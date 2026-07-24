@@ -19,6 +19,18 @@ from app.config.app_config import load_app_config
 from app.domain.activities import Activity, ActivityType
 
 
+async def _wait_until(predicate, *, timeout: float = 2.0) -> object:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
+        value = predicate()
+        if value:
+            return value
+        if loop.time() >= deadline:
+            return value
+        await asyncio.sleep(0.01)
+
+
 def demo_composition() -> StreamingComposition:
     config = create_streaming_demo_config(load_app_config())
     runtime = create_stream_preparation_runtime(config)
@@ -113,11 +125,14 @@ async def test_demo_comment_uses_poller_moderation_ranking_and_response(
                 "approved_by": "operator",
             }
         )
-        for _ in range(100):
-            main = service.main_segment_status()
-            if main is not None and main["status"] == "completed":
-                break
-            await asyncio.sleep(0)
+        main = await _wait_until(
+            lambda: (
+                status
+                if (status := service.main_segment_status()) is not None
+                and status["status"] == "completed"
+                else None
+            )
+        )
         assert main is not None and main["status"] == "completed"
 
         accepted = service.enqueue_demo_comment(
@@ -132,17 +147,18 @@ async def test_demo_comment_uses_poller_moderation_ranking_and_response(
         )
         assert accepted["accepted"] is True
         assert isinstance(accepted["test_case_id"], str)
-        poller = (
-            service._comment_poller
-        )  # noqa: SLF001 -- exercise the composed real poller
+        poller = service._comment_poller  # noqa: SLF001 -- exercise composed poller
         assert poller is not None
         await poller.poll_once()
-        for _ in range(100):
-            response = service.comment_response_status()
-            activity = response.get("activity") if response is not None else None
-            if isinstance(activity, dict) and activity.get("status") == "completed":
-                break
-            await asyncio.sleep(0)
+        response = await _wait_until(
+            lambda: (
+                current
+                if (current := service.comment_response_status()) is not None
+                and isinstance(current.get("activity"), dict)
+                and current["activity"].get("status") == "completed"
+                else None
+            )
+        )
         assert service.moderation_status()["allowed"] == 1  # type: ignore[index]
         assert service.ranking_status()["selected_count"] == 1  # type: ignore[index]
         assert response is not None and response["activity"]["status"] == "completed"
@@ -154,11 +170,14 @@ async def test_demo_comment_uses_poller_moderation_ranking_and_response(
             }
         )
         await poller.poll_once()
-        for _ in range(20):
-            moderation = service.moderation_status()
-            if moderation is not None and moderation["blocked"] == 1:
-                break
-            await asyncio.sleep(0)
+        moderation = await _wait_until(
+            lambda: (
+                current
+                if (current := service.moderation_status()) is not None
+                and current["blocked"] == 1
+                else None
+            )
+        )
         assert moderation is not None and moderation["blocked"] == 1
 
         for _ in range(30):
