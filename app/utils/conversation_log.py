@@ -4,6 +4,10 @@ import json
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
+
+
+_JAPAN_TIMEZONE = ZoneInfo("Asia/Tokyo")
 
 
 class ConversationLogger:
@@ -32,7 +36,9 @@ class ConversationLogger:
             return
         timestamp = occurred_at or datetime.now(timezone.utc)
         record = {
-            "timestamp": timestamp.astimezone().isoformat(timespec="milliseconds"),
+            "timestamp": timestamp.astimezone(_JAPAN_TIMEZONE).isoformat(
+                timespec="milliseconds"
+            ),
             "speaker": speaker,
             "speaker_name": speaker_name,
             "source": source,
