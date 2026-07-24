@@ -76,11 +76,25 @@ class InterruptedTopic:
         normalized = text.strip()
         if not normalized:
             return self
+        if self._is_explicit_continuation_request(normalized):
+            return self
         return replace(
             self,
             interruption_turns=self.interruption_turns + 1,
             interruption_topics=(*self.interruption_topics, normalized),
         )
+
+    @staticmethod
+    def _is_explicit_continuation_request(text: str) -> bool:
+        """元の話題を続けてほしい明示的な依頼は、別話題への割り込みに数えない。"""
+
+        continuation_markers = (
+            "続き",
+            "続けて",
+            "もっと聞きたい",
+            "もう少し聞きたい",
+        )
+        return any(marker in text for marker in continuation_markers)
 
 
 @dataclass(frozen=True, slots=True)
