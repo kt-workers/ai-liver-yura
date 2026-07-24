@@ -14,7 +14,7 @@ class AutonomousActivityPolicy:
     """
 
     low_talkativeness_threshold: float = 0.3
-    default_handoff_seconds: float = 30.0
+    default_handoff_seconds: float = 45.0
     excited_handoff_seconds: float = 20.0
     quiet_handoff_seconds: float = 45.0
     tired_handoff_seconds: float = 60.0
