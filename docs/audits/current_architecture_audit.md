@@ -1,0 +1,332 @@
+# 現行アーキテクチャ監査
+
+## 1. 目的
+
+`develop`を基準に、今後の構造改善を安全に進めるため、コード、設定、依存関係、巨大クラス、Composition Rootの現状を整理する。
+
+本監査は実装変更を行わず、次の実施順序の基準を確定するためのものである。
+
+1. コード・設定・依存関係の現状監査
+2. 依存方向テストの追加
+3. 話題選択ロジックの分離
+4. `AgentLifeService`の責務分割
+5. その他の巨大クラス・関数の分割
+6. 型付き設定モデルの導入
+7. 設定ファイルの分割
+8. Composition Rootの整理
+9. 依存違反の段階的解消
+10. 回帰テストと設計資料更新
+
+## 2. 現状サマリー
+
+### 2.1 全体構造
+
+現在の主要パッケージは次の責務を持つ。
+
+- `app/domain`: 状態、値オブジェクト、ドメインモデル
+- `app/ports`: 外部機能との抽象境界
+- `app/usecases`: ユースケース
+- `app/runtime`: Agentの実行制御、状態更新、Activity管理
+- `app/adapters`: LLM、TTS、DB、OBS、YouTube等の具象実装
+- `app/plugins`: 機能単位のPlugin
+- `app/bootstrap`: 具象実装の生成と接続
+- `app/shared`: Plugin契約や共有基盤
+
+方向性自体はポート・アダプタ型に近いが、`runtime`に複数責務が集中し、`bootstrap`と設定ファイルが巨大化している。
+
+### 2.2 既に改善済みの点
+
+- Runtimeには公開拡張口があり、主要なモンキーパッチは解消済み
+- 感情評価はService、Validator、Model Adapter、Runtime接続に分離済み
+- 設定値は多くがdataclassへ変換済み
+- Streaming PluginとCoreの接続はComposition Root内のAdapterで行われている
+- Plugin契約とCore内部モデルの変換境界が存在する
+
+## 3. 主要な監査結果
+
+## 3.1 依存方向テスト
+
+### 判定
+
+未対応。
+
+### 根拠
+
+通常の単体テスト・統合テストは多数存在するが、次のようなパッケージ依存規則を機械的に検査する専用テストは確認できていない。
+
+- `domain`が`runtime`、`adapters`、`plugins`、`bootstrap`へ依存しない
+- `ports`が具象Adapterへ依存しない
+- `usecases`が`bootstrap`へ依存しない
+- `runtime`が外部SDKへ直接依存しない
+- PluginがCoreのPrivate実装へ依存しない
+- Adapter同士が相互依存しない
+
+### 次工程
+
+Python ASTを使用した依存方向テストを追加する。
+
+最初は全面禁止ではなく、既知の例外を明示できるベースライン方式とする。
+
+推奨ブランチ:
+
+```text
+refactor/dependency-boundary-tests
+```
+
+## 3.2 話題選択・話題継続ロジック
+
+### 判定
+
+未分離。
+
+### 現在の配置
+
+`AgentLifeService`が次を直接担当している。
+
+- 自律発話結果から話題状態を生成
+- 興味度、未完了度、疲弊度の算出
+- 類似度評価
+- 話題の中断、再開、完了
+- 継続終了判定
+- 再導入要否の評価結果反映
+- 最近の自律発話履歴の保持
+- 自律発話イベント生成時の話題選択結果付与
+
+`TopicContinuationEvaluator`は存在するが、話題状態の生成・更新・選択・終了判定は`AgentLifeService`側に残っている。
+
+### 問題
+
+- Agent状態更新と話題戦略が密結合
+- 話題ロジックだけを独立テストしにくい
+- `SequenceMatcher`や固定ヒューリスティックがService内部に埋め込まれている
+- 将来の外部トレンド、話題ランキング、話題記憶統合を追加しにくい
+
+### 分離候補
+
+- `AutonomousTopicTracker`
+- `AutonomousTopicMetricsEvaluator`
+- `AutonomousTopicContinuationPolicy`
+- `AutonomousTopicSelectionResult`
+
+最初の分離では挙動を変えず、既存ロジックを移動する。
+
+推奨ブランチ:
+
+```text
+refactor/autonomous-topic-selection
+```
+
+## 3.3 AgentLifeService
+
+### 判定
+
+分割が必要。
+
+### 規模
+
+約1,100行。
+
+### 現在の責務
+
+1. AgentStateの保持
+2. Driveの時間経過更新
+3. Emotionの時間経過更新
+4. EventによるDrive更新
+5. EventによるEmotion更新
+6. EventによるRelationship更新
+7. 重複Event排除
+8. 短期記憶更新
+9. エピソード記憶更新
+10. 感情履歴更新
+11. 関係記憶の永続化
+12. Agent記憶の永続化
+13. ActivityManagerとの同期
+14. 自律発話タイミング判定
+15. 会話再開理由判定
+16. 話題状態管理
+17. 自律発話候補の却下バックオフ
+18. State Observer通知
+
+### 分割方針
+
+話題ロジック分離後、次の単位で段階的に分割する。
+
+- `AgentStateTransitionService`
+- `AgentMemoryRecorder`
+- `AgentActivityStateSynchronizer`
+- `AutonomousEventPlanner`
+- `ProcessedEventTracker`
+
+既存の公開APIを一度に変更せず、`AgentLifeService`をFacadeとして残しながら内部委譲へ移行する。
+
+## 3.4 その他の巨大クラス・関数
+
+### `app/config/app_config.py`
+
+約1,100行。
+
+責務:
+
+- 全設定dataclass定義
+- YAML読込
+- 型変換
+- デフォルト値
+- バリデーション
+- 全機能設定の集約
+
+### `app/bootstrap/runtime.py`
+
+多数のAdapter、Plugin、Usecase、Runtimeを一つのモジュールで生成・接続している。
+
+Composition Rootで具象型へ依存すること自体は正しいが、機能別Composerへの分割が必要。
+
+### Streaming Composition
+
+`app/bootstrap/streaming.py`はCoreとPluginを接続する境界として妥当。ただし次の課題がある。
+
+- `Any`の利用が多い
+- Repository Factoryの戻り値が`Any`
+- `configure_lifecycle_gate`、`configure_comment_moderation`の引数が`Any`
+- Runtime状態表示が設定構造を直接参照
+
+## 3.5 型付き設定モデル
+
+### 判定
+
+部分対応済み。
+
+### 実装済み
+
+- `AppConfig`以下、多数のdataclass
+- 一部設定の`__post_init__`バリデーション
+- YAMLから型付き設定への変換
+
+### 未完了
+
+- `ServiceSettings`が全サービス共通のOptionalフィールド集合
+- 設定定義、読込、変換、検証が一ファイルに集中
+- `dict[str, ...]`が多く、キー誤りを静的に検出しにくい
+- Plugin設定の構造とYAMLキーに不一致の可能性がある
+- 機能別設定の独立ロードができない
+
+### 改善候補
+
+- `OpenAIServiceSettings`
+- `OllamaServiceSettings`
+- `VoiceVoxServiceSettings`
+- `YouTubeServiceSettings`
+- `ObsServiceSettings`
+- `PostgresServiceSettings`
+
+設定モデル分割は、設定ファイル分割より先に実施する。
+
+## 3.6 設定ファイル
+
+### 判定
+
+分割が必要。
+
+現在の`config/config.yaml`は次を一つに保持している。
+
+- アプリ基本設定
+- Trace
+- 外部サービス
+- モデル
+- LLM役割
+- 音声
+- 話題分類
+- Memory
+- Character
+- Input Receiver
+- Confirmation
+- Streaming
+- Plugin
+
+約300行であり、機能追加に伴ってさらに肥大化する。
+
+### 分割候補
+
+```text
+config/
+  app.yaml
+  services.yaml
+  models.yaml
+  character.yaml
+  runtime.yaml
+  speech.yaml
+  memory.yaml
+  streaming.yaml
+  plugins.yaml
+```
+
+ただし、先に型付き設定モデルと統合ローダーの境界を整理し、互換性を保った段階移行を行う。
+
+## 3.7 Composition Root
+
+### 判定
+
+部分対応済みだが整理が必要。
+
+### 良い点
+
+- 具象Adapter生成が`bootstrap`に集約されている
+- PluginとCoreの橋渡しAdapterがComposition Rootに存在する
+- Streaming構成が専用モジュールへ一部分離されている
+
+### 問題
+
+- `app/bootstrap/runtime.py`が多数の機能を生成
+- Core Runtime、Memory、LLM、TTS、Plugin、Streamingの組立が混在
+- 生成関数同士の依存関係を追いにくい
+- テスト用構成と本番構成の差し替えが一部`replace()`による設定加工
+
+### 分割候補
+
+```text
+app/bootstrap/
+  core_runtime.py
+  llm.py
+  memory.py
+  speech.py
+  topic.py
+  plugins.py
+  streaming.py
+  application.py
+```
+
+最終的な`application.py`だけが各Composerを呼び出す。
+
+## 4. 依存違反候補
+
+現時点では確定違反ではなく、依存方向テスト導入前に確認すべき候補である。
+
+1. `runtime`が`shared.contracts.plugins`へ直接依存している箇所
+2. `bootstrap/streaming.py`がCoreモデルとPluginモデルを同時に扱う境界
+3. `app/config`が全機能の具体設定を一括所有している構造
+4. 一部UsecaseとRuntimeの責務重複
+5. Plugin公開層からCore内部型への参照有無
+6. Adapter間の直接参照有無
+
+これらは依存方向テストで現状を可視化してから段階的に解消する。
+
+## 5. 改訂後の実施順序
+
+1. 本監査資料を完成させる
+2. ASTベースの依存方向テストを追加する
+3. 話題状態管理と選択ロジックを`AgentLifeService`から分離する
+4. `AgentLifeService`をFacade化し、状態遷移・記憶・Activity同期・自律計画へ分割する
+5. `app_config.py`と`runtime.py`以外の巨大クラス・関数も抽出する
+6. サービス別・機能別の型付き設定モデルへ分割する
+7. YAML設定を段階的に分割する
+8. Composition Rootを機能別Composerへ分割する
+9. 依存方向テストで検出された違反を段階的に解消する
+10. 全回帰テストを実行し、設計資料を更新する
+
+## 6. 安全方針
+
+- 各段階で挙動変更と構造変更を混在させない
+- 既存の公開APIを維持し、内部委譲から始める
+- 1ブランチ1目的を原則とする
+- 各分割前に既存挙動を固定するテストを追加する
+- 依存方向テストは最初から完全禁止にせず、既知例外を明示して徐々に減らす
+- 設定ファイル分割時は旧`config.yaml`の互換読込期間を設ける
