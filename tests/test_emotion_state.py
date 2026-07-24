@@ -18,7 +18,7 @@ def test_autonomous_policy_defers_talking_for_angry_emotion() -> None:
     policy = AutonomousActivityPolicy()
 
     assert policy.should_defer_talking(emotion_state)
-    assert policy.minimum_talk_interval_seconds(emotion_state) == 5.0
+    assert policy.minimum_talk_interval_seconds(emotion_state) == 45.0
 
 
 def test_autonomous_policy_shortens_activity_interval_for_excited_emotion() -> None:
@@ -26,7 +26,7 @@ def test_autonomous_policy_shortens_activity_interval_for_excited_emotion() -> N
     policy = AutonomousActivityPolicy()
 
     assert not policy.should_defer_talking(emotion_state)
-    assert policy.minimum_talk_interval_seconds(emotion_state) == 0.5
+    assert policy.minimum_talk_interval_seconds(emotion_state) == 20.0
     assert policy.awakening_settle_seconds(emotion_state) >= 2.0
 
 
@@ -35,7 +35,7 @@ def test_low_talkativeness_reduces_speech() -> None:
     policy = AutonomousActivityPolicy()
 
     assert policy.should_defer_talking(emotion_state)
-    assert policy.minimum_talk_interval_seconds(emotion_state) == 3.0
+    assert policy.minimum_talk_interval_seconds(emotion_state) == 60.0
 
 
 def test_invalid_arousal_raises_error() -> None:
