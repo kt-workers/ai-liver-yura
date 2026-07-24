@@ -36,9 +36,7 @@ class AutonomousActivityPolicy:
             return self.excited_handoff_seconds
         if emotion.talkativeness < self.low_talkativeness_threshold:
             return self.tired_handoff_seconds
-        if emotion.talkativeness > 0.7:
-            return self.default_handoff_seconds
-        return self.quiet_handoff_seconds
+        return self.default_handoff_seconds
 
     def awakening_settle_seconds(self, emotion: EmotionState) -> float:
         """覚醒直後に状況を受け取る時間を、現在の感情状態から決める。"""
