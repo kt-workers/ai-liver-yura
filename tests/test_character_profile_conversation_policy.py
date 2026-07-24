@@ -14,7 +14,7 @@ def test_character_profile_adds_turn_handoff_and_existence_policies() -> None:
     assert any("発話権を返し" in item for item in profile.behavior_policy)
     assert any("沈黙や無反応" in item for item in profile.behavior_policy)
     assert any("海中に居住" in item for item in profile.behavior_policy)
-    assert any("物理的な身体感覚" in item for item in profile.behavior_policy)
+    assert any("物理的な身体を持たない" in item for item in profile.behavior_policy)
 
 
 def test_character_profile_does_not_duplicate_default_policies() -> None:
