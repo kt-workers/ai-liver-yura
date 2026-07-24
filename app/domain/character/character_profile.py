@@ -65,6 +65,9 @@ class CharacterProfile:
         """会話の発話権と存在設定に関する共通方針を必ず補完する。"""
 
         policies = list(self.behavior_policy)
+        if not policies:
+            # 個別指定が空であったことをプロンプト上でも区別できるようにする。
+            policies.append("なし（個別指定）")
         for policy in (
             *_DEFAULT_CONVERSATION_POLICIES,
             *self.existence.behavior_policies(),
