@@ -87,7 +87,10 @@ class TopicContinuationEvaluator:
             return TopicContinuationResult(
                 decision,
                 ("resume_score_high", f"resume_score={resume_score:.3f}"),
-                reintroduction_required=continuity < 0.9,
+                reintroduction_required=(
+                    topic.status == TopicLifecycleStatus.INTERRUPTED
+                    or continuity < 0.9
+                ),
                 selected_topic=topic.original_text,
             )
 
