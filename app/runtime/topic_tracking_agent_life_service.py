@@ -11,8 +11,8 @@ class TopicTrackingAgentLifeService(AgentLifeService):
     """話題固有処理を``AutonomousTopicTracker``へ委譲する移行用Facade。
 
     ``AgentLifeService``の公開APIを変更せず、話題状態の生成・更新・終了判定を
-    専用コンポーネントへ移す。基底クラス内に残る既存処理との互換性を保つため、
-    委譲の前後で従来の内部状態へ同期する。
+    専用コンポーネントへ移す。既存インスタンスをそのまま昇格できるため、
+    Planner、Executor、Coordinatorが保持する参照を交換する必要がない。
     """
 
     def __init__(
@@ -28,18 +28,18 @@ class TopicTrackingAgentLifeService(AgentLifeService):
         self._sync_tracker_from_legacy_state()
 
     @classmethod
-    def from_existing(
+    def upgrade_existing(
         cls,
         service: AgentLifeService,
         *,
         autonomous_topic_tracker: AutonomousTopicTracker | None = None,
     ) -> TopicTrackingAgentLifeService:
-        """既存Serviceの状態を保持したまま委譲型へ移行する。"""
+        """既存インスタンスと参照関係を維持したまま委譲型へ昇格する。"""
 
         if isinstance(service, cls):
             return service
-        upgraded = cls.__new__(cls)
-        upgraded.__dict__ = service.__dict__.copy()
+        service.__class__ = cls
+        upgraded = service
         upgraded._autonomous_topic_tracker = (
             autonomous_topic_tracker or AutonomousTopicTracker()
         )
