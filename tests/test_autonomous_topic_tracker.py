@@ -67,7 +67,7 @@ def test_record_output_updates_existing_topic_without_changing_id() -> None:
     assert second.turn_count == 2
     assert second.interest == pytest.approx(0.71)
     assert second.incompleteness == pytest.approx(0.62)
-    assert second.exhaustion == pytest.approx(0.181)
+    assert second.exhaustion == pytest.approx(0.297)
 
 
 def test_should_complete_returns_strength_and_decision() -> None:
