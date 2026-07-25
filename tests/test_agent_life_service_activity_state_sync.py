@@ -40,5 +40,5 @@ def test_agent_life_service_delegates_activity_state_synchronization() -> None:
     state = service.sync_from_activity_manager()
 
     assert synchronizer.calls == [topic]
-    assert state.memory.unrecovered_topic is not None
-    assert state.memory.unrecovered_topic.topic_id == topic.topic_id
+    assert len(state.memory.unrecovered_topics) == 1
+    assert state.memory.unrecovered_topics[0].topic_id == topic.topic_id
