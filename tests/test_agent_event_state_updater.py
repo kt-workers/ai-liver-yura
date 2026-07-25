@@ -25,7 +25,18 @@ def test_update_records_event_drive_emotion_memory_and_situation() -> None:
     assert result.before_drive != result.after_drive
     assert result.before_emotion != result.after_emotion
     assert result.state.memory.episodic[-1].event_id == event.event_id
+
+
+def test_update_records_effective_reactive_emotion_change() -> None:
+    event = AgentEvent(
+        event_type=AgentEventType.ACTION_FAILED,
+        payload={"reason": "test_failure"},
+    )
+
+    result = AgentEventStateUpdater().update(AgentState(), event)
+
     assert result.state.memory.emotion_history[-1].source_event_id == event.event_id
+    assert result.state.memory.emotion_history[-1].reason == result.appraisal.reason
 
 
 def test_update_ignores_blank_input_source() -> None:
