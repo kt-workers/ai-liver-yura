@@ -25,6 +25,7 @@ from app.runtime.activity_state_synchronizer import ActivityStateSynchronizer
 from app.runtime.agent_event_state_updater import AgentEventStateUpdater
 from app.runtime.agent_state import AgentState
 from app.runtime.autonomous_activity_policy import AutonomousActivityPolicy
+from app.runtime.autonomous_plan_state import AutonomousPlanState
 from app.runtime.drive_state_updater import DriveStateUpdater
 from app.runtime.emotion_appraiser import EmotionAppraiser
 from app.runtime.emotion_state_updater import EmotionStateUpdater
@@ -63,6 +64,7 @@ class AgentLifeService:
         processed_event_registry: ProcessedEventRegistry | None = None,
         activity_state_synchronizer: ActivityStateSynchronizer | None = None,
         agent_event_state_updater: AgentEventStateUpdater | None = None,
+        autonomous_plan_state: AutonomousPlanState | None = None,
         state_observer: Callable[[AgentState], None] | None = None,
     ) -> None:
         self._activity_manager = activity_manager
@@ -77,14 +79,12 @@ class AgentLifeService:
         self._relationship_memory_store = relationship_memory_store
         self._short_term_memory = short_term_memory
         self._last_emotion_updated_at = self._last_drive_updated_at
-        self._last_autonomous_talk_planned_at: datetime | None = None
-        self._last_autonomous_plan_rejected_at: datetime | None = None
         self._awakening_completed_at: datetime | None = None
-        self._autonomous_plan_retry_backoff_seconds = max(
-            autonomous_plan_retry_backoff_seconds, 0.0
-        )
-        self._autonomous_reconsider_after_seconds = (
-            self._autonomous_plan_retry_backoff_seconds
+        self._autonomous_plan_state = (
+            autonomous_plan_state
+            or AutonomousPlanState(
+                default_retry_backoff_seconds=autonomous_plan_retry_backoff_seconds
+            )
         )
         self._conversation_idle_timeout_seconds = conversation_idle_timeout_seconds
         self._observed_ongoing_activity_id: str | None = None
@@ -489,28 +489,25 @@ class AgentLifeService:
             return None
 
         autonomous_talk_interval_seconds = self._autonomous_talk_interval_seconds()
-        if self._is_within_pause(
-            since=self._last_autonomous_plan_rejected_at,
-            now=now,
-            pause_seconds=self._autonomous_reconsider_after_seconds,
-        ):
+        if self._autonomous_plan_state.is_retry_backoff_active(now):
             self._trace_logger.write(
                 "agent_life_service:plan_next_event:skipped",
                 reason="autonomous_plan_retry_backoff",
-                backoff_seconds=self._autonomous_reconsider_after_seconds,
-                last_rejected_at=self._last_autonomous_plan_rejected_at,
+                backoff_seconds=self._autonomous_plan_state.reconsider_after_seconds,
+                last_rejected_at=self._autonomous_plan_state.last_rejected_at,
             )
             return None
-        if not is_autonomous_lookahead and self._is_within_pause(
-            since=self._last_autonomous_talk_planned_at,
-            now=now,
-            pause_seconds=autonomous_talk_interval_seconds,
+        if (
+            not is_autonomous_lookahead
+            and self._autonomous_plan_state.is_talk_interval_active(
+                now, autonomous_talk_interval_seconds
+            )
         ):
             self._trace_logger.write(
                 "agent_life_service:plan_next_event:skipped",
                 reason="autonomous_talk_interval",
                 interval_seconds=autonomous_talk_interval_seconds,
-                last_autonomous_talk_planned_at=self._last_autonomous_talk_planned_at,
+                last_autonomous_talk_planned_at=self._autonomous_plan_state.last_accepted_at,
                 emotion_arousal=self._agent_state.current_emotion.arousal,
                 emotion_talkativeness=self._agent_state.current_emotion.talkativeness,
                 drive_energy=self._agent_state.current_drive.energy,
@@ -612,21 +609,8 @@ class AgentLifeService:
             )
             return self.sync_from_activity_manager()
 
-        if event.event_type == AgentEventType.CURIOSITY_PEAK:
-            planned_for = event.payload.get("autonomous_planned_for")
-            try:
-                accepted_at = (
-                    datetime.fromisoformat(planned_for)
-                    if isinstance(planned_for, str)
-                    else event.occurred_at
-                )
-            except ValueError:
-                accepted_at = event.occurred_at
-            self._last_autonomous_talk_planned_at = accepted_at
-            self._last_autonomous_plan_rejected_at = None
-            self._autonomous_reconsider_after_seconds = (
-                self._autonomous_plan_retry_backoff_seconds
-            )
+        accepted_at = self._autonomous_plan_state.accept(event)
+        if accepted_at is not None:
             self._explicit_resume_reason = None
             self._observed_ongoing_activity_id = None
             self._trace_logger.write(
@@ -724,21 +708,17 @@ class AgentLifeService:
     ) -> None:
         """LLMが採用しなかった候補の再評価時刻を保持する。"""
 
-        if event.event_type != AgentEventType.CURIOSITY_PEAK:
+        if not self._autonomous_plan_state.reject(
+            event,
+            rejected_at=rejected_at,
+            reconsider_after_seconds=reconsider_after_seconds,
+        ):
             return
-        self._last_autonomous_plan_rejected_at = (
-            rejected_at or datetime.now(timezone.utc)
-        )
-        self._autonomous_reconsider_after_seconds = (
-            min(300.0, max(5.0, reconsider_after_seconds))
-            if reconsider_after_seconds is not None
-            else self._autonomous_plan_retry_backoff_seconds
-        )
         self._trace_logger.write(
             "agent_life_service:autonomous_plan:rejected",
             source_event_id=event.event_id,
-            rejected_at=self._last_autonomous_plan_rejected_at,
-            retry_backoff_seconds=self._autonomous_reconsider_after_seconds,
+            rejected_at=self._autonomous_plan_state.last_rejected_at,
+            retry_backoff_seconds=self._autonomous_plan_state.reconsider_after_seconds,
         )
 
     def _persist_relationship_memory(
