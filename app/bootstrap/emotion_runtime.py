@@ -17,12 +17,18 @@ from app.runtime.emotion_runtime_integration import (
     EmotionAwareRuntimeCoordinator,
     attach_emotion_runtime,
 )
+from app.runtime.topic_tracking_agent_life_service import (
+    TopicTrackingAgentLifeService,
+)
 
 
 def create_runtime_coordinator(config: AppConfig) -> EmotionAwareRuntimeCoordinator:
-    """標準Runtimeへ自然文感情評価を明示的な依存として合成する。"""
+    """標準Runtimeへ話題管理分離と自然文感情評価を合成する。"""
 
     coordinator = create_base_runtime_coordinator(config)
+    TopicTrackingAgentLifeService.upgrade_existing(
+        coordinator._agent_life_service
+    )
     settings = load_emotion_appraisal_settings(config.config_path)
     model = None
     if settings.enabled and settings.mode in {
