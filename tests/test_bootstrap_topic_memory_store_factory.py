@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from unittest.mock import Mock
 
-from app.adapters.storage.postgres_topic_memory_store import PostgresTopicMemoryStore
+from app.bootstrap import topic_memory_store_factory
 from app.bootstrap.topic_memory_store_factory import (
     create_configured_topic_memory_store,
 )
@@ -35,7 +36,23 @@ def test_topic_memory_store_uses_typed_settings(monkeypatch) -> None:
         "AI_LIVER_DATABASE_URL",
         "postgresql://ai_liver:password@localhost:5432/ai_liver",
     )
+    created_store = object()
+    constructor = Mock(return_value=created_store)
+    monkeypatch.setattr(
+        topic_memory_store_factory,
+        "PostgresTopicMemoryStore",
+        constructor,
+    )
 
     store = create_configured_topic_memory_store(config)
 
-    assert isinstance(store, PostgresTopicMemoryStore)
+    assert store is created_store
+    constructor.assert_called_once()
+    generated_config = constructor.call_args.args[0]
+    assert generated_config.dsn == (
+        "postgresql://ai_liver:password@localhost:5432/ai_liver"
+    )
+    assert generated_config.embedding_dimension == 1536
+    assert generated_config.duplicate_threshold == (
+        config.memory.topic_memory.duplicate_threshold
+    )
