@@ -50,6 +50,19 @@ jobs:
           python -m pip install -r requirements-dev.txt
 
       - name: Run tests
+        id: pytest
+        continue-on-error: true
         env:
           PYTHONUNBUFFERED: "1"
-        run: pytest -q
+        run: pytest -q > pytest.log 2>&1
+
+      - name: Upload pytest log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-log
+          path: pytest.log
+
+      - name: Fail when pytest failed
+        if: steps.pytest.outcome == 'failure'
+        run: exit 1
