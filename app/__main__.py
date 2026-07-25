@@ -9,6 +9,7 @@ from app.adapters.input import (
     WebInputReceiverConfig,
 )
 from app.bootstrap.runtime import create_runtime_coordinator
+from app.bootstrap.runtime_preflight import validate_runtime_service_settings
 from app.config.app_config import load_app_config
 from app.domain.events import AgentEvent, AgentEventType, InputAuthority
 from app.utils.trace import TraceLogger
@@ -37,6 +38,7 @@ async def async_main() -> None:
     """Run Yura's core without composing OBS or YouTube operations."""
 
     config = load_app_config()
+    validate_runtime_service_settings(config)
     TraceLogger.configure(
         level=config.trace.level,
         trace_file_path=config.trace.file_path,
