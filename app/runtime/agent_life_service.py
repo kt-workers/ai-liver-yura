@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import asdict
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from typing import Any
@@ -11,7 +10,7 @@ from app.domain.activities import ActivityType
 from app.domain.drives import DriveState
 from app.domain.emotions import EmotionState
 from app.domain.events import AgentEvent, AgentEventType
-from app.domain.memory import EmotionHistoryEntry, EpisodicMemory, SemanticMemory
+from app.domain.memory import SemanticMemory
 from app.domain.relationships import RelationshipMemory, RelationshipState
 from app.domain.short_term_memory import ShortTermMemory
 from app.domain.topic import (
@@ -23,6 +22,7 @@ from app.domain.topic import (
 from app.ports.relationship_memory_store import RelationshipMemoryStore
 from app.runtime.activity_manager import ActivityManager
 from app.runtime.activity_state_synchronizer import ActivityStateSynchronizer
+from app.runtime.agent_event_state_updater import AgentEventStateUpdater
 from app.runtime.agent_state import AgentState
 from app.runtime.autonomous_activity_policy import AutonomousActivityPolicy
 from app.runtime.drive_state_updater import DriveStateUpdater
@@ -62,6 +62,7 @@ class AgentLifeService:
         autonomous_plan_retry_backoff_seconds: float = 2.0,
         processed_event_registry: ProcessedEventRegistry | None = None,
         activity_state_synchronizer: ActivityStateSynchronizer | None = None,
+        agent_event_state_updater: AgentEventStateUpdater | None = None,
         state_observer: Callable[[AgentState], None] | None = None,
     ) -> None:
         self._activity_manager = activity_manager
@@ -106,6 +107,15 @@ class AgentLifeService:
         self._activity_state_synchronizer = (
             activity_state_synchronizer
             or ActivityStateSynchronizer(activity_manager)
+        )
+        self._agent_event_state_updater = (
+            agent_event_state_updater
+            or AgentEventStateUpdater(
+                drive_state_updater=self._drive_state_updater,
+                emotion_appraiser=self._emotion_appraiser,
+                emotion_state_updater=self._emotion_state_updater,
+                relationship_state_updater=self._relationship_state_updater,
+            )
         )
         self._trace_logger = TraceLogger()
         self._state_observer = state_observer
@@ -625,65 +635,43 @@ class AgentLifeService:
                 planned_for=accepted_at,
             )
 
-        before_drive = self._agent_state.current_drive
-        before_emotion = self._agent_state.current_emotion
-        before_relationship = self._agent_state.relationship_memory.current
-
-        self._agent_state = self._agent_state.with_drive(
-            self._drive_state_updater.update_by_event(
-                self._agent_state.current_drive,
-                event,
-            )
+        update_result = self._agent_event_state_updater.update(
+            self._agent_state,
+            event,
         )
-
-        after_drive = self._agent_state.current_drive
-        self._trace_logger.write(
-            "agent_life_service:handle_event:drive_updated",
-            event_type=event.event_type.value,
-            before_curiosity=before_drive.curiosity,
-            before_engagement=before_drive.engagement,
-            before_boredom=before_drive.boredom,
-            before_energy=before_drive.energy,
-            after_curiosity=after_drive.curiosity,
-            after_engagement=after_drive.engagement,
-            after_boredom=after_drive.boredom,
-            after_energy=after_drive.energy,
-        )
-
-        appraisal = self._emotion_appraiser.appraise(event)
-        self._agent_state = self._agent_state.with_emotion(
-            self._emotion_state_updater.apply(before_emotion, appraisal)
-        )
+        self._agent_state = update_result.state
         self._last_emotion_updated_at = max(
             self._last_emotion_updated_at,
             event.occurred_at,
         )
-        after_emotion = self._agent_state.current_emotion
+
+        self._trace_logger.write(
+            "agent_life_service:handle_event:drive_updated",
+            event_type=event.event_type.value,
+            before_curiosity=update_result.before_drive.curiosity,
+            before_engagement=update_result.before_drive.engagement,
+            before_boredom=update_result.before_drive.boredom,
+            before_energy=update_result.before_drive.energy,
+            after_curiosity=update_result.after_drive.curiosity,
+            after_engagement=update_result.after_drive.engagement,
+            after_boredom=update_result.after_drive.boredom,
+            after_energy=update_result.after_drive.energy,
+        )
         self._trace_logger.info(
             "agent_life_service:handle_event:emotion_updated",
             event_type=event.event_type.value,
             source_event_id=event.event_id,
-            appraisal_reason=appraisal.reason,
-            before_arousal=before_emotion.arousal,
-            before_valence=before_emotion.valence,
-            before_talkativeness=before_emotion.talkativeness,
-            after_arousal=after_emotion.arousal,
-            after_valence=after_emotion.valence,
-            after_talkativeness=after_emotion.talkativeness,
+            appraisal_reason=update_result.appraisal.reason,
+            before_arousal=update_result.before_emotion.arousal,
+            before_valence=update_result.before_emotion.valence,
+            before_talkativeness=update_result.before_emotion.talkativeness,
+            after_arousal=update_result.after_emotion.arousal,
+            after_valence=update_result.after_emotion.valence,
+            after_talkativeness=update_result.after_emotion.talkativeness,
         )
 
-        relationship_memory = self._relationship_state_updater.update(
-            self._agent_state.relationship_memory,
-            event,
-        )
-        self._agent_state = self._agent_state.with_relationship_memory(
-            relationship_memory
-        )
-        after_relationship = relationship_memory.current
-        relationship_changed = (
-            after_relationship is not None and after_relationship != before_relationship
-        )
-        if relationship_changed and after_relationship is not None:
+        after_relationship = update_result.after_relationship
+        if update_result.relationship_changed and after_relationship is not None:
             self._trace_logger.info(
                 "agent_life_service:relationship_updated",
                 source_event_id=event.event_id,
@@ -692,50 +680,12 @@ class AgentLifeService:
                 familiarity=after_relationship.familiarity,
                 interaction_count=after_relationship.interaction_count,
             )
-            self._persist_relationship_memory(relationship_memory, event.event_id)
+            self._persist_relationship_memory(
+                update_result.relationship_memory,
+                event.event_id,
+            )
 
-        attention_target = (
-            after_relationship.counterpart_id
-            if relationship_changed and after_relationship is not None
-            else self._agent_state.attention_target
-        )
-        source = event.payload.get("source")
-        input_source = source if isinstance(source, str) and source.strip() else None
-        self._agent_state = self._agent_state.with_attention_target(attention_target)
-        self._agent_state = self._agent_state.with_memory(
-            self._agent_state.memory.remember_episode(
-                EpisodicMemory(
-                    event_id=event.event_id,
-                    event_type=event.event_type.value,
-                    occurred_at=event.occurred_at,
-                    activity_id=(
-                        self._agent_state.active_activity.activity_id
-                        if self._agent_state.active_activity is not None
-                        else None
-                    ),
-                    counterpart_id=attention_target,
-                )
-            ).record_emotion(
-                EmotionHistoryEntry(
-                    source_event_id=event.event_id,
-                    before=asdict(before_emotion),
-                    after=asdict(after_emotion),
-                    reason=appraisal.reason,
-                    recorded_at=event.occurred_at,
-                )
-            )
-        )
         self._persist_agent_memory()
-        self._agent_state = self._agent_state.with_situation(
-            self._agent_state.current_situation.observe_event(
-                event_id=event.event_id,
-                event_type=event.event_type.value,
-                occurred_at=event.occurred_at,
-                input_source=input_source,
-                input_authority_role=event.authority.role,
-                attention_target=attention_target,
-            )
-        )
 
         if event.event_type in (
             AgentEventType.USER_TEXT,
@@ -765,12 +715,6 @@ class AgentLifeService:
                 self._autonomous_topic = self._autonomous_topic.add_interruption_topic(
                     text
                 )
-
-        if event.event_type == AgentEventType.SPEECH_STARTED:
-            self._agent_state = self._agent_state.mark_speech_started(event.occurred_at)
-
-        if event.event_type == AgentEventType.SPEECH_FINISHED:
-            self._agent_state = self._agent_state.mark_speech_finished(event.occurred_at)
 
         return self.sync_from_activity_manager()
 
