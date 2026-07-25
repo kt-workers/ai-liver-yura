@@ -8,11 +8,11 @@ from app.bootstrap.model_settings import (
     require_embedding_dimension,
     resolve_ai_model,
 )
-from app.config.app_config import ModelSettings, load_config
+from app.config.app_config import ModelSettings, load_app_config
 
 
 def test_resolve_ai_model_returns_model_and_typed_service() -> None:
-    config = load_config()
+    config = load_app_config()
 
     resolved = resolve_ai_model(config, "openai_chat")
 
@@ -23,14 +23,14 @@ def test_resolve_ai_model_returns_model_and_typed_service() -> None:
 
 
 def test_resolve_ai_model_rejects_unknown_model() -> None:
-    config = load_config()
+    config = load_app_config()
 
     with pytest.raises(RuntimeError, match="未定義のモデルです: unknown"):
         resolve_ai_model(config, "unknown")
 
 
 def test_resolve_ai_model_rejects_disallowed_service_type() -> None:
-    config = load_config()
+    config = load_app_config()
 
     with pytest.raises(RuntimeError, match="services.openai.type"):
         resolve_ai_model(
@@ -41,14 +41,14 @@ def test_resolve_ai_model_rejects_disallowed_service_type() -> None:
 
 
 def test_require_embedding_dimension_returns_dimension() -> None:
-    config = load_config()
+    config = load_app_config()
     resolved = resolve_ai_model(config, "openai_embedding")
 
     assert require_embedding_dimension(resolved) == 1536
 
 
 def test_require_embedding_dimension_rejects_missing_dimension() -> None:
-    config = load_config()
+    config = load_app_config()
     models = dict(config.models)
     models["openai_embedding"] = ModelSettings(
         service="openai",
