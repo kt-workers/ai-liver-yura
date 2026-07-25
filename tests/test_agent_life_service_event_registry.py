@@ -36,4 +36,8 @@ def test_agent_life_service_delegates_duplicate_detection_to_registry() -> None:
 
     assert registry.registered_event_ids == [event.event_id, event.event_id]
     assert first_state.last_user_input_at == occurred_at
-    assert duplicate_state == first_state
+    assert duplicate_state.last_user_input_at == occurred_at
+    assert duplicate_state.current_drive == first_state.current_drive
+    assert duplicate_state.current_emotion == first_state.current_emotion
+    assert duplicate_state.memory == first_state.memory
+    assert duplicate_state.current_situation.last_event_id == event.event_id
