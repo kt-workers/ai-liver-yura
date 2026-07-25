@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from app.domain.topic import TopicLifecycleStatus
 from app.runtime.activity_manager import ActivityManager
+from app.runtime.agent_life_service import AgentLifeService
 from app.runtime.autonomous_topic_tracker import AutonomousTopicTracker
 from app.runtime.topic_tracking_agent_life_service import TopicTrackingAgentLifeService
 
@@ -15,6 +16,27 @@ def create_service() -> TopicTrackingAgentLifeService:
             uuid_factory=lambda: "topic-1"
         ),
     )
+
+
+def test_upgrade_existing_preserves_object_identity_and_state() -> None:
+    original = AgentLifeService(ActivityManager())
+    original.record_autonomous_output(
+        activity_id="activity-1",
+        text="元の話題",
+    )
+    original_id = id(original)
+    original_topic = original.autonomous_topic
+
+    upgraded = TopicTrackingAgentLifeService.upgrade_existing(
+        original,
+        autonomous_topic_tracker=AutonomousTopicTracker(
+            uuid_factory=lambda: "topic-2"
+        ),
+    )
+
+    assert id(upgraded) == original_id
+    assert isinstance(upgraded, TopicTrackingAgentLifeService)
+    assert upgraded.autonomous_topic == original_topic
 
 
 def test_record_autonomous_output_delegates_to_topic_tracker() -> None:
