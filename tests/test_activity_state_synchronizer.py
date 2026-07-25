@@ -61,8 +61,8 @@ def test_synchronize_records_interrupted_topic_as_unrecovered_memory() -> None:
         autonomous_topic=topic,
     )
 
-    unrecovered = state.memory.unrecovered_topic
-    assert unrecovered is not None
+    assert len(state.memory.unrecovered_topics) == 1
+    unrecovered = state.memory.unrecovered_topics[0]
     assert unrecovered.topic_id == "topic-1"
     assert unrecovered.source_activity_id == "activity-1"
     assert unrecovered.summary == "話題の続き"
@@ -83,4 +83,4 @@ def test_synchronize_clears_unrecovered_memory_for_completed_topic() -> None:
 
     updated = synchronizer.synchronize(state, autonomous_topic=completed)
 
-    assert updated.memory.unrecovered_topic is None
+    assert updated.memory.unrecovered_topics == ()
