@@ -692,9 +692,6 @@ class AgentLifeService:
             AgentEventType.YOUTUBE_COMMENT,
             AgentEventType.USER_SPEECH,
         ):
-            self._agent_state = self._agent_state.mark_user_input_received(
-                event.occurred_at
-            )
             text = event.payload.get("text") or event.payload.get("comment")
             if self._short_term_memory is not None and isinstance(text, str):
                 self._short_term_memory.add_user_input(
