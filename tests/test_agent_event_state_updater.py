@@ -24,7 +24,7 @@ def test_update_records_event_drive_emotion_memory_and_situation() -> None:
     assert result.state.current_emotion == result.after_emotion
     assert result.before_drive != result.after_drive
     assert result.before_emotion != result.after_emotion
-    assert result.state.memory.episodic_memories[-1].event_id == event.event_id
+    assert result.state.memory.episodic[-1].event_id == event.event_id
     assert result.state.memory.emotion_history[-1].source_event_id == event.event_id
 
 
@@ -60,5 +60,5 @@ def test_update_marks_speech_lifecycle() -> None:
         ),
     ).state
 
-    assert started.speech_started_at == started_at
-    assert finished.speech_finished_at == finished_at
+    assert started.last_speech_started_at == started_at
+    assert finished.last_speech_finished_at == finished_at
