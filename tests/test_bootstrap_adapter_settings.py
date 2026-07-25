@@ -8,11 +8,11 @@ from app.bootstrap.adapter_settings import (
     resolve_llm_adapter_settings,
     resolve_topic_memory_store_settings,
 )
-from app.config.app_config import ModelSettings, load_config
+from app.config.app_config import ModelSettings, load_app_config
 
 
 def test_resolve_llm_adapter_settings_for_openai() -> None:
-    config = load_config()
+    config = load_app_config()
 
     settings = resolve_llm_adapter_settings(config, "openai_chat")
 
@@ -24,7 +24,7 @@ def test_resolve_llm_adapter_settings_for_openai() -> None:
 
 
 def test_resolve_llm_adapter_settings_can_override_timeout() -> None:
-    config = load_config()
+    config = load_app_config()
 
     settings = resolve_llm_adapter_settings(
         config,
@@ -36,7 +36,7 @@ def test_resolve_llm_adapter_settings_can_override_timeout() -> None:
 
 
 def test_resolve_topic_memory_store_settings() -> None:
-    config = load_config()
+    config = load_app_config()
 
     settings = resolve_topic_memory_store_settings(config)
 
@@ -46,7 +46,7 @@ def test_resolve_topic_memory_store_settings() -> None:
 
 
 def test_topic_memory_settings_require_embedding_dimension() -> None:
-    config = load_config()
+    config = load_app_config()
     model_key = config.memory.topic_memory.embedding_model
     models = dict(config.models)
     current = models[model_key]
