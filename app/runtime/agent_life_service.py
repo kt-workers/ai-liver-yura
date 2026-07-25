@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import deque
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -34,6 +33,7 @@ from app.runtime.autonomous_activity_policy import AutonomousActivityPolicy
 from app.runtime.drive_state_updater import DriveStateUpdater
 from app.runtime.emotion_appraiser import EmotionAppraiser
 from app.runtime.emotion_state_updater import EmotionStateUpdater
+from app.runtime.processed_event_registry import ProcessedEventRegistry
 from app.runtime.relationship_state_updater import RelationshipStateUpdater
 from app.runtime.topic_continuation_evaluator import TopicContinuationEvaluator
 from app.shared.contracts.memory import AgentMemoryStore
@@ -65,6 +65,7 @@ class AgentLifeService:
         autonomous_activity_policy: AutonomousActivityPolicy | None = None,
         agent_memory_store: AgentMemoryStore | None = None,
         autonomous_plan_retry_backoff_seconds: float = 2.0,
+        processed_event_registry: ProcessedEventRegistry | None = None,
         state_observer: Callable[[AgentState], None] | None = None,
     ) -> None:
         self._activity_manager = activity_manager
@@ -103,8 +104,9 @@ class AgentLifeService:
             autonomous_activity_policy or AutonomousActivityPolicy()
         )
         self._agent_memory_store = agent_memory_store
-        self._processed_event_ids: deque[str] = deque(maxlen=1024)
-        self._processed_event_id_set: set[str] = set()
+        self._processed_event_registry = (
+            processed_event_registry or ProcessedEventRegistry()
+        )
         self._trace_logger = TraceLogger()
         self._state_observer = state_observer
 
@@ -592,18 +594,13 @@ class AgentLifeService:
     def handle_event(self, event: AgentEvent) -> AgentState:
         """Event を受け取り、AgentState に反映する。"""
 
-        if event.event_id in self._processed_event_id_set:
+        if not self._processed_event_registry.register(event.event_id):
             self._trace_logger.debug(
                 "agent_life_service:handle_event:duplicate_skipped",
                 event_id=event.event_id,
                 event_type=event.event_type.value,
             )
             return self.sync_from_activity_manager()
-        if len(self._processed_event_ids) == self._processed_event_ids.maxlen:
-            oldest = self._processed_event_ids[0]
-            self._processed_event_id_set.discard(oldest)
-        self._processed_event_ids.append(event.event_id)
-        self._processed_event_id_set.add(event.event_id)
 
         if event.event_type == AgentEventType.CURIOSITY_PEAK:
             planned_for = event.payload.get("autonomous_planned_for")
