@@ -11,11 +11,11 @@ from app.bootstrap.service_settings import (
     resolve_service,
     resolve_youtube_service,
 )
-from app.config.app_config import load_config
+from app.config.app_config import load_app_config
 
 
 def test_resolve_http_ai_service_returns_required_values() -> None:
-    config = load_config()
+    config = load_app_config()
 
     service = resolve_http_ai_service(config, "openai")
 
@@ -25,7 +25,7 @@ def test_resolve_http_ai_service_returns_required_values() -> None:
 
 
 def test_resolve_database_service_returns_dsn_environment_name() -> None:
-    config = load_config()
+    config = load_app_config()
 
     service = resolve_database_service(config, "topic_memory_database")
 
@@ -34,7 +34,7 @@ def test_resolve_database_service_returns_dsn_environment_name() -> None:
 
 
 def test_resolve_youtube_and_obs_services_use_default_names() -> None:
-    config = load_config()
+    config = load_app_config()
 
     youtube = resolve_youtube_service(config)
     obs = resolve_obs_service(config)
@@ -47,7 +47,7 @@ def test_resolve_youtube_and_obs_services_use_default_names() -> None:
 
 
 def test_resolve_service_reports_missing_name() -> None:
-    config = load_config()
+    config = load_app_config()
     config = replace(config, services={})
 
     with pytest.raises(RuntimeError, match="未定義のサービスです: openai"):
