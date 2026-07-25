@@ -11,13 +11,7 @@ from app.domain.activities import ActivityType
 from app.domain.drives import DriveState
 from app.domain.emotions import EmotionState
 from app.domain.events import AgentEvent, AgentEventType
-from app.domain.memory import (
-    EmotionHistoryEntry,
-    EpisodicMemory,
-    SemanticMemory,
-    UnfinishedActivityMemory,
-    UnrecoveredTopicMemory,
-)
+from app.domain.memory import EmotionHistoryEntry, EpisodicMemory, SemanticMemory
 from app.domain.relationships import RelationshipMemory, RelationshipState
 from app.domain.short_term_memory import ShortTermMemory
 from app.domain.topic import (
@@ -28,6 +22,7 @@ from app.domain.topic import (
 )
 from app.ports.relationship_memory_store import RelationshipMemoryStore
 from app.runtime.activity_manager import ActivityManager
+from app.runtime.activity_state_synchronizer import ActivityStateSynchronizer
 from app.runtime.agent_state import AgentState
 from app.runtime.autonomous_activity_policy import AutonomousActivityPolicy
 from app.runtime.drive_state_updater import DriveStateUpdater
@@ -66,6 +61,7 @@ class AgentLifeService:
         agent_memory_store: AgentMemoryStore | None = None,
         autonomous_plan_retry_backoff_seconds: float = 2.0,
         processed_event_registry: ProcessedEventRegistry | None = None,
+        activity_state_synchronizer: ActivityStateSynchronizer | None = None,
         state_observer: Callable[[AgentState], None] | None = None,
     ) -> None:
         self._activity_manager = activity_manager
@@ -106,6 +102,10 @@ class AgentLifeService:
         self._agent_memory_store = agent_memory_store
         self._processed_event_registry = (
             processed_event_registry or ProcessedEventRegistry()
+        )
+        self._activity_state_synchronizer = (
+            activity_state_synchronizer
+            or ActivityStateSynchronizer(activity_manager)
         )
         self._trace_logger = TraceLogger()
         self._state_observer = state_observer
@@ -828,71 +828,9 @@ class AgentLifeService:
         """ActivityManager の状態を AgentState に同期する。"""
 
         before_memory = self._agent_state.memory
-        pending = self._activity_manager.pending_activities()
-        suspended = self._activity_manager.suspended_activities()
-        foreground = self._activity_manager.foreground_activity
-        ongoing = self._activity_manager.ongoing_activity
-        unfinished = tuple(
-            UnfinishedActivityMemory(
-                activity_id=activity.activity_id,
-                activity_type=activity.activity_type.value,
-                goal=activity.goal,
-                status=activity.status.value,
-                priority=activity.priority,
-                updated_at=activity.updated_at,
-            )
-            for activity in self._activity_manager.list_activities()
-            if activity.status.value in {"pending", "active", "waiting", "suspended"}
-        )
-        topic = self._autonomous_topic
-        unrecovered_topic = (
-            UnrecoveredTopicMemory(
-                topic_id=topic.topic_id,
-                source_activity_id=topic.source_activity_id,
-                summary=topic.original_text,
-                status=topic.status.value,
-                importance=topic.importance,
-                interrupted_at=topic.interrupted_at,
-            )
-            if topic is not None
-            and topic.status
-            in {TopicLifecycleStatus.INTERRUPTED, TopicLifecycleStatus.SUSPENDED}
-            else None
-        )
-        self._agent_state = (
-            self._agent_state.with_active_activity(
-                self._activity_manager.foreground_activity
-            )
-            .with_pending_activities(pending)
-            .with_suspended_activities(suspended)
-            .with_memory(
-                self._agent_state.memory.with_unfinished_activities(
-                    unfinished
-                ).with_unrecovered_topic(unrecovered_topic)
-            )
-            .with_situation(
-                self._agent_state.current_situation.with_activity_snapshot(
-                    active_activity_id=(
-                        foreground.activity_id if foreground is not None else None
-                    ),
-                    active_activity_type=(
-                        foreground.activity_type.value
-                        if foreground is not None
-                        else None
-                    ),
-                    pending_activity_count=len(pending),
-                    suspended_activity_count=len(suspended),
-                    ongoing_activity_id=(
-                        ongoing.ongoing_activity_id if ongoing is not None else None
-                    ),
-                    ongoing_activity_type=(
-                        ongoing.activity_type if ongoing is not None else None
-                    ),
-                    ongoing_activity_status=(
-                        ongoing.status.value if ongoing is not None else None
-                    ),
-                )
-            )
+        self._agent_state = self._activity_state_synchronizer.synchronize(
+            self._agent_state,
+            autonomous_topic=self._autonomous_topic,
         )
 
         if self._agent_state.memory != before_memory:
