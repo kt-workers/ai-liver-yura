@@ -11,7 +11,7 @@ from app.bootstrap.llm_adapter_factory import (
     create_configured_response_generator,
     create_configured_topic_classifier,
 )
-from app.config.app_config import ServiceSettings, load_config
+from app.config.app_config import load_app_config
 from app.domain.character import CharacterProfile
 
 
@@ -25,7 +25,7 @@ def character_profile() -> CharacterProfile:
 
 
 def test_create_configured_response_generator_uses_openai_settings() -> None:
-    config = load_config()
+    config = load_app_config()
 
     generator = create_configured_response_generator(
         config,
@@ -40,7 +40,7 @@ def test_create_configured_response_generator_uses_openai_settings() -> None:
 
 
 def test_create_configured_response_generator_uses_ollama_settings() -> None:
-    config = load_config()
+    config = load_app_config()
 
     generator = create_configured_response_generator(
         config,
@@ -54,7 +54,7 @@ def test_create_configured_response_generator_uses_ollama_settings() -> None:
 
 
 def test_openai_response_generator_requires_api_key_env() -> None:
-    config = load_config()
+    config = load_app_config()
     services = dict(config.services)
     services["openai"] = replace(services["openai"], api_key_env=None)
     config = replace(config, services=services)
@@ -69,19 +69,19 @@ def test_openai_response_generator_requires_api_key_env() -> None:
         )
 
 
-def test_topic_classifier_returns_none_without_openai_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    config = load_config()
+def test_topic_classifier_returns_none_without_openai_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_app_config()
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    assert (
-        create_configured_topic_classifier(config, model_key="openai_chat") is None
-    )
+    assert create_configured_topic_classifier(config, model_key="openai_chat") is None
 
 
 def test_embedding_generator_returns_none_without_openai_api_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    config = load_config()
+    config = load_app_config()
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     assert (
