@@ -27,6 +27,25 @@ class TopicTrackingAgentLifeService(AgentLifeService):
         )
         self._sync_tracker_from_legacy_state()
 
+    @classmethod
+    def from_existing(
+        cls,
+        service: AgentLifeService,
+        *,
+        autonomous_topic_tracker: AutonomousTopicTracker | None = None,
+    ) -> TopicTrackingAgentLifeService:
+        """既存Serviceの状態を保持したまま委譲型へ移行する。"""
+
+        if isinstance(service, cls):
+            return service
+        upgraded = cls.__new__(cls)
+        upgraded.__dict__ = service.__dict__.copy()
+        upgraded._autonomous_topic_tracker = (
+            autonomous_topic_tracker or AutonomousTopicTracker()
+        )
+        upgraded._sync_tracker_from_legacy_state()
+        return upgraded
+
     @property
     def autonomous_topic(self) -> InterruptedTopic | None:
         self._sync_tracker_from_legacy_state()
