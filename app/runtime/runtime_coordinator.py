@@ -69,6 +69,9 @@ from app.runtime.pending_confirmation import (
 from app.runtime.runtime_diagnostic_snapshot_builder import (
     RuntimeDiagnosticSnapshotBuilder,
 )
+from app.runtime.user_input_interruption_coordinator import (
+    UserInputInterruptionCoordinator,
+)
 from app.shared.contracts.plugins.runtime import (
     CommandHandler,
     PlannedActivityInterpreter,
@@ -114,6 +117,9 @@ class RuntimeCoordinator:
             RuntimeDiagnosticSnapshotBuilder | None
         ) = None,
         event_subscriber_registry: EventSubscriberRegistry | None = None,
+        user_input_interruption_coordinator: (
+            UserInputInterruptionCoordinator | None
+        ) = None,
     ) -> None:
         self._event_queue = event_queue
         self._activity_manager = activity_manager
@@ -149,6 +155,17 @@ class RuntimeCoordinator:
         self._running = False
         self._thread_join_timeout_seconds = 1.0
         self._trace_logger = TraceLogger()
+        self._user_input_interruption_coordinator = (
+            user_input_interruption_coordinator
+            or UserInputInterruptionCoordinator(
+                activity_manager=self._activity_manager,
+                action_scheduler=self._action_scheduler,
+                activity_planner_thread=self._activity_planner_thread,
+                activity_executor_thread=self._activity_executor_thread,
+                agent_life_service=self._agent_life_service,
+                trace_logger=self._trace_logger,
+            )
+        )
         self._conversation_logger = conversation_logger or ConversationLogger()
         self._event_enrichers: list[Callable[[AgentEvent], AgentEvent]] = []
         self._autonomous_planning_enabled = autonomous_planning_enabled
@@ -318,14 +335,10 @@ class RuntimeCoordinator:
             if await self._event_subscriber_registry.dispatch(filtered_event):
                 continue
             if filtered_event.event_type == AgentEventType.USER_TEXT:
-                if (
-                    foreground_at_receipt is not None
-                    and foreground_at_receipt.activity_type
-                    == ActivityType.AUTONOMOUS_TALK
-                ):
-                    self._action_scheduler.cancel_pending_segments(
-                        foreground_at_receipt.activity_id
-                    )
+                self._user_input_interruption_coordinator.before_routing(
+                    filtered_event,
+                    foreground_at_receipt=foreground_at_receipt,
+                )
                 self._trace_logger.info(
                     "runtime_coordinator:event_received",
                     **filtered_event.trace_context.as_log_fields(),
@@ -376,56 +389,10 @@ class RuntimeCoordinator:
                 if prioritized_event.event_type == AgentEventType.USER_TEXT
                 else self._activity_manager.foreground_activity
             )
-            prepared_activity = self._activity_manager.prepare_user_input(
-                prioritized_event
+            self._user_input_interruption_coordinator.after_prioritization(
+                prioritized_event,
+                foreground_at_receipt=foreground_before_input,
             )
-            if prioritized_event.event_type == AgentEventType.USER_TEXT:
-                self._activity_planner_thread.cancel_inflight_autonomous(
-                    source_event_id=prioritized_event.event_id,
-                    trace_context=prioritized_event.trace_context,
-                )
-                if (
-                    foreground_before_input is not None
-                    and foreground_before_input.activity_type
-                    == ActivityType.AUTONOMOUS_TALK
-                ):
-                    self._agent_life_service.interrupt_autonomous_topic(
-                        activity_id=foreground_before_input.activity_id,
-                        fallback_text=foreground_before_input.goal,
-                    )
-                discarded_deferred = self._activity_manager.discard_deferred_autonomous(
-                    reason="user_conversation_started"
-                )
-                canceled = self._activity_executor_thread.cancel_pending_autonomous(
-                    source_event_id=prioritized_event.event_id,
-                    reason="user_text_received",
-                )
-                if canceled:
-                    self._trace_logger.info(
-                        "runtime_coordinator:user_input:pending_autonomous_canceled",
-                        event_id=prioritized_event.event_id,
-                        planned_activity_ids=[
-                            item.planned_activity_id for item in canceled
-                        ],
-                        activity_ids=[item.activity.activity_id for item in canceled],
-                    )
-                if discarded_deferred:
-                    self._trace_logger.info(
-                        "runtime_coordinator:user_input:deferred_autonomous_discarded",
-                        event_id=prioritized_event.event_id,
-                        activity_ids=[
-                            activity.activity_id for activity in discarded_deferred
-                        ],
-                        reason="restart_with_fresh_context_after_conversation",
-                    )
-            if prepared_activity is not None:
-                self._agent_life_service.sync_from_activity_manager()
-                self._trace_logger.info(
-                    "runtime_coordinator:user_input:conversation_prepared",
-                    event_id=prioritized_event.event_id,
-                    activity_id=prepared_activity.activity_id,
-                    activity_type=prepared_activity.activity_type.value,
-                )
             self._trace_logger.write(
                 "runtime_coordinator:publish_events:prioritized",
                 event_type=prioritized_event.event_type.value,
