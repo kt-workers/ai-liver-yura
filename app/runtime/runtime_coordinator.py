@@ -71,6 +71,7 @@ from app.runtime.pending_confirmation import (
 from app.runtime.runtime_diagnostic_snapshot_builder import (
     RuntimeDiagnosticSnapshotBuilder,
 )
+from app.runtime.user_input_event_logger import UserInputEventLogger
 from app.runtime.user_input_interruption_coordinator import (
     UserInputInterruptionCoordinator,
 )
@@ -124,6 +125,7 @@ class RuntimeCoordinator:
             UserInputInterruptionCoordinator | None
         ) = None,
         buffered_event_dispatcher: BufferedEventDispatcher | None = None,
+        user_input_event_logger: UserInputEventLogger | None = None,
     ) -> None:
         self._event_queue = event_queue
         self._activity_manager = activity_manager
@@ -159,6 +161,10 @@ class RuntimeCoordinator:
         self._running = False
         self._thread_join_timeout_seconds = 1.0
         self._trace_logger = TraceLogger()
+        self._user_input_event_logger = (
+            user_input_event_logger
+            or UserInputEventLogger(self._trace_logger)
+        )
         self._buffered_event_dispatcher = (
             buffered_event_dispatcher
             or BufferedEventDispatcher(
@@ -355,22 +361,7 @@ class RuntimeCoordinator:
                     filtered_event,
                     foreground_at_receipt=foreground_at_receipt,
                 )
-                self._trace_logger.info(
-                    "runtime_coordinator:event_received",
-                    **filtered_event.trace_context.as_log_fields(),
-                    event_type=filtered_event.event_type.value,
-                    source=str(filtered_event.payload.get("source") or "unknown"),
-                    priority=filtered_event.priority,
-                )
-                self._trace_logger.user_input(
-                    source=str(filtered_event.payload.get("source") or "unknown"),
-                    event_id=filtered_event.event_id,
-                    text=str(filtered_event.payload.get("text") or ""),
-                    trace_id=filtered_event.trace_context.trace_id,
-                    parent_trace_id=filtered_event.trace_context.parent_trace_id,
-                    activity_turn_id=filtered_event.trace_context.activity_turn_id,
-                    confirmation_id=filtered_event.trace_context.confirmation_id,
-                )
+                self._user_input_event_logger.log(filtered_event)
                 if (
                     self._behavior_planner is not None
                     and self._activity_plan_validator is not None
