@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: python-tests-${{ github.event.pull_request.head.ref || github.ref_name }}
@@ -34,20 +34,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-
-      - name: Apply explicit activity executor refactor
-        if: github.event_name == 'pull_request' && github.head_ref == 'refactor/explicit-activity-executor'
-        run: |
-          python scripts/apply_explicit_activity_executor_refactor.py
-          if ! git diff --quiet; then
-            git config user.name "ch4t9pt"
-            git config user.email "308621972+ch4t9pt@users.noreply.github.com"
-            git add app/runtime/runtime_coordinator.py
-            git commit -m "RuntimeCoordinatorの明示的Activity実行を分離"
-            git push origin HEAD:refactor/explicit-activity-executor
-          fi
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
