@@ -32,6 +32,7 @@ const bubbles = [];
 const STATE_TIMEOUT_MS = 45000;
 const PRESENCE_GATHER_RATE = 0.32;
 const PRESENCE_SCATTER_RATE = 0.16;
+const ROTATION_DIRECTION = -1;
 
 const particles = Array.from({ length: 820 }, (_, index) => {
   const golden = Math.PI * (3 - Math.sqrt(5));
@@ -284,7 +285,11 @@ function render(now) {
   const talking = display.emotion.talkativeness;
   const baseRadius = Math.min(width, height) * (.18 + curiosity * .09 + energy * .025);
   const speed = reduceMotion ? .025 : .045 + arousal * .23;
-  rotationYAngle = (rotationYAngle + speed * dt) % (Math.PI * 2);
+  rotationYAngle = (
+    rotationYAngle
+    + ROTATION_DIRECTION * speed * dt
+    + Math.PI * 2
+  ) % (Math.PI * 2);
   const rotationY = rotationYAngle;
   const rotationX = Math.sin(t * .12) * (.08 + arousal * .08);
   const flatten = 1 - boredom * .24;
