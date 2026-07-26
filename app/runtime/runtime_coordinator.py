@@ -60,6 +60,7 @@ from app.runtime.event_buffer import EventBuffer
 from app.runtime.event_filter import DefaultEventFilter, EventFilter
 from app.runtime.event_prioritizer import DefaultEventPrioritizer, EventPrioritizer
 from app.runtime.event_queue import EventQueue
+from app.runtime.event_subscriber_registry import EventSubscriberRegistry
 from app.runtime.ongoing_activity_coordinator import OngoingActivityCoordinator
 from app.runtime.pending_confirmation import (
     ConfirmationResolver,
@@ -112,6 +113,7 @@ class RuntimeCoordinator:
         runtime_diagnostic_snapshot_builder: (
             RuntimeDiagnosticSnapshotBuilder | None
         ) = None,
+        event_subscriber_registry: EventSubscriberRegistry | None = None,
     ) -> None:
         self._event_queue = event_queue
         self._activity_manager = activity_manager
@@ -131,6 +133,9 @@ class RuntimeCoordinator:
             runtime_diagnostic_snapshot_builder
             or RuntimeDiagnosticSnapshotBuilder()
         )
+        self._event_subscriber_registry = (
+            event_subscriber_registry or EventSubscriberRegistry()
+        )
         self._behavior_planner = behavior_planner
         self._activity_plan_validator = activity_plan_validator
         self._activity_registry = activity_registry
@@ -145,13 +150,6 @@ class RuntimeCoordinator:
         self._thread_join_timeout_seconds = 1.0
         self._trace_logger = TraceLogger()
         self._conversation_logger = conversation_logger or ConversationLogger()
-        self._event_subscribers: list[
-            tuple[
-                AgentEventType,
-                Callable[[AgentEvent], Awaitable[object]],
-                Callable[[AgentEvent], bool] | None,
-            ]
-        ] = []
         self._event_enrichers: list[Callable[[AgentEvent], AgentEvent]] = []
         self._autonomous_planning_enabled = autonomous_planning_enabled
         self._short_term_memory = short_term_memory
@@ -296,7 +294,9 @@ class RuntimeCoordinator:
         *,
         predicate: Callable[[AgentEvent], bool] | None = None,
     ) -> None:
-        self._event_subscribers.append((event_type, handler, predicate))
+        self._event_subscriber_registry.register(
+            event_type, handler, predicate=predicate
+        )
 
     def register_event_enricher(
         self, enricher: Callable[[AgentEvent], AgentEvent]
@@ -315,17 +315,7 @@ class RuntimeCoordinator:
             foreground_at_receipt = self._activity_manager.foreground_activity
             self._record_conversation_input(filtered_event)
             self._agent_life_service.handle_event(filtered_event)
-            subscriber = next(
-                (
-                    handler
-                    for event_type, handler, predicate in self._event_subscribers
-                    if filtered_event.event_type == event_type
-                    and (predicate is None or predicate(filtered_event))
-                ),
-                None,
-            )
-            if subscriber is not None:
-                await subscriber(filtered_event)
+            if await self._event_subscriber_registry.dispatch(filtered_event):
                 continue
             if filtered_event.event_type == AgentEventType.USER_TEXT:
                 if (
