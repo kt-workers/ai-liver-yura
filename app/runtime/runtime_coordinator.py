@@ -72,6 +72,7 @@ from app.runtime.runtime_diagnostic_snapshot_builder import (
     RuntimeDiagnosticSnapshotBuilder,
 )
 from app.runtime.user_input_event_logger import UserInputEventLogger
+from app.runtime.user_input_event_router import UserInputEventRouter
 from app.runtime.user_input_interruption_coordinator import (
     UserInputInterruptionCoordinator,
 )
@@ -126,6 +127,7 @@ class RuntimeCoordinator:
         ) = None,
         buffered_event_dispatcher: BufferedEventDispatcher | None = None,
         user_input_event_logger: UserInputEventLogger | None = None,
+        user_input_event_router: UserInputEventRouter | None = None,
     ) -> None:
         self._event_queue = event_queue
         self._activity_manager = activity_manager
@@ -164,6 +166,21 @@ class RuntimeCoordinator:
         self._user_input_event_logger = (
             user_input_event_logger
             or UserInputEventLogger(self._trace_logger)
+        )
+        self._user_input_event_router = (
+            user_input_event_router
+            or UserInputEventRouter(
+                behavior_router=self._route_behavior,
+                plugin_router=self._route_plugin_user_input,
+                fallback=self._with_plugin_availability,
+                behavior_routing_available=lambda: (
+                    self._behavior_planner is not None
+                    and self._activity_plan_validator is not None
+                ),
+                plugin_routing_available=lambda: self._has_plugin_capability(
+                    PluginCapability.USER_INTENT_INTERPRETER.value
+                ),
+            )
         )
         self._buffered_event_dispatcher = (
             buffered_event_dispatcher
@@ -362,17 +379,9 @@ class RuntimeCoordinator:
                     foreground_at_receipt=foreground_at_receipt,
                 )
                 self._user_input_event_logger.log(filtered_event)
-                if (
-                    self._behavior_planner is not None
-                    and self._activity_plan_validator is not None
-                ):
-                    routed_event = await self._route_behavior(filtered_event)
-                elif self._has_plugin_capability(
-                    PluginCapability.USER_INTENT_INTERPRETER.value
-                ):
-                    routed_event = await self._route_plugin_user_input(filtered_event)
-                else:
-                    routed_event = self._with_plugin_availability(filtered_event)
+                routed_event = await self._user_input_event_router.route(
+                    filtered_event
+                )
                 if routed_event is None:
                     continue
                 filtered_event = routed_event
