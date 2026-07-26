@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from app.domain.drives import DriveState
 from app.domain.events import AgentEvent, AgentEventType
 from app.runtime.drive_state_updater import DriveStateUpdater
@@ -34,6 +36,22 @@ def test_update_by_youtube_comment_increases_engagement_and_curiosity() -> None:
     assert updated_drive.engagement > drive.engagement
     assert updated_drive.boredom < drive.boredom
     assert updated_drive.energy < drive.energy
+
+
+def test_update_by_user_interaction_applies_a_gentle_attention_change() -> None:
+    updater = DriveStateUpdater()
+    drive = DriveState(curiosity=0.4, engagement=0.4, boredom=0.5, energy=0.8)
+    event = AgentEvent(
+        event_type=AgentEventType.USER_INTERACTION,
+        payload={"stimulus_kind": "tap"},
+    )
+
+    updated_drive = updater.update_by_event(drive, event)
+
+    assert updated_drive.curiosity == pytest.approx(0.43)
+    assert updated_drive.engagement == pytest.approx(0.48)
+    assert updated_drive.boredom == pytest.approx(0.42)
+    assert updated_drive.energy == pytest.approx(0.79)
 
 
 # New tests for app and stream started events

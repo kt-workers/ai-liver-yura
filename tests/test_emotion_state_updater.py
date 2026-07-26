@@ -68,6 +68,21 @@ def test_emotion_appraiser_uses_event_fact_without_inferring_user_sentiment() ->
     assert appraisal.arousal_delta > 0.0
 
 
+def test_emotion_appraiser_treats_visualizer_tap_as_gentle_surprise() -> None:
+    appraisal = EmotionAppraiser().appraise(
+        AgentEvent(
+            event_type=AgentEventType.USER_INTERACTION,
+            payload={"stimulus_kind": "tap"},
+        )
+    )
+
+    assert appraisal.reason == "user_tap_received"
+    assert appraisal.surprise_delta == pytest.approx(0.06)
+    assert appraisal.amusement_delta == pytest.approx(0.03)
+    assert appraisal.arousal_delta > 0.0
+    assert appraisal.valence_delta > 0.0
+
+
 def test_agent_life_service_applies_event_appraisal_and_elapsed_decay() -> None:
     started_at = datetime(2026, 7, 19, 10, 0, tzinfo=timezone.utc)
     service = AgentLifeService(ActivityManager(), now=started_at)

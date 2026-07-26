@@ -35,6 +35,15 @@ class EmotionAppraiser:
                 "reason": "viewer_attention_received",
                 "cause_summary": "視聴者からコメントを受け取った",
             },
+            AgentEventType.USER_INTERACTION: {
+                "amusement_delta": 0.03,
+                "surprise_delta": 0.06,
+                "arousal_delta": 0.04,
+                "valence_delta": 0.02,
+                "talkativeness_delta": 0.02,
+                "reason": "user_tap_received",
+                "cause_summary": "ユーザーから画面越しに触れられた",
+            },
             AgentEventType.ACTION_FAILED: {
                 "anger_delta": 0.05,
                 "sadness_delta": 0.04,

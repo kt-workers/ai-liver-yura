@@ -8,8 +8,14 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <canvas id="field" aria-label="ゆらの内面状態を表す粒子ビジュアライザー"></canvas>
+    <canvas
+      id="field"
+      role="button"
+      tabindex="0"
+      aria-label="ゆらの内面状態を表す粒子ビジュアライザー。クリックまたはEnterキーで、ゆらへそっと刺激を届けます"
+    ></canvas>
     <div class="veil"></div>
+    <p class="stimulus-status" id="stimulusStatus" role="status" aria-live="polite"></p>
 
     <header class="topbar">
       <div class="identity">
@@ -97,7 +103,15 @@
         <p><strong>まとまり</strong><span>集中・関与</span></p>
         <p><strong>平坦さ・散らばり</strong><span>退屈</span></p>
         <p><strong>表面の流れ</strong><span>話したさ</span></p>
+        <p><strong>異なる色の潮流</strong><span>同時にある強い感情</span></p>
+        <p><strong>中心核の収縮</strong><span>感情圧</span></p>
+        <p><strong>中心から広がる波</strong><span>新しく強まった感情</span></p>
         <p><strong>気泡の流れ</strong><span>光の粒子に沿う海中の流れ</span></p>
+      </section>
+
+      <section class="help-section" aria-labelledby="helpTouchTitle">
+        <h3 id="helpTouchTitle">触れる</h3>
+        <p>粒子の空間をクリックすると、画面越しの穏やかな刺激としてゆらへ届きます。画面が感情値を直接変更することはなく、ゆら自身の状態と状況に応じて反応が決まります。</p>
       </section>
     </dialog>
 

@@ -30,6 +30,16 @@ class DriveStateUpdater:
             )
             return updated_drive
 
+        if event.event_type == AgentEventType.USER_INTERACTION:
+            updated_drive = self._apply_user_interaction(drive)
+            self._write_update_trace(
+                "drive_state_updater:update_by_event:user_interaction",
+                before_drive=drive,
+                after_drive=updated_drive,
+                event_type=event.event_type.value,
+            )
+            return updated_drive
+
         if event.event_type in (
             AgentEventType.APP_STARTED,
             AgentEventType.STREAM_STARTED,
@@ -126,6 +136,14 @@ class DriveStateUpdater:
             engagement=drive.engagement + 0.2,
             boredom=drive.boredom - 0.3,
             energy=drive.energy - 0.03,
+        )
+
+    def _apply_user_interaction(self, drive: DriveState) -> DriveState:
+        return DriveState(
+            curiosity=drive.curiosity + 0.03,
+            engagement=drive.engagement + 0.08,
+            boredom=drive.boredom - 0.08,
+            energy=drive.energy - 0.01,
         )
 
     def _apply_speech_finished(self, drive: DriveState) -> DriveState:

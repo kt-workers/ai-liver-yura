@@ -4,6 +4,7 @@ import asyncio
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from time import monotonic
 
 from app.domain.events import AgentEvent, AgentEventType, InputAuthority
 from app.runtime import EventPublisher, InputReceiver
@@ -15,12 +16,15 @@ class WebInputReceiverConfig:
     host: str = "127.0.0.1"
     port: int = 8771
     max_text_length: int = 4000
+    interaction_min_interval_seconds: float = 0.75
 
     def __post_init__(self) -> None:
         if not 0 <= self.port <= 65535:
             raise ValueError("Web入力UDPポートは0から65535の範囲で指定してください。")
         if self.max_text_length < 1:
             raise ValueError("Web入力の最大文字数は1以上で指定してください。")
+        if self.interaction_min_interval_seconds < 0:
+            raise ValueError("画面刺激の最小間隔は0以上で指定してください。")
 
 
 class _WebInputProtocol(asyncio.DatagramProtocol):
@@ -36,6 +40,7 @@ class _WebInputProtocol(asyncio.DatagramProtocol):
         self._task_started = task_started
         self._task_finished = task_finished
         self._trace_logger = TraceLogger()
+        self._last_interaction_at = -config.interaction_min_interval_seconds
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         del addr
@@ -45,26 +50,75 @@ class _WebInputProtocol(asyncio.DatagramProtocol):
             return
         if not isinstance(payload, dict) or payload.get("schema_version") != 1:
             return
-        if payload.get("type") != "user_text":
+        event = self._event_from_payload(payload)
+        if event is None:
             return
-        raw_text = payload.get("text")
-        if not isinstance(raw_text, str):
-            return
-        text = raw_text.strip()
-        if not text or len(text) > self._config.max_text_length:
-            return
-        event = AgentEvent(
-            event_type=AgentEventType.USER_TEXT,
-            payload={"text": text, "source": "web"},
-            authority=InputAuthority.USER,
-        )
+
         task: asyncio.Task[None] = asyncio.create_task(self._publish(event))
         self._task_started(task)
         task.add_done_callback(self._task_finished)
         self._trace_logger.debug(
-            "web_input_receiver:user_text_received",
-            input_length=len(text),
-            source="web",
+            "web_input_receiver:event_received",
+            event_type=event.event_type.value,
+            source=str(event.payload.get("source") or "web"),
+        )
+
+    def _event_from_payload(self, payload: dict[str, object]) -> AgentEvent | None:
+        if payload.get("type") == "interaction_stimulus":
+            event = self._interaction_event(payload)
+            if event is None:
+                return None
+            now = monotonic()
+            if (
+                now - self._last_interaction_at
+                < self._config.interaction_min_interval_seconds
+            ):
+                return None
+            self._last_interaction_at = now
+            return event
+        if payload.get("type") != "user_text":
+            return None
+        raw_text = payload.get("text")
+        if not isinstance(raw_text, str):
+            return None
+        text = raw_text.strip()
+        if not text or len(text) > self._config.max_text_length:
+            return None
+        return AgentEvent(
+            event_type=AgentEventType.USER_TEXT,
+            payload={"text": text, "source": "web"},
+            authority=InputAuthority.USER,
+        )
+
+    @staticmethod
+    def _interaction_event(payload: dict[str, object]) -> AgentEvent | None:
+        if payload.get("stimulus_kind") != "tap":
+            return None
+        position = payload.get("position")
+        if not isinstance(position, dict):
+            return None
+        x = position.get("x")
+        y = position.get("y")
+        if (
+            not isinstance(x, (int, float))
+            or isinstance(x, bool)
+            or not isinstance(y, (int, float))
+            or isinstance(y, bool)
+            or not 0.0 <= float(x) <= 1.0
+            or not 0.0 <= float(y) <= 1.0
+        ):
+            return None
+        return AgentEvent(
+            event_type=AgentEventType.USER_INTERACTION,
+            payload={
+                "stimulus_kind": "tap",
+                "stimulus_description": (
+                    "内面状態の画面越しに、ユーザーからそっと触れられた"
+                ),
+                "position": {"x": float(x), "y": float(y)},
+                "source": "inner_state_visualizer",
+            },
+            authority=InputAuthority.USER,
         )
 
     async def _publish(self, event: AgentEvent) -> None:
@@ -72,7 +126,7 @@ class _WebInputProtocol(asyncio.DatagramProtocol):
 
 
 class WebInputReceiver(InputReceiver):
-    """ローカルWeb会話画面からUSER_TEXTを受け取るUDP入力アダプタ。"""
+    """ローカルWeb画面から会話入力と画面刺激を受け取るUDP Adapter。"""
 
     def __init__(self, config: WebInputReceiverConfig | None = None) -> None:
         self._config = config or WebInputReceiverConfig()
