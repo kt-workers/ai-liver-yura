@@ -95,6 +95,60 @@ async def test_web_input_protocol_converts_visualizer_tap_to_interaction() -> No
     assert events[0].authority == InputAuthority.USER
 
 
+@pytest.mark.asyncio
+async def test_web_input_protocol_preserves_visualizer_gesture_kinds() -> None:
+    events: list[AgentEvent] = []
+    tasks: set[asyncio.Task[None]] = set()
+
+    async def publish(event: AgentEvent) -> None:
+        events.append(event)
+
+    def finished(task: asyncio.Task[None]) -> None:
+        tasks.discard(task)
+        task.result()
+
+    protocol = _WebInputProtocol(
+        publish,
+        WebInputReceiverConfig(),
+        tasks.add,
+        finished,
+    )
+    payloads = [
+        {
+            "schema_version": 1,
+            "type": "interaction_stimulus",
+            "stimulus_kind": "double_tap",
+            "position": {"x": 0.4, "y": 0.6},
+        },
+        {
+            "schema_version": 1,
+            "type": "interaction_stimulus",
+            "stimulus_kind": "long_press",
+            "position": {"x": 0.5, "y": 0.5},
+            "duration_ms": 800,
+        },
+        {
+            "schema_version": 1,
+            "type": "interaction_stimulus",
+            "stimulus_kind": "drag",
+            "start_position": {"x": 0.2, "y": 0.3},
+            "position": {"x": 0.8, "y": 0.7},
+            "duration_ms": 900,
+        },
+    ]
+    for payload in payloads:
+        protocol.datagram_received(json.dumps(payload).encode(), ("127.0.0.1", 1))
+    await asyncio.gather(*tuple(tasks))
+
+    assert [event.payload["stimulus_kind"] for event in events] == [
+        "double_tap",
+        "long_press",
+        "drag",
+    ]
+    assert events[1].payload["duration_ms"] == 800
+    assert events[2].payload["start_position"] == {"x": 0.2, "y": 0.3}
+
+
 class _Response:
     def __init__(self, body: bytes) -> None:
         self._body = body

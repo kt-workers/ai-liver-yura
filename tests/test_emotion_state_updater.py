@@ -83,6 +83,30 @@ def test_emotion_appraiser_treats_visualizer_tap_as_gentle_surprise() -> None:
     assert appraisal.valence_delta > 0.0
 
 
+@pytest.mark.parametrize(
+    ("kind", "reason"),
+    [
+        ("double_tap", "user_double_tap_received"),
+        ("long_press", "user_long_press_received"),
+        ("drag", "user_drag_received"),
+    ],
+)
+def test_emotion_appraiser_distinguishes_visualizer_gestures(
+    kind: str,
+    reason: str,
+) -> None:
+    appraisal = EmotionAppraiser().appraise(
+        AgentEvent(
+            event_type=AgentEventType.USER_INTERACTION,
+            payload={"stimulus_kind": kind},
+        )
+    )
+
+    assert appraisal.reason == reason
+    assert appraisal.arousal_delta > 0.0
+    assert appraisal.valence_delta > 0.0
+
+
 def test_agent_life_service_applies_event_appraisal_and_elapsed_decay() -> None:
     started_at = datetime(2026, 7, 19, 10, 0, tzinfo=timezone.utc)
     service = AgentLifeService(ActivityManager(), now=started_at)

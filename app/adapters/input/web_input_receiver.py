@@ -10,6 +10,16 @@ from app.domain.events import AgentEvent, AgentEventType, InputAuthority
 from app.runtime import EventPublisher, InputReceiver
 from app.utils.trace import TraceLogger
 
+SUPPORTED_VISUALIZER_STIMULI = frozenset(
+    {"tap", "double_tap", "long_press", "drag"}
+)
+STIMULUS_DESCRIPTIONS = {
+    "tap": "内面状態の画面越しに、ユーザーからそっと触れられた",
+    "double_tap": "内面状態の画面越しに、ユーザーから続けて二度触れられた",
+    "long_press": "内面状態の画面越しに、ユーザーからしばらく触れられた",
+    "drag": "内面状態の画面越しに、ユーザーからなぞられた",
+}
+
 
 @dataclass(frozen=True)
 class WebInputReceiverConfig:
@@ -40,7 +50,7 @@ class _WebInputProtocol(asyncio.DatagramProtocol):
         self._task_started = task_started
         self._task_finished = task_finished
         self._trace_logger = TraceLogger()
-        self._last_interaction_at = -config.interaction_min_interval_seconds
+        self._last_interaction_at_by_kind: dict[str, float] = {}
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         del addr
@@ -69,12 +79,13 @@ class _WebInputProtocol(asyncio.DatagramProtocol):
             if event is None:
                 return None
             now = monotonic()
-            if (
-                now - self._last_interaction_at
-                < self._config.interaction_min_interval_seconds
-            ):
+            kind = str(event.payload["stimulus_kind"])
+            last_interaction_at = self._last_interaction_at_by_kind.get(
+                kind, -self._config.interaction_min_interval_seconds
+            )
+            if now - last_interaction_at < self._config.interaction_min_interval_seconds:
                 return None
-            self._last_interaction_at = now
+            self._last_interaction_at_by_kind[kind] = now
             return event
         if payload.get("type") != "user_text":
             return None
@@ -92,9 +103,43 @@ class _WebInputProtocol(asyncio.DatagramProtocol):
 
     @staticmethod
     def _interaction_event(payload: dict[str, object]) -> AgentEvent | None:
-        if payload.get("stimulus_kind") != "tap":
+        kind = payload.get("stimulus_kind")
+        if not isinstance(kind, str) or kind not in SUPPORTED_VISUALIZER_STIMULI:
             return None
-        position = payload.get("position")
+        position = _WebInputProtocol._normalized_position(payload.get("position"))
+        if position is None:
+            return None
+        event_payload: dict[str, object] = {
+            "stimulus_kind": kind,
+            "stimulus_description": STIMULUS_DESCRIPTIONS[kind],
+            "position": position,
+            "source": "inner_state_visualizer",
+        }
+        if kind == "drag":
+            start_position = _WebInputProtocol._normalized_position(
+                payload.get("start_position")
+            )
+            if start_position is None:
+                return None
+            event_payload["start_position"] = start_position
+        if kind in {"long_press", "drag"}:
+            duration_ms = payload.get("duration_ms")
+            if (
+                not isinstance(duration_ms, (int, float))
+                or isinstance(duration_ms, bool)
+                or not 0 <= float(duration_ms) <= 10_000
+            ):
+                return None
+            event_payload["duration_ms"] = float(duration_ms)
+        return AgentEvent(
+            event_type=AgentEventType.USER_INTERACTION,
+            payload=event_payload,
+            authority=InputAuthority.USER,
+        )
+
+    @staticmethod
+    def _normalized_position(value: object) -> dict[str, float] | None:
+        position = value
         if not isinstance(position, dict):
             return None
         x = position.get("x")
@@ -108,18 +153,7 @@ class _WebInputProtocol(asyncio.DatagramProtocol):
             or not 0.0 <= float(y) <= 1.0
         ):
             return None
-        return AgentEvent(
-            event_type=AgentEventType.USER_INTERACTION,
-            payload={
-                "stimulus_kind": "tap",
-                "stimulus_description": (
-                    "内面状態の画面越しに、ユーザーからそっと触れられた"
-                ),
-                "position": {"x": float(x), "y": float(y)},
-                "source": "inner_state_visualizer",
-            },
-            authority=InputAuthority.USER,
-        )
+        return {"x": float(x), "y": float(y)}
 
     async def _publish(self, event: AgentEvent) -> None:
         await self._publish_event(event)
