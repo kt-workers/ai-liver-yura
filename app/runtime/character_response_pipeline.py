@@ -110,7 +110,10 @@ class ResponseContextBuilder:
         )
         context = ResponseContext(
             user_input=str(
-                event_payload.get("text") or event_payload.get("comment") or ""
+                event_payload.get("text")
+                or event_payload.get("comment")
+                or event_payload.get("stimulus_description")
+                or ""
             ),
             activity_type=result.activity_type,
             operation=result.operation,

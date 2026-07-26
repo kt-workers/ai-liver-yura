@@ -135,6 +135,21 @@ async def test_action_planner_uses_response_generator_for_conversation() -> None
 
 
 @pytest.mark.asyncio
+async def test_action_planner_generates_reaction_for_visualizer_stimulus() -> None:
+    activity = Activity(
+        activity_type=ActivityType.STIMULUS_REACTION,
+        goal="画面越しの刺激へ短く反応する",
+    )
+    planner = ActionPlanner(response_generator=FakeResponseGenerator())
+
+    group = await planner.plan(activity)
+
+    assert group.action_plans[0].action_type == ActionType.SPEAK
+    assert group.action_plans[0].metadata["skip_topic_memory"] is True
+    assert group.output_priority < 100
+
+
+@pytest.mark.asyncio
 async def test_action_planner_expands_reaction_segments_without_engine_parameters() -> (
     None
 ):

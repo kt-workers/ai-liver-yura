@@ -23,6 +23,25 @@ def test_user_text_becomes_foreground_activity() -> None:
     assert manager.suspended_activities() == []
 
 
+def test_user_interaction_becomes_stimulus_reaction() -> None:
+    manager = ActivityManager()
+    event = AgentEvent(
+        event_type=AgentEventType.USER_INTERACTION,
+        payload={
+            "stimulus_kind": "tap",
+            "stimulus_description": "画面越しにそっと触れられた",
+        },
+        priority=25,
+    )
+
+    activity = manager.handle_event(event)
+
+    assert activity.activity_type == ActivityType.STIMULUS_REACTION
+    assert activity.status == ActivityStatus.ACTIVE
+    assert activity.priority == 100
+    assert activity.context["event_payload"] == event.payload
+
+
 def test_update_activity_context_updates_the_canonical_activity() -> None:
     manager = ActivityManager()
     activity = manager.handle_event(

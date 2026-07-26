@@ -86,6 +86,7 @@ class ActionPlanner:
             ActivityType.DIRECTED_TALK,
             ActivityType.PLUGIN_ACTIVITY,
             ActivityType.STARTUP_REACTION,
+            ActivityType.STIMULUS_REACTION,
             ActivityType.STREAM_OPENING_GREETING,
             ActivityType.STREAM_MAIN_SEGMENT,
             ActivityType.STREAM_COMMENT_RESPONSE,
@@ -495,7 +496,10 @@ class ActionPlanner:
         plugin_policy = activity.context.get("plugin_memory_policy")
         if isinstance(plugin_policy, MemoryPolicy):
             return plugin_policy.skip_topic_memory
-        return activity.activity_type == ActivityType.PLUGIN_ACTIVITY
+        return activity.activity_type in {
+            ActivityType.PLUGIN_ACTIVITY,
+            ActivityType.STIMULUS_REACTION,
+        }
 
     @staticmethod
     def _output_priority(activity_type: ActivityType) -> int:

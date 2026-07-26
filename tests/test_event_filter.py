@@ -44,3 +44,16 @@ def test_silence_timeout_is_discardable_and_replaceable() -> None:
     assert filtered.event_type == AgentEventType.SILENCE_TIMEOUT
     assert filtered.discardable is True
     assert filtered.replace_key == "silence_timeout"
+
+
+def test_user_interaction_is_discardable_and_replaceable() -> None:
+    event = AgentEvent(
+        event_type=AgentEventType.USER_INTERACTION,
+        payload={"stimulus_kind": "tap"},
+    )
+
+    filtered = DefaultEventFilter().filter(event)
+
+    assert filtered is not None
+    assert filtered.discardable is True
+    assert filtered.replace_key == "user_interaction"

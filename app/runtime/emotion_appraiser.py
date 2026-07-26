@@ -15,6 +15,8 @@ class EmotionAppraiser:
         structured = event.payload.get(self.STRUCTURED_APPRAISAL_KEY)
         if isinstance(structured, Mapping):
             return self._from_mapping(structured, event)
+        if event.event_type == AgentEventType.USER_INTERACTION:
+            return self._from_mapping(self._interaction_values(event), event)
 
         values = {
             AgentEventType.USER_TEXT: {
@@ -66,6 +68,51 @@ class EmotionAppraiser:
         if values is None:
             return EmotionAppraisal(source_event_id=event.event_id)
         return self._from_mapping(values, event)
+
+    @staticmethod
+    def _interaction_values(event: AgentEvent) -> Mapping[str, object]:
+        kind = event.payload.get("stimulus_kind")
+        return {
+            "double_tap": {
+                "amusement_delta": 0.06,
+                "surprise_delta": 0.09,
+                "arousal_delta": 0.07,
+                "valence_delta": 0.04,
+                "talkativeness_delta": 0.03,
+                "reason": "user_double_tap_received",
+                "cause_summary": "ユーザーから画面越しに二度触れられた",
+            },
+            "long_press": {
+                "joy_delta": 0.04,
+                "amusement_delta": 0.01,
+                "surprise_delta": 0.02,
+                "arousal_delta": 0.02,
+                "valence_delta": 0.04,
+                "talkativeness_delta": 0.02,
+                "reason": "user_long_press_received",
+                "cause_summary": "ユーザーから画面越しにしばらく触れられた",
+            },
+            "drag": {
+                "amusement_delta": 0.05,
+                "surprise_delta": 0.05,
+                "arousal_delta": 0.05,
+                "valence_delta": 0.03,
+                "talkativeness_delta": 0.02,
+                "reason": "user_drag_received",
+                "cause_summary": "ユーザーから画面越しになぞられた",
+            },
+        }.get(
+            kind,
+            {
+                "amusement_delta": 0.03,
+                "surprise_delta": 0.06,
+                "arousal_delta": 0.04,
+                "valence_delta": 0.02,
+                "talkativeness_delta": 0.02,
+                "reason": "user_tap_received",
+                "cause_summary": "ユーザーから画面越しに触れられた",
+            },
+        )
 
     def _from_mapping(
         self, values: Mapping[str, object], event: AgentEvent
