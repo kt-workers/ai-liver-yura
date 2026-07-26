@@ -13,7 +13,7 @@ from app.adapters.web_conversation import (
     WebConversationClient,
     WebConversationClientConfig,
 )
-from app.domain.events import AgentEvent, InputAuthority
+from app.domain.events import AgentEvent, AgentEventType, InputAuthority
 
 
 @pytest.mark.asyncio
@@ -46,6 +46,52 @@ async def test_web_input_protocol_accepts_only_valid_user_text() -> None:
 
     assert len(events) == 1
     assert events[0].payload == {"text": "こんにちは", "source": "web"}
+    assert events[0].authority == InputAuthority.USER
+
+
+@pytest.mark.asyncio
+async def test_web_input_protocol_converts_visualizer_tap_to_interaction() -> None:
+    events: list[AgentEvent] = []
+    tasks: set[asyncio.Task[None]] = set()
+
+    async def publish(event: AgentEvent) -> None:
+        events.append(event)
+
+    def finished(task: asyncio.Task[None]) -> None:
+        tasks.discard(task)
+        task.result()
+
+    protocol = _WebInputProtocol(
+        publish,
+        WebInputReceiverConfig(),
+        tasks.add,
+        finished,
+    )
+    protocol.datagram_received(
+        json.dumps({
+            "schema_version": 1,
+            "type": "interaction_stimulus",
+            "stimulus_kind": "tap",
+            "position": {"x": 0.25, "y": 0.75},
+        }).encode(),
+        ("127.0.0.1", 1),
+    )
+    protocol.datagram_received(
+        json.dumps({
+            "schema_version": 1,
+            "type": "interaction_stimulus",
+            "stimulus_kind": "tap",
+            "position": {"x": 0.5, "y": 0.5},
+        }).encode(),
+        ("127.0.0.1", 1),
+    )
+    await asyncio.gather(*tuple(tasks))
+
+    assert len(events) == 1
+    assert events[0].event_type == AgentEventType.USER_INTERACTION
+    assert events[0].payload["source"] == "inner_state_visualizer"
+    assert events[0].payload["position"] == {"x": 0.25, "y": 0.75}
+    assert "emotion_appraisal" not in events[0].payload
     assert events[0].authority == InputAuthority.USER
 
 
