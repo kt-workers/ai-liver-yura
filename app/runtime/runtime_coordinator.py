@@ -56,6 +56,9 @@ from app.runtime.agent_state import AgentState
 from app.runtime.autonomous_activity_execution import prepare_autonomous_execution
 from app.runtime.autonomous_output import completed_speech_text
 from app.runtime.behavior_planner import ActivityPlanValidator, BehaviorPlanner
+from app.runtime.behavior_planning_context_builder import (
+    BehaviorPlanningContextBuilder,
+)
 from app.runtime.buffered_event_dispatcher import BufferedEventDispatcher
 from app.runtime.conversation_input_recorder import ConversationInputRecorder
 from app.runtime.event_buffer import EventBuffer
@@ -128,6 +131,9 @@ class RuntimeCoordinator:
         event_ingress_processor: EventIngressProcessor | None = None,
         event_dispatch_processor: EventDispatchProcessor | None = None,
         event_type_router: EventTypeRouter | None = None,
+        behavior_planning_context_builder: (
+            BehaviorPlanningContextBuilder | None
+        ) = None,
         user_input_interruption_coordinator: (
             UserInputInterruptionCoordinator | None
         ) = None,
@@ -220,6 +226,21 @@ class RuntimeCoordinator:
                     self._behavior_planner is not None
                     and self._activity_plan_validator is not None
                 ),
+            )
+        )
+        self._behavior_planning_context_builder = (
+            behavior_planning_context_builder
+            or (
+                BehaviorPlanningContextBuilder(
+                    activity_manager=self._activity_manager,
+                    agent_life_service=self._agent_life_service,
+                    plugin_manager=self._plugin_manager,
+                    activity_registry=self._activity_registry,
+                    short_term_memory=short_term_memory,
+                    topic_history=topic_history,
+                )
+                if self._plugin_manager is not None
+                else None
             )
         )
         self._event_dispatch_processor = (
@@ -432,123 +453,19 @@ class RuntimeCoordinator:
         manager = self._plugin_manager
         return manager is not None and capability in manager.list_capabilities()
 
-    def _conversation_history(self) -> tuple[dict[str, object], ...]:
-        if self._short_term_memory is None:
-            return ()
-        return tuple(
-            {
-                "role": item.role,
-                "text": item.text,
-                "counterpart_id": item.counterpart_id,
-                "display_name": item.display_name,
-                "created_at": (
-                    item.created_at.isoformat() if item.created_at is not None else None
-                ),
-            }
-            for item in self._short_term_memory.recent_conversation(limit=6)
-        )
-
-    def _related_knowledge(
-        self, memory_context: dict[str, object]
-    ) -> tuple[dict[str, object], ...]:
-        knowledge: list[dict[str, object]] = []
-        semantic_facts = memory_context.get("semantic_facts")
-        if isinstance(semantic_facts, list):
-            knowledge.extend(
-                dict(item) for item in semantic_facts if isinstance(item, dict)
-            )
-        if self._topic_history is not None:
-            knowledge.extend(
-                {
-                    "category": item.category.value,
-                    "summary": item.summary,
-                    "source_text": item.source_text,
-                    "activity_type": item.activity_type,
-                }
-                for item in self._topic_history.recent_entries(limit=5)
-            )
-        return tuple(knowledge)
-
-    @staticmethod
-    def _startup_activity_definition() -> ActivityDefinition:
-        return ActivityDefinition(
-            activity_type=ActivityType.AWAKENING.value,
-            display_name="覚醒と状況認識",
-            required_capability=None,
-            provider_plugin_id="runtime",
-            description="起動後の状態を整え、発話せずに周囲を認識する",
-            supported_operations=(ActivityOperation.START,),
-            constraints_schema={"type": "object", "additionalProperties": True},
-        )
-
     async def _route_behavior(self, event: AgentEvent) -> AgentEvent | None:
         planner = self._behavior_planner
         validator = self._activity_plan_validator
         manager = self._plugin_manager
         if planner is None or validator is None or manager is None:
             return self._with_plugin_availability(event)
-        agent_state = self._agent_life_service.agent_state
-        ongoing = self._activity_manager.ongoing_activity
-        relationship = self._agent_life_service.preview_relationship(event)
-        relationship_context = (
-            relationship.as_context() if relationship is not None else {}
-        )
-        situation_context = agent_state.current_situation.as_context()
-        memory_context = agent_state.memory.as_context()
-        conversation_history = self._conversation_history()
-        related_knowledge = self._related_knowledge(memory_context)
-        event = replace(
-            event,
-            payload={
-                **event.payload,
-                "input_authority": {
-                    "role": event.authority.role,
-                    "instruction_trusted": event.authority.instruction_trusted,
-                },
-                "relationship": relationship_context,
-                "situation": situation_context,
-                "memory": memory_context,
-                "emotion": asdict(agent_state.current_emotion),
-                "drive": asdict(agent_state.current_drive),
-                "conversation_history": conversation_history,
-                "related_knowledge": related_knowledge,
-            },
-        )
-        definitions = (
-            self._activity_registry.list_definitions()
-            if self._activity_registry is not None
-            else manager.list_activity_definitions()
-        )
-        if event.event_type == AgentEventType.APP_STARTED:
-            definitions = (self._startup_activity_definition(),)
-        planning_context = BehaviorPlanningContext(
-            user_text=str(event.payload.get("text") or ""),
-            source_event_id=event.event_id,
-            available_capabilities=manager.list_capabilities(),
-            event_type=event.event_type.value,
-            request_kind=(
-                interpret_user_request(str(event.payload.get("text") or "")).kind.value
-                if event.event_type == AgentEventType.USER_TEXT
-                else None
-            ),
-            authority_role=event.authority.role,
-            instruction_trusted=event.authority.instruction_trusted,
-            activity_definitions=definitions,
-            active_activity_definition=manager.active_activity_definition(),
-            ongoing_activity_type=(
-                ongoing.activity_type if ongoing is not None else None
-            ),
-            ongoing_activity=self._ongoing_planning_context(ongoing),
-            drive=asdict(agent_state.current_drive),
-            emotion=asdict(agent_state.current_emotion),
-            relationship=relationship_context,
-            situation=situation_context,
-            memory=memory_context,
-            conversation_history=conversation_history,
-            related_knowledge=related_knowledge,
-            last_activity_result=self._activity_manager.last_activity_result,
-            trace_context=event.trace_context,
-        )
+        context_builder = self._behavior_planning_context_builder
+        if context_builder is None:
+            return self._with_plugin_availability(event)
+        preparation = context_builder.build(event)
+        event = preparation.event
+        planning_context = preparation.context
+        ongoing = preparation.ongoing_activity
         situation_payload: dict[str, object]
         confirmation_payload: dict[str, object] = {}
         plan: ActivityPlan | None = None
@@ -1477,51 +1394,6 @@ class RuntimeCoordinator:
             started=routed is None,
         )
         return routed
-
-    @staticmethod
-    def _ongoing_planning_context(
-        ongoing: OngoingActivity | None,
-    ) -> OngoingActivityPlanningContext | None:
-        if ongoing is None:
-            return None
-        summary_keys = (
-            "plugin_id",
-            "capability",
-            "plugin_session_id",
-            "plugin_state_version",
-            "plugin_activity_status",
-        )
-        constraints = ongoing.context.get("constraints")
-        recent_turns: tuple[dict[str, object], ...] = tuple(
-            {
-                "turn_id": turn.turn_id,
-                "sequence": turn.sequence,
-                "operation": turn.operation,
-                "input": turn.input_text,
-                "execution_status": (
-                    turn.execution_result.status.value
-                    if turn.execution_result is not None
-                    else None
-                ),
-            }
-            for turn in ongoing.turns[-3:]
-        )
-        return OngoingActivityPlanningContext(
-            ongoing_activity_id=ongoing.ongoing_activity_id,
-            activity_type=ongoing.activity_type,
-            status=ongoing.status.value,
-            goal=ongoing.goal,
-            constraints=dict(constraints) if isinstance(constraints, dict) else {},
-            expected_input=ongoing.expected_input,
-            turn_count=len(ongoing.turns),
-            current_operation=ongoing.turns[-1].operation if ongoing.turns else None,
-            plugin_state_summary={
-                key: ongoing.context[key]
-                for key in summary_keys
-                if key in ongoing.context
-            },
-            recent_turns=recent_turns,
-        )
 
     @staticmethod
     def _ongoing_transition_payload(
