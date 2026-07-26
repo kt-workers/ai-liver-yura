@@ -56,6 +56,7 @@ from app.runtime.agent_state import AgentState
 from app.runtime.autonomous_activity_execution import prepare_autonomous_execution
 from app.runtime.autonomous_output import completed_speech_text
 from app.runtime.behavior_planner import ActivityPlanValidator, BehaviorPlanner
+from app.runtime.buffered_event_dispatcher import BufferedEventDispatcher
 from app.runtime.conversation_input_recorder import ConversationInputRecorder
 from app.runtime.event_buffer import EventBuffer
 from app.runtime.event_filter import DefaultEventFilter, EventFilter
@@ -122,6 +123,7 @@ class RuntimeCoordinator:
         user_input_interruption_coordinator: (
             UserInputInterruptionCoordinator | None
         ) = None,
+        buffered_event_dispatcher: BufferedEventDispatcher | None = None,
     ) -> None:
         self._event_queue = event_queue
         self._activity_manager = activity_manager
@@ -157,6 +159,14 @@ class RuntimeCoordinator:
         self._running = False
         self._thread_join_timeout_seconds = 1.0
         self._trace_logger = TraceLogger()
+        self._buffered_event_dispatcher = (
+            buffered_event_dispatcher
+            or BufferedEventDispatcher(
+                event_buffer=self._event_buffer,
+                event_queue=self._event_queue,
+                trace_logger=self._trace_logger,
+            )
+        )
         self._user_input_interruption_coordinator = (
             user_input_interruption_coordinator
             or UserInputInterruptionCoordinator(
@@ -399,27 +409,9 @@ class RuntimeCoordinator:
                 prioritized_event,
                 foreground_at_receipt=foreground_before_input,
             )
-            self._trace_logger.write(
-                "runtime_coordinator:publish_events:prioritized",
-                event_type=prioritized_event.event_type.value,
-                event_id=prioritized_event.event_id,
-                priority=prioritized_event.priority,
-                discardable=prioritized_event.discardable,
-                replace_key=prioritized_event.replace_key,
-            )
-            self._event_buffer.put(prioritized_event)
+            self._buffered_event_dispatcher.buffer(prioritized_event)
 
-        for buffered_event in self._event_buffer.drain():
-            self._trace_logger.write(
-                "runtime_coordinator:publish_events:queue_put",
-                event_type=buffered_event.event_type.value,
-                event_id=buffered_event.event_id,
-                priority=buffered_event.priority,
-                discardable=buffered_event.discardable,
-                replace_key=buffered_event.replace_key,
-                queue_empty_before_put=self._event_queue.empty(),
-            )
-            await self._event_queue.put(buffered_event)
+        await self._buffered_event_dispatcher.flush()
 
     def _has_plugin_capability(self, capability: str) -> bool:
         manager = self._plugin_manager
