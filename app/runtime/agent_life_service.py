@@ -26,6 +26,7 @@ from app.runtime.agent_event_state_updater import AgentEventStateUpdater
 from app.runtime.agent_state import AgentState
 from app.runtime.autonomous_activity_policy import AutonomousActivityPolicy
 from app.runtime.autonomous_plan_state import AutonomousPlanState
+from app.runtime.conversation_resume_state import ConversationResumeState
 from app.runtime.drive_state_updater import DriveStateUpdater
 from app.runtime.emotion_appraiser import EmotionAppraiser
 from app.runtime.emotion_state_updater import EmotionStateUpdater
@@ -65,6 +66,7 @@ class AgentLifeService:
         activity_state_synchronizer: ActivityStateSynchronizer | None = None,
         agent_event_state_updater: AgentEventStateUpdater | None = None,
         autonomous_plan_state: AutonomousPlanState | None = None,
+        conversation_resume_state: ConversationResumeState | None = None,
         state_observer: Callable[[AgentState], None] | None = None,
     ) -> None:
         self._activity_manager = activity_manager
@@ -87,8 +89,9 @@ class AgentLifeService:
             )
         )
         self._conversation_idle_timeout_seconds = conversation_idle_timeout_seconds
-        self._observed_ongoing_activity_id: str | None = None
-        self._explicit_resume_reason: str | None = None
+        self._conversation_resume_state = (
+            conversation_resume_state or ConversationResumeState()
+        )
         self._topic_continuation_evaluator = (
             topic_continuation_evaluator or TopicContinuationEvaluator()
         )
@@ -369,7 +372,9 @@ class AgentLifeService:
 
         ongoing_activity = self._activity_manager.ongoing_activity
         if ongoing_activity is not None:
-            self._observed_ongoing_activity_id = ongoing_activity.ongoing_activity_id
+            self._conversation_resume_state.observe_ongoing_activity(
+                ongoing_activity.ongoing_activity_id
+            )
             self._trace_logger.debug(
                 "agent_life_service:plan_next_event:skipped",
                 reason="ongoing_activity_active",
@@ -574,29 +579,18 @@ class AgentLifeService:
     def end_conversation(self, *, reason: str) -> None:
         """明示的な会話終了後、次回の自律計画を許可する。"""
 
-        self._explicit_resume_reason = reason
+        self._conversation_resume_state.end_conversation(reason)
         self._trace_logger.info(
             "agent_life_service:conversation:ended",
             reason=reason,
         )
 
     def _conversation_resume_reason(self, now: datetime) -> str | None:
-        if self._explicit_resume_reason is not None:
-            return f"conversation_ended:{self._explicit_resume_reason}"
-        if self._observed_ongoing_activity_id is not None:
-            return f"ongoing_activity_completed:{self._observed_ongoing_activity_id}"
-        if (
-            self._agent_state.last_user_input_at is not None
-            and not self._is_within_pause(
-                since=self._agent_state.last_user_input_at,
-                now=now,
-                pause_seconds=self._conversation_idle_timeout_seconds,
-            )
-        ):
-            return "conversation_idle_timeout"
-        if self._agent_state.last_user_input_at is None:
-            return "no_conversation"
-        return None
+        return self._conversation_resume_state.resolve_reason(
+            last_user_input_at=self._agent_state.last_user_input_at,
+            now=now,
+            idle_timeout_seconds=self._conversation_idle_timeout_seconds,
+        )
 
     def handle_event(self, event: AgentEvent) -> AgentState:
         """Event を受け取り、AgentState に反映する。"""
@@ -611,8 +605,7 @@ class AgentLifeService:
 
         accepted_at = self._autonomous_plan_state.accept(event)
         if accepted_at is not None:
-            self._explicit_resume_reason = None
-            self._observed_ongoing_activity_id = None
+            self._conversation_resume_state.clear_after_plan_accepted()
             self._trace_logger.write(
                 "agent_life_service:autonomous_plan:accepted",
                 source_event_id=event.event_id,
