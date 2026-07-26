@@ -59,6 +59,7 @@ from app.runtime.behavior_planner import ActivityPlanValidator, BehaviorPlanner
 from app.runtime.buffered_event_dispatcher import BufferedEventDispatcher
 from app.runtime.conversation_input_recorder import ConversationInputRecorder
 from app.runtime.event_buffer import EventBuffer
+from app.runtime.event_dispatch_processor import EventDispatchProcessor
 from app.runtime.event_filter import DefaultEventFilter, EventFilter
 from app.runtime.event_ingress_processor import EventIngressProcessor
 from app.runtime.event_prioritizer import DefaultEventPrioritizer, EventPrioritizer
@@ -124,6 +125,7 @@ class RuntimeCoordinator:
         ) = None,
         event_subscriber_registry: EventSubscriberRegistry | None = None,
         event_ingress_processor: EventIngressProcessor | None = None,
+        event_dispatch_processor: EventDispatchProcessor | None = None,
         user_input_interruption_coordinator: (
             UserInputInterruptionCoordinator | None
         ) = None,
@@ -200,6 +202,18 @@ class RuntimeCoordinator:
                 activity_planner_thread=self._activity_planner_thread,
                 activity_executor_thread=self._activity_executor_thread,
                 agent_life_service=self._agent_life_service,
+                trace_logger=self._trace_logger,
+            )
+        )
+        self._event_dispatch_processor = (
+            event_dispatch_processor
+            or EventDispatchProcessor(
+                event_prioritizer=self._event_prioritizer,
+                activity_manager=self._activity_manager,
+                user_input_interruption_coordinator=(
+                    self._user_input_interruption_coordinator
+                ),
+                buffered_event_dispatcher=self._buffered_event_dispatcher,
                 trace_logger=self._trace_logger,
             )
         )
@@ -403,22 +417,11 @@ class RuntimeCoordinator:
                 if routed_event is None:
                     continue
                 filtered_event = routed_event
-            self._trace_logger.write(
-                "runtime_coordinator:publish_events:filtered",
-                event_type=event.event_type.value,
-                event_id=event.event_id,
+            self._event_dispatch_processor.process(
+                original_event=event,
+                routed_event=filtered_event,
+                foreground_at_receipt=foreground_at_receipt,
             )
-            prioritized_event = self._event_prioritizer.prioritize(filtered_event)
-            foreground_before_input = (
-                foreground_at_receipt
-                if prioritized_event.event_type == AgentEventType.USER_TEXT
-                else self._activity_manager.foreground_activity
-            )
-            self._user_input_interruption_coordinator.after_prioritization(
-                prioritized_event,
-                foreground_at_receipt=foreground_before_input,
-            )
-            self._buffered_event_dispatcher.buffer(prioritized_event)
 
         await self._buffered_event_dispatcher.flush()
 
