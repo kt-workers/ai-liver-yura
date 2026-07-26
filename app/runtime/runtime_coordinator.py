@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import asdict, replace
+from dataclasses import replace
 from queue import Queue
 from time import monotonic
 from typing import Any, cast
@@ -65,6 +65,9 @@ from app.runtime.pending_confirmation import (
     ConfirmationResolver,
     PendingConfirmationManager,
 )
+from app.runtime.runtime_diagnostic_snapshot_builder import (
+    RuntimeDiagnosticSnapshotBuilder,
+)
 from app.shared.contracts.plugins.runtime import (
     CommandHandler,
     PlannedActivityInterpreter,
@@ -106,6 +109,9 @@ class RuntimeCoordinator:
         async_initializers: tuple[Callable[[], Awaitable[None]], ...] = (),
         autonomous_planning_poll_seconds: float = 0.5,
         conversation_logger: ConversationLogger | None = None,
+        runtime_diagnostic_snapshot_builder: (
+            RuntimeDiagnosticSnapshotBuilder | None
+        ) = None,
     ) -> None:
         self._event_queue = event_queue
         self._activity_manager = activity_manager
@@ -121,6 +127,10 @@ class RuntimeCoordinator:
             activity_manager
         )
         self._plugin_manager = plugin_manager
+        self._runtime_diagnostic_snapshot_builder = (
+            runtime_diagnostic_snapshot_builder
+            or RuntimeDiagnosticSnapshotBuilder()
+        )
         self._behavior_planner = behavior_planner
         self._activity_plan_validator = activity_plan_validator
         self._activity_registry = activity_registry
@@ -176,83 +186,11 @@ class RuntimeCoordinator:
     def diagnostic_snapshot(self) -> dict[str, object]:
         """会話本文や外部秘密を含めず、Coreの現在状態を診断用に返す。"""
 
-        state = self._agent_life_service.agent_state
-        foreground = self._activity_manager.foreground_activity
-        ongoing = self._activity_manager.ongoing_activity
-        relationship = state.relationship_memory.current
-        manager = self._plugin_manager
-        plugin_statuses: dict[str, str] = {}
-        if manager is not None:
-            for plugin in manager.list_plugins():
-                status = manager.status(plugin.plugin_id)
-                plugin_statuses[plugin.plugin_id] = (
-                    status.value if status is not None else "unknown"
-                )
-        return {
-            "emotion": asdict(state.current_emotion),
-            "drive": asdict(state.current_drive),
-            "relationship": (
-                {
-                    "present": True,
-                    "role": relationship.role,
-                    "familiarity": relationship.familiarity,
-                    "trust": relationship.trust,
-                    "affinity": relationship.affinity,
-                    "interaction_count": relationship.interaction_count,
-                }
-                if relationship is not None
-                else {"present": False}
-            ),
-            "relationship_count": len(state.relationship_memory.relationships),
-            "memory": {
-                "episodic_count": len(state.memory.episodic),
-                "semantic_count": len(state.memory.semantic),
-                "unfinished_activity_count": len(state.memory.unfinished_activities),
-                "unrecovered_topic_count": len(state.memory.unrecovered_topics),
-                "emotion_history_count": len(state.memory.emotion_history),
-            },
-            "situation": {
-                "last_event_type": state.current_situation.last_event_type,
-                "last_event_at": (
-                    state.current_situation.last_event_at.isoformat()
-                    if state.current_situation.last_event_at is not None
-                    else None
-                ),
-                "input_source": state.current_situation.input_source,
-                "active_activity_type": state.current_situation.active_activity_type,
-                "pending_activity_count": state.current_situation.pending_activity_count,
-                "suspended_activity_count": state.current_situation.suspended_activity_count,
-                "ongoing_activity_type": state.current_situation.ongoing_activity_type,
-                "ongoing_activity_status": state.current_situation.ongoing_activity_status,
-            },
-            "activity": {
-                "foreground_id": (
-                    foreground.activity_id if foreground is not None else None
-                ),
-                "foreground_type": (
-                    foreground.activity_type.value if foreground is not None else None
-                ),
-                "foreground_status": (
-                    foreground.status.value if foreground is not None else None
-                ),
-                "pending_count": len(self._activity_manager.pending_activities()),
-                "suspended_count": len(self._activity_manager.suspended_activities()),
-                "ongoing_id": (
-                    ongoing.ongoing_activity_id if ongoing is not None else None
-                ),
-                "ongoing_type": ongoing.activity_type if ongoing is not None else None,
-                "ongoing_status": ongoing.status.value if ongoing is not None else None,
-            },
-            "plugins": (
-                {
-                    "statuses": plugin_statuses,
-                    "available_capabilities": sorted(manager.list_capabilities()),
-                }
-                if manager is not None
-                else {"statuses": {}, "available_capabilities": []}
-            ),
-            "stream_status": state.stream_status,
-        }
+        return self._runtime_diagnostic_snapshot_builder.build(
+            state=self._agent_life_service.agent_state,
+            activity_manager=self._activity_manager,
+            plugin_manager=self._plugin_manager,
+        )
 
     @property
     def last_behavior_evaluation(self) -> ActivityPlanEvaluation | None:
