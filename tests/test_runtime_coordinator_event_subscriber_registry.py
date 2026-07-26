@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from queue import Queue
+from unittest.mock import MagicMock
 
 import pytest
 
 from app.domain.events import AgentEvent, AgentEventType
+from app.runtime.activity_planner_thread import ActivityPlanningRequest
+from app.runtime.event_queue import EventQueue
 from app.runtime.runtime_coordinator import RuntimeCoordinator
 
 
@@ -35,18 +39,22 @@ class StubEventSubscriberRegistry:
 
 
 @pytest.mark.asyncio
-async def test_runtime_coordinator_delegates_event_subscription_and_dispatch(
-    runtime_components,
-) -> None:
+async def test_runtime_coordinator_delegates_event_subscription_and_dispatch() -> None:
     registry = StubEventSubscriberRegistry()
+    event_queue = EventQueue()
+    activity_manager = MagicMock()
+    activity_manager.foreground_activity = None
+    agent_life_service = MagicMock()
+
     coordinator = RuntimeCoordinator(
-        runtime_components.event_queue,
-        runtime_components.activity_manager,
-        runtime_components.action_planner,
-        runtime_components.action_scheduler,
-        runtime_components.activity_planning_request_queue,
-        runtime_components.activity_planner_thread,
-        runtime_components.activity_executor_thread,
+        event_queue,
+        activity_manager,
+        MagicMock(),
+        MagicMock(),
+        Queue[ActivityPlanningRequest](),
+        MagicMock(),
+        MagicMock(),
+        agent_life_service=agent_life_service,
         event_subscriber_registry=registry,  # type: ignore[arg-type]
     )
 
@@ -70,4 +78,5 @@ async def test_runtime_coordinator_delegates_event_subscription_and_dispatch(
         (AgentEventType.USER_TEXT, handler, predicate)
     ]
     assert registry.dispatched == [event]
-    assert runtime_components.event_queue.empty()
+    assert event_queue.empty()
+    agent_life_service.handle_event.assert_called_once_with(event)
