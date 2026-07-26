@@ -47,7 +47,7 @@
 - Browser endpoint: `POST /api/stimuli`
 - Visualizer destination: `127.0.0.1:8771/UDP`
 - Direction: visualizer → Yura core
-- Supported stimulus: `tap`
+- Supported stimuli: `tap`, `double_tap`, `long_press`, `drag`
 - Authority: Coreの入力Adapterが`user`を付与
 
 ```json
@@ -58,5 +58,7 @@
   "position": { "x": 0.5, "y": 0.5 }
 }
 ```
+
+`long_press`は`duration_ms`を追加します。`drag`は終点を`position`、始点を`start_position`として、`duration_ms`とともに送信します。座標はすべて画面内の`0.0`から`1.0`へ正規化します。
 
 画面は感情値やEmotion Appraisalを指定しません。Coreが刺激を`AgentEvent`として評価し、感情・Drive・Reactionを決定します。
