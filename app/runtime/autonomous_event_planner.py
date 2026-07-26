@@ -25,6 +25,8 @@ class AutonomousEventPlanResult:
 
     event: AgentEvent | None = None
     skip_reason: str | None = None
+    log_event: str = "agent_life_service:plan_next_event:skipped"
+    log_level: str = "write"
     details: dict[str, object] = field(default_factory=dict)
 
     @property
@@ -60,11 +62,11 @@ class AutonomousEventPlanner:
         *,
         now: datetime,
         awakening_completed_at: datetime | None,
-        continuation_result: TopicContinuationResult | None,
-        autonomous_topic: InterruptedTopic | None,
+        continuation_provider: Callable[[], TopicContinuationResult | None],
+        autonomous_topic_provider: Callable[[], InterruptedTopic | None],
     ) -> AutonomousEventPlanResult:
         if self._pending_confirmation_provider():
-            return self._skip("pending_confirmation_exists")
+            return self._skip("pending_confirmation_exists", log_level="debug")
 
         active_activity = state.active_activity
         is_autonomous_lookahead = (
@@ -98,6 +100,7 @@ class AutonomousEventPlanner:
             )
             return self._skip(
                 "ongoing_activity_active",
+                log_level="debug",
                 ongoing_activity_id=ongoing_activity.ongoing_activity_id,
                 ongoing_activity_type=ongoing_activity.activity_type,
             )
@@ -114,6 +117,7 @@ class AutonomousEventPlanner:
         ):
             return self._skip(
                 "awakening_settle",
+                log_level="debug",
                 awakening_completed_at=awakening_completed_at,
                 settle_seconds=awakening_settle_seconds,
                 emotion_arousal=state.current_emotion.arousal,
@@ -132,12 +136,15 @@ class AutonomousEventPlanner:
         ):
             return self._skip(
                 "conversation_idle_timeout_not_reached",
+                log_level="debug",
                 last_user_input_at=state.last_user_input_at,
                 conversation_idle_timeout_seconds=(
                     self._conversation_idle_timeout_seconds
                 ),
             )
 
+        continuation_result = continuation_provider()
+        autonomous_topic = autonomous_topic_provider()
         if continuation_result is not None and continuation_result.decision in {
             TopicContinuationDecision.WAIT,
             TopicContinuationDecision.SUSPEND_ORIGINAL,
@@ -145,6 +152,8 @@ class AutonomousEventPlanner:
         }:
             return self._skip(
                 "topic_continuation_no_event",
+                log_event="agent_life_service:topic_continuation:no_event",
+                log_level="debug",
                 topic_id=autonomous_topic.topic_id if autonomous_topic else None,
                 decision=continuation_result.decision.value,
                 reasons=list(continuation_result.reasons),
@@ -269,6 +278,7 @@ class AutonomousEventPlanner:
         )
         return AutonomousEventPlanResult(
             event=event,
+            log_event="agent_life_service:plan_next_event:planned",
             details={
                 "event_type": event.event_type.value,
                 "reason": "internal_drive",
@@ -287,8 +297,19 @@ class AutonomousEventPlanner:
         )
 
     @staticmethod
-    def _skip(reason: str, **details: object) -> AutonomousEventPlanResult:
-        return AutonomousEventPlanResult(skip_reason=reason, details=details)
+    def _skip(
+        reason: str,
+        *,
+        log_event: str = "agent_life_service:plan_next_event:skipped",
+        log_level: str = "write",
+        **details: object,
+    ) -> AutonomousEventPlanResult:
+        return AutonomousEventPlanResult(
+            skip_reason=reason,
+            log_event=log_event,
+            log_level=log_level,
+            details={"reason": reason, **details},
+        )
 
     @staticmethod
     def _is_within_pause(
