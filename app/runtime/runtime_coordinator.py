@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import replace
+from dataclasses import asdict, replace
 from queue import Queue
 from time import monotonic
 from typing import Any, cast
