@@ -56,6 +56,7 @@ from app.runtime.agent_state import AgentState
 from app.runtime.autonomous_activity_execution import prepare_autonomous_execution
 from app.runtime.autonomous_output import completed_speech_text
 from app.runtime.behavior_planner import ActivityPlanValidator, BehaviorPlanner
+from app.runtime.conversation_input_recorder import ConversationInputRecorder
 from app.runtime.event_buffer import EventBuffer
 from app.runtime.event_filter import DefaultEventFilter, EventFilter
 from app.runtime.event_prioritizer import DefaultEventPrioritizer, EventPrioritizer
@@ -113,6 +114,7 @@ class RuntimeCoordinator:
         async_initializers: tuple[Callable[[], Awaitable[None]], ...] = (),
         autonomous_planning_poll_seconds: float = 0.5,
         conversation_logger: ConversationLogger | None = None,
+        conversation_input_recorder: ConversationInputRecorder | None = None,
         runtime_diagnostic_snapshot_builder: (
             RuntimeDiagnosticSnapshotBuilder | None
         ) = None,
@@ -167,6 +169,10 @@ class RuntimeCoordinator:
             )
         )
         self._conversation_logger = conversation_logger or ConversationLogger()
+        self._conversation_input_recorder = (
+            conversation_input_recorder
+            or ConversationInputRecorder(self._conversation_logger)
+        )
         self._event_enrichers: list[Callable[[AgentEvent], AgentEvent]] = []
         self._autonomous_planning_enabled = autonomous_planning_enabled
         self._short_term_memory = short_term_memory
@@ -330,7 +336,7 @@ class RuntimeCoordinator:
             if filtered_event is None:
                 continue
             foreground_at_receipt = self._activity_manager.foreground_activity
-            self._record_conversation_input(filtered_event)
+            self._conversation_input_recorder.record(filtered_event)
             self._agent_life_service.handle_event(filtered_event)
             if await self._event_subscriber_registry.dispatch(filtered_event):
                 continue
@@ -414,36 +420,6 @@ class RuntimeCoordinator:
                 queue_empty_before_put=self._event_queue.empty(),
             )
             await self._event_queue.put(buffered_event)
-
-    def _record_conversation_input(self, event: AgentEvent) -> None:
-        """LLM経路が受理した外部会話入力を、加工前の本文で記録する。"""
-
-        if event.event_type == AgentEventType.USER_TEXT:
-            text = event.payload.get("text")
-            source = str(event.payload.get("source") or "console")
-            speaker = "console" if source == "console" else "user"
-            speaker_name = None
-        elif event.event_type == AgentEventType.YOUTUBE_COMMENT:
-            text = event.payload.get("comment") or event.payload.get("text")
-            source = "comment"
-            speaker = "comment"
-            speaker_name = str(
-                event.payload.get("author_name")
-                or event.payload.get("display_name")
-                or "viewer"
-            )
-        else:
-            return
-        if not isinstance(text, str):
-            return
-        self._conversation_logger.record(
-            speaker=speaker,
-            source=source,
-            text=text,
-            speaker_name=speaker_name,
-            occurred_at=event.occurred_at,
-            event_id=event.event_id,
-        )
 
     def _has_plugin_capability(self, capability: str) -> bool:
         manager = self._plugin_manager
