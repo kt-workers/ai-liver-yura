@@ -47,13 +47,9 @@ from app.runtime.activity_planner_thread import (
 )
 from app.runtime.activity_registry import ActivityRegistry
 from app.runtime.activity_result_builder import build_activity_result
-from app.runtime.activity_turn_result_factory import (
-    action_planning_failure_group,
-    canceled_output_group,
-)
+from app.runtime.activity_turn_result_factory import canceled_output_group
 from app.runtime.agent_life_service import AgentLifeService
 from app.runtime.agent_state import AgentState
-from app.runtime.autonomous_activity_execution import prepare_autonomous_execution
 from app.runtime.autonomous_output import completed_speech_text
 from app.runtime.behavior_planner import ActivityPlanValidator, BehaviorPlanner
 from app.runtime.behavior_planning_context_builder import (
@@ -69,6 +65,7 @@ from app.runtime.event_prioritizer import DefaultEventPrioritizer, EventPrioriti
 from app.runtime.event_queue import EventQueue
 from app.runtime.event_subscriber_registry import EventSubscriberRegistry
 from app.runtime.event_type_router import EventTypeRouter
+from app.runtime.explicit_activity_executor import ExplicitActivityExecutor
 from app.runtime.ongoing_activity_coordinator import OngoingActivityCoordinator
 from app.runtime.pending_confirmation import (
     ConfirmationResolver,
@@ -134,6 +131,7 @@ class RuntimeCoordinator:
         behavior_planning_context_builder: (
             BehaviorPlanningContextBuilder | None
         ) = None,
+        explicit_activity_executor: ExplicitActivityExecutor | None = None,
         user_input_interruption_coordinator: (
             UserInputInterruptionCoordinator | None
         ) = None,
@@ -243,6 +241,16 @@ class RuntimeCoordinator:
                 else None
             )
         )
+        self._explicit_activity_executor = (
+            explicit_activity_executor
+            or ExplicitActivityExecutor(
+                activity_manager=self._activity_manager,
+                action_planner=self._action_planner,
+                action_scheduler=self._action_scheduler,
+                agent_life_service=self._agent_life_service,
+                trace_logger=self._trace_logger,
+            )
+        )
         self._event_dispatch_processor = (
             event_dispatch_processor
             or EventDispatchProcessor(
@@ -324,36 +332,7 @@ class RuntimeCoordinator:
         return manager.current() if manager is not None else None
 
     async def _execute_explicit_activity(self, activity: Activity) -> ActionPlanGroup:
-        prepare_autonomous_execution(activity)
-        try:
-            action_plan_group = await self._action_planner.plan(activity)
-        except Exception as error:
-            action_plan_group = action_planning_failure_group(activity, error)
-            if action_plan_group.activity_turn_result is not None:
-                self._activity_manager.record_turn_result(
-                    action_plan_group.activity_turn_result
-                )
-            self._trace_logger.warning(
-                "runtime_coordinator:action_planning:failed",
-                activity_id=activity.activity_id,
-                failure_stage="action_planning",
-                error_type=type(error).__name__,
-            )
-            self._activity_manager.complete_processed_activity(activity.activity_id)
-            self._agent_life_service.sync_from_activity_manager()
-            raise
-        action_plan_group = await self._action_scheduler.prepare(action_plan_group)
-        output_result = await self._action_scheduler.execute(action_plan_group)
-        if (
-            output_result is not None
-            and action_plan_group.activity_turn_result is not None
-        ):
-            self._activity_manager.record_output_result(
-                action_plan_group.activity_turn_result, output_result
-            )
-        self._activity_manager.complete_processed_activity(activity.activity_id)
-        self._agent_life_service.sync_from_activity_manager()
-        return action_plan_group
+        return await self._explicit_activity_executor.execute(activity)
 
     async def publish_event(self, event: AgentEvent) -> None:
         await self.publish_events([event])
