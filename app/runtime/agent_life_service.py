@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime, timezone
-from difflib import SequenceMatcher
 from typing import Any
-from uuid import uuid4
 
 from app.domain.activities import ActivityType
 from app.domain.drives import DriveState
@@ -27,6 +25,7 @@ from app.runtime.agent_state import AgentState
 from app.runtime.autonomous_activity_policy import AutonomousActivityPolicy
 from app.runtime.autonomous_event_planner import AutonomousEventPlanner
 from app.runtime.autonomous_plan_state import AutonomousPlanState
+from app.runtime.autonomous_topic_tracker import AutonomousTopicTracker
 from app.runtime.conversation_resume_state import ConversationResumeState
 from app.runtime.drive_state_updater import DriveStateUpdater
 from app.runtime.emotion_appraiser import EmotionAppraiser
@@ -71,6 +70,7 @@ class AgentLifeService:
         conversation_resume_state: ConversationResumeState | None = None,
         elapsed_state_updater: ElapsedStateUpdater | None = None,
         autonomous_event_planner: AutonomousEventPlanner | None = None,
+        autonomous_topic_tracker: AutonomousTopicTracker | None = None,
         state_observer: Callable[[AgentState], None] | None = None,
     ) -> None:
         self._activity_manager = activity_manager
@@ -106,8 +106,9 @@ class AgentLifeService:
         self._topic_continuation_evaluator = (
             topic_continuation_evaluator or TopicContinuationEvaluator()
         )
-        self._autonomous_topic: InterruptedTopic | None = None
-        self._recent_autonomous_texts: list[str] = []
+        self._autonomous_topic_tracker = (
+            autonomous_topic_tracker or AutonomousTopicTracker()
+        )
         self._pending_confirmation_provider = pending_confirmation_provider or (
             lambda: False
         )
@@ -155,7 +156,7 @@ class AgentLifeService:
 
     @property
     def autonomous_topic(self) -> InterruptedTopic | None:
-        return self._autonomous_topic
+        return self._autonomous_topic_tracker.current_topic
 
     def record_awakening_completed(self, now: datetime | None = None) -> None:
         self._awakening_completed_at = now or datetime.now(timezone.utc)
@@ -169,88 +170,13 @@ class AgentLifeService:
     ) -> InterruptedTopic:
         """出力成功済みの自律発話を、再開判断可能な話題状態として保持する。"""
 
-        metrics = (context or {}).get("topic_metrics", {})
-        if not isinstance(metrics, dict):
-            metrics = {}
-        existing = self._autonomous_topic
-        same_activity = (
-            existing is not None and existing.source_activity_id == activity_id
+        topic = self._autonomous_topic_tracker.record_output(
+            activity_id=activity_id,
+            text=text,
+            drive=self._agent_state.current_drive,
+            emotion=self._agent_state.current_emotion,
+            context=context,
         )
-        observed_interest = self._metric(
-            metrics,
-            "interest",
-            (self._agent_state.current_drive.curiosity * 0.6)
-            + (self._agent_state.current_drive.engagement * 0.4),
-        )
-        observed_incompleteness = self._metric(
-            metrics, "incompleteness", self._estimate_incompleteness(text)
-        )
-        observed_exhaustion = self._metric(
-            metrics, "exhaustion", self._estimate_exhaustion(text)
-        )
-        if same_activity and existing is not None:
-            similarity = SequenceMatcher(
-                None,
-                self._normalize_text(existing.original_text),
-                self._normalize_text(text),
-            ).ratio()
-            emotion = self._agent_state.current_emotion
-            drive = self._agent_state.current_drive
-            interest = self._clamp01(
-                (existing.interest * 0.78)
-                + (observed_interest * 0.22)
-                - 0.04
-                - (similarity * 0.05)
-            )
-            incompleteness = self._clamp01(
-                (existing.incompleteness * 0.70)
-                + (observed_incompleteness * 0.30)
-                - 0.08
-            )
-            exhaustion = self._clamp01(
-                existing.exhaustion
-                + 0.10
-                + ((1.0 - emotion.talkativeness) * 0.05)
-                + ((1.0 - drive.energy) * 0.04)
-                + (similarity * 0.06)
-            )
-            turn_count = existing.turn_count + 1
-        else:
-            interest = observed_interest
-            incompleteness = observed_incompleteness
-            exhaustion = observed_exhaustion
-            turn_count = 1
-        topic = InterruptedTopic(
-            topic_id=(
-                existing.topic_id
-                if same_activity and existing is not None
-                else str(uuid4())
-            ),
-            source_activity_id=activity_id,
-            original_text=text,
-            status=(
-                existing.status
-                if same_activity and existing is not None
-                else TopicLifecycleStatus.ACTIVE
-            ),
-            importance=self._metric(
-                metrics, "importance", self._estimate_importance(text)
-            ),
-            interest=interest,
-            incompleteness=incompleteness,
-            exhaustion=exhaustion,
-            turn_count=turn_count,
-            interrupted_at=(
-                existing.interrupted_at if same_activity and existing else None
-            ),
-            interruption_turns=(
-                existing.interruption_turns if same_activity and existing else 0
-            ),
-            interruption_topics=(
-                existing.interruption_topics if same_activity and existing else ()
-            ),
-        )
-        self._autonomous_topic = topic
         self._trace_logger.info(
             "agent_life_service:autonomous_topic:recorded",
             topic_id=topic.topic_id,
@@ -267,20 +193,18 @@ class AgentLifeService:
     def should_complete_autonomous_activity(self, *, activity_id: str) -> bool:
         """感情・動機と、話題の減衰状態から発話Activityの自然終了を判断する。"""
 
-        topic = self._autonomous_topic
-        if topic is None or topic.source_activity_id != activity_id:
+        should_complete, continuation_strength = (
+            self._autonomous_topic_tracker.should_complete(
+                activity_id=activity_id,
+                drive=self._agent_state.current_drive,
+                emotion=self._agent_state.current_emotion,
+            )
+        )
+        topic = self._autonomous_topic_tracker.current_topic
+        if topic is None or continuation_strength is None:
             return False
         emotion = self._agent_state.current_emotion
         drive = self._agent_state.current_drive
-        continuation_strength = (
-            topic.interest * 0.35
-            + topic.incompleteness * 0.35
-            + emotion.talkativeness * 0.15
-            + emotion.arousal * 0.05
-            + drive.curiosity * 0.10
-            - topic.exhaustion * 0.35
-        )
-        should_complete = topic.turn_count >= 2 and continuation_strength <= 0.20
         self._trace_logger.info(
             "agent_life_service:autonomous_topic:continuation_evaluated",
             topic_id=topic.topic_id,
@@ -304,18 +228,11 @@ class AgentLifeService:
         fallback_text: str,
         now: datetime | None = None,
     ) -> InterruptedTopic:
-        topic = self._autonomous_topic
-        if topic is None or topic.source_activity_id != activity_id:
-            topic = InterruptedTopic(
-                topic_id=str(uuid4()),
-                source_activity_id=activity_id,
-                original_text=fallback_text,
-            )
-        interrupted = topic.with_status(
-            TopicLifecycleStatus.INTERRUPTED,
-            interrupted_at=now or datetime.now(timezone.utc),
+        interrupted = self._autonomous_topic_tracker.interrupt(
+            activity_id=activity_id,
+            fallback_text=fallback_text,
+            now=now,
         )
-        self._autonomous_topic = interrupted
         self._trace_logger.info(
             "agent_life_service:autonomous_topic:interrupted",
             topic_id=interrupted.topic_id,
@@ -325,19 +242,7 @@ class AgentLifeService:
         return interrupted
 
     def complete_autonomous_topic(self, *, activity_id: str) -> None:
-        topic = self._autonomous_topic
-        if (
-            topic is None
-            or topic.source_activity_id != activity_id
-            or topic.status
-            in {TopicLifecycleStatus.INTERRUPTED, TopicLifecycleStatus.SUSPENDED}
-        ):
-            return
-        self._autonomous_topic = topic.with_status(TopicLifecycleStatus.COMPLETED)
-        self._recent_autonomous_texts = [
-            *self._recent_autonomous_texts[-4:],
-            topic.original_text,
-        ]
+        self._autonomous_topic_tracker.complete(activity_id=activity_id)
 
     def plan_next_event(self, now: datetime | None = None) -> AgentEvent | None:
         """現在状態から、次に発生させる自律 Event を判断する。"""
@@ -363,7 +268,7 @@ class AgentLifeService:
             now=now,
             awakening_completed_at=self._awakening_completed_at,
             continuation_provider=lambda: self._evaluate_topic_continuation(now),
-            autonomous_topic_provider=lambda: self._autonomous_topic,
+            autonomous_topic_provider=lambda: self.autonomous_topic,
         )
         log_method = (
             self._trace_logger.debug
@@ -472,10 +377,8 @@ class AgentLifeService:
                     ),
                     created_at=event.occurred_at,
                 )
-            if self._autonomous_topic is not None and isinstance(text, str):
-                self._autonomous_topic = self._autonomous_topic.add_interruption_topic(
-                    text
-                )
+            if isinstance(text, str):
+                self._autonomous_topic_tracker.add_interruption_topic(text)
 
         return self.sync_from_activity_manager()
 
@@ -531,7 +434,7 @@ class AgentLifeService:
         before_memory = self._agent_state.memory
         self._agent_state = self._activity_state_synchronizer.synchronize(
             self._agent_state,
-            autonomous_topic=self._autonomous_topic,
+            autonomous_topic=self.autonomous_topic,
         )
 
         if self._agent_state.memory != before_memory:
@@ -591,7 +494,7 @@ class AgentLifeService:
     def _evaluate_topic_continuation(
         self, now: datetime
     ) -> TopicContinuationResult | None:
-        topic = self._autonomous_topic
+        topic = self._autonomous_topic_tracker.current_topic
         if topic is None or topic.status not in {
             TopicLifecycleStatus.INTERRUPTED,
             TopicLifecycleStatus.SUSPENDED,
@@ -612,7 +515,7 @@ class AgentLifeService:
         next_status = status_by_decision.get(
             result.decision, TopicLifecycleStatus.ACTIVE
         )
-        self._autonomous_topic = topic.with_status(next_status)
+        self._autonomous_topic_tracker.replace(topic.with_status(next_status))
         self._trace_logger.info(
             "agent_life_service:topic_continuation:evaluated",
             topic_id=topic.topic_id,
@@ -624,40 +527,6 @@ class AgentLifeService:
             selected_topic=result.selected_topic,
         )
         return result
-
-    @staticmethod
-    def _metric(metrics: dict[object, object], key: str, default: float) -> float:
-        value = metrics.get(key, default)
-        if not isinstance(value, (int, float)):
-            return max(0.0, min(1.0, default))
-        return max(0.0, min(1.0, float(value)))
-
-    @staticmethod
-    def _clamp01(value: float) -> float:
-        return max(0.0, min(1.0, value))
-
-    @staticmethod
-    def _normalize_text(text: str) -> str:
-        return "".join(character for character in text if not character.isspace())
-
-    @staticmethod
-    def _estimate_importance(text: str) -> float:
-        important_markers = ("大事", "将来", "目標", "価値", "約束", "やってみたい")
-        return 0.75 if any(marker in text for marker in important_markers) else 0.4
-
-    @staticmethod
-    def _estimate_incompleteness(text: str) -> float:
-        unfinished_markers = ("まず", "一つ目", "続き", "まだ", "……", "...")
-        return 0.85 if any(marker in text for marker in unfinished_markers) else 0.25
-
-    def _estimate_exhaustion(self, text: str) -> float:
-        if not self._recent_autonomous_texts:
-            return 0.0
-        similarity = max(
-            SequenceMatcher(None, text, previous).ratio()
-            for previous in self._recent_autonomous_texts
-        )
-        return max(0.0, min(1.0, (similarity - 0.45) / 0.45))
 
     def _update_state_by_elapsed_time(self, now: datetime) -> None:
         result = self._elapsed_state_updater.update(self._agent_state, now=now)

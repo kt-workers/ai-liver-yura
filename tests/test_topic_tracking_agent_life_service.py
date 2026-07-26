@@ -18,26 +18,21 @@ def create_service() -> TopicTrackingAgentLifeService:
     )
 
 
-def test_upgrade_existing_preserves_object_identity_and_state() -> None:
-    original = AgentLifeService(ActivityManager())
-    original.record_autonomous_output(
+def test_base_service_uses_injected_topic_tracker_without_runtime_class_change() -> None:
+    tracker = AutonomousTopicTracker(uuid_factory=lambda: "topic-base")
+    service = AgentLifeService(
+        ActivityManager(),
+        autonomous_topic_tracker=tracker,
+    )
+
+    topic = service.record_autonomous_output(
         activity_id="activity-1",
         text="元の話題",
     )
-    original_id = id(original)
-    original_topic = original.autonomous_topic
 
-    upgraded = TopicTrackingAgentLifeService.upgrade_existing(
-        original,
-        autonomous_topic_tracker=AutonomousTopicTracker(
-            uuid_factory=lambda: "topic-2"
-        ),
-    )
-
-    assert id(upgraded) == original_id
-    assert isinstance(upgraded, TopicTrackingAgentLifeService)
-    assert upgraded.autonomous_topic == original_topic
-
+    assert type(service) is AgentLifeService
+    assert topic.topic_id == "topic-base"
+    assert service.autonomous_topic is tracker.current_topic
 
 def test_record_autonomous_output_delegates_to_topic_tracker() -> None:
     service = create_service()
@@ -68,7 +63,7 @@ def test_repeated_output_preserves_topic_identity_through_facade() -> None:
     assert second.turn_count == 2
 
 
-def test_interrupt_and_complete_keep_legacy_state_synchronized() -> None:
+def test_interrupt_and_complete_keep_tracker_state_synchronized() -> None:
     service = create_service()
     service.record_autonomous_output(
         activity_id="activity-1",
