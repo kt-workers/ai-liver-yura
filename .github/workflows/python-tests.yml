@@ -12,7 +12,6 @@ on:
     branches:
       - develop
       - main
-      - refactor/autonomous-topic-lifecycle
     paths-ignore:
       - "docs/**"
       - "**/*.md"
@@ -38,7 +37,7 @@ jobs:
           ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Apply autonomous topic lifecycle refactor
-        if: github.event_name == 'push' && github.ref_name == 'refactor/autonomous-topic-lifecycle'
+        if: github.event_name == 'pull_request' && github.head_ref == 'refactor/autonomous-topic-lifecycle'
         run: |
           python scripts/apply_autonomous_topic_lifecycle_refactor.py
           if ! git diff --quiet; then
