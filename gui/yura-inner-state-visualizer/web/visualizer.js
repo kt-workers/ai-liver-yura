@@ -34,13 +34,22 @@ let streamConnected = false;
 let signalPresence = 0;
 let presenceTransitionTarget = 0;
 let presenceTransitionStart = 0;
-let presenceTransitionStartedAt = performance.now();
+let presenceTransitionElapsedMs = 0;
 let presenceTransitionProgress = 1;
 let presenceAcceleratedProgress = 1;
 let centralParticlePresence = 0;
 let innerDetailPresence = 0;
 let rotationYAngle = 0;
+let tiltPhase = 0;
+let breathPhase = 0;
+let surfaceWavePhase = 0;
+let surfaceCurlPhase = 0;
+let talkFlowPhase = 0;
+let pressurePulsePhase = 0;
 const visualPalette = { hue: 202, saturation: 84, lightness: 72 };
+const pendingStateSnapshots = [];
+let stateTransition = null;
+let lastSnapshotReceivedAt = 0;
 let lastFrameAppearance = {
   hue: 202, saturation: 84, lightness: 72, energy: 0, engagement: 0,
   baseRadius: 0,
@@ -50,14 +59,36 @@ let nextBubbleAt = 0;
 const bubbles = [];
 const emotionWaves = [];
 const stimulusRipples = [];
-let lastStimulusAt = -Infinity;
+const lastStimulusAtByKind = new Map();
+let activePointerGesture = null;
+let pendingTapGesture = null;
 const STATE_TIMEOUT_MS = 45000;
 const PRESENCE_GATHER_DURATION_MS = 7000;
 const PRESENCE_SCATTER_DURATION_MS = 4200;
 const CENTRIFUGAL_ACCELERATION_MIN = .12;
 const CENTRIFUGAL_ACCELERATION_GAIN = .08;
 const ROTATION_DIRECTION = -1;
+const MAX_PARTICLE_TRACKING_SPEED = 360;
+const MAX_VISUAL_FRAME_SECONDS = 1 / 60;
+const MAX_PARTICLE_FRAME_DISTANCE = 4;
+const PARTICLE_SIZE_REFERENCE_VIEWPORT = 720;
+const MAX_PARTICLE_VIEWPORT_SCALE = 1.5;
+const STATE_TRANSITION_INTERVAL_RATIO = .82;
+const STATE_TRANSITION_MIN_SECONDS = .6;
+const STATE_TRANSITION_MAX_SECONDS = 4;
 const STIMULUS_INTERVAL_MS = 850;
+const DOUBLE_TAP_INTERVAL_MS = 300;
+const DOUBLE_TAP_DISTANCE_PX = 28;
+const LONG_PRESS_DURATION_MS = 600;
+const DRAG_START_DISTANCE_PX = 10;
+const DRAG_TRAIL_LIFETIME_MS = 520;
+
+function balancedEmotionGroup(index) {
+  const pairIndex = Math.floor(index / 2);
+  const randomValue = Math.sin((pairIndex + 1) * 12.9898) * 43758.5453;
+  const pairFlip = randomValue - Math.floor(randomValue) >= .5 ? 1 : 0;
+  return (index % 2) ^ pairFlip;
+}
 
 const particles = Array.from({ length: 820 }, (_, index) => {
   const golden = Math.PI * (3 - Math.sqrt(5));
@@ -70,6 +101,7 @@ const particles = Array.from({ length: 820 }, (_, index) => {
     z: Math.sin(theta) * radius,
     seed: Math.random() * Math.PI * 2,
     weight: 0.35 + Math.random() * 0.9,
+    emotionGroup: balancedEmotionGroup(index),
     scatterAngle: Math.random() * Math.PI * 2,
     scatterSpeed: .72 + Math.random() * .55,
   };
@@ -104,6 +136,16 @@ const reactiveHues = {
   discomfort: 104,
 };
 
+const reactiveMotionSpeedScales = {
+  joy: 1.03,
+  amusement: 1.07,
+  anger: 1.08,
+  sadness: .94,
+  fear: 1.05,
+  surprise: 1.07,
+  discomfort: .97,
+};
+
 const reactiveLabels = {
   joy: "喜び",
   amusement: "愉快",
@@ -113,6 +155,16 @@ const reactiveLabels = {
   surprise: "驚き",
   discomfort: "不快",
 };
+
+const emotionParticleGroups = Array.from({ length: 2 }, () => ({
+  name: null,
+  hue: 202,
+  visibility: 0,
+  sizeScale: 1,
+  motionSpeedScale: 1,
+  rotationOffset: 0,
+  strength: 0,
+}));
 
 function resize() {
   dpr = Math.min(devicePixelRatio || 1, 2);
@@ -127,6 +179,15 @@ function resize() {
 
 function mix(current, target, rate) { return current + (target - current) * rate; }
 function clamp(value, min = 0, max = 1) { return Math.max(min, Math.min(max, value)); }
+function smoothstep(edge0, edge1, value) {
+  const normalized = clamp((value - edge0) / (edge1 - edge0));
+  return normalized * normalized * (3 - 2 * normalized);
+}
+function smootherstep(value) {
+  const normalized = clamp(value);
+  return normalized ** 3
+    * (normalized * (normalized * 6 - 15) + 10);
+}
 function mixHue(current, target, rate) {
   const delta = ((target - current + 540) % 360) - 180;
   return (current + delta * rate + 360) % 360;
@@ -178,17 +239,19 @@ function beginParticleTransition(target) {
   }
 }
 
-function updateSignalPresence(now) {
+function updateSignalPresence(dt) {
   const target = sourceAvailable ? 1 : 0;
   if (target !== presenceTransitionTarget) {
     presenceTransitionTarget = target;
     presenceTransitionStart = signalPresence;
-    presenceTransitionStartedAt = now;
+    presenceTransitionElapsedMs = 0;
     beginParticleTransition(target);
+  } else if (presenceTransitionProgress < 1) {
+    presenceTransitionElapsedMs += dt * 1000;
   }
 
   const duration = target ? PRESENCE_GATHER_DURATION_MS : PRESENCE_SCATTER_DURATION_MS;
-  presenceTransitionProgress = clamp((now - presenceTransitionStartedAt) / duration);
+  presenceTransitionProgress = clamp(presenceTransitionElapsedMs / duration);
   presenceAcceleratedProgress = presenceTransitionProgress * presenceTransitionProgress;
   signalPresence = mix(
     presenceTransitionStart,
@@ -197,14 +260,21 @@ function updateSignalPresence(now) {
   );
 }
 
-function resolveParticlePosition(particle, sphereX, sphereY, now, centerX, centerY) {
+function resolveParticlePosition(
+  particle,
+  sphereX,
+  sphereY,
+  centerX,
+  centerY,
+  dt,
+) {
   if (
     presenceTransitionTarget === 0
     && particle.motionStartX !== undefined
     && particle.motionStartY !== undefined
   ) {
     const elapsed = Math.min(
-      (now - presenceTransitionStartedAt) / 1000,
+      presenceTransitionElapsedMs / 1000,
       PRESENCE_SCATTER_DURATION_MS / 1000,
     );
     const accelerationX = particle.motionAccelerationX || 0;
@@ -227,9 +297,18 @@ function resolveParticlePosition(particle, sphereX, sphereY, now, centerX, cente
     && particle.motionStartX !== undefined
     && particle.motionStartY !== undefined
   ) {
+    const elapsed = presenceTransitionElapsedMs / 1000;
+    const inertiaDuration = .45;
+    const inertiaDistanceScale = inertiaDuration
+      * (1 - Math.exp(-elapsed / inertiaDuration));
+    const inertialX = particle.motionStartX
+      + (particle.motionStartVX || 0) * inertiaDistanceScale;
+    const inertialY = particle.motionStartY
+      + (particle.motionStartVY || 0) * inertiaDistanceScale;
+    const blend = smootherstep(presenceTransitionProgress);
     return {
-      x: mix(particle.motionStartX, sphereX, presenceAcceleratedProgress),
-      y: mix(particle.motionStartY, sphereY, presenceAcceleratedProgress),
+      x: mix(inertialX, sphereX, blend),
+      y: mix(inertialY, sphereY, blend),
       vx: null,
       vy: null,
     };
@@ -245,48 +324,222 @@ function resolveParticlePosition(particle, sphereX, sphereY, now, centerX, cente
     };
   }
 
-  return { x: sphereX, y: sphereY, vx: null, vy: null };
+  if (particle.screenX === undefined || particle.screenY === undefined) {
+    return { x: sphereX, y: sphereY, vx: null, vy: null };
+  }
+  const dx = sphereX - particle.screenX;
+  const dy = sphereY - particle.screenY;
+  const distance = Math.hypot(dx, dy);
+  // A delayed render must not consume the whole wall-clock gap in one frame.
+  // Advancing that gap at once makes the stable particle population look as if
+  // it were replaced, especially when a state event and a missed frame coincide.
+  const maximumStep = Math.min(
+    MAX_PARTICLE_TRACKING_SPEED * dt,
+    MAX_PARTICLE_FRAME_DISTANCE,
+  );
+  if (!distance || distance <= maximumStep) {
+    return { x: sphereX, y: sphereY, vx: null, vy: null };
+  }
+  const stepRatio = maximumStep / distance;
+  return {
+    x: particle.screenX + dx * stepRatio,
+    y: particle.screenY + dy * stepRatio,
+    vx: null,
+    vy: null,
+  };
 }
 
-function smoothState(dt) {
-  const rate = 1 - Math.exp(-dt * 2.2);
-  for (const group of ["emotion", "drive"]) {
-    for (const [key, value] of Object.entries(state[group])) {
-      if (typeof value === "number") display[group][key] = mix(display[group][key], value, rate);
-      else if (key !== "reactive") display[group][key] = value;
+function assignStateSnapshot(target, snapshot) {
+  target.emotion.mood = snapshot.emotion.mood;
+  target.emotion.arousal = snapshot.emotion.arousal;
+  target.emotion.valence = snapshot.emotion.valence;
+  target.emotion.talkativeness = snapshot.emotion.talkativeness;
+  Object.assign(target.emotion.reactive, snapshot.emotion.reactive);
+  Object.assign(target.drive, snapshot.drive);
+  target.activity = snapshot.activity;
+  target.attention = snapshot.attention;
+  target.observed_at = snapshot.observed_at;
+}
+
+function averageStateSnapshots(entries) {
+  const result = structuredClone(entries[entries.length - 1].snapshot);
+  const numericGroups = [
+    ["emotion", ["arousal", "valence", "talkativeness"]],
+    ["drive", Object.keys(result.drive)],
+  ];
+  for (const [group, keys] of numericGroups) {
+    for (const key of keys) {
+      result[group][key] = entries.reduce(
+        (sum, entry) => sum + entry.snapshot[group][key],
+        0,
+      ) / entries.length;
     }
   }
-  for (const [key, value] of Object.entries(state.emotion.reactive)) {
-    display.emotion.reactive[key] = mix(display.emotion.reactive[key], value, rate);
+  for (const key of Object.keys(result.emotion.reactive)) {
+    result.emotion.reactive[key] = entries.reduce(
+      (sum, entry) => sum + entry.snapshot.emotion.reactive[key],
+      0,
+    ) / entries.length;
   }
-  display.activity = state.activity;
-  display.attention = state.attention;
+  return result;
+}
+
+function interpolateStateSnapshot(from, to, progress) {
+  display.emotion.mood = to.emotion.mood;
+  for (const key of ["arousal", "valence", "talkativeness"]) {
+    display.emotion[key] = mix(from.emotion[key], to.emotion[key], progress);
+  }
+  for (const key of Object.keys(display.emotion.reactive)) {
+    display.emotion.reactive[key] = mix(
+      from.emotion.reactive[key],
+      to.emotion.reactive[key],
+      progress,
+    );
+  }
+  for (const key of Object.keys(display.drive)) {
+    display.drive[key] = mix(from.drive[key], to.drive[key], progress);
+  }
+  display.activity = to.activity;
+  display.attention = to.attention;
+  display.observed_at = to.observed_at;
+}
+
+function advanceStateTrajectory(dt) {
+  if (!stateTransition && pendingStateSnapshots.length) {
+    const entries = pendingStateSnapshots.splice(0);
+    const target = averageStateSnapshots(entries);
+    const receivedAt = entries[entries.length - 1].receivedAt;
+    const observedInterval = lastSnapshotReceivedAt
+      ? (receivedAt - lastSnapshotReceivedAt) / 1000
+      : 1.2;
+    const duration = clamp(
+      observedInterval * STATE_TRANSITION_INTERVAL_RATIO,
+      STATE_TRANSITION_MIN_SECONDS,
+      STATE_TRANSITION_MAX_SECONDS,
+    );
+    const previousReactive = { ...state.emotion.reactive };
+    assignStateSnapshot(state, target);
+    if (lastSnapshotReceivedAt) {
+      createEmotionWave(previousReactive, target.emotion.reactive, receivedAt);
+    }
+    stateTransition = {
+      from: structuredClone(display),
+      to: structuredClone(target),
+      elapsed: 0,
+      duration,
+    };
+    lastSnapshotReceivedAt = receivedAt;
+  }
+
+  if (!stateTransition) return;
+  stateTransition.elapsed = Math.min(
+    stateTransition.elapsed + dt,
+    stateTransition.duration,
+  );
+  const progress = smootherstep(
+    stateTransition.elapsed / stateTransition.duration,
+  );
+  interpolateStateSnapshot(
+    stateTransition.from,
+    stateTransition.to,
+    progress,
+  );
+  if (stateTransition.elapsed >= stateTransition.duration) {
+    assignStateSnapshot(display, stateTransition.to);
+    stateTransition = null;
+  }
 }
 
 function dominantReactiveEmotions() {
   return Object.entries(display.emotion.reactive)
     .filter(([name]) => name !== "emotional_pressure")
     .map(([name, value]) => ({ name, value, hue: reactiveHues[name] }))
-    .filter((item) => item.value >= .04)
+    .filter((item) => item.value >= .12)
     .sort((a, b) => b.value - a.value)
     .slice(0, 2);
 }
 
-function emotionalTurbulence() {
-  const reactiveIntensity = Math.max(
-    0,
-    ...Object.entries(display.emotion.reactive)
-      .filter(([name]) => name !== "emotional_pressure")
-      .map(([, value]) => value),
-  );
-  const arousalIntensity = clamp((display.emotion.arousal - .45) / .55);
-  const valenceIntensity = clamp((Math.abs(display.emotion.valence) - .25) / .75);
-  return clamp(
-    arousalIntensity * .45
-    + display.emotion.reactive.emotional_pressure * .4
-    + reactiveIntensity * .45
-    + valenceIntensity * .15,
-  );
+function updateEmotionParticleGroups(dt) {
+  const reactive = display.emotion.reactive;
+  for (const group of emotionParticleGroups) {
+    if (group.name && reactive[group.name] < .09) group.name = null;
+  }
+  const activeNames = emotionParticleGroups
+    .map((group) => group.name)
+    .filter(Boolean);
+  const candidates = Object.keys(reactiveHues)
+    .filter((name) => !activeNames.includes(name))
+    .map((name) => ({ name, value: reactive[name] }))
+    .sort((a, b) => b.value - a.value);
+
+  for (const group of emotionParticleGroups) {
+    if (group.name || candidates[0]?.value < .14) continue;
+    group.name = candidates.shift().name;
+  }
+  if (
+    emotionParticleGroups.every((group) => group.name)
+    && candidates[0]?.value >= .14
+  ) {
+    const weakestGroup = [...emotionParticleGroups].sort(
+      (a, b) => reactive[a.name] - reactive[b.name],
+    )[0];
+    if (candidates[0].value >= reactive[weakestGroup.name] + .07) {
+      weakestGroup.name = candidates[0].name;
+    }
+  }
+
+  const rankedGroups = emotionParticleGroups
+    .filter((group) => group.name)
+    .sort((a, b) => reactive[b.name] - reactive[a.name]);
+  const transitionRate = 1 - Math.exp(-dt * 2.4);
+  for (const group of emotionParticleGroups) {
+    const rank = rankedGroups.indexOf(group);
+    const active = rank >= 0;
+    const strength = active ? reactive[group.name] : 0;
+    group.visibility = mix(
+      group.visibility,
+      active ? 1 : 0,
+      transitionRate,
+    );
+    group.sizeScale = mix(
+      group.sizeScale,
+      active ? .68 + strength * .9 : 1,
+      transitionRate,
+    );
+    group.motionSpeedScale = mix(
+      group.motionSpeedScale,
+      active ? reactiveMotionSpeedScales[group.name] : 1,
+      transitionRate,
+    );
+    if (active) {
+      group.hue = mixHue(
+        group.hue,
+        reactiveHues[group.name],
+        transitionRate,
+      );
+      group.strength = strength;
+    } else {
+      group.strength = mix(group.strength, 0, transitionRate);
+    }
+  }
+  return emotionParticleGroups;
+}
+
+function emotionVisualProfile() {
+  const reactive = display.emotion.reactive;
+  return {
+    activation: smoothstep(.45, .85, display.emotion.arousal),
+    joy: reactive.joy,
+    amusement: reactive.amusement,
+    anger: reactive.anger,
+    sadness: reactive.sadness,
+    fear: reactive.fear,
+    surprise: reactive.surprise,
+    discomfort: reactive.discomfort,
+    pressure: reactive.emotional_pressure,
+    pressureLeak: Math.max(reactive.anger, reactive.fear)
+      * reactive.emotional_pressure,
+  };
 }
 
 function palette() {
@@ -294,7 +547,11 @@ function palette() {
   const emotionalHue = display.emotion.valence < 0
     ? 222 + display.emotion.valence * -20
     : 198 - display.emotion.valence * 156;
-  return [mix(emotionalHue, base[0], 0.48), base[1], base[2]];
+  return [
+    mixHue(emotionalHue, base[0], .18),
+    mix(78, base[1], .25),
+    mix(70, base[2], .25),
+  ];
 }
 
 function rotate(point, ax, ay) {
@@ -437,53 +694,16 @@ function renderBubbles(now, dt, projected, baseRadius, centerX, centerY, rotatio
   }
 }
 
-function drawEmotionCurrents(
-  t,
-  currents,
+function drawPressureCore(
+  pressure,
   centerX,
   centerY,
   baseRadius,
-  rotationX,
-  rotationY,
+  hue,
   reveal,
 ) {
-  if (!sourceAvailable || !currents.length || reveal <= .01) return;
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  for (let currentIndex = 0; currentIndex < currents.length; currentIndex += 1) {
-    const current = currents[currentIndex];
-    const phaseOffset = currentIndex * Math.PI + t * (.08 + current.value * .09);
-    ctx.beginPath();
-    for (let index = 0; index <= 96; index += 1) {
-      const progress = index / 96;
-      const angle = progress * Math.PI * 4 + phaseOffset;
-      const y = (progress * 2 - 1) * .82;
-      const ringRadius = Math.sqrt(Math.max(0, 1 - y * y));
-      const source = {
-        x: Math.cos(angle) * ringRadius * 1.035,
-        y,
-        z: Math.sin(angle) * ringRadius * 1.035,
-      };
-      const point = rotate(source, rotationX, rotationY);
-      const perspective = 1 / (2.7 - point.z * .75);
-      const x = centerX + point.x * baseRadius * perspective * 2.2;
-      const projectedY = centerY + point.y * baseRadius * perspective * 2.2;
-      if (index === 0) ctx.moveTo(x, projectedY);
-      else ctx.lineTo(x, projectedY);
-    }
-    const alpha = clamp((.12 + current.value * .55) * reveal);
-    ctx.strokeStyle = `hsla(${current.hue}, 88%, 72%, ${alpha})`;
-    ctx.lineWidth = 1 + current.value * 2.2;
-    ctx.shadowColor = `hsla(${current.hue}, 92%, 68%, ${alpha})`;
-    ctx.shadowBlur = 7 + current.value * 13;
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function drawPressureCore(t, pressure, centerX, centerY, baseRadius, hue, reveal) {
   if (!sourceAvailable || pressure <= .01 || reveal <= .01) return;
-  const pulse = 1 + Math.sin(t * (1.4 + pressure * 2.8)) * (.025 + pressure * .045);
+  const pulse = 1 + Math.sin(pressurePulsePhase) * (.025 + pressure * .045);
   const radius = baseRadius * (.19 - pressure * .045) * pulse;
   const glow = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius * 2.4);
   glow.addColorStop(0, `hsla(${hue + 22}, 82%, 82%, ${pressure * .2 * reveal})`);
@@ -542,36 +762,233 @@ function renderEmotionWaves(now, centerX, centerY, baseRadius) {
   ctx.restore();
 }
 
+function drawStimulusTrail(path, now, hue, opacity = 1) {
+  if (!path?.length) return false;
+  let visible = false;
+  for (let index = 1; index < path.length; index += 1) {
+    const previous = path[index - 1];
+    const point = path[index];
+    const age = now - point.bornAt;
+    if (age >= DRAG_TRAIL_LIFETIME_MS) continue;
+    const alpha = (1 - age / DRAG_TRAIL_LIFETIME_MS) ** 2 * opacity;
+    ctx.beginPath();
+    ctx.moveTo(previous.x, previous.y);
+    ctx.lineTo(point.x, point.y);
+    ctx.strokeStyle = `hsla(${hue + 32}, 94%, 82%, ${alpha * .72})`;
+    ctx.lineWidth = 1.2 + alpha * 2.1;
+    ctx.shadowColor = `hsla(${hue + 22}, 96%, 72%, ${alpha * .85})`;
+    ctx.shadowBlur = 7 + alpha * 13;
+    ctx.lineCap = "round";
+    ctx.stroke();
+    visible = true;
+  }
+  return visible;
+}
+
+function drawStimulusRing(x, y, radius, alpha, hue, lineWidth = 2) {
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = `hsla(${hue}, 92%, 86%, ${alpha * .72})`;
+  ctx.lineWidth = lineWidth;
+  ctx.shadowColor = `hsla(${hue}, 96%, 78%, ${alpha})`;
+  ctx.shadowBlur = 8 + alpha * 14;
+  ctx.stroke();
+}
+
+function renderActivePointerEffect(now, hue) {
+  if (!sourceAvailable || !activePointerGesture) return;
+  const gesture = activePointerGesture;
+  const heldFor = now - gesture.startedAt;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  if (gesture.dragging) {
+    drawStimulusTrail(gesture.path, now, hue);
+  } else if (heldFor >= LONG_PRESS_DURATION_MS) {
+    const holdProgress = clamp(
+      (heldFor - LONG_PRESS_DURATION_MS) / 1200,
+    );
+    const pulse = (Math.sin(now * .01) + 1) * .5;
+    const radius = 26 - holdProgress * 9 + pulse * 3;
+    const glow = ctx.createRadialGradient(
+      gesture.currentX,
+      gesture.currentY,
+      0,
+      gesture.currentX,
+      gesture.currentY,
+      radius * 2.4,
+    );
+    glow.addColorStop(0, `hsla(${hue + 18}, 96%, 88%, .32)`);
+    glow.addColorStop(.35, `hsla(${hue}, 92%, 70%, .14)`);
+    glow.addColorStop(1, "transparent");
+    ctx.fillStyle = glow;
+    ctx.fillRect(
+      gesture.currentX - radius * 2.5,
+      gesture.currentY - radius * 2.5,
+      radius * 5,
+      radius * 5,
+    );
+    drawStimulusRing(
+      gesture.currentX,
+      gesture.currentY,
+      radius,
+      .82,
+      hue + 18,
+      1.5,
+    );
+  }
+  ctx.restore();
+}
+
 function renderStimulusRipples(now, hue) {
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   for (let index = stimulusRipples.length - 1; index >= 0; index -= 1) {
     const ripple = stimulusRipples[index];
     const age = (now - ripple.bornAt) / 1000;
-    const duration = reduceMotion ? .35 : 1.15;
+    const durations = {
+      tap: 1.15,
+      double_tap: 1.55,
+      long_press: 1.8,
+      drag: 1.15,
+    };
+    const duration = reduceMotion ? .4 : (durations[ripple.kind] || 1.15);
     const progress = clamp(age / duration);
-    const radius = 12 + progress * Math.min(width, height) * .12;
     const alpha = 1 - progress;
-    ctx.beginPath();
-    ctx.arc(ripple.x, ripple.y, radius, 0, Math.PI * 2);
-    ctx.strokeStyle = `hsla(${hue}, 92%, 86%, ${alpha * .7})`;
-    ctx.lineWidth = 1.2 + alpha * 1.8;
-    ctx.shadowColor = `hsla(${hue}, 96%, 78%, ${alpha})`;
-    ctx.shadowBlur = 8 + alpha * 14;
-    ctx.stroke();
+    if (ripple.kind === "drag") {
+      const trailVisible = drawStimulusTrail(ripple.path, now, hue, .9);
+      if (progress < 1) {
+        drawStimulusRing(
+          ripple.x,
+          ripple.y,
+          12 + progress * Math.min(width, height) * .1,
+          alpha,
+          hue + 32,
+          1.4,
+        );
+      }
+      if (progress >= 1 && !trailVisible) stimulusRipples.splice(index, 1);
+      continue;
+    } else if (ripple.kind === "long_press") {
+      const radius = 18 + progress * Math.min(width, height) * .085;
+      drawStimulusRing(ripple.x, ripple.y, radius, alpha, hue + 18, 1.4 + alpha);
+      drawStimulusRing(
+        ripple.x,
+        ripple.y,
+        radius * .62,
+        alpha * .55,
+        hue + 18,
+        1,
+      );
+    } else {
+      const count = ripple.kind === "double_tap" ? 2 : 1;
+      for (let ringIndex = 0; ringIndex < count; ringIndex += 1) {
+        const ringProgress = clamp(progress - ringIndex * .13);
+        const ringAlpha = (1 - ringProgress) * (ringIndex ? .65 : 1);
+        const radius = 12 + ringProgress * Math.min(width, height) * .12;
+        drawStimulusRing(
+          ripple.x,
+          ripple.y,
+          radius,
+          ringAlpha,
+          hue + ringIndex * 28,
+          1.2 + ringAlpha * 1.8,
+        );
+      }
+    }
     if (progress >= 1) stimulusRipples.splice(index, 1);
   }
   ctx.restore();
 }
 
+function drawParticles(projected) {
+  const glowBuckets = Array.from({ length: 4 }, () => []);
+  for (const particle of projected) {
+    const bucketIndex = Math.min(
+      glowBuckets.length - 1,
+      Math.floor(clamp(particle.alpha) * glowBuckets.length),
+    );
+    glowBuckets[bucketIndex].push(particle);
+  }
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (const bucket of glowBuckets) {
+    if (!bucket.length) continue;
+    let hueX = 0;
+    let hueY = 0;
+    let saturation = 0;
+    let lightness = 0;
+    let alpha = 0;
+    let shadowAlpha = 0;
+    let shadowBlur = 0;
+    ctx.beginPath();
+    for (const particle of bucket) {
+      const hueRadians = particle.hue * Math.PI / 180;
+      hueX += Math.cos(hueRadians);
+      hueY += Math.sin(hueRadians);
+      saturation += particle.saturation;
+      lightness += particle.lightness;
+      alpha += particle.alpha;
+      shadowAlpha += particle.shadowAlpha;
+      shadowBlur += particle.shadowBlur;
+      ctx.moveTo(particle.x + particle.size, particle.y);
+      ctx.arc(
+        particle.x,
+        particle.y,
+        particle.size,
+        0,
+        Math.PI * 2,
+      );
+    }
+    const count = bucket.length;
+    const hue = (
+      Math.atan2(hueY / count, hueX / count) * 180 / Math.PI
+      + 360
+    ) % 360;
+    const averageSaturation = saturation / count;
+    const averageLightness = lightness / count;
+    const averageAlpha = alpha / count;
+    ctx.fillStyle = `hsla(${hue}, ${averageSaturation}%, ${
+      averageLightness
+    }%, ${averageAlpha * .2})`;
+    ctx.shadowColor = `hsla(${hue}, ${averageSaturation}%, ${
+      averageLightness
+    }%, ${(shadowAlpha / count) * .72})`;
+    ctx.shadowBlur = shadowBlur / count;
+    ctx.fill();
+  }
+
+  ctx.shadowBlur = 0;
+  for (const particle of projected) {
+    ctx.beginPath();
+    ctx.fillStyle = `hsla(${particle.hue}, ${particle.saturation}%, ${
+      particle.lightness
+    }%, ${particle.alpha})`;
+    ctx.arc(
+      particle.x,
+      particle.y,
+      particle.size,
+      0,
+      Math.PI * 2,
+    );
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function render(now) {
-  const dt = Math.min((now - lastFrame) / 1000, 0.05);
+  // Keep visual time continuous after a dropped frame. It is less noticeable
+  // for the animation to run briefly behind real time than to jump ahead.
+  const dt = Math.min(
+    Math.max((now - lastFrame) / 1000, 0),
+    MAX_VISUAL_FRAME_SECONDS,
+  );
   lastFrame = now;
   if (sourceAvailable && now - lastStateAt > STATE_TIMEOUT_MS) {
     markUnavailable(streamConnected ? "ゆらを待っています" : "再接続しています");
   }
-  updateSignalPresence(now);
-  smoothState(dt);
+  updateSignalPresence(dt);
+  advanceStateTrajectory(dt);
   const t = now / 1000;
   const [targetHue, targetSaturation, targetLightness] = palette();
   const paletteRate = 1 - Math.exp(-dt * (reduceMotion ? 3 : 1.25));
@@ -625,10 +1042,15 @@ function render(now) {
   const engagement = display.drive.engagement;
   const boredom = display.drive.boredom;
   const talking = display.emotion.talkativeness;
-  const pressure = display.emotion.reactive.emotional_pressure;
-  const turbulence = emotionalTurbulence();
-  const reactiveCurrents = dominantReactiveEmotions();
+  const emotionShape = emotionVisualProfile();
+  const pressure = emotionShape.pressure;
+  const particleEmotionGroups = updateEmotionParticleGroups(dt);
   const baseRadius = Math.min(width, height) * (.18 + curiosity * .09 + energy * .025);
+  const particleViewportScale = clamp(
+    Math.min(width, height) / PARTICLE_SIZE_REFERENCE_VIEWPORT,
+    1,
+    MAX_PARTICLE_VIEWPORT_SCALE,
+  );
   if (sourceAvailable) {
     lastFrameAppearance = {
       hue, saturation, lightness, energy, engagement, baseRadius,
@@ -640,32 +1062,139 @@ function render(now) {
     + ROTATION_DIRECTION * speed * dt
     + Math.PI * 2
   ) % (Math.PI * 2);
+  for (const group of particleEmotionGroups) {
+    const speedReveal = group.visibility * innerDetailPresence;
+    group.rotationOffset = (
+      group.rotationOffset
+      + ROTATION_DIRECTION
+        * speed
+        * (group.motionSpeedScale - 1)
+        * speedReveal
+        * dt
+      + Math.PI * 2
+    ) % (Math.PI * 2);
+  }
   const rotationY = rotationYAngle;
-  const rotationX = Math.sin(t * .12) * (.035 + turbulence * .13);
-  const flatten = 1 - boredom * turbulence * .18;
-  const pulse = 1
-    + Math.sin(t * (.35 + turbulence * 1.2)) * (.008 + turbulence * .075);
+  tiltPhase = (tiltPhase + .12 * dt) % (Math.PI * 2);
+  const motionScale = reduceMotion ? .25 : 1;
+  breathPhase = (
+    breathPhase + (.3 + emotionShape.activation * 1.15) * dt
+  ) % (Math.PI * 2);
+  surfaceWavePhase = (
+    surfaceWavePhase
+    + (
+      .2
+      + emotionShape.activation * .75
+      + emotionShape.amusement * .35
+      + emotionShape.anger * .25
+    ) * dt
+  ) % (Math.PI * 2);
+  surfaceCurlPhase = (
+    surfaceCurlPhase
+    + (.16 + emotionShape.activation * .62) * dt
+  ) % (Math.PI * 2);
+  talkFlowPhase = (
+    talkFlowPhase + (.12 + talking * .45) * dt
+  ) % (Math.PI * 2);
+  pressurePulsePhase = (
+    pressurePulsePhase + (1.4 + pressure * 2.8) * dt
+  ) % (Math.PI * 2);
+
+  const tiltAmplitude = (
+    .025
+    + emotionShape.activation * .05
+    + emotionShape.amusement * .04
+    + emotionShape.anger * .025
+  ) * motionScale;
+  const rotationX = Math.sin(tiltPhase) * tiltAmplitude;
+  const flatten = 1
+    - boredom * .07
+    - emotionShape.sadness * (.035 + (1 - emotionShape.activation) * .04);
+  const breathAmplitude = (
+    .006
+    + emotionShape.activation * .015
+    + emotionShape.joy * .025
+    + emotionShape.amusement * .015
+    + emotionShape.surprise * .018
+  ) * motionScale;
+  const pulse = 1 + Math.sin(breathPhase) * breathAmplitude;
+  const emotionScale = 1
+    + emotionShape.joy * .03
+    + emotionShape.amusement * .01
+    + emotionShape.surprise * .02
+    - emotionShape.anger * .012
+    - emotionShape.sadness * .012
+    - emotionShape.fear * .018
+    - pressure * .07;
   const centerX = width * .5;
   const centerY = height * .49;
 
   const projected = particles.map((particle) => {
+    const longitude = Math.atan2(particle.z, particle.x);
     const wave = Math.sin(
-      t * (.22 + turbulence * .9) + particle.seed + particle.y * 4.5,
+      surfaceWavePhase + particle.seed + particle.y * 4.5,
     );
     const curl = Math.cos(
-      t * (.18 + turbulence * .72) + particle.seed * 1.7 + particle.z * 5,
+      surfaceCurlPhase + particle.seed * 1.7 + particle.z * 5,
     );
-    const looseness = turbulence
-      * (.055 + (1 - engagement) * .055 + boredom * .045);
-    const pressureCompression = 1 - pressure * .12;
-    const radial = pulse * pressureCompression
-      * (1 + wave * (.003 + turbulence * .09) + looseness * curl);
+    const sharpWave = Math.tanh(wave * 1.8) / Math.tanh(1.8);
+    const joyWave = Math.sin(
+      surfaceWavePhase * .7 + longitude * 2 + particle.y * 2.5,
+    );
+    const amusementWave = Math.sin(
+      surfaceWavePhase * 1.35 + longitude * 3 + particle.seed,
+    );
+    const fearNoise = Math.sin(
+      surfaceWavePhase * 2.8
+      + particle.seed * 4.1
+      + particle.y * 8,
+    );
+    const dynamicDeformation = (
+      joyWave
+        * emotionShape.joy
+        * (.012 + emotionShape.activation * .04)
+      + amusementWave
+        * emotionShape.amusement
+        * (.02 + emotionShape.activation * .05)
+      + sharpWave
+        * emotionShape.anger
+        * (.025 + emotionShape.activation * .075)
+      + curl
+        * emotionShape.sadness
+        * (.008 + emotionShape.activation * .012)
+      + fearNoise
+        * emotionShape.fear
+        * (.01 + emotionShape.activation * .06)
+      + wave
+        * emotionShape.surprise
+        * (.008 + emotionShape.activation * .02)
+      + curl
+        * emotionShape.discomfort
+        * (.02 + emotionShape.activation * .035)
+      + curl * emotionShape.pressureLeak * .045
+    ) * motionScale;
+    const driveLooseness = curl
+      * (1 - engagement)
+      * (.004 + boredom * .01)
+      * motionScale;
+    const radial = pulse
+      * emotionScale
+      * (1 + dynamicDeformation + driveLooseness);
     const source = {
       x: particle.x * radial,
       y: particle.y * radial * flatten,
       z: particle.z * radial,
     };
-    const p = rotate(source, rotationX, rotationY + particle.seed * talking * .015);
+    const talkFlow = Math.sin(
+      talkFlowPhase + particle.y * 4 + particle.seed,
+    ) * talking * .02 * motionScale;
+    const emotionGroup = particleEmotionGroups[particle.emotionGroup];
+    const emotionReveal = emotionGroup.visibility * innerDetailPresence;
+    const p = rotate(
+      source,
+      rotationX,
+      rotationY + emotionGroup.rotationOffset + talkFlow,
+    );
     const perspective = 1 / (2.7 - p.z * .75);
     const sphereX = centerX + p.x * baseRadius * perspective * 2.2;
     const sphereY = centerY + p.y * baseRadius * perspective * 2.2;
@@ -673,9 +1202,9 @@ function render(now) {
       particle,
       sphereX,
       sphereY,
-      now,
       centerX,
       centerY,
+      dt,
     );
     const x = position.x;
     const y = position.y;
@@ -687,31 +1216,67 @@ function render(now) {
     const vy = position.vy ?? measuredVY;
     const scattering = presenceTransitionTarget === 0
       && particle.motionStartX !== undefined;
+    const gathering = presenceTransitionTarget === 1
+      && presenceTransitionProgress < 1
+      && particle.motionStartX !== undefined;
+    const gatheringBlend = gathering
+      ? smootherstep(presenceTransitionProgress)
+      : (scattering ? 0 : 1);
+    const largeParticleBoost = 1
+      + smoothstep(.82, 1.25, particle.weight) * .35;
+    const randomSizeWeight = particle.weight * largeParticleBoost;
+    const organicSizeVariation = mix(
+      .82,
+      1.18,
+      (particle.weight - .35) / .9,
+    );
+    const sizeWeight = mix(
+      randomSizeWeight,
+      emotionGroup.sizeScale * organicSizeVariation,
+      emotionReveal,
+    );
     const connectedSize = (.55 + perspective * 1.8)
-      * particle.weight
-      * (.75 + energy * .7);
+      * (.75 + energy * .7)
+      * particleViewportScale
+      * sizeWeight;
     const depthVisibility = mix(.28, 1, clamp((p.z + 1) * .5));
     const connectedAlpha = clamp(.12 + perspective * .48 + p.z * .1)
       * depthVisibility
       * clamp(signalPresence * 1.6);
+    const connectedSaturation = mix(saturation, 92, emotionReveal);
     const connectedLightness = lightness - (1 - depthVisibility) * 18 + p.z * 4;
     const connectedShadowAlpha = mix(.16, .65, depthVisibility);
-    const visualSize = scattering && particle.motionSize !== undefined
-      ? particle.motionSize : connectedSize;
-    const visualAlpha = scattering && particle.motionAlpha !== undefined
-      ? particle.motionAlpha : connectedAlpha;
-    const visualHue = scattering && particle.motionHue !== undefined
-      ? particle.motionHue : hue + p.z * 18;
-    const visualSaturation = scattering && particle.motionSaturation !== undefined
-      ? particle.motionSaturation : saturation;
-    const visualLightness = scattering && particle.motionLightness !== undefined
-      ? particle.motionLightness : connectedLightness;
-    const visualShadowBlur = scattering && particle.motionShadowBlur !== undefined
-      ? particle.motionShadowBlur : 4 + arousal * 9;
-    const visualShadowAlpha = scattering && particle.motionShadowAlpha !== undefined
-      ? particle.motionShadowAlpha : connectedShadowAlpha;
-    const visualZ = scattering && particle.motionZ !== undefined
-      ? particle.motionZ : p.z;
+    const connectedHue = mixHue(hue, emotionGroup.hue, emotionReveal)
+      + p.z * 18;
+    const connectedShadowBlur = (4 + arousal * 9) * particleViewportScale;
+    const holdsMotionAppearance = scattering || gathering;
+    const transitionNumber = (snapshot, connected) => (
+      holdsMotionAppearance && snapshot !== undefined
+        ? mix(snapshot, connected, gatheringBlend)
+        : connected
+    );
+    const visualSize = transitionNumber(particle.motionSize, connectedSize);
+    const visualAlpha = transitionNumber(particle.motionAlpha, connectedAlpha);
+    const visualHue = holdsMotionAppearance && particle.motionHue !== undefined
+      ? mixHue(particle.motionHue, connectedHue, gatheringBlend)
+      : connectedHue;
+    const visualSaturation = transitionNumber(
+      particle.motionSaturation,
+      connectedSaturation,
+    );
+    const visualLightness = transitionNumber(
+      particle.motionLightness,
+      connectedLightness,
+    );
+    const visualShadowBlur = transitionNumber(
+      particle.motionShadowBlur,
+      connectedShadowBlur,
+    );
+    const visualShadowAlpha = transitionNumber(
+      particle.motionShadowAlpha,
+      connectedShadowAlpha,
+    );
+    const visualZ = transitionNumber(particle.motionZ, p.z);
     particle.screenX = x;
     particle.screenY = y;
     particle.screenVX = Number.isFinite(vx) ? vx : 0;
@@ -767,27 +1332,9 @@ function render(now) {
     detailPresenceRate,
   );
 
-  drawEmotionCurrents(
-    t,
-    reactiveCurrents,
-    centerX,
-    centerY,
-    baseRadius * (1 - pressure * .08),
-    rotationX,
-    rotationY,
-    innerDetailPresence,
-  );
+  drawParticles(projected);
 
   ctx.globalCompositeOperation = "lighter";
-  for (const p of projected) {
-    ctx.beginPath();
-    ctx.fillStyle = `hsla(${p.hue}, ${p.saturation}%, ${p.lightness}%, ${p.alpha})`;
-    ctx.shadowColor = `hsla(${p.hue}, ${p.saturation}%, ${p.lightness}%, ${p.shadowAlpha})`;
-    ctx.shadowBlur = p.shadowBlur;
-    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
   const haloAppearance = !sourceAvailable && presenceTransitionTarget === 0
     ? scatterAppearance
     : { hue, saturation, lightness, energy, engagement };
@@ -822,7 +1369,6 @@ function render(now) {
   ctx.globalCompositeOperation = "source-over";
 
   drawPressureCore(
-    t,
     pressure,
     centerX,
     centerY,
@@ -835,6 +1381,7 @@ function render(now) {
   const rotationForce = (28 + arousal * 88 + talking * 18) * signalPresence;
   renderBubbles(now, dt, projected, baseRadius, centerX, centerY, rotationForce, hue, saturation);
   renderStimulusRipples(now, hue);
+  renderActivePointerEffect(now, hue);
 
   updateLabels();
   requestAnimationFrame(render);
@@ -864,6 +1411,9 @@ function updateLabels() {
 
 function markUnavailable(connectionText) {
   sourceAvailable = false;
+  pendingStateSnapshots.length = 0;
+  stateTransition = null;
+  lastSnapshotReceivedAt = 0;
   Object.assign(state.emotion, { mood: "unknown", arousal: 0, valence: 0, talkativeness: 0 });
   Object.keys(state.emotion.reactive).forEach((key) => { state.emotion.reactive[key] = 0; });
   Object.assign(state.drive, { curiosity: 0, engagement: 0, boredom: 0, energy: 0 });
@@ -878,31 +1428,38 @@ function markUnavailable(connectionText) {
 
 function receive(next) {
   if (!next?.emotion || !next?.drive) return;
-  const previousReactive = { ...state.emotion.reactive };
   const incomingReactive = next.emotion.reactive;
   const normalizedReactive = {};
   for (const key of Object.keys(state.emotion.reactive)) {
     normalizedReactive[key] = finiteNumber(incomingReactive?.[key], 0);
   }
-  if (sourceAvailable) {
-    createEmotionWave(previousReactive, normalizedReactive, performance.now());
-  }
-  state.emotion.mood = typeof next.emotion.mood === "string"
+  const snapshot = structuredClone(state);
+  snapshot.emotion.mood = typeof next.emotion.mood === "string"
     ? next.emotion.mood : state.emotion.mood;
-  state.emotion.arousal = finiteNumber(next.emotion.arousal, state.emotion.arousal);
-  state.emotion.valence = finiteNumber(next.emotion.valence, state.emotion.valence, -1, 1);
-  state.emotion.talkativeness = finiteNumber(
+  snapshot.emotion.arousal = finiteNumber(
+    next.emotion.arousal,
+    state.emotion.arousal,
+  );
+  snapshot.emotion.valence = finiteNumber(
+    next.emotion.valence,
+    state.emotion.valence,
+    -1,
+    1,
+  );
+  snapshot.emotion.talkativeness = finiteNumber(
     next.emotion.talkativeness,
     state.emotion.talkativeness,
   );
-  Object.assign(state.emotion.reactive, normalizedReactive);
+  Object.assign(snapshot.emotion.reactive, normalizedReactive);
   for (const key of Object.keys(state.drive)) {
-    state.drive[key] = finiteNumber(next.drive[key], state.drive[key]);
+    snapshot.drive[key] = finiteNumber(next.drive[key], state.drive[key]);
   }
-  state.activity = next.activity || state.activity;
-  state.attention = next.attention || state.attention;
-  state.observed_at = next.observed_at;
-  lastStateAt = performance.now();
+  snapshot.activity = next.activity || state.activity;
+  snapshot.attention = next.attention || state.attention;
+  snapshot.observed_at = next.observed_at;
+  const receivedAt = performance.now();
+  pendingStateSnapshots.push({ snapshot, receivedAt });
+  lastStateAt = receivedAt;
   sourceAvailable = true;
   const connection = document.querySelector("#connection");
   connection.classList.add("live");
@@ -922,27 +1479,57 @@ function setStimulusStatus(message) {
   stimulusStatusTimer = setTimeout(() => node.classList.remove("visible"), 1800);
 }
 
-async function sendStimulus(clientX, clientY) {
+function normalizedCanvasPosition(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: clamp((clientX - rect.left) / rect.width),
+    y: clamp((clientY - rect.top) / rect.height),
+  };
+}
+
+async function sendStimulus(kind, clientX, clientY, details = {}) {
   if (!sourceAvailable) {
     setStimulusStatus("ゆらとの接続を待っています");
     return;
   }
   const now = performance.now();
+  const lastStimulusAt = lastStimulusAtByKind.get(kind) ?? -Infinity;
   if (now - lastStimulusAt < STIMULUS_INTERVAL_MS) {
     setStimulusStatus("刺激は少し間をあけて届けられます");
     return;
   }
-  lastStimulusAt = now;
-  const rect = canvas.getBoundingClientRect();
-  const x = clamp((clientX - rect.left) / rect.width);
-  const y = clamp((clientY - rect.top) / rect.height);
-  stimulusRipples.push({ x: clientX, y: clientY, bornAt: now });
-  setStimulusStatus("ゆらへ、そっと触れました");
+  lastStimulusAtByKind.set(kind, now);
+  const position = normalizedCanvasPosition(clientX, clientY);
+  const payload = { kind, ...position };
+  if (details.startPosition) {
+    payload.start_position = normalizedCanvasPosition(
+      details.startPosition.x,
+      details.startPosition.y,
+    );
+  }
+  if (details.durationMs !== undefined) {
+    payload.duration_ms = Math.min(10_000, Math.max(0, details.durationMs));
+  }
+  stimulusRipples.push({
+    kind,
+    x: clientX,
+    y: clientY,
+    path: details.path || [{ x: clientX, y: clientY }],
+    bornAt: now,
+  });
+  if (stimulusRipples.length > 12) stimulusRipples.shift();
+  const messages = {
+    tap: "ゆらへ、そっと触れました",
+    double_tap: "ゆらへ、二度触れました",
+    long_press: "ゆらへ、しばらく触れました",
+    drag: "ゆらの粒子を、そっとなぞりました",
+  };
+  setStimulusStatus(messages[kind] || "ゆらへ刺激を届けました");
   try {
     const response = await fetch("/api/stimuli", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "tap", x, y }),
+      body: JSON.stringify(payload),
     });
     if (response.status === 429) {
       setStimulusStatus("刺激は少し間をあけて届けられます");
@@ -952,6 +1539,38 @@ async function sendStimulus(clientX, clientY) {
   } catch {
     setStimulusStatus("今は刺激を届けられません");
   }
+}
+
+function queueTapGesture(clientX, clientY, occurredAt) {
+  if (
+    pendingTapGesture
+    && occurredAt - pendingTapGesture.occurredAt <= DOUBLE_TAP_INTERVAL_MS
+    && Math.hypot(
+      clientX - pendingTapGesture.x,
+      clientY - pendingTapGesture.y,
+    ) <= DOUBLE_TAP_DISTANCE_PX
+  ) {
+    clearTimeout(pendingTapGesture.timer);
+    pendingTapGesture = null;
+    sendStimulus("double_tap", clientX, clientY);
+    return;
+  }
+  if (pendingTapGesture) {
+    clearTimeout(pendingTapGesture.timer);
+    sendStimulus("tap", pendingTapGesture.x, pendingTapGesture.y);
+  }
+  const gesture = {
+    x: clientX,
+    y: clientY,
+    occurredAt,
+    timer: null,
+  };
+  gesture.timer = setTimeout(() => {
+    if (pendingTapGesture !== gesture) return;
+    pendingTapGesture = null;
+    sendStimulus("tap", gesture.x, gesture.y);
+  }, DOUBLE_TAP_INTERVAL_MS);
+  pendingTapGesture = gesture;
 }
 
 const stream = new EventSource("/events");
@@ -966,13 +1585,104 @@ stream.onerror = () => {
 };
 
 canvas.addEventListener("pointerdown", (event) => {
-  if (event.button !== 0) return;
-  sendStimulus(event.clientX, event.clientY);
+  if (event.button !== 0 || event.ctrlKey) return;
+  canvas.setPointerCapture(event.pointerId);
+  activePointerGesture = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    currentX: event.clientX,
+    currentY: event.clientY,
+    startedAt: performance.now(),
+    dragging: false,
+    path: [{
+      x: event.clientX,
+      y: event.clientY,
+      bornAt: performance.now(),
+    }],
+  };
 });
+canvas.addEventListener("pointermove", (event) => {
+  if (activePointerGesture?.pointerId !== event.pointerId) return;
+  const now = performance.now();
+  const previousPoint = activePointerGesture.path[
+    activePointerGesture.path.length - 1
+  ];
+  activePointerGesture.currentX = event.clientX;
+  activePointerGesture.currentY = event.clientY;
+  const exceedsDragDistance = Math.hypot(
+    event.clientX - activePointerGesture.startX,
+    event.clientY - activePointerGesture.startY,
+  ) >= DRAG_START_DISTANCE_PX;
+  if (!activePointerGesture.dragging && exceedsDragDistance) {
+    activePointerGesture.dragging = true;
+  }
+  if (
+    activePointerGesture.dragging
+    && Math.hypot(
+      event.clientX - previousPoint.x,
+      event.clientY - previousPoint.y,
+    ) >= 4
+  ) {
+    activePointerGesture.path.push({
+      x: event.clientX,
+      y: event.clientY,
+      bornAt: now,
+    });
+    while (
+      activePointerGesture.path.length > 1
+      && now - activePointerGesture.path[0].bornAt
+        >= DRAG_TRAIL_LIFETIME_MS
+    ) {
+      activePointerGesture.path.shift();
+    }
+    if (activePointerGesture.path.length > 96) {
+      activePointerGesture.path.shift();
+    }
+  }
+});
+canvas.addEventListener("pointerup", (event) => {
+  if (activePointerGesture?.pointerId !== event.pointerId) return;
+  const gesture = activePointerGesture;
+  activePointerGesture = null;
+  if (canvas.hasPointerCapture(event.pointerId)) {
+    canvas.releasePointerCapture(event.pointerId);
+  }
+  const durationMs = performance.now() - gesture.startedAt;
+  if (gesture.dragging) {
+    const releasedAt = performance.now();
+    gesture.path.push({
+      x: event.clientX,
+      y: event.clientY,
+      bornAt: releasedAt,
+    });
+    while (
+      gesture.path.length > 1
+      && releasedAt - gesture.path[0].bornAt >= DRAG_TRAIL_LIFETIME_MS
+    ) {
+      gesture.path.shift();
+    }
+    sendStimulus("drag", event.clientX, event.clientY, {
+      startPosition: { x: gesture.startX, y: gesture.startY },
+      durationMs,
+      path: gesture.path,
+    });
+  } else if (durationMs >= LONG_PRESS_DURATION_MS) {
+    sendStimulus("long_press", event.clientX, event.clientY, { durationMs });
+  } else {
+    queueTapGesture(event.clientX, event.clientY, performance.now());
+  }
+});
+canvas.addEventListener("pointercancel", (event) => {
+  if (activePointerGesture?.pointerId === event.pointerId) {
+    activePointerGesture = null;
+  }
+});
+canvas.addEventListener("dblclick", (event) => event.preventDefault());
 canvas.addEventListener("keydown", (event) => {
   if (!["Enter", " "].includes(event.key)) return;
   event.preventDefault();
-  sendStimulus(width * .5, height * .49);
+  sendStimulus("tap", width * .5, height * .49);
 });
 addEventListener("resize", resize);
 resize();

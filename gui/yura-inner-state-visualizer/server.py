@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 WEB_ROOT = Path(__file__).parent / "web"
 MAX_STIMULUS_BODY_BYTES = 2048
+SUPPORTED_STIMULI = frozenset({"tap", "double_tap", "long_press", "drag"})
 
 
 class StimulusGateway:
@@ -34,23 +35,44 @@ class StimulusGateway:
         self._minimum_interval_seconds = minimum_interval_seconds
         self._send_datagram = send_datagram or self._send_udp
         self._lock = threading.Lock()
-        self._last_sent_at = -minimum_interval_seconds
+        self._last_sent_at_by_kind: dict[str, float] = {}
 
     def send_tap(self, x: float, y: float) -> bool:
+        return self.send_stimulus("tap", x, y)
+
+    def send_stimulus(
+        self,
+        kind: str,
+        x: float,
+        y: float,
+        *,
+        start_position: tuple[float, float] | None = None,
+        duration_ms: float | None = None,
+    ) -> bool:
+        if kind not in SUPPORTED_STIMULI:
+            return False
         now = monotonic()
         with self._lock:
-            if now - self._last_sent_at < self._minimum_interval_seconds:
+            last_sent_at = self._last_sent_at_by_kind.get(
+                kind, -self._minimum_interval_seconds
+            )
+            if now - last_sent_at < self._minimum_interval_seconds:
                 return False
-            self._last_sent_at = now
-        packet = json.dumps(
-            {
-                "schema_version": 1,
-                "type": "interaction_stimulus",
-                "stimulus_kind": "tap",
-                "position": {"x": x, "y": y},
-            },
-            separators=(",", ":"),
-        ).encode("utf-8")
+            self._last_sent_at_by_kind[kind] = now
+        payload: dict[str, object] = {
+            "schema_version": 1,
+            "type": "interaction_stimulus",
+            "stimulus_kind": kind,
+            "position": {"x": x, "y": y},
+        }
+        if start_position is not None:
+            payload["start_position"] = {
+                "x": start_position[0],
+                "y": start_position[1],
+            }
+        if duration_ms is not None:
+            payload["duration_ms"] = duration_ms
+        packet = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         self._send_datagram(packet, (self._host, self._port))
         return True
 
@@ -146,7 +168,8 @@ def handler_for(
 
         def _stimulus(self) -> None:
             payload = self._read_json()
-            if payload is None or payload.get("kind") != "tap":
+            kind = payload.get("kind") if payload is not None else None
+            if not isinstance(kind, str) or kind not in SUPPORTED_STIMULI:
                 self._json(
                     {"status": "rejected", "reason": "invalid_stimulus"},
                     HTTPStatus.BAD_REQUEST,
@@ -160,6 +183,40 @@ def handler_for(
                     HTTPStatus.BAD_REQUEST,
                 )
                 return
+            start_position = payload.get("start_position")
+            normalized_start: tuple[float, float] | None = None
+            if kind == "drag":
+                if not isinstance(start_position, dict):
+                    self._json(
+                        {"status": "rejected", "reason": "invalid_start_position"},
+                        HTTPStatus.BAD_REQUEST,
+                    )
+                    return
+                start_x = start_position.get("x")
+                start_y = start_position.get("y")
+                if not self._normalized_number(start_x) or not self._normalized_number(
+                    start_y
+                ):
+                    self._json(
+                        {"status": "rejected", "reason": "invalid_start_position"},
+                        HTTPStatus.BAD_REQUEST,
+                    )
+                    return
+                normalized_start = (float(start_x), float(start_y))
+            duration_ms = payload.get("duration_ms")
+            normalized_duration: float | None = None
+            if kind in {"long_press", "drag"}:
+                if (
+                    not isinstance(duration_ms, (int, float))
+                    or isinstance(duration_ms, bool)
+                    or not 0 <= float(duration_ms) <= 10_000
+                ):
+                    self._json(
+                        {"status": "rejected", "reason": "invalid_duration"},
+                        HTTPStatus.BAD_REQUEST,
+                    )
+                    return
+                normalized_duration = float(duration_ms)
             if stimulus_gateway is None:
                 self._json(
                     {"status": "unavailable"},
@@ -167,7 +224,13 @@ def handler_for(
                 )
                 return
             try:
-                accepted = stimulus_gateway.send_tap(float(x), float(y))
+                accepted = stimulus_gateway.send_stimulus(
+                    kind,
+                    float(x),
+                    float(y),
+                    start_position=normalized_start,
+                    duration_ms=normalized_duration,
+                )
             except OSError:
                 self._json(
                     {"status": "unavailable"},
@@ -256,7 +319,9 @@ def handler_for(
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", f"{content_type}; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-cache")
+            # The visualizer is iterated locally; never reuse an older script or
+            # stylesheet after a page reload.
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 

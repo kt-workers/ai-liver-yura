@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#050710" />
+    <title>感情の潮流・表現案 | Yura</title>
+    <link rel="stylesheet" href="/current-concepts.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <span class="eyebrow">YURA / VISUAL STUDY</span>
+        <h1>感情の潮流・表現案</h1>
+        <p>同じ2つの反応感情を、螺旋線を使わずに比較します。</p>
+      </div>
+      <a href="/">こころの潮流へ戻る</a>
+    </header>
+
+    <section class="controls" aria-label="サンプルの感情設定">
+      <label>
+        <span>感情 A</span>
+        <select id="emotionA">
+          <option value="joy">喜び</option>
+          <option value="amusement">愉快</option>
+          <option value="anger">怒り</option>
+          <option value="sadness">悲しみ</option>
+          <option value="fear">恐れ</option>
+          <option value="surprise">驚き</option>
+          <option value="discomfort">不快</option>
+        </select>
+      </label>
+      <label>
+        <span>強さ A <output id="strengthAValue">0.72</output></span>
+        <input id="strengthA" type="range" min="0" max="1" step="0.01" value="0.72" />
+      </label>
+      <label>
+        <span>感情 B</span>
+        <select id="emotionB">
+          <option value="amusement">愉快</option>
+          <option value="joy">喜び</option>
+          <option value="anger">怒り</option>
+          <option value="sadness">悲しみ</option>
+          <option value="fear">恐れ</option>
+          <option value="surprise">驚き</option>
+          <option value="discomfort">不快</option>
+        </select>
+      </label>
+      <label>
+        <span>強さ B <output id="strengthBValue">0.48</output></span>
+        <input id="strengthB" type="range" min="0" max="1" step="0.01" value="0.48" />
+      </label>
+      <label>
+        <span>覚醒度 <output id="arousalValue">0.58</output></span>
+        <input id="arousal" type="range" min="0" max="1" step="0.01" value="0.58" />
+      </label>
+    </section>
+
+    <main>
+      <article>
+        <div class="card-heading">
+          <div><span class="number">01</span><h2>感情の薄膜</h2></div>
+          <span class="tag">柔らかい</span>
+        </div>
+        <canvas class="concept-canvas" data-concept="membrane"></canvas>
+        <p>球面に半透明の帯を沿わせる案。混ざり合いを自然に見せやすい一方、低い強度では色の識別が弱くなります。</p>
+      </article>
+
+      <article>
+        <div class="card-heading">
+          <div><span class="number">02</span><h2>光点の流れ</h2></div>
+          <span class="tag recommended">推奨候補</span>
+        </div>
+        <canvas class="concept-canvas" data-concept="stream"></canvas>
+        <p>線を使わず、感情ごとの光点が球面を流れる案。粒子球との親和性が高く、感情の交代をフェードで処理しやすい表現です。</p>
+      </article>
+
+      <article>
+        <div class="card-heading">
+          <div><span class="number">03</span><h2>分節された環</h2></div>
+          <span class="tag">読みやすい</span>
+        </div>
+        <canvas class="concept-canvas" data-concept="orbit"></canvas>
+        <p>途切れた軌道を異なる傾きで配置する案。前後と感情の区別が明確で、強度を線分数や光量へ割り当てられます。</p>
+      </article>
+
+      <article>
+        <div class="card-heading">
+          <div><span class="number">04</span><h2>球面の脈</h2></div>
+          <span class="tag">内面的</span>
+        </div>
+        <canvas class="concept-canvas" data-concept="pulse"></canvas>
+        <p>感情が生じている領域を、球面上の同心波として表す案。刺激への反応と馴染みますが、感情の持続的な流れは弱くなります。</p>
+      </article>
+
+      <article>
+        <div class="card-heading">
+          <div><span class="number">05</span><h2>内側の色雲</h2></div>
+          <span class="tag">混ざり合う</span>
+        </div>
+        <canvas class="concept-canvas" data-concept="cloud"></canvas>
+        <p>球の内側に半透明の色雲を浮かべる案。混合感情を連続的に表しやすく、粒子の輪郭を妨げにくい表現です。</p>
+      </article>
+
+      <article>
+        <div class="card-heading">
+          <div><span class="number">06</span><h2>感情の群島</h2></div>
+          <span class="tag recommended">推奨候補</span>
+        </div>
+        <canvas class="concept-canvas" data-concept="cluster"></canvas>
+        <p>感情ごとの粒子群を球面の異なる領域へ集める案。既存の粒子表現を活かしながら、感情の個体と位置を安定して保てます。</p>
+      </article>
+
+      <article>
+        <div class="card-heading">
+          <div><span class="number">07</span><h2>浮遊する光核</h2></div>
+          <span class="tag">象徴的</span>
+        </div>
+        <canvas class="concept-canvas" data-concept="core"></canvas>
+        <p>球の内部に感情ごとの小さな核を浮かべる案。識別しやすく静かな一方、感情が球全体へ及ぼす影響は抽象的になります。</p>
+      </article>
+
+      <article>
+        <div class="card-heading">
+          <div><span class="number">08</span><h2>表面の発光域</h2></div>
+          <span class="tag">有機的</span>
+        </div>
+        <canvas class="concept-canvas" data-concept="patch"></canvas>
+        <p>球面の一部が感情色に染まり、ゆっくり呼吸する案。線を完全に排し、感情を局所的な温度や気配として表現します。</p>
+      </article>
+
+      <article>
+        <div class="card-heading">
+          <div><span class="number">09</span><h2>二色の感情粒子</h2></div>
+          <span class="tag recommended">採用案</span>
+        </div>
+        <canvas class="concept-canvas" data-concept="particle-split"></canvas>
+        <p>球全体の粒子を、個数と分布が均等な2群へ固定分割する案。それぞれを感情色で描き、各感情の強さを粒径へ、感情の種類を微妙な回転速度差へ反映します。</p>
+      </article>
+    </main>
+
+    <footer>
+      <p>サンプルでは感情の位相を種類ごとに固定し、すべて粒子球と同じ方向へ回転させています。</p>
+    </footer>
+    <script type="module" src="/current-concepts.js"></script>
+  </body>
+</html>
