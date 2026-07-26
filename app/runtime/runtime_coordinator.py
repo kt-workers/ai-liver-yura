@@ -65,6 +65,7 @@ from app.runtime.event_ingress_processor import EventIngressProcessor
 from app.runtime.event_prioritizer import DefaultEventPrioritizer, EventPrioritizer
 from app.runtime.event_queue import EventQueue
 from app.runtime.event_subscriber_registry import EventSubscriberRegistry
+from app.runtime.event_type_router import EventTypeRouter
 from app.runtime.ongoing_activity_coordinator import OngoingActivityCoordinator
 from app.runtime.pending_confirmation import (
     ConfirmationResolver,
@@ -126,6 +127,7 @@ class RuntimeCoordinator:
         event_subscriber_registry: EventSubscriberRegistry | None = None,
         event_ingress_processor: EventIngressProcessor | None = None,
         event_dispatch_processor: EventDispatchProcessor | None = None,
+        event_type_router: EventTypeRouter | None = None,
         user_input_interruption_coordinator: (
             UserInputInterruptionCoordinator | None
         ) = None,
@@ -203,6 +205,21 @@ class RuntimeCoordinator:
                 activity_executor_thread=self._activity_executor_thread,
                 agent_life_service=self._agent_life_service,
                 trace_logger=self._trace_logger,
+            )
+        )
+        self._event_type_router = (
+            event_type_router
+            or EventTypeRouter(
+                user_input_interruption_coordinator=(
+                    self._user_input_interruption_coordinator
+                ),
+                user_input_event_logger=self._user_input_event_logger,
+                user_input_event_router=self._user_input_event_router,
+                behavior_router=self._route_behavior,
+                behavior_routing_available=lambda: (
+                    self._behavior_planner is not None
+                    and self._activity_plan_validator is not None
+                ),
             )
         )
         self._event_dispatch_processor = (
@@ -396,27 +413,13 @@ class RuntimeCoordinator:
             if filtered_event is None or ingress_result.consumed:
                 continue
             foreground_at_receipt = ingress_result.foreground_at_receipt
-            if filtered_event.event_type == AgentEventType.USER_TEXT:
-                self._user_input_interruption_coordinator.before_routing(
-                    filtered_event,
-                    foreground_at_receipt=foreground_at_receipt,
-                )
-                self._user_input_event_logger.log(filtered_event)
-                routed_event = await self._user_input_event_router.route(
-                    filtered_event
-                )
-                if routed_event is None:
-                    continue
-                filtered_event = routed_event
-            elif (
-                filtered_event.event_type == AgentEventType.APP_STARTED
-                and self._behavior_planner is not None
-                and self._activity_plan_validator is not None
-            ):
-                routed_event = await self._route_behavior(filtered_event)
-                if routed_event is None:
-                    continue
-                filtered_event = routed_event
+            routed_event = await self._event_type_router.route(
+                filtered_event,
+                foreground_at_receipt=foreground_at_receipt,
+            )
+            if routed_event is None:
+                continue
+            filtered_event = routed_event
             self._event_dispatch_processor.process(
                 original_event=event,
                 routed_event=filtered_event,
