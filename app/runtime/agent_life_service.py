@@ -25,6 +25,7 @@ from app.runtime.activity_state_synchronizer import ActivityStateSynchronizer
 from app.runtime.agent_event_state_updater import AgentEventStateUpdater
 from app.runtime.agent_state import AgentState
 from app.runtime.autonomous_activity_policy import AutonomousActivityPolicy
+from app.runtime.autonomous_event_planner import AutonomousEventPlanner
 from app.runtime.autonomous_plan_state import AutonomousPlanState
 from app.runtime.conversation_resume_state import ConversationResumeState
 from app.runtime.drive_state_updater import DriveStateUpdater
@@ -69,6 +70,7 @@ class AgentLifeService:
         autonomous_plan_state: AutonomousPlanState | None = None,
         conversation_resume_state: ConversationResumeState | None = None,
         elapsed_state_updater: ElapsedStateUpdater | None = None,
+        autonomous_event_planner: AutonomousEventPlanner | None = None,
         state_observer: Callable[[AgentState], None] | None = None,
     ) -> None:
         self._activity_manager = activity_manager
@@ -111,6 +113,21 @@ class AgentLifeService:
         )
         self._autonomous_activity_policy = (
             autonomous_activity_policy or AutonomousActivityPolicy()
+        )
+        self._autonomous_event_planner = (
+            autonomous_event_planner
+            or AutonomousEventPlanner(
+                activity_manager,
+                autonomous_activity_policy=self._autonomous_activity_policy,
+                autonomous_plan_state=self._autonomous_plan_state,
+                conversation_resume_state=self._conversation_resume_state,
+                pending_confirmation_provider=(
+                    self._pending_confirmation_provider
+                ),
+                conversation_idle_timeout_seconds=(
+                    self._conversation_idle_timeout_seconds
+                ),
+            )
         )
         self._agent_memory_store = agent_memory_store
         self._processed_event_registry = (
@@ -341,248 +358,20 @@ class AgentLifeService:
             emotion_talkativeness=self._agent_state.current_emotion.talkativeness,
         )
 
-        if self._pending_confirmation_provider():
-            self._trace_logger.debug(
-                "agent_life_service:plan_next_event:skipped",
-                reason="pending_confirmation_exists",
-            )
-            return None
-
-        active_activity = self._agent_state.active_activity
-        is_autonomous_lookahead = (
-            active_activity is not None
-            and active_activity.activity_type == ActivityType.AUTONOMOUS_TALK
-            and active_activity.context.get("action_plan_prepared") is True
-            and self._activity_manager.pending_turn_count(active_activity.activity_id)
-            < 2
-            and not self._activity_manager.activity_completion_requested(
-                active_activity.activity_id
-            )
-            and not self._agent_state.pending_activities
-            and not self._agent_state.suspended_activities
-        )
-
-        if active_activity is not None and not is_autonomous_lookahead:
-            self._trace_logger.write(
-                "agent_life_service:plan_next_event:skipped",
-                reason="active_activity_exists",
-                active_activity_type=active_activity.activity_type.value,
-            )
-            return None
-
-        if self._agent_state.pending_activities:
-            self._trace_logger.write(
-                "agent_life_service:plan_next_event:skipped",
-                reason="pending_activity_exists",
-                pending_activity_count=len(self._agent_state.pending_activities),
-            )
-            return None
-
-        ongoing_activity = self._activity_manager.ongoing_activity
-        if ongoing_activity is not None:
-            self._conversation_resume_state.observe_ongoing_activity(
-                ongoing_activity.ongoing_activity_id
-            )
-            self._trace_logger.debug(
-                "agent_life_service:plan_next_event:skipped",
-                reason="ongoing_activity_active",
-                ongoing_activity_id=ongoing_activity.ongoing_activity_id,
-                ongoing_activity_type=ongoing_activity.activity_type,
-            )
-            return None
-
-        awakening_settle_seconds = (
-            self._autonomous_activity_policy.awakening_settle_seconds(
-                self._agent_state.current_emotion
-            )
-        )
-        if self._is_within_pause(
-            since=self._awakening_completed_at,
+        result = self._autonomous_event_planner.plan(
+            self._agent_state,
             now=now,
-            pause_seconds=awakening_settle_seconds,
-        ):
-            self._trace_logger.debug(
-                "agent_life_service:plan_next_event:skipped",
-                reason="awakening_settle",
-                awakening_completed_at=self._awakening_completed_at,
-                settle_seconds=awakening_settle_seconds,
-                emotion_arousal=self._agent_state.current_emotion.arousal,
-                emotion_talkativeness=(
-                    self._agent_state.current_emotion.talkativeness
-                ),
-            )
-            return None
-
-        resume_reason = self._conversation_resume_reason(now)
-        if resume_reason is None and self._is_within_pause(
-            since=self._agent_state.last_user_input_at,
-            now=now,
-            pause_seconds=self._conversation_idle_timeout_seconds,
-        ):
-            self._trace_logger.debug(
-                "agent_life_service:plan_next_event:skipped",
-                reason="conversation_idle_timeout_not_reached",
-                last_user_input_at=self._agent_state.last_user_input_at,
-                conversation_idle_timeout_seconds=self._conversation_idle_timeout_seconds,
-            )
-            return None
-
-        continuation_result = self._evaluate_topic_continuation(now)
-        if continuation_result is not None and continuation_result.decision in {
-            TopicContinuationDecision.WAIT,
-            TopicContinuationDecision.SUSPEND_ORIGINAL,
-            TopicContinuationDecision.ABANDON_ORIGINAL,
-        }:
-            self._trace_logger.debug(
-                "agent_life_service:topic_continuation:no_event",
-                topic_id=(
-                    self._autonomous_topic.topic_id if self._autonomous_topic else None
-                ),
-                decision=continuation_result.decision.value,
-                reasons=list(continuation_result.reasons),
-            )
-            return None
-
-        if self._autonomous_activity_policy.should_defer_talking(
-            self._agent_state.current_emotion
-        ):
-            self._trace_logger.write(
-                "agent_life_service:plan_next_event:skipped",
-                reason="emotion_reduces_speech",
-                emotion_mood=self._agent_state.current_emotion.mood.value,
-                emotion_talkativeness=self._agent_state.current_emotion.talkativeness,
-            )
-            return None
-
-        if not self._agent_state.current_drive.should_start_autonomous_talk():
-            self._trace_logger.write(
-                "agent_life_service:plan_next_event:skipped",
-                reason="drive_too_weak",
-                drive_curiosity=self._agent_state.current_drive.curiosity,
-                drive_engagement=self._agent_state.current_drive.engagement,
-                drive_boredom=self._agent_state.current_drive.boredom,
-                drive_energy=self._agent_state.current_drive.energy,
-            )
-            return None
-
-        minimum_pause_seconds = (
-            self._autonomous_activity_policy.minimum_talk_interval_seconds(
-                self._agent_state.current_emotion
-            )
+            awakening_completed_at=self._awakening_completed_at,
+            continuation_provider=lambda: self._evaluate_topic_continuation(now),
+            autonomous_topic_provider=lambda: self._autonomous_topic,
         )
-
-        if not is_autonomous_lookahead and self._is_within_pause(
-            since=self._agent_state.last_speech_finished_at,
-            now=now,
-            pause_seconds=minimum_pause_seconds,
-        ):
-            self._trace_logger.write(
-                "agent_life_service:plan_next_event:skipped",
-                reason="after_speech_pause",
-                pause_seconds=minimum_pause_seconds,
-                last_speech_finished_at=self._agent_state.last_speech_finished_at,
-            )
-            return None
-
-        if (
-            not is_autonomous_lookahead
-            and resume_reason is None
-            and self._is_within_pause(
-                since=self._agent_state.last_user_input_at,
-                now=now,
-                pause_seconds=minimum_pause_seconds,
-            )
-        ):
-            self._trace_logger.write(
-                "agent_life_service:plan_next_event:skipped",
-                reason="after_user_input_pause",
-                pause_seconds=minimum_pause_seconds,
-                last_user_input_at=self._agent_state.last_user_input_at,
-            )
-            return None
-
-        autonomous_talk_interval_seconds = self._autonomous_talk_interval_seconds()
-        if self._autonomous_plan_state.is_retry_backoff_active(now):
-            self._trace_logger.write(
-                "agent_life_service:plan_next_event:skipped",
-                reason="autonomous_plan_retry_backoff",
-                backoff_seconds=self._autonomous_plan_state.reconsider_after_seconds,
-                last_rejected_at=self._autonomous_plan_state.last_rejected_at,
-            )
-            return None
-        if (
-            not is_autonomous_lookahead
-            and self._autonomous_plan_state.is_talk_interval_active(
-                now, autonomous_talk_interval_seconds
-            )
-        ):
-            self._trace_logger.write(
-                "agent_life_service:plan_next_event:skipped",
-                reason="autonomous_talk_interval",
-                interval_seconds=autonomous_talk_interval_seconds,
-                last_autonomous_talk_planned_at=self._autonomous_plan_state.last_accepted_at,
-                emotion_arousal=self._agent_state.current_emotion.arousal,
-                emotion_talkativeness=self._agent_state.current_emotion.talkativeness,
-                drive_energy=self._agent_state.current_drive.energy,
-            )
-            return None
-
-        self._trace_logger.write(
-            "agent_life_service:plan_next_event:planned",
-            event_type=AgentEventType.CURIOSITY_PEAK.value,
-            reason="internal_drive",
-            drive=self._agent_state.current_drive.strongest_drive_name(),
-            drive_curiosity=self._agent_state.current_drive.curiosity,
-            drive_engagement=self._agent_state.current_drive.engagement,
-            drive_boredom=self._agent_state.current_drive.boredom,
-            drive_energy=self._agent_state.current_drive.energy,
-            autonomous_talk_interval_seconds=autonomous_talk_interval_seconds,
-            emotion_arousal=self._agent_state.current_emotion.arousal,
-            emotion_talkativeness=self._agent_state.current_emotion.talkativeness,
-            resume_reason=resume_reason,
+        log_method = (
+            self._trace_logger.debug
+            if result.log_level == "debug"
+            else self._trace_logger.write
         )
-
-        payload: dict[str, Any] = {
-            "reason": "internal_drive",
-            "drive": self._agent_state.current_drive.strongest_drive_name(),
-            "autonomous_planned_for": now.isoformat(),
-            "interaction_environment": {
-                "observation_source": "internal_state",
-                "input_authority_role": "system",
-                "direct_user_addressed": False,
-                "ambient_activity_observed": False,
-                "foreground_activity_kind": None,
-                "interruption_cost": "unknown",
-            },
-        }
-        if is_autonomous_lookahead:
-            # 同じActivity内のTurn間隔は、前Turnの発声後pauseで決める。
-            # 先読み時点の絶対時刻を予約すると、LLM/TTS待ちが未来へ累積する。
-            payload["lookahead"] = True
-        if resume_reason is not None and resume_reason != "no_conversation":
-            payload["resume_reason"] = resume_reason
-        if continuation_result is not None:
-            payload.update(
-                {
-                    "continuation_decision": continuation_result.decision.value,
-                    "continuation_reasons": list(continuation_result.reasons),
-                    "reintroduction_required": continuation_result.reintroduction_required,
-                    "selected_topic": continuation_result.selected_topic,
-                    "interrupted_topic": (
-                        self._autonomous_topic.original_text
-                        if self._autonomous_topic is not None
-                        else None
-                    ),
-                }
-            )
-
-        return AgentEvent(
-            event_type=AgentEventType.CURIOSITY_PEAK,
-            payload=payload,
-            priority=10,
-            discardable=True,
-            replace_key="agent_life_service:curiosity_peak",
-        )
+        log_method(result.log_event, **result.details)
+        return result.event
 
     def end_conversation(self, *, reason: str) -> None:
         """明示的な会話終了後、次回の自律計画を許可する。"""
@@ -591,13 +380,6 @@ class AgentLifeService:
         self._trace_logger.info(
             "agent_life_service:conversation:ended",
             reason=reason,
-        )
-
-    def _conversation_resume_reason(self, now: datetime) -> str | None:
-        return self._conversation_resume_state.resolve_reason(
-            last_user_input_at=self._agent_state.last_user_input_at,
-            now=now,
-            idle_timeout_seconds=self._conversation_idle_timeout_seconds,
         )
 
     def handle_event(self, event: AgentEvent) -> AgentState:
@@ -905,30 +687,3 @@ class AgentLifeService:
                 before_talkativeness=result.before_emotion.talkativeness,
                 after_talkativeness=result.after_emotion.talkativeness,
             )
-
-    def _autonomous_talk_interval_seconds(self) -> float:
-        """テンションから次の自律発話までの最低間隔を決める。"""
-
-        emotion = self._agent_state.current_emotion
-        drive = self._agent_state.current_drive
-        tension = (
-            emotion.arousal * 0.45 + emotion.talkativeness * 0.45 + drive.energy * 0.10
-        )
-        tension = max(0.0, min(1.0, tension))
-
-        minimum_interval_seconds = 8.0
-        maximum_interval_seconds = 60.0
-        return maximum_interval_seconds - (
-            (maximum_interval_seconds - minimum_interval_seconds) * tension
-        )
-
-    def _is_within_pause(
-        self,
-        since: datetime | None,
-        now: datetime,
-        pause_seconds: float,
-    ) -> bool:
-        if since is None:
-            return False
-
-        return (now - since).total_seconds() < pause_seconds
