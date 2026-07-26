@@ -60,6 +60,7 @@ from app.runtime.buffered_event_dispatcher import BufferedEventDispatcher
 from app.runtime.conversation_input_recorder import ConversationInputRecorder
 from app.runtime.event_buffer import EventBuffer
 from app.runtime.event_filter import DefaultEventFilter, EventFilter
+from app.runtime.event_ingress_processor import EventIngressProcessor
 from app.runtime.event_prioritizer import DefaultEventPrioritizer, EventPrioritizer
 from app.runtime.event_queue import EventQueue
 from app.runtime.event_subscriber_registry import EventSubscriberRegistry
@@ -122,6 +123,7 @@ class RuntimeCoordinator:
             RuntimeDiagnosticSnapshotBuilder | None
         ) = None,
         event_subscriber_registry: EventSubscriberRegistry | None = None,
+        event_ingress_processor: EventIngressProcessor | None = None,
         user_input_interruption_coordinator: (
             UserInputInterruptionCoordinator | None
         ) = None,
@@ -205,6 +207,16 @@ class RuntimeCoordinator:
         self._conversation_input_recorder = (
             conversation_input_recorder
             or ConversationInputRecorder(self._conversation_logger)
+        )
+        self._event_ingress_processor = (
+            event_ingress_processor
+            or EventIngressProcessor(
+                event_filter=self._event_filter,
+                activity_manager=self._activity_manager,
+                conversation_input_recorder=self._conversation_input_recorder,
+                agent_life_service=self._agent_life_service,
+                event_subscriber_registry=self._event_subscriber_registry,
+            )
         )
         self._event_enrichers: list[Callable[[AgentEvent], AgentEvent]] = []
         self._autonomous_planning_enabled = autonomous_planning_enabled
@@ -365,14 +377,11 @@ class RuntimeCoordinator:
             event_count=len(events),
         )
         for event in events:
-            filtered_event = self._event_filter.filter(event)
-            if filtered_event is None:
+            ingress_result = await self._event_ingress_processor.process(event)
+            filtered_event = ingress_result.event
+            if filtered_event is None or ingress_result.consumed:
                 continue
-            foreground_at_receipt = self._activity_manager.foreground_activity
-            self._conversation_input_recorder.record(filtered_event)
-            self._agent_life_service.handle_event(filtered_event)
-            if await self._event_subscriber_registry.dispatch(filtered_event):
-                continue
+            foreground_at_receipt = ingress_result.foreground_at_receipt
             if filtered_event.event_type == AgentEventType.USER_TEXT:
                 self._user_input_interruption_coordinator.before_routing(
                     filtered_event,
