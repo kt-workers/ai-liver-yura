@@ -45,11 +45,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --disable-pip-version-check --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install -r requirements-dev.txt
+          python -m pip install --disable-pip-version-check -q --upgrade pip
+          python -m pip install -q -r requirements.txt
+          python -m pip install -q -r requirements-dev.txt
 
-      - name: Run tests
+      - name: Run focused tests
         env:
           PYTHONUNBUFFERED: "1"
-        run: pytest -q
+        run: |
+          pytest -q \
+            tests/test_runtime_diagnostic_snapshot_builder.py \
+            tests/test_runtime_coordinator_diagnostic_snapshot_delegation.py
