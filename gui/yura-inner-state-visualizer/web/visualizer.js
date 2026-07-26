@@ -26,6 +26,7 @@ let lastStateAt = 0;
 let sourceAvailable = false;
 let streamConnected = false;
 let signalPresence = 0;
+let rotationYAngle = 0;
 let nextBubbleAt = 0;
 const bubbles = [];
 const STATE_TIMEOUT_MS = 45000;
@@ -283,7 +284,8 @@ function render(now) {
   const talking = display.emotion.talkativeness;
   const baseRadius = Math.min(width, height) * (.18 + curiosity * .09 + energy * .025);
   const speed = reduceMotion ? .025 : .045 + arousal * .23;
-  const rotationY = t * speed;
+  rotationYAngle = (rotationYAngle + speed * dt) % (Math.PI * 2);
+  const rotationY = rotationYAngle;
   const rotationX = Math.sin(t * .12) * (.08 + arousal * .08);
   const flatten = 1 - boredom * .24;
   const pulse = 1 + Math.sin(t * (0.6 + arousal * 2.4)) * (.008 + arousal * .022);
