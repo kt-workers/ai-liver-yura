@@ -133,7 +133,7 @@ async def test_app_started_passes_through_when_behavior_routing_is_unavailable()
 @pytest.mark.asyncio
 async def test_other_event_types_pass_through_without_routing() -> None:
     calls: list[str] = []
-    source = AgentEvent(event_type=AgentEventType.APP_STOPPING, payload={})
+    source = AgentEvent(event_type=AgentEventType.SYSTEM_STOPPED, payload={})
     router = EventTypeRouter(
         user_input_interruption_coordinator=_InterruptionCoordinator(calls),  # type: ignore[arg-type]
         user_input_event_logger=_Logger(calls),  # type: ignore[arg-type]
