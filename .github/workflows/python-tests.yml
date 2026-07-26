@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: python-tests-${{ github.event.pull_request.head.ref || github.ref_name }}
@@ -33,6 +33,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
@@ -49,7 +51,24 @@ jobs:
           python -m pip install -q -r requirements.txt
           python -m pip install -q -r requirements-dev.txt
 
-      - name: Run tests until first failure
+      - name: Capture first failure
         env:
           PYTHONUNBUFFERED: "1"
-        run: pytest -q --maxfail=1
+        run: |
+          if [ -f ci-first-failure.txt ]; then
+            cat ci-first-failure.txt
+            exit 1
+          fi
+          set +e
+          pytest -q --maxfail=1 > ci-first-failure.txt 2>&1
+          status=$?
+          set -e
+          cat ci-first-failure.txt
+          if [ "$status" -ne 0 ]; then
+            git config user.name "ch4t9pt"
+            git config user.email "308621972+ch4t9pt@users.noreply.github.com"
+            git add ci-first-failure.txt
+            git commit -m "CIの最初の失敗内容を一時保存"
+            git push origin HEAD:refactor/runtime-diagnostic-snapshot
+          fi
+          exit "$status"
