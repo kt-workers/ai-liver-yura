@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 from queue import Queue
+from unittest.mock import Mock
 
-from app.runtime.action_planner import ActionPlanner
-from app.runtime.action_scheduler import ActionScheduler
-from app.runtime.activity_executor_thread import ActivityExecutorThread
 from app.runtime.activity_manager import ActivityManager
-from app.runtime.activity_planner_thread import ActivityPlannerThread
 from app.runtime.event_queue import EventQueue
 from app.runtime.runtime_coordinator import RuntimeCoordinator
 
@@ -20,24 +17,17 @@ class StubSnapshotBuilder:
         return {"delegated": True}
 
 
-class StubActionPlanner(ActionPlanner):
-    pass
-
-
-class StubActionScheduler(ActionScheduler):
-    pass
-
-
-def test_runtime_coordinator_delegates_diagnostic_snapshot(runtime_components) -> None:
+def test_runtime_coordinator_delegates_diagnostic_snapshot() -> None:
     builder = StubSnapshotBuilder()
+    activity_manager = ActivityManager()
     coordinator = RuntimeCoordinator(
-        runtime_components.event_queue,
-        runtime_components.activity_manager,
-        runtime_components.action_planner,
-        runtime_components.action_scheduler,
-        runtime_components.activity_planning_request_queue,
-        runtime_components.activity_planner_thread,
-        runtime_components.activity_executor_thread,
+        event_queue=EventQueue(),
+        activity_manager=activity_manager,
+        action_planner=Mock(),
+        action_scheduler=Mock(),
+        activity_planning_request_queue=Queue(),
+        activity_planner_thread=Mock(),
+        activity_executor_thread=Mock(),
         runtime_diagnostic_snapshot_builder=builder,
     )
 
@@ -45,5 +35,6 @@ def test_runtime_coordinator_delegates_diagnostic_snapshot(runtime_components) -
 
     assert result == {"delegated": True}
     assert len(builder.calls) == 1
-    assert builder.calls[0]["activity_manager"] is runtime_components.activity_manager
+    assert builder.calls[0]["state"] is coordinator.agent_state
+    assert builder.calls[0]["activity_manager"] is activity_manager
     assert builder.calls[0]["plugin_manager"] is None
