@@ -26,37 +26,38 @@ def build_planner(
     )
 
 
-def test_pending_confirmation_skips_autonomous_event() -> None:
-    now = datetime(2026, 7, 26, 12, 0, tzinfo=timezone.utc)
-    planner = build_planner(pending_confirmation=True)
-
-    result = planner.plan(
-        AgentState(current_drive=DriveState(curiosity=0.9, energy=0.9)),
+def plan(planner: AutonomousEventPlanner, state: AgentState, now: datetime):
+    return planner.plan(
+        state,
         now=now,
         awakening_completed_at=None,
-        continuation_result=None,
-        autonomous_topic=None,
+        continuation_provider=lambda: None,
+        autonomous_topic_provider=lambda: None,
+    )
+
+
+def test_pending_confirmation_skips_autonomous_event() -> None:
+    now = datetime(2026, 7, 26, 12, 0, tzinfo=timezone.utc)
+
+    result = plan(
+        build_planner(pending_confirmation=True),
+        AgentState(current_drive=DriveState(curiosity=0.9, energy=0.9)),
+        now,
     )
 
     assert result.event is None
     assert result.skip_reason == "pending_confirmation_exists"
+    assert result.log_level == "debug"
 
 
 def test_recent_user_input_waits_for_idle_timeout() -> None:
     now = datetime(2026, 7, 26, 12, 0, tzinfo=timezone.utc)
-    planner = build_planner(idle_timeout_seconds=30.0)
     state = AgentState(
         current_drive=DriveState(curiosity=0.9, energy=0.9),
         last_user_input_at=now - timedelta(seconds=10),
     )
 
-    result = planner.plan(
-        state,
-        now=now,
-        awakening_completed_at=None,
-        continuation_result=None,
-        autonomous_topic=None,
-    )
+    result = plan(build_planner(idle_timeout_seconds=30.0), state, now)
 
     assert result.event is None
     assert result.skip_reason == "conversation_idle_timeout_not_reached"
@@ -64,16 +65,9 @@ def test_recent_user_input_waits_for_idle_timeout() -> None:
 
 def test_strong_drive_creates_curiosity_peak_event() -> None:
     now = datetime(2026, 7, 26, 12, 0, tzinfo=timezone.utc)
-    planner = build_planner()
     state = AgentState(current_drive=DriveState(curiosity=0.9, energy=0.9))
 
-    result = planner.plan(
-        state,
-        now=now,
-        awakening_completed_at=None,
-        continuation_result=None,
-        autonomous_topic=None,
-    )
+    result = plan(build_planner(), state, now)
 
     assert result.planned is True
     assert result.event is not None
@@ -83,6 +77,7 @@ def test_strong_drive_creates_curiosity_peak_event() -> None:
     assert "resume_reason" not in result.event.payload
     assert result.event.discardable is True
     assert result.event.replace_key == "agent_life_service:curiosity_peak"
+    assert result.log_event == "agent_life_service:plan_next_event:planned"
 
 
 def test_retry_backoff_skips_autonomous_event() -> None:
@@ -91,16 +86,34 @@ def test_retry_backoff_skips_autonomous_event() -> None:
         last_rejected_at=now - timedelta(seconds=2),
         reconsider_after_seconds=10.0,
     )
-    planner = build_planner(plan_state=plan_state)
 
-    result = planner.plan(
+    result = plan(
+        build_planner(plan_state=plan_state),
         AgentState(current_drive=DriveState(curiosity=0.9, energy=0.9)),
-        now=now,
-        awakening_completed_at=None,
-        continuation_result=None,
-        autonomous_topic=None,
+        now,
     )
 
     assert result.event is None
     assert result.skip_reason == "autonomous_plan_retry_backoff"
     assert result.details["backoff_seconds"] == 10.0
+
+
+def test_early_skip_does_not_evaluate_topic_continuation() -> None:
+    now = datetime(2026, 7, 26, 12, 0, tzinfo=timezone.utc)
+    continuation_calls = 0
+
+    def continuation_provider():
+        nonlocal continuation_calls
+        continuation_calls += 1
+        return None
+
+    result = build_planner(pending_confirmation=True).plan(
+        AgentState(current_drive=DriveState(curiosity=0.9, energy=0.9)),
+        now=now,
+        awakening_completed_at=None,
+        continuation_provider=continuation_provider,
+        autonomous_topic_provider=lambda: None,
+    )
+
+    assert result.skip_reason == "pending_confirmation_exists"
+    assert continuation_calls == 0
