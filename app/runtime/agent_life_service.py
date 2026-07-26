@@ -30,6 +30,7 @@ from app.runtime.conversation_resume_state import ConversationResumeState
 from app.runtime.drive_state_updater import DriveStateUpdater
 from app.runtime.emotion_appraiser import EmotionAppraiser
 from app.runtime.emotion_state_updater import EmotionStateUpdater
+from app.runtime.elapsed_state_updater import ElapsedStateUpdater
 from app.runtime.processed_event_registry import ProcessedEventRegistry
 from app.runtime.relationship_state_updater import RelationshipStateUpdater
 from app.runtime.topic_continuation_evaluator import TopicContinuationEvaluator
@@ -67,20 +68,28 @@ class AgentLifeService:
         agent_event_state_updater: AgentEventStateUpdater | None = None,
         autonomous_plan_state: AutonomousPlanState | None = None,
         conversation_resume_state: ConversationResumeState | None = None,
+        elapsed_state_updater: ElapsedStateUpdater | None = None,
         state_observer: Callable[[AgentState], None] | None = None,
     ) -> None:
         self._activity_manager = activity_manager
         self._agent_state = initial_state or AgentState()
         self._drive_state_updater = drive_state_updater or DriveStateUpdater()
-        self._last_drive_updated_at = now or datetime.now(timezone.utc)
+        initial_time = now or datetime.now(timezone.utc)
         self._emotion_appraiser = emotion_appraiser or EmotionAppraiser()
         self._emotion_state_updater = emotion_state_updater or EmotionStateUpdater()
+        self._elapsed_state_updater = (
+            elapsed_state_updater
+            or ElapsedStateUpdater(
+                initial_time=initial_time,
+                drive_state_updater=self._drive_state_updater,
+                emotion_state_updater=self._emotion_state_updater,
+            )
+        )
         self._relationship_state_updater = (
             relationship_state_updater or RelationshipStateUpdater()
         )
         self._relationship_memory_store = relationship_memory_store
         self._short_term_memory = short_term_memory
-        self._last_emotion_updated_at = self._last_drive_updated_at
         self._awakening_completed_at: datetime | None = None
         self._autonomous_plan_state = (
             autonomous_plan_state
@@ -317,8 +326,7 @@ class AgentLifeService:
         """現在状態から、次に発生させる自律 Event を判断する。"""
 
         now = now or datetime.now(timezone.utc)
-        self._update_drive_by_elapsed_time(now)
-        self._update_emotion_by_elapsed_time(now)
+        self._update_state_by_elapsed_time(now)
         self.sync_from_activity_manager()
         self._trace_logger.write(
             "agent_life_service:plan_next_event:start",
@@ -617,10 +625,7 @@ class AgentLifeService:
             event,
         )
         self._agent_state = update_result.state
-        self._last_emotion_updated_at = max(
-            self._last_emotion_updated_at,
-            event.occurred_at,
-        )
+        self._elapsed_state_updater.record_event(event.occurred_at)
 
         self._trace_logger.write(
             "agent_life_service:handle_event:drive_updated",
@@ -872,52 +877,33 @@ class AgentLifeService:
         )
         return max(0.0, min(1.0, (similarity - 0.45) / 0.45))
 
-    def _update_drive_by_elapsed_time(self, now: datetime) -> None:
-        before_drive = self._agent_state.current_drive
-        elapsed_seconds = (now - self._last_drive_updated_at).total_seconds()
-        updated_drive = self._drive_state_updater.update_by_timestamps(
-            self._agent_state.current_drive,
-            previous_time=self._last_drive_updated_at,
-            current_time=now,
-        )
-        self._agent_state = self._agent_state.with_drive(updated_drive)
-        self._last_drive_updated_at = now
-        after_drive = self._agent_state.current_drive
+    def _update_state_by_elapsed_time(self, now: datetime) -> None:
+        result = self._elapsed_state_updater.update(self._agent_state, now=now)
+        self._agent_state = result.state
         self._trace_logger.write(
             "agent_life_service:drive_updated_by_elapsed_time",
-            elapsed_seconds=elapsed_seconds,
-            before_curiosity=before_drive.curiosity,
-            before_engagement=before_drive.engagement,
-            before_boredom=before_drive.boredom,
-            before_energy=before_drive.energy,
-            after_curiosity=after_drive.curiosity,
-            after_engagement=after_drive.engagement,
-            after_boredom=after_drive.boredom,
-            after_energy=after_drive.energy,
+            elapsed_seconds=result.drive_elapsed_seconds,
+            before_curiosity=result.before_drive.curiosity,
+            before_engagement=result.before_drive.engagement,
+            before_boredom=result.before_drive.boredom,
+            before_energy=result.before_drive.energy,
+            after_curiosity=result.after_drive.curiosity,
+            after_engagement=result.after_drive.engagement,
+            after_boredom=result.after_drive.boredom,
+            after_energy=result.after_drive.energy,
         )
-
-    def _update_emotion_by_elapsed_time(self, now: datetime) -> None:
-        before = self._agent_state.current_emotion
-        elapsed_seconds = max(
-            0.0, (now - self._last_emotion_updated_at).total_seconds()
-        )
-        after = self._emotion_state_updater.decay(
-            before, elapsed_seconds=elapsed_seconds
-        )
-        self._agent_state = self._agent_state.with_emotion(after)
-        self._last_emotion_updated_at = max(self._last_emotion_updated_at, now)
-        if after != before:
+        if result.emotion_changed:
             self._trace_logger.debug(
                 "agent_life_service:emotion_decayed",
-                elapsed_seconds=elapsed_seconds,
-                before_mood=before.mood.value,
-                after_mood=after.mood.value,
-                before_arousal=before.arousal,
-                after_arousal=after.arousal,
-                before_valence=before.valence,
-                after_valence=after.valence,
-                before_talkativeness=before.talkativeness,
-                after_talkativeness=after.talkativeness,
+                elapsed_seconds=result.emotion_elapsed_seconds,
+                before_mood=result.before_emotion.mood.value,
+                after_mood=result.after_emotion.mood.value,
+                before_arousal=result.before_emotion.arousal,
+                after_arousal=result.after_emotion.arousal,
+                before_valence=result.before_emotion.valence,
+                after_valence=result.after_emotion.valence,
+                before_talkativeness=result.before_emotion.talkativeness,
+                after_talkativeness=result.after_emotion.talkativeness,
             )
 
     def _autonomous_talk_interval_seconds(self) -> float:
