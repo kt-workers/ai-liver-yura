@@ -4,7 +4,6 @@ from pathlib import Path
 
 
 AGENT = Path("app/runtime/agent_life_service.py")
-TRACKER = Path("app/runtime/autonomous_topic_tracker.py")
 FACADE = Path("app/runtime/topic_tracking_agent_life_service.py")
 BOOTSTRAP = Path("app/bootstrap/emotion_runtime.py")
 TEST = Path("tests/test_topic_tracking_agent_life_service.py")
@@ -175,7 +174,13 @@ def update_agent() -> None:
     helper_end = text.index("    def _update_state_by_elapsed_time(", helper_start)
     text = text[:helper_start] + text[helper_end:]
 
-    if "self._autonomous_topic" in text or "self._recent_autonomous_texts" in text:
+    forbidden = (
+        "self._autonomous_topic:",
+        "self._autonomous_topic =",
+        "self._autonomous_topic.",
+        "self._recent_autonomous_texts",
+    )
+    if any(pattern in text for pattern in forbidden):
         raise RuntimeError("旧自律話題状態への参照が残っています。")
     AGENT.write_text(text, encoding="utf-8")
 
