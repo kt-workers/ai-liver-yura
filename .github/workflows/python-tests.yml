@@ -3,6 +3,7 @@ name: Python tests
 on:
   pull_request:
     branches:
+      - feature/gui-development
       - develop
       - main
     paths-ignore:
