@@ -330,3 +330,46 @@ app/bootstrap/
 - 各分割前に既存挙動を固定するテストを追加する
 - 依存方向テストは最初から完全禁止にせず、既知例外を明示して徐々に減らす
 - 設定ファイル分割時は旧`config.yaml`の互換読込期間を設ける
+
+## 7. 設定スキーマ補完後の境界
+
+複数YAML化に先立ち、単一`config/config.yaml`の構造を維持したまま次を整理した。
+
+- `ServiceSettings`の全Optionalフィールド集合を廃止し、`type`ごとのfrozen
+  dataclassへ分離した
+- YAML読込時に未知service type、不要キー、必須キー不足、型・範囲不正を拒否する
+- 全`models.*.service`と、有効な機能が参照するmodel/serviceを`AppConfig`生成時に
+  一括検証する
+- StreamingとPlugin設定では、文字列から数値・booleanへの暗黙変換を行わない
+- 型付きCore領域の未知キーを完全なYAML path付きの設定エラーにする
+- Games固有設定型とparserは`app/plugins/games/settings.py`が所有し、Coreの
+  Composition Rootは型付き設定をPluginへ渡すだけとした
+- `plugins.registry`は動的ロードへ未接続の予約領域であり、非空ならwarningを出す
+- 未知Pluginの設定mappingはCoreが内部キーを検証しないopaque領域として保持する
+- loaderが生成するservices、models、voice profile、ranking weights、Plugin mappingと、
+  Characterのlist設定をimmutable化した
+
+### disabled時の参照検証
+
+`models.<key>.service`は、model定義自体の整合性として常に検証する。
+一方、`speech.enabled=false`、`memory.topic_memory.enabled=false`、
+`plugins.games.enabled=false`、`response_generator.type=dummy`の場合は、その機能だけが
+必要とするmodel/service参照を要求しない。無効化によって外部サービス設定が不要になる
+既存挙動を維持するためである。
+
+### 予約・deprecated設定
+
+`input_receivers`は型・strict validationを維持するが、現在の入力receiver選択は
+`YURA_WEB_CONVERSATION_ENABLED`などの起動時環境変数を使用する。入力システム全体の
+再設計を避けるため、本工程では予約設定として明記し、実行経路への接続は後続課題とする。
+
+`emotion_appraisal`は標準`app.__main__`のComposition Rootには接続されていない。
+`app/bootstrap/emotion_runtime.py`だけが同一YAMLを再読込する互換経路であり、
+`load_emotion_appraisal_settings()`はdeprecated warningを出す。複数設定ローダー導入時に
+`AppConfig`へ統合し、二重読込を廃止する。
+
+### 次工程
+
+今回、`config/config.yaml`の分割、キー移動、manifest/import、設定パス環境変数、
+相対パス基準の変更は行っていない。次工程では単一ファイル互換を維持する統合ローダーを
+追加し、トップレベルキー単位の重複拒否とsource情報を備えた上で段階的にYAMLを分割する。
