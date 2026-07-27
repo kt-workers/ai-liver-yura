@@ -77,10 +77,12 @@ const STATE_TRANSITION_INTERVAL_RATIO = .82;
 const STATE_TRANSITION_MIN_SECONDS = .6;
 const STATE_TRANSITION_MAX_SECONDS = 4;
 const STIMULUS_INTERVAL_MS = 850;
+const DRAG_SAMPLE_INTERVAL_MS = 140;
+const DRAG_SAMPLE_DISTANCE_PX = 5;
 const DOUBLE_TAP_INTERVAL_MS = 300;
 const DOUBLE_TAP_DISTANCE_PX = 28;
 const LONG_PRESS_DURATION_MS = 600;
-const DRAG_START_DISTANCE_PX = 10;
+const DRAG_START_DISTANCE_PX = 5;
 const DRAG_TRAIL_LIFETIME_MS = 520;
 
 function balancedEmotionGroup(index) {
@@ -1487,18 +1489,47 @@ function normalizedCanvasPosition(clientX, clientY) {
   };
 }
 
+function currentParticleZone() {
+  const rect = canvas.getBoundingClientRect();
+  const radius = lastFrameAppearance.baseRadius * 1.18;
+  return {
+    center: normalizedCanvasPosition(
+      rect.left + width * .5,
+      rect.top + height * .49,
+    ),
+    radius_x: clamp(radius / rect.width),
+    radius_y: clamp(radius / rect.height),
+  };
+}
+
+function createDragGestureId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return `drag-${globalThis.crypto.randomUUID()}`;
+  }
+  return `drag-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 async function sendStimulus(kind, clientX, clientY, details = {}) {
   if (!sourceAvailable) {
     setStimulusStatus("ゆらとの接続を待っています");
     return;
   }
   const now = performance.now();
-  const lastStimulusAt = lastStimulusAtByKind.get(kind) ?? -Infinity;
-  if (now - lastStimulusAt < STIMULUS_INTERVAL_MS) {
-    setStimulusStatus("刺激は少し間をあけて届けられます");
+  const rateLimitKey = details.rateLimitKey || kind;
+  const minimumIntervalMs = details.minimumIntervalMs
+    ?? STIMULUS_INTERVAL_MS;
+  const lastStimulusAt = lastStimulusAtByKind.get(rateLimitKey) ?? -Infinity;
+  if (!details.force && now - lastStimulusAt < minimumIntervalMs) {
+    if (details.showStatus !== false) {
+      setStimulusStatus("刺激は少し間をあけて届けられます");
+    }
     return;
   }
-  lastStimulusAtByKind.set(kind, now);
+  if (details.clearRateLimit) {
+    lastStimulusAtByKind.delete(rateLimitKey);
+  } else {
+    lastStimulusAtByKind.set(rateLimitKey, now);
+  }
   const position = normalizedCanvasPosition(clientX, clientY);
   const payload = { kind, ...position };
   if (details.startPosition) {
@@ -1508,23 +1539,39 @@ async function sendStimulus(kind, clientX, clientY, details = {}) {
     );
   }
   if (details.durationMs !== undefined) {
-    payload.duration_ms = Math.min(10_000, Math.max(0, details.durationMs));
+    const maximumDurationMs = kind === "drag" ? 60_000 : 10_000;
+    payload.duration_ms = Math.min(
+      maximumDurationMs,
+      Math.max(0, details.durationMs),
+    );
   }
-  stimulusRipples.push({
-    kind,
-    x: clientX,
-    y: clientY,
-    path: details.path || [{ x: clientX, y: clientY }],
-    bornAt: now,
-  });
-  if (stimulusRipples.length > 12) stimulusRipples.shift();
+  if (details.gestureId) {
+    payload.gesture_id = details.gestureId;
+    payload.gesture_phase = details.gesturePhase;
+    payload.gesture_sequence = details.gestureSequence;
+  }
+  if (details.particleZone) {
+    payload.particle_zone = details.particleZone;
+  }
+  if (details.renderRipple !== false) {
+    stimulusRipples.push({
+      kind,
+      x: clientX,
+      y: clientY,
+      path: details.path || [{ x: clientX, y: clientY }],
+      bornAt: now,
+    });
+    if (stimulusRipples.length > 12) stimulusRipples.shift();
+  }
   const messages = {
     tap: "ゆらへ、そっと触れました",
     double_tap: "ゆらへ、二度触れました",
     long_press: "ゆらへ、しばらく触れました",
     drag: "ゆらの粒子を、そっとなぞりました",
   };
-  setStimulusStatus(messages[kind] || "ゆらへ刺激を届けました");
+  if (details.showStatus !== false) {
+    setStimulusStatus(messages[kind] || "ゆらへ刺激を届けました");
+  }
   try {
     const response = await fetch("/api/stimuli", {
       method: "POST",
@@ -1532,13 +1579,41 @@ async function sendStimulus(kind, clientX, clientY, details = {}) {
       body: JSON.stringify(payload),
     });
     if (response.status === 429) {
-      setStimulusStatus("刺激は少し間をあけて届けられます");
+      if (details.showStatus !== false) {
+        setStimulusStatus("刺激は少し間をあけて届けられます");
+      }
     } else if (!response.ok) {
       setStimulusStatus("今は刺激を届けられません");
     }
   } catch {
     setStimulusStatus("今は刺激を届けられません");
   }
+}
+
+function sendDragSample(gesture, phase, clientX, clientY, occurredAt) {
+  const previousX = gesture.lastDragSampleX ?? gesture.startX;
+  const previousY = gesture.lastDragSampleY ?? gesture.startY;
+  const sequence = gesture.dragSequence;
+  gesture.dragSequence += 1;
+  gesture.lastDragSampleX = clientX;
+  gesture.lastDragSampleY = clientY;
+  gesture.lastDragSampleAt = occurredAt;
+  if (phase === "end") gesture.dragStreamEnded = true;
+  sendStimulus("drag", clientX, clientY, {
+    startPosition: { x: previousX, y: previousY },
+    durationMs: occurredAt - gesture.startedAt,
+    path: gesture.path,
+    gestureId: gesture.dragGestureId,
+    gesturePhase: phase,
+    gestureSequence: sequence,
+    particleZone: currentParticleZone(),
+    rateLimitKey: gesture.dragGestureId,
+    minimumIntervalMs: DRAG_SAMPLE_INTERVAL_MS,
+    force: phase === "end",
+    clearRateLimit: phase === "end",
+    renderRipple: phase === "end",
+    showStatus: phase === "start",
+  });
 }
 
 function queueTapGesture(clientX, clientY, occurredAt) {
@@ -1595,6 +1670,13 @@ canvas.addEventListener("pointerdown", (event) => {
     currentY: event.clientY,
     startedAt: performance.now(),
     dragging: false,
+    movedBeyondDragDistance: false,
+    dragGestureId: createDragGestureId(),
+    dragSequence: 0,
+    lastDragSampleX: null,
+    lastDragSampleY: null,
+    lastDragSampleAt: null,
+    dragStreamEnded: false,
     path: [{
       x: event.clientX,
       y: event.clientY,
@@ -1602,8 +1684,9 @@ canvas.addEventListener("pointerdown", (event) => {
     }],
   };
 });
-canvas.addEventListener("pointermove", (event) => {
+function handlePointerMove(event) {
   if (activePointerGesture?.pointerId !== event.pointerId) return;
+  if ((event.buttons & 1) === 0) return;
   const now = performance.now();
   const previousPoint = activePointerGesture.path[
     activePointerGesture.path.length - 1
@@ -1614,11 +1697,22 @@ canvas.addEventListener("pointermove", (event) => {
     event.clientX - activePointerGesture.startX,
     event.clientY - activePointerGesture.startY,
   ) >= DRAG_START_DISTANCE_PX;
+  if (exceedsDragDistance) {
+    activePointerGesture.movedBeyondDragDistance = true;
+  }
   if (!activePointerGesture.dragging && exceedsDragDistance) {
     activePointerGesture.dragging = true;
+    sendDragSample(
+      activePointerGesture,
+      "start",
+      event.clientX,
+      event.clientY,
+      now,
+    );
   }
   if (
     activePointerGesture.dragging
+    && !activePointerGesture.dragStreamEnded
     && Math.hypot(
       event.clientX - previousPoint.x,
       event.clientY - previousPoint.y,
@@ -1639,9 +1733,26 @@ canvas.addEventListener("pointermove", (event) => {
     if (activePointerGesture.path.length > 96) {
       activePointerGesture.path.shift();
     }
+    if (
+      now - activePointerGesture.lastDragSampleAt
+        >= DRAG_SAMPLE_INTERVAL_MS
+      && Math.hypot(
+        event.clientX - activePointerGesture.lastDragSampleX,
+        event.clientY - activePointerGesture.lastDragSampleY,
+      ) >= DRAG_SAMPLE_DISTANCE_PX
+    ) {
+      sendDragSample(
+        activePointerGesture,
+        "update",
+        event.clientX,
+        event.clientY,
+        now,
+      );
+    }
   }
-});
-canvas.addEventListener("pointerup", (event) => {
+}
+
+function handlePointerUp(event) {
   if (activePointerGesture?.pointerId !== event.pointerId) return;
   const gesture = activePointerGesture;
   activePointerGesture = null;
@@ -1662,22 +1773,47 @@ canvas.addEventListener("pointerup", (event) => {
     ) {
       gesture.path.shift();
     }
-    sendStimulus("drag", event.clientX, event.clientY, {
-      startPosition: { x: gesture.startX, y: gesture.startY },
-      durationMs,
-      path: gesture.path,
-    });
+    if (!gesture.dragStreamEnded) {
+      sendDragSample(
+        gesture,
+        "end",
+        event.clientX,
+        event.clientY,
+        performance.now(),
+      );
+    }
+  } else if (gesture.movedBeyondDragDistance) {
+    return;
   } else if (durationMs >= LONG_PRESS_DURATION_MS) {
     sendStimulus("long_press", event.clientX, event.clientY, { durationMs });
   } else {
     queueTapGesture(event.clientX, event.clientY, performance.now());
   }
-});
-canvas.addEventListener("pointercancel", (event) => {
+}
+
+function handlePointerCancel(event) {
   if (activePointerGesture?.pointerId === event.pointerId) {
+    if (
+      activePointerGesture.dragging
+      && !activePointerGesture.dragStreamEnded
+    ) {
+      sendDragSample(
+        activePointerGesture,
+        "end",
+        activePointerGesture.lastDragSampleX,
+        activePointerGesture.lastDragSampleY,
+        performance.now(),
+      );
+    }
     activePointerGesture = null;
   }
-});
+}
+
+// Pointer capture normally keeps delivery on the canvas, but window-level capture
+// also covers browser/overlay boundary transitions and lost canvas targeting.
+window.addEventListener("pointermove", handlePointerMove, true);
+window.addEventListener("pointerup", handlePointerUp, true);
+window.addEventListener("pointercancel", handlePointerCancel, true);
 canvas.addEventListener("dblclick", (event) => event.preventDefault());
 canvas.addEventListener("keydown", (event) => {
   if (!["Enter", " "].includes(event.key)) return;
