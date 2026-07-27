@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from queue import Queue
-from time import monotonic
 from typing import Any, cast
 
 from app.core.plugins import PluginManager
@@ -77,6 +75,8 @@ from app.runtime.plugin_ongoing_activity_synchronizer import (
 from app.runtime.runtime_diagnostic_snapshot_builder import (
     RuntimeDiagnosticSnapshotBuilder,
 )
+from app.runtime.runtime_lifecycle_controller import RuntimeLifecycleController
+from app.runtime.runtime_loop import RuntimeLoop
 from app.runtime.user_input_event_logger import UserInputEventLogger
 from app.runtime.user_input_event_router import UserInputEventRouter
 from app.runtime.user_input_interruption_coordinator import (
@@ -141,6 +141,8 @@ class RuntimeCoordinator:
         buffered_event_dispatcher: BufferedEventDispatcher | None = None,
         user_input_event_logger: UserInputEventLogger | None = None,
         user_input_event_router: UserInputEventRouter | None = None,
+        runtime_loop: RuntimeLoop | None = None,
+        runtime_lifecycle_controller: RuntimeLifecycleController | None = None,
     ) -> None:
         self._event_queue = event_queue
         self._activity_manager = activity_manager
@@ -171,8 +173,6 @@ class RuntimeCoordinator:
         self._ongoing_activity_coordinator = OngoingActivityCoordinator(
             activity_manager
         )
-        self._running = False
-        self._thread_join_timeout_seconds = 1.0
         self._trace_logger = TraceLogger()
         self._behavior_fallback_router = BehaviorFallbackRouter(
             plugin_manager=self._plugin_manager,
@@ -367,21 +367,45 @@ class RuntimeCoordinator:
             )
         )
         self._event_enrichers: list[Callable[[AgentEvent], AgentEvent]] = []
-        self._autonomous_planning_enabled = autonomous_planning_enabled
         self._short_term_memory = short_term_memory
         self._topic_history = topic_history
-        self._startup_completed = not require_startup_completion
-        self._async_initializers = async_initializers
-        self._initializers_completed = False
-        self._autonomous_planning_poll_seconds = max(
-            autonomous_planning_poll_seconds, 0.05
+        self._runtime_loop = (
+            runtime_loop
+            or RuntimeLoop(
+                event_queue=self._event_queue,
+                activity_planning_request_queue=(
+                    self._activity_planning_request_queue
+                ),
+                activity_planner_thread=self._activity_planner_thread,
+                agent_life_service=self._agent_life_service,
+                event_handler=self._handle_event,
+                autonomous_planning_enabled=autonomous_planning_enabled,
+                require_startup_completion=require_startup_completion,
+                autonomous_planning_poll_seconds=(
+                    autonomous_planning_poll_seconds
+                ),
+                trace_logger=self._trace_logger,
+            )
         )
-        self._last_autonomous_planning_request_at: float | None = None
-        self._idle_sleep_seconds = 0.05
+        self._runtime_lifecycle_controller = (
+            runtime_lifecycle_controller
+            or RuntimeLifecycleController(
+                runtime_loop=self._runtime_loop,
+                activity_planner_thread=self._activity_planner_thread,
+                activity_executor_thread=self._activity_executor_thread,
+                plugin_manager=self._plugin_manager,
+                ongoing_activity_coordinator=(
+                    self._ongoing_activity_coordinator
+                ),
+                async_initializers=async_initializers,
+                autonomous_planning_enabled=autonomous_planning_enabled,
+                trace_logger=self._trace_logger,
+            )
+        )
 
     @property
     def autonomous_planning_enabled(self) -> bool:
-        return self._autonomous_planning_enabled
+        return self._runtime_loop.autonomous_planning_enabled
 
     @property
     def plugin_manager(self) -> PluginManager | None:
@@ -572,149 +596,13 @@ class RuntimeCoordinator:
         )
 
     async def run_once(self) -> ActionPlanGroup | None:
-        self._trace_logger.write(
-            "runtime_coordinator:run_once:start",
-            queue_empty=self._event_queue.empty(),
-            drive_curiosity=self._agent_life_service.agent_state.current_drive.curiosity,
-            drive_engagement=self._agent_life_service.agent_state.current_drive.engagement,
-            drive_boredom=self._agent_life_service.agent_state.current_drive.boredom,
-            drive_energy=self._agent_life_service.agent_state.current_drive.energy,
-        )
-        if self._event_queue.empty():
-            if not self._autonomous_planning_enabled:
-                self._trace_logger.write(
-                    "runtime_coordinator:run_once:autonomous_planning_disabled"
-                )
-                return None
-            if not self._startup_completed:
-                return None
-            now = monotonic()
-            request_recently_sent = (
-                self._last_autonomous_planning_request_at is not None
-                and now - self._last_autonomous_planning_request_at
-                < self._autonomous_planning_poll_seconds
-            )
-            if (
-                request_recently_sent
-                or not self._activity_planning_request_queue.empty()
-                or self._activity_planner_thread.is_busy
-            ):
-                return None
-            self._activity_planning_request_queue.put(ActivityPlanningRequest())
-            self._last_autonomous_planning_request_at = now
-            self._trace_logger.write(
-                "runtime_coordinator:run_once:activity_planning_requested",
-                request_queue_size=self._activity_planning_request_queue.qsize(),
-            )
-            self._trace_logger.write("runtime_coordinator:run_once:no_event")
-            return None
-
-        event = await self._event_queue.get()
-        self._trace_logger.write(
-            "runtime_coordinator:run_once:queue_get",
-            level=(
-                "DEBUG"
-                if self._is_agent_state_only_event(event) or event.discardable
-                else "INFO"
-            ),
-            event_type=event.event_type.value,
-            event_id=event.event_id,
-            priority=event.priority,
-            discardable=event.discardable,
-            replace_key=event.replace_key,
-        )
-        result = await self._handle_event(event)
-        if event.event_type == AgentEventType.APP_STARTED:
-            self._startup_completed = True
-            self._agent_life_service.record_awakening_completed()
-            self._trace_logger.info(
-                "runtime_coordinator:startup_completed",
-                source_event_id=event.event_id,
-            )
-        return result
+        return await self._runtime_loop.run_once()
 
     async def run(self) -> None:
-        self._running = True
-        self._trace_logger.info("runtime_coordinator:run:start")
-
-        await self._run_async_initializers()
-        self._start_threads()
-
-        while self._running:
-            action_plan_group = await self.run_once()
-            if action_plan_group is None:
-                self._trace_logger.write("runtime_coordinator:run:idle_sleep")
-                await asyncio.sleep(self._idle_sleep_seconds)
-
-    async def _run_async_initializers(self) -> None:
-        if self._initializers_completed:
-            return
-        for initializer in self._async_initializers:
-            try:
-                await initializer()
-            except Exception as error:
-                self._trace_logger.error(
-                    "runtime_coordinator:async_initializer_failed",
-                    initializer=getattr(initializer, "__qualname__", type(initializer).__name__),
-                    error_type=type(error).__name__,
-                    error_message=str(error),
-                )
-        self._initializers_completed = True
+        await self._runtime_lifecycle_controller.run()
 
     def stop(self) -> None:
-        self._trace_logger.info("runtime_coordinator:stop")
-        self._running = False
-        self._stop_threads()
-        if self._plugin_manager is not None:
-            self._plugin_manager.shutdown_plugins()
-        self._ongoing_activity_coordinator.cancel(reason="runtime_stopped")
-
-    def _start_threads(self) -> None:
-        """常駐 Thread を必要に応じて起動する。"""
-
-        if not self._autonomous_planning_enabled:
-            self._trace_logger.info(
-                "runtime_coordinator:threads:skipped",
-                reason="autonomous_planning_disabled",
-            )
-            return
-
-        if not self._activity_planner_thread.is_alive():
-            self._activity_planner_thread.start()
-
-        if not self._activity_executor_thread.is_alive():
-            self._activity_executor_thread.start()
-
-        self._trace_logger.info(
-            "runtime_coordinator:threads:start",
-            activity_planner_thread_alive=self._activity_planner_thread.is_alive(),
-            activity_executor_thread_alive=self._activity_executor_thread.is_alive(),
-        )
-
-    def _stop_threads(self) -> None:
-        """常駐 Thread に停止要求を送り、終了を待つ。"""
-
-        if not self._autonomous_planning_enabled:
-            return
-
-        self._activity_planner_thread.stop()
-        self._activity_executor_thread.stop()
-
-        if self._activity_planner_thread.is_alive():
-            self._activity_planner_thread.join(
-                timeout=self._thread_join_timeout_seconds
-            )
-
-        if self._activity_executor_thread.is_alive():
-            self._activity_executor_thread.join(
-                timeout=self._thread_join_timeout_seconds
-            )
-
-        self._trace_logger.info(
-            "runtime_coordinator:threads:stopped",
-            activity_planner_thread_alive=self._activity_planner_thread.is_alive(),
-            activity_executor_thread_alive=self._activity_executor_thread.is_alive(),
-        )
+        self._runtime_lifecycle_controller.stop()
 
     async def _handle_event(self, event: AgentEvent) -> ActionPlanGroup:
         for enricher in self._event_enrichers:
