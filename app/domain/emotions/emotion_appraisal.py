@@ -1,6 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
+
+
+class RelationalMeaning(str, Enum):
+    """自然文が現在の関係に対して持つ、感情変化前の意味。"""
+
+    NONE = "none"
+    REPAIR_ATTEMPT = "repair_attempt"
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +38,7 @@ class EmotionAppraisal:
     talkativeness_delta: float = 0.0
     reason: str = "no_change"
     cause: EmotionCause | None = None
+    relational_meaning: RelationalMeaning = RelationalMeaning.NONE
     confidence: float = 1.0
     source_event_id: str | None = None
 
