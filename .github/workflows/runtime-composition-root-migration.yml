@@ -1,0 +1,114 @@
+name: Runtime composition root migration
+
+on:
+  push:
+    branches:
+      - refactor/runtime-composition-root
+    paths:
+      - ".github/workflows/runtime-composition-root-migration.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/runtime-composition-root
+      - name: Replace execution wiring
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("app/runtime/runtime_coordinator.py")
+          text = path.read_text(encoding="utf-8")
+          import_anchor = "from app.runtime.runtime_diagnostic_snapshot_builder import (\n    RuntimeDiagnosticSnapshotBuilder,\n)\n"
+          import_replacement = import_anchor + "from app.runtime.runtime_composition_root import RuntimeCompositionRoot\n"
+          if "from app.runtime.runtime_composition_root import RuntimeCompositionRoot" not in text:
+              if text.count(import_anchor) != 1:
+                  raise SystemExit("runtime composition import anchor mismatch")
+              text = text.replace(import_anchor, import_replacement, 1)
+
+          old = '''        self._runtime_event_executor = (
+            runtime_event_executor
+            or RuntimeEventExecutor(
+                activity_manager=self._activity_manager,
+                action_planner=self._action_planner,
+                action_scheduler=self._action_scheduler,
+                agent_life_service=self._agent_life_service,
+                event_enrichers_provider=lambda: tuple(self._event_enrichers),
+                trace_logger=self._trace_logger,
+            )
+        )
+        self._runtime_loop = (
+            runtime_loop
+            or RuntimeLoop(
+                event_queue=self._event_queue,
+                activity_planning_request_queue=(
+                    self._activity_planning_request_queue
+                ),
+                activity_planner_thread=self._activity_planner_thread,
+                agent_life_service=self._agent_life_service,
+                event_handler=self._handle_event,
+                autonomous_planning_enabled=autonomous_planning_enabled,
+                require_startup_completion=require_startup_completion,
+                autonomous_planning_poll_seconds=(
+                    autonomous_planning_poll_seconds
+                ),
+                trace_logger=self._trace_logger,
+            )
+        )
+        self._runtime_host_controller = (
+            runtime_host_controller
+            or RuntimeHostController(
+                runtime_loop=self._runtime_loop,
+                activity_planner_thread=self._activity_planner_thread,
+                activity_executor_thread=self._activity_executor_thread,
+                plugin_manager=self._plugin_manager,
+                ongoing_activity_coordinator=(
+                    self._ongoing_activity_coordinator
+                ),
+                async_initializers=async_initializers,
+                trace_logger=self._trace_logger,
+            )
+        )
+'''
+          new = '''        execution = RuntimeCompositionRoot().build_execution(
+            event_queue=self._event_queue,
+            activity_manager=self._activity_manager,
+            action_planner=self._action_planner,
+            action_scheduler=self._action_scheduler,
+            activity_planning_request_queue=self._activity_planning_request_queue,
+            activity_planner_thread=self._activity_planner_thread,
+            activity_executor_thread=self._activity_executor_thread,
+            agent_life_service=self._agent_life_service,
+            plugin_manager=self._plugin_manager,
+            ongoing_activity_coordinator=self._ongoing_activity_coordinator,
+            event_handler=self._handle_event,
+            event_enrichers_provider=lambda: tuple(self._event_enrichers),
+            autonomous_planning_enabled=autonomous_planning_enabled,
+            require_startup_completion=require_startup_completion,
+            autonomous_planning_poll_seconds=autonomous_planning_poll_seconds,
+            async_initializers=async_initializers,
+            trace_logger=self._trace_logger,
+            event_executor=runtime_event_executor,
+            runtime_loop=runtime_loop,
+            host_controller=runtime_host_controller,
+        )
+        self._runtime_event_executor = execution.event_executor
+        self._runtime_loop = execution.runtime_loop
+        self._runtime_host_controller = execution.host_controller
+'''
+          if text.count(old) != 1:
+              raise SystemExit("runtime execution wiring block mismatch")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+      - name: Commit migration
+        run: |
+          git config user.name "ch4t9pt"
+          git config user.email "308621972+ch4t9pt@users.noreply.github.com"
+          git add app/runtime/runtime_coordinator.py
+          git commit -m "RuntimeCoordinatorの実行系配線をComposition Rootへ移行"
+          git push origin HEAD:refactor/runtime-composition-root
