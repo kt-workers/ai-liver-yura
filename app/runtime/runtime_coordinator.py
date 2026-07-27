@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, replace
 from queue import Queue
 from time import monotonic
@@ -14,7 +14,6 @@ from app.domain.activities import (
     Activity,
     ActivityStatus,
     ActivityType,
-    OngoingActivity,
 )
 from app.domain.activity_turn_result import ActivityTurnResult
 from app.domain.behavior import (
@@ -71,6 +70,10 @@ from app.runtime.pending_confirmation import (
     ConfirmationResolver,
     PendingConfirmationManager,
 )
+from app.runtime.plugin_ongoing_activity_synchronizer import (
+    PluginActivitySynchronizationError,
+    PluginOngoingActivitySynchronizer,
+)
 from app.runtime.runtime_diagnostic_snapshot_builder import (
     RuntimeDiagnosticSnapshotBuilder,
 )
@@ -82,8 +85,6 @@ from app.runtime.user_input_interruption_coordinator import (
 from app.shared.contracts.plugins.runtime import (
     CommandHandler,
     PlannedActivityInterpreter,
-    PluginActivityState,
-    PluginActivityStatus,
     PluginCapability,
     UserIntentInterpreter,
 )
@@ -114,6 +115,9 @@ class RuntimeCoordinator:
         pending_confirmation_manager: PendingConfirmationManager | None = None,
         confirmation_resolver: ConfirmationResolver | None = None,
         confirmation_coordinator: ConfirmationCoordinator | None = None,
+        plugin_ongoing_activity_synchronizer: (
+            PluginOngoingActivitySynchronizer | None
+        ) = None,
         autonomous_planning_enabled: bool = True,
         short_term_memory: ShortTermMemory | None = None,
         topic_history: TopicHistory | None = None,
@@ -188,6 +192,13 @@ class RuntimeCoordinator:
                 if self._pending_confirmation_manager is not None
                 and self._activity_plan_validator is not None
                 else None
+            )
+        )
+        self._plugin_ongoing_activity_synchronizer = (
+            plugin_ongoing_activity_synchronizer
+            or PluginOngoingActivitySynchronizer(
+                ongoing_activity_coordinator=self._ongoing_activity_coordinator,
+                trace_logger=self._trace_logger,
             )
         )
         self._user_input_event_logger = (
@@ -722,45 +733,22 @@ class RuntimeCoordinator:
             )
             operation = self._activity_operation(activity_plan, intent_result)
             constraints = activity_plan.constraints if activity_plan is not None else {}
-            session_before = self._plugin_session_context(plugin)
             turn_started = False
             if operation != "start":
                 try:
-                    ongoing = self._ongoing_activity_coordinator.verify_context(
-                        session_id=self._optional_context_str(
-                            session_before, "session_id"
-                        ),
-                        plugin_id=plugin.plugin_id,
-                    )
-                    if ongoing is None:
-                        raise RuntimeError("継続対象のOngoingActivityがありません。")
-                    self._ongoing_activity_coordinator.begin_turn(
+                    self._plugin_ongoing_activity_synchronizer.begin_turn(
+                        plugin=plugin,
+                        operation=operation,
                         input_text=text,
                         source_event_id=event.event_id,
-                        operation=operation,
-                        constraints=(
-                            ongoing.context.get("constraints", constraints)
-                            if isinstance(
-                                ongoing.context.get("constraints", constraints), dict
-                            )
-                            else constraints
-                        ),
+                        constraints=constraints,
                     )
                     turn_started = True
-                except RuntimeError as error:
-                    self._trace_logger.error(
-                        "runtime_coordinator:ongoing_activity_sync_rejected",
-                        plugin_id=plugin.plugin_id,
-                        operation=operation,
-                        reason=str(error),
-                    )
-                    self._rollback_plugin_and_ongoing(
-                        plugin, reason="ongoing_activity_context_mismatch"
-                    )
+                except PluginActivitySynchronizationError as error:
                     return self._with_execution_fallback(
                         event,
                         contexts=[dict(intent_result.conversation_context)],
-                        reason="ongoing_activity_context_mismatch",
+                        reason=error.reason,
                         confidence=intent_result.confidence,
                     )
             handler = cast(CommandHandler, plugin)
@@ -780,7 +768,7 @@ class RuntimeCoordinator:
                 request = execution.activity_request
                 try:
                     execution_result, ongoing_snapshot = (
-                        self._synchronize_plugin_activity(
+                        self._plugin_ongoing_activity_synchronizer.synchronize(
                             plugin=plugin,
                             activity_state=request.state,
                             request_context=dict(request.context),
@@ -853,51 +841,20 @@ class RuntimeCoordinator:
                 return None
             if bool(execution.conversation_context.get("execution_requested")):
                 if turn_started:
-                    failed_result = ActivityExecutionResult(
+                    self._plugin_ongoing_activity_synchronizer.record_failed_turn(
                         activity_type=(
                             activity_plan.activity_type
                             if activity_plan is not None
                             else "plugin_activity"
                         ),
                         operation=operation,
-                        status=ActivityExecutionStatus.FAILED,
                         capability=required_capability,
-                        provider=plugin.plugin_id,
-                        payload={"summary": execution.reason or "Plugin実行に失敗した"},
-                        failure_reason=execution.reason or "execution_not_completed",
+                        plugin_id=plugin.plugin_id,
+                        reason=execution.reason or "execution_not_completed",
                         constraints=constraints,
+                        conversation_context=dict(execution.conversation_context),
+                        activity_state=execution.activity_state,
                     )
-                    failure_state = execution.activity_state
-                    can_continue = (
-                        failure_state is not None
-                        and failure_state.status
-                        in {
-                            PluginActivityStatus.WAITING_INPUT,
-                            PluginActivityStatus.SUSPENDED,
-                        }
-                    )
-                    failure_context = dict(execution.conversation_context)
-                    if failure_state is not None:
-                        failure_context.update(
-                            {
-                                "plugin_session_id": failure_state.session_id,
-                                "plugin_activity_status": failure_state.status.value,
-                            }
-                        )
-                    self._ongoing_activity_coordinator.record_execution(
-                        failed_result,
-                        context_updates=failure_context,
-                        expected_input=(
-                            failure_state.expected_input
-                            if can_continue and failure_state is not None
-                            else ""
-                        ),
-                        waiting_input=can_continue,
-                    )
-                    if not can_continue:
-                        self._ongoing_activity_coordinator.cancel(
-                            reason=execution.reason or "plugin_continue_failed"
-                        )
                 return self._with_execution_fallback(
                     event,
                     contexts=[dict(execution.conversation_context)],
@@ -919,144 +876,6 @@ class RuntimeCoordinator:
             )
         return self._with_plugin_availability(event)
 
-    def _synchronize_plugin_activity(
-        self,
-        *,
-        plugin: object,
-        activity_state: PluginActivityState,
-        request_context: dict[str, object],
-        activity_kind: str,
-        activity_type: str,
-        response_text: str,
-        capability: str | None,
-        operation: str,
-        constraints: dict[str, object],
-        goal: str,
-        input_text: str,
-        source_event_id: str,
-        turn_started: bool,
-    ) -> tuple[ActivityExecutionResult, OngoingActivity]:
-        plugin_id = str(
-            request_context.get("plugin_id") or getattr(plugin, "plugin_id", "")
-        )
-        session_id = activity_state.session_id
-        session_status = activity_state.status
-        is_terminal = session_status in {
-            PluginActivityStatus.COMPLETED,
-            PluginActivityStatus.CANCELED,
-        }
-        result_status = (
-            ActivityExecutionStatus.CANCELED
-            if session_status == PluginActivityStatus.CANCELED
-            else (
-                ActivityExecutionStatus.SUCCEEDED
-                if session_status == PluginActivityStatus.COMPLETED
-                else ActivityExecutionStatus.WAITING_INPUT
-            )
-        )
-        execution_result = ActivityExecutionResult(
-            activity_type=activity_type,
-            operation=operation,
-            status=result_status,
-            capability=capability,
-            provider=plugin_id,
-            payload={
-                "summary": response_text,
-                "activity_kind": activity_kind,
-                "ongoing": not is_terminal,
-            },
-            constraints=dict(constraints),
-        )
-        context_updates = {
-            "plugin_id": plugin_id,
-            "capability": capability,
-            "plugin_session_id": session_id,
-            "plugin_state_version": request_context.get("plugin_state_version"),
-            "plugin_activity_status": session_status.value,
-            "constraints": dict(constraints),
-        }
-        if operation == "start":
-            try:
-                ongoing = self._ongoing_activity_coordinator.start(
-                    activity_type=activity_type,
-                    goal=goal,
-                    expected_input=activity_state.expected_input,
-                    end_condition=activity_state.end_condition,
-                    context=context_updates,
-                    input_text=input_text,
-                    source_event_id=source_event_id,
-                    operation=operation,
-                    constraints=constraints,
-                )
-                linker = getattr(plugin, "link_ongoing_activity", None)
-                if not callable(linker):
-                    raise RuntimeError(
-                        "PluginがOngoingActivity関連付けに対応していません。"
-                    )
-                linker(ongoing.ongoing_activity_id)
-                context_updates["ongoing_activity_id"] = ongoing.ongoing_activity_id
-            except Exception:
-                self._rollback_plugin_and_ongoing(
-                    plugin, reason="ongoing_activity_start_failed"
-                )
-                raise
-        else:
-            verified = self._ongoing_activity_coordinator.verify_context(
-                session_id=session_id,
-                plugin_id=plugin_id,
-            )
-            if verified is None or not turn_started:
-                raise RuntimeError("Plugin継続Turnが開始されていません。")
-            ongoing = verified
-            context_updates["ongoing_activity_id"] = verified.ongoing_activity_id
-
-        recorded = self._ongoing_activity_coordinator.record_execution(
-            execution_result,
-            context_updates=context_updates,
-            expected_input="" if is_terminal else activity_state.expected_input,
-            waiting_input=session_status == PluginActivityStatus.WAITING_INPUT,
-        )
-        if session_status == PluginActivityStatus.COMPLETED:
-            terminal = self._ongoing_activity_coordinator.complete(
-                reason="plugin_session_completed"
-            )
-            if terminal is not None:
-                recorded = terminal
-        elif session_status == PluginActivityStatus.CANCELED:
-            terminal = self._ongoing_activity_coordinator.cancel(
-                reason="plugin_session_canceled"
-            )
-            if terminal is not None:
-                recorded = terminal
-        elif session_status == PluginActivityStatus.SUSPENDED:
-            paused = self._ongoing_activity_coordinator.pause(
-                reason="plugin_session_paused"
-            )
-            if paused is not None:
-                recorded = paused
-        self._trace_logger.info(
-            "runtime_coordinator:plugin_ongoing_activity_synchronized",
-            plugin_id=plugin_id,
-            ongoing_activity_id=recorded.ongoing_activity_id,
-            session_id=session_id,
-            operation=operation,
-            ongoing_status=recorded.status.value,
-            session_status=session_status.value,
-            activity_turn_id=recorded.turns[-1].turn_id if recorded.turns else None,
-        )
-        return execution_result, recorded
-
-    @staticmethod
-    def _optional_context_str(context: dict[str, object], key: str) -> str | None:
-        value = context.get(key)
-        return str(value) if value is not None else None
-
-    @staticmethod
-    def _plugin_session_context(plugin: object) -> dict[str, object]:
-        snapshot = getattr(plugin, "snapshot", None)
-        value = snapshot() if callable(snapshot) else {}
-        return dict(value) if isinstance(value, Mapping) else {}
-
     @staticmethod
     def _activity_operation(
         activity_plan: ActivityPlan | None,
@@ -1067,17 +886,6 @@ class RuntimeCoordinator:
         command = getattr(intent_result, "command", None)
         operation = getattr(command, "operation", None)
         return str(operation) if operation is not None else "continue"
-
-    def _rollback_plugin_and_ongoing(self, plugin: object, *, reason: str) -> None:
-        self._ongoing_activity_coordinator.cancel(reason=reason)
-        rollback = getattr(plugin, "rollback_active_session", None)
-        if callable(rollback):
-            rollback(reason)
-        self._trace_logger.warning(
-            "runtime_coordinator:plugin_ongoing_activity_rolled_back",
-            plugin_id=getattr(plugin, "plugin_id", None),
-            reason=reason,
-        )
 
     @staticmethod
     def _plan_payload(plan: ActivityPlan) -> dict[str, object]:
