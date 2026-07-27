@@ -20,7 +20,7 @@ def resolve_ai_model(
     config: AppConfig,
     model_key: str,
     *,
-    allowed_service_types: tuple[str, ...] = ("openai", "ollama", "voicevox"),
+    allowed_service_types: tuple[str, ...] = ("openai", "ollama"),
 ) -> ResolvedAiModelSettings:
     """モデルキーからモデル定義と型付きサービス設定を解決する。"""
 

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from app.bootstrap.model_settings import resolve_ai_model
 from app.bootstrap.service_settings import resolve_database_service
 from app.config.app_config import AppConfig
+from app.config.service_schema import OpenAiServiceSettings
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +45,9 @@ def resolve_llm_adapter_settings(
         timeout_seconds=(
             timeout_seconds if timeout_seconds is not None else service.timeout_seconds
         ),
-        api_key_env=service.api_key_env,
+        api_key_env=(
+            service.api_key_env if isinstance(service, OpenAiServiceSettings) else None
+        ),
     )
 
 
