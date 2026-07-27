@@ -138,7 +138,7 @@ async def test_action_planner_uses_response_generator_for_conversation() -> None
 async def test_action_planner_generates_reaction_for_visualizer_stimulus() -> None:
     activity = Activity(
         activity_type=ActivityType.STIMULUS_REACTION,
-        goal="画面越しの刺激へ短く反応する",
+        goal="直接触れられた刺激へ短く反応する",
     )
     planner = ActionPlanner(response_generator=FakeResponseGenerator())
 

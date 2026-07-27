@@ -51,6 +51,7 @@ from app.runtime.event_queue import EventQueue
 from app.runtime.event_subscriber_registry import EventSubscriberRegistry
 from app.runtime.event_type_router import EventTypeRouter
 from app.runtime.explicit_activity_executor import ExplicitActivityExecutor
+from app.runtime.interaction_reaction_policy import InteractionReactionPolicy
 from app.runtime.ongoing_activity_coordinator import OngoingActivityCoordinator
 from app.runtime.pending_confirmation import (
     ConfirmationResolver,
@@ -99,9 +100,7 @@ class RuntimeCoordinator:
         pending_confirmation_manager: PendingConfirmationManager | None = None,
         confirmation_resolver: ConfirmationResolver | None = None,
         confirmation_coordinator: ConfirmationCoordinator | None = None,
-        plugin_ongoing_activity_synchronizer: (
-            PluginOngoingActivitySynchronizer | None
-        ) = None,
+        plugin_ongoing_activity_synchronizer: (PluginOngoingActivitySynchronizer | None) = None,
         plugin_activity_coordinator: PluginActivityCoordinator | None = None,
         activity_switch_coordinator: ActivitySwitchCoordinator | None = None,
         behavior_routing_coordinator: BehaviorRoutingCoordinator | None = None,
@@ -113,26 +112,21 @@ class RuntimeCoordinator:
         autonomous_planning_poll_seconds: float = 0.5,
         conversation_logger: ConversationLogger | None = None,
         conversation_input_recorder: ConversationInputRecorder | None = None,
-        runtime_diagnostic_snapshot_builder: (
-            RuntimeDiagnosticSnapshotBuilder | None
-        ) = None,
+        runtime_diagnostic_snapshot_builder: (RuntimeDiagnosticSnapshotBuilder | None) = None,
         event_subscriber_registry: EventSubscriberRegistry | None = None,
         event_ingress_processor: EventIngressProcessor | None = None,
         event_dispatch_processor: EventDispatchProcessor | None = None,
         event_type_router: EventTypeRouter | None = None,
-        behavior_planning_context_builder: (
-            BehaviorPlanningContextBuilder | None
-        ) = None,
+        behavior_planning_context_builder: (BehaviorPlanningContextBuilder | None) = None,
         explicit_activity_executor: ExplicitActivityExecutor | None = None,
-        user_input_interruption_coordinator: (
-            UserInputInterruptionCoordinator | None
-        ) = None,
+        user_input_interruption_coordinator: (UserInputInterruptionCoordinator | None) = None,
         buffered_event_dispatcher: BufferedEventDispatcher | None = None,
         user_input_event_logger: UserInputEventLogger | None = None,
         user_input_event_router: UserInputEventRouter | None = None,
         runtime_event_executor: RuntimeEventExecutor | None = None,
         runtime_loop: RuntimeLoop | None = None,
         runtime_host_controller: RuntimeHostController | None = None,
+        interaction_reaction_policy: InteractionReactionPolicy | None = None,
     ) -> None:
         self._event_queue = event_queue
         self._activity_manager = activity_manager
@@ -144,47 +138,35 @@ class RuntimeCoordinator:
         self._event_filter = event_filter or DefaultEventFilter()
         self._event_prioritizer = event_prioritizer or DefaultEventPrioritizer()
         self._event_buffer = event_buffer or EventBuffer()
-        self._agent_life_service = agent_life_service or AgentLifeService(
-            activity_manager
-        )
+        self._agent_life_service = agent_life_service or AgentLifeService(activity_manager)
         self._plugin_manager = plugin_manager
         self._runtime_diagnostic_snapshot_builder = (
-            runtime_diagnostic_snapshot_builder
-            or RuntimeDiagnosticSnapshotBuilder()
+            runtime_diagnostic_snapshot_builder or RuntimeDiagnosticSnapshotBuilder()
         )
-        self._event_subscriber_registry = (
-            event_subscriber_registry or EventSubscriberRegistry()
-        )
+        self._event_subscriber_registry = event_subscriber_registry or EventSubscriberRegistry()
         self._behavior_planner = behavior_planner
         self._activity_plan_validator = activity_plan_validator
         self._activity_registry = activity_registry
         self._pending_confirmation_manager = pending_confirmation_manager
         self._confirmation_resolver = confirmation_resolver or ConfirmationResolver()
-        self._ongoing_activity_coordinator = OngoingActivityCoordinator(
-            activity_manager
-        )
+        self._ongoing_activity_coordinator = OngoingActivityCoordinator(activity_manager)
         self._trace_logger = TraceLogger()
         self._behavior_fallback_router = BehaviorFallbackRouter(
             plugin_manager=self._plugin_manager,
             trace_logger=self._trace_logger,
         )
-        self._confirmation_coordinator = (
-            confirmation_coordinator
-            or (
-                ConfirmationCoordinator(
-                    manager=self._pending_confirmation_manager,
-                    resolver=self._confirmation_resolver,
-                    validator=self._activity_plan_validator,
-                    conversation_fallback=(
-                        self._behavior_fallback_router.with_plugin_availability
-                    ),
-                    plan_payload=plan_payload,
-                    trace_logger=self._trace_logger,
-                )
-                if self._pending_confirmation_manager is not None
-                and self._activity_plan_validator is not None
-                else None
+        self._confirmation_coordinator = confirmation_coordinator or (
+            ConfirmationCoordinator(
+                manager=self._pending_confirmation_manager,
+                resolver=self._confirmation_resolver,
+                validator=self._activity_plan_validator,
+                conversation_fallback=(self._behavior_fallback_router.with_plugin_availability),
+                plan_payload=plan_payload,
+                trace_logger=self._trace_logger,
             )
+            if self._pending_confirmation_manager is not None
+            and self._activity_plan_validator is not None
+            else None
         )
         self._plugin_ongoing_activity_synchronizer = (
             plugin_ongoing_activity_synchronizer
@@ -193,32 +175,24 @@ class RuntimeCoordinator:
                 trace_logger=self._trace_logger,
             )
         )
-        self._user_input_event_logger = (
-            user_input_event_logger
-            or UserInputEventLogger(self._trace_logger)
+        self._user_input_event_logger = user_input_event_logger or UserInputEventLogger(
+            self._trace_logger
         )
-        self._user_input_event_router = (
-            user_input_event_router
-            or UserInputEventRouter(
-                behavior_router=self._route_behavior,
-                plugin_router=self._route_plugin_user_input,
-                fallback=self._with_plugin_availability,
-                behavior_routing_available=lambda: (
-                    self._behavior_planner is not None
-                    and self._activity_plan_validator is not None
-                ),
-                plugin_routing_available=lambda: self._has_plugin_capability(
-                    PluginCapability.USER_INTENT_INTERPRETER.value
-                ),
-            )
+        self._user_input_event_router = user_input_event_router or UserInputEventRouter(
+            behavior_router=self._route_behavior,
+            plugin_router=self._route_plugin_user_input,
+            fallback=self._with_plugin_availability,
+            behavior_routing_available=lambda: (
+                self._behavior_planner is not None and self._activity_plan_validator is not None
+            ),
+            plugin_routing_available=lambda: self._has_plugin_capability(
+                PluginCapability.USER_INTENT_INTERPRETER.value
+            ),
         )
-        self._buffered_event_dispatcher = (
-            buffered_event_dispatcher
-            or BufferedEventDispatcher(
-                event_buffer=self._event_buffer,
-                event_queue=self._event_queue,
-                trace_logger=self._trace_logger,
-            )
+        self._buffered_event_dispatcher = buffered_event_dispatcher or BufferedEventDispatcher(
+            event_buffer=self._event_buffer,
+            event_queue=self._event_queue,
+            trace_logger=self._trace_logger,
         )
         self._user_input_interruption_coordinator = (
             user_input_interruption_coordinator
@@ -231,45 +205,33 @@ class RuntimeCoordinator:
                 trace_logger=self._trace_logger,
             )
         )
-        self._event_type_router = (
-            event_type_router
-            or EventTypeRouter(
-                user_input_interruption_coordinator=(
-                    self._user_input_interruption_coordinator
-                ),
-                user_input_event_logger=self._user_input_event_logger,
-                user_input_event_router=self._user_input_event_router,
-                behavior_router=self._route_behavior,
-                behavior_routing_available=lambda: (
-                    self._behavior_planner is not None
-                    and self._activity_plan_validator is not None
-                ),
-            )
+        self._event_type_router = event_type_router or EventTypeRouter(
+            user_input_interruption_coordinator=(self._user_input_interruption_coordinator),
+            user_input_event_logger=self._user_input_event_logger,
+            user_input_event_router=self._user_input_event_router,
+            behavior_router=self._route_behavior,
+            behavior_routing_available=lambda: (
+                self._behavior_planner is not None and self._activity_plan_validator is not None
+            ),
         )
-        self._behavior_planning_context_builder = (
-            behavior_planning_context_builder
-            or (
-                BehaviorPlanningContextBuilder(
-                    activity_manager=self._activity_manager,
-                    agent_life_service=self._agent_life_service,
-                    plugin_manager=self._plugin_manager,
-                    activity_registry=self._activity_registry,
-                    short_term_memory=short_term_memory,
-                    topic_history=topic_history,
-                )
-                if self._plugin_manager is not None
-                else None
-            )
-        )
-        self._explicit_activity_executor = (
-            explicit_activity_executor
-            or ExplicitActivityExecutor(
+        self._behavior_planning_context_builder = behavior_planning_context_builder or (
+            BehaviorPlanningContextBuilder(
                 activity_manager=self._activity_manager,
-                action_planner=self._action_planner,
-                action_scheduler=self._action_scheduler,
                 agent_life_service=self._agent_life_service,
-                trace_logger=self._trace_logger,
+                plugin_manager=self._plugin_manager,
+                activity_registry=self._activity_registry,
+                short_term_memory=short_term_memory,
+                topic_history=topic_history,
             )
+            if self._plugin_manager is not None
+            else None
+        )
+        self._explicit_activity_executor = explicit_activity_executor or ExplicitActivityExecutor(
+            activity_manager=self._activity_manager,
+            action_planner=self._action_planner,
+            action_scheduler=self._action_scheduler,
+            agent_life_service=self._agent_life_service,
+            trace_logger=self._trace_logger,
         )
         self._plugin_activity_coordinator = (
             plugin_activity_coordinator
@@ -278,12 +240,8 @@ class RuntimeCoordinator:
                 activity_plan_validator=self._activity_plan_validator,
                 activity_manager=self._activity_manager,
                 explicit_activity_executor=self._explicit_activity_executor,
-                ongoing_synchronizer=(
-                    self._plugin_ongoing_activity_synchronizer
-                ),
-                conversation_fallback=(
-                    self._behavior_fallback_router.with_plugin_availability
-                ),
+                ongoing_synchronizer=(self._plugin_ongoing_activity_synchronizer),
+                conversation_fallback=(self._behavior_fallback_router.with_plugin_availability),
                 execution_fallback=lambda event, contexts, reason, confidence: (
                     self._with_execution_fallback(
                         event,
@@ -301,9 +259,7 @@ class RuntimeCoordinator:
             or ActivitySwitchCoordinator(
                 validator=self._activity_plan_validator,
                 plugin_router=self._route_plugin_user_input,
-                current_ongoing_activity=lambda: (
-                    self._activity_manager.ongoing_activity
-                ),
+                current_ongoing_activity=lambda: self._activity_manager.ongoing_activity,
                 execution_fallback=lambda event, contexts, reason, confidence: (
                     self._with_execution_fallback(
                         event,
@@ -329,78 +285,55 @@ class RuntimeCoordinator:
                 trace_logger=self._trace_logger,
             )
         )
-        self._event_dispatch_processor = (
-            event_dispatch_processor
-            or EventDispatchProcessor(
-                event_prioritizer=self._event_prioritizer,
-                activity_manager=self._activity_manager,
-                user_input_interruption_coordinator=(
-                    self._user_input_interruption_coordinator
-                ),
-                buffered_event_dispatcher=self._buffered_event_dispatcher,
-                trace_logger=self._trace_logger,
-            )
+        self._event_dispatch_processor = event_dispatch_processor or EventDispatchProcessor(
+            event_prioritizer=self._event_prioritizer,
+            activity_manager=self._activity_manager,
+            user_input_interruption_coordinator=(self._user_input_interruption_coordinator),
+            buffered_event_dispatcher=self._buffered_event_dispatcher,
+            trace_logger=self._trace_logger,
         )
         self._conversation_logger = conversation_logger or ConversationLogger()
         self._conversation_input_recorder = (
-            conversation_input_recorder
-            or ConversationInputRecorder(self._conversation_logger)
+            conversation_input_recorder or ConversationInputRecorder(self._conversation_logger)
         )
-        self._event_ingress_processor = (
-            event_ingress_processor
-            or EventIngressProcessor(
-                event_filter=self._event_filter,
-                activity_manager=self._activity_manager,
-                conversation_input_recorder=self._conversation_input_recorder,
-                agent_life_service=self._agent_life_service,
-                event_subscriber_registry=self._event_subscriber_registry,
-            )
+        self._event_ingress_processor = event_ingress_processor or EventIngressProcessor(
+            event_filter=self._event_filter,
+            activity_manager=self._activity_manager,
+            conversation_input_recorder=self._conversation_input_recorder,
+            agent_life_service=self._agent_life_service,
+            event_subscriber_registry=self._event_subscriber_registry,
         )
         self._event_enrichers: list[Callable[[AgentEvent], AgentEvent]] = []
         self._short_term_memory = short_term_memory
         self._topic_history = topic_history
-        self._runtime_event_executor = (
-            runtime_event_executor
-            or RuntimeEventExecutor(
-                activity_manager=self._activity_manager,
-                action_planner=self._action_planner,
-                action_scheduler=self._action_scheduler,
-                agent_life_service=self._agent_life_service,
-                event_enrichers_provider=lambda: tuple(self._event_enrichers),
-                trace_logger=self._trace_logger,
-            )
+        self._runtime_event_executor = runtime_event_executor or RuntimeEventExecutor(
+            activity_manager=self._activity_manager,
+            action_planner=self._action_planner,
+            action_scheduler=self._action_scheduler,
+            agent_life_service=self._agent_life_service,
+            event_enrichers_provider=lambda: tuple(self._event_enrichers),
+            trace_logger=self._trace_logger,
+            interaction_reaction_policy=interaction_reaction_policy,
         )
-        self._runtime_loop = (
-            runtime_loop
-            or RuntimeLoop(
-                event_queue=self._event_queue,
-                activity_planning_request_queue=(
-                    self._activity_planning_request_queue
-                ),
-                activity_planner_thread=self._activity_planner_thread,
-                agent_life_service=self._agent_life_service,
-                event_handler=self._handle_event,
-                autonomous_planning_enabled=autonomous_planning_enabled,
-                require_startup_completion=require_startup_completion,
-                autonomous_planning_poll_seconds=(
-                    autonomous_planning_poll_seconds
-                ),
-                trace_logger=self._trace_logger,
-            )
+        self._runtime_loop = runtime_loop or RuntimeLoop(
+            event_queue=self._event_queue,
+            activity_planning_request_queue=(self._activity_planning_request_queue),
+            activity_planner_thread=self._activity_planner_thread,
+            agent_life_service=self._agent_life_service,
+            event_handler=self._handle_event,
+            autonomous_planning_enabled=autonomous_planning_enabled,
+            require_startup_completion=require_startup_completion,
+            autonomous_planning_poll_seconds=(autonomous_planning_poll_seconds),
+            trace_logger=self._trace_logger,
         )
-        self._runtime_host_controller = (
-            runtime_host_controller
-            or RuntimeHostController(
-                runtime_loop=self._runtime_loop,
-                activity_planner_thread=self._activity_planner_thread,
-                activity_executor_thread=self._activity_executor_thread,
-                plugin_manager=self._plugin_manager,
-                ongoing_activity_coordinator=(
-                    self._ongoing_activity_coordinator
-                ),
-                async_initializers=async_initializers,
-                trace_logger=self._trace_logger,
-            )
+        self._runtime_host_controller = runtime_host_controller or RuntimeHostController(
+            runtime_loop=self._runtime_loop,
+            activity_planner_thread=self._activity_planner_thread,
+            activity_executor_thread=self._activity_executor_thread,
+            plugin_manager=self._plugin_manager,
+            ongoing_activity_coordinator=(self._ongoing_activity_coordinator),
+            async_initializers=async_initializers,
+            trace_logger=self._trace_logger,
         )
 
     @property
@@ -508,13 +441,9 @@ class RuntimeCoordinator:
         *,
         predicate: Callable[[AgentEvent], bool] | None = None,
     ) -> None:
-        self._event_subscriber_registry.register(
-            event_type, handler, predicate=predicate
-        )
+        self._event_subscriber_registry.register(event_type, handler, predicate=predicate)
 
-    def register_event_enricher(
-        self, enricher: Callable[[AgentEvent], AgentEvent]
-    ) -> None:
+    def register_event_enricher(self, enricher: Callable[[AgentEvent], AgentEvent]) -> None:
         self._event_enrichers.append(enricher)
 
     async def publish_events(self, events: list[AgentEvent]) -> None:

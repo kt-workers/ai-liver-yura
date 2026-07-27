@@ -53,7 +53,12 @@ class AgentEventStateUpdater:
         before_relationship = state.relationship_memory.current
 
         after_drive = self._drive_state_updater.update_by_event(before_drive, event)
-        appraisal = self._emotion_appraiser.appraise(event)
+        appraisal = self._emotion_appraiser.appraise(
+            event,
+            current_emotion=before_emotion,
+            relationship=before_relationship,
+            recent_history=state.memory.emotion_history,
+        )
         after_emotion = self._emotion_state_updater.apply(before_emotion, appraisal)
         relationship_memory = self._relationship_state_updater.update(
             state.relationship_memory,
@@ -95,6 +100,23 @@ class AgentEventStateUpdater:
                         before=asdict(before_emotion),
                         after=asdict(after_emotion),
                         reason=appraisal.reason,
+                        cause_category=(
+                            appraisal.cause.category
+                            if appraisal.cause is not None
+                            else appraisal.reason
+                        ),
+                        cause_summary=(
+                            appraisal.cause.summary
+                            if appraisal.cause is not None
+                            else ""
+                        ),
+                        target_id=(
+                            appraisal.cause.target
+                            if appraisal.cause is not None
+                            else None
+                        ),
+                        confidence=appraisal.confidence,
+                        relational_meaning=appraisal.relational_meaning.value,
                         recorded_at=event.occurred_at,
                     )
                 )

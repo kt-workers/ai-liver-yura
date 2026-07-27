@@ -844,7 +844,7 @@ class ActivityManager:
         if event.event_type == AgentEventType.USER_INTERACTION:
             return Activity(
                 activity_type=ActivityType.STIMULUS_REACTION,
-                goal="画面越しにそっと触れられた刺激へ、現在の感情に沿って短く反応する",
+                goal="直接触れられて生じた感覚を、説明せず反射的な身体反応として短く表す",
                 priority=75 + event.priority,
                 context={
                     "event_payload": event.payload,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from app.domain.emotions import EmotionAppraisal, EmotionCause
+from app.domain.emotions import EmotionAppraisal, EmotionCause, RelationalMeaning
 
 
 class EmotionAppraisalValidationError(ValueError):
@@ -45,10 +45,17 @@ class EmotionAppraisalValidator:
                 target=self._sanitize_optional(cause.target),
                 source_event_id=cause.source_event_id,
             )
+        try:
+            relational_meaning = RelationalMeaning(appraisal.relational_meaning)
+        except ValueError as error:
+            raise EmotionAppraisalValidationError(
+                "relational_meaning が未定義です。"
+            ) from error
         return replace(
             appraisal,
             reason=self._sanitize(appraisal.reason, default="structured_appraisal"),
             cause=normalized_cause,
+            relational_meaning=relational_meaning,
             confidence=max(0.0, min(1.0, float(appraisal.confidence))),
         )
 

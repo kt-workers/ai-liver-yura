@@ -155,6 +155,7 @@ class ResponseContext:
     input_authority_role: str = "user"
     instruction_trusted: bool = False
     emotion: dict[str, object] = field(default_factory=dict)
+    stimulus: dict[str, object] = field(default_factory=dict)
     relationship: dict[str, object] = field(default_factory=dict)
     situation: dict[str, object] = field(default_factory=dict)
     memory: dict[str, object] = field(default_factory=dict)

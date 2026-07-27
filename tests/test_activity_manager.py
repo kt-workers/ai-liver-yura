@@ -29,7 +29,7 @@ def test_user_interaction_becomes_stimulus_reaction() -> None:
         event_type=AgentEventType.USER_INTERACTION,
         payload={
             "stimulus_kind": "tap",
-            "stimulus_description": "画面越しにそっと触れられた",
+            "stimulus_description": "ユーザーからそっと触れられた",
         },
         priority=25,
     )
@@ -39,6 +39,9 @@ def test_user_interaction_becomes_stimulus_reaction() -> None:
     assert activity.activity_type == ActivityType.STIMULUS_REACTION
     assert activity.status == ActivityStatus.ACTIVE
     assert activity.priority == 100
+    assert activity.goal == (
+        "直接触れられて生じた感覚を、説明せず反射的な身体反応として短く表す"
+    )
     assert activity.context["event_payload"] == event.payload
 
 

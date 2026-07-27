@@ -1,9 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from dataclasses import replace
 
-from app.domain.emotions import EmotionAppraisal, EmotionCause
+from app.domain.emotions import (
+    EmotionAppraisal,
+    EmotionCause,
+    EmotionState,
+    RelationalMeaning,
+)
 from app.domain.events import AgentEvent, AgentEventType
+from app.domain.relationships import RelationshipState
+from app.runtime.contact_appraisal import ContactAppraiser
+from app.shared.contracts.memory import EmotionHistoryRecord
 
 
 class EmotionAppraiser:
@@ -11,12 +20,35 @@ class EmotionAppraiser:
 
     STRUCTURED_APPRAISAL_KEY = "emotion_appraisal"
 
-    def appraise(self, event: AgentEvent) -> EmotionAppraisal:
+    def __init__(self, contact_appraiser: ContactAppraiser | None = None) -> None:
+        self._contact_appraiser = contact_appraiser or ContactAppraiser()
+
+    def appraise(
+        self,
+        event: AgentEvent,
+        *,
+        current_emotion: EmotionState | None = None,
+        relationship: RelationshipState | None = None,
+        recent_history: Sequence[EmotionHistoryRecord] = (),
+    ) -> EmotionAppraisal:
         structured = event.payload.get(self.STRUCTURED_APPRAISAL_KEY)
         if isinstance(structured, Mapping):
-            return self._from_mapping(structured, event)
+            return self._apply_relational_meaning(
+                self._from_mapping(structured, event),
+                event=event,
+                current=current_emotion or EmotionState(),
+                recent_history=recent_history,
+            )
         if event.event_type == AgentEventType.USER_INTERACTION:
-            return self._from_mapping(self._interaction_values(event), event)
+            return self._from_mapping(
+                self._interaction_values(
+                    event,
+                    current_emotion or EmotionState(),
+                    relationship,
+                    recent_history,
+                ),
+                event,
+            )
 
         values = {
             AgentEventType.USER_TEXT: {
@@ -69,54 +101,206 @@ class EmotionAppraiser:
             return EmotionAppraisal(source_event_id=event.event_id)
         return self._from_mapping(values, event)
 
-    @staticmethod
-    def _interaction_values(event: AgentEvent) -> Mapping[str, object]:
-        kind = event.payload.get("stimulus_kind")
-        return {
-            "double_tap": {
-                "amusement_delta": 0.06,
-                "surprise_delta": 0.09,
-                "arousal_delta": 0.07,
-                "valence_delta": 0.04,
-                "talkativeness_delta": 0.03,
-                "reason": "user_double_tap_received",
-                "cause_summary": "ユーザーから画面越しに二度触れられた",
-            },
-            "long_press": {
-                "joy_delta": 0.04,
+    def _interaction_values(
+        self,
+        event: AgentEvent,
+        current: EmotionState,
+        relationship: RelationshipState | None,
+        recent_history: Sequence[EmotionHistoryRecord],
+    ) -> Mapping[str, object]:
+        region = str(event.payload.get("contact_region") or "center")
+        contact = self._contact_appraiser.appraise(
+            event,
+            current=current,
+            relationship=relationship,
+            recent_history=recent_history,
+        )
+        surprise = max(0.005, 0.04 * (1.0 - contact.overstimulation * 0.65))
+        meaning_values: dict[str, dict[str, object]] = {
+            "comforting": {
+                "joy_delta": 0.045,
                 "amusement_delta": 0.01,
-                "surprise_delta": 0.02,
-                "arousal_delta": 0.02,
+                "surprise_delta": surprise * 0.4,
+                "discomfort_delta": -min(0.08, current.reactive.discomfort),
+                "pressure_delta": -min(
+                    0.07,
+                    current.reactive.emotional_pressure,
+                ),
+                "arousal_delta": (0.5 - current.arousal) * 0.18 + 0.005,
+                "valence_delta": 0.055,
+                "talkativeness_delta": 0.005,
+                "reason": "contact_comfort_received",
+                "cause_summary": "信頼する相手との触れ合いに安心した",
+            },
+            "affectionate": {
+                "joy_delta": 0.035,
+                "amusement_delta": 0.02,
+                "surprise_delta": surprise * 0.65,
+                "discomfort_delta": -min(0.04, current.reactive.discomfort),
+                "pressure_delta": -min(
+                    0.035,
+                    current.reactive.emotional_pressure,
+                ),
+                "arousal_delta": 0.015,
                 "valence_delta": 0.04,
-                "talkativeness_delta": 0.02,
-                "reason": "user_long_press_received",
-                "cause_summary": "ユーザーから画面越しにしばらく触れられた",
+                "talkativeness_delta": 0.01,
+                "reason": "contact_affection_received",
+                "cause_summary": "触れ合いに親しさを感じた",
             },
-            "drag": {
-                "amusement_delta": 0.05,
-                "surprise_delta": 0.05,
-                "arousal_delta": 0.05,
-                "valence_delta": 0.03,
-                "talkativeness_delta": 0.02,
-                "reason": "user_drag_received",
-                "cause_summary": "ユーザーから画面越しになぞられた",
+            "playful": {
+                "amusement_delta": 0.04,
+                "surprise_delta": surprise,
+                "arousal_delta": 0.025,
+                "valence_delta": 0.025,
+                "talkativeness_delta": 0.01,
+                "reason": "contact_playful_received",
+                "cause_summary": "触れ合いを軽いじゃれ合いとして受け取った",
             },
-        }.get(
-            kind,
-            {
-                "amusement_delta": 0.03,
-                "surprise_delta": 0.06,
-                "arousal_delta": 0.04,
-                "valence_delta": 0.02,
-                "talkativeness_delta": 0.02,
-                "reason": "user_tap_received",
-                "cause_summary": "ユーザーから画面越しに触れられた",
+            "ambiguous": {
+                "surprise_delta": surprise,
+                "arousal_delta": 0.015,
+                "reason": "contact_ambiguous_received",
+                "cause_summary": "触れられた意図を測りかねた",
             },
+            "guarded": {
+                "pressure_delta": 0.02,
+                "arousal_delta": 0.005,
+                "valence_delta": -0.005,
+                "talkativeness_delta": -0.005,
+                "reason": "contact_guarded_received",
+                "cause_summary": "気持ちに余裕がなく、触れ合いに身構えた",
+            },
+            "overstimulating": {
+                "discomfort_delta": 0.025 + contact.overstimulation * 0.05,
+                "pressure_delta": 0.015 + contact.overstimulation * 0.025,
+                "arousal_delta": 0.02,
+                "valence_delta": -0.02 - contact.overstimulation * 0.025,
+                "talkativeness_delta": -0.01,
+                "reason": "contact_overstimulating",
+                "cause_summary": "触れ合いを少し負担に感じた",
+            },
+            "boundary_requested": {
+                "discomfort_delta": 0.05,
+                "pressure_delta": 0.045,
+                "arousal_delta": 0.025,
+                "valence_delta": -0.04,
+                "talkativeness_delta": -0.025,
+                "reason": "contact_boundary_requested",
+                "cause_summary": "触れ続けられて、やめてほしいと感じた",
+            },
+            "boundary_guarded": {
+                "discomfort_delta": 0.0,
+                "pressure_delta": 0.02,
+                "arousal_delta": 0.005,
+                "valence_delta": -0.008,
+                "talkativeness_delta": -0.005,
+                "reason": "contact_boundary_guarded",
+                "cause_summary": "境界を伝えた後で、まだ触れ合いに身構えた",
+            },
+            "boundary_ignored": {
+                "anger_delta": min(
+                    0.10,
+                    max(0, contact.boundary_violation_count - 1) * 0.035,
+                ),
+                "discomfort_delta": 0.04,
+                "pressure_delta": min(
+                    0.10,
+                    0.055 + contact.boundary_violation_count * 0.012,
+                ),
+                "arousal_delta": 0.035,
+                "valence_delta": -0.05,
+                "talkativeness_delta": -0.03,
+                "reason": "contact_boundary_ignored",
+                "cause_summary": "やめてほしいという境界を無視された",
+            },
+        }
+        values = meaning_values[contact.meaning]
+        if event.payload.get("continuous_contact"):
+            interval_ms = event.payload.get("contact_sample_interval_ms")
+            interval = (
+                float(interval_ms)
+                if isinstance(interval_ms, (int, float)) and not isinstance(interval_ms, bool)
+                else 0.0
+            )
+            sampling_weight = (
+                0.35
+                if event.payload.get("contact_phase") == "start"
+                else max(0.05, min(0.35, interval / 750.0))
+            )
+            for key, value in tuple(values.items()):
+                if (
+                    key.endswith("_delta")
+                    and isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                ):
+                    values[key] = float(value) * sampling_weight
+        values["cause"] = {
+            "category": values["reason"],
+            "summary": values["cause_summary"],
+            "target": region,
+        }
+        return values
+
+    def _apply_relational_meaning(
+        self,
+        appraisal: EmotionAppraisal,
+        *,
+        event: AgentEvent,
+        current: EmotionState,
+        recent_history: Sequence[EmotionHistoryRecord],
+    ) -> EmotionAppraisal:
+        if appraisal.relational_meaning != RelationalMeaning.REPAIR_ATTEMPT:
+            return appraisal
+        cutoff = event.occurred_at.timestamp() - 300.0
+        latest_boundary = next(
+            (
+                item
+                for item in reversed(recent_history)
+                if (
+                    item.reason
+                    in {
+                        "contact_boundary_requested",
+                        "contact_boundary_guarded",
+                        "contact_boundary_ignored",
+                    }
+                    and item.recorded_at.timestamp() >= cutoff
+                )
+            ),
+            None,
+        )
+        if latest_boundary is None:
+            return appraisal
+        latest_repair = next(
+            (
+                item
+                for item in reversed(recent_history)
+                if item.relational_meaning == RelationalMeaning.REPAIR_ATTEMPT.value
+            ),
+            None,
+        )
+        if latest_repair is not None and latest_repair.recorded_at >= latest_boundary.recorded_at:
+            return appraisal
+        return replace(
+            appraisal,
+            anger_delta=-min(0.25, current.reactive.anger),
+            discomfort_delta=-min(0.22, current.reactive.discomfort),
+            pressure_delta=-min(
+                0.28,
+                current.reactive.emotional_pressure,
+            ),
+            arousal_delta=-min(0.12, max(0.0, current.arousal - 0.5)),
+            valence_delta=max(0.08, appraisal.valence_delta),
+            talkativeness_delta=max(0.04, appraisal.talkativeness_delta),
+            reason="contact_repair_received",
+            cause=EmotionCause(
+                category="contact_repair_received",
+                summary="関係を修復しようとする働きかけを受け、緊張が少しほどけた",
+                target=latest_boundary.target_id,
+                source_event_id=event.event_id,
+            ),
         )
 
-    def _from_mapping(
-        self, values: Mapping[str, object], event: AgentEvent
-    ) -> EmotionAppraisal:
+    def _from_mapping(self, values: Mapping[str, object], event: AgentEvent) -> EmotionAppraisal:
         reason = self._text(values.get("reason"), "structured_appraisal")
         cause_value = values.get("cause")
         cause_mapping = cause_value if isinstance(cause_value, Mapping) else values
@@ -143,6 +327,7 @@ class EmotionAppraiser:
             talkativeness_delta=self._number(values.get("talkativeness_delta")),
             reason=reason,
             cause=cause,
+            relational_meaning=self._relational_meaning(values.get("relational_meaning")),
             confidence=self._bounded_number(values.get("confidence"), default=1.0),
             source_event_id=event.event_id,
         )
@@ -156,6 +341,13 @@ class EmotionAppraiser:
     @classmethod
     def _bounded_number(cls, value: object, *, default: float) -> float:
         return max(0.0, min(1.0, cls._number(value, default)))
+
+    @staticmethod
+    def _relational_meaning(value: object) -> RelationalMeaning:
+        try:
+            return RelationalMeaning(str(value or RelationalMeaning.NONE.value))
+        except ValueError:
+            return RelationalMeaning.NONE
 
     @staticmethod
     def _text(value: object, default: str) -> str:
