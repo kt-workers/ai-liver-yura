@@ -48,8 +48,11 @@ class UdpAgentStatePublisher:
             "schema_version": 1,
             "observed_at": datetime.now(timezone.utc).isoformat(),
             "emotion": {
-                **asdict(state.current_emotion),
                 "mood": state.current_emotion.mood.value,
+                "arousal": state.current_emotion.arousal,
+                "valence": state.current_emotion.valence,
+                "talkativeness": state.current_emotion.talkativeness,
+                "reactive": state.current_emotion.reactive.as_dict(),
             },
             "drive": asdict(state.current_drive),
             "activity": {

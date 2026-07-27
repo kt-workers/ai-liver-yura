@@ -16,6 +16,7 @@ from app.domain.emotions import (
     PerformanceDirective,
     PerformanceDirectiveType,
     ReactiveEmotionState,
+    RelationalMeaning,
 )
 from app.domain.events import AgentEvent, AgentEventType
 from app.domain.memory import AgentMemoryState, EmotionHistoryEntry
@@ -163,6 +164,19 @@ class _SlowAppraisalModel:
         return EmotionAppraisal(joy_delta=0.5, confidence=0.9)
 
 
+class _RepairAppraisalModel:
+    def __init__(self) -> None:
+        self.call_count = 0
+
+    async def appraise(self, context: object) -> EmotionAppraisal:
+        self.call_count += 1
+        return EmotionAppraisal(
+            reason="semantic_relationship_repair",
+            relational_meaning=RelationalMeaning.REPAIR_ATTEMPT,
+            confidence=0.9,
+        )
+
+
 @pytest.mark.asyncio
 async def test_emotion_appraisal_timeout_falls_back_without_blocking() -> None:
     service = EmotionAppraisalService(
@@ -201,3 +215,40 @@ async def test_acting_request_skips_internal_emotion_appraisal() -> None:
 
     assert enriched.payload["emotion_appraisal_skipped"] == "performance_request"
     assert "emotion_appraisal" not in enriched.payload
+
+
+@pytest.mark.asyncio
+async def test_emotion_appraisal_attaches_typed_relational_meaning() -> None:
+    service = EmotionAppraisalService(
+        _RepairAppraisalModel(),
+        settings=EmotionAppraisalSettings(timeout_seconds=0.1),
+    )
+
+    enriched = await service.enrich(
+        AgentEvent(
+            event_type=AgentEventType.USER_TEXT,
+            payload={"text": "任意の自然文"},
+        ),
+        recent_context="接触について境界を伝えた",
+    )
+
+    structured = enriched.payload["emotion_appraisal"]
+    assert structured["relational_meaning"] == "repair_attempt"
+
+
+@pytest.mark.asyncio
+async def test_semantic_appraisal_cache_includes_recent_context() -> None:
+    model = _RepairAppraisalModel()
+    service = EmotionAppraisalService(
+        model,
+        settings=EmotionAppraisalSettings(timeout_seconds=0.1),
+    )
+    event = AgentEvent(
+        event_type=AgentEventType.USER_TEXT,
+        payload={"text": "同じ入力"},
+    )
+
+    await service.enrich(event, recent_context="通常の会話")
+    await service.enrich(event, recent_context="境界を伝えた後")
+
+    assert model.call_count == 2

@@ -7,7 +7,7 @@ from app.adapters.telemetry import (
     UdpAgentStatePublisherConfig,
 )
 from app.domain.drives import DriveState
-from app.domain.emotions import EmotionState, MoodType
+from app.domain.emotions import EmotionState, MoodType, ReactiveEmotionState
 from app.runtime.agent_state import AgentState
 
 
@@ -32,6 +32,11 @@ def test_udp_agent_state_publisher_excludes_text_and_emits_inner_state() -> None
             arousal=0.7,
             valence=0.6,
             talkativeness=0.4,
+            reactive=ReactiveEmotionState(
+                joy=0.7,
+                sadness=0.2,
+                emotional_pressure=0.35,
+            ),
         ),
         current_drive=DriveState(
             curiosity=0.8,
@@ -48,6 +53,16 @@ def test_udp_agent_state_publisher_excludes_text_and_emits_inner_state() -> None
     payload = json.loads(raw)
     assert address == ("127.0.0.1", 18766)
     assert payload["emotion"]["mood"] == "happy"
+    assert payload["emotion"]["reactive"] == {
+        "joy": 0.7,
+        "amusement": 0.0,
+        "anger": 0.0,
+        "sadness": 0.2,
+        "fear": 0.0,
+        "surprise": 0.0,
+        "discomfort": 0.0,
+        "emotional_pressure": 0.35,
+    }
     assert payload["drive"]["curiosity"] == 0.8
     assert payload["attention"] == {"engaged": True}
     assert "sensitive-window-title" not in raw.decode("utf-8")

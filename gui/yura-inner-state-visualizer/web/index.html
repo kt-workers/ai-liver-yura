@@ -8,8 +8,14 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <canvas id="field" aria-label="ゆらの内面状態を表す粒子ビジュアライザー"></canvas>
+    <canvas
+      id="field"
+      role="button"
+      tabindex="0"
+      aria-label="ゆらの内面状態を表す粒子ビジュアライザー。クリックまたはEnterキーで、ゆらへそっと刺激を届けます"
+    ></canvas>
     <div class="veil"></div>
+    <p class="stimulus-status" id="stimulusStatus" role="status" aria-live="polite"></p>
 
     <header class="topbar">
       <div class="identity">
@@ -79,7 +85,7 @@
 
       <section class="help-section" aria-labelledby="helpColorTitle">
         <h3 id="helpColorTitle">色</h3>
-        <p><strong>気分と快・不快</strong>を表します。暖色ほど快、青色ほど不快寄りです。</p>
+        <p><strong>基調色は快・不快</strong>を連続的に表し、気分が色合いをわずかに補います。球を巡る異なる色は、同時にある強い反応感情です。</p>
         <div class="mood-colors" aria-label="気分ごとの色">
           <span class="mood-color neutral">平静</span>
           <span class="mood-color happy">喜び</span>
@@ -91,13 +97,33 @@
       </section>
 
       <section class="help-section help-grid" aria-label="粒子表現の意味">
-        <p><strong>速さ・脈動・発光</strong><span>覚醒度</span></p>
+        <p><strong>回転・呼吸の速さ</strong><span>覚醒度</span></p>
+        <p><strong>粒子の発光</strong><span>覚醒度とエネルギー</span></p>
         <p><strong>大きさ・明るさ</strong><span>エネルギー</span></p>
         <p><strong>全体の広がり</strong><span>好奇心</span></p>
         <p><strong>まとまり</strong><span>集中・関与</span></p>
-        <p><strong>平坦さ・散らばり</strong><span>退屈</span></p>
+        <p><strong>ゆっくりした緩み</strong><span>退屈</span></p>
         <p><strong>表面の流れ</strong><span>話したさ</span></p>
+        <p><strong>輪郭の乱れ方</strong><span>反応感情の種類と強さ</span></p>
+        <p><strong>異なる色の潮流</strong><span>同時にある強い感情</span></p>
+        <p><strong>中心核の収縮</strong><span>感情圧</span></p>
+        <p><strong>中心から広がる波</strong><span>新しく強まった感情</span></p>
         <p><strong>気泡の流れ</strong><span>光の粒子に沿う海中の流れ</span></p>
+      </section>
+
+      <section class="help-section" aria-labelledby="helpShapeTitle">
+        <h3 id="helpShapeTitle">形</h3>
+        <p>平常時は静かな球形を保ちます。喜びは滑らかな膨らみ、愉快は弾む波、怒りは鋭い凹凸、悲しみは沈む扁平化、恐れは細かな震え、驚きは外向きの脈動、不快は不均一な歪みとして重なります。</p>
+      </section>
+
+      <section class="help-section" aria-labelledby="helpConnectionTitle">
+        <h3 id="helpConnectionTitle">接続</h3>
+        <p>粒子の収束と画面外への拡散は、ゆらとの接続状態を表す演出です。退屈や感情による散逸ではありません。</p>
+      </section>
+
+      <section class="help-section" aria-labelledby="helpTouchTitle">
+        <h3 id="helpTouchTitle">触れる</h3>
+        <p>クリックは単発波紋、ダブルクリックは二重波紋、長押しは触れている間に集まる光として現れます。ドラッグ中は軌跡だけが後端から短く消え、離した位置から波紋が広がります。それぞれ異なる刺激としてゆらへ届きます。Enter／Spaceはクリックと同じです。画面が感情値を直接変更することはなく、ゆら自身の状態と状況に応じて反応が決まります。</p>
       </section>
     </dialog>
 

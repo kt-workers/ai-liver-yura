@@ -39,4 +39,11 @@ class DefaultEventFilter:
                 replace_key=event.replace_key or "silence_timeout",
             )
 
+        if event.event_type == AgentEventType.USER_INTERACTION:
+            return replace(
+                event,
+                discardable=True,
+                replace_key=event.replace_key or "user_interaction",
+            )
+
         return event

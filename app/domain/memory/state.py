@@ -151,6 +151,7 @@ class AgentMemoryState:
                     "cause_summary": item.cause_summary,
                     "target_id": item.target_id,
                     "confidence": item.confidence,
+                    "relational_meaning": item.relational_meaning,
                     "recorded_at": item.recorded_at.isoformat(),
                 }
                 for item in self.emotion_history[-limit:]
