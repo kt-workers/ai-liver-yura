@@ -17,6 +17,7 @@ from app.runtime.activity_planner_thread import (
 )
 from app.runtime.agent_life_service import AgentLifeService
 from app.runtime.event_queue import EventQueue
+from app.runtime.interaction_reaction_policy import InteractionReactionPolicy
 from app.runtime.ongoing_activity_coordinator import OngoingActivityCoordinator
 from app.runtime.runtime_event_executor import RuntimeEventExecutor
 from app.runtime.runtime_host_controller import RuntimeHostController
@@ -58,6 +59,7 @@ class RuntimeCompositionRoot:
         autonomous_planning_poll_seconds: float,
         async_initializers: tuple[Callable[[], Awaitable[None]], ...],
         trace_logger: TraceLogger,
+        interaction_reaction_policy: InteractionReactionPolicy | None,
         event_executor: RuntimeEventExecutor | None = None,
         runtime_loop: RuntimeLoop | None = None,
         host_controller: RuntimeHostController | None = None,
@@ -69,6 +71,7 @@ class RuntimeCompositionRoot:
             agent_life_service=agent_life_service,
             event_enrichers_provider=event_enrichers_provider,
             trace_logger=trace_logger,
+            interaction_reaction_policy=interaction_reaction_policy,
         )
         resolved_runtime_loop = runtime_loop or RuntimeLoop(
             event_queue=event_queue,

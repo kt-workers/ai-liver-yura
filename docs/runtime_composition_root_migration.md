@@ -16,6 +16,9 @@
 
 `RuntimeCoordinator`の公開コンストラクタ引数は維持し、既存の依存注入済みインスタンスもそのまま優先する。
 
+`InteractionReactionPolicy`は`RuntimeCompositionRoot`を経由して
+`RuntimeEventExecutor`へ渡し、`USER_INTERACTION`の接触反応制御を維持する。
+
 ## 第2段階: Event受付系
 
 以下をComposition Rootへ移動する。
