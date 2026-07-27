@@ -50,6 +50,7 @@ from app.runtime.activity_result_builder import build_activity_result
 from app.runtime.activity_turn_result_factory import canceled_output_group
 from app.runtime.agent_life_service import AgentLifeService
 from app.runtime.agent_state import AgentState
+from app.runtime.autonomous_activity_execution import prepare_autonomous_execution
 from app.runtime.autonomous_output import completed_speech_text
 from app.runtime.behavior_planner import ActivityPlanValidator, BehaviorPlanner
 from app.runtime.behavior_planning_context_builder import (
