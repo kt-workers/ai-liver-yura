@@ -213,7 +213,7 @@ RuntimeCoordinator (Facade)
 │  └─ BehaviorFallbackRouter
 ├─ ExplicitActivityExecutor
 ├─ RuntimeLoop
-└─ RuntimeLifecycleController
+└─ RuntimeHostController
 ```
 
 - `RuntimeCoordinator`は公開API、読み取り専用診断値、コンポーネント間の接続だけを担う。
@@ -238,12 +238,12 @@ RuntimeCoordinator (Facade)
   `ActivityTurnResult`記録、Activity完了、AgentState同期を所有する。
 - `RuntimeLoop`はEventQueue取得、startup完了、poll間隔、planner busy確認、
   ActivityPlanningRequest投入を所有する。
-- `RuntimeLifecycleController`はasync initializer、running状態、Thread起動・停止・join、
+- `RuntimeHostController`はasync initializer、running状態、Thread起動・停止・join、
   Plugin shutdown、stop時のOngoingActivity cancelを所有する。
 
 各コンポーネントが保持してよい可変状態は、責務に必要な最小限に限定する。
 `BehaviorRoutingCoordinator`は直近評価、`PendingConfirmationManager`は確認待ちと履歴、
-`RuntimeLoop`はstartup/poll時刻、`RuntimeLifecycleController`はrunning/initializer完了状態を
+`RuntimeLoop`はstartup/poll時刻、`RuntimeHostController`はrunning/initializer完了状態を
 保持してよい。Plugin routing、同期、切替は処理をまたぐ独自状態を保持しない。
 
 CoreからPluginへの依存は`app.shared.contracts.plugins`のProtocol/DTOとPluginManagerの登録境界へ
@@ -805,7 +805,7 @@ ActionScheduler の確定仕様:
 ## RuntimeCoordinator
 
 RuntimeCoordinator はFacadeとして扱い、Loopの状態機械は`RuntimeLoop`と
-`RuntimeLifecycleController`へ委譲する。通常EventをActivity/Actionへ変換する
+`RuntimeHostController`へ委譲する。通常EventをActivity/Actionへ変換する
 `_handle_event()`は互換経路として残るが、Facadeからさらに分離する次の候補である。
 
 メソッド方針:
@@ -843,7 +843,7 @@ RuntimeCoordinator が直接やらないこと:
 
 Runtime実行の基本動作:
 
-1. RuntimeLifecycleControllerがinitializerを実行し、running状態とThreadを起動する
+1. RuntimeHostControllerがinitializerを実行し、running状態とThreadを起動する
 2. RuntimeLoopがEventQueueからイベントを待ち受ける
 3. `SPEECH_STARTED` / `SPEECH_FINISHED` の場合は AgentLifeService のみ更新する
 4. 通常 Event の場合は ActivityManager に渡す
@@ -866,8 +866,8 @@ Runtime実行の基本動作:
   planner非busyの場合にActivityPlanningRequestを投入する
 - `run_once()` は処理可能な Event が存在しない場合のみ `None` を返す
 - RuntimeLoopはEventQueueから1件取り出し、注入されたevent handlerへ処理を委譲する
-- `RuntimeCoordinator.run()`と`stop()`は`RuntimeLifecycleController`への委譲だけを行う
-- EventQueueが空の場合、RuntimeLifecycleControllerは短時間待機してから再確認する
+- `RuntimeCoordinator.run()`と`stop()`は`RuntimeHostController`への委譲だけを行う
+- EventQueueが空の場合、RuntimeHostControllerは短時間待機してから再確認する
 - `_handle_event()`は通常Eventから状態更新、Activity生成、Action計画・実行までを行う互換経路である
 - `_handle_event()` は `SPEECH_STARTED` / `SPEECH_FINISHED` を AgentState 更新専用Eventとして扱う
 - AgentState 更新専用Eventは ActivityManager に渡さない

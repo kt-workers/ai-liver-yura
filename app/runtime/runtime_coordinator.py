@@ -75,7 +75,7 @@ from app.runtime.plugin_ongoing_activity_synchronizer import (
 from app.runtime.runtime_diagnostic_snapshot_builder import (
     RuntimeDiagnosticSnapshotBuilder,
 )
-from app.runtime.runtime_lifecycle_controller import RuntimeLifecycleController
+from app.runtime.runtime_host_controller import RuntimeHostController
 from app.runtime.runtime_loop import RuntimeLoop
 from app.runtime.user_input_event_logger import UserInputEventLogger
 from app.runtime.user_input_event_router import UserInputEventRouter
@@ -142,7 +142,7 @@ class RuntimeCoordinator:
         user_input_event_logger: UserInputEventLogger | None = None,
         user_input_event_router: UserInputEventRouter | None = None,
         runtime_loop: RuntimeLoop | None = None,
-        runtime_lifecycle_controller: RuntimeLifecycleController | None = None,
+        runtime_host_controller: RuntimeHostController | None = None,
     ) -> None:
         self._event_queue = event_queue
         self._activity_manager = activity_manager
@@ -387,9 +387,9 @@ class RuntimeCoordinator:
                 trace_logger=self._trace_logger,
             )
         )
-        self._runtime_lifecycle_controller = (
-            runtime_lifecycle_controller
-            or RuntimeLifecycleController(
+        self._runtime_host_controller = (
+            runtime_host_controller
+            or RuntimeHostController(
                 runtime_loop=self._runtime_loop,
                 activity_planner_thread=self._activity_planner_thread,
                 activity_executor_thread=self._activity_executor_thread,
@@ -599,10 +599,10 @@ class RuntimeCoordinator:
         return await self._runtime_loop.run_once()
 
     async def run(self) -> None:
-        await self._runtime_lifecycle_controller.run()
+        await self._runtime_host_controller.run()
 
     def stop(self) -> None:
-        self._runtime_lifecycle_controller.stop()
+        self._runtime_host_controller.stop()
 
     async def _handle_event(self, event: AgentEvent) -> ActionPlanGroup:
         for enricher in self._event_enrichers:

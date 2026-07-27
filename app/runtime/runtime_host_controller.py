@@ -11,7 +11,7 @@ from app.runtime.runtime_loop import RuntimeLoop
 from app.utils.trace import TraceLogger
 
 
-class RuntimeLifecycleController:
+class RuntimeHostController:
     """Runtime初期化、常駐Thread、停止時cleanupを所有する。"""
 
     def __init__(

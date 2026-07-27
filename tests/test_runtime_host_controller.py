@@ -2,7 +2,7 @@ import pytest
 
 from app.runtime.activity_manager import ActivityManager
 from app.runtime.ongoing_activity_coordinator import OngoingActivityCoordinator
-from app.runtime.runtime_lifecycle_controller import RuntimeLifecycleController
+from app.runtime.runtime_host_controller import RuntimeHostController
 from app.utils.trace import TraceLogger
 
 pytestmark = pytest.mark.unit
@@ -10,7 +10,7 @@ pytestmark = pytest.mark.unit
 
 class FakeRuntimeLoop:
     def __init__(self) -> None:
-        self.controller: RuntimeLifecycleController | None = None
+        self.controller: RuntimeHostController | None = None
         self.calls = 0
 
     async def run_once(self) -> None:
@@ -61,7 +61,7 @@ async def test_initializer_failure_does_not_prevent_runtime_start() -> None:
         calls.append("succeed")
 
     runtime_loop = FakeRuntimeLoop()
-    controller = RuntimeLifecycleController(
+    controller = RuntimeHostController(
         runtime_loop=runtime_loop,  # type: ignore[arg-type]
         activity_planner_thread=FakeThread(),  # type: ignore[arg-type]
         activity_executor_thread=FakeThread(),  # type: ignore[arg-type]
@@ -92,7 +92,7 @@ def test_stop_stops_and_joins_threads_then_shuts_down_plugin_and_ongoing() -> No
     planner_thread = FakeThread(alive=True)
     executor_thread = FakeThread(alive=True)
     plugin_manager = FakePluginManager()
-    controller = RuntimeLifecycleController(
+    controller = RuntimeHostController(
         runtime_loop=FakeRuntimeLoop(),  # type: ignore[arg-type]
         activity_planner_thread=planner_thread,  # type: ignore[arg-type]
         activity_executor_thread=executor_thread,  # type: ignore[arg-type]
