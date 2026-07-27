@@ -87,7 +87,8 @@ async def test_state_only_event_does_not_create_activity(
 
     result = await executor.execute(AgentEvent(event_type=event_type, payload={}))
 
-    assert result == ActionPlanGroup()
+    assert result.is_empty()
+    assert result.activity_turn_result is None
     manager.handle_event.assert_not_called()
     planner.plan.assert_not_called()
     scheduler.prepare.assert_not_awaited()
@@ -120,7 +121,8 @@ async def test_successful_event_execution_completes_activity_and_syncs_state() -
         AgentEvent(event_type=AgentEventType.USER_TEXT, payload={"text": "こんにちは"})
     )
 
-    assert result == ActionPlanGroup()
+    assert result.is_empty()
+    assert result.activity_turn_result is None
     planner.plan.assert_awaited_once_with(activity)
     scheduler.prepare.assert_awaited_once()
     scheduler.execute.assert_awaited_once()
