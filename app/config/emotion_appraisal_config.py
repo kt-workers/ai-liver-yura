@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,13 @@ def load_emotion_appraisal_settings(
     config_path: str | Path,
 ) -> EmotionAppraisalSettings:
     """config.yamlのemotion_appraisalを型付き設定へ変換する。"""
+
+    warnings.warn(
+        "emotion_appraisal の独立YAML再読込はdeprecatedです。"
+        "後続の複数設定ローダー工程でAppConfigへ統合します。",
+        FutureWarning,
+        stacklevel=2,
+    )
 
     if not str(config_path).strip():
         return EmotionAppraisalSettings()

@@ -74,6 +74,15 @@ from app.config.app_config import (
     ResponseGeneratorSettings,
     ServiceSettings,
 )
+from app.config.service_schema import (
+    FakeObsServiceSettings,
+    FakeYouTubeServiceSettings,
+    ObsWebSocketServiceSettings,
+    OllamaServiceSettings,
+    OpenAiServiceSettings,
+    VoiceVoxServiceSettings,
+    YouTubeServiceSettings,
+)
 from app.core.plugins import PluginManager
 from app.domain.activities import Activity, ActivityStatus, ActivityType
 from app.domain.character import CharacterProfile
@@ -199,16 +208,31 @@ def _require_service_value(value: str | None, field: str, service: str) -> str:
 
 
 def _service_timeout(service: ServiceSettings) -> float:
-    if service.timeout_seconds is None:
-        raise RuntimeError("外部AIサービスには timeout_seconds が必要です。")
-    return service.timeout_seconds
+    if isinstance(
+        service,
+        (OpenAiServiceSettings, OllamaServiceSettings, VoiceVoxServiceSettings),
+    ):
+        return service.timeout_seconds
+    raise RuntimeError("外部AIサービスには timeout_seconds が必要です。")
 
 
 def create_streaming_demo_config(config: AppConfig) -> AppConfig:
     """Return an explicit, external-I/O-free composition preset."""
     services = dict(config.services)
-    services["youtube"] = replace(services["youtube"], type="fake")
-    services["obs"] = replace(services["obs"], type="fake")
+    youtube = services["youtube"]
+    if isinstance(youtube, YouTubeServiceSettings):
+        services["youtube"] = FakeYouTubeServiceSettings(
+            client_secret_path_env=youtube.client_secret_path_env,
+            token_path_env=youtube.token_path_env,
+            request_timeout_seconds=youtube.request_timeout_seconds,
+            max_retries=youtube.max_retries,
+            retry_initial_delay_seconds=youtube.retry_initial_delay_seconds,
+            oauth_open_browser=youtube.oauth_open_browser,
+            allow_live_broadcast=youtube.allow_live_broadcast,
+            oauth_timeout_seconds=youtube.oauth_timeout_seconds,
+            allowed_privacy_statuses=youtube.allowed_privacy_statuses,
+        )
+    services["obs"] = FakeObsServiceSettings()
     return replace(
         config,
         app=replace(config.app, mode="streaming_demo"),
@@ -286,9 +310,9 @@ def create_character_profile(config: AppConfig) -> CharacterProfile:
         personality=character_config.personality,
         speaking_style=character_config.speaking_style,
         streaming_style=character_config.streaming_style,
-        likes=character_config.likes,
-        dislikes=character_config.dislikes,
-        behavior_policy=character_config.behavior_policy,
+        likes=list(character_config.likes),
+        dislikes=list(character_config.dislikes),
+        behavior_policy=list(character_config.behavior_policy),
     )
     return character_profile
 
@@ -415,6 +439,8 @@ def create_llm_role_generator(
     """役割ごとに独立したAdapterを生成する。旧設定への暗黙フォールバックはしない。"""
 
     model, service = _resolve_model(config, settings.model)
+    if not isinstance(service, (OpenAiServiceSettings, OllamaServiceSettings)):
+        raise RuntimeError(f"未対応のモデルサービスです: {service.type}")
     services = dict(config.services)
     services[model.service] = replace(service, timeout_seconds=settings.timeout_seconds)
     role_config = replace(
@@ -945,33 +971,19 @@ def create_runtime_coordinator(
     if character_llm_plugin is not None and validator_llm_plugin is not None:
         plugin_manager.register(character_llm_plugin)
         plugin_manager.register(validator_llm_plugin)
-    plugin_manager.register(GamesPlugin())
+    plugin_manager.register(GamesPlugin(config.plugins.games))
     relationship_memory_plugin = RelationshipMemoryPlugin(raw_relationship_memory_store)
     plugin_manager.register(relationship_memory_plugin)
     agent_memory_plugin = AgentMemoryPlugin(raw_agent_memory_store)
     plugin_manager.register(agent_memory_plugin)
     plugin_manager.register(VoiceOutputPlugin(speech_synthesizer, audio_player))
-    game_model = (
-        config.plugins.games.intent_interpreter.model or config.response_generator.model
-    )
+    game_model = config.plugins.games.intent_interpreter.model or config.response_generator.model
     plugin_manager.initialize_enabled_plugins(
         PluginContext(
             llm_gateway=_PluginLlmGateway(default_llm_plugin),
             activity_gateway=_ActivityManagerPluginGateway(activity_manager),
             clock=SystemClock(),
             configuration={
-                "intent_interpreter": {
-                    "enabled": config.plugins.games.intent_interpreter.enabled,
-                    "model": game_model,
-                    "confidence_threshold": (
-                        config.plugins.games.intent_interpreter.confidence_threshold
-                    ),
-                    "max_attempts": config.plugins.games.intent_interpreter.max_attempts,
-                },
-                "shiritori": {
-                    "enabled": config.plugins.games.shiritori.enabled,
-                    "max_generation_retries": config.plugins.games.shiritori.max_generation_retries,
-                },
                 "llm_available": _is_model_provider_available(config, game_model),
             },
             capability_reporter=plugin_manager,
@@ -1452,12 +1464,8 @@ def create_stream_preparation_runtime(config: AppConfig) -> StreamPreparationRun
                 host=host,
                 port=port,
                 password_env=password_env,
-                connect_timeout_seconds=obs_service.connect_timeout_seconds
-                or obs_service.timeout_seconds
-                or 5.0,
-                request_timeout_seconds=obs_service.request_timeout_seconds
-                or obs_service.timeout_seconds
-                or 5.0,
+                connect_timeout_seconds=obs_service.connect_timeout_seconds,
+                request_timeout_seconds=obs_service.request_timeout_seconds,
             )
         )
         obs = ObsWebSocketPreparationAdapter(
@@ -1467,9 +1475,7 @@ def create_stream_preparation_runtime(config: AppConfig) -> StreamPreparationRun
                 optional_audio_sources=config.streaming.obs.optional_audio_sources,
                 avatar_source_name=config.streaming.obs.avatar_source_name,
                 low_volume_threshold_db=config.streaming.obs.low_volume_threshold_db,
-                request_timeout_seconds=obs_service.request_timeout_seconds
-                or obs_service.timeout_seconds
-                or 5.0,
+                request_timeout_seconds=obs_service.request_timeout_seconds,
                 max_retries=obs_service.max_retries or 0,
                 retry_initial_delay_seconds=obs_service.retry_initial_delay_seconds
                 or 0.5,
@@ -1478,9 +1484,7 @@ def create_stream_preparation_runtime(config: AppConfig) -> StreamPreparationRun
         )
         obs_control = ObsWebSocketStreamingControlAdapter(
             obs_client_factory,
-            request_timeout_seconds=obs_service.request_timeout_seconds
-            or obs_service.timeout_seconds
-            or 5.0,
+            request_timeout_seconds=obs_service.request_timeout_seconds,
         )
     else:
         raise RuntimeError(f"未対応のOBSサービスです: {obs_service.type}")
@@ -1503,6 +1507,10 @@ def create_stream_preparation_runtime(config: AppConfig) -> StreamPreparationRun
         tts = FakeTtsHealthAdapter()
     else:
         voicevox_service = _resolve_service(config, config.speech.service)
+        if not isinstance(voicevox_service, VoiceVoxServiceSettings):
+            raise RuntimeError(
+                f"未対応の音声合成サービスです: {voicevox_service.type}"
+            )
         player_command = config.speech.player.command or (
             "afplay" if sys.platform == "darwin" else "aplay"
         )
@@ -1617,9 +1625,13 @@ def create_stream_preparation_runtime(config: AppConfig) -> StreamPreparationRun
         config.config_path,
         youtube_control.adapter_type,
         obs_control.adapter_type,
-        obs_service.host,
-        obs_service.port,
-        bool(obs_service.password_env and os.getenv(obs_service.password_env)),
+        obs_service.host if isinstance(obs_service, ObsWebSocketServiceSettings) else None,
+        obs_service.port if isinstance(obs_service, ObsWebSocketServiceSettings) else None,
+        bool(
+            isinstance(obs_service, ObsWebSocketServiceSettings)
+            and obs_service.password_env
+            and os.getenv(obs_service.password_env)
+        ),
     )
     return StreamPreparationRuntime(
         config,
