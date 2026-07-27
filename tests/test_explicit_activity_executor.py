@@ -7,6 +7,9 @@ import pytest
 from app.runtime.explicit_activity_executor import ExplicitActivityExecutor
 
 
+pytestmark = pytest.mark.unit
+
+
 @pytest.mark.asyncio
 async def test_execute_runs_action_pipeline_and_records_output() -> None:
     activity = MagicMock(activity_id="activity-1")
