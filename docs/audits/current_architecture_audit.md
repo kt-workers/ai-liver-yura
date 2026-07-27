@@ -504,3 +504,51 @@ confirmation、Streaming、Plugin、immutable mapping、tuple変換が等価で�
 
 次工程は`speech`と`memory`を`application.yaml`から個別owner fileへ移す。
 環境別overrideと単一`config.yaml`廃止は未実装・未決定のままとする。
+
+## 10. speech・memory本番設定の分割
+
+本番manifestの次段階として、`speech`と`memory`を暫定集約
+`config/application.yaml`から分離した。
+
+| owner file | トップレベルキー |
+| --- | --- |
+| `config/runtime.yaml` | `app`、`trace`、`input_receivers`、`confirmation` |
+| `config/character.yaml` | `character` |
+| `config/speech.yaml` | `speech` |
+| `config/memory.yaml` | `memory` |
+| `config/application.yaml` | `services`、`models`、`response_generator`、`llm_roles`、`topic_classifier`、`streaming`、`plugins` |
+
+`config/index.yaml`はこのownershipをすべて明示し、各owner fileのトップレベルキー集合と
+manifest割当を完全一致させる。`application.yaml`から`speech`と`memory`は削除済みであり、
+重複ownershipやdeep mergeはない。
+
+### 値、参照、source追跡
+
+`speech.yaml`には有効状態、VoiceVox service参照、発音辞書path、speaker ID、全voice profile、
+player設定と既存コメントをそのまま移した。`memory.yaml`にはagent、relationship、topic
+memory設定と既存コメントをそのまま移した。値、配列順、コメントの要約・校正は行っていない。
+
+分割後も次の参照グラフを維持する。
+
+- `speech.service`から`services.voicevox`
+- `memory.topic_memory.database_service`から`services.topic_memory_database`
+- `memory.topic_memory.embedding_model`から`models.openai_embedding`
+- `memory.topic_memory.summary.model`から`models.openai_chat`
+
+speechの型・参照エラーは`config/speech.yaml`、memoryの型・参照エラーは
+`config/memory.yaml`を`ConfigError.source_file`として返す。参照先service/modelではなく、
+参照を定義したowner fileをsourceとする。
+
+発音辞書、agent memory、relationship memoryの設定値内相対path規則は変更していない。
+`config/pronunciation_dictionary.yaml`、memoryデータ、PostgreSQL store、Repository、
+DB migrationにも変更はない。
+
+### 互換運用と次工程
+
+通常起動のrootは引き続き`config/index.yaml`で、`AI_LIVER_CONFIG_PATH`の優先順位と
+`AppConfig.config_path`の意味も変更しない。legacy `config/config.yaml`は値・コメントとも
+無変更で維持し、raw mappingおよび`config_path`を除く`AppConfig`の等価性を固定する。
+
+次工程は`services`と`models`を`application.yaml`から個別owner fileへ分離する。
+`application.yaml`は後続PRでさらに縮小する。emotion appraisal統合、環境別override、
+単一`config.yaml`廃止は引き続き未対応・未決定とする。
