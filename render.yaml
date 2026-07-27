@@ -3,7 +3,7 @@ services:
     name: yura-inner-state-visualizer
     runtime: python
     plan: free
-    branch: deploy/render-inner-state-visualizer
+    branch: feature/gui-development
     buildCommand: python -m compileall app gui/yura-inner-state-visualizer
     startCommand: python gui/yura-inner-state-visualizer/render_server.py
     healthCheckPath: /state
