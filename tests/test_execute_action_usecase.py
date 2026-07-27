@@ -279,12 +279,17 @@ async def test_speak_action_falls_back_when_synthesis_fails(monkeypatch) -> None
         audio_player=FakeAudioPlayer(),
     )
 
-    await usecase.execute(ActionPlan(action_type=ActionType.SPEAK, text="こんにちは"))
+    result = await usecase.execute(
+        ActionPlan(action_type=ActionType.SPEAK, text="こんにちは")
+    )
 
     assert sleep_durations == [1.0]
-    assert memory.recent_speeches() == []
+    assert [item.text for item in memory.recent_speeches()] == ["こんにちは"]
+    assert memory.build_recent_conversation_summary() == "- ゆら: こんにちは"
     assert topic_history.recent_entries() == []
     assert classifier.classified_texts == []
+    assert result is not None
+    assert result.status.value == "failed"
 
 
 # Test: SPEAK action records topic history when classifier is set
