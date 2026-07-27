@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import asdict, replace
+from dataclasses import replace
 from queue import Queue
 from time import monotonic
 from typing import Any, cast
 
 from app.core.plugins import PluginManager
-from app.core.plugins.user_request import UserRequestKind, interpret_user_request
 from app.domain.actions import ActionPlanGroup
 from app.domain.activities import (
     Activity,
@@ -17,15 +16,9 @@ from app.domain.activities import (
 )
 from app.domain.activity_turn_result import ActivityTurnResult
 from app.domain.behavior import (
-    ActivityOperation,
     ActivityPlan,
     ActivityPlanEvaluation,
-    BehaviorDecision,
     BehaviorPlanningContext,
-)
-from app.domain.character_response import (
-    ActivityExecutionResult,
-    ActivityExecutionStatus,
 )
 from app.domain.events import AgentEvent, AgentEventType, InputAuthority
 from app.domain.pending_confirmation import PendingConfirmation
@@ -53,6 +46,12 @@ from app.runtime.autonomous_output import completed_speech_text
 from app.runtime.behavior_planner import ActivityPlanValidator, BehaviorPlanner
 from app.runtime.behavior_planning_context_builder import (
     BehaviorPlanningContextBuilder,
+)
+from app.runtime.behavior_routing_coordinator import BehaviorRoutingCoordinator
+from app.runtime.behavior_routing_support import (
+    BehaviorFallbackRouter,
+    ongoing_transition_payload,
+    plan_payload,
 )
 from app.runtime.buffered_event_dispatcher import BufferedEventDispatcher
 from app.runtime.confirmation_coordinator import ConfirmationCoordinator
@@ -116,6 +115,7 @@ class RuntimeCoordinator:
         ) = None,
         plugin_activity_coordinator: PluginActivityCoordinator | None = None,
         activity_switch_coordinator: ActivitySwitchCoordinator | None = None,
+        behavior_routing_coordinator: BehaviorRoutingCoordinator | None = None,
         autonomous_planning_enabled: bool = True,
         short_term_memory: ShortTermMemory | None = None,
         topic_history: TopicHistory | None = None,
@@ -171,11 +171,13 @@ class RuntimeCoordinator:
         self._ongoing_activity_coordinator = OngoingActivityCoordinator(
             activity_manager
         )
-        self._last_behavior_evaluation: ActivityPlanEvaluation | None = None
-        self._last_behavior_fallback_plan: ActivityPlan | None = None
         self._running = False
         self._thread_join_timeout_seconds = 1.0
         self._trace_logger = TraceLogger()
+        self._behavior_fallback_router = BehaviorFallbackRouter(
+            plugin_manager=self._plugin_manager,
+            trace_logger=self._trace_logger,
+        )
         self._confirmation_coordinator = (
             confirmation_coordinator
             or (
@@ -183,8 +185,10 @@ class RuntimeCoordinator:
                     manager=self._pending_confirmation_manager,
                     resolver=self._confirmation_resolver,
                     validator=self._activity_plan_validator,
-                    conversation_fallback=self._with_plugin_availability,
-                    plan_payload=self._plan_payload,
+                    conversation_fallback=(
+                        self._behavior_fallback_router.with_plugin_availability
+                    ),
+                    plan_payload=plan_payload,
                     trace_logger=self._trace_logger,
                 )
                 if self._pending_confirmation_manager is not None
@@ -287,7 +291,9 @@ class RuntimeCoordinator:
                 ongoing_synchronizer=(
                     self._plugin_ongoing_activity_synchronizer
                 ),
-                conversation_fallback=self._with_plugin_availability,
+                conversation_fallback=(
+                    self._behavior_fallback_router.with_plugin_availability
+                ),
                 execution_fallback=lambda event, contexts, reason, confidence: (
                     self._with_execution_fallback(
                         event,
@@ -296,7 +302,7 @@ class RuntimeCoordinator:
                         confidence=confidence,
                     )
                 ),
-                ongoing_transition_payload=self._ongoing_transition_payload,
+                ongoing_transition_payload=ongoing_transition_payload,
                 trace_logger=self._trace_logger,
             )
         )
@@ -316,6 +322,20 @@ class RuntimeCoordinator:
                         confidence=confidence,
                     )
                 ),
+                trace_logger=self._trace_logger,
+            )
+        )
+        self._behavior_routing_coordinator = (
+            behavior_routing_coordinator
+            or BehaviorRoutingCoordinator(
+                planner=self._behavior_planner,
+                validator=self._activity_plan_validator,
+                plugin_manager=self._plugin_manager,
+                context_builder=self._behavior_planning_context_builder,
+                confirmation_coordinator=self._confirmation_coordinator,
+                plugin_activity_coordinator=self._plugin_activity_coordinator,
+                activity_switch_coordinator=self._activity_switch_coordinator,
+                fallback_router=self._behavior_fallback_router,
                 trace_logger=self._trace_logger,
             )
         )
@@ -388,11 +408,11 @@ class RuntimeCoordinator:
 
     @property
     def last_behavior_evaluation(self) -> ActivityPlanEvaluation | None:
-        return self._last_behavior_evaluation
+        return self._behavior_routing_coordinator.last_evaluation
 
     @property
     def last_behavior_fallback_plan(self) -> ActivityPlan | None:
-        return self._last_behavior_fallback_plan
+        return self._behavior_routing_coordinator.last_fallback_plan
 
     @property
     def pending_confirmation(self) -> PendingConfirmation | None:
@@ -501,180 +521,7 @@ class RuntimeCoordinator:
         return manager is not None and capability in manager.list_capabilities()
 
     async def _route_behavior(self, event: AgentEvent) -> AgentEvent | None:
-        planner = self._behavior_planner
-        validator = self._activity_plan_validator
-        manager = self._plugin_manager
-        if planner is None or validator is None or manager is None:
-            return self._with_plugin_availability(event)
-        context_builder = self._behavior_planning_context_builder
-        if context_builder is None:
-            return self._with_plugin_availability(event)
-        preparation = context_builder.build(event)
-        event = preparation.event
-        planning_context = preparation.context
-        ongoing = preparation.ongoing_activity
-        situation_payload: dict[str, object]
-        confirmation_payload: dict[str, object] = {}
-        plan: ActivityPlan | None = None
-        confirmation_coordinator = self._confirmation_coordinator
-        if confirmation_coordinator is not None:
-            confirmation = confirmation_coordinator.route_pending(
-                event,
-                planning_context,
-            )
-            if confirmation is not None:
-                event = confirmation.event
-                planning_context = confirmation.planning_context
-                plan = confirmation.plan
-                situation_payload = confirmation.situation_payload
-                confirmation_payload = confirmation.confirmation_payload
-                if confirmation.terminal_event is not None:
-                    return confirmation.terminal_event
-        if plan is None and event.event_type == AgentEventType.APP_STARTED:
-            situation_payload = {
-                "event_type": AgentEventType.APP_STARTED.value,
-                "lifecycle_phase": "awakening",
-                "speech_required": False,
-            }
-            plan = ActivityPlan(
-                decision=BehaviorDecision.START_ACTIVITY,
-                activity_type=ActivityType.AWAKENING.value,
-                goal="起動後の状態を整え、発話せずに周囲を認識する",
-                required_capability=None,
-                provider_plugin_id="runtime",
-                operation=ActivityOperation.START,
-                reason="app_started_runtime_activity",
-                planning_reason="app_started",
-            )
-        elif plan is None:
-            situation = await planner.evaluate_situation(planning_context)
-            plan = await planner.plan(planning_context, situation)
-            situation_payload = asdict(situation)
-        if plan.decision == BehaviorDecision.ASK_CONFIRMATION:
-            if confirmation_coordinator is None:
-                return self._with_plugin_availability(event)
-            self._last_behavior_evaluation = validator.validate(plan)
-            self._last_behavior_fallback_plan = None
-            return confirmation_coordinator.request_confirmation(
-                event,
-                plan,
-                current_ongoing_activity_id=(
-                    ongoing.ongoing_activity_id if ongoing is not None else None
-                ),
-                situation_payload=situation_payload,
-            )
-        evaluation = validator.validate(plan)
-        plan = evaluation.plan
-        event = replace(
-            event,
-            trace_context=event.trace_context.derive(
-                behavior_plan_id=plan.behavior_plan_id
-            ),
-        )
-        self._last_behavior_evaluation = evaluation
-        self._last_behavior_fallback_plan = None
-        self._trace_logger.info(
-            "behavior_planner:activity_plan_evaluated",
-            **event.trace_context.derive(
-                behavior_plan_id=plan.behavior_plan_id
-            ).as_log_fields(),
-            decision=plan.decision.value,
-            activity_type=plan.activity_type,
-            operation=plan.operation.value if plan.operation else None,
-            speech_act=plan.speech_act.value,
-            required_capability=plan.required_capability,
-            provider_plugin_id=plan.provider_plugin_id,
-            accepted=evaluation.accepted,
-            reason=plan.reason,
-        )
-        behavior_payload: dict[str, object] = {
-            "situation_analysis": situation_payload,
-            "behavior_plan": self._plan_payload(plan),
-            "behavior_plan_result": asdict(evaluation.result),
-            "ongoing_transition": self._ongoing_transition_payload(
-                plan,
-                current_status=ongoing.status.value if ongoing is not None else None,
-            ),
-            **confirmation_payload,
-            "trace_context": event.trace_context.derive(
-                behavior_plan_id=plan.behavior_plan_id
-            ),
-        }
-        if not evaluation.accepted:
-            behavior_payload["activity_execution_result"] = ActivityExecutionResult(
-                activity_type=plan.activity_type,
-                operation=plan.operation.value if plan.operation else None,
-                status=ActivityExecutionStatus.REJECTED,
-                capability=plan.required_capability,
-                provider=plan.provider_plugin_id,
-                payload={"summary": evaluation.result.summary},
-                failure_reason=str(
-                    evaluation.result.data.get("reason") or "activity_rejected"
-                ),
-                constraints=plan.constraints,
-                source_event_id=event.event_id,
-                trace_id=event.trace_context.trace_id,
-                parent_trace_id=event.trace_context.parent_trace_id,
-                behavior_plan_id=plan.behavior_plan_id,
-            )
-            fallback_plan = planner.fallback_after_rejection(evaluation)
-            self._last_behavior_fallback_plan = fallback_plan
-            behavior_payload["behavior_fallback_plan"] = self._plan_payload(
-                fallback_plan
-            )
-            fallback_event = self._with_execution_fallback(
-                event,
-                contexts=[{"activity_plan_result": asdict(evaluation.result)}],
-                reason="activity_capability_rejected",
-                confidence=plan.confidence,
-            )
-            return replace(
-                fallback_event,
-                payload={**fallback_event.payload, **behavior_payload},
-            )
-        if plan.decision == BehaviorDecision.SWITCH_ACTIVITY:
-            routed = await self._route_activity_switch(event, plan, planning_context)
-            if routed is None:
-                return None
-        elif plan.required_capability is not None:
-            routed = await self._route_plugin_user_input(
-                event,
-                plugin_id=plan.provider_plugin_id,
-                required_capability=plan.required_capability,
-                activity_plan=plan,
-            )
-            if routed is None:
-                return None
-        else:
-            routed = self._with_plugin_availability(event)
-            execution_rejected = bool(routed.payload.get("execution_request_unmatched"))
-            behavior_payload["activity_execution_result"] = ActivityExecutionResult(
-                activity_type=plan.activity_type,
-                operation=plan.operation.value if plan.operation else None,
-                status=(
-                    ActivityExecutionStatus.REJECTED
-                    if execution_rejected
-                    else ActivityExecutionStatus.WAITING_INPUT
-                ),
-                payload={
-                    "summary": (
-                        "要求された外部処理は実行されなかった"
-                        if execution_rejected
-                        else "Conversation Activityの応答Turnを生成する"
-                    )
-                },
-                failure_reason=(
-                    str(routed.payload.get("execution_match_reason"))
-                    if execution_rejected
-                    else None
-                ),
-                constraints=plan.constraints,
-                source_event_id=event.event_id,
-                trace_id=event.trace_context.trace_id,
-                parent_trace_id=event.trace_context.parent_trace_id,
-                behavior_plan_id=plan.behavior_plan_id,
-            )
-        return replace(routed, payload={**routed.payload, **behavior_payload})
+        return await self._behavior_routing_coordinator.route(event)
 
     async def _route_plugin_user_input(
         self,
@@ -691,19 +538,6 @@ class RuntimeCoordinator:
             activity_plan=activity_plan,
         )
 
-    @staticmethod
-    def _plan_payload(plan: ActivityPlan) -> dict[str, object]:
-        payload = asdict(plan)
-        payload["decision"] = plan.decision.value
-        payload["operation"] = plan.operation.value if plan.operation else None
-        payload["speech_act"] = plan.speech_act.value
-        payload["ongoing_input_decision"] = (
-            plan.ongoing_input_decision.value
-            if plan.ongoing_input_decision is not None
-            else None
-        )
-        return payload
-
     async def _route_activity_switch(
         self,
         event: AgentEvent,
@@ -717,59 +551,9 @@ class RuntimeCoordinator:
             plugin_router=self._route_plugin_user_input,
         )
 
-    @staticmethod
-    def _ongoing_transition_payload(
-        plan: ActivityPlan | None,
-        *,
-        current_status: str | None,
-        stopped: bool = False,
-        transition_result: str | None = None,
-    ) -> dict[str, object]:
-        if plan is None:
-            return {}
-        return {
-            "ongoing_input_decision": (
-                plan.ongoing_input_decision.value
-                if plan.ongoing_input_decision is not None
-                else None
-            ),
-            "current_activity_status": current_status,
-            "current_activity_preserved": plan.current_activity_preserved
-            and not stopped,
-            "current_activity_paused": plan.current_activity_paused,
-            "current_activity_stopped": stopped,
-            "requested_new_activity": plan.requested_new_activity,
-            "transition_result": transition_result,
-        }
-
     def _with_plugin_availability(self, event: AgentEvent) -> AgentEvent:
-        capabilities = (
-            sorted(self._plugin_manager.list_capabilities())
-            if self._plugin_manager is not None
-            else []
-        )
-        interpretation = interpret_user_request(str(event.payload.get("text") or ""))
-        if interpretation.kind == UserRequestKind.EXECUTION:
-            self._trace_logger.info(
-                "runtime_coordinator:execution_request_unmatched",
-                confidence=interpretation.confidence,
-                reason=interpretation.reason,
-                available_capability_count=len(capabilities),
-            )
-            return self._with_execution_fallback(
-                event,
-                contexts=[],
-                reason=interpretation.reason,
-                confidence=interpretation.confidence,
-            )
-        return replace(
+        return self._behavior_fallback_router.with_plugin_availability(
             event,
-            payload={
-                **event.payload,
-                "available_plugin_capabilities": capabilities,
-                "user_request_kind": interpretation.kind.value,
-                "execution_performed": False,
-            },
         )
 
     def _with_execution_fallback(
@@ -780,31 +564,11 @@ class RuntimeCoordinator:
         reason: str,
         confidence: float,
     ) -> AgentEvent:
-        capabilities = (
-            sorted(self._plugin_manager.list_capabilities())
-            if self._plugin_manager is not None
-            else []
-        )
-        self._trace_logger.info(
-            "runtime_coordinator:conversation_fallback_selected",
+        return self._behavior_fallback_router.with_execution_fallback(
+            event,
+            contexts=contexts,
             reason=reason,
             confidence=confidence,
-            available_capability_count=len(capabilities),
-        )
-        return replace(
-            event,
-            payload={
-                **event.payload,
-                "available_plugin_capabilities": capabilities,
-                "plugin_contexts": contexts,
-                "user_request_kind": UserRequestKind.EXECUTION.value,
-                "execution_request_unmatched": True,
-                "execution_performed": False,
-                "execution_match_confidence": confidence,
-                "execution_match_reason": reason,
-                "safe_conversation_fallback": "今はそれを一緒にできないんだ。別のお話をしよう。",
-                "available_alternative": "文字での通常会話",
-            },
         )
 
     async def run_once(self) -> ActionPlanGroup | None:
