@@ -6,7 +6,10 @@ from queue import Queue
 
 from app.core.plugins import PluginManager
 from app.domain.actions import ActionPlanGroup
+from app.domain.activities import OngoingActivity
 from app.domain.events import AgentEvent
+from app.domain.short_term_memory import ShortTermMemory
+from app.domain.topic import TopicHistory
 from app.runtime.action_planner import ActionPlanner
 from app.runtime.action_scheduler import ActionScheduler
 from app.runtime.activity_executor_thread import ActivityExecutorThread
@@ -15,8 +18,21 @@ from app.runtime.activity_planner_thread import (
     ActivityPlannerThread,
     ActivityPlanningRequest,
 )
+from app.runtime.activity_registry import ActivityRegistry
+from app.runtime.activity_switch_coordinator import ActivitySwitchCoordinator
 from app.runtime.agent_life_service import AgentLifeService
+from app.runtime.behavior_planner import ActivityPlanValidator, BehaviorPlanner
+from app.runtime.behavior_planning_context_builder import (
+    BehaviorPlanningContextBuilder,
+)
+from app.runtime.behavior_routing_coordinator import BehaviorRoutingCoordinator
+from app.runtime.behavior_routing_support import (
+    BehaviorFallbackRouter,
+    ongoing_transition_payload,
+    plan_payload,
+)
 from app.runtime.buffered_event_dispatcher import BufferedEventDispatcher
+from app.runtime.confirmation_coordinator import ConfirmationCoordinator
 from app.runtime.conversation_input_recorder import ConversationInputRecorder
 from app.runtime.event_buffer import EventBuffer
 from app.runtime.event_dispatch_processor import EventDispatchProcessor
@@ -26,8 +42,17 @@ from app.runtime.event_prioritizer import DefaultEventPrioritizer, EventPrioriti
 from app.runtime.event_queue import EventQueue
 from app.runtime.event_subscriber_registry import EventSubscriberRegistry
 from app.runtime.event_type_router import EventTypeRouter
+from app.runtime.explicit_activity_executor import ExplicitActivityExecutor
 from app.runtime.interaction_reaction_policy import InteractionReactionPolicy
 from app.runtime.ongoing_activity_coordinator import OngoingActivityCoordinator
+from app.runtime.pending_confirmation import (
+    ConfirmationResolver,
+    PendingConfirmationManager,
+)
+from app.runtime.plugin_activity_coordinator import PluginActivityCoordinator
+from app.runtime.plugin_ongoing_activity_synchronizer import (
+    PluginOngoingActivitySynchronizer,
+)
 from app.runtime.runtime_event_executor import RuntimeEventExecutor
 from app.runtime.runtime_host_controller import RuntimeHostController
 from app.runtime.runtime_loop import RuntimeLoop
@@ -73,8 +98,188 @@ class RuntimeEventPipelineComposition:
     event_ingress_processor: EventIngressProcessor
 
 
+@dataclass(frozen=True, slots=True)
+class RuntimeBehaviorComposition:
+    """RuntimeCoordinatorが保持するBehavior・Plugin系コンポーネント群。"""
+
+    confirmation_resolver: ConfirmationResolver
+    ongoing_activity_coordinator: OngoingActivityCoordinator
+    behavior_fallback_router: BehaviorFallbackRouter
+    confirmation_coordinator: ConfirmationCoordinator | None
+    plugin_ongoing_activity_synchronizer: PluginOngoingActivitySynchronizer
+    behavior_planning_context_builder: BehaviorPlanningContextBuilder | None
+    explicit_activity_executor: ExplicitActivityExecutor
+    plugin_activity_coordinator: PluginActivityCoordinator
+    activity_switch_coordinator: ActivitySwitchCoordinator
+    behavior_routing_coordinator: BehaviorRoutingCoordinator
+
+
 class RuntimeCompositionRoot:
     """Runtimeコンポーネントの生成順序と依存配線を一箇所へ閉じ込める。"""
+
+    def build_behavior_composition(
+        self,
+        *,
+        activity_manager: ActivityManager,
+        action_planner: ActionPlanner,
+        action_scheduler: ActionScheduler,
+        agent_life_service: AgentLifeService,
+        plugin_manager: PluginManager | None,
+        behavior_planner: BehaviorPlanner | None,
+        activity_plan_validator: ActivityPlanValidator | None,
+        activity_registry: ActivityRegistry | None,
+        pending_confirmation_manager: PendingConfirmationManager | None,
+        short_term_memory: ShortTermMemory | None,
+        topic_history: TopicHistory | None,
+        trace_logger: TraceLogger,
+        plugin_router: Callable[..., Awaitable[AgentEvent | None]],
+        execution_fallback: Callable[
+            [AgentEvent, list[dict[str, object]], str, float],
+            AgentEvent,
+        ],
+        current_ongoing_activity: Callable[[], OngoingActivity | None],
+        confirmation_resolver: ConfirmationResolver | None = None,
+        confirmation_coordinator: ConfirmationCoordinator | None = None,
+        plugin_ongoing_activity_synchronizer: (
+            PluginOngoingActivitySynchronizer | None
+        ) = None,
+        behavior_planning_context_builder: (
+            BehaviorPlanningContextBuilder | None
+        ) = None,
+        explicit_activity_executor: ExplicitActivityExecutor | None = None,
+        plugin_activity_coordinator: PluginActivityCoordinator | None = None,
+        activity_switch_coordinator: ActivitySwitchCoordinator | None = None,
+        behavior_routing_coordinator: BehaviorRoutingCoordinator | None = None,
+    ) -> RuntimeBehaviorComposition:
+        resolved_confirmation_resolver = (
+            confirmation_resolver
+            if confirmation_resolver is not None
+            else ConfirmationResolver()
+        )
+        resolved_ongoing_activity_coordinator = OngoingActivityCoordinator(
+            activity_manager
+        )
+        resolved_behavior_fallback_router = BehaviorFallbackRouter(
+            plugin_manager=plugin_manager,
+            trace_logger=trace_logger,
+        )
+        resolved_confirmation_coordinator = (
+            confirmation_coordinator
+            if confirmation_coordinator is not None
+            else (
+                ConfirmationCoordinator(
+                    manager=pending_confirmation_manager,
+                    resolver=resolved_confirmation_resolver,
+                    validator=activity_plan_validator,
+                    conversation_fallback=(
+                        resolved_behavior_fallback_router.with_plugin_availability
+                    ),
+                    plan_payload=plan_payload,
+                    trace_logger=trace_logger,
+                )
+                if pending_confirmation_manager is not None
+                and activity_plan_validator is not None
+                else None
+            )
+        )
+        resolved_plugin_ongoing_activity_synchronizer = (
+            plugin_ongoing_activity_synchronizer
+            if plugin_ongoing_activity_synchronizer is not None
+            else PluginOngoingActivitySynchronizer(
+                ongoing_activity_coordinator=(
+                    resolved_ongoing_activity_coordinator
+                ),
+                trace_logger=trace_logger,
+            )
+        )
+        resolved_behavior_planning_context_builder = (
+            behavior_planning_context_builder
+            if behavior_planning_context_builder is not None
+            else (
+                BehaviorPlanningContextBuilder(
+                    activity_manager=activity_manager,
+                    agent_life_service=agent_life_service,
+                    plugin_manager=plugin_manager,
+                    activity_registry=activity_registry,
+                    short_term_memory=short_term_memory,
+                    topic_history=topic_history,
+                )
+                if plugin_manager is not None
+                else None
+            )
+        )
+        resolved_explicit_activity_executor = (
+            explicit_activity_executor
+            if explicit_activity_executor is not None
+            else ExplicitActivityExecutor(
+                activity_manager=activity_manager,
+                action_planner=action_planner,
+                action_scheduler=action_scheduler,
+                agent_life_service=agent_life_service,
+                trace_logger=trace_logger,
+            )
+        )
+        resolved_plugin_activity_coordinator = (
+            plugin_activity_coordinator
+            if plugin_activity_coordinator is not None
+            else PluginActivityCoordinator(
+                plugin_manager=plugin_manager,
+                activity_plan_validator=activity_plan_validator,
+                activity_manager=activity_manager,
+                explicit_activity_executor=resolved_explicit_activity_executor,
+                ongoing_synchronizer=(
+                    resolved_plugin_ongoing_activity_synchronizer
+                ),
+                conversation_fallback=(
+                    resolved_behavior_fallback_router.with_plugin_availability
+                ),
+                execution_fallback=execution_fallback,
+                ongoing_transition_payload=ongoing_transition_payload,
+                trace_logger=trace_logger,
+            )
+        )
+        resolved_activity_switch_coordinator = (
+            activity_switch_coordinator
+            if activity_switch_coordinator is not None
+            else ActivitySwitchCoordinator(
+                validator=activity_plan_validator,
+                plugin_router=plugin_router,
+                current_ongoing_activity=current_ongoing_activity,
+                execution_fallback=execution_fallback,
+                trace_logger=trace_logger,
+            )
+        )
+        resolved_behavior_routing_coordinator = (
+            behavior_routing_coordinator
+            if behavior_routing_coordinator is not None
+            else BehaviorRoutingCoordinator(
+                planner=behavior_planner,
+                validator=activity_plan_validator,
+                plugin_manager=plugin_manager,
+                context_builder=resolved_behavior_planning_context_builder,
+                confirmation_coordinator=resolved_confirmation_coordinator,
+                plugin_activity_coordinator=resolved_plugin_activity_coordinator,
+                activity_switch_coordinator=resolved_activity_switch_coordinator,
+                fallback_router=resolved_behavior_fallback_router,
+                trace_logger=trace_logger,
+            )
+        )
+        return RuntimeBehaviorComposition(
+            confirmation_resolver=resolved_confirmation_resolver,
+            ongoing_activity_coordinator=resolved_ongoing_activity_coordinator,
+            behavior_fallback_router=resolved_behavior_fallback_router,
+            confirmation_coordinator=resolved_confirmation_coordinator,
+            plugin_ongoing_activity_synchronizer=(
+                resolved_plugin_ongoing_activity_synchronizer
+            ),
+            behavior_planning_context_builder=(
+                resolved_behavior_planning_context_builder
+            ),
+            explicit_activity_executor=resolved_explicit_activity_executor,
+            plugin_activity_coordinator=resolved_plugin_activity_coordinator,
+            activity_switch_coordinator=resolved_activity_switch_coordinator,
+            behavior_routing_coordinator=resolved_behavior_routing_coordinator,
+        )
 
     def build_event_pipeline(
         self,
