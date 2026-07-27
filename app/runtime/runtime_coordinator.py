@@ -398,7 +398,6 @@ class RuntimeCoordinator:
                     self._ongoing_activity_coordinator
                 ),
                 async_initializers=async_initializers,
-                autonomous_planning_enabled=autonomous_planning_enabled,
                 trace_logger=self._trace_logger,
             )
         )
@@ -441,7 +440,10 @@ class RuntimeCoordinator:
     @property
     def pending_confirmation(self) -> PendingConfirmation | None:
         coordinator = self._confirmation_coordinator
-        return coordinator.pending if coordinator is not None else None
+        if coordinator is not None:
+            return coordinator.pending
+        manager = self._pending_confirmation_manager
+        return manager.current() if manager is not None else None
 
     async def _execute_explicit_activity(self, activity: Activity) -> ActionPlanGroup:
         return await self._explicit_activity_executor.execute(activity)
