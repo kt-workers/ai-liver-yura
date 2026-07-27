@@ -44,9 +44,9 @@ from app.runtime.confirmation_coordinator import ConfirmationCoordinator
 from app.runtime.conversation_input_recorder import ConversationInputRecorder
 from app.runtime.event_buffer import EventBuffer
 from app.runtime.event_dispatch_processor import EventDispatchProcessor
-from app.runtime.event_filter import DefaultEventFilter, EventFilter
+from app.runtime.event_filter import EventFilter
 from app.runtime.event_ingress_processor import EventIngressProcessor
-from app.runtime.event_prioritizer import DefaultEventPrioritizer, EventPrioritizer
+from app.runtime.event_prioritizer import EventPrioritizer
 from app.runtime.event_queue import EventQueue
 from app.runtime.event_subscriber_registry import EventSubscriberRegistry
 from app.runtime.event_type_router import EventTypeRouter
@@ -136,15 +136,11 @@ class RuntimeCoordinator:
         self._activity_planning_request_queue = activity_planning_request_queue
         self._activity_planner_thread = activity_planner_thread
         self._activity_executor_thread = activity_executor_thread
-        self._event_filter = event_filter or DefaultEventFilter()
-        self._event_prioritizer = event_prioritizer or DefaultEventPrioritizer()
-        self._event_buffer = event_buffer or EventBuffer()
         self._agent_life_service = agent_life_service or AgentLifeService(activity_manager)
         self._plugin_manager = plugin_manager
         self._runtime_diagnostic_snapshot_builder = (
             runtime_diagnostic_snapshot_builder or RuntimeDiagnosticSnapshotBuilder()
         )
-        self._event_subscriber_registry = event_subscriber_registry or EventSubscriberRegistry()
         self._behavior_planner = behavior_planner
         self._activity_plan_validator = activity_plan_validator
         self._activity_registry = activity_registry
@@ -175,45 +171,6 @@ class RuntimeCoordinator:
                 ongoing_activity_coordinator=self._ongoing_activity_coordinator,
                 trace_logger=self._trace_logger,
             )
-        )
-        self._user_input_event_logger = user_input_event_logger or UserInputEventLogger(
-            self._trace_logger
-        )
-        self._user_input_event_router = user_input_event_router or UserInputEventRouter(
-            behavior_router=self._route_behavior,
-            plugin_router=self._route_plugin_user_input,
-            fallback=self._with_plugin_availability,
-            behavior_routing_available=lambda: (
-                self._behavior_planner is not None and self._activity_plan_validator is not None
-            ),
-            plugin_routing_available=lambda: self._has_plugin_capability(
-                PluginCapability.USER_INTENT_INTERPRETER.value
-            ),
-        )
-        self._buffered_event_dispatcher = buffered_event_dispatcher or BufferedEventDispatcher(
-            event_buffer=self._event_buffer,
-            event_queue=self._event_queue,
-            trace_logger=self._trace_logger,
-        )
-        self._user_input_interruption_coordinator = (
-            user_input_interruption_coordinator
-            or UserInputInterruptionCoordinator(
-                activity_manager=self._activity_manager,
-                action_scheduler=self._action_scheduler,
-                activity_planner_thread=self._activity_planner_thread,
-                activity_executor_thread=self._activity_executor_thread,
-                agent_life_service=self._agent_life_service,
-                trace_logger=self._trace_logger,
-            )
-        )
-        self._event_type_router = event_type_router or EventTypeRouter(
-            user_input_interruption_coordinator=(self._user_input_interruption_coordinator),
-            user_input_event_logger=self._user_input_event_logger,
-            user_input_event_router=self._user_input_event_router,
-            behavior_router=self._route_behavior,
-            behavior_routing_available=lambda: (
-                self._behavior_planner is not None and self._activity_plan_validator is not None
-            ),
         )
         self._behavior_planning_context_builder = behavior_planning_context_builder or (
             BehaviorPlanningContextBuilder(
@@ -286,28 +243,58 @@ class RuntimeCoordinator:
                 trace_logger=self._trace_logger,
             )
         )
-        self._event_dispatch_processor = event_dispatch_processor or EventDispatchProcessor(
-            event_prioritizer=self._event_prioritizer,
+        composition_root = RuntimeCompositionRoot()
+        event_pipeline = composition_root.build_event_pipeline(
+            event_queue=self._event_queue,
             activity_manager=self._activity_manager,
-            user_input_interruption_coordinator=(self._user_input_interruption_coordinator),
-            buffered_event_dispatcher=self._buffered_event_dispatcher,
-            trace_logger=self._trace_logger,
-        )
-        self._conversation_logger = conversation_logger or ConversationLogger()
-        self._conversation_input_recorder = (
-            conversation_input_recorder or ConversationInputRecorder(self._conversation_logger)
-        )
-        self._event_ingress_processor = event_ingress_processor or EventIngressProcessor(
-            event_filter=self._event_filter,
-            activity_manager=self._activity_manager,
-            conversation_input_recorder=self._conversation_input_recorder,
+            action_scheduler=self._action_scheduler,
+            activity_planner_thread=self._activity_planner_thread,
+            activity_executor_thread=self._activity_executor_thread,
             agent_life_service=self._agent_life_service,
-            event_subscriber_registry=self._event_subscriber_registry,
+            trace_logger=self._trace_logger,
+            behavior_router=self._route_behavior,
+            plugin_router=self._route_plugin_user_input,
+            fallback_router=self._with_plugin_availability,
+            behavior_routing_available=lambda: (
+                self._behavior_planner is not None
+                and self._activity_plan_validator is not None
+            ),
+            plugin_routing_available=lambda: self._has_plugin_capability(
+                PluginCapability.USER_INTENT_INTERPRETER.value
+            ),
+            event_filter=event_filter,
+            event_prioritizer=event_prioritizer,
+            event_buffer=event_buffer,
+            event_subscriber_registry=event_subscriber_registry,
+            user_input_event_logger=user_input_event_logger,
+            user_input_event_router=user_input_event_router,
+            buffered_event_dispatcher=buffered_event_dispatcher,
+            user_input_interruption_coordinator=user_input_interruption_coordinator,
+            event_type_router=event_type_router,
+            event_dispatch_processor=event_dispatch_processor,
+            conversation_logger=conversation_logger,
+            conversation_input_recorder=conversation_input_recorder,
+            event_ingress_processor=event_ingress_processor,
         )
+        self._event_filter = event_pipeline.event_filter
+        self._event_prioritizer = event_pipeline.event_prioritizer
+        self._event_buffer = event_pipeline.event_buffer
+        self._event_subscriber_registry = event_pipeline.event_subscriber_registry
+        self._user_input_event_logger = event_pipeline.user_input_event_logger
+        self._user_input_event_router = event_pipeline.user_input_event_router
+        self._buffered_event_dispatcher = event_pipeline.buffered_event_dispatcher
+        self._user_input_interruption_coordinator = (
+            event_pipeline.user_input_interruption_coordinator
+        )
+        self._event_type_router = event_pipeline.event_type_router
+        self._event_dispatch_processor = event_pipeline.event_dispatch_processor
+        self._conversation_logger = event_pipeline.conversation_logger
+        self._conversation_input_recorder = event_pipeline.conversation_input_recorder
+        self._event_ingress_processor = event_pipeline.event_ingress_processor
         self._event_enrichers: list[Callable[[AgentEvent], AgentEvent]] = []
         self._short_term_memory = short_term_memory
         self._topic_history = topic_history
-        execution = RuntimeCompositionRoot().build_execution(
+        execution = composition_root.build_execution(
             event_queue=self._event_queue,
             activity_manager=self._activity_manager,
             action_planner=self._action_planner,
