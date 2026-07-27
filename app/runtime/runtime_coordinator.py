@@ -18,23 +18,18 @@ from app.domain.activities import (
 )
 from app.domain.activity_turn_result import ActivityTurnResult
 from app.domain.behavior import (
-    ActivityDefinition,
     ActivityOperation,
     ActivityPlan,
     ActivityPlanEvaluation,
     BehaviorDecision,
     BehaviorPlanningContext,
-    OngoingActivityPlanningContext,
 )
 from app.domain.character_response import (
     ActivityExecutionResult,
     ActivityExecutionStatus,
 )
 from app.domain.events import AgentEvent, AgentEventType, InputAuthority
-from app.domain.pending_confirmation import (
-    ConfirmationResolutionKind,
-    PendingConfirmation,
-)
+from app.domain.pending_confirmation import PendingConfirmation
 from app.domain.short_term_memory import ShortTermMemory
 from app.domain.topic import TopicHistory
 from app.runtime.action_planner import ActionPlanner
@@ -47,7 +42,10 @@ from app.runtime.activity_planner_thread import (
 )
 from app.runtime.activity_registry import ActivityRegistry
 from app.runtime.activity_result_builder import build_activity_result
-from app.runtime.activity_turn_result_factory import canceled_output_group
+from app.runtime.activity_turn_result_factory import (
+    action_planning_failure_group,
+    canceled_output_group,
+)
 from app.runtime.agent_life_service import AgentLifeService
 from app.runtime.agent_state import AgentState
 from app.runtime.autonomous_activity_execution import prepare_autonomous_execution
@@ -57,6 +55,7 @@ from app.runtime.behavior_planning_context_builder import (
     BehaviorPlanningContextBuilder,
 )
 from app.runtime.buffered_event_dispatcher import BufferedEventDispatcher
+from app.runtime.confirmation_coordinator import ConfirmationCoordinator
 from app.runtime.conversation_input_recorder import ConversationInputRecorder
 from app.runtime.event_buffer import EventBuffer
 from app.runtime.event_dispatch_processor import EventDispatchProcessor
@@ -114,6 +113,7 @@ class RuntimeCoordinator:
         activity_registry: ActivityRegistry | None = None,
         pending_confirmation_manager: PendingConfirmationManager | None = None,
         confirmation_resolver: ConfirmationResolver | None = None,
+        confirmation_coordinator: ConfirmationCoordinator | None = None,
         autonomous_planning_enabled: bool = True,
         short_term_memory: ShortTermMemory | None = None,
         topic_history: TopicHistory | None = None,
@@ -174,6 +174,22 @@ class RuntimeCoordinator:
         self._running = False
         self._thread_join_timeout_seconds = 1.0
         self._trace_logger = TraceLogger()
+        self._confirmation_coordinator = (
+            confirmation_coordinator
+            or (
+                ConfirmationCoordinator(
+                    manager=self._pending_confirmation_manager,
+                    resolver=self._confirmation_resolver,
+                    validator=self._activity_plan_validator,
+                    conversation_fallback=self._with_plugin_availability,
+                    plan_payload=self._plan_payload,
+                    trace_logger=self._trace_logger,
+                )
+                if self._pending_confirmation_manager is not None
+                and self._activity_plan_validator is not None
+                else None
+            )
+        )
         self._user_input_event_logger = (
             user_input_event_logger
             or UserInputEventLogger(self._trace_logger)
@@ -329,8 +345,8 @@ class RuntimeCoordinator:
 
     @property
     def pending_confirmation(self) -> PendingConfirmation | None:
-        manager = self._pending_confirmation_manager
-        return manager.current() if manager is not None else None
+        coordinator = self._confirmation_coordinator
+        return coordinator.pending if coordinator is not None else None
 
     async def _execute_explicit_activity(self, activity: Activity) -> ActionPlanGroup:
         return await self._explicit_activity_executor.execute(activity)
@@ -449,90 +465,20 @@ class RuntimeCoordinator:
         situation_payload: dict[str, object]
         confirmation_payload: dict[str, object] = {}
         plan: ActivityPlan | None = None
-        pending_manager = self._pending_confirmation_manager
-        pending = pending_manager.current() if pending_manager is not None else None
-        if pending is not None:
-            event = replace(
+        confirmation_coordinator = self._confirmation_coordinator
+        if confirmation_coordinator is not None:
+            confirmation = confirmation_coordinator.route_pending(
                 event,
-                trace_context=event.trace_context.derive(
-                    parent_trace_id=pending.original_trace_id,
-                    confirmation_id=pending.confirmation_id,
-                ),
+                planning_context,
             )
-            planning_context = replace(
-                planning_context, trace_context=event.trace_context
-            )
-            assert pending_manager is not None
-            resolution = self._confirmation_resolver.resolve(
-                planning_context.user_text,
-                pending,
-                trace_context=event.trace_context,
-            )
-            if resolution.kind == ConfirmationResolutionKind.NEW_REQUEST:
-                pending_manager.resolve(
-                    pending,
-                    resolution,
-                    resolution_event_id=event.event_id,
-                    trace_context=event.trace_context,
-                )
-            elif resolution.kind == ConfirmationResolutionKind.AFFIRMATIVE:
-                resolved = pending_manager.resolve(
-                    pending,
-                    resolution,
-                    resolution_event_id=event.event_id,
-                    trace_context=event.trace_context,
-                )
-                plan = self._confirmed_plan(resolved.candidate_plan)
-                snapshot_analysis = resolved.context_snapshot.get("situation_analysis")
-                situation_payload = (
-                    dict(snapshot_analysis)
-                    if isinstance(snapshot_analysis, dict)
-                    else {}
-                )
-                confirmation_payload = self._confirmation_payload(
-                    resolved,
-                    resolution=resolution.kind.value,
-                    final_plan=plan,
-                )
-                self._trace_logger.debug(
-                    "pending_confirmation:confirmed_plan",
-                    confirmation_id=resolved.confirmation_id,
-                    final_plan=plan,
-                    plugin_handler_will_be_called=plan.required_capability is not None,
-                )
-            elif resolution.kind in {
-                ConfirmationResolutionKind.NEGATIVE,
-                ConfirmationResolutionKind.CANCEL,
-            }:
-                resolved = pending_manager.resolve(
-                    pending,
-                    resolution,
-                    resolution_event_id=event.event_id,
-                    trace_context=event.trace_context,
-                )
-                return self._confirmation_response_event(
-                    event,
-                    resolved,
-                    resolution=resolution.kind.value,
-                    waiting=False,
-                )
-            else:
-                revised = pending_manager.revise(
-                    pending,
-                    resolution,
-                    source_event_id=event.event_id,
-                    constraint_validation=validator.validate_constraints,
-                )
-                return self._confirmation_response_event(
-                    event,
-                    revised or pending,
-                    resolution=(
-                        resolution.kind.value
-                        if revised is not None
-                        else "max_attempts_reached"
-                    ),
-                    waiting=revised is not None,
-                )
+            if confirmation is not None:
+                event = confirmation.event
+                planning_context = confirmation.planning_context
+                plan = confirmation.plan
+                situation_payload = confirmation.situation_payload
+                confirmation_payload = confirmation.confirmation_payload
+                if confirmation.terminal_event is not None:
+                    return confirmation.terminal_event
         if plan is None and event.event_type == AgentEventType.APP_STARTED:
             situation_payload = {
                 "event_type": AgentEventType.APP_STARTED.value,
@@ -554,24 +500,17 @@ class RuntimeCoordinator:
             plan = await planner.plan(planning_context, situation)
             situation_payload = asdict(situation)
         if plan.decision == BehaviorDecision.ASK_CONFIRMATION:
-            if pending_manager is None:
+            if confirmation_coordinator is None:
                 return self._with_plugin_availability(event)
             self._last_behavior_evaluation = validator.validate(plan)
             self._last_behavior_fallback_plan = None
-            created = pending_manager.create(
+            return confirmation_coordinator.request_confirmation(
+                event,
                 plan,
-                source_event_id=event.event_id,
                 current_ongoing_activity_id=(
                     ongoing.ongoing_activity_id if ongoing is not None else None
                 ),
-                context_snapshot={"situation_analysis": situation_payload},
-                trace_context=event.trace_context,
-            )
-            return self._confirmation_response_event(
-                event,
-                created,
-                resolution=None,
-                waiting=True,
+                situation_payload=situation_payload,
             )
         evaluation = validator.validate(plan)
         plan = evaluation.plan
@@ -685,151 +624,6 @@ class RuntimeCoordinator:
                 behavior_plan_id=plan.behavior_plan_id,
             )
         return replace(routed, payload={**routed.payload, **behavior_payload})
-
-    @staticmethod
-    def _confirmed_plan(plan: ActivityPlan) -> ActivityPlan:
-        if plan.requested_new_activity:
-            decision = BehaviorDecision.SWITCH_ACTIVITY
-        elif plan.operation == ActivityOperation.START:
-            decision = BehaviorDecision.START_ACTIVITY
-        elif plan.operation in {ActivityOperation.CONTINUE, ActivityOperation.STOP}:
-            decision = BehaviorDecision.CONTINUE_ACTIVITY
-        else:
-            decision = BehaviorDecision.CONVERSATION
-        return replace(
-            plan,
-            decision=decision,
-            activity_type=(
-                "conversation"
-                if decision == BehaviorDecision.CONVERSATION
-                else plan.activity_type
-            ),
-            required_capability=(
-                None
-                if decision == BehaviorDecision.CONVERSATION
-                else plan.required_capability
-            ),
-            provider_plugin_id=(
-                None
-                if decision == BehaviorDecision.CONVERSATION
-                else plan.provider_plugin_id
-            ),
-            planner_constraints=tuple(
-                item
-                for item in plan.planner_constraints
-                if "確認" not in item and "低確信度" not in item
-            )
-            + ("確認解決後もCapabilityを再検証する",),
-            confidence=1.0,
-            reason=f"confirmed:{plan.reason}",
-        )
-
-    def _confirmation_response_event(
-        self,
-        event: AgentEvent,
-        pending: PendingConfirmation,
-        *,
-        resolution: str | None,
-        waiting: bool,
-    ) -> AgentEvent:
-        payload = self._confirmation_payload(pending, resolution=resolution)
-        summary = (
-            pending.question
-            if waiting
-            else self._confirmation_resolution_summary(resolution)
-        )
-        conversation_plan = ActivityPlan(
-            decision=(
-                BehaviorDecision.ASK_CONFIRMATION
-                if waiting
-                else BehaviorDecision.CONVERSATION
-            ),
-            activity_type="confirmation" if waiting else "conversation",
-            goal=summary,
-            operation=ActivityOperation.DISCUSS,
-            planner_constraints=(
-                "確認対象を変更しない",
-                "確認前のActivity実行・停止・切替を主張しない",
-                "内部用語を発話しない",
-            ),
-            confidence=pending.candidate_confidence,
-            reason=resolution or "pending_confirmation_created",
-        )
-        result = ActivityExecutionResult(
-            activity_type="confirmation",
-            operation=pending.candidate_operation,
-            status=(
-                ActivityExecutionStatus.WAITING_INPUT
-                if waiting
-                else ActivityExecutionStatus.CANCELED
-            ),
-            payload={"summary": summary, "question": pending.question},
-            failure_reason=None if waiting else resolution,
-            constraints=dict(pending.candidate_constraints),
-            source_event_id=event.event_id,
-        )
-        routed = self._with_plugin_availability(event)
-        return replace(
-            routed,
-            payload={
-                **routed.payload,
-                "behavior_plan": self._plan_payload(conversation_plan),
-                "activity_execution_result": result,
-                **payload,
-            },
-        )
-
-    @staticmethod
-    def _confirmation_payload(
-        pending: PendingConfirmation,
-        *,
-        resolution: str | None,
-        final_plan: ActivityPlan | None = None,
-    ) -> dict[str, object]:
-        return {
-            "pending_confirmation": {
-                "confirmation_id": pending.confirmation_id,
-                "source_event_id": pending.source_event_id,
-                "resolution_event_id": pending.resolution_event_id,
-                "confirmation_type": pending.confirmation_type.value,
-                "status": pending.status.value,
-                "candidate_activity_type": pending.candidate_activity_type,
-                "candidate_operation": pending.candidate_operation,
-                "candidate_goal": pending.candidate_goal,
-                "candidate_constraints": dict(pending.candidate_constraints),
-                "candidate_confidence": pending.candidate_confidence,
-                "candidate_constraints_schema_version": (
-                    pending.candidate_constraints_schema_version
-                ),
-                "current_ongoing_activity_id": pending.current_ongoing_activity_id,
-                "question": pending.question,
-                "attempt_count": pending.attempt_count,
-                "max_attempts": pending.max_attempts,
-                "resolution": resolution,
-                "final_behavior_plan": (
-                    RuntimeCoordinator._plan_payload(final_plan)
-                    if final_plan is not None
-                    else None
-                ),
-                "final_behavior_plan_id": (
-                    f"{pending.confirmation_id}:{pending.resolution_event_id}"
-                    if final_plan is not None
-                    and pending.resolution_event_id is not None
-                    else None
-                ),
-                "original_trace_id": pending.original_trace_id,
-                "resolution_trace_id": pending.resolution_trace_id,
-                "parent_trace_id": pending.parent_trace_id,
-            }
-        }
-
-    @staticmethod
-    def _confirmation_resolution_summary(resolution: str | None) -> str:
-        if resolution == ConfirmationResolutionKind.NEGATIVE.value:
-            return "確認候補は実行せず、現在の状態を維持する"
-        if resolution == ConfirmationResolutionKind.CANCEL.value:
-            return "確認を取り消し、候補は実行しない"
-        return "意図を確定できなかったため、候補は実行しない"
 
     async def _route_plugin_user_input(
         self,
