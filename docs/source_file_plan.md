@@ -150,7 +150,10 @@ RuntimeSupervisor / RuntimeCoordinator
 
 ## 現在の主要フロー
 
-現時点の旧フローは、Event 処理、Activity 生成、LLM 生成、Action 実行が RuntimeCoordinator 上で直列に近い形で接続されている。今後はこの旧フローを維持したまま拡張するのではなく、下記の全体骨格へ移行する。
+RuntimeCoordinatorは外部Adapterに対する安定したFacadeであり、Event受付、Behavior判断、
+Plugin実行、継続状態同期、Activity切替、Runtimeループを専用コンポーネントへ委譲する。
+公開APIをRuntimeCoordinatorへ残すのは、Console、Streaming、管理・診断Adapterが内部の
+責務分割や状態所有者を知る必要をなくし、Coreの入口を一つに保つためである。
 
 ```text
 InputReceiver
@@ -159,15 +162,17 @@ AgentEvent
   ↓
 RuntimeCoordinator.publish_event() / publish_events()
   ↓
-EventFilter
+EventIngressProcessor
   ↓
-EventPrioritizer
+EventTypeRouter
   ↓
-EventBuffer
+EventDispatchProcessor
+  ↓
+BufferedEventDispatcher
   ↓
 EventQueue
   ↓
-RuntimeCoordinator.run() / run_once()
+RuntimeCoordinator.run_once() → RuntimeLoop
   ↓
 ActivityManager
   ↓
@@ -191,6 +196,68 @@ EventQueue
   ↓
 SPEECH_STARTED / SPEECH_FINISHED Event
 ```
+
+### Runtime Facadeと実行判断の責務境界
+
+```text
+RuntimeCoordinator (Facade)
+├─ EventIngressProcessor
+├─ EventTypeRouter
+├─ EventDispatchProcessor
+├─ BufferedEventDispatcher
+├─ BehaviorRoutingCoordinator
+│  ├─ ConfirmationCoordinator
+│  ├─ ActivitySwitchCoordinator
+│  ├─ PluginActivityCoordinator
+│  │  └─ PluginOngoingActivitySynchronizer
+│  └─ BehaviorFallbackRouter
+├─ ExplicitActivityExecutor
+├─ RuntimeLoop
+└─ RuntimeLifecycleController
+```
+
+- `RuntimeCoordinator`は公開API、読み取り専用診断値、コンポーネント間の接続だけを担う。
+  Behavior判断、確認解決、Plugin Session同期、Activity切替、run/stopの状態機械を持たない。
+- Event受付は`EventIngressProcessor`、種別固有処理は`EventTypeRouter`、優先度・buffer投入は
+  `EventDispatchProcessor`、flushは`BufferedEventDispatcher`が所有する。実行判断とは分離する。
+- `BehaviorRoutingCoordinator`はplanning context構築後のAPP_STARTED特例、situation評価、
+  ActivityPlan生成・検証、confirmation/plugin/switch/conversation分岐、behavior payloadを所有する。
+  `last_behavior_evaluation`と`last_behavior_fallback_plan`はこのクラスだけが保持し、
+  RuntimeCoordinatorは読み取り専用で公開する。
+- `ConfirmationCoordinator`はPending Confirmationの取得、入力解決、確定Plan、確認応答Event、
+  payload、attempt上限、確認Trace継承を所有する。保留データと履歴そのものは
+  `PendingConfirmationManager`が保持する。
+- `PluginActivityCoordinator`はPlugin検索、intent解釈、実行直前Capability再検証、
+  CommandHandler呼出、Plugin Activity登録、`ExplicitActivityExecutor`への実行委譲を所有する。
+- `PluginOngoingActivitySynchronizer`はPlugin Session snapshotとCore OngoingActivityの照合、
+  start/begin_turn/record/complete/cancel/pause、状態変換、両側rollbackを所有する。
+  永続的なSession状態やOngoingActivity本体は保持しない。
+- `ActivitySwitchCoordinator`は停止Plan生成・検証、現在Activity停止、停止完了確認、
+  新Activity開始をこの順で実行する。停止が完了しない場合は新Activityを開始しない。
+- `ExplicitActivityExecutor`は外部またはPluginが明示したActivityのAction計画、実行、
+  `ActivityTurnResult`記録、Activity完了、AgentState同期を所有する。
+- `RuntimeLoop`はEventQueue取得、startup完了、poll間隔、planner busy確認、
+  ActivityPlanningRequest投入を所有する。
+- `RuntimeLifecycleController`はasync initializer、running状態、Thread起動・停止・join、
+  Plugin shutdown、stop時のOngoingActivity cancelを所有する。
+
+各コンポーネントが保持してよい可変状態は、責務に必要な最小限に限定する。
+`BehaviorRoutingCoordinator`は直近評価、`PendingConfirmationManager`は確認待ちと履歴、
+`RuntimeLoop`はstartup/poll時刻、`RuntimeLifecycleController`はrunning/initializer完了状態を
+保持してよい。Plugin routing、同期、切替は処理をまたぐ独自状態を保持しない。
+
+CoreからPluginへの依存は`app.shared.contracts.plugins`のProtocol/DTOとPluginManagerの登録境界へ
+向ける。Core Runtimeは`app.plugins`の具体実装やPlugin固有Session型をimportしない。
+Plugin実装は共有contractを実装してComposition Rootから登録されるため、Pluginが0件でも
+Runtimeは通常会話とCore Activityを実行できる。
+
+Trace ContextはEventを起点とし、ConfirmationCoordinatorが`confirmation_id`と元traceへの
+parentを、BehaviorRoutingCoordinatorが`behavior_plan_id`を派生させる。Plugin同期は
+`plugin_session_id`とOngoingActivityの関連をpayloadへ反映する。既存のTrace Contextを
+新規生成で置換せず、`derive()`で継承する。`ActivityTurnResult`はActionPlanner /
+ActionScheduler / ExplicitActivityExecutorの実行境界が生成・記録し、routing層は所有しない。
+Plugin/Core同期の途中失敗は`PluginOngoingActivitySynchronizer`がCore ongoing cancelと
+Plugin session rollbackを同じ理由で実行する。会話fallbackは失敗理由を保持し、曖昧化しない。
 
 今後は、LLM による Activity 計画と、Activity の実行待機を分離する。
 
@@ -737,7 +804,9 @@ ActionScheduler の確定仕様:
 
 ## RuntimeCoordinator
 
-RuntimeCoordinator は、最終的には RuntimeSupervisor に近い Host として扱う。Event から Activity 生成、ActionPlan 生成、Action 実行までを直接抱えるのではなく、各 Loop の起動・停止・接続・例外監視を担当する。
+RuntimeCoordinator はFacadeとして扱い、Loopの状態機械は`RuntimeLoop`と
+`RuntimeLifecycleController`へ委譲する。通常EventをActivity/Actionへ変換する
+`_handle_event()`は互換経路として残るが、Facadeからさらに分離する次の候補である。
 
 メソッド方針:
 
@@ -751,8 +820,9 @@ RuntimeCoordinator は、最終的には RuntimeSupervisor に近い Host とし
 - `run()` はAIライバーの常時稼働Runtimeとして使う
 - `stop()` はWeb管理画面の管理操作、終了シグナル、テストから停止するために使う
 
-現時点の RuntimeCoordinator は旧構成の名残として Event から Activity 生成、ActionPlan 生成、Action 実行までを直列に近い形で担当している。
-今後はこの責務を段階的に分解し、RuntimeCoordinator は Event 投入、状態同期、各 Loop の起動停止、終了制御、例外監視を行う Host 寄りの責務へ移す。
+現時点の RuntimeCoordinator はEvent投入と公開APIを保持するFacadeである。
+EventからActivity生成、ActionPlan生成、Action実行を行う通常Event互換経路だけが
+`_handle_event()`として残る。
 将来の RuntimeCoordinator / Supervisor の責務:
 
 - ActivityPlanningLoop を task として起動する
@@ -771,10 +841,10 @@ RuntimeCoordinator が直接やらないこと:
 - ActivityExecutionLoop.run_once() を通常運用の中で逐次呼び出す
 - InputReceiver の具体実装を知る
 
-RuntimeCoordinator.run の基本動作:
+Runtime実行の基本動作:
 
-1. running フラグを有効にする
-2. EventQueue からイベントを待ち受ける
+1. RuntimeLifecycleControllerがinitializerを実行し、running状態とThreadを起動する
+2. RuntimeLoopがEventQueueからイベントを待ち受ける
 3. `SPEECH_STARTED` / `SPEECH_FINISHED` の場合は AgentLifeService のみ更新する
 4. 通常 Event の場合は ActivityManager に渡す
 5. ActionPlanner で ActionPlanGroup を生成する
@@ -791,17 +861,14 @@ RuntimeCoordinator.run の基本動作:
 
 現時点の実装仕様:
 
-- `RuntimeCoordinator` は `_running` フラグを持つ
-- `run_once()` は Queue が空かどうかに関係なく、AgentLifeService に次の自律 Event 候補を問い合わせる
-- AgentLifeService が自律 Event 候補を返した場合、その Event を EventBuffer / EventQueue に投入できる
-- 自律 Event は Queue が空であることを発生条件にしない
+- `RuntimeCoordinator.run_once()`は`RuntimeLoop.run_once()`へ委譲する
+- RuntimeLoopはQueueが空で、startup完了済み、poll間隔経過済み、request queueが空、
+  planner非busyの場合にActivityPlanningRequestを投入する
 - `run_once()` は処理可能な Event が存在しない場合のみ `None` を返す
-- `run_once()` は EventQueue から1件取り出し、`_handle_event()` に処理を委譲する
-- `run()` は `_running=True` にして継続ループを開始する
-- `run()` は `run_once()` を繰り返し呼び出す
-- EventQueue が空の場合、`run()` は短時間待機してから再確認する
-- `stop()` は `_running=False` にして `run()` を停止させる
-- `_handle_event()` は Eventから状態更新、Plugin routing、Activity計画要求投入までを担当し、計画と実行は専用Threadへ分離する
+- RuntimeLoopはEventQueueから1件取り出し、注入されたevent handlerへ処理を委譲する
+- `RuntimeCoordinator.run()`と`stop()`は`RuntimeLifecycleController`への委譲だけを行う
+- EventQueueが空の場合、RuntimeLifecycleControllerは短時間待機してから再確認する
+- `_handle_event()`は通常Eventから状態更新、Activity生成、Action計画・実行までを行う互換経路である
 - `_handle_event()` は `SPEECH_STARTED` / `SPEECH_FINISHED` を AgentState 更新専用Eventとして扱う
 - AgentState 更新専用Eventは ActivityManager に渡さない
 - AgentState 更新専用Eventでは ActionPlanner / ActionScheduler を呼ばず、空の ActionPlanGroup を返す
