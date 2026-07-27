@@ -9,9 +9,10 @@ pytestmark = pytest.mark.unit
 
 
 class FakeRuntimeLoop:
-    def __init__(self) -> None:
+    def __init__(self, *, autonomous_planning_enabled: bool = False) -> None:
         self.controller: RuntimeHostController | None = None
         self.calls = 0
+        self.autonomous_planning_enabled = autonomous_planning_enabled
 
     async def run_once(self) -> None:
         self.calls += 1
@@ -60,15 +61,16 @@ async def test_initializer_failure_does_not_prevent_runtime_start() -> None:
     async def succeed() -> None:
         calls.append("succeed")
 
-    runtime_loop = FakeRuntimeLoop()
+    runtime_loop = FakeRuntimeLoop(autonomous_planning_enabled=False)
+    planner_thread = FakeThread()
+    executor_thread = FakeThread()
     controller = RuntimeHostController(
         runtime_loop=runtime_loop,  # type: ignore[arg-type]
-        activity_planner_thread=FakeThread(),  # type: ignore[arg-type]
-        activity_executor_thread=FakeThread(),  # type: ignore[arg-type]
+        activity_planner_thread=planner_thread,  # type: ignore[arg-type]
+        activity_executor_thread=executor_thread,  # type: ignore[arg-type]
         plugin_manager=None,
         ongoing_activity_coordinator=OngoingActivityCoordinator(ActivityManager()),
         async_initializers=(fail, succeed),
-        autonomous_planning_enabled=False,
         trace_logger=TraceLogger(),
         idle_sleep_seconds=0.0,
     )
@@ -78,6 +80,8 @@ async def test_initializer_failure_does_not_prevent_runtime_start() -> None:
 
     assert calls == ["fail", "succeed"]
     assert runtime_loop.calls == 1
+    assert planner_thread.started is False
+    assert executor_thread.started is False
 
 
 def test_stop_stops_and_joins_threads_then_shuts_down_plugin_and_ongoing() -> None:
@@ -93,13 +97,14 @@ def test_stop_stops_and_joins_threads_then_shuts_down_plugin_and_ongoing() -> No
     executor_thread = FakeThread(alive=True)
     plugin_manager = FakePluginManager()
     controller = RuntimeHostController(
-        runtime_loop=FakeRuntimeLoop(),  # type: ignore[arg-type]
+        runtime_loop=FakeRuntimeLoop(  # type: ignore[arg-type]
+            autonomous_planning_enabled=True
+        ),
         activity_planner_thread=planner_thread,  # type: ignore[arg-type]
         activity_executor_thread=executor_thread,  # type: ignore[arg-type]
         plugin_manager=plugin_manager,  # type: ignore[arg-type]
         ongoing_activity_coordinator=OngoingActivityCoordinator(manager),
         async_initializers=(),
-        autonomous_planning_enabled=True,
         trace_logger=TraceLogger(),
         thread_join_timeout_seconds=0.25,
     )
