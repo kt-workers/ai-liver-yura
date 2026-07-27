@@ -70,8 +70,8 @@ from app.runtime.pending_confirmation import (
     ConfirmationResolver,
     PendingConfirmationManager,
 )
+from app.runtime.plugin_activity_coordinator import PluginActivityCoordinator
 from app.runtime.plugin_ongoing_activity_synchronizer import (
-    PluginActivitySynchronizationError,
     PluginOngoingActivitySynchronizer,
 )
 from app.runtime.runtime_diagnostic_snapshot_builder import (
@@ -82,12 +82,7 @@ from app.runtime.user_input_event_router import UserInputEventRouter
 from app.runtime.user_input_interruption_coordinator import (
     UserInputInterruptionCoordinator,
 )
-from app.shared.contracts.plugins.runtime import (
-    CommandHandler,
-    PlannedActivityInterpreter,
-    PluginCapability,
-    UserIntentInterpreter,
-)
+from app.shared.contracts.plugins.runtime import PluginCapability
 from app.utils.conversation_log import ConversationLogger
 from app.utils.trace import TraceLogger
 
@@ -118,6 +113,7 @@ class RuntimeCoordinator:
         plugin_ongoing_activity_synchronizer: (
             PluginOngoingActivitySynchronizer | None
         ) = None,
+        plugin_activity_coordinator: PluginActivityCoordinator | None = None,
         autonomous_planning_enabled: bool = True,
         short_term_memory: ShortTermMemory | None = None,
         topic_history: TopicHistory | None = None,
@@ -276,6 +272,29 @@ class RuntimeCoordinator:
                 action_planner=self._action_planner,
                 action_scheduler=self._action_scheduler,
                 agent_life_service=self._agent_life_service,
+                trace_logger=self._trace_logger,
+            )
+        )
+        self._plugin_activity_coordinator = (
+            plugin_activity_coordinator
+            or PluginActivityCoordinator(
+                plugin_manager=self._plugin_manager,
+                activity_plan_validator=self._activity_plan_validator,
+                activity_manager=self._activity_manager,
+                explicit_activity_executor=self._explicit_activity_executor,
+                ongoing_synchronizer=(
+                    self._plugin_ongoing_activity_synchronizer
+                ),
+                conversation_fallback=self._with_plugin_availability,
+                execution_fallback=lambda event, contexts, reason, confidence: (
+                    self._with_execution_fallback(
+                        event,
+                        contexts=contexts,
+                        reason=reason,
+                        confidence=confidence,
+                    )
+                ),
+                ongoing_transition_payload=self._ongoing_transition_payload,
                 trace_logger=self._trace_logger,
             )
         )
@@ -644,248 +663,12 @@ class RuntimeCoordinator:
         required_capability: str | None = None,
         activity_plan: ActivityPlan | None = None,
     ) -> AgentEvent | None:
-        manager = self._plugin_manager
-        if manager is None:
-            return self._with_plugin_availability(event)
-        if activity_plan is not None and self._activity_plan_validator is not None:
-            immediate_evaluation = self._activity_plan_validator.validate(activity_plan)
-            activity_plan = immediate_evaluation.plan
-            if not immediate_evaluation.accepted:
-                self._trace_logger.info(
-                    "activity_constraints:rejected_before_plugin_handler",
-                    activity_type=activity_plan.activity_type,
-                    reason=immediate_evaluation.result.data.get("reason"),
-                )
-                return self._with_execution_fallback(
-                    event,
-                    contexts=[
-                        {"activity_plan_result": asdict(immediate_evaluation.result)}
-                    ],
-                    reason=str(
-                        immediate_evaluation.result.data.get("reason")
-                        or "activity_plan_rejected_before_execution"
-                    ),
-                    confidence=activity_plan.confidence,
-                )
-        text = str(event.payload.get("text") or "")
-        for plugin in manager.get_plugins_by_capability(
-            PluginCapability.USER_INTENT_INTERPRETER.value
-        ):
-            if plugin_id is not None and plugin.plugin_id != plugin_id:
-                continue
-            planned_interpreter = getattr(plugin, "interpret_activity_plan", None)
-            if activity_plan is not None and callable(planned_interpreter):
-                intent_result = await cast(
-                    PlannedActivityInterpreter, plugin
-                ).interpret_activity_plan(activity_plan, text)
-            else:
-                interpreter = cast(UserIntentInterpreter, plugin)
-                intent_result = await interpreter.interpret_user_text(text)
-            if not intent_result.handled:
-                continue
-            if intent_result.conversation_context.get("execution_requested") is False:
-                return replace(
-                    event,
-                    payload={
-                        **event.payload,
-                        "plugin_contexts": [dict(intent_result.conversation_context)],
-                        **dict(intent_result.conversation_context),
-                        "available_plugin_capabilities": sorted(
-                            manager.list_capabilities()
-                        ),
-                        "execution_performed": False,
-                    },
-                )
-            if required_capability is not None and not manager.is_capability_available(
-                required_capability, plugin.plugin_id
-            ):
-                self._trace_logger.warning(
-                    "runtime_coordinator:activity_capability_rejected_before_execution",
-                    plugin_id=plugin.plugin_id,
-                    capability=required_capability,
-                )
-                return self._with_execution_fallback(
-                    event,
-                    contexts=[dict(intent_result.conversation_context)],
-                    reason="activity_capability_revoked_before_execution",
-                    confidence=intent_result.confidence,
-                )
-            if not manager.is_capability_available(
-                PluginCapability.COMMAND_HANDLER.value, plugin.plugin_id
-            ):
-                self._trace_logger.warning(
-                    "runtime_coordinator:capability_execution_rejected",
-                    plugin_id=plugin.plugin_id,
-                    capability=PluginCapability.COMMAND_HANDLER.value,
-                    reason="unavailable_before_execution",
-                )
-                return self._with_execution_fallback(
-                    event,
-                    contexts=[dict(intent_result.conversation_context)],
-                    reason="selected_capability_unavailable",
-                    confidence=intent_result.confidence,
-                )
-            self._trace_logger.info(
-                "runtime_coordinator:capability_matched",
-                plugin_id=plugin.plugin_id,
-                capability=PluginCapability.COMMAND_HANDLER.value,
-                confidence=intent_result.confidence,
-            )
-            operation = self._activity_operation(activity_plan, intent_result)
-            constraints = activity_plan.constraints if activity_plan is not None else {}
-            turn_started = False
-            if operation != "start":
-                try:
-                    self._plugin_ongoing_activity_synchronizer.begin_turn(
-                        plugin=plugin,
-                        operation=operation,
-                        input_text=text,
-                        source_event_id=event.event_id,
-                        constraints=constraints,
-                    )
-                    turn_started = True
-                except PluginActivitySynchronizationError as error:
-                    return self._with_execution_fallback(
-                        event,
-                        contexts=[dict(intent_result.conversation_context)],
-                        reason=error.reason,
-                        confidence=intent_result.confidence,
-                    )
-            handler = cast(CommandHandler, plugin)
-            execution = await handler.execute_command(intent_result)
-            for capability in execution.unavailable_capabilities:
-                if manager.is_capability_available(capability, plugin.plugin_id):
-                    manager.set_capability_availability(
-                        plugin.plugin_id, capability, available=False
-                    )
-                    self._trace_logger.warning(
-                        "runtime_coordinator:capability_revoked_after_failure",
-                        plugin_id=plugin.plugin_id,
-                        capability=capability,
-                        reason=execution.reason,
-                    )
-            if execution.handled and execution.activity_request is not None:
-                request = execution.activity_request
-                try:
-                    execution_result, ongoing_snapshot = (
-                        self._plugin_ongoing_activity_synchronizer.synchronize(
-                            plugin=plugin,
-                            activity_state=request.state,
-                            request_context=dict(request.context),
-                            activity_kind=request.activity_kind,
-                            activity_type=(
-                                activity_plan.activity_type
-                                if activity_plan is not None
-                                else request.activity_kind
-                            ),
-                            response_text=request.response_text,
-                            capability=required_capability,
-                            operation=operation,
-                            constraints=constraints,
-                            goal=(
-                                activity_plan.goal
-                                if activity_plan is not None
-                                else f"Plugin {request.plugin_id} の継続Activityを実行する"
-                            ),
-                            input_text=text,
-                            source_event_id=event.event_id,
-                            turn_started=turn_started,
-                        )
-                    )
-                except Exception as error:
-                    self._trace_logger.error(
-                        "runtime_coordinator:plugin_ongoing_activity_sync_failed",
-                        plugin_id=plugin.plugin_id,
-                        operation=operation,
-                        error_type=type(error).__name__,
-                    )
-                    return self._with_execution_fallback(
-                        event,
-                        contexts=[dict(request.context)],
-                        reason="ongoing_activity_sync_failed",
-                        confidence=intent_result.confidence,
-                    )
-                activity = Activity(
-                    activity_type=ActivityType.PLUGIN_ACTIVITY,
-                    goal=f"Plugin {request.plugin_id} のActivityを実行する",
-                    priority=request.priority,
-                    context={
-                        **dict(request.context),
-                        "plugin_id": request.plugin_id,
-                        "prepared_response_text": request.response_text,
-                        "plugin_memory_policy": request.memory_policy,
-                        "ongoing_activity": ongoing_snapshot,
-                        "ongoing_activity_id": ongoing_snapshot.ongoing_activity_id,
-                        "activity_execution_result": execution_result,
-                        "ongoing_transition": self._ongoing_transition_payload(
-                            activity_plan,
-                            current_status=ongoing_snapshot.status.value,
-                            stopped=(
-                                operation == "stop"
-                                and ongoing_snapshot.status
-                                in {ActivityStatus.COMPLETED, ActivityStatus.CANCELED}
-                            ),
-                            transition_result="succeeded",
-                        ),
-                    },
-                    interruptible=False,
-                )
-                registered = self._activity_manager.register_plugin_activity(activity)
-                await self._execute_explicit_activity(registered)
-                self._trace_logger.info(
-                    "runtime_coordinator:plugin_activity_executed",
-                    plugin_id=request.plugin_id,
-                    activity_id=registered.activity_id,
-                    activity_kind=request.activity_kind,
-                )
-                return None
-            if bool(execution.conversation_context.get("execution_requested")):
-                if turn_started:
-                    self._plugin_ongoing_activity_synchronizer.record_failed_turn(
-                        activity_type=(
-                            activity_plan.activity_type
-                            if activity_plan is not None
-                            else "plugin_activity"
-                        ),
-                        operation=operation,
-                        capability=required_capability,
-                        plugin_id=plugin.plugin_id,
-                        reason=execution.reason or "execution_not_completed",
-                        constraints=constraints,
-                        conversation_context=dict(execution.conversation_context),
-                        activity_state=execution.activity_state,
-                    )
-                return self._with_execution_fallback(
-                    event,
-                    contexts=[dict(execution.conversation_context)],
-                    reason=execution.reason or "execution_not_completed",
-                    confidence=intent_result.confidence,
-                )
-            return replace(
-                event,
-                payload={
-                    **event.payload,
-                    "plugin_contexts": [dict(execution.conversation_context)],
-                    **dict(execution.conversation_context),
-                    "plugin_intent_reason": intent_result.reason,
-                    "available_plugin_capabilities": sorted(
-                        manager.list_capabilities()
-                    ),
-                    "execution_performed": False,
-                },
-            )
-        return self._with_plugin_availability(event)
-
-    @staticmethod
-    def _activity_operation(
-        activity_plan: ActivityPlan | None,
-        intent_result: object,
-    ) -> str:
-        if activity_plan is not None and activity_plan.operation is not None:
-            return activity_plan.operation.value
-        command = getattr(intent_result, "command", None)
-        operation = getattr(command, "operation", None)
-        return str(operation) if operation is not None else "continue"
+        return await self._plugin_activity_coordinator.route(
+            event,
+            plugin_id=plugin_id,
+            required_capability=required_capability,
+            activity_plan=activity_plan,
+        )
 
     @staticmethod
     def _plan_payload(plan: ActivityPlan) -> dict[str, object]:
