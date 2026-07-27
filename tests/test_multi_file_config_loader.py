@@ -10,7 +10,11 @@ import yaml
 
 from app.config import config_loader
 from app.config.app_config import CONFIG_PATH, load_app_config, load_raw_config
-from app.config.config_loader import CONFIG_PATH_ENV, ConfigSourceBundle
+from app.config.config_loader import (
+    CONFIG_PATH_ENV,
+    DEFAULT_CONFIG_PATH,
+    ConfigSourceBundle,
+)
 from app.config.errors import ConfigError
 from app.config.service_schema import OpenAiServiceSettings
 
@@ -376,11 +380,11 @@ def test_environment_variable_selects_single_file(
     assert load_app_config().config_path == str(CONFIG_PATH.resolve())
 
 
-def test_unset_environment_uses_legacy_default(
+def test_unset_environment_uses_production_manifest_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv(CONFIG_PATH_ENV, raising=False)
-    assert load_app_config().config_path == str(CONFIG_PATH.resolve())
+    assert load_app_config().config_path == str(DEFAULT_CONFIG_PATH.resolve())
 
 
 def test_environment_variable_selects_manifest(
@@ -419,11 +423,11 @@ def test_environment_missing_path_is_clear_error(
     assert raised.value.source_file == str(missing.resolve())
 
 
-def test_empty_environment_value_uses_legacy_default(
+def test_empty_environment_value_uses_production_manifest_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(CONFIG_PATH_ENV, "   ")
-    assert load_app_config().config_path == str(CONFIG_PATH.resolve())
+    assert load_app_config().config_path == str(DEFAULT_CONFIG_PATH.resolve())
 
 
 def test_explicit_argument_has_priority_over_environment(
