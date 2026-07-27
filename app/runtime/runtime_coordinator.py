@@ -34,11 +34,6 @@ from app.runtime.behavior_planning_context_builder import (
     BehaviorPlanningContextBuilder,
 )
 from app.runtime.behavior_routing_coordinator import BehaviorRoutingCoordinator
-from app.runtime.behavior_routing_support import (
-    BehaviorFallbackRouter,
-    ongoing_transition_payload,
-    plan_payload,
-)
 from app.runtime.buffered_event_dispatcher import BufferedEventDispatcher
 from app.runtime.confirmation_coordinator import ConfirmationCoordinator
 from app.runtime.conversation_input_recorder import ConversationInputRecorder
@@ -52,7 +47,6 @@ from app.runtime.event_subscriber_registry import EventSubscriberRegistry
 from app.runtime.event_type_router import EventTypeRouter
 from app.runtime.explicit_activity_executor import ExplicitActivityExecutor
 from app.runtime.interaction_reaction_policy import InteractionReactionPolicy
-from app.runtime.ongoing_activity_coordinator import OngoingActivityCoordinator
 from app.runtime.pending_confirmation import (
     ConfirmationResolver,
     PendingConfirmationManager,
@@ -145,105 +139,64 @@ class RuntimeCoordinator:
         self._activity_plan_validator = activity_plan_validator
         self._activity_registry = activity_registry
         self._pending_confirmation_manager = pending_confirmation_manager
-        self._confirmation_resolver = confirmation_resolver or ConfirmationResolver()
-        self._ongoing_activity_coordinator = OngoingActivityCoordinator(activity_manager)
         self._trace_logger = TraceLogger()
-        self._behavior_fallback_router = BehaviorFallbackRouter(
-            plugin_manager=self._plugin_manager,
-            trace_logger=self._trace_logger,
-        )
-        self._confirmation_coordinator = confirmation_coordinator or (
-            ConfirmationCoordinator(
-                manager=self._pending_confirmation_manager,
-                resolver=self._confirmation_resolver,
-                validator=self._activity_plan_validator,
-                conversation_fallback=(self._behavior_fallback_router.with_plugin_availability),
-                plan_payload=plan_payload,
-                trace_logger=self._trace_logger,
+        composition_root = RuntimeCompositionRoot()
+
+        def execution_fallback(
+            event: AgentEvent,
+            contexts: list[dict[str, object]],
+            reason: str,
+            confidence: float,
+        ) -> AgentEvent:
+            return self._with_execution_fallback(
+                event,
+                contexts=contexts,
+                reason=reason,
+                confidence=confidence,
             )
-            if self._pending_confirmation_manager is not None
-            and self._activity_plan_validator is not None
-            else None
-        )
-        self._plugin_ongoing_activity_synchronizer = (
-            plugin_ongoing_activity_synchronizer
-            or PluginOngoingActivitySynchronizer(
-                ongoing_activity_coordinator=self._ongoing_activity_coordinator,
-                trace_logger=self._trace_logger,
-            )
-        )
-        self._behavior_planning_context_builder = behavior_planning_context_builder or (
-            BehaviorPlanningContextBuilder(
-                activity_manager=self._activity_manager,
-                agent_life_service=self._agent_life_service,
-                plugin_manager=self._plugin_manager,
-                activity_registry=self._activity_registry,
-                short_term_memory=short_term_memory,
-                topic_history=topic_history,
-            )
-            if self._plugin_manager is not None
-            else None
-        )
-        self._explicit_activity_executor = explicit_activity_executor or ExplicitActivityExecutor(
+
+        behavior = composition_root.build_behavior_composition(
             activity_manager=self._activity_manager,
             action_planner=self._action_planner,
             action_scheduler=self._action_scheduler,
             agent_life_service=self._agent_life_service,
+            plugin_manager=self._plugin_manager,
+            behavior_planner=self._behavior_planner,
+            activity_plan_validator=self._activity_plan_validator,
+            activity_registry=self._activity_registry,
+            pending_confirmation_manager=self._pending_confirmation_manager,
+            short_term_memory=short_term_memory,
+            topic_history=topic_history,
             trace_logger=self._trace_logger,
+            plugin_router=self._route_plugin_user_input,
+            execution_fallback=execution_fallback,
+            current_ongoing_activity=lambda: self._activity_manager.ongoing_activity,
+            confirmation_resolver=confirmation_resolver,
+            confirmation_coordinator=confirmation_coordinator,
+            plugin_ongoing_activity_synchronizer=(
+                plugin_ongoing_activity_synchronizer
+            ),
+            behavior_planning_context_builder=behavior_planning_context_builder,
+            explicit_activity_executor=explicit_activity_executor,
+            plugin_activity_coordinator=plugin_activity_coordinator,
+            activity_switch_coordinator=activity_switch_coordinator,
+            behavior_routing_coordinator=behavior_routing_coordinator,
         )
-        self._plugin_activity_coordinator = (
-            plugin_activity_coordinator
-            or PluginActivityCoordinator(
-                plugin_manager=self._plugin_manager,
-                activity_plan_validator=self._activity_plan_validator,
-                activity_manager=self._activity_manager,
-                explicit_activity_executor=self._explicit_activity_executor,
-                ongoing_synchronizer=(self._plugin_ongoing_activity_synchronizer),
-                conversation_fallback=(self._behavior_fallback_router.with_plugin_availability),
-                execution_fallback=lambda event, contexts, reason, confidence: (
-                    self._with_execution_fallback(
-                        event,
-                        contexts=contexts,
-                        reason=reason,
-                        confidence=confidence,
-                    )
-                ),
-                ongoing_transition_payload=ongoing_transition_payload,
-                trace_logger=self._trace_logger,
-            )
+        self._confirmation_resolver = behavior.confirmation_resolver
+        self._ongoing_activity_coordinator = behavior.ongoing_activity_coordinator
+        self._behavior_fallback_router = behavior.behavior_fallback_router
+        self._confirmation_coordinator = behavior.confirmation_coordinator
+        self._plugin_ongoing_activity_synchronizer = (
+            behavior.plugin_ongoing_activity_synchronizer
         )
-        self._activity_switch_coordinator = (
-            activity_switch_coordinator
-            or ActivitySwitchCoordinator(
-                validator=self._activity_plan_validator,
-                plugin_router=self._route_plugin_user_input,
-                current_ongoing_activity=lambda: self._activity_manager.ongoing_activity,
-                execution_fallback=lambda event, contexts, reason, confidence: (
-                    self._with_execution_fallback(
-                        event,
-                        contexts=contexts,
-                        reason=reason,
-                        confidence=confidence,
-                    )
-                ),
-                trace_logger=self._trace_logger,
-            )
+        self._behavior_planning_context_builder = (
+            behavior.behavior_planning_context_builder
         )
-        self._behavior_routing_coordinator = (
-            behavior_routing_coordinator
-            or BehaviorRoutingCoordinator(
-                planner=self._behavior_planner,
-                validator=self._activity_plan_validator,
-                plugin_manager=self._plugin_manager,
-                context_builder=self._behavior_planning_context_builder,
-                confirmation_coordinator=self._confirmation_coordinator,
-                plugin_activity_coordinator=self._plugin_activity_coordinator,
-                activity_switch_coordinator=self._activity_switch_coordinator,
-                fallback_router=self._behavior_fallback_router,
-                trace_logger=self._trace_logger,
-            )
-        )
-        composition_root = RuntimeCompositionRoot()
+        self._explicit_activity_executor = behavior.explicit_activity_executor
+        self._plugin_activity_coordinator = behavior.plugin_activity_coordinator
+        self._activity_switch_coordinator = behavior.activity_switch_coordinator
+        self._behavior_routing_coordinator = behavior.behavior_routing_coordinator
+
         event_pipeline = composition_root.build_event_pipeline(
             event_queue=self._event_queue,
             activity_manager=self._activity_manager,
