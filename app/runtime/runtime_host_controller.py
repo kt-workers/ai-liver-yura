@@ -23,7 +23,6 @@ class RuntimeHostController:
         plugin_manager: PluginManager | None,
         ongoing_activity_coordinator: OngoingActivityCoordinator,
         async_initializers: tuple[Callable[[], Awaitable[None]], ...],
-        autonomous_planning_enabled: bool,
         trace_logger: TraceLogger,
         idle_sleep_seconds: float = 0.05,
         thread_join_timeout_seconds: float = 1.0,
@@ -34,7 +33,6 @@ class RuntimeHostController:
         self._plugin_manager = plugin_manager
         self._ongoing = ongoing_activity_coordinator
         self._async_initializers = async_initializers
-        self._autonomous_planning_enabled = autonomous_planning_enabled
         self._trace_logger = trace_logger
         self._idle_sleep_seconds = idle_sleep_seconds
         self._thread_join_timeout_seconds = thread_join_timeout_seconds
@@ -80,7 +78,7 @@ class RuntimeHostController:
         self._initializers_completed = True
 
     def _start_threads(self) -> None:
-        if not self._autonomous_planning_enabled:
+        if not self._runtime_loop.autonomous_planning_enabled:
             self._trace_logger.info(
                 "runtime_coordinator:threads:skipped",
                 reason="autonomous_planning_disabled",
@@ -97,7 +95,7 @@ class RuntimeHostController:
         )
 
     def _stop_threads(self) -> None:
-        if not self._autonomous_planning_enabled:
+        if not self._runtime_loop.autonomous_planning_enabled:
             return
         self._planner_thread.stop()
         self._executor_thread.stop()
