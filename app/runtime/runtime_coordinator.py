@@ -61,6 +61,7 @@ from app.runtime.plugin_activity_coordinator import PluginActivityCoordinator
 from app.runtime.plugin_ongoing_activity_synchronizer import (
     PluginOngoingActivitySynchronizer,
 )
+from app.runtime.runtime_composition_root import RuntimeCompositionRoot
 from app.runtime.runtime_diagnostic_snapshot_builder import (
     RuntimeDiagnosticSnapshotBuilder,
 )
@@ -306,35 +307,32 @@ class RuntimeCoordinator:
         self._event_enrichers: list[Callable[[AgentEvent], AgentEvent]] = []
         self._short_term_memory = short_term_memory
         self._topic_history = topic_history
-        self._runtime_event_executor = runtime_event_executor or RuntimeEventExecutor(
+        execution = RuntimeCompositionRoot().build_execution(
+            event_queue=self._event_queue,
             activity_manager=self._activity_manager,
             action_planner=self._action_planner,
             action_scheduler=self._action_scheduler,
-            agent_life_service=self._agent_life_service,
-            event_enrichers_provider=lambda: tuple(self._event_enrichers),
-            trace_logger=self._trace_logger,
-            interaction_reaction_policy=interaction_reaction_policy,
-        )
-        self._runtime_loop = runtime_loop or RuntimeLoop(
-            event_queue=self._event_queue,
-            activity_planning_request_queue=(self._activity_planning_request_queue),
-            activity_planner_thread=self._activity_planner_thread,
-            agent_life_service=self._agent_life_service,
-            event_handler=self._handle_event,
-            autonomous_planning_enabled=autonomous_planning_enabled,
-            require_startup_completion=require_startup_completion,
-            autonomous_planning_poll_seconds=(autonomous_planning_poll_seconds),
-            trace_logger=self._trace_logger,
-        )
-        self._runtime_host_controller = runtime_host_controller or RuntimeHostController(
-            runtime_loop=self._runtime_loop,
+            activity_planning_request_queue=self._activity_planning_request_queue,
             activity_planner_thread=self._activity_planner_thread,
             activity_executor_thread=self._activity_executor_thread,
+            agent_life_service=self._agent_life_service,
             plugin_manager=self._plugin_manager,
-            ongoing_activity_coordinator=(self._ongoing_activity_coordinator),
+            ongoing_activity_coordinator=self._ongoing_activity_coordinator,
+            event_handler=self._handle_event,
+            event_enrichers_provider=lambda: tuple(self._event_enrichers),
+            autonomous_planning_enabled=autonomous_planning_enabled,
+            require_startup_completion=require_startup_completion,
+            autonomous_planning_poll_seconds=autonomous_planning_poll_seconds,
             async_initializers=async_initializers,
             trace_logger=self._trace_logger,
+            interaction_reaction_policy=interaction_reaction_policy,
+            event_executor=runtime_event_executor,
+            runtime_loop=runtime_loop,
+            host_controller=runtime_host_controller,
         )
+        self._runtime_event_executor = execution.event_executor
+        self._runtime_loop = execution.runtime_loop
+        self._runtime_host_controller = execution.host_controller
 
     @property
     def autonomous_planning_enabled(self) -> bool:
