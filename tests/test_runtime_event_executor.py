@@ -98,7 +98,7 @@ async def test_state_only_event_does_not_create_activity(
 @pytest.mark.asyncio
 async def test_successful_event_execution_completes_activity_and_syncs_state() -> None:
     activity = Activity(
-        activity_type=ActivityType.CONVERSATION,
+        activity_type=ActivityType.CONVERSATION_WITH_USER,
         goal="会話する",
         status=ActivityStatus.ACTIVE,
     )
@@ -133,7 +133,7 @@ async def test_successful_event_execution_completes_activity_and_syncs_state() -
 @pytest.mark.asyncio
 async def test_action_planning_failure_records_result_and_skips_scheduler() -> None:
     activity = Activity(
-        activity_type=ActivityType.CONVERSATION,
+        activity_type=ActivityType.CONVERSATION_WITH_USER,
         goal="会話する",
         status=ActivityStatus.ACTIVE,
     )
