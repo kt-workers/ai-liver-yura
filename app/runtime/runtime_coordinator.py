@@ -41,6 +41,7 @@ from app.runtime.activity_planner_thread import (
 )
 from app.runtime.activity_registry import ActivityRegistry
 from app.runtime.activity_result_builder import build_activity_result
+from app.runtime.activity_switch_coordinator import ActivitySwitchCoordinator
 from app.runtime.activity_turn_result_factory import (
     action_planning_failure_group,
     canceled_output_group,
@@ -114,6 +115,7 @@ class RuntimeCoordinator:
             PluginOngoingActivitySynchronizer | None
         ) = None,
         plugin_activity_coordinator: PluginActivityCoordinator | None = None,
+        activity_switch_coordinator: ActivitySwitchCoordinator | None = None,
         autonomous_planning_enabled: bool = True,
         short_term_memory: ShortTermMemory | None = None,
         topic_history: TopicHistory | None = None,
@@ -295,6 +297,25 @@ class RuntimeCoordinator:
                     )
                 ),
                 ongoing_transition_payload=self._ongoing_transition_payload,
+                trace_logger=self._trace_logger,
+            )
+        )
+        self._activity_switch_coordinator = (
+            activity_switch_coordinator
+            or ActivitySwitchCoordinator(
+                validator=self._activity_plan_validator,
+                plugin_router=self._route_plugin_user_input,
+                current_ongoing_activity=lambda: (
+                    self._activity_manager.ongoing_activity
+                ),
+                execution_fallback=lambda event, contexts, reason, confidence: (
+                    self._with_execution_fallback(
+                        event,
+                        contexts=contexts,
+                        reason=reason,
+                        confidence=confidence,
+                    )
+                ),
                 trace_logger=self._trace_logger,
             )
         )
@@ -689,76 +710,12 @@ class RuntimeCoordinator:
         plan: ActivityPlan,
         planning_context: BehaviorPlanningContext,
     ) -> AgentEvent | None:
-        validator = self._activity_plan_validator
-        current = planning_context.active_activity_definition
-        if validator is None or current is None:
-            return self._with_execution_fallback(
-                event,
-                contexts=[],
-                reason="switch_current_activity_definition_missing",
-                confidence=plan.confidence,
-            )
-        stop_plan = ActivityPlan(
-            decision=BehaviorDecision.CONTINUE_ACTIVITY,
-            activity_type=current.activity_type,
-            goal=f"{current.display_name}を停止してActivityを切り替える",
-            required_capability=current.required_capability,
-            provider_plugin_id=current.provider_plugin_id,
-            operation=ActivityOperation.STOP,
-            planner_constraints=("停止成功後だけ新しいActivityを開始する",),
-            speech_act=plan.speech_act,
-            confidence=plan.confidence,
-            reason="switch_stop_current",
-            ongoing_input_decision=plan.ongoing_input_decision,
-            current_activity_type=current.activity_type,
-        )
-        stop_evaluation = validator.validate(stop_plan)
-        if not stop_evaluation.accepted:
-            self._trace_logger.warning(
-                "runtime_coordinator:activity_switch_stop_rejected",
-                current_activity_type=current.activity_type,
-                requested_activity_type=plan.activity_type,
-            )
-            return self._with_execution_fallback(
-                event,
-                contexts=[{"stop_result": asdict(stop_evaluation.result)}],
-                reason="switch_stop_rejected",
-                confidence=plan.confidence,
-            )
-        stop_routed = await self._route_plugin_user_input(
+        return await self._activity_switch_coordinator.route(
             event,
-            plugin_id=current.provider_plugin_id,
-            required_capability=current.required_capability,
-            activity_plan=stop_plan,
+            plan,
+            planning_context,
+            plugin_router=self._route_plugin_user_input,
         )
-        if (
-            stop_routed is not None
-            or self._activity_manager.ongoing_activity is not None
-        ):
-            self._trace_logger.warning(
-                "runtime_coordinator:activity_switch_stop_failed",
-                current_activity_type=current.activity_type,
-                requested_activity_type=plan.activity_type,
-            )
-            return self._with_execution_fallback(
-                stop_routed or event,
-                contexts=[],
-                reason="switch_stop_failed",
-                confidence=plan.confidence,
-            )
-        routed = await self._route_plugin_user_input(
-            event,
-            plugin_id=plan.provider_plugin_id,
-            required_capability=plan.required_capability,
-            activity_plan=plan,
-        )
-        self._trace_logger.info(
-            "runtime_coordinator:activity_switch_finished",
-            previous_activity_type=current.activity_type,
-            requested_activity_type=plan.activity_type,
-            started=routed is None,
-        )
-        return routed
 
     @staticmethod
     def _ongoing_transition_payload(
