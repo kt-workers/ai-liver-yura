@@ -447,3 +447,60 @@ import元file基準への切替は行わない。環境別override、Plugin別YA
 次工程では、このloaderを利用してまずruntime領域とcharacter領域の本番設定を段階的に
 分割する。移行中はlegacy単一設定との等価性をテストし、単一`config.yaml`廃止の可否は
 運用実績を確認してから別途決定する。
+
+## 9. runtime・character本番設定の分割
+
+複数YAML loaderの最初の本番利用として、`config/index.yaml`をroot manifestにし、
+次のownershipで設定を分割した。
+
+| owner file | トップレベルキー |
+| --- | --- |
+| `config/runtime.yaml` | `app`、`trace`、`input_receivers`、`confirmation` |
+| `config/character.yaml` | `character` |
+| `config/application.yaml` | `services`、`models`、`response_generator`、`llm_roles`、`speech`、`topic_classifier`、`memory`、`streaming`、`plugins` |
+
+`application.yaml`は今回個別分割しない領域の暫定集約fileであり、後続PRで領域を移すたびに
+縮小する。manifest import対象外の`emotion_appraisal`は現行単一設定にも存在せず、
+本工程では統合・追加していない。
+
+### 既定入口とlegacy互換
+
+環境変数も明示引数もない`load_app_config()`の既定入口は`config/index.yaml`へ切り替えた。
+`AI_LIVER_CONFIG_PATH`によるfile、manifest、directory指定と、明示引数が環境変数より
+優先される規則は維持する。directoryとして`config/`を指定した場合も同じ`index.yaml`を
+読む。
+
+`config/config.yaml`は削除・値変更・コメント変更を行わず、後方互換、比較検証、
+緊急切り戻し用として維持する。公開互換の`CONFIG_PATH`と、引数なしの低レベル
+`load_raw_config()`は引き続きこのlegacy fileを指す。したがって、次の入口を併存できる。
+
+- `load_app_config()`は本番manifest
+- `load_app_config(Path("config/index.yaml"))`は本番manifest
+- `load_app_config(Path("config"))`は本番manifest
+- `load_app_config(Path("config/config.yaml"))`はlegacy単一設定
+
+`AppConfig.config_path`は引き続きroot設定入口の絶対pathであり、通常起動とStreaming Adminは
+`config/index.yaml`、legacy明示指定は`config/config.yaml`を表示する。
+
+### 値、path、デプロイへの影響
+
+新しい3つのowner fileへは、最新`config/config.yaml`の値、character文章、配列順、
+設定コメントをそのまま配置した。timeout、retry、enabled、model、service、speaker ID、
+Streaming readinessを含め、設定値の最適化や変更は行っていない。
+
+manifest importは`index.yaml`基準で解決するが、ログ、発音辞書、memory、run-of-showなど
+設定値内の相対path規則は従来どおりである。owner file基準への変更は行っていない。
+
+リポジトリ内にRender設定fileや`config/config.yaml`を固定する起動コマンドは存在しないため、
+デプロイ設定は変更していない。既定入口がmanifestになったため追加環境変数は不要だが、
+外部管理の環境では`AI_LIVER_CONFIG_PATH=config/index.yaml`を明示しても同じ結果になる。
+
+### 検証と次工程
+
+本番4 YAMLの構文、重複キー、root mapping、import先存在、ownership完全一致、strict parser、
+参照グラフを実ファイルで検証する。legacyとmanifestは`config_path`を除く`AppConfig`全体に
+加え、service具体型、models、speech profile、memory、character、input receiver、
+confirmation、Streaming、Plugin、immutable mapping、tuple変換が等価であることを固定する。
+
+次工程は`speech`と`memory`を`application.yaml`から個別owner fileへ移す。
+環境別overrideと単一`config.yaml`廃止は未実装・未決定のままとする。
