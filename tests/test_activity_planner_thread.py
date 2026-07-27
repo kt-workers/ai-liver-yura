@@ -119,7 +119,7 @@ def _create_thread(
         request_queue=request_queue,
         planned_activity_queue=planned_activity_queue,
         planning_service=planning_service,  # type: ignore[arg-type]
-        idle_sleep_seconds=0.01,
+        idle_sleep_seconds=0.001,
         max_queue_size=max_queue_size,
     )
 
@@ -133,13 +133,13 @@ def _create_agent_event() -> AgentEvent:
 
 # Thread 起動直後のタイミング差を吸収するため、起動状態になるまで待つ。
 def _wait_until_running(
-    thread: ActivityPlannerThread, timeout_seconds: float = 1.0
+    thread: ActivityPlannerThread, timeout_seconds: float = 0.2
 ) -> bool:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         if thread.is_running:
             return True
-        time.sleep(0.01)
+        time.sleep(0.001)
     return False
 
 
@@ -246,7 +246,7 @@ def test_run_processes_request_queue_until_stopped() -> None:
         request_queue.join()
     finally:
         thread.stop()
-        thread.join(timeout=1.0)
+        thread.join(timeout=0.2)
 
     assert thread.is_alive() is False
     assert thread.is_running is False
@@ -266,7 +266,7 @@ def test_stop_changes_running_state() -> None:
         assert _wait_until_running(thread) is True
     finally:
         thread.stop()
-        thread.join(timeout=1.0)
+        thread.join(timeout=0.2)
 
     assert thread.is_alive() is False
     assert thread.is_running is False
