@@ -1445,12 +1445,18 @@ def _replace_topic_memory_embedding_service(
 def _replace_topic_memory_database_type(
     config: AppConfig, database_type: str
 ) -> AppConfig:
+    from app.config.service_schema import DisabledServiceSettings
+
     service_key = config.memory.topic_memory.database_service
+    service = config.services[service_key]
+    replacement = (
+        service if database_type == "postgres" else DisabledServiceSettings()
+    )
     return replace(
         config,
         services={
             **config.services,
-            service_key: replace(config.services[service_key], type=database_type),
+            service_key: replacement,
         },
     )
 
