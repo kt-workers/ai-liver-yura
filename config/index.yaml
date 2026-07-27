@@ -6,12 +6,13 @@ imports:
 
   character: character.yaml
 
+  speech: speech.yaml
+  memory: memory.yaml
+
   services: application.yaml
   models: application.yaml
   response_generator: application.yaml
   llm_roles: application.yaml
-  speech: application.yaml
   topic_classifier: application.yaml
-  memory: application.yaml
   streaming: application.yaml
   plugins: application.yaml
