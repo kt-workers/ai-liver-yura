@@ -6,8 +6,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
-import yaml
-
+from app.config.config_loader import (
+    DEFAULT_CONFIG_PATH,
+    ConfigSourceBundle,
+    load_config_bundle,
+    load_raw_config,
+)
 from app.config.errors import ConfigError
 from app.config.service_schema import (
     DisabledServiceSettings,
@@ -39,9 +43,17 @@ from app.config.strict import (
 )
 from app.plugins.games.settings import GamesPluginSettings, load_games_plugin_settings
 
-CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "config.yaml"
+CONFIG_PATH = DEFAULT_CONFIG_PATH
 
-__all__ = ["AppConfig", "ServiceSettings", "load_app_config", "load_raw_config"]
+__all__ = [
+    "AppConfig",
+    "CONFIG_PATH",
+    "ConfigSourceBundle",
+    "ServiceSettings",
+    "load_app_config",
+    "load_config_bundle",
+    "load_raw_config",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -391,9 +403,9 @@ class AppConfig:
     config_path: str = ""
 
 
-def load_app_config(config_path: Path = CONFIG_PATH) -> AppConfig:
-    resolved_path = config_path.resolve()
-    raw_config = load_raw_config(resolved_path)
+def load_app_config(config_path: str | Path | None = None) -> AppConfig:
+    bundle = load_config_bundle(config_path)
+    raw_config = dict(bundle.values)
     try:
         reject_unknown_keys(
             raw_config,
@@ -442,14 +454,14 @@ def load_app_config(config_path: Path = CONFIG_PATH) -> AppConfig:
             ),
             plugins=_load_plugin_settings(raw_config.get("plugins")),
             streaming=_load_streaming_settings(raw_config.get("streaming")),
-            config_path=str(resolved_path),
+            config_path=str(bundle.root_path),
         )
         _validate_reference_graph(config)
         return config
     except ConfigError as error:
         if error.source_file is not None:
             raise
-        raise error.with_source(str(resolved_path)) from error
+        raise error.with_source(str(bundle.source_for(error.path))) from error
 
 
 def _load_streaming_settings(value: object) -> StreamingSettings:
@@ -856,53 +868,6 @@ def _load_confirmation_settings(config: dict[str, Any]) -> ConfirmationSettings:
         ),
         max_attempts=_positive_int_setting(config, "max_attempts", "confirmation"),
     )
-
-
-def load_raw_config(config_path: Path = CONFIG_PATH) -> dict[str, Any]:
-    if not config_path.exists():
-        raise ConfigError(
-            path="<root>",
-            expected="existing YAML file",
-            actual="missing",
-            source_file=str(config_path),
-        )
-
-    try:
-        with config_path.open("r", encoding="utf-8") as file:
-            raw_config = yaml.safe_load(file)
-    except yaml.YAMLError as error:
-        raise ConfigError(
-            path="<yaml>",
-            expected="valid YAML syntax",
-            actual="invalid YAML",
-            cause=type(error).__name__,
-            source_file=str(config_path),
-        ) from error
-    except OSError as error:
-        raise ConfigError(
-            path="<root>",
-            expected="readable YAML file",
-            actual=type(error).__name__,
-            source_file=str(config_path),
-        ) from error
-
-    if raw_config is None:
-        raise ConfigError(
-            path="<root>",
-            expected="non-empty object",
-            actual="empty",
-            source_file=str(config_path),
-        )
-
-    if not isinstance(raw_config, dict):
-        raise ConfigError(
-            path="<root>",
-            expected="object",
-            actual=type(raw_config).__name__,
-            source_file=str(config_path),
-        )
-
-    return require_mapping(raw_config, "<root>")
 
 
 def _load_app_settings(config: dict[str, Any]) -> AppSettings:

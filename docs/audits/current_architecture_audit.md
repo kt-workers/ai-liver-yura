@@ -373,3 +373,77 @@ app/bootstrap/
 今回、`config/config.yaml`の分割、キー移動、manifest/import、設定パス環境変数、
 相対パス基準の変更は行っていない。次工程では単一ファイル互換を維持する統合ローダーを
 追加し、トップレベルキー単位の重複拒否とsource情報を備えた上で段階的にYAMLを分割する。
+
+## 8. 複数YAMLローダー導入後の設定入口
+
+型変換より前段に`app/config/config_loader.py`を追加した。`load_raw_config(path)`は従来どおり
+単一のYAML mappingだけを読む低レベル関数であり、manifest解決は行わない。
+`load_app_config()`は`load_config_bundle()`を経由し、次の順でroot設定入口を決定する。
+
+1. `load_app_config(path)`の明示引数
+2. 空白除去後に空でない`AI_LIVER_CONFIG_PATH`
+3. 従来の`config/config.yaml`
+
+相対的な入口pathは現在の作業ディレクトリ基準で解決する。入口がdirectoryなら、その直下の
+`index.yaml`だけをmanifestとして読む。directory内のYAML自動走査は行わず、
+`index.yaml`がない、通常設定である、またはfileでない場合は設定エラーとする。
+明示的な空文字列pathは誤指定として拒否し、環境変数の空文字列は未指定として扱う。
+
+### 単一設定とmanifestの判定
+
+fileのroot mappingに`imports`がなければ従来の単一設定として扱う。ただし、
+`index.yaml`という名前のfileはmanifest専用とし、`imports`を必須とする。
+`imports`があればmanifestとして扱い、manifestのトップレベルには`imports`以外を
+許可しない。通常設定キーとの混在はownershipを曖昧にするため拒否する。
+
+manifestは次のようにトップレベルキーごとの所有fileを宣言する。
+
+```yaml
+imports:
+  app: runtime.yaml
+  trace: runtime.yaml
+  services: services.yaml
+```
+
+import値は空でない文字列pathに限定する。相対importはmanifest自身のdirectory基準、
+絶対importはそのまま解決する。project root外のimportとsymlinkは一律禁止せず、
+`Path.resolve()`後の実体pathを同一file判定に使う。
+
+### ownership、重複、循環
+
+同じfileを複数キーのownerに指定できるが、そのfileのトップレベルキー集合はmanifestで
+そのfileへ割り当てた集合と完全一致しなければならない。未割当キーの暗黙混入、指定キーの
+欠落、YAML mapping内の重複キー、複数ownerによる重複はすべて拒否し、deep merge、
+前勝ち、後勝ちは実装しない。同じ実体fileはローカルキャッシュから一度だけ読む。
+
+import先の`imports`、manifest自身へのimport、symlinkや相対path正規化後にmanifest自身と
+なるimportを拒否する。nested importsはownershipとsource追跡を単純に保つため未実装であり、
+将来対応する場合も循環グラフ検証と併せて設計する。
+
+現行`AppConfig`の必須トップレベルキーはmanifest統合時点で割当を検証する。
+`plugins`と`streaming`は任意である。`emotion_appraisal`は独立再読込のdeprecated経路に
+残り、`AppConfig`の公開fieldではないため、曖昧に無視せずmanifest import対象外として
+明示的に拒否する。単一設定内の互換キーとしては引き続き受理する。
+
+### source追跡とconfig_path
+
+`ConfigSourceBundle`は統合済みraw mapping、root入口の絶対path、トップレベルキーから
+実際のowner fileへの読み取り専用source mapを保持する。manifest構文と割当のエラーは
+manifestをsourceとし、import先のYAML・ownershipエラーはimport先fileをsourceとする。
+型・範囲・参照グラフのエラーは、エラーpathのトップレベルキーからownerを引き、
+たとえば`speech.service`なら`speech.yaml`を`ConfigError.source_file`へ設定する。
+
+`AppConfig.config_path`は単一file、manifest file、またはdirectory指定時に解決した
+`index.yaml`という「ユーザーまたは環境が指定したroot設定入口」の絶対pathを表す。
+import先fileには置き換えないため、Streaming Adminなど既存表示側の意味も維持される。
+
+### 互換範囲と次工程
+
+`config/config.yaml`、既存Factory、Composition Root、`AppConfig`の公開fieldは変更して
+いない。ログ、辞書、memory、run-of-showなど設定値中の相対path解決規則も変更しておらず、
+import元file基準への切替は行わない。環境別override、Plugin別YAML移行、deep merge、
+単一設定互換の廃止はいずれも未決定・未実装である。
+
+次工程では、このloaderを利用してまずruntime領域とcharacter領域の本番設定を段階的に
+分割する。移行中はlegacy単一設定との等価性をテストし、単一`config.yaml`廃止の可否は
+運用実績を確認してから別途決定する。
