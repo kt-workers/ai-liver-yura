@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from app.config.config_loader import (
-    DEFAULT_CONFIG_PATH,
+    LEGACY_CONFIG_PATH,
     ConfigSourceBundle,
     load_config_bundle,
     load_raw_config,
@@ -43,7 +43,7 @@ from app.config.strict import (
 )
 from app.plugins.games.settings import GamesPluginSettings, load_games_plugin_settings
 
-CONFIG_PATH = DEFAULT_CONFIG_PATH
+CONFIG_PATH = LEGACY_CONFIG_PATH
 
 __all__ = [
     "AppConfig",

@@ -1,0 +1,226 @@
+# 外部サービスの接続情報はここで一元管理する。
+# APIキーやDSNの値自体は記載せず、環境変数名だけを指定する。
+services:
+  openai:
+    type: openai
+    base_url: https://api.openai.com/v1
+    api_key_env: OPENAI_API_KEY
+    timeout_seconds: 60.0
+  ollama:
+    type: ollama
+    base_url: http://localhost:11434
+    timeout_seconds: 60.0
+  voicevox:
+    type: voicevox
+    base_url: http://192.168.50.182:50021
+    timeout_seconds: 30.0
+  topic_memory_database:
+    type: postgres
+    dsn_env: AI_LIVER_DATABASE_URL
+  youtube:
+    type: fake
+    client_secret_path_env: YOUTUBE_CLIENT_SECRET_PATH
+    token_path_env: YOUTUBE_TOKEN_PATH
+    request_timeout_seconds: 15.0
+    max_retries: 2
+    retry_initial_delay_seconds: 1.0
+    oauth_open_browser: true
+    oauth_timeout_seconds: 300.0
+    # 準備段階では既にliveのBroadcastを候補にしない
+    allow_live_broadcast: false
+    allowed_privacy_statuses:
+      - private
+      - unlisted
+      - public
+  obs:
+    type: obs_websocket
+    host: 127.0.0.1
+    port: 4455
+    password_env: OBS_WEBSOCKET_PASSWORD
+    connect_timeout_seconds: 5.0
+    request_timeout_seconds: 5.0
+    max_retries: 2
+    retry_initial_delay_seconds: 0.5
+
+# 利用可能なモデルを登録し、各機能からキー名で参照する。
+models:
+  openai_chat:
+    service: openai
+    name: gpt-4.1-mini
+  ollama_chat:
+    service: ollama
+    name: local-agent:qwen7b-prompt-test
+  openai_embedding:
+    service: openai
+    name: text-embedding-3-small
+    dimension: 1536
+
+response_generator:
+  type: llm
+  model: openai_chat
+  fallback_response: うまく言葉が出てこなかったみたい。もう一度話しかけてね。
+
+# LLMの責務ごとにモデルと失敗時の扱いを明示する。
+# modelは上のmodelsキーを参照し、Providerはmodels.<key>.serviceから解決する。
+llm_roles:
+  situation_evaluator:
+    model: openai_chat
+    temperature: 0.1
+    timeout_seconds: 30.0
+    fallback_response: '{"activity_type":"conversation","operation":"discuss","goal":"通常会話で応答する","constraints":{},"speech_act":"statement","negated":false,"hypothetical":false,"past_reference":false,"knowledge_question":false,"confidence":0.0,"reason":"evaluation_failed"}'
+  character:
+    model: openai_chat
+    temperature: 0.7
+    timeout_seconds: 60.0
+    fallback_response: '{"speech":"うまく言葉にできなかったみたい。もう一度話しかけてね。","expression":"soft_smile","gesture":null,"claims":["conversation_only"]}'
+  response_validator:
+    model: openai_chat
+    temperature: 0.0
+    timeout_seconds: 30.0
+    fallback_response: '{"accepted":false,"reason":"validation_failed"}'
+
+speech:
+  enabled: true
+  service: voicevox
+  pronunciation_dictionary_path: config/pronunciation_dictionary.yaml
+  # Voidoll（ノーマル）
+  speaker_id: 89
+  default_profile: neutral
+  voice_intent_profiles:
+    # Voidoll公式推奨値を基準にする
+    neutral:
+      speed_scale: 0.90
+      pitch_scale: 0.03
+      intonation_scale: 0.90
+      volume_scale: 1.0
+    bright:
+      speed_scale: 1.02
+      pitch_scale: 0.05
+      intonation_scale: 1.08
+      volume_scale: 1.03
+    energetic:
+      speed_scale: 1.15
+      pitch_scale: 0.07
+      intonation_scale: 1.20
+      volume_scale: 1.08
+    restrained_anger:
+      speed_scale: 1.08
+      pitch_scale: 0.01
+      intonation_scale: 1.15
+      volume_scale: 1.10
+    subdued:
+      speed_scale: 0.78
+      pitch_scale: -0.02
+      intonation_scale: 0.72
+      volume_scale: 0.88
+    weary:
+      speed_scale: 0.72
+      pitch_scale: -0.03
+      intonation_scale: 0.68
+      volume_scale: 0.82
+  player:
+    type: system
+    # nullの場合、macOSはafplay、Linuxはaplayを使用する
+    command: null
+
+topic_classifier:
+  model: openai_chat
+
+memory:
+  # エピソード・意味・未完了Activity・未回収話題・感情履歴の継続状態。
+  agent_memory:
+    enabled: false
+    path: data/agent_memory.json
+    max_history_entries: 64
+  # 継続的な相手ごとの関係状態。必要な環境で明示的に有効化する。
+  relationship_memory:
+    enabled: false
+    path: data/relationship_memory.json
+    max_entries: 1000
+  topic_memory:
+    enabled: true
+    database_service: topic_memory_database
+    embedding_model: openai_embedding
+    summary:
+      type: llm
+      model: openai_chat
+      fallback_max_length: 120
+
+# 配信準備は状態確認だけを行い、OBS開始やYouTube遷移は行わない。
+streaming:
+  health_timeout_seconds: 60.0
+  readiness:
+    require_youtube: true
+    require_obs: true
+    require_tts: false
+    require_avatar: false
+    require_run_of_show: true
+    require_emergency_stop: false
+    allow_required_degraded: false
+    require_live_chat: false
+  obs:
+    expected_scene_collection: AI Liver
+    expected_start_scene: Starting Soon
+    required_audio_sources: []
+    optional_audio_sources: []
+    avatar_source_name: Yura
+    require_avatar_source_visible: false
+    low_volume_threshold_db: -60.0
+    max_scene_depth: 8
+  run_of_show:
+    directory: config/run_of_show
+    default_id: default
+  fake:
+    broadcast_id: fake-broadcast-1
+    broadcast_title: 配信準備テスト枠
+  moderation:
+    blocked_terms: []
+    allowed_terms: []
+    max_comment_length: 300
+    repeated_message_window_seconds: 30
+    repeated_message_limit: 3
+    url_policy: review
+    unknown_message_type_policy: ignore
+    max_concurrent_evaluations: 4
+    evaluation_queue_capacity: 128
+    timeout_seconds: 3.0
+  comment_ranking:
+    weights:
+      recency: 0.15
+      relevance: 0.25
+      novelty: 0.15
+      conversation_fit: 0.20
+      engagement: 0.15
+      fairness: 0.10
+    selection_threshold: 0.55
+    minimum_conversation_fit: 0.5
+    candidate_ttl_seconds: 90
+    reservation_ttl_seconds: 30
+    max_pool_size: 200
+    max_rank_batch_size: 50
+    history_size: 100
+    author_cooldown_count: 2
+    semantic_timeout_seconds: 2.0
+    max_concurrent_rankings: 1
+    queue_capacity: 16
+  comment_response:
+    max_characters: 140
+    max_sentences: 3
+    allow_follow_up_question: true
+    mention_author_name: optional
+    repeat_comment_text: false
+    response_cooldown_seconds: 5
+    max_retries: 2
+
+plugins:
+  registry: {}
+  games:
+    enabled: true
+    intent_interpreter:
+      enabled: true
+      model: openai_chat
+      confidence_threshold: 0.85
+      max_attempts: 2
+    shiritori:
+      enabled: true
+      max_generation_retries: 3

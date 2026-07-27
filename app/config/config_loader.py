@@ -15,9 +15,9 @@ from yaml.nodes import MappingNode
 from app.config.errors import ConfigError
 from app.config.strict import require_mapping, require_string_value
 
-DEFAULT_CONFIG_PATH = (
-    Path(__file__).resolve().parents[2] / "config" / "config.yaml"
-)
+CONFIG_DIRECTORY = Path(__file__).resolve().parents[2] / "config"
+LEGACY_CONFIG_PATH = CONFIG_DIRECTORY / "config.yaml"
+DEFAULT_CONFIG_PATH = CONFIG_DIRECTORY / "index.yaml"
 CONFIG_PATH_ENV = "AI_LIVER_CONFIG_PATH"
 MANIFEST_FILE_NAME = "index.yaml"
 
@@ -149,7 +149,7 @@ def resolve_config_entry(
 
 
 def load_raw_config(
-    config_path: str | Path = DEFAULT_CONFIG_PATH,
+    config_path: str | Path = LEGACY_CONFIG_PATH,
 ) -> dict[str, Any]:
     """Read one YAML mapping without resolving manifests."""
 
