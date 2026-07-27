@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: yura-inner-state-visualizer
+    runtime: python
+    plan: free
+    branch: feature/gui-development
+    buildCommand: python -m compileall app gui/yura-inner-state-visualizer
+    startCommand: python gui/yura-inner-state-visualizer/render_server.py
+    healthCheckPath: /state
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.5
+      - key: YURA_DEMO_INTERVAL_SECONDS
+        value: "1.0"
