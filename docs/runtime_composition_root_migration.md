@@ -73,21 +73,72 @@ Ingress、Filter、会話入力記録、Life Service、Subscriber、foreground�
 変更しない。`USER_INTERACTION`も従来どおりFilter、Prioritizer、Buffer、
 EventQueueを通り、実行系の`InteractionReactionPolicy`へ到達する。
 
-## 残存: Behavior・Plugin系
+## 移行済み: Behavior・Plugin系
 
-以下をComposition Rootへ移動する。
+以下の生成順序と依存配線を
+`RuntimeCompositionRoot.build_behavior_composition()`へ集約する。
 
 - `BehaviorFallbackRouter`
+- `ConfirmationResolver`
 - `ConfirmationCoordinator`
+- `OngoingActivityCoordinator`
 - `PluginOngoingActivitySynchronizer`
+- `BehaviorPlanningContextBuilder`
 - `ExplicitActivityExecutor`
 - `PluginActivityCoordinator`
 - `ActivitySwitchCoordinator`
 - `BehaviorRoutingCoordinator`
 
-次工程では、これらのBehavior／Plugin系生成責務を独立したComposition結果型へ
-段階的に移す。Event受付系との境界はCallableのまま維持し、Plugin Managerや
-各Coordinatorの循環参照を避ける。
+生成結果はimmutableな`RuntimeBehaviorComposition`として返す。
+
+生成条件は次のとおり。
+
+- `BehaviorFallbackRouter`と`OngoingActivityCoordinator`は常に生成する。
+- `ConfirmationResolver`は注入値を優先し、未注入時だけ生成する。
+- `ConfirmationCoordinator`は注入値を優先する。未注入時は
+  `PendingConfirmationManager`と`ActivityPlanValidator`の両方がある場合だけ
+  生成し、それ以外は`None`とする。
+- `PluginOngoingActivitySynchronizer`、`ExplicitActivityExecutor`、
+  `PluginActivityCoordinator`、`ActivitySwitchCoordinator`、
+  `BehaviorRoutingCoordinator`は注入値を優先し、未注入時だけ生成する。
+- `BehaviorPlanningContextBuilder`は注入値を優先する。未注入時は
+  `PluginManager`がある場合だけ生成し、それ以外は`None`とする。
+
+`short_term_memory`と`topic_history`は、未注入の
+`BehaviorPlanningContextBuilder`を生成する場合だけ使用する。
+`PluginManager`がない場合も、Fallback、Plugin Activity、Activity Switch、
+Behavior Routingの各Coordinatorは従来どおり生成でき、通常会話への
+フォールバックを維持する。
+
+部分依存注入では、注入された各コンポーネントをそのまま返し、その内部依存を
+差し替えない。ほかの未注入コンポーネントは解決済み依存から生成する。
+`OngoingActivityCoordinator`は
+`PluginOngoingActivitySynchronizer`と`RuntimeHostController`へ同一インスタンスを
+渡す。`ExplicitActivityExecutor`も未注入の`PluginActivityCoordinator`へ
+同一インスタンスを渡す。
+
+Behavior処理の依存方向は次のとおり。
+
+```text
+RuntimeCoordinator
+  -> RuntimeCompositionRoot.build_behavior_composition()
+  -> RuntimeBehaviorComposition
+       -> BehaviorRoutingCoordinator
+            -> BehaviorPlanningContextBuilder
+            -> ConfirmationCoordinator
+            -> PluginActivityCoordinator
+                 -> ExplicitActivityExecutor
+                 -> PluginOngoingActivitySynchronizer
+                      -> OngoingActivityCoordinator
+            -> ActivitySwitchCoordinator
+            -> BehaviorFallbackRouter
+  -> RuntimeCompositionRoot.build_event_pipeline()
+       -> RuntimeCoordinator._route_behavior
+       -> RuntimeCoordinator._route_plugin_user_input
+  -> RuntimeCompositionRoot.build_execution()
+       -> RuntimeHostController
+            -> OngoingActivityCoordinator
+```
 
 ## 境界方針
 
@@ -98,5 +149,41 @@ EventQueueを通り、実行系の`InteractionReactionPolicy`へ到達する。
   `behavior_routing_available`、`plugin_routing_available`は明示的なCallable契約
   として渡す。
 - availability判定は構築時ではなくEventルーティング時に遅延評価する。
+- Behavior Compositionには、Plugin入力を委譲する`plugin_router`、実行失敗を
+  会話Fallbackへ変換する`execution_fallback`、現在のOngoing Activityを返す
+  `current_ongoing_activity`を明示的なCallableとして渡す。
+- `PluginActivityCoordinator`と`ActivitySwitchCoordinator`は同一の
+  `execution_fallback`を共有する。
+- `current_ongoing_activity`はActivity切替時に遅延評価し、構築時の値を固定しない。
 - Componentの既存注入値がある場合は再生成しない。
 - Runtimeの公開API、Traceログ、Event payload、ActivityTurnResultの契約は変更しない。
+
+`RuntimeCoordinator.__init__()`の既存引数名、型、順序、デフォルト値は変更して
+いない。確認待ち、Plugin availability、Ongoing Activity同期、Activity切替、
+execution fallbackのEvent payload、診断プロパティも従来の契約を維持する。
+
+## RuntimeCoordinatorに残る責務
+
+- 基本依存と公開注入値の保持
+- `AgentLifeService`と`TraceLogger`の解決
+- Composition Root呼び出しとComposition結果のprivate属性への保持
+- Event Enricher一覧の管理
+- 公開Runtime APIと各Composition間を接続するCallable境界
+- Event publish、Runtime起動・停止、診断スナップショットのFacade
+
+初期化順序は、基本依存、`AgentLifeService`、`TraceLogger`、
+Behavior／Plugin Composition、Event Pipeline Composition、Event Enricher、
+Execution Compositionの順とする。これによりEvent Pipelineが参照する
+Behavior系属性は先に初期化される。
+
+## 次工程とComposition Rootの規模
+
+実行系、Event受付・入力経路、Behavior／Plugin系の3領域は移行済みである。
+次工程では、`RuntimeCoordinator`に残るFacade処理と初期化補助の責務を再評価し、
+必要に応じて診断・Enricher・Lifecycle境界を分離する。
+
+`runtime_composition_root.py`は3つのComposition結果型とbuildメソッドを保持するため
+規模が増えている。現時点ではRuntime全体の生成順序を一箇所で追える利点があるが、
+各buildメソッドの依存関係は独立している。今後さらに対象領域や生成条件が増える
+場合は、公開Facadeとして`RuntimeCompositionRoot`を残しつつ、
+Execution、Event Pipeline、Behaviorの内部Builderへファイル分割することを検討する。
