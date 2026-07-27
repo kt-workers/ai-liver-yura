@@ -42,7 +42,7 @@ def test_default_config_path_is_independent_of_working_directory(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     config = load_app_config()
-    assert config.config_path.endswith("/config/config.yaml")
+    assert config.config_path.endswith("/config/index.yaml")
     assert config.services["obs"].type == "obs_websocket"
 
 

@@ -1,0 +1,36 @@
+app:
+  name: ai-liver
+  mode: console
+
+trace:
+  # DEBUG, INFO, WARNING, ERROR, OFF
+  level: INFO
+  # textは人向け、jsonlは機械処理向け
+  format: text
+  file_path: logs/runtime_trace.log
+  # ログ表示は実行環境のローカルタイムゾーンを使用する
+  timezone: local
+  # INFO概要とは別に、DEBUGを含む詳細ログを出力する
+  debug_file_enabled: true
+  debug_file_path: logs/runtime_debug.log
+  # 機密情報は共通マスク処理を通してDEBUGファイルへ記録する
+  log_llm_prompts: true
+  log_llm_responses: true
+  log_user_input: true
+  # ファイルがこのサイズを超えるとローテーションする（5 MiB）
+  max_bytes: 5242880
+  # runtime_trace.log.1 から指定数まで保持する
+  backup_count: 5
+
+input_receivers:
+  console:
+    enabled: true
+  timer:
+    enabled: false
+    interval_seconds: 30.0
+    max_events: null
+
+# 曖昧な行動判断を実行せず、次のユーザー入力で解決する確認待ち設定。
+confirmation:
+  timeout_seconds: 30.0
+  max_attempts: 2
