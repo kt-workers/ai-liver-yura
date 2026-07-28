@@ -17,13 +17,14 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
-      - name: Execute integration script
+      - name: Execute integration fix script
         shell: bash
         run: |
+          set -euo pipefail
           python - <<'PY'
           from pathlib import Path
 
-          source = Path('.github/workflows/chatgpt-emotion-appraisal-integration.yml').read_text(encoding='utf-8')
+          source = Path('.github/workflows/chatgpt-emotion-appraisal-fix.yml').read_text(encoding='utf-8')
           marker = '        run: |\n'
           script = source.split(marker, 1)[1]
           lines = []
