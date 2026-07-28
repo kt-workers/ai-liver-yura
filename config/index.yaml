@@ -19,7 +19,7 @@ imports:
   emotion_appraisal: emotion.yaml
 
   streaming: streaming.yaml
-  plugins: plugins.yaml
+  plugins: plugins/index.yaml
 
 environments:
   local: environments/local.example.yaml
