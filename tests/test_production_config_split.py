@@ -31,6 +31,8 @@ RUNTIME_PATH = CONFIG_DIRECTORY / "runtime.yaml"
 CHARACTER_PATH = CONFIG_DIRECTORY / "character.yaml"
 SPEECH_PATH = CONFIG_DIRECTORY / "speech.yaml"
 MEMORY_PATH = CONFIG_DIRECTORY / "memory.yaml"
+SERVICES_PATH = CONFIG_DIRECTORY / "services.yaml"
+MODELS_PATH = CONFIG_DIRECTORY / "models.yaml"
 APPLICATION_PATH = CONFIG_DIRECTORY / "application.yaml"
 
 
@@ -41,9 +43,9 @@ def test_production_yaml_files_are_valid_mappings() -> None:
         CHARACTER_PATH: {"character"},
         SPEECH_PATH: {"speech"},
         MEMORY_PATH: {"memory"},
+        SERVICES_PATH: {"services"},
+        MODELS_PATH: {"models"},
         APPLICATION_PATH: {
-            "services",
-            "models",
             "response_generator",
             "llm_roles",
             "topic_classifier",
@@ -94,9 +96,9 @@ def test_production_manifest_ownership_sources() -> None:
     assert bundle.source_by_top_level_key["character"] == CHARACTER_PATH.resolve()
     assert bundle.source_by_top_level_key["speech"] == SPEECH_PATH.resolve()
     assert bundle.source_by_top_level_key["memory"] == MEMORY_PATH.resolve()
+    assert bundle.source_by_top_level_key["services"] == SERVICES_PATH.resolve()
+    assert bundle.source_by_top_level_key["models"] == MODELS_PATH.resolve()
     for key in (
-        "services",
-        "models",
         "response_generator",
         "llm_roles",
         "topic_classifier",
@@ -173,6 +175,27 @@ def test_production_config_composes_runtime_streaming_speech_and_admin() -> None
                 max_entries="invalid"
             ),
             "memory.relationship_memory.max_entries",
+        ),
+        (
+            "services.yaml",
+            lambda raw: raw["services"]["openai"].update(
+                timeout_seconds="invalid"
+            ),
+            "services.openai.timeout_seconds",
+        ),
+        (
+            "models.yaml",
+            lambda raw: raw["models"]["openai_chat"].update(
+                service="unknown_service"
+            ),
+            "models.openai_chat.service",
+        ),
+        (
+            "models.yaml",
+            lambda raw: raw["models"]["openai_embedding"].update(
+                dimension="invalid"
+            ),
+            "models.openai_embedding.dimension",
         ),
     ],
 )

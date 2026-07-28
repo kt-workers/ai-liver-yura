@@ -1,0 +1,12 @@
+# 利用可能なモデルを登録し、各機能からキー名で参照する。
+models:
+  openai_chat:
+    service: openai
+    name: gpt-4.1-mini
+  ollama_chat:
+    service: ollama
+    name: local-agent:qwen7b-prompt-test
+  openai_embedding:
+    service: openai
+    name: text-embedding-3-small
+    dimension: 1536
