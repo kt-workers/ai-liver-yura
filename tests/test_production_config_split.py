@@ -36,8 +36,9 @@ MODELS_PATH = CONFIG_DIRECTORY / "models.yaml"
 LLM_PATH = CONFIG_DIRECTORY / "llm.yaml"
 EMOTION_PATH = CONFIG_DIRECTORY / "emotion.yaml"
 STREAMING_PATH = CONFIG_DIRECTORY / "streaming.yaml"
-PLUGINS_PATH = CONFIG_DIRECTORY / "plugins.yaml"
+PLUGINS_PATH = CONFIG_DIRECTORY / "plugins" / "index.yaml"
 APPLICATION_PATH = CONFIG_DIRECTORY / "application.yaml"
+LEGACY_PLUGINS_PATH = CONFIG_DIRECTORY / "plugins.yaml"
 
 
 def test_production_yaml_files_are_valid_mappings() -> None:
@@ -57,6 +58,7 @@ def test_production_yaml_files_are_valid_mappings() -> None:
     for path, keys in expected_keys.items():
         assert set(load_raw_config(path)) == keys
     assert not APPLICATION_PATH.exists()
+    assert not LEGACY_PLUGINS_PATH.exists()
 
 
 def test_production_manifest_loads_successfully() -> None:
@@ -234,7 +236,7 @@ def test_production_config_composes_runtime_streaming_speech_and_admin() -> None
             "streaming.health_timeout_seconds",
         ),
         (
-            "plugins.yaml",
+            "plugins/index.yaml",
             lambda raw: raw["plugins"]["games"]["intent_interpreter"].update(
                 model="unknown_model"
             ),
