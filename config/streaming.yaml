@@ -63,16 +63,3 @@ streaming:
     repeat_comment_text: false
     response_cooldown_seconds: 5
     max_retries: 2
-
-plugins:
-  registry: {}
-  games:
-    enabled: true
-    intent_interpreter:
-      enabled: true
-      model: openai_chat
-      confidence_threshold: 0.85
-      max_attempts: 2
-    shiritori:
-      enabled: true
-      max_generation_retries: 3

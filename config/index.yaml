@@ -16,5 +16,5 @@ imports:
   llm_roles: llm.yaml
   topic_classifier: llm.yaml
 
-  streaming: application.yaml
-  plugins: application.yaml
+  streaming: streaming.yaml
+  plugins: plugins.yaml
