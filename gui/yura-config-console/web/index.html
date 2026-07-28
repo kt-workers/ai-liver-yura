@@ -3,16 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#062332" />
+    <meta name="theme-color" content="#d9edf1" />
     <title>設定の入り江 | Yura</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="seascape" aria-hidden="true">
-      <div class="surface-light"></div>
-      <div class="wave wave-a"></div>
-      <div class="wave wave-b"></div>
-      <div class="bubble-field"></div>
+      <div class="sky-light"></div>
+      <div class="cloud cloud-a"></div>
+      <div class="cloud cloud-b"></div>
+      <div class="cloud cloud-c"></div>
+      <div class="horizon"></div>
+      <div class="distant-headland"></div>
+      <div class="forest-coast"></div>
+      <div class="sand-coast"></div>
+      <div class="wet-sand"></div>
+      <div class="sea"></div>
+      <div class="shoreline shoreline-a"></div>
+      <div class="shoreline shoreline-b"></div>
+      <div class="shoreline shoreline-c"></div>
+      <div class="jetty"><span></span><span></span><span></span></div>
+      <div class="small-boat"></div>
+      <div class="gull gull-a"><i></i><b></b></div>
+      <div class="gull gull-b"><i></i><b></b></div>
+      <div class="gull gull-c"><i></i><b></b></div>
     </div>
 
     <header class="topbar">
@@ -20,13 +34,18 @@
         <p class="eyebrow">YURA / CONFIGURATION HARBOR</p>
         <h1>設定の入り江</h1>
       </div>
-      <nav id="headerTabs" class="header-nav" aria-label="設定カテゴリ"></nav>
+      <nav id="headerTabs" class="header-nav" aria-hidden="true"></nav>
       <div class="topbar-actions">
         <div id="connection" class="connection pending"><span></span><b>CONFIG SERVER 接続確認中</b></div>
         <button id="historyOpen" class="ghost">変更履歴</button>
         <button id="saveButton" class="primary" disabled>保存</button>
       </div>
     </header>
+
+    <div class="scenic-copy" aria-hidden="true">
+      <strong>海岸線の先まで見渡す、静かな入り江</strong>
+      <span>遠景の船着場と、地平線へ続く波打ち際</span>
+    </div>
 
     <main>
       <section class="summary-grid" aria-label="設定概要">
@@ -72,7 +91,7 @@
         </section>
 
         <aside class="inspection-panel">
-          <section>
+          <section class="change-status">
             <p class="label">UNSAVED CHANGES</p>
             <strong id="changeCount" class="large-number">0</strong>
             <p id="changeSummary" class="muted">変更はありません。</p>
@@ -85,13 +104,12 @@
             <h3>反映方法</h3>
             <p id="applyMessage" class="muted">保存後の反映方法をここに表示します。</p>
           </section>
-          <section>
+          <section class="save-process">
             <h3>保存処理</h3>
             <ol class="save-steps">
               <li>revision競合確認</li>
-              <li>型・必須項目検証</li>
-              <li>一時ファイルへ書込み</li>
-              <li>原子的に置換</li>
+              <li>入力検証</li>
+              <li>原子的に保存</li>
               <li>変更履歴を記録</li>
             </ol>
           </section>
