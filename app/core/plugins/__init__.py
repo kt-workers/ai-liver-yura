@@ -3,6 +3,12 @@ from app.core.plugins.capability_registry import (
     CapabilityHealth,
     CapabilityRegistry,
 )
+from app.core.plugins.plugin_loader import (
+    PluginLoader,
+    PluginLoadResult,
+    PluginLoadStatus,
+    PluginModuleSpec,
+)
 from app.core.plugins.plugin_manager import PluginManager, PluginStatus
 from app.core.plugins.static_provider import StaticCapabilityProvider
 from app.shared.contracts.plugins.runtime import (
@@ -42,7 +48,11 @@ __all__ = [
     "PluginContext",
     "PluginExecutionResult",
     "PluginIntentResult",
+    "PluginLoader",
+    "PluginLoadResult",
+    "PluginLoadStatus",
     "PluginManager",
+    "PluginModuleSpec",
     "PluginStatus",
     "PromptFragment",
     "SystemClock",
