@@ -37,9 +37,9 @@ REQUIRED_TOP_LEVEL_KEYS = frozenset(
         "confirmation",
     }
 )
-OPTIONAL_TOP_LEVEL_KEYS = frozenset({"plugins", "streaming"})
+OPTIONAL_TOP_LEVEL_KEYS = frozenset({"plugins", "streaming", "emotion_appraisal"})
 IMPORTABLE_TOP_LEVEL_KEYS = REQUIRED_TOP_LEVEL_KEYS | OPTIONAL_TOP_LEVEL_KEYS
-RESERVED_TOP_LEVEL_KEYS = frozenset({"emotion_appraisal"})
+RESERVED_TOP_LEVEL_KEYS = frozenset()
 
 
 @dataclass(frozen=True, slots=True)

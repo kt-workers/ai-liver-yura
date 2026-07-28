@@ -12,6 +12,7 @@ from app.config.config_loader import (
     load_config_bundle,
     load_raw_config,
 )
+from app.config.emotion_appraisal_config import load_emotion_appraisal_settings
 from app.config.errors import ConfigError
 from app.config.service_schema import (
     DisabledServiceSettings,
