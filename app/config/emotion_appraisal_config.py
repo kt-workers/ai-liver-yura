@@ -23,25 +23,27 @@ def load_emotion_appraisal_settings(value: object) -> EmotionAppraisalSettings:
 
     if value is None:
         return EmotionAppraisalSettings()
+
     config = require_mapping(value, "emotion_appraisal")
     reject_unknown_keys(
         config,
         {
-  "enabled",
-  "mode",
-  "llm_role",
-  "timeout_seconds",
-  "confidence_threshold",
-  "weak_confidence_threshold",
-  "fallback",
-  "max_concurrency",
-  "cache_ttl_seconds",
-  "cache_max_entries",
-  "circuit_breaker",
-  "history",
+            "enabled",
+            "mode",
+            "llm_role",
+            "timeout_seconds",
+            "confidence_threshold",
+            "weak_confidence_threshold",
+            "fallback",
+            "max_concurrency",
+            "cache_ttl_seconds",
+            "cache_max_entries",
+            "circuit_breaker",
+            "history",
         },
         "emotion_appraisal",
     )
+
     circuit = optional_mapping(config, "circuit_breaker", "emotion_appraisal")
     history = optional_mapping(config, "history", "emotion_appraisal")
     reject_unknown_keys(
@@ -61,9 +63,9 @@ def load_emotion_appraisal_settings(value: object) -> EmotionAppraisalSettings:
         mode = EmotionAppraisalMode(configured_mode)
     except ValueError as error:
         raise ConfigError(
-  path="emotion_appraisal.mode",
-  expected="disabled, rule_based, llm, or hybrid",
-  actual=configured_mode,
+            path="emotion_appraisal.mode",
+            expected="disabled, rule_based, llm, or hybrid",
+            actual=configured_mode,
         ) from error
     if not enabled:
         mode = EmotionAppraisalMode.DISABLED
@@ -119,6 +121,7 @@ def load_emotion_appraisal_settings(value: object) -> EmotionAppraisalSettings:
         "emotion_appraisal.history",
         default=0.02,
     )
+
     assert timeout_seconds is not None
     assert confidence_threshold is not None
     assert weak_confidence_threshold is not None
@@ -133,31 +136,35 @@ def load_emotion_appraisal_settings(value: object) -> EmotionAppraisalSettings:
 
     try:
         return EmotionAppraisalSettings(
-  enabled=enabled,
-  mode=mode,
-  llm_role=optional_string(config, "llm_role", "emotion_appraisal")
-  or "emotion_appraisal",
-  timeout_seconds=timeout_seconds,
-  confidence_threshold=confidence_threshold,
-  weak_confidence_threshold=weak_confidence_threshold,
-  fallback=optional_string(config, "fallback", "emotion_appraisal")
-  or "rule_based",
-  max_concurrency=max_concurrency,
-  cache_ttl_seconds=cache_ttl_seconds,
-  cache_max_entries=cache_max_entries,
-  circuit_breaker=EmotionAppraisalCircuitBreakerSettings(
-      failure_threshold=failure_threshold,
-      recovery_seconds=recovery_seconds,
-  ),
-  history=EmotionAppraisalHistorySettings(
-      max_entries=max_entries,
-      retention_seconds=retention_seconds,
-      min_effective_delta=min_effective_delta,
-  ),
+            enabled=enabled,
+            mode=mode,
+            llm_role=(
+                optional_string(config, "llm_role", "emotion_appraisal")
+                or "emotion_appraisal"
+            ),
+            timeout_seconds=timeout_seconds,
+            confidence_threshold=confidence_threshold,
+            weak_confidence_threshold=weak_confidence_threshold,
+            fallback=(
+                optional_string(config, "fallback", "emotion_appraisal")
+                or "rule_based"
+            ),
+            max_concurrency=max_concurrency,
+            cache_ttl_seconds=cache_ttl_seconds,
+            cache_max_entries=cache_max_entries,
+            circuit_breaker=EmotionAppraisalCircuitBreakerSettings(
+                failure_threshold=failure_threshold,
+                recovery_seconds=recovery_seconds,
+            ),
+            history=EmotionAppraisalHistorySettings(
+                max_entries=max_entries,
+                retention_seconds=retention_seconds,
+                min_effective_delta=min_effective_delta,
+            ),
         )
     except ValueError as error:
         raise ConfigError(
-  path="emotion_appraisal",
-  expected="valid emotion appraisal settings",
-  actual=str(error),
+            path="emotion_appraisal",
+            expected="valid emotion appraisal settings",
+            actual=str(error),
         ) from error
