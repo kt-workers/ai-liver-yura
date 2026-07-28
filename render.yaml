@@ -13,3 +13,18 @@ services:
         value: 3.10.5
       - key: YURA_DEMO_INTERVAL_SECONDS
         value: "1.0"
+
+  - type: web
+    name: yura-configuration-harbor
+    runtime: python
+    plan: free
+    branch: feature/configuration-harbor
+    buildCommand: python -m compileall gui/yura-config-console
+    startCommand: python gui/yura-config-console/server.py
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.5
+      - key: YURA_CONFIG_CONSOLE_DATA
+        value: /tmp/yura-config-console
