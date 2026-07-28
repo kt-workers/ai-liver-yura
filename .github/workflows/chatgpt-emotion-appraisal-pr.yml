@@ -1,0 +1,37 @@
+name: ChatGPT emotion appraisal PR integration
+
+on:
+  pull_request:
+    branches:
+      - feature/core-development
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'refactor/integrate-emotion-appraisal-config'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - name: Execute integration script
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path('.github/workflows/chatgpt-emotion-appraisal-integration.yml').read_text(encoding='utf-8')
+          marker = '        run: |\n'
+          script = source.split(marker, 1)[1]
+          lines = []
+          for line in script.splitlines():
+              if line.startswith('          '):
+                  lines.append(line[10:])
+              else:
+                  lines.append(line)
+          Path('/tmp/apply-emotion.sh').write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+          bash /tmp/apply-emotion.sh
