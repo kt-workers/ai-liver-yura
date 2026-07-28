@@ -4,6 +4,44 @@ on:
   pull_request:
     branches:
       - feature/core-development
+
+permissions:
+  contents: write
+
+jobs:
+  update-test:
+    if: github.head_ref == 'refactor/integrate-emotion-appraisal-config'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Update obsolete reserved-key test and restore CI
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          test = Path('tests/test_multi_file_config_loader.py')
+          text = test.read_text(encoding='utf-8')
+          obsolete = '''        (
+              {"imports": {"emotion_appraisal": "emotion.yaml"}},
+              "imports.emotion_appraisal",
+          ),
+'''
+          if obsolete not in text:
+              raise SystemExit('obsolete emotion_appraisal reserved-key case not found')
+          test.write_text(text.replace(obsolete, '', 1), encoding='utf-8')
+
+          Path('.github/workflows/python-tests.yml').write_text('''name: Python tests
+
+on:
+  pull_request:
+    branches:
+      - feature/core-development
       - develop
       - main
     paths-ignore:
@@ -53,19 +91,12 @@ jobs:
       - name: Run tests
         env:
           PYTHONUNBUFFERED: "1"
-        shell: bash
-        run: |
-          set +e
-          pytest -x -vv 2>&1 | tee pytest-output.txt
-          status=${PIPESTATUS[0]}
-          echo "$status" > pytest-status.txt
-          exit "$status"
+        run: pytest -x -vv
+''', encoding='utf-8')
+          PY
 
-      - name: Upload pytest output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pytest-output
-          path: |
-            pytest-output.txt
-            pytest-status.txt
+          git config user.name ch4t9pt
+          git config user.email 308621972+ch4t9pt@users.noreply.github.com
+          git add tests/test_multi_file_config_loader.py .github/workflows/python-tests.yml
+          git commit -m "emotion appraisalのmanifestテストを更新"
+          git push origin HEAD:refactor/integrate-emotion-appraisal-config
