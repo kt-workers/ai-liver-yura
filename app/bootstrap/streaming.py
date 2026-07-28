@@ -202,6 +202,10 @@ def compose_streaming(
     manual_check_log: object | None = None,
     enabled: bool = True,
 ) -> StreamingComposition:
+    obs_config = runtime_components.config.services["obs"]
+    obs_host = getattr(obs_config, "host", None)
+    obs_port = getattr(obs_config, "port", None)
+    obs_password_env = getattr(obs_config, "password_env", None)
     broker = ApplicationEventBroker()
     application = StreamingApplicationService(
         runtime_components,
@@ -233,13 +237,10 @@ def compose_streaming(
                     "obs": runtime_components.usecase.obs_adapter_type,
                 },
                 "obs_connection": {
-                    "host": runtime_components.config.services["obs"].host,
-                    "port": runtime_components.config.services["obs"].port,
+                    "host": obs_host,
+                    "port": obs_port,
                     "password_env_set": bool(
-                        runtime_components.config.services["obs"].password_env
-                        and os.getenv(
-                            runtime_components.config.services["obs"].password_env or ""
-                        )
+                        obs_password_env and os.getenv(obs_password_env)
                     ),
                 },
                 "agent_runtime": (

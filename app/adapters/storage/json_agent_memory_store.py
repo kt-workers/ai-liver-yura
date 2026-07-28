@@ -80,6 +80,16 @@ class JsonAgentMemoryStore:
                     after=self._mapping(item.get("after")),
                     reason=str(item["reason"]),
                     recorded_at=self._datetime(item["recorded_at"]),
+                    deltas=self._float_mapping(item.get("deltas", {})),
+                    cause_category=str(
+                        item.get("cause_category") or "unspecified"
+                    ),
+                    cause_summary=str(item.get("cause_summary") or ""),
+                    target_id=self._optional_str(item.get("target_id")),
+                    confidence=float(item.get("confidence", 1.0)),
+                    relational_meaning=str(
+                        item.get("relational_meaning") or "none"
+                    ),
                 )
                 for item in self._items(payload, "emotion_history")
             ),
@@ -139,6 +149,16 @@ class JsonAgentMemoryStore:
         if not isinstance(value, dict):
             raise ValueError("emotion stateはobject形式で指定してください。")
         return {str(key): item for key, item in value.items()}
+
+    @staticmethod
+    def _float_mapping(value: object) -> dict[str, float]:
+        if not isinstance(value, dict):
+            raise ValueError("emotion deltasはobject形式で指定してください。")
+        return {
+            str(key): float(item)
+            for key, item in value.items()
+            if isinstance(item, (int, float)) and not isinstance(item, bool)
+        }
 
     @staticmethod
     def _json_default(value: object) -> str:

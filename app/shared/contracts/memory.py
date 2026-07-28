@@ -45,6 +45,7 @@ class EmotionHistoryRecord:
     cause_summary: str = ""
     target_id: str | None = None
     confidence: float = 1.0
+    relational_meaning: str = "none"
 
     def __post_init__(self) -> None:
         if not self.source_event_id.strip():

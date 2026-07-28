@@ -69,7 +69,7 @@ def test_approve_and_status_endpoints_complete_asynchronously() -> None:
             )
             if status.status_code == 200:
                 break
-            time.sleep(0.005)
+            time.sleep(0.001)
         assert status.json()["status"] == "live"
         assert status.json()["obs_output_status"] == "active"
         assert status.json()["youtube_stream_status"] == "active"

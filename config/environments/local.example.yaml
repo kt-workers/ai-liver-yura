@@ -1,0 +1,9 @@
+# ローカル開発向けの安全なoverride例。
+# 秘密情報や環境固有の認証情報は記載しないこと。
+overrides:
+  - path: trace.level
+    value: DEBUG
+  - path: trace.debug_file_enabled
+    value: true
+  - path: input_receivers.timer.interval_seconds
+    value: 5.0

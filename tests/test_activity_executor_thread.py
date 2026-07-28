@@ -64,7 +64,7 @@ class BlockingFirstActionScheduler(FakeActionScheduler):
         if len(self.executed_groups) == 1:
             self.first_started.set()
             while not self.release_first.is_set():
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0.001)
 
 
 def _create_activity(
@@ -83,22 +83,22 @@ def _create_activity(
 
 # Thread 起動直後のタイミング差を吸収するため、起動状態になるまで待つ。
 def _wait_until_running(
-    thread: ActivityExecutorThread, timeout_seconds: float = 1.0
+    thread: ActivityExecutorThread, timeout_seconds: float = 0.2
 ) -> bool:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         if thread.is_running:
             return True
-        time.sleep(0.01)
+        time.sleep(0.001)
     return False
 
 
-def _wait_until(predicate: object, timeout_seconds: float = 1.0) -> bool:
+def _wait_until(predicate: object, timeout_seconds: float = 0.2) -> bool:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
         if callable(predicate) and predicate():
             return True
-        time.sleep(0.01)
+        time.sleep(0.001)
     return False
 
 
@@ -106,7 +106,7 @@ def _create_activity_executor_thread(
     planned_activity_queue: PlannedActivityQueue,
     action_planner: FakeActionPlanner,
     action_scheduler: FakeActionScheduler,
-    idle_sleep_seconds: float = 0.1,
+    idle_sleep_seconds: float = 0.001,
     activity_manager: ActivityManager | None = None,
 ) -> ActivityExecutorThread:
     activity_manager = activity_manager or ActivityManager()
@@ -309,7 +309,7 @@ def test_run_sets_running_until_stopped() -> None:
         planned_activity_queue=queue,
         action_planner=action_planner,
         action_scheduler=action_scheduler,
-        idle_sleep_seconds=0.01,
+        idle_sleep_seconds=0.001,
     )
 
     thread.start()
@@ -318,7 +318,7 @@ def test_run_sets_running_until_stopped() -> None:
         assert _wait_until_running(thread) is True
     finally:
         thread.stop()
-        thread.join(timeout=1.0)
+        thread.join(timeout=0.2)
 
     assert thread.is_alive() is False
     assert thread.is_running is False
@@ -342,13 +342,13 @@ def test_thread_prepares_next_autonomous_speech_while_first_output_is_running() 
         queue,
         planner,
         scheduler,
-        idle_sleep_seconds=0.01,
+        idle_sleep_seconds=0.001,
         activity_manager=activity_manager,
     )
 
     thread.start()
     try:
-        assert scheduler.first_started.wait(timeout=1.0)
+        assert scheduler.first_started.wait(timeout=0.2)
         assert _wait_until(lambda: len(planner.planned_activities) == 2)
         assert planner.planned_activities == [first, second]
         assert len(scheduler.executed_groups) == 1
@@ -357,7 +357,7 @@ def test_thread_prepares_next_autonomous_speech_while_first_output_is_running() 
     finally:
         scheduler.release_first.set()
         thread.stop()
-        thread.join(timeout=1.0)
+        thread.join(timeout=0.2)
 
 
 def test_prepared_marker_is_written_to_manager_for_detached_enriched_activity() -> (
@@ -378,20 +378,20 @@ def test_prepared_marker_is_written_to_manager_for_detached_enriched_activity() 
         queue,
         FakeActionPlanner(),
         scheduler,
-        idle_sleep_seconds=0.01,
+        idle_sleep_seconds=0.001,
         activity_manager=activity_manager,
     )
 
     thread.start()
     try:
-        assert scheduler.first_started.wait(timeout=1.0)
+        assert scheduler.first_started.wait(timeout=0.2)
         managed = activity_manager.get_activity(canonical.activity_id)
         assert managed is not None
         assert managed.context["action_plan_prepared"] is True
     finally:
         scheduler.release_first.set()
         thread.stop()
-        thread.join(timeout=1.0)
+        thread.join(timeout=0.2)
 
 
 def test_thread_waits_for_causal_activity_completion_before_planning_next() -> None:
@@ -410,13 +410,13 @@ def test_thread_waits_for_causal_activity_completion_before_planning_next() -> N
         queue,
         planner,
         scheduler,
-        idle_sleep_seconds=0.01,
+        idle_sleep_seconds=0.001,
         activity_manager=activity_manager,
     )
 
     thread.start()
     try:
-        assert scheduler.first_started.wait(timeout=1.0)
+        assert scheduler.first_started.wait(timeout=0.2)
         time.sleep(0.05)
         assert planner.planned_activities == [first]
         scheduler.release_first.set()
@@ -424,4 +424,4 @@ def test_thread_waits_for_causal_activity_completion_before_planning_next() -> N
     finally:
         scheduler.release_first.set()
         thread.stop()
-        thread.join(timeout=1.0)
+        thread.join(timeout=0.2)

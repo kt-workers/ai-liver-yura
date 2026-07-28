@@ -1,0 +1,19 @@
+memory:
+  # エピソード・意味・未完了Activity・未回収話題・感情履歴の継続状態。
+  agent_memory:
+    enabled: false
+    path: data/agent_memory.json
+    max_history_entries: 64
+  # 継続的な相手ごとの関係状態。必要な環境で明示的に有効化する。
+  relationship_memory:
+    enabled: false
+    path: data/relationship_memory.json
+    max_entries: 1000
+  topic_memory:
+    enabled: true
+    database_service: topic_memory_database
+    embedding_model: openai_embedding
+    summary:
+      type: llm
+      model: openai_chat
+      fallback_max_length: 120

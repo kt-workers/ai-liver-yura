@@ -7,6 +7,7 @@ class AgentEventType(str, Enum):
     USER_TEXT = "user_text"
     YOUTUBE_COMMENT = "youtube_comment"
     USER_SPEECH = "user_speech"
+    USER_INTERACTION = "user_interaction"
     CAMERA_FRAME = "camera_frame"
 
     SILENCE_TIMEOUT = "silence_timeout"

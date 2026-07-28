@@ -1,0 +1,5 @@
+[
+  "adapters_no_cross_dependency|app.adapters.llm.openai_response_generator|app.adapters.prompt|10",
+  "adapters_no_cross_dependency|app.adapters.streaming.fake_streaming_control|app.adapters.obs.obs_error_mapper|5",
+  "adapters_no_cross_dependency|app.adapters.streaming|app.adapters.obs|1"
+]

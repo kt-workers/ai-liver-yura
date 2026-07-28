@@ -4,8 +4,8 @@ from app.config.app_config import AppConfig, ServiceSettings
 from app.config.typed_service_settings import (
     DatabaseServiceSettings,
     HttpAiServiceSettings,
-    ObsWebSocketServiceSettings,
-    YouTubeServiceSettings,
+    ResolvedObsServiceSettings,
+    ResolvedYouTubeServiceSettings,
     as_database_service,
     as_http_ai_service,
     as_obs_websocket_service,
@@ -48,7 +48,7 @@ def resolve_database_service(
 def resolve_youtube_service(
     config: AppConfig,
     service_name: str = "youtube",
-) -> YouTubeServiceSettings:
+) -> ResolvedYouTubeServiceSettings:
     return as_youtube_service(
         resolve_service(config, service_name),
         service_name=service_name,
@@ -58,7 +58,7 @@ def resolve_youtube_service(
 def resolve_obs_service(
     config: AppConfig,
     service_name: str = "obs",
-) -> ObsWebSocketServiceSettings:
+) -> ResolvedObsServiceSettings:
     return as_obs_websocket_service(
         resolve_service(config, service_name),
         service_name=service_name,

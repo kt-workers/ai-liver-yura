@@ -24,6 +24,7 @@ class DefaultEventPrioritizer:
         AgentEventType.USER_TEXT: 50,
         AgentEventType.YOUTUBE_COMMENT: 40,
         AgentEventType.USER_SPEECH: 50,
+        AgentEventType.USER_INTERACTION: 25,
         AgentEventType.SPEECH_FINISHED: 20,
         AgentEventType.CURIOSITY_PEAK: 15,
         AgentEventType.SILENCE_TIMEOUT: 8,

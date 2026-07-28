@@ -12,6 +12,7 @@ from app.plugins.games.intent import (
     GameIntentCommand,
     GameIntentInterpreter,
 )
+from app.plugins.games.settings import GamesPluginSettings, load_games_plugin_settings
 from app.plugins.games.shiritori import (
     ShiritoriGameDefinition,
     ShiritoriGameService,
@@ -44,8 +45,9 @@ class GamesPlugin:
     display_name = "Games"
     SHIRITORI_CAPABILITY = "games.shiritori"
 
-    def __init__(self) -> None:
+    def __init__(self, settings: GamesPluginSettings | None = None) -> None:
         self._context: PluginContext | None = None
+        self._settings = settings
         self._engine: GameEngine | None = None
         self._service: ShiritoriGameService | None = None
         self._interpreter: GameIntentInterpreter | None = None
@@ -144,31 +146,30 @@ class GamesPlugin:
     def initialize(self, context: PluginContext) -> None:
         self._context = context
         configuration = context.configuration
-        shiritori = configuration.get("shiritori", {})
-        if not isinstance(shiritori, Mapping) or not bool(
-            shiritori.get("enabled", True)
-        ):
+        settings = self._settings or load_games_plugin_settings(
+            {
+                key: value
+                for key, value in configuration.items()
+                if key in {"enabled", "intent_interpreter", "shiritori"}
+            }
+        )
+        if not settings.shiritori.enabled:
             raise RuntimeError("有効なゲームがありません。")
         engine = GameEngine((ShiritoriGameDefinition(),))
-        max_retries = int(shiritori.get("max_generation_retries", 3))
         self._engine = engine
         self._service = ShiritoriGameService(
-            engine, max_generation_attempts=max_retries
+            engine,
+            max_generation_attempts=settings.shiritori.max_generation_retries,
         )
-        interpreter_config = configuration.get("intent_interpreter", {})
-        if not isinstance(interpreter_config, Mapping):
-            interpreter_config = {}
-        self._intent_interpreter_enabled = bool(interpreter_config.get("enabled", True))
+        self._intent_interpreter_enabled = settings.intent_interpreter.enabled
         self._interpreter = GameIntentInterpreter(
             engine,
             context.llm_gateway,
-            max_attempts=int(interpreter_config.get("max_attempts", 2)),
+            max_attempts=settings.intent_interpreter.max_attempts,
         )
         self._validator = GameCommandValidator(
             engine,
-            confidence_threshold=float(
-                interpreter_config.get("confidence_threshold", 0.85)
-            ),
+            confidence_threshold=settings.intent_interpreter.confidence_threshold,
         )
         self._llm_available = bool(configuration.get("llm_available", True))
         self._trace_logger.info(

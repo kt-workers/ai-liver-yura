@@ -73,9 +73,7 @@ class ResponseContextBuilder:
             if isinstance(result_value, ActivityExecutionResult)
             else self._infer_result(activity, event_payload)
         )
-        ongoing_activity = self._ongoing_context(
-            activity.context.get("ongoing_activity")
-        )
+        ongoing_activity = self._ongoing_context(activity.context.get("ongoing_activity"))
         transition_value = event_payload.get(
             "ongoing_transition", activity.context.get("ongoing_transition")
         )
@@ -83,9 +81,7 @@ class ResponseContextBuilder:
         behavior_plan_value = event_payload.get(
             "behavior_plan", activity.context.get("behavior_plan")
         )
-        behavior_plan = (
-            behavior_plan_value if isinstance(behavior_plan_value, dict) else {}
-        )
+        behavior_plan = behavior_plan_value if isinstance(behavior_plan_value, dict) else {}
         situation_value = event_payload.get(
             "autonomous_situation_context",
             activity.context.get("autonomous_situation_context"),
@@ -97,9 +93,7 @@ class ResponseContextBuilder:
         )
         autonomous_analysis = analysis_value if isinstance(analysis_value, dict) else {}
         confirmation_value = event_payload.get("pending_confirmation")
-        confirmation = (
-            confirmation_value if isinstance(confirmation_value, dict) else {}
-        )
+        confirmation = confirmation_value if isinstance(confirmation_value, dict) else {}
         allowed, forbidden = self._claims_for(
             result.status,
             activity_type=result.activity_type,
@@ -108,9 +102,50 @@ class ResponseContextBuilder:
             and ongoing_activity.ongoing_status
             in {ActivityStatus.ACTIVE.value, ActivityStatus.WAITING.value},
         )
+        stimulus = (
+            {
+                "kind": event_payload.get("stimulus_kind"),
+                "contact_region": event_payload.get("contact_region"),
+                "burst_count": event_payload.get("interaction_burst_count", 1),
+                "interval_since_previous_ms": event_payload.get("interval_since_previous_ms"),
+                "duration_ms": event_payload.get("duration_ms"),
+                **(
+                    {
+                        "continuous_contact": True,
+                        "contact_phase": event_payload.get("contact_phase"),
+                        "contact_duration_ms": event_payload.get("contact_duration_ms"),
+                        "contact_motion": event_payload.get("contact_motion"),
+                        "motion": (
+                            dict(event_payload.get("motion", {}))
+                            if isinstance(event_payload.get("motion"), dict)
+                            else {}
+                        ),
+                        "touch_features": (
+                            dict(event_payload.get("touch_features", {}))
+                            if isinstance(
+                                event_payload.get("touch_features"),
+                                dict,
+                            )
+                            else {}
+                        ),
+                    }
+                    if event_payload.get("continuous_contact")
+                    else {}
+                ),
+                "appraisal": (
+                    dict(event_payload.get("contact_appraisal", {}))
+                    if isinstance(event_payload.get("contact_appraisal"), dict)
+                    else {}
+                ),
+            }
+            if result.activity_type == ActivityType.STIMULUS_REACTION.value
+            else {}
+        )
         context = ResponseContext(
-            user_input=str(
-                event_payload.get("text") or event_payload.get("comment") or ""
+            user_input=(
+                ""
+                if stimulus
+                else str(event_payload.get("text") or event_payload.get("comment") or "")
             ),
             activity_type=result.activity_type,
             operation=result.operation,
@@ -121,21 +156,15 @@ class ResponseContextBuilder:
             forbidden_claims=forbidden,
             activity_goal=activity.goal,
             speech_act=str(behavior_plan.get("speech_act") or "statement"),
-            conversation_phase=str(
-                behavior_plan.get("conversation_phase") or "active"
-            ),
-            initiative_level=self._initiative_level(
-                behavior_plan.get("initiative_level")
-            ),
+            conversation_phase=str(behavior_plan.get("conversation_phase") or "active"),
+            initiative_level=self._initiative_level(behavior_plan.get("initiative_level")),
             input_authority_role=str(
                 activity.context.get("input_authority", {}).get("role", "user")
                 if isinstance(activity.context.get("input_authority"), dict)
                 else "user"
             ),
             instruction_trusted=bool(
-                activity.context.get("input_authority", {}).get(
-                    "instruction_trusted", False
-                )
+                activity.context.get("input_authority", {}).get("instruction_trusted", False)
                 if isinstance(activity.context.get("input_authority"), dict)
                 else False
             ),
@@ -144,6 +173,7 @@ class ResponseContextBuilder:
                 if isinstance(activity.context.get("emotion"), dict)
                 else {}
             ),
+            stimulus=stimulus,
             relationship=(
                 dict(event_payload.get("relationship", {}))
                 if isinstance(event_payload.get("relationship"), dict)
@@ -160,31 +190,18 @@ class ResponseContextBuilder:
             ),
             memory=self._memory_context(activity, event_payload),
             ongoing_activity=ongoing_activity,
-            ongoing_input_decision=self._optional_str(
-                transition.get("ongoing_input_decision")
-            ),
-            current_activity_status=self._optional_str(
-                transition.get("current_activity_status")
-            ),
-            current_activity_preserved=bool(
-                transition.get("current_activity_preserved", False)
-            ),
-            current_activity_paused=bool(
-                transition.get("current_activity_paused", False)
-            ),
-            current_activity_stopped=bool(
-                transition.get("current_activity_stopped", False)
-            ),
-            requested_new_activity=self._optional_str(
-                transition.get("requested_new_activity")
-            ),
+            ongoing_input_decision=self._optional_str(transition.get("ongoing_input_decision")),
+            current_activity_status=self._optional_str(transition.get("current_activity_status")),
+            current_activity_preserved=bool(transition.get("current_activity_preserved", False)),
+            current_activity_paused=bool(transition.get("current_activity_paused", False)),
+            current_activity_stopped=bool(transition.get("current_activity_stopped", False)),
+            requested_new_activity=self._optional_str(transition.get("requested_new_activity")),
             transition_result=self._optional_str(transition.get("transition_result")),
             topic=self._optional_str(
                 result.payload.get("selected_topic") or behavior_plan.get("topic")
             ),
             planning_reason=self._optional_str(
-                result.payload.get("planning_reason")
-                or behavior_plan.get("planning_reason")
+                result.payload.get("planning_reason") or behavior_plan.get("planning_reason")
             ),
             constraints=dict(result.constraints),
             drive={
@@ -214,10 +231,7 @@ class ResponseContextBuilder:
             ),
             recent_topic_summary=(
                 str(situation.get("recent_topic_summary") or "")
-                or "\n".join(
-                    entry.summary
-                    for entry in self._topic_history.recent_entries(limit=3)
-                )
+                or "\n".join(entry.summary for entry in self._topic_history.recent_entries(limit=3))
                 if self._topic_history is not None
                 else str(situation.get("recent_topic_summary") or "")
             ),
@@ -263,14 +277,10 @@ class ResponseContextBuilder:
         return 0.5
 
     @staticmethod
-    def _memory_context(
-        activity: Activity, event_payload: dict[str, object]
-    ) -> dict[str, object]:
+    def _memory_context(activity: Activity, event_payload: dict[str, object]) -> dict[str, object]:
         value = event_payload.get("memory", activity.context.get("memory"))
         memory = dict(value) if isinstance(value, dict) else {}
-        related = event_payload.get(
-            "related_knowledge", activity.context.get("related_knowledge")
-        )
+        related = event_payload.get("related_knowledge", activity.context.get("related_knowledge"))
         if isinstance(related, (list, tuple)):
             memory["related_knowledge"] = list(related)
         similar = activity.context.get("similar_topic_memories")
@@ -338,9 +348,7 @@ class ResponseContextBuilder:
             "plugin_activity_status",
         )
         constraints_value = value.context.get("constraints")
-        constraints = (
-            dict(constraints_value) if isinstance(constraints_value, dict) else {}
-        )
+        constraints = dict(constraints_value) if isinstance(constraints_value, dict) else {}
         previous_output = (
             value.turns[-1].turn_result.output_result
             if value.turns
@@ -374,25 +382,17 @@ class ResponseContextBuilder:
         )
 
     @staticmethod
-    def _infer_result(
-        activity: Activity, payload: dict[str, Any]
-    ) -> ActivityExecutionResult:
+    def _infer_result(activity: Activity, payload: dict[str, Any]) -> ActivityExecutionResult:
         rejected = bool(payload.get("execution_request_unmatched"))
         plan = payload.get("behavior_plan")
         plan_data = plan if isinstance(plan, dict) else {}
         status = (
-            ActivityExecutionStatus.REJECTED
-            if rejected
-            else ActivityExecutionStatus.WAITING_INPUT
+            ActivityExecutionStatus.REJECTED if rejected else ActivityExecutionStatus.WAITING_INPUT
         )
         return ActivityExecutionResult(
-            activity_type=str(
-                plan_data.get("activity_type") or activity.activity_type.value
-            ),
+            activity_type=str(plan_data.get("activity_type") or activity.activity_type.value),
             operation=(
-                str(plan_data.get("operation"))
-                if plan_data.get("operation") is not None
-                else None
+                str(plan_data.get("operation")) if plan_data.get("operation") is not None else None
             ),
             status=status,
             capability=(
@@ -405,14 +405,8 @@ class ResponseContextBuilder:
                 if plan_data.get("provider_plugin_id") is not None
                 else None
             ),
-            payload={
-                "summary": (
-                    "Activityを開始できなかった" if rejected else "会話を継続する"
-                )
-            },
-            failure_reason=(
-                str(payload.get("execution_match_reason")) if rejected else None
-            ),
+            payload={"summary": ("Activityを開始できなかった" if rejected else "会話を継続する")},
+            failure_reason=(str(payload.get("execution_match_reason")) if rejected else None),
             constraints=(
                 dict(plan_data.get("constraints", {}))
                 if isinstance(plan_data.get("constraints"), dict)
@@ -603,9 +597,7 @@ class CharacterLlmService:
                 "activity_turn_id": source.context.get("activity_turn_id"),
                 "ongoing_activity": source.context.get("ongoing_activity"),
                 "llm_attempt": attempt,
-                "activity_execution_result": source.context.get(
-                    "activity_execution_result"
-                ),
+                "activity_execution_result": source.context.get("activity_execution_result"),
             },
         )
         raw = await self._model.generate_character_response(activity)
@@ -639,9 +631,7 @@ class CharacterLlmService:
         if parsed_claims is None:
             return None
         claims, claim_details = parsed_claims
-        voice_intent = CharacterLlmService._parse_voice_intent(
-            value.get("voice_intent")
-        )
+        voice_intent = CharacterLlmService._parse_voice_intent(value.get("voice_intent"))
         if voice_intent is None:
             return None
         expression = str(value.get("expression") or "smile")
@@ -726,11 +716,7 @@ class CharacterLlmService:
                 segment = ReactionSegment(
                     speech=speech.strip(),
                     expression=str(item.get("expression") or default_expression),
-                    gesture=(
-                        str(item["gesture"])
-                        if item.get("gesture") is not None
-                        else None
-                    ),
+                    gesture=(str(item["gesture"]) if item.get("gesture") is not None else None),
                     voice_intent=voice_intent,
                     pause_after_seconds=float(pause),
                 )
@@ -779,20 +765,10 @@ class CharacterLlmService:
                 except ValueError:
                     return None
                 activity_type = (
-                    str(item["activity_type"])
-                    if item.get("activity_type") is not None
-                    else None
+                    str(item["activity_type"]) if item.get("activity_type") is not None else None
                 )
-                operation = (
-                    str(item["operation"])
-                    if item.get("operation") is not None
-                    else None
-                )
-                target = (
-                    str(item["target"])
-                    if item.get("target") is not None
-                    else None
-                )
+                operation = str(item["operation"]) if item.get("operation") is not None else None
+                target = str(item["target"]) if item.get("target") is not None else None
             claims.append(response_claim)
             details.append(
                 Claim(
@@ -862,14 +838,10 @@ class ResponseValidator:
             **trace.as_log_fields(),
             component_role="claim_extractor",
             self_reported_claims=[claim.value for claim in response.claims],
-            extracted_claim_types=[
-                claim.claim_type.value for claim in extracted_claims
-            ],
+            extracted_claim_types=[claim.claim_type.value for claim in extracted_claims],
             attempt=attempt,
         )
-        deterministic = self._fact_validator.validate(
-            context, response, extracted_claims
-        )
+        deterministic = self._fact_validator.validate(context, response, extracted_claims)
         if not deterministic.accepted:
             self._trace_result(source, deterministic)
             return deterministic
@@ -898,9 +870,7 @@ class ResponseValidator:
                 "activity_turn_id": source.context.get("activity_turn_id"),
                 "ongoing_activity": source.context.get("ongoing_activity"),
                 "llm_attempt": attempt,
-                "activity_execution_result": source.context.get(
-                    "activity_execution_result"
-                ),
+                "activity_execution_result": source.context.get("activity_execution_result"),
             },
         )
         try:
@@ -922,9 +892,7 @@ class ResponseValidator:
             )
             self._trace_result(source, result)
             return result
-        objective_claims = self._parse_objective_claims(
-            value.get("extracted_claims", [])
-        )
+        objective_claims = self._parse_objective_claims(value.get("extracted_claims", []))
         if objective_claims is None:
             result = ResponseValidationResult(
                 False,
@@ -946,9 +914,7 @@ class ResponseValidator:
                 for claim in (*extracted_claims, *objective_claims)
             }.values()
         )
-        objective_facts = self._fact_validator.validate(
-            context, response, merged_claims
-        )
+        objective_facts = self._fact_validator.validate(context, response, merged_claims)
         if not objective_facts.accepted:
             self._trace_result(source, objective_facts)
             return objective_facts
@@ -962,9 +928,7 @@ class ResponseValidator:
 
     def _require_prompt_builder(self) -> ResponseValidationPromptBuilder:
         if self._prompt_builder is None:
-            raise RuntimeError(
-                "Response Validation Prompt Builderが構成されていません。"
-            )
+            raise RuntimeError("Response Validation Prompt Builderが構成されていません。")
         return self._prompt_builder
 
     @staticmethod
@@ -996,14 +960,10 @@ class ResponseValidator:
                         else None
                     ),
                     operation=(
-                        str(item["operation"])
-                        if item.get("operation") is not None
-                        else None
+                        str(item["operation"]) if item.get("operation") is not None else None
                     ),
                     status=status,
-                    target=(
-                        str(item["target"]) if item.get("target") is not None else None
-                    ),
+                    target=(str(item["target"]) if item.get("target") is not None else None),
                     confidence=confidence,
                     evidence=str(item.get("evidence") or ""),
                 )
@@ -1060,9 +1020,7 @@ class CharacterResponsePipeline:
                     activity,
                     context,
                     correction=(
-                        self._correction(validation, context)
-                        if validation is not None
-                        else None
+                        self._correction(validation, context) if validation is not None else None
                     ),
                     attempt=attempt + 1,
                 )
@@ -1120,9 +1078,7 @@ class CharacterResponsePipeline:
                 "character_response_pipeline:response_rejected",
                 reason=validation.reason,
                 attempt=attempt,
-                extracted_claims=[
-                    asdict(claim) for claim in validation.extracted_claims
-                ],
+                extracted_claims=[asdict(claim) for claim in validation.extracted_claims],
                 claim_differences=list(validation.claim_differences),
             )
             if attempt == 0:
@@ -1131,18 +1087,14 @@ class CharacterResponsePipeline:
                     source_activity_id=activity.activity_id,
                     reason=validation.reason,
                     invalid_claims=[claim.value for claim in validation.invalid_claims],
-                    extracted_claims=[
-                        asdict(claim) for claim in validation.extracted_claims
-                    ],
+                    extracted_claims=[asdict(claim) for claim in validation.extracted_claims],
                 )
         fallback = self._safe_fallback(context)
         self._trace_logger.warning(
             "character_response_pipeline:safe_fallback_used",
             source_activity_id=activity.activity_id,
             execution_status=context.status.value,
-            last_validation_reason=(
-                validation.reason if validation is not None else None
-            ),
+            last_validation_reason=(validation.reason if validation is not None else None),
         )
         return fallback, CharacterGenerationResult(
             status=CharacterGenerationStatus.FALLBACK_USED,
@@ -1176,12 +1128,8 @@ class CharacterResponsePipeline:
                 or activity.activity_id
             ),
             (
-                str(
-                    ongoing_id
-                    or (trace.ongoing_activity_id if trace is not None else None)
-                )
-                if ongoing_id is not None
-                or (trace is not None and trace.ongoing_activity_id)
+                str(ongoing_id or (trace.ongoing_activity_id if trace is not None else None))
+                if ongoing_id is not None or (trace is not None and trace.ongoing_activity_id)
                 else None
             ),
         )
@@ -1206,9 +1154,7 @@ class CharacterResponsePipeline:
                 "invalid_self_reported_claims": [
                     claim.value for claim in validation.invalid_claims
                 ],
-                "invalid_speech_claims": [
-                    asdict(claim) for claim in validation.extracted_claims
-                ],
+                "invalid_speech_claims": [asdict(claim) for claim in validation.extracted_claims],
                 "claim_differences": list(validation.claim_differences),
                 "execution_status": context.status.value,
                 "activity_type": context.activity_type,
