@@ -50,10 +50,10 @@ jobs:
           set -e
           cat /tmp/apply-emotion.log
           if [ "$status" -ne 0 ]; then
-            cp /tmp/apply-emotion.log .chatgpt-emotion-integration-error.log
+            cp /tmp/apply-emotion.log .chatgpt-emotion-integration-error.txt
             git config user.name ch4t9pt
             git config user.email 308621972+ch4t9pt@users.noreply.github.com
-            git add .chatgpt-emotion-integration-error.log
+            git add .chatgpt-emotion-integration-error.txt
             git commit -m "emotion appraisal統合の失敗ログを保存"
             git push origin HEAD:refactor/integrate-emotion-appraisal-config
             exit "$status"
