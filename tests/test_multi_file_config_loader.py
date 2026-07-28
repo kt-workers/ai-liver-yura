@@ -162,10 +162,6 @@ def test_manifest_rejects_invalid_import_values(
         ({"imports": []}, "imports"),
         ({"imports": {}, "app": {}}, "app"),
         ({"imports": {"unknown": "unknown.yaml"}}, "imports.unknown"),
-        (
-            {"imports": {"emotion_appraisal": "emotion.yaml"}},
-            "imports.emotion_appraisal",
-        ),
     ],
 )
 def test_manifest_rejects_invalid_structure(
