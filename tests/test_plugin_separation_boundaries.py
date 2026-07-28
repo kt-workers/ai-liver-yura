@@ -78,6 +78,7 @@ def test_bootstrap_concrete_plugin_imports_match_migration_baseline() -> None:
         "app.plugins.voice_output",
         "app.plugins.youtube_streaming.application",
         "app.plugins.youtube_streaming.application.service",
+        "app.plugins.youtube_streaming.domain",
         "app.plugins.youtube_streaming.public.activity_provider",
         "app.plugins.youtube_streaming.public.evidence",
         "app.plugins.youtube_streaming.public.registration",
