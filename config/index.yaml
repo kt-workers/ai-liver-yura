@@ -16,5 +16,7 @@ imports:
   llm_roles: llm.yaml
   topic_classifier: llm.yaml
 
+  emotion_appraisal: emotion.yaml
+
   streaming: streaming.yaml
   plugins: plugins.yaml

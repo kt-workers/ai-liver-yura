@@ -95,6 +95,8 @@ def test_production_manifest_matches_legacy_config() -> None:
     assert legacy.confirmation == production.confirmation
     assert legacy.streaming == production.streaming
     assert legacy.plugins == production.plugins
+    assert production.emotion_appraisal.enabled is True
+    assert production.emotion_appraisal.mode.value == "hybrid"
     assert legacy.emotion_appraisal == production.emotion_appraisal
 
 
