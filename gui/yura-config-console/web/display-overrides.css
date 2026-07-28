@@ -1,0 +1,55 @@
+/* 利用者向け画面では設定ファイル名を表示しない。内部のowner file管理は維持する。 */
+.summary-grid {
+  display: none;
+}
+
+main {
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  margin-top: 8px;
+  height: calc(100dvh - 98px);
+}
+
+.workspace {
+  height: 100%;
+}
+
+.category-item small,
+#categoryFile,
+.field > small {
+  display: none;
+}
+
+.category-item {
+  min-height: 40px;
+  align-content: center;
+}
+
+.category-item.dirty::after {
+  margin-top: -18px;
+}
+
+.config-form {
+  max-height: calc(100% - 76px);
+}
+
+/* 履歴ではowner file名を見せず、操作としての意味だけを表示する。 */
+.history-entry strong {
+  font-size: 0;
+}
+
+.history-entry strong::before {
+  content: "設定を保存";
+  font-size: 13px;
+}
+
+@media (max-width: 1180px) {
+  main {
+    height: auto;
+    min-height: calc(100dvh - 98px);
+  }
+
+  .workspace {
+    height: auto;
+  }
+}
