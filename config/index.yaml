@@ -9,8 +9,9 @@ imports:
   speech: speech.yaml
   memory: memory.yaml
 
-  services: application.yaml
-  models: application.yaml
+  services: services.yaml
+  models: models.yaml
+
   response_generator: application.yaml
   llm_roles: application.yaml
   topic_classifier: application.yaml
