@@ -42,7 +42,7 @@ APPLICATION_PATH = CONFIG_DIRECTORY / "application.yaml"
 
 def test_production_yaml_files_are_valid_mappings() -> None:
     expected_keys = {
-        DEFAULT_CONFIG_PATH: {"imports"},
+        DEFAULT_CONFIG_PATH: {"imports", "environments"},
         RUNTIME_PATH: {"app", "trace", "input_receivers", "confirmation"},
         CHARACTER_PATH: {"character"},
         SPEECH_PATH: {"speech"},
