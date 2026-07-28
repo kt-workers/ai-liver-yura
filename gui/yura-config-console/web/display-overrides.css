@@ -43,6 +43,71 @@ main {
   font-size: 13px;
 }
 
+/* 背景は上層を明るく保ち、深度に応じて段階的に暗くする。 */
+.seascape {
+  background:
+    radial-gradient(ellipse at 55% -6%, rgba(245, 255, 251, .94) 0 9%, rgba(170, 241, 239, .62) 22%, rgba(88, 199, 213, .24) 42%, transparent 62%),
+    linear-gradient(180deg, #2f9fb4 0%, #238ca7 18%, #176f8c 38%, #10546f 58%, #0a3d56 76%, #06283d 100%);
+}
+
+.water-surface {
+  height: 28%;
+  background:
+    repeating-radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, .48) 0 2px, transparent 4px 30px),
+    linear-gradient(180deg, rgba(226, 255, 252, .9), rgba(95, 203, 214, .22));
+}
+
+.surface-glow {
+  left: 20%;
+  top: -10%;
+  width: 64%;
+  height: 56%;
+  background: radial-gradient(ellipse, rgba(250, 255, 248, .96), rgba(194, 249, 243, .42) 36%, rgba(102, 205, 216, .12) 58%, transparent 78%);
+}
+
+.water-haze {
+  background:
+    radial-gradient(circle at 78% 38%, rgba(102, 208, 216, .2), transparent 30%),
+    linear-gradient(180deg, rgba(113, 211, 220, .08) 0%, transparent 48%, rgba(2, 16, 27, .1) 72%, rgba(1, 10, 19, .32) 100%);
+}
+
+/* 海底を遠く低く見せ、境界を平坦化して水中空間を広く取る。 */
+.sand-floor {
+  left: -14%;
+  right: -14%;
+  bottom: -9%;
+  height: 24%;
+  border-radius: 58% 58% 0 0 / 24% 24% 0 0;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(128, 153, 143, .2), transparent 58%),
+    linear-gradient(180deg, rgba(113, 139, 128, .08), rgba(74, 94, 87, .34) 34%, rgba(35, 48, 46, .72) 72%, rgba(20, 31, 31, .92));
+  box-shadow: 0 -34px 72px rgba(5, 39, 50, .28);
+}
+
+.sand-floor::before {
+  inset: -34% 4% auto;
+  height: 58%;
+  background: linear-gradient(180deg, transparent, rgba(72, 105, 101, .2));
+  filter: blur(34px);
+}
+
+/* 魚影は遠景感を残しつつ、背景へ消えない濃さを確保する。 */
+.fish {
+  background: rgba(7, 48, 65, .72);
+  box-shadow: 0 0 8px rgba(5, 35, 49, .18);
+  opacity: .82;
+}
+
+.fish::after {
+  border-right-color: rgba(7, 48, 65, .68);
+}
+
+.fish-b { opacity: .76; }
+.fish-c { opacity: .7; }
+.fish-d { opacity: .66; }
+.fish-e { opacity: .6; }
+.fish-f { opacity: .56; }
+
 @media (max-width: 1180px) {
   main {
     height: auto;
