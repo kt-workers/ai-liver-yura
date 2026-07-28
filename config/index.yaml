@@ -12,8 +12,9 @@ imports:
   services: services.yaml
   models: models.yaml
 
-  response_generator: application.yaml
-  llm_roles: application.yaml
-  topic_classifier: application.yaml
+  response_generator: llm.yaml
+  llm_roles: llm.yaml
+  topic_classifier: llm.yaml
+
   streaming: application.yaml
   plugins: application.yaml
