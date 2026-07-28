@@ -1,67 +1,10 @@
-# 外部サービスの接続情報はここで一元管理する。
-# APIキーやDSNの値自体は記載せず、環境変数名だけを指定する。
-services:
-  openai:
-    type: openai
-    base_url: https://api.openai.com/v1
-    api_key_env: OPENAI_API_KEY
-    timeout_seconds: 60.0
-  ollama:
-    type: ollama
-    base_url: http://localhost:11434
-    timeout_seconds: 60.0
-  voicevox:
-    type: voicevox
-    base_url: http://192.168.50.182:50021
-    timeout_seconds: 30.0
-  topic_memory_database:
-    type: postgres
-    dsn_env: AI_LIVER_DATABASE_URL
-  youtube:
-    type: fake
-    client_secret_path_env: YOUTUBE_CLIENT_SECRET_PATH
-    token_path_env: YOUTUBE_TOKEN_PATH
-    request_timeout_seconds: 15.0
-    max_retries: 2
-    retry_initial_delay_seconds: 1.0
-    oauth_open_browser: true
-    oauth_timeout_seconds: 300.0
-    # 準備段階では既にliveのBroadcastを候補にしない
-    allow_live_broadcast: false
-    allowed_privacy_statuses:
-      - private
-      - unlisted
-      - public
-  obs:
-    type: obs_websocket
-    host: 127.0.0.1
-    port: 4455
-    password_env: OBS_WEBSOCKET_PASSWORD
-    connect_timeout_seconds: 5.0
-    request_timeout_seconds: 5.0
-    max_retries: 2
-    retry_initial_delay_seconds: 0.5
-
-# 利用可能なモデルを登録し、各機能からキー名で参照する。
-models:
-  openai_chat:
-    service: openai
-    name: gpt-4.1-mini
-  ollama_chat:
-    service: ollama
-    name: local-agent:qwen7b-prompt-test
-  openai_embedding:
-    service: openai
-    name: text-embedding-3-small
-    dimension: 1536
-
 response_generator:
   type: llm
   model: openai_chat
   fallback_response: うまく言葉が出てこなかったみたい。もう一度話しかけてね。
 
 # LLMの責務ごとにモデルと失敗時の扱いを明示する。
-# modelは上のmodelsキーを参照し、Providerはmodels.<key>.serviceから解決する。
+# modelはmodels.yamlのmodelsキーを参照し、Providerはmodels.<key>.serviceから解決する。
 llm_roles:
   situation_evaluator:
     model: openai_chat
