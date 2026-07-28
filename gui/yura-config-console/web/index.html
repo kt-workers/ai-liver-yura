@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#48b7ca" />
+    <title>設定の入り江 | Yura</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="seascape" aria-hidden="true">
+      <div class="water-surface"></div>
+      <div class="surface-glow"></div>
+      <div class="light-ray ray-a"></div>
+      <div class="light-ray ray-b"></div>
+      <div class="light-ray ray-c"></div>
+      <div class="caustics"></div>
+      <div class="water-haze"></div>
+      <div class="sand-floor"></div>
+      <div class="sand-ripple ripple-a"></div>
+      <div class="sand-ripple ripple-b"></div>
+      <div class="sand-ripple ripple-c"></div>
+      <div class="seagrass grass-a"></div>
+      <div class="seagrass grass-b"></div>
+      <div class="seagrass grass-c"></div>
+      <div class="rock rock-a"></div>
+      <div class="rock rock-b"></div>
+      <div class="fish fish-a"></div>
+      <div class="fish fish-b"></div>
+      <div class="bubble bubble-a"></div>
+      <div class="bubble bubble-b"></div>
+      <div class="bubble bubble-c"></div>
+    </div>
+
+    <header class="topbar">
+      <div class="brand">
+        <p class="eyebrow">YURA / CONFIGURATION HARBOR</p>
+        <h1>設定の入り江</h1>
+      </div>
+      <nav id="headerTabs" class="header-nav" aria-hidden="true"></nav>
+      <div class="topbar-actions">
+        <div id="connection" class="connection pending"><span></span><b>CONFIG SERVER 接続確認中</b></div>
+        <button id="historyOpen" class="ghost">変更履歴</button>
+        <button id="saveButton" class="primary" disabled>保存</button>
+      </div>
+    </header>
+
+    <div class="scenic-copy" aria-hidden="true">
+      <strong>光の満ちる浅瀬から、海面を見上げる</strong>
+      <span>揺れる水面と差し込む光の下で、設定を静かに整える</span>
+    </div>
+
+    <main>
+      <section class="summary-grid" aria-label="設定概要">
+        <article>
+          <p class="label">CURRENT MANIFEST</p>
+          <strong id="manifestRoot">config/index.yaml</strong>
+          <span id="manifestSummary">設定一覧を取得しています。</span>
+        </article>
+        <article>
+          <p class="label">VALIDATION</p>
+          <strong id="validationState">CHECKING</strong>
+          <span id="validationSummary">検証状態を確認しています。</span>
+        </article>
+        <article>
+          <p class="label">APPLY POLICY</p>
+          <strong id="reloadState">保存 ≠ 即時反映</strong>
+          <span id="reloadSummary">項目ごとに反映タイミングを案内します。</span>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <aside class="category-panel">
+          <div class="panel-heading">
+            <p class="label">OWNER FILES</p>
+            <h2>設定カテゴリ</h2>
+          </div>
+          <div id="categoryList" class="category-list"></div>
+        </aside>
+
+        <section class="editor-panel">
+          <div class="editor-heading">
+            <div>
+              <p id="categoryFile" class="label">-</p>
+              <h2 id="categoryTitle">設定を選択してください</h2>
+              <p id="categoryDescription" class="muted"></p>
+            </div>
+            <div class="editor-actions">
+              <button id="resetButton" class="ghost" disabled>変更を破棄</button>
+              <button id="validateButton" class="ghost" disabled>検証</button>
+            </div>
+          </div>
+          <form id="configForm" class="config-form"></form>
+        </section>
+
+        <aside class="inspection-panel">
+          <section class="change-status">
+            <p class="label">UNSAVED CHANGES</p>
+            <strong id="changeCount" class="large-number">0</strong>
+            <p id="changeSummary" class="muted">変更はありません。</p>
+          </section>
+          <section>
+            <h3>検証結果</h3>
+            <div id="validationDetails" class="inspection-list"><p class="muted">カテゴリを選択してください。</p></div>
+          </section>
+          <section>
+            <h3>反映方法</h3>
+            <p id="applyMessage" class="muted">保存後の反映方法をここに表示します。</p>
+          </section>
+          <section class="save-process">
+            <h3>保存処理</h3>
+            <ol class="save-steps">
+              <li>revision競合確認</li>
+              <li>入力検証</li>
+              <li>原子的に保存</li>
+              <li>変更履歴を記録</li>
+            </ol>
+          </section>
+          <button id="jsonPreviewButton" class="wide ghost" disabled>構造化プレビュー</button>
+        </aside>
+      </section>
+    </main>
+
+    <dialog id="historyDialog" class="dialog">
+      <header><div><p class="label">AUDIT HISTORY</p><h2>変更履歴</h2></div><button data-close="historyDialog" class="icon">×</button></header>
+      <div id="historyList" class="history-list"></div>
+    </dialog>
+
+    <dialog id="previewDialog" class="dialog preview-dialog">
+      <header><div><p class="label">STRUCTURED PREVIEW</p><h2>保存予定の設定</h2></div><button data-close="previewDialog" class="icon">×</button></header>
+      <pre id="jsonPreview"></pre>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
