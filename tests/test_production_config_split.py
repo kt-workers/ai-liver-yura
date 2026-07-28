@@ -34,6 +34,7 @@ MEMORY_PATH = CONFIG_DIRECTORY / "memory.yaml"
 SERVICES_PATH = CONFIG_DIRECTORY / "services.yaml"
 MODELS_PATH = CONFIG_DIRECTORY / "models.yaml"
 LLM_PATH = CONFIG_DIRECTORY / "llm.yaml"
+EMOTION_PATH = CONFIG_DIRECTORY / "emotion.yaml"
 STREAMING_PATH = CONFIG_DIRECTORY / "streaming.yaml"
 PLUGINS_PATH = CONFIG_DIRECTORY / "plugins.yaml"
 APPLICATION_PATH = CONFIG_DIRECTORY / "application.yaml"
@@ -49,6 +50,7 @@ def test_production_yaml_files_are_valid_mappings() -> None:
         SERVICES_PATH: {"services"},
         MODELS_PATH: {"models"},
         LLM_PATH: {"response_generator", "llm_roles", "topic_classifier"},
+        EMOTION_PATH: {"emotion_appraisal"},
         STREAMING_PATH: {"streaming"},
         PLUGINS_PATH: {"plugins"},
     }
@@ -64,6 +66,8 @@ def test_production_manifest_loads_successfully() -> None:
     assert config.app.name == "ai-liver"
     assert config.character.name == "星波ゆら"
     assert isinstance(config.services["openai"], OpenAiServiceSettings)
+    assert config.emotion_appraisal.enabled is True
+    assert config.emotion_appraisal.mode.value == "hybrid"
     assert config.config_path == str(DEFAULT_CONFIG_PATH.resolve())
 
 
@@ -71,8 +75,10 @@ def test_production_manifest_matches_legacy_config() -> None:
     legacy = load_app_config(LEGACY_CONFIG_PATH)
     production = load_app_config(DEFAULT_CONFIG_PATH)
     production_raw = load_config_bundle(DEFAULT_CONFIG_PATH)
+    production_values = dict(production_raw.values)
+    production_values.pop("emotion_appraisal")
 
-    assert production_raw.values == load_raw_config(LEGACY_CONFIG_PATH)
+    assert production_values == load_raw_config(LEGACY_CONFIG_PATH)
     assert replace(legacy, config_path="") == replace(production, config_path="")
     assert type(legacy.services) is type(production.services)
     assert type(legacy.speech.voice_intent_profiles) is type(
@@ -89,6 +95,9 @@ def test_production_manifest_matches_legacy_config() -> None:
     assert legacy.confirmation == production.confirmation
     assert legacy.streaming == production.streaming
     assert legacy.plugins == production.plugins
+    assert production.emotion_appraisal.enabled is True
+    assert production.emotion_appraisal.mode.value == "hybrid"
+    assert legacy.emotion_appraisal == production.emotion_appraisal
 
 
 def test_production_manifest_ownership_sources() -> None:
@@ -103,6 +112,7 @@ def test_production_manifest_ownership_sources() -> None:
     assert bundle.source_by_top_level_key["models"] == MODELS_PATH.resolve()
     for key in ("response_generator", "llm_roles", "topic_classifier"):
         assert bundle.source_by_top_level_key[key] == LLM_PATH.resolve()
+    assert bundle.source_by_top_level_key["emotion_appraisal"] == EMOTION_PATH.resolve()
     assert bundle.source_by_top_level_key["streaming"] == STREAMING_PATH.resolve()
     assert bundle.source_by_top_level_key["plugins"] == PLUGINS_PATH.resolve()
 
@@ -212,6 +222,11 @@ def test_production_config_composes_runtime_streaming_speech_and_admin() -> None
             "llm.yaml",
             lambda raw: raw["topic_classifier"].update(model="unknown_model"),
             "topic_classifier.model",
+        ),
+        (
+            "emotion.yaml",
+            lambda raw: raw["emotion_appraisal"].update(mode="unknown"),
+            "emotion_appraisal.mode",
         ),
         (
             "streaming.yaml",

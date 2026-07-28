@@ -12,6 +12,7 @@ from app.config.config_loader import (
     load_config_bundle,
     load_raw_config,
 )
+from app.config.emotion_appraisal_config import load_emotion_appraisal_settings
 from app.config.errors import ConfigError
 from app.config.service_schema import (
     DisabledServiceSettings,
@@ -41,6 +42,7 @@ from app.config.strict import (
     require_string_sequence,
     string_sequence_value,
 )
+from app.domain.emotions import EmotionAppraisalSettings
 from app.plugins.games.settings import GamesPluginSettings, load_games_plugin_settings
 
 CONFIG_PATH = LEGACY_CONFIG_PATH
@@ -400,6 +402,9 @@ class AppConfig:
     confirmation: ConfirmationSettings
     plugins: PluginSettings = field(default_factory=PluginSettings)
     streaming: StreamingSettings = field(default_factory=StreamingSettings)
+    emotion_appraisal: EmotionAppraisalSettings = field(
+        default_factory=EmotionAppraisalSettings
+    )
     config_path: str = ""
 
 
@@ -424,7 +429,6 @@ def load_app_config(config_path: str | Path | None = None) -> AppConfig:
                 "confirmation",
                 "plugins",
                 "streaming",
-                # Reserved for the currently separate, deprecated loader.
                 "emotion_appraisal",
             },
             "",
@@ -454,6 +458,9 @@ def load_app_config(config_path: str | Path | None = None) -> AppConfig:
             ),
             plugins=_load_plugin_settings(raw_config.get("plugins")),
             streaming=_load_streaming_settings(raw_config.get("streaming")),
+            emotion_appraisal=load_emotion_appraisal_settings(
+                raw_config.get("emotion_appraisal")
+            ),
             config_path=str(bundle.root_path),
         )
         _validate_reference_graph(config)

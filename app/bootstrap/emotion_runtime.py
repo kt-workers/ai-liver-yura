@@ -10,7 +10,6 @@ from app.bootstrap.runtime import (
     create_runtime_coordinator as create_base_runtime_coordinator,
 )
 from app.config.app_config import AppConfig
-from app.config.emotion_appraisal_config import load_emotion_appraisal_settings
 from app.domain.emotions import EmotionAppraisalMode
 from app.runtime.emotion_appraisal_service import EmotionAppraisalService
 from app.runtime.emotion_runtime_integration import (
@@ -23,7 +22,7 @@ def create_runtime_coordinator(config: AppConfig) -> EmotionAwareRuntimeCoordina
     """標準Runtimeへ話題管理分離と自然文感情評価を合成する。"""
 
     coordinator = create_base_runtime_coordinator(config)
-    settings = load_emotion_appraisal_settings(config.config_path)
+    settings = config.emotion_appraisal
     model = None
     if settings.enabled and settings.mode in {
         EmotionAppraisalMode.LLM,
