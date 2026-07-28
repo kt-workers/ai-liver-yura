@@ -4,7 +4,7 @@ response_generator:
   fallback_response: うまく言葉が出てこなかったみたい。もう一度話しかけてね。
 
 # LLMの責務ごとにモデルと失敗時の扱いを明示する。
-# modelはmodels.yamlのmodelsキーを参照し、Providerはmodels.<key>.serviceから解決する。
+# modelは上のmodelsキーを参照し、Providerはmodels.<key>.serviceから解決する。
 llm_roles:
   situation_evaluator:
     model: openai_chat
