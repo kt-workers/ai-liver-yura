@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#48b7ca" />
+    <meta name="theme-color" content="#08283a" />
     <title>設定の入り江 | Yura</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
@@ -14,19 +14,19 @@
       <div class="light-ray ray-a"></div>
       <div class="light-ray ray-b"></div>
       <div class="light-ray ray-c"></div>
-      <div class="caustics"></div>
       <div class="water-haze"></div>
       <div class="sand-floor"></div>
-      <div class="sand-ripple ripple-a"></div>
-      <div class="sand-ripple ripple-b"></div>
-      <div class="sand-ripple ripple-c"></div>
       <div class="seagrass grass-a"></div>
       <div class="seagrass grass-b"></div>
       <div class="seagrass grass-c"></div>
       <div class="rock rock-a"></div>
       <div class="rock rock-b"></div>
       <div class="fish fish-a"></div>
-      <div class="fish fish-b"></div>
+      <div class="fish fish-b reverse"></div>
+      <div class="fish fish-c diagonal"></div>
+      <div class="fish fish-d reverse diagonal"></div>
+      <div class="fish fish-e"></div>
+      <div class="fish fish-f reverse"></div>
       <div class="bubble bubble-a"></div>
       <div class="bubble bubble-b"></div>
       <div class="bubble bubble-c"></div>
@@ -45,27 +45,39 @@
       </div>
     </header>
 
-    <div class="scenic-copy" aria-hidden="true">
-      <strong>光の満ちる浅瀬から、海面を見上げる</strong>
-      <span>揺れる水面と差し込む光の下で、設定を静かに整える</span>
-    </div>
-
     <main>
       <section class="summary-grid" aria-label="設定概要">
         <article>
-          <p class="label">CURRENT MANIFEST</p>
-          <strong id="manifestRoot">config/index.yaml</strong>
-          <span id="manifestSummary">設定一覧を取得しています。</span>
+          <span class="summary-icon" aria-hidden="true">⌘</span>
+          <div>
+            <p class="label">CURRENT MANIFEST</p>
+            <strong id="manifestRoot">config/index.yaml</strong>
+            <span id="manifestSummary">設定一覧を取得しています。</span>
+          </div>
         </article>
         <article>
-          <p class="label">VALIDATION</p>
-          <strong id="validationState">CHECKING</strong>
-          <span id="validationSummary">検証状態を確認しています。</span>
+          <span class="summary-icon" aria-hidden="true">◇</span>
+          <div>
+            <p class="label">VALIDATION</p>
+            <strong id="validationState">CHECKING</strong>
+            <span id="validationSummary">検証状態を確認しています。</span>
+          </div>
         </article>
         <article>
-          <p class="label">APPLY POLICY</p>
-          <strong id="reloadState">保存 ≠ 即時反映</strong>
-          <span id="reloadSummary">項目ごとに反映タイミングを案内します。</span>
+          <span class="summary-icon" aria-hidden="true">↻</span>
+          <div>
+            <p class="label">APPLY POLICY</p>
+            <strong id="reloadState">保存 ≠ 即時反映</strong>
+            <span id="reloadSummary">項目ごとに反映タイミングを案内します。</span>
+          </div>
+        </article>
+        <article class="owner-summary">
+          <span class="summary-icon" aria-hidden="true">▤</span>
+          <div>
+            <p class="label">OWNER FILES</p>
+            <strong>設定カテゴリ</strong>
+            <span>10カテゴリの設定ファイル</span>
+          </div>
         </article>
       </section>
 
