@@ -1,0 +1,65 @@
+# 配信準備は状態確認だけを行い、OBS開始やYouTube遷移は行わない。
+streaming:
+  health_timeout_seconds: 60.0
+  readiness:
+    require_youtube: true
+    require_obs: true
+    require_tts: false
+    require_avatar: false
+    require_run_of_show: true
+    require_emergency_stop: false
+    allow_required_degraded: false
+    require_live_chat: false
+  obs:
+    expected_scene_collection: AI Liver
+    expected_start_scene: Starting Soon
+    required_audio_sources: []
+    optional_audio_sources: []
+    avatar_source_name: Yura
+    require_avatar_source_visible: false
+    low_volume_threshold_db: -60.0
+    max_scene_depth: 8
+  run_of_show:
+    directory: config/run_of_show
+    default_id: default
+  fake:
+    broadcast_id: fake-broadcast-1
+    broadcast_title: 配信準備テスト枠
+  moderation:
+    blocked_terms: []
+    allowed_terms: []
+    max_comment_length: 300
+    repeated_message_window_seconds: 30
+    repeated_message_limit: 3
+    url_policy: review
+    unknown_message_type_policy: ignore
+    max_concurrent_evaluations: 4
+    evaluation_queue_capacity: 128
+    timeout_seconds: 3.0
+  comment_ranking:
+    weights:
+      recency: 0.15
+      relevance: 0.25
+      novelty: 0.15
+      conversation_fit: 0.20
+      engagement: 0.15
+      fairness: 0.10
+    selection_threshold: 0.55
+    minimum_conversation_fit: 0.5
+    candidate_ttl_seconds: 90
+    reservation_ttl_seconds: 30
+    max_pool_size: 200
+    max_rank_batch_size: 50
+    history_size: 100
+    author_cooldown_count: 2
+    semantic_timeout_seconds: 2.0
+    max_concurrent_rankings: 1
+    queue_capacity: 16
+  comment_response:
+    max_characters: 140
+    max_sentences: 3
+    allow_follow_up_question: true
+    mention_author_name: optional
+    repeat_comment_text: false
+    response_cooldown_seconds: 5
+    max_retries: 2
