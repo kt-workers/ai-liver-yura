@@ -1,0 +1,298 @@
+name: ChatGPT emotion appraisal integration
+
+on:
+  push:
+    branches:
+      - refactor/integrate-emotion-appraisal-config
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply integration patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding='utf-8')
+              if old not in text:
+                  raise SystemExit(f'replacement target not found: {path}: {old[:80]!r}')
+              file.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          replace(
+              'app/config/config_loader.py',
+              'OPTIONAL_TOP_LEVEL_KEYS = frozenset({"plugins", "streaming"})\nIMPORTABLE_TOP_LEVEL_KEYS = REQUIRED_TOP_LEVEL_KEYS | OPTIONAL_TOP_LEVEL_KEYS\nRESERVED_TOP_LEVEL_KEYS = frozenset({"emotion_appraisal"})',
+              'OPTIONAL_TOP_LEVEL_KEYS = frozenset({"plugins", "streaming", "emotion_appraisal"})\nIMPORTABLE_TOP_LEVEL_KEYS = REQUIRED_TOP_LEVEL_KEYS | OPTIONAL_TOP_LEVEL_KEYS\nRESERVED_TOP_LEVEL_KEYS = frozenset()',
+          )
+
+          replace(
+              'app/config/app_config.py',
+              'from app.config.errors import ConfigError\n',
+              'from app.config.emotion_appraisal_config import load_emotion_appraisal_settings\nfrom app.config.errors import ConfigError\n',
+          )
+          replace(
+              'from app.plugins.games.settings import GamesPluginSettings, load_games_plugin_settings\n',
+              'from app.domain.emotions import EmotionAppraisalSettings\nfrom app.plugins.games.settings import GamesPluginSettings, load_games_plugin_settings\n',
+          )
+          replace(
+              '    streaming: StreamingSettings = field(default_factory=StreamingSettings)\n    config_path: str = ""',
+              '    streaming: StreamingSettings = field(default_factory=StreamingSettings)\n    emotion_appraisal: EmotionAppraisalSettings = field(\n        default_factory=EmotionAppraisalSettings\n    )\n    config_path: str = ""',
+          )
+          replace(
+              '                "streaming",\n                # Reserved for the currently separate, deprecated loader.\n                "emotion_appraisal",',
+              '                "streaming",\n                "emotion_appraisal",',
+          )
+          replace(
+              '            streaming=_load_streaming_settings(raw_config.get("streaming")),\n            config_path=str(bundle.root_path),',
+              '            streaming=_load_streaming_settings(raw_config.get("streaming")),\n            emotion_appraisal=load_emotion_appraisal_settings(\n                raw_config.get("emotion_appraisal")\n            ),\n            config_path=str(bundle.root_path),',
+          )
+
+          replace(
+              'app/bootstrap/emotion_runtime.py',
+              'from app.config.emotion_appraisal_config import load_emotion_appraisal_settings\n',
+              '',
+          )
+          replace(
+              '    settings = load_emotion_appraisal_settings(config.config_path)\n',
+              '    settings = config.emotion_appraisal\n',
+          )
+
+          Path('app/config/emotion_appraisal_config.py').write_text('''from __future__ import annotations
+
+from app.config.errors import ConfigError
+from app.config.strict import (
+    optional_bool,
+    optional_int,
+    optional_mapping,
+    optional_number,
+    optional_string,
+    reject_unknown_keys,
+    require_mapping,
+)
+from app.domain.emotions import (
+    EmotionAppraisalCircuitBreakerSettings,
+    EmotionAppraisalHistorySettings,
+    EmotionAppraisalMode,
+    EmotionAppraisalSettings,
+)
+
+
+def load_emotion_appraisal_settings(value: object) -> EmotionAppraisalSettings:
+    """emotion_appraisal mappingをAppConfig用の型付き設定へ変換する。"""
+
+    if value is None:
+        return EmotionAppraisalSettings()
+    config = require_mapping(value, "emotion_appraisal")
+    reject_unknown_keys(
+        config,
+        {
+            "enabled",
+            "mode",
+            "llm_role",
+            "timeout_seconds",
+            "confidence_threshold",
+            "weak_confidence_threshold",
+            "fallback",
+            "max_concurrency",
+            "cache_ttl_seconds",
+            "cache_max_entries",
+            "circuit_breaker",
+            "history",
+        },
+        "emotion_appraisal",
+    )
+    circuit = optional_mapping(config, "circuit_breaker", "emotion_appraisal")
+    history = optional_mapping(config, "history", "emotion_appraisal")
+    reject_unknown_keys(
+        circuit,
+        {"failure_threshold", "recovery_seconds"},
+        "emotion_appraisal.circuit_breaker",
+    )
+    reject_unknown_keys(
+        history,
+        {"max_entries", "retention_seconds", "min_effective_delta"},
+        "emotion_appraisal.history",
+    )
+
+    enabled = optional_bool(config, "enabled", "emotion_appraisal", default=True)
+    configured_mode = optional_string(config, "mode", "emotion_appraisal") or "hybrid"
+    try:
+        mode = EmotionAppraisalMode(configured_mode)
+    except ValueError as error:
+        raise ConfigError(
+            path="emotion_appraisal.mode",
+            expected="disabled, rule_based, llm, or hybrid",
+            actual=configured_mode,
+        ) from error
+    if not enabled:
+        mode = EmotionAppraisalMode.DISABLED
+
+    try:
+        timeout_seconds = optional_number(
+            config, "timeout_seconds", "emotion_appraisal", default=2.5
+        )
+        confidence_threshold = optional_number(
+            config, "confidence_threshold", "emotion_appraisal", default=0.55
+        )
+        weak_confidence_threshold = optional_number(
+            config,
+            "weak_confidence_threshold",
+            "emotion_appraisal",
+            default=0.40,
+        )
+        max_concurrency = optional_int(
+            config, "max_concurrency", "emotion_appraisal", default=2
+        )
+        cache_ttl_seconds = optional_number(
+            config, "cache_ttl_seconds", "emotion_appraisal", default=20.0
+        )
+        cache_max_entries = optional_int(
+            config, "cache_max_entries", "emotion_appraisal", default=256
+        )
+        failure_threshold = optional_int(
+            circuit,
+            "failure_threshold",
+            "emotion_appraisal.circuit_breaker",
+            default=5,
+        )
+        recovery_seconds = optional_number(
+            circuit,
+            "recovery_seconds",
+            "emotion_appraisal.circuit_breaker",
+            default=30.0,
+        )
+        max_entries = optional_int(
+            history,
+            "max_entries",
+            "emotion_appraisal.history",
+            default=200,
+        )
+        retention_seconds = optional_number(
+            history,
+            "retention_seconds",
+            "emotion_appraisal.history",
+            default=7200.0,
+        )
+        min_effective_delta = optional_number(
+            history,
+            "min_effective_delta",
+            "emotion_appraisal.history",
+            default=0.02,
+        )
+        assert timeout_seconds is not None
+        assert confidence_threshold is not None
+        assert weak_confidence_threshold is not None
+        assert max_concurrency is not None
+        assert cache_ttl_seconds is not None
+        assert cache_max_entries is not None
+        assert failure_threshold is not None
+        assert recovery_seconds is not None
+        assert max_entries is not None
+        assert retention_seconds is not None
+        assert min_effective_delta is not None
+        return EmotionAppraisalSettings(
+            enabled=enabled,
+            mode=mode,
+            llm_role=optional_string(config, "llm_role", "emotion_appraisal")
+            or "emotion_appraisal",
+            timeout_seconds=timeout_seconds,
+            confidence_threshold=confidence_threshold,
+            weak_confidence_threshold=weak_confidence_threshold,
+            fallback=optional_string(config, "fallback", "emotion_appraisal")
+            or "rule_based",
+            max_concurrency=max_concurrency,
+            cache_ttl_seconds=cache_ttl_seconds,
+            cache_max_entries=cache_max_entries,
+            circuit_breaker=EmotionAppraisalCircuitBreakerSettings(
+                failure_threshold=failure_threshold,
+                recovery_seconds=recovery_seconds,
+            ),
+            history=EmotionAppraisalHistorySettings(
+                max_entries=max_entries,
+                retention_seconds=retention_seconds,
+                min_effective_delta=min_effective_delta,
+            ),
+        )
+    except ValueError as error:
+        raise ConfigError(
+            path="emotion_appraisal",
+            expected="valid emotion appraisal settings",
+            actual=str(error),
+        ) from error
+''', encoding='utf-8')
+
+          Path('config/emotion.yaml').write_text('''emotion_appraisal:
+  enabled: true
+  mode: hybrid
+  llm_role: emotion_appraisal
+  timeout_seconds: 2.5
+  confidence_threshold: 0.55
+  weak_confidence_threshold: 0.40
+  fallback: rule_based
+  max_concurrency: 2
+  cache_ttl_seconds: 20.0
+  cache_max_entries: 256
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_seconds: 30.0
+  history:
+    max_entries: 200
+    retention_seconds: 7200.0
+    min_effective_delta: 0.02
+''', encoding='utf-8')
+
+          replace(
+              'config/index.yaml',
+              '  topic_classifier: llm.yaml\n\n  streaming: streaming.yaml',
+              '  topic_classifier: llm.yaml\n\n  emotion_appraisal: emotion.yaml\n\n  streaming: streaming.yaml',
+          )
+
+          test = Path('tests/test_production_config_split.py')
+          text = test.read_text(encoding='utf-8')
+          text = text.replace(
+              'LLM_PATH = CONFIG_DIRECTORY / "llm.yaml"\n',
+              'LLM_PATH = CONFIG_DIRECTORY / "llm.yaml"\nEMOTION_PATH = CONFIG_DIRECTORY / "emotion.yaml"\n',
+              1,
+          )
+          text = text.replace(
+              '        LLM_PATH: {"response_generator", "llm_roles", "topic_classifier"},\n',
+              '        LLM_PATH: {"response_generator", "llm_roles", "topic_classifier"},\n        EMOTION_PATH: {"emotion_appraisal"},\n',
+              1,
+          )
+          text = text.replace(
+              '    assert legacy.plugins == production.plugins\n',
+              '    assert legacy.plugins == production.plugins\n    assert production.emotion_appraisal.enabled is True\n    assert production.emotion_appraisal.mode.value == "hybrid"\n',
+              1,
+          )
+          text = text.replace(
+              '    for key in ("streaming", "plugins"):\n',
+              '    assert bundle.source_by_top_level_key["emotion_appraisal"] == EMOTION_PATH.resolve()\n    for key in ("streaming", "plugins"):\n',
+              1,
+          )
+          text = text.replace(
+              '        (\n            "llm.yaml",\n            lambda raw: raw["topic_classifier"].update(model="unknown_model"),\n            "topic_classifier.model",\n        ),\n',
+              '        (\n            "llm.yaml",\n            lambda raw: raw["topic_classifier"].update(model="unknown_model"),\n            "topic_classifier.model",\n        ),\n        (\n            "emotion.yaml",\n            lambda raw: raw["emotion_appraisal"].update(mode="unknown"),\n            "emotion_appraisal.mode",\n        ),\n',
+              1,
+          )
+          test.write_text(text, encoding='utf-8')
+          PY
+
+          python -m ruff check app/config/config_loader.py app/config/app_config.py app/config/emotion_appraisal_config.py app/bootstrap/emotion_runtime.py tests/test_production_config_split.py
+          pytest -q tests/test_production_config_split.py tests/test_emotion_appraisal_config.py tests/test_emotion_runtime_integration.py
+          pytest -q
+
+          rm .github/workflows/chatgpt-emotion-appraisal-integration.yml
+          git config user.name ch4t9pt
+          git config user.email 308621972+ch4t9pt@users.noreply.github.com
+          git add -A
+          git commit -m "emotion appraisal設定をAppConfigへ統合"
+          git push origin HEAD:refactor/integrate-emotion-appraisal-config
