@@ -20,3 +20,6 @@ imports:
 
   streaming: streaming.yaml
   plugins: plugins.yaml
+
+environments:
+  local: environments/local.example.yaml
