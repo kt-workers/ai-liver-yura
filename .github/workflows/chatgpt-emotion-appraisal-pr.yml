@@ -17,10 +17,10 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
-      - name: Apply integration changes
+      - name: Diagnose integration changes
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           python - <<'PY'
           from pathlib import Path
 
@@ -44,4 +44,17 @@ jobs:
                   lines.append(line)
           Path('/tmp/apply-emotion.sh').write_text('\n'.join(lines) + '\n', encoding='utf-8')
           PY
-          bash /tmp/apply-emotion.sh
+          set +e
+          bash /tmp/apply-emotion.sh > /tmp/apply-emotion.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/apply-emotion.log
+          if [ "$status" -ne 0 ]; then
+            cp /tmp/apply-emotion.log .chatgpt-emotion-integration-error.log
+            git config user.name ch4t9pt
+            git config user.email 308621972+ch4t9pt@users.noreply.github.com
+            git add .chatgpt-emotion-integration-error.log
+            git commit -m "emotion appraisal統合の失敗ログを保存"
+            git push origin HEAD:refactor/integrate-emotion-appraisal-config
+            exit "$status"
+          fi
