@@ -841,6 +841,25 @@ class ActivityManager:
                 source_event_id=event.event_id,
             )
 
+        if event.event_type == AgentEventType.USER_INTERACTION:
+            return Activity(
+                activity_type=ActivityType.STIMULUS_REACTION,
+                goal="直接触れられて生じた感覚を、説明せず反射的な身体反応として短く表す",
+                priority=75 + event.priority,
+                context={
+                    "event_payload": event.payload,
+                    "input_authority": {
+                        "role": event.authority.role,
+                        "instruction_trusted": event.authority.instruction_trusted,
+                    },
+                    "emotion": event.payload.get("emotion", {}),
+                    "drive": event.payload.get("drive", {}),
+                    "trace_context": event.trace_context,
+                },
+                interruptible=False,
+                source_event_id=event.event_id,
+            )
+
         if event.event_type == AgentEventType.STREAM_STARTED:
             return Activity(
                 activity_type=ActivityType.STREAM_OPENING_GREETING,

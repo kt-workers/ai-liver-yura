@@ -26,6 +26,12 @@ def test_json_agent_memory_store_round_trip(tmp_path: Path) -> None:
                 {"mood": "happy"},
                 "friendly_input",
                 now,
+                deltas={"joy": 0.2},
+                cause_category="relationship_repair",
+                cause_summary="関係を修復しようとする働きかけを受けた",
+                target_id="local:user",
+                confidence=0.9,
+                relational_meaning="repair_attempt",
             ),
         ),
     )

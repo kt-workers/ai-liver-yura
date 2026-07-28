@@ -330,3 +330,225 @@ app/bootstrap/
 - 各分割前に既存挙動を固定するテストを追加する
 - 依存方向テストは最初から完全禁止にせず、既知例外を明示して徐々に減らす
 - 設定ファイル分割時は旧`config.yaml`の互換読込期間を設ける
+
+## 7. 設定スキーマ補完後の境界
+
+複数YAML化に先立ち、単一`config/config.yaml`の構造を維持したまま次を整理した。
+
+- `ServiceSettings`の全Optionalフィールド集合を廃止し、`type`ごとのfrozen
+  dataclassへ分離した
+- YAML読込時に未知service type、不要キー、必須キー不足、型・範囲不正を拒否する
+- 全`models.*.service`と、有効な機能が参照するmodel/serviceを`AppConfig`生成時に
+  一括検証する
+- StreamingとPlugin設定では、文字列から数値・booleanへの暗黙変換を行わない
+- 型付きCore領域の未知キーを完全なYAML path付きの設定エラーにする
+- Games固有設定型とparserは`app/plugins/games/settings.py`が所有し、Coreの
+  Composition Rootは型付き設定をPluginへ渡すだけとした
+- `plugins.registry`は動的ロードへ未接続の予約領域であり、非空ならwarningを出す
+- 未知Pluginの設定mappingはCoreが内部キーを検証しないopaque領域として保持する
+- loaderが生成するservices、models、voice profile、ranking weights、Plugin mappingと、
+  Characterのlist設定をimmutable化した
+
+### disabled時の参照検証
+
+`models.<key>.service`は、model定義自体の整合性として常に検証する。
+一方、`speech.enabled=false`、`memory.topic_memory.enabled=false`、
+`plugins.games.enabled=false`、`response_generator.type=dummy`の場合は、その機能だけが
+必要とするmodel/service参照を要求しない。無効化によって外部サービス設定が不要になる
+既存挙動を維持するためである。
+
+### 予約・deprecated設定
+
+`input_receivers`は型・strict validationを維持するが、現在の入力receiver選択は
+`YURA_WEB_CONVERSATION_ENABLED`などの起動時環境変数を使用する。入力システム全体の
+再設計を避けるため、本工程では予約設定として明記し、実行経路への接続は後続課題とする。
+
+`emotion_appraisal`は標準`app.__main__`のComposition Rootには接続されていない。
+`app/bootstrap/emotion_runtime.py`だけが同一YAMLを再読込する互換経路であり、
+`load_emotion_appraisal_settings()`はdeprecated warningを出す。複数設定ローダー導入時に
+`AppConfig`へ統合し、二重読込を廃止する。
+
+### 次工程
+
+今回、`config/config.yaml`の分割、キー移動、manifest/import、設定パス環境変数、
+相対パス基準の変更は行っていない。次工程では単一ファイル互換を維持する統合ローダーを
+追加し、トップレベルキー単位の重複拒否とsource情報を備えた上で段階的にYAMLを分割する。
+
+## 8. 複数YAMLローダー導入後の設定入口
+
+型変換より前段に`app/config/config_loader.py`を追加した。`load_raw_config(path)`は従来どおり
+単一のYAML mappingだけを読む低レベル関数であり、manifest解決は行わない。
+`load_app_config()`は`load_config_bundle()`を経由し、次の順でroot設定入口を決定する。
+
+1. `load_app_config(path)`の明示引数
+2. 空白除去後に空でない`AI_LIVER_CONFIG_PATH`
+3. 従来の`config/config.yaml`
+
+相対的な入口pathは現在の作業ディレクトリ基準で解決する。入口がdirectoryなら、その直下の
+`index.yaml`だけをmanifestとして読む。directory内のYAML自動走査は行わず、
+`index.yaml`がない、通常設定である、またはfileでない場合は設定エラーとする。
+明示的な空文字列pathは誤指定として拒否し、環境変数の空文字列は未指定として扱う。
+
+### 単一設定とmanifestの判定
+
+fileのroot mappingに`imports`がなければ従来の単一設定として扱う。ただし、
+`index.yaml`という名前のfileはmanifest専用とし、`imports`を必須とする。
+`imports`があればmanifestとして扱い、manifestのトップレベルには`imports`以外を
+許可しない。通常設定キーとの混在はownershipを曖昧にするため拒否する。
+
+manifestは次のようにトップレベルキーごとの所有fileを宣言する。
+
+```yaml
+imports:
+  app: runtime.yaml
+  trace: runtime.yaml
+  services: services.yaml
+```
+
+import値は空でない文字列pathに限定する。相対importはmanifest自身のdirectory基準、
+絶対importはそのまま解決する。project root外のimportとsymlinkは一律禁止せず、
+`Path.resolve()`後の実体pathを同一file判定に使う。
+
+### ownership、重複、循環
+
+同じfileを複数キーのownerに指定できるが、そのfileのトップレベルキー集合はmanifestで
+そのfileへ割り当てた集合と完全一致しなければならない。未割当キーの暗黙混入、指定キーの
+欠落、YAML mapping内の重複キー、複数ownerによる重複はすべて拒否し、deep merge、
+前勝ち、後勝ちは実装しない。同じ実体fileはローカルキャッシュから一度だけ読む。
+
+import先の`imports`、manifest自身へのimport、symlinkや相対path正規化後にmanifest自身と
+なるimportを拒否する。nested importsはownershipとsource追跡を単純に保つため未実装であり、
+将来対応する場合も循環グラフ検証と併せて設計する。
+
+現行`AppConfig`の必須トップレベルキーはmanifest統合時点で割当を検証する。
+`plugins`と`streaming`は任意である。`emotion_appraisal`は独立再読込のdeprecated経路に
+残り、`AppConfig`の公開fieldではないため、曖昧に無視せずmanifest import対象外として
+明示的に拒否する。単一設定内の互換キーとしては引き続き受理する。
+
+### source追跡とconfig_path
+
+`ConfigSourceBundle`は統合済みraw mapping、root入口の絶対path、トップレベルキーから
+実際のowner fileへの読み取り専用source mapを保持する。manifest構文と割当のエラーは
+manifestをsourceとし、import先のYAML・ownershipエラーはimport先fileをsourceとする。
+型・範囲・参照グラフのエラーは、エラーpathのトップレベルキーからownerを引き、
+たとえば`speech.service`なら`speech.yaml`を`ConfigError.source_file`へ設定する。
+
+`AppConfig.config_path`は単一file、manifest file、またはdirectory指定時に解決した
+`index.yaml`という「ユーザーまたは環境が指定したroot設定入口」の絶対pathを表す。
+import先fileには置き換えないため、Streaming Adminなど既存表示側の意味も維持される。
+
+### 互換範囲と次工程
+
+`config/config.yaml`、既存Factory、Composition Root、`AppConfig`の公開fieldは変更して
+いない。ログ、辞書、memory、run-of-showなど設定値中の相対path解決規則も変更しておらず、
+import元file基準への切替は行わない。環境別override、Plugin別YAML移行、deep merge、
+単一設定互換の廃止はいずれも未決定・未実装である。
+
+次工程では、このloaderを利用してまずruntime領域とcharacter領域の本番設定を段階的に
+分割する。移行中はlegacy単一設定との等価性をテストし、単一`config.yaml`廃止の可否は
+運用実績を確認してから別途決定する。
+
+## 9. runtime・character本番設定の分割
+
+複数YAML loaderの最初の本番利用として、`config/index.yaml`をroot manifestにし、
+次のownershipで設定を分割した。
+
+| owner file | トップレベルキー |
+| --- | --- |
+| `config/runtime.yaml` | `app`、`trace`、`input_receivers`、`confirmation` |
+| `config/character.yaml` | `character` |
+| `config/application.yaml` | `services`、`models`、`response_generator`、`llm_roles`、`speech`、`topic_classifier`、`memory`、`streaming`、`plugins` |
+
+`application.yaml`は今回個別分割しない領域の暫定集約fileであり、後続PRで領域を移すたびに
+縮小する。manifest import対象外の`emotion_appraisal`は現行単一設定にも存在せず、
+本工程では統合・追加していない。
+
+### 既定入口とlegacy互換
+
+環境変数も明示引数もない`load_app_config()`の既定入口は`config/index.yaml`へ切り替えた。
+`AI_LIVER_CONFIG_PATH`によるfile、manifest、directory指定と、明示引数が環境変数より
+優先される規則は維持する。directoryとして`config/`を指定した場合も同じ`index.yaml`を
+読む。
+
+`config/config.yaml`は削除・値変更・コメント変更を行わず、後方互換、比較検証、
+緊急切り戻し用として維持する。公開互換の`CONFIG_PATH`と、引数なしの低レベル
+`load_raw_config()`は引き続きこのlegacy fileを指す。したがって、次の入口を併存できる。
+
+- `load_app_config()`は本番manifest
+- `load_app_config(Path("config/index.yaml"))`は本番manifest
+- `load_app_config(Path("config"))`は本番manifest
+- `load_app_config(Path("config/config.yaml"))`はlegacy単一設定
+
+`AppConfig.config_path`は引き続きroot設定入口の絶対pathであり、通常起動とStreaming Adminは
+`config/index.yaml`、legacy明示指定は`config/config.yaml`を表示する。
+
+### 値、path、デプロイへの影響
+
+新しい3つのowner fileへは、最新`config/config.yaml`の値、character文章、配列順、
+設定コメントをそのまま配置した。timeout、retry、enabled、model、service、speaker ID、
+Streaming readinessを含め、設定値の最適化や変更は行っていない。
+
+manifest importは`index.yaml`基準で解決するが、ログ、発音辞書、memory、run-of-showなど
+設定値内の相対path規則は従来どおりである。owner file基準への変更は行っていない。
+
+リポジトリ内にRender設定fileや`config/config.yaml`を固定する起動コマンドは存在しないため、
+デプロイ設定は変更していない。既定入口がmanifestになったため追加環境変数は不要だが、
+外部管理の環境では`AI_LIVER_CONFIG_PATH=config/index.yaml`を明示しても同じ結果になる。
+
+### 検証と次工程
+
+本番4 YAMLの構文、重複キー、root mapping、import先存在、ownership完全一致、strict parser、
+参照グラフを実ファイルで検証する。legacyとmanifestは`config_path`を除く`AppConfig`全体に
+加え、service具体型、models、speech profile、memory、character、input receiver、
+confirmation、Streaming、Plugin、immutable mapping、tuple変換が等価であることを固定する。
+
+次工程は`speech`と`memory`を`application.yaml`から個別owner fileへ移す。
+環境別overrideと単一`config.yaml`廃止は未実装・未決定のままとする。
+
+## 10. speech・memory本番設定の分割
+
+本番manifestの次段階として、`speech`と`memory`を暫定集約
+`config/application.yaml`から分離した。
+
+| owner file | トップレベルキー |
+| --- | --- |
+| `config/runtime.yaml` | `app`、`trace`、`input_receivers`、`confirmation` |
+| `config/character.yaml` | `character` |
+| `config/speech.yaml` | `speech` |
+| `config/memory.yaml` | `memory` |
+| `config/application.yaml` | `services`、`models`、`response_generator`、`llm_roles`、`topic_classifier`、`streaming`、`plugins` |
+
+`config/index.yaml`はこのownershipをすべて明示し、各owner fileのトップレベルキー集合と
+manifest割当を完全一致させる。`application.yaml`から`speech`と`memory`は削除済みであり、
+重複ownershipやdeep mergeはない。
+
+### 値、参照、source追跡
+
+`speech.yaml`には有効状態、VoiceVox service参照、発音辞書path、speaker ID、全voice profile、
+player設定と既存コメントをそのまま移した。`memory.yaml`にはagent、relationship、topic
+memory設定と既存コメントをそのまま移した。値、配列順、コメントの要約・校正は行っていない。
+
+分割後も次の参照グラフを維持する。
+
+- `speech.service`から`services.voicevox`
+- `memory.topic_memory.database_service`から`services.topic_memory_database`
+- `memory.topic_memory.embedding_model`から`models.openai_embedding`
+- `memory.topic_memory.summary.model`から`models.openai_chat`
+
+speechの型・参照エラーは`config/speech.yaml`、memoryの型・参照エラーは
+`config/memory.yaml`を`ConfigError.source_file`として返す。参照先service/modelではなく、
+参照を定義したowner fileをsourceとする。
+
+発音辞書、agent memory、relationship memoryの設定値内相対path規則は変更していない。
+`config/pronunciation_dictionary.yaml`、memoryデータ、PostgreSQL store、Repository、
+DB migrationにも変更はない。
+
+### 互換運用と次工程
+
+通常起動のrootは引き続き`config/index.yaml`で、`AI_LIVER_CONFIG_PATH`の優先順位と
+`AppConfig.config_path`の意味も変更しない。legacy `config/config.yaml`は値・コメントとも
+無変更で維持し、raw mappingおよび`config_path`を除く`AppConfig`の等価性を固定する。
+
+次工程は`services`と`models`を`application.yaml`から個別owner fileへ分離する。
+`application.yaml`は後続PRでさらに縮小する。emotion appraisal統合、環境別override、
+単一`config.yaml`廃止は引き続き未対応・未決定とする。

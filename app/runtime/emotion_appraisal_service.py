@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections import OrderedDict
 from dataclasses import asdict, replace
 from time import monotonic
@@ -91,7 +92,12 @@ class EmotionAppraisalService:
             return self._attach(event, self._fallback(event), source="rule_based")
 
         text = self._event_text(event)
-        cache_key = self._cache_key(event, text)
+        cache_key = self._cache_key(
+            event,
+            text,
+            relationship=relationship,
+            recent_context=recent_context,
+        )
         cached = self._cached(cache_key)
         if cached is not None:
             self._metrics["cache_hit"] += 1
@@ -186,6 +192,7 @@ class EmotionAppraisalService:
             "talkativeness_delta": appraisal.talkativeness_delta,
             "reason": appraisal.reason,
             "cause": cause,
+            "relational_meaning": appraisal.relational_meaning.value,
             "confidence": appraisal.confidence,
             "source": source,
         }
@@ -237,13 +244,26 @@ class EmotionAppraisalService:
             self._cache.popitem(last=False)
 
     @staticmethod
-    def _cache_key(event: AgentEvent, text: str) -> str:
+    def _cache_key(
+        event: AgentEvent,
+        text: str,
+        *,
+        relationship: dict[str, object] | None,
+        recent_context: str,
+    ) -> str:
         return "|".join(
             (
                 event.event_type.value,
                 event.authority.role,
                 "1" if EmotionAppraisalService._directed_to_yura(event) else "0",
                 " ".join(text.split()).casefold(),
+                json.dumps(
+                    relationship or {},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    default=str,
+                ),
+                " ".join(recent_context.split()).casefold(),
             )
         )
 

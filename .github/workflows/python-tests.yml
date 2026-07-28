@@ -3,6 +3,7 @@ name: Python tests
 on:
   pull_request:
     branches:
+      - feature/core-development
       - develop
       - main
     paths-ignore:
@@ -28,7 +29,7 @@ jobs:
   pytest:
     name: pytest (Python 3.10)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -52,4 +53,4 @@ jobs:
       - name: Run tests
         env:
           PYTHONUNBUFFERED: "1"
-        run: pytest -q
+        run: pytest -x -vv

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 from queue import Queue
 
 import pytest
@@ -202,6 +203,72 @@ async def test_publish_events_keeps_all_user_text_events() -> None:
         "ダミー応答: 1つ目",
         "ダミー応答: 2つ目",
     ]
+
+
+@pytest.mark.asyncio
+async def test_repeated_interactions_update_emotion_without_speaking_every_time() -> None:
+    runtime = _create_runtime()
+    started_at = datetime(2026, 7, 27, tzinfo=timezone.utc)
+    first = AgentEvent(
+        event_type=AgentEventType.USER_INTERACTION,
+        occurred_at=started_at,
+        payload={
+            "stimulus_kind": "tap",
+            "stimulus_description": "ユーザーからそっと触れられた",
+            "contact_region": "center",
+            "interaction_burst_count": 1,
+        },
+    )
+    repeated = AgentEvent(
+        event_type=AgentEventType.USER_INTERACTION,
+        occurred_at=started_at + timedelta(seconds=1),
+        payload={
+            "stimulus_kind": "long_press",
+            "stimulus_description": "ユーザーからしばらく触れ続けられた",
+            "contact_region": "lower",
+            "interaction_burst_count": 3,
+        },
+    )
+
+    await runtime.publish_event(first)
+    first_group = await runtime.run_once()
+    before_repeated = runtime.agent_state.current_emotion
+    await runtime.publish_event(repeated)
+    after_repeated = runtime.agent_state.current_emotion
+    repeated_group = await runtime.run_once()
+
+    assert first_group is not None
+    assert any(plan.action_type == ActionType.SPEAK for plan in first_group.action_plans)
+    assert repeated_group is not None
+    assert repeated_group.action_plans == []
+    assert after_repeated.reactive.amusement > before_repeated.reactive.amusement
+    assert after_repeated != before_repeated
+
+
+@pytest.mark.asyncio
+async def test_interaction_activity_receives_updated_emotion_context() -> None:
+    generator = CapturingResponseGenerator()
+    runtime = _create_runtime(response_generator=generator)
+    event = AgentEvent(
+        event_type=AgentEventType.USER_INTERACTION,
+        payload={
+            "stimulus_kind": "tap",
+            "stimulus_description": "ユーザーからそっと触れられた",
+            "contact_region": "center",
+            "interaction_burst_count": 1,
+        },
+    )
+
+    await runtime.publish_event(event)
+    await runtime.run_once()
+
+    assert len(generator.activities) == 1
+    emotion = generator.activities[0].context["emotion"]
+    assert isinstance(emotion, dict)
+    assert emotion["current"]["reactive"]["surprise"] > 0.0
+    payload = generator.activities[0].context["event_payload"]
+    assert payload["contact_appraisal"]["reason"] == "contact_affection_received"
+    assert "boundary_stage" not in payload["contact_appraisal"]
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,18 @@
+emotion_appraisal:
+  enabled: true
+  mode: hybrid
+  llm_role: emotion_appraisal
+  timeout_seconds: 2.5
+  confidence_threshold: 0.55
+  weak_confidence_threshold: 0.40
+  fallback: rule_based
+  max_concurrency: 2
+  cache_ttl_seconds: 20.0
+  cache_max_entries: 256
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_seconds: 30.0
+  history:
+    max_entries: 200
+    retention_seconds: 7200.0
+    min_effective_delta: 0.02

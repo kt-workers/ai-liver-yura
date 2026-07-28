@@ -148,6 +148,17 @@ class ExecuteActionUsecase:
                 source_activity_id=action_plan.source_activity_id,
             )
             print(f"[{action_plan.action_type.value}] {action_plan.text}")
+            self._short_term_memory.add_speech(
+                text=action_plan.text,
+                activity_type=action_plan.action_type.value,
+            )
+            self._trace_logger.info(
+                "execute_action_usecase:speak:memory_saved",
+                action_id=action_plan.action_id,
+                source_activity_id=action_plan.source_activity_id,
+                text_length=len(action_plan.text),
+                reason="response_committed",
+            )
             playback_error = await self._play_speech(action_plan)
             await self._publish_speech_event(
                 AgentEventType.SPEECH_FINISHED, action_plan
@@ -158,27 +169,16 @@ class ExecuteActionUsecase:
                 source_activity_id=action_plan.source_activity_id,
             )
             if playback_error is None:
-                self._short_term_memory.add_speech(
-                    text=action_plan.text,
-                    activity_type=action_plan.action_type.value,
-                )
-                self._trace_logger.info(
-                    "execute_action_usecase:speak:memory_saved",
-                    action_id=action_plan.action_id,
-                    source_activity_id=action_plan.source_activity_id,
-                    text_length=len(action_plan.text),
-                    reason="speak_completed",
-                )
                 if self._background_topic_memory:
                     self._schedule_topic_history(action_plan)
                 else:
                     await self._record_topic_history(action_plan)
             else:
                 self._trace_logger.info(
-                    "execute_action_usecase:speak:memory_not_saved",
+                    "execute_action_usecase:speak:topic_memory_not_saved",
                     action_id=action_plan.action_id,
                     source_activity_id=action_plan.source_activity_id,
-                    reason="speak_failed",
+                    reason="audio_delivery_failed",
                 )
             self._trace_logger.write(
                 "execute_action_usecase:speak:finished",

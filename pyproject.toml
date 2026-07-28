@@ -7,6 +7,12 @@ requires-python = ">=3.10,<3.11"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "unit: 外部I/Oや実時間待機を伴わない高速な単体テスト",
+    "integration: 複数コンポーネント間の接続を検証する統合テスト",
+    "slow: 実時間待機、スレッド待機、長時間処理を伴う低速テスト",
+    "external: DB、HTTP、外部サービスなど実環境依存を伴うテスト",
+]
 
 [tool.ruff]
 line-length = 100

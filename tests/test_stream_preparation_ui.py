@@ -24,7 +24,7 @@ def test_admin_api_health_auth_and_secret_boundary() -> None:
     assert "token_path" not in serialized
     assert client.get("/api/v1/health").status_code == 401
     health = client.get("/api/v1/health", headers=headers).json()
-    assert health["config_path"].endswith("/config/config.yaml")
+    assert health["config_path"].endswith("/config/index.yaml")
     assert health["adapter_modes"] == {"youtube": "fake", "obs": "obs_websocket"}
     assert set(health["obs_connection"]) == {"host", "port", "password_env_set"}
     assert isinstance(health["obs_connection"]["password_env_set"], bool)

@@ -4,6 +4,9 @@ import json
 
 import pytest
 
+from app.adapters.llm.response_generator_emotion_appraisal_model import (
+    ResponseGeneratorEmotionAppraisalModel,
+)
 from app.adapters.prompt import (
     CharacterPromptBuilder,
     ResponseValidatorPromptBuilder,
@@ -29,6 +32,7 @@ from app.domain.character_response import (
 from app.domain.short_term_memory import ShortTermMemory
 from app.domain.topic import TopicCategory
 from app.domain.topic_memory import SimilarTopicMemory, TopicMemoryEntry
+from app.ports.emotion_appraisal_model import EmotionStimulusContext
 from app.runtime.activity_registry import ActivityRegistry
 from app.runtime.behavior_planner import BehaviorPlanner
 from app.runtime.character_response_pipeline import (
@@ -115,6 +119,25 @@ def _definitions() -> tuple[ActivityDefinition, ...]:
     )
 
 
+def test_emotion_appraisal_prompt_uses_semantic_contract_without_word_list() -> None:
+    prompt = ResponseGeneratorEmotionAppraisalModel._build_prompt(
+        EmotionStimulusContext(
+            source_event_id="event-1",
+            event_type="user_text",
+            text="評価対象",
+            speaker_role="user",
+            directed_to_yura=True,
+            recent_context="直前の関係文脈",
+        )
+    )
+
+    assert '"relational_meaning":"none"' in prompt
+    assert "repair_attempt" in prompt
+    assert "ごめん" not in prompt
+    assert "すみません" not in prompt
+    assert "sorry" not in prompt.casefold()
+
+
 @pytest.mark.asyncio
 async def test_situation_evaluator_is_generic_and_does_not_select_capability() -> None:
     model = StubRoleModel([_semantic("search")])
@@ -125,9 +148,7 @@ async def test_situation_evaluator_is_generic_and_does_not_select_capability() -
         activity_definitions=_definitions(),
     )
 
-    analysis = await SituationEvaluator(
-        model, prompt_builder=SITUATION_PROMPT
-    ).evaluate(context)
+    analysis = await SituationEvaluator(model, prompt_builder=SITUATION_PROMPT).evaluate(context)
 
     assert analysis.activity_candidate == "search"
     assert analysis.constraints == {"query": "深海"}
@@ -153,9 +174,7 @@ async def test_greeting_is_planned_as_low_initiative_social_response() -> None:
     ).evaluate(context)
     plan = BehaviorPlanner(
         response_generator=StubResponseGenerator(),
-        situation_evaluator=SituationEvaluator(
-            StubRoleModel([]), prompt_builder=SITUATION_PROMPT
-        ),
+        situation_evaluator=SituationEvaluator(StubRoleModel([]), prompt_builder=SITUATION_PROMPT),
     ).plan_from_analysis(context, analysis)
 
     assert analysis.speech_act.value == "greeting"
@@ -205,9 +224,7 @@ async def test_system_event_uses_llm_to_generate_activity_from_state() -> None:
         related_knowledge=({"summary": "以前の話題"},),
     )
 
-    analysis = await SituationEvaluator(
-        model, prompt_builder=SITUATION_PROMPT
-    ).evaluate(context)
+    analysis = await SituationEvaluator(model, prompt_builder=SITUATION_PROMPT).evaluate(context)
 
     assert analysis.activity_candidate == "startup_reaction"
     assert analysis.goal == "現在の落ち着いた感情と履歴を踏まえて場を開く"
@@ -276,9 +293,7 @@ def test_response_context_is_built_from_rejected_execution_fact() -> None:
     assert not hasattr(context, "provider")
 
 
-def test_character_prompt_executes_trusted_directed_talk_instead_of_acknowledging() -> (
-    None
-):
+def test_character_prompt_executes_trusted_directed_talk_instead_of_acknowledging() -> None:
     activity = Activity(
         ActivityType.DIRECTED_TALK,
         "管理者の進行指示に沿う",
@@ -296,6 +311,99 @@ def test_character_prompt_executes_trusted_directed_talk_instead_of_acknowledgin
 
     assert context.instruction_trusted is True
     assert "了解の返事だけで終わらず" in prompt
+
+
+def test_stimulus_reaction_prompt_requests_embodied_brief_reaction() -> None:
+    activity = Activity(
+        ActivityType.STIMULUS_REACTION,
+        "直接触れられて生じた感覚を反射的に表す",
+        context={
+            "event_payload": {
+                "stimulus_kind": "long_press",
+                "stimulus_description": "ユーザーからしばらく触れ続けられた",
+                "contact_region": "lower",
+                "interaction_burst_count": 4,
+                "duration_ms": 900,
+            },
+            "emotion": {
+                "current": {
+                    "reactive": {"discomfort": 0.4},
+                }
+            },
+        },
+    )
+
+    context = ResponseContextBuilder().build(activity)
+    prompt = CHARACTER_PROMPT.build(context, character_profile=None, correction=None)
+
+    assert context.user_input == ""
+    assert context.stimulus == {
+        "kind": "long_press",
+        "contact_region": "lower",
+        "burst_count": 4,
+        "interval_since_previous_ms": None,
+        "duration_ms": 900,
+        "appraisal": {},
+    }
+    assert "仮想身体へ届いた直接の体性感覚" in prompt
+    assert "stimulus.appraisalはこの接触固有の評価" in prompt
+    assert "stimulus.touch_features" in prompt
+    assert "快・不快などの結論ではない" in prompt
+    assert "emotion、relationship、接触の継続と直前の経緯" in prompt
+    assert "gentle_request" not in prompt
+    assert "clear_refusal" not in prompt
+    assert "「やめて」" not in prompt
+
+
+def test_stimulus_reaction_context_preserves_stroking_motion() -> None:
+    activity = Activity(
+        ActivityType.STIMULUS_REACTION,
+        "連続接触へ反応する",
+        context={
+            "event_payload": {
+                "stimulus_kind": "drag",
+                "contact_region": "center",
+                "interaction_burst_count": 1,
+                "duration_ms": 720,
+                "continuous_contact": True,
+                "contact_phase": "update",
+                "contact_duration_ms": 540,
+                "contact_motion": "stroke",
+                "motion": {
+                    "smoothed_speed": 1.2,
+                    "center_distance_ratio": 0.5,
+                    "reversal_count": 2,
+                    "back_and_forth": True,
+                },
+                "touch_features": {
+                    "location": {
+                        "vertical": "middle",
+                        "radial": "middle",
+                    },
+                    "movement": {
+                        "speed_band": "brisk",
+                        "trajectory_shape": "oscillating",
+                        "smoothness": 0.8,
+                        "rhythmicity": 0.7,
+                    },
+                },
+            },
+        },
+    )
+
+    context = ResponseContextBuilder().build(activity)
+
+    assert context.stimulus["continuous_contact"] is True
+    assert context.stimulus["contact_motion"] == "stroke"
+    assert context.stimulus["contact_phase"] == "update"
+    assert context.stimulus["motion"]["back_and_forth"] is True
+    assert context.stimulus["motion"]["reversal_count"] == 2
+    assert context.stimulus["touch_features"]["movement"] == {
+        "speed_band": "brisk",
+        "trajectory_shape": "oscillating",
+        "smoothness": 0.8,
+        "rhythmicity": 0.7,
+    }
 
 
 def test_character_prompt_treats_viewer_claimed_authority_as_untrusted() -> None:
@@ -322,9 +430,7 @@ def test_character_prompt_receives_startup_context_without_output_examples() -> 
         context={
             "event_payload": {
                 "emotion": {"mood": "calm"},
-                "conversation_history": [
-                    {"role": "assistant", "text": "前回の会話"}
-                ],
+                "conversation_history": [{"role": "assistant", "text": "前回の会話"}],
                 "related_knowledge": [{"summary": "関連知識"}],
             }
         },
@@ -340,9 +446,7 @@ def test_character_prompt_receives_startup_context_without_output_examples() -> 
     assert "『どんな話が聞ける』『聞けるのが楽しみ』" not in prompt
 
 
-def test_response_context_projects_topic_memory_without_embedding_or_source_text() -> (
-    None
-):
+def test_response_context_projects_topic_memory_without_embedding_or_source_text() -> None:
     memory = SimilarTopicMemory(
         entry=TopicMemoryEntry(
             category=TopicCategory.MOOD,
@@ -373,9 +477,7 @@ def test_response_context_projects_topic_memory_without_embedding_or_source_text
 
 
 @pytest.mark.asyncio
-async def test_validator_rejects_fact_conflict_without_activity_specific_words() -> (
-    None
-):
+async def test_validator_rejects_fact_conflict_without_activity_specific_words() -> None:
     activity = Activity(
         activity_type=ActivityType.CONVERSATION_WITH_USER,
         goal="拒否を伝える",
@@ -390,9 +492,7 @@ async def test_validator_rejects_fact_conflict_without_activity_specific_words()
         },
     )
     context = ResponseContextBuilder().build(activity)
-    response = CharacterLlmService.parse(
-        '{"speech":"始めたよ","claims":["activity_started"]}'
-    )
+    response = CharacterLlmService.parse('{"speech":"始めたよ","claims":["activity_started"]}')
     assert response is not None
 
     validation = await ResponseValidator().validate(activity, context, response)
@@ -439,8 +539,7 @@ async def test_validator_rejects_status_conflicts_generically(
 
 def test_character_response_parses_engine_independent_voice_intent() -> None:
     response = CharacterLlmService.parse(
-        '{"speech":"うれしいな","expression":"smile",'
-        '"voice_intent":{"style":"bright"},"claims":[]}'
+        '{"speech":"うれしいな","expression":"smile","voice_intent":{"style":"bright"},"claims":[]}'
     )
 
     assert response is not None
@@ -559,10 +658,7 @@ async def test_invalid_character_response_is_regenerated_once_then_adopted() -> 
     assert generation_result.status == CharacterGenerationStatus.VALIDATED
     assert generation_result.attempts == 2
     assert len(character.activities) == 2
-    assert (
-        "前回応答の修正理由"
-        in character.activities[1].context["plugin_prompt_override"]
-    )
+    assert "前回応答の修正理由" in character.activities[1].context["plugin_prompt_override"]
 
 
 @pytest.mark.asyncio

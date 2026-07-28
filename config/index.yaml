@@ -1,0 +1,25 @@
+imports:
+  app: runtime.yaml
+  trace: runtime.yaml
+  input_receivers: runtime.yaml
+  confirmation: runtime.yaml
+
+  character: character.yaml
+
+  speech: speech.yaml
+  memory: memory.yaml
+
+  services: services.yaml
+  models: models.yaml
+
+  response_generator: llm.yaml
+  llm_roles: llm.yaml
+  topic_classifier: llm.yaml
+
+  emotion_appraisal: emotion.yaml
+
+  streaming: streaming.yaml
+  plugins: plugins/index.yaml
+
+environments:
+  local: environments/local.example.yaml
