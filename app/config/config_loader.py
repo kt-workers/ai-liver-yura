@@ -12,6 +12,12 @@ import yaml
 from yaml.constructor import ConstructorError
 from yaml.nodes import MappingNode
 
+from app.config.environment_override import (
+    parse_environment_paths,
+    reject_legacy_environment,
+    resolve_config_environment,
+    resolve_environment_file,
+)
 from app.config.errors import ConfigError
 from app.config.strict import require_mapping, require_string_value
 
@@ -214,6 +220,7 @@ def load_config_bundle(
     """Load a legacy file or merge a strict top-level ownership manifest."""
 
     root_path, directory_input = resolve_config_entry(config_path)
+    selected_environment = resolve_config_environment()
     root_values = load_raw_config(root_path)
     if "imports" not in root_values:
         if directory_input or root_path.name == MANIFEST_FILE_NAME:
@@ -223,6 +230,7 @@ def load_config_bundle(
                 actual="missing",
                 source_file=str(root_path),
             )
+        reject_legacy_environment(root_path, selected_environment)
         return ConfigSourceBundle(
             root_path=root_path,
             values=MappingProxyType(dict(root_values)),
@@ -230,24 +238,31 @@ def load_config_bundle(
                 {key: root_path for key in root_values}
             ),
         )
-    return _load_manifest_bundle(root_path, root_values)
+    return _load_manifest_bundle(root_path, root_values, selected_environment)
 
 
 def _load_manifest_bundle(
     manifest_path: Path,
     manifest_values: dict[str, Any],
+    selected_environment: str | None,
 ) -> ConfigSourceBundle:
-    extra_manifest_keys = set(manifest_values) - {"imports"}
+    extra_manifest_keys = set(manifest_values) - {"imports", "environments"}
     if extra_manifest_keys:
         key = sorted(extra_manifest_keys)[0]
         raise ConfigError(
             path=key,
-            expected="manifest containing only imports",
+            expected="manifest containing only imports and optional environments",
             actual="mixed regular setting",
             source_file=str(manifest_path),
         )
 
     imports = _manifest_imports(manifest_path, manifest_values["imports"])
+    environments = parse_environment_paths(
+        manifest_path,
+        manifest_values.get("environments"),
+    )
+    resolve_environment_file(manifest_path, environments, selected_environment)
+
     missing = REQUIRED_TOP_LEVEL_KEYS - set(imports)
     if missing:
         key = sorted(missing)[0]
