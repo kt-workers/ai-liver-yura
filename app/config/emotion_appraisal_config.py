@@ -21,7 +21,7 @@ from app.domain.emotions import (
 def load_emotion_appraisal_settings(value: object) -> EmotionAppraisalSettings:
     """emotion_appraisal mappingをAppConfig用の型付き設定へ変換する。"""
 
-    if value is None:
+    if value is None or value == "":
         return EmotionAppraisalSettings()
 
     config = require_mapping(value, "emotion_appraisal")
