@@ -60,6 +60,9 @@ FIELD_METADATA: dict[str, dict[str, dict[str, Any]]] = {
         "timer_enabled": {"label": "タイマー入力", "type": "boolean", "reload_policy": "restart"},
         "confirmation_timeout_seconds": {"label": "確認待ち時間（秒）", "type": "integer", "minimum": 1, "reload_policy": "next_request"},
     },
+    "character": {
+        "casual_speech": {"label": "くだけた話し方", "type": "boolean", "reload_policy": "restart"},
+    },
 }
 
 
@@ -69,6 +72,60 @@ def utc_now() -> str:
 
 def initial_state() -> dict[str, Any]:
     return {"revision": 1, "updated_at": utc_now(), "values": deepcopy(DEFAULT_VALUES), "history": []}
+
+
+def expected_type(category: str, key: str) -> str:
+    explicit = FIELD_METADATA.get(category, {}).get(key, {}).get("type")
+    if explicit:
+        return str(explicit)
+    default = DEFAULT_VALUES.get(category, {}).get(key)
+    if isinstance(default, bool):
+        return "boolean"
+    if isinstance(default, int):
+        return "integer"
+    if isinstance(default, float):
+        return "number"
+    return "string"
+
+
+def coerce_boolean(value: Any) -> Any:
+    if isinstance(value, bool):
+        return value
+    if value in (0, "0", "false", "False", "off", "OFF"):
+        return False
+    if value in (1, "1", "true", "True", "on", "ON"):
+        return True
+    return value
+
+
+def normalize_values(category: str, values: dict[str, Any]) -> dict[str, Any]:
+    normalized = deepcopy(values)
+    for key in DEFAULT_VALUES.get(category, {}):
+        if key in normalized and expected_type(category, key) == "boolean":
+            normalized[key] = coerce_boolean(normalized[key])
+    return normalized
+
+
+def normalize_state(state: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    changed = False
+    values = state.get("values")
+    if not isinstance(values, dict):
+        return initial_state(), True
+    for category, defaults in DEFAULT_VALUES.items():
+        category_values = values.get(category)
+        if not isinstance(category_values, dict):
+            values[category] = deepcopy(defaults)
+            changed = True
+            continue
+        normalized = normalize_values(category, category_values)
+        for key, default in defaults.items():
+            if key not in normalized:
+                normalized[key] = deepcopy(default)
+                changed = True
+        if normalized != category_values:
+            values[category] = normalized
+            changed = True
+    return state, changed
 
 
 class ConfigStore:
@@ -83,7 +140,11 @@ class ConfigStore:
             value = json.loads(STATE_PATH.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             value = initial_state()
-        return value if isinstance(value, dict) else initial_state()
+        state = value if isinstance(value, dict) else initial_state()
+        state, changed = normalize_state(state)
+        if changed:
+            self._write(state)
+        return state
 
     def _write(self, state: dict[str, Any]) -> None:
         temp = STATE_PATH.with_suffix(".tmp")
@@ -99,14 +160,15 @@ class ConfigStore:
             state = self._read()
             if int(state.get("revision", 0)) != expected_revision:
                 raise ConflictError("設定が別の画面またはプロセスで更新されています。再読込してください。")
-            errors = validate_values(category, values)
+            normalized = normalize_values(category, values)
+            errors = validate_values(category, normalized)
             if errors:
                 raise ValidationError(errors)
             before = deepcopy(state["values"].get(category, {}))
-            state["values"][category] = deepcopy(values)
+            state["values"][category] = deepcopy(normalized)
             state["revision"] = expected_revision + 1
             state["updated_at"] = utc_now()
-            state.setdefault("history", []).insert(0, {"revision": state["revision"], "category": category, "saved_at": state["updated_at"], "before": before, "after": deepcopy(values)})
+            state.setdefault("history", []).insert(0, {"revision": state["revision"], "category": category, "saved_at": state["updated_at"], "before": before, "after": deepcopy(normalized)})
             state["history"] = state["history"][:30]
             self._write(state)
             return deepcopy(state)
@@ -128,7 +190,7 @@ def metadata_for(category: str, values: dict[str, Any]) -> list[dict[str, Any]]:
     for key, value in values.items():
         meta = deepcopy(definitions.get(key, {}))
         meta.setdefault("label", key.replace("_", " "))
-        meta.setdefault("type", "boolean" if isinstance(value, bool) else "integer" if isinstance(value, int) else "string")
+        meta.setdefault("type", expected_type(category, key))
         meta.update({"key": key, "value": value, "source_file": f"{category}.yaml", "reload_policy": meta.get("reload_policy", "restart")})
         result.append(meta)
     return result
@@ -144,13 +206,16 @@ def validate_values(category: str, values: dict[str, Any]) -> list[dict[str, str
             errors.append({"field": key, "message": "必須項目です。"})
             continue
         value = values[key]
-        if isinstance(expected_value, bool) and not isinstance(value, bool):
-            errors.append({"field": key, "message": "真偽値で入力してください。"})
-        elif isinstance(expected_value, int) and (not isinstance(value, int) or isinstance(value, bool)):
+        field_type = expected_type(category, key)
+        if field_type == "boolean" and not isinstance(value, bool):
+            errors.append({"field": key, "message": "オンまたはオフを指定してください。"})
+        elif field_type == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
             errors.append({"field": key, "message": "整数で入力してください。"})
-        elif isinstance(expected_value, str) and not isinstance(value, str):
+        elif field_type in {"string", "select", "reference", "path"} and not isinstance(value, str):
             errors.append({"field": key, "message": "文字列で入力してください。"})
-    if category == "speech" and isinstance(values.get("speaker_id"), int) and values["speaker_id"] < 0:
+        elif isinstance(expected_value, float) and not isinstance(value, (int, float)):
+            errors.append({"field": key, "message": "数値で入力してください。"})
+    if category == "speech" and isinstance(values.get("speaker_id"), int) and not isinstance(values.get("speaker_id"), bool) and values["speaker_id"] < 0:
         errors.append({"field": "speaker_id", "message": "0以上を指定してください。"})
     return errors
 
@@ -169,20 +234,22 @@ class ConfigConsoleService:
         if values is None:
             raise KeyError(category)
         definition = next(item for item in CATEGORY_DEFINITIONS if item["id"] == category)
-        return {"category": definition, "revision": state["revision"], "updated_at": state["updated_at"], "fields": metadata_for(category, values), "values": values, "validation": {"valid": not validate_values(category, values), "errors": validate_values(category, values)}}
+        errors = validate_values(category, values)
+        return {"category": definition, "revision": state["revision"], "updated_at": state["updated_at"], "fields": metadata_for(category, values), "values": values, "validation": {"valid": not errors, "errors": errors}}
 
     def validate(self, payload: dict[str, Any]) -> dict[str, Any]:
         category = str(payload.get("category") or "")
         values = payload.get("values")
         if not isinstance(values, dict):
             raise ValidationError([{"field": "values", "message": "設定値が不正です。"}])
-        errors = validate_values(category, values)
-        return {"valid": not errors, "errors": errors, "reload_plan": reload_plan(category)}
+        normalized = normalize_values(category, values)
+        errors = validate_values(category, normalized)
+        return {"valid": not errors, "errors": errors, "values": normalized, "reload_plan": reload_plan(category)}
 
     def save(self, category: str, payload: dict[str, Any]) -> dict[str, Any]:
         values = payload.get("values")
         revision = payload.get("revision")
-        if not isinstance(values, dict) or not isinstance(revision, int):
+        if not isinstance(values, dict) or not isinstance(revision, int) or isinstance(revision, bool):
             raise ValidationError([{"field": "request", "message": "revisionとvaluesが必要です。"}])
         state = self.store.save(category, values, revision)
         return {"saved": True, "revision": state["revision"], "updated_at": state["updated_at"], "reload_plan": reload_plan(category)}
@@ -200,7 +267,7 @@ def reload_plan(category: str) -> dict[str, Any]:
 
 def handler_for(service: ConfigConsoleService) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
-        server_version = "YuraConfigConsole/1.0"
+        server_version = "YuraConfigConsole/1.1"
 
         def do_GET(self) -> None:  # noqa: N802
             path = urlparse(self.path).path
@@ -285,7 +352,9 @@ def handler_for(service: ConfigConsoleService) -> type[BaseHTTPRequestHandler]:
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", f"{content_type}; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Cache-Control", "no-store, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
             self.end_headers()
             self.wfile.write(body)
 
