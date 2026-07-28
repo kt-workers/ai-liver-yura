@@ -13,7 +13,9 @@ from yaml.constructor import ConstructorError
 from yaml.nodes import MappingNode
 
 from app.config.environment_override import (
+    apply_override_operations,
     parse_environment_paths,
+    parse_override_operations,
     reject_legacy_environment,
     resolve_config_environment,
     resolve_environment_file,
@@ -50,13 +52,27 @@ RESERVED_TOP_LEVEL_KEYS = frozenset()
 
 @dataclass(frozen=True, slots=True)
 class ConfigSourceBundle:
-    """Merged raw settings and their top-level source ownership."""
+    """Merged raw settings and their source ownership."""
 
     root_path: Path
     values: Mapping[str, Any]
     source_by_top_level_key: Mapping[str, Path]
+    source_by_yaml_path: Mapping[str, Path]
 
     def source_for(self, yaml_path: str) -> Path:
+        direct = self.source_by_yaml_path.get(yaml_path)
+        if direct is not None:
+            return direct
+
+        best_match: tuple[int, Path] | None = None
+        for configured_path, source in self.source_by_yaml_path.items():
+            if yaml_path.startswith(f"{configured_path}."):
+                candidate = (len(configured_path), source)
+                if best_match is None or candidate[0] > best_match[0]:
+                    best_match = candidate
+        if best_match is not None:
+            return best_match[1]
+
         top_level_key = yaml_path.split(".", maxsplit=1)[0]
         return self.source_by_top_level_key.get(top_level_key, self.root_path)
 
@@ -237,6 +253,7 @@ def load_config_bundle(
             source_by_top_level_key=MappingProxyType(
                 {key: root_path for key in root_values}
             ),
+            source_by_yaml_path=MappingProxyType({}),
         )
     return _load_manifest_bundle(root_path, root_values, selected_environment)
 
@@ -261,7 +278,11 @@ def _load_manifest_bundle(
         manifest_path,
         manifest_values.get("environments"),
     )
-    resolve_environment_file(manifest_path, environments, selected_environment)
+    environment_path = resolve_environment_file(
+        manifest_path,
+        environments,
+        selected_environment,
+    )
 
     missing = REQUIRED_TOP_LEVEL_KEYS - set(imports)
     if missing:
@@ -328,10 +349,18 @@ def _load_manifest_bundle(
         merged[key] = cache[imported_path][key]
         sources[key] = imported_path
 
+    path_sources: dict[str, Path] = {}
+    if environment_path is not None:
+        raw_environment = load_raw_config(environment_path)
+        operations = parse_override_operations(environment_path, raw_environment)
+        merged = apply_override_operations(merged, operations, environment_path)
+        path_sources = {operation.path: environment_path for operation in operations}
+
     return ConfigSourceBundle(
         root_path=manifest_path,
         values=MappingProxyType(merged),
         source_by_top_level_key=MappingProxyType(sources),
+        source_by_yaml_path=MappingProxyType(path_sources),
     )
 
 
