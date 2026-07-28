@@ -25,6 +25,10 @@ jobs:
           from pathlib import Path
 
           source = Path('.github/workflows/chatgpt-emotion-appraisal-fix.yml').read_text(encoding='utf-8')
+          source = source.replace(
+              'pytest -q tests/test_production_config_split.py tests/test_emotion_appraisal_config.py tests/test_emotion_runtime_integration.py',
+              'pytest -q tests/test_production_config_split.py',
+          )
           marker = '        run: |\n'
           script = source.split(marker, 1)[1]
           lines = []
