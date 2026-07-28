@@ -53,19 +53,4 @@ jobs:
       - name: Run tests
         env:
           PYTHONUNBUFFERED: "1"
-        shell: bash
-        run: |
-          set +e
-          pytest -x -vv 2>&1 | tee pytest-output.txt
-          status=${PIPESTATUS[0]}
-          echo "$status" > pytest-status.txt
-          exit "$status"
-
-      - name: Upload pytest output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dependency-pytest-output
-          path: |
-            pytest-output.txt
-            pytest-status.txt
+        run: pytest -x -vv
