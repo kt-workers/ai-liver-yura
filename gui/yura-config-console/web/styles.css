@@ -17,8 +17,8 @@
 * { box-sizing: border-box; }
 html, body { min-width: 320px; min-height: 100%; margin: 0; }
 body {
-  min-height: 100vh;
-  overflow-x: hidden;
+  min-height: 100dvh;
+  overflow: hidden;
   background: #08283a;
 }
 button, input, select { font: inherit; }
@@ -30,8 +30,13 @@ p, h1, h2, h3 { margin-top: 0; }
   position: fixed;
   inset: 0;
   z-index: 0;
+  width: 100vw;
+  height: 100dvh;
+  min-height: 100dvh;
   overflow: hidden;
   pointer-events: none;
+  contain: paint;
+  transform: translateZ(0);
   background:
     radial-gradient(ellipse at 55% -5%, rgba(232,255,252,.78) 0 7%, rgba(116,213,225,.34) 20%, transparent 40%),
     linear-gradient(180deg, #0d5670 0%, #0c4860 28%, #0a364b 58%, #071f31 100%);
@@ -295,6 +300,7 @@ main {
 .toast.error { border-color: rgba(255,154,165,.55); background: rgba(93,35,47,.96); }
 
 @media (max-width: 1180px) {
+  body { overflow-x: hidden; overflow-y: auto; }
   main { height: auto; min-height: calc(100dvh - 108px); }
   .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .workspace { grid-template-columns: 230px minmax(0, 1fr); grid-template-rows: auto auto; }
@@ -304,7 +310,6 @@ main {
 }
 
 @media (max-width: 860px) {
-  .seascape { position: absolute; min-height: 100%; }
   .topbar { flex-wrap: wrap; padding: 15px 20px; }
   .topbar-actions { width: 100%; flex-wrap: wrap; }
   .connection { flex: 1 1 auto; }
