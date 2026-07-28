@@ -33,6 +33,7 @@ SPEECH_PATH = CONFIG_DIRECTORY / "speech.yaml"
 MEMORY_PATH = CONFIG_DIRECTORY / "memory.yaml"
 SERVICES_PATH = CONFIG_DIRECTORY / "services.yaml"
 MODELS_PATH = CONFIG_DIRECTORY / "models.yaml"
+LLM_PATH = CONFIG_DIRECTORY / "llm.yaml"
 APPLICATION_PATH = CONFIG_DIRECTORY / "application.yaml"
 
 
@@ -45,13 +46,8 @@ def test_production_yaml_files_are_valid_mappings() -> None:
         MEMORY_PATH: {"memory"},
         SERVICES_PATH: {"services"},
         MODELS_PATH: {"models"},
-        APPLICATION_PATH: {
-            "response_generator",
-            "llm_roles",
-            "topic_classifier",
-            "streaming",
-            "plugins",
-        },
+        LLM_PATH: {"response_generator", "llm_roles", "topic_classifier"},
+        APPLICATION_PATH: {"streaming", "plugins"},
     }
     for path, keys in expected_keys.items():
         assert set(load_raw_config(path)) == keys
@@ -80,6 +76,9 @@ def test_production_manifest_matches_legacy_config() -> None:
     )
     assert type(legacy.character.likes) is type(production.character.likes)
     assert legacy.models == production.models
+    assert legacy.response_generator == production.response_generator
+    assert legacy.llm_roles == production.llm_roles
+    assert legacy.topic_classifier == production.topic_classifier
     assert legacy.speech == production.speech
     assert legacy.memory == production.memory
     assert legacy.input_receivers == production.input_receivers
@@ -98,13 +97,9 @@ def test_production_manifest_ownership_sources() -> None:
     assert bundle.source_by_top_level_key["memory"] == MEMORY_PATH.resolve()
     assert bundle.source_by_top_level_key["services"] == SERVICES_PATH.resolve()
     assert bundle.source_by_top_level_key["models"] == MODELS_PATH.resolve()
-    for key in (
-        "response_generator",
-        "llm_roles",
-        "topic_classifier",
-        "streaming",
-        "plugins",
-    ):
+    for key in ("response_generator", "llm_roles", "topic_classifier"):
+        assert bundle.source_by_top_level_key[key] == LLM_PATH.resolve()
+    for key in ("streaming", "plugins"):
         assert bundle.source_by_top_level_key[key] == APPLICATION_PATH.resolve()
 
 
@@ -196,6 +191,23 @@ def test_production_config_composes_runtime_streaming_speech_and_admin() -> None
                 dimension="invalid"
             ),
             "models.openai_embedding.dimension",
+        ),
+        (
+            "llm.yaml",
+            lambda raw: raw["response_generator"].update(model="unknown_model"),
+            "response_generator.model",
+        ),
+        (
+            "llm.yaml",
+            lambda raw: raw["llm_roles"]["character"].update(
+                temperature="invalid"
+            ),
+            "llm_roles.character.temperature",
+        ),
+        (
+            "llm.yaml",
+            lambda raw: raw["topic_classifier"].update(model="unknown_model"),
+            "topic_classifier.model",
         ),
     ],
 )
