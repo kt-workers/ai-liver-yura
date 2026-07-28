@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 WEB_ROOT = Path(__file__).parent / "web"
 MAX_STIMULUS_BODY_BYTES = 2048
 SUPPORTED_STIMULI = frozenset({"tap", "double_tap", "long_press", "drag"})
+DRAG_STREAM_PHASES = frozenset({"start", "update", "end"})
 
 
 class StimulusGateway:
@@ -28,11 +29,13 @@ class StimulusGateway:
         port: int,
         *,
         minimum_interval_seconds: float = 0.75,
+        drag_stream_minimum_interval_seconds: float = 0.10,
         send_datagram: Callable[[bytes, tuple[str, int]], None] | None = None,
     ) -> None:
         self._host = host
         self._port = port
         self._minimum_interval_seconds = minimum_interval_seconds
+        self._drag_stream_minimum_interval_seconds = drag_stream_minimum_interval_seconds
         self._send_datagram = send_datagram or self._send_udp
         self._lock = threading.Lock()
         self._last_sent_at_by_kind: dict[str, float] = {}
@@ -48,17 +51,34 @@ class StimulusGateway:
         *,
         start_position: tuple[float, float] | None = None,
         duration_ms: float | None = None,
+        gesture_id: str | None = None,
+        gesture_phase: str | None = None,
+        gesture_sequence: int | None = None,
+        particle_zone: dict[str, object] | None = None,
     ) -> bool:
         if kind not in SUPPORTED_STIMULI:
             return False
         now = monotonic()
+        is_drag_stream = (
+            kind == "drag"
+            and gesture_id is not None
+            and gesture_phase in DRAG_STREAM_PHASES
+            and gesture_sequence is not None
+        )
+        rate_limit_key = f"drag:{gesture_id}" if is_drag_stream else kind
+        minimum_interval = (
+            self._drag_stream_minimum_interval_seconds
+            if is_drag_stream
+            else self._minimum_interval_seconds
+        )
         with self._lock:
-            last_sent_at = self._last_sent_at_by_kind.get(
-                kind, -self._minimum_interval_seconds
-            )
-            if now - last_sent_at < self._minimum_interval_seconds:
+            last_sent_at = self._last_sent_at_by_kind.get(rate_limit_key, -minimum_interval)
+            if gesture_phase != "end" and now - last_sent_at < minimum_interval:
                 return False
-            self._last_sent_at_by_kind[kind] = now
+            if gesture_phase == "end":
+                self._last_sent_at_by_kind.pop(rate_limit_key, None)
+            else:
+                self._last_sent_at_by_kind[rate_limit_key] = now
         payload: dict[str, object] = {
             "schema_version": 1,
             "type": "interaction_stimulus",
@@ -72,6 +92,11 @@ class StimulusGateway:
             }
         if duration_ms is not None:
             payload["duration_ms"] = duration_ms
+        if is_drag_stream:
+            payload["gesture_id"] = gesture_id
+            payload["gesture_phase"] = gesture_phase
+            payload["gesture_sequence"] = gesture_sequence
+            payload["particle_zone"] = particle_zone
         packet = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         self._send_datagram(packet, (self._host, self._port))
         return True
@@ -194,9 +219,7 @@ def handler_for(
                     return
                 start_x = start_position.get("x")
                 start_y = start_position.get("y")
-                if not self._normalized_number(start_x) or not self._normalized_number(
-                    start_y
-                ):
+                if not self._normalized_number(start_x) or not self._normalized_number(start_y):
                     self._json(
                         {"status": "rejected", "reason": "invalid_start_position"},
                         HTTPStatus.BAD_REQUEST,
@@ -206,10 +229,11 @@ def handler_for(
             duration_ms = payload.get("duration_ms")
             normalized_duration: float | None = None
             if kind in {"long_press", "drag"}:
+                maximum_duration_ms = 60_000 if kind == "drag" else 10_000
                 if (
                     not isinstance(duration_ms, (int, float))
                     or isinstance(duration_ms, bool)
-                    or not 0 <= float(duration_ms) <= 10_000
+                    or not 0 <= float(duration_ms) <= maximum_duration_ms
                 ):
                     self._json(
                         {"status": "rejected", "reason": "invalid_duration"},
@@ -217,6 +241,46 @@ def handler_for(
                     )
                     return
                 normalized_duration = float(duration_ms)
+            gesture_id: str | None = None
+            gesture_phase: str | None = None
+            gesture_sequence: int | None = None
+            particle_zone: dict[str, object] | None = None
+            if kind == "drag":
+                raw_gesture_id = payload.get("gesture_id")
+                raw_gesture_phase = payload.get("gesture_phase")
+                raw_gesture_sequence = payload.get("gesture_sequence")
+                has_stream_metadata = any(
+                    value is not None
+                    for value in (
+                        raw_gesture_id,
+                        raw_gesture_phase,
+                        raw_gesture_sequence,
+                    )
+                )
+                if has_stream_metadata:
+                    if (
+                        not isinstance(raw_gesture_id, str)
+                        or not 1 <= len(raw_gesture_id) <= 64
+                        or raw_gesture_phase not in DRAG_STREAM_PHASES
+                        or not isinstance(raw_gesture_sequence, int)
+                        or isinstance(raw_gesture_sequence, bool)
+                        or not 0 <= raw_gesture_sequence <= 1_000_000
+                    ):
+                        self._json(
+                            {"status": "rejected", "reason": "invalid_drag_stream"},
+                            HTTPStatus.BAD_REQUEST,
+                        )
+                        return
+                    gesture_id = raw_gesture_id
+                    gesture_phase = raw_gesture_phase
+                    gesture_sequence = raw_gesture_sequence
+                    particle_zone = self._normalized_particle_zone(payload.get("particle_zone"))
+                    if particle_zone is None:
+                        self._json(
+                            {"status": "rejected", "reason": "invalid_particle_zone"},
+                            HTTPStatus.BAD_REQUEST,
+                        )
+                        return
             if stimulus_gateway is None:
                 self._json(
                     {"status": "unavailable"},
@@ -230,6 +294,10 @@ def handler_for(
                     float(y),
                     start_position=normalized_start,
                     duration_ms=normalized_duration,
+                    gesture_id=gesture_id,
+                    gesture_phase=gesture_phase,
+                    gesture_sequence=gesture_sequence,
+                    particle_zone=particle_zone,
                 )
             except OSError:
                 self._json(
@@ -244,6 +312,37 @@ def handler_for(
                 )
                 return
             self._json({"status": "accepted"}, HTTPStatus.ACCEPTED)
+
+        @classmethod
+        def _normalized_particle_zone(
+            cls,
+            value: object,
+        ) -> dict[str, object] | None:
+            if not isinstance(value, dict):
+                return None
+            center = value.get("center")
+            if not isinstance(center, dict):
+                return None
+            center_x = center.get("x")
+            center_y = center.get("y")
+            radius_x = value.get("radius_x")
+            radius_y = value.get("radius_y")
+            if (
+                not cls._normalized_number(center_x)
+                or not cls._normalized_number(center_y)
+                or not isinstance(radius_x, (int, float))
+                or isinstance(radius_x, bool)
+                or not isinstance(radius_y, (int, float))
+                or isinstance(radius_y, bool)
+                or not 0 < float(radius_x) <= 1
+                or not 0 < float(radius_y) <= 1
+            ):
+                return None
+            return {
+                "center": {"x": float(center_x), "y": float(center_y)},
+                "radius_x": float(radius_x),
+                "radius_y": float(radius_y),
+            }
 
         def _read_json(self) -> dict[str, Any] | None:
             raw_length = self.headers.get("Content-Length", "")

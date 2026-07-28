@@ -59,6 +59,31 @@
 }
 ```
 
-`long_press`は`duration_ms`を追加します。`drag`は終点を`position`、始点を`start_position`として、`duration_ms`とともに送信します。座標はすべて画面内の`0.0`から`1.0`へ正規化します。
+`long_press`は`duration_ms`を追加します。座標はすべて画面内の`0.0`から`1.0`へ正規化します。
+
+`drag`は開始位置に関係なく、ドラッグ中にも継続して送信します。同じドラッグは`gesture_id`で関連付け、`gesture_phase`を`start`、`update`、`end`の順に、単調増加する`gesture_sequence`とともに送ります。`start_position`は直前のサンプル位置、`position`は現在位置、`duration_ms`はドラッグ開始からの累積時間です。
+
+画面は描画中の粒子球を`particle_zone`の楕円として添付します。Coreは座標がこの領域へ入ったサンプルだけを接触として扱います。接触中の速度、中心からの距離、累積移動量、方向反転回数を計算し、往復を伴う適度な速さの動きを`contact_motion: stroke`として認識します。従来のメタデータを持たない単発`drag`も互換性のため受け付けます。
+
+Coreはさらに、接触位置を粒子球に対する相対座標・上下・中心寄り／表面寄りとして表し、動きを速度帯、軌跡形状、滑らかさ、リズム、往復性、曲率、細かな揺れ、接触範囲として`touch_features`へまとめます。これは快・不快などの感情結論ではありません。Character LLMが現在感情、関係性、接触履歴と合わせて、その場の感覚や気分を判断するための観測情報です。
+
+```json
+{
+  "schema_version": 1,
+  "type": "interaction_stimulus",
+  "stimulus_kind": "drag",
+  "gesture_id": "drag-2e0f7b5a",
+  "gesture_phase": "update",
+  "gesture_sequence": 3,
+  "start_position": { "x": 0.48, "y": 0.42 },
+  "position": { "x": 0.52, "y": 0.40 },
+  "duration_ms": 480,
+  "particle_zone": {
+    "center": { "x": 0.5, "y": 0.49 },
+    "radius_x": 0.18,
+    "radius_y": 0.28
+  }
+}
+```
 
 画面は感情値やEmotion Appraisalを指定しません。Coreが刺激を`AgentEvent`として評価し、感情・Drive・Reactionを決定します。
