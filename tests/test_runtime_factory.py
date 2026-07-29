@@ -353,7 +353,6 @@ def test_create_runtime_coordinator_returns_emotion_aware_runtime() -> None:
         "llm_provider.character": "initialized",
         "llm_provider.response_validator": "initialized",
         "games": "initialized",
-        "agent_memory": "disabled",
         "voice_output": "initialized",
     }
     assert "output.speech" in plugins["available_capabilities"]

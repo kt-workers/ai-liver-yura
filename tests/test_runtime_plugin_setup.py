@@ -127,6 +127,7 @@ def test_disabled_optional_plugins_are_not_imported_or_registered(
 ) -> None:
     original_import_module = importlib.import_module
     forbidden = {
+        "app.plugins.agent_memory",
         "app.plugins.games",
         "app.plugins.relationship_memory",
         "app.plugins.voice_output",
@@ -150,10 +151,10 @@ def test_disabled_optional_plugins_are_not_imported_or_registered(
     assert registered_ids == {
         "llm_provider.default",
         "llm_provider.situation_evaluator",
-        "agent_memory",
     }
     assert services.relationship_memory_store is None
     assert services.agent_memory_store is None
+    assert services.initial_agent_memory.episodic == ()
     assert services.speech_synthesizer is None
     assert services.audio_player is None
 
@@ -232,6 +233,12 @@ def test_enabled_plugins_receive_configuration_services_and_initialization(
             "services": {"relationship_memory_store": relationship_store},
         },
         {
+            "plugin_id": "agent_memory",
+            "module": "app.plugins.agent_memory",
+            "enabled": True,
+            "services": {"agent_memory_store": agent_store},
+        },
+        {
             "plugin_id": "voice_output",
             "module": "app.plugins.voice_output",
             "enabled": True,
@@ -277,22 +284,29 @@ def test_enabled_plugins_receive_configuration_services_and_initialization(
 def test_missing_store_and_voice_providers_initialize_degraded() -> None:
     services = setup_runtime_plugins(
         _setup_input(
-            _config(relationship_memory=True, speech=True),
+            _config(relationship_memory=True, agent_memory=True, speech=True),
         )
     )
 
     assert services.plugin_manager.get_plugin("relationship_memory") is not None
+    assert services.plugin_manager.get_plugin("agent_memory") is not None
     assert services.plugin_manager.get_plugin("voice_output") is not None
     assert not services.plugin_manager.is_capability_available(
         "memory.relationship",
         "relationship_memory",
     )
     assert not services.plugin_manager.is_capability_available(
+        "memory.agent_state",
+        "agent_memory",
+    )
+    assert not services.plugin_manager.is_capability_available(
         "output.speech",
         "voice_output",
     )
     assert services.relationship_memory_store is None
+    assert services.agent_memory_store is None
     assert services.initial_relationship_memory.current is None
+    assert services.initial_agent_memory.episodic == ()
     assert services.speech_synthesizer is not None
     assert services.audio_player is services.speech_synthesizer
 

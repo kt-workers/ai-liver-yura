@@ -10,7 +10,6 @@ from app.core.plugins import PluginManager, SystemClock
 from app.domain.activities import Activity, ActivityType
 from app.domain.memory import AgentMemoryState
 from app.domain.relationships import RelationshipMemory
-from app.plugins.agent_memory import AgentMemoryPlugin
 from app.plugins.llm_provider import LlmProviderPlugin
 from app.ports.audio_player import AudioPlayer
 from app.ports.relationship_memory_store import RelationshipMemoryStore
@@ -128,7 +127,15 @@ def setup_runtime_plugins(
             "relationship_memory_store": setup.raw_relationship_memory_store,
         },
     )
-    plugin_manager.register(AgentMemoryPlugin(setup.raw_agent_memory_store))
+    register_optional_plugin_from_factory(
+        plugin_manager,
+        plugin_id=_AGENT_MEMORY_PLUGIN_ID,
+        module="app.plugins.agent_memory",
+        enabled=config.memory.agent_memory.enabled,
+        services={
+            "agent_memory_store": setup.raw_agent_memory_store,
+        },
+    )
     register_optional_plugin_from_factory(
         plugin_manager,
         plugin_id="voice_output",
@@ -163,7 +170,7 @@ def setup_runtime_plugins(
             _RELATIONSHIP_MEMORY_PLUGIN_ID: (
                 config.memory.relationship_memory.enabled
             ),
-            _AGENT_MEMORY_PLUGIN_ID: setup.raw_agent_memory_store is not None,
+            _AGENT_MEMORY_PLUGIN_ID: config.memory.agent_memory.enabled,
             "voice_output": config.speech.enabled,
         },
     )

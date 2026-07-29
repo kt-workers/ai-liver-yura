@@ -71,7 +71,6 @@ def test_bootstrap_concrete_plugin_imports_match_migration_baseline() -> None:
 
     actual = _imports_with_prefix(_python_files("app/bootstrap"), "app.plugins")
     expected_migration_debt = {
-        "app.plugins.agent_memory",
         "app.plugins.llm_provider",
         "app.plugins.youtube_streaming.application",
         "app.plugins.youtube_streaming.application.service",
