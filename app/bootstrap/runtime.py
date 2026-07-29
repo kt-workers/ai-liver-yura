@@ -94,7 +94,6 @@ from app.domain.topic import TopicHistory
 from app.domain.topic_classifier import TopicClassifier
 from app.plugins.agent_memory import AgentMemoryPlugin
 from app.plugins.llm_provider import LlmProviderPlugin
-from app.plugins.relationship_memory import RelationshipMemoryPlugin
 from app.ports.audio_player import AudioPlayer
 from app.ports.embedding_generator import EmbeddingGenerator
 from app.ports.llm_roles import ResponseGeneratorRoleAdapter
@@ -146,6 +145,8 @@ from app.usecases.enrich_activity_with_topic_memory_usecase import (
 from app.utils.trace import TraceLogger
 
 logger = logging.getLogger(__name__)
+_RELATIONSHIP_MEMORY_PLUGIN_ID = "relationship_memory"
+_RELATIONSHIP_MEMORY_CAPABILITY = "memory.relationship"
 
 if TYPE_CHECKING:
     from app.adapters.streaming import (
@@ -977,8 +978,15 @@ def create_runtime_coordinator(
         enabled=config.plugins.games.enabled,
         configuration={"settings": config.plugins.games},
     )
-    relationship_memory_plugin = RelationshipMemoryPlugin(raw_relationship_memory_store)
-    plugin_manager.register(relationship_memory_plugin)
+    register_optional_plugin_from_factory(
+        plugin_manager,
+        plugin_id=_RELATIONSHIP_MEMORY_PLUGIN_ID,
+        module="app.plugins.relationship_memory",
+        enabled=config.memory.relationship_memory.enabled,
+        services={
+            "relationship_memory_store": raw_relationship_memory_store,
+        },
+    )
     agent_memory_plugin = AgentMemoryPlugin(raw_agent_memory_store)
     plugin_manager.register(agent_memory_plugin)
     register_optional_plugin_from_factory(
@@ -1008,22 +1016,32 @@ def create_runtime_coordinator(
             "llm_provider.character": character_llm_plugin is not None,
             "llm_provider.response_validator": validator_llm_plugin is not None,
             "games": config.plugins.games.enabled,
-            "relationship_memory": raw_relationship_memory_store is not None,
+            _RELATIONSHIP_MEMORY_PLUGIN_ID: config.memory.relationship_memory.enabled,
             "agent_memory": raw_agent_memory_store is not None,
             "voice_output": config.speech.enabled,
         },
     )
     relationship_memory_store: RelationshipMemoryStore | None = None
-    initialized_memory_plugin = plugin_manager.get_plugin("relationship_memory")
-    if isinstance(initialized_memory_plugin, RelationshipMemoryPlugin):
-        relationship_memory_store = initialized_memory_plugin
+    initialized_memory_plugin = plugin_manager.get_plugin(
+        _RELATIONSHIP_MEMORY_PLUGIN_ID
+    )
+    if initialized_memory_plugin is not None and (
+        plugin_manager.is_capability_available(
+            _RELATIONSHIP_MEMORY_CAPABILITY,
+            _RELATIONSHIP_MEMORY_PLUGIN_ID,
+        )
+    ):
+        relationship_memory_store = cast(
+            RelationshipMemoryStore,
+            initialized_memory_plugin,
+        )
     initial_relationship_memory = load_relationship_memory(
         relationship_memory_store,
         max_entries=config.memory.relationship_memory.max_entries,
     )
     if not plugin_manager.is_capability_available(
-        RelationshipMemoryPlugin.MEMORY_CAPABILITY,
-        RelationshipMemoryPlugin.plugin_id,
+        _RELATIONSHIP_MEMORY_CAPABILITY,
+        _RELATIONSHIP_MEMORY_PLUGIN_ID,
     ):
         relationship_memory_store = None
     agent_memory_store: AgentMemoryStore | None = None
