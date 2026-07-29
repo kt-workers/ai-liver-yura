@@ -1,0 +1,348 @@
+from __future__ import annotations
+
+import importlib
+from dataclasses import replace
+
+import pytest
+
+from app.bootstrap import runtime_plugin_setup
+from app.bootstrap.runtime_plugin_setup import (
+    RuntimePluginServices,
+    RuntimePluginSetupInput,
+    setup_runtime_plugins,
+)
+from app.config.app_config import AppConfig, load_app_config
+from app.core.plugins import PluginManager
+from app.domain.activities import Activity
+from app.domain.relationships import RelationshipMemory
+from app.runtime.activity_manager import ActivityManager
+from app.shared.contracts.memory import AgentMemorySnapshot
+from app.shared.contracts.plugins.runtime import PluginContext
+
+
+class _ResponseGenerator:
+    async def generate_response(self, activity: Activity) -> str:
+        return "response"
+
+
+class _RelationshipMemoryStore:
+    def __init__(self, *, fail_load: bool = False) -> None:
+        self.memory = RelationshipMemory()
+        self.fail_load = fail_load
+
+    def load(self) -> RelationshipMemory:
+        if self.fail_load:
+            raise OSError("relationship store offline")
+        return self.memory
+
+    def save(self, memory: RelationshipMemory) -> None:
+        self.memory = memory
+
+
+class _AgentMemoryStore:
+    def __init__(self, *, fail_load: bool = False) -> None:
+        self.snapshot = AgentMemorySnapshot()
+        self.fail_load = fail_load
+
+    def load(self) -> AgentMemorySnapshot:
+        if self.fail_load:
+            raise OSError("agent store offline")
+        return self.snapshot
+
+    def save(self, snapshot: AgentMemorySnapshot) -> None:
+        self.snapshot = snapshot
+
+
+class _SpeechSynthesizer:
+    async def synthesize(
+        self,
+        text: str,
+        voice_intent: object | None = None,
+    ) -> bytes:
+        return text.encode()
+
+
+class _AudioPlayer:
+    async def play(self, audio_data: bytes) -> None:
+        return None
+
+
+def _config(
+    *,
+    games: bool = False,
+    relationship_memory: bool = False,
+    agent_memory: bool = False,
+    speech: bool = False,
+) -> AppConfig:
+    config = load_app_config()
+    return replace(
+        config,
+        response_generator=replace(config.response_generator, type="dummy"),
+        speech=replace(config.speech, enabled=speech),
+        plugins=replace(
+            config.plugins,
+            games=replace(config.plugins.games, enabled=games),
+        ),
+        memory=replace(
+            config.memory,
+            relationship_memory=replace(
+                config.memory.relationship_memory,
+                enabled=relationship_memory,
+            ),
+            agent_memory=replace(
+                config.memory.agent_memory,
+                enabled=agent_memory,
+            ),
+        ),
+    )
+
+
+def _setup_input(
+    config: AppConfig,
+    *,
+    character_generator: _ResponseGenerator | None = None,
+    validator_generator: _ResponseGenerator | None = None,
+    relationship_memory_store: _RelationshipMemoryStore | None = None,
+    agent_memory_store: _AgentMemoryStore | None = None,
+    speech_synthesizer: _SpeechSynthesizer | None = None,
+    audio_player: _AudioPlayer | None = None,
+) -> RuntimePluginSetupInput:
+    default_generator = _ResponseGenerator()
+    return RuntimePluginSetupInput(
+        config=config,
+        activity_manager=ActivityManager(),
+        raw_response_generator=default_generator,
+        raw_situation_generator=_ResponseGenerator(),
+        raw_character_generator=character_generator,
+        raw_validator_generator=validator_generator,
+        raw_relationship_memory_store=relationship_memory_store,
+        raw_agent_memory_store=agent_memory_store,
+        speech_synthesizer=speech_synthesizer,
+        audio_player=audio_player,
+    )
+
+
+def test_disabled_optional_plugins_are_not_imported_or_registered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_import_module = importlib.import_module
+    forbidden = {
+        "app.plugins.games",
+        "app.plugins.relationship_memory",
+        "app.plugins.voice_output",
+    }
+
+    def import_module(name: str, package: str | None = None) -> object:
+        if name in forbidden:
+            raise AssertionError(f"無効Pluginをimportしました: {name}")
+        return original_import_module(name, package)
+
+    monkeypatch.setattr(
+        "app.core.plugins.plugin_loader.importlib.import_module",
+        import_module,
+    )
+
+    services = setup_runtime_plugins(_setup_input(_config()))
+    registered_ids = {
+        plugin.plugin_id for plugin in services.plugin_manager.list_plugins()
+    }
+
+    assert registered_ids == {
+        "llm_provider.default",
+        "llm_provider.situation_evaluator",
+        "agent_memory",
+    }
+    assert services.relationship_memory_store is None
+    assert services.agent_memory_store is None
+    assert services.speech_synthesizer is None
+    assert services.audio_player is None
+
+
+def test_enabled_plugins_receive_configuration_services_and_initialization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config(
+        games=True,
+        relationship_memory=True,
+        agent_memory=True,
+        speech=True,
+    )
+    relationship_store = _RelationshipMemoryStore()
+    agent_store = _AgentMemoryStore()
+    synthesizer = _SpeechSynthesizer()
+    player = _AudioPlayer()
+    character_generator = _ResponseGenerator()
+    validator_generator = _ResponseGenerator()
+    register_calls: list[dict[str, object]] = []
+    initialized: dict[str, bool] = {}
+    contexts: list[PluginContext] = []
+    actual_register = runtime_plugin_setup.register_optional_plugin_from_factory
+    actual_initialize = PluginManager.initialize_enabled_plugins
+
+    def register_optional_plugin_from_factory(
+        manager: PluginManager,
+        **kwargs: object,
+    ) -> object:
+        register_calls.append(kwargs)
+        return actual_register(manager, **kwargs)  # type: ignore[arg-type]
+
+    def initialize_enabled_plugins(
+        manager: PluginManager,
+        context: PluginContext,
+        enabled: dict[str, bool],
+    ) -> None:
+        contexts.append(context)
+        initialized.update(enabled)
+        actual_initialize(manager, context, enabled)
+
+    monkeypatch.setattr(
+        runtime_plugin_setup,
+        "register_optional_plugin_from_factory",
+        register_optional_plugin_from_factory,
+    )
+    monkeypatch.setattr(
+        PluginManager,
+        "initialize_enabled_plugins",
+        initialize_enabled_plugins,
+    )
+
+    services = setup_runtime_plugins(
+        _setup_input(
+            config,
+            character_generator=character_generator,
+            validator_generator=validator_generator,
+            relationship_memory_store=relationship_store,
+            agent_memory_store=agent_store,
+            speech_synthesizer=synthesizer,
+            audio_player=player,
+        )
+    )
+
+    assert register_calls == [
+        {
+            "plugin_id": "games",
+            "module": "app.plugins.games",
+            "enabled": True,
+            "configuration": {"settings": config.plugins.games},
+        },
+        {
+            "plugin_id": "relationship_memory",
+            "module": "app.plugins.relationship_memory",
+            "enabled": True,
+            "services": {"relationship_memory_store": relationship_store},
+        },
+        {
+            "plugin_id": "voice_output",
+            "module": "app.plugins.voice_output",
+            "enabled": True,
+            "services": {
+                "speech_synthesizer": synthesizer,
+                "audio_player": player,
+            },
+        },
+    ]
+    assert initialized == {
+        "llm_provider.default": True,
+        "llm_provider.situation_evaluator": True,
+        "llm_provider.character": True,
+        "llm_provider.response_validator": True,
+        "games": True,
+        "relationship_memory": True,
+        "agent_memory": True,
+        "voice_output": True,
+    }
+    assert contexts[0].configuration["llm_available"] is True
+    assert services.initial_relationship_memory is relationship_store.memory
+    assert services.initial_agent_memory.max_history_entries == (
+        config.memory.agent_memory.max_history_entries
+    )
+    assert services.relationship_memory_store is not None
+    assert services.agent_memory_store is not None
+    assert services.speech_synthesizer is not synthesizer
+    assert services.audio_player is services.speech_synthesizer
+    assert services.plugin_manager.is_capability_available(
+        "memory.relationship",
+        "relationship_memory",
+    )
+    assert services.plugin_manager.is_capability_available(
+        "memory.agent_state",
+        "agent_memory",
+    )
+    assert services.plugin_manager.is_capability_available(
+        "output.speech",
+        "voice_output",
+    )
+
+
+def test_missing_store_and_voice_providers_initialize_degraded() -> None:
+    services = setup_runtime_plugins(
+        _setup_input(
+            _config(relationship_memory=True, speech=True),
+        )
+    )
+
+    assert services.plugin_manager.get_plugin("relationship_memory") is not None
+    assert services.plugin_manager.get_plugin("voice_output") is not None
+    assert not services.plugin_manager.is_capability_available(
+        "memory.relationship",
+        "relationship_memory",
+    )
+    assert not services.plugin_manager.is_capability_available(
+        "output.speech",
+        "voice_output",
+    )
+    assert services.relationship_memory_store is None
+    assert services.initial_relationship_memory.current is None
+    assert services.speech_synthesizer is not None
+    assert services.audio_player is services.speech_synthesizer
+
+
+def test_memory_load_failures_revoke_capabilities_and_return_no_store() -> None:
+    services = setup_runtime_plugins(
+        _setup_input(
+            _config(relationship_memory=True, agent_memory=True),
+            relationship_memory_store=_RelationshipMemoryStore(fail_load=True),
+            agent_memory_store=_AgentMemoryStore(fail_load=True),
+        )
+    )
+
+    assert services.relationship_memory_store is None
+    assert services.agent_memory_store is None
+    assert services.initial_relationship_memory.current is None
+    assert services.initial_agent_memory.episodic == ()
+    assert not services.plugin_manager.is_capability_available(
+        "memory.relationship",
+        "relationship_memory",
+    )
+    assert not services.plugin_manager.is_capability_available(
+        "memory.agent_state",
+        "agent_memory",
+    )
+
+
+def test_incomplete_llm_role_pair_is_not_registered() -> None:
+    services = setup_runtime_plugins(
+        _setup_input(
+            _config(),
+            character_generator=_ResponseGenerator(),
+            validator_generator=None,
+        )
+    )
+
+    assert services.plugin_manager.get_plugin("llm_provider.default") is not None
+    assert (
+        services.plugin_manager.get_plugin("llm_provider.situation_evaluator")
+        is not None
+    )
+    assert services.plugin_manager.get_plugin("llm_provider.character") is None
+    assert services.plugin_manager.get_plugin("llm_provider.response_validator") is None
+    assert services.character_response_generator is None
+    assert services.validator_response_generator is None
+
+
+def test_setup_result_exposes_only_shared_contract_types() -> None:
+    annotations = RuntimePluginServices.__annotations__
+
+    assert all(
+        "app.plugins" not in str(annotation) for annotation in annotations.values()
+    )

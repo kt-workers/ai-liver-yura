@@ -18,10 +18,9 @@ from app.bootstrap.runtime import (
     create_topic_memory_store,
 )
 from app.config.app_config import AppConfig, load_app_config
-from app.core.plugins import PluginCapability, PluginManager
+from app.core.plugins import PluginCapability
 from app.domain.activities import Activity, ActivityType
 from app.domain.behavior import BehaviorDecision
-from app.domain.relationships import RelationshipMemory
 from app.plugins.games import GamesPlugin
 from app.ports.response_generator import ResponseGenerator
 from app.runtime.emotion_runtime_integration import EmotionAwareRuntimeCoordinator
@@ -360,6 +359,47 @@ def test_create_runtime_coordinator_returns_emotion_aware_runtime() -> None:
     assert "output.speech" in plugins["available_capabilities"]
 
 
+def test_create_runtime_coordinator_calls_plugin_setup_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bootstrap import runtime as runtime_factory
+
+    config = load_app_config()
+    config = replace(
+        config,
+        response_generator=replace(config.response_generator, type="dummy"),
+        speech=replace(config.speech, enabled=False),
+        plugins=replace(
+            config.plugins,
+            games=replace(config.plugins.games, enabled=False),
+        ),
+        memory=replace(
+            config.memory,
+            topic_memory=replace(config.memory.topic_memory, enabled=False),
+        ),
+    )
+    actual_setup = runtime_factory.setup_runtime_plugins
+    setup_results: list[object] = []
+
+    def setup_runtime_plugins(
+        setup: runtime_factory.RuntimePluginSetupInput,
+    ) -> object:
+        result = actual_setup(setup)
+        setup_results.append(result)
+        return result
+
+    monkeypatch.setattr(
+        runtime_factory,
+        "setup_runtime_plugins",
+        setup_runtime_plugins,
+    )
+
+    runtime = runtime_factory.create_runtime_coordinator(config)
+
+    assert len(setup_results) == 1
+    assert runtime.plugin_manager is setup_results[0].plugin_manager  # type: ignore[attr-defined]
+
+
 def test_runtime_does_not_import_games_plugin_when_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -391,60 +431,6 @@ def test_runtime_does_not_import_games_plugin_when_disabled(
         plugin.plugin_id for plugin in runtime.plugin_manager.list_plugins()
     }
     assert runtime.plugin_manager.get_plugin("games") is None
-
-
-def test_runtime_registers_enabled_games_plugin_via_factory(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from app.bootstrap import runtime as runtime_factory
-
-    config = load_app_config()
-    config = replace(
-        config,
-        response_generator=replace(config.response_generator, type="dummy"),
-        speech=replace(config.speech, enabled=False),
-        plugins=replace(
-            config.plugins,
-            games=replace(config.plugins.games, enabled=True),
-        ),
-    )
-    actual_register = runtime_factory.register_optional_plugin_from_factory
-    calls: list[dict[str, object]] = []
-
-    def register_optional_plugin_from_factory(
-        manager: PluginManager,
-        **kwargs: object,
-    ) -> object:
-        calls.append(kwargs)
-        return actual_register(manager, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(
-        runtime_factory,
-        "register_optional_plugin_from_factory",
-        register_optional_plugin_from_factory,
-    )
-
-    runtime = runtime_factory.create_runtime_coordinator(config)
-
-    assert [call for call in calls if call["plugin_id"] == "games"] == [
-        {
-            "plugin_id": "games",
-            "module": "app.plugins.games",
-            "enabled": True,
-            "configuration": {"settings": config.plugins.games},
-        }
-    ]
-    assert runtime.plugin_manager is not None
-    assert runtime.plugin_manager.get_plugin("games") is not None
-
-
-class _RuntimeSpeechSynthesizer:
-    async def synthesize(
-        self,
-        text: str,
-        voice_intent: object | None = None,
-    ) -> bytes:
-        return text.encode("utf-8")
 
 
 class _RuntimeAudioPlayer:
@@ -496,65 +482,6 @@ async def test_runtime_does_not_import_voice_output_when_speech_is_disabled(
     assert group is not None
 
 
-def test_runtime_registers_enabled_voice_output_via_factory(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from app.bootstrap import runtime as runtime_factory
-
-    config = load_app_config()
-    config = replace(
-        config,
-        response_generator=replace(config.response_generator, type="dummy"),
-        plugins=replace(
-            config.plugins,
-            games=replace(config.plugins.games, enabled=False),
-        ),
-    )
-    synthesizer = _RuntimeSpeechSynthesizer()
-    player = _RuntimeAudioPlayer()
-    monkeypatch.setattr(
-        runtime_factory,
-        "create_speech_synthesizer",
-        lambda _: synthesizer,
-    )
-    monkeypatch.setattr(runtime_factory, "create_audio_player", lambda _: player)
-    actual_register = runtime_factory.register_optional_plugin_from_factory
-    calls: list[dict[str, object]] = []
-
-    def register_optional_plugin_from_factory(
-        manager: PluginManager,
-        **kwargs: object,
-    ) -> object:
-        calls.append(kwargs)
-        return actual_register(manager, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(
-        runtime_factory,
-        "register_optional_plugin_from_factory",
-        register_optional_plugin_from_factory,
-    )
-
-    runtime = runtime_factory.create_runtime_coordinator(config)
-
-    assert [call for call in calls if call["plugin_id"] == "voice_output"] == [
-        {
-            "plugin_id": "voice_output",
-            "module": "app.plugins.voice_output",
-            "enabled": True,
-            "services": {
-                "speech_synthesizer": synthesizer,
-                "audio_player": player,
-            },
-        }
-    ]
-    assert runtime.plugin_manager is not None
-    assert runtime.plugin_manager.get_plugin("voice_output") is not None
-    assert runtime.plugin_manager.is_capability_available(
-        "output.speech",
-        "voice_output",
-    )
-
-
 @pytest.mark.asyncio
 async def test_runtime_initializes_voice_output_degraded_with_missing_provider(
     monkeypatch: pytest.MonkeyPatch,
@@ -599,17 +526,6 @@ async def test_runtime_initializes_voice_output_degraded_with_missing_provider(
         "voice_output",
     )
     assert group is not None
-
-
-class _RuntimeRelationshipMemoryStore:
-    def __init__(self) -> None:
-        self.memory = RelationshipMemory()
-
-    def load(self) -> RelationshipMemory:
-        return self.memory
-
-    def save(self, memory: RelationshipMemory) -> None:
-        self.memory = memory
 
 
 @pytest.mark.asyncio
@@ -658,71 +574,6 @@ async def test_runtime_does_not_import_relationship_memory_when_disabled(
         plugin.plugin_id for plugin in runtime.plugin_manager.list_plugins()
     }
     assert group is not None
-
-
-def test_runtime_registers_enabled_relationship_memory_via_factory(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from app.bootstrap import runtime as runtime_factory
-
-    config = load_app_config()
-    config = replace(
-        config,
-        response_generator=replace(config.response_generator, type="dummy"),
-        speech=replace(config.speech, enabled=False),
-        plugins=replace(
-            config.plugins,
-            games=replace(config.plugins.games, enabled=False),
-        ),
-        memory=replace(
-            config.memory,
-            topic_memory=replace(config.memory.topic_memory, enabled=False),
-            relationship_memory=replace(
-                config.memory.relationship_memory,
-                enabled=True,
-            ),
-        ),
-    )
-    store = _RuntimeRelationshipMemoryStore()
-    monkeypatch.setattr(
-        runtime_factory,
-        "create_relationship_memory_store",
-        lambda _: store,
-    )
-    actual_register = runtime_factory.register_optional_plugin_from_factory
-    calls: list[dict[str, object]] = []
-
-    def register_optional_plugin_from_factory(
-        manager: PluginManager,
-        **kwargs: object,
-    ) -> object:
-        calls.append(kwargs)
-        return actual_register(manager, **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr(
-        runtime_factory,
-        "register_optional_plugin_from_factory",
-        register_optional_plugin_from_factory,
-    )
-
-    runtime = runtime_factory.create_runtime_coordinator(config)
-
-    assert [
-        call for call in calls if call["plugin_id"] == "relationship_memory"
-    ] == [
-        {
-            "plugin_id": "relationship_memory",
-            "module": "app.plugins.relationship_memory",
-            "enabled": True,
-            "services": {"relationship_memory_store": store},
-        }
-    ]
-    assert runtime.plugin_manager is not None
-    assert runtime.plugin_manager.get_plugin("relationship_memory") is not None
-    assert runtime.plugin_manager.is_capability_available(
-        "memory.relationship",
-        "relationship_memory",
-    )
 
 
 @pytest.mark.asyncio
