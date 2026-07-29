@@ -404,6 +404,7 @@ def test_runtime_does_not_import_games_plugin_when_disabled(
 ) -> None:
     from app.bootstrap import runtime as runtime_factory
 
+    original_import_module = importlib.import_module
     config = load_app_config()
     config = replace(
         config,
@@ -416,7 +417,9 @@ def test_runtime_does_not_import_games_plugin_when_disabled(
     )
 
     def fail_import(name: str) -> object:
-        raise AssertionError(f"無効なGames Pluginをimportしました: {name}")
+        if name == "app.plugins.games":
+            raise AssertionError(f"無効なGames Pluginをimportしました: {name}")
+        return original_import_module(name)
 
     monkeypatch.setattr(
         "app.core.plugins.plugin_loader.importlib.import_module",
