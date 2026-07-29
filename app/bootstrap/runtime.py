@@ -95,7 +95,6 @@ from app.domain.topic_classifier import TopicClassifier
 from app.plugins.agent_memory import AgentMemoryPlugin
 from app.plugins.llm_provider import LlmProviderPlugin
 from app.plugins.relationship_memory import RelationshipMemoryPlugin
-from app.plugins.voice_output import VoiceOutputPlugin
 from app.ports.audio_player import AudioPlayer
 from app.ports.embedding_generator import EmbeddingGenerator
 from app.ports.llm_roles import ResponseGeneratorRoleAdapter
@@ -982,7 +981,16 @@ def create_runtime_coordinator(
     plugin_manager.register(relationship_memory_plugin)
     agent_memory_plugin = AgentMemoryPlugin(raw_agent_memory_store)
     plugin_manager.register(agent_memory_plugin)
-    plugin_manager.register(VoiceOutputPlugin(speech_synthesizer, audio_player))
+    register_optional_plugin_from_factory(
+        plugin_manager,
+        plugin_id="voice_output",
+        module="app.plugins.voice_output",
+        enabled=config.speech.enabled,
+        services={
+            "speech_synthesizer": speech_synthesizer,
+            "audio_player": audio_player,
+        },
+    )
     game_model = config.plugins.games.intent_interpreter.model or config.response_generator.model
     plugin_manager.initialize_enabled_plugins(
         PluginContext(
@@ -1002,7 +1010,7 @@ def create_runtime_coordinator(
             "games": config.plugins.games.enabled,
             "relationship_memory": raw_relationship_memory_store is not None,
             "agent_memory": raw_agent_memory_store is not None,
-            "voice_output": speech_synthesizer is not None and audio_player is not None,
+            "voice_output": config.speech.enabled,
         },
     )
     relationship_memory_store: RelationshipMemoryStore | None = None
@@ -1077,9 +1085,9 @@ def create_runtime_coordinator(
             ),
         )
     voice_output = plugin_manager.get_plugin("voice_output")
-    if isinstance(voice_output, VoiceOutputPlugin):
-        speech_synthesizer = voice_output
-        audio_player = voice_output
+    if voice_output is not None:
+        speech_synthesizer = cast(SpeechSynthesizer, voice_output)
+        audio_player = cast(AudioPlayer, voice_output)
     topic_classifier = create_topic_classifier(config)
     embedding_generator = create_embedding_generator(config)
     topic_memory_store = create_topic_memory_store(config)
