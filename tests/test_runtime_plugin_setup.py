@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 import importlib
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -13,7 +15,7 @@ from app.bootstrap.runtime_plugin_setup import (
 )
 from app.config.app_config import AppConfig, load_app_config
 from app.core.plugins import PluginManager
-from app.domain.activities import Activity
+from app.domain.activities import Activity, ActivityType
 from app.domain.relationships import RelationshipMemory
 from app.runtime.activity_manager import ActivityManager
 from app.shared.contracts.memory import AgentMemorySnapshot
@@ -21,7 +23,14 @@ from app.shared.contracts.plugins.runtime import PluginContext
 
 
 class _ResponseGenerator:
+    def __init__(self, *, error: Exception | None = None) -> None:
+        self.error = error
+        self.requests: list[Activity] = []
+
     async def generate_response(self, activity: Activity) -> str:
+        self.requests.append(activity)
+        if self.error is not None:
+            raise self.error
         return "response"
 
 
@@ -100,6 +109,8 @@ def _config(
 def _setup_input(
     config: AppConfig,
     *,
+    default_generator: _ResponseGenerator | None = None,
+    situation_generator: _ResponseGenerator | None = None,
     character_generator: _ResponseGenerator | None = None,
     validator_generator: _ResponseGenerator | None = None,
     relationship_memory_store: _RelationshipMemoryStore | None = None,
@@ -107,12 +118,11 @@ def _setup_input(
     speech_synthesizer: _SpeechSynthesizer | None = None,
     audio_player: _AudioPlayer | None = None,
 ) -> RuntimePluginSetupInput:
-    default_generator = _ResponseGenerator()
     return RuntimePluginSetupInput(
         config=config,
         activity_manager=ActivityManager(),
-        raw_response_generator=default_generator,
-        raw_situation_generator=_ResponseGenerator(),
+        raw_response_generator=default_generator or _ResponseGenerator(),
+        raw_situation_generator=situation_generator or _ResponseGenerator(),
         raw_character_generator=character_generator,
         raw_validator_generator=validator_generator,
         raw_relationship_memory_store=relationship_memory_store,
@@ -207,19 +217,64 @@ def test_enabled_plugins_receive_configuration_services_and_initialization(
         initialize_enabled_plugins,
     )
 
-    services = setup_runtime_plugins(
-        _setup_input(
-            config,
-            character_generator=character_generator,
-            validator_generator=validator_generator,
-            relationship_memory_store=relationship_store,
-            agent_memory_store=agent_store,
-            speech_synthesizer=synthesizer,
-            audio_player=player,
-        )
+    setup = _setup_input(
+        config,
+        character_generator=character_generator,
+        validator_generator=validator_generator,
+        relationship_memory_store=relationship_store,
+        agent_memory_store=agent_store,
+        speech_synthesizer=synthesizer,
+        audio_player=player,
     )
+    services = setup_runtime_plugins(setup)
 
     assert register_calls == [
+        {
+            "plugin_id": "llm_provider.default",
+            "module": "app.plugins.llm_provider",
+            "enabled": True,
+            "configuration": {
+                "role": "default",
+                "configured_available": True,
+            },
+            "services": {"response_generator": setup.raw_response_generator},
+        },
+        {
+            "plugin_id": "llm_provider.situation_evaluator",
+            "module": "app.plugins.llm_provider",
+            "enabled": True,
+            "configuration": {
+                "role": "situation_evaluator",
+                "configured_available": True,
+            },
+            "services": {"response_generator": setup.raw_situation_generator},
+        },
+        {
+            "plugin_id": "llm_provider.character",
+            "module": "app.plugins.llm_provider",
+            "enabled": True,
+            "configuration": {
+                "role": "character",
+                "configured_available": runtime_plugin_setup._is_model_provider_available(
+                    config,
+                    config.llm_roles.character.model,
+                ),
+            },
+            "services": {"response_generator": character_generator},
+        },
+        {
+            "plugin_id": "llm_provider.response_validator",
+            "module": "app.plugins.llm_provider",
+            "enabled": True,
+            "configuration": {
+                "role": "response_validator",
+                "configured_available": runtime_plugin_setup._is_model_provider_available(
+                    config,
+                    config.llm_roles.response_validator.model,
+                ),
+            },
+            "services": {"response_generator": validator_generator},
+        },
         {
             "plugin_id": "games",
             "module": "app.plugins.games",
@@ -259,6 +314,21 @@ def test_enabled_plugins_receive_configuration_services_and_initialization(
         "voice_output": True,
     }
     assert contexts[0].configuration["llm_available"] is True
+    assert vars(contexts[0].llm_gateway)["_generator"] is (
+        services.default_response_generator
+    )
+    assert services.default_response_generator is services.plugin_manager.get_plugin(
+        "llm_provider.default"
+    )
+    assert services.situation_response_generator is (
+        services.plugin_manager.get_plugin("llm_provider.situation_evaluator")
+    )
+    assert services.character_response_generator is services.plugin_manager.get_plugin(
+        "llm_provider.character"
+    )
+    assert services.validator_response_generator is services.plugin_manager.get_plugin(
+        "llm_provider.response_validator"
+    )
     assert services.initial_relationship_memory is relationship_store.memory
     assert services.initial_agent_memory.max_history_entries == (
         config.memory.agent_memory.max_history_entries
@@ -334,12 +404,39 @@ def test_memory_load_failures_revoke_capabilities_and_return_no_store() -> None:
     )
 
 
-def test_incomplete_llm_role_pair_is_not_registered() -> None:
+@pytest.mark.parametrize(
+    ("character_generator", "validator_generator"),
+    [
+        (_ResponseGenerator(), None),
+        (None, _ResponseGenerator()),
+    ],
+)
+def test_incomplete_llm_role_pair_is_not_registered(
+    monkeypatch: pytest.MonkeyPatch,
+    character_generator: _ResponseGenerator | None,
+    validator_generator: _ResponseGenerator | None,
+) -> None:
+    registered_ids: list[str] = []
+    actual_register = runtime_plugin_setup.register_optional_plugin_from_factory
+
+    def register_optional_plugin_from_factory(
+        manager: PluginManager,
+        **kwargs: object,
+    ) -> object:
+        registered_ids.append(str(kwargs["plugin_id"]))
+        return actual_register(manager, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        runtime_plugin_setup,
+        "register_optional_plugin_from_factory",
+        register_optional_plugin_from_factory,
+    )
+
     services = setup_runtime_plugins(
         _setup_input(
             _config(),
-            character_generator=_ResponseGenerator(),
-            validator_generator=None,
+            character_generator=character_generator,
+            validator_generator=validator_generator,
         )
     )
 
@@ -352,6 +449,147 @@ def test_incomplete_llm_role_pair_is_not_registered() -> None:
     assert services.plugin_manager.get_plugin("llm_provider.response_validator") is None
     assert services.character_response_generator is None
     assert services.validator_response_generator is None
+    assert "llm_provider.character" not in registered_ids
+    assert "llm_provider.response_validator" not in registered_ids
+
+
+@pytest.mark.parametrize(
+    "missing_plugin_id",
+    [
+        "llm_provider.default",
+        "llm_provider.situation_evaluator",
+    ],
+)
+def test_required_llm_provider_missing_registration_fails_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+    missing_plugin_id: str,
+) -> None:
+    actual_register = runtime_plugin_setup.register_optional_plugin_from_factory
+
+    def register_optional_plugin_from_factory(
+        manager: PluginManager,
+        **kwargs: object,
+    ) -> object:
+        if kwargs["plugin_id"] == missing_plugin_id:
+            return None
+        return actual_register(manager, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        runtime_plugin_setup,
+        "register_optional_plugin_from_factory",
+        register_optional_plugin_from_factory,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "必須LLM Providerを登録できませんでした: "
+            + missing_plugin_id.replace(".", r"\.")
+        ),
+    ):
+        setup_runtime_plugins(_setup_input(_config()))
+
+
+def test_required_llm_provider_unregistered_after_load_fails_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    actual_register = runtime_plugin_setup.register_optional_plugin_from_factory
+
+    def register_optional_plugin_from_factory(
+        manager: PluginManager,
+        **kwargs: object,
+    ) -> object:
+        if kwargs["plugin_id"] == "llm_provider.default":
+            return _ResponseGenerator()
+        return actual_register(manager, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        runtime_plugin_setup,
+        "register_optional_plugin_from_factory",
+        register_optional_plugin_from_factory,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            r"必須LLM Providerを初期化できませんでした: "
+            r"llm_provider\.default \(status=unregistered\)"
+        ),
+    ):
+        setup_runtime_plugins(_setup_input(_config()))
+
+
+@pytest.mark.asyncio
+async def test_configured_unavailable_provider_is_initialized_without_capability() -> (
+    None
+):
+    config = _config()
+    config = replace(
+        config,
+        response_generator=replace(
+            config.response_generator,
+            type="openai",
+            model="missing-model",
+        ),
+    )
+
+    services = setup_runtime_plugins(_setup_input(config))
+
+    assert services.plugin_manager.status("llm_provider.default") is not None
+    assert services.plugin_manager.get_plugin("llm_provider.default") is (
+        services.default_response_generator
+    )
+    assert not services.plugin_manager.is_capability_available(
+        "llm.provider.default",
+        "llm_provider.default",
+    )
+    with pytest.raises(RuntimeError, match=r"llm_provider\.default\.unavailable"):
+        await services.default_response_generator.generate_response(
+            Activity(
+                activity_type=ActivityType.CONVERSATION_WITH_USER,
+                goal="test",
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_provider_failure_revokes_generic_and_role_capabilities() -> None:
+    generator = _ResponseGenerator(error=OSError("provider offline"))
+    services = setup_runtime_plugins(
+        _setup_input(
+            _config(),
+            default_generator=generator,
+        )
+    )
+
+    with pytest.raises(OSError, match="provider offline"):
+        await services.default_response_generator.generate_response(
+            Activity(
+                activity_type=ActivityType.CONVERSATION_WITH_USER,
+                goal="test",
+            ),
+        )
+
+    assert not services.plugin_manager.is_capability_available(
+        "llm.provider",
+        "llm_provider.default",
+    )
+    assert not services.plugin_manager.is_capability_available(
+        "llm.provider.default",
+        "llm_provider.default",
+    )
+
+
+def test_runtime_plugin_setup_has_no_static_llm_provider_import() -> None:
+    path = Path(runtime_plugin_setup.__file__)
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    imports = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    }
+
+    assert "app.plugins.llm_provider" not in imports
 
 
 def test_setup_result_exposes_only_shared_contract_types() -> None:

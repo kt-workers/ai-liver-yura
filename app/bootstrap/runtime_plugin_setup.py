@@ -10,7 +10,6 @@ from app.core.plugins import PluginManager, SystemClock
 from app.domain.activities import Activity, ActivityType
 from app.domain.memory import AgentMemoryState
 from app.domain.relationships import RelationshipMemory
-from app.plugins.llm_provider import LlmProviderPlugin
 from app.ports.audio_player import AudioPlayer
 from app.ports.relationship_memory_store import RelationshipMemoryStore
 from app.ports.response_generator import ResponseGenerator
@@ -63,17 +62,23 @@ def setup_runtime_plugins(
     setup: RuntimePluginSetupInput,
 ) -> RuntimePluginServices:
     config = setup.config
-    default_llm_plugin = LlmProviderPlugin(
-        "default",
-        setup.raw_response_generator,
+    plugin_manager = PluginManager()
+    default_llm_plugin = _register_llm_provider(
+        plugin_manager,
+        plugin_id="llm_provider.default",
+        role="default",
+        generator=setup.raw_response_generator,
         configured_available=(
             config.response_generator.type == "dummy"
             or _is_model_provider_available(config, config.response_generator.model)
         ),
+        required=True,
     )
-    situation_llm_plugin = LlmProviderPlugin(
-        "situation_evaluator",
-        setup.raw_situation_generator,
+    _register_llm_provider(
+        plugin_manager,
+        plugin_id="llm_provider.situation_evaluator",
+        role="situation_evaluator",
+        generator=setup.raw_situation_generator,
         configured_available=(
             config.response_generator.type == "dummy"
             or _is_model_provider_available(
@@ -81,36 +86,35 @@ def setup_runtime_plugins(
                 config.llm_roles.situation_evaluator.model,
             )
         ),
+        required=True,
     )
-    character_llm_plugin: LlmProviderPlugin | None = None
-    validator_llm_plugin: LlmProviderPlugin | None = None
+    character_llm_plugin: ResponseGenerator | None = None
+    validator_llm_plugin: ResponseGenerator | None = None
     if (
         setup.raw_character_generator is not None
         and setup.raw_validator_generator is not None
     ):
-        character_llm_plugin = LlmProviderPlugin(
-            "character",
-            setup.raw_character_generator,
+        character_llm_plugin = _register_llm_provider(
+            plugin_manager,
+            plugin_id="llm_provider.character",
+            role="character",
+            generator=setup.raw_character_generator,
             configured_available=_is_model_provider_available(
                 config,
                 config.llm_roles.character.model,
             ),
         )
-        validator_llm_plugin = LlmProviderPlugin(
-            "response_validator",
-            setup.raw_validator_generator,
+        validator_llm_plugin = _register_llm_provider(
+            plugin_manager,
+            plugin_id="llm_provider.response_validator",
+            role="response_validator",
+            generator=setup.raw_validator_generator,
             configured_available=_is_model_provider_available(
                 config,
                 config.llm_roles.response_validator.model,
             ),
         )
 
-    plugin_manager = PluginManager()
-    plugin_manager.register(default_llm_plugin)
-    plugin_manager.register(situation_llm_plugin)
-    if character_llm_plugin is not None and validator_llm_plugin is not None:
-        plugin_manager.register(character_llm_plugin)
-        plugin_manager.register(validator_llm_plugin)
     register_optional_plugin_from_factory(
         plugin_manager,
         plugin_id="games",
@@ -175,6 +179,23 @@ def setup_runtime_plugins(
         },
     )
 
+    default_response_generator = _require_initialized_llm_provider(
+        plugin_manager,
+        "llm_provider.default",
+    )
+    situation_response_generator = _require_initialized_llm_provider(
+        plugin_manager,
+        "llm_provider.situation_evaluator",
+    )
+    character_response_generator = _get_initialized_llm_provider(
+        plugin_manager,
+        "llm_provider.character",
+    )
+    validator_response_generator = _get_initialized_llm_provider(
+        plugin_manager,
+        "llm_provider.response_validator",
+    )
+
     relationship_memory_store: RelationshipMemoryStore | None = None
     relationship_memory_plugin = plugin_manager.get_plugin(
         _RELATIONSHIP_MEMORY_PLUGIN_ID
@@ -225,16 +246,10 @@ def setup_runtime_plugins(
 
     return RuntimePluginServices(
         plugin_manager=plugin_manager,
-        default_response_generator=cast(ResponseGenerator, default_llm_plugin),
-        situation_response_generator=cast(ResponseGenerator, situation_llm_plugin),
-        character_response_generator=cast(
-            ResponseGenerator | None,
-            character_llm_plugin,
-        ),
-        validator_response_generator=cast(
-            ResponseGenerator | None,
-            validator_llm_plugin,
-        ),
+        default_response_generator=default_response_generator,
+        situation_response_generator=situation_response_generator,
+        character_response_generator=character_response_generator,
+        validator_response_generator=validator_response_generator,
         initial_relationship_memory=initial_relationship_memory,
         initial_agent_memory=initial_agent_memory,
         relationship_memory_store=relationship_memory_store,
@@ -242,6 +257,60 @@ def setup_runtime_plugins(
         speech_synthesizer=speech_synthesizer,
         audio_player=audio_player,
     )
+
+
+def _register_llm_provider(
+    plugin_manager: PluginManager,
+    *,
+    plugin_id: str,
+    role: str,
+    generator: ResponseGenerator,
+    configured_available: bool,
+    required: bool = False,
+) -> ResponseGenerator:
+    plugin = register_optional_plugin_from_factory(
+        plugin_manager,
+        plugin_id=plugin_id,
+        module="app.plugins.llm_provider",
+        enabled=True,
+        configuration={
+            "role": role,
+            "configured_available": configured_available,
+        },
+        services={
+            "response_generator": generator,
+        },
+    )
+    if plugin is None:
+        if required:
+            raise RuntimeError(f"必須LLM Providerを登録できませんでした: {plugin_id}")
+        raise RuntimeError(f"LLM Providerを登録できませんでした: {plugin_id}")
+    return cast(ResponseGenerator, plugin)
+
+
+def _require_initialized_llm_provider(
+    plugin_manager: PluginManager,
+    plugin_id: str,
+) -> ResponseGenerator:
+    plugin = _get_initialized_llm_provider(plugin_manager, plugin_id)
+    if plugin is None:
+        status = plugin_manager.status(plugin_id)
+        status_value = status.value if status is not None else "unregistered"
+        raise RuntimeError(
+            f"必須LLM Providerを初期化できませんでした: "
+            f"{plugin_id} (status={status_value})"
+        )
+    return plugin
+
+
+def _get_initialized_llm_provider(
+    plugin_manager: PluginManager,
+    plugin_id: str,
+) -> ResponseGenerator | None:
+    plugin = plugin_manager.get_plugin(plugin_id)
+    if plugin is None:
+        return None
+    return cast(ResponseGenerator, plugin)
 
 
 class _ActivityManagerPluginGateway:
