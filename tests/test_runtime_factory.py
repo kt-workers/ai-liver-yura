@@ -17,7 +17,7 @@ from app.bootstrap.runtime import (
     create_topic_memory_store,
 )
 from app.config.app_config import AppConfig, load_app_config
-from app.core.plugins import PluginCapability
+from app.core.plugins import PluginCapability, PluginManager
 from app.domain.activities import Activity, ActivityType
 from app.domain.behavior import BehaviorDecision
 from app.plugins.games import GamesPlugin
@@ -359,6 +359,84 @@ def test_create_runtime_coordinator_returns_emotion_aware_runtime() -> None:
     assert "output.speech" in plugins["available_capabilities"]
 
 
+def test_runtime_does_not_import_games_plugin_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bootstrap import runtime as runtime_factory
+
+    config = load_app_config()
+    config = replace(
+        config,
+        response_generator=replace(config.response_generator, type="dummy"),
+        speech=replace(config.speech, enabled=False),
+        plugins=replace(
+            config.plugins,
+            games=replace(config.plugins.games, enabled=False),
+        ),
+    )
+
+    def fail_import(name: str) -> object:
+        raise AssertionError(f"無効なGames Pluginをimportしました: {name}")
+
+    monkeypatch.setattr(
+        "app.core.plugins.plugin_loader.importlib.import_module",
+        fail_import,
+    )
+
+    runtime = runtime_factory.create_runtime_coordinator(config)
+
+    assert runtime.plugin_manager is not None
+    assert "games" not in {
+        plugin.plugin_id for plugin in runtime.plugin_manager.list_plugins()
+    }
+    assert runtime.plugin_manager.get_plugin("games") is None
+
+
+def test_runtime_registers_enabled_games_plugin_via_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bootstrap import runtime as runtime_factory
+
+    config = load_app_config()
+    config = replace(
+        config,
+        response_generator=replace(config.response_generator, type="dummy"),
+        speech=replace(config.speech, enabled=False),
+        plugins=replace(
+            config.plugins,
+            games=replace(config.plugins.games, enabled=True),
+        ),
+    )
+    actual_register = runtime_factory.register_optional_plugin_from_factory
+    calls: list[dict[str, object]] = []
+
+    def register_optional_plugin_from_factory(
+        manager: PluginManager,
+        **kwargs: object,
+    ) -> object:
+        calls.append(kwargs)
+        return actual_register(manager, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        runtime_factory,
+        "register_optional_plugin_from_factory",
+        register_optional_plugin_from_factory,
+    )
+
+    runtime = runtime_factory.create_runtime_coordinator(config)
+
+    assert calls == [
+        {
+            "plugin_id": "games",
+            "module": "app.plugins.games",
+            "enabled": True,
+            "configuration": {"settings": config.plugins.games},
+        }
+    ]
+    assert runtime.plugin_manager is not None
+    assert runtime.plugin_manager.get_plugin("games") is not None
+
+
 @pytest.mark.asyncio
 async def test_runtime_factory_persists_and_restores_relationship_memory(
     tmp_path: Path,
@@ -537,7 +615,7 @@ async def test_semantic_activity_constraints_reach_enabled_games_plugin(
 
 
 @pytest.mark.asyncio
-async def test_semantic_start_is_rejected_without_games_plugin_and_no_first_word(
+async def test_semantic_start_becomes_conversation_without_games_plugin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from app.bootstrap import runtime as runtime_factory
@@ -568,10 +646,10 @@ async def test_semantic_start_is_rejected_without_games_plugin_and_no_first_word
 
     evaluation = runtime.last_behavior_evaluation
     assert evaluation is not None
-    assert evaluation.plan.activity_type == "shiritori"
-    assert evaluation.plan.constraints == {"theme": "深海生物"}
-    assert evaluation.accepted is False
-    assert evaluation.result.data["reason"] == "capability_unavailable"
+    assert evaluation.plan.activity_type == "conversation"
+    assert evaluation.plan.constraints == {}
+    assert evaluation.accepted is True
+    assert runtime.last_behavior_fallback_plan is None
     assert runtime.activity_manager.ongoing_activity is None
     assert generator.game_call_count == 0
     assert group is not None
@@ -612,10 +690,9 @@ async def test_games_plugin_disabled_keeps_core_conversation_available(
     assert runtime.plugin_manager is not None
     assert runtime.plugin_manager.get_plugin("games") is None
     assert runtime.last_behavior_evaluation is not None
-    assert runtime.last_behavior_evaluation.plan.activity_type == "shiritori"
-    assert runtime.last_behavior_evaluation.accepted is False
-    assert runtime.last_behavior_fallback_plan is not None
-    assert runtime.last_behavior_fallback_plan.decision == BehaviorDecision.CONVERSATION
+    assert runtime.last_behavior_evaluation.plan.activity_type == "conversation"
+    assert runtime.last_behavior_evaluation.accepted is True
+    assert runtime.last_behavior_fallback_plan is None
     assert group is not None
     assert generator.game_call_count == 0
     assert generator.conversation_call_count == 0
@@ -818,7 +895,7 @@ async def test_affirmative_confirmation_revalidates_and_executes_candidate(
 
 
 @pytest.mark.asyncio
-async def test_affirmative_confirmation_is_rejected_when_capability_is_unavailable(
+async def test_unregistered_games_activity_does_not_request_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from app.bootstrap import runtime as runtime_factory
@@ -836,13 +913,11 @@ async def test_affirmative_confirmation_is_rejected_when_capability_is_unavailab
     )
     runtime = runtime_factory.create_runtime_coordinator(config)
     await runtime.submit_user_text("言葉をつなぐ遊びをやらない？", source="console")
-    assert runtime.pending_confirmation is not None
-
-    await runtime.submit_user_text("はい", source="console")
 
     assert runtime.pending_confirmation is None
     assert runtime.last_behavior_evaluation is not None
-    assert runtime.last_behavior_evaluation.accepted is False
+    assert runtime.last_behavior_evaluation.plan.activity_type == "conversation"
+    assert runtime.last_behavior_evaluation.accepted is True
     assert runtime.activity_manager.ongoing_activity is None
 
 
