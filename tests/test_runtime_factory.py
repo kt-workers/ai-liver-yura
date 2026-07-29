@@ -21,6 +21,7 @@ from app.config.app_config import AppConfig, load_app_config
 from app.core.plugins import PluginCapability, PluginManager
 from app.domain.activities import Activity, ActivityType
 from app.domain.behavior import BehaviorDecision
+from app.domain.relationships import RelationshipMemory
 from app.plugins.games import GamesPlugin
 from app.ports.response_generator import ResponseGenerator
 from app.runtime.emotion_runtime_integration import EmotionAwareRuntimeCoordinator
@@ -354,7 +355,6 @@ def test_create_runtime_coordinator_returns_emotion_aware_runtime() -> None:
         "llm_provider.response_validator": "initialized",
         "games": "initialized",
         "agent_memory": "disabled",
-        "relationship_memory": "disabled",
         "voice_output": "initialized",
     }
     assert "output.speech" in plugins["available_capabilities"]
@@ -597,6 +597,177 @@ async def test_runtime_initializes_voice_output_degraded_with_missing_provider(
     assert not runtime.plugin_manager.is_capability_available(
         "output.speech",
         "voice_output",
+    )
+    assert group is not None
+
+
+class _RuntimeRelationshipMemoryStore:
+    def __init__(self) -> None:
+        self.memory = RelationshipMemory()
+
+    def load(self) -> RelationshipMemory:
+        return self.memory
+
+    def save(self, memory: RelationshipMemory) -> None:
+        self.memory = memory
+
+
+@pytest.mark.asyncio
+async def test_runtime_does_not_import_relationship_memory_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bootstrap import runtime as runtime_factory
+
+    config = load_app_config()
+    config = replace(
+        config,
+        response_generator=replace(config.response_generator, type="dummy"),
+        speech=replace(config.speech, enabled=False),
+        plugins=replace(
+            config.plugins,
+            games=replace(config.plugins.games, enabled=False),
+        ),
+        memory=replace(
+            config.memory,
+            topic_memory=replace(config.memory.topic_memory, enabled=False),
+            relationship_memory=replace(
+                config.memory.relationship_memory,
+                enabled=False,
+            ),
+        ),
+    )
+    original_import_module = importlib.import_module
+
+    def import_module(name: str, package: str | None = None) -> object:
+        if name == "app.plugins.relationship_memory":
+            raise AssertionError("無効なRelationship Memory Pluginをimportしました")
+        return original_import_module(name, package)
+
+    monkeypatch.setattr(
+        "app.core.plugins.plugin_loader.importlib.import_module",
+        import_module,
+    )
+
+    runtime = runtime_factory.create_runtime_coordinator(config)
+    assert runtime.agent_state.relationship_memory.current is None
+    await runtime.submit_user_text("こんにちは", source="console")
+    group = await runtime.run_once()
+
+    assert runtime.plugin_manager is not None
+    assert "relationship_memory" not in {
+        plugin.plugin_id for plugin in runtime.plugin_manager.list_plugins()
+    }
+    assert group is not None
+
+
+def test_runtime_registers_enabled_relationship_memory_via_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bootstrap import runtime as runtime_factory
+
+    config = load_app_config()
+    config = replace(
+        config,
+        response_generator=replace(config.response_generator, type="dummy"),
+        speech=replace(config.speech, enabled=False),
+        plugins=replace(
+            config.plugins,
+            games=replace(config.plugins.games, enabled=False),
+        ),
+        memory=replace(
+            config.memory,
+            topic_memory=replace(config.memory.topic_memory, enabled=False),
+            relationship_memory=replace(
+                config.memory.relationship_memory,
+                enabled=True,
+            ),
+        ),
+    )
+    store = _RuntimeRelationshipMemoryStore()
+    monkeypatch.setattr(
+        runtime_factory,
+        "create_relationship_memory_store",
+        lambda _: store,
+    )
+    actual_register = runtime_factory.register_optional_plugin_from_factory
+    calls: list[dict[str, object]] = []
+
+    def register_optional_plugin_from_factory(
+        manager: PluginManager,
+        **kwargs: object,
+    ) -> object:
+        calls.append(kwargs)
+        return actual_register(manager, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        runtime_factory,
+        "register_optional_plugin_from_factory",
+        register_optional_plugin_from_factory,
+    )
+
+    runtime = runtime_factory.create_runtime_coordinator(config)
+
+    assert [
+        call for call in calls if call["plugin_id"] == "relationship_memory"
+    ] == [
+        {
+            "plugin_id": "relationship_memory",
+            "module": "app.plugins.relationship_memory",
+            "enabled": True,
+            "services": {"relationship_memory_store": store},
+        }
+    ]
+    assert runtime.plugin_manager is not None
+    assert runtime.plugin_manager.get_plugin("relationship_memory") is not None
+    assert runtime.plugin_manager.is_capability_available(
+        "memory.relationship",
+        "relationship_memory",
+    )
+
+
+@pytest.mark.asyncio
+async def test_runtime_initializes_relationship_memory_degraded_without_store(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bootstrap import runtime as runtime_factory
+
+    config = load_app_config()
+    config = replace(
+        config,
+        response_generator=replace(config.response_generator, type="dummy"),
+        speech=replace(config.speech, enabled=False),
+        plugins=replace(
+            config.plugins,
+            games=replace(config.plugins.games, enabled=False),
+        ),
+        memory=replace(
+            config.memory,
+            topic_memory=replace(config.memory.topic_memory, enabled=False),
+            relationship_memory=replace(
+                config.memory.relationship_memory,
+                enabled=True,
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        runtime_factory,
+        "create_relationship_memory_store",
+        lambda _: None,
+    )
+
+    runtime = runtime_factory.create_runtime_coordinator(config)
+    assert runtime.agent_state.relationship_memory.current is None
+    await runtime.submit_user_text("こんにちは", source="console")
+    group = await runtime.run_once()
+
+    assert runtime.plugin_manager is not None
+    assert "relationship_memory" in {
+        plugin.plugin_id for plugin in runtime.plugin_manager.list_plugins()
+    }
+    assert runtime.plugin_manager.get_plugin("relationship_memory") is not None
+    assert not runtime.plugin_manager.is_capability_available(
+        "memory.relationship",
+        "relationship_memory",
     )
     assert group is not None
 
