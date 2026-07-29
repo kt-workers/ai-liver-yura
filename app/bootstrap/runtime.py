@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from queue import Queue
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from app.adapters.embedding.openai_embedding_generator import (
     OpenAIEmbeddingGenerator,
@@ -67,7 +67,10 @@ from app.adapters.web_conversation import (
     WebConversationClient,
     WebConversationClientConfig,
 )
-from app.bootstrap.plugin_registration import register_optional_plugin_from_factory
+from app.bootstrap.runtime_plugin_setup import (
+    RuntimePluginSetupInput,
+    setup_runtime_plugins,
+)
 from app.config.app_config import (
     AppConfig,
     LlmRoleSettings,
@@ -84,16 +87,11 @@ from app.config.service_schema import (
     VoiceVoxServiceSettings,
     YouTubeServiceSettings,
 )
-from app.core.plugins import PluginManager
-from app.domain.activities import Activity, ActivityStatus, ActivityType
+from app.domain.activities import ActivityStatus, ActivityType
 from app.domain.character import CharacterProfile
-from app.domain.memory import AgentMemoryState
-from app.domain.relationships import RelationshipMemory
 from app.domain.short_term_memory import ShortTermMemory
 from app.domain.topic import TopicHistory
 from app.domain.topic_classifier import TopicClassifier
-from app.plugins.agent_memory import AgentMemoryPlugin
-from app.plugins.llm_provider import LlmProviderPlugin
 from app.ports.audio_player import AudioPlayer
 from app.ports.embedding_generator import EmbeddingGenerator
 from app.ports.llm_roles import ResponseGeneratorRoleAdapter
@@ -132,12 +130,6 @@ from app.runtime.planned_activity_queue import PlannedActivityQueue
 from app.runtime.runtime_coordinator import RuntimeCoordinator
 from app.runtime.situation_evaluator import SituationEvaluator
 from app.shared.contracts.memory import AgentMemoryStore
-from app.shared.contracts.plugins.runtime import (
-    PluginActivityWorkItem,
-    PluginContext,
-    PluginLlmRequest,
-    SystemClock,
-)
 from app.usecases import ExecuteActionUsecase
 from app.usecases.enrich_activity_with_topic_memory_usecase import (
     EnrichActivityWithTopicMemoryUsecase,
@@ -145,8 +137,6 @@ from app.usecases.enrich_activity_with_topic_memory_usecase import (
 from app.utils.trace import TraceLogger
 
 logger = logging.getLogger(__name__)
-_RELATIONSHIP_MEMORY_PLUGIN_ID = "relationship_memory"
-_RELATIONSHIP_MEMORY_CAPABILITY = "memory.relationship"
 
 if TYPE_CHECKING:
     from app.adapters.streaming import (
@@ -687,23 +677,6 @@ def create_relationship_memory_store(
     return store
 
 
-def load_relationship_memory(
-    store: RelationshipMemoryStore | None,
-    *,
-    max_entries: int,
-) -> RelationshipMemory:
-    if store is None:
-        return RelationshipMemory(max_entries=max_entries)
-    try:
-        return store.load()
-    except Exception as error:
-        TraceLogger().error(
-            "runtime_factory:load_relationship_memory:failed",
-            error_type=type(error).__name__,
-        )
-        return RelationshipMemory(max_entries=max_entries)
-
-
 def create_agent_memory_store(config: AppConfig) -> AgentMemoryStore | None:
     settings = config.memory.agent_memory
     if not settings.enabled:
@@ -718,25 +691,6 @@ def create_agent_memory_store(config: AppConfig) -> AgentMemoryStore | None:
         )
         path = project_root / path
     return JsonAgentMemoryStore(path)
-
-
-def load_agent_memory(
-    store: AgentMemoryStore | None,
-    *,
-    max_history_entries: int,
-) -> AgentMemoryState:
-    if store is None:
-        return AgentMemoryState(max_history_entries=max_history_entries)
-    try:
-        return AgentMemoryState.from_snapshot(
-            store.load(), max_history_entries=max_history_entries
-        )
-    except Exception as error:
-        TraceLogger().error(
-            "runtime_factory:load_agent_memory:failed",
-            error_type=type(error).__name__,
-        )
-        return AgentMemoryState(max_history_entries=max_history_entries)
 
 
 # --- memory summary generator factory ---
@@ -929,134 +883,21 @@ def create_runtime_coordinator(
         )
         audio_player = web_conversation_client
 
-    default_llm_available = config.response_generator.type == "dummy" or (
-        _is_model_provider_available(config, config.response_generator.model)
-    )
-    default_llm_plugin = LlmProviderPlugin(
-        "default",
-        raw_response_generator,
-        configured_available=default_llm_available,
-    )
-    situation_llm_plugin = LlmProviderPlugin(
-        "situation_evaluator",
-        raw_situation_generator,
-        configured_available=(
-            config.response_generator.type == "dummy"
-            or _is_model_provider_available(
-                config, config.llm_roles.situation_evaluator.model
-            )
-        ),
-    )
-    character_llm_plugin: LlmProviderPlugin | None = None
-    validator_llm_plugin: LlmProviderPlugin | None = None
-    if raw_character_generator is not None and raw_validator_generator is not None:
-        character_llm_plugin = LlmProviderPlugin(
-            "character",
-            raw_character_generator,
-            configured_available=_is_model_provider_available(
-                config, config.llm_roles.character.model
-            ),
+    plugin_services = setup_runtime_plugins(
+        RuntimePluginSetupInput(
+            config=config,
+            activity_manager=activity_manager,
+            raw_response_generator=raw_response_generator,
+            raw_situation_generator=raw_situation_generator,
+            raw_character_generator=raw_character_generator,
+            raw_validator_generator=raw_validator_generator,
+            raw_relationship_memory_store=raw_relationship_memory_store,
+            raw_agent_memory_store=raw_agent_memory_store,
+            speech_synthesizer=speech_synthesizer,
+            audio_player=audio_player,
         )
-        validator_llm_plugin = LlmProviderPlugin(
-            "response_validator",
-            raw_validator_generator,
-            configured_available=_is_model_provider_available(
-                config, config.llm_roles.response_validator.model
-            ),
-        )
-
-    plugin_manager = PluginManager()
-    plugin_manager.register(default_llm_plugin)
-    plugin_manager.register(situation_llm_plugin)
-    if character_llm_plugin is not None and validator_llm_plugin is not None:
-        plugin_manager.register(character_llm_plugin)
-        plugin_manager.register(validator_llm_plugin)
-    register_optional_plugin_from_factory(
-        plugin_manager,
-        plugin_id="games",
-        module="app.plugins.games",
-        enabled=config.plugins.games.enabled,
-        configuration={"settings": config.plugins.games},
     )
-    register_optional_plugin_from_factory(
-        plugin_manager,
-        plugin_id=_RELATIONSHIP_MEMORY_PLUGIN_ID,
-        module="app.plugins.relationship_memory",
-        enabled=config.memory.relationship_memory.enabled,
-        services={
-            "relationship_memory_store": raw_relationship_memory_store,
-        },
-    )
-    agent_memory_plugin = AgentMemoryPlugin(raw_agent_memory_store)
-    plugin_manager.register(agent_memory_plugin)
-    register_optional_plugin_from_factory(
-        plugin_manager,
-        plugin_id="voice_output",
-        module="app.plugins.voice_output",
-        enabled=config.speech.enabled,
-        services={
-            "speech_synthesizer": speech_synthesizer,
-            "audio_player": audio_player,
-        },
-    )
-    game_model = config.plugins.games.intent_interpreter.model or config.response_generator.model
-    plugin_manager.initialize_enabled_plugins(
-        PluginContext(
-            llm_gateway=_PluginLlmGateway(default_llm_plugin),
-            activity_gateway=_ActivityManagerPluginGateway(activity_manager),
-            clock=SystemClock(),
-            configuration={
-                "llm_available": _is_model_provider_available(config, game_model),
-            },
-            capability_reporter=plugin_manager,
-        ),
-        {
-            "llm_provider.default": True,
-            "llm_provider.situation_evaluator": True,
-            "llm_provider.character": character_llm_plugin is not None,
-            "llm_provider.response_validator": validator_llm_plugin is not None,
-            "games": config.plugins.games.enabled,
-            _RELATIONSHIP_MEMORY_PLUGIN_ID: config.memory.relationship_memory.enabled,
-            "agent_memory": raw_agent_memory_store is not None,
-            "voice_output": config.speech.enabled,
-        },
-    )
-    relationship_memory_store: RelationshipMemoryStore | None = None
-    initialized_memory_plugin = plugin_manager.get_plugin(
-        _RELATIONSHIP_MEMORY_PLUGIN_ID
-    )
-    if initialized_memory_plugin is not None and (
-        plugin_manager.is_capability_available(
-            _RELATIONSHIP_MEMORY_CAPABILITY,
-            _RELATIONSHIP_MEMORY_PLUGIN_ID,
-        )
-    ):
-        relationship_memory_store = cast(
-            RelationshipMemoryStore,
-            initialized_memory_plugin,
-        )
-    initial_relationship_memory = load_relationship_memory(
-        relationship_memory_store,
-        max_entries=config.memory.relationship_memory.max_entries,
-    )
-    if not plugin_manager.is_capability_available(
-        _RELATIONSHIP_MEMORY_CAPABILITY,
-        _RELATIONSHIP_MEMORY_PLUGIN_ID,
-    ):
-        relationship_memory_store = None
-    agent_memory_store: AgentMemoryStore | None = None
-    initialized_agent_memory_plugin = plugin_manager.get_plugin("agent_memory")
-    if isinstance(initialized_agent_memory_plugin, AgentMemoryPlugin):
-        agent_memory_store = initialized_agent_memory_plugin
-    initial_agent_memory = load_agent_memory(
-        agent_memory_store,
-        max_history_entries=config.memory.agent_memory.max_history_entries,
-    )
-    if not plugin_manager.is_capability_available(
-        AgentMemoryPlugin.MEMORY_CAPABILITY,
-        AgentMemoryPlugin.plugin_id,
-    ):
-        agent_memory_store = None
+    plugin_manager = plugin_services.plugin_manager
     telemetry_enabled = os.getenv("YURA_STATE_TELEMETRY_ENABLED", "1").strip().lower()
     state_telemetry_publisher = UdpAgentStatePublisher(
         UdpAgentStatePublisherConfig(
@@ -1068,18 +909,21 @@ def create_runtime_coordinator(
     agent_life_service = AgentLifeService(
         activity_manager,
         initial_state=AgentState(
-            relationship_memory=initial_relationship_memory,
-            memory=initial_agent_memory,
+            relationship_memory=plugin_services.initial_relationship_memory,
+            memory=plugin_services.initial_agent_memory,
         ),
         pending_confirmation_provider=pending_confirmation_manager.has_pending,
         short_term_memory=short_term_memory,
-        relationship_memory_store=relationship_memory_store,
-        agent_memory_store=agent_memory_store,
+        relationship_memory_store=plugin_services.relationship_memory_store,
+        agent_memory_store=plugin_services.agent_memory_store,
         state_observer=state_telemetry_publisher.publish,
     )
-    response_generator: ResponseGenerator = default_llm_plugin
-    situation_generator: ResponseGenerator = situation_llm_plugin
-    if character_llm_plugin is None or validator_llm_plugin is None:
+    response_generator = plugin_services.default_response_generator
+    situation_generator = plugin_services.situation_response_generator
+    if (
+        plugin_services.character_response_generator is None
+        or plugin_services.validator_response_generator is None
+    ):
         character_response_pipeline = CharacterResponsePipeline(
             ResponseContextBuilder(short_term_memory, topic_history),
             CharacterLlmService(
@@ -1093,19 +937,21 @@ def create_runtime_coordinator(
         character_response_pipeline = CharacterResponsePipeline(
             ResponseContextBuilder(short_term_memory, topic_history),
             CharacterLlmService(
-                ResponseGeneratorRoleAdapter(character_llm_plugin),
+                ResponseGeneratorRoleAdapter(
+                    plugin_services.character_response_generator
+                ),
                 CharacterPromptBuilder(),
                 character_profile,
             ),
             ResponseValidator(
-                ResponseGeneratorRoleAdapter(validator_llm_plugin),
+                ResponseGeneratorRoleAdapter(
+                    plugin_services.validator_response_generator
+                ),
                 ResponseValidatorPromptBuilder(),
             ),
         )
-    voice_output = plugin_manager.get_plugin("voice_output")
-    if voice_output is not None:
-        speech_synthesizer = cast(SpeechSynthesizer, voice_output)
-        audio_player = cast(AudioPlayer, voice_output)
+    speech_synthesizer = plugin_services.speech_synthesizer
+    audio_player = plugin_services.audio_player
     topic_classifier = create_topic_classifier(config)
     embedding_generator = create_embedding_generator(config)
     topic_memory_store = create_topic_memory_store(config)
@@ -1244,60 +1090,6 @@ def create_runtime_coordinator(
         activity_executor_thread_class=type(activity_executor_thread).__name__,
     )
     return runtime_coordinator
-
-
-class _ActivityManagerPluginGateway:
-    def __init__(self, activity_manager: ActivityManager) -> None:
-        self._activity_manager = activity_manager
-
-    def register(self, activity: Activity) -> Activity:
-        return self._activity_manager.register_plugin_activity(activity)
-
-
-class _PluginLlmGateway:
-    """Shared Plugin要求をCore Activityへ変換するcomposition-root Adapter。"""
-
-    def __init__(self, generator: ResponseGenerator) -> None:
-        self._generator = generator
-
-    async def generate_response(self, request: object) -> str:
-        if isinstance(request, PluginActivityWorkItem):
-            activity = Activity(
-                activity_type=ActivityType.PLUGIN_ACTIVITY,
-                goal=request.goal,
-                priority=request.priority,
-                context=dict(request.context),
-                interruptible=request.interruptible,
-                activity_id=request.work_item_id,
-            )
-            return await self._generator.generate_response(activity)
-        if not isinstance(request, PluginLlmRequest):
-            return await self._generator.generate_response(cast(Activity, request))
-        activity = Activity(
-            activity_type=ActivityType.BEHAVIOR_PLANNING,
-            goal=request.purpose,
-            context={
-                **request.context,
-                "plugin_prompt_override": request.prompt,
-                "llm_role": request.purpose,
-                "request_id": request.request_id,
-            },
-        )
-        return await self._generator.generate_response(activity)
-
-
-def _is_model_provider_available(config: AppConfig, model_key: str) -> bool:
-    if config.response_generator.type == "dummy":
-        return True
-    model = config.models.get(model_key)
-    if model is None:
-        return False
-    service = config.services.get(model.service)
-    if service is None:
-        return False
-    if service.type == "openai":
-        return bool(service.api_key_env and os.getenv(service.api_key_env))
-    return True
 
 
 def create_stream_preparation_runtime(config: AppConfig) -> StreamPreparationRuntime:
