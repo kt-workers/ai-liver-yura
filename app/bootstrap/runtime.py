@@ -67,6 +67,7 @@ from app.adapters.web_conversation import (
     WebConversationClient,
     WebConversationClientConfig,
 )
+from app.bootstrap.plugin_registration import register_optional_plugin_from_factory
 from app.config.app_config import (
     AppConfig,
     LlmRoleSettings,
@@ -92,7 +93,6 @@ from app.domain.short_term_memory import ShortTermMemory
 from app.domain.topic import TopicHistory
 from app.domain.topic_classifier import TopicClassifier
 from app.plugins.agent_memory import AgentMemoryPlugin
-from app.plugins.games import GamesPlugin
 from app.plugins.llm_provider import LlmProviderPlugin
 from app.plugins.relationship_memory import RelationshipMemoryPlugin
 from app.plugins.voice_output import VoiceOutputPlugin
@@ -971,7 +971,13 @@ def create_runtime_coordinator(
     if character_llm_plugin is not None and validator_llm_plugin is not None:
         plugin_manager.register(character_llm_plugin)
         plugin_manager.register(validator_llm_plugin)
-    plugin_manager.register(GamesPlugin(config.plugins.games))
+    register_optional_plugin_from_factory(
+        plugin_manager,
+        plugin_id="games",
+        module="app.plugins.games",
+        enabled=config.plugins.games.enabled,
+        configuration={"settings": config.plugins.games},
+    )
     relationship_memory_plugin = RelationshipMemoryPlugin(raw_relationship_memory_store)
     plugin_manager.register(relationship_memory_plugin)
     agent_memory_plugin = AgentMemoryPlugin(raw_agent_memory_store)
