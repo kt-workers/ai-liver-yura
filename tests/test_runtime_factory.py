@@ -1,3 +1,4 @@
+import importlib
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -425,7 +426,7 @@ def test_runtime_registers_enabled_games_plugin_via_factory(
 
     runtime = runtime_factory.create_runtime_coordinator(config)
 
-    assert calls == [
+    assert [call for call in calls if call["plugin_id"] == "games"] == [
         {
             "plugin_id": "games",
             "module": "app.plugins.games",
@@ -435,6 +436,169 @@ def test_runtime_registers_enabled_games_plugin_via_factory(
     ]
     assert runtime.plugin_manager is not None
     assert runtime.plugin_manager.get_plugin("games") is not None
+
+
+class _RuntimeSpeechSynthesizer:
+    async def synthesize(
+        self,
+        text: str,
+        voice_intent: object | None = None,
+    ) -> bytes:
+        return text.encode("utf-8")
+
+
+class _RuntimeAudioPlayer:
+    async def play(self, audio_data: bytes) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+async def test_runtime_does_not_import_voice_output_when_speech_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bootstrap import runtime as runtime_factory
+
+    config = load_app_config()
+    config = replace(
+        config,
+        response_generator=replace(config.response_generator, type="dummy"),
+        speech=replace(config.speech, enabled=False),
+        plugins=replace(
+            config.plugins,
+            games=replace(config.plugins.games, enabled=False),
+        ),
+        memory=replace(
+            config.memory,
+            topic_memory=replace(config.memory.topic_memory, enabled=False),
+        ),
+    )
+    original_import_module = importlib.import_module
+
+    def import_module(name: str, package: str | None = None) -> object:
+        if name == "app.plugins.voice_output":
+            raise AssertionError("無効なVoice Output Pluginをimportしました")
+        return original_import_module(name, package)
+
+    monkeypatch.setattr(
+        "app.core.plugins.plugin_loader.importlib.import_module",
+        import_module,
+    )
+
+    runtime = runtime_factory.create_runtime_coordinator(config)
+    await runtime.submit_user_text("こんにちは", source="console")
+    group = await runtime.run_once()
+
+    assert runtime.plugin_manager is not None
+    assert "voice_output" not in {
+        plugin.plugin_id for plugin in runtime.plugin_manager.list_plugins()
+    }
+    assert runtime.plugin_manager.get_plugin("voice_output") is None
+    assert group is not None
+
+
+def test_runtime_registers_enabled_voice_output_via_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bootstrap import runtime as runtime_factory
+
+    config = load_app_config()
+    config = replace(
+        config,
+        response_generator=replace(config.response_generator, type="dummy"),
+        plugins=replace(
+            config.plugins,
+            games=replace(config.plugins.games, enabled=False),
+        ),
+    )
+    synthesizer = _RuntimeSpeechSynthesizer()
+    player = _RuntimeAudioPlayer()
+    monkeypatch.setattr(
+        runtime_factory,
+        "create_speech_synthesizer",
+        lambda _: synthesizer,
+    )
+    monkeypatch.setattr(runtime_factory, "create_audio_player", lambda _: player)
+    actual_register = runtime_factory.register_optional_plugin_from_factory
+    calls: list[dict[str, object]] = []
+
+    def register_optional_plugin_from_factory(
+        manager: PluginManager,
+        **kwargs: object,
+    ) -> object:
+        calls.append(kwargs)
+        return actual_register(manager, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        runtime_factory,
+        "register_optional_plugin_from_factory",
+        register_optional_plugin_from_factory,
+    )
+
+    runtime = runtime_factory.create_runtime_coordinator(config)
+
+    assert [call for call in calls if call["plugin_id"] == "voice_output"] == [
+        {
+            "plugin_id": "voice_output",
+            "module": "app.plugins.voice_output",
+            "enabled": True,
+            "services": {
+                "speech_synthesizer": synthesizer,
+                "audio_player": player,
+            },
+        }
+    ]
+    assert runtime.plugin_manager is not None
+    assert runtime.plugin_manager.get_plugin("voice_output") is not None
+    assert runtime.plugin_manager.is_capability_available(
+        "output.speech",
+        "voice_output",
+    )
+
+
+@pytest.mark.asyncio
+async def test_runtime_initializes_voice_output_degraded_with_missing_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.bootstrap import runtime as runtime_factory
+
+    config = load_app_config()
+    config = replace(
+        config,
+        response_generator=replace(config.response_generator, type="dummy"),
+        plugins=replace(
+            config.plugins,
+            games=replace(config.plugins.games, enabled=False),
+        ),
+        memory=replace(
+            config.memory,
+            topic_memory=replace(config.memory.topic_memory, enabled=False),
+        ),
+    )
+    monkeypatch.setattr(
+        runtime_factory,
+        "create_speech_synthesizer",
+        lambda _: None,
+    )
+    monkeypatch.setattr(
+        runtime_factory,
+        "create_audio_player",
+        lambda _: _RuntimeAudioPlayer(),
+    )
+
+    runtime = runtime_factory.create_runtime_coordinator(config)
+    await runtime.submit_user_text("こんにちは", source="console")
+    group = await runtime.run_once()
+
+    assert runtime.plugin_manager is not None
+    assert "voice_output" in {
+        plugin.plugin_id for plugin in runtime.plugin_manager.list_plugins()
+    }
+    assert runtime.plugin_manager.get_plugin("voice_output") is not None
+    assert not runtime.plugin_manager.is_capability_available(
+        "output.speech",
+        "voice_output",
+    )
+    assert group is not None
 
 
 @pytest.mark.asyncio
