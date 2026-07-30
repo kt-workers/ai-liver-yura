@@ -26,6 +26,7 @@ from app.integrations.streaming import (
 from subsystems.streaming.domain import StreamingSubsystemState
 
 if TYPE_CHECKING:
+    from subsystems.streaming.adapters.obs import ObsAdapterBundle
     from subsystems.streaming.adapters.youtube import YouTubeAdapterBundle
 
 _CAPABILITIES = StreamingCapabilities(
@@ -58,9 +59,11 @@ class FakeStreamingRuntime:
         self,
         *,
         clock: Callable[[], datetime] = _utc_now,
+        obs: ObsAdapterBundle | None = None,
         youtube: YouTubeAdapterBundle | None = None,
     ) -> None:
         self._clock = clock
+        self._obs = obs
         self._youtube = youtube
         self._state = StreamingSubsystemState()
         self._events: list[StreamingEventEnvelope] = []
@@ -72,6 +75,9 @@ class FakeStreamingRuntime:
         return self._state.status
 
     async def get_health(self) -> StreamingHealth:
+        obs_healthy = (
+            True if self._obs is None else await self._obs.preparation.health_check()
+        )
         youtube_healthy = (
             True
             if self._youtube is None
@@ -79,9 +85,13 @@ class FakeStreamingRuntime:
         )
         return StreamingHealth(
             status=self._state.status,
-            healthy=youtube_healthy,
+            healthy=obs_healthy and youtube_healthy,
             checked_at=self._clock(),
-            components={"runtime": True, "youtube": youtube_healthy},
+            components={
+                "runtime": True,
+                "obs": obs_healthy,
+                "youtube": youtube_healthy,
+            },
         )
 
     async def get_capabilities(self) -> StreamingCapabilities:
