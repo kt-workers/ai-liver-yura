@@ -727,6 +727,16 @@ ActionScheduler の確定仕様:
 - EmbeddingやLLM評価はPort越しに任意利用とし、利用不能時は決定論的なフォールバックを使う
 - TopicHistoryは発話履歴、InterruptedTopicは中断判断用状態、Topic Engineは候補選定責務として区別する
 
+## Streaming公開通信契約方針
+
+- `app/integrations/streaming/`をCore、Streaming Subsystem、Streaming Adminが共有するPython参照契約とする
+- status、health、capability、comment、Operation request／result、Event Envelope、error、version、cursor、idempotency keyだけを公開する
+- Query、Command、Eventを分離し、Operation受付と実行完了を同一視しない
+- 公開DTOへYouTube／OBS／Google API、Core Runtime、Admin API、transportの具象型を含めない
+- 現在versionは`1.0`とし、同一majorのoptional追加を互換、required削除・型変更をmajor変更とする
+- 未知fieldは無視し、未知status／error code／Event type／capabilityは文書化した安全なfallbackで扱う
+- 今回はRuntime配線、Streaming処理移動、外部schema、server、Config／Secret変更を行わない
+
 ## Game Subsystem Integration方針
 
 - 旧`app/plugins/games/`としりとり専用実装は物理削除し、Core内に互換入口を残さない

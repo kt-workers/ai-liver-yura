@@ -102,6 +102,7 @@ Coreは次を認識しない。
 
 ```text
 DISCONNECTED
+UNAVAILABLE
 IDLE
 PREPARING
 READY
@@ -134,13 +135,16 @@ Command
 
 Event
 - streaming.status.changed
+- streaming.health.changed
+- streaming.capabilities.changed
 - streaming.comment.received
 - streaming.operation.completed
-- streaming.operation.failed
-- streaming.connection.changed
+- streaming.error.occurred
 ```
 
-通信方式はHTTPをCommand／Queryに、SSEまたはWebSocketをEventに用いる。具体方式は契約定義PRで確定する。
+公開契約versionは`1.0`から開始する。Eventはversion、sequence、不透明cursorを持つ共通Envelopeで通知する。Commandは任意のidempotency keyを持ち、結果はaccepted、正規化status、安定error codeで表す。
+
+契約はtransport非依存とし、HTTP、WebSocket、IPC、in-process Fakeのいずれでも利用可能にする。具体的な通信方式とschema serializerはSubsystem外枠工程で決定する。
 
 ## 5. Game Subsystem
 

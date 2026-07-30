@@ -157,9 +157,11 @@ subsystems/games/
 
 ## 7. E: Streaming公開通信契約
 
+> 実施状況（2026-07-31）: 完了。公開DTO、versioning、互換方針、契約境界テストを追加した。
+
 ### 目的
 
-CoreとStreaming Subsystem間のプロセス境界契約を確定する。
+Core、Streaming Subsystem、Streaming Admin間のプロセス境界契約を確定する。
 
 ### 契約対象
 
@@ -179,6 +181,7 @@ CoreとStreaming Subsystem間のプロセス境界契約を確定する。
 - Command／QueryとEventを分離する
 - schemaの後方互換方針を定義する
 - Core、Subsystem、Adminが同じ公開schemaを検証できる
+- 公開契約がtransport、Core Runtime、Streaming Plugin、Adapter、Admin具象へ依存しない
 
 ## 8. F: Streaming Subsystemプロセス外枠
 
@@ -309,7 +312,7 @@ feature/plugin-separation-development
 ├─ refactor/disable-legacy-games-registration
 ├─ refactor/remove-legacy-games-plugin
 ├─ feature/game-subsystem-contract
-├─ feature/streaming-subsystem-contracts
+├─ feature/streaming-public-contract
 ├─ feature/streaming-subsystem-shell
 ├─ refactor/move-youtube-obs-to-streaming-subsystem
 ├─ refactor/move-streaming-session-to-subsystem
@@ -320,4 +323,4 @@ feature/plugin-separation-development
 
 ## 15. 次の作業
 
-旧Games Plugin／しりとりの物理削除と、Game Subsystem契約外枠／Null Gatewayの新規追加は完了した。次工程ではStreaming公開通信契約を確定する。
+Streaming公開通信契約の定義は完了した。次工程では既存Streaming処理をまだ移動せず、独立起動可能なStreaming Subsystemプロセス外枠を追加する。
