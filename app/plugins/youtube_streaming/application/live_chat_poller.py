@@ -389,19 +389,23 @@ class YouTubeLiveChatPoller:
         text = str(error)
         if "chat_ended" in text or "liveChatEnded" in text:
             return "live_chat.chat_ended", False, True
-        if isinstance(error, YouTubeApiError):
+        kind = getattr(error, "kind", None)
+        kind_value = getattr(kind, "value", None)
+        if isinstance(error, YouTubeApiError) or isinstance(kind_value, str):
             mapping = {
-                YouTubeApiErrorKind.AUTHENTICATION: "live_chat.auth_failed",
-                YouTubeApiErrorKind.PERMISSION: "live_chat.forbidden",
-                YouTubeApiErrorKind.QUOTA_EXHAUSTED: "live_chat.quota_exceeded",
-                YouTubeApiErrorKind.TIMEOUT: "live_chat.network_timeout",
-                YouTubeApiErrorKind.NETWORK: "live_chat.transient_error",
-                YouTubeApiErrorKind.SERVER: "live_chat.transient_error",
-                YouTubeApiErrorKind.NOT_FOUND: "live_chat.not_found",
+                YouTubeApiErrorKind.AUTHENTICATION.value: "live_chat.auth_failed",
+                YouTubeApiErrorKind.PERMISSION.value: "live_chat.forbidden",
+                YouTubeApiErrorKind.QUOTA_EXHAUSTED.value: (
+                    "live_chat.quota_exceeded"
+                ),
+                YouTubeApiErrorKind.TIMEOUT.value: "live_chat.network_timeout",
+                YouTubeApiErrorKind.NETWORK.value: "live_chat.transient_error",
+                YouTubeApiErrorKind.SERVER.value: "live_chat.transient_error",
+                YouTubeApiErrorKind.NOT_FOUND.value: "live_chat.not_found",
             }
             return (
-                mapping.get(error.kind, "live_chat.invalid_response"),
-                error.retryable,
+                mapping.get(kind_value, "live_chat.invalid_response"),
+                bool(getattr(error, "retryable", False)),
                 False,
             )
         if isinstance(error, (TimeoutError, OSError)):

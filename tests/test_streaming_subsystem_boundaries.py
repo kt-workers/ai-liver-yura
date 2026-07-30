@@ -44,7 +44,6 @@ def test_subsystem_has_no_core_transport_or_external_sdk_imports() -> None:
         "app.services",
         "fastapi",
         "flask",
-        "googleapiclient",
         "gui",
         "obswebsocket",
         "starlette",
@@ -62,15 +61,23 @@ def test_subsystem_has_no_core_transport_or_external_sdk_imports() -> None:
     assert violations == []
 
 
-def test_subsystem_python_code_has_no_adapter_specific_names() -> None:
-    forbidden_names = ("youtube", "obs_websocket", "googleapiclient")
+def test_external_sdk_imports_are_confined_to_youtube_adapter() -> None:
+    sdk_prefixes = (
+        "google",
+        "google_auth_httplib2",
+        "google_auth_oauthlib",
+        "googleapiclient",
+        "httplib2",
+    )
     violations = sorted(
-        str(path.relative_to(ROOT))
+        f"{path.relative_to(ROOT)} -> {import_name}"
         for path in SUBSYSTEM.rglob("*.py")
+        for import_name in _imports(path)
         if any(
-            name in path.read_text(encoding="utf-8").lower()
-            for name in forbidden_names
+            import_name == prefix or import_name.startswith(f"{prefix}.")
+            for prefix in sdk_prefixes
         )
+        and "adapters/youtube" not in path.relative_to(ROOT).as_posix()
     )
 
     assert violations == []

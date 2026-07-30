@@ -2,10 +2,6 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from subsystems.streaming.adapters.youtube.contracts import (
-    YouTubeStreamingControlPort as YouTubeStreamingControlPort,
-)
-
 
 class ObsStreamingControlPort(Protocol):
     @property
@@ -22,4 +18,14 @@ class ObsStreamingControlPort(Protocol):
     async def disconnect(self) -> None: ...
 
 
-__all__ = ["ObsStreamingControlPort", "YouTubeStreamingControlPort"]
+class YouTubeStreamingControlPort(Protocol):
+    @property
+    def adapter_type(self) -> str: ...
+
+    async def get_stream_status(self, stream_id: str) -> str: ...
+
+    async def transition_broadcast_to_live(self, broadcast_id: str) -> None: ...
+
+    async def transition_broadcast_to_complete(self, broadcast_id: str) -> None: ...
+
+    async def get_broadcast_status(self, broadcast_id: str) -> str: ...
