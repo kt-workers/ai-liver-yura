@@ -185,6 +185,8 @@ Core、Streaming Subsystem、Streaming Admin間のプロセス境界契約を確
 
 ## 8. F: Streaming Subsystemプロセス外枠
 
+> 実施状況（2026-07-31）: 実施中。Core非依存のApplication API、Fake Runtime、composition root、one-shot entrypointを追加する。
+
 ### 目的
 
 既存処理をまだ移動せず、独立起動可能なSubsystem entrypoint、Health、Status、Event配信の外枠を作る。
@@ -193,20 +195,22 @@ Core、Streaming Subsystem、Streaming Admin間のプロセス境界契約を確
 
 ```text
 subsystems/streaming/
+  __main__.py
   api/
   application/
   domain/
   adapters/
   bootstrap/
-  admin/
+  contracts/
 ```
 
 ### 完了条件
 
-- CoreなしでSubsystemのHealth endpointを起動できる
+- CoreなしでSubsystemのHealth／Status確認を実行できる
 - SubsystemなしでCoreを起動できる
 - 接続確認用のFake implementationだけで契約テストが通る
 - Python 3.10.5を使用する
+- Runtime、実network、旧Streaming Pluginへ依存しない
 
 ## 9. G: YouTube／OBS処理をSubsystemへ移動
 

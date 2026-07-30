@@ -737,6 +737,15 @@ ActionScheduler の確定仕様:
 - 未知fieldは無視し、未知status／error code／Event type／capabilityは文書化した安全なfallbackで扱う
 - 今回はRuntime配線、Streaming処理移動、外部schema、server、Config／Secret変更を行わない
 
+## Streaming Subsystemプロセス外枠方針
+
+- `subsystems/streaming/`をCoreと独立したpackageとし、許可するapp依存を`app.integrations.streaming`公開契約に限定する
+- `api`、`application`、`domain`、`adapters`、`bootstrap`の責務を分離する
+- 初期実装は外部I/OのないFake Runtimeだけを使用し、IDLEから準備・開始・停止の最小遷移を提供する
+- idempotency cache、sequence／cursor付きEvent queueはFake instance内memoryに限定する
+- `python -m subsystems.streaming --check`をハングしない独立起動smokeとする
+- 今回はCore Runtime配線、server、実配信処理、Admin、Config、Secret、DBを変更しない
+
 ## Game Subsystem Integration方針
 
 - 旧`app/plugins/games/`としりとり専用実装は物理削除し、Core内に互換入口を残さない
