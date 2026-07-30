@@ -676,7 +676,7 @@ ActionScheduler の確定仕様:
 - ActivityResultは結果種別、概要、成功状態、Actionごとの詳細データを持ち、SPEAKへ依存しない
 - 活動終了時は状態をCOMPLETEDにして現在状態から外し、次のUSER_TEXTを通常会話として扱う
 - 開始、更新、終了は`ongoing_activity_id`、活動種別、終了理由を含むINFOログへ記録する
-- しりとり固有の開始判定、単語更新、勝敗・終了判定はGames Plugin内に閉じ、Coreは共通Plugin契約だけを扱う
+- 個別機能固有の開始判定や状態更新はCoreへ埋め込まず、Coreは共通Plugin契約だけを扱う
 
 ### 中断後の話題継続・再開・転換判断
 
@@ -727,61 +727,14 @@ ActionScheduler の確定仕様:
 - EmbeddingやLLM評価はPort越しに任意利用とし、利用不能時は決定論的なフォールバックを使う
 - TopicHistoryは発話履歴、InterruptedTopicは中断判断用状態、Topic Engineは候補選定責務として区別する
 
-## Games Plugin / 複数ターンゲーム方針
+## Game機能の削除後方針
 
-- GameEngine、GameSession、ゲーム入力解釈、しりとり状態・ルール・進行Serviceは`app/plugins/games/`が所有する
-- Core Runtimeはゲーム固有型や「しりとり」分岐を持たず、PluginCommand、PluginActivityRequest、PluginActivityStateだけを扱う
-- GameEngineは対応ゲームの登録・一覧・対応判定と、単一GameSessionのライフサイクルだけを管理する
-- GameEngineは音声、字幕、表情、Action、CoreのOngoingActivityを直接扱わない
-- GameDefinitionはgame_type、display_name、description、supported、create_initial_stateを提供する最小抽象とする
-- 未登録またはsupported=falseのゲームは開始を拒否し、同じgame_typeの二重登録も拒否する
-- activeなGameSessionはRuntime内で最大1つとし、PLAYINGまたはPAUSEDをactiveとして扱う
-- GameSessionはsession_id、game_type、status、started_at、updated_at、ended_at、current_turn、metadata、result、end_reasonを保持する
-- GameSessionStatusはSTARTING、PLAYING、PAUSED、COMPLETED、CANCELEDとする
-- 状態遷移はSTARTING→PLAYING、PLAYING→PAUSED、PAUSED→PLAYING、PLAYING→COMPLETED、PLAYING/PAUSED→CANCELEDだけを許可する
-- COMPLETEDまたはCANCELEDからPLAYINGへ戻すことを禁止する
-- ActivityはRuntime上の実行状態、GameSessionはゲーム終了まで継続するゲーム状態として分離する
-- Coreへ渡すActivityは共通`PLUGIN_ACTIVITY`とし、`plugin_session_id`でPlugin Sessionを参照して既存のAction・字幕・音声・表情経路を利用する
-- Activityの完了・中断・再生成だけではGameSessionを終了しない
-- GameEngineはGames Plugin初期化時に一度だけ生成し、Plugin内部の各ゲームコンポーネントが同一インスタンスを参照する
-- Sessionの開始・一時停止・再開・完了・キャンセルはprevious_status、new_status、reasonを含む構造化ログへ記録する
-- しりとりはShiritoriGameDefinitionとしてFactoryで登録し、GameEngineの共通Session基盤を利用する
-- 自然言語からのゲーム開始判定と、ゲーム入力・通常会話の分類はGames PluginのIntent Interpreterが扱う
-
-### しりとり詳細設計
-
-- ShiritoriStateはcurrent_turn、last_word、expected_head、used_words、turn_count、winner、loser、end_reasonを保持する
-- 手番はUSERとAIを区別し、開始時に指定可能、既定はAI先攻とする
-- ユーザー単語はGames PluginのCommand HandlerからServiceへ渡す
-- AI単語はPlugin内部の一時ActivityとPlugin専用Promptを使い、注入されたLLM Gatewayで生成する
-- GameEngineやShiritoriGameDefinitionからLLM、Action、音声、字幕、表情を直接呼ばない
-- AI生成時は既存の人格・品質Promptに、ルール、期待文字、使用済み単語、感情スナップショットを追加する
-- LLM出力はgame_action、word、utteranceを持つJSONとし、状態更新にはwordだけ、SPEAKにはutteranceだけを使う
-- JSON解析失敗、空単語、手番違反、開始文字違反、重複、`ん`終端は採用せず、最大3回まで再生成する
-- 上限後は期待文字に合う安全な内蔵候補を使用し、候補がなければAI降参としてSessionを完了する
-- ユーザーの`ん`終端はAI勝利、AI降参はユーザー勝利とし、winner、loser、end_reasonをSession結果へ保存する
-- ユーザーまたはAIの正常手ごとにlast_word、expected_head、used_words、current_turn、turn_count、updated_atを更新する
-
-単語正規化:
-
-- Unicode NFKC正規化後、前後・全角を含む空白、句読点、括弧、引用符を除去する
-- カタカナはひらがなへ変換し、ユーザーとAIで同じ正規化・検証関数を使う
-- headは先頭の基本かなを使い、`キャベツ`は`き`として扱う
-- tailの小書き文字は大書きへ寄せ、`きゅ`は`ゆ`として扱う
-- 末尾の長音符は読み飛ばして直前かなを使用し、`ミネラルウォーター`は`た`として扱う
-- 今回は辞書APIによる実在語判定、形態素解析、複合語・固有名詞の網羅的例外処理を行わない
-
-検証結果:
-
-- valid、invalid_head、already_used、ends_with_n、not_user_turn、not_ai_turn、game_finished、invalid_wordを区別する
-- 終了済みSessionへの追加入力はgame_finishedとして拒否する
-- 自然言語の終了判定は行わず、cancelまたはsurrenderの明示メソッドを使う
-
-ログと記憶:
-
-- session初期化、ユーザー検証、AI生成要求・拒否・採用、ターン更新、完了、フォールバックを構造化ログへ記録する
-- Prompt全文やユーザー長文は通常のINFOログへ出さず、設定で許可したDEBUGログだけへ記録する
-- PluginActivityRequestのMemoryPolicyでtopic memory等を抑止し、各単語と発話を通常会話の記憶へ混入させない
+- 旧`app/plugins/games/`としりとり専用実装は物理削除し、Core内に互換入口を残さない
+- Coreはゲーム固有Activity、Intent、Command、Session、State、Capabilityを認識しない
+- 「しりとりしよう」などの入力は専用Sessionを開始せず、通常会話経路へフォールバックする
+- CoreのPlugin Manager、Loader、Capability、Command、Intent、Activity、ongoing activity同期は汎用基盤として維持する
+- 将来のGame Subsystemは旧Games Pluginを移植せず、Core外の独立Subsystemと公開契約として別工程で新規設計する
+- Game Subsystem契約外枠とNull Gatewayは本物理削除工程では追加しない
 
 ### コンソール入力のデコード障害
 
@@ -1553,18 +1506,6 @@ pytest
 - 音声認識入力 Adapter の追加
 - Web管理画面から Runtime の start / stop を操作する機能
 
-## Games Pluginの入力分類と実行
-
-- `app/plugins/games/intent/`: 開始・継続・制御・通常会話を区別する決定論的判定、LLMフォールバック、Parser、Validator
-- `app/plugins/games/engine.py`と`session.py`: ゲームSessionのライフサイクルと状態の正本
-- `app/plugins/games/shiritori/`: しりとりの状態、ルール、進行Service、専用Prompt
-- `app/plugins/games/plugin.py`: 共通Command/Result/ActivityStateへの変換、失敗時rollback、Capability縮退
-- `app/runtime/runtime_coordinator.py`: Plugin共通契約に基づく実行とOngoingActivity同期だけを担当する
-- GameSessionをゲーム状態の唯一の正本とし、開始要求・AI初手・ゲーム内単語はtopic memoryから除外する
-- `app/__main__.py`: ConsoleInputReceiverを`RuntimeCoordinator.submit_user_text`へ接続する本番入口
-- 本番RuntimeFactoryはGames Pluginを登録し、ゲーム内部コンポーネントの生成はPlugin初期化へ委ねる
-- 本番Factory経由テストでは公開入力APIから3手以上進行し、Plugin Session IDとOngoingActivity IDの継続を確認する
-
 ## Plugin構成
 
 - `app/shared/contracts/plugins/runtime/`: 常駐Runtime PluginのContext、Capability、汎用Command/Result契約
@@ -1575,10 +1516,6 @@ pytest
 - `app/shared/plugin_host/`: 汎用PluginRegistryとCommand / Query / Activity Dispatcher
 - `app/shared/observability/`: bounded replayを持つ実装非依存ApplicationEventBroker
 - `app/core/plugins/`: Runtime PluginManager、CapabilityRegistryと旧import互換入口。契約の正本は置かない
-- `app/plugins/games/plugin.py`: Games Pluginの初期化、Intent公開境界、Command実行、ActivityRequest変換
-- Games Plugin内のLLM要求と生成作業は`PluginLlmRequest` / `PluginActivityWorkItem`を使い、composition rootだけがCore Activityへ変換する
-- Games Pluginの観測ログはShared `PluginLogger`を使い、Core TraceContextへ依存しない
-- `app/plugins/games/intent/`: GameIntentCommand、意味解析Prompt、JSON Parser、Validator
 - `app/plugins/llm_provider/`: 役割別ResponseGenerator Adapterを`llm.provider.<role>` Capabilityとして公開し、障害時は当該ProviderのCapabilityだけを解除する
 - LLM Provider PluginはSharedの`ResponseGenerationGateway`だけを受け取り、Core Activity型や旧ResponseGenerator Portをimportしない
 - default / situation_evaluator / character / response_validatorは独立Providerとして登録し、役割ごとの障害を隔離する
@@ -1587,14 +1524,12 @@ pytest
 - `app/plugins/voice_output/`: Sharedの表現・出力契約だけに依存し、合成・再生障害時に`output.speech`を解除する
 - Pluginの`capabilities`はManifest相当の提供可能性宣言、`available_capabilities`は初期化・設定・依存・Provider健全性を反映した現在値として区別する
 - CapabilityRegistryは許可リスト方式でCapability単位に登録・解除・Provider解決を行い、未対応機能一覧や拒否リストは持たない
-- disabled、初期化失敗、停止、依存・Health喪失時は該当Capabilityを解除する。Games PluginはLLM Provider不在時に実行Capabilityを登録しない
+- disabled、初期化失敗、停止、依存・Health喪失時は該当Capabilityを解除する
 - RuntimeCoordinatorは現在使用可能なCapabilityからInterpreter/Handlerを取得し、Command実行直前にも同じPluginのCapabilityを再検証する
 - 実行要求に一致するCapabilityがなければ通常会話へ戻し、実行したふりと内部用語を禁止する制約をPromptへ渡す。知識質問・過去・否定・雑談は機能不在を理由に拒否しない
 - 未知の要求でも仮Capabilityを生成せず、安全な通常会話へ戻す。代替案は現在可能なものを最大一つに限定する
 - ActionPlannerは`prepared_response_text`とPlugin MemoryPolicyを汎用的に適用する
-- `plugins.games.enabled`でゲーム機能をCore変更なしに無効化できる
 - 将来別Pythonパッケージへ分離する場合も、`app/shared`の契約とGatewayだけを依存境界とする
-- mixed入力は構造化までとし、ゲーム進行と雑談応答の統合は次工程で実装する
 
 ## Behavior Planner・Situation Evaluator・Character LLM
 
