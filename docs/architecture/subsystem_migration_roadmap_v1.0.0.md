@@ -185,6 +185,8 @@ Core、Streaming Subsystem、Streaming Admin間のプロセス境界契約を確
 
 ## 8. F: Streaming Subsystemプロセス外枠
 
+> 実施状況（2026-07-31）: 完了。Core非依存のApplication API、Fake Runtime、composition root、one-shot entrypoint、境界テストを追加した。
+
 ### 目的
 
 既存処理をまだ移動せず、独立起動可能なSubsystem entrypoint、Health、Status、Event配信の外枠を作る。
@@ -193,20 +195,22 @@ Core、Streaming Subsystem、Streaming Admin間のプロセス境界契約を確
 
 ```text
 subsystems/streaming/
+  __main__.py
   api/
   application/
   domain/
   adapters/
   bootstrap/
-  admin/
+  contracts/
 ```
 
 ### 完了条件
 
-- CoreなしでSubsystemのHealth endpointを起動できる
+- CoreなしでSubsystemのHealth／Status確認を実行できる
 - SubsystemなしでCoreを起動できる
 - 接続確認用のFake implementationだけで契約テストが通る
 - Python 3.10.5を使用する
+- Runtime、実network、旧Streaming Pluginへ依存しない
 
 ## 9. G: YouTube／OBS処理をSubsystemへ移動
 
@@ -313,7 +317,7 @@ feature/plugin-separation-development
 ├─ refactor/remove-legacy-games-plugin
 ├─ feature/game-subsystem-contract
 ├─ feature/streaming-public-contract
-├─ feature/streaming-subsystem-shell
+├─ feature/streaming-subsystem-process-shell
 ├─ refactor/move-youtube-obs-to-streaming-subsystem
 ├─ refactor/move-streaming-session-to-subsystem
 ├─ refactor/connect-streaming-admin-to-subsystem
@@ -323,4 +327,4 @@ feature/plugin-separation-development
 
 ## 15. 次の作業
 
-Streaming公開通信契約の定義は完了した。次工程では既存Streaming処理をまだ移動せず、独立起動可能なStreaming Subsystemプロセス外枠を追加する。
+Streaming Subsystemの独立プロセス外枠は完了した。次工程では公開契約とApplication APIを維持しながら、YouTube／OBS処理をSubsystem内部へ段階的に移動する。

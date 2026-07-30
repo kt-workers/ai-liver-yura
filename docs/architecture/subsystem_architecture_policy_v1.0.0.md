@@ -146,6 +146,14 @@ Event
 
 契約はtransport非依存とし、HTTP、WebSocket、IPC、in-process Fakeのいずれでも利用可能にする。具体的な通信方式とschema serializerはSubsystem外枠工程で決定する。
 
+### 4.5 プロセス外枠
+
+初期外枠はCore非依存のApplication API、Service、内部状態、Fake Runtime、composition root、one-shot entrypointで構成する。
+
+Fakeは外部I/Oを行わず、`IDLE`から準備、開始、停止、緊急停止の最小遷移、idempotency、in-memory Event queueだけを提供する。Event readはcursor指定可能な非破壊読み取りとし、brokerや永続化は後工程へ分離する。
+
+`python -m subsystems.streaming --check`はHealth、Status、契約versionを確認して終了する。常駐server、Core Runtime配線、実Streaming処理はこの外枠へ含めない。
+
 ## 5. Game Subsystem
 
 ### 5.1 方針
