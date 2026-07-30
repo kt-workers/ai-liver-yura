@@ -746,6 +746,15 @@ ActionScheduler の確定仕様:
 - `python -m subsystems.streaming --check`をハングしない独立起動smokeとする
 - 今回はCore Runtime配線、server、実配信処理、Admin、Config、Secret、DBを変更しない
 
+## YouTube Subsystem移行方針
+
+- YouTube API、OAuth、broadcast／stream、Live Chat transport、error mapping、Fake実装の正本を`subsystems/streaming/adapters/youtube/`へ移す
+- YouTube設定Adapterは`subsystems/streaming/config/youtube.py`で所有し、既存Core Configを互換入力として当面維持する
+- 公開Comment、Status、Operation result、Errorは`app.integrations.streaming`へ正規化し、Google raw response／credential／SDK例外を外へ出さない
+- 旧`app/adapters/youtube/**`、YouTube Fake、関連Port／Domain DTO pathは新pathへの一方向re-exportとして一時維持する
+- Core Runtime／bootstrapはGoogle SDKを直接importせず、Subsystem composition rootがFake／Google／disabled bundleを選択する
+- OBS、Session、Run of Show、Admin、Core Gateway、旧Plugin削除は後続工程とする
+
 ## Game Subsystem Integration方針
 
 - 旧`app/plugins/games/`としりとり専用実装は物理削除し、Core内に互換入口を残さない

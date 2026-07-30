@@ -1,22 +1,27 @@
-from app.adapters.youtube.google_youtube_auth_service import (
-    GoogleYouTubeAuthConfig,
-    GoogleYouTubeAuthService,
-)
-from app.adapters.youtube.google_youtube_client_factory import (
+"""Deprecated compatibility exports for Subsystem-owned YouTube adapters."""
+
+from subsystems.streaming.adapters.youtube.client import (
     GoogleYouTubeClientConfig,
     GoogleYouTubeClientFactory,
 )
-from app.adapters.youtube.google_youtube_live_chat_adapter import (
-    GoogleYouTubeLiveChatAdapter,
+from subsystems.streaming.adapters.youtube.control import (
+    GoogleYouTubeStreamingControlAdapter,
 )
-from app.adapters.youtube.google_youtube_preparation_adapter import (
-    GoogleYouTubePreparationAdapter,
-    GoogleYouTubePreparationConfig,
-)
-from app.adapters.youtube.youtube_api_error_mapper import (
+from subsystems.streaming.adapters.youtube.errors import (
     YouTubeApiError,
     YouTubeApiErrorKind,
     YouTubeApiErrorMapper,
+)
+from subsystems.streaming.adapters.youtube.google_youtube import (
+    GoogleYouTubePreparationAdapter,
+    GoogleYouTubePreparationConfig,
+)
+from subsystems.streaming.adapters.youtube.live_chat import (
+    GoogleYouTubeLiveChatAdapter,
+)
+from subsystems.streaming.adapters.youtube.oauth import (
+    GoogleYouTubeAuthConfig,
+    GoogleYouTubeAuthService,
 )
 
 __all__ = [
@@ -27,6 +32,7 @@ __all__ = [
     "GoogleYouTubePreparationAdapter",
     "GoogleYouTubeLiveChatAdapter",
     "GoogleYouTubePreparationConfig",
+    "GoogleYouTubeStreamingControlAdapter",
     "YouTubeApiError",
     "YouTubeApiErrorKind",
     "YouTubeApiErrorMapper",

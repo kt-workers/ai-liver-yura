@@ -154,6 +154,14 @@ Fakeは外部I/Oを行わず、`IDLE`から準備、開始、停止、緊急停�
 
 `python -m subsystems.streaming --check`はHealth、Status、契約versionを確認して終了する。常駐server、Core Runtime配線、実Streaming処理はこの外枠へ含めない。
 
+### 4.6 YouTube Adapter所有境界
+
+YouTube API、OAuth、credential refresh、broadcast／stream操作、Live Chat transport、Google error mapping、YouTube FakeはStreaming Subsystem内部Adapterとして所有する。
+
+Google responseとSDK型はSubsystem内部でYouTube固有DTOへ変換し、Subsystem外へ通知するComment、Status、Operation result、Errorは`app.integrations.streaming`の中立DTOへ正規化する。
+
+移行期間中の旧`app.adapters.youtube`等はSubsystem実装への一方向re-exportだけを保持する。Core Configは互換入力として残すが、credential構築とGoogle SDK importをCore Runtimeの責務にしない。
+
 ## 5. Game Subsystem
 
 ### 5.1 方針
