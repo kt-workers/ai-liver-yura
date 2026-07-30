@@ -233,13 +233,6 @@ def test_production_config_composes_runtime_streaming_speech_and_admin() -> None
             lambda raw: raw["streaming"].update(health_timeout_seconds="invalid"),
             "streaming.health_timeout_seconds",
         ),
-        (
-            "plugins/index.yaml",
-            lambda raw: raw["plugins"]["games"]["intent_interpreter"].update(
-                model="unknown_model"
-            ),
-            "plugins.games.intent_interpreter.model",
-        ),
     ],
 )
 def test_split_setting_errors_report_owner_file(

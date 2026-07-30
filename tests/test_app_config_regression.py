@@ -23,7 +23,7 @@ def test_current_config_yaml_loads_successfully() -> None:
     assert config.speech.speaker_id == 89
     assert config.memory.topic_memory.enabled is True
     assert config.streaming.health_timeout_seconds == 60.0
-    assert config.plugins.games.enabled is True
+    assert not hasattr(config.plugins, "games")
 
 
 def test_loaded_configuration_collections_are_immutable() -> None:

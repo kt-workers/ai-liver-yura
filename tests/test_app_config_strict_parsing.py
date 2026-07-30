@@ -36,12 +36,6 @@ def _invalid_config(
             r"speech\.enabled",
         ),
         (
-            lambda raw: raw["plugins"]["games"]["intent_interpreter"].update(
-                max_attempts=2.5
-            ),
-            r"plugins\.games\.intent_interpreter\.max_attempts",
-        ),
-        (
             lambda raw: raw["streaming"]["moderation"].update(timeout_seconds="3.0"),
             r"streaming\.moderation\.timeout_seconds",
         ),

@@ -43,7 +43,6 @@ from app.config.strict import (
     string_sequence_value,
 )
 from app.domain.emotions import EmotionAppraisalSettings
-from app.plugins.games.settings import GamesPluginSettings, load_games_plugin_settings
 
 CONFIG_PATH = LEGACY_CONFIG_PATH
 
@@ -224,7 +223,6 @@ class PluginRegistrationSettings:
 
 @dataclass(frozen=True, slots=True)
 class PluginSettings:
-    games: GamesPluginSettings = field(default_factory=GamesPluginSettings)
     registrations: Mapping[str, PluginRegistrationSettings] = field(
         default_factory=lambda: immutable_mapping({})
     )
@@ -831,7 +829,6 @@ def _load_plugin_settings(value: object) -> PluginSettings:
     if value is None:
         return PluginSettings()
     config = require_mapping(value, "plugins")
-    games = config.get("games", {})
     registrations = optional_mapping(config, "registry", "plugins")
     parsed_registrations: dict[str, PluginRegistrationSettings] = {}
     for plugin_id, raw in registrations.items():
@@ -855,13 +852,12 @@ def _load_plugin_settings(value: object) -> PluginSettings:
         )
     opaque_configs: dict[str, Mapping[str, Any]] = {}
     for plugin_id, raw in config.items():
-        if plugin_id in {"registry", "games"}:
+        if plugin_id == "registry":
             continue
         opaque_configs[plugin_id] = immutable_mapping(
             require_mapping(raw, f"plugins.{plugin_id}")
         )
     return PluginSettings(
-        games=load_games_plugin_settings(games),
         registrations=immutable_mapping(parsed_registrations),
         opaque_configs=immutable_mapping(opaque_configs),
     )
@@ -1531,15 +1527,6 @@ def _validate_reference_graph(config: AppConfig) -> None:
                 topic_memory.summary.model,
                 "memory.topic_memory.summary.model",
             )
-
-    games = config.plugins.games
-    if games.enabled and games.intent_interpreter.enabled:
-        game_model = games.intent_interpreter.model
-        if game_model is not None:
-            _require_model_reference(
-                config, game_model, "plugins.games.intent_interpreter.model"
-            )
-
 
 def _require_model_reference(
     config: AppConfig,
