@@ -214,7 +214,7 @@ subsystems/streaming/
 
 ## 9. G: YouTube／OBS処理をSubsystemへ移動
 
-> 実施状況（2026-07-31）: 分割実施中。G1 YouTube bundleを先行して移動し、OBS、TTS／Avatar Health、Config／Secret最終移動は後続工程とする。
+> 実施状況（2026-07-31）: 分割実施中。G1 YouTube bundle移動は完了し、OBS、TTS／Avatar Health、Config／Secret最終移動は後続工程とする。
 
 ### 目的
 
@@ -230,7 +230,7 @@ YouTube API、OAuth、Live Chat、OBS WebSocket、外部I/O構築をCore側packa
 
 ### 分割進捗
 
-- G1 YouTube bundle移動: 実施中
+- G1 YouTube bundle移動: 完了
 - G2 OBS bundle移動: 未着手
 - G3 TTS／Avatar Health抽象化: 未着手
 - G4 Config／Secret最終移動: YouTube設定境界のみ実施
@@ -328,7 +328,8 @@ feature/plugin-separation-development
 ├─ feature/game-subsystem-contract
 ├─ feature/streaming-public-contract
 ├─ feature/streaming-subsystem-process-shell
-├─ refactor/move-youtube-obs-to-streaming-subsystem
+├─ refactor/move-youtube-to-streaming-subsystem
+├─ refactor/move-obs-to-streaming-subsystem
 ├─ refactor/move-streaming-session-to-subsystem
 ├─ refactor/connect-streaming-admin-to-subsystem
 ├─ refactor/add-core-streaming-integration
@@ -337,4 +338,4 @@ feature/plugin-separation-development
 
 ## 15. 次の作業
 
-Streaming Subsystemの独立プロセス外枠は完了した。次工程では公開契約とApplication APIを維持しながら、YouTube／OBS処理をSubsystem内部へ段階的に移動する。
+YouTube Adapter bundleのSubsystem移動は完了した。次工程ではYouTube境界を維持しながら、OBS Adapter bundleをSubsystem内部へ移動する。

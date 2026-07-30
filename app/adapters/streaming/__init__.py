@@ -1,5 +1,3 @@
-from importlib import import_module
-
 from app.adapters.obs import ObsWebSocketPreparationAdapter
 from app.adapters.streaming.fake_comment_moderation_adapter import (
     FakeCommentModerationAdapter,
@@ -85,7 +83,8 @@ _YOUTUBE_COMPAT_EXPORTS = frozenset(
 def __getattr__(name: str) -> object:
     if name not in _YOUTUBE_COMPAT_EXPORTS:
         raise AttributeError(name)
-    module = import_module(
-        "subsystems.streaming.adapters.youtube.fake_youtube"
+    module = __import__(
+        "subsystems.streaming.adapters.youtube.fake_youtube",
+        fromlist=[name],
     )
     return getattr(module, name)

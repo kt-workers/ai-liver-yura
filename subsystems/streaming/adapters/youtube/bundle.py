@@ -2,17 +2,10 @@
 
 from dataclasses import dataclass
 
-from subsystems.streaming.adapters.youtube.client import (
-    GoogleYouTubeClientConfig,
-    GoogleYouTubeClientFactory,
-)
 from subsystems.streaming.adapters.youtube.contracts import (
     YouTubeLiveChatReadPort,
     YouTubePreparationPort,
     YouTubeStreamingControlPort,
-)
-from subsystems.streaming.adapters.youtube.control import (
-    GoogleYouTubeStreamingControlAdapter,
 )
 from subsystems.streaming.adapters.youtube.fake_youtube import (
     FakeLiveChatAdapter,
@@ -21,17 +14,6 @@ from subsystems.streaming.adapters.youtube.fake_youtube import (
     FakeYouTubeStreamingControlAdapter,
     UnavailableYouTubePreparationAdapter,
     UnavailableYouTubeStreamingControlAdapter,
-)
-from subsystems.streaming.adapters.youtube.google_youtube import (
-    GoogleYouTubePreparationAdapter,
-    GoogleYouTubePreparationConfig,
-)
-from subsystems.streaming.adapters.youtube.live_chat import (
-    GoogleYouTubeLiveChatAdapter,
-)
-from subsystems.streaming.adapters.youtube.oauth import (
-    GoogleYouTubeAuthConfig,
-    GoogleYouTubeAuthService,
 )
 from subsystems.streaming.config.youtube import (
     YouTubeAdapterMode,
@@ -74,6 +56,25 @@ def build_youtube_adapter_bundle(
 
     if not config.client_secret_path_env or not config.token_path_env:
         raise ValueError("google youtube environment variable names are required")
+
+    from subsystems.streaming.adapters.youtube.client import (
+        GoogleYouTubeClientConfig,
+        GoogleYouTubeClientFactory,
+    )
+    from subsystems.streaming.adapters.youtube.control import (
+        GoogleYouTubeStreamingControlAdapter,
+    )
+    from subsystems.streaming.adapters.youtube.google_youtube import (
+        GoogleYouTubePreparationAdapter,
+        GoogleYouTubePreparationConfig,
+    )
+    from subsystems.streaming.adapters.youtube.live_chat import (
+        GoogleYouTubeLiveChatAdapter,
+    )
+    from subsystems.streaming.adapters.youtube.oauth import (
+        GoogleYouTubeAuthConfig,
+        GoogleYouTubeAuthService,
+    )
 
     auth = GoogleYouTubeAuthService(
         GoogleYouTubeAuthConfig(

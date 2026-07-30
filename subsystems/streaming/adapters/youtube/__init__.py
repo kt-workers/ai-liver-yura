@@ -1,21 +1,10 @@
 """YouTube implementation bundle owned by Streaming Subsystem."""
 
+from importlib import import_module
+
 from subsystems.streaming.adapters.youtube.bundle import (
     YouTubeAdapterBundle,
     build_youtube_adapter_bundle,
-)
-from subsystems.streaming.adapters.youtube.client import (
-    GoogleYouTubeClientConfig,
-    GoogleYouTubeClientFactory,
-)
-from subsystems.streaming.adapters.youtube.control import (
-    GoogleYouTubeStreamingControlAdapter,
-)
-from subsystems.streaming.adapters.youtube.errors import (
-    YouTubeApiError,
-    YouTubeApiErrorKind,
-    YouTubeApiErrorMapper,
-    to_streaming_error,
 )
 from subsystems.streaming.adapters.youtube.fake_youtube import (
     FakeLiveChatAdapter,
@@ -23,18 +12,6 @@ from subsystems.streaming.adapters.youtube.fake_youtube import (
     FakeYouTubePreparationConfig,
     FakeYouTubeStreamingControlAdapter,
     UnavailableYouTubePreparationAdapter,
-)
-from subsystems.streaming.adapters.youtube.google_youtube import (
-    GoogleYouTubePreparationAdapter,
-    GoogleYouTubePreparationConfig,
-)
-from subsystems.streaming.adapters.youtube.live_chat import (
-    GoogleYouTubeLiveChatAdapter,
-)
-from subsystems.streaming.adapters.youtube.oauth import (
-    YOUTUBE_READONLY_SCOPE,
-    GoogleYouTubeAuthConfig,
-    GoogleYouTubeAuthService,
 )
 
 __all__ = [
@@ -59,3 +36,34 @@ __all__ = [
     "build_youtube_adapter_bundle",
     "to_streaming_error",
 ]
+
+_LAZY_EXPORTS = {
+    "YOUTUBE_READONLY_SCOPE": "subsystems.streaming.adapters.youtube.oauth",
+    "GoogleYouTubeAuthConfig": "subsystems.streaming.adapters.youtube.oauth",
+    "GoogleYouTubeAuthService": "subsystems.streaming.adapters.youtube.oauth",
+    "GoogleYouTubeClientConfig": "subsystems.streaming.adapters.youtube.client",
+    "GoogleYouTubeClientFactory": "subsystems.streaming.adapters.youtube.client",
+    "GoogleYouTubeLiveChatAdapter": (
+        "subsystems.streaming.adapters.youtube.live_chat"
+    ),
+    "GoogleYouTubePreparationAdapter": (
+        "subsystems.streaming.adapters.youtube.google_youtube"
+    ),
+    "GoogleYouTubePreparationConfig": (
+        "subsystems.streaming.adapters.youtube.google_youtube"
+    ),
+    "GoogleYouTubeStreamingControlAdapter": (
+        "subsystems.streaming.adapters.youtube.control"
+    ),
+    "YouTubeApiError": "subsystems.streaming.adapters.youtube.errors",
+    "YouTubeApiErrorKind": "subsystems.streaming.adapters.youtube.errors",
+    "YouTubeApiErrorMapper": "subsystems.streaming.adapters.youtube.errors",
+    "to_streaming_error": "subsystems.streaming.adapters.youtube.errors",
+}
+
+
+def __getattr__(name: str) -> object:
+    module_name = _LAZY_EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(name)
+    return getattr(import_module(module_name), name)
