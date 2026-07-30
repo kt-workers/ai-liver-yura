@@ -8,10 +8,9 @@ from fastapi.testclient import TestClient
 from app.__main__ import is_demo_exit_command, should_start_console_input
 from app.adapters.llm import StreamingDemoResponseGenerator
 from app.admin_api import create_admin_api
-from app.bootstrap import (
-    StreamingComposition,
-    compose_streaming,
-    create_runtime_coordinator,
+from app.bootstrap import create_runtime_coordinator
+from app.bootstrap.streaming import StreamingComposition, compose_streaming
+from app.bootstrap.streaming_runtime import (
     create_stream_preparation_runtime,
     create_streaming_demo_config,
 )

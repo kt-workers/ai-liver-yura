@@ -10,7 +10,8 @@ from app.adapters.streaming.fake_streaming_control import (
     FakeYouTubeStreamingControlAdapter,
 )
 from app.admin_api import create_admin_api
-from app.bootstrap import compose_streaming, create_stream_preparation_runtime
+from app.bootstrap.streaming import compose_streaming
+from app.bootstrap.streaming_runtime import create_stream_preparation_runtime
 from app.config.app_config import load_app_config
 from app.plugins.youtube_streaming.application import StartStreamSessionUsecase
 from app.plugins.youtube_streaming.domain import StreamSession, StreamSessionStatus

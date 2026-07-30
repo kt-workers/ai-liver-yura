@@ -7,11 +7,13 @@ typed settings boundary.
 
 from app.bootstrap.emotion_runtime import create_runtime_coordinator
 from app.bootstrap.runtime import (
-    StreamPreparationRuntime,
     create_audio_player,
     create_character_profile,
     create_memory_summary_generator,
     create_speech_synthesizer,
+)
+from app.bootstrap.streaming_runtime import (
+    StreamPreparationRuntime,
     create_stream_preparation_runtime,
     create_streaming_demo_config,
 )

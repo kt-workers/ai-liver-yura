@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.bootstrap import (
-    compose_streaming,
+from app.bootstrap.streaming import compose_streaming
+from app.bootstrap.streaming_runtime import (
     create_stream_preparation_runtime,
     create_streaming_demo_config,
 )
