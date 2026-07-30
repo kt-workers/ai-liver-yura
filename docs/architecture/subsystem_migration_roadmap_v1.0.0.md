@@ -157,9 +157,11 @@ subsystems/games/
 
 ## 7. E: Streaming公開通信契約
 
+> 実施状況（2026-07-31）: 実施中。公開DTO、versioning、互換方針、契約境界を先に確定する。
+
 ### 目的
 
-CoreとStreaming Subsystem間のプロセス境界契約を確定する。
+Core、Streaming Subsystem、Streaming Admin間のプロセス境界契約を確定する。
 
 ### 契約対象
 
@@ -179,6 +181,7 @@ CoreとStreaming Subsystem間のプロセス境界契約を確定する。
 - Command／QueryとEventを分離する
 - schemaの後方互換方針を定義する
 - Core、Subsystem、Adminが同じ公開schemaを検証できる
+- 公開契約がtransport、Core Runtime、Streaming Plugin、Adapter、Admin具象へ依存しない
 
 ## 8. F: Streaming Subsystemプロセス外枠
 
