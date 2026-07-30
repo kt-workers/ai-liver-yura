@@ -174,34 +174,6 @@ def test_runtime_package_does_not_compose_concrete_adapters_or_plugins() -> None
     assert_no_imports(python_files("app/runtime"), ("app.adapters", "app.plugins"))
 
 
-def test_games_plugin_owns_game_implementation_without_core_legacy_imports() -> None:
-    assert_no_imports(
-        python_files("app/plugins/games"),
-        (
-            "app.domain.games",
-            "app.runtime.game_engine",
-            "app.runtime.game_input_classifier",
-            "app.runtime.shiritori_game_service",
-        ),
-    )
-
-
-def test_games_plugin_depends_only_on_its_own_modules_and_shared_contracts() -> None:
-    assert_no_imports(
-        python_files("app/plugins/games"),
-        (
-            "app.core",
-            "app.domain",
-            "app.runtime",
-            "app.ports",
-            "app.usecases",
-            "app.adapters",
-            "app.admin_api",
-            "app.utils",
-        ),
-    )
-
-
 def test_speech_synthesis_boundary_does_not_depend_on_emotion_state() -> None:
     assert_no_imports(
         [

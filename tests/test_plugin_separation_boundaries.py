@@ -115,13 +115,12 @@ def test_plugin_manager_operates_with_zero_registered_plugins() -> None:
     assert manager.get_plugins_by_capability("missing") == []
 
 
-def test_core_entrypoint_does_not_import_streaming_or_game_plugins() -> None:
-    """通常Coreの入口は配信・ゲームPluginの存在を前提にしない。"""
+def test_core_entrypoint_does_not_import_streaming_plugins() -> None:
+    """通常Coreの入口は配信Pluginの存在を前提にしない。"""
 
     _assert_no_import_prefix(
         [ROOT / "app/__main__.py"],
         (
-            "app.plugins.games",
             "app.plugins.youtube_streaming",
             "app.admin_api",
             "app.adapters.obs",
@@ -130,11 +129,13 @@ def test_core_entrypoint_does_not_import_streaming_or_game_plugins() -> None:
     )
 
 
-def test_runtime_plugin_setup_has_no_games_dependency() -> None:
+def test_legacy_games_package_is_physically_absent() -> None:
+    assert not (ROOT / "app" / "plugins" / "games").exists()
+
+
+def test_runtime_plugin_setup_has_no_legacy_games_dependency() -> None:
     path = ROOT / "app/bootstrap/runtime_plugin_setup.py"
     source = path.read_text(encoding="utf-8")
 
-    assert "app.plugins.games" not in source
-    assert "config.plugins.games" not in source
     assert 'plugin_id="games"' not in source
-    assert '"games.shiritori"' not in source
+    assert "games" not in source

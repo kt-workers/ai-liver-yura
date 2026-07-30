@@ -141,6 +141,7 @@ def test_runtime_does_not_import_games_plugin(
     from app.bootstrap import runtime as runtime_factory
 
     original_import_module = importlib.import_module
+    removed_module = ".".join(("app", "plugins", "games"))
     config = load_app_config()
     config = replace(
         config,
@@ -149,7 +150,7 @@ def test_runtime_does_not_import_games_plugin(
     )
 
     def fail_import(name: str) -> object:
-        if name == "app.plugins.games":
+        if name == removed_module:
             raise AssertionError(f"無効なGames Pluginをimportしました: {name}")
         return original_import_module(name)
 

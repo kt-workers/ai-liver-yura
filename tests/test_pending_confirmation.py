@@ -19,10 +19,10 @@ from app.runtime.pending_confirmation import (
 def _plan() -> ActivityPlan:
     return ActivityPlan(
         decision=BehaviorDecision.ASK_CONFIRMATION,
-        activity_type="shiritori",
-        goal="深海魚縛りのしりとりを開始する",
-        required_capability="games.shiritori",
-        provider_plugin_id="games",
+        activity_type="echo_activity",
+        goal="深海魚縛りのエコー活動を開始する",
+        required_capability="sample.echo",
+        provider_plugin_id="sample",
         operation=ActivityOperation.START,
         constraints={"theme": "深海魚"},
         confidence=0.6,

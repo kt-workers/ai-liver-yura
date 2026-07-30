@@ -5,8 +5,8 @@ from app.core.plugins import PluginManager
 
 
 class _Plugin:
-    plugin_id = "games"
-    display_name = "Games"
+    plugin_id = "sample"
+    display_name = "Sample"
     capabilities = frozenset()
 
     def available_capabilities(self) -> frozenset[str]:
@@ -33,8 +33,8 @@ def test_disabled_plugin_is_not_registered(monkeypatch) -> None:
 
     result = register_optional_plugin_from_factory(
         manager,
-        plugin_id="games",
-        module="app.plugins.games",
+        plugin_id="sample",
+        module="sample.module",
         enabled=False,
     )
 
@@ -52,8 +52,8 @@ def test_enabled_plugin_is_registered(monkeypatch) -> None:
 
     result = register_optional_plugin_from_factory(
         manager,
-        plugin_id="games",
-        module="app.plugins.games",
+        plugin_id="sample",
+        module="sample.module",
         enabled=True,
         configuration={"enabled": True},
     )

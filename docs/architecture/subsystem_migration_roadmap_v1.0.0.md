@@ -18,7 +18,7 @@
 完了: Streaming Composition Root抽出（PR #97）
   -> 完了: A. 方針文書更新
     -> 完了: B. Games／しりとり削除監査
-      -> 実施中: C. しりとり・旧Games Plugin削除
+      -> 完了: C. しりとり・旧Games Plugin削除
         -> D. Game Subsystem契約の外枠
           -> E. Streaming公開通信契約
             -> F. Streaming Subsystemプロセス外枠
@@ -88,7 +88,7 @@ StreamingをCore PluginとしてFactory化する従来ロードマップを廃�
 
 製品要件でないしりとりと、それを保持するための旧Games Pluginを削除する。
 
-Core Runtime／Configからの登録・設定依存はPR #100で削除済みである。本工程では`app/plugins/games/**`と専用テストを物理削除し、Gamesをfixtureとしていた汎用Pluginテストはテスト専用Pluginへ置換する。
+Core Runtime／Configからの登録・設定依存はPR #100で削除済みである。本工程で`app/plugins/games/**`と専用テストを物理削除し、Gamesをfixtureとしていた汎用Pluginテストはテスト専用Pluginへ置換した。
 
 ### 分割原則
 
@@ -315,4 +315,4 @@ feature/plugin-separation-development
 
 ## 15. 次の作業
 
-現在の実装作業は、監査とPR #100を前提にした**旧Games Plugin／しりとりの物理削除**である。完了後の次工程はGame Subsystem契約外枠とNull Gatewayの新規設計とし、旧Games実装を流用しない。
+旧Games Plugin／しりとりの物理削除は完了した。次工程はGame Subsystem契約外枠とNull Gatewayの新規設計とし、旧Games実装を流用しない。

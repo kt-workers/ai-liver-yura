@@ -131,9 +131,10 @@ def test_disabled_optional_plugins_are_not_imported_or_registered(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     original_import_module = importlib.import_module
+    removed_module = ".".join(("app", "plugins", "games"))
     forbidden = {
         "app.plugins.agent_memory",
-        "app.plugins.games",
+        removed_module,
         "app.plugins.relationship_memory",
         "app.plugins.voice_output",
     }

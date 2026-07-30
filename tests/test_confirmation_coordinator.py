@@ -36,10 +36,10 @@ def _plan_payload(plan: ActivityPlan) -> dict[str, object]:
 def _plan() -> ActivityPlan:
     return ActivityPlan(
         decision=BehaviorDecision.ASK_CONFIRMATION,
-        activity_type="shiritori",
-        goal="海の生き物縛りのしりとりを開始する",
-        required_capability="games.shiritori",
-        provider_plugin_id="games",
+        activity_type="echo_activity",
+        goal="海の生き物縛りのエコー活動を開始する",
+        required_capability="sample.echo",
+        provider_plugin_id="sample",
         operation=ActivityOperation.START,
         constraints={"theme": "海の生き物"},
         confidence=0.6,
@@ -71,13 +71,13 @@ def _context(event: AgentEvent, text: str) -> BehaviorPlanningContext:
     return BehaviorPlanningContext(
         user_text=text,
         source_event_id=event.event_id,
-        available_capabilities=frozenset({"games.shiritori"}),
+        available_capabilities=frozenset({"sample.echo"}),
         trace_context=event.trace_context,
     )
 
 
 def _request(coordinator: ConfirmationCoordinator) -> tuple[AgentEvent, str]:
-    event = _event("しりとりを始める？")
+    event = _event("エコー活動を始める？")
     routed = coordinator.request_confirmation(
         event,
         _plan(),

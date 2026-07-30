@@ -50,15 +50,15 @@ class FakeSynchronizer:
         if self._fail:
             raise RuntimeError("sync failed")
         ongoing = self._manager.start_ongoing_activity(
-            activity_type="shiritori",
+            activity_type="echo_activity",
             goal="遊ぶ",
             expected_input="次の単語",
             end_condition="終了",
-            context={"plugin_id": "games", "plugin_session_id": "session-1"},
+            context={"plugin_id": "sample", "plugin_session_id": "session-1"},
         )
         return (
             ActivityExecutionResult(
-                activity_type="shiritori",
+                activity_type="echo_activity",
                 operation="start",
                 status=ActivityExecutionStatus.WAITING_INPUT,
             ),
@@ -70,7 +70,7 @@ class FakeSynchronizer:
 
 
 class FakePlugin:
-    plugin_id = "games"
+    plugin_id = "sample"
 
     def __init__(
         self,
@@ -121,14 +121,14 @@ class FakePluginManager:
     def list_capabilities(self) -> frozenset[str]:
         return frozenset(
             {
-                "games.shiritori",
+                "sample.echo",
                 PluginCapability.COMMAND_HANDLER.value,
                 PluginCapability.USER_INTENT_INTERPRETER.value,
             }
         )
 
     def is_capability_available(self, capability: str, plugin_id: str) -> bool:
-        assert plugin_id == "games"
+        assert plugin_id == "sample"
         if capability == PluginCapability.COMMAND_HANDLER.value:
             return self._handler_available
         return self._activity_available
@@ -146,20 +146,20 @@ class FakePluginManager:
 def _plan() -> ActivityPlan:
     return ActivityPlan(
         decision=BehaviorDecision.START_ACTIVITY,
-        activity_type="shiritori",
-        goal="しりとりを開始する",
-        required_capability="games.shiritori",
-        provider_plugin_id="games",
+        activity_type="echo_activity",
+        goal="エコー活動を開始する",
+        required_capability="sample.echo",
+        provider_plugin_id="sample",
         operation=ActivityOperation.START,
     )
 
 
 def _intent(*, handled: bool = True) -> PluginIntentResult:
     return PluginIntentResult(
-        plugin_id="games",
+        plugin_id="sample",
         handled=handled,
         confidence=0.9,
-        command=PluginCommand(command_type="shiritori", operation="start"),
+        command=PluginCommand(command_type="echo_activity", operation="start"),
         conversation_context={"execution_requested": True},
     )
 
@@ -172,11 +172,11 @@ def _execution(
 ) -> PluginExecutionResult:
     request = (
         PluginActivityRequest(
-            plugin_id="games",
+            plugin_id="sample",
             activity_kind="game_with_user",
             priority=10,
-            context={"plugin_id": "games"},
-            response_text="しりとりを始めよう",
+            context={"plugin_id": "sample"},
+            response_text="エコー活動を始めよう",
             state=PluginActivityState(
                 session_id="session-1",
                 status=PluginActivityStatus.WAITING_INPUT,
@@ -188,7 +188,7 @@ def _execution(
         else None
     )
     return PluginExecutionResult(
-        plugin_id="games",
+        plugin_id="sample",
         handled=handled,
         activity_request=request,
         conversation_context={"execution_requested": True},
@@ -234,7 +234,7 @@ def _coordinator(
 def _event() -> AgentEvent:
     return AgentEvent(
         event_type=AgentEventType.USER_TEXT,
-        payload={"text": "しりとりしよう"},
+        payload={"text": "エコー活動しよう"},
     )
 
 
@@ -269,7 +269,7 @@ async def test_capability_is_revalidated_immediately_before_execution(
 
     routed = await coordinator.route(
         _event(),
-        required_capability="games.shiritori",
+        required_capability="sample.echo",
         activity_plan=_plan(),
     )
 
@@ -286,14 +286,14 @@ async def test_success_registers_and_executes_plugin_activity() -> None:
 
     routed = await coordinator.route(
         _event(),
-        required_capability="games.shiritori",
+        required_capability="sample.echo",
         activity_plan=_plan(),
     )
 
     assert routed is None
     assert plugin.command_calls == 1
     assert len(executor.executed) == 1
-    assert executor.executed[0].context["plugin_id"] == "games"
+    assert executor.executed[0].context["plugin_id"] == "sample"
 
 
 @pytest.mark.asyncio
@@ -306,7 +306,7 @@ async def test_failed_execution_returns_reasoned_fallback() -> None:
 
     routed = await coordinator.route(
         _event(),
-        required_capability="games.shiritori",
+        required_capability="sample.echo",
         activity_plan=_plan(),
     )
 
@@ -337,7 +337,7 @@ async def test_ongoing_sync_failure_returns_existing_fallback_reason() -> None:
 
     routed = await coordinator.route(
         _event(),
-        required_capability="games.shiritori",
+        required_capability="sample.echo",
         activity_plan=_plan(),
     )
 

@@ -411,8 +411,8 @@ def test_ongoing_activity_suppresses_autonomous_talk_until_activity_ends() -> No
     activity_manager = ActivityManager()
     now = datetime(2026, 7, 5, 12, 0, 0, tzinfo=timezone.utc)
     ongoing = activity_manager.start_ongoing_activity(
-        activity_type="shiritori",
-        goal="しりとりを続ける",
+        activity_type="echo_activity",
+        goal="エコー活動を続ける",
         expected_input="単語",
         end_condition="終了希望",
     )

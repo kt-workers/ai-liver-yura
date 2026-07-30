@@ -68,8 +68,8 @@ async def test_user_turn_keeps_trace_from_activity_through_output() -> None:
 
 def test_ongoing_activity_keeps_session_id_but_creates_trace_per_turn() -> None:
     ongoing = OngoingActivity(
-        activity_type="shiritori",
-        goal="しりとりを続ける",
+        activity_type="echo_activity",
+        goal="エコー活動を続ける",
         expected_input="次の単語",
         end_condition="終了",
     )

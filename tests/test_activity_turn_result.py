@@ -57,7 +57,7 @@ def test_confirmation_correlation_is_copied_to_activity_turn_result() -> None:
                     "confirmation_id": "confirmation-1",
                     "source_event_id": "source-event",
                     "resolution_event_id": "resolution-event",
-                    "candidate_activity_type": "shiritori",
+                    "candidate_activity_type": "echo_activity",
                     "candidate_operation": "start",
                     "resolution": "affirmative",
                     "final_behavior_plan_id": "plan-1",
@@ -71,7 +71,7 @@ def test_confirmation_correlation_is_copied_to_activity_turn_result() -> None:
     assert result.confirmation_id == "confirmation-1"
     assert result.confirmation_source_event_id == "source-event"
     assert result.resolution_event_id == "resolution-event"
-    assert result.candidate_activity_type == "shiritori"
+    assert result.candidate_activity_type == "echo_activity"
     assert result.candidate_operation == "start"
     assert result.confirmation_resolution == "affirmative"
     assert result.final_behavior_plan_id == "plan-1"
@@ -147,7 +147,7 @@ async def test_tts_failure_produces_partial_output_without_rewriting_execution()
 ):
     aggregate = ActivityTurnResult(
         activity_turn_id="turn-partial",
-        activity_type="shiritori",
+        activity_type="echo_activity",
         execution_result=_execution(ActivityExecutionStatus.SUCCEEDED),
         character_result=_character(
             "turn-partial", CharacterGenerationStatus.FALLBACK_USED
@@ -237,8 +237,8 @@ def test_action_planning_failure_is_a_turn_result_not_a_runtime_exception() -> N
 async def test_ongoing_activity_keeps_session_when_output_is_partial() -> None:
     manager = ActivityManager()
     ongoing = manager.start_ongoing_activity(
-        activity_type="shiritori",
-        goal="しりとりを続ける",
+        activity_type="echo_activity",
+        goal="エコー活動を続ける",
         expected_input="次の単語",
         end_condition="終了指示",
     )
@@ -251,7 +251,7 @@ async def test_ongoing_activity_keeps_session_when_output_is_partial() -> None:
     ongoing = updated
     turn_id = ongoing.turns[-1].turn_id
     execution = ActivityExecutionResult(
-        activity_type="shiritori",
+        activity_type="echo_activity",
         operation="continue",
         status=ActivityExecutionStatus.SUCCEEDED,
     )
@@ -260,7 +260,7 @@ async def test_ongoing_activity_keeps_session_when_output_is_partial() -> None:
         activity_turn_id=turn_id,
         ongoing_activity_id=ongoing.ongoing_activity_id,
         source_event_id="event-game",
-        activity_type="shiritori",
+        activity_type="echo_activity",
         execution_result=execution,
         character_result=_character(turn_id, CharacterGenerationStatus.VALIDATED),
     )
@@ -292,7 +292,7 @@ async def test_ongoing_activity_keeps_session_when_output_is_partial() -> None:
 
 
 @pytest.mark.parametrize(
-    "activity_type", ["shiritori", "external_search", "stream_control"]
+    "activity_type", ["echo_activity", "external_search", "stream_control"]
 )
 def test_result_model_is_activity_type_agnostic(activity_type: str) -> None:
     result = ActivityTurnResult(

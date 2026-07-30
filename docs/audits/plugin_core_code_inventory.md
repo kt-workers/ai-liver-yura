@@ -7,7 +7,7 @@
 > 注記（2026-07-23）: この文書は調査時点の履歴である。PyQt6版`streaming_admin`は廃止され、
 > 現在の管理画面は`gui/yura-streaming-admin`のWeb UIへ移行した。
 >
-> 注記（2026-07-30）: Games／Shiritoriの記載も調査時点の過去構成である。Core Runtime／Config依存はPR #100で除去され、後続の物理削除工程で`app/plugins/games/**`と専用テストを削除する。将来のGame Subsystemへ旧実装は流用しない。
+> 注記（2026-07-30）: Games／Shiritoriの記載も調査時点の過去構成である。Core Runtime／Config依存はPR #100で除去され、後続の物理削除工程で`app/plugins/games/**`と専用テストを削除した。将来のGame Subsystemへ旧実装は流用しない。
 
 ## 1. Executive Summary
 
