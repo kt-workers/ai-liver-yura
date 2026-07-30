@@ -11,7 +11,6 @@ from app.domain.behavior import (
     ActivityOperation,
     DeterministicActivityMatch,
 )
-from app.plugins.games.plugin import GamesPlugin
 from app.runtime import (
     behavior_planner,
     ongoing_input,
@@ -167,26 +166,6 @@ def test_new_matcher_contract_is_activity_agnostic() -> None:
     assert selected is not None
     assert selected[0].activity_type == "external_search"
     assert selected[1].activity_type == "external_search"
-
-
-def test_games_plugin_uses_only_new_matcher_for_start_stop_and_continue() -> None:
-    definition = GamesPlugin().activity_definitions()[0]
-
-    assert definition.start_markers == ()
-    assert definition.stop_markers == ()
-    assert definition.matcher is None
-    assert len(definition.matchers) == 1
-    resolver = ActivityMatcherResolver()
-    operations: dict[str, ActivityOperation] = {}
-    for text in ("しりとりしよう", "しりとりをやめよう", "しりとりを続けよう"):
-        selected = resolver.resolve(text, (definition,))
-        assert selected is not None
-        operations[text] = selected[1].operation
-    assert operations == {
-        "しりとりしよう": ActivityOperation.START,
-        "しりとりをやめよう": ActivityOperation.STOP,
-        "しりとりを続けよう": ActivityOperation.CONTINUE,
-    }
 
 
 def test_core_runtime_modules_do_not_reference_legacy_marker_fields() -> None:

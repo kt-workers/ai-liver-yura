@@ -673,7 +673,7 @@ Plugin設定はPlugin単位で分離する。
 
 ```yaml
 plugins:
-  games:
+  sample_activity:
     enabled: true
 
   youtube_platform:

@@ -17,10 +17,10 @@ pytestmark = pytest.mark.unit
 
 def _current_definition() -> ActivityDefinition:
     return ActivityDefinition(
-        activity_type="shiritori",
-        display_name="しりとり",
-        required_capability="games.shiritori",
-        provider_plugin_id="games",
+        activity_type="echo_activity",
+        display_name="エコー活動",
+        required_capability="sample.echo",
+        provider_plugin_id="sample",
         supported_operations=(
             ActivityOperation.START,
             ActivityOperation.CONTINUE,
@@ -34,7 +34,7 @@ def _target_plan() -> ActivityPlan:
         decision=BehaviorDecision.SWITCH_ACTIVITY,
         activity_type="quiz",
         goal="クイズへ切り替える",
-        required_capability="games.quiz",
+        required_capability="sample.quiz",
         provider_plugin_id="quiz",
         operation=ActivityOperation.START,
         requested_new_activity="quiz",
@@ -48,7 +48,7 @@ def _context() -> BehaviorPlanningContext:
         user_text="クイズにしよう",
         source_event_id="event-switch",
         available_capabilities=frozenset(
-            {"games.shiritori", "games.quiz"},
+            {"sample.echo", "sample.quiz"},
         ),
         active_activity_definition=definition,
         activity_definitions=(definition,),

@@ -190,7 +190,7 @@ async def test_run_once_does_not_execute_autonomous_activity_suspended_by_user_i
     activity_manager.prepare_user_input(
         AgentEvent(
             event_type=AgentEventType.USER_TEXT,
-            payload={"text": "しりとりしたい"},
+            payload={"text": "エコー活動を始めたい"},
         )
     )
 

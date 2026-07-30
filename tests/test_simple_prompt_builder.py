@@ -80,8 +80,8 @@ def test_simple_prompt_builder_includes_user_text_for_conversation() -> None:
 
 def test_simple_prompt_builder_includes_ongoing_activity_state() -> None:
     ongoing = OngoingActivity(
-        activity_type="shiritori",
-        goal="ユーザーとしりとりを続ける",
+        activity_type="echo_activity",
+        goal="ユーザーとエコー活動を続ける",
         expected_input="『ぱ』から始まる単語",
         end_condition="終了希望または『ん』で終わる単語",
         last_result=ActivityResult(
@@ -92,7 +92,7 @@ def test_simple_prompt_builder_includes_ongoing_activity_state() -> None:
     )
     activity = Activity(
         activity_type=ActivityType.CONVERSATION_WITH_USER,
-        goal="複数ターン活動「shiritori」を継続する",
+        goal="複数ターン活動「echo_activity」を継続する",
         context={
             "event_payload": {"text": "ぱんだ"},
             "ongoing_activity": ongoing,
@@ -106,9 +106,9 @@ def test_simple_prompt_builder_includes_ongoing_activity_state() -> None:
     prompt = prompt_builder.build_prompt(activity, character_profile)
 
     assert "# 継続中の複数ターン活動" in prompt
-    assert "活動種別: shiritori" in prompt
+    assert "活動種別: echo_activity" in prompt
     assert "状態: active" in prompt
-    assert "開始時の目的: ユーザーとしりとりを続ける" in prompt
+    assert "開始時の目的: ユーザーとエコー活動を続ける" in prompt
     assert "直前のActivity結果種別: speech_output" in prompt
     assert "直前のActivity結果: らっぱ！ 次は『ぱ』だよ。" in prompt
     assert "次に期待する入力: 『ぱ』から始まる単語" in prompt

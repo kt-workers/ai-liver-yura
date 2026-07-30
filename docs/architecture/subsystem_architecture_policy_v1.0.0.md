@@ -148,7 +148,9 @@ Event
 
 現時点でゲーム機能は必要ない。個別ゲーム、ゲームエンジン、APIサーバーは実装せず、将来接続可能な外枠だけを用意する。
 
-既存のしりとりは製品要件ではないため、サンプルや互換機能として残さず削除する。
+既存のしりとりは製品要件ではないため、サンプルや互換機能として残さず物理削除する。削除後のCoreには`app.plugins.games`、しりとり専用Activity／Intent／Command／Session／State、`games.shiritori` Capabilityを置かない。
+
+「しりとりしよう」などの入力は専用ゲームSessionを開始せず、通常会話として処理する。将来のGame Subsystemは旧Games Pluginを移植せず、公開契約から新規設計する。
 
 ### 5.2 将来所有する責務
 

@@ -87,8 +87,8 @@ def test_llm_details_are_one_line_and_separated_from_info(tmp_path) -> None:
         event_id="event-1",
         session_id="session-1",
         request={"input": "一行目\n二行目"},
-        user_input="しりとりしよう",
-        available_capabilities=["games.shiritori.play"],
+        user_input="エコー活動しよう",
+        available_capabilities=["sample.echo.play"],
         planner_state={"mood": "excited"},
         constraints=["発話本文を生成しない"],
     )
@@ -99,7 +99,7 @@ def test_llm_details_are_one_line_and_separated_from_info(tmp_path) -> None:
         activity_id="activity-1",
         raw_response='{"decision":"start_activity"}',
         parsed_response={"decision": "start_activity"},
-        adopted_text="しりとりを開始する",
+        adopted_text="エコー活動を開始する",
         stage="parsed",
     )
 
@@ -109,10 +109,10 @@ def test_llm_details_are_one_line_and_separated_from_info(tmp_path) -> None:
     request_record = json.loads(lines[0])
     response_record = json.loads(lines[1])
     assert request_record["request"]["input"] == "一行目\n二行目"
-    assert request_record["available_capabilities"] == ["games.shiritori.play"]
+    assert request_record["available_capabilities"] == ["sample.echo.play"]
     assert response_record["raw_response"] == '{"decision":"start_activity"}'
     assert response_record["parsed_response"] == {"decision": "start_activity"}
-    assert response_record["adopted_text"] == "しりとりを開始する"
+    assert response_record["adopted_text"] == "エコー活動を開始する"
 
 
 def test_sensitive_values_are_masked_in_nested_llm_details(

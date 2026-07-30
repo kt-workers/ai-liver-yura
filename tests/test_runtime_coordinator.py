@@ -284,7 +284,7 @@ async def test_publish_user_text_immediately_suspends_foreground_autonomous() ->
     )
     user_event = AgentEvent(
         event_type=AgentEventType.USER_TEXT,
-        payload={"text": "しりとりしたい"},
+        payload={"text": "エコー活動を始めたい"},
         priority=50,
     )
 
@@ -327,7 +327,7 @@ async def test_user_input_during_autonomous_planning_prevents_autonomous_actions
     await runtime.publish_event(
         AgentEvent(
             event_type=AgentEventType.USER_TEXT,
-            payload={"text": "しりとりしたい"},
+            payload={"text": "エコー活動を始めたい"},
             priority=50,
         )
     )

@@ -4,6 +4,8 @@
 **基準コミット:** `91bdb8a8f358b48ef6e102c6a83d0ccc7013c470`  
 **関連文書:** `plugin_separation_audit_v1.0.0.md`
 
+> 履歴注記（2026-07-30）: 本書は監査時点の移行候補を記録する過去文書である。`app/plugins/games/**`としりとり専用テストは後続工程で物理削除され、表中の維持方針は現行仕様ではない。
+
 ## 1. 目的
 
 現行ファイルをCore、Plugin、Adapter、shared/contracts、Composition Root、Compatibility、削除候補へ分類し、移行先と実施Phaseを明確にする。
