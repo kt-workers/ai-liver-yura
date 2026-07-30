@@ -128,3 +128,13 @@ def test_core_entrypoint_does_not_import_streaming_or_game_plugins() -> None:
             "app.adapters.youtube",
         ),
     )
+
+
+def test_runtime_plugin_setup_has_no_games_dependency() -> None:
+    path = ROOT / "app/bootstrap/runtime_plugin_setup.py"
+    source = path.read_text(encoding="utf-8")
+
+    assert "app.plugins.games" not in source
+    assert "config.plugins.games" not in source
+    assert 'plugin_id="games"' not in source
+    assert '"games.shiritori"' not in source

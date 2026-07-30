@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 import pytest
 import yaml
 
-from app.bootstrap import runtime
 from app.config.app_config import CONFIG_PATH, load_app_config
 from app.config.errors import ConfigError
 from app.plugins.games.settings import (
@@ -15,13 +13,10 @@ from app.plugins.games.settings import (
 )
 
 
-def test_games_settings_are_defined_and_parsed_by_the_plugin() -> None:
+def test_games_settings_are_not_part_of_core_config() -> None:
     config = load_app_config()
-    assert isinstance(config.plugins.games, GamesPluginSettings)
-    assert type(config.plugins.games).__module__ == "app.plugins.games.settings"
-    source = inspect.getsource(runtime.create_runtime_coordinator)
-    assert '"confidence_threshold"' not in source
-    assert '"max_generation_retries"' not in source
+    assert not hasattr(config.plugins, "games")
+    assert isinstance(load_games_plugin_settings({}), GamesPluginSettings)
 
 
 @pytest.mark.parametrize(

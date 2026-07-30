@@ -75,7 +75,7 @@ def test_legacy_and_split_configs_are_equivalent(split_config: Path) -> None:
     assert isinstance(split.services["openai"], OpenAiServiceSettings)
     assert type(legacy.services) is type(split.services)
     assert type(legacy.character.likes) is type(split.character.likes)
-    assert legacy.plugins.games == split.plugins.games
+    assert legacy.plugins == split.plugins
     assert legacy.streaming == split.streaming
 
 
@@ -341,13 +341,6 @@ def test_manifest_yaml_syntax_error_has_manifest_source(tmp_path: Path) -> None:
             "speech.yaml",
             lambda raw: raw["speech"].update(service="missing"),
             "speech.service",
-        ),
-        (
-            "plugins.yaml",
-            lambda raw: raw["plugins"]["games"]["intent_interpreter"].update(
-                confidence_threshold="invalid"
-            ),
-            "plugins.games.intent_interpreter.confidence_threshold",
         ),
     ],
 )

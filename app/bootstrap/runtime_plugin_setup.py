@@ -117,13 +117,6 @@ def setup_runtime_plugins(
 
     register_optional_plugin_from_factory(
         plugin_manager,
-        plugin_id="games",
-        module="app.plugins.games",
-        enabled=config.plugins.games.enabled,
-        configuration={"settings": config.plugins.games},
-    )
-    register_optional_plugin_from_factory(
-        plugin_manager,
         plugin_id=_RELATIONSHIP_MEMORY_PLUGIN_ID,
         module="app.plugins.relationship_memory",
         enabled=config.memory.relationship_memory.enabled,
@@ -151,18 +144,12 @@ def setup_runtime_plugins(
         },
     )
 
-    game_model = (
-        config.plugins.games.intent_interpreter.model
-        or config.response_generator.model
-    )
     plugin_manager.initialize_enabled_plugins(
         PluginContext(
             llm_gateway=_PluginLlmGateway(default_llm_plugin),
             activity_gateway=_ActivityManagerPluginGateway(setup.activity_manager),
             clock=SystemClock(),
-            configuration={
-                "llm_available": _is_model_provider_available(config, game_model),
-            },
+            configuration={},
             capability_reporter=plugin_manager,
         ),
         {
@@ -170,7 +157,6 @@ def setup_runtime_plugins(
             "llm_provider.situation_evaluator": True,
             "llm_provider.character": character_llm_plugin is not None,
             "llm_provider.response_validator": validator_llm_plugin is not None,
-            "games": config.plugins.games.enabled,
             _RELATIONSHIP_MEMORY_PLUGIN_ID: (
                 config.memory.relationship_memory.enabled
             ),

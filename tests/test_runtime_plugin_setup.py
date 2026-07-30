@@ -78,7 +78,6 @@ class _AudioPlayer:
 
 def _config(
     *,
-    games: bool = False,
     relationship_memory: bool = False,
     agent_memory: bool = False,
     speech: bool = False,
@@ -88,10 +87,6 @@ def _config(
         config,
         response_generator=replace(config.response_generator, type="dummy"),
         speech=replace(config.speech, enabled=speech),
-        plugins=replace(
-            config.plugins,
-            games=replace(config.plugins.games, enabled=games),
-        ),
         memory=replace(
             config.memory,
             relationship_memory=replace(
@@ -173,7 +168,6 @@ def test_enabled_plugins_receive_configuration_services_and_initialization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config(
-        games=True,
         relationship_memory=True,
         agent_memory=True,
         speech=True,
@@ -276,12 +270,6 @@ def test_enabled_plugins_receive_configuration_services_and_initialization(
             "services": {"response_generator": validator_generator},
         },
         {
-            "plugin_id": "games",
-            "module": "app.plugins.games",
-            "enabled": True,
-            "configuration": {"settings": config.plugins.games},
-        },
-        {
             "plugin_id": "relationship_memory",
             "module": "app.plugins.relationship_memory",
             "enabled": True,
@@ -308,12 +296,11 @@ def test_enabled_plugins_receive_configuration_services_and_initialization(
         "llm_provider.situation_evaluator": True,
         "llm_provider.character": True,
         "llm_provider.response_validator": True,
-        "games": True,
         "relationship_memory": True,
         "agent_memory": True,
         "voice_output": True,
     }
-    assert contexts[0].configuration["llm_available"] is True
+    assert contexts[0].configuration == {}
     assert vars(contexts[0].llm_gateway)["_generator"] is (
         services.default_response_generator
     )
