@@ -80,8 +80,8 @@ def test_runtime_is_not_wired_to_the_new_public_contract() -> None:
     assert violations == []
 
 
-def test_subsystem_contract_shell_contains_documentation_only() -> None:
-    subsystem_root = ROOT / "subsystems" / "streaming"
+def test_subsystem_contract_directory_contains_documentation_only() -> None:
+    contracts_root = ROOT / "subsystems" / "streaming" / "contracts"
 
-    assert (subsystem_root / "contracts" / "README.md").is_file()
-    assert list(subsystem_root.rglob("*.py")) == []
+    assert (contracts_root / "README.md").is_file()
+    assert list(contracts_root.rglob("*.py")) == []

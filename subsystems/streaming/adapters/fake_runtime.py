@@ -128,7 +128,9 @@ class FakeStreamingRuntime:
             and record.payload == request.payload
         ):
             return record.result
-        return self._conflict_result(request, self._state.status)
+        result = self._conflict_result(request, self._state.status)
+        self._emit_error(request, result)
+        return result
 
     def _remember(
         self,

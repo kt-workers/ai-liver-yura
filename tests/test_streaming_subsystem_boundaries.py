@@ -1,0 +1,122 @@
+from __future__ import annotations
+
+import ast
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).parents[1]
+SUBSYSTEM = ROOT / "subsystems" / "streaming"
+
+
+def _imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    imports: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imports.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module)
+    return imports
+
+
+def test_subsystem_only_uses_the_public_app_contract() -> None:
+    violations = sorted(
+        f"{path.relative_to(ROOT)} -> {import_name}"
+        for path in SUBSYSTEM.rglob("*.py")
+        for import_name in _imports(path)
+        if import_name.startswith("app.")
+        and not (
+            import_name == "app.integrations.streaming"
+            or import_name.startswith("app.integrations.streaming.")
+        )
+    )
+
+    assert violations == []
+
+
+def test_subsystem_has_no_core_transport_or_external_sdk_imports() -> None:
+    forbidden_prefixes = (
+        "app.adapters",
+        "app.bootstrap",
+        "app.plugins",
+        "app.runtime",
+        "app.services",
+        "fastapi",
+        "flask",
+        "googleapiclient",
+        "gui",
+        "obswebsocket",
+        "starlette",
+    )
+    violations = sorted(
+        f"{path.relative_to(ROOT)} -> {import_name}"
+        for path in SUBSYSTEM.rglob("*.py")
+        for import_name in _imports(path)
+        if any(
+            import_name == prefix or import_name.startswith(f"{prefix}.")
+            for prefix in forbidden_prefixes
+        )
+    )
+
+    assert violations == []
+
+
+def test_subsystem_python_code_has_no_adapter_specific_names() -> None:
+    forbidden_names = ("youtube", "obs_websocket", "googleapiclient")
+    violations = sorted(
+        str(path.relative_to(ROOT))
+        for path in SUBSYSTEM.rglob("*.py")
+        if any(
+            name in path.read_text(encoding="utf-8").lower()
+            for name in forbidden_names
+        )
+    )
+
+    assert violations == []
+
+
+def test_core_bootstrap_and_runtime_do_not_import_subsystem_implementation() -> None:
+    core_files = [
+        *sorted((ROOT / "app" / "bootstrap").rglob("*.py")),
+        *sorted((ROOT / "app" / "runtime").rglob("*.py")),
+    ]
+    violations = sorted(
+        str(path.relative_to(ROOT))
+        for path in core_files
+        if any(
+            import_name == "subsystems.streaming"
+            or import_name.startswith("subsystems.streaming.")
+            for import_name in _imports(path)
+        )
+    )
+
+    assert violations == []
+
+
+def test_core_import_succeeds_when_subsystem_package_is_blocked() -> None:
+    script = """
+import builtins
+
+original_import = builtins.__import__
+
+def blocked_import(name, *args, **kwargs):
+    if name == "subsystems.streaming" or name.startswith("subsystems.streaming."):
+        raise ModuleNotFoundError(name)
+    return original_import(name, *args, **kwargs)
+
+builtins.__import__ = blocked_import
+import app
+from app.runtime.runtime_factory import StreamPreparationRuntime
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 0
+    assert completed.stderr == ""
