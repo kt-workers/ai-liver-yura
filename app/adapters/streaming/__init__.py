@@ -1,11 +1,5 @@
-from app.adapters.obs import ObsWebSocketPreparationAdapter
 from app.adapters.streaming.fake_comment_moderation_adapter import (
     FakeCommentModerationAdapter,
-)
-from app.adapters.streaming.fake_obs_preparation_adapter import (
-    DisabledObsPreparationAdapter,
-    FakeObsPreparationAdapter,
-    FakeObsPreparationConfig,
 )
 from app.adapters.streaming.health_adapters import (
     FakeAvatarHealthAdapter,
@@ -78,13 +72,25 @@ _YOUTUBE_COMPAT_EXPORTS = frozenset(
         "UnavailableYouTubePreparationAdapter",
     }
 )
+_OBS_COMPAT_EXPORTS = frozenset(
+    {
+        "DisabledObsPreparationAdapter",
+        "FakeObsPreparationAdapter",
+        "FakeObsPreparationConfig",
+        "ObsWebSocketPreparationAdapter",
+    }
+)
 
 
 def __getattr__(name: str) -> object:
-    if name not in _YOUTUBE_COMPAT_EXPORTS:
+    if name in _OBS_COMPAT_EXPORTS:
+        module_name = "subsystems.streaming.adapters.obs"
+    elif name in _YOUTUBE_COMPAT_EXPORTS:
+        module_name = "subsystems.streaming.adapters.youtube.fake_youtube"
+    else:
         raise AttributeError(name)
     module = __import__(
-        "subsystems.streaming.adapters.youtube.fake_youtube",
+        module_name,
         fromlist=[name],
     )
     return getattr(module, name)

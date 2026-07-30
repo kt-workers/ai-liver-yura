@@ -1,20 +1,17 @@
-from app.adapters.obs.models import (
+"""Deprecated one-way compatibility boundary for OBS adapters."""
+
+from subsystems.streaming.adapters.obs import (
+    ObsAdapterError,
     ObsAudioSourceState,
+    ObsErrorMapper,
     ObsInspection,
-    ObsSourceVisibility,
-)
-from app.adapters.obs.obs_error_mapper import ObsAdapterError, ObsErrorMapper
-from app.adapters.obs.obs_status_mapper import ObsStatusMapper
-from app.adapters.obs.obs_websocket_client_factory import (
     ObsRequestClient,
+    ObsSourceVisibility,
+    ObsStatusMapper,
     ObsWebSocketClientConfig,
     ObsWebSocketClientFactory,
-)
-from app.adapters.obs.obs_websocket_preparation_adapter import (
     ObsWebSocketPreparationAdapter,
     ObsWebSocketPreparationConfig,
-)
-from app.adapters.obs.obs_websocket_streaming_control_adapter import (
     ObsWebSocketStreamingControlAdapter,
 )
 

@@ -214,7 +214,7 @@ subsystems/streaming/
 
 ## 9. G: YouTube／OBS処理をSubsystemへ移動
 
-> 実施状況（2026-07-31）: 分割実施中。G1 YouTube bundle移動は完了し、OBS、TTS／Avatar Health、Config／Secret最終移動は後続工程とする。
+> 実施状況（2026-07-31）: 分割実施中。G1 YouTube bundle移動とG2 OBS bundle移動は完了し、TTS／Avatar Health、Config／Secret最終移動は後続工程とする。
 
 ### 目的
 
@@ -231,9 +231,9 @@ YouTube API、OAuth、Live Chat、OBS WebSocket、外部I/O構築をCore側packa
 ### 分割進捗
 
 - G1 YouTube bundle移動: 完了
-- G2 OBS bundle移動: 未着手
+- G2 OBS bundle移動: 完了
 - G3 TTS／Avatar Health抽象化: 未着手
-- G4 Config／Secret最終移動: YouTube設定境界のみ実施
+- G4 Config／Secret最終移動: YouTube／OBS設定境界まで実施
 - G5 旧path互換整理: 一方向re-exportを追加し継続
 
 ### 完了条件
@@ -338,4 +338,4 @@ feature/plugin-separation-development
 
 ## 15. 次の作業
 
-YouTube Adapter bundleのSubsystem移動は完了した。次工程ではYouTube境界を維持しながら、OBS Adapter bundleをSubsystem内部へ移動する。
+YouTube／OBS Adapter bundleのSubsystem移動は完了した。次工程では両Adapter境界を維持しながら、TTS／Avatar Health抽象化とConfig／Secret最終移動を行う。

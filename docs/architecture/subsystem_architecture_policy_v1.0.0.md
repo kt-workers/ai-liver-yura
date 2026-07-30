@@ -162,6 +162,18 @@ Google responseとSDK型はSubsystem内部でYouTube固有DTOへ変換し、Subs
 
 移行期間中の旧`app.adapters.youtube`等はSubsystem実装への一方向re-exportだけを保持する。Core Configは互換入力として残すが、credential構築とGoogle SDK importをCore Runtimeの責務にしない。
 
+### 4.7 OBS Adapter所有境界
+
+OBS WebSocket client生成、接続確認、配信開始／停止、状態取得、Scene／Input操作、
+OBS error mapping、OBS Fake／disabledはStreaming Subsystem内部Adapterとして所有する。
+OBS responseとSDK例外を公開境界へ出さず、状態、Health、Capability、Operation result、
+Errorは`app.integrations.streaming`の中立DTOへ正規化する。
+
+OBS bundleはYouTube bundleと独立してfake／obs_websocket／disabledを選択する。
+`obsws_python`とcredential値はreal client生成時のみ遅延loadし、旧
+`app.adapters.obs`はSubsystem実装への一方向re-exportだけを保持する。Core Config
+互換読込とSession配線の最終移動は後続工程とする。
+
 ## 5. Game Subsystem
 
 ### 5.1 方針
