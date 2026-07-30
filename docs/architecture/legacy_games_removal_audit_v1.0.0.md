@@ -11,7 +11,7 @@
   - `docs/architecture/subsystem_architecture_policy_v1.0.0.md`
   - `docs/architecture/subsystem_migration_roadmap_v1.0.0.md`
 
-> 実施状況（2026-07-30）: PR AはPR #100で完了し、PR Bで本監査の分類に従って旧Games Pluginとしりとりを物理削除した。本書の「現在」は監査時点の過去構成を示し、削除後の現行仕様は`subsystem_architecture_policy_v1.0.0.md`と`source_file_plan.md`を正本とする。
+> 実施状況（2026-07-30）: PR AはPR #100で完了し、PR Bで本監査の分類に従って旧Games Pluginとしりとりを物理削除した。PR Cでは旧実装を再利用せず、Game Subsystemの中立DTO、Gateway Protocol、Null Gatewayだけを新規追加する。本書の「現在」は監査時点の過去構成を示し、削除後の現行仕様は`subsystem_architecture_policy_v1.0.0.md`、`game_subsystem_contract_v1.0.0.md`、`source_file_plan.md`を正本とする。
 
 ## 2. 結論
 

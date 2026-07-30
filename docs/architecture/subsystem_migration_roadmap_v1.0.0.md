@@ -118,22 +118,24 @@ Core Runtime／Configからの登録・設定依存はPR #100で削除済みで�
 
 ```text
 app/integrations/games/
+  __init__.py
   contracts.py
+  events.py
   gateway.py
   null_gateway.py
-  event_mapper.py
 
 subsystems/games/
   README.md
-  contracts/
+  contracts/README.md
 ```
 
 ### 契約
 
-- status query
-- available games query
-- start／submit input／cancel command
-- session started／input requested／message produced／session ended／failed event
+- disconnected／unavailable／ready／busy／degraded status
+- status／snapshot query
+- start／input／pause／resume／stop／reset command
+- status changed／session started／output available／session ended／error event
+- transport非依存の汎用payload
 
 ### 対象外
 
@@ -149,6 +151,7 @@ subsystems/games/
 - Null Gatewayが未接続を正常状態として返す
 - Core起動時にGame Subsystem接続を要求しない
 - 契約がCore Runtime具象、個別ゲーム型をimportしない
+- 旧Games Plugin、しりとり、Games専用Capability／Configを復元しない
 
 ## 7. E: Streaming公開通信契約
 
