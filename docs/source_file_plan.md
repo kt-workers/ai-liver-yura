@@ -753,7 +753,16 @@ ActionScheduler の確定仕様:
 - 公開Comment、Status、Operation result、Errorは`app.integrations.streaming`へ正規化し、Google raw response／credential／SDK例外を外へ出さない
 - 旧`app/adapters/youtube/**`、YouTube Fake、関連Port／Domain DTO pathは新pathへの一方向re-exportとして一時維持する
 - Core Runtime／bootstrapはGoogle SDKを直接importせず、Subsystem composition rootがFake／Google／disabled bundleを選択する
-- OBS、Session、Run of Show、Admin、Core Gateway、旧Plugin削除は後続工程とする
+- Session、Run of Show、Admin、Core Gateway、旧Plugin削除は後続工程とする
+
+## OBS Subsystem移行方針
+
+- OBS WebSocket client、配信開始／停止、状態取得、Scene／Input操作、error mapping、Fake／disabled実装の正本を`subsystems/streaming/adapters/obs/`へ移す
+- OBS設定境界は`subsystems/streaming/config/obs.py`で所有し、password値は環境変数からclient生成時だけ読み込む
+- OBS内部状態と例外は`app.integrations.streaming`の中立Status／Health／Errorへ正規化し、SDK responseやcredentialを公開しない
+- OBS bundleとYouTube bundleは独立構築し、一方がdisabledでも他方を利用できる
+- 旧`app/adapters/obs/**`とOBS Fake pathは新pathへの一方向re-exportとして一時維持する
+- Core Config／Secret最終移動、Session、Run of Show、Admin、Core Gateway、旧Plugin削除は後続工程とする
 
 ## Game Subsystem Integration方針
 
