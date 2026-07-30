@@ -182,24 +182,36 @@ Coreはゲームルール、単語辞書、盤面、勝敗判定を持たない�
 ### 5.4 外枠の公開契約
 
 ```text
+Status
+- disconnected
+- unavailable
+- ready
+- busy
+- degraded
+
 Query
 - get_status
-- list_available_games
+- get_snapshot
 
 Command
-- start_game
-- submit_input
-- cancel_game
+- start
+- input
+- pause
+- resume
+- stop
+- reset
 
 Event
-- game.session.started
-- game.input.requested
-- game.message.produced
-- game.session.ended
-- game.session.failed
+- status_changed
+- session_started
+- output_available
+- session_ended
+- error
 ```
 
-外枠追加時点では、未接続を正常状態として扱うNull GatewayだけをCore側に用意する。ゲーム実装は追加しない。
+Command／Eventは個別ゲーム型を含まない中立DTOとし、Gatewayはstatus、snapshot、Command送信、Event pollingだけを公開する。
+
+外枠追加時点では、未接続を正常状態として扱うNull GatewayだけをCore側に用意する。Null GatewayはI/Oと可変状態を持たず、常に`DISCONNECTED`、`game_subsystem_not_connected`、空Eventを返す。利用者がない段階ではRuntimeへ注入せず、ゲーム実装も追加しない。
 
 ## 6. しりとり削除方針
 

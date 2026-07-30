@@ -110,6 +110,8 @@ Core Runtime／Configからの登録・設定依存はPR #100で削除済みで�
 
 ## 6. D: Game Subsystem契約の外枠
 
+> 実施状況（2026-07-30）: 完了。旧Games Pluginを再利用せず、中立DTO、Gateway Protocol、Null Gateway、境界テストを追加した。
+
 ### 目的
 
 ゲーム実装を追加せず、将来の独立Subsystem接続に必要な最小契約だけを用意する。
@@ -118,22 +120,24 @@ Core Runtime／Configからの登録・設定依存はPR #100で削除済みで�
 
 ```text
 app/integrations/games/
+  __init__.py
   contracts.py
+  events.py
   gateway.py
   null_gateway.py
-  event_mapper.py
 
 subsystems/games/
   README.md
-  contracts/
+  contracts/README.md
 ```
 
 ### 契約
 
-- status query
-- available games query
-- start／submit input／cancel command
-- session started／input requested／message produced／session ended／failed event
+- disconnected／unavailable／ready／busy／degraded status
+- status／snapshot query
+- start／input／pause／resume／stop／reset command
+- status changed／session started／output available／session ended／error event
+- transport非依存の汎用payload
 
 ### 対象外
 
@@ -149,6 +153,7 @@ subsystems/games/
 - Null Gatewayが未接続を正常状態として返す
 - Core起動時にGame Subsystem接続を要求しない
 - 契約がCore Runtime具象、個別ゲーム型をimportしない
+- 旧Games Plugin、しりとり、Games専用Capability／Configを復元しない
 
 ## 7. E: Streaming公開通信契約
 
@@ -303,7 +308,7 @@ feature/plugin-separation-development
 ├─ audit/remove-legacy-games
 ├─ refactor/disable-legacy-games-registration
 ├─ refactor/remove-legacy-games-plugin
-├─ feature/game-subsystem-contract-shell
+├─ feature/game-subsystem-contract
 ├─ feature/streaming-subsystem-contracts
 ├─ feature/streaming-subsystem-shell
 ├─ refactor/move-youtube-obs-to-streaming-subsystem
@@ -315,4 +320,4 @@ feature/plugin-separation-development
 
 ## 15. 次の作業
 
-旧Games Plugin／しりとりの物理削除は完了した。次工程はGame Subsystem契約外枠とNull Gatewayの新規設計とし、旧Games実装を流用しない。
+旧Games Plugin／しりとりの物理削除と、Game Subsystem契約外枠／Null Gatewayの新規追加は完了した。次工程ではStreaming公開通信契約を確定する。

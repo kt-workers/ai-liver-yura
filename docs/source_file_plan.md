@@ -727,14 +727,16 @@ ActionScheduler の確定仕様:
 - EmbeddingやLLM評価はPort越しに任意利用とし、利用不能時は決定論的なフォールバックを使う
 - TopicHistoryは発話履歴、InterruptedTopicは中断判断用状態、Topic Engineは候補選定責務として区別する
 
-## Game機能の削除後方針
+## Game Subsystem Integration方針
 
 - 旧`app/plugins/games/`としりとり専用実装は物理削除し、Core内に互換入口を残さない
 - Coreはゲーム固有Activity、Intent、Command、Session、State、Capabilityを認識しない
 - 「しりとりしよう」などの入力は専用Sessionを開始せず、通常会話経路へフォールバックする
 - CoreのPlugin Manager、Loader、Capability、Command、Intent、Activity、ongoing activity同期は汎用基盤として維持する
-- 将来のGame Subsystemは旧Games Pluginを移植せず、Core外の独立Subsystemと公開契約として別工程で新規設計する
-- Game Subsystem契約外枠とNull Gatewayは本物理削除工程では追加しない
+- `app/integrations/games/`にはstatus、汎用Command／Event DTO、Gateway Protocol、Null Gatewayだけを置く
+- `subsystems/games/`には将来の独立Subsystemと外部向け契約の説明だけを置き、ゲーム実装は追加しない
+- Game Subsystemは旧Games Pluginを移植せず、Core外の独立Subsystemとして新規実装する
+- 接続利用者がない間はRuntimeへGatewayを注入せず、未接続を正常な`DISCONNECTED`状態として扱う
 
 ### コンソール入力のデコード障害
 
