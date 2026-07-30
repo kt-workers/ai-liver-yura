@@ -9,13 +9,11 @@ from typing import Any
 import pytest
 import yaml
 
-from app.bootstrap import (
-    compose_streaming,
-    create_runtime_coordinator,
-    create_stream_preparation_runtime,
-)
+from app.bootstrap import create_runtime_coordinator
 from app.bootstrap.runtime import create_speech_synthesizer
 from app.bootstrap.runtime_preflight import validate_runtime_service_settings
+from app.bootstrap.streaming import compose_streaming
+from app.bootstrap.streaming_runtime import create_stream_preparation_runtime
 from app.config.app_config import load_app_config, load_raw_config
 from app.config.config_loader import (
     CONFIG_DIRECTORY,

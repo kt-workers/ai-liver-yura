@@ -6,7 +6,8 @@ import os
 import uvicorn
 
 from app.admin_api import create_admin_api
-from app.bootstrap import compose_streaming, create_stream_preparation_runtime
+from app.bootstrap.streaming import compose_streaming
+from app.bootstrap.streaming_runtime import create_stream_preparation_runtime
 from app.config.app_config import load_app_config
 
 

@@ -24,3 +24,18 @@ def test_legacy_runtime_factory_routes_adapter_creation_through_typed_boundary()
         runtime_factory.create_topic_memory_store.__module__
         == "app.bootstrap.typed_runtime_adapters"
     )
+
+
+def test_streaming_composition_root_is_defined_in_streaming_runtime() -> None:
+    assert (
+        runtime_factory.StreamPreparationRuntime.__module__
+        == "app.bootstrap.streaming_runtime"
+    )
+    assert (
+        runtime_factory.create_stream_preparation_runtime.__module__
+        == "app.bootstrap.streaming_runtime"
+    )
+    assert (
+        runtime_factory.create_streaming_demo_config.__module__
+        == "app.bootstrap.streaming_runtime"
+    )

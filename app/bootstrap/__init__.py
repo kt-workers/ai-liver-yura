@@ -1,10 +1,10 @@
 from app.bootstrap.emotion_runtime import create_runtime_coordinator
-from app.bootstrap.runtime import (
+from app.bootstrap.streaming import StreamingComposition, compose_streaming
+from app.bootstrap.streaming_runtime import (
     StreamPreparationRuntime,
     create_stream_preparation_runtime,
     create_streaming_demo_config,
 )
-from app.bootstrap.streaming import StreamingComposition, compose_streaming
 
 __all__ = [
     "StreamPreparationRuntime",
