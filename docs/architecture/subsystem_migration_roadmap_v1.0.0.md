@@ -157,7 +157,7 @@ subsystems/games/
 
 ## 7. E: Streaming公開通信契約
 
-> 実施状況（2026-07-31）: 実施中。公開DTO、versioning、互換方針、契約境界を先に確定する。
+> 実施状況（2026-07-31）: 完了。公開DTO、versioning、互換方針、契約境界テストを追加した。
 
 ### 目的
 
@@ -312,7 +312,7 @@ feature/plugin-separation-development
 ├─ refactor/disable-legacy-games-registration
 ├─ refactor/remove-legacy-games-plugin
 ├─ feature/game-subsystem-contract
-├─ feature/streaming-subsystem-contracts
+├─ feature/streaming-public-contract
 ├─ feature/streaming-subsystem-shell
 ├─ refactor/move-youtube-obs-to-streaming-subsystem
 ├─ refactor/move-streaming-session-to-subsystem
@@ -323,4 +323,4 @@ feature/plugin-separation-development
 
 ## 15. 次の作業
 
-旧Games Plugin／しりとりの物理削除と、Game Subsystem契約外枠／Null Gatewayの新規追加は完了した。次工程ではStreaming公開通信契約を確定する。
+Streaming公開通信契約の定義は完了した。次工程では既存Streaming処理をまだ移動せず、独立起動可能なStreaming Subsystemプロセス外枠を追加する。
