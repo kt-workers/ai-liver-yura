@@ -1,5 +1,7 @@
 # Plugin移行ロードマップ v1.0.0
 
+> 履歴注記（2026-07-30）: 本書は旧Games Pluginを使ったPlugin Factory移行時点の計画であり、現行仕様ではない。Core Runtime／Config依存はPR #100で除去され、後続工程で旧Games Pluginとしりとり実装を物理削除した。現行方針は`subsystem_architecture_policy_v1.0.0.md`を参照する。
+
 ## 1. 目的
 
 Plugin分離を安全に進めるため、`app/bootstrap/runtime.py`に残る具体Plugin依存を段階的に除去する順序、各段階の前提条件、並行可能な作業範囲を定義する。

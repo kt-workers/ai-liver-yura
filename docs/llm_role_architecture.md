@@ -84,11 +84,11 @@ Character LLMへ外部入力だけを直接渡し、意味解析、行動判断�
 ```json
 {
   "decision": "start_activity",
-  "activity_type": "shiritori",
+  "activity_type": "external_search",
   "operation": "start",
-  "speech_act": "proposal",
-  "goal": "深海生物に限定したしりとりを行う",
-  "constraints": {"theme": "深海生物"},
+  "speech_act": "request",
+  "goal": "最新ニュースを検索する",
+  "constraints": {"query": "最新ニュース"},
   "negated": false,
   "hypothetical": false,
   "past_reference": false,
