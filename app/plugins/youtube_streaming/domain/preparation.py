@@ -4,6 +4,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from app.plugins.youtube_streaming.domain.health import utc_now
+from subsystems.streaming.adapters.youtube.contracts import (
+    YouTubeBroadcastSummary as YouTubeBroadcastSummary,
+)
+from subsystems.streaming.adapters.youtube.contracts import (
+    YouTubeStreamSnapshot as YouTubeStreamSnapshot,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,30 +22,6 @@ class StreamPreparationCommand:
     requested_by: str = "pyqt_management_ui"
     expected_state_version: int = 0
     run_of_show_id: str = "default"
-
-
-@dataclass(frozen=True, slots=True)
-class YouTubeBroadcastSummary:
-    broadcast_id: str
-    title: str
-    scheduled_start_at: datetime | None = None
-    privacy_status: str = "private"
-    lifecycle_status: str = "ready"
-    actual_start_at: datetime | None = None
-    actual_end_at: datetime | None = None
-    live_chat_id: str | None = None
-    bound_stream_id: str | None = None
-    selectable: bool = True
-
-
-@dataclass(frozen=True, slots=True)
-class YouTubeStreamSnapshot:
-    stream_id: str
-    status: str
-    bound: bool
-    live_chat_id: str | None = None
-    ingestion_type: str | None = None
-    health_status: str = "unknown"
 
 
 @dataclass(frozen=True, slots=True)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
 from app.integrations.streaming import (
     CURRENT_STREAMING_API_VERSION,
@@ -23,6 +24,9 @@ from app.integrations.streaming import (
     StreamingStatus,
 )
 from subsystems.streaming.domain import StreamingSubsystemState
+
+if TYPE_CHECKING:
+    from subsystems.streaming.adapters.youtube import YouTubeAdapterBundle
 
 _CAPABILITIES = StreamingCapabilities(
     values=frozenset(
@@ -50,8 +54,14 @@ def _utc_now() -> datetime:
 class FakeStreamingRuntime:
     """In-memory implementation for process and contract verification."""
 
-    def __init__(self, *, clock: Callable[[], datetime] = _utc_now) -> None:
+    def __init__(
+        self,
+        *,
+        clock: Callable[[], datetime] = _utc_now,
+        youtube: YouTubeAdapterBundle | None = None,
+    ) -> None:
         self._clock = clock
+        self._youtube = youtube
         self._state = StreamingSubsystemState()
         self._events: list[StreamingEventEnvelope] = []
         self._cursor_positions: dict[StreamingCursor, int] = {}
@@ -62,11 +72,16 @@ class FakeStreamingRuntime:
         return self._state.status
 
     async def get_health(self) -> StreamingHealth:
+        youtube_healthy = (
+            True
+            if self._youtube is None
+            else await self._youtube.preparation.health_check()
+        )
         return StreamingHealth(
             status=self._state.status,
-            healthy=True,
+            healthy=youtube_healthy,
             checked_at=self._clock(),
-            components={"runtime": True},
+            components={"runtime": True, "youtube": youtube_healthy},
         )
 
     async def get_capabilities(self) -> StreamingCapabilities:

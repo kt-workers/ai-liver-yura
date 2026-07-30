@@ -181,7 +181,7 @@ def test_initial_authentication_saves_token_without_logging_secret(
             return credentials()
 
     monkeypatch.setattr(
-        "app.adapters.youtube.google_youtube_auth_service."
+        "subsystems.streaming.adapters.youtube.oauth."
         "InstalledAppFlow.from_client_secrets_file",
         lambda *args, **kwargs: FakeFlow(),
     )

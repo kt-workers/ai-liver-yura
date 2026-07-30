@@ -10,42 +10,10 @@ from app.plugins.youtube_streaming.domain import (
     RunOfShowSummary,
     StreamPreparationResult,
     StreamSession,
-    YouTubeAuthenticationState,
-    YouTubeBroadcastSummary,
-    YouTubeLiveChatSnapshot,
-    YouTubeStreamSnapshot,
 )
-
-
-class YouTubePreparationPort(Protocol):
-    @property
-    def adapter_type(self) -> str: ...
-
-    async def get_authentication_state(self) -> YouTubeAuthenticationState: ...
-
-    async def authenticate(self) -> YouTubeAuthenticationState: ...
-
-    async def list_broadcasts(self) -> tuple[YouTubeBroadcastSummary, ...]: ...
-
-    async def check_authentication(self) -> bool: ...
-
-    async def resolve_broadcast(self, broadcast_id: str) -> YouTubeBroadcastSummary: ...
-
-    async def resolve_bound_stream(
-        self, broadcast_id: str
-    ) -> YouTubeStreamSnapshot: ...
-
-    async def get_stream_status(self, stream_id: str) -> str: ...
-
-    async def get_broadcast_status(self, broadcast_id: str) -> str: ...
-
-    async def get_live_chat_id(self, broadcast_id: str) -> str | None: ...
-
-    async def get_live_chat_availability(
-        self, broadcast_id: str
-    ) -> YouTubeLiveChatSnapshot: ...
-
-    async def health_check(self) -> bool: ...
+from subsystems.streaming.adapters.youtube.contracts import (
+    YouTubePreparationPort as YouTubePreparationPort,
+)
 
 
 class ObsPreparationPort(Protocol):
