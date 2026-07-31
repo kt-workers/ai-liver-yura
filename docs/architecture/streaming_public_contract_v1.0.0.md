@@ -10,7 +10,7 @@
 
 責務を次のように分離する。
 
-- Query: status、health、capabilities、recent commentsを読み取る。状態変更を要求しない
+- Query: status、health、dependency health、capabilities、recent commentsを読み取る。状態変更を要求しない
 - Command: `PREPARE`、`START`、`STOP`、`EMERGENCY_STOP`をOperation requestとして送る
 - Event: status、health、capabilities、comment、operation結果、errorの変化をEnvelopeで通知する
 
@@ -22,6 +22,9 @@ Operation requestの受付可否と実行完了は分離する。`accepted=False
 
 - `StreamingStatus`
 - `StreamingHealth`
+- `StreamingDependencyHealth`
+- `DependencyKind`
+- `DependencyState`
 - `StreamingCapability`
 - `StreamingComment`
 - `StreamingOperationRequest`
@@ -33,6 +36,10 @@ Operation requestの受付可否と実行完了は分離する。`accepted=False
 - `StreamingApiVersion`
 
 Mapping payloadは初期化時にdefensive copyし、外部dictの変更やDTO経由の書き換えを防ぐ。外部SDKのraw response、例外、stack trace、認証情報を格納しない。
+
+TTS／Avatar dependency healthは未接続を`DISCONNECTED`、未知状態を`DEGRADED`へ
+正規化する。metadataはJSON互換の中立値だけを許可し、speaker ID、endpoint、
+model path、Cubism parameter、SDK response、credentialを含めない。
 
 timestampはtimezone-awareな`datetime`で保持し、wire schemaではRFC 3339のUTC表現を使用する。ID、cursor、idempotency keyは不透明文字列であり、呼び出し側は構造解析、順序比較、外部サービスIDへの変換を行わない。
 

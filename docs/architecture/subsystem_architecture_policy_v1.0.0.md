@@ -174,6 +174,17 @@ OBS bundleはYouTube bundleと独立してfake／obs_websocket／disabledを選�
 `app.adapters.obs`はSubsystem実装への一方向re-exportだけを保持する。Core Config
 互換読込とSession配線の最終移動は後続工程とする。
 
+### 4.8 TTS／Avatar Health境界
+
+Streaming SubsystemはTTS／Avatarの実装を所有せず、可用性を中立なdependency health
+として参照する。公開情報はkind、state、healthy、available、確認時刻、中立capability、
+安全なmetadataに限定し、VOICEVOX endpoint／speaker ID、Live2D model path／Cubism
+parameter、SDK型と例外を含めない。
+
+未接続は`disconnected`を返す正常状態とする。一方のHealth Provider障害は他方から分離し、
+TTS／Avatarの劣化だけでStreaming Subsystem本体をunhealthyにしない。Coreから実Healthを
+供給する配線、発話Command、Avatar操作Commandは後続工程とする。
+
 ## 5. Game Subsystem
 
 ### 5.1 方針
