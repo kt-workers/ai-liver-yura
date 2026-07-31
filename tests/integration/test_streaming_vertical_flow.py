@@ -26,11 +26,6 @@ from app.adapters.streaming import (
     InMemoryStreamSessionRepository,
     YamlRunOfShowRepository,
 )
-from app.adapters.streaming.fake_live_chat_adapter import FakeLiveChatAdapter
-from app.adapters.streaming.fake_streaming_control import (
-    FakeObsStreamingControlAdapter,
-    FakeYouTubeStreamingControlAdapter,
-)
 from app.bootstrap.streaming import RuntimeCoreActivityAdapter
 from app.config.app_config import CommentRankingSettings, load_app_config
 from app.domain.actions import ActionPlan
@@ -75,6 +70,11 @@ from app.runtime.activity_planner_thread import (
     ActivityPlanningService,
 )
 from app.runtime.planned_activity_queue import PlannedActivityQueue
+from subsystems.streaming.adapters.obs.fake_obs import FakeObsStreamingControlAdapter
+from subsystems.streaming.adapters.youtube.fake_youtube import (
+    FakeLiveChatAdapter,
+    FakeYouTubeStreamingControlAdapter,
+)
 
 ACTIVE = {
     "obs_output": "active",

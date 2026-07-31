@@ -6,9 +6,12 @@ from typing import Any
 
 import pytest
 
-from app.adapters.obs import ObsAdapterError, ObsWebSocketStreamingControlAdapter
 from app.core.contracts.plugins import CommandRejected
 from app.plugins.youtube_streaming.public.registration import MethodHandler
+from subsystems.streaming.adapters.obs import (
+    ObsAdapterError,
+    ObsWebSocketStreamingControlAdapter,
+)
 
 
 class ControlClient:

@@ -8,13 +8,13 @@ import pytest
 from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
 
-from app.adapters.youtube.google_youtube_auth_service import (
+from app.plugins.youtube_streaming.domain import YouTubeAuthenticationStatus
+from app.utils.trace import TraceLogger
+from subsystems.streaming.adapters.youtube.oauth import (
     YOUTUBE_READONLY_SCOPE,
     GoogleYouTubeAuthConfig,
     GoogleYouTubeAuthService,
 )
-from app.plugins.youtube_streaming.domain import YouTubeAuthenticationStatus
-from app.utils.trace import TraceLogger
 
 
 def credentials(*, expired: bool = False) -> Credentials:

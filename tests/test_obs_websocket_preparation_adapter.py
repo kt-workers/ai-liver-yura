@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from app.adapters.obs import (
+from subsystems.streaming.adapters.obs import (
     ObsAdapterError,
     ObsErrorMapper,
     ObsStatusMapper,

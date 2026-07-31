@@ -116,10 +116,6 @@ def create_stream_preparation_runtime(config: AppConfig) -> StreamPreparationRun
         VoiceVoxHealthConfig,
         YamlRunOfShowRepository,
     )
-    from app.adapters.streaming.fake_streaming_control import (
-        FakeObsStreamingControlAdapter,
-        FakeYouTubeStreamingControlAdapter,
-    )
     from app.core.plugins import (
         CapabilityAvailability,
         CapabilityRegistry,
@@ -139,6 +135,12 @@ def create_stream_preparation_runtime(config: AppConfig) -> StreamPreparationRun
         ObsPreparationPort,
         TtsHealthPort,
         YouTubePreparationPort,
+    )
+    from subsystems.streaming.adapters.obs.fake_obs import (
+        FakeObsStreamingControlAdapter,
+    )
+    from subsystems.streaming.adapters.youtube.fake_youtube import (
+        FakeYouTubeStreamingControlAdapter,
     )
 
     youtube_service = _resolve_service(config, "youtube")
@@ -174,7 +176,7 @@ def create_stream_preparation_runtime(config: AppConfig) -> StreamPreparationRun
                 "complete",
             ]
     elif youtube_service.type in {"google", "google_youtube"}:
-        from app.adapters.youtube import (
+        from subsystems.streaming.adapters.youtube import (
             GoogleYouTubeAuthConfig,
             GoogleYouTubeAuthService,
             GoogleYouTubeClientConfig,
@@ -235,14 +237,14 @@ def create_stream_preparation_runtime(config: AppConfig) -> StreamPreparationRun
                     allowed_privacy_statuses=youtube_service.allowed_privacy_statuses,
                 ),
             )
-            from app.adapters.youtube.google_youtube_streaming_control_adapter import (
+            from subsystems.streaming.adapters.youtube import (
                 GoogleYouTubeStreamingControlAdapter,
             )
 
             youtube_control = GoogleYouTubeStreamingControlAdapter(
                 client_factory, youtube
             )
-            from app.adapters.youtube import GoogleYouTubeLiveChatAdapter
+            from subsystems.streaming.adapters.youtube import GoogleYouTubeLiveChatAdapter
 
             live_chat = GoogleYouTubeLiveChatAdapter(client_factory)
     else:
@@ -267,7 +269,7 @@ def create_stream_preparation_runtime(config: AppConfig) -> StreamPreparationRun
             obs_control.statuses = ["idle", "active", "active", "active", "idle"]
     elif obs_service.type == "disabled":
         from app.adapters.streaming import DisabledObsPreparationAdapter
-        from app.adapters.streaming.fake_streaming_control import (
+        from subsystems.streaming.adapters.obs.fake_obs import (
             DisabledObsStreamingControlAdapter,
         )
 
@@ -276,7 +278,7 @@ def create_stream_preparation_runtime(config: AppConfig) -> StreamPreparationRun
     elif obs_service.type == "obs_websocket":
         from urllib.parse import urlparse
 
-        from app.adapters.obs import (
+        from subsystems.streaming.adapters.obs import (
             ObsWebSocketClientConfig,
             ObsWebSocketClientFactory,
             ObsWebSocketPreparationAdapter,

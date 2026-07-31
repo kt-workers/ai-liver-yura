@@ -14,12 +14,6 @@ from app.adapters.streaming import (
     InMemoryStreamSessionRepository,
     YamlRunOfShowRepository,
 )
-from app.adapters.youtube import (
-    GoogleYouTubePreparationAdapter,
-    GoogleYouTubePreparationConfig,
-    YouTubeApiError,
-    YouTubeApiErrorKind,
-)
 from app.plugins.youtube_streaming.application import (
     PrepareStreamSessionUsecase,
     StreamPreparationRequirements,
@@ -30,6 +24,12 @@ from app.plugins.youtube_streaming.domain import (
     YouTubeAuthenticationState,
     YouTubeAuthenticationStatus,
     YouTubeLiveChatStatus,
+)
+from subsystems.streaming.adapters.youtube import (
+    GoogleYouTubePreparationAdapter,
+    GoogleYouTubePreparationConfig,
+    YouTubeApiError,
+    YouTubeApiErrorKind,
 )
 
 
