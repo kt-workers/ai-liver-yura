@@ -41,6 +41,8 @@ class StreamingCapability(str, Enum):
     RECEIVE_COMMENTS = "receive_comments"
     CONTROL_SCENE = "control_scene"
     PUBLISH_STATUS = "publish_status"
+    TTS_AVAILABLE = "tts_available"
+    AVATAR_AVAILABLE = "avatar_available"
 
 
 def normalize_streaming_capabilities(

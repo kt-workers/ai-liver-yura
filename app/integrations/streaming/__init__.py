@@ -11,6 +11,12 @@ from app.integrations.streaming.contracts import (
     normalize_streaming_capabilities,
     normalize_streaming_status,
 )
+from app.integrations.streaming.dependency_health import (
+    DependencyKind,
+    DependencyState,
+    StreamingDependencyHealth,
+    normalize_dependency_state,
+)
 from app.integrations.streaming.errors import (
     StreamingError,
     StreamingErrorCode,
@@ -37,6 +43,8 @@ from app.integrations.streaming.versioning import (
 
 __all__ = [
     "CURRENT_STREAMING_API_VERSION",
+    "DependencyKind",
+    "DependencyState",
     "UNKNOWN_ENUM_POLICY",
     "UNKNOWN_EVENT_TYPE_POLICY",
     "UNKNOWN_FIELD_POLICY",
@@ -45,6 +53,7 @@ __all__ = [
     "StreamingCapability",
     "StreamingComment",
     "StreamingCursor",
+    "StreamingDependencyHealth",
     "StreamingError",
     "StreamingErrorCode",
     "StreamingEventEnvelope",
@@ -57,6 +66,7 @@ __all__ = [
     "StreamingStatus",
     "is_streaming_api_compatible",
     "normalize_streaming_capabilities",
+    "normalize_dependency_state",
     "normalize_streaming_error_code",
     "normalize_streaming_status",
     "parse_streaming_event_type",
