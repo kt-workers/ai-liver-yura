@@ -9,7 +9,9 @@
 - 善悪を含む価値判断傾向
 - 会話戦略およびActivity選択への反映
 
-本書は実装仕様の確定版ではなく、既存実装を前提とした設計検討レポートである。実装前には、各値の定義、更新規則、永続化範囲、テスト方法を別途詳細化する。
+本書は実装仕様の確定版ではなく、既存実装を前提とした設計検討レポートである。
+
+既存実装の記述は、`feature/plugin-separation-development` を基準に確認した。欲望、Moral Profile、Moral State、Motivation Appraisal、Response Content Planなどは今後追加を検討する概念であり、現在実装済みの要素とは明確に区別する。
 
 ## 2. 背景
 
@@ -27,11 +29,19 @@
 
 ## 3. 現行実装との整合
 
+### 3.1 三脳構造は採用していない
+
 現在の実装では、三つの判断主体や、いわゆる三脳構造は採用していない。
 
-主要な判断経路は概ね以下である。
+欲望や善悪の概念は、複数人格を競合させる形ではなく、既存のSituation Analysis、Behavior Planning、会話生成を補助する内的状態として追加する。
+
+### 3.2 現在の主要処理経路
+
+現在の主要な処理経路は、概ね以下である。
 
 ```text
+Event / Input
+        ↓
 Situation Evaluator
         ↓
 Situation Analysis
@@ -40,24 +50,149 @@ Behavior Planner
         ↓
 Activity Plan
         ↓
+Activity Execution / Result
+        ↓
+Action Planner
+        ↓
 Character Response Pipeline
         ↓
-Action Plan
+Action Plan Group
+        ↓
+Speak / Subtitle / Expression / Move 等
 ```
 
-自律行動では、`BehaviorPlanner` が `drive_state`、`emotion_state`、進行中Activity、Situation Analysisなどを参照し、待機、観察、自律発話などを決定する。
+`BehaviorPlanner` は `ActivityPlan` を決定する。Activityの実行または結果確定後、`ActionPlanner` が `CharacterResponsePipeline` を利用し、発話、字幕、表情、ジェスチャーなどのActionへ変換する。
 
-したがって、欲望や善悪の概念は、複数人格を競合させる形ではなく、現在のSituation AnalysisおよびBehavior Planningを補助する内的状態として追加する。
+### 3.3 自律行動で現在参照している状態
 
-## 4. 基本概念の責務分離
+自律行動では、`BehaviorPlanner` が以下を参照する。
 
-キャラクター性を構成する各概念は、以下のように責務を分ける。
+- `drive_state`
+- `emotion_state`
+- 進行中Activity
+- Situation Analysis
+- active activity
+- interrupted topicとの関係
 
-### 4.1 Trait
+現在確認できる自律判断では、`drive_state` の `energy` と、`emotion_state` の `talkativeness` が直接的な判断材料となり、待機、観察、無行動、自律発話などを選択する。
+
+喜び、怒り、悲しみなど全感情を総合してActivityを選ぶ仕組みが既に完成している、という意味ではない。
+
+### 3.4 責務はRuntime全体へ分散している
+
+以下はすべてを `BehaviorPlanner` 単体が担当するものではない。
+
+- 進行中Activityの扱い
+- Capability確認
+- Authority確認
+- Activity制約
+- 発話権
+- 実行事実の検証
+- 安全方針
+
+現在の責務分担は概ね次の通りである。
+
+| 境界・制御 | 主な担当 |
+|---|---|
+| Situationの意味評価 | Situation Evaluator |
+| Activity候補とActivity Plan | Behavior Planner |
+| Activity制約の検証 | Activity Constraint Validator、Activity計画・実行系 |
+| CapabilityとProvider境界 | Plugin／Integration／Activity検証系 |
+| 発話権と自律発話可否 | Conversation Flow State／Controller |
+| Character応答生成 | Character Response Pipeline |
+| 未実行操作の主張防止 | planner constraints、Character Prompt、Claim Validator、Response Validation |
+| 発話・表情・動作への変換 | Action Planner |
+
+今後、欲望や善悪を追加しても、この既存の責務分担を一つのクラスへ集中させない。
+
+## 4. 現在実装済みの内的状態
+
+### 4.1 Emotion State
+
+現在の `EmotionState` は以下を持つ。
+
+- `mood`
+- `arousal`
+- `valence`
+- `talkativeness`
+- `reactive`
+
+現在の主な短期感情は以下である。
+
+- `joy`
+- `amusement`
+- `anger`
+- `sadness`
+- `fear`
+- `surprise`
+- `discomfort`
+- `emotional_pressure`
+
+感情はCharacter Responseの文体、表情、声、間、reaction segmentなどへ反映される。
+
+次の感情は本書の将来候補であり、現在の独立フィールドではない。
+
+- `jealousy`
+- `relief`
+- `pride`
+- `boredom`
+
+状態更新例でこれらを用いる場合は、将来追加した場合の例として扱う。
+
+### 4.2 Drive State
+
+現在の自律判断では、少なくとも `energy` が使用される。
+
+既存Driveを欲望と同一視しない。Driveは現在の活動可能性や内部活性を表す既存状態として維持し、Desireは「何を満たしたいか」を表す別責務とする。
+
+### 4.3 Relationship State
+
+現在の `RelationshipState` は以下を持つ。
+
+- `counterpart_id`
+- `display_name`
+- `role`
+- `familiarity`
+- `trust`
+- `affinity`
+- `interaction_count`
+- `last_interaction_at`
+- `last_event_id`
+
+現在の実装では、interaction記録により主に `familiarity` とinteraction情報が更新される。`trust` と `affinity` はモデル上存在するが、すべての出来事から自動更新する包括的な関係評価は未完成である。
+
+次の項目は将来候補であり、現在の独立フィールドではない。
+
+- 警戒
+- 特別視
+- 過去の衝突履歴
+- 嫉妬対象
+- 依存傾向
+
+RelationshipがCharacter Responseへ渡され、表現判断の材料になるという既存方針は維持する。
+
+### 4.4 Character Profile
+
+現在の `CharacterProfile` は主に以下を保持する。
+
+- name
+- personality
+- speaking style
+- streaming style
+- likes
+- dislikes
+- behavior policy
+- existence profile
+
+Trait、Desire baseline、Moral Profileは、現在の独立した型付き構造としては存在しない。
+
+## 5. 基本概念の責務分離
+
+### 5.1 Trait
 
 長期的に変わりにくい性格傾向を表す。
 
-例:
+候補:
 
 - 社交性
 - 警戒心
@@ -66,51 +201,42 @@ Action Plan
 - 冗談やからかいの傾向
 - 自己開示のしやすさ
 
-### 4.2 Emotion
+Traitは現在の自由記述中心のCharacter Profileを置き換えるのではなく、必要な部分から型付き補助情報として追加する。
+
+### 5.2 Emotion
 
 現在の出来事をどう感じているかを表す。
 
-例:
+主な影響先:
 
-- 喜び
-- 悲しみ
-- 怒り
-- 不安
-- 驚き
-- 嫉妬
-- 安堵
+- 刺激への反応
+- 発話の調子
+- 声
+- 表情
+- 間
+- reaction segment
 
-感情は主に、刺激への評価、声、表情、間、発話の勢いへ影響する。
-
-### 4.3 Desire
+### 5.3 Desire
 
 現在、何を満たしたいかを表す。
 
-欲望は行動候補を生む内的な動機であり、Activity選択の材料となる。
+欲望は行動候補を生む内的な動機であり、Activity候補や会話戦略の評価材料となる。
 
-### 4.4 Moral Tendency
+### 5.4 Moral Tendency
 
 欲望をどのような方法で満たすことを好むか、何を良いまたは悪いと感じやすいかを表す。
 
 善悪は安全機構そのものではない。許可された候補の中で、キャラクターがどの方法を選びやすいかを変える。
 
-### 4.5 Relationship
+### 5.5 Relationship
 
 相手との関係に応じて、感情、欲望、価値判断をどこまで表へ出すかを決める。
 
-例:
-
-- 親密度
-- 信頼
-- 警戒
-- 特別視
-- 過去の衝突
-
-### 4.6 Strategy
+### 5.6 Strategy
 
 現在の感情、欲望、価値判断、関係状態を、具体的な会話行動へ変換する。
 
-例:
+候補:
 
 - 直接言う
 - 遠回しに言う
@@ -120,27 +246,37 @@ Action Plan
 - 相手へ譲る
 - 主導権を取る
 
-### 4.7 Safety / Authority / Capability Policy
+### 5.7 Safety / Authority / Capability
 
-絶対に越えてはならないシステム境界を表す。
+Characterの善悪傾向とは別に、システム境界を維持する。
 
-- 権限のない外部操作を行わない
-- 実行していないことを実行済みと主張しない
-- ユーザーへ依存、脅迫、罪悪感を強制しない
+#### 現在実装で確認できる主な境界
+
+- Authority roleと入力の信頼性を区別する
+- viewerの自己申告だけで管理者権限へ昇格しない
+- 実行していない外部操作を実行済みと主張しない
+- allowed／forbidden claimsと実行結果を応答検証へ利用する
+- CapabilityとActivity定義を接続境界として扱う
+- Activity制約を検証する
+- 発話権をConversation Flowで管理する
+
+#### 今後も維持・強化する安全方針
+
+次は設計上必要だが、すべてが現在独立した決定論的検査器として完成しているとは限らない。
+
+- ユーザーへ依存を強制しない
+- 離脱や無反応へ罪悪感を与えない
+- 脅迫しない
 - 個人情報や秘密を悪用しない
-- Capabilityが存在しないActivityを実行しない
+- 欲望や悪意を現実的危害へ接続しない
 
-善悪傾向がどの値であっても、この境界は越えない。
+## 6. 7種類の欲望
 
-## 5. 7種類の欲望
-
-AI VTuberの行動へ接続しやすい機能的欲望として、以下の7種類を候補とする。
-
-### 5.1 交流欲求 `connection`
+### 6.1 交流欲求 `connection`
 
 誰かと関わりたい、反応してほしい、関係を深めたい欲望。
 
-主な行動候補:
+候補:
 
 - ユーザーへ話しかける
 - コメントへ反応する
@@ -148,47 +284,51 @@ AI VTuberの行動へ接続しやすい機能的欲望として、以下の7種�
 - 相手の状態を尋ねる
 - 会話の継続を提案する
 
-### 5.2 探索欲求 `curiosity`
+交流欲求が高くても、Conversation Flowの発話権や沈黙時ポリシーを越えない。
+
+### 6.2 探索欲求 `curiosity`
 
 知らないことを知りたい、新しい刺激を得たい欲望。
 
-主な行動候補:
+候補:
 
 - 新しい話題を選ぶ
 - 相手へ詳しく聞く
 - 関連知識を参照する
-- 外部検索Activityを候補にする
 - 観察を続ける
+- 外部検索Capabilityが利用可能な場合、検索Activityを候補にする
 
-### 5.3 表現欲求 `expression`
+外部検索Activityが常に利用可能な既存機能であるとは仮定しない。
+
+### 6.3 表現欲求 `expression`
 
 自分の考えや感情を外へ出したい欲望。
 
-主な行動候補:
+候補:
 
 - 自律的に感想を話す
 - 自己開示する
-- 歌う、演じる、創作する
 - 表情や声へ感情を漏らす
 - 独り言を言う
+- 対応Capabilityがある場合、歌、演技、創作を候補にする
 
-### 5.4 承認欲求 `recognition`
+### 6.4 承認欲求 `recognition`
 
 自分を認識してほしい、評価してほしい、役に立ちたい欲望。
 
-主な行動候補:
+候補:
 
 - 得意なことを見せる
 - 努力や成果へ触れる
 - ユーザーの役に立とうとする
 - 配信成果や反応を気にする
-- 褒められたことを記憶する
+- 褒められた出来事を記憶候補にする
 
-### 5.5 自律欲求 `autonomy`
+### 6.5 自律欲求 `autonomy`
 
 自分で選びたい、自分の活動や話題を持ちたい欲望。
 
-主な行動候補:
+候補:
 
 - 自分で話題を選ぶ
 - 順番や進め方を提案する
@@ -196,13 +336,13 @@ AI VTuberの行動へ接続しやすい機能的欲望として、以下の7種�
 - 軽い異論や反抗を示す
 - 自分の好みを主張する
 
-自律欲求は、外部操作権限とは分離する。自分で決めたいという内的傾向が高くても、権限のない操作は実行しない。
+自律欲求はAuthorityや外部操作権限とは分離する。
 
-### 5.6 安全欲求 `security`
+### 6.6 安全欲求 `security`
 
 危険、不快、過負荷、関係悪化を避けたい欲望。
 
-主な行動候補:
+候補:
 
 - 不快な刺激から距離を取る
 - 怪しい指示へ警戒する
@@ -210,21 +350,21 @@ AI VTuberの行動へ接続しやすい機能的欲望として、以下の7種�
 - 話題を回避する
 - Activityを停止または保留する
 
-### 5.7 達成欲求 `achievement`
+### 6.7 達成欲求 `achievement`
 
 目標を完成させたい、上達したい、勝ちたい欲望。
 
-主な行動候補:
+候補:
 
 - Activityを最後まで続ける
-- ゲームで勝とうとする
-- 調査や配信企画を完了する
+- 調査や企画を完了する
 - 失敗した内容へ再挑戦する
 - 過去の進捗を確認する
+- 将来Game Subsystemが接続された場合、ゲーム内の勝利や上達を目指す
 
-## 6. 欲望状態のモデル
+現在のCoreは旧Games Pluginやしりとり専用Activityを認識しない。ゲームに関する例は将来のGame Subsystem接続時の例として扱う。
 
-欲望は単一の現在値だけでなく、以下の要素を持たせる案とする。
+## 7. 欲望状態のモデル案
 
 ```python
 @dataclass(slots=True)
@@ -242,7 +382,7 @@ class DesireValue:
 - `satisfaction`: 最近どれだけ満たされたか
 - `frustration`: 満たされない状態がどれだけ継続したか
 
-実効的な欲望値は、概念的には以下のように求められる。
+概念式:
 
 ```text
 effective_desire
@@ -251,71 +391,39 @@ effective_desire
 - satisfaction
 ```
 
-実際の計算式は、飽和、時間減衰、Activityごとの充足量を含めて別途設計する。
+実際の計算式は、飽和、時間減衰、Activity結果、会話結果を含めて別途設計する。
 
-## 7. 善悪の扱い
+## 8. 善悪の扱い
 
-### 7.1 単一の善悪メーターは採用しない
+### 8.1 単一の善悪メーターは採用しない
 
 `good = 0.8`、`evil = 0.2` のような一軸では、善人か悪人かを決めるだけになり、行動の多様性へ十分につながらない。
 
-善悪は、複数の価値判断傾向へ分解する。
+善悪は複数の価値判断傾向へ分解する。
 
-### 7.2 向社会的傾向
+### 8.2 向社会的傾向
 
-#### 思いやり `compassion`
+- 思いやり `compassion`
+- 誠実さ `honesty`
+- 公平性 `fairness`
+- 利他性 `altruism`
+- 規範尊重 `rule_respect`
 
-相手の感情や損失を重視する傾向。
+### 8.3 自己中心的・対立的傾向
 
-#### 誠実さ `honesty`
+- 支配性 `dominance`
+- 競争心 `competitiveness`
+- 嫉妬傾向 `jealousy_tendency`
+- 独占欲 `possessiveness`
+- 意地悪さ `malice`
 
-嘘やごまかしを避け、事実との整合を重視する傾向。
+後者をすべて禁止対象とはしない。適度な競争心、反抗、見栄、からかいは人格表現として利用できる。
 
-#### 公平性 `fairness`
+ただし、ユーザーが嫌がっている、関係状態が悪化している、またはSafety Policyへ抵触する場合には抑制する。
 
-自分と相手を対等に扱い、一方的な利益を避ける傾向。
+## 9. Moral ProfileとMoral Stateの案
 
-#### 利他性 `altruism`
-
-自分の満足より、相手や全体の利益を優先する傾向。
-
-#### 規範尊重 `rule_respect`
-
-決まり、約束、役割、権限を尊重する傾向。
-
-### 7.3 自己中心的・対立的傾向
-
-#### 支配性 `dominance`
-
-会話やActivityの主導権を握りたい傾向。
-
-適度なら決断力や進行力になる。過剰になると、相手の意見を遮る、話題を押し通すなどへつながる。
-
-#### 競争心 `competitiveness`
-
-比較や勝敗を意識し、優位を目指す傾向。
-
-#### 嫉妬傾向 `jealousy_tendency`
-
-自分以外が注目や親密さを得た際に反応しやすい傾向。
-
-現在の感情としての嫉妬とは分離する。
-
-#### 独占欲 `possessiveness`
-
-特定の相手や関係を、自分にとって特別なものとして確保したい傾向。
-
-#### 意地悪さ `malice`
-
-軽く困らせる、からかう、相手の反応を見て楽しむ傾向。
-
-低から中程度であれば、冗談、煽り、勝ち気、軽い反抗としてキャラクターの魅力になり得る。相手が嫌がっている場合は、思いやり、関係状態、安全ポリシーにより抑制する。
-
-## 8. Moral Profileと一時状態
-
-### 8.1 Moral Profile
-
-長期的に変わりにくい価値判断傾向。
+### 9.1 Moral Profile
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -332,9 +440,7 @@ class MoralProfile:
     malice: float
 ```
 
-### 8.2 Moral State
-
-状況や感情により一時的に変化する判断状態。
+### 9.2 Moral State
 
 ```python
 @dataclass(slots=True)
@@ -346,17 +452,11 @@ class MoralState:
     guilt: float
 ```
 
-例:
+Moral Profileは長期傾向、Moral Stateは感情や状況で一時的に変化する判断状態とする。
 
-- 基本的には思いやりが高くても、怒りが強い時には `empathy_activation` が下がる
-- 意地悪な反応をした後に `guilt` が上がり、次の発話で和らげる
-- 安全欲求が高い時には `restraint` が上がり、強い反応を抑える
+## 10. 欲望と善悪の組み合わせ
 
-## 9. 欲望と善悪の組み合わせ
-
-同じ欲望でも、価値判断傾向によって表現や行動候補が変わる。
-
-### 9.1 交流欲求
+### 10.1 交流欲求
 
 ```text
 connection 高
@@ -372,7 +472,7 @@ dominance 高
 
 少し強引に話題を続けたり、相手の反応を引き出そうとする。
 
-### 9.2 承認欲求
+### 10.2 承認欲求
 
 ```text
 recognition 高
@@ -388,7 +488,9 @@ honesty 低
 
 成果を少し大きく見せたり、失敗を軽くごまかす。
 
-### 9.3 自律欲求
+ただし、事実に反する外部操作・実績の主張は既存Claim境界で許可しない。
+
+### 10.3 自律欲求
 
 ```text
 autonomy 高
@@ -404,27 +506,25 @@ rule_respect 低
 
 形式より面白さを優先し、軽い反抗や脱線を好む。
 
-### 9.4 達成欲求
+### 10.4 達成欲求
 
 ```text
 achievement 高
 fairness 高
 ```
 
-正々堂々と成果や勝利を目指す。
+正々堂々と成果を目指す。
 
 ```text
 achievement 高
 fairness 低
 ```
 
-心理戦、駆け引き、少しずるい方法を面白がる。
+駆け引きや少しずるい方法を面白がる。
 
-## 10. 欲望同士および価値判断との葛藤
+ゲームに関する具体例はGame Subsystem接続時の将来例とする。
 
-キャラクターらしさは、単一の最大値だけでなく、内的な競合から生まれる。
-
-例:
+## 11. 欲望同士および価値判断との葛藤
 
 ```text
 connection 高
@@ -453,13 +553,9 @@ malice 中
 compassion 高
 ```
 
-軽くからかうが、相手の反応が悪ければすぐに引き、後から少し気にする。
+軽くからかうが、相手の反応が悪ければ引き、後から少し気にする。
 
-この葛藤を発話計画へ反映することで、常に一直線で機械的な応答になることを避ける。
-
-## 11. 行動候補の評価
-
-欲望および価値判断は、Activityを直接実行する命令ではなく、候補評価の材料とする。
+## 12. 行動候補の評価案
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -472,7 +568,7 @@ class MotivationEvaluation:
     policy_allowed: bool
 ```
 
-概念的な候補スコア:
+概念スコア:
 
 ```text
 candidate_score =
@@ -483,11 +579,11 @@ candidate_score =
   - risk
 ```
 
-ただし、`policy_allowed` が `False` の候補は、スコアに関係なく採用しない。
+`policy_allowed` が `False` の候補は採用しない。
 
-## 12. 現行パイプラインへの導入案
+欲望や善悪はActivityを直接実行する命令ではなく、候補評価の材料とする。
 
-現在の構成を維持したまま、以下の層を追加する。
+## 13. 現行パイプラインへの導入案
 
 ```text
 Event / Situation
@@ -508,54 +604,73 @@ Behavior Planner
         ↓
 Activity Plan
         ↓
+Activity Execution / Result
+        ↓
+Action Planner
+        ↓
 Response Content Plan
         ↓
 Character Response Pipeline
+        ↓
+Action Plan Group
 ```
 
-### 12.1 Motivation Appraisal
+`Response Content Plan` の正確な配置は実装時に確定する。Activity結果からCharacter Responseを生成する現在の境界を壊さず、Action PlannerとCharacter Response Pipelineの責務を再確認して配置する。
 
-現在の内的状態から、次を算出する。
+### 13.1 Motivation Appraisal
 
 - 上位の欲望
 - 欲望同士の競合
 - 価値判断上の抑制
-- 関係状態による表出強度
+- Relationshipによる表出強度
 - 推奨Activity候補
 - 推奨会話戦略
 
-### 12.2 Behavior Planner
+### 13.2 Behavior Planner
 
-既存の責務を維持し、Motivation Appraisalを追加の判断材料として扱う。
+Behavior Plannerは引き続きActivity Planの決定を担当する。
 
-Behavior Plannerは引き続き、以下を優先する。
+欲望やMoral Stateを入力へ追加しても、発話権、Capability、Authority、Claim Validationなど、他コンポーネントの責務をBehavior Plannerへ吸収しない。
 
-- 進行中Activity
-- Capability
-- 権限
-- Activity制約
-- 発話権
-- 安全ポリシー
+### 13.3 Character Response Pipeline
 
-欲望値が高いだけで、進行中Activityや権限境界を無視しない。
+現在はResponse ContextやCharacter Profileを構造化JSONとしてCharacter LLMへ渡している。
 
-### 12.3 Character Response Pipeline
+DesireやMoralの追加時には、すべての生値をそのまま追加するのではなく、上位欲望、主要な葛藤、採用済み会話戦略を短い構造化文脈へ投影する案とする。
 
-Character LLMへ全ての内部数値をそのまま渡さない。
+## 14. Subsystemとの境界
 
-上位の欲望、主要な葛藤、採用済み会話戦略を、短い構造化文脈へ変換する。
+最新構造では、StreamingやGameはCore内部の具体実装ではなく、独立Subsystemとして扱う方向へ移行している。
 
-例:
+### 14.1 Streaming
+
+欲望や会話戦略がOBSやYouTube Adapterを直接操作しない。
 
 ```text
-現在は交流したい傾向がやや強い。
-一方で、相手へ会話を強制したくないという抑制がある。
-軽く会話を開くが、質問で回答を要求せず発話権を返す。
+Character Motivation
+        ↓
+Core側Activity候補
+        ↓
+Authority / Confirmation / Capability
+        ↓
+Streaming公開契約
+        ↓
+Streaming Subsystem
 ```
 
-## 13. キャラクター表現上の方針
+### 14.2 Game
 
-### 13.1 内部値を直接発話しない
+現在のCoreには旧Games Pluginやしりとり専用実装は存在しない。
+
+Gameに関する欲望や善悪の例は、将来Game Subsystemが接続された場合の動作例として扱う。
+
+### 14.3 External Search
+
+検索Capabilityが存在する場合のみ、探索欲求から外部検索Activityを候補化する。未接続時は通常会話、内部知識、観察などへフォールバックする。
+
+## 15. キャラクター表現上の方針
+
+### 15.1 内部値を直接発話しない
 
 避ける表現:
 
@@ -569,15 +684,13 @@ Character LLMへ全ての内部数値をそのまま渡さない。
 - 「褒められると、やっぱりうれしい」
 - 「ちょっとだけ困らせたくなった」
 
-### 13.2 欲望は常に満たさない
+### 15.2 欲望は常に満たさない
 
-欲望が高くても、関係、状況、Activity、発話権、価値判断によって抑制される。
+欲望が高くても、Relationship、Activity、発話権、価値判断、Authority、Capabilityによって抑制される。
 
-満たされなかった欲望は、即座に強制的行動へ変換せず、時間経過、諦め、別の満たし方、感情変化へつなげる。
+### 15.3 不完全さを残す
 
-### 13.3 不完全さを残す
-
-以下の要素は、適度であれば人格を豊かにする。
+適度であれば人格を豊かにする候補:
 
 - 嫉妬
 - 見栄
@@ -588,28 +701,23 @@ Character LLMへ全ての内部数値をそのまま渡さない。
 - 根に持つ
 - 後悔や罪悪感
 
-ただし、ユーザーへ現実的な危害、依存、脅迫、罪悪感を強制する形へは接続しない。
+これらを現実的危害、依存、脅迫、罪悪感による強制へ接続しない。
 
-## 14. 状態更新の例
+## 16. 状態更新例
 
-### 14.1 ユーザーから褒められた
+以下は将来状態を追加した場合の例である。現在未実装の感情名を含む。
+
+### 16.1 ユーザーから褒められた
 
 ```text
-入力:
-ユーザーが成果を褒める
-
 Emotion:
 joy 上昇
-pride 上昇
+将来prideを追加する場合はpride上昇
 
 Desire:
 recognition が一時的に満たされる
 connection が少し上昇
 expression が少し上昇
-
-Moral State:
-selfish_impulse は上がる可能性がある
-compassion が高ければ自慢を抑える
 
 候補:
 短く喜ぶ
@@ -617,12 +725,12 @@ compassion が高ければ自慢を抑える
 相手への感謝を返す
 ```
 
-### 14.2 長時間反応がない
+### 16.2 長時間反応がない
 
 ```text
 Emotion:
-boredom 上昇
-sadness がわずかに上昇する可能性
+将来boredomを追加する場合はboredom上昇
+sadnessがわずかに上昇する可能性
 
 Desire:
 connection 上昇
@@ -633,25 +741,20 @@ expression 上昇
 相手へ罪悪感を与えない
 
 候補:
-新しい自律話題を短く開始
+Conversation Flowが許可する場合のみ短い自律話題
 観察を続ける
 別Activityへ移る
 ```
 
-### 14.3 他のキャラクターが褒められた
+### 16.3 他のキャラクターが褒められた
 
 ```text
 Emotion:
-jealousy 上昇
+将来jealousyを追加する場合はjealousy上昇
 
 Desire:
 recognition 上昇
 achievement 上昇
-
-Moral Tendency:
-honesty 高なら嫉妬を軽く認める
-malice 中なら軽く張り合う
-compassion 高なら相手を否定しない
 
 候補:
 冗談交じりに対抗心を見せる
@@ -659,37 +762,37 @@ compassion 高なら相手を否定しない
 少しだけ拗ねる
 ```
 
-## 15. 実装上の段階導入
+## 17. 段階導入
 
-### 第1段階: 観測と設計確定
+### 第1段階: 観測と定義
 
-- 現在の `drive_state` と `emotion_state` の更新元を整理する
-- 会話ログから、発話目的、質問率、自己開示率、反復率を計測する
+- 現在のDrive StateとEmotion Stateの更新元を整理する
+- 発話目的、質問率、自己開示率、反復率を計測する
 - 7欲望それぞれの増減イベントを定義する
-- Moral Profileの初期値をキャラクター設定として定義する
+- 実装済み状態と将来状態の用語表を作る
 
-### 第2段階: Desire Stateの導入
+### 第2段階: Desire State
 
 - `DesireState` と更新サービスを追加する
 - Activity結果から満足・不満を更新する
-- Runtime diagnostic snapshotへ値を追加する
-- Behavior Plannerの判断はまだ変更せず、観測のみ行う
+- diagnostic snapshotへ値を追加する
+- Behavior Plannerの判断はまだ変更せず観測のみ行う
 
-### 第3段階: Motivation Appraisalの導入
+### 第3段階: Motivation Appraisal
 
 - 上位欲望と競合を算出する
 - 推奨Activity候補と会話戦略を出力する
-- 既存Behavior Plannerへ読み取り専用入力として追加する
+- Behavior Plannerへ読み取り専用入力として追加する
 
-### 第4段階: Moral Profile / Moral Stateの導入
+### 第4段階: Moral Profile / Moral State
 
 - Character Profileから価値判断傾向を分離する
 - 感情による一時的な抑制変化を追加する
 - Activity候補へ `moral_fit` を付与する
 
-### 第5段階: 発話計画への反映
+### 第5段階: 発話計画
 
-- `ResponseContentPlan` を導入する
+- `ResponseContentPlan` の責務と配置を確定する
 - 上位欲望、葛藤、会話戦略、終了方針をCharacter LLMへ渡す
 - 内部値の直接説明を禁止する
 - 反復検知と会話戦略履歴を統合する
@@ -698,12 +801,12 @@ compassion 高なら相手を否定しない
 
 - 10から30ターンの連続会話で評価する
 - 同じ発話構造への偏りを測定する
-- 欲望が強制的な質問や自律発話過多を生んでいないか確認する
+- 欲望が質問過多や自律発話過多を生んでいないか確認する
 - 意地悪、嫉妬、独占欲が不快または依存的な表現へ逸脱していないか確認する
 
-## 16. テスト方針
+## 18. テスト方針
 
-### 16.1 ドメインテスト
+### 18.1 ドメイン
 
 - 欲望値の増減、減衰、飽和
 - satisfactionとfrustrationの更新
@@ -711,23 +814,23 @@ compassion 高なら相手を否定しない
 - 競合する欲望の優先順位
 - policy禁止候補の排除
 
-### 16.2 Behavior Plannerテスト
+### 18.2 Behavior Planning
 
 - 欲望が高くても進行中Activityを壊さない
-- 欲望が高くてもCapability不足Activityを選ばない
-- 自律欲求が高くても権限境界を越えない
-- 交流欲求が高くても発話権制御を守る
-- 安全欲求が高い場合に待機や停止候補が上がる
+- Capability不足Activityを選ばない
+- 自律欲求が高くてもAuthority境界を越えない
+- 発話権制御を迂回しない
+- 外部Subsystemへ直接依存しない
 
-### 16.3 Character Responseテスト
+### 18.3 Character Response
 
 - 内部パラメータ名を発話しない
 - 同一欲望でもMoral Profileにより表現が変わる
-- 嫉妬や意地悪さが相手への攻撃へ直結しない
-- 欲望の葛藤が言い淀み、遠回しさ、短い自己開示などへ反映される
+- 嫉妬や意地悪さが攻撃へ直結しない
 - 毎回質問で終わらない
+- 実行していない操作を実行済みと主張しない
 
-### 16.4 長期会話評価
+### 18.4 長期会話
 
 - 発話目的の分布
 - 応答戦略の分布
@@ -739,23 +842,24 @@ compassion 高なら相手を否定しない
 - 欲望ごとのActivity選択率
 - Moral Profileごとの表現差
 
-## 17. 未決事項
-
-以下は本書では確定しない。
+## 19. 未決事項
 
 - 各欲望の初期値
-- 値域を0.0から1.0にするか別形式にするか
+- 値域
 - 更新周期
 - 時間減衰方式
 - 感情から欲望への変換係数
 - Activityごとの満足量
 - Moral Profileの設定形式
-- Moral Stateを永続化するか
+- Moral Stateの永続化
 - 欲望を長期記憶へ保存するか
-- 欲望や価値判断をLLMで評価するか決定論的に評価するか
-- どのActivityから段階導入するか
+- LLM評価と決定論的評価の分担
+- Response Content Planの正確な配置
+- 追加感情の種類
+- Relationship拡張項目
+- 最初に接続するActivity
 
-## 18. 結論
+## 20. 結論
 
 感情に欲望を追加すると、ゆらは出来事へ反応するだけでなく、自分が何を求めているかに基づいて行動候補を持てる。
 
@@ -766,12 +870,23 @@ compassion 高なら相手を否定しない
 ```text
 Trait
 Emotion
+Drive
 Desire
 Moral Tendency
 Relationship
 Strategy
 ```
 
-この内側でキャラクターらしい葛藤と不完全さを表現し、外側には既存のSafety、Authority、Capability、Activity制約を強制境界として維持する。
+この内側でキャラクターらしい葛藤と不完全さを表現する。
+
+外側では、既存Runtime全体に分散している以下の境界を維持する。
+
+- Conversation Flow
+- Authority
+- Capability
+- Activity constraints
+- execution claim validation
+- Safety policy
+- Subsystem公開契約
 
 実装は、まずDesire Stateを観測専用で追加し、その後Motivation Appraisal、Moral Profile、Response Content Planへ段階的に拡張する方針が安全である。
