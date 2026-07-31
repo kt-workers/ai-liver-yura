@@ -15,6 +15,11 @@ from subsystems.streaming.adapters.youtube.fake_youtube import (
     UnavailableYouTubePreparationAdapter,
     UnavailableYouTubeStreamingControlAdapter,
 )
+from subsystems.streaming.config.secrets import (
+    EnvironmentSecretProvider,
+    SecretProvider,
+)
+from subsystems.streaming.config.validation import validate_youtube_config
 from subsystems.streaming.config.youtube import (
     YouTubeAdapterMode,
     YouTubeSubsystemConfig,
@@ -31,7 +36,10 @@ class YouTubeAdapterBundle:
 
 def build_youtube_adapter_bundle(
     config: YouTubeSubsystemConfig,
+    secret_provider: SecretProvider | None = None,
 ) -> YouTubeAdapterBundle:
+    secrets = secret_provider or EnvironmentSecretProvider()
+    validate_youtube_config(config, secrets)
     if config.mode is YouTubeAdapterMode.FAKE:
         return YouTubeAdapterBundle(
             mode=config.mode,
@@ -54,9 +62,6 @@ def build_youtube_adapter_bundle(
             live_chat=FakeLiveChatAdapter(),
         )
 
-    if not config.client_secret_path_env or not config.token_path_env:
-        raise ValueError("google youtube environment variable names are required")
-
     from subsystems.streaming.adapters.youtube.client import (
         GoogleYouTubeClientConfig,
         GoogleYouTubeClientFactory,
@@ -78,12 +83,13 @@ def build_youtube_adapter_bundle(
 
     auth = GoogleYouTubeAuthService(
         GoogleYouTubeAuthConfig(
-            client_secret_path_env=config.client_secret_path_env,
-            token_path_env=config.token_path_env,
+            client_secret_path_env=config.client_secret_path_ref,
+            token_path_env=config.token_path_ref,
             request_timeout_seconds=config.request_timeout_seconds,
             open_browser=config.oauth_open_browser,
             oauth_timeout_seconds=config.oauth_timeout_seconds,
-        )
+        ),
+        secret_provider=secrets,
     )
     client = GoogleYouTubeClientFactory(
         auth,

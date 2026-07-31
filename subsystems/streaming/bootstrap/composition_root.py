@@ -15,21 +15,39 @@ from subsystems.streaming.application import (
     DependencyHealthService,
     StreamingSubsystemService,
 )
-from subsystems.streaming.config import ObsSubsystemConfig, YouTubeSubsystemConfig
+from subsystems.streaming.config import (
+    EnvironmentSecretProvider,
+    ObsSubsystemConfig,
+    SecretProvider,
+    StreamingSubsystemConfig,
+    YouTubeSubsystemConfig,
+    validate_streaming_subsystem_config,
+)
 
 
 def build_streaming_subsystem(
     *,
     clock: Callable[[], datetime] | None = None,
+    config: StreamingSubsystemConfig | None = None,
+    secret_provider: SecretProvider | None = None,
     dependency_health_providers: Sequence[DependencyHealthProvider] = (),
     obs_config: ObsSubsystemConfig | None = None,
     youtube_config: YouTubeSubsystemConfig | None = None,
 ) -> StreamingSubsystemApi:
-    """Build a fresh process shell with independent OBS and YouTube bundles."""
+    """Build from Subsystem-owned config and externally supplied secrets."""
 
-    obs = build_obs_adapter_bundle(obs_config or ObsSubsystemConfig())
+    if config is not None and (obs_config is not None or youtube_config is not None):
+        raise ValueError("config cannot be combined with legacy adapter configs")
+    subsystem_config = config or StreamingSubsystemConfig(
+        youtube=youtube_config or YouTubeSubsystemConfig(),
+        obs=obs_config or ObsSubsystemConfig(),
+    )
+    secrets = secret_provider or EnvironmentSecretProvider()
+    validate_streaming_subsystem_config(subsystem_config, secrets)
+    obs = build_obs_adapter_bundle(subsystem_config.obs, secrets)
     youtube = build_youtube_adapter_bundle(
-        youtube_config or YouTubeSubsystemConfig()
+        subsystem_config.youtube,
+        secrets,
     )
     health_catalog = (
         CompositeDependencyHealthProvider(dependency_health_providers)

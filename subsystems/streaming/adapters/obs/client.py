@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
 from subsystems.streaming.adapters.obs.errors import ObsAdapterError
+from subsystems.streaming.config.secrets import (
+    EnvironmentSecretProvider,
+    SecretProvider,
+)
 
 
 class ObsRequestClient(Protocol):
@@ -49,12 +52,18 @@ class ObsWebSocketClientConfig:
 
 
 class ObsWebSocketClientFactory:
-    def __init__(self, config: ObsWebSocketClientConfig) -> None:
+    def __init__(
+        self,
+        config: ObsWebSocketClientConfig,
+        *,
+        secret_provider: SecretProvider | None = None,
+    ) -> None:
         self.config = config
+        self._secrets = secret_provider or EnvironmentSecretProvider()
 
     def create(self) -> ObsRequestClient:
         self.config.validate()
-        password = os.getenv(self.config.password_env)
+        password = self._secrets.get_secret(self.config.password_env)
         if not password:
             raise ObsAdapterError("configuration", "obs.configuration.password_missing")
         # obsws-python logs connection kwargs at INFO; suppress that logger so secrets cannot leak.
