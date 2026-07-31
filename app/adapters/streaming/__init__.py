@@ -34,9 +34,27 @@ from app.adapters.streaming.preparation_publisher import (
     InMemoryStreamPreparationPublisher,
 )
 from app.adapters.streaming.yaml_run_of_show_repository import YamlRunOfShowRepository
+from subsystems.streaming.adapters.obs.fake_obs import (
+    DisabledObsPreparationAdapter,
+    DisabledObsStreamingControlAdapter,
+    FakeObsPreparationAdapter,
+    FakeObsPreparationConfig,
+    FakeObsStreamingControlAdapter,
+)
+from subsystems.streaming.adapters.obs.obs_websocket import (
+    ObsWebSocketPreparationAdapter,
+)
+from subsystems.streaming.adapters.youtube.fake_youtube import (
+    FakeLiveChatAdapter,
+    FakeYouTubePreparationAdapter,
+    FakeYouTubePreparationConfig,
+    FakeYouTubeStreamingControlAdapter,
+    UnavailableYouTubePreparationAdapter,
+)
 
 __all__ = [
     "DisabledObsPreparationAdapter",
+    "DisabledObsStreamingControlAdapter",
     "FakeAvatarHealthAdapter",
     "FakeTtsHealthAdapter",
     "FakeObsPreparationAdapter",
@@ -50,8 +68,10 @@ __all__ = [
     "InMemoryCommentResponseActivityRepository",
     "InMemoryCommentResponseHistory",
     "FakeObsPreparationConfig",
+    "FakeObsStreamingControlAdapter",
     "FakeYouTubePreparationAdapter",
     "FakeYouTubePreparationConfig",
+    "FakeYouTubeStreamingControlAdapter",
     "InMemoryStreamPreparationPublisher",
     "InMemoryStreamOpeningRepository",
     "InMemoryStreamMainSegmentRepository",
@@ -63,34 +83,3 @@ __all__ = [
     "VoiceVoxHealthConfig",
     "YamlRunOfShowRepository",
 ]
-
-_YOUTUBE_COMPAT_EXPORTS = frozenset(
-    {
-        "FakeLiveChatAdapter",
-        "FakeYouTubePreparationAdapter",
-        "FakeYouTubePreparationConfig",
-        "UnavailableYouTubePreparationAdapter",
-    }
-)
-_OBS_COMPAT_EXPORTS = frozenset(
-    {
-        "DisabledObsPreparationAdapter",
-        "FakeObsPreparationAdapter",
-        "FakeObsPreparationConfig",
-        "ObsWebSocketPreparationAdapter",
-    }
-)
-
-
-def __getattr__(name: str) -> object:
-    if name in _OBS_COMPAT_EXPORTS:
-        module_name = "subsystems.streaming.adapters.obs"
-    elif name in _YOUTUBE_COMPAT_EXPORTS:
-        module_name = "subsystems.streaming.adapters.youtube.fake_youtube"
-    else:
-        raise AttributeError(name)
-    module = __import__(
-        module_name,
-        fromlist=[name],
-    )
-    return getattr(module, name)
