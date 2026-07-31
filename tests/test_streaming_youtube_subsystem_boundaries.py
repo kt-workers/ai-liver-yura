@@ -23,6 +23,8 @@ from subsystems.streaming.adapters.youtube import (
     to_streaming_error,
 )
 from subsystems.streaming.config import (
+    NullSecretProvider,
+    StaticSecretProvider,
     YouTubeAdapterMode,
     YouTubeSubsystemConfig,
 )
@@ -145,9 +147,15 @@ def test_composition_selects_fake_google_and_disabled_bundles() -> None:
     google = build_youtube_adapter_bundle(
         YouTubeSubsystemConfig(
             mode=YouTubeAdapterMode.GOOGLE,
-            client_secret_path_env="YOUTUBE_CLIENT_SECRET_PATH",
-            token_path_env="YOUTUBE_TOKEN_PATH",
-        )
+            client_secret_path_ref="YOUTUBE_CLIENT_SECRET_PATH",
+            token_path_ref="YOUTUBE_TOKEN_PATH",
+        ),
+        StaticSecretProvider(
+            {
+                "YOUTUBE_CLIENT_SECRET_PATH": "/tmp/client.json",
+                "YOUTUBE_TOKEN_PATH": "/tmp/token.json",
+            }
+        ),
     )
     assert google.mode is YouTubeAdapterMode.GOOGLE
     assert isinstance(google.preparation, GoogleYouTubePreparationAdapter)
@@ -160,10 +168,11 @@ def test_composition_selects_fake_google_and_disabled_bundles() -> None:
     assert disabled.mode is YouTubeAdapterMode.DISABLED
 
 
-def test_google_bundle_requires_environment_variable_names() -> None:
-    with pytest.raises(ValueError, match="environment variable names"):
+def test_google_bundle_requires_secret_values_only_in_google_mode() -> None:
+    with pytest.raises(ValueError, match="required_secret_missing"):
         build_youtube_adapter_bundle(
-            YouTubeSubsystemConfig(mode=YouTubeAdapterMode.GOOGLE)
+            YouTubeSubsystemConfig(mode=YouTubeAdapterMode.GOOGLE),
+            NullSecretProvider(),
         )
 
 

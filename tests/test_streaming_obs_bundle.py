@@ -16,8 +16,10 @@ from subsystems.streaming.adapters.obs import (
     build_obs_adapter_bundle,
 )
 from subsystems.streaming.config import (
+    NullSecretProvider,
     ObsAdapterMode,
     ObsSubsystemConfig,
+    StaticSecretProvider,
     YouTubeAdapterMode,
     YouTubeSubsystemConfig,
 )
@@ -35,8 +37,9 @@ def test_composition_selects_fake_real_and_disabled_obs_bundles() -> None:
     real = build_obs_adapter_bundle(
         ObsSubsystemConfig(
             mode=ObsAdapterMode.OBS_WEBSOCKET,
-            password_env="OBS_PASSWORD",
-        )
+            password_ref="OBS_PASSWORD",
+        ),
+        StaticSecretProvider({"OBS_PASSWORD": "test-only-password"}),
     )
     assert real.mode is ObsAdapterMode.OBS_WEBSOCKET
     assert isinstance(real.preparation, ObsWebSocketPreparationAdapter)
@@ -50,10 +53,11 @@ def test_composition_selects_fake_real_and_disabled_obs_bundles() -> None:
     assert isinstance(disabled.control, DisabledObsStreamingControlAdapter)
 
 
-def test_real_obs_bundle_requires_only_secret_environment_variable_name() -> None:
-    with pytest.raises(ValueError, match="environment variable name"):
+def test_real_obs_bundle_requires_secret_only_in_websocket_mode() -> None:
+    with pytest.raises(ValueError, match="required_secret_missing"):
         build_obs_adapter_bundle(
-            ObsSubsystemConfig(mode=ObsAdapterMode.OBS_WEBSOCKET)
+            ObsSubsystemConfig(mode=ObsAdapterMode.OBS_WEBSOCKET),
+            NullSecretProvider(),
         )
 
 
