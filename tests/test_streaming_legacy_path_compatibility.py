@@ -67,10 +67,6 @@ def test_remaining_legacy_exports_are_identical(
         "app.adapters.obs.obs_websocket_client_factory",
         "app.adapters.obs.obs_websocket_preparation_adapter",
         "app.adapters.obs.obs_websocket_streaming_control_adapter",
-        "app.adapters.streaming.fake_live_chat_adapter",
-        "app.adapters.streaming.fake_obs_preparation_adapter",
-        "app.adapters.streaming.fake_streaming_control",
-        "app.adapters.streaming.fake_youtube_preparation_adapter",
     ),
 )
 def test_removed_module_wrappers_are_not_importable(module_name: str) -> None:

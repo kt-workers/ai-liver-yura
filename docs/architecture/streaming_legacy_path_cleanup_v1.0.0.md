@@ -35,10 +35,6 @@ subsystems.streaming
 | `app.adapters.obs.obs_websocket_client_factory` | `subsystems.streaming.adapters.obs.client` |
 | `app.adapters.obs.obs_websocket_preparation_adapter` | `subsystems.streaming.adapters.obs.obs_websocket` |
 | `app.adapters.obs.obs_websocket_streaming_control_adapter` | `subsystems.streaming.adapters.obs.control` |
-| `app.adapters.streaming.fake_live_chat_adapter` | `subsystems.streaming.adapters.youtube.fake_youtube` |
-| `app.adapters.streaming.fake_youtube_preparation_adapter` | `subsystems.streaming.adapters.youtube.fake_youtube` |
-| `app.adapters.streaming.fake_obs_preparation_adapter` | `subsystems.streaming.adapters.obs.fake_obs` |
-| `app.adapters.streaming.fake_streaming_control` | YouTube／OBSそれぞれの`fake_*` module |
 
 削除pathはimport失敗を契約テストで固定し、同名wrapperの再追加を防ぐ。
 
@@ -48,7 +44,7 @@ subsystems.streaming
 | --- | --- | --- |
 | `app.adapters.youtube` | package-level外部互換とsymbol identity testだけ。実装・SDK初期化なし | K |
 | `app.adapters.obs` | package-level外部互換とsymbol identity testだけ。実装・SDK初期化なし | K |
-| `app.adapters.streaming` | Session／Comment repository、旧RuntimeとそのFake組立てを所有中 | H、残余はK |
+| `app.adapters.streaming`と4個のFake wrapper | Core単独importを保つ遅延export、Session／Comment repository、旧Runtimeの組立て | H／J、残余はK |
 | `app.plugins.youtube_streaming` | Session、Lifecycle、Run of Show、Comment処理が未移動 | H、残余はK |
 | `app.ports.streaming_*`、`app.ports.youtube_*` | 上記Applicationと旧RuntimeのPort | H／J、残余はK |
 | `app.bootstrap.streaming_runtime` | Admin、bootstrap export、runtime factory、互換テストが利用 | H／I／J、残余はK |
@@ -62,7 +58,7 @@ subsystems.streaming
 
 - 通常のAdapter／RuntimeテストはSubsystem正規pathを使用する
 - 旧YouTube／OBS packageを利用できるのは互換identity／境界テストだけとする
-- package wrapperはimport、`__all__`、canonical lazy exportのaliasだけを持つ
+- YouTube／OBS package wrapperはimport、`__all__`、canonical lazy exportのaliasだけを持つ
 - wrapper importではGoogle／OBS SDK、Secret解決、network、Core Runtimeを起動しない
 - Subsystemから旧Core pathをimportしない
 - Core内の旧bootstrap importはAdmin、bootstrap export、runtime factoryの5組だけをbaselineとする

@@ -111,14 +111,14 @@ def test_legacy_youtube_adapter_paths_are_one_way_compatibility_imports() -> Non
 
 
 def test_legacy_class_names_resolve_to_subsystem_implementations() -> None:
-    from app.adapters.streaming import (
+    from app.adapters.streaming.fake_live_chat_adapter import (
         FakeLiveChatAdapter as LegacyFakeLiveChatAdapter,
     )
-    from app.adapters.streaming import (
-        FakeYouTubePreparationAdapter as LegacyFakePreparation,
-    )
-    from app.adapters.streaming import (
+    from app.adapters.streaming.fake_streaming_control import (
         FakeYouTubeStreamingControlAdapter as LegacyFakeControl,
+    )
+    from app.adapters.streaming.fake_youtube_preparation_adapter import (
+        FakeYouTubePreparationAdapter as LegacyFakePreparation,
     )
     from app.adapters.youtube import (
         GoogleYouTubeLiveChatAdapter as LegacyLiveChat,

@@ -22,6 +22,7 @@ def _imports(path: Path) -> set[str]:
 
 def test_legacy_adapter_imports_are_limited_to_compatibility_tests() -> None:
     allowed = {
+        "app/bootstrap/streaming_runtime.py",
         "tests/test_streaming_legacy_path_compatibility.py",
         "tests/test_streaming_obs_subsystem_boundaries.py",
         "tests/test_streaming_youtube_subsystem_boundaries.py",

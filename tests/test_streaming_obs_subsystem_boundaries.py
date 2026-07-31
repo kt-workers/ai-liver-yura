@@ -87,7 +87,7 @@ def test_legacy_class_names_resolve_to_subsystem_implementations() -> None:
     from app.adapters.obs import (
         ObsWebSocketStreamingControlAdapter as LegacyControl,
     )
-    from app.adapters.streaming import (
+    from app.adapters.streaming.fake_obs_preparation_adapter import (
         FakeObsPreparationAdapter as LegacyFakePreparation,
     )
 
