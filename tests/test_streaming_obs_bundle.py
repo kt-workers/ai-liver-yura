@@ -65,7 +65,13 @@ async def test_obs_and_youtube_bundles_can_be_disabled_independently() -> None:
         youtube_config=YouTubeSubsystemConfig(mode=YouTubeAdapterMode.FAKE),
     )
     health = await obs_disabled.get_health()
-    assert health.components == {"runtime": True, "obs": False, "youtube": True}
+    assert health.components == {
+        "runtime": True,
+        "obs": False,
+        "youtube": True,
+        "tts": False,
+        "avatar": False,
+    }
 
     youtube_disabled = build_streaming_subsystem(
         clock=lambda: NOW,
@@ -73,7 +79,13 @@ async def test_obs_and_youtube_bundles_can_be_disabled_independently() -> None:
         youtube_config=YouTubeSubsystemConfig(mode=YouTubeAdapterMode.DISABLED),
     )
     health = await youtube_disabled.get_health()
-    assert health.components == {"runtime": True, "obs": True, "youtube": False}
+    assert health.components == {
+        "runtime": True,
+        "obs": True,
+        "youtube": False,
+        "tts": False,
+        "avatar": False,
+    }
 
 
 @pytest.mark.asyncio

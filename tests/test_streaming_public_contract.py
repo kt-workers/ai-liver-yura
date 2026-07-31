@@ -48,6 +48,8 @@ def test_public_enum_values_are_stable() -> None:
         "receive_comments",
         "control_scene",
         "publish_status",
+        "tts_available",
+        "avatar_available",
     }
     assert {operation.value for operation in StreamingOperationType} == {
         "prepare",
