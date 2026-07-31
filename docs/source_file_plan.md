@@ -764,6 +764,15 @@ ActionScheduler の確定仕様:
 - 旧`app/adapters/obs/**`とOBS Fake pathは新pathへの一方向re-exportとして一時維持する
 - Core Config／Secret最終移動、Session、Run of Show、Admin、Core Gateway、旧Plugin削除は後続工程とする
 
+## Streaming TTS／Avatar Health抽象化方針
+
+- `app/integrations/streaming/dependency_health.py`をTTS／Avatar可用性の中立公開契約とする
+- `subsystems/streaming/adapters/dependency_health/`はNull／Static／Composite Providerを所有し、Core具象やSDKをimportしない
+- 未接続を`disconnected`として返し、TTS／Avatarの劣化だけでSubsystem本体をunhealthyにしない
+- 利用可能な依存だけを`tts_available`／`avatar_available` capabilityへ反映する
+- metadataへVOICEVOX／Live2D固有設定、SDK response、credentialを含めない
+- 音声合成・再生、Live2D rendering・操作、実Health配線、Config／Secret、Session／Admin移動は後続工程とする
+
 ## Game Subsystem Integration方針
 
 - 旧`app/plugins/games/`としりとり専用実装は物理削除し、Core内に互換入口を残さない

@@ -45,7 +45,13 @@ async def test_process_shell_starts_idle_healthy_and_with_fixed_capabilities() -
     assert health.status is StreamingStatus.IDLE
     assert health.healthy is True
     assert health.checked_at is NOW
-    assert health.components == {"runtime": True, "obs": True, "youtube": True}
+    assert health.components == {
+        "runtime": True,
+        "obs": True,
+        "youtube": True,
+        "tts": False,
+        "avatar": False,
+    }
 
     capabilities = await api.get_capabilities()
     assert capabilities.values == frozenset(

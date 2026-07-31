@@ -9,9 +9,11 @@ from typing import TYPE_CHECKING
 
 from app.integrations.streaming import (
     CURRENT_STREAMING_API_VERSION,
+    DependencyKind,
     StreamingCapabilities,
     StreamingCapability,
     StreamingCursor,
+    StreamingDependencyHealth,
     StreamingError,
     StreamingErrorCode,
     StreamingEventEnvelope,
@@ -23,21 +25,23 @@ from app.integrations.streaming import (
     StreamingOperationType,
     StreamingStatus,
 )
+from subsystems.streaming.adapters.dependency_health import (
+    CompositeDependencyHealthProvider,
+)
+from subsystems.streaming.application import DependencyHealthService
 from subsystems.streaming.domain import StreamingSubsystemState
 
 if TYPE_CHECKING:
     from subsystems.streaming.adapters.obs import ObsAdapterBundle
     from subsystems.streaming.adapters.youtube import YouTubeAdapterBundle
 
-_CAPABILITIES = StreamingCapabilities(
-    values=frozenset(
-        {
-            StreamingCapability.PREPARE,
-            StreamingCapability.START,
-            StreamingCapability.STOP,
-            StreamingCapability.PUBLISH_STATUS,
-        }
-    )
+_BASE_CAPABILITIES = frozenset(
+    {
+        StreamingCapability.PREPARE,
+        StreamingCapability.START,
+        StreamingCapability.STOP,
+        StreamingCapability.PUBLISH_STATUS,
+    }
 )
 
 
@@ -59,10 +63,14 @@ class FakeStreamingRuntime:
         self,
         *,
         clock: Callable[[], datetime] = _utc_now,
+        dependency_health: DependencyHealthService | None = None,
         obs: ObsAdapterBundle | None = None,
         youtube: YouTubeAdapterBundle | None = None,
     ) -> None:
         self._clock = clock
+        self._dependency_health = dependency_health or DependencyHealthService(
+            CompositeDependencyHealthProvider(clock=clock)
+        )
         self._obs = obs
         self._youtube = youtube
         self._state = StreamingSubsystemState()
@@ -91,11 +99,28 @@ class FakeStreamingRuntime:
                 "runtime": True,
                 "obs": obs_healthy,
                 "youtube": youtube_healthy,
+                **self._dependency_health.component_health(),
             },
         )
 
     async def get_capabilities(self) -> StreamingCapabilities:
-        return _CAPABILITIES
+        return StreamingCapabilities(
+            values=(
+                _BASE_CAPABILITIES
+                | self._dependency_health.available_capabilities()
+            )
+        )
+
+    async def get_dependency_health(
+        self,
+        kind: DependencyKind,
+    ) -> StreamingDependencyHealth:
+        return self._dependency_health.get(kind)
+
+    async def list_dependency_health(
+        self,
+    ) -> tuple[StreamingDependencyHealth, ...]:
+        return self._dependency_health.list()
 
     async def execute_operation(
         self,

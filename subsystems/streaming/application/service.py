@@ -3,8 +3,10 @@
 from collections.abc import Sequence
 
 from app.integrations.streaming import (
+    DependencyKind,
     StreamingCapabilities,
     StreamingCursor,
+    StreamingDependencyHealth,
     StreamingEventEnvelope,
     StreamingHealth,
     StreamingOperationRequest,
@@ -28,6 +30,17 @@ class StreamingSubsystemService:
 
     async def get_capabilities(self) -> StreamingCapabilities:
         return await self._runtime.get_capabilities()
+
+    async def get_dependency_health(
+        self,
+        kind: DependencyKind,
+    ) -> StreamingDependencyHealth:
+        return await self._runtime.get_dependency_health(kind)
+
+    async def list_dependency_health(
+        self,
+    ) -> tuple[StreamingDependencyHealth, ...]:
+        return await self._runtime.list_dependency_health()
 
     async def execute_operation(
         self,

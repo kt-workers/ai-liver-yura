@@ -179,7 +179,13 @@ async def test_disabled_youtube_is_reported_in_subsystem_health() -> None:
     health = await api.get_health()
 
     assert health.healthy is False
-    assert health.components == {"runtime": True, "obs": True, "youtube": False}
+    assert health.components == {
+        "runtime": True,
+        "obs": True,
+        "youtube": False,
+        "tts": False,
+        "avatar": False,
+    }
 
 
 class _Request:
