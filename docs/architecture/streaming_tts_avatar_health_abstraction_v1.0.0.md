@@ -51,7 +51,7 @@ GUI、Adminをimportしない。Coreから実Healthを供給する配線は今�
 
 ## 6. 次工程
 
-- G4: Config／Secret最終移動
+- G4 Config／Secret移動とG5旧path互換整理は完了した
 - H: Session／Comment／Run of Show移動
 - I/J: Streaming Admin接続先変更とCore Integration置換
 - K: 旧Health Portと旧Streaming構造の削除

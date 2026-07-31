@@ -200,6 +200,16 @@ load前に検証する。設定エラー、repr、公開metadataへSecret値を�
 `app/config/streaming_compat.py`によるCoreからSubsystemへの一方向変換に限定する。
 逆変換と二重同期は禁止し、H〜Kで利用箇所を移した後に削除する。
 
+### 4.10 旧path互換境界
+
+YouTube／OBS Adapterのrepository内部参照は`subsystems.streaming.adapters`を使用する。
+旧`app.adapters.youtube`／`app.adapters.obs`はKまでのpackage-level一方向re-exportに
+限定し、個別module wrapper、独自factory、validation、Secret解決を置かない。
+
+旧Plugin、Streaming Port、bootstrap、Runtime、Config変換はH〜Jの利用者が残るため、
+削除工程を明示して維持する。Subsystemからこれら旧Core pathへのimportを禁止し、
+wrapper import時に外部SDK、network、Secret解決、Runtime起動を発生させない。
+
 ## 5. Game Subsystem
 
 ### 5.1 方針
