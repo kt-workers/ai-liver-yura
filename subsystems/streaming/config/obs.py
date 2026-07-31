@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from enum import Enum
 
+STREAMING_OBS_PASSWORD = "STREAMING_OBS_PASSWORD"
+
 
 class ObsAdapterMode(str, Enum):
     FAKE = "fake"
@@ -15,7 +17,7 @@ class ObsSubsystemConfig:
     mode: ObsAdapterMode = ObsAdapterMode.FAKE
     host: str = "127.0.0.1"
     port: int = 4455
-    password_env: str | None = None
+    password_ref: str = STREAMING_OBS_PASSWORD
     connect_timeout_seconds: float = 5.0
     request_timeout_seconds: float = 5.0
     state_timeout_seconds: float = 30.0
