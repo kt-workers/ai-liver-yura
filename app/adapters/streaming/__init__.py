@@ -89,8 +89,5 @@ def __getattr__(name: str) -> object:
         module_name = "subsystems.streaming.adapters.youtube.fake_youtube"
     else:
         raise AttributeError(name)
-    module = __import__(
-        module_name,
-        fromlist=[name],
-    )
+    module = __import__(module_name, fromlist=[name])
     return getattr(module, name)

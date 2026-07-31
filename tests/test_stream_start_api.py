@@ -5,16 +5,18 @@ from dataclasses import replace
 
 from fastapi.testclient import TestClient
 
-from app.adapters.streaming.fake_streaming_control import (
-    FakeObsStreamingControlAdapter,
-    FakeYouTubeStreamingControlAdapter,
-)
 from app.admin_api import create_admin_api
 from app.bootstrap.streaming import compose_streaming
 from app.bootstrap.streaming_runtime import create_stream_preparation_runtime
 from app.config.app_config import load_app_config
 from app.plugins.youtube_streaming.application import StartStreamSessionUsecase
 from app.plugins.youtube_streaming.domain import StreamSession, StreamSessionStatus
+from subsystems.streaming.adapters.obs.fake_obs import (
+    FakeObsStreamingControlAdapter,
+)
+from subsystems.streaming.adapters.youtube.fake_youtube import (
+    FakeYouTubeStreamingControlAdapter,
+)
 
 
 def ready_runtime(real_controls: bool) -> tuple[object, StreamSession]:

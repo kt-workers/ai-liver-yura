@@ -12,13 +12,6 @@ from app.adapters.streaming import (
 from app.adapters.streaming.in_memory_session_repository import (
     InMemoryStreamSessionRepository,
 )
-from app.adapters.youtube.google_youtube_live_chat_adapter import (
-    GoogleYouTubeLiveChatAdapter,
-)
-from app.adapters.youtube.youtube_api_error_mapper import (
-    YouTubeApiError,
-    YouTubeApiErrorKind,
-)
 from app.domain.events import AgentEvent
 from app.plugins.youtube_streaming.application import (
     StreamLifecycleGate,
@@ -26,6 +19,11 @@ from app.plugins.youtube_streaming.application import (
 )
 from app.plugins.youtube_streaming.domain import StreamSession, StreamSessionStatus
 from app.ports.youtube_live_chat import LiveChatMessageDto, LiveChatPageDto
+from subsystems.streaming.adapters.youtube import (
+    GoogleYouTubeLiveChatAdapter,
+    YouTubeApiError,
+    YouTubeApiErrorKind,
+)
 
 ACTIVE = {
     "obs_output": "active",

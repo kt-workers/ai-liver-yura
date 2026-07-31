@@ -1,4 +1,8 @@
-"""Deprecated one-way compatibility boundary for OBS adapters."""
+"""Deprecated compatibility import.
+
+Canonical implementation: ``subsystems.streaming.adapters.obs``.
+Removal target: phase K.
+"""
 
 from subsystems.streaming.adapters.obs import (
     ObsAdapterError,

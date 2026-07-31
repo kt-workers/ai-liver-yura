@@ -784,6 +784,16 @@ ActionScheduler の確定仕様:
 - 旧Core Streaming ConfigはRuntime／Adminの移行が未完了のためH〜Kまで維持し、逆変換や二重同期を追加しない
 - `config/subsystems/streaming.yaml`とexampleにはSecret参照名だけを置き、credential JSON、token cache、password実値を置かない
 
+## Streaming旧path互換整理方針
+
+- repository内部のYouTube／OBS Adapter参照は`subsystems/streaming/adapters/`を正規pathとする
+- 利用ゼロとなった旧個別module wrapperは削除し、削除済みpathのimport失敗を境界テストで固定する
+- `app/adapters/youtube`と`app/adapters/obs`はKまでpackage-level一方向re-exportだけを維持する
+- wrapperは独自factory、validation、Secret解決、SDK初期化、network I/O、mutable stateを持たない
+- `app/plugins/youtube_streaming`、Streaming専用Port、bootstrap、runtime factoryはH〜Jの利用者を移した後にKで削除する
+- `app/config/streaming_compat.py`は旧Core設定からSubsystem DTOへの一方向変換としてKまで維持する
+- 旧Adapter参照と旧bootstrap参照のallowlistをテストで固定し、新規負債の増加を禁止する
+
 ## Game Subsystem Integration方針
 
 - 旧`app/plugins/games/`としりとり専用実装は物理削除し、Core内に互換入口を残さない

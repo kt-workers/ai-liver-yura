@@ -5,16 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from app.adapters.obs import ObsWebSocketStreamingControlAdapter
-from app.adapters.streaming.fake_streaming_control import (
-    DisabledObsStreamingControlAdapter,
-)
 from app.bootstrap.streaming_runtime import create_stream_preparation_runtime
 from app.config.app_config import load_app_config
 from app.config.service_schema import (
     DisabledServiceSettings,
     PostgresServiceSettings,
     YouTubeServiceSettings,
+)
+from subsystems.streaming.adapters.obs import ObsWebSocketStreamingControlAdapter
+from subsystems.streaming.adapters.obs.fake_obs import (
+    DisabledObsStreamingControlAdapter,
 )
 
 

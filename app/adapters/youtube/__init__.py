@@ -1,28 +1,12 @@
-"""Deprecated compatibility exports for Subsystem-owned YouTube adapters."""
+"""Deprecated compatibility import.
 
-from subsystems.streaming.adapters.youtube.client import (
-    GoogleYouTubeClientConfig,
-    GoogleYouTubeClientFactory,
-)
-from subsystems.streaming.adapters.youtube.control import (
-    GoogleYouTubeStreamingControlAdapter,
-)
-from subsystems.streaming.adapters.youtube.errors import (
-    YouTubeApiError,
-    YouTubeApiErrorKind,
-    YouTubeApiErrorMapper,
-)
-from subsystems.streaming.adapters.youtube.google_youtube import (
-    GoogleYouTubePreparationAdapter,
-    GoogleYouTubePreparationConfig,
-)
-from subsystems.streaming.adapters.youtube.live_chat import (
-    GoogleYouTubeLiveChatAdapter,
-)
-from subsystems.streaming.adapters.youtube.oauth import (
-    GoogleYouTubeAuthConfig,
-    GoogleYouTubeAuthService,
-)
+Canonical implementation: ``subsystems.streaming.adapters.youtube``.
+Removal target: phase K.
+"""
+
+import subsystems.streaming.adapters.youtube as _canonical
+
+__getattr__ = _canonical.__getattr__
 
 __all__ = [
     "GoogleYouTubeAuthConfig",

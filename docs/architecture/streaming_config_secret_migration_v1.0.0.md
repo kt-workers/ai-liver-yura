@@ -63,9 +63,14 @@ Subsystem ConfigはCore Config、Core bootstrap、GUI、Admin、Game、外部SDK
 公開Streaming DTOやHealth metadataにもcredential、token、password、Secret参照名を
 含めない。
 
-## 6. 後続工程
+## 6. G5整理後の互換
 
-- G5: 旧YouTube／OBS pathの一方向互換re-exportを整理する
+- G5で個別YouTube／OBS module wrapperを削除し、通常利用をSubsystem正規pathへ統一した
+- `app.adapters.youtube`／`app.adapters.obs`のpackage-level互換だけをKまで維持する
+- `app.config.streaming_compat`は旧Runtime／Admin移行後にKで削除する
+
+## 7. 後続工程
+
 - H: Session／CommentをSubsystemへ移し、旧Runtimeの設定参照を減らす
 - I: Streaming AdminをSubsystemへ接続し、AdminのCore Config参照を外す
 - J: Coreを薄いStreaming Integrationへ置換する

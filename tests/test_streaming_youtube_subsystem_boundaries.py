@@ -120,13 +120,13 @@ def test_legacy_class_names_resolve_to_subsystem_implementations() -> None:
     from app.adapters.streaming.fake_youtube_preparation_adapter import (
         FakeYouTubePreparationAdapter as LegacyFakePreparation,
     )
-    from app.adapters.youtube.google_youtube_live_chat_adapter import (
+    from app.adapters.youtube import (
         GoogleYouTubeLiveChatAdapter as LegacyLiveChat,
     )
-    from app.adapters.youtube.google_youtube_preparation_adapter import (
+    from app.adapters.youtube import (
         GoogleYouTubePreparationAdapter as LegacyPreparation,
     )
-    from app.adapters.youtube.google_youtube_streaming_control_adapter import (
+    from app.adapters.youtube import (
         GoogleYouTubeStreamingControlAdapter as LegacyControl,
     )
 

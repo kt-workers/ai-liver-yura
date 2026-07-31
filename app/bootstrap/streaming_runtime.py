@@ -235,7 +235,7 @@ def create_stream_preparation_runtime(config: AppConfig) -> StreamPreparationRun
                     allowed_privacy_statuses=youtube_service.allowed_privacy_statuses,
                 ),
             )
-            from app.adapters.youtube.google_youtube_streaming_control_adapter import (
+            from app.adapters.youtube import (
                 GoogleYouTubeStreamingControlAdapter,
             )
 

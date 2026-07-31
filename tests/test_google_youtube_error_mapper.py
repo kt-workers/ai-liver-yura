@@ -6,7 +6,7 @@ import httplib2  # type: ignore[import-untyped]
 import pytest
 from googleapiclient.errors import HttpError  # type: ignore[import-untyped]
 
-from app.adapters.youtube import YouTubeApiErrorKind, YouTubeApiErrorMapper
+from subsystems.streaming.adapters.youtube import YouTubeApiErrorKind, YouTubeApiErrorMapper
 
 
 def http_error(status: int, reason: str) -> HttpError:

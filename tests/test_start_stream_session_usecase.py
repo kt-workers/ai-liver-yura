@@ -4,10 +4,6 @@ from dataclasses import replace
 
 import pytest
 
-from app.adapters.streaming.fake_streaming_control import (
-    FakeObsStreamingControlAdapter,
-    FakeYouTubeStreamingControlAdapter,
-)
 from app.adapters.streaming.in_memory_session_repository import (
     InMemoryStreamSessionRepository,
 )
@@ -17,6 +13,12 @@ from app.plugins.youtube_streaming.domain import (
     StreamSession,
     StreamSessionStatus,
     StreamStartRejected,
+)
+from subsystems.streaming.adapters.obs.fake_obs import (
+    FakeObsStreamingControlAdapter,
+)
+from subsystems.streaming.adapters.youtube.fake_youtube import (
+    FakeYouTubeStreamingControlAdapter,
 )
 
 
