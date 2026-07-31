@@ -26,6 +26,10 @@ from subsystems.streaming.adapters.youtube.trace import (
     StandardYouTubeTrace,
     YouTubeTrace,
 )
+from subsystems.streaming.config.secrets import (
+    EnvironmentSecretProvider,
+    SecretProvider,
+)
 
 YOUTUBE_READONLY_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
 
@@ -55,9 +59,11 @@ class GoogleYouTubeAuthService:
         self,
         config: GoogleYouTubeAuthConfig,
         *,
+        secret_provider: SecretProvider | None = None,
         trace_logger: YouTubeTrace | None = None,
     ) -> None:
         self._config = config
+        self._secrets = secret_provider or EnvironmentSecretProvider()
         self._trace = trace_logger or StandardYouTubeTrace()
         self._credentials: Credentials | None = None
         self._state = YouTubeAuthenticationState(
@@ -165,7 +171,7 @@ class GoogleYouTubeAuthService:
             return self._credentials
 
     def _validate_client_secret(self) -> Path:
-        value = os.getenv(self._config.client_secret_path_env)
+        value = self._secrets.get_secret(self._config.client_secret_path_env)
         if not value:
             raise YouTubeApiError(
                 YouTubeApiErrorKind.AUTHENTICATION,
@@ -180,7 +186,7 @@ class GoogleYouTubeAuthService:
         return path
 
     def _token_path(self) -> Path:
-        value = os.getenv(self._config.token_path_env)
+        value = self._secrets.get_secret(self._config.token_path_env)
         if not value:
             raise YouTubeApiError(
                 YouTubeApiErrorKind.AUTHENTICATION,

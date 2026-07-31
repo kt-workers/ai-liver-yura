@@ -37,6 +37,10 @@ Operation requestの受付可否と実行完了は分離する。`accepted=False
 
 Mapping payloadは初期化時にdefensive copyし、外部dictの変更やDTO経由の書き換えを防ぐ。外部SDKのraw response、例外、stack trace、認証情報を格納しない。
 
+Subsystem内部のConfig、Secret値、Secret参照名も公開DTOの対象外とする。Health、Error、
+Event metadataにはOAuth path、token、credential、OBS passwordを含めず、設定不備は
+安定error codeと安全な説明へ正規化する。
+
 TTS／Avatar dependency healthは未接続を`DISCONNECTED`、未知状態を`DEGRADED`へ
 正規化する。metadataはJSON互換の中立値だけを許可し、speaker ID、endpoint、
 model path、Cubism parameter、SDK response、credentialを含めない。
@@ -91,7 +95,8 @@ idempotency keyはCommandの重複適用を防ぐ不透明値である。
 
 - Streaming Subsystem entrypoint、HTTP API、WebSocket、IPC
 - YouTube API、OBS WebSocket、OAuth、Live Chat pollingの移動
-- 配信Session、Run of Show、DB、Secret、Configの実装・移動
+- 配信Session、Run of Show、DB
+- Subsystem内部Config／Secretの公開schema化（内部実装と移動はG4で完了）
 - Streaming Admin接続先変更
 - Core RuntimeへのClient配線
 - 旧Streaming Pluginの削除・Factory化

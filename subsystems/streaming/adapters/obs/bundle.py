@@ -14,6 +14,11 @@ from subsystems.streaming.adapters.obs.fake_obs import (
     FakeObsStreamingControlAdapter,
 )
 from subsystems.streaming.config.obs import ObsAdapterMode, ObsSubsystemConfig
+from subsystems.streaming.config.secrets import (
+    EnvironmentSecretProvider,
+    SecretProvider,
+)
+from subsystems.streaming.config.validation import validate_obs_config
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,9 +28,14 @@ class ObsAdapterBundle:
     control: ObsStreamingControlPort
 
 
-def build_obs_adapter_bundle(config: ObsSubsystemConfig) -> ObsAdapterBundle:
+def build_obs_adapter_bundle(
+    config: ObsSubsystemConfig,
+    secret_provider: SecretProvider | None = None,
+) -> ObsAdapterBundle:
     """Build OBS adapters without loading obsws-python unless real mode is selected."""
 
+    secrets = secret_provider or EnvironmentSecretProvider()
+    validate_obs_config(config, secrets)
     if config.mode is ObsAdapterMode.FAKE:
         return ObsAdapterBundle(
             mode=config.mode,
@@ -44,9 +54,6 @@ def build_obs_adapter_bundle(config: ObsSubsystemConfig) -> ObsAdapterBundle:
             preparation=DisabledObsPreparationAdapter(),
             control=DisabledObsStreamingControlAdapter(),
         )
-    if not config.password_env:
-        raise ValueError("OBS password environment variable name is required")
-
     from subsystems.streaming.adapters.obs.client import (
         ObsWebSocketClientConfig,
         ObsWebSocketClientFactory,
@@ -63,10 +70,11 @@ def build_obs_adapter_bundle(config: ObsSubsystemConfig) -> ObsAdapterBundle:
         ObsWebSocketClientConfig(
             host=config.host,
             port=config.port,
-            password_env=config.password_env,
+            password_env=config.password_ref,
             connect_timeout_seconds=config.connect_timeout_seconds,
             request_timeout_seconds=config.request_timeout_seconds,
-        )
+        ),
+        secret_provider=secrets,
     )
     return ObsAdapterBundle(
         mode=config.mode,

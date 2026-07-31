@@ -3,6 +3,9 @@
 from dataclasses import dataclass
 from enum import Enum
 
+STREAMING_YOUTUBE_CLIENT_SECRET_PATH = "STREAMING_YOUTUBE_CLIENT_SECRET_PATH"
+STREAMING_YOUTUBE_TOKEN_PATH = "STREAMING_YOUTUBE_TOKEN_PATH"
+
 
 class YouTubeAdapterMode(str, Enum):
     FAKE = "fake"
@@ -13,8 +16,8 @@ class YouTubeAdapterMode(str, Enum):
 @dataclass(frozen=True, slots=True)
 class YouTubeSubsystemConfig:
     mode: YouTubeAdapterMode = YouTubeAdapterMode.FAKE
-    client_secret_path_env: str | None = None
-    token_path_env: str | None = None
+    client_secret_path_ref: str = STREAMING_YOUTUBE_CLIENT_SECRET_PATH
+    token_path_ref: str = STREAMING_YOUTUBE_TOKEN_PATH
     request_timeout_seconds: float = 15.0
     max_retries: int = 2
     retry_initial_delay_seconds: float = 1.0

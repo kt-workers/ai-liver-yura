@@ -1,0 +1,6 @@
+# Streaming Subsystemのローカル既定値。Secret値は環境またはSecretProviderから注入する。
+streaming:
+  youtube:
+    adapter: fake
+  obs:
+    adapter: fake

@@ -1,0 +1,11 @@
+# 外部接続を行わない安全な設定例。Secret値はこのファイルへ記載しない。
+streaming:
+  youtube:
+    adapter: disabled
+    client_secret_path_ref: STREAMING_YOUTUBE_CLIENT_SECRET_PATH
+    token_path_ref: STREAMING_YOUTUBE_TOKEN_PATH
+  obs:
+    adapter: disabled
+    host: 127.0.0.1
+    port: 4455
+    password_ref: STREAMING_OBS_PASSWORD

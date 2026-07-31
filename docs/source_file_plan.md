@@ -773,6 +773,17 @@ ActionScheduler の確定仕様:
 - metadataへVOICEVOX／Live2D固有設定、SDK response、credentialを含めない
 - 音声合成・再生、Live2D rendering・操作、実Health配線、Config／Secret、Session／Admin移動は後続工程とする
 
+## Streaming Config／Secret移行方針
+
+- `subsystems/streaming/config/models.py`をYouTube／OBS設定rootとSecret参照名の正本とする
+- `loader.py`と`environment.py`はSubsystem専用YAML、型変換、default、未知key拒否、environment overrideを所有する
+- `secrets.py`はEnvironment／Static／Null／Composite Providerを所有し、Secret値をConfig、repr、例外、公開metadataへ出さない
+- `validation.py`はFake／disabledをSecret不要、Google／OBS WebSocketを選んだ場合だけSecret必須としてSDK load前に検証する
+- `bootstrap/composition_root.py`はSubsystem ConfigとSecretProviderからYouTube／OBS bundleを独立構築し、Core Configをimportしない
+- `app/config/streaming_compat.py`は旧Core ConfigからSubsystem DTOへの一方向互換変換だけを行う
+- 旧Core Streaming ConfigはRuntime／Adminの移行が未完了のためH〜Kまで維持し、逆変換や二重同期を追加しない
+- `config/subsystems/streaming.yaml`とexampleにはSecret参照名だけを置き、credential JSON、token cache、password実値を置かない
+
 ## Game Subsystem Integration方針
 
 - 旧`app/plugins/games/`としりとり専用実装は物理削除し、Core内に互換入口を残さない
