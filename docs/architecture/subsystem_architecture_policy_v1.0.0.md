@@ -185,6 +185,21 @@ parameter、SDK型と例外を含めない。
 TTS／Avatarの劣化だけでStreaming Subsystem本体をunhealthyにしない。Coreから実Healthを
 供給する配線、発話Command、Avatar操作Commandは後続工程とする。
 
+### 4.9 Config／Secret所有境界
+
+YouTube／OBSのadapter mode、接続先、timeout、retry、poll、配信default、Secret参照名は
+`subsystems/streaming/config/`を正本とする。Subsystem entrypointはCore `AppConfig`を
+経由せず、専用YAMLとenvironment overrideから`StreamingSubsystemConfig`を構築する。
+
+ConfigはSecretの値を保持せず参照名だけを保持する。OAuth client secret path、token
+cache path、OBS passwordは`SecretProvider`からreal Adapter構築時にだけ解決する。
+Fake／disabled構成ではSecretを要求せず、Google／OBS WebSocket構成の場合だけSDKの
+load前に検証する。設定エラー、repr、公開metadataへSecret値を含めない。
+
+移行中のCore Streaming Configは旧RuntimeとAdminの互換入力としてのみ残し、
+`app/config/streaming_compat.py`によるCoreからSubsystemへの一方向変換に限定する。
+逆変換と二重同期は禁止し、H〜Kで利用箇所を移した後に削除する。
+
 ## 5. Game Subsystem
 
 ### 5.1 方針
