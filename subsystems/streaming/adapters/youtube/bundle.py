@@ -24,6 +24,7 @@ from subsystems.streaming.config.youtube import (
     YouTubeAdapterMode,
     YouTubeSubsystemConfig,
 )
+from subsystems.streaming.domain import YouTubeBroadcastSummary
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +44,18 @@ def build_youtube_adapter_bundle(
     if config.mode is YouTubeAdapterMode.FAKE:
         return YouTubeAdapterBundle(
             mode=config.mode,
-            preparation=FakeYouTubePreparationAdapter(FakeYouTubePreparationConfig()),
+            preparation=FakeYouTubePreparationAdapter(
+                FakeYouTubePreparationConfig(
+                    broadcasts=(
+                        YouTubeBroadcastSummary(
+                            broadcast_id="fake-broadcast",
+                            title="Streaming Subsystem local test",
+                            live_chat_id="fake-live-chat",
+                            bound_stream_id="stream-fake-broadcast",
+                        ),
+                    )
+                )
+            ),
             control=FakeYouTubeStreamingControlAdapter(),
             live_chat=FakeLiveChatAdapter(),
         )

@@ -44,6 +44,7 @@ class InMemoryStreamSessionRepository:
                     in {
                         StreamSessionStatus.CREATED,
                         StreamSessionStatus.PREPARING,
+                        StreamSessionStatus.FAILED,
                         StreamSessionStatus.READY,
                         StreamSessionStatus.START_APPROVED,
                         StreamSessionStatus.STARTING,
