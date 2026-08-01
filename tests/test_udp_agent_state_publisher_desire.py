@@ -19,7 +19,7 @@ class RecordingSocket:
         return len(data)
 
 
-def test_publisher_includes_observational_desire_snapshot() -> None:
+def test_publisher_includes_observational_desire_and_moral_snapshot() -> None:
     socket = RecordingSocket()
     publisher = UdpAgentStatePublisher(
         UdpAgentStatePublisherConfig(host="127.0.0.1", port=9876),
@@ -42,6 +42,7 @@ def test_publisher_includes_observational_desire_snapshot() -> None:
     packet, address = socket.packets[0]
     payload = json.loads(packet.decode("utf-8"))
     recognition = payload["desire"]["recognition"]
+    moral = payload["moral"]
     assert address == ("127.0.0.1", 9876)
     assert payload["schema_version"] == 1
     assert set(payload["desire"]) == set(desire.effective_values())
@@ -51,6 +52,10 @@ def test_publisher_includes_observational_desire_snapshot() -> None:
     assert recognition["satisfaction"] == pytest.approx(0.1)
     assert recognition["frustration"] == pytest.approx(0.2)
     assert recognition["effective_level"] == pytest.approx(0.8)
+    assert moral["observation_only"] is True
+    assert moral["profile"]["compassion"] > 0.0
+    assert moral["state"]["restraint"] > 0.0
+    assert 0.0 <= moral["composite"]["prosocial_activation"] <= 1.0
     assert "emotion" in payload
     assert "drive" in payload
     assert "activity" in payload
