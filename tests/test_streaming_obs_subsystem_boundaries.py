@@ -3,12 +3,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from subsystems.streaming.adapters.obs import (
-    FakeObsPreparationAdapter,
-    ObsWebSocketPreparationAdapter,
-    ObsWebSocketStreamingControlAdapter,
-)
-
 ROOT = Path(__file__).parents[1]
 OBS_ADAPTER = ROOT / "subsystems" / "streaming" / "adapters" / "obs"
 
@@ -58,39 +52,3 @@ def test_core_python_files_do_not_import_obs_sdk() -> None:
 
     assert violations == []
 
-
-def test_legacy_obs_paths_are_one_way_compatibility_imports() -> None:
-    legacy_root = ROOT / "app" / "adapters" / "obs"
-    violations = sorted(
-        f"{path.relative_to(ROOT)} -> {import_name}"
-        for path in legacy_root.rglob("*.py")
-        for import_name in _imports(path)
-        if not import_name.startswith("subsystems.streaming.adapters.obs")
-    )
-    implementations = sorted(
-        f"{path.relative_to(ROOT)}:{node.name}"
-        for path in legacy_root.rglob("*.py")
-        for node in ast.walk(
-            ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        )
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
-    )
-
-    assert violations == []
-    assert implementations == []
-
-
-def test_legacy_class_names_resolve_to_subsystem_implementations() -> None:
-    from app.adapters.obs import (
-        ObsWebSocketPreparationAdapter as LegacyPreparation,
-    )
-    from app.adapters.obs import (
-        ObsWebSocketStreamingControlAdapter as LegacyControl,
-    )
-    from app.adapters.streaming.fake_obs_preparation_adapter import (
-        FakeObsPreparationAdapter as LegacyFakePreparation,
-    )
-
-    assert LegacyPreparation is ObsWebSocketPreparationAdapter
-    assert LegacyControl is ObsWebSocketStreamingControlAdapter
-    assert LegacyFakePreparation is FakeObsPreparationAdapter

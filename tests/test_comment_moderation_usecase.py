@@ -4,20 +4,22 @@ import asyncio
 
 import pytest
 
-from app.adapters.streaming import (
+from app.domain.events import AgentEvent, AgentEventType
+from subsystems.streaming.adapters.repositories import (
     FakeCommentModerationAdapter,
     InMemoryCommentModerationRepository,
     InMemoryStreamMainSegmentRepository,
     InMemoryStreamOpeningRepository,
 )
-from app.config.app_config import CommentModerationSettings
-from app.domain.events import AgentEvent, AgentEventType
 from subsystems.streaming.adapters.repositories.in_memory_session_repository import (
     InMemoryStreamSessionRepository,
 )
 from subsystems.streaming.application import (
     CommentModerationUsecase,
     StreamLifecycleGate,
+)
+from subsystems.streaming.application.settings import (
+    DefaultCommentModerationSettings as CommentModerationSettings,
 )
 from subsystems.streaming.domain import (
     CommentCandidate,

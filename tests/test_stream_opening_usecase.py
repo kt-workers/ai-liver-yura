@@ -4,16 +4,16 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.adapters.streaming import InMemoryStreamOpeningRepository
-from app.adapters.streaming.in_memory_session_repository import (
-    InMemoryStreamSessionRepository,
-)
 from app.domain.activity_turn_result import (
     ActionExecutionResult,
     ActionExecutionStatus,
     ActivityOutputResult,
     ActivityOutputStatus,
     ActivityTurnResult,
+)
+from subsystems.streaming.adapters.repositories import (
+    InMemoryStreamOpeningRepository,
+    InMemoryStreamSessionRepository,
 )
 from subsystems.streaming.application import StreamOpeningUsecase
 from subsystems.streaming.domain import (

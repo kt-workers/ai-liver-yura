@@ -11,7 +11,6 @@ from app.integrations.streaming import (
 )
 from subsystems.streaming import build_streaming_subsystem
 from subsystems.streaming.adapters.youtube import (
-    FakeLiveChatAdapter,
     FakeYouTubePreparationAdapter,
     FakeYouTubeStreamingControlAdapter,
     GoogleYouTubeLiveChatAdapter,
@@ -87,55 +86,6 @@ def test_core_python_files_do_not_import_google_sdks() -> None:
     )
 
     assert violations == []
-
-
-def test_legacy_youtube_adapter_paths_are_one_way_compatibility_imports() -> None:
-    legacy_root = ROOT / "app" / "adapters" / "youtube"
-    violations = sorted(
-        f"{path.relative_to(ROOT)} -> {import_name}"
-        for path in legacy_root.rglob("*.py")
-        for import_name in _imports(path)
-        if not import_name.startswith("subsystems.streaming.adapters.youtube")
-    )
-    implementation_classes = sorted(
-        f"{path.relative_to(ROOT)}:{node.name}"
-        for path in legacy_root.rglob("*.py")
-        for node in ast.walk(
-            ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        )
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
-    )
-
-    assert violations == []
-    assert implementation_classes == []
-
-
-def test_legacy_class_names_resolve_to_subsystem_implementations() -> None:
-    from app.adapters.streaming.fake_live_chat_adapter import (
-        FakeLiveChatAdapter as LegacyFakeLiveChatAdapter,
-    )
-    from app.adapters.streaming.fake_streaming_control import (
-        FakeYouTubeStreamingControlAdapter as LegacyFakeControl,
-    )
-    from app.adapters.streaming.fake_youtube_preparation_adapter import (
-        FakeYouTubePreparationAdapter as LegacyFakePreparation,
-    )
-    from app.adapters.youtube import (
-        GoogleYouTubeLiveChatAdapter as LegacyLiveChat,
-    )
-    from app.adapters.youtube import (
-        GoogleYouTubePreparationAdapter as LegacyPreparation,
-    )
-    from app.adapters.youtube import (
-        GoogleYouTubeStreamingControlAdapter as LegacyControl,
-    )
-
-    assert LegacyFakeLiveChatAdapter is FakeLiveChatAdapter
-    assert LegacyFakeControl is FakeYouTubeStreamingControlAdapter
-    assert LegacyFakePreparation is FakeYouTubePreparationAdapter
-    assert LegacyLiveChat is GoogleYouTubeLiveChatAdapter
-    assert LegacyPreparation is GoogleYouTubePreparationAdapter
-    assert LegacyControl is GoogleYouTubeStreamingControlAdapter
 
 
 def test_composition_selects_fake_google_and_disabled_bundles() -> None:

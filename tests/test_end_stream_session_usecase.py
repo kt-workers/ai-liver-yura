@@ -2,10 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from app.adapters.streaming import InMemoryStreamMainSegmentRepository
-from app.adapters.streaming.in_memory_session_repository import (
-    InMemoryStreamSessionRepository,
-)
 from app.domain.activity_turn_result import (
     ActionExecutionResult,
     ActionExecutionStatus,
@@ -15,6 +11,10 @@ from app.domain.activity_turn_result import (
 )
 from subsystems.streaming.adapters.obs.fake_obs import (
     FakeObsStreamingControlAdapter,
+)
+from subsystems.streaming.adapters.repositories import (
+    InMemoryStreamMainSegmentRepository,
+    InMemoryStreamSessionRepository,
 )
 from subsystems.streaming.adapters.youtube.fake_youtube import (
     FakeYouTubeStreamingControlAdapter,

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.adapters.streaming import InMemoryStreamSessionRepository
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.adapters.repositories import InMemoryStreamSessionRepository
+from subsystems.streaming.domain import (
     HealthCheckItem,
     HealthStatus,
     ReadinessPolicy,
