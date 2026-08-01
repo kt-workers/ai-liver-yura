@@ -174,6 +174,8 @@ class MoralActivityCandidateLimitedActivationApplier:
         condition = shadow.application_condition
         if not condition.ready_for_limited_activation:
             return "limited_activation_condition_not_ready"
+        if context.event_type != "user_text":
+            return "limited_activation_event_type_not_eligible"
         if analysis.evaluator_type != "llm":
             return "limited_activation_evaluator_not_eligible"
         if analysis.operation is not ActivityOperation.START:
