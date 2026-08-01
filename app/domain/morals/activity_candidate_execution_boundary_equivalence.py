@@ -9,6 +9,7 @@ from enum import Enum
 from app.shared.contracts.activity import (
     ActivityAuthorityRequirement,
     ActivityDefinition,
+    ActivitySafetyRequirement,
 )
 
 
@@ -130,13 +131,30 @@ class ConstraintEquivalenceAssessment:
 
 
 @dataclass(frozen=True, slots=True)
+class SafetyCandidateAssessment:
+    """候補別Safety要件の宣言内容。"""
+
+    activity_type: str
+    policy_id: str | None = None
+    risk_class: str | None = None
+
+    def as_context(self) -> dict[str, object]:
+        return {
+            "activity_type": self.activity_type,
+            "policy_id": self.policy_id,
+            "risk_class": self.risk_class,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class SafetyEquivalenceAssessment:
-    """候補間Safety policyの同等性評価。"""
+    """候補間Safety policy要件の同等性評価。"""
 
     status: ExecutionBoundaryEquivalenceStatus = (
         ExecutionBoundaryEquivalenceStatus.UNCONFIRMED
     )
     candidate_policy_contract_available: bool = False
+    candidates: tuple[SafetyCandidateAssessment, ...] = ()
     reasons: tuple[str, ...] = ()
 
     def as_context(self) -> dict[str, object]:
@@ -145,6 +163,7 @@ class SafetyEquivalenceAssessment:
             "candidate_policy_contract_available": (
                 self.candidate_policy_contract_available
             ),
+            "candidates": [candidate.as_context() for candidate in self.candidates],
             "reasons": list(self.reasons),
         }
 
@@ -246,10 +265,7 @@ class ActivityCandidateExecutionBoundaryEquivalenceEvaluator:
             available_capabilities,
         )
         constraint = self._evaluate_constraint(selected)
-        safety = SafetyEquivalenceAssessment(
-            candidate_policy_contract_available=False,
-            reasons=("safety_policy_contract_unavailable",),
-        )
+        safety = self._evaluate_safety(selected)
         statuses = (
             authority.status,
             capability.status,
@@ -435,6 +451,71 @@ class ActivityCandidateExecutionBoundaryEquivalenceEvaluator:
             schema_versions=versions,
             schema_fingerprints=tuple(fingerprints),
             reasons=("constraint_schema_differs",),
+        )
+
+    @staticmethod
+    def _evaluate_safety(
+        definitions: Sequence[ActivityDefinition],
+    ) -> SafetyEquivalenceAssessment:
+        candidate_assessments = tuple(
+            ActivityCandidateExecutionBoundaryEquivalenceEvaluator._safety_candidate(
+                definition
+            )
+            for definition in definitions
+        )
+        requirements = tuple(
+            definition.safety_requirement for definition in definitions
+        )
+        if any(requirement is None for requirement in requirements):
+            return SafetyEquivalenceAssessment(
+                candidate_policy_contract_available=False,
+                candidates=candidate_assessments,
+                reasons=("safety_requirement_contract_missing",),
+            )
+        if not all(
+            isinstance(requirement, ActivitySafetyRequirement)
+            for requirement in requirements
+        ):
+            return SafetyEquivalenceAssessment(
+                candidate_policy_contract_available=False,
+                candidates=candidate_assessments,
+                reasons=("safety_requirement_contract_invalid",),
+            )
+
+        typed_requirements = tuple(
+            requirement
+            for requirement in requirements
+            if isinstance(requirement, ActivitySafetyRequirement)
+        )
+        signatures = {
+            (requirement.policy_id, requirement.risk_class)
+            for requirement in typed_requirements
+        }
+        if len(signatures) == 1:
+            return SafetyEquivalenceAssessment(
+                status=ExecutionBoundaryEquivalenceStatus.CONFIRMED,
+                candidate_policy_contract_available=True,
+                candidates=candidate_assessments,
+                reasons=("safety_requirement_equivalent",),
+            )
+        return SafetyEquivalenceAssessment(
+            status=ExecutionBoundaryEquivalenceStatus.REJECTED,
+            candidate_policy_contract_available=True,
+            candidates=candidate_assessments,
+            reasons=("safety_requirement_differs",),
+        )
+
+    @staticmethod
+    def _safety_candidate(
+        definition: ActivityDefinition,
+    ) -> SafetyCandidateAssessment:
+        requirement = definition.safety_requirement
+        if not isinstance(requirement, ActivitySafetyRequirement):
+            return SafetyCandidateAssessment(activity_type=definition.activity_type)
+        return SafetyCandidateAssessment(
+            activity_type=definition.activity_type,
+            policy_id=requirement.policy_id,
+            risk_class=requirement.risk_class.value,
         )
 
     @staticmethod
