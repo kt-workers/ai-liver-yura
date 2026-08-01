@@ -232,7 +232,8 @@ def test_character_prompt_projects_plan_below_facts_and_claim_boundaries() -> No
     )
 
     assert "Response Content Plan:" in prompt
-    assert '"primary_desire": "connection"' in prompt
+    assert prompt.count('"primary_desire": "connection"') == 1
+    assert '"response_content_plan"' not in prompt
     assert "allowed_claims、forbidden_claims" in prompt
     assert "行動選択、実行許可、事実認定、権限、安全判定を変更しない" in prompt
     assert "ユーザーを採点・断罪・説教せず" in prompt
