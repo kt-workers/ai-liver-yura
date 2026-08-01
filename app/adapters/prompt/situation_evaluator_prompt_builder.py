@@ -3,12 +3,40 @@ from __future__ import annotations
 import json
 
 from app.domain.behavior import BehaviorPlanningContext
+from app.domain.motivation import MotivationActivityCandidateRanker
 
 
 class SituationEvaluatorPromptBuilder:
     """客観的意味解析だけを要求するrole専用PromptBuilder。"""
 
+    def __init__(
+        self,
+        candidate_ranker: MotivationActivityCandidateRanker | None = None,
+    ) -> None:
+        self._candidate_ranker = candidate_ranker or MotivationActivityCandidateRanker()
+
     def build(self, context: BehaviorPlanningContext) -> str:
+        pinned_activity_types = tuple(
+            activity_type
+            for activity_type in (
+                (
+                    context.active_activity_definition.activity_type
+                    if context.active_activity_definition is not None
+                    else None
+                ),
+                context.ongoing_activity_type,
+            )
+            if activity_type is not None
+        )
+        ranking = self._candidate_ranker.rank(
+            context.activity_definitions,
+            context.motivation,
+            pinned_activity_types=pinned_activity_types,
+        )
+        preference_by_activity = {
+            preference.activity_type: preference.as_context()
+            for preference in ranking.preferences
+        }
         candidates = [
             {
                 "activity_type": item.activity_type,
@@ -19,8 +47,9 @@ class SituationEvaluatorPromptBuilder:
                 "semantic_descriptions": list(item.semantic_descriptions),
                 "constraints_schema": item.constraints_schema,
                 "constraints_schema_version": item.constraints_schema_version,
+                "motivation_preference": preference_by_activity[item.activity_type],
             }
-            for item in context.activity_definitions
+            for item in ranking.definitions
         ]
         ongoing = context.ongoing_activity
         ongoing_payload = (
@@ -52,6 +81,8 @@ class SituationEvaluatorPromptBuilder:
             "emotion": context.emotion,
             "drive": context.drive,
             "relationship": context.relationship,
+            "motivation": context.motivation,
+            "activity_candidate_preferences": ranking.as_context(),
             "conversation_history": list(context.conversation_history),
             "memory": context.memory,
             "related_knowledge": list(context.related_knowledge),
@@ -79,6 +110,10 @@ class SituationEvaluatorPromptBuilder:
         return "\n".join(
             [
                 "あなたはSituation Evaluatorです。入力を総合して次のActivityを決定します。",
+                "# 判断規則",
+                "ユーザーの明示意図、進行中Activity、意味的一致をMotivationより優先してください。",
+                "Motivation候補選好は、意味的に妥当な候補が複数ある場合の補助的な優先情報としてだけ使用してください。",
+                "Motivationを理由に候補外Activityを生成したり、Authority・Capability・Constraintの検証結果を推測したりしないでください。",
                 "# 判断入力",
                 json.dumps(planning_input, ensure_ascii=False, default=str),
                 "# 出力JSONスキーマ",
