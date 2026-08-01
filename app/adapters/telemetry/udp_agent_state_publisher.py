@@ -56,6 +56,14 @@ class UdpAgentStatePublisher:
             },
             "drive": asdict(state.current_drive),
             "desire": state.current_desire.as_dict(),
+            "moral": {
+                "profile": state.moral_profile.as_dict(),
+                "state": state.current_moral.as_dict(),
+                "composite": state.moral_profile.compose(
+                    state.current_moral
+                ).as_dict(),
+                "observation_only": True,
+            },
             "activity": {
                 "type": (
                     state.active_activity.activity_type.value
