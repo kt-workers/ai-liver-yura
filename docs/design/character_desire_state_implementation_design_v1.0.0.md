@@ -118,17 +118,22 @@ Elapsed time
   -> AgentState.current_desire
 ```
 
-`AgentLifeService`は更新結果をtraceへ記録するが、
 `BehaviorPlanner`や`AutonomousEventPlanner`へDesireを渡さない。
+既存のAgentState observerを通じて、更新後の値を観測境界へ渡す。
 
 ## 8. 観測方針
 
-- AgentStateから7欲望の実効値を取得できること
-- Event前後の値をtraceで比較できること
-- 経過時間前後の値をtraceで比較できること
-- 後続でCore diagnostics snapshotへ追加できる型を提供すること
+- AgentStateから7欲望の詳細値と実効値を取得できること
+- Event更新と経過時間更新の結果をAgentState上で比較できること
+- 既存UDPテレメトリへ`desire`セクションを追加すること
+- テレメトリには各欲望の`level`、`baseline`、`sensitivity`、
+  `satisfaction`、`frustration`、`effective_level`を含めること
+- 本文、会話内容、個人情報をテレメトリへ追加しないこと
 
-本PRではGUI表示や「こころの潮流」画面への追加は行わない。
+追加フィールドは診断用であり、本PRではGUI表示や
+「こころの潮流」画面の表示項目・描画ロジックを変更しない。
+既存クライアントは未知の`desire`フィールドを無視できるため、
+テレメトリの`schema_version`は1を維持する。
 
 ## 9. 非対象
 
@@ -140,6 +145,7 @@ Elapsed time
 - DesireのDB永続化
 - Character Profile設定化
 - 外部Subsystem操作
+- こころの潮流画面でのDesire可視化
 
 ## 10. テスト方針
 
@@ -150,13 +156,14 @@ Elapsed time
 - 経過時間でbaseline回帰、satisfaction減衰、frustration増減を検証する
 - 未対応Eventでは状態を変更しない
 - 負の経過時間では状態を変更しない
+- UDPテレメトリに7欲望の詳細値が含まれる
+- テレメトリ追加後も既存Emotion、Drive、Activity構造を維持する
 
 ## 11. 後続段階
 
-1. AgentStateおよびRuntime更新経路へ観測専用で統合
-2. Core diagnostics snapshotへ追加
-3. 実会話ログから係数を調整
-4. Motivation Appraisalを追加
-5. Behavior Plannerへ読み取り専用入力として接続
-6. Moral Profile / Moral Stateを追加
-7. Response Content Planへ投影
+1. 実会話ログから係数を調整
+2. Motivation Appraisalを追加
+3. Behavior Plannerへ読み取り専用入力として接続
+4. Moral Profile / Moral Stateを追加
+5. Response Content Planへ投影
+6. 必要性を評価した後にGUI可視化を検討
