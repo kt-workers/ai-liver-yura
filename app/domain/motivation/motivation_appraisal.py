@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.domain.desires import DesireType
+from app.domain.morals import MoralComposite, MoralProfile, MoralState
 
 
 def _clamp_01(value: float) -> float:
@@ -60,7 +61,7 @@ class DesireConflict:
 
 @dataclass(frozen=True, slots=True)
 class MotivationAppraisal:
-    """DesireとRelationshipから導出する読み取り専用の動機評価。"""
+    """Desire・Relationship・Moralから導出する動機評価。"""
 
     ranked_desires: tuple[RankedDesire, ...] = ()
     conflicts: tuple[DesireConflict, ...] = ()
@@ -68,6 +69,10 @@ class MotivationAppraisal:
     recommended_activity_types: tuple[str, ...] = ()
     recommended_conversation_strategies: tuple[str, ...] = ()
     moral_evaluation_available: bool = False
+    moral_observation_only: bool = True
+    moral_profile: MoralProfile | None = None
+    moral_state: MoralState | None = None
+    moral_composite: MoralComposite | None = None
     suppressed_activity_types: tuple[str, ...] = ()
     suppression_reasons: tuple[str, ...] = field(
         default_factory=lambda: ("moral_profile_not_available",)
@@ -83,7 +88,20 @@ class MotivationAppraisal:
             self.ranked_desires
         ):
             raise ValueError("ranked_desiresのrankは重複できません。")
-        if self.moral_evaluation_available is False and self.suppressed_activity_types:
+        if self.moral_evaluation_available:
+            if (
+                self.moral_profile is None
+                or self.moral_state is None
+                or self.moral_composite is None
+            ):
+                raise ValueError(
+                    "Moral評価が利用可能な場合はProfile・State・Compositeが必要です。"
+                )
+            if self.moral_observation_only and self.suppressed_activity_types:
+                raise ValueError(
+                    "観測専用Moral評価ではActivityを抑制できません。"
+                )
+        elif self.suppressed_activity_types:
             raise ValueError(
                 "Moral評価が利用不可の場合はActivityを抑制できません。"
             )
@@ -95,6 +113,18 @@ class MotivationAppraisal:
         return min(self.ranked_desires, key=lambda item: item.rank).desire_type
 
     def as_context(self) -> dict[str, object]:
+        moral_context: dict[str, object] | None = None
+        if (
+            self.moral_profile is not None
+            and self.moral_state is not None
+            and self.moral_composite is not None
+        ):
+            moral_context = {
+                "profile": self.moral_profile.as_dict(),
+                "state": self.moral_state.as_dict(),
+                "composite": self.moral_composite.as_dict(),
+                "observation_only": self.moral_observation_only,
+            }
         return {
             "primary_desire": (
                 self.primary_desire.value if self.primary_desire is not None else None
@@ -109,6 +139,8 @@ class MotivationAppraisal:
                 self.recommended_conversation_strategies
             ),
             "moral_evaluation_available": self.moral_evaluation_available,
+            "moral_observation_only": self.moral_observation_only,
+            "moral": moral_context,
             "suppressed_activity_types": list(self.suppressed_activity_types),
             "suppression_reasons": list(self.suppression_reasons),
         }
