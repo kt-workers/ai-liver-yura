@@ -10,9 +10,10 @@ from app.domain.behavior import (
     ActivityOperation,
     BehaviorPlanningContext,
 )
-from app.domain.morals import MoralProfile, MoralState
-from app.runtime.moral_activity_candidate_evaluator import (
+from app.domain.morals import (
     MoralActivityCandidateEvaluator,
+    MoralProfile,
+    MoralState,
 )
 
 
@@ -115,9 +116,8 @@ def test_prompt_projects_moral_fit_without_changing_motivation_order() -> None:
         moral=_moral_context(profile, state),
     )
 
-    planning_input = _planning_input(
-        SituationEvaluatorPromptBuilder().build(context)
-    )
+    prompt = SituationEvaluatorPromptBuilder().build(context)
+    planning_input = _planning_input(prompt)
     available = planning_input["available_activities"]
     moral_fits = planning_input["activity_candidate_moral_fits"]
 
@@ -133,6 +133,4 @@ def test_prompt_projects_moral_fit_without_changing_motivation_order() -> None:
         fit_by_type["conversation_with_user"]["moral_fit"]
         > fit_by_type["plugin_activity"]["moral_fit"]
     )
-    assert "候補の選択、並べ替え、禁止、抑制へ使用しない" in (
-        SituationEvaluatorPromptBuilder().build(context)
-    )
+    assert "候補の選択、並べ替え、禁止、抑制へ使用しない" in prompt
