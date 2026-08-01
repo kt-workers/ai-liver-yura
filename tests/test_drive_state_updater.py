@@ -38,6 +38,52 @@ def test_update_by_youtube_comment_increases_engagement_and_curiosity() -> None:
     assert updated_drive.energy < drive.energy
 
 
+def test_acknowledgement_has_less_stimulus_than_substantive_input() -> None:
+    updater = DriveStateUpdater()
+    drive = DriveState(curiosity=0.8, engagement=0.8, boredom=0.5, energy=0.8)
+
+    acknowledgement = updater.update_by_event(
+        drive,
+        AgentEvent(event_type=AgentEventType.USER_TEXT, payload={"text": "ふむふむ"}),
+    )
+    substantive = updater.update_by_event(
+        drive,
+        AgentEvent(
+            event_type=AgentEventType.USER_TEXT,
+            payload={"text": "深海の熱水噴出孔について詳しく知りたい"},
+        ),
+    )
+
+    assert acknowledgement.curiosity - drive.curiosity < (
+        substantive.curiosity - drive.curiosity
+    )
+    assert acknowledgement.engagement - drive.engagement < (
+        substantive.engagement - drive.engagement
+    )
+    assert acknowledgement.energy > substantive.energy
+
+
+def test_repeated_acknowledgements_do_not_immediately_saturate_drive() -> None:
+    updater = DriveStateUpdater()
+    drive = DriveState(curiosity=0.9, engagement=0.9, boredom=0.2, energy=0.8)
+    event = AgentEvent(event_type=AgentEventType.USER_TEXT, payload={"text": "うん"})
+
+    for _ in range(10):
+        drive = updater.update_by_event(drive, event)
+
+    assert drive.curiosity < 0.95
+    assert drive.engagement < 0.97
+
+
+def test_elapsed_curiosity_uses_diminishing_returns_near_upper_bound() -> None:
+    updater = DriveStateUpdater()
+    drive = DriveState(curiosity=0.9, engagement=0.6, boredom=0.2, energy=0.8)
+
+    updated_drive = updater.update_by_elapsed_time(drive, elapsed_seconds=600.0)
+
+    assert drive.curiosity < updated_drive.curiosity < 1.0
+
+
 def test_update_by_user_interaction_applies_a_gentle_attention_change() -> None:
     updater = DriveStateUpdater()
     drive = DriveState(curiosity=0.4, engagement=0.4, boredom=0.5, energy=0.8)
