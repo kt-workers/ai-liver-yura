@@ -41,4 +41,5 @@ class StreamingSessionComponents:
     response: CommentResponseUsecase
     create_comment_poller: PollerFactory
     public_comment_events: list[StreamingEventEnvelope]
+    content_execution_connected: bool = False
     core_comment_decision: object | None = None

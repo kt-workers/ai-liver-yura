@@ -14,8 +14,13 @@ from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
-from client import CoreApiClient, CoreApiError, EventStreamClient
-from config import AdminClientConfig
+from client import (
+    StreamingSubsystemApiClient,
+    StreamingSubsystemApiError,
+    StreamingSubsystemEventStreamClient,
+)
+
+from config import StreamingSubsystemAdminConfig
 
 WEB_ROOT = Path(__file__).parent / "web"
 MAX_JSON_BYTES = 64 * 1024
@@ -23,7 +28,7 @@ EVENT_COALESCE_SECONDS = 0.25
 
 
 class WebEventHub:
-    """Small fan-out buffer between the Core SSE worker and browsers."""
+    """Small fan-out buffer between the Subsystem SSE worker and browsers."""
 
     def __init__(self) -> None:
         self._condition = threading.Condition()
@@ -43,16 +48,16 @@ class WebEventHub:
 
 
 class StreamingAdminService:
-    """Browser-facing facade. Core credentials never leave this process."""
+    """Browser-facing facade. Subsystem credentials never leave this process."""
 
-    def __init__(self, client: CoreApiClient) -> None:
+    def __init__(self, client: StreamingSubsystemApiClient) -> None:
         self.client = client
 
     @staticmethod
     def _optional(callback: Callable[[], Any]) -> Any:
         try:
             return callback()
-        except CoreApiError as error:
+        except StreamingSubsystemApiError as error:
             if error.code.endswith("not_found"):
                 return None
             raise
@@ -226,10 +231,10 @@ def handler_for(service: StreamingAdminService, hub: WebEventHub) -> type[BaseHT
                     {"error": {"code": "admin.action_not_found", "message": "未対応の操作です。"}},
                     HTTPStatus.NOT_FOUND,
                 )
-            except (CoreApiError, ValueError, TypeError) as error:
+            except (StreamingSubsystemApiError, ValueError, TypeError) as error:
                 status = (
-                    HTTPStatus.SERVICE_UNAVAILABLE
-                    if isinstance(error, CoreApiError) and error.code == "runtime.unavailable"
+                    HTTPStatus(error.status_code)
+                    if isinstance(error, StreamingSubsystemApiError)
                     else HTTPStatus.BAD_REQUEST
                 )
                 self._json(
@@ -259,14 +264,14 @@ def handler_for(service: StreamingAdminService, hub: WebEventHub) -> type[BaseHT
                     if not events:
                         self.wfile.write(b": heartbeat\n\n")
                     else:
-                        # Core can emit several related events for one state transition.
+                        # Subsystem can emit related events for one state transition.
                         # Give them a short window to accumulate and notify the browser once.
                         time.sleep(EVENT_COALESCE_SECONDS)
                         sequence, trailing = hub.wait_after(sequence, 0)
                         if trailing:
                             events.extend(trailing)
                         self._send_event(
-                            "core-event",
+                            "streaming-event",
                             {
                                 "count": len(events),
                                 "events": events,
@@ -330,10 +335,10 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8780)
     args = parser.parse_args()
 
-    config = AdminClientConfig.from_environment()
-    service = StreamingAdminService(CoreApiClient(config))
+    config = StreamingSubsystemAdminConfig.from_environment()
+    service = StreamingAdminService(StreamingSubsystemApiClient(config))
     hub = WebEventHub()
-    event_client = EventStreamClient(config)
+    event_client = StreamingSubsystemEventStreamClient(config)
 
     def on_event(event: object) -> None:
         hub.publish(
@@ -347,7 +352,7 @@ def main() -> int:
     event_thread = threading.Thread(
         target=event_client.run,
         args=(on_event, lambda connected: hub.publish({"connected": connected})),
-        name="core-event-stream",
+        name="streaming-subsystem-event-stream",
         daemon=True,
     )
     event_thread.start()

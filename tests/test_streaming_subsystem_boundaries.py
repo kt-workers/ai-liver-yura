@@ -35,7 +35,7 @@ def test_subsystem_only_uses_the_public_app_contract() -> None:
     assert violations == []
 
 
-def test_subsystem_has_no_core_transport_or_external_sdk_imports() -> None:
+def test_subsystem_confines_admin_transport_and_has_no_core_sdk_imports() -> None:
     forbidden_prefixes = (
         "app.adapters",
         "app.bootstrap",
@@ -55,6 +55,10 @@ def test_subsystem_has_no_core_transport_or_external_sdk_imports() -> None:
         if any(
             import_name == prefix or import_name.startswith(f"{prefix}.")
             for prefix in forbidden_prefixes
+        )
+        and not (
+            "admin_api" in path.relative_to(SUBSYSTEM).parts
+            and import_name.startswith(("fastapi", "starlette"))
         )
     )
 

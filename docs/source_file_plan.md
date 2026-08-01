@@ -120,6 +120,8 @@ RuntimeSupervisor / RuntimeCoordinator
 - Coreの`app/domain`と共通`app/usecases`には、配信固有実装やPluginへの互換
   re-exportを置かない
 - CoreとのActivity/Event接続はComposition RootでShared DTOへ相互変換する
+- Streaming Adminは`subsystems/streaming/admin_api`を正規接続先とし、Core Admin APIを
+  状態取得元にしない。旧Core routeと旧環境変数aliasはKで削除する
 - Streaming DemoのResponse GeneratorはCore pipeline用Adapterに置き、Plugin側の
   手動確認ログはSharedの固定fixtureだけを参照する
 

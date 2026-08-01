@@ -1,4 +1,4 @@
-"""DTOs received from the Core event stream."""
+"""DTOs received from the Streaming Subsystem event stream."""
 
 from __future__ import annotations
 
@@ -21,5 +21,5 @@ class ApiEvent:
             event_type=str(value["event_type"]),
             occurred_at=str(value["occurred_at"]),
             trace_id=str(value.get("trace_id", "")),
-            data=dict(value.get("data", {})),
+            data=dict(value.get("payload", value.get("data", {}))),
         )

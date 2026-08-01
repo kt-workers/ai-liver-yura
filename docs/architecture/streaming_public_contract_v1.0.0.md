@@ -105,7 +105,7 @@ live chat参照、OAuth情報、credential、raw SDK responseを公開しない�
 - YouTube API、OBS WebSocket、OAuth、Live Chat pollingの移動
 - 配信Session、Run of Show、DB
 - Subsystem内部Config／Secretの公開schema化（内部実装と移動はG4で完了）
-- Streaming Admin接続先変更
+- Streaming Admin接続先変更（工程Iで完了。HTTP／SSE transportはSubsystem Admin Adapter）
 - Core RuntimeへのClient配線
 - 旧Streaming Pluginの削除・Factory化
 - schema serializer／decoder、idempotency保存機構

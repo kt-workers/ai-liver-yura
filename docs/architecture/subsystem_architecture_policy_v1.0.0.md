@@ -345,6 +345,8 @@ subsystems/
 8. Secretと外部サービスConfigは所有するSubsystemに置く。
 9. Streaming Session、Run of Show、Commentの状態・policy・repositoryはStreaming
    Subsystemが所有し、Coreは公開Eventと中立content execution境界だけを扱う。
+10. Streaming AdminのREST／SSE、運用read model、Streaming専用diagnosticsはStreaming
+    Subsystemが所有し、Core Admin APIを経由しない。
 
 ## 9. 既存設計の扱い
 

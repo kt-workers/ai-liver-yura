@@ -135,7 +135,9 @@ def build_streaming_subsystem(
         obs=obs,
         youtube=youtube,
         content_executor=content_executor or UnavailableStreamContentExecutor(),
+        content_execution_connected=content_executor is not None,
         core_comment_decision=core_comment_decision,
+        required_audio_sources=subsystem_config.obs.required_audio_sources,
     )
     return StreamingSubsystemApi(service, sessions=session_components)
 
@@ -155,7 +157,9 @@ def _build_session_components(
     obs: object,
     youtube: object,
     content_executor: ContentExecutor,
+    content_execution_connected: bool,
     core_comment_decision: object | None,
+    required_audio_sources: tuple[str, ...],
 ) -> StreamingSessionComponents:
     sessions = InMemoryStreamSessionRepository()
     openings = InMemoryStreamOpeningRepository()
@@ -177,6 +181,7 @@ def _build_session_components(
         requirements=StreamPreparationRequirements(
             require_tts=False,
             require_avatar=False,
+            required_audio_sources=required_audio_sources,
         ),
     )
     start = StartStreamSessionUsecase(
@@ -274,5 +279,6 @@ def _build_session_components(
         response=response,
         create_comment_poller=create_poller,
         public_comment_events=public_events,
+        content_execution_connected=content_execution_connected,
         core_comment_decision=core_comment_decision,
     )
