@@ -11,9 +11,6 @@ from app.adapters.streaming import (
     InMemoryStreamMainSegmentRepository,
     InMemoryStreamOpeningRepository,
 )
-from subsystems.streaming.adapters.repositories.in_memory_session_repository import (
-    InMemoryStreamSessionRepository,
-)
 from app.config.app_config import CommentResponseSettings
 from app.domain.activity_turn_result import (
     ActionExecutionResult,
@@ -23,6 +20,9 @@ from app.domain.activity_turn_result import (
     ActivityTurnResult,
     CharacterGenerationResult,
     CharacterGenerationStatus,
+)
+from subsystems.streaming.adapters.repositories.in_memory_session_repository import (
+    InMemoryStreamSessionRepository,
 )
 from subsystems.streaming.application import (
     CommentResponseUsecase,

@@ -4,8 +4,14 @@ from dataclasses import replace
 
 import pytest
 
+from subsystems.streaming.adapters.obs.fake_obs import (
+    FakeObsStreamingControlAdapter,
+)
 from subsystems.streaming.adapters.repositories.in_memory_session_repository import (
     InMemoryStreamSessionRepository,
+)
+from subsystems.streaming.adapters.youtube.fake_youtube import (
+    FakeYouTubeStreamingControlAdapter,
 )
 from subsystems.streaming.application import StartStreamSessionUsecase
 from subsystems.streaming.domain import (
@@ -13,12 +19,6 @@ from subsystems.streaming.domain import (
     StreamSession,
     StreamSessionStatus,
     StreamStartRejected,
-)
-from subsystems.streaming.adapters.obs.fake_obs import (
-    FakeObsStreamingControlAdapter,
-)
-from subsystems.streaming.adapters.youtube.fake_youtube import (
-    FakeYouTubeStreamingControlAdapter,
 )
 
 

@@ -31,6 +31,26 @@ from app.config.app_config import CommentRankingSettings, load_app_config
 from app.domain.actions import ActionPlan
 from app.domain.character import CharacterProfile
 from app.domain.events import AgentEvent, AgentEventType
+from app.runtime import (
+    ActionPlanner,
+    ActivityManager,
+    AgentLifeService,
+    EventQueue,
+    RuntimeCoordinator,
+)
+from app.runtime.action_scheduler import ActionScheduler
+from app.runtime.activity_executor_thread import ActivityExecutorThread
+from app.runtime.activity_planner_thread import (
+    ActivityPlannerThread,
+    ActivityPlanningRequest,
+    ActivityPlanningService,
+)
+from app.runtime.planned_activity_queue import PlannedActivityQueue
+from subsystems.streaming.adapters.obs.fake_obs import FakeObsStreamingControlAdapter
+from subsystems.streaming.adapters.youtube.fake_youtube import (
+    FakeLiveChatAdapter,
+    FakeYouTubeStreamingControlAdapter,
+)
 from subsystems.streaming.application import (
     CommentModerationUsecase,
     CommentRankingUsecase,
@@ -55,26 +75,6 @@ from subsystems.streaming.domain import (
     YouTubeBroadcastSummary,
 )
 from subsystems.streaming.ports.youtube_live_chat import LiveChatMessageDto, LiveChatPageDto
-from app.runtime import (
-    ActionPlanner,
-    ActivityManager,
-    AgentLifeService,
-    EventQueue,
-    RuntimeCoordinator,
-)
-from app.runtime.action_scheduler import ActionScheduler
-from app.runtime.activity_executor_thread import ActivityExecutorThread
-from app.runtime.activity_planner_thread import (
-    ActivityPlannerThread,
-    ActivityPlanningRequest,
-    ActivityPlanningService,
-)
-from app.runtime.planned_activity_queue import PlannedActivityQueue
-from subsystems.streaming.adapters.obs.fake_obs import FakeObsStreamingControlAdapter
-from subsystems.streaming.adapters.youtube.fake_youtube import (
-    FakeLiveChatAdapter,
-    FakeYouTubeStreamingControlAdapter,
-)
 
 ACTIVE = {
     "obs_output": "active",

@@ -13,6 +13,12 @@ from app.domain.activity_turn_result import (
     ActivityOutputStatus,
     ActivityTurnResult,
 )
+from subsystems.streaming.adapters.obs.fake_obs import (
+    FakeObsStreamingControlAdapter,
+)
+from subsystems.streaming.adapters.youtube.fake_youtube import (
+    FakeYouTubeStreamingControlAdapter,
+)
 from subsystems.streaming.application import EndStreamSessionUsecase
 from subsystems.streaming.domain import (
     ApproveNormalStreamEndCommand,
@@ -23,12 +29,6 @@ from subsystems.streaming.domain import (
     StreamMainSegmentStatus,
     StreamSession,
     StreamSessionStatus,
-)
-from subsystems.streaming.adapters.obs.fake_obs import (
-    FakeObsStreamingControlAdapter,
-)
-from subsystems.streaming.adapters.youtube.fake_youtube import (
-    FakeYouTubeStreamingControlAdapter,
 )
 
 
