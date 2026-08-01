@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from app.domain.behavior import BehaviorPlanningContext, SituationAnalysis
 from app.domain.morals import (
+    ActivityCandidateExecutionBoundaryEquivalenceEvaluator,
     MoralActivityCandidateEvaluator,
     MoralActivityCandidatePreferenceShadow,
     MoralActivityCandidatePreferenceShadowEvaluator,
@@ -11,7 +14,7 @@ from app.utils.trace import TraceLogger
 
 
 class SituationSemanticEquivalenceShadowObserver:
-    """Situation解析由来の意味的同等性証拠をShadow評価へ接続する。"""
+    """Situation解析由来の証拠と実行境界をShadow評価へ接続する。"""
 
     def __init__(
         self,
@@ -21,6 +24,9 @@ class SituationSemanticEquivalenceShadowObserver:
         shadow_evaluator: (
             MoralActivityCandidatePreferenceShadowEvaluator | None
         ) = None,
+        execution_boundary_equivalence_evaluator: (
+            ActivityCandidateExecutionBoundaryEquivalenceEvaluator | None
+        ) = None,
         trace_logger: TraceLogger | None = None,
     ) -> None:
         self._candidate_ranker = candidate_ranker or MotivationActivityCandidateRanker()
@@ -29,6 +35,10 @@ class SituationSemanticEquivalenceShadowObserver:
         )
         self._shadow_evaluator = (
             shadow_evaluator or MoralActivityCandidatePreferenceShadowEvaluator()
+        )
+        self._execution_boundary_equivalence_evaluator = (
+            execution_boundary_equivalence_evaluator
+            or ActivityCandidateExecutionBoundaryEquivalenceEvaluator()
         )
         self._trace_logger = trace_logger or TraceLogger()
 
@@ -69,6 +79,19 @@ class SituationSemanticEquivalenceShadowObserver:
                 analysis.semantic_equivalence_evidence
             ),
         )
+        execution_boundary_equivalence = (
+            self._execution_boundary_equivalence_evaluator.evaluate(
+                ranking.definitions,
+                shadow.candidate_group,
+                authority_role=context.authority_role,
+                instruction_trusted=context.instruction_trusted,
+                available_capabilities=context.available_capabilities,
+            )
+        )
+        shadow = replace(
+            shadow,
+            execution_boundary_equivalence=execution_boundary_equivalence,
+        )
         self._trace_logger.debug(
             "situation_evaluator:semantic_equivalence_shadow_observed",
             source_event_id=context.source_event_id,
@@ -85,6 +108,24 @@ class SituationSemanticEquivalenceShadowObserver:
             ),
             semantic_equivalence_candidate_group=list(
                 shadow.semantic_equivalence.candidate_group
+            ),
+            execution_boundary_equivalence_status=(
+                shadow.execution_boundary_equivalence.status.value
+            ),
+            authority_equivalence_status=(
+                shadow.execution_boundary_equivalence.authority.status.value
+            ),
+            capability_equivalence_status=(
+                shadow.execution_boundary_equivalence.capability.status.value
+            ),
+            constraint_equivalence_status=(
+                shadow.execution_boundary_equivalence.constraint.status.value
+            ),
+            safety_equivalence_status=(
+                shadow.execution_boundary_equivalence.safety.status.value
+            ),
+            execution_boundary_equivalence=(
+                shadow.execution_boundary_equivalence.as_context()
             ),
             current_order=list(shadow.current_order),
             hypothetical_order=list(shadow.hypothetical_order),
