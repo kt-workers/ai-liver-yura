@@ -137,6 +137,7 @@ class BehaviorPlanningContext:
     emotion: dict[str, object] = field(default_factory=dict)
     relationship: dict[str, object] = field(default_factory=dict)
     motivation: dict[str, object] = field(default_factory=dict)
+    moral: dict[str, object] = field(default_factory=dict)
     situation: dict[str, object] = field(default_factory=dict)
     memory: dict[str, object] = field(default_factory=dict)
     conversation_history: tuple[dict[str, object], ...] = ()
