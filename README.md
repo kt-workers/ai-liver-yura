@@ -110,7 +110,7 @@ set +a
 
 ```bash
 # 停止
-Docker compose stop postgres
+docker compose stop postgres
 
 # 再開
 docker compose start postgres
@@ -121,12 +121,6 @@ docker compose down
 # DBデータを含めて完全削除
 # 注意: Topic Memoryの全データが消えます
 docker compose down -v
-```
-
-上記の停止コマンドは先頭を小文字にして実行してください。
-
-```bash
-docker compose stop postgres
 ```
 
 ### 接続設定
