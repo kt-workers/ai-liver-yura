@@ -17,6 +17,7 @@ from app.domain.topic import TopicHistory
 from app.runtime.activity_manager import ActivityManager
 from app.runtime.activity_registry import ActivityRegistry
 from app.runtime.agent_life_service import AgentLifeService
+from app.runtime.motivation_appraiser import MotivationAppraiser
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +39,7 @@ class BehaviorPlanningContextBuilder:
         activity_registry: ActivityRegistry | None = None,
         short_term_memory: ShortTermMemory | None = None,
         topic_history: TopicHistory | None = None,
+        motivation_appraiser: MotivationAppraiser | None = None,
     ) -> None:
         self._activity_manager = activity_manager
         self._agent_life_service = agent_life_service
@@ -45,6 +47,7 @@ class BehaviorPlanningContextBuilder:
         self._activity_registry = activity_registry
         self._short_term_memory = short_term_memory
         self._topic_history = topic_history
+        self._motivation_appraiser = motivation_appraiser or MotivationAppraiser()
 
     def build(self, event: AgentEvent) -> BehaviorPlanningPreparation:
         agent_state = self._agent_life_service.agent_state
@@ -53,6 +56,10 @@ class BehaviorPlanningContextBuilder:
         relationship_context = (
             relationship.as_context() if relationship is not None else {}
         )
+        motivation_context = self._motivation_appraiser.appraise(
+            agent_state.current_desire,
+            relationship,
+        ).as_context()
         situation_context = agent_state.current_situation.as_context()
         memory_context = agent_state.memory.as_context()
         conversation_history = self._conversation_history()
@@ -66,6 +73,7 @@ class BehaviorPlanningContextBuilder:
                     "instruction_trusted": event.authority.instruction_trusted,
                 },
                 "relationship": relationship_context,
+                "motivation": motivation_context,
                 "situation": situation_context,
                 "memory": memory_context,
                 "emotion": asdict(agent_state.current_emotion),
@@ -105,6 +113,7 @@ class BehaviorPlanningContextBuilder:
             drive=asdict(agent_state.current_drive),
             emotion=asdict(agent_state.current_emotion),
             relationship=relationship_context,
+            motivation=motivation_context,
             situation=situation_context,
             memory=memory_context,
             conversation_history=conversation_history,
