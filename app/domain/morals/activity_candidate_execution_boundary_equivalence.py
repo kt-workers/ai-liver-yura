@@ -6,7 +6,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 
-from app.shared.contracts.activity import ActivityDefinition
+from app.shared.contracts.activity import (
+    ActivityAuthorityRequirement,
+    ActivityDefinition,
+)
 
 
 class ExecutionBoundaryEquivalenceStatus(str, Enum):
@@ -15,6 +18,26 @@ class ExecutionBoundaryEquivalenceStatus(str, Enum):
     UNCONFIRMED = "unconfirmed"
     CONFIRMED = "confirmed"
     REJECTED = "rejected"
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorityCandidateAssessment:
+    """候補別Authority要件と現在入力に対する充足状態。"""
+
+    activity_type: str
+    policy_id: str | None = None
+    allowed_roles: tuple[str, ...] = ()
+    trusted_instruction_required: bool | None = None
+    current_request_authorized: bool | None = None
+
+    def as_context(self) -> dict[str, object]:
+        return {
+            "activity_type": self.activity_type,
+            "policy_id": self.policy_id,
+            "allowed_roles": list(self.allowed_roles),
+            "trusted_instruction_required": self.trusted_instruction_required,
+            "current_request_authorized": self.current_request_authorized,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +50,7 @@ class AuthorityEquivalenceAssessment:
     authority_role: str = "unknown"
     instruction_trusted: bool = False
     candidate_requirement_contract_available: bool = False
+    candidates: tuple[AuthorityCandidateAssessment, ...] = ()
     reasons: tuple[str, ...] = ()
 
     def as_context(self) -> dict[str, object]:
@@ -37,6 +61,7 @@ class AuthorityEquivalenceAssessment:
             "candidate_requirement_contract_available": (
                 self.candidate_requirement_contract_available
             ),
+            "candidates": [candidate.as_context() for candidate in self.candidates],
             "reasons": list(self.reasons),
         }
 
@@ -180,7 +205,7 @@ class ActivityCandidateExecutionBoundaryEquivalenceEvaluator:
             for activity_type in candidate_group
             if isinstance(activity_type, str) and activity_type.strip()
         )
-        normalized_role = authority_role.strip() or "unknown"
+        normalized_role = authority_role.strip().lower() or "unknown"
         if len(normalized_group) < 2 or len(set(normalized_group)) != len(
             normalized_group
         ):
@@ -211,11 +236,10 @@ class ActivityCandidateExecutionBoundaryEquivalenceEvaluator:
             definition_by_activity[activity_type]
             for activity_type in normalized_group
         )
-        authority = AuthorityEquivalenceAssessment(
+        authority = self._evaluate_authority(
+            selected,
             authority_role=normalized_role,
             instruction_trusted=instruction_trusted,
-            candidate_requirement_contract_available=False,
-            reasons=("authority_requirement_contract_unavailable",),
         )
         capability = self._evaluate_capability(
             selected,
@@ -252,6 +276,85 @@ class ActivityCandidateExecutionBoundaryEquivalenceEvaluator:
             constraint=constraint,
             safety=safety,
             reasons=(reason,),
+        )
+
+    @staticmethod
+    def _evaluate_authority(
+        definitions: Sequence[ActivityDefinition],
+        *,
+        authority_role: str,
+        instruction_trusted: bool,
+    ) -> AuthorityEquivalenceAssessment:
+        candidate_assessments = tuple(
+            ActivityCandidateExecutionBoundaryEquivalenceEvaluator._authority_candidate(
+                definition,
+                authority_role=authority_role,
+                instruction_trusted=instruction_trusted,
+            )
+            for definition in definitions
+        )
+        requirements = tuple(
+            definition.authority_requirement for definition in definitions
+        )
+        if any(requirement is None for requirement in requirements):
+            return AuthorityEquivalenceAssessment(
+                authority_role=authority_role,
+                instruction_trusted=instruction_trusted,
+                candidate_requirement_contract_available=False,
+                candidates=candidate_assessments,
+                reasons=("authority_requirement_contract_missing",),
+            )
+
+        typed_requirements = tuple(
+            requirement
+            for requirement in requirements
+            if isinstance(requirement, ActivityAuthorityRequirement)
+        )
+        signatures = {
+            (
+                requirement.policy_id,
+                requirement.allowed_roles,
+                requirement.trusted_instruction_required,
+            )
+            for requirement in typed_requirements
+        }
+        if len(signatures) == 1:
+            return AuthorityEquivalenceAssessment(
+                status=ExecutionBoundaryEquivalenceStatus.CONFIRMED,
+                authority_role=authority_role,
+                instruction_trusted=instruction_trusted,
+                candidate_requirement_contract_available=True,
+                candidates=candidate_assessments,
+                reasons=("authority_requirement_equivalent",),
+            )
+        return AuthorityEquivalenceAssessment(
+            status=ExecutionBoundaryEquivalenceStatus.REJECTED,
+            authority_role=authority_role,
+            instruction_trusted=instruction_trusted,
+            candidate_requirement_contract_available=True,
+            candidates=candidate_assessments,
+            reasons=("authority_requirement_differs",),
+        )
+
+    @staticmethod
+    def _authority_candidate(
+        definition: ActivityDefinition,
+        *,
+        authority_role: str,
+        instruction_trusted: bool,
+    ) -> AuthorityCandidateAssessment:
+        requirement = definition.authority_requirement
+        if requirement is None:
+            return AuthorityCandidateAssessment(activity_type=definition.activity_type)
+        return AuthorityCandidateAssessment(
+            activity_type=definition.activity_type,
+            policy_id=requirement.policy_id,
+            allowed_roles=requirement.allowed_roles,
+            trusted_instruction_required=requirement.trusted_instruction_required,
+            current_request_authorized=requirement.permits(
+                authority_role,
+                instruction_trusted,
+            ),
         )
 
     @staticmethod
