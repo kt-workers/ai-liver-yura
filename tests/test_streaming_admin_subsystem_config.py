@@ -18,10 +18,10 @@ def test_new_environment_names_win_over_legacy_names(monkeypatch: pytest.MonkeyP
     assert config.timeout_seconds == 3
 
 
-def test_legacy_environment_is_a_deprecated_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_legacy_environment_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("STREAMING_SUBSYSTEM_ADMIN_API_URL", raising=False)
     monkeypatch.setenv("AI_LIVER_ADMIN_API_URL", "http://legacy:8765/")
-    assert StreamingSubsystemAdminConfig.from_environment().base_url == "http://legacy:8765"
+    assert StreamingSubsystemAdminConfig.from_environment().base_url == "http://127.0.0.1:8781"
 
 
 def test_default_uses_subsystem_port_and_token_is_hidden() -> None:
