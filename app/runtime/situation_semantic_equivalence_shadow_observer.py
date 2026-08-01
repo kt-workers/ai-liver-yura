@@ -5,6 +5,7 @@ from dataclasses import replace
 from app.domain.behavior import BehaviorPlanningContext, SituationAnalysis
 from app.domain.morals import (
     ActivityCandidateExecutionBoundaryEquivalenceEvaluator,
+    MoralActivityCandidateApplicationConditionEvaluator,
     MoralActivityCandidateEvaluator,
     MoralActivityCandidatePreferenceShadow,
     MoralActivityCandidatePreferenceShadowEvaluator,
@@ -27,6 +28,9 @@ class SituationSemanticEquivalenceShadowObserver:
         execution_boundary_equivalence_evaluator: (
             ActivityCandidateExecutionBoundaryEquivalenceEvaluator | None
         ) = None,
+        application_condition_evaluator: (
+            MoralActivityCandidateApplicationConditionEvaluator | None
+        ) = None,
         trace_logger: TraceLogger | None = None,
     ) -> None:
         self._candidate_ranker = candidate_ranker or MotivationActivityCandidateRanker()
@@ -39,6 +43,10 @@ class SituationSemanticEquivalenceShadowObserver:
         self._execution_boundary_equivalence_evaluator = (
             execution_boundary_equivalence_evaluator
             or ActivityCandidateExecutionBoundaryEquivalenceEvaluator()
+        )
+        self._application_condition_evaluator = (
+            application_condition_evaluator
+            or MoralActivityCandidateApplicationConditionEvaluator()
         )
         self._trace_logger = trace_logger or TraceLogger()
 
@@ -88,9 +96,17 @@ class SituationSemanticEquivalenceShadowObserver:
                 available_capabilities=context.available_capabilities,
             )
         )
+        application_condition = self._application_condition_evaluator.evaluate(
+            static_eligible=shadow.static_eligible,
+            candidate_group=shadow.candidate_group,
+            preferred_activity_type=shadow.preferred_activity_type,
+            semantic_equivalence=shadow.semantic_equivalence,
+            execution_boundary_equivalence=execution_boundary_equivalence,
+        )
         shadow = replace(
             shadow,
             execution_boundary_equivalence=execution_boundary_equivalence,
+            application_condition=application_condition,
         )
         self._trace_logger.debug(
             "situation_evaluator:semantic_equivalence_shadow_observed",
@@ -127,6 +143,13 @@ class SituationSemanticEquivalenceShadowObserver:
             execution_boundary_equivalence=(
                 shadow.execution_boundary_equivalence.as_context()
             ),
+            application_condition_status=(
+                shadow.application_condition.status.value
+            ),
+            application_condition_ready=(
+                shadow.application_condition.ready_for_limited_activation
+            ),
+            application_condition=shadow.application_condition.as_context(),
             current_order=list(shadow.current_order),
             hypothetical_order=list(shadow.hypothetical_order),
             static_eligible=shadow.static_eligible,
