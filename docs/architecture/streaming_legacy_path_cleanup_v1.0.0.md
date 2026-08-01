@@ -78,6 +78,6 @@ subsystems.streaming
 
 ## 6. 次工程
 
-J完了後の進捗は14/15である。次はKとして利用停止済みの旧pathを物理削除する。
-Coreの正規経路は`app.integrations.streaming`へ置換済みであり、旧Core Admin route、
-Runtime composition、wrapper、Config互換はKの削除対象として確定した。
+工程Kを完了し、本書に記録した旧path、wrapper、Config互換は物理削除済みである。
+Coreの正規経路は`app.integrations.streaming`、配信実装は`subsystems/streaming`だけとなった。
+進捗は15/15、残り0である。

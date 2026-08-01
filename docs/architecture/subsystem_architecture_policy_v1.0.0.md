@@ -370,6 +370,8 @@ subsystems/
 
 ## 10. 完了状態
 
+> 2026-08-01に工程A〜K（15/15）を完了した。旧Streaming構造は物理削除済みで、残りは0。
+
 最終的なCore-only状態は次を満たす。
 
 - Streaming SubsystemとGame Subsystemを起動しなくてもCoreが正常起動する

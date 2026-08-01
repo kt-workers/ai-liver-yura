@@ -12,9 +12,9 @@ Streaming Subsystem Admin APIを起動したあと、リポジトリ直下で次
 `STREAMING_SUBSYSTEM_ADMIN_API_URL`、`STREAMING_SUBSYSTEM_ADMIN_API_TOKEN`、
 `STREAMING_SUBSYSTEM_ADMIN_API_TIMEOUT`、`STREAMING_SUBSYSTEM_ADMIN_OPERATOR` で指定する。
 
-Streaming Admin は配信制御を行うCore／UseCase／Adapterとは分離し、状態表示、操作要求、
+Streaming Admin はCoreから分離され、Streaming Subsystemの状態表示、操作要求、
 確認ダイアログ、診断情報の保存を担当する。ブラウザは同一オリジンのローカルWebサーバーとのみ
-通信し、Core APIトークンを受け取らない。画面からAdapterを直接呼び出さない。
+通信し、Subsystem APIトークンをブラウザへ渡さない。画面からAdapterを直接呼び出さない。
 
 ## 状態取得と更新
 

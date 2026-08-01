@@ -48,6 +48,9 @@ CoreからStreaming Subsystemへ接続する場合は、Subsystem起動後に
 未設定または接続不能でもCoreはNull／degraded状態で単独動作します。YouTube／OBS設定と
 SecretはCoreではなくStreaming Subsystem側で管理します。
 
+Subsystem分離工程A〜K（15/15）は完了しています。旧Streaming Plugin／Core側
+YouTube・OBS Adapter／専用Portは削除済みです。
+
 会話画面は <http://127.0.0.1:8770>、内部状態ビジュアライザーは
 <http://127.0.0.1:8765>、配信管理画面は <http://127.0.0.1:8780> で開けます。
 

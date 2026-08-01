@@ -73,6 +73,8 @@ YouTube OAuth、OBS password、broadcast、Run of Show、polling設定はSubsyst
 
 ## K削除確定対象
 
+> 工程Kで以下をすべて削除済み。Coreの正規Streaming境界は本書記載のIntegrationのみである。
+
 - `app/plugins/youtube_streaming/**`
 - `app/adapters/streaming/**`、`app/adapters/youtube/**`、`app/adapters/obs/**`
 - Streaming専用`app/ports/*`
