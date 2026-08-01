@@ -26,6 +26,12 @@ from app.shared.contracts.activity import (
     ActivityOperation as ActivityOperation,
 )
 from app.shared.contracts.activity import (
+    ActivitySafetyRequirement as ActivitySafetyRequirement,
+)
+from app.shared.contracts.activity import (
+    ActivitySafetyRiskClass as ActivitySafetyRiskClass,
+)
+from app.shared.contracts.activity import (
     BehaviorDecision as BehaviorDecision,
 )
 from app.shared.contracts.activity import (
