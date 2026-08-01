@@ -1,6 +1,7 @@
 from app.domain.morals.activity_candidate_execution_boundary_equivalence import (
     ActivityCandidateExecutionBoundaryEquivalenceAssessment,
     ActivityCandidateExecutionBoundaryEquivalenceEvaluator,
+    AuthorityCandidateAssessment,
     AuthorityEquivalenceAssessment,
     CapabilityEquivalenceAssessment,
     ConstraintEquivalenceAssessment,
@@ -34,6 +35,7 @@ __all__ = [
     "ActivityCandidateSemanticEquivalenceAssessment",
     "ActivityCandidateSemanticEquivalenceEvaluator",
     "ActivityCandidateSemanticEquivalenceEvidence",
+    "AuthorityCandidateAssessment",
     "AuthorityEquivalenceAssessment",
     "CapabilityEquivalenceAssessment",
     "ConstraintEquivalenceAssessment",
