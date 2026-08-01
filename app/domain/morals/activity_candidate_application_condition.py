@@ -159,7 +159,7 @@ class MoralActivityCandidateApplicationConditionEvaluator:
             static_eligible=static_eligible,
             semantic_equivalence=semantic_equivalence,
             execution_boundary_equivalence=execution_boundary_equivalence,
-            reasons=("application_condition_ready_but_activation_disabled",),
+            reasons=("application_condition_ready",),
         )
 
     @staticmethod
