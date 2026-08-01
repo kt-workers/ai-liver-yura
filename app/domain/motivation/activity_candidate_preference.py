@@ -59,16 +59,27 @@ class MotivationActivityCandidateRanker:
         *,
         pinned_activity_types: Sequence[str] = (),
     ) -> MotivationActivityCandidateRanking:
-        recommendations = self._string_sequence(
-            motivation.get("recommended_activity_types")
-            if motivation is not None
-            else None
+        known_activity_types = {
+            definition.activity_type for definition in definitions
+        }
+        recommendations = tuple(
+            activity_type
+            for activity_type in self._string_sequence(
+                motivation.get("recommended_activity_types")
+                if motivation is not None
+                else None
+            )
+            if activity_type in known_activity_types
         )
         recommendation_positions = {
             activity_type: index
             for index, activity_type in enumerate(recommendations, start=1)
         }
-        pinned = self._deduplicate_strings(pinned_activity_types)
+        pinned = tuple(
+            activity_type
+            for activity_type in self._deduplicate_strings(pinned_activity_types)
+            if activity_type in known_activity_types
+        )
         pinned_positions = {
             activity_type: index
             for index, activity_type in enumerate(pinned, start=1)
