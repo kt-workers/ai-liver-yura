@@ -245,6 +245,9 @@ YouTube API、OAuth、Live Chat、OBS WebSocket、外部I/O構築をCore側packa
 
 ## 10. H: 配信セッション・コメント機能をSubsystemへ移動
 
+> 実施状況（2026-08-01）: 完了。正規Domain／Application／Port／Repositoryと
+> compositionを`subsystems/streaming`へ移し、旧pathはK削除予定の一方向互換とした。
+
 ### 目的
 
 Session、Preparation、Readiness、Lifecycle、Run of Show、Comment処理をStreaming Subsystemの整合性境界へ移す。
@@ -338,5 +341,5 @@ feature/plugin-separation-development
 
 ## 15. 次の作業
 
-全15工程のうちA〜G5の11工程が完了した。残りはH、I、J、Kの4工程である。
-次工程ではHとして配信Session／Comment／Run of ShowをStreaming Subsystemへ移動する。
+全15工程のうちA〜Hの12工程が完了した。残りはI、J、Kの3工程である。
+次工程ではIとしてStreaming Adminの接続先をSubsystem APIへ変更する。

@@ -31,7 +31,7 @@ from app.config.app_config import CommentRankingSettings, load_app_config
 from app.domain.actions import ActionPlan
 from app.domain.character import CharacterProfile
 from app.domain.events import AgentEvent, AgentEventType
-from app.plugins.youtube_streaming.application import (
+from subsystems.streaming.application import (
     CommentModerationUsecase,
     CommentRankingUsecase,
     CommentResponseUsecase,
@@ -44,7 +44,7 @@ from app.plugins.youtube_streaming.application import (
     StreamPreparationRequirements,
     YouTubeLiveChatPoller,
 )
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.domain import (
     ApproveNormalStreamEndCommand,
     ApproveStreamStartCommand,
     CommentRankingContext,
@@ -54,7 +54,7 @@ from app.plugins.youtube_streaming.domain import (
     StreamSessionStatus,
     YouTubeBroadcastSummary,
 )
-from app.ports.youtube_live_chat import LiveChatMessageDto, LiveChatPageDto
+from subsystems.streaming.ports.youtube_live_chat import LiveChatMessageDto, LiveChatPageDto
 from app.runtime import (
     ActionPlanner,
     ActivityManager,

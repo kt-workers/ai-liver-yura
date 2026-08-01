@@ -16,11 +16,11 @@ from app.adapters.streaming import (
     InMemoryStreamSessionRepository,
     YamlRunOfShowRepository,
 )
-from app.plugins.youtube_streaming.application import (
+from subsystems.streaming.application import (
     PrepareStreamSessionUsecase,
     StreamPreparationRequirements,
 )
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.domain import (
     HealthCheckItem,
     HealthStatus,
     StreamPreparationCommand,

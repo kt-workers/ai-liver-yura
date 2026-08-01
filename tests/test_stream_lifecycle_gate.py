@@ -9,8 +9,8 @@ from app.adapters.streaming import (
 from app.adapters.streaming.in_memory_session_repository import (
     InMemoryStreamSessionRepository,
 )
-from app.plugins.youtube_streaming.application import StreamLifecycleGate
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application import StreamLifecycleGate
+from subsystems.streaming.domain import (
     LifecycleOperation,
     StreamLifecycleClass,
     StreamOpeningActivity,

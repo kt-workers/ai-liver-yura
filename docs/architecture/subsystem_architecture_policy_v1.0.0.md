@@ -343,6 +343,8 @@ subsystems/
 6. CoreはSubsystem固有statusをそのまま保持しない。
 7. Admin画面はCoreを経由せず、所有するSubsystemのAdmin APIへ接続する。
 8. Secretと外部サービスConfigは所有するSubsystemに置く。
+9. Streaming Session、Run of Show、Commentの状態・policy・repositoryはStreaming
+   Subsystemが所有し、Coreは公開Eventと中立content execution境界だけを扱う。
 
 ## 9. 既存設計の扱い
 

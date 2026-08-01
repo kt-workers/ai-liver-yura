@@ -77,7 +77,15 @@ idempotency keyはCommandの重複適用を防ぐ不透明値である。
 - keyがない場合、重複排除は保証しない
 - keyの保存期間と保存機構は将来のSubsystem実装が定義する
 
-今回は保存機構を実装しない。
+公開Operationの保存機構は実装しない。Session application内部のcommand result cacheは
+既存のidempotencyを維持し、公開transportの保存とは分離する。
+
+## 7.1 Comment Event
+
+工程HからLive Chatの正規化結果は既存`StreamingEventEnvelope`と
+`StreamingEventType.COMMENT_RECEIVED`を使用する。versionは引き続き`1.0`であり、
+breaking changeはない。payloadは正規化済み公開値だけを持ち、外部page token、
+live chat参照、OAuth情報、credential、raw SDK responseを公開しない。
 
 ## 8. Schema互換方針
 

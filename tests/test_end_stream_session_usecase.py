@@ -13,8 +13,8 @@ from app.domain.activity_turn_result import (
     ActivityOutputStatus,
     ActivityTurnResult,
 )
-from app.plugins.youtube_streaming.application import EndStreamSessionUsecase
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application import EndStreamSessionUsecase
+from subsystems.streaming.domain import (
     ApproveNormalStreamEndCommand,
     EmergencyStopStreamCommand,
     RunOfShowSegment,

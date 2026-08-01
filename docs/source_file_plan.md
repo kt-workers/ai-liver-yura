@@ -112,9 +112,11 @@ RuntimeSupervisor / RuntimeCoordinator
 
 ## Plugin所有ソースの配置
 
-- YouTube配信固有のDomain modelは`app/plugins/youtube_streaming/domain`を正本とする
+- YouTube配信固有のDomain modelは`subsystems/streaming/domain`を正本とする
 - 配信準備、開始、進行、コメント処理、終了のApplication logicは
-  `app/plugins/youtube_streaming/application`を正本とする
+  `subsystems/streaming/application`を正本とする
+- 旧`app/plugins/youtube_streaming`、`app/adapters/streaming`、Streaming専用
+  `app/ports`はI／Jの互換層であり、正規ロジックを追加せずKで削除する
 - Coreの`app/domain`と共通`app/usecases`には、配信固有実装やPluginへの互換
   re-exportを置かない
 - CoreとのActivity/Event接続はComposition RootでShared DTOへ相互変換する

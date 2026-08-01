@@ -15,8 +15,8 @@ from app.domain.activity_turn_result import (
     ActivityOutputStatus,
     ActivityTurnResult,
 )
-from app.plugins.youtube_streaming.application import StreamOpeningUsecase
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application import StreamOpeningUsecase
+from subsystems.streaming.domain import (
     RetryOpeningCommand,
     RunOfShowSegment,
     StreamOpeningRejected,
@@ -238,7 +238,7 @@ async def test_missing_required_segment_fails_without_generating_greeting() -> N
 
 
 def test_opening_activity_rejects_invalid_transition() -> None:
-    from app.plugins.youtube_streaming.domain import StreamOpeningActivity
+    from subsystems.streaming.domain import StreamOpeningActivity
 
     activity = StreamOpeningActivity("session", "trace", "opening")
     with pytest.raises(ValueError, match="invalid opening transition"):

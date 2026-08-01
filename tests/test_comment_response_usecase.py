@@ -11,7 +11,7 @@ from app.adapters.streaming import (
     InMemoryStreamMainSegmentRepository,
     InMemoryStreamOpeningRepository,
 )
-from app.adapters.streaming.in_memory_session_repository import (
+from subsystems.streaming.adapters.repositories.in_memory_session_repository import (
     InMemoryStreamSessionRepository,
 )
 from app.config.app_config import CommentResponseSettings
@@ -24,11 +24,11 @@ from app.domain.activity_turn_result import (
     CharacterGenerationResult,
     CharacterGenerationStatus,
 )
-from app.plugins.youtube_streaming.application import (
+from subsystems.streaming.application import (
     CommentResponseUsecase,
     StreamLifecycleGate,
 )
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.domain import (
     CommentResponseRejected,
     CommentResponseTarget,
     RetryCommentResponseCommand,
