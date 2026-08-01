@@ -105,8 +105,8 @@ def test_viewer_payload_cannot_spoof_administrator_direction() -> None:
 def test_ongoing_activity_is_carried_to_next_user_input_and_updated() -> None:
     manager = ActivityManager()
     ongoing = manager.start_ongoing_activity(
-        activity_type="shiritori",
-        goal="ユーザーとしりとりを続ける",
+        activity_type="echo_activity",
+        goal="ユーザーとエコー活動を続ける",
         expected_input="直前の単語につながる単語",
         end_condition="ユーザーが終了を希望するか、んで終わる",
         context={"last_word": "りんご"},
@@ -122,7 +122,7 @@ def test_ongoing_activity_is_carried_to_next_user_input_and_updated() -> None:
     assert carried_first.ongoing_activity_id == ongoing.ongoing_activity_id
     assert carried_first.turns[-1] == first_turn.context["activity_turn"]
     assert carried_first.turns[-1].input_text == "ごりら"
-    assert first_turn.goal == "複数ターン活動「shiritori」を継続する"
+    assert first_turn.goal == "複数ターン活動「echo_activity」を継続する"
 
     manager.complete_processed_activity(
         first_turn.activity_id,
@@ -178,8 +178,8 @@ def test_conversation_activity_can_continue_across_multiple_turns() -> None:
 def test_ending_ongoing_activity_returns_next_input_to_normal_conversation() -> None:
     manager = ActivityManager()
     manager.start_ongoing_activity(
-        activity_type="shiritori",
-        goal="ユーザーとしりとりを続ける",
+        activity_type="echo_activity",
+        goal="ユーザーとエコー活動を続ける",
         expected_input="単語",
         end_condition="終了の意思表示",
     )
@@ -312,7 +312,7 @@ def test_prepare_user_input_immediately_suspends_autonomous_talk() -> None:
     )
     user_event = AgentEvent(
         event_type=AgentEventType.USER_TEXT,
-        payload={"text": "しりとりしたい"},
+        payload={"text": "エコー活動したい"},
         priority=50,
     )
     prepared = manager.prepare_user_input(user_event)
@@ -334,7 +334,7 @@ def test_handle_event_reuses_prepared_user_conversation() -> None:
     )
     user_event = AgentEvent(
         event_type=AgentEventType.USER_TEXT,
-        payload={"text": "しりとりしたい"},
+        payload={"text": "エコー活動したい"},
         priority=50,
     )
     prepared = manager.prepare_user_input(user_event)

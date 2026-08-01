@@ -1,4 +1,13 @@
-from client.core_api_client import CoreApiClient, CoreApiError
-from client.event_stream_client import EventStreamClient
+from client.streaming_subsystem_api_client import (
+    StreamingSubsystemApiClient,
+    StreamingSubsystemApiError,
+)
+from client.streaming_subsystem_event_stream_client import (
+    StreamingSubsystemEventStreamClient,
+)
 
-__all__ = ["CoreApiClient", "CoreApiError", "EventStreamClient"]
+__all__ = [
+    "StreamingSubsystemApiClient",
+    "StreamingSubsystemApiError",
+    "StreamingSubsystemEventStreamClient",
+]

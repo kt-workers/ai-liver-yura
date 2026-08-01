@@ -1,37 +1,27 @@
+"""Standalone entrypoint for the Core Admin API."""
+
 from __future__ import annotations
 
-import logging
+import argparse
 import os
 
-import uvicorn
-
-from app.admin_api import create_admin_api
-from app.bootstrap import compose_streaming, create_stream_preparation_runtime
-from app.config.app_config import load_app_config
+from app.admin_api.server import create_admin_api
 
 
 def main() -> None:
-    host = os.getenv("AI_LIVER_ADMIN_API_HOST", "127.0.0.1")
-    token = os.getenv("AI_LIVER_ADMIN_API_TOKEN")
-    if host not in {"127.0.0.1", "localhost", "::1"} and not token:
-        raise RuntimeError(
-            "localhost以外へbindする場合はAI_LIVER_ADMIN_API_TOKENが必要です。"
-        )
-    port = int(os.getenv("AI_LIVER_ADMIN_API_PORT", "8765"))
-    runtime = create_stream_preparation_runtime(load_app_config())
-    obs_settings = runtime.config.services["obs"]
-    logging.getLogger("uvicorn.error").info(
-        "Streaming config loaded: config_path=%s youtube_adapter=%s obs_adapter=%s "
-        "obs_host=%s obs_port=%s obs_password_env_set=%s",
-        runtime.config.config_path,
-        runtime.usecase.youtube_adapter_type,
-        runtime.usecase.obs_adapter_type,
-        obs_settings.host,
-        obs_settings.port,
-        bool(obs_settings.password_env and os.getenv(obs_settings.password_env)),
+    parser = argparse.ArgumentParser(description="Yura Core Admin API")
+    parser.add_argument("--host", default=os.getenv("YURA_CORE_ADMIN_HOST", "127.0.0.1"))
+    parser.add_argument(
+        "--port", type=int, default=int(os.getenv("YURA_CORE_ADMIN_PORT", "8765"))
     )
-    composition = compose_streaming(runtime)
-    uvicorn.run(create_admin_api(composition.admin_api, token), host=host, port=port)
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args()
+    if args.check:
+        print("Core Admin configuration valid")
+        return
+    import uvicorn
+
+    uvicorn.run(create_admin_api(), host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

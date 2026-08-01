@@ -4,7 +4,7 @@ import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any
 
 from app.config.config_loader import (
     LEGACY_CONFIG_PATH,
@@ -16,15 +16,11 @@ from app.config.emotion_appraisal_config import load_emotion_appraisal_settings
 from app.config.errors import ConfigError
 from app.config.service_schema import (
     DisabledServiceSettings,
-    FakeObsServiceSettings,
-    FakeYouTubeServiceSettings,
-    ObsWebSocketServiceSettings,
     OllamaServiceSettings,
     OpenAiServiceSettings,
     PostgresServiceSettings,
     ServiceSettings,
     VoiceVoxServiceSettings,
-    YouTubeServiceSettings,
 )
 from app.config.strict import (
     immutable_mapping,
@@ -40,10 +36,8 @@ from app.config.strict import (
     require_number,
     require_string,
     require_string_sequence,
-    string_sequence_value,
 )
 from app.domain.emotions import EmotionAppraisalSettings
-from app.plugins.games.settings import GamesPluginSettings, load_games_plugin_settings
 
 CONFIG_PATH = LEGACY_CONFIG_PATH
 
@@ -224,166 +218,12 @@ class PluginRegistrationSettings:
 
 @dataclass(frozen=True, slots=True)
 class PluginSettings:
-    games: GamesPluginSettings = field(default_factory=GamesPluginSettings)
     registrations: Mapping[str, PluginRegistrationSettings] = field(
         default_factory=lambda: immutable_mapping({})
     )
     opaque_configs: Mapping[str, Mapping[str, Any]] = field(
         default_factory=lambda: immutable_mapping({})
     )
-
-
-@dataclass(frozen=True, slots=True)
-class StreamingReadinessSettings:
-    require_youtube: bool = True
-    require_obs: bool = True
-    require_tts: bool = True
-    require_avatar: bool = False
-    require_run_of_show: bool = True
-    require_emergency_stop: bool = False
-    allow_required_degraded: bool = False
-    require_live_chat: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class StreamingObsSettings:
-    expected_scene_collection: str = "AI Liver"
-    expected_start_scene: str = "Starting Soon"
-    required_audio_sources: tuple[str, ...] = ("VOICEVOX",)
-    optional_audio_sources: tuple[str, ...] = ()
-    avatar_source_name: str | None = None
-    require_avatar_source_visible: bool = False
-    low_volume_threshold_db: float = -60.0
-    max_scene_depth: int = 8
-
-
-@dataclass(frozen=True, slots=True)
-class StreamingRunOfShowSettings:
-    directory: str = "config/run_of_show"
-    default_id: str = "default"
-
-
-@dataclass(frozen=True, slots=True)
-class StreamingFakeSettings:
-    broadcast_id: str = "fake-broadcast-1"
-    broadcast_title: str = "配信準備テスト枠"
-
-
-@dataclass(frozen=True, slots=True)
-class CommentModerationSettings:
-    blocked_terms: tuple[str, ...] = ()
-    allowed_terms: tuple[str, ...] = ()
-    max_comment_length: int = 300
-    repeated_message_window_seconds: int = 30
-    repeated_message_limit: int = 3
-    url_policy: str = "review"
-    unknown_message_type_policy: str = "ignore"
-    max_concurrent_evaluations: int = 4
-    evaluation_queue_capacity: int = 128
-    timeout_seconds: float = 3.0
-
-
-@dataclass(frozen=True, slots=True)
-class CommentRankingSettings:
-    weights: Mapping[str, float] = field(
-        default_factory=lambda: immutable_mapping(
-            {
-                "recency": 0.15,
-                "relevance": 0.25,
-                "novelty": 0.15,
-                "conversation_fit": 0.20,
-                "engagement": 0.15,
-                "fairness": 0.10,
-            }
-        )
-    )
-    selection_threshold: float = 0.55
-    minimum_conversation_fit: float = 0.5
-    candidate_ttl_seconds: int = 90
-    reservation_ttl_seconds: int = 30
-    max_pool_size: int = 200
-    max_rank_batch_size: int = 50
-    history_size: int = 100
-    author_cooldown_count: int = 2
-    semantic_timeout_seconds: float = 2.0
-    max_concurrent_rankings: int = 1
-    queue_capacity: int = 16
-
-    def __post_init__(self) -> None:
-        expected = {
-            "recency",
-            "relevance",
-            "novelty",
-            "conversation_fit",
-            "engagement",
-            "fairness",
-        }
-        if (
-            set(self.weights) != expected
-            or abs(sum(self.weights.values()) - 1.0) > 0.000001
-        ):
-            raise ValueError("comment_ranking.weights_invalid")
-        if any(not 0 <= value <= 1 for value in self.weights.values()):
-            raise ValueError("comment_ranking.weights_invalid")
-        if (
-            not 0 <= self.selection_threshold <= 1
-            or not 0 <= self.minimum_conversation_fit <= 1
-        ):
-            raise ValueError("comment_ranking.threshold_invalid")
-        positive = (
-            self.candidate_ttl_seconds,
-            self.reservation_ttl_seconds,
-            self.max_pool_size,
-            self.max_rank_batch_size,
-            self.history_size,
-            self.author_cooldown_count,
-            self.semantic_timeout_seconds,
-            self.max_concurrent_rankings,
-            self.queue_capacity,
-        )
-        if any(value <= 0 for value in positive):
-            raise ValueError("comment_ranking.capacity_invalid")
-
-
-@dataclass(frozen=True, slots=True)
-class CommentResponseSettings:
-    max_characters: int = 140
-    max_sentences: int = 3
-    allow_follow_up_question: bool = True
-    mention_author_name: str = "optional"
-    repeat_comment_text: bool = False
-    response_cooldown_seconds: int = 5
-    max_retries: int = 2
-
-    def __post_init__(self) -> None:
-        if self.max_characters <= 0 or self.max_sentences <= 0:
-            raise ValueError("comment_response.length_invalid")
-        if self.mention_author_name not in {"never", "optional"}:
-            raise ValueError("comment_response.author_policy_invalid")
-        if self.response_cooldown_seconds < 0 or self.max_retries < 0:
-            raise ValueError("comment_response.retry_invalid")
-
-
-@dataclass(frozen=True, slots=True)
-class StreamingSettings:
-    readiness: StreamingReadinessSettings = field(
-        default_factory=StreamingReadinessSettings
-    )
-    obs: StreamingObsSettings = field(default_factory=StreamingObsSettings)
-    run_of_show: StreamingRunOfShowSettings = field(
-        default_factory=StreamingRunOfShowSettings
-    )
-    fake: StreamingFakeSettings = field(default_factory=StreamingFakeSettings)
-    moderation: CommentModerationSettings = field(
-        default_factory=CommentModerationSettings
-    )
-    comment_ranking: CommentRankingSettings = field(
-        default_factory=CommentRankingSettings
-    )
-    comment_response: CommentResponseSettings = field(
-        default_factory=CommentResponseSettings
-    )
-    health_timeout_seconds: float = 5.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -401,7 +241,6 @@ class AppConfig:
     input_receivers: InputReceiverSettings
     confirmation: ConfirmationSettings
     plugins: PluginSettings = field(default_factory=PluginSettings)
-    streaming: StreamingSettings = field(default_factory=StreamingSettings)
     emotion_appraisal: EmotionAppraisalSettings = field(
         default_factory=EmotionAppraisalSettings
     )
@@ -428,7 +267,6 @@ def load_app_config(config_path: str | Path | None = None) -> AppConfig:
                 "input_receivers",
                 "confirmation",
                 "plugins",
-                "streaming",
                 "emotion_appraisal",
             },
             "",
@@ -457,7 +295,6 @@ def load_app_config(config_path: str | Path | None = None) -> AppConfig:
                 _require_dict(raw_config, "confirmation")
             ),
             plugins=_load_plugin_settings(raw_config.get("plugins")),
-            streaming=_load_streaming_settings(raw_config.get("streaming")),
             emotion_appraisal=load_emotion_appraisal_settings(
                 raw_config.get("emotion_appraisal")
             ),
@@ -471,367 +308,10 @@ def load_app_config(config_path: str | Path | None = None) -> AppConfig:
         raise error.with_source(str(bundle.source_for(error.path))) from error
 
 
-def _load_streaming_settings(value: object) -> StreamingSettings:
-    if value is None:
-        return StreamingSettings()
-    config = require_mapping(value, "streaming")
-    reject_unknown_keys(
-        config,
-        {
-            "health_timeout_seconds",
-            "readiness",
-            "obs",
-            "run_of_show",
-            "fake",
-            "moderation",
-            "comment_ranking",
-            "comment_response",
-        },
-        "streaming",
-    )
-    readiness = optional_mapping(config, "readiness", "streaming")
-    obs = optional_mapping(config, "obs", "streaming")
-    run_of_show = optional_mapping(config, "run_of_show", "streaming")
-    fake = optional_mapping(config, "fake", "streaming")
-    moderation = optional_mapping(config, "moderation", "streaming")
-    ranking = optional_mapping(config, "comment_ranking", "streaming")
-    response = optional_mapping(config, "comment_response", "streaming")
-    reject_unknown_keys(
-        readiness,
-        {
-            "require_youtube",
-            "require_obs",
-            "require_tts",
-            "require_avatar",
-            "require_run_of_show",
-            "require_emergency_stop",
-            "allow_required_degraded",
-            "require_live_chat",
-        },
-        "streaming.readiness",
-    )
-    reject_unknown_keys(
-        obs,
-        {
-            "expected_scene_collection",
-            "expected_start_scene",
-            "required_audio_sources",
-            "optional_audio_sources",
-            "avatar_source_name",
-            "require_avatar_source_visible",
-            "low_volume_threshold_db",
-            "max_scene_depth",
-        },
-        "streaming.obs",
-    )
-    reject_unknown_keys(run_of_show, {"directory", "default_id"}, "streaming.run_of_show")
-    reject_unknown_keys(fake, {"broadcast_id", "broadcast_title"}, "streaming.fake")
-    reject_unknown_keys(
-        moderation,
-        {
-            "blocked_terms",
-            "allowed_terms",
-            "max_comment_length",
-            "repeated_message_window_seconds",
-            "repeated_message_limit",
-            "url_policy",
-            "unknown_message_type_policy",
-            "max_concurrent_evaluations",
-            "evaluation_queue_capacity",
-            "timeout_seconds",
-        },
-        "streaming.moderation",
-    )
-    reject_unknown_keys(
-        ranking,
-        {
-            "weights",
-            "selection_threshold",
-            "minimum_conversation_fit",
-            "candidate_ttl_seconds",
-            "reservation_ttl_seconds",
-            "max_pool_size",
-            "max_rank_batch_size",
-            "history_size",
-            "author_cooldown_count",
-            "semantic_timeout_seconds",
-            "max_concurrent_rankings",
-            "queue_capacity",
-        },
-        "streaming.comment_ranking",
-    )
-    reject_unknown_keys(
-        response,
-        {
-            "max_characters",
-            "max_sentences",
-            "allow_follow_up_question",
-            "mention_author_name",
-            "repeat_comment_text",
-            "response_cooldown_seconds",
-            "max_retries",
-        },
-        "streaming.comment_response",
-    )
-    default_weights = CommentRankingSettings().weights
-    weights = ranking.get("weights", default_weights)
-    if not isinstance(weights, Mapping) or set(weights) != set(default_weights):
-        raise ConfigError(
-            path="streaming.comment_ranking.weights",
-            expected="all six ranking feature weights",
-            actual=type(weights).__name__,
-        )
-    parsed_weights = {
-        key: _number_value(value, f"streaming.comment_ranking.weights.{key}")
-        for key, value in weights.items()
-    }
-    if (
-        any(item < 0 or item > 1 for item in parsed_weights.values())
-        or abs(sum(parsed_weights.values()) - 1.0) > 0.000001
-    ):
-        raise ConfigError(
-            path="streaming.comment_ranking.weights",
-            expected="weights between 0.0 and 1.0 whose sum is 1.0",
-            actual="out of range",
-        )
-    audio_sources = string_sequence_value(
-        obs.get("required_audio_sources", ["VOICEVOX"]),
-        "streaming.obs.required_audio_sources",
-    )
-    optional_audio_sources = string_sequence_value(
-        obs.get("optional_audio_sources", []),
-        "streaming.obs.optional_audio_sources",
-    )
-    timeout = optional_number(
-        config, "health_timeout_seconds", "streaming", default=5.0
-    )
-    assert timeout is not None
-    _require_positive(timeout, "streaming.health_timeout_seconds")
-    max_scene_depth = optional_int(obs, "max_scene_depth", "streaming.obs", default=8)
-    assert max_scene_depth is not None
-    _require_positive(max_scene_depth, "streaming.obs.max_scene_depth")
-
-    moderation_ints = {
-        "max_comment_length": (300, True),
-        "repeated_message_window_seconds": (30, True),
-        "repeated_message_limit": (3, True),
-        "max_concurrent_evaluations": (4, True),
-        "evaluation_queue_capacity": (128, True),
-    }
-    parsed_moderation_ints: dict[str, int] = {}
-    for key, (default, positive) in moderation_ints.items():
-        parsed = optional_int(moderation, key, "streaming.moderation", default=default)
-        assert parsed is not None
-        if positive:
-            _require_positive(parsed, f"streaming.moderation.{key}")
-        parsed_moderation_ints[key] = parsed
-    moderation_timeout = optional_number(
-        moderation, "timeout_seconds", "streaming.moderation", default=3.0
-    )
-    assert moderation_timeout is not None
-    _require_positive(moderation_timeout, "streaming.moderation.timeout_seconds")
-    url_policy = optional_string(moderation, "url_policy", "streaming.moderation") or "review"
-    _require_enum(
-        url_policy,
-        {"allow", "review", "ignore"},
-        "streaming.moderation.url_policy",
-    )
-    unknown_policy = (
-        optional_string(
-            moderation, "unknown_message_type_policy", "streaming.moderation"
-        )
-        or "ignore"
-    )
-    _require_enum(
-        unknown_policy,
-        {"allow", "review", "ignore"},
-        "streaming.moderation.unknown_message_type_policy",
-    )
-    return StreamingSettings(
-        readiness=StreamingReadinessSettings(
-            require_youtube=optional_bool(
-                readiness, "require_youtube", "streaming.readiness", default=True
-            ),
-            require_obs=optional_bool(
-                readiness, "require_obs", "streaming.readiness", default=True
-            ),
-            require_tts=optional_bool(
-                readiness, "require_tts", "streaming.readiness", default=True
-            ),
-            require_avatar=optional_bool(
-                readiness, "require_avatar", "streaming.readiness", default=False
-            ),
-            require_run_of_show=optional_bool(
-                readiness, "require_run_of_show", "streaming.readiness", default=True
-            ),
-            require_emergency_stop=optional_bool(
-                readiness,
-                "require_emergency_stop",
-                "streaming.readiness",
-                default=False,
-            ),
-            allow_required_degraded=optional_bool(
-                readiness,
-                "allow_required_degraded",
-                "streaming.readiness",
-                default=False,
-            ),
-            require_live_chat=optional_bool(
-                readiness, "require_live_chat", "streaming.readiness", default=False
-            ),
-        ),
-        obs=StreamingObsSettings(
-            expected_scene_collection=(
-                optional_string(obs, "expected_scene_collection", "streaming.obs")
-                or "AI Liver"
-            ),
-            expected_start_scene=(
-                optional_string(obs, "expected_start_scene", "streaming.obs")
-                or "Starting Soon"
-            ),
-            required_audio_sources=audio_sources,
-            optional_audio_sources=optional_audio_sources,
-            avatar_source_name=optional_string(
-                obs, "avatar_source_name", "streaming.obs"
-            ),
-            require_avatar_source_visible=optional_bool(
-                obs,
-                "require_avatar_source_visible",
-                "streaming.obs",
-                default=False,
-            ),
-            low_volume_threshold_db=optional_number(
-                obs, "low_volume_threshold_db", "streaming.obs", default=-60.0
-            )
-            or 0.0,
-            max_scene_depth=max_scene_depth,
-        ),
-        run_of_show=StreamingRunOfShowSettings(
-            directory=optional_string(
-                run_of_show, "directory", "streaming.run_of_show"
-            )
-            or "config/run_of_show",
-            default_id=optional_string(
-                run_of_show, "default_id", "streaming.run_of_show"
-            )
-            or "default",
-        ),
-        fake=StreamingFakeSettings(
-            broadcast_id=optional_string(fake, "broadcast_id", "streaming.fake")
-            or "fake-broadcast-1",
-            broadcast_title=(
-                optional_string(fake, "broadcast_title", "streaming.fake")
-                or "配信準備テスト枠"
-            ),
-        ),
-        moderation=CommentModerationSettings(
-            blocked_terms=string_sequence_value(
-                moderation.get("blocked_terms", []),
-                "streaming.moderation.blocked_terms",
-            ),
-            allowed_terms=string_sequence_value(
-                moderation.get("allowed_terms", []),
-                "streaming.moderation.allowed_terms",
-            ),
-            max_comment_length=parsed_moderation_ints["max_comment_length"],
-            repeated_message_window_seconds=parsed_moderation_ints[
-                "repeated_message_window_seconds"
-            ],
-            repeated_message_limit=parsed_moderation_ints["repeated_message_limit"],
-            url_policy=url_policy,
-            unknown_message_type_policy=unknown_policy,
-            max_concurrent_evaluations=parsed_moderation_ints[
-                "max_concurrent_evaluations"
-            ],
-            evaluation_queue_capacity=parsed_moderation_ints[
-                "evaluation_queue_capacity"
-            ],
-            timeout_seconds=moderation_timeout,
-        ),
-        comment_ranking=CommentRankingSettings(
-            weights=immutable_mapping(parsed_weights),
-            selection_threshold=_optional_number_required(
-                ranking, "selection_threshold", "streaming.comment_ranking", 0.55
-            ),
-            minimum_conversation_fit=_optional_number_required(
-                ranking,
-                "minimum_conversation_fit",
-                "streaming.comment_ranking",
-                0.5,
-            ),
-            candidate_ttl_seconds=_optional_positive_int(
-                ranking, "candidate_ttl_seconds", "streaming.comment_ranking", 90
-            ),
-            reservation_ttl_seconds=_optional_positive_int(
-                ranking, "reservation_ttl_seconds", "streaming.comment_ranking", 30
-            ),
-            max_pool_size=_optional_positive_int(
-                ranking, "max_pool_size", "streaming.comment_ranking", 200
-            ),
-            max_rank_batch_size=_optional_positive_int(
-                ranking, "max_rank_batch_size", "streaming.comment_ranking", 50
-            ),
-            history_size=_optional_positive_int(
-                ranking, "history_size", "streaming.comment_ranking", 100
-            ),
-            author_cooldown_count=_optional_positive_int(
-                ranking, "author_cooldown_count", "streaming.comment_ranking", 2
-            ),
-            semantic_timeout_seconds=_optional_positive_number(
-                ranking, "semantic_timeout_seconds", "streaming.comment_ranking", 2.0
-            ),
-            max_concurrent_rankings=_optional_positive_int(
-                ranking, "max_concurrent_rankings", "streaming.comment_ranking", 1
-            ),
-            queue_capacity=_optional_positive_int(
-                ranking, "queue_capacity", "streaming.comment_ranking", 16
-            ),
-        ),
-        comment_response=CommentResponseSettings(
-            max_characters=_optional_positive_int(
-                response, "max_characters", "streaming.comment_response", 140
-            ),
-            max_sentences=_optional_positive_int(
-                response, "max_sentences", "streaming.comment_response", 3
-            ),
-            allow_follow_up_question=optional_bool(
-                response,
-                "allow_follow_up_question",
-                "streaming.comment_response",
-                default=True,
-            ),
-            mention_author_name=_enum_setting(
-                response,
-                "mention_author_name",
-                "streaming.comment_response",
-                "optional",
-                {"never", "optional"},
-            ),
-            repeat_comment_text=optional_bool(
-                response,
-                "repeat_comment_text",
-                "streaming.comment_response",
-                default=False,
-            ),
-            response_cooldown_seconds=_optional_non_negative_int(
-                response,
-                "response_cooldown_seconds",
-                "streaming.comment_response",
-                5,
-            ),
-            max_retries=_optional_non_negative_int(
-                response, "max_retries", "streaming.comment_response", 2
-            ),
-        ),
-        health_timeout_seconds=timeout,
-    )
-
-
 def _load_plugin_settings(value: object) -> PluginSettings:
     if value is None:
         return PluginSettings()
     config = require_mapping(value, "plugins")
-    games = config.get("games", {})
     registrations = optional_mapping(config, "registry", "plugins")
     parsed_registrations: dict[str, PluginRegistrationSettings] = {}
     for plugin_id, raw in registrations.items():
@@ -855,13 +335,12 @@ def _load_plugin_settings(value: object) -> PluginSettings:
         )
     opaque_configs: dict[str, Mapping[str, Any]] = {}
     for plugin_id, raw in config.items():
-        if plugin_id in {"registry", "games"}:
+        if plugin_id == "registry":
             continue
         opaque_configs[plugin_id] = immutable_mapping(
             require_mapping(raw, f"plugins.{plugin_id}")
         )
     return PluginSettings(
-        games=load_games_plugin_settings(games),
         registrations=immutable_mapping(parsed_registrations),
         opaque_configs=immutable_mapping(opaque_configs),
     )
@@ -1120,120 +599,16 @@ def _load_service(
     if service_type == "postgres":
         reject_unknown_keys(config, {"type", "dsn_env"}, path)
         return PostgresServiceSettings(dsn_env=require_string(config, "dsn_env", path))
-    if service_type in {"youtube", "youtube_api", "google", "google_youtube"}:
-        values = _load_youtube_values(config, path)
-        youtube_type = cast(
-            Literal["youtube", "youtube_api", "google", "google_youtube"],
-            service_type,
-        )
-        return YouTubeServiceSettings(type=youtube_type, **values)
-    if service_type == "fake":
-        if service_name == "youtube":
-            values = _load_youtube_values(config, path)
-            return FakeYouTubeServiceSettings(**values)
-        if service_name == "obs":
-            reject_unknown_keys(config, {"type"}, path)
-            return FakeObsServiceSettings()
-        raise ConfigError(
-            path=f"{path}.type",
-            expected="fake service named youtube or obs",
-            actual="unsupported service name",
-        )
-    if service_type == "obs_websocket":
-        reject_unknown_keys(
-            config,
-            {
-                "type",
-                "host",
-                "port",
-                "password_env",
-                "connect_timeout_seconds",
-                "request_timeout_seconds",
-                "max_retries",
-                "retry_initial_delay_seconds",
-                "websocket_url",
-            },
-            path,
-        )
-        port = require_int(config, "port", path)
-        if not 1 <= port <= 65535:
-            raise ConfigError(
-                path=f"{path}.port",
-                expected="integer between 1 and 65535",
-                actual="out of range",
-            )
-        return ObsWebSocketServiceSettings(
-            host=require_string(config, "host", path),
-            port=port,
-            password_env=optional_string(config, "password_env", path),
-            connect_timeout_seconds=_positive_number_setting(
-                config, "connect_timeout_seconds", path
-            ),
-            request_timeout_seconds=_positive_number_setting(
-                config, "request_timeout_seconds", path
-            ),
-            max_retries=_non_negative_int_setting(config, "max_retries", path),
-            retry_initial_delay_seconds=_positive_number_setting(
-                config, "retry_initial_delay_seconds", path
-            ),
-            websocket_url=optional_string(config, "websocket_url", path),
-        )
     if service_type == "disabled":
         reject_unknown_keys(config, {"type"}, path)
         return DisabledServiceSettings()
     raise ConfigError(
         path=f"{path}.type",
         expected=(
-            "openai, ollama, voicevox, postgres, youtube, youtube_api, "
-            "google, google_youtube, fake, obs_websocket, or disabled"
+            "openai, ollama, voicevox, postgres, or disabled"
         ),
         actual="unknown service type",
     )
-
-
-def _load_youtube_values(config: dict[str, Any], path: str) -> dict[str, Any]:
-    reject_unknown_keys(
-        config,
-        {
-            "type",
-            "client_secret_path_env",
-            "token_path_env",
-            "request_timeout_seconds",
-            "max_retries",
-            "retry_initial_delay_seconds",
-            "oauth_open_browser",
-            "allow_live_broadcast",
-            "oauth_timeout_seconds",
-            "allowed_privacy_statuses",
-        },
-        path,
-    )
-    statuses = require_string_sequence(
-        config, "allowed_privacy_statuses", path, allow_empty=False
-    )
-    if any(status not in {"private", "unlisted", "public"} for status in statuses):
-        raise ConfigError(
-            path=f"{path}.allowed_privacy_statuses",
-            expected="list containing only private, unlisted, or public",
-            actual="unsupported value",
-        )
-    return {
-        "client_secret_path_env": require_string(config, "client_secret_path_env", path),
-        "token_path_env": require_string(config, "token_path_env", path),
-        "request_timeout_seconds": _positive_number_setting(
-            config, "request_timeout_seconds", path
-        ),
-        "max_retries": _non_negative_int_setting(config, "max_retries", path),
-        "retry_initial_delay_seconds": _positive_number_setting(
-            config, "retry_initial_delay_seconds", path
-        ),
-        "oauth_open_browser": require_bool(config, "oauth_open_browser", path),
-        "allow_live_broadcast": require_bool(config, "allow_live_broadcast", path),
-        "oauth_timeout_seconds": _positive_number_setting(
-            config, "oauth_timeout_seconds", path
-        ),
-        "allowed_privacy_statuses": statuses,
-    }
 
 
 def _load_models(config: dict[str, Any]) -> dict[str, ModelSettings]:
@@ -1531,15 +906,6 @@ def _validate_reference_graph(config: AppConfig) -> None:
                 topic_memory.summary.model,
                 "memory.topic_memory.summary.model",
             )
-
-    games = config.plugins.games
-    if games.enabled and games.intent_interpreter.enabled:
-        game_model = games.intent_interpreter.model
-        if game_model is not None:
-            _require_model_reference(
-                config, game_model, "plugins.games.intent_interpreter.model"
-            )
-
 
 def _require_model_reference(
     config: AppConfig,

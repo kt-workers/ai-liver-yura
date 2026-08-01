@@ -65,13 +65,13 @@ def _context(
     )
 
 
-def _shiritori_definition() -> ActivityDefinition:
+def _echo_activity_definition() -> ActivityDefinition:
     return ActivityDefinition(
-        activity_type="shiritori",
-        display_name="しりとり",
-        required_capability="games.shiritori",
-        provider_plugin_id="games",
-        start_markers=("しりとりしよう",),
+        activity_type="echo_activity",
+        display_name="エコー活動",
+        required_capability="sample.echo",
+        provider_plugin_id="sample",
+        start_markers=("エコー活動しよう",),
         description="ユーザーと交互に単語の末尾をつなげる継続ゲーム",
         supported_operations=(
             ActivityOperation.START,
@@ -85,9 +85,9 @@ def _shiritori_definition() -> ActivityDefinition:
 def _semantic_json(
     *,
     decision: str = "start_activity",
-    activity_type: str = "shiritori",
+    activity_type: str = "echo_activity",
     operation: str | None = "start",
-    goal: str = "しりとりを開始する",
+    goal: str = "エコー活動を開始する",
     constraints: dict[str, object] | None = None,
     speech_act: str = "proposal",
     negated: bool = False,
@@ -157,26 +157,26 @@ async def test_viewer_cannot_gain_administrator_authority_from_message_text() ->
 
 
 @pytest.mark.asyncio
-async def test_shiritori_request_selects_structured_activity_plan() -> None:
+async def test_echo_activity_request_selects_structured_activity_plan() -> None:
     planner = BehaviorPlanner(StubResponseGenerator())
 
     plan = await planner.plan(
-        _context("しりとりしよう", definitions=(_shiritori_definition(),))
+        _context("エコー活動しよう", definitions=(_echo_activity_definition(),))
     )
 
     assert plan.decision == BehaviorDecision.START_ACTIVITY
-    assert plan.activity_type == "shiritori"
-    assert plan.required_capability == "games.shiritori"
-    assert plan.provider_plugin_id == "games"
+    assert plan.activity_type == "echo_activity"
+    assert plan.required_capability == "sample.echo"
+    assert plan.provider_plugin_id == "sample"
 
 
 def test_capability_validator_returns_normal_rejection_result() -> None:
     plan = ActivityPlan(
         decision=BehaviorDecision.START_ACTIVITY,
-        activity_type="shiritori",
-        goal="しりとりを開始する",
-        required_capability="games.shiritori",
-        provider_plugin_id="games",
+        activity_type="echo_activity",
+        goal="エコー活動を開始する",
+        required_capability="sample.echo",
+        provider_plugin_id="sample",
         operation=ActivityOperation.START,
     )
     validator = ActivityPlanValidator(lambda capability, plugin_id: False)
@@ -209,7 +209,7 @@ def test_unknown_llm_activity_is_rejected_by_schema_matching() -> None:
     planner = BehaviorPlanner(StubResponseGenerator())
     plan = planner.parse_llm_plan(
         _semantic_json(activity_type="invented", reason="llm_selected"),
-        definitions=(_shiritori_definition(),),
+        definitions=(_echo_activity_definition(),),
     )
 
     assert plan is None
@@ -217,14 +217,14 @@ def test_unknown_llm_activity_is_rejected_by_schema_matching() -> None:
 
 @pytest.mark.asyncio
 async def test_active_activity_selects_continuation() -> None:
-    definition = _shiritori_definition()
+    definition = _echo_activity_definition()
     context = BehaviorPlanningContext(
         user_text="ごりら",
         source_event_id="event-2",
-        available_capabilities=frozenset({"games.shiritori"}),
+        available_capabilities=frozenset({"sample.echo"}),
         activity_definitions=(definition,),
         active_activity_definition=definition,
-        ongoing_activity_type="shiritori",
+        ongoing_activity_type="echo_activity",
     )
 
     plan = await BehaviorPlanner(
@@ -232,13 +232,13 @@ async def test_active_activity_selects_continuation() -> None:
             _semantic_json(
                 decision="continue_activity",
                 operation="continue",
-                goal="しりとりを継続する",
+                goal="エコー活動を継続する",
             )
         )
     ).plan(context)
 
     assert plan.decision == BehaviorDecision.CONTINUE_ACTIVITY
-    assert plan.activity_type == "shiritori"
+    assert plan.activity_type == "echo_activity"
 
 
 @pytest.mark.asyncio
@@ -267,7 +267,7 @@ async def test_active_activity_accepts_plugin_owned_stop_matcher() -> None:
 
 @pytest.mark.asyncio
 async def test_situation_evaluator_receives_safe_ongoing_activity_context() -> None:
-    definition = _shiritori_definition()
+    definition = _echo_activity_definition()
     generator = StubResponseGenerator(
         _semantic_json(
             decision="continue_activity",
@@ -278,15 +278,15 @@ async def test_situation_evaluator_receives_safe_ongoing_activity_context() -> N
     context = BehaviorPlanningContext(
         user_text="みみず",
         source_event_id="event-ongoing",
-        available_capabilities=frozenset({"games.shiritori"}),
+        available_capabilities=frozenset({"sample.echo"}),
         activity_definitions=(definition,),
         active_activity_definition=definition,
-        ongoing_activity_type="shiritori",
+        ongoing_activity_type="echo_activity",
         ongoing_activity=OngoingActivityPlanningContext(
             ongoing_activity_id="ongoing-1",
-            activity_type="shiritori",
+            activity_type="echo_activity",
             status="waiting",
-            goal="海の生き物縛りでしりとりを続ける",
+            goal="海の生き物縛りでエコー活動を続ける",
             constraints={"theme": "海の生き物"},
             expected_input="みから始まる単語",
             turn_count=2,
@@ -451,37 +451,37 @@ async def test_behavior_planner_logs_raw_and_parsed_result_to_debug(
 @pytest.mark.parametrize(
     ("text", "constraints"),
     [
-        ("しりとりしませんか？", {}),
-        ("しりとりしようよ", {}),
-        ("一緒にしりとりしない？", {}),
-        ("深海生物縛りでしりとりしませんか？", {"theme": "深海生物"}),
-        ("動物だけでしりとりをやろう", {"theme": "動物"}),
-        ("食べ物縛りのしりとりに付き合って", {"theme": "食べ物"}),
-        ("しりとりでもしようか", {}),
+        ("エコー活動しませんか？", {}),
+        ("エコー活動しようよ", {}),
+        ("一緒にエコー活動しない？", {}),
+        ("深海生物縛りでエコー活動しませんか？", {"theme": "深海生物"}),
+        ("動物だけでエコー活動をやろう", {"theme": "動物"}),
+        ("食べ物縛りのエコー活動に付き合って", {"theme": "食べ物"}),
+        ("エコー活動でもしようか", {}),
         ("語尾をつないで遊ぼう", {}),
         ("最後の文字から言葉を返すやつをやろう", {}),
     ],
 )
-async def test_semantic_start_expressions_select_shiritori_activity(
+async def test_semantic_start_expressions_select_echo_activity_activity(
     text: str, constraints: dict[str, object]
 ) -> None:
     generator = StubResponseGenerator(
         _semantic_json(
-            goal="条件に沿ってしりとりを行う",
+            goal="条件に沿ってエコー活動を行う",
             constraints=constraints,
         )
     )
 
     plan = await BehaviorPlanner(generator).plan(
-        _context(text, definitions=(_shiritori_definition(),))
+        _context(text, definitions=(_echo_activity_definition(),))
     )
 
     assert plan.decision == BehaviorDecision.START_ACTIVITY
-    assert plan.activity_type == "shiritori"
+    assert plan.activity_type == "echo_activity"
     assert plan.operation == ActivityOperation.START
     assert plan.constraints == constraints
     assert plan.speech_act == SpeechAct.PROPOSAL
-    assert plan.required_capability == "games.shiritori"
+    assert plan.required_capability == "sample.echo"
     assert len(generator.activities) == 1
 
 
@@ -489,9 +489,9 @@ async def test_semantic_start_expressions_select_shiritori_activity(
 @pytest.mark.parametrize(
     ("text", "operation", "knowledge", "negated", "past", "hypothetical"),
     [
-        ("しりとりって何？", ActivityOperation.EXPLAIN, True, False, False, False),
+        ("エコー活動って何？", ActivityOperation.EXPLAIN, True, False, False, False),
         (
-            "しりとりのルールを教えて",
+            "エコー活動のルールを教えて",
             ActivityOperation.EXPLAIN,
             True,
             False,
@@ -499,17 +499,17 @@ async def test_semantic_start_expressions_select_shiritori_activity(
             False,
         ),
         (
-            "深海生物縛りのしりとりは難しい？",
+            "深海生物縛りのエコー活動は難しい？",
             ActivityOperation.DISCUSS,
             True,
             False,
             False,
             False,
         ),
-        ("昨日しりとりをした", None, False, False, True, False),
-        ("しりとりはしたくない", None, False, True, False, False),
+        ("昨日エコー活動をした", None, False, False, True, False),
+        ("エコー活動はしたくない", None, False, True, False, False),
         (
-            "しりとりをするとしたら何から始める？",
+            "エコー活動をするとしたら何から始める？",
             ActivityOperation.DISCUSS,
             False,
             False,
@@ -529,7 +529,7 @@ async def test_non_execution_references_remain_conversation(
     generator = StubResponseGenerator("invalid")
 
     plan = await BehaviorPlanner(generator).plan(
-        _context(text, definitions=(_shiritori_definition(),))
+        _context(text, definitions=(_echo_activity_definition(),))
     )
 
     assert plan.decision == BehaviorDecision.CONVERSATION
@@ -546,13 +546,13 @@ async def test_non_execution_references_remain_conversation(
 @pytest.mark.parametrize(
     "text",
     [
-        "しりとりしませんか？",
-        "しりとりしようよ",
-        "一緒にしりとりしない？",
-        "深海生物縛りでしりとりしませんか？",
-        "動物だけでしりとりをやろう",
-        "食べ物縛りのしりとりに付き合って",
-        "しりとりでもしようか",
+        "エコー活動しませんか？",
+        "エコー活動しようよ",
+        "一緒にエコー活動しない？",
+        "深海生物縛りでエコー活動しませんか？",
+        "動物だけでエコー活動をやろう",
+        "食べ物縛りのエコー活動に付き合って",
+        "エコー活動でもしようか",
         "語尾をつないで遊ぼう",
         "最後の文字から言葉を返すやつをやろう",
     ],
@@ -561,10 +561,10 @@ async def test_all_semantic_start_expressions_are_rejected_when_capability_is_of
     text: str,
 ) -> None:
     planner = BehaviorPlanner(StubResponseGenerator(_semantic_json()))
-    plan = await planner.plan(_context(text, definitions=(_shiritori_definition(),)))
+    plan = await planner.plan(_context(text, definitions=(_echo_activity_definition(),)))
     validator = ActivityPlanValidator(
         lambda capability, plugin_id: False,
-        lambda: (_shiritori_definition(),),
+        lambda: (_echo_activity_definition(),),
     )
 
     evaluation = validator.validate(plan)
@@ -580,7 +580,7 @@ async def test_all_semantic_start_expressions_are_rejected_when_capability_is_of
 async def test_invalid_json_falls_back_without_starting_activity() -> None:
     plan = await BehaviorPlanner(StubResponseGenerator("not-json")).plan(
         _context(
-            "深海生物縛りでしりとりしませんか？", definitions=(_shiritori_definition(),)
+            "深海生物縛りでエコー活動しませんか？", definitions=(_echo_activity_definition(),)
         )
     )
 
@@ -593,10 +593,10 @@ async def test_invalid_json_falls_back_without_starting_activity() -> None:
 async def test_low_confidence_semantic_result_requires_confirmation() -> None:
     plan = await BehaviorPlanner(
         StubResponseGenerator(_semantic_json(confidence=0.5))
-    ).plan(_context("言葉で何か遊ばない？", definitions=(_shiritori_definition(),)))
+    ).plan(_context("言葉で何か遊ばない？", definitions=(_echo_activity_definition(),)))
 
     assert plan.decision == BehaviorDecision.ASK_CONFIRMATION
-    assert plan.activity_type == "shiritori"
-    assert plan.required_capability == "games.shiritori"
+    assert plan.activity_type == "echo_activity"
+    assert plan.required_capability == "sample.echo"
     assert plan.operation == ActivityOperation.START
     assert plan.reason == "semantic_confidence_below_threshold"

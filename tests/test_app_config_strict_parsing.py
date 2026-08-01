@@ -36,16 +36,6 @@ def _invalid_config(
             r"speech\.enabled",
         ),
         (
-            lambda raw: raw["plugins"]["games"]["intent_interpreter"].update(
-                max_attempts=2.5
-            ),
-            r"plugins\.games\.intent_interpreter\.max_attempts",
-        ),
-        (
-            lambda raw: raw["streaming"]["moderation"].update(timeout_seconds="3.0"),
-            r"streaming\.moderation\.timeout_seconds",
-        ),
-        (
             lambda raw: raw["speech"].update(speaker_id=True),
             r"speech\.speaker_id",
         ),
@@ -84,12 +74,6 @@ def test_implicit_scalar_and_list_item_conversions_are_rejected(
         (
             lambda raw: raw["models"]["openai_chat"].update(nmae="x"),
             r"models\.openai_chat\.nmae",
-        ),
-        (
-            lambda raw: raw["streaming"]["comment_ranking"].update(
-                selection_treshold=0.5
-            ),
-            r"streaming\.comment_ranking\.selection_treshold",
         ),
     ],
 )

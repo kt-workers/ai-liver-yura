@@ -2,10 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from app.adapters.streaming import InMemoryStreamMainSegmentRepository
-from app.adapters.streaming.in_memory_session_repository import (
-    InMemoryStreamSessionRepository,
-)
 from app.domain.actions import ActionType
 from app.domain.activity_turn_result import (
     ActionExecutionResult,
@@ -14,8 +10,12 @@ from app.domain.activity_turn_result import (
     ActivityOutputStatus,
     ActivityTurnResult,
 )
-from app.plugins.youtube_streaming.application import StreamMainSegmentUsecase
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.adapters.repositories import (
+    InMemoryStreamMainSegmentRepository,
+    InMemoryStreamSessionRepository,
+)
+from subsystems.streaming.application import StreamMainSegmentUsecase
+from subsystems.streaming.domain import (
     RetryMainSegmentCommand,
     RunOfShowSegment,
     StreamMainSegmentRejected,

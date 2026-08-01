@@ -65,7 +65,7 @@ function resolveNextAction(auth, session, health, enabled) {
   if (enabled.start) return { action: "start", label: "配信開始", description: "準備が完了しています。確認後に配信を開始できます。" };
   if (enabled.prepare) return { action: "prepare", label: "配信準備を開始", description: "配信枠と進行表を確認して準備を開始してください。" };
   if (enabled.authenticate) return { action: "authenticate", label: "YouTube認証", description: "最初にYouTube認証を完了してください。" };
-  return { action: "prepare", label: "操作待ち", description: `${text(session.status || health.status, "待機中")}。Coreから次の操作が有効になるのを待っています。`, disabled: true };
+  return { action: "prepare", label: "操作待ち", description: `${text(session.status || health.status, "待機中")}。Subsystemで次の操作が有効になるのを待っています。`, disabled: true };
 }
 
 function createServiceCard(name) {
@@ -131,7 +131,7 @@ function render() {
   setOptions($("#runOfShowSelect"), data.run_of_shows, "run_of_show_id", "title", "runOfShows");
 
   renderServiceCards(consoleData.services || [
-    { name: "Core", status: health.status || "unknown", freshness: "unknown" },
+    { name: "Streaming Subsystem", status: health.status || "unknown", freshness: "unknown" },
     { name: "OBS", status: session.obs_status || "unknown", freshness: "unknown" },
     { name: "YouTube", status: auth.status || "unknown", freshness: "unknown" },
   ]);
@@ -309,7 +309,7 @@ $("#demoForm").addEventListener("submit", async (event) => {
 });
 
 const events = new EventSource("/events");
-events.addEventListener("core-event", () => load());
+events.addEventListener("streaming-event", () => load());
 events.onopen = () => setConnection(true);
 events.onerror = () => setConnection(false);
 load();

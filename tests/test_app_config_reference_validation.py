@@ -62,12 +62,6 @@ def _load_changed(
             r"memory\.topic_memory\.database_service",
         ),
         (
-            lambda raw: raw["plugins"]["games"]["intent_interpreter"].update(
-                model="missing"
-            ),
-            r"plugins\.games\.intent_interpreter\.model",
-        ),
-        (
             lambda raw: raw["models"]["openai_embedding"].update(dimension=0),
             r"models\.openai_embedding\.dimension",
         ),
@@ -91,13 +85,20 @@ def test_disabled_features_do_not_require_their_references(tmp_path: Path) -> No
             embedding_model="missing",
         )
         raw["memory"]["topic_memory"]["summary"].update(model="missing")
-        raw["plugins"]["games"].update(enabled=False)
-        raw["plugins"]["games"]["intent_interpreter"].update(model="missing")
 
     config = _load_changed(tmp_path, change)
     assert config.speech.enabled is False
     assert config.memory.topic_memory.enabled is False
-    assert config.plugins.games.enabled is False
+
+
+def test_config_without_games_or_games_model_loads(tmp_path: Path) -> None:
+    def change(raw: dict[str, Any]) -> None:
+        raw["plugins"].pop("games", None)
+        raw["models"].pop("games_intent", None)
+
+    config = _load_changed(tmp_path, change)
+    assert not hasattr(config.plugins, "games")
+    assert "games_intent" not in config.models
 
 
 def test_model_service_type_must_be_ai_compatible(tmp_path: Path) -> None:

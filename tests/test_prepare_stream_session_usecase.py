@@ -6,21 +6,27 @@ from pathlib import Path
 
 import pytest
 
-from app.adapters.streaming import (
-    FakeAvatarHealthAdapter,
+from subsystems.streaming.adapters.obs import (
     FakeObsPreparationAdapter,
     FakeObsPreparationConfig,
-    FakeYouTubePreparationAdapter,
-    FakeYouTubePreparationConfig,
+)
+from subsystems.streaming.adapters.preparation_health import (
+    StaticPreparationHealthAdapter,
+)
+from subsystems.streaming.adapters.repositories import (
     InMemoryStreamPreparationPublisher,
     InMemoryStreamSessionRepository,
     YamlRunOfShowRepository,
 )
-from app.plugins.youtube_streaming.application import (
+from subsystems.streaming.adapters.youtube import (
+    FakeYouTubePreparationAdapter,
+    FakeYouTubePreparationConfig,
+)
+from subsystems.streaming.application import (
     PrepareStreamSessionUsecase,
     StreamPreparationRequirements,
 )
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.domain import (
     HealthCheckItem,
     HealthStatus,
     StreamPreparationCommand,
@@ -80,7 +86,7 @@ def build_usecase(
         ),
         obs=FakeObsPreparationAdapter(obs_config or FakeObsPreparationConfig()),
         tts=tts or FakeTtsHealth(),
-        avatar=FakeAvatarHealthAdapter(HealthStatus.UNAVAILABLE, "avatar unavailable"),
+        avatar=StaticPreparationHealthAdapter("avatar", available=False),
         run_of_show=YamlRunOfShowRepository(tmp_path),
         sessions=sessions,
         publisher=publisher,

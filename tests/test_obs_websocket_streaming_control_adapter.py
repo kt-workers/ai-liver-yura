@@ -6,9 +6,10 @@ from typing import Any
 
 import pytest
 
-from app.adapters.obs import ObsAdapterError, ObsWebSocketStreamingControlAdapter
-from app.core.contracts.plugins import CommandRejected
-from app.plugins.youtube_streaming.public.registration import MethodHandler
+from subsystems.streaming.adapters.obs import (
+    ObsAdapterError,
+    ObsWebSocketStreamingControlAdapter,
+)
 
 
 class ControlClient:
@@ -102,17 +103,6 @@ async def test_authentication_and_connection_failures_are_mapped() -> None:
         with pytest.raises(ObsAdapterError, match=code):
             await adapter.connect()
         await adapter.disconnect()
-
-
-@pytest.mark.asyncio
-async def test_plugin_boundary_converts_obs_error_to_common_rejection() -> None:
-    def fail(_: object) -> None:
-        raise ObsAdapterError("authentication", "obs.authentication_failed")
-
-    with pytest.raises(CommandRejected) as captured:
-        await MethodHandler(fail).handle(None)
-
-    assert captured.value.reason_code == "obs.authentication_failed"
 
 
 @pytest.mark.asyncio

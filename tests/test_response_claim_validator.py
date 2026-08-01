@@ -107,27 +107,27 @@ async def test_low_initiative_greeting_does_not_expand_into_question() -> None:
 
 def test_response_context_contains_safe_structured_ongoing_activity_summary() -> None:
     ongoing = OngoingActivity(
-        activity_type="game_with_user",
-        goal="深海生物縛りのしりとりを続ける",
+        activity_type="plugin_task",
+        goal="深海生物縛りのエコー活動を続ける",
         expected_input="みから始まる言葉",
         end_condition="勝敗または停止",
         context={
-            "plugin_id": "games",
-            "capability": "games.shiritori",
+            "plugin_id": "sample",
+            "capability": "sample.echo",
             "plugin_session_id": "session-1",
-            "game_type": "shiritori",
+            "activity_variant": "echo_activity",
             "plugin_state_version": 2,
             "constraints": {"theme": "深海生物"},
             "game_state": {"used_words": ["内部状態は渡さない"]},
         },
     ).begin_turn(
-        "しりとりしよう",
+        "エコー活動しよう",
         "event-1",
         operation="start",
         constraints_snapshot={"theme": "深海生物"},
     )
     result = ActivityExecutionResult(
-        activity_type="game_with_user",
+        activity_type="plugin_task",
         operation="start",
         status=ActivityExecutionStatus.WAITING_INPUT,
         payload={"summary": "最初の単語を出した"},
@@ -174,9 +174,9 @@ def test_response_context_exposes_confirmation_target_and_forbids_execution_clai
                 "pending_confirmation": {
                     "confirmation_id": "confirmation-1",
                     "confirmation_type": "confirm_start_activity",
-                    "candidate_activity_type": "shiritori",
+                    "candidate_activity_type": "echo_activity",
                     "candidate_operation": "start",
-                    "question": "しりとりを始める意図で合っているか確認する",
+                    "question": "エコー活動を始める意図で合っているか確認する",
                 },
             }
         },
@@ -185,7 +185,7 @@ def test_response_context_exposes_confirmation_target_and_forbids_execution_clai
     context = ResponseContextBuilder().build(activity)
 
     assert context.confirmation_id == "confirmation-1"
-    assert context.confirmation_candidate_activity_type == "shiritori"
+    assert context.confirmation_candidate_activity_type == "echo_activity"
     assert context.confirmation_question is not None
     assert context.allowed_claims == (ResponseClaim.CONVERSATION_ONLY,)
     assert ResponseClaim.ACTIVITY_STARTED in context.forbidden_claims
@@ -498,7 +498,7 @@ async def test_ordinary_conversation_does_not_require_external_success_result() 
         activity,
         context,
         _response(
-            "しりとりは、最後の文字をつなぐ言葉遊びだよ",
+            "エコー活動は、最後の文字をつなぐ言葉遊びだよ",
             (ResponseClaim.CONVERSATION_ONLY,),
         ),
     )

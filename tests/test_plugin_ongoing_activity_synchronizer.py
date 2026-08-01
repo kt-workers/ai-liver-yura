@@ -17,7 +17,7 @@ pytestmark = pytest.mark.unit
 
 
 class SessionPlugin:
-    plugin_id = "games"
+    plugin_id = "sample"
 
     def __init__(self, session_id: str = "session-1") -> None:
         self.session_id = session_id
@@ -65,14 +65,14 @@ def _synchronize(
     synchronizer.synchronize(
         plugin=plugin,
         activity_state=_state(status),
-        request_context={"plugin_id": "games", "plugin_state_version": 1},
-        activity_kind="game_with_user",
-        activity_type="shiritori",
+        request_context={"plugin_id": "sample", "plugin_state_version": 1},
+        activity_kind="plugin_task",
+        activity_type="echo_activity",
         response_text="りんご",
-        capability="games.shiritori",
+        capability="sample.echo",
         operation=operation,
         constraints={"theme": "通常"},
-        goal="しりとりを続ける",
+        goal="エコー活動を続ける",
         input_text="ごりら",
         source_event_id=f"event-{operation}",
         turn_started=turn_started,

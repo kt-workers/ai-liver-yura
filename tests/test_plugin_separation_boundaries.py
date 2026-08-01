@@ -63,27 +63,10 @@ def test_plugins_do_not_import_core_runtime_or_usecase_implementations() -> None
 
 
 def test_bootstrap_concrete_plugin_imports_match_migration_baseline() -> None:
-    """Phase 2で除去する静的importを固定し、これ以上の増加を防止する。
-
-    baselineは許容設計ではなく移行負債の一覧である。Phase 2以降は削除に合わせて
-    この集合を縮小し、最終的に空集合にする。
-    """
+    """移行完了後のbootstrapにPlugin具象importがないことを固定する。"""
 
     actual = _imports_with_prefix(_python_files("app/bootstrap"), "app.plugins")
-    expected_migration_debt = {
-        "app.plugins.agent_memory",
-        "app.plugins.llm_provider",
-        "app.plugins.relationship_memory",
-        "app.plugins.voice_output",
-        "app.plugins.youtube_streaming.application",
-        "app.plugins.youtube_streaming.application.service",
-        "app.plugins.youtube_streaming.domain",
-        "app.plugins.youtube_streaming.public.activity_provider",
-        "app.plugins.youtube_streaming.public.evidence",
-        "app.plugins.youtube_streaming.public.registration",
-    }
-
-    assert actual == expected_migration_debt
+    assert actual == set()
 
 
 class _Clock:
@@ -119,16 +102,27 @@ def test_plugin_manager_operates_with_zero_registered_plugins() -> None:
     assert manager.get_plugins_by_capability("missing") == []
 
 
-def test_core_entrypoint_does_not_import_streaming_or_game_plugins() -> None:
-    """通常Coreの入口は配信・ゲームPluginの存在を前提にしない。"""
+def test_core_entrypoint_does_not_import_streaming_plugins() -> None:
+    """通常Coreの入口は配信Pluginの存在を前提にしない。"""
 
     _assert_no_import_prefix(
         [ROOT / "app/__main__.py"],
         (
-            "app.plugins.games",
-            "app.plugins.youtube_streaming",
+            ".".join(("app", "plugins", "youtube_streaming")),
             "app.admin_api",
-            "app.adapters.obs",
-            "app.adapters.youtube",
+            ".".join(("app", "adapters", "obs")),
+            ".".join(("app", "adapters", "youtube")),
         ),
     )
+
+
+def test_legacy_games_package_is_physically_absent() -> None:
+    assert not (ROOT / "app" / "plugins" / "games").exists()
+
+
+def test_runtime_plugin_setup_has_no_legacy_games_dependency() -> None:
+    path = ROOT / "app/bootstrap/runtime_plugin_setup.py"
+    source = path.read_text(encoding="utf-8")
+
+    assert 'plugin_id="games"' not in source
+    assert "games" not in source

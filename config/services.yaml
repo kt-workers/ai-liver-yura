@@ -17,27 +17,3 @@ services:
   topic_memory_database:
     type: postgres
     dsn_env: AI_LIVER_DATABASE_URL
-  youtube:
-    type: fake
-    client_secret_path_env: YOUTUBE_CLIENT_SECRET_PATH
-    token_path_env: YOUTUBE_TOKEN_PATH
-    request_timeout_seconds: 15.0
-    max_retries: 2
-    retry_initial_delay_seconds: 1.0
-    oauth_open_browser: true
-    oauth_timeout_seconds: 300.0
-    # 準備段階では既にliveのBroadcastを候補にしない
-    allow_live_broadcast: false
-    allowed_privacy_statuses:
-      - private
-      - unlisted
-      - public
-  obs:
-    type: obs_websocket
-    host: 127.0.0.1
-    port: 4455
-    password_env: OBS_WEBSOCKET_PASSWORD
-    connect_timeout_seconds: 5.0
-    request_timeout_seconds: 5.0
-    max_retries: 2
-    retry_initial_delay_seconds: 0.5

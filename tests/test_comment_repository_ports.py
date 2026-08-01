@@ -4,19 +4,19 @@ import ast
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from app.adapters.streaming import (
+from subsystems.streaming.adapters.repositories import (
     InMemoryCommentCandidateRepository,
     InMemoryCommentRankingRepository,
     InMemoryCommentResponseHistoryRepository,
     InMemoryCommentSelectionRepository,
 )
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.domain import (
     CommentCandidate,
     CommentRankingFeature,
     CommentResponseTarget,
     RankedCommentCandidate,
 )
-from app.ports.comment_ranking import (
+from subsystems.streaming.ports.comment_ranking import (
     CommentCandidateRepository,
     CommentRankingRepository,
     CommentResponseHistoryRepository,
@@ -168,9 +168,9 @@ def test_history_repository_is_bounded_and_session_separated() -> None:
 def test_usecase_and_port_modules_do_not_import_adapters() -> None:
     root = Path(__file__).parents[1]
     paths = (
-        root / "app/plugins/youtube_streaming/application/comment_ranking.py",
-        root / "app/ports/comment_ranking.py",
-        root / "app/ports/comment_response.py",
+        root / "subsystems/streaming/application/comment_ranking.py",
+        root / "subsystems/streaming/ports/comment_ranking.py",
+        root / "subsystems/streaming/ports/comment_response.py",
     )
     for path in paths:
         tree = ast.parse(path.read_text())
@@ -179,4 +179,4 @@ def test_usecase_and_port_modules_do_not_import_adapters() -> None:
             for node in ast.walk(tree)
             if isinstance(node, ast.ImportFrom) and node.module is not None
         }
-        assert not any(name.startswith("app.adapters") for name in imported), path
+        assert not any(".adapters" in name for name in imported), path

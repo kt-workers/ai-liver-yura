@@ -12,6 +12,7 @@ from app.bootstrap.runtime import create_runtime_coordinator
 from app.bootstrap.runtime_preflight import validate_runtime_service_settings
 from app.config.app_config import load_app_config
 from app.domain.events import AgentEvent, AgentEventType, InputAuthority
+from app.integrations.streaming import create_core_streaming_integration
 from app.utils.trace import TraceLogger
 
 
@@ -64,6 +65,7 @@ async def async_main() -> None:
         config,
         web_conversation_enabled=web_conversation_enabled,
     )
+    streaming_integration = create_core_streaming_integration(runtime.publish_event)
     receiver = (
         WebInputReceiver(
             WebInputReceiverConfig(
@@ -75,6 +77,7 @@ async def async_main() -> None:
         else ConsoleInputReceiver()
     )
     runtime_task = asyncio.create_task(runtime.run())
+    await streaming_integration.start()
 
     await runtime.publish_event(
         AgentEvent(
@@ -105,6 +108,7 @@ async def async_main() -> None:
         await receiver.wait_until_stopped()
     finally:
         await receiver.stop()
+        await streaming_integration.close()
         runtime.stop()
         await runtime_task
         trace_logger.info("app:finished")

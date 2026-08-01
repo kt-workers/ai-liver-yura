@@ -1,51 +1,16 @@
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 import pytest
 import yaml
 
-from app.bootstrap import runtime
 from app.config.app_config import CONFIG_PATH, load_app_config
-from app.config.errors import ConfigError
-from app.plugins.games.settings import (
-    GamesPluginSettings,
-    load_games_plugin_settings,
-)
 
 
-def test_games_settings_are_defined_and_parsed_by_the_plugin() -> None:
+def test_retired_plugin_settings_are_not_part_of_core_config() -> None:
     config = load_app_config()
-    assert isinstance(config.plugins.games, GamesPluginSettings)
-    assert type(config.plugins.games).__module__ == "app.plugins.games.settings"
-    source = inspect.getsource(runtime.create_runtime_coordinator)
-    assert '"confidence_threshold"' not in source
-    assert '"max_generation_retries"' not in source
-
-
-@pytest.mark.parametrize(
-    ("raw", "path"),
-    [
-        ({"enabled": "false"}, r"plugins\.games\.enabled"),
-        (
-            {"intent_interpreter": {"confidence_threshold": -0.1}},
-            r"confidence_threshold",
-        ),
-        (
-            {"intent_interpreter": {"confidence_threshold": 1.1}},
-            r"confidence_threshold",
-        ),
-        ({"intent_interpreter": {"max_attempts": 0}}, r"max_attempts"),
-        ({"shiritori": {"max_generation_retries": -1}}, r"max_generation_retries"),
-        ({"shiritori": {"unknown": True}}, r"plugins\.games\.shiritori\.unknown"),
-    ],
-)
-def test_games_plugin_rejects_invalid_own_configuration(
-    raw: dict[str, object], path: str
-) -> None:
-    with pytest.raises(ConfigError, match=path):
-        load_games_plugin_settings(raw)
+    assert not hasattr(config.plugins, "games")
 
 
 def test_unknown_plugin_configuration_is_opaque_to_core(tmp_path: Path) -> None:

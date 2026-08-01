@@ -582,14 +582,23 @@ Capabilityとして登録する。一つのProviderが失敗しても他の役�
 Provider PluginはSharedの`ResponseGenerationGateway`を境界とし、Core Activity型や
 Core側ResponseGenerator Portへ依存しない。
 
-Games等のPlugin内部LLM処理はSharedの`PluginLlmRequest`、一時的な生成作業は
+Plugin内部LLM処理はSharedの`PluginLlmRequest`、一時的な生成作業は
 `PluginActivityWorkItem`としてCoreへ渡す。Core Activityへの変換はcomposition rootの
 Gateway Adapterだけが行い、PluginはCore Activity、EmotionState、ResponseGeneratorを
 importしない。
 
-Streaming PluginからCore Activityを実行する場合も、戻り値はSharedの
+移行完了まで旧Streaming PluginからCore Activityを実行する場合も、戻り値はSharedの
 `PluginActivityResult`へ縮約し、Event入出力は`PluginEvent`へ変換する。
 `ActivityTurnResult`や`AgentEvent`などCore内部集約をPlugin Portへ公開しない。
+
+独立Subsystemとの接続は、同一プロセス内Pluginとは別のIntegration境界として扱う。
+Subsystem GatewayはPlugin Managerへ登録せず、専用CapabilityやPlugin Configを要求しない。
+Coreは中立DTOとGateway Protocolだけを認識し、通信方式、Subsystem具象型、ゲーム等の
+ドメイン固有型をimportしない。未導入時は副作用のないNull Gatewayで正常に縮退する。
+
+Streaming公開通信契約はCore、Streaming Subsystem、Streaming Adminが共有するが、
+Plugin契約ではない。公開DTOは正規化status、health、capability、comment、Operation、
+Event、error、versioningに限定し、YouTube／OBS／Admin API／transport具象を含めない。
 
 ## 16. Response生成との境界
 
@@ -673,7 +682,7 @@ Plugin設定はPlugin単位で分離する。
 
 ```yaml
 plugins:
-  games:
+  sample_activity:
     enabled: true
 
   youtube_platform:

@@ -6,26 +6,29 @@ from pathlib import Path
 
 import pytest
 
-from app.adapters.streaming import (
-    FakeAvatarHealthAdapter,
+from subsystems.streaming.adapters.obs import (
     FakeObsPreparationAdapter,
     FakeObsPreparationConfig,
+)
+from subsystems.streaming.adapters.preparation_health import (
+    StaticPreparationHealthAdapter,
+)
+from subsystems.streaming.adapters.repositories import (
     InMemoryStreamPreparationPublisher,
     InMemoryStreamSessionRepository,
     YamlRunOfShowRepository,
 )
-from app.adapters.youtube import (
+from subsystems.streaming.adapters.youtube import (
     GoogleYouTubePreparationAdapter,
     GoogleYouTubePreparationConfig,
     YouTubeApiError,
     YouTubeApiErrorKind,
 )
-from app.plugins.youtube_streaming.application import (
+from subsystems.streaming.application import (
     PrepareStreamSessionUsecase,
     StreamPreparationRequirements,
 )
-from app.plugins.youtube_streaming.domain import (
-    HealthStatus,
+from subsystems.streaming.domain import (
     StreamPreparationCommand,
     YouTubeAuthenticationState,
     YouTubeAuthenticationStatus,
@@ -324,8 +327,8 @@ async def test_google_adapter_integrates_with_prepare_usecase(
     usecase = PrepareStreamSessionUsecase(
         youtube=youtube,
         obs=FakeObsPreparationAdapter(FakeObsPreparationConfig()),
-        tts=FakeAvatarHealthAdapter(HealthStatus.HEALTHY),
-        avatar=FakeAvatarHealthAdapter(HealthStatus.HEALTHY),
+        tts=StaticPreparationHealthAdapter("tts", available=True),
+        avatar=StaticPreparationHealthAdapter("avatar", available=True),
         run_of_show=YamlRunOfShowRepository(tmp_path),
         sessions=sessions,
         publisher=InMemoryStreamPreparationPublisher(),

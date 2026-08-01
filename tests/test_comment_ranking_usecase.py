@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.adapters.streaming import (
+from subsystems.streaming.adapters.repositories import (
     InMemoryCommentCandidateRepository,
     InMemoryCommentRankingRepository,
     InMemoryCommentResponseHistoryRepository,
@@ -13,15 +13,17 @@ from app.adapters.streaming import (
     InMemoryStreamMainSegmentRepository,
     InMemoryStreamOpeningRepository,
 )
-from app.adapters.streaming.in_memory_session_repository import (
+from subsystems.streaming.adapters.repositories.in_memory_session_repository import (
     InMemoryStreamSessionRepository,
 )
-from app.config.app_config import CommentRankingSettings
-from app.plugins.youtube_streaming.application import (
+from subsystems.streaming.application import (
     CommentRankingUsecase,
     StreamLifecycleGate,
 )
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application.settings import (
+    DefaultCommentRankingSettings as CommentRankingSettings,
+)
+from subsystems.streaming.domain import (
     CommentCandidate,
     CommentRankingContext,
     StreamMainSegmentActivity,
@@ -29,7 +31,7 @@ from app.plugins.youtube_streaming.domain import (
     StreamSession,
     StreamSessionStatus,
 )
-from app.ports.comment_ranking import SemanticRankingScores
+from subsystems.streaming.ports.comment_ranking import SemanticRankingScores
 
 ACTIVE = {
     "obs_output": "active",

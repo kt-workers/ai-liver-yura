@@ -1,10 +1,9 @@
-"""Headless management API for the streaming runtime."""
+"""Core-only health, diagnostics, settings, and manual checks."""
 
 from app.admin_api.server import create_admin_api
-from app.admin_api.service import AdminApiService, EventBroker
+from app.admin_api.service import CoreAdminService
 
 __all__ = [
-    "AdminApiService",
-    "EventBroker",
+    "CoreAdminService",
     "create_admin_api",
 ]

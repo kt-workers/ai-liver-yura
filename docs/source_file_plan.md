@@ -112,12 +112,18 @@ RuntimeSupervisor / RuntimeCoordinator
 
 ## Plugin所有ソースの配置
 
-- YouTube配信固有のDomain modelは`app/plugins/youtube_streaming/domain`を正本とする
+- YouTube配信固有のDomain modelは`subsystems/streaming/domain`を正本とする
 - 配信準備、開始、進行、コメント処理、終了のApplication logicは
-  `app/plugins/youtube_streaming/application`を正本とする
+  `subsystems/streaming/application`を正本とする
+- Coreの正規接続は`app/integrations/streaming`のHTTP Gateway／Null Gateway／Event
+  Receiverとし、Subsystemの`/api/v1/integration/*`公開APIだけを利用する
+- 旧`app/plugins/youtube_streaming`、`app/adapters/streaming`、Streaming専用
+  `app/ports`はJで利用停止済みであり、正規ロジックを追加せずKで削除する
 - Coreの`app/domain`と共通`app/usecases`には、配信固有実装やPluginへの互換
   re-exportを置かない
 - CoreとのActivity/Event接続はComposition RootでShared DTOへ相互変換する
+- Streaming Adminは`subsystems/streaming/admin_api`を正規接続先とし、Core Admin APIを
+  状態取得元にしない。旧Core routeと旧環境変数aliasはKで削除する
 - Streaming DemoのResponse GeneratorはCore pipeline用Adapterに置き、Plugin側の
   手動確認ログはSharedの固定fixtureだけを参照する
 
@@ -676,7 +682,7 @@ ActionScheduler の確定仕様:
 - ActivityResultは結果種別、概要、成功状態、Actionごとの詳細データを持ち、SPEAKへ依存しない
 - 活動終了時は状態をCOMPLETEDにして現在状態から外し、次のUSER_TEXTを通常会話として扱う
 - 開始、更新、終了は`ongoing_activity_id`、活動種別、終了理由を含むINFOログへ記録する
-- しりとり固有の開始判定、単語更新、勝敗・終了判定はGames Plugin内に閉じ、Coreは共通Plugin契約だけを扱う
+- 個別機能固有の開始判定や状態更新はCoreへ埋め込まず、Coreは共通Plugin契約だけを扱う
 
 ### 中断後の話題継続・再開・転換判断
 
@@ -727,61 +733,83 @@ ActionScheduler の確定仕様:
 - EmbeddingやLLM評価はPort越しに任意利用とし、利用不能時は決定論的なフォールバックを使う
 - TopicHistoryは発話履歴、InterruptedTopicは中断判断用状態、Topic Engineは候補選定責務として区別する
 
-## Games Plugin / 複数ターンゲーム方針
+## Streaming公開通信契約方針
 
-- GameEngine、GameSession、ゲーム入力解釈、しりとり状態・ルール・進行Serviceは`app/plugins/games/`が所有する
-- Core Runtimeはゲーム固有型や「しりとり」分岐を持たず、PluginCommand、PluginActivityRequest、PluginActivityStateだけを扱う
-- GameEngineは対応ゲームの登録・一覧・対応判定と、単一GameSessionのライフサイクルだけを管理する
-- GameEngineは音声、字幕、表情、Action、CoreのOngoingActivityを直接扱わない
-- GameDefinitionはgame_type、display_name、description、supported、create_initial_stateを提供する最小抽象とする
-- 未登録またはsupported=falseのゲームは開始を拒否し、同じgame_typeの二重登録も拒否する
-- activeなGameSessionはRuntime内で最大1つとし、PLAYINGまたはPAUSEDをactiveとして扱う
-- GameSessionはsession_id、game_type、status、started_at、updated_at、ended_at、current_turn、metadata、result、end_reasonを保持する
-- GameSessionStatusはSTARTING、PLAYING、PAUSED、COMPLETED、CANCELEDとする
-- 状態遷移はSTARTING→PLAYING、PLAYING→PAUSED、PAUSED→PLAYING、PLAYING→COMPLETED、PLAYING/PAUSED→CANCELEDだけを許可する
-- COMPLETEDまたはCANCELEDからPLAYINGへ戻すことを禁止する
-- ActivityはRuntime上の実行状態、GameSessionはゲーム終了まで継続するゲーム状態として分離する
-- Coreへ渡すActivityは共通`PLUGIN_ACTIVITY`とし、`plugin_session_id`でPlugin Sessionを参照して既存のAction・字幕・音声・表情経路を利用する
-- Activityの完了・中断・再生成だけではGameSessionを終了しない
-- GameEngineはGames Plugin初期化時に一度だけ生成し、Plugin内部の各ゲームコンポーネントが同一インスタンスを参照する
-- Sessionの開始・一時停止・再開・完了・キャンセルはprevious_status、new_status、reasonを含む構造化ログへ記録する
-- しりとりはShiritoriGameDefinitionとしてFactoryで登録し、GameEngineの共通Session基盤を利用する
-- 自然言語からのゲーム開始判定と、ゲーム入力・通常会話の分類はGames PluginのIntent Interpreterが扱う
+- `app/integrations/streaming/`をCore、Streaming Subsystem、Streaming Adminが共有するPython参照契約とする
+- status、health、capability、comment、Operation request／result、Event Envelope、error、version、cursor、idempotency keyだけを公開する
+- Query、Command、Eventを分離し、Operation受付と実行完了を同一視しない
+- 公開DTOへYouTube／OBS／Google API、Core Runtime、Admin API、transportの具象型を含めない
+- 現在versionは`1.0`とし、同一majorのoptional追加を互換、required削除・型変更をmajor変更とする
+- 未知fieldは無視し、未知status／error code／Event type／capabilityは文書化した安全なfallbackで扱う
+- 今回はRuntime配線、Streaming処理移動、外部schema、server、Config／Secret変更を行わない
 
-### しりとり詳細設計
+## Streaming Subsystemプロセス外枠方針
 
-- ShiritoriStateはcurrent_turn、last_word、expected_head、used_words、turn_count、winner、loser、end_reasonを保持する
-- 手番はUSERとAIを区別し、開始時に指定可能、既定はAI先攻とする
-- ユーザー単語はGames PluginのCommand HandlerからServiceへ渡す
-- AI単語はPlugin内部の一時ActivityとPlugin専用Promptを使い、注入されたLLM Gatewayで生成する
-- GameEngineやShiritoriGameDefinitionからLLM、Action、音声、字幕、表情を直接呼ばない
-- AI生成時は既存の人格・品質Promptに、ルール、期待文字、使用済み単語、感情スナップショットを追加する
-- LLM出力はgame_action、word、utteranceを持つJSONとし、状態更新にはwordだけ、SPEAKにはutteranceだけを使う
-- JSON解析失敗、空単語、手番違反、開始文字違反、重複、`ん`終端は採用せず、最大3回まで再生成する
-- 上限後は期待文字に合う安全な内蔵候補を使用し、候補がなければAI降参としてSessionを完了する
-- ユーザーの`ん`終端はAI勝利、AI降参はユーザー勝利とし、winner、loser、end_reasonをSession結果へ保存する
-- ユーザーまたはAIの正常手ごとにlast_word、expected_head、used_words、current_turn、turn_count、updated_atを更新する
+- `subsystems/streaming/`をCoreと独立したpackageとし、許可するapp依存を`app.integrations.streaming`公開契約に限定する
+- `api`、`application`、`domain`、`adapters`、`bootstrap`の責務を分離する
+- 初期実装は外部I/OのないFake Runtimeだけを使用し、IDLEから準備・開始・停止の最小遷移を提供する
+- idempotency cache、sequence／cursor付きEvent queueはFake instance内memoryに限定する
+- `python -m subsystems.streaming --check`をハングしない独立起動smokeとする
+- 今回はCore Runtime配線、server、実配信処理、Admin、Config、Secret、DBを変更しない
 
-単語正規化:
+## YouTube Subsystem移行方針
 
-- Unicode NFKC正規化後、前後・全角を含む空白、句読点、括弧、引用符を除去する
-- カタカナはひらがなへ変換し、ユーザーとAIで同じ正規化・検証関数を使う
-- headは先頭の基本かなを使い、`キャベツ`は`き`として扱う
-- tailの小書き文字は大書きへ寄せ、`きゅ`は`ゆ`として扱う
-- 末尾の長音符は読み飛ばして直前かなを使用し、`ミネラルウォーター`は`た`として扱う
-- 今回は辞書APIによる実在語判定、形態素解析、複合語・固有名詞の網羅的例外処理を行わない
+- YouTube API、OAuth、broadcast／stream、Live Chat transport、error mapping、Fake実装の正本を`subsystems/streaming/adapters/youtube/`へ移す
+- YouTube設定Adapterは`subsystems/streaming/config/youtube.py`で所有し、既存Core Configを互換入力として当面維持する
+- 公開Comment、Status、Operation result、Errorは`app.integrations.streaming`へ正規化し、Google raw response／credential／SDK例外を外へ出さない
+- 旧`app/adapters/youtube/**`、YouTube Fake、関連Port／Domain DTO pathは新pathへの一方向re-exportとして一時維持する
+- Core Runtime／bootstrapはGoogle SDKを直接importせず、Subsystem composition rootがFake／Google／disabled bundleを選択する
+- Session、Run of Show、Admin、Core Gateway、旧Plugin削除は後続工程とする
 
-検証結果:
+## OBS Subsystem移行方針
 
-- valid、invalid_head、already_used、ends_with_n、not_user_turn、not_ai_turn、game_finished、invalid_wordを区別する
-- 終了済みSessionへの追加入力はgame_finishedとして拒否する
-- 自然言語の終了判定は行わず、cancelまたはsurrenderの明示メソッドを使う
+- OBS WebSocket client、配信開始／停止、状態取得、Scene／Input操作、error mapping、Fake／disabled実装の正本を`subsystems/streaming/adapters/obs/`へ移す
+- OBS設定境界は`subsystems/streaming/config/obs.py`で所有し、password値は環境変数からclient生成時だけ読み込む
+- OBS内部状態と例外は`app.integrations.streaming`の中立Status／Health／Errorへ正規化し、SDK responseやcredentialを公開しない
+- OBS bundleとYouTube bundleは独立構築し、一方がdisabledでも他方を利用できる
+- 旧`app/adapters/obs/**`とOBS Fake pathは新pathへの一方向re-exportとして一時維持する
+- Core Config／Secret最終移動、Session、Run of Show、Admin、Core Gateway、旧Plugin削除は後続工程とする
 
-ログと記憶:
+## Streaming TTS／Avatar Health抽象化方針
 
-- session初期化、ユーザー検証、AI生成要求・拒否・採用、ターン更新、完了、フォールバックを構造化ログへ記録する
-- Prompt全文やユーザー長文は通常のINFOログへ出さず、設定で許可したDEBUGログだけへ記録する
-- PluginActivityRequestのMemoryPolicyでtopic memory等を抑止し、各単語と発話を通常会話の記憶へ混入させない
+- `app/integrations/streaming/dependency_health.py`をTTS／Avatar可用性の中立公開契約とする
+- `subsystems/streaming/adapters/dependency_health/`はNull／Static／Composite Providerを所有し、Core具象やSDKをimportしない
+- 未接続を`disconnected`として返し、TTS／Avatarの劣化だけでSubsystem本体をunhealthyにしない
+- 利用可能な依存だけを`tts_available`／`avatar_available` capabilityへ反映する
+- metadataへVOICEVOX／Live2D固有設定、SDK response、credentialを含めない
+- 音声合成・再生、Live2D rendering・操作、実Health配線、Config／Secret、Session／Admin移動は後続工程とする
+
+## Streaming Config／Secret移行方針
+
+- `subsystems/streaming/config/models.py`をYouTube／OBS設定rootとSecret参照名の正本とする
+- `loader.py`と`environment.py`はSubsystem専用YAML、型変換、default、未知key拒否、environment overrideを所有する
+- `secrets.py`はEnvironment／Static／Null／Composite Providerを所有し、Secret値をConfig、repr、例外、公開metadataへ出さない
+- `validation.py`はFake／disabledをSecret不要、Google／OBS WebSocketを選んだ場合だけSecret必須としてSDK load前に検証する
+- `bootstrap/composition_root.py`はSubsystem ConfigとSecretProviderからYouTube／OBS bundleを独立構築し、Core Configをimportしない
+- `app/config/streaming_compat.py`は旧Core ConfigからSubsystem DTOへの一方向互換変換だけを行う
+- 旧Core Streaming ConfigはRuntime／Adminの移行が未完了のためH〜Kまで維持し、逆変換や二重同期を追加しない
+- `config/subsystems/streaming.yaml`とexampleにはSecret参照名だけを置き、credential JSON、token cache、password実値を置かない
+
+## Streaming旧path互換整理方針
+
+- repository内部のYouTube／OBS Adapter参照は`subsystems/streaming/adapters/`を正規pathとする
+- 利用ゼロとなった旧個別module wrapperは削除し、削除済みpathのimport失敗を境界テストで固定する
+- `app/adapters/youtube`と`app/adapters/obs`はKまでpackage-level一方向re-exportだけを維持する
+- wrapperは独自factory、validation、Secret解決、SDK初期化、network I/O、mutable stateを持たない
+- `app/plugins/youtube_streaming`、Streaming専用Port、bootstrap、runtime factoryはH〜Jの利用者を移した後にKで削除する
+- `app/config/streaming_compat.py`は旧Core設定からSubsystem DTOへの一方向変換としてKまで維持する
+- 旧Adapter参照と旧bootstrap参照のallowlistをテストで固定し、新規負債の増加を禁止する
+
+## Game Subsystem Integration方針
+
+- 旧`app/plugins/games/`としりとり専用実装は物理削除し、Core内に互換入口を残さない
+- Coreはゲーム固有Activity、Intent、Command、Session、State、Capabilityを認識しない
+- 「しりとりしよう」などの入力は専用Sessionを開始せず、通常会話経路へフォールバックする
+- CoreのPlugin Manager、Loader、Capability、Command、Intent、Activity、ongoing activity同期は汎用基盤として維持する
+- `app/integrations/games/`にはstatus、汎用Command／Event DTO、Gateway Protocol、Null Gatewayだけを置く
+- `subsystems/games/`には将来の独立Subsystemと外部向け契約の説明だけを置き、ゲーム実装は追加しない
+- Game Subsystemは旧Games Pluginを移植せず、Core外の独立Subsystemとして新規実装する
+- 接続利用者がない間はRuntimeへGatewayを注入せず、未接続を正常な`DISCONNECTED`状態として扱う
 
 ### コンソール入力のデコード障害
 
@@ -1553,18 +1581,6 @@ pytest
 - 音声認識入力 Adapter の追加
 - Web管理画面から Runtime の start / stop を操作する機能
 
-## Games Pluginの入力分類と実行
-
-- `app/plugins/games/intent/`: 開始・継続・制御・通常会話を区別する決定論的判定、LLMフォールバック、Parser、Validator
-- `app/plugins/games/engine.py`と`session.py`: ゲームSessionのライフサイクルと状態の正本
-- `app/plugins/games/shiritori/`: しりとりの状態、ルール、進行Service、専用Prompt
-- `app/plugins/games/plugin.py`: 共通Command/Result/ActivityStateへの変換、失敗時rollback、Capability縮退
-- `app/runtime/runtime_coordinator.py`: Plugin共通契約に基づく実行とOngoingActivity同期だけを担当する
-- GameSessionをゲーム状態の唯一の正本とし、開始要求・AI初手・ゲーム内単語はtopic memoryから除外する
-- `app/__main__.py`: ConsoleInputReceiverを`RuntimeCoordinator.submit_user_text`へ接続する本番入口
-- 本番RuntimeFactoryはGames Pluginを登録し、ゲーム内部コンポーネントの生成はPlugin初期化へ委ねる
-- 本番Factory経由テストでは公開入力APIから3手以上進行し、Plugin Session IDとOngoingActivity IDの継続を確認する
-
 ## Plugin構成
 
 - `app/shared/contracts/plugins/runtime/`: 常駐Runtime PluginのContext、Capability、汎用Command/Result契約
@@ -1575,10 +1591,6 @@ pytest
 - `app/shared/plugin_host/`: 汎用PluginRegistryとCommand / Query / Activity Dispatcher
 - `app/shared/observability/`: bounded replayを持つ実装非依存ApplicationEventBroker
 - `app/core/plugins/`: Runtime PluginManager、CapabilityRegistryと旧import互換入口。契約の正本は置かない
-- `app/plugins/games/plugin.py`: Games Pluginの初期化、Intent公開境界、Command実行、ActivityRequest変換
-- Games Plugin内のLLM要求と生成作業は`PluginLlmRequest` / `PluginActivityWorkItem`を使い、composition rootだけがCore Activityへ変換する
-- Games Pluginの観測ログはShared `PluginLogger`を使い、Core TraceContextへ依存しない
-- `app/plugins/games/intent/`: GameIntentCommand、意味解析Prompt、JSON Parser、Validator
 - `app/plugins/llm_provider/`: 役割別ResponseGenerator Adapterを`llm.provider.<role>` Capabilityとして公開し、障害時は当該ProviderのCapabilityだけを解除する
 - LLM Provider PluginはSharedの`ResponseGenerationGateway`だけを受け取り、Core Activity型や旧ResponseGenerator Portをimportしない
 - default / situation_evaluator / character / response_validatorは独立Providerとして登録し、役割ごとの障害を隔離する
@@ -1587,14 +1599,12 @@ pytest
 - `app/plugins/voice_output/`: Sharedの表現・出力契約だけに依存し、合成・再生障害時に`output.speech`を解除する
 - Pluginの`capabilities`はManifest相当の提供可能性宣言、`available_capabilities`は初期化・設定・依存・Provider健全性を反映した現在値として区別する
 - CapabilityRegistryは許可リスト方式でCapability単位に登録・解除・Provider解決を行い、未対応機能一覧や拒否リストは持たない
-- disabled、初期化失敗、停止、依存・Health喪失時は該当Capabilityを解除する。Games PluginはLLM Provider不在時に実行Capabilityを登録しない
+- disabled、初期化失敗、停止、依存・Health喪失時は該当Capabilityを解除する
 - RuntimeCoordinatorは現在使用可能なCapabilityからInterpreter/Handlerを取得し、Command実行直前にも同じPluginのCapabilityを再検証する
 - 実行要求に一致するCapabilityがなければ通常会話へ戻し、実行したふりと内部用語を禁止する制約をPromptへ渡す。知識質問・過去・否定・雑談は機能不在を理由に拒否しない
 - 未知の要求でも仮Capabilityを生成せず、安全な通常会話へ戻す。代替案は現在可能なものを最大一つに限定する
 - ActionPlannerは`prepared_response_text`とPlugin MemoryPolicyを汎用的に適用する
-- `plugins.games.enabled`でゲーム機能をCore変更なしに無効化できる
 - 将来別Pythonパッケージへ分離する場合も、`app/shared`の契約とGatewayだけを依存境界とする
-- mixed入力は構造化までとし、ゲーム進行と雑談応答の統合は次工程で実装する
 
 ## Behavior Planner・Situation Evaluator・Character LLM
 
@@ -1696,3 +1706,9 @@ LLMロール:
 - `ActionPlanner`はCharacter LLM出力を直接信用せず、検証済みResponseをActionPlanGroupへ変換する
 - `RuntimeCoordinator`は個別機能判定を持たず、各Service・Registry・Loopの接続と実行調停へ寄せる
 - `OngoingActivity`は複数Turnの目的と状態を保持し、各Turnの実行結果はActivity Resultとして記録する
+## Streaming Subsystem移行完了（2026-08-01）
+
+A〜Kの全15工程（15/15）が完了し、残りは0。Coreの正規接続境界は
+`app/integrations/streaming/**`、配信実装は`subsystems/streaming/**`、管理画面は
+`gui/yura-streaming-admin/**`からStreaming Subsystem Admin APIへ接続する。
+旧Streaming Plugin、Core側Adapter、専用Port、bootstrap、Config、Admin互換は削除済み。

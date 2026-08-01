@@ -2,15 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from app.adapters.streaming import (
+from subsystems.streaming.adapters.repositories import (
     InMemoryStreamMainSegmentRepository,
     InMemoryStreamOpeningRepository,
-)
-from app.adapters.streaming.in_memory_session_repository import (
     InMemoryStreamSessionRepository,
 )
-from app.plugins.youtube_streaming.application import StreamLifecycleGate
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application import StreamLifecycleGate
+from subsystems.streaming.domain import (
     LifecycleOperation,
     StreamLifecycleClass,
     StreamOpeningActivity,

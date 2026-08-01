@@ -7,13 +7,10 @@ typed settings boundary.
 
 from app.bootstrap.emotion_runtime import create_runtime_coordinator
 from app.bootstrap.runtime import (
-    StreamPreparationRuntime,
     create_audio_player,
     create_character_profile,
     create_memory_summary_generator,
     create_speech_synthesizer,
-    create_stream_preparation_runtime,
-    create_streaming_demo_config,
 )
 from app.bootstrap.typed_runtime_adapters import (
     create_embedding_generator,
@@ -24,7 +21,6 @@ from app.bootstrap.typed_runtime_adapters import (
 )
 
 __all__ = [
-    "StreamPreparationRuntime",
     "create_audio_player",
     "create_character_profile",
     "create_embedding_generator",
@@ -33,8 +29,6 @@ __all__ = [
     "create_response_generator",
     "create_runtime_coordinator",
     "create_speech_synthesizer",
-    "create_stream_preparation_runtime",
-    "create_streaming_demo_config",
     "create_topic_classifier",
     "create_topic_memory_store",
 ]
