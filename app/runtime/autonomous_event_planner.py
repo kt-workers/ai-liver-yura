@@ -18,6 +18,7 @@ from app.runtime.autonomous_activity_policy import AutonomousActivityPolicy
 from app.runtime.autonomous_motivation_context import AutonomousMotivationContextBuilder
 from app.runtime.autonomous_plan_state import AutonomousPlanState
 from app.runtime.conversation_resume_state import ConversationResumeState
+from app.runtime.response_content_planner import ResponseContentPlanner
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +49,7 @@ class AutonomousEventPlanner:
         pending_confirmation_provider: Callable[[], bool],
         conversation_idle_timeout_seconds: float,
         motivation_context_builder: AutonomousMotivationContextBuilder | None = None,
+        response_content_planner: ResponseContentPlanner | None = None,
     ) -> None:
         self._activity_manager = activity_manager
         self._autonomous_activity_policy = autonomous_activity_policy
@@ -59,6 +61,9 @@ class AutonomousEventPlanner:
         )
         self._motivation_context_builder = (
             motivation_context_builder or AutonomousMotivationContextBuilder()
+        )
+        self._response_content_planner = (
+            response_content_planner or ResponseContentPlanner()
         )
 
     def plan(
@@ -241,10 +246,19 @@ class AutonomousEventPlanner:
             )
 
         motivation = self._motivation_context_builder.build(state)
+        moral_value = motivation.get("moral")
+        moral = moral_value if isinstance(moral_value, dict) else {}
+        response_content_plan = self._response_content_planner.build(
+            motivation=motivation,
+            moral=moral,
+        )
         payload: dict[str, Any] = {
             "reason": "internal_drive",
             "drive": state.current_drive.strongest_drive_name(),
             "motivation": motivation,
+            "memory": {
+                "response_content_plan": response_content_plan.as_context(),
+            },
             "autonomous_planned_for": now.isoformat(),
             "interaction_environment": {
                 "observation_source": "internal_state",
