@@ -210,6 +210,14 @@ YouTube／OBS Adapterのrepository内部参照は`subsystems.streaming.adapters`
 削除工程を明示して維持する。Subsystemからこれら旧Core pathへのimportを禁止し、
 wrapper import時に外部SDK、network、Secret解決、Runtime起動を発生させない。
 
+### 4.11 Core Streaming Integration境界
+
+Coreは`app.integrations.streaming`のGateway、Client、DTO、Event Mapperだけを使用する。
+本番Clientは`/api/v1/integration/*`へHTTP接続し、テスト時だけin-process clientを許可する。
+endpoint未設定時はNull Gatewayで起動し、接続断はbounded backoffで処理してCoreの他Loopを
+止めない。CoreはYouTube／OBS SDK、Subsystem Domain／Application／Adapter、Admin read
+model、Streaming Config／Secretをimportしない。
+
 ## 5. Game Subsystem
 
 ### 5.1 方針

@@ -278,6 +278,9 @@ Streaming AdminをCore Admin APIやRuntime dataclassではなくStreaming Subsys
 
 ## 12. J: Core側Streaming Integrationへ置換
 
+> **完了。** Coreの正規経路をHTTP Gateway／Null Gateway／Event Receiverへ置換し、
+> Subsystem公開APIとCore Runtimeのプロセス境界を確立した。
+
 ### 目的
 
 Coreに残るStreaming依存を薄いClient／Gateway／Event Mapperへ置き換える。
@@ -344,5 +347,6 @@ feature/plugin-separation-development
 
 ## 15. 次の作業
 
-全15工程のうちA〜Iの13工程が完了した。残りはJ、Kの2工程である。
-次工程ではJとしてCore側Streaming IntegrationをGateway／Clientへ置換する。
+全15工程のうちA〜Jの14工程が完了した。残りはKの1工程である。
+次工程ではKとして利用停止済みの旧Plugin、Port、Adapter wrapper、bootstrap、Config互換、
+Core Admin Streaming route、Admin client互換を物理削除する。

@@ -101,11 +101,18 @@ live chat参照、OAuth情報、credential、raw SDK responseを公開しない�
 
 ## 9. 対象外
 
-- Streaming Subsystem entrypoint、HTTP API、WebSocket、IPC
+- WebSocket、IPC transport
 - YouTube API、OBS WebSocket、OAuth、Live Chat pollingの移動
 - 配信Session、Run of Show、DB
 - Subsystem内部Config／Secretの公開schema化（内部実装と移動はG4で完了）
 - Streaming Admin接続先変更（工程Iで完了。HTTP／SSE transportはSubsystem Admin Adapter）
-- Core RuntimeへのClient配線
+- Core RuntimeへのClient配線（工程Jで完了）
 - 旧Streaming Pluginの削除・Factory化
-- schema serializer／decoder、idempotency保存機構
+- idempotency保存機構
+
+## 10. HTTP参照transport
+
+工程Jで`/api/v1/integration/*`を公開し、version、status、health、capability、dependency
+health、operation、cursor付きevent snapshotをv1.0 DTOへ直列化する。Coreの
+`HttpStreamingClient`はraw JSONをGateway外へ漏らさず、unknown値を公開契約のpolicyで
+正規化する。Admin diagnostics／settings／Session read modelはこのtransportに含めない。
