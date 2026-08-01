@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 
 from app.domain.behavior import BehaviorPlanningContext
-from app.domain.morals import MoralActivityCandidateEvaluator
+from app.domain.morals import (
+    MoralActivityCandidateEvaluator,
+    MoralActivityCandidatePreferenceShadowEvaluator,
+)
 from app.domain.motivation import MotivationActivityCandidateRanker
 
 
@@ -14,10 +17,17 @@ class SituationEvaluatorPromptBuilder:
         self,
         candidate_ranker: MotivationActivityCandidateRanker | None = None,
         moral_candidate_evaluator: MoralActivityCandidateEvaluator | None = None,
+        moral_preference_shadow_evaluator: (
+            MoralActivityCandidatePreferenceShadowEvaluator | None
+        ) = None,
     ) -> None:
         self._candidate_ranker = candidate_ranker or MotivationActivityCandidateRanker()
         self._moral_candidate_evaluator = (
             moral_candidate_evaluator or MoralActivityCandidateEvaluator()
+        )
+        self._moral_preference_shadow_evaluator = (
+            moral_preference_shadow_evaluator
+            or MoralActivityCandidatePreferenceShadowEvaluator()
         )
 
     def build(self, context: BehaviorPlanningContext) -> str:
@@ -49,6 +59,14 @@ class SituationEvaluatorPromptBuilder:
         moral_fit_by_activity = {
             fit.activity_type: fit.as_context() for fit in moral_fits
         }
+        moral_preference_shadow = (
+            self._moral_preference_shadow_evaluator.evaluate(
+                ranking.definitions,
+                moral_fits,
+                ranking.as_context(),
+                context.moral,
+            )
+        )
         candidates = [
             {
                 "activity_type": item.activity_type,
@@ -100,6 +118,9 @@ class SituationEvaluatorPromptBuilder:
             "activity_candidate_moral_fits": [
                 fit.as_context() for fit in moral_fits
             ],
+            "moral_candidate_preference_shadow": (
+                moral_preference_shadow.as_context()
+            ),
             "conversation_history": list(context.conversation_history),
             "memory": context.memory,
             "related_knowledge": list(context.related_knowledge),
@@ -132,6 +153,7 @@ class SituationEvaluatorPromptBuilder:
                 "Motivation候補選好は、意味的に妥当な候補が複数ある場合の補助的な優先情報としてだけ使用してください。",
                 "Motivationを理由に候補外Activityを生成したり、Authority・Capability・Constraintの検証結果を推測したりしないでください。",
                 "Moral Profile、Moral State、moral_fitは観測専用です。現段階では候補の選択、並べ替え、禁止、抑制へ使用しないでください。",
+                "Moral preference shadowは診断専用です。current_orderを変更せず、hypothetical_order、preferred_activity_type、static_eligibleをActivity選択へ使用しないでください。",
                 "# 判断入力",
                 json.dumps(planning_input, ensure_ascii=False, default=str),
                 "# 出力JSONスキーマ",
