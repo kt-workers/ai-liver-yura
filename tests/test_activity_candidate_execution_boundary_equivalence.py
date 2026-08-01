@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from app.domain.behavior import ActivityDefinition, ActivityOperation
+import pytest
+
+from app.domain.behavior import (
+    ActivityAuthorityRequirement,
+    ActivityDefinition,
+    ActivityOperation,
+)
 from app.domain.morals import (
     ActivityCandidateExecutionBoundaryEquivalenceEvaluator,
     ExecutionBoundaryEquivalenceStatus,
@@ -13,6 +19,7 @@ def _definition(
     required_capability: str | None = "activity.execute",
     schema_version: str = "1",
     constraints_schema: dict[str, object] | None = None,
+    authority_requirement: ActivityAuthorityRequirement | None = None,
 ) -> ActivityDefinition:
     return ActivityDefinition(
         activity_type=activity_type,
@@ -30,7 +37,69 @@ def _definition(
             }
         ),
         constraints_schema_version=schema_version,
+        authority_requirement=authority_requirement,
     )
+
+
+def _user_authority_requirement() -> ActivityAuthorityRequirement:
+    return ActivityAuthorityRequirement(
+        policy_id="core.user_activity.v1",
+        allowed_roles=("administrator", "user", "viewer"),
+        trusted_instruction_required=False,
+    )
+
+
+def test_authority_requirement_normalizes_stable_contract_values() -> None:
+    requirement = ActivityAuthorityRequirement(
+        policy_id="  core.user_activity.v1  ",
+        allowed_roles=("Viewer", " administrator ", "USER"),
+    )
+
+    assert requirement.policy_id == "core.user_activity.v1"
+    assert requirement.allowed_roles == ("administrator", "user", "viewer")
+    assert requirement.permits(" viewer ", False) is True
+    assert requirement.permits("system", True) is False
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "error_type"),
+    [
+        (
+            {
+                "policy_id": "",
+                "allowed_roles": ("user",),
+            },
+            ValueError,
+        ),
+        (
+            {
+                "policy_id": "policy",
+                "allowed_roles": (),
+            },
+            ValueError,
+        ),
+        (
+            {
+                "policy_id": "policy",
+                "allowed_roles": ("user", "USER"),
+            },
+            ValueError,
+        ),
+        (
+            {
+                "policy_id": "policy",
+                "allowed_roles": ["user"],
+            },
+            TypeError,
+        ),
+    ],
+)
+def test_authority_requirement_rejects_ambiguous_contract(
+    kwargs: dict[str, object],
+    error_type: type[Exception],
+) -> None:
+    with pytest.raises(error_type):
+        ActivityAuthorityRequirement(**kwargs)  # type: ignore[arg-type]
 
 
 def test_equal_capability_and_constraint_are_confirmed_independently() -> None:
@@ -54,10 +123,98 @@ def test_equal_capability_and_constraint_are_confirmed_independently() -> None:
     assert result.safety.status is ExecutionBoundaryEquivalenceStatus.UNCONFIRMED
     assert result.status is ExecutionBoundaryEquivalenceStatus.UNCONFIRMED
     assert result.confirmed is False
+    assert result.authority.candidate_requirement_contract_available is False
     assert result.capability.availability == (
         ("activity_a", True),
         ("activity_b", True),
     )
+
+
+def test_equal_explicit_authority_requirements_are_confirmed_independently() -> None:
+    evaluator = ActivityCandidateExecutionBoundaryEquivalenceEvaluator()
+    definitions = (
+        _definition("activity_a", authority_requirement=_user_authority_requirement()),
+        _definition(
+            "activity_b",
+            authority_requirement=ActivityAuthorityRequirement(
+                policy_id="core.user_activity.v1",
+                allowed_roles=("viewer", "user", "administrator"),
+            ),
+        ),
+    )
+
+    result = evaluator.evaluate(
+        definitions,
+        ("activity_a", "activity_b"),
+        authority_role="viewer",
+        instruction_trusted=False,
+        available_capabilities=frozenset({"activity.execute"}),
+    )
+
+    assert result.authority.status is ExecutionBoundaryEquivalenceStatus.CONFIRMED
+    assert result.authority.candidate_requirement_contract_available is True
+    assert tuple(
+        candidate.current_request_authorized
+        for candidate in result.authority.candidates
+    ) == (True, True)
+    assert result.status is ExecutionBoundaryEquivalenceStatus.UNCONFIRMED
+    assert result.safety.status is ExecutionBoundaryEquivalenceStatus.UNCONFIRMED
+
+
+def test_different_authority_requirements_reject_boundary_equivalence() -> None:
+    evaluator = ActivityCandidateExecutionBoundaryEquivalenceEvaluator()
+    definitions = (
+        _definition("activity_a", authority_requirement=_user_authority_requirement()),
+        _definition(
+            "activity_b",
+            authority_requirement=ActivityAuthorityRequirement(
+                policy_id="core.administrator_activity.v1",
+                allowed_roles=("administrator",),
+                trusted_instruction_required=True,
+            ),
+        ),
+    )
+
+    result = evaluator.evaluate(
+        definitions,
+        ("activity_a", "activity_b"),
+        authority_role="administrator",
+        instruction_trusted=True,
+        available_capabilities=frozenset({"activity.execute"}),
+    )
+
+    assert result.authority.status is ExecutionBoundaryEquivalenceStatus.REJECTED
+    assert result.status is ExecutionBoundaryEquivalenceStatus.REJECTED
+    assert result.authority.candidate_requirement_contract_available is True
+    assert "authority_requirement_differs" in result.authority.reasons
+
+
+def test_current_authorization_does_not_replace_requirement_equivalence() -> None:
+    evaluator = ActivityCandidateExecutionBoundaryEquivalenceEvaluator()
+    trusted_requirement = ActivityAuthorityRequirement(
+        policy_id="core.trusted_instruction.v1",
+        allowed_roles=("administrator",),
+        trusted_instruction_required=True,
+    )
+    definitions = (
+        _definition("activity_a", authority_requirement=trusted_requirement),
+        _definition("activity_b", authority_requirement=trusted_requirement),
+    )
+
+    result = evaluator.evaluate(
+        definitions,
+        ("activity_a", "activity_b"),
+        authority_role="administrator",
+        instruction_trusted=False,
+        available_capabilities=frozenset({"activity.execute"}),
+    )
+
+    assert result.authority.status is ExecutionBoundaryEquivalenceStatus.CONFIRMED
+    assert tuple(
+        candidate.current_request_authorized
+        for candidate in result.authority.candidates
+    ) == (False, False)
+    assert result.status is ExecutionBoundaryEquivalenceStatus.UNCONFIRMED
 
 
 def test_different_required_capability_rejects_boundary_equivalence() -> None:
