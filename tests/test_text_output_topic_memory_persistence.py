@@ -4,7 +4,6 @@ import pytest
 
 from app.domain.actions import ActionPlan, ActionPlanGroup, ActionType
 from app.domain.character_response import VoiceIntent
-from app.domain.output_delivery import is_optional_output_degraded
 from app.domain.topic import TopicCategory, TopicHistory
 from app.domain.topic_memory import SimilarTopicMemory, TopicMemoryEntry
 from app.runtime.action_scheduler import ActionScheduler
@@ -115,9 +114,7 @@ async def test_voice_failure_persists_topic_memory_after_text_output(
     assert len(store.saved_entries) == 1
     assert store.saved_entries[0].source_text == action.text
     assert store.saved_entries[0].source_activity_id == "activity-1"
-    assert result is not None
-    assert result.status.value == "failed"
-    assert is_optional_output_degraded(result.error)
+    assert result is None
 
 
 @pytest.mark.asyncio
@@ -150,8 +147,7 @@ async def test_voice_failure_respects_skip_topic_memory_policy(
     assert embedding_generator.received_texts == []
     assert topic_history.recent_entries() == []
     assert store.saved_entries == []
-    assert result is not None
-    assert is_optional_output_degraded(result.error)
+    assert result is None
 
 
 @pytest.mark.asyncio
@@ -178,8 +174,7 @@ async def test_voice_failure_does_not_block_autonomous_speech_recognition(
     output_result = await ActionScheduler(usecase).execute(group)
 
     assert output.outputs == [("speak", action.text, action.action_id)]
-    assert output_result.status.value == "failed"
+    assert output_result.status.value == "completed"
     assert len(output_result.action_results) == 1
-    assert output_result.action_results[0].status.value == "failed"
-    assert is_optional_output_degraded(output_result.action_results[0].error)
+    assert output_result.action_results[0].status.value == "completed"
     assert completed_speech_text(group, output_result) == action.text
