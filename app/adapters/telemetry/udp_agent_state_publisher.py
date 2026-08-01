@@ -55,6 +55,7 @@ class UdpAgentStatePublisher:
                 "reactive": state.current_emotion.reactive.as_dict(),
             },
             "drive": asdict(state.current_drive),
+            "desire": state.current_desire.as_dict(),
             "activity": {
                 "type": (
                     state.active_activity.activity_type.value
