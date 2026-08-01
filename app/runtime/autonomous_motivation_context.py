@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-
 from app.runtime.agent_state import AgentState
 from app.runtime.motivation_appraiser import MotivationAppraiser
 
@@ -18,4 +16,4 @@ class AutonomousMotivationContextBuilder:
             state.current_desire,
             relationship,
         )
-        return asdict(appraisal)
+        return appraisal.as_context()
