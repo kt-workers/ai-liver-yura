@@ -5,7 +5,6 @@ import pytest
 from app.core.plugins import PluginContext, PluginManager
 from app.domain.actions import ActionPlan, ActionType
 from app.domain.activities import Activity
-from app.domain.activity_turn_result import ActionExecutionStatus
 from app.domain.character_response import VoiceIntent
 from app.plugins.voice_output import VoiceOutputPlugin
 from app.ports.audio_player import AudioPlayer
@@ -112,7 +111,7 @@ async def test_voice_output_failure_revokes_capability_without_stopping_core() -
 
 
 @pytest.mark.asyncio
-async def test_voice_output_failure_keeps_text_fallback_and_returns_failed_result(
+async def test_voice_output_failure_keeps_core_speech_completed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def no_sleep(_: float) -> None:
@@ -129,8 +128,7 @@ async def test_voice_output_failure_keeps_text_fallback_and_returns_failed_resul
         ActionPlan(action_type=ActionType.SPEAK, text="こんにちは")
     )
 
-    assert result is not None
-    assert result.status == ActionExecutionStatus.FAILED
+    assert result is None
     assert not manager.is_capability_available("output.speech", plugin.plugin_id)
 
 
