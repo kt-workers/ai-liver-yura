@@ -78,5 +78,5 @@ subsystems.streaming
 
 ## 6. 次工程
 
-H完了後の進捗は12/15である。次はIとしてStreaming AdminをSubsystem APIへ接続する。
-Jまでは旧Runtime compositionを薄い互換facadeとして維持し、Kでwrapperと共に削除する。
+I完了後の進捗は13/15である。次はJとしてCore側Streaming Integrationを置換する。
+旧Core Admin routeとRuntime compositionは回帰用互換として維持し、Kでwrapperと共に削除する。

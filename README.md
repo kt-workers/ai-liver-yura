@@ -36,6 +36,7 @@ cd gui/yura-inner-state-visualizer
 python3 server.py
 
 # 配信管理画面
+.venv/bin/python -m subsystems.streaming.admin_api --port 8781
 .venv/bin/python gui/yura-streaming-admin/server.py
 
 # AI Liver本体（リポジトリ直下）

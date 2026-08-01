@@ -1,15 +1,16 @@
 # Streaming Admin Web運用コンソール
 
-Coreを起動したあと、リポジトリ直下で次を実行し、
+Streaming Subsystem Admin APIを起動したあと、リポジトリ直下で次を実行し、
 <http://127.0.0.1:8780> をブラウザで開く。
 
 ```bash
+.venv/bin/python -m subsystems.streaming.admin_api --port 8781
 .venv/bin/python gui/yura-streaming-admin/server.py
 ```
 
-待受ポートは `--port` で変更できる。Core APIの接続先、トークン、タイムアウト、操作者名は
-`AI_LIVER_ADMIN_API_URL`、`AI_LIVER_ADMIN_API_TOKEN`、
-`AI_LIVER_ADMIN_API_TIMEOUT`、`AI_LIVER_ADMIN_OPERATOR` で指定する。
+待受ポートは `--port` で変更できる。Subsystem APIの接続先、トークン、タイムアウト、操作者名は
+`STREAMING_SUBSYSTEM_ADMIN_API_URL`、`STREAMING_SUBSYSTEM_ADMIN_API_TOKEN`、
+`STREAMING_SUBSYSTEM_ADMIN_API_TIMEOUT`、`STREAMING_SUBSYSTEM_ADMIN_OPERATOR` で指定する。
 
 Streaming Admin は配信制御を行うCore／UseCase／Adapterとは分離し、状態表示、操作要求、
 確認ダイアログ、診断情報の保存を担当する。ブラウザは同一オリジンのローカルWebサーバーとのみ
@@ -19,7 +20,7 @@ Streaming Admin は配信制御を行うCore／UseCase／Adapterとは分離し�
 
 - 初期表示と再接続時はRESTの`/api/v1/admin/console`を含む集約状態を取得する。
 - 実行中の変化はSSEを契機にRESTで再同期する。OBSとYouTubeは手動更新も提供する。
-- Coreが一つの状態遷移で複数イベントを発行した場合、Streaming Adminサーバーは短時間のイベントをまとめ、ブラウザへ1回の更新通知として送る。
+- Subsystemが一つの状態遷移で複数イベントを発行した場合、Streaming Adminサーバーは短時間のイベントをまとめ、ブラウザへ1回の更新通知として送る。
 - ブラウザは更新通知を受けると`/api/bootstrap`を1回取得する。SSEのheartbeatだけでは再取得しない。
 - 配信セッションが存在しない間は、開始、Opening、Main、終了、コメント関連のセッション配下APIを取得しない。
 - 状態更新時は画面全体のDOMを作り直さない。既存要素のテキスト、属性、必要な一覧だけを差分更新する。

@@ -262,6 +262,9 @@ Session、Preparation、Readiness、Lifecycle、Run of Show、Comment処理をSt
 
 ## 11. I: Streaming Admin接続先変更
 
+> 実施状況（2026-08-01）: 完了。Standalone AdminのREST／SSE接続先を
+> Streaming Subsystem Admin APIへ変更し、Coreを任意依存とした。
+
 ### 目的
 
 Streaming AdminをCore Admin APIやRuntime dataclassではなくStreaming Subsystem Admin APIへ接続する。
@@ -341,5 +344,5 @@ feature/plugin-separation-development
 
 ## 15. 次の作業
 
-全15工程のうちA〜Hの12工程が完了した。残りはI、J、Kの3工程である。
-次工程ではIとしてStreaming Adminの接続先をSubsystem APIへ変更する。
+全15工程のうちA〜Iの13工程が完了した。残りはJ、Kの2工程である。
+次工程ではJとしてCore側Streaming IntegrationをGateway／Clientへ置換する。
