@@ -271,6 +271,10 @@ Moral Profile、Moral State、moral_fitは観測専用である。
 
 Motivationによる既存候補順は変更しない。
 
+後続の`character_moral_activity_candidate_preference_shadow_design_v1.0.0.md`では、
+実際の候補順を変更せず、`current_order`と`hypothetical_order`を比較する
+Moral候補選好Shadow契約を定義する。
+
 ## 13. 自律Planning
 
 `AutonomousMotivationContextBuilder`は、現在のProfileとStateを
@@ -352,6 +356,7 @@ Motivation Appraisalへ渡す。
 1. 実ログでMoral Stateの変動幅を観測する
 2. Activity候補ごとのmoral fit分布を記録する
 3. 初期Profileと更新係数を調整する
-4. Moralを許可済み候補内の補助選好へ使う条件を設計する
-5. Moral抑制とSafety禁止を別の結果として表現する
-6. Response Content Planへ価値判断と会話戦略を投影する
+4. Moral候補選好Shadowの成立率と仮想順序差分を観測する
+5. 意味的同等性を表す型付き評価契約を追加する
+6. Moral抑制とSafety禁止を別の結果として表現する
+7. Response Content Planへ価値判断と会話戦略を投影する
