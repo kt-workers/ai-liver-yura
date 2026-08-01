@@ -6,6 +6,9 @@ from datetime import datetime
 
 from app.domain.desires import DesireState, DesireType, DesireValue
 from app.domain.events import AgentEvent, AgentEventType
+from app.runtime.activity_desire_satisfaction_evaluator import (
+    ActivityDesireSatisfactionEvaluator,
+)
 
 
 DesireDelta = tuple[float, float, float]
@@ -21,12 +24,27 @@ class DesireStateUpdater:
         DesireType.RECOGNITION: (0.01, 0.0, 0.0),
     }
 
+    def __init__(
+        self,
+        *,
+        activity_result_evaluator: ActivityDesireSatisfactionEvaluator | None = None,
+    ) -> None:
+        self._activity_result_evaluator = (
+            activity_result_evaluator or ActivityDesireSatisfactionEvaluator()
+        )
+
     def update_by_event(
         self,
         desire: DesireState,
         event: AgentEvent,
     ) -> DesireState:
         """既存Eventの意味に応じて欲望を更新する。"""
+
+        if event.event_type == AgentEventType.ACTIVITY_RESULT_RECORDED:
+            return self._apply_deltas(
+                desire,
+                self._activity_result_evaluator.evaluate(event),
+            )
 
         if event.event_type in {
             AgentEventType.USER_TEXT,
