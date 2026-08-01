@@ -17,11 +17,15 @@ from app.domain.behavior import (
 )
 from app.domain.morals import (
     ActivityCandidateSemanticEquivalenceEvidence,
+    MoralActivityCandidatePreferenceShadow,
     SemanticEquivalenceDimension,
 )
 from app.ports.llm_roles import SituationEvaluationModel
 from app.ports.prompt_builder import SituationPromptBuilder
 from app.runtime.activity_matcher_resolver import ActivityMatcherResolver
+from app.runtime.moral_activity_candidate_limited_activation import (
+    MoralActivityCandidateLimitedActivationApplier,
+)
 from app.runtime.situation_semantic_equivalence_shadow_observer import (
     SituationSemanticEquivalenceShadowObserver,
 )
@@ -43,6 +47,9 @@ class SituationEvaluator:
         semantic_equivalence_shadow_observer: (
             SituationSemanticEquivalenceShadowObserver | None
         ) = None,
+        limited_activation_applier: (
+            MoralActivityCandidateLimitedActivationApplier | None
+        ) = None,
     ) -> None:
         if not 0.0 <= confidence_threshold <= 1.0:
             raise ValueError(
@@ -63,6 +70,10 @@ class SituationEvaluator:
         self._semantic_equivalence_shadow_observer = (
             semantic_equivalence_shadow_observer
             or SituationSemanticEquivalenceShadowObserver()
+        )
+        self._limited_activation_applier = (
+            limited_activation_applier
+            or MoralActivityCandidateLimitedActivationApplier()
         )
         self._trace_logger = TraceLogger()
 
@@ -294,7 +305,12 @@ class SituationEvaluator:
                     reason="semantic_confidence_below_threshold",
                     semantic_equivalence_evidence=None,
                 )
-            self._observe_semantic_equivalence(context, analysis)
+            shadow = self._observe_semantic_equivalence(context, analysis)
+            analysis, _ = self._limited_activation_applier.apply(
+                context,
+                analysis,
+                shadow,
+            )
             return analysis
         return None
 
@@ -549,11 +565,14 @@ class SituationEvaluator:
         self,
         context: BehaviorPlanningContext,
         analysis: SituationAnalysis,
-    ) -> None:
+    ) -> MoralActivityCandidatePreferenceShadow | None:
         if analysis.semantic_equivalence_evidence is None:
-            return
+            return None
         try:
-            self._semantic_equivalence_shadow_observer.observe(context, analysis)
+            return self._semantic_equivalence_shadow_observer.observe(
+                context,
+                analysis,
+            )
         except Exception as error:
             self._trace_logger.warning(
                 "situation_evaluator:semantic_equivalence_shadow_failed",
@@ -563,6 +582,7 @@ class SituationEvaluator:
                 ),
                 error_type=type(error).__name__,
             )
+            return None
 
     @staticmethod
     def _candidate_definitions(
