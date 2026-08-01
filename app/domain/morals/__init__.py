@@ -6,6 +6,7 @@ from app.domain.morals.activity_candidate_execution_boundary_equivalence import 
     CapabilityEquivalenceAssessment,
     ConstraintEquivalenceAssessment,
     ExecutionBoundaryEquivalenceStatus,
+    SafetyCandidateAssessment,
     SafetyEquivalenceAssessment,
 )
 from app.domain.morals.activity_candidate_fit import (
@@ -47,6 +48,7 @@ __all__ = [
     "MoralComposite",
     "MoralProfile",
     "MoralState",
+    "SafetyCandidateAssessment",
     "SafetyEquivalenceAssessment",
     "SemanticEquivalenceDimension",
     "SemanticEquivalenceStatus",
