@@ -3,6 +3,7 @@ from app.domain.activities import Activity, ActivityType
 from app.domain.desires import DesireState, DesireType, DesireValue
 from app.domain.drives import DriveState
 from app.domain.emotions import EmotionState, MoodType
+from app.domain.morals import MoralProfile, MoralState
 from app.runtime import AgentState
 
 
@@ -16,6 +17,8 @@ def test_agent_state_has_default_values() -> None:
     assert agent_state.prepared_actions == []
     assert agent_state.current_drive == DriveState()
     assert agent_state.current_desire == DesireState()
+    assert agent_state.moral_profile == MoralProfile()
+    assert agent_state.current_moral == MoralState.from_profile(MoralProfile())
     assert agent_state.memory.episodic == ()
     assert agent_state.attention_target is None
     assert agent_state.stream_status == "idle"
@@ -57,6 +60,16 @@ def test_agent_state_can_update_desire() -> None:
     agent_state = AgentState().with_desire(desire)
 
     assert agent_state.current_desire == desire
+
+
+def test_agent_state_can_update_moral_without_changing_profile() -> None:
+    state = AgentState()
+    moral = state.current_moral.adjusted(guilt=0.2)
+
+    updated = state.with_moral(moral)
+
+    assert updated.current_moral == moral
+    assert updated.moral_profile == state.moral_profile
 
 
 def test_agent_state_can_update_prepared_actions() -> None:
