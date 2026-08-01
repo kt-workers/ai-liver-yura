@@ -3,6 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
+from app.domain.morals.activity_candidate_execution_boundary_equivalence import (
+    ActivityCandidateExecutionBoundaryEquivalenceAssessment,
+)
 from app.domain.morals.activity_candidate_fit import MoralActivityCandidateFit
 from app.domain.morals.activity_candidate_semantic_equivalence import (
     ActivityCandidateSemanticEquivalenceAssessment,
@@ -30,11 +33,20 @@ class MoralActivityCandidatePreferenceShadow:
     semantic_equivalence: ActivityCandidateSemanticEquivalenceAssessment = field(
         default_factory=ActivityCandidateSemanticEquivalenceAssessment
     )
+    execution_boundary_equivalence: (
+        ActivityCandidateExecutionBoundaryEquivalenceAssessment
+    ) = field(
+        default_factory=ActivityCandidateExecutionBoundaryEquivalenceAssessment
+    )
     reasons: tuple[str, ...] = ()
 
     @property
     def semantic_equivalence_confirmed(self) -> bool:
         return self.semantic_equivalence.confirmed
+
+    @property
+    def execution_boundary_equivalence_confirmed(self) -> bool:
+        return self.execution_boundary_equivalence.confirmed
 
     def as_context(self) -> dict[str, object]:
         return {
@@ -42,6 +54,9 @@ class MoralActivityCandidatePreferenceShadow:
             "static_eligible": self.static_eligible,
             "semantic_equivalence_confirmed": (
                 self.semantic_equivalence_confirmed
+            ),
+            "execution_boundary_equivalence_confirmed": (
+                self.execution_boundary_equivalence_confirmed
             ),
             "activation_permitted": self.activation_permitted,
             "preferred_activity_type": self.preferred_activity_type,
@@ -52,6 +67,9 @@ class MoralActivityCandidatePreferenceShadow:
             "runner_up_fit": self.runner_up_fit,
             "fit_margin": self.fit_margin,
             "semantic_equivalence": self.semantic_equivalence.as_context(),
+            "execution_boundary_equivalence": (
+                self.execution_boundary_equivalence.as_context()
+            ),
             "reasons": list(self.reasons),
         }
 
