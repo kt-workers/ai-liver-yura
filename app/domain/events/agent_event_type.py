@@ -16,6 +16,7 @@ class AgentEventType(str, Enum):
     CURIOSITY_PEAK = "curiosity_peak"
     TREND_UPDATED = "trend_updated"
     ACTION_FAILED = "action_failed"
+    ACTIVITY_RESULT_RECORDED = "activity_result_recorded"
 
     SYSTEM_STARTED = "system_started"
     SYSTEM_STOPPED = "system_stopped"
