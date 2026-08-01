@@ -15,5 +15,7 @@ class AutonomousMotivationContextBuilder:
         appraisal = self._appraiser.appraise(
             state.current_desire,
             relationship,
+            moral_profile=state.moral_profile,
+            moral_state=state.current_moral,
         )
         return appraisal.as_context()
