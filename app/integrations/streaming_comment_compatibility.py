@@ -4,27 +4,13 @@ This compatibility mapper is replaced in J and removed with the legacy integrati
 in K. A reverse Core-to-Subsystem mapper is intentionally not provided.
 """
 
-from app.domain.events import AgentEvent, AgentEventType
-from app.domain.trace_context import TraceContext
-from app.integrations.streaming.events import (
-    StreamingEventEnvelope,
-    StreamingEventType,
-)
+from app.domain.events import AgentEvent
+from app.integrations.streaming.event_mapper import StreamingEventMapper
+from app.integrations.streaming.events import StreamingEventEnvelope
 
 
 def comment_event_to_agent_event(event: StreamingEventEnvelope) -> AgentEvent:
-    if event.event_type is not StreamingEventType.COMMENT_RECEIVED:
+    mapped = StreamingEventMapper().map(event)
+    if mapped is None or mapped.event_type.value != "youtube_comment":
         raise ValueError("streaming.event.not_comment")
-    trace = TraceContext(
-        trace_id=event.correlation_id or "",
-        source_event_id=event.event_id,
-    )
-    priority = event.payload.get("normalized_priority", 0)
-    return AgentEvent(
-        event_type=AgentEventType.YOUTUBE_COMMENT,
-        payload=dict(event.payload),
-        priority=priority if isinstance(priority, int) else 0,
-        occurred_at=event.occurred_at,
-        event_id=event.event_id,
-        trace_context=trace,
-    )
+    return mapped

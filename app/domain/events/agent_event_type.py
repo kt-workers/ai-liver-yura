@@ -26,3 +26,8 @@ class AgentEventType(str, Enum):
     STREAM_COMMENT_RESPONSE = "stream_comment_response"
     STREAM_ENDING = "stream_ending"
     STREAM_ENDED = "stream_ended"
+    STREAMING_CONNECTION_CHANGED = "streaming_connection_changed"
+    STREAMING_STATUS_CHANGED = "streaming_status_changed"
+    STREAMING_HEALTH_CHANGED = "streaming_health_changed"
+    STREAMING_CAPABILITIES_CHANGED = "streaming_capabilities_changed"
+    STREAMING_ERROR = "streaming_error"
