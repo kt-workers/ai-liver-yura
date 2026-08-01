@@ -47,6 +47,46 @@ class OngoingInputDecision(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class ActivityAuthorityRequirement:
+    """Activity候補が宣言するAuthority要件の正規契約。"""
+
+    policy_id: str
+    allowed_roles: tuple[str, ...]
+    trusted_instruction_required: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.policy_id, str):
+            raise TypeError("policy_id must be str")
+        normalized_policy_id = self.policy_id.strip()
+        if not normalized_policy_id:
+            raise ValueError("policy_id must not be empty")
+        if not isinstance(self.allowed_roles, tuple):
+            raise TypeError("allowed_roles must be tuple")
+        normalized_roles: list[str] = []
+        for role in self.allowed_roles:
+            if not isinstance(role, str):
+                raise TypeError("allowed_roles must contain str values")
+            normalized_role = role.strip().lower()
+            if not normalized_role:
+                raise ValueError("allowed_roles must not contain empty values")
+            normalized_roles.append(normalized_role)
+        if not normalized_roles:
+            raise ValueError("allowed_roles must not be empty")
+        if len(set(normalized_roles)) != len(normalized_roles):
+            raise ValueError("allowed_roles must not contain duplicates")
+        if not isinstance(self.trusted_instruction_required, bool):
+            raise TypeError("trusted_instruction_required must be bool")
+        object.__setattr__(self, "policy_id", normalized_policy_id)
+        object.__setattr__(self, "allowed_roles", tuple(sorted(normalized_roles)))
+
+    def permits(self, authority_role: str, instruction_trusted: bool) -> bool:
+        normalized_role = authority_role.strip().lower()
+        return normalized_role in self.allowed_roles and (
+            not self.trusted_instruction_required or instruction_trusted
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class OngoingActivityPlanningContext:
     ongoing_activity_id: str
     activity_type: str
@@ -105,6 +145,7 @@ class ActivityDefinition:
     constraints_schema_version: str = "1"
     matcher: ActivityMatcher | None = None
     matchers: tuple[ActivityMatcher, ...] = ()
+    authority_requirement: ActivityAuthorityRequirement | None = None
 
 
 class ActivityPlanView(Protocol):
