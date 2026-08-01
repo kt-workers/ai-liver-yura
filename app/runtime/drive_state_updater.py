@@ -136,10 +136,7 @@ class DriveStateUpdater:
                 0.06 * elapsed_minutes,
             ),
             engagement=drive.engagement - (0.01 * elapsed_minutes),
-            boredom=self._increase_toward_one(
-                drive.boredom,
-                0.14 * elapsed_minutes,
-            ),
+            boredom=drive.boredom + (0.14 * elapsed_minutes),
             energy=drive.energy - (0.005 * elapsed_minutes),
         )
         self._write_update_trace(
@@ -167,10 +164,10 @@ class DriveStateUpdater:
     ) -> DriveState:
         if event.event_type == AgentEventType.STREAM_STARTED:
             return DriveState(
-                curiosity=self._increase_toward_one(drive.curiosity, 0.08),
-                engagement=self._increase_toward_one(drive.engagement, 0.18),
-                boredom=self._increase_toward_one(drive.boredom, 0.02),
-                energy=self._increase_toward_one(drive.energy, 0.04),
+                curiosity=drive.curiosity + 0.08,
+                engagement=drive.engagement + 0.18,
+                boredom=drive.boredom + 0.02,
+                energy=drive.energy + 0.04,
             )
         return drive
 
@@ -194,8 +191,8 @@ class DriveStateUpdater:
 
     def _apply_user_interaction(self, drive: DriveState) -> DriveState:
         return DriveState(
-            curiosity=self._increase_toward_one(drive.curiosity, 0.03),
-            engagement=self._increase_toward_one(drive.engagement, 0.08),
+            curiosity=drive.curiosity + 0.03,
+            engagement=drive.engagement + 0.08,
             boredom=drive.boredom - 0.08,
             energy=drive.energy - 0.01,
         )
@@ -203,16 +200,16 @@ class DriveStateUpdater:
     def _apply_speech_finished(self, drive: DriveState) -> DriveState:
         return DriveState(
             curiosity=drive.curiosity - 0.015,
-            engagement=self._increase_toward_one(drive.engagement, 0.02),
+            engagement=drive.engagement + 0.02,
             boredom=drive.boredom - 0.02,
             energy=drive.energy - 0.015,
         )
 
     def _apply_action_failed(self, drive: DriveState) -> DriveState:
         return DriveState(
-            curiosity=self._increase_toward_one(drive.curiosity, 0.05),
+            curiosity=drive.curiosity + 0.05,
             engagement=drive.engagement - 0.1,
-            boredom=self._increase_toward_one(drive.boredom, 0.05),
+            boredom=drive.boredom + 0.05,
             energy=drive.energy - 0.05,
         )
 
