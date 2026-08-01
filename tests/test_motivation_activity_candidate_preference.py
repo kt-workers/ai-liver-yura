@@ -78,8 +78,8 @@ def test_ranker_prioritizes_only_existing_recommended_candidates() -> None:
     ]
     assert ranking.preferences[0].recommendation_rank == 1
     assert ranking.preferences[0].motivation_score == pytest.approx(1.0)
-    assert ranking.preferences[1].recommendation_rank == 3
-    assert ranking.preferences[1].motivation_score == pytest.approx(1.0 / 3.0)
+    assert ranking.preferences[1].recommendation_rank == 2
+    assert ranking.preferences[1].motivation_score == pytest.approx(0.5)
     assert all(
         item.activity_type != "unknown_activity" for item in ranking.preferences
     )
