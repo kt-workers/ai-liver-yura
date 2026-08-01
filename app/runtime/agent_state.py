@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from app.domain.actions import ActionPlan
 from app.domain.activities import Activity
+from app.domain.desires import DesireState
 from app.domain.drives import DriveState
 from app.domain.emotions import EmotionState
 from app.domain.memory import AgentMemoryState
@@ -23,6 +24,7 @@ class AgentState:
     prepared_actions: list[ActionPlan] = field(default_factory=list)
     current_emotion: EmotionState = field(default_factory=EmotionState)
     current_drive: DriveState = field(default_factory=DriveState)
+    current_desire: DesireState = field(default_factory=DesireState)
     relationship_memory: RelationshipMemory = field(default_factory=RelationshipMemory)
     current_situation: SituationState = field(default_factory=SituationState)
     memory: AgentMemoryState = field(default_factory=AgentMemoryState)
@@ -79,6 +81,13 @@ class AgentState:
         return replace(
             self,
             current_drive=drive,
+            updated_at=datetime.now(timezone.utc),
+        )
+
+    def with_desire(self, desire: DesireState) -> AgentState:
+        return replace(
+            self,
+            current_desire=desire,
             updated_at=datetime.now(timezone.utc),
         )
 
