@@ -1,0 +1,28 @@
+name: ai-liver-yura
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: postgres-m4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ai_liver}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ai_liver_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ai_liver}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ai_liver_postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  ai_liver_postgres_data:
+    name: ai_liver_postgres_data
