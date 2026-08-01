@@ -39,4 +39,3 @@ def resolve_database_service(
         resolve_service(config, service_name),
         service_name=service_name,
     )
-

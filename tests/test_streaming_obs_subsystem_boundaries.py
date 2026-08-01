@@ -40,7 +40,6 @@ def test_obs_adapter_has_no_core_or_youtube_dependency() -> None:
 
     assert violations == []
 
-
 def test_core_python_files_do_not_import_obs_sdk() -> None:
     violations = sorted(
         f"{path.relative_to(ROOT)} -> {import_name}"
@@ -51,4 +50,3 @@ def test_core_python_files_do_not_import_obs_sdk() -> None:
     )
 
     assert violations == []
-

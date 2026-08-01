@@ -87,4 +87,3 @@ def test_repeated_subscribe_unsubscribe_does_not_leak() -> None:
         assert broker.subscriber_count == 1
         broker.unsubscribe(subscription)
         assert broker.subscriber_count == 0
-
