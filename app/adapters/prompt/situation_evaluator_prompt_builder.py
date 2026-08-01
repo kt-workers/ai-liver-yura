@@ -147,6 +147,13 @@ class SituationEvaluatorPromptBuilder:
             "confidence": "number",
             "reason": "string",
             "ongoing_input_decision": "string|null",
+            "semantic_equivalence": {
+                "candidate_group": "array[string]",
+                "intent": "unknown|confirmed|rejected",
+                "operation": "unknown|confirmed|rejected",
+                "goal": "unknown|confirmed|rejected",
+                "reasons": "array[string]",
+            },
         }
         return "\n".join(
             [
@@ -164,7 +171,24 @@ class SituationEvaluatorPromptBuilder:
                     "現段階では候補の選択、並べ替え、禁止、抑制へ"
                     "使用しないでください。"
                 ),
-                "意味的同等性評価は型付き診断情報です。confirmedであってもMoral候補選好の実適用許可を意味しません。",
+                (
+                    "semantic_equivalenceには、入力の"
+                    "activity_candidate_semantic_equivalence.candidate_groupを"
+                    "順序も含めてそのまま複写してください。"
+                ),
+                (
+                    "その候補グループについてだけ、同じ意図を満たすかをintent、"
+                    "同じ操作意味かをoperation、達成結果が代替可能かをgoalで"
+                    "unknown・confirmed・rejectedのいずれかとして評価してください。"
+                ),
+                (
+                    "候補が2件未満、根拠不足、Authority・Capability・Constraint・"
+                    "Safetyの同等性しか判断できない場合はunknownにしてください。"
+                ),
+                (
+                    "semantic_equivalenceの評価は診断証拠候補であり、"
+                    "Moral候補選好の実適用許可ではありません。"
+                ),
                 (
                     "Moral preference shadowは診断専用です。"
                     "current_orderを変更せず、hypothetical_order、"
