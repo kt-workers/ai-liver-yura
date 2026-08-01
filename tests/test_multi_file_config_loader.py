@@ -30,7 +30,6 @@ _FILE_OWNERS = {
     "speech.yaml": ("speech",),
     "memory.yaml": ("memory",),
     "character.yaml": ("character",),
-    "streaming.yaml": ("streaming",),
     "plugins.yaml": ("plugins",),
 }
 
@@ -76,7 +75,6 @@ def test_legacy_and_split_configs_are_equivalent(split_config: Path) -> None:
     assert type(legacy.services) is type(split.services)
     assert type(legacy.character.likes) is type(split.character.likes)
     assert legacy.plugins == split.plugins
-    assert legacy.streaming == split.streaming
 
 
 def test_manifest_can_assign_every_key_to_its_own_file(tmp_path: Path) -> None:

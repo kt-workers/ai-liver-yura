@@ -4,7 +4,6 @@ import logging
 import os
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from importlib import import_module
 from pathlib import Path
 from queue import Queue
 
@@ -61,6 +60,7 @@ from app.adapters.tts import (
     VoiceVoxSpeechSynthesizer,
     VoiceVoxSpeechSynthesizerConfig,
 )
+from app.adapters.tts.fake_output import FakeAudioPlayer, FakeSpeechSynthesizer
 from app.adapters.web_conversation import (
     WebConversationClient,
     WebConversationClientConfig,
@@ -759,9 +759,8 @@ def create_runtime_coordinator(
     speech_synthesizer: SpeechSynthesizer | None
     audio_player: AudioPlayer | None
     if config.app.mode == "streaming_demo":
-        fake_outputs = import_module("app.adapters.streaming.fake_output_adapters")
-        speech_synthesizer = fake_outputs.FakeSpeechSynthesizer()
-        audio_player = fake_outputs.FakeAudioPlayer()
+        speech_synthesizer = FakeSpeechSynthesizer()
+        audio_player = FakeAudioPlayer()
     else:
         speech_synthesizer = create_speech_synthesizer(config)
         audio_player = create_audio_player(config)

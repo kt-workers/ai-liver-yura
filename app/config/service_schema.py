@@ -33,52 +33,6 @@ class PostgresServiceSettings:
 
 
 @dataclass(frozen=True, slots=True)
-class YouTubeServiceSettings:
-    type: Literal["youtube", "youtube_api", "google", "google_youtube"]
-    client_secret_path_env: str
-    token_path_env: str
-    request_timeout_seconds: float
-    max_retries: int
-    retry_initial_delay_seconds: float
-    oauth_open_browser: bool
-    allow_live_broadcast: bool
-    oauth_timeout_seconds: float
-    allowed_privacy_statuses: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class FakeYouTubeServiceSettings:
-    client_secret_path_env: str
-    token_path_env: str
-    request_timeout_seconds: float
-    max_retries: int
-    retry_initial_delay_seconds: float
-    oauth_open_browser: bool
-    allow_live_broadcast: bool
-    oauth_timeout_seconds: float
-    allowed_privacy_statuses: tuple[str, ...]
-    type: Literal["fake"] = field(default="fake", init=False)
-
-
-@dataclass(frozen=True, slots=True)
-class ObsWebSocketServiceSettings:
-    host: str
-    port: int
-    password_env: str | None
-    connect_timeout_seconds: float
-    request_timeout_seconds: float
-    max_retries: int
-    retry_initial_delay_seconds: float
-    websocket_url: str | None = None
-    type: Literal["obs_websocket"] = field(default="obs_websocket", init=False)
-
-
-@dataclass(frozen=True, slots=True)
-class FakeObsServiceSettings:
-    type: Literal["fake"] = field(default="fake", init=False)
-
-
-@dataclass(frozen=True, slots=True)
 class DisabledServiceSettings:
     type: Literal["disabled"] = field(default="disabled", init=False)
 
@@ -88,10 +42,6 @@ ServiceSettings: TypeAlias = (
     | OllamaServiceSettings
     | VoiceVoxServiceSettings
     | PostgresServiceSettings
-    | YouTubeServiceSettings
-    | FakeYouTubeServiceSettings
-    | ObsWebSocketServiceSettings
-    | FakeObsServiceSettings
     | DisabledServiceSettings
 )
 
