@@ -5,7 +5,7 @@ Version: 1.0.0
 ## 1. 位置づけ
 
 本書は、`character_motivation_morality_design_report.md` の段階導入方針と、
-`character_motivation_appraisal_observation_design_v1.0.0.md` で追加した
+`character_motivation_appraisal_observation_design_v1.0.1.md` で定義した
 Motivation Appraisalを基に、Activity候補評価へMotivationを初めて利用する範囲を定義する。
 
 先行段階ではMotivationを通常・自律Behavior Planningへ読み取り専用で渡したが、
@@ -107,6 +107,8 @@ recommended_activity_types = ["unknown_activity"]
 
 このため、候補集合は処理前後で一致する。
 
+未知候補は推奨順位の計算からも除外する。
+
 ## 8. 選好診断情報
 
 各候補について次を出力する。
@@ -116,7 +118,7 @@ recommended_activity_types = ["unknown_activity"]
 | `activity_type` | Activity識別子 |
 | `position` | 並べ替え後の位置 |
 | `original_position` | 元の登録位置 |
-| `recommendation_rank` | Motivation推奨順位。対象外はnull |
+| `recommendation_rank` | 既知候補だけで正規化したMotivation推奨順位。対象外はnull |
 | `motivation_score` | 推奨順位から導出した診断値 |
 | `pinned` | 進行中Activity等として固定されたか |
 | `reason` | 選好理由 |
@@ -219,6 +221,7 @@ Motivation候補選好はActivityを禁止しない。
 
 - Motivation推奨候補が推奨順へ並ぶ
 - 未知の推奨Activityが候補へ追加されない
+- 未知候補が推奨順位を消費しない
 - Motivation非推奨の既存候補が削除されない
 - 進行中ActivityがMotivation推奨候補より先になる
 - 同順位で元の登録順が維持される
