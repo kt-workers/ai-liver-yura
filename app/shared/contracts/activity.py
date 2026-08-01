@@ -86,6 +86,33 @@ class ActivityAuthorityRequirement:
         )
 
 
+class ActivitySafetyRiskClass(str, Enum):
+    """候補Safety要件の比較に使用する宣言上のRisk class。"""
+
+    LOW = "low"
+    MODERATE = "moderate"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+@dataclass(frozen=True, slots=True)
+class ActivitySafetyRequirement:
+    """Activity候補が宣言するSafety要件の正規契約。"""
+
+    policy_id: str
+    risk_class: ActivitySafetyRiskClass
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.policy_id, str):
+            raise TypeError("policy_id must be str")
+        normalized_policy_id = self.policy_id.strip()
+        if not normalized_policy_id:
+            raise ValueError("policy_id must not be empty")
+        if not isinstance(self.risk_class, ActivitySafetyRiskClass):
+            raise TypeError("risk_class must be ActivitySafetyRiskClass")
+        object.__setattr__(self, "policy_id", normalized_policy_id)
+
+
 @dataclass(frozen=True, slots=True)
 class OngoingActivityPlanningContext:
     ongoing_activity_id: str
@@ -146,6 +173,7 @@ class ActivityDefinition:
     matcher: ActivityMatcher | None = None
     matchers: tuple[ActivityMatcher, ...] = ()
     authority_requirement: ActivityAuthorityRequirement | None = None
+    safety_requirement: ActivitySafetyRequirement | None = None
 
 
 class ActivityPlanView(Protocol):
