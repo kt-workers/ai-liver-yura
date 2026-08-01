@@ -3,10 +3,8 @@ from __future__ import annotations
 import json
 
 from app.domain.behavior import BehaviorPlanningContext
+from app.domain.morals import MoralActivityCandidateEvaluator
 from app.domain.motivation import MotivationActivityCandidateRanker
-from app.runtime.moral_activity_candidate_evaluator import (
-    MoralActivityCandidateEvaluator,
-)
 
 
 class SituationEvaluatorPromptBuilder:
