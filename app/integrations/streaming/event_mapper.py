@@ -62,7 +62,7 @@ class StreamingEventMapper:
         )
         priority = comment.get("normalized_priority", event.payload.get("normalized_priority", 0))
         return AgentEvent(
-            event_type=AgentEventType.YOUTUBE_COMMENT,
+            event_type=AgentEventType.USER_TEXT,
             payload=payload,
             priority=priority if isinstance(priority, int) else 0,
             occurred_at=event.occurred_at,

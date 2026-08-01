@@ -35,7 +35,7 @@ def test_comment_is_mapped_to_viewer_input_without_secret_fields() -> None:
         )
     )
     assert mapped is not None
-    assert mapped.event_type is AgentEventType.YOUTUBE_COMMENT
+    assert mapped.event_type is AgentEventType.USER_TEXT
     assert mapped.authority is InputAuthority.VIEWER
     assert mapped.payload["is_paid"] is True
     assert "access_token" not in mapped.payload
