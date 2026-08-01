@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from subsystems.streaming.admin_api.models import StreamingAdminApiError, to_json
 from subsystems.streaming.admin_api.service import StreamingAdminService
 from subsystems.streaming.api import StreamingSubsystemApi
+from subsystems.streaming.api.http_routes import create_streaming_public_router
 
 
 def _error(
@@ -51,6 +52,7 @@ def create_streaming_admin_api(
         token if token is not None else os.getenv("STREAMING_SUBSYSTEM_ADMIN_API_TOKEN")
     )
     app.state.streaming_admin_service = service
+    app.include_router(create_streaming_public_router(subsystem_api))
 
     @app.middleware("http")
     async def authenticate(request: Request, call_next: Any) -> Any:

@@ -1,5 +1,16 @@
 """Transport-neutral public contracts for the Streaming Subsystem."""
 
+from app.integrations.streaming.client import StreamingClient
+from app.integrations.streaming.composition import (
+    CoreStreamingIntegration,
+    CoreStreamingIntegrationConfig,
+    create_core_streaming_integration,
+)
+from app.integrations.streaming.connection_state import (
+    StreamingConnectionSnapshot,
+    StreamingConnectionState,
+    StreamingConnectionTracker,
+)
 from app.integrations.streaming.contracts import (
     StreamingCapabilities,
     StreamingCapability,
@@ -22,11 +33,20 @@ from app.integrations.streaming.errors import (
     StreamingErrorCode,
     normalize_streaming_error_code,
 )
+from app.integrations.streaming.event_mapper import StreamingEventMapper
+from app.integrations.streaming.event_receiver import StreamingEventReceiver
 from app.integrations.streaming.events import (
     StreamingEventEnvelope,
     StreamingEventType,
     parse_streaming_event_type,
 )
+from app.integrations.streaming.gateway import StreamingGateway
+from app.integrations.streaming.http_client import (
+    HttpStreamingClient,
+    StreamingHttpClientConfig,
+)
+from app.integrations.streaming.in_process_client import InProcessStreamingClient
+from app.integrations.streaming.null_gateway import NullStreamingGateway
 from app.integrations.streaming.operations import (
     StreamingOperationRequest,
     StreamingOperationResult,
@@ -64,6 +84,20 @@ __all__ = [
     "StreamingOperationResult",
     "StreamingOperationType",
     "StreamingStatus",
+    "CoreStreamingIntegration",
+    "CoreStreamingIntegrationConfig",
+    "HttpStreamingClient",
+    "InProcessStreamingClient",
+    "NullStreamingGateway",
+    "StreamingClient",
+    "StreamingConnectionSnapshot",
+    "StreamingConnectionState",
+    "StreamingConnectionTracker",
+    "StreamingEventMapper",
+    "StreamingEventReceiver",
+    "StreamingGateway",
+    "StreamingHttpClientConfig",
+    "create_core_streaming_integration",
     "is_streaming_api_compatible",
     "normalize_streaming_capabilities",
     "normalize_dependency_state",

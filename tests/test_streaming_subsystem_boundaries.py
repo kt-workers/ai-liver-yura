@@ -57,8 +57,12 @@ def test_subsystem_confines_admin_transport_and_has_no_core_sdk_imports() -> Non
             for prefix in forbidden_prefixes
         )
         and not (
-            "admin_api" in path.relative_to(SUBSYSTEM).parts
-            and import_name.startswith(("fastapi", "starlette"))
+            import_name.startswith(("fastapi", "starlette"))
+            and (
+                "admin_api" in path.relative_to(SUBSYSTEM).parts
+                or path.relative_to(SUBSYSTEM).as_posix()
+                == "api/http_routes.py"
+            )
         )
     )
 

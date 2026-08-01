@@ -119,6 +119,12 @@ class StreamingComment:
     stream_id: str | None = None
     moderation_flags: frozenset[str] = frozenset()
     cursor: StreamingCursor | None = None
+    author_role: str = "viewer"
+    is_owner: bool = False
+    is_moderator: bool = False
+    is_paid: bool = False
+    amount_micros: int | None = None
+    metadata: Mapping[str, object] = MappingProxyType({})
 
     def __post_init__(self) -> None:
         _require_timezone(self.published_at, field_name="published_at")
@@ -127,6 +133,9 @@ class StreamingComment:
             "moderation_flags",
             frozenset(self.moderation_flags),
         )
+        if self.amount_micros is not None and self.amount_micros < 0:
+            raise ValueError("amount_micros must not be negative")
+        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
 
 def _require_timezone(value: datetime, *, field_name: str) -> None:

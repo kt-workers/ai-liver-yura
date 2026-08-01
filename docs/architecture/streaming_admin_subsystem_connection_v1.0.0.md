@@ -61,5 +61,6 @@ REST bootstrapを再取得する。旧`core-event`は正規名として使用し
 
 ## 6. 後続工程
 
-- J: Core側Streaming具象依存をGateway／Clientへ置換する。
+- J: 完了。Core側Streaming具象依存をGateway／Clientへ置換した。Core Integrationは
+  Admin read modelではなく`/api/v1/integration/*`を使用する。
 - K: 旧Core Streaming route、旧client alias、旧環境変数fallback、Plugin／Port互換を削除する。

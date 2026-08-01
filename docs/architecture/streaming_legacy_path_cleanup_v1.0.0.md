@@ -78,5 +78,6 @@ subsystems.streaming
 
 ## 6. 次工程
 
-I完了後の進捗は13/15である。次はJとしてCore側Streaming Integrationを置換する。
-旧Core Admin routeとRuntime compositionは回帰用互換として維持し、Kでwrapperと共に削除する。
+J完了後の進捗は14/15である。次はKとして利用停止済みの旧pathを物理削除する。
+Coreの正規経路は`app.integrations.streaming`へ置換済みであり、旧Core Admin route、
+Runtime composition、wrapper、Config互換はKの削除対象として確定した。
