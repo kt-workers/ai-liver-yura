@@ -11,6 +11,9 @@ from app.domain.activity_constraints import (
 )
 from app.domain.trace_context import TraceContext
 from app.shared.contracts.activity import (
+    ActivityAuthorityRequirement as ActivityAuthorityRequirement,
+)
+from app.shared.contracts.activity import (
     ActivityDefinition as ActivityDefinition,
 )
 from app.shared.contracts.activity import (
