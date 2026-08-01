@@ -118,6 +118,9 @@ class SituationEvaluatorPromptBuilder:
             "activity_candidate_moral_fits": [
                 fit.as_context() for fit in moral_fits
             ],
+            "activity_candidate_semantic_equivalence": (
+                moral_preference_shadow.semantic_equivalence.as_context()
+            ),
             "moral_candidate_preference_shadow": (
                 moral_preference_shadow.as_context()
             ),
@@ -151,9 +154,24 @@ class SituationEvaluatorPromptBuilder:
                 "# 判断規則",
                 "ユーザーの明示意図、進行中Activity、意味的一致をMotivationより優先してください。",
                 "Motivation候補選好は、意味的に妥当な候補が複数ある場合の補助的な優先情報としてだけ使用してください。",
-                "Motivationを理由に候補外Activityを生成したり、Authority・Capability・Constraintの検証結果を推測したりしないでください。",
-                "Moral Profile、Moral State、moral_fitは観測専用です。現段階では候補の選択、並べ替え、禁止、抑制へ使用しないでください。",
-                "Moral preference shadowは診断専用です。current_orderを変更せず、hypothetical_order、preferred_activity_type、static_eligibleをActivity選択へ使用しないでください。",
+                (
+                    "Motivationを理由に候補外Activityを生成したり、"
+                    "Authority・Capability・Constraintの検証結果を"
+                    "推測したりしないでください。"
+                ),
+                (
+                    "Moral Profile、Moral State、moral_fitは観測専用です。"
+                    "現段階では候補の選択、並べ替え、禁止、抑制へ"
+                    "使用しないでください。"
+                ),
+                "意味的同等性評価は型付き診断情報です。confirmedであってもMoral候補選好の実適用許可を意味しません。",
+                (
+                    "Moral preference shadowは診断専用です。"
+                    "current_orderを変更せず、hypothetical_order、"
+                    "preferred_activity_type、static_eligible、"
+                    "semantic_equivalence_confirmedをActivity選択へ"
+                    "使用しないでください。"
+                ),
                 "# 判断入力",
                 json.dumps(planning_input, ensure_ascii=False, default=str),
                 "# 出力JSONスキーマ",
