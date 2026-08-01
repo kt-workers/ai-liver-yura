@@ -21,6 +21,12 @@ class CharacterPromptBuilder:
         content_plan = ResponseContentPlan.from_context(
             context.memory.get("response_content_plan")
         )
+        response_context = asdict(context)
+        response_memory = response_context.get("memory")
+        if isinstance(response_memory, dict):
+            response_memory = dict(response_memory)
+            response_memory.pop("response_content_plan", None)
+            response_context["memory"] = response_memory
         lines = [
             "あなたはCharacter LLMです。行動判断や実行可否判断はしない。",
             "Character Profile: "
@@ -30,7 +36,7 @@ class CharacterPromptBuilder:
                 default=str,
             ),
             "次の確定済みResponse Contextだけを事実として表現する。",
-            json.dumps(asdict(context), ensure_ascii=False, default=str),
+            json.dumps(response_context, ensure_ascii=False, default=str),
             "Response Content Plan: "
             + json.dumps(
                 content_plan.as_context(),
