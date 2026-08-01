@@ -40,3 +40,18 @@ class StreamingError:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "details", MappingProxyType(dict(self.details)))
+
+
+class StreamingTransportError(RuntimeError):
+    """Safe transport failure without leaking URLs, credentials, or SDK errors."""
+
+    def __init__(
+        self,
+        code: StreamingErrorCode,
+        message: str,
+        *,
+        retryable: bool,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
