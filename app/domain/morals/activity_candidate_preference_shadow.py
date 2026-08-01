@@ -3,6 +3,10 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
+from app.domain.morals.activity_candidate_application_condition import (
+    MoralActivityCandidateApplicationCondition,
+    MoralActivityCandidateApplicationConditionEvaluator,
+)
 from app.domain.morals.activity_candidate_execution_boundary_equivalence import (
     ActivityCandidateExecutionBoundaryEquivalenceAssessment,
 )
@@ -38,6 +42,9 @@ class MoralActivityCandidatePreferenceShadow:
     ) = field(
         default_factory=ActivityCandidateExecutionBoundaryEquivalenceAssessment
     )
+    application_condition: MoralActivityCandidateApplicationCondition = field(
+        default_factory=MoralActivityCandidateApplicationCondition
+    )
     reasons: tuple[str, ...] = ()
 
     @property
@@ -47,6 +54,10 @@ class MoralActivityCandidatePreferenceShadow:
     @property
     def execution_boundary_equivalence_confirmed(self) -> bool:
         return self.execution_boundary_equivalence.confirmed
+
+    @property
+    def application_condition_ready(self) -> bool:
+        return self.application_condition.ready_for_limited_activation
 
     def as_context(self) -> dict[str, object]:
         return {
@@ -58,6 +69,7 @@ class MoralActivityCandidatePreferenceShadow:
             "execution_boundary_equivalence_confirmed": (
                 self.execution_boundary_equivalence_confirmed
             ),
+            "application_condition_ready": self.application_condition_ready,
             "activation_permitted": self.activation_permitted,
             "preferred_activity_type": self.preferred_activity_type,
             "candidate_group": list(self.candidate_group),
@@ -70,6 +82,7 @@ class MoralActivityCandidatePreferenceShadow:
             "execution_boundary_equivalence": (
                 self.execution_boundary_equivalence.as_context()
             ),
+            "application_condition": self.application_condition.as_context(),
             "reasons": list(self.reasons),
         }
 
@@ -87,10 +100,17 @@ class MoralActivityCandidatePreferenceShadowEvaluator:
         semantic_equivalence_evaluator: (
             ActivityCandidateSemanticEquivalenceEvaluator | None
         ) = None,
+        application_condition_evaluator: (
+            MoralActivityCandidateApplicationConditionEvaluator | None
+        ) = None,
     ) -> None:
         self._semantic_equivalence_evaluator = (
             semantic_equivalence_evaluator
             or ActivityCandidateSemanticEquivalenceEvaluator()
+        )
+        self._application_condition_evaluator = (
+            application_condition_evaluator
+            or MoralActivityCandidateApplicationConditionEvaluator()
         )
 
     def evaluate(
@@ -170,6 +190,17 @@ class MoralActivityCandidatePreferenceShadowEvaluator:
             )
             preferred_activity_type = top_activity
 
+        execution_boundary_equivalence = (
+            ActivityCandidateExecutionBoundaryEquivalenceAssessment()
+        )
+        application_condition = self._application_condition_evaluator.evaluate(
+            static_eligible=static_eligible,
+            candidate_group=candidate_group,
+            preferred_activity_type=preferred_activity_type,
+            semantic_equivalence=semantic_equivalence,
+            execution_boundary_equivalence=execution_boundary_equivalence,
+        )
+
         semantic_reason = (
             "semantic_equivalence_confirmed_but_activation_disabled"
             if semantic_equivalence.status
@@ -199,6 +230,8 @@ class MoralActivityCandidatePreferenceShadowEvaluator:
             runner_up_fit=runner_up_fit,
             fit_margin=fit_margin,
             semantic_equivalence=semantic_equivalence,
+            execution_boundary_equivalence=execution_boundary_equivalence,
+            application_condition=application_condition,
             reasons=reasons,
         )
 
