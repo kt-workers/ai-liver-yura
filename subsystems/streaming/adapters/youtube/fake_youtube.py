@@ -78,9 +78,7 @@ class FakeYouTubePreparationAdapter:
             stream_id=f"stream-{broadcast_id}",
             status=self._config.stream_status,
             bound=True,
-            live_chat_id=(
-                f"chat-{broadcast_id}" if self._config.live_chat_enabled else None
-            ),
+            live_chat_id=(f"chat-{broadcast_id}" if self._config.live_chat_enabled else None),
             ingestion_type="rtmp",
             health_status="healthy",
         )
@@ -97,15 +95,11 @@ class FakeYouTubePreparationAdapter:
         await self.resolve_broadcast(broadcast_id)
         return f"chat-{broadcast_id}" if self._config.live_chat_enabled else None
 
-    async def get_live_chat_availability(
-        self, broadcast_id: str
-    ) -> YouTubeLiveChatSnapshot:
+    async def get_live_chat_availability(self, broadcast_id: str) -> YouTubeLiveChatSnapshot:
         live_chat_id = await self.get_live_chat_id(broadcast_id)
         return YouTubeLiveChatSnapshot(
             status=(
-                YouTubeLiveChatStatus.AVAILABLE
-                if live_chat_id
-                else YouTubeLiveChatStatus.DISABLED
+                YouTubeLiveChatStatus.AVAILABLE if live_chat_id else YouTubeLiveChatStatus.DISABLED
             ),
             live_chat_id=live_chat_id,
             reason=None if live_chat_id else "Live Chatは無効です。",
@@ -166,9 +160,7 @@ class UnavailableYouTubePreparationAdapter:
         await self._fail()
         return None
 
-    async def get_live_chat_availability(
-        self, broadcast_id: str
-    ) -> YouTubeLiveChatSnapshot:
+    async def get_live_chat_availability(self, broadcast_id: str) -> YouTubeLiveChatSnapshot:
         await self._fail()
         return YouTubeLiveChatSnapshot(YouTubeLiveChatStatus.UNAVAILABLE)
 
@@ -179,9 +171,7 @@ class UnavailableYouTubePreparationAdapter:
 @dataclass(slots=True)
 class FakeYouTubeStreamingControlAdapter:
     stream_statuses: list[str] = field(default_factory=lambda: ["active", "active"])
-    broadcast_statuses: list[str] = field(
-        default_factory=lambda: ["ready", "live", "live"]
-    )
+    broadcast_statuses: list[str] = field(default_factory=lambda: ["ready", "live", "live"])
     adapter_type: str = "fake"
     transition_calls: int = 0
     complete_calls: int = 0

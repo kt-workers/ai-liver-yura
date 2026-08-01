@@ -55,6 +55,7 @@ class ObsPreparationSnapshot:
     avatar_source_paths: tuple[str, ...] = ()
     adapter_type: str = "fake"
 
+
 class ObsPreparationPort(Protocol):
     adapter_type: str
 

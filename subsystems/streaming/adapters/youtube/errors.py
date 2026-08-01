@@ -44,16 +44,10 @@ def to_streaming_error(error: YouTubeApiError) -> StreamingError:
     code_by_kind = {
         YouTubeApiErrorKind.AUTHENTICATION: StreamingErrorCode.UNAVAILABLE,
         YouTubeApiErrorKind.PERMISSION: StreamingErrorCode.UNAVAILABLE,
-        YouTubeApiErrorKind.QUOTA_EXHAUSTED: (
-            StreamingErrorCode.EXTERNAL_DEPENDENCY_ERROR
-        ),
+        YouTubeApiErrorKind.QUOTA_EXHAUSTED: (StreamingErrorCode.EXTERNAL_DEPENDENCY_ERROR),
         YouTubeApiErrorKind.RATE_LIMIT: StreamingErrorCode.EXTERNAL_DEPENDENCY_ERROR,
-        YouTubeApiErrorKind.DAILY_LIMIT: (
-            StreamingErrorCode.EXTERNAL_DEPENDENCY_ERROR
-        ),
-        YouTubeApiErrorKind.UNKNOWN_QUOTA: (
-            StreamingErrorCode.EXTERNAL_DEPENDENCY_ERROR
-        ),
+        YouTubeApiErrorKind.DAILY_LIMIT: (StreamingErrorCode.EXTERNAL_DEPENDENCY_ERROR),
+        YouTubeApiErrorKind.UNKNOWN_QUOTA: (StreamingErrorCode.EXTERNAL_DEPENDENCY_ERROR),
         YouTubeApiErrorKind.NOT_FOUND: StreamingErrorCode.INVALID_REQUEST,
         YouTubeApiErrorKind.INVALID_STATE: StreamingErrorCode.CONFLICT,
         YouTubeApiErrorKind.TIMEOUT: StreamingErrorCode.TIMEOUT,

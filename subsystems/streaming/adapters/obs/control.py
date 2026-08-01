@@ -38,9 +38,7 @@ class ObsWebSocketStreamingControlAdapter:
         self._state_timeout = state_timeout_seconds
         self._poll_interval = poll_interval_seconds
         self._lock = asyncio.Lock()
-        self._executor = ThreadPoolExecutor(
-            max_workers=1, thread_name_prefix="obs-control"
-        )
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="obs-control")
         self._client: ObsRequestClient | None = None
         self._connection_status = "disconnected"
         self._closed = False
@@ -105,17 +103,13 @@ class ObsWebSocketStreamingControlAdapter:
         if not scene_name.strip():
             raise ObsAdapterError("invalid_state", "obs.scene_name_missing")
         async with self._lock:
-            await self._request_locked(
-                lambda client: client.set_current_program_scene(scene_name)
-            )
+            await self._request_locked(lambda client: client.set_current_program_scene(scene_name))
 
     async def set_input_mute(self, input_name: str, muted: bool) -> None:
         if not input_name.strip():
             raise ObsAdapterError("invalid_state", "obs.input_name_missing")
         async with self._lock:
-            await self._request_locked(
-                lambda client: client.set_input_mute(input_name, muted)
-            )
+            await self._request_locked(lambda client: client.set_input_mute(input_name, muted))
 
     async def _connect_locked(self) -> None:
         if self._client is not None:
@@ -150,9 +144,7 @@ class ObsWebSocketStreamingControlAdapter:
                 raise ObsAdapterError("timeout", failure_code, True)
             await asyncio.sleep(self._poll_interval)
 
-    async def _request_locked(
-        self, operation: Callable[[ObsRequestClient], Any]
-    ) -> Any:
+    async def _request_locked(self, operation: Callable[[ObsRequestClient], Any]) -> Any:
         await self._connect_locked()
         client = self._client
         assert client is not None

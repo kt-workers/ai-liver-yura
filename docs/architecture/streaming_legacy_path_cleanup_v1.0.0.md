@@ -44,9 +44,9 @@ subsystems.streaming
 | --- | --- | --- |
 | `app.adapters.youtube` | package-level外部互換とsymbol identity testだけ。実装・SDK初期化なし | K |
 | `app.adapters.obs` | package-level外部互換とsymbol identity testだけ。実装・SDK初期化なし | K |
-| `app.adapters.streaming`と4個のFake wrapper | Core単独importを保つ遅延export、Session／Comment repository、旧Runtimeの組立て | H／J、残余はK |
-| `app.plugins.youtube_streaming` | Session、Lifecycle、Run of Show、Comment処理が未移動 | H、残余はK |
-| `app.ports.streaming_*`、`app.ports.youtube_*` | 上記Applicationと旧RuntimeのPort | H／J、残余はK |
+| `app.adapters.streaming`のSession／Comment wrapper | Hで移動済みのSubsystem repositoryへの一段re-export。旧Runtime用 | K |
+| `app.plugins.youtube_streaming` | Hで移動済みのDomain／Applicationへの一段re-exportとJまでのservice facade | K |
+| `app.ports.streaming_*`、`app.ports.youtube_*`、`app.ports.comment_*` | Hで移動済みのSubsystem Portへの一段re-export | K |
 | `app.bootstrap.streaming_runtime` | Admin、bootstrap export、runtime factory、互換テストが利用 | H／I／J、残余はK |
 | `app.bootstrap.streaming` | Adminと旧Streaming composition／テストが利用 | I／J、残余はK |
 | `app.runtime.runtime_factory`のStreaming export | 既存Core call site互換 | J／K |
@@ -78,5 +78,5 @@ subsystems.streaming
 
 ## 6. 次工程
 
-G5完了後の進捗は11/15である。次はHとしてSession、Preparation、Lifecycle、Run of
-Show、Comment処理をStreaming Subsystemへ移し、旧Plugin／ports／adapter利用を縮小する。
+H完了後の進捗は12/15である。次はIとしてStreaming AdminをSubsystem APIへ接続する。
+Jまでは旧Runtime compositionを薄い互換facadeとして維持し、Kでwrapperと共に削除する。

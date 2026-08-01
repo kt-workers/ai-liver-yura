@@ -34,9 +34,7 @@ class MethodHandler:
             raise CommandRejected(
                 "YouTube Streaming command/query rejected",
                 plugin_id="youtube_streaming",
-                reason_code=str(
-                    getattr(error, "code", None) or error or "stream.operation_failed"
-                ),
+                reason_code=str(getattr(error, "code", None) or error or "stream.operation_failed"),
             ) from error
 
 
@@ -73,9 +71,7 @@ class YouTubeStreamingLifecycle:
 def _commands(service: StreamingApplicationService) -> dict[str, MethodHandler]:
     values: dict[str, Callable[[Any], Any]] = {
         "manual_check.ui.record": service.record_ui_operation,
-        "youtube.auth.start": lambda value: service.start_authentication(
-            str(value["command_id"])
-        ),
+        "youtube.auth.start": lambda value: service.start_authentication(str(value["command_id"])),
         "stream.broadcast.refresh": lambda _: service.broadcasts(),
         "obs.status.refresh": lambda _: service.refresh_obs(),
         "stream.session.prepare": service.prepare,
@@ -89,9 +85,7 @@ def _commands(service: StreamingApplicationService) -> dict[str, MethodHandler]:
     }
     if service.demo_mode:
         values["demo.live_chat.submit"] = service.enqueue_demo_comment
-    return {
-        capability: MethodHandler(callback) for capability, callback in values.items()
-    }
+    return {capability: MethodHandler(callback) for capability, callback in values.items()}
 
 
 def _queries(service: StreamingApplicationService) -> dict[str, MethodHandler]:
@@ -140,9 +134,7 @@ def create_registration(
         }
     )
     activity_provider = StreamingActivityProvider()
-    activity_providers = {
-        capability: activity_provider for capability in activity_capabilities
-    }
+    activity_providers = {capability: activity_provider for capability in activity_capabilities}
     capabilities = frozenset(commands) | frozenset(queries) | activity_capabilities
     return PluginRegistration(
         descriptor=YouTubeStreamingDescriptor(capabilities),

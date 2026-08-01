@@ -13,9 +13,7 @@ class FakeObsPreparationConfig:
     output_status: str = "idle"
     current_scene: str = "Starting Soon"
     current_scene_collection: str = "AI Liver"
-    audio_source_states: dict[str, bool] = field(
-        default_factory=lambda: {"VOICEVOX": True}
-    )
+    audio_source_states: dict[str, bool] = field(default_factory=lambda: {"VOICEVOX": True})
     avatar_source_visible: bool = True
     latency_seconds: float = 0.0
 
@@ -88,9 +86,7 @@ class DisabledObsPreparationAdapter(FakeObsPreparationAdapter):
     adapter_type = "disabled"
 
     def __init__(self) -> None:
-        super().__init__(
-            FakeObsPreparationConfig(connected=False, output_status="unknown")
-        )
+        super().__init__(FakeObsPreparationConfig(connected=False, output_status="unknown"))
 
     async def connect(self) -> None:
         return None

@@ -9,9 +9,7 @@ from app.shared.contracts.plugins.registration import (
 
 
 class StreamingActivityProvider:
-    async def create_activity(
-        self, request: PluginActivityRequest
-    ) -> PluginActivitySpec:
+    async def create_activity(self, request: PluginActivityRequest) -> PluginActivitySpec:
         definitions = {
             "stream.activity.opening": (
                 "stream_opening_greeting",

@@ -50,8 +50,7 @@ def validate_youtube_config(
     )
     _positive(config.oauth_timeout_seconds, "youtube.oauth_timeout_seconds")
     if not config.allowed_privacy_statuses or any(
-        value not in {"private", "unlisted", "public"}
-        for value in config.allowed_privacy_statuses
+        value not in {"private", "unlisted", "public"} for value in config.allowed_privacy_statuses
     ):
         raise StreamingConfigError(
             "youtube.allowed_privacy_statuses",

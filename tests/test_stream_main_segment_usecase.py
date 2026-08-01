@@ -14,8 +14,8 @@ from app.domain.activity_turn_result import (
     ActivityOutputStatus,
     ActivityTurnResult,
 )
-from app.plugins.youtube_streaming.application import StreamMainSegmentUsecase
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application import StreamMainSegmentUsecase
+from subsystems.streaming.domain import (
     RetryMainSegmentCommand,
     RunOfShowSegment,
     StreamMainSegmentRejected,

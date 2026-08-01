@@ -45,8 +45,6 @@ def test_legacy_bootstrap_imports_match_the_migration_baseline() -> None:
     expected = {
         ("app/admin_api/__main__.py", "app.bootstrap.streaming"),
         ("app/admin_api/__main__.py", "app.bootstrap.streaming_runtime"),
-        ("app/bootstrap/__init__.py", "app.bootstrap.streaming"),
-        ("app/bootstrap/__init__.py", "app.bootstrap.streaming_runtime"),
         ("app/runtime/runtime_factory.py", "app.bootstrap.streaming_runtime"),
     }
     prefixes = (

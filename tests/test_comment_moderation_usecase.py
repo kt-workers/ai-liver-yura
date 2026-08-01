@@ -10,21 +10,21 @@ from app.adapters.streaming import (
     InMemoryStreamMainSegmentRepository,
     InMemoryStreamOpeningRepository,
 )
-from app.adapters.streaming.in_memory_session_repository import (
-    InMemoryStreamSessionRepository,
-)
 from app.config.app_config import CommentModerationSettings
 from app.domain.events import AgentEvent, AgentEventType
-from app.plugins.youtube_streaming.application import (
+from subsystems.streaming.adapters.repositories.in_memory_session_repository import (
+    InMemoryStreamSessionRepository,
+)
+from subsystems.streaming.application import (
     CommentModerationUsecase,
     StreamLifecycleGate,
 )
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.domain import (
     CommentCandidate,
     StreamSession,
     StreamSessionStatus,
 )
-from app.ports.comment_moderation import SemanticModerationResult
+from subsystems.streaming.ports.comment_moderation import SemanticModerationResult
 
 ACTIVE = {
     "obs_output": "active",

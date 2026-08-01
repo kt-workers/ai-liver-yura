@@ -9,21 +9,21 @@ from app.adapters.streaming import (
     InMemoryStreamMainSegmentRepository,
     InMemoryStreamOpeningRepository,
 )
-from app.adapters.streaming.in_memory_session_repository import (
+from app.domain.events import AgentEvent
+from subsystems.streaming.adapters.repositories.in_memory_session_repository import (
     InMemoryStreamSessionRepository,
 )
-from app.domain.events import AgentEvent
-from app.plugins.youtube_streaming.application import (
-    StreamLifecycleGate,
-    YouTubeLiveChatPoller,
-)
-from app.plugins.youtube_streaming.domain import StreamSession, StreamSessionStatus
-from app.ports.youtube_live_chat import LiveChatMessageDto, LiveChatPageDto
 from subsystems.streaming.adapters.youtube import (
     GoogleYouTubeLiveChatAdapter,
     YouTubeApiError,
     YouTubeApiErrorKind,
 )
+from subsystems.streaming.application import (
+    StreamLifecycleGate,
+    YouTubeLiveChatPoller,
+)
+from subsystems.streaming.domain import StreamSession, StreamSessionStatus
+from subsystems.streaming.ports.youtube_live_chat import LiveChatMessageDto, LiveChatPageDto
 
 ACTIVE = {
     "obs_output": "active",

@@ -42,12 +42,8 @@ class EnvironmentSecretProvider:
         *,
         aliases: Mapping[str, Sequence[str]] = DEFAULT_SECRET_ALIASES,
     ) -> None:
-        self._environ = (
-            None if environ is None else MappingProxyType(dict(environ))
-        )
-        self._aliases = MappingProxyType(
-            {name: tuple(values) for name, values in aliases.items()}
-        )
+        self._environ = None if environ is None else MappingProxyType(dict(environ))
+        self._aliases = MappingProxyType({name: tuple(values) for name, values in aliases.items()})
 
     def get_secret(self, name: str) -> str | None:
         environ = os.environ if self._environ is None else self._environ

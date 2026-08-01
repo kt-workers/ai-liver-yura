@@ -31,30 +31,6 @@ from app.config.app_config import CommentRankingSettings, load_app_config
 from app.domain.actions import ActionPlan
 from app.domain.character import CharacterProfile
 from app.domain.events import AgentEvent, AgentEventType
-from app.plugins.youtube_streaming.application import (
-    CommentModerationUsecase,
-    CommentRankingUsecase,
-    CommentResponseUsecase,
-    EndStreamSessionUsecase,
-    PrepareStreamSessionUsecase,
-    StartStreamSessionUsecase,
-    StreamLifecycleGate,
-    StreamMainSegmentUsecase,
-    StreamOpeningUsecase,
-    StreamPreparationRequirements,
-    YouTubeLiveChatPoller,
-)
-from app.plugins.youtube_streaming.domain import (
-    ApproveNormalStreamEndCommand,
-    ApproveStreamStartCommand,
-    CommentRankingContext,
-    HealthCheckItem,
-    HealthStatus,
-    StreamPreparationCommand,
-    StreamSessionStatus,
-    YouTubeBroadcastSummary,
-)
-from app.ports.youtube_live_chat import LiveChatMessageDto, LiveChatPageDto
 from app.runtime import (
     ActionPlanner,
     ActivityManager,
@@ -75,6 +51,30 @@ from subsystems.streaming.adapters.youtube.fake_youtube import (
     FakeLiveChatAdapter,
     FakeYouTubeStreamingControlAdapter,
 )
+from subsystems.streaming.application import (
+    CommentModerationUsecase,
+    CommentRankingUsecase,
+    CommentResponseUsecase,
+    EndStreamSessionUsecase,
+    PrepareStreamSessionUsecase,
+    StartStreamSessionUsecase,
+    StreamLifecycleGate,
+    StreamMainSegmentUsecase,
+    StreamOpeningUsecase,
+    StreamPreparationRequirements,
+    YouTubeLiveChatPoller,
+)
+from subsystems.streaming.domain import (
+    ApproveNormalStreamEndCommand,
+    ApproveStreamStartCommand,
+    CommentRankingContext,
+    HealthCheckItem,
+    HealthStatus,
+    StreamPreparationCommand,
+    StreamSessionStatus,
+    YouTubeBroadcastSummary,
+)
+from subsystems.streaming.ports.youtube_live_chat import LiveChatMessageDto, LiveChatPageDto
 
 ACTIVE = {
     "obs_output": "active",

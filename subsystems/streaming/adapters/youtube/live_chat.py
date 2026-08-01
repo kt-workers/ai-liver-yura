@@ -41,9 +41,7 @@ class GoogleYouTubeLiveChatAdapter(YouTubeLiveChatReadPort):
         self, live_chat_id: str, page_token: str | None, max_results: int
     ) -> LiveChatPageDto:
         try:
-            raw = await asyncio.to_thread(
-                self._list_sync, live_chat_id, page_token, max_results
-            )
+            raw = await asyncio.to_thread(self._list_sync, live_chat_id, page_token, max_results)
             return self._parse(raw)
         except Exception as error:
             raise YouTubeApiErrorMapper.map(error) from error
@@ -95,11 +93,7 @@ class GoogleYouTubeLiveChatAdapter(YouTubeLiveChatReadPort):
     def _parse(raw: dict[str, Any]) -> LiveChatPageDto:
         items = raw.get("items")
         interval = raw.get("pollingIntervalMillis")
-        if (
-            not isinstance(items, list)
-            or not isinstance(interval, int)
-            or interval <= 0
-        ):
+        if not isinstance(items, list) or not isinstance(interval, int) or interval <= 0:
             raise ValueError("invalid live chat response")
         messages: list[LiveChatMessageDto] = []
         for item in items:
@@ -156,9 +150,7 @@ class GoogleYouTubeLiveChatAdapter(YouTubeLiveChatReadPort):
         return StreamingComment(
             comment_id=message.message_id,
             author_id=author_id if isinstance(author_id, str) else "",
-            author_display_name=(
-                display_name if isinstance(display_name, str) else ""
-            ),
+            author_display_name=(display_name if isinstance(display_name, str) else ""),
             text=text if isinstance(text, str) else "",
             published_at=published_at,
             stream_id=stream_id,
