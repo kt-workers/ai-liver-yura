@@ -3,12 +3,13 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 
 from app.domain.desires import DesireState, DesireType
+from app.domain.morals import MoralProfile, MoralState
 from app.domain.motivation import DesireConflict, MotivationAppraisal, RankedDesire
 from app.domain.relationships import RelationshipState
 
 
 class MotivationAppraiser:
-    """DesireとRelationshipから読み取り専用のMotivationを導出する。"""
+    """Desire・Relationship・MoralからMotivationを導出する。"""
 
     _ACTIVITY_RECOMMENDATIONS: Mapping[DesireType, tuple[str, ...]] = {
         DesireType.CONNECTION: (
@@ -132,7 +133,13 @@ class MotivationAppraiser:
         self,
         desire: DesireState,
         relationship: RelationshipState | None = None,
+        *,
+        moral_profile: MoralProfile | None = None,
+        moral_state: MoralState | None = None,
     ) -> MotivationAppraisal:
+        if (moral_profile is None) != (moral_state is None):
+            raise ValueError("moral_profileとmoral_stateは同時に指定してください。")
+
         expression_strength = self._expression_strength(relationship)
         ordered_types = sorted(
             DesireType,
@@ -166,15 +173,28 @@ class MotivationAppraiser:
             top_types,
             self._STRATEGY_RECOMMENDATIONS,
         )
+        moral_available = moral_profile is not None and moral_state is not None
         return MotivationAppraisal(
             ranked_desires=ranked_desires,
             conflicts=conflicts,
             expression_strength=expression_strength,
             recommended_activity_types=activities,
             recommended_conversation_strategies=strategies,
-            moral_evaluation_available=False,
+            moral_evaluation_available=moral_available,
+            moral_observation_only=True,
+            moral_profile=moral_profile,
+            moral_state=moral_state,
+            moral_composite=(
+                moral_profile.compose(moral_state)
+                if moral_profile is not None and moral_state is not None
+                else None
+            ),
             suppressed_activity_types=(),
-            suppression_reasons=("moral_profile_not_available",),
+            suppression_reasons=(
+                ("moral_fit_observation_only",)
+                if moral_available
+                else ("moral_profile_not_available",)
+            ),
         )
 
     def _conflicts(self, desire: DesireState) -> tuple[DesireConflict, ...]:
