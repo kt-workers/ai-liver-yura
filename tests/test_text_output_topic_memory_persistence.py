@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.domain.actions import ActionPlan, ActionType
+from app.domain.actions import ActionPlan, ActionPlanGroup, ActionType
 from app.domain.character_response import VoiceIntent
 from app.domain.topic import TopicCategory, TopicHistory
 from app.domain.topic_memory import SimilarTopicMemory, TopicMemoryEntry
+from app.runtime.action_scheduler import ActionScheduler
+from app.runtime.autonomous_output import completed_speech_text
 from app.usecases import ExecuteActionUsecase
 
 
@@ -65,11 +67,7 @@ class FakeTopicMemoryStore:
         return []
 
 
-@pytest.mark.asyncio
-async def test_voice_failure_persists_topic_memory_after_text_output(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
+def _disable_wait(monkeypatch: pytest.MonkeyPatch) -> None:
     async def no_wait(duration: float) -> None:
         return None
 
@@ -77,6 +75,14 @@ async def test_voice_failure_persists_topic_memory_after_text_output(
         "app.usecases.execute_action_usecase.asyncio.sleep",
         no_wait,
     )
+
+
+@pytest.mark.asyncio
+async def test_voice_failure_persists_topic_memory_after_text_output(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _disable_wait(monkeypatch)
     topic_history = TopicHistory()
     classifier = FakeTopicClassifier()
     embedding_generator = FakeEmbeddingGenerator()
@@ -108,22 +114,14 @@ async def test_voice_failure_persists_topic_memory_after_text_output(
     assert len(store.saved_entries) == 1
     assert store.saved_entries[0].source_text == action.text
     assert store.saved_entries[0].source_activity_id == "activity-1"
-    assert result is not None
-    assert result.status.value == "failed"
-    assert "VOICEVOX unavailable" in (result.error or "")
+    assert result is None
 
 
 @pytest.mark.asyncio
 async def test_voice_failure_respects_skip_topic_memory_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def no_wait(duration: float) -> None:
-        return None
-
-    monkeypatch.setattr(
-        "app.usecases.execute_action_usecase.asyncio.sleep",
-        no_wait,
-    )
+    _disable_wait(monkeypatch)
     topic_history = TopicHistory()
     classifier = FakeTopicClassifier()
     embedding_generator = FakeEmbeddingGenerator()
@@ -149,5 +147,34 @@ async def test_voice_failure_respects_skip_topic_memory_policy(
     assert embedding_generator.received_texts == []
     assert topic_history.recent_entries() == []
     assert store.saved_entries == []
-    assert result is not None
-    assert result.status.value == "failed"
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_voice_failure_does_not_block_autonomous_speech_completion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _disable_wait(monkeypatch)
+    output = FakeConversationOutputPublisher()
+    usecase = ExecuteActionUsecase(
+        speech_synthesizer=FailingSpeechSynthesizer(),
+        audio_player=FakeAudioPlayer(),
+        conversation_output_publisher=output,
+    )
+    action = ActionPlan(
+        action_type=ActionType.SPEAK,
+        text="音声プラグインがなくても、発話ターンは完了するよ。",
+        source_activity_id="autonomous-activity-1",
+    )
+    group = ActionPlanGroup(
+        action_plans=[action],
+        source_activity_id="autonomous-activity-1",
+    )
+
+    output_result = await ActionScheduler(usecase).execute(group)
+
+    assert output.outputs == [("speak", action.text, action.action_id)]
+    assert output_result.status.value == "completed"
+    assert len(output_result.action_results) == 1
+    assert output_result.action_results[0].status.value == "completed"
+    assert completed_speech_text(group, output_result) == action.text
