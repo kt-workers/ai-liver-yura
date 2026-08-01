@@ -62,6 +62,11 @@ def test_build_enriches_user_event_and_creates_planning_context() -> None:
     }
     assert prepared.event.payload["conversation_history"] == ()
     assert prepared.event.payload["related_knowledge"] == ()
+    assert prepared.event.payload["motivation"] == prepared.context.motivation
+    assert prepared.context.motivation["primary_desire"] == "curiosity"
+    assert prepared.context.motivation["expression_strength"] == 0.5
+    assert prepared.context.motivation["moral_evaluation_available"] is False
+    assert prepared.context.motivation["suppressed_activity_types"] == []
     assert prepared.context.user_text == "こんにちは"
     assert prepared.context.source_event_id == event.event_id
     assert prepared.context.event_type == AgentEventType.USER_TEXT.value
