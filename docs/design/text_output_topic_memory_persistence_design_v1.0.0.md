@@ -1,48 +1,94 @@
-# テキスト出力済み発話のTopic Memory保存設計 v1.0.0
+# Core発話成立とTopic Memory保存設計 v1.0.1
 
 ## 1. 目的
 
-VOICEVOXまたは音声再生先が利用できない場合でも、発話テキストがWeb画面またはコンソールへ出力されたなら、その発話をTopic HistoryおよびTopic Memoryへ保存する。
+VOICEVOXや音声再生先が存在しない、または一時的に利用不能であっても、Core単体で会話・自律発話・記憶・話題進行を継続できるようにする。
 
-音声出力は発話内容を届ける複数の出力チャネルの一つであり、音声だけの失敗を理由として、すでに利用者へ提示された発話内容を長期記憶から除外しない。
+音声出力は発話内容を届ける任意の出力チャネルであり、Coreの発話成立条件ではない。発話テキストがCoreの統一出力境界を通過した時点で発話成立とし、その後段にあるVOICEVOX、音声再生、Live2D、字幕などの成否は個別チャネルの状態として扱う。
 
-## 2. 変更前の問題
+## 2. 実動作で確認した問題
 
-`ExecuteActionUsecase`は次の順で処理していた。
+一言入力後に放置した実動作では、VOICEVOX未接続中に同じ自律話題の発話が短い間隔で連続した。終了は内部の自然停止ではなく、利用者がターミナルでCtrl+Cを入力したことによる。
 
-1. Web Conversationへテキストを送る
-2. コンソールへテキストを表示する
-3. Short Term Memoryへ保存する
-4. 音声合成・再生を試行する
-5. 音声が成功した場合だけTopic History・Topic Memoryを保存する
-
-このため、テキストが利用者へ表示済みでもVOICEVOX未接続時には次の理由でDB保存が停止していた。
+ログでは発話テキストがWeb／コンソールへ出力され、Topic Memoryにも保存されていた一方、自律発話側では次が繰り返されていた。
 
 ```text
-reason=audio_delivery_failed
+activity_executor_thread:autonomous_memory_not_saved
+reason=speak_not_completed
 ```
 
-## 3. 保存条件
+従来は`SPEAK` Actionの完了を音声再生成功と同一視していたため、テキストを実際に出力してもVOICEVOX失敗時には次が更新されなかった。
 
-音声失敗時にもTopic Memory保存を継続する条件は次のすべてを満たす場合とする。
+- 自律発話ターン数
+- 最終自律発話時刻
+- 話題の消耗度
+- 話題継続強度
+- 自律Activity終了判定
 
-- Action種別が`SPEAK`
-- 発話テキストが通常の出力処理へコミット済み
-- `skip_topic_memory`が`true`ではない
-- Topic Historyが構成済み
-- Topic Classifierが構成済み
-- Embedding Generatorが構成済み
-- Topic Memory Storeが構成済み
+結果として、外部音声プラグインの障害がCoreの自律進行を停止させていた。
 
-DB保存構成が不足している場合は、保存できない状態を成功として偽装せず、従来の音声失敗結果を維持する。
+## 3. 発話成立点
 
-## 4. 出力結果と記憶結果の分離
+### 3.1 採用する境界
 
-音声失敗時も次の二つを分離する。
+Coreの発話成立点は、`SPEAK`実行経路で次が完了した後とする。
 
-### 発話内容の記憶
+1. Conversation Output Publisherへのテキスト出力
+2. コンソールへのテキスト表示
+3. Short Term Memoryへの発話コミット
 
-テキスト出力済みであれば次を実行する。
+この処理の後に音声合成・再生を行う。したがって、音声処理へ到達した時点ではCoreの発話テキストはすでに外部観測可能な出力として成立している。
+
+### 3.2 採用しない境界
+
+LLMが発話テキストを生成しただけの段階は発話成立としない。
+
+生成後でも、次の理由で出力されない可能性があるためである。
+
+- Response Validatorによる拒否
+- Activityのキャンセル
+- ユーザー割り込み
+- 出力優先度による破棄
+- Safety／Authority判定
+- FIFO出力前の停止
+
+発話成立は「生成したか」ではなく「Coreの出力境界を通過したか」で判断する。
+
+## 4. Coreと任意出力チャネルの分離
+
+### Coreの責務
+
+テキスト出力がコミットされた場合、Coreは次を成立させる。
+
+- `SPEAK` Actionの完了
+- 自律発話出力の記録
+- 自律話題ターン数の更新
+- 話題継続・終了判定
+- Short Term Memory保存
+- Topic History保存
+- 構成済みの場合のTopic Memory DB保存
+- 次回発話間隔の更新
+
+### 音声チャネルの責務
+
+VOICEVOXやAudio Playerは、成立済みの発話を音声として配送する任意チャネルである。
+
+失敗時は次を行う。
+
+- `audio_fallback`を記録
+- `optional_voice_output_degraded`を記録
+- エラー種別と内容をTraceへ残す
+- Coreの`SPEAK`完了を取り消さない
+- 自律発話ターンを未完了へ戻さない
+- Topic Memory保存を止めない
+
+音声成功を偽装するのではなく、Core発話成功と音声チャネル失敗を別の事実として扱う。
+
+## 5. Topic Memory保存
+
+テキスト出力コミット後は音声結果に関係なくTopic Memory処理へ進む。
+
+保存処理は構成に応じて次を行う。
 
 - Topic分類
 - Topic History追加
@@ -50,50 +96,46 @@ DB保存構成が不足している場合は、保存できない状態を成功
 - Embedding生成
 - PostgreSQL Topic Memory保存
 
-### Action実行結果
-
-VOICEVOXまたは音声再生に失敗した事実は維持する。
-
-- `ActionExecutionResult.status=failed`
-- Activity全体では既存の集約規則により部分成功として扱える
-- 音声エラー文字列を保持する
-- 音声成功として偽装しない
-
-## 5. 保存対象外ポリシー
+必要なClassifier、Embedding Generator、Topic Memory Storeが存在しない場合は、既存どおり各処理をskipし、Core発話自体は成功のまま維持する。
 
 `metadata.skip_topic_memory=true`は音声状態に関係なく最優先する。
 
-ゲーム中の短い返答、一時的なシステム発話、記憶へ残すべきでない出力は従来どおり保存しない。
-
 ## 6. Trace
 
-音声失敗後も保存を許可した場合は次を記録する。
+音声失敗後もCore発話を成立させた場合は次を記録する。
+
+```text
+execute_action_usecase:speak:optional_voice_output_degraded
+reason=text_output_already_committed
+```
+
+Topic Memory処理を継続する場合は次も記録する。
 
 ```text
 execute_action_usecase:speak:topic_memory_allowed_after_audio_failure
 reason=text_output_committed
 ```
 
-音声側では従来どおり`audio_fallback`を記録し、DB保存側では`topic_memory_saved`または各失敗理由を記録する。
+音声側の元エラーは`audio_fallback`と`audio_error`に保持する。
 
-## 7. 非対象
+## 7. 受入条件
 
-この変更では次を行わない。
+1. VOICEVOX未接続でもWeb／コンソールへテキストが出力される
+2. `SPEAK` ActionがCore上で`completed`になる
+3. 自律発話が`record_autonomous_output`へ渡される
+4. 自律話題のターン数と消耗度が更新される
+5. 発話間隔と話題終了判定が音声有無に依存しない
+6. Topic HistoryとDB保存が音声結果に依存しない
+7. `skip_topic_memory=true`では保存しない
+8. VOICEVOXエラーはTraceから確認できる
+9. DB機能が無効でもCore発話完了は維持される
+10. 発話テキスト生成だけでは発話済みと判定しない
+
+## 8. 非対象
 
 - VOICEVOX接続設定の変更
-- 音声失敗を成功扱いに変更
-- Topic Classifier失敗時のカテゴリ推定
-- Embedding失敗時のDB保存
-- `ASK`、`REACT`、`OBSERVE`など非`SPEAK` ActionのTopic Memory保存
-- Topic Memoryのスキーマ変更
-
-## 8. 検証条件
-
-回帰テストでは次を確認する。
-
-- VOICEVOX失敗でもWeb出力とコンソール出力が成立する
-- Topic Historyへ発話が追加される
-- Embeddingが生成される
-- Topic Memory Storeへ1件保存される
-- Action結果は音声失敗のまま
-- `skip_topic_memory=true`では保存されない
+- 音声プラグインの再接続制御
+- 音声チャネル専用の永続的Health管理
+- Live2Dや字幕チャネルの個別実装変更
+- Topic Memoryスキーマ変更
+- LLM生成直後を発話成立点にすること
