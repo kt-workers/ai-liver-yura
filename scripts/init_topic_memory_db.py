@@ -13,6 +13,9 @@ from app.adapters.storage.postgres_topic_memory_store import (  # noqa: E402
     PostgresTopicMemoryStore,
     PostgresTopicMemoryStoreConfig,
 )
+from app.bootstrap.adapter_settings import (  # noqa: E402
+    resolve_topic_memory_store_settings,
+)
 from app.config.app_config import load_app_config  # noqa: E402
 
 
@@ -26,22 +29,20 @@ async def main() -> None:
         )
         return
 
-    if topic_memory_config.database.type != "postgres":
-        raise RuntimeError(
-            "unsupported topic memory database type: "
-            f"{topic_memory_config.database.type}"
-        )
-
-    dsn = os.environ.get(topic_memory_config.database.dsn_env, "")
+    store_settings = resolve_topic_memory_store_settings(config)
+    dsn = os.environ.get(store_settings.dsn_env, "")
     if not dsn:
         raise RuntimeError(
-            "database dsn is not set: " f"{topic_memory_config.database.dsn_env}"
+            "database dsn is not set: " f"{store_settings.dsn_env}"
         )
 
     store = PostgresTopicMemoryStore(
         PostgresTopicMemoryStoreConfig(
             dsn=dsn,
-            embedding_dimension=topic_memory_config.embedding.dimension,
+            embedding_dimension=store_settings.embedding_dimension,
+            duplicate_threshold=store_settings.duplicate_threshold,
+            max_entries=store_settings.max_entries,
+            retention_days=store_settings.retention_days,
         )
     )
     await store.initialize()

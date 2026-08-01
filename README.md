@@ -114,6 +114,80 @@ set +a
 この処理はpgvector拡張、`topic_memories`テーブル、必要なインデックスを
 冪等に作成します。
 
+### 6. PostgreSQLへターミナルから接続する
+
+PostgreSQLコンテナ内の`psql`を使用して、対話形式でデータベースへ接続します。
+次のコマンドはコンテナ内の`POSTGRES_USER`と`POSTGRES_DB`を使用するため、
+`.env`で既定値を変更した場合もそのまま使用できます。
+
+```bash
+docker compose exec postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+接続後、プロンプトが`ai_liver=#`のように表示されます。接続先を確認するには
+次を実行します。
+
+```text
+\conninfo
+```
+
+`psql`を終了して通常のターミナルへ戻る場合は、次を実行します。
+
+```text
+\q
+```
+
+### 7. テーブルとTopic Memoryデータを確認する
+
+以下は`psql`へ接続した後に実行します。バックスラッシュから始まるものは
+`psql`のメタコマンドで、SQL文ではありません。
+
+```sql
+-- データベース内のテーブル一覧
+\dt
+
+-- topic_memoriesテーブルの列、型、インデックスを確認
+\d topic_memories
+
+-- pgvector拡張が有効か確認
+SELECT extname, extversion
+FROM pg_extension
+WHERE extname = 'vector';
+
+-- Topic Memoryの登録件数を確認
+SELECT COUNT(*) AS topic_memory_count
+FROM topic_memories;
+
+-- 直近20件を確認（長いembedding列は表示しない）
+SELECT
+    id,
+    category,
+    summary,
+    activity_type,
+    source_activity_id,
+    created_at
+FROM topic_memories
+ORDER BY created_at DESC, id DESC
+LIMIT 20;
+
+-- categoryごとの登録件数を確認
+SELECT
+    category,
+    COUNT(*) AS count
+FROM topic_memories
+GROUP BY category
+ORDER BY count DESC, category;
+```
+
+テーブル初期化直後でまだ会話データが保存されていない場合、
+`topic_memory_count`が`0`でも正常です。
+
+対話接続せず、ターミナルから件数だけ確認する場合は次を実行します。
+
+```bash
+docker compose exec postgres sh -lc 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT COUNT(*) AS topic_memory_count FROM topic_memories;"'
+```
+
 ### 起動・停止・削除
 
 ```bash
