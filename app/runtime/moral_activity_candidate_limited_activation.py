@@ -98,7 +98,11 @@ class MoralActivityCandidateLimitedActivationApplier:
         *,
         trace_logger: TraceLogger | None = None,
     ) -> None:
-        self._policy = policy or MoralActivityCandidateLimitedActivationPolicy()
+        self._policy = (
+            policy
+            if policy is not None
+            else MoralActivityCandidateLimitedActivationPolicy.from_environment()
+        )
         self._trace_logger = trace_logger or TraceLogger()
 
     @property
