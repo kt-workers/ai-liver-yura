@@ -4,8 +4,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from typing import Protocol
 
-from app.plugins.youtube_streaming.application.lifecycle_gate import StreamLifecycleGate
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application.lifecycle_gate import StreamLifecycleGate
+from subsystems.streaming.domain import (
     LifecycleOperation,
     RetryOpeningCommand,
     StreamOpeningActivity,
@@ -14,8 +14,14 @@ from app.plugins.youtube_streaming.domain import (
     StreamSessionStatus,
     StreamStartResult,
 )
-from app.ports.streaming_preparation import RunOfShowRepository, StreamSessionRepository
-from app.shared.contracts.plugins.runtime import SPEAK_ACTION_TYPE, PluginActivityResult
+from subsystems.streaming.ports.content_execution import (
+    SPEAK_ACTION_TYPE,
+    StreamContentExecutionResult,
+)
+from subsystems.streaming.ports.streaming_preparation import (
+    RunOfShowRepository,
+    StreamSessionRepository,
+)
 
 
 class OpeningRepository(Protocol):
@@ -28,7 +34,7 @@ class OpeningRepository(Protocol):
     ) -> StreamOpeningActivity: ...
 
 
-OpeningExecutor = Callable[[dict[str, object], str], Awaitable[PluginActivityResult]]
+OpeningExecutor = Callable[[dict[str, object], str], Awaitable[StreamContentExecutionResult]]
 OpeningEventPublisher = Callable[[str, dict[str, object], str], None]
 OpeningCompleted = Callable[[StreamOpeningActivity, dict[str, str]], Awaitable[object]]
 
@@ -107,9 +113,7 @@ class StreamOpeningUsecase:
         try:
             segment = self._run_of_show.get_opening_segment(session.run_of_show_id)
         except Exception as error:
-            return self._create_failed(
-                session_id, start_result.trace_id, None, str(error)
-            )
+            return self._create_failed(session_id, start_result.trace_id, None, str(error))
         if segment is None:
             code = (
                 "opening.segment.required_missing"
@@ -120,21 +124,15 @@ class StreamOpeningUsecase:
             self._openings.create(activity)
             self._sessions.save(session.attach_opening(activity.activity_id))
             if self._require_segment:
-                return self._fail(
-                    activity.transition(StreamOpeningStatus.RUNNING), code
-                )
+                return self._fail(activity.transition(StreamOpeningStatus.RUNNING), code)
             activity = self._openings.save(
                 activity.transition(StreamOpeningStatus.CANCELED, failure_code=code)
             )
             return activity
-        activity = StreamOpeningActivity(
-            session_id, start_result.trace_id, segment.segment_id
-        )
+        activity = StreamOpeningActivity(session_id, start_result.trace_id, segment.segment_id)
         self._openings.create(activity)
         self._sessions.save(session.attach_opening(activity.activity_id))
-        return await self._execute(
-            activity, segment=asdict(segment), session_title=session.title
-        )
+        return await self._execute(activity, segment=asdict(segment), session_title=session.title)
 
     async def retry(self, command: RetryOpeningCommand) -> StreamOpeningActivity:
         duplicate = self._openings.command_result(command.command_id)
@@ -158,9 +156,7 @@ class StreamOpeningUsecase:
             raise StreamOpeningRejected(str(error)) from error
         if segment is None:
             raise StreamOpeningRejected("opening.segment.required_missing")
-        result = await self._execute(
-            activity, segment=asdict(segment), session_title=session.title
-        )
+        result = await self._execute(activity, segment=asdict(segment), session_title=session.title)
         return self._openings.save_command_result(command.command_id, result)
 
     async def _execute(
@@ -208,18 +204,14 @@ class StreamOpeningUsecase:
         speak = next(
             (
                 item
-                for item in (
-                    turn.output_result.action_results if turn.output_result else ()
-                )
+                for item in (turn.output_result.action_results if turn.output_result else ())
                 if item.action_type == SPEAK_ACTION_TYPE
             ),
             None,
         )
         result: dict[str, object] = {
             "activity_turn_id": turn.activity_turn_id,
-            "generation_id": (
-                turn.character_result.result_id if turn.character_result else None
-            ),
+            "generation_id": (turn.character_result.result_id if turn.character_result else None),
             "action_id": speak.action_id if speak else None,
             "final_status": turn.final_status,
         }
@@ -234,9 +226,7 @@ class StreamOpeningUsecase:
                 result=result,
             )
         )
-        self._publish(
-            "stream_opening.completed", self._event_data(activity), activity.trace_id
-        )
+        self._publish("stream_opening.completed", self._event_data(activity), activity.trace_id)
         if self._completed_handler is not None:
             try:
                 await self._completed_handler(
@@ -275,13 +265,9 @@ class StreamOpeningUsecase:
         else:
             running = self._openings.save(activity)
         failed = self._openings.save(
-            running.transition(
-                StreamOpeningStatus.FAILED, failure_code=code, result=result
-            )
+            running.transition(StreamOpeningStatus.FAILED, failure_code=code, result=result)
         )
-        self._publish(
-            "stream_opening.failed", self._event_data(failed), failed.trace_id
-        )
+        self._publish("stream_opening.failed", self._event_data(failed), failed.trace_id)
         return failed
 
     @staticmethod

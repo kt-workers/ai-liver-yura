@@ -5,9 +5,9 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import Protocol
 
-from app.config.app_config import CommentResponseSettings
-from app.plugins.youtube_streaming.application.lifecycle_gate import StreamLifecycleGate
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application.lifecycle_gate import StreamLifecycleGate
+from subsystems.streaming.application.settings import CommentResponseSettings
+from subsystems.streaming.domain import (
     CommentResponseHistoryEntry,
     CommentResponseRejected,
     CommentResponseTarget,
@@ -16,11 +16,14 @@ from app.plugins.youtube_streaming.domain import (
     StreamCommentResponseActivity,
     StreamCommentResponseStatus,
 )
-from app.ports.comment_response import (
+from subsystems.streaming.ports.comment_response import (
     CommentResponseActivityRepository,
     CompletedCommentResponseHistoryRepository,
 )
-from app.shared.contracts.plugins.runtime import SPEAK_ACTION_TYPE, PluginActivityResult
+from subsystems.streaming.ports.content_execution import (
+    SPEAK_ACTION_TYPE,
+    StreamContentExecutionResult,
+)
 
 
 class SelectionManager(Protocol):
@@ -30,7 +33,7 @@ class SelectionManager(Protocol):
     def consume(self, selection_id: str) -> CommentResponseTarget | None: ...
 
 
-ResponseExecutor = Callable[[dict[str, object], str], Awaitable[PluginActivityResult]]
+ResponseExecutor = Callable[[dict[str, object], str], Awaitable[StreamContentExecutionResult]]
 ResponsePublisher = Callable[[str, dict[str, object], str], None]
 
 
@@ -67,9 +70,7 @@ class CommentResponseUsecase:
             raise CommentResponseRejected("comment_response.duplicate_activity")
         target = self._require_target(session_id, selection_id)
         try:
-            self._require_gate(
-                LifecycleOperation.START_COMMENT_RESPONSE, session_id, trace_id
-            )
+            self._require_gate(LifecycleOperation.START_COMMENT_RESPONSE, session_id, trace_id)
         except CommentResponseRejected:
             self._selections.release(selection_id)
             self._publish(
@@ -79,15 +80,11 @@ class CommentResponseUsecase:
             )
             raise
         activity = self._activities.create(
-            StreamCommentResponseActivity(
-                session_id, trace_id, selection_id, target.candidate_id
-            )
+            StreamCommentResponseActivity(session_id, trace_id, selection_id, target.candidate_id)
         )
         return await self._execute(activity, target)
 
-    async def retry(
-        self, command: RetryCommentResponseCommand
-    ) -> StreamCommentResponseActivity:
+    async def retry(self, command: RetryCommentResponseCommand) -> StreamCommentResponseActivity:
         duplicate = self._activities.command_result(command.command_id)
         if duplicate is not None:
             return duplicate
@@ -99,9 +96,7 @@ class CommentResponseUsecase:
         if activity.version != command.expected_activity_version:
             raise CommentResponseRejected("comment_response.version_mismatch")
         if activity.status != StreamCommentResponseStatus.FAILED:
-            raise CommentResponseRejected(
-                f"comment_response.retry.{activity.status.value}"
-            )
+            raise CommentResponseRejected(f"comment_response.retry.{activity.status.value}")
         if activity.attempt > self._settings.max_retries:
             raise CommentResponseRejected("comment_response.retry_limit")
         target = self._selections.reacquire(command.selection_id)
@@ -113,12 +108,8 @@ class CommentResponseUsecase:
     async def _execute(
         self, activity: StreamCommentResponseActivity, target: CommentResponseTarget
     ) -> StreamCommentResponseActivity:
-        activity = self._activities.save(
-            activity.transition(StreamCommentResponseStatus.RUNNING)
-        )
-        self._publish(
-            "stream_comments.response_started", self._event(activity), activity.trace_id
-        )
+        activity = self._activities.save(activity.transition(StreamCommentResponseStatus.RUNNING))
+        self._publish("stream_comments.response_started", self._event(activity), activity.trace_id)
         payload = {
             "session_id": activity.session_id,
             "activity_type": "stream_comment_response",
@@ -187,15 +178,11 @@ class CommentResponseUsecase:
         except CommentResponseRejected as error:
             return self._fail(activity, error.code)
         except Exception as error:
-            return self._fail(
-                activity, f"comment_response.output.{type(error).__name__}"
-            )
+            return self._fail(activity, f"comment_response.output.{type(error).__name__}")
         speak = next(
             (
                 item
-                for item in (
-                    turn.output_result.action_results if turn.output_result else ()
-                )
+                for item in (turn.output_result.action_results if turn.output_result else ())
                 if item.action_type == SPEAK_ACTION_TYPE
             ),
             None,
@@ -203,9 +190,7 @@ class CommentResponseUsecase:
         response = turn.character_result.adopted_text if turn.character_result else None
         result: dict[str, object] = {
             "activity_turn_id": turn.activity_turn_id,
-            "generation_id": (
-                turn.character_result.result_id if turn.character_result else None
-            ),
+            "generation_id": (turn.character_result.result_id if turn.character_result else None),
             "action_id": speak.action_id if speak else None,
             "final_status": turn.final_status,
         }
@@ -213,9 +198,7 @@ class CommentResponseUsecase:
             code = turn.failure_stage or "comment_response.tts_or_playback_failed"
             return self._fail(activity, code, result=result)
         if self._selections.consume(activity.selection_id) is None:
-            return self._fail(
-                activity, "comment_response.consume_conflict", result=result
-            )
+            return self._fail(activity, "comment_response.consume_conflict", result=result)
         activity = self._activities.save(
             activity.transition(StreamCommentResponseStatus.COMPLETED, result=result)
         )
@@ -278,14 +261,10 @@ class CommentResponseUsecase:
                     "failed",
                 )
             )
-        self._publish(
-            "stream_comments.response_failed", self._event(failed), activity.trace_id
-        )
+        self._publish("stream_comments.response_failed", self._event(failed), activity.trace_id)
         return failed
 
-    def _require_target(
-        self, session_id: str, selection_id: str
-    ) -> CommentResponseTarget:
+    def _require_target(self, session_id: str, selection_id: str) -> CommentResponseTarget:
         target = self._selections.selection(selection_id)
         if target is None:
             raise CommentResponseRejected("comment_response.reservation_missing")
@@ -299,9 +278,7 @@ class CommentResponseUsecase:
             raise CommentResponseRejected("comment_response.reservation_missing")
         return target
 
-    def _require_gate(
-        self, operation: LifecycleOperation, session_id: str, trace_id: str
-    ) -> None:
+    def _require_gate(self, operation: LifecycleOperation, session_id: str, trace_id: str) -> None:
         decision = self._gate.evaluate(operation, session_id, trace_id=trace_id)
         if not decision.allowed:
             raise CommentResponseRejected(
@@ -315,17 +292,11 @@ class CommentResponseUsecase:
             "activity_id": activity.activity_id,
             "selection_id": activity.selection_id,
             "candidate_id": activity.candidate_id,
-            "message_id_hash": hashlib.sha256(
-                activity.candidate_id.encode()
-            ).hexdigest()[:12],
+            "message_id_hash": hashlib.sha256(activity.candidate_id.encode()).hexdigest()[:12],
             "status": activity.status.value,
             "attempt": activity.attempt,
             "failure_code": activity.failure_code,
             "retryable": activity.retryable,
-            "started_at": (
-                activity.started_at.isoformat() if activity.started_at else None
-            ),
-            "completed_at": (
-                activity.completed_at.isoformat() if activity.completed_at else None
-            ),
+            "started_at": (activity.started_at.isoformat() if activity.started_at else None),
+            "completed_at": (activity.completed_at.isoformat() if activity.completed_at else None),
         }

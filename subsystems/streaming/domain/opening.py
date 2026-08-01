@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
-from app.plugins.youtube_streaming.domain.health import utc_now
+from subsystems.streaming.domain.health import utc_now
 
 
 class StreamOpeningStatus(str, Enum):
@@ -64,23 +64,15 @@ class StreamOpeningActivity:
         result: dict[str, Any] | None = None,
     ) -> StreamOpeningActivity:
         if status not in _OPENING_TRANSITIONS[self.status]:
-            raise ValueError(
-                f"invalid opening transition: {self.status.value} -> {status.value}"
-            )
+            raise ValueError(f"invalid opening transition: {self.status.value} -> {status.value}")
         now = utc_now()
         return replace(
             self,
             status=status,
-            attempt=(
-                self.attempt + 1
-                if status == StreamOpeningStatus.RUNNING
-                else self.attempt
-            ),
+            attempt=(self.attempt + 1 if status == StreamOpeningStatus.RUNNING else self.attempt),
             failure_code=failure_code,
             manual_intervention_required=status == StreamOpeningStatus.FAILED,
-            started_at=(
-                now if status == StreamOpeningStatus.RUNNING else self.started_at
-            ),
+            started_at=(now if status == StreamOpeningStatus.RUNNING else self.started_at),
             completed_at=(
                 now
                 if status

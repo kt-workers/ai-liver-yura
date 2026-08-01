@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from threading import RLock
 
-from app.plugins.youtube_streaming.domain import StreamOpeningActivity
+from subsystems.streaming.domain import StreamOpeningActivity
 
 
 class InMemoryStreamOpeningRepository:

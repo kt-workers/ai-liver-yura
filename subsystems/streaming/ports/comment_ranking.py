@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from app.plugins.youtube_streaming.domain import CommentCandidate
-from app.plugins.youtube_streaming.domain.comment_ranking import (
+from subsystems.streaming.domain import CommentCandidate
+from subsystems.streaming.domain.comment_ranking import (
     CommentResponseTarget,
     RankedCommentCandidate,
 )
@@ -32,16 +32,12 @@ class CommentCandidateRepository(Protocol):
     def expired_count(self) -> int: ...
 
     def add(self, candidate: CommentCandidate) -> None: ...
-    def valid(
-        self, session_id: str, expires_before: datetime
-    ) -> tuple[CommentCandidate, ...]: ...
+    def valid(self, session_id: str, expires_before: datetime) -> tuple[CommentCandidate, ...]: ...
     def mark(self, session_id: str, candidate_id: str, status: str) -> None: ...
 
 
 class CommentRankingRepository(Protocol):
-    def save(
-        self, session_id: str, values: tuple[RankedCommentCandidate, ...]
-    ) -> None: ...
+    def save(self, session_id: str, values: tuple[RankedCommentCandidate, ...]) -> None: ...
     def latest(self, session_id: str) -> tuple[RankedCommentCandidate, ...]: ...
 
 
@@ -52,9 +48,7 @@ class CommentSelectionRepository(Protocol):
     def reserve_released(
         self, selection_id: str, expires_at: datetime
     ) -> CommentResponseTarget | None: ...
-    def transition(
-        self, selection_id: str, status: str
-    ) -> CommentResponseTarget | None: ...
+    def transition(self, selection_id: str, status: str) -> CommentResponseTarget | None: ...
     def invalidate_session(self, session_id: str) -> None: ...
 
 

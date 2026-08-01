@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Protocol
 
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.domain import (
     LifecycleDecision,
     LifecycleOperation,
     StreamLifecycleClass,
@@ -13,7 +13,7 @@ from app.plugins.youtube_streaming.domain import (
     StreamSessionStatus,
     classify_lifecycle,
 )
-from app.ports.streaming_preparation import StreamSessionRepository
+from subsystems.streaming.ports.streaming_preparation import StreamSessionRepository
 
 
 class ActivityReader(Protocol):
@@ -64,9 +64,7 @@ class StreamLifecycleGate:
         self._main = main_segments
         self._publisher = publisher or (lambda _event, _data, _trace: None)
         self._external: dict[str, dict[str, str]] = {}
-        self._last_notifications: dict[
-            tuple[str, str], tuple[bool, str | None, int]
-        ] = {}
+        self._last_notifications: dict[tuple[str, str], tuple[bool, str | None, int]] = {}
         active = sessions.find_active_or_preparing()
         self._current_session_id = active.session_id if active is not None else None
 
@@ -188,10 +186,7 @@ class StreamLifecycleGate:
                 False,
                 trace_id,
             )
-        if (
-            operation in self._OUTPUT_OPERATIONS
-            and activity_type == "stream_closing_greeting"
-        ):
+        if operation in self._OUTPUT_OPERATIONS and activity_type == "stream_closing_greeting":
             allowed = session.status in {
                 StreamSessionStatus.CLOSING_REQUESTED,
                 StreamSessionStatus.CLOSING,
@@ -237,10 +232,7 @@ class StreamLifecycleGate:
             )
         if operation == LifecycleOperation.START_MAIN_SEGMENT:
             opening = self._openings.find_by_session(session_id)
-            if (
-                opening is None
-                or getattr(opening, "status", None) != StreamOpeningStatus.COMPLETED
-            ):
+            if opening is None or getattr(opening, "status", None) != StreamOpeningStatus.COMPLETED:
                 return self._decision(
                     operation,
                     session_id,
@@ -258,10 +250,7 @@ class StreamLifecycleGate:
             LifecycleOperation.START_COMMENT_RESPONSE_SPEECH,
         }:
             main = self._main.find_by_session(session_id)
-            if (
-                main is None
-                or getattr(main, "status", None) != StreamMainSegmentStatus.COMPLETED
-            ):
+            if main is None or getattr(main, "status", None) != StreamMainSegmentStatus.COMPLETED:
                 return self._decision(
                     operation,
                     session_id,
@@ -298,9 +287,7 @@ class StreamLifecycleGate:
                     True,
                     trace_id,
                 )
-        return self._decision(
-            operation, session_id, session, True, None, False, trace_id
-        )
+        return self._decision(operation, session_id, session, True, None, False, trace_id)
 
     def evaluate_policy(
         self,
@@ -329,9 +316,7 @@ class StreamLifecycleGate:
         return {
             "session_id": session_id,
             "session_status": session.status.value if session else "missing",
-            "lifecycle_class": (
-                classify_lifecycle(session.status).value if session else "failed"
-            ),
+            "lifecycle_class": (classify_lifecycle(session.status).value if session else "failed"),
             "state_version": session.state_version if session else None,
             "operations": operations,
         }
@@ -358,11 +343,7 @@ class StreamLifecycleGate:
         signature = (allowed, reason, version)
         if self._last_notifications.get(key) != signature:
             self._last_notifications[key] = signature
-            event = (
-                "stream_lifecycle.updated"
-                if allowed
-                else "stream_lifecycle.operation_blocked"
-            )
+            event = "stream_lifecycle.updated" if allowed else "stream_lifecycle.operation_blocked"
             self._publisher(
                 event,
                 {

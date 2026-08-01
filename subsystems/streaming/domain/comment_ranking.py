@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import uuid4
 
-from app.plugins.youtube_streaming.domain.health import utc_now
+from subsystems.streaming.domain.health import utc_now
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.ports.comment_moderation import SemanticModerationResult
+from subsystems.streaming.ports.comment_moderation import SemanticModerationResult
 
 
 class FakeCommentModerationAdapter:

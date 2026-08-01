@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.plugins.youtube_streaming.domain.health import HealthCheckItem, HealthStatus
+from subsystems.streaming.domain.health import HealthCheckItem, HealthStatus
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,7 +26,5 @@ class ReadinessPolicy:
                 self.allow_required_degraded and item.status == HealthStatus.DEGRADED
             )
             if not accepted:
-                failures.append(
-                    item.failure_reason or f"{item.check_id}: {item.status.value}"
-                )
+                failures.append(item.failure_reason or f"{item.check_id}: {item.status.value}")
         return ReadinessDecision(ready=not failures, failure_reasons=tuple(failures))

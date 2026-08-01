@@ -83,13 +83,9 @@ class FakeStreamingRuntime:
         return self._state.status
 
     async def get_health(self) -> StreamingHealth:
-        obs_healthy = (
-            True if self._obs is None else await self._obs.preparation.health_check()
-        )
+        obs_healthy = True if self._obs is None else await self._obs.preparation.health_check()
         youtube_healthy = (
-            True
-            if self._youtube is None
-            else await self._youtube.preparation.health_check()
+            True if self._youtube is None else await self._youtube.preparation.health_check()
         )
         return StreamingHealth(
             status=self._state.status,
@@ -105,10 +101,7 @@ class FakeStreamingRuntime:
 
     async def get_capabilities(self) -> StreamingCapabilities:
         return StreamingCapabilities(
-            values=(
-                _BASE_CAPABILITIES
-                | self._dependency_health.available_capabilities()
-            )
+            values=(_BASE_CAPABILITIES | self._dependency_health.available_capabilities())
         )
 
     async def get_dependency_health(
@@ -173,10 +166,7 @@ class FakeStreamingRuntime:
         record = self._idempotency.get(key)
         if record is None:
             return None
-        if (
-            record.operation_type == request.operation_type
-            and record.payload == request.payload
-        ):
+        if record.operation_type == request.operation_type and record.payload == request.payload:
             return record.result
         result = self._conflict_result(request, self._state.status)
         self._emit_error(request, result)

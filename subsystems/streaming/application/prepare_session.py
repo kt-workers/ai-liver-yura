@@ -9,7 +9,8 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import TypeVar, cast
 
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application.observability import StreamingApplicationLogger
+from subsystems.streaming.domain import (
     HealthCheckItem,
     HealthStatus,
     ObsPreparationSnapshot,
@@ -28,8 +29,8 @@ from app.plugins.youtube_streaming.domain import (
     YouTubeStreamSnapshot,
     YouTubeStreamStatus,
 )
-from app.plugins.youtube_streaming.domain.health import utc_now
-from app.ports.streaming_preparation import (
+from subsystems.streaming.domain.health import utc_now
+from subsystems.streaming.ports.streaming_preparation import (
     AvatarHealthPort,
     ObsPreparationPort,
     RunOfShowRepository,
@@ -38,7 +39,6 @@ from app.ports.streaming_preparation import (
     TtsHealthPort,
     YouTubePreparationPort,
 )
-from app.utils.trace import TraceLogger
 
 T = TypeVar("T")
 CapabilityReporter = Callable[[str, HealthStatus, str | None, datetime], None]
@@ -74,7 +74,7 @@ class PrepareStreamSessionUsecase:
         requirements: StreamPreparationRequirements,
         readiness_policy: ReadinessPolicy | None = None,
         capability_reporter: CapabilityReporter | None = None,
-        trace_logger: TraceLogger | None = None,
+        trace_logger: StreamingApplicationLogger | None = None,
     ) -> None:
         self._youtube = youtube
         self._obs = obs
@@ -86,7 +86,7 @@ class PrepareStreamSessionUsecase:
         self._requirements = requirements
         self._readiness_policy = readiness_policy or ReadinessPolicy()
         self._capability_reporter = capability_reporter
-        self._trace = trace_logger or TraceLogger()
+        self._trace = trace_logger or StreamingApplicationLogger()
         self._command_results: dict[str, StreamPreparationResult] = {}
         self._lock = asyncio.Lock()
 
@@ -140,9 +140,7 @@ class PrepareStreamSessionUsecase:
         """Run only read-only OBS preparation checks without changing a session."""
         return await self._obs_checks()
 
-    async def execute(
-        self, command: StreamPreparationCommand
-    ) -> StreamPreparationResult:
+    async def execute(self, command: StreamPreparationCommand) -> StreamPreparationResult:
         async with self._lock:
             cached = self._command_results.get(command.command_id)
             if cached is not None:
@@ -157,15 +155,11 @@ class PrepareStreamSessionUsecase:
             self._command_results[command.command_id] = result
             return result
 
-    async def _execute_once(
-        self, command: StreamPreparationCommand
-    ) -> StreamPreparationResult:
+    async def _execute_once(self, command: StreamPreparationCommand) -> StreamPreparationResult:
         started_at = utc_now()
         session = self._sessions.get(command.session_id)
         if session is None:
-            return self._rejected_result(
-                command, started_at, "未知のStreamSessionです。"
-            )
+            return self._rejected_result(command, started_at, "未知のStreamSessionです。")
         if session.state_version != command.expected_state_version:
             self._trace.warning(
                 "stream_preparation:version_mismatch",
@@ -182,9 +176,7 @@ class PrepareStreamSessionUsecase:
                 version_mismatch=True,
             )
         if session.selected_broadcast_id != command.selected_broadcast_id:
-            return self._rejected_result(
-                command, started_at, "選択したBroadcastが一致しません。"
-            )
+            return self._rejected_result(command, started_at, "選択したBroadcastが一致しません。")
 
         session = self._sessions.save(
             session.transition(
@@ -258,8 +250,7 @@ class PrepareStreamSessionUsecase:
             (
                 str(item.metadata["stream_id"])
                 for item in checks
-                if item.check_id == "youtube.stream.bound"
-                and "stream_id" in item.metadata
+                if item.check_id == "youtube.stream.bound" and "stream_id" in item.metadata
             ),
             None,
         )
@@ -272,9 +263,7 @@ class PrepareStreamSessionUsecase:
             ),
             None,
         )
-        status = (
-            StreamSessionStatus.READY if decision.ready else StreamSessionStatus.FAILED
-        )
+        status = StreamSessionStatus.READY if decision.ready else StreamSessionStatus.FAILED
         session = self._sessions.save(
             session.transition(
                 status,
@@ -328,17 +317,13 @@ class PrepareStreamSessionUsecase:
             self._youtube.check_authentication(),
         )
         checks.append(
-            self._boolean_item(
-                auth, "YouTube認証を確認しました。", "YouTube認証に失敗しました。"
-            )
+            self._boolean_item(auth, "YouTube認証を確認しました。", "YouTube認証に失敗しました。")
         )
         api = await self._call(
             "youtube.api.available", "youtube", required, self._youtube.health_check()
         )
         checks.append(
-            self._boolean_item(
-                api, "YouTube APIを利用できます。", "YouTube APIを利用できません。"
-            )
+            self._boolean_item(api, "YouTube APIを利用できます。", "YouTube APIを利用できません。")
         )
         broadcast = await self._call(
             "youtube.broadcast.resolvable",
@@ -376,9 +361,7 @@ class PrepareStreamSessionUsecase:
             self._youtube.get_broadcast_status(broadcast_id),
         )
         broadcast_status_value = (
-            str(broadcast_status.value)
-            if broadcast_status.value is not None
-            else "unknown"
+            str(broadcast_status.value) if broadcast_status.value is not None else "unknown"
         )
         invalid_broadcast = {
             YouTubeBroadcastStatus.COMPLETE.value,
@@ -492,9 +475,7 @@ class PrepareStreamSessionUsecase:
 
     async def _obs_checks(self) -> tuple[HealthCheckItem, ...]:
         required = self._requirements.require_obs
-        snapshot = await self._call(
-            "obs.connected", "obs", required, self._obs.snapshot()
-        )
+        snapshot = await self._call("obs.connected", "obs", required, self._obs.snapshot())
         if snapshot.status != HealthStatus.HEALTHY or snapshot.value is None:
             reason = snapshot.failure_reason or "OBS状態を取得できません。"
             return (
@@ -568,14 +549,12 @@ class PrepareStreamSessionUsecase:
         muted = [
             name
             for name, item in audio_details.items()
-            if name in self._requirements.required_audio_sources
-            and item.get("muted") is True
+            if name in self._requirements.required_audio_sources and item.get("muted") is True
         ]
         low_volume = [
             name
             for name, item in audio_details.items()
-            if name in self._requirements.required_audio_sources
-            and item.get("low_volume") is True
+            if name in self._requirements.required_audio_sources and item.get("low_volume") is True
         ]
         optional_audio_issues = [
             name
@@ -591,14 +570,18 @@ class PrepareStreamSessionUsecase:
         audio_status = (
             HealthStatus.UNAVAILABLE
             if not audio_ok
-            else HealthStatus.DEGRADED if low_volume else HealthStatus.HEALTHY
+            else HealthStatus.DEGRADED
+            if low_volume
+            else HealthStatus.HEALTHY
         )
         avatar_required = self._requirements.require_obs_avatar_visible
         avatar_ok = value.avatar_source_exists and value.avatar_source_visible
         avatar_status = (
             HealthStatus.HEALTHY
             if avatar_ok
-            else HealthStatus.UNAVAILABLE if avatar_required else HealthStatus.DEGRADED
+            else HealthStatus.UNAVAILABLE
+            if avatar_required
+            else HealthStatus.DEGRADED
         )
         checks = (
             self._item(
@@ -644,8 +627,7 @@ class PrepareStreamSessionUsecase:
                 "obs.scene_collection",
                 "obs",
                 required,
-                value.current_scene_collection
-                == self._requirements.expected_scene_collection,
+                value.current_scene_collection == self._requirements.expected_scene_collection,
                 "obs.scene_collection.matches",
                 "obs.scene_collection.mismatch",
             ),
@@ -662,11 +644,7 @@ class PrepareStreamSessionUsecase:
                 "obs",
                 required,
                 audio_status,
-                (
-                    "obs.audio_sources.ready"
-                    if audio_ok
-                    else "obs.audio_sources.unavailable"
-                ),
+                ("obs.audio_sources.ready" if audio_ok else "obs.audio_sources.unavailable"),
                 failure_reason=None if audio_ok else "obs.audio_sources.invalid",
             ),
             self._item(
@@ -674,11 +652,7 @@ class PrepareStreamSessionUsecase:
                 "obs",
                 avatar_required,
                 avatar_status,
-                (
-                    "obs.avatar_source.visible"
-                    if avatar_ok
-                    else "obs.avatar_source.hidden"
-                ),
+                ("obs.avatar_source.visible" if avatar_ok else "obs.avatar_source.hidden"),
                 failure_reason=None if avatar_ok else "obs.avatar_source.unavailable",
             ),
         )
@@ -698,9 +672,7 @@ class PrepareStreamSessionUsecase:
         }
         return tuple(self._replace_metadata(item, metadata) for item in checks)
 
-    async def _run_of_show_checks(
-        self, run_of_show_id: str
-    ) -> tuple[HealthCheckItem, ...]:
+    async def _run_of_show_checks(self, run_of_show_id: str) -> tuple[HealthCheckItem, ...]:
         required = self._requirements.require_run_of_show
         result = await self._call(
             "run_of_show.loadable",
@@ -727,9 +699,7 @@ class PrepareStreamSessionUsecase:
         self, check_id: str, awaitable: Awaitable[HealthCheckItem], required: bool
     ) -> tuple[HealthCheckItem, ...]:
         try:
-            return (
-                await asyncio.wait_for(awaitable, self._requirements.timeout_seconds),
-            )
+            return (await asyncio.wait_for(awaitable, self._requirements.timeout_seconds),)
         except Exception as error:
             return (
                 self._item(
@@ -758,9 +728,7 @@ class PrepareStreamSessionUsecase:
     ) -> _CallResult:
         started = time.perf_counter()
         try:
-            value = await asyncio.wait_for(
-                awaitable, self._requirements.timeout_seconds
-            )
+            value = await asyncio.wait_for(awaitable, self._requirements.timeout_seconds)
             return self._CallResult(
                 check_id,
                 component,
@@ -801,11 +769,7 @@ class PrepareStreamSessionUsecase:
     def _object_item(
         self, result: _CallResult, ok: str, *, none_is_degraded: bool = False
     ) -> HealthCheckItem:
-        if (
-            result.status == HealthStatus.HEALTHY
-            and result.value is None
-            and none_is_degraded
-        ):
+        if result.status == HealthStatus.HEALTHY and result.value is None and none_is_degraded:
             return self._from_call(
                 result,
                 HealthStatus.DEGRADED,
@@ -838,9 +802,7 @@ class PrepareStreamSessionUsecase:
         )
 
     @staticmethod
-    def _replace_metadata(
-        item: HealthCheckItem, metadata: dict[str, object]
-    ) -> HealthCheckItem:
+    def _replace_metadata(item: HealthCheckItem, metadata: dict[str, object]) -> HealthCheckItem:
         return HealthCheckItem(
             check_id=item.check_id,
             component=item.component,

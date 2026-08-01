@@ -5,8 +5,8 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Protocol
 
-from app.plugins.youtube_streaming.application.lifecycle_gate import StreamLifecycleGate
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application.lifecycle_gate import StreamLifecycleGate
+from subsystems.streaming.domain import (
     ApproveNormalStreamEndCommand,
     EmergencyStopStreamCommand,
     LifecycleOperation,
@@ -19,16 +19,22 @@ from app.plugins.youtube_streaming.domain import (
     StreamSession,
     StreamSessionStatus,
 )
-from app.plugins.youtube_streaming.domain.health import utc_now
-from app.ports.streaming_control import (
+from subsystems.streaming.domain.health import utc_now
+from subsystems.streaming.ports.content_execution import (
+    SPEAK_ACTION_TYPE,
+    StreamContentExecutionResult,
+)
+from subsystems.streaming.ports.streaming_control import (
     ObsStreamingControlPort,
     YouTubeStreamingControlPort,
 )
-from app.ports.streaming_preparation import RunOfShowRepository, StreamSessionRepository
-from app.shared.contracts.plugins.runtime import SPEAK_ACTION_TYPE, PluginActivityResult
+from subsystems.streaming.ports.streaming_preparation import (
+    RunOfShowRepository,
+    StreamSessionRepository,
+)
 
 EndEventPublisher = Callable[[str, dict[str, object], str], None]
-ClosingExecutor = Callable[[dict[str, object], str], Awaitable[PluginActivityResult]]
+ClosingExecutor = Callable[[dict[str, object], str], Awaitable[StreamContentExecutionResult]]
 OutputCanceler = Callable[[], bool]
 EndCommand = ApproveNormalStreamEndCommand | EmergencyStopStreamCommand
 
@@ -84,9 +90,7 @@ class EndStreamSessionUsecase:
             if self._normal_task is current_task:
                 self._normal_task = None
 
-    async def _normal_locked(
-        self, command: ApproveNormalStreamEndCommand
-    ) -> StreamEndResult:
+    async def _normal_locked(self, command: ApproveNormalStreamEndCommand) -> StreamEndResult:
         session = self._validate(command.session_id, command.expected_state_version)
         if self._gate is not None:
             decision = self._gate.evaluate(
@@ -96,9 +100,7 @@ class EndStreamSessionUsecase:
                 trace_id=command.trace_id,
             )
             if not decision.allowed:
-                raise StreamEndRejected(
-                    decision.reason_code or "lifecycle.operation_not_allowed"
-                )
+                raise StreamEndRejected(decision.reason_code or "lifecycle.operation_not_allowed")
         if session.status not in {
             StreamSessionStatus.LIVE,
             StreamSessionStatus.STOP_FAILED,
@@ -111,14 +113,10 @@ class EndStreamSessionUsecase:
         started = utc_now()
         if session.status == StreamSessionStatus.LIVE:
             session = self._sessions.save(
-                session.transition(
-                    StreamSessionStatus.CLOSING_REQUESTED, trace_id=command.trace_id
-                )
+                session.transition(StreamSessionStatus.CLOSING_REQUESTED, trace_id=command.trace_id)
             )
             self._event("stream_end.approved", command.trace_id, session.session_id)
-            session = self._sessions.save(
-                session.transition(StreamSessionStatus.CLOSING)
-            )
+            session = self._sessions.save(session.transition(StreamSessionStatus.CLOSING))
         closing_status = "completed"
         existing = self._closing.get(session.session_id)
         if existing is None or existing.status != StreamClosingStatus.COMPLETED:
@@ -134,13 +132,9 @@ class EndStreamSessionUsecase:
                 )
         session = self._sessions.get(session.session_id) or session
         if session.status != StreamSessionStatus.STOPPING:
-            session = self._sessions.save(
-                session.transition(StreamSessionStatus.STOPPING)
-            )
+            session = self._sessions.save(session.transition(StreamSessionStatus.STOPPING))
         self._event("stream_end.stopping", command.trace_id, session.session_id)
-        return await self._stop_external(
-            command, session, started, "normal", closing_status
-        )
+        return await self._stop_external(command, session, started, "normal", closing_status)
 
     async def emergency(self, command: EmergencyStopStreamCommand) -> StreamEndResult:
         if command.command_id in self._results:
@@ -150,9 +144,7 @@ class EndStreamSessionUsecase:
         if normal_task is not None and normal_task is not asyncio.current_task():
             normal_task.cancel()
         async with self._lock:
-            session = self._validate_emergency(
-                command.session_id, command.expected_state_version
-            )
+            session = self._validate_emergency(command.session_id, command.expected_state_version)
             if self._gate is not None:
                 decision = self._gate.evaluate(
                     LifecycleOperation.START_EMERGENCY_STOP,
@@ -196,12 +188,8 @@ class EndStreamSessionUsecase:
             session = self._sessions.save(
                 session.transition(StreamSessionStatus.EMERGENCY_STOPPING)
             )
-            self._event(
-                "stream_emergency_stop.stopping", command.trace_id, session.session_id
-            )
-            return await self._stop_external(
-                command, session, started, "emergency", "canceled"
-            )
+            self._event("stream_emergency_stop.stopping", command.trace_id, session.session_id)
+            return await self._stop_external(command, session, started, "emergency", "canceled")
 
     async def _run_closing(self, session: StreamSession, trace_id: str) -> str:
         if self._gate is not None:
@@ -247,9 +235,7 @@ class EndStreamSessionUsecase:
             speak = next(
                 (
                     item
-                    for item in (
-                        turn.output_result.action_results if turn.output_result else ()
-                    )
+                    for item in (turn.output_result.action_results if turn.output_result else ())
                     if item.action_type == SPEAK_ACTION_TYPE
                 ),
                 None,
@@ -261,9 +247,7 @@ class EndStreamSessionUsecase:
                 StreamClosingStatus.FAILED, str(error)
             )
             return "failed"
-        self._closing[activity.session_id] = activity.with_status(
-            StreamClosingStatus.COMPLETED
-        )
+        self._closing[activity.session_id] = activity.with_status(StreamClosingStatus.COMPLETED)
         self._event("stream_closing.completed", trace_id, activity.session_id)
         return "completed"
 
@@ -281,16 +265,10 @@ class EndStreamSessionUsecase:
             if mode == "emergency":
                 obs = await self._stop_obs_output()
             if broadcast != "complete":
-                broadcast = await self._youtube.get_broadcast_status(
-                    session.selected_broadcast_id
-                )
+                broadcast = await self._youtube.get_broadcast_status(session.selected_broadcast_id)
             if broadcast != "complete":
-                await self._youtube.transition_broadcast_to_complete(
-                    session.selected_broadcast_id
-                )
-            broadcast = await self._youtube.get_broadcast_status(
-                session.selected_broadcast_id
-            )
+                await self._youtube.transition_broadcast_to_complete(session.selected_broadcast_id)
+            broadcast = await self._youtube.get_broadcast_status(session.selected_broadcast_id)
             if broadcast != "complete":
                 raise RuntimeError("broadcast_not_complete")
             self._event(
@@ -304,9 +282,7 @@ class EndStreamSessionUsecase:
             )
             if mode == "normal":
                 obs = await self._stop_obs_output()
-            stream = await self._youtube.get_stream_status(
-                session.selected_stream_id or ""
-            )
+            stream = await self._youtube.get_stream_status(session.selected_stream_id or "")
             if obs != "idle" or stream not in {"inactive", "no_data"}:
                 raise RuntimeError("external_state_not_stopped")
         except Exception as error:
@@ -378,11 +354,7 @@ class EndStreamSessionUsecase:
             session.session_id,
             command.trace_id,
             command.command_id,
-            (
-                "emergency"
-                if isinstance(command, EmergencyStopStreamCommand)
-                else "normal"
-            ),
+            ("emergency" if isinstance(command, EmergencyStopStreamCommand) else "normal"),
             False,
             step,
             closing,
@@ -397,12 +369,8 @@ class EndStreamSessionUsecase:
         )
         self._results[result.command_id] = result
         self._latest = result
-        prefix = (
-            "stream_emergency_stop" if result.end_mode == "emergency" else "stream_end"
-        )
-        self._event(
-            f"{prefix}.failed", result.trace_id, result.session_id, failure_code=code
-        )
+        prefix = "stream_emergency_stop" if result.end_mode == "emergency" else "stream_end"
+        self._event(f"{prefix}.failed", result.trace_id, result.session_id, failure_code=code)
         return result
 
     def _validate(self, session_id: str, version: int) -> StreamSession:
@@ -432,7 +400,5 @@ class EndStreamSessionUsecase:
         ):
             raise StreamEndRejected("stream.end.fake_requires_test_mode")
 
-    def _event(
-        self, event: str, trace_id: str, session_id: str, **data: object
-    ) -> None:
+    def _event(self, event: str, trace_id: str, session_id: str, **data: object) -> None:
         self._publish(event, {"session_id": session_id, **data}, trace_id)

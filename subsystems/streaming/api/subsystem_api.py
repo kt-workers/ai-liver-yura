@@ -14,13 +14,30 @@ from app.integrations.streaming import (
     StreamingStatus,
 )
 from subsystems.streaming.application import StreamingSubsystemService
+from subsystems.streaming.application.session_components import (
+    StreamingSessionComponents,
+)
 
 
 class StreamingSubsystemApi:
     """Transport-independent facade for Query, Command, and Event access."""
 
-    def __init__(self, service: StreamingSubsystemService) -> None:
+    def __init__(
+        self,
+        service: StreamingSubsystemService,
+        *,
+        sessions: StreamingSessionComponents | None = None,
+    ) -> None:
         self._service = service
+        self._sessions = sessions
+
+    @property
+    def sessions(self) -> StreamingSessionComponents:
+        """Return H application components without coupling callers to Core runtime."""
+
+        if self._sessions is None:
+            raise RuntimeError("streaming.sessions.not_configured")
+        return self._sessions
 
     async def get_status(self) -> StreamingStatus:
         return await self._service.get_status()

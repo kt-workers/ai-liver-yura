@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from threading import RLock
 
-from app.plugins.youtube_streaming.domain import StreamMainSegmentActivity
+from subsystems.streaming.domain import StreamMainSegmentActivity
 
 
 class InMemoryStreamMainSegmentRepository:
@@ -32,11 +32,7 @@ class InMemoryStreamMainSegmentRepository:
     def find_by_session(self, session_id: str) -> StreamMainSegmentActivity | None:
         with self._lock:
             return next(
-                (
-                    item
-                    for item in self._items.values()
-                    if item.session_id == session_id
-                ),
+                (item for item in self._items.values() if item.session_id == session_id),
                 None,
             )
 

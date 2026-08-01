@@ -41,9 +41,7 @@ def build_obs_adapter_bundle(
             mode=config.mode,
             preparation=FakeObsPreparationAdapter(
                 FakeObsPreparationConfig(
-                    audio_source_states={
-                        name: True for name in config.required_audio_sources
-                    }
+                    audio_source_states={name: True for name in config.required_audio_sources}
                 )
             ),
             control=FakeObsStreamingControlAdapter(),

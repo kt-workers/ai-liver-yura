@@ -4,8 +4,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from typing import Protocol
 
-from app.plugins.youtube_streaming.application.lifecycle_gate import StreamLifecycleGate
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application.lifecycle_gate import StreamLifecycleGate
+from subsystems.streaming.domain import (
     LifecycleOperation,
     RetryMainSegmentCommand,
     StreamMainSegmentActivity,
@@ -15,17 +15,19 @@ from app.plugins.youtube_streaming.domain import (
     StreamOpeningStatus,
     StreamSessionStatus,
 )
-from app.ports.streaming_preparation import RunOfShowRepository, StreamSessionRepository
-from app.shared.contracts.plugins.runtime import SPEAK_ACTION_TYPE, PluginActivityResult
+from subsystems.streaming.ports.content_execution import (
+    SPEAK_ACTION_TYPE,
+    StreamContentExecutionResult,
+)
+from subsystems.streaming.ports.streaming_preparation import (
+    RunOfShowRepository,
+    StreamSessionRepository,
+)
 
 
 class MainSegmentRepository(Protocol):
-    def create(
-        self, activity: StreamMainSegmentActivity
-    ) -> StreamMainSegmentActivity: ...
-    def save(
-        self, activity: StreamMainSegmentActivity
-    ) -> StreamMainSegmentActivity: ...
+    def create(self, activity: StreamMainSegmentActivity) -> StreamMainSegmentActivity: ...
+    def save(self, activity: StreamMainSegmentActivity) -> StreamMainSegmentActivity: ...
     def find_by_session(self, session_id: str) -> StreamMainSegmentActivity | None: ...
     def command_result(self, command_id: str) -> StreamMainSegmentActivity | None: ...
     def save_command_result(
@@ -33,7 +35,7 @@ class MainSegmentRepository(Protocol):
     ) -> StreamMainSegmentActivity: ...
 
 
-MainExecutor = Callable[[dict[str, object], str], Awaitable[PluginActivityResult]]
+MainExecutor = Callable[[dict[str, object], str], Awaitable[StreamContentExecutionResult]]
 EventPublisher = Callable[[str, dict[str, object], str], None]
 TopicSelector = Callable[[str, str, tuple[str, ...]], str]
 
@@ -121,15 +123,11 @@ class StreamMainSegmentUsecase:
             segment.title,
         )
         self._activities.create(activity)
-        self._sessions.save(
-            session.attach_main_segment(segment.segment_id, activity.activity_id)
-        )
+        self._sessions.save(session.attach_main_segment(segment.segment_id, activity.activity_id))
         self._verified_states[session.session_id] = dict(verified_state)
         return await self._execute(activity, asdict(segment), session.title, opening)
 
-    async def retry(
-        self, command: RetryMainSegmentCommand
-    ) -> StreamMainSegmentActivity:
+    async def retry(self, command: RetryMainSegmentCommand) -> StreamMainSegmentActivity:
         duplicate = self._activities.command_result(command.command_id)
         if duplicate is not None:
             return duplicate
@@ -139,9 +137,7 @@ class StreamMainSegmentUsecase:
         if activity.version != command.expected_activity_version:
             raise StreamMainSegmentRejected("main_segment.version_mismatch")
         if activity.status != StreamMainSegmentStatus.FAILED:
-            raise StreamMainSegmentRejected(
-                f"main_segment.retry.{activity.status.value}"
-            )
+            raise StreamMainSegmentRejected(f"main_segment.retry.{activity.status.value}")
         session = self._sessions.get(command.session_id)
         if session is None or session.status != StreamSessionStatus.LIVE:
             raise StreamMainSegmentRejected("main_segment.session.not_live")
@@ -159,9 +155,7 @@ class StreamMainSegmentUsecase:
             session.opening_activity_id,
             status=StreamOpeningStatus.COMPLETED,
         )
-        result = await self._execute(
-            activity, asdict(segment), session.title, opening_summary
-        )
+        result = await self._execute(activity, asdict(segment), session.title, opening_summary)
         return self._activities.save_command_result(command.command_id, result)
 
     async def _execute(
@@ -171,18 +165,12 @@ class StreamMainSegmentUsecase:
         stream_title: str,
         opening: StreamOpeningActivity,
     ) -> StreamMainSegmentActivity:
-        activity = self._activities.save(
-            activity.transition(StreamMainSegmentStatus.RUNNING)
-        )
-        self._publish(
-            "stream_main_segment.started", self._data(activity), activity.trace_id
-        )
+        activity = self._activities.save(activity.transition(StreamMainSegmentStatus.RUNNING))
+        self._publish("stream_main_segment.started", self._data(activity), activity.trace_id)
         topic = str(segment.get("topic") or "").strip()
         if not topic:
             if self._topic_selector is None:
-                return self._fail(
-                    activity, "main_segment.topic.unavailable", retryable=True
-                )
+                return self._fail(activity, "main_segment.topic.unavailable", retryable=True)
             topic = self._topic_selector(
                 str(segment.get("intent") or segment.get("title") or ""),
                 stream_title,
@@ -232,18 +220,14 @@ class StreamMainSegmentUsecase:
         speak = next(
             (
                 item
-                for item in (
-                    turn.output_result.action_results if turn.output_result else ()
-                )
+                for item in (turn.output_result.action_results if turn.output_result else ())
                 if item.action_type == SPEAK_ACTION_TYPE
             ),
             None,
         )
         result: dict[str, object] = {
             "activity_turn_id": turn.activity_turn_id,
-            "generation_id": (
-                turn.character_result.result_id if turn.character_result else None
-            ),
+            "generation_id": (turn.character_result.result_id if turn.character_result else None),
             "action_id": speak.action_id if speak else None,
             "final_status": turn.final_status,
         }
@@ -258,9 +242,7 @@ class StreamMainSegmentUsecase:
             activity.transition(StreamMainSegmentStatus.COMPLETED, result=result)
         )
         self._recent_topics.append(topic)
-        self._publish(
-            "stream_main_segment.completed", self._data(activity), activity.trace_id
-        )
+        self._publish("stream_main_segment.completed", self._data(activity), activity.trace_id)
         return activity
 
     def _missing(

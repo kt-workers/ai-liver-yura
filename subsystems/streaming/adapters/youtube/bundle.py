@@ -43,9 +43,7 @@ def build_youtube_adapter_bundle(
     if config.mode is YouTubeAdapterMode.FAKE:
         return YouTubeAdapterBundle(
             mode=config.mode,
-            preparation=FakeYouTubePreparationAdapter(
-                FakeYouTubePreparationConfig()
-            ),
+            preparation=FakeYouTubePreparationAdapter(FakeYouTubePreparationConfig()),
             control=FakeYouTubeStreamingControlAdapter(),
             live_chat=FakeLiveChatAdapter(),
         )
@@ -93,9 +91,7 @@ def build_youtube_adapter_bundle(
     )
     client = GoogleYouTubeClientFactory(
         auth,
-        GoogleYouTubeClientConfig(
-            request_timeout_seconds=config.request_timeout_seconds
-        ),
+        GoogleYouTubeClientConfig(request_timeout_seconds=config.request_timeout_seconds),
     )
     preparation = GoogleYouTubePreparationAdapter(
         auth_service=auth,

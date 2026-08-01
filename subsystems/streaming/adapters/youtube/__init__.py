@@ -43,18 +43,10 @@ _LAZY_EXPORTS = {
     "GoogleYouTubeAuthService": "subsystems.streaming.adapters.youtube.oauth",
     "GoogleYouTubeClientConfig": "subsystems.streaming.adapters.youtube.client",
     "GoogleYouTubeClientFactory": "subsystems.streaming.adapters.youtube.client",
-    "GoogleYouTubeLiveChatAdapter": (
-        "subsystems.streaming.adapters.youtube.live_chat"
-    ),
-    "GoogleYouTubePreparationAdapter": (
-        "subsystems.streaming.adapters.youtube.google_youtube"
-    ),
-    "GoogleYouTubePreparationConfig": (
-        "subsystems.streaming.adapters.youtube.google_youtube"
-    ),
-    "GoogleYouTubeStreamingControlAdapter": (
-        "subsystems.streaming.adapters.youtube.control"
-    ),
+    "GoogleYouTubeLiveChatAdapter": ("subsystems.streaming.adapters.youtube.live_chat"),
+    "GoogleYouTubePreparationAdapter": ("subsystems.streaming.adapters.youtube.google_youtube"),
+    "GoogleYouTubePreparationConfig": ("subsystems.streaming.adapters.youtube.google_youtube"),
+    "GoogleYouTubeStreamingControlAdapter": ("subsystems.streaming.adapters.youtube.control"),
     "YouTubeApiError": "subsystems.streaming.adapters.youtube.errors",
     "YouTubeApiErrorKind": "subsystems.streaming.adapters.youtube.errors",
     "YouTubeApiErrorMapper": "subsystems.streaming.adapters.youtube.errors",

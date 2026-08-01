@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import uuid4
 
-from app.plugins.youtube_streaming.domain.health import utc_now
+from subsystems.streaming.domain.health import utc_now
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,9 +83,7 @@ class StreamClosingActivity:
             self,
             status=status,
             failure_code=failure_code,
-            started_at=(
-                now if status == StreamClosingStatus.RUNNING else self.started_at
-            ),
+            started_at=(now if status == StreamClosingStatus.RUNNING else self.started_at),
             completed_at=(
                 now
                 if status

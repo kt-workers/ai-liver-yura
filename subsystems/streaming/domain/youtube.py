@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
-from app.plugins.youtube_streaming.domain.health import utc_now
+from subsystems.streaming.domain.health import utc_now
 
 
 class YouTubeAuthenticationStatus(str, Enum):

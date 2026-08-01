@@ -83,9 +83,7 @@ class GoogleYouTubeAuthService:
                 self._validate_client_secret()
                 token_path = self._token_path()
                 if not token_path.is_file():
-                    return self._set_state(
-                        YouTubeAuthenticationStatus.AUTHENTICATION_REQUIRED
-                    )
+                    return self._set_state(YouTubeAuthenticationStatus.AUTHENTICATION_REQUIRED)
                 credentials = self._load_credentials(token_path)
                 if credentials.expired and credentials.refresh_token:
                     self._refresh(credentials)

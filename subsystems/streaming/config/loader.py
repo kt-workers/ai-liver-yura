@@ -48,9 +48,7 @@ def load_streaming_subsystem_config(
     _reject_unknown(streaming, {"youtube", "obs"}, "streaming")
 
     config = StreamingSubsystemConfig(
-        youtube=_load_youtube(
-            _mapping(streaming.get("youtube", {}), "streaming.youtube")
-        ),
+        youtube=_load_youtube(_mapping(streaming.get("youtube", {}), "streaming.youtube")),
         obs=_load_obs(_mapping(streaming.get("obs", {}), "streaming.obs")),
         source_path=source_path,
     )
@@ -231,9 +229,7 @@ def _load_obs(value: dict[str, Any]) -> ObsSubsystemConfig:
 
 
 def _mapping(value: object, path: str) -> dict[str, Any]:
-    if not isinstance(value, Mapping) or any(
-        not isinstance(key, str) for key in value
-    ):
+    if not isinstance(value, Mapping) or any(not isinstance(key, str) for key in value):
         raise StreamingConfigError(path, "must_be_mapping")
     return dict(value)
 
@@ -260,36 +256,28 @@ def _enum(
         raise StreamingConfigError(f"{path}.{key}", "invalid_enum") from error
 
 
-def _string(
-    value: Mapping[str, object], key: str, default: str, path: str
-) -> str:
+def _string(value: Mapping[str, object], key: str, default: str, path: str) -> str:
     raw = value.get(key, default)
     if not isinstance(raw, str):
         raise StreamingConfigError(f"{path}.{key}", "must_be_string")
     return raw
 
 
-def _number(
-    value: Mapping[str, object], key: str, default: float, path: str
-) -> float:
+def _number(value: Mapping[str, object], key: str, default: float, path: str) -> float:
     raw = value.get(key, default)
     if isinstance(raw, bool) or not isinstance(raw, (int, float)):
         raise StreamingConfigError(f"{path}.{key}", "must_be_number")
     return float(raw)
 
 
-def _integer(
-    value: Mapping[str, object], key: str, default: int, path: str
-) -> int:
+def _integer(value: Mapping[str, object], key: str, default: int, path: str) -> int:
     raw = value.get(key, default)
     if isinstance(raw, bool) or not isinstance(raw, int):
         raise StreamingConfigError(f"{path}.{key}", "must_be_integer")
     return raw
 
 
-def _boolean(
-    value: Mapping[str, object], key: str, default: bool, path: str
-) -> bool:
+def _boolean(value: Mapping[str, object], key: str, default: bool, path: str) -> bool:
     raw = value.get(key, default)
     if not isinstance(raw, bool):
         raise StreamingConfigError(f"{path}.{key}", "must_be_boolean")

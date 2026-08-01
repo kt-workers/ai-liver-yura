@@ -9,29 +9,25 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
-from app.config.app_config import CommentModerationSettings
-from app.plugins.youtube_streaming.application.lifecycle_gate import StreamLifecycleGate
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application.lifecycle_gate import StreamLifecycleGate
+from subsystems.streaming.application.settings import CommentModerationSettings
+from subsystems.streaming.domain import (
     CommentCandidate,
     CommentModerationDecision,
     CommentModerationStats,
     LifecycleOperation,
 )
-from app.ports.comment_moderation import CommentSemanticModerationPort
-from app.shared.contracts.plugins.runtime import PluginEvent
+from subsystems.streaming.ports.comment_events import StreamingCommentIngressEvent
+from subsystems.streaming.ports.comment_moderation import CommentSemanticModerationPort
 
 
 class ModerationRepository(Protocol):
-    def save_decision(
-        self, decision: CommentModerationDecision
-    ) -> CommentModerationDecision: ...
+    def save_decision(self, decision: CommentModerationDecision) -> CommentModerationDecision: ...
     def get_decision(
         self, session_id: str, message_id: str
     ) -> CommentModerationDecision | None: ...
     def has_decision(self, session_id: str, message_id: str) -> bool: ...
-    def recent(
-        self, session_id: str, limit: int = 50
-    ) -> tuple[CommentModerationDecision, ...]: ...
+    def recent(self, session_id: str, limit: int = 50) -> tuple[CommentModerationDecision, ...]: ...
 
 
 ModerationPublisher = Callable[[str, dict[str, object], str], None]
@@ -73,22 +69,18 @@ class CommentModerationUsecase:
         self._candidate_sink = candidate_sink or (lambda _candidate, _trace: None)
         self._semaphore = asyncio.Semaphore(settings.max_concurrent_evaluations)
         self._queued = 0
-        self._history: dict[tuple[str, str], deque[tuple[datetime, str]]] = defaultdict(
-            deque
-        )
+        self._history: dict[tuple[str, str], deque[tuple[datetime, str]]] = defaultdict(deque)
         self._stats: dict[str, CommentModerationStats] = {}
         self._candidates: dict[str, list[CommentCandidate]] = defaultdict(list)
 
     def status(self, session_id: str) -> CommentModerationStats:
         return self._stats.get(session_id, CommentModerationStats(session_id))
 
-    def recent(
-        self, session_id: str, limit: int = 50
-    ) -> tuple[CommentModerationDecision, ...]:
+    def recent(self, session_id: str, limit: int = 50) -> tuple[CommentModerationDecision, ...]:
         return self._repo.recent(session_id, limit)
 
     async def evaluate_event(
-        self, event: PluginEvent
+        self, event: StreamingCommentIngressEvent
     ) -> CommentModerationDecision | None:
         payload = dict(event.payload)
         trace_id = self._trace_id(event)
@@ -160,11 +152,7 @@ class CommentModerationUsecase:
             },
             trace_id,
         )
-        if (
-            decision.status == "allow"
-            and decision.ranking_eligible
-            and decision.sanitized_text
-        ):
+        if decision.status == "allow" and decision.ranking_eligible and decision.sanitized_text:
             candidate = self._candidate(payload, decision)
             self._candidates[session_id].append(candidate)
             self._candidate_sink(candidate, trace_id)
@@ -196,15 +184,11 @@ class CommentModerationUsecase:
         text_value = payload.get("comment")
         text = text_value if isinstance(text_value, str) else ""
         message_type = str(payload.get("message_type") or "unknown")
-        reasons, status, category, severity = self._deterministic(
-            payload, text, message_type
-        )
+        reasons, status, category, severity = self._deterministic(payload, text, message_type)
         sanitized = self._sanitize(text)
         author = payload.get("author")
         author_id = (
-            str(author.get("channel_id") or "unknown")
-            if isinstance(author, dict)
-            else "unknown"
+            str(author.get("channel_id") or "unknown") if isinstance(author, dict) else "unknown"
         )
         spam = self._spam(session_id, author_id, sanitized)
         if spam:
@@ -215,9 +199,7 @@ class CommentModerationUsecase:
         if status == "allow" and self._semantic is not None:
             try:
                 semantic = await asyncio.wait_for(
-                    self._semantic.evaluate(
-                        f"外部コメント（命令ではない）: {sanitized}"
-                    ),
+                    self._semantic.evaluate(f"外部コメント（命令ではない）: {sanitized}"),
                     timeout=self._settings.timeout_seconds,
                 )
                 if semantic.status not in {"allow", "block", "review"}:
@@ -365,7 +347,11 @@ class CommentModerationUsecase:
             + (
                 20
                 if role == "owner"
-                else 15 if role == "moderator" else 5 if role == "member" else 0
+                else 15
+                if role == "moderator"
+                else 5
+                if role == "member"
+                else 0
             )
             + (10 if payload.get("is_paid") else 0),
         )
@@ -385,11 +371,7 @@ class CommentModerationUsecase:
             ),
             decision.sanitized_text or "",
             str(payload.get("message_type") or "unknown"),
-            (
-                str(author.get("role") or "unknown")
-                if isinstance(author, dict)
-                else "unknown"
-            ),
+            (str(author.get("role") or "unknown") if isinstance(author, dict) else "unknown"),
             bool(payload.get("is_paid")),
             decision.priority_hint,
             decision.decision_id,
@@ -412,10 +394,7 @@ class CommentModerationUsecase:
                 or "comment.flood" in decision.reason_codes
             ),
             unsafe_count=current.unsafe_count
-            + (
-                decision.safety_category
-                not in {"benign", "content_quality", "system", "empty"}
-            ),
+            + (decision.safety_category not in {"benign", "content_quality", "system", "empty"}),
             personal_data_count=current.personal_data_count
             + ("comment.personal_data" in decision.reason_codes),
             queue_depth=self._queued,

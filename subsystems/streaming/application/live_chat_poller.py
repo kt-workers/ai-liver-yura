@@ -9,22 +9,25 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
 
-from app.plugins.youtube_streaming.application.lifecycle_gate import StreamLifecycleGate
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application.lifecycle_gate import StreamLifecycleGate
+from subsystems.streaming.domain import (
     LifecycleOperation,
     LiveChatPollerState,
     LiveChatPollingStatus,
     NormalizedLiveChatMessage,
 )
-from app.ports.youtube_errors import YouTubeApiError, YouTubeApiErrorKind
-from app.ports.youtube_live_chat import (
+from subsystems.streaming.ports.comment_events import (
+    PublicCommentEventSink,
+    StreamingCommentIngressEvent,
+)
+from subsystems.streaming.ports.youtube_errors import YouTubeApiError, YouTubeApiErrorKind
+from subsystems.streaming.ports.youtube_live_chat import (
     LiveChatDeduplicationRepository,
     LiveChatMessageDto,
     YouTubeLiveChatReadPort,
 )
-from app.shared.contracts.plugins.runtime import PluginEvent
 
-EventSink = Callable[[PluginEvent], Awaitable[None]]
+EventSink = Callable[[StreamingCommentIngressEvent], Awaitable[None]]
 PollerPublisher = Callable[[str, dict[str, object], str], None]
 
 
@@ -55,6 +58,7 @@ class YouTubeLiveChatPoller:
         adapter: YouTubeLiveChatReadPort,
         gate: StreamLifecycleGate,
         event_sink: EventSink,
+        public_event_sink: PublicCommentEventSink | None = None,
         publisher: PollerPublisher | None = None,
         max_results: int = 200,
         max_messages_per_poll: int = 100,
@@ -71,13 +75,12 @@ class YouTubeLiveChatPoller:
         self._adapter = adapter
         self._gate = gate
         self._sink = event_sink
+        self._public_sink = public_event_sink
         self._publish = publisher or (lambda _event, _data, _trace: None)
         self._max_results = max_results
         self._max_per_poll = max_messages_per_poll
         self._max_per_second = max_events_per_second
-        self._dedup = deduplication or BoundedLiveChatDeduplicationRepository(
-            dedup_capacity
-        )
+        self._dedup = deduplication or BoundedLiveChatDeduplicationRepository(dedup_capacity)
         self._buffer_capacity = buffer_capacity
         self._max_retries = max_retries
         self._next_token: str | None = None
@@ -157,9 +160,9 @@ class YouTubeLiveChatPoller:
                     "stream_comments.message_deduplicated",
                     {
                         "session_id": self.session_id,
-                        "message_id_hash": hashlib.sha256(
-                            message.message_id.encode()
-                        ).hexdigest()[:12],
+                        "message_id_hash": hashlib.sha256(message.message_id.encode()).hexdigest()[
+                            :12
+                        ],
                         "deduplicated": True,
                     },
                     self.trace_id,
@@ -185,7 +188,10 @@ class YouTubeLiveChatPoller:
             if not decision.allowed:
                 self._stop_for_lifecycle(decision.reason_code)
                 return False
-            await self._sink(self._event(message))
+            event = self._event(message)
+            await self._sink(event)
+            if self._public_sink is not None:
+                await self._public_sink(event.to_public_event())
             emitted += 1
         dropped += max(0, len(unique) - per_poll_rate)
         self._next_token = page.next_page_token
@@ -211,9 +217,7 @@ class YouTubeLiveChatPoller:
                 {
                     "session_id": self.session_id,
                     "count": emitted,
-                    "message_types": sorted(
-                        {item.message_type for item in unique[:per_poll_rate]}
-                    ),
+                    "message_types": sorted({item.message_type for item in unique[:per_poll_rate]}),
                 },
                 self.trace_id,
             )
@@ -239,10 +243,7 @@ class YouTubeLiveChatPoller:
         if retryable and self._status.attempt <= self._max_retries:
             interval = min(
                 60_000,
-                int(
-                    1000 * 2 ** max(0, self._status.attempt - 1)
-                    + random.uniform(0, 250)
-                ),
+                int(1000 * 2 ** max(0, self._status.attempt - 1) + random.uniform(0, 250)),
             )
             self._status = replace(
                 self._status,
@@ -276,13 +277,9 @@ class YouTubeLiveChatPoller:
         )
         self._emit_status("stream_comments.polling_stopped")
 
-    def _event(self, message: NormalizedLiveChatMessage) -> PluginEvent:
-        priority = (
-            80
-            if message.is_paid or message.author_role in {"owner", "moderator"}
-            else 40
-        )
-        return PluginEvent(
+    def _event(self, message: NormalizedLiveChatMessage) -> StreamingCommentIngressEvent:
+        priority = 80 if message.is_paid or message.author_role in {"owner", "moderator"} else 40
+        return StreamingCommentIngressEvent(
             event_type="youtube_comment",
             payload={
                 "session_id": message.session_id,
@@ -337,14 +334,14 @@ class YouTubeLiveChatPoller:
                     else (
                         "verified"
                         if author.get("isVerified")
-                        else "viewer" if author else "unknown"
+                        else "viewer"
+                        if author
+                        else "unknown"
                     )
                 )
             )
         )
-        details = (
-            snippet.get("superChatDetails") or snippet.get("superStickerDetails") or {}
-        )
+        details = snippet.get("superChatDetails") or snippet.get("superStickerDetails") or {}
         published = self._parse_time(snippet.get("publishedAt"))
         text = snippet.get("displayMessage")
         return NormalizedLiveChatMessage(
@@ -381,7 +378,9 @@ class YouTubeLiveChatPoller:
         return (
             3
             if message.author_role == "owner"
-            else 2 if message.is_paid or message.author_role == "moderator" else 1
+            else 2
+            if message.is_paid or message.author_role == "moderator"
+            else 1
         )
 
     @staticmethod
@@ -395,9 +394,7 @@ class YouTubeLiveChatPoller:
             mapping = {
                 YouTubeApiErrorKind.AUTHENTICATION.value: "live_chat.auth_failed",
                 YouTubeApiErrorKind.PERMISSION.value: "live_chat.forbidden",
-                YouTubeApiErrorKind.QUOTA_EXHAUSTED.value: (
-                    "live_chat.quota_exceeded"
-                ),
+                YouTubeApiErrorKind.QUOTA_EXHAUSTED.value: ("live_chat.quota_exceeded"),
                 YouTubeApiErrorKind.TIMEOUT.value: "live_chat.network_timeout",
                 YouTubeApiErrorKind.NETWORK.value: "live_chat.transient_error",
                 YouTubeApiErrorKind.SERVER.value: "live_chat.transient_error",

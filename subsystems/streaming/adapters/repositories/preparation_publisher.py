@@ -3,16 +3,16 @@ from __future__ import annotations
 from collections.abc import Callable
 from threading import RLock
 
-from app.plugins.youtube_streaming.domain import StreamPreparationResult
-from app.ports.streaming_preparation import PreparationSubscriber
-from app.utils.trace import TraceLogger
+from subsystems.streaming.application.observability import StreamingApplicationLogger
+from subsystems.streaming.domain import StreamPreparationResult
+from subsystems.streaming.ports.streaming_preparation import PreparationSubscriber
 
 
 class InMemoryStreamPreparationPublisher:
     def __init__(self) -> None:
         self._subscribers: list[PreparationSubscriber] = []
         self._lock = RLock()
-        self._trace = TraceLogger()
+        self._trace = StreamingApplicationLogger()
 
     def publish(self, result: StreamPreparationResult) -> None:
         with self._lock:

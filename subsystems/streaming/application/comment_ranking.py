@@ -10,9 +10,9 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from app.config.app_config import CommentRankingSettings
-from app.plugins.youtube_streaming.application.lifecycle_gate import StreamLifecycleGate
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application.lifecycle_gate import StreamLifecycleGate
+from subsystems.streaming.application.settings import CommentRankingSettings
+from subsystems.streaming.domain import (
     CommentCandidate,
     CommentRankingContext,
     CommentRankingFeature,
@@ -21,7 +21,7 @@ from app.plugins.youtube_streaming.domain import (
     LifecycleOperation,
     RankedCommentCandidate,
 )
-from app.ports.comment_ranking import (
+from subsystems.streaming.ports.comment_ranking import (
     CommentCandidateRepository,
     CommentRankingRepository,
     CommentResponseHistoryRepository,
@@ -71,9 +71,7 @@ class CommentRankingUsecase:
             dropped_count=self._candidates.dropped_count,
         )
 
-    def top(
-        self, session_id: str, limit: int = 10
-    ) -> tuple[RankedCommentCandidate, ...]:
+    def top(self, session_id: str, limit: int = 10) -> tuple[RankedCommentCandidate, ...]:
         return self._rankings.latest(session_id)[: max(0, min(limit, 20))]
 
     def current_selection(self, session_id: str) -> CommentResponseTarget | None:
@@ -85,8 +83,7 @@ class CommentRankingUsecase:
     def reacquire(self, selection_id: str) -> CommentResponseTarget | None:
         return self._selections.reserve_released(
             selection_id,
-            datetime.now(timezone.utc)
-            + timedelta(seconds=self._settings.reservation_ttl_seconds),
+            datetime.now(timezone.utc) + timedelta(seconds=self._settings.reservation_ttl_seconds),
         )
 
     async def add_and_select(
@@ -107,9 +104,7 @@ class CommentRankingUsecase:
     ) -> CommentResponseTarget | None:
         started = time.perf_counter()
         if self._queued >= self._settings.queue_capacity:
-            return self._not_selected(
-                session_id, ("comment_ranking.queue_full",), 0, trace_id
-            )
+            return self._not_selected(session_id, ("comment_ranking.queue_full",), 0, trace_id)
         gate = self._gate.evaluate(
             LifecycleOperation.SELECT_COMMENT_RESPONSE_TARGET,
             session_id,
@@ -128,18 +123,14 @@ class CommentRankingUsecase:
                 trace_id,
             )
         if not context.speech_idle or not context.activity_interruptible:
-            return self._not_selected(
-                session_id, ("comment_ranking.activity_busy",), 0, trace_id
-            )
+            return self._not_selected(session_id, ("comment_ranking.activity_busy",), 0, trace_id)
         if self.current_selection(session_id) is not None:
             return self._not_selected(
                 session_id, ("comment_ranking.reservation_exists",), 0, trace_id
             )
         pool = self._valid_candidates(session_id)[: self._settings.max_rank_batch_size]
         if not pool:
-            return self._not_selected(
-                session_id, ("comment_ranking.no_candidate",), 0, trace_id
-            )
+            return self._not_selected(session_id, ("comment_ranking.no_candidate",), 0, trace_id)
         self._queued += 1
         run_id = str(uuid4())
         self._publish(
@@ -189,14 +180,10 @@ class CommentRankingUsecase:
         selected = next((item for item in ranked if item.eligible), None)
         if selected is None:
             reasons = tuple(
-                dict.fromkeys(
-                    reason for item in ranked for reason in item.exclusion_reasons
-                )
+                dict.fromkeys(reason for item in ranked for reason in item.exclusion_reasons)
             ) or ("comment_ranking.below_threshold",)
             return self._not_selected(session_id, reasons, len(pool), trace_id)
-        candidate = next(
-            item for item in pool if item.candidate_id == selected.candidate_id
-        )
+        candidate = next(item for item in pool if item.candidate_id == selected.candidate_id)
         now = datetime.now(timezone.utc)
         target = CommentResponseTarget(
             session_id=session_id,
@@ -311,19 +298,11 @@ class CommentRankingUsecase:
         context: CommentRankingContext,
         history: tuple[tuple[str | None, str, str], ...],
     ) -> tuple[CommentRankingFeature, bool]:
-        age = max(
-            0.0, (datetime.now(timezone.utc) - candidate.eligible_at).total_seconds()
-        )
-        recency = max(
-            0.1, math.exp(-age / max(1, self._settings.candidate_ttl_seconds))
-        )
+        age = max(0.0, (datetime.now(timezone.utc) - candidate.eligible_at).total_seconds())
+        recency = max(0.1, math.exp(-age / max(1, self._settings.candidate_ttl_seconds)))
         text_tokens = self._tokens(candidate.sanitized_text)
-        context_tokens = self._tokens(
-            f"{context.current_topic} {context.recent_agent_utterance}"
-        )
-        relevance = (
-            self._overlap(text_tokens, context_tokens) if context_tokens else 0.55
-        )
+        context_tokens = self._tokens(f"{context.current_topic} {context.recent_agent_utterance}")
+        relevance = self._overlap(text_tokens, context_tokens) if context_tokens else 0.55
         engagement = min(
             1.0,
             0.35
@@ -332,16 +311,13 @@ class CommentRankingUsecase:
             + (
                 0.15
                 if any(
-                    mark in candidate.sanitized_text
-                    for mark in ("楽しい", "好き", "どう", "なぜ")
+                    mark in candidate.sanitized_text for mark in ("楽しい", "好き", "どう", "なぜ")
                 )
                 else 0.0
             ),
         )
         recent_texts = [self._normalize(item[1]) for item in history]
-        novelty = (
-            0.2 if self._normalize(candidate.sanitized_text) in recent_texts else 0.9
-        )
+        novelty = 0.2 if self._normalize(candidate.sanitized_text) in recent_texts else 0.9
         same_author = sum(
             1
             for item in history[-self._settings.author_cooldown_count :]
@@ -373,10 +349,7 @@ class CommentRankingUsecase:
                     semantic.conversation_fit,
                     semantic.novelty,
                 )
-                if any(
-                    not math.isfinite(score) or score < 0 or score > 1
-                    for score in scores
-                ):
+                if any(not math.isfinite(score) or score < 0 or score > 1 for score in scores):
                     raise ValueError("invalid semantic score")
                 relevance = min(relevance, semantic.relevance)
                 fit = min(fit, semantic.conversation_fit)

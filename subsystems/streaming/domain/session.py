@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import uuid4
 
-from app.plugins.youtube_streaming.domain.health import HealthCheckItem, utc_now
+from subsystems.streaming.domain.health import HealthCheckItem, utc_now
 
 
 class StreamSessionStatus(str, Enum):
@@ -72,9 +72,7 @@ _ALLOWED_TRANSITIONS = {
         StreamSessionStatus.STOP_FAILED,
         StreamSessionStatus.EMERGENCY_STOP_REQUESTED,
     },
-    StreamSessionStatus.EMERGENCY_STOP_REQUESTED: {
-        StreamSessionStatus.EMERGENCY_STOPPING
-    },
+    StreamSessionStatus.EMERGENCY_STOP_REQUESTED: {StreamSessionStatus.EMERGENCY_STOPPING},
     StreamSessionStatus.EMERGENCY_STOPPING: {
         StreamSessionStatus.EMERGENCY_STOPPED,
         StreamSessionStatus.STOP_FAILED,
@@ -113,10 +111,7 @@ class StreamSession:
 
     @property
     def can_start(self) -> bool:
-        return (
-            self.status == StreamSessionStatus.READY
-            and self.readiness == StreamReadiness.READY
-        )
+        return self.status == StreamSessionStatus.READY and self.readiness == StreamReadiness.READY
 
     def transition(
         self,
@@ -132,9 +127,7 @@ class StreamSession:
         start_approved_at: datetime | None = None,
     ) -> StreamSession:
         if status not in _ALLOWED_TRANSITIONS[self.status]:
-            raise ValueError(
-                f"不正なStreamSession遷移です: {self.status.value} -> {status.value}"
-            )
+            raise ValueError(f"不正なStreamSession遷移です: {self.status.value} -> {status.value}")
         readiness = (
             StreamReadiness.READY
             if status == StreamSessionStatus.READY
@@ -148,9 +141,7 @@ class StreamSession:
             self,
             trace_id=trace_id or self.trace_id,
             selected_stream_id=selected_stream_id or self.selected_stream_id,
-            live_chat_id=(
-                live_chat_id if live_chat_id is not None else self.live_chat_id
-            ),
+            live_chat_id=(live_chat_id if live_chat_id is not None else self.live_chat_id),
             status=status,
             health_snapshot=(
                 health_snapshot if health_snapshot is not None else self.health_snapshot
@@ -169,10 +160,7 @@ class StreamSession:
     def attach_opening(self, activity_id: str) -> StreamSession:
         if self.status != StreamSessionStatus.LIVE:
             raise ValueError("openingはlive Sessionへだけ関連付けできます。")
-        if (
-            self.opening_activity_id is not None
-            and self.opening_activity_id != activity_id
-        ):
+        if self.opening_activity_id is not None and self.opening_activity_id != activity_id:
             raise ValueError("opening Activityは関連付け済みです。")
         return replace(
             self,
@@ -184,10 +172,7 @@ class StreamSession:
     def attach_main_segment(self, segment_id: str, activity_id: str) -> StreamSession:
         if self.status != StreamSessionStatus.LIVE:
             raise ValueError("main Segmentはlive Sessionへだけ関連付けできます。")
-        if (
-            self.current_segment_activity_id
-            and self.current_segment_activity_id != activity_id
-        ):
+        if self.current_segment_activity_id and self.current_segment_activity_id != activity_id:
             raise ValueError("main Segment Activityは関連付け済みです。")
         return replace(
             self,

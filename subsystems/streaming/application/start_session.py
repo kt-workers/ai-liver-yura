@@ -6,19 +6,19 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 
-from app.plugins.youtube_streaming.domain import (
+from subsystems.streaming.application.observability import StreamingApplicationLogger
+from subsystems.streaming.domain import (
     ApproveStreamStartCommand,
     StreamSessionStatus,
     StreamStartRejected,
     StreamStartResult,
 )
-from app.plugins.youtube_streaming.domain.health import utc_now
-from app.ports.streaming_control import (
+from subsystems.streaming.domain.health import utc_now
+from subsystems.streaming.ports.streaming_control import (
     ObsStreamingControlPort,
     YouTubeStreamingControlPort,
 )
-from app.ports.streaming_preparation import StreamSessionRepository
-from app.utils.trace import TraceLogger
+from subsystems.streaming.ports.streaming_preparation import StreamSessionRepository
 
 StartEventPublisher = Callable[[str, dict[str, object], str], None]
 
@@ -33,8 +33,9 @@ class StartStreamSessionUsecase:
         event_publisher: StartEventPublisher | None = None,
         poll_interval_seconds: float = 1.0,
         step_timeout_seconds: float = 30.0,
-        trace_logger: TraceLogger | None = None,
+        trace_logger: StreamingApplicationLogger | None = None,
         allow_fake_youtube: bool = False,
+        allow_test_adapters: bool = False,
     ) -> None:
         self._sessions = sessions
         self._obs = obs
@@ -42,8 +43,9 @@ class StartStreamSessionUsecase:
         self._publish = event_publisher or (lambda event, data, trace: None)
         self._poll_interval = poll_interval_seconds
         self._step_timeout = step_timeout_seconds
-        self._trace = trace_logger or TraceLogger()
+        self._trace = trace_logger or StreamingApplicationLogger()
         self._allow_fake_youtube = allow_fake_youtube
+        self._allow_test_adapters = allow_test_adapters
         self._results: dict[str, StreamStartResult] = {}
         self._latest: StreamStartResult | None = None
         self._lock = asyncio.Lock()
@@ -57,8 +59,9 @@ class StartStreamSessionUsecase:
 
     @property
     def uses_test_adapter(self) -> bool:
-        return self._obs.adapter_type not in {"obs_websocket", "demo_fake"} or (
-            self._youtube.adapter_type == "fake" and not self._allow_fake_youtube
+        return (not self._allow_test_adapters) and (
+            self._obs.adapter_type not in {"obs_websocket", "demo_fake"}
+            or (self._youtube.adapter_type == "fake" and not self._allow_fake_youtube)
         )
 
     async def execute(self, command: ApproveStreamStartCommand) -> StreamStartResult:
@@ -75,9 +78,16 @@ class StartStreamSessionUsecase:
         session = self._sessions.get(command.session_id)
         if session is None:
             raise StreamStartRejected("stream.session.not_found")
-        if self._obs.adapter_type not in {"obs_websocket", "demo_fake"}:
+        if not self._allow_test_adapters and self._obs.adapter_type not in {
+            "obs_websocket",
+            "demo_fake",
+        }:
             raise StreamStartRejected("stream.start.test_adapter")
-        if self._youtube.adapter_type == "fake" and not self._allow_fake_youtube:
+        if (
+            not self._allow_test_adapters
+            and self._youtube.adapter_type == "fake"
+            and not self._allow_fake_youtube
+        ):
             raise StreamStartRejected("stream.start.test_adapter")
         if session.state_version != command.expected_state_version:
             raise StreamStartRejected("stream.start.version_mismatch")
@@ -89,9 +99,7 @@ class StartStreamSessionUsecase:
         }:
             raise StreamStartRejected("stream.start.not_ready")
 
-    async def _execute_once(
-        self, command: ApproveStreamStartCommand
-    ) -> StreamStartResult:
+    async def _execute_once(self, command: ApproveStreamStartCommand) -> StreamStartResult:
         self.validate(command)
         session = self._sessions.get(command.session_id)
         assert session is not None
@@ -132,13 +140,9 @@ class StartStreamSessionUsecase:
                 raise StreamStartRejected("stream.start.obs_failed")
             if obs_status == "idle":
                 await self._obs.start_stream()
-                self._event(
-                    "stream_start.step_updated", command, step="obs_start_requested"
-                )
+                self._event("stream_start.step_updated", command, step="obs_start_requested")
             step = "obs_active"
-            obs_status = await self._poll(
-                self._obs.get_output_status, "active", "obs_active"
-            )
+            obs_status = await self._poll(self._obs.get_output_status, "active", "obs_active")
             self._event("stream_start.obs_active", command, obs_status=obs_status)
 
             stream_id = starting.selected_stream_id
@@ -163,15 +167,11 @@ class StartStreamSessionUsecase:
             if broadcast_status not in {"live", "ready", "testing"}:
                 raise StreamStartRejected("stream.start.broadcast_transition_failed")
             if broadcast_status != "live":
-                await self._youtube.transition_broadcast_to_live(
-                    starting.selected_broadcast_id
-                )
+                await self._youtube.transition_broadcast_to_live(starting.selected_broadcast_id)
                 self._event("stream_start.broadcast_transition_requested", command)
             step = "broadcast_live"
             broadcast_status = await self._poll(
-                lambda: self._youtube.get_broadcast_status(
-                    starting.selected_broadcast_id
-                ),
+                lambda: self._youtube.get_broadcast_status(starting.selected_broadcast_id),
                 "live",
                 "broadcast_live",
             )
@@ -218,9 +218,7 @@ class StartStreamSessionUsecase:
             return result
         except Exception as error:
             code = (
-                error.code
-                if isinstance(error, StreamStartRejected)
-                else self._failure_code(step)
+                error.code if isinstance(error, StreamStartRejected) else self._failure_code(step)
             )
             current = self._sessions.get(command.session_id) or starting
             failed = self._sessions.save(
@@ -231,9 +229,7 @@ class StartStreamSessionUsecase:
                 )
             )
             manual = (
-                obs_status == "active"
-                or stream_status == "active"
-                or broadcast_status == "live"
+                obs_status == "active" or stream_status == "active" or broadcast_status == "live"
             )
             result = StreamStartResult(
                 failed.session_id,
@@ -259,9 +255,7 @@ class StartStreamSessionUsecase:
             )
             return result
 
-    async def _poll(
-        self, read: Callable[[], Awaitable[str]], expected: str, step: str
-    ) -> str:
+    async def _poll(self, read: Callable[[], Awaitable[str]], expected: str, step: str) -> str:
         deadline = asyncio.get_running_loop().time() + self._step_timeout
         while True:
             value = str(await read())
@@ -283,9 +277,7 @@ class StartStreamSessionUsecase:
             "broadcast_live": "stream.start.broadcast_live_timeout",
         }.get(step, "stream.start.failed")
 
-    def _event(
-        self, event_type: str, command: ApproveStreamStartCommand, **data: object
-    ) -> None:
+    def _event(self, event_type: str, command: ApproveStreamStartCommand, **data: object) -> None:
         self._publish(
             event_type,
             {

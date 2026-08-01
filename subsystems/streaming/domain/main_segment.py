@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
-from app.plugins.youtube_streaming.domain.health import utc_now
+from subsystems.streaming.domain.health import utc_now
 
 
 class StreamMainSegmentStatus(str, Enum):
@@ -81,16 +81,12 @@ class StreamMainSegmentActivity:
             self,
             status=status,
             attempt=(
-                self.attempt + 1
-                if status == StreamMainSegmentStatus.RUNNING
-                else self.attempt
+                self.attempt + 1 if status == StreamMainSegmentStatus.RUNNING else self.attempt
             ),
             failure_code=failure_code,
             retryable=retryable,
             manual_intervention_required=status == StreamMainSegmentStatus.FAILED,
-            started_at=(
-                now if status == StreamMainSegmentStatus.RUNNING else self.started_at
-            ),
+            started_at=(now if status == StreamMainSegmentStatus.RUNNING else self.started_at),
             completed_at=now if terminal else None,
             result=result if result is not None else self.result,
             topic=topic or self.topic,

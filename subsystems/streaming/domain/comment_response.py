@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum
 from uuid import uuid4
 
-from app.plugins.youtube_streaming.domain.health import utc_now
+from subsystems.streaming.domain.health import utc_now
 
 
 class StreamCommentResponseStatus(str, Enum):
@@ -63,9 +63,7 @@ class StreamCommentResponseActivity:
         result: dict[str, object] | None = None,
     ) -> StreamCommentResponseActivity:
         if status not in _TRANSITIONS[self.status]:
-            raise ValueError(
-                f"invalid comment response transition: {self.status} -> {status}"
-            )
+            raise ValueError(f"invalid comment response transition: {self.status} -> {status}")
         now = utc_now()
         return replace(
             self,
@@ -75,11 +73,7 @@ class StreamCommentResponseActivity:
             failure_code=failure_code,
             retryable=retryable,
             result=result if result is not None else self.result,
-            started_at=(
-                now
-                if status == StreamCommentResponseStatus.RUNNING
-                else self.started_at
-            ),
+            started_at=(now if status == StreamCommentResponseStatus.RUNNING else self.started_at),
             completed_at=(
                 now
                 if status
