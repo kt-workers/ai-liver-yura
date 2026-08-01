@@ -6,9 +6,7 @@ from app.domain.character_response import VoiceIntent
 class FakeSpeechSynthesizer:
     """Demo synthesizer that never performs network or device I/O."""
 
-    async def synthesize(
-        self, text: str, voice_intent: VoiceIntent | None = None
-    ) -> bytes:
+    async def synthesize(self, text: str, voice_intent: VoiceIntent | None = None) -> bytes:
         del voice_intent
         return f"DEMO_AUDIO:{text}".encode()
 

@@ -182,9 +182,7 @@ class StreamingDemoManualCheckLog:
     def count(self) -> int:
         return sum(self._counts.values())
 
-    def record_broker_event(
-        self, event_type: str, data: dict[str, Any], trace_id: str
-    ) -> None:
+    def record_broker_event(self, event_type: str, data: dict[str, Any], trace_id: str) -> None:
         mapped = self.EVENT_MAP.get(event_type)
         if mapped is None:
             return
@@ -214,9 +212,7 @@ class StreamingDemoManualCheckLog:
             enriched["moderation_status"] = moderation_status
             reasons = data.get("reason_codes")
             if isinstance(reasons, (list, tuple)):
-                enriched["moderation_reason"] = ",".join(
-                    str(reason) for reason in reasons
-                )
+                enriched["moderation_reason"] = ",".join(str(reason) for reason in reasons)
                 case["moderation_reason"] = enriched["moderation_reason"]
         if case is not None and event == "ranking_completed":
             for item in data.get("top", []):
@@ -247,9 +243,7 @@ class StreamingDemoManualCheckLog:
                 {
                     "spoken_text": STREAMING_DEMO_SPEECH[activity_type],
                     "expression": (
-                        "soft_smile"
-                        if activity_type == "stream_closing_greeting"
-                        else "smile"
+                        "soft_smile" if activity_type == "stream_closing_greeting" else "smile"
                     ),
                     "activity_type": activity_type,
                 }
@@ -389,9 +383,7 @@ class StreamingDemoManualCheckLog:
             and isinstance(value, (str, int, float, bool, list, type(None)))
         }
         payload = {
-            "timestamp": datetime.now(ZoneInfo("Asia/Tokyo")).isoformat(
-                timespec="milliseconds"
-            ),
+            "timestamp": datetime.now(ZoneInfo("Asia/Tokyo")).isoformat(timespec="milliseconds"),
             "source": source,
             "category": category,
             "event": event,
@@ -404,9 +396,7 @@ class StreamingDemoManualCheckLog:
             "reason": reason or safe.pop("reason_code", None),
             "details": safe,
         }
-        self._file.write(
-            json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"
-        )
+        self._file.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
         self._file.flush()
         self.last_write_at = str(payload["timestamp"])
         self._counts[event] += 1

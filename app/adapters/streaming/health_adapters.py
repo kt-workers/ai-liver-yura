@@ -78,9 +78,7 @@ class VoiceVoxHealthAdapter:
             )
 
     def _get_json(self, path: str) -> object:
-        request = urllib.request.Request(
-            f"{self._config.base_url.rstrip('/')}{path}", method="GET"
-        )
+        request = urllib.request.Request(f"{self._config.base_url.rstrip('/')}{path}", method="GET")
         try:
             with urllib.request.urlopen(  # noqa: S310 -- configured local service
                 request, timeout=self._config.timeout_seconds

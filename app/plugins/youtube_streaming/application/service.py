@@ -125,11 +125,7 @@ class StreamingApplicationService:
         if not self.demo_mode:
             raise PermissionError("demo.disabled")
         session = self.runtime.usecase.find_active_session()
-        if (
-            session is None
-            or session.status.value != "live"
-            or self._comment_poller is None
-        ):
+        if session is None or session.status.value != "live" or self._comment_poller is None:
             raise RuntimeError("demo.live_session_required")
         enqueue = getattr(self.runtime.live_chat, "enqueue", None)
         if not callable(enqueue):
@@ -147,9 +143,7 @@ class StreamingApplicationService:
         message_id_hash = hashlib.sha256(message_id.encode()).hexdigest()[:12]
         author = {
             "channelId": f"demo-{role}",
-            "displayName": str(payload.get("author_display_name") or "Demo Viewer")[
-                :40
-            ],
+            "displayName": str(payload.get("author_display_name") or "Demo Viewer")[:40],
             "isChatOwner": role == "owner",
             "isChatModerator": role == "moderator",
             "isChatSponsor": role == "member",
@@ -245,9 +239,7 @@ class StreamingApplicationService:
                 responder = self._comment_response
                 if target is not None and responder is not None:
                     try:
-                        await responder.start(
-                            target.session_id, target.selection_id, trace_id
-                        )
+                        await responder.start(target.session_id, target.selection_id, trace_id)
                     except Exception as error:
                         publish(
                             "stream_comments.response_failed",
@@ -270,9 +262,7 @@ class StreamingApplicationService:
             publisher=publish,
             candidate_sink=rank_candidate,
         )
-        activity_gateway.configure_comment_moderation(
-            self._comment_moderation.evaluate_event
-        )
+        activity_gateway.configure_comment_moderation(self._comment_moderation.evaluate_event)
         self._main_segment_usecase = StreamMainSegmentUsecase(
             sessions=self.runtime.sessions,
             activities=self.runtime.main_segments,
@@ -309,8 +299,7 @@ class StreamingApplicationService:
                 self.demo_mode
                 or (
                     self.runtime.youtube_control.adapter_type == "fake"
-                    and self.runtime.obs_control.adapter_type
-                    in {"fake", "obs_websocket"}
+                    and self.runtime.obs_control.adapter_type in {"fake", "obs_websocket"}
                 )
             ),
             lifecycle_gate=self._lifecycle_gate,
@@ -366,9 +355,7 @@ class StreamingApplicationService:
                 requested_by=str(payload["requested_by"]),
                 reason_code=str(payload["reason_code"]),
                 operator_note=(
-                    str(payload["operator_note"])
-                    if payload.get("operator_note")
-                    else None
+                    str(payload["operator_note"]) if payload.get("operator_note") else None
                 ),
             )
         )
@@ -402,9 +389,7 @@ class StreamingApplicationService:
         if self._main_segment_usecase is None:
             return None
         session = self.runtime.usecase.find_active_session()
-        activity = (
-            self._main_segment_usecase.status(session.session_id) if session else None
-        )
+        activity = self._main_segment_usecase.status(session.session_id) if session else None
         return self._main_segment_result(activity) if activity else None
 
     async def retry_main_segment(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -442,9 +427,7 @@ class StreamingApplicationService:
             "speaking": activity.status.value == "waiting_for_output",
         }
 
-    def _publish_start_event(
-        self, event_type: str, data: dict[str, object], trace_id: str
-    ) -> None:
+    def _publish_start_event(self, event_type: str, data: dict[str, object], trace_id: str) -> None:
         if self._start_progress is not None:
             self._start_progress.update(data)
             if "obs_status" in data:
@@ -487,9 +470,7 @@ class StreamingApplicationService:
             )
 
     async def broadcasts(self) -> list[dict[str, Any]]:
-        return [
-            broadcast(item) for item in await self.runtime.usecase.list_broadcasts()
-        ]
+        return [broadcast(item) for item in await self.runtime.usecase.list_broadcasts()]
 
     def run_of_shows(self) -> list[dict[str, Any]]:
         return [
@@ -543,9 +524,7 @@ class StreamingApplicationService:
             session_id=session.session_id,
             selected_broadcast_id=str(payload["broadcast_id"]),
             requested_by="streaming_admin",
-            expected_state_version=(
-                session.state_version if expected is None else int(expected)
-            ),
+            expected_state_version=(session.state_version if expected is None else int(expected)),
             run_of_show_id=str(payload["run_of_show_id"]),
         )
         self.broker.publish(
@@ -605,9 +584,7 @@ class StreamingApplicationService:
                     }
                 )
         live_chat_real = self.runtime.live_chat.adapter_type == "google"
-        items = [
-            item for item in items if item["capability"] != "youtube.live_chat.read"
-        ]
+        items = [item for item in items if item["capability"] != "youtube.live_chat.read"]
         items.append(
             {
                 "capability": "youtube.live_chat.read",
@@ -625,9 +602,7 @@ class StreamingApplicationService:
                     item["status"] = "blocked"
                     item["reason_code"] = "comment_ranking.no_candidate"
         selection = self.current_comment_selection()
-        has_reservation = (
-            selection is not None and selection.get("selection") is not None
-        )
+        has_reservation = selection is not None and selection.get("selection") is not None
         if not has_reservation:
             for item in items:
                 if item["capability"] in {
@@ -705,8 +680,7 @@ class StreamingApplicationService:
                     self.demo_mode
                     or (
                         self.runtime.usecase.youtube_adapter_type == "fake"
-                        and self.runtime.usecase.obs_adapter_type
-                        in {"fake", "obs_websocket"}
+                        and self.runtime.usecase.obs_adapter_type in {"fake", "obs_websocket"}
                     )
                 ),
             )
@@ -715,12 +689,7 @@ class StreamingApplicationService:
         session = self.runtime.sessions.get(session_id)
         gate = self._lifecycle_gate
         activity_gateway = self._activity_gateway
-        if (
-            session is None
-            or gate is None
-            or activity_gateway is None
-            or not session.live_chat_id
-        ):
+        if session is None or gate is None or activity_gateway is None or not session.live_chat_id:
             return
 
         def publish(event: str, data: dict[str, object], trace: str) -> None:
@@ -794,9 +763,7 @@ class StreamingApplicationService:
             "items": [
                 {
                     "decision_id": item.decision_id,
-                    "message_id_hash": hashlib.sha256(
-                        item.message_id.encode()
-                    ).hexdigest()[:12],
+                    "message_id_hash": hashlib.sha256(item.message_id.encode()).hexdigest()[:12],
                     "status": item.status,
                     "reason_codes": item.reason_codes,
                     "severity": item.severity,
@@ -888,9 +855,7 @@ class StreamingApplicationService:
         activity = responder.status(session.session_id)
         return {
             "session_id": session.session_id,
-            "activity": (
-                None if activity is None else self._comment_response_result(activity)
-            ),
+            "activity": (None if activity is None else self._comment_response_result(activity)),
         }
 
     def comment_response_recent(self) -> dict[str, Any] | None:
@@ -905,9 +870,7 @@ class StreamingApplicationService:
                     "response_id": item.response_id,
                     "selection_id": item.selection_id,
                     "candidate_id": item.candidate_id,
-                    "message_id_hash": hashlib.sha256(
-                        item.message_id.encode()
-                    ).hexdigest()[:12],
+                    "message_id_hash": hashlib.sha256(item.message_id.encode()).hexdigest()[:12],
                     "response_summary": item.response_summary[:80],
                     "outcome": item.outcome,
                     "completed_at": item.completed_at.isoformat(),
@@ -1027,11 +990,7 @@ class StreamingApplicationService:
                 },
                 result.trace_id,
             )
-        event_type = (
-            "stream_preparation.completed"
-            if result.ready
-            else "stream_preparation.failed"
-        )
+        event_type = "stream_preparation.completed" if result.ready else "stream_preparation.failed"
         self.broker.publish(
             event_type,
             session_snapshot(
@@ -1042,9 +1001,7 @@ class StreamingApplicationService:
             result.trace_id,
         )
         if result.ready and not self.runtime.start_usecase.uses_test_adapter:
-            providers = self.runtime.capability_registry.resolve_providers(
-                "stream.session.prepare"
-            )
+            providers = self.runtime.capability_registry.resolve_providers("stream.session.prepare")
             if providers:
                 for capability in (
                     "stream.session.start",
@@ -1052,6 +1009,4 @@ class StreamingApplicationService:
                     "youtube.broadcast.transition_live",
                 ):
                     self.runtime.capability_registry.register(providers[0], capability)
-        self.broker.publish(
-            "capability.updated", {"items": self.capabilities()}, result.trace_id
-        )
+        self.broker.publish("capability.updated", {"items": self.capabilities()}, result.trace_id)

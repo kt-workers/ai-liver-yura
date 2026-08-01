@@ -11,9 +11,7 @@ from app.domain.character_response import CharacterResponse, Claim, ResponseCont
 class PromptBuilder(Protocol):
     """Activity と CharacterProfile から LLM 用 prompt を生成する Port。"""
 
-    def build_prompt(
-        self, activity: Activity, character_profile: CharacterProfile
-    ) -> str: ...
+    def build_prompt(self, activity: Activity, character_profile: CharacterProfile) -> str: ...
 
 
 class SituationPromptBuilder(Protocol):
