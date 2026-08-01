@@ -13,6 +13,9 @@ def test_build_returns_json_compatible_motivation_context() -> None:
         isinstance(item["desire_type"], str)
         for item in context["ranked_desires"]
     )
-    assert context["moral_evaluation_available"] is False
+    assert context["moral_evaluation_available"] is True
+    assert context["moral_observation_only"] is True
+    assert context["moral"]["profile"]["compassion"] > 0.0
+    assert context["moral"]["state"]["restraint"] > 0.0
     assert context["suppressed_activity_types"] == []
-    assert context["suppression_reasons"] == ["moral_profile_not_available"]
+    assert context["suppression_reasons"] == ["moral_fit_observation_only"]
