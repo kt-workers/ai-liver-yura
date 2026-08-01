@@ -12,6 +12,7 @@ from app.domain.behavior import (
 from app.domain.morals import (
     ActivityCandidateSemanticEquivalenceEvidence,
     ExecutionBoundaryEquivalenceStatus,
+    MoralActivityCandidateApplicationConditionStatus,
     MoralProfile,
     MoralState,
     SemanticEquivalenceDimension,
@@ -106,8 +107,17 @@ def test_situation_shadow_confirms_all_boundaries_without_activation() -> None:
     assert execution_boundary.status is ExecutionBoundaryEquivalenceStatus.CONFIRMED
     assert execution_boundary.confirmed is True
     assert result.semantic_equivalence.confirmed is True
+    assert result.application_condition.status is (
+        MoralActivityCandidateApplicationConditionStatus.READY
+    )
+    assert result.application_condition.ready_for_limited_activation is True
+    assert result.application_condition_ready is True
     assert result.current_order == (
         "autonomous_talk",
         "conversation_with_user",
+    )
+    assert result.hypothetical_order == (
+        "conversation_with_user",
+        "autonomous_talk",
     )
     assert result.activation_permitted is False
