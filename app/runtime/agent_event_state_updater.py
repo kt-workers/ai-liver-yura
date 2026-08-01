@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
+from app.domain.desires import DesireState
 from app.domain.drives import DriveState
 from app.domain.emotions import EmotionAppraisal, EmotionState
 from app.domain.events import AgentEvent, AgentEventType
 from app.domain.memory import EmotionHistoryEntry, EpisodicMemory
 from app.domain.relationships import RelationshipMemory, RelationshipState
 from app.runtime.agent_state import AgentState
+from app.runtime.desire_state_updater import DesireStateUpdater
 from app.runtime.drive_state_updater import DriveStateUpdater
 from app.runtime.emotion_appraiser import EmotionAppraiser
 from app.runtime.emotion_state_updater import EmotionStateUpdater
@@ -20,6 +22,8 @@ class AgentEventStateUpdateResult:
     appraisal: EmotionAppraisal
     before_drive: DriveState
     after_drive: DriveState
+    before_desire: DesireState
+    after_desire: DesireState
     before_emotion: EmotionState
     after_emotion: EmotionState
     relationship_memory: RelationshipMemory
@@ -36,11 +40,13 @@ class AgentEventStateUpdater:
         self,
         *,
         drive_state_updater: DriveStateUpdater | None = None,
+        desire_state_updater: DesireStateUpdater | None = None,
         emotion_appraiser: EmotionAppraiser | None = None,
         emotion_state_updater: EmotionStateUpdater | None = None,
         relationship_state_updater: RelationshipStateUpdater | None = None,
     ) -> None:
         self._drive_state_updater = drive_state_updater or DriveStateUpdater()
+        self._desire_state_updater = desire_state_updater or DesireStateUpdater()
         self._emotion_appraiser = emotion_appraiser or EmotionAppraiser()
         self._emotion_state_updater = emotion_state_updater or EmotionStateUpdater()
         self._relationship_state_updater = (
@@ -49,10 +55,12 @@ class AgentEventStateUpdater:
 
     def update(self, state: AgentState, event: AgentEvent) -> AgentEventStateUpdateResult:
         before_drive = state.current_drive
+        before_desire = state.current_desire
         before_emotion = state.current_emotion
         before_relationship = state.relationship_memory.current
 
         after_drive = self._drive_state_updater.update_by_event(before_drive, event)
+        after_desire = self._desire_state_updater.update_by_event(before_desire, event)
         appraisal = self._emotion_appraiser.appraise(
             event,
             current_emotion=before_emotion,
@@ -78,6 +86,7 @@ class AgentEventStateUpdater:
 
         updated = (
             state.with_drive(after_drive)
+            .with_desire(after_desire)
             .with_emotion(after_emotion)
             .with_relationship_memory(relationship_memory)
             .with_attention_target(attention_target)
@@ -149,6 +158,8 @@ class AgentEventStateUpdater:
             appraisal=appraisal,
             before_drive=before_drive,
             after_drive=after_drive,
+            before_desire=before_desire,
+            after_desire=after_desire,
             before_emotion=before_emotion,
             after_emotion=after_emotion,
             relationship_memory=relationship_memory,
