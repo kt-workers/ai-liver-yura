@@ -9,10 +9,13 @@ import httpx
 COMPONENT_ROOT = Path(__file__).parents[1] / "gui" / "yura-streaming-admin"
 sys.path.insert(0, str(COMPONENT_ROOT))
 
-from client import CoreApiClient, CoreApiError  # noqa: E402
+from client import (  # noqa: E402
+    StreamingSubsystemApiClient,
+    StreamingSubsystemApiError,
+)
 from server import StreamingAdminService  # noqa: E402
 
-from config import AdminClientConfig  # noqa: E402
+from config import StreamingSubsystemAdminConfig  # noqa: E402
 
 
 class FakeClient:
@@ -105,16 +108,16 @@ def test_web_actions_add_server_side_command_metadata() -> None:
     assert client.started[1:] == ("session-1", 3, "web-operator")
 
 
-def test_core_api_client_reports_core_unavailable(monkeypatch: Any) -> None:
+def test_subsystem_api_client_reports_subsystem_unavailable(monkeypatch: Any) -> None:
     def fail(*args: object, **kwargs: object) -> object:
         raise httpx.ConnectError("offline")
 
     monkeypatch.setattr(httpx, "request", fail)
-    client = CoreApiClient(AdminClientConfig())
+    client = StreamingSubsystemApiClient(StreamingSubsystemAdminConfig())
     try:
         client.health()
-    except CoreApiError as error:
-        assert error.code == "runtime.unavailable"
+    except StreamingSubsystemApiError as error:
+        assert error.code == "streaming_subsystem.unavailable"
         assert error.retryable is True
     else:
-        raise AssertionError("CoreApiError was not raised")
+        raise AssertionError("StreamingSubsystemApiError was not raised")
