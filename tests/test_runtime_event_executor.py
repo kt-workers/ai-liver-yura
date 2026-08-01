@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 
@@ -96,7 +96,7 @@ async def test_state_only_event_does_not_create_activity(
 
 
 @pytest.mark.asyncio
-async def test_successful_event_execution_completes_activity_and_syncs_state() -> None:
+async def test_successful_event_execution_records_activity_result_desire_event() -> None:
     activity = Activity(
         activity_type=ActivityType.CONVERSATION_WITH_USER,
         goal="会話する",
@@ -126,12 +126,18 @@ async def test_successful_event_execution_completes_activity_and_syncs_state() -
     planner.plan.assert_awaited_once_with(activity)
     scheduler.prepare.assert_awaited_once()
     scheduler.execute.assert_awaited_once()
-    manager.complete_processed_activity.assert_called_once()
-    service.sync_from_activity_manager.assert_called_once_with()
+    manager.complete_processed_activity.assert_called_once_with(
+        activity.activity_id,
+        result=ANY,
+    )
+    result_event = service.handle_event.call_args_list[-1].args[0]
+    assert result_event.event_type == AgentEventType.ACTIVITY_RESULT_RECORDED
+    assert result_event.payload["activity_type"] == "conversation_with_user"
+    assert result_event.payload["outcome"] == "completed"
 
 
 @pytest.mark.asyncio
-async def test_action_planning_failure_records_result_and_skips_scheduler() -> None:
+async def test_action_planning_failure_records_failed_desire_event() -> None:
     activity = Activity(
         activity_type=ActivityType.CONVERSATION_WITH_USER,
         goal="会話する",
@@ -156,10 +162,15 @@ async def test_action_planning_failure_records_result_and_skips_scheduler() -> N
 
     assert result.activity_turn_result is not None
     manager.record_turn_result.assert_called_once_with(result.activity_turn_result)
-    manager.complete_processed_activity.assert_called_once_with(activity.activity_id)
+    manager.complete_processed_activity.assert_called_once_with(
+        activity.activity_id,
+        result=ANY,
+    )
     scheduler.prepare.assert_not_awaited()
     scheduler.execute.assert_not_awaited()
-    service.sync_from_activity_manager.assert_called_once_with()
+    result_event = service.handle_event.call_args_list[-1].args[0]
+    assert result_event.event_type == AgentEventType.ACTIVITY_RESULT_RECORDED
+    assert result_event.payload["outcome"] == "failed"
 
 
 @pytest.mark.asyncio

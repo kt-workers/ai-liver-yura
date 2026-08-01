@@ -15,9 +15,20 @@ from app.domain.behavior import (
     SituationAnalysis,
     SpeechAct,
 )
+from app.domain.morals import (
+    ActivityCandidateSemanticEquivalenceEvidence,
+    MoralActivityCandidatePreferenceShadow,
+    SemanticEquivalenceDimension,
+)
 from app.ports.llm_roles import SituationEvaluationModel
 from app.ports.prompt_builder import SituationPromptBuilder
 from app.runtime.activity_matcher_resolver import ActivityMatcherResolver
+from app.runtime.moral_activity_candidate_limited_activation import (
+    MoralActivityCandidateLimitedActivationApplier,
+)
+from app.runtime.situation_semantic_equivalence_shadow_observer import (
+    SituationSemanticEquivalenceShadowObserver,
+)
 from app.utils.trace import TraceLogger
 
 
@@ -33,6 +44,12 @@ class SituationEvaluator:
         max_attempts: int = 1,
         constraint_validator: ActivityConstraintValidator | None = None,
         matcher_resolver: ActivityMatcherResolver | None = None,
+        semantic_equivalence_shadow_observer: (
+            SituationSemanticEquivalenceShadowObserver | None
+        ) = None,
+        limited_activation_applier: (
+            MoralActivityCandidateLimitedActivationApplier | None
+        ) = None,
     ) -> None:
         if not 0.0 <= confidence_threshold <= 1.0:
             raise ValueError(
@@ -49,6 +66,14 @@ class SituationEvaluator:
         )
         self._matcher_resolver = matcher_resolver or ActivityMatcherResolver(
             self._constraint_validator
+        )
+        self._semantic_equivalence_shadow_observer = (
+            semantic_equivalence_shadow_observer
+            or SituationSemanticEquivalenceShadowObserver()
+        )
+        self._limited_activation_applier = (
+            limited_activation_applier
+            or MoralActivityCandidateLimitedActivationApplier()
         )
         self._trace_logger = TraceLogger()
 
@@ -224,6 +249,10 @@ class SituationEvaluator:
                 context.activity_definitions,
                 intent_flags_can_cancel_activity=context.event_type
                 != "curiosity_peak",
+                semantic_evidence_source="situation_evaluator_llm",
+                semantic_evidence_id=(
+                    f"{context.source_event_id}:semantic-equivalence:{attempt + 1}"
+                ),
             )
             self._trace_logger.llm_response(
                 purpose="behavior_planning",
@@ -262,7 +291,26 @@ class SituationEvaluator:
             if analysis is None:
                 continue
             if analysis.confidence < self._confidence_threshold:
-                return replace(analysis, reason="semantic_confidence_below_threshold")
+                if analysis.semantic_equivalence_evidence is not None:
+                    self._trace_logger.debug(
+                        "situation_evaluator:semantic_equivalence_evidence_discarded",
+                        source_event_id=context.source_event_id,
+                        evidence_id=(
+                            analysis.semantic_equivalence_evidence.evidence_id
+                        ),
+                        reason="semantic_confidence_below_threshold",
+                    )
+                return replace(
+                    analysis,
+                    reason="semantic_confidence_below_threshold",
+                    semantic_equivalence_evidence=None,
+                )
+            shadow = self._observe_semantic_equivalence(context, analysis)
+            analysis, _ = self._limited_activation_applier.apply(
+                context,
+                analysis,
+                shadow,
+            )
             return analysis
         return None
 
@@ -272,6 +320,8 @@ class SituationEvaluator:
         definitions: tuple[ActivityDefinition, ...] = (),
         *,
         intent_flags_can_cancel_activity: bool = True,
+        semantic_evidence_source: str | None = None,
+        semantic_evidence_id: str | None = None,
     ) -> SituationAnalysis | None:
         text = raw.strip()
         if text.startswith("```"):
@@ -320,7 +370,13 @@ class SituationEvaluator:
             if conversation_phase_value is not None
             else None
         )
-        if conversation_phase not in {None, "greeting", "opening", "active", "winding_down"}:
+        if conversation_phase not in {
+            None,
+            "greeting",
+            "opening",
+            "active",
+            "winding_down",
+        }:
             return None
         initiative_value = payload.get("initiative_level")
         if initiative_value is None:
@@ -335,7 +391,12 @@ class SituationEvaluator:
             return None
         constraints = payload["constraints"]
         confidence = payload["confidence"]
-        flags = ("negated", "hypothetical", "past_reference", "knowledge_question")
+        flags = (
+            "negated",
+            "hypothetical",
+            "past_reference",
+            "knowledge_question",
+        )
         if not isinstance(constraints, dict) or not all(
             isinstance(key, str) for key in constraints
         ):
@@ -401,6 +462,14 @@ class SituationEvaluator:
                 applied_defaults=validation.applied_defaults,
                 warnings=list(validation.warnings),
             )
+        semantic_equivalence_evidence = (
+            self._parse_semantic_equivalence_evidence(
+                payload,
+                definitions,
+                source=semantic_evidence_source,
+                evidence_id=semantic_evidence_id,
+            )
+        )
         return SituationAnalysis(
             activity_candidate=candidate,
             operation=operation,
@@ -425,7 +494,95 @@ class SituationEvaluator:
             constraints_schema_version=(
                 validation.schema_version if validation is not None else None
             ),
+            semantic_equivalence_evidence=semantic_equivalence_evidence,
         )
+
+    @staticmethod
+    def _parse_semantic_equivalence_evidence(
+        payload: dict[str, object],
+        definitions: tuple[ActivityDefinition, ...],
+        *,
+        source: str | None,
+        evidence_id: str | None,
+    ) -> ActivityCandidateSemanticEquivalenceEvidence | None:
+        normalized_source = source.strip() if isinstance(source, str) else ""
+        normalized_evidence_id = (
+            evidence_id.strip() if isinstance(evidence_id, str) else ""
+        )
+        if not normalized_source or not normalized_evidence_id:
+            return None
+        raw = payload.get("semantic_equivalence")
+        if not isinstance(raw, dict):
+            return None
+        raw_group = raw.get("candidate_group")
+        if not isinstance(raw_group, (list, tuple)) or not all(
+            isinstance(activity_type, str) for activity_type in raw_group
+        ):
+            return None
+        candidate_group = tuple(
+            activity_type.strip()
+            for activity_type in raw_group
+            if activity_type.strip()
+        )
+        known_activity_types = {
+            definition.activity_type for definition in definitions
+        }
+        if any(
+            activity_type not in known_activity_types
+            for activity_type in candidate_group
+        ):
+            return None
+        try:
+            intent = SemanticEquivalenceDimension(str(raw["intent"]))
+            operation = SemanticEquivalenceDimension(str(raw["operation"]))
+            goal = SemanticEquivalenceDimension(str(raw["goal"]))
+        except (KeyError, ValueError):
+            return None
+        raw_reasons = raw.get("reasons", [])
+        if not isinstance(raw_reasons, (list, tuple)) or not all(
+            isinstance(reason, str) for reason in raw_reasons
+        ):
+            return None
+        reasons = tuple(
+            reason.strip()[:120]
+            for reason in raw_reasons[:8]
+            if reason.strip()
+        )
+        try:
+            return ActivityCandidateSemanticEquivalenceEvidence(
+                candidate_group=candidate_group,
+                intent=intent,
+                operation=operation,
+                goal=goal,
+                source=normalized_source,
+                evidence_id=normalized_evidence_id,
+                reasons=reasons,
+            )
+        except ValueError:
+            return None
+
+    def _observe_semantic_equivalence(
+        self,
+        context: BehaviorPlanningContext,
+        analysis: SituationAnalysis,
+    ) -> MoralActivityCandidatePreferenceShadow | None:
+        if analysis.semantic_equivalence_evidence is None:
+            return None
+        try:
+            return self._semantic_equivalence_shadow_observer.observe(
+                context,
+                analysis,
+            )
+        except Exception as error:
+            self._trace_logger.warning(
+                "situation_evaluator:semantic_equivalence_shadow_failed",
+                source_event_id=context.source_event_id,
+                evidence_id=(
+                    analysis.semantic_equivalence_evidence.evidence_id
+                ),
+                error_type=type(error).__name__,
+            )
+            return None
 
     @staticmethod
     def _candidate_definitions(

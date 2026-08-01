@@ -5,11 +5,17 @@ from datetime import datetime, timezone
 
 from app.domain.actions import ActionPlan
 from app.domain.activities import Activity
+from app.domain.desires import DesireState
 from app.domain.drives import DriveState
 from app.domain.emotions import EmotionState
 from app.domain.memory import AgentMemoryState
+from app.domain.morals import MoralProfile, MoralState
 from app.domain.relationships import RelationshipMemory
 from app.domain.situation import SituationState
+
+
+def _default_moral_state() -> MoralState:
+    return MoralState.from_profile(MoralProfile())
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +29,9 @@ class AgentState:
     prepared_actions: list[ActionPlan] = field(default_factory=list)
     current_emotion: EmotionState = field(default_factory=EmotionState)
     current_drive: DriveState = field(default_factory=DriveState)
+    current_desire: DesireState = field(default_factory=DesireState)
+    moral_profile: MoralProfile = field(default_factory=MoralProfile)
+    current_moral: MoralState = field(default_factory=_default_moral_state)
     relationship_memory: RelationshipMemory = field(default_factory=RelationshipMemory)
     current_situation: SituationState = field(default_factory=SituationState)
     memory: AgentMemoryState = field(default_factory=AgentMemoryState)
@@ -79,6 +88,20 @@ class AgentState:
         return replace(
             self,
             current_drive=drive,
+            updated_at=datetime.now(timezone.utc),
+        )
+
+    def with_desire(self, desire: DesireState) -> AgentState:
+        return replace(
+            self,
+            current_desire=desire,
+            updated_at=datetime.now(timezone.utc),
+        )
+
+    def with_moral(self, moral: MoralState) -> AgentState:
+        return replace(
+            self,
+            current_moral=moral,
             updated_at=datetime.now(timezone.utc),
         )
 

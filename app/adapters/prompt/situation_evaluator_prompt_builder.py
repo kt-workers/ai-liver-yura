@@ -3,12 +3,70 @@ from __future__ import annotations
 import json
 
 from app.domain.behavior import BehaviorPlanningContext
+from app.domain.morals import (
+    MoralActivityCandidateEvaluator,
+    MoralActivityCandidatePreferenceShadowEvaluator,
+)
+from app.domain.motivation import MotivationActivityCandidateRanker
 
 
 class SituationEvaluatorPromptBuilder:
     """客観的意味解析だけを要求するrole専用PromptBuilder。"""
 
+    def __init__(
+        self,
+        candidate_ranker: MotivationActivityCandidateRanker | None = None,
+        moral_candidate_evaluator: MoralActivityCandidateEvaluator | None = None,
+        moral_preference_shadow_evaluator: (
+            MoralActivityCandidatePreferenceShadowEvaluator | None
+        ) = None,
+    ) -> None:
+        self._candidate_ranker = candidate_ranker or MotivationActivityCandidateRanker()
+        self._moral_candidate_evaluator = (
+            moral_candidate_evaluator or MoralActivityCandidateEvaluator()
+        )
+        self._moral_preference_shadow_evaluator = (
+            moral_preference_shadow_evaluator
+            or MoralActivityCandidatePreferenceShadowEvaluator()
+        )
+
     def build(self, context: BehaviorPlanningContext) -> str:
+        pinned_activity_types = tuple(
+            activity_type
+            for activity_type in (
+                (
+                    context.active_activity_definition.activity_type
+                    if context.active_activity_definition is not None
+                    else None
+                ),
+                context.ongoing_activity_type,
+            )
+            if activity_type is not None
+        )
+        ranking = self._candidate_ranker.rank(
+            context.activity_definitions,
+            context.motivation,
+            pinned_activity_types=pinned_activity_types,
+        )
+        preference_by_activity = {
+            preference.activity_type: preference.as_context()
+            for preference in ranking.preferences
+        }
+        moral_fits = self._moral_candidate_evaluator.evaluate_context(
+            ranking.definitions,
+            context.moral,
+        )
+        moral_fit_by_activity = {
+            fit.activity_type: fit.as_context() for fit in moral_fits
+        }
+        moral_preference_shadow = (
+            self._moral_preference_shadow_evaluator.evaluate(
+                ranking.definitions,
+                moral_fits,
+                ranking.as_context(),
+                context.moral,
+            )
+        )
         candidates = [
             {
                 "activity_type": item.activity_type,
@@ -19,8 +77,10 @@ class SituationEvaluatorPromptBuilder:
                 "semantic_descriptions": list(item.semantic_descriptions),
                 "constraints_schema": item.constraints_schema,
                 "constraints_schema_version": item.constraints_schema_version,
+                "motivation_preference": preference_by_activity[item.activity_type],
+                "moral_fit_observation": moral_fit_by_activity[item.activity_type],
             }
-            for item in context.activity_definitions
+            for item in ranking.definitions
         ]
         ongoing = context.ongoing_activity
         ongoing_payload = (
@@ -52,6 +112,18 @@ class SituationEvaluatorPromptBuilder:
             "emotion": context.emotion,
             "drive": context.drive,
             "relationship": context.relationship,
+            "motivation": context.motivation,
+            "moral": context.moral,
+            "activity_candidate_preferences": ranking.as_context(),
+            "activity_candidate_moral_fits": [
+                fit.as_context() for fit in moral_fits
+            ],
+            "activity_candidate_semantic_equivalence": (
+                moral_preference_shadow.semantic_equivalence.as_context()
+            ),
+            "moral_candidate_preference_shadow": (
+                moral_preference_shadow.as_context()
+            ),
             "conversation_history": list(context.conversation_history),
             "memory": context.memory,
             "related_knowledge": list(context.related_knowledge),
@@ -75,10 +147,55 @@ class SituationEvaluatorPromptBuilder:
             "confidence": "number",
             "reason": "string",
             "ongoing_input_decision": "string|null",
+            "semantic_equivalence": {
+                "candidate_group": "array[string]",
+                "intent": "unknown|confirmed|rejected",
+                "operation": "unknown|confirmed|rejected",
+                "goal": "unknown|confirmed|rejected",
+                "reasons": "array[string]",
+            },
         }
         return "\n".join(
             [
                 "あなたはSituation Evaluatorです。入力を総合して次のActivityを決定します。",
+                "# 判断規則",
+                "ユーザーの明示意図、進行中Activity、意味的一致をMotivationより優先してください。",
+                "Motivation候補選好は、意味的に妥当な候補が複数ある場合の補助的な優先情報としてだけ使用してください。",
+                (
+                    "Motivationを理由に候補外Activityを生成したり、"
+                    "Authority・Capability・Constraintの検証結果を"
+                    "推測したりしないでください。"
+                ),
+                (
+                    "Moral Profile、Moral State、moral_fitは観測専用です。"
+                    "現段階では候補の選択、並べ替え、禁止、抑制へ"
+                    "使用しないでください。"
+                ),
+                (
+                    "semantic_equivalenceには、入力の"
+                    "activity_candidate_semantic_equivalence.candidate_groupを"
+                    "順序も含めてそのまま複写してください。"
+                ),
+                (
+                    "その候補グループについてだけ、同じ意図を満たすかをintent、"
+                    "同じ操作意味かをoperation、達成結果が代替可能かをgoalで"
+                    "unknown・confirmed・rejectedのいずれかとして評価してください。"
+                ),
+                (
+                    "候補が2件未満、根拠不足、Authority・Capability・Constraint・"
+                    "Safetyの同等性しか判断できない場合はunknownにしてください。"
+                ),
+                (
+                    "semantic_equivalenceの評価は診断証拠候補であり、"
+                    "Moral候補選好の実適用許可ではありません。"
+                ),
+                (
+                    "Moral preference shadowは診断専用です。"
+                    "current_orderを変更せず、hypothetical_order、"
+                    "preferred_activity_type、static_eligible、"
+                    "semantic_equivalence_confirmedをActivity選択へ"
+                    "使用しないでください。"
+                ),
                 "# 判断入力",
                 json.dumps(planning_input, ensure_ascii=False, default=str),
                 "# 出力JSONスキーマ",
