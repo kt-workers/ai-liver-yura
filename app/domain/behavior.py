@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from app.domain.activities import ActivityResult
@@ -37,6 +38,9 @@ from app.shared.contracts.activity import (
     SpeechAct as SpeechAct,
 )
 
+if TYPE_CHECKING:
+    from app.domain.morals import ActivityCandidateSemanticEquivalenceEvidence
+
 
 @dataclass(frozen=True, slots=True)
 class OngoingInputInterpretation:
@@ -71,6 +75,9 @@ class SituationAnalysis:
     matcher_id: str | None = None
     matcher_type: str | None = None
     matcher_evidence: str | None = None
+    semantic_equivalence_evidence: (
+        ActivityCandidateSemanticEquivalenceEvidence | None
+    ) = None
 
 
 @dataclass(frozen=True, slots=True)
