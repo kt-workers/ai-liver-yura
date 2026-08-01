@@ -175,6 +175,22 @@ class ActivityDefinition:
     authority_requirement: ActivityAuthorityRequirement | None = None
     safety_requirement: ActivitySafetyRequirement | None = None
 
+    def __post_init__(self) -> None:
+        if self.authority_requirement is not None and not isinstance(
+            self.authority_requirement,
+            ActivityAuthorityRequirement,
+        ):
+            raise TypeError(
+                "authority_requirement must be ActivityAuthorityRequirement or None"
+            )
+        if self.safety_requirement is not None and not isinstance(
+            self.safety_requirement,
+            ActivitySafetyRequirement,
+        ):
+            raise TypeError(
+                "safety_requirement must be ActivitySafetyRequirement or None"
+            )
+
 
 class ActivityPlanView(Protocol):
     @property
