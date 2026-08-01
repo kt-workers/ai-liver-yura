@@ -11,10 +11,13 @@ from app.domain.behavior import (
     BehaviorPlanningContext,
 )
 from app.domain.morals import (
+    ActivityCandidateSemanticEquivalenceEvidence,
     MoralActivityCandidateFit,
     MoralActivityCandidatePreferenceShadowEvaluator,
     MoralProfile,
     MoralState,
+    SemanticEquivalenceDimension,
+    SemanticEquivalenceStatus,
 )
 
 
@@ -69,6 +72,19 @@ def _moral_context(
     }
 
 
+def _semantic_evidence(
+    candidate_group: tuple[str, ...],
+) -> ActivityCandidateSemanticEquivalenceEvidence:
+    return ActivityCandidateSemanticEquivalenceEvidence(
+        candidate_group=candidate_group,
+        intent=SemanticEquivalenceDimension.CONFIRMED,
+        operation=SemanticEquivalenceDimension.CONFIRMED,
+        goal=SemanticEquivalenceDimension.CONFIRMED,
+        source="situation_evaluator_shadow",
+        evidence_id="semantic-shadow-1",
+    )
+
+
 def _planning_input(prompt: str) -> dict[str, object]:
     lines = prompt.splitlines()
     marker_index = lines.index("# 判断入力")
@@ -99,6 +115,7 @@ def test_shadow_computes_hypothetical_order_without_activation() -> None:
     )
 
     assert result.static_eligible is True
+    assert result.semantic_equivalence_confirmed is False
     assert result.activation_permitted is False
     assert result.preferred_activity_type == "conversation_with_user"
     assert result.current_order == (
@@ -112,8 +129,49 @@ def test_shadow_computes_hypothetical_order_without_activation() -> None:
         "plugin_activity",
     )
     assert result.fit_margin == pytest.approx(0.16)
+    assert (
+        result.semantic_equivalence.status
+        is SemanticEquivalenceStatus.UNCONFIRMED
+    )
     assert "shadow_mode_only" in result.reasons
-    assert "semantic_tie_confirmation_required" in result.reasons
+    assert "semantic_equivalence_unconfirmed" in result.reasons
+
+
+def test_confirmed_semantic_equivalence_still_does_not_activate() -> None:
+    candidate_group = (
+        "autonomous_talk",
+        "conversation_with_user",
+    )
+    definitions = tuple(_definition(item) for item in candidate_group)
+    result = MoralActivityCandidatePreferenceShadowEvaluator().evaluate(
+        definitions,
+        (
+            _fit("autonomous_talk", 0.60),
+            _fit("conversation_with_user", 0.76),
+        ),
+        (
+            _preference("autonomous_talk", motivation_score=0.0),
+            _preference("conversation_with_user", motivation_score=0.0),
+        ),
+        _moral_context(),
+        _semantic_evidence(candidate_group),
+    )
+
+    assert result.static_eligible is True
+    assert result.semantic_equivalence_confirmed is True
+    assert result.activation_permitted is False
+    assert (
+        result.semantic_equivalence.status
+        is SemanticEquivalenceStatus.CONFIRMED
+    )
+    assert (
+        "semantic_equivalence_confirmed_but_activation_disabled"
+        in result.reasons
+    )
+    assert result.hypothetical_order == (
+        "conversation_with_user",
+        "autonomous_talk",
+    )
 
 
 def test_shadow_rejects_small_fit_margin() -> None:
@@ -218,14 +276,20 @@ def test_prompt_projects_shadow_without_changing_available_order() -> None:
     planning_input = _planning_input(prompt)
     available = planning_input["available_activities"]
     shadow = planning_input["moral_candidate_preference_shadow"]
+    semantic_equivalence = planning_input[
+        "activity_candidate_semantic_equivalence"
+    ]
 
     assert isinstance(available, list)
     assert isinstance(shadow, dict)
+    assert isinstance(semantic_equivalence, dict)
     actual_order = [item["activity_type"] for item in available]
     assert actual_order == shadow["current_order"]
     assert shadow["activation_permitted"] is False
+    assert shadow["semantic_equivalence"] == semantic_equivalence
+    assert semantic_equivalence["status"] == "unconfirmed"
     assert "hypothetical_order" in shadow
     assert (
-        "hypothetical_order、preferred_activity_type、static_eligibleをActivity選択へ使用しない"
+        "semantic_equivalence_confirmedをActivity選択へ使用しない"
         in prompt
     )
