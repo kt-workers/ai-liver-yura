@@ -73,9 +73,7 @@ def test_application_condition_is_ready_only_when_all_conditions_confirmed() -> 
     assert result.execution_boundary_equivalence_status is (
         ExecutionBoundaryEquivalenceStatus.CONFIRMED
     )
-    assert result.reasons == (
-        "application_condition_ready_but_activation_disabled",
-    )
+    assert result.reasons == ("application_condition_ready",)
 
 
 def test_application_condition_is_ineligible_when_static_condition_fails() -> None:
