@@ -4,12 +4,15 @@ from collections.abc import Callable
 from dataclasses import asdict, replace
 
 from app.domain.actions import ActionPlanGroup
-from app.domain.activities import ActivityStatus, ActivityType
+from app.domain.activities import Activity, ActivityResult, ActivityStatus, ActivityType
 from app.domain.events import AgentEvent, AgentEventType
 from app.runtime.action_planner import ActionPlanner
 from app.runtime.action_scheduler import ActionScheduler
 from app.runtime.activity_manager import ActivityManager
 from app.runtime.activity_result_builder import build_activity_result
+from app.runtime.activity_result_desire_event import (
+    build_activity_result_desire_event,
+)
 from app.runtime.activity_turn_result_factory import (
     action_planning_failure_group,
     canceled_output_group,
@@ -116,8 +119,9 @@ class RuntimeEventExecutor:
             action_plan_group = await self._action_planner.plan(activity)
         except Exception as error:
             action_plan_group = action_planning_failure_group(activity, error)
-            if action_plan_group.activity_turn_result is not None:
-                self._activity_manager.record_turn_result(action_plan_group.activity_turn_result)
+            turn_result = action_plan_group.activity_turn_result
+            if turn_result is not None:
+                self._activity_manager.record_turn_result(turn_result)
             self._trace_logger.warning(
                 "runtime_coordinator:action_planning:failed",
                 activity_id=activity.activity_id,
@@ -125,8 +129,13 @@ class RuntimeEventExecutor:
                 failure_stage="action_planning",
                 error_type=type(error).__name__,
             )
-            self._activity_manager.complete_processed_activity(activity.activity_id)
-            self._agent_life_service.sync_from_activity_manager()
+            output_result = turn_result.output_result if turn_result is not None else None
+            activity_result = build_activity_result(action_plan_group, output_result)
+            self._activity_manager.complete_processed_activity(
+                activity.activity_id,
+                result=activity_result,
+            )
+            self._record_activity_desire_result(activity, activity_result)
             return action_plan_group
 
         self._trace_logger.write(
@@ -157,9 +166,14 @@ class RuntimeEventExecutor:
                 action_plan_group,
                 reason="activity_suspended_before_action_execution",
             )
-            if canceled_group.activity_turn_result is not None:
-                self._activity_manager.record_turn_result(canceled_group.activity_turn_result)
-            self._agent_life_service.sync_from_activity_manager()
+            canceled_turn = canceled_group.activity_turn_result
+            if canceled_turn is not None:
+                self._activity_manager.record_turn_result(canceled_turn)
+            canceled_output = (
+                canceled_turn.output_result if canceled_turn is not None else None
+            )
+            canceled_result = build_activity_result(canceled_group, canceled_output)
+            self._record_activity_desire_result(activity, canceled_result)
             return canceled_group
 
         self._trace_logger.write("runtime_coordinator:handle_event:actions_execute_start")
@@ -196,9 +210,10 @@ class RuntimeEventExecutor:
                 )
 
         self._trace_logger.write("runtime_coordinator:handle_event:actions_execute_finished")
+        activity_result = build_activity_result(action_plan_group, output_result)
         completed_activity = self._activity_manager.complete_processed_activity(
             activity.activity_id,
-            result=build_activity_result(action_plan_group, output_result),
+            result=activity_result,
         )
         if activity.activity_type == ActivityType.AUTONOMOUS_TALK and autonomous_output_saved:
             self._agent_life_service.complete_autonomous_topic(activity_id=activity.activity_id)
@@ -215,7 +230,7 @@ class RuntimeEventExecutor:
                 completed_activity.status.value if completed_activity is not None else None
             ),
         )
-        self._agent_life_service.sync_from_activity_manager()
+        self._record_activity_desire_result(activity, activity_result)
         state = self._agent_life_service.agent_state
         self._trace_logger.write(
             "runtime_coordinator:handle_event:agent_state_synced_after_activity_complete",
@@ -224,6 +239,21 @@ class RuntimeEventExecutor:
             suspended_activity_count=len(state.suspended_activities),
         )
         return action_plan_group
+
+    def _record_activity_desire_result(
+        self,
+        activity: Activity,
+        result: ActivityResult,
+    ) -> None:
+        result_event = build_activity_result_desire_event(activity, result)
+        self._agent_life_service.handle_event(result_event)
+        self._trace_logger.info(
+            "runtime_coordinator:activity_desire_result:recorded",
+            activity_id=activity.activity_id,
+            activity_type=activity.activity_type.value,
+            outcome=result_event.payload["outcome"],
+            result_type=result.result_type,
+        )
 
     def _with_emotion_context(self, event: AgentEvent) -> AgentEvent:
         if event.event_type != AgentEventType.USER_INTERACTION:
