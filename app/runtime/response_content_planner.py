@@ -130,15 +130,15 @@ class ResponseContentPlanner:
         conflict_mode: str | None,
         moral: Mapping[str, object],
     ) -> tuple[str, ...]:
-        result: list[str] = []
+        base: list[str] = []
         if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
             for item in value:
                 if not isinstance(item, str):
                     continue
                 normalized = item.strip()
-                if normalized in self._KNOWN_STRATEGIES and normalized not in result:
-                    result.append(normalized)
-                if len(result) >= 3:
+                if normalized in self._KNOWN_STRATEGIES and normalized not in base:
+                    base.append(normalized)
+                if len(base) >= 3:
                     break
 
         state = self._mapping(moral.get("state"))
@@ -147,22 +147,21 @@ class ResponseContentPlanner:
             default=0.0,
         )
         restraint = self._number(state.get("restraint"), default=0.5)
+        priorities: list[str] = []
         if conflict_mode in self._SECURITY_CONFLICTS:
-            self._append_priority(result, "slow_down")
+            priorities.append("slow_down")
         if aggressive_impulse >= 0.55 and restraint >= 0.50:
-            self._append_priority(result, "state_boundary_calmly")
+            priorities.append("state_boundary_calmly")
+
+        priorities = list(dict.fromkeys(priorities))[:3]
+        remaining_slots = max(0, 3 - len(priorities))
+        retained_base = [item for item in base if item not in priorities][
+            :remaining_slots
+        ]
+        result = [*retained_base, *priorities]
         if not result:
             result.append("continue_conversation")
-        return tuple(result[:3])
-
-    @staticmethod
-    def _append_priority(values: list[str], value: str) -> None:
-        if value in values:
-            return
-        if len(values) >= 3:
-            values[-1] = value
-        else:
-            values.append(value)
+        return tuple(result)
 
     def _value_emphases(
         self,
