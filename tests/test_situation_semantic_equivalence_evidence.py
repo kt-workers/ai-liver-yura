@@ -12,6 +12,7 @@ from app.domain.behavior import (
 )
 from app.domain.morals import (
     ActivityCandidateSemanticEquivalenceEvidence,
+    ExecutionBoundaryEquivalenceStatus,
     MoralProfile,
     MoralState,
     SemanticEquivalenceDimension,
@@ -248,6 +249,21 @@ def test_shadow_observer_confirms_evidence_without_activating_preference() -> No
 
     assert result.semantic_equivalence.status is SemanticEquivalenceStatus.CONFIRMED
     assert result.semantic_equivalence.evidence_id == "runtime-evidence-3"
+    assert result.execution_boundary_equivalence.status is (
+        ExecutionBoundaryEquivalenceStatus.UNCONFIRMED
+    )
+    assert result.execution_boundary_equivalence.capability.status is (
+        ExecutionBoundaryEquivalenceStatus.CONFIRMED
+    )
+    assert result.execution_boundary_equivalence.constraint.status is (
+        ExecutionBoundaryEquivalenceStatus.CONFIRMED
+    )
+    assert result.execution_boundary_equivalence.authority.status is (
+        ExecutionBoundaryEquivalenceStatus.UNCONFIRMED
+    )
+    assert result.execution_boundary_equivalence.safety.status is (
+        ExecutionBoundaryEquivalenceStatus.UNCONFIRMED
+    )
     assert result.activation_permitted is False
     assert result.current_order == (
         "autonomous_talk",
