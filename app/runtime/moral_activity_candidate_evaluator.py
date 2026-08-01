@@ -123,6 +123,25 @@ class MoralActivityCandidateEvaluator:
         ActivityType.STIMULUS_REACTION.value: _OBSERVATION_POLICY,
     }
 
+    def evaluate_context(
+        self,
+        definitions: Sequence[ActivityDefinition],
+        moral: Mapping[str, object] | None,
+    ) -> tuple[MoralActivityCandidateFit, ...]:
+        profile = self._profile_from_context(moral)
+        state = self._state_from_context(moral)
+        if profile is None or state is None:
+            return tuple(
+                MoralActivityCandidateFit(
+                    activity_type=definition.activity_type,
+                    moral_fit=0.5,
+                    profiled=False,
+                    reason="moral_context_unavailable_neutral",
+                )
+                for definition in definitions
+            )
+        return self.evaluate(definitions, profile=profile, state=state)
+
     def evaluate(
         self,
         definitions: Sequence[ActivityDefinition],
@@ -165,3 +184,48 @@ class MoralActivityCandidateEvaluator:
             moral_fit=score,
             profiled=True,
         )
+
+    @staticmethod
+    def _profile_from_context(
+        moral: Mapping[str, object] | None,
+    ) -> MoralProfile | None:
+        if moral is None:
+            return None
+        raw = moral.get("profile")
+        if not isinstance(raw, Mapping):
+            return None
+        try:
+            return MoralProfile(
+                compassion=float(raw["compassion"]),
+                honesty=float(raw["honesty"]),
+                fairness=float(raw["fairness"]),
+                altruism=float(raw["altruism"]),
+                rule_respect=float(raw["rule_respect"]),
+                dominance=float(raw["dominance"]),
+                competitiveness=float(raw["competitiveness"]),
+                jealousy_tendency=float(raw["jealousy_tendency"]),
+                possessiveness=float(raw["possessiveness"]),
+                malice=float(raw["malice"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _state_from_context(
+        moral: Mapping[str, object] | None,
+    ) -> MoralState | None:
+        if moral is None:
+            return None
+        raw = moral.get("state")
+        if not isinstance(raw, Mapping):
+            return None
+        try:
+            return MoralState(
+                restraint=float(raw["restraint"]),
+                empathy_activation=float(raw["empathy_activation"]),
+                selfish_impulse=float(raw["selfish_impulse"]),
+                aggressive_impulse=float(raw["aggressive_impulse"]),
+                guilt=float(raw["guilt"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
