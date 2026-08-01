@@ -56,9 +56,19 @@ class BehaviorPlanningContextBuilder:
         relationship_context = (
             relationship.as_context() if relationship is not None else {}
         )
+        moral_context = {
+            "profile": agent_state.moral_profile.as_dict(),
+            "state": agent_state.current_moral.as_dict(),
+            "composite": agent_state.moral_profile.compose(
+                agent_state.current_moral
+            ).as_dict(),
+            "observation_only": True,
+        }
         motivation_context = self._motivation_appraiser.appraise(
             agent_state.current_desire,
             relationship,
+            moral_profile=agent_state.moral_profile,
+            moral_state=agent_state.current_moral,
         ).as_context()
         situation_context = agent_state.current_situation.as_context()
         memory_context = agent_state.memory.as_context()
@@ -74,6 +84,7 @@ class BehaviorPlanningContextBuilder:
                 },
                 "relationship": relationship_context,
                 "motivation": motivation_context,
+                "moral": moral_context,
                 "situation": situation_context,
                 "memory": memory_context,
                 "emotion": asdict(agent_state.current_emotion),
@@ -114,6 +125,7 @@ class BehaviorPlanningContextBuilder:
             emotion=asdict(agent_state.current_emotion),
             relationship=relationship_context,
             motivation=motivation_context,
+            moral=moral_context,
             situation=situation_context,
             memory=memory_context,
             conversation_history=conversation_history,
