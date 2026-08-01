@@ -18,6 +18,7 @@ from app.runtime.activity_manager import ActivityManager
 from app.runtime.activity_registry import ActivityRegistry
 from app.runtime.agent_life_service import AgentLifeService
 from app.runtime.motivation_appraiser import MotivationAppraiser
+from app.runtime.response_content_planner import ResponseContentPlanner
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +41,7 @@ class BehaviorPlanningContextBuilder:
         short_term_memory: ShortTermMemory | None = None,
         topic_history: TopicHistory | None = None,
         motivation_appraiser: MotivationAppraiser | None = None,
+        response_content_planner: ResponseContentPlanner | None = None,
     ) -> None:
         self._activity_manager = activity_manager
         self._agent_life_service = agent_life_service
@@ -48,6 +50,9 @@ class BehaviorPlanningContextBuilder:
         self._short_term_memory = short_term_memory
         self._topic_history = topic_history
         self._motivation_appraiser = motivation_appraiser or MotivationAppraiser()
+        self._response_content_planner = (
+            response_content_planner or ResponseContentPlanner()
+        )
 
     def build(self, event: AgentEvent) -> BehaviorPlanningPreparation:
         agent_state = self._agent_life_service.agent_state
@@ -72,6 +77,14 @@ class BehaviorPlanningContextBuilder:
         ).as_context()
         situation_context = agent_state.current_situation.as_context()
         memory_context = agent_state.memory.as_context()
+        response_content_plan = self._response_content_planner.build(
+            motivation=motivation_context,
+            moral=moral_context,
+        )
+        response_memory_context = {
+            **memory_context,
+            "response_content_plan": response_content_plan.as_context(),
+        }
         conversation_history = self._conversation_history()
         related_knowledge = self._related_knowledge(memory_context)
         enriched_event = replace(
@@ -86,7 +99,7 @@ class BehaviorPlanningContextBuilder:
                 "motivation": motivation_context,
                 "moral": moral_context,
                 "situation": situation_context,
-                "memory": memory_context,
+                "memory": response_memory_context,
                 "emotion": asdict(agent_state.current_emotion),
                 "drive": asdict(agent_state.current_drive),
                 "conversation_history": conversation_history,
