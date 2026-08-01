@@ -1,3 +1,12 @@
+from app.domain.morals.activity_candidate_execution_boundary_equivalence import (
+    ActivityCandidateExecutionBoundaryEquivalenceAssessment,
+    ActivityCandidateExecutionBoundaryEquivalenceEvaluator,
+    AuthorityEquivalenceAssessment,
+    CapabilityEquivalenceAssessment,
+    ConstraintEquivalenceAssessment,
+    ExecutionBoundaryEquivalenceStatus,
+    SafetyEquivalenceAssessment,
+)
 from app.domain.morals.activity_candidate_fit import (
     MoralActivityCandidateEvaluator,
     MoralActivityCandidateFit,
@@ -20,9 +29,15 @@ from app.domain.morals.moral_state import (
 )
 
 __all__ = [
+    "ActivityCandidateExecutionBoundaryEquivalenceAssessment",
+    "ActivityCandidateExecutionBoundaryEquivalenceEvaluator",
     "ActivityCandidateSemanticEquivalenceAssessment",
     "ActivityCandidateSemanticEquivalenceEvaluator",
     "ActivityCandidateSemanticEquivalenceEvidence",
+    "AuthorityEquivalenceAssessment",
+    "CapabilityEquivalenceAssessment",
+    "ConstraintEquivalenceAssessment",
+    "ExecutionBoundaryEquivalenceStatus",
     "MoralActivityCandidateEvaluator",
     "MoralActivityCandidateFit",
     "MoralActivityCandidatePreferenceShadow",
@@ -30,6 +45,7 @@ __all__ = [
     "MoralComposite",
     "MoralProfile",
     "MoralState",
+    "SafetyEquivalenceAssessment",
     "SemanticEquivalenceDimension",
     "SemanticEquivalenceStatus",
 ]
