@@ -15,6 +15,7 @@ from app.domain.topic import (
 from app.runtime.activity_manager import ActivityManager
 from app.runtime.agent_state import AgentState
 from app.runtime.autonomous_activity_policy import AutonomousActivityPolicy
+from app.runtime.autonomous_motivation_context import AutonomousMotivationContextBuilder
 from app.runtime.autonomous_plan_state import AutonomousPlanState
 from app.runtime.conversation_resume_state import ConversationResumeState
 
@@ -46,6 +47,7 @@ class AutonomousEventPlanner:
         conversation_resume_state: ConversationResumeState,
         pending_confirmation_provider: Callable[[], bool],
         conversation_idle_timeout_seconds: float,
+        motivation_context_builder: AutonomousMotivationContextBuilder | None = None,
     ) -> None:
         self._activity_manager = activity_manager
         self._autonomous_activity_policy = autonomous_activity_policy
@@ -54,6 +56,9 @@ class AutonomousEventPlanner:
         self._pending_confirmation_provider = pending_confirmation_provider
         self._conversation_idle_timeout_seconds = max(
             0.0, float(conversation_idle_timeout_seconds)
+        )
+        self._motivation_context_builder = (
+            motivation_context_builder or AutonomousMotivationContextBuilder()
         )
 
     def plan(
@@ -235,9 +240,11 @@ class AutonomousEventPlanner:
                 drive_energy=state.current_drive.energy,
             )
 
+        motivation = self._motivation_context_builder.build(state)
         payload: dict[str, Any] = {
             "reason": "internal_drive",
             "drive": state.current_drive.strongest_drive_name(),
+            "motivation": motivation,
             "autonomous_planned_for": now.isoformat(),
             "interaction_environment": {
                 "observation_source": "internal_state",
@@ -283,6 +290,11 @@ class AutonomousEventPlanner:
                 "event_type": event.event_type.value,
                 "reason": "internal_drive",
                 "drive": state.current_drive.strongest_drive_name(),
+                "motivation_top_desires": [
+                    item.get("desire_type")
+                    for item in motivation.get("ranked_desires", [])
+                    if isinstance(item, dict)
+                ],
                 "drive_curiosity": state.current_drive.curiosity,
                 "drive_engagement": state.current_drive.engagement,
                 "drive_boredom": state.current_drive.boredom,
