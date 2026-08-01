@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Protocol
 
 from app.domain.activities import Activity
 from app.ports.response_generator import ResponseGenerator
@@ -43,8 +44,7 @@ class ResponseGeneratorRoleAdapter:
         """LLMが返すCore内部の会話名をSituation契約へ正規化する。"""
 
         text = raw.strip()
-        fenced = text.startswith("```")
-        if fenced:
+        if text.startswith("```"):
             lines = text.splitlines()
             if len(lines) < 3 or lines[-1].strip() != "```":
                 return raw
