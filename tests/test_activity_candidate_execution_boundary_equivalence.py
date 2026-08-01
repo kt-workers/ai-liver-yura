@@ -102,6 +102,25 @@ def test_authority_requirement_rejects_ambiguous_contract(
         ActivityAuthorityRequirement(**kwargs)  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    "field_name",
+    ["authority_requirement", "safety_requirement"],
+)
+def test_activity_definition_rejects_invalid_execution_boundary_contract_type(
+    field_name: str,
+) -> None:
+    kwargs: dict[str, object] = {
+        "activity_type": "activity_a",
+        "display_name": "activity_a",
+        "required_capability": "activity.execute",
+        "provider_plugin_id": "test",
+        field_name: object(),
+    }
+
+    with pytest.raises(TypeError):
+        ActivityDefinition(**kwargs)  # type: ignore[arg-type]
+
+
 def test_equal_capability_and_constraint_are_confirmed_independently() -> None:
     evaluator = ActivityCandidateExecutionBoundaryEquivalenceEvaluator()
     definitions = (
