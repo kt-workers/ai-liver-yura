@@ -72,7 +72,7 @@ class ElapsedStateUpdater:
             previous_time=self._last_drive_updated_at,
             current_time=now,
         )
-        self._last_drive_updated_at = max(self._last_drive_updated_at, now)
+        self._last_drive_updated_at = now
 
         before_desire = state.current_desire
         desire_elapsed_seconds = (now - self._last_desire_updated_at).total_seconds()
