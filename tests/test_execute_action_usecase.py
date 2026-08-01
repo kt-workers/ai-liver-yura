@@ -79,7 +79,6 @@ async def test_prepare_records_text_handed_to_tts_once(tmp_path) -> None:
     assert records[0]["text"] == "読み上げる原稿"
 
 
-# FakeTopicClassifier for testing topic classification and history recording
 class FakeTopicClassifier:
     def __init__(self, category: TopicCategory) -> None:
         self.category = category
@@ -100,9 +99,6 @@ class BlockingTopicClassifier(FakeTopicClassifier):
         self.started.set()
         await self.release.wait()
         return await super().classify(text)
-
-
-# FakeEmbeddingGenerator and FakeTopicMemoryStore for topic memory tests
 
 
 class FakeEmbeddingGenerator:
@@ -261,7 +257,7 @@ async def test_speak_keeps_original_text_for_display_and_memory(capsys) -> None:
 
 
 @pytest.mark.asyncio
-async def test_speak_action_falls_back_when_synthesis_fails(monkeypatch) -> None:
+async def test_speak_action_commits_when_synthesis_fails(monkeypatch) -> None:
     sleep_durations: list[float] = []
     memory = ShortTermMemory()
     topic_history = TopicHistory()
@@ -286,13 +282,12 @@ async def test_speak_action_falls_back_when_synthesis_fails(monkeypatch) -> None
     assert sleep_durations == [1.0]
     assert [item.text for item in memory.recent_speeches()] == ["こんにちは"]
     assert memory.build_recent_conversation_summary() == "- ゆら: こんにちは"
-    assert topic_history.recent_entries() == []
-    assert classifier.classified_texts == []
-    assert result is not None
-    assert result.status.value == "failed"
+    assert len(topic_history.recent_entries()) == 1
+    assert topic_history.recent_entries()[0].source_text == "こんにちは"
+    assert classifier.classified_texts == ["こんにちは"]
+    assert result is None
 
 
-# Test: SPEAK action records topic history when classifier is set
 @pytest.mark.asyncio
 async def test_speak_action_records_topic_history_when_classifier_is_set() -> None:
     topic_history = TopicHistory()
@@ -379,11 +374,8 @@ async def test_game_speech_does_not_record_topic_history_or_memory() -> None:
     assert store.saved_entries == []
 
 
-# Test: SPEAK action records topic memory when embedding and store are set
 @pytest.mark.asyncio
-async def test_speak_action_records_topic_memory_when_embedding_and_store_are_set() -> (
-    None
-):
+async def test_speak_action_records_topic_memory_when_embedding_and_store_are_set() -> None:
     topic_history = TopicHistory()
     topic_classifier = FakeTopicClassifier(category=TopicCategory.NATURE)
     embedding_generator = FakeEmbeddingGenerator(embedding=[0.1, 0.2, 0.3])
@@ -415,11 +407,8 @@ async def test_speak_action_records_topic_memory_when_embedding_and_store_are_se
     assert saved_entry.source_activity_id == "activity-1"
 
 
-# Test: SPEAK action does not record topic memory when embedding generator is not set
 @pytest.mark.asyncio
-async def test_speak_action_does_not_record_topic_memory_when_embedding_generator_is_not_set() -> (
-    None
-):
+async def test_speak_action_does_not_record_topic_memory_when_embedding_generator_is_not_set() -> None:
     topic_history = TopicHistory()
     topic_classifier = FakeTopicClassifier(category=TopicCategory.NATURE)
     topic_memory_store = FakeTopicMemoryStore()
@@ -438,11 +427,8 @@ async def test_speak_action_does_not_record_topic_memory_when_embedding_generato
     assert topic_memory_store.saved_entries == []
 
 
-# Test: SPEAK action does not record topic memory when embedding is empty
 @pytest.mark.asyncio
-async def test_speak_action_does_not_record_topic_memory_when_embedding_is_empty() -> (
-    None
-):
+async def test_speak_action_does_not_record_topic_memory_when_embedding_is_empty() -> None:
     topic_history = TopicHistory()
     topic_classifier = FakeTopicClassifier(category=TopicCategory.NATURE)
     embedding_generator = FakeEmbeddingGenerator(embedding=[])
@@ -464,11 +450,8 @@ async def test_speak_action_does_not_record_topic_memory_when_embedding_is_empty
     assert topic_memory_store.saved_entries == []
 
 
-# Test: SPEAK action does not record topic history when classifier is not set
 @pytest.mark.asyncio
-async def test_speak_action_does_not_record_topic_history_when_classifier_is_not_set() -> (
-    None
-):
+async def test_speak_action_does_not_record_topic_history_when_classifier_is_not_set() -> None:
     topic_history = TopicHistory()
     usecase = ExecuteActionUsecase(topic_history=topic_history)
     action_plan = ActionPlan(
@@ -479,9 +462,6 @@ async def test_speak_action_does_not_record_topic_history_when_classifier_is_not
     await usecase.execute(action_plan)
 
     assert topic_history.recent_entries() == []
-
-
-# Test: SPEAK action records topic memory with generated summary
 
 
 @pytest.mark.asyncio
@@ -521,9 +501,7 @@ async def test_speak_action_records_topic_memory_with_generated_summary() -> Non
 
 
 @pytest.mark.asyncio
-async def test_speak_action_uses_original_text_when_generated_summary_is_empty() -> (
-    None
-):
+async def test_speak_action_uses_original_text_when_generated_summary_is_empty() -> None:
     topic_history = TopicHistory()
     topic_classifier = FakeTopicClassifier(category=TopicCategory.SEA_LIFE)
     embedding_generator = FakeEmbeddingGenerator(embedding=[0.1, 0.2, 0.3])
@@ -549,7 +527,6 @@ async def test_speak_action_uses_original_text_when_generated_summary_is_empty()
     assert topic_memory_store.saved_entries[0].source_text == "クラゲの話をした"
 
 
-# Test: Non-SPEAK action does not record topic history
 @pytest.mark.asyncio
 async def test_non_speak_action_does_not_record_topic_history() -> None:
     topic_history = TopicHistory()
