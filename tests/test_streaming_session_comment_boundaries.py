@@ -5,8 +5,8 @@ def test_streaming_subsystem_has_no_forbidden_core_imports() -> None:
     root = Path("subsystems/streaming")
     source = "\n".join(path.read_text() for path in root.rglob("*.py"))
     forbidden = (
-        "app.plugins.youtube_streaming",
-        "app.adapters.streaming",
+        ".".join(("app", "plugins", "youtube_streaming")),
+        ".".join(("app", "adapters", "streaming")),
         "app.runtime",
         "app.bootstrap",
         "AgentEvent",

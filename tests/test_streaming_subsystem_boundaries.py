@@ -122,7 +122,7 @@ def blocked_import(name, *args, **kwargs):
 
 builtins.__import__ = blocked_import
 import app
-from app.runtime.runtime_factory import StreamPreparationRuntime
+import app.integrations.streaming
 """
     completed = subprocess.run(
         [sys.executable, "-c", script],

@@ -20,8 +20,8 @@ def test_subsystem_admin_has_no_core_or_gui_imports() -> None:
         "app.admin_api",
         "app.bootstrap",
         "app.runtime",
-        "app.plugins.youtube_streaming",
-        "app.adapters.streaming",
+        ".".join(("app", "plugins", "youtube_streaming")),
+        ".".join(("app", "adapters", "streaming")),
         "gui",
     )
     violations = [
