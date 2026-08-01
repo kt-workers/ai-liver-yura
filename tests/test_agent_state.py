@@ -1,5 +1,6 @@
 from app.domain.actions import ActionPlan, ActionType
 from app.domain.activities import Activity, ActivityType
+from app.domain.desires import DesireState, DesireType, DesireValue
 from app.domain.drives import DriveState
 from app.domain.emotions import EmotionState, MoodType
 from app.runtime import AgentState
@@ -14,6 +15,7 @@ def test_agent_state_has_default_values() -> None:
     assert agent_state.running_actions == []
     assert agent_state.prepared_actions == []
     assert agent_state.current_drive == DriveState()
+    assert agent_state.current_desire == DesireState()
     assert agent_state.memory.episodic == ()
     assert agent_state.attention_target is None
     assert agent_state.stream_status == "idle"
@@ -44,6 +46,17 @@ def test_agent_state_can_update_drive() -> None:
     agent_state = AgentState().with_drive(drive)
 
     assert agent_state.current_drive == drive
+
+
+def test_agent_state_can_update_desire() -> None:
+    desire = DesireState().with_value(
+        DesireType.ACHIEVEMENT,
+        DesireValue(level=0.8, baseline=0.35),
+    )
+
+    agent_state = AgentState().with_desire(desire)
+
+    assert agent_state.current_desire == desire
 
 
 def test_agent_state_can_update_prepared_actions() -> None:
