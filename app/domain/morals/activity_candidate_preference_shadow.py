@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.domain.morals.activity_candidate_fit import MoralActivityCandidateFit
+from app.domain.morals.activity_candidate_semantic_equivalence import (
+    ActivityCandidateSemanticEquivalenceAssessment,
+    ActivityCandidateSemanticEquivalenceEvaluator,
+    ActivityCandidateSemanticEquivalenceEvidence,
+    SemanticEquivalenceStatus,
+)
 from app.shared.contracts.activity import ActivityDefinition
 
 
@@ -21,12 +27,22 @@ class MoralActivityCandidatePreferenceShadow:
     top_fit: float | None = None
     runner_up_fit: float | None = None
     fit_margin: float | None = None
+    semantic_equivalence: ActivityCandidateSemanticEquivalenceAssessment = field(
+        default_factory=ActivityCandidateSemanticEquivalenceAssessment
+    )
     reasons: tuple[str, ...] = ()
+
+    @property
+    def semantic_equivalence_confirmed(self) -> bool:
+        return self.semantic_equivalence.confirmed
 
     def as_context(self) -> dict[str, object]:
         return {
             "mode": self.mode,
             "static_eligible": self.static_eligible,
+            "semantic_equivalence_confirmed": (
+                self.semantic_equivalence_confirmed
+            ),
             "activation_permitted": self.activation_permitted,
             "preferred_activity_type": self.preferred_activity_type,
             "candidate_group": list(self.candidate_group),
@@ -35,6 +51,7 @@ class MoralActivityCandidatePreferenceShadow:
             "top_fit": self.top_fit,
             "runner_up_fit": self.runner_up_fit,
             "fit_margin": self.fit_margin,
+            "semantic_equivalence": self.semantic_equivalence.as_context(),
             "reasons": list(self.reasons),
         }
 
@@ -47,12 +64,26 @@ class MoralActivityCandidatePreferenceShadowEvaluator:
     MAXIMUM_STABLE_AGGRESSIVE_IMPULSE = 0.80
     MAXIMUM_STABLE_SELFISH_IMPULSE = 0.80
 
+    def __init__(
+        self,
+        semantic_equivalence_evaluator: (
+            ActivityCandidateSemanticEquivalenceEvaluator | None
+        ) = None,
+    ) -> None:
+        self._semantic_equivalence_evaluator = (
+            semantic_equivalence_evaluator
+            or ActivityCandidateSemanticEquivalenceEvaluator()
+        )
+
     def evaluate(
         self,
         definitions: Sequence[ActivityDefinition],
         fits: Sequence[MoralActivityCandidateFit],
         preference_contexts: Sequence[Mapping[str, object]],
         moral: Mapping[str, object] | None,
+        semantic_equivalence_evidence: (
+            ActivityCandidateSemanticEquivalenceEvidence | None
+        ) = None,
     ) -> MoralActivityCandidatePreferenceShadow:
         current_order = tuple(
             definition.activity_type for definition in definitions
@@ -75,6 +106,11 @@ class MoralActivityCandidatePreferenceShadowEvaluator:
                 blockers,
                 "equivalent_motivation_group_unavailable",
             )
+
+        semantic_equivalence = self._semantic_equivalence_evaluator.evaluate(
+            candidate_group,
+            semantic_equivalence_evidence,
+        )
 
         top_activity: str | None = None
         top_fit: float | None = None
@@ -116,11 +152,22 @@ class MoralActivityCandidatePreferenceShadowEvaluator:
             )
             preferred_activity_type = top_activity
 
+        semantic_reason = (
+            "semantic_equivalence_confirmed_but_activation_disabled"
+            if semantic_equivalence.status
+            is SemanticEquivalenceStatus.CONFIRMED
+            else (
+                "semantic_equivalence_rejected"
+                if semantic_equivalence.status
+                is SemanticEquivalenceStatus.REJECTED
+                else "semantic_equivalence_unconfirmed"
+            )
+        )
         reasons = tuple(
             blockers
             + [
+                semantic_reason,
                 "shadow_mode_only",
-                "semantic_tie_confirmation_required",
             ]
         )
         return MoralActivityCandidatePreferenceShadow(
@@ -133,6 +180,7 @@ class MoralActivityCandidatePreferenceShadowEvaluator:
             top_fit=top_fit,
             runner_up_fit=runner_up_fit,
             fit_margin=fit_margin,
+            semantic_equivalence=semantic_equivalence,
             reasons=reasons,
         )
 
