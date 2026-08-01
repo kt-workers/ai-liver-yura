@@ -17,13 +17,17 @@ Version: 1.0.0
 Moral Profile／Moral Stateはまだ存在しないため、価値判断による抑制は
 「利用不可」として明示し、推測や仮の善悪判定を適用しない。
 
+本実装単位では、まず外部Eventを起点とする通常Behavior Planningへ統合する。
+自律Behavior Planningへの統合は、既存のActivityPlanningService境界を整理した
+後続実装として分離する。
+
 ## 2. 目的
 
 - 現在の上位欲望を順位付きで算出する
 - 強い欲望同士の競合を決定論的に検出する
 - Relationshipから表出強度を算出する
 - 推奨Activity候補と推奨会話戦略を観測用に出力する
-- Behavior Plannerの通常・自律コンテキストへ読み取り専用で追加する
+- 通常Behavior Plannerのコンテキストへ読み取り専用で追加する
 - 現行のActivity選択、Capability、Authority、Safety判定を変更しない
 - 後続のMoral Profile導入前にMotivation値の妥当性を検証できるようにする
 
@@ -190,20 +194,28 @@ BehaviorPlanningContext.motivation
 
 ### 10.2 自律Behavior Planning
 
+自律Behavior Planningも将来的には同じ`MotivationAppraiser`を利用する。
+ただし本実装単位では、既存の`ActivityPlanningService`が自律計画Contextを
+独立して構築しているため、未接続のDTOフィールドだけを先行追加しない。
+
+後続実装では次の経路を追加する。
+
 ```text
 AgentState.current_desire
 RelationshipMemory.current
         ↓
 MotivationAppraiser
         ↓
-AutonomousSituationContext.motivation_state
+AutonomousSituationContext
         ↓
 BehaviorPlanningContext.motivation
 ```
 
+通常経路と同一Appraiserを使用し、係数や意味規則を複製しないことを必須とする。
+
 ## 11. 読み取り専用境界
 
-本段階のBehavior PlannerはMotivationをコンテキストとして受け取るが、
+本段階の通常Behavior PlannerはMotivationをコンテキストとして受け取るが、
 次の既存判断を変更しない。
 
 - Driveによる自律発話開始可否
@@ -231,6 +243,7 @@ Motivation履歴のDB保存は行わない。
 - 善悪による候補抑制
 - MotivationによるActivity選択変更
 - Motivationによる自律発話開始条件変更
+- 自律Behavior PlanningへのMotivation接続
 - Character LLMへの直接注入
 - Response Content Plan
 - GUI表示
@@ -247,13 +260,15 @@ Motivation履歴のDB保存は行わない。
 - 推奨Activityと会話戦略が順位順かつ重複なしで出力される
 - Moral評価が利用不可として明示される
 - 通常BehaviorPlanningContextへmotivationが追加される
-- 自律BehaviorPlanningContextへmotivationが追加される
+- enriched EventとBehaviorPlanningContextが同じMotivationスナップショットを持つ
 - Motivation追加前後で同じSituation Analysisから同じActivity Planが得られる
+- 自律計画DTOへ未接続フィールドを追加しない
 
 ## 15. 後続段階
 
-1. Motivation観測ログから閾値・競合ペア・候補対応を調整
-2. Behavior PlannerがMotivationを候補評価へ使用する設計を追加
-3. Moral Profile／Moral Stateを追加
-4. Moral評価による許可候補内の選好・抑制を追加
-5. Response Content Planへ会話戦略を投影
+1. 自律Behavior Planningへ同じMotivation Appraisalを読み取り専用で接続
+2. Motivation観測ログから閾値・競合ペア・候補対応を調整
+3. Behavior PlannerがMotivationを候補評価へ使用する設計を追加
+4. Moral Profile／Moral Stateを追加
+5. Moral評価による許可候補内の選好・抑制を追加
+6. Response Content Planへ会話戦略を投影
