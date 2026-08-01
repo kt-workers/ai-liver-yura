@@ -1,4 +1,21 @@
-from client.core_api_client import CoreApiClient, CoreApiError
-from client.event_stream_client import EventStreamClient
+from client.streaming_subsystem_api_client import (
+    StreamingSubsystemApiClient,
+    StreamingSubsystemApiError,
+)
+from client.streaming_subsystem_event_stream_client import (
+    StreamingSubsystemEventStreamClient,
+)
 
-__all__ = ["CoreApiClient", "CoreApiError", "EventStreamClient"]
+# Deprecated aliases for existing callers; remove in K.
+CoreApiClient = StreamingSubsystemApiClient
+CoreApiError = StreamingSubsystemApiError
+EventStreamClient = StreamingSubsystemEventStreamClient
+
+__all__ = [
+    "StreamingSubsystemApiClient",
+    "StreamingSubsystemApiError",
+    "StreamingSubsystemEventStreamClient",
+    "CoreApiClient",
+    "CoreApiError",
+    "EventStreamClient",
+]
