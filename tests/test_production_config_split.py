@@ -12,8 +12,6 @@ import yaml
 from app.bootstrap import create_runtime_coordinator
 from app.bootstrap.runtime import create_speech_synthesizer
 from app.bootstrap.runtime_preflight import validate_runtime_service_settings
-from app.bootstrap.streaming import compose_streaming
-from app.bootstrap.streaming_runtime import create_stream_preparation_runtime
 from app.config.app_config import load_app_config, load_raw_config
 from app.config.config_loader import (
     CONFIG_DIRECTORY,
@@ -33,7 +31,6 @@ SERVICES_PATH = CONFIG_DIRECTORY / "services.yaml"
 MODELS_PATH = CONFIG_DIRECTORY / "models.yaml"
 LLM_PATH = CONFIG_DIRECTORY / "llm.yaml"
 EMOTION_PATH = CONFIG_DIRECTORY / "emotion.yaml"
-STREAMING_PATH = CONFIG_DIRECTORY / "streaming.yaml"
 PLUGINS_PATH = CONFIG_DIRECTORY / "plugins" / "index.yaml"
 APPLICATION_PATH = CONFIG_DIRECTORY / "application.yaml"
 LEGACY_PLUGINS_PATH = CONFIG_DIRECTORY / "plugins.yaml"
@@ -50,7 +47,6 @@ def test_production_yaml_files_are_valid_mappings() -> None:
         MODELS_PATH: {"models"},
         LLM_PATH: {"response_generator", "llm_roles", "topic_classifier"},
         EMOTION_PATH: {"emotion_appraisal"},
-        STREAMING_PATH: {"streaming"},
         PLUGINS_PATH: {"plugins"},
     }
     for path, keys in expected_keys.items():
@@ -93,7 +89,6 @@ def test_production_manifest_matches_legacy_config() -> None:
     assert legacy.memory == production.memory
     assert legacy.input_receivers == production.input_receivers
     assert legacy.confirmation == production.confirmation
-    assert legacy.streaming == production.streaming
     assert legacy.plugins == production.plugins
     assert production.emotion_appraisal.enabled is True
     assert production.emotion_appraisal.mode.value == "hybrid"
@@ -113,7 +108,6 @@ def test_production_manifest_ownership_sources() -> None:
     for key in ("response_generator", "llm_roles", "topic_classifier"):
         assert bundle.source_by_top_level_key[key] == LLM_PATH.resolve()
     assert bundle.source_by_top_level_key["emotion_appraisal"] == EMOTION_PATH.resolve()
-    assert bundle.source_by_top_level_key["streaming"] == STREAMING_PATH.resolve()
     assert bundle.source_by_top_level_key["plugins"] == PLUGINS_PATH.resolve()
 
 
@@ -134,17 +128,10 @@ def test_legacy_file_and_config_directory_remain_supported() -> None:
     assert replace(legacy, config_path="") == replace(directory, config_path="")
 
 
-def test_production_config_composes_runtime_streaming_speech_and_admin() -> None:
+def test_production_config_composes_core_runtime_and_speech() -> None:
     config = load_app_config(DEFAULT_CONFIG_PATH)
     validate_runtime_service_settings(config)
     assert create_speech_synthesizer(config) is not None
-
-    streaming_runtime = create_stream_preparation_runtime(config)
-    composition = compose_streaming(streaming_runtime)
-    assert Path(streaming_runtime.config.config_path) == DEFAULT_CONFIG_PATH.resolve()
-    assert composition.admin_api.runtime_status()["config_path"] == str(
-        DEFAULT_CONFIG_PATH.resolve()
-    )
 
     safe_runtime_config = replace(
         config,
@@ -227,11 +214,6 @@ def test_production_config_composes_runtime_streaming_speech_and_admin() -> None
             "emotion.yaml",
             lambda raw: raw["emotion_appraisal"].update(mode="unknown"),
             "emotion_appraisal.mode",
-        ),
-        (
-            "streaming.yaml",
-            lambda raw: raw["streaming"].update(health_timeout_seconds="invalid"),
-            "streaming.health_timeout_seconds",
         ),
     ],
 )

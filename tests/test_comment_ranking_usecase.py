@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.adapters.streaming import (
+from subsystems.streaming.adapters.repositories import (
     InMemoryCommentCandidateRepository,
     InMemoryCommentRankingRepository,
     InMemoryCommentResponseHistoryRepository,
@@ -13,13 +13,15 @@ from app.adapters.streaming import (
     InMemoryStreamMainSegmentRepository,
     InMemoryStreamOpeningRepository,
 )
-from app.config.app_config import CommentRankingSettings
 from subsystems.streaming.adapters.repositories.in_memory_session_repository import (
     InMemoryStreamSessionRepository,
 )
 from subsystems.streaming.application import (
     CommentRankingUsecase,
     StreamLifecycleGate,
+)
+from subsystems.streaming.application.settings import (
+    DefaultCommentRankingSettings as CommentRankingSettings,
 )
 from subsystems.streaming.domain import (
     CommentCandidate,

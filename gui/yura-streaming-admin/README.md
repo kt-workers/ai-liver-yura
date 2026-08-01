@@ -28,8 +28,8 @@
 ブラウザはStreaming Adminのローカルサーバーとのみ通信します。Subsystem APIのトークンは
 ブラウザへ渡しません。接続設定には `STREAMING_SUBSYSTEM_ADMIN_API_URL`、
 `STREAMING_SUBSYSTEM_ADMIN_API_TOKEN`、`STREAMING_SUBSYSTEM_ADMIN_API_TIMEOUT`、
-`STREAMING_SUBSYSTEM_ADMIN_OPERATOR` を使用します。旧`AI_LIVER_ADMIN_*`はKまでfallbackとして
-利用できます。Core停止時はcontent execution／comment decisionが`disconnected`表示になります。
+`STREAMING_SUBSYSTEM_ADMIN_OPERATOR` を使用します。旧環境変数fallbackは削除済みです。
+Core停止時はcontent execution／comment decisionが`disconnected`表示になります。
 
 構成確認だけを行う場合:
 
@@ -37,7 +37,7 @@
 .venv/bin/python -m subsystems.streaming.admin_api --check
 ```
 
-接続できない場合は8781の起動状態、新旧URL環境変数の優先順位、Bearer tokenの一致を確認します。
+接続できない場合は8781の起動状態、正規URL環境変数、Bearer tokenの一致を確認します。
 
 依存関係だけを個別に導入する場合は次を実行します。
 

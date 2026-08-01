@@ -1706,3 +1706,9 @@ LLMロール:
 - `ActionPlanner`はCharacter LLM出力を直接信用せず、検証済みResponseをActionPlanGroupへ変換する
 - `RuntimeCoordinator`は個別機能判定を持たず、各Service・Registry・Loopの接続と実行調停へ寄せる
 - `OngoingActivity`は複数Turnの目的と状態を保持し、各Turnの実行結果はActivity Resultとして記録する
+## Streaming Subsystem移行完了（2026-08-01）
+
+A〜Kの全15工程（15/15）が完了し、残りは0。Coreの正規接続境界は
+`app/integrations/streaming/**`、配信実装は`subsystems/streaming/**`、管理画面は
+`gui/yura-streaming-admin/**`からStreaming Subsystem Admin APIへ接続する。
+旧Streaming Plugin、Core側Adapter、専用Port、bootstrap、Config、Admin互換は削除済み。

@@ -60,4 +60,4 @@ Jまで必要なCore接続は`app.integrations.streaming_comment_compatibility`�
 
 - I: 完了。Streaming Adminの接続先をSubsystem Admin APIへ変更した。
 - J: 完了。Core Streaming Client／Gateway／Event Mapper／Receiverへ置換した。
-- K: 旧Plugin、Streaming専用global Port、wrapper、旧bootstrap facadeを削除する。
+- K: 完了。旧Plugin、Streaming専用global Port、wrapper、旧bootstrap facadeを物理削除した。

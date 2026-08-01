@@ -19,14 +19,14 @@
   -> 完了: A. 方針文書更新
     -> 完了: B. Games／しりとり削除監査
       -> 完了: C. しりとり・旧Games Plugin削除
-        -> D. Game Subsystem契約の外枠
-          -> E. Streaming公開通信契約
-            -> F. Streaming Subsystemプロセス外枠
-              -> G. YouTube／OBS処理をSubsystemへ移動
-                -> H. コメント／配信セッションをSubsystemへ移動
-                  -> I. Streaming Admin接続先変更
-                    -> J. Core側Integrationへ置換
-                      -> K. 互換層と旧Plugin構造削除
+        -> 完了: D. Game Subsystem契約の外枠
+          -> 完了: E. Streaming公開通信契約
+            -> 完了: F. Streaming Subsystemプロセス外枠
+              -> 完了: G. YouTube／OBS処理をSubsystemへ移動
+                -> 完了: H. コメント／配信セッションをSubsystemへ移動
+                  -> 完了: I. Streaming Admin接続先変更
+                    -> 完了: J. Core側Integrationへ置換
+                      -> 完了: K. 互換層と旧Plugin構造削除
 ```
 
 ## 3. A: サブシステム設計方針の確定
@@ -305,6 +305,9 @@ app/integrations/streaming/
 
 ## 13. K: 互換層と旧Plugin構造削除
 
+> **完了。** 旧Plugin、Adapter、専用Port、bootstrap、Config、Core Admin配信route、
+> Admin client互換を物理削除し、配信実装の所有者をSubsystemへ一本化した。
+
 ### 目的
 
 移行完了後に、旧Streaming Plugin構造、global Ports、re-export、migration baselineを削除する。
@@ -347,6 +350,6 @@ feature/plugin-separation-development
 
 ## 15. 次の作業
 
-全15工程のうちA〜Jの14工程が完了した。残りはKの1工程である。
-次工程ではKとして利用停止済みの旧Plugin、Port、Adapter wrapper、bootstrap、Config互換、
-Core Admin Streaming route、Admin client互換を物理削除する。
+A〜K: 完了。全15工程の15/15が完了し、残り: 0。
+以後は`app/integrations/streaming`をCore接続境界、`subsystems/streaming`を配信実装、
+`gui/yura-streaming-admin`をSubsystem Admin API利用者として保守する。

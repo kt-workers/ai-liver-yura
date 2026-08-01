@@ -1,10 +1,5 @@
 from __future__ import annotations
 
-from typing import Any, cast
-
-import pytest
-
-from app.admin_api import create_admin_api
 from app.core.application.events import ApplicationEventBroker
 
 
@@ -92,37 +87,3 @@ def test_repeated_subscribe_unsubscribe_does_not_leak() -> None:
         assert broker.subscriber_count == 1
         broker.unsubscribe(subscription)
         assert broker.subscriber_count == 0
-
-
-class _SseService:
-    def __init__(self, broker: ApplicationEventBroker) -> None:
-        self.broker = broker
-
-    async def start(self) -> None:
-        return None
-
-    async def stop(self) -> None:
-        return None
-
-    def runtime_status(self) -> dict[str, Any]:
-        return {"runtime_mode": "test", "manual_check_log": {"enabled": False}}
-
-
-@pytest.mark.asyncio
-async def test_sse_generator_unsubscribes_when_disconnected_during_replay() -> None:
-    broker = ApplicationEventBroker()
-    broker.publish("test.replay", {})
-    app = create_admin_api(_SseService(broker))  # type: ignore[arg-type]
-    endpoint = next(
-        cast(Any, route).endpoint
-        for route in app.routes
-        if getattr(route, "path", "") == "/api/v1/events/stream"
-    )
-    response = await endpoint(None)
-    iterator = response.body_iterator
-
-    await anext(iterator)
-    assert broker.subscriber_count == 1
-    await iterator.aclose()
-
-    assert broker.subscriber_count == 0

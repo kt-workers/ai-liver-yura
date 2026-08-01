@@ -17,7 +17,7 @@ Browser -> Streaming Admin Web :8780
 
 | 現行route | 旧所有者 | 移行後所有者／契約 | Browser利用 | 互換 |
 | --- | --- | --- | --- | --- |
-| `GET /api/v1/health`、`status`、`capabilities` | Core runtime／Plugin Registry | Subsystem公開status／health／capability | bootstrap、service card | 旧Core routeはKまで残す |
+| `GET /api/v1/health`、`status`、`capabilities` | Core runtime／Plugin Registry | Subsystem公開status／health／capability | bootstrap、service card | 旧Core配信routeは削除済み |
 | `GET /api/v1/dependencies/health` | Core snapshot | Subsystem dependency healthとoptional Core接続状態 | console | 新規 |
 | `/api/v1/youtube/auth*`、`broadcasts*` | Core composition | Subsystem YouTube preparation Port | 配信設定 | URL shape維持 |
 | `/api/v1/obs/*` | Core composition | Subsystem OBS preparation Port | service card／更新 | URL shape維持 |
@@ -56,11 +56,10 @@ REST bootstrapを再取得する。旧`core-event`は正規名として使用し
 - `STREAMING_SUBSYSTEM_ADMIN_API_TIMEOUT`
 - `STREAMING_SUBSYSTEM_ADMIN_OPERATOR`
 
-旧`AI_LIVER_ADMIN_*`はKまでdeprecated fallbackとして残す。tokenはrepr、response、logへ
-出さない。
+旧`AI_LIVER_ADMIN_*` fallbackはKで削除した。tokenはrepr、response、logへ出さない。
 
 ## 6. 後続工程
 
 - J: 完了。Core側Streaming具象依存をGateway／Clientへ置換した。Core Integrationは
   Admin read modelではなく`/api/v1/integration/*`を使用する。
-- K: 旧Core Streaming route、旧client alias、旧環境変数fallback、Plugin／Port互換を削除する。
+- K: 完了。旧Core Streaming route、旧client alias、旧環境変数fallback、Plugin／Port互換を削除した。

@@ -23,39 +23,14 @@ class StreamingSubsystemAdminConfig:
 
     @classmethod
     def from_environment(cls) -> StreamingSubsystemAdminConfig:
-        def value(new: str, old: str, default: str | None = None) -> str | None:
-            return os.getenv(new, os.getenv(old, default))
-
         return cls(
-            base_url=str(
-                value(
-                    "STREAMING_SUBSYSTEM_ADMIN_API_URL",
-                    "AI_LIVER_ADMIN_API_URL",
-                    "http://127.0.0.1:8781",
-                )
+            base_url=os.getenv(
+                "STREAMING_SUBSYSTEM_ADMIN_API_URL",
+                "http://127.0.0.1:8781",
             ),
-            token=value(
-                "STREAMING_SUBSYSTEM_ADMIN_API_TOKEN",
-                "AI_LIVER_ADMIN_API_TOKEN",
-            ),
+            token=os.getenv("STREAMING_SUBSYSTEM_ADMIN_API_TOKEN"),
             timeout_seconds=float(
-                str(
-                    value(
-                        "STREAMING_SUBSYSTEM_ADMIN_API_TIMEOUT",
-                        "AI_LIVER_ADMIN_API_TIMEOUT",
-                        "10",
-                    )
-                )
+                os.getenv("STREAMING_SUBSYSTEM_ADMIN_API_TIMEOUT", "10")
             ),
-            operator=str(
-                value(
-                    "STREAMING_SUBSYSTEM_ADMIN_OPERATOR",
-                    "AI_LIVER_ADMIN_OPERATOR",
-                    "operator",
-                )
-            ),
+            operator=os.getenv("STREAMING_SUBSYSTEM_ADMIN_OPERATOR", "operator"),
         )
-
-
-# Deprecated environment/config import compatibility; remove in K.
-AdminClientConfig = StreamingSubsystemAdminConfig

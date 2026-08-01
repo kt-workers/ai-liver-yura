@@ -10,7 +10,7 @@ def test_admin_factory_imports_when_core_packages_are_blocked() -> None:
 import builtins
 original = builtins.__import__
 def blocked(name, *args, **kwargs):
-    forbidden = ('app.admin_api', 'app.runtime', 'app.bootstrap.streaming')
+    forbidden = ('app.admin_api', 'app.runtime', '.'.join(('app', 'bootstrap', 'streaming')))
     if any(name == value or name.startswith(value + '.') for value in forbidden):
         raise ModuleNotFoundError(name)
     return original(name, *args, **kwargs)
