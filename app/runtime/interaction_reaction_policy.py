@@ -13,10 +13,15 @@ class InteractionReactionPolicy:
         self,
         *,
         verbal_cooldown_seconds: float = 12.0,
+        continuous_contact_verbal_interval_seconds: float = 4.0,
         boundary_followup_cooldown_seconds: float = 8.0,
         boundary_repeat_seconds: float = 30.0,
     ) -> None:
         self._verbal_cooldown_seconds = verbal_cooldown_seconds
+        self._continuous_contact_verbal_interval_seconds = max(
+            0.5,
+            continuous_contact_verbal_interval_seconds,
+        )
         self._boundary_followup_cooldown_seconds = (
             boundary_followup_cooldown_seconds
         )
@@ -57,12 +62,24 @@ class InteractionReactionPolicy:
             self._last_verbal_reaction_at = event.occurred_at
             return True
 
-        cooldown = (
-            self._boundary_followup_cooldown_seconds
-            if reason == "contact_boundary_ignored"
-            else self._verbal_cooldown_seconds
-        )
+        if self._is_continuous_contact(event):
+            cooldown = self._continuous_contact_verbal_interval_seconds
+        else:
+            cooldown = (
+                self._boundary_followup_cooldown_seconds
+                if reason == "contact_boundary_ignored"
+                else self._verbal_cooldown_seconds
+            )
         if elapsed < cooldown:
             return False
         self._last_verbal_reaction_at = event.occurred_at
         return True
+
+    @staticmethod
+    def _is_continuous_contact(event: AgentEvent) -> bool:
+        phase = event.payload.get("contact_phase") or event.payload.get("gesture_phase")
+        return event.payload.get("continuous_contact") is True or phase in {
+            "start",
+            "update",
+            "end",
+        }
