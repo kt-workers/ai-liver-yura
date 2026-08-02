@@ -84,6 +84,18 @@ Input Meaningとして正常に解釈できた後にInternal Directive生成が�
 
 これらはActivityを選択・実行するための分類ではない。`KNOWLEDGE`と`PAST_EVENT`は会話へ固定し、`EXECUTION`も一致するActivityが確定しない場合は実行したふりを禁止した通常会話へ戻す。説明、難易度相談、過去参照、否定、仮定がActivity開始へ誤変換されないために使用する。
 
+### 4.4 PromptBuilderの依存境界
+
+`InputMeaningPromptBuilder`と`InternalDirectivePromptBuilder`は、外部LLM SDK、通信、設定読込を行わず、型付き入力を文字列へ直列化する決定論的サービスである。正規実装は次へ置く。
+
+```text
+app/prompting/cognitive_direction_prompt_builders.py
+```
+
+旧import pathである`app.adapters.prompt.cognitive_direction_prompt_builders`は互換re-exportだけを提供する。これにより、`app.ports.llm_roles`が具体的なAdapterへ依存せず、既存RuntimeのRole Adapter経路も維持する。
+
+`ResponseGeneratorRoleAdapter`は、テストや将来のComposition Rootから`SeparatedSituationEvaluatorFactory`を明示注入できる。既存Compositionとの互換経路では、外部I/O非依存の`app.prompting`実装を用いて既定Factoryを構築する。具体LLM Providerの生成、モデル選択、API設定は引き続きBootstrapおよびAdapter側の責務とする。
+
 ## 5. 後続移行条件
 
 進行中Activityを二段階LLMへ移行する前に、次の契約を追加する。
@@ -109,3 +121,5 @@ ActivityContinuationDirective
 旧Situation応答の互換テストでは、最初の応答が有効な旧契約である場合、基盤Generatorの呼び出しが1回に留まることを保証する。
 
 表面Fallbackの回帰テストでは、共同実行提案を`EXECUTION`として扱う一方、内部状態への質問や通常会話の疑問文は`AMBIGUOUS`のままInput Meaning Interpreterへ渡すことを保証する。
+
+依存境界テストでは、Port層から`app.adapters`への新規依存がないこと、旧PromptBuilder import pathと正規`app.prompting`パスが同一実装を提供することを保証する。
