@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-`input_meaning_internal_directive_separation_v1.0.0.md`の段階移行方針へ、進行中Activity入力の扱いを追補する。
+`input_meaning_internal_directive_separation_v1.0.0.md`の段階移行方針へ、進行中Activity入力と旧Situation応答の扱いを追補する。
 
 ## 2. 進行中Activity入力の移行境界
 
@@ -43,6 +43,21 @@
 - Internal Directive JSONの生成またはparseに失敗する
 - システムイベントである
 
+### 4.1 旧Situation応答の単回再利用
+
+Input Meaning用Promptへの最初の応答が`StructuredInputMeaning`ではなく、有効な旧Situation Evaluator JSONだった場合は、その応答を捨てて同じLLMを再呼び出さない。
+
+次の必須フィールドを持つJSONを旧Situation応答として認識し、既存の正規化・検証経路へそのまま渡す。
+
+- `decision`
+- `activity_type`
+- `operation`
+- `confidence`
+
+これにより、段階移行中の旧Adapter、テスト用Generator、旧モデル挙動との互換性を維持しつつ、失敗時の不要な重複呼び出しと遅延を防ぐ。
+
+Input Meaningとして正常に解釈できた後にInternal Directive生成が失敗した場合は、この再利用条件には該当しないため、従来どおり旧Situation Evaluatorへ明示的にFallbackする。
+
 ## 5. 後続移行条件
 
 進行中Activityを二段階LLMへ移行する前に、次の契約を追加する。
@@ -64,3 +79,5 @@ ActivityContinuationDirective
 - `plugin_state_summary`
 - `recent_turns`
 - Activity RegistryとCapabilityによる実行前検証
+
+旧Situation応答の互換テストでは、最初の応答が有効な旧契約である場合、基盤Generatorの呼び出しが1回に留まることを保証する。
