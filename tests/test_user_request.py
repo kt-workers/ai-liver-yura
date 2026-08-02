@@ -11,12 +11,24 @@ def test_explicit_execution_requests_remain_available_as_fallback() -> None:
         assert interpret_user_request(text).kind == UserRequestKind.EXECUTION
 
 
+def test_explicit_activity_explanation_and_past_reference_remain_fallbacks() -> None:
+    cases = (
+        ("エコー活動って何？", UserRequestKind.KNOWLEDGE),
+        ("エコー活動のルールを教えて", UserRequestKind.KNOWLEDGE),
+        ("昨日エコー活動をした", UserRequestKind.PAST_EVENT),
+    )
+
+    for text, expected in cases:
+        interpretation = interpret_user_request(text)
+        assert interpretation.kind is expected
+        assert interpretation.confidence >= 0.9
+
+
 def test_ordinary_conversation_requires_semantic_interpretation() -> None:
     for text in (
-        "エコー活動って何？",
-        "昨日エコー活動をした",
         "今日はいい天気だね",
         "今はどんな気分ですか？",
+        "おすすめを教えて",
         "もし明日やるとしたら",
     ):
         interpretation = interpret_user_request(text)
