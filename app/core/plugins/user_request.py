@@ -58,17 +58,7 @@ def interpret_user_request(text: str) -> UserRequestInterpretation:
             "explicit_participation_proposal_fallback",
         )
 
-    if normalized.endswith(
-        (
-            "してください",
-            "始めよう",
-            "検索して",
-            "聞いて",
-            "開始して",
-            "停止して",
-            "中止して",
-        )
-    ):
+    if _is_explicit_action_request(normalized):
         return UserRequestInterpretation(
             UserRequestKind.EXECUTION,
             0.9,
@@ -114,6 +104,24 @@ def _is_explicit_past_event_reference(text: str) -> bool:
             "に行った",
             "を見た",
             "を聞いた",
+        )
+    )
+
+
+def _is_explicit_action_request(text: str) -> bool:
+    """対象を伴う明示的な実行要求・開始希望だけをFallback対象にする。"""
+
+    return text.endswith(
+        (
+            "してください",
+            "始めよう",
+            "を始めたい",
+            "を開始したい",
+            "検索して",
+            "聞いて",
+            "開始して",
+            "停止して",
+            "中止して",
         )
     )
 
