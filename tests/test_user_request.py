@@ -15,6 +15,7 @@ def test_explicit_activity_explanation_and_past_reference_remain_fallbacks() -> 
     cases = (
         ("エコー活動って何？", UserRequestKind.KNOWLEDGE),
         ("エコー活動のルールを教えて", UserRequestKind.KNOWLEDGE),
+        ("深海生物縛りのエコー活動は難しい？", UserRequestKind.KNOWLEDGE),
         ("昨日エコー活動をした", UserRequestKind.PAST_EVENT),
     )
 
