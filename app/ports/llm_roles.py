@@ -105,10 +105,40 @@ class ResponseGeneratorRoleAdapter:
     ) -> str | None:
         factory = self._separated_situation_evaluator_factory
         if factory is None:
-            return None
+            factory = self._default_separated_situation_evaluator_factory
         if self._separated_situation_evaluator is None:
             self._separated_situation_evaluator = factory(self)
         return await self._separated_situation_evaluator.evaluate(activity)
+
+    def _default_separated_situation_evaluator_factory(
+        self,
+        role_model: "ResponseGeneratorRoleAdapter",
+    ) -> OptionalSituationEvaluationModel:
+        """既存Compositionとの互換用既定Factory。
+
+        PromptBuilderの正規実装は外部Adapterではなく、外部I/O非依存の
+        ``app.prompting`` に置く。明示Factoryが注入された場合は使用しない。
+        """
+
+        from app.prompting import (
+            InputMeaningPromptBuilder,
+            InternalDirectivePromptBuilder,
+        )
+        from app.runtime.separated_situation_evaluator import (
+            SeparatedSituationEvaluationAdapter,
+        )
+
+        return SeparatedSituationEvaluationAdapter(
+            role_model,
+            role_model,
+            input_prompt_builder=InputMeaningPromptBuilder(),
+            directive_prompt_builder=InternalDirectivePromptBuilder(),
+            character_profile=getattr(
+                self._generator,
+                "_character_profile",
+                None,
+            ),
+        )
 
     @staticmethod
     def _with_input_meaning_role_boundary(activity: Activity) -> Activity:
