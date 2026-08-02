@@ -274,10 +274,10 @@ def decide_conversation_response_mode(
         scores[ConversationResponseMode.ASK] -= 0.85
         reasons.append("semantic_answer_returns_conversation_floor")
     elif normalized_speech_act == "acknowledgement":
-        scores[ConversationResponseMode.LISTEN] += 0.75
-        scores[ConversationResponseMode.REACT] += 0.35
-        scores[ConversationResponseMode.ASK] -= 0.40
-        scores[ConversationResponseMode.SPEAK] -= 0.50
+        scores[ConversationResponseMode.LISTEN] += 0.55
+        scores[ConversationResponseMode.REACT] += 0.30
+        scores[ConversationResponseMode.ASK] -= 0.20
+        scores[ConversationResponseMode.SPEAK] -= 0.40
         reasons.append("semantic_acknowledgement_supports_listening")
     elif normalized_speech_act == "closing":
         scores[ConversationResponseMode.LISTEN] += 0.80
