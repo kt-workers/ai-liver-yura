@@ -41,7 +41,7 @@ def interpret_user_request(text: str) -> UserRequestInterpretation:
         return UserRequestInterpretation(
             UserRequestKind.KNOWLEDGE,
             0.95,
-            "explicit_definition_or_rule_question_fallback",
+            "explicit_definition_rule_or_difficulty_question_fallback",
         )
 
     if _is_explicit_past_event_reference(normalized):
@@ -78,7 +78,7 @@ def interpret_user_request(text: str) -> UserRequestInterpretation:
 
 
 def _is_explicit_knowledge_question(text: str) -> bool:
-    return any(
+    if any(
         marker in text
         for marker in (
             "って何",
@@ -87,7 +87,9 @@ def _is_explicit_knowledge_question(text: str) -> bool:
             "仕組みを教えて",
             "意味を教えて",
         )
-    )
+    ):
+        return True
+    return text.endswith(("は難しい？", "は難しい?", "のは難しい？", "のは難しい?"))
 
 
 def _is_explicit_past_event_reference(text: str) -> bool:
