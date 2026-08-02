@@ -21,7 +21,7 @@ class UserRequestInterpretation:
 
 
 def interpret_user_request(text: str) -> UserRequestInterpretation:
-    """LLM失敗時に使う、高確信度の実行・停止要求だけを判定するFallback。"""
+    """LLM失敗時に使う、高確信度の明示表現だけを判定するFallback。"""
 
     normalized = text.strip()
     if not normalized:
@@ -35,6 +35,20 @@ def interpret_user_request(text: str) -> UserRequestInterpretation:
             UserRequestKind.NEGATIVE,
             0.95,
             "explicit_stop_or_negative_request",
+        )
+
+    if _is_explicit_knowledge_question(normalized):
+        return UserRequestInterpretation(
+            UserRequestKind.KNOWLEDGE,
+            0.95,
+            "explicit_definition_or_rule_question_fallback",
+        )
+
+    if _is_explicit_past_event_reference(normalized):
+        return UserRequestInterpretation(
+            UserRequestKind.PAST_EVENT,
+            0.9,
+            "explicit_past_event_reference_fallback",
         )
 
     if normalized.endswith(
@@ -54,10 +68,42 @@ def interpret_user_request(text: str) -> UserRequestInterpretation:
             "explicit_action_request_fallback",
         )
 
-    # 「どんな」「教えて」、疑問符、語尾、過去表現、仮定表現などは、
+    # 「どんな」、一般的な「教えて」、疑問符、語尾、仮定表現などは、
     # 会話履歴を含むInput Meaning Interpreterで解釈する。
     return UserRequestInterpretation(
         UserRequestKind.AMBIGUOUS,
         0.0,
         "semantic_interpretation_required",
+    )
+
+
+def _is_explicit_knowledge_question(text: str) -> bool:
+    return any(
+        marker in text
+        for marker in (
+            "って何",
+            "とは何",
+            "ルールを教えて",
+            "仕組みを教えて",
+            "意味を教えて",
+        )
+    )
+
+
+def _is_explicit_past_event_reference(text: str) -> bool:
+    if not any(
+        marker in text
+        for marker in ("昨日", "一昨日", "先週", "この前", "以前", "さっき")
+    ):
+        return False
+    return any(
+        marker in text
+        for marker in (
+            "をした",
+            "をやった",
+            "を始めた",
+            "に行った",
+            "を見た",
+            "を聞いた",
+        )
     )
