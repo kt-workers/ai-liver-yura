@@ -94,7 +94,10 @@ class TargetInterest:
 
     @property
     def question_signal(self) -> float:
-        return self.interest_intensity * self.knowledge_gap * (1.0 - self.satiation)
+        return round(
+            self.interest_intensity * self.knowledge_gap * (1.0 - self.satiation),
+            6,
+        )
 
 
 @dataclass(frozen=True, slots=True)
