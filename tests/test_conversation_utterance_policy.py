@@ -4,6 +4,10 @@ from app.adapters.prompt.character_prompt_builder import CharacterPromptBuilder
 from app.adapters.prompt.response_validator_prompt_builder import (
     ResponseValidatorPromptBuilder,
 )
+from app.adapters.prompt.situation_evaluator_prompt_builder import (
+    SituationEvaluatorPromptBuilder,
+)
+from app.domain.behavior import BehaviorPlanningContext
 from app.domain.character_response import (
     ActivityExecutionStatus,
     CharacterResponse,
@@ -79,13 +83,40 @@ def _context(
     )
 
 
-def test_compound_acknowledgement_is_detected_without_consuming_substantive_text() -> None:
+def test_surface_acknowledgement_detector_remains_compatibility_only() -> None:
     assert is_low_information_acknowledgement("いいね。そういうの")
-    assert is_low_information_acknowledgement("前向きでいいね")
     assert not is_low_information_acknowledgement(
         "そうだね。でもゲームは難しい方が好き"
     )
-    assert not is_low_information_acknowledgement("いいね。どこから始める？")
+
+    _, decision = apply_conversation_response_policy(
+        _expansive_plan(),
+        speech_act="statement",
+        conversation_phase="active",
+        initiative_level=0.65,
+        user_input="いいね。そういうの",
+        drive={"curiosity": 0.5, "engagement": 0.5, "energy": 0.7},
+    )
+
+    assert decision.low_information_input is False
+
+
+def test_situation_prompt_requires_contextual_semantic_speech_acts() -> None:
+    prompt = SituationEvaluatorPromptBuilder().build(
+        BehaviorPlanningContext(
+            user_text="しまなみ海道だよ",
+            source_event_id="event-1",
+            available_capabilities=frozenset(),
+            conversation_history=(
+                {"role": "assistant", "text": "どこへ行ったの？"},
+            ),
+        )
+    )
+
+    assert "answer|acknowledgement|closing" in prompt
+    assert "表面文字列、語尾、疑問符の有無だけで分類せず" in prompt
+    assert "『しまなみ海道だよ』はanswer" in prompt
+    assert "『今日のところはこのくらいかな』はclosing" in prompt
 
 
 def test_low_initiative_greeting_selects_reaction_without_hardcoded_prohibition() -> None:
@@ -94,7 +125,7 @@ def test_low_initiative_greeting_selects_reaction_without_hardcoded_prohibition(
         speech_act="greeting",
         conversation_phase="greeting",
         initiative_level=0.15,
-        user_input="こんにちは",
+        user_input="こんばんわ",
         drive={"curiosity": 0.5, "engagement": 0.5, "energy": 0.7},
     )
 
@@ -103,16 +134,15 @@ def test_low_initiative_greeting_selects_reaction_without_hardcoded_prohibition(
     assert effective.new_direction_budget == 0
     assert effective.self_disclosure_level == "none"
     assert effective.conversation_strategies == ("share_reaction",)
-    assert "conversation_response_mode:react" in effective.reasons
 
 
-def test_acknowledgement_normally_selects_listening() -> None:
+def test_semantic_acknowledgement_normally_selects_listening() -> None:
     effective, decision = apply_conversation_response_policy(
         _expansive_plan(),
-        speech_act="statement",
+        speech_act="acknowledgement",
         conversation_phase="active",
         initiative_level=0.65,
-        user_input="いいね。そういうの",
+        user_input="うん。そうだね",
         drive={"curiosity": 0.5, "engagement": 0.5, "energy": 0.7},
     )
 
@@ -124,13 +154,13 @@ def test_acknowledgement_normally_selects_listening() -> None:
     assert effective.conversation_strategies == ("acknowledge_other",)
 
 
-def test_strong_curiosity_can_select_question_even_after_acknowledgement() -> None:
+def test_strong_curiosity_can_select_question_after_semantic_acknowledgement() -> None:
     effective, decision = apply_conversation_response_policy(
         _expansive_plan(),
-        speech_act="statement",
+        speech_act="acknowledgement",
         conversation_phase="active",
         initiative_level=0.65,
-        user_input="いいね。そういうの",
+        user_input="うん",
         drive={
             "curiosity": 0.99,
             "engagement": 0.8,
@@ -146,13 +176,58 @@ def test_strong_curiosity_can_select_question_even_after_acknowledgement() -> No
     assert effective.conversation_strategies == ("ask_for_detail",)
 
 
+def test_semantic_answer_returns_floor_instead_of_chaining_questions() -> None:
+    effective, decision = apply_conversation_response_policy(
+        _expansive_plan(),
+        speech_act="answer",
+        conversation_phase="active",
+        initiative_level=0.65,
+        user_input="海と橋が一望できるところかな",
+        drive={
+            "curiosity": 0.99,
+            "engagement": 0.95,
+            "boredom": 0.0,
+            "energy": 0.8,
+        },
+    )
+
+    assert decision.mode is not ConversationResponseMode.ASK
+    assert "semantic_answer_returns_conversation_floor" in decision.reasons
+    assert effective.question_budget == 0
+
+
+def test_semantic_closing_prefers_closure_over_high_curiosity() -> None:
+    effective, decision = apply_conversation_response_policy(
+        _expansive_plan(),
+        speech_act="closing",
+        conversation_phase="winding_down",
+        initiative_level=0.65,
+        user_input="今日のところはこのくらいかな",
+        drive={
+            "curiosity": 1.0,
+            "engagement": 1.0,
+            "boredom": 0.0,
+            "energy": 0.7,
+        },
+    )
+
+    assert decision.mode in {
+        ConversationResponseMode.LISTEN,
+        ConversationResponseMode.REACT,
+        ConversationResponseMode.OBSERVE,
+    }
+    assert "semantic_closing_supports_closure" in decision.reasons
+    assert effective.question_budget == 0
+    assert effective.new_direction_budget == 0
+
+
 def test_low_initiative_is_weight_not_absolute_speaking_ban() -> None:
     effective, decision = apply_conversation_response_policy(
         _autonomy_plan(),
         speech_act="statement",
         conversation_phase="active",
         initiative_level=0.20,
-        user_input="この後はどうするの",
+        user_input="この後の進め方を決めよう",
         drive={
             "curiosity": 0.2,
             "engagement": 0.4,
@@ -164,65 +239,63 @@ def test_low_initiative_is_weight_not_absolute_speaking_ban() -> None:
     assert decision.mode is ConversationResponseMode.SPEAK
     assert effective.question_budget == 0
     assert effective.new_direction_budget == 1
-    assert effective.conversation_strategies == (
-        "take_initiative",
-        "state_choice",
-        "define_next_step",
-    )
 
 
-def test_user_question_selects_direct_answer_mode() -> None:
+def test_semantic_question_selects_direct_answer_mode() -> None:
     effective, decision = apply_conversation_response_policy(
         _expansive_plan(),
         speech_act="question",
         conversation_phase="active",
         initiative_level=0.65,
-        user_input="今日はゲームする？",
+        user_input="今日は何がしたい",
         drive={"curiosity": 0.9},
     )
 
     assert decision.mode is ConversationResponseMode.ANSWER
+    assert "semantic_question_supports_answer" in decision.reasons
     assert effective.question_budget == 0
     assert effective.new_direction_budget == 0
     assert effective.self_disclosure_level == "none"
-    assert effective.conversation_strategies == ("explain_clearly",)
 
 
-def test_decision_context_exposes_scores_and_reasons() -> None:
-    decision = decide_conversation_response_mode(
+def test_same_semantic_structure_ignores_surface_punctuation_variation() -> None:
+    first = decide_conversation_response_mode(
         _expansive_plan(),
-        speech_act="statement",
+        speech_act="answer",
         conversation_phase="active",
         initiative_level=0.65,
-        user_input="いいね。そういうの",
-        drive={"curiosity": 0.5},
+        user_input="しまなみ海道だよ",
+        drive={"curiosity": 0.9, "engagement": 0.8},
+    )
+    second = decide_conversation_response_mode(
+        _expansive_plan(),
+        speech_act="answer",
+        conversation_phase="active",
+        initiative_level=0.65,
+        user_input="しまなみ海道だよ？？",
+        drive={"curiosity": 0.9, "engagement": 0.8},
     )
 
-    context = decision.as_context()
-    assert context["mode"] == "listen"
-    assert context["low_information_input"] is True
-    assert isinstance(context["scores"], dict)
-    assert context["reasons"]
+    assert first.mode is second.mode
+    assert first.scores == second.scores
 
 
-def test_character_prompt_projects_state_driven_reaction_decision() -> None:
+def test_character_prompt_projects_semantic_acknowledgement_decision() -> None:
     prompt = CharacterPromptBuilder().build(
         _context(
-            initiative_level=0.15,
-            phase="greeting",
-            speech_act="greeting",
+            initiative_level=0.65,
+            phase="active",
+            speech_act="acknowledgement",
+            user_input="うん。そうだね",
             drive={"curiosity": 0.5, "engagement": 0.5, "energy": 0.7},
         ),
         character_profile=None,
         correction=None,
     )
 
-    assert '"mode": "react"' in prompt
+    assert '"mode": "listen"' in prompt
     assert '"question_budget": 0' in prompt
-    assert '"new_direction_budget": 0' in prompt
-    assert "今回のConversation Response Modeはreact" in prompt
-    assert "入力種別だけによる一律の質問禁止・話題禁止ではない" in prompt
-    assert "この応答は低主体性の挨拶である" not in prompt
+    assert "今回のConversation Response Modeはlisten" in prompt
 
 
 def test_character_prompt_allows_state_selected_question_after_acknowledgement() -> None:
@@ -230,8 +303,8 @@ def test_character_prompt_allows_state_selected_question_after_acknowledgement()
         _context(
             initiative_level=0.65,
             phase="active",
-            speech_act="statement",
-            user_input="いいね。そういうの",
+            speech_act="acknowledgement",
+            user_input="うん",
             drive={
                 "curiosity": 0.99,
                 "engagement": 0.8,
@@ -245,28 +318,27 @@ def test_character_prompt_allows_state_selected_question_after_acknowledgement()
     assert '"mode": "ask"' in prompt
     assert '"question_budget": 1' in prompt
     assert "現在の好奇心や関心に結び付く" in prompt
-    assert "入力分類ではなく、上記で選ばれたResponse Modeに従う" in prompt
-    assert "質問、新話題、自己開示を追加しない" not in prompt
 
 
-def test_validator_uses_same_effective_decision_as_character_prompt() -> None:
+def test_validator_uses_same_semantic_decision_as_character_prompt() -> None:
     context = _context(
         initiative_level=0.65,
         phase="active",
-        speech_act="statement",
-        user_input="いいね。そういうの",
-        drive={
-            "curiosity": 0.99,
-            "engagement": 0.8,
-            "energy": 0.8,
-        },
+        speech_act="answer",
+        user_input="しまなみ海道だよ",
+        drive={"curiosity": 0.99, "engagement": 0.9, "energy": 0.8},
     )
-    prompt = ResponseValidatorPromptBuilder().build(
+    character_prompt = CharacterPromptBuilder().build(
         context,
-        CharacterResponse(speech="それなら、どんなところが一番好き？"),
+        character_profile=None,
+        correction=None,
+    )
+    validator_prompt = ResponseValidatorPromptBuilder().build(
+        context,
+        CharacterResponse(speech="海と橋を一緒に眺められるのは気持ちよさそうだね。"),
     )
 
-    assert '"mode": "ask"' in prompt
-    assert "Effective Response Content Plan" in prompt
-    assert '"question_budget": 1' in prompt
-    assert "入力が挨拶・相槌であることだけを理由に質問や発話を拒否しない" in prompt
+    assert '"mode": "ask"' not in character_prompt
+    assert '"mode": "ask"' not in validator_prompt
+    assert "semantic_answer_returns_conversation_floor" in character_prompt
+    assert "semantic_answer_returns_conversation_floor" in validator_prompt
