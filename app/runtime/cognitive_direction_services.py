@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from app.adapters.prompt.cognitive_direction_prompt_builders import (
-    InputMeaningPromptBuilder,
-    InternalDirectivePromptBuilder,
-)
 from app.domain.activities import Activity, ActivityType
 from app.domain.cognitive_direction import (
     InternalDirective,
@@ -11,7 +7,9 @@ from app.domain.cognitive_direction import (
 )
 from app.ports.cognitive_direction import (
     InputMeaningModel,
+    InputMeaningPromptBuilder,
     InternalDirectiveModel,
+    InternalDirectivePromptBuilder,
 )
 from app.runtime.cognitive_direction_parsers import (
     InputMeaningJsonParser,
@@ -24,11 +22,11 @@ class InputMeaningInterpreter:
         self,
         model: InputMeaningModel,
         *,
-        prompt_builder: InputMeaningPromptBuilder | None = None,
+        prompt_builder: InputMeaningPromptBuilder,
         parser: InputMeaningJsonParser | None = None,
     ) -> None:
         self._model = model
-        self._prompt_builder = prompt_builder or InputMeaningPromptBuilder()
+        self._prompt_builder = prompt_builder
         self._parser = parser or InputMeaningJsonParser()
 
     async def interpret(
@@ -53,7 +51,9 @@ class InputMeaningInterpreter:
                     "Activityや応答方針を決めない",
                 ],
             },
-            source_event_id=activity.source_event_id,
+            source_event_id=activity.source_event_event_id
+            if hasattr(activity, "source_event_event_id")
+            else activity.source_event_id,
         )
         try:
             raw = await self._model.interpret_input_meaning(request)
@@ -67,11 +67,11 @@ class InternalDirectivePlanner:
         self,
         model: InternalDirectiveModel,
         *,
-        prompt_builder: InternalDirectivePromptBuilder | None = None,
+        prompt_builder: InternalDirectivePromptBuilder,
         parser: InternalDirectiveJsonParser | None = None,
     ) -> None:
         self._model = model
-        self._prompt_builder = prompt_builder or InternalDirectivePromptBuilder()
+        self._prompt_builder = prompt_builder
         self._parser = parser or InternalDirectiveJsonParser()
 
     async def plan(
@@ -109,5 +109,3 @@ class InternalDirectivePlanner:
         except Exception:
             return None
         return self._parser.parse(raw)
-
-
