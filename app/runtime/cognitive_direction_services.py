@@ -51,9 +51,7 @@ class InputMeaningInterpreter:
                     "Activityや応答方針を決めない",
                 ],
             },
-            source_event_id=activity.source_event_event_id
-            if hasattr(activity, "source_event_event_id")
-            else activity.source_event_id,
+            source_event_id=activity.source_event_id,
         )
         try:
             raw = await self._model.interpret_input_meaning(request)
