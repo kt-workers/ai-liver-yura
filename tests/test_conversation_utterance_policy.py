@@ -7,7 +7,7 @@ from app.adapters.prompt.response_validator_prompt_builder import (
 from app.adapters.prompt.situation_evaluator_prompt_builder import (
     SituationEvaluatorPromptBuilder,
 )
-from app.domain.behavior import BehaviorPlanningContext
+from app.domain.behavior import BehaviorPlanningContext, TargetInterest
 from app.domain.character_response import (
     ActivityExecutionStatus,
     CharacterResponse,
@@ -83,6 +83,25 @@ def _context(
     )
 
 
+def _high_interest() -> tuple[TargetInterest, ...]:
+    return (
+        TargetInterest(
+            target_type="place",
+            target_id="しまなみ海道",
+            interest_intensity=0.95,
+            knowledge_gap=0.95,
+            satiation=0.05,
+            reason="場所は分かったが、景色や体験がまだ分からない",
+        ),
+    )
+
+
+def test_target_interest_question_signal_combines_gap_and_satiation() -> None:
+    interest = _high_interest()[0]
+
+    assert interest.question_signal == 0.857375
+
+
 def test_surface_acknowledgement_detector_remains_compatibility_only() -> None:
     assert is_low_information_acknowledgement("いいね。そういうの")
     assert not is_low_information_acknowledgement(
@@ -154,7 +173,7 @@ def test_semantic_acknowledgement_normally_selects_listening() -> None:
     assert effective.conversation_strategies == ("acknowledge_other",)
 
 
-def test_strong_curiosity_can_select_question_after_semantic_acknowledgement() -> None:
+def test_global_curiosity_alone_does_not_force_question_after_acknowledgement() -> None:
     effective, decision = apply_conversation_response_policy(
         _expansive_plan(),
         speech_act="acknowledgement",
@@ -162,11 +181,32 @@ def test_strong_curiosity_can_select_question_after_semantic_acknowledgement() -
         initiative_level=0.65,
         user_input="うん",
         drive={
-            "curiosity": 0.99,
+            "curiosity": 1.0,
             "engagement": 0.8,
             "boredom": 0.0,
             "energy": 0.8,
         },
+    )
+
+    assert decision.mode is ConversationResponseMode.LISTEN
+    assert effective.question_budget == 0
+    assert "target_interest_can_overcome_acknowledgement_weight" not in decision.reasons
+
+
+def test_target_interest_and_knowledge_gap_can_select_question_after_acknowledgement() -> None:
+    effective, decision = apply_conversation_response_policy(
+        _expansive_plan(),
+        speech_act="acknowledgement",
+        conversation_phase="active",
+        initiative_level=0.65,
+        user_input="うん",
+        drive={
+            "curiosity": 0.60,
+            "engagement": 0.8,
+            "boredom": 0.0,
+            "energy": 0.8,
+        },
+        active_interests=_high_interest(),
     )
 
     assert decision.mode is ConversationResponseMode.ASK
@@ -174,6 +214,31 @@ def test_strong_curiosity_can_select_question_after_semantic_acknowledgement() -
     assert effective.question_budget == 1
     assert effective.new_direction_budget == 0
     assert effective.conversation_strategies == ("ask_for_detail",)
+    assert "target_interest_can_overcome_acknowledgement_weight" in decision.reasons
+
+
+def test_high_interest_without_knowledge_gap_does_not_force_question() -> None:
+    effective, decision = apply_conversation_response_policy(
+        _expansive_plan(),
+        speech_act="acknowledgement",
+        conversation_phase="active",
+        initiative_level=0.65,
+        user_input="うん",
+        drive={"curiosity": 1.0, "engagement": 0.8, "energy": 0.8},
+        active_interests=(
+            TargetInterest(
+                target_type="place",
+                target_id="しまなみ海道",
+                interest_intensity=0.95,
+                knowledge_gap=0.05,
+                satiation=0.90,
+                reason="好きな話題だが、すでに十分に聞いた",
+            ),
+        ),
+    )
+
+    assert decision.mode is ConversationResponseMode.LISTEN
+    assert effective.question_budget == 0
 
 
 def test_semantic_answer_returns_floor_instead_of_chaining_questions() -> None:
@@ -189,6 +254,7 @@ def test_semantic_answer_returns_floor_instead_of_chaining_questions() -> None:
             "boredom": 0.0,
             "energy": 0.8,
         },
+        active_interests=_high_interest(),
     )
 
     assert decision.mode is not ConversationResponseMode.ASK
@@ -196,7 +262,7 @@ def test_semantic_answer_returns_floor_instead_of_chaining_questions() -> None:
     assert effective.question_budget == 0
 
 
-def test_semantic_closing_prefers_closure_over_high_curiosity() -> None:
+def test_semantic_closing_prefers_closure_over_high_interest() -> None:
     effective, decision = apply_conversation_response_policy(
         _expansive_plan(),
         speech_act="closing",
@@ -209,6 +275,7 @@ def test_semantic_closing_prefers_closure_over_high_curiosity() -> None:
             "boredom": 0.0,
             "energy": 0.7,
         },
+        active_interests=_high_interest(),
     )
 
     assert decision.mode in {
@@ -249,6 +316,7 @@ def test_semantic_question_selects_direct_answer_mode() -> None:
         initiative_level=0.65,
         user_input="今日は何がしたい",
         drive={"curiosity": 0.9},
+        active_interests=_high_interest(),
     )
 
     assert decision.mode is ConversationResponseMode.ANSWER
@@ -266,6 +334,7 @@ def test_same_semantic_structure_ignores_surface_punctuation_variation() -> None
         initiative_level=0.65,
         user_input="しまなみ海道だよ",
         drive={"curiosity": 0.9, "engagement": 0.8},
+        active_interests=_high_interest(),
     )
     second = decide_conversation_response_mode(
         _expansive_plan(),
@@ -274,6 +343,7 @@ def test_same_semantic_structure_ignores_surface_punctuation_variation() -> None
         initiative_level=0.65,
         user_input="しまなみ海道だよ？？",
         drive={"curiosity": 0.9, "engagement": 0.8},
+        active_interests=_high_interest(),
     )
 
     assert first.mode is second.mode
@@ -298,7 +368,7 @@ def test_character_prompt_projects_semantic_acknowledgement_decision() -> None:
     assert "今回のConversation Response Modeはlisten" in prompt
 
 
-def test_character_prompt_allows_state_selected_question_after_acknowledgement() -> None:
+def test_character_prompt_does_not_treat_global_curiosity_as_target_interest() -> None:
     prompt = CharacterPromptBuilder().build(
         _context(
             initiative_level=0.65,
@@ -306,7 +376,7 @@ def test_character_prompt_allows_state_selected_question_after_acknowledgement()
             speech_act="acknowledgement",
             user_input="うん",
             drive={
-                "curiosity": 0.99,
+                "curiosity": 1.0,
                 "engagement": 0.8,
                 "energy": 0.8,
             },
@@ -315,9 +385,8 @@ def test_character_prompt_allows_state_selected_question_after_acknowledgement()
         correction=None,
     )
 
-    assert '"mode": "ask"' in prompt
-    assert '"question_budget": 1' in prompt
-    assert "現在の好奇心や関心に結び付く" in prompt
+    assert '"mode": "listen"' in prompt
+    assert '"question_budget": 0' in prompt
 
 
 def test_validator_uses_same_semantic_decision_as_character_prompt() -> None:
