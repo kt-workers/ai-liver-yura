@@ -148,7 +148,7 @@ class ConversationResponseDecision:
 
 
 def is_low_information_acknowledgement(user_input: str) -> bool:
-    """短い相槌・同意だけで、追加の主張や質問を含まない入力か判定する。"""
+    """互換用の表面判定。RuntimeのMode選択では使用しない。"""
 
     normalized = unicodedata.normalize("NFKC", user_input).strip().lower()
     if not normalized or "?" in normalized or "？" in normalized:
@@ -175,28 +175,21 @@ def decide_conversation_response_mode(
     user_input: str = "",
     drive: Mapping[str, object] | None = None,
 ) -> ConversationResponseDecision:
-    """入力分類を禁止規則にせず、状態と状況の重みから応答モードを選ぶ。"""
+    """LLM意味解析結果と内的状態を重み付けし、応答モードを選ぶ。"""
 
+    del user_input  # 表面テキストを決定論的に再解釈しない。
     normalized_speech_act = speech_act.strip().lower()
     normalized_phase = conversation_phase.strip().lower()
     initiative = _clamp_01(initiative_level)
-    low_information = is_low_information_acknowledgement(user_input)
+    low_information = normalized_speech_act == "acknowledgement"
     drive_values = drive or {}
     curiosity = _number(drive_values.get("curiosity"), default=0.5)
     engagement = _number(drive_values.get("engagement"), default=0.5)
     boredom = _number(drive_values.get("boredom"), default=0.0)
     energy = _number(drive_values.get("energy"), default=0.7)
 
-    if normalized_speech_act == "question":
-        return ConversationResponseDecision(
-            mode=ConversationResponseMode.ANSWER,
-            confidence=0.95,
-            scores=((ConversationResponseMode.ANSWER.value, 1.0),),
-            reasons=("user_question_requires_direct_answer",),
-            low_information_input=low_information,
-        )
-
     scores = {
+        ConversationResponseMode.ANSWER: -0.20,
         ConversationResponseMode.ASK: 0.05 + 0.20 * initiative,
         ConversationResponseMode.LISTEN: 0.15 + 0.25 * (1.0 - initiative),
         ConversationResponseMode.REACT: 0.20,
@@ -265,24 +258,52 @@ def decide_conversation_response_mode(
         scores[ConversationResponseMode.SPEAK] += 0.30
         reasons.append(f"{primary_desire}_desire_supports_speaking")
 
-    # initiative_levelは絶対禁止ではなく、質問・発話へ必要な主体性の連続的な重みとする。
     low_initiative_penalty = 0.45 * (1.0 - initiative)
     scores[ConversationResponseMode.ASK] -= low_initiative_penalty
     scores[ConversationResponseMode.SPEAK] -= 0.25 * (1.0 - initiative)
 
-    if low_information:
-        # 相槌は「聞く／反応する」証拠だが、強い好奇心等があれば質問も選び得る。
+    if normalized_speech_act == "question":
+        scores[ConversationResponseMode.ANSWER] += 1.55
+        scores[ConversationResponseMode.ASK] -= 0.45
+        scores[ConversationResponseMode.SPEAK] -= 0.15
+        reasons.append("semantic_question_supports_answer")
+    elif normalized_speech_act == "answer":
+        scores[ConversationResponseMode.LISTEN] += 0.50
+        scores[ConversationResponseMode.REACT] += 0.35
+        scores[ConversationResponseMode.SPEAK] += 0.20
+        scores[ConversationResponseMode.ASK] -= 0.85
+        reasons.append("semantic_answer_returns_conversation_floor")
+    elif normalized_speech_act == "acknowledgement":
         scores[ConversationResponseMode.LISTEN] += 0.75
         scores[ConversationResponseMode.REACT] += 0.35
         scores[ConversationResponseMode.ASK] -= 0.40
         scores[ConversationResponseMode.SPEAK] -= 0.50
-        reasons.append("low_information_input_supports_listening")
-    if normalized_speech_act == "greeting" or normalized_phase == "greeting":
+        reasons.append("semantic_acknowledgement_supports_listening")
+    elif normalized_speech_act == "closing":
+        scores[ConversationResponseMode.LISTEN] += 0.80
+        scores[ConversationResponseMode.REACT] += 0.55
+        scores[ConversationResponseMode.OBSERVE] += 0.35
+        scores[ConversationResponseMode.ASK] -= 1.20
+        scores[ConversationResponseMode.SPEAK] -= 0.60
+        reasons.append("semantic_closing_supports_closure")
+    elif normalized_speech_act == "greeting":
         scores[ConversationResponseMode.REACT] += 0.55
         scores[ConversationResponseMode.LISTEN] += 0.25
         scores[ConversationResponseMode.ASK] -= 0.40
         scores[ConversationResponseMode.SPEAK] -= 0.25
-        reasons.append("greeting_supports_brief_reaction")
+        reasons.append("semantic_greeting_supports_brief_reaction")
+
+    if normalized_phase == "greeting":
+        scores[ConversationResponseMode.REACT] += 0.25
+        scores[ConversationResponseMode.ASK] -= 0.20
+        reasons.append("greeting_phase_supports_reaction")
+    elif normalized_phase == "winding_down":
+        scores[ConversationResponseMode.LISTEN] += 0.45
+        scores[ConversationResponseMode.REACT] += 0.30
+        scores[ConversationResponseMode.OBSERVE] += 0.20
+        scores[ConversationResponseMode.ASK] -= 0.70
+        scores[ConversationResponseMode.SPEAK] -= 0.35
+        reasons.append("winding_down_phase_supports_closure")
 
     ordered_modes = (
         ConversationResponseMode.ANSWER,
