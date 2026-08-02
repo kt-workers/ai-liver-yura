@@ -53,29 +53,29 @@ def test_drive_updates_again_after_one_second_while_dragging() -> None:
     assert after_next_segment.energy < within_segment.energy
 
 
-def test_state_history_is_recorded_once_per_contact_segment() -> None:
+def test_state_and_episode_are_recorded_once_per_contact_segment() -> None:
     started_at = datetime(2026, 8, 2, tzinfo=timezone.utc)
     updater = AgentEventStateUpdater()
     initial = AgentState()
 
     after_start = updater.update(initial, _drag(started_at, "start")).state
-    history_after_start = len(after_start.memory.emotion_history)
+    episodes_after_start = len(after_start.memory.episodic)
 
     after_early_update = updater.update(
         after_start,
         _drag(started_at + timedelta(seconds=0.4), "update"),
     ).state
-    history_after_early_update = len(after_early_update.memory.emotion_history)
+    episodes_after_early_update = len(after_early_update.memory.episodic)
 
     after_next_segment = updater.update(
         after_early_update,
         _drag(started_at + timedelta(seconds=1.1), "update"),
     ).state
-    history_after_next_segment = len(after_next_segment.memory.emotion_history)
+    episodes_after_next_segment = len(after_next_segment.memory.episodic)
 
-    assert history_after_start == 1
-    assert history_after_early_update == history_after_start
-    assert history_after_next_segment == history_after_start + 1
+    assert episodes_after_start == 1
+    assert episodes_after_early_update == episodes_after_start
+    assert episodes_after_next_segment == episodes_after_start + 1
     assert after_early_update.current_drive == after_start.current_drive
     assert after_early_update.current_emotion == after_start.current_emotion
     assert after_next_segment.current_drive != after_early_update.current_drive
