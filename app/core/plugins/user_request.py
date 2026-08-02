@@ -20,6 +20,20 @@ class UserRequestInterpretation:
     reason: str
 
 
+_CONVERSATION_WINDING_DOWN_MARKERS = (
+    "今日はそろそろ終わり",
+    "今日は終わりにしよう",
+    "今日はここまで",
+    "そろそろ会話を終わり",
+    "そろそろ終わりにしよう",
+    "また明日",
+    "またあした",
+    "ばいばい",
+    "バイバイ",
+    "おやすみ",
+)
+
+
 def interpret_user_request(text: str) -> UserRequestInterpretation:
     """対象機能を列挙せず、発話が行為の実行要求かどうかだけを判定する。"""
 
@@ -45,6 +59,12 @@ def interpret_user_request(text: str) -> UserRequestInterpretation:
     if hypothetical:
         return UserRequestInterpretation(
             UserRequestKind.CHAT, 0.9, "hypothetical_expression"
+        )
+    if any(marker in normalized for marker in _CONVERSATION_WINDING_DOWN_MARKERS):
+        return UserRequestInterpretation(
+            UserRequestKind.CHAT,
+            0.95,
+            "conversation_winding_down",
         )
     if any(
         marker in normalized
