@@ -68,6 +68,18 @@ Input Meaningとして正常に解釈できた後にInternal Directive生成が�
 
 また、`available_activities`はInput Meaning Interpreterへ実データを渡さず、未提供であることだけを役割境界メタデータとして示す。Activity候補の参照と選択はInternal Directive Planner以降に限定する。
 
+### 4.3 高確信度の表面Fallback
+
+通常会話の「どんな」「一般的な教えて」「疑問符・語尾」「仮定表現」は固定語句で分類せず、Input Meaning Interpreterへ渡す。
+
+一方、LLM失敗時にも既存Activityの安全な会話回帰を維持するため、意味がほぼ一意な次の表現だけはFallbackとして残す。
+
+- 定義・ルール質問: `〜って何`、`〜とは何`、`ルールを教えて`、`仕組みを教えて`、`意味を教えて`
+- 明示的な過去参照: `昨日`等の時点表現と、`〜をした`等の完了表現の組合せ
+- 明示的な実行・停止・否定要求
+
+これらはActivityを選択・実行するための分類ではない。`KNOWLEDGE`と`PAST_EVENT`は会話へ固定し、説明、過去参照、否定、仮定がActivity開始へ誤変換されないために使用する。
+
 ## 5. 後続移行条件
 
 進行中Activityを二段階LLMへ移行する前に、次の契約を追加する。
