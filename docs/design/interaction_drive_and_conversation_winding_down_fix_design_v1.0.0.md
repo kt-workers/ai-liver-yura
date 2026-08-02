@@ -1,4 +1,4 @@
-# 画面操作Driveと会話終了判定 修正設計 v1.0.0
+# 画面操作Driveと会話終了判定 修正設計 v1.0.1
 
 ## 1. 目的
 
@@ -36,15 +36,18 @@
 - tap
 - double_tap
 - long_press
+- phaseを持たない旧形式のdrag
 
-連続接触は次の係数でDriveへ反映する。
+`contact_phase`または`gesture_phase`を持つ連続接触は、次の係数でDriveへ反映する。
 
 | phase | stimulus_scale | 意味 |
 |---|---:|---|
 | start | 0.35 | 接触開始による注意喚起 |
 | update | 0.00 | 座標追跡サンプル。新規刺激にしない |
 | end | 0.15 | 接触終了の弱い変化 |
-| phase不明の連続接触 | 0.25 | 互換入力向けの保守的刺激 |
+| phase不明かつ`continuous_contact=true` | 0.25 | 互換入力向けの保守的刺激 |
+
+phaseと`continuous_contact`を持たない旧形式のdragは、一回の完結した操作として`stimulus_scale=1.0`を維持する。これにより、既存Simulatorや旧クライアントの契約を壊さず、現行Web画面から送られる連続座標サンプルだけを抑制する。
 
 Drive変化は既存の単発操作量へ係数を掛ける。
 
@@ -81,7 +84,7 @@ Traceへ次を追加する。
 
 ## 5. 受入条件
 
-1. 単発tapの既存Drive変化を維持する
+1. 単発tapと旧形式dragの既存Drive変化を維持する
 2. 連続ドラッグの`update`を何十件処理してもDriveが変化しない
 3. dragの開始・終了は一つのジェスチャーとして弱くDriveへ反映される
 4. 画面のサンプリング頻度だけでEnergyが0へ到達しない
