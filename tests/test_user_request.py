@@ -11,6 +11,22 @@ def test_explicit_execution_requests_remain_available_as_fallback() -> None:
         assert interpret_user_request(text).kind == UserRequestKind.EXECUTION
 
 
+def test_explicit_participation_proposals_remain_execution_fallbacks() -> None:
+    for text in (
+        "エコー活動しませんか？",
+        "一緒にエコー活動しない？",
+        "深海生物縛りでエコー活動しませんか？",
+        "動物だけでエコー活動をやろう",
+        "食べ物縛りのエコー活動に付き合って",
+        "エコー活動でもしようか",
+        "語尾をつないで遊ぼう",
+    ):
+        interpretation = interpret_user_request(text)
+        assert interpretation.kind is UserRequestKind.EXECUTION
+        assert interpretation.confidence >= 0.9
+        assert interpretation.reason == "explicit_participation_proposal_fallback"
+
+
 def test_explicit_activity_explanation_and_past_reference_remain_fallbacks() -> None:
     cases = (
         ("エコー活動って何？", UserRequestKind.KNOWLEDGE),
@@ -29,6 +45,8 @@ def test_ordinary_conversation_requires_semantic_interpretation() -> None:
     for text in (
         "今日はいい天気だね",
         "今はどんな気分ですか？",
+        "今怒ってる？",
+        "今は何をしたい気分ですか？",
         "おすすめを教えて",
         "もし明日やるとしたら",
     ):
