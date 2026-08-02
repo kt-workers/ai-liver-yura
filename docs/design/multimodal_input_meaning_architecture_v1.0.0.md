@@ -217,7 +217,95 @@ STTは文字起こしを担当し、発話意図の最終判定は行わない�
 
 表面上は推量にも見えるが、会話履歴を含めてclosingと判断する。
 
-## 7. 応答モードとの接続
+## 7. 好奇心と対象別関心
+
+全体的な`curiosity`と、現在の対象へ向いている`interest`は分離する。
+
+### 7.1 全体的な好奇心
+
+`drive.curiosity`は、未知を知りたがる全体傾向である。
+
+これは質問しやすさの基礎値には使えるが、特定の対象へ質問する直接根拠にはしない。
+
+```text
+curiosity=1.0
+```
+
+だけでは、現在の話題について未解決の情報があるとは限らない。
+
+### 7.2 対象別関心
+
+現在どの対象へ意識が向いているかは`TargetInterest`として表す。
+
+```json
+{
+  "target_type": "place",
+  "target_id": "しまなみ海道",
+  "interest_intensity": 0.95,
+  "knowledge_gap": 0.80,
+  "satiation": 0.20,
+  "reason": "場所は分かったが景色や体験がまだ分からない"
+}
+```
+
+各値の意味は次の通りである。
+
+- `interest_intensity`: 対象へ注意を向け続ける強さ
+- `knowledge_gap`: その対象について未解決の情報が残っている度合い
+- `satiation`: その対象についてすでに十分聞いた、理解した度合い
+
+質問へ使う対象別シグナルは次とする。
+
+```text
+question_signal
+=
+interest_intensity
+× knowledge_gap
+× (1 - satiation)
+```
+
+関心度が高くても知識ギャップが小さい、または満足度が高い場合は質問を続けない。
+
+```text
+関心度: 高い
+知識ギャップ: 小さい
+満足度: 高い
+→ 好きな話題として反応するが、追加質問はしない
+```
+
+### 7.3 用語の境界
+
+```text
+Trait / Drive Curiosity
+  キャラクター全体の探索傾向
+
+Target Interest
+  現在どの対象へどれだけ意識が向いているか
+
+Knowledge Gap
+  対象について何がまだ分からないか
+
+Satiation
+  対象についてどれだけ十分に聞いたか
+```
+
+対象別関心は感情そのものではなく、会話・知覚対象に対する一時的な注意状態として扱う。
+
+対象は話題だけに限定しない。
+
+- topic
+- person
+- place
+- object
+- activity
+- event
+- emotion
+- utterance
+- visual observation
+- sound
+- touch target
+
+## 8. 応答モードとの接続
 
 Conversation Response Modeは入力文字列を再解析しない。
 
@@ -230,16 +318,18 @@ speech_act=answer
 
 speech_act=acknowledgement
   → 通常はlisten/reactを支持
-  → 強いcuriosity等があればaskも選択可能
+  → 対象別の関心、知識ギャップが高く、満足度が低い場合だけaskも選択可能
 
 speech_act=closing
   → listen/react/observeを支持
   → askと長いspeakを抑える
 ```
 
-これは固定禁止ではなく、LLM意味解析結果と内的状態を合わせた重み付けである。
+全体好奇心が高いだけでは、相槌後の質問を回復させない。
 
-## 8. LLMと決定論的処理の境界
+これは固定禁止ではなく、LLM意味解析結果、対象別関心、内的状態を合わせた重み付けである。
+
+## 9. LLMと決定論的処理の境界
 
 LLMが担当する。
 
@@ -250,11 +340,14 @@ LLMが担当する。
 - conversation phase
 - 応答期待
 - 話題・参照対象
+- 対象別関心候補と知識ギャップの推定
 - confidenceと根拠参照
 
 Coreが決定論的に担当する。
 
 - 構造の検証
+- `TargetInterest`の型・範囲検証
+- 対象別question signalの計算
 - 候補外Activityの拒否
 - Activity Definitionとの照合
 - Capability確認
@@ -265,7 +358,7 @@ Coreが決定論的に担当する。
 
 LLMはActivityの実行成功、Providerの可用性、権限、安全性を確定しない。
 
-## 9. Fallback
+## 10. Fallback
 
 意味解析が失敗した場合は、表面文字列の疑問符や語尾から意味を断定しない。
 
@@ -280,27 +373,32 @@ LLMはActivityの実行成功、Providerの可用性、権限、安全性を確�
 
 - `speech_act=statement`
 - `conversation_phase=active`
+- `active_interests=[]`
 - Activityを実行しない通常会話
 - 必要な場合だけ確認応答
 
 Fallbackは仮の意味であり、実行許可を与えない。
 
-## 10. 今回の実装範囲
+## 11. 今回の実装範囲
 
 - Situation Evaluator Promptへ文脈的speech act定義を追加
 - `answer`、`acknowledgement`、`closing`を契約へ追加
 - 応答モード選択から入力文字列の表面判定を除外
-- LLM意味解析結果を応答モードの重みとして使用
+- `TargetInterest`契約を追加
+- 全体好奇心を質問判断の補助値へ縮小
+- 対象別関心、知識ギャップ、満足度によるquestion signalを追加
 - 実プロセスログで確認された質問連続と終了局面の問題を回帰テスト化
 
-## 11. 後続実装
+## 12. 後続実装
 
-1. `ModalityObservation`契約の追加
-2. Text／Speech／Vision／Touch Adapterの共通入力Port
-3. `StructuredInputMeaning`の独立ドメイン型
-4. Input Meaning InterpreterとSituation Evaluatorの責務分離
-5. 音声prosodyの入力
-6. Vision observationの入力
-7. 複数媒体の時間窓によるFusion
-8. confidence・evidenceのTrace表示
-9. 管理画面で意味解析結果を確認する診断UI
+1. Situation Evaluator出力から`active_interests`を生成・検証する
+2. `ActivityPlan`から`ResponseContext`へ`active_interests`を投影する
+3. `ModalityObservation`契約の追加
+4. Text／Speech／Vision／Touch Adapterの共通入力Port
+5. `StructuredInputMeaning`の独立ドメイン型
+6. Input Meaning InterpreterとSituation Evaluatorの責務分離
+7. 音声prosodyの入力
+8. Vision observationの入力
+9. 複数媒体の時間窓によるFusion
+10. confidence・evidenceのTrace表示
+11. 管理画面で意味解析結果を確認する診断UI
