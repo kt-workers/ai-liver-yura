@@ -51,6 +51,13 @@ def interpret_user_request(text: str) -> UserRequestInterpretation:
             "explicit_past_event_reference_fallback",
         )
 
+    if _is_explicit_participation_proposal(normalized):
+        return UserRequestInterpretation(
+            UserRequestKind.EXECUTION,
+            0.9,
+            "explicit_participation_proposal_fallback",
+        )
+
     if normalized.endswith(
         (
             "してください",
@@ -107,5 +114,26 @@ def _is_explicit_past_event_reference(text: str) -> bool:
             "に行った",
             "を見た",
             "を聞いた",
+        )
+    )
+
+
+def _is_explicit_participation_proposal(text: str) -> bool:
+    """共同実行を直接提案する語尾だけを、LLM失敗時の実行要求として扱う。"""
+
+    return text.endswith(
+        (
+            "しませんか？",
+            "しませんか?",
+            "しない？",
+            "しない?",
+            "しよう",
+            "しようよ",
+            "しようか",
+            "しようか？",
+            "しようか?",
+            "やろう",
+            "遊ぼう",
+            "付き合って",
         )
     )
