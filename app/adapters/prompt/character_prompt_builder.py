@@ -5,6 +5,7 @@ from dataclasses import asdict
 
 from app.domain.character import CharacterProfile
 from app.domain.character_response import ResponseContext
+from app.domain.conversation_utterance_policy import constrain_response_content_plan
 from app.domain.response_content_plan import ResponseContentPlan
 
 
@@ -18,8 +19,21 @@ class CharacterPromptBuilder:
         character_profile: CharacterProfile | None,
         correction: str | None,
     ) -> str:
-        content_plan = ResponseContentPlan.from_context(
+        raw_content_plan = ResponseContentPlan.from_context(
             context.memory.get("response_content_plan")
+        )
+        content_plan = constrain_response_content_plan(
+            raw_content_plan,
+            speech_act=context.speech_act,
+            conversation_phase=context.conversation_phase,
+            initiative_level=context.initiative_level,
+        )
+        low_initiative_greeting = (
+            context.initiative_level <= 0.25
+            and (
+                context.speech_act == "greeting"
+                or context.conversation_phase == "greeting"
+            )
         )
         response_context = asdict(context)
         response_memory = response_context.get("memory")
@@ -45,6 +59,10 @@ class CharacterPromptBuilder:
             ),
             "Response Content PlanはDesire・Motivation・Moralの観測値から導出した発話表現専用の方針である。"
             "行動選択、実行許可、事実認定、権限、安全判定を変更しない。",
+            "Response Content Planのobservation_onlyはActivity選択へ介入しない安全属性であり、"
+            "会話上の質問や話題展開を必ず許可する意味ではない。確定済みのspeech_act、"
+            "conversation_phase、initiative_levelにより縮退されたquestion_budgetと"
+            "new_direction_budgetを厳守する。",
             "Response Context、allowed_claims、forbidden_claims、speech_act、conversation_phase、"
             "initiative_level、Character ProfileがResponse Content Planより常に優先する。",
             "conversation_strategiesとvalue_emphasesは、その語を発話で説明・列挙する指示ではない。"
@@ -91,6 +109,14 @@ class CharacterPromptBuilder:
             '"evidence":"発話中の根拠"}]}',
             "claimsはspeech本文が実際に主張している事実だけを記載する。",
         ]
+        if low_initiative_greeting:
+            lines.extend(
+                [
+                    "この応答は低主体性の挨拶である。ユーザーの挨拶への短い返礼だけに留める。",
+                    "質問、自己開示、新しい話題、最近の関心や好みの持ち出し、"
+                    "会話を先回りして広げる提案を行わない。原則1文、長くても2文にする。",
+                ]
+            )
         if correction:
             lines.append(f"前回応答の修正理由: {correction}")
         if context.activity_type == "stimulus_reaction":
