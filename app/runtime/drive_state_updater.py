@@ -262,7 +262,6 @@ class DriveStateUpdater:
         )
         continuous_contact = (
             event.payload.get("continuous_contact") is True
-            or stimulus_kind == "drag"
             or contact_phase in {"start", "update", "end"}
         )
         if continuous_contact:
@@ -273,7 +272,7 @@ class DriveStateUpdater:
             if contact_phase == "update":
                 return 0.0, f"{stimulus_kind}_update", contact_phase
             return 0.25, f"{stimulus_kind}_continuous", contact_phase
-        if stimulus_kind in {"tap", "double_tap", "long_press"}:
+        if stimulus_kind in {"tap", "double_tap", "long_press", "drag"}:
             return 1.0, stimulus_kind, contact_phase
         return 0.5, stimulus_kind, contact_phase
 
