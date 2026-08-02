@@ -24,10 +24,21 @@ class ResponseGeneratorRoleAdapter:
 
     def __init__(self, generator: ResponseGenerator) -> None:
         self._generator = generator
+        self._separated_situation_evaluator: object | None = None
 
     async def evaluate(self, activity: Activity) -> str:
+        if self._uses_separated_user_input_path(activity):
+            separated = await self._evaluate_user_input_with_separated_roles(activity)
+            if separated is not None:
+                return separated
         raw = await self._generate(activity)
         return self._normalize_situation_evaluation(raw)
+
+    async def interpret_input_meaning(self, activity: Activity) -> str:
+        return await self._generate(activity)
+
+    async def plan_internal_directive(self, activity: Activity) -> str:
+        return await self._generate(activity)
 
     async def generate_character_response(self, activity: Activity) -> str:
         return await self._generate(activity)
@@ -38,6 +49,35 @@ class ResponseGeneratorRoleAdapter:
     async def _generate(self, activity: Activity) -> str:
         result = await self._generator.generate_response(activity)
         return str(result)
+
+    @staticmethod
+    def _uses_separated_user_input_path(activity: Activity) -> bool:
+        return (
+            activity.context.get("llm_role") == "situation_evaluator"
+            and bool(str(activity.context.get("user_input") or "").strip())
+        )
+
+    async def _evaluate_user_input_with_separated_roles(
+        self,
+        activity: Activity,
+    ) -> str | None:
+        if self._separated_situation_evaluator is None:
+            from app.runtime.separated_situation_evaluator import (
+                SeparatedSituationEvaluationAdapter,
+            )
+
+            self._separated_situation_evaluator = SeparatedSituationEvaluationAdapter(
+                self,
+                self,
+                character_profile=getattr(
+                    self._generator,
+                    "_character_profile",
+                    None,
+                ),
+            )
+        evaluate = getattr(self._separated_situation_evaluator, "evaluate")
+        result = await evaluate(activity)
+        return str(result) if result is not None else None
 
     @staticmethod
     def _normalize_situation_evaluation(raw: str) -> str:
