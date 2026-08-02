@@ -100,6 +100,66 @@ def test_update_by_user_interaction_applies_a_gentle_attention_change() -> None:
     assert updated_drive.energy == pytest.approx(0.79)
 
 
+def test_drag_update_samples_do_not_saturate_drive() -> None:
+    updater = DriveStateUpdater()
+    drive = DriveState(curiosity=0.4, engagement=0.4, boredom=0.5, energy=0.8)
+    gesture_id = "drag-long-running"
+    events = [
+        AgentEvent(
+            event_type=AgentEventType.USER_INTERACTION,
+            payload={
+                "stimulus_kind": "drag",
+                "gesture_id": gesture_id,
+                "gesture_phase": "start",
+                "continuous_contact": True,
+            },
+        ),
+        *[
+            AgentEvent(
+                event_type=AgentEventType.USER_INTERACTION,
+                payload={
+                    "stimulus_kind": "drag",
+                    "gesture_id": gesture_id,
+                    "gesture_phase": "update",
+                    "continuous_contact": True,
+                },
+            )
+            for _ in range(80)
+        ],
+        AgentEvent(
+            event_type=AgentEventType.USER_INTERACTION,
+            payload={
+                "stimulus_kind": "drag",
+                "gesture_id": gesture_id,
+                "gesture_phase": "end",
+                "continuous_contact": True,
+            },
+        ),
+    ]
+
+    for event in events:
+        drive = updater.update_by_event(drive, event)
+
+    assert drive.curiosity < 0.45
+    assert drive.engagement < 0.55
+    assert drive.boredom > 0.45
+    assert drive.energy > 0.79
+
+
+def test_drag_update_phase_without_continuous_flag_is_ignored_for_drive() -> None:
+    updater = DriveStateUpdater()
+    drive = DriveState(curiosity=0.4, engagement=0.4, boredom=0.5, energy=0.8)
+    event = AgentEvent(
+        event_type=AgentEventType.USER_INTERACTION,
+        payload={
+            "stimulus_kind": "drag",
+            "contact_phase": "update",
+        },
+    )
+
+    assert updater.update_by_event(drive, event) == drive
+
+
 # New tests for app and stream started events
 def test_update_by_app_started_preserves_drive() -> None:
     updater = DriveStateUpdater()
