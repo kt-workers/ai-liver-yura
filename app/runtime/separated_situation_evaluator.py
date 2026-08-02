@@ -12,7 +12,12 @@ from app.domain.cognitive_direction import (
     TargetInterestUpdate,
     ValidatedActionPlan,
 )
-from app.ports.cognitive_direction import InputMeaningModel, InternalDirectiveModel
+from app.ports.cognitive_direction import (
+    InputMeaningModel,
+    InputMeaningPromptBuilder,
+    InternalDirectiveModel,
+    InternalDirectivePromptBuilder,
+)
 from app.runtime.cognitive_direction_services import (
     InputMeaningInterpreter,
     InternalDirectivePlanner,
@@ -29,16 +34,20 @@ class SeparatedSituationEvaluationAdapter:
         input_model: InputMeaningModel,
         directive_model: InternalDirectiveModel,
         *,
+        input_prompt_builder: InputMeaningPromptBuilder,
+        directive_prompt_builder: InternalDirectivePromptBuilder,
         character_profile: object = None,
         input_interpreter: InputMeaningInterpreter | None = None,
         directive_planner: InternalDirectivePlanner | None = None,
         validator: InternalDirectiveValidator | None = None,
     ) -> None:
         self._input_interpreter = input_interpreter or InputMeaningInterpreter(
-            input_model
+            input_model,
+            prompt_builder=input_prompt_builder,
         )
         self._directive_planner = directive_planner or InternalDirectivePlanner(
-            directive_model
+            directive_model,
+            prompt_builder=directive_prompt_builder,
         )
         self._validator = validator or InternalDirectiveValidator()
         self._character_profile = _profile_context(character_profile)
@@ -99,18 +108,16 @@ class SeparatedSituationEvaluationAdapter:
                     value = None
                 if isinstance(value, dict):
                     return dict(value)
+        planner_state = activity.context.get("planner_state")
+        state = planner_state if isinstance(planner_state, dict) else {}
         return {
             "event": {
                 "type": "user_text",
                 "source_event_id": activity.context.get("event_id"),
                 "user_text": activity.context.get("user_input", ""),
             },
-            "emotion": activity.context.get("planner_state", {}).get("emotion", {})
-            if isinstance(activity.context.get("planner_state"), dict)
-            else {},
-            "drive": activity.context.get("planner_state", {}).get("drive", {})
-            if isinstance(activity.context.get("planner_state"), dict)
-            else {},
+            "emotion": state.get("emotion", {}),
+            "drive": state.get("drive", {}),
             "available_activities": [],
         }
 
@@ -214,5 +221,3 @@ def _legacy_active_interests(
             }
         )
     return interests
-
-
