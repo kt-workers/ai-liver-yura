@@ -4,11 +4,16 @@ from app.core.plugins.user_request import UserRequestKind, interpret_user_reques
 def test_explicit_execution_requests_remain_available_as_fallback() -> None:
     for text in (
         "エコー活動を始めよう",
+        "エコー活動を始めたい",
+        "星間航行シミュレーションを開始したい",
         "今日の最新ニュースを検索して",
         "私の声を聞いて",
         "一緒に星間航行シミュレーションを始めよう",
     ):
-        assert interpret_user_request(text).kind == UserRequestKind.EXECUTION
+        interpretation = interpret_user_request(text)
+        assert interpretation.kind is UserRequestKind.EXECUTION
+        assert interpretation.confidence >= 0.9
+        assert interpretation.reason == "explicit_action_request_fallback"
 
 
 def test_explicit_participation_proposals_remain_execution_fallbacks() -> None:
