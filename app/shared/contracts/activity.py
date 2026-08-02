@@ -25,9 +25,14 @@ class ActivityOperation(str, Enum):
 
 
 class SpeechAct(str, Enum):
+    """入力表面ではなく、文脈を含む意味上の会話機能。"""
+
     GREETING = "greeting"
     STATEMENT = "statement"
     QUESTION = "question"
+    ANSWER = "answer"
+    ACKNOWLEDGEMENT = "acknowledgement"
+    CLOSING = "closing"
     REQUEST = "request"
     PROPOSAL = "proposal"
     COMMAND = "command"
@@ -97,7 +102,7 @@ class ActivitySafetyRiskClass(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class ActivitySafetyRequirement:
-    """Activity候補が宣言するSafety要件の正規契約。"""
+    """候補Safety要件の比較に使用する宣言上のRisk class。"""
 
     policy_id: str
     risk_class: ActivitySafetyRiskClass
