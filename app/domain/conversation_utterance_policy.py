@@ -358,6 +358,7 @@ def apply_conversation_response_policy(
         drive=drive,
     )
     mode = decision.mode
+    semantic_speech_act = speech_act.strip().lower()
     strategies = plan.conversation_strategies
     self_disclosure = plan.self_disclosure_level
     question_budget = plan.question_budget
@@ -414,6 +415,13 @@ def apply_conversation_response_policy(
             allowed=_SPEAK_STRATEGIES | {"continue_conversation", "share_reaction"},
             default="continue_conversation",
         )
+
+    if semantic_speech_act == "answer":
+        question_budget = 0
+    elif semantic_speech_act == "closing":
+        self_disclosure = "none"
+        question_budget = 0
+        new_direction_budget = 0
 
     effective_plan = replace(
         plan,
