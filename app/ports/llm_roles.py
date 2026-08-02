@@ -74,7 +74,8 @@ class ResponseGeneratorRoleAdapter:
         return await self._generate(activity)
 
     async def generate_character_response(self, activity: Activity) -> str:
-        return await self._generate(activity)
+        raw = await self._generate(activity)
+        return self._normalize_closing_character_response(activity, raw)
 
     async def validate_character_response(self, activity: Activity) -> str:
         return await self._generate(activity)
@@ -156,6 +157,59 @@ class ResponseGeneratorRoleAdapter:
         context = dict(activity.context)
         context["plugin_prompt_override"] = f"{prompt}\n{boundary}"
         return replace(activity, context=context)
+
+    @classmethod
+    def _normalize_closing_character_response(
+        cls,
+        activity: Activity,
+        raw: str,
+    ) -> str:
+        response_context = activity.context.get("response_context")
+        if not isinstance(response_context, dict):
+            return raw
+        if str(response_context.get("conversation_phase") or "") != "winding_down":
+            return raw
+        payload = cls._json_object(raw)
+        if payload is not None and cls._has_character_speech(payload):
+            return raw
+        return json.dumps(
+            {
+                "speech": "おやすみ。またね。",
+                "expression": "soft_smile",
+                "gesture": None,
+                "voice_intent": {"style": "gentle"},
+                "pause_after_seconds": 0.0,
+                "reaction_segments": None,
+                "claims": [
+                    {
+                        "claim_type": "conversation_only",
+                        "activity_type": None,
+                        "operation": None,
+                        "status": None,
+                        "target": None,
+                        "confidence": 1.0,
+                        "evidence": "終了意図に対する短い別れの挨拶",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
+    @staticmethod
+    def _has_character_speech(payload: dict[str, object]) -> bool:
+        speech = payload.get("speech")
+        if isinstance(speech, str) and speech.strip():
+            return True
+        segments = payload.get("reaction_segments")
+        if not isinstance(segments, list):
+            return False
+        return any(
+            isinstance(item, dict)
+            and isinstance(item.get("speech"), str)
+            and bool(str(item["speech"]).strip())
+            for item in segments
+        )
 
     @classmethod
     def _is_legacy_situation_evaluation(cls, raw: str | None) -> bool:
