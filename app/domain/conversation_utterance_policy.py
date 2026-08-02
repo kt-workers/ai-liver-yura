@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import Enum
 
+from app.domain.behavior import TargetInterest
 from app.domain.response_content_plan import ResponseContentPlan
 
 
@@ -174,6 +175,7 @@ def decide_conversation_response_mode(
     initiative_level: float,
     user_input: str = "",
     drive: Mapping[str, object] | None = None,
+    active_interests: Sequence[TargetInterest | Mapping[str, object]] | None = None,
 ) -> ConversationResponseDecision:
     """LLM意味解析結果と内的状態を重み付けし、応答モードを選ぶ。"""
 
@@ -183,10 +185,11 @@ def decide_conversation_response_mode(
     initiative = _clamp_01(initiative_level)
     low_information = normalized_speech_act == "acknowledgement"
     drive_values = drive or {}
-    curiosity = _number(drive_values.get("curiosity"), default=0.5)
+    baseline_curiosity = _number(drive_values.get("curiosity"), default=0.5)
     engagement = _number(drive_values.get("engagement"), default=0.5)
     boredom = _number(drive_values.get("boredom"), default=0.0)
     energy = _number(drive_values.get("energy"), default=0.7)
+    target_interest_signal = _target_interest_signal(active_interests)
 
     scores = {
         ConversationResponseMode.ANSWER: -0.20,
@@ -227,7 +230,9 @@ def decide_conversation_response_mode(
         scores[ConversationResponseMode.SPEAK] += 0.20
         reasons.append("new_direction_budget_available")
 
-    scores[ConversationResponseMode.ASK] += 0.40 * curiosity
+    # 全体的な好奇心は質問しやすさの基礎傾向に留める。
+    scores[ConversationResponseMode.ASK] += 0.10 * baseline_curiosity
+    scores[ConversationResponseMode.ASK] += 0.50 * target_interest_signal
     scores[ConversationResponseMode.ASK] += 0.12 * engagement
     scores[ConversationResponseMode.ASK] += 0.20 * boredom
     scores[ConversationResponseMode.ASK] += 0.10 * energy
@@ -236,11 +241,13 @@ def decide_conversation_response_mode(
     scores[ConversationResponseMode.SPEAK] += 0.35 * boredom
     scores[ConversationResponseMode.SPEAK] += 0.15 * energy
     scores[ConversationResponseMode.OBSERVE] += 0.25 * (1.0 - energy)
+    if target_interest_signal > 0.0:
+        reasons.append("target_interest_and_knowledge_gap_support_asking")
 
     primary_desire = (plan.primary_desire or "").strip().lower()
     if primary_desire == "curiosity":
-        scores[ConversationResponseMode.ASK] += 0.25
-        reasons.append("curiosity_desire_supports_asking")
+        scores[ConversationResponseMode.ASK] += 0.10
+        reasons.append("baseline_curiosity_desire_supports_exploration")
     elif primary_desire == "connection":
         scores[ConversationResponseMode.LISTEN] += 0.25
         scores[ConversationResponseMode.ASK] += 0.15
@@ -278,10 +285,9 @@ def decide_conversation_response_mode(
         scores[ConversationResponseMode.REACT] += 0.30
         scores[ConversationResponseMode.ASK] -= 0.40
         scores[ConversationResponseMode.SPEAK] -= 0.40
-        curiosity_overflow = max(0.0, curiosity - 0.80)
-        if curiosity_overflow > 0.0:
-            scores[ConversationResponseMode.ASK] += 2.50 * curiosity_overflow
-            reasons.append("strong_curiosity_overcomes_acknowledgement_weight")
+        scores[ConversationResponseMode.ASK] += 0.80 * target_interest_signal
+        if target_interest_signal > 0.0:
+            reasons.append("target_interest_can_overcome_acknowledgement_weight")
         reasons.append("semantic_acknowledgement_supports_listening")
     elif normalized_speech_act == "closing":
         scores[ConversationResponseMode.LISTEN] += 0.80
@@ -346,6 +352,7 @@ def apply_conversation_response_policy(
     initiative_level: float,
     user_input: str = "",
     drive: Mapping[str, object] | None = None,
+    active_interests: Sequence[TargetInterest | Mapping[str, object]] | None = None,
 ) -> tuple[ResponseContentPlan, ConversationResponseDecision]:
     """状態駆動の応答モードを、Character用の実効Planへ投影する。"""
 
@@ -356,6 +363,7 @@ def apply_conversation_response_policy(
         initiative_level=initiative_level,
         user_input=user_input,
         drive=drive,
+        active_interests=active_interests,
     )
     mode = decision.mode
     semantic_speech_act = speech_act.strip().lower()
@@ -449,6 +457,7 @@ def constrain_response_content_plan(
     initiative_level: float,
     user_input: str = "",
     drive: Mapping[str, object] | None = None,
+    active_interests: Sequence[TargetInterest | Mapping[str, object]] | None = None,
 ) -> ResponseContentPlan:
     """互換API。状態駆動の応答モードを反映した実効Planだけを返す。"""
 
@@ -459,6 +468,7 @@ def constrain_response_content_plan(
         initiative_level=initiative_level,
         user_input=user_input,
         drive=drive,
+        active_interests=active_interests,
     )
     return effective_plan
 
@@ -473,6 +483,25 @@ def _retain_or_default(
     if not retained:
         retained = (default,)
     return tuple(dict.fromkeys(retained))[:3]
+
+
+def _target_interest_signal(
+    active_interests: Sequence[TargetInterest | Mapping[str, object]] | None,
+) -> float:
+    if not active_interests:
+        return 0.0
+    signals: list[float] = []
+    for item in active_interests[:8]:
+        if isinstance(item, TargetInterest):
+            signals.append(item.question_signal)
+            continue
+        if not isinstance(item, Mapping):
+            continue
+        interest = _number(item.get("interest_intensity"), default=0.0)
+        knowledge_gap = _number(item.get("knowledge_gap"), default=0.0)
+        satiation = _number(item.get("satiation"), default=0.0)
+        signals.append(interest * knowledge_gap * (1.0 - satiation))
+    return max(signals, default=0.0)
 
 
 def _number(value: object, *, default: float) -> float:
