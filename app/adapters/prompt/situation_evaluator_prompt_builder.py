@@ -160,7 +160,8 @@ class SituationEvaluatorPromptBuilder:
         }
         return "\n".join(
             [
-                "あなたはSituation Evaluatorです。入力を文脈込みで意味解析し、次のActivityを決定します。",
+                "あなたはSituation Evaluatorです。入力を総合して次のActivityを決定します。"
+                "その前提として、入力を文脈込みで意味解析してください。",
                 "入力の表面文字列、語尾、疑問符の有無だけで分類せず、conversation_history、"
                 "直前のゆら発話、現在の話題、入力媒体から得られた意味情報を総合してください。",
                 "# speech_actの意味契約",
