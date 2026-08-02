@@ -23,3 +23,22 @@ def test_knowledge_past_and_negative_statements_are_not_execution_requests() -> 
         interpret_user_request("エコー活動はしたくない").kind == UserRequestKind.NEGATIVE
     )
     assert interpret_user_request("今日はいい天気だね").kind == UserRequestKind.CHAT
+
+
+def test_conversation_winding_down_is_not_an_execution_request() -> None:
+    for text in (
+        "今日はそろそろ終わりにしようか",
+        "今日はここまでにしよう",
+        "またあした",
+        "ばいばい",
+        "おやすみ",
+    ):
+        interpretation = interpret_user_request(text)
+        assert interpretation.kind == UserRequestKind.CHAT
+        assert interpretation.reason == "conversation_winding_down"
+
+
+def test_activity_stop_request_remains_execution_request() -> None:
+    interpretation = interpret_user_request("エコー活動を終わりにしよう")
+
+    assert interpretation.kind == UserRequestKind.EXECUTION
