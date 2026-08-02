@@ -6,8 +6,8 @@ from dataclasses import asdict
 from app.domain.character import CharacterProfile
 from app.domain.character_response import ResponseContext
 from app.domain.conversation_utterance_policy import (
-    constrain_response_content_plan,
-    is_low_information_acknowledgement,
+    ConversationResponseMode,
+    apply_conversation_response_policy,
 )
 from app.domain.response_content_plan import ResponseContentPlan
 
@@ -25,22 +25,13 @@ class CharacterPromptBuilder:
         raw_content_plan = ResponseContentPlan.from_context(
             context.memory.get("response_content_plan")
         )
-        content_plan = constrain_response_content_plan(
+        content_plan, response_decision = apply_conversation_response_policy(
             raw_content_plan,
             speech_act=context.speech_act,
             conversation_phase=context.conversation_phase,
             initiative_level=context.initiative_level,
             user_input=context.user_input,
-        )
-        low_initiative_greeting = (
-            context.initiative_level <= 0.25
-            and (
-                context.speech_act == "greeting"
-                or context.conversation_phase == "greeting"
-            )
-        )
-        acknowledgement_input = is_low_information_acknowledgement(
-            context.user_input
+            drive=context.drive,
         )
         response_context = asdict(context)
         response_memory = response_context.get("memory")
@@ -58,20 +49,28 @@ class CharacterPromptBuilder:
             ),
             "次の確定済みResponse Contextだけを事実として表現する。",
             json.dumps(response_context, ensure_ascii=False, default=str),
+            "Conversation Response Decision: "
+            + json.dumps(
+                response_decision.as_context(),
+                ensure_ascii=False,
+                default=str,
+            ),
             "Response Content Plan: "
             + json.dumps(
                 content_plan.as_context(),
                 ensure_ascii=False,
                 default=str,
             ),
+            "Conversation Response Decisionは、Drive、Desire由来のResponse Content Plan、"
+            "speech_act、conversation_phase、initiative_level、入力情報量から今回の関わり方を"
+            "選んだ確定済み方針である。入力種別だけによる一律の質問禁止・話題禁止ではない。",
             "Response Content PlanはDesire・Motivation・Moralの観測値から導出した発話表現専用の方針である。"
             "行動選択、実行許可、事実認定、権限、安全判定を変更しない。",
-            "Response Content Planのobservation_onlyはActivity選択へ介入しない安全属性であり、"
-            "会話上の質問や話題展開を必ず許可する意味ではない。確定済みのspeech_act、"
-            "conversation_phase、initiative_levelにより縮退されたquestion_budgetと"
+            "Response Content Planのobservation_onlyはActivity選択へ介入しない安全属性である。"
+            "今回選ばれたConversation Response Decisionと、そこから導出されたquestion_budget、"
             "new_direction_budgetを厳守する。",
             "Response Context、allowed_claims、forbidden_claims、speech_act、conversation_phase、"
-            "initiative_level、Character ProfileがResponse Content Planより常に優先する。",
+            "Conversation Response Decision、Character ProfileがResponse Content Planより常に優先する。",
             "conversation_strategiesとvalue_emphasesは、その語を発話で説明・列挙する指示ではない。"
             "自然な応答の焦点、態度、言い回しとして必要な分だけ反映する。",
             "内部の欲望名、Moral項目名、数値、観測理由をユーザーへ開示しない。"
@@ -99,8 +98,8 @@ class CharacterPromptBuilder:
             "breathinessとemotional_leakageは0.0〜1.0で指定する。",
             "emotion、発話内容の明暗、話のテンポ、溜めを総合し、発話後の間を"
             "pause_after_secondsで決める。",
-            "speech_act、conversation_phase、initiative_levelは確定済みの対話方針である。"
-            "その関与度と主体性の範囲に合わせて発話の長さと展開量を決める。",
+            "speech_act、conversation_phase、initiative_levelは確定済みの対話状況である。"
+            "Conversation Response Decisionが選んだ関わり方の範囲で発話の長さと展開量を決める。",
             "話し方、強弱、抑揚、表情、間のまとまりが変わる箇所では、発話を短い"
             "reaction_segmentsへ分ける。各segmentはspeech/expression/gesture/"
             "voice_intent/pause_after_secondsを持つ。",
@@ -116,22 +115,12 @@ class CharacterPromptBuilder:
             '"evidence":"発話中の根拠"}]}',
             "claimsはspeech本文が実際に主張している事実だけを記載する。",
         ]
-        if low_initiative_greeting:
-            lines.extend(
-                [
-                    "この応答は低主体性の挨拶である。ユーザーの挨拶への短い返礼だけに留める。",
-                    "質問、自己開示、新しい話題、最近の関心や好みの持ち出し、"
-                    "会話を先回りして広げる提案を行わない。原則1文、長くても2文にする。",
-                ]
+        lines.extend(
+            self._response_mode_instructions(
+                response_decision.mode,
+                low_information_input=response_decision.low_information_input,
             )
-        elif acknowledgement_input:
-            lines.extend(
-                [
-                    "user_inputは短い相槌または同意である。受け止めや小さな反応を示す短い1文だけを返す。",
-                    "直前の発話内容を別の言葉で要約・復唱・説明し直さない。質問、自己開示、"
-                    "新しい話題、追加提案を行わず、会話を無理に広げない。",
-                ]
-            )
+        )
         if correction:
             lines.append(f"前回応答の修正理由: {correction}")
         if context.activity_type == "stimulus_reaction":
@@ -169,3 +158,66 @@ class CharacterPromptBuilder:
                 ]
             )
         return "\n".join(lines)
+
+    @staticmethod
+    def _response_mode_instructions(
+        mode: ConversationResponseMode,
+        *,
+        low_information_input: bool,
+    ) -> list[str]:
+        lines = [
+            f"今回のConversation Response Modeは{mode.value}である。"
+            "別のモードへ勝手に切り替えない。"
+        ]
+        if mode is ConversationResponseMode.ANSWER:
+            lines.extend(
+                [
+                    "ユーザーの質問へ直接答える。最初の文で結論または明確な回答を示し、"
+                    "関係のない話題や質問で回答を回避しない。",
+                    "不足情報のため回答不能な場合だけ、その不足を明示する。question_budgetが0なら"
+                    "追加質問を行わない。",
+                ]
+            )
+        elif mode is ConversationResponseMode.ASK:
+            lines.extend(
+                [
+                    "ユーザーの発話を短く受け止めたうえで、現在の好奇心や関心に結び付く"
+                    "自然な質問を1件まで行う。",
+                    "直前発話を長く言い換えてから質問せず、無関係な新話題へ飛ばない。",
+                ]
+            )
+        elif mode is ConversationResponseMode.LISTEN:
+            lines.extend(
+                [
+                    "今は聞く側に回る。短い受け止めや同意を返し、相手が続けられる余白を残す。",
+                    "直前の内容を要約・復唱・説明し直さず、質問、新話題、自己開示を追加しない。",
+                ]
+            )
+        elif mode is ConversationResponseMode.REACT:
+            lines.extend(
+                [
+                    "今は内容への小さな感情反応を返す。感情、表情、声色を中心に原則1文で表現する。",
+                    "直前発話の説明的な言い換えや、反応と無関係な話題展開を行わない。",
+                ]
+            )
+        elif mode is ConversationResponseMode.SPEAK:
+            lines.extend(
+                [
+                    "今は自分から一つの考え、選好、補足、話題方向を示す。"
+                    "Response Content Planの範囲内で一つに絞る。",
+                    "既出内容を言い換えて水増しせず、question_budgetが0なら質問形式にしない。",
+                ]
+            )
+        else:
+            lines.extend(
+                [
+                    "今は観察し、会話を急いで進めない。短い相槌、間、表情または最小限の一文に留める。",
+                    "新しい質問、説明、自己開示、話題展開を追加しない。",
+                ]
+            )
+        if low_information_input:
+            lines.append(
+                "user_inputは新しい情報が少ない相槌・同意である。入力の意味を長く復唱しない。"
+                "ただし質問や発話の可否は入力分類ではなく、上記で選ばれたResponse Modeに従う。"
+            )
+        return lines
