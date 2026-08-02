@@ -1,7 +1,7 @@
 from app.core.plugins.user_request import UserRequestKind, interpret_user_request
 
 
-def test_execution_requests_are_identified_without_feature_ids() -> None:
+def test_explicit_execution_requests_remain_available_as_fallback() -> None:
     for text in (
         "エコー活動を始めよう",
         "今日の最新ニュースを検索して",
@@ -11,15 +11,21 @@ def test_execution_requests_are_identified_without_feature_ids() -> None:
         assert interpret_user_request(text).kind == UserRequestKind.EXECUTION
 
 
-def test_knowledge_past_and_negative_statements_are_not_execution_requests() -> None:
-    assert (
-        interpret_user_request("エコー活動って何？").kind
-        == UserRequestKind.KNOWLEDGE
-    )
-    assert (
-        interpret_user_request("昨日エコー活動をした").kind == UserRequestKind.PAST_EVENT
-    )
-    assert (
-        interpret_user_request("エコー活動はしたくない").kind == UserRequestKind.NEGATIVE
-    )
-    assert interpret_user_request("今日はいい天気だね").kind == UserRequestKind.CHAT
+def test_ordinary_conversation_requires_semantic_interpretation() -> None:
+    for text in (
+        "エコー活動って何？",
+        "昨日エコー活動をした",
+        "今日はいい天気だね",
+        "今はどんな気分ですか？",
+        "もし明日やるとしたら",
+    ):
+        interpretation = interpret_user_request(text)
+        assert interpretation.kind == UserRequestKind.AMBIGUOUS
+        assert interpretation.reason == "semantic_interpretation_required"
+
+
+def test_explicit_negative_request_remains_high_confidence_fallback() -> None:
+    interpretation = interpret_user_request("エコー活動はしたくない")
+
+    assert interpretation.kind == UserRequestKind.NEGATIVE
+    assert interpretation.confidence == 0.95
