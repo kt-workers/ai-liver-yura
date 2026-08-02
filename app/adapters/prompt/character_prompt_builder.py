@@ -5,7 +5,10 @@ from dataclasses import asdict
 
 from app.domain.character import CharacterProfile
 from app.domain.character_response import ResponseContext
-from app.domain.conversation_utterance_policy import constrain_response_content_plan
+from app.domain.conversation_utterance_policy import (
+    constrain_response_content_plan,
+    is_low_information_acknowledgement,
+)
 from app.domain.response_content_plan import ResponseContentPlan
 
 
@@ -27,6 +30,7 @@ class CharacterPromptBuilder:
             speech_act=context.speech_act,
             conversation_phase=context.conversation_phase,
             initiative_level=context.initiative_level,
+            user_input=context.user_input,
         )
         low_initiative_greeting = (
             context.initiative_level <= 0.25
@@ -34,6 +38,9 @@ class CharacterPromptBuilder:
                 context.speech_act == "greeting"
                 or context.conversation_phase == "greeting"
             )
+        )
+        acknowledgement_input = is_low_information_acknowledgement(
+            context.user_input
         )
         response_context = asdict(context)
         response_memory = response_context.get("memory")
@@ -115,6 +122,14 @@ class CharacterPromptBuilder:
                     "この応答は低主体性の挨拶である。ユーザーの挨拶への短い返礼だけに留める。",
                     "質問、自己開示、新しい話題、最近の関心や好みの持ち出し、"
                     "会話を先回りして広げる提案を行わない。原則1文、長くても2文にする。",
+                ]
+            )
+        elif acknowledgement_input:
+            lines.extend(
+                [
+                    "user_inputは短い相槌または同意である。受け止めや小さな反応を示す短い1文だけを返す。",
+                    "直前の発話内容を別の言葉で要約・復唱・説明し直さない。質問、自己開示、"
+                    "新しい話題、追加提案を行わず、会話を無理に広げない。",
                 ]
             )
         if correction:
