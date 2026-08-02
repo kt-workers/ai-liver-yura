@@ -52,10 +52,19 @@ class ResponseGeneratorRoleAdapter:
 
     @staticmethod
     def _uses_separated_user_input_path(activity: Activity) -> bool:
-        return (
-            activity.context.get("llm_role") == "situation_evaluator"
-            and bool(str(activity.context.get("user_input") or "").strip())
-        )
+        if activity.context.get("llm_role") != "situation_evaluator":
+            return False
+        if not str(activity.context.get("user_input") or "").strip():
+            return False
+        planner_state = activity.context.get("planner_state")
+        if isinstance(planner_state, dict) and isinstance(
+            planner_state.get("ongoing_activity"),
+            dict,
+        ):
+            # 進行中Activityの入力意味はプラグイン契約に依存するため、
+            # 専用契約が整うまでは既存の安全な継続判定へ委ねる。
+            return False
+        return True
 
     async def _evaluate_user_input_with_separated_roles(
         self,
