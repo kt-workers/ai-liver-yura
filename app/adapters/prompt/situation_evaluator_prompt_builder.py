@@ -137,7 +137,10 @@ class SituationEvaluatorPromptBuilder:
             "operation": "start|continue|stop|explain|discuss|null",
             "goal": "string",
             "constraints": "object",
-            "speech_act": "greeting|statement|question|request|proposal|command",
+            "speech_act": (
+                "greeting|statement|question|answer|acknowledgement|closing|"
+                "request|proposal|command"
+            ),
             "conversation_phase": "greeting|opening|active|winding_down|null",
             "initiative_level": "number|null",
             "negated": "boolean",
@@ -157,8 +160,26 @@ class SituationEvaluatorPromptBuilder:
         }
         return "\n".join(
             [
-                "あなたはSituation Evaluatorです。入力を総合して次のActivityを決定します。",
-                "# 判断規則",
+                "あなたはSituation Evaluatorです。入力を文脈込みで意味解析し、次のActivityを決定します。",
+                "入力の表面文字列、語尾、疑問符の有無だけで分類せず、conversation_history、"
+                "直前のゆら発話、現在の話題、入力媒体から得られた意味情報を総合してください。",
+                "# speech_actの意味契約",
+                "greeting: 会話開始・再接触の挨拶。",
+                "question: 人間がゆらから回答を得ようとしている入力。表面上の疑問符は必須ではない。",
+                "answer: 直前のゆらの質問・確認に対する回答。断片語や名詞だけでも文脈上の回答ならanswer。",
+                "acknowledgement: 相槌、同意、受領、短い反応で、主な目的が話題追加や回答要求ではない。",
+                "closing: 会話を締める、区切る、離脱する意図。conversation_phaseは原則winding_down。",
+                "statement: 新しい事実・経験・意見の共有。直前質問への回答ならstatementではなくanswer。",
+                "request: ゆらに会話上または実行上の行為を依頼する。",
+                "proposal: 共同の方針・候補・次の進め方を提案する。",
+                "command: 権限を伴う明示的指示。authorityとは別に意味だけを分類する。",
+                "例: ゆら『どこへ行ったの？』→人間『しまなみ海道だよ』はanswer。",
+                "例: ゆら『どんな景色？』→人間『海と橋が一望できるところかな』はanswer。",
+                "例: 人間『うん。そうだね』はacknowledgement。",
+                "例: 人間『今日のところはこのくらいかな』はclosing。",
+                "例: 人間『もしもし？』は文脈に応じてgreetingまたはquestionであり、"
+                "疑問符だけを理由にquestionへ固定しない。",
+                "# Activity判断規則",
                 "ユーザーの明示意図、進行中Activity、意味的一致をMotivationより優先してください。",
                 (
                     "通常会話を続ける場合はactivity_typeをconversation、"
