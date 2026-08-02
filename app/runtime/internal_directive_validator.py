@@ -64,12 +64,11 @@ class InternalDirectiveValidator:
             if activity_intent is not None:
                 activity_intent = None
                 notes.append("closing_rejects_activity_intent")
-            if response_mode not in {ResponseMode.LISTEN, ResponseMode.REACT}:
-                response_mode = ResponseMode.REACT
+            response_mode = ResponseMode.REACT
             question_budget = 0
             new_direction_budget = 0
             initiative_level = min(initiative_level, 0.15)
-            notes.append("closing_forces_winding_down")
+            notes.append("closing_forces_brief_farewell")
 
         if response_mode is ResponseMode.ASK and not self._has_target_question_signal(
             directive.target_interest_updates
@@ -81,6 +80,13 @@ class InternalDirectiveValidator:
 
         requirements = list(directive.content_requirements)
         forbidden_claims = list(directive.forbidden_claims)
+        if meaning.input_speech_act is InputSpeechAct.CLOSING:
+            requirements.append(
+                "短い別れの挨拶を1文で返し、speechを空にしない"
+            )
+            forbidden_claims.append(
+                "会話を再開する質問、新しい話題、長い説明を追加する"
+            )
         existence_boundaries = self._existence_boundaries(character_profile)
         self._add_internal_state_requirements(
             meaning,
@@ -194,7 +200,7 @@ class InternalDirectiveValidator:
                 f"現在値: joy={joy}, amusement={amusement}, engagement={engagement}"
             )
             forbidden_claims.append(
-                "joyとamusementが低いの㑫engagementだけを根拠として楽しいと断定する"
+                "joyとamusementが低いのにengagementだけを根拠として楽しいと断定する"
             )
         elif target_id in {"anger", "怒り", "angry"}:
             anger = _nested_number(emotion_state, "anger")
