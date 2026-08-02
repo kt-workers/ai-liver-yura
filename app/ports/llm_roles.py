@@ -25,17 +25,25 @@ class ResponseGeneratorRoleAdapter:
     def __init__(self, generator: ResponseGenerator) -> None:
         self._generator = generator
         self._separated_situation_evaluator: object | None = None
+        self._last_input_meaning_raw: str | None = None
 
     async def evaluate(self, activity: Activity) -> str:
         if self._uses_separated_user_input_path(activity):
+            self._last_input_meaning_raw = None
             separated = await self._evaluate_user_input_with_separated_roles(activity)
             if separated is not None:
                 return separated
+            if self._is_legacy_situation_evaluation(self._last_input_meaning_raw):
+                return self._normalize_situation_evaluation(
+                    self._last_input_meaning_raw or ""
+                )
         raw = await self._generate(activity)
         return self._normalize_situation_evaluation(raw)
 
     async def interpret_input_meaning(self, activity: Activity) -> str:
-        return await self._generate(activity)
+        raw = await self._generate(activity)
+        self._last_input_meaning_raw = raw
+        return raw
 
     async def plan_internal_directive(self, activity: Activity) -> str:
         return await self._generate(activity)
@@ -94,23 +102,26 @@ class ResponseGeneratorRoleAdapter:
         result = await evaluate(activity)
         return str(result) if result is not None else None
 
-    @staticmethod
-    def _normalize_situation_evaluation(raw: str) -> str:
+    @classmethod
+    def _is_legacy_situation_evaluation(cls, raw: str | None) -> bool:
+        if raw is None:
+            return False
+        payload = cls._json_object(raw)
+        if payload is None:
+            return False
+        return {
+            "decision",
+            "activity_type",
+            "operation",
+            "confidence",
+        }.issubset(payload)
+
+    @classmethod
+    def _normalize_situation_evaluation(cls, raw: str) -> str:
         """LLMが返すCore内部の会話名をSituation契約へ正規化する。"""
 
-        text = raw.strip()
-        if text.startswith("```"):
-            lines = text.splitlines()
-            if len(lines) < 3 or lines[-1].strip() != "```":
-                return raw
-            text = "\n".join(lines[1:-1]).strip()
-            if text.startswith("json"):
-                text = text[4:].strip()
-        try:
-            payload = json.loads(text)
-        except (json.JSONDecodeError, TypeError):
-            return raw
-        if not isinstance(payload, dict):
+        payload = cls._json_object(raw)
+        if payload is None:
             return raw
         if payload.get("activity_type") != "conversation_with_user":
             return raw
@@ -120,3 +131,19 @@ class ResponseGeneratorRoleAdapter:
         if normalized.get("operation") in {"start", "continue"}:
             normalized["operation"] = "discuss"
         return json.dumps(normalized, ensure_ascii=False, separators=(",", ":"))
+
+    @staticmethod
+    def _json_object(raw: str) -> dict[str, object] | None:
+        text = raw.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if len(lines) < 3 or lines[-1].strip() != "```":
+                return None
+            text = "\n".join(lines[1:-1]).strip()
+            if text.startswith("json"):
+                text = text[4:].strip()
+        try:
+            payload = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        return dict(payload) if isinstance(payload, dict) else None
