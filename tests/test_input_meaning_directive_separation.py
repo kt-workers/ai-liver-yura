@@ -6,7 +6,11 @@ import pytest
 
 from app.adapters.prompt import CharacterPromptBuilder, ResponseValidatorPromptBuilder
 from app.domain.activities import Activity, ActivityType
-from app.domain.character_response import ActivityExecutionStatus, CharacterResponse, ResponseContext
+from app.domain.character_response import (
+    ActivityExecutionStatus,
+    CharacterResponse,
+    ResponseContext,
+)
 from app.domain.cognitive_direction import (
     ConversationPhaseSignal,
     ExpectedResponse,
@@ -25,6 +29,14 @@ from app.runtime.cognitive_direction_pipeline import (
     InternalDirectiveValidator,
 )
 
+DESIRE_QUESTION = "\u4eca\u306f\u4f55\u3092\u3057\u305f\u3044\u6c17\u5206\u3067\u3059\u304b\uff1f"
+ANGER_QUESTION = "\u4eca\u6012\u3063\u3066\u308b\uff1f"
+FUN_QUESTION = "\u697d\u3057\u3044\uff1f"
+HUNGER_QUESTION = "\u304a\u8179\u306f\u7a7a\u3044\u3066\u308b\uff1f"
+SHIMANAMI = "\u3057\u307e\u306a\u307f\u6d77\u9053"
+ACK = "\u4e86\u89e3"
+CLOSING = "\u4eca\u65e5\u306f\u3053\u306e\u304f\u3089\u3044\u304b\u306a"
+
 
 class StubResponseGenerator:
     def __init__(self, responses: list[str]) -> None:
@@ -42,6 +54,7 @@ def meaning_json(
     expected: str = "direct_answer",
     target_id: str | None = "current_desire",
     *,
+    target_type: str = "agent_internal_state",
     intent: str = "ask_agent_internal_state",
     phase: str = "continue",
 ) -> str:
@@ -51,7 +64,7 @@ def meaning_json(
             "primary_intent": intent,
             "expected_response": expected,
             "target": (
-                {"type": "agent_internal_state", "id": target_id}
+                {"type": target_type, "id": target_id}
                 if target_id is not None
                 else None
             ),
@@ -63,17 +76,16 @@ def meaning_json(
             "past_reference": False,
             "conversation_phase_signal": phase,
             "confidence": 0.96,
-            "reason": "入力側の意味を分類した",
-        },
-        ensure_ascii=False,
+            "reason": "input meaning classified",
+        }
     )
 
 
-def directive_json(mode: str = "speak", updates: list[dict[str, object]] | None = None) -> str:
+def directive_json(mode: str = "speak") -> str:
     return json.dumps(
         {
             "response_mode": mode,
-            "response_goal": "入力へ自然に応答する",
+            "response_goal": "respond naturally",
             "activity_intent": None,
             "initiative_level": 0.8,
             "question_budget": 1,
@@ -81,18 +93,21 @@ def directive_json(mode: str = "speak", updates: list[dict[str, object]] | None 
             "self_disclosure_level": 0.8,
             "content_requirements": [],
             "forbidden_claims": [],
-            "target_interest_updates": updates or [],
+            "target_interest_updates": [],
             "state_update_proposals": [],
-            "reason": "構造化入力に基づく",
-        },
-        ensure_ascii=False,
+            "reason": "based on structured input",
+        }
     )
 
 
 def planning_input(text: str) -> dict[str, object]:
     return {
-        "event": {"type": "user_text", "source_event_id": "event-1", "user_text": text},
-        "situation": {"current_topic": "現在の気分"},
+        "event": {
+            "type": "user_text",
+            "source_event_id": "event-1",
+            "user_text": text,
+        },
+        "situation": {"current_topic": "current mood"},
         "emotion": {"joy": 0.0, "amusement": 0.0, "engagement": 0.94},
         "drive": {"curiosity": 1.0},
         "relationship": {},
@@ -108,22 +123,31 @@ def planning_input(text: str) -> dict[str, object]:
 
 
 def legacy_prompt(data: dict[str, object]) -> str:
-    return "\n".join(("legacy", "# 判断入力", json.dumps(data, ensure_ascii=False), "# 出力JSONスキーマ", "{}"))
+    return "\n".join(
+        (
+            "legacy",
+            "# \u5224\u65ad\u5165\u529b",
+            json.dumps(data),
+            "# \u51fa\u529bJSON\u30b9\u30ad\u30fc\u30de",
+            "{}",
+        )
+    )
 
 
 @pytest.mark.asyncio
-async def test_runtime_uses_two_roles_and_does_not_reinterpret_raw_text() -> None:
-    text = "今は何をしたい気分ですか？"
+async def test_runtime_uses_two_roles_without_raw_text_reinterpretation() -> None:
     generator = StubResponseGenerator([meaning_json(), directive_json()])
     adapter = ResponseGeneratorRoleAdapter(generator)
     activity = Activity(
         ActivityType.BEHAVIOR_PLANNING,
-        "意味解析",
+        "interpret",
         context={
-            "plugin_prompt_override": legacy_prompt(planning_input(text)),
+            "plugin_prompt_override": legacy_prompt(
+                planning_input(DESIRE_QUESTION)
+            ),
             "llm_role": "situation_evaluator",
             "event_id": "event-1",
-            "user_input": text,
+            "user_input": DESIRE_QUESTION,
         },
         source_event_id="event-1",
     )
@@ -134,25 +158,74 @@ async def test_runtime_uses_two_roles_and_does_not_reinterpret_raw_text() -> Non
         "input_meaning_interpreter",
         "internal_directive_planner",
     ]
-    assert payload["speech_act"] == "question"
     validated = payload["constraints"]["_internal_directive"]
+    assert payload["speech_act"] == "question"
     assert validated["internal_directive"]["response_mode"] == "answer"
     assert validated["internal_directive"]["question_budget"] == 0
-    assert text not in generator.activities[1].context["plugin_prompt_override"]
+    assert DESIRE_QUESTION not in generator.activities[1].context[
+        "plugin_prompt_override"
+    ]
 
 
 @pytest.mark.parametrize(
     ("raw", "act", "expected", "target_id"),
     (
-        (meaning_json(), InputSpeechAct.QUESTION, ExpectedResponse.DIRECT_ANSWER, "current_desire"),
-        (meaning_json(target_id="anger"), InputSpeechAct.QUESTION, ExpectedResponse.DIRECT_ANSWER, "anger"),
-        (meaning_json("answer", "acknowledgement", "しまなみ海道", intent="answer_agent_question"), InputSpeechAct.ANSWER, ExpectedResponse.ACKNOWLEDGEMENT, "しまなみ海道"),
-        (meaning_json("acknowledgement", "continue_listening", None, intent="acknowledge"), InputSpeechAct.ACKNOWLEDGEMENT, ExpectedResponse.CONTINUE_LISTENING, None),
-        (meaning_json("closing", "acknowledgement", None, intent="close", phase="winding_down"), InputSpeechAct.CLOSING, ExpectedResponse.ACKNOWLEDGEMENT, None),
+        (
+            meaning_json(),
+            InputSpeechAct.QUESTION,
+            ExpectedResponse.DIRECT_ANSWER,
+            "current_desire",
+        ),
+        (
+            meaning_json(target_id="anger"),
+            InputSpeechAct.QUESTION,
+            ExpectedResponse.DIRECT_ANSWER,
+            "anger",
+        ),
+        (
+            meaning_json(
+                "answer",
+                "acknowledgement",
+                SHIMANAMI,
+                target_type="place",
+                intent="answer_agent_question",
+            ),
+            InputSpeechAct.ANSWER,
+            ExpectedResponse.ACKNOWLEDGEMENT,
+            SHIMANAMI,
+        ),
+        (
+            meaning_json(
+                "acknowledgement",
+                "continue_listening",
+                None,
+                intent="acknowledge",
+            ),
+            InputSpeechAct.ACKNOWLEDGEMENT,
+            ExpectedResponse.CONTINUE_LISTENING,
+            None,
+        ),
+        (
+            meaning_json(
+                "closing",
+                "acknowledgement",
+                None,
+                intent="close",
+                phase="winding_down",
+            ),
+            InputSpeechAct.CLOSING,
+            ExpectedResponse.ACKNOWLEDGEMENT,
+            None,
+        ),
     ),
 )
-def test_input_meaning_contract(raw: str, act: InputSpeechAct, expected: ExpectedResponse, target_id: str | None) -> None:
-    parsed = InputMeaningJsonParser().parse(raw, source_text="入力")
+def test_input_meaning_contract(
+    raw: str,
+    act: InputSpeechAct,
+    expected: ExpectedResponse,
+    target_id: str | None,
+) -> None:
+    parsed = InputMeaningJsonParser().parse(raw, source_text="input")
     assert parsed is not None
     assert parsed.input_speech_act is act
     assert parsed.expected_response is expected
@@ -176,10 +249,13 @@ def structured(
     )
 
 
-def directive(mode: ResponseMode, updates: tuple[TargetInterestUpdate, ...] = ()) -> InternalDirective:
+def directive(
+    mode: ResponseMode,
+    updates: tuple[TargetInterestUpdate, ...] = (),
+) -> InternalDirective:
     return InternalDirective(
         response_mode=mode,
-        response_goal="応答する",
+        response_goal="respond",
         activity_intent=None,
         initiative_level=0.9,
         question_budget=1,
@@ -189,7 +265,12 @@ def directive(mode: ResponseMode, updates: tuple[TargetInterestUpdate, ...] = ()
     )
 
 
-def validate(meaning: StructuredInputMeaning, command: InternalDirective, text: str = "入力", profile: dict[str, object] | None = None):
+def validate(
+    meaning: StructuredInputMeaning,
+    command: InternalDirective,
+    text: str = "input",
+    profile: dict[str, object] | None = None,
+):
     return InternalDirectiveValidator().validate(
         meaning,
         command,
@@ -200,31 +281,51 @@ def validate(meaning: StructuredInputMeaning, command: InternalDirective, text: 
 
 def test_direct_question_acknowledgement_and_closing_force_budgets() -> None:
     question = validate(
-        structured(InputSpeechAct.QUESTION, expected=ExpectedResponse.DIRECT_ANSWER, target=InputTarget("agent_internal_state", "current_desire")),
+        structured(
+            InputSpeechAct.QUESTION,
+            expected=ExpectedResponse.DIRECT_ANSWER,
+            target=InputTarget("agent_internal_state", "current_desire"),
+        ),
         directive(ResponseMode.ASK),
     )
-    acknowledgement = validate(structured(InputSpeechAct.ACKNOWLEDGEMENT), directive(ResponseMode.SPEAK), "了解")
+    acknowledgement = validate(
+        structured(InputSpeechAct.ACKNOWLEDGEMENT),
+        directive(ResponseMode.SPEAK),
+        ACK,
+    )
     closing = validate(
-        structured(InputSpeechAct.CLOSING, phase=ConversationPhaseSignal.WINDING_DOWN),
+        structured(
+            InputSpeechAct.CLOSING,
+            phase=ConversationPhaseSignal.WINDING_DOWN,
+        ),
         directive(ResponseMode.ASK),
-        "今日はこのくらいかな",
+        CLOSING,
     )
 
     assert question.directive.response_mode is ResponseMode.ANSWER
     for plan in (question, acknowledgement, closing):
         assert plan.directive.question_budget == 0
         assert plan.directive.new_direction_budget == 0
-    assert acknowledgement.directive.response_mode in {ResponseMode.LISTEN, ResponseMode.REACT}
-    assert closing.directive.response_mode in {ResponseMode.LISTEN, ResponseMode.REACT}
+    assert acknowledgement.directive.response_mode in {
+        ResponseMode.LISTEN,
+        ResponseMode.REACT,
+    }
+    assert closing.directive.response_mode in {
+        ResponseMode.LISTEN,
+        ResponseMode.REACT,
+    }
 
 
 def test_curiosity_requires_target_interest_and_knowledge_gap() -> None:
-    global_only = validate(structured(InputSpeechAct.STATEMENT), directive(ResponseMode.ASK))
+    global_only = validate(
+        structured(InputSpeechAct.STATEMENT),
+        directive(ResponseMode.ASK),
+    )
     update = TargetInterestUpdate(
         target_type="place",
-        target_id="しまなみ海道",
+        target_id=SHIMANAMI,
         interest_change=InterestChange.SLIGHTLY_INCREASE,
-        new_knowledge_gaps=("訪れた時間帯",),
+        new_knowledge_gaps=("visit time",),
     )
     targeted = validate(
         structured(InputSpeechAct.STATEMENT),
@@ -239,25 +340,48 @@ def test_curiosity_requires_target_interest_and_knowledge_gap() -> None:
 
 def test_internal_state_and_existence_boundaries_are_enforced() -> None:
     joy = validate(
-        structured(InputSpeechAct.QUESTION, expected=ExpectedResponse.DIRECT_ANSWER, target=InputTarget("agent_internal_state", "joy")),
+        structured(
+            InputSpeechAct.QUESTION,
+            expected=ExpectedResponse.DIRECT_ANSWER,
+            target=InputTarget("agent_internal_state", "joy"),
+        ),
         directive(ResponseMode.ANSWER),
-        "楽しい？",
+        FUN_QUESTION,
     )
     hunger = validate(
-        structured(InputSpeechAct.QUESTION, expected=ExpectedResponse.DIRECT_ANSWER, target=InputTarget("agent_internal_state", "physical_hunger")),
+        structured(
+            InputSpeechAct.QUESTION,
+            expected=ExpectedResponse.DIRECT_ANSWER,
+            target=InputTarget("agent_internal_state", "physical_hunger"),
+        ),
         directive(ResponseMode.ANSWER),
-        "お腹は空いてる？",
-        {"existence": {"physical_capabilities": ["物理的な身体を持たない"]}},
+        HUNGER_QUESTION,
+        {
+            "existence": {
+                "physical_capabilities": [
+                    "\u7269\u7406\u7684\u306a\u8eab\u4f53\u3092\u6301\u305f\u306a\u3044"
+                ]
+            }
+        },
     )
 
     joy_requirements = "\n".join(joy.directive.content_requirements)
-    assert "joy=0.0" in joy_requirements and "engagement=0.94" in joy_requirements
-    assert "楽しいと断定" in "\n".join(joy.directive.forbidden_claims)
-    assert "人間と同じ物理的身体感覚は持たない" in "\n".join(hunger.directive.content_requirements)
-    assert "今は空腹でないだけ" in "\n".join(hunger.directive.forbidden_claims)
+    assert "joy=0.0" in joy_requirements
+    assert "engagement=0.94" in joy_requirements
+    assert "\u697d\u3057\u3044\u3068\u65ad\u5b9a" in "\n".join(
+        joy.directive.forbidden_claims
+    )
+    human_body_claim = (
+        "\u4eba\u9593\u3068\u540c\u3058\u7269\u7406\u7684\u8eab\u4f53\u611f\u899a"
+        "\u306f\u6301\u305f\u306a\u3044"
+    )
+    assert human_body_claim in "\n".join(hunger.directive.content_requirements)
+    assert "\u4eca\u306f\u7a7a\u8179\u3067\u306a\u3044\u3060\u3051" in "\n".join(
+        hunger.directive.forbidden_claims
+    )
 
 
-def test_parsers_are_strict_and_prompts_receive_validated_directive() -> None:
+def test_strict_parser_and_validated_directive_prompt_transport() -> None:
     malformed = json.loads(directive_json())
     malformed["question_budget"] = 0.5
     assert InternalDirectiveJsonParser().parse(json.dumps(malformed)) is None
@@ -265,29 +389,36 @@ def test_parsers_are_strict_and_prompts_receive_validated_directive() -> None:
     directive_context = {
         "internal_directive": {
             "response_mode": "answer",
-            "response_goal": "存在設定に沿って答える",
+            "response_goal": "respect existence boundary",
             "question_budget": 0,
             "new_direction_budget": 0,
-            "content_requirements": ["物理的身体を持たないことを明示する"],
-            "forbidden_claims": ["今はお腹が空いていないだけと答える"],
+            "content_requirements": ["no physical body"],
+            "forbidden_claims": ["ordinary human hunger"],
         },
-        "character_profile": {"name": "ゆら"},
-        "existence_boundaries": ["物理的な身体を持たない"],
+        "character_profile": {"name": "yura"},
+        "existence_boundaries": ["no physical body"],
     }
     context = ResponseContext(
-        user_input="お腹は空いてる？",
+        user_input=HUNGER_QUESTION,
         activity_type="conversation",
         operation="discuss",
         status=ActivityExecutionStatus.WAITING_INPUT,
         failure_reason=None,
-        result_summary="会話を継続する",
+        result_summary="continue conversation",
         allowed_claims=(),
         forbidden_claims=(),
-        activity_goal="質問へ答える",
+        activity_goal="answer question",
         constraints={"_internal_directive": directive_context},
     )
-    character_prompt = CharacterPromptBuilder().build(context, character_profile=None, correction=None)
-    validator_prompt = ResponseValidatorPromptBuilder().build(context, CharacterResponse(speech="今は空いてないよ。"))
+    character_prompt = CharacterPromptBuilder().build(
+        context,
+        character_profile=None,
+        correction=None,
+    )
+    validator_prompt = ResponseValidatorPromptBuilder().build(
+        context,
+        CharacterResponse(speech="not hungry"),
+    )
 
     assert "Validated Internal Directive" in character_prompt
     assert "existence_boundaries" in character_prompt
