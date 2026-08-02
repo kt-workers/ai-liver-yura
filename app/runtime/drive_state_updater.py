@@ -201,14 +201,8 @@ class DriveStateUpdater:
         stimulus_scale: float,
     ) -> DriveState:
         return DriveState(
-            curiosity=self._increase_toward_one(
-                drive.curiosity,
-                0.05 * stimulus_scale,
-            ),
-            engagement=self._increase_toward_one(
-                drive.engagement,
-                (2.0 / 15.0) * stimulus_scale,
-            ),
+            curiosity=drive.curiosity + (0.03 * stimulus_scale),
+            engagement=drive.engagement + (0.08 * stimulus_scale),
             boredom=drive.boredom - (0.08 * stimulus_scale),
             energy=drive.energy - (0.01 * stimulus_scale),
         )
