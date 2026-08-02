@@ -1,4 +1,4 @@
-# 画面操作Driveと会話終了判定 修正設計 v1.0.2
+# 画面操作Driveと会話終了判定 修正設計 v1.0.3
 
 ## 1. 目的
 
@@ -104,7 +104,27 @@ Traceへ次を追加する。
 7. Activityを明示した停止要求は実行要求のまま維持される
 8. 既存の感情評価・Reaction Policy・Plugin Activity境界を変更しない
 
-## 6. 再評価条件
+## 6. 回帰テスト
+
+GitHub Actionsで次を確認した。
+
+```text
+1587 passed
+1 warning
+47.39 seconds
+```
+
+実行コマンドは`pytest -x -vv`である。Ruff、mypy、Blackは依存として導入されるが、このWorkflowでは実行されていない。
+
+追加した主な回帰:
+
+- 80件のdrag updateでもDriveが飽和しない
+- `continuous_contact`省略時もphase=`update`ならDriveへ加算しない
+- 単発tapとphaseなしdragの既存挙動を維持する
+- 会話終了文が未対応Activity実行要求にならない
+- Activityを明示した停止要求は実行要求として残る
+
+## 7. 再評価条件
 
 修正後の実プロセスを新しく起動し、次を確認する。
 
