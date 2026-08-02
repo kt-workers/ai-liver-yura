@@ -109,3 +109,20 @@ def test_character_prompt_projects_effective_greeting_plan_and_explicit_limit() 
     assert "質問、自己開示、新しい話題" in prompt
     assert "最近の関心や好みの持ち出し" in prompt
     assert "observation_onlyはActivity選択へ介入しない安全属性" in prompt
+
+
+def test_character_prompt_keeps_active_conversation_budgets() -> None:
+    prompt = CharacterPromptBuilder().build(
+        _context(
+            initiative_level=0.65,
+            phase="active",
+            speech_act="question",
+        ),
+        character_profile=None,
+        correction=None,
+    )
+
+    assert '"question_budget": 1' in prompt
+    assert '"new_direction_budget": 1' in prompt
+    assert '"self_disclosure_level": "brief"' in prompt
+    assert "この応答は低主体性の挨拶である" not in prompt
