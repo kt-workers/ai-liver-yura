@@ -62,6 +62,10 @@ class ResponseGeneratorRoleAdapter:
         activity: Activity,
     ) -> str | None:
         if self._separated_situation_evaluator is None:
+            from app.adapters.prompt.cognitive_direction_prompt_builders import (
+                InputMeaningPromptBuilder,
+                InternalDirectivePromptBuilder,
+            )
             from app.runtime.separated_situation_evaluator import (
                 SeparatedSituationEvaluationAdapter,
             )
@@ -69,6 +73,8 @@ class ResponseGeneratorRoleAdapter:
             self._separated_situation_evaluator = SeparatedSituationEvaluationAdapter(
                 self,
                 self,
+                input_prompt_builder=InputMeaningPromptBuilder(),
+                directive_prompt_builder=InternalDirectivePromptBuilder(),
                 character_profile=getattr(
                     self._generator,
                     "_character_profile",
