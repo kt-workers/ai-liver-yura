@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import Protocol
 
 from app.domain.activities import Activity
@@ -41,7 +42,8 @@ class ResponseGeneratorRoleAdapter:
         return self._normalize_situation_evaluation(raw)
 
     async def interpret_input_meaning(self, activity: Activity) -> str:
-        raw = await self._generate(activity)
+        request = self._with_input_meaning_role_boundary(activity)
+        raw = await self._generate(request)
         self._last_input_meaning_raw = raw
         return raw
 
@@ -101,6 +103,23 @@ class ResponseGeneratorRoleAdapter:
         evaluate = getattr(self._separated_situation_evaluator, "evaluate")
         result = await evaluate(activity)
         return str(result) if result is not None else None
+
+    @staticmethod
+    def _with_input_meaning_role_boundary(activity: Activity) -> Activity:
+        prompt = activity.context.get("plugin_prompt_override")
+        if not isinstance(prompt, str):
+            return activity
+        boundary = "\n".join(
+            (
+                "# 移行互換用の役割境界",
+                "旧Situation Evaluatorの責務『入力を総合して次のActivityを決定』は、"
+                "Input Meaning Interpreterでは行わない。",
+                '{"available_activities":"not provided to Input Meaning Interpreter"}',
+            )
+        )
+        context = dict(activity.context)
+        context["plugin_prompt_override"] = f"{prompt}\n{boundary}"
+        return replace(activity, context=context)
 
     @classmethod
     def _is_legacy_situation_evaluation(cls, raw: str | None) -> bool:
