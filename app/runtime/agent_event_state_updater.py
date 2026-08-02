@@ -10,6 +10,7 @@ from app.domain.memory import EmotionHistoryEntry, EpisodicMemory
 from app.domain.morals import MoralState
 from app.domain.relationships import RelationshipMemory, RelationshipState
 from app.runtime.agent_state import AgentState
+from app.runtime.continuous_interaction_segmenter import ContinuousInteractionSegmenter
 from app.runtime.desire_state_updater import DesireStateUpdater
 from app.runtime.drive_state_updater import DriveStateUpdater
 from app.runtime.emotion_appraiser import EmotionAppraiser
@@ -49,6 +50,7 @@ class AgentEventStateUpdater:
         emotion_state_updater: EmotionStateUpdater | None = None,
         moral_state_updater: MoralStateUpdater | None = None,
         relationship_state_updater: RelationshipStateUpdater | None = None,
+        interaction_segmenter: ContinuousInteractionSegmenter | None = None,
     ) -> None:
         self._drive_state_updater = drive_state_updater or DriveStateUpdater()
         self._desire_state_updater = desire_state_updater or DesireStateUpdater()
@@ -58,6 +60,9 @@ class AgentEventStateUpdater:
         self._relationship_state_updater = (
             relationship_state_updater or RelationshipStateUpdater()
         )
+        self._interaction_segmenter = (
+            interaction_segmenter or ContinuousInteractionSegmenter()
+        )
 
     def update(self, state: AgentState, event: AgentEvent) -> AgentEventStateUpdateResult:
         before_drive = state.current_drive
@@ -65,6 +70,30 @@ class AgentEventStateUpdater:
         before_emotion = state.current_emotion
         before_moral = state.current_moral
         before_relationship = state.relationship_memory.current
+        input_source = self._input_source(event)
+
+        segment = self._interaction_segmenter.decide(event)
+        if not segment.should_apply:
+            return AgentEventStateUpdateResult(
+                state=state,
+                appraisal=EmotionAppraisal(
+                    reason="interaction_segment_skipped",
+                    source_event_id=event.event_id,
+                ),
+                before_drive=before_drive,
+                after_drive=before_drive,
+                before_desire=before_desire,
+                after_desire=before_desire,
+                before_emotion=before_emotion,
+                after_emotion=before_emotion,
+                before_moral=before_moral,
+                after_moral=before_moral,
+                relationship_memory=state.relationship_memory,
+                before_relationship=before_relationship,
+                after_relationship=before_relationship,
+                relationship_changed=False,
+                input_source=input_source,
+            )
 
         after_drive = self._drive_state_updater.update_by_event(before_drive, event)
         after_desire = self._desire_state_updater.update_by_event(before_desire, event)
@@ -95,8 +124,6 @@ class AgentEventStateUpdater:
             if relationship_changed and after_relationship is not None
             else state.attention_target
         )
-        source = event.payload.get("source")
-        input_source = source if isinstance(source, str) and source.strip() else None
 
         updated = (
             state.with_drive(after_drive)
@@ -185,3 +212,10 @@ class AgentEventStateUpdater:
             relationship_changed=relationship_changed,
             input_source=input_source,
         )
+
+    @staticmethod
+    def _input_source(event: AgentEvent) -> str | None:
+        source = event.payload.get("source")
+        if isinstance(source, str) and source.strip():
+            return source
+        return None
