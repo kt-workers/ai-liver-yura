@@ -8,6 +8,7 @@ from app.domain.character_response import (
 )
 from app.domain.conversation_utterance_policy import (
     constrain_response_content_plan,
+    is_low_information_acknowledgement,
 )
 from app.domain.response_content_plan import ResponseContentPlan
 
@@ -30,9 +31,15 @@ def _expansive_plan() -> ResponseContentPlan:
     )
 
 
-def _context(*, initiative_level: float, phase: str, speech_act: str) -> ResponseContext:
+def _context(
+    *,
+    initiative_level: float,
+    phase: str,
+    speech_act: str,
+    user_input: str = "こんにちは",
+) -> ResponseContext:
     return ResponseContext(
-        user_input="こんにちは",
+        user_input=user_input,
         activity_type="conversation_with_user",
         operation=None,
         status=ActivityExecutionStatus.WAITING_INPUT,
@@ -90,6 +97,45 @@ def test_low_initiative_non_greeting_removes_expansion_strategies() -> None:
     assert "low_initiative_response_constrained" in constrained.reasons
 
 
+def test_compound_acknowledgement_is_detected_without_consuming_substantive_text() -> None:
+    assert is_low_information_acknowledgement("いいね。そういうの")
+    assert is_low_information_acknowledgement("前向きでいいね")
+    assert not is_low_information_acknowledgement(
+        "そうだね。でもゲームは難しい方が好き"
+    )
+    assert not is_low_information_acknowledgement("いいね。どこから始める？")
+
+
+def test_acknowledgement_constrains_expansive_plan_at_normal_initiative() -> None:
+    constrained = constrain_response_content_plan(
+        _expansive_plan(),
+        speech_act="statement",
+        conversation_phase="active",
+        initiative_level=0.65,
+        user_input="いいね。そういうの",
+    )
+
+    assert constrained.question_budget == 0
+    assert constrained.new_direction_budget == 0
+    assert constrained.self_disclosure_level == "none"
+    assert constrained.conversation_strategies == ("acknowledge_other",)
+    assert "acknowledgement_input_constrained" in constrained.reasons
+
+
+def test_substantive_followup_preserves_active_plan() -> None:
+    original = _expansive_plan()
+
+    constrained = constrain_response_content_plan(
+        original,
+        speech_act="statement",
+        conversation_phase="active",
+        initiative_level=0.65,
+        user_input="そうだね。でもゲームは難しい方が好き",
+    )
+
+    assert constrained == original
+
+
 def test_character_prompt_projects_effective_greeting_plan_and_explicit_limit() -> None:
     prompt = CharacterPromptBuilder().build(
         _context(
@@ -111,12 +157,34 @@ def test_character_prompt_projects_effective_greeting_plan_and_explicit_limit() 
     assert "observation_onlyはActivity選択へ介入しない安全属性" in prompt
 
 
+def test_character_prompt_projects_acknowledgement_plan_and_anti_repetition_limit() -> None:
+    prompt = CharacterPromptBuilder().build(
+        _context(
+            initiative_level=0.65,
+            phase="active",
+            speech_act="statement",
+            user_input="いいね。そういうの",
+        ),
+        character_profile=None,
+        correction=None,
+    )
+
+    assert '"question_budget": 0' in prompt
+    assert '"new_direction_budget": 0' in prompt
+    assert '"self_disclosure_level": "none"' in prompt
+    assert '"conversation_strategies": ["acknowledge_other"]' in prompt
+    assert "user_inputは短い相槌または同意である" in prompt
+    assert "要約・復唱・説明し直さない" in prompt
+    assert "会話を無理に広げない" in prompt
+
+
 def test_character_prompt_keeps_active_conversation_budgets() -> None:
     prompt = CharacterPromptBuilder().build(
         _context(
             initiative_level=0.65,
             phase="active",
             speech_act="question",
+            user_input="今日はゲームする？",
         ),
         character_profile=None,
         correction=None,
@@ -126,3 +194,4 @@ def test_character_prompt_keeps_active_conversation_budgets() -> None:
     assert '"new_direction_budget": 1' in prompt
     assert '"self_disclosure_level": "brief"' in prompt
     assert "この応答は低主体性の挨拶である" not in prompt
+    assert "user_inputは短い相槌または同意である" not in prompt
