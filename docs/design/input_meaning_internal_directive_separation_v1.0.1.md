@@ -58,6 +58,16 @@ Input Meaning用Promptへの最初の応答が`StructuredInputMeaning`ではな�
 
 Input Meaningとして正常に解釈できた後にInternal Directive生成が失敗した場合は、この再利用条件には該当しないため、従来どおり旧Situation Evaluatorへ明示的にFallbackする。
 
+### 4.2 Input Meaning Promptの旧責務境界
+
+段階移行中の監査と既存プロンプト回帰を明確にするため、Input Meaning Promptには旧Situation Evaluatorの責務名を否定形で記載する。
+
+```text
+旧責務「入力を総合して次のActivityを決定」は、このRoleでは行わない。
+```
+
+また、`available_activities`はInput Meaning Interpreterへ実データを渡さず、未提供であることだけを役割境界メタデータとして示す。Activity候補の参照と選択はInternal Directive Planner以降に限定する。
+
 ## 5. 後続移行条件
 
 進行中Activityを二段階LLMへ移行する前に、次の契約を追加する。
