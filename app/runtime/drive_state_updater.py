@@ -69,12 +69,18 @@ class DriveStateUpdater:
             return updated_drive
 
         if event.event_type == AgentEventType.USER_INTERACTION:
-            updated_drive = self._apply_user_interaction(drive)
+            stimulus_scale, interaction_kind, contact_phase = (
+                self._interaction_stimulus(event)
+            )
+            updated_drive = self._apply_user_interaction(drive, stimulus_scale)
             self._write_update_trace(
                 "drive_state_updater:update_by_event:user_interaction",
                 before_drive=drive,
                 after_drive=updated_drive,
                 event_type=event.event_type.value,
+                interaction_kind=interaction_kind,
+                contact_phase=contact_phase,
+                stimulus_scale=stimulus_scale,
             )
             return updated_drive
 
@@ -189,12 +195,22 @@ class DriveStateUpdater:
             energy=drive.energy - (0.03 * stimulus_scale),
         )
 
-    def _apply_user_interaction(self, drive: DriveState) -> DriveState:
+    def _apply_user_interaction(
+        self,
+        drive: DriveState,
+        stimulus_scale: float,
+    ) -> DriveState:
         return DriveState(
-            curiosity=drive.curiosity + 0.03,
-            engagement=drive.engagement + 0.08,
-            boredom=drive.boredom - 0.08,
-            energy=drive.energy - 0.01,
+            curiosity=self._increase_toward_one(
+                drive.curiosity,
+                0.05 * stimulus_scale,
+            ),
+            engagement=self._increase_toward_one(
+                drive.engagement,
+                (2.0 / 15.0) * stimulus_scale,
+            ),
+            boredom=drive.boredom - (0.08 * stimulus_scale),
+            energy=drive.energy - (0.01 * stimulus_scale),
         )
 
     def _apply_speech_finished(self, drive: DriveState) -> DriveState:
@@ -231,6 +247,41 @@ class DriveStateUpdater:
         if not normalized:
             return 0.5, "unknown"
         return 1.0, "substantive"
+
+    @staticmethod
+    def _interaction_stimulus(
+        event: AgentEvent,
+    ) -> tuple[float, str, str | None]:
+        stimulus_value = event.payload.get("stimulus_kind")
+        stimulus_kind = (
+            stimulus_value.strip().lower()
+            if isinstance(stimulus_value, str) and stimulus_value.strip()
+            else "unknown"
+        )
+        phase_value = event.payload.get("contact_phase") or event.payload.get(
+            "gesture_phase"
+        )
+        contact_phase = (
+            phase_value.strip().lower()
+            if isinstance(phase_value, str) and phase_value.strip()
+            else None
+        )
+        continuous_contact = (
+            event.payload.get("continuous_contact") is True
+            or stimulus_kind == "drag"
+            or contact_phase in {"start", "update", "end"}
+        )
+        if continuous_contact:
+            if contact_phase == "start":
+                return 0.35, f"{stimulus_kind}_start", contact_phase
+            if contact_phase == "end":
+                return 0.15, f"{stimulus_kind}_end", contact_phase
+            if contact_phase == "update":
+                return 0.0, f"{stimulus_kind}_update", contact_phase
+            return 0.25, f"{stimulus_kind}_continuous", contact_phase
+        if stimulus_kind in {"tap", "double_tap", "long_press"}:
+            return 1.0, stimulus_kind, contact_phase
+        return 0.5, stimulus_kind, contact_phase
 
     @staticmethod
     def _normalize_input_text(text: str) -> str:
