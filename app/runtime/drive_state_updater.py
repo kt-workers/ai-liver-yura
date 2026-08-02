@@ -4,6 +4,7 @@ from datetime import datetime
 
 from app.domain.drives import DriveState
 from app.domain.events import AgentEvent, AgentEventType
+from app.runtime.continuous_interaction_segmenter import ContinuousInteractionSegmenter
 from app.utils.trace import TraceLogger
 
 _ACKNOWLEDGEMENTS = frozenset(
@@ -44,8 +45,15 @@ _GREETINGS = frozenset(
 class DriveStateUpdater:
     """Event と時間経過から DriveState を更新する Runtime 部品。"""
 
-    def __init__(self, trace_logger: TraceLogger | None = None) -> None:
+    def __init__(
+        self,
+        trace_logger: TraceLogger | None = None,
+        interaction_segmenter: ContinuousInteractionSegmenter | None = None,
+    ) -> None:
         self._trace_logger = trace_logger or TraceLogger()
+        self._interaction_segmenter = (
+            interaction_segmenter or ContinuousInteractionSegmenter()
+        )
 
     def update_by_event(self, drive: DriveState, event: AgentEvent) -> DriveState:
         """AgentEvent の種類に応じて内的動機を更新する。"""
@@ -69,8 +77,14 @@ class DriveStateUpdater:
             return updated_drive
 
         if event.event_type == AgentEventType.USER_INTERACTION:
-            stimulus_scale, interaction_kind, contact_phase = (
+            default_scale, interaction_kind, contact_phase = (
                 self._interaction_stimulus(event)
+            )
+            segment = self._interaction_segmenter.decide(event)
+            stimulus_scale = (
+                float(segment.weight)
+                if segment.should_apply and segment.weight is not None
+                else default_scale if segment.should_apply else 0.0
             )
             updated_drive = self._apply_user_interaction(drive, stimulus_scale)
             self._write_update_trace(
@@ -81,6 +95,10 @@ class DriveStateUpdater:
                 interaction_kind=interaction_kind,
                 contact_phase=contact_phase,
                 stimulus_scale=stimulus_scale,
+                interaction_segment_applied=segment.should_apply,
+                interaction_segment_index=segment.segment_index,
+                interaction_segment_reason=segment.reason,
+                gesture_id=segment.gesture_id,
             )
             return updated_drive
 
