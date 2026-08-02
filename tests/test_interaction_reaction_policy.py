@@ -21,6 +21,24 @@ def _interaction(
     )
 
 
+def _drag(
+    occurred_at: datetime,
+    phase: str,
+    *,
+    gesture_id: str = "drag-1",
+) -> AgentEvent:
+    return AgentEvent(
+        event_type=AgentEventType.USER_INTERACTION,
+        occurred_at=occurred_at,
+        payload={
+            "stimulus_kind": "drag",
+            "gesture_id": gesture_id,
+            "gesture_phase": phase,
+            "continuous_contact": True,
+        },
+    )
+
+
 def _state_for(event: AgentEvent, reason: str = "") -> AgentState:
     if not reason:
         return AgentState()
@@ -62,6 +80,24 @@ def test_policy_suppresses_repeated_speech_during_contact_burst() -> None:
         )
         is True
     )
+
+
+def test_policy_reacts_during_long_continuous_contact_by_interval() -> None:
+    started_at = datetime(2026, 8, 2, tzinfo=timezone.utc)
+    policy = InteractionReactionPolicy(
+        verbal_cooldown_seconds=12.0,
+        continuous_contact_verbal_interval_seconds=4.0,
+    )
+
+    start = _drag(started_at, "start")
+    early = _drag(started_at + timedelta(seconds=3.9), "update")
+    middle = _drag(started_at + timedelta(seconds=4.1), "update")
+    later = _drag(started_at + timedelta(seconds=8.2), "update")
+
+    assert policy.should_speak(start, _state_for(start)) is True
+    assert policy.should_speak(early, _state_for(early)) is False
+    assert policy.should_speak(middle, _state_for(middle)) is True
+    assert policy.should_speak(later, _state_for(later)) is True
 
 
 def test_policy_expresses_boundary_then_waits_before_followup() -> None:
