@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Protocol
 
@@ -12,6 +13,10 @@ class SituationEvaluationModel(Protocol):
     async def evaluate(self, activity: Activity) -> str: ...
 
 
+class OptionalSituationEvaluationModel(Protocol):
+    async def evaluate(self, activity: Activity) -> str | None: ...
+
+
 class CharacterModel(Protocol):
     async def generate_character_response(self, activity: Activity) -> str: ...
 
@@ -20,12 +25,30 @@ class ResponseValidationModel(Protocol):
     async def validate_character_response(self, activity: Activity) -> str: ...
 
 
+SeparatedSituationEvaluatorFactory = Callable[
+    ["ResponseGeneratorRoleAdapter"],
+    OptionalSituationEvaluationModel,
+]
+
+
 class ResponseGeneratorRoleAdapter:
     """既存ResponseGeneratorを明示した役割Portへ接続する移行用Adapter。"""
 
-    def __init__(self, generator: ResponseGenerator) -> None:
+    def __init__(
+        self,
+        generator: ResponseGenerator,
+        *,
+        separated_situation_evaluator_factory: (
+            SeparatedSituationEvaluatorFactory | None
+        ) = None,
+    ) -> None:
         self._generator = generator
-        self._separated_situation_evaluator: object | None = None
+        self._separated_situation_evaluator_factory = (
+            separated_situation_evaluator_factory
+        )
+        self._separated_situation_evaluator: (
+            OptionalSituationEvaluationModel | None
+        ) = None
         self._last_input_meaning_raw: str | None = None
 
     async def evaluate(self, activity: Activity) -> str:
@@ -80,29 +103,12 @@ class ResponseGeneratorRoleAdapter:
         self,
         activity: Activity,
     ) -> str | None:
+        factory = self._separated_situation_evaluator_factory
+        if factory is None:
+            return None
         if self._separated_situation_evaluator is None:
-            from app.adapters.prompt.cognitive_direction_prompt_builders import (
-                InputMeaningPromptBuilder,
-                InternalDirectivePromptBuilder,
-            )
-            from app.runtime.separated_situation_evaluator import (
-                SeparatedSituationEvaluationAdapter,
-            )
-
-            self._separated_situation_evaluator = SeparatedSituationEvaluationAdapter(
-                self,
-                self,
-                input_prompt_builder=InputMeaningPromptBuilder(),
-                directive_prompt_builder=InternalDirectivePromptBuilder(),
-                character_profile=getattr(
-                    self._generator,
-                    "_character_profile",
-                    None,
-                ),
-            )
-        evaluate = getattr(self._separated_situation_evaluator, "evaluate")
-        result = await evaluate(activity)
-        return str(result) if result is not None else None
+            self._separated_situation_evaluator = factory(self)
+        return await self._separated_situation_evaluator.evaluate(activity)
 
     @staticmethod
     def _with_input_meaning_role_boundary(activity: Activity) -> Activity:
