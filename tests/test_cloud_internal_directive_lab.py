@@ -194,7 +194,7 @@ def test_index_exposes_chatgpt_export_and_collapsible_sections() -> None:
         assert f"{section}:" in html
 
     assert "setupLabCollapsibleSections()" in html
-    assert "data.collapseSection = section" in html
+    assert "button.dataset.collapseSection = section" in html
     assert "aria-expanded" in html
     assert "editor-collapsible-body" in html
     assert "section === 'state' ? panel.querySelector('#stateOverview')" in html
