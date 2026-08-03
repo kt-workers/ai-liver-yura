@@ -48,13 +48,13 @@ jobs:
           import re
           from pathlib import Path
 
-          from cloud_validation.internal_directive_lab_compact import (
-              _PRESET_INDEX_HTML,
+          from cloud_validation.internal_directive_lab_workspace import (
+              _WORKSPACE_INDEX_HTML,
           )
 
           scripts = re.findall(
               r"<script[^>]*>(.*?)</script>",
-              _PRESET_INDEX_HTML,
+              _WORKSPACE_INDEX_HTML,
               flags=re.DOTALL,
           )
           if not scripts:
