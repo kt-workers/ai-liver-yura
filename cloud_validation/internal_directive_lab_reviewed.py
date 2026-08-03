@@ -44,10 +44,42 @@ def _correct_existence_preset_html(html: str) -> str:
     return html[:preset_start] + corrected_fragment + html[script_end:]
 
 
+def _collapse_sections_by_default_html(html: str) -> str:
+    """5入力領域を初期表示で折りたたみ、状態概要だけは常時表示する。"""
+
+    replacements = (
+        (
+            "body.className = 'editor-collapsible-body';",
+            "body.className = 'editor-collapsible-body hidden';",
+        ),
+        (
+            "button.setAttribute('aria-expanded', 'true');",
+            "button.setAttribute('aria-expanded', 'false');",
+        ),
+        (
+            "button.setAttribute('aria-label', `${label}を折りたたむ`);",
+            "button.setAttribute('aria-label', `${label}を展開する`);",
+        ),
+        (
+            "button.textContent = '折りたたむ';",
+            "button.textContent = '展開する';",
+        ),
+    )
+    for expanded_value, collapsed_value in replacements:
+        if expanded_value in html:
+            html = html.replace(expanded_value, collapsed_value, 1)
+            continue
+        if collapsed_value not in html:
+            raise RuntimeError(
+                f"collapsible section initial state was not found: {expanded_value}"
+            )
+    return html
+
+
 # workspace側で組み立て済みの完成HTMLを基準にする。
-# DOMや既存JavaScriptを再生成せず、対象プリセットの値だけを訂正する。
-_REVIEWED_INDEX_HTML = _correct_existence_preset_html(
-    workspace._WORKSPACE_INDEX_HTML
+# DOMや既存JavaScriptを再生成せず、対象プリセットと初期表示だけを訂正する。
+_REVIEWED_INDEX_HTML = _collapse_sections_by_default_html(
+    _correct_existence_preset_html(workspace._WORKSPACE_INDEX_HTML)
 )
 
 
@@ -56,7 +88,7 @@ def create_app(
     settings: LabSettings | None = None,
     service: InternalDirectiveLabService | None = None,
 ):
-    """存在境界プリセット修正版の検証ラボを生成する。"""
+    """存在境界プリセットと初期折りたたみを反映した検証ラボを生成する。"""
 
     compact.base._INDEX_HTML = _REVIEWED_INDEX_HTML
     return compact.base.create_app(settings=settings, service=service)
