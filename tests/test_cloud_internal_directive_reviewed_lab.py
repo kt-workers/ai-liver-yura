@@ -52,6 +52,20 @@ def test_reviewed_html_contains_corrected_preset_and_workspace_controls() -> Non
     assert "setupLabCollapsibleSections()" in _REVIEWED_INDEX_HTML
 
 
+def test_reviewed_html_collapses_input_sections_by_default() -> None:
+    assert "body.className = 'editor-collapsible-body hidden';" in (
+        _REVIEWED_INDEX_HTML
+    )
+    assert "button.setAttribute('aria-expanded', 'false');" in (
+        _REVIEWED_INDEX_HTML
+    )
+    assert "button.setAttribute('aria-label', `${label}を展開する`);" in (
+        _REVIEWED_INDEX_HTML
+    )
+    assert "button.textContent = '展開する';" in _REVIEWED_INDEX_HTML
+    assert "overview.dataset.alwaysVisible = 'true';" in _REVIEWED_INDEX_HTML
+
+
 def test_reviewed_app_serves_corrected_complete_html() -> None:
     response = _client().get(
         "/",
@@ -61,3 +75,5 @@ def test_reviewed_app_serves_corrected_complete_html() -> None:
     assert response.status_code == 200
     assert '"past_reference":true' in response.text
     assert "ChatGPT用テキストをExport" in response.text
+    assert "body.className = 'editor-collapsible-body hidden';" in response.text
+    assert "button.textContent = '展開する';" in response.text
