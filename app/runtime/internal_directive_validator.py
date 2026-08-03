@@ -32,6 +32,7 @@ class InternalDirectiveValidator:
         question_budget = min(directive.question_budget, 1)
         new_direction_budget = min(directive.new_direction_budget, 1)
         initiative_level = directive.initiative_level
+        self_disclosure_level = directive.self_disclosure_level
         target_interest_updates = directive.target_interest_updates
         activity_intent = self._validated_activity_intent(
             directive.activity_intent,
@@ -50,6 +51,9 @@ class InternalDirectiveValidator:
             question_budget = 0
             new_direction_budget = 0
             initiative_level = min(initiative_level, 0.35)
+            if self._is_internal_state_target(meaning):
+                self_disclosure_level = max(self_disclosure_level, 0.35)
+                notes.append("internal_state_question_allows_direct_disclosure")
             notes.append("direct_question_forces_answer")
         elif meaning.input_speech_act is InputSpeechAct.ACKNOWLEDGEMENT:
             if activity_intent is not None:
@@ -115,6 +119,7 @@ class InternalDirectiveValidator:
             initiative_level=initiative_level,
             question_budget=question_budget,
             new_direction_budget=new_direction_budget,
+            self_disclosure_level=self_disclosure_level,
             content_requirements=tuple(dict.fromkeys(requirements)),
             forbidden_claims=tuple(dict.fromkeys(forbidden_claims)),
             target_interest_updates=target_interest_updates,
@@ -160,6 +165,14 @@ class InternalDirectiveValidator:
             in {InterestChange.INCREASE, InterestChange.SLIGHTLY_INCREASE}
             for update in updates
         )
+
+    @staticmethod
+    def _is_internal_state_target(meaning: StructuredInputMeaning) -> bool:
+        target = meaning.target
+        return target is not None and target.target_type.casefold() in {
+            "internal_state",
+            "agent_internal_state",
+        }
 
     @staticmethod
     def _existence_boundaries(
@@ -241,20 +254,67 @@ class InternalDirectiveValidator:
         forbidden_claims: list[str],
     ) -> None:
         target = meaning.target
-        if target is None or target.target_type != "agent_internal_state":
+        if target is None or target.target_type.casefold() not in {
+            "internal_state",
+            "agent_internal_state",
+        }:
             return
         emotion = planning_input.get("emotion")
         emotion_state = emotion if isinstance(emotion, dict) else {}
         target_id = target.target_id.casefold()
-        if target_id in {"joy", "amusement", "fun", "楽しさ"}:
+        if target_id in {
+            "current_feeling",
+            "current_mood",
+            "current_emotion",
+            "mood",
+            "feeling",
+        }:
+            emotion_values = _numeric_state_values(emotion_state)
+            dominant_summary = _dominant_state_summary(emotion_values)
+            requirements.append(
+                "現在の気分全体はEmotionの値が高い1〜2項目を中心に、強度を誇張せず直接回答する"
+            )
+            if dominant_summary:
+                requirements.append(
+                    f"現在の気分の中心候補: {dominant_summary}"
+                )
+            requirements.append(
+                "Emotion evidence: "
+                + json.dumps(
+                    emotion_values,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+            drive = planning_input.get("drive")
+            drive_state = drive if isinstance(drive, dict) else {}
+            drive_values = _numeric_state_values(drive_state)
+            if "curiosity" in drive_values:
+                requirements.append(
+                    "Drive evidence（感情ではなく補助的な好奇心・関心）: "
+                    f"curiosity={drive_values['curiosity']}"
+                )
+            forbidden_claims.extend(
+                (
+                    "低いEmotion値を主感情として強く誇張する",
+                    "curiosityやengagementだけを根拠に楽しい・うれしいと断定する",
+                    "現在値にない悲しみ、怒り、強い興奮を創作する",
+                )
+            )
+        elif target_id in {"joy", "amusement", "fun", "楽しさ"}:
             joy = _nested_number(emotion_state, "joy")
             amusement = _nested_number(emotion_state, "amusement")
-            engagement = _nested_number(emotion_state, "engagement")
+            motivation = planning_input.get("motivation")
+            motivation_state = motivation if isinstance(motivation, dict) else {}
+            engagement_value = _find_nested_number(motivation_state, "engagement")
+            if engagement_value is None:
+                engagement_value = _nested_number(emotion_state, "engagement")
             requirements.append(
                 "joy/amusementの値を根拠に直接回答し、engagementとは区別する"
             )
             requirements.append(
-                f"現在値: joy={joy}, amusement={amusement}, engagement={engagement}"
+                "現在値: "
+                f"joy={joy}, amusement={amusement}, engagement={engagement_value}"
             )
             forbidden_claims.append(
                 "joyとamusementが低いのにengagementだけを根拠として楽しいと断定する"
@@ -322,7 +382,7 @@ class InternalDirectiveValidator:
             )
 
 
-def _nested_number(data: dict[str, object], name: str) -> float:
+def _find_nested_number(data: dict[str, object], name: str) -> float | None:
     direct = data.get(name)
     if isinstance(direct, (int, float)) and not isinstance(direct, bool):
         return float(direct)
@@ -336,6 +396,56 @@ def _nested_number(data: dict[str, object], name: str) -> float:
                 sub = container.get(nested_container)
                 if isinstance(sub, dict):
                     value = sub.get(name)
-                    if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    if isinstance(value, (int, float)) and not isinstance(
+                        value,
+                        bool,
+                    ):
                         return float(value)
-    return 0.0
+    return None
+
+
+def _nested_number(data: dict[str, object], name: str) -> float:
+    value = _find_nested_number(data, name)
+    return value if value is not None else 0.0
+
+
+def _numeric_state_values(data: dict[str, object]) -> dict[str, float]:
+    values: dict[str, float] = {}
+
+    def collect(container: dict[str, object]) -> None:
+        for key, value in container.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                values.setdefault(str(key), float(value))
+
+    collect(data)
+    for container_name in ("current", "reactive", "mood", "state"):
+        nested = data.get(container_name)
+        if not isinstance(nested, dict):
+            continue
+        collect(nested)
+        for nested_container_name in ("reactive", "mood"):
+            sub = nested.get(nested_container_name)
+            if isinstance(sub, dict):
+                collect(sub)
+    return values
+
+
+def _dominant_state_summary(values: dict[str, float]) -> str:
+    strongest = sorted(
+        values.items(),
+        key=lambda item: (-item[1], item[0]),
+    )[:2]
+    return ", ".join(
+        f"{name}={value} ({_intensity_label(value)})"
+        for name, value in strongest
+    )
+
+
+def _intensity_label(value: float) -> str:
+    if value >= 0.70:
+        return "強め"
+    if value >= 0.45:
+        return "中程度"
+    if value >= 0.25:
+        return "少し"
+    return "低め"
