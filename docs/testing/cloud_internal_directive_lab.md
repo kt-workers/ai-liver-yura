@@ -2,7 +2,7 @@
 
 ## 概要
 
-`cloud_validation.internal_directive_lab` は、司令塔LLM（`InternalDirectivePlanner`）だけをブラウザから実行する検証用Webアプリです。
+`cloud_validation.internal_directive_lab_compact` は、司令塔LLM（`InternalDirectivePlanner`）だけをブラウザから実行する検証用Webアプリです。
 
 入力意味解析済みの `StructuredInputMeaning`、内部状態、Activity情報、Character Profileを入力し、`InternalDirective` の生成後に停止します。入力意味解析、実行可否判定、Character LLM、出力処理は実行しません。
 
@@ -12,7 +12,7 @@
 export YURA_INTERNAL_DIRECTIVE_LAB_MODE=fake
 export YURA_LAB_USERNAME=tester
 export YURA_LAB_PASSWORD=secret
-python -m uvicorn cloud_validation.internal_directive_lab:app \
+python -m uvicorn cloud_validation.internal_directive_lab_compact:app \
   --host 127.0.0.1 \
   --port 8001
 ```
@@ -27,12 +27,36 @@ export YURA_INTERNAL_DIRECTIVE_LAB_MODEL='<model-name>'
 export OPENAI_API_KEY='<api-key>'
 export YURA_LAB_USERNAME='<username>'
 export YURA_LAB_PASSWORD='<password>'
-python -m uvicorn cloud_validation.internal_directive_lab:app \
+python -m uvicorn cloud_validation.internal_directive_lab_compact:app \
   --host 127.0.0.1 \
   --port 8001
 ```
 
 APIキー名を変更する場合は `YURA_INTERNAL_DIRECTIVE_LAB_API_KEY_ENV` を設定します。
+
+## プリセット
+
+画面上部の「検証プリセット」から代表的な条件を選択できます。選択した時点で、次の入力がすべてプリセット値へ置き換わります。
+
+- `StructuredInputMeaning`
+- 内部状態
+- 利用可能Activity
+- 進行中Activity
+- Character Profile / 存在境界
+
+現在用意しているプリセットは以下です。
+
+- 現在の気分への直接質問
+- うれしい出来事への共感
+- 強い好奇心で話題を広げる
+- 低活性で聞き続ける
+- 会話を短く締める
+- 進行中Activityを継続する
+- 存在境界に関する質問
+
+プリセット適用時にLLMは実行されません。値を確認・調整した後、「司令塔LLMを実行」を押します。
+
+プリセット適用後に値を変更し、元の条件へ戻したい場合は「選択中を再適用」を押します。再適用すると追加した内部状態項目やActivityも削除され、プリセットの完全な状態へ戻ります。
 
 ## 画面入力
 
@@ -42,7 +66,9 @@ APIキー名を変更する場合は `YURA_INTERNAL_DIRECTIVE_LAB_API_KEY_ENV` �
 - `進行中Activity`: 存在しない場合は `null`
 - `Character Profile / 存在境界`: 身体能力、知覚、経験範囲を含むプロフィール
 
-初期値が入力済みのため、そのまま実行して疎通確認できます。
+各領域はGUI入力とJSON入力を切り替えられます。プリセットを適用した場合、GUIとJSONの両方へ同じ値が同期されます。
+
+初期値が入力済みのため、そのまま実行して疎通確認することもできます。
 
 ## 結果の確認
 
