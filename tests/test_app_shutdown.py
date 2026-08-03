@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Coroutine
+from typing import Any
 
 import pytest
 
@@ -30,9 +32,8 @@ async def test_await_runtime_shutdown_collects_cancelled_task() -> None:
 def test_main_swallows_top_level_cancelled_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def canceled_run(coroutine: object) -> None:
-        close = getattr(coroutine, "close")
-        close()
+    def canceled_run(coroutine: Coroutine[Any, Any, Any]) -> None:
+        coroutine.close()
         raise asyncio.CancelledError
 
     monkeypatch.setattr(app_main.asyncio, "run", canceled_run)
