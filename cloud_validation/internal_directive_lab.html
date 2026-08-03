@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ゆら 内部指示器ラボ</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07131f;
+      --panel: rgba(15, 38, 55, .86);
+      --line: rgba(150, 215, 230, .25);
+      --text: #e9f7fb;
+      --muted: #9ebac5;
+      --accent: #8ce4df;
+      --danger: #ffb8b8;
+      --ok: #adf0cb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(46, 141, 164, .25), transparent 42%),
+        linear-gradient(180deg, #0b2639, var(--bg));
+      color: var(--text);
+    }
+    main { width: min(100%, 1120px); margin: 0 auto; padding: 24px 16px 64px; }
+    h1 { margin: 0 0 6px; font-size: clamp(1.55rem, 5vw, 2.3rem); }
+    h2 { margin: 0 0 12px; font-size: 1.05rem; }
+    .lead { margin: 0 0 22px; color: var(--muted); line-height: 1.7; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      margin: 14px 0;
+      backdrop-filter: blur(16px);
+    }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    label { display: block; margin: 0 0 8px; font-weight: 650; }
+    textarea {
+      width: 100%;
+      min-height: 220px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(2, 13, 22, .72);
+      color: var(--text);
+      padding: 12px;
+      font: .84rem ui-monospace, SFMono-Regular, Menlo, monospace;
+      line-height: 1.55;
+    }
+    textarea.small { min-height: 150px; }
+    .check { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+    .check input { width: auto; }
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 999px;
+      padding: 13px 20px;
+      background: var(--accent);
+      color: #062228;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    button:disabled { opacity: .55; cursor: wait; }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .badge {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 9px;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+    .badge strong { display: block; color: var(--text); margin-top: 3px; }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+      background: rgba(0, 7, 13, .68);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      margin: 8px 0 16px;
+      font-size: .82rem;
+      line-height: 1.55;
+    }
+    .error { color: var(--danger); }
+    .ok { color: var(--ok); }
+    .hidden { display: none; }
+    details > summary { cursor: pointer; color: var(--muted); margin-bottom: 10px; }
+    @media (min-width: 820px) {
+      main { padding-top: 42px; }
+      .grid.two { grid-template-columns: 1fr 1fr; }
+      .summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ゆら 内部指示器ラボ</h1>
+  <p class="lead">
+    StructuredInputMeaningと内部状態を司令塔LLMへ渡し、InternalDirectiveの生成後に停止します。
+    入力意味解析、実行可否判定、Character LLM、出力プラグインは実行しません。
+  </p>
+
+  <section class="panel">
+    <div class="grid two">
+      <div>
+        <label for="meaning">StructuredInputMeaning</label>
+        <textarea id="meaning"></textarea>
+      </div>
+      <div>
+        <label for="state">内部状態</label>
+        <textarea id="state"></textarea>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <details open>
+      <summary>司令候補の判断条件</summary>
+      <div class="grid two">
+        <div>
+          <label for="activities">利用可能Activity</label>
+          <textarea class="small" id="activities"></textarea>
+        </div>
+        <div>
+          <label for="ongoing">進行中Activity（null可）</label>
+          <textarea class="small" id="ongoing">null</textarea>
+        </div>
+        <div>
+          <label for="profile">Character Profile / 存在境界</label>
+          <textarea id="profile"></textarea>
+        </div>
+      </div>
+    </details>
+    <label class="check">
+      <input id="includePrompt" type="checkbox">
+      生成したプロンプトも結果に含める
+    </label>
+    <div style="height:12px"></div>
+    <button id="run">司令塔LLMを実行</button>
+  </section>
+
+  <section class="panel hidden" id="resultPanel">
+    <div class="summary">
+      <div class="badge">valid<strong id="valid">-</strong></div>
+      <div class="badge">mode / model<strong id="mode">-</strong></div>
+      <div class="badge">elapsed<strong id="elapsed">-</strong></div>
+      <div class="badge">stop stage<strong id="stop">-</strong></div>
+    </div>
+    <p id="message"></p>
+    <h2>Parsed InternalDirective</h2>
+    <pre id="parsed">-</pre>
+    <h2>Raw LLM Response</h2>
+    <pre id="raw">-</pre>
+    <div id="promptArea" class="hidden">
+      <h2>Prompt</h2>
+      <pre id="prompt">-</pre>
+    </div>
+  </section>
+</main>
+<script>
+const defaults = {
+  meaning: __DEFAULT_MEANING__,
+  state: __DEFAULT_INTERNAL_STATE__,
+  activities: __DEFAULT_AVAILABLE_ACTIVITIES__,
+  profile: __DEFAULT_CHARACTER_PROFILE__
+};
+const format = value => JSON.stringify(value, null, 2);
+for (const key of Object.keys(defaults)) {
+  document.getElementById(key).value = format(defaults[key]);
+}
+function parseJson(id) {
+  const text = document.getElementById(id).value.trim();
+  try { return JSON.parse(text); }
+  catch (error) { throw new Error(`${id}: JSON形式が不正です (${error.message})`); }
+}
+const run = document.getElementById('run');
+run.addEventListener('click', async () => {
+  const panel = document.getElementById('resultPanel');
+  const message = document.getElementById('message');
+  panel.classList.remove('hidden');
+  message.className = '';
+  message.textContent = '実行中...';
+  run.disabled = true;
+  try {
+    const response = await fetch('/api/internal-directive', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        structured_input_meaning: parseJson('meaning'),
+        internal_state: parseJson('state'),
+        available_activities: parseJson('activities'),
+        ongoing_activity: parseJson('ongoing'),
+        character_profile: parseJson('profile'),
+        include_prompt: document.getElementById('includePrompt').checked
+      })
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
+    document.getElementById('valid').textContent = String(payload.valid);
+    document.getElementById('mode').textContent = `${payload.mode} / ${payload.model || '-'}`;
+    document.getElementById('elapsed').textContent = `${payload.elapsed_ms} ms`;
+    document.getElementById('stop').textContent = payload.stopped_at;
+    document.getElementById('parsed').textContent = format(payload.parsed_response);
+    document.getElementById('raw').textContent = payload.raw_response || '-';
+    const promptArea = document.getElementById('promptArea');
+    if (payload.prompt) {
+      promptArea.classList.remove('hidden');
+      document.getElementById('prompt').textContent = payload.prompt;
+    } else {
+      promptArea.classList.add('hidden');
+    }
+    message.className = payload.valid ? 'ok' : 'error';
+    message.textContent = payload.valid
+      ? 'InternalDirective契約として受理されました。'
+      : `${payload.error_type || 'invalid'}: ${payload.error_message || '解析に失敗しました'}`;
+  } catch (error) {
+    message.className = 'error';
+    message.textContent = error.message;
+  } finally {
+    run.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
