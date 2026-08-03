@@ -45,11 +45,48 @@ def test_existence_boundary_preset_marks_yesterday_as_past_reference() -> None:
     assert meaning["past_reference"] is True
 
 
+def test_high_curiosity_preset_keeps_structured_related_knowledge() -> None:
+    data = _PRESETS["high_curiosity"]["data"]
+    assert isinstance(data, dict)
+    state = data["state"]
+    assert isinstance(state, dict)
+    related_knowledge = state["related_knowledge"]
+
+    assert related_knowledge == [
+        {
+            "target_type": "topic",
+            "target_id": "deep_sea_unknown_life",
+            "interest": 0.94,
+            "known_facts": ["深海には未分類の生物が多く存在する"],
+            "knowledge_gaps": [
+                "未発見生物が多いと考えられている深度や環境"
+            ],
+        }
+    ]
+
+
 def test_reviewed_html_contains_corrected_preset_and_workspace_controls() -> None:
     assert '"yesterday_outing"' in _REVIEWED_INDEX_HTML
     assert '"past_reference":true' in _REVIEWED_INDEX_HTML
     assert 'id="exportLabText"' in _REVIEWED_INDEX_HTML
     assert "setupLabCollapsibleSections()" in _REVIEWED_INDEX_HTML
+
+
+def test_reviewed_html_preserves_related_knowledge_objects() -> None:
+    assert 'placeholder="1行につきJSONオブジェクト1件"' in _REVIEWED_INDEX_HTML
+    assert "JSON.stringify(item)).join('\\n')" in _REVIEWED_INDEX_HTML
+    assert (
+        ".map(line => { try { return JSON.parse(line); } catch { return line; } });"
+        in _REVIEWED_INDEX_HTML
+    )
+    assert "lines(state.related_knowledge);" not in _REVIEWED_INDEX_HTML
+    assert "model.state.related_knowledge = parseLines(" in _REVIEWED_INDEX_HTML
+    assert '"target_type":"topic"' in _REVIEWED_INDEX_HTML
+    assert '"target_id":"deep_sea_unknown_life"' in _REVIEWED_INDEX_HTML
+    assert '"knowledge_gaps":["未発見生物が多いと考えられている深度や環境"]' in (
+        _REVIEWED_INDEX_HTML
+    )
+    assert "[object Object]" not in _REVIEWED_INDEX_HTML
 
 
 def test_reviewed_html_collapses_input_sections_by_default() -> None:
@@ -77,3 +114,5 @@ def test_reviewed_app_serves_corrected_complete_html() -> None:
     assert "ChatGPT用テキストをExport" in response.text
     assert "body.className = 'editor-collapsible-body hidden';" in response.text
     assert "button.textContent = '展開する';" in response.text
+    assert "JSON.stringify(item)).join('\\n')" in response.text
+    assert "[object Object]" not in response.text
