@@ -15,6 +15,9 @@ from app.runtime.cognitive_direction_parsers import (
     InputMeaningJsonParser,
     InternalDirectiveJsonParser,
 )
+from app.runtime.internal_directive_candidate_normalizer import (
+    InternalDirectiveCandidateNormalizer,
+)
 
 
 class InputMeaningInterpreter:
@@ -67,10 +70,12 @@ class InternalDirectivePlanner:
         *,
         prompt_builder: InternalDirectivePromptBuilder,
         parser: InternalDirectiveJsonParser | None = None,
+        normalizer: InternalDirectiveCandidateNormalizer | None = None,
     ) -> None:
         self._model = model
         self._prompt_builder = prompt_builder
         self._parser = parser or InternalDirectiveJsonParser()
+        self._normalizer = normalizer or InternalDirectiveCandidateNormalizer()
 
     async def plan(
         self,
@@ -106,4 +111,7 @@ class InternalDirectivePlanner:
             raw = await self._model.plan_internal_directive(request)
         except Exception:
             return None
-        return self._parser.parse(raw)
+        directive = self._parser.parse(raw)
+        if directive is None:
+            return None
+        return self._normalizer.normalize(meaning, directive)
