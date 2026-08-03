@@ -25,7 +25,6 @@ async def test_await_runtime_shutdown_collects_cancelled_task() -> None:
         raise asyncio.CancelledError
 
     task = asyncio.create_task(canceled_runtime())
-
     assert await app_main._await_runtime_shutdown(task) is True
 
 
