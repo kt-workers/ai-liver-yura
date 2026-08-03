@@ -4,11 +4,8 @@ import base64
 
 from fastapi.testclient import TestClient
 
-from cloud_validation.internal_directive_lab_compact import (
-    LabSettings,
-    _PRESETS,
-    create_app,
-)
+from cloud_validation.internal_directive_lab_compact import _PRESETS
+from cloud_validation.internal_directive_lab_workspace import LabSettings, create_app
 
 
 def _authorization(username: str = "tester", password: str = "secret") -> str:
@@ -164,6 +161,44 @@ def test_index_exposes_complete_preset_controller() -> None:
         assert set(preset) == {"label", "description", "data"}
         assert set(preset["data"]) == required_sections
         assert str(preset["label"]) in html
+
+
+def test_index_exposes_chatgpt_export_and_collapsible_sections() -> None:
+    response = _client().get(
+        "/",
+        headers={"Authorization": _authorization()},
+    )
+
+    assert response.status_code == 200
+    html = response.text
+    assert 'id="transferPanel"' in html
+    assert 'id="exportLabText"' in html
+    assert 'id="exportStatus"' in html
+    assert 'id="internal-directive-workspace-script"' in html
+    assert "function buildLabExportText()" in html
+    assert "syncAllSections();" in html
+    assert "new Blob" in html
+    assert "text/plain;charset=utf-8" in html
+    assert "yura-internal-directive-lab-" in html
+
+    for heading in (
+        "StructuredInputMeaning",
+        "内部状態",
+        "利用可能Activity",
+        "進行中Activity",
+        "Character Profile / 存在境界",
+    ):
+        assert heading in html
+
+    for section in ("meaning", "state", "activities", "ongoing", "profile"):
+        assert f"{section}:" in html
+
+    assert "setupLabCollapsibleSections()" in html
+    assert "data.collapseSection = section" in html
+    assert "aria-expanded" in html
+    assert "editor-collapsible-body" in html
+    assert "section === 'state' ? panel.querySelector('#stateOverview')" in html
+    assert "overview.dataset.alwaysVisible = 'true'" in html
 
 
 def test_all_presets_are_accepted_by_existing_api_contract() -> None:
