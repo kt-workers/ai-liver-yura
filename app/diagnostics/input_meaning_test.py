@@ -170,6 +170,10 @@ class InputMeaningTestRunner:
         self._situation_prompt_builder = SituationEvaluatorPromptBuilder()
         self._reporter = reporter or InputMeaningTestReporter()
 
+    @property
+    def output_path(self) -> Path:
+        return self._reporter.output_path
+
     async def run(
         self,
         context: BehaviorPlanningContext,
@@ -298,7 +302,7 @@ def install_input_meaning_test(
     trace_logger.info(
         "input_meaning_test:installed",
         stop_stage="input_meaning_interpreter",
-        output_path=str(runner._reporter.output_path),
+        output_path=str(runner.output_path),
     )
     return runner
 
