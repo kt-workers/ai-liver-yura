@@ -1,0 +1,51 @@
+name: Cloud input meaning validation
+
+on:
+  push:
+    branches:
+      - test/input-meaning-cloud-validation
+  pull_request:
+    branches:
+      - test/input-meaning-cloud-validation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-input-meaning-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run cloud validation tests
+        env:
+          YURA_INPUT_MEANING_LAB_MODE: fake
+          YURA_LAB_USERNAME: test-user
+          YURA_LAB_PASSWORD: test-password
+        run: |
+          pytest -q \
+            tests/test_cloud_input_meaning_lab.py \
+            tests/test_input_meaning_test_module.py
