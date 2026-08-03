@@ -92,6 +92,23 @@ def test_index_requires_basic_authentication() -> None:
     assert "内部指示器ラボ" in authorized.text
 
 
+def test_index_exposes_gui_and_json_editing_modes() -> None:
+    response = _client().get(
+        "/",
+        headers={"Authorization": _authorization()},
+    )
+
+    assert response.status_code == 200
+    html = response.text
+    assert "GUI入力" in html
+    assert "JSON入力" in html
+    assert 'type="range"' in html
+    assert 'id="stateOverview"' in html
+    assert 'id="metricGroups"' in html
+    assert 'id="addActivity"' in html
+    assert 'data-apply-json="state"' in html
+
+
 def test_fake_mode_returns_internal_directive_and_stops_before_later_stages() -> None:
     response = _client().post(
         "/api/internal-directive",
