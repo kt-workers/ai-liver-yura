@@ -48,4 +48,5 @@ jobs:
         run: |
           pytest -q \
             tests/test_cloud_input_meaning_lab.py \
+            tests/test_cloud_input_meaning_blueprint.py \
             tests/test_input_meaning_test_module.py
