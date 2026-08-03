@@ -116,6 +116,9 @@ def test_validator_adds_current_feeling_evidence_for_target_aliases(
     requirements = "\n".join(validated.directive.content_requirements)
     forbidden = "\n".join(validated.directive.forbidden_claims)
 
+    assert validated.directive.response_mode is ResponseMode.ANSWER
+    assert validated.directive.question_budget == 0
+    assert validated.directive.new_direction_budget == 0
     assert validated.directive.self_disclosure_level == 0.35
     assert "internal_state_question_allows_direct_disclosure" in (
         validated.validation_notes
