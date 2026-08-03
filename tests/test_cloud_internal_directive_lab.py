@@ -4,7 +4,7 @@ import base64
 
 from fastapi.testclient import TestClient
 
-from cloud_validation.internal_directive_lab import LabSettings, create_app
+from cloud_validation.internal_directive_lab_compact import LabSettings, create_app
 
 
 def _authorization(username: str = "tester", password: str = "secret") -> str:
@@ -107,6 +107,21 @@ def test_index_exposes_gui_and_json_editing_modes() -> None:
     assert 'id="metricGroups"' in html
     assert 'id="addActivity"' in html
     assert 'data-apply-json="state"' in html
+
+
+def test_index_hides_duplicate_horizontal_meters() -> None:
+    response = _client().get(
+        "/",
+        headers={"Authorization": _authorization()},
+    )
+
+    assert response.status_code == 200
+    html = response.text
+    assert 'id="compact-metric-display"' in html
+    assert ".meter-track { display: none !important; }" in html
+    assert "スライダーと数値欄が連動します。" in html
+    assert "数値はメーターにも反映されます。" not in html
+    assert 'id="stateOverview"' in html
 
 
 def test_fake_mode_returns_internal_directive_and_stops_before_later_stages() -> None:
