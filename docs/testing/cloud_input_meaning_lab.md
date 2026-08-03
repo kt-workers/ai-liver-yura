@@ -177,6 +177,7 @@ python -m uvicorn cloud_validation.input_meaning_lab:app \
 ```bash
 pytest -q \
   tests/test_cloud_input_meaning_lab.py \
+  tests/test_cloud_input_meaning_blueprint.py \
   tests/test_input_meaning_test_module.py
 ```
 
@@ -186,17 +187,17 @@ GitHub Actionsの
 
 ## CI結果（2026-08-03）
 
-CI確認専用のDraft PR #128を
-`test/input-meaning-cloud-validation`向けに作成し、専用Workflowを実行した。
+専用Blueprint分離後の最終状態を、CI確認専用Draft PR #129で検証した。
 PRはマージせず、成功確認後に閉じた。
 
 - Workflow: `Cloud input meaning validation`
-- Run ID: `30783663899`
-- Run number: `2`
+- Run ID: `30783836759`
+- Run number: `9`
 - Python: `3.10`
 - 新規クラウドラボテスト: 5件
+- 専用Blueprint境界テスト: 1件
 - 既存意味解析テストモジュール: 3件
-- 合計: 8件
+- 合計: 9件
 - 結果: 成功
 
 確認した境界:
@@ -207,6 +208,9 @@ PRはマージせず、成功確認後に閉じた。
 - Fakeモードで本番PromptBuilder／Interpreter／Parserを通過
 - `StructuredInputMeaning`生成後に停止
 - Internal Directive以降の実行結果は空
+- Blueprintは入力意味解析ラボ1サービスだけを管理
+- APIキー、ユーザー名、パスワード、モデル名は`sync: false`
+- 既存`render.yaml`は変更しない
 
 ## 終了条件
 
