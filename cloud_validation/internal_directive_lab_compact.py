@@ -133,7 +133,7 @@ def _state(
     care: float = 0.82,
     honesty: float = 0.92,
     memory: dict[str, object] | None = None,
-    related_knowledge: list[str] | None = None,
+    related_knowledge: list[object] | None = None,
     last_activity_result: object = None,
 ) -> dict[str, object]:
     return {
@@ -154,7 +154,7 @@ def _state(
         "moral": {"care": care, "honesty": honesty},
         "situation": {"current_topic": current_topic},
         "memory": deepcopy(memory or {}),
-        "related_knowledge": list(related_knowledge or []),
+        "related_knowledge": deepcopy(related_knowledge or []),
         "last_activity_result": deepcopy(last_activity_result),
     }
 
@@ -232,7 +232,7 @@ _PRESETS: dict[str, dict[str, object]] = {
     "high_curiosity": {
         "label": "強い好奇心で話題を広げる",
         "description": (
-            "好奇心と関与意欲が高い状態で、関連質問や新しい方向をどの程度許可するか確認します。"
+            "好奇心と関与意欲に加え、現在対象と一致する対象別関心とKnowledge Gapがある状態で、関連質問を1件だけ許可できるか確認します。"
         ),
         "data": _preset_data(
             meaning=_meaning(
@@ -242,7 +242,7 @@ _PRESETS: dict[str, dict[str, object]] = {
                 current_topic="深海の未知の生物",
                 target={"type": "topic", "id": "deep_sea_unknown_life"},
                 information=["深海には未発見の生物がいる可能性がある"],
-                reason="ユーザーは興味深い話題を共有し、会話の継続を期待している",
+                reason="ユーザーは興味深い話題を共有し、対象に沿った会話の継続を期待している",
             ),
             state=_state(
                 joy=0.48,
@@ -254,7 +254,19 @@ _PRESETS: dict[str, dict[str, object]] = {
                 trust=0.71,
                 engagement=0.91,
                 current_topic="深海の未知の生物",
-                related_knowledge=["深海には未分類の生物が多く存在する"],
+                related_knowledge=[
+                    {
+                        "target_type": "topic",
+                        "target_id": "deep_sea_unknown_life",
+                        "interest": 0.94,
+                        "known_facts": [
+                            "深海には未分類の生物が多く存在する"
+                        ],
+                        "knowledge_gaps": [
+                            "未発見生物が多いと考えられている深度や環境"
+                        ],
+                    }
+                ],
             ),
             activities=_conversation_activity("discuss", "explain"),
         ),
