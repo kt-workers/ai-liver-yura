@@ -45,18 +45,30 @@ jobs:
       - name: Check browser JavaScript syntax
         run: |
           python - <<'PY'
+          import re
           from pathlib import Path
 
-          html = Path("cloud_validation/internal_directive_lab.html").read_text(
-              encoding="utf-8"
+          from cloud_validation.internal_directive_lab_compact import (
+              _PRESET_INDEX_HTML,
           )
-          script = html.split("<script>", 1)[1].split("</script>", 1)[0]
-          Path("/tmp/internal-directive-lab.js").write_text(
-              script,
-              encoding="utf-8",
+
+          scripts = re.findall(
+              r"<script[^>]*>(.*?)</script>",
+              _PRESET_INDEX_HTML,
+              flags=re.DOTALL,
           )
+          if not scripts:
+              raise RuntimeError("検査対象のJavaScriptが見つかりません")
+          for index, script in enumerate(scripts, start=1):
+              Path(f"/tmp/internal-directive-lab-{index}.js").write_text(
+                  script,
+                  encoding="utf-8",
+              )
+          print(f"extracted {len(scripts)} scripts")
           PY
-          node --check /tmp/internal-directive-lab.js
+          for script in /tmp/internal-directive-lab-*.js; do
+            node --check "$script"
+          done
 
       - name: Run cloud validation tests
         env:
