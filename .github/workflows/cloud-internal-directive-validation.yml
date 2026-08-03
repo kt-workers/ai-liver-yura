@@ -80,6 +80,7 @@ jobs:
             tests/test_cloud_internal_directive_lab.py \
             tests/test_cloud_internal_directive_reviewed_lab.py \
             tests/test_cloud_internal_directive_blueprint.py \
+            tests/test_cloud_internal_directive_multi_preset_ui.py \
             tests/test_input_meaning_directive_separation.py \
             tests/test_internal_directive_runtime_guards.py \
             tests/test_internal_directive_impossible_experience_boundary.py \
