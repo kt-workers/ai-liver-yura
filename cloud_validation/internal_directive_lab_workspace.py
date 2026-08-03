@@ -68,6 +68,13 @@ _TRANSFER_PANEL = """
 </section>
 """
 
+_RUN_PANEL_MARKER = (
+    '<section class="panel"><label class="check-option">'
+    '<input id="includePrompt" type="checkbox">生成したプロンプトも結果に含める'
+    '</label><div style="height:12px"></div><button class="primary-run" '
+    'id="run" type="button">司令塔LLMを実行</button></section>'
+)
+
 _WORKSPACE_SCRIPT = r"""
 <script id="internal-directive-workspace-script">
 const labCollapsibleSections = {
@@ -257,14 +264,16 @@ setupLabCollapsibleSections();
 
 
 def add_workspace_controls(html: str) -> str:
-    """Exportと5入力領域の折りたたみ操作を完成HTMLへ追加する。"""
+    """実行ボタン直後へExportを置き、5入力領域へ折りたたみ操作を追加する。"""
 
     if 'id="internal-directive-workspace-script"' in html:
         return html
     with_style = html.replace("</head>", f"{_WORKSPACE_STYLE}</head>", 1)
+    if _RUN_PANEL_MARKER not in with_style:
+        raise RuntimeError("internal directive run panel was not found")
     with_transfer = with_style.replace(
-        '<section class="panel editor"',
-        f'{_TRANSFER_PANEL}\n<section class="panel editor"',
+        _RUN_PANEL_MARKER,
+        f"{_RUN_PANEL_MARKER}\n{_TRANSFER_PANEL}",
         1,
     )
     return with_transfer.replace("</body>", f"{_WORKSPACE_SCRIPT}\n</body>", 1)
