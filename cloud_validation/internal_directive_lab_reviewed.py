@@ -44,6 +44,41 @@ def _correct_existence_preset_html(html: str) -> str:
     return html[:preset_start] + corrected_fragment + html[script_end:]
 
 
+def _preserve_related_knowledge_objects_html(html: str) -> str:
+    """関連知識をJSON Linesとして表示し、オブジェクト構造を往復で維持する。"""
+
+    replacements = (
+        (
+            'placeholder="1行につき1件"',
+            'placeholder="1行につきJSONオブジェクト1件"',
+        ),
+        (
+            "document.getElementById('stateRelatedKnowledge').value = "
+            "lines(state.related_knowledge);",
+            "document.getElementById('stateRelatedKnowledge').value = "
+            "Array.isArray(state.related_knowledge) ? "
+            "state.related_knowledge.map(item => typeof item === 'string' ? "
+            "item : JSON.stringify(item)).join('\\n') : '';",
+        ),
+        (
+            "model.state.related_knowledge = parseLines("
+            "document.getElementById('stateRelatedKnowledge').value);",
+            "model.state.related_knowledge = parseLines("
+            "document.getElementById('stateRelatedKnowledge').value)"
+            ".map(line => { try { return JSON.parse(line); } catch { return line; } });",
+        ),
+    )
+    for old_value, new_value in replacements:
+        if old_value in html:
+            html = html.replace(old_value, new_value, 1)
+            continue
+        if new_value not in html:
+            raise RuntimeError(
+                f"related knowledge synchronization was not found: {old_value}"
+            )
+    return html
+
+
 def _collapse_sections_by_default_html(html: str) -> str:
     """5入力領域を初期表示で折りたたみ、状態概要だけは常時表示する。"""
 
@@ -77,9 +112,11 @@ def _collapse_sections_by_default_html(html: str) -> str:
 
 
 # workspace側で組み立て済みの完成HTMLを基準にする。
-# DOMや既存JavaScriptを再生成せず、対象プリセットと初期表示だけを訂正する。
+# DOMや既存JavaScriptを再生成せず、対象プリセット・同期処理・初期表示だけを訂正する。
 _REVIEWED_INDEX_HTML = _collapse_sections_by_default_html(
-    _correct_existence_preset_html(workspace._WORKSPACE_INDEX_HTML)
+    _preserve_related_knowledge_objects_html(
+        _correct_existence_preset_html(workspace._WORKSPACE_INDEX_HTML)
+    )
 )
 
 
@@ -88,7 +125,7 @@ def create_app(
     settings: LabSettings | None = None,
     service: InternalDirectiveLabService | None = None,
 ):
-    """存在境界プリセットと初期折りたたみを反映した検証ラボを生成する。"""
+    """修正版プリセット・同期処理・初期折りたたみを反映したラボを生成する。"""
 
     compact.base._INDEX_HTML = _REVIEWED_INDEX_HTML
     return compact.base.create_app(settings=settings, service=service)
