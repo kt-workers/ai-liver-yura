@@ -37,5 +37,4 @@ def test_main_swallows_top_level_cancelled_error(
         raise asyncio.CancelledError
 
     monkeypatch.setattr(app_main.asyncio, "run", canceled_run)
-
     app_main.main()
