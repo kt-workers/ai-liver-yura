@@ -174,6 +174,30 @@ GitHub Actionsの
 `.github/workflows/cloud-input-meaning-validation.yml`
 でも同じ範囲を実行する。
 
+## CI結果（2026-08-03）
+
+CI確認専用のDraft PR #128を
+`test/input-meaning-cloud-validation`向けに作成し、専用Workflowを実行した。
+PRはマージせず、成功確認後に閉じた。
+
+- Workflow: `Cloud input meaning validation`
+- Run ID: `30783663899`
+- Run number: `2`
+- Python: `3.10`
+- 新規クラウドラボテスト: 5件
+- 既存意味解析テストモジュール: 3件
+- 合計: 8件
+- 結果: 成功
+
+確認した境界:
+
+- Health Checkは認証なしで利用可能
+- 検証画面と解析APIはBasic認証必須
+- 認証未設定時はFail Closed
+- Fakeモードで本番PromptBuilder／Interpreter／Parserを通過
+- `StructuredInputMeaning`生成後に停止
+- Internal Directive以降の実行結果は空
+
 ## 終了条件
 
 以下を確認後、このブランチを閉じるか削除する。
