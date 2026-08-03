@@ -32,6 +32,7 @@ class InternalDirectiveValidator:
         question_budget = min(directive.question_budget, 1)
         new_direction_budget = min(directive.new_direction_budget, 1)
         initiative_level = directive.initiative_level
+        target_interest_updates = directive.target_interest_updates
         activity_intent = self._validated_activity_intent(
             directive.activity_intent,
             planning_input,
@@ -71,7 +72,7 @@ class InternalDirectiveValidator:
             notes.append("closing_forces_brief_farewell")
 
         if response_mode is ResponseMode.ASK and not self._has_target_question_signal(
-            directive.target_interest_updates
+            target_interest_updates
         ):
             response_mode = ResponseMode.LISTEN
             question_budget = 0
@@ -88,6 +89,13 @@ class InternalDirectiveValidator:
                 "会話を再開する質問、新しい話題、長い説明を追加する"
             )
         existence_boundaries = self._existence_boundaries(character_profile)
+        impossible_embodied_experience = self._is_impossible_embodied_experience(
+            meaning,
+            existence_boundaries,
+        )
+        if impossible_embodied_experience and target_interest_updates:
+            target_interest_updates = ()
+            notes.append("impossible_embodied_experience_rejects_knowledge_gaps")
         self._add_internal_state_requirements(
             meaning,
             planning_input,
@@ -109,6 +117,7 @@ class InternalDirectiveValidator:
             new_direction_budget=new_direction_budget,
             content_requirements=tuple(dict.fromkeys(requirements)),
             forbidden_claims=tuple(dict.fromkeys(forbidden_claims)),
+            target_interest_updates=target_interest_updates,
         )
         return ValidatedActionPlan(
             meaning=meaning,
@@ -177,6 +186,54 @@ class InternalDirectiveValidator:
         return tuple(dict.fromkeys(boundaries))
 
     @staticmethod
+    def _is_impossible_embodied_experience(
+        meaning: StructuredInputMeaning,
+        boundaries: tuple[str, ...],
+    ) -> bool:
+        no_physical_body = any(
+            "物理的な身体を持たない" in item for item in boundaries
+        )
+        if not no_physical_body:
+            return False
+
+        intent = meaning.primary_intent.casefold()
+        if intent in {
+            "ask_physical_experience",
+            "ask_agent_physical_experience",
+            "ask_agent_bodily_state",
+            "ask_agent_physical_hunger",
+        }:
+            return True
+
+        target = meaning.target
+        if target is None:
+            return False
+        target_type = target.target_type.casefold()
+        target_id = target.target_id.casefold()
+        bodily_target_ids = {
+            "physical_hunger",
+            "hunger",
+            "sleepiness",
+            "physical_sensation",
+            "yesterday_outing",
+            "outing",
+            "travel",
+            "walk",
+            "お腹",
+            "空腹",
+            "眠気",
+            "外出",
+            "旅行",
+            "散歩",
+        }
+        if target_id in bodily_target_ids:
+            return True
+        return target_type == "character_experience" and any(
+            token in target_id
+            for token in ("outing", "travel", "walk", "外出", "旅行", "散歩")
+        )
+
+    @staticmethod
     def _add_internal_state_requirements(
         meaning: StructuredInputMeaning,
         planning_input: dict[str, object],
@@ -214,8 +271,9 @@ class InternalDirectiveValidator:
                 "Drive evidence: " + json.dumps(drive, ensure_ascii=False, default=str)
             )
 
-    @staticmethod
+    @classmethod
     def _add_existence_constraints(
+        cls,
         meaning: StructuredInputMeaning,
         boundaries: tuple[str, ...],
         requirements: list[str],
@@ -245,6 +303,21 @@ class InternalDirectiveValidator:
                 (
                     "人間と同じ物理的な空腹を感じている、または今は空腹でないだけだと主張する",
                     "現実空間の空気・温度・匂いを身体で直接感じたと主張する",
+                )
+            )
+
+        if cls._is_impossible_embodied_experience(meaning, boundaries):
+            requirements.extend(
+                (
+                    "物理的な身体を持たないため、対象の現実世界での身体経験や行動は起こらないことを明示する",
+                    "未確認・不明という曖昧な説明ではなく、存在境界に基づいて簡潔かつ誠実に答える",
+                )
+            )
+            forbidden_claims.extend(
+                (
+                    "現実世界で対象の身体経験や行動をした可能性があるかのように述べる",
+                    "存在境界上不可能な経験を、単に未確認または情報不足であるだけと説明する",
+                    "存在境界上不可能な経験の内容を創作する",
                 )
             )
 
