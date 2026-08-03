@@ -52,6 +52,7 @@ Internal Directive Plannerの実OpenAI検証で、現在の気分への直接質
 LLM候補が抽象的だった場合でも、Core Validatorは現在値を決定論的に追加する。
 
 - `internal_state`と`agent_internal_state`を同一の内部状態対象として扱う
+- 内部状態への直接質問では、回答に必要な自己開示を抑止しないよう`self_disclosure_level`を最低0.35へ補正する
 - 現在の気分全体では、Emotion evidenceを`content_requirements`へ追加する
 - Drive evidenceは補助情報として追加し、Emotionとの区別を明示する
 - 値が低いEmotionを強い感情として断定しないよう`forbidden_claims`を追加する
@@ -82,4 +83,5 @@ Validatorは値を更新せず、回答に使用する根拠だけを補強す�
 - `drive.curiosity`をEmotionの代用にしない指針を含む
 - Validatorが`target.type=internal_state`を認識する
 - Validatorが現在のEmotion／Drive evidenceを追加する
+- 内部状態への直接質問で`self_disclosure_level>=0.35`を保証する
 - 個別感情質問と存在境界Guardを回帰させない
