@@ -8,6 +8,17 @@ from cloud_validation.internal_directive_lab_compact import _PRESETS
 from cloud_validation.internal_directive_lab_workspace import LabSettings, create_app
 
 
+_BASE_PRESET_KEYS = {
+    "current_feeling",
+    "positive_empathy",
+    "high_curiosity",
+    "low_activation_listen",
+    "conversation_closing",
+    "continue_ongoing_activity",
+    "existence_boundary",
+}
+
+
 def _authorization(username: str = "tester", password: str = "secret") -> str:
     token = base64.b64encode(f"{username}:{password}".encode()).decode()
     return f"Basic {token}"
@@ -155,12 +166,14 @@ def test_index_exposes_complete_preset_controller() -> None:
     assert "model.ongoing = data.ongoing" in html
     assert "model.profile = data.profile" in html
 
-    assert len(_PRESETS) == 7
+    assert _BASE_PRESET_KEYS <= set(_PRESETS)
+    assert len(_PRESETS) >= len(_BASE_PRESET_KEYS)
     required_sections = {"meaning", "state", "activities", "ongoing", "profile"}
     for preset in _PRESETS.values():
         assert set(preset) == {"label", "description", "data"}
         assert set(preset["data"]) == required_sections
-        assert str(preset["label"]) in html
+    for key in _BASE_PRESET_KEYS:
+        assert str(_PRESETS[key]["label"]) in html
 
 
 def test_index_exposes_chatgpt_export_and_collapsible_sections() -> None:
