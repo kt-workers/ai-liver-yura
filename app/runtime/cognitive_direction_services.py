@@ -114,4 +114,8 @@ class InternalDirectivePlanner:
         directive = self._parser.parse(raw)
         if directive is None:
             return None
-        return self._normalizer.normalize(meaning, directive)
+        return self._normalizer.normalize(
+            meaning,
+            directive,
+            planning_input,
+        )
