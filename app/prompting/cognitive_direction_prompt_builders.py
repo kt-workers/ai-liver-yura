@@ -179,6 +179,16 @@ class InternalDirectivePromptBuilder:
                 "として扱わず、存在境界上できないことを回答要件にする。",
                 "存在境界上不可能な経験の有無や内容をnew_knowledge_gapsへ追加してはいけない。"
                 "一般知識への関心と、自分自身の実体験の有無を混同しない。",
+                "resolved_knowledge_gapsにはDirectiveInput内で既存のKnowledge Gapとして"
+                "確認できる項目だけを入れる。related_knowledgeまたはmemoryに対象のGapが"
+                "存在しない場合は空配列にし、存在境界から判明した事実を解決済みGapとして"
+                "新規作成してはいけない。",
+                "interest_changeは入力情報または既存の対象別関心状態に増減の明確な根拠がある"
+                "場合だけ変更する。質問へ回答したこと、事実が判明したこと、Knowledge Gapが"
+                "閉じたことだけを理由に関心を下げず、根拠がなければunchangedにする。",
+                "state_update_proposalsには実際に値を変更すべき状態だけを入れる。現在値の"
+                "言い換え、応答行為の記録、current_topicへ『直接回答』などを付け加えるだけの"
+                "提案は行わず、変更がなければ空配列にする。",
                 "Activityはavailable_activitiesに対する意図だけを出す。Capability、Authority、"
                 "Safety、Constraint、実行成功を確定しない。",
                 "自由文章のCharacter LLMプロンプトを書かない。発話本文も生成しない。",
