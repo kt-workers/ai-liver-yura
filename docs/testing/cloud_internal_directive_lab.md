@@ -2,7 +2,7 @@
 
 ## 概要
 
-`cloud_validation.internal_directive_lab_compact` は、司令塔LLM（`InternalDirectivePlanner`）だけをブラウザから実行する検証用Webアプリです。
+`cloud_validation.internal_directive_lab_workspace` は、司令塔LLM（`InternalDirectivePlanner`）だけをブラウザから実行する検証用Webアプリです。
 
 入力意味解析済みの `StructuredInputMeaning`、内部状態、Activity情報、Character Profileを入力し、`InternalDirective` の生成後に停止します。入力意味解析、実行可否判定、Character LLM、出力処理は実行しません。
 
@@ -12,7 +12,7 @@
 export YURA_INTERNAL_DIRECTIVE_LAB_MODE=fake
 export YURA_LAB_USERNAME=tester
 export YURA_LAB_PASSWORD=secret
-python -m uvicorn cloud_validation.internal_directive_lab_compact:app \
+python -m uvicorn cloud_validation.internal_directive_lab_workspace:app \
   --host 127.0.0.1 \
   --port 8001
 ```
@@ -27,7 +27,7 @@ export YURA_INTERNAL_DIRECTIVE_LAB_MODEL='<model-name>'
 export OPENAI_API_KEY='<api-key>'
 export YURA_LAB_USERNAME='<username>'
 export YURA_LAB_PASSWORD='<password>'
-python -m uvicorn cloud_validation.internal_directive_lab_compact:app \
+python -m uvicorn cloud_validation.internal_directive_lab_workspace:app \
   --host 127.0.0.1 \
   --port 8001
 ```
@@ -69,6 +69,54 @@ APIキー名を変更する場合は `YURA_INTERNAL_DIRECTIVE_LAB_API_KEY_ENV` �
 各領域はGUI入力とJSON入力を切り替えられます。プリセットを適用した場合、GUIとJSONの両方へ同じ値が同期されます。
 
 初期値が入力済みのため、そのまま実行して疎通確認することもできます。
+
+## セクションの折りたたみ
+
+次の5セクションは、ヘッダー右側の「折りたたむ」「展開する」ボタンで個別に開閉できます。
+
+- `StructuredInputMeaning`
+- 内部状態
+- 利用可能Activity
+- 進行中Activity
+- Character Profile / 存在境界
+
+折りたたんでも入力値、GUI/JSONモード、プリセット値は変化しません。
+
+内部状態の円形サマリーは折りたたみ対象外です。内部状態の詳細入力を閉じても、感情・欲求・関係性・動機・善悪の平均値と最大項目は常に確認できます。
+
+## ChatGPT用テキストExport
+
+「ChatGPT用テキストをExport」を押すと、現在の検証条件をUTF-8の `.txt` ファイルとしてダウンロードします。
+
+必ず次の5入力領域を含みます。
+
+- `StructuredInputMeaning`
+- 内部状態
+- 利用可能Activity
+- 進行中Activity
+- Character Profile / 存在境界
+
+LLM実行結果が画面に表示されている場合は、次も同じファイルへ追記します。
+
+- valid
+- mode / model
+- elapsed
+- stop stage
+- Parsed InternalDirective
+- Raw LLM Response
+- Prompt（結果へ含めた場合のみ）
+
+ファイル先頭には、ChatGPTへ評価を依頼するための説明文が入ります。ChatGPTへファイルを添付するだけで、入力と司令結果の整合性評価を依頼できます。
+
+ファイル名は次の形式です。
+
+```text
+yura-internal-directive-lab-YYYYMMDD-HHMMSS.txt
+```
+
+APIキー、Basic認証情報、Render環境変数はExportされません。
+
+JSON入力モードの内容が不正な場合は、ファイルを作らず画面にJSONエラーを表示します。
 
 ## 結果の確認
 
