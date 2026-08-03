@@ -167,10 +167,25 @@ class InternalDirectivePromptBuilder:
                 "直接回答だけで完結し、独立したActivity操作を必要としない場合は"
                 "activity_intent=nullにする。available_activitiesにconversationがあるだけを理由に"
                 "explainまたはdiscussを選んではいけない。",
-                "acknowledgementでは新しい話題を始めず、listenまたはreactを選ぶ。",
-                "closingでは会話を締め、question_budget=0にする。",
+                "structured_input_meaning.expected_response=actionで、target.type=activity、"
+                "ongoing_activityがあり、そのactivity_typeがavailable_activitiesでcontinue可能なら、"
+                "activity_intentは同じactivity_typeのoperation=continueにする。本文を返すだけでも"
+                "継続できることを理由にactivity_intent=nullへ落としてはいけない。",
+                "available_activitiesの操作一覧はsupported_operationsまたはoperationsの"
+                "どちらのキーでも同じ契約として読む。",
+                "acknowledgementでは新しい話題を始めず、通常はlistenまたはreactを選ぶ。"
+                "ただし、ユーザーが肯定的な出来事を共有し共感反応を期待している場合は、"
+                "高いjoy、care、social、engagementを根拠にresponse_mode=reactを選び、"
+                "短く一緒に喜ぶ内容をresponse_goalとcontent_requirementsへ具体化する。",
+                "closingではresponse_mode=reactとし、短い別れの挨拶を1文で返す。"
+                "question_budget=0、new_direction_budget=0とし、no_responseであっても"
+                "無言終了にはしない。",
                 "全体的なdrive.curiosityだけを理由に質問しない。対象別関心、knowledge gap、"
-                "未解決点が具体的にある場合だけaskを選択できる。",
+                "未解決点が具体的にある場合だけaskを選択できる。related_knowledgeに"
+                "現在targetと一致する高いinterestと既存knowledge_gapsがある場合、そのGapに"
+                "直接つながる質問を1件だけ許可できる。この場合question_budget=1、"
+                "同じ対象を掘り下げるだけならnew_direction_budget=0にする。既存Gapを"
+                "new_knowledge_gapsとして作り直してはいけない。",
                 "joyやamusementとengagementを混同しない。内部状態への直接質問では対象の"
                 "感情値を根拠にし、関心の高さを楽しさとして断定しない。",
                 "structured_input_meaning.target.typeがinternal_stateまたは"
@@ -182,12 +197,18 @@ class InternalDirectivePromptBuilder:
                 "現在の気分を表す感情値は、0.70以上を強め、0.45以上0.70未満を中程度、"
                 "0.25以上0.45未満を少し、0.25未満を低いものとして扱う。低い項目を"
                 "主感情として誇張してはいけない。",
+                "内部状態のキー名と数値は司令の根拠であり、Character LLMがそのまま読み上げる"
+                "発話内容ではない。content_requirementsには、最終発話で『落ち着きが強め』など"
+                "自然な日本語へ変換し、calm=0.74のような内部表現を読まないことも含める。",
                 "drive.curiosityは好奇心・関心として必要な場合だけ補助的に含め、joyまたは"
                 "amusementの代用にしない。内部状態そのものが直接回答対象なら、必要な内容を"
                 "答えられるようself_disclosure_levelは0.35以上を目安にするが、発話本文は"
                 "生成しない。",
-                "Character Profileと存在境界に反する身体経験・現実空間での実体験を"
-                "content_requirementsまたはforbidden_claimsで明示的に防ぐ。",
+                "Character Profileと存在境界は常に守る。ただし身体経験と無関係な通常の"
+                "相づち、共感、会話終了、Activity継続へ、身体や現実体験の禁止事項を機械的に"
+                "毎回列挙しない。structured_input_meaningが身体状態・物理行動・現実空間の"
+                "実体験を対象にするときだけ、必要なcontent_requirementsまたは"
+                "forbidden_claimsへ具体化する。",
                 "存在境界が物理的行動や身体経験を不可能としている場合は、単なる未確認・不明"
                 "として扱わず、存在境界上できないことを回答要件にする。",
                 "存在境界上不可能な経験の有無や内容をnew_knowledge_gapsへ追加してはいけない。"
