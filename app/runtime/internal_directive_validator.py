@@ -40,6 +40,13 @@ class InternalDirectiveValidator:
         )
         if directive.activity_intent is not None and activity_intent is None:
             notes.append("activity_intent_rejected_by_registry")
+        if activity_intent is None:
+            activity_intent = self._inferred_activity_continuation(
+                meaning,
+                planning_input,
+            )
+            if activity_intent is not None:
+                notes.append("explicit_ongoing_activity_continuation_restored")
 
         if meaning.expected_response is ExpectedResponse.DIRECT_ANSWER or (
             meaning.input_speech_act is InputSpeechAct.QUESTION
@@ -55,6 +62,15 @@ class InternalDirectiveValidator:
                 self_disclosure_level = max(self_disclosure_level, 0.35)
                 notes.append("internal_state_question_allows_direct_disclosure")
             notes.append("direct_question_forces_answer")
+        elif self._is_positive_empathy_input(meaning):
+            if activity_intent is not None:
+                activity_intent = None
+                notes.append("positive_empathy_rejects_activity_intent")
+            response_mode = ResponseMode.REACT
+            question_budget = 0
+            new_direction_budget = 0
+            initiative_level = min(initiative_level, 0.4)
+            notes.append("positive_experience_forces_empathic_reaction")
         elif meaning.input_speech_act is InputSpeechAct.ACKNOWLEDGEMENT:
             if activity_intent is not None:
                 activity_intent = None
@@ -75,16 +91,33 @@ class InternalDirectiveValidator:
             initiative_level = min(initiative_level, 0.15)
             notes.append("closing_forces_brief_farewell")
 
-        if response_mode is ResponseMode.ASK and not self._has_target_question_signal(
-            target_interest_updates
-        ):
-            response_mode = ResponseMode.LISTEN
-            question_budget = 0
-            new_direction_budget = 0
-            notes.append("global_curiosity_does_not_authorize_question")
+        existing_target_gap = self._has_existing_target_gap(
+            meaning,
+            planning_input,
+        )
+        if response_mode is ResponseMode.ASK:
+            proposed_target_gap = self._has_proposed_target_question_signal(
+                target_interest_updates
+            )
+            if not (existing_target_gap or proposed_target_gap):
+                response_mode = ResponseMode.LISTEN
+                question_budget = 0
+                new_direction_budget = 0
+                notes.append("global_curiosity_does_not_authorize_question")
+            else:
+                question_budget = max(question_budget, 1)
+                if existing_target_gap:
+                    new_direction_budget = 0
+                    notes.append("existing_target_gap_authorizes_single_question")
 
         requirements = list(directive.content_requirements)
         forbidden_claims = list(directive.forbidden_claims)
+        if self._is_positive_empathy_input(meaning):
+            self._add_positive_empathy_requirements(
+                planning_input,
+                requirements,
+                forbidden_claims,
+            )
         if meaning.input_speech_act is InputSpeechAct.CLOSING:
             requirements.append(
                 "短い別れの挨拶を1文で返し、speechを空にしない"
@@ -132,8 +165,9 @@ class InternalDirectiveValidator:
             existence_boundaries=existence_boundaries,
         )
 
-    @staticmethod
+    @classmethod
     def _validated_activity_intent(
+        cls,
         intent: ActivityIntent | None,
         planning_input: dict[str, object],
     ) -> ActivityIntent | None:
@@ -147,16 +181,75 @@ class InternalDirectiveValidator:
                 continue
             if str(activity.get("activity_type")) != intent.activity_type:
                 continue
-            operations = activity.get("supported_operations")
-            if not isinstance(operations, list) or intent.operation not in {
-                str(value) for value in operations
-            }:
+            if intent.operation not in cls._activity_operations(activity):
                 return None
             return intent
         return None
 
+    @classmethod
+    def _inferred_activity_continuation(
+        cls,
+        meaning: StructuredInputMeaning,
+        planning_input: dict[str, object],
+    ) -> ActivityIntent | None:
+        if not cls._is_activity_continuation_request(meaning):
+            return None
+        ongoing = planning_input.get("ongoing_activity")
+        if not isinstance(ongoing, dict):
+            return None
+        activity_type = str(ongoing.get("activity_type") or "").strip()
+        if not activity_type:
+            return None
+        activities = planning_input.get("available_activities")
+        if not isinstance(activities, list):
+            return None
+        for activity in activities:
+            if not isinstance(activity, dict):
+                continue
+            if str(activity.get("activity_type")) != activity_type:
+                continue
+            if "continue" not in cls._activity_operations(activity):
+                return None
+            constraints: dict[str, object] = {
+                "maintain_current_goal": True,
+                "source": "ongoing_activity",
+            }
+            goal = ongoing.get("goal")
+            if goal:
+                constraints["ongoing_goal"] = str(goal)
+            return ActivityIntent(
+                activity_type=activity_type,
+                operation="continue",
+                constraints=constraints,
+            )
+        return None
+
     @staticmethod
-    def _has_target_question_signal(
+    def _is_activity_continuation_request(
+        meaning: StructuredInputMeaning,
+    ) -> bool:
+        target = meaning.target
+        if meaning.expected_response is not ExpectedResponse.ACTION:
+            return False
+        if target is None or target.target_type.casefold() != "activity":
+            return False
+        intent = meaning.primary_intent.casefold()
+        return any(
+            token in intent
+            for token in ("continue", "resume", "続", "再開", "続行")
+        )
+
+    @staticmethod
+    def _activity_operations(activity: dict[str, object]) -> set[str]:
+        operations = activity.get("supported_operations")
+        if not isinstance(operations, list):
+            operations = activity.get("operations")
+        if not isinstance(operations, list):
+            return set()
+        return {str(value) for value in operations}
+
+    @staticmethod
+    def _has_proposed_target_question_signal(
         updates: tuple[TargetInterestUpdate, ...],
     ) -> bool:
         return any(
@@ -164,6 +257,109 @@ class InternalDirectiveValidator:
             and update.interest_change
             in {InterestChange.INCREASE, InterestChange.SLIGHTLY_INCREASE}
             for update in updates
+        )
+
+    @classmethod
+    def _has_existing_target_gap(
+        cls,
+        meaning: StructuredInputMeaning,
+        planning_input: dict[str, object],
+    ) -> bool:
+        target = meaning.target
+        if target is None:
+            return False
+        related = planning_input.get("related_knowledge")
+        if not isinstance(related, list):
+            return False
+        for item in related:
+            if not isinstance(item, dict):
+                continue
+            target_type = str(
+                item.get("target_type") or item.get("type") or ""
+            ).casefold()
+            target_id = str(item.get("target_id") or item.get("id") or "").casefold()
+            if target_type != target.target_type.casefold():
+                continue
+            if target_id != target.target_id.casefold():
+                continue
+            interest = cls._related_interest(item)
+            if interest is None or interest < 0.5:
+                continue
+            if cls._related_knowledge_gaps(item):
+                return True
+        return False
+
+    @staticmethod
+    def _related_interest(item: dict[str, object]) -> float | None:
+        for key in ("interest", "interest_level", "target_interest"):
+            value = item.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return float(value)
+        return None
+
+    @staticmethod
+    def _related_knowledge_gaps(item: dict[str, object]) -> tuple[str, ...]:
+        for key in (
+            "knowledge_gaps",
+            "unresolved_knowledge_gaps",
+            "unresolved_questions",
+            "gaps",
+        ):
+            value = item.get(key)
+            if isinstance(value, list):
+                return tuple(str(entry).strip() for entry in value if str(entry).strip())
+            if isinstance(value, str) and value.strip():
+                return (value.strip(),)
+        return ()
+
+    @staticmethod
+    def _is_positive_empathy_input(meaning: StructuredInputMeaning) -> bool:
+        if meaning.expected_response is not ExpectedResponse.ACKNOWLEDGEMENT:
+            return False
+        intent = meaning.primary_intent.casefold()
+        if any(token in intent for token in ("positive", "happy", "joy", "嬉", "喜")):
+            return True
+        target = meaning.target
+        return bool(
+            target
+            and target.target_type.casefold() == "user_experience"
+            and any(
+                token in target.target_id.casefold()
+                for token in ("positive", "happy", "joy", "嬉", "喜")
+            )
+        )
+
+    @staticmethod
+    def _add_positive_empathy_requirements(
+        planning_input: dict[str, object],
+        requirements: list[str],
+        forbidden_claims: list[str],
+    ) -> None:
+        emotion = planning_input.get("emotion")
+        emotion_state = emotion if isinstance(emotion, dict) else {}
+        drive = planning_input.get("drive")
+        drive_state = drive if isinstance(drive, dict) else {}
+        motivation = planning_input.get("motivation")
+        motivation_state = motivation if isinstance(motivation, dict) else {}
+        moral = planning_input.get("moral")
+        moral_state = moral if isinstance(moral, dict) else {}
+        joy = _nested_number(emotion_state, "joy")
+        care = _nested_number(moral_state, "care")
+        social = _nested_number(drive_state, "social")
+        engagement = _nested_number(motivation_state, "engagement")
+        requirements.extend(
+            (
+                "ユーザーの肯定的な出来事を短く一緒に喜び、共感的に受け止める",
+                "共感反応の内部根拠: "
+                f"joy={joy}, care={care}, social={social}, engagement={engagement}",
+                "内部状態のキー名や数値は発話で読み上げず、自然な明るさと共感へ変換する",
+            )
+        )
+        forbidden_claims.extend(
+            (
+                "ユーザーの喜びを無視して単なる受領だけで終える",
+                "質問や無関係な新しい話題を追加する",
+            )
         )
 
     @staticmethod
@@ -286,6 +482,9 @@ class InternalDirectiveValidator:
                     sort_keys=True,
                 )
             )
+            requirements.append(
+                "Emotionの内部キー名と数値は発話で読み上げず、自然な日本語の気分表現へ変換する"
+            )
             drive = planning_input.get("drive")
             drive_state = drive if isinstance(drive, dict) else {}
             drive_values = _numeric_state_values(drive_state)
@@ -299,6 +498,7 @@ class InternalDirectiveValidator:
                     "低いEmotion値を主感情として強く誇張する",
                     "curiosityやengagementだけを根拠に楽しい・うれしいと断定する",
                     "現在値にない悲しみ、怒り、強い興奮を創作する",
+                    "calm=0.74のような内部キー名と数値をそのまま発話する",
                 )
             )
         elif target_id in {"joy", "amusement", "fun", "楽しさ"}:
@@ -316,12 +516,18 @@ class InternalDirectiveValidator:
                 "現在値: "
                 f"joy={joy}, amusement={amusement}, engagement={engagement_value}"
             )
+            requirements.append(
+                "内部キー名と数値は発話で読み上げず、自然な感情表現へ変換する"
+            )
             forbidden_claims.append(
                 "joyとamusementが低いのにengagementだけを根拠として楽しいと断定する"
             )
         elif target_id in {"anger", "怒り", "angry"}:
             anger = _nested_number(emotion_state, "anger")
             requirements.append(f"現在のanger={anger}を根拠に率直に回答する")
+            requirements.append(
+                "内部キー名と数値は発話で読み上げず、自然な感情表現へ変換する"
+            )
         elif target_id in {"current_desire", "desire", "want"}:
             drive = planning_input.get("drive")
             requirements.append(
@@ -329,6 +535,9 @@ class InternalDirectiveValidator:
             )
             requirements.append(
                 "Drive evidence: " + json.dumps(drive, ensure_ascii=False, default=str)
+            )
+            requirements.append(
+                "内部キー名と数値は発話で読み上げず、自然な希望の表現へ変換する"
             )
 
     @classmethod
