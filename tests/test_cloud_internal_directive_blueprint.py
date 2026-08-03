@@ -17,7 +17,10 @@ def test_internal_directive_lab_blueprint_is_isolated_and_uses_secrets() -> None
     assert service["plan"] == "free"
     assert service["branch"] == "test/internal-directive-cloud-validation"
     assert service["healthCheckPath"] == "/health"
-    assert "cloud_validation.internal_directive_lab:app" in service["startCommand"]
+    assert (
+        "cloud_validation.internal_directive_lab_compact:app"
+        in service["startCommand"]
+    )
 
     env_vars = {item["key"]: item for item in service["envVars"]}
     for secret_name in (
