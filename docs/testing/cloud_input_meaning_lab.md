@@ -140,9 +140,19 @@ APIキー、パスワード、Authorization Headerをレスポンスやログへ
 
 ## Render
 
-リポジトリ直下の`render.yaml`をBlueprintとして使用する。
+検証ラボ専用のBlueprintとして、リポジトリ直下の
+`render.input-meaning-lab.yaml`を使用する。
+既存の`render.yaml`には他GUIサービスと別ブランチの定義が含まれるため、
+本ラボの作成には使用しない。
 
-Render Dashboardで次を入力する。
+Render DashboardでBlueprintを作成するときは次を指定する。
+
+```text
+Branch: test/input-meaning-cloud-validation
+Blueprint Path: render.input-meaning-lab.yaml
+```
+
+初回作成画面で次の値を入力する。
 
 ```text
 YURA_INPUT_MEANING_LAB_MODEL
