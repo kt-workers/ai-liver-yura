@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from app.domain.cognitive_direction import InternalDirective, StructuredInputMeaning
+from app.domain.cognitive_direction import (
+    ConversationPhaseSignal,
+    ExpectedResponse,
+    InputSpeechAct,
+    InternalDirective,
+    ResponseMode,
+    StructuredInputMeaning,
+)
 
 
 class InternalDirectiveCandidateNormalizer:
@@ -10,6 +17,19 @@ class InternalDirectiveCandidateNormalizer:
 
     def normalize(
         self,
+        meaning: StructuredInputMeaning,
+        directive: InternalDirective,
+        planning_input: dict[str, object] | None = None,
+    ) -> InternalDirective:
+        normalized = self._normalize_existence_constraints(meaning, directive)
+        return self._restore_target_gap_question(
+            meaning,
+            normalized,
+            planning_input or {},
+        )
+
+    @staticmethod
+    def _normalize_existence_constraints(
         meaning: StructuredInputMeaning,
         directive: InternalDirective,
     ) -> InternalDirective:
@@ -36,6 +56,183 @@ class InternalDirectiveCandidateNormalizer:
             content_requirements=requirements,
             forbidden_claims=forbidden_claims,
         )
+
+    @classmethod
+    def _restore_target_gap_question(
+        cls,
+        meaning: StructuredInputMeaning,
+        directive: InternalDirective,
+        planning_input: dict[str, object],
+    ) -> InternalDirective:
+        gap = cls._eligible_target_gap(meaning, planning_input)
+        if gap is None or not cls._question_expansion_is_allowed(meaning):
+            return directive
+        if not cls._has_high_question_motivation(planning_input):
+            return directive
+
+        requirements = tuple(
+            value
+            for value in directive.content_requirements
+            if not _is_question_prohibition(value)
+        )
+        forbidden_claims = tuple(
+            value
+            for value in directive.forbidden_claims
+            if not _is_question_prohibition(value)
+        )
+        requirements = tuple(
+            dict.fromkeys(
+                (
+                    *requirements,
+                    f"現在対象の既存Knowledge Gap『{gap}』に沿った質問を1件だけ行う",
+                    "現在の対象を掘り下げ、無関係な新しい話題へ展開しない",
+                )
+            )
+        )
+        forbidden_claims = tuple(
+            dict.fromkeys(
+                (
+                    *forbidden_claims,
+                    "対象と無関係な質問、複数の質問、別方向の話題を追加する",
+                )
+            )
+        )
+        return replace(
+            directive,
+            response_mode=ResponseMode.ASK,
+            response_goal=(
+                "現在対象の既存Knowledge Gapに沿った関連質問を1件だけ行う"
+            ),
+            initiative_level=max(directive.initiative_level, 0.35),
+            question_budget=1,
+            new_direction_budget=0,
+            content_requirements=requirements,
+            forbidden_claims=forbidden_claims,
+        )
+
+    @classmethod
+    def _eligible_target_gap(
+        cls,
+        meaning: StructuredInputMeaning,
+        planning_input: dict[str, object],
+    ) -> str | None:
+        target = meaning.target
+        if target is None:
+            return None
+        related = planning_input.get("related_knowledge")
+        if not isinstance(related, list):
+            return None
+        for item in related:
+            if not isinstance(item, dict):
+                continue
+            target_type = str(
+                item.get("target_type") or item.get("type") or ""
+            ).casefold()
+            target_id = str(item.get("target_id") or item.get("id") or "").casefold()
+            if target_type != target.target_type.casefold():
+                continue
+            if target_id != target.target_id.casefold():
+                continue
+            interest = _number_from_keys(
+                item,
+                "interest",
+                "interest_level",
+                "target_interest",
+            )
+            if interest is None or interest < 0.75:
+                continue
+            for key in (
+                "knowledge_gaps",
+                "unresolved_knowledge_gaps",
+                "unresolved_questions",
+                "gaps",
+            ):
+                value = item.get(key)
+                if isinstance(value, list):
+                    for entry in value:
+                        text = str(entry).strip()
+                        if text:
+                            return text
+                elif isinstance(value, str) and value.strip():
+                    return value.strip()
+        return None
+
+    @staticmethod
+    def _question_expansion_is_allowed(
+        meaning: StructuredInputMeaning,
+    ) -> bool:
+        if meaning.conversation_phase_signal is not ConversationPhaseSignal.CONTINUE:
+            return False
+        if meaning.input_speech_act in {
+            InputSpeechAct.QUESTION,
+            InputSpeechAct.CLOSING,
+            InputSpeechAct.COMMAND,
+            InputSpeechAct.REQUEST,
+        }:
+            return False
+        if meaning.expected_response in {
+            ExpectedResponse.DIRECT_ANSWER,
+            ExpectedResponse.ACTION,
+            ExpectedResponse.NO_RESPONSE,
+            ExpectedResponse.CLARIFICATION,
+        }:
+            return False
+        intent = meaning.primary_intent.casefold()
+        return not any(
+            token in intent
+            for token in (
+                "positive_experience",
+                "share_happy",
+                "share_joy",
+                "closing",
+                "end_conversation",
+                "continue_previous",
+                "stop_activity",
+                "嬉",
+                "喜びを共有",
+            )
+        )
+
+    @staticmethod
+    def _has_high_question_motivation(
+        planning_input: dict[str, object],
+    ) -> bool:
+        drive = planning_input.get("drive")
+        drive_state = drive if isinstance(drive, dict) else {}
+        motivation = planning_input.get("motivation")
+        motivation_state = motivation if isinstance(motivation, dict) else {}
+        curiosity = _number_from_keys(drive_state, "curiosity") or 0.0
+        engagement = _number_from_keys(motivation_state, "engagement") or 0.0
+        return curiosity >= 0.75 or engagement >= 0.75
+
+
+def _number_from_keys(
+    data: dict[str, object],
+    *keys: str,
+) -> float | None:
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+    return None
+
+
+def _is_question_prohibition(value: str) -> bool:
+    normalized = value.casefold()
+    has_question = any(token in normalized for token in ("質問", "問いかけ", "ask"))
+    has_prohibition = any(
+        token in normalized
+        for token in (
+            "しない",
+            "禁止",
+            "追加しない",
+            "行わない",
+            "広げない",
+            "拡張はしない",
+            "do not",
+        )
+    )
+    return has_question and has_prohibition
 
 
 def _is_existence_sensitive_input(meaning: StructuredInputMeaning) -> bool:
