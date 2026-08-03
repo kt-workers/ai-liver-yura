@@ -173,6 +173,19 @@ class InternalDirectivePromptBuilder:
                 "未解決点が具体的にある場合だけaskを選択できる。",
                 "joyやamusementとengagementを混同しない。内部状態への直接質問では対象の"
                 "感情値を根拠にし、関心の高さを楽しさとして断定しない。",
+                "structured_input_meaning.target.typeがinternal_stateまたは"
+                "agent_internal_stateで、target.idがcurrent_feeling、current_mood、"
+                "current_emotion、mood、feelingのいずれかなら、internal_state.emotionの"
+                "数値が高い1〜2項目をresponse_goalへ具体的に含め、content_requirementsへ"
+                "根拠の項目名と数値を明記する。『現在の気分に直接答える』という抽象方針だけで"
+                "終えてはいけない。",
+                "現在の気分を表す感情値は、0.70以上を強め、0.45以上0.70未満を中程度、"
+                "0.25以上0.45未満を少し、0.25未満を低いものとして扱う。低い項目を"
+                "主感情として誇張してはいけない。",
+                "drive.curiosityは好奇心・関心として必要な場合だけ補助的に含め、joyまたは"
+                "amusementの代用にしない。内部状態そのものが直接回答対象なら、必要な内容を"
+                "答えられるようself_disclosure_levelは0.35以上を目安にするが、発話本文は"
+                "生成しない。",
                 "Character Profileと存在境界に反する身体経験・現実空間での実体験を"
                 "content_requirementsまたはforbidden_claimsで明示的に防ぐ。",
                 "存在境界が物理的行動や身体経験を不可能としている場合は、単なる未確認・不明"
