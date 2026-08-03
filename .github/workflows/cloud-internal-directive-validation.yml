@@ -48,13 +48,13 @@ jobs:
           import re
           from pathlib import Path
 
-          from cloud_validation.internal_directive_lab_workspace import (
-              _WORKSPACE_INDEX_HTML,
+          from cloud_validation.internal_directive_lab_reviewed import (
+              _REVIEWED_INDEX_HTML,
           )
 
           scripts = re.findall(
               r"<script[^>]*>(.*?)</script>",
-              _WORKSPACE_INDEX_HTML,
+              _REVIEWED_INDEX_HTML,
               flags=re.DOTALL,
           )
           if not scripts:
@@ -78,6 +78,7 @@ jobs:
         run: |
           pytest -q \
             tests/test_cloud_internal_directive_lab.py \
+            tests/test_cloud_internal_directive_reviewed_lab.py \
             tests/test_cloud_internal_directive_blueprint.py \
             tests/test_input_meaning_directive_separation.py \
             tests/test_internal_directive_runtime_guards.py
