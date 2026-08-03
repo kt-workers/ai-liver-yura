@@ -83,4 +83,5 @@ jobs:
             tests/test_input_meaning_directive_separation.py \
             tests/test_internal_directive_runtime_guards.py \
             tests/test_internal_directive_impossible_experience_boundary.py \
-            tests/test_internal_directive_impossible_experience_boundary_smoke.py
+            tests/test_internal_directive_impossible_experience_boundary_smoke.py \
+            tests/test_internal_directive_interest_gap_guidance.py
