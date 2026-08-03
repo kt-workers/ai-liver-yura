@@ -63,6 +63,8 @@ class InputMeaningPromptBuilder:
                 "ゆらが回答する必要があることはexpected_response=direct_answerで表す。",
                 "ゆら『どこへ行ったの？』の後の『しまなみ海道だよ』はanswerである。",
                 "『了解』はacknowledgement、『今日はこのくらいかな』はclosingである。",
+                "『昨日』『以前』『先週』など明確な過去時点を参照する入力は"
+                "past_reference=trueにする。経験が可能かどうかはこの役割では判断しない。",
                 "疑問符、語尾、固定語句だけで分類せず、直近の会話履歴と対象を使う。",
                 "この役割ではActivity、response_mode、initiative_level、question_budget、"
                 "new_direction_budget、ゆらの発話内容を決めない。",
@@ -162,6 +164,9 @@ class InternalDirectivePromptBuilder:
                 "唯一の主入力として扱う。",
                 "ユーザーの直接質問はresponse_mode=answerとし、原則question_budget=0、"
                 "new_direction_budget=0にする。",
+                "直接回答だけで完結し、独立したActivity操作を必要としない場合は"
+                "activity_intent=nullにする。available_activitiesにconversationがあるだけを理由に"
+                "explainまたはdiscussを選んではいけない。",
                 "acknowledgementでは新しい話題を始めず、listenまたはreactを選ぶ。",
                 "closingでは会話を締め、question_budget=0にする。",
                 "全体的なdrive.curiosityだけを理由に質問しない。対象別関心、knowledge gap、"
@@ -170,6 +175,10 @@ class InternalDirectivePromptBuilder:
                 "感情値を根拠にし、関心の高さを楽しさとして断定しない。",
                 "Character Profileと存在境界に反する身体経験・現実空間での実体験を"
                 "content_requirementsまたはforbidden_claimsで明示的に防ぐ。",
+                "存在境界が物理的行動や身体経験を不可能としている場合は、単なる未確認・不明"
+                "として扱わず、存在境界上できないことを回答要件にする。",
+                "存在境界上不可能な経験の有無や内容をnew_knowledge_gapsへ追加してはいけない。"
+                "一般知識への関心と、自分自身の実体験の有無を混同しない。",
                 "Activityはavailable_activitiesに対する意図だけを出す。Capability、Authority、"
                 "Safety、Constraint、実行成功を確定しない。",
                 "自由文章のCharacter LLMプロンプトを書かない。発話本文も生成しない。",
