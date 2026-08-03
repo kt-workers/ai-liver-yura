@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from typing import Protocol
 
 from app.adapters.input import (
     ConsoleInputReceiver,
@@ -14,6 +15,10 @@ from app.config.app_config import load_app_config
 from app.domain.events import AgentEvent, AgentEventType, InputAuthority
 from app.integrations.streaming import create_core_streaming_integration
 from app.utils.trace import TraceLogger
+
+
+class _StoppableReceiver(Protocol):
+    async def wait_until_stopped(self) -> None: ...
 
 
 def should_start_console_input(_runtime_mode: str) -> bool:
@@ -35,12 +40,11 @@ def is_web_conversation_enabled() -> bool:
     )
 
 
-async def _wait_until_shutdown(receiver: object) -> bool:
+async def _wait_until_shutdown(receiver: _StoppableReceiver) -> bool:
     """Return whether the top-level wait was canceled by an external shutdown."""
 
-    wait_until_stopped = getattr(receiver, "wait_until_stopped")
     try:
-        await wait_until_stopped()
+        await receiver.wait_until_stopped()
     except asyncio.CancelledError:
         return True
     return False
