@@ -4,7 +4,11 @@ import base64
 
 from fastapi.testclient import TestClient
 
-from cloud_validation.internal_directive_lab_compact import LabSettings, create_app
+from cloud_validation.internal_directive_lab_compact import (
+    LabSettings,
+    _PRESETS,
+    create_app,
+)
 
 
 def _authorization(username: str = "tester", password: str = "secret") -> str:
@@ -70,6 +74,17 @@ def _request_payload(*, include_prompt: bool = False) -> dict[str, object]:
     }
 
 
+def _preset_request(data: dict[str, object]) -> dict[str, object]:
+    return {
+        "structured_input_meaning": data["meaning"],
+        "internal_state": data["state"],
+        "available_activities": data["activities"],
+        "ongoing_activity": data["ongoing"],
+        "character_profile": data["profile"],
+        "include_prompt": False,
+    }
+
+
 def test_health_is_public_and_reports_stop_stage() -> None:
     response = _client().get("/health")
 
@@ -122,6 +137,51 @@ def test_index_hides_duplicate_horizontal_meters() -> None:
     assert "スライダーと数値欄が連動します。" in html
     assert "数値はメーターにも反映されます。" not in html
     assert 'id="stateOverview"' in html
+
+
+def test_index_exposes_complete_preset_controller() -> None:
+    response = _client().get(
+        "/",
+        headers={"Authorization": _authorization()},
+    )
+
+    assert response.status_code == 200
+    html = response.text
+    assert 'id="presetPanel"' in html
+    assert 'id="presetSelect"' in html
+    assert 'id="reapplyPreset"' in html
+    assert 'id="internal-directive-preset-script"' in html
+    assert "function applyLabPreset(key)" in html
+    assert "model.meaning = data.meaning" in html
+    assert "model.state = data.state" in html
+    assert "model.activities = data.activities" in html
+    assert "model.ongoing = data.ongoing" in html
+    assert "model.profile = data.profile" in html
+
+    assert len(_PRESETS) == 7
+    required_sections = {"meaning", "state", "activities", "ongoing", "profile"}
+    for preset in _PRESETS.values():
+        assert set(preset) == {"label", "description", "data"}
+        assert set(preset["data"]) == required_sections
+        assert str(preset["label"]) in html
+
+
+def test_all_presets_are_accepted_by_existing_api_contract() -> None:
+    client = _client()
+
+    for key, preset in _PRESETS.items():
+        data = preset["data"]
+        assert isinstance(data, dict)
+        response = client.post(
+            "/api/internal-directive",
+            headers={"Authorization": _authorization()},
+            json=_preset_request(data),
+        )
+
+        assert response.status_code == 200, f"preset={key}: {response.text}"
+        payload = response.json()
+        assert payload["valid"] is True, f"preset={key}: {payload}"
+        assert payload["stopped_at"] == "internal_directive_planner"
 
 
 def test_fake_mode_returns_internal_directive_and_stops_before_later_stages() -> None:
