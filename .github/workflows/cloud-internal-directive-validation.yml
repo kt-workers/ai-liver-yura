@@ -1,0 +1,53 @@
+name: Cloud internal directive validation
+
+on:
+  push:
+    branches:
+      - test/internal-directive-cloud-validation
+  pull_request:
+    branches:
+      - test/internal-directive-cloud-validation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-internal-directive-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run cloud validation tests
+        env:
+          YURA_INTERNAL_DIRECTIVE_LAB_MODE: fake
+          YURA_LAB_USERNAME: test-user
+          YURA_LAB_PASSWORD: test-password
+        run: |
+          pytest -q \
+            tests/test_cloud_internal_directive_lab.py \
+            tests/test_cloud_internal_directive_blueprint.py \
+            tests/test_input_meaning_directive_separation.py \
+            tests/test_internal_directive_runtime_guards.py
