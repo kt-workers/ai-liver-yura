@@ -8,13 +8,16 @@
     :root {
       color-scheme: dark;
       --bg: #07131f;
-      --panel: rgba(15, 38, 55, .86);
+      --panel: rgba(15, 38, 55, .88);
+      --panel-soft: rgba(9, 28, 42, .72);
       --line: rgba(150, 215, 230, .25);
+      --line-strong: rgba(140, 228, 223, .48);
       --text: #e9f7fb;
       --muted: #9ebac5;
       --accent: #8ce4df;
       --danger: #ffb8b8;
       --ok: #adf0cb;
+      --warning: #ffe0a6;
     }
     * { box-sizing: border-box; }
     body {
@@ -26,10 +29,12 @@
         linear-gradient(180deg, #0b2639, var(--bg));
       color: var(--text);
     }
-    main { width: min(100%, 1120px); margin: 0 auto; padding: 24px 16px 64px; }
+    main { width: min(100%, 1180px); margin: 0 auto; padding: 24px 16px 64px; }
     h1 { margin: 0 0 6px; font-size: clamp(1.55rem, 5vw, 2.3rem); }
-    h2 { margin: 0 0 12px; font-size: 1.05rem; }
-    .lead { margin: 0 0 22px; color: var(--muted); line-height: 1.7; }
+    h2 { margin: 0; font-size: 1.08rem; }
+    h3 { margin: 0; font-size: .98rem; }
+    p { line-height: 1.65; }
+    .lead { margin: 0 0 22px; color: var(--muted); }
     .panel {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -38,28 +43,199 @@
       margin: 14px 0;
       backdrop-filter: blur(16px);
     }
-    .grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
-    label { display: block; margin: 0 0 8px; font-weight: 650; }
-    textarea {
-      width: 100%;
-      min-height: 220px;
-      resize: vertical;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      background: rgba(2, 13, 22, .72);
-      color: var(--text);
-      padding: 12px;
-      font: .84rem ui-monospace, SFMono-Regular, Menlo, monospace;
-      line-height: 1.55;
+    .editor-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
     }
-    textarea.small { min-height: 150px; }
-    .check { display: flex; align-items: center; gap: 8px; color: var(--muted); }
-    .check input { width: auto; }
-    button {
-      width: 100%;
+    .editor-description { margin: 4px 0 0; color: var(--muted); font-size: .87rem; }
+    .mode-switch {
+      display: inline-flex;
+      flex: 0 0 auto;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(0, 9, 16, .45);
+    }
+    .mode-switch button {
+      width: auto;
+      min-width: 68px;
       border: 0;
       border-radius: 999px;
-      padding: 13px 20px;
+      padding: 7px 11px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: .82rem;
+      font-weight: 750;
+      cursor: pointer;
+    }
+    .mode-switch button.active {
+      background: var(--accent);
+      color: #062228;
+    }
+    .form-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+    .field { min-width: 0; }
+    label, .field-label { display: block; margin: 0 0 7px; font-weight: 680; }
+    .hint { margin-top: 6px; color: var(--muted); font-size: .78rem; line-height: 1.5; }
+    input[type="text"], input[type="number"], select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: rgba(2, 13, 22, .72);
+      color: var(--text);
+      padding: 10px 11px;
+      font: inherit;
+    }
+    select { min-height: 43px; }
+    textarea { min-height: 96px; resize: vertical; line-height: 1.55; }
+    textarea.json-editor {
+      min-height: 330px;
+      font: .82rem ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: 2px solid rgba(140, 228, 223, .2);
+      border-color: var(--line-strong);
+    }
+    .radio-row, .check-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 14px;
+      min-height: 42px;
+    }
+    .radio-option, .check-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      margin: 0;
+      color: var(--text);
+      font-weight: 540;
+    }
+    .subpanel {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 13px;
+      background: var(--panel-soft);
+    }
+    .subpanel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 11px;
+    }
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .overview-card {
+      --value: 0%;
+      --tone: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px;
+      background: rgba(0, 9, 16, .34);
+    }
+    .ring {
+      width: 52px;
+      height: 52px;
+      flex: 0 0 52px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: conic-gradient(var(--tone) var(--value), rgba(255,255,255,.09) 0);
+      position: relative;
+    }
+    .ring::after {
+      content: "";
+      position: absolute;
+      inset: 6px;
+      border-radius: 50%;
+      background: #0a1d2a;
+    }
+    .ring strong { position: relative; z-index: 1; font-size: .78rem; }
+    .overview-copy { min-width: 0; }
+    .overview-copy span { display: block; color: var(--muted); font-size: .75rem; }
+    .overview-copy strong { display: block; overflow-wrap: anywhere; margin-top: 2px; }
+    .metric-section { margin-top: 13px; }
+    .metric-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    .metric-card {
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      padding: 11px;
+      background: rgba(0, 9, 16, .32);
+    }
+    .metric-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .metric-key { color: var(--muted); font-size: .75rem; }
+    .metric-controls {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 76px;
+      align-items: center;
+      gap: 10px;
+    }
+    input[type="range"] { width: 100%; accent-color: var(--accent); }
+    .meter-track {
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      margin-top: 8px;
+    }
+    .meter-fill {
+      height: 100%;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, rgba(140,228,223,.45), var(--accent));
+      transition: width .12s ease;
+    }
+    .metric-foot {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: .74rem;
+    }
+    .add-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .activity-list { display: grid; gap: 10px; }
+    .activity-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(0, 9, 16, .32);
+    }
+    .activity-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .operation-grid { display: flex; flex-wrap: wrap; gap: 8px 12px; }
+    .json-actions, .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 16px;
       background: var(--accent);
       color: #062228;
       font: inherit;
@@ -67,6 +243,18 @@
       cursor: pointer;
     }
     button:disabled { opacity: .55; cursor: wait; }
+    button.secondary {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.04);
+      color: var(--text);
+    }
+    button.danger {
+      border: 1px solid rgba(255,184,184,.35);
+      background: rgba(255,184,184,.08);
+      color: var(--danger);
+    }
+    button.small { width: auto; padding: 7px 11px; font-size: .78rem; }
+    button.primary-run { width: 100%; padding: 13px 20px; }
     .summary {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -95,12 +283,24 @@
     }
     .error { color: var(--danger); }
     .ok { color: var(--ok); }
-    .hidden { display: none; }
+    .warning { color: var(--warning); }
+    .hidden { display: none !important; }
     details > summary { cursor: pointer; color: var(--muted); margin-bottom: 10px; }
-    @media (min-width: 820px) {
+    @media (min-width: 720px) {
+      .form-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .form-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .overview-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    }
+    @media (min-width: 900px) {
       main { padding-top: 42px; }
-      .grid.two { grid-template-columns: 1fr 1fr; }
       .summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+    @media (max-width: 560px) {
+      .editor-header { align-items: flex-start; flex-direction: column; }
+      .mode-switch { width: 100%; }
+      .mode-switch button { flex: 1; }
+      .metric-controls { grid-template-columns: minmax(0, 1fr) 68px; }
     }
   </style>
 </head>
@@ -108,130 +308,138 @@
 <main>
   <h1>ゆら 内部指示器ラボ</h1>
   <p class="lead">
-    StructuredInputMeaningと内部状態を司令塔LLMへ渡し、InternalDirectiveの生成後に停止します。
-    入力意味解析、実行可否判定、Character LLM、出力プラグインは実行しません。
+    GUIで意味解析結果と内部状態を設定し、司令塔LLMが生成するInternalDirectiveを確認します。
+    各項目は「GUI入力／JSON入力」を切り替えられ、どちらの編集内容も相互に同期されます。
   </p>
 
-  <section class="panel">
-    <div class="grid two">
+  <section class="panel editor" data-section="meaning">
+    <div class="editor-header">
       <div>
-        <label for="meaning">StructuredInputMeaning</label>
-        <textarea id="meaning"></textarea>
+        <h2>StructuredInputMeaning</h2>
+        <p class="editor-description">意味解析LLMが出力した内容を、選択項目と入力欄で設定します。</p>
       </div>
-      <div>
-        <label for="state">内部状態</label>
-        <textarea id="state"></textarea>
+      <div class="mode-switch" aria-label="StructuredInputMeaning入力モード">
+        <button class="active" type="button" data-mode="gui">GUI入力</button>
+        <button type="button" data-mode="json">JSON入力</button>
       </div>
     </div>
+    <div class="editor-view" data-view="gui">
+      <div class="form-grid three">
+        <div class="field"><label for="meaningSpeechAct">発話行為</label><select id="meaningSpeechAct"><option value="greeting">挨拶</option><option value="statement">発言</option><option value="question">質問</option><option value="answer">回答</option><option value="acknowledgement">相づち・了解</option><option value="closing">会話終了</option><option value="request">依頼</option><option value="proposal">提案</option><option value="command">命令</option></select></div>
+        <div class="field"><label for="meaningExpectedResponse">期待する応答</label><select id="meaningExpectedResponse"><option value="direct_answer">直接回答</option><option value="acknowledgement">受領・相づち</option><option value="continue_listening">聞き続ける</option><option value="action">行動</option><option value="clarification">確認質問</option><option value="no_response">応答不要</option></select></div>
+        <div class="field"><label for="meaningPhase">会話段階</label><select id="meaningPhase"><option value="greeting">挨拶</option><option value="opening">開始</option><option value="continue">継続</option><option value="winding_down">終了へ向かう</option></select></div>
+      </div>
+      <div class="form-grid two" style="margin-top:12px">
+        <div class="field"><label for="meaningIntent">主な意図</label><input id="meaningIntent" type="text" placeholder="例: ask_current_feeling"></div>
+        <div class="field"><label for="meaningConfidence">解析確信度 <strong id="meaningConfidenceValue">0.00</strong></label><input id="meaningConfidence" type="range" min="0" max="1" step="0.01"><div class="meter-track"><div class="meter-fill" id="meaningConfidenceMeter"></div></div></div>
+      </div>
+      <div class="subpanel" style="margin-top:12px">
+        <div class="form-grid two">
+          <div class="field"><span class="field-label">対象の有無</span><div class="radio-row"><label class="radio-option"><input type="radio" name="meaningTargetEnabled" value="yes"> あり</label><label class="radio-option"><input type="radio" name="meaningTargetEnabled" value="no"> なし</label></div></div>
+          <div id="meaningTargetFields" class="form-grid two"><div class="field"><label for="meaningTargetType">対象種別</label><input id="meaningTargetType" type="text" placeholder="internal_state"></div><div class="field"><label for="meaningTargetId">対象ID</label><input id="meaningTargetId" type="text" placeholder="current_feeling"></div></div>
+        </div>
+      </div>
+      <div class="form-grid three" style="margin-top:12px">
+        <div class="field"><span class="field-label">否定表現</span><div class="radio-row"><label class="radio-option"><input type="radio" name="meaningNegated" value="false"> なし</label><label class="radio-option"><input type="radio" name="meaningNegated" value="true"> あり</label></div></div>
+        <div class="field"><span class="field-label">仮定・もしもの話</span><div class="radio-row"><label class="radio-option"><input type="radio" name="meaningHypothetical" value="false"> なし</label><label class="radio-option"><input type="radio" name="meaningHypothetical" value="true"> あり</label></div></div>
+        <div class="field"><span class="field-label">過去への言及</span><div class="radio-row"><label class="radio-option"><input type="radio" name="meaningPastReference" value="false"> なし</label><label class="radio-option"><input type="radio" name="meaningPastReference" value="true"> あり</label></div></div>
+      </div>
+      <details style="margin-top:14px"><summary>詳細情報（必要な場合のみ）</summary><div class="form-grid two"><div class="field"><label for="meaningInformation">提供された情報</label><textarea id="meaningInformation" placeholder="1行につき1件"></textarea></div><div class="field"><label for="meaningEntities">エンティティ</label><textarea id="meaningEntities" placeholder="1行につき1件。例: type=place; value=しまなみ海道"></textarea></div><div class="field"><label for="meaningReferences">参照情報</label><textarea id="meaningReferences" placeholder="1行につき1件。例: type=previous_turn; id=turn-2"></textarea></div><div class="field"><label for="meaningReason">解析理由</label><textarea id="meaningReason"></textarea></div></div></details>
+    </div>
+    <div class="editor-view hidden" data-view="json"><textarea class="json-editor" id="meaningJson" spellcheck="false"></textarea><div class="json-actions"><button class="secondary small" type="button" data-apply-json="meaning">JSONをGUIへ反映</button></div></div>
   </section>
 
-  <section class="panel">
-    <details open>
-      <summary>司令候補の判断条件</summary>
-      <div class="grid two">
-        <div>
-          <label for="activities">利用可能Activity</label>
-          <textarea class="small" id="activities"></textarea>
-        </div>
-        <div>
-          <label for="ongoing">進行中Activity（null可）</label>
-          <textarea class="small" id="ongoing">null</textarea>
-        </div>
-        <div>
-          <label for="profile">Character Profile / 存在境界</label>
-          <textarea id="profile"></textarea>
-        </div>
-      </div>
-    </details>
-    <label class="check">
-      <input id="includePrompt" type="checkbox">
-      生成したプロンプトも結果に含める
-    </label>
-    <div style="height:12px"></div>
-    <button id="run">司令塔LLMを実行</button>
+  <section class="panel editor" data-section="state">
+    <div class="editor-header"><div><h2>内部状態</h2><p class="editor-description">感情・欲求・関係性などを0〜1で調整します。数値はメーターにも反映されます。</p></div><div class="mode-switch" aria-label="内部状態入力モード"><button class="active" type="button" data-mode="gui">GUI入力</button><button type="button" data-mode="json">JSON入力</button></div></div>
+    <div class="editor-view" data-view="gui">
+      <div class="overview-grid" id="stateOverview"></div>
+      <div id="metricGroups"></div>
+      <div class="subpanel" style="margin-top:14px"><div class="subpanel-title"><h3>状況・記憶コンテキスト</h3></div><div class="form-grid two"><div class="field"><label for="stateCurrentTopic">現在の話題</label><input id="stateCurrentTopic" type="text"></div><div class="field"><label for="stateRelatedKnowledge">関連知識</label><textarea id="stateRelatedKnowledge" placeholder="1行につき1件"></textarea></div><div class="field"><label for="stateMemory">記憶</label><textarea id="stateMemory" placeholder="1行につき key=value"></textarea></div><div class="field"><label for="stateLastResult">直前Activity結果</label><textarea id="stateLastResult" placeholder="空欄の場合はnull"></textarea><p class="hint">複雑なオブジェクトを設定する場合はJSON入力へ切り替えてください。</p></div></div></div>
+    </div>
+    <div class="editor-view hidden" data-view="json"><textarea class="json-editor" id="stateJson" spellcheck="false"></textarea><div class="json-actions"><button class="secondary small" type="button" data-apply-json="state">JSONをGUIへ反映</button></div></div>
   </section>
 
-  <section class="panel hidden" id="resultPanel">
-    <div class="summary">
-      <div class="badge">valid<strong id="valid">-</strong></div>
-      <div class="badge">mode / model<strong id="mode">-</strong></div>
-      <div class="badge">elapsed<strong id="elapsed">-</strong></div>
-      <div class="badge">stop stage<strong id="stop">-</strong></div>
-    </div>
-    <p id="message"></p>
-    <h2>Parsed InternalDirective</h2>
-    <pre id="parsed">-</pre>
-    <h2>Raw LLM Response</h2>
-    <pre id="raw">-</pre>
-    <div id="promptArea" class="hidden">
-      <h2>Prompt</h2>
-      <pre id="prompt">-</pre>
-    </div>
+  <section class="panel editor" data-section="activities">
+    <div class="editor-header"><div><h2>利用可能Activity</h2><p class="editor-description">司令塔LLMが候補として参照できるActivityを追加・削除します。</p></div><div class="mode-switch" aria-label="利用可能Activity入力モード"><button class="active" type="button" data-mode="gui">GUI入力</button><button type="button" data-mode="json">JSON入力</button></div></div>
+    <div class="editor-view" data-view="gui"><div class="activity-list" id="activityList"></div><div class="action-row"><button class="secondary small" id="addActivity" type="button">Activityを追加</button></div></div>
+    <div class="editor-view hidden" data-view="json"><textarea class="json-editor" id="activitiesJson" spellcheck="false"></textarea><div class="json-actions"><button class="secondary small" type="button" data-apply-json="activities">JSONをGUIへ反映</button></div></div>
   </section>
+
+  <section class="panel editor" data-section="ongoing">
+    <div class="editor-header"><div><h2>進行中Activity</h2><p class="editor-description">進行中のActivityがなければ「なし」を選択します。</p></div><div class="mode-switch" aria-label="進行中Activity入力モード"><button class="active" type="button" data-mode="gui">GUI入力</button><button type="button" data-mode="json">JSON入力</button></div></div>
+    <div class="editor-view" data-view="gui"><div class="radio-row"><label class="radio-option"><input type="radio" name="ongoingEnabled" value="no"> 進行中Activityなし</label><label class="radio-option"><input type="radio" name="ongoingEnabled" value="yes"> 進行中Activityあり</label></div><div class="form-grid two hidden" id="ongoingFields" style="margin-top:12px"><div class="field"><label for="ongoingType">Activity種別</label><input id="ongoingType" type="text" placeholder="conversation"></div><div class="field"><label for="ongoingGoal">目的</label><input id="ongoingGoal" type="text"></div><div class="field"><label for="ongoingExpectedInput">期待する入力</label><input id="ongoingExpectedInput" type="text"></div><div class="field"><label for="ongoingStatus">状態</label><select id="ongoingStatus"><option value="active">進行中</option><option value="waiting">入力待ち</option><option value="paused">一時停止</option></select></div></div></div>
+    <div class="editor-view hidden" data-view="json"><textarea class="json-editor" id="ongoingJson" spellcheck="false"></textarea><div class="json-actions"><button class="secondary small" type="button" data-apply-json="ongoing">JSONをGUIへ反映</button></div></div>
+  </section>
+
+  <section class="panel editor" data-section="profile">
+    <div class="editor-header"><div><h2>Character Profile / 存在境界</h2><p class="editor-description">ゆらの性格・話し方と、語ってよい経験の境界を設定します。</p></div><div class="mode-switch" aria-label="Character Profile入力モード"><button class="active" type="button" data-mode="gui">GUI入力</button><button type="button" data-mode="json">JSON入力</button></div></div>
+    <div class="editor-view" data-view="gui"><div class="form-grid two"><div class="field"><label for="profileName">名前</label><input id="profileName" type="text"></div><div class="field"><label for="profileSpeakingStyle">話し方</label><input id="profileSpeakingStyle" type="text"></div><div class="field"><label for="profilePersonality">性格</label><textarea id="profilePersonality"></textarea></div><div class="field"><label for="profileStreamingStyle">活動時の振る舞い</label><textarea id="profileStreamingStyle"></textarea></div></div><div class="subpanel" style="margin-top:12px"><div class="subpanel-title"><h3>存在境界</h3></div><div class="form-grid two"><div class="field"><label for="profilePhysical">身体能力</label><textarea id="profilePhysical" placeholder="1行につき1件"></textarea></div><div class="field"><label for="profileSensory">知覚能力</label><textarea id="profileSensory" placeholder="1行につき1件"></textarea></div><div class="field"><label for="profileExperience">経験の境界</label><textarea id="profileExperience" placeholder="1行につき1件"></textarea></div><div class="field"><label for="profileWorldRelationship">世界との関係</label><textarea id="profileWorldRelationship"></textarea></div></div></div></div>
+    <div class="editor-view hidden" data-view="json"><textarea class="json-editor" id="profileJson" spellcheck="false"></textarea><div class="json-actions"><button class="secondary small" type="button" data-apply-json="profile">JSONをGUIへ反映</button></div></div>
+  </section>
+
+  <section class="panel"><label class="check-option"><input id="includePrompt" type="checkbox">生成したプロンプトも結果に含める</label><div style="height:12px"></div><button class="primary-run" id="run" type="button">司令塔LLMを実行</button></section>
+
+  <section class="panel hidden" id="resultPanel"><div class="summary"><div class="badge">valid<strong id="valid">-</strong></div><div class="badge">mode / model<strong id="mode">-</strong></div><div class="badge">elapsed<strong id="elapsed">-</strong></div><div class="badge">stop stage<strong id="stop">-</strong></div></div><p id="message"></p><h2>Parsed InternalDirective</h2><pre id="parsed">-</pre><h2>Raw LLM Response</h2><pre id="raw">-</pre><div id="promptArea" class="hidden"><h2>Prompt</h2><pre id="prompt">-</pre></div></section>
 </main>
 <script>
-const defaults = {
-  meaning: __DEFAULT_MEANING__,
-  state: __DEFAULT_INTERNAL_STATE__,
-  activities: __DEFAULT_AVAILABLE_ACTIVITIES__,
-  profile: __DEFAULT_CHARACTER_PROFILE__
-};
+const defaults = {meaning: __DEFAULT_MEANING__, state: __DEFAULT_INTERNAL_STATE__, activities: __DEFAULT_AVAILABLE_ACTIVITIES__, ongoing: null, profile: __DEFAULT_CHARACTER_PROFILE__};
+const model = typeof structuredClone === 'function' ? structuredClone(defaults) : JSON.parse(JSON.stringify(defaults));
+const modes = {meaning: 'gui', state: 'gui', activities: 'gui', ongoing: 'gui', profile: 'gui'};
 const format = value => JSON.stringify(value, null, 2);
-for (const key of Object.keys(defaults)) {
-  document.getElementById(key).value = format(defaults[key]);
-}
-function parseJson(id) {
-  const text = document.getElementById(id).value.trim();
-  try { return JSON.parse(text); }
-  catch (error) { throw new Error(`${id}: JSON形式が不正です (${error.message})`); }
-}
-const run = document.getElementById('run');
-run.addEventListener('click', async () => {
-  const panel = document.getElementById('resultPanel');
-  const message = document.getElementById('message');
-  panel.classList.remove('hidden');
-  message.className = '';
-  message.textContent = '実行中...';
-  run.disabled = true;
-  try {
-    const response = await fetch('/api/internal-directive', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        structured_input_meaning: parseJson('meaning'),
-        internal_state: parseJson('state'),
-        available_activities: parseJson('activities'),
-        ongoing_activity: parseJson('ongoing'),
-        character_profile: parseJson('profile'),
-        include_prompt: document.getElementById('includePrompt').checked
-      })
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`);
-    document.getElementById('valid').textContent = String(payload.valid);
-    document.getElementById('mode').textContent = `${payload.mode} / ${payload.model || '-'}`;
-    document.getElementById('elapsed').textContent = `${payload.elapsed_ms} ms`;
-    document.getElementById('stop').textContent = payload.stopped_at;
-    document.getElementById('parsed').textContent = format(payload.parsed_response);
-    document.getElementById('raw').textContent = payload.raw_response || '-';
-    const promptArea = document.getElementById('promptArea');
-    if (payload.prompt) {
-      promptArea.classList.remove('hidden');
-      document.getElementById('prompt').textContent = payload.prompt;
-    } else {
-      promptArea.classList.add('hidden');
-    }
-    message.className = payload.valid ? 'ok' : 'error';
-    message.textContent = payload.valid
-      ? 'InternalDirective契約として受理されました。'
-      : `${payload.error_type || 'invalid'}: ${payload.error_message || '解析に失敗しました'}`;
-  } catch (error) {
-    message.className = 'error';
-    message.textContent = error.message;
-  } finally {
-    run.disabled = false;
-  }
-});
+const operationChoices = ['start', 'continue', 'stop', 'explain', 'discuss'];
+const metricGroups = {emotion: {label: '感情', tone: '#8ce4df'}, drive: {label: '欲求・ドライブ', tone: '#b9a7ff'}, relationship: {label: '関係性', tone: '#ffb8d1'}, motivation: {label: '動機', tone: '#ffd58c'}, moral: {label: '善悪・価値判断', tone: '#adf0cb'}};
+const metricLabels = {joy: '喜び', calm: '落ち着き', amusement: '面白さ', curiosity: '好奇心', social: '交流欲求', familiarity: '親しさ', trust: '信頼', engagement: '関与意欲', care: '思いやり', honesty: '誠実さ'};
+function escapeHtml(value) { return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;'); }
+function lines(value) { return Array.isArray(value) ? value.map(item => String(item)).join('\n') : ''; }
+function parseLines(value) { return value.split('\n').map(item => item.trim()).filter(Boolean); }
+function parseScalar(value) { const text = value.trim(); if (text === 'true') return true; if (text === 'false') return false; if (text === 'null') return null; if (text !== '' && Number.isFinite(Number(text))) return Number(text); return text; }
+function objectToPairs(value) { if (!value || typeof value !== 'object' || Array.isArray(value)) return ''; return Object.entries(value).map(([key, item]) => `${key}=${String(item)}`).join('\n'); }
+function pairsToObject(value) { const result = {}; for (const line of parseLines(value)) { const separator = line.indexOf('='); if (separator < 1) continue; const key = line.slice(0, separator).trim(); result[key] = parseScalar(line.slice(separator + 1)); } return result; }
+function objectArrayToText(value) { if (!Array.isArray(value)) return ''; return value.map(item => Object.entries(item || {}).map(([key, val]) => `${key}=${String(val)}`).join('; ')).join('\n'); }
+function textToObjectArray(value) { return parseLines(value).map(line => { const item = {}; for (const pair of line.split(';')) { const separator = pair.indexOf('='); if (separator < 1) continue; const key = pair.slice(0, separator).trim(); item[key] = parseScalar(pair.slice(separator + 1)); } return item; }).filter(item => Object.keys(item).length > 0); }
+function setRadio(name, value) { const element = document.querySelector(`input[name="${name}"][value="${String(value)}"]`); if (element) element.checked = true; }
+function radioValue(name, fallback = 'false') { return document.querySelector(`input[name="${name}"]:checked`)?.value ?? fallback; }
+function clamp01(value) { const number = Number(value); if (!Number.isFinite(number)) return 0; return Math.min(1, Math.max(0, number)); }
+function intensityLabel(value) { if (value < .2) return 'とても低い'; if (value < .4) return '低い'; if (value < .6) return '中程度'; if (value < .8) return '高い'; return 'とても高い'; }
+function getSectionValue(section) { if (section === 'meaning') return model.meaning; if (section === 'state') return model.state; if (section === 'activities') return model.activities; if (section === 'ongoing') return model.ongoing; return model.profile; }
+function setSectionValue(section, value) { if (section === 'meaning') model.meaning = value; else if (section === 'state') model.state = value; else if (section === 'activities') model.activities = value; else if (section === 'ongoing') model.ongoing = value; else model.profile = value; }
+function jsonEditor(section) { return document.getElementById(`${section}Json`); }
+function syncJson(section) { jsonEditor(section).value = format(getSectionValue(section)); }
+function parseJsonEditor(section) { try { return JSON.parse(jsonEditor(section).value.trim()); } catch (error) { throw new Error(`${section}: JSON形式が不正です (${error.message})`); } }
+function hydrateMeaning() { const value = model.meaning || {}; document.getElementById('meaningSpeechAct').value = value.input_speech_act || 'statement'; document.getElementById('meaningExpectedResponse').value = value.expected_response || 'acknowledgement'; document.getElementById('meaningPhase').value = value.conversation_phase_signal || 'continue'; document.getElementById('meaningIntent').value = value.primary_intent || ''; const confidence = clamp01(value.confidence ?? 1); document.getElementById('meaningConfidence').value = confidence; updateConfidenceVisual(confidence); setRadio('meaningTargetEnabled', value.target ? 'yes' : 'no'); document.getElementById('meaningTargetType').value = value.target?.type || ''; document.getElementById('meaningTargetId').value = value.target?.id || ''; document.getElementById('meaningTargetFields').classList.toggle('hidden', !value.target); setRadio('meaningNegated', Boolean(value.negated)); setRadio('meaningHypothetical', Boolean(value.hypothetical)); setRadio('meaningPastReference', Boolean(value.past_reference)); document.getElementById('meaningInformation').value = lines(value.information_provided); document.getElementById('meaningEntities').value = objectArrayToText(value.entities); document.getElementById('meaningReferences').value = objectArrayToText(value.references); document.getElementById('meaningReason').value = value.reason || ''; syncJson('meaning'); }
+function readMeaning() { const hasTarget = radioValue('meaningTargetEnabled', 'no') === 'yes'; model.meaning = {input_speech_act: document.getElementById('meaningSpeechAct').value, primary_intent: document.getElementById('meaningIntent').value.trim(), expected_response: document.getElementById('meaningExpectedResponse').value, target: hasTarget ? {type: document.getElementById('meaningTargetType').value.trim(), id: document.getElementById('meaningTargetId').value.trim()} : null, entities: textToObjectArray(document.getElementById('meaningEntities').value), references: textToObjectArray(document.getElementById('meaningReferences').value), information_provided: parseLines(document.getElementById('meaningInformation').value), negated: radioValue('meaningNegated') === 'true', hypothetical: radioValue('meaningHypothetical') === 'true', past_reference: radioValue('meaningPastReference') === 'true', conversation_phase_signal: document.getElementById('meaningPhase').value, confidence: clamp01(document.getElementById('meaningConfidence').value), reason: document.getElementById('meaningReason').value.trim()}; syncJson('meaning'); }
+function updateConfidenceVisual(value) { const normalized = clamp01(value); document.getElementById('meaningConfidenceValue').textContent = normalized.toFixed(2); document.getElementById('meaningConfidenceMeter').style.width = `${normalized * 100}%`; }
+function hydrateState() { const state = model.state || {}; model.state = state; for (const key of Object.keys(metricGroups)) { if (!state[key] || typeof state[key] !== 'object' || Array.isArray(state[key])) state[key] = {}; } document.getElementById('stateCurrentTopic').value = state.situation?.current_topic || ''; document.getElementById('stateRelatedKnowledge').value = lines(state.related_knowledge); document.getElementById('stateMemory').value = objectToPairs(state.memory); const last = state.last_activity_result; document.getElementById('stateLastResult').value = last == null ? '' : (typeof last === 'string' ? last : format(last)); renderMetricGroups(); renderStateOverview(); syncJson('state'); }
+function readStateContext() { model.state.situation = {...(model.state.situation || {}), current_topic: document.getElementById('stateCurrentTopic').value.trim()}; model.state.related_knowledge = parseLines(document.getElementById('stateRelatedKnowledge').value); model.state.memory = pairsToObject(document.getElementById('stateMemory').value); const last = document.getElementById('stateLastResult').value.trim(); if (!last) model.state.last_activity_result = null; else { try { model.state.last_activity_result = JSON.parse(last); } catch { model.state.last_activity_result = last; } } syncJson('state'); }
+function renderMetricGroups() { const root = document.getElementById('metricGroups'); root.innerHTML = Object.entries(metricGroups).map(([groupKey, meta]) => { const entries = Object.entries(model.state[groupKey] || {}); const cards = entries.length ? entries.map(([key, raw]) => { const value = clamp01(raw); return `<div class="metric-card" data-group="${groupKey}" data-key="${escapeHtml(key)}"><div class="metric-head"><div><strong>${escapeHtml(metricLabels[key] || key)}</strong><div class="metric-key">${escapeHtml(key)}</div></div><button class="danger small" type="button" data-remove-metric="${groupKey}" data-metric-key="${escapeHtml(key)}">削除</button></div><div class="metric-controls"><input type="range" min="0" max="1" step="0.01" value="${value}" data-metric-range="${groupKey}" data-metric-key="${escapeHtml(key)}"><input type="number" min="0" max="1" step="0.01" value="${value.toFixed(2)}" data-metric-number="${groupKey}" data-metric-key="${escapeHtml(key)}"></div><div class="meter-track"><div class="meter-fill" style="width:${value * 100}%" data-metric-meter></div></div><div class="metric-foot"><span>0.00</span><strong data-metric-label>${intensityLabel(value)}</strong><span>1.00</span></div></div>`; }).join('') : '<p class="hint">項目がありません。下の入力欄から追加できます。</p>'; return `<div class="subpanel metric-section" style="--tone:${meta.tone}"><div class="subpanel-title"><h3>${meta.label}</h3><span class="hint">0〜1</span></div><div class="metric-grid">${cards}</div><div class="add-row"><input type="text" placeholder="追加する項目キー" data-new-metric="${groupKey}"><button class="secondary small" type="button" data-add-metric="${groupKey}">追加</button></div></div>`; }).join(''); }
+function renderStateOverview() { const root = document.getElementById('stateOverview'); root.innerHTML = Object.entries(metricGroups).map(([groupKey, meta]) => { const values = Object.entries(model.state[groupKey] || {}).map(([key, raw]) => [key, clamp01(raw)]); const average = values.length ? values.reduce((sum, item) => sum + item[1], 0) / values.length : 0; const strongest = values.sort((a, b) => b[1] - a[1])[0]; const strongestText = strongest ? `${metricLabels[strongest[0]] || strongest[0]} ${strongest[1].toFixed(2)}` : '項目なし'; return `<div class="overview-card" style="--value:${average * 100}%;--tone:${meta.tone}"><div class="ring"><strong>${Math.round(average * 100)}%</strong></div><div class="overview-copy"><span>${meta.label} 平均</span><strong>${escapeHtml(strongestText)}</strong></div></div>`; }).join(''); }
+function setMetric(group, key, rawValue, card) { const value = clamp01(rawValue); model.state[group][key] = value; card.querySelector('[data-metric-range]').value = value; card.querySelector('[data-metric-number]').value = value.toFixed(2); card.querySelector('[data-metric-meter]').style.width = `${value * 100}%`; card.querySelector('[data-metric-label]').textContent = intensityLabel(value); renderStateOverview(); syncJson('state'); }
+function hydrateActivities() { if (!Array.isArray(model.activities)) model.activities = []; const root = document.getElementById('activityList'); root.innerHTML = model.activities.length ? model.activities.map((activity, index) => { const selected = Array.isArray(activity.operations) ? activity.operations : []; const checks = operationChoices.map(operation => `<label class="check-option"><input type="checkbox" data-activity-operation="${index}" value="${operation}" ${selected.includes(operation) ? 'checked' : ''}> ${operation}</label>`).join(''); const custom = selected.filter(item => !operationChoices.includes(item)).join(', '); return `<div class="activity-card" data-activity-index="${index}"><div class="activity-head"><h3>Activity ${index + 1}</h3><button class="danger small" type="button" data-remove-activity="${index}">削除</button></div><div class="form-grid two"><div class="field"><label>Activity種別</label><input type="text" value="${escapeHtml(activity.activity_type || '')}" data-activity-type="${index}"></div><div class="field"><label>説明</label><input type="text" value="${escapeHtml(activity.description || '')}" data-activity-description="${index}"></div></div><div class="field" style="margin-top:10px"><span class="field-label">許可する操作</span><div class="operation-grid">${checks}</div></div><div class="field" style="margin-top:10px"><label>その他の操作（カンマ区切り）</label><input type="text" value="${escapeHtml(custom)}" data-activity-custom="${index}"></div></div>`; }).join('') : '<p class="hint">利用可能Activityがありません。「Activityを追加」から登録してください。</p>'; syncJson('activities'); }
+function readActivities() { const cards = [...document.querySelectorAll('[data-activity-index]')]; model.activities = cards.map(card => { const index = Number(card.dataset.activityIndex); const base = {...(model.activities[index] || {})}; const selected = [...card.querySelectorAll(`[data-activity-operation="${index}"]:checked`)].map(item => item.value); const custom = card.querySelector(`[data-activity-custom="${index}"]`).value.split(',').map(item => item.trim()).filter(Boolean); return {...base, activity_type: card.querySelector(`[data-activity-type="${index}"]`).value.trim(), operations: [...new Set([...selected, ...custom])], description: card.querySelector(`[data-activity-description="${index}"]`).value.trim()}; }); syncJson('activities'); }
+function hydrateOngoing() { const enabled = model.ongoing && typeof model.ongoing === 'object'; setRadio('ongoingEnabled', enabled ? 'yes' : 'no'); document.getElementById('ongoingFields').classList.toggle('hidden', !enabled); const value = enabled ? model.ongoing : {}; document.getElementById('ongoingType').value = value.activity_type || ''; document.getElementById('ongoingGoal').value = value.goal || ''; document.getElementById('ongoingExpectedInput').value = value.expected_input || ''; document.getElementById('ongoingStatus').value = value.status || 'active'; syncJson('ongoing'); }
+function readOngoing() { if (radioValue('ongoingEnabled', 'no') === 'no') model.ongoing = null; else model.ongoing = {...(model.ongoing || {}), activity_type: document.getElementById('ongoingType').value.trim(), goal: document.getElementById('ongoingGoal').value.trim(), expected_input: document.getElementById('ongoingExpectedInput').value.trim(), status: document.getElementById('ongoingStatus').value}; syncJson('ongoing'); }
+function hydrateProfile() { const value = model.profile || {}; const existence = value.existence || {}; document.getElementById('profileName').value = value.name || ''; document.getElementById('profileSpeakingStyle').value = value.speaking_style || ''; document.getElementById('profilePersonality').value = value.personality || ''; document.getElementById('profileStreamingStyle').value = value.streaming_style || ''; document.getElementById('profilePhysical').value = lines(existence.physical_capabilities); document.getElementById('profileSensory').value = lines(existence.sensory_capabilities); document.getElementById('profileExperience').value = lines(existence.experience_boundaries); document.getElementById('profileWorldRelationship').value = existence.world_relationship || ''; syncJson('profile'); }
+function readProfile() { model.profile = {...(model.profile || {}), name: document.getElementById('profileName').value.trim(), personality: document.getElementById('profilePersonality').value.trim(), speaking_style: document.getElementById('profileSpeakingStyle').value.trim(), streaming_style: document.getElementById('profileStreamingStyle').value.trim(), existence: {...(model.profile?.existence || {}), physical_capabilities: parseLines(document.getElementById('profilePhysical').value), sensory_capabilities: parseLines(document.getElementById('profileSensory').value), experience_boundaries: parseLines(document.getElementById('profileExperience').value), world_relationship: document.getElementById('profileWorldRelationship').value.trim()}}; syncJson('profile'); }
+function hydrateSection(section) { if (section === 'meaning') hydrateMeaning(); else if (section === 'state') hydrateState(); else if (section === 'activities') hydrateActivities(); else if (section === 'ongoing') hydrateOngoing(); else hydrateProfile(); }
+function readGuiSection(section) { if (section === 'meaning') readMeaning(); else if (section === 'state') readStateContext(); else if (section === 'activities') readActivities(); else if (section === 'ongoing') readOngoing(); else readProfile(); }
+function setMode(section, nextMode) { const editor = document.querySelector(`.editor[data-section="${section}"]`); if (nextMode === 'json') { readGuiSection(section); syncJson(section); } else { try { setSectionValue(section, parseJsonEditor(section)); hydrateSection(section); } catch (error) { alert(error.message); return; } } modes[section] = nextMode; editor.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('active', button.dataset.mode === nextMode)); editor.querySelector('[data-view="gui"]').classList.toggle('hidden', nextMode !== 'gui'); editor.querySelector('[data-view="json"]').classList.toggle('hidden', nextMode !== 'json'); }
+function syncAllSections() { for (const section of Object.keys(modes)) { if (modes[section] === 'json') setSectionValue(section, parseJsonEditor(section)); else readGuiSection(section); } }
+for (const editor of document.querySelectorAll('.editor')) { const section = editor.dataset.section; editor.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(section, button.dataset.mode))); }
+document.querySelectorAll('[data-apply-json]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.applyJson, 'gui')));
+document.getElementById('meaningConfidence').addEventListener('input', event => { updateConfidenceVisual(event.target.value); readMeaning(); });
+document.querySelectorAll('input[name="meaningTargetEnabled"]').forEach(input => input.addEventListener('change', () => { document.getElementById('meaningTargetFields').classList.toggle('hidden', radioValue('meaningTargetEnabled') !== 'yes'); readMeaning(); }));
+document.querySelector('.editor[data-section="meaning"] [data-view="gui"]').addEventListener('change', readMeaning);
+document.querySelector('.editor[data-section="meaning"] [data-view="gui"]').addEventListener('input', event => { if (event.target.id !== 'meaningConfidence') readMeaning(); });
+document.getElementById('metricGroups').addEventListener('input', event => { const rangeGroup = event.target.dataset.metricRange; const numberGroup = event.target.dataset.metricNumber; const group = rangeGroup || numberGroup; if (!group) return; const card = event.target.closest('.metric-card'); setMetric(group, event.target.dataset.metricKey, event.target.value, card); });
+document.getElementById('metricGroups').addEventListener('click', event => { const addGroup = event.target.dataset.addMetric; if (addGroup) { const input = document.querySelector(`[data-new-metric="${addGroup}"]`); const key = input.value.trim(); if (!key) return; if (Object.hasOwn(model.state[addGroup], key)) { alert('同じキーの項目がすでにあります。'); return; } model.state[addGroup][key] = .5; renderMetricGroups(); renderStateOverview(); syncJson('state'); return; } const removeGroup = event.target.dataset.removeMetric; if (removeGroup) { delete model.state[removeGroup][event.target.dataset.metricKey]; renderMetricGroups(); renderStateOverview(); syncJson('state'); } });
+for (const id of ['stateCurrentTopic', 'stateRelatedKnowledge', 'stateMemory', 'stateLastResult']) document.getElementById(id).addEventListener('input', readStateContext);
+document.getElementById('activityList').addEventListener('input', readActivities); document.getElementById('activityList').addEventListener('change', readActivities); document.getElementById('activityList').addEventListener('click', event => { const index = event.target.dataset.removeActivity; if (index === undefined) return; model.activities.splice(Number(index), 1); hydrateActivities(); });
+document.getElementById('addActivity').addEventListener('click', () => { readActivities(); model.activities.push({activity_type: 'conversation', operations: ['discuss'], description: ''}); hydrateActivities(); });
+document.querySelectorAll('input[name="ongoingEnabled"]').forEach(input => input.addEventListener('change', () => { const enabled = radioValue('ongoingEnabled') === 'yes'; document.getElementById('ongoingFields').classList.toggle('hidden', !enabled); if (enabled && !model.ongoing) model.ongoing = {activity_type: 'conversation', goal: '', expected_input: '', status: 'active'}; readOngoing(); }));
+document.getElementById('ongoingFields').addEventListener('input', readOngoing); document.getElementById('ongoingFields').addEventListener('change', readOngoing);
+document.querySelector('.editor[data-section="profile"] [data-view="gui"]').addEventListener('input', readProfile);
+document.getElementById('run').addEventListener('click', async () => { const run = document.getElementById('run'); const panel = document.getElementById('resultPanel'); const message = document.getElementById('message'); panel.classList.remove('hidden'); message.className = ''; message.textContent = '実行中...'; run.disabled = true; try { syncAllSections(); const response = await fetch('/api/internal-directive', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({structured_input_meaning: model.meaning, internal_state: model.state, available_activities: model.activities, ongoing_activity: model.ongoing, character_profile: model.profile, include_prompt: document.getElementById('includePrompt').checked})}); const payload = await response.json(); if (!response.ok) throw new Error(payload.detail || `HTTP ${response.status}`); document.getElementById('valid').textContent = String(payload.valid); document.getElementById('mode').textContent = `${payload.mode} / ${payload.model || '-'}`; document.getElementById('elapsed').textContent = `${payload.elapsed_ms} ms`; document.getElementById('stop').textContent = payload.stopped_at; document.getElementById('parsed').textContent = format(payload.parsed_response); document.getElementById('raw').textContent = payload.raw_response || '-'; const promptArea = document.getElementById('promptArea'); if (payload.prompt) { promptArea.classList.remove('hidden'); document.getElementById('prompt').textContent = payload.prompt; } else promptArea.classList.add('hidden'); message.className = payload.valid ? 'ok' : 'error'; message.textContent = payload.valid ? 'InternalDirective契約として受理されました。' : `${payload.error_type || 'invalid'}: ${payload.error_message || '解析に失敗しました'}`; } catch (error) { message.className = 'error'; message.textContent = error.message; } finally { run.disabled = false; } });
+hydrateMeaning(); hydrateState(); hydrateActivities(); hydrateOngoing(); hydrateProfile();
 </script>
 </body>
 </html>
