@@ -129,6 +129,7 @@ async def async_main() -> None:
     else:
         print("ゆらを起動しました。管理者として自然文で指示できます。終了: exit / quit")
     interrupted = False
+    runtime_task_cancelled = False
     try:
         await receiver.start(route_console_event)
         interrupted = await _wait_until_shutdown(receiver)
