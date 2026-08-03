@@ -40,6 +40,22 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
 
+      - name: Check browser JavaScript syntax
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          html = Path("cloud_validation/internal_directive_lab.html").read_text(
+              encoding="utf-8"
+          )
+          script = html.split("<script>", 1)[1].split("</script>", 1)[0]
+          Path("/tmp/internal-directive-lab.js").write_text(
+              script,
+              encoding="utf-8",
+          )
+          PY
+          node --check /tmp/internal-directive-lab.js
+
       - name: Run cloud validation tests
         env:
           YURA_INTERNAL_DIRECTIVE_LAB_MODE: fake
