@@ -57,6 +57,8 @@ def test_prompt_only_resolves_existing_knowledge_gaps() -> None:
         character_profile=_profile(),
     )
 
+    assert '"related_knowledge": []' in prompt
+    assert '"memory": {}' in prompt
     assert "既存のKnowledge Gapとして" in prompt
     assert "存在しない場合は空配列" in prompt
     assert "解決済みGapとして新規作成してはいけない" in prompt
