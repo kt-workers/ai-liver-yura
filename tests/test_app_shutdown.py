@@ -9,9 +9,19 @@ import pytest
 import app.__main__ as app_main
 
 
+class _StoppedReceiver:
+    async def wait_until_stopped(self) -> None:
+        return None
+
+
 class _CancelledReceiver:
     async def wait_until_stopped(self) -> None:
         raise asyncio.CancelledError
+
+
+@pytest.mark.asyncio
+async def test_wait_until_shutdown_reports_normal_stop() -> None:
+    assert await app_main._wait_until_shutdown(_StoppedReceiver()) is False
 
 
 @pytest.mark.asyncio
