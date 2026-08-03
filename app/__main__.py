@@ -35,6 +35,27 @@ def is_web_conversation_enabled() -> bool:
     )
 
 
+async def _wait_until_shutdown(receiver: object) -> bool:
+    """Return whether the top-level wait was canceled by an external shutdown."""
+
+    wait_until_stopped = getattr(receiver, "wait_until_stopped")
+    try:
+        await wait_until_stopped()
+    except asyncio.CancelledError:
+        return True
+    return False
+
+
+async def _await_runtime_shutdown(runtime_task: asyncio.Task[None]) -> bool:
+    """Collect an already-stopping runtime task without leaking cancellation."""
+
+    try:
+        await runtime_task
+    except asyncio.CancelledError:
+        return True
+    return False
+
+
 async def async_main() -> None:
     """Run Yura's core without composing OBS or YouTube operations."""
 
@@ -103,22 +124,29 @@ async def async_main() -> None:
         print("ゆらを起動しました。Web会話画面から話しかけてください。終了: Ctrl-C")
     else:
         print("ゆらを起動しました。管理者として自然文で指示できます。終了: exit / quit")
+    interrupted = False
     try:
         await receiver.start(route_console_event)
-        await receiver.wait_until_stopped()
+        interrupted = await _wait_until_shutdown(receiver)
+        if interrupted:
+            trace_logger.info("app:interrupt_received", signal="cancelled")
     finally:
         await receiver.stop()
         await streaming_integration.close()
         runtime.stop()
-        await runtime_task
-        trace_logger.info("app:finished")
+        runtime_task_cancelled = await _await_runtime_shutdown(runtime_task)
+        trace_logger.info(
+            "app:finished",
+            interrupted=interrupted,
+            runtime_task_cancelled=runtime_task_cancelled,
+        )
         print("終了しました。")
 
 
 def main() -> None:
     try:
         asyncio.run(async_main())
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         pass
 
 
