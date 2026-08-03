@@ -2,7 +2,7 @@
 
 ## 概要
 
-`cloud_validation.internal_directive_lab_workspace` は、司令塔LLM（`InternalDirectivePlanner`）だけをブラウザから実行する検証用Webアプリです。
+`cloud_validation.internal_directive_lab_reviewed` は、司令塔LLM（`InternalDirectivePlanner`）だけをブラウザから実行する検証用Webアプリです。
 
 入力意味解析済みの `StructuredInputMeaning`、内部状態、Activity情報、Character Profileを入力し、`InternalDirective` の生成後に停止します。入力意味解析、実行可否判定、Character LLM、出力処理は実行しません。
 
@@ -12,7 +12,7 @@
 export YURA_INTERNAL_DIRECTIVE_LAB_MODE=fake
 export YURA_LAB_USERNAME=tester
 export YURA_LAB_PASSWORD=secret
-python -m uvicorn cloud_validation.internal_directive_lab_workspace:app \
+python -m uvicorn cloud_validation.internal_directive_lab_reviewed:app \
   --host 127.0.0.1 \
   --port 8001
 ```
@@ -27,7 +27,7 @@ export YURA_INTERNAL_DIRECTIVE_LAB_MODEL='<model-name>'
 export OPENAI_API_KEY='<api-key>'
 export YURA_LAB_USERNAME='<username>'
 export YURA_LAB_PASSWORD='<password>'
-python -m uvicorn cloud_validation.internal_directive_lab_workspace:app \
+python -m uvicorn cloud_validation.internal_directive_lab_reviewed:app \
   --host 127.0.0.1 \
   --port 8001
 ```
@@ -53,6 +53,8 @@ APIキー名を変更する場合は `YURA_INTERNAL_DIRECTIVE_LAB_API_KEY_ENV` �
 - 会話を短く締める
 - 進行中Activityを継続する
 - 存在境界に関する質問
+
+「存在境界に関する質問」は`yesterday_outing`を対象とするため、入力意味契約上の`past_reference`は`true`です。
 
 プリセット適用時にLLMは実行されません。値を確認・調整した後、「司令塔LLMを実行」を押します。
 
@@ -130,7 +132,13 @@ JSON入力モードの内容が不正な場合は、ファイルを作らず画�
 
 ## Render
 
-`render.internal-directive-lab.yaml` をBlueprintとして使用します。Secret項目として以下を設定します。
+`render.internal-directive-lab.yaml` をBlueprintとして使用します。起動先は次です。
+
+```text
+cloud_validation.internal_directive_lab_reviewed:app
+```
+
+Secret項目として以下を設定します。
 
 - `YURA_INTERNAL_DIRECTIVE_LAB_MODEL`
 - `OPENAI_API_KEY`
@@ -144,7 +152,10 @@ Render上では `YURA_INTERNAL_DIRECTIVE_LAB_MODE=live` が指定されます。
 ```bash
 pytest -q \
   tests/test_cloud_internal_directive_lab.py \
+  tests/test_cloud_internal_directive_reviewed_lab.py \
   tests/test_cloud_internal_directive_blueprint.py \
   tests/test_input_meaning_directive_separation.py \
-  tests/test_internal_directive_runtime_guards.py
+  tests/test_internal_directive_runtime_guards.py \
+  tests/test_internal_directive_impossible_experience_boundary.py \
+  tests/test_internal_directive_impossible_experience_boundary_smoke.py
 ```
