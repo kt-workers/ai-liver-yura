@@ -21,11 +21,57 @@ class InternalDirectiveCandidateNormalizer:
         directive: InternalDirective,
         planning_input: dict[str, object] | None = None,
     ) -> InternalDirective:
-        normalized = self._normalize_existence_constraints(meaning, directive)
+        normalized = self._normalize_gap_answer_acknowledgement(
+            meaning,
+            directive,
+        )
+        normalized = self._normalize_existence_constraints(meaning, normalized)
         return self._restore_target_gap_question(
             meaning,
             normalized,
             planning_input or {},
+        )
+
+    @classmethod
+    def _normalize_gap_answer_acknowledgement(
+        cls,
+        meaning: StructuredInputMeaning,
+        directive: InternalDirective,
+    ) -> InternalDirective:
+        if not _is_gap_answer_input(meaning):
+            return directive
+        if not cls._resolved_target_gaps(meaning, directive):
+            return directive
+
+        forbidden_claims = tuple(
+            dict.fromkeys(
+                (
+                    *directive.forbidden_claims,
+                    "ユーザーが提供した説明を、自分の新しい説明として繰り返す",
+                    "追加質問や新しい話題を持ち出す",
+                )
+            )
+        )
+        return replace(
+            directive,
+            response_mode=ResponseMode.REACT,
+            response_goal=(
+                "提供された情報を受け止め、既存Knowledge Gapが解消されたことを"
+                "示す短い反応を返す"
+            ),
+            initiative_level=min(directive.initiative_level, 0.2),
+            question_budget=0,
+            new_direction_budget=0,
+            content_requirements=(
+                "提供された情報を理解したことが伝わる短い反応を返す",
+                "既存Knowledge Gapが解消されたことを自然に受け止める",
+                "提供された内容を必要以上に説明し直さない",
+            ),
+            forbidden_claims=forbidden_claims,
+            reason=(
+                "Core補正: ユーザーの回答により既存Knowledge Gapが解消されたため、"
+                "内容を再説明せず短い受領・理解反応を返す"
+            ),
         )
 
     @staticmethod
@@ -245,6 +291,27 @@ class InternalDirectiveCandidateNormalizer:
         curiosity = _number_from_keys(drive_state, "curiosity") or 0.0
         engagement = _number_from_keys(motivation_state, "engagement") or 0.0
         return curiosity >= 0.75 or engagement >= 0.75
+
+
+def _is_gap_answer_input(meaning: StructuredInputMeaning) -> bool:
+    if meaning.expected_response is not ExpectedResponse.ACKNOWLEDGEMENT:
+        return False
+    if meaning.input_speech_act is InputSpeechAct.ANSWER:
+        return True
+    intent = meaning.primary_intent.casefold()
+    return any(
+        token in intent
+        for token in (
+            "provide_answer",
+            "answer_existing_gap",
+            "resolve_existing_gap",
+            "resolve_knowledge_gap",
+            "knowledge_gap_answer",
+            "既存gapへの回答",
+            "gapを解消",
+            "解消する回答",
+        )
+    )
 
 
 def _number_from_keys(

@@ -236,18 +236,21 @@ def test_matching_target_gap_and_high_motivation_restore_single_question() -> No
     assert "acknowledgementとして処理する" not in normalized.reason
 
 
-def test_answer_that_resolves_only_gap_does_not_restore_question() -> None:
+def test_answer_that_resolves_only_gap_becomes_short_acknowledgement() -> None:
     gap = "深海生物が高水圧へ適応できる仕組み"
     directive = InternalDirective(
         response_mode=ResponseMode.ANSWER,
-        response_goal="既存Knowledge Gapへの回答を受け止める",
+        response_goal="深海生物が高水圧へ適応する仕組みを説明する",
         activity_intent=None,
-        initiative_level=0.1,
+        initiative_level=0.46,
         question_budget=0,
         new_direction_budget=0,
         self_disclosure_level=0.1,
-        content_requirements=("提供された回答を簡潔に受け止める",),
-        forbidden_claims=(),
+        content_requirements=(
+            "柔軟な細胞膜と圧力に強いタンパク質を説明する",
+            "現実空間での実体験を語らない",
+        ),
+        forbidden_claims=("根拠のない現地観測を語る",),
         target_interest_updates=(
             TargetInterestUpdate(
                 target_type="topic",
@@ -256,7 +259,7 @@ def test_answer_that_resolves_only_gap_does_not_restore_question() -> None:
                 resolved_knowledge_gaps=(gap,),
             ),
         ),
-        reason="既存Gapへの回答として処理する",
+        reason="既存Gapへの回答内容を説明する",
     )
     planning_input = _curious_input(
         target_id="deep_sea_pressure_adaptation",
@@ -269,12 +272,47 @@ def test_answer_that_resolves_only_gap_does_not_restore_question() -> None:
         planning_input,
     )
 
-    assert normalized.response_mode is ResponseMode.ANSWER
+    assert normalized.response_mode is ResponseMode.REACT
     assert normalized.question_budget == 0
     assert normalized.new_direction_budget == 0
-    assert normalized.response_goal == "既存Knowledge Gapへの回答を受け止める"
-    assert normalized.reason == "既存Gapへの回答として処理する"
-    assert all("質問を1件だけ" not in value for value in normalized.content_requirements)
+    assert normalized.initiative_level == 0.2
+    assert "短い反応" in normalized.response_goal
+    requirements = "\n".join(normalized.content_requirements)
+    assert "理解したこと" in requirements
+    assert "Knowledge Gapが解消" in requirements
+    assert "説明し直さない" in requirements
+    assert "柔軟な細胞膜" not in requirements
+    assert "現実空間" not in requirements
+    forbidden = "\n".join(normalized.forbidden_claims)
+    assert "自分の新しい説明として繰り返す" in forbidden
+    assert "追加質問や新しい話題" in forbidden
+    assert normalized.target_interest_updates == directive.target_interest_updates
+    assert normalized.reason.startswith("Core補正:")
+    assert "再説明せず短い受領・理解反応" in normalized.reason
+
+
+def test_answer_without_resolved_target_gap_is_not_rewritten() -> None:
+    directive = InternalDirective(
+        response_mode=ResponseMode.ANSWER,
+        response_goal="通常の回答として扱う",
+        activity_intent=None,
+        initiative_level=0.3,
+        question_budget=0,
+        new_direction_budget=0,
+        self_disclosure_level=0.1,
+        content_requirements=("必要な内容を答える",),
+        forbidden_claims=(),
+        target_interest_updates=(),
+        reason="解消対象のKnowledge Gapはない",
+    )
+
+    normalized = InternalDirectiveCandidateNormalizer().normalize(
+        _gap_answer_meaning(),
+        directive,
+        _curious_input(target_id="deep_sea_pressure_adaptation"),
+    )
+
+    assert normalized is directive
 
 
 def test_resolved_gap_is_skipped_but_another_unresolved_gap_can_be_asked() -> None:
