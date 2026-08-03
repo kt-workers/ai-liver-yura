@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: yura-internal-directive-lab
+    runtime: python
+    plan: free
+    branch: test/internal-directive-cloud-validation
+    buildCommand: python -m pip install -r requirements.txt
+    startCommand: >-
+      python -m uvicorn cloud_validation.internal_directive_lab:app
+      --host 0.0.0.0
+      --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.20
+      - key: YURA_INTERNAL_DIRECTIVE_LAB_MODE
+        value: live
+      - key: YURA_INTERNAL_DIRECTIVE_LAB_TIMEOUT_SECONDS
+        value: "45"
+      - key: YURA_INTERNAL_DIRECTIVE_LAB_MODEL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: YURA_LAB_USERNAME
+        sync: false
+      - key: YURA_LAB_PASSWORD
+        sync: false
