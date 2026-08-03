@@ -6,7 +6,7 @@ services:
     branch: test/internal-directive-cloud-validation
     buildCommand: python -m pip install -r requirements.txt
     startCommand: >-
-      python -m uvicorn cloud_validation.internal_directive_lab:app
+      python -m uvicorn cloud_validation.internal_directive_lab_compact:app
       --host 0.0.0.0
       --port $PORT
     healthCheckPath: /health
