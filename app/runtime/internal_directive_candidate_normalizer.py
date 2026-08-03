@@ -64,7 +64,7 @@ class InternalDirectiveCandidateNormalizer:
         directive: InternalDirective,
         planning_input: dict[str, object],
     ) -> InternalDirective:
-        gap = cls._eligible_target_gap(meaning, planning_input)
+        gap = cls._eligible_target_gap(meaning, directive, planning_input)
         if gap is None or not cls._question_expansion_is_allowed(meaning):
             return directive
         if not cls._has_high_question_motivation(planning_input):
@@ -84,7 +84,7 @@ class InternalDirectiveCandidateNormalizer:
             dict.fromkeys(
                 (
                     *requirements,
-                    f"現在対象の既存Knowledge Gap『{gap}』に沿った質問を1件だけ行う",
+                    f"現在対象の未解決Knowledge Gap『{gap}』に沿った質問を1件だけ行う",
                     "現在の対象を掘り下げ、無関係な新しい話題へ展開しない",
                 )
             )
@@ -101,24 +101,31 @@ class InternalDirectiveCandidateNormalizer:
             directive,
             response_mode=ResponseMode.ASK,
             response_goal=(
-                "現在対象の既存Knowledge Gapに沿った関連質問を1件だけ行う"
+                "現在対象の未解決Knowledge Gapに沿った関連質問を1件だけ行う"
             ),
             initiative_level=max(directive.initiative_level, 0.35),
             question_budget=1,
             new_direction_budget=0,
             content_requirements=requirements,
             forbidden_claims=forbidden_claims,
+            reason=(
+                "Core補正: 現在対象と一致する未解決Knowledge Gap"
+                f"『{gap}』があり、対象別関心とCuriosityまたはEngagementが"
+                "閾値を満たすため、関連質問を1件だけ許可した"
+            ),
         )
 
     @classmethod
     def _eligible_target_gap(
         cls,
         meaning: StructuredInputMeaning,
+        directive: InternalDirective,
         planning_input: dict[str, object],
     ) -> str | None:
         target = meaning.target
         if target is None:
             return None
+        resolved_gaps = cls._resolved_target_gaps(meaning, directive)
         related = planning_input.get("related_knowledge")
         if not isinstance(related, list):
             return None
@@ -151,11 +158,36 @@ class InternalDirectiveCandidateNormalizer:
                 if isinstance(value, list):
                     for entry in value:
                         text = str(entry).strip()
-                        if text:
+                        if text and text.casefold() not in resolved_gaps:
                             return text
-                elif isinstance(value, str) and value.strip():
-                    return value.strip()
+                elif isinstance(value, str):
+                    text = value.strip()
+                    if text and text.casefold() not in resolved_gaps:
+                        return text
         return None
+
+    @staticmethod
+    def _resolved_target_gaps(
+        meaning: StructuredInputMeaning,
+        directive: InternalDirective,
+    ) -> set[str]:
+        target = meaning.target
+        if target is None:
+            return set()
+        target_type = target.target_type.casefold()
+        target_id = target.target_id.casefold()
+        resolved: set[str] = set()
+        for update in directive.target_interest_updates:
+            if update.target_type.casefold() != target_type:
+                continue
+            if update.target_id.casefold() != target_id:
+                continue
+            resolved.update(
+                gap.casefold()
+                for gap in update.resolved_knowledge_gaps
+                if gap.strip()
+            )
+        return resolved
 
     @staticmethod
     def _question_expansion_is_allowed(
@@ -165,6 +197,7 @@ class InternalDirectiveCandidateNormalizer:
             return False
         if meaning.input_speech_act in {
             InputSpeechAct.QUESTION,
+            InputSpeechAct.ANSWER,
             InputSpeechAct.CLOSING,
             InputSpeechAct.COMMAND,
             InputSpeechAct.REQUEST,
@@ -184,12 +217,20 @@ class InternalDirectiveCandidateNormalizer:
                 "positive_experience",
                 "share_happy",
                 "share_joy",
+                "provide_answer",
+                "answer_existing_gap",
+                "resolve_existing_gap",
+                "resolve_knowledge_gap",
+                "knowledge_gap_answer",
                 "closing",
                 "end_conversation",
                 "continue_previous",
                 "stop_activity",
                 "嬉",
                 "喜びを共有",
+                "既存gapへの回答",
+                "gapを解消",
+                "解消する回答",
             )
         )
 
