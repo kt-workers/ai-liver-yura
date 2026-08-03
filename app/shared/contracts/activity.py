@@ -25,9 +25,14 @@ class ActivityOperation(str, Enum):
 
 
 class SpeechAct(str, Enum):
+    """入力表面ではなく、文脈を含む意味上の会話機能。"""
+
     GREETING = "greeting"
     STATEMENT = "statement"
     QUESTION = "question"
+    ANSWER = "answer"
+    ACKNOWLEDGEMENT = "acknowledgement"
+    CLOSING = "closing"
     REQUEST = "request"
     PROPOSAL = "proposal"
     COMMAND = "command"

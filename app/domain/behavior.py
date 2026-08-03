@@ -61,6 +61,46 @@ class OngoingInputInterpretation:
 
 
 @dataclass(frozen=True, slots=True)
+class TargetInterest:
+    """現在の対象へ向いている関心と、未知が残っている度合い。"""
+
+    target_type: str
+    target_id: str
+    interest_intensity: float
+    knowledge_gap: float
+    satiation: float
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        normalized_type = self.target_type.strip()
+        normalized_id = self.target_id.strip()
+        if not normalized_type:
+            raise ValueError("target_type must not be empty")
+        if not normalized_id:
+            raise ValueError("target_id must not be empty")
+        for name, value in (
+            ("interest_intensity", self.interest_intensity),
+            ("knowledge_gap", self.knowledge_gap),
+            ("satiation", self.satiation),
+        ):
+            if not 0.0 <= float(value) <= 1.0:
+                raise ValueError(f"{name} must be between 0.0 and 1.0")
+        object.__setattr__(self, "target_type", normalized_type)
+        object.__setattr__(self, "target_id", normalized_id)
+        object.__setattr__(self, "interest_intensity", float(self.interest_intensity))
+        object.__setattr__(self, "knowledge_gap", float(self.knowledge_gap))
+        object.__setattr__(self, "satiation", float(self.satiation))
+        object.__setattr__(self, "reason", self.reason.strip()[:160])
+
+    @property
+    def question_signal(self) -> float:
+        return round(
+            self.interest_intensity * self.knowledge_gap * (1.0 - self.satiation),
+            6,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class SituationAnalysis:
     """外部Eventの客観的な意味構造。実行可否や発話本文は含めない。"""
 
@@ -71,6 +111,7 @@ class SituationAnalysis:
     speech_act: SpeechAct = SpeechAct.STATEMENT
     conversation_phase: str | None = None
     initiative_level: float | None = None
+    active_interests: tuple[TargetInterest, ...] = ()
     negated: bool = False
     hypothetical: bool = False
     past_reference: bool = False
@@ -102,6 +143,7 @@ class ActivityPlan:
     speech_act: SpeechAct = SpeechAct.STATEMENT
     conversation_phase: str | None = None
     initiative_level: float | None = None
+    active_interests: tuple[TargetInterest, ...] = ()
     negated: bool = False
     hypothetical: bool = False
     past_reference: bool = False

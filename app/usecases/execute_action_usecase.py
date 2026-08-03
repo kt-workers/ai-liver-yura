@@ -3,10 +3,9 @@ from __future__ import annotations
 import asyncio
 import threading
 from dataclasses import replace
-from datetime import datetime, timezone
 
 from app.domain.actions import ActionPlan, ActionType
-from app.domain.activity_turn_result import ActionExecutionResult, ActionExecutionStatus
+from app.domain.activity_turn_result import ActionExecutionResult
 from app.domain.character_response import VoiceIntent
 from app.domain.events import AgentEvent, AgentEventType
 from app.domain.short_term_memory import ShortTermMemory
@@ -142,24 +141,30 @@ class ExecuteActionUsecase:
             )
             await self._publish_speech_event(AgentEventType.SPEECH_STARTED, action_plan)
             await self._publish_conversation_output(action_plan)
-            self._trace_logger.write(
-                "execute_action_usecase:speak:speech_started_published",
-                action_id=action_plan.action_id,
-                source_activity_id=action_plan.source_activity_id,
-            )
             print(f"[{action_plan.action_type.value}] {action_plan.text}")
             self._short_term_memory.add_speech(
                 text=action_plan.text,
                 activity_type=action_plan.action_type.value,
             )
             self._trace_logger.info(
-                "execute_action_usecase:speak:memory_saved",
+                "execute_action_usecase:speak:committed",
                 action_id=action_plan.action_id,
                 source_activity_id=action_plan.source_activity_id,
                 text_length=len(action_plan.text),
-                reason="response_committed",
+                commit_point="core_conversation_output",
             )
+
             playback_error = await self._play_speech(action_plan)
+            if playback_error is not None:
+                self._trace_logger.warning(
+                    "execute_action_usecase:speak:optional_channel_degraded",
+                    action_id=action_plan.action_id,
+                    source_activity_id=action_plan.source_activity_id,
+                    channel="audio",
+                    error=playback_error,
+                    core_speech_committed=True,
+                )
+
             await self._publish_speech_event(
                 AgentEventType.SPEECH_FINISHED, action_plan
             )
@@ -168,43 +173,25 @@ class ExecuteActionUsecase:
                 action_id=action_plan.action_id,
                 source_activity_id=action_plan.source_activity_id,
             )
-            if playback_error is None:
-                if self._background_topic_memory:
-                    self._schedule_topic_history(action_plan)
-                else:
-                    await self._record_topic_history(action_plan)
+
+            if self._background_topic_memory:
+                self._schedule_topic_history(action_plan)
             else:
-                self._trace_logger.info(
-                    "execute_action_usecase:speak:topic_memory_not_saved",
-                    action_id=action_plan.action_id,
-                    source_activity_id=action_plan.source_activity_id,
-                    reason="audio_delivery_failed",
-                )
+                await self._record_topic_history(action_plan)
+
             self._trace_logger.write(
                 "execute_action_usecase:speak:finished",
                 action_id=action_plan.action_id,
                 source_activity_id=action_plan.source_activity_id,
+                audio_channel_available=playback_error is None,
             )
             pause_after = action_plan.metadata.get("pause_after_seconds", 0.0)
             if (
-                playback_error is None
-                and isinstance(pause_after, (int, float))
+                isinstance(pause_after, (int, float))
                 and not isinstance(pause_after, bool)
                 and pause_after > 0
             ):
                 await asyncio.sleep(min(float(pause_after), 3.0))
-            if playback_error is not None:
-                now = datetime.now(timezone.utc)
-                return ActionExecutionResult(
-                    action_id=action_plan.action_id,
-                    action_type=action_plan.action_type.value,
-                    status=ActionExecutionStatus.FAILED,
-                    output_unit_id=action_plan.output_unit_id or "",
-                    activity_turn_id="",
-                    error=playback_error,
-                    started_at=now,
-                    finished_at=now,
-                )
             return None
 
         if action_plan.action_type in (ActionType.ASK, ActionType.REACT):

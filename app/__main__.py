@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from typing import Protocol
 
 from app.adapters.input import (
     ConsoleInputReceiver,
@@ -14,6 +15,10 @@ from app.config.app_config import load_app_config
 from app.domain.events import AgentEvent, AgentEventType, InputAuthority
 from app.integrations.streaming import create_core_streaming_integration
 from app.utils.trace import TraceLogger
+
+
+class _StoppableReceiver(Protocol):
+    async def wait_until_stopped(self) -> None: ...
 
 
 def should_start_console_input(_runtime_mode: str) -> bool:
@@ -33,6 +38,26 @@ def is_web_conversation_enabled() -> bool:
         os.getenv("YURA_WEB_CONVERSATION_ENABLED", "1").strip().lower()
         not in {"0", "false", "off"}
     )
+
+
+async def _wait_until_shutdown(receiver: _StoppableReceiver) -> bool:
+    """Return whether the top-level wait was canceled by an external shutdown."""
+
+    try:
+        await receiver.wait_until_stopped()
+    except asyncio.CancelledError:
+        return True
+    return False
+
+
+async def _await_runtime_shutdown(runtime_task: asyncio.Task[None]) -> bool:
+    """Collect an already-stopping runtime task without leaking cancellation."""
+
+    try:
+        await runtime_task
+    except asyncio.CancelledError:
+        return True
+    return False
 
 
 async def async_main() -> None:
@@ -103,22 +128,30 @@ async def async_main() -> None:
         print("ゆらを起動しました。Web会話画面から話しかけてください。終了: Ctrl-C")
     else:
         print("ゆらを起動しました。管理者として自然文で指示できます。終了: exit / quit")
+    interrupted = False
+    runtime_task_cancelled = False
     try:
         await receiver.start(route_console_event)
-        await receiver.wait_until_stopped()
+        interrupted = await _wait_until_shutdown(receiver)
+        if interrupted:
+            trace_logger.info("app:interrupt_received", signal="cancelled")
     finally:
         await receiver.stop()
         await streaming_integration.close()
         runtime.stop()
-        await runtime_task
-        trace_logger.info("app:finished")
+        runtime_task_cancelled = await _await_runtime_shutdown(runtime_task)
+        trace_logger.info(
+            "app:finished",
+            interrupted=interrupted,
+            runtime_task_cancelled=runtime_task_cancelled,
+        )
         print("終了しました。")
 
 
 def main() -> None:
     try:
         asyncio.run(async_main())
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         pass
 
 

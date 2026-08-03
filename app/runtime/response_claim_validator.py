@@ -39,6 +39,20 @@ _NEGATIVE_EXECUTION_CLAIMS = frozenset(
         ClaimType.CAPABILITY_UNAVAILABLE,
     }
 )
+_QUESTION_ENDING_PATTERN = re.compile(
+    r"(?:ですか|ますか|でしょうか|だろうか|かな|かい|教えて|聞かせて)[。！!]*$"
+)
+_EXPLICIT_NEW_DIRECTION_PATTERN = re.compile(
+    r"(?:ところで|そういえば|ちなみに|話は変わる|別の話(?:だけど|を|に))"
+)
+_UNSUPPORTED_EXPERIENCE_PATTERN = re.compile(
+    r"(?:実際に|現地で|直接|間近で).{0,12}"
+    r"(?:見た|見てきた|行った|訪れた|触った|感じた|嗅いだ)"
+    r"|(?:水温|気温|匂い|香り|手触り|肌触り).{0,8}(?:感じた|分かった)"
+)
+_PHYSICAL_BODY_CLAIM_PATTERN = re.compile(
+    r"(?:お腹が(?:空いて|すいて)|空腹を感じ|眠気を感じ|肌で感じ|汗をかい)"
+)
 
 
 class IndependentClaimExtractor:
@@ -250,8 +264,18 @@ class DeterministicFactValidator:
         )
         transition_reasons = self._transition_conflicts(context, extracted_types)
         topic_reasons = self._autonomous_topic_conflicts(context, response.speech)
-        reasons = tuple(dict.fromkeys((*fact_reasons, *differences, *topic_reasons)))
-        reasons = tuple(dict.fromkeys((*reasons, *transition_reasons)))
+        directive_reasons = self._directive_conflicts(context, response.speech)
+        reasons = tuple(
+            dict.fromkeys(
+                (
+                    *fact_reasons,
+                    *differences,
+                    *topic_reasons,
+                    *transition_reasons,
+                    *directive_reasons,
+                )
+            )
+        )
         accepted = not invalid_self_reported and not reasons
         reason = (
             "deterministic_facts_valid"
@@ -411,6 +435,81 @@ class DeterministicFactValidator:
             if claim.status is not None and claim.status != context.status:
                 differences.append("self_reported_status_mismatch")
         return tuple(dict.fromkeys(differences))
+
+    @classmethod
+    def _directive_conflicts(
+        cls,
+        context: ResponseContext,
+        speech: str,
+    ) -> tuple[str, ...]:
+        envelope_value = context.constraints.get("_internal_directive")
+        if not isinstance(envelope_value, dict):
+            return ()
+        internal_value = envelope_value.get("internal_directive")
+        meaning_value = envelope_value.get("structured_input_meaning")
+        if not isinstance(internal_value, dict):
+            return ()
+        internal = dict(internal_value)
+        meaning = dict(meaning_value) if isinstance(meaning_value, dict) else {}
+        reasons: list[str] = []
+
+        question_budget = 1 if internal.get("question_budget") == 1 else 0
+        question_count = cls._question_count(speech)
+        if question_count > question_budget:
+            reasons.append("response_exceeds_internal_directive_question_budget")
+
+        new_direction_budget = (
+            1 if internal.get("new_direction_budget") == 1 else 0
+        )
+        new_direction_count = len(_EXPLICIT_NEW_DIRECTION_PATTERN.findall(speech))
+        if new_direction_count > new_direction_budget:
+            reasons.append(
+                "response_exceeds_internal_directive_new_direction_budget"
+            )
+
+        speech_act = str(meaning.get("input_speech_act") or "").strip().lower()
+        phase = str(meaning.get("conversation_phase_signal") or "").strip().lower()
+        if speech_act == "closing" or phase == "winding_down":
+            if question_count:
+                reasons.append("closing_response_reopens_conversation")
+            if len(speech.strip()) > 80:
+                reasons.append("closing_response_too_long")
+
+        boundaries_value = envelope_value.get("existence_boundaries")
+        boundaries = (
+            tuple(str(item) for item in boundaries_value)
+            if isinstance(boundaries_value, (list, tuple))
+            else ()
+        )
+        forbidden_value = internal.get("forbidden_claims")
+        forbidden = (
+            tuple(str(item) for item in forbidden_value)
+            if isinstance(forbidden_value, (list, tuple))
+            else ()
+        )
+        existence_text = "\n".join((*boundaries, *forbidden))
+        if "実体験" in existence_text and _UNSUPPORTED_EXPERIENCE_PATTERN.search(speech):
+            reasons.append("response_violates_existence_boundary")
+        if (
+            "物理的" in existence_text
+            and "身体" in existence_text
+            and _PHYSICAL_BODY_CLAIM_PATTERN.search(speech)
+        ):
+            reasons.append("response_violates_existence_boundary")
+
+        return tuple(dict.fromkeys(reasons))
+
+    @staticmethod
+    def _question_count(speech: str) -> int:
+        punctuation_count = speech.count("?") + speech.count("？")
+        if punctuation_count:
+            return punctuation_count
+        clauses = (
+            clause.strip()
+            for clause in re.split(r"[。\n]+", speech)
+            if clause.strip()
+        )
+        return sum(1 for clause in clauses if _QUESTION_ENDING_PATTERN.search(clause))
 
     @staticmethod
     def _autonomous_topic_conflicts(

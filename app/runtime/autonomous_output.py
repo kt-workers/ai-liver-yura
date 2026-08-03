@@ -8,7 +8,13 @@ def completed_speech_text(
     group: ActionPlanGroup,
     output_result: ActivityOutputResult,
 ) -> str | None:
-    """Output実績から、実際に完了したSPEAK本文だけを返す。"""
+    """Core出力境界を通過して完了したSPEAK本文を返す。
+
+    VOICEVOXやAudio Playerは任意の後段チャネルであり、その障害は
+    ExecuteActionUsecase内でTraceへ記録される。CoreのSPEAK Actionは
+    テキストコミット後に完了するため、ここでは通常の完了結果だけを
+    発話成立として扱う。キャンセルや出力境界前の失敗は含めない。
+    """
 
     completed_ids = {
         result.action_id
