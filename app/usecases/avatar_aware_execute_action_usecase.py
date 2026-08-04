@@ -5,13 +5,13 @@ from typing import Any
 from app.domain.actions import ActionPlan, ActionType
 from app.domain.activity_turn_result import ActionExecutionResult
 from app.ports.avatar_output import AvatarOutputPort, get_bound_avatar_output
-from app.usecases.execute_action_usecase import (
-    ExecuteActionUsecase as CoreExecuteActionUsecase,
+from app.usecases.delivery_aware_execute_action_usecase import (
+    ExecuteActionUsecase as DeliveryAwareExecuteActionUsecase,
 )
 from app.utils.trace import TraceLogger
 
 
-class ExecuteActionUsecase(CoreExecuteActionUsecase):
+class ExecuteActionUsecase(DeliveryAwareExecuteActionUsecase):
     """既存Action実行へ交換可能なAvatar Output Portを合成する。"""
 
     def __init__(
