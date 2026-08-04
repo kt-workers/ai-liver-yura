@@ -9,6 +9,9 @@ from app.domain.cognitive_direction import (
     InputTarget,
     StructuredInputMeaning,
 )
+from app.runtime.avatar_body_command_normalizer import (
+    normalize_avatar_body_command,
+)
 
 _SPATIAL_SPEECH_ACTS = {
     InputSpeechAct.COMMAND,
@@ -92,11 +95,7 @@ _GAZE_MARKERS = (
 def normalize_spatial_input_meaning(
     meaning: StructuredInputMeaning,
 ) -> StructuredInputMeaning:
-    """身体方向の指示をInputTargetへ正規化する。
-
-    LLMが方向をprimary_intentやinformation_providedへだけ書き、targetを省略しても、
-    command/request/proposalかつexpected_response=actionの場合に限って補完する。
-    """
+    """身体方向またはアバター身体操作の指示をInputTargetへ正規化する。"""
 
     if meaning.expected_response is not ExpectedResponse.ACTION:
         return meaning
@@ -110,18 +109,17 @@ def normalize_spatial_input_meaning(
     text = _meaning_text(meaning)
     direction = canonical_spatial_direction(text)
     mode = spatial_attention_mode(text)
-    if direction is None or mode is None:
-        return meaning
-
-    return replace(
-        meaning,
-        target=InputTarget(
-            target_type=(
-                "orientation_direction" if mode == "orientation" else "gaze_direction"
+    if direction is not None and mode is not None:
+        return replace(
+            meaning,
+            target=InputTarget(
+                target_type=(
+                    "orientation_direction" if mode == "orientation" else "gaze_direction"
+                ),
+                target_id=direction,
             ),
-            target_id=direction,
-        ),
-    )
+        )
+    return normalize_avatar_body_command(meaning)
 
 
 def canonical_spatial_direction(text: str) -> str | None:
