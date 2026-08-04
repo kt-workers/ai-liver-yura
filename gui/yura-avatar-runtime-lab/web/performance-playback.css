@@ -1,0 +1,20 @@
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 520px) {
+  .panel-heading {
+    align-items: flex-start;
+  }
+
+  .panel-actions {
+    justify-content: flex-start;
+  }
+
+  .panel-actions .ghost-button {
+    flex: 1 1 auto;
+  }
+}
