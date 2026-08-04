@@ -9,6 +9,11 @@ from app.adapters.input import (
     WebInputReceiver,
     WebInputReceiverConfig,
 )
+from app.bootstrap.body_runtime_setup import (
+    clear_bound_body_runtime,
+    create_bound_body_runtime_from_env,
+    install_body_aware_runtime_components,
+)
 from app.bootstrap.runtime import create_runtime_coordinator
 from app.bootstrap.runtime_preflight import validate_runtime_service_settings
 from app.config.app_config import load_app_config
@@ -86,10 +91,14 @@ async def async_main() -> None:
         response_generator_type=config.response_generator.type,
     )
     web_conversation_enabled = is_web_conversation_enabled()
+    install_body_aware_runtime_components()
     runtime = create_runtime_coordinator(
         config,
         web_conversation_enabled=web_conversation_enabled,
     )
+    body_runtime = create_bound_body_runtime_from_env()
+    if body_runtime is not None:
+        await body_runtime.start()
     streaming_integration = create_core_streaming_integration(runtime.publish_event)
     receiver = (
         WebInputReceiver(
@@ -138,6 +147,9 @@ async def async_main() -> None:
     finally:
         await receiver.stop()
         await streaming_integration.close()
+        if body_runtime is not None:
+            await body_runtime.stop()
+        clear_bound_body_runtime()
         runtime.stop()
         runtime_task_cancelled = await _await_runtime_shutdown(runtime_task)
         trace_logger.info(
