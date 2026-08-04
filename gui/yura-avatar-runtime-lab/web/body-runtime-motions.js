@@ -1,7 +1,6 @@
 (() => {
   const applyBaseMotion = applyMotion;
   const resolveBaseAttentionTarget = resolveAttentionTarget;
-  const drawBaseFace = drawFace;
 
   const spatialTargets = {
     left: { x: -0.82, y: 0 },
@@ -40,13 +39,76 @@
 
   drawFace = function drawBodyRuntimeFace(pose) {
     const yaw = clamp(Number(pose.headYaw || 0), -1, 1);
+    const expression = String(state.expression.name || "neutral");
+    const commandedEyeClosure = expression === "eyes_close" ? 1 : 0;
+    const commandedEyeOpen = expression === "eyes_open" ? 1 : 0;
+    const eyeClosure = clamp(
+      Math.max(Number(pose.eyeClosure || 0), commandedEyeClosure) - commandedEyeOpen,
+      0,
+      1,
+    );
+    const mouthOpen = expression === "mouth_open" ? 1 : 0;
+    const mouthClosed = expression === "mouth_close";
+    const gazeX = (Number(pose.gazeX || 0) + yaw * 0.24) * 11;
+    const gazeY = Number(pose.gazeY || 0) * 9;
+    const eyeY = -13;
+    const eyeSpread = 27;
+
     ctx.save();
     ctx.translate(yaw * 22, 0);
     ctx.scale(1 - Math.abs(yaw) * 0.28, 1);
-    drawBaseFace({
-      ...pose,
-      gazeX: clamp(Number(pose.gazeX || 0) + yaw * 0.24, -1, 1),
-    });
+    ctx.strokeStyle = "rgba(216, 247, 255, 0.78)";
+    ctx.fillStyle = "rgba(216, 247, 255, 0.78)";
+    ctx.lineWidth = 7;
+
+    for (const direction of [-1, 1]) {
+      ctx.beginPath();
+      const x = direction * eyeSpread + gazeX;
+      const y = eyeY + gazeY;
+      if (eyeClosure >= 0.55) {
+        ctx.moveTo(x - 9, y);
+        ctx.quadraticCurveTo(x, y + 5, x + 9, y);
+        ctx.stroke();
+      } else if (expression === "happy") {
+        ctx.arc(direction * eyeSpread, eyeY + 5, 11, Math.PI * 1.1, Math.PI * 1.9);
+        ctx.stroke();
+      } else {
+        const radius = expression === "surprised" ? 8 : 6;
+        ctx.arc(x, y, Math.max(2, radius * (1 - eyeClosure)), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.beginPath();
+    if (mouthOpen > 0) {
+      ctx.ellipse(0, 24, 14, 20, 0, 0, Math.PI * 2);
+    } else if (mouthClosed) {
+      ctx.moveTo(-18, 25);
+      ctx.lineTo(18, 25);
+    } else {
+      switch (expression) {
+        case "happy": ctx.arc(0, 12, 25, 0.12 * Math.PI, 0.88 * Math.PI); break;
+        case "sad": ctx.arc(0, 42, 23, 1.15 * Math.PI, 1.85 * Math.PI); break;
+        case "surprised": ctx.arc(0, 25, 12, 0, Math.PI * 2); break;
+        case "angry":
+        case "disgusted": ctx.moveTo(-24, 26); ctx.lineTo(24, 26); break;
+        case "curious": ctx.arc(5, 18, 18, 0.08 * Math.PI, 0.75 * Math.PI); break;
+        default: ctx.moveTo(-20, 25); ctx.quadraticCurveTo(0, 31, 20, 25);
+      }
+    }
+    ctx.stroke();
+
+    if (["angry", "disgusted", "curious"].includes(expression)) {
+      ctx.beginPath();
+      if (expression === "curious") {
+        ctx.moveTo(-38, -31); ctx.lineTo(-17, -33);
+        ctx.moveTo(15, -38); ctx.lineTo(39, -27);
+      } else {
+        ctx.moveTo(-39, -38); ctx.lineTo(-15, -29);
+        ctx.moveTo(39, -38); ctx.lineTo(15, -29);
+      }
+      ctx.stroke();
+    }
     ctx.restore();
   };
 
@@ -64,12 +126,27 @@
 
     switch (intent.name) {
       case "breathing":
-        pose.bodyBounce += Math.sin(phase) * 13 * strength;
-        pose.torsoLeanY += Math.sin(phase) * 0.08 * strength;
+        pose.bodyBounce += Math.sin(phase) * 18 * strength;
+        pose.torsoLeanY += Math.sin(phase) * 0.12 * strength;
         return;
       case "micro_sway":
-        pose.torsoLeanX += Math.sin(phase) * 0.5 * strength;
-        pose.headRoll -= Math.sin(phase * 0.85) * 0.08 * strength;
+        pose.torsoLeanX += direction * Math.sin(phase) * 0.72 * strength;
+        pose.headRoll -= direction * Math.sin(phase * 0.85) * 0.14 * strength;
+        return;
+      case "idle_blink":
+      case "blink":
+        pose.eyeClosure = Math.max(Number(pose.eyeClosure || 0), arc * strength);
+        return;
+      case "idle_gaze_shift": {
+        const drift = Math.sin(progress * Math.PI) * direction * strength;
+        pose.gazeX += drift * 0.42;
+        pose.gazeY += Math.sin(progress * Math.PI * 2) * 0.08 * strength;
+        pose.headYaw += drift * 0.12;
+        return;
+      }
+      case "idle_posture_adjust":
+        pose.torsoLeanX += direction * Math.sin(progress * Math.PI) * 0.32 * strength;
+        pose.headRoll -= direction * Math.sin(progress * Math.PI) * 0.07 * strength;
         return;
       case "speech_cadence": {
         const primary = Math.sin(phase);
@@ -91,6 +168,29 @@
         pose.headRoll += direction * arc * 0.5 * strength;
         pose.headPitch -= arc * 0.16 * strength;
         pose.torsoLeanY -= arc * 0.18 * strength * bodyParticipation;
+        return;
+      case "head_circle":
+        pose.headYaw += Math.sin(phase) * 0.75 * strength;
+        pose.headPitch += Math.cos(phase) * 0.52 * strength;
+        pose.headRoll += Math.sin(phase) * 0.24 * strength;
+        return;
+      case "bow":
+        pose.headPitch += arc * 0.95 * strength;
+        pose.torsoLeanY += arc * 0.95 * strength;
+        pose.bodyBounce += arc * 20 * strength;
+        return;
+      case "jump":
+        pose.bodyBounce -= arc * 115 * strength;
+        pose.leftArmRaise = Math.max(pose.leftArmRaise, arc * 0.35 * strength);
+        pose.rightArmRaise = Math.max(pose.rightArmRaise, arc * 0.35 * strength);
+        return;
+      case "body_sway":
+        pose.torsoLeanX += Math.sin(phase) * 0.92 * strength;
+        pose.headRoll -= Math.sin(phase) * 0.18 * strength;
+        return;
+      case "body_twist":
+        pose.torsoLeanX += Math.sin(phase) * 0.72 * strength;
+        pose.headYaw -= Math.sin(phase) * 0.28 * strength;
         return;
       case "recoil":
         pose.torsoLeanY += arc * 0.72 * strength;
