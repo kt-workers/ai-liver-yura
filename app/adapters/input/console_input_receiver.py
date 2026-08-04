@@ -4,7 +4,6 @@ import asyncio
 import sys
 import threading
 from collections.abc import Awaitable, Callable
-from typing import Any
 
 from app.domain.events import AgentEvent, AgentEventType, InputAuthority
 from app.runtime import EventPublisher, InputReceiver
