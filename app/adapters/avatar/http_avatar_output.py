@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from app.domain.avatar_performance import AvatarPerformancePlan
+from app.domain.avatar_performance import AvatarPerformancePlan, AvatarPerformanceTrack
 from app.ports.avatar_output import AvatarGazeIntent
 
 JsonSender = Callable[[str, bytes, float], None]
@@ -50,7 +50,7 @@ class HttpAvatarOutput:
         await self._send(
             "/api/avatar/performances",
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "type": "avatar.performance.submit",
                 "performance_id": performance.performance_id,
                 "source_activity_id": performance.source_activity_id,
@@ -58,6 +58,9 @@ class HttpAvatarOutput:
                 "priority": performance.priority,
                 "interrupt_policy": performance.interrupt_policy.value,
                 "return_behavior": performance.return_behavior.value,
+                "duration_ms": performance.duration_ms,
+                "tracks": [self._track_payload(track) for track in performance.tracks],
+                # 移行期間中は旧Runtime向けの直列Segmentも同時送信する。
                 "segments": [
                     {
                         "expression": {
@@ -89,6 +92,52 @@ class HttpAvatarOutput:
                 ],
             },
         )
+
+    @staticmethod
+    def _track_payload(track: AvatarPerformanceTrack) -> dict[str, object]:
+        intent: dict[str, object]
+        if track.expression is not None:
+            intent = {
+                "type": "expression",
+                "name": track.expression.name,
+                "intensity": track.expression.intensity,
+            }
+        elif track.attention is not None:
+            intent = {
+                "type": "attention",
+                "target": track.attention.target,
+                "behavior": track.attention.behavior,
+                "intensity": track.attention.intensity,
+                "eye_follow": track.attention.eye_follow,
+                "head_follow": track.attention.head_follow,
+                "body_follow": track.attention.body_follow,
+            }
+        elif track.motion is not None:
+            intent = {
+                "type": "motion",
+                "name": track.motion.name,
+                "intensity": track.motion.intensity,
+                "amplitude": track.motion.amplitude,
+                "tempo": track.motion.tempo,
+                "repetitions": track.motion.repetitions,
+                "body_participation": track.motion.body_participation,
+                "direction": track.motion.direction,
+            }
+        else:  # pragma: no cover - Domain validation prevents this.
+            raise ValueError("avatar performance track has no intent")
+        return {
+            "track_id": track.track_id,
+            "channel": track.channel.value,
+            "start_offset_ms": track.start_offset_ms,
+            "duration_ms": track.duration_ms,
+            "fade_in_ms": track.fade_in_ms,
+            "fade_out_ms": track.fade_out_ms,
+            "blend_mode": track.blend_mode.value,
+            "continuity": track.continuity.value,
+            "hold": track.hold,
+            "layer_priority": track.layer_priority,
+            "intent": intent,
+        }
 
     async def set_expression(self, expression: str) -> None:
         name = self._require_name(expression, "expression")
