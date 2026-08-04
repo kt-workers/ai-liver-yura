@@ -1,9 +1,10 @@
-from app.runtime.action_planner import ActionPlanner
+from app.runtime.action_planner import ActionPlanner as CoreActionPlanner
 from app.runtime.action_scheduler import ActionScheduler
 from app.runtime.activity_manager import ActivityManager
 from app.runtime.agent_life_service import AgentLifeService
 from app.runtime.agent_state import AgentState
 from app.runtime.autonomous_activity_policy import AutonomousActivityPolicy
+from app.runtime.avatar_performance_action_planner import AvatarPerformanceActionPlanner
 from app.runtime.event_buffer import EventBuffer
 from app.runtime.event_bus import EventBus
 from app.runtime.event_filter import DefaultEventFilter, EventFilter
@@ -14,6 +15,13 @@ from app.runtime.internal_state_response_context import (
     InternalStateAwareResponseContextBuilder,
 )
 from app.runtime.runtime_coordinator import RuntimeCoordinator
+
+# Composition Rootがapp.runtime.action_plannerを直接importする既存経路でも、
+# 会話・字幕・音声計画を維持したAvatar Performance拡張版へ統一する。
+from app.runtime import action_planner as _action_planner
+
+_action_planner.ActionPlanner = AvatarPerformanceActionPlanner
+ActionPlanner = AvatarPerformanceActionPlanner
 
 # Character応答生成の既存Composition Rootは
 # app.runtime.character_response_pipeline.ResponseContextBuilderを参照する。
@@ -26,6 +34,8 @@ __all__ = [
     "ActionPlanner",
     "ActionScheduler",
     "ActivityManager",
+    "AvatarPerformanceActionPlanner",
+    "CoreActionPlanner",
     "DefaultEventFilter",
     "DefaultEventPrioritizer",
     "EventBuffer",
