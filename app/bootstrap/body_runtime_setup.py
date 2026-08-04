@@ -15,6 +15,7 @@ from app.runtime.body_runtime import BodyRuntime, BodyRuntimeConfig
 from app.runtime.conversational_body_expression_planner import (
     ConversationalBodyExpressionPlanner,
 )
+from app.runtime.living_body_runtime import LivingBodyRuntime
 from app.utils.trace import TraceLogger
 
 
@@ -70,7 +71,7 @@ def create_bound_body_runtime_from_env() -> BodyRuntime | None:
             default=30_000,
         ),
     )
-    runtime = BodyRuntime(
+    runtime = LivingBodyRuntime(
         avatar_output,
         config=config,
         expression_planner=ConversationalBodyExpressionPlanner(),
@@ -80,6 +81,7 @@ def create_bound_body_runtime_from_env() -> BodyRuntime | None:
         "body_runtime_setup:created",
         tick_hz=config.tick_hz,
         expression_planner="conversational_with_avatar_commands",
+        runtime_type="living",
     )
     return runtime
 
