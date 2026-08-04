@@ -5,8 +5,8 @@ import os
 from app.bootstrap import runtime as runtime_bootstrap
 from app.ports.avatar_output import get_bound_avatar_output
 from app.ports.body_subsystem import bind_body_subsystem
-from app.runtime.avatar_performance_action_planner import (
-    AvatarPerformanceActionPlanner,
+from app.runtime.avatar_body_command_action_planner import (
+    AvatarBodyCommandActionPlanner,
 )
 from app.runtime.avatar_performance_character_service import (
     AvatarPerformanceCharacterLlmService,
@@ -19,13 +19,9 @@ from app.utils.trace import TraceLogger
 
 
 def install_body_aware_runtime_components() -> None:
-    """既存Composition RootへBody対応Plannerを組み込む。
+    """既存Composition RootへBody対応Plannerを組み込む。"""
 
-    現行Factoryの公開契約を変えず段階移行するため、Factoryが参照する実装Classを
-    起動前に差し替える。Activity、ActionPlanGroup、ActionSchedulerの責務は変更しない。
-    """
-
-    setattr(runtime_bootstrap, "ActionPlanner", AvatarPerformanceActionPlanner)
+    setattr(runtime_bootstrap, "ActionPlanner", AvatarBodyCommandActionPlanner)
     setattr(
         runtime_bootstrap,
         "CharacterLlmService",
@@ -67,7 +63,7 @@ def create_bound_body_runtime_from_env() -> BodyRuntime | None:
         ),
         autonomous_interval_ms=_env_int(
             "YURA_BODY_AUTONOMOUS_INTERVAL_MS",
-            default=2400,
+            default=1800,
         ),
         baseline_refresh_ms=_env_int(
             "YURA_BODY_BASELINE_REFRESH_MS",
@@ -83,7 +79,7 @@ def create_bound_body_runtime_from_env() -> BodyRuntime | None:
     TraceLogger().info(
         "body_runtime_setup:created",
         tick_hz=config.tick_hz,
-        expression_planner="conversational",
+        expression_planner="conversational_with_avatar_commands",
     )
     return runtime
 
