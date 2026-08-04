@@ -134,3 +134,20 @@ def test_avatar_state_hub_updates_state_and_limits_history() -> None:
     assert snapshot["history"][0]["action"]["name"] == (
         f"gesture_{server.MAX_HISTORY_ITEMS + 4}"
     )
+
+
+def test_mobile_manual_controls_keep_avatar_preview_visible() -> None:
+    web_root = (
+        Path(__file__).parents[1]
+        / "gui"
+        / "yura-avatar-runtime-lab"
+        / "web"
+    )
+    html = (web_root / "index.html").read_text(encoding="utf-8")
+    css = (web_root / "styles.css").read_text(encoding="utf-8")
+
+    assert 'class="mobile-preview"' in html
+    assert 'id="mobileAvatarCanvas"' in html
+    assert "targetContext.drawImage(source" in html
+    assert "position: sticky" in css
+    assert "safe-area-inset-top" in css
