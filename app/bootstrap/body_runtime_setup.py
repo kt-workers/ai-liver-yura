@@ -12,6 +12,9 @@ from app.runtime.avatar_performance_character_service import (
     AvatarPerformanceCharacterLlmService,
 )
 from app.runtime.body_runtime import BodyRuntime, BodyRuntimeConfig
+from app.runtime.conversational_body_expression_planner import (
+    ConversationalBodyExpressionPlanner,
+)
 from app.utils.trace import TraceLogger
 
 
@@ -71,11 +74,16 @@ def create_bound_body_runtime_from_env() -> BodyRuntime | None:
             default=30_000,
         ),
     )
-    runtime = BodyRuntime(avatar_output, config=config)
+    runtime = BodyRuntime(
+        avatar_output,
+        config=config,
+        expression_planner=ConversationalBodyExpressionPlanner(),
+    )
     bind_body_subsystem(runtime)
     TraceLogger().info(
         "body_runtime_setup:created",
         tick_hz=config.tick_hz,
+        expression_planner="conversational",
     )
     return runtime
 
