@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
+from app.adapters.prompt import CharacterPromptBuilder
 from app.domain.actions import ActionType
 from app.domain.activities import Activity, ActivityType
 from app.domain.avatar_performance import (
@@ -10,9 +13,16 @@ from app.domain.avatar_performance import (
     AvatarPerformancePlan,
     AvatarPerformanceSegment,
 )
-from app.domain.character_response import CharacterResponse, ReactionPlan, ReactionSegment
+from app.domain.character_response import (
+    ActivityExecutionStatus,
+    CharacterResponse,
+    ReactionPlan,
+    ReactionSegment,
+    ResponseContext,
+)
 from app.runtime.avatar_performance_action_planner import AvatarPerformanceActionPlanner
 from app.runtime.avatar_performance_planner import AvatarPerformancePlanner
+from app.runtime.character_response_pipeline import CharacterLlmService
 
 
 class UnusedResponseGenerator:
@@ -153,3 +163,68 @@ def test_avatar_performance_action_planner_attaches_plan_once() -> None:
         and action.metadata["avatar_performance_managed"] is True
         for action in [*expression_actions, *move_actions]
     )
+
+
+def test_character_llm_parser_accepts_avatar_performance_intents() -> None:
+    response = CharacterLlmService.parse(
+        json.dumps(
+            {
+                "speech": "気になるね",
+                "expression": "curious",
+                "gesture": "head_tilt",
+                "voice_intent": {"style": "bright"},
+                "pause_after_seconds": 0.0,
+                "reaction_segments": [
+                    {
+                        "speech": "気になるね",
+                        "expression": "curious",
+                        "expression_intensity": 0.7,
+                        "gesture": "head_tilt",
+                        "gesture_intensity": 0.4,
+                        "gaze": {
+                            "target": "viewer",
+                            "behavior": "maintain",
+                            "intensity": 0.8,
+                        },
+                        "voice_intent": {"style": "bright"},
+                        "pause_after_seconds": 0.0,
+                    }
+                ],
+                "claims": [],
+            },
+            ensure_ascii=False,
+        )
+    )
+
+    assert response is not None
+    segment = response.effective_reaction_plan().segments[0]
+    assert segment.expression_intensity == 0.7
+    assert segment.gesture_intensity == 0.4
+    assert segment.gaze is not None
+    assert segment.gaze.target == "viewer"
+
+
+def test_character_prompt_limits_avatar_fields_to_high_level_intents() -> None:
+    context = ResponseContext(
+        user_input="気になる？",
+        activity_type=ActivityType.CONVERSATION_WITH_USER.value,
+        operation=None,
+        status=ActivityExecutionStatus.WAITING_INPUT,
+        failure_reason=None,
+        result_summary="",
+        allowed_claims=(),
+        forbidden_claims=(),
+        activity_goal="応答する",
+    )
+
+    prompt = CharacterPromptBuilder().build(
+        context,
+        character_profile=None,
+        correction=None,
+    )
+
+    assert "expression_intensity" in prompt
+    assert "gesture_intensity" in prompt
+    assert "gaze" in prompt
+    assert "performance_id" in prompt
+    assert "Live2D Parameter" in prompt
