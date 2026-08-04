@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from app.domain.avatar_performance import AvatarPerformancePlan
 from app.ports.avatar_output import AvatarGazeIntent
 
 JsonSender = Callable[[str, bytes, float], None]
@@ -42,32 +43,82 @@ class HttpAvatarOutput:
         self._config = config
         self._send_json = send_json or self._post_json
 
+    async def submit_performance(
+        self,
+        performance: AvatarPerformancePlan,
+    ) -> None:
+        await self._send(
+            "/api/avatar/performances",
+            {
+                "schema_version": 1,
+                "type": "avatar.performance.submit",
+                "performance_id": performance.performance_id,
+                "source_activity_id": performance.source_activity_id,
+                "output_unit_id": performance.output_unit_id,
+                "priority": performance.priority,
+                "interrupt_policy": performance.interrupt_policy.value,
+                "return_behavior": performance.return_behavior.value,
+                "segments": [
+                    {
+                        "expression": {
+                            "name": segment.expression.name,
+                            "intensity": segment.expression.intensity,
+                        },
+                        "gesture": (
+                            {
+                                "name": segment.gesture.name,
+                                "intensity": segment.gesture.intensity,
+                            }
+                            if segment.gesture is not None
+                            else None
+                        ),
+                        "gaze": (
+                            {
+                                "target": segment.gaze.target,
+                                "behavior": segment.gaze.behavior,
+                                "intensity": segment.gaze.intensity,
+                            }
+                            if segment.gaze is not None
+                            else None
+                        ),
+                        "duration_ms": segment.duration_ms,
+                        "fade_in_ms": segment.fade_in_ms,
+                        "fade_out_ms": segment.fade_out_ms,
+                    }
+                    for segment in performance.segments
+                ],
+            },
+        )
+
     async def set_expression(self, expression: str) -> None:
         name = self._require_name(expression, "expression")
         await self._send(
+            "/api/avatar/actions",
             {
                 "schema_version": 1,
                 "type": "avatar.action",
                 "action": "expression",
                 "name": name,
                 "intensity": 1.0,
-            }
+            },
         )
 
     async def play_gesture(self, gesture: str) -> None:
         name = self._require_name(gesture, "gesture")
         await self._send(
+            "/api/avatar/actions",
             {
                 "schema_version": 1,
                 "type": "avatar.action",
                 "action": "gesture",
                 "name": name,
                 "intensity": 1.0,
-            }
+            },
         )
 
     async def set_gaze(self, gaze: AvatarGazeIntent) -> None:
         await self._send(
+            "/api/avatar/actions",
             {
                 "schema_version": 1,
                 "type": "avatar.action",
@@ -75,16 +126,20 @@ class HttpAvatarOutput:
                 "target": gaze.target,
                 "behavior": gaze.behavior,
                 "intensity": gaze.intensity,
-            }
+            },
         )
 
-    async def _send(self, payload: dict[str, object]) -> None:
+    async def _send(
+        self,
+        endpoint_path: str,
+        payload: dict[str, object],
+    ) -> None:
         body = json.dumps(
             payload,
             ensure_ascii=False,
             separators=(",", ":"),
         ).encode("utf-8")
-        endpoint = f"{self._config.base_url}/api/avatar/actions"
+        endpoint = f"{self._config.base_url}{endpoint_path}"
         await asyncio.to_thread(
             self._send_json,
             endpoint,
