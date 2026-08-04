@@ -118,6 +118,18 @@ Pluginは次のCapabilityを追加する。
 output.avatar.performance
 ```
 
+### 6.1 段階移行中の互換境界
+
+型契約上は `submit_performance()` を推奨するが、Plugin Factoryは移行前Adapterへこのメソッドを必須にしない。
+
+- 既存Adapterが個別表情・Gesture・視線だけを実装している場合も登録可能
+- `submit_performance()` がない場合は `output.avatar.performance` だけをUnavailableとする
+- Performance Endpointの404・通信失敗時もPerformance CapabilityだけをUnavailableとする
+- `expression / gesture / gaze` Capabilityは維持し、Avatar-aware UseCaseが個別Actionへ縮退する
+- 個別Action側も失敗した場合に限り、Avatar Plugin全体をUnavailableとする
+
+この境界により、CoreとAdapterを同時更新できない環境でも段階的に移行できる。
+
 ## 7. HTTP Web MVP契約
 
 暫定HTTP Adapterは次へ送信する。
@@ -156,6 +168,7 @@ HTTPはWeb MVP用の暫定Transportであり、完了通知、取消、双方向
 - Avatar Runtime停止時もCore、会話、字幕、音声を継続する
 - Performance API非対応時は個別Actionへ縮退する
 - Performance送信失敗だけで発話を失敗扱いにしない
+- Performance送信失敗だけで個別Avatar Capabilityを停止しない
 - Delivery-aware UseCaseの発話確定境界を維持する
 - 送信済みPerformance IDの保持数を制限し、常駐Runtimeで無制限に増加させない
 
@@ -166,7 +179,8 @@ HTTPはWeb MVP用の暫定Transportであり、完了通知、取消、双方向
 - Character LLMの高レベル強度・視線Schema
 - Action metadataによるPerformance搬送
 - Port / Plugin / HTTP AdapterのPerformance送信
-- 個別Actionへの後方互換Fallback
+- Performance Capability単独の劣化管理
+- 旧Adapterおよび個別Actionへの後方互換Fallback
 - 単体・統合回帰テスト
 
 対象外：
