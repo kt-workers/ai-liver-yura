@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.bootstrap.avatar_output_runtime import create_avatar_output_plugin_from_env
 from app.domain.actions import ActionPlan, ActionType
 from app.domain.activity_turn_result import ActionExecutionResult
 from app.plugins.avatar_output import AvatarOutputPlugin
+from app.plugins.avatar_output.runtime import create_avatar_output_plugin_from_env
 from app.usecases.execute_action_usecase import (
     ExecuteActionUsecase as CoreExecuteActionUsecase,
 )
