@@ -230,7 +230,7 @@ Bodyの30〜60fpsループでLLMを呼び出さない。
 
 ## 9. 現在の実装範囲
 
-PR #158では次を実装する。
+PR #158では次を実装済みとする。
 
 - `BodyActivityContext`
 - `BodyExpressionRequest`
@@ -239,29 +239,50 @@ PR #158では次を実装する。
 - `SpeechEmphasis`
 - `SpeechPresentationRequest`
 - `BodySubsystemPort`
+- `BodyRuntimeSnapshot`
 - Activityから身体文脈を作るBuilder
 - 意味軸から部位別Trackを合成する決定論的Fallback
 - Character LLMの高レベルIntent Schema
 - 旧`gesture` / `gaze`経路の移行互換
 - `AvatarPerformancePlan`による複合Track送信
+- インプロセスの常駐`BodyRuntime`
+- 既定30fpsの非LLM Tick Loop
+- Activity Contextと発話時間の状態保持
+- 優先度付き身体表現Queue
+- Activity基礎姿勢と注意Trackの定期更新
+- `breathing`と`micro_sway`の自律Track生成
+- Avatar出力障害をCoreから隔離する診断状態
+- 冪等な`start()` / `stop()`
+
+現在の`BodyRuntime`は、独立プロセス化前のインプロセスMVPである。Activity文脈、身体表現要求、発話状態を保持し、各Tickで`AvatarPerformancePlan`へコンパイルする。
 
 現段階では次を実装しない。
 
 - 独立プロセスとしてのBody Runtime
+- CoreのComposition RootとApplication lifecycleへの実運用接続
+- Activity遷移からBody Contextを送る実運用Gateway
+- Character出力からBody Expressionを送る実運用Gateway
 - カメラ人物・物体認識
-- 外界対象の識別
-- Bodyの常時Tick Loop
+- 外界対象の識別と注意候補選択
 - TTS生成後の実音声再生時計
-- Viseme同期
+- 音素・Viseme同期
+- 瞬き・眼球微動の詳細制御
 - WebSocketによる双方向状態通知
 - Live2D / VTube Studio固有変換
+- Avatar Runtimeからの完了・中断・失敗通知
+
+詳細は`docs/design/body_runtime_mvp_v1.0.0.md`を参照する。
 
 ## 10. 移行手順
 
-1. Bodyのドメイン契約と高レベルIntentを導入する
-2. `gesture`をCharacter LLMの標準出力から外す
-3. Activity ContextとBody ExpressionをBodyへ送るGatewayを実装する
-4. TTS生成結果を`SpeechPresentationRequest`としてBodyへ渡す
-5. Bodyの常時Tick、Attention、Autonomous Motionを独立Runtimeへ実装する
-6. AvatarPerformancePlanをBody内部のコンパイル結果に限定する
-7. 旧個別Avatar Actionを削除可能になるまで互換経路を維持する
+1. Bodyのドメイン契約と高レベルIntentを導入する（完了）
+2. `gesture`をCharacter LLMの標準出力から外す（互換経路を残して完了）
+3. インプロセスBody Runtimeと非LLM Tick Loopを実装する（完了）
+4. Composition RootとApplication lifecycleへBody Runtimeを接続する
+5. Activity ContextとBody ExpressionをBodyへ送るGatewayを接続する
+6. TTS生成結果を`SpeechPresentationRequest`としてBodyへ渡す
+7. 実音声再生時計、音素・Viseme、発話強調同期を実装する
+8. Perception入力とAttention Controllerを実装する
+9. Body Runtimeを独立プロセス化し、同じ`BodySubsystemPort`のRemote Adapterへ差し替える
+10. AvatarPerformancePlanをBody内部のコンパイル結果に限定する
+11. 旧個別Avatar Actionを削除可能になるまで互換経路を維持する
