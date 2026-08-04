@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yura Avatar Runtime Lab</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Avatar Runtime / Web MVP</p>
+        <h1>からだの水鏡</h1>
+        <p class="lead">LLMが決めた表情と動作を、Live2D接続前の軽量モデルで確認する検証画面です。</p>
+      </div>
+      <div class="connection" id="connection" data-state="connecting">
+        <span class="connection-dot"></span>
+        <span id="connectionText">接続中</span>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <article class="stage-card">
+        <div class="stage-toolbar">
+          <div>
+            <span class="label">現在の演技</span>
+            <strong id="performanceLabel">neutral / idle / neutral</strong>
+          </div>
+          <span class="sequence" id="sequenceLabel">#0</span>
+        </div>
+        <div class="stage-wrap">
+          <canvas id="avatarCanvas" width="720" height="720" aria-label="棒人間アバター"></canvas>
+          <div class="stage-glow"></div>
+        </div>
+        <dl class="state-grid">
+          <div><dt>表情</dt><dd id="expressionValue">neutral</dd></div>
+          <div><dt>動作</dt><dd id="gestureValue">idle</dd></div>
+          <div><dt>視線</dt><dd id="gazeValue">neutral</dd></div>
+          <div><dt>受信</dt><dd id="receivedValue">未受信</dd></div>
+        </dl>
+      </article>
+
+      <aside class="control-column">
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <span class="label">Manual Probe</span>
+              <h2>プリセット送信</h2>
+            </div>
+            <button class="ghost-button" id="randomButton" type="button">ランダム</button>
+          </div>
+
+          <div class="control-group">
+            <h3>表情</h3>
+            <div class="button-grid" id="expressionButtons">
+              <button data-action="expression" data-name="neutral">neutral</button>
+              <button data-action="expression" data-name="happy">happy</button>
+              <button data-action="expression" data-name="sad">sad</button>
+              <button data-action="expression" data-name="surprised">surprised</button>
+              <button data-action="expression" data-name="angry">angry</button>
+              <button data-action="expression" data-name="curious">curious</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <h3>ジェスチャー</h3>
+            <div class="button-grid" id="gestureButtons">
+              <button data-action="gesture" data-name="small_nod">small_nod</button>
+              <button data-action="gesture" data-name="head_tilt">head_tilt</button>
+              <button data-action="gesture" data-name="wave">wave</button>
+              <button data-action="gesture" data-name="lean_forward">lean_forward</button>
+              <button data-action="gesture" data-name="bounce">bounce</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <h3>視線</h3>
+            <div class="button-grid compact" id="gazeButtons">
+              <button data-action="gaze" data-name="viewer">viewer</button>
+              <button data-action="gaze" data-name="left">left</button>
+              <button data-action="gaze" data-name="right">right</button>
+              <button data-action="gaze" data-name="up">up</button>
+              <button data-action="gaze" data-name="down">down</button>
+              <button data-action="gaze" data-name="away">away</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel payload-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="label">Transport</span>
+              <h2>最終Action</h2>
+            </div>
+            <span class="pill">POST /api/avatar/actions</span>
+          </div>
+          <pre id="payloadView">{
+  "status": "waiting"
+}</pre>
+        </section>
+      </aside>
+    </section>
+
+    <section class="panel history-panel">
+      <div class="panel-heading">
+        <div>
+          <span class="label">Event Stream</span>
+          <h2>受信履歴</h2>
+        </div>
+        <span class="pill" id="historyCount">0 actions</span>
+      </div>
+      <div class="history-list" id="historyList">
+        <p class="empty-state">CoreまたはプリセットからActionが届くと、ここに表示されます。</p>
+      </div>
+    </section>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>
