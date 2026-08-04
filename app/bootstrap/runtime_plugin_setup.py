@@ -153,13 +153,26 @@ def setup_runtime_plugins(
 
     avatar_output_adapter = _create_avatar_output_adapter_from_env()
     avatar_output_enabled = avatar_output_adapter is not None
-    register_optional_plugin_from_factory(
-        plugin_manager,
-        plugin_id=_AVATAR_OUTPUT_PLUGIN_ID,
-        module="app.plugins.avatar_output",
-        enabled=avatar_output_enabled,
-        services={"avatar_output": avatar_output_adapter},
-    )
+    if avatar_output_enabled:
+        register_optional_plugin_from_factory(
+            plugin_manager,
+            plugin_id=_AVATAR_OUTPUT_PLUGIN_ID,
+            module="app.plugins.avatar_output",
+            enabled=True,
+            services={"avatar_output": avatar_output_adapter},
+        )
+
+    enabled_plugins = {
+        "llm_provider.default": True,
+        "llm_provider.situation_evaluator": True,
+        "llm_provider.character": character_llm_plugin is not None,
+        "llm_provider.response_validator": validator_llm_plugin is not None,
+        _RELATIONSHIP_MEMORY_PLUGIN_ID: config.memory.relationship_memory.enabled,
+        _AGENT_MEMORY_PLUGIN_ID: config.memory.agent_memory.enabled,
+        "voice_output": config.speech.enabled,
+    }
+    if avatar_output_enabled:
+        enabled_plugins[_AVATAR_OUTPUT_PLUGIN_ID] = True
 
     plugin_manager.initialize_enabled_plugins(
         PluginContext(
@@ -169,18 +182,7 @@ def setup_runtime_plugins(
             configuration={},
             capability_reporter=plugin_manager,
         ),
-        {
-            "llm_provider.default": True,
-            "llm_provider.situation_evaluator": True,
-            "llm_provider.character": character_llm_plugin is not None,
-            "llm_provider.response_validator": validator_llm_plugin is not None,
-            _RELATIONSHIP_MEMORY_PLUGIN_ID: (
-                config.memory.relationship_memory.enabled
-            ),
-            _AGENT_MEMORY_PLUGIN_ID: config.memory.agent_memory.enabled,
-            "voice_output": config.speech.enabled,
-            _AVATAR_OUTPUT_PLUGIN_ID: avatar_output_enabled,
-        },
+        enabled_plugins,
     )
 
     default_response_generator = _require_initialized_llm_provider(
