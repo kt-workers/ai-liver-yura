@@ -4,8 +4,7 @@ from typing import Any
 
 from app.domain.actions import ActionPlan, ActionType
 from app.domain.activity_turn_result import ActionExecutionResult
-from app.plugins.avatar_output import AvatarOutputPlugin
-from app.plugins.avatar_output.runtime import create_avatar_output_plugin_from_env
+from app.ports.avatar_output import AvatarOutputPort, get_bound_avatar_output
 from app.usecases.execute_action_usecase import (
     ExecuteActionUsecase as CoreExecuteActionUsecase,
 )
@@ -13,25 +12,23 @@ from app.utils.trace import TraceLogger
 
 
 class ExecuteActionUsecase(CoreExecuteActionUsecase):
-    """既存Action実行へ交換可能なAvatar Output Pluginを合成する。"""
+    """既存Action実行へ交換可能なAvatar Output Portを合成する。"""
 
     def __init__(
         self,
         *args: Any,
-        avatar_output_plugin: AvatarOutputPlugin | None = None,
+        avatar_output: AvatarOutputPort | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
-        self._avatar_output_plugin = (
-            avatar_output_plugin
-            if avatar_output_plugin is not None
-            else create_avatar_output_plugin_from_env()
+        self._avatar_output = (
+            avatar_output if avatar_output is not None else get_bound_avatar_output()
         )
         self._avatar_trace_logger = TraceLogger()
 
     async def execute(self, action_plan: ActionPlan) -> ActionExecutionResult | None:
-        plugin = self._avatar_output_plugin
-        if plugin is None or action_plan.action_type not in {
+        avatar_output = self._avatar_output
+        if avatar_output is None or action_plan.action_type not in {
             ActionType.CHANGE_EXPRESSION,
             ActionType.MOVE,
         }:
@@ -39,9 +36,9 @@ class ExecuteActionUsecase(CoreExecuteActionUsecase):
 
         try:
             if action_plan.action_type == ActionType.CHANGE_EXPRESSION:
-                await plugin.set_expression(action_plan.text)
+                await avatar_output.set_expression(action_plan.text)
             else:
-                await plugin.play_gesture(action_plan.text)
+                await avatar_output.play_gesture(action_plan.text)
         except Exception as error:
             # Avatar出力は任意Capabilityであり、描画停止時もCoreを継続する。
             self._avatar_trace_logger.warning(
