@@ -30,6 +30,7 @@ class AvatarPerformanceCharacterPromptBuilder(DirectiveAwareCharacterPromptBuild
                 "周辺への一瞬の視線などを毎回指定しない。",
                 "reaction_segmentsの各要素では、発話に密接な人格的表現が必要な場合だけ"
                 "embodied_expression、attention_intent、speech_emphasisを追加する。",
+                "expression_intensityは0.0〜1.0で、表情の見せ方の強さだけに使用できる。",
                 "embodied_expressionは{attitude, intensity, valence, arousal, tension, openness,"
                 " approach, agreement, surprise, assertiveness, warmth}。",
                 "intensity、arousal、tension、openness、surprise、assertiveness、warmthは0.0〜1.0。"
