@@ -81,7 +81,17 @@ class FakeBodySubsystem:
         self.speeches.append(request)
 
     async def snapshot(self) -> BodyRuntimeSnapshot:
-        return BodyRuntimeSnapshot(running=self.started)
+        return BodyRuntimeSnapshot(
+            running=self.started,
+            tick_count=0,
+            active_activity_id=None,
+            pending_expression_count=len(self.expressions),
+            active_speech_id=(
+                self.speeches[-1].presentation_id if self.speeches else None
+            ),
+            last_performance_id=None,
+            last_error=None,
+        )
 
 
 @pytest.fixture(autouse=True)
