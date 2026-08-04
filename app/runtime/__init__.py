@@ -5,6 +5,7 @@ from app.runtime.agent_life_service import AgentLifeService
 from app.runtime.agent_state import AgentState
 from app.runtime.autonomous_activity_policy import AutonomousActivityPolicy
 from app.runtime.avatar_performance_action_planner import AvatarPerformanceActionPlanner
+from app.runtime.body_runtime import BodyRuntime, BodyRuntimeConfig
 from app.runtime.event_buffer import EventBuffer
 from app.runtime.event_bus import EventBus
 from app.runtime.event_filter import DefaultEventFilter, EventFilter
@@ -40,6 +41,8 @@ __all__ = [
     "ActivityManager",
     "AvatarPerformanceActionPlanner",
     "AvatarPerformanceCharacterLlmService",
+    "BodyRuntime",
+    "BodyRuntimeConfig",
     "CoreActionPlanner",
     "DefaultEventFilter",
     "DefaultEventPrioritizer",
