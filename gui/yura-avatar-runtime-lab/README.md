@@ -107,7 +107,7 @@ curl -X POST http://127.0.0.1:8780/api/avatar/actions \
 
 `render.yaml` に `yura-avatar-runtime-lab` を追加しています。
 
-- Branch: `experiment/avatar-runtime-render-stick-model-v2`
+- Branch: `test/avatar-runtime-render-stick-model`
 - Build: `python -m compileall app gui/yura-avatar-runtime-lab`
 - Start: `python gui/yura-avatar-runtime-lab/server.py`
 - Health: `/health`
