@@ -145,9 +145,13 @@ def test_mobile_manual_controls_keep_avatar_preview_visible() -> None:
     )
     html = (web_root / "index.html").read_text(encoding="utf-8")
     css = (web_root / "styles.css").read_text(encoding="utf-8")
+    mobile_preview_js = (web_root / "mobile-preview.js").read_text(
+        encoding="utf-8"
+    )
 
     assert 'class="mobile-preview"' in html
     assert 'id="mobileAvatarCanvas"' in html
-    assert "targetContext.drawImage(source" in html
+    assert 'src="/mobile-preview.js"' in html
+    assert "targetContext.drawImage(source" in mobile_preview_js
     assert "position: sticky" in css
     assert "safe-area-inset-top" in css
