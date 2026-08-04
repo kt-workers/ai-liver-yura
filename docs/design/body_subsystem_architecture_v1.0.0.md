@@ -2,59 +2,111 @@
 
 ## 1. 目的
 
-ゆらの身体を、Character LLMが選ぶ固定ポーズ集ではなく、現在のActivity、内部状態、外界認識、発話、直前までの身体状態から連続的に動く独立Subsystemとして扱う。
+ゆらの身体を、Character LLMが選んだ固定ポーズを順番に再生する装置ではなく、
+Activity、内部状態、外界認識、発話、現在姿勢を統合して常時動く独立Subsystemとして扱う。
 
-Body Subsystemは「脳から命令が来たときだけ動く出力装置」ではない。LLMを待たずに常時稼働し、呼吸、瞬き、姿勢維持、視線、注意対象への追従、発話同期を担当する。
+BodyはLLMを待たずに稼働し、呼吸、姿勢維持、注意、視線、首、胴体、腕、表情、
+発話同期を連続的に制御する。
+
+## 2. システム上の位置
 
 ```text
-Input
+外界入力
+  ├─ テキスト入力
+  ├─ マイク音声
+  ├─ カメラ映像
+  └─ マウス等の操作入力
+          ↓
+Perception / 入力Adapter
+  ├─ 意味的観測 ───────────────→ 意味解析・内部指令
+  └─ 空間・低遅延観測 ─────────→ Body Attention Controller
+
+意味解析LLM
+  ↓ StructuredInputMeaning
+内部指令LLM
+  ↓ InternalDirective
+Activityの作成・更新
   ↓
-Input Meaning Interpreter
-  ↓
-Internal Directive Planner
-  ↓
-Activity ────────────────┐
-  ↓ 必要な場合            │ BodyActivityContext
-Character LLM             │
-  ↓ 発話・意味的表現意図   │
-TTS生成                    │
-  ↓ 音声・時間情報         │
-                          ▼
-                   Body Subsystem
-                   ├─ Body State
-Perception ──────────────→├─ Attention Controller
-Camera / Cursor / Sound   ├─ Autonomous Motion
-                   ├─ Expression Planner
-                   ├─ Speech Presentation
-                   ├─ Track Composer
-                   └─ Motion Runtime
-                          ├─ 音声再生
-                          └─ Live2D / 3D
+Activity Manager / Action Planner / ActionPlanGroup
+  ├─ Character LLM（必要時のみ）
+  ├─ SPEAK / TTS生成
+  ├─ Subtitle / Plugin Action
+  ├─ BodyActivityContext
+  └─ BodyExpressionRequest
+          ↓
+Body Runtime（非LLM・既定30fps）
+  ├─ Body State
+  ├─ Attention Controller
+  ├─ Autonomous Motion
+  ├─ Expression Planner
+  ├─ Speech Presentation
+  └─ Track Composer
+          ↓
+AvatarPerformancePlan
+          ↓
+Avatar Runtime
+          ↓
+Live2D / 3D / 検証用棒人間
 ```
 
-## 2. 基本原則
+## 3. Perceptionの二経路
 
-### 2.1 脳は身体を毎フレーム操作しない
+カメラ、マイク、マウスはBodyだけの入力ではない。認識結果を用途別に分ける。
 
-脳側は「ユーザーと会話している」「強く拒否を表したい」「対象を見たい」のような目的と意味を渡す。首の角度、腕の角度、フレーム時刻、Live2D Parameterは指定しない。
+### 3.1 脳へ渡す意味的観測
 
-### 2.2 BodyはLLMなしで動き続ける
+- ユーザーが入室した
+- 名前を呼ばれた
+- 手を振った
+- 物が落ちた
+- 会話内容
+- 操作対象が変わった
 
-次はBody内部の常駐制御で行う。
+これらはEventまたはStructured Inputとして意味解析・内部指令へ渡し、Activityや判断に
+利用する。
 
-- 呼吸
-- 瞬き
-- 小さな眼球運動
-- 姿勢の微調整
-- 重心移動
-- 長時間の完全静止を避ける動き
-- 発話中の口の動き
-- Activityで許された範囲の周辺確認
-- 注意対象への目、首、体の遅延追従
+### 3.2 Bodyへ渡す低遅延観測
 
-### 2.3 Activityは継続文脈を渡す
+- 対象のおおよその画面位置
+- 音源方向
+- 対象が移動したか
+- カーソル位置と速度
+- 対象の検出信頼度
 
-Activityは毎フレームの動作命令を送らない。Bodyへ次のような継続状態を提示する。
+これらは視線や首の追従に使う。生映像・生音声を毎フレームLLMへ渡さない。
+
+```text
+人物が右側にいる
+  → Bodyは必要なら目を先に右へ向けられる
+  → 脳は「その人物を見る／無視する／確認する」を意味判断する
+```
+
+反射的な一瞥はBodyの許可範囲内で行えるが、誰を優先して見るかという人格的判断は
+Activityと脳側の方針に従う。
+
+## 4. Activityの位置付け
+
+Activityは意味解析LLMやCharacter LLMと同列の変換コンポーネントではない。
+
+既存どおり、ゆらが継続して行っている目的・状態と、TurnごとのActionを束ねる
+ドメイン概念・実行管理単位である。
+
+```text
+内部指令
+  ↓ Activityを作成・更新
+Activity
+  ├─ goal / context / lifecycle
+  └─ TurnごとのActionPlanGroup
+       ├─ Character生成
+       ├─ SPEAK / TTS
+       ├─ Subtitle
+       ├─ Body Context更新
+       ├─ Body Expression Request
+       └─ その他Plugin Action
+```
+
+ActivityはBodyへ毎フレーム角度を送らない。注意対象、関与度、姿勢傾向、動きの活発さ、
+視線自由度などを継続文脈として渡す。
 
 ```json
 {
@@ -67,14 +119,81 @@ Activityは毎フレームの動作命令を送らない。Bodyへ次のよう�
 }
 ```
 
-この状態は、明示的な演技が終了してもActivityが続く間は保持される。
+一時的な首振りやうなずきが終わっても、このActivity文脈はActivityが続く間保持される。
 
-### 2.4 強い表現だけを要求する
+## 5. Character LLMの責務
 
-驚き、拒否、喜び、怒りなど、人格的な意味を持つ身体表現が必要なときだけ`BodyExpressionRequest`を送る。
+Character LLMはActivity実行中に必要な場合だけ呼ばれ、主に発話と人格的な表現意図を
+生成する。
+
+出力可能なもの：
+
+- セリフ
+- Voice Intent
+- `embodied_expression`
+- `attention_intent`
+- `speech_emphasis`
+- 顔表情の高レベル名
+
+出力しないもの：
+
+- 身体部位の角度
+- Live2D Parameter
+- モーション開始時刻
+- 振幅、速度、反復回数
+- 完成済み全身ポーズ
+- VTube Studio Hotkey
+- Performance ID
+
+Character LLMを通さないもの：
+
+- 呼吸
+- 瞬き
+- 微細な姿勢変更
+- Activityで許された視線の一瞥
+- 目、首、体の遅延追従
+- 長時間の完全静止を避ける動き
+
+## 6. Character・TTS・Bodyの経路
+
+Character LLMからTTS Pluginへ直接出力する構成ではない。
+
+```text
+Character LLM
+  ↓ CharacterResponse
+Action Planner / ActionPlanGroup
+  ├─ speech text + voice intent
+  │       ↓
+  │    SPEAK Action
+  │       ↓
+  │    TTS Plugin
+  │       ↓ 生成音声・実時間
+  │    Action実行Gateway
+  │       ↓
+  │    SpeechPresentationRequest
+  │       ↓
+  └────→ Body Runtime
+
+CharacterResponseの表現意図
+  ↓ BodyExpressionRequest
+Body Runtime
+```
+
+TTS Pluginは音声生成を担当する。Bodyは生成済み音声のpresentation ID、実時間、強調点を
+共通時計へ登録し、将来的に音声再生、口、Viseme、表情、身体強調を同期する。
+
+現在の通常経路では、既存AudioPlayerによる再生を維持しながら、準備済みWAVの実時間または
+推定時間をBodyへ登録する。実音声再生の所有権をBodyへ完全移行する工程は後続とする。
+
+## 7. Bodyへの明示的表現要求
+
+驚き、拒否、肯定、喜び、怒りなど、意味のある表現が必要な時だけ
+`BodyExpressionRequest`を送る。
 
 ```json
 {
+  "facial_expression": "disgusted",
+  "facial_intensity": 0.9,
   "expression": {
     "attitude": "firm_rejection",
     "intensity": 0.85,
@@ -97,51 +216,44 @@ Activityは毎フレームの動作命令を送らない。Bodyへ次のよう�
 }
 ```
 
-`head_shake`や`raise_hand`などの身体部位別モーション名は、Character LLMの標準出力にしない。
+Bodyはこれを完成済み「強く嫌がる」プリセットへ変換しない。意味軸から表情、注意、首、
+胴体、左右腕の独立Trackを生成する。
 
-## 3. Body内部の責務
+## 8. Body内部の責務
 
-### 3.1 Body State
+### 8.1 Body State
 
-現在姿勢、注意対象、視線方向、表情、発話状態、継続中Track、直前動作を保持する。新しい動作はneutralではなく、現在状態から開始する。
+現在Activity、姿勢、注意対象、表情、発話状態、要求Queue、直前のPerformance、診断状態を
+保持する。新しい動作はneutralではなく現在状態から開始する。
 
-### 3.2 Attention Controller
+### 8.2 Attention Controller
 
-カメラ、カーソル、音などから得られた対象候補と、Activityおよび明示的な注意Intentを統合する。
+意味上の対象とPerceptionによる現在位置を結び付ける。微細な位置変更はデッドゾーンで
+無視し、目、首、体を異なる速度で追従させる。
 
-Perceptionは「人物が右側にいる」と報告するだけであり、その人物を見るかどうかはBodyの注意方針と脳側の目的が決める。
+### 8.3 Autonomous Motion
 
-微細な座標変化はデッドゾーンで無視し、目、首、体を異なる速度で追従させる。
+LLMなしで呼吸、瞬き、微細な揺れ、Idle姿勢変更を生成する。
 
-### 3.3 Autonomous Motion Controller
+### 8.4 Expression Planner
 
-呼吸、瞬き、Idle、姿勢変更を生成する。Character LLMを呼び出さない。
+意味軸を独立Trackへ展開する。
 
-### 3.4 Expression Planner
+- `agreement > 0`：うなずき
+- `agreement < 0`：首の横振り
+- `approach > 0`：前傾
+- `approach < 0`：後退
+- `surprise`：反射的な後退
+- `openness`低下：腕を内側へ寄せる
+- `openness`・`warmth`上昇：腕を開く
+- `assertiveness`上昇：姿勢を伸ばす
 
-意味軸を部位別プリミティブへ展開する。
+### 8.5 Speech Presentation
 
-例として、`agreement < 0`は首の横振り、`approach < 0`は上体の後退、`openness`の低下は左右腕を内側へ寄せる傾向へ個別に変換する。
+生成済み音声の実時間と発話状態を保持する。将来は共通再生時計、音素、Viseme、強調語の
+実時間同期を所有する。
 
-これは「強く嫌がる」という完成済み全身プリセットを再生する処理ではない。複数の意味軸から独立Trackを生成し、現在状態へ重ねる。
-
-### 3.5 Speech Presentation Controller
-
-TTS生成はTTS Pluginが担当する。Bodyは生成済み音声、実時間、音素またはViseme、意味的な強調点を受け取る。
-
-Bodyが共通の再生時計を開始し、次を同期する。
-
-- 音声再生
-- 口の開閉
-- Viseme
-- 発話中の表情
-- 強調語に対応する首、視線、体の動き
-
-音声データの生成責務をBodyへ移さない。最終再生と身体同期だけをBodyが統括する。
-
-### 3.6 Track Composer
-
-最終姿勢は次を毎フレーム合成する。
+### 8.6 Track Composer
 
 ```text
 最終姿勢
@@ -153,136 +265,103 @@ Bodyが共通の再生時計を開始し、次を同期する。
   + 呼吸・瞬き・Idle
 ```
 
-一時Trackが終了したときは、そのTrackの影響だけをFade-outする。他の継続TrackやActivity姿勢をneutralへ戻さない。
+一時Track終了時は、そのTrackの影響だけをFade-outする。他の継続Trackをneutralへ戻さない。
 
-## 4. Character LLMの責務
+## 9. ActionPlanGroupとの関係
 
-Character LLMは主に発話を生成する。発話に密接な人格的表現が必要な場合だけ、次を追加できる。
+ActionPlanGroupはActivity Turnから生じる発話、字幕、Body要求、Plugin Actionを束ね、
+リソース競合、順序、キャンセル、実行結果を管理する。
 
-- `embodied_expression`
-- `attention_intent`
-- `speech_emphasis`
+身体部位ごとのActionをActionSchedulerへ細切れに積まない。ActionPlanGroupからBodyへは
+高レベルな複合要求を渡し、部位間の同時実行と連続性はBody内部で扱う。
 
-Character LLMは次を出力しない。
-
-- 身体部位
-- モーション名
-- ポーズ名
-- 角度
-- 回数
-- 振幅
-- 速度
-- 開始時刻
-- Performance ID
-- Live2D Parameter
-- VTube Studio Hotkey
-
-Bodyが自律的に処理できる生理動作や周辺反応は、Character LLM出力を省略する。
-
-## 5. AvatarPerformancePlanとの関係
-
-`AvatarPerformancePlan`はBody Subsystemではない。Bodyが複数の身体表現をAvatar Runtimeへ渡すための実行契約である。
+発話を含むSegmentは次の順に同期実行する。
 
 ```text
-Activity / Character / Internal State / Perception / Speech
-                         ↓
-                  Body Subsystem
-                         ↓ compile
-             AvatarPerformancePlan
-                         ↓
-                  Avatar Runtime
+Subtitle
+  → Body Context / Body Expression
+  → 互換MOVE（Body成功時は省略）
+  → SPEAK / TTS / Speech Presentation
 ```
 
-`AvatarPerformancePlan`は目、首、胴体、左右腕、表情などの重複Trackを持つ。Avatar RuntimeはTrackを毎フレーム補間し、Live2Dまたは3D固有Parameterへ変換する。
+複数SegmentはSegment番号順に進むため、後続Segmentの身体表現だけが先行しない。
 
-## 6. ActionPlanGroupとの関係
+## 10. AvatarPerformancePlan
 
-ActionPlanGroupはActivity Turnから生じた発話、字幕、Body要求などを束ね、リソース競合と実行結果を管理する。
+`AvatarPerformancePlan`はBody Subsystemそのものではなく、BodyからAvatar Runtimeへ渡す
+エンジン非依存の実行契約である。
 
-身体部位ごとのActionをActionSchedulerへ大量に積まない。Bodyへの要求は1つの複合要求として渡し、部位間の同時実行と連続性はBody内部で扱う。
+独立チャネル：
 
-## 7. 優先順位
+- expression
+- attention
+- head
+- torso
+- left_arm
+- right_arm
+- autonomous
 
-Body内部では概ね次の順で制約する。
+各Trackは開始オフセット、継続時間、Fade、加算／上書き、優先度、保持、現在姿勢からの
+連続性を持つ。
 
-1. モデル可動範囲、安全制限
-2. 緊急の明示的表現要求
-3. 発話同期の強調
-4. Activityの注意・姿勢方針
-5. 周辺対象への自律反応
-6. 呼吸、瞬き、Idle
+## 11. Lifecycleと障害分離
 
-上位Trackは下位Trackを必ず完全停止するわけではない。例えば強い首振り中も呼吸と表情は継続する。
+通常の`python -m app`起動時：
 
-## 8. 更新周期
+1. Body対応Character ParserとAction PlannerをComposition Rootへ組み込む
+2. Avatar Output Pluginを初期化する
+3. Avatar Outputが利用可能ならBody Runtimeを生成・束縛する
+4. Body RuntimeのTick Loopを開始する
+5. Application終了時にBodyを先に停止する
+6. Body束縛を解除してからAvatar Pluginを停止する
 
-意味判断と身体更新の周期を分ける。
+Avatar Runtimeが停止しても、Bodyの送信失敗はCore会話、Activity、字幕、次のTickを停止しない。
+
+## 12. 更新周期
 
 ```text
 脳・LLM                 数百ms〜数秒
 Activity Context更新    Activity遷移時または意味のある変化時
-Perception              センサーに応じた周期
-Body制御                30〜60fps
-Live2D / 3D描画         描画環境のフレーム周期
+Perception              センサーごとの周期
+Body Runtime            既定30fps
+Avatar描画               requestAnimationFrame / 描画環境周期
 ```
 
-Bodyの30〜60fpsループでLLMを呼び出さない。
+Body Tick内ではLLMを呼び出さない。
 
-## 9. 現在の実装範囲
+## 13. 現在の実装範囲
 
-PR #158では次を実装済みとする。
+実装済み：
 
-- `BodyActivityContext`
-- `BodyExpressionRequest`
-- `EmbodiedExpressionIntent`
-- `BodyAttentionIntent`
-- `SpeechEmphasis`
-- `SpeechPresentationRequest`
-- `BodySubsystemPort`
-- `BodyRuntimeSnapshot`
-- Activityから身体文脈を作るBuilder
-- 意味軸から部位別Trackを合成する決定論的Fallback
-- Character LLMの高レベルIntent Schema
-- 旧`gesture` / `gaze`経路の移行互換
-- `AvatarPerformancePlan`による複合Track送信
-- インプロセスの常駐`BodyRuntime`
-- 既定30fpsの非LLM Tick Loop
-- Activity Contextと発話時間の状態保持
-- 優先度付き身体表現Queue
-- Activity基礎姿勢と注意Trackの定期更新
-- `breathing`と`micro_sway`の自律Track生成
-- Avatar出力障害をCoreから隔離する診断状態
-- 冪等な`start()` / `stop()`
+- Bodyドメイン契約とPort
+- 通常Application lifecycleへのBody Runtime接続
+- Activity Context Gateway
+- Character表現Intent Gateway
+- TTS準備済み音声時間のSpeech Presentation Gateway
+- Body対応Character Schema・Parser・Prompt
+- 意味軸から表情・注意・身体Trackを生成するPlanner
+- 既定30fpsの常駐Body Runtime
+- Activity基礎姿勢
+- `breathing`と`micro_sway`
+- 優先度付き表現Queue
+- 重複Track型AvatarPerformancePlan
+- HTTP Avatar Output
+- 障害分離と診断Snapshot
+- 旧Gesture・個別Avatar Actionへの互換Fallback
+- 検証用棒人間Runtimeとのローカル接続
 
-現在の`BodyRuntime`は、独立プロセス化前のインプロセスMVPである。Activity文脈、身体表現要求、発話状態を保持し、各Tickで`AvatarPerformancePlan`へコンパイルする。
+後続：
 
-現段階では次を実装しない。
-
-- 独立プロセスとしてのBody Runtime
-- CoreのComposition RootとApplication lifecycleへの実運用接続
-- Activity遷移からBody Contextを送る実運用Gateway
-- Character出力からBody Expressionを送る実運用Gateway
-- カメラ人物・物体認識
-- 外界対象の識別と注意候補選択
-- TTS生成後の実音声再生時計
+- カメラ・マイクのPerception Adapter
+- 意味的観測を脳へ送るEvent経路
+- 対象位置・音源方向をBodyへ送る低遅延経路
+- 実音声再生をBodyが所有する共通時計
 - 音素・Viseme同期
 - 瞬き・眼球微動の詳細制御
-- WebSocketによる双方向状態通知
+- WebSocketによる低遅延状態通知
 - Live2D / VTube Studio固有変換
+- Body Runtimeの独立プロセス化
 - Avatar Runtimeからの完了・中断・失敗通知
 
-詳細は`docs/design/body_runtime_mvp_v1.0.0.md`を参照する。
-
-## 10. 移行手順
-
-1. Bodyのドメイン契約と高レベルIntentを導入する（完了）
-2. `gesture`をCharacter LLMの標準出力から外す（互換経路を残して完了）
-3. インプロセスBody Runtimeと非LLM Tick Loopを実装する（完了）
-4. Composition RootとApplication lifecycleへBody Runtimeを接続する
-5. Activity ContextとBody ExpressionをBodyへ送るGatewayを接続する
-6. TTS生成結果を`SpeechPresentationRequest`としてBodyへ渡す
-7. 実音声再生時計、音素・Viseme、発話強調同期を実装する
-8. Perception入力とAttention Controllerを実装する
-9. Body Runtimeを独立プロセス化し、同じ`BodySubsystemPort`のRemote Adapterへ差し替える
-10. AvatarPerformancePlanをBody内部のコンパイル結果に限定する
-11. 旧個別Avatar Actionを削除可能になるまで互換経路を維持する
+ローカル結合手順は
+`docs/guides/body_runtime_stick_model_local_validation.md`を参照する。
