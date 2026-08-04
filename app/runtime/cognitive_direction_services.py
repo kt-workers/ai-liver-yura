@@ -11,6 +11,9 @@ from app.ports.cognitive_direction import (
     InternalDirectiveModel,
     InternalDirectivePromptBuilder,
 )
+from app.runtime.avatar_aware_internal_directive_normalizer import (
+    AvatarAwareInternalDirectiveCandidateNormalizer,
+)
 from app.runtime.cognitive_direction_parsers import (
     InputMeaningJsonParser,
     InternalDirectiveJsonParser,
@@ -75,7 +78,9 @@ class InternalDirectivePlanner:
         self._model = model
         self._prompt_builder = prompt_builder
         self._parser = parser or InternalDirectiveJsonParser()
-        self._normalizer = normalizer or InternalDirectiveCandidateNormalizer()
+        self._normalizer = (
+            normalizer or AvatarAwareInternalDirectiveCandidateNormalizer()
+        )
 
     async def plan(
         self,
