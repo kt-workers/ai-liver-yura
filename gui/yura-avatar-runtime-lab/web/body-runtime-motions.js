@@ -1,5 +1,54 @@
 (() => {
   const applyBaseMotion = applyMotion;
+  const resolveBaseAttentionTarget = resolveAttentionTarget;
+  const drawBaseFace = drawFace;
+
+  const spatialTargets = {
+    left: { x: -0.82, y: 0 },
+    right: { x: 0.82, y: 0 },
+    up: { x: 0, y: -0.75 },
+    down: { x: 0, y: 0.7 },
+    up_left: { x: -0.72, y: -0.65 },
+    left_up: { x: -0.72, y: -0.65 },
+    up_right: { x: 0.72, y: -0.65 },
+    right_up: { x: 0.72, y: -0.65 },
+    down_left: { x: -0.72, y: 0.62 },
+    left_down: { x: -0.72, y: 0.62 },
+    down_right: { x: 0.72, y: 0.62 },
+    right_down: { x: 0.72, y: 0.62 },
+    center: { x: 0, y: 0 },
+    front: { x: 0, y: 0 },
+  };
+
+  resolveAttentionTarget = function resolveBodyRuntimeAttentionTarget(attention, now) {
+    const spatial = spatialTargets[String(attention.target || "").toLowerCase()];
+    if (!spatial) return resolveBaseAttentionTarget(attention, now);
+
+    const target = { ...spatial };
+    if (attention.behavior === "wander") {
+      target.x += Math.sin(now / 1300) * 0.28;
+      target.y += Math.sin(now / 1900 + 1.1) * 0.18;
+    }
+    const dx = target.x - state.attentionTarget.x;
+    const dy = target.y - state.attentionTarget.y;
+    if (Math.hypot(dx, dy) > 0.08) {
+      state.attentionTarget.x = clamp(target.x, -1, 1);
+      state.attentionTarget.y = clamp(target.y, -1, 1);
+    }
+    return state.attentionTarget;
+  };
+
+  drawFace = function drawBodyRuntimeFace(pose) {
+    const yaw = clamp(Number(pose.headYaw || 0), -1, 1);
+    ctx.save();
+    ctx.translate(yaw * 22, 0);
+    ctx.scale(1 - Math.abs(yaw) * 0.28, 1);
+    drawBaseFace({
+      ...pose,
+      gazeX: clamp(Number(pose.gazeX || 0) + yaw * 0.24, -1, 1),
+    });
+    ctx.restore();
+  };
 
   applyMotion = function applyBodyRuntimeMotion(pose, track, weight, progress) {
     const intent = track.intent || {};
