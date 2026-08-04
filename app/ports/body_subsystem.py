@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from threading import RLock
 from typing import Protocol
 
 from app.domain.body import (
@@ -8,6 +9,12 @@ from app.domain.body import (
     SpeechPresentationRequest,
 )
 from app.domain.body_runtime import BodyRuntimeSnapshot
+
+__all__ = [
+    "BodySubsystemPort",
+    "bind_body_subsystem",
+    "get_bound_body_subsystem",
+]
 
 
 class BodySubsystemPort(Protocol):
@@ -36,3 +43,26 @@ class BodySubsystemPort(Protocol):
     async def snapshot(self) -> BodyRuntimeSnapshot:
         """本文や音声データを含まない診断状態を返す。"""
         ...
+
+
+_binding_lock = RLock()
+_bound_body_subsystem: BodySubsystemPort | None = None
+
+
+def bind_body_subsystem(body: BodySubsystemPort | None) -> None:
+    """Composition Rootが構築したBody Subsystemを実行経路へ束縛する。
+
+    通常起動時の依存配線を一箇所へ集めるための移行境界。Runtime再構成時は
+    Noneを渡し、以前の参照を必ず解除する。
+    """
+
+    global _bound_body_subsystem
+    with _binding_lock:
+        _bound_body_subsystem = body
+
+
+def get_bound_body_subsystem() -> BodySubsystemPort | None:
+    """現在のComposition Rootが束縛しているBody Subsystemを返す。"""
+
+    with _binding_lock:
+        return _bound_body_subsystem
