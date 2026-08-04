@@ -10,7 +10,17 @@ from app.runtime.event_filter import DefaultEventFilter, EventFilter
 from app.runtime.event_prioritizer import DefaultEventPrioritizer, EventPrioritizer
 from app.runtime.event_queue import EventQueue
 from app.runtime.input_receiver import EventPublisher, InputReceiver
+from app.runtime.internal_state_response_context import (
+    InternalStateAwareResponseContextBuilder,
+)
 from app.runtime.runtime_coordinator import RuntimeCoordinator
+
+# Character応答生成の既存Composition Rootは
+# app.runtime.character_response_pipeline.ResponseContextBuilderを参照する。
+# パッケージ初期化時に状態投影対応版へ統一し、すべての生成経路で同じ契約を使う。
+from app.runtime import character_response_pipeline as _character_response_pipeline
+
+_character_response_pipeline.ResponseContextBuilder = InternalStateAwareResponseContextBuilder
 
 __all__ = [
     "ActionPlanner",
@@ -29,4 +39,5 @@ __all__ = [
     "AgentState",
     "AgentLifeService",
     "AutonomousActivityPolicy",
+    "InternalStateAwareResponseContextBuilder",
 ]
