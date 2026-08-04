@@ -1,33 +1,28 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from threading import RLock
 from typing import Protocol
 
+from app.domain.avatar_performance import AvatarGazeIntent, AvatarPerformancePlan
 
-@dataclass(frozen=True, slots=True)
-class AvatarGazeIntent:
-    """描画方式に依存しない高レベル視線Intent。"""
-
-    target: str
-    behavior: str = "maintain"
-    intensity: float = 1.0
-
-    def __post_init__(self) -> None:
-        normalized_target = self.target.strip()
-        normalized_behavior = self.behavior.strip()
-        if not normalized_target:
-            raise ValueError("target must not be empty")
-        if not normalized_behavior:
-            raise ValueError("behavior must not be empty")
-        if not 0.0 <= self.intensity <= 1.0:
-            raise ValueError("intensity must be between 0.0 and 1.0")
-        object.__setattr__(self, "target", normalized_target)
-        object.__setattr__(self, "behavior", normalized_behavior)
+__all__ = [
+    "AvatarGazeIntent",
+    "AvatarOutputPort",
+    "AvatarPerformancePlan",
+    "bind_avatar_output",
+    "get_bound_avatar_output",
+]
 
 
 class AvatarOutputPort(Protocol):
     """Live2D等の実装に依存しないアバター出力契約。"""
+
+    async def submit_performance(
+        self,
+        performance: AvatarPerformancePlan,
+    ) -> None:
+        """時間軸付きの高レベル演技計画をアバターへ送信する。"""
+        ...
 
     async def set_expression(self, expression: str) -> None:
         """高レベルな表情名をアバターへ反映する。"""

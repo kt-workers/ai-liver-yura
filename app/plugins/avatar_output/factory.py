@@ -18,7 +18,13 @@ class AvatarOutputPluginFactory:
     def _validate_adapter(adapter: Any) -> None:
         if adapter is None:
             return
-        for method_name in ("set_expression", "play_gesture", "set_gaze"):
+        # Performance送信は段階移行中の任意Capability。
+        # 既存Adapterは個別Actionの契約を満たせば引き続き利用できる。
+        for method_name in (
+            "set_expression",
+            "play_gesture",
+            "set_gaze",
+        ):
             if not callable(getattr(adapter, method_name, None)):
                 raise TypeError(
                     f"avatar_output must implement {method_name}()"
