@@ -8,7 +8,7 @@ from app.domain.character_response import ResponseContext
 
 
 class AvatarPerformanceCharacterPromptBuilder(DirectiveAwareCharacterPromptBuilder):
-    """Character表現へエンジン非依存のAvatar演技Intentだけを追加する。"""
+    """Character表現へBody Subsystem向けの意味的な演技Intentを追加する。"""
 
     def build(
         self,
@@ -25,15 +25,30 @@ class AvatarPerformanceCharacterPromptBuilder(DirectiveAwareCharacterPromptBuild
         return "\n".join(
             [
                 prompt,
-                "# Avatar Performance Intent",
-                "reaction_segmentsの各要素では、必要な場合だけ次の高レベル項目を追加する。",
-                "expression_intensityとgesture_intensityは0.0〜1.0。未指定時は1.0。",
-                "gazeはnullまたは{target, behavior, intensity}。targetはviewer、speaker、"
-                "object、down、away、wander、neutralなどの意味名を使い、intensityは0.0〜1.0。",
-                "視線、表情、Gestureは発話内容と内部感情に根拠がある場合だけ指定し、"
-                "数値や項目を埋めるために不必要な演技を追加しない。",
-                "performance_id、priority、duration_ms、fade、interrupt_policy、"
-                "Live2D Parameter、VTube Studio Hotkeyは出力しない。これらはCoreと"
-                "Avatar Runtimeが決定する。",
+                "# Embodied Expression Intent",
+                "身体はCharacter LLMとは独立して常時動作する。呼吸、瞬き、微細な姿勢変化、"
+                "周辺への一瞬の視線などを毎回指定しない。",
+                "reaction_segmentsの各要素では、発話に密接な人格的表現が必要な場合だけ"
+                "embodied_expression、attention_intent、speech_emphasisを追加する。",
+                "embodied_expressionは{attitude, intensity, valence, arousal, tension, openness,"
+                " approach, agreement, surprise, assertiveness, warmth}。",
+                "intensity、arousal、tension、openness、surprise、assertiveness、warmthは0.0〜1.0。"
+                "valence、approach、agreementは-1.0〜1.0。",
+                "agreementは肯定方向を正、否定方向を負、approachは近付く態度を正、"
+                "距離を取る態度を負として表す。",
+                "attention_intentはnullまたは{target, behavior, engagement, avoidance, eye_follow,"
+                " head_follow, body_follow}。behaviorはmaintain、glance、avoid、search、wander。",
+                "targetはconversation_partner、viewer、speaker、cursor、object、stimulusなど"
+                "意味上の対象を指定し、画面座標や角度を指定しない。",
+                "speech_emphasisは必要な場合だけ[{text, intent, strength}]として、発話中の"
+                "意味的な強調位置を示す。時刻は指定しない。",
+                "首、腕、胴体などの身体部位、head_shake、nod、wave等のモーション名、"
+                "回数、振幅、速度、開始時刻、ポーズを直接指定しない。gestureとgazeは"
+                "旧Runtime互換項目であり、新しい応答では原則nullにする。",
+                "身体表現を埋めるためだけに値を追加しない。Characterとして意図的に表したい"
+                "態度がない場合は、Body Subsystemの自律制御へ任せる。",
+                "performance_id、priority、duration_ms、fade、interrupt_policy、Live2D Parameter、"
+                "VTube Studio Hotkeyは出力しない。これらはBody SubsystemとAvatar Runtimeが"
+                "決定する。",
             ]
         )
