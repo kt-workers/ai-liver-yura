@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
+from app.domain.avatar_performance import AvatarGazeIntent
 from app.shared.contracts.expression import VoiceIntent as VoiceIntent
 
 
@@ -111,6 +112,9 @@ class ReactionSegment:
     gesture: str | None = None
     voice_intent: VoiceIntent = field(default_factory=VoiceIntent)
     pause_after_seconds: float = 0.0
+    expression_intensity: float = 1.0
+    gesture_intensity: float = 1.0
+    gaze: AvatarGazeIntent | None = None
 
     def __post_init__(self) -> None:
         if not self.speech.strip():
@@ -119,6 +123,15 @@ class ReactionSegment:
             raise ValueError("reaction segment expressionは空にできません。")
         if not 0.0 <= self.pause_after_seconds <= 3.0:
             raise ValueError("pause_after_secondsは0.0以上3.0以下にしてください。")
+        for field_name, value in (
+            ("expression_intensity", self.expression_intensity),
+            ("gesture_intensity", self.gesture_intensity),
+        ):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"{field_name}は数値にしてください。")
+            if not 0.0 <= float(value) <= 1.0:
+                raise ValueError(f"{field_name}は0.0以上1.0以下にしてください。")
+            object.__setattr__(self, field_name, float(value))
 
 
 @dataclass(frozen=True, slots=True)
