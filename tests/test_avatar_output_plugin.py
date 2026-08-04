@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -16,16 +16,22 @@ from app.shared.contracts.plugins.runtime import PluginContext
 
 
 class FakeAvatarAdapter:
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail: bool = False,
+        fail_performance: bool = False,
+    ) -> None:
         self.fail = fail
+        self.fail_performance = fail_performance
         self.performances: list[AvatarPerformancePlan] = []
         self.expressions: list[str] = []
         self.gestures: list[str] = []
         self.gazes: list[AvatarGazeIntent] = []
 
     async def submit_performance(self, performance: AvatarPerformancePlan) -> None:
-        if self.fail:
-            raise RuntimeError("avatar runtime unavailable")
+        if self.fail or self.fail_performance:
+            raise RuntimeError("avatar performance unavailable")
         self.performances.append(performance)
 
     async def set_expression(self, expression: str) -> None:
@@ -44,6 +50,24 @@ class FakeAvatarAdapter:
         self.gazes.append(gaze)
 
 
+class LegacyAvatarAdapter:
+    """Performance導入前の個別Actionだけを持つAdapter。"""
+
+    def __init__(self) -> None:
+        self.expressions: list[str] = []
+        self.gestures: list[str] = []
+        self.gazes: list[AvatarGazeIntent] = []
+
+    async def set_expression(self, expression: str) -> None:
+        self.expressions.append(expression)
+
+    async def play_gesture(self, gesture: str) -> None:
+        self.gestures.append(gesture)
+
+    async def set_gaze(self, gaze: AvatarGazeIntent) -> None:
+        self.gazes.append(gaze)
+
+
 class UnusedLlmGateway:
     async def generate_response(self, request: object) -> str:
         raise AssertionError("avatar output must not call the LLM gateway")
@@ -55,7 +79,7 @@ class UnusedActivityGateway:
 
 
 def create_initialized_plugin(
-    adapter: FakeAvatarAdapter,
+    adapter: Any,
 ) -> tuple[PluginManager, AvatarOutputPort]:
     manager = PluginManager()
     plugin = register_optional_plugin_from_factory(
@@ -79,6 +103,20 @@ def create_initialized_plugin(
     return manager, cast(AvatarOutputPort, plugin)
 
 
+def performance_plan() -> AvatarPerformancePlan:
+    return AvatarPerformancePlan(
+        performance_id="perf-001",
+        source_activity_id="activity-001",
+        output_unit_id="output-001",
+        priority=100,
+        segments=(
+            AvatarPerformanceSegment(
+                expression=AvatarExpressionIntent("curious"),
+            ),
+        ),
+    )
+
+
 @pytest.mark.asyncio
 async def test_avatar_output_plugin_is_registered_by_generic_factory() -> None:
     adapter = FakeAvatarAdapter()
@@ -92,17 +130,7 @@ async def test_avatar_output_plugin_is_registered_by_generic_factory() -> None:
     ):
         assert manager.is_capability_available(capability, "avatar_output")
 
-    performance = AvatarPerformancePlan(
-        performance_id="perf-001",
-        source_activity_id="activity-001",
-        output_unit_id="output-001",
-        priority=100,
-        segments=(
-            AvatarPerformanceSegment(
-                expression=AvatarExpressionIntent("curious"),
-            ),
-        ),
-    )
+    performance = performance_plan()
     gaze = AvatarGazeIntent(
         target="viewer",
         behavior="maintain",
@@ -120,7 +148,48 @@ async def test_avatar_output_plugin_is_registered_by_generic_factory() -> None:
 
 
 @pytest.mark.asyncio
-async def test_avatar_output_failure_marks_all_capabilities_unavailable() -> None:
+async def test_performance_failure_keeps_individual_capabilities_available() -> None:
+    adapter = FakeAvatarAdapter(fail_performance=True)
+    manager, output = create_initialized_plugin(adapter)
+
+    with pytest.raises(RuntimeError, match="avatar performance unavailable"):
+        await output.submit_performance(performance_plan())
+
+    assert not manager.is_capability_available(
+        "output.avatar.performance", "avatar_output"
+    )
+    for capability in (
+        "output.avatar.expression",
+        "output.avatar.gesture",
+        "output.avatar.gaze",
+    ):
+        assert manager.is_capability_available(capability, "avatar_output")
+
+    await output.set_expression("happy")
+    assert adapter.expressions == ["happy"]
+
+
+@pytest.mark.asyncio
+async def test_legacy_adapter_uses_individual_capabilities_without_performance() -> None:
+    adapter = LegacyAvatarAdapter()
+    manager, output = create_initialized_plugin(adapter)
+
+    assert not manager.is_capability_available(
+        "output.avatar.performance", "avatar_output"
+    )
+    for capability in (
+        "output.avatar.expression",
+        "output.avatar.gesture",
+        "output.avatar.gaze",
+    ):
+        assert manager.is_capability_available(capability, "avatar_output")
+
+    await output.set_expression("happy")
+    assert adapter.expressions == ["happy"]
+
+
+@pytest.mark.asyncio
+async def test_individual_output_failure_marks_all_capabilities_unavailable() -> None:
     manager, output = create_initialized_plugin(FakeAvatarAdapter(fail=True))
 
     with pytest.raises(RuntimeError, match="avatar runtime unavailable"):
