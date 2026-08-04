@@ -33,7 +33,7 @@ services:
     name: yura-avatar-runtime-lab
     runtime: python
     plan: free
-    branch: experiment/avatar-runtime-render-stick-model-v2
+    branch: test/avatar-runtime-render-stick-model
     buildCommand: python -m compileall app gui/yura-avatar-runtime-lab
     startCommand: python gui/yura-avatar-runtime-lab/server.py
     healthCheckPath: /health
