@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from app.domain.avatar_performance import AvatarPerformancePlan
 from app.ports.avatar_output import AvatarGazeIntent, AvatarOutputPort
 from app.shared.contracts.plugins.runtime import CapabilityReporter, PluginContext
 
@@ -11,6 +12,7 @@ class AvatarOutputPlugin:
 
     plugin_id = "avatar_output"
     display_name = "Avatar Output"
+    PERFORMANCE_CAPABILITY = "output.avatar.performance"
     EXPRESSION_CAPABILITY = "output.avatar.expression"
     GESTURE_CAPABILITY = "output.avatar.gesture"
     GAZE_CAPABILITY = "output.avatar.gaze"
@@ -26,6 +28,7 @@ class AvatarOutputPlugin:
     def capabilities(self) -> frozenset[str]:
         return frozenset(
             {
+                self.PERFORMANCE_CAPABILITY,
                 self.EXPRESSION_CAPABILITY,
                 self.GESTURE_CAPABILITY,
                 self.GAZE_CAPABILITY,
@@ -48,6 +51,17 @@ class AvatarOutputPlugin:
         self._initialized = False
         self._healthy = False
         self._capability_reporter = None
+
+    async def submit_performance(
+        self,
+        performance: AvatarPerformancePlan,
+    ) -> None:
+        adapter = self._require_adapter(self.PERFORMANCE_CAPABILITY)
+        try:
+            await adapter.submit_performance(performance)
+        except Exception as error:
+            self._mark_unavailable("performance_failed", error)
+            raise
 
     async def set_expression(self, expression: str) -> None:
         adapter = self._require_adapter(self.EXPRESSION_CAPABILITY)
