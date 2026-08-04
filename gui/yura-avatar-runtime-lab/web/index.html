@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yura Avatar Runtime Lab</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/performance-playback.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Avatar Runtime / Track Composer</p>
+        <h1>からだの水鏡</h1>
+        <p class="lead">ゆらが選んだ注意・表情・首・体・腕のIntentを、重なり合う連続運動として確認する検証画面です。</p>
+      </div>
+      <div class="connection" id="connection" data-state="connecting">
+        <span class="connection-dot"></span>
+        <span id="connectionText">接続中</span>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <article class="stage-card">
+        <div class="stage-toolbar">
+          <div>
+            <span class="label">現在の演技</span>
+            <strong id="performanceLabel">neutral / continuous idle / neutral</strong>
+          </div>
+          <span class="sequence" id="sequenceLabel">#0</span>
+        </div>
+        <div class="stage-wrap">
+          <canvas id="avatarCanvas" width="720" height="720" aria-label="棒人間アバター"></canvas>
+          <div class="stage-glow"></div>
+        </div>
+        <dl class="state-grid">
+          <div><dt>表情</dt><dd id="expressionValue">neutral</dd></div>
+          <div><dt>重複動作</dt><dd id="gestureValue">idle / breathing</dd></div>
+          <div><dt>注意対象</dt><dd id="gazeValue">neutral</dd></div>
+          <div><dt>受信</dt><dd id="receivedValue">未受信</dd></div>
+        </dl>
+      </article>
+
+      <aside class="control-column">
+        <section class="mobile-preview" aria-label="操作中のアバタープレビュー">
+          <div class="mobile-preview-stage">
+            <canvas id="mobileAvatarCanvas" width="360" height="360" aria-hidden="true"></canvas>
+          </div>
+          <div class="mobile-preview-copy">
+            <span class="label">Live Preview</span>
+            <span class="mobile-preview-sequence" id="mobileSequenceLabel">#0</span>
+            <strong id="mobilePerformanceLabel">neutral / continuous idle / neutral</strong>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <span class="label">Biological Motion Probe</span>
+              <h2>複合演技</h2>
+            </div>
+            <button class="ghost-button" id="randomButton" type="button">旧Actionランダム</button>
+          </div>
+          <p class="panel-note">ボタンは、CoreがそのIntentを選んだ状態を代替します。複数Trackは開始・終了を重ね、他のTrackをホーム位置へ戻しません。</p>
+          <div class="panel-actions performance-actions">
+            <button class="ghost-button" id="performanceDemoButton" type="button">強く嫌がる</button>
+            <button class="ghost-button" id="affirmDemoButton" type="button">強く肯定する</button>
+            <button class="ghost-button" id="attentionDemoButton" type="button">カーソルを見る</button>
+          </div>
+
+          <div class="control-group">
+            <h3>表情（旧個別Action）</h3>
+            <div class="button-grid" id="expressionButtons">
+              <button data-action="expression" data-name="neutral">neutral</button>
+              <button data-action="expression" data-name="happy">happy</button>
+              <button data-action="expression" data-name="sad">sad</button>
+              <button data-action="expression" data-name="surprised">surprised</button>
+              <button data-action="expression" data-name="angry">angry</button>
+              <button data-action="expression" data-name="curious">curious</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <h3>ジェスチャー（旧個別Action）</h3>
+            <div class="button-grid" id="gestureButtons">
+              <button data-action="gesture" data-name="small_nod">small_nod</button>
+              <button data-action="gesture" data-name="head_tilt">head_tilt</button>
+              <button data-action="gesture" data-name="wave">wave</button>
+              <button data-action="gesture" data-name="lean_forward">lean_forward</button>
+              <button data-action="gesture" data-name="bounce">bounce</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <h3>視線（旧個別Action）</h3>
+            <div class="button-grid compact" id="gazeButtons">
+              <button data-action="gaze" data-name="viewer">viewer</button>
+              <button data-action="gaze" data-name="left">left</button>
+              <button data-action="gaze" data-name="right">right</button>
+              <button data-action="gaze" data-name="up">up</button>
+              <button data-action="gaze" data-name="down">down</button>
+              <button data-action="gaze" data-name="away">away</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel payload-panel">
+          <div class="panel-heading">
+            <div>
+              <span class="label">Transport</span>
+              <h2>最終受信Payload</h2>
+            </div>
+            <span class="pill">Action / Track Performance</span>
+          </div>
+          <pre id="payloadView">{
+  "status": "waiting"
+}</pre>
+        </section>
+      </aside>
+    </section>
+
+    <section class="panel history-panel">
+      <div class="panel-heading">
+        <div>
+          <span class="label">Event Stream</span>
+          <h2>受信履歴</h2>
+        </div>
+        <span class="pill" id="historyCount">0 events</span>
+      </div>
+      <div class="history-list" id="historyList">
+        <p class="empty-state">CoreまたはプリセットからActionが届くと、ここに表示されます。</p>
+      </div>
+    </section>
+  </main>
+  <script src="/app.js" defer></script>
+  <script src="/body-runtime-motions.js" defer></script>
+  <script src="/mobile-preview.js" defer></script>
+</body>
+</html>

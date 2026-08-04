@@ -1,0 +1,41 @@
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.performance-actions {
+  justify-content: flex-start;
+  margin: 14px 0 20px;
+}
+
+.performance-actions .ghost-button {
+  min-width: 132px;
+}
+
+.performance-actions .ghost-button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.panel-note {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.65;
+}
+
+@media (max-width: 520px) {
+  .panel-heading {
+    align-items: flex-start;
+  }
+
+  .panel-actions {
+    justify-content: flex-start;
+  }
+
+  .panel-actions .ghost-button {
+    flex: 1 1 auto;
+  }
+}

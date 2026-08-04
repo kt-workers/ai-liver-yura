@@ -39,7 +39,7 @@ Canvas棒人間モデル
 
 ### 2.2 検証ブランチ
 
-`experiment/avatar-runtime-render-stick-model`
+`test/avatar-runtime-render-stick-model`
 
 担当範囲：
 

@@ -28,3 +28,16 @@ services:
         value: 3.10.5
       - key: YURA_CONFIG_CONSOLE_DATA
         value: /tmp/yura-config-console
+
+  - type: web
+    name: yura-avatar-runtime-lab
+    runtime: python
+    plan: free
+    branch: test/avatar-runtime-render-stick-model
+    buildCommand: python -m compileall app gui/yura-avatar-runtime-lab
+    startCommand: python gui/yura-avatar-runtime-lab/server.py
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.5
