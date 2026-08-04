@@ -22,7 +22,9 @@ class ExecuteActionUsecase(CoreExecuteActionUsecase):
     ) -> None:
         super().__init__(*args, **kwargs)
         self._avatar_output = (
-            avatar_output if avatar_output is not None else get_bound_avatar_output()
+            avatar_output
+            if avatar_output is not None
+            else get_bound_avatar_output()
         )
         self._avatar_trace_logger = TraceLogger()
 
