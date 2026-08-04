@@ -21,73 +21,127 @@ class UserRequestInterpretation:
 
 
 def interpret_user_request(text: str) -> UserRequestInterpretation:
-    """対象機能を列挙せず、発話が行為の実行要求かどうかだけを判定する。"""
+    """LLM失敗時に使う、高確信度の明示表現だけを判定するFallback。"""
 
     normalized = text.strip()
     if not normalized:
         return UserRequestInterpretation(UserRequestKind.AMBIGUOUS, 0.0, "empty_input")
 
     if any(
-        marker in normalized for marker in ("したくない", "しないで", "やめて", "不要")
+        marker in normalized
+        for marker in ("したくない", "しないで", "やめて", "停止して", "中止して")
     ):
         return UserRequestInterpretation(
-            UserRequestKind.NEGATIVE, 0.95, "negative_expression"
+            UserRequestKind.NEGATIVE,
+            0.95,
+            "explicit_stop_or_negative_request",
         )
-    if any(
-        marker in normalized for marker in ("昨日", "さっき", "この前", "以前")
-    ) and any(marker in normalized for marker in ("した", "やった", "していた", "だった")):
+
+    if _is_explicit_knowledge_question(normalized):
         return UserRequestInterpretation(
-            UserRequestKind.PAST_EVENT, 0.9, "past_expression"
+            UserRequestKind.KNOWLEDGE,
+            0.95,
+            "explicit_definition_rule_or_difficulty_question_fallback",
         )
-    hypothetical = any(
-        marker in normalized for marker in ("としたら", "とすれば", "仮に")
-    ) or normalized.startswith("もし")
-    if hypothetical:
+
+    if _is_explicit_past_event_reference(normalized):
         return UserRequestInterpretation(
-            UserRequestKind.CHAT, 0.9, "hypothetical_expression"
+            UserRequestKind.PAST_EVENT,
+            0.9,
+            "explicit_past_event_reference_fallback",
         )
+
+    if _is_explicit_participation_proposal(normalized):
+        return UserRequestInterpretation(
+            UserRequestKind.EXECUTION,
+            0.9,
+            "explicit_participation_proposal_fallback",
+        )
+
+    if _is_explicit_action_request(normalized):
+        return UserRequestInterpretation(
+            UserRequestKind.EXECUTION,
+            0.9,
+            "explicit_action_request_fallback",
+        )
+
+    # 「どんな」、一般的な「教えて」、疑問符、語尾、仮定表現などは、
+    # 会話履歴を含むInput Meaning Interpreterで解釈する。
+    return UserRequestInterpretation(
+        UserRequestKind.AMBIGUOUS,
+        0.0,
+        "semantic_interpretation_required",
+    )
+
+
+def _is_explicit_knowledge_question(text: str) -> bool:
     if any(
-        marker in normalized
+        marker in text
         for marker in (
             "って何",
-            "とは",
-            "どんな",
-            "方法を教えて",
-            "について教えて",
+            "とは何",
             "ルールを教えて",
-            "ルール教えて",
-            "は難しい",
-            "って難しい",
+            "仕組みを教えて",
+            "意味を教えて",
         )
     ):
-        return UserRequestInterpretation(
-            UserRequestKind.KNOWLEDGE, 0.9, "knowledge_question"
+        return True
+    return text.endswith(("は難しい？", "は難しい?", "のは難しい？", "のは難しい?"))
+
+
+def _is_explicit_past_event_reference(text: str) -> bool:
+    if not any(
+        marker in text
+        for marker in ("昨日", "一昨日", "先週", "この前", "以前", "さっき")
+    ):
+        return False
+    return any(
+        marker in text
+        for marker in (
+            "をした",
+            "をやった",
+            "を始めた",
+            "に行った",
+            "を見た",
+            "を聞いた",
         )
-    if normalized.endswith(
+    )
+
+
+def _is_explicit_action_request(text: str) -> bool:
+    """対象を伴う明示的な実行要求・開始希望だけをFallback対象にする。"""
+
+    return text.endswith(
         (
-            "して",
-            "してよ",
             "してください",
-            "してほしい",
-            "お願い",
             "始めよう",
-            "やろう",
-            "しよう",
-            "遊ぼう",
+            "を始めたい",
+            "を開始したい",
+            "検索して",
+            "聞いて",
+            "開始して",
+            "停止して",
+            "中止して",
+        )
+    )
+
+
+def _is_explicit_participation_proposal(text: str) -> bool:
+    """共同実行を直接提案する語尾だけを、LLM失敗時の実行要求として扱う。"""
+
+    return text.endswith(
+        (
             "しませんか？",
             "しませんか?",
             "しない？",
             "しない?",
+            "しよう",
+            "しようよ",
             "しようか",
             "しようか？",
             "しようか?",
+            "やろう",
+            "遊ぼう",
             "付き合って",
-            "聞いて",
-            "見て",
-            "たい",
         )
-    ):
-        return UserRequestInterpretation(
-            UserRequestKind.EXECUTION, 0.85, "action_request"
-        )
-    return UserRequestInterpretation(UserRequestKind.CHAT, 0.7, "ordinary_conversation")
+    )
