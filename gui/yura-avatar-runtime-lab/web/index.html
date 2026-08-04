@@ -11,9 +11,9 @@
   <main class="shell">
     <header class="hero">
       <div>
-        <p class="eyebrow">Avatar Runtime / Web MVP</p>
+        <p class="eyebrow">Avatar Runtime / Track Composer</p>
         <h1>からだの水鏡</h1>
-        <p class="lead">LLMが決めた表情と動作を、Live2D接続前の軽量モデルで確認する検証画面です。</p>
+        <p class="lead">ゆらが選んだ注意・表情・首・体・腕のIntentを、重なり合う連続運動として確認する検証画面です。</p>
       </div>
       <div class="connection" id="connection" data-state="connecting">
         <span class="connection-dot"></span>
@@ -26,7 +26,7 @@
         <div class="stage-toolbar">
           <div>
             <span class="label">現在の演技</span>
-            <strong id="performanceLabel">neutral / idle / neutral</strong>
+            <strong id="performanceLabel">neutral / continuous idle / neutral</strong>
           </div>
           <span class="sequence" id="sequenceLabel">#0</span>
         </div>
@@ -36,8 +36,8 @@
         </div>
         <dl class="state-grid">
           <div><dt>表情</dt><dd id="expressionValue">neutral</dd></div>
-          <div><dt>動作</dt><dd id="gestureValue">idle</dd></div>
-          <div><dt>視線</dt><dd id="gazeValue">neutral</dd></div>
+          <div><dt>重複動作</dt><dd id="gestureValue">idle / breathing</dd></div>
+          <div><dt>注意対象</dt><dd id="gazeValue">neutral</dd></div>
           <div><dt>受信</dt><dd id="receivedValue">未受信</dd></div>
         </dl>
       </article>
@@ -50,24 +50,27 @@
           <div class="mobile-preview-copy">
             <span class="label">Live Preview</span>
             <span class="mobile-preview-sequence" id="mobileSequenceLabel">#0</span>
-            <strong id="mobilePerformanceLabel">neutral / idle / neutral</strong>
+            <strong id="mobilePerformanceLabel">neutral / continuous idle / neutral</strong>
           </div>
         </section>
 
         <section class="panel">
           <div class="panel-heading">
             <div>
-              <span class="label">Manual Probe</span>
-              <h2>プリセット送信</h2>
+              <span class="label">Biological Motion Probe</span>
+              <h2>複合演技</h2>
             </div>
-            <div class="panel-actions">
-              <button class="ghost-button" id="performanceDemoButton" type="button">3区間演技</button>
-              <button class="ghost-button" id="randomButton" type="button">ランダム</button>
-            </div>
+            <button class="ghost-button" id="randomButton" type="button">旧Actionランダム</button>
+          </div>
+          <p class="panel-note">ボタンは、CoreがそのIntentを選んだ状態を代替します。複数Trackは開始・終了を重ね、他のTrackをホーム位置へ戻しません。</p>
+          <div class="panel-actions performance-actions">
+            <button class="ghost-button" id="performanceDemoButton" type="button">強く嫌がる</button>
+            <button class="ghost-button" id="affirmDemoButton" type="button">強く肯定する</button>
+            <button class="ghost-button" id="attentionDemoButton" type="button">カーソルを見る</button>
           </div>
 
           <div class="control-group">
-            <h3>表情</h3>
+            <h3>表情（旧個別Action）</h3>
             <div class="button-grid" id="expressionButtons">
               <button data-action="expression" data-name="neutral">neutral</button>
               <button data-action="expression" data-name="happy">happy</button>
@@ -79,7 +82,7 @@
           </div>
 
           <div class="control-group">
-            <h3>ジェスチャー</h3>
+            <h3>ジェスチャー（旧個別Action）</h3>
             <div class="button-grid" id="gestureButtons">
               <button data-action="gesture" data-name="small_nod">small_nod</button>
               <button data-action="gesture" data-name="head_tilt">head_tilt</button>
@@ -90,7 +93,7 @@
           </div>
 
           <div class="control-group">
-            <h3>視線</h3>
+            <h3>視線（旧個別Action）</h3>
             <div class="button-grid compact" id="gazeButtons">
               <button data-action="gaze" data-name="viewer">viewer</button>
               <button data-action="gaze" data-name="left">left</button>
@@ -108,7 +111,7 @@
               <span class="label">Transport</span>
               <h2>最終受信Payload</h2>
             </div>
-            <span class="pill">Action / Performance</span>
+            <span class="pill">Action / Track Performance</span>
           </div>
           <pre id="payloadView">{
   "status": "waiting"
@@ -123,7 +126,7 @@
           <span class="label">Event Stream</span>
           <h2>受信履歴</h2>
         </div>
-        <span class="pill" id="historyCount">0 actions</span>
+        <span class="pill" id="historyCount">0 events</span>
       </div>
       <div class="history-list" id="historyList">
         <p class="empty-state">CoreまたはプリセットからActionが届くと、ここに表示されます。</p>
@@ -131,7 +134,6 @@
     </section>
   </main>
   <script src="/app.js" defer></script>
-  <script src="/performance-playback.js" defer></script>
   <script src="/mobile-preview.js" defer></script>
 </body>
 </html>
