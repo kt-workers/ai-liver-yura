@@ -12,20 +12,25 @@ from app.domain.character_response import (
 )
 from app.runtime.action_planner import ActionPlanner as CoreActionPlanner
 from app.runtime.avatar_performance_planner import AvatarPerformancePlanner
+from app.runtime.body_activity_context_builder import BodyActivityContextBuilder
 
 
 class AvatarPerformanceActionPlanner(CoreActionPlanner):
-    """既存Action計画を維持し、Avatar演技計画だけをmetadataへ付与する。"""
+    """既存Action計画を維持し、Body向け複合Performanceだけを付与する。"""
 
     def __init__(
         self,
         *args: Any,
         avatar_performance_planner: AvatarPerformancePlanner | None = None,
+        body_activity_context_builder: BodyActivityContextBuilder | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._avatar_performance_planner = (
             avatar_performance_planner or AvatarPerformancePlanner()
+        )
+        self._body_activity_context_builder = (
+            body_activity_context_builder or BodyActivityContextBuilder()
         )
 
     def _reaction_action_plans(
@@ -45,11 +50,13 @@ class AvatarPerformanceActionPlanner(CoreActionPlanner):
                 (ReactionSegment(fallback_speech, voice_intent=VoiceIntent()),)
             )
         )
+        body_context = self._body_activity_context_builder.build(activity)
         performance = self._avatar_performance_planner.plan(
             plan,
             source_activity_id=activity.activity_id,
             output_unit_id=output_unit_id,
             priority=self._output_priority(activity.activity_type),
+            body_context=body_context,
         )
         actions: list[ActionPlan] = []
         for index, segment in enumerate(plan.segments):
@@ -58,11 +65,13 @@ class AvatarPerformanceActionPlanner(CoreActionPlanner):
                 "reaction_segment_index": index,
                 "reaction_segment_count": len(plan.segments),
                 "avatar_performance_id": performance.performance_id,
+                "body_activity_context": body_context,
             }
             speak_metadata = {
                 **segment_metadata,
                 "voice_intent": segment.voice_intent,
                 "pause_after_seconds": segment.pause_after_seconds,
+                "speech_emphasis": segment.speech_emphasis,
             }
             if skip_topic_memory:
                 speak_metadata["skip_topic_memory"] = True
