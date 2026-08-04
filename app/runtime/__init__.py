@@ -24,17 +24,22 @@ _action_planner.ActionPlanner = AvatarPerformanceActionPlanner
 ActionPlanner = AvatarPerformanceActionPlanner
 
 # Character応答生成の既存Composition Rootは
-# app.runtime.character_response_pipeline.ResponseContextBuilderを参照する。
-# パッケージ初期化時に状態投影対応版へ統一し、すべての生成経路で同じ契約を使う。
+# app.runtime.character_response_pipelineの具象クラスを直接参照する。
+# パッケージ初期化時に状態投影版とAvatar演技Intent対応版へ統一する。
 from app.runtime import character_response_pipeline as _character_response_pipeline
+from app.runtime.avatar_performance_character_service import (
+    AvatarPerformanceCharacterLlmService,
+)
 
 _character_response_pipeline.ResponseContextBuilder = InternalStateAwareResponseContextBuilder
+_character_response_pipeline.CharacterLlmService = AvatarPerformanceCharacterLlmService
 
 __all__ = [
     "ActionPlanner",
     "ActionScheduler",
     "ActivityManager",
     "AvatarPerformanceActionPlanner",
+    "AvatarPerformanceCharacterLlmService",
     "CoreActionPlanner",
     "DefaultEventFilter",
     "DefaultEventPrioritizer",
