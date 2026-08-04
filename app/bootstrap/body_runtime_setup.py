@@ -52,32 +52,30 @@ def create_bound_body_runtime_from_env() -> BodyRuntime | None:
         )
         return None
 
-    runtime = BodyRuntime(
-        avatar_output,
-        config=BodyRuntimeConfig(
-            tick_hz=_env_float("YURA_BODY_TICK_HZ", default=30.0),
-            expression_queue_limit=_env_int(
-                "YURA_BODY_EXPRESSION_QUEUE_LIMIT",
-                default=32,
-            ),
-            max_expressions_per_tick=_env_int(
-                "YURA_BODY_MAX_EXPRESSIONS_PER_TICK",
-                default=4,
-            ),
-            autonomous_interval_ms=_env_int(
-                "YURA_BODY_AUTONOMOUS_INTERVAL_MS",
-                default=2400,
-            ),
-            baseline_refresh_ms=_env_int(
-                "YURA_BODY_BASELINE_REFRESH_MS",
-                default=30_000,
-            ),
+    config = BodyRuntimeConfig(
+        tick_hz=_env_float("YURA_BODY_TICK_HZ", default=30.0),
+        expression_queue_limit=_env_int(
+            "YURA_BODY_EXPRESSION_QUEUE_LIMIT",
+            default=32,
+        ),
+        max_expressions_per_tick=_env_int(
+            "YURA_BODY_MAX_EXPRESSIONS_PER_TICK",
+            default=4,
+        ),
+        autonomous_interval_ms=_env_int(
+            "YURA_BODY_AUTONOMOUS_INTERVAL_MS",
+            default=2400,
+        ),
+        baseline_refresh_ms=_env_int(
+            "YURA_BODY_BASELINE_REFRESH_MS",
+            default=30_000,
         ),
     )
+    runtime = BodyRuntime(avatar_output, config=config)
     bind_body_subsystem(runtime)
     TraceLogger().info(
         "body_runtime_setup:created",
-        tick_hz=runtime.config.tick_hz,
+        tick_hz=config.tick_hz,
     )
     return runtime
 
