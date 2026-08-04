@@ -8,15 +8,14 @@ from uuid import uuid4
 
 import pytest
 
+REPOSITORY_ROOT = Path(__file__).parents[1]
+LAB_ROOT = REPOSITORY_ROOT / "test" / "yura-avatar-runtime-lab"
+LEGACY_GUI_ROOT = REPOSITORY_ROOT / "gui" / "yura-avatar-runtime-lab"
+
 
 def _load_server_module() -> ModuleType:
     module_name = f"avatar_runtime_lab_server_{uuid4().hex}"
-    path = (
-        Path(__file__).parents[1]
-        / "test"
-        / "yura-avatar-runtime-lab"
-        / "server.py"
-    )
+    path = LAB_ROOT / "server.py"
     spec = importlib.util.spec_from_file_location(module_name, path)
     if spec is None or spec.loader is None:
         raise RuntimeError("failed to load avatar runtime lab server")
@@ -24,6 +23,12 @@ def _load_server_module() -> ModuleType:
     sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def test_avatar_runtime_lab_is_kept_under_test_directory() -> None:
+    assert (LAB_ROOT / "server.py").is_file()
+    assert (LAB_ROOT / "web" / "index.html").is_file()
+    assert not LEGACY_GUI_ROOT.exists()
 
 
 def test_validate_avatar_action_accepts_expression_and_gaze() -> None:
