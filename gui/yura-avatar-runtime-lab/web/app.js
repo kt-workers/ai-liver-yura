@@ -36,14 +36,18 @@ function setConnection(state, text) {
 
 function applyState(state) {
   if (!state || typeof state !== "object") return;
+  const incomingSequence = Number(state.sequence || 0);
+  const latestAction = state.latest_action || {};
+  const isNewAction = incomingSequence > model.sequence;
+
   model.expression = state.expression || "neutral";
-  if (state.gesture && (state.sequence !== model.sequence || state.gesture !== model.gesture)) {
+  model.gaze = state.gaze || model.gaze;
+  if (isNewAction && latestAction.action === "gesture" && state.gesture) {
     model.gesture = state.gesture;
     model.gestureStartedAt = performance.now();
     model.gestureDuration = gestureDurations[state.gesture] || 1500;
   }
-  model.gaze = state.gaze || model.gaze;
-  model.sequence = Number(state.sequence || 0);
+  model.sequence = incomingSequence;
 
   expressionValue.textContent = model.expression;
   gestureValue.textContent = model.gesture || "idle";
@@ -51,7 +55,7 @@ function applyState(state) {
   sequenceLabel.textContent = `#${model.sequence}`;
   performanceLabel.textContent = `${model.expression} / ${model.gesture || "idle"} / ${model.gaze.target || "neutral"}`;
   receivedValue.textContent = state.received_at ? formatTime(state.received_at) : "未受信";
-  payloadView.textContent = JSON.stringify(state.latest_action || { status: "waiting" }, null, 2);
+  payloadView.textContent = JSON.stringify(latestAction.action ? latestAction : { status: "waiting" }, null, 2);
   renderHistory(Array.isArray(state.history) ? state.history : []);
 }
 
