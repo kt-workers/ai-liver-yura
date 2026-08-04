@@ -42,6 +42,17 @@
       </article>
 
       <aside class="control-column">
+        <section class="mobile-preview" aria-label="操作中のアバタープレビュー">
+          <div class="mobile-preview-stage">
+            <canvas id="mobileAvatarCanvas" width="360" height="360" aria-hidden="true"></canvas>
+          </div>
+          <div class="mobile-preview-copy">
+            <span class="label">Live Preview</span>
+            <span class="mobile-preview-sequence" id="mobileSequenceLabel">#0</span>
+            <strong id="mobilePerformanceLabel">neutral / idle / neutral</strong>
+          </div>
+        </section>
+
         <section class="panel">
           <div class="panel-heading">
             <div>
@@ -116,5 +127,31 @@
     </section>
   </main>
   <script src="/app.js" defer></script>
+  <script>
+    window.addEventListener("DOMContentLoaded", () => {
+      const media = window.matchMedia("(max-width: 1040px)");
+      const source = document.getElementById("avatarCanvas");
+      const target = document.getElementById("mobileAvatarCanvas");
+      const sourcePerformance = document.getElementById("performanceLabel");
+      const sourceSequence = document.getElementById("sequenceLabel");
+      const targetPerformance = document.getElementById("mobilePerformanceLabel");
+      const targetSequence = document.getElementById("mobileSequenceLabel");
+      const targetContext = target ? target.getContext("2d") : null;
+
+      if (!source || !target || !targetContext) return;
+
+      function syncMobilePreview() {
+        if (media.matches) {
+          targetContext.clearRect(0, 0, target.width, target.height);
+          targetContext.drawImage(source, 0, 0, target.width, target.height);
+          targetPerformance.textContent = sourcePerformance.textContent;
+          targetSequence.textContent = sourceSequence.textContent;
+        }
+        window.requestAnimationFrame(syncMobilePreview);
+      }
+
+      window.requestAnimationFrame(syncMobilePreview);
+    });
+  </script>
 </body>
 </html>
