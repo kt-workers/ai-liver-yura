@@ -18,8 +18,9 @@ class AvatarOutputPluginFactory:
     def _validate_adapter(adapter: Any) -> None:
         if adapter is None:
             return
+        # Performance送信は段階移行中の任意Capability。
+        # 既存Adapterは個別Actionの契約を満たせば引き続き利用できる。
         for method_name in (
-            "submit_performance",
             "set_expression",
             "play_gesture",
             "set_gaze",
