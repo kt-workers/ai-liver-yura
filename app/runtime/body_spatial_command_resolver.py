@@ -8,7 +8,7 @@ from app.domain.body import (
 
 
 class BodySpatialCommandResolver:
-    """構造化された方向指示をBodyの注意方針へ変換する。"""
+    """構造化された方向・身体操作指示をBody要求へ変換する。"""
 
     _SUPPORTED_TYPES = {
         "gaze_direction",
@@ -27,18 +27,28 @@ class BodySpatialCommandResolver:
         "down_right",
         "center",
     }
+    _SUPPORTED_BODY_ACTIONS = {
+        "right_hand_raise",
+        "left_hand_raise",
+        "both_hands_raise",
+        "right_hand_wave",
+        "left_hand_wave",
+        "both_hands_wave",
+        "eyes_close",
+        "eyes_open",
+        "blink",
+        "mouth_open",
+        "mouth_close",
+        "head_circle",
+        "bow",
+        "jump",
+        "body_sway",
+        "body_twist",
+    }
 
     def resolve(self, activity: Activity) -> BodyAttentionIntent | None:
-        meaning = self._structured_input_meaning(activity)
+        meaning = self._eligible_meaning(activity)
         if meaning is None:
-            return None
-        if str(meaning.get("expected_response", "")).strip().lower() != "action":
-            return None
-        if str(meaning.get("input_speech_act", "")).strip().lower() not in {
-            "command",
-            "request",
-            "proposal",
-        }:
             return None
 
         target = meaning.get("target")
@@ -79,6 +89,35 @@ class BodySpatialCommandResolver:
             head_follow=0.72,
             body_follow=0.12,
         )
+
+    def resolve_body_actions(self, activity: Activity) -> tuple[str, ...]:
+        meaning = self._eligible_meaning(activity)
+        if meaning is None:
+            return ()
+        target = meaning.get("target")
+        if not isinstance(target, dict):
+            return ()
+        if str(target.get("type", "")).strip().lower() != "avatar_body_action":
+            return ()
+        action = str(target.get("id", "")).strip().lower()
+        if action not in self._SUPPORTED_BODY_ACTIONS:
+            return ()
+        return (action,)
+
+    @classmethod
+    def _eligible_meaning(cls, activity: Activity) -> dict[str, object] | None:
+        meaning = cls._structured_input_meaning(activity)
+        if meaning is None:
+            return None
+        if str(meaning.get("expected_response", "")).strip().lower() != "action":
+            return None
+        if str(meaning.get("input_speech_act", "")).strip().lower() not in {
+            "command",
+            "request",
+            "proposal",
+        }:
+            return None
+        return meaning
 
     @classmethod
     def _structured_input_meaning(
