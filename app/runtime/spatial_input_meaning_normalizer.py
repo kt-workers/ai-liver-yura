@@ -102,6 +102,15 @@ def normalize_spatial_input_meaning(
     if meaning.input_speech_act not in _SPATIAL_SPEECH_ACTS:
         return meaning
 
+    # 「目を開けて」の「上」などを方向として誤認しないよう、明示的な
+    # アバター身体Actionを方向語より先に確定する。
+    body_command = normalize_avatar_body_command(meaning)
+    if (
+        body_command.target is not None
+        and body_command.target.target_type.casefold() == "avatar_body_action"
+    ):
+        return body_command
+
     existing = _normalize_existing_target(meaning.target)
     if existing is not None:
         return replace(meaning, target=existing)
@@ -119,7 +128,7 @@ def normalize_spatial_input_meaning(
                 target_id=direction,
             ),
         )
-    return normalize_avatar_body_command(meaning)
+    return meaning
 
 
 def canonical_spatial_direction(text: str) -> str | None:
