@@ -15,6 +15,9 @@ from app.domain.cognitive_direction import (
     StructuredInputMeaning,
     TargetInterestUpdate,
 )
+from app.runtime.spatial_input_meaning_normalizer import (
+    normalize_spatial_input_meaning,
+)
 
 
 class InputMeaningJsonParser:
@@ -83,7 +86,7 @@ class InputMeaningJsonParser:
         ):
             return None
         try:
-            return StructuredInputMeaning(
+            meaning = StructuredInputMeaning(
                 input_speech_act=speech_act,
                 primary_intent=primary_intent,
                 expected_response=expected_response,
@@ -101,6 +104,7 @@ class InputMeaningJsonParser:
             )
         except (TypeError, ValueError):
             return None
+        return normalize_spatial_input_meaning(meaning)
 
 
 class InternalDirectiveJsonParser:
@@ -267,5 +271,3 @@ def _required_string_tuple(value: object) -> tuple[str, ...]:
     if result is None:
         raise TypeError("expected array[string]")
     return result
-
-
