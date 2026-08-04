@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from app.ports.avatar_output import AvatarOutputPort
+from app.ports.avatar_output import AvatarGazeIntent, AvatarOutputPort
 from app.shared.contracts.plugins.runtime import CapabilityReporter, PluginContext
 
 
@@ -13,6 +13,7 @@ class AvatarOutputPlugin:
     display_name = "Avatar Output"
     EXPRESSION_CAPABILITY = "output.avatar.expression"
     GESTURE_CAPABILITY = "output.avatar.gesture"
+    GAZE_CAPABILITY = "output.avatar.gaze"
 
     def __init__(self, adapter: AvatarOutputPort | None) -> None:
         self._adapter = adapter
@@ -24,7 +25,11 @@ class AvatarOutputPlugin:
     @property
     def capabilities(self) -> frozenset[str]:
         return frozenset(
-            {self.EXPRESSION_CAPABILITY, self.GESTURE_CAPABILITY}
+            {
+                self.EXPRESSION_CAPABILITY,
+                self.GESTURE_CAPABILITY,
+                self.GAZE_CAPABILITY,
+            }
         )
 
     def available_capabilities(self) -> frozenset[str]:
@@ -59,6 +64,14 @@ class AvatarOutputPlugin:
             await adapter.play_gesture(gesture)
         except Exception as error:
             self._mark_unavailable("gesture_failed", error)
+            raise
+
+    async def set_gaze(self, gaze: AvatarGazeIntent) -> None:
+        adapter = self._require_adapter(self.GAZE_CAPABILITY)
+        try:
+            await adapter.set_gaze(gaze)
+        except Exception as error:
+            self._mark_unavailable("gaze_failed", error)
             raise
 
     def _require_adapter(self, capability: str) -> AvatarOutputPort:
