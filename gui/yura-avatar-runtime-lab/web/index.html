@@ -59,7 +59,10 @@
               <span class="label">Manual Probe</span>
               <h2>プリセット送信</h2>
             </div>
-            <button class="ghost-button" id="randomButton" type="button">ランダム</button>
+            <div class="panel-actions">
+              <button class="ghost-button" id="performanceDemoButton" type="button">3区間演技</button>
+              <button class="ghost-button" id="randomButton" type="button">ランダム</button>
+            </div>
           </div>
 
           <div class="control-group">
@@ -102,9 +105,9 @@
           <div class="panel-heading">
             <div>
               <span class="label">Transport</span>
-              <h2>最終Action</h2>
+              <h2>最終受信Payload</h2>
             </div>
-            <span class="pill">POST /api/avatar/actions</span>
+            <span class="pill">Action / Performance</span>
           </div>
           <pre id="payloadView">{
   "status": "waiting"
@@ -127,6 +130,7 @@
     </section>
   </main>
   <script src="/app.js" defer></script>
+  <script src="/performance-playback.js" defer></script>
   <script src="/mobile-preview.js" defer></script>
 </body>
 </html>
