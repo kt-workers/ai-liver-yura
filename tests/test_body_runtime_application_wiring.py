@@ -29,13 +29,14 @@ from app.ports.body_subsystem import (
     bind_body_subsystem,
     get_bound_body_subsystem,
 )
-from app.runtime.avatar_performance_action_planner import (
-    AvatarPerformanceActionPlanner,
+from app.runtime.avatar_body_command_action_planner import (
+    AvatarBodyCommandActionPlanner,
 )
 from app.runtime.avatar_performance_character_service import (
     AvatarPerformanceCharacterLlmService,
 )
 from app.runtime.body_runtime import BodyRuntime
+from app.runtime.living_body_runtime import LivingBodyRuntime
 from app.usecases import ExecuteActionUsecase
 
 
@@ -107,7 +108,7 @@ def reset_runtime_bindings(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_install_body_aware_runtime_components_keeps_activity_pipeline() -> None:
     install_body_aware_runtime_components()
 
-    assert runtime_bootstrap.ActionPlanner is AvatarPerformanceActionPlanner
+    assert runtime_bootstrap.ActionPlanner is AvatarBodyCommandActionPlanner
     assert (
         runtime_bootstrap.CharacterLlmService
         is AvatarPerformanceCharacterLlmService
@@ -125,6 +126,7 @@ def test_create_bound_body_runtime_uses_initialized_avatar_output(
     body = create_bound_body_runtime_from_env()
 
     assert isinstance(body, BodyRuntime)
+    assert isinstance(body, LivingBodyRuntime)
     assert get_bound_body_subsystem() is body
     clear_bound_body_runtime()
     assert get_bound_body_subsystem() is None
