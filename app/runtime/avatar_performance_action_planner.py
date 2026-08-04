@@ -15,6 +15,7 @@ from app.domain.character_response import (
 from app.runtime.action_planner import ActionPlanner as CoreActionPlanner
 from app.runtime.avatar_performance_planner import AvatarPerformancePlanner
 from app.runtime.body_activity_context_builder import BodyActivityContextBuilder
+from app.runtime.body_spatial_command_resolver import BodySpatialCommandResolver
 
 
 class AvatarPerformanceActionPlanner(CoreActionPlanner):
@@ -25,6 +26,7 @@ class AvatarPerformanceActionPlanner(CoreActionPlanner):
         *args: Any,
         avatar_performance_planner: AvatarPerformancePlanner | None = None,
         body_activity_context_builder: BodyActivityContextBuilder | None = None,
+        body_spatial_command_resolver: BodySpatialCommandResolver | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
@@ -33,6 +35,9 @@ class AvatarPerformanceActionPlanner(CoreActionPlanner):
         )
         self._body_activity_context_builder = (
             body_activity_context_builder or BodyActivityContextBuilder()
+        )
+        self._body_spatial_command_resolver = (
+            body_spatial_command_resolver or BodySpatialCommandResolver()
         )
 
     def _reaction_action_plans(
@@ -54,6 +59,7 @@ class AvatarPerformanceActionPlanner(CoreActionPlanner):
         )
         body_context = self._body_activity_context_builder.build(activity)
         speech_act = self._speech_act(activity)
+        command_attention = self._body_spatial_command_resolver.resolve(activity)
         compatibility_performance = self._avatar_performance_planner.plan(
             plan,
             source_activity_id=activity.activity_id,
@@ -74,7 +80,7 @@ class AvatarPerformanceActionPlanner(CoreActionPlanner):
                         body_context,
                     )
                 ),
-                attention=segment.attention_intent,
+                attention=segment.attention_intent or command_attention,
                 facial_expression=segment.expression,
                 facial_intensity=segment.expression_intensity,
                 speech_emphasis=segment.speech_emphasis,
