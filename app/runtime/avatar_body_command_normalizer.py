@@ -42,6 +42,7 @@ def normalize_avatar_body_command(
         return meaning
     if meaning.input_speech_act not in _ACTION_SPEECH_ACTS:
         return meaning
+
     if meaning.target is not None:
         target_type = meaning.target.target_type.casefold()
         if target_type in {"avatar_body_action", "body_action", "avatar_action"}:
@@ -49,7 +50,8 @@ def normalize_avatar_body_command(
                 meaning,
                 target=InputTarget("avatar_body_action", meaning.target.target_id),
             )
-        return meaning
+        if target_type in {"activity", "plugin", "subsystem", "topic"}:
+            return meaning
 
     text = _meaning_text(meaning)
     for action, patterns in _ACTION_PATTERNS:
