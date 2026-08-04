@@ -152,6 +152,8 @@ def test_mobile_manual_controls_keep_avatar_preview_visible() -> None:
     assert 'class="mobile-preview"' in html
     assert 'id="mobileAvatarCanvas"' in html
     assert 'src="/mobile-preview.js"' in html
+    assert 'matchMedia("(max-width: 1040px)")' in mobile_preview_js
     assert "targetContext.drawImage(source" in mobile_preview_js
+    assert "requestAnimationFrame(syncMobilePreview)" in mobile_preview_js
     assert "position: sticky" in css
     assert "safe-area-inset-top" in css
