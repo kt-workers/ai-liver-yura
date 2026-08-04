@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from app.bootstrap.avatar_output_runtime import create_avatar_output_plugin_from_env
 from app.domain.actions import ActionPlan, ActionType
 from app.domain.activity_turn_result import ActionExecutionResult
@@ -15,9 +17,9 @@ class ExecuteActionUsecase(CoreExecuteActionUsecase):
 
     def __init__(
         self,
-        *args: object,
+        *args: Any,
         avatar_output_plugin: AvatarOutputPlugin | None = None,
-        **kwargs: object,
+        **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self._avatar_output_plugin = (
