@@ -145,6 +145,36 @@ async def test_body_runtime_runs_autonomous_motion_without_character_llm_or_acti
 
 
 @pytest.mark.asyncio
+async def test_body_runtime_shortest_autonomous_interval_keeps_fades_in_track_range() -> None:
+    output = RecordingAvatarOutput()
+    runtime = BodyRuntime(
+        output,
+        config=BodyRuntimeConfig(autonomous_interval_ms=250),
+        performance_id_factory=lambda: "perf-autonomous",
+    )
+    await runtime.update_activity_context(
+        BodyActivityContext(
+            source_activity_id="activity-001",
+            movement_energy=1.0,
+        )
+    )
+
+    await runtime.tick_once(now=1.0)
+
+    autonomous = next(
+        performance
+        for performance in output.performances
+        if performance.output_unit_id == "body-autonomous"
+    )
+    assert any(
+        track.motion is not None and track.motion.name == "micro_sway"
+        for track in autonomous.tracks
+    )
+    assert all(track.fade_in_ms <= track.duration_ms for track in autonomous.tracks)
+    assert all(track.fade_out_ms <= track.duration_ms for track in autonomous.tracks)
+
+
+@pytest.mark.asyncio
 async def test_body_runtime_keeps_tick_alive_when_avatar_submission_fails() -> None:
     runtime = BodyRuntime(
         FailingAvatarOutput(),
