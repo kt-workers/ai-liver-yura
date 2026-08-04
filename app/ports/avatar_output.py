@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from threading import RLock
 from typing import Protocol
 
 
@@ -39,3 +40,26 @@ class AvatarOutputPort(Protocol):
     async def set_gaze(self, gaze: AvatarGazeIntent) -> None:
         """高レベルな視線Intentをアバターへ反映する。"""
         ...
+
+
+_binding_lock = RLock()
+_bound_avatar_output: AvatarOutputPort | None = None
+
+
+def bind_avatar_output(output: AvatarOutputPort | None) -> None:
+    """Composition Rootが初期化済みAvatar Outputをプロセスへ束縛する。
+
+    Web MVP期間の移行用境界であり、正式なRuntime依存定義ではConstructor
+    Injectionへ置き換える。Runtime再構成時にNoneを渡すと以前の束縛を解除する。
+    """
+
+    global _bound_avatar_output
+    with _binding_lock:
+        _bound_avatar_output = output
+
+
+def get_bound_avatar_output() -> AvatarOutputPort | None:
+    """現在Composition Rootが束縛しているAvatar Outputを返す。"""
+
+    with _binding_lock:
+        return _bound_avatar_output
