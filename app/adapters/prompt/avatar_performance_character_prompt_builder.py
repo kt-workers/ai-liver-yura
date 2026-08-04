@@ -43,8 +43,8 @@ class AvatarPerformanceCharacterPromptBuilder(DirectiveAwareCharacterPromptBuild
                 "speech_emphasisは必要な場合だけ[{text, intent, strength}]として、発話中の"
                 "意味的な強調位置を示す。時刻は指定しない。",
                 "首、腕、胴体などの身体部位、head_shake、nod、wave等のモーション名、"
-                "回数、振幅、速度、開始時刻、ポーズを直接指定しない。gestureとgazeは"
-                "旧Runtime互換項目であり、新しい応答では原則nullにする。",
+                "回数、振幅、速度、開始時刻、ポーズを直接指定しない。gesture、"
+                "gesture_intensity、gazeは旧Runtime互換項目であり、新しい応答では原則nullにする。",
                 "身体表現を埋めるためだけに値を追加しない。Characterとして意図的に表したい"
                 "態度がない場合は、Body Subsystemの自律制御へ任せる。",
                 "performance_id、priority、duration_ms、fade、interrupt_policy、Live2D Parameter、"
