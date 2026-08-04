@@ -144,7 +144,7 @@ def _normalize_existing_target(target: InputTarget | None) -> InputTarget | None
         return None
     direction = canonical_spatial_direction(target.target_id)
     if direction is None:
-        return target
+        return None
     target_type = target.target_type.strip().lower()
     if target_type in {
         "orientation",
@@ -161,7 +161,7 @@ def _normalize_existing_target(target: InputTarget | None) -> InputTarget | None
         "direction",
     }:
         return InputTarget("gaze_direction", direction)
-    return target
+    return None
 
 
 def _meaning_text(meaning: StructuredInputMeaning) -> str:
