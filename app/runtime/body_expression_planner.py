@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.domain.avatar_performance import (
     AvatarBlendMode,
+    AvatarExpressionIntent,
     AvatarGazeIntent,
     AvatarMotionIntent,
     AvatarPerformanceTrack,
@@ -19,7 +20,7 @@ class BodyExpressionPlanner:
     """高レベルな身体表現要求を、独立して重なる身体Trackへ展開する。
 
     全身プリセットを選ぶのではなく、agreement、approach、openness等の意味軸から
-    首・胴体・左右腕の手続き的なプリミティブを個別に生成する。
+    表情・首・胴体・左右腕の手続き的なプリミティブを個別に生成する。
     """
 
     def compile(
@@ -34,6 +35,16 @@ class BodyExpressionPlanner:
         legacy_gesture_intensity: float = 1.0,
     ) -> tuple[AvatarPerformanceTrack, ...]:
         tracks: list[AvatarPerformanceTrack] = []
+        if request.facial_expression is not None:
+            tracks.append(
+                self._facial_expression_track(
+                    request,
+                    segment_index=segment_index,
+                    start_offset_ms=start_offset_ms,
+                    duration_ms=duration_ms,
+                )
+            )
+
         attention = request.attention or self._attention_from_context(activity_context)
         if attention is not None:
             tracks.append(
@@ -64,6 +75,31 @@ class BodyExpressionPlanner:
                 )
             )
         return tuple(tracks)
+
+    @staticmethod
+    def _facial_expression_track(
+        request: BodyExpressionRequest,
+        *,
+        segment_index: int,
+        start_offset_ms: int,
+        duration_ms: int,
+    ) -> AvatarPerformanceTrack:
+        assert request.facial_expression is not None
+        return AvatarPerformanceTrack(
+            track_id=f"segment-{segment_index}-body-expression",
+            channel=AvatarTrackChannel.EXPRESSION,
+            start_offset_ms=start_offset_ms,
+            duration_ms=duration_ms,
+            fade_in_ms=min(180, duration_ms),
+            fade_out_ms=min(320, duration_ms),
+            blend_mode=AvatarBlendMode.OVERRIDE,
+            hold=True,
+            layer_priority=120,
+            expression=AvatarExpressionIntent(
+                name=request.facial_expression,
+                intensity=request.facial_intensity,
+            ),
+        )
 
     @staticmethod
     def _attention_from_context(
@@ -156,12 +192,13 @@ class BodyExpressionPlanner:
 
         approach_strength = abs(expression.approach) * expression.intensity
         if approach_strength >= 0.12:
+            offset = min(120, duration_ms // 8)
             tracks.append(
                 self._motion_track(
                     track_id=f"segment-{segment_index}-approach",
                     channel=AvatarTrackChannel.TORSO,
-                    start_offset_ms=start_offset_ms + min(120, duration_ms // 8),
-                    available_duration_ms=max(100, duration_ms - min(120, duration_ms // 8)),
+                    start_offset_ms=start_offset_ms + offset,
+                    available_duration_ms=max(100, duration_ms - offset),
                     name=(
                         "lean_forward"
                         if expression.approach > 0
@@ -197,11 +234,12 @@ class BodyExpressionPlanner:
         closure_strength = (1.0 - expression.openness) * expression.intensity
         opening_strength = expression.openness * expression.warmth * expression.intensity
         if closure_strength >= 0.48:
+            offset = min(160, duration_ms // 6)
             tracks.extend(
                 self._paired_arm_tracks(
                     segment_index=segment_index,
-                    start_offset_ms=start_offset_ms + min(160, duration_ms // 6),
-                    duration_ms=max(100, duration_ms - min(160, duration_ms // 6)),
+                    start_offset_ms=start_offset_ms + offset,
+                    duration_ms=max(100, duration_ms - offset),
                     name="draw_in",
                     strength=closure_strength,
                     tempo=0.55 + expression.tension * 0.55,
@@ -209,11 +247,12 @@ class BodyExpressionPlanner:
                 )
             )
         elif opening_strength >= 0.56 and expression.approach > 0.1:
+            offset = min(180, duration_ms // 5)
             tracks.extend(
                 self._paired_arm_tracks(
                     segment_index=segment_index,
-                    start_offset_ms=start_offset_ms + min(180, duration_ms // 5),
-                    duration_ms=max(100, duration_ms - min(180, duration_ms // 5)),
+                    start_offset_ms=start_offset_ms + offset,
+                    duration_ms=max(100, duration_ms - offset),
                     name="open_outward",
                     strength=opening_strength,
                     tempo=0.5 + expression.arousal * 0.5,
