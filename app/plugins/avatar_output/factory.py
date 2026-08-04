@@ -18,7 +18,12 @@ class AvatarOutputPluginFactory:
     def _validate_adapter(adapter: Any) -> None:
         if adapter is None:
             return
-        for method_name in ("set_expression", "play_gesture", "set_gaze"):
+        for method_name in (
+            "submit_performance",
+            "set_expression",
+            "play_gesture",
+            "set_gaze",
+        ):
             if not callable(getattr(adapter, method_name, None)):
                 raise TypeError(
                     f"avatar_output must implement {method_name}()"
