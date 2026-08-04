@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from time import monotonic
 
 from app.core.plugins import PluginManager
 from app.runtime.activity_executor_thread import ActivityExecutorThread
@@ -101,12 +100,9 @@ class RuntimeHostController:
         self._planner_thread.stop()
         self._executor_thread.stop()
 
-        deadline = monotonic() + self._thread_join_timeout_seconds
         for thread in (self._planner_thread, self._executor_thread):
-            if not thread.is_alive():
-                continue
-            remaining = max(0.0, deadline - monotonic())
-            thread.join(timeout=remaining)
+            if thread.is_alive():
+                thread.join(timeout=self._thread_join_timeout_seconds)
 
         planner_alive = self._planner_thread.is_alive()
         executor_alive = self._executor_thread.is_alive()
