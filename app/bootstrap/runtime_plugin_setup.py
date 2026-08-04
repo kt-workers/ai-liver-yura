@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass
 from typing import cast
 
+from app.adapters.avatar import HttpAvatarOutput, HttpAvatarOutputConfig
 from app.bootstrap.plugin_registration import register_optional_plugin_from_factory
 from app.config.app_config import AppConfig
 from app.core.plugins import PluginManager, SystemClock
@@ -11,6 +12,7 @@ from app.domain.activities import Activity, ActivityType
 from app.domain.memory import AgentMemoryState
 from app.domain.relationships import RelationshipMemory
 from app.ports.audio_player import AudioPlayer
+from app.ports.avatar_output import AvatarOutputPort, bind_avatar_output
 from app.ports.relationship_memory_store import RelationshipMemoryStore
 from app.ports.response_generator import ResponseGenerator
 from app.ports.speech_synthesizer import SpeechSynthesizer
@@ -27,6 +29,8 @@ _RELATIONSHIP_MEMORY_PLUGIN_ID = "relationship_memory"
 _RELATIONSHIP_MEMORY_CAPABILITY = "memory.relationship"
 _AGENT_MEMORY_PLUGIN_ID = "agent_memory"
 _AGENT_MEMORY_CAPABILITY = "memory.agent_state"
+_AVATAR_OUTPUT_PLUGIN_ID = "avatar_output"
+_AVATAR_EXPRESSION_CAPABILITY = "output.avatar.expression"
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +67,9 @@ def setup_runtime_plugins(
 ) -> RuntimePluginServices:
     config = setup.config
     plugin_manager = PluginManager()
+    # 同一プロセス内でRuntimeを再構築した際に、以前のPlugin参照を残さない。
+    bind_avatar_output(None)
+
     default_llm_plugin = _register_llm_provider(
         plugin_manager,
         plugin_id="llm_provider.default",
@@ -144,6 +151,29 @@ def setup_runtime_plugins(
         },
     )
 
+    avatar_output_adapter = _create_avatar_output_adapter_from_env()
+    avatar_output_enabled = avatar_output_adapter is not None
+    if avatar_output_enabled:
+        register_optional_plugin_from_factory(
+            plugin_manager,
+            plugin_id=_AVATAR_OUTPUT_PLUGIN_ID,
+            module="app.plugins.avatar_output",
+            enabled=True,
+            services={"avatar_output": avatar_output_adapter},
+        )
+
+    enabled_plugins = {
+        "llm_provider.default": True,
+        "llm_provider.situation_evaluator": True,
+        "llm_provider.character": character_llm_plugin is not None,
+        "llm_provider.response_validator": validator_llm_plugin is not None,
+        _RELATIONSHIP_MEMORY_PLUGIN_ID: config.memory.relationship_memory.enabled,
+        _AGENT_MEMORY_PLUGIN_ID: config.memory.agent_memory.enabled,
+        "voice_output": config.speech.enabled,
+    }
+    if avatar_output_enabled:
+        enabled_plugins[_AVATAR_OUTPUT_PLUGIN_ID] = True
+
     plugin_manager.initialize_enabled_plugins(
         PluginContext(
             llm_gateway=_PluginLlmGateway(default_llm_plugin),
@@ -152,17 +182,7 @@ def setup_runtime_plugins(
             configuration={},
             capability_reporter=plugin_manager,
         ),
-        {
-            "llm_provider.default": True,
-            "llm_provider.situation_evaluator": True,
-            "llm_provider.character": character_llm_plugin is not None,
-            "llm_provider.response_validator": validator_llm_plugin is not None,
-            _RELATIONSHIP_MEMORY_PLUGIN_ID: (
-                config.memory.relationship_memory.enabled
-            ),
-            _AGENT_MEMORY_PLUGIN_ID: config.memory.agent_memory.enabled,
-            "voice_output": config.speech.enabled,
-        },
+        enabled_plugins,
     )
 
     default_response_generator = _require_initialized_llm_provider(
@@ -229,6 +249,15 @@ def setup_runtime_plugins(
     if voice_output_plugin is not None:
         speech_synthesizer = cast(SpeechSynthesizer, voice_output_plugin)
         audio_player = cast(AudioPlayer, voice_output_plugin)
+
+    avatar_output: AvatarOutputPort | None = None
+    avatar_output_plugin = plugin_manager.get_plugin(_AVATAR_OUTPUT_PLUGIN_ID)
+    if avatar_output_plugin is not None and plugin_manager.is_capability_available(
+        _AVATAR_EXPRESSION_CAPABILITY,
+        _AVATAR_OUTPUT_PLUGIN_ID,
+    ):
+        avatar_output = cast(AvatarOutputPort, avatar_output_plugin)
+    bind_avatar_output(avatar_output)
 
     return RuntimePluginServices(
         plugin_manager=plugin_manager,
@@ -337,6 +366,48 @@ class _PluginLlmGateway:
             },
         )
         return await self._generator.generate_response(activity)
+
+
+def _create_avatar_output_adapter_from_env() -> AvatarOutputPort | None:
+    if not _env_enabled("YURA_AVATAR_OUTPUT_ENABLED", default=False):
+        return None
+    base_url = os.getenv("YURA_AVATAR_RUNTIME_URL", "").strip()
+    if not base_url:
+        TraceLogger().warning(
+            "runtime_factory:create_avatar_output:skipped",
+            reason="avatar_runtime_url_not_set",
+        )
+        return None
+    timeout_seconds = _env_float(
+        "YURA_AVATAR_OUTPUT_TIMEOUT_SECONDS",
+        default=3.0,
+    )
+    return HttpAvatarOutput(
+        HttpAvatarOutputConfig(
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+        )
+    )
+
+
+def _env_enabled(name: str, *, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in {"0", "false", "off", "no", ""}
+
+
+def _env_float(name: str, *, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        value = float(raw)
+    except ValueError as error:
+        raise RuntimeError(f"{name} must be a number") from error
+    if value <= 0:
+        raise RuntimeError(f"{name} must be greater than zero")
+    return value
 
 
 def _is_model_provider_available(config: AppConfig, model_key: str) -> bool:
