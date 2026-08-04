@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from app.ports.avatar_output import AvatarOutputPort
+from app.ports.avatar_output import AvatarGazeIntent, AvatarOutputPort
 from app.shared.contracts.plugins.runtime import CapabilityReporter, PluginContext
 
 
@@ -13,6 +13,7 @@ class AvatarOutputPlugin:
     display_name = "Avatar Output"
     EXPRESSION_CAPABILITY = "output.avatar.expression"
     GESTURE_CAPABILITY = "output.avatar.gesture"
+    GAZE_CAPABILITY = "output.avatar.gaze"
 
     def __init__(self, adapter: AvatarOutputPort | None) -> None:
         self._adapter = adapter
@@ -24,7 +25,11 @@ class AvatarOutputPlugin:
     @property
     def capabilities(self) -> frozenset[str]:
         return frozenset(
-            {self.EXPRESSION_CAPABILITY, self.GESTURE_CAPABILITY}
+            {
+                self.EXPRESSION_CAPABILITY,
+                self.GESTURE_CAPABILITY,
+                self.GAZE_CAPABILITY,
+            }
         )
 
     def available_capabilities(self) -> frozenset[str]:
@@ -36,11 +41,10 @@ class AvatarOutputPlugin:
         self._capability_reporter = context.capability_reporter
         self._initialized = True
         self._healthy = self._adapter is not None
-        self._report_availability(self._healthy)
+        # 初期Capability登録はinitialize()後にPluginManagerが実施する。
         self._logger.info("avatar output initialized: available=%s", self._healthy)
 
     def shutdown(self) -> None:
-        self._report_availability(False)
         self._initialized = False
         self._healthy = False
         self._capability_reporter = None
@@ -61,6 +65,14 @@ class AvatarOutputPlugin:
             self._mark_unavailable("gesture_failed", error)
             raise
 
+    async def set_gaze(self, gaze: AvatarGazeIntent) -> None:
+        adapter = self._require_adapter(self.GAZE_CAPABILITY)
+        try:
+            await adapter.set_gaze(gaze)
+        except Exception as error:
+            self._mark_unavailable("gaze_failed", error)
+            raise
+
     def _require_adapter(self, capability: str) -> AvatarOutputPort:
         if not self._initialized or not self._healthy or self._adapter is None:
             raise RuntimeError(f"avatar_output.unavailable:{capability}")
@@ -68,19 +80,19 @@ class AvatarOutputPlugin:
 
     def _mark_unavailable(self, reason: str, error: Exception) -> None:
         self._healthy = False
-        self._report_availability(False)
+        self._report_unavailable()
         self._logger.warning(
             "avatar output capability lost: reason=%s error=%s",
             reason,
             type(error).__name__,
         )
 
-    def _report_availability(self, available: bool) -> None:
+    def _report_unavailable(self) -> None:
         if self._capability_reporter is None:
             return
         for capability in self.capabilities:
             self._capability_reporter.set_capability_availability(
                 self.plugin_id,
                 capability,
-                available=available,
+                available=False,
             )
