@@ -202,6 +202,8 @@ class BodyExpressionRequest:
     output_unit_id: str
     expression: EmbodiedExpressionIntent
     attention: BodyAttentionIntent | None = None
+    facial_expression: str | None = None
+    facial_intensity: float = 1.0
     speech_emphasis: tuple[SpeechEmphasis, ...] = ()
     priority: int = 0
     duration_hint_ms: int | None = None
@@ -218,6 +220,17 @@ class BodyExpressionRequest:
                     maximum=128,
                 ),
             )
+        if self.facial_expression is not None:
+            object.__setattr__(
+                self,
+                "facial_expression",
+                _normalize_name(self.facial_expression, "facial_expression"),
+            )
+        object.__setattr__(
+            self,
+            "facial_intensity",
+            _unit(self.facial_intensity, "facial_intensity"),
+        )
         if isinstance(self.priority, bool) or not isinstance(self.priority, int):
             raise TypeError("priority must be an integer")
         if not 0 <= self.priority <= 1000:
@@ -269,7 +282,11 @@ class SpeechPresentationRequest:
                     maximum=maximum,
                 ),
             )
-        object.__setattr__(self, "text", _normalize_name(self.text, "text", maximum=4000))
+        object.__setattr__(
+            self,
+            "text",
+            _normalize_name(self.text, "text", maximum=4000),
+        )
         if isinstance(self.duration_ms, bool) or not isinstance(self.duration_ms, int):
             raise TypeError("duration_ms must be an integer")
         if not 100 <= self.duration_ms <= 600_000:
