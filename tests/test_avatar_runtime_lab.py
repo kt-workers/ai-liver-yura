@@ -13,7 +13,7 @@ def _load_server_module() -> ModuleType:
     module_name = f"avatar_runtime_lab_server_{uuid4().hex}"
     path = (
         Path(__file__).parents[1]
-        / "gui"
+        / "test"
         / "yura-avatar-runtime-lab"
         / "server.py"
     )
