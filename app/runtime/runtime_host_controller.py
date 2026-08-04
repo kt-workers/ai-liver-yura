@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from time import monotonic
 
 from app.core.plugins import PluginManager
 from app.runtime.activity_executor_thread import ActivityExecutorThread
@@ -25,7 +26,7 @@ class RuntimeHostController:
         async_initializers: tuple[Callable[[], Awaitable[None]], ...],
         trace_logger: TraceLogger,
         idle_sleep_seconds: float = 0.05,
-        thread_join_timeout_seconds: float = 1.0,
+        thread_join_timeout_seconds: float = 30.0,
     ) -> None:
         self._runtime_loop = runtime_loop
         self._planner_thread = activity_planner_thread
@@ -99,12 +100,25 @@ class RuntimeHostController:
             return
         self._planner_thread.stop()
         self._executor_thread.stop()
-        if self._planner_thread.is_alive():
-            self._planner_thread.join(timeout=self._thread_join_timeout_seconds)
-        if self._executor_thread.is_alive():
-            self._executor_thread.join(timeout=self._thread_join_timeout_seconds)
+
+        deadline = monotonic() + self._thread_join_timeout_seconds
+        for thread in (self._planner_thread, self._executor_thread):
+            if not thread.is_alive():
+                continue
+            remaining = max(0.0, deadline - monotonic())
+            thread.join(timeout=remaining)
+
+        planner_alive = self._planner_thread.is_alive()
+        executor_alive = self._executor_thread.is_alive()
+        if planner_alive or executor_alive:
+            self._trace_logger.warning(
+                "runtime_coordinator:threads:shutdown_timeout",
+                timeout_seconds=self._thread_join_timeout_seconds,
+                activity_planner_thread_alive=planner_alive,
+                activity_executor_thread_alive=executor_alive,
+            )
         self._trace_logger.info(
             "runtime_coordinator:threads:stopped",
-            activity_planner_thread_alive=self._planner_thread.is_alive(),
-            activity_executor_thread_alive=self._executor_thread.is_alive(),
+            activity_planner_thread_alive=planner_alive,
+            activity_executor_thread_alive=executor_alive,
         )
