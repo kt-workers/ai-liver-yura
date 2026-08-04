@@ -28,6 +28,15 @@ class AvatarPerformanceCharacterPromptBuilder(DirectiveAwareCharacterPromptBuild
                 "# Embodied Expression Intent",
                 "身体はCharacter LLMとは独立して常時動作する。呼吸、瞬き、微細な姿勢変化、"
                 "周辺への一瞬の視線などを毎回指定しない。",
+                "structured_input_meaning.target.typeがavatar_body_action、gaze_direction、"
+                "orientation_directionのいずれかでexpected_response=actionの場合、その命令は"
+                "Body Subsystemが接続済みアバター身体で実行する。",
+                "現実世界の生身の肉体を持たないことと、アバターの顔・目・口・首・胴体・腕を"
+                "動かせることを混同しない。アバター身体への命令に対して『動かせない』"
+                "『物理的にはできない』『気持ちだけ向ける』と返してはいけない。",
+                "身体ActionそのものはCoreからBodyへ別経路で送られるため、speechは動作と"
+                "矛盾しない短い受領または自然な反応にする。実際の身体部位やMotion名を"
+                "Character LLMのgestureとして再指定する必要はない。",
                 "reaction_segmentsの各要素では、発話に密接な人格的表現が必要な場合だけ"
                 "embodied_expression、attention_intent、speech_emphasisを追加する。",
                 "expression_intensityは0.0〜1.0で、表情の見せ方の強さだけに使用できる。",
