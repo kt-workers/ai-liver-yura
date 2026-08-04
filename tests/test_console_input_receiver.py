@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import pytest
 
@@ -29,6 +30,21 @@ class DecodeErrorThenQuitInputProvider:
                 "utf-8", b"\xe3", 0, 1, "invalid continuation byte"
             )
         return "quit"
+
+
+class WaitingInputProvider:
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.cancelled = False
+
+    async def __call__(self) -> str | None:
+        self.started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        return None
 
 
 @pytest.mark.asyncio
@@ -139,3 +155,32 @@ async def test_console_input_receiver_recovers_from_unicode_decode_error() -> No
     await receiver.wait_until_stopped()
 
     assert published_events == []
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_pending_console_input_wait() -> None:
+    provider = WaitingInputProvider()
+
+    async def publish_event(_event: AgentEvent) -> None:
+        raise AssertionError("入力待機中にイベントは発行されません。")
+
+    receiver = ConsoleInputReceiver(input_provider=provider)
+    await receiver.start(publish_event)
+    await asyncio.wait_for(provider.started.wait(), timeout=1.0)
+
+    await asyncio.wait_for(receiver.stop(), timeout=1.0)
+
+    assert provider.cancelled is True
+
+
+def test_default_console_input_does_not_use_asyncio_default_executor() -> None:
+    source = (
+        Path(__file__).parents[1]
+        / "app"
+        / "adapters"
+        / "input"
+        / "console_input_receiver.py"
+    ).read_text(encoding="utf-8")
+
+    assert "asyncio.to_thread" not in source
+    assert "loop.add_reader" in source
