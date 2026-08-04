@@ -1,3 +1,6 @@
-from app.domain.character.character_profile import CharacterProfile
+from app.domain.character.character_profile import (
+    CharacterExistenceProfile,
+    CharacterProfile,
+)
 
-__all__ = ["CharacterProfile"]
+__all__ = ["CharacterExistenceProfile", "CharacterProfile"]
