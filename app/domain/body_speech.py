@@ -16,7 +16,7 @@ class SpeechCoupledBodyExpressionRequest(BodyExpressionRequest):
     speech_act: str = "statement"
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        BodyExpressionRequest.__post_init__(self)
         if not isinstance(self.speech_act, str):
             raise TypeError("speech_act must be a string")
         normalized = self.speech_act.strip().lower()
