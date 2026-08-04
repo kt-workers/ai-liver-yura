@@ -6,6 +6,11 @@ import pytest
 
 from app.bootstrap.plugin_registration import register_optional_plugin_from_factory
 from app.core.plugins import PluginManager, SystemClock
+from app.domain.avatar_performance import (
+    AvatarExpressionIntent,
+    AvatarPerformancePlan,
+    AvatarPerformanceSegment,
+)
 from app.ports.avatar_output import AvatarGazeIntent, AvatarOutputPort
 from app.shared.contracts.plugins.runtime import PluginContext
 
@@ -13,9 +18,15 @@ from app.shared.contracts.plugins.runtime import PluginContext
 class FakeAvatarAdapter:
     def __init__(self, *, fail: bool = False) -> None:
         self.fail = fail
+        self.performances: list[AvatarPerformancePlan] = []
         self.expressions: list[str] = []
         self.gestures: list[str] = []
         self.gazes: list[AvatarGazeIntent] = []
+
+    async def submit_performance(self, performance: AvatarPerformancePlan) -> None:
+        if self.fail:
+            raise RuntimeError("avatar runtime unavailable")
+        self.performances.append(performance)
 
     async def set_expression(self, expression: str) -> None:
         if self.fail:
@@ -73,28 +84,36 @@ async def test_avatar_output_plugin_is_registered_by_generic_factory() -> None:
     adapter = FakeAvatarAdapter()
     manager, output = create_initialized_plugin(adapter)
 
-    assert manager.is_capability_available(
+    for capability in (
+        "output.avatar.performance",
         "output.avatar.expression",
-        "avatar_output",
-    )
-    assert manager.is_capability_available(
         "output.avatar.gesture",
-        "avatar_output",
-    )
-    assert manager.is_capability_available(
         "output.avatar.gaze",
-        "avatar_output",
-    )
+    ):
+        assert manager.is_capability_available(capability, "avatar_output")
 
+    performance = AvatarPerformancePlan(
+        performance_id="perf-001",
+        source_activity_id="activity-001",
+        output_unit_id="output-001",
+        priority=100,
+        segments=(
+            AvatarPerformanceSegment(
+                expression=AvatarExpressionIntent("curious"),
+            ),
+        ),
+    )
     gaze = AvatarGazeIntent(
         target="viewer",
         behavior="maintain",
         intensity=0.8,
     )
+    await output.submit_performance(performance)
     await output.set_expression("happy")
     await output.play_gesture("small_nod")
     await output.set_gaze(gaze)
 
+    assert adapter.performances == [performance]
     assert adapter.expressions == ["happy"]
     assert adapter.gestures == ["small_nod"]
     assert adapter.gazes == [gaze]
@@ -107,15 +126,10 @@ async def test_avatar_output_failure_marks_all_capabilities_unavailable() -> Non
     with pytest.raises(RuntimeError, match="avatar runtime unavailable"):
         await output.set_expression("happy")
 
-    assert not manager.is_capability_available(
+    for capability in (
+        "output.avatar.performance",
         "output.avatar.expression",
-        "avatar_output",
-    )
-    assert not manager.is_capability_available(
         "output.avatar.gesture",
-        "avatar_output",
-    )
-    assert not manager.is_capability_available(
         "output.avatar.gaze",
-        "avatar_output",
-    )
+    ):
+        assert not manager.is_capability_available(capability, "avatar_output")
