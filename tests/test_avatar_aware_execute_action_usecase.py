@@ -1,4 +1,4 @@
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -9,6 +9,7 @@ from app.domain.avatar_performance import (
     AvatarPerformancePlan,
     AvatarPerformanceSegment,
 )
+from app.plugins.avatar_output.plugin import AvatarOutputPlugin
 from app.ports.avatar_output import (
     AvatarGazeIntent,
     AvatarOutputPort,
@@ -50,6 +51,21 @@ class FakeAvatarOutput:
         if self.fail:
             raise RuntimeError("avatar offline")
         self.gazes.append(gaze)
+
+
+class FakeCapabilityReporter:
+    def set_capability_availability(
+        self,
+        plugin_id: str,
+        capability: str,
+        *,
+        available: bool,
+    ) -> None:
+        del plugin_id, capability, available
+
+
+class FakePluginContext:
+    capability_reporter = FakeCapabilityReporter()
 
 
 def performance_plan() -> AvatarPerformancePlan:
@@ -139,6 +155,32 @@ async def test_execute_action_falls_back_when_performance_submission_fails() -> 
     fake = FakeAvatarOutput(fail_performance=True)
     usecase = ExecuteActionUsecase(
         avatar_output=cast(AvatarOutputPort, fake)
+    )
+    performance = performance_plan()
+
+    await usecase.execute(
+        ActionPlan(
+            action_type=ActionType.CHANGE_EXPRESSION,
+            text="curious",
+            metadata={
+                "avatar_performance_id": performance.performance_id,
+                "avatar_performance_managed": True,
+                "avatar_performance_plan": performance,
+            },
+        )
+    )
+
+    assert fake.performances == []
+    assert fake.expressions == ["curious"]
+
+
+@pytest.mark.asyncio
+async def test_execute_action_falls_back_through_plugin_after_performance_failure() -> None:
+    fake = FakeAvatarOutput(fail_performance=True)
+    plugin = AvatarOutputPlugin(fake)
+    plugin.initialize(cast(Any, FakePluginContext()))
+    usecase = ExecuteActionUsecase(
+        avatar_output=cast(AvatarOutputPort, plugin)
     )
     performance = performance_plan()
 
