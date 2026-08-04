@@ -39,7 +39,7 @@ Canvas棒人間モデル
 
 ### 2.2 検証ブランチ
 
-`experiment/avatar-runtime-render-stick-model`
+`experiment/avatar-runtime-render-stick-model-v2`
 
 担当範囲：
 
@@ -51,6 +51,20 @@ Canvas棒人間モデル
 - Render Blueprint設定
 
 検証ブランチは実装ブランチを基点とする。検証用UIや棒人間Backendを本番Live2D Runtimeへ混在させない。
+
+### 2.3 配置規約
+
+検証用Runtime本体は製品GUIではないため、次の配下へ配置する。
+
+```text
+test/yura-avatar-runtime-lab/
+```
+
+- `test/`: 手動・結合・外部環境向けの検証コード
+- `tests/`: pytestで自動実行するテストコード
+- `gui/`: 製品または運用画面として継続利用するGUI
+
+したがって、棒人間Runtimeのサーバー、HTML、CSS、JavaScript、READMEは `test/yura-avatar-runtime-lab` に置き、自動テストだけを `tests/test_avatar_runtime_lab.py` に置く。
 
 ## 3. 依存境界
 
@@ -156,6 +170,12 @@ HTTPはWeb MVPを最短で検証するための暫定Transportである。最終
 
 無効時またはURL未設定時はAdapterもPluginも登録しない。Runtimeを同一プロセス内で再構成する場合は、Port Bindingを最初に解除して以前のPlugin参照を残さない。
 
+検証Runtimeのローカル起動コマンドは次とする。
+
+```bash
+python test/yura-avatar-runtime-lab/server.py
+```
+
 ## 7. エラー・縮退方針
 
 - Avatar Runtimeへ接続できなくてもCoreの会話・音声・記憶処理を停止しない。
@@ -183,6 +203,13 @@ HTTPはWeb MVPを最短で検証するための暫定Transportである。最終
 - Action履歴
 - 手動プリセットボタン
 
+Renderでは次の配置を参照する。
+
+```text
+Build: python -m compileall app test/yura-avatar-runtime-lab
+Start: python test/yura-avatar-runtime-lab/server.py
+```
+
 ## 9. 完了条件
 
 1. `YURA_AVATAR_OUTPUT_ENABLED=1` でCore起動時にAvatar Output Pluginが汎用Factory経由で初期化される。
@@ -190,7 +217,7 @@ HTTPはWeb MVPを最短で検証するための暫定Transportである。最終
 3. LLM出力から生成された `change_expression` がRender上のモデル表情を変える。
 4. LLM出力から生成された `move` がRender上のモデルを動かす。
 5. Render停止中でもCoreが継続動作する。
-6. 検証用コードが本番Live2D Backendのブランチと分離されている。
+6. 検証用コードが本番Live2D Backendのブランチと分離され、`test/yura-avatar-runtime-lab` に配置されている。
 7. Port、Plugin、Adapter、Action接続に単体テストがある。
 
 ## 10. 次段階
