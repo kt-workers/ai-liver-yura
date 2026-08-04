@@ -36,6 +36,14 @@ http://127.0.0.1:8780
 PORT=8781 python test/yura-avatar-runtime-lab/server.py
 ```
 
+## 自動テスト
+
+検証Runtime本体は `test/`、pytestから実行する回帰テストは `tests/` に分離しています。
+
+```bash
+pytest tests/test_avatar_runtime_lab.py
+```
+
 ## Coreから接続
 
 別ターミナルでCoreを次の環境変数付きで起動します。
