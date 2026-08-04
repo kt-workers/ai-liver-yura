@@ -41,11 +41,10 @@ class AvatarOutputPlugin:
         self._capability_reporter = context.capability_reporter
         self._initialized = True
         self._healthy = self._adapter is not None
-        self._report_availability(self._healthy)
+        # 初期Capability登録はinitialize()後にPluginManagerが実施する。
         self._logger.info("avatar output initialized: available=%s", self._healthy)
 
     def shutdown(self) -> None:
-        self._report_availability(False)
         self._initialized = False
         self._healthy = False
         self._capability_reporter = None
@@ -81,19 +80,19 @@ class AvatarOutputPlugin:
 
     def _mark_unavailable(self, reason: str, error: Exception) -> None:
         self._healthy = False
-        self._report_availability(False)
+        self._report_unavailable()
         self._logger.warning(
             "avatar output capability lost: reason=%s error=%s",
             reason,
             type(error).__name__,
         )
 
-    def _report_availability(self, available: bool) -> None:
+    def _report_unavailable(self) -> None:
         if self._capability_reporter is None:
             return
         for capability in self.capabilities:
             self._capability_reporter.set_capability_availability(
                 self.plugin_id,
                 capability,
-                available=available,
+                available=False,
             )
