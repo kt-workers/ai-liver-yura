@@ -2,33 +2,58 @@
 
 ## 1. 目的
 
-Character LLMが生成した `ReactionPlan` を、Live2DやVTube Studioなどの描画方式に依存しないアバター演技計画へ変換する。
+`AvatarPerformancePlan`を、Character LLMが選んだポーズを再生する仕組みではなく、Body Subsystemが生成した複数の身体TrackをAvatar Runtimeへ渡す実行契約として定義する。
 
 ```text
-CharacterResponse
-  ↓
-ReactionPlan
-  ↓ 決定論的変換
-AvatarPerformancePlan
-  ↓
-AvatarOutputPort
-  ↓
-Avatar Runtime
+Activity Context ─────────┐
+Internal State ───────────┤
+Characterの表現意図 ──────┤
+Perception ───────────────┤
+Speech Presentation ──────┘
+             ↓
+       Body Subsystem
+             ↓ compile
+  AvatarPerformancePlan
+             ↓
+       Avatar Runtime
+             ↓
+       Live2D / 3D
 ```
 
-本層は意味や行動を再決定しない。確定済みの表情・ジェスチャー・視線意図を、アバター実行に必要な相関ID、強度、時間、割込み方針へ詳細化する。
+Body Subsystem全体の責務は`body_subsystem_architecture_v1.0.0.md`で定義する。本契約はその出力の一つであり、呼吸、瞬き、注意選択、音声再生などBodyの全機能を表すものではない。
 
 ## 2. 責務境界
 
-### ReactionPlan
+### Activity
+
+- 継続する目的
+- 主な注意対象
+- 関与度
+- 姿勢傾向
+- 動きの活発さ
+- 視線の自由度
+
+毎フレームの角度や身体部位を指定しない。
+
+### Character LLM
 
 - 発話本文
-- 表情名
-- ジェスチャー名
-- 高レベル視線Intent
 - 声の意図
-- 表現が変わる区間
-- 発話後の間
+- 表情の意味
+- 必要な場合だけ高レベルな身体表現Intent
+- 必要な場合だけ意味上の注意対象
+- 発話中の意味的な強調点
+
+首、胴体、腕などの身体部位、モーション名、回数、振幅、速度、時刻、Live2D Parameterは指定しない。
+
+### Body Subsystem
+
+- Activity Contextと現在の身体状態を統合する
+- 高レベル表現Intentを身体部位別プリミティブへ展開する
+- 複数Trackの重なり、優先度、継続性を決定する
+- 現在姿勢から開始する計画を作る
+- 発話同期用の意味的強調を時間軸へ投影する
+- AvatarPerformancePlanを生成する
 
 ### AvatarPerformancePlan
 
@@ -36,101 +61,136 @@ Avatar Runtime
 - Activity ID
 - Output Unit ID
 - Priority
-- 表情・ジェスチャー・視線の強度
-- Segment継続時間
-- Fade-in / Fade-out
-- Interrupt policy
-- 終了後のReturn behavior
+- 複数の重複可能なTrack
+- Trackごとの開始オフセット、継続時間、Fade
+- 加算または上書き
+- 部位内優先度
+- 現在姿勢からの連続性
+- Track終了後の保持方針
+- Performance全体の割込み方針
 
 ### Avatar Runtime
 
-- Live2D ParameterやVTube Studio Hotkeyへのマッピング
-- 補間、毎フレーム更新、視線の目先行・頭追従
-- Idle、呼吸、瞬き
-- Performanceのスケジューリング、割込み、復帰
+- Live2D Parameterや3D Boneへのマッピング
+- 毎フレームのTrack合成
+- 補間、可動範囲、安全制限
+- 目、首、体の遅延追従
+- Performanceの割込みと復帰
+- Bodyの常駐レイヤーとの合成
 
 Coreはモデル固有Parameter、Hotkey、座標、フレームレートを知らない。
 
-## 3. ドメイン契約
+## 3. 正規表現
 
-`app/domain/avatar_performance.py` に次を置く。
+正規の演技表現は、直列Segmentではなく重複可能なTrackである。
 
-- `AvatarExpressionIntent`
-- `AvatarGestureIntent`
-- `AvatarGazeIntent`
+対象Channelは次とする。
+
+- `expression`
+- `attention`
+- `head`
+- `torso`
+- `left_arm`
+- `right_arm`
+- `autonomous`
+
+各Trackは次を保持する。
+
+- `track_id`
+- `channel`
+- `start_offset_ms`
+- `duration_ms`
+- `fade_in_ms`
+- `fade_out_ms`
+- `blend_mode`: `override`または`additive`
+- `continuity`: 現在姿勢から開始する方針
+- `hold`
+- `layer_priority`
+- Channelに対応するIntent
+
+一つのTrackが終了しても、他の継続中Trackをneutralへ戻さない。終了したTrackの寄与だけをFade-outする。
+
+## 4. Body表現からの変換
+
+`BodyExpressionPlanner`は、完成済み全身プリセットを選ばず、高レベルな意味軸から独立Trackを生成する。
+
+現在の決定論的Fallbackでは、例として次の変換を行う。
+
+- `agreement > 0`：うなずき方向のHead Track
+- `agreement < 0`：首振り方向のHead Track
+- `approach > 0`：前傾方向のTorso Track
+- `approach < 0`：後退方向のTorso Track
+- `surprise`：短い反射的Torso Track
+- `openness`低下：左右腕を内側へ寄せるTrack
+- `openness`、`warmth`、`approach`上昇：左右腕を開くTrack
+- `assertiveness`上昇：姿勢を伸ばすTorso Track
+
+これは実行プリミティブへの変換であり、Character LLMが`head_shake`や`lean_back`を直接選ぶものではない。
+
+同じ「拒否」でも、agreement、approach、tension、openness、arousal、assertivenessなどの組合せにより、生成されるTrack、強度、重なり方が変わる。
+
+## 5. Activity Contextとの合成
+
+Character LLMが注意Intentを出さなくても、Activity ContextからBodyが基礎的な注意方針を作れる。
+
+例：会話Activity
+
+```json
+{
+  "attention_target": "conversation_partner",
+  "engagement": 0.72,
+  "posture_tendency": "open",
+  "movement_energy": 0.38,
+  "gaze_freedom": 0.25
+}
+```
+
+明示的な首振りが終了しても、会話相手を注意対象とするActivity Contextは継続する。
+
+## 6. ActionPlanGroupとの関係
+
+ActionPlanGroupはActivity Turnから生じた発話、字幕、Avatar出力などを束ね、リソース競合と実行結果を管理する。
+
+身体部位ごとのActionをActionSchedulerへ細切れに積まない。Output Unitごとに複合Performanceを一度だけ送信し、部位間の同時実行と連続性はBodyおよびAvatar Runtimeで扱う。
+
+移行期間中は既存の`CHANGE_EXPRESSION`と`MOVE`を維持し、Action metadataへPerformanceを付与する。Performance送信に成功した場合は同じPerformanceに属する個別Avatar操作を抑止する。
+
+## 7. 発話との関係
+
+TTS生成はBodyの責務ではない。
+
+```text
+Character Text
+  ↓
+TTS Plugin
+  ↓ 音声・実時間・音素/Viseme
+SpeechPresentationRequest
+  ↓
+Body Subsystem
+  ├─ 音声再生時計
+  ├─ 口・Viseme同期
+  └─ 強調語に同期する身体Track
+```
+
+現在の文字数によるDuration推定は、音声情報をBodyへ接続するまでの暫定Fallbackである。最終仕様では、生成済み音声の実時間を基準にする。
+
+## 8. 互換契約
+
+段階移行のため次を残す。
+
+- `ReactionSegment.gesture`
+- `ReactionSegment.gaze`
 - `AvatarPerformanceSegment`
-- `AvatarPerformancePlan`
-- `AvatarInterruptPolicy`
-- `AvatarReturnBehavior`
+- `set_expression()`
+- `play_gesture()`
+- `set_gaze()`
+- 旧Segment Payload
 
-`AvatarGazeIntent` は描画方式に依存しないためPort実装詳細ではなくドメイン契約とし、既存import互換のため `app.ports.avatar_output` から再公開する。
+新しいCharacter応答では`gesture`と旧`gaze`を原則使用しない。
 
-## 4. 変換規則
+Performance APIがないAdapter、またはPerformance送信に失敗した環境では、既存の個別Avatar操作へ縮退する。Performance Endpointの障害だけでは、個別表情・Gesture・視線Capabilityを停止しない。
 
-`AvatarPerformancePlanner` は `ReactionPlan` を決定論的に変換する。
-
-- 表情・ジェスチャー・視線の意味名は変更しない
-- 未指定強度は `1.0`
-- Priorityは既存 `ActionPlanner` の出力優先度を利用する
-- Performance IDはCoreで発行する
-- Activity IDとOutput Unit IDを引き継ぐ
-- Durationは発話文字数、発話後の間から暫定推定する
-- FadeはCore共通の安全な既定値を補完する
-- Segment数はReactionPlanと一致させる
-
-LLMにPerformance ID、Priority、割込み方針、Live2D Parameterを生成させない。
-
-## 5. 既存Actionとの互換性
-
-既存の次のActionは維持する。
-
-```text
-CHANGE_EXPRESSION
-MOVE
-```
-
-Action metadataへPerformanceを付与し、Avatar-aware UseCaseがOutput Unitごとに一度だけ `submit_performance()` を呼び出す。
-
-Performance送信に成功した場合、同じPerformanceに属する個別表情・ジェスチャー送信を抑止する。Performance APIを持たない互換Adapter、またはPerformance送信に失敗した場合は、既存の個別操作へ縮退する。
-
-これにより、既存Action Scheduler、字幕、音声、Topic Memoryの経路を変更せずに移行できる。
-
-## 6. PortとCapability
-
-`AvatarOutputPort` に次を追加する。
-
-```python
-async def submit_performance(performance: AvatarPerformancePlan) -> None:
-    ...
-```
-
-既存Facadeは残す。
-
-```python
-async def set_expression(expression: str) -> None: ...
-async def play_gesture(gesture: str) -> None: ...
-async def set_gaze(gaze: AvatarGazeIntent) -> None: ...
-```
-
-Pluginは次のCapabilityを追加する。
-
-```text
-output.avatar.performance
-```
-
-### 6.1 段階移行中の互換境界
-
-型契約上は `submit_performance()` を推奨するが、Plugin Factoryは移行前Adapterへこのメソッドを必須にしない。
-
-- 既存Adapterが個別表情・Gesture・視線だけを実装している場合も登録可能
-- `submit_performance()` がない場合は `output.avatar.performance` だけをUnavailableとする
-- Performance Endpointの404・通信失敗時もPerformance CapabilityだけをUnavailableとする
-- `expression / gesture / gaze` Capabilityは維持し、Avatar-aware UseCaseが個別Actionへ縮退する
-- 個別Action側も失敗した場合に限り、Avatar Plugin全体をUnavailableとする
-
-この境界により、CoreとAdapterを同時更新できない環境でも段階的に移行できる。
-
-## 7. HTTP Web MVP契約
+## 9. HTTP Web MVP契約
 
 暫定HTTP Adapterは次へ送信する。
 
@@ -138,56 +198,41 @@ output.avatar.performance
 POST /api/avatar/performances
 ```
 
-```json
-{
-  "schema_version": 1,
-  "type": "avatar.performance.submit",
-  "performance_id": "perf-001",
-  "source_activity_id": "activity-001",
-  "output_unit_id": "output-001",
-  "priority": 100,
-  "interrupt_policy": "replace_lower_priority",
-  "return_behavior": "neutral",
-  "segments": [
-    {
-      "expression": {"name": "curious", "intensity": 0.7},
-      "gesture": {"name": "head_tilt", "intensity": 0.4},
-      "gaze": {"target": "viewer", "behavior": "maintain", "intensity": 0.8},
-      "duration_ms": 1800,
-      "fade_in_ms": 200,
-      "fade_out_ms": 300
-    }
-  ]
-}
-```
+Schema v2では`tracks`を正規表現とし、旧Runtime向けに`segments`も併送できる。
 
-HTTPはWeb MVP用の暫定Transportであり、完了通知、取消、双方向状態通知は後続のWebSocket段階で追加する。
+HTTPは検証用Transportである。Bodyの常時更新、完了通知、取消、状態返送、音声再生同期には後続の双方向Transportを使用する。
 
-## 8. 障害時動作
+## 10. 障害時動作
 
-- Avatar Runtime停止時もCore、会話、字幕、音声を継続する
-- Performance API非対応時は個別Actionへ縮退する
+- Avatar Runtime停止時もCore、会話、字幕を継続する
+- Performance API非対応時は個別Avatar操作へ縮退する
 - Performance送信失敗だけで発話を失敗扱いにしない
 - Performance送信失敗だけで個別Avatar Capabilityを停止しない
-- Delivery-aware UseCaseの発話確定境界を維持する
-- 送信済みPerformance IDの保持数を制限し、常駐Runtimeで無制限に増加させない
+- 送信済みPerformance IDの保持数を制限する
+- Body出力の障害を意味判断やActivity実行の成功と混同しない
 
-## 9. 今回の実装範囲
+## 11. 今回の実装範囲
 
-- ドメイン契約
-- ReactionPlanからの決定論的変換
-- Character LLMの高レベル強度・視線Schema
+- 重複Track型AvatarPerformancePlan
+- Bodyの高レベルドメイン契約
+- ActivityからBodyActivityContextを作るBuilder
+- 意味軸から部位別Trackを作る決定論的Fallback
+- Character LLMの`embodied_expression`、`attention_intent`、`speech_emphasis`
+- Character LLMから身体部位・モーション名を排除するPrompt
 - Action metadataによるPerformance搬送
-- Port / Plugin / HTTP AdapterのPerformance送信
-- Performance Capability単独の劣化管理
+- Port、Plugin、HTTP AdapterのPerformance送信
 - 旧Adapterおよび個別Actionへの後方互換Fallback
 - 単体・統合回帰テスト
 
 対象外：
 
-- `test/*` 検証ブランチのdevelop取り込み
-- Render棒人間Runtime側のPerformance API実装
-- WebSocket
-- Cancel / Status取得
+- 独立プロセスとしてのBody Runtime
+- Bodyの30〜60fps常時Tick
+- カメラ人物・物体認識
+- 外界対象の識別と選択
+- TTS生成後の実音声再生時計
+- Viseme同期
+- WebSocketによる双方向状態通知
 - VTube Studio Backend
 - Live2Dモデル固有マッピング
+- `test/*`検証ブランチのdevelop取り込み
