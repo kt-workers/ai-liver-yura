@@ -6,6 +6,11 @@ from typing import Any
 from uuid import uuid4
 
 from app.domain.avatar_performance import AvatarGazeIntent
+from app.domain.body import (
+    BodyAttentionIntent,
+    EmbodiedExpressionIntent,
+    SpeechEmphasis,
+)
 from app.shared.contracts.expression import VoiceIntent as VoiceIntent
 
 
@@ -115,6 +120,9 @@ class ReactionSegment:
     expression_intensity: float = 1.0
     gesture_intensity: float = 1.0
     gaze: AvatarGazeIntent | None = None
+    embodied_expression: EmbodiedExpressionIntent | None = None
+    attention_intent: BodyAttentionIntent | None = None
+    speech_emphasis: tuple[SpeechEmphasis, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.speech.strip():
@@ -132,6 +140,9 @@ class ReactionSegment:
             if not 0.0 <= float(value) <= 1.0:
                 raise ValueError(f"{field_name}は0.0以上1.0以下にしてください。")
             object.__setattr__(self, field_name, float(value))
+        object.__setattr__(self, "speech_emphasis", tuple(self.speech_emphasis))
+        if len(self.speech_emphasis) > 16:
+            raise ValueError("speech_emphasisは16件以下にしてください。")
 
 
 @dataclass(frozen=True, slots=True)
