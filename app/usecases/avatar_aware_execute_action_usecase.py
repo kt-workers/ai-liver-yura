@@ -40,11 +40,7 @@ class ExecuteActionUsecase(DeliveryAwareExecuteActionUsecase):
         self._avatar_output = (
             avatar_output if avatar_output is not None else get_bound_avatar_output()
         )
-        self._body_subsystem = (
-            body_subsystem
-            if body_subsystem is not None
-            else get_bound_body_subsystem()
-        )
+        self._body_subsystem = body_subsystem
         self._avatar_trace_logger = TraceLogger()
         self._submitted_performance_ids: set[str] = set()
         self._submitted_performance_order: deque[str] = deque()
@@ -157,12 +153,15 @@ class ExecuteActionUsecase(DeliveryAwareExecuteActionUsecase):
         )
         return None
 
+    def _body(self) -> BodySubsystemPort | None:
+        return self._body_subsystem or get_bound_body_subsystem()
+
     async def _submit_body_request(
         self,
         action_plan: ActionPlan,
         request: BodyExpressionRequest,
     ) -> bool:
-        body = self._body_subsystem
+        body = self._body()
         if body is None:
             return False
         context = action_plan.metadata.get("body_activity_context")
@@ -192,7 +191,7 @@ class ExecuteActionUsecase(DeliveryAwareExecuteActionUsecase):
         return True
 
     async def _present_speech_to_body(self, action_plan: ActionPlan) -> None:
-        body = self._body_subsystem
+        body = self._body()
         if body is None:
             return
         prepared_audio = action_plan.metadata.get("prepared_audio")
