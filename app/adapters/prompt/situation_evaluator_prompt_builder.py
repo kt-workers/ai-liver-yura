@@ -133,7 +133,7 @@ class SituationEvaluatorPromptBuilder:
         }
         output_schema = {
             "decision": "string",
-            "activity_type": "string|null",
+            "activity_type": "conversation|available_activities[].activity_type|null",
             "operation": "start|continue|stop|explain|discuss|null",
             "goal": "string",
             "constraints": "object",
@@ -160,6 +160,22 @@ class SituationEvaluatorPromptBuilder:
                 "あなたはSituation Evaluatorです。入力を総合して次のActivityを決定します。",
                 "# 判断規則",
                 "ユーザーの明示意図、進行中Activity、意味的一致をMotivationより優先してください。",
+                (
+                    "通常会話を続ける場合はactivity_typeをconversation、"
+                    "operationをdiscussまたはexplainにしてください。"
+                ),
+                (
+                    "conversation_with_userはRuntime内部のActivity名です。"
+                    "Situation Evaluatorの出力には使用しないでください。"
+                ),
+                (
+                    "start・continue・stopはavailable_activitiesまたは"
+                    "ongoing_activityに明示されたActivityにだけ使用してください。"
+                ),
+                (
+                    "available_activitiesが空で、通常会話として応答できる場合は、"
+                    "activity_type=conversation、operation=discussを選んでください。"
+                ),
                 "Motivation候補選好は、意味的に妥当な候補が複数ある場合の補助的な優先情報としてだけ使用してください。",
                 (
                     "Motivationを理由に候補外Activityを生成したり、"

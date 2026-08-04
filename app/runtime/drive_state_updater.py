@@ -6,6 +6,40 @@ from app.domain.drives import DriveState
 from app.domain.events import AgentEvent, AgentEventType
 from app.utils.trace import TraceLogger
 
+_ACKNOWLEDGEMENTS = frozenset(
+    {
+        "うん",
+        "うんうん",
+        "はい",
+        "そう",
+        "そうだね",
+        "そうなんだ",
+        "なるほど",
+        "ふむ",
+        "ふむふむ",
+        "へえ",
+        "ほう",
+        "いいね",
+        "わかった",
+        "了解",
+        "ok",
+        "okay",
+        "yes",
+    }
+)
+_GREETINGS = frozenset(
+    {
+        "こんにちは",
+        "こんばんは",
+        "おはよう",
+        "おはようございます",
+        "やあ",
+        "どうも",
+        "hello",
+        "hi",
+    }
+)
+
 
 class DriveStateUpdater:
     """Event と時間経過から DriveState を更新する Runtime 部品。"""
@@ -21,12 +55,16 @@ class DriveStateUpdater:
             AgentEventType.YOUTUBE_COMMENT,
             AgentEventType.USER_SPEECH,
         ):
-            updated_drive = self._apply_user_input(drive)
+            input_text = self._event_text(event)
+            stimulus_scale, input_kind = self._input_stimulus(input_text)
+            updated_drive = self._apply_user_input(drive, stimulus_scale)
             self._write_update_trace(
                 "drive_state_updater:update_by_event:user_input",
                 before_drive=drive,
                 after_drive=updated_drive,
                 event_type=event.event_type.value,
+                input_kind=input_kind,
+                stimulus_scale=stimulus_scale,
             )
             return updated_drive
 
@@ -93,7 +131,10 @@ class DriveStateUpdater:
         elapsed_minutes = max(0.0, elapsed_seconds) / 60.0
 
         updated_drive = DriveState(
-            curiosity=drive.curiosity + (0.06 * elapsed_minutes),
+            curiosity=self._increase_toward_one(
+                drive.curiosity,
+                0.06 * elapsed_minutes,
+            ),
             engagement=drive.engagement - (0.01 * elapsed_minutes),
             boredom=drive.boredom + (0.14 * elapsed_minutes),
             energy=drive.energy - (0.005 * elapsed_minutes),
@@ -130,12 +171,22 @@ class DriveStateUpdater:
             )
         return drive
 
-    def _apply_user_input(self, drive: DriveState) -> DriveState:
+    def _apply_user_input(
+        self,
+        drive: DriveState,
+        stimulus_scale: float,
+    ) -> DriveState:
         return DriveState(
-            curiosity=drive.curiosity + 0.1,
-            engagement=drive.engagement + 0.2,
-            boredom=drive.boredom - 0.3,
-            energy=drive.energy - 0.03,
+            curiosity=self._increase_toward_one(
+                drive.curiosity,
+                0.18 * stimulus_scale,
+            ),
+            engagement=self._increase_toward_one(
+                drive.engagement,
+                0.32 * stimulus_scale,
+            ),
+            boredom=drive.boredom - (0.3 * stimulus_scale),
+            energy=drive.energy - (0.03 * stimulus_scale),
         )
 
     def _apply_user_interaction(self, drive: DriveState) -> DriveState:
@@ -161,6 +212,34 @@ class DriveStateUpdater:
             boredom=drive.boredom + 0.05,
             energy=drive.energy - 0.05,
         )
+
+    @staticmethod
+    def _event_text(event: AgentEvent) -> str:
+        for key in ("text", "comment", "transcript", "utterance"):
+            value = event.payload.get(key)
+            if isinstance(value, str):
+                return value
+        return ""
+
+    @classmethod
+    def _input_stimulus(cls, text: str) -> tuple[float, str]:
+        normalized = cls._normalize_input_text(text)
+        if normalized in _ACKNOWLEDGEMENTS:
+            return 0.25, "acknowledgement"
+        if normalized in _GREETINGS:
+            return 0.6, "greeting"
+        if not normalized:
+            return 0.5, "unknown"
+        return 1.0, "substantive"
+
+    @staticmethod
+    def _normalize_input_text(text: str) -> str:
+        return text.strip().lower().strip("。.!！?？、, ")
+
+    @staticmethod
+    def _increase_toward_one(value: float, rate: float) -> float:
+        normalized_rate = max(0.0, min(1.0, rate))
+        return value + ((1.0 - value) * normalized_rate)
 
     def _write_update_trace(
         self,

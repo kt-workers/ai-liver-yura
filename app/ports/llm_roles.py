@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Protocol
 
 from app.domain.activities import Activity
@@ -25,7 +26,8 @@ class ResponseGeneratorRoleAdapter:
         self._generator = generator
 
     async def evaluate(self, activity: Activity) -> str:
-        return await self._generate(activity)
+        raw = await self._generate(activity)
+        return self._normalize_situation_evaluation(raw)
 
     async def generate_character_response(self, activity: Activity) -> str:
         return await self._generate(activity)
@@ -36,3 +38,30 @@ class ResponseGeneratorRoleAdapter:
     async def _generate(self, activity: Activity) -> str:
         result = await self._generator.generate_response(activity)
         return str(result)
+
+    @staticmethod
+    def _normalize_situation_evaluation(raw: str) -> str:
+        """LLMが返すCore内部の会話名をSituation契約へ正規化する。"""
+
+        text = raw.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if len(lines) < 3 or lines[-1].strip() != "```":
+                return raw
+            text = "\n".join(lines[1:-1]).strip()
+            if text.startswith("json"):
+                text = text[4:].strip()
+        try:
+            payload = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return raw
+        if not isinstance(payload, dict):
+            return raw
+        if payload.get("activity_type") != "conversation_with_user":
+            return raw
+
+        normalized = dict(payload)
+        normalized["activity_type"] = "conversation"
+        if normalized.get("operation") in {"start", "continue"}:
+            normalized["operation"] = "discuss"
+        return json.dumps(normalized, ensure_ascii=False, separators=(",", ":"))
