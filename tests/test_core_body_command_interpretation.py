@@ -74,24 +74,60 @@ def test_explicit_jump_count_is_preserved_as_sequential_steps() -> None:
     assert group_body_actions(actions) == (("jump",), ("jump",))
 
 
-def test_repeat_request_reuses_previous_body_action_and_attention() -> None:
+def test_repeat_request_resolves_body_action_and_attention_from_history() -> None:
     planner = AvatarBodyCommandActionPlanner(UnusedResponseGenerator())
-    first = _activity(
-        "左を見たまま右手を挙げて",
-        target={"type": "avatar_body_action", "id": "right_hand_raise"},
-    )
     repeated = _activity(
         "もう一回やって",
         target=None,
         primary_intent="repeat_previous_action",
+        conversation_history=(
+            {
+                "role": "user",
+                "text": "左を見たまま右手を挙げて",
+                "turn_id": "turn-body-command",
+            },
+            {"role": "assistant", "text": "了解だよ。"},
+            {"role": "user", "text": "もう一回やって"},
+        ),
     )
 
-    _body_request(planner, first)
     repeat_request = _body_request(planner, repeated)
 
     assert repeat_request.body_actions == ("right_hand_raise",)
     assert repeat_request.attention is not None
     assert repeat_request.attention.target == "left"
+
+
+def test_repeat_request_uses_structured_execution_history_without_planner_cache() -> None:
+    planner = AvatarBodyCommandActionPlanner(UnusedResponseGenerator())
+    repeated = _activity(
+        "もう一回やって",
+        target=None,
+        primary_intent="repeat_previous_action",
+        conversation_history=(
+            {
+                "role": "user",
+                "text": "前の身体操作",
+                "turn_id": "turn-executed",
+                "executed_operation": {
+                    "kind": "body_action",
+                    "payload": {
+                        "body_actions": ["left_hand_raise", "right_leg_raise"]
+                    },
+                },
+                "execution_status": "completed",
+                "repeatable": True,
+            },
+            {"role": "user", "text": "もう一回やって"},
+        ),
+    )
+
+    repeat_request = _body_request(planner, repeated)
+
+    assert repeat_request.body_actions == (
+        "left_hand_raise",
+        "right_leg_raise",
+    )
 
 
 def test_core_controller_moves_leg_joint_while_independent_arm_command_runs() -> None:
@@ -163,6 +199,7 @@ def _activity(
     target: dict[str, str] | None,
     primary_intent: str = "アバター身体を操作する",
     entities: tuple[dict[str, object], ...] = (),
+    conversation_history: tuple[dict[str, object], ...] = (),
 ) -> Activity:
     return Activity(
         activity_type=ActivityType.CONVERSATION_WITH_USER,
@@ -184,6 +221,9 @@ def _activity(
             },
             "event_payload": {
                 "text": text,
+                "conversation_history": [
+                    dict(item) for item in conversation_history
+                ],
                 "behavior_plan": {"speech_act": "command"},
             },
         },
