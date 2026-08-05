@@ -1,0 +1,44 @@
+.body-command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.body-command-grid button {
+  min-height: 44px;
+  border-radius: 14px;
+  text-align: left;
+}
+
+.body-command-grid button:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
+.body-command-status {
+  min-height: 1.5em;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: .78rem;
+}
+
+.body-command-status[data-state="active"] {
+  color: var(--accent-2);
+}
+
+.body-command-status[data-state="error"] {
+  color: #fb7185;
+}
+
+@media (max-width: 560px) {
+  .body-command-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .body-command-grid button {
+    min-height: 48px;
+    padding: .68rem .72rem;
+    font-size: .76rem;
+  }
+}
