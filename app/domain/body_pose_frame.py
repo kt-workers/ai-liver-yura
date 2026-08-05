@@ -119,13 +119,47 @@ class BodyTrackingPose:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyTrackingVelocity:
+    """各正規化軸の毎秒変化量。"""
+
+    head_yaw: float = 0.0
+    head_pitch: float = 0.0
+    head_roll: float = 0.0
+    gaze_x: float = 0.0
+    gaze_y: float = 0.0
+    eye_left_open: float = 0.0
+    eye_right_open: float = 0.0
+    mouth_open: float = 0.0
+    mouth_form: float = 0.0
+    torso_yaw: float = 0.0
+    torso_pitch: float = 0.0
+    torso_roll: float = 0.0
+    body_height: float = 0.0
+    left_arm_raise: float = 0.0
+    right_arm_raise: float = 0.0
+    left_arm_in: float = 0.0
+    right_arm_in: float = 0.0
+
+    def __post_init__(self) -> None:
+        for field in fields(self):
+            object.__setattr__(
+                self,
+                field.name,
+                _number(getattr(self, field.name), field.name, -8.0, 8.0),
+            )
+
+    def as_payload(self) -> dict[str, float]:
+        return {field.name: getattr(self, field.name) for field in fields(self)}
+
+
+@dataclass(frozen=True, slots=True)
 class BodyPoseFrame:
     """Body Controllerが一定周期で出力するトラッキングフレーム。"""
 
     sequence: int
     timestamp_ms: int
     pose: BodyTrackingPose
-    velocity: BodyTrackingPose
+    velocity: BodyTrackingVelocity
     inner_state: BodyInnerMotionState
     attention_target_id: str | None = None
     attention_dwell_ms: int = 0
