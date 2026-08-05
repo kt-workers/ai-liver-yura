@@ -4,28 +4,30 @@ from dataclasses import replace
 
 from app.domain.actions import ActionPlan, ActionType
 from app.domain.activities import Activity
-from app.domain.body import BodyAttentionIntent
 from app.domain.body_speech import SpeechCoupledBodyExpressionRequest
 from app.domain.character_response import CharacterResponse
 from app.runtime.avatar_performance_action_planner import (
     AvatarPerformanceActionPlanner,
 )
 from app.runtime.body_spatial_command_resolver import BodySpatialCommandResolver
+from app.runtime.contextual_reference_resolver import (
+    ContextualReferenceResolver,
+    ResolvedContextualReference,
+)
 
 
 class AvatarBodyCommandActionPlanner(AvatarPerformanceActionPlanner):
     """構造化されたアバター身体命令を最初のBody要求へ付与する。
 
-    直前のBody命令を保持し、「もう一回」のような省略指示では同じ身体Actionと
-    注視方向を再利用する。記憶するのはBody向け意味命令だけで、Character発話や
-    Activityそのものは再実行しない。
+    「もう一回」の参照先はBody専用キャッシュでは保持しない。汎用の
+    ContextualReferenceResolverがStructuredInputMeaningと会話履歴から参照元Turnを
+    解決し、このPlannerは解決済みの内容を通常のBody命令として再評価する。
     """
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
         self._avatar_body_command_resolver = BodySpatialCommandResolver()
-        self._last_body_actions: tuple[str, ...] = ()
-        self._last_body_attention: BodyAttentionIntent | None = None
+        self._contextual_reference_resolver = ContextualReferenceResolver()
 
     def _reaction_action_plans(
         self,
@@ -39,12 +41,28 @@ class AvatarBodyCommandActionPlanner(AvatarPerformanceActionPlanner):
     ) -> list[ActionPlan]:
         body_actions = self._avatar_body_command_resolver.resolve_body_actions(activity)
         body_attention = self._avatar_body_command_resolver.resolve(activity)
-        repeat_request = self._avatar_body_command_resolver.is_repeat_request(activity)
-        if repeat_request:
+        contextual_reference = self._contextual_reference_resolver.resolve(activity)
+
+        reference_used = False
+        if contextual_reference is not None:
+            reference_activity = self._activity_for_reference(
+                activity,
+                contextual_reference,
+            )
             if not body_actions:
-                body_actions = self._last_body_actions
+                body_actions = self._body_actions_from_reference(contextual_reference)
+                if not body_actions:
+                    body_actions = (
+                        self._avatar_body_command_resolver.resolve_body_actions(
+                            reference_activity
+                        )
+                    )
+                reference_used = bool(body_actions)
             if body_attention is None:
-                body_attention = self._last_body_attention
+                body_attention = self._avatar_body_command_resolver.resolve(
+                    reference_activity
+                )
+                reference_used = reference_used or body_attention is not None
 
         plans = super()._reaction_action_plans(
             activity,
@@ -76,13 +94,58 @@ class AvatarBodyCommandActionPlanner(AvatarPerformanceActionPlanner):
             )
             if body_actions:
                 metadata["avatar_body_actions"] = body_actions
-            if repeat_request:
+            if contextual_reference is not None and reference_used:
+                metadata["resolved_contextual_reference"] = (
+                    contextual_reference.as_context()
+                )
                 metadata["avatar_body_repeat_previous"] = True
             result.append(replace(plan, metadata=metadata))
             attached = True
-
-        if body_actions:
-            self._last_body_actions = body_actions
-        if body_attention is not None:
-            self._last_body_attention = body_attention
         return result
+
+    @staticmethod
+    def _activity_for_reference(
+        activity: Activity,
+        reference: ResolvedContextualReference,
+    ) -> Activity:
+        reference_context = reference.as_context()
+        context = dict(activity.context)
+        event_payload_value = context.get("event_payload")
+        event_payload = (
+            dict(event_payload_value)
+            if isinstance(event_payload_value, dict)
+            else {}
+        )
+        if reference.source_text:
+            event_payload["text"] = reference.source_text
+        event_payload["resolved_contextual_reference"] = reference_context
+        context["event_payload"] = event_payload
+        context["resolved_contextual_reference"] = reference_context
+        if reference.structured_input_meaning is not None:
+            context["structured_input_meaning"] = dict(
+                reference.structured_input_meaning
+            )
+        return replace(activity, context=context)
+
+    def _body_actions_from_reference(
+        self,
+        reference: ResolvedContextualReference,
+    ) -> tuple[str, ...]:
+        operation = reference.executed_operation
+        if not isinstance(operation, dict):
+            return ()
+        payload_value = operation.get("payload")
+        payload = dict(payload_value) if isinstance(payload_value, dict) else operation
+        raw_actions = payload.get("body_actions") or payload.get("actions")
+        if isinstance(raw_actions, str):
+            candidates: tuple[object, ...] = (raw_actions,)
+        elif isinstance(raw_actions, (list, tuple)):
+            candidates = tuple(raw_actions)
+        else:
+            return ()
+        supported = self._avatar_body_command_resolver.supported_body_actions()
+        return tuple(
+            normalized
+            for candidate in candidates
+            if (normalized := str(candidate).strip().lower()) in supported
+        )
