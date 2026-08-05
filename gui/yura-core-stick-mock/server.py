@@ -18,7 +18,7 @@ class BodyFrameHub:
     """Coreから受信した最新BodyPoseFrameだけをブラウザへ中継する。"""
 
     def __init__(self) -> None:
-        self._condition = threading.Condition()
+        self._condition = threading.Condition(threading.RLock())
         self._revision = 0
         self._received_at = 0.0
         self._frame: dict[str, object] = {
