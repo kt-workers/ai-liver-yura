@@ -46,7 +46,7 @@ def test_compound_direction_and_arm_command_are_both_preserved() -> None:
 def test_multiple_independent_body_parts_are_resolved_together() -> None:
     activity = _activity(
         "左手を下におろして右足を挙げて",
-        target={"type": "avatar_body_action", "id": "left_hand_lower"},
+        target=None,
         entities=(
             {"body_part": "左手", "action": "下におろす"},
             {"body_part": "右足", "action": "挙げる"},
