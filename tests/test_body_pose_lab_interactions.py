@@ -32,17 +32,24 @@ def test_attention_markers_support_pointer_and_touch_dragging() -> None:
     assert ".target-dot.dragging" in styles
 
 
-def test_head_center_does_not_translate_sideways_from_yaw() -> None:
+def test_head_center_comes_from_canonical_joint_and_yaw_changes_only_width() -> None:
     app = (_web_root() / "app.js").read_text(encoding="utf-8")
     skeleton = (_web_root() / "body-pose-skeleton.js").read_text(
         encoding="utf-8"
     )
 
+    # 旧描画のfallbackでもyawを頭中心の横移動には使わない。
     assert "const neckOffset = rotatePoint(0, -56" in app
     assert "rotatePoint(pose.head_yaw * 20" not in app
     assert "headRadiusX = 72 * (1 - Math.abs(pose.head_yaw)" in app
-    assert "const neckOffset = rotatePoint(0, -56" in skeleton
-    assert "rotatePoint(pose.head_yaw * 20" not in skeleton
+
+    # Generative描画ではCanonical head/neck関節を中心座標として使い、yawは幅のみ。
+    assert 'const head = points.get("head")' in skeleton
+    assert 'const neck = points.get("neck")' in skeleton
+    assert "ctx.translate(head.x, head.y)" in skeleton
+    assert "head.x +" not in skeleton
+    assert "Math.abs(Number(pose.head_yaw) || 0)" in skeleton
+    assert "line(neck.x, neck.y, head.x" in skeleton
 
 
 def test_mobile_floating_preview_keeps_avatar_visible_after_scroll() -> None:
@@ -61,7 +68,7 @@ def test_mobile_floating_preview_keeps_avatar_visible_after_scroll() -> None:
     assert "env(safe-area-inset-top" in styles
 
 
-def test_stick_figure_uses_articulated_joint_skeleton() -> None:
+def test_stick_figure_uses_canonical_articulated_joint_skeleton() -> None:
     root = _web_root()
     html = (root / "index.html").read_text(encoding="utf-8")
     skeleton = (root / "body-pose-skeleton.js").read_text(encoding="utf-8")
@@ -69,14 +76,14 @@ def test_stick_figure_uses_articulated_joint_skeleton() -> None:
     assert 'src="/body-pose-skeleton.js"' in html
     assert html.index('src="/app.js"') < html.index('src="/body-pose-skeleton.js"')
     assert "function drawJoint(" in skeleton
-    assert "function drawJointedArm(" in skeleton
-    assert "function drawJointedLeg(" in skeleton
-    assert "const elbowX" in skeleton
-    assert "const kneeX" in skeleton
-    assert "const spineX" in skeleton
-    assert "line(pelvisX, pelvisY, spineX, spineY" in skeleton
-    assert "line(spineX, spineY, chestX, chestY" in skeleton
-    assert "drawJoint(pelvisX, pelvisY" in skeleton
-    assert "drawJoint(spineX, spineY" in skeleton
-    assert "drawJoint(elbowX, elbowY" in skeleton
-    assert "drawJoint(kneeX, kneeY" in skeleton
+    assert "function kinematicView(" in skeleton
+    assert "frame?.kinematic_pose" in skeleton
+    assert 'points.get("left_elbow")' not in skeleton
+    assert 'drawChain(points, ["left_shoulder", "left_elbow", "left_hand"]' in skeleton
+    assert 'drawChain(points, ["right_shoulder", "right_elbow", "right_hand"]' in skeleton
+    assert 'drawChain(points, ["left_hip", "left_knee", "left_ankle"]' in skeleton
+    assert 'drawChain(points, ["right_hip", "right_knee", "right_ankle"]' in skeleton
+    assert "drawPolygon([leftShoulder, rightShoulder, pelvis]" in skeleton
+    assert "drawPolygon([pelvis, leftHip, rightHip]" in skeleton
+    assert "line(chest.x, chest.y, neck.x, neck.y" in skeleton
+    assert "line(neck.x, neck.y, head.x" in skeleton
