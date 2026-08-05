@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 from app.domain.body_kinematics import (
     BodyKinematicPoint,
-    BodyKinematicPose,
     GenerativeBodyPoseFrame,
 )
 from app.domain.body_motion import (
@@ -120,7 +119,6 @@ class GenerativeBodyMotionController(ProceduralBodyController):
         self._motion_clock = 0.0
         self._last_motion_timestamp_ms: int | None = None
         self._smoothed_positions: dict[str, BodyKinematicPoint] = {}
-        self._smoothed_root = BodyKinematicPoint()
         self._latest_kinematic = self._kinematic_projector.project(BodyTrackingPose())
 
     @property
@@ -172,13 +170,12 @@ class GenerativeBodyMotionController(ProceduralBodyController):
         )
         self._motion_clock += dt
         base_kinematic = self._kinematic_projector.project(base_frame.pose)
-        positions = base_kinematic.positions()
-        positions["root"] = base_kinematic.root_position
+        base_positions = base_kinematic.positions()
+        base_positions["root"] = base_kinematic.root_position
+        positions = dict(base_positions)
 
         for target, held in self._held_positions.items():
-            if target == "root":
-                positions["root"] = held
-            elif target in positions:
+            if target in positions:
                 positions[target] = held
 
         completed: list[_ActiveBodyMotion] = []
@@ -188,12 +185,12 @@ class GenerativeBodyMotionController(ProceduralBodyController):
                 active.plan.root,
                 elapsed,
                 positions,
-                base_kinematic.positions(),
+                base_positions,
             )
             if elapsed >= active.plan.duration_seconds:
                 completed.append(active)
 
-        self._solve_limbs(positions, base_kinematic.positions())
+        self._solve_limbs(positions, base_positions)
 
         for active in completed:
             self._capture_hold_final_targets(active.plan.root, positions)
@@ -271,10 +268,7 @@ class GenerativeBodyMotionController(ProceduralBodyController):
             if child_duration <= 0.0:
                 return
             total = child_duration * request.timing.repetitions
-            if local >= total:
-                child_elapsed = child_duration
-            else:
-                child_elapsed = local % child_duration
+            child_elapsed = child_duration if local >= total else local % child_duration
             self._apply_request(child, child_elapsed, positions, base_positions)
             return
 
@@ -301,7 +295,11 @@ class GenerativeBodyMotionController(ProceduralBodyController):
         if target is None or target not in positions:
             return
         eased = self._easing(progress, request.timing.easing)
-        strength = eased if request.timing.hold_final else self._pulse(progress, request.timing.easing)
+        strength = (
+            eased
+            if request.timing.hold_final
+            else self._pulse(progress, request.timing.easing)
+        )
 
         if request.operation is BodyMotionOperation.REACH:
             assert request.vector is not None
@@ -326,12 +324,7 @@ class GenerativeBodyMotionController(ProceduralBodyController):
         if request.operation is BodyMotionOperation.OSCILLATE:
             assert request.vector is not None
             envelope = self._window(progress)
-            phase = (
-                2.0
-                * math.pi
-                * request.timing.repetitions
-                * progress
-            )
+            phase = 2.0 * math.pi * request.timing.repetitions * progress
             amount = math.sin(phase) * envelope
             offset = BodyKinematicPoint(
                 request.vector.x * amount,
@@ -347,24 +340,30 @@ class GenerativeBodyMotionController(ProceduralBodyController):
 
         if request.operation is BodyMotionOperation.ROTATE:
             angle = request.amount * request.direction * strength
-            self._rotate_subtree(target, pivot_id, angle, positions)
+            self._rotate_subtree(
+                target,
+                pivot_id,
+                angle,
+                request.axis,
+                positions,
+            )
             return
 
         if request.operation is BodyMotionOperation.CIRCLE:
             pivot = positions[pivot_id]
             start = base_positions[target]
-            start_angle = math.atan2(start.y - pivot.y, start.x - pivot.x)
-            phase = (
-                2.0
-                * math.pi
-                * request.timing.repetitions
-                * progress
-                * request.direction
-            )
-            desired = BodyKinematicPoint(
-                pivot.x + math.cos(start_angle + phase) * request.radius,
-                pivot.y + math.sin(start_angle + phase) * request.radius,
-                start.z,
+            desired = self._circle_point(
+                start,
+                pivot,
+                radius=request.radius,
+                phase=(
+                    2.0
+                    * math.pi
+                    * request.timing.repetitions
+                    * progress
+                    * request.direction
+                ),
+                axis=request.axis,
             )
             positions[target] = start.lerp(desired, self._window(progress))
 
@@ -385,22 +384,74 @@ class GenerativeBodyMotionController(ProceduralBodyController):
         target: str,
         pivot_id: str,
         angle: float,
+        axis: str,
         positions: dict[str, BodyKinematicPoint],
     ) -> None:
         pivot = positions[pivot_id]
-        cosine = math.cos(angle)
-        sine = math.sin(angle)
         for joint_id in self._DESCENDANTS.get(target, (target,)):
             point = positions.get(joint_id)
-            if point is None:
-                continue
-            dx = point.x - pivot.x
-            dy = point.y - pivot.y
-            positions[joint_id] = BodyKinematicPoint(
-                pivot.x + dx * cosine - dy * sine,
-                pivot.y + dx * sine + dy * cosine,
-                point.z,
+            if point is not None:
+                positions[joint_id] = self._rotated_point(point, pivot, angle, axis)
+
+    @staticmethod
+    def _rotated_point(
+        point: BodyKinematicPoint,
+        pivot: BodyKinematicPoint,
+        angle: float,
+        axis: str,
+    ) -> BodyKinematicPoint:
+        cosine = math.cos(angle)
+        sine = math.sin(angle)
+        dx = point.x - pivot.x
+        dy = point.y - pivot.y
+        dz = point.z - pivot.z
+        if axis == "x":
+            return BodyKinematicPoint(
+                point.x,
+                pivot.y + dy * cosine - dz * sine,
+                pivot.z + dy * sine + dz * cosine,
             )
+        if axis == "y":
+            return BodyKinematicPoint(
+                pivot.x + dx * cosine + dz * sine,
+                point.y,
+                pivot.z - dx * sine + dz * cosine,
+            )
+        return BodyKinematicPoint(
+            pivot.x + dx * cosine - dy * sine,
+            pivot.y + dx * sine + dy * cosine,
+            point.z,
+        )
+
+    @staticmethod
+    def _circle_point(
+        start: BodyKinematicPoint,
+        pivot: BodyKinematicPoint,
+        *,
+        radius: float,
+        phase: float,
+        axis: str,
+    ) -> BodyKinematicPoint:
+        if axis == "x":
+            start_angle = math.atan2(start.z - pivot.z, start.y - pivot.y)
+            return BodyKinematicPoint(
+                start.x,
+                pivot.y + math.cos(start_angle + phase) * radius,
+                pivot.z + math.sin(start_angle + phase) * radius,
+            )
+        if axis == "y":
+            start_angle = math.atan2(start.z - pivot.z, start.x - pivot.x)
+            return BodyKinematicPoint(
+                pivot.x + math.cos(start_angle + phase) * radius,
+                start.y,
+                pivot.z + math.sin(start_angle + phase) * radius,
+            )
+        start_angle = math.atan2(start.y - pivot.y, start.x - pivot.x)
+        return BodyKinematicPoint(
+            pivot.x + math.cos(start_angle + phase) * radius,
+            pivot.y + math.sin(start_angle + phase) * radius,
+            start.z,
+        )
 
     def _solve_limbs(
         self,
@@ -445,8 +496,7 @@ class GenerativeBodyMotionController(ProceduralBodyController):
             - lower_length * lower_length
             + clamped * clamped
         ) / (2.0 * clamped)
-        height_sq = max(0.0, upper_length * upper_length - along * along)
-        height = math.sqrt(height_sq)
+        height = math.sqrt(max(0.0, upper_length * upper_length - along * along))
         unit_x = dx / distance
         unit_y = dy / distance
         base_x = root.x + unit_x * along
@@ -471,8 +521,6 @@ class GenerativeBodyMotionController(ProceduralBodyController):
             next_point = current.lerp(target, alpha)
             self._smoothed_positions[joint_id] = next_point
             result[joint_id] = next_point
-        root = result.get("root", self._smoothed_root)
-        self._smoothed_root = root
         return result
 
     def _capture_hold(self, target: str | None) -> None:
