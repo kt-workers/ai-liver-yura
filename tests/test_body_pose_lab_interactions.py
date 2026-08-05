@@ -38,11 +38,9 @@ def test_head_center_does_not_translate_sideways_from_yaw() -> None:
         encoding="utf-8"
     )
 
-    assert "const neckOffset = rotatePoint(0, -56" in app
     assert "rotatePoint(pose.head_yaw * 20" not in app
-    assert "headRadiusX = 72 * (1 - Math.abs(pose.head_yaw)" in app
-    assert "const neckOffset = rotatePoint(0, -56" in skeleton
     assert "rotatePoint(pose.head_yaw * 20" not in skeleton
+    assert "headRadiusX = 70 * (1 - Math.abs(pose.head_yaw)" in skeleton
 
 
 def test_mobile_floating_preview_keeps_avatar_visible_after_scroll() -> None:
@@ -73,10 +71,48 @@ def test_stick_figure_uses_articulated_joint_skeleton() -> None:
     assert "function drawJointedLeg(" in skeleton
     assert "const elbowX" in skeleton
     assert "const kneeX" in skeleton
-    assert "const spineX" in skeleton
-    assert "line(pelvisX, pelvisY, spineX, spineY" in skeleton
-    assert "line(spineX, spineY, chestX, chestY" in skeleton
-    assert "drawJoint(pelvisX, pelvisY" in skeleton
-    assert "drawJoint(spineX, spineY" in skeleton
     assert "drawJoint(elbowX, elbowY" in skeleton
     assert "drawJoint(kneeX, kneeY" in skeleton
+
+
+def test_neck_and_shoulders_are_separate_articulated_sections() -> None:
+    skeleton = (_web_root() / "body-pose-skeleton.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "const shoulderCenterX" in skeleton
+    assert "const neckX" in skeleton
+    assert "line(shoulderCenterX, shoulderCenterY, neckX, neckY" in skeleton
+    assert "line(neckX, neckY, headBottomX, headBottomY" in skeleton
+    assert "drawJoint(shoulderCenterX, shoulderCenterY" in skeleton
+    assert "drawJoint(neckX, neckY" in skeleton
+
+
+def test_torso_is_rendered_as_upper_and_lower_triangles() -> None:
+    skeleton = (_web_root() / "body-pose-skeleton.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "function drawTorsoTriangle(" in skeleton
+    assert skeleton.count("drawTorsoTriangle(") >= 3
+    assert "leftShoulderX" in skeleton
+    assert "rightShoulderX" in skeleton
+    assert "waistX" in skeleton
+    assert "leftHipX" in skeleton
+    assert "rightHipX" in skeleton
+    assert "drawJoint(waistX, waistY" in skeleton
+
+
+def test_body_command_probe_is_loaded_after_core_lab_script() -> None:
+    root = _web_root()
+    html = (root / "index.html").read_text(encoding="utf-8")
+    controls = (root / "body-command-controls.js").read_text(encoding="utf-8")
+    styles = (root / "body-command-controls.css").read_text(encoding="utf-8")
+
+    assert 'id="bodyCommandStatus"' in html
+    assert 'src="/body-command-controls.js"' in html
+    assert html.index('src="/app.js"') < html.index('src="/body-command-controls.js"')
+    assert 'data-body-command="right_hand_raise"' in html
+    assert 'data-body-command="body_twist"' in html
+    assert 'postJson("/api/body-command"' in controls
+    assert ".body-command-grid" in styles
