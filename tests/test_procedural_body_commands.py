@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from app.runtime.body_pose_lab_controller import BodyPoseLabController
 from app.runtime.procedural_body_controller import ProceduralBodyController
 
 pytestmark = pytest.mark.unit
@@ -67,6 +68,20 @@ def test_motion_commands_generate_time_varying_paths() -> None:
     assert max(frame.pose.body_height for frame in jump_frames) > 0.55
 
 
+def test_directional_lab_commands_move_root_only_on_screen_axes() -> None:
+    controller = BodyPoseLabController(tick_hz=30.0, seed=24)
+
+    controller.apply_body_command("body_move_left", duration_ms=2200)
+    left_frames = _tick_many(controller, 66)
+    assert min(frame.root_transform.position.x for frame in left_frames) < -0.6
+    assert all(frame.root_transform.position.z == 0.0 for frame in left_frames)
+
+    controller.apply_body_command("body_move_up", duration_ms=2200)
+    up_frames = _tick_many(controller, 66, start_ms=4000)
+    assert max(frame.root_transform.position.y for frame in up_frames) > 0.48
+    assert all(frame.root_transform.position.z == 0.0 for frame in up_frames)
+
+
 def test_body_command_rejects_unknown_or_invalid_duration() -> None:
     controller = ProceduralBodyController(tick_hz=30.0)
 
@@ -97,6 +112,13 @@ def test_render_lab_hub_accepts_body_command_without_llm() -> None:
     assert duration_ms == 2800
     assert hub.active_body_command == "right_hand_wave"
 
+    command, duration_ms = hub.apply_body_command(
+        {"command": "body_move_right", "duration_ms": 2200}
+    )
+    assert command == "body_move_right"
+    assert duration_ms == 2200
+    assert hub.active_body_command == "body_move_right"
+
 
 def test_render_lab_exposes_body_command_api_and_controls() -> None:
     root = Path(__file__).parents[1]
@@ -106,9 +128,19 @@ def test_render_lab_exposes_body_command_api_and_controls() -> None:
     web = root / "gui" / "yura-body-pose-lab" / "web"
     html = (web / "index.html").read_text(encoding="utf-8")
     controls = (web / "body-command-controls.js").read_text(encoding="utf-8")
+    skeleton = (web / "body-pose-skeleton.js").read_text(encoding="utf-8")
 
     assert 'path == "/api/body-command"' in server
     assert 'data-body-command="right_hand_raise"' in html
     assert 'data-body-command="eyes_close"' in html
     assert 'data-body-command="jump"' in html
+    assert 'data-body-command="body_move_up"' in html
+    assert 'data-body-command="body_move_down"' in html
+    assert 'data-body-command="body_move_left"' in html
+    assert 'data-body-command="body_move_right"' in html
+    assert 'data-body-command="body_twist"' not in html
     assert 'postJson("/api/body-command"' in controls
+    assert "drawWavingArm" in skeleton
+    assert "- side * liftAngle" in skeleton
+    assert "armInVelocity" in skeleton
+    assert "frame.root_transform?.position" in skeleton
