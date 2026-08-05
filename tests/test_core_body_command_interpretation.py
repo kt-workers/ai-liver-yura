@@ -128,8 +128,8 @@ def test_stick_mock_reads_canonical_leg_joints() -> None:
         / "body-pose-skeleton.js"
     ).read_text(encoding="utf-8")
 
-    assert "left_upper_leg" in source
-    assert "right_upper_leg" in source
+    assert "${side}_upper_leg" in source
+    assert "candidate?.joint_id === jointId" in source
     assert "legRaiseFromFrame" in source
 
 
