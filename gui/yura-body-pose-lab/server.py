@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import sys
 import threading
 import time
 from dataclasses import fields
@@ -12,25 +13,40 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from app.domain.body_pose_frame import (
+LAB_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = LAB_ROOT.parents[1]
+for import_root in (LAB_ROOT, PROJECT_ROOT):
+    import_root_text = str(import_root)
+    if import_root_text not in sys.path:
+        sys.path.insert(0, import_root_text)
+
+from app.domain.body_kinematics import GenerativeBodyPoseFrame  # noqa: E402
+from app.domain.body_motion import BodyMotionPlan, BodyMotionRequest  # noqa: E402
+from app.domain.body_pose_frame import (  # noqa: E402
     BodyAttentionCandidate,
     BodyInnerMotionState,
-    BodyPoseFrame,
 )
-from app.runtime.procedural_body_controller import ProceduralBodyController
+from app.runtime.generative_body_motion_controller import (  # noqa: E402
+    GenerativeBodyMotionController,
+)
 
-WEB_ROOT = Path(__file__).parent / "web"
+WEB_ROOT = LAB_ROOT / "web"
 MAX_BODY_BYTES = 65_536
 
 
 class BodyPoseLabHub:
     def __init__(self, *, tick_hz: float = 30.0) -> None:
         self._tick_hz = tick_hz
-        self._controller = ProceduralBodyController(tick_hz=tick_hz, seed=514)
+        self._controller = GenerativeBodyMotionController(
+            tick_hz=tick_hz,
+            seed=514,
+        )
         self._condition = threading.Condition()
         self._running = False
         self._thread: threading.Thread | None = None
-        self._latest = self._controller.tick(timestamp_ms=int(time.monotonic() * 1000))
+        self._latest = self._controller.tick(
+            timestamp_ms=int(time.monotonic() * 1000)
+        )
         self._controller.set_attention_candidates(
             (
                 BodyAttentionCandidate(
@@ -88,7 +104,7 @@ class BodyPoseLabHub:
             self._thread.join(timeout=2.0)
             self._thread = None
 
-    def snapshot(self) -> BodyPoseFrame:
+    def snapshot(self) -> GenerativeBodyPoseFrame:
         with self._condition:
             return self._latest
 
@@ -97,7 +113,7 @@ class BodyPoseLabHub:
         after_sequence: int,
         *,
         timeout: float = 2.0,
-    ) -> BodyPoseFrame:
+    ) -> GenerativeBodyPoseFrame:
         with self._condition:
             self._condition.wait_for(
                 lambda: self._latest.sequence > after_sequence or not self._running,
@@ -141,6 +157,26 @@ class BodyPoseLabHub:
             self._controller.set_attention_candidates(candidates)
         return tuple(candidates)
 
+    def submit_motion(self, payload: object) -> BodyMotionPlan:
+        request = BodyMotionRequest.from_payload(payload)
+        with self._condition:
+            return self._controller.submit_motion(request)
+
+    def cancel_motion(self, plan_id: str) -> bool:
+        with self._condition:
+            return self._controller.cancel_motion(plan_id)
+
+    def clear_motions(self, *, release_holds: bool) -> None:
+        with self._condition:
+            self._controller.clear_motions(release_holds=release_holds)
+
+    def motion_status(self) -> dict[str, object]:
+        with self._condition:
+            return {
+                "active_motion_ids": list(self._controller.active_motion_ids),
+                "held_targets": list(self._controller.held_targets),
+            }
+
     def _run(self) -> None:
         interval = 1.0 / self._tick_hz
         next_tick = time.monotonic()
@@ -152,11 +188,11 @@ class BodyPoseLabHub:
             if now < next_tick:
                 time.sleep(min(interval, next_tick - now))
                 continue
-            frame = self._controller.tick(
-                timestamp_ms=int(now * 1000),
-                dt_seconds=interval,
-            )
             with self._condition:
+                frame = self._controller.tick(
+                    timestamp_ms=int(now * 1000),
+                    dt_seconds=interval,
+                )
                 self._latest = frame
                 self._condition.notify_all()
             next_tick += interval
@@ -181,11 +217,15 @@ class BodyPoseLabHandler(BaseHTTPRequestHandler):
                     "status": "ok",
                     "tick_hz": HUB.tick_hz,
                     "sequence": HUB.snapshot().sequence,
+                    **HUB.motion_status(),
                 },
             )
             return
         if path == "/api/snapshot":
             self._json_response(HTTPStatus.OK, HUB.snapshot().as_payload())
+            return
+        if path == "/api/motions":
+            self._json_response(HTTPStatus.OK, HUB.motion_status())
             return
         if path == "/api/frames":
             self._stream_frames()
@@ -219,6 +259,36 @@ class BodyPoseLabHandler(BaseHTTPRequestHandler):
                         "status": "updated",
                         "candidates": [candidate.as_payload() for candidate in candidates],
                     },
+                )
+                return
+            if path == "/api/motion":
+                plan = HUB.submit_motion(payload)
+                self._json_response(
+                    HTTPStatus.ACCEPTED,
+                    {"status": "accepted", "plan": plan.as_payload()},
+                )
+                return
+            if path == "/api/motion/cancel":
+                if not isinstance(payload, dict):
+                    raise ValueError("cancel request must be an object")
+                plan_id = str(payload.get("plan_id", "")).strip()
+                if not plan_id:
+                    raise ValueError("plan_id is required")
+                cancelled = HUB.cancel_motion(plan_id)
+                self._json_response(
+                    HTTPStatus.OK,
+                    {"status": "cancelled" if cancelled else "not_found"},
+                )
+                return
+            if path == "/api/motion/clear":
+                if not isinstance(payload, dict):
+                    raise ValueError("clear request must be an object")
+                HUB.clear_motions(
+                    release_holds=bool(payload.get("release_holds", False))
+                )
+                self._json_response(
+                    HTTPStatus.OK,
+                    {"status": "cleared", **HUB.motion_status()},
                 )
                 return
         except (TypeError, ValueError, json.JSONDecodeError) as error:
@@ -309,7 +379,7 @@ class QuietDisconnectHTTPServer(ThreadingHTTPServer):
 
     def handle_error(self, request: Any, client_address: Any) -> None:
         _ = request, client_address
-        error = __import__("sys").exc_info()[1]
+        error = sys.exc_info()[1]
         if isinstance(
             error,
             (BrokenPipeError, ConnectionResetError, ConnectionAbortedError),
