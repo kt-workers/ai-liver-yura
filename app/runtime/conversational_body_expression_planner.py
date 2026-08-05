@@ -3,9 +3,9 @@ from __future__ import annotations
 from app.domain.avatar_performance import (
     AvatarBlendMode,
     AvatarContinuity,
-    AvatarExpressionIntent,
     AvatarMotionIntent,
     AvatarPerformanceTrack,
+    AvatarPoseIntent,
     AvatarTrackChannel,
 )
 from app.domain.body import BodyActivityContext, BodyExpressionRequest
@@ -203,26 +203,20 @@ class ConversationalBodyExpressionPlanner(BodyExpressionPlanner):
         available = max(1000, duration_ms)
         tracks: list[AvatarPerformanceTrack] = []
         for action in request.body_actions:
-            if action in {"eyes_close", "eyes_open", "mouth_open", "mouth_close"}:
-                visible_duration = min(4200, max(1800, available))
-                tracks.append(
-                    AvatarPerformanceTrack(
-                        track_id=f"segment-{segment_index}-{action}",
-                        channel=AvatarTrackChannel.EXPRESSION,
-                        start_offset_ms=start_offset_ms,
-                        duration_ms=visible_duration,
-                        fade_in_ms=min(120, visible_duration),
-                        fade_out_ms=min(260, visible_duration),
-                        blend_mode=AvatarBlendMode.OVERRIDE,
-                        continuity=AvatarContinuity.CURRENT,
-                        hold=False,
-                        layer_priority=360,
-                        expression=AvatarExpressionIntent(
-                            name=action,
-                            intensity=1.0,
-                        ),
+            pose_specs = cls._pose_specs(action)
+            if pose_specs:
+                for channel, pose in pose_specs:
+                    tracks.append(
+                        cls._action_pose_track(
+                            track_id=f"segment-{segment_index}-{channel.value}-{action}",
+                            channel=channel,
+                            start_offset_ms=start_offset_ms,
+                            duration_ms=min(1800, max(1000, available)),
+                            pose=pose,
+                            layer_priority=360,
+                            hold=True,
+                        )
                     )
-                )
                 continue
 
             if action == "blink":
@@ -240,16 +234,7 @@ class ConversationalBodyExpressionPlanner(BodyExpressionPlanner):
                 continue
 
             specifications: tuple[tuple[AvatarTrackChannel, str, int, int], ...]
-            if action == "right_hand_raise":
-                specifications = ((AvatarTrackChannel.RIGHT_ARM, "raise_hand", 1, 2200),)
-            elif action == "left_hand_raise":
-                specifications = ((AvatarTrackChannel.LEFT_ARM, "raise_hand", 1, 2200),)
-            elif action == "both_hands_raise":
-                specifications = (
-                    (AvatarTrackChannel.LEFT_ARM, "raise_hand", 1, 2200),
-                    (AvatarTrackChannel.RIGHT_ARM, "raise_hand", 1, 2200),
-                )
-            elif action == "right_hand_wave":
+            if action == "right_hand_wave":
                 specifications = ((AvatarTrackChannel.RIGHT_ARM, "wave", 3, 2400),)
             elif action == "left_hand_wave":
                 specifications = ((AvatarTrackChannel.LEFT_ARM, "wave", 3, 2400),)
@@ -286,6 +271,106 @@ class ConversationalBodyExpressionPlanner(BodyExpressionPlanner):
                     )
                 )
         return tuple(tracks)
+
+    @staticmethod
+    def _pose_specs(
+        action: str,
+    ) -> tuple[tuple[AvatarTrackChannel, AvatarPoseIntent], ...]:
+        if action == "right_hand_raise":
+            return (
+                (
+                    AvatarTrackChannel.RIGHT_ARM,
+                    AvatarPoseIntent(
+                        right_arm_raise=1.0,
+                        right_arm_in=-0.08,
+                        responsiveness=0.68,
+                    ),
+                ),
+            )
+        if action == "left_hand_raise":
+            return (
+                (
+                    AvatarTrackChannel.LEFT_ARM,
+                    AvatarPoseIntent(
+                        left_arm_raise=1.0,
+                        left_arm_in=-0.08,
+                        responsiveness=0.68,
+                    ),
+                ),
+            )
+        if action == "both_hands_raise":
+            return (
+                (
+                    AvatarTrackChannel.LEFT_ARM,
+                    AvatarPoseIntent(
+                        left_arm_raise=1.0,
+                        left_arm_in=-0.08,
+                        responsiveness=0.68,
+                    ),
+                ),
+                (
+                    AvatarTrackChannel.RIGHT_ARM,
+                    AvatarPoseIntent(
+                        right_arm_raise=1.0,
+                        right_arm_in=-0.08,
+                        responsiveness=0.68,
+                    ),
+                ),
+            )
+        if action == "eyes_close":
+            return (
+                (
+                    AvatarTrackChannel.FACE,
+                    AvatarPoseIntent(eye_closure=1.0, responsiveness=0.82),
+                ),
+            )
+        if action == "eyes_open":
+            return (
+                (
+                    AvatarTrackChannel.FACE,
+                    AvatarPoseIntent(eye_closure=0.0, responsiveness=0.82),
+                ),
+            )
+        if action == "mouth_open":
+            return (
+                (
+                    AvatarTrackChannel.FACE,
+                    AvatarPoseIntent(mouth_open=1.0, responsiveness=0.78),
+                ),
+            )
+        if action == "mouth_close":
+            return (
+                (
+                    AvatarTrackChannel.FACE,
+                    AvatarPoseIntent(mouth_open=0.0, responsiveness=0.78),
+                ),
+            )
+        return ()
+
+    @staticmethod
+    def _action_pose_track(
+        *,
+        track_id: str,
+        channel: AvatarTrackChannel,
+        start_offset_ms: int,
+        duration_ms: int,
+        pose: AvatarPoseIntent,
+        layer_priority: int,
+        hold: bool,
+    ) -> AvatarPerformanceTrack:
+        return AvatarPerformanceTrack(
+            track_id=track_id,
+            channel=channel,
+            start_offset_ms=start_offset_ms,
+            duration_ms=duration_ms,
+            fade_in_ms=min(520, duration_ms),
+            fade_out_ms=0 if hold else min(420, duration_ms),
+            blend_mode=AvatarBlendMode.OVERRIDE,
+            continuity=AvatarContinuity.CURRENT,
+            hold=hold,
+            layer_priority=layer_priority,
+            pose=pose,
+        )
 
     @staticmethod
     def _action_motion_track(
