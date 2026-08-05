@@ -18,8 +18,12 @@ from app.domain.body_pose_frame import (
 from app.domain.body_speech import SpeechCoupledBodyExpressionRequest
 from app.ports.avatar_output import AvatarOutputPort
 from app.ports.body_pose_output import BodyPoseFrameOutputPort
-from app.runtime.body_pose_3d_projector import KinematicProceduralBodyController
 from app.runtime.body_runtime import BodyRuntimeConfig
+from app.runtime.core_command_body_controller import (
+    SUPPORTED_CORE_BODY_COMMANDS,
+    CoreCommandBodyController,
+    group_body_actions,
+)
 from app.runtime.living_body_runtime import LivingBodyRuntime
 
 _DIRECTION_POSITIONS: dict[str, tuple[float, float]] = {
@@ -33,24 +37,6 @@ _DIRECTION_POSITIONS: dict[str, tuple[float, float]] = {
     "down_right": (0.72, 0.68),
     "center": (0.0, 0.0),
     "viewer": (0.0, 0.0),
-}
-_SUPPORTED_BODY_COMMANDS = {
-    "right_hand_raise",
-    "left_hand_raise",
-    "both_hands_raise",
-    "right_hand_wave",
-    "left_hand_wave",
-    "both_hands_wave",
-    "eyes_close",
-    "eyes_open",
-    "blink",
-    "mouth_open",
-    "mouth_close",
-    "head_circle",
-    "bow",
-    "jump",
-    "body_sway",
-    "body_twist",
 }
 
 
@@ -82,13 +68,15 @@ class CoreBodyPoseRuntime(LivingBodyRuntime):
         super().__init__(avatar_output, config=config, **kwargs)
         resolved_config = config or BodyRuntimeConfig()
         self._body_pose_output = body_pose_output
-        self._pose_controller = KinematicProceduralBodyController(
+        self._pose_controller = CoreCommandBodyController(
             tick_hz=resolved_config.tick_hz,
         )
         self._base_inner_state = BodyInnerMotionState()
         self._expression_inner_state: BodyInnerMotionState | None = None
         self._expression_state_until: float | None = None
-        self._pending_body_commands: deque[tuple[str, int | None]] = deque()
+        self._pending_body_command_steps: deque[
+            tuple[tuple[str, ...], int | None]
+        ] = deque()
 
     async def stop(self) -> None:
         await super().stop()
@@ -115,21 +103,27 @@ class CoreBodyPoseRuntime(LivingBodyRuntime):
             self._set_attention(request.attention)
         if isinstance(request, SpeechCoupledBodyExpressionRequest):
             command_duration = _body_command_duration(request.duration_hint_ms)
-            for command in request.body_actions:
-                if command in _SUPPORTED_BODY_COMMANDS:
-                    self._pending_body_commands.append((command, command_duration))
+            supported_actions = tuple(
+                command
+                for command in request.body_actions
+                if command in SUPPORTED_CORE_BODY_COMMANDS
+            )
+            for command_group in group_body_actions(supported_actions):
+                self._pending_body_command_steps.append(
+                    (command_group, command_duration)
+                )
 
     async def tick_once(self, *, now: float | None = None) -> None:
         current_time = self._monotonic() if now is None else float(now)
         await super().tick_once(now=current_time)
         self._refresh_controller_state(current_time)
         if (
-            self._pose_controller.active_body_command is None
-            and self._pending_body_commands
+            not self._pose_controller.active_body_commands
+            and self._pending_body_command_steps
         ):
-            command, duration_ms = self._pending_body_commands.popleft()
-            self._pose_controller.apply_body_command(
-                command,
+            commands, duration_ms = self._pending_body_command_steps.popleft()
+            self._pose_controller.apply_body_commands(
+                commands,
                 duration_ms=duration_ms,
             )
         frame = self._pose_controller.tick(
