@@ -5,6 +5,7 @@ import json
 import mimetypes
 import os
 import re
+import sys
 import threading
 from collections import deque
 from copy import deepcopy
@@ -31,15 +32,39 @@ SUPPORTED_TRACK_CHANNELS = frozenset(
     {
         "expression",
         "attention",
+        "face",
         "head",
         "torso",
         "left_arm",
         "right_arm",
+        "full_body",
         "autonomous",
     }
 )
 SUPPORTED_BLEND_MODES = frozenset({"override", "additive"})
 SUPPORTED_CONTINUITY = frozenset({"current", "neutral"})
+POSE_SIGNED_FIELDS = frozenset(
+    {
+        "head_yaw",
+        "head_pitch",
+        "head_roll",
+        "torso_lean_x",
+        "torso_lean_y",
+        "body_height",
+        "gaze_x",
+        "gaze_y",
+        "left_arm_in",
+        "right_arm_in",
+    }
+)
+POSE_UNIT_FIELDS = frozenset(
+    {
+        "eye_closure",
+        "mouth_open",
+        "left_arm_raise",
+        "right_arm_raise",
+    }
+)
 
 
 class AvatarStateHub:
@@ -155,6 +180,7 @@ class AvatarStateHub:
             if track["start_offset_ms"] != 0:
                 continue
             intent = track["intent"]
+            intent_type = intent.get("type")
             if track["channel"] == "expression":
                 self._state["expression"] = intent["name"]
             elif track["channel"] == "attention":
@@ -164,12 +190,16 @@ class AvatarStateHub:
                     "intensity": intent["intensity"],
                 }
             elif track["channel"] in {
+                "face",
                 "head",
                 "torso",
                 "left_arm",
                 "right_arm",
+                "full_body",
             }:
-                self._state["gesture"] = intent["name"]
+                self._state["gesture"] = (
+                    intent.get("name") if intent_type == "motion" else "pose_target"
+                )
         if tracks:
             return
         segments = performance.get("segments") or []
@@ -392,8 +422,14 @@ def _validate_track_intent(
                 payload.get("body_follow", 0.15), 0.0, 1.0, f"{field}.intent.body_follow"
             ),
         }
+    if intent_type == "pose":
+        if channel == "expression":
+            raise ValueError(f"{field}.pose intent cannot use expression channel")
+        return _validate_pose_intent(payload, field)
+    if channel == "face":
+        raise ValueError(f"{field}.intent must be pose")
     if intent_type != "motion":
-        raise ValueError(f"{field}.intent must be motion")
+        raise ValueError(f"{field}.intent must be motion or pose")
     direction = payload.get("direction")
     if direction is not None:
         direction = _validated_name(direction, f"{field}.intent.direction")
@@ -420,6 +456,37 @@ def _validate_track_intent(
         ),
         "direction": direction,
     }
+
+
+def _validate_pose_intent(payload: dict[str, Any], field: str) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "type": "pose",
+        "responsiveness": _number_between(
+            payload.get("responsiveness", 0.72),
+            0.05,
+            1.0,
+            f"{field}.intent.responsiveness",
+        ),
+    }
+    for field_name in POSE_SIGNED_FIELDS:
+        if field_name in payload:
+            result[field_name] = _number_between(
+                payload[field_name],
+                -1.0,
+                1.0,
+                f"{field}.intent.{field_name}",
+            )
+    for field_name in POSE_UNIT_FIELDS:
+        if field_name in payload:
+            result[field_name] = _number_between(
+                payload[field_name],
+                0.0,
+                1.0,
+                f"{field}.intent.{field_name}",
+            )
+    if len(result) == 2:
+        raise ValueError(f"{field}.pose intent requires at least one target axis")
+    return result
 
 
 def _validate_performance_segment(payload: object, index: int) -> dict[str, Any]:
@@ -535,7 +602,7 @@ def _integer_between(
 
 def handler_for(hub: AvatarStateHub) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
-        server_version = "YuraAvatarRuntimeLab/2.0"
+        server_version = "YuraAvatarRuntimeLab/2.1"
 
         def do_OPTIONS(self) -> None:  # noqa: N802
             self.send_response(HTTPStatus.NO_CONTENT)
@@ -554,6 +621,7 @@ def handler_for(hub: AvatarStateHub) -> type[BaseHTTPRequestHandler]:
                         "performance_api": True,
                         "performance_schema_version": 2,
                         "overlapping_tracks": True,
+                        "continuous_pose_targets": True,
                     }
                 )
                 return
@@ -668,12 +736,29 @@ def handler_for(hub: AvatarStateHub) -> type[BaseHTTPRequestHandler]:
     return Handler
 
 
+class QuietThreadingHTTPServer(ThreadingHTTPServer):
+    """ブラウザ再接続時の通常切断を大きなTracebackとして表示しない。"""
+
+    def handle_error(self, request: object, client_address: object) -> None:
+        del request, client_address
+        error = sys.exc_info()[1]
+        if isinstance(
+            error,
+            (BrokenPipeError, ConnectionResetError, ConnectionAbortedError),
+        ):
+            return
+        super().handle_error(request, client_address)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Yura Avatar Runtime Lab")
     parser.add_argument("--host", default=os.getenv("HOST", "0.0.0.0"))
     parser.add_argument("--port", type=int, default=int(os.getenv("PORT", "8000")))
     args = parser.parse_args()
-    server = ThreadingHTTPServer((args.host, args.port), handler_for(AvatarStateHub()))
+    server = QuietThreadingHTTPServer(
+        (args.host, args.port),
+        handler_for(AvatarStateHub()),
+    )
     print(f"avatar runtime lab listening on http://{args.host}:{args.port}")
     try:
         server.serve_forever()
