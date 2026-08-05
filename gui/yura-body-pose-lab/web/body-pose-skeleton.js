@@ -20,6 +20,22 @@
     ctx.restore();
   }
 
+  function drawTorsoTriangle(points, alpha = 0.1) {
+    ctx.save();
+    ctx.fillStyle = `rgba(143, 231, 242, ${alpha})`;
+    ctx.strokeStyle = "#d8f8ff";
+    ctx.lineWidth = 9;
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    ctx.lineTo(points[1].x, points[1].y);
+    ctx.lineTo(points[2].x, points[2].y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawJointedArm(x, y, side, raise, inward, torsoAngle) {
     const liftAngle = raise * Math.PI * 0.9;
     const upperAngle = (
@@ -30,8 +46,8 @@
     );
     const elbowBend = 0.16 + Math.abs(inward) * 0.24 + raise * 0.08;
     const lowerAngle = upperAngle + side * elbowBend;
-    const upperLength = 106;
-    const lowerLength = 96;
+    const upperLength = 104;
+    const lowerLength = 94;
     const elbowX = x + Math.cos(upperAngle) * upperLength;
     const elbowY = y + Math.sin(upperAngle) * upperLength;
     const handX = elbowX + Math.cos(lowerAngle) * lowerLength;
@@ -57,10 +73,10 @@
         0.08,
         0.34,
       );
-    const upperAngle = Math.PI / 2 - side * 0.34 + torsoAngle * 0.2;
-    const lowerAngle = upperAngle + side * (0.14 + kneeBend * 0.42);
-    const upperLength = 112;
-    const lowerLength = 106;
+    const upperAngle = Math.PI / 2 - side * 0.28 + torsoAngle * 0.18;
+    const lowerAngle = upperAngle + side * (0.12 + kneeBend * 0.42);
+    const upperLength = 108;
+    const lowerLength = 102;
     const kneeX = x + Math.cos(upperAngle) * upperLength;
     const kneeY = y + Math.sin(upperAngle) * upperLength;
     const ankleX = kneeX + Math.cos(lowerAngle) * lowerLength;
@@ -80,39 +96,42 @@
     if (!frame?.pose) return;
 
     const pose = frame.pose;
-    const pelvisX = width / 2;
-    const pelvisY = height * 0.70 - pose.body_height * 46;
+    const waistX = width / 2;
+    const waistY = height * 0.58 - pose.body_height * 46;
     const torsoAngle = pose.torso_roll * 0.26 + pose.torso_yaw * 0.08;
     const lowerTorsoAngle = torsoAngle * 0.62 + pose.torso_pitch * 0.035;
     const upperTorsoAngle = torsoAngle + pose.torso_pitch * 0.055;
 
-    const lowerTorso = rotatePoint(0, -88, lowerTorsoAngle);
-    const spineX = pelvisX + lowerTorso.x;
-    const spineY = pelvisY + lowerTorso.y;
-    const upperTorso = rotatePoint(0, -96, upperTorsoAngle);
-    const chestX = spineX + upperTorso.x;
-    const chestY = spineY + upperTorso.y;
+    const shoulderCenterOffset = rotatePoint(0, -112, upperTorsoAngle);
+    const shoulderCenterX = waistX + shoulderCenterOffset.x;
+    const shoulderCenterY = waistY + shoulderCenterOffset.y;
+    const shoulderSpread = rotatePoint(70, 0, upperTorsoAngle);
+    const leftShoulderX = shoulderCenterX - shoulderSpread.x;
+    const leftShoulderY = shoulderCenterY - shoulderSpread.y;
+    const rightShoulderX = shoulderCenterX + shoulderSpread.x;
+    const rightShoulderY = shoulderCenterY + shoulderSpread.y;
+
+    const pelvisCenterOffset = rotatePoint(0, 88, lowerTorsoAngle);
+    const pelvisCenterX = waistX + pelvisCenterOffset.x;
+    const pelvisCenterY = waistY + pelvisCenterOffset.y;
+    const hipSpread = rotatePoint(30, 0, lowerTorsoAngle);
+    const leftHipX = pelvisCenterX - hipSpread.x;
+    const leftHipY = pelvisCenterY - hipSpread.y;
+    const rightHipX = pelvisCenterX + hipSpread.x;
+    const rightHipY = pelvisCenterY + hipSpread.y;
 
     const headAngle = upperTorsoAngle + pose.head_roll * 0.34;
-    const neckOffset = rotatePoint(0, -56 - pose.head_pitch * 5, headAngle);
-    const headX = chestX + neckOffset.x;
-    const headY = chestY + neckOffset.y;
-    const headRadiusX = 72 * (1 - Math.abs(pose.head_yaw) * 0.22);
-    const headRadiusY = 76;
-
-    const leftHip = rotatePoint(-21, 3, lowerTorsoAngle);
-    const rightHip = rotatePoint(21, 3, lowerTorsoAngle);
-    const leftHipX = pelvisX + leftHip.x;
-    const leftHipY = pelvisY + leftHip.y;
-    const rightHipX = pelvisX + rightHip.x;
-    const rightHipY = pelvisY + rightHip.y;
-
-    const leftShoulder = rotatePoint(-63, 4, upperTorsoAngle);
-    const rightShoulder = rotatePoint(63, 4, upperTorsoAngle);
-    const leftShoulderX = chestX + leftShoulder.x;
-    const leftShoulderY = chestY + leftShoulder.y;
-    const rightShoulderX = chestX + rightShoulder.x;
-    const rightShoulderY = chestY + rightShoulder.y;
+    const neckOffset = rotatePoint(0, -34, headAngle);
+    const neckX = shoulderCenterX + neckOffset.x;
+    const neckY = shoulderCenterY + neckOffset.y;
+    const headRadiusX = 70 * (1 - Math.abs(pose.head_yaw) * 0.22);
+    const headRadiusY = 73;
+    const headOffset = rotatePoint(0, -(headRadiusY + 17), headAngle);
+    const headX = neckX + headOffset.x;
+    const headY = neckY + headOffset.y;
+    const headBottom = rotatePoint(0, headRadiusY, headAngle);
+    const headBottomX = headX + headBottom.x;
+    const headBottomY = headY + headBottom.y;
 
     ctx.save();
     ctx.shadowColor = "rgba(111, 222, 242, .42)";
@@ -121,11 +140,22 @@
     drawJointedLeg(leftHipX, leftHipY, -1, pose, lowerTorsoAngle);
     drawJointedLeg(rightHipX, rightHipY, 1, pose, lowerTorsoAngle);
 
-    line(pelvisX, pelvisY, spineX, spineY, 13);
-    line(spineX, spineY, chestX, chestY, 13);
-    drawJoint(pelvisX, pelvisY, 11);
-    drawJoint(spineX, spineY, 10);
-    drawJoint(chestX, chestY, 10);
+    drawTorsoTriangle(
+      [
+        { x: leftShoulderX, y: leftShoulderY },
+        { x: rightShoulderX, y: rightShoulderY },
+        { x: waistX, y: waistY },
+      ],
+      0.11,
+    );
+    drawTorsoTriangle(
+      [
+        { x: waistX, y: waistY },
+        { x: rightHipX, y: rightHipY },
+        { x: leftHipX, y: leftHipY },
+      ],
+      0.07,
+    );
 
     drawJointedArm(
       leftShoulderX,
@@ -144,8 +174,13 @@
       upperTorsoAngle,
     );
 
-    drawJoint(chestX, chestY, 9);
-    drawJoint(headX, headY + headRadiusY - 4, 7);
+    line(shoulderCenterX, shoulderCenterY, neckX, neckY, 10);
+    line(neckX, neckY, headBottomX, headBottomY, 9);
+    drawJoint(shoulderCenterX, shoulderCenterY, 9);
+    drawJoint(neckX, neckY, 8);
+    drawJoint(waistX, waistY, 11);
+    drawJoint(leftHipX, leftHipY, 9);
+    drawJoint(rightHipX, rightHipY, 9);
 
     ctx.save();
     ctx.translate(headX, headY);
