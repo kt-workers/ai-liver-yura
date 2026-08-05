@@ -34,7 +34,7 @@
         </div>
         <div class="stage-wrap">
           <canvas id="canvas" width="760" height="760" aria-label="連続トラッキング棒人間"></canvas>
-          <div class="target-layer" id="targetLayer" aria-hidden="true"></div>
+          <div class="target-layer" id="targetLayer" aria-label="ドラッグ可能な注意候補"></div>
         </div>
         <div class="axis-grid" id="axisGrid"></div>
       </article>
@@ -63,7 +63,7 @@
               <h2>注意候補</h2>
             </div>
           </div>
-          <p class="note">候補は固定モーションの再生指示ではありません。Bodyが心境と顕著性・新規性・脅威度・関連度から注視先を選びます。</p>
+          <p class="note">候補は固定モーションの再生指示ではありません。マーカーをマウスまたは指でドラッグして位置を変えられます。Bodyが心境と顕著性・新規性・脅威度・関連度から注視先を選びます。</p>
           <div id="candidateControls" class="candidate-controls"></div>
         </section>
 
@@ -79,6 +79,15 @@
       </aside>
     </section>
   </main>
+
+  <aside class="floating-preview" id="floatingPreview" aria-hidden="true">
+    <div class="floating-preview-head">
+      <span>Body Preview</span>
+      <b id="floatingAttention">-</b>
+    </div>
+    <canvas id="floatingCanvas" width="320" height="320" aria-label="スクロール追従棒人間プレビュー"></canvas>
+  </aside>
+
   <script src="/app.js" defer></script>
 </body>
 </html>
