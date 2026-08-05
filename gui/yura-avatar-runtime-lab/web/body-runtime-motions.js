@@ -19,6 +19,23 @@
     front: { x: 0, y: 0 },
   };
 
+  const poseAxes = {
+    head_yaw: ["headYaw", 1],
+    head_pitch: ["headPitch", 1],
+    head_roll: ["headRoll", 1],
+    torso_lean_x: ["torsoLeanX", 1],
+    torso_lean_y: ["torsoLeanY", 1],
+    body_height: ["bodyBounce", -90],
+    gaze_x: ["gazeX", 1],
+    gaze_y: ["gazeY", 1],
+    eye_closure: ["eyeClosure", 1],
+    mouth_open: ["mouthOpen", 1],
+    left_arm_raise: ["leftArmRaise", 1],
+    right_arm_raise: ["rightArmRaise", 1],
+    left_arm_in: ["leftArmIn", 1],
+    right_arm_in: ["rightArmIn", 1],
+  };
+
   resolveAttentionTarget = function resolveBodyRuntimeAttentionTarget(attention, now) {
     const spatial = spatialTargets[String(attention.target || "").toLowerCase()];
     if (!spatial) return resolveBaseAttentionTarget(attention, now);
@@ -47,8 +64,12 @@
       0,
       1,
     );
-    const mouthOpen = expression === "mouth_open" ? 1 : 0;
-    const mouthClosed = expression === "mouth_close";
+    const poseMouthOpen = clamp(Number(pose.mouthOpen || 0), 0, 1);
+    const mouthOpen = Math.max(
+      poseMouthOpen,
+      expression === "mouth_open" ? 1 : 0,
+    );
+    const mouthClosed = expression === "mouth_close" && mouthOpen < 0.08;
     const gazeX = (Number(pose.gazeX || 0) + yaw * 0.24) * 11;
     const gazeY = Number(pose.gazeY || 0) * 9;
     const eyeY = -13;
@@ -80,8 +101,16 @@
     }
 
     ctx.beginPath();
-    if (mouthOpen > 0) {
-      ctx.ellipse(0, 24, 14, 20, 0, 0, Math.PI * 2);
+    if (mouthOpen > 0.08) {
+      ctx.ellipse(
+        0,
+        24,
+        10 + mouthOpen * 5,
+        5 + mouthOpen * 16,
+        0,
+        0,
+        Math.PI * 2,
+      );
     } else if (mouthClosed) {
       ctx.moveTo(-18, 25);
       ctx.lineTo(18, 25);
@@ -112,8 +141,29 @@
     ctx.restore();
   };
 
+  function applyPoseTarget(pose, intent, weight, progress) {
+    const responsiveness = clamp(Number(intent.responsiveness ?? 0.72), 0.05, 1);
+    const easedProgress = ease(clamp(progress, 0, 1));
+    const responseCurve = 1 - Math.pow(
+      1 - easedProgress,
+      0.45 + responsiveness * 2.4,
+    );
+    const alpha = clamp(responseCurve * weight, 0, 1);
+
+    for (const [intentKey, [poseKey, scale]] of Object.entries(poseAxes)) {
+      if (intent[intentKey] === undefined || intent[intentKey] === null) continue;
+      const target = Number(intent[intentKey]) * scale;
+      pose[poseKey] = lerp(Number(pose[poseKey] || 0), target, alpha);
+    }
+  }
+
   applyMotion = function applyBodyRuntimeMotion(pose, track, weight, progress) {
     const intent = track.intent || {};
+    if (intent.type === "pose") {
+      applyPoseTarget(pose, intent, weight, progress);
+      return;
+    }
+
     const intensity = Number(intent.intensity ?? 1);
     const amplitude = Number(intent.amplitude ?? 1);
     const repetitions = Number(intent.repetitions ?? 1);
