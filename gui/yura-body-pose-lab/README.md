@@ -1,8 +1,20 @@
 # Yura Body Pose Lab
 
-Core、LLM、TTS、DBを起動せず、心境と注意候補だけから連続`BodyPoseFrame`を生成する最小検証モジュールです。
+Core、LLM、TTS、DBを起動せず、`GenerativeBodyMotionController`と`BodyPoseFrame`を単体確認する補助モジュールです。
 
-## ローカル起動
+**本番のBody機能や通常起動の所有者ではありません。**
+
+通常の開発・結合確認では、CoreがMotionRequest、軌道、IK、Pose Frameを生成し、`gui/yura-core-stick-mock`は受信したFrameを描画するだけの構成を使用します。
+
+```text
+python -m app
+  ↓ GenerativeBodyPoseFrame
+gui/yura-core-stick-mock
+```
+
+本Labは、Core配線から切り離してController単体の挙動や任意JSONを調べる場合だけ使用します。
+
+## 単体起動
 
 リポジトリルートから実行します。
 
@@ -22,14 +34,15 @@ http://127.0.0.1:8000
 PORT=8010 python gui/yura-body-pose-lab/render_server.py
 ```
 
-## 確認内容
+## 単体確認内容
 
 - 心境Presetまたは各スライダーによる運動変化
 - 会話相手、左の光、右の物音からの注視対象選択
 - 目が先行し、頭、胴体が異なる速度で追従すること
 - 呼吸、瞬き、視線微動、姿勢変化が連続していること
 - 新しい対象へ移る際にホーム姿勢へ戻らないこと
-- Payloadに3D用の`root_transform`、`joints`、`blend_shapes`、`gaze_vector`が存在すること
+- 任意`BodyMotionRequest`のoperation、sequence、parallel、repeat、hold
+- Payloadに`kinematic_pose`、`active_motion_ids`、`held_targets`が存在すること
 
 ## API
 
@@ -53,50 +66,18 @@ Content-Type: text/event-stream
 Event: body-pose-frame
 ```
 
-### 内的状態更新
+### Motion単体入力
 
 ```text
-POST /api/state
+POST /api/motion
 Content-Type: application/json
 ```
 
-```json
-{
-  "arousal": 0.6,
-  "tension": 0.2,
-  "curiosity": 0.9,
-  "confidence": 0.6,
-  "engagement": 0.8,
-  "avoidance": 0.0,
-  "movement_energy": 0.6
-}
-```
-
-### 注意候補更新
-
-```text
-POST /api/candidates
-Content-Type: application/json
-```
-
-```json
-[
-  {
-    "candidate_id": "viewer",
-    "x": 0.0,
-    "y": 0.0,
-    "salience": 0.8,
-    "novelty": 0.1,
-    "threat": 0.0,
-    "relevance": 1.0,
-    "stability": 0.9
-  }
-]
-```
+このAPIはControllerの単体試験用です。通常Coreでは、入力意味解析とAction Plannerを通して`BodySubsystemPort.request_motion()`へ配送します。
 
 ## Render
 
-`render.yaml`に`yura-body-pose-lab`を追加しています。
+`render.yaml`の`yura-body-pose-lab`は単体デモ用途です。
 
 - Build: `python -m compileall app gui/yura-body-pose-lab`
 - Start: `python gui/yura-body-pose-lab/render_server.py`
