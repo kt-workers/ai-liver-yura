@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import os
 
+from app.adapters.avatar.http_body_pose_output import (
+    HttpBodyPoseFrameOutput,
+    HttpBodyPoseOutputConfig,
+)
 from app.bootstrap import runtime as runtime_bootstrap
 from app.ports.avatar_output import get_bound_avatar_output
 from app.ports.body_subsystem import bind_body_subsystem
@@ -16,6 +20,7 @@ from app.runtime.conversational_body_expression_planner import (
     ConversationalBodyExpressionPlanner,
 )
 from app.runtime.living_body_runtime import LivingBodyRuntime
+from app.runtime.state_driven_body_pose_runtime import StateDrivenBodyPoseRuntime
 from app.utils.trace import TraceLogger
 
 
@@ -31,13 +36,19 @@ def install_body_aware_runtime_components() -> None:
 
 
 def create_bound_body_runtime_from_env() -> BodyRuntime | None:
-    """初期化済みAvatar Outputへ接続するBody Runtimeを生成・束縛する。"""
+    """利用可能なAvatar出力へ接続するBody Runtimeを生成・束縛する。
+
+    `YURA_BODY_POSE_OUTPUT_URL`がある場合は、表情・視線・姿勢・呼吸・発話口形を
+    統合した連続BodyPoseFrame Runtimeを正規経路として使用する。従来の
+    AvatarPerformance出力は互換経路として並行維持する。
+    """
 
     bind_body_subsystem(None)
     avatar_output = get_bound_avatar_output()
+    pose_output_url = os.getenv("YURA_BODY_POSE_OUTPUT_URL", "").strip()
     enabled = _env_enabled(
         "YURA_BODY_RUNTIME_ENABLED",
-        default=avatar_output is not None,
+        default=avatar_output is not None or bool(pose_output_url),
     )
     if not enabled:
         TraceLogger().info(
@@ -45,10 +56,10 @@ def create_bound_body_runtime_from_env() -> BodyRuntime | None:
             reason="disabled",
         )
         return None
-    if avatar_output is None:
+    if avatar_output is None and not pose_output_url:
         TraceLogger().warning(
             "body_runtime_setup:skipped",
-            reason="avatar_output_unavailable",
+            reason="avatar_and_pose_output_unavailable",
         )
         return None
 
@@ -71,17 +82,41 @@ def create_bound_body_runtime_from_env() -> BodyRuntime | None:
             default=30_000,
         ),
     )
-    runtime = LivingBodyRuntime(
-        avatar_output,
-        config=config,
-        expression_planner=ConversationalBodyExpressionPlanner(),
-    )
+    expression_planner = ConversationalBodyExpressionPlanner()
+
+    if pose_output_url:
+        pose_output = HttpBodyPoseFrameOutput(
+            HttpBodyPoseOutputConfig(
+                base_url=pose_output_url,
+                timeout_seconds=_env_float(
+                    "YURA_BODY_POSE_OUTPUT_TIMEOUT_SECONDS",
+                    default=1.0,
+                ),
+            )
+        )
+        runtime: BodyRuntime = StateDrivenBodyPoseRuntime(
+            avatar_output,
+            body_pose_output=pose_output,
+            config=config,
+            expression_planner=expression_planner,
+        )
+        runtime_type = "state_driven_pose"
+    else:
+        runtime = LivingBodyRuntime(
+            avatar_output,
+            config=config,
+            expression_planner=expression_planner,
+        )
+        runtime_type = "living_performance_compatibility"
+
     bind_body_subsystem(runtime)
     TraceLogger().info(
         "body_runtime_setup:created",
         tick_hz=config.tick_hz,
-        expression_planner="conversational_with_avatar_commands",
-        runtime_type="living",
+        expression_planner="conversational_state_driven",
+        runtime_type=runtime_type,
+        pose_output_enabled=bool(pose_output_url),
+        avatar_performance_compatibility=avatar_output is not None,
     )
     return runtime
 
