@@ -9,9 +9,7 @@ from app.adapters.avatar.http_body_pose_output import (
 from app.bootstrap import runtime as runtime_bootstrap
 from app.ports.avatar_output import get_bound_avatar_output
 from app.ports.body_subsystem import bind_body_subsystem
-from app.runtime.avatar_body_command_action_planner import (
-    AvatarBodyCommandActionPlanner,
-)
+from app.runtime.avatar_performance_action_planner import AvatarPerformanceActionPlanner
 from app.runtime.avatar_performance_character_service import (
     AvatarPerformanceCharacterLlmService,
 )
@@ -27,7 +25,8 @@ from app.utils.trace import TraceLogger
 def install_body_aware_runtime_components() -> None:
     """既存Composition RootへBody対応Plannerを組み込む。"""
 
-    setattr(runtime_bootstrap, "ActionPlanner", AvatarBodyCommandActionPlanner)
+    # 明示身体命令を主経路にせず、Characterの高レベル表現意図をBodyへ渡す。
+    setattr(runtime_bootstrap, "ActionPlanner", AvatarPerformanceActionPlanner)
     setattr(
         runtime_bootstrap,
         "CharacterLlmService",
