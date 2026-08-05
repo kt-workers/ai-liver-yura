@@ -231,4 +231,6 @@ def test_stick_mock_only_renders_core_pose_frames() -> None:
     assert 'path != "/api/body-pose-frame"' in server
     assert "const pose = frame?.kinematic_pose" in app
     assert "EventSource(\"/api/events\")" in app
-    assert "動作の解釈・軌道・IKは実行しません" in readme
+    assert "自然言語の解釈" in readme
+    assert "軌道、sequence、parallel、repeatの処理" in readme
+    assert "\n- IK\n" in readme
