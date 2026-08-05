@@ -180,52 +180,52 @@ def test_action_planner_attaches_body_command_without_character_gesture() -> Non
 
 
 @pytest.mark.parametrize(
+    ("body_action", "channel", "axis", "target"),
+    [
+        ("right_hand_raise", AvatarTrackChannel.RIGHT_ARM, "right_arm_raise", 1.0),
+        ("left_hand_raise", AvatarTrackChannel.LEFT_ARM, "left_arm_raise", 1.0),
+        ("eyes_close", AvatarTrackChannel.FACE, "eye_closure", 1.0),
+        ("eyes_open", AvatarTrackChannel.FACE, "eye_closure", 0.0),
+        ("mouth_open", AvatarTrackChannel.FACE, "mouth_open", 1.0),
+        ("mouth_close", AvatarTrackChannel.FACE, "mouth_open", 0.0),
+    ],
+)
+def test_state_command_compiles_to_continuous_pose_target(
+    body_action: str,
+    channel: AvatarTrackChannel,
+    axis: str,
+    target: float,
+) -> None:
+    tracks = _compile_body_action(body_action)
+    matching = [track for track in tracks if track.channel is channel and track.pose]
+
+    assert matching
+    assert getattr(matching[0].pose, axis) == pytest.approx(target)
+    assert matching[0].motion is None
+    assert matching[0].continuity.value == "current"
+    assert matching[0].hold is True
+
+
+@pytest.mark.parametrize(
     ("body_action", "channel", "intent_name"),
     [
-        ("right_hand_raise", AvatarTrackChannel.RIGHT_ARM, "raise_hand"),
         ("left_hand_wave", AvatarTrackChannel.LEFT_ARM, "wave"),
-        ("eyes_close", AvatarTrackChannel.EXPRESSION, "eyes_close"),
-        ("mouth_open", AvatarTrackChannel.EXPRESSION, "mouth_open"),
         ("head_circle", AvatarTrackChannel.HEAD, "head_circle"),
         ("jump", AvatarTrackChannel.TORSO, "jump"),
         ("bow", AvatarTrackChannel.TORSO, "bow"),
     ],
 )
-def test_body_compiles_explicit_command_to_part_track(
+def test_trajectory_command_keeps_procedural_motion_generator(
     body_action: str,
     channel: AvatarTrackChannel,
     intent_name: str,
 ) -> None:
-    request = SpeechCoupledBodyExpressionRequest(
-        source_activity_id="activity-1",
-        output_unit_id="output-1",
-        expression=EmbodiedExpressionIntent(
-            attitude="neutral",
-            intensity=0.3,
-        ),
-        body_actions=(body_action,),
-        duration_hint_ms=2400,
-    )
+    tracks = _compile_body_action(body_action)
+    matching = [track for track in tracks if track.channel is channel and track.motion]
 
-    tracks = ConversationalBodyExpressionPlanner().compile(
-        request,
-        activity_context=BodyActivityContext(
-            source_activity_id="activity-1",
-            engagement=0.6,
-            movement_energy=0.4,
-        ),
-        segment_index=0,
-        start_offset_ms=0,
-        duration_ms=2400,
-    )
-
-    matching = [track for track in tracks if track.channel is channel]
     assert matching
-    assert any(
-        (track.motion is not None and track.motion.name == intent_name)
-        or (track.expression is not None and track.expression.name == intent_name)
-        for track in matching
-    )
+    assert matching[0].motion is not None
+    assert matching[0].motion.name == intent_name
 
 
 def test_living_body_runtime_generates_visible_idle_tracks_without_activity() -> None:
@@ -249,7 +249,7 @@ def test_living_body_runtime_generates_visible_idle_tracks_without_activity() ->
     assert motions["micro_sway"].amplitude >= 0.45
 
 
-def test_stick_model_supports_body_commands_and_living_idle() -> None:
+def test_stick_model_supports_pose_targets_and_living_idle() -> None:
     source = (
         Path(__file__).parents[1]
         / "gui"
@@ -267,12 +267,38 @@ def test_stick_model_supports_body_commands_and_living_idle() -> None:
         "jump",
         "body_sway",
         "body_twist",
-        "eyes_close",
+        "applyPoseTarget",
+        "right_arm_raise",
+        "eye_closure",
         "mouth_open",
     ):
         assert name in source
     assert "eyeClosure" in source
     assert "mouthOpen" in source
+
+
+def _compile_body_action(body_action: str):
+    request = SpeechCoupledBodyExpressionRequest(
+        source_activity_id="activity-1",
+        output_unit_id="output-1",
+        expression=EmbodiedExpressionIntent(
+            attitude="neutral",
+            intensity=0.3,
+        ),
+        body_actions=(body_action,),
+        duration_hint_ms=2400,
+    )
+    return ConversationalBodyExpressionPlanner().compile(
+        request,
+        activity_context=BodyActivityContext(
+            source_activity_id="activity-1",
+            engagement=0.6,
+            movement_energy=0.4,
+        ),
+        segment_index=0,
+        start_offset_ms=0,
+        duration_ms=2400,
+    )
 
 
 def _activity_with_target(target_type: str, target_id: str) -> Activity:
