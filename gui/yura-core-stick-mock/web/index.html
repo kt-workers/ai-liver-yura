@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ゆら Living Body Mock</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">CORE BODYPOSEFRAME VIEWER</p>
+        <h1>こころが身体になる場所</h1>
+        <p>棒人形は判断せず、Coreが生成した表情・視線・姿勢・呼吸・発話口形を描画します。</p>
+      </div>
+      <div id="connection" class="status">Core待機中</div>
+    </header>
+
+    <section class="stage-card">
+      <canvas id="avatar" width="760" height="820" aria-label="ゆらの棒人形モック"></canvas>
+      <div class="metrics">
+        <div><span>Sequence</span><b id="sequence">0</b></div>
+        <div><span>Frame age</span><b id="age">-</b></div>
+        <div><span>Attention</span><b id="attention">-</b></div>
+        <div><span>Expression</span><b id="expression">neutral</b></div>
+      </div>
+    </section>
+
+    <section class="payload-card">
+      <h2>最新BodyPoseFrame</h2>
+      <pre id="payload">CoreからのFrameを待っています。</pre>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
