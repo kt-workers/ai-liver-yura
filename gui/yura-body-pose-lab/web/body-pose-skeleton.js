@@ -36,16 +36,56 @@
     ctx.restore();
   }
 
-  function drawJointedArm(x, y, side, raise, inward, torsoAngle) {
-    const liftAngle = raise * Math.PI * 0.9;
+  function drawWavingArm(x, y, side, inward, torsoAngle) {
     const upperAngle = (
-      (side > 0 ? 0.48 : Math.PI - 0.48)
-      + side * liftAngle
-      - side * inward * 0.42
+      (side > 0 ? -0.72 : Math.PI + 0.72)
       + torsoAngle
     );
-    const elbowBend = 0.16 + Math.abs(inward) * 0.24 + raise * 0.08;
-    const lowerAngle = upperAngle + side * elbowBend;
+    const upperLength = 96;
+    const lowerLength = 94;
+    const elbowX = x + Math.cos(upperAngle) * upperLength;
+    const elbowY = y + Math.sin(upperAngle) * upperLength;
+    const waveSignal = clamp((inward + 0.16) / 0.42, -1, 1);
+    const lowerAngle = -Math.PI / 2 + waveSignal * 0.48 + torsoAngle * 0.15;
+    const handX = elbowX + Math.cos(lowerAngle) * lowerLength;
+    const handY = elbowY + Math.sin(lowerAngle) * lowerLength;
+
+    line(x, y, elbowX, elbowY, 11);
+    line(elbowX, elbowY, handX, handY, 10);
+    drawJoint(x, y, 9);
+    drawJoint(elbowX, elbowY, 9);
+    drawEndPoint(handX, handY, 11);
+  }
+
+  function drawJointedArm(
+    x,
+    y,
+    side,
+    raise,
+    inward,
+    torsoAngle,
+    armInVelocity = 0,
+  ) {
+    const waveDeviation = Math.abs(inward + 0.16);
+    const isWaving = (
+      raise > 0.52
+      && (waveDeviation > 0.13 || Math.abs(armInVelocity) > 0.32)
+    );
+    if (isWaving) {
+      drawWavingArm(x, y, side, inward, torsoAngle);
+      return;
+    }
+
+    const restingAngle = side > 0 ? 0.48 : Math.PI - 0.48;
+    const liftAngle = raise * Math.PI * 0.63;
+    const upperAngle = (
+      restingAngle
+      - side * liftAngle
+      + side * inward * 0.24
+      + torsoAngle
+    );
+    const elbowBend = 0.08 + Math.abs(inward) * 0.1 + (1 - raise) * 0.09;
+    const lowerAngle = upperAngle - side * elbowBend;
     const upperLength = 104;
     const lowerLength = 94;
     const elbowX = x + Math.cos(upperAngle) * upperLength;
@@ -96,8 +136,14 @@
     if (!frame?.pose) return;
 
     const pose = frame.pose;
-    const waistX = width / 2;
-    const waistY = height * 0.58 - pose.body_height * 46;
+    const velocity = frame.velocity || {};
+    const rootPosition = frame.root_transform?.position || {};
+    const rootX = Number(rootPosition.x);
+    const rootY = Number(rootPosition.y);
+    const rootOffsetX = Number.isFinite(rootX) ? rootX * 100 : 0;
+    const rootOffsetY = Number.isFinite(rootY) ? -rootY * 92 : 0;
+    const waistX = width / 2 + rootOffsetX;
+    const waistY = height * 0.58 - pose.body_height * 46 + rootOffsetY;
     const torsoAngle = pose.torso_roll * 0.26 + pose.torso_yaw * 0.08;
     const lowerTorsoAngle = torsoAngle * 0.62 + pose.torso_pitch * 0.035;
     const upperTorsoAngle = torsoAngle + pose.torso_pitch * 0.055;
@@ -164,6 +210,7 @@
       pose.left_arm_raise,
       pose.left_arm_in,
       upperTorsoAngle,
+      Number(velocity.left_arm_in) || 0,
     );
     drawJointedArm(
       rightShoulderX,
@@ -172,6 +219,7 @@
       pose.right_arm_raise,
       pose.right_arm_in,
       upperTorsoAngle,
+      Number(velocity.right_arm_in) || 0,
     );
 
     line(shoulderCenterX, shoulderCenterY, neckX, neckY, 10);
