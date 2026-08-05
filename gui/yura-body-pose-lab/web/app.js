@@ -1,5 +1,10 @@
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
+const floatingPreview = document.getElementById("floatingPreview");
+const floatingCanvas = document.getElementById("floatingCanvas");
+const floatingCtx = floatingCanvas.getContext("2d");
+const floatingAttention = document.getElementById("floatingAttention");
+const stageWrap = canvas.closest(".stage-wrap");
 const connection = document.getElementById("connection");
 const connectionText = document.getElementById("connectionText");
 const trackingLabel = document.getElementById("trackingLabel");
@@ -10,6 +15,10 @@ const payloadView = document.getElementById("payload");
 const slidersRoot = document.getElementById("sliders");
 const candidateControls = document.getElementById("candidateControls");
 const targetLayer = document.getElementById("targetLayer");
+
+const TARGET_CENTER = 0.5;
+const TARGET_RADIUS = 0.42;
+const CANDIDATE_POST_INTERVAL_MS = 80;
 
 const stateDefinitions = [
   ["arousal", "覚醒度"],
@@ -101,12 +110,15 @@ const candidates = [
   },
 ];
 
+const candidateViews = new Map();
 let latestFrame = null;
 let eventCount = 0;
 let fpsWindowStarted = performance.now();
 let lastPayloadUpdate = 0;
 let postStateTimer = null;
 let postCandidatesTimer = null;
+let lastCandidatesPostAt = 0;
+let mainStageVisible = true;
 
 function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
@@ -178,25 +190,97 @@ function candidateField(candidate, name, label) {
   return field;
 }
 
+function updateCandidateMarker(candidate) {
+  const view = candidateViews.get(candidate.candidate_id);
+  if (!view) return;
+  view.marker.style.left = `${(TARGET_CENTER + candidate.x * TARGET_RADIUS) * 100}%`;
+  view.marker.style.top = `${(TARGET_CENTER + candidate.y * TARGET_RADIUS) * 100}%`;
+  view.position.textContent = `x ${candidate.x.toFixed(2)} / y ${candidate.y.toFixed(2)}`;
+  view.marker.setAttribute(
+    "aria-valuetext",
+    `${candidate.label} x ${candidate.x.toFixed(2)} y ${candidate.y.toFixed(2)}`,
+  );
+}
+
+function updateCandidateFromPointer(candidate, clientX, clientY) {
+  const rect = targetLayer.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  const normalizedX = clamp((clientX - rect.left) / rect.width, 0.08, 0.92);
+  const normalizedY = clamp((clientY - rect.top) / rect.height, 0.08, 0.92);
+  candidate.x = clamp((normalizedX - TARGET_CENTER) / TARGET_RADIUS, -1, 1);
+  candidate.y = clamp((normalizedY - TARGET_CENTER) / TARGET_RADIUS, -1, 1);
+  updateCandidateMarker(candidate);
+  scheduleCandidatesPost();
+}
+
+function attachCandidateDrag(marker, candidate) {
+  let activePointerId = null;
+
+  marker.addEventListener("pointerdown", (event) => {
+    if (!candidate.enabled) return;
+    event.preventDefault();
+    activePointerId = event.pointerId;
+    marker.setPointerCapture(event.pointerId);
+    marker.classList.add("dragging");
+    updateCandidateFromPointer(candidate, event.clientX, event.clientY);
+  });
+
+  marker.addEventListener("pointermove", (event) => {
+    if (activePointerId !== event.pointerId) return;
+    event.preventDefault();
+    updateCandidateFromPointer(candidate, event.clientX, event.clientY);
+  });
+
+  const finish = (event) => {
+    if (activePointerId !== event.pointerId) return;
+    updateCandidateFromPointer(candidate, event.clientX, event.clientY);
+    marker.classList.remove("dragging");
+    if (marker.hasPointerCapture(event.pointerId)) {
+      marker.releasePointerCapture(event.pointerId);
+    }
+    activePointerId = null;
+    scheduleCandidatesPost(true);
+  };
+  marker.addEventListener("pointerup", finish);
+  marker.addEventListener("pointercancel", finish);
+
+  marker.addEventListener("keydown", (event) => {
+    const step = event.shiftKey ? 0.2 : 0.05;
+    let handled = true;
+    switch (event.key) {
+      case "ArrowLeft": candidate.x = clamp(candidate.x - step, -1, 1); break;
+      case "ArrowRight": candidate.x = clamp(candidate.x + step, -1, 1); break;
+      case "ArrowUp": candidate.y = clamp(candidate.y - step, -1, 1); break;
+      case "ArrowDown": candidate.y = clamp(candidate.y + step, -1, 1); break;
+      default: handled = false;
+    }
+    if (!handled) return;
+    event.preventDefault();
+    updateCandidateMarker(candidate);
+    scheduleCandidatesPost(true);
+  });
+}
+
 function buildCandidateControls() {
   candidateControls.replaceChildren();
   targetLayer.replaceChildren();
+  candidateViews.clear();
   for (const candidate of candidates) {
     const card = document.createElement("div");
     card.className = "candidate-card";
     const title = document.createElement("div");
     title.className = "candidate-title";
+    const titleCopy = document.createElement("div");
+    titleCopy.className = "candidate-title-copy";
     const label = document.createElement("label");
     label.textContent = candidate.label;
+    const position = document.createElement("span");
+    position.className = "candidate-position";
     const enabled = document.createElement("input");
     enabled.type = "checkbox";
     enabled.checked = candidate.enabled;
-    enabled.addEventListener("change", () => {
-      candidate.enabled = enabled.checked;
-      marker.hidden = !candidate.enabled;
-      scheduleCandidatesPost(true);
-    });
-    title.append(label, enabled);
+    titleCopy.append(label, position);
+    title.append(titleCopy, enabled);
     const fields = document.createElement("div");
     fields.className = "candidate-fields";
     fields.append(
@@ -212,13 +296,23 @@ function buildCandidateControls() {
     const marker = document.createElement("div");
     marker.className = "target-dot";
     marker.dataset.candidateId = candidate.candidate_id;
-    marker.style.left = `${50 + candidate.x * 42}%`;
-    marker.style.top = `${50 + candidate.y * 42}%`;
+    marker.tabIndex = 0;
+    marker.setAttribute("role", "slider");
+    marker.setAttribute("aria-label", `${candidate.label}の位置`);
     marker.hidden = !candidate.enabled;
     const markerLabel = document.createElement("span");
     markerLabel.textContent = candidate.label;
     marker.appendChild(markerLabel);
     targetLayer.appendChild(marker);
+    candidateViews.set(candidate.candidate_id, { marker, position });
+    updateCandidateMarker(candidate);
+    attachCandidateDrag(marker, candidate);
+
+    enabled.addEventListener("change", () => {
+      candidate.enabled = enabled.checked;
+      marker.hidden = !candidate.enabled;
+      scheduleCandidatesPost(true);
+    });
   }
 }
 
@@ -249,8 +343,17 @@ function scheduleStatePost(immediate = false) {
 }
 
 function scheduleCandidatesPost(immediate = false) {
-  window.clearTimeout(postCandidatesTimer);
+  if (immediate) {
+    window.clearTimeout(postCandidatesTimer);
+    postCandidatesTimer = null;
+  } else if (postCandidatesTimer !== null) {
+    return;
+  }
+  const elapsed = performance.now() - lastCandidatesPostAt;
+  const delay = immediate ? 0 : Math.max(0, CANDIDATE_POST_INTERVAL_MS - elapsed);
   postCandidatesTimer = window.setTimeout(async () => {
+    postCandidatesTimer = null;
+    lastCandidatesPostAt = performance.now();
     try {
       const enabled = candidates
         .filter((candidate) => candidate.enabled)
@@ -259,7 +362,7 @@ function scheduleCandidatesPost(immediate = false) {
     } catch (error) {
       setConnection("error", `候補送信失敗: ${error.message}`);
     }
-  }, immediate ? 0 : 120);
+  }, delay);
 }
 
 function setConnection(state, text) {
@@ -276,7 +379,9 @@ function setupStream() {
       latestFrame = JSON.parse(event.data);
       eventCount += 1;
       trackingLabel.textContent = `BodyPoseFrame #${latestFrame.sequence}`;
-      attentionValue.textContent = latestFrame.attention_target_id || "ambient_scan";
+      const attention = latestFrame.attention_target_id || "ambient_scan";
+      attentionValue.textContent = attention;
+      floatingAttention.textContent = attention;
       updateTargetMarkers(latestFrame.attention_target_id);
       updateAxisGrid(latestFrame);
       const now = performance.now();
@@ -288,6 +393,25 @@ function setupStream() {
       setConnection("error", `Frame解析失敗: ${error.message}`);
     }
   });
+}
+
+function setupFloatingPreview() {
+  const mobileQuery = window.matchMedia("(max-width: 980px)");
+  const updateVisibility = () => {
+    const visible = mobileQuery.matches && !mainStageVisible;
+    floatingPreview.classList.toggle("visible", visible);
+    floatingPreview.setAttribute("aria-hidden", visible ? "false" : "true");
+  };
+  const observer = new IntersectionObserver(
+    ([entry]) => {
+      mainStageVisible = entry.isIntersecting;
+      updateVisibility();
+    },
+    { threshold: 0.18 },
+  );
+  observer.observe(stageWrap);
+  mobileQuery.addEventListener("change", updateVisibility);
+  updateVisibility();
 }
 
 function updateTargetMarkers(activeId) {
@@ -361,7 +485,8 @@ function drawStickPerson(frame) {
   const shoulderX = centerX + torsoOffset.x;
   const shoulderY = hipY + torsoOffset.y + pose.torso_pitch * 30;
   const headAngle = torsoAngle + pose.head_roll * 0.34;
-  const neckOffset = rotatePoint(pose.head_yaw * 20, -52 - pose.head_pitch * 10, headAngle);
+  // yawは顔の向きとして表現し、頭部中心そのものは首・胴体の中心軸から外さない。
+  const neckOffset = rotatePoint(0, -56 - pose.head_pitch * 5, headAngle);
   const headX = shoulderX + neckOffset.x;
   const headY = shoulderY + neckOffset.y;
   const headRadiusX = 72 * (1 - Math.abs(pose.head_yaw) * 0.22);
@@ -469,6 +594,20 @@ function drawFace(pose, headRadiusX) {
 
 function animationLoop() {
   drawStickPerson(latestFrame);
+  if (floatingPreview.classList.contains("visible")) {
+    floatingCtx.clearRect(0, 0, floatingCanvas.width, floatingCanvas.height);
+    floatingCtx.drawImage(
+      canvas,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+      0,
+      0,
+      floatingCanvas.width,
+      floatingCanvas.height,
+    );
+  }
   const now = performance.now();
   if (now - fpsWindowStarted >= 1000) {
     fpsValue.textContent = String(Math.round(eventCount * 1000 / (now - fpsWindowStarted)));
@@ -481,4 +620,5 @@ function animationLoop() {
 scheduleStatePost(true);
 scheduleCandidatesPost(true);
 setupStream();
+setupFloatingPreview();
 requestAnimationFrame(animationLoop);
