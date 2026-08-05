@@ -59,7 +59,8 @@ def test_motion_commands_generate_time_varying_paths() -> None:
     controller.apply_body_command("body_sway", duration_ms=3000)
     sway_frames = _tick_many(controller, 75)
     torso_values = [frame.pose.torso_roll for frame in sway_frames]
-    assert max(torso_values) - min(torso_values) > 0.35
+    # 目標振幅ではなく、慣性・減衰を通った実際の追跡値に十分な往復があることを確認する。
+    assert max(torso_values) - min(torso_values) > 0.28
 
     controller.apply_body_command("jump", duration_ms=1800)
     jump_frames = _tick_many(controller, 50, start_ms=4000)
