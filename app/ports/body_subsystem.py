@@ -8,6 +8,7 @@ from app.domain.body import (
     BodyExpressionRequest,
     SpeechPresentationRequest,
 )
+from app.domain.body_motion import BodyMotionRequest
 from app.domain.body_runtime import BodyRuntimeSnapshot
 
 __all__ = [
@@ -34,6 +35,10 @@ class BodySubsystemPort(Protocol):
 
     async def request_expression(self, request: BodyExpressionRequest) -> None:
         """驚き、拒否、喜びなど、必要時だけ高レベルな表現を要求する。"""
+        ...
+
+    async def request_motion(self, request: BodyMotionRequest) -> None:
+        """対象・軌道・時間を持つモデル非依存の運動要求を登録する。"""
         ...
 
     async def present_speech(self, request: SpeechPresentationRequest) -> None:
