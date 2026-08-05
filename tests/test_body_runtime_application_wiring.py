@@ -29,14 +29,13 @@ from app.ports.body_subsystem import (
     bind_body_subsystem,
     get_bound_body_subsystem,
 )
-from app.runtime.avatar_body_command_action_planner import (
-    AvatarBodyCommandActionPlanner,
-)
+from app.runtime.avatar_performance_action_planner import AvatarPerformanceActionPlanner
 from app.runtime.avatar_performance_character_service import (
     AvatarPerformanceCharacterLlmService,
 )
 from app.runtime.body_runtime import BodyRuntime
 from app.runtime.living_body_runtime import LivingBodyRuntime
+from app.runtime.state_driven_body_pose_runtime import StateDrivenBodyPoseRuntime
 from app.usecases import ExecuteActionUsecase
 
 
@@ -100,6 +99,8 @@ def reset_runtime_bindings(monkeypatch: pytest.MonkeyPatch) -> None:
     bind_avatar_output(None)
     bind_body_subsystem(None)
     monkeypatch.delenv("YURA_BODY_RUNTIME_ENABLED", raising=False)
+    monkeypatch.delenv("YURA_BODY_POSE_OUTPUT_URL", raising=False)
+    monkeypatch.delenv("YURA_BODY_POSE_OUTPUT_TIMEOUT_SECONDS", raising=False)
     yield
     bind_avatar_output(None)
     bind_body_subsystem(None)
@@ -108,7 +109,7 @@ def reset_runtime_bindings(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_install_body_aware_runtime_components_keeps_activity_pipeline() -> None:
     install_body_aware_runtime_components()
 
-    assert runtime_bootstrap.ActionPlanner is AvatarBodyCommandActionPlanner
+    assert runtime_bootstrap.ActionPlanner is AvatarPerformanceActionPlanner
     assert (
         runtime_bootstrap.CharacterLlmService
         is AvatarPerformanceCharacterLlmService
@@ -127,9 +128,22 @@ def test_create_bound_body_runtime_uses_initialized_avatar_output(
 
     assert isinstance(body, BodyRuntime)
     assert isinstance(body, LivingBodyRuntime)
+    assert not isinstance(body, StateDrivenBodyPoseRuntime)
     assert get_bound_body_subsystem() is body
     clear_bound_body_runtime()
     assert get_bound_body_subsystem() is None
+
+
+def test_create_bound_body_runtime_uses_pose_output_without_avatar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("YURA_BODY_RUNTIME_ENABLED", "1")
+    monkeypatch.setenv("YURA_BODY_POSE_OUTPUT_URL", "http://127.0.0.1:8010")
+
+    body = create_bound_body_runtime_from_env()
+
+    assert isinstance(body, StateDrivenBodyPoseRuntime)
+    assert get_bound_body_subsystem() is body
 
 
 def test_create_bound_body_runtime_skips_without_avatar_output(
