@@ -100,7 +100,28 @@
     drawEndPoint(handX, handY, 10);
   }
 
-  function drawJointedLeg(x, y, side, pose, torsoAngle) {
+  function quaternionEulerX(rotation) {
+    if (!rotation) return 0;
+    const x = Number(rotation.x) || 0;
+    const y = Number(rotation.y) || 0;
+    const z = Number(rotation.z) || 0;
+    const w = Number(rotation.w);
+    const resolvedW = Number.isFinite(w) ? w : 1;
+    return Math.atan2(
+      2 * (resolvedW * x + y * z),
+      1 - 2 * (x * x + y * y),
+    );
+  }
+
+  function legRaiseFromFrame(frame, side) {
+    const jointId = `${side}_upper_leg`;
+    const joint = Array.isArray(frame?.joints)
+      ? frame.joints.find((candidate) => candidate?.joint_id === jointId)
+      : null;
+    return clamp(Math.abs(quaternionEulerX(joint?.rotation)) / (Math.PI * 0.43), 0, 1);
+  }
+
+  function drawJointedLeg(x, y, side, pose, torsoAngle, legRaise = 0) {
     const explicitBend = Number(
       side < 0 ? pose.left_knee_bend : pose.right_knee_bend,
     );
@@ -109,12 +130,14 @@
       : clamp(
         0.12
           + Math.abs(pose.torso_roll) * 0.18
-          + Math.abs(pose.body_height) * 0.12,
+          + Math.abs(pose.body_height) * 0.12
+          + legRaise * 0.58,
         0.08,
-        0.34,
+        0.82,
       );
-    const upperAngle = Math.PI / 2 - side * 0.28 + torsoAngle * 0.18;
-    const lowerAngle = upperAngle + side * (0.12 + kneeBend * 0.42);
+    const restingAngle = Math.PI / 2 - side * 0.28 + torsoAngle * 0.18;
+    const upperAngle = restingAngle - side * legRaise * 1.08;
+    const lowerAngle = upperAngle + side * (0.12 + kneeBend * 0.52);
     const upperLength = 108;
     const lowerLength = 102;
     const kneeX = x + Math.cos(upperAngle) * upperLength;
@@ -178,13 +201,29 @@
     const headBottom = rotatePoint(0, headRadiusY, headAngle);
     const headBottomX = headX + headBottom.x;
     const headBottomY = headY + headBottom.y;
+    const leftLegRaise = legRaiseFromFrame(frame, "left");
+    const rightLegRaise = legRaiseFromFrame(frame, "right");
 
     ctx.save();
     ctx.shadowColor = "rgba(111, 222, 242, .42)";
     ctx.shadowBlur = 18;
 
-    drawJointedLeg(leftHipX, leftHipY, -1, pose, lowerTorsoAngle);
-    drawJointedLeg(rightHipX, rightHipY, 1, pose, lowerTorsoAngle);
+    drawJointedLeg(
+      leftHipX,
+      leftHipY,
+      -1,
+      pose,
+      lowerTorsoAngle,
+      leftLegRaise,
+    );
+    drawJointedLeg(
+      rightHipX,
+      rightHipY,
+      1,
+      pose,
+      lowerTorsoAngle,
+      rightLegRaise,
+    );
 
     drawTorsoTriangle(
       [
