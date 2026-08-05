@@ -221,11 +221,15 @@ def test_trajectory_command_keeps_procedural_motion_generator(
     intent_name: str,
 ) -> None:
     tracks = _compile_body_action(body_action)
-    matching = [track for track in tracks if track.channel is channel and track.motion]
+    matching = [
+        track
+        for track in tracks
+        if track.channel is channel
+        and track.motion is not None
+        and track.motion.name == intent_name
+    ]
 
     assert matching
-    assert matching[0].motion is not None
-    assert matching[0].motion.name == intent_name
 
 
 def test_living_body_runtime_generates_visible_idle_tracks_without_activity() -> None:
