@@ -112,6 +112,11 @@ class HttpAvatarOutput:
                 "head_follow": track.attention.head_follow,
                 "body_follow": track.attention.body_follow,
             }
+        elif track.pose is not None:
+            intent = {
+                "type": "pose",
+                **track.pose.as_payload(),
+            }
         elif track.motion is not None:
             intent = {
                 "type": "motion",
