@@ -11,11 +11,20 @@ from app.domain.avatar_performance import (
     AvatarTrackChannel,
 )
 from app.domain.body import BodyActivityContext
+from app.domain.body_motion import BodyMotionRequest
 from app.runtime.body_runtime import BodyRuntime
 
 
 class LivingBodyRuntime(BodyRuntime):
     """無指示時も視認できる生理・注意・姿勢の微細動作を生成する。"""
+
+    async def request_motion(self, request: BodyMotionRequest) -> None:
+        """Pose Frame出力未接続時はCoreを壊さず診断へ残す。"""
+
+        await self._record_error(
+            "generative_motion_unavailable:"
+            f"{request.motion_id or request.operation.value}"
+        )
 
     def _build_autonomous_plan(
         self,
