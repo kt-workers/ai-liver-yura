@@ -157,10 +157,51 @@ class SpeechEmphasis:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyAffectContext:
+    """AgentのEmotion SnapshotをBodyへ渡すモデル非依存契約。
+
+    Character LLMが表情Intentを省略した場合でも、現在の感情が顔、姿勢、動き方へ
+    継続的に現れるための基礎状態である。これは新たな感情判定を行わず、Coreで
+    確定済みのEmotion Stateを一方向に投影する。
+    """
+
+    valence: float = 0.0
+    arousal: float = 0.5
+    joy: float = 0.0
+    amusement: float = 0.0
+    anger: float = 0.0
+    sadness: float = 0.0
+    fear: float = 0.0
+    surprise: float = 0.0
+    discomfort: float = 0.0
+    emotional_pressure: float = 0.0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "valence", _signed_unit(self.valence, "valence"))
+        for field_name in (
+            "arousal",
+            "joy",
+            "amusement",
+            "anger",
+            "sadness",
+            "fear",
+            "surprise",
+            "discomfort",
+            "emotional_pressure",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                _unit(getattr(self, field_name), field_name),
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class BodyActivityContext:
     """ActivityがBodyへ継続的に提示する身体文脈。
 
-    毎フレームの角度やポーズではなく、注意対象・姿勢傾向・動きの自由度を表す。
+    毎フレームの角度やポーズではなく、注意対象・姿勢傾向・動きの自由度と、
+    Coreで確定済みの感情Snapshotを表す。
     """
 
     source_activity_id: str
@@ -169,6 +210,7 @@ class BodyActivityContext:
     posture_tendency: BodyPostureTendency = BodyPostureTendency.NEUTRAL
     movement_energy: float = 0.35
     gaze_freedom: float = 0.5
+    affect: BodyAffectContext | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -192,6 +234,8 @@ class BodyActivityContext:
                 field_name,
                 _unit(getattr(self, field_name), field_name),
             )
+        if self.affect is not None and not isinstance(self.affect, BodyAffectContext):
+            raise TypeError("affect must be BodyAffectContext or None")
 
 
 @dataclass(frozen=True, slots=True)
