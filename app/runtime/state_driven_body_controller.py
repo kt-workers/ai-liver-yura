@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 
-from app.domain.body import BodyExpressionRequest
+from app.domain.body import BodyAffectContext, BodyExpressionRequest
 from app.domain.body_pose_frame import BodyBlendShape, BodyPoseFrame, BodyTrackingPose
 from app.runtime.body_pose_3d_projector import (
     BodyPose3DProjector,
@@ -24,13 +24,14 @@ class StateDrivenBodyController(KinematicProceduralBodyController):
     """内的状態・Activity・表情・発話を一つのBodyPoseFrameへ合成する。
 
     明示的な関節命令を主入力にせず、現在姿勢を維持するProcedural Controllerへ
-    `BodyExpressionRequest`と発話状態を時間的なOverlayとして重ねる。表情、視線、
-    頭、胴体、腕、呼吸、瞬き、口形は同じFrameに残る。
+    確定済みEmotion、`BodyExpressionRequest`、発話状態を時間レイヤーとして重ねる。
+    表情、視線、頭、胴体、腕、呼吸、瞬き、口形は同じFrameに残る。
     """
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
         self._projector = BodyPose3DProjector()
+        self._baseline_affect: BodyAffectContext | None = None
         self._expression_request: BodyExpressionRequest | None = None
         self._expression_elapsed = 0.0
         self._expression_duration = 0.0
@@ -42,6 +43,11 @@ class StateDrivenBodyController(KinematicProceduralBodyController):
     def active_expression_id(self) -> str | None:
         request = self._expression_request
         return request.request_id if request is not None else None
+
+    def set_baseline_affect(self, affect: BodyAffectContext | None) -> None:
+        """Coreで確定済みのEmotion Snapshotを継続的な顔の基礎へ反映する。"""
+
+        self._baseline_affect = affect
 
     def apply_expression(self, request: BodyExpressionRequest) -> None:
         """人格的な高レベル表現を現在姿勢へ重ねる。"""
@@ -105,9 +111,27 @@ class StateDrivenBodyController(KinematicProceduralBodyController):
         mouth_open = pose.mouth_open
         mouth_form = pose.mouth_form
 
-        brow_raise = 0.0
-        brow_lower = 0.0
-        eye_squint = 0.0
+        baseline = self._baseline_facial_targets()
+        mouth_form = _clamp(
+            mouth_form + baseline["smile"] - baseline["frown"]
+        )
+        eye_left_open = _clamp(
+            eye_left_open
+            + baseline["eye_wide"] * 0.18
+            - baseline["eye_squint"] * 0.24,
+            0.0,
+            1.0,
+        )
+        eye_right_open = _clamp(
+            eye_right_open
+            + baseline["eye_wide"] * 0.18
+            - baseline["eye_squint"] * 0.22,
+            0.0,
+            1.0,
+        )
+        brow_raise = baseline["brow_raise"]
+        brow_lower = baseline["brow_lower"]
+        eye_squint = baseline["eye_squint"]
 
         if request is not None and envelope > 0.0:
             expression = request.expression
@@ -144,7 +168,9 @@ class StateDrivenBodyController(KinematicProceduralBodyController):
             left_arm_raise = _clamp(left_arm_raise + surprise * 0.22, 0.0, 1.0)
             right_arm_raise = _clamp(right_arm_raise + surprise * 0.22, 0.0, 1.0)
             body_height = _clamp(
-                body_height + surprise * 0.08 + expression.assertiveness * strength * 0.045
+                body_height
+                + surprise * 0.08
+                + expression.assertiveness * strength * 0.045
             )
 
             facial = self._facial_targets(request)
@@ -172,9 +198,9 @@ class StateDrivenBodyController(KinematicProceduralBodyController):
                 0.0,
                 1.0,
             )
-            brow_raise = facial["brow_raise"] * strength
-            brow_lower = facial["brow_lower"] * strength
-            eye_squint = facial["eye_squint"] * strength
+            brow_raise = max(brow_raise, facial["brow_raise"] * strength)
+            brow_lower = max(brow_lower, facial["brow_lower"] * strength)
+            eye_squint = max(eye_squint, facial["eye_squint"] * strength)
 
         if self._speech_active:
             self._speech_phase += (
@@ -212,6 +238,59 @@ class StateDrivenBodyController(KinematicProceduralBodyController):
             BodyBlendShape("eye_squint_right", _clamp(eye_squint, 0.0, 1.0)),
         )
         return composed, shapes
+
+    def _baseline_facial_targets(self) -> dict[str, float]:
+        affect = self._baseline_affect
+        if affect is None:
+            return {
+                "smile": 0.0,
+                "frown": 0.0,
+                "eye_wide": 0.0,
+                "eye_squint": 0.0,
+                "brow_raise": 0.0,
+                "brow_lower": 0.0,
+            }
+        positive = max(
+            max(0.0, affect.valence),
+            affect.joy * 0.82,
+            affect.amusement * 0.74,
+        )
+        negative = max(
+            max(0.0, -affect.valence),
+            affect.sadness * 0.76,
+            affect.discomfort * 0.62,
+            affect.anger * 0.56,
+        )
+        return {
+            "smile": _clamp(positive * 0.34, 0.0, 0.42),
+            "frown": _clamp(negative * 0.30, 0.0, 0.40),
+            "eye_wide": _clamp(
+                affect.surprise * 0.34 + affect.fear * 0.18,
+                0.0,
+                0.44,
+            ),
+            "eye_squint": _clamp(
+                affect.amusement * 0.12
+                + affect.anger * 0.24
+                + affect.discomfort * 0.20,
+                0.0,
+                0.38,
+            ),
+            "brow_raise": _clamp(
+                affect.surprise * 0.40
+                + affect.fear * 0.22
+                + affect.sadness * 0.12,
+                0.0,
+                0.48,
+            ),
+            "brow_lower": _clamp(
+                affect.anger * 0.40
+                + affect.discomfort * 0.24
+                + affect.emotional_pressure * 0.14,
+                0.0,
+                0.48,
+            ),
+        }
 
     def _expression_envelope(self) -> float:
         if self._expression_request is None or self._expression_duration <= 0.0:
