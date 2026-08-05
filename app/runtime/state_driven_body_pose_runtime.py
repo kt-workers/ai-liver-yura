@@ -79,6 +79,7 @@ class StateDrivenBodyPoseRuntime(LivingBodyRuntime):
     async def update_activity_context(self, context: BodyActivityContext) -> None:
         await super().update_activity_context(context)
         self._pose_controller.set_inner_state(self._inner_state_from_activity(context))
+        self._pose_controller.set_baseline_affect(context.affect)
         self._set_activity_attention(context)
 
     async def request_expression(self, request: BodyExpressionRequest) -> None:
@@ -102,7 +103,11 @@ class StateDrivenBodyPoseRuntime(LivingBodyRuntime):
         active_speech = self._active_speech
         self._pose_controller.set_speech_active(
             active_speech is not None,
-            energy=(self._speech_energy(active_speech) if active_speech is not None else 0.0),
+            energy=(
+                self._speech_energy(active_speech)
+                if active_speech is not None
+                else 0.0
+            ),
         )
         frame = self._pose_controller.tick(
             timestamp_ms=max(0, round(current_time * 1000.0)),
@@ -127,19 +132,46 @@ class StateDrivenBodyPoseRuntime(LivingBodyRuntime):
         open_posture = posture is BodyPostureTendency.OPEN
         forward = posture is BodyPostureTendency.FORWARD
         withdrawn = posture is BodyPostureTendency.WITHDRAWN
+        affect = context.affect
+
+        affect_tension = 0.0
+        affect_avoidance = 0.0
+        affect_confidence = 0.0
+        arousal = 0.16 + context.movement_energy * 0.74
+        movement_energy = context.movement_energy
+        if affect is not None:
+            arousal = affect.arousal
+            affect_tension = max(
+                affect.anger * 0.72,
+                affect.fear * 0.82,
+                affect.discomfort * 0.76,
+                affect.emotional_pressure * 0.88,
+            )
+            affect_avoidance = max(
+                affect.fear * 0.78,
+                affect.discomfort * 0.56,
+            )
+            affect_confidence = affect.valence * 0.16 - affect.fear * 0.20
+            movement_energy = max(
+                context.movement_energy,
+                affect.arousal * 0.64,
+                affect.surprise * 0.72,
+            )
+
         return BodyInnerMotionState(
-            arousal=_unit(0.16 + context.movement_energy * 0.74),
-            tension=_unit(0.12 + (0.36 if closed else 0.0)),
+            arousal=_unit(arousal),
+            tension=_unit(max(0.12 + (0.36 if closed else 0.0), affect_tension)),
             curiosity=_unit(0.16 + context.gaze_freedom * 0.72),
             confidence=_unit(
                 0.46
                 + (0.22 if open_posture else 0.0)
                 + (0.10 if forward else 0.0)
                 - (0.24 if closed else 0.0)
+                + affect_confidence
             ),
             engagement=context.engagement,
-            avoidance=_unit(0.52 if withdrawn else 0.0),
-            movement_energy=context.movement_energy,
+            avoidance=_unit(max(0.52 if withdrawn else 0.0, affect_avoidance)),
+            movement_energy=_unit(movement_energy),
         )
 
     def _set_activity_attention(self, context: BodyActivityContext) -> None:
