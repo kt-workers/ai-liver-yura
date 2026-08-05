@@ -39,4 +39,6 @@ def test_continuity_runtime_uses_current_pose_and_reveals_lower_layers() -> None
     assert "remaining / fadeOut" in source
     assert "state.transition = null" in source
     assert "layer_priority" in source
-    assert "state.__continuityChannels" in source
+    assert "ownerByChannel" in source
+    assert "firstEntryByChannel" in source
+    assert "__continuityOriginOverride" in source
