@@ -8,7 +8,11 @@ from app.domain.body import (
 
 
 class BodySpatialCommandResolver:
-    """構造化された方向・身体操作指示をBody要求へ変換する。"""
+    """構造化された視線・身体方向指示をAttentionへ変換する。
+
+    手足や胴体の運動は`BodyMotionRequestResolver`が担当し、このResolverは
+    完成済みの身体Action名を保持しない。
+    """
 
     _SUPPORTED_TYPES = {
         "gaze_direction",
@@ -26,24 +30,6 @@ class BodySpatialCommandResolver:
         "down_left",
         "down_right",
         "center",
-    }
-    _SUPPORTED_BODY_ACTIONS = {
-        "right_hand_raise",
-        "left_hand_raise",
-        "both_hands_raise",
-        "right_hand_wave",
-        "left_hand_wave",
-        "both_hands_wave",
-        "eyes_close",
-        "eyes_open",
-        "blink",
-        "mouth_open",
-        "mouth_close",
-        "head_circle",
-        "bow",
-        "jump",
-        "body_sway",
-        "body_twist",
     }
 
     def resolve(self, activity: Activity) -> BodyAttentionIntent | None:
@@ -89,20 +75,6 @@ class BodySpatialCommandResolver:
             head_follow=0.72,
             body_follow=0.12,
         )
-
-    def resolve_body_actions(self, activity: Activity) -> tuple[str, ...]:
-        meaning = self._eligible_meaning(activity)
-        if meaning is None:
-            return ()
-        target = meaning.get("target")
-        if not isinstance(target, dict):
-            return ()
-        if str(target.get("type", "")).strip().lower() != "avatar_body_action":
-            return ()
-        action = str(target.get("id", "")).strip().lower()
-        if action not in self._SUPPORTED_BODY_ACTIONS:
-            return ()
-        return (action,)
 
     @classmethod
     def _eligible_meaning(cls, activity: Activity) -> dict[str, object] | None:
