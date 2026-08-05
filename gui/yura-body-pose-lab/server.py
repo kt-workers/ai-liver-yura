@@ -68,6 +68,11 @@ class BodyPoseLabHub:
     def tick_hz(self) -> float:
         return self._tick_hz
 
+    @property
+    def active_body_command(self) -> str | None:
+        with self._condition:
+            return self._controller.active_body_command
+
     def start(self) -> None:
         with self._condition:
             if self._running:
@@ -141,6 +146,23 @@ class BodyPoseLabHub:
             self._controller.set_attention_candidates(candidates)
         return tuple(candidates)
 
+    def apply_body_command(self, payload: object) -> tuple[str, int | None]:
+        if not isinstance(payload, dict):
+            raise ValueError("body command must be an object")
+        command = payload.get("command")
+        if not isinstance(command, str):
+            raise ValueError("command must be a string")
+        duration_value = payload.get("duration_ms")
+        if duration_value is None:
+            duration_ms = None
+        elif isinstance(duration_value, bool) or not isinstance(duration_value, int):
+            raise ValueError("duration_ms must be an integer")
+        else:
+            duration_ms = duration_value
+        with self._condition:
+            self._controller.apply_body_command(command, duration_ms=duration_ms)
+        return command.strip().lower(), duration_ms
+
     def _run(self) -> None:
         interval = 1.0 / self._tick_hz
         next_tick = time.monotonic()
@@ -181,6 +203,7 @@ class BodyPoseLabHandler(BaseHTTPRequestHandler):
                     "status": "ok",
                     "tick_hz": HUB.tick_hz,
                     "sequence": HUB.snapshot().sequence,
+                    "active_body_command": HUB.active_body_command,
                 },
             )
             return
@@ -218,6 +241,17 @@ class BodyPoseLabHandler(BaseHTTPRequestHandler):
                     {
                         "status": "updated",
                         "candidates": [candidate.as_payload() for candidate in candidates],
+                    },
+                )
+                return
+            if path == "/api/body-command":
+                command, duration_ms = HUB.apply_body_command(payload)
+                self._json_response(
+                    HTTPStatus.OK,
+                    {
+                        "status": "accepted",
+                        "command": command,
+                        "duration_ms": duration_ms,
                     },
                 )
                 return
