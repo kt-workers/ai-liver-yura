@@ -2,22 +2,27 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from app.domain.actions import ActionPlan, ActionType
+from app.domain.actions import ActionPlan
 from app.domain.activities import Activity
-from app.domain.body_speech import SpeechCoupledBodyExpressionRequest
 from app.domain.character_response import CharacterResponse
 from app.runtime.avatar_performance_action_planner import (
     AvatarPerformanceActionPlanner,
 )
-from app.runtime.body_spatial_command_resolver import BodySpatialCommandResolver
+from app.runtime.body_motion_request_resolver import (
+    BodyMotionRequestResolver,
+)
 
 
 class AvatarBodyCommandActionPlanner(AvatarPerformanceActionPlanner):
-    """構造化されたアバター身体命令を最初のBody要求へ付与する。"""
+    """構造化された身体入力をCore BodyのMotionRequestへ付与する。
+
+    クラス名はComposition Root互換のため維持するが、完成済み`body_actions`や
+    Motion名は生成しない。
+    """
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
-        self._avatar_body_command_resolver = BodySpatialCommandResolver()
+        self._body_motion_request_resolver = BodyMotionRequestResolver()
 
     def _reaction_action_plans(
         self,
@@ -37,26 +42,17 @@ class AvatarBodyCommandActionPlanner(AvatarPerformanceActionPlanner):
             base_metadata=base_metadata,
             skip_topic_memory=skip_topic_memory,
         )
-        body_actions = self._avatar_body_command_resolver.resolve_body_actions(activity)
-        if not body_actions:
+        motion_request = self._body_motion_request_resolver.resolve(activity)
+        if motion_request is None or not plans:
             return plans
-
-        result: list[ActionPlan] = []
-        attached = False
-        for plan in plans:
-            if attached or plan.action_type is not ActionType.CHANGE_EXPRESSION:
-                result.append(plan)
-                continue
-            metadata = dict(plan.metadata)
-            request = metadata.get("body_expression_request")
-            if not isinstance(request, SpeechCoupledBodyExpressionRequest):
-                result.append(plan)
-                continue
-            metadata["body_expression_request"] = replace(
-                request,
-                body_actions=body_actions,
+        if motion_request.motion_id is None:
+            motion_request = replace(
+                motion_request,
+                motion_id=f"{activity.activity_id}:{output_unit_id}:body-motion",
             )
-            metadata["avatar_body_actions"] = body_actions
-            result.append(replace(plan, metadata=metadata))
-            attached = True
-        return result
+        first = plans[0]
+        metadata = dict(first.metadata)
+        metadata["body_motion_request"] = motion_request
+        metadata.pop("avatar_body_actions", None)
+        plans[0] = replace(first, metadata=metadata)
+        return plans
