@@ -28,14 +28,16 @@ class AvatarPerformanceCharacterPromptBuilder(DirectiveAwareCharacterPromptBuild
                 "# Embodied Expression Intent",
                 "身体はCharacter LLMとは独立して常時動作する。呼吸、瞬き、微細な姿勢変化、"
                 "周辺への一瞬の視線などを毎回指定しない。",
-                "structured_input_meaning.target.typeがavatar_body_action、gaze_direction、"
+                "structured_input_meaning.target.typeがbody_motion、gaze_direction、"
                 "orientation_directionのいずれかでexpected_response=actionの場合、その命令は"
-                "Body Subsystemが接続済みアバター身体で実行する。",
+                "Core Body Runtimeが接続済みアバター身体で実行する。",
+                "body_motionには対象、軌道、時間、順序、同時性を持つBodyMotionRequestが"
+                "別経路で付与される。Character LLMは完成モーション名や関節角度を作らない。",
                 "現実世界の生身の肉体を持たないことと、アバターの顔・目・口・首・胴体・腕を"
                 "動かせることを混同しない。アバター身体への命令に対して『動かせない』"
                 "『物理的にはできない』『気持ちだけ向ける』と返してはいけない。",
-                "身体ActionそのものはCoreからBodyへ別経路で送られるため、speechは動作と"
-                "矛盾しない短い受領または自然な反応にする。実際の身体部位やMotion名を"
+                "身体ActionそのものはCore Bodyへ別経路で送られるため、speechは動作と"
+                "矛盾しない短い受領または自然な反応にする。身体部位やMotion名を"
                 "Character LLMのgestureとして再指定する必要はない。",
                 "reaction_segmentsの各要素では、発話に密接な人格的表現が必要な場合だけ"
                 "embodied_expression、attention_intent、speech_emphasisを追加する。",
@@ -52,8 +54,8 @@ class AvatarPerformanceCharacterPromptBuilder(DirectiveAwareCharacterPromptBuild
                 "意味上の対象を指定し、画面座標や角度を指定しない。",
                 "speech_emphasisは必要な場合だけ[{text, intent, strength}]として、発話中の"
                 "意味的な強調位置を示す。時刻は指定しない。",
-                "首、腕、胴体などの身体部位、head_shake、nod、wave等のモーション名、"
-                "回数、振幅、速度、開始時刻、ポーズを直接指定しない。gesture、"
+                "首、腕、胴体などの身体部位、head_shake、nod、wave等の完成モーション名、"
+                "回数、振幅、速度、開始時刻、ポーズをCharacter応答へ直接指定しない。gesture、"
                 "gesture_intensity、gazeは旧Runtime互換項目であり、新しい応答では原則nullにする。",
                 "身体表現を埋めるためだけに値を追加しない。Characterとして意図的に表したい"
                 "態度がない場合は、Body Subsystemの自律制御へ任せる。",
