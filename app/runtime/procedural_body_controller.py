@@ -21,13 +21,32 @@ _UNIT_FIELDS = {
     "left_arm_raise",
     "right_arm_raise",
 }
+_BODY_COMMAND_DEFAULT_DURATION_MS = {
+    "right_hand_raise": 2400,
+    "left_hand_raise": 2400,
+    "both_hands_raise": 2400,
+    "right_hand_wave": 2800,
+    "left_hand_wave": 2800,
+    "both_hands_wave": 2800,
+    "eyes_close": 2200,
+    "eyes_open": 1600,
+    "blink": 650,
+    "mouth_open": 2200,
+    "mouth_close": 1600,
+    "head_circle": 2600,
+    "bow": 2300,
+    "jump": 1800,
+    "body_sway": 3000,
+    "body_twist": 2800,
+}
 
 
 class ProceduralBodyController:
     """内的状態と注意候補から連続トラッキング姿勢を生成する。
 
     完成済み待機モーションを順番に再生せず、現在姿勢・速度・相関揺らぎを
-    保持しながら毎Tickの目標姿勢を更新する。
+    保持しながら毎Tickの目標姿勢を更新する。明示的な身体操作も現在姿勢へ
+    一時的な目標・軌道として重ね、ホーム姿勢へ瞬間移動しない。
     """
 
     def __init__(
@@ -62,6 +81,9 @@ class ProceduralBodyController:
         self._breathing_phase = 0.0
         self._blink_elapsed = 0.0
         self._blink_progress: float | None = None
+        self._body_command: str | None = None
+        self._body_command_elapsed = 0.0
+        self._body_command_duration = 0.0
         self._sequence = 0
         self._last_timestamp_ms: int | None = None
 
@@ -72,6 +94,10 @@ class ProceduralBodyController:
     @property
     def inner_state(self) -> BodyInnerMotionState:
         return self._inner_state
+
+    @property
+    def active_body_command(self) -> str | None:
+        return self._body_command
 
     def set_inner_state(self, state: BodyInnerMotionState) -> None:
         self._inner_state = state
@@ -97,6 +123,33 @@ class ProceduralBodyController:
             self._attention_elapsed = 0.0
         self._candidates = normalized
 
+    def apply_body_command(
+        self,
+        command: str,
+        *,
+        duration_ms: int | None = None,
+    ) -> None:
+        normalized = command.strip().lower()
+        if normalized not in _BODY_COMMAND_DEFAULT_DURATION_MS:
+            raise ValueError(f"unsupported body command: {command}")
+        resolved_duration = (
+            _BODY_COMMAND_DEFAULT_DURATION_MS[normalized]
+            if duration_ms is None
+            else duration_ms
+        )
+        if isinstance(resolved_duration, bool) or not isinstance(resolved_duration, int):
+            raise TypeError("duration_ms must be an integer")
+        if not 200 <= resolved_duration <= 10_000:
+            raise ValueError("duration_ms must be between 200 and 10000")
+        self._body_command = normalized
+        self._body_command_elapsed = 0.0
+        self._body_command_duration = resolved_duration / 1000.0
+
+    def clear_body_command(self) -> None:
+        self._body_command = None
+        self._body_command_elapsed = 0.0
+        self._body_command_duration = 0.0
+
     def tick(
         self,
         *,
@@ -119,7 +172,9 @@ class ProceduralBodyController:
         self._update_correlated_noise(dt)
         self._update_blink(dt)
         target = self._target_pose(dt)
+        self._apply_body_command_target(target)
         self._integrate_pose(target, dt)
+        self._advance_body_command(dt)
         self._sequence += 1
 
         return BodyPoseFrame(
@@ -301,6 +356,77 @@ class ProceduralBodyController:
             "left_arm_in": max(-1.0, min(1.0, arm_in + self._posture_noise * 0.12)),
             "right_arm_in": max(-1.0, min(1.0, arm_in - self._posture_noise * 0.12)),
         }
+
+    def _apply_body_command_target(self, target: dict[str, float]) -> None:
+        command = self._body_command
+        if command is None or self._body_command_duration <= 0.0:
+            return
+        progress = max(
+            0.0,
+            min(1.0, self._body_command_elapsed / self._body_command_duration),
+        )
+        envelope = self._command_envelope(progress)
+        phase = progress * math.tau
+
+        if command in {"right_hand_raise", "right_hand_wave", "both_hands_raise", "both_hands_wave"}:
+            target["right_arm_raise"] = max(target["right_arm_raise"], 0.96 * envelope)
+            target["right_arm_in"] = min(target["right_arm_in"], -0.16 * envelope)
+        if command in {"left_hand_raise", "left_hand_wave", "both_hands_raise", "both_hands_wave"}:
+            target["left_arm_raise"] = max(target["left_arm_raise"], 0.96 * envelope)
+            target["left_arm_in"] = min(target["left_arm_in"], -0.16 * envelope)
+        if command in {"right_hand_wave", "both_hands_wave"}:
+            target["right_arm_in"] += math.sin(phase * 3.0) * 0.42 * envelope
+        if command in {"left_hand_wave", "both_hands_wave"}:
+            target["left_arm_in"] -= math.sin(phase * 3.0) * 0.42 * envelope
+
+        if command == "eyes_close":
+            target["eye_left_open"] = min(target["eye_left_open"], 1.0 - envelope)
+            target["eye_right_open"] = min(target["eye_right_open"], 1.0 - envelope)
+        elif command == "eyes_open":
+            target["eye_left_open"] = max(target["eye_left_open"], envelope)
+            target["eye_right_open"] = max(target["eye_right_open"], envelope)
+        elif command == "blink":
+            closure = math.sin(math.pi * progress)
+            target["eye_left_open"] = min(target["eye_left_open"], 1.0 - closure)
+            target["eye_right_open"] = min(target["eye_right_open"], 1.0 - closure)
+        elif command == "mouth_open":
+            target["mouth_open"] = max(target["mouth_open"], 0.92 * envelope)
+        elif command == "mouth_close":
+            target["mouth_open"] = min(target["mouth_open"], 1.0 - envelope)
+        elif command == "head_circle":
+            target["head_yaw"] = max(-1.0, min(1.0, target["head_yaw"] + math.sin(phase) * 0.68 * envelope))
+            target["head_pitch"] = max(-1.0, min(1.0, target["head_pitch"] - math.cos(phase) * 0.48 * envelope))
+            target["head_roll"] = max(-1.0, min(1.0, target["head_roll"] + math.sin(phase) * 0.24 * envelope))
+        elif command == "bow":
+            target["torso_pitch"] = min(target["torso_pitch"], -0.82 * envelope)
+            target["head_pitch"] = min(target["head_pitch"], -0.48 * envelope)
+            target["body_height"] = min(target["body_height"], -0.12 * envelope)
+        elif command == "jump":
+            target["body_height"] = max(target["body_height"], math.sin(math.pi * progress) * 0.88)
+            target["left_arm_raise"] = max(target["left_arm_raise"], envelope * 0.38)
+            target["right_arm_raise"] = max(target["right_arm_raise"], envelope * 0.38)
+        elif command == "body_sway":
+            target["torso_roll"] = max(-1.0, min(1.0, target["torso_roll"] + math.sin(phase * 2.0) * 0.52 * envelope))
+        elif command == "body_twist":
+            target["torso_yaw"] = max(-1.0, min(1.0, target["torso_yaw"] + math.sin(phase * 2.0) * 0.64 * envelope))
+
+    def _advance_body_command(self, dt: float) -> None:
+        if self._body_command is None:
+            return
+        self._body_command_elapsed += dt
+        if self._body_command_elapsed >= self._body_command_duration:
+            self.clear_body_command()
+
+    @staticmethod
+    def _command_envelope(progress: float) -> float:
+        if progress <= 0.18:
+            normalized = progress / 0.18
+            return normalized * normalized * (3.0 - 2.0 * normalized)
+        if progress >= 0.82:
+            normalized = (1.0 - progress) / 0.18
+            normalized = max(0.0, min(1.0, normalized))
+            return normalized * normalized * (3.0 - 2.0 * normalized)
+        return 1.0
 
     def _integrate_pose(self, target: dict[str, float], dt: float) -> None:
         for name in _POSE_FIELDS:
