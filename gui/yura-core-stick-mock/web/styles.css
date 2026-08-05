@@ -1,0 +1,30 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #071722;
+  color: #e7f7ff;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 0%, #153a51 0, #071722 45%, #040c12 100%); }
+main { width: min(1320px, calc(100% - 32px)); margin: 0 auto; padding: 36px 0 48px; }
+header { margin-bottom: 24px; }
+.eyebrow { margin: 0 0 8px; color: #79c8eb; font-size: 12px; font-weight: 800; letter-spacing: .18em; }
+h1 { margin: 0; font-size: clamp(28px, 4vw, 48px); }
+header p:last-child { max-width: 820px; color: #a7c5d4; line-height: 1.7; }
+.layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(300px, .8fr); gap: 20px; }
+.viewer-card, .panel { border: 1px solid rgba(130, 206, 238, .22); background: rgba(9, 29, 42, .78); box-shadow: 0 22px 60px rgba(0, 0, 0, .26); backdrop-filter: blur(14px); }
+.viewer-card { border-radius: 24px; overflow: hidden; }
+canvas { display: block; width: 100%; height: auto; aspect-ratio: 1; }
+.status-row { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; padding: 15px 18px 18px; color: #a8c7d7; font-size: 13px; }
+.pill { display: inline-flex; padding: 6px 10px; border-radius: 999px; background: rgba(255, 174, 90, .16); color: #ffd6aa; }
+.pill.connected { background: rgba(91, 223, 175, .16); color: #a8f5d8; }
+aside { display: grid; gap: 20px; align-content: start; }
+.panel { border-radius: 20px; padding: 20px; }
+.panel h2 { margin: 0 0 16px; font-size: 18px; }
+dl { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 12px; margin: 0; }
+dt { color: #78b9d7; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+dd { margin: 0; color: #d8effa; overflow-wrap: anywhere; }
+.payload-panel { min-height: 420px; }
+pre { margin: 0; max-height: 560px; overflow: auto; color: #b8d9e8; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+@media (max-width: 880px) { .layout { grid-template-columns: 1fr; } main { width: min(100% - 20px, 720px); padding-top: 20px; } }
