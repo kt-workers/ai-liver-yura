@@ -5,7 +5,6 @@ import math
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 import pytest
@@ -154,6 +153,7 @@ def test_render_lab_hub_produces_frames_without_core_llm_or_tts() -> None:
 
     assert second.sequence > first.sequence
     assert second.pose != BodyTrackingPose()
+    assert second.kinematic_pose.joint("right_hand") is not None
 
 
 def test_render_entrypoint_imports_app_outside_repository_cwd() -> None:
@@ -182,20 +182,23 @@ def test_render_entrypoint_imports_app_outside_repository_cwd() -> None:
 
 def test_render_lab_is_configured_as_standalone_service() -> None:
     root = Path(__file__).parents[1]
+    lab_root = root / "gui" / "yura-body-pose-lab"
     render_yaml = (root / "render.yaml").read_text(encoding="utf-8")
-    render_server = (
-        root / "gui" / "yura-body-pose-lab" / "render_server.py"
-    ).read_text(encoding="utf-8")
-    browser = (
-        root / "gui" / "yura-body-pose-lab" / "web" / "app.js"
-    ).read_text(encoding="utf-8")
+    render_server = (lab_root / "render_server.py").read_text(encoding="utf-8")
+    server = (lab_root / "server.py").read_text(encoding="utf-8")
+    browser = (lab_root / "web" / "app.js").read_text(encoding="utf-8")
+    skeleton = (lab_root / "web" / "body-pose-skeleton.js").read_text(
+        encoding="utf-8"
+    )
 
     assert "name: yura-body-pose-lab" in render_yaml
     assert "python gui/yura-body-pose-lab/render_server.py" in render_yaml
-    assert "KinematicProceduralBodyController" in render_server
+    assert "GenerativeBodyMotionController" in server
+    assert "KinematicProceduralBodyController" not in render_server
     assert "PROJECT_ROOT" in render_server
     assert "sys.path.insert" in render_server
     assert 'new EventSource("/api/frames")' in browser
-    assert "frame.joints" in browser
+    assert "frame?.kinematic_pose" in skeleton
+    assert 'path == "/api/motion"' in server
     assert "CharacterLlm" not in render_server
     assert "TTS" not in render_server
