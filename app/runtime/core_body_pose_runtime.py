@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from collections import deque
 from contextlib import suppress
 
@@ -15,6 +16,7 @@ from app.domain.body_pose_frame import (
     BodyInnerMotionState,
 )
 from app.domain.body_speech import SpeechCoupledBodyExpressionRequest
+from app.ports.avatar_output import AvatarOutputPort
 from app.ports.body_pose_output import BodyPoseFrameOutputPort
 from app.runtime.body_pose_3d_projector import KinematicProceduralBodyController
 from app.runtime.body_runtime import BodyRuntimeConfig
@@ -56,6 +58,12 @@ def _clamp(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
 
 
+def _body_command_duration(duration_ms: int | None) -> int | None:
+    if duration_ms is None:
+        return None
+    return max(200, min(10_000, duration_ms))
+
+
 class CoreBodyPoseRuntime(LivingBodyRuntime):
     """Coreの意味状態を連続BodyPoseFrameへ変換してAvatar Mockへ送る。
 
@@ -65,7 +73,7 @@ class CoreBodyPoseRuntime(LivingBodyRuntime):
 
     def __init__(
         self,
-        avatar_output: object | None,
+        avatar_output: AvatarOutputPort | None,
         *,
         body_pose_output: BodyPoseFrameOutputPort,
         config: BodyRuntimeConfig | None = None,
@@ -85,11 +93,12 @@ class CoreBodyPoseRuntime(LivingBodyRuntime):
     async def stop(self) -> None:
         await super().stop()
         close = getattr(self._body_pose_output, "close", None)
-        if callable(close):
+        if not callable(close):
+            return
+        with suppress(Exception):
             result = close()
-            if result is not None:
-                with suppress(Exception):
-                    await result
+            if inspect.isawaitable(result):
+                await result
 
     async def update_activity_context(self, context: BodyActivityContext) -> None:
         await super().update_activity_context(context)
@@ -105,9 +114,10 @@ class CoreBodyPoseRuntime(LivingBodyRuntime):
         if request.attention is not None:
             self._set_attention(request.attention)
         if isinstance(request, SpeechCoupledBodyExpressionRequest):
+            command_duration = _body_command_duration(request.duration_hint_ms)
             for command in request.body_actions:
                 if command in _SUPPORTED_BODY_COMMANDS:
-                    self._pending_body_commands.append((command, request.duration_hint_ms))
+                    self._pending_body_commands.append((command, command_duration))
 
     async def tick_once(self, *, now: float | None = None) -> None:
         current_time = self._monotonic() if now is None else float(now)
@@ -162,7 +172,11 @@ class CoreBodyPoseRuntime(LivingBodyRuntime):
                 - (0.24 if closed else 0.0)
             ),
             engagement=context.engagement,
-            avoidance=_clamp(0.46 if posture is BodyPostureTendency.WITHDRAWN else 0.0),
+            avoidance=_clamp(
+                0.46
+                if posture is BodyPostureTendency.WITHDRAWN
+                else 0.0
+            ),
             movement_energy=context.movement_energy,
         )
 
