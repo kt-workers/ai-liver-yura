@@ -5,12 +5,13 @@
   const applyLayeredMotion = applyMotion;
 
   const channelPoseKeys = {
+    face: ["gazeX", "gazeY", "eyeClosure", "mouthOpen"],
     head: ["headYaw", "headPitch", "headRoll", "gazeX", "gazeY", "eyeClosure"],
     torso: ["torsoLeanX", "torsoLeanY", "bodyBounce"],
     left_arm: ["leftArmRaise", "leftArmIn", "leftArmWave"],
     right_arm: ["rightArmRaise", "rightArmIn", "rightArmWave"],
     full_body: [
-      "headYaw", "headPitch", "headRoll", "gazeX", "gazeY", "eyeClosure",
+      "headYaw", "headPitch", "headRoll", "gazeX", "gazeY", "eyeClosure", "mouthOpen",
       "torsoLeanX", "torsoLeanY", "bodyBounce",
       "leftArmRaise", "leftArmIn", "leftArmWave",
       "rightArmRaise", "rightArmIn", "rightArmWave",
@@ -38,7 +39,7 @@
     if (!origin) return 0;
     const duration = Math.max(1, Number(track.duration_ms || 1));
     const fadeOut = Math.max(0, Number(track.fade_out_ms || 0));
-    if (fadeOut <= 0) return progress < 1 ? 1 : 0;
+    if (fadeOut <= 0) return progress < 1 || track.hold ? 1 : 0;
     const remaining = duration * (1 - clamp(progress, 0, 1));
     return clamp(remaining / fadeOut, 0, 1);
   }
