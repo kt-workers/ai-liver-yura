@@ -25,10 +25,12 @@ class AvatarTrackChannel(str, Enum):
 
     EXPRESSION = "expression"
     ATTENTION = "attention"
+    FACE = "face"
     HEAD = "head"
     TORSO = "torso"
     LEFT_ARM = "left_arm"
     RIGHT_ARM = "right_arm"
+    FULL_BODY = "full_body"
     AUTONOMOUS = "autonomous"
 
 
@@ -78,6 +80,17 @@ def _validate_number_between(
             f"{field_name} must be between {minimum} and {maximum}"
         )
     return normalized
+
+
+def _validate_optional_number_between(
+    value: float | None,
+    field_name: str,
+    minimum: float,
+    maximum: float,
+) -> float | None:
+    if value is None:
+        return None
+    return _validate_number_between(value, field_name, minimum, maximum)
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,7 +158,7 @@ class AvatarGazeIntent:
 
 @dataclass(frozen=True, slots=True)
 class AvatarMotionIntent:
-    """首振り・うなずき・腕上げ等を手続き的に生成するためのIntent。"""
+    """周期・軌道を持つ動作を手続き的に生成するためのIntent。"""
 
     name: str
     intensity: float = 1.0
@@ -193,6 +206,104 @@ class AvatarMotionIntent:
 
 
 @dataclass(frozen=True, slots=True)
+class AvatarPoseIntent:
+    """現在姿勢から連続補間するエンジン非依存の正規化姿勢目標。"""
+
+    head_yaw: float | None = None
+    head_pitch: float | None = None
+    head_roll: float | None = None
+    torso_lean_x: float | None = None
+    torso_lean_y: float | None = None
+    body_height: float | None = None
+    gaze_x: float | None = None
+    gaze_y: float | None = None
+    eye_closure: float | None = None
+    mouth_open: float | None = None
+    left_arm_raise: float | None = None
+    right_arm_raise: float | None = None
+    left_arm_in: float | None = None
+    right_arm_in: float | None = None
+    responsiveness: float = 0.72
+
+    def __post_init__(self) -> None:
+        signed_axes = (
+            "head_yaw",
+            "head_pitch",
+            "head_roll",
+            "torso_lean_x",
+            "torso_lean_y",
+            "body_height",
+            "gaze_x",
+            "gaze_y",
+            "left_arm_in",
+            "right_arm_in",
+        )
+        unit_axes = (
+            "eye_closure",
+            "mouth_open",
+            "left_arm_raise",
+            "right_arm_raise",
+        )
+        for field_name in signed_axes:
+            object.__setattr__(
+                self,
+                field_name,
+                _validate_optional_number_between(
+                    getattr(self, field_name),
+                    f"pose {field_name}",
+                    -1.0,
+                    1.0,
+                ),
+            )
+        for field_name in unit_axes:
+            object.__setattr__(
+                self,
+                field_name,
+                _validate_optional_number_between(
+                    getattr(self, field_name),
+                    f"pose {field_name}",
+                    0.0,
+                    1.0,
+                ),
+            )
+        object.__setattr__(
+            self,
+            "responsiveness",
+            _validate_number_between(
+                self.responsiveness,
+                "pose responsiveness",
+                0.05,
+                1.0,
+            ),
+        )
+        if not any(getattr(self, field_name) is not None for field_name in (*signed_axes, *unit_axes)):
+            raise ValueError("pose intent requires at least one target axis")
+
+    def as_payload(self) -> dict[str, float]:
+        payload: dict[str, float] = {"responsiveness": self.responsiveness}
+        for field_name in (
+            "head_yaw",
+            "head_pitch",
+            "head_roll",
+            "torso_lean_x",
+            "torso_lean_y",
+            "body_height",
+            "gaze_x",
+            "gaze_y",
+            "eye_closure",
+            "mouth_open",
+            "left_arm_raise",
+            "right_arm_raise",
+            "left_arm_in",
+            "right_arm_in",
+        ):
+            value = getattr(self, field_name)
+            if value is not None:
+                payload[field_name] = value
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
 class AvatarPerformanceSegment:
     """旧Runtimeとの互換用の直列演技区間。"""
 
@@ -229,6 +340,7 @@ class AvatarPerformanceTrack:
     expression: AvatarExpressionIntent | None = None
     attention: AvatarGazeIntent | None = None
     motion: AvatarMotionIntent | None = None
+    pose: AvatarPoseIntent | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "track_id", _normalize_name(self.track_id, "track_id"))
@@ -249,7 +361,7 @@ class AvatarPerformanceTrack:
 
         payloads = tuple(
             value
-            for value in (self.expression, self.attention, self.motion)
+            for value in (self.expression, self.attention, self.motion, self.pose)
             if value is not None
         )
         if len(payloads) != 1:
@@ -258,11 +370,14 @@ class AvatarPerformanceTrack:
             raise ValueError("expression track requires expression intent")
         if self.channel == AvatarTrackChannel.ATTENTION and self.attention is None:
             raise ValueError("attention track requires attention intent")
+        if self.channel == AvatarTrackChannel.FACE and self.pose is None:
+            raise ValueError("face track requires pose intent")
         if self.channel not in {
             AvatarTrackChannel.EXPRESSION,
             AvatarTrackChannel.ATTENTION,
-        } and self.motion is None:
-            raise ValueError("motion track requires motion intent")
+            AvatarTrackChannel.FACE,
+        } and self.motion is None and self.pose is None:
+            raise ValueError("body track requires motion or pose intent")
 
     @property
     def end_offset_ms(self) -> int:
