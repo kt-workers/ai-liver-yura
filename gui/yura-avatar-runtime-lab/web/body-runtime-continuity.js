@@ -34,7 +34,8 @@
   }
 
   function continuityOriginWeight(track, progress) {
-    if (!track.__continuityOrigin) return 0;
+    const origin = track.__continuityOriginOverride || track.__continuityOrigin;
+    if (!origin) return 0;
     const duration = Math.max(1, Number(track.duration_ms || 1));
     const fadeOut = Math.max(0, Number(track.fade_out_ms || 0));
     if (fadeOut <= 0) return progress < 1 ? 1 : 0;
@@ -43,9 +44,9 @@
   }
 
   function applyContinuityOrigin(pose, track, progress) {
-    const origin = track.__continuityOrigin;
+    const origin = track.__continuityOriginOverride || track.__continuityOrigin;
     const keys = channelPoseKeys[track.channel];
-    if (!origin || !keys || state.__continuityChannels.has(track.channel)) return;
+    if (!origin || !keys || !track.__applyContinuityOrigin) return;
 
     const weight = continuityOriginWeight(track, progress);
     for (const key of keys) {
@@ -53,7 +54,30 @@
       const start = Number(origin[key] || 0);
       pose[key] = lerp(current, start, weight);
     }
-    state.__continuityChannels.add(track.channel);
+  }
+
+  function assignChannelContinuityOrigins(entries) {
+    const ownerByChannel = new Map();
+    const firstEntryByChannel = new Map();
+
+    for (const entry of entries) {
+      const track = entry.track;
+      track.__applyContinuityOrigin = false;
+      delete track.__continuityOriginOverride;
+      if (!firstEntryByChannel.has(track.channel)) {
+        firstEntryByChannel.set(track.channel, entry);
+      }
+      if (track.__continuityOrigin) {
+        ownerByChannel.set(track.channel, track);
+      }
+    }
+
+    for (const [channel, owner] of ownerByChannel.entries()) {
+      const firstEntry = firstEntryByChannel.get(channel);
+      if (!firstEntry) continue;
+      firstEntry.track.__applyContinuityOrigin = true;
+      firstEntry.track.__continuityOriginOverride = owner.__continuityOrigin;
+    }
   }
 
   startPerformance = function startContinuousPerformance(plan) {
@@ -70,7 +94,7 @@
   };
 
   activeTracks = function activeContinuousTracks(now) {
-    return activeLayeredTracks(now).sort((left, right) => {
+    const entries = activeLayeredTracks(now).sort((left, right) => {
       const priorityDifference =
         Number(left.track.layer_priority || 0) - Number(right.track.layer_priority || 0);
       if (priorityDifference !== 0) return priorityDifference;
@@ -78,17 +102,12 @@
         String(right.track.track_id || ""),
       );
     });
+    assignChannelContinuityOrigins(entries);
+    return entries;
   };
 
   applyMotion = function applyContinuousMotion(pose, track, weight, progress) {
-    state.__continuityChannels ||= new Set();
     applyContinuityOrigin(pose, track, progress);
     applyLayeredMotion(pose, track, weight, progress);
-  };
-
-  const evaluateLayeredTracks = evaluateTracks;
-  evaluateTracks = function evaluateContinuousTracks(now, deltaMs) {
-    state.__continuityChannels = new Set();
-    return evaluateLayeredTracks(now, deltaMs);
   };
 })();
