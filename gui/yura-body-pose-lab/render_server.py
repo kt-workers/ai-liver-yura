@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
-# Renderやローカルでこのファイルを直接実行すると、sys.path[0]は
-# gui/yura-body-pose-labになる。実行場所に依存せず、ローカルのserver.pyと
-# リポジトリ直下のappを確実にimportできるよう両方を明示する。
 LAB_ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = LAB_ROOT.parents[1]
 for import_root in (LAB_ROOT, PROJECT_ROOT):
@@ -15,16 +11,9 @@ for import_root in (LAB_ROOT, PROJECT_ROOT):
         sys.path.insert(0, import_root_text)
 
 import server as lab_server  # noqa: E402
-from app.runtime.body_pose_3d_projector import (  # noqa: E402
-    KinematicProceduralBodyController,
-)
 
 
 def main() -> None:
-    lab_server.ProceduralBodyController = KinematicProceduralBodyController
-    lab_server.HUB = lab_server.BodyPoseLabHub(
-        tick_hz=float(os.getenv("YURA_BODY_POSE_LAB_TICK_HZ", "30"))
-    )
     lab_server.main()
 
 
