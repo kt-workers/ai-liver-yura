@@ -41,7 +41,9 @@ class AvatarBodyCommandActionPlanner(AvatarPerformanceActionPlanner):
     ) -> list[ActionPlan]:
         body_actions = self._avatar_body_command_resolver.resolve_body_actions(activity)
         body_attention = self._avatar_body_command_resolver.resolve(activity)
-        contextual_reference = self._contextual_reference_resolver.resolve(activity)
+        contextual_reference = self._contextual_reference_resolver.resolve(
+            self._reference_lookup_activity(activity)
+        )
 
         reference_used = False
         if contextual_reference is not None:
@@ -102,6 +104,18 @@ class AvatarBodyCommandActionPlanner(AvatarPerformanceActionPlanner):
             result.append(replace(plan, metadata=metadata))
             attached = True
         return result
+
+    @staticmethod
+    def _reference_lookup_activity(activity: Activity) -> Activity:
+        """現在Turnの意味を履歴内の過去Meaningより先に探索させる。"""
+
+        constraints = activity.context.get("constraints")
+        if not isinstance(constraints, dict):
+            return activity
+        return replace(
+            activity,
+            context={"constraints": constraints, **activity.context},
+        )
 
     @staticmethod
     def _activity_for_reference(
