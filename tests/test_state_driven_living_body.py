@@ -4,14 +4,17 @@ from dataclasses import dataclass, field
 
 import pytest
 
+from app.domain.activities import Activity, ActivityType
 from app.domain.body import (
     BodyActivityContext,
+    BodyAffectContext,
     BodyExpressionRequest,
     BodyPostureTendency,
     EmbodiedExpressionIntent,
     SpeechPresentationRequest,
 )
 from app.domain.body_pose_frame import BodyPoseFrame
+from app.runtime.body_activity_context_builder import BodyActivityContextBuilder
 from app.runtime.body_runtime import BodyRuntimeConfig
 from app.runtime.state_driven_body_controller import StateDrivenBodyController
 from app.runtime.state_driven_body_pose_runtime import StateDrivenBodyPoseRuntime
@@ -76,6 +79,67 @@ def test_speech_mouth_is_layered_without_removing_expression() -> None:
     assert max(_shape_values(frame)["jaw_open"] for frame in frames) > 0.45
 
 
+def test_emotion_snapshot_shapes_face_without_character_expression() -> None:
+    controller = StateDrivenBodyController(tick_hz=30.0, seed=19)
+    controller.set_baseline_affect(
+        BodyAffectContext(
+            valence=-0.72,
+            arousal=0.76,
+            anger=0.82,
+            discomfort=0.58,
+            emotional_pressure=0.64,
+        )
+    )
+
+    frame = controller.tick(timestamp_ms=33, dt_seconds=1.0 / 30.0)
+    shapes = _shape_values(frame)
+
+    assert shapes["mouth_frown"] > shapes["mouth_smile"]
+    assert shapes["brow_lower"] > 0.25
+    assert shapes["eye_squint_left"] > 0.15
+
+
+def test_activity_builder_projects_event_emotion_and_drive() -> None:
+    activity = Activity(
+        activity_type=ActivityType.CONVERSATION_WITH_USER,
+        goal="人間と会話する",
+        context={
+            "event_payload": {
+                "emotion": {
+                    "arousal": 0.84,
+                    "valence": -0.48,
+                    "reactive": {
+                        "joy": 0.05,
+                        "amusement": 0.02,
+                        "anger": 0.72,
+                        "sadness": 0.12,
+                        "fear": 0.20,
+                        "surprise": 0.08,
+                        "discomfort": 0.54,
+                        "emotional_pressure": 0.62,
+                    },
+                },
+                "drive": {
+                    "curiosity": 0.88,
+                    "engagement": 0.91,
+                    "boredom": 0.04,
+                    "energy": 0.79,
+                },
+            }
+        },
+    )
+
+    context = BodyActivityContextBuilder().build(activity)
+
+    assert context.engagement == pytest.approx(0.91)
+    assert context.movement_energy == pytest.approx(0.79)
+    assert context.gaze_freedom > 0.75
+    assert context.affect is not None
+    assert context.affect.arousal == pytest.approx(0.84)
+    assert context.affect.anger == pytest.approx(0.72)
+    assert context.affect.discomfort == pytest.approx(0.54)
+
+
 @dataclass
 class _RecordingPoseOutput:
     frames: list[BodyPoseFrame] = field(default_factory=list)
@@ -108,6 +172,12 @@ async def test_runtime_publishes_unified_state_driven_frames() -> None:
             posture_tendency=BodyPostureTendency.OPEN,
             movement_energy=0.52,
             gaze_freedom=0.28,
+            affect=BodyAffectContext(
+                valence=0.62,
+                arousal=0.58,
+                joy=0.72,
+                amusement=0.34,
+            ),
         )
     )
     await runtime.request_expression(_happy_request())
