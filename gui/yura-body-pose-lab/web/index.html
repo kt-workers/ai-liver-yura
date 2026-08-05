@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yura Body Pose Lab</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Procedural Body Controller / Render Probe</p>
+        <h1>ゆらの身体感覚ラボ</h1>
+        <p class="lead">完成済み待機モーションを再生せず、心境と注意候補から連続したBodyPoseFrameを生成します。</p>
+      </div>
+      <div class="connection" id="connection" data-state="connecting">
+        <span class="dot"></span>
+        <span id="connectionText">接続中</span>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <article class="stage-card">
+        <div class="stage-head">
+          <div>
+            <span class="label">Tracking Stream</span>
+            <strong id="trackingLabel">BodyPoseFrame #0</strong>
+          </div>
+          <div class="metrics">
+            <span><b id="fpsValue">0</b> fps</span>
+            <span>注視: <b id="attentionValue">-</b></span>
+          </div>
+        </div>
+        <div class="stage-wrap">
+          <canvas id="canvas" width="760" height="760" aria-label="連続トラッキング棒人間"></canvas>
+          <div class="target-layer" id="targetLayer" aria-hidden="true"></div>
+        </div>
+        <div class="axis-grid" id="axisGrid"></div>
+      </article>
+
+      <aside class="controls">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <span class="label">Inner State</span>
+              <h2>心境による動き</h2>
+            </div>
+          </div>
+          <div class="preset-row">
+            <button data-preset="calm">落ち着き</button>
+            <button data-preset="curious">好奇心</button>
+            <button data-preset="nervous">緊張</button>
+            <button data-preset="engaged">会話集中</button>
+          </div>
+          <div id="sliders" class="sliders"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <span class="label">Perception Candidates</span>
+              <h2>注意候補</h2>
+            </div>
+          </div>
+          <p class="note">候補は固定モーションの再生指示ではありません。Bodyが心境と顕著性・新規性・脅威度・関連度から注視先を選びます。</p>
+          <div id="candidateControls" class="candidate-controls"></div>
+        </section>
+
+        <section class="panel payload-panel">
+          <div class="panel-head">
+            <div>
+              <span class="label">Latest Frame</span>
+              <h2>BodyPoseFrame</h2>
+            </div>
+          </div>
+          <pre id="payload">接続待機中</pre>
+        </section>
+      </aside>
+    </section>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>
