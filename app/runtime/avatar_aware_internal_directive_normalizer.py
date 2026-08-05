@@ -13,7 +13,7 @@ from app.runtime.internal_directive_candidate_normalizer import (
 )
 
 _AVATAR_TARGET_TYPES = {
-    "avatar_body_action",
+    "body_motion",
     "gaze_direction",
     "orientation_direction",
 }
@@ -54,7 +54,7 @@ class AvatarAwareInternalDirectiveCandidateNormalizer(
                 (
                     *requirements,
                     "ユーザーの指示は現実の生身の肉体ではなく、接続済みアバター身体への操作命令として扱う",
-                    "Body Subsystemが対象の方向または身体Actionを実行する前提で、短く自然に受領する",
+                    "Core Body Runtimeが対象・軌道・時間を持つMotionRequestを実行する前提で、短く自然に受領する",
                     "発話内容と実行するアバター動作を一致させる",
                 )
             )
@@ -64,7 +64,7 @@ class AvatarAwareInternalDirectiveCandidateNormalizer(
                 (
                     *forbidden,
                     "物理的な身体がないことを理由に、アバターの顔・目・口・首・胴体・腕を動かせないと主張する",
-                    "Body Subsystemへ渡される操作命令を、気持ちだけ向ける等の比喩で置き換える",
+                    "Core Bodyへ渡されるMotionRequestを、気持ちだけ向ける等の比喩で置き換える",
                 )
             )
         )
@@ -72,7 +72,7 @@ class AvatarAwareInternalDirectiveCandidateNormalizer(
             normalized,
             response_mode=ResponseMode.REACT,
             response_goal=(
-                "指定されたアバター身体の動作をBody Subsystemで実行し、"
+                "指定されたアバター身体の動作をCore Body Runtimeで実行し、"
                 "その動作と矛盾しない短い反応を返す"
             ),
             activity_intent=None,
@@ -83,7 +83,7 @@ class AvatarAwareInternalDirectiveCandidateNormalizer(
             forbidden_claims=forbidden,
             reason=(
                 "Core補正: 明示的なアバター身体操作であり、現実世界の身体経験ではないため、"
-                "Body Subsystemで実行可能な命令として扱う"
+                "Core Body Runtimeで実行可能なMotionRequestとして扱う"
             ),
         )
 
