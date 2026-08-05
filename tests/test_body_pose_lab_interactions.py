@@ -113,6 +113,10 @@ def test_body_command_probe_is_loaded_after_core_lab_script() -> None:
     assert 'src="/body-command-controls.js"' in html
     assert html.index('src="/app.js"') < html.index('src="/body-command-controls.js"')
     assert 'data-body-command="right_hand_raise"' in html
-    assert 'data-body-command="body_twist"' in html
+    assert 'data-body-command="body_move_up"' in html
+    assert 'data-body-command="body_move_down"' in html
+    assert 'data-body-command="body_move_left"' in html
+    assert 'data-body-command="body_move_right"' in html
+    assert 'data-body-command="body_twist"' not in html
     assert 'postJson("/api/body-command"' in controls
     assert ".body-command-grid" in styles
