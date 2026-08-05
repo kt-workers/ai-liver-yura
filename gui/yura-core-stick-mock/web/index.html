@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yura Core Body Pose Mock</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">OUTPUT MOCK</p>
+      <h1>Core Body Pose Viewer</h1>
+      <p>この画面はCoreが生成した関節位置を描画するだけです。動作の解釈・軌道・IKは実行しません。</p>
+    </header>
+    <section class="layout">
+      <article class="viewer-card">
+        <canvas id="avatar" width="720" height="720"></canvas>
+        <div class="status-row">
+          <span id="connection" class="pill">接続待ち</span>
+          <span>sequence: <strong id="sequence">0</strong></span>
+          <span>age: <strong id="age">-</strong></span>
+        </div>
+      </article>
+      <aside>
+        <section class="panel">
+          <h2>Core Motion</h2>
+          <dl>
+            <dt>Active</dt><dd id="motions">-</dd>
+            <dt>Held</dt><dd id="holds">-</dd>
+            <dt>Source</dt><dd id="source">-</dd>
+          </dl>
+        </section>
+        <section class="panel payload-panel">
+          <h2>Latest Pose Frame</h2>
+          <pre id="payload">{}</pre>
+        </section>
+      </aside>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
