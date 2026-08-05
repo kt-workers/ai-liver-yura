@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Yura Body Pose Lab</title>
+  <title>Yura Generative Body Motion Lab</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <main class="shell">
     <header class="hero">
       <div>
-        <p class="eyebrow">Procedural Body Controller / Render Probe</p>
+        <p class="eyebrow">Generative Body Motion / Render Probe</p>
         <h1>ゆらの身体感覚ラボ</h1>
-        <p class="lead">完成済み待機モーションを再生せず、心境と注意候補から連続したBodyPoseFrameを生成します。</p>
+        <p class="lead">完成済みモーションを選ばず、対象・軌道・時間・順序から関節位置を毎フレーム生成します。</p>
       </div>
       <div class="connection" id="connection" data-state="connecting">
         <span class="dot"></span>
@@ -33,7 +33,7 @@
           </div>
         </div>
         <div class="stage-wrap">
-          <canvas id="canvas" width="760" height="760" aria-label="連続トラッキング棒人間"></canvas>
+          <canvas id="canvas" width="760" height="760" aria-label="生成された関節位置を描く棒人間"></canvas>
           <div class="target-layer" id="targetLayer" aria-label="ドラッグ可能な注意候補"></div>
         </div>
         <div class="axis-grid" id="axisGrid"></div>
@@ -43,8 +43,33 @@
         <section class="panel">
           <div class="panel-head">
             <div>
+              <span class="label">Body Motion Request</span>
+              <h2>汎用運動を生成</h2>
+            </div>
+          </div>
+          <p class="note">ボタンは完成モーションを呼ぶものではなく、reach・circle・sequence・parallelなどの汎用要求例をJSON欄へ入れます。値を書き換えて任意の軌道を送信できます。</p>
+          <div class="preset-row">
+            <button data-motion-example="reach">手を任意位置へ</button>
+            <button data-motion-example="circle">円軌道</button>
+            <button data-motion-example="parallel">同時操作</button>
+            <button data-motion-example="sequence">順次操作</button>
+            <button data-motion-example="oscillate">往復移動</button>
+          </div>
+          <label class="motion-editor-label" for="motionRequest">BodyMotionRequest JSON</label>
+          <textarea id="motionRequest" class="motion-editor" rows="18" spellcheck="false"></textarea>
+          <div class="preset-row motion-actions">
+            <button id="submitMotion" type="button">Motionを送信</button>
+            <button id="clearMotion" type="button">実行中を停止</button>
+            <button id="releaseMotion" type="button">保持も解除</button>
+          </div>
+          <p class="note" id="motionStatus">Motion待機中</p>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
               <span class="label">Inner State</span>
-              <h2>心境による動き</h2>
+              <h2>心境による基礎動作</h2>
             </div>
           </div>
           <div class="preset-row">
@@ -63,7 +88,7 @@
               <h2>注意候補</h2>
             </div>
           </div>
-          <p class="note">候補は固定モーションの再生指示ではありません。マーカーをマウスまたは指でドラッグして位置を変えられます。Bodyが心境と顕著性・新規性・脅威度・関連度から注視先を選びます。</p>
+          <p class="note">マーカーをマウスまたは指でドラッグできます。Bodyが心境と顕著性・新規性・脅威度・関連度から注視先を選びます。</p>
           <div id="candidateControls" class="candidate-controls"></div>
         </section>
 
@@ -89,6 +114,7 @@
   </aside>
 
   <script src="/app.js" defer></script>
+  <script src="/body-motion-controls.js" defer></script>
   <script src="/body-pose-skeleton.js" defer></script>
 </body>
 </html>
