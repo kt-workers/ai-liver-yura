@@ -21,8 +21,15 @@ Procedural Body Controller
   - 速度
   - 相関した微細揺らぎ
   - Attention選択と滞在時間
+            ↓
+Generative Body Motion Controller
+  - reach / translate / rotate
+  - oscillate / circle
+  - sequence / parallel / repeat
+  - hold / release
+  - Canonical joint IK
             ↓ 30〜60fps
-BodyPoseFrame
+BodyPoseFrame + BodyKinematicPose
             ↓
 Avatar Adapter
   - Stick Model
@@ -31,6 +38,8 @@ Avatar Adapter
 ```
 
 Character LLM、Activity、ActionPlanGroupは毎フレームの値を決めない。低速の意味・制約をBodyへ渡し、Bodyが連続状態へ展開する。
+
+完成動作名を追加するのではなく、明示的な身体要求は`BodyMotionRequest`の運動プリミティブへ変換し、Procedural Bodyが生成した現在姿勢へ重ねる。詳細は`docs/design/generative_body_motion_v1.0.0.md`を参照する。
 
 ## 3. BodyPoseFrameの汎用契約
 
@@ -56,9 +65,18 @@ Character LLM、Activity、ActionPlanGroupは毎フレームの値を決めな�
 
 補助投影は3D骨格の代替ではない。
 
+Generative Motion経路では既存`BodyPoseFrame`を破壊せず、`GenerativeBodyPoseFrame`が次を追加する。
+
+- `motion_schema_version`
+- `kinematic_pose`
+- `active_motion_ids`
+- `held_targets`
+
+`kinematic_pose`はモデル非依存のCanonical関節位置であり、棒人間、Live2D、3D Adapterが共通利用する。
+
 ## 4. Canonical joint
 
-初期版は上半身中心の次を提供する。
+初期版の`BodyPoseFrame.joints`は上半身中心の次を提供する。
 
 - `hips`
 - `spine`
@@ -69,6 +87,20 @@ Character LLM、Activity、ActionPlanGroupは毎フレームの値を決めな�
 - `right_upper_arm`
 - `left_lower_arm`
 - `right_lower_arm`
+
+Generative Motionの`BodyKinematicPose`は、end effectorとIKを扱うため次の位置関節を提供する。
+
+- `pelvis`
+- `spine`
+- `chest`
+- `neck`
+- `head`
+- `left_shoulder`／`right_shoulder`
+- `left_elbow`／`right_elbow`
+- `left_hand`／`right_hand`
+- `left_hip`／`right_hip`
+- `left_knee`／`right_knee`
+- `left_ankle`／`right_ankle`
 
 脚、手首、指、肩、足などは契約を壊さず追加できる。Avatar AdapterはCanonical jointを対象モデルの骨へマッピングする。
 
@@ -126,11 +158,27 @@ Bodyは候補ごとに次を受ける。
 
 各軸は現在値と速度を保持し、ばね・減衰モデルで目標へ近づく。新しい命令が来てもneutralへ戻さず、現在値を初期条件として継続する。
 
+### 6.4 明示的な運動要求
+
+`BodyMotionRequest`は、対象、軌道、回転、時間、順序、同時性を運動プリミティブとして表す。
+
+- `reach`: end effectorをBodyローカル絶対位置へ近づける
+- `translate`: 対象subtreeを平行移動する
+- `rotate`: pivot周辺で対象subtreeを回転する
+- `oscillate`: 指定vectorを振幅として往復する
+- `circle`: pivot周辺の円軌道を生成する
+- `sequence`: 子要求を順番に実行する
+- `parallel`: 子要求を同じローカル時間で実行する
+- `repeat`: 1個の子要求を反復する
+- `hold`／`release`: 現在位置の保持と解除
+
+上肢・下肢のend effector移動後は2-bone IKで肘・膝を再計算し、Frame間を平滑化する。
+
 ## 7. Avatar別Adapter
 
 ### 棒人間
 
-正規化補助投影をCanvas関節へ適用する。Render Labではこの経路を使う。
+通常の連続姿勢は正規化補助投影をCanvas関節へ適用する。Generative Motionを含むFrameでは`kinematic_pose`のCanonical関節位置を直接描画する。
 
 ### Live2D
 
@@ -144,9 +192,11 @@ jaw_open      -> ParamMouthOpenY
 body_height   -> ParamBodyY または独自Parameter
 ```
 
+`kinematic_pose`は、モデルプロファイルが持つ可動部・Parameter組み合わせへ投影する。Live2D固有の制約や近似はAdapter側の責務とする。
+
 ### 3D / VRM
 
-`root_transform`、`joints`、`blend_shapes`、`gaze_vector`を使用する。Quaternionをモデル骨のRest Poseと座標系へ変換して適用する。
+`root_transform`、`joints`、`blend_shapes`、`gaze_vector`に加え、必要に応じて`kinematic_pose`を使用する。Quaternionをモデル骨のRest Poseと座標系へ変換して適用する。
 
 ## 8. Transport
 
@@ -168,8 +218,10 @@ HTTPによる`AvatarPerformancePlan`は意味的な演技要求・互換経路�
 心境スライダー・注意候補
          ↓ HTTP設定更新
 Procedural Body Controller
+         +
+任意BodyMotionRequest JSON
          ↓ 30fps
-BodyPoseFrame
+GenerativeBodyPoseFrame
          ↓ SSE
 ブラウザ棒人間
 ```
@@ -182,6 +234,10 @@ BodyPoseFrame
 - 瞬き、呼吸、姿勢揺らぎ
 - Frame間の連続性
 - 3D joint／Quaternion／BlendShape payload
+- reach／rotate／circle等の任意運動要求
+- sequence／parallel／repeat
+- hold／release
+- `kinematic_pose`による関節描画
 
 Renderサービス名は`yura-body-pose-lab`とする。
 
@@ -192,14 +248,23 @@ Renderサービス名は`yura-body-pose-lab`とする。
 - 汎用`BodyPoseFrame` Domain契約
 - Canonical 3D骨格への投影
 - 心境・注意候補駆動の連続Controller
-- Render単体ラボ
+- モデル非依存`BodyMotionRequest`／`BodyMotionPlan`
+- reach／translate／rotate／oscillate／circle
+- sequence／parallel／repeat
+- hold／release／hold_final
+- 上肢・下肢の2-bone IK
+- `GenerativeBodyPoseFrame`と`BodyKinematicPose`
+- Render単体ラボのMotion APIとCanonical関節描画
 - `BodyPoseFrameOutputPort`
 
 未実装：
 
-- Core本番LifecycleへのPose Controller統合
+- StructuredInputMeaningから`BodyMotionRequest`への変換
+- Core本番LifecycleへのGenerative Motion Controller統合
+- Motion priority／blend／authority
 - WebSocket Transport
 - Live2D Parameter Adapter
 - VRM／3Dモデル固有Skeleton Adapter
 - カメラ・マイク由来の実Perception候補
 - 発話音素と口形のFrame統合
+- 完全な3D IK、関節可動域、接地、衝突判定
