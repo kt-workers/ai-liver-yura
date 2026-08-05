@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Yura Core Stick Mock</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Core BodyPoseFrame / Live2D Mock</p>
+        <h1>ゆら Core身体出力モック</h1>
+        <p class="lead">Coreが生成したBodyPoseFrameだけを受信し、Live2Dの代わりに棒人間へ反映します。</p>
+      </div>
+      <div class="connection" id="connection" data-state="waiting">
+        <span class="dot"></span>
+        <span id="connectionText">Core Frame待機中</span>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <article class="stage-card">
+        <div class="stage-head">
+          <div>
+            <span class="label">Core Tracking Stream</span>
+            <strong id="trackingLabel">BodyPoseFrame 未受信</strong>
+          </div>
+          <div class="metrics">
+            <span><b id="fpsValue">0</b> fps</span>
+            <span>注視: <b id="attentionValue">-</b></span>
+          </div>
+        </div>
+        <div class="stage-wrap">
+          <canvas id="canvas" width="760" height="760" aria-label="Core制御の棒人間"></canvas>
+        </div>
+      </article>
+
+      <aside class="side-panel">
+        <section class="panel">
+          <span class="label">Connection</span>
+          <h2>Core接続状態</h2>
+          <dl class="status-grid">
+            <div><dt>Source</dt><dd id="sourceValue">waiting</dd></div>
+            <div><dt>Frame age</dt><dd id="frameAgeValue">-</dd></div>
+            <div><dt>Schema</dt><dd id="schemaValue">-</dd></div>
+          </dl>
+          <p class="note">この画面自身は身体状態やモーションを生成しません。表示される動きはCoreから受信した値です。</p>
+        </section>
+
+        <section class="panel">
+          <span class="label">Pose Axes</span>
+          <h2>主要な身体値</h2>
+          <div class="axis-grid" id="axisGrid"></div>
+        </section>
+
+        <section class="panel payload-panel">
+          <span class="label">Latest Frame</span>
+          <h2>BodyPoseFrame</h2>
+          <pre id="payload">Core Frame待機中</pre>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <aside class="floating-preview" id="floatingPreview" aria-hidden="true">
+    <div class="floating-preview-head">
+      <span>Core Body Preview</span>
+      <b id="floatingAttention">-</b>
+    </div>
+    <canvas id="floatingCanvas" width="320" height="320" aria-label="スクロール追従棒人間"></canvas>
+  </aside>
+
+  <script src="/app.js" defer></script>
+  <script src="/body-pose-skeleton.js" defer></script>
+</body>
+</html>
