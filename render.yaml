@@ -41,3 +41,18 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.5
+
+  - type: web
+    name: yura-body-pose-lab
+    runtime: python
+    plan: free
+    branch: fix/runtime-graceful-shutdown
+    buildCommand: python -m compileall app gui/yura-body-pose-lab
+    startCommand: python gui/yura-body-pose-lab/render_server.py
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.5
+      - key: YURA_BODY_POSE_LAB_TICK_HZ
+        value: "30"
