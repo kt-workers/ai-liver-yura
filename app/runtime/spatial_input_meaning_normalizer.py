@@ -95,21 +95,21 @@ _GAZE_MARKERS = (
 def normalize_spatial_input_meaning(
     meaning: StructuredInputMeaning,
 ) -> StructuredInputMeaning:
-    """身体方向またはアバター身体操作の指示をInputTargetへ正規化する。"""
+    """身体Motionまたは視線・向きの指示をInputTargetへ正規化する。"""
 
     if meaning.expected_response is not ExpectedResponse.ACTION:
         return meaning
     if meaning.input_speech_act not in _SPATIAL_SPEECH_ACTS:
         return meaning
 
-    # 「目を開けて」の「上」などを方向として誤認しないよう、明示的な
-    # アバター身体Actionを方向語より先に確定する。
-    body_command = normalize_avatar_body_command(meaning)
+    # 「右手を上げる」の「右」「上」などを視線方向として誤認しないよう、
+    # BodyMotionRequestへの変換を方向語より先に確定する。
+    body_motion = normalize_avatar_body_command(meaning)
     if (
-        body_command.target is not None
-        and body_command.target.target_type.casefold() == "avatar_body_action"
+        body_motion.target is not None
+        and body_motion.target.target_type.casefold() == "body_motion"
     ):
-        return body_command
+        return body_motion
 
     existing = _normalize_existing_target(meaning.target)
     if existing is not None:
