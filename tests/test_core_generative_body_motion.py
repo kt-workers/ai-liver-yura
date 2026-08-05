@@ -10,7 +10,6 @@ from app.domain.actions import ActionPlan, ActionType
 from app.domain.body import (
     BodyActivityContext,
     BodyExpressionRequest,
-    EmbodiedExpressionIntent,
     SpeechPresentationRequest,
 )
 from app.domain.body_motion import (
@@ -26,6 +25,7 @@ from app.domain.cognitive_direction import (
     StructuredInputMeaning,
 )
 from app.ports.avatar_output import bind_avatar_output
+from app.ports.body_pose_output import BodyPoseFrameOutputPort
 from app.ports.body_subsystem import BodySubsystemPort, bind_body_subsystem
 from app.runtime.body_motion_request_resolver import (
     body_motion_request_from_meaning,
@@ -146,7 +146,7 @@ async def test_core_runtime_generates_kinematic_frames_from_motion_request() -> 
     output = FakePoseOutput()
     runtime = CoreGenerativeBodyRuntime(
         None,
-        body_pose_output=cast(object, output),  # type: ignore[arg-type]
+        body_pose_output=cast(BodyPoseFrameOutputPort, output),
     )
     await runtime.request_motion(
         BodyMotionRequest(
@@ -229,8 +229,6 @@ def test_stick_mock_only_renders_core_pose_frames() -> None:
     assert "GenerativeBodyMotionController" not in server
     assert "BodyMotionRequest" not in server
     assert 'path != "/api/body-pose-frame"' in server
-    assert "frame?.kinematic_pose" not in app
-    assert "frame?." not in app
-    assert "frame?.kinematic_pose" not in app
-    assert "frame.kinematic_pose" in app
+    assert "const pose = frame?.kinematic_pose" in app
+    assert "EventSource(\"/api/events\")" in app
     assert "動作の解釈・軌道・IKは実行しません" in readme
