@@ -17,7 +17,7 @@ from app.domain.body_pose_frame import (
     BodyInnerMotionState,
     BodyPoseFrame,
 )
-from app.runtime.procedural_body_controller import ProceduralBodyController
+from app.runtime.body_pose_lab_controller import BodyPoseLabController
 
 WEB_ROOT = Path(__file__).parent / "web"
 MAX_BODY_BYTES = 65_536
@@ -26,7 +26,7 @@ MAX_BODY_BYTES = 65_536
 class BodyPoseLabHub:
     def __init__(self, *, tick_hz: float = 30.0) -> None:
         self._tick_hz = tick_hz
-        self._controller = ProceduralBodyController(tick_hz=tick_hz, seed=514)
+        self._controller = BodyPoseLabController(tick_hz=tick_hz, seed=514)
         self._condition = threading.Condition()
         self._running = False
         self._thread: threading.Thread | None = None
