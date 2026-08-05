@@ -75,14 +75,14 @@
               <h2>身体操作テスト</h2>
             </div>
           </div>
-          <p class="note">現在姿勢を保ったまま、Body Controllerへ一時的な姿勢目標または軌道命令を送ります。終了時もホーム姿勢へ瞬間移動せず、心境由来の姿勢へ連続的に戻ります。</p>
+          <p class="note">現在姿勢を保ったまま、Body Controllerへ一時的な姿勢目標または軌道命令を送ります。終了時もホーム姿勢へ瞬間移動せず、心境由来の姿勢へ連続的に戻ります。奥行き方向は使わず、移動は画面上の上下左右で確認します。</p>
           <div class="body-command-grid">
             <button data-body-command="right_hand_raise" data-duration-ms="2400">右手を上げる</button>
             <button data-body-command="left_hand_raise" data-duration-ms="2400">左手を上げる</button>
             <button data-body-command="both_hands_raise" data-duration-ms="2400">両手を上げる</button>
-            <button data-body-command="right_hand_wave" data-duration-ms="2800">右手を振る</button>
-            <button data-body-command="left_hand_wave" data-duration-ms="2800">左手を振る</button>
-            <button data-body-command="both_hands_wave" data-duration-ms="2800">両手を振る</button>
+            <button data-body-command="right_hand_wave" data-duration-ms="2800">右手でバイバイ</button>
+            <button data-body-command="left_hand_wave" data-duration-ms="2800">左手でバイバイ</button>
+            <button data-body-command="both_hands_wave" data-duration-ms="2800">両手でバイバイ</button>
             <button data-body-command="eyes_close" data-duration-ms="2200">目を閉じる</button>
             <button data-body-command="eyes_open" data-duration-ms="1600">目を開ける</button>
             <button data-body-command="blink" data-duration-ms="650">まばたき</button>
@@ -91,8 +91,11 @@
             <button data-body-command="head_circle" data-duration-ms="2600">首を回す</button>
             <button data-body-command="bow" data-duration-ms="2300">お辞儀</button>
             <button data-body-command="jump" data-duration-ms="1800">ジャンプ</button>
-            <button data-body-command="body_sway" data-duration-ms="3000">体を左右に揺らす</button>
-            <button data-body-command="body_twist" data-duration-ms="2800">体をひねる</button>
+            <button data-body-command="body_sway" data-duration-ms="3000">体を左右に揺らす（傾き）</button>
+            <button data-body-command="body_move_up" data-duration-ms="2200">体を上へ移動</button>
+            <button data-body-command="body_move_down" data-duration-ms="2200">体を下へ移動</button>
+            <button data-body-command="body_move_left" data-duration-ms="2200">体を左へ移動</button>
+            <button data-body-command="body_move_right" data-duration-ms="2200">体を右へ移動</button>
           </div>
           <p class="body-command-status" id="bodyCommandStatus" data-state="idle">身体操作を選択してください</p>
         </section>
