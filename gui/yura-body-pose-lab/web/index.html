@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Yura Body Pose Lab</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/body-command-controls.css">
 </head>
 <body>
   <main class="shell">
@@ -67,6 +68,35 @@
           <div id="candidateControls" class="candidate-controls"></div>
         </section>
 
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <span class="label">Body Command Probe</span>
+              <h2>身体操作テスト</h2>
+            </div>
+          </div>
+          <p class="note">現在姿勢を保ったまま、Body Controllerへ一時的な姿勢目標または軌道命令を送ります。終了時もホーム姿勢へ瞬間移動せず、心境由来の姿勢へ連続的に戻ります。</p>
+          <div class="body-command-grid">
+            <button data-body-command="right_hand_raise" data-duration-ms="2400">右手を上げる</button>
+            <button data-body-command="left_hand_raise" data-duration-ms="2400">左手を上げる</button>
+            <button data-body-command="both_hands_raise" data-duration-ms="2400">両手を上げる</button>
+            <button data-body-command="right_hand_wave" data-duration-ms="2800">右手を振る</button>
+            <button data-body-command="left_hand_wave" data-duration-ms="2800">左手を振る</button>
+            <button data-body-command="both_hands_wave" data-duration-ms="2800">両手を振る</button>
+            <button data-body-command="eyes_close" data-duration-ms="2200">目を閉じる</button>
+            <button data-body-command="eyes_open" data-duration-ms="1600">目を開ける</button>
+            <button data-body-command="blink" data-duration-ms="650">まばたき</button>
+            <button data-body-command="mouth_open" data-duration-ms="2200">口を開ける</button>
+            <button data-body-command="mouth_close" data-duration-ms="1600">口を閉じる</button>
+            <button data-body-command="head_circle" data-duration-ms="2600">首を回す</button>
+            <button data-body-command="bow" data-duration-ms="2300">お辞儀</button>
+            <button data-body-command="jump" data-duration-ms="1800">ジャンプ</button>
+            <button data-body-command="body_sway" data-duration-ms="3000">体を左右に揺らす</button>
+            <button data-body-command="body_twist" data-duration-ms="2800">体をひねる</button>
+          </div>
+          <p class="body-command-status" id="bodyCommandStatus" data-state="idle">身体操作を選択してください</p>
+        </section>
+
         <section class="panel payload-panel">
           <div class="panel-head">
             <div>
@@ -90,5 +120,6 @@
 
   <script src="/app.js" defer></script>
   <script src="/body-pose-skeleton.js" defer></script>
+  <script src="/body-command-controls.js" defer></script>
 </body>
 </html>
