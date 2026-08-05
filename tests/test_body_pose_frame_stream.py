@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import math
+import subprocess
+import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -153,6 +156,30 @@ def test_render_lab_hub_produces_frames_without_core_llm_or_tts() -> None:
     assert second.pose != BodyTrackingPose()
 
 
+def test_render_entrypoint_imports_app_outside_repository_cwd() -> None:
+    root = Path(__file__).parents[1]
+    render_server = (
+        root / "gui" / "yura-body-pose-lab" / "render_server.py"
+    )
+    command = (
+        "import runpy; "
+        f"runpy.run_path({str(render_server)!r}, run_name='render_import_check')"
+    )
+
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        result = subprocess.run(
+            [sys.executable, "-c", command],
+            cwd=temporary_directory,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+
+    assert result.returncode == 0, result.stderr
+    assert "ModuleNotFoundError" not in result.stderr
+
+
 def test_render_lab_is_configured_as_standalone_service() -> None:
     root = Path(__file__).parents[1]
     render_yaml = (root / "render.yaml").read_text(encoding="utf-8")
@@ -166,6 +193,8 @@ def test_render_lab_is_configured_as_standalone_service() -> None:
     assert "name: yura-body-pose-lab" in render_yaml
     assert "python gui/yura-body-pose-lab/render_server.py" in render_yaml
     assert "KinematicProceduralBodyController" in render_server
+    assert "PROJECT_ROOT" in render_server
+    assert "sys.path.insert" in render_server
     assert 'new EventSource("/api/frames")' in browser
     assert "frame.joints" in browser
     assert "CharacterLlm" not in render_server
