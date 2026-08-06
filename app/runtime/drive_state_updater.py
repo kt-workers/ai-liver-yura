@@ -63,8 +63,7 @@ class DriveStateUpdater:
 
         dimensions = affective_appraisal.dimensions
         curiosity_compatibility = self._clamp(
-            desire.curiosity.effective_level * 0.82
-            + dimensions.novelty * 0.18,
+            desire.curiosity.effective_level + dimensions.novelty * 0.18
         )
         engagement_target = self._clamp(
             0.18
