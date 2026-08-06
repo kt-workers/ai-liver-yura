@@ -40,35 +40,39 @@ class BodyAmbientMotionGenerator:
         dt = max(1.0 / 240.0, min(0.1, float(dt_seconds)))
         root_dt = math.sqrt(dt)
 
-        scan_sigma = 0.08 + state.curiosity * 0.34 + state.tension * 0.16
-        scan_reversion = 0.65 + state.engagement * 0.55
-        self._scan_vx += (-scan_reversion * self._scan_x - 1.7 * self._scan_vx) * dt
-        self._scan_vy += (-scan_reversion * self._scan_y - 1.8 * self._scan_vy) * dt
+        scan_sigma = 0.035 + state.curiosity * 0.14 + state.tension * 0.06
+        scan_reversion = 0.78 + state.engagement * 0.62
+        self._scan_vx += (-scan_reversion * self._scan_x - 2.15 * self._scan_vx) * dt
+        self._scan_vy += (-scan_reversion * self._scan_y - 2.25 * self._scan_vy) * dt
         self._scan_vx += self._random.gauss(0.0, scan_sigma) * root_dt
-        self._scan_vy += self._random.gauss(0.0, scan_sigma * 0.72) * root_dt
-        self._scan_x = self._clamp(self._scan_x + self._scan_vx * dt, -0.82, 0.82)
-        self._scan_y = self._clamp(self._scan_y + self._scan_vy * dt, -0.58, 0.58)
+        self._scan_vy += self._random.gauss(0.0, scan_sigma * 0.68) * root_dt
+        self._scan_vx = self._clamp(self._scan_vx, -0.38, 0.38)
+        self._scan_vy = self._clamp(self._scan_vy, -0.32, 0.32)
+        self._scan_x = self._clamp(self._scan_x + self._scan_vx * dt, -0.72, 0.72)
+        self._scan_y = self._clamp(self._scan_y + self._scan_vy * dt, -0.48, 0.48)
 
-        posture_sigma = 0.025 + state.movement_energy * 0.08
+        posture_sigma = 0.006 + state.movement_energy * 0.022
         self._posture_velocity += (
-            -0.42 * self._posture_noise - 0.95 * self._posture_velocity
+            -0.68 * self._posture_noise - 1.55 * self._posture_velocity
         ) * dt
         self._posture_velocity += self._random.gauss(0.0, posture_sigma) * root_dt
+        self._posture_velocity = self._clamp(self._posture_velocity, -0.065, 0.065)
         self._posture_noise = self._clamp(
             self._posture_noise + self._posture_velocity * dt,
-            -0.24,
-            0.24,
+            -0.12,
+            0.12,
         )
 
-        head_sigma = 0.02 + state.arousal * 0.055 + state.curiosity * 0.035
+        head_sigma = 0.005 + state.arousal * 0.016 + state.curiosity * 0.012
         self._head_velocity += (
-            -0.58 * self._head_noise - 1.1 * self._head_velocity
+            -0.82 * self._head_noise - 1.72 * self._head_velocity
         ) * dt
         self._head_velocity += self._random.gauss(0.0, head_sigma) * root_dt
+        self._head_velocity = self._clamp(self._head_velocity, -0.052, 0.052)
         self._head_noise = self._clamp(
             self._head_noise + self._head_velocity * dt,
-            -0.18,
-            0.18,
+            -0.09,
+            0.09,
         )
 
         return BodyAmbientMotionSample(
