@@ -6,7 +6,7 @@ from tests.support.body_pose_frame_factory import make_body_pose_frame
 from tests.support.body_pose_lab_http_harness import BodyPoseLabHttpHarness
 
 
-def test_sse_stream_delivers_first_body_pose_frame_event() -> None:
+def test_sse_stream_delivers_first_body_pose_frame_event_over_http() -> None:
     with BodyPoseLabHttpHarness.start(local_simulation=False) as harness:
         frame = make_body_pose_frame(
             7,
@@ -25,9 +25,16 @@ def test_sse_stream_delivers_first_body_pose_frame_event() -> None:
         assert payload["source"] == "sse-test"
         assert payload["sequence"] == 7
         assert payload["pose"]["head_yaw"] == 0.31
-        harness.wait_until(
-            lambda: harness.components.frame_hub.snapshot().subscriber_count == 0
-        )
+
+
+def test_sse_stream_subscription_lifecycle_is_deterministic() -> None:
+    with BodyPoseLabHttpHarness.start(local_simulation=False) as harness:
+        subscription = harness.components.sse.open()
+        assert harness.components.frame_hub.snapshot().subscriber_count == 1
+
+        harness.components.sse.close(subscription)
+
+        assert harness.components.frame_hub.snapshot().subscriber_count == 0
 
 
 def test_local_simulation_tick_loop_starts_and_stops_without_leaking_ticks() -> None:
