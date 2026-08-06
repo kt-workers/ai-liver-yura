@@ -7,6 +7,8 @@ from app.domain.body_pose_dynamics import (
     BodyPoseConstraintTarget,
 )
 
+_COMPLETION_EPSILON_SECONDS = 1e-9
+
 
 def _smoothstep(value: float) -> float:
     normalized = max(0.0, min(1.0, value))
@@ -49,14 +51,14 @@ class BodyExternalConstraintPlayer:
 
         dt = max(1.0 / 240.0, min(0.1, float(dt_seconds)))
         duration = constraint.duration_ms / 1000.0
-        self._elapsed = min(duration, self._elapsed + dt)
+        next_elapsed = self._elapsed + dt
+        completed = next_elapsed + _COMPLETION_EPSILON_SECONDS >= duration
+        self._elapsed = duration if completed else next_elapsed
         progress = self._elapsed / duration
-        envelope = self._envelope(constraint, progress)
-        completed = self._elapsed >= duration
         sample = BodyExternalConstraintSample(
             constraint_id=constraint.constraint_id,
             targets=constraint.targets,
-            envelope=envelope,
+            envelope=0.0 if completed else self._envelope(constraint, progress),
             completed=completed,
         )
         if completed:
