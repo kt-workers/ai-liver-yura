@@ -17,6 +17,7 @@ from app.domain.topic import (
     TopicContinuationResult,
 )
 from app.runtime.agent_state import AgentState
+from app.runtime.causal_decision_observer import CausalDecisionObserver
 from app.utils.trace import TraceLogger
 
 
@@ -31,8 +32,13 @@ class AutonomousInteractionDecider:
         TopicContinuationDecision.START_NEW_TOPIC,
     }
 
-    def __init__(self, trace_logger: TraceLogger | None = None) -> None:
+    def __init__(
+        self,
+        trace_logger: TraceLogger | None = None,
+        causal_observer: CausalDecisionObserver | None = None,
+    ) -> None:
         self._trace_logger = trace_logger or TraceLogger()
+        self._causal_observer = causal_observer or CausalDecisionObserver()
 
     def decide(
         self,
@@ -96,6 +102,7 @@ class AutonomousInteractionDecider:
             drive_boredom=state.current_drive.boredom,
             drive_energy=state.current_drive.energy,
         )
+        self._causal_observer.observe_autonomous_start(decision, comparison)
         return decision, comparison
 
     def _decide(
