@@ -146,10 +146,14 @@ class StateDrivenBodyController:
             target=target.pose,
             dt_seconds=tick.dt_seconds,
         )
+        display_dynamics = self._components.speech_overlay.apply(
+            dynamics=self._dynamics,
+            speech=speech,
+        )
         return self._components.frame_assembler.assemble(
             sequence=tick.sequence,
             timestamp_ms=tick.timestamp_ms,
-            dynamics=self._dynamics,
+            dynamics=display_dynamics,
             inner_state=motion_state,
             target=target,
         )
