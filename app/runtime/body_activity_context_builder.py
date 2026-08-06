@@ -2,199 +2,94 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from app.domain.activities import Activity, ActivityType
+from app.domain.activities import Activity
 from app.domain.body import BodyActivityContext, BodyPostureTendency
-from app.domain.interaction_intention import InteractionIntention
+from app.runtime.body_activity_context_policy import BodyActivityContextPolicy
+from app.runtime.body_interaction_intention_resolver import (
+    BodyInteractionIntentionResolver,
+)
 from app.runtime.interaction_expression_projector import (
-    InteractionExpressionProjection,
     InteractionExpressionProjector,
 )
 from app.utils.trace import TraceLogger
 
 
 class BodyActivityContextBuilder:
-    """Activityを毎フレーム命令ではない継続的な身体文脈へ変換する。"""
-
-    _DEFAULTS: dict[
-        ActivityType,
-        tuple[str | None, float, BodyPostureTendency, float, float],
-    ] = {
-        ActivityType.CONVERSATION_WITH_USER: (
-            "conversation_partner",
-            0.72,
-            BodyPostureTendency.OPEN,
-            0.38,
-            0.25,
-        ),
-        ActivityType.DIRECTED_TALK: (
-            "audience",
-            0.68,
-            BodyPostureTendency.OPEN,
-            0.46,
-            0.32,
-        ),
-        ActivityType.LISTENING_MODE: (
-            "conversation_partner",
-            0.82,
-            BodyPostureTendency.FORWARD,
-            0.24,
-            0.18,
-        ),
-        ActivityType.STIMULUS_REACTION: (
-            "stimulus",
-            0.78,
-            BodyPostureTendency.NEUTRAL,
-            0.58,
-            0.42,
-        ),
-        ActivityType.IDLE_OBSERVATION: (
-            None,
-            0.25,
-            BodyPostureTendency.NEUTRAL,
-            0.22,
-            0.88,
-        ),
-        ActivityType.BODY_EXPRESSION_LOOP: (
-            None,
-            0.35,
-            BodyPostureTendency.NEUTRAL,
-            0.32,
-            0.72,
-        ),
-    }
+    """Body文脈の既定値へ明示overrideを適用し、型付きContextを生成する。"""
 
     def __init__(
         self,
         projector: InteractionExpressionProjector | None = None,
+        intention_resolver: BodyInteractionIntentionResolver | None = None,
+        context_policy: BodyActivityContextPolicy | None = None,
     ) -> None:
         self._projector = projector or InteractionExpressionProjector()
+        self._intention_resolver = (
+            intention_resolver or BodyInteractionIntentionResolver()
+        )
+        self._context_policy = context_policy or BodyActivityContextPolicy()
         self._trace_logger = TraceLogger()
 
     def build(self, activity: Activity) -> BodyActivityContext:
-        defaults = self._DEFAULTS.get(
-            activity.activity_type,
-            (
-                None,
-                0.5,
-                BodyPostureTendency.NEUTRAL,
-                0.35,
-                0.5,
-            ),
-        )
+        defaults = self._context_policy.defaults_for(activity.activity_type)
         raw = activity.context.get("body_context", {})
         overrides: Mapping[str, object] = raw if isinstance(raw, Mapping) else {}
-        intention = self._interaction_intention(activity)
-        projection = self._projector.project(intention) if intention is not None else None
-        projected_defaults = self._projected_defaults(defaults, projection)
 
-        attention_target = self._optional_name(
-            overrides.get("attention_target"),
-            projected_defaults[0],
-        )
-        posture_tendency = self._posture(
-            overrides.get("posture_tendency"),
-            projected_defaults[2],
-        )
+        intention = self._intention_resolver.resolve(activity)
+        projection = self._projector.project(intention) if intention is not None else None
+        projected = self._context_policy.apply_projection(defaults, projection)
+
         context = BodyActivityContext(
             source_activity_id=activity.activity_id,
-            attention_target=attention_target,
+            attention_target=self._optional_name(
+                overrides.get("attention_target"),
+                projected.attention_target,
+            ),
             engagement=self._unit(
                 overrides.get("engagement"),
-                projected_defaults[1],
+                projected.engagement,
             ),
-            posture_tendency=posture_tendency,
+            posture_tendency=self._posture(
+                overrides.get("posture_tendency"),
+                projected.posture_tendency,
+            ),
             movement_energy=self._unit(
                 overrides.get("movement_energy"),
-                projected_defaults[3],
+                projected.movement_energy,
             ),
             gaze_freedom=self._unit(
                 overrides.get("gaze_freedom"),
-                projected_defaults[4],
+                projected.gaze_freedom,
             ),
             interaction_intention=intention,
         )
-        if intention is not None:
-            self._trace_logger.info(
-                "interaction_intention:body_context_projected",
-                source_activity_id=activity.activity_id,
-                activity_type=activity.activity_type.value,
-                intention=intention.intention.value,
-                intention_source=intention.source,
-                observation_only=intention.observation_only,
-                posture_tendency=context.posture_tendency.value,
-                attention_target=context.attention_target,
-                engagement=context.engagement,
-                movement_energy=context.movement_energy,
-                gaze_freedom=context.gaze_freedom,
-                explicit_body_override=bool(overrides),
-            )
+        self._trace_projection(activity, context, explicit_override=bool(overrides))
         return context
 
-    @staticmethod
-    def _projected_defaults(
-        defaults: tuple[str | None, float, BodyPostureTendency, float, float],
-        projection: InteractionExpressionProjection | None,
-    ) -> tuple[str | None, float, BodyPostureTendency, float, float]:
-        if projection is None:
-            return defaults
-        attention = projection.attention_intent
-        attention_target = attention.target if attention is not None else defaults[0]
-        attention_engagement = (
-            attention.engagement if attention is not None else defaults[1]
+    def _trace_projection(
+        self,
+        activity: Activity,
+        context: BodyActivityContext,
+        *,
+        explicit_override: bool,
+    ) -> None:
+        intention = context.interaction_intention
+        if intention is None:
+            return
+        self._trace_logger.info(
+            "interaction_intention:body_context_projected",
+            source_activity_id=activity.activity_id,
+            activity_type=activity.activity_type.value,
+            intention=intention.intention.value,
+            intention_source=intention.source,
+            observation_only=intention.observation_only,
+            posture_tendency=context.posture_tendency.value,
+            attention_target=context.attention_target,
+            engagement=context.engagement,
+            movement_energy=context.movement_energy,
+            gaze_freedom=context.gaze_freedom,
+            explicit_body_override=explicit_override,
         )
-        return (
-            attention_target,
-            BodyActivityContextBuilder._blend(defaults[1], attention_engagement),
-            projection.posture_tendency,
-            BodyActivityContextBuilder._blend(
-                defaults[3], projection.movement_energy
-            ),
-            BodyActivityContextBuilder._blend(
-                defaults[4], projection.gaze_freedom
-            ),
-        )
-
-    @staticmethod
-    def _interaction_intention(activity: Activity) -> InteractionIntention | None:
-        candidates: list[object] = [activity.context.get("interaction_intention")]
-        event_payload = activity.context.get("event_payload")
-        if isinstance(event_payload, Mapping):
-            candidates.append(event_payload.get("interaction_intention"))
-            event_memory = event_payload.get("memory")
-            if isinstance(event_memory, Mapping):
-                candidates.append(event_memory.get("interaction_intention"))
-            event_plan = event_payload.get("behavior_plan")
-            if isinstance(event_plan, Mapping):
-                candidates.extend(BodyActivityContextBuilder._plan_candidates(event_plan))
-        behavior_plan = activity.context.get("behavior_plan")
-        if isinstance(behavior_plan, Mapping):
-            candidates.extend(BodyActivityContextBuilder._plan_candidates(behavior_plan))
-        memory = activity.context.get("memory")
-        if isinstance(memory, Mapping):
-            candidates.append(memory.get("interaction_intention"))
-        execution_result = activity.context.get("activity_execution_result")
-        result_constraints = getattr(execution_result, "constraints", None)
-        if isinstance(result_constraints, Mapping):
-            candidates.append(result_constraints.get("_interaction_intention"))
-        for candidate in candidates:
-            intention = InteractionIntention.from_context(candidate)
-            if intention is not None:
-                return intention
-        return None
-
-    @staticmethod
-    def _plan_candidates(plan: Mapping[str, object]) -> tuple[object, ...]:
-        constraints = plan.get("constraints")
-        constraint_intention = (
-            constraints.get("_interaction_intention")
-            if isinstance(constraints, Mapping)
-            else None
-        )
-        return plan.get("interaction_intention"), constraint_intention
-
-    @staticmethod
-    def _blend(base: float, projected: float) -> float:
-        return max(0.0, min(1.0, base * 0.45 + projected * 0.55))
 
     @staticmethod
     def _unit(value: object, default: float) -> float:
