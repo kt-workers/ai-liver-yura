@@ -154,12 +154,8 @@ class ElapsedStateUpdater:
         )
 
     def record_event(self, occurred_at: datetime) -> None:
-        """Event反映済み状態を、以後の時間更新の基準時刻にする。"""
+        """Event反映済み状態を派生状態の基準時刻へ反映する。"""
 
-        self._last_drive_updated_at = max(
-            self._last_drive_updated_at,
-            occurred_at,
-        )
         self._last_desire_updated_at = max(
             self._last_desire_updated_at,
             occurred_at,
