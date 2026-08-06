@@ -160,14 +160,37 @@ class BodyActivityContextBuilder:
         event_payload = activity.context.get("event_payload")
         if isinstance(event_payload, Mapping):
             candidates.append(event_payload.get("interaction_intention"))
+            event_memory = event_payload.get("memory")
+            if isinstance(event_memory, Mapping):
+                candidates.append(event_memory.get("interaction_intention"))
+            event_plan = event_payload.get("behavior_plan")
+            if isinstance(event_plan, Mapping):
+                candidates.extend(BodyActivityContextBuilder._plan_candidates(event_plan))
         behavior_plan = activity.context.get("behavior_plan")
         if isinstance(behavior_plan, Mapping):
-            candidates.append(behavior_plan.get("interaction_intention"))
+            candidates.extend(BodyActivityContextBuilder._plan_candidates(behavior_plan))
+        memory = activity.context.get("memory")
+        if isinstance(memory, Mapping):
+            candidates.append(memory.get("interaction_intention"))
+        execution_result = activity.context.get("activity_execution_result")
+        result_constraints = getattr(execution_result, "constraints", None)
+        if isinstance(result_constraints, Mapping):
+            candidates.append(result_constraints.get("_interaction_intention"))
         for candidate in candidates:
             intention = InteractionIntention.from_context(candidate)
             if intention is not None:
                 return intention
         return None
+
+    @staticmethod
+    def _plan_candidates(plan: Mapping[str, object]) -> tuple[object, ...]:
+        constraints = plan.get("constraints")
+        constraint_intention = (
+            constraints.get("_interaction_intention")
+            if isinstance(constraints, Mapping)
+            else None
+        )
+        return plan.get("interaction_intention"), constraint_intention
 
     @staticmethod
     def _blend(base: float, projected: float) -> float:
