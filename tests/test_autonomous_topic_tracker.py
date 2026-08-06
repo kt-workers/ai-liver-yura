@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app.domain.autonomous_continuation import AutonomousContinuationAction
 from app.domain.drives import DriveState
 from app.domain.emotions import EmotionState
 from app.domain.topic import TopicLifecycleStatus
@@ -110,6 +111,91 @@ def test_should_complete_returns_strength_and_decision() -> None:
     assert should_complete is True
     assert strength is not None
     assert strength <= 0.20
+
+
+def test_question_returns_turn_to_user_after_first_output() -> None:
+    tracker = AutonomousTopicTracker(uuid_factory=lambda: "topic-1")
+    drive = DriveState(curiosity=0.9, engagement=0.9, energy=0.9)
+    emotion = EmotionState(talkativeness=0.9, arousal=0.8)
+    tracker.record_output(
+        activity_id="activity-1",
+        text="最近どんなゲームが気になっている？",
+        drive=drive,
+        emotion=emotion,
+    )
+
+    evaluation = tracker.evaluate_completion(
+        activity_id="activity-1",
+        drive=drive,
+        emotion=emotion,
+    )
+
+    assert evaluation is not None
+    assert evaluation.action is AutonomousContinuationAction.COMPLETE
+    assert evaluation.reason == "user_response_expected_after_question"
+    assert evaluation.turn_count == 1
+    assert evaluation.waiting_for_user is True
+
+
+def test_autonomous_topic_completes_at_hard_turn_limit() -> None:
+    tracker = AutonomousTopicTracker(
+        uuid_factory=lambda: "topic-1",
+        maximum_autonomous_turns=3,
+    )
+    drive = DriveState(curiosity=0.9, engagement=0.9, energy=0.9)
+    emotion = EmotionState(talkativeness=0.9, arousal=0.8)
+    for index in range(3):
+        tracker.record_output(
+            activity_id="activity-1",
+            text=f"未完の話題を続ける {index}",
+            drive=drive,
+            emotion=emotion,
+            context={
+                "topic_metrics": {
+                    "interest": 1.0,
+                    "incompleteness": 1.0,
+                    "exhaustion": 0.0,
+                }
+            },
+        )
+
+    evaluation = tracker.evaluate_completion(
+        activity_id="activity-1",
+        drive=drive,
+        emotion=emotion,
+    )
+
+    assert evaluation is not None
+    assert evaluation.action is AutonomousContinuationAction.COMPLETE
+    assert evaluation.reason == "maximum_autonomous_turns_reached"
+    assert evaluation.hard_limit_reached is True
+
+
+def test_non_question_with_strength_can_continue_before_limit() -> None:
+    tracker = AutonomousTopicTracker(uuid_factory=lambda: "topic-1")
+    drive = DriveState(curiosity=0.9, engagement=0.9, energy=0.9)
+    emotion = EmotionState(talkativeness=0.9, arousal=0.8)
+    tracker.record_output(
+        activity_id="activity-1",
+        text="まず一つ目の考えを話すね",
+        drive=drive,
+        emotion=emotion,
+    )
+
+    evaluation = tracker.evaluate_completion(
+        activity_id="activity-1",
+        drive=drive,
+        emotion=emotion,
+    )
+
+    assert evaluation is not None
+    assert evaluation.action is AutonomousContinuationAction.CONTINUE
+    assert evaluation.reason == "topic_still_has_causal_continuation_strength"
+
+
+def test_invalid_maximum_autonomous_turns_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        AutonomousTopicTracker(maximum_autonomous_turns=0)
 
 
 def test_interrupt_preserves_existing_topic_identity() -> None:
