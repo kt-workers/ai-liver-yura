@@ -97,6 +97,7 @@ class DriveStateUpdater:
         energy_delta = self._event_energy_delta(event.event_type)
         if activity_active:
             energy_delta -= 0.004
+        input_stimulus_scale, input_kind = self._causal_input_observation(event)
         updated = DriveState(
             curiosity=curiosity_compatibility,
             engagement=self._move_toward(drive.engagement, engagement_target, 0.30),
@@ -108,6 +109,9 @@ class DriveStateUpdater:
             source_event_id=event.event_id,
             event_type=event.event_type.value,
             affective_cause=affective_appraisal.cause_category,
+            input_kind=input_kind,
+            stimulus_scale=input_stimulus_scale,
+            input_classification_observation_only=input_kind is not None,
             curiosity_source=curiosity_source,
             desire_curiosity_projection=desire_curiosity_projection,
             drive_curiosity_inertia=drive_curiosity_inertia,
@@ -380,6 +384,19 @@ class DriveStateUpdater:
             AgentEventType.USER_SPEECH: -0.010,
             AgentEventType.YOUTUBE_COMMENT: -0.008,
         }.get(event_type, 0.0)
+
+    @classmethod
+    def _causal_input_observation(
+        cls,
+        event: AgentEvent,
+    ) -> tuple[float | None, str | None]:
+        if event.event_type not in {
+            AgentEventType.USER_TEXT,
+            AgentEventType.YOUTUBE_COMMENT,
+            AgentEventType.USER_SPEECH,
+        }:
+            return None, None
+        return cls._input_stimulus(cls._event_text(event))
 
     @staticmethod
     def _event_text(event: AgentEvent) -> str:
