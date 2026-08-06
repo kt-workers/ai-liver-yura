@@ -86,13 +86,15 @@ class SeparatedSituationEvaluationAdapter:
             planning_input,
             character_profile=self._character_profile,
         )
+        intention_context = observation.interaction_intention.as_context()
         payload = self._legacy_situation_payload(validated)
-        payload["interaction_intention"] = (
-            observation.interaction_intention.as_context()
-        )
+        payload["interaction_intention"] = intention_context
         payload["interaction_intention_comparison"] = (
             observation.comparison.as_context()
         )
+        constraints = payload.get("constraints")
+        if isinstance(constraints, dict):
+            constraints["_interaction_intention"] = intention_context
         self._trace_logger.info(
             "interaction_intention:situation_projected",
             source_event_id=activity.source_event_id,
