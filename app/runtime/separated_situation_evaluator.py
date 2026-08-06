@@ -22,6 +22,9 @@ from app.runtime.cognitive_direction_services import (
     InputMeaningInterpreter,
     InternalDirectivePlanner,
 )
+from app.runtime.interaction_expression_projector import (
+    InteractionExpressionProjector,
+)
 from app.runtime.internal_directive_validator import InternalDirectiveValidator
 from app.utils.trace import TraceLogger
 
@@ -40,6 +43,7 @@ class SeparatedSituationEvaluationAdapter:
         input_interpreter: InputMeaningInterpreter | None = None,
         directive_planner: InternalDirectivePlanner | None = None,
         validator: InternalDirectiveValidator | None = None,
+        expression_projector: InteractionExpressionProjector | None = None,
     ) -> None:
         self._input_interpreter = input_interpreter or InputMeaningInterpreter(
             input_model,
@@ -50,6 +54,9 @@ class SeparatedSituationEvaluationAdapter:
             prompt_builder=directive_prompt_builder,
         )
         self._validator = validator or InternalDirectiveValidator()
+        self._expression_projector = (
+            expression_projector or InteractionExpressionProjector()
+        )
         self._character_profile = _profile_context(character_profile)
         self._trace_logger = TraceLogger()
 
@@ -87,20 +94,29 @@ class SeparatedSituationEvaluationAdapter:
             character_profile=self._character_profile,
         )
         intention_context = observation.interaction_intention.as_context()
+        expression_context = self._expression_projector.project(
+            observation.interaction_intention
+        ).as_context()
         payload = self._legacy_situation_payload(validated)
         payload["interaction_intention"] = intention_context
+        payload["interaction_expression"] = expression_context
         payload["interaction_intention_comparison"] = (
             observation.comparison.as_context()
         )
         constraints = payload.get("constraints")
         if isinstance(constraints, dict):
             constraints["_interaction_intention"] = intention_context
+            constraints["_interaction_expression"] = expression_context
         self._trace_logger.info(
             "interaction_intention:situation_projected",
             source_event_id=activity.source_event_id,
             intention=observation.interaction_intention.intention.value,
             intention_source=observation.interaction_intention.source,
             observation_only=observation.interaction_intention.observation_only,
+            expression_attitude=expression_context["embodied_expression"][
+                "attitude"
+            ],
+            content_strategy=expression_context["content_strategy"],
             exact_match=observation.comparison.exact_match,
             compatible=observation.comparison.compatible,
             activity_type=payload["activity_type"],
