@@ -1,3 +1,11 @@
+from app.domain.emotions.affective_appraisal import (
+    AffectiveAppraisal,
+    AffectiveAppraisalComparison,
+    AffectiveAppraisalDimensions,
+    AffectiveEmotionProjection,
+    AffectiveInputMeaning,
+    EmotionStateSnapshot,
+)
 from app.domain.emotions.emotion_appraisal import (
     EmotionAppraisal,
     EmotionCause,
@@ -24,6 +32,11 @@ from app.domain.emotions.emotion_state import (
 )
 
 __all__ = [
+    "AffectiveAppraisal",
+    "AffectiveAppraisalComparison",
+    "AffectiveAppraisalDimensions",
+    "AffectiveEmotionProjection",
+    "AffectiveInputMeaning",
     "EmotionAppraisal",
     "EmotionAppraisalAcceptancePolicy",
     "EmotionAppraisalCircuitBreakerSettings",
@@ -35,6 +48,7 @@ __all__ = [
     "EmotionExpression",
     "EmotionExpressionDeriver",
     "EmotionState",
+    "EmotionStateSnapshot",
     "MoodType",
     "PerformanceDirective",
     "PerformanceDirectiveType",
