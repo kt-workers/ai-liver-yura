@@ -6,42 +6,46 @@ from app.domain.body_attention_intent import (
     BodyAttentionBehavior,
     BodyAttentionIntent,
 )
-from app.runtime.interaction_expression_projector import (
-    InteractionExpressionProjection,
-)
 
 
 class BodyAttentionIntentResolver:
-    """Activity overrideと対人的表現、感情回避傾向から注意意図を解決する。"""
+    """Activity override・優先Attention・感情回避傾向から注意意図を解決する。"""
 
     def resolve(
         self,
         *,
         context: BodyActivityContext,
         baseline: BodyAffectBaseline,
-        projection: InteractionExpressionProjection | None,
+        preferred_attention: BodyAttentionIntent | None,
     ) -> BodyAttentionIntent | None:
         if not isinstance(context, BodyActivityContext):
             raise TypeError("context must be BodyActivityContext")
         if not isinstance(baseline, BodyAffectBaseline):
             raise TypeError("baseline must be BodyAffectBaseline")
+        if preferred_attention is not None and not isinstance(
+            preferred_attention,
+            BodyAttentionIntent,
+        ):
+            raise TypeError("preferred_attention must be BodyAttentionIntent")
 
-        projected = projection.attention_intent if projection is not None else None
         target = context.attention_target or (
-            projected.target if projected is not None else None
+            preferred_attention.target if preferred_attention is not None else None
         )
         if target is None:
             return None
 
-        if projected is not None:
+        if preferred_attention is not None:
             return BodyAttentionIntent(
                 target=target,
-                behavior=projected.behavior,
+                behavior=preferred_attention.behavior,
                 engagement=context.engagement,
-                avoidance=max(projected.avoidance, baseline.avoidance * 0.45),
-                eye_follow=projected.eye_follow,
-                head_follow=projected.head_follow,
-                body_follow=projected.body_follow,
+                avoidance=max(
+                    preferred_attention.avoidance,
+                    baseline.avoidance * 0.45,
+                ),
+                eye_follow=preferred_attention.eye_follow,
+                head_follow=preferred_attention.head_follow,
+                body_follow=preferred_attention.body_follow,
             )
 
         behavior = (
