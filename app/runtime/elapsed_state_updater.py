@@ -93,10 +93,9 @@ class ElapsedStateUpdater:
         self._last_emotion_updated_at = max(self._last_emotion_updated_at, now)
 
         before_desire = state.current_desire
-        desire_elapsed_seconds = max(
-            0.0,
-            (now - self._last_desire_updated_at).total_seconds(),
-        )
+        desire_elapsed_seconds = (
+            now - self._last_desire_updated_at
+        ).total_seconds()
         after_desire = self._desire_state_updater.update_by_elapsed_time(
             before_desire,
             elapsed_seconds=desire_elapsed_seconds,
@@ -104,10 +103,9 @@ class ElapsedStateUpdater:
         self._last_desire_updated_at = max(self._last_desire_updated_at, now)
 
         before_drive = state.current_drive
-        drive_elapsed_seconds = max(
-            0.0,
-            (now - self._last_drive_updated_at).total_seconds(),
-        )
+        drive_elapsed_seconds = (
+            now - self._last_drive_updated_at
+        ).total_seconds()
         after_drive = self._drive_state_updater.derive_by_elapsed_time(
             before_drive,
             emotion=after_emotion,
