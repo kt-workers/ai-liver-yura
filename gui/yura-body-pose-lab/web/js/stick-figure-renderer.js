@@ -1,25 +1,38 @@
 import { clamp, computeStickFigureGeometry } from "./stick-figure-geometry.js";
+import { StickFigurePoseFilter } from "./stick-figure-pose-filter.js";
 
 export class StickFigureRenderer {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.frame = null;
+    this.poseFilter = new StickFigurePoseFilter();
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
     this.resize();
   }
 
   setFrame(frame) {
-    this.frame = frame;
+    if (!frame?.pose) {
+      this.frame = frame;
+      this.poseFilter.reset();
+      this.draw();
+      return;
+    }
+    this.frame = {
+      ...frame,
+      pose: this.poseFilter.apply(frame.pose),
+    };
     this.draw();
   }
 
   resize() {
     const rect = this.canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
-    this.canvas.width = Math.max(1, Math.round(rect.width * dpr));
-    this.canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    const width = Math.max(1, Math.round(rect.width * dpr));
+    const height = Math.max(1, Math.round(rect.height * dpr));
+    if (this.canvas.width !== width) this.canvas.width = width;
+    if (this.canvas.height !== height) this.canvas.height = height;
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.draw();
   }
