@@ -12,6 +12,8 @@ from app.domain.character_response import (
     ResponseContext,
     ResponseValidationResult,
 )
+from app.domain.interaction_intention import InteractionIntentionType
+from app.runtime.causal_decision_observer import CausalDecisionObserver
 from app.utils.trace import TraceLogger
 
 _POSITIVE_EXECUTION_CLAIMS = frozenset(
@@ -52,6 +54,12 @@ _UNSUPPORTED_EXPERIENCE_PATTERN = re.compile(
 )
 _PHYSICAL_BODY_CLAIM_PATTERN = re.compile(
     r"(?:お腹が(?:空いて|すいて)|空腹を感じ|眠気を感じ|肌で感じ|汗をかい)"
+)
+_EMBODIED_ACTION_COMPLETION_PATTERN = re.compile(
+    r"(?:(?:右|左)?(?:手|腕|肩|脚|足|顔|頭|体|身体|上半身|下半身)"
+    r"(?:を|が)?(?:挙げた|上げた|下げた|振った|動かした|伸ばした|曲げた|向けた))"
+    r"|(?:ジャンプした|跳んだ|飛び跳ねた|しゃがんだ|立ち上がった|座った)"
+    r"|(?:振り向いた|うなずいた|頷いた|首をかしげた|お辞儀した)"
 )
 
 
@@ -152,6 +160,24 @@ class IndependentClaimExtractor:
         else:
             extracted: list[Claim] = []
             seen: set[ClaimType] = set()
+            embodied_match = self._embodied_completion_match(context, normalized)
+            if embodied_match is not None:
+                seen.add(ClaimType.ACTIVITY_SUCCEEDED)
+                extracted.append(
+                    Claim(
+                        claim_type=ClaimType.ACTIVITY_SUCCEEDED,
+                        activity_type=(
+                            context.activity_type
+                            if context.activity_type != "conversation"
+                            else None
+                        ),
+                        operation=context.operation,
+                        status=ActivityExecutionStatus.SUCCEEDED,
+                        target=self._target(normalized, embodied_match.start()),
+                        confidence=0.99,
+                        evidence=embodied_match.group(0),
+                    )
+                )
             for claim_type, pattern, confidence in self._rules:
                 match = pattern.search(normalized)
                 if match is None or claim_type in seen:
@@ -181,6 +207,19 @@ class IndependentClaimExtractor:
             extracted_claims=[asdict(claim) for claim in claims],
         )
         return claims
+
+    @staticmethod
+    def _embodied_completion_match(
+        context: ResponseContext,
+        speech: str,
+    ) -> re.Match[str] | None:
+        intention = context.interaction_intention
+        if (
+            intention is None
+            or intention.intention is not InteractionIntentionType.ACT
+        ):
+            return None
+        return _EMBODIED_ACTION_COMPLETION_PATTERN.search(speech)
 
     @classmethod
     def _is_non_assertive(cls, speech: str) -> bool:
@@ -232,8 +271,12 @@ class DeterministicFactValidator:
         ResponseClaim.CONVERSATION_ONLY: ClaimType.CONVERSATION_ONLY,
     }
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        causal_observer: CausalDecisionObserver | None = None,
+    ) -> None:
         self._trace_logger = TraceLogger()
+        self._causal_observer = causal_observer or CausalDecisionObserver()
 
     def validate(
         self,
@@ -253,6 +296,7 @@ class DeterministicFactValidator:
             *self._claim_differences(extracted_types, self_reported_types),
             *self._structured_claim_differences(context, response.claim_details),
         )
+        embodied_reasons = self._embodied_action_conflicts(context, response.speech)
         fact_reasons = self._fact_conflicts(
             context.status,
             extracted_types,
@@ -268,6 +312,7 @@ class DeterministicFactValidator:
         reasons = tuple(
             dict.fromkeys(
                 (
+                    *embodied_reasons,
                     *fact_reasons,
                     *differences,
                     *topic_reasons,
@@ -305,6 +350,7 @@ class DeterministicFactValidator:
             self._trace_logger.debug("response_fact_validator:accepted", **fields)
         else:
             self._trace_logger.info("response_fact_validator:rejected", **fields)
+        self._causal_observer.observe_character_claim(context, result)
         return result
 
     @staticmethod
@@ -318,6 +364,25 @@ class DeterministicFactValidator:
             claim for claim in response.claims if claim not in context.allowed_claims
         )
         return tuple(dict.fromkeys((*forbidden, *unknown)))
+
+    @staticmethod
+    def _embodied_action_conflicts(
+        context: ResponseContext,
+        speech: str,
+    ) -> tuple[str, ...]:
+        intention = context.interaction_intention
+        if (
+            intention is None
+            or intention.intention is not InteractionIntentionType.ACT
+            or _EMBODIED_ACTION_COMPLETION_PATTERN.search(speech) is None
+        ):
+            return ()
+        if (
+            context.activity_type != "conversation"
+            and context.status is ActivityExecutionStatus.SUCCEEDED
+        ):
+            return ()
+        return ("embodied_action_claim_without_execution_result",)
 
     @staticmethod
     def _fact_conflicts(
