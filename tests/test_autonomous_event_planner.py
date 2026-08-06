@@ -71,13 +71,25 @@ def test_strong_drive_creates_curiosity_peak_event() -> None:
 
     assert result.planned is True
     assert result.event is not None
-    assert result.event.payload["reason"] == "internal_drive"
-    assert result.event.payload["drive"] == "curiosity"
-    assert result.event.payload["autonomous_planned_for"] == now.isoformat()
-    assert "resume_reason" not in result.event.payload
+    payload = result.event.payload
+    assert payload["reason"] == "internal_drive"
+    assert payload["drive"] == "curiosity"
+    assert payload["autonomous_planned_for"] == now.isoformat()
+    assert "resume_reason" not in payload
     assert result.event.discardable is True
     assert result.event.replace_key == "agent_life_service:curiosity_peak"
     assert result.log_event == "agent_life_service:plan_next_event:planned"
+    assert payload["memory"]["interaction_intention"] == (
+        payload["interaction_intention"]
+    )
+    assert payload["memory"]["interaction_expression"] == (
+        payload["interaction_expression"]
+    )
+    assert payload["interaction_expression"]["observation_only"] is True
+    assert (
+        payload["interaction_expression"]["grants_execution_authority"]
+        is False
+    )
 
 
 def test_retry_backoff_skips_autonomous_event() -> None:
