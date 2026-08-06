@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import cast
 
+import pytest
+
 from app.domain.emotions import (
     AffectiveAppraisalComparison,
     AffectiveAppraisalDimensions,
@@ -152,6 +154,30 @@ def test_observer_accepts_nested_validated_meaning_context() -> None:
     assert comparison.matched is True
 
 
+def test_observer_marks_meaning_unavailable_without_reinterpreting_raw_text() -> None:
+    before = EmotionState()
+    legacy = EmotionAppraisal(arousal_delta=0.02, reason="user_attention_received")
+    event = AgentEvent(
+        event_type=AgentEventType.USER_TEXT,
+        payload={"text": "意味解析前の入力"},
+    )
+    after = EmotionStateUpdater().apply(before, legacy)
+
+    appraisal, comparison = AffectiveAppraisalObserver().observe(
+        event,
+        legacy_appraisal=legacy,
+        before_emotion=before,
+        actual_after_emotion=after,
+        relationship=None,
+    )
+
+    assert appraisal.meaning.available is False
+    assert appraisal.meaning.source == "unavailable"
+    assert appraisal.meaning.primary_intent is None
+    assert "意味解析前の入力" not in repr(appraisal.as_context())
+    assert comparison.matched is True
+
+
 def test_comparison_reports_shadow_projection_difference() -> None:
     projected = EmotionState(arousal=0.80, valence=0.40, talkativeness=0.70)
     actual = EmotionState(arousal=0.50, valence=0.00, talkativeness=0.50)
@@ -159,7 +185,7 @@ def test_comparison_reports_shadow_projection_difference() -> None:
     comparison = AffectiveAppraisalComparison.compare(projected, actual)
 
     assert comparison.matched is False
-    assert comparison.max_abs_difference == 0.40
+    assert comparison.max_abs_difference == pytest.approx(0.40)
     assert set(comparison.mismatched_fields) == {
         "arousal",
         "valence",
