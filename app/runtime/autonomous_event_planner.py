@@ -15,6 +15,7 @@ from app.domain.topic import (
 from app.runtime.activity_manager import ActivityManager
 from app.runtime.agent_state import AgentState
 from app.runtime.autonomous_activity_policy import AutonomousActivityPolicy
+from app.runtime.autonomous_interaction_decider import AutonomousInteractionDecider
 from app.runtime.autonomous_motivation_context import AutonomousMotivationContextBuilder
 from app.runtime.autonomous_plan_state import AutonomousPlanState
 from app.runtime.conversation_resume_state import ConversationResumeState
@@ -50,6 +51,7 @@ class AutonomousEventPlanner:
         conversation_idle_timeout_seconds: float,
         motivation_context_builder: AutonomousMotivationContextBuilder | None = None,
         response_content_planner: ResponseContentPlanner | None = None,
+        autonomous_interaction_decider: AutonomousInteractionDecider | None = None,
     ) -> None:
         self._activity_manager = activity_manager
         self._autonomous_activity_policy = autonomous_activity_policy
@@ -64,6 +66,9 @@ class AutonomousEventPlanner:
         )
         self._response_content_planner = (
             response_content_planner or ResponseContentPlanner()
+        )
+        self._autonomous_interaction_decider = (
+            autonomous_interaction_decider or AutonomousInteractionDecider()
         )
 
     def plan(
@@ -178,13 +183,59 @@ class AutonomousEventPlanner:
                 emotion_talkativeness=state.current_emotion.talkativeness,
             )
 
-        if not state.current_drive.should_start_autonomous_talk():
+        motivation = self._motivation_context_builder.build(state)
+        moral_value = motivation.get("moral")
+        moral = moral_value if isinstance(moral_value, dict) else {}
+        response_content_plan = self._response_content_planner.build(
+            motivation=motivation,
+            moral=moral,
+        )
+        start_decision, start_comparison = (
+            self._autonomous_interaction_decider.decide(
+                state,
+                motivation=motivation,
+                continuation_result=continuation_result,
+                autonomous_topic=autonomous_topic,
+                resume_reason=resume_reason,
+                is_autonomous_lookahead=is_autonomous_lookahead,
+            )
+        )
+        decision_details = {
+            "interaction_action": start_decision.action.value,
+            "interaction_intention": (
+                start_decision.interaction_intention.intention.value
+            ),
+            "interaction_intention_reason": (
+                start_decision.interaction_intention.reason
+            ),
+            "interaction_intention_confidence": start_decision.confidence,
+            "interaction_primary_desire": (
+                start_decision.interaction_intention.primary_desire
+            ),
+            **start_comparison.as_context(),
+        }
+
+        if not start_comparison.legacy_drive_ready:
             return self._skip(
                 "drive_too_weak",
                 drive_curiosity=state.current_drive.curiosity,
                 drive_engagement=state.current_drive.engagement,
                 drive_boredom=state.current_drive.boredom,
                 drive_energy=state.current_drive.energy,
+                **decision_details,
+            )
+
+        if not start_comparison.conservative_start_allowed:
+            return self._skip(
+                "interaction_intention_wait",
+                emotion_mood=state.current_emotion.mood.value,
+                emotion_arousal=state.current_emotion.arousal,
+                emotion_talkativeness=state.current_emotion.talkativeness,
+                drive_curiosity=state.current_drive.curiosity,
+                drive_engagement=state.current_drive.engagement,
+                drive_boredom=state.current_drive.boredom,
+                drive_energy=state.current_drive.energy,
+                **decision_details,
             )
 
         minimum_pause_seconds = (
@@ -201,6 +252,7 @@ class AutonomousEventPlanner:
                 "after_speech_pause",
                 pause_seconds=minimum_pause_seconds,
                 last_speech_finished_at=state.last_speech_finished_at,
+                **decision_details,
             )
 
         if (
@@ -216,6 +268,7 @@ class AutonomousEventPlanner:
                 "after_user_input_pause",
                 pause_seconds=minimum_pause_seconds,
                 last_user_input_at=state.last_user_input_at,
+                **decision_details,
             )
 
         autonomous_talk_interval_seconds = self._autonomous_talk_interval_seconds(
@@ -226,6 +279,7 @@ class AutonomousEventPlanner:
                 "autonomous_plan_retry_backoff",
                 backoff_seconds=self._autonomous_plan_state.reconsider_after_seconds,
                 last_rejected_at=self._autonomous_plan_state.last_rejected_at,
+                **decision_details,
             )
 
         if (
@@ -243,19 +297,18 @@ class AutonomousEventPlanner:
                 emotion_arousal=state.current_emotion.arousal,
                 emotion_talkativeness=state.current_emotion.talkativeness,
                 drive_energy=state.current_drive.energy,
+                **decision_details,
             )
 
-        motivation = self._motivation_context_builder.build(state)
-        moral_value = motivation.get("moral")
-        moral = moral_value if isinstance(moral_value, dict) else {}
-        response_content_plan = self._response_content_planner.build(
-            motivation=motivation,
-            moral=moral,
-        )
         payload: dict[str, Any] = {
             "reason": "internal_drive",
             "drive": state.current_drive.strongest_drive_name(),
             "motivation": motivation,
+            "interaction_intention": (
+                start_decision.interaction_intention.as_context()
+            ),
+            "autonomous_start_decision": start_decision.as_context(),
+            "autonomous_start_comparison": start_comparison.as_context(),
             "memory": {
                 "response_content_plan": response_content_plan.as_context(),
             },
@@ -319,6 +372,7 @@ class AutonomousEventPlanner:
                 "emotion_arousal": state.current_emotion.arousal,
                 "emotion_talkativeness": state.current_emotion.talkativeness,
                 "resume_reason": resume_reason,
+                **decision_details,
             },
         )
 
