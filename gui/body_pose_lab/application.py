@@ -42,7 +42,7 @@ class BodyPoseLabApplicationSnapshot:
                 "movement_energy": context.movement_energy,
                 "gaze_freedom": context.gaze_freedom,
                 "interaction_intention": (
-                    context.interaction_intention.as_payload()
+                    context.interaction_intention.as_context()
                     if context.interaction_intention is not None
                     else None
                 ),
