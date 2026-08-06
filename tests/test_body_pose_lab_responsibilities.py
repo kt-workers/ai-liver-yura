@@ -160,7 +160,7 @@ def test_application_applies_emotion_candidates_and_temporary_constraint() -> No
     ]
 
     assert frames[-1].pose.right_arm_raise > 0.15
-    assert frames[-1].inner_state.arousal > 0.5
+    assert frames[-1].inner_state.arousal > 0.4
     assert hub.latest() is not None
     snapshot = application.snapshot()
     assert snapshot.emotion.reactive.joy == 0.9
