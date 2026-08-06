@@ -164,7 +164,7 @@ def test_drive_curiosity_keeps_short_term_inertia_across_user_input() -> None:
     assert updated.curiosity < 0.90
 
 
-def test_elapsed_drive_uses_emotion_desire_and_activity_cost() -> None:
+def test_elapsed_drive_adds_bounded_idle_exploration_pressure() -> None:
     now = datetime(2026, 8, 6, 3, 0, tzinfo=timezone.utc)
     updater = ElapsedStateUpdater(initial_time=now)
     state = AgentState(
@@ -174,9 +174,11 @@ def test_elapsed_drive_uses_emotion_desire_and_activity_cost() -> None:
 
     result = updater.update(state, now=now + timedelta(minutes=10))
 
+    desire_curiosity = result.after_desire.curiosity.effective_level
     assert result.after_drive.curiosity > result.before_drive.curiosity
+    assert result.after_drive.curiosity == pytest.approx(desire_curiosity + 0.40)
+    assert result.after_drive.curiosity <= 1.0
     assert result.after_drive.energy > result.before_drive.energy
-    assert result.after_drive.curiosity <= result.after_desire.curiosity.effective_level
 
 
 def test_causal_emotion_appraiser_keeps_legacy_path_for_regular_events() -> None:
