@@ -69,12 +69,50 @@ Core確定Emotion
 
 実HTTP統合テストでも責務を分ける。
 
-- Server lifecycle fixture
-- HTTP JSON client helper
-- SSE first-event reader
-- Core Output integration test
-- local simulation lifecycle test
-- architectural boundary test
+### Support
+
+- `tests/support/body_pose_lab_http_harness.py`
+  - 実Server lifecycle
+  - HTTP JSON／bytes request
+  - SSE first-event reader
+  - bounded polling
+- `tests/support/body_pose_frame_factory.py`
+  - 最小BodyPoseFrame生成
+
+### 実HTTP・表示資産
+
+- `tests/test_body_pose_lab_http_integration.py`
+  - health
+  - snapshot
+  - index／JavaScript／CSS
+  - 未定義Route／traversal
+- `tests/test_body_pose_lab_http_safety.py`
+  - 不正JSON
+  - Payload上限
+
+### Core Transport
+
+- `tests/test_body_core_to_lab_http_integration.py`
+  - `HttpBodyPoseFrameOutput`から実Socketへ送信
+  - source／sequence
+  - stale拒否
+  - latest更新
+
+### SSE／Lifecycle
+
+- `tests/test_body_pose_lab_sse_lifecycle.py`
+  - 最初のSSE Frame Event
+  - subscriber解放
+  - local Tick start／stop
+  - stop後のTick停止
+
+### 因果・安全境界
+
+- `tests/test_body_causal_architecture_boundaries.py`
+  - Runtime→Bootstrap逆依存なし
+  - 固定Body command名非依存
+  - 正規化Pose軸のみ
+  - Speech本文・Prompt・Memory非保持
 
 1つの巨大テスト関数へ起動・送信・SSE・終了・旧PR確認を混在させない。
 
