@@ -4,11 +4,17 @@ from dataclasses import asdict, dataclass
 
 from app.domain.desires import DesireState
 from app.domain.drives import DriveState
-from app.domain.emotions import EmotionAppraisal, EmotionState
+from app.domain.emotions import (
+    AffectiveAppraisal,
+    AffectiveAppraisalComparison,
+    EmotionAppraisal,
+    EmotionState,
+)
 from app.domain.events import AgentEvent, AgentEventType
 from app.domain.memory import EmotionHistoryEntry, EpisodicMemory
 from app.domain.morals import MoralState
 from app.domain.relationships import RelationshipMemory, RelationshipState
+from app.runtime.affective_appraisal_observer import AffectiveAppraisalObserver
 from app.runtime.agent_state import AgentState
 from app.runtime.desire_state_updater import DesireStateUpdater
 from app.runtime.drive_state_updater import DriveStateUpdater
@@ -22,6 +28,8 @@ from app.runtime.relationship_state_updater import RelationshipStateUpdater
 class AgentEventStateUpdateResult:
     state: AgentState
     appraisal: EmotionAppraisal
+    affective_appraisal: AffectiveAppraisal
+    affective_comparison: AffectiveAppraisalComparison
     before_drive: DriveState
     after_drive: DriveState
     before_desire: DesireState
@@ -47,6 +55,7 @@ class AgentEventStateUpdater:
         desire_state_updater: DesireStateUpdater | None = None,
         emotion_appraiser: EmotionAppraiser | None = None,
         emotion_state_updater: EmotionStateUpdater | None = None,
+        affective_appraisal_observer: AffectiveAppraisalObserver | None = None,
         moral_state_updater: MoralStateUpdater | None = None,
         relationship_state_updater: RelationshipStateUpdater | None = None,
     ) -> None:
@@ -54,6 +63,12 @@ class AgentEventStateUpdater:
         self._desire_state_updater = desire_state_updater or DesireStateUpdater()
         self._emotion_appraiser = emotion_appraiser or EmotionAppraiser()
         self._emotion_state_updater = emotion_state_updater or EmotionStateUpdater()
+        self._affective_appraisal_observer = (
+            affective_appraisal_observer
+            or AffectiveAppraisalObserver(
+                emotion_state_updater=self._emotion_state_updater,
+            )
+        )
         self._moral_state_updater = moral_state_updater or MoralStateUpdater()
         self._relationship_state_updater = (
             relationship_state_updater or RelationshipStateUpdater()
@@ -75,6 +90,16 @@ class AgentEventStateUpdater:
             recent_history=state.memory.emotion_history,
         )
         after_emotion = self._emotion_state_updater.apply(before_emotion, appraisal)
+        affective_appraisal, affective_comparison = (
+            self._affective_appraisal_observer.observe(
+                event,
+                legacy_appraisal=appraisal,
+                before_emotion=before_emotion,
+                actual_after_emotion=after_emotion,
+                relationship=before_relationship,
+                recent_history=state.memory.emotion_history,
+            )
+        )
         relationship_memory = self._relationship_state_updater.update(
             state.relationship_memory,
             event,
@@ -171,6 +196,8 @@ class AgentEventStateUpdater:
         return AgentEventStateUpdateResult(
             state=updated,
             appraisal=appraisal,
+            affective_appraisal=affective_appraisal,
+            affective_comparison=affective_comparison,
             before_drive=before_drive,
             after_drive=after_drive,
             before_desire=before_desire,
