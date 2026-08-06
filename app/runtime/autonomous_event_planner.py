@@ -19,6 +19,7 @@ from app.runtime.autonomous_interaction_decider import AutonomousInteractionDeci
 from app.runtime.autonomous_motivation_context import AutonomousMotivationContextBuilder
 from app.runtime.autonomous_plan_state import AutonomousPlanState
 from app.runtime.conversation_resume_state import ConversationResumeState
+from app.runtime.interaction_expression_projector import InteractionExpressionProjector
 from app.runtime.response_content_planner import ResponseContentPlanner
 
 
@@ -52,6 +53,7 @@ class AutonomousEventPlanner:
         motivation_context_builder: AutonomousMotivationContextBuilder | None = None,
         response_content_planner: ResponseContentPlanner | None = None,
         autonomous_interaction_decider: AutonomousInteractionDecider | None = None,
+        interaction_expression_projector: InteractionExpressionProjector | None = None,
     ) -> None:
         self._activity_manager = activity_manager
         self._autonomous_activity_policy = autonomous_activity_policy
@@ -69,6 +71,9 @@ class AutonomousEventPlanner:
         )
         self._autonomous_interaction_decider = (
             autonomous_interaction_decider or AutonomousInteractionDecider()
+        )
+        self._interaction_expression_projector = (
+            interaction_expression_projector or InteractionExpressionProjector()
         )
 
     def plan(
@@ -301,16 +306,21 @@ class AutonomousEventPlanner:
             )
 
         intention_context = start_decision.interaction_intention.as_context()
+        expression_context = self._interaction_expression_projector.project(
+            start_decision.interaction_intention
+        ).as_context()
         payload: dict[str, Any] = {
             "reason": "internal_drive",
             "drive": state.current_drive.strongest_drive_name(),
             "motivation": motivation,
             "interaction_intention": intention_context,
+            "interaction_expression": expression_context,
             "autonomous_start_decision": start_decision.as_context(),
             "autonomous_start_comparison": start_comparison.as_context(),
             "memory": {
                 "response_content_plan": response_content_plan.as_context(),
                 "interaction_intention": intention_context,
+                "interaction_expression": expression_context,
             },
             "autonomous_planned_for": now.isoformat(),
             "interaction_environment": {
