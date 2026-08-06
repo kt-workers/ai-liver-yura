@@ -15,6 +15,10 @@ from app.runtime.cognitive_direction_parsers import (
     InputMeaningJsonParser,
     InternalDirectiveJsonParser,
 )
+from app.runtime.interaction_intention_shadow_observer import (
+    InteractionIntentionShadowObserver,
+    InternalDirectivePlanningObservation,
+)
 from app.runtime.internal_directive_candidate_normalizer import (
     InternalDirectiveCandidateNormalizer,
 )
@@ -71,11 +75,17 @@ class InternalDirectivePlanner:
         prompt_builder: InternalDirectivePromptBuilder,
         parser: InternalDirectiveJsonParser | None = None,
         normalizer: InternalDirectiveCandidateNormalizer | None = None,
+        interaction_intention_observer: (
+            InteractionIntentionShadowObserver | None
+        ) = None,
     ) -> None:
         self._model = model
         self._prompt_builder = prompt_builder
         self._parser = parser or InternalDirectiveJsonParser()
         self._normalizer = normalizer or InternalDirectiveCandidateNormalizer()
+        self._interaction_intention_observer = (
+            interaction_intention_observer or InteractionIntentionShadowObserver()
+        )
 
     async def plan(
         self,
@@ -85,6 +95,26 @@ class InternalDirectivePlanner:
         *,
         character_profile: dict[str, object],
     ) -> InternalDirective | None:
+        """既存互換API。Interaction IntentionはShadow観測だけ行う。"""
+
+        observation = await self.plan_with_observation(
+            activity,
+            meaning,
+            planning_input,
+            character_profile=character_profile,
+        )
+        return observation.directive if observation is not None else None
+
+    async def plan_with_observation(
+        self,
+        activity: Activity,
+        meaning: StructuredInputMeaning,
+        planning_input: dict[str, object],
+        *,
+        character_profile: dict[str, object],
+    ) -> InternalDirectivePlanningObservation | None:
+        """既存Directive候補とInteraction IntentionのShadow比較を返す。"""
+
         prompt = self._prompt_builder.build(
             meaning,
             planning_input,
@@ -114,8 +144,14 @@ class InternalDirectivePlanner:
         directive = self._parser.parse(raw)
         if directive is None:
             return None
-        return self._normalizer.normalize(
+        normalized = self._normalizer.normalize(
             meaning,
             directive,
             planning_input,
+        )
+        return self._interaction_intention_observer.observe(
+            meaning,
+            normalized,
+            planning_input,
+            comparison_stage="normalized_internal_directive_candidate",
         )
