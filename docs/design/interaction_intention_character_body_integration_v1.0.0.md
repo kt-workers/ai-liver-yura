@@ -201,3 +201,16 @@ Phase 5では共通意図を接続するが、次の旧互換境界は削除し�
 - Activity constraints schema
 
 旧経路の縮小・削除はPhase 6で、観測結果と全体回帰を確認してから行う。
+
+## 11. 検証境界
+
+Phase 5の回帰では次を確認する。
+
+- 型付き意図の復元にRaw User Textを使わない
+- Character ContextとBody Contextが同じ意図を保持する
+- 外部Activityのconstraints schemaへ内部表現情報を混入させない
+- 明示`body_context`が意図射影より優先される
+- `act`射影が実行権限を持たない
+- 自律EventのPayloadとMemoryで意図・表現方向が一致する
+- 既存Character claim validationとActivity lifecycleが維持される
+- 全体pytestが成功する
