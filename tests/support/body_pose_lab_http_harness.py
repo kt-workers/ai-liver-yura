@@ -48,7 +48,7 @@ class BodyPoseLabHttpHarness:
         server_thread.start()
         harness = cls(components=components, server_thread=server_thread)
         harness.wait_until(
-            lambda: harness.json_request("GET", "/health")[0] == 200,
+            harness._health_is_ready,
             timeout_seconds=2.0,
         )
         return harness
@@ -138,6 +138,12 @@ class BodyPoseLabHttpHarness:
                     event_name = line.removeprefix("event:").strip()
                 elif line.startswith("data:"):
                     data_lines.append(line.removeprefix("data:").strip())
+
+    def _health_is_ready(self) -> bool:
+        try:
+            return self.json_request("GET", "/health")[0] == 200
+        except OSError:
+            return False
 
     @staticmethod
     def wait_until(
