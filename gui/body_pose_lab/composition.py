@@ -38,7 +38,7 @@ class BodyPoseLabComponents:
             self.http_server.serve_forever()
         finally:
             self.tick_loop.stop()
-            self.http_server.shutdown()
+            self.http_server.close()
 
     def stop(self) -> None:
         self.tick_loop.stop()
