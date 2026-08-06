@@ -13,6 +13,7 @@ from app.domain.interaction_intention import (
     InteractionIntentionComparison,
     InteractionIntentionType,
 )
+from app.runtime.causal_decision_observer import CausalDecisionObserver
 from app.runtime.interaction_intention_appraiser import (
     InteractionIntentionAppraiser,
 )
@@ -112,9 +113,11 @@ class InteractionIntentionShadowObserver:
         *,
         appraiser: InteractionIntentionAppraiser | None = None,
         trace_logger: TraceLogger | None = None,
+        causal_observer: CausalDecisionObserver | None = None,
     ) -> None:
         self._appraiser = appraiser or InteractionIntentionAppraiser()
         self._trace_logger = trace_logger or TraceLogger()
+        self._causal_observer = causal_observer or CausalDecisionObserver()
 
     def observe(
         self,
@@ -163,6 +166,10 @@ class InteractionIntentionShadowObserver:
             exact_match=exact,
             compatible=compatible,
             comparison_stage=comparison_stage,
+        )
+        self._causal_observer.observe_interaction_intention(
+            intention,
+            comparison,
         )
         return InternalDirectivePlanningObservation(
             directive=directive,
