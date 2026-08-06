@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from app.domain.body_speech import SpeechPresentationRequest
 
+_COMPLETION_EPSILON_SECONDS = 1e-9
+
 
 @dataclass(frozen=True, slots=True)
 class BodySpeechMouthSample:
@@ -57,10 +59,15 @@ class BodySpeechMouthDriver:
         if request is None:
             return BodySpeechMouthSample(0.0, None)
 
-        dt = max(1.0 / 240.0, min(0.1, float(dt_seconds)))
-        self._elapsed += dt
+        if isinstance(dt_seconds, bool) or not isinstance(dt_seconds, (int, float)):
+            raise TypeError("dt_seconds must be a number")
+        elapsed_dt = float(dt_seconds)
+        if not math.isfinite(elapsed_dt) or elapsed_dt < 0.0:
+            raise ValueError("dt_seconds must be a finite non-negative number")
+
         duration = request.duration_ms / 1000.0
-        if self._elapsed >= duration:
+        next_elapsed = self._elapsed + elapsed_dt
+        if next_elapsed + _COMPLETION_EPSILON_SECONDS >= duration:
             presentation_id = request.presentation_id
             self.clear()
             return BodySpeechMouthSample(
@@ -69,7 +76,12 @@ class BodySpeechMouthDriver:
                 completed=True,
             )
 
-        self._phase = (self._phase + math.tau * (3.1 + self._energy * 2.4) * dt) % math.tau
+        self._elapsed = next_elapsed
+        phase_dt = min(0.1, elapsed_dt)
+        self._phase = (
+            self._phase
+            + math.tau * (3.1 + self._energy * 2.4) * phase_dt
+        ) % math.tau
         pulse = 0.5 + 0.5 * math.sin(self._phase)
         mouth_open = 0.16 + self._energy * 0.30
         mouth_open += pulse * (0.18 + self._energy * 0.24)
