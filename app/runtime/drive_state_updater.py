@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from app.domain.desires import DesireState
 from app.domain.drives import DriveState
+from app.domain.emotions import AffectiveAppraisal, EmotionState
 from app.domain.events import AgentEvent, AgentEventType
 from app.utils.trace import TraceLogger
 
@@ -42,13 +44,141 @@ _GREETINGS = frozenset(
 
 
 class DriveStateUpdater:
-    """Event と時間経過から DriveState を更新する Runtime 部品。"""
+    """Emotion・Desire・疲労からDriveStateを導出するRuntime部品。"""
 
     def __init__(self, trace_logger: TraceLogger | None = None) -> None:
         self._trace_logger = trace_logger or TraceLogger()
 
+    def derive_from_affect(
+        self,
+        drive: DriveState,
+        event: AgentEvent,
+        *,
+        affective_appraisal: AffectiveAppraisal,
+        emotion: EmotionState,
+        desire: DesireState,
+        activity_active: bool,
+    ) -> DriveState:
+        """人格的内容を決めず、現在の活性・準備状態だけを導出する。"""
+
+        dimensions = affective_appraisal.dimensions
+        curiosity_compatibility = self._clamp(
+            desire.curiosity.effective_level * 0.82
+            + dimensions.novelty * 0.18,
+        )
+        engagement_target = self._clamp(
+            0.18
+            + emotion.arousal * 0.22
+            + dimensions.social_relevance * 0.18
+            + max(0.0, dimensions.approach) * 0.14
+            + dimensions.relationship_significance * 0.12
+            - dimensions.tension * 0.18,
+        )
+        boredom_target = self._clamp(
+            0.62
+            - emotion.arousal * 0.28
+            - dimensions.novelty * 0.24
+            - engagement_target * 0.26
+            + (0.06 if not activity_active else 0.0),
+        )
+        energy_delta = self._event_energy_delta(event.event_type)
+        if activity_active:
+            energy_delta -= 0.004
+        updated = DriveState(
+            curiosity=curiosity_compatibility,
+            engagement=self._move_toward(drive.engagement, engagement_target, 0.30),
+            boredom=self._move_toward(drive.boredom, boredom_target, 0.24),
+            energy=drive.energy + energy_delta,
+        )
+        self._trace_logger.info(
+            "drive_state_updater:causal_derivation",
+            source_event_id=event.event_id,
+            event_type=event.event_type.value,
+            affective_cause=affective_appraisal.cause_category,
+            curiosity_source="desire_curiosity_compatibility",
+            activity_active=activity_active,
+            engagement_target=engagement_target,
+            boredom_target=boredom_target,
+            before_curiosity=drive.curiosity,
+            after_curiosity=updated.curiosity,
+            before_engagement=drive.engagement,
+            after_engagement=updated.engagement,
+            before_boredom=drive.boredom,
+            after_boredom=updated.boredom,
+            before_energy=drive.energy,
+            after_energy=updated.energy,
+        )
+        return updated
+
+    def derive_by_elapsed_time(
+        self,
+        drive: DriveState,
+        *,
+        emotion: EmotionState,
+        desire: DesireState,
+        elapsed_seconds: float,
+        activity_active: bool,
+    ) -> DriveState:
+        """時間経過による疲労・回復と、現在Emotionへの追従を計算する。"""
+
+        elapsed_minutes = max(0.0, elapsed_seconds) / 60.0
+        if elapsed_minutes == 0.0:
+            return drive
+        curiosity_target = desire.curiosity.effective_level
+        engagement_target = self._clamp(
+            0.20
+            + emotion.arousal * 0.28
+            + max(0.0, emotion.valence) * 0.12
+            - emotion.reactive.emotional_pressure * 0.18
+            - emotion.reactive.discomfort * 0.14,
+        )
+        boredom_target = self._clamp(
+            0.68
+            - emotion.arousal * 0.34
+            - engagement_target * 0.24
+            - curiosity_target * 0.16,
+        )
+        follow_ratio = min(1.0, 0.10 * elapsed_minutes)
+        if activity_active:
+            energy = drive.energy - 0.012 * elapsed_minutes
+        elif emotion.arousal < 0.45:
+            energy = drive.energy + (0.72 - drive.energy) * min(
+                1.0,
+                0.06 * elapsed_minutes,
+            )
+        else:
+            energy = drive.energy - 0.003 * elapsed_minutes
+        updated = DriveState(
+            curiosity=self._move_toward(
+                drive.curiosity,
+                curiosity_target,
+                follow_ratio,
+            ),
+            engagement=self._move_toward(
+                drive.engagement,
+                engagement_target,
+                follow_ratio,
+            ),
+            boredom=self._move_toward(
+                drive.boredom,
+                boredom_target,
+                follow_ratio,
+            ),
+            energy=energy,
+        )
+        self._write_update_trace(
+            "drive_state_updater:causal_elapsed_derivation",
+            before_drive=drive,
+            after_drive=updated,
+            elapsed_seconds=elapsed_seconds,
+            elapsed_minutes=elapsed_minutes,
+            activity_active=activity_active,
+            curiosity_source="desire_curiosity_compatibility",
+        )
+        return updated
+
     def update_by_event(self, drive: DriveState, event: AgentEvent) -> DriveState:
-        """AgentEvent の種類に応じて内的動機を更新する。"""
+        """旧Event直接更新。移行期間の互換APIとしてのみ維持する。"""
 
         if event.event_type in (
             AgentEventType.USER_TEXT,
@@ -65,6 +195,7 @@ class DriveStateUpdater:
                 event_type=event.event_type.value,
                 input_kind=input_kind,
                 stimulus_scale=stimulus_scale,
+                compatibility_path=True,
             )
             return updated_drive
 
@@ -75,6 +206,7 @@ class DriveStateUpdater:
                 before_drive=drive,
                 after_drive=updated_drive,
                 event_type=event.event_type.value,
+                compatibility_path=True,
             )
             return updated_drive
 
@@ -88,6 +220,7 @@ class DriveStateUpdater:
                 before_drive=drive,
                 after_drive=updated_drive,
                 event_type=event.event_type.value,
+                compatibility_path=True,
             )
             return updated_drive
 
@@ -98,6 +231,7 @@ class DriveStateUpdater:
                 before_drive=drive,
                 after_drive=updated_drive,
                 event_type=event.event_type.value,
+                compatibility_path=True,
             )
             return updated_drive
 
@@ -108,6 +242,7 @@ class DriveStateUpdater:
                 before_drive=drive,
                 after_drive=updated_drive,
                 event_type=event.event_type.value,
+                compatibility_path=True,
             )
             return updated_drive
 
@@ -118,6 +253,7 @@ class DriveStateUpdater:
             engagement=drive.engagement,
             boredom=drive.boredom,
             energy=drive.energy,
+            compatibility_path=True,
         )
         return drive
 
@@ -126,7 +262,7 @@ class DriveStateUpdater:
         drive: DriveState,
         elapsed_seconds: float,
     ) -> DriveState:
-        """時間経過に応じて内的動機を更新する。"""
+        """旧時間更新。移行期間の互換APIとしてのみ維持する。"""
 
         elapsed_minutes = max(0.0, elapsed_seconds) / 60.0
 
@@ -145,6 +281,7 @@ class DriveStateUpdater:
             after_drive=updated_drive,
             elapsed_seconds=elapsed_seconds,
             elapsed_minutes=elapsed_minutes,
+            compatibility_path=True,
         )
         return updated_drive
 
@@ -154,8 +291,6 @@ class DriveStateUpdater:
         previous_time: datetime,
         current_time: datetime,
     ) -> DriveState:
-        """前回更新時刻と現在時刻の差分から内的動機を更新する。"""
-
         elapsed_seconds = (current_time - previous_time).total_seconds()
         return self.update_by_elapsed_time(drive, elapsed_seconds)
 
@@ -214,6 +349,18 @@ class DriveStateUpdater:
         )
 
     @staticmethod
+    def _event_energy_delta(event_type: AgentEventType) -> float:
+        return {
+            AgentEventType.STREAM_STARTED: 0.03,
+            AgentEventType.SPEECH_FINISHED: -0.015,
+            AgentEventType.ACTION_FAILED: -0.05,
+            AgentEventType.USER_INTERACTION: -0.008,
+            AgentEventType.USER_TEXT: -0.008,
+            AgentEventType.USER_SPEECH: -0.010,
+            AgentEventType.YOUTUBE_COMMENT: -0.008,
+        }.get(event_type, 0.0)
+
+    @staticmethod
     def _event_text(event: AgentEvent) -> str:
         for key in ("text", "comment", "transcript", "utterance"):
             value = event.payload.get(key)
@@ -240,6 +387,15 @@ class DriveStateUpdater:
     def _increase_toward_one(value: float, rate: float) -> float:
         normalized_rate = max(0.0, min(1.0, rate))
         return value + ((1.0 - value) * normalized_rate)
+
+    @staticmethod
+    def _move_toward(current: float, target: float, ratio: float) -> float:
+        bounded_ratio = max(0.0, min(1.0, ratio))
+        return current + (target - current) * bounded_ratio
+
+    @staticmethod
+    def _clamp(value: float) -> float:
+        return max(0.0, min(1.0, value))
 
     def _write_update_trace(
         self,
