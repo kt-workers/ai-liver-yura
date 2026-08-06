@@ -149,11 +149,7 @@ class AutonomousInteractionDecider:
             emotion.reactive.anger,
         )
         security_conflict = self._has_security_conflict(motivation)
-        if (
-            primary_desire == "security"
-            or security_conflict
-            or tension >= 0.48
-        ):
+        if primary_desire == "security" or security_conflict or tension >= 0.48:
             return self._decision(
                 AutonomousInteractionAction.WAIT,
                 InteractionIntentionType.PAUSE,
@@ -336,6 +332,7 @@ class AutonomousInteractionDecider:
             target_id=target_id,
             activity_type=activity_type,
             requires_response=requires_response,
+            observation_only=False,
         )
         return AutonomousInteractionDecision(
             action=action,
