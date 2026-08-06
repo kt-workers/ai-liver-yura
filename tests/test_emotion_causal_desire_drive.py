@@ -142,6 +142,28 @@ def test_drive_curiosity_is_compatibility_projection_of_desire() -> None:
     assert before_emotion == after_emotion
 
 
+def test_drive_curiosity_keeps_short_term_inertia_across_user_input() -> None:
+    event = AgentEvent(
+        event_type=AgentEventType.USER_TEXT,
+        payload={"text": "続きも聞きたい"},
+    )
+    appraisal = EmotionAppraisal(source_event_id=event.event_id)
+    _, after_emotion, affective = _observe(event, appraisal)
+
+    updated = DriveStateUpdater().derive_from_affect(
+        DriveState(curiosity=0.90),
+        event,
+        affective_appraisal=affective,
+        emotion=after_emotion,
+        desire=DesireState(),
+        activity_active=False,
+    )
+
+    assert updated.curiosity == pytest.approx(0.864)
+    assert updated.curiosity > DesireState().curiosity.effective_level
+    assert updated.curiosity < 0.90
+
+
 def test_elapsed_drive_uses_emotion_desire_and_activity_cost() -> None:
     now = datetime(2026, 8, 6, 3, 0, tzinfo=timezone.utc)
     updater = ElapsedStateUpdater(initial_time=now)
