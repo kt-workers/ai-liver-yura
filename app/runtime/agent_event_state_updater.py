@@ -16,6 +16,7 @@ from app.domain.morals import MoralState
 from app.domain.relationships import RelationshipMemory, RelationshipState
 from app.runtime.affective_appraisal_observer import AffectiveAppraisalObserver
 from app.runtime.agent_state import AgentState
+from app.runtime.causal_emotion_appraiser import CausalEmotionAppraiser
 from app.runtime.desire_state_updater import DesireStateUpdater
 from app.runtime.drive_state_updater import DriveStateUpdater
 from app.runtime.emotion_appraiser import EmotionAppraiser
@@ -46,7 +47,7 @@ class AgentEventStateUpdateResult:
 
 
 class AgentEventStateUpdater:
-    """EventからAgentStateの確定状態を構築する。"""
+    """Eventを感情評価し、派生状態を因果順に構築する。"""
 
     def __init__(
         self,
@@ -61,7 +62,7 @@ class AgentEventStateUpdater:
     ) -> None:
         self._drive_state_updater = drive_state_updater or DriveStateUpdater()
         self._desire_state_updater = desire_state_updater or DesireStateUpdater()
-        self._emotion_appraiser = emotion_appraiser or EmotionAppraiser()
+        self._emotion_appraiser = emotion_appraiser or CausalEmotionAppraiser()
         self._emotion_state_updater = emotion_state_updater or EmotionStateUpdater()
         self._affective_appraisal_observer = (
             affective_appraisal_observer
@@ -81,8 +82,6 @@ class AgentEventStateUpdater:
         before_moral = state.current_moral
         before_relationship = state.relationship_memory.current
 
-        after_drive = self._drive_state_updater.update_by_event(before_drive, event)
-        after_desire = self._desire_state_updater.update_by_event(before_desire, event)
         appraisal = self._emotion_appraiser.appraise(
             event,
             current_emotion=before_emotion,
@@ -99,6 +98,21 @@ class AgentEventStateUpdater:
                 relationship=before_relationship,
                 recent_history=state.memory.emotion_history,
             )
+        )
+        after_desire = self._desire_state_updater.update_from_affect(
+            before_desire,
+            event,
+            affective_appraisal=affective_appraisal,
+            before_emotion=before_emotion,
+            after_emotion=after_emotion,
+        )
+        after_drive = self._drive_state_updater.derive_from_affect(
+            before_drive,
+            event,
+            affective_appraisal=affective_appraisal,
+            emotion=after_emotion,
+            desire=after_desire,
+            activity_active=state.active_activity is not None,
         )
         relationship_memory = self._relationship_state_updater.update(
             state.relationship_memory,

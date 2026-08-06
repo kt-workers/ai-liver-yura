@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class DriveState:
-    """AIライバーの内的動機を表す状態。"""
+    """行動内容ではなく、現在の活性・関与・疲労を表す派生状態。"""
 
     curiosity: float = 0.5
     engagement: float = 0.5
@@ -19,14 +19,14 @@ class DriveState:
         object.__setattr__(self, "energy", self._clamp_01(self.energy))
 
     def should_start_autonomous_talk(self) -> bool:
-        """内的動機として自律発話を始める強さがあるかを判定する。"""
+        """旧自律発話判定との互換API。Phase 4でInteraction Intentionへ移行する。"""
 
         return (
             self.curiosity >= 0.7 or self.engagement >= 0.75 or self.boredom >= 0.8
         ) and self.energy >= 0.3
 
     def strongest_drive_name(self) -> str:
-        """現在もっとも強い内的動機名を返す。"""
+        """現在もっとも強い活性指標名を返す。"""
 
         drives = {
             "curiosity": self.curiosity,
