@@ -40,6 +40,12 @@ class LegacyRouteInventory:
             reason="Emotion・Motivation・会話状態から自律開始を因果判断する",
         ),
         CausalRouteDescriptor(
+            name="autonomous_topic_evaluate_completion",
+            lifecycle=RouteLifecycle.ACTIVE,
+            removable=False,
+            reason="質問待ち・話題減衰・最大ターンから自律発話継続を型付き判断する",
+        ),
+        CausalRouteDescriptor(
             name="autonomous_topic_should_complete_tuple",
             lifecycle=RouteLifecycle.COMPATIBILITY,
             removable=False,
