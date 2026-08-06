@@ -96,22 +96,41 @@ Activity Result
 
 Driveは次だけを表す。
 
-- `curiosity`: Desire curiosityの互換投影
+- `curiosity`: Desire curiosityと短期探索圧の互換投影
 - `engagement`: Emotionと社会的関与から導出した現在の関与可能性
-- `boredom`: activation、novelty、engagementの低さから導出
+- `boredom`: activation、novelty、social relevance、engagementの低さから導出
 - `energy`: Activity・発話等による消費と、低活性時の回復
 
 Driveから話題やActivity内容を直接作らない。
 
 ### 4.2 Curiosity互換
 
+Event更新時は次の大きい方を使用する。
+
 ```text
-drive.curiosity
-  = desire.curiosity.effective_level
-  + event noveltyによる短期補正
+desire curiosity + event novelty
+previous drive curiosity × 0.96
 ```
 
-`drive.curiosity`は既存RuntimeとのCompatibility fieldである。長期的な「知りたい」はDesire、対象別の関心はTarget Interestへ移す。
+`CURIOSITY_PEAK`は現在の内的状態をActivity計画へ渡す通知であり、新しい刺激ではない。そのため、このEventでは短期慣性を減衰させない。
+
+時間経過時は、Activityがない時間にだけ有限の探索圧を加える。
+
+```text
+drive.curiosity target
+  = desire.curiosity.effective_level
+  + min(0.40, 0.06 × idle elapsed minutes)
+```
+
+これにより次を区別する。
+
+- Desire curiosity: 長期的な「知りたい」
+- Event novelty: 新しい刺激への短期反応
+- Drive inertia: 直前の探索意欲が急に消えないための短期慣性
+- Idle exploration pressure: 何もしていない時間から生じる一時的な探索準備
+- Target Interest: 特定対象への関心
+
+`drive.curiosity`は既存RuntimeとのCompatibility fieldであり、これらを行動開始判定へ渡す短期活性値である。
 
 ### 4.3 時間経過
 
@@ -125,6 +144,10 @@ Emotion decay
 ```
 
 Activity実行中はenergyを消費する。Activityがなく低arousalの場合は基準energyへ回復する。
+
+経過時間が内部時計より前の場合、DriveとDesireの結果値は変化させないが、負の経過秒数は診断値として`ElapsedStateUpdateResult`へ保持する。各内部時計は`max(previous, now)`で更新し、巻き戻さない。
+
+`record_event()`はEmotion、Desire、Moralの基準時刻をEvent時刻へ進める。Driveの無活動時間はEventを挟んでも連続計測し、自律的な探索圧を失わない。
 
 ## 5. Trace
 
@@ -163,8 +186,11 @@ Phase 2では次を残す。
 - fear／discomfortがsecurity Desireへ伝播する
 - 新規刺激がEmotionを経由してcuriosityへ伝播する
 - Activity失敗がEmotionを更新してからDesire不満へ反映される
-- `drive.curiosity`がDesire curiosityの互換投影になる
+- `drive.curiosity`がDesire curiosityと短期補正の互換投影になる
+- 高い探索Driveが次のEventで急に消えず、徐々に減衰する
+- 無活動時の探索圧が上限付きで加わる
 - 経過時間でEmotion、Desire、Driveの順に更新される
+- 負の経過時間を観測しても内部時計が巻き戻らない
 - 旧Updater APIの既存テストが維持される
 
 ## 9. 完了条件
@@ -172,7 +198,7 @@ Phase 2では次を残す。
 - 通常Event経路が`Emotion → Desire → Drive`の順で動く
 - Activity結果がEmotionへ戻る
 - Raw Eventだけで通常Desireを直接増やさない
-- DriveがEmotion・Desire・疲労から導出される
+- DriveがEmotion・Desire・疲労・短期探索圧から導出される
 - Compatibility APIと既存境界を維持する
 - 全体テストが成功する
 
