@@ -44,7 +44,7 @@ class ElapsedStateUpdateResult:
 
 
 class ElapsedStateUpdater:
-    """経過時間に基づくDrive・Desire・Emotion・Moral更新を管理する。"""
+    """経過時間に基づくEmotionと派生状態の更新を管理する。"""
 
     def __init__(
         self,
@@ -81,24 +81,6 @@ class ElapsedStateUpdater:
         return self._last_moral_updated_at
 
     def update(self, state: AgentState, *, now: datetime) -> ElapsedStateUpdateResult:
-        before_drive = state.current_drive
-        drive_elapsed_seconds = (now - self._last_drive_updated_at).total_seconds()
-        after_drive = self._drive_state_updater.update_by_timestamps(
-            before_drive,
-            previous_time=self._last_drive_updated_at,
-            current_time=now,
-        )
-        self._last_drive_updated_at = now
-
-        before_desire = state.current_desire
-        desire_elapsed_seconds = (now - self._last_desire_updated_at).total_seconds()
-        after_desire = self._desire_state_updater.update_by_timestamps(
-            before_desire,
-            previous_time=self._last_desire_updated_at,
-            current_time=now,
-        )
-        self._last_desire_updated_at = max(self._last_desire_updated_at, now)
-
         before_emotion = state.current_emotion
         emotion_elapsed_seconds = max(
             0.0,
@@ -109,6 +91,31 @@ class ElapsedStateUpdater:
             elapsed_seconds=emotion_elapsed_seconds,
         )
         self._last_emotion_updated_at = max(self._last_emotion_updated_at, now)
+
+        before_desire = state.current_desire
+        desire_elapsed_seconds = max(
+            0.0,
+            (now - self._last_desire_updated_at).total_seconds(),
+        )
+        after_desire = self._desire_state_updater.update_by_elapsed_time(
+            before_desire,
+            elapsed_seconds=desire_elapsed_seconds,
+        )
+        self._last_desire_updated_at = max(self._last_desire_updated_at, now)
+
+        before_drive = state.current_drive
+        drive_elapsed_seconds = max(
+            0.0,
+            (now - self._last_drive_updated_at).total_seconds(),
+        )
+        after_drive = self._drive_state_updater.derive_by_elapsed_time(
+            before_drive,
+            emotion=after_emotion,
+            desire=after_desire,
+            elapsed_seconds=drive_elapsed_seconds,
+            activity_active=state.active_activity is not None,
+        )
+        self._last_drive_updated_at = max(self._last_drive_updated_at, now)
 
         before_moral = state.current_moral
         moral_elapsed_seconds = max(
@@ -125,9 +132,9 @@ class ElapsedStateUpdater:
         self._last_moral_updated_at = max(self._last_moral_updated_at, now)
 
         updated_state = (
-            state.with_drive(after_drive)
+            state.with_emotion(after_emotion)
             .with_desire(after_desire)
-            .with_emotion(after_emotion)
+            .with_drive(after_drive)
             .with_moral(after_moral)
         )
         return ElapsedStateUpdateResult(
@@ -149,6 +156,10 @@ class ElapsedStateUpdater:
     def record_event(self, occurred_at: datetime) -> None:
         """Event反映済み状態を、以後の時間更新の基準時刻にする。"""
 
+        self._last_drive_updated_at = max(
+            self._last_drive_updated_at,
+            occurred_at,
+        )
         self._last_desire_updated_at = max(
             self._last_desire_updated_at,
             occurred_at,
