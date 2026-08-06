@@ -94,9 +94,10 @@ class SeparatedSituationEvaluationAdapter:
             character_profile=self._character_profile,
         )
         intention_context = observation.interaction_intention.as_context()
-        expression_context = self._expression_projector.project(
+        expression_projection = self._expression_projector.project(
             observation.interaction_intention
-        ).as_context()
+        )
+        expression_context = expression_projection.as_context()
         payload = self._legacy_situation_payload(validated)
         payload["interaction_intention"] = intention_context
         payload["interaction_expression"] = expression_context
@@ -104,7 +105,10 @@ class SeparatedSituationEvaluationAdapter:
             observation.comparison.as_context()
         )
         constraints = payload.get("constraints")
-        if isinstance(constraints, dict):
+        if (
+            payload.get("activity_type") == "conversation"
+            and isinstance(constraints, dict)
+        ):
             constraints["_interaction_intention"] = intention_context
             constraints["_interaction_expression"] = expression_context
         self._trace_logger.info(
@@ -113,10 +117,10 @@ class SeparatedSituationEvaluationAdapter:
             intention=observation.interaction_intention.intention.value,
             intention_source=observation.interaction_intention.source,
             observation_only=observation.interaction_intention.observation_only,
-            expression_attitude=expression_context["embodied_expression"][
-                "attitude"
-            ],
-            content_strategy=expression_context["content_strategy"],
+            expression_attitude=(
+                expression_projection.embodied_expression.attitude
+            ),
+            content_strategy=expression_projection.content_strategy,
             exact_match=observation.comparison.exact_match,
             compatible=observation.comparison.compatible,
             activity_type=payload["activity_type"],
