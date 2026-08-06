@@ -16,7 +16,7 @@ class BodyAmbientMotionSample:
 
 
 class BodyAmbientMotionGenerator:
-    """相関した視線探索・姿勢揺らぎ・頭部微動だけを生成する。"""
+    """相関した探索微動と、別時間スケールの低周波姿勢移動を生成する。"""
 
     def __init__(self, *, seed: int | None = None) -> None:
         self._random = random.Random(seed)
@@ -28,6 +28,8 @@ class BodyAmbientMotionGenerator:
         self._posture_velocity = 0.0
         self._head_noise = 0.0
         self._head_velocity = 0.0
+        self._posture_sway_phase = 0.0
+        self._head_sway_phase = math.pi * 0.35
 
     def step(
         self,
@@ -75,11 +77,43 @@ class BodyAmbientMotionGenerator:
             0.09,
         )
 
+        posture_frequency_hz = (
+            0.035 + state.movement_energy * 0.018 + state.arousal * 0.008
+        )
+        head_frequency_hz = (
+            0.047 + state.curiosity * 0.014 + state.engagement * 0.009
+        )
+        self._posture_sway_phase = (
+            self._posture_sway_phase + math.tau * posture_frequency_hz * dt
+        ) % math.tau
+        self._head_sway_phase = (
+            self._head_sway_phase + math.tau * head_frequency_hz * dt
+        ) % math.tau
+
+        posture_sway_amplitude = (
+            0.035 + state.movement_energy * 0.07 + state.engagement * 0.025
+        )
+        head_sway_amplitude = (
+            0.02 + state.arousal * 0.035 + state.curiosity * 0.025
+        )
+        posture_motion = self._clamp(
+            self._posture_noise
+            + math.sin(self._posture_sway_phase) * posture_sway_amplitude,
+            -0.18,
+            0.18,
+        )
+        head_motion = self._clamp(
+            self._head_noise
+            + math.sin(self._head_sway_phase) * head_sway_amplitude,
+            -0.14,
+            0.14,
+        )
+
         return BodyAmbientMotionSample(
             scan_x=self._scan_x,
             scan_y=self._scan_y,
-            posture_noise=self._posture_noise,
-            head_noise=self._head_noise,
+            posture_noise=posture_motion,
+            head_noise=head_motion,
         )
 
     @staticmethod
