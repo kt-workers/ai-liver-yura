@@ -52,12 +52,14 @@ class BodyRuntimeSettings:
     def from_env(
         cls,
         environ: Mapping[str, str] | None = None,
+        *,
+        default_enabled: bool = False,
     ) -> BodyRuntimeSettings:
         values = environ or os.environ
         return cls(
             enabled=cls._boolean(
                 values.get("YURA_BODY_RUNTIME_ENABLED"),
-                default=False,
+                default=default_enabled,
             ),
             tick_hz=float(values.get("YURA_BODY_TICK_HZ", "30")),
             pose_output_url=values.get("YURA_BODY_POSE_OUTPUT_URL"),
