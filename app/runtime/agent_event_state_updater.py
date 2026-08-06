@@ -16,6 +16,7 @@ from app.domain.morals import MoralState
 from app.domain.relationships import RelationshipMemory, RelationshipState
 from app.runtime.affective_appraisal_observer import AffectiveAppraisalObserver
 from app.runtime.agent_state import AgentState
+from app.runtime.causal_emotion_appraiser import CausalEmotionAppraiser
 from app.runtime.desire_state_updater import DesireStateUpdater
 from app.runtime.drive_state_updater import DriveStateUpdater
 from app.runtime.emotion_appraiser import EmotionAppraiser
@@ -61,7 +62,7 @@ class AgentEventStateUpdater:
     ) -> None:
         self._drive_state_updater = drive_state_updater or DriveStateUpdater()
         self._desire_state_updater = desire_state_updater or DesireStateUpdater()
-        self._emotion_appraiser = emotion_appraiser or EmotionAppraiser()
+        self._emotion_appraiser = emotion_appraiser or CausalEmotionAppraiser()
         self._emotion_state_updater = emotion_state_updater or EmotionStateUpdater()
         self._affective_appraisal_observer = (
             affective_appraisal_observer
