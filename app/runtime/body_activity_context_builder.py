@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from app.domain.activities import Activity
-from app.domain.body import BodyActivityContext, BodyPostureTendency
+from app.domain.body_activity_context import (
+    BodyActivityContext,
+    BodyPostureTendency,
+)
 from app.runtime.body_activity_context_policy import BodyActivityContextPolicy
 from app.runtime.body_interaction_intention_resolver import (
     BodyInteractionIntentionResolver,
