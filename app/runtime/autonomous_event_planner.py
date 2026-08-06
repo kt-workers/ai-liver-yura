@@ -300,17 +300,17 @@ class AutonomousEventPlanner:
                 **decision_details,
             )
 
+        intention_context = start_decision.interaction_intention.as_context()
         payload: dict[str, Any] = {
             "reason": "internal_drive",
             "drive": state.current_drive.strongest_drive_name(),
             "motivation": motivation,
-            "interaction_intention": (
-                start_decision.interaction_intention.as_context()
-            ),
+            "interaction_intention": intention_context,
             "autonomous_start_decision": start_decision.as_context(),
             "autonomous_start_comparison": start_comparison.as_context(),
             "memory": {
                 "response_content_plan": response_content_plan.as_context(),
+                "interaction_intention": intention_context,
             },
             "autonomous_planned_for": now.isoformat(),
             "interaction_environment": {
