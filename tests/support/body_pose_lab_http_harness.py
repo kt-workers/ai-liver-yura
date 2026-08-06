@@ -82,10 +82,20 @@ class BodyPoseLabHttpHarness:
         if payload is not None:
             data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             headers["Content-Type"] = "application/json; charset=utf-8"
+        return self.raw_json_request(method, path, data=data, headers=headers)
+
+    def raw_json_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        data: bytes | None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, dict[str, object]]:
         request = Request(
             f"{self.base_url}{path}",
             data=data,
-            headers=headers,
+            headers=headers or {"Accept": "application/json"},
             method=method,
         )
         try:
