@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from uuid import uuid4
 
+from app.domain.interaction_intention import InteractionIntention
+
 
 class BodyAttentionBehavior(str, Enum):
     """Bodyが注意対象をどのように扱うかを表す。"""
@@ -169,6 +171,7 @@ class BodyActivityContext:
     posture_tendency: BodyPostureTendency = BodyPostureTendency.NEUTRAL
     movement_energy: float = 0.35
     gaze_freedom: float = 0.5
+    interaction_intention: InteractionIntention | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -207,6 +210,7 @@ class BodyExpressionRequest:
     speech_emphasis: tuple[SpeechEmphasis, ...] = ()
     priority: int = 0
     duration_hint_ms: int | None = None
+    interaction_intention: InteractionIntention | None = None
     request_id: str = field(default_factory=lambda: str(uuid4()))
 
     def __post_init__(self) -> None:
