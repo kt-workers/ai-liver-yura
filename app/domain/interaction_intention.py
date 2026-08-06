@@ -43,6 +43,7 @@ class InteractionIntention:
     activity_type: str | None = None
     operation: str | None = None
     requires_response: bool = True
+    observation_only: bool = True
 
     def __post_init__(self) -> None:
         if not self.source.strip():
@@ -75,7 +76,7 @@ class InteractionIntention:
             "activity_type": self.activity_type,
             "operation": self.operation,
             "requires_response": self.requires_response,
-            "observation_only": True,
+            "observation_only": self.observation_only,
         }
 
 
