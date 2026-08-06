@@ -65,6 +65,11 @@ class DriveStateUpdater:
         curiosity_compatibility = self._clamp(
             desire.curiosity.effective_level + dimensions.novelty * 0.18
         )
+        if event.event_type == AgentEventType.CURIOSITY_PEAK:
+            curiosity_compatibility = max(
+                drive.curiosity,
+                curiosity_compatibility,
+            )
         engagement_target = self._clamp(
             0.25
             + emotion.arousal * 0.22
@@ -95,7 +100,11 @@ class DriveStateUpdater:
             source_event_id=event.event_id,
             event_type=event.event_type.value,
             affective_cause=affective_appraisal.cause_category,
-            curiosity_source="desire_curiosity_compatibility",
+            curiosity_source=(
+                "preserved_autonomous_planning_drive"
+                if event.event_type == AgentEventType.CURIOSITY_PEAK
+                else "desire_curiosity_compatibility"
+            ),
             activity_active=activity_active,
             engagement_target=engagement_target,
             boredom_target=boredom_target,
@@ -125,9 +134,7 @@ class DriveStateUpdater:
         if elapsed_minutes == 0.0:
             return drive
         idle_exploration_pressure = (
-            0.0
-            if activity_active
-            else min(0.40, 0.06 * elapsed_minutes)
+            0.0 if activity_active else min(0.40, 0.06 * elapsed_minutes)
         )
         curiosity_target = self._clamp(
             desire.curiosity.effective_level + idle_exploration_pressure
