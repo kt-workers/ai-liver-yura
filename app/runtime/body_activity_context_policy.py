@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.domain.activities import ActivityType
-from app.domain.body import BodyPostureTendency
+from app.domain.body_activity_context import BodyPostureTendency
 from app.runtime.interaction_expression_projector import (
     InteractionExpressionProjection,
 )
