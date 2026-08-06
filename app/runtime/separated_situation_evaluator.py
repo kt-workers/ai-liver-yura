@@ -68,13 +68,13 @@ class SeparatedSituationEvaluationAdapter:
                 source_event_id=activity.source_event_id,
             )
             return None
-        directive = await self._directive_planner.plan(
+        observation = await self._directive_planner.plan_with_observation(
             activity,
             meaning,
             planning_input,
             character_profile=self._character_profile,
         )
-        if directive is None:
+        if observation is None:
             self._trace_logger.warning(
                 "internal_directive_planner:fallback",
                 source_event_id=activity.source_event_id,
@@ -82,12 +82,30 @@ class SeparatedSituationEvaluationAdapter:
             return None
         validated = self._validator.validate(
             meaning,
-            directive,
+            observation.directive,
             planning_input,
             character_profile=self._character_profile,
         )
+        payload = self._legacy_situation_payload(validated)
+        payload["interaction_intention"] = (
+            observation.interaction_intention.as_context()
+        )
+        payload["interaction_intention_comparison"] = (
+            observation.comparison.as_context()
+        )
+        self._trace_logger.info(
+            "interaction_intention:situation_projected",
+            source_event_id=activity.source_event_id,
+            intention=observation.interaction_intention.intention.value,
+            intention_source=observation.interaction_intention.source,
+            observation_only=observation.interaction_intention.observation_only,
+            exact_match=observation.comparison.exact_match,
+            compatible=observation.comparison.compatible,
+            activity_type=payload["activity_type"],
+            operation=payload["operation"],
+        )
         return json.dumps(
-            self._legacy_situation_payload(validated),
+            payload,
             ensure_ascii=False,
             separators=(",", ":"),
         )
