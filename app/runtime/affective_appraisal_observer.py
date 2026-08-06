@@ -15,6 +15,7 @@ from app.domain.events import AgentEvent, AgentEventType
 from app.domain.relationships import RelationshipState
 from app.runtime.emotion_state_updater import EmotionStateUpdater
 from app.shared.contracts.memory import EmotionHistoryRecord
+from app.utils.trace import TraceLogger
 
 
 class AffectiveAppraisalObserver:
@@ -31,8 +32,10 @@ class AffectiveAppraisalObserver:
         self,
         *,
         emotion_state_updater: EmotionStateUpdater | None = None,
+        trace_logger: TraceLogger | None = None,
     ) -> None:
         self._emotion_state_updater = emotion_state_updater or EmotionStateUpdater()
+        self._trace_logger = trace_logger or TraceLogger()
 
     def observe(
         self,
@@ -87,13 +90,34 @@ class AffectiveAppraisalObserver:
                 if item.cause_category == cause_category or item.reason == cause_category
             ),
         )
-        return (
-            appraisal,
-            AffectiveAppraisalComparison.compare(
-                projected_after,
-                actual_after_emotion,
-            ),
+        comparison = AffectiveAppraisalComparison.compare(
+            projected_after,
+            actual_after_emotion,
         )
+        self._trace_logger.info(
+            "affective_appraisal:shadow_compared",
+            source_event_id=event.event_id,
+            event_type=event.event_type.value,
+            projection_source=appraisal.projection_source,
+            cause_category=appraisal.cause_category,
+            appraisal_confidence=appraisal.confidence,
+            meaning_available=meaning.available,
+            meaning_source=meaning.source,
+            input_speech_act=meaning.input_speech_act,
+            primary_intent=meaning.primary_intent,
+            expected_response=meaning.expected_response,
+            target_type=meaning.target_type,
+            target_id=meaning.target_id,
+            relationship_available=relationship is not None,
+            relationship_counterpart_id=appraisal.relationship_counterpart_id,
+            recent_emotion_history_count=appraisal.recent_emotion_history_count,
+            similar_cause_count=appraisal.similar_cause_count,
+            dimensions=dimensions.as_context(),
+            comparison_matched=comparison.matched,
+            comparison_max_abs_difference=comparison.max_abs_difference,
+            comparison_mismatched_fields=list(comparison.mismatched_fields),
+        )
+        return appraisal, comparison
 
     def _dimensions(
         self,
