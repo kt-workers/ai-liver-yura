@@ -6,7 +6,6 @@ from app.domain.body_auxiliary_projection import BodyTrackingPose
 from app.domain.body_expression_input import BodyExpressionInput
 from app.domain.body_pose_dynamics import BodyPoseAxis
 from app.domain.body_pose_target import BodyPoseTarget
-from app.runtime.body_blink_scheduler import BodyBlinkSample
 from app.runtime.body_external_constraint_player import (
     BodyExternalConstraintSample,
 )
@@ -24,19 +23,17 @@ class BodyPoseTargetComposer:
         value: BodyExpressionInput,
         gaze: BodyGazeTarget,
         posture: BodyPostureTarget,
-        blink: BodyBlinkSample,
         speech: BodySpeechMouthSample,
         constraint: BodyExternalConstraintSample,
         attention_target_id: str | None,
         attention_dwell_ms: int,
     ) -> BodyPoseTarget:
         facial = value.facial_target
-        eye_expression = self._clamp(
+        eye_open = self._clamp(
             1.0 + facial.eye_widen * 0.18 - facial.eye_narrow * 0.28,
             0.0,
             1.0,
         )
-        eye_open = self._clamp(eye_expression * blink.eye_open, 0.0, 1.0)
         mouth_form = self._clamp(facial.smile - facial.frown, -1.0, 1.0)
         surprise_open = value.affect_baseline.surprise * 0.42
         mouth_open = self._clamp(
