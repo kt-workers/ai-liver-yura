@@ -9,25 +9,21 @@ import pytest
 
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-_GEOMETRY_MODULE = (
+_WEB_JS = (
     _REPOSITORY_ROOT
     / "gui"
     / "yura-body-pose-lab"
     / "web"
     / "js"
-    / "stick-figure-geometry.js"
 )
+_GEOMETRY_MODULE = _WEB_JS / "stick-figure-geometry.js"
+_FILTER_MODULE = _WEB_JS / "stick-figure-pose-filter.js"
 _NODE = shutil.which("node")
 
 
-def _geometry(pose: dict[str, float]) -> dict[str, object]:
+def _run_node(script: str) -> object:
     if _NODE is None:
         pytest.skip("node is required for browser geometry validation")
-    script = f"""
-import {{ computeStickFigureGeometry }} from {json.dumps(_GEOMETRY_MODULE.as_uri())};
-const geometry = computeStickFigureGeometry({json.dumps(pose)}, 800, 600);
-console.log(JSON.stringify(geometry));
-"""
     completed = subprocess.run(
         [
             _NODE,
@@ -41,6 +37,16 @@ console.log(JSON.stringify(geometry));
         text=True,
     )
     return json.loads(completed.stdout)
+
+
+def _geometry(pose: dict[str, float]) -> dict[str, object]:
+    return _run_node(
+        f"""
+import {{ computeStickFigureGeometry }} from {json.dumps(_GEOMETRY_MODULE.as_uri())};
+const geometry = computeStickFigureGeometry({json.dumps(pose)}, 800, 600);
+console.log(JSON.stringify(geometry));
+"""
+    )
 
 
 def test_neutral_arms_extend_outward_and_downward_symmetrically() -> None:
@@ -80,3 +86,40 @@ def test_head_neck_and_torso_share_one_connected_centerline() -> None:
     assert geometry["head"]["x"] == pytest.approx(geometry["neck"]["x"])
     assert geometry["headBottom"]["y"] > geometry["head"]["y"]
     assert geometry["headBottom"]["y"] < geometry["neck"]["y"]
+
+
+def test_pose_filter_suppresses_subpixel_jitter() -> None:
+    result = _run_node(
+        f"""
+import {{ StickFigurePoseFilter }} from {json.dumps(_FILTER_MODULE.as_uri())};
+const filter = new StickFigurePoseFilter();
+filter.apply({{ torso_roll: 0, head_yaw: 0, body_height: 0 }});
+const values = [0.0004, -0.0003, 0.0005, -0.0004].map((value) =>
+  filter.apply({{ torso_roll: value, head_yaw: value, body_height: value }})
+);
+console.log(JSON.stringify(values));
+"""
+    )
+
+    assert all(sample["torso_roll"] == pytest.approx(0.0) for sample in result)
+    assert all(sample["head_yaw"] == pytest.approx(0.0) for sample in result)
+    assert max(abs(sample["body_height"]) for sample in result) < 0.0005
+
+
+def test_pose_filter_tracks_large_intentional_motion_without_freezing() -> None:
+    result = _run_node(
+        f"""
+import {{ StickFigurePoseFilter }} from {json.dumps(_FILTER_MODULE.as_uri())};
+const filter = new StickFigurePoseFilter();
+filter.apply({{ right_arm_raise: 0 }});
+const values = [];
+for (let index = 0; index < 5; index += 1) {{
+  values.push(filter.apply({{ right_arm_raise: 1 }}).right_arm_raise);
+}}
+console.log(JSON.stringify(values));
+"""
+    )
+
+    assert result[0] > 0.15
+    assert result[-1] > 0.75
+    assert result == sorted(result)
