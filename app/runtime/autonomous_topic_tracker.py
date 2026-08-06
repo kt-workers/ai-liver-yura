@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from uuid import uuid4
 
+from app.domain.autonomous_continuation import (
+    AutonomousContinuationAction,
+    AutonomousContinuationEvaluation,
+)
 from app.domain.drives import DriveState
 from app.domain.emotions import EmotionState
 from app.domain.topic import InterruptedTopic, TopicLifecycleStatus
@@ -17,8 +22,24 @@ class AutonomousTopicTracker:
     変更せずに集約する。スレッドやI/Oには依存しない。
     """
 
-    def __init__(self, uuid_factory: Callable[[], str] | None = None) -> None:
+    _QUESTION_ENDING = re.compile(
+        r"(?:[？?]|ですか|ますか|でしょうか|だろうか|かな|かい)[。！!]*$"
+    )
+
+    def __init__(
+        self,
+        uuid_factory: Callable[[], str] | None = None,
+        *,
+        maximum_autonomous_turns: int = 3,
+    ) -> None:
+        if (
+            isinstance(maximum_autonomous_turns, bool)
+            or not isinstance(maximum_autonomous_turns, int)
+            or maximum_autonomous_turns < 1
+        ):
+            raise ValueError("maximum_autonomous_turnsは1以上の整数にしてください。")
         self._uuid_factory = uuid_factory or (lambda: str(uuid4()))
+        self._maximum_autonomous_turns = maximum_autonomous_turns
         self._topic: InterruptedTopic | None = None
         self._recent_autonomous_texts: list[str] = []
 
@@ -29,6 +50,10 @@ class AutonomousTopicTracker:
     @property
     def recent_autonomous_texts(self) -> tuple[str, ...]:
         return tuple(self._recent_autonomous_texts)
+
+    @property
+    def maximum_autonomous_turns(self) -> int:
+        return self._maximum_autonomous_turns
 
     def replace(self, topic: InterruptedTopic | None) -> InterruptedTopic | None:
         self._topic = topic
@@ -133,16 +158,18 @@ class AutonomousTopicTracker:
         self._topic = topic
         return topic
 
-    def should_complete(
+    def evaluate_completion(
         self,
         *,
         activity_id: str,
         drive: DriveState,
         emotion: EmotionState,
-    ) -> tuple[bool, float | None]:
+    ) -> AutonomousContinuationEvaluation | None:
+        """話題の継続・終了を有限な理由付きで返す。"""
+
         topic = self._topic
         if topic is None or topic.source_activity_id != activity_id:
-            return False, None
+            return None
 
         continuation_strength = (
             topic.interest * 0.35
@@ -152,7 +179,56 @@ class AutonomousTopicTracker:
             + drive.curiosity * 0.10
             - topic.exhaustion * 0.35
         )
-        return topic.turn_count >= 2 and continuation_strength <= 0.20, continuation_strength
+        waiting_for_user = self._expects_user_response(topic.original_text)
+        hard_limit_reached = topic.turn_count >= self._maximum_autonomous_turns
+        if waiting_for_user:
+            return AutonomousContinuationEvaluation(
+                action=AutonomousContinuationAction.COMPLETE,
+                reason="user_response_expected_after_question",
+                continuation_strength=continuation_strength,
+                turn_count=topic.turn_count,
+                waiting_for_user=True,
+                hard_limit_reached=hard_limit_reached,
+            )
+        if hard_limit_reached:
+            return AutonomousContinuationEvaluation(
+                action=AutonomousContinuationAction.COMPLETE,
+                reason="maximum_autonomous_turns_reached",
+                continuation_strength=continuation_strength,
+                turn_count=topic.turn_count,
+                hard_limit_reached=True,
+            )
+        if topic.turn_count >= 2 and continuation_strength <= 0.20:
+            return AutonomousContinuationEvaluation(
+                action=AutonomousContinuationAction.COMPLETE,
+                reason="topic_continuation_strength_exhausted",
+                continuation_strength=continuation_strength,
+                turn_count=topic.turn_count,
+            )
+        return AutonomousContinuationEvaluation(
+            action=AutonomousContinuationAction.CONTINUE,
+            reason="topic_still_has_causal_continuation_strength",
+            continuation_strength=continuation_strength,
+            turn_count=topic.turn_count,
+        )
+
+    def should_complete(
+        self,
+        *,
+        activity_id: str,
+        drive: DriveState,
+        emotion: EmotionState,
+    ) -> tuple[bool, float | None]:
+        """既存呼出し向けCompatibility API。内部判断はevaluate_completionを使う。"""
+
+        evaluation = self.evaluate_completion(
+            activity_id=activity_id,
+            drive=drive,
+            emotion=emotion,
+        )
+        if evaluation is None:
+            return False, None
+        return evaluation.should_complete, evaluation.continuation_strength
 
     def interrupt(
         self,
@@ -197,6 +273,11 @@ class AutonomousTopicTracker:
         if self._topic is not None:
             self._topic = self._topic.add_interruption_topic(text)
         return self._topic
+
+    @classmethod
+    def _expects_user_response(cls, text: str) -> bool:
+        normalized = text.strip()
+        return bool(normalized and cls._QUESTION_ENDING.search(normalized))
 
     @staticmethod
     def _metric(metrics: dict[object, object], key: str, default: float) -> float:
