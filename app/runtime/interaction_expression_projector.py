@@ -25,6 +25,44 @@ class InteractionExpressionProjection:
     gaze_freedom: float
     content_strategy: str
 
+    def as_context(self) -> dict[str, object]:
+        expression = self.embodied_expression
+        attention = self.attention_intent
+        return {
+            "embodied_expression": {
+                "attitude": expression.attitude,
+                "intensity": expression.intensity,
+                "valence": expression.valence,
+                "arousal": expression.arousal,
+                "tension": expression.tension,
+                "openness": expression.openness,
+                "approach": expression.approach,
+                "agreement": expression.agreement,
+                "surprise": expression.surprise,
+                "assertiveness": expression.assertiveness,
+                "warmth": expression.warmth,
+            },
+            "attention_intent": (
+                {
+                    "target": attention.target,
+                    "behavior": attention.behavior.value,
+                    "engagement": attention.engagement,
+                    "avoidance": attention.avoidance,
+                    "eye_follow": attention.eye_follow,
+                    "head_follow": attention.head_follow,
+                    "body_follow": attention.body_follow,
+                }
+                if attention is not None
+                else None
+            ),
+            "posture_tendency": self.posture_tendency.value,
+            "movement_energy": self.movement_energy,
+            "gaze_freedom": self.gaze_freedom,
+            "content_strategy": self.content_strategy,
+            "observation_only": True,
+            "grants_execution_authority": False,
+        }
+
 
 class InteractionExpressionProjector:
     """有限な対人的意図を、モーション名に依存しない表現へ射影する。"""
