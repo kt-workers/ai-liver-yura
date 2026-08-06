@@ -135,7 +135,6 @@ class StateDrivenBodyController:
             value=self._input,
             gaze=gaze,
             posture=posture,
-            blink=blink,
             speech=speech,
             constraint=constraint,
             attention_target_id=attention.target_id,
@@ -149,6 +148,11 @@ class StateDrivenBodyController:
         display_dynamics = self._components.speech_overlay.apply(
             dynamics=self._dynamics,
             speech=speech,
+        )
+        display_dynamics = self._components.blink_overlay.apply(
+            dynamics=display_dynamics,
+            target=target,
+            blink=blink,
         )
         return self._components.frame_assembler.assemble(
             sequence=tick.sequence,
