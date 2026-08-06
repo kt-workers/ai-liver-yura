@@ -3,10 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from app.bootstrap.body_emotion_bridge import get_body_agent_state_observer
 from app.runtime.agent_life_service import AgentLifeService
 from app.runtime.agent_state import AgentState
 from app.runtime.agent_state_observer_fanout import AgentStateObserverFanout
+from app.runtime.body_emotion_bridge import get_body_agent_state_observer
 
 
 class BodyAwareAgentLifeService(AgentLifeService):
