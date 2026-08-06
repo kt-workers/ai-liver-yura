@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>からだの水鏡 — Body Pose Lab</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div>
+      <p class="eyebrow">YURA / BODY EXPRESSION LAB</p>
+      <h1>からだの水鏡</h1>
+      <p class="lead">感情から生まれる視線・姿勢・呼吸・瞬きを、モデル非依存の棒人形で確認します。</p>
+    </div>
+    <div class="connection-card">
+      <span id="connection-dot" class="status-dot"></span>
+      <div><strong id="connection-label">接続中</strong><small id="frame-source">Frame待機中</small></div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="control-panel glass-card">
+      <section>
+        <div class="section-heading"><h2>感情プリセット</h2><span>Emotion</span></div>
+        <div id="preset-list" class="preset-grid"></div>
+      </section>
+
+      <section>
+        <div class="section-heading"><h2>感情の基礎</h2><span>Affect</span></div>
+        <label>覚醒度 <output id="arousal-value">0.50</output><input id="arousal" type="range" min="0" max="1" step="0.01" value="0.5"></label>
+        <label>快・不快 <output id="valence-value">0.00</output><input id="valence" type="range" min="-1" max="1" step="0.01" value="0"></label>
+        <label>喜び <output id="joy-value">0.00</output><input id="joy" type="range" min="0" max="1" step="0.01" value="0"></label>
+        <label>驚き <output id="surprise-value">0.00</output><input id="surprise" type="range" min="0" max="1" step="0.01" value="0"></label>
+        <label>緊張・恐れ <output id="fear-value">0.00</output><input id="fear" type="range" min="0" max="1" step="0.01" value="0"></label>
+      </section>
+
+      <section>
+        <div class="section-heading"><h2>活動文脈</h2><span>Context</span></div>
+        <label>関与度 <output id="engagement-value">0.55</output><input id="engagement" type="range" min="0" max="1" step="0.01" value="0.55"></label>
+        <label>運動エネルギー <output id="movement-value">0.32</output><input id="movement" type="range" min="0" max="1" step="0.01" value="0.32"></label>
+        <label>視線の自由度 <output id="gaze-value">0.72</output><input id="gaze" type="range" min="0" max="1" step="0.01" value="0.72"></label>
+        <label>姿勢傾向<select id="posture"><option value="neutral">中立</option><option value="open">開く</option><option value="closed">閉じる</option><option value="forward">前へ</option><option value="withdrawn">退く</option></select></label>
+      </section>
+
+      <section>
+        <div class="section-heading"><h2>反射と一時制約</h2><span>Overlay</span></div>
+        <div class="action-grid">
+          <button data-action="blink">瞬き</button>
+          <button data-action="speech">発話口形</button>
+          <button data-constraint="right-arm">右腕を上げる</button>
+          <button data-constraint="left-arm">左腕を上げる</button>
+          <button data-constraint="bow">お辞儀</button>
+          <button data-constraint="jump">跳ねる</button>
+        </div>
+        <button id="clear-constraint" class="subtle-button">一時制約を解除</button>
+      </section>
+    </aside>
+
+    <section class="stage-column">
+      <div class="stage glass-card">
+        <canvas id="pose-canvas" aria-label="Body pose stick figure"></canvas>
+        <div id="candidate-layer" class="candidate-layer"></div>
+        <div class="stage-caption"><span id="attention-target">ambient_scan</span><span id="fps">0.0 fps</span></div>
+      </div>
+      <div class="metrics glass-card" id="metrics"></div>
+    </section>
+
+    <aside class="diagnostics glass-card">
+      <div class="section-heading"><h2>診断</h2><span>Frame</span></div>
+      <dl id="diagnostic-list"></dl>
+      <details><summary>BodyPoseFrame payload</summary><pre id="payload-view">Frame待機中</pre></details>
+    </aside>
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
