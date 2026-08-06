@@ -3,24 +3,24 @@ from __future__ import annotations
 import os
 
 from app.bootstrap import runtime as runtime_bootstrap
+from app.bootstrap.body_emotion_bridge import get_body_emotion_state_store
+from app.bootstrap.body_output_factory import BodyOutputFactory
+from app.bootstrap.body_runtime_factory import BodyRuntimeFactory
+from app.bootstrap.body_runtime_settings import BodyRuntimeSettings
 from app.ports.avatar_output import get_bound_avatar_output
-from app.ports.body_subsystem import bind_body_subsystem
+from app.ports.body_subsystem import BodySubsystemPort, bind_body_subsystem
 from app.runtime.avatar_performance_action_planner import (
     AvatarPerformanceActionPlanner,
 )
 from app.runtime.avatar_performance_character_service import (
     AvatarPerformanceCharacterLlmService,
 )
-from app.runtime.body_runtime import BodyRuntime, BodyRuntimeConfig
+from app.runtime.body_aware_agent_life_service import BodyAwareAgentLifeService
 from app.utils.trace import TraceLogger
 
 
 def install_body_aware_runtime_components() -> None:
-    """既存Composition RootへBody対応Plannerを組み込む。
-
-    現行Factoryの公開契約を変えず段階移行するため、Factoryが参照する実装Classを
-    起動前に差し替える。Activity、ActionPlanGroup、ActionSchedulerの責務は変更しない。
-    """
+    """既存Composition RootへBody対応部品を起動前に登録する。"""
 
     setattr(runtime_bootstrap, "ActionPlanner", AvatarPerformanceActionPlanner)
     setattr(
@@ -28,54 +28,48 @@ def install_body_aware_runtime_components() -> None:
         "CharacterLlmService",
         AvatarPerformanceCharacterLlmService,
     )
+    setattr(
+        runtime_bootstrap,
+        "AgentLifeService",
+        BodyAwareAgentLifeService,
+    )
 
 
-def create_bound_body_runtime_from_env() -> BodyRuntime | None:
-    """初期化済みAvatar Outputへ接続するBody Runtimeを生成・束縛する。"""
+def create_bound_body_runtime_from_env() -> BodySubsystemPort | None:
+    """型付き設定と利用可能PortからBody Runtimeを生成・束縛する。"""
 
     bind_body_subsystem(None)
+    trace = TraceLogger()
     avatar_output = get_bound_avatar_output()
-    enabled = _env_enabled(
-        "YURA_BODY_RUNTIME_ENABLED",
-        default=avatar_output is not None,
+    has_pose_output = bool(os.getenv("YURA_BODY_POSE_OUTPUT_URL", "").strip())
+    settings = BodyRuntimeSettings.from_env(
+        default_enabled=avatar_output is not None or has_pose_output,
     )
-    if not enabled:
-        TraceLogger().info(
-            "body_runtime_setup:skipped",
-            reason="disabled",
-        )
+    if not settings.enabled:
+        trace.info("body_runtime_setup:skipped", reason="disabled")
         return None
-    if avatar_output is None:
-        TraceLogger().warning(
+
+    pose_output = BodyOutputFactory().create(settings)
+    runtime = BodyRuntimeFactory().create(
+        settings=settings,
+        avatar_output=avatar_output,
+        pose_output=pose_output,
+        emotion_provider=get_body_emotion_state_store().snapshot,
+    )
+    if runtime is None:
+        trace.warning(
             "body_runtime_setup:skipped",
-            reason="avatar_output_unavailable",
+            reason="body_output_unavailable",
         )
         return None
 
-    config = BodyRuntimeConfig(
-        tick_hz=_env_float("YURA_BODY_TICK_HZ", default=30.0),
-        expression_queue_limit=_env_int(
-            "YURA_BODY_EXPRESSION_QUEUE_LIMIT",
-            default=32,
-        ),
-        max_expressions_per_tick=_env_int(
-            "YURA_BODY_MAX_EXPRESSIONS_PER_TICK",
-            default=4,
-        ),
-        autonomous_interval_ms=_env_int(
-            "YURA_BODY_AUTONOMOUS_INTERVAL_MS",
-            default=2400,
-        ),
-        baseline_refresh_ms=_env_int(
-            "YURA_BODY_BASELINE_REFRESH_MS",
-            default=30_000,
-        ),
-    )
-    runtime = BodyRuntime(avatar_output, config=config)
     bind_body_subsystem(runtime)
-    TraceLogger().info(
+    trace.info(
         "body_runtime_setup:created",
-        tick_hz=config.tick_hz,
+        tick_hz=settings.tick_hz,
+        runtime_type=type(runtime).__name__,
+        pose_output_enabled=pose_output is not None,
+        avatar_output_enabled=avatar_output is not None,
     )
     return runtime
 
@@ -84,30 +78,3 @@ def clear_bound_body_runtime() -> None:
     """停止済みBody Runtimeのプロセス束縛を解除する。"""
 
     bind_body_subsystem(None)
-
-
-def _env_enabled(name: str, *, default: bool) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() not in {"0", "false", "off", "no", ""}
-
-
-def _env_float(name: str, *, default: float) -> float:
-    raw = os.getenv(name)
-    if raw is None or not raw.strip():
-        return default
-    try:
-        return float(raw)
-    except ValueError as error:
-        raise RuntimeError(f"{name} must be a number") from error
-
-
-def _env_int(name: str, *, default: int) -> int:
-    raw = os.getenv(name)
-    if raw is None or not raw.strip():
-        return default
-    try:
-        return int(raw)
-    except ValueError as error:
-        raise RuntimeError(f"{name} must be an integer") from error
