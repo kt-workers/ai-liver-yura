@@ -42,6 +42,7 @@ class BodyPoseLabHttpServer:
             self._handler_type(),
         )
         self._server.daemon_threads = True
+        self._closed = False
 
     @property
     def address(self) -> tuple[str, int]:
@@ -52,7 +53,15 @@ class BodyPoseLabHttpServer:
         self._server.serve_forever(poll_interval=0.2)
 
     def shutdown(self) -> None:
+        if self._closed:
+            return
         self._server.shutdown()
+        self.close()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         self._server.server_close()
 
     def _handler_type(self) -> type[BaseHTTPRequestHandler]:
