@@ -62,14 +62,22 @@ class DriveStateUpdater:
         """人格的内容を決めず、現在の活性・準備状態だけを導出する。"""
 
         dimensions = affective_appraisal.dimensions
-        curiosity_compatibility = self._clamp(
+        desire_curiosity_projection = self._clamp(
             desire.curiosity.effective_level + dimensions.novelty * 0.18
         )
-        if event.event_type == AgentEventType.CURIOSITY_PEAK:
-            curiosity_compatibility = max(
-                drive.curiosity,
-                curiosity_compatibility,
-            )
+        drive_inertia_ratio = (
+            1.0 if event.event_type == AgentEventType.CURIOSITY_PEAK else 0.96
+        )
+        drive_curiosity_inertia = drive.curiosity * drive_inertia_ratio
+        curiosity_compatibility = max(
+            desire_curiosity_projection,
+            drive_curiosity_inertia,
+        )
+        curiosity_source = (
+            "previous_drive_inertia"
+            if drive_curiosity_inertia > desire_curiosity_projection
+            else "desire_curiosity_compatibility"
+        )
         engagement_target = self._clamp(
             0.25
             + emotion.arousal * 0.22
@@ -100,11 +108,9 @@ class DriveStateUpdater:
             source_event_id=event.event_id,
             event_type=event.event_type.value,
             affective_cause=affective_appraisal.cause_category,
-            curiosity_source=(
-                "preserved_autonomous_planning_drive"
-                if event.event_type == AgentEventType.CURIOSITY_PEAK
-                else "desire_curiosity_compatibility"
-            ),
+            curiosity_source=curiosity_source,
+            desire_curiosity_projection=desire_curiosity_projection,
+            drive_curiosity_inertia=drive_curiosity_inertia,
             activity_active=activity_active,
             engagement_target=engagement_target,
             boredom_target=boredom_target,
