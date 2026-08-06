@@ -11,6 +11,7 @@ from app.domain.body import (
     EmbodiedExpressionIntent,
     SpeechEmphasis,
 )
+from app.domain.interaction_intention import InteractionIntention
 from app.shared.contracts.expression import VoiceIntent as VoiceIntent
 
 
@@ -206,6 +207,21 @@ class ResponseContext:
     confirmation_candidate_operation: str | None = None
     confirmation_question: str | None = None
     confirmation_resolution: str | None = None
+    interaction_intention: InteractionIntention | None = field(
+        default=None,
+        init=False,
+    )
+
+    def __post_init__(self) -> None:
+        candidates = (
+            self.memory.get("interaction_intention"),
+            self.constraints.get("_interaction_intention"),
+        )
+        for candidate in candidates:
+            intention = InteractionIntention.from_context(candidate)
+            if intention is not None:
+                object.__setattr__(self, "interaction_intention", intention)
+                break
 
 
 @dataclass(frozen=True, slots=True)
