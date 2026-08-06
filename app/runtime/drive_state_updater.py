@@ -66,9 +66,9 @@ class DriveStateUpdater:
             desire.curiosity.effective_level + dimensions.novelty * 0.18
         )
         engagement_target = self._clamp(
-            0.18
+            0.25
             + emotion.arousal * 0.22
-            + dimensions.social_relevance * 0.18
+            + dimensions.social_relevance * 0.25
             + max(0.0, dimensions.approach) * 0.14
             + dimensions.relationship_significance * 0.12
             - dimensions.tension * 0.18,
