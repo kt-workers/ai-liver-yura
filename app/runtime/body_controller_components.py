@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from time import monotonic
-from collections.abc import Callable
 
 from app.runtime.body_ambient_motion_generator import BodyAmbientMotionGenerator
 from app.runtime.body_attention_selector import BodyAttentionSelector
@@ -21,6 +21,7 @@ from app.runtime.body_pose_integrator import BodyPoseIntegrator
 from app.runtime.body_pose_target_composer import BodyPoseTargetComposer
 from app.runtime.body_posture_target_composer import BodyPostureTargetComposer
 from app.runtime.body_speech_mouth_driver import BodySpeechMouthDriver
+from app.runtime.body_speech_pose_overlay import BodySpeechPoseOverlay
 from app.runtime.body_tick_clock import BodyTickClock
 
 
@@ -36,6 +37,7 @@ class BodyControllerComponents:
     blink: BodyBlinkScheduler
     expression_gesture: BodyExpressionGestureGenerator
     speech_mouth: BodySpeechMouthDriver
+    speech_overlay: BodySpeechPoseOverlay
     external_constraint: BodyExternalConstraintPlayer
     gaze_composer: BodyGazeTargetComposer
     posture_composer: BodyPostureTargetComposer
@@ -65,6 +67,7 @@ class BodyControllerComponents:
             blink=BodyBlinkScheduler(seed=None if seed is None else seed + 2),
             expression_gesture=BodyExpressionGestureGenerator(),
             speech_mouth=BodySpeechMouthDriver(),
+            speech_overlay=BodySpeechPoseOverlay(),
             external_constraint=BodyExternalConstraintPlayer(),
             gaze_composer=BodyGazeTargetComposer(),
             posture_composer=BodyPostureTargetComposer(),
