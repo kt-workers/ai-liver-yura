@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.domain.desires import DesireState
+from app.domain.desires import DesireState, DesireType
 from app.domain.drives import DriveState
 from app.domain.emotions import EmotionAppraisal, EmotionCause, EmotionState
 from app.domain.events import AgentEvent, AgentEventType
@@ -123,15 +123,10 @@ def test_drive_curiosity_is_compatibility_projection_of_desire() -> None:
     event = AgentEvent(event_type=AgentEventType.CAMERA_FRAME)
     appraisal = EmotionAppraisal(source_event_id=event.event_id)
     before_emotion, after_emotion, affective = _observe(event, appraisal)
-    desire = DesireState().with_value(
-        desire_type=next(
-            desire_type
-            for desire_type in __import__(
-                "app.domain.desires", fromlist=["DesireType"]
-            ).DesireType
-            if desire_type.value == "curiosity"
-        ),
-        value=DesireState().curiosity.adjusted(level_delta=0.20),
+    initial = DesireState()
+    desire = initial.with_value(
+        DesireType.CURIOSITY,
+        initial.curiosity.adjusted(level_delta=0.20),
     )
 
     updated = DriveStateUpdater().derive_from_affect(
