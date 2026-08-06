@@ -74,10 +74,11 @@ class DriveStateUpdater:
             - dimensions.tension * 0.18,
         )
         boredom_target = self._clamp(
-            0.62
-            - emotion.arousal * 0.28
-            - dimensions.novelty * 0.24
-            - engagement_target * 0.26
+            0.45
+            - emotion.arousal * 0.30
+            - dimensions.novelty * 0.28
+            - dimensions.social_relevance * 0.42
+            - engagement_target * 0.20
             + (0.06 if not activity_active else 0.0),
         )
         energy_delta = self._event_energy_delta(event.event_type)
