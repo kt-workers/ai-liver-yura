@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 
 from app.bootstrap import runtime as runtime_bootstrap
-from app.bootstrap.body_emotion_bridge import get_body_emotion_state_store
 from app.bootstrap.body_output_factory import BodyOutputFactory
 from app.bootstrap.body_runtime_factory import BodyRuntimeFactory
 from app.bootstrap.body_runtime_settings import BodyRuntimeSettings
@@ -16,6 +15,7 @@ from app.runtime.avatar_performance_character_service import (
     AvatarPerformanceCharacterLlmService,
 )
 from app.runtime.body_aware_agent_life_service import BodyAwareAgentLifeService
+from app.runtime.body_emotion_bridge import get_body_emotion_state_store
 from app.utils.trace import TraceLogger
 
 
