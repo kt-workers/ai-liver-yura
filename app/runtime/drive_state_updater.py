@@ -124,7 +124,14 @@ class DriveStateUpdater:
         elapsed_minutes = max(0.0, elapsed_seconds) / 60.0
         if elapsed_minutes == 0.0:
             return drive
-        curiosity_target = desire.curiosity.effective_level
+        idle_exploration_pressure = (
+            0.0
+            if activity_active
+            else min(0.40, 0.06 * elapsed_minutes)
+        )
+        curiosity_target = self._clamp(
+            desire.curiosity.effective_level + idle_exploration_pressure
+        )
         engagement_target = self._clamp(
             0.20
             + emotion.arousal * 0.28
@@ -173,7 +180,8 @@ class DriveStateUpdater:
             elapsed_seconds=elapsed_seconds,
             elapsed_minutes=elapsed_minutes,
             activity_active=activity_active,
-            curiosity_source="desire_curiosity_compatibility",
+            curiosity_source="desire_curiosity_plus_idle_exploration_pressure",
+            idle_exploration_pressure=idle_exploration_pressure,
         )
         return updated
 
