@@ -28,6 +28,7 @@ class BodyPoseLabHttpHarness:
         *,
         local_simulation: bool = False,
         tick_hz: float = 30.0,
+        maximum_json_bytes: int = 512 * 1024,
     ) -> BodyPoseLabHttpHarness:
         components = BodyPoseLabComposition.create(
             BodyPoseLabConfig(
@@ -36,6 +37,7 @@ class BodyPoseLabHttpHarness:
                 tick_hz=tick_hz,
                 random_seed=31,
                 local_simulation=local_simulation,
+                maximum_json_bytes=maximum_json_bytes,
             )
         )
         if local_simulation:
