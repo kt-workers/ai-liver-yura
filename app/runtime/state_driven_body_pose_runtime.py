@@ -7,6 +7,7 @@ from time import monotonic
 
 from app.domain.body_activity_context import BodyActivityContext
 from app.domain.body_expression_request import BodyExpressionRequest
+from app.domain.body_pose_frame import BodyPoseFrame
 from app.domain.body_runtime import BodyRuntimeSnapshot
 from app.domain.body_speech import SpeechPresentationRequest
 from app.domain.emotions.emotion_state import EmotionState
@@ -100,25 +101,31 @@ class StateDrivenBodyPoseRuntime:
             last_error=self._last_error,
         )
 
+    async def tick_once(self) -> BodyPoseFrame:
+        """確定済みEmotionと現在Contextから1Frameだけ生成・公開する。"""
+
+        emotion = self._emotion_provider()
+        if not isinstance(emotion, EmotionState):
+            raise TypeError("emotion_provider must return EmotionState")
+        expression_input = self._input_builder.build(
+            emotion=emotion,
+            context=self._context,
+            expression_request=self._expression_store.current(),
+        )
+        self._controller.update_expression_input(expression_input)
+        frame = self._controller.tick()
+        await self._output.publish_body_pose_frame(frame)
+        self._tick_count += 1
+        self._last_frame_id = f"body-frame-{frame.sequence}"
+        self._last_error = None
+        return frame
+
     async def _run(self) -> None:
         interval = 1.0 / self._controller.tick_hz
         while self._running:
             started = monotonic()
             try:
-                emotion = self._emotion_provider()
-                if not isinstance(emotion, EmotionState):
-                    raise TypeError("emotion_provider must return EmotionState")
-                expression_input = self._input_builder.build(
-                    emotion=emotion,
-                    context=self._context,
-                    expression_request=self._expression_store.current(),
-                )
-                self._controller.update_expression_input(expression_input)
-                frame = self._controller.tick()
-                await self._output.publish_body_pose_frame(frame)
-                self._tick_count += 1
-                self._last_frame_id = f"body-frame-{frame.sequence}"
-                self._last_error = None
+                await self.tick_once()
             except asyncio.CancelledError:
                 raise
             except Exception as error:
