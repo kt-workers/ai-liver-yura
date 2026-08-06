@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 
@@ -63,6 +64,54 @@ class InteractionIntention:
                 field_name,
                 _optional_text(getattr(self, field_name)),
             )
+
+    @classmethod
+    def from_context(cls, value: object) -> InteractionIntention | None:
+        """有限な公開項目だけからInteraction Intentionを安全に復元する。"""
+
+        if isinstance(value, cls):
+            return value
+        if not isinstance(value, Mapping):
+            return None
+        intention_value = value.get("intention")
+        try:
+            intention = (
+                intention_value
+                if isinstance(intention_value, InteractionIntentionType)
+                else InteractionIntentionType(str(intention_value).strip())
+            )
+        except (TypeError, ValueError):
+            return None
+        confidence_value = value.get("confidence", 0.5)
+        if isinstance(confidence_value, bool) or not isinstance(
+            confidence_value, (int, float)
+        ):
+            return None
+        source = str(value.get("source") or "projected_context").strip()
+        reason = str(value.get("reason") or "restored_from_context").strip()
+        if not source or not reason:
+            return None
+
+        def optional(name: str) -> str | None:
+            candidate = value.get(name)
+            if candidate is None:
+                return None
+            normalized = str(candidate).strip()
+            return normalized or None
+
+        return cls(
+            intention=intention,
+            confidence=float(confidence_value),
+            source=source,
+            reason=reason,
+            primary_desire=optional("primary_desire"),
+            target_type=optional("target_type"),
+            target_id=optional("target_id"),
+            activity_type=optional("activity_type"),
+            operation=optional("operation"),
+            requires_response=bool(value.get("requires_response", True)),
+            observation_only=bool(value.get("observation_only", True)),
+        )
 
     def as_context(self) -> dict[str, object]:
         return {
