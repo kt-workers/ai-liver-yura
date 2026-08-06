@@ -13,6 +13,7 @@ from app.domain.autonomous_continuation import (
 from app.domain.drives import DriveState
 from app.domain.emotions import EmotionState
 from app.domain.topic import InterruptedTopic, TopicLifecycleStatus
+from app.runtime.causal_decision_observer import CausalDecisionObserver
 
 
 class AutonomousTopicTracker:
@@ -31,6 +32,7 @@ class AutonomousTopicTracker:
         uuid_factory: Callable[[], str] | None = None,
         *,
         maximum_autonomous_turns: int = 3,
+        causal_observer: CausalDecisionObserver | None = None,
     ) -> None:
         if (
             isinstance(maximum_autonomous_turns, bool)
@@ -40,6 +42,7 @@ class AutonomousTopicTracker:
             raise ValueError("maximum_autonomous_turnsは1以上の整数にしてください。")
         self._uuid_factory = uuid_factory or (lambda: str(uuid4()))
         self._maximum_autonomous_turns = maximum_autonomous_turns
+        self._causal_observer = causal_observer or CausalDecisionObserver()
         self._topic: InterruptedTopic | None = None
         self._recent_autonomous_texts: list[str] = []
 
@@ -182,34 +185,42 @@ class AutonomousTopicTracker:
         waiting_for_user = self._expects_user_response(topic.original_text)
         hard_limit_reached = topic.turn_count >= self._maximum_autonomous_turns
         if waiting_for_user:
-            return AutonomousContinuationEvaluation(
-                action=AutonomousContinuationAction.COMPLETE,
-                reason="user_response_expected_after_question",
-                continuation_strength=continuation_strength,
-                turn_count=topic.turn_count,
-                waiting_for_user=True,
-                hard_limit_reached=hard_limit_reached,
+            return self._observe(
+                AutonomousContinuationEvaluation(
+                    action=AutonomousContinuationAction.COMPLETE,
+                    reason="user_response_expected_after_question",
+                    continuation_strength=continuation_strength,
+                    turn_count=topic.turn_count,
+                    waiting_for_user=True,
+                    hard_limit_reached=hard_limit_reached,
+                )
             )
         if hard_limit_reached:
-            return AutonomousContinuationEvaluation(
-                action=AutonomousContinuationAction.COMPLETE,
-                reason="maximum_autonomous_turns_reached",
-                continuation_strength=continuation_strength,
-                turn_count=topic.turn_count,
-                hard_limit_reached=True,
+            return self._observe(
+                AutonomousContinuationEvaluation(
+                    action=AutonomousContinuationAction.COMPLETE,
+                    reason="maximum_autonomous_turns_reached",
+                    continuation_strength=continuation_strength,
+                    turn_count=topic.turn_count,
+                    hard_limit_reached=True,
+                )
             )
         if topic.turn_count >= 2 and continuation_strength <= 0.20:
-            return AutonomousContinuationEvaluation(
-                action=AutonomousContinuationAction.COMPLETE,
-                reason="topic_continuation_strength_exhausted",
+            return self._observe(
+                AutonomousContinuationEvaluation(
+                    action=AutonomousContinuationAction.COMPLETE,
+                    reason="topic_continuation_strength_exhausted",
+                    continuation_strength=continuation_strength,
+                    turn_count=topic.turn_count,
+                )
+            )
+        return self._observe(
+            AutonomousContinuationEvaluation(
+                action=AutonomousContinuationAction.CONTINUE,
+                reason="topic_still_has_causal_continuation_strength",
                 continuation_strength=continuation_strength,
                 turn_count=topic.turn_count,
             )
-        return AutonomousContinuationEvaluation(
-            action=AutonomousContinuationAction.CONTINUE,
-            reason="topic_still_has_causal_continuation_strength",
-            continuation_strength=continuation_strength,
-            turn_count=topic.turn_count,
         )
 
     def should_complete(
@@ -267,12 +278,23 @@ class AutonomousTopicTracker:
             *self._recent_autonomous_texts[-4:],
             topic.original_text,
         ]
+        self._causal_observer.observe_autonomous_completion(
+            topic_status=completed.status.value,
+            reason="autonomous_topic_marked_completed",
+        )
         return completed
 
     def add_interruption_topic(self, text: str) -> InterruptedTopic | None:
         if self._topic is not None:
             self._topic = self._topic.add_interruption_topic(text)
         return self._topic
+
+    def _observe(
+        self,
+        evaluation: AutonomousContinuationEvaluation,
+    ) -> AutonomousContinuationEvaluation:
+        self._causal_observer.observe_autonomous_continuation(evaluation)
+        return evaluation
 
     @classmethod
     def _expects_user_response(cls, text: str) -> bool:
