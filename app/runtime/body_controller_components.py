@@ -6,6 +6,7 @@ from time import monotonic
 
 from app.runtime.body_ambient_motion_generator import BodyAmbientMotionGenerator
 from app.runtime.body_attention_selector import BodyAttentionSelector
+from app.runtime.body_blink_pose_overlay import BodyBlinkPoseOverlay
 from app.runtime.body_blink_scheduler import BodyBlinkScheduler
 from app.runtime.body_breathing_oscillator import BodyBreathingOscillator
 from app.runtime.body_expression_gesture_generator import (
@@ -35,6 +36,7 @@ class BodyControllerComponents:
     ambient_motion: BodyAmbientMotionGenerator
     breathing: BodyBreathingOscillator
     blink: BodyBlinkScheduler
+    blink_overlay: BodyBlinkPoseOverlay
     expression_gesture: BodyExpressionGestureGenerator
     speech_mouth: BodySpeechMouthDriver
     speech_overlay: BodySpeechPoseOverlay
@@ -65,6 +67,7 @@ class BodyControllerComponents:
             ),
             breathing=BodyBreathingOscillator(),
             blink=BodyBlinkScheduler(seed=None if seed is None else seed + 2),
+            blink_overlay=BodyBlinkPoseOverlay(),
             expression_gesture=BodyExpressionGestureGenerator(),
             speech_mouth=BodySpeechMouthDriver(),
             speech_overlay=BodySpeechPoseOverlay(),
