@@ -8,6 +8,7 @@ from app.bootstrap.body_runtime_factory import BodyRuntimeFactory
 from app.bootstrap.body_runtime_settings import BodyRuntimeSettings
 from app.ports.avatar_output import get_bound_avatar_output
 from app.ports.body_subsystem import BodySubsystemPort, bind_body_subsystem
+from app.runtime import separated_situation_evaluator as separated_situation_evaluator_module
 from app.runtime.avatar_performance_action_planner import (
     AvatarPerformanceActionPlanner,
 )
@@ -16,6 +17,9 @@ from app.runtime.avatar_performance_character_service import (
 )
 from app.runtime.body_aware_agent_life_service import BodyAwareAgentLifeService
 from app.runtime.body_aware_behavior_planner import BodyAwareBehaviorPlanner
+from app.runtime.body_aware_internal_directive_validator import (
+    BodyAwareInternalDirectiveValidator,
+)
 from app.runtime.body_aware_response_validation import BodyAwareResponseValidator
 from app.runtime.body_emotion_bridge import get_body_emotion_state_store
 from app.usecases.body_aware_execute_action_usecase import BodyAwareExecuteActionUsecase
@@ -50,6 +54,11 @@ def install_body_aware_runtime_components() -> None:
         runtime_bootstrap,
         "ExecuteActionUsecase",
         BodyAwareExecuteActionUsecase,
+    )
+    setattr(
+        separated_situation_evaluator_module,
+        "InternalDirectiveValidator",
+        BodyAwareInternalDirectiveValidator,
     )
 
 
