@@ -17,6 +17,8 @@ from app.domain.behavior import (
     SpeechAct,
 )
 from app.domain.body_instruction import (
+    BODY_ACTION_INTENT_CONSTRAINT,
+    BODY_EXPRESSION_ACTIVITY_TYPE,
     BodyConstraintExecutionResult,
     BodyConstraintExecutionStatus,
     BodyInstruction,
@@ -68,10 +70,29 @@ def _meaning_payload(body_instruction: dict[str, object] | None) -> dict[str, ob
     }
 
 
-def _analysis(instruction: BodyInstruction) -> SituationAnalysis:
+def _analysis(
+    instruction: BodyInstruction,
+    *,
+    directive_selects_body: bool = True,
+) -> SituationAnalysis:
+    activity_intent: dict[str, object] | None = None
+    if directive_selects_body:
+        activity_intent = {
+            "activity_type": BODY_EXPRESSION_ACTIVITY_TYPE,
+            "operation": "start",
+            "constraints": {
+                BODY_ACTION_INTENT_CONSTRAINT: instruction.as_context(),
+            },
+        }
     return SituationAnalysis(
-        activity_candidate=None,
-        operation=ActivityOperation.DISCUSS,
+        activity_candidate=(
+            BODY_EXPRESSION_ACTIVITY_TYPE if directive_selects_body else None
+        ),
+        operation=(
+            ActivityOperation.START
+            if directive_selects_body
+            else ActivityOperation.DISCUSS
+        ),
         goal="明示Body指示へ応答する",
         constraints={
             "_internal_directive": {
@@ -80,6 +101,8 @@ def _analysis(instruction: BodyInstruction) -> SituationAnalysis:
                 },
                 "internal_directive": {
                     "response_mode": "react",
+                    "response_goal": "身体要求へ自然に応じる",
+                    "activity_intent": activity_intent,
                     "question_budget": 0,
                     "new_direction_budget": 0,
                 },
@@ -183,7 +206,7 @@ def test_resolver_maps_right_arm_raise_without_motion_preset() -> None:
     assert resolution.constraint.targets[0].value >= 0.9
 
 
-def test_body_aware_planner_uses_runtime_body_activity_when_registry_is_empty() -> None:
+def test_body_aware_planner_uses_internal_directive_body_action_when_registry_is_empty() -> None:
     planner = BodyAwareBehaviorPlanner(situation_evaluator=MagicMock())
     instruction = BodyInstruction("head", "right", magnitude=0.8)
 
@@ -193,29 +216,23 @@ def test_body_aware_planner_uses_runtime_body_activity_when_registry_is_empty() 
     assert plan.activity_type == ActivityType.BODY_EXPRESSION_LOOP.value
     assert plan.provider_plugin_id == "runtime"
     assert plan.required_capability is None
+    assert plan.constraints[BODY_ACTION_INTENT_CONSTRAINT] == instruction.as_context()
     assert plan.constraints["_body_instruction"] == instruction.as_context()
+    assert plan.reason == "validated_internal_directive_body_action"
 
 
-def test_viewer_body_direction_is_not_promoted_to_runtime_execution() -> None:
+def test_input_body_request_alone_does_not_promote_runtime_body_execution() -> None:
     planner = BodyAwareBehaviorPlanner(situation_evaluator=MagicMock())
     instruction = BodyInstruction("head", "right", magnitude=0.8)
-    context = _planning_context("右見て")
-    context = BehaviorPlanningContext(
-        **{
-            **context.__dict__,
-            "authority_role": "viewer",
-        }
-    ) if hasattr(context, "__dict__") else BehaviorPlanningContext(
-        user_text=context.user_text,
-        source_event_id=context.source_event_id,
-        available_capabilities=context.available_capabilities,
-        authority_role="viewer",
-        activity_definitions=(),
+
+    plan = planner.plan_from_analysis(
+        _planning_context("右見て"),
+        _analysis(instruction, directive_selects_body=False),
     )
 
-    plan = planner.plan_from_analysis(context, _analysis(instruction))
-
     assert plan.activity_type == "conversation"
+    assert BODY_ACTION_INTENT_CONSTRAINT not in plan.constraints
+    assert "_body_instruction" not in plan.constraints
 
 
 class _RecordingBody:
@@ -341,7 +358,7 @@ class _ReadyBodyInstructionExecutor:
 
 
 @pytest.mark.asyncio
-async def test_behavior_routing_preflights_body_without_executing_before_character() -> None:
+async def test_behavior_routing_preflights_directive_body_action_without_executing_before_character() -> None:
     instruction = BodyInstruction("head", "right", magnitude=0.8)
     analysis = _analysis(instruction)
     planner = BodyAwareBehaviorPlanner(situation_evaluator=MagicMock())
@@ -374,7 +391,12 @@ async def test_behavior_routing_preflights_body_without_executing_before_charact
     assert body_executor.instructions == [instruction]
 
 
-def _act_context(*, status: ActivityExecutionStatus, activity_type: str) -> ResponseContext:
+def _act_context(
+    *,
+    status: ActivityExecutionStatus,
+    activity_type: str,
+    directive_body_action: BodyInstruction | None = None,
+) -> ResponseContext:
     intention = InteractionIntention(
         intention=InteractionIntentionType.ACT,
         confidence=0.98,
@@ -383,6 +405,24 @@ def _act_context(*, status: ActivityExecutionStatus, activity_type: str) -> Resp
         activity_type=ActivityType.BODY_EXPRESSION_LOOP.value,
         observation_only=True,
     )
+    constraints: dict[str, object] = {}
+    if directive_body_action is not None:
+        constraints["_internal_directive"] = {
+            "structured_input_meaning": _meaning_payload(
+                directive_body_action.as_context()
+            ),
+            "internal_directive": {
+                "response_mode": "react",
+                "response_goal": "身体行動へ自然に反応する",
+                "activity_intent": {
+                    "activity_type": BODY_EXPRESSION_ACTIVITY_TYPE,
+                    "operation": "start",
+                    "constraints": {
+                        BODY_ACTION_INTENT_CONSTRAINT: directive_body_action.as_context(),
+                    },
+                },
+            },
+        }
     return ResponseContext(
         user_input="右見て",
         activity_type=activity_type,
@@ -399,6 +439,7 @@ def _act_context(*, status: ActivityExecutionStatus, activity_type: str) -> Resp
             ResponseClaim.EXTERNAL_RESULT_OBTAINED,
         ),
         activity_goal="身体方向を一時制約として適用する",
+        constraints=constraints,
         memory={"interaction_intention": intention.as_context()},
     )
 
@@ -433,6 +474,47 @@ async def test_present_progressive_body_claim_is_allowed_after_body_apply_succes
     response = CharacterResponse(
         speech="うん、右手を挙げてるよ。",
         claims=(ResponseClaim.ACTIVITY_SUCCEEDED,),
+    )
+
+    result = await validator.validate(source, context, response)
+
+    assert result.accepted is True
+
+
+@pytest.mark.asyncio
+async def test_character_cannot_deny_body_ability_when_directive_selected_body_action() -> None:
+    validator = BodyAwareResponseValidator()
+    source = Activity(ActivityType.BEHAVIOR_PLANNING, "respond")
+    body_action = BodyInstruction("arm", "up", side="right", magnitude=0.9)
+    context = _act_context(
+        status=ActivityExecutionStatus.WAITING_INPUT,
+        activity_type=ActivityType.BODY_EXPRESSION_LOOP.value,
+        directive_body_action=body_action,
+    )
+    response = CharacterResponse(
+        speech="ごめん、体は動かせないんだ。",
+        claims=(ResponseClaim.CONVERSATION_ONLY,),
+    )
+
+    result = await validator.validate(source, context, response)
+
+    assert result.accepted is False
+    assert result.reason == "body_capability_denial_conflicts_with_internal_directive"
+
+
+@pytest.mark.asyncio
+async def test_character_may_report_inability_after_confirmed_body_rejection() -> None:
+    validator = BodyAwareResponseValidator()
+    source = Activity(ActivityType.BEHAVIOR_PLANNING, "respond")
+    body_action = BodyInstruction("arm", "up", side="right", magnitude=0.9)
+    context = _act_context(
+        status=ActivityExecutionStatus.REJECTED,
+        activity_type=ActivityType.BODY_EXPRESSION_LOOP.value,
+        directive_body_action=body_action,
+    )
+    response = CharacterResponse(
+        speech="今はその動作はできないみたい。",
+        claims=(ResponseClaim.CONVERSATION_ONLY,),
     )
 
     result = await validator.validate(source, context, response)
