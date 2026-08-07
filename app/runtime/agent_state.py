@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from app.domain.actions import ActionPlan
 from app.domain.activities import Activity
+from app.domain.awakening_state import AwakeningState
 from app.domain.desires import DesireState
 from app.domain.drives import DriveState
 from app.domain.emotions import EmotionState
@@ -35,6 +36,7 @@ class AgentState:
     relationship_memory: RelationshipMemory = field(default_factory=RelationshipMemory)
     current_situation: SituationState = field(default_factory=SituationState)
     memory: AgentMemoryState = field(default_factory=AgentMemoryState)
+    awakening_state: AwakeningState | None = None
     attention_target: str | None = None
     stream_status: str = "idle"
     last_user_input_at: datetime | None = None
@@ -121,6 +123,13 @@ class AgentState:
 
     def with_memory(self, memory: AgentMemoryState) -> AgentState:
         return replace(self, memory=memory, updated_at=datetime.now(timezone.utc))
+
+    def with_awakening_state(self, awakening_state: AwakeningState | None) -> AgentState:
+        return replace(
+            self,
+            awakening_state=awakening_state,
+            updated_at=datetime.now(timezone.utc),
+        )
 
     def with_attention_target(self, attention_target: str | None) -> AgentState:
         return replace(
