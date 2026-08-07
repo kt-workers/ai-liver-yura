@@ -6,16 +6,23 @@ from app.bootstrap import runtime as runtime_bootstrap
 from app.bootstrap.body_output_factory import BodyOutputFactory
 from app.bootstrap.body_runtime_factory import BodyRuntimeFactory
 from app.bootstrap.body_runtime_settings import BodyRuntimeSettings
+from app.domain.events import AgentEvent, AgentEventType
 from app.ports.avatar_output import get_bound_avatar_output
 from app.ports.body_subsystem import BodySubsystemPort, bind_body_subsystem
+from app.runtime.agent_state import AgentState
 from app.runtime.avatar_performance_action_planner import (
     AvatarPerformanceActionPlanner,
 )
 from app.runtime.avatar_performance_character_service import (
     AvatarPerformanceCharacterLlmService,
 )
+from app.runtime.awakening_state_transition_service import (
+    AwakeningStateTransitionService,
+)
+from app.runtime.body_awakening_affect_projector import BodyAwakeningAffectProjector
 from app.runtime.body_aware_agent_life_service import BodyAwareAgentLifeService
 from app.runtime.body_emotion_bridge import get_body_emotion_state_store
+from app.runtime.body_emotion_state_store import LatestBodyEmotionStateStore
 from app.utils.trace import TraceLogger
 
 
@@ -33,6 +40,54 @@ def install_body_aware_runtime_components() -> None:
         "AgentLifeService",
         BodyAwareAgentLifeService,
     )
+
+
+def prime_body_causal_state_from_startup(
+    *,
+    state: AgentState,
+    event: AgentEvent,
+    store: LatestBodyEmotionStateStore | None = None,
+) -> bool:
+    """Body起動前にAPP_STARTEDの有限因果状態だけをProviderへ先行反映する。
+
+    AgentStateそのものは変更しない。正式な状態更新は従来どおりRuntime Pipelineが
+    同じAPP_STARTEDを処理して所有する。
+    """
+
+    if not isinstance(state, AgentState):
+        raise TypeError("state must be AgentState")
+    if not isinstance(event, AgentEvent):
+        raise TypeError("event must be AgentEvent")
+    if event.event_type is not AgentEventType.APP_STARTED:
+        raise ValueError("event must be APP_STARTED")
+
+    transition = AwakeningStateTransitionService().transition(state, event)
+    if transition is None:
+        TraceLogger().warning(
+            "body_runtime_setup:startup_state_not_primed",
+            reason="awakening_context_unavailable",
+        )
+        return False
+
+    awakening_affect = BodyAwakeningAffectProjector().project(
+        transition.awakening_state
+    )
+    target_store = store or get_body_emotion_state_store()
+    target_store.update(
+        transition.projection.emotion,
+        awakening=awakening_affect,
+    )
+    TraceLogger().info(
+        "body_runtime_setup:startup_state_primed",
+        startup_kind=transition.context.startup_kind.value,
+        awakening_phase=transition.awakening_state.phase.value,
+        awakening_salience=awakening_affect.salience,
+        emotion_mood=transition.projection.emotion.mood.value,
+        emotion_arousal=transition.projection.emotion.arousal,
+        emotion_valence=transition.projection.emotion.valence,
+        emotion_talkativeness=transition.projection.emotion.talkativeness,
+    )
+    return True
 
 
 def create_bound_body_runtime_from_env() -> BodySubsystemPort | None:
