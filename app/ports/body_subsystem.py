@@ -8,6 +8,8 @@ from app.domain.body import (
     BodyExpressionRequest,
     SpeechPresentationRequest,
 )
+from app.domain.body_instruction import BodyConstraintExecutionResult
+from app.domain.body_pose_dynamics import BodyExternalConstraint
 from app.domain.body_runtime import BodyRuntimeSnapshot
 
 __all__ = [
@@ -34,6 +36,13 @@ class BodySubsystemPort(Protocol):
 
     async def request_expression(self, request: BodyExpressionRequest) -> None:
         """驚き、拒否、喜びなど、必要時だけ高レベルな表現を要求する。"""
+        ...
+
+    async def apply_external_constraint(
+        self,
+        constraint: BodyExternalConstraint,
+    ) -> BodyConstraintExecutionResult:
+        """正規化済み一時制約を適用し、Speechとは独立した型付き結果を返す。"""
         ...
 
     async def present_speech(self, request: SpeechPresentationRequest) -> None:
