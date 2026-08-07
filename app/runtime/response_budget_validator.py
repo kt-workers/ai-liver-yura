@@ -121,11 +121,7 @@ class ResponseBudgetValidator:
         accepted = not reasons_tuple
         result = ResponseValidationResult(
             accepted=accepted,
-            reason=(
-                "response_budget_valid"
-                if accepted
-                else reasons_tuple[0]
-            ),
+            reason=("response_budget_valid" if accepted else reasons_tuple[0]),
             claim_differences=reasons_tuple,
         )
         fields = {
@@ -135,12 +131,6 @@ class ResponseBudgetValidator:
             "new_direction_budget": new_direction_budget,
             "directed_question_count": analysis.directed_question_count,
             "explicit_new_direction_count": analysis.explicit_new_direction_count,
-            "directed_question_evidence": list(
-                analysis.directed_question_evidence
-            ),
-            "explicit_new_direction_evidence": list(
-                analysis.explicit_new_direction_evidence
-            ),
             "accepted": accepted,
             "reasons": list(reasons_tuple),
         }
