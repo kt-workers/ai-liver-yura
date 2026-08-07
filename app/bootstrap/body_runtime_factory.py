@@ -12,7 +12,8 @@ from app.ports.avatar_output import AvatarOutputPort
 from app.ports.body_pose_output import BodyPoseFrameOutputPort
 from app.ports.body_subsystem import BodySubsystemPort
 from app.runtime.body_expression_input_builder import BodyExpressionInputBuilder
-from app.runtime.body_runtime import BodyRuntime, BodyRuntimeConfig
+from app.runtime.body_runtime import BodyRuntimeConfig
+from app.runtime.compatibility_body_runtime import CompatibilityBodyRuntime
 from app.runtime.state_driven_body_controller import StateDrivenBodyController
 from app.runtime.state_driven_body_pose_runtime import StateDrivenBodyPoseRuntime
 
@@ -86,8 +87,8 @@ class BodyRuntimeFactory:
         *,
         settings: BodyRuntimeSettings,
         avatar_output: AvatarOutputPort,
-    ) -> BodyRuntime:
-        return BodyRuntime(
+    ) -> CompatibilityBodyRuntime:
+        return CompatibilityBodyRuntime(
             avatar_output,
             config=BodyRuntimeConfig(
                 tick_hz=settings.tick_hz,
