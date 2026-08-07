@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import re
 
+from app.domain.activities import Activity
+from app.domain.body_instruction import (
+    BODY_ACTION_INTENT_CONSTRAINT,
+    BODY_EXPRESSION_ACTIVITY_TYPE,
+    BodyInstruction,
+)
 from app.domain.character_response import (
     ActivityExecutionStatus,
+    CharacterResponse,
     Claim,
     ClaimType,
     ResponseContext,
+    ResponseValidationResult,
 )
 from app.domain.interaction_intention import InteractionIntentionType
 from app.runtime.character_response_pipeline import ResponseValidator
@@ -17,6 +25,32 @@ _EMBODIED_STATE_ASSERTION_PATTERN = re.compile(
     r"下げて(?:いる|る)|振って(?:いる|る)|動かして(?:いる|る)|伸ばして(?:いる|る)|"
     r"曲げて(?:いる|る)|しゃがんで(?:いる|る)|立って(?:いる|る)|座って(?:いる|る))"
 )
+_EMBODIED_CAPABILITY_DENIAL_PATTERN = re.compile(
+    r"(?:(?:体|身体|アバター|腕|手|頭|首).{0,14}"
+    r"(?:動かせない|動かせません|動かすことができない|動かすことはできない))"
+    r"|(?:(?:その|この)?(?:動き|動作|ポーズ).{0,10}(?:できない|できません))"
+    r"|(?:身体動作.{0,10}(?:できない|できません))"
+)
+
+
+def _directive_body_action_intent(context: ResponseContext) -> BodyInstruction | None:
+    envelope = context.constraints.get("_internal_directive")
+    if not isinstance(envelope, dict):
+        return None
+    internal = envelope.get("internal_directive")
+    if not isinstance(internal, dict):
+        return None
+    activity_intent = internal.get("activity_intent")
+    if not isinstance(activity_intent, dict):
+        return None
+    if str(activity_intent.get("activity_type") or "") != BODY_EXPRESSION_ACTIVITY_TYPE:
+        return None
+    constraints = activity_intent.get("constraints")
+    if not isinstance(constraints, dict):
+        return None
+    return BodyInstruction.from_context(
+        constraints.get(BODY_ACTION_INTENT_CONSTRAINT)
+    )
 
 
 class BodyAwareIndependentClaimExtractor(IndependentClaimExtractor):
@@ -60,11 +94,40 @@ class BodyAwareIndependentClaimExtractor(IndependentClaimExtractor):
 
 
 class BodyAwareResponseValidator(ResponseValidator):
-    """既存Response検証へ、身体状態主張の独立抽出だけを追加する。"""
+    """実行事実に加え、CharacterとValidated Internal Directiveの整合を検証する。"""
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         kwargs.setdefault("claim_extractor", BodyAwareIndependentClaimExtractor())
         super().__init__(*args, **kwargs)
+
+    async def validate(
+        self,
+        source: Activity,
+        context: ResponseContext,
+        response: CharacterResponse,
+        *,
+        attempt: int = 1,
+    ) -> ResponseValidationResult:
+        body_intent = _directive_body_action_intent(context)
+        denied = _EMBODIED_CAPABILITY_DENIAL_PATTERN.search(response.speech)
+        if (
+            body_intent is not None
+            and denied is not None
+            and context.status
+            not in {ActivityExecutionStatus.REJECTED, ActivityExecutionStatus.FAILED}
+        ):
+            result = ResponseValidationResult(
+                False,
+                "body_capability_denial_conflicts_with_internal_directive",
+            )
+            self._trace_result(source, result)
+            return result
+        return await super().validate(
+            source,
+            context,
+            response,
+            attempt=attempt,
+        )
 
 
 __all__ = [
