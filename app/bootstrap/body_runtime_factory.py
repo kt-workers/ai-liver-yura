@@ -7,6 +7,7 @@ from app.domain.body_activity_context import (
     BodyActivityContext,
     BodyPostureTendency,
 )
+from app.domain.body_awakening_affect import BodyAwakeningAffect
 from app.domain.emotions.emotion_state import EmotionState
 from app.ports.avatar_output import AvatarOutputPort
 from app.ports.body_pose_output import BodyPoseFrameOutputPort
@@ -27,6 +28,7 @@ class BodyRuntimeFactory:
         avatar_output: AvatarOutputPort | None,
         pose_output: BodyPoseFrameOutputPort | None,
         emotion_provider: Callable[[], EmotionState],
+        awakening_provider: Callable[[], BodyAwakeningAffect] | None = None,
     ) -> BodySubsystemPort | None:
         if not isinstance(settings, BodyRuntimeSettings):
             raise TypeError("settings must be BodyRuntimeSettings")
@@ -34,12 +36,15 @@ class BodyRuntimeFactory:
             return None
         if not callable(emotion_provider):
             raise TypeError("emotion_provider must be callable")
+        if awakening_provider is not None and not callable(awakening_provider):
+            raise TypeError("awakening_provider must be callable")
 
         if pose_output is not None:
             return self._create_continuous_pose_runtime(
                 settings=settings,
                 pose_output=pose_output,
                 emotion_provider=emotion_provider,
+                awakening_provider=awakening_provider,
             )
         if avatar_output is not None:
             return self._create_compatibility_runtime(
@@ -54,6 +59,7 @@ class BodyRuntimeFactory:
         settings: BodyRuntimeSettings,
         pose_output: BodyPoseFrameOutputPort,
         emotion_provider: Callable[[], EmotionState],
+        awakening_provider: Callable[[], BodyAwakeningAffect] | None,
     ) -> StateDrivenBodyPoseRuntime:
         context = BodyActivityContext(
             source_activity_id="body-runtime-idle",
@@ -64,9 +70,13 @@ class BodyRuntimeFactory:
             gaze_freedom=0.82,
         )
         input_builder = BodyExpressionInputBuilder()
+        initial_awakening = (
+            awakening_provider() if awakening_provider is not None else None
+        )
         initial_input = input_builder.build(
             emotion=emotion_provider(),
             context=context,
+            awakening_affect=initial_awakening,
         )
         controller = StateDrivenBodyController(
             initial_input,
@@ -77,6 +87,7 @@ class BodyRuntimeFactory:
             controller=controller,
             output=pose_output,
             emotion_provider=emotion_provider,
+            awakening_provider=awakening_provider,
             initial_context=context,
             input_builder=input_builder,
         )
