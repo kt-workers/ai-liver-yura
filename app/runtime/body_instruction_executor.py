@@ -39,26 +39,25 @@ class BodyInstructionExecutor:
         body = self._body_provider()
         if body is None:
             return self._unsupported(constraint, "body_subsystem_unavailable")
-        apply_constraint = getattr(body, "apply_external_constraint", None)
-        if not callable(apply_constraint):
-            return self._unsupported(constraint, "body_constraint_port_unavailable")
         try:
-            result = await apply_constraint(constraint)
+            result = await body.apply_external_constraint(constraint)
         except Exception as error:
-            return BodyConstraintExecutionResult(
-                status=BodyConstraintExecutionStatus.REJECTED,
-                constraint_id=constraint.constraint_id,
-                reason=f"body_constraint_apply_failed:{type(error).__name__}",
-                target_axes=self._target_axes(constraint),
+            return self._rejected(
+                constraint,
+                f"body_constraint_apply_failed:{type(error).__name__}",
             )
-        if isinstance(result, BodyConstraintExecutionResult):
-            return result
-        return BodyConstraintExecutionResult(
-            status=BodyConstraintExecutionStatus.APPLIED,
-            constraint_id=constraint.constraint_id,
-            reason="body_constraint_applied",
-            target_axes=self._target_axes(constraint),
-        )
+        if not isinstance(result, BodyConstraintExecutionResult):
+            return self._rejected(constraint, "body_constraint_result_invalid")
+        if (
+            result.status
+            in {
+                BodyConstraintExecutionStatus.ACCEPTED,
+                BodyConstraintExecutionStatus.APPLIED,
+            }
+            and result.constraint_id != constraint.constraint_id
+        ):
+            return self._rejected(constraint, "body_constraint_result_mismatch")
+        return result
 
     @classmethod
     def _unsupported(
@@ -68,6 +67,19 @@ class BodyInstructionExecutor:
     ) -> BodyConstraintExecutionResult:
         return BodyConstraintExecutionResult(
             status=BodyConstraintExecutionStatus.UNSUPPORTED,
+            constraint_id=constraint.constraint_id,
+            reason=reason,
+            target_axes=cls._target_axes(constraint),
+        )
+
+    @classmethod
+    def _rejected(
+        cls,
+        constraint: BodyExternalConstraint,
+        reason: str,
+    ) -> BodyConstraintExecutionResult:
+        return BodyConstraintExecutionResult(
+            status=BodyConstraintExecutionStatus.REJECTED,
             constraint_id=constraint.constraint_id,
             reason=reason,
             target_axes=cls._target_axes(constraint),
