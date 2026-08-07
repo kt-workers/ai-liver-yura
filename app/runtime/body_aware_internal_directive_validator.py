@@ -7,7 +7,11 @@ from app.domain.body_instruction import (
     BODY_EXPRESSION_ACTIVITY_TYPE,
     BodyInstruction,
 )
-from app.domain.cognitive_direction import InternalDirective, ValidatedActionPlan
+from app.domain.cognitive_direction import (
+    InternalDirective,
+    StructuredInputMeaning,
+    ValidatedActionPlan,
+)
 from app.runtime.internal_directive_validator import InternalDirectiveValidator
 
 
@@ -21,7 +25,7 @@ class BodyAwareInternalDirectiveValidator(InternalDirectiveValidator):
 
     def validate(
         self,
-        meaning,  # type: ignore[no-untyped-def]
+        meaning: StructuredInputMeaning,
         directive: InternalDirective,
         planning_input: dict[str, object],
         *,
