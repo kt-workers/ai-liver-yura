@@ -4,12 +4,17 @@ from dataclasses import dataclass
 from enum import Enum
 
 
+BODY_EXPRESSION_ACTIVITY_TYPE = "body_expression_loop"
+BODY_ACTION_INTENT_CONSTRAINT = "body_action_intent"
+
+
 @dataclass(frozen=True, slots=True)
 class BodyInstruction:
-    """入力意味解析が確定した、モデル非依存の身体指示。
+    """入力意味またはInternal Directiveが保持するモデル非依存の身体意味。
 
-    Pose軸、角度、モーション名、再生時刻は含めない。Body Runtimeが
-    effector / direction / side / magnitudeを現在状態へ重ねる一時制約へ変換する。
+    StructuredInputMeaning上では「ユーザーが要求した身体行動」、Internal Directiveの
+    body_action_intent上では「ゆら自身が意識的に行うと決めた身体行動」を表す。
+    Pose軸、角度、モーション名、再生時刻は含めない。
     """
 
     effector: str
@@ -127,6 +132,8 @@ class BodyConstraintExecutionResult:
 
 
 __all__ = [
+    "BODY_ACTION_INTENT_CONSTRAINT",
+    "BODY_EXPRESSION_ACTIVITY_TYPE",
     "BodyConstraintExecutionResult",
     "BodyConstraintExecutionStatus",
     "BodyInstruction",
