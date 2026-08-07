@@ -15,7 +15,7 @@ from app.runtime.body_instruction_constraint_resolver import (
 
 
 class BodyInstructionExecutor:
-    """意味解決済みBody指示を現在のBody Subsystemへ一度だけ適用する。"""
+    """意味解決済みBody指示の事前確認と実適用を分離する。"""
 
     def __init__(
         self,
@@ -26,7 +26,33 @@ class BodyInstructionExecutor:
         self._body_provider = body_provider
         self._resolver = resolver or BodyInstructionConstraintResolver()
 
+    def preflight(self, instruction: BodyInstruction) -> BodyConstraintExecutionResult:
+        """Character生成前に、実行可能性だけを確認する。
+
+        ConstraintはまだControllerへ適用しない。ACCEPTEDは出力段階でMOVEを
+        実行できる見込みがあることだけを表し、身体動作成功の根拠にはしない。
+        """
+
+        resolution = self._resolver.resolve(instruction)
+        constraint = resolution.constraint
+        if constraint is None:
+            return BodyConstraintExecutionResult(
+                status=BodyConstraintExecutionStatus.UNSUPPORTED,
+                constraint_id=None,
+                reason=resolution.reason,
+            )
+        if self._body_provider() is None:
+            return self._unsupported(constraint, "body_subsystem_unavailable")
+        return BodyConstraintExecutionResult(
+            status=BodyConstraintExecutionStatus.ACCEPTED,
+            constraint_id=None,
+            reason="body_constraint_ready_for_output",
+            target_axes=self._target_axes(constraint),
+        )
+
     async def execute(self, instruction: BodyInstruction) -> BodyConstraintExecutionResult:
+        """出力段階で正規化Body制約を現在のBody Subsystemへ一度だけ適用する。"""
+
         resolution = self._resolver.resolve(instruction)
         constraint = resolution.constraint
         if constraint is None:
