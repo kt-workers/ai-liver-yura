@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.domain.actions import ActionPlan, ActionType
+from app.domain.activity_turn_result import ActionExecutionResult
 from app.domain.body_instruction import BodyInstruction
 from app.runtime.body_instruction_executor import BodyInstructionExecutor
 from app.usecases.execute_action_usecase import ExecuteActionUsecase
@@ -24,7 +25,10 @@ class BodyAwareExecuteActionUsecase(ExecuteActionUsecase):
         )
         self._body_trace = TraceLogger()
 
-    async def execute(self, action_plan: ActionPlan):
+    async def execute(
+        self,
+        action_plan: ActionPlan,
+    ) -> ActionExecutionResult | None:
         if (
             action_plan.action_type is ActionType.MOVE
             and action_plan.metadata.get("body_instruction_execution") is True
