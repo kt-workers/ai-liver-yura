@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.domain.actions import ActionPlan, ActionResource, ActionType
+from app.domain.actions import ActionPlan, ActionPlanGroup, ActionResource, ActionType
 from app.domain.activities import Activity, ActivityType
 from app.domain.body_instruction import (
     BodyConstraintExecutionResult,
@@ -59,7 +59,7 @@ def test_action_planner_emits_explicit_body_move_once_before_speech() -> None:
     assert body_moves[0].metadata["explicit_body_instruction"] == instruction.as_context()
 
     ordered = ActionScheduler._synchronized_action_order(
-        cast(Any, type("Group", (), {"action_plans": actions})())
+        ActionPlanGroup(action_plans=actions, group_id="output-1")
     )
     move_index = next(
         index for index, action in enumerate(ordered)
