@@ -3,14 +3,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from app.runtime.agent_life_service import AgentLifeService
 from app.runtime.agent_state import AgentState
 from app.runtime.agent_state_observer_fanout import AgentStateObserverFanout
+from app.runtime.awakening_aware_agent_life_service import AwakeningAwareAgentLifeService
 from app.runtime.body_emotion_bridge import get_body_agent_state_observer
 
 
-class BodyAwareAgentLifeService(AgentLifeService):
-    """既存AgentLifeServiceへBody Emotion observerだけをCompositionする。"""
+class BodyAwareAgentLifeService(AwakeningAwareAgentLifeService):
+    """Awakening対応Life ServiceへBody Emotion observerだけをCompositionする。"""
 
     def __init__(
         self,
