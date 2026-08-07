@@ -114,6 +114,7 @@ class AwakeningStateProjector:
             appraisal=appraisal,
         )
         prior_drive = previous.drive if previous is not None else None
+        prior_energy = prior_drive.energy if prior_drive is not None else drive.energy
         projected_drive = DriveState(
             curiosity=self._clamp(
                 self._blend(
@@ -145,9 +146,10 @@ class AwakeningStateProjector:
                 + appraisal.sleepiness * 0.18
             ),
             energy=self._clamp(
-                appraisal.activation_urge * 0.58
-                + appraisal.restoration * 0.24
-                + (1.0 - appraisal.sleepiness) * 0.18
+                prior_energy * 0.20
+                + appraisal.activation_urge * 0.40
+                + appraisal.restoration * 0.20
+                + (1.0 - appraisal.sleepiness) * 0.20
             ),
         )
         return AwakeningStateProjection(
