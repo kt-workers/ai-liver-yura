@@ -30,6 +30,9 @@ class BodyAwareBehaviorPlanner(BehaviorPlanner):
 
         constraints = dict(analysis.constraints)
         constraints[BODY_ACTION_INTENT_CONSTRAINT] = instruction.as_context()
+        # 既存#202のpreflight/MOVE実行境界へ渡す移行用projection。
+        # 入力意味から生成せず、Validated Internal Directiveだけをsourceにする。
+        constraints["_body_instruction"] = instruction.as_context()
         return ActivityPlan(
             decision=BehaviorDecision.START_ACTIVITY,
             activity_type=ActivityType.BODY_EXPRESSION_LOOP.value,
