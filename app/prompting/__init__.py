@@ -3,8 +3,8 @@
 from app.prompting.body_aware_input_meaning_prompt_builder import (
     BodyAwareInputMeaningPromptBuilder as InputMeaningPromptBuilder,
 )
-from app.prompting.cognitive_direction_prompt_builders import (
-    InternalDirectivePromptBuilder,
+from app.prompting.body_aware_internal_directive_prompt_builder import (
+    BodyAwareInternalDirectivePromptBuilder as InternalDirectivePromptBuilder,
 )
 
 __all__ = [
