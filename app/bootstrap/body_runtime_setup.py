@@ -18,6 +18,7 @@ from app.runtime.body_aware_agent_life_service import BodyAwareAgentLifeService
 from app.runtime.body_aware_behavior_planner import BodyAwareBehaviorPlanner
 from app.runtime.body_aware_response_validation import BodyAwareResponseValidator
 from app.runtime.body_emotion_bridge import get_body_emotion_state_store
+from app.usecases.body_aware_execute_action_usecase import BodyAwareExecuteActionUsecase
 from app.utils.trace import TraceLogger
 
 
@@ -44,6 +45,11 @@ def install_body_aware_runtime_components() -> None:
         runtime_bootstrap,
         "ResponseValidator",
         BodyAwareResponseValidator,
+    )
+    setattr(
+        runtime_bootstrap,
+        "ExecuteActionUsecase",
+        BodyAwareExecuteActionUsecase,
     )
 
 
