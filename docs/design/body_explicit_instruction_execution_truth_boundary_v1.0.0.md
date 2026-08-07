@@ -1,23 +1,40 @@
-# Body明示指示 実行事実境界 v1.0.0
+# 意識的Body行動・実行事実境界 v1.1.0
 
 ## 1. 目的
 
-Issue #184「身体動作を実行していないのに完了・進行中として発話する」を、既存の因果設計とBody責務分離を崩さずに修正する。
+Issue #184「Character/Body出力が内部指示器の意識的行動決定と一致しない」を、既存の因果設計とBody責務分離を崩さずに修正する。
 
-本設計は、ユーザーの明示的な身体指示をBodyの主動機へ昇格させるものではない。Emotion / Desire / Drive / Motivation / Interaction Intentionから生じる連続Body状態を主状態として維持し、その上に短時間の外部制約をOverlayする。
+本設計の正本は、Character発話でもBody実行結果でもユーザー入力そのものでもない。**Internal Directive LLMが決定した「ゆらは何をする／しないか」という意識的行動決定**である。
+
+```text
+Perception / Input / Memory / Internal State
+→ Input Meaning / Appraisal
+→ Internal Directive LLM
+   conscious action decision
+      ├─ CharacterLLM → Speech realization
+      ├─ Body Realizer → Body motion realization
+      └─ Other Realizer → Voice / Face / Gaze / etc.
+```
+
+CharacterとBodyは兄弟Realizerであり、片方の出力を見てもう片方の意思を決めない。それぞれが同じValidated Internal Directiveに従う。
 
 ## 2. 非目標
 
 - Raw User TextをBody Controllerへ渡さない。
-- `right_look`、`raise_right_hand`のような固定モーション名をCore契約にしない。
-- 明示Body指示をEmotion、Desire、Drive、Motivationへ逆流させない。
-- Body ControllerにCharacterの発話内容や発話事実性を判断させない。
-- LLM待ち時間を見込んでConstraint時間を固定的に延長しない。
-- `ACCEPTED`やPlanning完了を、身体動作成功の意味にしない。
+- `StructuredInputMeaning.body_instruction`をそのままBody実行命令にしない。
+- Character発話を見てBody動作を決めない。
+- Body実行結果を見てCharacterの意思そのものを決めない。
+- `right_look`、`raise_right_hand`のような固定Motion名を意識的行動の正本にしない。
+- `MOVE → SPEAK`の順序を人格の意思決定ルールにしない。
+- `WAITING_INPUT`やpreflight結果を「ゆらはできない」という自己認識へ変換しない。
+- 実行失敗をInternal Directiveより先回りして仮定しない。
+- Characterに身体動作の実況・完了報告を強制しない。
 
-## 3. 入力意味契約
+## 3. Input Meaningの責務
 
-入力意味解析LLMは、明示的な身体指示をモデル非依存の意味へ正規化する。
+入力意味解析LLMは、ユーザーが何を要求・質問・報告したかを構造化する。
+
+明示的な身体要求は次のモデル非依存意味として保持できる。
 
 ```text
 StructuredInputMeaning
@@ -28,179 +45,279 @@ StructuredInputMeaning
     magnitude
 ```
 
-この段階ではPose軸、角度、速度、Live2D Parameter、モーション名、再生時刻を決めない。Body Runtimeが実行可能か、実行に成功したかも判断しない。
+ここでの`body_instruction`は**ユーザーが望んだ身体行動の意味**であり、ゆら自身が実行すると決めた事実ではない。
 
-信頼できるauthorityの `command` / `request` かつ `expected_response=action` の場合だけ、明示Body指示を実行候補へ持ち上げる。
+この段階では以下を決めない。
 
-## 4. 一時Body制約への解決
+- ゆらが要求に応じるかどうか
+- Activityを開始するかどうか
+- Pose軸 / 関節角 / 軌道
+- 固定Motion / Preset
+- Body Runtimeの実行成否
+- Characterが何を発言するか
+
+したがって正規経路で次を行ってはならない。
 
 ```text
-BodyInstruction
-  -> BodyInstructionConstraintResolver
-  -> BodyExternalConstraint
-  -> BodySubsystemPort.apply_external_constraint()
+StructuredInputMeaning.body_instruction
+→ Body Runtime
 ```
 
-`BodyExternalConstraint` は既存のEmotion / Drive由来Poseを置き換えず、期限付きOverlayとしてControllerへ適用する。
+## 4. Internal Directiveが意識的行動を決める
 
-ResolverはRaw User Textを参照しない。意味上のeffector / direction / side / magnitudeだけから、BodyPoseAxis上の安全な正規化制約へ変換する。
+Internal Directive LLMは、Input Meaning、内部状態、Appraisal、Character Profile、利用可能Activity等を踏まえ、ゆら自身が何をするかを決める。
 
-## 5. Planningと実行を分離する
+明示Body要求に応じて身体を動かすと判断した場合は、既存の`InternalDirective.activity_intent`を正本として用いる。
 
-明示Body指示はCharacter生成より前に実行しない。
+```text
+InternalDirective.activity_intent
+  activity_type = body_expression_loop
+  operation = start
+  constraints:
+    body_action_intent:
+      effector
+      direction
+      side
+      magnitude
+```
 
-従来はBehavior Routing中にConstraintを適用していたため、1.5〜1.9秒の短時間ConstraintがCharacter LLM・Response Validation待ちの間に終了し、ユーザーへ返答が見える時点では動作が終わる可能性があった。
+`body_action_intent`はInput Meaningの要求を単純コピーする必須契約ではない。Internal Directiveが実際に行うと決めた高レベル身体意図を表す。
 
-現在の正規経路は次とする。
+Internal Directiveが身体行動を選ばなければ、Input Meaningに`body_instruction`が存在してもBodyを実行してはならない。
+
+### Core-owned Body Activity
+
+`body_expression_loop`はCoreが所有する意識的Body Activityとして、明示Body要求を評価するTurnではInternal Directiveが選択可能である。
+
+Plugin Activity Registryが空でも、Core-owned Activityであることを理由にInternal Directive Validatorが正規に検証できる。
+
+後段がInput MeaningからActivityを復元して、この意思決定をバイパスしてはならない。
+
+## 5. Validated Internal Directiveを共通正本にする
+
+Internal DirectiveはCore Validatorを通して`ValidatedActionPlan`となる。
 
 ```text
 StructuredInputMeaning
-  -> BodyInstruction
-  -> BodyInstructionExecutor.preflight()
-  -> ACCEPTED / REJECTED / UNSUPPORTED
-  -> Character生成・Response Validation
-  -> ActionPlan生成
-  -> synchronized MOVE
-  -> BodyInstructionExecutor.execute()
-  -> BodyExternalConstraint
-  -> BodyPoseFrame
-  -> SPEAK
+→ InternalDirective
+→ Core Validator
+→ ValidatedActionPlan
 ```
 
-`preflight()` は次だけを確認する。
-
-- 指示を現在の正規化Pose軸へ解決できる。
-- Body Subsystemが接続されている。
-
-この段階ではControllerへConstraintを登録しない。
-
-## 6. 公開Body実行結果契約
-
-`BodySubsystemPort` は次の型付き境界を公開する。
+Character RealizerとBody Realizerは**同じValidatedActionPlan / Internal Directive revision**を参照する。
 
 ```text
-apply_external_constraint(
-    BodyExternalConstraint
-) -> BodyConstraintExecutionResult
+Validated Internal Directive
+   ├─ CharacterLLM
+   └─ Body Realizer
 ```
 
-### ACCEPTED
+Activityへ射影した後も`_internal_directive` envelopeを失ってはならない。Conversation以外のBody Activityでも、CharacterとBodyが同じ意思を追跡できるよう保持する。
 
-実行前の事前確認が通った、またはBody Subsystemが要求を受理した状態。
+## 6. Character Realizerの責務
 
-- 身体動作成功ではない。
-- `execution_performed=true` にしてはならない。
-- 現在進行・完了の身体実行主張を許可してはならない。
-- Outputの`MOVE` Actionへ進める根拠にはできる。
+CharacterLLMはInternal Directiveの`response_mode`、`response_goal`、`content_requirements`、`activity_intent`等を受け、自然な発言を生成する。
 
-### APPLIED
+Internal Directiveが「右手を上げる」と決めた場合でも、Characterに以下を強制しない。
 
-出力段階で、正規化済みConstraintが現在のBody Controllerへコミットされた状態。
+- 「右手を上げたよ」と報告する
+- 身体動作を実況する
+- 完了を説明する
 
-- Body側の適用成功を示す。
-- Speech成功とは独立した結果である。
-- 次回以降のBody tickでPose Frameへ投影される。
-- ブラウザ描画済み・ユーザー視認済みまでは保証しない。
+次のような出力もDirectiveと矛盾しなければ正しい。
 
-### REJECTED
+- `うん`
+- 指示内容への自然な短い反応
+- 別の自然な発話
+- 発話しない方針
 
-Body Subsystemは存在するが、要求を適用できなかった状態。例外、契約違反、不正な戻り値もここへfail-closedする。
+一方、Internal Directiveが身体行動を選び、実行失敗が確定していない状態で次のような自己否定を生成するのはバグである。
 
-### UNSUPPORTED
+- `体は動かせない`
+- `身体を動かすことはできない`
+- `その動作はできない`
+- アバターBody能力を存在境界と混同した能力否定
 
-Body Subsystem未接続、または意味上の指示を現在のBody契約で表現できない状態。
+Response Validationは、Character出力をBody出力と比較するのではなく、Validated Internal Directiveと既知のExecution Factに対して検証する。
 
-## 7. Activity実行境界
+## 7. Body Realizerの責務
 
-Behavior Planningでは実行可能性だけを判定する。
+Body RealizerはInternal Directiveの`body_action_intent`を高レベル身体意図として受け取り、Body側の身体知識と現在状態から実現する。
+
+現PR #202では既存Body実行境界との互換のため、Validated Directive由来`body_action_intent`を移行用`_body_instruction`へ射影している。
+
+重要なのは、その値の出所が必ず次であること。
 
 ```text
-trusted body_instruction
-  -> BodyAwareBehaviorPlanner
-  -> runtime/body_expression_loop
-  -> BodyInstructionExecutor.preflight
-  -> ActivityExecutionStatus.WAITING_INPUT
+Validated Internal Directive
+→ body_action_intent
+→ runtime compatibility projection (_body_instruction)
+→ Body execution
 ```
 
-事前確認成功時も、次を維持する。
+次は禁止する。
 
 ```text
-execution_performed = false
-body_instruction_execution_ready = true
+StructuredInputMeaning.body_instruction
+→ _body_instruction
+→ Body execution
 ```
 
-Body未接続・未対応なら`REJECTED`として通常の成功発話へ進めない。
+`_body_instruction`は認知上の正本ではなく、既存#202実行機構へ接続するための移行用Adapter値である。
 
-## 8. 出力同期境界
+### Generative Body Motionとの関係
 
-事前確認済みBodyInstructionは`AvatarPerformanceActionPlanner`が最初のReaction Segmentへ1件だけ`ActionType.MOVE`として載せる。
+Bodyが高レベル身体意図をどう関節運動へ変換するかはIssue #211が所有する。
 
-既存`ActionScheduler`の同期順序をそのまま利用する。
+最終形は次を目標とする。
 
 ```text
-UPDATE_SUBTITLE
-  -> CHANGE_EXPRESSION
-  -> MOVE              # BodyExternalConstraintをここで適用
-  -> SPEAK
+Internal Directive body_action_intent
+→ Body Motion Planner / BodyLLM
+  + current pose / velocity
+  + Skeleton Profile
+  + Joint hierarchy / DOF / limits
+  + kinematic chain
+  + continuous Emotion / Activity expression
+→ multi-joint motion / trajectory / IK
+→ BodyPoseFrame
 ```
 
-これにより、Character生成時間とは無関係に、ユーザーへ返答を提示する直前にBody動作を開始できる。
+#202の目的は#211を完了させることではなく、**Bodyが実現する意思の正本をInternal Directiveへ戻すこと**である。
 
-固定時間をLLM待ち時間分だけ延ばす対症療法は行わない。
+## 8. 意思と実行事実を分離する
 
-明示Body指示が存在するSegmentではCharacter由来gestureの`MOVE`を重複生成せず、同じBody Resourceへ別経路の命令を同時投入しない。
+Internal Directiveは「何をするか」を決める。Body Runtimeは「実際にどうなったか」を返す。
 
-## 9. Action実行事実
+```text
+Directive intent
+→ Body realization
+→ Runtime execution
+→ Execution Result
+```
 
-`BodyAwareExecuteActionUsecase`は、明示Body指示としてマークされた`MOVE`だけを`BodyInstructionExecutor.execute()`へ接続する。
+少なくとも次を概念上分離する。
 
-- `APPLIED`ならMOVE Actionは成功する。
-- `REJECTED` / `UNSUPPORTED` / 不正結果なら例外化し、ActionSchedulerがMOVEをFAILEDとして記録する。
-- SPEAK Actionとは別の`ActionExecutionResult`になる。
+- intended / selected
+- accepted / planned
+- started
+- observable / applied
+- completed
+- rejected / unsupported / failed
 
-したがってSpeech再生や字幕成功をBody成功へ読み替えない。
+`preflight=ACCEPTED`は「意識的に行動を選んだ」ことそのものではない。また「実行成功」でも「実行不能」でもない。
 
-## 10. Character Claim検証
+Body実行に失敗した場合はExecution Factとして記録し、必要であれば次の認知サイクルへ戻す。
 
-Character生成は実Body MOVEより前なので、生成時点では現在進行・完了の身体成功主張を許可しない。
+```text
+Body Runtime FAILED
+→ Event / Appraisal
+→ next Internal Directive
+```
 
-少なくとも次を独立Claimとして検出する。
+Characterが同一ターンで「実行済み」「完了した」という事実を明示する場合だけ、その主張には対応するExecution Resultが必要である。
 
-- 見ている / 見てる
-- 向いている / 向いてる
-- 挙げている / 挙げてる
-- 上げている / 上げてる
-- 動かしている / 動かしてる
-- `〜してる感じでいる` のような曖昧化表現
+## 9. preflight / MOVE / SPEAKはRuntime detail
 
-事前確認`ACCEPTED`だけではこれらを正当化しない。
+PR #202で導入したpreflightと同期`MOVE`は、短時間Body動作がLLM待ち時間中に消費される問題を避け、Body実行結果をSpeech結果と分離するためのRuntime機構として残す。
 
-Characterは「うん」「右を見るね」のような、未実行事実と矛盾しない応答を生成できる。実Body MOVEはその直後、SPEAKより前に実行される。
+例:
 
-## 11. HTTP / SSE境界検証
+```text
+Validated Directive
+→ Activity projection
+→ preflight
+→ Character realization
+→ ActionPlan
+→ MOVE
+→ SPEAK
+```
 
-単体テストだけではOutput時の`MOVE -> APPLIED -> Pose Frame -> HTTP/SSE -> Body Pose Lab`を保証できない。
+ただし、この順序は次を決める根拠ではない。
 
-実HTTPハーネスでは`BodyInstructionExecutor`を直接呼ばず、本番と同じ`BodyAwareExecuteActionUsecase`の`MOVE` Actionを通す。
+- ゆらが身体を動かすか
+- ゆらが何を言いたいか
+- CharacterとBodyの人格上の整合性
 
-最低限次を検証する。
+それらの正本はすでにValidated Internal Directiveで決まっている。
 
-1. `右見て`相当のMOVEを実行する。
-2. Body RuntimeへConstraintが適用される。
-3. Body tick後のPose FrameでHEAD_YAW / GAZE_Xが右方向へ変化する。
-4. 実HTTP/SSE境界を経由して同じ変化を観測できる。
-5. `右手挙げて`相当でRIGHT_ARM_RAISEが変化する。
-6. Body未接続、未対応、契約違反時はMOVE成功にしない。
+## 10. 存在境界
 
-## 12. 完了・マージ条件
+Character Profileの「物理的な身体を持たない」は、人間と同じ生物学的肉体や現実空間での身体経験を創作しないための存在境界である。
 
-- Body基盤は#178 / PR #180〜#182で統合済みの正本を使用する。
-- Planning時にConstraintを実適用しない。
-- preflight成功は`ACCEPTED`であり実行成功ではない。
-- 明示Body指示は同期`MOVE`としてSPEAK直前に実行される。
-- MOVEとSPEAKの実行結果が分離される。
-- 実HTTP/SSE境界の回帰テストが同期MOVE経路を通る。
-- 現在進行・完了の未実行身体主張をResponse Validationで拒否する。
-- 全体pytestが成功する。
-- 実画面で`右見て`・`右手挙げて`の動作を返答付近で確認する。
-- ユーザーの明示確認まではDraft・未マージを維持する。
+これは次を意味しない。
+
+```text
+アバターBodyを動かせない
+```
+
+ゆらにはAvatar Bodyを表現・操作する能力があり、Internal Directiveはその能力を意識的行動として選択できる。
+
+したがって、身体行動を選んだDirectiveに対し「物理的身体がないから動けない」とCharacterが自己否定するのは存在境界の誤適用である。
+
+## 11. 独立した整合性検証
+
+検証対象は`Speech ↔ Body`ではない。
+
+```text
+Character output ↔ Validated Internal Directive
+Body output      ↔ Validated Internal Directive
+Other output     ↔ Validated Internal Directive
+```
+
+### Character側
+
+- Directiveが身体行動を選んだのに、能力不可を虚偽に主張しない。
+- Directiveと矛盾しない自然な発言・無言を許容する。
+- 実行完了を主張する場合だけExecution Factを要求する。
+
+### Body側
+
+- Directiveが身体行動を選ばなければ、Input Meaningの要求だけで動かない。
+- Directiveが身体行動を選べば、そのBody intentionを実行系へ渡す。
+- 実行不能ならtyped failureを返す。
+- #211導入後は高レベル意図を関節・IK等で実現する。
+
+## 12. Trace / Verification
+
+実HTTP/SSE環境では、最低限次を同一Turnで追跡できること。
+
+```text
+StructuredInputMeaning
+→ Internal Directive
+→ ValidatedActionPlan
+→ Character realization
+→ Body realization
+→ Body execution result
+→ BodyPoseFrame / HTTP / SSE
+```
+
+手動Verificationでは単に「発話とBodyが同じことを言っているか」を見るのではなく、次を確認する。
+
+1. `右見て` / `右手挙げて`等のInput Meaningがユーザー要求として解析される。
+2. Internal Directive自身が`body_expression_loop`と`body_action_intent`を選択する。
+3. Directiveが選択しなければ、Input Meaningだけを理由にBodyは動かない。
+4. Directiveが選択した場合、Body実行系へ同じbody intentionが渡る。
+5. Characterが同じDirectiveと矛盾する`体は動かせない`等を生成しない。
+6. Characterに身体動作の実況を強制しない。
+7. Body未接続/unsupportedの場合はtyped failureとなる。
+8. 実Body Pose変化をHTTP/SSEで観測できる。
+
+## 13. 完了・マージ条件
+
+- [ ] Input Meaningの身体要求からBody Runtimeへの直接実行経路がない。
+- [ ] Internal Directiveが意識的Body Activityを選択できる。
+- [ ] Core-owned `body_expression_loop`がPlugin Registry空でも正規に検証できる。
+- [ ] Body Activity化後も同じValidated Internal Directive envelopeが保持される。
+- [ ] CharacterとBodyが同じDirectiveを参照する。
+- [ ] Directive未選択時はBody要求だけで動かない。
+- [ ] Directive選択時はBody intentionが実行系へ渡る。
+- [ ] Directive選択＋未失敗時にCharacterがAvatar Body能力を虚偽に否定しない。
+- [ ] Characterの身体動作実況・完了報告を必須にしない。
+- [ ] 実行完了主張にはExecution Factを要求する。
+- [ ] preflight / MOVE / SPEAKを意思決定の正本として使わない。
+- [ ] Body実行失敗を次の認知サイクルへ戻せる設計を維持する。
+- [ ] #211のGenerative Motionと責務が分離されている。
+- [ ] 全体pytestが成功する。
+- [ ] 実HTTP/SSE環境でDirective・Character・Bodyを同一Traceとして確認する。
+- [ ] ユーザーの実画面確認まではDraft・未マージを維持する。
