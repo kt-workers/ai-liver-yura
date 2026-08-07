@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.domain.body_instruction import BodyInstruction
 from app.domain.cognitive_direction import (
     ActivityIntent,
     ConversationPhaseSignal,
@@ -59,6 +60,10 @@ class InputMeaningJsonParser:
                 return None
         else:
             return None
+        body_instruction_value = payload.get("body_instruction")
+        body_instruction = BodyInstruction.from_context(body_instruction_value)
+        if body_instruction_value is not None and body_instruction is None:
+            return None
         primary_intent = payload["primary_intent"]
         reason = payload["reason"]
         entities = _object_tuple(payload["entities"])
@@ -88,6 +93,7 @@ class InputMeaningJsonParser:
                 primary_intent=primary_intent,
                 expected_response=expected_response,
                 target=target,
+                body_instruction=body_instruction,
                 entities=entities,
                 references=references,
                 information_provided=information,
@@ -267,5 +273,4 @@ def _required_string_tuple(value: object) -> tuple[str, ...]:
     if result is None:
         raise TypeError("expected array[string]")
     return result
-
 
