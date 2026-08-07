@@ -17,6 +17,7 @@ from app.bootstrap.body_runtime_setup import (
     clear_bound_body_runtime,
     create_bound_body_runtime_from_env,
     install_body_aware_runtime_components,
+    prime_body_causal_state_from_startup,
 )
 from app.bootstrap.runtime import create_runtime_coordinator
 from app.bootstrap.runtime_preflight import validate_runtime_service_settings
@@ -76,7 +77,7 @@ async def async_main() -> None:
     validate_runtime_service_settings(config)
     TraceLogger.configure(
         level=config.trace.level,
-        trace_file_path=config.trace.file_path,
+        trace_file_path=config.trace.trace_file_path if hasattr(config.trace, "trace_file_path") else config.trace.file_path,
         output_format=config.trace.format,
         max_bytes=config.trace.max_bytes,
         backup_count=config.trace.backup_count,
@@ -101,8 +102,6 @@ async def async_main() -> None:
         web_conversation_enabled=web_conversation_enabled,
     )
     body_runtime = create_bound_body_runtime_from_env()
-    if body_runtime is not None:
-        await body_runtime.start()
 
     awakening_service = create_awakening_context_service_from_env()
     awakening_context = awakening_service.begin(
@@ -112,6 +111,28 @@ async def async_main() -> None:
             conversation_output_available=True,
         )
     )
+    startup_event = AgentEvent(
+        event_type=AgentEventType.APP_STARTED,
+        payload={
+            "source": "app_main",
+            "awakening_context": awakening_context.as_context(),
+        },
+        priority=20,
+        discardable=False,
+        authority=InputAuthority.SYSTEM,
+    )
+
+    if body_runtime is not None:
+        primed = prime_body_causal_state_from_startup(
+            state=runtime.agent_state,
+            event=startup_event,
+        )
+        if not primed:
+            trace_logger.warning(
+                "app:body_startup_state_not_primed",
+                reason="awakening_transition_unavailable",
+            )
+        await body_runtime.start()
 
     streaming_integration = create_core_streaming_integration(runtime.publish_event)
     receiver = (
@@ -127,18 +148,7 @@ async def async_main() -> None:
     runtime_task = asyncio.create_task(runtime.run())
     await streaming_integration.start()
 
-    await runtime.publish_event(
-        AgentEvent(
-            event_type=AgentEventType.APP_STARTED,
-            payload={
-                "source": "app_main",
-                "awakening_context": awakening_context.as_context(),
-            },
-            priority=20,
-            discardable=False,
-            authority=InputAuthority.SYSTEM,
-        )
-    )
+    await runtime.publish_event(startup_event)
 
     async def route_console_event(event: AgentEvent) -> None:
         if event.event_type == AgentEventType.USER_TEXT:
