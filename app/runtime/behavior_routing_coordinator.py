@@ -231,19 +231,21 @@ class BehaviorRoutingCoordinator:
                     "summary": "身体指示を実行できなかった",
                     "body_constraint_execution": None,
                 }
+                execution_ready = False
             else:
-                body_result = await self._body_instruction_executor.execute(instruction)
+                body_result = self._body_instruction_executor.preflight(instruction)
+                execution_ready = body_result.accepted
                 status = (
-                    ActivityExecutionStatus.SUCCEEDED
-                    if body_result.applied
+                    ActivityExecutionStatus.WAITING_INPUT
+                    if execution_ready
                     else ActivityExecutionStatus.REJECTED
                 )
-                failure_reason = None if body_result.applied else body_result.reason
+                failure_reason = None if execution_ready else body_result.reason
                 execution_payload = {
                     "summary": (
-                        "明示された身体指示を一時Body制約として適用した"
-                        if body_result.applied
-                        else "現在のBodyでは明示された身体指示を適用できなかった"
+                        "明示された身体指示を出力段階で実行する準備ができた"
+                        if execution_ready
+                        else "現在のBodyでは明示された身体指示を実行できない"
                     ),
                     "body_constraint_execution": body_result.as_context(),
                 }
@@ -265,18 +267,22 @@ class BehaviorRoutingCoordinator:
                 event,
                 payload={
                     **event.payload,
-                    "execution_performed": status is ActivityExecutionStatus.SUCCEEDED,
+                    "execution_performed": False,
+                    "body_instruction_execution_ready": execution_ready,
                     "body_constraint_execution_result": (
                         body_result.as_context() if body_result is not None else None
                     ),
                 },
             )
             self._trace_logger.info(
-                "behavior_routing:body_instruction_executed",
+                "behavior_routing:body_instruction_preflight",
                 **event.trace_context.as_log_fields(),
                 activity_type=plan.activity_type,
                 execution_status=status.value,
-                result_reason=(body_result.reason if body_result is not None else failure_reason),
+                execution_ready=execution_ready,
+                result_reason=(
+                    body_result.reason if body_result is not None else failure_reason
+                ),
             )
         else:
             routed = self._fallback.with_plugin_availability(event)
