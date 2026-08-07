@@ -9,6 +9,10 @@ from app.adapters.input import (
     WebInputReceiver,
     WebInputReceiverConfig,
 )
+from app.bootstrap.awakening_runtime_setup import (
+    build_awakening_capabilities,
+    create_awakening_context_service_from_env,
+)
 from app.bootstrap.body_runtime_setup import (
     clear_bound_body_runtime,
     create_bound_body_runtime_from_env,
@@ -99,6 +103,16 @@ async def async_main() -> None:
     body_runtime = create_bound_body_runtime_from_env()
     if body_runtime is not None:
         await body_runtime.start()
+
+    awakening_service = create_awakening_context_service_from_env()
+    awakening_context = awakening_service.begin(
+        build_awakening_capabilities(
+            body_available=body_runtime is not None,
+            tts_available=config.speech.enabled,
+            conversation_output_available=True,
+        )
+    )
+
     streaming_integration = create_core_streaming_integration(runtime.publish_event)
     receiver = (
         WebInputReceiver(
@@ -116,7 +130,10 @@ async def async_main() -> None:
     await runtime.publish_event(
         AgentEvent(
             event_type=AgentEventType.APP_STARTED,
-            payload={"source": "app_main"},
+            payload={
+                "source": "app_main",
+                "awakening_context": awakening_context.as_context(),
+            },
             priority=20,
             discardable=False,
             authority=InputAuthority.SYSTEM,
@@ -151,6 +168,7 @@ async def async_main() -> None:
             await body_runtime.stop()
         clear_bound_body_runtime()
         runtime.stop()
+        awakening_service.save_shutdown_snapshot(runtime.agent_state)
         runtime_task_cancelled = await _await_runtime_shutdown(runtime_task)
         trace_logger.info(
             "app:finished",
