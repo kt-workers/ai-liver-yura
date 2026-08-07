@@ -71,6 +71,7 @@ class BodyInstruction:
 
 
 class BodyConstraintExecutionStatus(str, Enum):
+    ACCEPTED = "accepted"
     APPLIED = "applied"
     REJECTED = "rejected"
     UNSUPPORTED = "unsupported"
@@ -78,7 +79,11 @@ class BodyConstraintExecutionStatus(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class BodyConstraintExecutionResult:
-    """Speechとは独立した、一時Body制約の実行結果。"""
+    """Speechとは独立した、一時Body制約の実行結果。
+
+    ACCEPTEDは受付のみ、APPLIEDはBody Controllerの権威状態へ制約を
+    コミット済みであることを表す。ブラウザ描画完了までは保証しない。
+    """
 
     status: BodyConstraintExecutionStatus
     constraint_id: str | None
@@ -100,6 +105,13 @@ class BodyConstraintExecutionResult:
             "target_axes",
             tuple(str(axis).strip() for axis in self.target_axes if str(axis).strip()),
         )
+
+    @property
+    def accepted(self) -> bool:
+        return self.status in {
+            BodyConstraintExecutionStatus.ACCEPTED,
+            BodyConstraintExecutionStatus.APPLIED,
+        }
 
     @property
     def applied(self) -> bool:
