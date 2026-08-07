@@ -98,16 +98,14 @@ class BehaviorRoutingCoordinator:
                 if confirmation_result.terminal_event is not None:
                     return confirmation_result.terminal_event
         if plan is None and event.event_type == AgentEventType.APP_STARTED:
-            awakening_value = event.payload.get("awakening_context")
-            awakening_context = (
-                dict(awakening_value) if isinstance(awakening_value, dict) else {}
-            )
             situation_payload = {
                 "event_type": AgentEventType.APP_STARTED.value,
                 "lifecycle_phase": "awakening",
                 "speech_required": False,
-                "awakening_context": awakening_context,
             }
+            awakening_value = event.payload.get("awakening_context")
+            if isinstance(awakening_value, dict) and awakening_value:
+                situation_payload["awakening_context"] = dict(awakening_value)
             plan = ActivityPlan(
                 decision=BehaviorDecision.START_ACTIVITY,
                 activity_type=ActivityType.AWAKENING.value,
