@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from app.domain.activities import ActivityType
 from app.domain.behavior import (
+    ActivityDefinition,
     ActivityOperation,
     ActivityPlan,
     BehaviorDecision,
@@ -16,8 +19,89 @@ from app.domain.body_instruction import (
 from app.runtime.behavior_planner import BehaviorPlanner
 
 
+def _core_body_activity_definition() -> ActivityDefinition:
+    """Internal Directiveが選択できるCore-owned Body Activityの正規定義。"""
+
+    return ActivityDefinition(
+        activity_type=BODY_EXPRESSION_ACTIVITY_TYPE,
+        display_name="意識的なBody表現",
+        required_capability=None,
+        provider_plugin_id="runtime",
+        description=(
+            "Internal Directiveがゆら自身の意識的身体行動として選択した、"
+            "モデル非依存の一時Body表現を実現する"
+        ),
+        supported_operations=(ActivityOperation.START,),
+        semantic_descriptions=(
+            "アバターBodyの頭・視線・腕などを高レベル意味に沿って一時的に動かす",
+        ),
+        constraints_schema={
+            "type": "object",
+            "properties": {
+                BODY_ACTION_INTENT_CONSTRAINT: {
+                    "type": "object",
+                    "properties": {
+                        "effector": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                        },
+                        "direction": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64,
+                        },
+                        "side": {
+                            "type": ["string", "null"],
+                            "maxLength": 32,
+                        },
+                        "magnitude": {
+                            "type": "number",
+                            "minimum": 0.0,
+                            "maximum": 1.0,
+                        },
+                    },
+                    "required": ["effector", "direction", "magnitude"],
+                    "additionalProperties": False,
+                },
+                # Validated Internal Directive envelopeはBody/Characterの共通正本。
+                # 内容の検証はInternal Directive Validatorが所有する。
+                "_internal_directive": {"type": "object"},
+            },
+            "required": [BODY_ACTION_INTENT_CONSTRAINT],
+            "additionalProperties": False,
+        },
+        constraints_schema_version="body-action-intent-v1",
+    )
+
+
 class BodyAwareBehaviorPlanner(BehaviorPlanner):
     """Validated Internal Directiveが選んだ身体行動だけをRuntimeへ射影する。"""
+
+    async def evaluate_situation(
+        self, context: BehaviorPlanningContext
+    ) -> SituationAnalysis:
+        """Core-owned Body Activityを正規候補としてSituation評価へ供給する。
+
+        generic SituationEvaluatorの「候補外Activityを拒否する」境界は維持し、
+        Bodyだけをparserで例外通過させない。Plugin RegistryにBody定義がなくても、
+        Body-aware Runtime自身が所有する定義をPlanning Contextへ追加する。
+        """
+
+        if any(
+            definition.activity_type == BODY_EXPRESSION_ACTIVITY_TYPE
+            for definition in context.activity_definitions
+        ):
+            planning_context = context
+        else:
+            planning_context = replace(
+                context,
+                activity_definitions=(
+                    *context.activity_definitions,
+                    _core_body_activity_definition(),
+                ),
+            )
+        return await super().evaluate_situation(planning_context)
 
     def plan_from_analysis(
         self,
