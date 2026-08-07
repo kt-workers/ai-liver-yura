@@ -250,6 +250,20 @@ async def test_executor_returns_applied_result_separate_from_speech() -> None:
     assert len(body.constraints) == 1
 
 
+def test_executor_preflight_does_not_apply_constraint() -> None:
+    body = _RecordingBody()
+    executor = BodyInstructionExecutor(body_provider=lambda: cast(Any, body))
+
+    result = executor.preflight(
+        BodyInstruction("arm", "up", side="right", magnitude=0.9)
+    )
+
+    assert result.status is BodyConstraintExecutionStatus.ACCEPTED
+    assert result.applied is False
+    assert result.reason == "body_constraint_ready_for_output"
+    assert body.constraints == []
+
+
 @pytest.mark.asyncio
 async def test_executor_reports_unsupported_when_body_is_disconnected() -> None:
     result = await BodyInstructionExecutor(body_provider=lambda: None).execute(
@@ -312,27 +326,27 @@ class _FailingFallback:
         raise AssertionError("runtime body activity must bypass execution fallback")
 
 
-class _AppliedBodyInstructionExecutor:
+class _ReadyBodyInstructionExecutor:
     def __init__(self) -> None:
         self.instructions: list[BodyInstruction] = []
 
-    async def execute(self, instruction: BodyInstruction) -> BodyConstraintExecutionResult:
+    def preflight(self, instruction: BodyInstruction) -> BodyConstraintExecutionResult:
         self.instructions.append(instruction)
         return BodyConstraintExecutionResult(
-            status=BodyConstraintExecutionStatus.APPLIED,
-            constraint_id="constraint-test",
-            reason="body_constraint_applied",
+            status=BodyConstraintExecutionStatus.ACCEPTED,
+            constraint_id=None,
+            reason="body_constraint_ready_for_output",
             target_axes=(BodyPoseAxis.HEAD_YAW.value, BodyPoseAxis.GAZE_X.value),
         )
 
 
 @pytest.mark.asyncio
-async def test_behavior_routing_records_body_execution_result_without_conversation_fallback() -> None:
+async def test_behavior_routing_preflights_body_without_executing_before_character() -> None:
     instruction = BodyInstruction("head", "right", magnitude=0.8)
     analysis = _analysis(instruction)
     planner = BodyAwareBehaviorPlanner(situation_evaluator=MagicMock())
     plan = planner.plan_from_analysis(_planning_context("右見て"), analysis)
-    body_executor = _AppliedBodyInstructionExecutor()
+    body_executor = _ReadyBodyInstructionExecutor()
     coordinator = BehaviorRoutingCoordinator(
         planner=cast(Any, _StubPlanner(analysis, plan)),
         validator=cast(Any, _StubValidator()),
@@ -354,8 +368,9 @@ async def test_behavior_routing_records_body_execution_result_without_conversati
 
     assert routed is not None
     execution = routed.payload["activity_execution_result"]
-    assert execution.status is ActivityExecutionStatus.SUCCEEDED
-    assert routed.payload["execution_performed"] is True
+    assert execution.status is ActivityExecutionStatus.WAITING_INPUT
+    assert routed.payload["execution_performed"] is False
+    assert routed.payload["body_instruction_execution_ready"] is True
     assert body_executor.instructions == [instruction]
 
 
