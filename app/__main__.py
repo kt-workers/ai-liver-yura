@@ -77,7 +77,7 @@ async def async_main() -> None:
     validate_runtime_service_settings(config)
     TraceLogger.configure(
         level=config.trace.level,
-        trace_file_path=config.trace.trace_file_path if hasattr(config.trace, "trace_file_path") else config.trace.file_path,
+        trace_file_path=config.trace.file_path,
         output_format=config.trace.format,
         max_bytes=config.trace.max_bytes,
         backup_count=config.trace.backup_count,
