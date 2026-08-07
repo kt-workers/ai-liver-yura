@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from app.domain.events import AgentEvent
 from app.runtime.agent_life_service import AgentLifeService
 from app.runtime.awakening_aware_autonomous_event_planner import (
     AwakeningAwareAutonomousEventPlanner,
@@ -34,7 +35,7 @@ class AwakeningAwareAgentLifeService(AgentLifeService):
                 conversation_idle_timeout_seconds=self._conversation_idle_timeout_seconds,
             )
 
-    def plan_next_event(self, now: datetime | None = None):
+    def plan_next_event(self, now: datetime | None = None) -> AgentEvent | None:
         current_time = now or datetime.now(timezone.utc)
         self._advance_awakening(current_time)
         return super().plan_next_event(current_time)
