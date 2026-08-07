@@ -8,6 +8,7 @@ from app.domain.emotions import (
     AffectiveAppraisal,
     AffectiveAppraisalComparison,
     EmotionAppraisal,
+    EmotionCause,
     EmotionState,
 )
 from app.domain.events import AgentEvent, AgentEventType
@@ -16,6 +17,9 @@ from app.domain.morals import MoralState
 from app.domain.relationships import RelationshipMemory, RelationshipState
 from app.runtime.affective_appraisal_observer import AffectiveAppraisalObserver
 from app.runtime.agent_state import AgentState
+from app.runtime.awakening_state_transition_service import (
+    AwakeningStateTransitionService,
+)
 from app.runtime.causal_emotion_appraiser import CausalEmotionAppraiser
 from app.runtime.desire_state_updater import DesireStateUpdater
 from app.runtime.drive_state_updater import DriveStateUpdater
@@ -59,6 +63,7 @@ class AgentEventStateUpdater:
         affective_appraisal_observer: AffectiveAppraisalObserver | None = None,
         moral_state_updater: MoralStateUpdater | None = None,
         relationship_state_updater: RelationshipStateUpdater | None = None,
+        awakening_transition_service: AwakeningStateTransitionService | None = None,
     ) -> None:
         self._drive_state_updater = drive_state_updater or DriveStateUpdater()
         self._desire_state_updater = desire_state_updater or DesireStateUpdater()
@@ -74,6 +79,9 @@ class AgentEventStateUpdater:
         self._relationship_state_updater = (
             relationship_state_updater or RelationshipStateUpdater()
         )
+        self._awakening_transition_service = (
+            awakening_transition_service or AwakeningStateTransitionService()
+        )
 
     def update(self, state: AgentState, event: AgentEvent) -> AgentEventStateUpdateResult:
         before_drive = state.current_drive
@@ -82,13 +90,29 @@ class AgentEventStateUpdater:
         before_moral = state.current_moral
         before_relationship = state.relationship_memory.current
 
-        appraisal = self._emotion_appraiser.appraise(
+        awakening_transition = self._awakening_transition_service.transition(
+            state,
             event,
-            current_emotion=before_emotion,
-            relationship=before_relationship,
-            recent_history=state.memory.emotion_history,
         )
-        after_emotion = self._emotion_state_updater.apply(before_emotion, appraisal)
+        if awakening_transition is not None:
+            after_emotion = awakening_transition.projection.emotion
+            after_desire = awakening_transition.projection.desire
+            after_drive = awakening_transition.projection.drive
+            appraisal = self._awakening_emotion_appraisal(
+                event,
+                before=before_emotion,
+                after=after_emotion,
+                reason=awakening_transition.appraisal.reason,
+            )
+        else:
+            appraisal = self._emotion_appraiser.appraise(
+                event,
+                current_emotion=before_emotion,
+                relationship=before_relationship,
+                recent_history=state.memory.emotion_history,
+            )
+            after_emotion = self._emotion_state_updater.apply(before_emotion, appraisal)
+
         affective_appraisal, affective_comparison = (
             self._affective_appraisal_observer.observe(
                 event,
@@ -99,21 +123,23 @@ class AgentEventStateUpdater:
                 recent_history=state.memory.emotion_history,
             )
         )
-        after_desire = self._desire_state_updater.update_from_affect(
-            before_desire,
-            event,
-            affective_appraisal=affective_appraisal,
-            before_emotion=before_emotion,
-            after_emotion=after_emotion,
-        )
-        after_drive = self._drive_state_updater.derive_from_affect(
-            before_drive,
-            event,
-            affective_appraisal=affective_appraisal,
-            emotion=after_emotion,
-            desire=after_desire,
-            activity_active=state.active_activity is not None,
-        )
+        if awakening_transition is None:
+            after_desire = self._desire_state_updater.update_from_affect(
+                before_desire,
+                event,
+                affective_appraisal=affective_appraisal,
+                before_emotion=before_emotion,
+                after_emotion=after_emotion,
+            )
+            after_drive = self._drive_state_updater.derive_from_affect(
+                before_drive,
+                event,
+                affective_appraisal=affective_appraisal,
+                emotion=after_emotion,
+                desire=after_desire,
+                activity_active=state.active_activity is not None,
+            )
+
         relationship_memory = self._relationship_state_updater.update(
             state.relationship_memory,
             event,
@@ -195,6 +221,10 @@ class AgentEventStateUpdater:
                 )
             )
         )
+        if awakening_transition is not None:
+            updated = updated.with_awakening_state(
+                awakening_transition.awakening_state
+            )
 
         if event.event_type in {
             AgentEventType.USER_TEXT,
@@ -225,4 +255,39 @@ class AgentEventStateUpdater:
             after_relationship=after_relationship,
             relationship_changed=relationship_changed,
             input_source=input_source,
+        )
+
+    @staticmethod
+    def _awakening_emotion_appraisal(
+        event: AgentEvent,
+        *,
+        before: EmotionState,
+        after: EmotionState,
+        reason: str,
+    ) -> EmotionAppraisal:
+        before_reactive = before.reactive
+        after_reactive = after.reactive
+        return EmotionAppraisal(
+            joy_delta=after_reactive.joy - before_reactive.joy,
+            amusement_delta=(after_reactive.amusement - before_reactive.amusement),
+            anger_delta=after_reactive.anger - before_reactive.anger,
+            sadness_delta=after_reactive.sadness - before_reactive.sadness,
+            fear_delta=after_reactive.fear - before_reactive.fear,
+            surprise_delta=after_reactive.surprise - before_reactive.surprise,
+            discomfort_delta=(after_reactive.discomfort - before_reactive.discomfort),
+            pressure_delta=(
+                after_reactive.emotional_pressure
+                - before_reactive.emotional_pressure
+            ),
+            arousal_delta=after.arousal - before.arousal,
+            valence_delta=after.valence - before.valence,
+            talkativeness_delta=after.talkativeness - before.talkativeness,
+            reason="awakening_appraisal",
+            cause=EmotionCause(
+                category="awakening_appraisal",
+                summary=reason,
+                source_event_id=event.event_id,
+            ),
+            confidence=1.0,
+            source_event_id=event.event_id,
         )
