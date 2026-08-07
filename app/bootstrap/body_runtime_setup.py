@@ -21,6 +21,9 @@ from app.runtime.body_aware_internal_directive_validator import (
     BodyAwareInternalDirectiveValidator,
 )
 from app.runtime.body_aware_response_validation import BodyAwareResponseValidator
+from app.runtime.body_aware_separated_situation_evaluator import (
+    BodyAwareSeparatedSituationEvaluationAdapter,
+)
 from app.runtime.body_emotion_bridge import get_body_emotion_state_store
 from app.usecases.body_aware_execute_action_usecase import BodyAwareExecuteActionUsecase
 from app.utils.trace import TraceLogger
@@ -59,6 +62,11 @@ def install_body_aware_runtime_components() -> None:
         separated_situation_evaluator_module,
         "InternalDirectiveValidator",
         BodyAwareInternalDirectiveValidator,
+    )
+    setattr(
+        separated_situation_evaluator_module,
+        "SeparatedSituationEvaluationAdapter",
+        BodyAwareSeparatedSituationEvaluationAdapter,
     )
 
 
