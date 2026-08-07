@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from app.domain.body_activity_context import BodyActivityContext
 from app.domain.body_affect import BodyAffectBaseline, BodyFacialAffectTarget
 from app.domain.body_attention_intent import BodyAttentionIntent
+from app.domain.body_awakening_affect import BodyAwakeningAffect
 from app.domain.body_expression import EmbodiedExpressionIntent
 
 
@@ -12,7 +13,7 @@ from app.domain.body_expression import EmbodiedExpressionIntent
 class BodyExpressionInput:
     """連続Pose Controllerへ渡す、Pose計算前の高レベル入力。
 
-    感情基礎表現と対人的な一時表現を別レイヤーで保持する。
+    感情基礎表現と対人的な一時表現、覚醒由来の連続傾向を別レイヤーで保持する。
     """
 
     activity_context: BodyActivityContext
@@ -20,6 +21,7 @@ class BodyExpressionInput:
     facial_target: BodyFacialAffectTarget
     expression_overlay: EmbodiedExpressionIntent | None = None
     attention_intent: BodyAttentionIntent | None = None
+    awakening_affect: BodyAwakeningAffect | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.activity_context, BodyActivityContext):
@@ -40,6 +42,11 @@ class BodyExpressionInput:
             BodyAttentionIntent,
         ):
             raise TypeError("attention_intent must be BodyAttentionIntent")
+        if self.awakening_affect is not None and not isinstance(
+            self.awakening_affect,
+            BodyAwakeningAffect,
+        ):
+            raise TypeError("awakening_affect must be BodyAwakeningAffect")
 
     @property
     def source_activity_id(self) -> str:
@@ -58,6 +65,11 @@ class BodyExpressionInput:
             "attention_intent": (
                 self.attention_intent.as_payload()
                 if self.attention_intent is not None
+                else None
+            ),
+            "awakening_affect": (
+                self.awakening_affect.as_payload()
+                if self.awakening_affect is not None
                 else None
             ),
             "activity_context": {
