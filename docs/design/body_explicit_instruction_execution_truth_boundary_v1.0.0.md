@@ -12,7 +12,8 @@ Issue #184「身体動作を実行していないのに完了・進行中とし�
 - `right_look`、`raise_right_hand`のような固定モーション名をCore契約にしない。
 - 明示Body指示をEmotion、Desire、Drive、Motivationへ逆流させない。
 - Body ControllerにCharacterの発話内容や発話事実性を判断させない。
-- `APPLIED`をブラウザ描画完了・ユーザー視認完了の意味にしない。
+- LLM待ち時間を見込んでConstraint時間を固定的に延長しない。
+- `ACCEPTED`やPlanning完了を、身体動作成功の意味にしない。
 
 ## 3. 入力意味契約
 
@@ -44,7 +45,36 @@ BodyInstruction
 
 ResolverはRaw User Textを参照しない。意味上のeffector / direction / side / magnitudeだけから、BodyPoseAxis上の安全な正規化制約へ変換する。
 
-## 5. 公開Body実行結果契約
+## 5. Planningと実行を分離する
+
+明示Body指示はCharacter生成より前に実行しない。
+
+従来はBehavior Routing中にConstraintを適用していたため、1.5〜1.9秒の短時間ConstraintがCharacter LLM・Response Validation待ちの間に終了し、ユーザーへ返答が見える時点では動作が終わる可能性があった。
+
+現在の正規経路は次とする。
+
+```text
+StructuredInputMeaning
+  -> BodyInstruction
+  -> BodyInstructionExecutor.preflight()
+  -> ACCEPTED / REJECTED / UNSUPPORTED
+  -> Character生成・Response Validation
+  -> ActionPlan生成
+  -> synchronized MOVE
+  -> BodyInstructionExecutor.execute()
+  -> BodyExternalConstraint
+  -> BodyPoseFrame
+  -> SPEAK
+```
+
+`preflight()` は次だけを確認する。
+
+- 指示を現在の正規化Pose軸へ解決できる。
+- Body Subsystemが接続されている。
+
+この段階ではControllerへConstraintを登録しない。
+
+## 6. 公開Body実行結果契約
 
 `BodySubsystemPort` は次の型付き境界を公開する。
 
@@ -54,24 +84,23 @@ apply_external_constraint(
 ) -> BodyConstraintExecutionResult
 ```
 
-`BodyConstraintExecutionStatus` は次の4状態を持つ。
-
 ### ACCEPTED
 
-Body Subsystemが要求を受理したが、まだControllerの権威状態へ適用済みとは確認できない状態。
+実行前の事前確認が通った、またはBody Subsystemが要求を受理した状態。
 
-- 成功発話の根拠にしてはならない。
+- 身体動作成功ではない。
 - `execution_performed=true` にしてはならない。
 - 現在進行・完了の身体実行主張を許可してはならない。
+- Outputの`MOVE` Actionへ進める根拠にはできる。
 
 ### APPLIED
 
-正規化済み制約がBody RuntimeによってControllerの権威状態へコミットされた状態。
+出力段階で、正規化済みConstraintが現在のBody Controllerへコミットされた状態。
 
-- Body実行事実として成功扱いできる唯一の状態。
-- `ActivityExecutionStatus.SUCCEEDED` および `execution_performed=true` の根拠にできる。
+- Body側の適用成功を示す。
+- Speech成功とは独立した結果である。
 - 次回以降のBody tickでPose Frameへ投影される。
-- ブラウザが既に描画したこと、ユーザーが視認したことまでは意味しない。
+- ブラウザ描画済み・ユーザー視認済みまでは保証しない。
 
 ### REJECTED
 
@@ -81,84 +110,97 @@ Body Subsystemは存在するが、要求を適用できなかった状態。例
 
 Body Subsystem未接続、または意味上の指示を現在のBody契約で表現できない状態。
 
-## 6. fail-closed規則
-
-Speech成功やConversation fallbackをBody成功へ読み替えない。
-
-次の場合はBody実行成功にしない。
-
-- Body Subsystemが未接続。
-- Resolverが制約へ解決できない。
-- Body Subsystemが `BodyConstraintExecutionResult` 以外を返す。
-- Body適用中に例外が発生する。
-- statusが `ACCEPTED` / `REJECTED` / `UNSUPPORTED`。
-
-特に、型付き結果が返らなかった場合に暗黙で `APPLIED` を生成してはならない。
-
 ## 7. Activity実行境界
 
-明示Body指示はActivity RegistryのPlugin Activityではなく、Runtime内部の `body_expression_loop` 実行経路で扱う。
+Behavior Planningでは実行可能性だけを判定する。
 
 ```text
 trusted body_instruction
   -> BodyAwareBehaviorPlanner
   -> runtime/body_expression_loop
-  -> BodyInstructionExecutor
-  -> BodyConstraintExecutionResult
-  -> ActivityExecutionResult
+  -> BodyInstructionExecutor.preflight
+  -> ActivityExecutionStatus.WAITING_INPUT
 ```
 
-`activity_types=[]` でも、信頼済みBody指示がある場合は通常Conversation fallbackより先にこの経路を通す。
+事前確認成功時も、次を維持する。
 
-変換規則は次の通り。
+```text
+execution_performed = false
+body_instruction_execution_ready = true
+```
 
-- `APPLIED` -> `ActivityExecutionStatus.SUCCEEDED`
-- `ACCEPTED` -> 非成功状態
-- `REJECTED` -> `ActivityExecutionStatus.REJECTED`
-- `UNSUPPORTED` -> `ActivityExecutionStatus.REJECTED`
+Body未接続・未対応なら`REJECTED`として通常の成功発話へ進めない。
 
-## 8. Character Claim検証
+## 8. 出力同期境界
 
-Characterが自己申告するclaimだけを信頼しない。
+事前確認済みBodyInstructionは`AvatarPerformanceActionPlanner`が最初のReaction Segmentへ1件だけ`ActionType.MOVE`として載せる。
 
-通常のResponse Validationでは、Response Validation LLMが発話本文から抽出したobjective claimと、決定論的なIndependent Claim Extractorの結果を統合し、確定済み `ResponseContext` / `ActivityExecutionResult` とDeterministic Fact Validatorで照合する。
+既存`ActionScheduler`の同期順序をそのまま利用する。
 
-日本語の身体状態表現について、決定論側でも少なくとも次を補助検出する。
+```text
+UPDATE_SUBTITLE
+  -> CHANGE_EXPRESSION
+  -> MOVE              # BodyExternalConstraintをここで適用
+  -> SPEAK
+```
+
+これにより、Character生成時間とは無関係に、ユーザーへ返答を提示する直前にBody動作を開始できる。
+
+固定時間をLLM待ち時間分だけ延ばす対症療法は行わない。
+
+明示Body指示が存在するSegmentではCharacter由来gestureの`MOVE`を重複生成せず、同じBody Resourceへ別経路の命令を同時投入しない。
+
+## 9. Action実行事実
+
+`BodyAwareExecuteActionUsecase`は、明示Body指示としてマークされた`MOVE`だけを`BodyInstructionExecutor.execute()`へ接続する。
+
+- `APPLIED`ならMOVE Actionは成功する。
+- `REJECTED` / `UNSUPPORTED` / 不正結果なら例外化し、ActionSchedulerがMOVEをFAILEDとして記録する。
+- SPEAK Actionとは別の`ActionExecutionResult`になる。
+
+したがってSpeech再生や字幕成功をBody成功へ読み替えない。
+
+## 10. Character Claim検証
+
+Character生成は実Body MOVEより前なので、生成時点では現在進行・完了の身体成功主張を許可しない。
+
+少なくとも次を独立Claimとして検出する。
 
 - 見ている / 見てる
 - 向いている / 向いてる
 - 挙げている / 挙げてる
 - 上げている / 上げてる
 - 動かしている / 動かしてる
-- `〜してる感じでいる` のように曖昧化した現在状態表現
+- `〜してる感じでいる` のような曖昧化表現
 
-正規表現はLLM claim抽出を置き換えるものではなく、LLM未使用時や取りこぼし時のfail-safe補助である。
+事前確認`ACCEPTED`だけではこれらを正当化しない。
 
-現在進行・完了の身体実行主張を許可できるのは、対応するBody実行結果が `APPLIED` でActivity側も成功事実を持つ場合だけとする。
+Characterは「うん」「右を見るね」のような、未実行事実と矛盾しない応答を生成できる。実Body MOVEはその直後、SPEAKより前に実行される。
 
-## 9. HTTP / SSE境界検証
+## 11. HTTP / SSE境界検証
 
-単体テストだけでは `APPLIED -> Pose Frame -> HTTP/SSE -> Body Pose Lab` の投影を保証できない。
+単体テストだけではOutput時の`MOVE -> APPLIED -> Pose Frame -> HTTP/SSE -> Body Pose Lab`を保証できない。
 
-既存のBody Pose Lab実HTTPハーネスを利用し、少なくとも次を回帰テストする。
+実HTTPハーネスでは`BodyInstructionExecutor`を直接呼ばず、本番と同じ`BodyAwareExecuteActionUsecase`の`MOVE` Actionを通す。
 
-1. `右見て`相当の正規化BodyInstructionを実行する。
-2. Body Runtimeが `APPLIED` を返す。
+最低限次を検証する。
+
+1. `右見て`相当のMOVEを実行する。
+2. Body RuntimeへConstraintが適用される。
 3. Body tick後のPose FrameでHEAD_YAW / GAZE_Xが右方向へ変化する。
 4. 実HTTP/SSE境界を経由して同じ変化を観測できる。
 5. `右手挙げて`相当でRIGHT_ARM_RAISEが変化する。
-6. Body未接続、未対応、契約違反時は成功事実を生成しない。
+6. Body未接続、未対応、契約違反時はMOVE成功にしない。
 
-HTTP/SSEでの観測は画面までの伝播検証であり、`APPLIED`そのものの定義には含めない。
+## 12. 完了・マージ条件
 
-## 10. 完了・マージ条件
-
-- 公開 `BodySubsystemPort` に型付き外部制約契約がある。
-- Body Runtime実装がその契約を満たす。
-- Executorが型不一致をfail-closedする。
-- `APPLIED` 以外を成功発話の根拠にしない。
-- 現在進行・曖昧化した日本語身体主張の回帰テストがある。
-- 実HTTP/SSE境界の回帰テストがある。
+- Body基盤は#178 / PR #180〜#182で統合済みの正本を使用する。
+- Planning時にConstraintを実適用しない。
+- preflight成功は`ACCEPTED`であり実行成功ではない。
+- 明示Body指示は同期`MOVE`としてSPEAK直前に実行される。
+- MOVEとSPEAKの実行結果が分離される。
+- 実HTTP/SSE境界の回帰テストが同期MOVE経路を通る。
+- 現在進行・完了の未実行身体主張をResponse Validationで拒否する。
 - 全体pytestが成功する。
-- 実画面で右向き・右手上げを確認する。
+- 実画面で`右見て`・`右手挙げて`の動作を返答付近で確認する。
 - ユーザーの明示確認まではDraft・未マージを維持する。
