@@ -50,11 +50,13 @@ def create_bound_body_runtime_from_env() -> BodySubsystemPort | None:
         return None
 
     pose_output = BodyOutputFactory().create(settings)
+    causal_store = get_body_emotion_state_store()
     runtime = BodyRuntimeFactory().create(
         settings=settings,
         avatar_output=avatar_output,
         pose_output=pose_output,
-        emotion_provider=get_body_emotion_state_store().snapshot,
+        emotion_provider=causal_store.snapshot,
+        awakening_provider=causal_store.awakening_snapshot,
     )
     if runtime is None:
         trace.warning(
