@@ -7,6 +7,11 @@ from time import monotonic
 
 from app.domain.body_activity_context import BodyActivityContext
 from app.domain.body_expression_request import BodyExpressionRequest
+from app.domain.body_instruction import (
+    BodyConstraintExecutionResult,
+    BodyConstraintExecutionStatus,
+)
+from app.domain.body_pose_dynamics import BodyExternalConstraint
 from app.domain.body_pose_frame import BodyPoseFrame
 from app.domain.body_runtime import BodyRuntimeSnapshot
 from app.domain.body_speech import SpeechPresentationRequest
@@ -81,6 +86,20 @@ class StateDrivenBodyPoseRuntime:
 
     async def request_expression(self, request: BodyExpressionRequest) -> None:
         self._expression_store.set(request)
+
+    async def apply_external_constraint(
+        self,
+        constraint: BodyExternalConstraint,
+    ) -> BodyConstraintExecutionResult:
+        if not isinstance(constraint, BodyExternalConstraint):
+            raise TypeError("constraint must be BodyExternalConstraint")
+        self._controller.apply_external_constraint(constraint)
+        return BodyConstraintExecutionResult(
+            status=BodyConstraintExecutionStatus.APPLIED,
+            constraint_id=constraint.constraint_id,
+            reason="body_constraint_applied",
+            target_axes=tuple(target.axis.value for target in constraint.targets),
+        )
 
     async def present_speech(self, request: SpeechPresentationRequest) -> None:
         current = self._controller.expression_input
