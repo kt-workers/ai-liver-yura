@@ -6,6 +6,7 @@ from contextlib import suppress
 from time import monotonic
 
 from app.domain.body_activity_context import BodyActivityContext
+from app.domain.body_awakening_affect import BodyAwakeningAffect
 from app.domain.body_expression_request import BodyExpressionRequest
 from app.domain.body_pose_frame import BodyPoseFrame
 from app.domain.body_runtime import BodyRuntimeSnapshot
@@ -20,7 +21,7 @@ from app.runtime.state_driven_body_controller import StateDrivenBodyController
 
 
 class StateDrivenBodyPoseRuntime:
-    """Emotion・Activity・Expression入力をControllerへ渡しFrameを公開する薄いRuntime。"""
+    """Emotion・Awakening・Activity・Expression入力をControllerへ渡す薄いRuntime。"""
 
     def __init__(
         self,
@@ -29,6 +30,7 @@ class StateDrivenBodyPoseRuntime:
         output: BodyPoseFrameOutputPort,
         emotion_provider: Callable[[], EmotionState],
         initial_context: BodyActivityContext,
+        awakening_provider: Callable[[], BodyAwakeningAffect] | None = None,
         input_builder: BodyExpressionInputBuilder | None = None,
         expression_store: TimedBodyExpressionRequestStore | None = None,
     ) -> None:
@@ -36,11 +38,14 @@ class StateDrivenBodyPoseRuntime:
             raise TypeError("controller must be StateDrivenBodyController")
         if not callable(emotion_provider):
             raise TypeError("emotion_provider must be callable")
+        if awakening_provider is not None and not callable(awakening_provider):
+            raise TypeError("awakening_provider must be callable")
         if not isinstance(initial_context, BodyActivityContext):
             raise TypeError("initial_context must be BodyActivityContext")
         self._controller = controller
         self._output = output
         self._emotion_provider = emotion_provider
+        self._awakening_provider = awakening_provider
         self._context = initial_context
         self._input_builder = input_builder or BodyExpressionInputBuilder()
         self._expression_store = (
@@ -102,15 +107,23 @@ class StateDrivenBodyPoseRuntime:
         )
 
     async def tick_once(self) -> BodyPoseFrame:
-        """確定済みEmotionと現在Contextから1Frameだけ生成・公開する。"""
+        """確定済み因果状態と現在Contextから1Frameだけ生成・公開する。"""
 
         emotion = self._emotion_provider()
         if not isinstance(emotion, EmotionState):
             raise TypeError("emotion_provider must return EmotionState")
+        awakening = (
+            self._awakening_provider()
+            if self._awakening_provider is not None
+            else None
+        )
+        if awakening is not None and not isinstance(awakening, BodyAwakeningAffect):
+            raise TypeError("awakening_provider must return BodyAwakeningAffect")
         expression_input = self._input_builder.build(
             emotion=emotion,
             context=self._context,
             expression_request=self._expression_store.current(),
+            awakening_affect=awakening,
         )
         self._controller.update_expression_input(expression_input)
         frame = self._controller.tick()
