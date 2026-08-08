@@ -98,29 +98,30 @@ class BodyInstructionConstraintResolver:
         magnitude = instruction.magnitude
 
         if effector in {"head", "face", "look"}:
-            if direction in {"right", "left"}:
-                sign = 1.0 if direction == "right" else -1.0
-                return (
-                    self._target(BodyPoseAxis.HEAD_YAW, sign * 0.72 * magnitude),
-                    self._target(BodyPoseAxis.GAZE_X, sign * 0.86 * magnitude, 0.92),
-                )
-            if direction in {"up", "down"}:
-                sign = 1.0 if direction == "up" else -1.0
-                return (
-                    self._target(BodyPoseAxis.HEAD_PITCH, sign * 0.58 * magnitude),
-                    self._target(BodyPoseAxis.GAZE_Y, sign * 0.76 * magnitude, 0.92),
-                )
+            horizontal = self._horizontal_look_targets(
+                direction=direction,
+                side=side,
+                magnitude=magnitude,
+            )
+            vertical = self._vertical_look_targets(
+                direction=direction,
+                magnitude=magnitude,
+            )
+            if horizontal or vertical:
+                return (*horizontal, *vertical)
 
         if effector in {"gaze", "eyes", "eye"}:
-            axis_and_sign = {
-                "right": (BodyPoseAxis.GAZE_X, 1.0),
-                "left": (BodyPoseAxis.GAZE_X, -1.0),
-                "up": (BodyPoseAxis.GAZE_Y, 1.0),
-                "down": (BodyPoseAxis.GAZE_Y, -1.0),
-            }.get(direction)
-            if axis_and_sign is not None:
-                axis, sign = axis_and_sign
-                return (self._target(axis, sign * 0.88 * magnitude),)
+            horizontal = self._horizontal_gaze_targets(
+                direction=direction,
+                side=side,
+                magnitude=magnitude,
+            )
+            vertical = self._vertical_gaze_targets(
+                direction=direction,
+                magnitude=magnitude,
+            )
+            if horizontal or vertical:
+                return (*horizontal, *vertical)
 
         if effector in {"arm", "hand"} and side in {"left", "right"}:
             raise_axis = (
@@ -151,6 +152,64 @@ class BodyInstructionConstraintResolver:
                 return (self._target(BodyPoseAxis.TORSO_PITCH, sign * 0.42 * magnitude),)
 
         return ()
+
+    def _horizontal_look_targets(
+        self,
+        *,
+        direction: str,
+        side: str | None,
+        magnitude: float,
+    ) -> tuple[BodyPoseConstraintTarget, ...]:
+        horizontal_direction = (
+            direction if direction in {"right", "left"} else side
+        )
+        if horizontal_direction not in {"right", "left"}:
+            return ()
+        sign = 1.0 if horizontal_direction == "right" else -1.0
+        return (
+            self._target(BodyPoseAxis.HEAD_YAW, sign * 0.72 * magnitude),
+            self._target(BodyPoseAxis.GAZE_X, sign * 0.86 * magnitude, 0.92),
+        )
+
+    def _vertical_look_targets(
+        self,
+        *,
+        direction: str,
+        magnitude: float,
+    ) -> tuple[BodyPoseConstraintTarget, ...]:
+        if direction not in {"up", "down"}:
+            return ()
+        sign = 1.0 if direction == "up" else -1.0
+        return (
+            self._target(BodyPoseAxis.HEAD_PITCH, sign * 0.58 * magnitude),
+            self._target(BodyPoseAxis.GAZE_Y, sign * 0.76 * magnitude, 0.92),
+        )
+
+    def _horizontal_gaze_targets(
+        self,
+        *,
+        direction: str,
+        side: str | None,
+        magnitude: float,
+    ) -> tuple[BodyPoseConstraintTarget, ...]:
+        horizontal_direction = (
+            direction if direction in {"right", "left"} else side
+        )
+        if horizontal_direction not in {"right", "left"}:
+            return ()
+        sign = 1.0 if horizontal_direction == "right" else -1.0
+        return (self._target(BodyPoseAxis.GAZE_X, sign * 0.88 * magnitude),)
+
+    def _vertical_gaze_targets(
+        self,
+        *,
+        direction: str,
+        magnitude: float,
+    ) -> tuple[BodyPoseConstraintTarget, ...]:
+        if direction not in {"up", "down"}:
+            return ()
+        sign = 1.0 if direction == "up" else -1.0
+        return (self._target(BodyPoseAxis.GAZE_Y, sign * 0.88 * magnitude),)
 
     @staticmethod
     def _target(
