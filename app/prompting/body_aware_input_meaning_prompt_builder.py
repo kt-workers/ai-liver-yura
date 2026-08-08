@@ -20,6 +20,9 @@ class BodyAwareInputMeaningPromptBuilder(BaseInputMeaningPromptBuilder):
                 '{"effector":"head|gaze|arm|hand|torso|body等の意味上の対象",'
                 '"direction":"right|left|up|down|raise|lower|inward|outward|forward|backward等",'
                 '"side":"left|right|null","magnitude":0.0}の形にする。',
+                "left/rightは常に行為主体であるゆら自身を基準に解釈する。"
+                "side=left/rightはゆら自身の解剖学的左/右、direction=left/rightは"
+                "ゆら自身から見て左/右であり、視聴者・カメラ・画面の左右へ読み替えない。",
                 "magnitudeは意味上の強さ0.0..1.0であり、角度、速度、回数、時刻、"
                 "Live2D Parameter、モーション名ではない。通常会話ではbody_instruction=null。",
                 "『右見て』はhead/right、『右手挙げて』はarm/up/rightのように、"
