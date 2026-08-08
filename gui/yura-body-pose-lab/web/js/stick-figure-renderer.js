@@ -1,4 +1,8 @@
-import { clamp, computeStickFigureGeometry } from "./stick-figure-geometry.js";
+import {
+  clamp,
+  computeStickFigureGeometry,
+  projectFrontViewDirection,
+} from "./stick-figure-geometry.js";
 import { StickFigurePoseFilter } from "./stick-figure-pose-filter.js";
 
 export class StickFigureRenderer {
@@ -116,8 +120,9 @@ export class StickFigureRenderer {
     ctx.stroke();
     ctx.shadowBlur = 0;
 
-    const gazeX = clamp(pose.gaze_x) * scale * 0.055;
-    const gazeY = clamp(pose.gaze_y) * scale * 0.04;
+    const projectedGaze = projectFrontViewDirection(pose.gaze_x, pose.gaze_y);
+    const gazeX = projectedGaze.x * scale * 0.055;
+    const gazeY = projectedGaze.y * scale * 0.04;
     const leftOpen = clamp(pose.eye_left_open, 0, 1);
     const rightOpen = clamp(pose.eye_right_open, 0, 1);
     // 正面表示では、ゆらの解剖学的左眼は画面右に見える。
