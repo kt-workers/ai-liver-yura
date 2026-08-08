@@ -1,5 +1,24 @@
 # Body因果再統合 最終検証設計 v1.0.0
 
+## 後続設計による位置付け更新（2026-08-08）
+
+本書はIssue #178 / PR #180〜#182で完了したBody因果再統合の**当時の検証設計と結果境界**を記録する。Runtime/Transport/SSE/安全境界の検証方針は引き続き有効である。
+
+ただし、当時の検証条件である「External Constraintは正規化Pose軸だけを使用」は、Issue #211以前のCompatibility境界を確認したもの。これを将来Body Motionの正規設計として拡張しない。
+
+後続の正規完成形は次へ更新される。
+
+```text
+high-level body intention / BodyMotionGoal
+→ current pose + Skeleton + DOF / Joint Limits
+→ Motion Planning / IK / Kinematics / trajectory
+→ Continuous Controller
+→ BodyPoseFrame
+→ HTTP / SSE / Avatar or Lab Adapter
+```
+
+したがって本書の歴史的テストを削除・改変して過去結果を作り替えるのではなく、旧normalized Pose-axis経路はCompatibility回帰として保持し、新しい身体能力は#211のGenerative Motion経路で検証する。
+
 ## 1. 目的
 
 工程1〜7で分離・再構築したBody因果経路を、実際のHTTP Server、Core側HTTP Output、SSE、ローカルTick Loopを通して統合検証する。
@@ -20,6 +39,8 @@ Core確定Emotion
   → GET /api/frames (SSE)
   → Stick Figure Client
 ```
+
+#211以降もこのTransport経路自体は維持し、Controller内部で生成されるCanonical joints/root/gazeの自由度を拡張する。
 
 ## 3. 内部段階
 
@@ -53,9 +74,11 @@ Core確定Emotion
 - Payloadにユーザー発話本文、Character Prompt、Memoryを含めない
 - EmotionとActivity Contextは型付き境界を通す
 - Body command名をController主入力にしない
-- External Constraintは正規化Pose軸だけを使用
+- 当時のCompatibility External Constraintは正規化Pose軸だけを使用
 - Runtime→Bootstrap逆依存がないことを確認
 - 主要ファイル・関数の責務再監査
+
+後続#211では、明示Body Motionの正規入力をfixed Pose axisへ増築せず、型付き`BodyMotionGoal`とSkeleton/IK/Kinematicsへ移行する。
 
 ### 8-5 最終CI・旧PR整理
 
@@ -111,8 +134,10 @@ Core確定Emotion
 - `tests/test_body_causal_architecture_boundaries.py`
   - Runtime→Bootstrap逆依存なし
   - 固定Body command名非依存
-  - 正規化Pose軸のみ
+  - Compatibility正規化Pose軸の境界確認
   - Speech本文・Prompt・Memory非保持
+
+#211ではこれに加え、fixed Motion/Pose名を正規経路に持たないこと、Canonical Skeleton/DOF/Joint Limit、任意3D direction、IK、連続性を別テストで検証する。
 
 1つの巨大テスト関数へ起動・送信・SSE・終了・旧PR確認を混在させない。
 
@@ -134,3 +159,12 @@ Core確定Emotion
 - WebSocket／gRPC等の正規Transport決定
 - Body表現アルゴリズムの追加調整
 - `develop`へのマージ
+
+## 7. 後続Issueとの整合
+
+- #211: Generative Motion基盤。旧Pose軸Compatibilityを新規能力へ拡張しない
+- #213: TTS発音/Viseme同期口形
+- #214: Character Profile由来のBody表現Style
+- #215: Body Pose Lab表示簡素化
+
+各Issueは#207の共通Body完成目標へ収束し、本書の歴史的Compatibility検証を異なる最終設計として再利用しない。
