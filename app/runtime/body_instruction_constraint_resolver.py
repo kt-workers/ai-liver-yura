@@ -26,6 +26,10 @@ class BodyInstructionConstraintResolver:
 
     Raw text、モーション名、再生時刻は扱わない。既存のEmotion/Drive由来Poseを
     主状態として維持し、その上へ短時間だけ意味制約を重ねる。
+
+    複合BodyInstructionは各componentを別々に再生せず、全componentのPose targetを
+    一個のBodyExternalConstraintへ統合する。これにより「左を見ながら右手を挙げる」
+    などの一つの意識的行動を同じ時間窓で満たす。
     """
 
     def resolve(self, instruction: BodyInstruction) -> BodyInstructionResolution:
@@ -34,17 +38,55 @@ class BodyInstructionConstraintResolver:
         if instruction.magnitude <= 0.0:
             return BodyInstructionResolution(None, "zero_magnitude")
 
-        targets = self._targets(instruction)
-        if not targets:
-            return BodyInstructionResolution(None, "unsupported_body_instruction")
+        if instruction.components:
+            targets = self._composite_targets(instruction.components)
+            if targets is None:
+                return BodyInstructionResolution(
+                    None,
+                    "unsupported_or_conflicting_body_instruction_component",
+                )
+            duration_ms = max(
+                self._duration_ms(component) for component in instruction.components
+            )
+            reason = "body_instruction_composite_resolved"
+        else:
+            targets = self._targets(instruction)
+            if not targets:
+                return BodyInstructionResolution(None, "unsupported_body_instruction")
+            duration_ms = self._duration_ms(instruction)
+            reason = "body_instruction_resolved"
+
         constraint = BodyExternalConstraint(
             constraint_id=f"explicit-body-{uuid4()}",
             targets=targets,
-            duration_ms=self._duration_ms(instruction),
+            duration_ms=duration_ms,
             attack_ratio=0.16,
             release_ratio=0.28,
         )
-        return BodyInstructionResolution(constraint, "body_instruction_resolved")
+        return BodyInstructionResolution(constraint, reason)
+
+    def _composite_targets(
+        self,
+        components: tuple[BodyInstruction, ...],
+    ) -> tuple[BodyPoseConstraintTarget, ...] | None:
+        if not components:
+            return None
+        by_axis: dict[BodyPoseAxis, BodyPoseConstraintTarget] = {}
+        for component in components:
+            targets = self._targets(component)
+            if not targets:
+                return None
+            for target in targets:
+                current = by_axis.get(target.axis)
+                if current is not None:
+                    if (
+                        abs(current.value - target.value) > 1e-6
+                        or abs(current.weight - target.weight) > 1e-6
+                    ):
+                        return None
+                    continue
+                by_axis[target.axis] = target
+        return tuple(by_axis.values())
 
     def _targets(
         self,
