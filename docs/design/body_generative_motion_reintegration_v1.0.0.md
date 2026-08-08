@@ -104,6 +104,23 @@ Emotion/Activity由来の既存連続Body、呼吸、瞬き、表情、Speech la
 
 旧`BodyExternalConstraint`や`right_arm_raise`等は移行Compatibilityとして既存回帰を維持してよいが、新しい身体能力をそこへ追加しない。
 
+## 表示モデルとCore能力の分離
+
+CoreのBody能力は、現在接続しているAvatarモデルの表現能力で制限しない。
+
+```text
+Canonical BodyPoseFrame (full 3D)
+├─ 2D Stick Figure Adapter → 2Dへ投影・不可視成分は省略
+├─ Live2D Adapter          → モデルが持つParameter範囲へ近似・制限
+└─ 3D Avatar Adapter       → Canonical 3D姿勢・方向を3Dとして反映
+```
+
+したがって、棒人間やLive2Dが上下・奥行き・背面方向や大きなroll/pitchを完全表示できなくても、CoreのCanonical 3D Stateからその自由度を削除しない。
+
+Adapterが表現できない成分はAdapter境界で投影・近似・clampする。Adapterの制約をMotion Planner、Skeleton Profile、BodyMotionGoalの制約として逆流させない。
+
+3D Avatarでは、モデル側Skeleton Mappingが対応する限りCanonical 3Dの全方向・全身姿勢を利用できることを必須目標とする。
+
 ## 非目標
 
 - `right_arm_raise` 等を完成Motion/Pose名として増やす
@@ -114,6 +131,7 @@ Emotion/Activity由来の既存連続Body、呼吸、瞬き、表情、Speech la
 - 毎回Neutral/Home Poseへ戻ってから動く
 - Emotion/Activity由来の連続表現を明示指示で置き換える
 - Live2D固有Bone/ParameterをCore契約へ持ち込む
+- 2D/Live2Dの表現限界をCanonical 3D Bodyの能力上限にする
 - Character固有の女の子らしい/男性らしい仕草を本Issueへ混在させる（#214）
 - 発音同期口形を本Issueへ混在させる（#213）
 - Body Pose Lab UI簡素化を本Issueへ混在させる（#215）
@@ -196,23 +214,39 @@ components
 
 Motion GoalはBody契約と同じright-handed / Y-upのモデル非依存3D座標系を使う。
 
-- `direction`: 正規化された向き
+- `direction`: 正規化された3D方向ベクトル
 - `position`: Task-spaceまたはroot translationとして意味が明示された3D位置/変位
+- `orientation`: Quaternion等による3自由度の3D姿勢
 - Avatar固有Canvas座標やLive2D Parameter値を入れない
 
-### 任意方向
+### 「360度」の定義
 
-左右・上下を独立した完成軸へ落とさず、方向は3Dベクトルで扱う。
+本設計でいう「360度対応」は**水平面のyaw一周だけを意味しない**。
+
+方向については、単位球面 `S²` 上の任意方向を扱えることを意味する。
 
 ```text
-up          -> (0, +1, 0)
-left-up     -> normalized(-1, +1, 0)
-forward-up  -> normalized(0, +1, +1)
-back-right  -> normalized(+1, 0, -1)
-look target -> normalized(target - head_position)
+x: left / right
+y: down / up
+z: back / forward
+
+任意direction = normalize(x, y, z)
 ```
 
-これにより斜め・上下・前後を含む360度方向を同じ経路で扱う。
+例:
+
+```text
+up              -> (0, +1, 0)
+down            -> (0, -1, 0)
+left-up         -> normalize(-1, +1, 0)
+forward-up      -> normalize(0, +1, +1)
+back-right-down -> normalize(+1, -1, -1)
+look target     -> normalize(target - head_position)
+```
+
+水平面、垂直面、斜め、前後、頭上、足元を含む**3次元空間の全方向**を同じVector Goalで扱う。
+
+また「物体の向き」はdirectionだけではrollを一意に定められないため、Joint/Rootの姿勢GoalではQuaternion等の3D orientationを使用する。これにより3D Avatarではyaw/pitch/rollを含む任意姿勢を扱える。
 
 ## Motion Planning
 
@@ -226,28 +260,34 @@ PlannerはGoalとSkeletonから、使用するchain、phase、duration、coordin
 
 Solverは肩・肘・手首・必要なら肩帯/胸郭へ必要量を分配する。
 
-### 視線と360度方向転換
+手を「右上奥へ伸ばす」「左下手前へ戻す」等も同じ3D Task-space Goalで扱い、方向ごとのPresetを作らない。
 
-任意3D directionを快適域に応じて段階的に分配する。
+### 視線と3次元全方向
+
+視線Goalは単位球面上の任意3D directionを受理する。
 
 ```text
-small angle:
+small angular difference:
 gaze → head
 
-medium angle:
+medium angular difference:
 gaze → head → neck → chest
 
-large / rear angle:
-gaze → head → neck → chest → spine → hips → root yaw
+large angular difference:
+gaze → head → neck → chest → spine → hips → root rotation
 ```
 
-後方を見る要求を首のJoint Limitだけで無理に満たさない。上半身の快適域を越える場合、Body全体が向きを変えることで360度の対象を視認可能にする。
+後方を見る要求を首のJoint Limitだけで無理に満たさない。上半身の快適域を越える場合、Body全体が向きを変える。
 
-視線Ray自体は全方向を向けられるが、身体姿勢はJoint Limit・Balanceを守って協調する。
+同様に真上・真下・斜め上後方等でも、head/neckだけに無理なpitch/rollを集中させず、胸郭・脊椎・骨盤・必要なら足運び/Root姿勢へ協調分配する。
+
+視線Ray自体は3次元空間の全方向を向けられる。身体側はJoint Limit・Balanceを守りながら、その方向を可能な範囲で全身協調して追従する。
+
+棒人間/Live2D Adapterで完全表示できない方向があっても、このCanonical Goal/Stateは失わない。3D Adapterでは全3D方向を利用する。
 
 ### 首・腰
 
-head / neck / chest / spine / hipsはyaw/pitch/rollを使用できる。首傾げ・腰の左右傾きも固定Poseなしで生成する。
+head / neck / chest / spine / hipsはyaw/pitch/rollを使用できる。首傾げ・腰の左右傾きだけでなく、前後傾・ねじり・複合回転も固定Poseなしで生成する。
 
 ### 脚・しゃがみ
 
@@ -377,9 +417,12 @@ rejected / unsupported
 - shoulder/elbow/wristを個別・協調で動かせる
 - hip/knee/ankleを個別・協調で動かせる
 - head/neck/chest/spine/hipsのyaw/pitch/rollを協調できる
-- gazeを3D任意方向へ向けられる
-- 後方方向では必要に応じてhips/rootまで回して360度方向転換できる
-- 上下・斜め・前後を同じvector goalで扱える
+- `direction`が単位球面上の任意3D方向を表現できる
+- 水平yawだけでなく上下・前後・斜め・頭上・足元を同じVector Goalで扱える
+- Joint/Root orientationを3自由度Quaternion等で表現できる
+- 2D/Live2D Adapterの表現限界がCanonical 3D能力を制限しない
+- 3D Avatar AdapterがCanonical 3D方向・姿勢を利用できる
+- 大きな方向変更では必要に応じてhips/rootまで全身協調できる
 - crouchをCOM低下+脚関節屈曲として生成できる
 - jumpをprepare→propel→airborne→landとして生成できる
 - 小/大ジャンプで軌道/屈曲/腕協調量が変わる
