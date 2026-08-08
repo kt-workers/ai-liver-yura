@@ -190,16 +190,14 @@ class InternalDirectivePromptBuilder:
                 "感情値を根拠にし、関心の高さを楽しさとして断定しない。",
                 "structured_input_meaning.target.typeがinternal_stateまたは"
                 "agent_internal_stateで、target.idがcurrent_feeling、current_mood、"
-                "current_emotion、mood、feelingのいずれかなら、internal_state.emotionの"
-                "数値が高い1〜2項目をresponse_goalへ具体的に含め、content_requirementsへ"
-                "根拠の項目名と数値を明記する。『現在の気分に直接答える』という抽象方針だけで"
-                "終えてはいけない。",
-                "現在の気分を表す感情値は、0.70以上を強め、0.45以上0.70未満を中程度、"
-                "0.25以上0.45未満を少し、0.25未満を低いものとして扱う。低い項目を"
-                "主感情として誇張してはいけない。",
-                "内部状態のキー名と数値は司令の根拠であり、Character LLMがそのまま読み上げる"
-                "発話内容ではない。content_requirementsには、最終発話で『落ち着きが強め』など"
-                "自然な日本語へ変換し、calm=0.74のような内部表現を読まないことも含める。",
+                "current_emotion、mood、feelingのいずれかなら、internal_state.emotionや"
+                "internal_state.driveはPlanner判断の根拠として利用できる。ただし内部キー、"
+                "数値、強度ラベル、内部分類をresponse_goalまたはcontent_requirementsへ"
+                "発話すべき内容として移してはいけない。",
+                "現在の気分全体への回答目的は、現在の内的状態に沿ってユーザーの質問へ自然に"
+                "直接答えることに留める。内部状態はCharacter表現を生む原因であり、診断結果の"
+                "ように説明する対象ではない。Characterへ固定文、固定フレーズ、状態名ごとの"
+                "言い換え辞書を指定せず、発話本文も生成しない。",
                 "drive.curiosityは好奇心・関心として必要な場合だけ補助的に含め、joyまたは"
                 "amusementの代用にしない。内部状態そのものが直接回答対象なら、必要な内容を"
                 "答えられるようself_disclosure_levelは0.35以上を目安にするが、発話本文は"
