@@ -458,7 +458,9 @@ class InternalDirectiveValidator:
             label in text for label in ("強め", "中程度", "少し", "低め")
         ):
             return True
-        return "中立" in text and diagnostic_context
+        return any(
+            label in folded for label in ("neutral", "ニュートラル", "中立")
+        )
 
     @staticmethod
     def _existence_boundaries(

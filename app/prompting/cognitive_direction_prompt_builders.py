@@ -66,6 +66,20 @@ class InputMeaningPromptBuilder:
                 "『昨日』『以前』『先週』など明確な過去時点を参照する入力は"
                 "past_reference=trueにする。経験が可能かどうかはこの役割では判断しない。",
                 "疑問符、語尾、固定語句だけで分類せず、直近の会話履歴と対象を使う。",
+                "targetは単なるNamed Entityではない。質問、request、command等が意味的に"
+                "対象としている状態、対象物、活動、行為、話題をtypeとidへ構造化する。",
+                "内部状態への質問は意味をcanonical targetへ正規化する。意味分類例: "
+                "『今どんな気分？』→type=internal_state,id=current_feeling、"
+                "『楽しい？』→type=internal_state,id=joy、"
+                "『怒ってる？』→type=internal_state,id=anger、"
+                "『何かしたい？』→type=internal_state,id=current_desire。",
+                "これらは文字列照合規則ではなく意味分類例である。表現が異なっても、意味が"
+                "現在の全体的な内的状態ならinternal_state/current_feelingへ統一する。"
+                "固定フレーズ辞書や正規表現による照合を行わない。",
+                "question、request、command等で意味上の対象が存在する場合、targetをnullに"
+                "してはいけない。曖昧参照はconversation_history、current_topic、"
+                "ongoing_activity等から意味対象を解決する。target=nullは、本当に状態、対象物、"
+                "活動、行為、話題のいずれも対象にしていない入力だけに限定する。",
                 "この役割ではActivity、response_mode、initiative_level、question_budget、"
                 "new_direction_budget、ゆらの発話内容を決めない。",
                 "内部状態は曖昧参照の解決以外に利用しない。",
@@ -75,7 +89,7 @@ class InputMeaningPromptBuilder:
                 json.dumps(reference_context, ensure_ascii=False, default=str),
                 "# 出力JSONスキーマ",
                 json.dumps(schema, ensure_ascii=False),
-                "JSONオブジェクトだけを返す。targetがない場合はnullにする。",
+                "JSONオブジェクトだけを返す。本当に意味上の対象がない場合だけtargetをnullにする。",
             ]
         )
 

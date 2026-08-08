@@ -23,6 +23,9 @@ from app.domain.cognitive_direction import (
     TargetInterestUpdate,
 )
 from app.ports.llm_roles import ResponseGeneratorRoleAdapter
+from app.prompting.cognitive_direction_prompt_builders import (
+    InputMeaningPromptBuilder,
+)
 from app.runtime.cognitive_direction_pipeline import (
     InputMeaningJsonParser,
     InternalDirectiveJsonParser,
@@ -36,6 +39,7 @@ HUNGER_QUESTION = "\u304a\u8179\u306f\u7a7a\u3044\u3066\u308b\uff1f"
 SHIMANAMI = "\u3057\u307e\u306a\u307f\u6d77\u9053"
 ACK = "\u4e86\u89e3"
 CLOSING = "\u4eca\u65e5\u306f\u3053\u306e\u304f\u3089\u3044\u304b\u306a"
+CURRENT_FEELING_QUESTION = "\u4eca\u3069\u3093\u306a\u6c17\u5206\uff1f"
 
 
 class StubResponseGenerator:
@@ -165,6 +169,106 @@ async def test_runtime_uses_two_roles_without_raw_text_reinterpretation() -> Non
     assert DESIRE_QUESTION not in generator.activities[1].context[
         "plugin_prompt_override"
     ]
+
+
+def test_input_meaning_prompt_requires_semantic_canonical_targets() -> None:
+    prompt = InputMeaningPromptBuilder().build(
+        planning_input(CURRENT_FEELING_QUESTION)
+    )
+
+    assert "targetは単なるNamed Entityではない" in prompt
+    assert "type=internal_state,id=current_feeling" in prompt
+    assert "type=internal_state,id=joy" in prompt
+    assert "type=internal_state,id=anger" in prompt
+    assert "type=internal_state,id=current_desire" in prompt
+    assert "文字列照合規則ではなく意味分類例" in prompt
+    assert "表現が異なっても" in prompt
+    assert "固定フレーズ辞書や正規表現による照合を行わない" in prompt
+    assert "question、request、command等で意味上の対象が存在する場合" in prompt
+    assert "targetをnullにしてはいけない" in prompt
+    assert "曖昧参照はconversation_history" in prompt
+    assert "本当に意味上の対象がない場合だけtargetをnull" in prompt
+
+
+@pytest.mark.parametrize("speech_act", ("question", "request", "command"))
+def test_input_meaning_parser_rejects_missing_required_semantic_target(
+    speech_act: str,
+) -> None:
+    raw = meaning_json(
+        speech_act=speech_act,
+        expected="direct_answer" if speech_act == "question" else "action",
+        target_id=None,
+    )
+
+    assert InputMeaningJsonParser().parse(raw, source_text="input") is None
+    assert InputMeaningJsonParser.has_missing_semantic_target(raw)
+
+
+@pytest.mark.asyncio
+async def test_missing_question_target_is_restructured_then_current_feeling_is_normalized(
+) -> None:
+    invalid_meaning = meaning_json(
+        target_id=None,
+        intent="ask_current_feeling",
+    )
+    corrected_meaning = meaning_json(
+        target_id="current_feeling",
+        target_type="internal_state",
+        intent="ask_current_feeling",
+    )
+    diagnostic_directive = json.loads(directive_json("answer"))
+    diagnostic_directive["response_goal"] = (
+        "現在の気分はニュートラルで落ち着いています"
+    )
+    diagnostic_directive["content_requirements"] = [
+        "ニュートラルであることを明示する"
+    ]
+    generator = StubResponseGenerator(
+        [
+            invalid_meaning,
+            corrected_meaning,
+            json.dumps(diagnostic_directive, ensure_ascii=False),
+        ]
+    )
+    adapter = ResponseGeneratorRoleAdapter(generator)
+    activity = Activity(
+        ActivityType.BEHAVIOR_PLANNING,
+        "interpret",
+        context={
+            "plugin_prompt_override": legacy_prompt(
+                planning_input(CURRENT_FEELING_QUESTION)
+            ),
+            "llm_role": "situation_evaluator",
+            "event_id": "event-1",
+            "user_input": CURRENT_FEELING_QUESTION,
+        },
+        source_event_id="event-1",
+    )
+
+    payload = json.loads(await adapter.evaluate(activity))
+    validated = payload["constraints"]["_internal_directive"]
+    meaning = validated["structured_input_meaning"]
+    directive_result = validated["internal_directive"]
+
+    assert [item.context["llm_role"] for item in generator.activities] == [
+        "input_meaning_interpreter",
+        "input_meaning_interpreter",
+        "internal_directive_planner",
+    ]
+    assert "# Contract Repair" in generator.activities[1].context[
+        "plugin_prompt_override"
+    ]
+    assert meaning["target"] == {
+        "type": "internal_state",
+        "id": "current_feeling",
+    }
+    assert "current_feeling_guidance_normalized" in validated["validation_notes"]
+    assert directive_result["response_goal"] == (
+        "現在の内的状態に沿って、ユーザーの質問へ自然に直接答える"
+    )
+    assert "ニュートラル" not in "\n".join(
+        directive_result["content_requirements"]
+    )
 
 
 @pytest.mark.parametrize(

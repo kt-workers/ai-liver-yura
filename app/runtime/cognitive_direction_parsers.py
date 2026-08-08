@@ -19,6 +19,11 @@ from app.domain.cognitive_direction import (
 
 
 class InputMeaningJsonParser:
+    _TARGET_REQUIRED_SPEECH_ACTS = {
+        InputSpeechAct.QUESTION,
+        InputSpeechAct.REQUEST,
+        InputSpeechAct.COMMAND,
+    }
     _REQUIRED = {
         "input_speech_act",
         "primary_intent",
@@ -59,6 +64,8 @@ class InputMeaningJsonParser:
             except ValueError:
                 return None
         else:
+            return None
+        if target is None and speech_act in self._TARGET_REQUIRED_SPEECH_ACTS:
             return None
         body_instruction_value = payload.get("body_instruction")
         body_instruction = BodyInstruction.from_context(body_instruction_value)
@@ -107,6 +114,19 @@ class InputMeaningJsonParser:
             )
         except (TypeError, ValueError):
             return None
+
+    @classmethod
+    def has_missing_semantic_target(cls, raw: str) -> bool:
+        """typed speech actだけを使ってtarget欠落契約違反を識別する。"""
+
+        payload = _json_object(raw)
+        if payload is None or payload.get("target") is not None:
+            return False
+        try:
+            speech_act = InputSpeechAct(str(payload.get("input_speech_act")))
+        except ValueError:
+            return False
+        return speech_act in cls._TARGET_REQUIRED_SPEECH_ACTS
 
 
 class InternalDirectiveJsonParser:
@@ -273,4 +293,3 @@ def _required_string_tuple(value: object) -> tuple[str, ...]:
     if result is None:
         raise TypeError("expected array[string]")
     return result
-

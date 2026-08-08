@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app.domain.cognitive_direction import (
@@ -13,6 +15,7 @@ from app.domain.cognitive_direction import (
 from app.prompting.cognitive_direction_prompt_builders import (
     InternalDirectivePromptBuilder,
 )
+from app.runtime.cognitive_direction_parsers import InputMeaningJsonParser
 from app.runtime.internal_directive_validator import InternalDirectiveValidator
 
 
@@ -213,3 +216,48 @@ def test_individual_internal_state_questions_keep_existing_guidance(
     requirements = "\n".join(validated.directive.content_requirements)
     assert expected_requirement in requirements
     assert "内部キー名と数値は発話で読み上げず" in requirements
+
+
+@pytest.mark.parametrize(
+    ("target_id", "expected_requirement"),
+    (
+        ("joy", "joy=0.58"),
+        ("anger", "現在のanger=0.0を根拠に率直に回答する"),
+        ("current_desire", "Drive evidence:"),
+    ),
+)
+def test_parsed_typed_target_enters_individual_internal_state_guidance(
+    target_id: str,
+    expected_requirement: str,
+) -> None:
+    raw = {
+        "input_speech_act": "question",
+        "primary_intent": f"ask_{target_id}",
+        "expected_response": "direct_answer",
+        "target": {"type": "internal_state", "id": target_id},
+        "entities": [],
+        "references": [],
+        "information_provided": [],
+        "negated": False,
+        "hypothetical": False,
+        "past_reference": False,
+        "conversation_phase_signal": "continue",
+        "confidence": 0.98,
+        "reason": "semantic target classified",
+    }
+    meaning = InputMeaningJsonParser().parse(
+        json.dumps(raw),
+        source_text="input",
+    )
+
+    assert meaning is not None
+    validated = InternalDirectiveValidator().validate(
+        meaning,
+        _directive(),
+        _planning_input(),
+        character_profile=_profile(),
+    )
+
+    assert expected_requirement in "\n".join(
+        validated.directive.content_requirements
+    )

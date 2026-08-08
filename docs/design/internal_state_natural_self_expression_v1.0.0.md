@@ -51,6 +51,37 @@ Validatorでcurrent feeling系だけを正規化する。
 例えば`落ち着いて、短く答える`という通常の表現方針は保持できる。一方、
 `落ち着きが強め`や`Emotion evidence: calm=0.74`は内部診断の搬送なので除く。
 
+## 実環境Verification追補: Input Meaning target契約
+
+初回の実環境Verificationでは、13件すべてのInput Meaning結果が
+`input_speech_act=question`かつ`target=null`になっていた。これにより、次の経路で
+Validatorの正規化が迂回された。
+
+```text
+Input Meaning target=null
+→ current feeling normalization bypass
+→ raw structured mood classification reused by Planner
+→ diagnostic Character speech
+```
+
+`target`はNamed Entityだけを表すものではない。質問・request・command等が意味的に
+対象としている状態、対象物、活動、行為、話題をtyped identityとして表す。
+内部状態質問ではInput Meaning LLMが意味を次のcanonical targetへ正規化する。
+
+- 現在の全体的な内的状態: `internal_state/current_feeling`
+- 喜び・楽しさ: `internal_state/joy`
+- 怒り: `internal_state/anger`
+- 現在の欲求: `internal_state/current_desire`
+
+これは日本語の固定文字列辞書、正規表現、Parserによるraw text再解釈ではない。
+言い換えでも同じ意味なら同じtargetへ正規化し、曖昧参照はconversation history、
+current topic、ongoing activity等の意味文脈から解決する。
+
+意味上の対象を持つ`question`、`request`、`command`で`target=null`になった結果は
+typed契約違反として受理しない。この違反に限り、Coreがtargetを決めるのではなく、
+Input Meaning LLMへ欠落した意味対象を再構造化するよう一度だけ要求する。
+`target=null`は本当に意味上の対象を持たない入力だけに限定する。
+
 ## PR #135から維持する目的
 
 PR #135が目指した「内部状態をCharacterへ十分に搬送し、状態と矛盾しない回答を
