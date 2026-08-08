@@ -172,9 +172,7 @@ def test_payload_decoder_rejects_invalid_non_domain_values() -> None:
             {
                 "constraint_id": "bad",
                 "duration_ms": 100,
-                "targets": [
-                    {"axis": "right_arm_raise", "value": 1.2}
-                ],
+                "targets": [{"axis": "right_arm_raise", "value": 1.2}],
             }
         )
 
@@ -308,10 +306,10 @@ def test_api_controller_keeps_http_routing_out_of_application() -> None:
     assert stale.status == 200
     assert stale.payload["reason"] == "stale_or_inactive_producer"
     assert newer_generation.status == 202
-    assert hub.snapshot().latest_sequence if False else True
-    assert hub.snapshot().latest is not None
-    assert hub.snapshot().latest.frame.sequence == 1
-    assert hub.snapshot().latest.producer_instance_id == "producer-b"
+    latest = hub.snapshot().latest
+    assert latest is not None
+    assert latest.frame.sequence == 1
+    assert latest.producer_instance_id == "producer-b"
     assert old_generation.status == 200
     assert incomplete_generation.status == 400
 
