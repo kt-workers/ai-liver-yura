@@ -1,5 +1,30 @@
 # Body連続Pose Runtime 責務分離設計 v1.0.0
 
+## 後続設計による更新（2026-08-08）
+
+本書はBody Runtimeの責務分離・時間スケール・Transport分離について引き続き有効である。
+
+ただし、本書作成時点で採用していた **`BodyExternalConstraint` の正規化Pose軸を明示身体動作の正規実行経路とする部分** は、Issue #211 / `body_generative_motion_reintegration_v1.0.0.md` により後続設計へ置換する。
+
+```text
+旧Compatibility:
+meaning-resolved request
+→ normalized pose axes
+→ BodyExternalConstraint
+→ continuous pose
+
+後続の正規経路:
+high-level body intention / BodyMotionGoal
+→ current pose + Skeleton + DOF / Joint Limits
+→ Motion Planning / IK / Kinematics / trajectory
+→ Continuous Controller
+→ BodyPoseFrame
+```
+
+旧External Constraint APIは既存テスト・移行互換のため当面残してよいが、新しい身体能力・新しい関節動作を固定Pose軸として追加しない。
+
+またGenerative Motionは高頻度TickごとにLLMを呼ぶ方式ではない。高レベル意図の決定と、リアルタイムの数理的Body実現を分離し、30〜60fpsのController/Solverは非LLMで動作する。
+
 ## 1. 目的
 
 Emotion因果設計から得た高レベルBody Expression入力を、モデル非依存の連続`BodyPoseFrame`へ変換し、Coreの会話・Activity・Transportを肥大化させずに外部表示へ届ける。
@@ -12,10 +37,10 @@ Emotion因果設計から得た高レベルBody Expression入力を、モデル�
 Emotion State
   + Activity Context
   + Interaction / Expression Intention
-  + temporary external constraint
+  + temporary body motion goal / compatibility constraint
   + speech presentation
         ↓
-BodyExpressionInput
+BodyExpressionInput + Body Motion realization
         ↓
 continuous pose components
         ↓
@@ -28,13 +53,15 @@ HTTP / future streaming adapter
 
 BodyはEmotionの下流にある表現チャネルである。Body ControllerはActivity、Motivation、権限、安全性、実行成功を決定しない。
 
-明示的な身体指示はMotion名としてControllerへ渡さず、意味解決後の`BodyExternalConstraint`として、正規化Pose軸へ一定時間だけ重ねる。
+明示的な身体要求はMotion名としてControllerへ渡さない。後続の正規経路では、Internal Directive等で採用された高レベルな`BodyMotionGoal`としてBody Realizerへ渡し、Skeleton / IK / Kinematicsから現在Poseに対する運動を生成する。
+
+既存の`BodyExternalConstraint`による正規化Pose軸はCompatibility境界であり、新規機能の正本にしない。
 
 ## 3. 時間スケールの分離
 
 ### 3.1 連続全身Dynamics
 
-次の要素は目標Poseを作り、`BodyPoseIntegrator`で現在姿勢と速度から連続的に追従する。
+次の要素は目標Poseを作り、`BodyPoseIntegrator`または後続Generative Motion Controllerで現在姿勢と速度から連続的に追従する。
 
 - 視線に追従する頭部・胴体
 - Emotion由来の姿勢傾向
@@ -42,7 +69,8 @@ BodyはEmotionの下流にある表現チャネルである。Body Controllerは
 - 呼吸による体高変化
 - 相関微動
 - 対人的なうなずき・首振り傾向
-- 一時外部制約
+- 高レベルBody Motion Goalから解かれた関節運動
+- Compatibilityとして残る一時外部制約
 
 ### 3.2 低遅延の反射・同期レイヤー
 
@@ -57,7 +85,7 @@ BodyはEmotionの下流にある表現チャネルである。Body Controllerは
 - 発話口形は音声に追従する必要があり、全身姿勢の遅い追従を通すと発話開始に遅延する。
 - どちらもFrame表示へだけ適用し、基礎Dynamicsを変更しない。
 
-将来Visemeや視線安定化を追加する場合も、同じ低遅延レイヤーへ置く。
+将来Visemeや視線安定化を追加する場合も、同じ低遅延レイヤーへ置く。Visemeの具体実装はIssue #213で扱う。
 
 ## 4. 分離した責務
 
@@ -79,7 +107,8 @@ BodyはEmotionの下流にある表現チャネルである。Body Controllerは
 - `BodyBlinkScheduler`: 瞬き発生と開閉進行
 - `BodyExpressionGestureGenerator`: 対人的な頭部リズム
 - `BodySpeechMouthDriver`: 発話時間と暫定口形
-- `BodyExternalConstraintPlayer`: 外部制約のattack／hold／release
+- `BodyExternalConstraintPlayer`: 旧正規化Pose軸Compatibilityのattack／hold／release
+- `BodyMotionPlanner` / Kinematic Solver: 高レベルBodyMotionGoalを現在Pose/Skeletonから関節運動へ実現する後続責務（#211）
 - `BodyGazeTargetComposer`: 眼・頭・胴体の追従目標
 - `BodyPostureTargetComposer`: 姿勢目標
 - `BodyPoseTargetComposer`: 高レベル目標の正規化Pose集約
@@ -95,6 +124,8 @@ BodyはEmotionの下流にある表現チャネルである。Body Controllerは
 
 `BodyControllerComponents`が依存生成を担当し、部品単位で差し替え・単体テストできる。
 
+#211のGenerative Motion導入後もこの原則を維持し、IK/Kinematicsの計算式をController本体へ集中させない。
+
 ### 4.4 Runtime
 
 `StateDrivenBodyPoseRuntime`は次だけを担当する。
@@ -106,6 +137,8 @@ BodyはEmotionの下流にある表現チャネルである。Body Controllerは
 5. Tick周期と例外隔離
 
 `tick_once()`を公開し、常駐Loopなしで統合テストできる。
+
+Motion Goal受付が追加されても、Runtimeは高レベルGoalをController/Realizerへ配送するだけで、IK計算や意思決定を所有しない。
 
 ### 4.5 Transport
 
@@ -155,13 +188,17 @@ RuntimeからBootstrapをimportしない。Emotion Bridgeの正本はRuntime層�
 ## 7. 禁止事項
 
 - EmotionとDriveを独立したBody主原因として並列入力しない
-- Character LLMにJoint角度、固定Motion名、モデルParameterを選ばせない
+- Character LLM / Internal Directive LLMにJoint角度、毎Frame Pose、固定Motion名、モデルParameterを選ばせない
 - Body ControllerにActivity選択、権限、安全性、実行成功判定を持たせない
 - HTTP送信をController Tick内で待たない
 - 瞬き・口形を全身Dynamicsへ残留させない
 - Live2D／VRM固有名をDomainへ混入させない
 - Bodyの実行結果なしにCharacterへ「動作を完了した」と主張させない
+- 新しい身体能力をCompatibility用のnormalized Pose axis / fixed Gestureとして増やさない
+- 高頻度Body Tick内でLLMを呼ばない
 
 ## 8. 後続工程
 
 工程7では棒人形／Body Pose Labを表示・検証専用のStacked PRとして追加する。旧Labの巨大`server.py`と`app.js`をそのまま移植せず、Hub、入力Application Service、HTTP API、SSE、静的配信、Renderer、UI State、API Clientへ分ける。
+
+後続Issue #211ではGenerative Motion、#213ではViseme同期、#214ではCharacter Profile由来Body Style、#215ではLab表示簡素化をそれぞれ独立責務として扱い、全て#207の共通Body完成目標へ収束させる。
