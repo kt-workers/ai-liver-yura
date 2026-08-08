@@ -8,17 +8,29 @@ from app.domain.body_value_validation import bounded_number, normalized_identifi
 
 
 class CanonicalBodyJoint(str, Enum):
-    """初期BodyPoseFrame契約が定義するモデル非依存Joint。"""
+    """BodyPoseFrameが定義するモデル非依存の全身Joint。"""
 
     HIPS = "hips"
     SPINE = "spine"
     CHEST = "chest"
     NECK = "neck"
     HEAD = "head"
+
+    LEFT_CLAVICLE = "left_clavicle"
+    RIGHT_CLAVICLE = "right_clavicle"
     LEFT_UPPER_ARM = "left_upper_arm"
     RIGHT_UPPER_ARM = "right_upper_arm"
     LEFT_LOWER_ARM = "left_lower_arm"
     RIGHT_LOWER_ARM = "right_lower_arm"
+    LEFT_HAND = "left_hand"
+    RIGHT_HAND = "right_hand"
+
+    LEFT_UPPER_LEG = "left_upper_leg"
+    RIGHT_UPPER_LEG = "right_upper_leg"
+    LEFT_LOWER_LEG = "left_lower_leg"
+    RIGHT_LOWER_LEG = "right_lower_leg"
+    LEFT_FOOT = "left_foot"
+    RIGHT_FOOT = "right_foot"
 
 
 CANONICAL_BODY_JOINT_IDS: frozenset[str] = frozenset(
