@@ -15,6 +15,11 @@ class BodyInstruction:
     StructuredInputMeaning上では「ユーザーが要求した身体行動」、Internal Directiveの
     body_action_intent上では「ゆら自身が意識的に行うと決めた身体行動」を表す。
     Pose軸、角度、モーション名、再生時刻は含めない。
+
+    left/right は常に行為主体である「ゆら自身」を基準にする。side の left/right は
+    ゆら自身の解剖学的左/右、direction の left/right はゆら自身から見て左/右を表し、
+    視聴者・カメラ・画面の左右へ読み替えない。表示上の鏡像変換は Renderer / Avatar
+    Adapter の責務であり、この意味契約へ持ち込まない。
     """
 
     effector: str
