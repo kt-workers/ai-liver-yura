@@ -7,7 +7,10 @@ import pytest
 
 from app.adapters.avatar.body_pose_frame_json_encoder import BodyPoseFrameJsonEncoder
 from app.adapters.avatar.body_pose_http_config import HttpBodyPoseOutputConfig
-from app.adapters.avatar.body_pose_http_sender import BodyPoseHttpSender
+from app.adapters.avatar.body_pose_http_sender import (
+    BodyPoseHttpSendReceipt,
+    BodyPoseHttpSender,
+)
 from app.adapters.avatar.http_body_pose_output import HttpBodyPoseFrameOutput
 from app.adapters.avatar.latest_body_pose_frame_buffer import LatestBodyPoseFrameBuffer
 from app.domain.body_auxiliary_projection import (
@@ -81,11 +84,15 @@ def test_body_pose_json_encoder_keeps_schema_and_transport_metadata() -> None:
     body = BodyPoseFrameJsonEncoder().encode(
         _frame(3),
         source_name="test-source",
+        producer_instance_id="producer-a",
+        producer_started_at_ms=1234,
     )
     payload = json.loads(body.decode("utf-8"))
 
     assert payload["type"] == "body.pose.frame"
     assert payload["source"] == "test-source"
+    assert payload["producer_instance_id"] == "producer-a"
+    assert payload["producer_started_at_ms"] == 1234
     assert payload["schema_version"] == 2
     assert payload["sequence"] == 3
 
@@ -97,15 +104,21 @@ async def test_http_sender_posts_one_encoded_frame() -> None:
     sender = BodyPoseHttpSender(
         config,
         post_json=lambda url, body, timeout: calls.append((url, body, timeout)),
+        producer_instance_id="producer-a",
+        producer_started_at_ms=2000,
     )
 
-    await sender.send(_frame(4))
+    receipt = await sender.send(_frame(4))
 
     assert len(calls) == 1
     url, body, timeout = calls[0]
+    payload = json.loads(body)
     assert url == "http://example.test/api/body-pose-frame"
-    assert json.loads(body)["sequence"] == 4
+    assert payload["sequence"] == 4
+    assert payload["producer_instance_id"] == "producer-a"
+    assert payload["producer_started_at_ms"] == 2000
     assert timeout == 0.4
+    assert receipt.accepted is True
 
 
 class SlowSender:
@@ -145,7 +158,39 @@ async def test_http_output_drops_intermediate_frames_without_blocking_publish() 
 
     assert sender.sent == [1, 3]
     assert snapshot.sent_count == 2
+    assert snapshot.ignored_count == 0
     assert snapshot.dropped_count == 1
+    assert snapshot.failed_count == 0
+
+
+class IgnoringSender:
+    async def send(self, frame: BodyPoseFrame) -> BodyPoseHttpSendReceipt:
+        del frame
+        return BodyPoseHttpSendReceipt(
+            accepted=False,
+            http_status=200,
+            reason="stale_or_inactive_producer",
+        )
+
+
+@pytest.mark.asyncio
+async def test_http_output_does_not_count_ignored_frame_as_sent() -> None:
+    output = HttpBodyPoseFrameOutput(
+        HttpBodyPoseOutputConfig(base_url="http://example.test"),
+        sender=IgnoringSender(),  # type: ignore[arg-type]
+    )
+
+    await output.publish_body_pose_frame(_frame(1))
+    for _ in range(100):
+        if output.snapshot().ignored_count:
+            break
+        await asyncio.sleep(0.001)
+
+    snapshot = output.snapshot()
+    await output.close()
+
+    assert snapshot.sent_count == 0
+    assert snapshot.ignored_count == 1
     assert snapshot.failed_count == 0
 
 
@@ -173,6 +218,7 @@ async def test_http_output_records_error_and_continues() -> None:
 
     assert snapshot.failed_count == 1
     assert snapshot.sent_count == 0
+    assert snapshot.ignored_count == 0
     assert snapshot.last_error == "RuntimeError: network down"
 
 
