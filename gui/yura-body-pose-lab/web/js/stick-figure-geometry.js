@@ -2,6 +2,13 @@ export function clamp(value, min = -1, max = 1) {
   return Math.max(min, Math.min(max, Number(value) || 0));
 }
 
+export function projectFrontViewDirection(horizontal = 0, vertical = 0) {
+  return {
+    x: -clamp(horizontal),
+    y: -clamp(vertical),
+  };
+}
+
 function pointFrom(origin, length, angle) {
   return {
     x: origin.x + Math.cos(angle) * length,
@@ -56,18 +63,20 @@ export function computeStickFigureGeometry(pose, width, height) {
   );
   const neck = offsetFrom(chest, 0, -scale * 0.16, torsoAngle);
 
-  // BodyPoseFrame の left/right は、ゆら自身から見た解剖学的左右を表す。
-  // 正面向きの検証Rendererでは、解剖学的左は画面右、解剖学的右は画面左に描画する。
+  // BodyPoseFrame の left/right と方向符号は、ゆら自身の身体座標を表す。
+  // 正面向きの検証Rendererでは、解剖学的左/身体座標+Xは画面右/左へ反転し、
+  // 身体座標+Y（上）はCanvasの-Yへ投影する。
   const shoulderLeft = offsetFrom(chest, scale * 0.34, scale * 0.04, torsoAngle);
   const shoulderRight = offsetFrom(chest, -scale * 0.34, scale * 0.04, torsoAngle);
   const hipAngle = torsoAngle * 0.35;
   const hipLeft = offsetFrom(pelvis, scale * 0.18, 0, hipAngle);
   const hipRight = offsetFrom(pelvis, -scale * 0.18, 0, hipAngle);
   const headAngle = torsoAngle + clamp(pose.head_roll) * 0.32;
+  const projectedHeadDirection = projectFrontViewDirection(pose.head_yaw, pose.head_pitch);
   const head = offsetFrom(
     neck,
-    clamp(pose.head_yaw) * scale * 0.16,
-    -scale * 0.32 + clamp(pose.head_pitch) * scale * 0.12,
+    projectedHeadDirection.x * scale * 0.16,
+    -scale * 0.32 + projectedHeadDirection.y * scale * 0.12,
     headAngle,
   );
   const headBottom = offsetFrom(head, 0, scale * 0.31, headAngle);
