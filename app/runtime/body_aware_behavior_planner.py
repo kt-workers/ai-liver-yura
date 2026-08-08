@@ -19,6 +19,48 @@ from app.domain.body_instruction import (
 from app.runtime.behavior_planner import BehaviorPlanner
 
 
+def _simple_body_instruction_schema() -> dict[str, object]:
+    return {
+        "type": "object",
+        "properties": {
+            "effector": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+            },
+            "direction": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+            },
+            "side": {
+                "type": ["string", "null"],
+                "maxLength": 32,
+            },
+            "magnitude": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+            },
+        },
+        "required": ["effector", "direction", "magnitude"],
+        "additionalProperties": False,
+    }
+
+
+def _body_action_intent_schema() -> dict[str, object]:
+    schema = _simple_body_instruction_schema()
+    properties = dict(schema["properties"])  # type: ignore[arg-type]
+    properties["components"] = {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 8,
+        "items": _simple_body_instruction_schema(),
+    }
+    schema["properties"] = properties
+    return schema
+
+
 def _core_body_activity_definition() -> ActivityDefinition:
     """Internal Directiveが選択できるCore-owned Body Activityの正規定義。"""
 
@@ -34,36 +76,12 @@ def _core_body_activity_definition() -> ActivityDefinition:
         supported_operations=(ActivityOperation.START,),
         semantic_descriptions=(
             "アバターBodyの頭・視線・腕などを高レベル意味に沿って一時的に動かす",
+            "複数部位を同時に満たす一つの高レベルBody意図を扱う",
         ),
         constraints_schema={
             "type": "object",
             "properties": {
-                BODY_ACTION_INTENT_CONSTRAINT: {
-                    "type": "object",
-                    "properties": {
-                        "effector": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 64,
-                        },
-                        "direction": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 64,
-                        },
-                        "side": {
-                            "type": ["string", "null"],
-                            "maxLength": 32,
-                        },
-                        "magnitude": {
-                            "type": "number",
-                            "minimum": 0.0,
-                            "maximum": 1.0,
-                        },
-                    },
-                    "required": ["effector", "direction", "magnitude"],
-                    "additionalProperties": False,
-                },
+                BODY_ACTION_INTENT_CONSTRAINT: _body_action_intent_schema(),
                 # Validated Internal Directive envelopeはBody/Characterの共通正本。
                 # 内容の検証はInternal Directive Validatorが所有する。
                 "_internal_directive": {"type": "object"},
@@ -71,7 +89,7 @@ def _core_body_activity_definition() -> ActivityDefinition:
             "required": [BODY_ACTION_INTENT_CONSTRAINT],
             "additionalProperties": False,
         },
-        constraints_schema_version="body-action-intent-v1",
+        constraints_schema_version="body-action-intent-v2",
     )
 
 
@@ -129,6 +147,7 @@ class BodyAwareBehaviorPlanner(BehaviorPlanner):
                 "Internal Directiveのbody_action_intentを意識的行動の正本として扱う",
                 "StructuredInputMeaningのbody_instructionからBody実行を直接生成しない",
                 "Character出力とBody出力はそれぞれ同じValidated Internal Directiveに従う",
+                "複合body_action_intentのcomponentsは同時に満たす一つの意図として扱う",
                 "Raw User Textやモーション名をBody Controllerへ渡さない",
             ),
             speech_act=analysis.speech_act,
