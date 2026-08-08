@@ -49,6 +49,15 @@ console.log(JSON.stringify(geometry));
     )
 
 
+def _project_direction(horizontal: float, vertical: float) -> dict[str, float]:
+    return _run_node(
+        f"""
+import {{ projectFrontViewDirection }} from {json.dumps(_GEOMETRY_MODULE.as_uri())};
+console.log(JSON.stringify(projectFrontViewDirection({horizontal}, {vertical})));
+"""
+    )
+
+
 def test_front_view_maps_anatomical_left_to_viewer_right() -> None:
     geometry = _geometry({})
     center_x = geometry["pelvis"]["x"]
@@ -57,6 +66,26 @@ def test_front_view_maps_anatomical_left_to_viewer_right() -> None:
     assert geometry["shoulderRight"]["x"] < center_x
     assert geometry["hipLeft"]["x"] > center_x
     assert geometry["hipRight"]["x"] < center_x
+
+
+def test_front_view_projects_body_local_look_direction_to_screen_axes() -> None:
+    neutral = _geometry({})
+    look_right = _geometry({"head_yaw": 1.0})
+    look_left = _geometry({"head_yaw": -1.0})
+    look_up = _geometry({"head_pitch": 1.0})
+    look_down = _geometry({"head_pitch": -1.0})
+
+    assert look_right["head"]["x"] < neutral["head"]["x"]
+    assert look_left["head"]["x"] > neutral["head"]["x"]
+    assert look_up["head"]["y"] < neutral["head"]["y"]
+    assert look_down["head"]["y"] > neutral["head"]["y"]
+
+
+def test_front_view_projects_gaze_direction_with_same_body_coordinate_contract() -> None:
+    projected = _project_direction(0.8, 0.6)
+
+    assert projected["x"] == pytest.approx(-0.8)
+    assert projected["y"] == pytest.approx(-0.6)
 
 
 def test_neutral_arms_extend_outward_and_downward_symmetrically() -> None:
