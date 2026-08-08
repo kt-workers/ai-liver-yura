@@ -16,6 +16,10 @@ class BodyInstruction:
     body_action_intent上では「ゆら自身が意識的に行うと決めた身体行動」を表す。
     Pose軸、角度、モーション名、再生時刻は含めない。
 
+    単一の身体意味はeffector/direction/side/magnitudeで表す。複数部位を同時に動かす
+    一つの意識的行動はcomponentsへ複数のBodyInstructionを保持する。componentsは
+    プリセット列ではなく、同時に満たす高レベル身体意味の集合である。
+
     left/right は常に行為主体である「ゆら自身」を基準にする。side の left/right は
     ゆら自身の解剖学的左/右、direction の left/right はゆら自身から見て左/右を表し、
     視聴者・カメラ・画面の左右へ読み替えない。表示上の鏡像変換は Renderer / Avatar
@@ -26,6 +30,7 @@ class BodyInstruction:
     direction: str
     side: str | None = None
     magnitude: float = 1.0
+    components: tuple[BodyInstruction, ...] = ()
 
     def __post_init__(self) -> None:
         effector = self.effector.strip().lower()
@@ -44,21 +49,45 @@ class BodyInstruction:
         magnitude = float(self.magnitude)
         if not 0.0 <= magnitude <= 1.0:
             raise ValueError("magnitude must be between 0.0 and 1.0")
+        if not isinstance(self.components, tuple):
+            raise TypeError("components must be a tuple")
+        if len(self.components) > 8:
+            raise ValueError("components must contain at most 8 body meanings")
+        if any(not isinstance(component, BodyInstruction) for component in self.components):
+            raise TypeError("components must contain only BodyInstruction values")
+        if any(component.components for component in self.components):
+            raise ValueError("nested body instruction components are not supported")
         object.__setattr__(self, "effector", effector)
         object.__setattr__(self, "direction", direction)
         object.__setattr__(self, "side", side)
         object.__setattr__(self, "magnitude", magnitude)
 
+    @property
+    def is_composite(self) -> bool:
+        return bool(self.components)
+
     def as_context(self) -> dict[str, object]:
-        return {
+        context: dict[str, object] = {
             "effector": self.effector,
             "direction": self.direction,
             "side": self.side,
             "magnitude": self.magnitude,
         }
+        if self.components:
+            context["components"] = [component.as_context() for component in self.components]
+        return context
 
     @classmethod
     def from_context(cls, value: object) -> BodyInstruction | None:
+        return cls._from_context(value, allow_components=True)
+
+    @classmethod
+    def _from_context(
+        cls,
+        value: object,
+        *,
+        allow_components: bool,
+    ) -> BodyInstruction | None:
         if not isinstance(value, dict):
             return None
         effector = value.get("effector")
@@ -69,12 +98,28 @@ class BodyInstruction:
             return None
         if side is not None and not isinstance(side, str):
             return None
+
+        components_value = value.get("components", [])
+        if not allow_components and components_value not in (None, []):
+            return None
+        if components_value is None:
+            components_value = []
+        if not isinstance(components_value, list) or len(components_value) > 8:
+            return None
+        components: list[BodyInstruction] = []
+        for item in components_value:
+            component = cls._from_context(item, allow_components=False)
+            if component is None:
+                return None
+            components.append(component)
+
         try:
             return cls(
                 effector=effector,
                 direction=direction,
                 side=side,
                 magnitude=magnitude,  # type: ignore[arg-type]
+                components=tuple(components),
             )
         except (TypeError, ValueError):
             return None
