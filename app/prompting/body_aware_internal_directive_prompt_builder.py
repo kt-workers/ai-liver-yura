@@ -62,6 +62,9 @@ class BodyAwareInternalDirectivePromptBuilder(InternalDirectivePromptBuilder):
                 "この要求に応じてゆら自身が身体を動かすと判断した場合だけ、activity_intentを"
                 f"activity_type={BODY_EXPRESSION_ACTIVITY_TYPE}, operation=start とし、constraints.{BODY_ACTION_INTENT_CONSTRAINT}へ"
                 "ゆらが実際に行うと決めた高レベル身体意図を入れる。",
+                "body_action_intentのleft/rightは、入力意味と同じく常にゆら自身を基準にする。"
+                "sideはゆら自身の解剖学的左右、directionはゆら自身から見た左右であり、"
+                "視聴者・カメラ・画面基準へ反転させてはいけない。",
                 "body_action_intentにはPose軸、関節角、固定Motion名、Preset名を書かない。"
                 "対象部位・方向・左右・強度の意味だけを保持し、実現方法はBody Realizerに任せる。",
                 "このCore Activityは明示Body要求があるTurnではInternal Directiveが選択できる。"
