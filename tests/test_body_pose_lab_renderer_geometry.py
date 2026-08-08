@@ -49,20 +49,30 @@ console.log(JSON.stringify(geometry));
     )
 
 
+def test_front_view_maps_anatomical_left_to_viewer_right() -> None:
+    geometry = _geometry({})
+    center_x = geometry["pelvis"]["x"]
+
+    assert geometry["shoulderLeft"]["x"] > center_x
+    assert geometry["shoulderRight"]["x"] < center_x
+    assert geometry["hipLeft"]["x"] > center_x
+    assert geometry["hipRight"]["x"] < center_x
+
+
 def test_neutral_arms_extend_outward_and_downward_symmetrically() -> None:
     geometry = _geometry({})
     left = geometry["leftArm"]
     right = geometry["rightArm"]
     center_x = geometry["pelvis"]["x"]
 
-    assert left["elbow"]["x"] < left["shoulder"]["x"]
-    assert right["elbow"]["x"] > right["shoulder"]["x"]
+    assert left["elbow"]["x"] > left["shoulder"]["x"]
+    assert right["elbow"]["x"] < right["shoulder"]["x"]
     assert left["elbow"]["y"] > left["shoulder"]["y"]
     assert right["elbow"]["y"] > right["shoulder"]["y"]
-    assert left["wrist"]["x"] < left["elbow"]["x"]
-    assert right["wrist"]["x"] > right["elbow"]["x"]
-    assert (center_x - left["elbow"]["x"]) == pytest.approx(
-        right["elbow"]["x"] - center_x,
+    assert left["wrist"]["x"] > left["elbow"]["x"]
+    assert right["wrist"]["x"] < right["elbow"]["x"]
+    assert left["elbow"]["x"] - center_x == pytest.approx(
+        center_x - right["elbow"]["x"],
     )
     assert left["elbow"]["y"] == pytest.approx(right["elbow"]["y"])
 
@@ -72,10 +82,29 @@ def test_raised_arms_extend_outward_and_upward() -> None:
     left = geometry["leftArm"]
     right = geometry["rightArm"]
 
-    assert left["elbow"]["x"] < left["shoulder"]["x"]
-    assert right["elbow"]["x"] > right["shoulder"]["x"]
+    assert left["elbow"]["x"] > left["shoulder"]["x"]
+    assert right["elbow"]["x"] < right["shoulder"]["x"]
     assert left["elbow"]["y"] < left["shoulder"]["y"]
     assert right["elbow"]["y"] < right["shoulder"]["y"]
+
+
+def test_single_arm_raise_keeps_anatomical_side_identity_in_front_view() -> None:
+    neutral = _geometry({})
+    left_raised = _geometry({"left_arm_raise": 1.0})
+    right_raised = _geometry({"right_arm_raise": 1.0})
+    center_x = neutral["pelvis"]["x"]
+
+    assert left_raised["leftArm"]["shoulder"]["x"] > center_x
+    assert left_raised["leftArm"]["elbow"]["y"] < neutral["leftArm"]["elbow"]["y"]
+    assert left_raised["rightArm"]["elbow"]["y"] == pytest.approx(
+        neutral["rightArm"]["elbow"]["y"],
+    )
+
+    assert right_raised["rightArm"]["shoulder"]["x"] < center_x
+    assert right_raised["rightArm"]["elbow"]["y"] < neutral["rightArm"]["elbow"]["y"]
+    assert right_raised["leftArm"]["elbow"]["y"] == pytest.approx(
+        neutral["leftArm"]["elbow"]["y"],
+    )
 
 
 def test_head_neck_and_torso_share_one_connected_centerline() -> None:
