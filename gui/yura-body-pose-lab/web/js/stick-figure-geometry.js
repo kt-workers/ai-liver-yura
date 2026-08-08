@@ -55,11 +55,14 @@ export function computeStickFigureGeometry(pose, width, height) {
     torsoAngle,
   );
   const neck = offsetFrom(chest, 0, -scale * 0.16, torsoAngle);
-  const shoulderLeft = offsetFrom(chest, -scale * 0.34, scale * 0.04, torsoAngle);
-  const shoulderRight = offsetFrom(chest, scale * 0.34, scale * 0.04, torsoAngle);
+
+  // BodyPoseFrame の left/right は、ゆら自身から見た解剖学的左右を表す。
+  // 正面向きの検証Rendererでは、解剖学的左は画面右、解剖学的右は画面左に描画する。
+  const shoulderLeft = offsetFrom(chest, scale * 0.34, scale * 0.04, torsoAngle);
+  const shoulderRight = offsetFrom(chest, -scale * 0.34, scale * 0.04, torsoAngle);
   const hipAngle = torsoAngle * 0.35;
-  const hipLeft = offsetFrom(pelvis, -scale * 0.18, 0, hipAngle);
-  const hipRight = offsetFrom(pelvis, scale * 0.18, 0, hipAngle);
+  const hipLeft = offsetFrom(pelvis, scale * 0.18, 0, hipAngle);
+  const hipRight = offsetFrom(pelvis, -scale * 0.18, 0, hipAngle);
   const headAngle = torsoAngle + clamp(pose.head_roll) * 0.32;
   const head = offsetFrom(
     neck,
@@ -84,7 +87,7 @@ export function computeStickFigureGeometry(pose, width, height) {
     hipRight,
     leftArm: computeArmGeometry({
       shoulder: shoulderLeft,
-      side: -1,
+      side: 1,
       raise: pose.left_arm_raise,
       inward: pose.left_arm_in,
       scale,
@@ -92,13 +95,13 @@ export function computeStickFigureGeometry(pose, width, height) {
     }),
     rightArm: computeArmGeometry({
       shoulder: shoulderRight,
-      side: 1,
+      side: -1,
       raise: pose.right_arm_raise,
       inward: pose.right_arm_in,
       scale,
       torsoAngle,
     }),
-    leftLeg: computeLegGeometry({ hip: hipLeft, side: -1, scale, torsoAngle: hipAngle }),
-    rightLeg: computeLegGeometry({ hip: hipRight, side: 1, scale, torsoAngle: hipAngle }),
+    leftLeg: computeLegGeometry({ hip: hipLeft, side: 1, scale, torsoAngle: hipAngle }),
+    rightLeg: computeLegGeometry({ hip: hipRight, side: -1, scale, torsoAngle: hipAngle }),
   };
 }
