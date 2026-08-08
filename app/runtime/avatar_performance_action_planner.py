@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from app.domain.actions import ActionPlan, ActionResource, ActionType
 from app.domain.activities import Activity
 from app.domain.body import BodyExpressionRequest, EmbodiedExpressionIntent
+from app.domain.body_instruction import BodyInstruction
 from app.domain.character_response import (
     CharacterResponse,
     ReactionPlan,
@@ -52,6 +54,7 @@ class AvatarPerformanceActionPlanner(CoreActionPlanner):
             )
         )
         body_context = self._body_activity_context_builder.build(activity)
+        explicit_body_instruction = self._explicit_body_instruction(activity)
         compatibility_performance = self._avatar_performance_planner.plan(
             plan,
             source_activity_id=activity.activity_id,
@@ -130,7 +133,24 @@ class AvatarPerformanceActionPlanner(CoreActionPlanner):
                     ),
                 )
             )
-            if segment.gesture:
+            if index == 0 and explicit_body_instruction is not None:
+                actions.append(
+                    ActionPlan(
+                        action_type=ActionType.MOVE,
+                        text="explicit_body_instruction",
+                        required_resources={ActionResource.BODY},
+                        source_activity_id=activity.activity_id,
+                        output_unit_id=output_unit_id,
+                        metadata={
+                            **segment_metadata,
+                            "body_instruction_execution": True,
+                            "explicit_body_instruction": (
+                                explicit_body_instruction.as_context()
+                            ),
+                        },
+                    )
+                )
+            elif segment.gesture:
                 actions.append(
                     ActionPlan(
                         action_type=ActionType.MOVE,
@@ -147,6 +167,34 @@ class AvatarPerformanceActionPlanner(CoreActionPlanner):
                     )
                 )
         return actions
+
+    @staticmethod
+    def _explicit_body_instruction(activity: Activity) -> BodyInstruction | None:
+        """事前確認済みのBody指示だけを出力Actionへ復元する。"""
+
+        event_payload = activity.context.get("event_payload")
+        ready = activity.context.get("body_instruction_execution_ready")
+        if isinstance(event_payload, Mapping):
+            ready = event_payload.get("body_instruction_execution_ready", ready)
+        if ready is not True:
+            return None
+
+        candidates: list[object] = [activity.context.get("constraints")]
+        if isinstance(event_payload, Mapping):
+            event_plan = event_payload.get("behavior_plan")
+            if isinstance(event_plan, Mapping):
+                candidates.append(event_plan.get("constraints"))
+        behavior_plan = activity.context.get("behavior_plan")
+        if isinstance(behavior_plan, Mapping):
+            candidates.append(behavior_plan.get("constraints"))
+
+        for value in candidates:
+            if not isinstance(value, Mapping):
+                continue
+            instruction = BodyInstruction.from_context(value.get("_body_instruction"))
+            if instruction is not None:
+                return instruction
+        return None
 
     @staticmethod
     def _duration_hint_ms(segment: ReactionSegment) -> int:

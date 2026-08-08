@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+from app.domain.body_instruction import BodyInstruction
+
 
 class InputSpeechAct(str, Enum):
     GREETING = "greeting"
@@ -57,6 +59,7 @@ class StructuredInputMeaning:
     primary_intent: str
     expected_response: ExpectedResponse
     target: InputTarget | None
+    body_instruction: BodyInstruction | None = None
     entities: tuple[dict[str, object], ...] = ()
     references: tuple[dict[str, object], ...] = ()
     information_provided: tuple[str, ...] = ()
@@ -76,6 +79,10 @@ class StructuredInputMeaning:
             raise ValueError("primary_intent must not be empty")
         if not 0.0 <= float(self.confidence) <= 1.0:
             raise ValueError("confidence must be between 0.0 and 1.0")
+        if self.body_instruction is not None and not isinstance(
+            self.body_instruction, BodyInstruction
+        ):
+            raise TypeError("body_instruction must be BodyInstruction or None")
         object.__setattr__(self, "primary_intent", intent)
         object.__setattr__(self, "confidence", float(self.confidence))
         object.__setattr__(self, "reason", self.reason.strip()[:300])
@@ -91,6 +98,11 @@ class StructuredInputMeaning:
             "primary_intent": self.primary_intent,
             "expected_response": self.expected_response.value,
             "target": self.target.as_context() if self.target is not None else None,
+            "body_instruction": (
+                self.body_instruction.as_context()
+                if self.body_instruction is not None
+                else None
+            ),
             "entities": [dict(value) for value in self.entities],
             "references": [dict(value) for value in self.references],
             "information_provided": list(self.information_provided),

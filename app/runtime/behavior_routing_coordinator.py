@@ -10,6 +10,7 @@ from app.domain.behavior import (
     ActivityPlanEvaluation,
     BehaviorDecision,
 )
+from app.domain.body_instruction import BodyInstruction
 from app.domain.character_response import (
     ActivityExecutionResult,
     ActivityExecutionStatus,
@@ -25,6 +26,7 @@ from app.runtime.behavior_routing_support import (
     ongoing_transition_payload,
     plan_payload,
 )
+from app.runtime.body_instruction_executor import BodyInstructionExecutor
 from app.runtime.confirmation_coordinator import ConfirmationCoordinator
 from app.runtime.plugin_activity_coordinator import PluginActivityCoordinator
 from app.utils.trace import TraceLogger
@@ -45,6 +47,7 @@ class BehaviorRoutingCoordinator:
         activity_switch_coordinator: ActivitySwitchCoordinator,
         fallback_router: BehaviorFallbackRouter,
         trace_logger: TraceLogger,
+        body_instruction_executor: BodyInstructionExecutor | None = None,
     ) -> None:
         self._planner = planner
         self._validator = validator
@@ -55,6 +58,9 @@ class BehaviorRoutingCoordinator:
         self._activity_switch = activity_switch_coordinator
         self._fallback = fallback_router
         self._trace_logger = trace_logger
+        self._body_instruction_executor = (
+            body_instruction_executor or BodyInstructionExecutor()
+        )
         self._last_evaluation: ActivityPlanEvaluation | None = None
         self._last_fallback_plan: ActivityPlan | None = None
 
@@ -210,6 +216,74 @@ class BehaviorRoutingCoordinator:
             )
             if routed is None:
                 return None
+        elif (
+            plan.provider_plugin_id == "runtime"
+            and plan.activity_type == ActivityType.BODY_EXPRESSION_LOOP.value
+        ):
+            instruction = BodyInstruction.from_context(
+                plan.constraints.get("_body_instruction")
+            )
+            if instruction is None:
+                body_result = None
+                status = ActivityExecutionStatus.REJECTED
+                failure_reason = "body_instruction_missing"
+                execution_payload = {
+                    "summary": "身体指示を実行できなかった",
+                    "body_constraint_execution": None,
+                }
+                execution_ready = False
+            else:
+                body_result = self._body_instruction_executor.preflight(instruction)
+                execution_ready = body_result.accepted
+                status = (
+                    ActivityExecutionStatus.WAITING_INPUT
+                    if execution_ready
+                    else ActivityExecutionStatus.REJECTED
+                )
+                failure_reason = None if execution_ready else body_result.reason
+                execution_payload = {
+                    "summary": (
+                        "明示された身体指示を出力段階で実行する準備ができた"
+                        if execution_ready
+                        else "現在のBodyでは明示された身体指示を実行できない"
+                    ),
+                    "body_constraint_execution": body_result.as_context(),
+                }
+            behavior_payload["activity_execution_result"] = ActivityExecutionResult(
+                activity_type=plan.activity_type,
+                operation=plan.operation.value if plan.operation else None,
+                status=status,
+                capability="body_external_constraint",
+                provider="runtime",
+                payload=execution_payload,
+                failure_reason=failure_reason,
+                constraints=plan.constraints,
+                source_event_id=event.event_id,
+                trace_id=event.trace_context.trace_id,
+                parent_trace_id=event.trace_context.parent_trace_id,
+                behavior_plan_id=plan.behavior_plan_id,
+            )
+            routed = replace(
+                event,
+                payload={
+                    **event.payload,
+                    "execution_performed": False,
+                    "body_instruction_execution_ready": execution_ready,
+                    "body_constraint_execution_result": (
+                        body_result.as_context() if body_result is not None else None
+                    ),
+                },
+            )
+            self._trace_logger.info(
+                "behavior_routing:body_instruction_preflight",
+                **event.trace_context.as_log_fields(),
+                activity_type=plan.activity_type,
+                execution_status=status.value,
+                execution_ready=execution_ready,
+                result_reason=(
+                    body_result.reason if body_result is not None else failure_reason
+                ),
+            )
         else:
             routed = self._fallback.with_plugin_availability(event)
             execution_rejected = bool(routed.payload.get("execution_request_unmatched"))

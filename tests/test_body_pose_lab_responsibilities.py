@@ -89,10 +89,68 @@ def test_frame_hub_rejects_stale_frames_and_keeps_latest_for_slow_subscriber() -
     snapshot = hub.snapshot()
     assert snapshot.received_count == 3
     assert snapshot.stale_count == 1
+    assert snapshot.inactive_producer_count == 0
     assert snapshot.dropped_delivery_count == 2
     assert snapshot.subscriber_count == 1
     hub.unsubscribe(subscription.subscription_id)
     assert hub.snapshot().subscriber_count == 0
+
+
+def test_frame_hub_newer_producer_supersedes_old_sequence_generation() -> None:
+    hub = BodyPoseLabFrameHub()
+
+    assert hub.publish(
+        make_frame(500),
+        source="core",
+        producer_instance_id="producer-old",
+        producer_started_at_ms=1000,
+    ) is True
+    assert hub.publish(
+        make_frame(1),
+        source="core",
+        producer_instance_id="producer-new",
+        producer_started_at_ms=2000,
+    ) is True
+    assert hub.publish(
+        make_frame(501),
+        source="core",
+        producer_instance_id="producer-old",
+        producer_started_at_ms=1000,
+    ) is False
+    assert hub.publish(
+        make_frame(2),
+        source="core",
+        producer_instance_id="producer-new",
+        producer_started_at_ms=2000,
+    ) is True
+
+    snapshot = hub.snapshot()
+    assert snapshot.latest is not None
+    assert snapshot.latest.frame.sequence == 2
+    assert snapshot.latest.producer_instance_id == "producer-new"
+    assert snapshot.latest.producer_started_at_ms == 2000
+    assert snapshot.received_count == 3
+    assert snapshot.stale_count == 0
+    assert snapshot.inactive_producer_count == 1
+
+
+def test_frame_hub_explicit_producer_prevents_legacy_source_from_overwriting() -> None:
+    hub = BodyPoseLabFrameHub()
+
+    assert hub.publish(make_frame(900), source="core") is True
+    assert hub.publish(
+        make_frame(1),
+        source="core",
+        producer_instance_id="producer-new",
+        producer_started_at_ms=3000,
+    ) is True
+    assert hub.publish(make_frame(901), source="core") is False
+
+    snapshot = hub.snapshot()
+    assert snapshot.latest is not None
+    assert snapshot.latest.frame.sequence == 1
+    assert snapshot.latest.producer_instance_id == "producer-new"
+    assert snapshot.inactive_producer_count == 1
 
 
 def test_payload_decoder_round_trips_body_pose_frame() -> None:
@@ -114,9 +172,7 @@ def test_payload_decoder_rejects_invalid_non_domain_values() -> None:
             {
                 "constraint_id": "bad",
                 "duration_ms": 100,
-                "targets": [
-                    {"axis": "right_arm_raise", "value": 1.2}
-                ],
+                "targets": [{"axis": "right_arm_raise", "value": 1.2}],
             }
         )
 
@@ -198,16 +254,64 @@ def test_api_controller_keeps_http_routing_out_of_application() -> None:
     accepted = api.handle(
         "POST",
         "/api/body-pose-frame",
-        {"source": "core", **frame.as_payload()},
+        {
+            "source": "core",
+            "producer_instance_id": "producer-a",
+            "producer_started_at_ms": 1000,
+            **frame.as_payload(),
+        },
     )
     stale = api.handle(
         "POST",
         "/api/body-pose-frame",
-        {"source": "core", **frame.as_payload()},
+        {
+            "source": "core",
+            "producer_instance_id": "producer-a",
+            "producer_started_at_ms": 1000,
+            **frame.as_payload(),
+        },
     )
+    newer_generation = api.handle(
+        "POST",
+        "/api/body-pose-frame",
+        {
+            "source": "core",
+            "producer_instance_id": "producer-b",
+            "producer_started_at_ms": 2000,
+            **make_frame(1).as_payload(),
+        },
+    )
+    old_generation = api.handle(
+        "POST",
+        "/api/body-pose-frame",
+        {
+            "source": "core",
+            "producer_instance_id": "producer-a",
+            "producer_started_at_ms": 1000,
+            **make_frame(11).as_payload(),
+        },
+    )
+    incomplete_generation = api.handle(
+        "POST",
+        "/api/body-pose-frame",
+        {
+            "source": "core",
+            "producer_instance_id": "producer-c",
+            **make_frame(2).as_payload(),
+        },
+    )
+
     assert accepted.status == 202
+    assert accepted.payload["producer_instance_id"] == "producer-a"
     assert stale.status == 200
-    assert stale.payload["reason"] == "stale_sequence"
+    assert stale.payload["reason"] == "stale_or_inactive_producer"
+    assert newer_generation.status == 202
+    latest = hub.snapshot().latest
+    assert latest is not None
+    assert latest.frame.sequence == 1
+    assert latest.producer_instance_id == "producer-b"
+    assert old_generation.status == 200
+    assert incomplete_generation.status == 400
 
 
 def test_static_files_reject_path_traversal(tmp_path: Path) -> None:
