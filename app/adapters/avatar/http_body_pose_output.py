@@ -5,7 +5,11 @@ from contextlib import suppress
 from dataclasses import dataclass
 
 from app.adapters.avatar.body_pose_http_config import HttpBodyPoseOutputConfig
-from app.adapters.avatar.body_pose_http_sender import BodyPoseHttpSender, JsonPoster
+from app.adapters.avatar.body_pose_http_sender import (
+    BodyPoseHttpSendReceipt,
+    BodyPoseHttpSender,
+    JsonPoster,
+)
 from app.adapters.avatar.latest_body_pose_frame_buffer import LatestBodyPoseFrameBuffer
 from app.domain.body_pose_frame import BodyPoseFrame
 from app.utils.trace import TraceLogger
@@ -17,6 +21,7 @@ class HttpBodyPoseOutputSnapshot:
     closed: bool
     pending_count: int
     sent_count: int
+    ignored_count: int
     dropped_count: int
     failed_count: int
     last_error: str | None
@@ -37,6 +42,7 @@ class HttpBodyPoseFrameOutput:
         self._worker: asyncio.Task[None] | None = None
         self._closed = False
         self._sent_count = 0
+        self._ignored_count = 0
         self._failed_count = 0
         self._last_error: str | None = None
         self._trace = TraceLogger()
@@ -65,6 +71,7 @@ class HttpBodyPoseFrameOutput:
             closed=self._closed,
             pending_count=self._buffer.pending_count,
             sent_count=self._sent_count,
+            ignored_count=self._ignored_count,
             dropped_count=self._buffer.dropped_count,
             failed_count=self._failed_count,
             last_error=self._last_error,
@@ -82,7 +89,7 @@ class HttpBodyPoseFrameOutput:
         while True:
             frame = await self._buffer.receive()
             try:
-                await self._sender.send(frame)
+                receipt = await self._sender.send(frame)
             except asyncio.CancelledError:
                 raise
             except Exception as error:
@@ -95,20 +102,36 @@ class HttpBodyPoseFrameOutput:
                     error_type=type(error).__name__,
                 )
             else:
-                self._sent_count += 1
-                self._last_error = None
-                self._trace.debug(
-                    "body_pose_http_output_sent",
-                    source=self._source_name,
-                    frame_sequence=frame.sequence,
-                    sent_count=self._sent_count,
-                    dropped_count=self._buffer.dropped_count,
-                    pose_axes={
-                        "head_yaw": frame.pose.head_yaw,
-                        "gaze_x": frame.pose.gaze_x,
-                        "left_arm_raise": frame.pose.left_arm_raise,
-                        "right_arm_raise": frame.pose.right_arm_raise,
-                    },
-                )
+                if (
+                    isinstance(receipt, BodyPoseHttpSendReceipt)
+                    and not receipt.accepted
+                ):
+                    self._ignored_count += 1
+                    self._last_error = None
+                    self._trace.warning(
+                        "body_pose_http_output_ignored",
+                        source=self._source_name,
+                        frame_sequence=frame.sequence,
+                        ignored_count=self._ignored_count,
+                        http_status=receipt.http_status,
+                        reason=receipt.reason,
+                    )
+                else:
+                    self._sent_count += 1
+                    self._last_error = None
+                    self._trace.debug(
+                        "body_pose_http_output_sent",
+                        source=self._source_name,
+                        frame_sequence=frame.sequence,
+                        sent_count=self._sent_count,
+                        ignored_count=self._ignored_count,
+                        dropped_count=self._buffer.dropped_count,
+                        pose_axes={
+                            "head_yaw": frame.pose.head_yaw,
+                            "gaze_x": frame.pose.gaze_x,
+                            "left_arm_raise": frame.pose.left_arm_raise,
+                            "right_arm_raise": frame.pose.right_arm_raise,
+                        },
+                    )
             finally:
                 self._buffer.task_done()
