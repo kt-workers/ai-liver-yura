@@ -86,6 +86,44 @@ def test_compound_head_and_arm_action_resolves_to_one_atomic_constraint() -> Non
     assert result.constraint.duration_ms == 1900
 
 
+def test_diagonal_head_look_preserves_horizontal_and_vertical_semantics() -> None:
+    result = BodyInstructionConstraintResolver().resolve(
+        BodyInstruction(
+            effector="head",
+            direction="up",
+            side="left",
+            magnitude=1.0,
+        )
+    )
+
+    assert result.supported is True
+    assert result.constraint is not None
+    targets = {target.axis.value: target.value for target in result.constraint.targets}
+    assert targets["head_yaw"] < 0.0
+    assert targets["gaze_x"] < 0.0
+    assert targets["head_pitch"] > 0.0
+    assert targets["gaze_y"] > 0.0
+
+
+def test_diagonal_head_look_down_right_keeps_both_axes() -> None:
+    result = BodyInstructionConstraintResolver().resolve(
+        BodyInstruction(
+            effector="head",
+            direction="down",
+            side="right",
+            magnitude=0.8,
+        )
+    )
+
+    assert result.supported is True
+    assert result.constraint is not None
+    targets = {target.axis.value: target.value for target in result.constraint.targets}
+    assert targets["head_yaw"] > 0.0
+    assert targets["gaze_x"] > 0.0
+    assert targets["head_pitch"] < 0.0
+    assert targets["gaze_y"] < 0.0
+
+
 def test_compound_body_action_rejects_conflicting_targets() -> None:
     instruction = _compound(
         {
