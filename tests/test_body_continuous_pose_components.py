@@ -75,8 +75,39 @@ def test_ambient_motion_is_seed_deterministic_and_bounded() -> None:
     second_samples = [second.step(dt_seconds=1 / 30, state=_state()) for _ in range(12)]
 
     assert first_samples == second_samples
-    assert all(-0.82 <= sample.scan_x <= 0.82 for sample in first_samples)
-    assert all(-0.58 <= sample.scan_y <= 0.58 for sample in first_samples)
+    assert all(-0.72 <= sample.scan_x <= 0.72 for sample in first_samples)
+    assert all(-0.48 <= sample.scan_y <= 0.48 for sample in first_samples)
+
+
+def test_ambient_motion_limits_frame_to_frame_jitter_without_stopping() -> None:
+    generator = BodyAmbientMotionGenerator(seed=17)
+    samples = [
+        generator.step(dt_seconds=1 / 30, state=_state())
+        for _ in range(600)
+    ]
+
+    scan_deltas = [
+        abs(current.scan_x - previous.scan_x)
+        for previous, current in zip(samples, samples[1:])
+    ]
+    posture_deltas = [
+        abs(current.posture_noise - previous.posture_noise)
+        for previous, current in zip(samples, samples[1:])
+    ]
+    head_deltas = [
+        abs(current.head_noise - previous.head_noise)
+        for previous, current in zip(samples, samples[1:])
+    ]
+
+    assert max(scan_deltas) <= 0.013
+    assert max(posture_deltas) <= 0.0022
+    assert max(head_deltas) <= 0.0018
+    assert max(sample.scan_x for sample in samples) - min(
+        sample.scan_x for sample in samples
+    ) > 0.01
+    assert max(sample.posture_noise for sample in samples) - min(
+        sample.posture_noise for sample in samples
+    ) > 0.001
 
 
 def test_attention_selector_respects_explicit_maintain_target() -> None:

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from typing import Any
 from urllib.parse import urlsplit
 
 from gui.body_pose_lab.api_controller import BodyPoseLabApiController
+from gui.body_pose_lab.http_transport_server import BodyPoseLabThreadingHttpServer
 from gui.body_pose_lab.sse_stream import BodyPoseLabSseStream
 from gui.body_pose_lab.static_files import BodyPoseLabStaticFiles
 
@@ -37,11 +38,10 @@ class BodyPoseLabHttpServer:
         self._sse = sse
         self._static_files = static_files
         self._maximum_json_bytes = maximum_json_bytes
-        self._server = ThreadingHTTPServer(
+        self._server = BodyPoseLabThreadingHttpServer(
             (host.strip(), port),
             self._handler_type(),
         )
-        self._server.daemon_threads = True
         self._closed = False
 
     @property
