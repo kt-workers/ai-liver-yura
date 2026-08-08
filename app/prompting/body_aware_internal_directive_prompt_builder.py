@@ -36,6 +36,12 @@ class BodyAwareInternalDirectivePromptBuilder(InternalDirectivePromptBuilder):
         if instruction is None:
             return prompt
 
+        simple_instruction = {
+            "effector": "string",
+            "direction": "string",
+            "side": "string|null",
+            "magnitude": "number 0.0..1.0",
+        }
         core_activity = {
             "activity_type": BODY_EXPRESSION_ACTIVITY_TYPE,
             "description": (
@@ -44,10 +50,8 @@ class BodyAwareInternalDirectivePromptBuilder(InternalDirectivePromptBuilder):
             "supported_operations": ["start"],
             "constraints": {
                 BODY_ACTION_INTENT_CONSTRAINT: {
-                    "effector": "string",
-                    "direction": "string",
-                    "side": "string|null",
-                    "magnitude": "number 0.0..1.0",
+                    **simple_instruction,
+                    "components": [simple_instruction],
                 }
             },
         }
@@ -62,11 +66,17 @@ class BodyAwareInternalDirectivePromptBuilder(InternalDirectivePromptBuilder):
                 "この要求に応じてゆら自身が身体を動かすと判断した場合だけ、activity_intentを"
                 f"activity_type={BODY_EXPRESSION_ACTIVITY_TYPE}, operation=start とし、constraints.{BODY_ACTION_INTENT_CONSTRAINT}へ"
                 "ゆらが実際に行うと決めた高レベル身体意図を入れる。",
+                "ユーザー要求が複数部位を同時に動かす一つの行動で、ゆらがその要求に従うと決めた場合、"
+                "body_action_intentのcomponentsを保持し、要求されたcomponentを一部だけ捨ててはいけない。"
+                "componentsは順番付きPresetではなく、Body Realizerが同時に満たす意味要素である。",
+                "複合行動を選ぶ場合はeffector=body,direction=compose,side=null,magnitude=1.0を外側に置き、"
+                "componentsにはhead/gaze/arm/hand/torso等の単一意味だけを入れる。componentsを入れ子にしない。",
                 "body_action_intentのleft/rightは、入力意味と同じく常にゆら自身を基準にする。"
                 "sideはゆら自身の解剖学的左右、directionはゆら自身から見た左右であり、"
                 "視聴者・カメラ・画面基準へ反転させてはいけない。",
                 "body_action_intentにはPose軸、関節角、固定Motion名、Preset名を書かない。"
-                "対象部位・方向・左右・強度の意味だけを保持し、実現方法はBody Realizerに任せる。",
+                "対象部位・方向・左右・強度と、必要なら同時componentの意味だけを保持し、"
+                "実現方法はBody Realizerに任せる。",
                 "このCore Activityは明示Body要求があるTurnではInternal Directiveが選択できる。"
                 "DirectiveInput.available_activitiesにPlugin Activityとして列挙されていなくても、"
                 "この契約で示したCore Activityは利用可能な意識的行動候補として扱う。",
