@@ -22,6 +22,7 @@ from app.runtime.body_expression_request_store import (
     TimedBodyExpressionRequestStore,
 )
 from app.runtime.state_driven_body_controller import StateDrivenBodyController
+from app.utils.trace import TraceLogger
 
 
 class StateDrivenBodyPoseRuntime:
@@ -56,6 +57,10 @@ class StateDrivenBodyPoseRuntime:
         self._tick_count = 0
         self._last_frame_id: str | None = None
         self._last_error: str | None = None
+        self._trace = TraceLogger()
+        self._constraint_trace_id: str | None = None
+        self._constraint_trace_axes: tuple[str, ...] = ()
+        self._constraint_trace_frames_remaining = 0
 
     async def start(self) -> None:
         if self._task is not None and not self._task.done():
@@ -94,11 +99,32 @@ class StateDrivenBodyPoseRuntime:
         if not isinstance(constraint, BodyExternalConstraint):
             raise TypeError("constraint must be BodyExternalConstraint")
         self._controller.apply_external_constraint(constraint)
+        target_axes = tuple(target.axis.value for target in constraint.targets)
+        self._constraint_trace_id = constraint.constraint_id
+        self._constraint_trace_axes = target_axes
+        self._constraint_trace_frames_remaining = max(
+            1,
+            int(round(self._controller.tick_hz * 2.5)),
+        )
+        self._trace.info(
+            "body_constraint_runtime_applied",
+            constraint_id=constraint.constraint_id,
+            active_constraint_id=self._controller.active_constraint_id,
+            duration_ms=constraint.duration_ms,
+            targets=[
+                {
+                    "axis": target.axis.value,
+                    "value": target.value,
+                    "weight": target.weight,
+                }
+                for target in constraint.targets
+            ],
+        )
         return BodyConstraintExecutionResult(
             status=BodyConstraintExecutionStatus.APPLIED,
             constraint_id=constraint.constraint_id,
             reason="body_constraint_applied",
-            target_axes=tuple(target.axis.value for target in constraint.targets),
+            target_axes=target_axes,
         )
 
     async def present_speech(self, request: SpeechPresentationRequest) -> None:
@@ -132,12 +158,54 @@ class StateDrivenBodyPoseRuntime:
             expression_request=self._expression_store.current(),
         )
         self._controller.update_expression_input(expression_input)
+        active_constraint_before_tick = self._controller.active_constraint_id
         frame = self._controller.tick()
+        self._trace_constraint_frame(
+            frame,
+            active_constraint_before_tick=active_constraint_before_tick,
+        )
         await self._output.publish_body_pose_frame(frame)
         self._tick_count += 1
         self._last_frame_id = f"body-frame-{frame.sequence}"
         self._last_error = None
         return frame
+
+    def _trace_constraint_frame(
+        self,
+        frame: BodyPoseFrame,
+        *,
+        active_constraint_before_tick: str | None,
+    ) -> None:
+        constraint_id = self._constraint_trace_id
+        if constraint_id is None or self._constraint_trace_frames_remaining <= 0:
+            return
+        pose_axes = {
+            axis: getattr(frame.pose, axis)
+            for axis in self._constraint_trace_axes
+            if hasattr(frame.pose, axis)
+        }
+        self._trace.debug(
+            "body_constraint_pose_frame_generated",
+            constraint_id=constraint_id,
+            frame_sequence=frame.sequence,
+            active_constraint_id_before_tick=active_constraint_before_tick,
+            active_constraint_id_after_tick=self._controller.active_constraint_id,
+            pose_axes=pose_axes,
+        )
+        if (
+            active_constraint_before_tick == constraint_id
+            and self._controller.active_constraint_id is None
+        ):
+            self._trace.info(
+                "body_constraint_runtime_completed",
+                constraint_id=constraint_id,
+                frame_sequence=frame.sequence,
+                pose_axes=pose_axes,
+            )
+        self._constraint_trace_frames_remaining -= 1
+        if self._constraint_trace_frames_remaining <= 0:
+            self._constraint_trace_id = None
+            self._constraint_trace_axes = ()
 
     async def _run(self) -> None:
         interval = 1.0 / self._controller.tick_hz
