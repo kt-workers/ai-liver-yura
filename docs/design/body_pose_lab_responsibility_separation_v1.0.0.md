@@ -1,5 +1,28 @@
 # Body Pose Lab 責務分離設計 v1.0.0
 
+## 後続設計による更新（2026-08-08）
+
+本書の **Labは表示・診断用Adapter／GUIであり、Emotion因果・Interaction Intention・Body表現判断・Activity選択を所有しない** という責務境界は引き続き有効である。
+
+一方、本書作成時点の `POST /api/external-constraint` と正規化Pose軸（例: `right_arm_raise`）は、Issue #211でGenerative Motionへ移行するまでの **Compatibility／検証入力境界** とする。新しい身体能力をこのPose軸APIへ追加しない。
+
+正規の完成目標は次とする。
+
+```text
+Core / Internal Directive / Expression
+→ high-level BodyMotionGoal
+→ Body Realizer
+   + current pose
+   + Skeleton / DOF / Joint Limits
+→ Motion Planning / IK / Kinematics / trajectory
+→ continuous BodyPoseFrame
+→ Body Pose Lab
+```
+
+Labは`BodyMotionGoal`を独自解釈してMotionを生成しない。Coreから届く`BodyPoseFrame`の`joints/root_transform/gaze_vector/blend_shapes`を表示する。将来Labへ高レベルGoalの検証入力UIを設ける場合も、入力はCore/Body Realizerへ配送し、Lab Renderer自身が固定Poseへ変換しない。
+
+UIの表示密度・棒人間中心レイアウトはIssue #215で扱い、本書の責務境界を変更しない。
+
 ## 1. 目的
 
 `BodyPoseFrame`、連続Pose Controller、Runtime、Transportを、棒人形表示と診断情報によって実動作確認する。
@@ -58,11 +81,11 @@ BodyPoseLabHttpRouter
 - Emotion Snapshot更新
 - Activity Context更新
 - 注意候補更新
-- 正規化外部制約の適用
+- Compatibility用の正規化外部制約を適用
 - 発話Presentationの開始
 - Snapshot取得
 
-Body Motion名やCharacter発言を生成しない。
+Body Motion名やCharacter発言を生成しない。#211以降の正規Motion生成はCore Body Realizerが所有する。
 
 ### 3.3 API Controller
 
@@ -105,7 +128,7 @@ main.js
 
 - `main.js`: 部品のCompositionとイベント配線のみ
 - `lab-state.js`: 画面状態
-- `presets.js`: 検証Preset定義
+- `presets.js`: 検証Preset定義。Body Motionの正規実装Presetではない
 - `api-client.js`: REST通信
 - `frame-stream.js`: SSE再接続
 - `candidate-controls.js`: 注意候補の編集・Drag
@@ -132,9 +155,9 @@ Coreの`EmotionState`と同じ型・範囲を使用する。Lab独自のDriveを
 
 `BodyAttentionCandidate`として位置、salience、novelty、threat、relevance、stabilityを渡す。
 
-### External Constraint
+### External Constraint（Compatibility）
 
-Body command名ではなく、`BodyExternalConstraint`の正規化軸目標として渡す。
+本書作成時点の互換検証では、Body command名ではなく`BodyExternalConstraint`の正規化軸目標を使用する。
 
 例:
 
@@ -148,9 +171,11 @@ Body command名ではなく、`BodyExternalConstraint`の正規化軸目標と�
 }
 ```
 
+このAPIは既存Controller境界の回帰確認に限る。#211以降、新しい関節能力・ジャンプ・しゃがみ・360度方向等をPose軸として増やさない。正規Motionは`BodyMotionGoal → Planner/IK/Kinematics → BodyPoseFrame`で生成する。
+
 ### Speech
 
-本文や音声データではなく、`SpeechPresentationRequest`のID、duration、audio referenceを渡す。
+本文や音声データではなく、`SpeechPresentationRequest`のID、duration、audio referenceを渡す。発音同期VisemeはIssue #213で扱う。
 
 ## 6. API
 
@@ -159,8 +184,8 @@ Body command名ではなく、`BodyExternalConstraint`の正規化軸目標と�
 - `POST /api/emotion`
 - `POST /api/activity-context`
 - `POST /api/attention-candidates`
-- `POST /api/external-constraint`
-- `DELETE /api/external-constraint`
+- `POST /api/external-constraint`（Compatibility）
+- `DELETE /api/external-constraint`（Compatibility）
 - `POST /api/speech`
 - `GET /api/frames` (SSE)
 
@@ -185,7 +210,10 @@ Core RuntimeのHTTP Outputは`POST /api/body-pose-frame`へFrameを送信でき�
 - SSE: Frame、keep-alive、slow consumer
 - Composition: 起動・停止、Tick、外部HTTP Frame受信
 - Browser資産: 純粋変換関数を可能な範囲で分離
+- #211以降: RendererがCore生成済みCanonical joints/root/gazeを表示し、独自Motion生成をしないこと
 
 ## 9. Stacked PR
 
 本工程は`feature/body-causal-reintegration`をBaseとする別Draft PRで実装する。PR #180へGUI・Server資産を継ぎ足さない。明示承認なしではマージしない。
+
+後続作業では#207のIssue間完成目標整合ルールを正本とし、#211/#213/#214/#215が同じBody完成形へ収束することを維持する。
