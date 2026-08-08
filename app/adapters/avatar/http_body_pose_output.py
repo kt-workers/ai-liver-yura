@@ -8,6 +8,7 @@ from app.adapters.avatar.body_pose_http_config import HttpBodyPoseOutputConfig
 from app.adapters.avatar.body_pose_http_sender import BodyPoseHttpSender, JsonPoster
 from app.adapters.avatar.latest_body_pose_frame_buffer import LatestBodyPoseFrameBuffer
 from app.domain.body_pose_frame import BodyPoseFrame
+from app.utils.trace import TraceLogger
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +39,8 @@ class HttpBodyPoseFrameOutput:
         self._sent_count = 0
         self._failed_count = 0
         self._last_error: str | None = None
+        self._trace = TraceLogger()
+        self._source_name = config.source_name
 
     async def publish_body_pose_frame(self, frame: BodyPoseFrame) -> None:
         if self._closed:
@@ -85,8 +88,27 @@ class HttpBodyPoseFrameOutput:
             except Exception as error:
                 self._failed_count += 1
                 self._last_error = f"{type(error).__name__}: {error}"[:240]
+                self._trace.warning(
+                    "body_pose_http_output_failed",
+                    source=self._source_name,
+                    frame_sequence=frame.sequence,
+                    error_type=type(error).__name__,
+                )
             else:
                 self._sent_count += 1
                 self._last_error = None
+                self._trace.debug(
+                    "body_pose_http_output_sent",
+                    source=self._source_name,
+                    frame_sequence=frame.sequence,
+                    sent_count=self._sent_count,
+                    dropped_count=self._buffer.dropped_count,
+                    pose_axes={
+                        "head_yaw": frame.pose.head_yaw,
+                        "gaze_x": frame.pose.gaze_x,
+                        "left_arm_raise": frame.pose.left_arm_raise,
+                        "right_arm_raise": frame.pose.right_arm_raise,
+                    },
+                )
             finally:
                 self._buffer.task_done()
