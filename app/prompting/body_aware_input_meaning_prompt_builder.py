@@ -14,6 +14,12 @@ class BodyAwareInputMeaningPromptBuilder(BaseInputMeaningPromptBuilder):
             (
                 prompt,
                 "# Optional Body Instruction",
+                "input_speech_actは必ず既存enumから主たる発話行為を1つだけ選ぶ。"
+                "greeting|commandのような複合文字列や独自enumを作ってはいけない。",
+                "一つの入力に挨拶・感想などと明示的な身体行動要求が共存し、"
+                "expected_response=actionなら、実際に要求されている行為を表すcommandまたはrequestを"
+                "主input_speech_actにする。挨拶性はconversation_phase_signal=greeting/openingや"
+                "information_providedへ保持し、行動要求を捨てない。",
                 "入力がゆら自身の身体・視線を明示的に動かすcommand/requestで、"
                 "expected_response=actionの場合だけbody_instructionを追加する。",
                 "単一動作のbody_instructionは"
