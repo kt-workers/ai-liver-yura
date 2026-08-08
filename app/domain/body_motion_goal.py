@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from uuid import uuid4
 
-from app.domain.body_geometry import BodyVector3
+from app.domain.body_geometry import BodyQuaternion, BodyVector3
 from app.domain.body_value_validation import (
     bounded_number,
     non_negative_integer,
@@ -29,13 +29,14 @@ class BodyMotionGoal:
 
     完成Pose名やAvatar固有Bone名を含めない。position/direction/orientationは
     Body座標系（right-handed, Y-up）の意味目標であり、実関節角はPlanner/Solverが決める。
+    directionは単位球面上の任意3D方向、orientationはQuaternionで表現する。
     """
 
     kind: BodyMotionGoalKind
     target_id: str | None = None
     position: BodyVector3 | None = None
     direction: BodyVector3 | None = None
-    orientation_radians: BodyVector3 | None = None
+    orientation: BodyQuaternion | None = None
     magnitude: float = 1.0
     duration_ms: int = 1200
     weight: float = 1.0
@@ -69,10 +70,14 @@ class BodyMotionGoal:
                     maximum_length=80,
                 ),
             )
-        for name in ("position", "direction", "orientation_radians"):
+        for name in ("position", "direction"):
             value = getattr(self, name)
             if value is not None and not isinstance(value, BodyVector3):
                 raise TypeError(f"{name} must be BodyVector3 or None")
+        if self.orientation is not None and not isinstance(
+            self.orientation, BodyQuaternion
+        ):
+            raise TypeError("orientation must be BodyQuaternion or None")
         if self.direction is not None:
             object.__setattr__(self, "direction", self.direction.normalized())
 
@@ -124,7 +129,7 @@ class BodyMotionGoal:
             if self.direction is None:
                 raise ValueError("look-direction goal requires direction")
         elif kind is BodyMotionGoalKind.JOINT_ORIENTATION:
-            if self.target_id is None or self.orientation_radians is None:
+            if self.target_id is None or self.orientation is None:
                 raise ValueError("joint-orientation goal requires target_id and orientation")
         elif kind is BodyMotionGoalKind.ROOT_TRANSLATION:
             if self.position is None:
@@ -135,7 +140,7 @@ class BodyMotionGoal:
         elif kind is BodyMotionGoalKind.OSCILLATE:
             if self.target_id is None:
                 raise ValueError("oscillate goal requires target_id")
-            if self.direction is None and self.orientation_radians is None:
+            if self.direction is None and self.orientation is None:
                 raise ValueError("oscillate goal requires direction or orientation")
 
     @classmethod
