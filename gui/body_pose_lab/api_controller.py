@@ -118,18 +118,42 @@ class BodyPoseLabApiController:
             frame_payload = self._required_payload(payload)
             frame = self._decoder.decode_frame(frame_payload)
             source = "external-body-runtime"
+            producer_instance_id: str | None = None
+            producer_started_at_ms: int | None = None
             if isinstance(frame_payload, dict):
                 raw_source = frame_payload.get("source")
                 if isinstance(raw_source, str) and raw_source.strip():
                     source = raw_source.strip()
-            accepted = self._frame_hub.publish(frame, source=source)
+                raw_producer_id = frame_payload.get("producer_instance_id")
+                if raw_producer_id is not None:
+                    if not isinstance(raw_producer_id, str):
+                        raise TypeError("producer_instance_id must be a string")
+                    producer_instance_id = raw_producer_id
+                raw_started_at = frame_payload.get("producer_started_at_ms")
+                if raw_started_at is not None:
+                    if isinstance(raw_started_at, bool) or not isinstance(
+                        raw_started_at, int
+                    ):
+                        raise TypeError("producer_started_at_ms must be an integer")
+                    producer_started_at_ms = raw_started_at
+            accepted = self._frame_hub.publish(
+                frame,
+                source=source,
+                producer_instance_id=producer_instance_id,
+                producer_started_at_ms=producer_started_at_ms,
+            )
+            response_payload: dict[str, object] = {
+                "status": "accepted" if accepted else "ignored",
+                "reason": None if accepted else "stale_or_inactive_producer",
+                "sequence": frame.sequence,
+            }
+            if producer_instance_id is not None:
+                response_payload["producer_instance_id"] = producer_instance_id
+            if producer_started_at_ms is not None:
+                response_payload["producer_started_at_ms"] = producer_started_at_ms
             return BodyPoseLabApiResponse(
                 202 if accepted else 200,
-                {
-                    "status": "accepted" if accepted else "ignored",
-                    "reason": None if accepted else "stale_sequence",
-                    "sequence": frame.sequence,
-                },
+                response_payload,
             )
         return self._error(404, "not_found", "route is not available")
 
