@@ -120,8 +120,9 @@ export class StickFigureRenderer {
     const gazeY = clamp(pose.gaze_y) * scale * 0.04;
     const leftOpen = clamp(pose.eye_left_open, 0, 1);
     const rightOpen = clamp(pose.eye_right_open, 0, 1);
-    this.eye(-scale * 0.09 + gazeX, -scale * 0.04 + gazeY, leftOpen, scale);
-    this.eye(scale * 0.09 + gazeX, -scale * 0.04 + gazeY, rightOpen, scale);
+    // 正面表示では、ゆらの解剖学的左眼は画面右に見える。
+    this.eye(scale * 0.09 + gazeX, -scale * 0.04 + gazeY, leftOpen, scale);
+    this.eye(-scale * 0.09 + gazeX, -scale * 0.04 + gazeY, rightOpen, scale);
     this.mouth(clamp(pose.mouth_open, 0, 1), clamp(pose.mouth_form), scale);
     ctx.restore();
   }
