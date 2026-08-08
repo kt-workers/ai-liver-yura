@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import replace
 
 from app.domain.cognitive_direction import (
@@ -112,6 +113,19 @@ class InternalDirectiveValidator:
 
         requirements = list(directive.content_requirements)
         forbidden_claims = list(directive.forbidden_claims)
+        response_goal = directive.response_goal
+        if self._is_current_feeling_target(meaning):
+            response_goal, requirements = self._normalize_current_feeling_guidance(
+                planning_input,
+                requirements,
+            )
+            forbidden_claims.extend(
+                (
+                    "Emotion/Driveの内部キー名、数値、強度分類を診断結果として読み上げる",
+                    "neutralや中立などの内部分類を、そのまま人物の自己説明として使う",
+                )
+            )
+            notes.append("current_feeling_guidance_normalized")
         if self._is_positive_empathy_input(meaning):
             self._add_positive_empathy_requirements(
                 planning_input,
@@ -148,6 +162,7 @@ class InternalDirectiveValidator:
         validated = replace(
             directive,
             response_mode=response_mode,
+            response_goal=response_goal,
             activity_intent=activity_intent,
             initiative_level=initiative_level,
             question_budget=question_budget,
@@ -371,6 +386,81 @@ class InternalDirectiveValidator:
         }
 
     @staticmethod
+    def _is_current_feeling_target(meaning: StructuredInputMeaning) -> bool:
+        target = meaning.target
+        return bool(
+            target
+            and target.target_type.casefold()
+            in {"internal_state", "agent_internal_state"}
+            and target.target_id.casefold()
+            in {
+                "current_feeling",
+                "current_mood",
+                "current_emotion",
+                "mood",
+                "feeling",
+            }
+        )
+
+    @classmethod
+    def _normalize_current_feeling_guidance(
+        cls,
+        planning_input: dict[str, object],
+        requirements: list[str],
+    ) -> tuple[str, list[str]]:
+        internal_tokens = _internal_state_tokens(planning_input)
+        retained = [
+            requirement
+            for requirement in requirements
+            if not cls._is_current_feeling_diagnostic_requirement(
+                requirement,
+                internal_tokens,
+            )
+        ]
+        return (
+            "現在の内的状態に沿って、ユーザーの質問へ自然に直接答える",
+            retained,
+        )
+
+    @staticmethod
+    def _is_current_feeling_diagnostic_requirement(
+        requirement: str,
+        internal_tokens: set[str],
+    ) -> bool:
+        text = str(requirement).strip()
+        folded = text.casefold()
+        if any(
+            marker in folded
+            for marker in (
+                "emotion evidence",
+                "drive evidence",
+                "現在の気分の中心候補",
+                "内部キー",
+                "内部分類",
+            )
+        ):
+            return True
+        if any(
+            re.search(
+                rf"(?<![a-z0-9_]){re.escape(token)}(?![a-z0-9_])",
+                folded,
+            )
+            for token in internal_tokens
+        ):
+            return True
+        diagnostic_context = any(
+            marker in text
+            for marker in ("気分", "感情", "内部状態", "落ち着き")
+        )
+        if diagnostic_context and re.search(r"[-+]?\d+(?:\.\d+)?", text):
+            return True
+        if diagnostic_context and any(
+            label in text for label in ("強め", "中程度", "少し", "低め")
+        ):
+            return True
+        return "中立" in text and diagnostic_context
+
+    @staticmethod
     def _existence_boundaries(
         character_profile: dict[str, object],
     ) -> tuple[str, ...]:
@@ -465,42 +555,7 @@ class InternalDirectiveValidator:
             "mood",
             "feeling",
         }:
-            emotion_values = _numeric_state_values(emotion_state)
-            dominant_summary = _dominant_state_summary(emotion_values)
-            requirements.append(
-                "現在の気分全体はEmotionの値が高い1〜2項目を中心に、強度を誇張せず直接回答する"
-            )
-            if dominant_summary:
-                requirements.append(
-                    f"現在の気分の中心候補: {dominant_summary}"
-                )
-            requirements.append(
-                "Emotion evidence: "
-                + json.dumps(
-                    emotion_values,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                )
-            )
-            requirements.append(
-                "Emotionの内部キー名と数値は発話で読み上げず、自然な日本語の気分表現へ変換する"
-            )
-            drive = planning_input.get("drive")
-            drive_state = drive if isinstance(drive, dict) else {}
-            drive_values = _numeric_state_values(drive_state)
-            if "curiosity" in drive_values:
-                requirements.append(
-                    "Drive evidence（感情ではなく補助的な好奇心・関心）: "
-                    f"curiosity={drive_values['curiosity']}"
-                )
-            forbidden_claims.extend(
-                (
-                    "低いEmotion値を主感情として強く誇張する",
-                    "curiosityやengagementだけを根拠に楽しい・うれしいと断定する",
-                    "現在値にない悲しみ、怒り、強い興奮を創作する",
-                    "calm=0.74のような内部キー名と数値をそのまま発話する",
-                )
-            )
+            return
         elif target_id in {"joy", "amusement", "fun", "楽しさ"}:
             joy = _nested_number(emotion_state, "joy")
             amusement = _nested_number(emotion_state, "amusement")
@@ -618,43 +673,23 @@ def _nested_number(data: dict[str, object], name: str) -> float:
     return value if value is not None else 0.0
 
 
-def _numeric_state_values(data: dict[str, object]) -> dict[str, float]:
-    values: dict[str, float] = {}
+def _internal_state_tokens(planning_input: dict[str, object]) -> set[str]:
+    tokens: set[str] = set()
 
-    def collect(container: dict[str, object]) -> None:
-        for key, value in container.items():
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                values.setdefault(str(key), float(value))
+    def collect(value: object) -> None:
+        if not isinstance(value, dict):
+            return
+        for key, nested in value.items():
+            normalized_key = str(key).casefold()
+            if re.fullmatch(r"[a-z][a-z0-9_]*", normalized_key):
+                tokens.add(normalized_key)
+            if isinstance(nested, dict):
+                collect(nested)
+            elif isinstance(nested, str):
+                normalized_value = nested.casefold()
+                if re.fullmatch(r"[a-z][a-z0-9_]*", normalized_value):
+                    tokens.add(normalized_value)
 
-    collect(data)
-    for container_name in ("current", "reactive", "mood", "state"):
-        nested = data.get(container_name)
-        if not isinstance(nested, dict):
-            continue
-        collect(nested)
-        for nested_container_name in ("reactive", "mood"):
-            sub = nested.get(nested_container_name)
-            if isinstance(sub, dict):
-                collect(sub)
-    return values
-
-
-def _dominant_state_summary(values: dict[str, float]) -> str:
-    strongest = sorted(
-        values.items(),
-        key=lambda item: (-item[1], item[0]),
-    )[:2]
-    return ", ".join(
-        f"{name}={value} ({_intensity_label(value)})"
-        for name, value in strongest
-    )
-
-
-def _intensity_label(value: float) -> str:
-    if value >= 0.70:
-        return "強め"
-    if value >= 0.45:
-        return "中程度"
-    if value >= 0.25:
-        return "少し"
-    return "低め"
+    collect(planning_input.get("emotion"))
+    collect(planning_input.get("drive"))
+    return tokens
