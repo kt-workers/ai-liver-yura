@@ -52,10 +52,18 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 "Semantic Planのpredicate/state/certainty/required/forbiddenは確定済み意味である。"
                 "Character Profileは、その意味をどう言うかだけに使用し、事実を追加・反転・弱め・"
                 "強めない。",
+                "primary proposition（先頭proposition）は必須意味単位である。required_facetsに"
+                "列挙されたstate/certainty/conceptをすべてspeechで意味的に保持する。conceptが"
+                "non-nullなら、そのconceptの意味を自然語として含め、単なる『何かある』等の"
+                "存在表明だけへ縮退しない。内部英語ラベルをそのまま読み上げる必要はない。",
                 "state=unknownは、その対象状態の存在・不在・強度が確定していないことを意味する。"
                 "unknownをpresent/absent/low等へ変換せず、certainty=lowであっても『あるかも』等の"
                 "特定polarityを推測しない。必要なら、状態を判断できていないこと自体を自然に表現する。",
-                "certaintyは指定されたstateへの確からしさであり、別のstateを推測してよい許可ではない。",
+                "state=presentは存在を表すだけで強度を含まない。stateがlow/moderate/high/very_high等の"
+                "強度を明示していない限り、『少し』『かなり』等の強度を新しく推測・追加しない。",
+                "certaintyは指定されたstateへの確からしさであり、別のstateや強度を推測してよい"
+                "許可ではない。medium/lowのcertaintyは、必要に応じて断定度や言い回しの慎重さとして"
+                "表し、強度表現へ置き換えない。",
                 "User Wording Hintは、ユーザーがどの語彙・意味枠で対象を尋ねたかを保つための"
                 "言語的な参照情報である。事実や内部状態を推論する材料には使わず、"
                 "Semantic Planと矛盾する場合はSemantic Planを優先する。",
@@ -76,7 +84,8 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 "evidence path/key/valueや内部diagnostic名はCharacter入力ではない。推測・説明しない。",
                 "response_length、question_budget、new_direction_budgetを上限として守り、"
                 "使い切るために内容を追加しない。",
-                "semantic_realizationsには、実際にspeechへ反映したrealization_idだけを列挙する。",
+                "semantic_realizationsには、実際にspeechへ反映したrealization_idだけを列挙する。"
+                "primary propositionのIDを列挙する場合はrequired_facetsをすべて保持している必要がある。",
                 "linguistic_performanceは言語上の区切り・強調・高レベルdelivery tagのみ。"
                 "音響数値を入れない。",
                 (
@@ -109,6 +118,12 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
     def _character_facing_plan(plan: SemanticUtterancePlan) -> dict[str, object]:
         propositions: list[dict[str, object]] = []
         for index, item in enumerate(plan.propositions):
+            required = index == 0
+            required_facets: list[str] = []
+            if required:
+                required_facets.extend(("state", "certainty"))
+                if item.concept is not None:
+                    required_facets.append("concept")
             propositions.append(
                 {
                     "realization_id": f"proposition:{index}:{item.predicate}",
@@ -117,6 +132,8 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                     "state": item.state,
                     "certainty": item.certainty,
                     "concept": item.concept,
+                    "required": required,
+                    "required_facets": required_facets,
                 }
             )
         return {
