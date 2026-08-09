@@ -142,3 +142,119 @@ class SemanticUtterancePlan:
             "discourse_context": dict(self.discourse_context),
             "reasons": list(self.reasons),
         }
+
+    @classmethod
+    def from_context(cls, value: object) -> SemanticUtterancePlan | None:
+        """ResponseContext等の境界を越えたdictを保守的に型付きPlanへ戻す。"""
+
+        if not isinstance(value, Mapping):
+            return None
+        speech_act = str(value.get("speech_act") or "").strip()
+        if not speech_act:
+            return None
+
+        target: SemanticTarget | None = None
+        target_value = value.get("target")
+        if isinstance(target_value, Mapping):
+            target_type = str(target_value.get("type") or "").strip()
+            target_id = str(target_value.get("id") or "").strip()
+            if target_type and target_id:
+                target = SemanticTarget(target_type, target_id)
+
+        propositions: list[SemanticProposition] = []
+        raw_propositions = value.get("propositions")
+        if isinstance(raw_propositions, (list, tuple)):
+            for item in raw_propositions:
+                if not isinstance(item, Mapping):
+                    continue
+                kind = str(item.get("kind") or "").strip()
+                predicate = str(item.get("predicate") or "").strip()
+                state = str(item.get("state") or "unknown").strip()
+                certainty = str(item.get("certainty") or "low").strip()
+                if not kind or not predicate:
+                    continue
+                if state not in _ALLOWED_STATES:
+                    state = "unknown"
+                if certainty not in _ALLOWED_CERTAINTY:
+                    certainty = "low"
+                concept_value = item.get("concept")
+                concept = (
+                    str(concept_value).strip()
+                    if concept_value is not None and str(concept_value).strip()
+                    else None
+                )
+                evidence_refs = cls._strings(item.get("evidence_refs"))
+                propositions.append(
+                    SemanticProposition(
+                        kind=kind,
+                        predicate=predicate,
+                        state=state,
+                        certainty=certainty,
+                        concept=concept,
+                        evidence_refs=evidence_refs,
+                    )
+                )
+
+        interpersonal_value = value.get("interpersonal")
+        interpersonal_map = (
+            dict(interpersonal_value) if isinstance(interpersonal_value, Mapping) else {}
+        )
+        interpersonal = InterpersonalContentContext(
+            disclosure_permission=cls._semantic_string(
+                interpersonal_map.get("disclosure_permission"), "normal"
+            ),
+            boundary_sensitivity=cls._semantic_string(
+                interpersonal_map.get("boundary_sensitivity"), "normal"
+            ),
+            social_distance=cls._semantic_string(
+                interpersonal_map.get("social_distance"), "unspecified"
+            ),
+            current_tension=cls._semantic_string(
+                interpersonal_map.get("current_tension"), "unspecified"
+            ),
+        )
+
+        discourse_value = value.get("discourse_context")
+        discourse = {
+            str(key): str(item).strip()
+            for key, item in (
+                discourse_value.items() if isinstance(discourse_value, Mapping) else ()
+            )
+            if str(key).strip() and isinstance(item, str) and item.strip()
+        }
+        response_length = str(value.get("response_length") or "normal")
+        if response_length not in _ALLOWED_LENGTH:
+            response_length = "normal"
+        self_disclosure = str(value.get("self_disclosure") or "none")
+        if self_disclosure not in _ALLOWED_DISCLOSURE:
+            self_disclosure = "none"
+
+        return cls(
+            speech_act=speech_act,
+            target=target,
+            propositions=tuple(propositions),
+            required_content=cls._strings(value.get("required_content")),
+            optional_content=cls._strings(value.get("optional_content")),
+            forbidden_additions=cls._strings(value.get("forbidden_additions")),
+            response_length=response_length,
+            self_disclosure=self_disclosure,
+            question_budget=1 if value.get("question_budget") == 1 else 0,
+            new_direction_budget=1 if value.get("new_direction_budget") == 1 else 0,
+            interpersonal=interpersonal,
+            discourse_context=discourse,
+            reasons=cls._strings(value.get("reasons")),
+        )
+
+    @staticmethod
+    def _strings(value: object) -> tuple[str, ...]:
+        if not isinstance(value, (list, tuple)):
+            return ()
+        return tuple(
+            item.strip()
+            for item in value
+            if isinstance(item, str) and item.strip()
+        )
+
+    @staticmethod
+    def _semantic_string(value: object, default: str) -> str:
+        return str(value).strip() if isinstance(value, str) and value.strip() else default
