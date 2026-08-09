@@ -6,6 +6,7 @@ from dataclasses import asdict, is_dataclass
 from app.domain.activities import Activity
 from app.domain.cognitive_direction import (
     ConversationPhaseSignal,
+    ExpectedResponse,
     InputSpeechAct,
     InterestChange,
     StructuredInputMeaning,
@@ -171,11 +172,14 @@ class SeparatedSituationEvaluationAdapter:
             "conversation" if is_conversation else activity_intent.activity_type
         )
         operation = "discuss" if is_conversation else activity_intent.operation
-        constraints = (
-            {"_internal_directive": plan.as_context()}
-            if is_conversation
-            else dict(activity_intent.constraints)
-        )
+        if is_conversation:
+            constraints: dict[str, object] = {
+                "_internal_directive": plan.as_context()
+            }
+            if _is_direct_internal_state_question(meaning):
+                constraints["avoid_repetition"] = True
+        else:
+            constraints = dict(activity_intent.constraints)
         return {
             "decision": (
                 "conversation" if is_conversation else f"{operation}_activity"
@@ -198,6 +202,19 @@ class SeparatedSituationEvaluationAdapter:
             "reason": "input_meaning_and_internal_directive_separated",
             "ongoing_input_decision": None,
         }
+
+
+def _is_direct_internal_state_question(meaning: StructuredInputMeaning) -> bool:
+    target = meaning.target
+    if target is None or target.target_type.casefold() not in {
+        "internal_state",
+        "agent_internal_state",
+    }:
+        return False
+    return (
+        meaning.expected_response is ExpectedResponse.DIRECT_ANSWER
+        or meaning.input_speech_act is InputSpeechAct.QUESTION
+    )
 
 
 def _profile_context(profile: object) -> dict[str, object]:
