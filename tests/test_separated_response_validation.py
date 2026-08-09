@@ -300,6 +300,23 @@ async def test_model_intensity_miss_is_overridden_by_deterministic_surface_guard
 
 
 @pytest.mark.asyncio
+async def test_deterministic_surface_guard_rejects_without_validator_model() -> None:
+    validator = CharacterRealizationValidator(
+        model=None,
+        prompt_builder=CharacterRealizationValidatorPromptBuilder(),
+    )
+    source = Activity(activity_type=ActivityType.CONVERSATION_WITH_USER, goal="質問へ答える")
+    result = await validator.validate(
+        source,
+        _validated_context(),
+        _response(speech="少し楽しくないかな。"),
+    )
+    assert result.accepted is False
+    assert result.reason == "semantic_facet_validation_failed"
+    assert result.claim_differences == ("unsupported_intensity_markers:少し",)
+
+
+@pytest.mark.asyncio
 async def test_model_acceptance_without_facet_diagnostics_fails_closed() -> None:
     model = _RecordingValidationModel(
         json.dumps(
