@@ -149,6 +149,19 @@ def test_character_utterance_schema_has_no_acoustic_parameters() -> None:
         ensure_ascii=False,
     )
 
+    for forbidden_field in (
+        "voice_intent",
+        "speed",
+        "pitch",
+        "intonation",
+        "volume",
+        "breathiness",
+        "pause_after_seconds",
+        "gesture",
+        "reaction_segments",
+    ):
+        assert forbidden_field not in raw
+
     parsed = CharacterLanguageRealizerService.parse(raw)
 
     assert parsed is not None
@@ -159,6 +172,24 @@ def test_character_utterance_schema_has_no_acoustic_parameters() -> None:
     assert parsed.voice_intent.style == "neutral"
     assert parsed.voice_intent.speed == 1.0
     assert parsed.claims == (ResponseClaim.CONVERSATION_ONLY,)
+
+
+def test_legacy_schema_is_not_misidentified_as_character_utterance() -> None:
+    raw = json.dumps(
+        {
+            "speech": "うん。",
+            "expression": "soft_smile",
+            "voice_intent": {"style": "calm"},
+            "claims": ["conversation_only"],
+        },
+        ensure_ascii=False,
+    )
+
+    parsed = CharacterLanguageRealizerService.parse(raw)
+
+    assert parsed is not None
+    assert parsed.expression == "soft_smile"
+    assert parsed.voice_intent.style == "calm"
 
 
 @pytest.mark.asyncio
@@ -210,6 +241,25 @@ async def test_model_invocation_does_not_receive_raw_response_context_or_user_in
 
 
 @pytest.mark.asyncio
+async def test_semantic_path_rejects_incomplete_character_utterance_schema() -> None:
+    model = _RecordingCharacterModel(
+        json.dumps({"speech": "今は楽しくないかな。"}, ensure_ascii=False)
+    )
+    service = CharacterLanguageRealizerService(
+        model,
+        CharacterLanguageRealizerPromptBuilder(),
+        _profile(),
+    )
+    source = Activity(
+        activity_type=ActivityType.CONVERSATION_WITH_USER,
+        goal="質問へ答える",
+    )
+
+    with pytest.raises(ValueError, match="Character Language Realizer"):
+        await service.generate(source, _context())
+
+
+@pytest.mark.asyncio
 async def test_non_semantic_case_keeps_legacy_character_path_temporarily() -> None:
     model = _RecordingCharacterModel(
         json.dumps(
@@ -238,6 +288,7 @@ async def test_non_semantic_case_keeps_legacy_character_path_temporarily() -> No
     response = await service.generate(source, _context(include_semantic_plan=False))
 
     assert response.speech == "うん。"
+    assert response.expression == "soft_smile"
     assert len(model.activities) == 1
     activity = model.activities[0]
     assert activity.context["llm_role"] == "character"
