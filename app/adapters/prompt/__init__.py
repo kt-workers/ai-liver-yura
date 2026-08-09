@@ -5,7 +5,7 @@ from app.adapters.prompt.cognitive_direction_prompt_builders import (
     InputMeaningPromptBuilder,
     InternalDirectivePromptBuilder,
 )
-from app.adapters.prompt.directive_aware_prompt_builders import (
+from app.adapters.prompt.internal_state_evidence_prompt_builders import (
     ResponseValidatorPromptBuilder,
 )
 from app.adapters.prompt.simple_prompt_builder import SimplePromptBuilder
