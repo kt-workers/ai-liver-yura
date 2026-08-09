@@ -76,6 +76,8 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "変換した発話はrejectする。hedge付きでも特定polarityを推測していればrejectする",
                 "- state=presentは存在のみで強度を含まない。Planにlow/moderate/high/very_high等の"
                 "強度stateがないのに『少し』『かなり』等の強度を追加した場合はrejectする",
+                "- speechに意味上の程度・強弱を与える表現があればsurface_evidence.intensity_markersへ"
+                "原文のまま列挙する。単なる語調fillerで強度意味を持たないものは列挙しない",
                 "- certaintyは指定stateへのepistemic certaintyである。medium/lowを強度へ変換せず、"
                 "断定度を過大化・矮小化していないことを確認する",
                 "- certainty=lowは別stateを推測する許可ではない。指定state自体の確からしさとして扱う",
@@ -89,10 +91,16 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "- existence boundaryを破っていない",
                 "- 言い回し、語尾、filler、柔らかさ等のCharacter表現差だけを理由にrejectしない",
                 "- semantic_realizationsは補助診断であり、IDがあるだけでspeechの意味整合を自動承認しない",
+                "semantic_checksは各facetを独立に判定する。accepted=trueでも、required_facets_preserved、"
+                "state_preserved、certainty_preserved、concept_preservedの必要項目がfalse、または"
+                "unsupported_intensity_added=trueならRuntime側でrejectされる。",
                 "raw Emotion/Drive値やevidence pathを推測して検証しない。Semantic Planを正本とする。",
                 "JSONのみ返す:",
-                '{"accepted":true,"reason":"semantic_realization_consistent",'
-                '"differences":[]}',
+                '{"accepted":true,"reason":"semantic_realization_consistent","differences":[],'
+                '"semantic_checks":{"required_facets_preserved":true,"state_preserved":true,'
+                '"certainty_preserved":true,"concept_preserved":true,'
+                '"unsupported_intensity_added":false},'
+                '"surface_evidence":{"intensity_markers":[]}}',
             ]
         )
 
