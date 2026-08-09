@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - "cloud_validation/character_response_lab.py"
-      - "tests/test_cloud_character_response_lab.py"
+      - "tests/test_cloud_character_response_lab*.py"
       - "app/domain/character/**"
       - "app/runtime/character_response_pipeline.py"
       - "app/adapters/prompt/**"
