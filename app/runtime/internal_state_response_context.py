@@ -5,6 +5,7 @@ from typing import Mapping
 
 from app.domain.activities import Activity
 from app.domain.character_response import ResponseContext
+from app.domain.semantic_utterance import SemanticUtterancePlan
 from app.runtime.character_response_pipeline import (
     ResponseContextBuilder as BaseResponseContextBuilder,
 )
@@ -87,8 +88,8 @@ class InternalStateAwareResponseContextBuilder(BaseResponseContextBuilder):
     @staticmethod
     def _attach_repetition_context(
         context: ResponseContext,
-        semantic_plan: object,
-    ):
+        semantic_plan: SemanticUtterancePlan,
+    ) -> SemanticUtterancePlan:
         # Characterへraw内部状態を戻さず、反復回避に必要な直近発話だけを
         # finite discourse contextとして渡す。avoid_repetition無効時は投影しない。
         if context.constraints.get("avoid_repetition") is not True:
