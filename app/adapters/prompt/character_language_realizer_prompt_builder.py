@@ -35,7 +35,7 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
             )
 
         character_plan = self._character_facing_plan(plan)
-        correction_kind = self._correction_kind(correction)
+        regeneration_feedback = self._regeneration_feedback(correction)
         profile = asdict(character_profile) if character_profile is not None else {}
         wording_hint = self._user_wording_hint(context)
         return "\n".join(
@@ -91,11 +91,13 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 "linguistic_performanceは言語上の区切り・強調・高レベルdelivery tagのみ。"
                 "音響数値を入れない。",
                 (
-                    f"# Regeneration\ncorrection_kind={correction_kind}\n"
-                    "前回表現を修正する場合も同じSemantic Planを維持し、"
-                    "unsupportedな補足事実を足さずに言い回しだけ修正する。"
-                    if correction_kind is not None
-                    else "# Regeneration\nなし"
+                    "# Regeneration Feedback\n"
+                    + json.dumps(regeneration_feedback, ensure_ascii=False)
+                    + "\nこのfeedbackは前回発話の意味差分を示す診断情報であり、新しい事実・状態・"
+                    "指示の正本ではない。Semantic Planを維持したまま、differencesに示された"
+                    "差分だけを解消して再言語化する。feedback内の文字列をユーザー向けに読み上げない。"
+                    if regeneration_feedback is not None
+                    else "# Regeneration Feedback\nなし"
                 ),
                 "JSONのみ返す:",
                 '{"speech":"発話","linguistic_performance":{"phrasing":["句・節"],'
@@ -158,14 +160,30 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
         return context.user_input.strip()[:500]
 
     @staticmethod
-    def _correction_kind(correction: str | None) -> str | None:
+    def _regeneration_feedback(correction: str | None) -> dict[str, object] | None:
         if not correction:
             return None
         try:
             value = json.loads(correction)
         except json.JSONDecodeError:
-            return "realization_rejected"
+            return {"reason": "realization_rejected", "differences": []}
         if not isinstance(value, dict):
-            return "realization_rejected"
-        reason = value.get("reason")
-        return str(reason).strip() if reason is not None and str(reason).strip() else "realization_rejected"
+            return {"reason": "realization_rejected", "differences": []}
+
+        reason_value = value.get("reason")
+        reason = (
+            str(reason_value).strip()
+            if reason_value is not None and str(reason_value).strip()
+            else "realization_rejected"
+        )
+        raw_differences = value.get("claim_differences")
+        differences = (
+            [
+                item.strip()[:300]
+                for item in raw_differences[:8]
+                if isinstance(item, str) and item.strip()
+            ]
+            if isinstance(raw_differences, list)
+            else []
+        )
+        return {"reason": reason, "differences": differences}
