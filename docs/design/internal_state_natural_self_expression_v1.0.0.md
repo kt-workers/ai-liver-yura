@@ -113,6 +113,97 @@ typed契約違反として受理しない。この違反に限り、Coreがtarge
 Input Meaning LLMへ欠落した意味対象を再構造化するよう一度だけ要求する。
 `target=null`は本当に意味上の対象を持たない入力だけに限定する。
 
+## 3回目Verification追補: Character実現と最終意味検証
+
+旧evidence注入を除去した後の実環境Verificationでは、Input Meaning target、
+structured Emotion / Drive、正規化済みInternal Directiveはいずれも後段まで届いていた。
+それにもかかわらず、`楽しい？`に対してjoy/amusementではなくcuriosity/engagementの
+高さを根拠に肯定的な「楽しい」回答を生成し、Response Validatorも受理した。
+
+したがって本不具合は「内部状態がCharacterへ届いていない」問題ではない。
+正しい因果は次のとおりとする。
+
+```text
+canonical internal-state target
++ current structured internal state
++ validated directive constraints
+→ Character Realizer
+→ targetに意味的に整合する自然な自己表現
+→ Response Validator
+→ targetとcurrent stateの意味整合性を再確認
+```
+
+CharacterとResponse Validatorは、`curiosity`、`engagement`、`joy`、`amusement`等を
+互いに代用可能な「ポジティブさ」として扱ってはいけない。質問targetが`joy`なら、
+joy/amusementに対応する現在状態を回答根拠とし、curiosity/engagementは語調や関心の
+補助材料にはなっても、楽しさの存在事実を置き換えない。
+
+この契約はtarget IDごとの固定回答文を意味しない。targetのtyped identityと
+structured stateの意味関係を使い、Characterが自然文を生成する。
+
+## Character Realizerの責務
+
+内部状態への直接質問ではCharacterが次を守る。
+
+- Input Meaningで確定した内部状態targetへ直接答える
+- 現在のstructured Emotion / Driveを根拠として使う
+- 別の内部状態の高さを質問targetの存在事実へ読み替えない
+- 内部キー名、数値、強度分類を説明しない
+- `recent_speech_summary`や関連記憶は会話継続の参考にできるが、現在状態の正本にしない
+- 過去の自己発話を現在状態の根拠として再利用しない
+- 同じ質問が繰り返されても固定回答テンプレートを選ばず、現在状態から改めて生成する
+
+Memoryの保存・Retrieval方式そのものは本Issueの責務ではない。関連記憶が存在しても、
+現在の内部状態質問ではcurrent structured stateが現在事実の正本である。
+
+## Response Validatorの責務
+
+Response ValidatorはActivity実行事実だけでなく、内部状態への直接質問について
+次の意味的不整合を拒否する。
+
+- 質問targetと異なる内部状態を根拠に、targetが高い／低いと主張する
+- current structured stateと矛盾する自己状態を断定する
+- `curiosity/engagement`を`joy/amusement`の代用として扱う
+- 過去発話や関連記憶を、現在状態の正本として採用する
+
+通常語の禁止リストや日本語フレーズの正規表現では判定しない。Validatorには
+Characterと同じtyped target、current structured state、validated constraintsを渡し、
+意味関係として評価させる。
+
+## 反復検出の責務境界
+
+`CharacterResponsePipeline`には既に直近発話との意味的類似を検出し、
+`recent_speech_too_similar`として再生成する機構がある。新しい反復フィルタは作らず、
+内部状態への直接質問でもこの既存機構を利用する。
+
+ただし既存の一般的な再生成指示「直近発話とは異なる主題または内容を選ぶ」は、
+直接質問では無関係な話題への逃避を起こし得る。内部状態への直接質問で反復を検出した
+場合は次の修正要求とする。
+
+```text
+同じinternal-state targetへ直接答える
++ 直前回答の文面をコピーしない
++ current structured stateから改めて自然に表現する
++ 無関係な新話題へ移らない
+```
+
+反復検出を通常会話全体へ無条件適用する変更は行わない。typed internal-state direct
+questionという構造条件で適用し、#201のMemory最適化や#193のDiscourse Appraisalを
+先取りしない。
+
+## 非目標
+
+本Issueでは次を行わない。
+
+- Memory保存条件、要約、重複統合、Retrieval rankingの再設計
+- 過去発話をDBから削除して症状を隠す対応
+- 通常会話全体の汎用反復制御の再設計
+- `楽しい？`等の固定文字列matcherや正規表現
+- `joy -> 固定回答文`のような状態別テンプレート
+- Discourse Appraisalや話題距離判定の先行実装
+
+Memory全体の保存・想起品質は#201、談話関係は#193の責務を維持する。
+
 ## PR #135から維持する目的
 
 PR #135が目指した「内部状態をCharacterへ十分に搬送し、状態と矛盾しない回答を
@@ -140,7 +231,10 @@ PR #135が目指した「内部状態をCharacterへ十分に搬送し、状態�
 - 内部キー・数値・内部分類を読み上げない
 - 診断レポート口調にならない
 - 状態差が語調・内容・発話量へ自然に反映される
+- `joy=0`かつcuriosity/engagementが高い場合に「楽しい」を状態事実として代用しない
+- 質問targetと異なる内部状態を根拠にした回答をValidatorが拒否できる
 - 毎回同じ固定文にならない
+- 反復検出後も同じtargetへ直接答え、無関係な話題へ逃げない
 - 質問へ直接答え、無関係な話題へ逃げない
 - question budget誤判定が再発しない
 - Input Meaning targetと`internal_state_guidance_normalized`を確認する
