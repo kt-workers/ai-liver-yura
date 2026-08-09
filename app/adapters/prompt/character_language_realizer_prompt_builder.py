@@ -11,6 +11,9 @@ from app.domain.character_response import ResponseContext
 from app.domain.semantic_utterance import SemanticUtterancePlan
 
 
+_INTERNAL_STATE_TYPES = frozenset({"internal_state", "agent_internal_state"})
+
+
 class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
     """Semantic Planが十分な場合だけCharacter LLMを言語実現専用境界へ切り替える。"""
 
@@ -79,8 +82,15 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
 
     @staticmethod
     def _can_realize(plan: SemanticUtterancePlan) -> bool:
-        # 移行初期は、上流が発話意味を十分に確定できたケースだけ新経路へ切り替える。
-        return bool(plan.propositions or plan.required_content)
+        # 移行初期はconversation-onlyとして安全にLegacy CharacterResponseへ戻せる
+        # 内部状態直接回答だけを新経路へ切り替える。一般ActivityはSemantic Planが
+        # execution propositionを保持できる段階まで旧経路を維持する。
+        return bool(
+            plan.target is not None
+            and plan.target.type.casefold() in _INTERNAL_STATE_TYPES
+            and plan.speech_act == "direct_answer"
+            and plan.propositions
+        )
 
     @staticmethod
     def _character_facing_plan(plan: SemanticUtterancePlan) -> dict[str, object]:
