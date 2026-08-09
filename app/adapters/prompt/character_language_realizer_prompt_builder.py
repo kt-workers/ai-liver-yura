@@ -61,6 +61,8 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 "特定polarityを推測しない。必要なら、状態を判断できていないこと自体を自然に表現する。",
                 "state=presentは存在を表すだけで強度を含まない。stateがlow/moderate/high/very_high等の"
                 "強度を明示していない限り、『少し』『かなり』等の強度を新しく推測・追加しない。",
+                "JSON生成前にspeechの程度・強弱表現を内部点検し、Semantic Planに対応する強度stateが"
+                "ない対象へ付いた程度表現は除去する。点検過程や診断語は出力しない。",
                 "certaintyは指定されたstateへの確からしさであり、別のstateや強度を推測してよい"
                 "許可ではない。medium/lowのcertaintyは、必要に応じて断定度や言い回しの慎重さとして"
                 "表し、強度表現へ置き換えない。",
@@ -104,9 +106,6 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
 
     @staticmethod
     def _can_realize(plan: SemanticUtterancePlan) -> bool:
-        # 移行初期はconversation-onlyとして安全にLegacy CharacterResponseへ戻せる
-        # 内部状態直接回答だけを新経路へ切り替える。一般ActivityはSemantic Planが
-        # execution propositionを保持できる段階まで旧経路を維持する。
         return bool(
             plan.target is not None
             and plan.target.type.casefold() in _INTERNAL_STATE_TYPES
