@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from app.adapters.prompt.character_language_realizer_prompt_builder import (
     CharacterLanguageRealizerPromptBuilder,
 )
@@ -89,3 +91,35 @@ def test_present_state_does_not_license_new_intensity_and_certainty_stays_episte
     assert "対応する強度stateがない対象へ付いた程度表現は除去" in prompt
     assert "medium/lowのcertainty" in prompt
     assert "強度表現へ置き換えない" in prompt
+
+
+def test_regeneration_feedback_projects_only_semantic_differences() -> None:
+    correction = json.dumps(
+        {
+            "reason": "unsupported_intensity_added",
+            "claim_differences": [
+                "unsupported_intensity_markers:少し",
+                "Planにない強度を追加している",
+            ],
+            "execution_status": "waiting_input",
+            "invalid_speech_claims": [{"text": "raw claim payload"}],
+            "emotion": {"joy": 0.14},
+        },
+        ensure_ascii=False,
+    )
+
+    prompt = CharacterLanguageRealizerPromptBuilder().build(
+        _context(),
+        character_profile=_profile(),
+        correction=correction,
+    )
+
+    assert "# Regeneration Feedback" in prompt
+    assert '"reason": "unsupported_intensity_added"' in prompt
+    assert "unsupported_intensity_markers:少し" in prompt
+    assert "Planにない強度を追加している" in prompt
+    assert "waiting_input" not in prompt
+    assert "invalid_speech_claims" not in prompt
+    assert "raw claim payload" not in prompt
+    assert '"joy": 0.14' not in prompt
+    assert "新しい事実・状態・指示の正本ではない" in prompt
