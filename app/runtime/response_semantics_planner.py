@@ -218,9 +218,10 @@ class ResponseSemanticsPlanner:
         self,
         emotion: object,
     ) -> tuple[SemanticProposition, ...]:
-        reactive = self._find_named_mapping(emotion, "reactive")
-        if reactive is None:
+        found = self._find_named_mapping(emotion, "reactive", path="emotion")
+        if found is None:
             return ()
+        base_path, reactive = found
         dimensions: list[SemanticProposition] = []
         for raw_key, value in reactive.items():
             if not self._is_scalar(value):
@@ -236,7 +237,7 @@ class ResponseSemanticsPlanner:
                     state=state,
                     certainty="high",
                     concept=concept,
-                    evidence_refs=(f"emotion.reactive.{key}",),
+                    evidence_refs=(f"{base_path}.{key}",),
                 )
             )
         dimensions.sort(
@@ -250,14 +251,18 @@ class ResponseSemanticsPlanner:
         cls,
         value: object,
         key_name: str,
-    ) -> Mapping[str, object] | None:
+        *,
+        path: str,
+    ) -> tuple[str, Mapping[str, object]] | None:
         if not isinstance(value, Mapping):
             return None
         for raw_key, item in value.items():
-            if str(raw_key).strip().casefold() == key_name.casefold() and isinstance(item, Mapping):
-                return item
+            key = str(raw_key)
+            item_path = f"{path}.{key}"
+            if key.strip().casefold() == key_name.casefold() and isinstance(item, Mapping):
+                return item_path, item
             if isinstance(item, Mapping):
-                nested = cls._find_named_mapping(item, key_name)
+                nested = cls._find_named_mapping(item, key_name, path=item_path)
                 if nested is not None:
                     return nested
         return None
