@@ -91,13 +91,14 @@ def test_high_curiosity_is_not_promoted_into_joy_meaning() -> None:
     assert '"state": "absent"' in serialized
 
 
-def test_current_feeling_uses_emotion_overview_without_raw_values() -> None:
+def test_current_feeling_uses_semantic_emotion_overview_without_raw_values() -> None:
     plan = ResponseSemanticsPlanner().plan(_context("current_feeling"))
 
-    proposition = plan.propositions[0]
-    assert proposition.predicate == "current_feeling"
-    assert proposition.state == "overview"
-    assert proposition.evidence_refs == ("emotion",)
+    assert plan.propositions[0].predicate == "current_feeling"
+    assert plan.propositions[0].state == "overview"
+    calm = next(item for item in plan.propositions if item.predicate == "calm")
+    assert calm.state == "moderate"
+    assert calm.evidence_refs == ("emotion.current.reactive.calm",)
     serialized = json.dumps(plan.as_context(), ensure_ascii=False)
     assert "0.58" not in serialized
 
