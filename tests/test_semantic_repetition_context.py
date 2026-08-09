@@ -3,8 +3,8 @@ from app.domain.character_response import (
     ResponseClaim,
     ResponseContext,
 )
-from app.runtime.internal_state_response_context import InternalStateAwareResponseContextBuilder
 from app.runtime.response_semantics_planner import ResponseSemanticsPlanner
+from app.runtime.semantic_discourse_context import project_semantic_discourse_context
 
 
 def _context(*, avoid_repetition: bool, recent_speech_summary: str) -> ResponseContext:
@@ -54,18 +54,16 @@ def test_recent_speech_is_projected_only_for_repetition_avoidance() -> None:
         avoid_repetition=True,
         recent_speech_summary="- 今は落ち着いてて、ちょっとだけ元気がある感じかな。",
     )
-    plan = ResponseSemanticsPlanner().plan(context)
-
-    enriched = InternalStateAwareResponseContextBuilder._attach_repetition_context(
+    plan = project_semantic_discourse_context(
         context,
-        plan,
+        ResponseSemanticsPlanner().plan(context),
     )
 
-    assert enriched.discourse_context["recent_speech_summary"] == (
+    assert plan.discourse_context["recent_speech_summary"] == (
         "- 今は落ち着いてて、ちょっとだけ元気がある感じかな。"
     )
     assert (
-        enriched.discourse_context["repetition_policy"]
+        plan.discourse_context["repetition_policy"]
         == "avoid_semantic_and_phrasal_repeat"
     )
 
@@ -75,12 +73,10 @@ def test_recent_speech_is_not_exposed_when_repetition_avoidance_is_disabled() ->
         avoid_repetition=False,
         recent_speech_summary="- 以前の発話",
     )
-    plan = ResponseSemanticsPlanner().plan(context)
-
-    enriched = InternalStateAwareResponseContextBuilder._attach_repetition_context(
+    plan = project_semantic_discourse_context(
         context,
-        plan,
+        ResponseSemanticsPlanner().plan(context),
     )
 
-    assert "recent_speech_summary" not in enriched.discourse_context
-    assert "repetition_policy" not in enriched.discourse_context
+    assert "recent_speech_summary" not in plan.discourse_context
+    assert "repetition_policy" not in plan.discourse_context
