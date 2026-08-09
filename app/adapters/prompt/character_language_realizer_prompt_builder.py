@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import json
+from dataclasses import asdict
+
+from app.adapters.prompt.avatar_performance_character_prompt_builder import (
+    AvatarPerformanceCharacterPromptBuilder as LegacyCharacterPromptBuilder,
+)
+from app.domain.character import CharacterProfile
+from app.domain.character_response import ResponseContext
+from app.domain.semantic_utterance import SemanticUtterancePlan
+
+
+class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
+    """Semantic Planが十分な場合だけCharacter LLMを言語実現専用境界へ切り替える。"""
+
+    def build(
+        self,
+        context: ResponseContext,
+        *,
+        character_profile: CharacterProfile | None,
+        correction: str | None,
+    ) -> str:
+        plan = SemanticUtterancePlan.from_context(
+            context.memory.get("semantic_utterance_plan")
+        )
+        if plan is None or not self._can_realize(plan):
+            return super().build(
+                context,
+                character_profile=character_profile,
+                correction=correction,
+            )
+
+        character_plan = self._character_facing_plan(plan)
+        correction_kind = self._correction_kind(correction)
+        profile = asdict(character_profile) if character_profile is not None else {}
+        return "\n".join(
+            [
+                "あなたはCharacter Language Realizerです。",
+                "発言内容・事実・内部状態を新しく判断しない。与えられたSemantic Utterance Planの"
+                "意味を変えず、Character Profileどおりの自然な日本語へ言語実現する。",
+                "# Character Profile",
+                json.dumps(profile, ensure_ascii=False, default=str),
+                "# Semantic Utterance Plan for Character",
+                json.dumps(character_plan, ensure_ascii=False, default=str),
+                "Semantic Planのpredicate/state/certainty/required/forbiddenは確定済み意味である。"
+                "Character Profileは、その意味をどう言うかだけに使用し、事実を追加・反転・弱め・"
+                "強めない。",
+                "interpersonalとdiscourse_contextは意味化済みの対人・談話facetである。"
+                "raw relationship scoreを推測せず、距離感、呼称、register、柔らかさ、冗談の程度など"
+                "言語表現に必要な範囲だけ反映する。",
+                "Character Profileのpersonality / speaking_style / existence / behavior_policyから、"
+                "語彙、一人称、語尾、直接さ、柔らかさ、簡潔さ、言い淀み等を自然に選ぶ。",
+                "言語的な間は、句読点、文分割、必要なfiller等で表してよい。"
+                "ただしpause秒数、speed、pitch、intonation、volume、breathiness等の音響parameterは"
+                "生成しない。",
+                "expression、gesture、Body joint、gaze、Viseme、TTS engine parameterも生成しない。",
+                "Semantic Planにない新しい自己状態、体験、関係評価、Activity結果、外部事実を"
+                "『でも〜』等で補足しない。",
+                "evidence path/key/valueや内部diagnostic名はCharacter入力ではない。推測・説明しない。",
+                "response_length、question_budget、new_direction_budgetを上限として守り、"
+                "使い切るために内容を追加しない。",
+                "semantic_realizationsには、実際にspeechへ反映したrealization_idだけを列挙する。",
+                "linguistic_performanceは言語上の区切り・強調・高レベルdelivery tagのみ。"
+                "音響数値を入れない。",
+                (
+                    f"# Regeneration\ncorrection_kind={correction_kind}\n"
+                    "前回表現を修正する場合も同じSemantic Planを維持し、"
+                    "unsupportedな補足事実を足さずに言い回しだけ修正する。"
+                    if correction_kind is not None
+                    else "# Regeneration\nなし"
+                ),
+                "JSONのみ返す:",
+                '{"speech":"発話","linguistic_performance":{"phrasing":["句・節"],'
+                '"emphasis":["強調語句"],"delivery_tags":["gentle"]},'
+                '"semantic_realizations":["proposition:0:joy"]}',
+            ]
+        )
+
+    @staticmethod
+    def _can_realize(plan: SemanticUtterancePlan) -> bool:
+        # 移行初期は、上流が発話意味を十分に確定できたケースだけ新経路へ切り替える。
+        return bool(plan.propositions or plan.required_content)
+
+    @staticmethod
+    def _character_facing_plan(plan: SemanticUtterancePlan) -> dict[str, object]:
+        propositions: list[dict[str, object]] = []
+        for index, item in enumerate(plan.propositions):
+            propositions.append(
+                {
+                    "realization_id": f"proposition:{index}:{item.predicate}",
+                    "kind": item.kind,
+                    "predicate": item.predicate,
+                    "state": item.state,
+                    "certainty": item.certainty,
+                    "concept": item.concept,
+                }
+            )
+        return {
+            "speech_act": plan.speech_act,
+            "target": plan.target.as_context() if plan.target is not None else None,
+            "propositions": propositions,
+            "required_content": list(plan.required_content),
+            "optional_content": list(plan.optional_content),
+            "forbidden_additions": list(plan.forbidden_additions),
+            "response_length": plan.response_length,
+            "self_disclosure": plan.self_disclosure,
+            "question_budget": plan.question_budget,
+            "new_direction_budget": plan.new_direction_budget,
+            "interpersonal": plan.interpersonal.as_context(),
+            "discourse_context": dict(plan.discourse_context),
+        }
+
+    @staticmethod
+    def _correction_kind(correction: str | None) -> str | None:
+        if not correction:
+            return None
+        try:
+            value = json.loads(correction)
+        except json.JSONDecodeError:
+            return "realization_rejected"
+        if not isinstance(value, dict):
+            return "realization_rejected"
+        reason = value.get("reason")
+        return str(reason).strip() if reason is not None and str(reason).strip() else "realization_rejected"
