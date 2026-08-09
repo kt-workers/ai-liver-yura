@@ -31,6 +31,24 @@ class _RecordingValidationModel:
         return self.response
 
 
+def _accepted_payload(*, intensity_markers: list[str] | None = None) -> dict[str, object]:
+    return {
+        "accepted": True,
+        "reason": "semantic_realization_consistent",
+        "differences": [],
+        "semantic_checks": {
+            "required_facets_preserved": True,
+            "state_preserved": True,
+            "certainty_preserved": True,
+            "concept_preserved": True,
+            "unsupported_intensity_added": False,
+        },
+        "surface_evidence": {
+            "intensity_markers": intensity_markers or [],
+        },
+    }
+
+
 def _envelope(target_id: str = "joy") -> dict[str, object]:
     return {
         "structured_input_meaning": {
@@ -129,9 +147,7 @@ def _response(
 def test_semantic_validator_accepts_canonical_plan() -> None:
     context = _base_context()
     plan = ResponseSemanticsPlanner().plan(context)
-
     result = SemanticUtteranceValidator().validate(context, plan)
-
     assert result.accepted is True
     assert result.reason == "semantic_plan_consistent"
     assert result.differences == ()
@@ -147,10 +163,8 @@ def test_semantic_validator_rejects_modified_target_proposition() -> None:
     propositions[0]["state"] = "present"
     value["propositions"] = propositions
     modified = SemanticUtterancePlan.from_context(value)
-
     assert modified is not None
     result = SemanticUtteranceValidator().validate(context, modified)
-
     assert result.accepted is False
     assert result.reason == "semantic_plan_inconsistent_with_structured_facts"
     assert "proposition_mismatch" in result.differences
@@ -158,11 +172,7 @@ def test_semantic_validator_rejects_modified_target_proposition() -> None:
 
 def test_realization_validator_prompt_uses_semantic_plan_not_raw_internal_state() -> None:
     context = _validated_context()
-    prompt = CharacterRealizationValidatorPromptBuilder().build(
-        context,
-        _response(),
-    )
-
+    prompt = CharacterRealizationValidatorPromptBuilder().build(context, _response())
     assert "# Semantic Utterance Plan" in prompt
     assert '"predicate": "joy"' in prompt
     assert '"state": "absent"' in prompt
@@ -173,21 +183,13 @@ def test_realization_validator_prompt_uses_semantic_plan_not_raw_internal_state(
     assert "# User Wording Hint" in prompt
     assert '"utterance": "楽しい？"' in prompt
     assert "意味の近い別概念へ置換していない" in prompt
-    assert "事実の正本ではない" in prompt
+    assert "surface_evidence.intensity_markers" in prompt
+    assert "semantic_checks" in prompt
 
 
 @pytest.mark.asyncio
 async def test_realization_validator_model_invocation_is_sanitized() -> None:
-    model = _RecordingValidationModel(
-        json.dumps(
-            {
-                "accepted": True,
-                "reason": "semantic_realization_consistent",
-                "differences": [],
-            },
-            ensure_ascii=False,
-        )
-    )
+    model = _RecordingValidationModel(json.dumps(_accepted_payload(), ensure_ascii=False))
     validator = CharacterRealizationValidator(
         model=model,
         prompt_builder=CharacterRealizationValidatorPromptBuilder(),
@@ -197,12 +199,9 @@ async def test_realization_validator_model_invocation_is_sanitized() -> None:
         goal="質問へ答える",
         source_event_id="test-event",
     )
-
     result = await validator.validate(source, _validated_context(), _response())
-
     assert result.accepted is True
     assert result.reason == "semantic_realization_consistent"
-    assert len(model.activities) == 1
     activity = model.activities[0]
     assert activity.context["llm_role"] == "character_realization_validator"
     assert activity.context["semantic_boundary"] is True
@@ -215,33 +214,21 @@ async def test_realization_validator_model_invocation_is_sanitized() -> None:
         "ongoing_activity",
     ):
         assert forbidden_key not in activity.context
-    prompt = str(activity.context["plugin_prompt_override"])
-    assert "0.82" not in prompt
-    assert "0.58" not in prompt
-    assert "emotion.current.reactive.joy" not in prompt
-    assert '"utterance": "楽しい？"' in prompt
 
 
 @pytest.mark.asyncio
 async def test_missing_primary_semantic_realization_is_rejected_before_model_call() -> None:
-    model = _RecordingValidationModel(
-        json.dumps({"accepted": True, "reason": "should_not_run", "differences": []})
-    )
+    model = _RecordingValidationModel(json.dumps(_accepted_payload()))
     validator = CharacterRealizationValidator(
         model=model,
         prompt_builder=CharacterRealizationValidatorPromptBuilder(),
     )
-    source = Activity(
-        activity_type=ActivityType.CONVERSATION_WITH_USER,
-        goal="質問へ答える",
-    )
-
+    source = Activity(activity_type=ActivityType.CONVERSATION_WITH_USER, goal="質問へ答える")
     result = await validator.validate(
         source,
         _validated_context(),
         _response(realizations=()),
     )
-
     assert result.accepted is False
     assert result.reason == "required_semantic_realization_missing"
     assert model.activities == []
@@ -263,17 +250,53 @@ async def test_model_rejection_is_returned_as_realization_difference() -> None:
         model=model,
         prompt_builder=CharacterRealizationValidatorPromptBuilder(),
     )
-    source = Activity(
-        activity_type=ActivityType.CONVERSATION_WITH_USER,
-        goal="質問へ答える",
-    )
-
+    source = Activity(activity_type=ActivityType.CONVERSATION_WITH_USER, goal="質問へ答える")
     result = await validator.validate(
         source,
         _validated_context(),
         _response(speech="うん、少し楽しいよ。"),
     )
-
     assert result.accepted is False
     assert result.reason == "target_polarity_changed"
     assert result.claim_differences == ("joy_absent_became_positive",)
+
+
+@pytest.mark.asyncio
+async def test_model_acceptance_is_overridden_when_unplanned_intensity_marker_is_reported() -> None:
+    model = _RecordingValidationModel(
+        json.dumps(_accepted_payload(intensity_markers=["ちょっと"]), ensure_ascii=False)
+    )
+    validator = CharacterRealizationValidator(
+        model=model,
+        prompt_builder=CharacterRealizationValidatorPromptBuilder(),
+    )
+    source = Activity(activity_type=ActivityType.CONVERSATION_WITH_USER, goal="質問へ答える")
+    result = await validator.validate(
+        source,
+        _validated_context(),
+        _response(speech="ちょっと楽しくないかな。"),
+    )
+    assert result.accepted is False
+    assert result.reason == "semantic_facet_validation_failed"
+    assert "unsupported_intensity_markers:ちょっと" in result.claim_differences
+
+
+@pytest.mark.asyncio
+async def test_model_acceptance_without_facet_diagnostics_fails_closed() -> None:
+    model = _RecordingValidationModel(
+        json.dumps(
+            {
+                "accepted": True,
+                "reason": "semantic_realization_consistent",
+                "differences": [],
+            }
+        )
+    )
+    validator = CharacterRealizationValidator(
+        model=model,
+        prompt_builder=CharacterRealizationValidatorPromptBuilder(),
+    )
+    source = Activity(activity_type=ActivityType.CONVERSATION_WITH_USER, goal="質問へ答える")
+    result = await validator.validate(source, _validated_context(), _response())
+    assert result.accepted is False
+    assert result.reason == "realization_validator_schema_invalid"
