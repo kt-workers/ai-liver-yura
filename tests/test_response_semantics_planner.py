@@ -165,7 +165,7 @@ def test_production_response_context_builder_attaches_semantic_plan() -> None:
         constraints={"_internal_directive": _envelope("joy")},
     )
     activity = Activity(
-        activity_type=ActivityType.CONVERSATION,
+        activity_type=ActivityType.CONVERSATION_WITH_USER,
         goal="現在の内部状態へ自然に直接答える",
         context={
             "activity_execution_result": result,
