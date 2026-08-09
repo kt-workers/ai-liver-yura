@@ -2,15 +2,80 @@ from __future__ import annotations
 
 import json
 
-from app.domain.character_response import CharacterResponse, ResponseClaim, VoiceIntent
+from app.domain.activities import Activity
+from app.domain.character_response import (
+    CharacterResponse,
+    ResponseClaim,
+    ResponseContext,
+    VoiceIntent,
+)
 from app.domain.character_utterance import CharacterUtterance
+from app.domain.semantic_utterance import SemanticUtterancePlan
 from app.runtime.avatar_performance_character_service import (
     AvatarPerformanceCharacterLlmService,
 )
+from app.utils.llm_trace import build_llm_trace_context
+
+
+_INTERNAL_STATE_TYPES = frozenset({"internal_state", "agent_internal_state"})
 
 
 class CharacterLanguageRealizerService(AvatarPerformanceCharacterLlmService):
-    """新CharacterUtterance Schemaを既存CharacterResponse Pipelineへ接続する移行Adapter。"""
+    """Character LLMを言語実現専用境界へ接続し、既存Pipelineへ互換変換する。"""
+
+    async def generate(
+        self,
+        source: Activity,
+        context: ResponseContext,
+        *,
+        correction: str | None = None,
+        attempt: int = 1,
+    ) -> CharacterResponse:
+        if not self._uses_language_realizer(context):
+            return await super().generate(
+                source,
+                context,
+                correction=correction,
+                attempt=attempt,
+            )
+
+        prompt = self._prompt_builder.build(
+            context,
+            character_profile=self._character_profile,
+            correction=correction,
+        )
+        # 新Language Realizer経路ではPrompt外のActivity Contextからraw stateを参照できないよう、
+        # Model invocationへuser_input/full ResponseContext/Emotion/Drive/Activity payloadを渡さない。
+        activity = Activity(
+            activity_type=source.activity_type,
+            goal="確定済み発言意味をCharacter Profileに沿って言語実現する",
+            source_event_id=source.source_event_id,
+            context={
+                "plugin_prompt_override": prompt,
+                "llm_role": "character_language_realizer",
+                "event_id": source.context.get("event_id"),
+                "trace_context": source.context.get("trace_context"),
+                "activity_turn_id": source.context.get("activity_turn_id"),
+                "llm_attempt": attempt,
+                "semantic_boundary": True,
+            },
+        )
+        raw = await self._model.generate_character_response(activity)
+        response = self.parse(raw)
+        if response is None:
+            raise ValueError("Character Language Realizerの構造化応答が不正です。")
+        trace = build_llm_trace_context(activity)
+        self._trace_logger.info(
+            "character_language_realizer:response_generated",
+            **trace.trace_context.as_log_fields(),
+            llm_role="character_language_realizer",
+            request_id=trace.request_id,
+            attempt=attempt,
+            source_activity_id=source.activity_id,
+            speech_length=len(response.speech),
+            semantic_boundary=True,
+        )
+        return response
 
     @staticmethod
     def parse(raw: str) -> CharacterResponse | None:
@@ -35,4 +100,17 @@ class CharacterLanguageRealizerService(AvatarPerformanceCharacterLlmService):
             claims=(ResponseClaim.CONVERSATION_ONLY,),
             claim_details=(),
             reaction_plan=None,
+        )
+
+    @staticmethod
+    def _uses_language_realizer(context: ResponseContext) -> bool:
+        plan = SemanticUtterancePlan.from_context(
+            context.memory.get("semantic_utterance_plan")
+        )
+        return bool(
+            plan is not None
+            and plan.target is not None
+            and plan.target.type.casefold() in _INTERNAL_STATE_TYPES
+            and plan.speech_act == "direct_answer"
+            and plan.propositions
         )
