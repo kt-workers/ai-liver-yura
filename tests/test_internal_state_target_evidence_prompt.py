@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from app.adapters.prompt import CharacterPromptBuilder, ResponseValidatorPromptBuilder
 from app.domain.character_response import (
     ActivityExecutionStatus,
@@ -108,6 +110,28 @@ def test_validator_prompt_rejects_positive_target_claim_against_zero_evidence() 
     assert "少しでも存在する" in prompt
     assert "accepted=false" in prompt
     assert "curiosity、engagement、energy等はjoy、anger等の代替事実ではない" in prompt
+
+
+def test_target_conflict_regeneration_does_not_compensate_with_other_state() -> None:
+    correction = json.dumps(
+        {
+            "reason": "target_joy_value_conflict",
+            "instruction": "未実行処理を実行済みと表現しない",
+        },
+        ensure_ascii=False,
+    )
+
+    prompt = CharacterPromptBuilder().build(
+        _context("joy"),
+        character_profile=None,
+        correction=correction,
+    )
+
+    assert "# Target-specific Internal State Regeneration" in prompt
+    assert "target_evidenceと矛盾しない形へ修正" in prompt
+    assert "付け足して埋め合わせない" in prompt
+    assert "新しい自己状態の事実を作る根拠にはしない" in prompt
+    assert "不要な補足を追加せず" in prompt
 
 
 def test_current_feeling_uses_emotion_overview_instead_of_one_dimension() -> None:
