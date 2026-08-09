@@ -70,6 +70,28 @@ Character Language Realizer (#227)
 
 `evidence_refs`は値そのものではなく、どのstructured factを根拠に意味化したかを示す参照である。
 
+### evidence_refsの可視境界
+
+`evidence_refs`は **Core内のprovenance / Semantic Validator / 診断用情報** であり、Character LLM向けの表現材料ではない。
+
+#227でCharacter-facing inputを構築する際は、原則として次だけを渡す。
+
+- predicate
+- semantic state
+- certainty
+- 必要なsemantic concept
+- required / optional / forbidden semantic content
+- interpersonal / discourse facet
+
+次はCharacter LLMへ渡さない。
+
+- `evidence_refs`
+- internal path / key名
+- raw value
+- evidence extractionのdiagnostic reason
+
+これにより、数値だけでなく内部schema名へのCharacter依存も防ぐ。
+
 ## 数値から意味への変換
 
 0〜1の強度dimensionはCharacterへ数値を渡さず、次の有限状態へ意味化する。
