@@ -5,6 +5,7 @@ on:
     paths:
       - "cloud_validation/character_response_lab.py"
       - "tests/test_cloud_character_response_lab*.py"
+      - "tests/test_internal_state_target_evidence_prompt.py"
       - "app/domain/character/**"
       - "app/runtime/character_response_pipeline.py"
       - "app/adapters/prompt/**"
@@ -51,4 +52,5 @@ jobs:
           PYTHONUNBUFFERED: "1"
         run: |
           pytest -q tests/test_cloud_character_response_lab.py \
-            tests/test_internal_state_response_semantic_consistency.py
+            tests/test_internal_state_response_semantic_consistency.py \
+            tests/test_internal_state_target_evidence_prompt.py
