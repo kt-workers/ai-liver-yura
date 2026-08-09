@@ -37,6 +37,7 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
         character_plan = self._character_facing_plan(plan)
         correction_kind = self._correction_kind(correction)
         profile = asdict(character_profile) if character_profile is not None else {}
+        wording_hint = self._user_wording_hint(context)
         return "\n".join(
             [
                 "あなたはCharacter Language Realizerです。",
@@ -46,9 +47,17 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 json.dumps(profile, ensure_ascii=False, default=str),
                 "# Semantic Utterance Plan for Character",
                 json.dumps(character_plan, ensure_ascii=False, default=str),
+                "# User Wording Hint",
+                json.dumps({"utterance": wording_hint}, ensure_ascii=False),
                 "Semantic Planのpredicate/state/certainty/required/forbiddenは確定済み意味である。"
                 "Character Profileは、その意味をどう言うかだけに使用し、事実を追加・反転・弱め・"
                 "強めない。",
+                "User Wording Hintは、ユーザーがどの語彙・意味枠で対象を尋ねたかを保つための"
+                "言語的な参照情報である。事実や内部状態を推論する材料には使わず、"
+                "Semantic Planと矛盾する場合はSemantic Planを優先する。",
+                "predicateやtarget.idは内部状態との接続・同一性を示す識別子であり、"
+                "その英語ラベルをそのまま自然語の意味として再解釈してはいけない。"
+                "User Wording Hintが示す対象概念を、意味の近い別概念へ勝手に置き換えない。",
                 "interpersonalとdiscourse_contextは意味化済みの対人・談話facetである。"
                 "raw relationship scoreを推測せず、距離感、呼称、register、柔らかさ、冗談の程度など"
                 "言語表現に必要な範囲だけ反映する。",
@@ -120,6 +129,10 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
             "interpersonal": plan.interpersonal.as_context(),
             "discourse_context": dict(plan.discourse_context),
         }
+
+    @staticmethod
+    def _user_wording_hint(context: ResponseContext) -> str:
+        return context.user_input.strip()[:500]
 
     @staticmethod
     def _correction_kind(correction: str | None) -> str | None:
