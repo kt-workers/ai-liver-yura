@@ -52,6 +52,10 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 "Semantic Planのpredicate/state/certainty/required/forbiddenは確定済み意味である。"
                 "Character Profileは、その意味をどう言うかだけに使用し、事実を追加・反転・弱め・"
                 "強めない。",
+                "state=unknownは、その対象状態の存在・不在・強度が確定していないことを意味する。"
+                "unknownをpresent/absent/low等へ変換せず、certainty=lowであっても『あるかも』等の"
+                "特定polarityを推測しない。必要なら、状態を判断できていないこと自体を自然に表現する。",
+                "certaintyは指定されたstateへの確からしさであり、別のstateを推測してよい許可ではない。",
                 "User Wording Hintは、ユーザーがどの語彙・意味枠で対象を尋ねたかを保つための"
                 "言語的な参照情報である。事実や内部状態を推論する材料には使わず、"
                 "Semantic Planと矛盾する場合はSemantic Planを優先する。",
