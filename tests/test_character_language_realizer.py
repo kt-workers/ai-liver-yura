@@ -111,7 +111,20 @@ def test_language_realizer_prompt_exposes_semantics_not_raw_internal_state() -> 
     assert "evidence_refs" not in prompt
     assert "0.82" not in prompt
     assert "0.58" not in prompt
-    assert "楽しい？" not in prompt
+
+
+def test_user_wording_hint_preserves_target_semantic_frame_without_becoming_fact_source() -> None:
+    prompt = CharacterLanguageRealizerPromptBuilder().build(
+        _context(),
+        character_profile=_profile(),
+        correction=None,
+    )
+
+    assert "# User Wording Hint" in prompt
+    assert '"utterance": "楽しい？"' in prompt
+    assert "事実や内部状態を推論する材料には使わず" in prompt
+    assert "内部状態との接続・同一性を示す識別子" in prompt
+    assert "意味の近い別概念へ勝手に置き換えない" in prompt
 
 
 def test_same_semantic_plan_keeps_facts_while_character_profile_changes_style_context() -> None:
@@ -238,6 +251,7 @@ async def test_model_invocation_does_not_receive_raw_response_context_or_user_in
     assert "0.82" not in prompt
     assert "0.58" not in prompt
     assert "emotion.current.reactive.joy" not in prompt
+    assert '"utterance": "楽しい？"' in prompt
 
 
 @pytest.mark.asyncio
