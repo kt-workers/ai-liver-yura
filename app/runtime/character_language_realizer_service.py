@@ -103,6 +103,7 @@ class CharacterLanguageRealizerService(AvatarPerformanceCharacterLlmService):
         # #227ではCharacter LLMは言語表現だけを所有する。
         # expression / voice / acoustic pauseは下流責務へ移行するため、
         # 既存Pipeline互換値はAdapter側のneutral defaultとして補う。
+        # 一方、言語的な区切り/強調とsemantic realization IDはCharacter自身の出力なので保持する。
         return CharacterResponse(
             speech=utterance.speech,
             expression="neutral",
@@ -112,6 +113,8 @@ class CharacterLanguageRealizerService(AvatarPerformanceCharacterLlmService):
             claims=(ResponseClaim.CONVERSATION_ONLY,),
             claim_details=(),
             reaction_plan=None,
+            linguistic_performance=utterance.linguistic_performance,
+            semantic_realizations=utterance.semantic_realizations,
         )
 
     @staticmethod
