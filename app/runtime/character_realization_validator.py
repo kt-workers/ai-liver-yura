@@ -16,6 +16,32 @@ from app.utils.llm_trace import build_llm_trace_context
 
 _INTERNAL_STATE_TYPES = frozenset({"internal_state", "agent_internal_state"})
 _INTENSITY_STATES = frozenset({"low", "moderate", "high", "very_high"})
+# LLM Validatorがsurface markerを見落とした場合の保守的な安全網。
+# 固定回答辞書ではなく、発話上で明示的に程度・強弱を付与する語だけを扱う。
+_EXPLICIT_INTENSITY_MARKERS = tuple(
+    sorted(
+        {
+            "ほんの少し",
+            "少しだけ",
+            "ものすごく",
+            "めちゃくちゃ",
+            "非常に",
+            "かなり",
+            "とても",
+            "すごく",
+            "だいぶ",
+            "相当",
+            "ちょっと",
+            "わりと",
+            "割と",
+            "結構",
+            "やや",
+            "少し",
+        },
+        key=len,
+        reverse=True,
+    )
+)
 
 
 class CharacterRealizationValidator(LegacyResponseValidator):
@@ -139,6 +165,14 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                 return result
             differences.extend(facet_differences)
 
+        deterministic_surface_differences = self._deterministic_surface_differences(
+            plan,
+            response.speech,
+        )
+        for difference in deterministic_surface_differences:
+            if difference not in differences:
+                differences.append(difference)
+
         accepted = model_accepted and not differences
         reason = str(value.get("reason") or "semantic_realization_validation")
         if model_accepted and differences:
@@ -207,6 +241,30 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                 "unsupported_intensity_markers:" + ",".join(intensity_markers)
             )
         return differences
+
+    @staticmethod
+    def _deterministic_surface_differences(
+        plan: SemanticUtterancePlan,
+        speech: str,
+    ) -> list[str]:
+        if plan.propositions[0].state in _INTENSITY_STATES:
+            return []
+        markers = CharacterRealizationValidator._explicit_intensity_markers(speech)
+        if not markers:
+            return []
+        return ["unsupported_intensity_markers:" + ",".join(markers)]
+
+    @staticmethod
+    def _explicit_intensity_markers(speech: str) -> list[str]:
+        # 長い語から消費し、"ほんの少し"と"少し"のような重複報告を避ける。
+        remaining = speech
+        found: list[str] = []
+        for marker in _EXPLICIT_INTENSITY_MARKERS:
+            if marker not in remaining:
+                continue
+            found.append(marker)
+            remaining = remaining.replace(marker, " " * len(marker))
+        return found
 
     @staticmethod
     def _uses_realization_validation(
