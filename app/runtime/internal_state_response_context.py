@@ -8,15 +8,17 @@ from app.domain.character_response import ResponseContext
 from app.runtime.character_response_pipeline import (
     ResponseContextBuilder as BaseResponseContextBuilder,
 )
+from app.runtime.response_semantics_planner import ResponseSemanticsPlanner
 from app.utils.trace import TraceLogger
 
 
 class InternalStateAwareResponseContextBuilder(BaseResponseContextBuilder):
-    """全Activity種別でEmotion／Driveの投影規則を統一する。"""
+    """全Activity種別でEmotion／Driveと発話意味の投影規則を統一する。"""
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
         self._state_projection_trace_logger = TraceLogger()
+        self._response_semantics_planner = ResponseSemanticsPlanner()
 
     def build(self, activity: Activity) -> ResponseContext:
         context = super().build(activity)
@@ -49,6 +51,11 @@ class InternalStateAwareResponseContextBuilder(BaseResponseContextBuilder):
             emotion=dict(emotion),
             drive=projected_drive,
         )
+        semantic_plan = self._response_semantics_planner.plan(projected)
+        projected_memory = dict(projected.memory)
+        projected_memory["semantic_utterance_plan"] = semantic_plan.as_context()
+        projected = replace(projected, memory=projected_memory)
+
         self._state_projection_trace_logger.debug(
             "response_context_builder:internal_state_projected",
             source_activity_id=activity.activity_id,
@@ -59,6 +66,17 @@ class InternalStateAwareResponseContextBuilder(BaseResponseContextBuilder):
             drive_available=bool(projected.drive),
             emotion_keys=sorted(projected.emotion),
             drive_keys=sorted(projected.drive),
+        )
+        self._state_projection_trace_logger.debug(
+            "response_semantics_planner:planned",
+            source_activity_id=activity.activity_id,
+            activity_type=projected.activity_type,
+            speech_act=semantic_plan.speech_act,
+            target=(semantic_plan.target.as_context() if semantic_plan.target else None),
+            proposition_count=len(semantic_plan.propositions),
+            question_budget=semantic_plan.question_budget,
+            new_direction_budget=semantic_plan.new_direction_budget,
+            response_length=semantic_plan.response_length,
         )
         return projected
 
