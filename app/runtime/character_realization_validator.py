@@ -98,11 +98,20 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             self._trace_result(source, result)
             return result
 
+        deterministic_surface_differences = self._deterministic_surface_differences(
+            plan,
+            response.speech,
+        )
         if self._model is None:
             result = ResponseValidationResult(
-                accepted=True,
-                reason="semantic_realization_structure_valid",
+                accepted=not deterministic_surface_differences,
+                reason=(
+                    "semantic_realization_structure_valid"
+                    if not deterministic_surface_differences
+                    else "semantic_facet_validation_failed"
+                ),
                 extracted_claims=extracted_claims,
+                claim_differences=tuple(deterministic_surface_differences),
             )
             self._trace_result(source, result)
             return result
@@ -165,10 +174,6 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                 return result
             differences.extend(facet_differences)
 
-        deterministic_surface_differences = self._deterministic_surface_differences(
-            plan,
-            response.speech,
-        )
         for difference in deterministic_surface_differences:
             if difference not in differences:
                 differences.append(difference)
