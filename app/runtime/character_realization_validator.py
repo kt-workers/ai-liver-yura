@@ -15,6 +15,7 @@ from app.utils.llm_trace import build_llm_trace_context
 
 
 _INTERNAL_STATE_TYPES = frozenset({"internal_state", "agent_internal_state"})
+_INTENSITY_STATES = frozenset({"low", "moderate", "high", "very_high"})
 
 
 class CharacterRealizationValidator(LegacyResponseValidator):
@@ -119,20 +120,35 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             return result
 
         differences_value = value.get("differences", [])
-        differences = (
-            tuple(
-                item.strip()
-                for item in differences_value
-                if isinstance(item, str) and item.strip()
-            )
-            if isinstance(differences_value, list)
-            else ()
-        )
+        differences = list(
+            item.strip()
+            for item in differences_value
+            if isinstance(item, str) and item.strip()
+        ) if isinstance(differences_value, list) else []
+
+        model_accepted = bool(value["accepted"])
+        if model_accepted:
+            facet_differences = self._accepted_facet_differences(plan, value)
+            if facet_differences is None:
+                result = ResponseValidationResult(
+                    False,
+                    "realization_validator_schema_invalid",
+                    extracted_claims=extracted_claims,
+                )
+                self._trace_result(source, result)
+                return result
+            differences.extend(facet_differences)
+
+        accepted = model_accepted and not differences
+        reason = str(value.get("reason") or "semantic_realization_validation")
+        if model_accepted and differences:
+            reason = "semantic_facet_validation_failed"
+
         result = ResponseValidationResult(
-            accepted=bool(value["accepted"]),
-            reason=str(value.get("reason") or "semantic_realization_validation"),
+            accepted=accepted,
+            reason=reason,
             extracted_claims=extracted_claims,
-            claim_differences=differences,
+            claim_differences=tuple(differences),
         )
         trace = build_llm_trace_context(activity)
         self._trace_logger.debug(
@@ -147,6 +163,50 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         )
         self._trace_result(source, result)
         return result
+
+    @staticmethod
+    def _accepted_facet_differences(
+        plan: SemanticUtterancePlan,
+        value: dict[str, object],
+    ) -> list[str] | None:
+        checks = value.get("semantic_checks")
+        surface = value.get("surface_evidence")
+        if not isinstance(checks, dict) or not isinstance(surface, dict):
+            return None
+
+        required_checks = [
+            "required_facets_preserved",
+            "state_preserved",
+            "certainty_preserved",
+            "unsupported_intensity_added",
+        ]
+        if plan.propositions[0].concept is not None:
+            required_checks.append("concept_preserved")
+        if any(not isinstance(checks.get(name), bool) for name in required_checks):
+            return None
+
+        markers_value = surface.get("intensity_markers")
+        if not isinstance(markers_value, list) or any(
+            not isinstance(item, str) for item in markers_value
+        ):
+            return None
+        intensity_markers = [item.strip() for item in markers_value if item.strip()]
+
+        differences: list[str] = []
+        for name in ("required_facets_preserved", "state_preserved", "certainty_preserved"):
+            if checks[name] is False:
+                differences.append(name)
+        if plan.propositions[0].concept is not None and checks["concept_preserved"] is False:
+            differences.append("concept_preserved")
+        if checks["unsupported_intensity_added"] is True:
+            differences.append("unsupported_intensity_added")
+
+        primary_state = plan.propositions[0].state
+        if primary_state not in _INTENSITY_STATES and intensity_markers:
+            differences.append(
+                "unsupported_intensity_markers:" + ",".join(intensity_markers)
+            )
+        return differences
 
     @staticmethod
     def _uses_realization_validation(
