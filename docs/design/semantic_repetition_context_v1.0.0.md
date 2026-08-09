@@ -12,6 +12,8 @@ Character LLMをLanguage Realizerへ限定した後も、直近発話との不�
 ResponseContext.recent_speech_summary
 + constraints.avoid_repetition
         ↓
+project_semantic_discourse_context
+        ↓
 SemanticUtterancePlan.discourse_context
         ↓
 Character Language Realizer
@@ -25,6 +27,14 @@ Character Language Realizer
   "repetition_policy": "avoid_semantic_and_phrasal_repeat"
 }
 ```
+
+## 正規化責務
+
+反復Contextは`app/runtime/semantic_discourse_context.py`の`project_semantic_discourse_context()`を唯一の投影規則とする。
+
+Production ResponseContext生成側とSemantic Validator側が別々の後付け規則を持ってはならない。Characterへ渡すPlanとValidatorが再構成するcanonical Planは、同じ`ResponseContext`に対して同じProjectorを通す。
+
+これにより、`recent_speech_summary`が存在するケースでも`discourse_context_mismatch`を起こさず、同時にValidatorが単に差分を無視する実装にもならない。
 
 ## 責務
 
@@ -54,12 +64,15 @@ Characterはこれを使って:
 
 反復検出そのものは既存Pipelineのdeterministic repetition checkを維持する。
 
+Semantic Validatorは`ResponseSemanticsPlanner`でcanonical Planを再構成した後、同じ`project_semantic_discourse_context()`を適用してから比較する。
+
 再生成時には同じSemantic Planを保持し、Characterは`discourse_context.recent_speech_summary`を参照して表現だけを変える。
 
 ## Verification
 
 - Semantic Planにraw数値を含めない
 - `avoid_repetition=true`時だけrecent speechを投影
+- Production生成PlanとValidator canonical Planの`discourse_context`が一致する
 - Character model boundaryにfull ResponseContextを戻さない
 - current feeling repetition presetで同じtyped targetを維持する
 - 再生成時に無関係な新話題へ逃げない
