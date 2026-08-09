@@ -200,22 +200,20 @@ class InternalDirectivePromptBuilder:
                 "直接つながる質問を1件だけ許可できる。この場合question_budget=1、"
                 "同じ対象を掘り下げるだけならnew_direction_budget=0にする。既存Gapを"
                 "new_knowledge_gapsとして作り直してはいけない。",
-                "joyやamusementとengagementを混同しない。内部状態への直接質問では対象の"
-                "感情値を根拠にし、関心の高さを楽しさとして断定しない。",
                 "structured_input_meaning.target.typeがinternal_stateまたは"
-                "agent_internal_stateで、target.idがcurrent_feeling、current_mood、"
-                "current_emotion、mood、feelingのいずれかなら、internal_state.emotionや"
-                "internal_state.driveはPlanner判断の根拠として利用できる。ただし内部キー、"
-                "数値、強度ラベル、内部分類をresponse_goalまたはcontent_requirementsへ"
-                "発話すべき内容として移してはいけない。",
-                "現在の気分全体への回答目的は、現在の内的状態に沿ってユーザーの質問へ自然に"
-                "直接答えることに留める。内部状態はCharacter表現を生む原因であり、診断結果の"
-                "ように説明する対象ではない。Characterへ固定文、固定フレーズ、状態名ごとの"
-                "言い換え辞書を指定せず、発話本文も生成しない。",
-                "drive.curiosityは好奇心・関心として必要な場合だけ補助的に含め、joyまたは"
-                "amusementの代用にしない。内部状態そのものが直接回答対象なら、必要な内容を"
-                "答えられるようself_disclosure_levelは0.35以上を目安にするが、発話本文は"
-                "生成しない。",
+                "agent_internal_stateである直接質問では、internal_state.emotionや"
+                "internal_state.driveはPlanner判断の材料として利用できる。ただし具体的な"
+                "状態説明、内部キー、数値、強度、分類、自然語へ変換した診断内容を"
+                "response_goal、content_requirements、forbidden_claimsへ発話内容として"
+                "移してはいけない。target.idごとの例外を作らず、すべての内部状態targetへ"
+                "同じ責務境界を適用する。",
+                "内部状態への直接質問のresponse_goalは、ユーザーが尋ねた内的状態について"
+                "現在の状態に沿って自然に直接答える、という会話目的に留める。"
+                "content_requirementsへ状態説明を生成しない。内部状態はCharacter表現を生む"
+                "cause/evidenceであり、Internal Directiveが説明文へ変換する対象ではない。",
+                "engagementやcuriosityを質問対象の内的状態と同一概念として扱わない。"
+                "内部状態そのものが直接回答対象ならself_disclosure_levelは0.35以上を目安に"
+                "するが、固定文、固定フレーズ、状態名ごとの言い換え辞書、発話本文は生成しない。",
                 "Character Profileと存在境界は常に守る。ただし身体経験と無関係な通常の"
                 "相づち、共感、会話終了、Activity継続へ、身体や現実体験の禁止事項を機械的に"
                 "毎回列挙しない。structured_input_meaningが身体状態・物理行動・現実空間の"

@@ -2,7 +2,8 @@
 
 ## 目的
 
-`今どんな気分？`のような現在の気分全体への質問で、Characterが
+`今どんな気分？`、`楽しい？`、`怒ってる？`、`何かしたい？`のような
+内部状態への直接質問で、Characterが
 `neutral`、`calm=0.74`、`中立的な気分`などの内部モデルを診断結果のように
 自己説明しないようにする。
 
@@ -25,8 +26,8 @@ Characterへは既存の`InternalStateAwareResponseContextBuilder`を通して
 ## Internal Directiveの責務
 
 Internal Directive Plannerはstructured Emotion/Driveを判断根拠として利用できる。
-ただしcurrent feeling系では、次を`response_goal`や`content_requirements`へ
-発話すべき内容として移さない。
+ただし`internal_state` / `agent_internal_state`への直接質問全般では、次を
+`response_goal`、`content_requirements`、`forbidden_claims`へ発話内容として移さない。
 
 - Emotion/Driveの内部キー
 - 内部値や強度区分
@@ -37,19 +38,49 @@ Internal Directive Plannerはstructured Emotion/Driveを判断根拠として利
 `response_goal`は「現在の内的状態に沿って、質問へ自然に直接答える」という
 会話目的に留め、発話本文を先に作らない。
 
-## 決定論的な正規化
+## 構造境界による正規化
 
-LLM Plannerが旧形式の診断的なgoal/requirementを返す可能性があるため、Coreの
-Validatorでcurrent feeling系だけを正規化する。
+LLM Plannerが内部状態を自然語へ変換したgoal/requirementを返す可能性がある。
+自然語化後の文章を診断文らしさで判定することはできないため、CoreのValidatorは
+内部状態への直接質問全般をtarget typeと発話行為で識別し、次を構造的に正規化する。
 
 - `response_goal`を自然な直接回答の会話目的へ戻す
-- 実際のstructured Emotion/Driveに含まれる内部tokenを発話要件から除く
-- evidence marker、数値付き状態説明、状態名と強度区分を組み合わせた診断説明を除く
-- 通常の日本語を単語単位で全面禁止しない
+- Planner生成の`content_requirements`を採用しない
+- Planner生成の`forbidden_claims`を採用しない
+- existence boundary等のCore deterministic constraintを後から追加する
+- target IDの固定一覧を使わず、将来追加される内部状態targetにも同じ境界を適用する
 - 固定セリフへ置換しない
 
-例えば`落ち着いて、短く答える`という通常の表現方針は保持できる。一方、
-`落ち着きが強め`や`Emotion evidence: calm=0.74`は内部診断の搬送なので除く。
+この正規化は感情語辞書、正規表現、日本語診断文分類を使用しない。
+Characterは別経路のstructured Emotion/Drive、Interaction Intention / Expression、
+conversation historyを使い、その場で発話を生成する。
+
+## 2回目Verification追補: 個別状態を含む二重搬送
+
+Input Meaningのtyped target修正後、13件すべてでtargetは正しく構造化された。一方、
+current feelingへの6回の質問が完全に同じ文となり、joy / anger / current_desireでも
+内部状態の具体値や自然語化済み説明が`content_requirements`へ搬送されていた。
+
+```text
+structured internal state
+→ Plannerが状態を自然語の説明内容へ変換
+→ 同じ具体的content requirementがCharacterを固定
+→ diagnostic and repeated Character speech
+```
+
+このため個別状態質問を対象外とする旧判断を撤回し、内部状態への直接質問全般を
+同じ構造境界の対象とする。`current_concern`、`loneliness`、`confidence`等の新しい
+target IDにも追加実装なしで適用される。
+
+旧evidence注入経路は廃止する。
+
+- `joy=...`, `amusement=...`, `engagement=...`
+- `現在のanger=...`
+- `Drive evidence: {...}`
+- 内部値を自然語へ変換するようCharacterへ要求するcontent requirement
+
+内部状態をCharacterから隠すのではない。内部状態は別のstructured contextとして
+維持し、答えの具体的な文章だけをInternal Directiveで先取りしない。
 
 ## 実環境Verification追補: Input Meaning target契約
 
@@ -92,17 +123,19 @@ PR #135が目指した「内部状態をCharacterへ十分に搬送し、状態�
 その責務を持つ。このため旧Internal Directive発話要件経路だけを縮小し、内部状態の
 取得やCharacterへのstructured搬送は削除しない。
 
-## 対象外
+## 維持する契約
 
-- `楽しい？`、`怒ってる？`、`何かしたい？`など個別状態質問の既存契約
 - `self_disclosure_level >= 0.35`の直接回答許可
 - question budget / new direction budget
+- `ResponseContext.emotion` / `ResponseContext.drive`
 - Interaction Intention / ExpressionからCharacter・Bodyへ至る因果経路
-- 状態名を固定セリフへ変換するテンプレート
+- conversation history
+- physical hunger等へ後から追加されるexistence constraint
 
 ## Verification
 
-複数の内部状態で`今どんな気分？`と`何か気になることある？`を複数回確認する。
+複数の内部状態でcurrent feeling、joy、anger、current desire、current concernを
+複数回確認する。
 
 - 内部キー・数値・内部分類を読み上げない
 - 診断レポート口調にならない
@@ -110,3 +143,5 @@ PR #135が目指した「内部状態をCharacterへ十分に搬送し、状態�
 - 毎回同じ固定文にならない
 - 質問へ直接答え、無関係な話題へ逃げない
 - question budget誤判定が再発しない
+- Input Meaning targetと`internal_state_guidance_normalized`を確認する
+- physical hunger等でexistence constraintが維持される

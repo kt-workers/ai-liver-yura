@@ -262,9 +262,9 @@ async def test_missing_question_target_is_restructured_then_current_feeling_is_n
         "type": "internal_state",
         "id": "current_feeling",
     }
-    assert "current_feeling_guidance_normalized" in validated["validation_notes"]
+    assert "internal_state_guidance_normalized" in validated["validation_notes"]
     assert directive_result["response_goal"] == (
-        "現在の内的状態に沿って、ユーザーの質問へ自然に直接答える"
+        "ユーザーが尋ねた内的状態について、現在の状態に沿って自然に直接答える"
     )
     assert "ニュートラル" not in "\n".join(
         directive_result["content_requirements"]
@@ -470,9 +470,9 @@ def test_internal_state_and_existence_boundaries_are_enforced() -> None:
     )
 
     joy_requirements = "\n".join(joy.directive.content_requirements)
-    assert "joy=0.0" in joy_requirements
-    assert "engagement=0.94" in joy_requirements
-    assert "\u697d\u3057\u3044\u3068\u65ad\u5b9a" in "\n".join(
+    assert "joy=0.0" not in joy_requirements
+    assert "engagement=0.94" not in joy_requirements
+    assert "engagement\u3084curiosity" in "\n".join(
         joy.directive.forbidden_claims
     )
     human_body_claim = (

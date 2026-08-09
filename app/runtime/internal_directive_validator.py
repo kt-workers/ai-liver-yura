@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import replace
 
 from app.domain.cognitive_direction import (
@@ -114,18 +112,17 @@ class InternalDirectiveValidator:
         requirements = list(directive.content_requirements)
         forbidden_claims = list(directive.forbidden_claims)
         response_goal = directive.response_goal
-        if self._is_current_feeling_target(meaning):
-            response_goal, requirements = self._normalize_current_feeling_guidance(
-                planning_input,
-                requirements,
+        if self._is_direct_internal_state_question(meaning):
+            response_goal, requirements, forbidden_claims = (
+                self._normalize_internal_state_guidance()
             )
             forbidden_claims.extend(
                 (
                     "Emotion/Driveの内部キー名、数値、強度分類を診断結果として読み上げる",
-                    "neutralや中立などの内部分類を、そのまま人物の自己説明として使う",
+                    "engagementやcuriosityを、質問対象の内的状態と同一概念として扱う",
                 )
             )
-            notes.append("current_feeling_guidance_normalized")
+            notes.append("internal_state_guidance_normalized")
         if self._is_positive_empathy_input(meaning):
             self._add_positive_empathy_requirements(
                 planning_input,
@@ -147,12 +144,6 @@ class InternalDirectiveValidator:
         if impossible_embodied_experience and target_interest_updates:
             target_interest_updates = ()
             notes.append("impossible_embodied_experience_rejects_knowledge_gaps")
-        self._add_internal_state_requirements(
-            meaning,
-            planning_input,
-            requirements,
-            forbidden_claims,
-        )
         self._add_existence_constraints(
             meaning,
             existence_boundaries,
@@ -385,81 +376,22 @@ class InternalDirectiveValidator:
             "agent_internal_state",
         }
 
-    @staticmethod
-    def _is_current_feeling_target(meaning: StructuredInputMeaning) -> bool:
-        target = meaning.target
-        return bool(
-            target
-            and target.target_type.casefold()
-            in {"internal_state", "agent_internal_state"}
-            and target.target_id.casefold()
-            in {
-                "current_feeling",
-                "current_mood",
-                "current_emotion",
-                "mood",
-                "feeling",
-            }
-        )
-
     @classmethod
-    def _normalize_current_feeling_guidance(
+    def _is_direct_internal_state_question(
         cls,
-        planning_input: dict[str, object],
-        requirements: list[str],
-    ) -> tuple[str, list[str]]:
-        internal_tokens = _internal_state_tokens(planning_input)
-        retained = [
-            requirement
-            for requirement in requirements
-            if not cls._is_current_feeling_diagnostic_requirement(
-                requirement,
-                internal_tokens,
-            )
-        ]
-        return (
-            "現在の内的状態に沿って、ユーザーの質問へ自然に直接答える",
-            retained,
+        meaning: StructuredInputMeaning,
+    ) -> bool:
+        return cls._is_internal_state_target(meaning) and (
+            meaning.expected_response is ExpectedResponse.DIRECT_ANSWER
+            or meaning.input_speech_act is InputSpeechAct.QUESTION
         )
 
     @staticmethod
-    def _is_current_feeling_diagnostic_requirement(
-        requirement: str,
-        internal_tokens: set[str],
-    ) -> bool:
-        text = str(requirement).strip()
-        folded = text.casefold()
-        if any(
-            marker in folded
-            for marker in (
-                "emotion evidence",
-                "drive evidence",
-                "現在の気分の中心候補",
-                "内部キー",
-                "内部分類",
-            )
-        ):
-            return True
-        if any(
-            re.search(
-                rf"(?<![a-z0-9_]){re.escape(token)}(?![a-z0-9_])",
-                folded,
-            )
-            for token in internal_tokens
-        ):
-            return True
-        diagnostic_context = any(
-            marker in text
-            for marker in ("気分", "感情", "内部状態", "落ち着き")
-        )
-        if diagnostic_context and re.search(r"[-+]?\d+(?:\.\d+)?", text):
-            return True
-        if diagnostic_context and any(
-            label in text for label in ("強め", "中程度", "少し", "低め")
-        ):
-            return True
-        return any(
-            label in folded for label in ("neutral", "ニュートラル", "中立")
+    def _normalize_internal_state_guidance() -> tuple[str, list[str], list[str]]:
+        return (
+            "ユーザーが尋ねた内的状態について、現在の状態に沿って自然に直接答える",
+            [],
+            [],
         )
 
     @staticmethod
@@ -533,69 +465,6 @@ class InternalDirectiveValidator:
             token in target_id
             for token in ("outing", "travel", "walk", "外出", "旅行", "散歩")
         )
-
-    @staticmethod
-    def _add_internal_state_requirements(
-        meaning: StructuredInputMeaning,
-        planning_input: dict[str, object],
-        requirements: list[str],
-        forbidden_claims: list[str],
-    ) -> None:
-        target = meaning.target
-        if target is None or target.target_type.casefold() not in {
-            "internal_state",
-            "agent_internal_state",
-        }:
-            return
-        emotion = planning_input.get("emotion")
-        emotion_state = emotion if isinstance(emotion, dict) else {}
-        target_id = target.target_id.casefold()
-        if target_id in {
-            "current_feeling",
-            "current_mood",
-            "current_emotion",
-            "mood",
-            "feeling",
-        }:
-            return
-        elif target_id in {"joy", "amusement", "fun", "楽しさ"}:
-            joy = _nested_number(emotion_state, "joy")
-            amusement = _nested_number(emotion_state, "amusement")
-            motivation = planning_input.get("motivation")
-            motivation_state = motivation if isinstance(motivation, dict) else {}
-            engagement_value = _find_nested_number(motivation_state, "engagement")
-            if engagement_value is None:
-                engagement_value = _nested_number(emotion_state, "engagement")
-            requirements.append(
-                "joy/amusementの値を根拠に直接回答し、engagementとは区別する"
-            )
-            requirements.append(
-                "現在値: "
-                f"joy={joy}, amusement={amusement}, engagement={engagement_value}"
-            )
-            requirements.append(
-                "内部キー名と数値は発話で読み上げず、自然な感情表現へ変換する"
-            )
-            forbidden_claims.append(
-                "joyとamusementが低いのにengagementだけを根拠として楽しいと断定する"
-            )
-        elif target_id in {"anger", "怒り", "angry"}:
-            anger = _nested_number(emotion_state, "anger")
-            requirements.append(f"現在のanger={anger}を根拠に率直に回答する")
-            requirements.append(
-                "内部キー名と数値は発話で読み上げず、自然な感情表現へ変換する"
-            )
-        elif target_id in {"current_desire", "desire", "want"}:
-            drive = planning_input.get("drive")
-            requirements.append(
-                "現在の欲求・Driveから最も近い希望を説明し、存在しない身体欲求を創作しない"
-            )
-            requirements.append(
-                "Drive evidence: " + json.dumps(drive, ensure_ascii=False, default=str)
-            )
-            requirements.append(
-                "内部キー名と数値は発話で読み上げず、自然な希望の表現へ変換する"
-            )
 
     @classmethod
     def _add_existence_constraints(
@@ -673,25 +542,3 @@ def _find_nested_number(data: dict[str, object], name: str) -> float | None:
 def _nested_number(data: dict[str, object], name: str) -> float:
     value = _find_nested_number(data, name)
     return value if value is not None else 0.0
-
-
-def _internal_state_tokens(planning_input: dict[str, object]) -> set[str]:
-    tokens: set[str] = set()
-
-    def collect(value: object) -> None:
-        if not isinstance(value, dict):
-            return
-        for key, nested in value.items():
-            normalized_key = str(key).casefold()
-            if re.fullmatch(r"[a-z][a-z0-9_]*", normalized_key):
-                tokens.add(normalized_key)
-            if isinstance(nested, dict):
-                collect(nested)
-            elif isinstance(nested, str):
-                normalized_value = nested.casefold()
-                if re.fullmatch(r"[a-z][a-z0-9_]*", normalized_value):
-                    tokens.add(normalized_value)
-
-    collect(planning_input.get("emotion"))
-    collect(planning_input.get("drive"))
-    return tokens
