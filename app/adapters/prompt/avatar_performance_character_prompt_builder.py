@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from app.adapters.prompt.directive_aware_prompt_builders import (
-    CharacterPromptBuilder as DirectiveAwareCharacterPromptBuilder,
+from app.adapters.prompt.internal_state_evidence_prompt_builders import (
+    CharacterPromptBuilder as InternalStateEvidenceCharacterPromptBuilder,
 )
 from app.domain.character import CharacterProfile
 from app.domain.character_response import ResponseContext
 
 
-class AvatarPerformanceCharacterPromptBuilder(DirectiveAwareCharacterPromptBuilder):
+class AvatarPerformanceCharacterPromptBuilder(InternalStateEvidenceCharacterPromptBuilder):
     """Character表現へBody Subsystem向けの意味的な演技Intentを追加する。"""
 
     def build(
