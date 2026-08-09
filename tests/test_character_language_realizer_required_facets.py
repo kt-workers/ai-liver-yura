@@ -85,5 +85,7 @@ def test_present_state_does_not_license_new_intensity_and_certainty_stays_episte
 
     assert "state=presentは存在を表すだけで強度を含まない" in prompt
     assert "『少し』『かなり』等の強度を新しく推測・追加しない" in prompt
+    assert "speechの程度・強弱表現を内部点検" in prompt
+    assert "対応する強度stateがない対象へ付いた程度表現は除去" in prompt
     assert "medium/lowのcertainty" in prompt
     assert "強度表現へ置き換えない" in prompt
