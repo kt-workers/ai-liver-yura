@@ -128,7 +128,7 @@ def _validated_context() -> ResponseContext:
 
 
 def _response(
-    speech: str = "今は、そこまで楽しいって感じじゃないかな。",
+    speech: str = "今は楽しくないかな。",
     *,
     realizations: tuple[str, ...] = ("proposition:0:joy",),
 ) -> CharacterResponse:
@@ -254,7 +254,7 @@ async def test_model_rejection_is_returned_as_realization_difference() -> None:
     result = await validator.validate(
         source,
         _validated_context(),
-        _response(speech="うん、少し楽しいよ。"),
+        _response(speech="うん、楽しいよ。"),
     )
     assert result.accepted is False
     assert result.reason == "target_polarity_changed"
@@ -279,6 +279,24 @@ async def test_model_acceptance_is_overridden_when_unplanned_intensity_marker_is
     assert result.accepted is False
     assert result.reason == "semantic_facet_validation_failed"
     assert "unsupported_intensity_markers:ちょっと" in result.claim_differences
+
+
+@pytest.mark.asyncio
+async def test_model_intensity_miss_is_overridden_by_deterministic_surface_guard() -> None:
+    model = _RecordingValidationModel(json.dumps(_accepted_payload(), ensure_ascii=False))
+    validator = CharacterRealizationValidator(
+        model=model,
+        prompt_builder=CharacterRealizationValidatorPromptBuilder(),
+    )
+    source = Activity(activity_type=ActivityType.CONVERSATION_WITH_USER, goal="質問へ答える")
+    result = await validator.validate(
+        source,
+        _validated_context(),
+        _response(speech="少し楽しくないかな。"),
+    )
+    assert result.accepted is False
+    assert result.reason == "semantic_facet_validation_failed"
+    assert "unsupported_intensity_markers:少し" in result.claim_differences
 
 
 @pytest.mark.asyncio
