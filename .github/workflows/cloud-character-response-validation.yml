@@ -1,0 +1,54 @@
+name: Cloud character response validation
+
+on:
+  pull_request:
+    paths:
+      - "cloud_validation/character_response_lab.py"
+      - "tests/test_cloud_character_response_lab.py"
+      - "app/domain/character/**"
+      - "app/runtime/character_response_pipeline.py"
+      - "app/adapters/prompt/**"
+      - ".github/workflows/cloud-character-response-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-character-response-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  validation:
+    name: Character / Validator Lab
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+
+      - name: Compile lab module
+        run: python -m py_compile cloud_validation/character_response_lab.py
+
+      - name: Run focused tests
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          pytest -q tests/test_cloud_character_response_lab.py \
+            tests/test_internal_state_response_semantic_consistency.py
