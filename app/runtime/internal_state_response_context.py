@@ -5,6 +5,7 @@ from typing import Mapping
 
 from app.domain.activities import Activity
 from app.domain.character_response import ResponseContext
+from app.domain.semantic_utterance import SemanticUtterancePlan
 from app.runtime.character_response_pipeline import (
     ResponseContextBuilder as BaseResponseContextBuilder,
 )
@@ -52,6 +53,7 @@ class InternalStateAwareResponseContextBuilder(BaseResponseContextBuilder):
             drive=projected_drive,
         )
         semantic_plan = self._response_semantics_planner.plan(projected)
+        semantic_plan = self._attach_repetition_context(projected, semantic_plan)
         projected_memory = dict(projected.memory)
         projected_memory["semantic_utterance_plan"] = semantic_plan.as_context()
         projected = replace(projected, memory=projected_memory)
@@ -77,8 +79,28 @@ class InternalStateAwareResponseContextBuilder(BaseResponseContextBuilder):
             question_budget=semantic_plan.question_budget,
             new_direction_budget=semantic_plan.new_direction_budget,
             response_length=semantic_plan.response_length,
+            repetition_context_available=bool(
+                semantic_plan.discourse_context.get("recent_speech_summary")
+            ),
         )
         return projected
+
+    @staticmethod
+    def _attach_repetition_context(
+        context: ResponseContext,
+        semantic_plan: SemanticUtterancePlan,
+    ) -> SemanticUtterancePlan:
+        # Characterへraw内部状態を戻さず、反復回避に必要な直近発話だけを
+        # finite discourse contextとして渡す。avoid_repetition無効時は投影しない。
+        if context.constraints.get("avoid_repetition") is not True:
+            return semantic_plan
+        recent_speech = context.recent_speech_summary.strip()
+        if not recent_speech:
+            return semantic_plan
+        discourse_context = dict(semantic_plan.discourse_context)
+        discourse_context["recent_speech_summary"] = recent_speech
+        discourse_context["repetition_policy"] = "avoid_semantic_and_phrasal_repeat"
+        return replace(semantic_plan, discourse_context=discourse_context)
 
     @staticmethod
     def _mapping(value: object) -> Mapping[str, object]:
