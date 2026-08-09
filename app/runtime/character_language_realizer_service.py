@@ -61,7 +61,7 @@ class CharacterLanguageRealizerService(AvatarPerformanceCharacterLlmService):
             },
         )
         raw = await self._model.generate_character_response(activity)
-        response = self.parse(raw)
+        response = self._parse_character_utterance(raw)
         if response is None:
             raise ValueError("Character Language Realizerの構造化応答が不正です。")
         trace = build_llm_trace_context(activity)
@@ -79,14 +79,26 @@ class CharacterLanguageRealizerService(AvatarPerformanceCharacterLlmService):
 
     @staticmethod
     def parse(raw: str) -> CharacterResponse | None:
+        """新Schemaを明示識別し、それ以外は既存Character Schemaへ委譲する。"""
+
+        parsed = CharacterLanguageRealizerService._parse_character_utterance(raw)
+        if parsed is not None:
+            return parsed
+        return AvatarPerformanceCharacterLlmService.parse(raw)
+
+    @staticmethod
+    def _parse_character_utterance(raw: str) -> CharacterResponse | None:
         try:
             value = json.loads(raw.strip())
         except json.JSONDecodeError:
-            return AvatarPerformanceCharacterLlmService.parse(raw)
-
+            return None
+        if not isinstance(value, dict):
+            return None
+        if "linguistic_performance" not in value or "semantic_realizations" not in value:
+            return None
         utterance = CharacterUtterance.from_context(value)
         if utterance is None:
-            return AvatarPerformanceCharacterLlmService.parse(raw)
+            return None
 
         # #227ではCharacter LLMは言語表現だけを所有する。
         # expression / voice / acoustic pauseは下流責務へ移行するため、
