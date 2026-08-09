@@ -42,25 +42,60 @@ class CharacterPromptBuilder(LegacyCharacterPromptBuilder):
         )
         if directive is None:
             return prompt
-        return "\n".join(
-            [
-                prompt,
-                "# Validated Internal Directive",
-                json.dumps(directive, ensure_ascii=False, default=str),
-                "この司令はCoreで検証済みの最終方針である。Raw User Textから別の意味や"
-                "方針を再推定しない。",
-                "Conversation Response DecisionとResponse Content Planは、この司令を"
-                "表現層へ投影した補助情報であり、矛盾する場合はValidated Internal Directiveを"
-                "必ず優先する。",
-                "response_modeとresponse_goalに従い、question_budgetと"
-                "new_direction_budgetを上限として厳守する。content_requirementsを満たし、"
-                "forbidden_claimsとexistence_boundariesに反する主張を生成しない。",
-                "conversation_phaseがwinding_downの場合はspeechを空にせず、質問や新しい話題を"
-                "含まない短い別れの挨拶を返す。",
-                "character_profileは存在設定を含む確定済みProfileであり、物理的な身体や"
-                "現実空間での実体験を根拠なく創作しない。",
-            ]
+        sections = [
+            prompt,
+            "# Validated Internal Directive",
+            json.dumps(directive, ensure_ascii=False, default=str),
+            "この司令はCoreで検証済みの最終方針である。Raw User Textから別の意味や"
+            "方針を再推定しない。",
+            "Conversation Response DecisionとResponse Content Planは、この司令を"
+            "表現層へ投影した補助情報であり、矛盾する場合はValidated Internal Directiveを"
+            "必ず優先する。",
+            "response_modeとresponse_goalに従い、question_budgetと"
+            "new_direction_budgetを上限として厳守する。content_requirementsを満たし、"
+            "forbidden_claimsとexistence_boundariesに反する主張を生成しない。",
+            "conversation_phaseがwinding_downの場合はspeechを空にせず、質問や新しい話題を"
+            "含まない短い別れの挨拶を返す。",
+            "character_profileは存在設定を含む確定済みProfileであり、物理的な身体や"
+            "現実空間での実体験を根拠なく創作しない。",
+        ]
+        direct_state_contract = _direct_internal_state_contract(
+            effective_context,
+            directive,
         )
+        if direct_state_contract is not None:
+            sections.extend(
+                [
+                    "# Direct Internal State Answer Contract",
+                    json.dumps(
+                        direct_state_contract,
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                    "targetは今回ユーザーが直接尋ねた内部状態のtyped identityである。"
+                    "Raw User Textから別targetへ読み替えず、このtargetへ直接答える。",
+                    "current_emotionとcurrent_driveは現在状態のstructured source of truthである。"
+                    "recent_speech_summary、recent_conversation_summary、memory、related knowledgeは"
+                    "会話継続の参考にできるが、現在状態の事実を上書きしない。",
+                    "質問targetとは異なる内部状態が高くても、その高さをtarget自身の存在や強さの"
+                    "根拠へ代用しない。curiosityやengagementはjoy/amusementではなく、"
+                    "関心や関与の補助状態として区別する。",
+                    "内部キー名、数値、強度分類を説明せず、targetとcurrent structured stateに"
+                    "意味的に整合する人物としての自然な自己表現へ変換する。",
+                ]
+            )
+            if _correction_reason(correction) == "recent_speech_too_similar":
+                sections.extend(
+                    [
+                        "# Internal State Repetition Correction",
+                        "前回応答との類似が理由で再生成している。一般的な『別の主題または内容を"
+                        "選ぶ』という修正指示は、この場合は別話題へ移る意味ではない。",
+                        "同じtyped internal-state targetへ直接答え続け、直前回答の文面をコピーせず、"
+                        "current structured stateから改めて自然に表現する。無関係な新話題へ"
+                        "逃げない。",
+                    ]
+                )
+        return "\n".join(sections)
 
 
 class ResponseValidatorPromptBuilder(LegacyResponseValidatorPromptBuilder):
@@ -82,30 +117,95 @@ class ResponseValidatorPromptBuilder(LegacyResponseValidatorPromptBuilder):
         )
         if directive is None:
             return prompt
-        return "\n".join(
-            [
-                prompt,
-                "# Validated Internal Directive / Character Profile / Existence Boundaries",
-                json.dumps(directive, ensure_ascii=False, default=str),
-                "Validated Internal Directiveは最終上限であり、Conversation Response Decisionや"
-                "Response Content Planが矛盾して見える場合も、こちらを優先して検証する。",
-                "Character Responseがresponse_mode、response_goal、question_budget、"
-                "new_direction_budget、content_requirementsに一致するか検証する。",
-                "question_budget=0で質問を含む場合、new_direction_budget=0で明示的に別話題へ"
-                "移る場合、またはwinding_downで会話を再開する場合はaccepted=falseにする。",
-                "forbidden_claims、character_profile、existence_boundariesのいずれかに"
-                "反する身体感覚・実体験・感情断定があればaccepted=falseにする。",
-                "engagementの高さだけをjoyやamusementの高さとして扱う表現は、"
-                "内部状態への直接質問に対する事実不整合として拒否する。",
-                "物理的な身体を持たないProfileで『今はお腹が空いていない』だけを"
-                "回答し、人間同様の空腹能力を暗示する表現は拒否する。",
-            ]
+        sections = [
+            prompt,
+            "# Validated Internal Directive / Character Profile / Existence Boundaries",
+            json.dumps(directive, ensure_ascii=False, default=str),
+            "Validated Internal Directiveは最終上限であり、Conversation Response Decisionや"
+            "Response Content Planが矛盾して見える場合も、こちらを優先して検証する。",
+            "Character Responseがresponse_mode、response_goal、question_budget、"
+            "new_direction_budget、content_requirementsに一致するか検証する。",
+            "question_budget=0で質問を含む場合、new_direction_budget=0で明示的に別話題へ"
+            "移る場合、またはwinding_downで会話を再開する場合はaccepted=falseにする。",
+            "forbidden_claims、character_profile、existence_boundariesのいずれかに"
+            "反する身体感覚・実体験・感情断定があればaccepted=falseにする。",
+            "物理的な身体を持たないProfileで『今はお腹が空いていない』だけを"
+            "回答し、人間同様の空腹能力を暗示する表現は拒否する。",
+        ]
+        direct_state_contract = _direct_internal_state_contract(
+            effective_context,
+            directive,
         )
+        if direct_state_contract is not None:
+            sections.extend(
+                [
+                    "# Direct Internal State Semantic Validation",
+                    json.dumps(
+                        direct_state_contract,
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                    "Character Responseがtyped targetへ直接答えているか、targetとcurrent_emotion / "
+                    "current_driveの意味関係に照らして検証する。",
+                    "別の内部状態の高さをtarget自身の高さ・存在へ代用した場合は、文章が自然でも"
+                    "事実不整合としてaccepted=falseにする。特にcuriosity/engagementを"
+                    "joy/amusementとして扱わない。これは文字列照合ではなく意味関係の検証である。",
+                    "current structured stateと矛盾する自己状態の断定、または過去発話・関連記憶を"
+                    "現在状態の正本として採用した回答はaccepted=falseにする。",
+                    "内部キーや数値をそのまま読み上げた診断的回答もaccepted=falseにする。",
+                ]
+            )
+        return "\n".join(sections)
 
 
 def _validated_directive(context: ResponseContext) -> dict[str, object] | None:
     value = context.constraints.get("_internal_directive")
     return dict(value) if isinstance(value, dict) else None
+
+
+def _direct_internal_state_contract(
+    context: ResponseContext,
+    envelope: dict[str, object] | None,
+) -> dict[str, object] | None:
+    if envelope is None:
+        return None
+    meaning_value = envelope.get("structured_input_meaning")
+    if not isinstance(meaning_value, dict):
+        return None
+    meaning = dict(meaning_value)
+    target_value = meaning.get("target")
+    if not isinstance(target_value, dict):
+        return None
+    target = dict(target_value)
+    target_type = str(target.get("type") or "").strip().casefold()
+    if target_type not in {"internal_state", "agent_internal_state"}:
+        return None
+    speech_act = str(meaning.get("input_speech_act") or "").strip().casefold()
+    expected_response = str(meaning.get("expected_response") or "").strip().casefold()
+    if speech_act != "question" and expected_response != "direct_answer":
+        return None
+    return {
+        "target": {
+            "type": str(target.get("type") or ""),
+            "id": str(target.get("id") or ""),
+        },
+        "current_emotion": context.emotion,
+        "current_drive": context.drive,
+        "source_of_truth": "current_structured_internal_state",
+    }
+
+
+def _correction_reason(correction: str | None) -> str | None:
+    if not correction:
+        return None
+    try:
+        value = json.loads(correction)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(value, dict):
+        return None
+    reason = value.get("reason")
+    return str(reason) if reason is not None else None
 
 
 def _effective_context(
