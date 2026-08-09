@@ -5,6 +5,7 @@ from app.domain.character_response import (
 )
 from app.runtime.response_semantics_planner import ResponseSemanticsPlanner
 from app.runtime.semantic_discourse_context import project_semantic_discourse_context
+from app.runtime.semantic_utterance_validator import SemanticUtteranceValidator
 
 
 def _context(*, avoid_repetition: bool, recent_speech_summary: str) -> ResponseContext:
@@ -80,3 +81,20 @@ def test_recent_speech_is_not_exposed_when_repetition_avoidance_is_disabled() ->
 
     assert "recent_speech_summary" not in plan.discourse_context
     assert "repetition_policy" not in plan.discourse_context
+
+
+def test_semantic_validator_accepts_same_projected_repetition_context() -> None:
+    context = _context(
+        avoid_repetition=True,
+        recent_speech_summary="- 今は落ち着いてて、ちょっとだけ元気がある感じかな。",
+    )
+    plan = project_semantic_discourse_context(
+        context,
+        ResponseSemanticsPlanner().plan(context),
+    )
+
+    result = SemanticUtteranceValidator().validate(context, plan)
+
+    assert result.accepted is True
+    assert result.reason == "semantic_plan_consistent"
+    assert result.differences == ()
