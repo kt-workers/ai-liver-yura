@@ -149,6 +149,26 @@ Character speech
 
 Activity実行事実検証を新しく重複実装しない。
 
+## deterministic semantic surface guard
+
+LLM Validatorの`accepted`や`surface_evidence`は意味評価の一要素であり、Runtimeの唯一の正本にはしない。
+
+`state`が`low/moderate/high/very_high`ではないprimary propositionに対して、発話上で明示的な程度・強弱を付与する高確度なsurface markerを検出した場合は、LLM Validatorが`intensity_markers=[]`と誤判定してもRuntime側で`unsupported_intensity_markers:<marker>`を追加しfail closedする。
+
+```text
+Semantic Plan: state=present
+Character speech: 「少し気になる」
+LLM Validator: accepted=true / intensity_markers=[]
+        ↓
+Runtime surface guard: 「少し」を検出
+        ↓
+semantic_facet_validation_failed
+```
+
+このguardは固定回答やCharacter語彙を生成する辞書ではない。発話後に明示的な程度副詞をsurface evidenceとして検出する限定的なvalidation safety netであり、一般会話全体へ単語禁止を適用しない。`low/moderate/high/very_high`のようにSemantic Plan自身が強度を持つ場合は、強度表現の妥当性をLLM Validatorへ委ねる。
+
+またこのguardはValidator modelの有無に依存せず実行する。modelなし互換経路でも、明示的な未計画強度が見つかれば`semantic_realization_structure_valid`として通さずrejectする。
+
 ## semantic_realizationsとrequired facets
 
 #227の`CharacterUtterance.semantic_realizations`を`CharacterResponse`互換境界でも保持する。
@@ -175,8 +195,9 @@ Semantic経路でmodelがない場合:
 
 - existing deterministic fact validation
 - primary semantic realization IDの構造確認
+- deterministic semantic surface guard
 
-までを行い、`semantic_realization_structure_valid`として扱う。
+までを行う。surface guardに差分がなければ`semantic_realization_structure_valid`として扱い、未計画の明示的強度を検出した場合は`semantic_facet_validation_failed`としてrejectする。
 
 これは実LLM意味検証と同等ではないため、実環境Verificationではvalidator modelを有効にして確認する。
 
@@ -242,6 +263,8 @@ Semantic validation済み新経路でない場合は既存Response Validatorへf
 6. realization modelの意味差分をResponseValidationResultへ保持
 7. primary propositionのstate/certainty/non-null conceptをrequired facetsとして提示
 8. presentから未根拠の強度を追加しない契約を検証
+9. LLM Validatorが強度markerを見落としてもdeterministic surface guardでreject
+10. Validator modelなしでもdeterministic surface guardを維持
 
 実LLM:
 
@@ -255,6 +278,6 @@ Semantic validation済み新経路でない場合は既存Response Validatorへf
 
 - Semantic Plannerの再実装
 - Character Profile表現の品質採点
-- fixed phrase / word blacklist
+- fixed phrase / response dictionary
 - Speech Performance
 - Body/TTS
