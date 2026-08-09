@@ -1,4 +1,4 @@
-"""Public character profile contracts used by runtime and validation tooling."""
+"""Public character profile contracts for runtime and isolated validation tooling."""
 
 from app.domain.character.character_profile import (
     CharacterExistenceProfile,
