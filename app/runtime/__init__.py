@@ -26,7 +26,8 @@ ActionPlanner = AvatarPerformanceActionPlanner
 
 # Character応答生成の既存Composition Rootは
 # app.runtime.character_response_pipelineの具象クラスを直接参照する。
-# パッケージ初期化時に状態投影版とCharacter Language Realizer対応版へ統一する。
+# パッケージ初期化時にSemantic検証済みContext、Language Realizer、
+# Character Realization Validatorへ統一する。
 from app.runtime import character_response_pipeline as _character_response_pipeline
 from app.runtime import response_claim_validator as _response_claim_validator
 from app.runtime.avatar_performance_character_service import (
@@ -35,12 +36,19 @@ from app.runtime.avatar_performance_character_service import (
 from app.runtime.character_language_realizer_service import (
     CharacterLanguageRealizerService,
 )
+from app.runtime.character_realization_validator import (
+    CharacterRealizationValidator,
+)
 from app.runtime.response_validation_composition import (
     DeterministicResponseValidator,
 )
+from app.runtime.semantic_validated_response_context import (
+    SemanticValidatedResponseContextBuilder,
+)
 
-_character_response_pipeline.ResponseContextBuilder = InternalStateAwareResponseContextBuilder
+_character_response_pipeline.ResponseContextBuilder = SemanticValidatedResponseContextBuilder
 _character_response_pipeline.CharacterLlmService = CharacterLanguageRealizerService
+_character_response_pipeline.ResponseValidator = CharacterRealizationValidator
 
 # 既存公開名は維持しながら、質問・話題展開Budgetと実行事実検証を
 # 独立責務へ分離した決定論的Validatorへ統一する。
@@ -54,6 +62,7 @@ __all__ = [
     "AvatarPerformanceActionPlanner",
     "AvatarPerformanceCharacterLlmService",
     "CharacterLanguageRealizerService",
+    "CharacterRealizationValidator",
     "BodyRuntime",
     "BodyRuntimeConfig",
     "CoreActionPlanner",
@@ -72,4 +81,5 @@ __all__ = [
     "AgentLifeService",
     "AutonomousActivityPolicy",
     "InternalStateAwareResponseContextBuilder",
+    "SemanticValidatedResponseContextBuilder",
 ]
