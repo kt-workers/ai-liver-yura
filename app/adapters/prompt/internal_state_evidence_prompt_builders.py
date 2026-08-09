@@ -29,25 +29,40 @@ class CharacterPromptBuilder(DirectiveAwareCharacterPromptBuilder):
         evidence = _target_specific_internal_state_evidence(context)
         if evidence is None:
             return prompt
-        return "\n".join(
-            [
-                prompt,
-                "# Target-specific Internal State Evidence",
-                json.dumps(evidence, ensure_ascii=False, default=str),
-                "target_evidenceはtyped targetについて現在値を判断するためにCoreが選択した"
-                "直接evidenceである。targetの存在・強さについては、このevidenceを"
-                "current_emotion/current_drive全体より優先する。",
-                "scope=exact_dimensionで数値evidenceがある場合、その値と矛盾するtargetの"
-                "肯定・否定・強度表現を生成しない。特にvalue=0.0は、そのdimensionが現在"
-                "活性しているという肯定の根拠にしてはならない。",
-                "non_target_contextは話し方、勢い、関心の向きなどを自然に整える補助情報であり、"
-                "target_evidenceを上書きしない。curiosity、engagement、energy等が高くても、"
-                "それだけで別targetの存在・強さを肯定しない。",
-                "evidence_available=falseの場合、別の内部状態からtargetを推測して断定しない。"
-                "不足したevidenceの範囲を越えず、人物として自然に直接答える。",
-                "target_evidenceのpath、key、数値、scope等の内部表現はユーザーへ読み上げない。",
-            ]
-        )
+        sections = [
+            prompt,
+            "# Target-specific Internal State Evidence",
+            json.dumps(evidence, ensure_ascii=False, default=str),
+            "target_evidenceはtyped targetについて現在値を判断するためにCoreが選択した"
+            "直接evidenceである。targetの存在・強さについては、このevidenceを"
+            "current_emotion/current_drive全体より優先する。",
+            "scope=exact_dimensionで数値evidenceがある場合、その値と矛盾するtargetの"
+            "肯定・否定・強度表現を生成しない。特にvalue=0.0は、そのdimensionが現在"
+            "活性しているという肯定の根拠にしてはならない。",
+            "non_target_contextは話し方、勢い、関心の向きなどを自然に整える補助情報であり、"
+            "target_evidenceを上書きしない。curiosity、engagement、energy等が高くても、"
+            "それだけで別targetの存在・強さを肯定しない。",
+            "evidence_available=falseの場合、別の内部状態からtargetを推測して断定しない。"
+            "不足したevidenceの範囲を越えず、人物として自然に直接答える。",
+            "target_evidenceのpath、key、数値、scope等の内部表現はユーザーへ読み上げない。",
+        ]
+        correction_reason = _correction_reason(correction)
+        if correction_reason is not None and correction_reason != "recent_speech_too_similar":
+            sections.extend(
+                [
+                    "# Target-specific Internal State Regeneration",
+                    "前回応答はResponse Validatorで拒否されている。再生成では、まずtyped targetへの"
+                    "直接回答をtarget_evidenceと矛盾しない形へ修正する。",
+                    "拒否されたtarget主張を、別の内部状態、relationship、体験事実、評価を付け足して"
+                    "埋め合わせない。non_target_contextは表現の自然さや語調の補助に限定し、"
+                    "新しい自己状態の事実を作る根拠にはしない。",
+                    "target_evidenceだけで短く自然に回答を完結できる場合は、不要な補足を追加せず"
+                    "そこで止める。",
+                    "correction内のreasonや内部diagnostic名は修正の手掛かりであり、ユーザーへ"
+                    "説明・引用しない。",
+                ]
+            )
+        return "\n".join(sections)
 
 
 class ResponseValidatorPromptBuilder(DirectiveAwareResponseValidatorPromptBuilder):
@@ -209,6 +224,19 @@ def _matches_dimension_key(key: str, candidate_keys: frozenset[str]) -> bool:
     if key in candidate_keys:
         return True
     return any(key.endswith(f"_{candidate}") for candidate in candidate_keys)
+
+
+def _correction_reason(correction: str | None) -> str | None:
+    if not correction:
+        return None
+    try:
+        value = json.loads(correction)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(value, dict):
+        return None
+    reason = value.get("reason")
+    return str(reason) if reason is not None else None
 
 
 def _is_scalar(value: Any) -> bool:
