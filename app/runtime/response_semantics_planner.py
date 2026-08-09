@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
 
 from app.domain.character_response import ResponseContext
 from app.domain.response_content_plan import ResponseContentPlan
@@ -23,6 +22,15 @@ _DISCOURSE_KEYS = frozenset(
         "response_obligation",
     }
 )
+_STATE_PRIORITY = {
+    "very_high": 5,
+    "high": 4,
+    "moderate": 3,
+    "low": 2,
+    "present": 1,
+    "absent": 0,
+    "unknown": -1,
+}
 
 
 class ResponseSemanticsPlanner:
@@ -40,7 +48,9 @@ class ResponseSemanticsPlanner:
         propositions: list[SemanticProposition] = []
         reasons: list[str] = []
         if direct_internal and target is not None:
-            propositions.append(self._internal_state_proposition(context, target, content_plan))
+            propositions.extend(
+                self._internal_state_propositions(context, target, content_plan)
+            )
             reasons.append("typed_internal_state_target_projected")
 
         question_budget = self._budget(
@@ -132,21 +142,23 @@ class ResponseSemanticsPlanner:
         expected = str(meaning.get("expected_response") or "").strip().casefold()
         return speech_act == "question" or expected == "direct_answer"
 
-    def _internal_state_proposition(
+    def _internal_state_propositions(
         self,
         context: ResponseContext,
         target: SemanticTarget,
         content_plan: ResponseContentPlan,
-    ) -> SemanticProposition:
+    ) -> tuple[SemanticProposition, ...]:
         target_id = target.id.strip().casefold()
         if target_id in _OVERVIEW_TARGETS:
-            return SemanticProposition(
+            overview = SemanticProposition(
                 kind="self_state",
                 predicate=target.id,
                 state="overview" if context.emotion else "unknown",
                 certainty="high" if context.emotion else "low",
                 evidence_refs=("emotion",) if context.emotion else (),
             )
+            dimensions = self._reactive_emotion_dimensions(context.emotion)
+            return (overview, *dimensions)
 
         candidate_keys = self._candidate_dimension_keys(target_id)
         match = self._find_dimension(
@@ -170,31 +182,85 @@ class ResponseSemanticsPlanner:
         if match is not None:
             path, value = match
             state, concept = self._semantic_state(value)
-            return SemanticProposition(
-                kind="self_state",
-                predicate=target.id,
-                state=state,
-                certainty="high",
-                concept=concept,
-                evidence_refs=(path,),
+            return (
+                SemanticProposition(
+                    kind="self_state",
+                    predicate=target.id,
+                    state=state,
+                    certainty="high",
+                    concept=concept,
+                    evidence_refs=(path,),
+                ),
             )
 
         if target_id in {"current_desire", "desire"} and content_plan.primary_desire:
-            return SemanticProposition(
-                kind="self_state",
-                predicate=target.id,
-                state="present",
-                certainty="medium",
-                concept=content_plan.primary_desire,
-                evidence_refs=("response_content_plan.primary_desire",),
+            return (
+                SemanticProposition(
+                    kind="self_state",
+                    predicate=target.id,
+                    state="present",
+                    certainty="medium",
+                    concept=content_plan.primary_desire,
+                    evidence_refs=("response_content_plan.primary_desire",),
+                ),
             )
 
-        return SemanticProposition(
-            kind="self_state",
-            predicate=target.id,
-            state="unknown",
-            certainty="low",
+        return (
+            SemanticProposition(
+                kind="self_state",
+                predicate=target.id,
+                state="unknown",
+                certainty="low",
+            ),
         )
+
+    def _reactive_emotion_dimensions(
+        self,
+        emotion: object,
+    ) -> tuple[SemanticProposition, ...]:
+        reactive = self._find_named_mapping(emotion, "reactive")
+        if reactive is None:
+            return ()
+        dimensions: list[SemanticProposition] = []
+        for raw_key, value in reactive.items():
+            if not self._is_scalar(value):
+                continue
+            key = str(raw_key).strip()
+            if not key:
+                continue
+            state, concept = self._semantic_state(value)
+            dimensions.append(
+                SemanticProposition(
+                    kind="self_state_dimension",
+                    predicate=key,
+                    state=state,
+                    certainty="high",
+                    concept=concept,
+                    evidence_refs=(f"emotion.reactive.{key}",),
+                )
+            )
+        dimensions.sort(
+            key=lambda item: (_STATE_PRIORITY.get(item.state, -1), item.predicate),
+            reverse=True,
+        )
+        return tuple(dimensions[:8])
+
+    @classmethod
+    def _find_named_mapping(
+        cls,
+        value: object,
+        key_name: str,
+    ) -> Mapping[str, object] | None:
+        if not isinstance(value, Mapping):
+            return None
+        for raw_key, item in value.items():
+            if str(raw_key).strip().casefold() == key_name.casefold() and isinstance(item, Mapping):
+                return item
+            if isinstance(item, Mapping):
+                nested = cls._find_named_mapping(item, key_name)
+                if nested is not None:
+                    return nested
+        return None
 
     @staticmethod
     def _candidate_dimension_keys(target_id: str) -> frozenset[str]:
