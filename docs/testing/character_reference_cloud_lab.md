@@ -19,7 +19,7 @@ Character Reference Labを開く
   ↓
 「解析」または「未処理を順番に解析」
   ↓
-カード内のプログレスで現在工程を確認
+カード内の工程 / 経過時間 / モデルを確認
   ↓
 一時領域へ動画取得
   ↓
@@ -32,7 +32,9 @@ Driveへ manifest / transcript JSON / transcript TXT を保存
 一時動画・一時音声を削除
 ```
 
-同じDrive file revisionはmanifestで検出し、通常操作では再度ASRへ送信しない。失敗済みrevisionを再実行する場合のみ明示的なretryとする。
+通常の参考動画は `gpt-4o-mini-transcribe` を使う。複数話者を区別する必要がある資料だけ、環境変数で `gpt-4o-transcribe-diarize` へ切り替える。
+
+同じDrive file revisionはmanifestで検出するが、**manifestが存在するだけでは解析済みとみなさない**。`asr_status=completed` の場合だけ通常操作でpaid ASRをskipする。
 
 ## 一覧表示メタデータ
 
@@ -44,6 +46,8 @@ Drive APIのファイルメタデータから以下を表示する。
 - サムネイル
 - ASR / audio / visual の解析状態
 - 解析中の現在工程 / 進捗率
+- 解析経過時間
+- ASRモデル
 
 動画長とサイズの表示だけのために動画本体をRenderへダウンロードしない。Driveの `videoMediaMetadata.durationMillis` / `size` を利用する。
 
@@ -70,12 +74,59 @@ Labの解析操作はバックグラウンドジョブとして開始し、ブ�
 60%   OpenAI日本語ASR開始
 85%   ASR完了・結果保存開始
 95%   manifest最終保存
-100%  完了 / 失敗 / 重複skip
+100%  完了 / 失敗 / 中断 / 重複skip
 ```
 
-これはファイルの実バイト処理率ではなく、解析パイプラインの工程位置を示す。OpenAI Audio Transcriptions APIがリクエスト処理中の細かな進捗率を返さないため、ASR待機中は `60% / 日本語ASR処理中` と表示し、応答後に85%へ進む。
+これはファイルの実バイト処理率ではなく、解析パイプラインの工程位置を示す。OpenAI Audio Transcriptions APIがprovider内部の細かな進捗率を返さないため、ASR待機中は `60% / 日本語ASR処理中` のままになる。その代わりUIで `経過 mm:ss` と利用モデルを表示する。
 
-解析ジョブ状態はRenderプロセス内で保持するため、デプロイやプロセス再起動が発生した場合は実行中表示を引き継がない。永続的な解析済み状態はDrive上のmanifestを正本とする。
+## ASR timeout
+
+OpenAI ASRはasync HTTPで実行し、socket単位のtimeoutだけでなく総時間timeoutを設定する。
+
+既定:
+
+```text
+YURA_REFERENCE_ASR_TIMEOUT_SECONDS=90
+```
+
+90秒を超えるとjobは `failed` になり、Drive manifestへ失敗理由を保存する。長い参考動画を扱う場合はRender環境変数で延長する。
+
+## キャンセル
+
+解析中カードには `キャンセル` を表示する。
+
+```text
+POST /api/analyze/cancel/{job_id}
+```
+
+キャンセル時はasync ASR requestを停止し、manifestを `interrupted` にする。temporary video / audioは一時領域終了時に削除される。`interrupted` は完了扱いではなく、後から通常操作で再解析できる。
+
+## Render停止・再起動時
+
+解析jobのprogressはRenderプロセス内だけにあるため、スピンダウン・再起動・デプロイで消える。一方、永続的な解析状態はGoogle Drive上のmanifest / transcriptを正本とする。
+
+起動後の復旧:
+
+```text
+completed
+  → paid ASRをskip
+
+processing + transcriptあり
+  → completedへ復旧
+  → paid ASRを再実行しない
+
+processing + transcriptなし
+  → interruptedとして扱う
+  → 再解析可能
+
+interrupted
+  → 再解析可能
+
+failed
+  → retryで再解析
+```
+
+OpenAIが処理を終えた直後、transcriptをDriveへ保存する前にプロセス自体が強制終了した場合だけは、provider側実行済みかを完全には判断できず、再試行時に二重課金の可能性が残る。この区間を除き、保存済みtranscriptを優先して復旧する。
 
 ## Google Drive認証
 
@@ -141,7 +192,14 @@ YURA_REFERENCE_DRIVE_RESULTS_FOLDER_ID
 
 未指定ならInbox folderを結果保存先にも使用する。
 
-ASR modelは既定で:
+既定ASR:
+
+```text
+YURA_REFERENCE_ASR_MODEL=gpt-4o-mini-transcribe
+YURA_REFERENCE_ASR_TIMEOUT_SECONDS=90
+```
+
+複数話者のspeaker annotationが必要な検証だけ:
 
 ```text
 YURA_REFERENCE_ASR_MODEL=gpt-4o-transcribe-diarize
@@ -198,11 +256,13 @@ Human review
 ## 検証順
 
 1. Module: DTO / usage policy / OpenAI response normalization
-2. Adjacent: Drive source / metadata / manifest / duplicate prevention / temporary media cleanup
-3. Lab: Basic Auth / list / native thumbnail proxy / generated thumbnail fallback / analysis progress / single analyze / sequential unprocessed analyze
-4. Cloud: 実Drive + 実OpenAIで1動画を処理
-5. Driveにmanifest / transcript JSON / TXTが作成されることを確認
-6. 同じ動画を再実行してASRがskipされることを確認
-7. #236で結果を参考観察として利用できることを確認
+2. Module: strict timeout / cancel / interrupted recovery
+3. Adjacent: Drive source / metadata / manifest / duplicate prevention / temporary media cleanup
+4. Lab: Basic Auth / list / thumbnail / elapsed progress / cancel / sequential unprocessed analyze
+5. Cloud: 実Drive + 実OpenAIで10〜30秒程度の動画1本をminiモデルで処理
+6. Driveにmanifest / transcript JSON / TXTが作成されることを確認
+7. 同じ動画を再実行してASRがskipされることを確認
+8. cancel後にinterruptedとして再実行できることを確認
+9. #236で結果を参考観察として利用できることを確認
 
 実Cloud検証が完了するまではIssue #240 / PR #241をVerification完了扱いにしない。
