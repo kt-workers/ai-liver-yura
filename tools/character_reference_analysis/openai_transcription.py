@@ -21,7 +21,7 @@ class OpenAITranscriptionBackend:
     """OpenAI Audio Transcriptions adapter for reference-only analysis.
 
     The default diarization model is used because it provides timestamped segments
-    and speaker labels in one request.  Other supported models are normalized into
+    and speaker labels in one request. Other supported models are normalized into
     the same Transcript DTO.
     """
 
@@ -178,10 +178,14 @@ class OpenAITranscriptionBackend:
         if not isinstance(text, str) or not text.strip():
             raise OpenAITranscriptionError("transcription response did not contain text")
 
-        segments = self._parse_segments(payload.get("segments"))
         detected_language = payload.get("language")
         if not isinstance(detected_language, str):
             detected_language = None
+        segment_language = requested_language or detected_language
+        segments = self._parse_segments(
+            payload.get("segments"),
+            language=segment_language,
+        )
         duration = payload.get("duration")
         if not isinstance(duration, (int, float)):
             duration = None
@@ -201,7 +205,11 @@ class OpenAITranscriptionBackend:
         )
 
     @staticmethod
-    def _parse_segments(value: Any) -> tuple[TranscriptSegment, ...]:
+    def _parse_segments(
+        value: Any,
+        *,
+        language: str | None,
+    ) -> tuple[TranscriptSegment, ...]:
         if not isinstance(value, list):
             return ()
         parsed: list[TranscriptSegment] = []
@@ -219,6 +227,7 @@ class OpenAITranscriptionBackend:
                     text=text.strip(),
                     start_seconds=float(start) if isinstance(start, (int, float)) else None,
                     end_seconds=float(end) if isinstance(end, (int, float)) else None,
+                    language=language,
                     speaker=speaker if isinstance(speaker, str) else None,
                 )
             )
