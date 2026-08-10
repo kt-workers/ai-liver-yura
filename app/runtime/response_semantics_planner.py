@@ -150,14 +150,15 @@ class ResponseSemanticsPlanner:
     ) -> tuple[SemanticProposition, ...]:
         target_id = target.id.strip().casefold()
         if target_id in _OVERVIEW_TARGETS:
+            dimensions = self._reactive_emotion_dimensions(context.emotion)
+            reactive_available = bool(dimensions)
             overview = SemanticProposition(
                 kind="self_state",
                 predicate=target.id,
-                state="overview" if context.emotion else "unknown",
-                certainty="high" if context.emotion else "low",
-                evidence_refs=("emotion",) if context.emotion else (),
+                state="overview" if reactive_available else "unknown",
+                certainty="high" if reactive_available else "low",
+                evidence_refs=("emotion.reactive",) if reactive_available else (),
             )
-            dimensions = self._reactive_emotion_dimensions(context.emotion)
             return (overview, *dimensions)
 
         candidate_keys = self._candidate_dimension_keys(target_id)
@@ -333,6 +334,8 @@ class ResponseSemanticsPlanner:
 
     @staticmethod
     def _budget(value: object, *, fallback: int) -> int:
+        if isinstance(value, bool):
+            return 1 if fallback == 1 else 0
         if value == 1:
             return 1
         if value == 0:
