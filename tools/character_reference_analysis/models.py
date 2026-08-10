@@ -74,6 +74,9 @@ class ReferenceSource:
     source_locator: str
     display_name: str
     content_hash: str | None = None
+    size_bytes: int | None = None
+    duration_seconds: float | None = None
+    thumbnail_available: bool = False
     created_at: str = field(default_factory=_utc_now_iso)
     analysis_status: ReferenceAnalysisStatus = ReferenceAnalysisStatus.PENDING
     usage_policy: ReferenceUsagePolicy = field(default_factory=ReferenceUsagePolicy)
@@ -85,6 +88,10 @@ class ReferenceSource:
             raise ValueError("source_locator must not be empty")
         if not self.display_name.strip():
             raise ValueError("display_name must not be empty")
+        if self.size_bytes is not None and self.size_bytes < 0:
+            raise ValueError("size_bytes must be >= 0")
+        if self.duration_seconds is not None and self.duration_seconds < 0:
+            raise ValueError("duration_seconds must be >= 0")
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
