@@ -8,6 +8,8 @@ Issue #240 / Draft PR #241。
 
 参考動画は `reference_only` である。元映像・元音声・声・セリフ・固有口癖・語尾・モーション・キャラクター固有設定を、星波ゆらの素材やRuntimeデータとして直接再利用しない。
 
+本Labは最終成果物ではない。**星波ゆらのCharacter Bibleを考えるための参考観察を得ること**が目的であり、プレビュー等の補助機能は解析の安定性より優先しない。
+
 ## 定常運用
 
 ```text
@@ -15,7 +17,9 @@ Google Driveへ参考動画を追加
   ↓
 Character Reference Labを開く
   ↓
-一覧でサムネイル / 動画長 / ファイルサイズ / 解析状態を確認
+一覧で動画名 / 動画長 / ファイルサイズ / 解析状態を確認
+  ├─ Drive純正サムネイルがあれば表示
+  └─ 無ければ No preview
   ↓
 「解析」または「未処理を順番に解析」
   ↓
@@ -41,7 +45,7 @@ Drive APIのファイルメタデータから以下を表示する。
 - ファイル名
 - 動画長
 - ファイルサイズ
-- サムネイル
+- Drive純正サムネイル（提供される場合のみ）
 - ASR / audio / visual の解析状態
 - 解析中の現在工程 / 進捗率
 - ASR待機中の経過時間 / model名
@@ -50,9 +54,28 @@ Drive APIのファイルメタデータから以下を表示する。
 
 Driveが `thumbnailLink` を提供する動画は、元URLをブラウザへ公開せずLabのサムネイルAPIで認証付きプロキシする。
 
-`.mov` などDriveがサムネイルを提供しない動画は、初回プレビュー要求時だけ一時領域へ動画を取得し、ffmpegで小さなJPEGを1枚生成する。生成後は結果folderへ `preview_thumbnail` として保存し、2回目以降は小さなJPEGだけを再利用する。元動画と生成処理中の一時ファイルはRenderへ永続保存しない。複数の未生成サムネイルが同時に要求されても生成並列数を制限する。
+### Drive純正サムネイルが無い場合
 
-このJPEGは参考資料を見分けるための `reference_only` UIプレビューであり、星波ゆらの画像素材・学習素材・Runtime入力として再利用しない。
+`.mov` などDriveがサムネイルを提供しない動画は、通常UIでは `No preview` と表示する。
+
+2026-08-10のRender実機で、Drive純正サムネイル無し動画のfallback生成と同時期に次が発生した。
+
+```text
+double free or corruption (!prev)
+GET /api/thumbnail ... 503
+Instance exited with status 134
+```
+
+native root causeはこの時点では断定しない。ただし、**一覧を開いただけで動画本体download + ffmpegを開始する必要はCharacter探索にはない**ため、通常UIからfallback生成を自動起動しない。
+
+したがって一覧表示時の期待値は次とする。
+
+```text
+Drive thumbnailあり → thumbnail APIを呼ぶ
+Drive thumbnailなし → No preview / thumbnail APIを呼ばない
+```
+
+過去に正常生成済みのpreview cacheやfallback生成コードは直ちにデータ削除対象とはしないが、通常UIの自動経路からは外す。再有効化は解析本体とは別Verificationで扱う。
 
 ## 一覧の障害分離
 
@@ -95,7 +118,7 @@ ASRの総時間timeoutは既定90秒。`YURA_REFERENCE_ASR_TIMEOUT_SECONDS` で�
 
 ## Render停止・再起動
 
-解析ジョブの進捗はRenderプロセス内にあるため、デプロイ・スピンダウン・プロセス再起動で消える。一方、manifest / transcript / previewはGoogle Driveを正本とする。
+解析ジョブの進捗はRenderプロセス内にあるため、デプロイ・スピンダウン・プロセス再起動で消える。一方、manifest / transcriptはGoogle Driveを正本とする。
 
 ```text
 completed
@@ -209,7 +232,9 @@ Drive結果folderへ、revision keyごとに以下を保存する。
 - manifest JSON
 - normalized transcript JSON
 - readable transcript TXT
-- Drive純正サムネイルがない場合のreference-only preview JPEG
+- 過去に正常生成済みのreference-only preview JPEG（存在する場合）
+
+通常UIは新しいfallback preview JPEGを自動生成しない。
 
 ## 保存しないもの
 
@@ -243,12 +268,14 @@ Human review
 
 1. Module: DTO / usage policy / OpenAI response normalization
 2. Adjacent: Drive source / metadata / manifest / duplicate prevention / temporary media cleanup
-3. Lab: persistent Cookie / list / native thumbnail proxy / generated thumbnail fallback / analysis progress / cancel
-4. Cloud: 実Drive + 実OpenAIで1動画を処理
-5. Drive動画取得中に5〜30%の途中値が進むことを確認
-6. Driveにmanifest / transcript JSON / TXTが作成されることを確認
-7. 同じ動画を再実行してASRがskipされることを確認
-8. Render再起動相当のprocessing状態から復旧できることを確認
-9. #236で結果を参考観察として利用できることを確認
+3. Lab: persistent Cookie / list / native thumbnail proxy / No preview safe degradation / analysis progress / cancel
+4. Render最新デプロイで、一覧表示だけではinstanceが落ちないことを確認
+5. Drive純正thumbnail無しMOVで`No preview`となり、thumbnail API / 元動画download / ffmpeg fallbackが自動起動しないことを確認
+6. Cloud: 実Drive + 実OpenAIで1動画を処理
+7. Drive動画取得中に5〜30%の途中値が進むことを確認
+8. Driveにmanifest / transcript JSON / TXTが作成されることを確認
+9. 同じ動画を再実行してASRがskipされることを確認
+10. Render再起動相当のprocessing状態から復旧できることを確認
+11. #236で結果を参考観察として利用できることを確認
 
 実Cloud検証が完了するまではIssue #240 / PR #241をVerification完了扱いにしない。
