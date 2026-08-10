@@ -6,7 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import google.auth
 from google.auth.credentials import Credentials
@@ -18,6 +18,7 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
 from .manifest import ReferenceAnalysisManifest
 from .models import ReferenceSource, ReferenceSourceKind, Transcript
+from .progress import ProgressCallback, report_progress
 
 _DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 _TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -205,7 +206,37 @@ class GoogleDriveReferenceInbox:
     async def materialize(self, source: ReferenceSource, work_directory: Path) -> Path:
         return await asyncio.to_thread(self._materialize_sync, source, work_directory)
 
-    def _materialize_sync(self, source: ReferenceSource, work_directory: Path) -> Path:
+    async def materialize_with_progress(
+        self,
+        source: ReferenceSource,
+        work_directory: Path,
+        *,
+        progress_callback: ProgressCallback,
+    ) -> Path:
+        loop = asyncio.get_running_loop()
+
+        def notify(fraction: float) -> None:
+            bounded = max(0.0, min(1.0, fraction))
+            percent = 5 + round(25 * bounded)
+            future = asyncio.run_coroutine_threadsafe(
+                report_progress(progress_callback, "downloading_video", percent),
+                loop,
+            )
+            future.result()
+
+        return await asyncio.to_thread(
+            self._materialize_sync,
+            source,
+            work_directory,
+            notify,
+        )
+
+    def _materialize_sync(
+        self,
+        source: ReferenceSource,
+        work_directory: Path,
+        progress_callback: Callable[[float], None] | None = None,
+    ) -> Path:
         file_id = _drive_file_id(source.source_locator)
         work_directory.mkdir(parents=True, exist_ok=True)
         destination = work_directory / Path(source.display_name).name
@@ -214,7 +245,9 @@ class GoogleDriveReferenceInbox:
             downloader = MediaIoBaseDownload(handle, request)
             done = False
             while not done:
-                _, done = downloader.next_chunk()
+                status, done = downloader.next_chunk()
+                if progress_callback is not None and status is not None:
+                    progress_callback(float(status.progress()))
         return destination
 
 
@@ -329,17 +362,19 @@ class GoogleDriveReferenceResultStore:
                 .execute()
             )
             return
+        body = {
+            "name": name,
+            "parents": [self._folder_id],
+            "appProperties": {
+                "yura_revision_key": revision_key,
+                "yura_result_kind": result_kind,
+                "yura_reference_usage": "reference_only",
+            },
+        }
         (
             self._service.files()
             .create(
-                body={
-                    "name": name,
-                    "parents": [self._folder_id],
-                    "appProperties": {
-                        "yura_revision_key": revision_key,
-                        "yura_result_kind": result_kind,
-                    },
-                },
+                body=body,
                 media_body=media,
                 fields="id",
             )
@@ -359,14 +394,14 @@ class GoogleDriveReferenceResultStore:
 def _drive_file_id(source_locator: str) -> str:
     prefix = "drive-file:"
     if not source_locator.startswith(prefix):
-        raise ValueError("source locator is not a Drive file locator")
+        raise ValueError("Drive source locator must start with drive-file:")
     file_id = source_locator[len(prefix) :]
     if not file_id:
-        raise ValueError("Drive file locator is missing file id")
+        raise ValueError("Drive source locator did not contain a file ID")
     return file_id
 
 
-def _optional_non_negative_int(value: object) -> int | None:
+def _optional_non_negative_int(value: Any) -> int | None:
     if value is None:
         return None
     try:
