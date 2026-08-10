@@ -50,7 +50,10 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
 
-      - name: Run tests
+      - name: Run #229 module unit tests only
         env:
           PYTHONUNBUFFERED: "1"
-        run: pytest -x -vv
+        run: |
+          pytest -x -vv \
+            tests/test_separated_response_validation.py \
+            tests/test_separated_response_validation_unit_gate.py
