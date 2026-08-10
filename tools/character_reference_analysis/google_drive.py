@@ -5,16 +5,21 @@ import hashlib
 import io
 import json
 import os
+import ssl
+import threading
+import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TypeVar
 
 import google.auth
+import httplib2
 from google.auth.credentials import Credentials
 from google.auth.transport.requests import AuthorizedSession
 from google.oauth2 import credentials as user_credentials
 from google.oauth2 import service_account
+from google_auth_httplib2 import AuthorizedHttp
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
+from googleapiclient.http import HttpRequest, MediaIoBaseDownload, MediaIoBaseUpload
 
 from .manifest import ReferenceAnalysisManifest
 from .models import ReferenceSource, ReferenceSourceKind, Transcript
@@ -22,6 +27,22 @@ from .progress import ProgressCallback, report_progress
 
 _DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 _TOKEN_URI = "https://oauth2.googleapis.com/token"
+_DRIVE_SSL_MAX_ATTEMPTS = 3
+_DRIVE_SSL_RETRY_BASE_SECONDS = 0.25
+_T = TypeVar("_T")
+
+
+def _call_with_ssl_retry(operation: Callable[[], _T]) -> _T:
+    """Retry a complete Drive operation after transient TLS record failures."""
+
+    for attempt in range(_DRIVE_SSL_MAX_ATTEMPTS):
+        try:
+            return operation()
+        except ssl.SSLError:
+            if attempt >= _DRIVE_SSL_MAX_ATTEMPTS - 1:
+                raise
+            time.sleep(_DRIVE_SSL_RETRY_BASE_SECONDS * (2**attempt))
+    raise AssertionError("unreachable")
 
 
 def build_google_drive_credentials(
@@ -65,7 +86,12 @@ def build_google_drive_service(
     oauth_client_secret_env: str = "YURA_REFERENCE_GOOGLE_OAUTH_CLIENT_SECRET",
     oauth_refresh_token_env: str = "YURA_REFERENCE_GOOGLE_OAUTH_REFRESH_TOKEN",
 ) -> Any:
-    """Build Drive v3 service without storing credentials in the repository.
+    """Build a Drive v3 service with one HTTP transport per worker thread.
+
+    ``google-api-python-client`` uses ``httplib2.Http`` underneath, and that
+    transport is not thread-safe. Character Reference Lab invokes the synchronous
+    Drive client through ``asyncio.to_thread()``, so the discovery resource may be
+    shared but each worker thread must own its own TLS/HTTP connection state.
 
     Personal My Drive deployments should normally use the user OAuth refresh-token
     path. A service account remains available for Shared Drive/Workspace deployments.
@@ -77,7 +103,27 @@ def build_google_drive_service(
         oauth_client_secret_env=oauth_client_secret_env,
         oauth_refresh_token_env=oauth_refresh_token_env,
     )
-    return build("drive", "v3", credentials=credentials, cache_discovery=False)
+    thread_local = threading.local()
+
+    def authorized_http_for_current_thread() -> AuthorizedHttp:
+        authorized_http = getattr(thread_local, "authorized_http", None)
+        if authorized_http is None:
+            authorized_http = AuthorizedHttp(credentials, http=httplib2.Http())
+            thread_local.authorized_http = authorized_http
+        return authorized_http
+
+    def build_request(unused_http: Any, *args: Any, **kwargs: Any) -> HttpRequest:
+        del unused_http
+        return HttpRequest(authorized_http_for_current_thread(), *args, **kwargs)
+
+    bootstrap_http = AuthorizedHttp(credentials, http=httplib2.Http())
+    return build(
+        "drive",
+        "v3",
+        http=bootstrap_http,
+        requestBuilder=build_request,
+        cache_discovery=False,
+    )
 
 
 class GoogleDriveReferenceInbox:
@@ -98,6 +144,9 @@ class GoogleDriveReferenceInbox:
         return await asyncio.to_thread(self._list_sources_sync)
 
     def _list_sources_sync(self) -> tuple[ReferenceSource, ...]:
+        return _call_with_ssl_retry(self._list_sources_once)
+
+    def _list_sources_once(self) -> tuple[ReferenceSource, ...]:
         files: list[dict[str, Any]] = []
         page_token: str | None = None
         while True:
@@ -181,6 +230,12 @@ class GoogleDriveReferenceInbox:
         self,
         source: ReferenceSource,
     ) -> tuple[bytes, str] | None:
+        return _call_with_ssl_retry(lambda: self._fetch_thumbnail_once(source))
+
+    def _fetch_thumbnail_once(
+        self,
+        source: ReferenceSource,
+    ) -> tuple[bytes, str] | None:
         file_id = _drive_file_id(source.source_locator)
         metadata = (
             self._service.files()
@@ -237,6 +292,28 @@ class GoogleDriveReferenceInbox:
         work_directory: Path,
         progress_callback: Callable[[float], None] | None = None,
     ) -> Path:
+        highest_fraction = 0.0
+
+        def monotonic_progress(fraction: float) -> None:
+            nonlocal highest_fraction
+            highest_fraction = max(highest_fraction, max(0.0, min(1.0, fraction)))
+            if progress_callback is not None:
+                progress_callback(highest_fraction)
+
+        return _call_with_ssl_retry(
+            lambda: self._materialize_once(
+                source,
+                work_directory,
+                monotonic_progress if progress_callback is not None else None,
+            )
+        )
+
+    def _materialize_once(
+        self,
+        source: ReferenceSource,
+        work_directory: Path,
+        progress_callback: Callable[[float], None] | None = None,
+    ) -> Path:
         file_id = _drive_file_id(source.source_locator)
         work_directory.mkdir(parents=True, exist_ok=True)
         destination = work_directory / Path(source.display_name).name
@@ -271,10 +348,15 @@ class GoogleDriveReferenceResultStore:
     def _load_manifest_sync(
         self, revision_key: str
     ) -> ReferenceAnalysisManifest | None:
-        file_id = self._find_result_file(revision_key, "manifest")
+        return _call_with_ssl_retry(lambda: self._load_manifest_once(revision_key))
+
+    def _load_manifest_once(
+        self, revision_key: str
+    ) -> ReferenceAnalysisManifest | None:
+        file_id = self._find_result_file_once(revision_key, "manifest")
         if file_id is None:
             return None
-        payload = json.loads(self._download_text(file_id))
+        payload = json.loads(self._download_text_once(file_id))
         if not isinstance(payload, dict):
             raise ValueError("stored reference manifest must be a JSON object")
         return ReferenceAnalysisManifest.from_dict(payload)
@@ -312,6 +394,13 @@ class GoogleDriveReferenceResultStore:
         )
 
     def _find_result_file(self, revision_key: str, result_kind: str) -> str | None:
+        return _call_with_ssl_retry(
+            lambda: self._find_result_file_once(revision_key, result_kind)
+        )
+
+    def _find_result_file_once(
+        self, revision_key: str, result_kind: str
+    ) -> str | None:
         revision = _escape_drive_query(revision_key)
         kind = _escape_drive_query(result_kind)
         folder = _escape_drive_query(self._folder_id)
@@ -341,7 +430,23 @@ class GoogleDriveReferenceResultStore:
         text: str,
         mime_type: str,
     ) -> None:
-        existing_file_id = self._find_result_file(revision_key, result_kind)
+        _call_with_ssl_retry(
+            lambda: self._upsert_text_once(
+                revision_key,
+                result_kind,
+                text,
+                mime_type,
+            )
+        )
+
+    def _upsert_text_once(
+        self,
+        revision_key: str,
+        result_kind: str,
+        text: str,
+        mime_type: str,
+    ) -> None:
+        existing_file_id = self._find_result_file_once(revision_key, result_kind)
         suffix = "txt" if result_kind == "transcript_text" else "json"
         digest = hashlib.sha256(revision_key.encode("utf-8")).hexdigest()[:16]
         name = f"yura-reference-{digest}-{result_kind}.{suffix}"
@@ -382,6 +487,9 @@ class GoogleDriveReferenceResultStore:
         )
 
     def _download_text(self, file_id: str) -> str:
+        return _call_with_ssl_retry(lambda: self._download_text_once(file_id))
+
+    def _download_text_once(self, file_id: str) -> str:
         request = self._service.files().get_media(fileId=file_id)
         target = io.BytesIO()
         downloader = MediaIoBaseDownload(target, request)
