@@ -15,7 +15,9 @@ services:
       - key: PYTHON_VERSION
         value: 3.10.20
       - key: YURA_REFERENCE_ASR_MODEL
-        value: gpt-4o-transcribe-diarize
+        value: gpt-4o-mini-transcribe
+      - key: YURA_REFERENCE_ASR_TIMEOUT_SECONDS
+        value: "90"
       - key: YURA_REFERENCE_DRIVE_INBOX_FOLDER_ID
         sync: false
       - key: YURA_REFERENCE_DRIVE_RESULTS_FOLDER_ID
