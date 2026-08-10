@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 
 from app.domain.activities import Activity
 from app.domain.character_response import (
@@ -18,6 +19,12 @@ from app.utils.llm_trace import build_llm_trace_context
 
 
 _INTERNAL_STATE_TYPES = frozenset({"internal_state", "agent_internal_state"})
+_CHARACTER_UTTERANCE_KEYS = frozenset(
+    {"speech", "linguistic_performance", "semantic_realizations"}
+)
+_LINGUISTIC_PERFORMANCE_KEYS = frozenset(
+    {"phrasing", "emphasis", "delivery_tags"}
+)
 
 
 class CharacterLanguageRealizerService(AvatarPerformanceCharacterLlmService):
@@ -79,23 +86,42 @@ class CharacterLanguageRealizerService(AvatarPerformanceCharacterLlmService):
 
     @staticmethod
     def parse(raw: str) -> CharacterResponse | None:
-        """新Schemaを明示識別し、それ以外は既存Character Schemaへ委譲する。"""
+        """新Schema候補はfail closedし、それ以外だけ既存Character Schemaへ委譲する。"""
 
-        parsed = CharacterLanguageRealizerService._parse_character_utterance(raw)
-        if parsed is not None:
-            return parsed
+        value = CharacterLanguageRealizerService._json_mapping(raw)
+        if value is not None and CharacterLanguageRealizerService._looks_semantic(value):
+            return CharacterLanguageRealizerService._parse_character_utterance_value(value)
         return AvatarPerformanceCharacterLlmService.parse(raw)
 
     @staticmethod
     def _parse_character_utterance(raw: str) -> CharacterResponse | None:
-        try:
-            value = json.loads(raw.strip())
-        except json.JSONDecodeError:
+        value = CharacterLanguageRealizerService._json_mapping(raw)
+        if value is None:
             return None
-        if not isinstance(value, dict):
+        return CharacterLanguageRealizerService._parse_character_utterance_value(value)
+
+    @staticmethod
+    def _parse_character_utterance_value(
+        value: Mapping[str, object],
+    ) -> CharacterResponse | None:
+        # Semantic経路は言語実現だけを所有する。責務外fieldを黙って捨てると、
+        # Character LLMがVoice/Body等を再び決め始めても境界違反を検知できないためfail closedする。
+        if set(value.keys()) != _CHARACTER_UTTERANCE_KEYS:
             return None
-        if "linguistic_performance" not in value or "semantic_realizations" not in value:
+        linguistic_value = value.get("linguistic_performance")
+        if not isinstance(linguistic_value, Mapping):
             return None
+        if not set(linguistic_value.keys()).issubset(_LINGUISTIC_PERFORMANCE_KEYS):
+            return None
+        if not CharacterLanguageRealizerService._string_list_fields(
+            linguistic_value,
+            keys=_LINGUISTIC_PERFORMANCE_KEYS,
+        ):
+            return None
+        semantic_realizations = value.get("semantic_realizations")
+        if not CharacterLanguageRealizerService._is_string_list(semantic_realizations):
+            return None
+
         utterance = CharacterUtterance.from_context(value)
         if utterance is None:
             return None
@@ -116,6 +142,35 @@ class CharacterLanguageRealizerService(AvatarPerformanceCharacterLlmService):
             linguistic_performance=utterance.linguistic_performance,
             semantic_realizations=utterance.semantic_realizations,
         )
+
+    @staticmethod
+    def _json_mapping(raw: str) -> Mapping[str, object] | None:
+        try:
+            value = json.loads(raw.strip())
+        except json.JSONDecodeError:
+            return None
+        return value if isinstance(value, Mapping) else None
+
+    @staticmethod
+    def _looks_semantic(value: Mapping[str, object]) -> bool:
+        return bool(
+            "linguistic_performance" in value or "semantic_realizations" in value
+        )
+
+    @staticmethod
+    def _string_list_fields(
+        value: Mapping[str, object],
+        *,
+        keys: frozenset[str],
+    ) -> bool:
+        return all(
+            CharacterLanguageRealizerService._is_string_list(value.get(key, []))
+            for key in keys
+        )
+
+    @staticmethod
+    def _is_string_list(value: object) -> bool:
+        return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
     @staticmethod
     def _uses_language_realizer(context: ResponseContext) -> bool:
