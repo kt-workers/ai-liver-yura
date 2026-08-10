@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: yura-character-reference-lab
+    runtime: python
+    plan: free
+    branch: feature/character-reference-japanese-asr
+    buildCommand: python -m pip install -r requirements-character-reference-lab.txt
+    startCommand: >-
+      python -m uvicorn cloud_validation.character_reference_asr_lab:app
+      --host 0.0.0.0
+      --port $PORT
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.20
+      - key: YURA_REFERENCE_ASR_MODEL
+        value: gpt-4o-transcribe-diarize
+      - key: YURA_REFERENCE_DRIVE_INBOX_FOLDER_ID
+        sync: false
+      - key: YURA_REFERENCE_DRIVE_RESULTS_FOLDER_ID
+        sync: false
+      - key: YURA_REFERENCE_GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: YURA_REFERENCE_LAB_USERNAME
+        sync: false
+      - key: YURA_REFERENCE_LAB_PASSWORD
+        sync: false
