@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from cloud_validation.character_reference_asr_lab import (
@@ -44,6 +42,9 @@ def make_source() -> ReferenceSource:
         source_locator="drive-file:file-1",
         display_name="reference.mov",
         content_hash="md5:abc",
+        size_bytes=52_790_619,
+        duration_seconds=28.44,
+        thumbnail_available=True,
     )
 
 
@@ -72,9 +73,18 @@ class FakePipeline:
     def __init__(self, source: ReferenceSource) -> None:
         self.source = source
         self.calls: list[tuple[str, bool]] = []
+        self.thumbnail_calls = 0
 
     async def list_sources(self) -> tuple[ReferenceSource, ...]:
         return (self.source,)
+
+    async def fetch_thumbnail(
+        self,
+        source: ReferenceSource,
+    ) -> tuple[bytes, str] | None:
+        assert source == self.source
+        self.thumbnail_calls += 1
+        return b"thumbnail", "image/jpeg"
 
     async def process_source(
         self,
@@ -128,8 +138,28 @@ async def test_lab_list_does_not_expose_private_source_locator() -> None:
     assert len(items) == 1
     assert items[0]["reference_id"] == "drive:file-1"
     assert items[0]["asr_status"] == "completed"
+    assert items[0]["size_bytes"] == 52_790_619
+    assert items[0]["duration_seconds"] == pytest.approx(28.44)
+    assert items[0]["thumbnail_available"] is True
     assert items[0]["reference_only"] is True
     assert "source_locator" not in items[0]
+
+
+@pytest.mark.asyncio
+async def test_lab_thumbnail_is_proxied_from_pipeline() -> None:
+    source = make_source()
+    pipeline = FakePipeline(source)
+    service = CharacterReferenceLabService(
+        make_settings(),
+        pipeline=pipeline,
+        store=FakeStore(),
+    )
+
+    await service.list_references()
+    thumbnail = await service.thumbnail(source.reference_id)
+
+    assert thumbnail == (b"thumbnail", "image/jpeg")
+    assert pipeline.thumbnail_calls == 1
 
 
 @pytest.mark.asyncio
