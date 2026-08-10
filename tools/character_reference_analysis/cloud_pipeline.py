@@ -70,7 +70,19 @@ class ReferenceCloudAsrPipeline:
         with tempfile.TemporaryDirectory(prefix="yura-reference-") as work_dir:
             work_path = Path(work_dir)
             await report_progress(progress_callback, "downloading_video", 5)
-            media_path = await self._inbox.materialize(source, work_path)
+            progressive_materializer = getattr(
+                self._inbox,
+                "materialize_with_progress",
+                None,
+            )
+            if progress_callback is not None and progressive_materializer is not None:
+                media_path = await progressive_materializer(
+                    source,
+                    work_path,
+                    progress_callback=progress_callback,
+                )
+            else:
+                media_path = await self._inbox.materialize(source, work_path)
             await report_progress(progress_callback, "video_downloaded", 30)
             await report_progress(progress_callback, "extracting_audio", 35)
             audio_path = await self._normalizer.extract_audio(media_path, work_path)
