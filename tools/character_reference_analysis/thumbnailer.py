@@ -4,8 +4,6 @@ import asyncio
 import subprocess
 from pathlib import Path
 
-import imageio_ffmpeg
-
 
 class FfmpegReferenceThumbnailer:
     """Create a small reference-only preview frame from a temporary video file."""
@@ -34,6 +32,13 @@ class FfmpegReferenceThumbnailer:
         media_path: Path,
         output_directory: Path,
     ) -> Path:
+        try:
+            import imageio_ffmpeg
+        except ModuleNotFoundError as error:
+            raise RuntimeError(
+                "reference thumbnail generation requires imageio-ffmpeg"
+            ) from error
+
         output_directory.mkdir(parents=True, exist_ok=True)
         output_path = output_directory / "reference-preview.jpg"
         ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
