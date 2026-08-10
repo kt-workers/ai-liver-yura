@@ -133,6 +133,28 @@ Unitでは少なくとも:
 
 否定慣用句など文脈解釈が必要なケースを単純辞書で拡大対応しない。誤検出が確認された場合はdeterministic guardの責務を縮小し、意味判定をLLM Validatorへ委譲する。
 
+### overview + supporting dimension の強度
+
+`current_feeling`等のoverview targetではprimary proposition自身は`state=overview`だが、supporting propositionに`joy=low`、`calm=moderate`等の強度stateを持てる。
+
+この場合、発話中の「少し」「ちょっと」「かなり」等が**どのpropositionを修飾しているか**をdeterministic marker辞書だけで判定してはいけない。
+
+したがってsurface guardはPlan全体を見て次の境界にする。
+
+```text
+Plan内の全propositionに intensity state がない
+  → explicit intensity marker をdeterministic reject可能
+
+Plan内のいずれかのpropositionに intensity state がある
+  → marker帰属はsemantic interpretationが必要
+  → deterministic guardはmarker単独ではrejectしない
+  → Validator LLMの unsupported_intensity_added / facet判定へ委譲
+```
+
+この規則は「Plan内に強度が1つあれば任意の強度表現を承認する」という意味ではない。例えば`anger=absent`なのに「かなり怒っている」と発話した場合、state/polarity/intensityの意味不整合はValidator LLMがrejectする。deterministic guardはpropositionへのmarker帰属を推測しないだけとする。
+
+`accepted=true`後のsurface evidence再確認も同じPlan全体規則を使い、primary=`overview`だけを見てsupporting dimensionの正当なmarkerを誤rejectしない。
+
 ## Module Unit Test
 
 最低限:
@@ -158,6 +180,8 @@ Unitでは少なくとも:
 16. model differencesをResponseValidationResultへ保持
 17. modelなし互換経路でもrequired ID + surface guardを維持
 18. Legacy非Semantic pathを既存Validatorへ委譲
+19. primary=`overview`でもsupporting propositionに`low/moderate/high/very_high`があればmarker単独で誤rejectしない
+20. Plan全体にintensity stateが無いoverviewではexplicit markerを引き続きrejectする
 
 ## 次工程
 
