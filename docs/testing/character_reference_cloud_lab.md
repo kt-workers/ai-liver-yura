@@ -66,11 +66,12 @@ API例外は `ExceptionType: message` の形で画面へ表示し、Safari等で
 
 Labの解析操作はバックグラウンドジョブとして開始し、ブラウザは進捗APIを定期的にポーリングする。1つのreferenceについて実行中ジョブがある場合、同じreferenceを再度押しても新しいpaid ASRジョブは作らず既存ジョブを返す。
 
-工程ベースの目安:
+進捗の構成:
 
 ```text
 0%    待機
 5%    Driveから動画取得開始
+5-30% Drive動画取得量の実進捗
 30%   動画取得完了
 35%   音声抽出開始
 45%   音声抽出完了
@@ -82,7 +83,11 @@ Labの解析操作はバックグラウンドジョブとして開始し、ブ�
 100%  完了 / 失敗 / 重複skip / cancel
 ```
 
-これはファイルの実バイト処理率ではなく、解析パイプラインの工程位置を示す。OpenAI Audio Transcriptions APIがリクエスト処理中の細かな進捗率を返さないため、ASR待機中は `60% / 日本語ASR処理中` と表示し、同時に経過時間を表示する。
+Drive動画取得中の5〜30%だけは、Google Drive downloaderが返す0〜100%の取得割合をLab全体の5〜30%へ線形マッピングした**実バイト取得進捗**である。大きい動画や回線が遅い場合でも5%のまま固定せず、Driveからデータを受信できていれば途中値が更新される。
+
+30%以降は解析パイプラインの工程位置を示す。OpenAI Audio Transcriptions APIはリクエスト処理中の細かな進捗率を返さないため、ASR待機中は `60% / 日本語ASR処理中` と表示し、同時に経過時間とmodel名を表示する。したがって `60%` はprovider内部の60%完了を意味しない。
+
+progress対応のない互換Inboxを使う場合は、Drive取得工程だけ5%開始→30%完了の従来表示へ安全に縮退する。
 
 通常ASRの既定modelは `gpt-4o-mini-transcribe`。話者分離が必要な資料のみ `gpt-4o-transcribe-diarize` へ明示的に切り替える。
 
@@ -240,9 +245,10 @@ Human review
 2. Adjacent: Drive source / metadata / manifest / duplicate prevention / temporary media cleanup
 3. Lab: persistent Cookie / list / native thumbnail proxy / generated thumbnail fallback / analysis progress / cancel
 4. Cloud: 実Drive + 実OpenAIで1動画を処理
-5. Driveにmanifest / transcript JSON / TXTが作成されることを確認
-6. 同じ動画を再実行してASRがskipされることを確認
-7. Render再起動相当のprocessing状態から復旧できることを確認
-8. #236で結果を参考観察として利用できることを確認
+5. Drive動画取得中に5〜30%の途中値が進むことを確認
+6. Driveにmanifest / transcript JSON / TXTが作成されることを確認
+7. 同じ動画を再実行してASRがskipされることを確認
+8. Render再起動相当のprocessing状態から復旧できることを確認
+9. #236で結果を参考観察として利用できることを確認
 
 実Cloud検証が完了するまではIssue #240 / PR #241をVerification完了扱いにしない。
