@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import Protocol
 
 from .asr_coordinator import AsrProcessingResult, ReferenceAsrCoordinator
 from .media_normalizer import ReferenceMediaNormalizer
