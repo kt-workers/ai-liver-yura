@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -48,15 +49,38 @@ class ReferenceAsrCoordinator:
     ) -> AsrProcessingResult:
         revision_key = build_revision_key(source)
         await report_progress(progress_callback, "checking_duplicate", 50)
-        if not retry and await self._store.has_revision(revision_key):
-            await report_progress(progress_callback, "skipped_duplicate", 100)
-            return AsrProcessingResult(
-                outcome=AsrProcessingOutcome.SKIPPED_DUPLICATE,
-                revision_key=revision_key,
-            )
+        existing = await self._store.load_manifest(revision_key)
+
+        if existing is not None and not retry:
+            if existing.asr_status == AnalysisStepStatus.COMPLETED:
+                await report_progress(progress_callback, "skipped_duplicate", 100)
+                return AsrProcessingResult(
+                    outcome=AsrProcessingOutcome.SKIPPED_DUPLICATE,
+                    revision_key=revision_key,
+                )
+            if existing.asr_status == AnalysisStepStatus.PROCESSING:
+                if await self._has_transcript(revision_key):
+                    recovered = existing.with_asr_status(AnalysisStepStatus.COMPLETED)
+                    await self._store.save_manifest(recovered)
+                    await report_progress(progress_callback, "recovered_completed", 100)
+                    return AsrProcessingResult(
+                        outcome=AsrProcessingOutcome.SKIPPED_DUPLICATE,
+                        revision_key=revision_key,
+                    )
+                existing = existing.with_asr_status(
+                    AnalysisStepStatus.INTERRUPTED,
+                    error="previous ASR process was interrupted before transcript persistence",
+                )
+                await self._store.save_manifest(existing)
+            elif existing.asr_status == AnalysisStepStatus.FAILED:
+                await report_progress(progress_callback, "retry_required", 100)
+                return AsrProcessingResult(
+                    outcome=AsrProcessingOutcome.FAILED,
+                    revision_key=revision_key,
+                    error=existing.last_error or "previous ASR attempt failed; retry is required",
+                )
 
         await report_progress(progress_callback, "preparing_asr", 55)
-        existing = await self._store.load_manifest(revision_key)
         manifest = existing or ReferenceAnalysisManifest.for_source(source)
         manifest = manifest.with_asr_status(AnalysisStepStatus.PROCESSING)
         await self._store.save_manifest(manifest)
@@ -70,6 +94,14 @@ class ReferenceAsrCoordinator:
             )
             await report_progress(progress_callback, "saving_transcript", 85)
             await self._store.save_transcript(transcript, revision_key=revision_key)
+        except asyncio.CancelledError:
+            interrupted = manifest.with_asr_status(
+                AnalysisStepStatus.INTERRUPTED,
+                error="ASR analysis was canceled or interrupted",
+            )
+            await self._store.save_manifest(interrupted)
+            await report_progress(progress_callback, "canceled", 100)
+            raise
         except Exception as error:  # boundary intentionally records provider/storage failures
             failed = manifest.with_asr_status(
                 AnalysisStepStatus.FAILED,
@@ -92,3 +124,9 @@ class ReferenceAsrCoordinator:
             revision_key=revision_key,
             transcript=transcript,
         )
+
+    async def _has_transcript(self, revision_key: str) -> bool:
+        checker = getattr(self._store, "has_transcript", None)
+        if checker is None:
+            return False
+        return bool(await checker(revision_key))
