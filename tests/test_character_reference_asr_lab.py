@@ -140,7 +140,8 @@ async def test_lab_list_does_not_expose_private_source_locator() -> None:
     assert items[0]["asr_status"] == "completed"
     assert items[0]["size_bytes"] == 52_790_619
     assert items[0]["duration_seconds"] == pytest.approx(28.44)
-    assert items[0]["thumbnail_available"] is True
+    assert items[0]["drive_thumbnail_available"] is True
+    assert items[0]["preview_available"] is True
     assert items[0]["reference_only"] is True
     assert "source_locator" not in items[0]
 
