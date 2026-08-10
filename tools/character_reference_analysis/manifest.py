@@ -17,6 +17,7 @@ class AnalysisStepStatus(str, Enum):
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
+    INTERRUPTED = "interrupted"
     SKIPPED = "skipped"
 
 
