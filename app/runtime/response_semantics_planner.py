@@ -178,7 +178,7 @@ class ResponseSemanticsPlanner:
             context.emotion,
             path="emotion",
             candidate_keys=candidate_keys,
-            prefer_reactive=target_id in _REACTIVE_EMOTION_TARGETS,
+            prefer_reactive=bool(candidate_keys & _REACTIVE_EMOTION_TARGETS),
         )
         if match is None:
             match = self._find_dimension(
@@ -354,18 +354,24 @@ class ResponseSemanticsPlanner:
     ) -> tuple[int, int, int, str]:
         normalized_path = path.strip().casefold()
         exact_key = key in candidate_keys
-        if prefer_reactive and exact_key:
-            if ".current.reactive." in normalized_path:
-                reactive_rank = 0
+        if prefer_reactive:
+            if exact_key and ".current.reactive." in normalized_path:
+                source_rank = 0
+            elif exact_key and ".reactive." in normalized_path:
+                source_rank = 1
+            elif exact_key:
+                source_rank = 2
+            elif ".current.reactive." in normalized_path:
+                source_rank = 3
             elif ".reactive." in normalized_path:
-                reactive_rank = 1
+                source_rank = 4
             else:
-                reactive_rank = 2
+                source_rank = 5
         else:
-            reactive_rank = 0
+            source_rank = 0
         match_rank = 0 if exact_key else 1
         depth = normalized_path.count(".")
-        return reactive_rank, match_rank, depth, normalized_path
+        return source_rank, match_rank, depth, normalized_path
 
     @staticmethod
     def _matches_dimension_key(key: str, candidate_keys: frozenset[str]) -> bool:
