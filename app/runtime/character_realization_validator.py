@@ -254,8 +254,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         if checks["unsupported_intensity_added"] is True:
             differences.append("unsupported_intensity_added")
 
-        primary_state = plan.propositions[0].state
-        if primary_state not in _INTENSITY_STATES and intensity_markers:
+        if not CharacterRealizationValidator._plan_has_intensity_state(plan) and intensity_markers:
             differences.append(
                 "unsupported_intensity_markers:" + ",".join(intensity_markers)
             )
@@ -266,12 +265,16 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         plan: SemanticUtterancePlan,
         speech: str,
     ) -> list[str]:
-        if plan.propositions[0].state in _INTENSITY_STATES:
+        if CharacterRealizationValidator._plan_has_intensity_state(plan):
             return []
         markers = CharacterRealizationValidator._explicit_intensity_markers(speech)
         if not markers:
             return []
         return ["unsupported_intensity_markers:" + ",".join(markers)]
+
+    @staticmethod
+    def _plan_has_intensity_state(plan: SemanticUtterancePlan) -> bool:
+        return any(proposition.state in _INTENSITY_STATES for proposition in plan.propositions)
 
     @staticmethod
     def _explicit_intensity_markers(speech: str) -> list[str]:
