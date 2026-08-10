@@ -14,6 +14,18 @@ from app.domain.semantic_utterance import (
 
 _INTERNAL_STATE_TYPES = frozenset({"internal_state", "agent_internal_state"})
 _OVERVIEW_TARGETS = frozenset({"current_feeling", "current_mood", "feeling", "mood"})
+_REACTIVE_EMOTION_TARGETS = frozenset(
+    {
+        "joy",
+        "amusement",
+        "anger",
+        "sadness",
+        "fear",
+        "surprise",
+        "discomfort",
+        "emotional_pressure",
+    }
+)
 _DISCOURSE_KEYS = frozenset(
     {
         "topic_transition",
@@ -166,6 +178,7 @@ class ResponseSemanticsPlanner:
             context.emotion,
             path="emotion",
             candidate_keys=candidate_keys,
+            prefer_reactive=target_id in _REACTIVE_EMOTION_TARGETS,
         )
         if match is None:
             match = self._find_dimension(
@@ -283,24 +296,76 @@ class ResponseSemanticsPlanner:
         *,
         path: str,
         candidate_keys: frozenset[str],
+        prefer_reactive: bool = False,
     ) -> tuple[str, object] | None:
-        if not isinstance(value, Mapping):
+        matches: list[tuple[str, str, object]] = []
+        cls._collect_dimension_matches(
+            value,
+            path=path,
+            candidate_keys=candidate_keys,
+            matches=matches,
+        )
+        if not matches:
             return None
+        selected = min(
+            matches,
+            key=lambda match: cls._dimension_match_rank(
+                match[0],
+                match[1],
+                candidate_keys=candidate_keys,
+                prefer_reactive=prefer_reactive,
+            ),
+        )
+        return selected[0], selected[2]
+
+    @classmethod
+    def _collect_dimension_matches(
+        cls,
+        value: object,
+        *,
+        path: str,
+        candidate_keys: frozenset[str],
+        matches: list[tuple[str, str, object]],
+    ) -> None:
+        if not isinstance(value, Mapping):
+            return
         for raw_key, item in value.items():
             key = str(raw_key)
             normalized = key.strip().casefold()
             item_path = f"{path}.{key}"
             if cls._matches_dimension_key(normalized, candidate_keys) and cls._is_scalar(item):
-                return item_path, item
+                matches.append((item_path, normalized, item))
             if isinstance(item, Mapping):
-                nested = cls._find_dimension(
+                cls._collect_dimension_matches(
                     item,
                     path=item_path,
                     candidate_keys=candidate_keys,
+                    matches=matches,
                 )
-                if nested is not None:
-                    return nested
-        return None
+
+    @classmethod
+    def _dimension_match_rank(
+        cls,
+        path: str,
+        key: str,
+        *,
+        candidate_keys: frozenset[str],
+        prefer_reactive: bool,
+    ) -> tuple[int, int, int, str]:
+        normalized_path = path.strip().casefold()
+        exact_key = key in candidate_keys
+        if prefer_reactive and exact_key:
+            if ".current.reactive." in normalized_path:
+                reactive_rank = 0
+            elif ".reactive." in normalized_path:
+                reactive_rank = 1
+            else:
+                reactive_rank = 2
+        else:
+            reactive_rank = 0
+        match_rank = 0 if exact_key else 1
+        depth = normalized_path.count(".")
+        return reactive_rank, match_rank, depth, normalized_path
 
     @staticmethod
     def _matches_dimension_key(key: str, candidate_keys: frozenset[str]) -> bool:
