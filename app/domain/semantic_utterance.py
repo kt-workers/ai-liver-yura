@@ -113,9 +113,12 @@ class SemanticUtterancePlan:
             raise ValueError("response_lengthが不正です。")
         if self.self_disclosure not in _ALLOWED_DISCLOSURE:
             raise ValueError("self_disclosureが不正です。")
-        if self.question_budget not in {0, 1}:
+        if isinstance(self.question_budget, bool) or self.question_budget not in {0, 1}:
             raise ValueError("question_budgetは0または1にしてください。")
-        if self.new_direction_budget not in {0, 1}:
+        if (
+            isinstance(self.new_direction_budget, bool)
+            or self.new_direction_budget not in {0, 1}
+        ):
             raise ValueError("new_direction_budgetは0または1にしてください。")
         for values in (
             self.required_content,
@@ -238,8 +241,8 @@ class SemanticUtterancePlan:
             forbidden_additions=cls._strings(value.get("forbidden_additions")),
             response_length=response_length,
             self_disclosure=self_disclosure,
-            question_budget=1 if value.get("question_budget") == 1 else 0,
-            new_direction_budget=1 if value.get("new_direction_budget") == 1 else 0,
+            question_budget=cls._binary_budget(value.get("question_budget")),
+            new_direction_budget=cls._binary_budget(value.get("new_direction_budget")),
             interpersonal=interpersonal,
             discourse_context=discourse,
             reasons=cls._strings(value.get("reasons")),
@@ -258,3 +261,9 @@ class SemanticUtterancePlan:
     @staticmethod
     def _semantic_string(value: object, default: str) -> str:
         return str(value).strip() if isinstance(value, str) and value.strip() else default
+
+    @staticmethod
+    def _binary_budget(value: object) -> int:
+        if isinstance(value, bool):
+            return 0
+        return 1 if value == 1 else 0
