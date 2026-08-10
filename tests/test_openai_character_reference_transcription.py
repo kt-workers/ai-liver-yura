@@ -79,6 +79,7 @@ def test_diarized_json_is_normalized_to_common_segments() -> None:
     assert transcript.metadata.model == "gpt-4o-transcribe-diarize"
     assert transcript.metadata.source_duration_seconds == 4.5
     assert [segment.speaker for segment in transcript.segments] == ["A", "A"]
+    assert [segment.language for segment in transcript.segments] == ["ja", "ja"]
 
 
 def test_verbose_json_is_normalized_without_copying_provider_specific_fields() -> None:
@@ -108,7 +109,8 @@ def test_verbose_json_is_normalized_without_copying_provider_specific_fields() -
 
     assert transcript.metadata.detected_language == "japanese"
     assert transcript.segments[0].text == "今日は楽しいね。"
-    assert transcript.segments[0].confidence is None
+    assert transcript.segments[0].language == "ja"
+    assert transcript.segments[0].asr_confidence is None
 
 
 def test_multipart_contains_language_model_and_media(tmp_path: Path) -> None:
@@ -120,7 +122,7 @@ def test_multipart_contains_language_model_and_media(tmp_path: Path) -> None:
     body, content_type = backend._build_multipart(media, fields)
 
     assert content_type.startswith("multipart/form-data; boundary=")
-    assert b'gpt-4o-transcribe-diarize' in body
+    assert b"gpt-4o-transcribe-diarize" in body
     assert b'name="language"' in body
     assert b"ja" in body
     assert b'name="file"' in body
