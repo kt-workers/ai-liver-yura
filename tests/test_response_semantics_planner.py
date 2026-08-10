@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 
 from app.domain.activities import Activity, ActivityType
@@ -14,13 +15,17 @@ from app.runtime.internal_state_response_context import InternalStateAwareRespon
 from app.runtime.response_semantics_planner import ResponseSemanticsPlanner
 
 
-def _envelope(target_id: str) -> dict[str, object]:
+def _envelope(
+    target_id: str,
+    *,
+    target_type: str = "internal_state",
+) -> dict[str, object]:
     return {
         "structured_input_meaning": {
             "input_speech_act": "question",
             "primary_intent": "ask_internal_state",
             "expected_response": "direct_answer",
-            "target": {"type": "internal_state", "id": target_id},
+            "target": {"type": target_type, "id": target_id},
         },
         "internal_directive": {
             "response_mode": "answer",
@@ -65,6 +70,23 @@ def _context(
         relationship=relationship or {},
         memory=memory or {},
         constraints={"_internal_directive": _envelope(target_id)},
+    )
+
+
+def _with_joy(value: float) -> ResponseContext:
+    context = _context("joy")
+    return replace(
+        context,
+        emotion={
+            "current": {
+                "reactive": {
+                    "joy": value,
+                    "amusement": 0.0,
+                    "calm": 0.58,
+                    "anger": 0.0,
+                }
+            }
+        },
     )
 
 
@@ -156,6 +178,132 @@ def test_semantic_plan_round_trips_across_response_context_boundary() -> None:
     restored = SemanticUtterancePlan.from_context(original.as_context())
 
     assert restored == original
+
+
+def test_semantic_state_numeric_boundaries_are_stable() -> None:
+    cases = (
+        (0.0, "absent"),
+        (0.05, "absent"),
+        (0.050001, "low"),
+        (0.349999, "low"),
+        (0.35, "moderate"),
+        (0.649999, "moderate"),
+        (0.65, "high"),
+        (0.849999, "high"),
+        (0.85, "very_high"),
+        (1.0, "very_high"),
+    )
+
+    planner = ResponseSemanticsPlanner()
+    for value, expected in cases:
+        plan = planner.plan(_with_joy(value))
+        assert plan.propositions[0].state == expected, value
+        assert str(value) not in json.dumps(plan.as_context(), ensure_ascii=False)
+
+
+def test_semantic_state_clamps_out_of_range_numeric_values() -> None:
+    planner = ResponseSemanticsPlanner()
+
+    below = planner.plan(_with_joy(-2.0))
+    above = planner.plan(_with_joy(3.0))
+
+    assert below.propositions[0].state == "absent"
+    assert above.propositions[0].state == "very_high"
+    assert "-2.0" not in json.dumps(below.as_context(), ensure_ascii=False)
+    assert "3.0" not in json.dumps(above.as_context(), ensure_ascii=False)
+
+
+def test_missing_target_dimension_degrades_to_unknown_without_substitution() -> None:
+    plan = ResponseSemanticsPlanner().plan(_context("fear"))
+
+    assert len(plan.propositions) == 1
+    proposition = plan.propositions[0]
+    assert proposition.predicate == "fear"
+    assert proposition.state == "unknown"
+    assert proposition.certainty == "low"
+    assert proposition.evidence_refs == ()
+    assert "curiosity" not in json.dumps(plan.as_context(), ensure_ascii=False)
+
+
+def test_current_feeling_without_emotion_degrades_to_unknown_only() -> None:
+    context = replace(_context("current_feeling"), emotion={})
+
+    plan = ResponseSemanticsPlanner().plan(context)
+
+    assert len(plan.propositions) == 1
+    proposition = plan.propositions[0]
+    assert proposition.predicate == "current_feeling"
+    assert proposition.state == "unknown"
+    assert proposition.certainty == "low"
+    assert proposition.evidence_refs == ()
+
+
+def test_non_internal_target_does_not_generate_internal_state_propositions() -> None:
+    context = replace(
+        _context("deep_sea_pressure"),
+        constraints={
+            "_internal_directive": _envelope(
+                "deep_sea_pressure",
+                target_type="topic",
+            )
+        },
+    )
+
+    plan = ResponseSemanticsPlanner().plan(context)
+
+    assert plan.target is not None
+    assert plan.target.type == "topic"
+    assert plan.target.id == "deep_sea_pressure"
+    assert plan.propositions == ()
+    assert "contradict_target_state" not in plan.forbidden_additions
+
+
+def test_direct_internal_state_does_not_carry_natural_language_content_requirement() -> None:
+    plan = ResponseSemanticsPlanner().plan(_context("joy"))
+
+    assert plan.required_content == ()
+    assert "内部状態の説明文を固定しない" not in json.dumps(
+        plan.as_context(),
+        ensure_ascii=False,
+    )
+
+
+def test_from_context_degrades_malformed_semantic_fields_conservatively() -> None:
+    restored = SemanticUtterancePlan.from_context(
+        {
+            "speech_act": "direct_answer",
+            "target": {"type": "internal_state", "id": "joy"},
+            "propositions": [
+                {
+                    "kind": "self_state",
+                    "predicate": "joy",
+                    "state": "invalid-state",
+                    "certainty": "invalid-certainty",
+                    "evidence_refs": ["emotion.current.reactive.joy", ""],
+                },
+                {"kind": "", "predicate": "ignored", "state": "high"},
+                "not-a-proposition",
+            ],
+            "response_length": "invalid-length",
+            "self_disclosure": "invalid-disclosure",
+            "question_budget": 99,
+            "new_direction_budget": -1,
+            "required_content": ["", "required"],
+        }
+    )
+
+    assert restored is not None
+    assert restored.response_length == "normal"
+    assert restored.self_disclosure == "none"
+    assert restored.question_budget == 0
+    assert restored.new_direction_budget == 0
+    assert restored.required_content == ("required",)
+    assert len(restored.propositions) == 1
+    proposition = restored.propositions[0]
+    assert proposition.predicate == "joy"
+    assert proposition.state == "unknown"
+    assert proposition.certainty == "low"
+    assert proposition.evidence_refs == ("emotion.current.reactive.joy",)
 
 
 def test_production_response_context_builder_attaches_semantic_plan() -> None:
