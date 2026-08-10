@@ -38,6 +38,25 @@ class ReferenceAnalysisManifest:
             revision_key=build_revision_key(source),
         )
 
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "ReferenceAnalysisManifest":
+        return cls(
+            reference_id=str(value["reference_id"]),
+            revision_key=str(value["revision_key"]),
+            asr_status=AnalysisStepStatus(str(value.get("asr_status", "pending"))),
+            audio_analysis_status=AnalysisStepStatus(
+                str(value.get("audio_analysis_status", "pending"))
+            ),
+            visual_analysis_status=AnalysisStepStatus(
+                str(value.get("visual_analysis_status", "pending"))
+            ),
+            created_at=str(value.get("created_at") or _utc_now_iso()),
+            updated_at=str(value.get("updated_at") or _utc_now_iso()),
+            last_error=(
+                str(value["last_error"]) if value.get("last_error") is not None else None
+            ),
+        )
+
     def with_asr_status(
         self,
         status: AnalysisStepStatus,
