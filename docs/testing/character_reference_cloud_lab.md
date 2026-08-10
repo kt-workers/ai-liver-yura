@@ -15,6 +15,8 @@ Google Driveへ参考動画を追加
   ↓
 Character Reference Labを開く
   ↓
+一覧でサムネイル / 動画長 / ファイルサイズ / 解析状態を確認
+  ↓
 「未処理を順番に解析」
   ↓
 一時領域へ動画取得
@@ -29,6 +31,20 @@ Driveへ manifest / transcript JSON / transcript TXT を保存
 ```
 
 同じDrive file revisionはmanifestで検出し、通常操作では再度ASRへ送信しない。失敗済みrevisionを再実行する場合のみ明示的なretryとする。
+
+## 一覧表示メタデータ
+
+Drive APIのファイルメタデータから以下を表示する。
+
+- ファイル名
+- 動画長
+- ファイルサイズ
+- Driveサムネイル（利用可能な場合）
+- ASR / audio / visual の解析状態
+
+動画長とサイズの表示だけのために動画本体をRenderへダウンロードしない。Driveの `videoMediaMetadata.durationMillis` / `size` を利用する。
+
+Driveの `thumbnailLink` は短命かつ認証が必要になる場合があるため、ブラウザへ元URLを公開せず、Labの `/api/thumbnail/{reference_id}` で認証付きプロキシする。サムネイルが利用できない場合は `No preview` 表示へフォールバックする。
 
 ## Google Drive認証
 
@@ -150,8 +166,8 @@ Human review
 ## 検証順
 
 1. Module: DTO / usage policy / OpenAI response normalization
-2. Adjacent: Drive source / manifest / duplicate prevention / temporary media cleanup
-3. Lab: Basic Auth / list / single analyze / sequential unprocessed analyze
+2. Adjacent: Drive source / metadata / manifest / duplicate prevention / temporary media cleanup
+3. Lab: Basic Auth / list / thumbnail proxy / single analyze / sequential unprocessed analyze
 4. Cloud: 実Drive + 実OpenAIで1動画を処理
 5. Driveにmanifest / transcript JSON / TXTが作成されることを確認
 6. 同じ動画を再実行してASRがskipされることを確認
