@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import secrets
 from dataclasses import dataclass
 from typing import Protocol
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Response, status
 from fastapi.responses import HTMLResponse
@@ -22,6 +24,7 @@ from tools.character_reference_analysis.media_normalizer import FfmpegAudioNorma
 from tools.character_reference_analysis.models import ReferenceSource
 from tools.character_reference_analysis.openai_transcription import OpenAITranscriptionBackend
 from tools.character_reference_analysis.preview_store import GoogleDriveReferencePreviewStore
+from tools.character_reference_analysis.progress import ProgressCallback
 from tools.character_reference_analysis.store import ReferenceResultStore
 from tools.character_reference_analysis.thumbnailer import FfmpegReferenceThumbnailer
 
@@ -70,6 +73,7 @@ class ReferencePipeline(Protocol):
         *,
         language: str | None = "ja",
         retry: bool = False,
+        progress_callback: ProgressCallback | None = None,
     ): ...
 
 
@@ -89,6 +93,32 @@ class AnalyzeRequest(BaseModel):
     retry: bool = False
 
 
+@dataclass(slots=True)
+class AnalysisJob:
+    job_id: str
+    reference_id: str
+    state: str = "queued"
+    stage: str = "queued"
+    percent: int = 0
+    outcome: str | None = None
+    error: str | None = None
+    transcript_preview: str | None = None
+    segment_count: int = 0
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "job_id": self.job_id,
+            "reference_id": self.reference_id,
+            "state": self.state,
+            "stage": self.stage,
+            "percent": self.percent,
+            "outcome": self.outcome,
+            "error": self.error,
+            "transcript_preview": self.transcript_preview,
+            "segment_count": self.segment_count,
+        }
+
+
 class CharacterReferenceLabService:
     def __init__(
         self,
@@ -103,6 +133,10 @@ class CharacterReferenceLabService:
         self._store = store
         self._preview_store = preview_store
         self._source_cache: dict[str, ReferenceSource] = {}
+        self._jobs: dict[str, AnalysisJob] = {}
+        self._active_job_by_reference: dict[str, str] = {}
+        self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._thumbnail_semaphore = asyncio.Semaphore(2)
 
     def _ensure_components(self) -> tuple[ReferencePipeline, ReferenceResultStore]:
         if self._pipeline is not None and self._store is not None:
@@ -143,6 +177,19 @@ class CharacterReferenceLabService:
         self._source_cache = {source.reference_id: source for source in sources}
         return sources
 
+    async def _find_source(self, reference_id: str) -> ReferenceSource:
+        source = self._source_cache.get(reference_id)
+        if source is not None:
+            return source
+        sources = await self._sources()
+        source = next(
+            (item for item in sources if item.reference_id == reference_id),
+            None,
+        )
+        if source is None:
+            raise ValueError("reference_id was not found in the configured Drive folder")
+        return source
+
     async def list_references(self) -> list[dict[str, object]]:
         _, store = self._ensure_components()
         sources = await self._sources()
@@ -150,6 +197,7 @@ class CharacterReferenceLabService:
         for source in sources:
             revision_key = build_revision_key(source)
             manifest = await store.load_manifest(revision_key)
+            active_job = self._active_job(source.reference_id)
             items.append(
                 {
                     "reference_id": source.reference_id,
@@ -174,23 +222,24 @@ class CharacterReferenceLabService:
                         if manifest is not None
                         else "pending"
                     ),
+                    "analysis_job": active_job.to_dict() if active_job else None,
                     "reference_only": True,
                 }
             )
         return items
 
+    def _active_job(self, reference_id: str) -> AnalysisJob | None:
+        job_id = self._active_job_by_reference.get(reference_id)
+        if job_id is None:
+            return None
+        job = self._jobs.get(job_id)
+        if job is None or job.state not in {"queued", "running"}:
+            return None
+        return job
+
     async def thumbnail(self, reference_id: str) -> tuple[bytes, str] | None:
         pipeline, _ = self._ensure_components()
-        source = self._source_cache.get(reference_id)
-        if source is None:
-            sources = await self._sources()
-            source = next(
-                (item for item in sources if item.reference_id == reference_id),
-                None,
-            )
-        if source is None:
-            raise ValueError("reference_id was not found in the configured Drive folder")
-
+        source = await self._find_source(reference_id)
         revision_key = build_revision_key(source)
         if self._preview_store is not None:
             cached = await self._preview_store.load(revision_key)
@@ -207,43 +256,124 @@ class CharacterReferenceLabService:
         generator = getattr(pipeline, "generate_thumbnail", None)
         if generator is None:
             return None
-        payload = await generator(source)
-        if payload is None:
-            return None
-        if self._preview_store is not None:
-            content, media_type = payload
-            await self._preview_store.save(
-                revision_key,
-                content,
-                media_type,
-            )
-        return payload
+        async with self._thumbnail_semaphore:
+            if self._preview_store is not None:
+                cached = await self._preview_store.load(revision_key)
+                if cached is not None:
+                    return cached
+            payload = await generator(source)
+            if payload is None:
+                return None
+            if self._preview_store is not None:
+                content, media_type = payload
+                await self._preview_store.save(
+                    revision_key,
+                    content,
+                    media_type,
+                )
+            return payload
 
     async def analyze(self, request: AnalyzeRequest) -> dict[str, object]:
         pipeline, _ = self._ensure_components()
-        sources = await self._sources()
-        source = next(
-            (item for item in sources if item.reference_id == request.reference_id),
-            None,
-        )
-        if source is None:
-            raise ValueError("reference_id was not found in the configured Drive folder")
+        source = await self._find_source(request.reference_id)
         result = await pipeline.process_source(
             source,
             language="ja",
             retry=request.retry,
         )
+        return self._analysis_result(source, result)
+
+    async def start_analysis(self, request: AnalyzeRequest) -> dict[str, object]:
+        source = await self._find_source(request.reference_id)
+        active = self._active_job(source.reference_id)
+        if active is not None:
+            return active.to_dict()
+
+        job = AnalysisJob(
+            job_id=uuid4().hex,
+            reference_id=source.reference_id,
+        )
+        self._jobs[job.job_id] = job
+        self._active_job_by_reference[source.reference_id] = job.job_id
+        task = asyncio.create_task(
+            self._run_analysis_job(job, source, retry=request.retry),
+            name=f"reference-analysis-{job.job_id}",
+        )
+        self._tasks[job.job_id] = task
+        task.add_done_callback(
+            lambda _task, job_id=job.job_id: self._tasks.pop(job_id, None)
+        )
+        return job.to_dict()
+
+    async def analysis_progress(self, job_id: str) -> dict[str, object]:
+        job = self._jobs.get(job_id)
+        if job is None:
+            raise ValueError("analysis job was not found")
+        return job.to_dict()
+
+    async def _run_analysis_job(
+        self,
+        job: AnalysisJob,
+        source: ReferenceSource,
+        *,
+        retry: bool,
+    ) -> None:
+        pipeline, _ = self._ensure_components()
+        job.state = "running"
+        job.stage = "starting"
+        job.percent = 1
+
+        async def progress(stage: str, percent: int) -> None:
+            job.stage = stage
+            job.percent = max(0, min(100, percent))
+
+        try:
+            result = await pipeline.process_source(
+                source,
+                language="ja",
+                retry=retry,
+                progress_callback=progress,
+            )
+            result_data = self._analysis_result(source, result)
+            job.outcome = str(result_data["outcome"])
+            job.error = result_data["error"] if isinstance(result_data["error"], str) else None
+            preview = result_data["transcript_preview"]
+            job.transcript_preview = preview if isinstance(preview, str) else None
+            job.segment_count = int(result_data["segment_count"])
+            if job.outcome == "failed":
+                job.state = "failed"
+                job.stage = "failed"
+            elif job.outcome == "skipped_duplicate":
+                job.state = "skipped"
+                job.stage = "skipped_duplicate"
+            else:
+                job.state = "completed"
+                job.stage = "completed"
+            job.percent = 100
+        except Exception as error:
+            job.state = "failed"
+            job.stage = "failed"
+            job.percent = 100
+            job.error = f"{type(error).__name__}: {error}"
+        finally:
+            if self._active_job_by_reference.get(source.reference_id) == job.job_id:
+                self._active_job_by_reference.pop(source.reference_id, None)
+
+    @staticmethod
+    def _analysis_result(source: ReferenceSource, result: object) -> dict[str, object]:
+        transcript = getattr(result, "transcript", None)
         transcript_preview = None
         segment_count = 0
-        if result.transcript is not None:
-            transcript_preview = result.transcript.text[:240]
-            segment_count = len(result.transcript.segments)
+        if transcript is not None:
+            transcript_preview = transcript.text[:240]
+            segment_count = len(transcript.segments)
+        outcome = getattr(result, "outcome")
         return {
             "reference_id": source.reference_id,
             "display_name": source.display_name,
-            "revision_key": result.revision_key,
-            "outcome": result.outcome.value,
-            "error": result.error,
+            "revision_key": getattr(result, "revision_key"),
+            "outcome": outcome.value,
+            "error": getattr(result, "error"),
             "transcript_preview": transcript_preview,
             "segment_count": segment_count,
             "reference_only": True,
@@ -367,6 +497,37 @@ def create_app(
                 detail=str(error),
             ) from error
 
+    @application.post("/api/analyze/start")
+    async def start_analysis(
+        request: AnalyzeRequest,
+        _: str = Depends(require_auth),
+    ) -> dict[str, object]:
+        try:
+            return await resolved_service.start_analysis(request)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(error),
+            ) from error
+        except Exception as error:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(error),
+            ) from error
+
+    @application.get("/api/analyze/progress/{job_id}")
+    async def analysis_progress(
+        job_id: str,
+        _: str = Depends(require_auth),
+    ) -> dict[str, object]:
+        try:
+            return await resolved_service.analysis_progress(job_id)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
+            ) from error
+
     return application
 
 
@@ -389,20 +550,26 @@ h1{margin:0}.note{color:#9ac2d8}.card{border:1px solid #294a5d;background:#0a1b2
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}.badge{display:inline-block;border:1px solid #3e6a82;border-radius:999px;padding:3px 8px;margin-right:5px;font-size:12px}
 button{border:1px solid #4f809b;background:#10415a;color:#fff;border-radius:10px;padding:9px 13px;cursor:pointer}button:disabled{opacity:.5}
 .toolbar{display:flex;gap:8px;margin:14px 0}.status{min-height:24px;color:#a5cde2;white-space:pre-wrap}.preview{margin-top:8px;color:#c7dfeb;font-size:13px;white-space:pre-wrap;margin-left:166px}
+.progress-wrap{margin-top:10px}.progress-line{display:flex;justify-content:space-between;gap:10px;color:#9fc7da;font-size:12px;margin-bottom:5px}.progress-track{height:8px;border-radius:999px;background:#061019;border:1px solid #244557;overflow:hidden}.progress-bar{height:100%;width:0;background:#3d819f;transition:width .25s ease}
 @media(max-width:700px){.row{grid-template-columns:100px 1fr}.thumb{width:100px;height:72px}.row>button{grid-column:2;justify-self:start}.preview{margin-left:116px}}
 </style></head><body><main>
 <header><div><h1>Character Reference Lab</h1><div class="note">参考動画 → 日本語ASR。素材はreference-onlyで、ゆらへ直接コピーしません。</div></div></header>
 <div class="toolbar"><button id="refresh">再読込</button><button id="all">未処理を順番に解析</button></div>
 <div id="status" class="status"></div><div id="list"></div>
 <script>
-const $=id=>document.getElementById(id);let items=[];
+const $=id=>document.getElementById(id);let items=[];const jobResults=new Map();
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const stageNames={queued:'待機',starting:'開始',downloading_video:'動画を取得中',video_downloaded:'動画取得完了',extracting_audio:'音声を抽出中',audio_extracted:'音声抽出完了',checking_duplicate:'重複解析を確認中',preparing_asr:'ASRを準備中',transcribing:'日本語ASR処理中',saving_transcript:'解析結果をDriveへ保存中',finalizing:'最終状態を保存中',completed:'完了',failed:'失敗',skipped_duplicate:'解析済みのためスキップ'};
 function formatBytes(value){if(value===null||value===undefined)return 'サイズ: —';let n=Number(value);if(!Number.isFinite(n))return 'サイズ: —';const units=['B','KB','MB','GB'];let i=0;while(n>=1024&&i<units.length-1){n/=1024;i++;}const digits=i===0?0:(n>=100?0:n>=10?1:2);return `サイズ: ${n.toFixed(digits)} ${units[i]}`;}
 function formatDuration(value){if(value===null||value===undefined)return '長さ: —';const total=Math.max(0,Math.round(Number(value)));if(!Number.isFinite(total))return '長さ: —';const h=Math.floor(total/3600),m=Math.floor((total%3600)/60),s=total%60;return `長さ: ${h?`${h}:`:''}${h?String(m).padStart(2,'0'):m}:${String(s).padStart(2,'0')}`;}
-async function load(){ $('status').textContent='読込中…'; const r=await fetch('/api/references'); const p=await r.json(); if(!r.ok)throw new Error(p.detail||r.status); items=p; render(); $('status').textContent=`${items.length}件`; }
-function thumb(x){const src=`/api/thumbnail/${encodeURIComponent(x.reference_id)}`;return `<div class="thumb"><img src="${src}" alt="" loading="lazy" onload="this.parentElement.dataset.ready='1'" onerror="this.parentElement.textContent='No preview'"></div>`;}
-function render(){ $('list').innerHTML=items.map((x,i)=>`<div class="card"><div class="row">${thumb(x)}<div><div class="name">${esc(x.display_name)}</div><div class="details"><span class="detail">${formatDuration(x.duration_seconds)}</span><span class="detail">${formatBytes(x.size_bytes)}</span></div><div class="meta"><span class="badge">ASR: ${esc(x.asr_status)}</span><span class="badge">audio: ${esc(x.audio_analysis_status)}</span><span class="badge">visual: ${esc(x.visual_analysis_status)}</span></div></div><button onclick="run(${i})">解析</button></div><div id="p${i}" class="preview"></div></div>`).join(''); }
-async function run(i,retry=false){ const x=items[i]; $('status').textContent=`解析中: ${x.display_name}`; const r=await fetch('/api/analyze',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reference_id:x.reference_id,retry})}); const p=await r.json(); if(!r.ok)throw new Error(p.detail||r.status); $('p'+i).textContent=`${p.outcome} / segments=${p.segment_count}\n${p.transcript_preview||''}`; await load(); return p; }
+async function load(){ $('status').textContent='読込中…'; const r=await fetch('/api/references'); const p=await r.json(); if(!r.ok)throw new Error(p.detail||r.status); items=p; for(const x of items){if(x.analysis_job)jobResults.set(x.reference_id,x.analysis_job);} render(); $('status').textContent=`${items.length}件`; }
+function thumb(x){const src=`/api/thumbnail/${encodeURIComponent(x.reference_id)}`;return `<div class="thumb"><img src="${src}" alt="" loading="lazy" onerror="this.parentElement.textContent='No preview'"></div>`;}
+function progressHtml(x,i){const j=jobResults.get(x.reference_id);if(!j)return `<div id="progress${i}" class="progress-wrap" hidden><div class="progress-line"><span id="stage${i}"></span><span id="pct${i}"></span></div><div class="progress-track"><div id="bar${i}" class="progress-bar"></div></div></div>`;const hidden=(j.state==='completed'||j.state==='skipped')?'':' ';return `<div id="progress${i}" class="progress-wrap"${hidden?'':' hidden'}><div class="progress-line"><span id="stage${i}">${esc(stageNames[j.stage]||j.stage)}</span><span id="pct${i}">${Number(j.percent)||0}%</span></div><div class="progress-track"><div id="bar${i}" class="progress-bar" style="width:${Number(j.percent)||0}%"></div></div></div>`;}
+function resultHtml(x){const j=jobResults.get(x.reference_id);if(!j)return '';if(j.error)return esc(j.error);if(j.transcript_preview)return `${esc(j.outcome||'')} / segments=${Number(j.segment_count)||0}\n${esc(j.transcript_preview)}`;if(j.outcome)return esc(j.outcome);return '';}
+function render(){ $('list').innerHTML=items.map((x,i)=>`<div class="card"><div class="row">${thumb(x)}<div><div class="name">${esc(x.display_name)}</div><div class="details"><span class="detail">${formatDuration(x.duration_seconds)}</span><span class="detail">${formatBytes(x.size_bytes)}</span></div><div class="meta"><span class="badge">ASR: ${esc(x.asr_status)}</span><span class="badge">audio: ${esc(x.audio_analysis_status)}</span><span class="badge">visual: ${esc(x.visual_analysis_status)}</span></div>${progressHtml(x,i)}</div><button id="run${i}" onclick="run(${i})">解析</button></div><div id="p${i}" class="preview">${resultHtml(x)}</div></div>`).join(''); }
+function updateProgress(i,j){jobResults.set(items[i].reference_id,j);const box=$('progress'+i),bar=$('bar'+i),stage=$('stage'+i),pct=$('pct'+i),button=$('run'+i);if(box)box.hidden=false;if(bar)bar.style.width=`${j.percent}%`;if(stage)stage.textContent=stageNames[j.stage]||j.stage;if(pct)pct.textContent=`${j.percent}%`;if(button)button.disabled=(j.state==='queued'||j.state==='running');if(j.error&&$('p'+i))$('p'+i).textContent=j.error;}
+async function poll(i,jobId){while(true){const r=await fetch(`/api/analyze/progress/${encodeURIComponent(jobId)}`);const j=await r.json();if(!r.ok)throw new Error(j.detail||r.status);updateProgress(i,j);if(!['queued','running'].includes(j.state)){if(j.state==='completed')items[i].asr_status='completed';if(j.state==='failed')items[i].asr_status='failed';if(j.transcript_preview&&$('p'+i))$('p'+i).textContent=`${j.outcome||''} / segments=${j.segment_count}\n${j.transcript_preview}`;render();return j;}await new Promise(resolve=>setTimeout(resolve,700));}}
+async function run(i,retry=false){const x=items[i];$('status').textContent=`解析開始: ${x.display_name}`;const r=await fetch('/api/analyze/start',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reference_id:x.reference_id,retry})});const j=await r.json();if(!r.ok)throw new Error(j.detail||r.status);updateProgress(i,j);const done=await poll(i,j.job_id);$('status').textContent=done.state==='failed'?`失敗: ${x.display_name}`:`完了: ${x.display_name}`;return done;}
 $('refresh').onclick=()=>load().catch(e=>$('status').textContent=`失敗: ${e.message}`);
 $('all').onclick=async()=>{ $('all').disabled=true; try{ for(let i=0;i<items.length;i++){ if(items[i].asr_status==='pending'||items[i].asr_status==='failed') await run(i,items[i].asr_status==='failed'); } $('status').textContent='未処理の解析が完了しました'; }catch(e){ $('status').textContent=`失敗: ${e.message}`; }finally{$('all').disabled=false;} };
 load().catch(e=>$('status').textContent=`初期化失敗: ${e.message}`);
