@@ -230,6 +230,23 @@ structured facts
 → Realization Validator
 ```
 
+## モジュール単体の完了ゲート
+
+#226は後段のCharacter / Validator / Labを使って品質を判定しない。まず`SemanticUtterancePlan`と`ResponseSemanticsPlanner`だけをUnit Testで固定し、その後に#227との隣接契約へ進む。
+
+Unit Testでは正常系だけでなく、少なくとも次を独立に確認する。
+
+- 数値境界 `0.05 / 0.35 / 0.65 / 0.85` が有限semantic stateへ一意に写像される
+- 0未満 / 1超過の値は0〜1へclampされ、raw数値をPlanへ露出しない
+- target dimensionが存在しない場合は捏造せず`unknown / low certainty`になる
+- `current_feeling`でreactive Emotionが存在しない場合は`unknown`となり、存在しないEmotion dimensionを生成しない
+- direct internal-state質問ではPlanner由来の自然語`content_requirements`を意味の正本へ持ち込まない
+- internal-state以外のtargetでは内部状態propositionを勝手に生成しない
+- malformedなserialize入力は保守的にdefault/skipし、例外や未定義stateを外へ出さない
+- round-trip後もtyped target / proposition / budget / relationship facetの意味が保持される
+
+このUnit gateがPASSするまでは、#227 Character Language Realizerの挙動を#226の合否根拠にしない。
+
 ## 非目標
 
 - Character Profileによる言い回し生成
@@ -252,5 +269,11 @@ structured facts
 6. Relationship raw数値をPlanへ露出しない
 7. serialize / restoreで意味を保持する
 8. production `InternalStateAwareResponseContextBuilder`がPlanを添付する
+9. semantic stateの全境界値とclamp
+10. missing target dimensionの`unknown`縮退
+11. reactive Emotion欠落時のoverview縮退
+12. non-internal targetで内部状態propositionを生成しない
+13. malformed serialized contextの保守的復元
+14. direct internal-state質問で自然語content requirementを持ち越さない
 
 実LLMの自然さ検証は#227以降に#223 Labで行う。
