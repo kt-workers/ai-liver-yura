@@ -101,7 +101,39 @@ POST /api/analyze/cancel/{job_id}
 
 ## 7. プログレス表示
 
-ASR provider内部の正確な進捗率は得られないため、工程ベースのpercentは維持する。ただし60%で停止して見えない問題を避けるため、jobの経過秒数を返す。
+解析全体を単一の推測進捗率として扱わず、**観測可能な実進捗と工程位置を分けて表示する**。
+
+### 7.1 Drive動画取得: 5〜30%
+
+Google Driveからの動画取得中は `MediaIoBaseDownload` が返す実ダウンロード割合を利用し、0〜100%の取得率をLab全体の5〜30%へ線形マッピングする。
+
+```text
+Drive download 0%   → Lab 5%
+Drive download 40%  → Lab 15%
+Drive download 100% → Lab 30%
+```
+
+これにより、大きい動画やRender側の回線が遅い場合に `5% / 動画取得中` のまま長時間停止して見える状態を避け、少なくともDrive取得工程の内部では実際にデータが進んでいるかを観測できる。
+
+この割合は**動画解析全体の実処理率ではなく、Driveファイル取得量だけの実進捗**である。Drive APIからprogress情報を取得できない互換Inboxでは、従来どおり5%開始→30%完了の工程表示へ縮退する。
+
+### 7.2 音声抽出以降: 工程ベース
+
+Drive取得後は次の工程位置を表示する。
+
+```text
+30%  動画取得完了
+35%  音声抽出開始
+45%  音声抽出完了
+50%  重複解析確認
+55%  ASR準備
+60%  OpenAI日本語ASR開始
+85%  ASR完了・結果保存開始
+95%  manifest最終保存
+100% 完了 / 失敗 / 重複skip / cancel
+```
+
+ASR provider内部の正確な進捗率は得られないため、`60%` はprovider内部の60%完了を意味しない。60%で停止して見えない問題を避けるため、ASR待機中はjobの経過秒数とmodel名を返す。
 
 例:
 
@@ -113,7 +145,12 @@ ASR provider内部の正確な進捗率は得られないため、工程ベー�
 [キャンセル]
 ```
 
-`60%` はprovider内部の60%完了を意味しない。
+したがってUI上の解釈は次のとおり。
+
+- 5〜30%: Drive動画取得量の実進捗
+- 30〜60%: 解析パイプラインの工程位置
+- 60%の待機: OpenAI ASR処理中。経過時間で監視
+- 85〜100%: 永続化・完了処理の工程位置
 
 ## 8. Render停止時
 
@@ -141,9 +178,12 @@ Module:
 - processing + transcriptありをcompletedへ復旧
 - processing + transcriptなしをinterruptedへ復旧
 - cancelでmanifestがinterruptedになる
+- Drive downloaderの0〜100%実進捗がLabの5〜30%へ単調にマッピングされる
+- progress非対応Inboxでは従来の工程表示へ安全に縮退する
 
 Lab:
 
+- Drive取得中に5〜30%の途中値が更新される
 - elapsed time表示
 - cancel button
 - canceled/interrupted referenceを再実行可能
@@ -152,8 +192,9 @@ Lab:
 Cloud Verification:
 
 1. 10〜30秒の参考動画1本でmini ASR
-2. 経過時間が更新される
-3. transcriptがDriveへ保存される
-4. 同一revision再実行がproviderを呼ばずskip
-5. cancel後にinterruptedとなり再実行可能
-6. Render再起動後にprocessingを完了扱いしない
+2. Drive動画取得中に5〜30%のprogressが進む
+3. ASR待機中は経過時間が更新される
+4. transcriptがDriveへ保存される
+5. 同一revision再実行がproviderを呼ばずskip
+6. cancel後にinterruptedとなり再実行可能
+7. Render再起動後にprocessingを完了扱いしない
