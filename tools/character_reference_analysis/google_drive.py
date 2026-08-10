@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import google.auth
+from google.oauth2 import credentials as user_credentials
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
@@ -17,23 +18,44 @@ from .manifest import ReferenceAnalysisManifest
 from .models import ReferenceSource, ReferenceSourceKind, Transcript
 
 _DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
+_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 
 def build_google_drive_service(
     *,
     service_account_json_env: str = "YURA_REFERENCE_GOOGLE_SERVICE_ACCOUNT_JSON",
+    oauth_client_id_env: str = "YURA_REFERENCE_GOOGLE_OAUTH_CLIENT_ID",
+    oauth_client_secret_env: str = "YURA_REFERENCE_GOOGLE_OAUTH_CLIENT_SECRET",
+    oauth_refresh_token_env: str = "YURA_REFERENCE_GOOGLE_OAUTH_REFRESH_TOKEN",
 ) -> Any:
-    """Build Drive v3 service without storing credentials in the repository."""
+    """Build Drive v3 service without storing credentials in the repository.
 
-    raw_service_account = os.environ.get(service_account_json_env)
-    if raw_service_account:
-        info = json.loads(raw_service_account)
-        credentials = service_account.Credentials.from_service_account_info(
-            info,
+    Personal My Drive deployments should normally use the user OAuth refresh-token
+    path. A service account remains available for Shared Drive/Workspace deployments.
+    """
+
+    client_id = os.environ.get(oauth_client_id_env, "").strip()
+    client_secret = os.environ.get(oauth_client_secret_env, "").strip()
+    refresh_token = os.environ.get(oauth_refresh_token_env, "").strip()
+    if client_id and client_secret and refresh_token:
+        credentials = user_credentials.Credentials(
+            token=None,
+            refresh_token=refresh_token,
+            token_uri=_TOKEN_URI,
+            client_id=client_id,
+            client_secret=client_secret,
             scopes=[_DRIVE_SCOPE],
         )
     else:
-        credentials, _ = google.auth.default(scopes=[_DRIVE_SCOPE])
+        raw_service_account = os.environ.get(service_account_json_env)
+        if raw_service_account:
+            info = json.loads(raw_service_account)
+            credentials = service_account.Credentials.from_service_account_info(
+                info,
+                scopes=[_DRIVE_SCOPE],
+            )
+        else:
+            credentials, _ = google.auth.default(scopes=[_DRIVE_SCOPE])
     return build("drive", "v3", credentials=credentials, cache_discovery=False)
 
 
@@ -48,23 +70,37 @@ class GoogleDriveReferenceInbox:
         return await asyncio.to_thread(self._list_sources_sync)
 
     def _list_sources_sync(self) -> tuple[ReferenceSource, ...]:
-        response = (
-            self._service.files()
-            .list(
-                q=f"'{_escape_drive_query(self._folder_id)}' in parents and trashed = false",
-                fields=(
-                    "nextPageToken,files(id,name,mimeType,md5Checksum,version,"
-                    "modifiedTime,size)"
-                ),
-                pageSize=1000,
+        files: list[dict[str, Any]] = []
+        page_token: str | None = None
+        while True:
+            response = (
+                self._service.files()
+                .list(
+                    q=(
+                        f"'{_escape_drive_query(self._folder_id)}' in parents "
+                        "and trashed = false"
+                    ),
+                    fields=(
+                        "nextPageToken,files(id,name,mimeType,md5Checksum,version,"
+                        "modifiedTime,size)"
+                    ),
+                    pageSize=1000,
+                    pageToken=page_token,
+                )
+                .execute()
             )
-            .execute()
-        )
-        files = response.get("files", []) if isinstance(response, dict) else []
+            if not isinstance(response, dict):
+                break
+            batch = response.get("files", [])
+            if isinstance(batch, list):
+                files.extend(item for item in batch if isinstance(item, dict))
+            next_token = response.get("nextPageToken")
+            if not isinstance(next_token, str) or not next_token:
+                break
+            page_token = next_token
+
         sources: list[ReferenceSource] = []
         for item in files:
-            if not isinstance(item, dict):
-                continue
             mime_type = item.get("mimeType")
             if not isinstance(mime_type, str) or not mime_type.startswith("video/"):
                 continue
@@ -185,7 +221,10 @@ class GoogleDriveReferenceResultStore:
         files = response.get("files", []) if isinstance(response, dict) else []
         if not files:
             return None
-        file_id = files[0].get("id")
+        first = files[0]
+        if not isinstance(first, dict):
+            return None
+        file_id = first.get("id")
         return file_id if isinstance(file_id, str) else None
 
     def _upsert_text(
