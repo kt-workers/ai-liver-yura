@@ -21,7 +21,9 @@ from tools.character_reference_analysis.manifest import build_revision_key
 from tools.character_reference_analysis.media_normalizer import FfmpegAudioNormalizer
 from tools.character_reference_analysis.models import ReferenceSource
 from tools.character_reference_analysis.openai_transcription import OpenAITranscriptionBackend
+from tools.character_reference_analysis.preview_store import GoogleDriveReferencePreviewStore
 from tools.character_reference_analysis.store import ReferenceResultStore
+from tools.character_reference_analysis.thumbnailer import FfmpegReferenceThumbnailer
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +73,17 @@ class ReferencePipeline(Protocol):
     ): ...
 
 
+class ReferencePreviewStore(Protocol):
+    async def load(self, revision_key: str) -> tuple[bytes, str] | None: ...
+
+    async def save(
+        self,
+        revision_key: str,
+        content: bytes,
+        media_type: str,
+    ) -> None: ...
+
+
 class AnalyzeRequest(BaseModel):
     reference_id: str
     retry: bool = False
@@ -83,10 +96,12 @@ class CharacterReferenceLabService:
         *,
         pipeline: ReferencePipeline | None = None,
         store: ReferenceResultStore | None = None,
+        preview_store: ReferencePreviewStore | None = None,
     ) -> None:
         self._settings = settings
         self._pipeline = pipeline
         self._store = store
+        self._preview_store = preview_store
         self._source_cache: dict[str, ReferenceSource] = {}
 
     def _ensure_components(self) -> tuple[ReferencePipeline, ReferenceResultStore]:
@@ -103,6 +118,10 @@ class CharacterReferenceLabService:
             service=service,
             folder_id=self._settings.results_folder_id,
         )
+        preview_store = GoogleDriveReferencePreviewStore(
+            service=service,
+            folder_id=self._settings.results_folder_id,
+        )
         coordinator = ReferenceAsrCoordinator(
             backend=OpenAITranscriptionBackend(model=self._settings.asr_model),
             store=store,
@@ -111,9 +130,11 @@ class CharacterReferenceLabService:
             inbox=inbox,
             normalizer=FfmpegAudioNormalizer(),
             coordinator=coordinator,
+            thumbnailer=FfmpegReferenceThumbnailer(),
         )
         self._pipeline = pipeline
         self._store = store
+        self._preview_store = preview_store
         return pipeline, store
 
     async def _sources(self) -> tuple[ReferenceSource, ...]:
@@ -138,7 +159,8 @@ class CharacterReferenceLabService:
                     "content_hash": source.content_hash,
                     "size_bytes": source.size_bytes,
                     "duration_seconds": source.duration_seconds,
-                    "thumbnail_available": source.thumbnail_available,
+                    "drive_thumbnail_available": source.thumbnail_available,
+                    "preview_available": True,
                     "asr_status": (
                         manifest.asr_status.value if manifest is not None else "pending"
                     ),
@@ -168,12 +190,34 @@ class CharacterReferenceLabService:
             )
         if source is None:
             raise ValueError("reference_id was not found in the configured Drive folder")
-        if not source.thumbnail_available:
+
+        revision_key = build_revision_key(source)
+        if self._preview_store is not None:
+            cached = await self._preview_store.load(revision_key)
+            if cached is not None:
+                return cached
+
+        if source.thumbnail_available:
+            fetcher = getattr(pipeline, "fetch_thumbnail", None)
+            if fetcher is not None:
+                payload = await fetcher(source)
+                if payload is not None:
+                    return payload
+
+        generator = getattr(pipeline, "generate_thumbnail", None)
+        if generator is None:
             return None
-        fetcher = getattr(pipeline, "fetch_thumbnail", None)
-        if fetcher is None:
+        payload = await generator(source)
+        if payload is None:
             return None
-        return await fetcher(source)
+        if self._preview_store is not None:
+            content, media_type = payload
+            await self._preview_store.save(
+                revision_key,
+                content,
+                media_type,
+            )
+        return payload
 
     async def analyze(self, request: AnalyzeRequest) -> dict[str, object]:
         pipeline, _ = self._ensure_components()
@@ -302,7 +346,7 @@ def create_app(
         return Response(
             content=content,
             media_type=media_type,
-            headers={"Cache-Control": "private, max-age=1800"},
+            headers={"Cache-Control": "private, max-age=86400"},
         )
 
     @application.post("/api/analyze")
@@ -356,7 +400,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 function formatBytes(value){if(value===null||value===undefined)return 'サイズ: —';let n=Number(value);if(!Number.isFinite(n))return 'サイズ: —';const units=['B','KB','MB','GB'];let i=0;while(n>=1024&&i<units.length-1){n/=1024;i++;}const digits=i===0?0:(n>=100?0:n>=10?1:2);return `サイズ: ${n.toFixed(digits)} ${units[i]}`;}
 function formatDuration(value){if(value===null||value===undefined)return '長さ: —';const total=Math.max(0,Math.round(Number(value)));if(!Number.isFinite(total))return '長さ: —';const h=Math.floor(total/3600),m=Math.floor((total%3600)/60),s=total%60;return `長さ: ${h?`${h}:`:''}${h?String(m).padStart(2,'0'):m}:${String(s).padStart(2,'0')}`;}
 async function load(){ $('status').textContent='読込中…'; const r=await fetch('/api/references'); const p=await r.json(); if(!r.ok)throw new Error(p.detail||r.status); items=p; render(); $('status').textContent=`${items.length}件`; }
-function thumb(x){if(!x.thumbnail_available)return '<div class="thumb">No preview</div>';const src=`/api/thumbnail/${encodeURIComponent(x.reference_id)}`;return `<div class="thumb"><img src="${src}" alt="" loading="lazy" onerror="this.parentElement.textContent='No preview'"></div>`;}
+function thumb(x){const src=`/api/thumbnail/${encodeURIComponent(x.reference_id)}`;return `<div class="thumb"><img src="${src}" alt="" loading="lazy" onload="this.parentElement.dataset.ready='1'" onerror="this.parentElement.textContent='No preview'"></div>`;}
 function render(){ $('list').innerHTML=items.map((x,i)=>`<div class="card"><div class="row">${thumb(x)}<div><div class="name">${esc(x.display_name)}</div><div class="details"><span class="detail">${formatDuration(x.duration_seconds)}</span><span class="detail">${formatBytes(x.size_bytes)}</span></div><div class="meta"><span class="badge">ASR: ${esc(x.asr_status)}</span><span class="badge">audio: ${esc(x.audio_analysis_status)}</span><span class="badge">visual: ${esc(x.visual_analysis_status)}</span></div></div><button onclick="run(${i})">解析</button></div><div id="p${i}" class="preview"></div></div>`).join(''); }
 async function run(i,retry=false){ const x=items[i]; $('status').textContent=`解析中: ${x.display_name}`; const r=await fetch('/api/analyze',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reference_id:x.reference_id,retry})}); const p=await r.json(); if(!r.ok)throw new Error(p.detail||r.status); $('p'+i).textContent=`${p.outcome} / segments=${p.segment_count}\n${p.transcript_preview||''}`; await load(); return p; }
 $('refresh').onclick=()=>load().catch(e=>$('status').textContent=`失敗: ${e.message}`);
