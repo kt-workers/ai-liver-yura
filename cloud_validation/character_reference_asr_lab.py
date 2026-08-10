@@ -5,7 +5,7 @@ import secrets
 from dataclasses import dataclass
 from typing import Protocol
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Response, status
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
@@ -87,6 +87,7 @@ class CharacterReferenceLabService:
         self._settings = settings
         self._pipeline = pipeline
         self._store = store
+        self._source_cache: dict[str, ReferenceSource] = {}
 
     def _ensure_components(self) -> tuple[ReferencePipeline, ReferenceResultStore]:
         if self._pipeline is not None and self._store is not None:
@@ -115,9 +116,15 @@ class CharacterReferenceLabService:
         self._store = store
         return pipeline, store
 
-    async def list_references(self) -> list[dict[str, object]]:
-        pipeline, store = self._ensure_components()
+    async def _sources(self) -> tuple[ReferenceSource, ...]:
+        pipeline, _ = self._ensure_components()
         sources = await pipeline.list_sources()
+        self._source_cache = {source.reference_id: source for source in sources}
+        return sources
+
+    async def list_references(self) -> list[dict[str, object]]:
+        _, store = self._ensure_components()
+        sources = await self._sources()
         items: list[dict[str, object]] = []
         for source in sources:
             revision_key = build_revision_key(source)
@@ -129,6 +136,9 @@ class CharacterReferenceLabService:
                     "source_kind": source.source_kind.value,
                     "revision_key": revision_key,
                     "content_hash": source.content_hash,
+                    "size_bytes": source.size_bytes,
+                    "duration_seconds": source.duration_seconds,
+                    "thumbnail_available": source.thumbnail_available,
                     "asr_status": (
                         manifest.asr_status.value if manifest is not None else "pending"
                     ),
@@ -147,9 +157,27 @@ class CharacterReferenceLabService:
             )
         return items
 
+    async def thumbnail(self, reference_id: str) -> tuple[bytes, str] | None:
+        pipeline, _ = self._ensure_components()
+        source = self._source_cache.get(reference_id)
+        if source is None:
+            sources = await self._sources()
+            source = next(
+                (item for item in sources if item.reference_id == reference_id),
+                None,
+            )
+        if source is None:
+            raise ValueError("reference_id was not found in the configured Drive folder")
+        if not source.thumbnail_available:
+            return None
+        fetcher = getattr(pipeline, "fetch_thumbnail", None)
+        if fetcher is None:
+            return None
+        return await fetcher(source)
+
     async def analyze(self, request: AnalyzeRequest) -> dict[str, object]:
         pipeline, _ = self._ensure_components()
-        sources = await pipeline.list_sources()
+        sources = await self._sources()
         source = next(
             (item for item in sources if item.reference_id == request.reference_id),
             None,
@@ -248,6 +276,35 @@ def create_app(
                 detail=str(error),
             ) from error
 
+    @application.get("/api/thumbnail/{reference_id}")
+    async def thumbnail(
+        reference_id: str,
+        _: str = Depends(require_auth),
+    ) -> Response:
+        try:
+            payload = await resolved_service.thumbnail(reference_id)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(error),
+            ) from error
+        except Exception as error:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(error),
+            ) from error
+        if payload is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="thumbnail is not available",
+            )
+        content, media_type = payload
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Cache-Control": "private, max-age=1800"},
+        )
+
     @application.post("/api/analyze")
     async def analyze(
         request: AnalyzeRequest,
@@ -279,13 +336,16 @@ _INDEX_HTML = r"""
 <title>Yura Character Reference Lab</title>
 <style>
 :root{font-family:Inter,system-ui,sans-serif;color-scheme:dark}*{box-sizing:border-box}
-body{margin:0;background:#07131d;color:#eaf7ff}main{width:min(1100px,94vw);margin:auto;padding:28px 0}
+body{margin:0;background:#07131d;color:#eaf7ff}main{width:min(1180px,94vw);margin:auto;padding:28px 0}
 header{display:flex;justify-content:space-between;gap:16px;align-items:end;margin-bottom:18px}
 h1{margin:0}.note{color:#9ac2d8}.card{border:1px solid #294a5d;background:#0a1b27;border-radius:16px;padding:15px;margin:10px 0}
-.row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}.name{font-weight:700}.meta{color:#8fb5c9;font-size:13px;margin-top:5px}
-.badge{display:inline-block;border:1px solid #3e6a82;border-radius:999px;padding:3px 8px;margin-right:5px;font-size:12px}
+.row{display:grid;grid-template-columns:150px 1fr auto;gap:16px;align-items:center}.name{font-weight:700}.meta{color:#8fb5c9;font-size:13px;margin-top:7px}
+.details{display:flex;gap:12px;flex-wrap:wrap;color:#b7d1df;font-size:13px;margin-top:7px}.detail{white-space:nowrap}
+.thumb{width:150px;height:96px;border-radius:11px;overflow:hidden;background:#061019;border:1px solid #244557;display:flex;align-items:center;justify-content:center;color:#698ca0;font-size:12px}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}.badge{display:inline-block;border:1px solid #3e6a82;border-radius:999px;padding:3px 8px;margin-right:5px;font-size:12px}
 button{border:1px solid #4f809b;background:#10415a;color:#fff;border-radius:10px;padding:9px 13px;cursor:pointer}button:disabled{opacity:.5}
-.toolbar{display:flex;gap:8px;margin:14px 0}.status{min-height:24px;color:#a5cde2;white-space:pre-wrap}.preview{margin-top:8px;color:#c7dfeb;font-size:13px;white-space:pre-wrap}
+.toolbar{display:flex;gap:8px;margin:14px 0}.status{min-height:24px;color:#a5cde2;white-space:pre-wrap}.preview{margin-top:8px;color:#c7dfeb;font-size:13px;white-space:pre-wrap;margin-left:166px}
+@media(max-width:700px){.row{grid-template-columns:100px 1fr}.thumb{width:100px;height:72px}.row>button{grid-column:2;justify-self:start}.preview{margin-left:116px}}
 </style></head><body><main>
 <header><div><h1>Character Reference Lab</h1><div class="note">参考動画 → 日本語ASR。素材はreference-onlyで、ゆらへ直接コピーしません。</div></div></header>
 <div class="toolbar"><button id="refresh">再読込</button><button id="all">未処理を順番に解析</button></div>
@@ -293,8 +353,11 @@ button{border:1px solid #4f809b;background:#10415a;color:#fff;border-radius:10px
 <script>
 const $=id=>document.getElementById(id);let items=[];
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function formatBytes(value){if(value===null||value===undefined)return 'サイズ: —';let n=Number(value);if(!Number.isFinite(n))return 'サイズ: —';const units=['B','KB','MB','GB'];let i=0;while(n>=1024&&i<units.length-1){n/=1024;i++;}const digits=i===0?0:(n>=100?0:n>=10?1:2);return `サイズ: ${n.toFixed(digits)} ${units[i]}`;}
+function formatDuration(value){if(value===null||value===undefined)return '長さ: —';const total=Math.max(0,Math.round(Number(value)));if(!Number.isFinite(total))return '長さ: —';const h=Math.floor(total/3600),m=Math.floor((total%3600)/60),s=total%60;return `長さ: ${h?`${h}:`:''}${h?String(m).padStart(2,'0'):m}:${String(s).padStart(2,'0')}`;}
 async function load(){ $('status').textContent='読込中…'; const r=await fetch('/api/references'); const p=await r.json(); if(!r.ok)throw new Error(p.detail||r.status); items=p; render(); $('status').textContent=`${items.length}件`; }
-function render(){ $('list').innerHTML=items.map((x,i)=>`<div class="card"><div class="row"><div><div class="name">${esc(x.display_name)}</div><div class="meta"><span class="badge">ASR: ${esc(x.asr_status)}</span><span class="badge">audio: ${esc(x.audio_analysis_status)}</span><span class="badge">visual: ${esc(x.visual_analysis_status)}</span></div></div><button onclick="run(${i})">解析</button></div><div id="p${i}" class="preview"></div></div>`).join(''); }
+function thumb(x){if(!x.thumbnail_available)return '<div class="thumb">No preview</div>';const src=`/api/thumbnail/${encodeURIComponent(x.reference_id)}`;return `<div class="thumb"><img src="${src}" alt="" loading="lazy" onerror="this.parentElement.textContent='No preview'"></div>`;}
+function render(){ $('list').innerHTML=items.map((x,i)=>`<div class="card"><div class="row">${thumb(x)}<div><div class="name">${esc(x.display_name)}</div><div class="details"><span class="detail">${formatDuration(x.duration_seconds)}</span><span class="detail">${formatBytes(x.size_bytes)}</span></div><div class="meta"><span class="badge">ASR: ${esc(x.asr_status)}</span><span class="badge">audio: ${esc(x.audio_analysis_status)}</span><span class="badge">visual: ${esc(x.visual_analysis_status)}</span></div></div><button onclick="run(${i})">解析</button></div><div id="p${i}" class="preview"></div></div>`).join(''); }
 async function run(i,retry=false){ const x=items[i]; $('status').textContent=`解析中: ${x.display_name}`; const r=await fetch('/api/analyze',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reference_id:x.reference_id,retry})}); const p=await r.json(); if(!r.ok)throw new Error(p.detail||r.status); $('p'+i).textContent=`${p.outcome} / segments=${p.segment_count}\n${p.transcript_preview||''}`; await load(); return p; }
 $('refresh').onclick=()=>load().catch(e=>$('status').textContent=`失敗: ${e.message}`);
 $('all').onclick=async()=>{ $('all').disabled=true; try{ for(let i=0;i<items.length;i++){ if(items[i].asr_status==='pending'||items[i].asr_status==='failed') await run(i,items[i].asr_status==='failed'); } $('status').textContent='未処理の解析が完了しました'; }catch(e){ $('status').textContent=`失敗: ${e.message}`; }finally{$('all').disabled=false;} };
