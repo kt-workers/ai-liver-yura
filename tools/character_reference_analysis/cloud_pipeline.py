@@ -75,6 +75,13 @@ class ReferenceCloudAsrPipeline:
             await report_progress(progress_callback, "extracting_audio", 35)
             audio_path = await self._normalizer.extract_audio(media_path, work_path)
             await report_progress(progress_callback, "audio_extracted", 45)
+            if progress_callback is None:
+                return await self._coordinator.process(
+                    source,
+                    audio_path,
+                    language=language,
+                    retry=retry,
+                )
             return await self._coordinator.process(
                 source,
                 audio_path,
