@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 import google.auth
+from google.auth.credentials import Credentials
+from google.auth.transport.requests import AuthorizedSession
 from google.oauth2 import credentials as user_credentials
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -19,6 +21,40 @@ from .models import ReferenceSource, ReferenceSourceKind, Transcript
 
 _DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 _TOKEN_URI = "https://oauth2.googleapis.com/token"
+
+
+def build_google_drive_credentials(
+    *,
+    service_account_json_env: str = "YURA_REFERENCE_GOOGLE_SERVICE_ACCOUNT_JSON",
+    oauth_client_id_env: str = "YURA_REFERENCE_GOOGLE_OAUTH_CLIENT_ID",
+    oauth_client_secret_env: str = "YURA_REFERENCE_GOOGLE_OAUTH_CLIENT_SECRET",
+    oauth_refresh_token_env: str = "YURA_REFERENCE_GOOGLE_OAUTH_REFRESH_TOKEN",
+) -> Credentials:
+    """Build Drive credentials without storing secrets in the repository."""
+
+    client_id = os.environ.get(oauth_client_id_env, "").strip()
+    client_secret = os.environ.get(oauth_client_secret_env, "").strip()
+    refresh_token = os.environ.get(oauth_refresh_token_env, "").strip()
+    if client_id and client_secret and refresh_token:
+        return user_credentials.Credentials(
+            token=None,
+            refresh_token=refresh_token,
+            token_uri=_TOKEN_URI,
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=[_DRIVE_SCOPE],
+        )
+
+    raw_service_account = os.environ.get(service_account_json_env)
+    if raw_service_account:
+        info = json.loads(raw_service_account)
+        return service_account.Credentials.from_service_account_info(
+            info,
+            scopes=[_DRIVE_SCOPE],
+        )
+
+    credentials, _ = google.auth.default(scopes=[_DRIVE_SCOPE])
+    return credentials
 
 
 def build_google_drive_service(
@@ -34,37 +70,28 @@ def build_google_drive_service(
     path. A service account remains available for Shared Drive/Workspace deployments.
     """
 
-    client_id = os.environ.get(oauth_client_id_env, "").strip()
-    client_secret = os.environ.get(oauth_client_secret_env, "").strip()
-    refresh_token = os.environ.get(oauth_refresh_token_env, "").strip()
-    if client_id and client_secret and refresh_token:
-        credentials = user_credentials.Credentials(
-            token=None,
-            refresh_token=refresh_token,
-            token_uri=_TOKEN_URI,
-            client_id=client_id,
-            client_secret=client_secret,
-            scopes=[_DRIVE_SCOPE],
-        )
-    else:
-        raw_service_account = os.environ.get(service_account_json_env)
-        if raw_service_account:
-            info = json.loads(raw_service_account)
-            credentials = service_account.Credentials.from_service_account_info(
-                info,
-                scopes=[_DRIVE_SCOPE],
-            )
-        else:
-            credentials, _ = google.auth.default(scopes=[_DRIVE_SCOPE])
+    credentials = build_google_drive_credentials(
+        service_account_json_env=service_account_json_env,
+        oauth_client_id_env=oauth_client_id_env,
+        oauth_client_secret_env=oauth_client_secret_env,
+        oauth_refresh_token_env=oauth_refresh_token_env,
+    )
     return build("drive", "v3", credentials=credentials, cache_discovery=False)
 
 
 class GoogleDriveReferenceInbox:
     """Scans one shared Drive folder for reference videos and materializes on demand."""
 
-    def __init__(self, *, service: Any, folder_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        service: Any,
+        folder_id: str,
+        credentials: Credentials | None = None,
+    ) -> None:
         self._service = service
         self._folder_id = folder_id
+        self._credentials = credentials
 
     async def list_sources(self) -> tuple[ReferenceSource, ...]:
         return await asyncio.to_thread(self._list_sources_sync)
@@ -82,7 +109,8 @@ class GoogleDriveReferenceInbox:
                     ),
                     fields=(
                         "nextPageToken,files(id,name,mimeType,md5Checksum,version,"
-                        "modifiedTime,size)"
+                        "modifiedTime,size,thumbnailLink,hasThumbnail,"
+                        "videoMediaMetadata(durationMillis,width,height))"
                     ),
                     pageSize=1000,
                     pageToken=page_token,
@@ -117,6 +145,17 @@ class GoogleDriveReferenceInbox:
                 content_hash = f"drive-version:{version}"
             else:
                 content_hash = None
+
+            size_bytes = _optional_non_negative_int(item.get("size"))
+            duration_seconds: float | None = None
+            video_metadata = item.get("videoMediaMetadata")
+            if isinstance(video_metadata, dict):
+                duration_millis = _optional_non_negative_int(
+                    video_metadata.get("durationMillis")
+                )
+                if duration_millis is not None:
+                    duration_seconds = duration_millis / 1000.0
+
             sources.append(
                 ReferenceSource(
                     reference_id=f"drive:{file_id}",
@@ -124,9 +163,44 @@ class GoogleDriveReferenceInbox:
                     source_locator=f"drive-file:{file_id}",
                     display_name=name,
                     content_hash=content_hash,
+                    size_bytes=size_bytes,
+                    duration_seconds=duration_seconds,
+                    thumbnail_available=bool(item.get("thumbnailLink")),
                 )
             )
         return tuple(sources)
+
+    async def fetch_thumbnail(
+        self,
+        source: ReferenceSource,
+    ) -> tuple[bytes, str] | None:
+        return await asyncio.to_thread(self._fetch_thumbnail_sync, source)
+
+    def _fetch_thumbnail_sync(
+        self,
+        source: ReferenceSource,
+    ) -> tuple[bytes, str] | None:
+        file_id = _drive_file_id(source.source_locator)
+        metadata = (
+            self._service.files()
+            .get(fileId=file_id, fields="thumbnailLink")
+            .execute()
+        )
+        if not isinstance(metadata, dict):
+            return None
+        thumbnail_link = metadata.get("thumbnailLink")
+        if not isinstance(thumbnail_link, str) or not thumbnail_link:
+            return None
+
+        credentials = self._credentials or build_google_drive_credentials()
+        with AuthorizedSession(credentials) as session:
+            response = session.get(thumbnail_link, timeout=20)
+            response.raise_for_status()
+            content_type = response.headers.get("content-type", "image/jpeg")
+            content_type = content_type.split(";", 1)[0].strip().lower()
+            if not content_type.startswith("image/"):
+                raise ValueError("Drive thumbnail response is not an image")
+            return response.content, content_type
 
     async def materialize(self, source: ReferenceSource, work_directory: Path) -> Path:
         return await asyncio.to_thread(self._materialize_sync, source, work_directory)
@@ -290,6 +364,16 @@ def _drive_file_id(source_locator: str) -> str:
     if not file_id:
         raise ValueError("Drive file locator is missing file id")
     return file_id
+
+
+def _optional_non_negative_int(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
 
 
 def _escape_drive_query(value: str) -> str:
