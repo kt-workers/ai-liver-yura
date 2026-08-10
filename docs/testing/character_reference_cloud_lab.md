@@ -39,12 +39,16 @@ Drive APIのファイルメタデータから以下を表示する。
 - ファイル名
 - 動画長
 - ファイルサイズ
-- Driveサムネイル（利用可能な場合）
+- サムネイル
 - ASR / audio / visual の解析状態
 
 動画長とサイズの表示だけのために動画本体をRenderへダウンロードしない。Driveの `videoMediaMetadata.durationMillis` / `size` を利用する。
 
-Driveの `thumbnailLink` は短命かつ認証が必要になる場合があるため、ブラウザへ元URLを公開せず、Labの `/api/thumbnail/{reference_id}` で認証付きプロキシする。サムネイルが利用できない場合は `No preview` 表示へフォールバックする。
+Driveが `thumbnailLink` を提供する動画は、元URLをブラウザへ公開せずLabの `/api/thumbnail/{reference_id}` で認証付きプロキシする。
+
+`.mov` などDriveがサムネイルを提供しない動画は、初回プレビュー要求時だけ一時領域へ動画を取得し、ffmpegで小さなJPEGを1枚生成する。生成後は結果folderへ `preview_thumbnail` として保存し、2回目以降は小さなJPEGだけを再利用する。元動画と生成処理中の一時ファイルはRenderへ永続保存しない。
+
+このJPEGは参考資料を見分けるための `reference_only` UIプレビューであり、星波ゆらの画像素材・学習素材・Runtime入力として再利用しない。
 
 ## Google Drive認証
 
@@ -132,6 +136,7 @@ Drive結果folderへ、revision keyごとに以下を保存する。
 - manifest JSON
 - normalized transcript JSON
 - readable transcript TXT
+- Drive純正サムネイルがない場合のreference-only preview JPEG
 
 ファイル名はrevision keyのhashを使い、Drive `appProperties` にrevision key / result kindを保持する。
 
@@ -140,7 +145,7 @@ Drive結果folderへ、revision keyごとに以下を保存する。
 - Gitリポジトリ内の第三者動画
 - Gitリポジトリ内の第三者音声
 - 一時抽出MP3
-- 一時フレーム
+- 一時生成JPEG
 - 原動画を再利用する素材ライブラリ
 
 ## Reference-only境界
@@ -167,7 +172,7 @@ Human review
 
 1. Module: DTO / usage policy / OpenAI response normalization
 2. Adjacent: Drive source / metadata / manifest / duplicate prevention / temporary media cleanup
-3. Lab: Basic Auth / list / thumbnail proxy / single analyze / sequential unprocessed analyze
+3. Lab: Basic Auth / list / native thumbnail proxy / generated thumbnail fallback / single analyze / sequential unprocessed analyze
 4. Cloud: 実Drive + 実OpenAIで1動画を処理
 5. Driveにmanifest / transcript JSON / TXTが作成されることを確認
 6. 同じ動画を再実行してASRがskipされることを確認
