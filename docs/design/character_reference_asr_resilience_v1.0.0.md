@@ -190,7 +190,37 @@ Drive thumbnailなし
 - transcript生成
 - Character Reference Observationへの利用
 
-## 9. Render停止時
+## 9. Drive通信の並列安全性
+
+Character Reference Lab は FastAPI の非同期処理から `asyncio.to_thread()` を使って同期Google Drive APIを呼ぶ。Google API Python Client の `httplib2.Http` はスレッドセーフではないため、**1個のHTTP transportを複数worker threadで共有しない**ことを必須境界とする。
+
+2026-08-10のRender実機で、解析開始直後に次を確認した。
+
+```text
+manifest: SSLError: [SSL: DECRYPTION_FAILED_OR_BAD_RECORD_MAC]
+```
+
+現行実装では1個のDrive serviceをInbox / ResultStore / PreviewStoreで共有し、manifest読書き・動画取得・一覧再読込・transcript JSON/TXT保存が複数の`to_thread()`から重なる可能性がある。特にtranscript JSON/TXT保存は2本のthread処理を同時に開始する。この構成は`httplib2.Http`のスレッドセーフ要件を満たさない。
+
+修正後の境界:
+
+```text
+Drive discovery Resource
+  ├─ worker thread A → thread-local AuthorizedHttp / httplib2.Http
+  ├─ worker thread B → thread-local AuthorizedHttp / httplib2.Http
+  └─ worker thread C → thread-local AuthorizedHttp / httplib2.Http
+```
+
+- discovery Resource自体は共有可能とし、実HTTP transportはthread-localに分離する
+- OAuth credentialsは認証情報として共有してよいが、TLS connection / `httplib2.Http` は共有しない
+- transient SSL failureはDrive操作単位で限定回数だけ再試行する
+- manifest/transcriptのwriteは単純な内部POST再送ではなく、upsert処理全体をやり直すことで既存file探索を再度通し、重複生成リスクを抑える
+- retryを使い切った場合は失敗を上位へ返し、`completed` へ進めない
+- SSL失敗をOpenAI ASR失敗と混同せず、job errorにはDrive/manifest段階の例外型を残す
+
+この修正は参考解析の信頼性向上が目的であり、Character Bibleの設計そのものを置き換えるものではない。実クラウドで1本のtranscriptを取得できたら、インフラ改善を広げず #236 Character Definition詳細設計へ戻る。
+
+## 10. Render停止時
 
 Render process内だけにあるもの:
 
@@ -206,7 +236,7 @@ Google Driveに永続化するもの:
 
 Renderが停止するとin-memory jobは消えるが、次回一覧取得時にDrive manifestを正本として復旧する。
 
-## 10. 検証
+## 11. 検証
 
 Module:
 
@@ -218,6 +248,9 @@ Module:
 - cancelでmanifestがinterruptedになる
 - Drive downloaderの0〜100%実進捗がLabの5〜30%へ単調にマッピングされる
 - progress非対応Inboxでは従来の工程表示へ安全に縮退する
+- 複数worker threadからDrive requestを構築しても同一`httplib2.Http`を共有しない
+- transient SSL failureを限定再試行し、retry exhaustion時は失敗を隠さない
+- write再試行時はupsert全体を再評価する
 
 Lab:
 
@@ -235,8 +268,9 @@ Cloud Verification:
 2. Drive thumbnailなしMOVが`No preview`で表示される
 3. 10〜30秒の参考動画1本でmini ASR
 4. Drive動画取得中に5〜30%のprogressが進む
-5. ASR待機中は経過時間が更新される
-6. transcriptがDriveへ保存される
-7. 同一revision再実行がproviderを呼ばずskip
-8. cancel後にinterruptedとなり再実行可能
-9. Render再起動後にprocessingを完了扱いしない
+5. manifest read/writeでSSL `BAD_RECORD_MAC` が再発しない
+6. ASR待機中は経過時間が更新される
+7. transcriptがDriveへ保存される
+8. 同一revision再実行がproviderを呼ばずskip
+9. cancel後にinterruptedとなり再実行可能
+10. Render再起動後にprocessingを完了扱いしない
