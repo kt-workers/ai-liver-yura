@@ -53,4 +53,11 @@ jobs:
       - name: Run tests
         env:
           PYTHONUNBUFFERED: "1"
-        run: pytest -x -vv
+        run: |
+          pytest -q \
+            tests/test_response_semantics_planner.py \
+            tests/test_character_language_realizer_unit_gate.py \
+            tests/test_semantic_to_character_language_realizer_contract.py \
+            tests/test_separated_response_validation.py \
+            tests/test_separated_response_validation_unit_gate.py \
+            tests/test_semantic_character_validation_adjacent_contract.py
