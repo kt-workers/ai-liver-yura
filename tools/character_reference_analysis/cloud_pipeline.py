@@ -7,6 +7,7 @@ from typing import Protocol
 from .asr_coordinator import AsrProcessingResult, ReferenceAsrCoordinator
 from .media_normalizer import ReferenceMediaNormalizer
 from .models import ReferenceSource
+from .progress import ProgressCallback, report_progress
 from .thumbnailer import FfmpegReferenceThumbnailer
 
 
@@ -64,14 +65,20 @@ class ReferenceCloudAsrPipeline:
         *,
         language: str | None = "ja",
         retry: bool = False,
+        progress_callback: ProgressCallback | None = None,
     ) -> AsrProcessingResult:
         with tempfile.TemporaryDirectory(prefix="yura-reference-") as work_dir:
             work_path = Path(work_dir)
+            await report_progress(progress_callback, "downloading_video", 5)
             media_path = await self._inbox.materialize(source, work_path)
+            await report_progress(progress_callback, "video_downloaded", 30)
+            await report_progress(progress_callback, "extracting_audio", 35)
             audio_path = await self._normalizer.extract_audio(media_path, work_path)
+            await report_progress(progress_callback, "audio_extracted", 45)
             return await self._coordinator.process(
                 source,
                 audio_path,
                 language=language,
                 retry=retry,
+                progress_callback=progress_callback,
             )
