@@ -14,6 +14,18 @@ from app.domain.semantic_utterance import (
 
 _INTERNAL_STATE_TYPES = frozenset({"internal_state", "agent_internal_state"})
 _OVERVIEW_TARGETS = frozenset({"current_feeling", "current_mood", "feeling", "mood"})
+_REACTIVE_EMOTION_TARGETS = frozenset(
+    {
+        "joy",
+        "amusement",
+        "anger",
+        "sadness",
+        "fear",
+        "surprise",
+        "discomfort",
+        "emotional_pressure",
+    }
+)
 _DISCOURSE_KEYS = frozenset(
     {
         "topic_transition",
@@ -65,8 +77,6 @@ class ResponseSemanticsPlanner:
 
         required_content = self._string_tuple(directive.get("content_requirements"))
         if direct_internal:
-            # Internal-state direct answers use structured propositions as the source of truth.
-            # Planner-generated natural-language state labels are not carried forward.
             required_content = ()
 
         forbidden_additions = list(self._string_tuple(directive.get("forbidden_claims")))
@@ -150,14 +160,15 @@ class ResponseSemanticsPlanner:
     ) -> tuple[SemanticProposition, ...]:
         target_id = target.id.strip().casefold()
         if target_id in _OVERVIEW_TARGETS:
+            dimensions = self._reactive_emotion_dimensions(context.emotion)
+            reactive_available = bool(dimensions)
             overview = SemanticProposition(
                 kind="self_state",
                 predicate=target.id,
-                state="overview" if context.emotion else "unknown",
-                certainty="high" if context.emotion else "low",
-                evidence_refs=("emotion",) if context.emotion else (),
+                state="overview" if reactive_available else "unknown",
+                certainty="high" if reactive_available else "low",
+                evidence_refs=("emotion.reactive",) if reactive_available else (),
             )
-            dimensions = self._reactive_emotion_dimensions(context.emotion)
             return (overview, *dimensions)
 
         candidate_keys = self._candidate_dimension_keys(target_id)
@@ -165,6 +176,7 @@ class ResponseSemanticsPlanner:
             context.emotion,
             path="emotion",
             candidate_keys=candidate_keys,
+            prefer_reactive=bool(candidate_keys & _REACTIVE_EMOTION_TARGETS),
         )
         if match is None:
             match = self._find_dimension(
@@ -282,24 +294,82 @@ class ResponseSemanticsPlanner:
         *,
         path: str,
         candidate_keys: frozenset[str],
+        prefer_reactive: bool = False,
     ) -> tuple[str, object] | None:
-        if not isinstance(value, Mapping):
+        matches: list[tuple[str, str, object]] = []
+        cls._collect_dimension_matches(
+            value,
+            path=path,
+            candidate_keys=candidate_keys,
+            matches=matches,
+        )
+        if not matches:
             return None
+        selected = min(
+            matches,
+            key=lambda match: cls._dimension_match_rank(
+                match[0],
+                match[1],
+                candidate_keys=candidate_keys,
+                prefer_reactive=prefer_reactive,
+            ),
+        )
+        return selected[0], selected[2]
+
+    @classmethod
+    def _collect_dimension_matches(
+        cls,
+        value: object,
+        *,
+        path: str,
+        candidate_keys: frozenset[str],
+        matches: list[tuple[str, str, object]],
+    ) -> None:
+        if not isinstance(value, Mapping):
+            return
         for raw_key, item in value.items():
             key = str(raw_key)
             normalized = key.strip().casefold()
             item_path = f"{path}.{key}"
             if cls._matches_dimension_key(normalized, candidate_keys) and cls._is_scalar(item):
-                return item_path, item
+                matches.append((item_path, normalized, item))
             if isinstance(item, Mapping):
-                nested = cls._find_dimension(
+                cls._collect_dimension_matches(
                     item,
                     path=item_path,
                     candidate_keys=candidate_keys,
+                    matches=matches,
                 )
-                if nested is not None:
-                    return nested
-        return None
+
+    @classmethod
+    def _dimension_match_rank(
+        cls,
+        path: str,
+        key: str,
+        *,
+        candidate_keys: frozenset[str],
+        prefer_reactive: bool,
+    ) -> tuple[int, int, int, str]:
+        normalized_path = path.strip().casefold()
+        exact_key = key in candidate_keys
+        if prefer_reactive:
+            if exact_key and ".current.reactive." in normalized_path:
+                source_rank = 0
+            elif exact_key and ".reactive." in normalized_path:
+                source_rank = 1
+            elif exact_key:
+                source_rank = 2
+            elif ".current.reactive." in normalized_path:
+                source_rank = 3
+            elif ".reactive." in normalized_path:
+                source_rank = 4
+            else:
+                source_rank = 5
+        else:
+            source_rank = 0
+        match_rank = 0 if exact_key else 1
+        depth = normalized_path.count(".")
+        return source_rank, match_rank, depth, normalized_path
 
     @staticmethod
     def _matches_dimension_key(key: str, candidate_keys: frozenset[str]) -> bool:
@@ -333,6 +403,8 @@ class ResponseSemanticsPlanner:
 
     @staticmethod
     def _budget(value: object, *, fallback: int) -> int:
+        if isinstance(value, bool):
+            return 1 if fallback == 1 else 0
         if value == 1:
             return 1
         if value == 0:
