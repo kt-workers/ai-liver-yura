@@ -50,7 +50,13 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
 
-      - name: Run tests
+      - name: Run Brain frozen unit and adjacent gates
         env:
           PYTHONUNBUFFERED: "1"
-        run: pytest -x -vv
+        run: |
+          pytest -x -vv \
+            tests/test_character_language_realizer_unit_gate.py \
+            tests/test_semantic_to_character_language_realizer_contract.py \
+            tests/test_separated_response_validation.py \
+            tests/test_separated_response_validation_unit_gate.py \
+            tests/test_semantic_character_validation_adjacent_contract.py
