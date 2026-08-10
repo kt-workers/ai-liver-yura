@@ -54,6 +54,13 @@ async def test_drive_inbox_lists_only_video_sources() -> None:
                     "mimeType": "video/quicktime",
                     "md5Checksum": "abc123",
                     "version": "7",
+                    "size": "52790619",
+                    "thumbnailLink": "https://example.invalid/thumbnail",
+                    "videoMediaMetadata": {
+                        "durationMillis": "28440",
+                        "width": 1320,
+                        "height": 2868,
+                    },
                 },
                 {
                     "id": "text-1",
@@ -72,6 +79,13 @@ async def test_drive_inbox_lists_only_video_sources() -> None:
     assert sources[0].source_kind == ReferenceSourceKind.GOOGLE_DRIVE_VIDEO
     assert sources[0].source_locator == "drive-file:video-1"
     assert sources[0].content_hash == "md5:abc123"
+    assert sources[0].size_bytes == 52790619
+    assert sources[0].duration_seconds == pytest.approx(28.44)
+    assert sources[0].thumbnail_available is True
+    assert service.files_resource.last_list_kwargs is not None
+    fields = str(service.files_resource.last_list_kwargs["fields"])
+    assert "thumbnailLink" in fields
+    assert "videoMediaMetadata" in fields
 
 
 def test_ffmpeg_normalizer_extracts_audio_only_command(tmp_path: Path) -> None:
