@@ -16,8 +16,6 @@ from app.utils.llm_trace import build_llm_trace_context
 
 _INTERNAL_STATE_TYPES = frozenset({"internal_state", "agent_internal_state"})
 _INTENSITY_STATES = frozenset({"low", "moderate", "high", "very_high"})
-# LLM Validatorがsurface markerを見落とした場合の保守的な安全網。
-# 固定回答辞書ではなく、発話上で明示的に程度・強弱を付与する語だけを扱う。
 _EXPLICIT_INTENSITY_MARKERS = tuple(
     sorted(
         {
@@ -137,7 +135,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         try:
             raw = await self._model.validate_character_response(activity)
             value = json.loads(raw)
-        except (Exception, json.JSONDecodeError):
+        except Exception:
             result = ResponseValidationResult(
                 False,
                 "realization_validator_model_failed",
@@ -145,7 +143,8 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             )
             self._trace_result(source, result)
             return result
-        if not isinstance(value, dict) or not isinstance(value.get("accepted"), bool):
+
+        if not self._valid_top_level_schema(value):
             result = ResponseValidationResult(
                 False,
                 "realization_validator_schema_invalid",
@@ -154,14 +153,13 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             self._trace_result(source, result)
             return result
 
-        differences_value = value.get("differences", [])
-        differences = list(
-            item.strip()
-            for item in differences_value
-            if isinstance(item, str) and item.strip()
-        ) if isinstance(differences_value, list) else []
+        assert isinstance(value, dict)
+        assert isinstance(value["accepted"], bool)
+        assert isinstance(value["reason"], str)
+        assert isinstance(value["differences"], list)
 
-        model_accepted = bool(value["accepted"])
+        differences = [item.strip() for item in value["differences"] if item.strip()]
+        model_accepted = value["accepted"]
         if model_accepted:
             facet_differences = self._accepted_facet_differences(plan, value)
             if facet_differences is None:
@@ -179,7 +177,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                 differences.append(difference)
 
         accepted = model_accepted and not differences
-        reason = str(value.get("reason") or "semantic_realization_validation")
+        reason = value["reason"].strip()
         if model_accepted and differences:
             reason = "semantic_facet_validation_failed"
 
@@ -202,6 +200,22 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         )
         self._trace_result(source, result)
         return result
+
+    @staticmethod
+    def _valid_top_level_schema(value: object) -> bool:
+        if not isinstance(value, dict):
+            return False
+        if not isinstance(value.get("accepted"), bool):
+            return False
+        reason = value.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            return False
+        differences = value.get("differences")
+        if not isinstance(differences, list):
+            return False
+        if any(not isinstance(item, str) for item in differences):
+            return False
+        return True
 
     @staticmethod
     def _accepted_facet_differences(
@@ -261,7 +275,6 @@ class CharacterRealizationValidator(LegacyResponseValidator):
 
     @staticmethod
     def _explicit_intensity_markers(speech: str) -> list[str]:
-        # 長い語から消費し、"ほんの少し"と"少し"のような重複報告を避ける。
         remaining = speech
         found: list[str] = []
         for marker in _EXPLICIT_INTENSITY_MARKERS:
