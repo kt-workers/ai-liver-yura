@@ -34,6 +34,15 @@ class ReferenceCloudAsrPipeline:
     async def list_sources(self) -> tuple[ReferenceSource, ...]:
         return await self._inbox.list_sources()
 
+    async def fetch_thumbnail(
+        self,
+        source: ReferenceSource,
+    ) -> tuple[bytes, str] | None:
+        fetcher = getattr(self._inbox, "fetch_thumbnail", None)
+        if fetcher is None:
+            return None
+        return await fetcher(source)
+
     async def process_source(
         self,
         source: ReferenceSource,
