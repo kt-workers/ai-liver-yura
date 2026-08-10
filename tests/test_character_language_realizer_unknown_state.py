@@ -61,4 +61,4 @@ def test_unknown_state_is_not_permission_to_guess_target_presence() -> None:
     assert '"certainty": "low"' in prompt
     assert "unknownをpresent/absent/low等へ変換せず" in prompt
     assert "特定polarityを推測しない" in prompt
-    assert "別のstateを推測してよい許可ではない" in prompt
+    assert "別のstateや強度を推測してよい許可ではない" in prompt
