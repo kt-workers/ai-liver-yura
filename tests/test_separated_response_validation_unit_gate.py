@@ -295,3 +295,83 @@ def test_intensity_state_disables_deterministic_marker_rejection() -> None:
         intensity_plan,
         "かなり楽しい",
     ) == []
+
+
+def test_overview_with_supporting_intensity_does_not_reject_marker() -> None:
+    context = _validated_context()
+    plan = SemanticUtterancePlan.from_context(context.memory["semantic_utterance_plan"])
+    assert plan is not None
+    assert plan.target is not None
+    overview_plan = replace(
+        plan,
+        target=replace(plan.target, id="current_feeling"),
+        propositions=(
+            replace(
+                plan.propositions[0],
+                kind="self_state",
+                predicate="current_feeling",
+                state="overview",
+            ),
+            replace(
+                plan.propositions[0],
+                kind="self_state_dimension",
+                predicate="joy",
+                state="low",
+            ),
+        ),
+    )
+
+    assert CharacterRealizationValidator._plan_has_intensity_state(overview_plan) is True
+    assert CharacterRealizationValidator._deterministic_surface_differences(
+        overview_plan,
+        "今は落ち着いてるよ。うれしさも、ちょっとある感じ。",
+    ) == []
+
+    payload = _accepted_payload()
+    surface = payload["surface_evidence"]
+    assert isinstance(surface, dict)
+    surface["intensity_markers"] = ["ちょっと"]
+    assert CharacterRealizationValidator._accepted_facet_differences(
+        overview_plan,
+        payload,
+    ) == []
+
+
+def test_overview_without_any_intensity_still_rejects_marker() -> None:
+    context = _validated_context()
+    plan = SemanticUtterancePlan.from_context(context.memory["semantic_utterance_plan"])
+    assert plan is not None
+    assert plan.target is not None
+    overview_plan = replace(
+        plan,
+        target=replace(plan.target, id="current_feeling"),
+        propositions=(
+            replace(
+                plan.propositions[0],
+                kind="self_state",
+                predicate="current_feeling",
+                state="overview",
+            ),
+            replace(
+                plan.propositions[0],
+                kind="self_state_dimension",
+                predicate="anger",
+                state="absent",
+            ),
+        ),
+    )
+
+    assert CharacterRealizationValidator._plan_has_intensity_state(overview_plan) is False
+    assert CharacterRealizationValidator._deterministic_surface_differences(
+        overview_plan,
+        "今はかなり落ち着いてるよ。",
+    ) == ["unsupported_intensity_markers:かなり"]
+
+    payload = _accepted_payload()
+    surface = payload["surface_evidence"]
+    assert isinstance(surface, dict)
+    surface["intensity_markers"] = ["かなり"]
+    assert CharacterRealizationValidator._accepted_facet_differences(
+        overview_plan,
+        payload,
+    ) == ["unsupported_intensity_markers:かなり"]
