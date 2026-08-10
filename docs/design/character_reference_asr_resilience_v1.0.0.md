@@ -152,7 +152,45 @@ ASR provider内部の正確な進捗率は得られないため、`60%` はprovi
 - 60%の待機: OpenAI ASR処理中。経過時間で監視
 - 85〜100%: 永続化・完了処理の工程位置
 
-## 8. Render停止時
+## 8. プレビューの安定性境界
+
+Character Reference Labの主目的は、**Character Bibleを考えるための参考資料を文字起こし・観察可能にすること**である。サムネイル生成は補助機能であり、解析基盤の可用性より優先しない。
+
+2026-08-10のRender実機で、Drive純正サムネイルを持たないMOVに対する自動fallback preview生成と同時期に、次を確認した。
+
+```text
+double free or corruption (!prev)
+GET /api/thumbnail ... 503
+Render instance exited with status 134
+```
+
+この時点ではクラッシュのnative root causeを断定しない。ただしASR開始前の一覧表示だけで動画本体取得・ffmpeg実行を発生させる設計は、本来のCharacter探索に対してコストと障害半径が大きい。
+
+そのためRenderの通常UIでは次を標準とする。
+
+```text
+Drive thumbnailあり
+  → 認証付きthumbnail proxyで表示
+
+Drive thumbnailなし
+  → No preview
+  → 一覧表示だけでは動画本体を取得しない
+  → 一覧表示だけではffmpegを起動しない
+```
+
+既存のgenerated-preview実装は解析本体とは分離して残せるが、通常UIから自動起動しない。将来再有効化する場合は、別job化・単独Verification・resource limit・native process failure isolationを満たしてから行う。
+
+この縮退によって失うのは一覧上の補助画像だけであり、次は維持する。
+
+- 動画名
+- 動画長
+- ファイルサイズ
+- ASR状態
+- 解析開始
+- transcript生成
+- Character Reference Observationへの利用
+
+## 9. Render停止時
 
 Render process内だけにあるもの:
 
@@ -164,11 +202,11 @@ Google Driveに永続化するもの:
 
 - manifest
 - transcript JSON/TXT
-- reference-only preview JPEG
+- 過去に正常生成済みのreference-only preview JPEG
 
 Renderが停止するとin-memory jobは消えるが、次回一覧取得時にDrive manifestを正本として復旧する。
 
-## 9. 検証
+## 10. 検証
 
 Module:
 
@@ -183,6 +221,8 @@ Module:
 
 Lab:
 
+- Drive純正thumbnailがないreferenceは`No preview`となり、自動fallback生成を開始しない
+- 一覧表示だけで元動画download / ffmpegが起動しない
 - Drive取得中に5〜30%の途中値が更新される
 - elapsed time表示
 - cancel button
@@ -191,10 +231,12 @@ Lab:
 
 Cloud Verification:
 
-1. 10〜30秒の参考動画1本でmini ASR
-2. Drive動画取得中に5〜30%のprogressが進む
-3. ASR待機中は経過時間が更新される
-4. transcriptがDriveへ保存される
-5. 同一revision再実行がproviderを呼ばずskip
-6. cancel後にinterruptedとなり再実行可能
-7. Render再起動後にprocessingを完了扱いしない
+1. Render最新デプロイ後、一覧表示だけではinstanceが落ちない
+2. Drive thumbnailなしMOVが`No preview`で表示される
+3. 10〜30秒の参考動画1本でmini ASR
+4. Drive動画取得中に5〜30%のprogressが進む
+5. ASR待機中は経過時間が更新される
+6. transcriptがDriveへ保存される
+7. 同一revision再実行がproviderを呼ばずskip
+8. cancel後にinterruptedとなり再実行可能
+9. Render再起動後にprocessingを完了扱いしない
