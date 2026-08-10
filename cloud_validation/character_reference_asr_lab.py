@@ -1,4 +1,4 @@
-from cloud_validation.character_reference_asr_lab_runtime import (
+from cloud_validation.character_reference_asr_lab_web import (
     AnalyzeRequest,
     AnalysisJob,
     CharacterReferenceLabService,
