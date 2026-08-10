@@ -15,6 +15,9 @@ class ReferenceResultStore(Protocol):
     async def has_revision(self, revision_key: str) -> bool:
         """Return whether this exact source revision already has a manifest."""
 
+    async def has_transcript(self, revision_key: str) -> bool:
+        """Return whether normalized transcript output already exists."""
+
     async def load_manifest(
         self, revision_key: str
     ) -> ReferenceAnalysisManifest | None:
