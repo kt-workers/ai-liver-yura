@@ -17,7 +17,9 @@ Character Reference Labを開く
   ↓
 一覧でサムネイル / 動画長 / ファイルサイズ / 解析状態を確認
   ↓
-「未処理を順番に解析」
+「解析」または「未処理を順番に解析」
+  ↓
+カード内のプログレスで現在工程を確認
   ↓
 一時領域へ動画取得
   ↓
@@ -41,14 +43,39 @@ Drive APIのファイルメタデータから以下を表示する。
 - ファイルサイズ
 - サムネイル
 - ASR / audio / visual の解析状態
+- 解析中の現在工程 / 進捗率
 
 動画長とサイズの表示だけのために動画本体をRenderへダウンロードしない。Driveの `videoMediaMetadata.durationMillis` / `size` を利用する。
 
 Driveが `thumbnailLink` を提供する動画は、元URLをブラウザへ公開せずLabの `/api/thumbnail/{reference_id}` で認証付きプロキシする。
 
-`.mov` などDriveがサムネイルを提供しない動画は、初回プレビュー要求時だけ一時領域へ動画を取得し、ffmpegで小さなJPEGを1枚生成する。生成後は結果folderへ `preview_thumbnail` として保存し、2回目以降は小さなJPEGだけを再利用する。元動画と生成処理中の一時ファイルはRenderへ永続保存しない。
+`.mov` などDriveがサムネイルを提供しない動画は、初回プレビュー要求時だけ一時領域へ動画を取得し、ffmpegで小さなJPEGを1枚生成する。生成後は結果folderへ `preview_thumbnail` として保存し、2回目以降は小さなJPEGだけを再利用する。元動画と生成処理中の一時ファイルはRenderへ永続保存しない。複数の未生成サムネイルが同時に要求されても生成並列数を制限する。
 
 このJPEGは参考資料を見分けるための `reference_only` UIプレビューであり、星波ゆらの画像素材・学習素材・Runtime入力として再利用しない。
+
+## 解析プログレス
+
+Labの解析操作はバックグラウンドジョブとして開始し、ブラウザは進捗APIを定期的にポーリングする。1つのreferenceについて実行中ジョブがある場合、同じreferenceを再度押しても新しいpaid ASRジョブは作らず既存ジョブを返す。
+
+工程ベースの目安:
+
+```text
+0%    待機
+5%    Driveから動画取得開始
+30%   動画取得完了
+35%   音声抽出開始
+45%   音声抽出完了
+50%   重複解析確認
+55%   ASR準備
+60%   OpenAI日本語ASR開始
+85%   ASR完了・結果保存開始
+95%   manifest最終保存
+100%  完了 / 失敗 / 重複skip
+```
+
+これはファイルの実バイト処理率ではなく、解析パイプラインの工程位置を示す。OpenAI Audio Transcriptions APIがリクエスト処理中の細かな進捗率を返さないため、ASR待機中は `60% / 日本語ASR処理中` と表示し、応答後に85%へ進む。
+
+解析ジョブ状態はRenderプロセス内で保持するため、デプロイやプロセス再起動が発生した場合は実行中表示を引き継がない。永続的な解析済み状態はDrive上のmanifestを正本とする。
 
 ## Google Drive認証
 
@@ -172,7 +199,7 @@ Human review
 
 1. Module: DTO / usage policy / OpenAI response normalization
 2. Adjacent: Drive source / metadata / manifest / duplicate prevention / temporary media cleanup
-3. Lab: Basic Auth / list / native thumbnail proxy / generated thumbnail fallback / single analyze / sequential unprocessed analyze
+3. Lab: Basic Auth / list / native thumbnail proxy / generated thumbnail fallback / analysis progress / single analyze / sequential unprocessed analyze
 4. Cloud: 実Drive + 実OpenAIで1動画を処理
 5. Driveにmanifest / transcript JSON / TXTが作成されることを確認
 6. 同じ動画を再実行してASRがskipされることを確認
