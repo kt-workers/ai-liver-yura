@@ -11,9 +11,9 @@ permissions:
 
 jobs:
   bisect:
-    name: full regression grouped diagnostics
+    name: full regression s-z diagnostics
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -30,23 +30,18 @@ jobs:
           python -m pip install --disable-pip-version-check --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
-      - name: Tests a-f
+      - name: Tests s
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_*.py' | sort | awk -F/ '{n=$NF; c=substr(n,6,1); if (c >= "a" && c <= "f") print $0}')
+          files=$(find tests -type f -name 'test_s*.py' | sort)
           test -z "$files" || pytest -x -q $files
-      - name: Tests g-l
+      - name: Tests t
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_*.py' | sort | awk -F/ '{n=$NF; c=substr(n,6,1); if (c >= "g" && c <= "l") print $0}')
+          files=$(find tests -type f -name 'test_t*.py' | sort)
           test -z "$files" || pytest -x -q $files
-      - name: Tests m-r
+      - name: Tests u-z
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_*.py' | sort | awk -F/ '{n=$NF; c=substr(n,6,1); if (c >= "m" && c <= "r") print $0}')
-          test -z "$files" || pytest -x -q $files
-      - name: Tests s-z
-        if: always()
-        run: |
-          files=$(find tests -type f -name 'test_*.py' | sort | awk -F/ '{n=$NF; c=substr(n,6,1); if (c >= "s" && c <= "z") print $0}')
+          files=$(find tests -type f -name 'test_*.py' | sort | awk -F/ '{n=$NF; c=substr(n,6,1); if (c >= "u" && c <= "z") print $0}')
           test -z "$files" || pytest -x -q $files
