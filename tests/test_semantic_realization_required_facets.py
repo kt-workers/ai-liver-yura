@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from app.adapters.prompt.character_realization_validator_prompt_builder import (
     CharacterRealizationValidatorPromptBuilder,
 )
@@ -72,21 +74,60 @@ def _response() -> CharacterResponse:
     )
 
 
+def _json_section(prompt: str, heading: str, next_heading: str) -> dict[str, object]:
+    section = prompt.split(f"{heading}\n", 1)[1].split(f"\n{next_heading}", 1)[0]
+    value = json.loads(section)
+    assert isinstance(value, dict)
+    return value
+
+
+def _output_schema_example(prompt: str) -> dict[str, object]:
+    value = json.loads(prompt.rsplit("JSONのみ返す:\n", 1)[1])
+    assert isinstance(value, dict)
+    return value
+
+
 def test_validator_marks_primary_predicate_state_certainty_and_non_null_concept_as_required_facets() -> None:
     prompt = CharacterRealizationValidatorPromptBuilder().build(
         _context(),
         _response(),
     )
 
-    assert '"required": true' in prompt
-    assert '"required_facets": ["predicate", "state", "certainty", "concept"]' in prompt
-    assert '"if_realized_required_facets": ["predicate", "state", "certainty", "concept"]' in prompt
-    assert "predicate_preservedは内部英語ラベルがspeechに存在するかではなく" in prompt
-    assert "conceptを落として単なる『何かある』等の存在表明だけに縮退した場合はreject" in prompt
-    assert "state=presentは存在のみで強度を含まない" in prompt
-    assert "『少し』『かなり』等の強度を追加した場合はreject" in prompt
-    assert "medium/lowを強度へ変換せず" in prompt
+    semantic_view = _json_section(
+        prompt,
+        "# Semantic Utterance Plan",
+        "# User Wording Hint",
+    )
+    propositions = semantic_view["propositions"]
+    assert isinstance(propositions, list)
+    primary = propositions[0]
+    assert isinstance(primary, dict)
+
+    assert primary["required"] is True
+    assert primary["predicate"] == "current_desire"
+    assert primary["state"] == "present"
+    assert primary["certainty"] == "medium"
+    assert primary["concept"] == "curiosity"
+    assert primary["required_facets"] == ["predicate", "state", "certainty", "concept"]
+    assert primary["if_realized_required_facets"] == [
+        "predicate",
+        "state",
+        "certainty",
+        "concept",
+    ]
+    assert primary["state_semantics"] == "presence_without_intensity"
+    assert primary["certainty_surface_requirement"] == "overt_epistemic_modality"
     assert "response_content_plan.primary_desire" not in prompt
+
+    output_schema = _output_schema_example(prompt)
+    semantic_checks = output_schema["semantic_checks"]
+    assert isinstance(semantic_checks, dict)
+    assert "required_facets_preserved" in semantic_checks
+    assert "predicate_preserved" in semantic_checks
+    assert "state_preserved" in semantic_checks
+    assert "certainty_preserved" in semantic_checks
+    assert "concept_preserved" in semantic_checks
+    assert "unsupported_intensity_added" in semantic_checks
 
 
 def test_semantic_realization_id_requires_per_proposition_facet_validation() -> None:
@@ -95,8 +136,26 @@ def test_semantic_realization_id_requires_per_proposition_facet_validation() -> 
         _response(),
     )
 
-    assert '"semantic_realizations": ["proposition:0:current_desire"]' in prompt
-    assert "IDがあるだけで意味整合を自動承認せず" in prompt
-    assert "realized_proposition_checksで個別検証する" in prompt
-    assert "各IDについてちょうど1件返す" in prompt
-    assert '"state_fidelity":"exact"' in prompt
+    utterance_view = _json_section(
+        prompt,
+        "# Character Utterance",
+        "# Existence Boundaries",
+    )
+    assert utterance_view["semantic_realizations"] == [
+        "proposition:0:current_desire"
+    ]
+
+    output_schema = _output_schema_example(prompt)
+    proposition_checks = output_schema["realized_proposition_checks"]
+    assert isinstance(proposition_checks, list)
+    check = proposition_checks[0]
+    assert isinstance(check, dict)
+    assert check["state_fidelity"] == "exact"
+    assert "predicate_preserved" in check
+    assert "state_preserved" in check
+    assert "certainty_preserved" in check
+    assert "concept_preserved" in check
+    assert "predicate_evidence_spans" in check
+    assert "certainty_evidence_spans" in check
+    assert "concept_evidence_spans" in check
+    assert "intensity_evidence_spans" in check
