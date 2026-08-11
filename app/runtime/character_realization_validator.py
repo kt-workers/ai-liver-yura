@@ -16,6 +16,16 @@ from app.utils.llm_trace import build_llm_trace_context
 
 _INTERNAL_STATE_TYPES = frozenset({"internal_state", "agent_internal_state"})
 _INTENSITY_STATES = frozenset({"low", "moderate", "high", "very_high"})
+_STATE_FIDELITY_VALUES = frozenset(
+    {
+        "exact",
+        "weakened",
+        "strengthened",
+        "polarity_changed",
+        "unknown_committed",
+        "omitted",
+    }
+)
 _EXPLICIT_INTENSITY_MARKERS = tuple(
     sorted(
         {
@@ -96,6 +106,22 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             self._trace_result(source, result)
             return result
 
+        planned_realization_ids = self._planned_realization_ids(plan)
+        unplanned_realizations = [
+            realization_id
+            for realization_id in response.semantic_realizations
+            if realization_id not in planned_realization_ids
+        ]
+        if unplanned_realizations:
+            result = ResponseValidationResult(
+                accepted=False,
+                reason="unknown_semantic_realization",
+                extracted_claims=extracted_claims,
+                claim_differences=tuple(unplanned_realizations),
+            )
+            self._trace_result(source, result)
+            return result
+
         deterministic_surface_differences = self._deterministic_surface_differences(
             plan,
             response.speech,
@@ -161,7 +187,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         differences = [item.strip() for item in value["differences"] if item.strip()]
         model_accepted = value["accepted"]
         if model_accepted:
-            facet_differences = self._accepted_facet_differences(plan, value)
+            facet_differences = self._accepted_facet_differences(plan, response, value)
             if facet_differences is None:
                 result = ResponseValidationResult(
                     False,
@@ -220,11 +246,17 @@ class CharacterRealizationValidator(LegacyResponseValidator):
     @staticmethod
     def _accepted_facet_differences(
         plan: SemanticUtterancePlan,
+        response: CharacterResponse,
         value: dict[str, object],
     ) -> list[str] | None:
         checks = value.get("semantic_checks")
         surface = value.get("surface_evidence")
-        if not isinstance(checks, dict) or not isinstance(surface, dict):
+        realized_checks = value.get("realized_proposition_checks")
+        if (
+            not isinstance(checks, dict)
+            or not isinstance(surface, dict)
+            or not isinstance(realized_checks, list)
+        ):
             return None
 
         required_checks = [
@@ -246,6 +278,42 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             return None
         intensity_markers = [item.strip() for item in markers_value if item.strip()]
 
+        expected_ids = list(dict.fromkeys(response.semantic_realizations))
+        planned_ids = CharacterRealizationValidator._planned_realization_ids(plan)
+        if any(realization_id not in planned_ids for realization_id in expected_ids):
+            return None
+
+        checks_by_id: dict[str, dict[str, object]] = {}
+        for item in realized_checks:
+            if not isinstance(item, dict):
+                return None
+            realization_id = item.get("realization_id")
+            if not isinstance(realization_id, str) or not realization_id.strip():
+                return None
+            realization_id = realization_id.strip()
+            if realization_id in checks_by_id:
+                return None
+            if realization_id not in planned_ids:
+                return None
+            for name in (
+                "predicate_preserved",
+                "state_preserved",
+                "certainty_preserved",
+                "concept_preserved",
+            ):
+                if not isinstance(item.get(name), bool):
+                    return None
+            state_fidelity = item.get("state_fidelity")
+            if (
+                not isinstance(state_fidelity, str)
+                or state_fidelity not in _STATE_FIDELITY_VALUES
+            ):
+                return None
+            checks_by_id[realization_id] = item
+
+        if set(checks_by_id) != set(expected_ids):
+            return None
+
         differences: list[str] = []
         for name in (
             "required_facets_preserved",
@@ -259,6 +327,20 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             differences.append("concept_preserved")
         if checks["unsupported_intensity_added"] is True:
             differences.append("unsupported_intensity_added")
+
+        for realization_id in expected_ids:
+            item = checks_by_id[realization_id]
+            for name in (
+                "predicate_preserved",
+                "state_preserved",
+                "certainty_preserved",
+                "concept_preserved",
+            ):
+                if item[name] is False:
+                    differences.append(f"{realization_id}:{name}")
+            state_fidelity = item["state_fidelity"]
+            if state_fidelity != "exact":
+                differences.append(f"{realization_id}:state_fidelity:{state_fidelity}")
 
         if not CharacterRealizationValidator._plan_has_intensity_state(plan) and intensity_markers:
             differences.append(
@@ -277,6 +359,13 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         if not markers:
             return []
         return ["unsupported_intensity_markers:" + ",".join(markers)]
+
+    @staticmethod
+    def _planned_realization_ids(plan: SemanticUtterancePlan) -> set[str]:
+        return {
+            f"proposition:{index}:{proposition.predicate}"
+            for index, proposition in enumerate(plan.propositions)
+        }
 
     @staticmethod
     def _plan_has_intensity_state(plan: SemanticUtterancePlan) -> bool:
