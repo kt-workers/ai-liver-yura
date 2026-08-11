@@ -276,7 +276,6 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             not isinstance(item, str) for item in markers_value
         ):
             return None
-        intensity_markers = [item.strip() for item in markers_value if item.strip()]
 
         expected_ids = list(dict.fromkeys(response.semantic_realizations))
         planned_ids = CharacterRealizationValidator._planned_realization_ids(plan)
@@ -389,10 +388,6 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                         f"{realization_id}:unexpected_intensity_evidence"
                     )
 
-        if not CharacterRealizationValidator._plan_has_intensity_state(plan) and intensity_markers:
-            differences.append(
-                "unsupported_intensity_markers:" + ",".join(intensity_markers)
-            )
         return differences
 
     @staticmethod
