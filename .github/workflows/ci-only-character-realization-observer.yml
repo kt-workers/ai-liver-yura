@@ -1,0 +1,74 @@
+name: CI-only Character Realization Observer
+
+on:
+  pull_request:
+    branches:
+      - develop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused:
+    name: character realization focused diagnostics
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+      - name: Observer contract
+        if: always()
+        run: pytest -q tests/test_character_realization_observer_contract.py
+      - name: Foundation completion
+        if: always()
+        run: pytest -q tests/test_character_realization_foundation_completion.py
+      - name: Facet evidence runtime gate
+        if: always()
+        run: pytest -q tests/test_character_realization_facet_evidence_runtime_gate.py
+      - name: Unknown state
+        if: always()
+        run: pytest -q tests/test_character_realization_unknown_state.py
+      - name: Unknown surface evidence
+        if: always()
+        run: pytest -q tests/test_character_realization_unknown_surface_evidence.py
+      - name: Validator facet evidence prompt
+        if: always()
+        run: pytest -q tests/test_character_realization_validator_facet_evidence_prompt.py
+      - name: Validator intensity evidence
+        if: always()
+        run: pytest -q tests/test_character_realization_validator_intensity_evidence.py
+      - name: Validator state fidelity
+        if: always()
+        run: pytest -q tests/test_character_realization_validator_state_fidelity.py
+      - name: Current desire adjacent
+        if: always()
+        run: pytest -q tests/test_current_desire_semantic_character_validation_adjacent.py
+      - name: Semantic character adjacent
+        if: always()
+        run: pytest -q tests/test_semantic_character_validation_adjacent_contract.py
+      - name: Intensity adjacent
+        if: always()
+        run: pytest -q tests/test_semantic_character_validator_intensity_evidence_adjacent.py
+      - name: State fidelity adjacent
+        if: always()
+        run: pytest -q tests/test_semantic_character_validator_state_fidelity_adjacent.py
+      - name: Unknown surface adjacent
+        if: always()
+        run: pytest -q tests/test_semantic_character_validator_unknown_surface_adjacent.py
+      - name: Separated response validation
+        if: always()
+        run: pytest -q tests/test_separated_response_validation.py tests/test_separated_response_validation_unit_gate.py
