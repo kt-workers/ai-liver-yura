@@ -102,6 +102,13 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "内部state名、Plan JSON、説明用の言い換え、speechに存在しない語を根拠として捏造しない",
                 "- state=unknownは存在・不在・強度が未確定である。unknownをpresent/absent/low等へ"
                 "変換した発話はrejectする。hedge付きでも特定polarityを推測していればrejectする",
+                "- state=unknownでは、target predicateについて『当てはまるかはっきりしない』『まだわからない』"
+                "『判断できない』等、predicate自体を現時点で確定できないことを述べる表現はexact realizationに"
+                "なり得る。target predicateを保持しpolarityをcommitしていない限り、これをpredicateから逃げた"
+                "meta-uncertaintyとしてrejectしない",
+                "- state=unknownかつcertainty=lowでは、同じ慎重な表現がunknown stateと低い断定度の両方を"
+                "自然に担ってよい。state用とcertainty用に別々の語句を要求せず、『はっきりしない』等を"
+                "使ったことだけを理由にcertainty_preserved=falseとしない",
                 "- yes/no型User Wording Hintへの『うん』『ううん』『そう』『違う』等も、speech全体として"
                 "present/absentを確定するならunknown保持ではなくstate_fidelity=unknown_committedとする",
                 "- state=presentは存在のみで強度を含まない。Planにlow/moderate/high/very_high等の"
@@ -110,7 +117,9 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "polarity_changed/unknown_committed/omittedのいずれかで判定する。accepted=trueにできるのは"
                 "Characterが列挙した全realization IDのstate_fidelityがexactの場合だけ",
                 "- speechに意味上の程度・強弱を与える表現があればsurface_evidence.intensity_markersへ"
-                "原文のまま列挙する。単なる語調fillerで強度意味を持たないものは列挙しない",
+                "原文のまま列挙する。単なる語調filler、時間限定、epistemic hedge、断定度表現は、それ自体が"
+                "predicateの程度・強度を変えない限りintensity markerではない。例えば『今のところ』"
+                "『はっきりしない』『かな』をunknown/certaintyの表現として使うだけならintensity markerにしない",
                 "- certaintyは指定stateへのepistemic certaintyである。medium/lowを強度へ変換せず、"
                 "断定度を過大化・矮小化していないことを確認する",
                 "- certainty=lowは別stateを推測する許可ではない。指定state自体の確からしさとして扱う",
