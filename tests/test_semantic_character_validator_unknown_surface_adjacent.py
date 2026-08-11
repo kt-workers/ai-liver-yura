@@ -39,10 +39,43 @@ class _CharacterModel:
 
 
 class _ValidatorModel:
-    def __init__(self, payload: dict[str, object]) -> None:
+    def __init__(
+        self,
+        payload: dict[str, object],
+        *,
+        observed_state: str,
+        observed_certainty: str,
+        state_evidence: str,
+        certainty_evidence: str | None,
+    ) -> None:
         self.payload = payload
+        self.observed_state = observed_state
+        self.observed_certainty = observed_certainty
+        self.state_evidence = state_evidence
+        self.certainty_evidence = certainty_evidence
 
     async def validate_character_response(self, activity: Activity) -> str:
+        if activity.context.get("llm_role") == "character_realization_observer":
+            return json.dumps(
+                {
+                    "observations": [
+                        {
+                            "realization_id": "proposition:0:sadness",
+                            "predicate_realized": True,
+                            "observed_state": self.observed_state,
+                            "observed_certainty": self.observed_certainty,
+                            "predicate_evidence_spans": ["悲し"],
+                            "state_evidence_spans": [self.state_evidence],
+                            "certainty_evidence_spans": (
+                                [self.certainty_evidence]
+                                if self.certainty_evidence is not None
+                                else []
+                            ),
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            )
         return json.dumps(self.payload, ensure_ascii=False)
 
 
@@ -159,7 +192,15 @@ def _validation_payload(
     }
 
 
-async def _run(*, speech: str, validator_payload: dict[str, object]):
+async def _run(
+    *,
+    speech: str,
+    validator_payload: dict[str, object],
+    observed_state: str,
+    observed_certainty: str,
+    state_evidence: str,
+    certainty_evidence: str | None,
+):
     source, context = _source_and_context()
     response = await CharacterLanguageRealizerService(
         _CharacterModel(speech),
@@ -167,7 +208,13 @@ async def _run(*, speech: str, validator_payload: dict[str, object]):
         _profile(),
     ).generate(source, context)
     validation = await CharacterRealizationValidator(
-        model=_ValidatorModel(validator_payload),
+        model=_ValidatorModel(
+            validator_payload,
+            observed_state=observed_state,
+            observed_certainty=observed_certainty,
+            state_evidence=state_evidence,
+            certainty_evidence=certainty_evidence,
+        ),
         prompt_builder=CharacterRealizationValidatorPromptBuilder(),
     ).validate(source, context, response)
     return validation
@@ -180,6 +227,10 @@ async def test_valid_unknown_survives_spurious_model_surface_markers() -> None:
         validator_payload=_validation_payload(
             surface_markers=["今のところ", "はっきりしない"]
         ),
+        observed_state="unknown",
+        observed_certainty="low",
+        state_evidence="はっきりしない",
+        certainty_evidence="はっきりしない",
     )
 
     assert validation.accepted is True
@@ -188,27 +239,38 @@ async def test_valid_unknown_survives_spurious_model_surface_markers() -> None:
 
 
 @pytest.mark.asyncio
-async def test_actual_unsupported_intensity_is_still_rejected_after_production_plan() -> None:
+async def test_actual_unknown_to_low_commit_is_rejected_by_independent_observer() -> None:
     validation = await _run(
         speech="少し悲しいかも。",
         validator_payload=_validation_payload(certainty_evidence="かも"),
+        observed_state="low",
+        observed_certainty="low",
+        state_evidence="少し悲しい",
+        certainty_evidence="かも",
     )
 
     assert validation.accepted is False
-    assert validation.reason == "semantic_facet_validation_failed"
-    assert "unsupported_intensity_markers:少し" in validation.claim_differences
+    assert validation.reason == "observed_semantic_state_mismatch"
+    assert (
+        "proposition:0:sadness:observed_state_mismatch:expected=unknown:observed=low"
+        in validation.claim_differences
+    )
 
 
 @pytest.mark.asyncio
-async def test_unknown_committed_diagnosis_is_still_rejected_after_production_plan() -> None:
+async def test_unknown_committed_to_present_is_rejected_by_independent_observer() -> None:
     validation = await _run(
         speech="うん、悲しいよ。",
         validator_payload=_validation_payload(state_fidelity="unknown_committed"),
+        observed_state="present",
+        observed_certainty="high",
+        state_evidence="悲しい",
+        certainty_evidence=None,
     )
 
     assert validation.accepted is False
-    assert validation.reason == "semantic_facet_validation_failed"
+    assert validation.reason == "observed_semantic_state_mismatch"
     assert (
-        "proposition:0:sadness:state_fidelity:unknown_committed"
+        "proposition:0:sadness:observed_state_mismatch:expected=unknown:observed=present"
         in validation.claim_differences
     )
