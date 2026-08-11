@@ -22,15 +22,19 @@ jobs:
           python -m pip install --disable-pip-version-check --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
-      - name: semantic character
+      - name: semantic a-f
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_semantic_character*.py' | sort); test -z "$files" || pytest -x -q $files
-      - name: semantic utterance
+          files=$(find tests -type f -name 'test_semantic*.py' | sort | grep -Ev '/test_semantic_(character|utterance)' | awk -F/ '{n=$NF; c=substr(n,15,1); if (c >= "a" && c <= "f") print $0}'); test -z "$files" || pytest -x -q $files
+      - name: semantic g-m
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_semantic_utterance*.py' | sort); test -z "$files" || pytest -x -q $files
-      - name: other semantic
+          files=$(find tests -type f -name 'test_semantic*.py' | sort | grep -Ev '/test_semantic_(character|utterance)' | awk -F/ '{n=$NF; c=substr(n,15,1); if (c >= "g" && c <= "m") print $0}'); test -z "$files" || pytest -x -q $files
+      - name: semantic n-s
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_semantic*.py' | sort | grep -Ev '/test_semantic_(character|utterance)'); test -z "$files" || pytest -x -q $files
+          files=$(find tests -type f -name 'test_semantic*.py' | sort | grep -Ev '/test_semantic_(character|utterance)' | awk -F/ '{n=$NF; c=substr(n,15,1); if (c >= "n" && c <= "s") print $0}'); test -z "$files" || pytest -x -q $files
+      - name: semantic t-z
+        if: always()
+        run: |
+          files=$(find tests -type f -name 'test_semantic*.py' | sort | grep -Ev '/test_semantic_(character|utterance)' | awk -F/ '{n=$NF; c=substr(n,15,1); if (c >= "t" && c <= "z") print $0}'); test -z "$files" || pytest -x -q $files
