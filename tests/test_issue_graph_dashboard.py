@@ -213,10 +213,22 @@ def test_browser_uses_hierarchical_component_packing_not_force_relaxation() -> N
 
     assert "function buildForest(" in html
     assert "function layoutComponent(" in html
-    assert "function packComponents(" in html
+    assert "function packHierarchy(" in html
     assert "subtreeSpan" in html
     assert "relaxFreeLayout" not in html
     assert "jitterX" not in html
+
+
+def test_browser_separates_parent_trees_and_unlinked_issues_visually() -> None:
+    html = Path("gui/yura_issue_graph/static/index.html").read_text(encoding="utf-8")
+
+    assert 'id="groups"' in html
+    assert "function renderGroups(" in html
+    assert "component-frame" in html
+    assert "親子ツリー #" in html
+    assert "親子関係なし（" in html
+    assert "component.nodeCount>1" in html
+    assert "component.nodeCount===1" in html
 
 
 def test_browser_routes_parent_edges_by_bus_and_dependencies_around_measured_nodes() -> None:
@@ -233,6 +245,36 @@ def test_browser_routes_parent_edges_by_bus_and_dependencies_around_measured_nod
     assert "edge.source===state.selected" in html
     assert ".edge.focused" in html
     assert ".edge.dimmed" in html
+
+
+def test_dependency_edges_are_contextual_by_default_and_can_be_shown_all() -> None:
+    html = Path("gui/yura_issue_graph/static/index.html").read_text(encoding="utf-8")
+
+    assert 'id="showDependencies"' in html
+    assert "依存線を全表示" in html
+    assert "function dependencyShouldBeVisible(" in html
+    assert "showDependencies.checked" in html
+    assert "edge.source===state.selected||edge.target===state.selected" in html
+    assert "showDependencies.addEventListener('change',drawEdges)" in html
+
+
+def test_selected_node_focus_dims_unrelated_nodes() -> None:
+    html = Path("gui/yura_issue_graph/static/index.html").read_text(encoding="utf-8")
+
+    assert ".node.context-dim" in html
+    assert "function directRelatedNumbers(" in html
+    assert "function updateNodeFocus(" in html
+    assert "related&&!related.has(number)" in html
+
+
+def test_initial_view_keeps_readable_scale_before_full_fit() -> None:
+    html = Path("gui/yura_issue_graph/static/index.html").read_text(encoding="utf-8")
+
+    assert "MIN_READABLE_SCALE=.65" in html
+    assert "function setInitialViewport(" in html
+    assert "if(fit>=MIN_READABLE_SCALE)" in html
+    assert "state.scale=MIN_READABLE_SCALE" in html
+    assert "document.getElementById('reset').addEventListener('click',fitToView)" in html
 
 
 def test_browser_closed_issue_switch_requests_server_side_state_scope() -> None:
