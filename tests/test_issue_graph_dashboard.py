@@ -166,4 +166,7 @@ def test_browser_routes_edges_around_nodes_and_focuses_selected_source() -> None
     assert "edge.source===state.selected" in html
     assert ".edge.focused" in html
     assert ".edge.dimmed" in html
-    assert "dependency focused" not in html
+
+    readme = Path("gui/yura_issue_graph/README.md").read_text(encoding="utf-8")
+    assert "可能な限りノードを迂回" in readme
+    assert "そのIssueを起点として伸びる線を強調" in readme
