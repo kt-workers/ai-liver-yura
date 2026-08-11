@@ -130,24 +130,24 @@ public repository では REST Open Issues API を利用し、Issue 本文から 
 - Reset view
 - 親 node ごとの collapse
 
-### 6.2 Edge visibility / focus
+### 6.2 Edge routing / node avoidance
 
-Issue数が増えると全エッジを同じ強さで表示した場合に線が重なり、どのノードへ接続しているか判別しにくくなるため、エッジは情報量に応じた視覚的優先順位を持つ。
+Issue数が増えた状態で単純なBezier曲線をsource右端からtarget左端へ引くと、途中の別Issue nodeの背面を通過して線が見えなくなる。このため、nodeを障害物として扱う経路計算をBrowser側で行う。
 
-通常時:
+方針:
 
-- 親子エッジは実線で表示するが低いopacityとする
-- 依存エッジは破線かつ親子より低いopacityとする
-- 全エッジを完全に隠さず、グラフ全体の構造は把握できる状態を維持する
+- 各表示nodeの矩形を、見た目の矩形より数px広げたobstacle rectangleとして登録する
+- source/target node自身はobstacle判定から除外する
+- sourceは原則右側port、targetは原則左側portから接続する
+- source/targetの直近に短いlead segmentを設け、node border直後から経路探索を開始する
+- obstacleを通過しない水平・垂直segmentを候補として、Manhattan/A*経路探索で迂回路を求める
+- 探索gridはnode配置の余白より細かい固定stepを利用し、描画負荷を抑える
+- 取得した経路は不要な同一直線上の中間点を削除して簡略化する
+- 描画時は折れ線を基本とし、角は小さなradiusで丸めて方向を追いやすくする
+- 親子=実線、依存=破線の形状差は維持する
+- 経路探索が失敗した場合のみ、従来のBezier曲線へfallbackする
 
-Issue nodeをhoverまたは選択した場合:
-
-- 対象Issueへ直接接続する親子・依存エッジだけを高opacity・太線で強調する
-- 強調対象の矢印先端も同じ強さで表示する
-- 直接接続していないエッジはさらにfadeし、選択したIssueの関係を追いやすくする
-- click選択は詳細panelを開いている間持続し、hoverは一時的な確認としてclick選択より優先する
-
-エッジの種類そのものは色だけに依存させず、親子=実線、依存=破線の形状差を維持する。
+目標は「全線交差ゼロ」ではなく、**edgeがIssue nodeの裏へ隠れて接続先を追えなくなる状態を原則回避すること**である。edge同士の交差・重なりは許容するが、将来はedge lane分離で追加改善できる。
 
 ### 6.3 Node
 
@@ -258,7 +258,8 @@ Verification中はDraft PRのhead `feature/issue-graph-dashboard` を明示的�
 - `render.yaml` に `yura-issue-graph` が存在する
 - Blueprint上でtokenが `sync: false` である
 - Blueprintのhealth checkが `/api/health` を参照する
-- edge focus用のCSS/DOM属性が存在し、親子と依存の形状差を維持する
+- Browser実装にnode obstacle routingとBezier fallbackが存在する
+- 親子と依存の形状差を維持する
 
 実画面:
 
@@ -267,7 +268,7 @@ Verification中はDraft PRのhead `feature/issue-graph-dashboard` を明示的�
 - pan / zoom / reset
 - collapse
 - node click detail
-- node hover / clickで接続edgeが強調され、非接続edgeがfadeする
+- edgeが途中のIssue nodeを原則回避して描画される
 - search / filter
 - local 起動
 - Render Blueprint sync / deploy
