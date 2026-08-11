@@ -52,6 +52,9 @@ def _accepted_payload(*, intensity_markers: list[str] | None = None) -> dict[str
                 "state_fidelity": "exact",
                 "certainty_preserved": True,
                 "concept_preserved": True,
+                "intensity_semantics_preserved": True,
+                "presence_only_counterfactual_equivalent": False,
+                "intensity_evidence_spans": [],
             }
         ],
         "surface_evidence": {
