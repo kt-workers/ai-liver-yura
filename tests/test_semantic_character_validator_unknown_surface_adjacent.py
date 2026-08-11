@@ -122,6 +122,7 @@ def _validation_payload(
     *,
     state_fidelity: str = "exact",
     surface_markers: list[str] | None = None,
+    certainty_evidence: str = "はっきりしない",
 ) -> dict[str, object]:
     exact = state_fidelity == "exact"
     return {
@@ -140,10 +141,13 @@ def _validation_payload(
             {
                 "realization_id": "proposition:0:sadness",
                 "predicate_preserved": True,
+                "predicate_evidence_spans": ["悲し"],
                 "state_preserved": exact,
                 "state_fidelity": state_fidelity,
                 "certainty_preserved": exact,
+                "certainty_evidence_spans": [certainty_evidence] if exact else [],
                 "concept_preserved": True,
+                "concept_evidence_spans": [],
                 "intensity_semantics_preserved": True,
                 "presence_only_counterfactual_equivalent": False,
                 "intensity_evidence_spans": [],
@@ -187,7 +191,7 @@ async def test_valid_unknown_survives_spurious_model_surface_markers() -> None:
 async def test_actual_unsupported_intensity_is_still_rejected_after_production_plan() -> None:
     validation = await _run(
         speech="少し悲しいかも。",
-        validator_payload=_validation_payload(),
+        validator_payload=_validation_payload(certainty_evidence="かも"),
     )
 
     assert validation.accepted is False
