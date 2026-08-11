@@ -38,6 +38,7 @@ def _accepted_payload(*, intensity_markers: list[str] | None = None) -> dict[str
         "differences": [],
         "semantic_checks": {
             "required_facets_preserved": True,
+            "predicate_preserved": True,
             "state_preserved": True,
             "certainty_preserved": True,
             "concept_preserved": True,
