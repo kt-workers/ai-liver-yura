@@ -123,9 +123,26 @@ RESTでも既定は `state=open`、`include_closed=true` の場合は `state=all
 
 ## 6. Browser UI
 
-### 6.1 Canvas
+### 6.1 Canvas / free layout
 
-- 左から右へ depth ごとに配置
+ノードを depth ごとの固定列へ並べる方式は使用しない。親子階層は読みやすさのため左から右へ進む傾向だけを維持し、最終位置は関係性と空き領域から自由配置する。
+
+配置方針:
+
+- parent/subIssue から depth を計算するが、depth は初期位置のseedにのみ使う
+- 初期位置にはIssue番号由来の決定的なX/Yずらしを加え、同一depthのノードを完全な縦一列に揃えない
+- seed後に複数回のlayout relaxationを行う
+- node rectangle同士が近すぎる場合は衝突回避力で離す
+- 親子edgeには左→右の方向制約と適度な距離を与えるが、固定X座標へsnapしない
+- dependency edgeは親子より弱い引力だけを与え、遠すぎる関係を近づける
+- 多数node時は反復回数を減らし、ブラウザ負荷を上限化する
+- relaxation後に全nodeを正座標へnormalizeし、world sizeを実配置boundsから計算する
+- disconnected rootも同一列へ強制せず、複数の開始位置へstaggerして配置する
+
+目標は、**列の整然さよりも、ノード同士の重なり回避・線の短縮・枝分かれの追いやすさを優先すること**である。
+
+共通操作:
+
 - 親子: 実線矢印
 - 依存: 破線矢印
 - mouse/touch drag で pan
@@ -174,6 +191,7 @@ nodeをclickして詳細panelを表示した場合、選択Issueを起点とす�
 - title
 - Status
 - Issueレベル
+- Closedの場合はClosedバッジ
 
 Status は色だけに依存せず text badge を必ず表示する。
 
@@ -289,6 +307,7 @@ Verification中はDraft PRのhead `feature/issue-graph-dashboard` を明示的�
 - `render.yaml` に `yura-issue-graph` が存在する
 - Blueprint上でtokenが `sync: false` である
 - Blueprintのhealth checkが `/api/health` を参照する
+- Browser実装にfree-layout relaxationが存在し、固定列へsnapしない
 - Browser実装にnode obstacle routingとBezier fallbackが存在する
 - selected issueをsourceとするedge focusが存在する
 - 親子と依存の形状差を維持する
@@ -297,6 +316,8 @@ Verification中はDraft PRのhead `feature/issue-graph-dashboard` を明示的�
 実画面:
 
 - 3階層以上の親子表示
+- 同一depthでもノードが固定列に縛られず、関係性と空きに応じて配置される
+- node同士が重ならず、親子の左→右方向は概ね維持される
 - In progress / Verification / Blocked 視認性
 - pan / zoom / reset
 - collapse
