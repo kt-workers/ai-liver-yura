@@ -7,68 +7,58 @@
   <style>
     :root {
       color-scheme: light dark;
-      --bg: #f5f8fb;
-      --panel: rgba(255,255,255,.92);
-      --panel-solid: #fff;
-      --text: #17202a;
-      --muted: #657786;
-      --border: #d9e2ea;
-      --grid: rgba(90,110,130,.22);
-      --accent: #23a8e0;
-      --edge: #17202a;
-      --inprogress: #23a8e0;
-      --verification: #7b61ff;
-      --blocked: #d24b4b;
-      --ready: #3d8f67;
-      --review: #c47b17;
-      --backlog: #7c8794;
-      --done: #55606d;
+      --bg:#f5f8fb; --panel:rgba(255,255,255,.94); --panel-solid:#fff;
+      --text:#17202a; --muted:#657786; --border:#d9e2ea; --grid:rgba(90,110,130,.22);
+      --accent:#23a8e0; --edge:#17202a;
+      --inprogress:#23a8e0; --verification:#7b61ff; --blocked:#d24b4b;
+      --ready:#3d8f67; --review:#c47b17; --backlog:#7c8794; --done:#55606d;
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #0f151b;
-        --panel: rgba(22,31,39,.94);
-        --panel-solid: #161f27;
-        --text: #edf4f8;
-        --muted: #a8b5c0;
-        --border: #31404c;
-        --grid: rgba(180,200,214,.17);
-        --edge: #e4edf3;
+        --bg:#0f151b; --panel:rgba(22,31,39,.95); --panel-solid:#161f27;
+        --text:#edf4f8; --muted:#a8b5c0; --border:#31404c;
+        --grid:rgba(180,200,214,.17); --edge:#e4edf3;
       }
     }
-    * { box-sizing: border-box; }
+    * { box-sizing:border-box; }
     body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); }
     button,input,select { font:inherit; }
     header { min-height:64px; display:flex; gap:16px; align-items:center; justify-content:space-between; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--panel-solid); }
     header h1 { margin:0; font-size:18px; }
     .subtitle { color:var(--muted); font-size:12px; margin-top:3px; }
     .controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-    .controls input[type="search"],.controls select,.controls button { border:1px solid var(--border); background:var(--panel-solid); color:var(--text); border-radius:9px; padding:8px 10px; }
+    .controls input[type="search"],.controls select,.controls button {
+      border:1px solid var(--border); background:var(--panel-solid); color:var(--text);
+      border-radius:9px; padding:8px 10px;
+    }
     .controls input[type="search"] { width:220px; }
     .state-toggle { display:inline-flex; align-items:center; gap:7px; min-height:36px; padding:6px 9px; border:1px solid var(--border); border-radius:9px; background:var(--panel-solid); color:var(--muted); font-size:12px; cursor:pointer; user-select:none; }
-    .state-toggle input { appearance:none; width:34px; height:20px; margin:0; padding:0; border:1px solid var(--border); border-radius:999px; background:var(--border); position:relative; cursor:pointer; transition:background .16s ease,border-color .16s ease; }
+    .state-toggle input { appearance:none; width:34px; height:20px; margin:0; border:1px solid var(--border); border-radius:999px; background:var(--border); position:relative; cursor:pointer; transition:background .16s ease,border-color .16s ease; }
     .state-toggle input::after { content:""; position:absolute; width:14px; height:14px; left:2px; top:2px; border-radius:50%; background:var(--panel-solid); box-shadow:0 1px 3px rgba(0,0,0,.22); transition:transform .16s ease; }
     .state-toggle input:checked { background:var(--accent); border-color:var(--accent); }
     .state-toggle input:checked::after { transform:translateX(14px); }
     .state-toggle input:disabled { opacity:.55; cursor:wait; }
+
     .shell { display:grid; grid-template-columns:minmax(0,1fr) 360px; height:calc(100vh - 65px); }
-    .viewport { position:relative; overflow:hidden; background-color:var(--bg); background-image:radial-gradient(var(--grid) 1.2px, transparent 1.2px); background-size:24px 24px; cursor:grab; touch-action:none; }
+    .viewport { position:relative; overflow:hidden; background-color:var(--bg); background-image:radial-gradient(var(--grid) 1.2px,transparent 1.2px); background-size:24px 24px; cursor:grab; touch-action:none; }
     .viewport.dragging { cursor:grabbing; }
     #world { position:absolute; left:0; top:0; transform-origin:0 0; }
     #edges { position:absolute; left:0; top:0; overflow:visible; pointer-events:none; }
     #nodes { position:absolute; left:0; top:0; }
-    .edge { fill:none; stroke:var(--edge); stroke-linecap:round; stroke-linejoin:round; transition:opacity .16s ease, stroke-width .16s ease; }
-    .edge.parent { stroke-width:2.15; opacity:.48; }
-    .edge.dependency { stroke-width:1.75; stroke-dasharray:8 7; opacity:.34; }
-    .edge.dimmed { opacity:.10; }
+
+    .edge { fill:none; stroke:var(--edge); stroke-linecap:round; stroke-linejoin:round; transition:opacity .16s ease,stroke-width .16s ease; }
+    .edge.parent { stroke-width:2.2; opacity:.55; }
+    .edge.dependency { stroke-width:1.8; stroke-dasharray:8 7; opacity:.38; }
+    .edge.dimmed { opacity:.09; }
     .edge.focused { stroke-width:4; opacity:1; }
     .edge.dependency.focused { stroke-width:3.4; opacity:1; }
-    .node { position:absolute; width:260px; min-height:106px; border:2px solid var(--border); border-left-width:7px; border-radius:16px; background:var(--panel-solid); color:var(--text); padding:12px 38px 12px 13px; box-shadow:0 5px 16px rgba(20,35,45,.08); text-align:left; cursor:pointer; }
-    .node:hover,.node.selected { outline:3px solid color-mix(in srgb, var(--accent) 50%, transparent); }
+
+    .node { position:absolute; width:260px; height:122px; overflow:hidden; border:2px solid var(--border); border-left-width:7px; border-radius:16px; background:var(--panel-solid); color:var(--text); padding:12px 38px 11px 13px; box-shadow:0 5px 16px rgba(20,35,45,.08); text-align:left; cursor:pointer; }
+    .node:hover,.node.selected { outline:3px solid color-mix(in srgb,var(--accent) 50%,transparent); }
     .node .number { font-weight:750; font-size:13px; }
     .node .title { margin-top:7px; line-height:1.35; font-size:14px; max-height:38px; overflow:hidden; }
-    .node .meta { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
-    .badge { display:inline-flex; align-items:center; gap:5px; border:1px solid var(--border); border-radius:999px; padding:3px 7px; font-size:11px; background:var(--panel); }
+    .node .meta { display:flex; gap:6px; margin-top:9px; overflow:hidden; white-space:nowrap; }
+    .badge { display:inline-flex; flex:0 0 auto; align-items:center; gap:5px; border:1px solid var(--border); border-radius:999px; padding:3px 7px; font-size:11px; background:var(--panel); }
     .badge::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--status-color,var(--muted)); }
     .node[data-status="In progress"] { border-left-color:var(--inprogress); --status-color:var(--inprogress); }
     .node[data-status="Verification"] { border-left-color:var(--verification); --status-color:var(--verification); }
@@ -78,6 +68,7 @@
     .node[data-status="Backlog"] { border-left-color:var(--backlog); --status-color:var(--backlog); }
     .node[data-status="Done"] { border-left-color:var(--done); --status-color:var(--done); opacity:.72; }
     .collapse { position:absolute; right:8px; top:8px; width:26px; height:26px; padding:0; border:1px solid var(--border); border-radius:8px; background:var(--panel); color:var(--text); cursor:pointer; }
+
     .details { overflow:auto; border-left:1px solid var(--border); background:var(--panel-solid); padding:16px; }
     .details h2 { margin:0; font-size:18px; }
     .details .statusline { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 16px; }
@@ -93,10 +84,11 @@
     .line { width:28px; height:0; border-top:2px solid var(--edge); display:inline-block; vertical-align:middle; margin-right:5px; }
     .line.dep { border-top-style:dashed; }
     .empty { color:var(--muted); padding:16px; }
-    @media (max-width: 900px) {
+
+    @media (max-width:900px) {
       header { align-items:flex-start; flex-direction:column; }
       .shell { grid-template-columns:1fr; grid-template-rows:minmax(440px,62vh) auto; height:auto; }
-      .details { border-left:0; border-top:1px solid var(--border); max-height:none; }
+      .details { border-left:0; border-top:1px solid var(--border); }
       .controls input[type="search"] { width:180px; }
     }
   </style>
@@ -130,6 +122,7 @@
     <button id="reload" type="button">再読込</button>
   </div>
 </header>
+
 <div class="shell">
   <main id="viewport" class="viewport" aria-label="Issue relationship graph">
     <div id="notice" class="notice">GitHubからデータを取得しています。</div>
@@ -141,403 +134,330 @@
   </main>
   <aside id="details" class="details"><div class="empty">ノードをクリックするとIssue詳細を表示します。</div></aside>
 </div>
+
 <script>
 (() => {
-  const NODE_W = 260, NODE_H = 118, BASE_X_GAP = 390, BASE_Y_GAP = 170, MARGIN = 80;
-  const NODE_GAP_X = 76, NODE_GAP_Y = 46;
-  const OBSTACLE_PAD = 14, PORT_LEAD = 22, ROUTE_MARGIN = 28;
-  const activeStatuses = new Set(['In progress','Review','Verification','Blocked']);
-  const state = { data:null, selected:null, collapsed:new Set(), scale:1, tx:40, ty:40, dragging:false, lastX:0, lastY:0 };
-  const viewport = document.getElementById('viewport');
-  const world = document.getElementById('world');
-  const edgeSvg = document.getElementById('edges');
-  const nodeLayer = document.getElementById('nodes');
-  const details = document.getElementById('details');
-  const notice = document.getElementById('notice');
-  const search = document.getElementById('search');
-  const statusFilter = document.getElementById('statusFilter');
-  const includeClosed = document.getElementById('includeClosed');
+  const NODE_W=260, NODE_H=122;
+  const LEVEL_GAP=170, SIBLING_GAP=42, COMPONENT_GAP_X=150, COMPONENT_GAP_Y=110, MARGIN=90;
+  const ROUTE_CLEARANCE=14, BEND_PENALTY=24;
+  const activeStatuses=new Set(['In progress','Review','Verification','Blocked']);
+
+  const state={
+    data:null, selected:null, collapsed:new Set(),
+    scale:1, tx:40, ty:40, dragging:false, lastX:0, lastY:0,
+    layout:null, visible:new Set(), nodeElements:new Map()
+  };
+
+  const viewport=document.getElementById('viewport');
+  const world=document.getElementById('world');
+  const edgeSvg=document.getElementById('edges');
+  const nodeLayer=document.getElementById('nodes');
+  const details=document.getElementById('details');
+  const notice=document.getElementById('notice');
+  const search=document.getElementById('search');
+  const statusFilter=document.getElementById('statusFilter');
+  const includeClosed=document.getElementById('includeClosed');
 
   async function load() {
-    notice.hidden = false;
-    notice.textContent = includeClosed.checked
-      ? 'Open / Closed IssueをGitHubから取得しています。'
-      : 'Open IssueをGitHubから取得しています。';
-    includeClosed.disabled = true;
+    notice.hidden=false;
+    notice.textContent=includeClosed.checked ? 'Open / Closed IssueをGitHubから取得しています。' : 'Open IssueをGitHubから取得しています。';
+    includeClosed.disabled=true;
     try {
-      const includeClosedValue = includeClosed.checked;
-      const response = await fetch(`/api/graph?include_closed=${includeClosedValue ? 'true' : 'false'}`, {cache:'no-store'});
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      state.data = await response.json();
-      includeClosed.checked = Boolean(state.data.include_closed);
-      const stateLabel = state.data.include_closed ? ' / Closed含む' : ' / Openのみ';
-      document.getElementById('sourceLabel').textContent = `${state.data.repository} / Project #${state.data.project.number}${state.data.project.title ? ' ' + state.data.project.title : ''}${stateLabel}`;
-      const loadedNumbers = new Set((state.data.nodes || []).map(node => node.number));
-      if (state.selected !== null && !loadedNumbers.has(state.selected)) {
-        state.selected = null;
-        details.innerHTML = '<div class="empty">選択中のIssueは現在の表示対象外です。</div>';
+      const includeClosedValue=includeClosed.checked;
+      const response=await fetch(`/api/graph?include_closed=${includeClosedValue?'true':'false'}`,{cache:'no-store'});
+      if(!response.ok) throw new Error(`HTTP ${response.status}`);
+      state.data=await response.json();
+      includeClosed.checked=Boolean(state.data.include_closed);
+      const stateLabel=state.data.include_closed?' / Closed含む':' / Openのみ';
+      document.getElementById('sourceLabel').textContent=`${state.data.repository} / Project #${state.data.project.number}${state.data.project.title?' '+state.data.project.title:''}${stateLabel}`;
+
+      const loaded=new Set((state.data.nodes||[]).map(node=>node.number));
+      if(state.selected!==null&&!loaded.has(state.selected)){
+        state.selected=null;
+        details.innerHTML='<div class="empty">選択中のIssueは現在の表示対象外です。</div>';
       }
-      const messages = state.data.diagnostics || [];
-      notice.hidden = messages.length === 0;
-      notice.textContent = messages.join(' / ');
-      render();
+      const messages=state.data.diagnostics||[];
+      notice.hidden=messages.length===0;
+      notice.textContent=messages.join(' / ');
+      renderGraph();
       fitToView();
-    } catch (error) {
-      notice.hidden = false;
-      notice.textContent = `データ取得に失敗しました: ${error.message}`;
+    } catch(error) {
+      notice.hidden=false;
+      notice.textContent=`データ取得に失敗しました: ${error.message}`;
     } finally {
-      includeClosed.disabled = false;
+      includeClosed.disabled=false;
     }
   }
 
-  function nodeMap() { return new Map((state.data?.nodes || []).map(n => [n.number,n])); }
+  function nodeMap() {
+    return new Map((state.data?.nodes||[]).map(node=>[node.number,node]));
+  }
 
   function filteredVisibleSet(map) {
-    const query = search.value.trim().toLowerCase();
-    const status = statusFilter.value;
-    const direct = new Set();
-    for (const node of map.values()) {
-      const textMatch = !query || (`#${node.number} ${node.title}`).toLowerCase().includes(query);
-      const statusMatch = status === 'all' || (status === 'active' ? activeStatuses.has(node.status) : node.status === status);
-      if (textMatch && statusMatch) direct.add(node.number);
+    const query=search.value.trim().toLowerCase();
+    const status=statusFilter.value;
+    const direct=new Set();
+    for(const node of map.values()){
+      const textMatch=!query||(`#${node.number} ${node.title}`).toLowerCase().includes(query);
+      const statusMatch=status==='all'||(status==='active'?activeStatuses.has(node.status):node.status===status);
+      if(textMatch&&statusMatch) direct.add(node.number);
     }
-    if (!query && status === 'all') return new Set(map.keys());
-    const visible = new Set(direct);
-    for (const number of [...direct]) {
-      let current = map.get(number);
-      const guard = new Set();
-      while (current?.parent_number && map.has(current.parent_number) && !guard.has(current.parent_number)) {
+    if(!query&&status==='all') return new Set(map.keys());
+
+    const visible=new Set(direct);
+    for(const number of [...direct]){
+      let current=map.get(number);
+      const guard=new Set();
+      while(current?.parent_number&&map.has(current.parent_number)&&!guard.has(current.parent_number)){
         guard.add(current.parent_number);
         visible.add(current.parent_number);
-        current = map.get(current.parent_number);
+        current=map.get(current.parent_number);
       }
     }
     return visible;
   }
 
   function hideCollapsedDescendants(visible,map) {
-    const result = new Set(visible);
-    const walk = number => {
-      const node = map.get(number);
-      if (!node) return;
-      for (const child of node.child_numbers || []) { result.delete(child); walk(child); }
+    const result=new Set(visible);
+    const walk=number=>{
+      const node=map.get(number);
+      if(!node) return;
+      for(const child of node.child_numbers||[]){
+        result.delete(child);
+        walk(child);
+      }
     };
-    for (const number of state.collapsed) walk(number);
+    for(const number of state.collapsed) walk(number);
     return result;
   }
 
-  function computeLayout(map, visible) {
-    const visibleEdges = (state.data.edges || []).filter(edge => visible.has(edge.source) && visible.has(edge.target));
-    const parentEdges = visibleEdges.filter(edge => edge.kind === 'parent');
-    const dependencyEdges = visibleEdges.filter(edge => edge.kind === 'dependency');
-    const incoming = new Map([...visible].map(number => [number,0]));
-    const children = new Map([...visible].map(number => [number,[]]));
-    for (const edge of parentEdges) {
+  function sortNumbers(numbers,map) {
+    return [...numbers].sort((a,b)=>{
+      const na=map.get(a), nb=map.get(b);
+      const pa=Number.isFinite(Number(na?.process))?Number(na.process):99999;
+      const pb=Number.isFinite(Number(nb?.process))?Number(nb.process):99999;
+      return pa-pb||a-b;
+    });
+  }
+
+  function buildForest(map,visible) {
+    const parentEdges=(state.data.edges||[]).filter(edge=>edge.kind==='parent'&&visible.has(edge.source)&&visible.has(edge.target));
+    const children=new Map([...visible].map(number=>[number,[]]));
+    const incoming=new Map([...visible].map(number=>[number,0]));
+    for(const edge of parentEdges){
+      if(!children.has(edge.source)||!incoming.has(edge.target)) continue;
+      children.get(edge.source).push(edge.target);
       incoming.set(edge.target,(incoming.get(edge.target)||0)+1);
-      children.get(edge.source)?.push(edge.target);
     }
+    for(const [number,list] of children) children.set(number,sortNumbers(new Set(list),map));
 
-    const roots = [...visible].filter(number => (incoming.get(number)||0) === 0).sort((a,b)=>a-b);
-    const depth = new Map();
-    const queue = roots.map(number => [number,0]);
-    while (queue.length) {
-      const [number,d] = queue.shift();
-      if ((depth.get(number) ?? -1) >= d) continue;
-      depth.set(number,d);
-      for (const child of children.get(number) || []) queue.push([child,d+1]);
-    }
-    for (const number of visible) if (!depth.has(number)) depth.set(number,0);
+    const roots=sortNumbers([...visible].filter(number=>(incoming.get(number)||0)===0),map);
+    const visited=new Set();
+    const orderedRoots=[];
 
-    const byDepth = new Map();
-    for (const number of visible) {
-      const d=depth.get(number)||0;
-      if(!byDepth.has(d)) byDepth.set(d,[]);
-      byDepth.get(d).push(number);
+    const mark=number=>{
+      if(visited.has(number)) return;
+      visited.add(number);
+      for(const child of children.get(number)||[]) mark(child);
+    };
+    for(const root of roots){
+      if(visited.has(root)) continue;
+      orderedRoots.push(root);
+      mark(root);
     }
-    for (const numbers of byDepth.values()) {
-      numbers.sort((a,b)=>{
-        const na=map.get(a), nb=map.get(b);
-        const pa=Number.isFinite(Number(na?.process))?Number(na.process):99999;
-        const pb=Number.isFinite(Number(nb?.process))?Number(nb.process):99999;
-        return pa-pb||a-b;
-      });
+    for(const number of sortNumbers(visible,map)){
+      if(visited.has(number)) continue;
+      orderedRoots.push(number);
+      mark(number);
     }
+    return {children,roots:orderedRoots,parentEdges};
+  }
 
-    const rootRank=new Map(roots.map((number,index)=>[number,index]));
-    const rootOf=new Map();
-    const rootQueue=roots.map(number=>number);
-    for(const root of roots) rootOf.set(root,root);
-    while(rootQueue.length){
-      const current=rootQueue.shift();
-      const root=rootOf.get(current)??current;
-      for(const child of children.get(current)||[]){
-        if(rootOf.has(child)) continue;
-        rootOf.set(child,root);
-        rootQueue.push(child);
+  function layoutComponent(root,children) {
+    const spanCache=new Map();
+    const visiting=new Set();
+
+    const subtreeSpan=number=>{
+      if(spanCache.has(number)) return spanCache.get(number);
+      if(visiting.has(number)) return NODE_H;
+      visiting.add(number);
+      const list=children.get(number)||[];
+      let span=NODE_H;
+      if(list.length){
+        const childSpans=list.map(child=>subtreeSpan(child));
+        span=Math.max(NODE_H,childSpans.reduce((sum,value)=>sum+value,0)+SIBLING_GAP*(childSpans.length-1));
       }
-    }
+      visiting.delete(number);
+      spanCache.set(number,span);
+      return span;
+    };
 
     const positions=new Map();
-    for(const [d,numbers] of [...byDepth.entries()].sort((a,b)=>a[0]-b[0])){
-      numbers.forEach((number,index)=>{
-        const root=rootOf.get(number)??number;
-        const componentRank=rootRank.get(root)??0;
-        const jitterX=((number*97)%181)-90;
-        const jitterY=((number*53)%73)-36;
-        const stagger=(componentRank%3)*58+(index%2)*28;
-        positions.set(number,{
-          x:MARGIN+d*BASE_X_GAP+jitterX+stagger,
-          y:MARGIN+index*BASE_Y_GAP+jitterY+(d%2)*62+Math.floor(componentRank/3)*52,
-        });
-      });
-    }
+    let maxDepth=0;
+    const placing=new Set();
 
-    relaxFreeLayout(positions,[...visible],parentEdges,dependencyEdges);
-    return normalizeFreeLayout(positions);
-  }
-
-  function relaxFreeLayout(positions,numbers,parentEdges,dependencyEdges) {
-    const count=numbers.length;
-    const iterations=count<=70?70:count<=160?48:30;
-    const maxMove=count<=120?22:16;
-
-    for(let iteration=0;iteration<iterations;iteration++){
-      const force=new Map(numbers.map(number=>[number,{x:0,y:0}]));
-
-      for(let i=0;i<numbers.length;i++){
-        const aNumber=numbers[i], a=positions.get(aNumber); if(!a) continue;
-        for(let j=i+1;j<numbers.length;j++){
-          const bNumber=numbers[j], b=positions.get(bNumber); if(!b) continue;
-          const dx=(b.x+NODE_W/2)-(a.x+NODE_W/2);
-          const dy=(b.y+NODE_H/2)-(a.y+NODE_H/2);
-          const overlapX=NODE_W+NODE_GAP_X-Math.abs(dx);
-          const overlapY=NODE_H+NODE_GAP_Y-Math.abs(dy);
-          if(overlapX<=0||overlapY<=0) continue;
-          const fa=force.get(aNumber), fb=force.get(bNumber);
-          if(overlapX<overlapY){
-            const sign=dx===0?((aNumber<bNumber)?1:-1):Math.sign(dx);
-            const amount=Math.min(28,overlapX*.28);
-            fa.x-=sign*amount; fb.x+=sign*amount;
-          }else{
-            const sign=dy===0?((aNumber<bNumber)?1:-1):Math.sign(dy);
-            const amount=Math.min(30,overlapY*.32);
-            fa.y-=sign*amount; fb.y+=sign*amount;
-          }
+    const place=(number,depth,top)=>{
+      if(placing.has(number)||positions.has(number)) return;
+      placing.add(number);
+      maxDepth=Math.max(maxDepth,depth);
+      const span=subtreeSpan(number);
+      positions.set(number,{x:depth*(NODE_W+LEVEL_GAP),y:top+(span-NODE_H)/2});
+      const list=children.get(number)||[];
+      if(list.length){
+        let childTop=top;
+        for(const child of list){
+          const childSpan=subtreeSpan(child);
+          place(child,depth+1,childTop);
+          childTop+=childSpan+SIBLING_GAP;
         }
       }
+      placing.delete(number);
+    };
 
-      for(const edge of parentEdges){
-        const source=positions.get(edge.source), target=positions.get(edge.target);
-        const fs=force.get(edge.source), ft=force.get(edge.target);
-        if(!source||!target||!fs||!ft) continue;
-        const dx=target.x-source.x;
-        const dy=(target.y+NODE_H/2)-(source.y+NODE_H/2);
-        const minForward=NODE_W+105;
-        if(dx<minForward){
-          const push=Math.min(34,(minForward-dx)*.17);
-          fs.x-=push*.36; ft.x+=push*.64;
-        }else if(dx>NODE_W+330){
-          const pull=Math.min(13,(dx-(NODE_W+330))*.025);
-          fs.x+=pull*.28; ft.x-=pull*.72;
-        }
-        if(Math.abs(dy)>310){
-          const pullY=Math.min(12,(Math.abs(dy)-310)*.028)*Math.sign(dy);
-          fs.y+=pullY*.25; ft.y-=pullY*.75;
-        }
-      }
-
-      for(const edge of dependencyEdges){
-        const source=positions.get(edge.source), target=positions.get(edge.target);
-        const fs=force.get(edge.source), ft=force.get(edge.target);
-        if(!source||!target||!fs||!ft) continue;
-        const dx=(target.x-source.x), dy=(target.y-source.y);
-        const distance=Math.max(1,Math.hypot(dx,dy));
-        if(distance>620){
-          const pull=Math.min(8,(distance-620)*.012);
-          fs.x+=dx/distance*pull*.35; fs.y+=dy/distance*pull*.35;
-          ft.x-=dx/distance*pull*.65; ft.y-=dy/distance*pull*.65;
-        }
-      }
-
-      const cooling=1-iteration/iterations*.42;
-      for(const number of numbers){
-        const p=positions.get(number), f=force.get(number); if(!p||!f) continue;
-        const fx=Math.max(-maxMove,Math.min(maxMove,f.x))*cooling;
-        const fy=Math.max(-maxMove,Math.min(maxMove,f.y))*cooling;
-        p.x+=fx; p.y+=fy;
-      }
-    }
-
-    for(let pass=0;pass<8;pass++){
-      for(const edge of parentEdges){
-        const source=positions.get(edge.source), target=positions.get(edge.target); if(!source||!target) continue;
-        const minimum=NODE_W+82;
-        if(target.x-source.x<minimum){
-          const correction=minimum-(target.x-source.x);
-          source.x-=correction*.28;
-          target.x+=correction*.72;
-        }
-      }
-      resolveLayoutOverlaps(positions,numbers);
-    }
-  }
-
-  function resolveLayoutOverlaps(positions,numbers) {
-    for(let i=0;i<numbers.length;i++){
-      const aNumber=numbers[i], a=positions.get(aNumber); if(!a) continue;
-      for(let j=i+1;j<numbers.length;j++){
-        const bNumber=numbers[j], b=positions.get(bNumber); if(!b) continue;
-        const dx=(b.x+NODE_W/2)-(a.x+NODE_W/2);
-        const dy=(b.y+NODE_H/2)-(a.y+NODE_H/2);
-        const overlapX=NODE_W+NODE_GAP_X-Math.abs(dx);
-        const overlapY=NODE_H+NODE_GAP_Y-Math.abs(dy);
-        if(overlapX<=0||overlapY<=0) continue;
-        if(overlapY<=overlapX){
-          const sign=dy===0?((aNumber<bNumber)?1:-1):Math.sign(dy);
-          const move=overlapY/2+2;
-          a.y-=sign*move; b.y+=sign*move;
-        }else{
-          const sign=dx===0?((aNumber<bNumber)?1:-1):Math.sign(dx);
-          const move=overlapX/2+2;
-          a.x-=sign*move; b.x+=sign*move;
-        }
-      }
-    }
-  }
-
-  function normalizeFreeLayout(positions) {
-    if(!positions.size) return {positions,width:MARGIN*2+NODE_W,height:MARGIN*2+NODE_H};
-    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-    for(const p of positions.values()){
-      minX=Math.min(minX,p.x); minY=Math.min(minY,p.y);
-      maxX=Math.max(maxX,p.x+NODE_W); maxY=Math.max(maxY,p.y+NODE_H);
-    }
-    const offsetX=MARGIN-minX, offsetY=MARGIN-minY;
-    for(const p of positions.values()){p.x+=offsetX;p.y+=offsetY;}
+    const height=subtreeSpan(root);
+    place(root,0,0);
     return {
-      positions,
-      width:Math.ceil(maxX-minX+MARGIN*2),
-      height:Math.ceil(maxY-minY+MARGIN*2),
+      root,positions,
+      width:(maxDepth+1)*NODE_W+maxDepth*LEVEL_GAP,
+      height:Math.max(NODE_H,height)
     };
   }
 
-  function obstacleRects(layout, visible, source, target) {
-    const rects=[];
-    for (const number of visible) {
-      if (number === source || number === target) continue;
-      const p=layout.positions.get(number); if(!p) continue;
-      rects.push({
-        left:p.x-OBSTACLE_PAD,
-        right:p.x+NODE_W+OBSTACLE_PAD,
-        top:p.y-OBSTACLE_PAD,
-        bottom:p.y+NODE_H+OBSTACLE_PAD,
+  function packComponents(components) {
+    const totalArea=components.reduce((sum,c)=>sum+(c.width+COMPONENT_GAP_X)*(c.height+COMPONENT_GAP_Y),0);
+    const targetWidth=Math.max(1050,Math.min(2500,Math.sqrt(Math.max(1,totalArea))*1.55));
+
+    let cursorX=MARGIN, cursorY=MARGIN, rowHeight=0, maxRight=MARGIN, maxBottom=MARGIN;
+    const positions=new Map();
+
+    for(const component of components){
+      if(cursorX>MARGIN&&cursorX+component.width>targetWidth){
+        cursorX=MARGIN;
+        cursorY+=rowHeight+COMPONENT_GAP_Y;
+        rowHeight=0;
+      }
+      for(const [number,p] of component.positions){
+        positions.set(number,{x:cursorX+p.x,y:cursorY+p.y});
+      }
+      maxRight=Math.max(maxRight,cursorX+component.width);
+      maxBottom=Math.max(maxBottom,cursorY+component.height);
+      cursorX+=component.width+COMPONENT_GAP_X;
+      rowHeight=Math.max(rowHeight,component.height);
+    }
+    return {
+      positions,
+      width:Math.ceil(maxRight+MARGIN),
+      height:Math.ceil(maxBottom+MARGIN)
+    };
+  }
+
+  function computeLayout(map,visible) {
+    const forest=buildForest(map,visible);
+    const components=forest.roots.map(root=>layoutComponent(root,forest.children));
+    const packed=packComponents(components);
+    return {...packed,children:forest.children,parentEdges:forest.parentEdges};
+  }
+
+  function renderGraph() {
+    if(!state.data) return;
+    const map=nodeMap();
+    let visible=filteredVisibleSet(map);
+    visible=hideCollapsedDescendants(visible,map);
+    const layout=computeLayout(map,visible);
+
+    state.layout=layout;
+    state.visible=visible;
+    state.nodeElements=new Map();
+
+    world.style.width=`${layout.width}px`;
+    world.style.height=`${layout.height}px`;
+    edgeSvg.setAttribute('width',layout.width);
+    edgeSvg.setAttribute('height',layout.height);
+    edgeSvg.setAttribute('viewBox',`0 0 ${layout.width} ${layout.height}`);
+
+    nodeLayer.innerHTML='';
+    for(const number of visible){
+      const node=map.get(number), pos=layout.positions.get(number);
+      if(!node||!pos) continue;
+      const el=document.createElement('div');
+      el.className='node'+(state.selected===number?' selected':'');
+      el.dataset.number=String(number);
+      el.dataset.status=node.status||'';
+      el.dataset.issueState=node.state||'';
+      el.style.left=`${pos.x}px`;
+      el.style.top=`${pos.y}px`;
+
+      const status=node.status||'Project未設定';
+      const level=node.issue_level||'未分類';
+      const closedBadge=node.state==='CLOSED'?'<span class="badge">Closed</span>':'';
+      el.innerHTML=`<div class="number">#${node.number}</div><div class="title"></div><div class="meta"><span class="badge">${escapeHtml(status)}</span><span class="badge">${escapeHtml(level)}</span>${closedBadge}</div>`;
+      el.querySelector('.title').textContent=node.title;
+      el.addEventListener('click',()=>selectNode(node.number));
+
+      if((node.child_numbers||[]).some(child=>visible.has(child))){
+        const button=document.createElement('button');
+        button.type='button';
+        button.className='collapse';
+        button.textContent=state.collapsed.has(number)?'+':'−';
+        button.title='子Issueを折りたたむ';
+        button.addEventListener('click',event=>{
+          event.stopPropagation();
+          state.collapsed.has(number)?state.collapsed.delete(number):state.collapsed.add(number);
+          renderGraph();
+        });
+        el.appendChild(button);
+      }
+      nodeLayer.appendChild(el);
+      state.nodeElements.set(number,el);
+    }
+
+    drawEdges();
+    applyTransform();
+    if(state.selected!==null&&map.has(state.selected)) renderDetails(map.get(state.selected),map);
+  }
+
+  function measuredRects() {
+    const rects=new Map();
+    for(const [number,el] of state.nodeElements){
+      rects.set(number,{
+        left:el.offsetLeft,
+        top:el.offsetTop,
+        right:el.offsetLeft+el.offsetWidth,
+        bottom:el.offsetTop+el.offsetHeight,
+        width:el.offsetWidth,
+        height:el.offsetHeight,
+        cx:el.offsetLeft+el.offsetWidth/2,
+        cy:el.offsetTop+el.offsetHeight/2
       });
     }
     return rects;
   }
 
-  function pointInsideRect(point, rect) {
-    return point.x > rect.left && point.x < rect.right && point.y > rect.top && point.y < rect.bottom;
+  function clearRect(rect,pad=ROUTE_CLEARANCE) {
+    return {left:rect.left-pad,right:rect.right+pad,top:rect.top-pad,bottom:rect.bottom+pad};
   }
 
   function segmentHitsRect(a,b,rect) {
-    if (a.x === b.x) {
-      if (a.x <= rect.left || a.x >= rect.right) return false;
+    if(Math.abs(a.x-b.x)<0.001){
+      if(a.x<=rect.left||a.x>=rect.right) return false;
       const lo=Math.min(a.y,b.y), hi=Math.max(a.y,b.y);
-      return hi > rect.top && lo < rect.bottom;
+      return hi>rect.top&&lo<rect.bottom;
     }
-    if (a.y === b.y) {
-      if (a.y <= rect.top || a.y >= rect.bottom) return false;
+    if(Math.abs(a.y-b.y)<0.001){
+      if(a.y<=rect.top||a.y>=rect.bottom) return false;
       const lo=Math.min(a.x,b.x), hi=Math.max(a.x,b.x);
-      return hi > rect.left && lo < rect.right;
+      return hi>rect.left&&lo<rect.right;
     }
     return true;
   }
 
-  function segmentClear(a,b,rects) {
-    return !rects.some(rect=>segmentHitsRect(a,b,rect));
-  }
-
-  function uniqueSorted(values) {
-    return [...new Set(values.map(value=>Math.round(value*100)/100))].sort((a,b)=>a-b);
-  }
-
-  function buildRoutingLattice(layout, visible, source, target, start, goal) {
-    const rects=obstacleRects(layout,visible,source,target);
-    const xs=[start.x,goal.x,ROUTE_MARGIN,layout.width-ROUTE_MARGIN];
-    const ys=[start.y,goal.y,ROUTE_MARGIN,layout.height-ROUTE_MARGIN];
-    for (const rect of rects) {
-      xs.push(rect.left,rect.right);
-      ys.push(rect.top,rect.bottom);
-    }
-    return {xs:uniqueSorted(xs),ys:uniqueSorted(ys),rects};
-  }
-
-  function pointKey(ix,iy,dir) { return `${ix}:${iy}:${dir}`; }
-
-  function routeEdgeAvoidingNodes(edge,layout,visible) {
-    const a=layout.positions.get(edge.source), b=layout.positions.get(edge.target);
-    if(!a||!b) return null;
-    const sourcePort={x:a.x+NODE_W,y:a.y+NODE_H/2};
-    const targetPort={x:b.x,y:b.y+NODE_H/2};
-    const start={x:sourcePort.x+PORT_LEAD,y:sourcePort.y};
-    const goal={x:targetPort.x-PORT_LEAD,y:targetPort.y};
-    const lattice=buildRoutingLattice(layout,visible,edge.source,edge.target,start,goal);
-    const sx=lattice.xs.indexOf(start.x), sy=lattice.ys.indexOf(start.y);
-    const gx=lattice.xs.indexOf(goal.x), gy=lattice.ys.indexOf(goal.y);
-    if(sx<0||sy<0||gx<0||gy<0) return null;
-
-    const blocked=(ix,iy)=>lattice.rects.some(rect=>pointInsideRect({x:lattice.xs[ix],y:lattice.ys[iy]},rect));
-    const open=[];
-    const best=new Map();
-    const parent=new Map();
-    const directions=[[1,0,'h'],[-1,0,'h'],[0,1,'v'],[0,-1,'v']];
-    const heuristic=(ix,iy)=>Math.abs(lattice.xs[ix]-goal.x)+Math.abs(lattice.ys[iy]-goal.y);
-
-    const startKey=pointKey(sx,sy,'s');
-    open.push({ix:sx,iy:sy,dir:'s',g:0,f:heuristic(sx,sy),key:startKey});
-    best.set(startKey,0);
-    let endState=null;
-
-    while(open.length) {
-      open.sort((p,q)=>p.f-q.f);
-      const current=open.shift();
-      if(current.ix===gx&&current.iy===gy){endState=current;break;}
-      const currentPoint={x:lattice.xs[current.ix],y:lattice.ys[current.iy]};
-      for(const [dx,dy,dir] of directions){
-        const nx=current.ix+dx, ny=current.iy+dy;
-        if(nx<0||ny<0||nx>=lattice.xs.length||ny>=lattice.ys.length) continue;
-        if(blocked(nx,ny) && !(nx===gx&&ny===gy)) continue;
-        const nextPoint={x:lattice.xs[nx],y:lattice.ys[ny]};
-        if(!segmentClear(currentPoint,nextPoint,lattice.rects)) continue;
-        const distance=Math.abs(nextPoint.x-currentPoint.x)+Math.abs(nextPoint.y-currentPoint.y);
-        const turnPenalty=current.dir!=='s'&&current.dir!==dir?22:0;
-        const ng=current.g+distance+turnPenalty;
-        const key=pointKey(nx,ny,dir);
-        if(ng>=(best.get(key)??Infinity)) continue;
-        best.set(key,ng);
-        parent.set(key,current.key);
-        open.push({ix:nx,iy:ny,dir,g:ng,f:ng+heuristic(nx,ny),key});
+  function pathIsClear(points,obstacles) {
+    for(let i=1;i<points.length;i++){
+      for(const rect of obstacles){
+        if(segmentHitsRect(points[i-1],points[i],rect)) return false;
       }
     }
-    if(!endState) return null;
-
-    const keyed=new Map();
-    for(const [key] of best){
-      const [ix,iy,dir]=key.split(':');
-      keyed.set(key,{ix:Number(ix),iy:Number(iy),dir});
-    }
-    const route=[];
-    let key=endState.key;
-    while(key){
-      const item=keyed.get(key);
-      if(!item) break;
-      route.push({x:lattice.xs[item.ix],y:lattice.ys[item.iy]});
-      key=parent.get(key);
-    }
-    route.reverse();
-    const points=[sourcePort,start,...route.slice(1,-1),goal,targetPort];
-    return simplifyRoute(points);
+    return true;
   }
 
   function simplifyRoute(points) {
@@ -557,7 +477,155 @@
     return result;
   }
 
-  function roundedOrthogonalPath(points,radius=9) {
+  function parentBusRoute(edge,rects) {
+    const source=rects.get(edge.source), target=rects.get(edge.target);
+    if(!source||!target) return null;
+    if(target.left<=source.right+40) return null;
+    const sourcePort={x:source.right,y:source.cy};
+    const targetPort={x:target.left,y:target.cy};
+    const busX=source.right+(target.left-source.right)*0.46;
+    return simplifyRoute([
+      sourcePort,
+      {x:busX,y:source.cy},
+      {x:busX,y:target.cy},
+      targetPort
+    ]);
+  }
+
+  function pointInsideAny(point,obstacles) {
+    return obstacles.some(rect=>point.x>rect.left&&point.x<rect.right&&point.y>rect.top&&point.y<rect.bottom);
+  }
+
+  function uniqueSorted(values) {
+    return [...new Set(values.map(value=>Math.round(value*100)/100))].sort((a,b)=>a-b);
+  }
+
+  function routeByVisibility(start,goal,obstacles,width,height) {
+    const xs=[start.x,goal.x,MARGIN/2,width-MARGIN/2];
+    const ys=[start.y,goal.y,MARGIN/2,height-MARGIN/2];
+    for(const rect of obstacles){
+      xs.push(rect.left,rect.right);
+      ys.push(rect.top,rect.bottom);
+    }
+    const xValues=uniqueSorted(xs);
+    const yValues=uniqueSorted(ys);
+    const candidates=[];
+    const indexByKey=new Map();
+
+    for(let xi=0;xi<xValues.length;xi++){
+      for(let yi=0;yi<yValues.length;yi++){
+        const point={x:xValues[xi],y:yValues[yi],xi,yi};
+        if(pointInsideAny(point,obstacles)) continue;
+        const key=`${xi}:${yi}`;
+        indexByKey.set(key,candidates.length);
+        candidates.push(point);
+      }
+    }
+
+    const startXi=xValues.indexOf(start.x), startYi=yValues.indexOf(start.y);
+    const goalXi=xValues.indexOf(goal.x), goalYi=yValues.indexOf(goal.y);
+    const startIndex=indexByKey.get(`${startXi}:${startYi}`);
+    const goalIndex=indexByKey.get(`${goalXi}:${goalYi}`);
+    if(startIndex===undefined||goalIndex===undefined) return null;
+
+    const adjacency=Array.from({length:candidates.length},()=>[]);
+    const rows=new Map(), cols=new Map();
+    candidates.forEach((point,index)=>{
+      if(!rows.has(point.yi)) rows.set(point.yi,[]);
+      if(!cols.has(point.xi)) cols.set(point.xi,[]);
+      rows.get(point.yi).push(index);
+      cols.get(point.xi).push(index);
+    });
+
+    const connectList=(indices,axis)=>{
+      indices.sort((a,b)=>axis==='x'?candidates[a].x-candidates[b].x:candidates[a].y-candidates[b].y);
+      for(let i=1;i<indices.length;i++){
+        const a=indices[i-1], b=indices[i];
+        const pa=candidates[a], pb=candidates[b];
+        if(!pathIsClear([pa,pb],obstacles)) continue;
+        const length=Math.abs(pa.x-pb.x)+Math.abs(pa.y-pb.y);
+        const direction=axis==='x'?'h':'v';
+        adjacency[a].push({to:b,length,direction});
+        adjacency[b].push({to:a,length,direction});
+      }
+    };
+    for(const indices of rows.values()) connectList(indices,'x');
+    for(const indices of cols.values()) connectList(indices,'y');
+
+    const keyFor=(index,direction)=>`${index}:${direction}`;
+    const open=[{index:startIndex,direction:'s',g:0,f:0,key:keyFor(startIndex,'s')}];
+    const best=new Map([[keyFor(startIndex,'s'),0]]);
+    const parent=new Map();
+    let end=null;
+
+    while(open.length){
+      open.sort((a,b)=>a.f-b.f);
+      const current=open.shift();
+      if(current.index===goalIndex){ end=current; break; }
+      for(const edge of adjacency[current.index]){
+        const bend=current.direction!=='s'&&current.direction!==edge.direction?BEND_PENALTY:0;
+        const g=current.g+edge.length+bend;
+        const key=keyFor(edge.to,edge.direction);
+        if(g>=(best.get(key)??Infinity)) continue;
+        best.set(key,g);
+        parent.set(key,current.key);
+        const point=candidates[edge.to];
+        const heuristic=Math.abs(point.x-goal.x)+Math.abs(point.y-goal.y);
+        open.push({index:edge.to,direction:edge.direction,g,f:g+heuristic,key});
+      }
+    }
+    if(!end) return null;
+
+    const points=[];
+    let key=end.key;
+    while(key){
+      const [indexText]=key.split(':');
+      points.push(candidates[Number(indexText)]);
+      key=parent.get(key);
+    }
+    points.reverse();
+    return simplifyRoute(points.map(({x,y})=>({x,y})));
+  }
+
+  function dependencyPorts(source,target) {
+    const horizontal=target.cx>=source.cx;
+    const vertical=target.cy>=source.cy;
+    return [
+      [{x:horizontal?source.right:source.left,y:source.cy},{x:horizontal?target.left:target.right,y:target.cy}],
+      [{x:source.cx,y:vertical?source.bottom:source.top},{x:target.cx,y:vertical?target.top:target.bottom}],
+      [{x:horizontal?source.left:source.right,y:source.cy},{x:horizontal?target.right:target.left,y:target.cy}],
+      [{x:source.cx,y:vertical?source.top:source.bottom},{x:target.cx,y:vertical?target.bottom:target.top}],
+    ];
+  }
+
+  function routeDependency(edge,rects) {
+    const source=rects.get(edge.source), target=rects.get(edge.target);
+    if(!source||!target) return null;
+    const obstacles=[];
+    for(const [number,rect] of rects){
+      if(number===edge.source||number===edge.target) continue;
+      obstacles.push(clearRect(rect));
+    }
+
+    let bestRoute=null, bestCost=Infinity;
+    for(const [start,goal] of dependencyPorts(source,target)){
+      const route=routeByVisibility(start,goal,obstacles,state.layout.width,state.layout.height);
+      if(!route) continue;
+      const cost=route.slice(1).reduce((sum,p,index)=>sum+Math.abs(p.x-route[index].x)+Math.abs(p.y-route[index].y),0);
+      if(cost<bestCost){ bestCost=cost; bestRoute=route; }
+    }
+    if(bestRoute) return bestRoute;
+
+    const topY=MARGIN/3;
+    const bottomY=state.layout.height-MARGIN/3;
+    const alternatives=[
+      [{x:source.cx,y:source.top},{x:source.cx,y:topY},{x:target.cx,y:topY},{x:target.cx,y:target.top}],
+      [{x:source.cx,y:source.bottom},{x:source.cx,y:bottomY},{x:target.cx,y:bottomY},{x:target.cx,y:target.bottom}],
+    ];
+    return alternatives.find(points=>pathIsClear(points,obstacles))||null;
+  }
+
+  function roundedOrthogonalPath(points,radius=8) {
     if(!points?.length) return '';
     if(points.length===1) return `M ${points[0].x} ${points[0].y}`;
     let d=`M ${points[0].x} ${points[0].y}`;
@@ -566,89 +634,135 @@
       const inLen=Math.abs(cur.x-prev.x)+Math.abs(cur.y-prev.y);
       const outLen=Math.abs(next.x-cur.x)+Math.abs(next.y-cur.y);
       const r=Math.min(radius,inLen/2,outLen/2);
-      const before={
-        x:cur.x+(prev.x-cur.x)*(r/inLen||0),
-        y:cur.y+(prev.y-cur.y)*(r/inLen||0),
-      };
-      const after={
-        x:cur.x+(next.x-cur.x)*(r/outLen||0),
-        y:cur.y+(next.y-cur.y)*(r/outLen||0),
-      };
+      const before={x:cur.x+(prev.x-cur.x)*(r/(inLen||1)),y:cur.y+(prev.y-cur.y)*(r/(inLen||1))};
+      const after={x:cur.x+(next.x-cur.x)*(r/(outLen||1)),y:cur.y+(next.y-cur.y)*(r/(outLen||1))};
       d+=` L ${before.x} ${before.y} Q ${cur.x} ${cur.y} ${after.x} ${after.y}`;
     }
     const last=points[points.length-1];
     return d+` L ${last.x} ${last.y}`;
   }
 
-  function fallbackBezier(edge,layout) {
-    const a=layout.positions.get(edge.source), b=layout.positions.get(edge.target); if(!a||!b)return '';
-    const sx=a.x+NODE_W, sy=a.y+NODE_H/2, tx=b.x, ty=b.y+NODE_H/2, dx=Math.max(55,Math.abs(tx-sx)*.48);
-    const c1x=sx+(tx>=sx?dx:-dx), c2x=tx-(tx>=sx?dx:-dx);
-    return `M ${sx} ${sy} C ${c1x} ${sy}, ${c2x} ${ty}, ${tx} ${ty}`;
-  }
+  function drawEdges() {
+    if(!state.data||!state.layout) return;
+    const rects=measuredRects();
+    edgeSvg.innerHTML=`<defs>
+      <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--edge)"/></marker>
+      <marker id="arrowFocus" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="var(--edge)"/></marker>
+    </defs>`;
 
-  function render() {
-    if (!state.data) return;
-    const map = nodeMap();
-    let visible = filteredVisibleSet(map);
-    visible = hideCollapsedDescendants(visible,map);
-    const layout = computeLayout(map,visible);
-    world.style.width = `${layout.width}px`; world.style.height = `${layout.height}px`;
-    edgeSvg.setAttribute('width',layout.width); edgeSvg.setAttribute('height',layout.height); edgeSvg.setAttribute('viewBox',`0 0 ${layout.width} ${layout.height}`);
-    edgeSvg.innerHTML = `<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--edge)"/></marker><marker id="arrowFocus" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="var(--edge)"/></marker></defs>`;
-    nodeLayer.innerHTML = '';
+    const edges=(state.data.edges||[]).filter(edge=>state.visible.has(edge.source)&&state.visible.has(edge.target));
+    const ordered=[...edges.filter(edge=>edge.source!==state.selected),...edges.filter(edge=>edge.source===state.selected)];
 
-    for (const edge of state.data.edges || []) {
-      if (!visible.has(edge.source) || !visible.has(edge.target)) continue;
-      const points=routeEdgeAvoidingNodes(edge,layout,visible);
-      const path=document.createElementNS('http://www.w3.org/2000/svg','path');
-      path.setAttribute('d',points?roundedOrthogonalPath(points):fallbackBezier(edge,layout));
+    for(const edge of ordered){
+      let route=edge.kind==='parent'?parentBusRoute(edge,rects):routeDependency(edge,rects);
+      if(!route&&edge.kind==='parent') route=routeDependency(edge,rects);
+      if(!route) continue;
+
       const focused=state.selected!==null&&edge.source===state.selected;
       const dimmed=state.selected!==null&&!focused;
+      const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('d',roundedOrthogonalPath(route));
       path.setAttribute('class',`edge ${edge.kind==='dependency'?'dependency':'parent'}${focused?' focused':''}${dimmed?' dimmed':''}`);
       path.setAttribute('marker-end',focused?'url(#arrowFocus)':'url(#arrow)');
       edgeSvg.appendChild(path);
     }
-
-    for (const number of visible) {
-      const node=map.get(number), pos=layout.positions.get(number); if(!node||!pos) continue;
-      const el=document.createElement('div'); el.className='node'+(state.selected===number?' selected':'');
-      el.dataset.status=node.status || ''; el.dataset.issueState=node.state || ''; el.style.left=`${pos.x}px`; el.style.top=`${pos.y}px`;
-      const status=node.status || 'Project未設定', level=node.issue_level || '未分類';
-      const closedBadge=node.state==='CLOSED'?'<span class="badge">Closed</span>':'';
-      el.innerHTML=`<div class="number">#${node.number}</div><div class="title"></div><div class="meta"><span class="badge">${escapeHtml(status)}</span><span class="badge">${escapeHtml(level)}</span>${closedBadge}</div>`;
-      el.querySelector('.title').textContent=node.title;
-      el.addEventListener('click',()=>selectNode(node.number));
-      if((node.child_numbers||[]).length){
-        const btn=document.createElement('button'); btn.type='button'; btn.className='collapse'; btn.textContent=state.collapsed.has(number)?'+':'−'; btn.title='子Issueを折りたたむ';
-        btn.addEventListener('click',event=>{event.stopPropagation(); state.collapsed.has(number)?state.collapsed.delete(number):state.collapsed.add(number); render();}); el.appendChild(btn);
-      }
-      nodeLayer.appendChild(el);
-    }
-    applyTransform();
-    if (state.selected && map.has(state.selected)) renderDetails(map.get(state.selected),map);
   }
 
-  function selectNode(number) { state.selected=Number(number); render(); const map=nodeMap(); const node=map.get(state.selected); if(node) renderDetails(node,map); }
-  function relationChips(numbers,map) { if(!numbers?.length) return '<span>なし</span>'; return `<div class="relations">${numbers.map(n=>`<button class="chip" data-jump="${n}">#${n}${map.get(n)?' '+escapeHtml(shortTitle(map.get(n).title)):''}</button>`).join('')}</div>`; }
+  function selectNode(number) {
+    state.selected=Number(number);
+    for(const [nodeNumber,el] of state.nodeElements) el.classList.toggle('selected',nodeNumber===state.selected);
+    drawEdges();
+    const map=nodeMap(), node=map.get(state.selected);
+    if(node) renderDetails(node,map);
+  }
+
+  function relationChips(numbers,map) {
+    if(!numbers?.length) return '<span>なし</span>';
+    return `<div class="relations">${numbers.map(number=>`<button class="chip" data-jump="${number}">#${number}${map.get(number)?' '+escapeHtml(shortTitle(map.get(number).title)):''}</button>`).join('')}</div>`;
+  }
+
   function renderDetails(node,map) {
-    details.innerHTML=`<h2>#${node.number} ${escapeHtml(node.title)}</h2><div class="statusline"><span class="badge">${escapeHtml(node.status||'Project未設定')}</span><span class="badge">${escapeHtml(node.issue_level||'未分類')}</span></div><dl class="kv"><dt>Issue state</dt><dd>${escapeHtml(node.state)}</dd><dt>作業種別</dt><dd>${escapeHtml(node.work_type||'—')}</dd><dt>領域</dt><dd>${escapeHtml(node.area||'—')}</dd><dt>優先度</dt><dd>${escapeHtml(node.priority||'—')}</dd><dt>工程</dt><dd>${escapeHtml(String(node.process??'—'))}</dd><dt>Start date</dt><dd>${escapeHtml(node.start_date||'—')}</dd><dt>Target date</dt><dd>${escapeHtml(node.target_date||'—')}</dd><dt>親Issue</dt><dd>${relationChips(node.parent_number?[node.parent_number]:[],map)}</dd><dt>子Issue</dt><dd>${relationChips(node.child_numbers,map)}</dd><dt>依存元</dt><dd>${relationChips(node.dependency_numbers,map)}</dd><dt>関連PR</dt><dd>${prChips(node.related_pr_numbers)}</dd></dl><a class="open-link" href="${escapeAttr(node.url)}" target="_blank" rel="noreferrer">GitHubでIssueを開く ↗</a><div class="summary">${escapeHtml(node.summary||'')}</div>`;
+    details.innerHTML=`<h2>#${node.number} ${escapeHtml(node.title)}</h2>
+      <div class="statusline"><span class="badge">${escapeHtml(node.status||'Project未設定')}</span><span class="badge">${escapeHtml(node.issue_level||'未分類')}</span>${node.state==='CLOSED'?'<span class="badge">Closed</span>':''}</div>
+      <dl class="kv">
+        <dt>Issue state</dt><dd>${escapeHtml(node.state)}</dd>
+        <dt>作業種別</dt><dd>${escapeHtml(node.work_type||'—')}</dd>
+        <dt>領域</dt><dd>${escapeHtml(node.area||'—')}</dd>
+        <dt>優先度</dt><dd>${escapeHtml(node.priority||'—')}</dd>
+        <dt>工程</dt><dd>${escapeHtml(String(node.process??'—'))}</dd>
+        <dt>Start date</dt><dd>${escapeHtml(node.start_date||'—')}</dd>
+        <dt>Target date</dt><dd>${escapeHtml(node.target_date||'—')}</dd>
+        <dt>親Issue</dt><dd>${relationChips(node.parent_number?[node.parent_number]:[],map)}</dd>
+        <dt>子Issue</dt><dd>${relationChips(node.child_numbers,map)}</dd>
+        <dt>依存元</dt><dd>${relationChips(node.dependency_numbers,map)}</dd>
+        <dt>関連PR</dt><dd>${prChips(node.related_pr_numbers)}</dd>
+      </dl>
+      <a class="open-link" href="${escapeAttr(node.url)}" target="_blank" rel="noreferrer">GitHubでIssueを開く ↗</a>
+      <div class="summary">${escapeHtml(node.summary||'')}</div>`;
     details.querySelectorAll('[data-jump]').forEach(button=>button.addEventListener('click',()=>selectNode(button.dataset.jump)));
   }
-  function prChips(numbers){ if(!numbers?.length)return '<span>なし</span>'; const [owner,repo]=state.data.repository.split('/'); return `<div class="relations">${numbers.map(n=>`<a class="chip" href="https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pull/${n}" target="_blank" rel="noreferrer">PR #${n}</a>`).join('')}</div>`; }
-  function shortTitle(t){ return t.length>24?t.slice(0,23)+'…':t; }
-  function escapeHtml(value){ return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  function escapeAttr(value){ return escapeHtml(value); }
-  function applyTransform(){ world.style.transform=`translate(${state.tx}px,${state.ty}px) scale(${state.scale})`; }
-  function zoomAt(factor,cx=viewport.clientWidth/2,cy=viewport.clientHeight/2){ const old=state.scale; const next=Math.max(.25,Math.min(2.2,old*factor)); const wx=(cx-state.tx)/old, wy=(cy-state.ty)/old; state.scale=next; state.tx=cx-wx*next; state.ty=cy-wy*next; applyTransform(); }
-  function fitToView(){ if(!world.offsetWidth||!world.offsetHeight)return; const pad=36; const sx=(viewport.clientWidth-pad*2)/world.offsetWidth, sy=(viewport.clientHeight-pad*2)/world.offsetHeight; state.scale=Math.max(.25,Math.min(1,Math.min(sx,sy))); state.tx=(viewport.clientWidth-world.offsetWidth*state.scale)/2; state.ty=(viewport.clientHeight-world.offsetHeight*state.scale)/2; applyTransform(); }
 
-  viewport.addEventListener('pointerdown',e=>{ if(e.target.closest('.node'))return; state.dragging=true; state.lastX=e.clientX; state.lastY=e.clientY; viewport.classList.add('dragging'); viewport.setPointerCapture(e.pointerId); });
-  viewport.addEventListener('pointermove',e=>{ if(!state.dragging)return; state.tx+=e.clientX-state.lastX; state.ty+=e.clientY-state.lastY; state.lastX=e.clientX; state.lastY=e.clientY; applyTransform(); });
-  viewport.addEventListener('pointerup',()=>{state.dragging=false; viewport.classList.remove('dragging');});
-  viewport.addEventListener('wheel',e=>{e.preventDefault(); const r=viewport.getBoundingClientRect(); zoomAt(e.deltaY<0?1.12:.89,e.clientX-r.left,e.clientY-r.top);},{passive:false});
-  document.getElementById('zoomIn').addEventListener('click',()=>zoomAt(1.18)); document.getElementById('zoomOut').addEventListener('click',()=>zoomAt(.84)); document.getElementById('reset').addEventListener('click',fitToView); document.getElementById('reload').addEventListener('click',load);
-  search.addEventListener('input',()=>{render(); fitToView();}); statusFilter.addEventListener('change',()=>{render(); fitToView();}); includeClosed.addEventListener('change',load); window.addEventListener('resize',()=>applyTransform());
+  function prChips(numbers) {
+    if(!numbers?.length) return '<span>なし</span>';
+    const [owner,repo]=state.data.repository.split('/');
+    return `<div class="relations">${numbers.map(number=>`<a class="chip" href="https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pull/${number}" target="_blank" rel="noreferrer">PR #${number}</a>`).join('')}</div>`;
+  }
+
+  function shortTitle(text) { return text.length>24?text.slice(0,23)+'…':text; }
+  function escapeHtml(value) { return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])); }
+  function escapeAttr(value) { return escapeHtml(value); }
+
+  function applyTransform() { world.style.transform=`translate(${state.tx}px,${state.ty}px) scale(${state.scale})`; }
+  function zoomAt(factor,cx=viewport.clientWidth/2,cy=viewport.clientHeight/2) {
+    const old=state.scale;
+    const next=Math.max(.25,Math.min(2.2,old*factor));
+    const wx=(cx-state.tx)/old, wy=(cy-state.ty)/old;
+    state.scale=next;
+    state.tx=cx-wx*next;
+    state.ty=cy-wy*next;
+    applyTransform();
+  }
+  function fitToView() {
+    if(!world.offsetWidth||!world.offsetHeight) return;
+    const pad=36;
+    const sx=(viewport.clientWidth-pad*2)/world.offsetWidth;
+    const sy=(viewport.clientHeight-pad*2)/world.offsetHeight;
+    state.scale=Math.max(.25,Math.min(1,Math.min(sx,sy)));
+    state.tx=(viewport.clientWidth-world.offsetWidth*state.scale)/2;
+    state.ty=(viewport.clientHeight-world.offsetHeight*state.scale)/2;
+    applyTransform();
+  }
+
+  viewport.addEventListener('pointerdown',event=>{
+    if(event.target.closest('.node')) return;
+    state.dragging=true;
+    state.lastX=event.clientX; state.lastY=event.clientY;
+    viewport.classList.add('dragging');
+    viewport.setPointerCapture(event.pointerId);
+  });
+  viewport.addEventListener('pointermove',event=>{
+    if(!state.dragging) return;
+    state.tx+=event.clientX-state.lastX;
+    state.ty+=event.clientY-state.lastY;
+    state.lastX=event.clientX; state.lastY=event.clientY;
+    applyTransform();
+  });
+  viewport.addEventListener('pointerup',()=>{ state.dragging=false; viewport.classList.remove('dragging'); });
+  viewport.addEventListener('wheel',event=>{
+    event.preventDefault();
+    const rect=viewport.getBoundingClientRect();
+    zoomAt(event.deltaY<0?1.12:.89,event.clientX-rect.left,event.clientY-rect.top);
+  },{passive:false});
+
+  document.getElementById('zoomIn').addEventListener('click',()=>zoomAt(1.18));
+  document.getElementById('zoomOut').addEventListener('click',()=>zoomAt(.84));
+  document.getElementById('reset').addEventListener('click',fitToView);
+  document.getElementById('reload').addEventListener('click',load);
+  search.addEventListener('input',()=>{ renderGraph(); fitToView(); });
+  statusFilter.addEventListener('change',()=>{ renderGraph(); fitToView(); });
+  includeClosed.addEventListener('change',load);
+  window.addEventListener('resize',()=>applyTransform());
+
   load();
 })();
 </script>
