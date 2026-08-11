@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import yaml
+
 from gui.yura_issue_graph.config import IssueGraphConfig
 from gui.yura_issue_graph.github_client import IssueGraphService
 from gui.yura_issue_graph.models import (
@@ -120,3 +124,33 @@ def test_project_scope_keeps_related_context() -> None:
     unrelated = IssueNode(99, "unrelated", "", "u", "OPEN")
     scoped = IssueGraphService._scope_to_project([parent, work, dependency, unrelated], {2})
     assert {node.number for node in scoped} == {1, 2, 3}
+
+
+def test_render_blueprint_preserves_existing_services_and_adds_issue_graph() -> None:
+    blueprint = yaml.safe_load(Path("render.yaml").read_text(encoding="utf-8"))
+    services = {service["name"]: service for service in blueprint["services"]}
+
+    assert {
+        "yura-inner-state-visualizer",
+        "yura-configuration-harbor",
+        "yura-avatar-runtime-lab",
+        "yura-issue-graph",
+    }.issubset(services)
+
+    issue_graph = services["yura-issue-graph"]
+    assert issue_graph["type"] == "web"
+    assert issue_graph["runtime"] == "python"
+    assert issue_graph["plan"] == "free"
+    assert issue_graph["branch"] == "feature/issue-graph-dashboard"
+    assert issue_graph["healthCheckPath"] == "/api/health"
+    assert issue_graph["autoDeployTrigger"] == "commit"
+    assert "gui.yura_issue_graph.server:app" in issue_graph["startCommand"]
+    assert "$PORT" in issue_graph["startCommand"]
+
+    env_vars = {item["key"]: item for item in issue_graph["envVars"]}
+    token = env_vars["GITHUB_TOKEN"]
+    assert token["sync"] is False
+    assert "value" not in token
+    assert env_vars["YURA_ISSUE_GRAPH_OWNER"]["value"] == "ktan514"
+    assert env_vars["YURA_ISSUE_GRAPH_REPOSITORY"]["value"] == "ai-liver-yura"
+    assert env_vars["YURA_ISSUE_GRAPH_PROJECT_NUMBER"]["value"] == "6"
