@@ -55,6 +55,41 @@ class _ValidatorModel:
 
     async def validate_character_response(self, activity: Activity) -> str:
         self.activities.append(activity)
+        if activity.context.get("llm_role") == "character_realization_observer":
+            if self.predicate_preserved:
+                return json.dumps(
+                    {
+                        "observations": [
+                            {
+                                "realization_id": "proposition:0:current_desire",
+                                "predicate_realized": True,
+                                "observed_state": "present",
+                                "observed_certainty": "medium",
+                                "predicate_evidence_spans": ["何かしたい気持ち"],
+                                "state_evidence_spans": ["気持ちはある"],
+                                "certainty_evidence_spans": ["と思う"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+            return json.dumps(
+                {
+                    "observations": [
+                        {
+                            "realization_id": "proposition:0:current_desire",
+                            "predicate_realized": False,
+                            "observed_state": "present",
+                            "observed_certainty": "high",
+                            "predicate_evidence_spans": [],
+                            "state_evidence_spans": ["感じはある"],
+                            "certainty_evidence_spans": [],
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            )
+
         if self.predicate_preserved:
             predicate_spans = ["何かしたい気持ち"]
             certainty_preserved = True
@@ -224,8 +259,19 @@ async def test_current_desire_medium_certainty_flows_through_semantic_character_
     )
     result = await validator.validate(source, context, response)
 
-    assert len(validator_model.activities) == 1
-    validator_prompt = validator_model.activities[0].context["plugin_prompt_override"]
+    assert len(validator_model.activities) == 2
+    observer_activity, comparator_activity = validator_model.activities
+    assert observer_activity.context["llm_role"] == "character_realization_observer"
+    assert comparator_activity.context["llm_role"] == "character_realization_validator"
+
+    observer_prompt = observer_activity.context["plugin_prompt_override"]
+    assert '"realization_id": "proposition:0:current_desire"' in observer_prompt
+    assert '"predicate": "current_desire"' in observer_prompt
+    assert '"state": "present"' not in observer_prompt
+    assert '"certainty": "medium"' not in observer_prompt
+    assert '"concept": "curiosity"' not in observer_prompt
+
+    validator_prompt = comparator_activity.context["plugin_prompt_override"]
     assert '"required_facets": ["predicate", "state", "certainty", "concept"]' in validator_prompt
     assert '"predicate_semantics": "preserve_target_meaning"' in validator_prompt
     assert '"state": "present"' in validator_prompt
@@ -242,13 +288,17 @@ async def test_current_desire_medium_certainty_flows_through_semantic_character_
         "event_payload",
         "activity_execution_result",
     }
-    for invocation in (character_model.activities[0], validator_model.activities[0]):
+    for invocation in (
+        character_model.activities[0],
+        observer_activity,
+        comparator_activity,
+    ):
         assert invocation.context["semantic_boundary"] is True
         assert forbidden.isdisjoint(invocation.context.keys())
 
 
 @pytest.mark.asyncio
-async def test_concept_only_current_desire_realization_is_rejected_even_if_model_accepts() -> None:
+async def test_concept_only_current_desire_realization_is_rejected_by_independent_observer() -> None:
     context, source = _validated_context()
     character_model = _CharacterModel("うん、気になる感じはあるよ。")
     response = await CharacterLanguageRealizerService(
@@ -267,6 +317,10 @@ async def test_concept_only_current_desire_realization_is_rejected_even_if_model
     ).validate(source, context, response)
 
     assert len(validator_model.activities) == 1
+    assert validator_model.activities[0].context["llm_role"] == "character_realization_observer"
     assert result.accepted is False
-    assert result.reason == "semantic_facet_validation_failed"
-    assert "predicate_preserved" in result.claim_differences
+    assert result.reason == "observed_semantic_state_mismatch"
+    assert (
+        "proposition:0:current_desire:predicate_not_observed"
+        in result.claim_differences
+    )
