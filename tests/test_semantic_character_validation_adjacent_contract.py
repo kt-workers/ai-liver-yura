@@ -152,6 +152,7 @@ def _accepted_validation_payload() -> dict[str, object]:
         "differences": [],
         "semantic_checks": {
             "required_facets_preserved": True,
+            "predicate_preserved": True,
             "state_preserved": True,
             "certainty_preserved": True,
             "concept_preserved": True,

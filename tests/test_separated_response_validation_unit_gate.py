@@ -114,6 +114,7 @@ def _accepted_payload() -> dict[str, object]:
         "differences": [],
         "semantic_checks": {
             "required_facets_preserved": True,
+            "predicate_preserved": True,
             "state_preserved": True,
             "certainty_preserved": True,
             "concept_preserved": True,
@@ -186,6 +187,20 @@ def test_validator_wording_hint_is_bounded_and_untrusted() -> None:
     assert "0.82" not in prompt
 
 
+def test_validator_prompt_requires_predicate_meaning_independently_from_concept() -> None:
+    prompt = CharacterRealizationValidatorPromptBuilder().build(
+        _validated_context(),
+        _response(),
+    )
+
+    assert '"required_facets": ["predicate", "state", "certainty"]' in prompt
+    assert '"predicate_semantics": "preserve_target_meaning"' in prompt
+    assert "predicate_preservedは内部英語ラベルがspeechに存在するかではなく" in prompt
+    assert "conceptだけを表現してpredicateの" in prompt
+    assert "concept_preserved=trueでもpredicate_preserved=false" in prompt
+    assert '"predicate_preserved":true' in prompt
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "payload",
@@ -219,6 +234,7 @@ async def test_validator_model_top_level_schema_is_fail_closed(payload: object) 
     ("checks_patch", "surface_patch"),
     (
         ({"required_facets_preserved": "yes"}, {}),
+        ({"predicate_preserved": None}, {}),
         ({"state_preserved": None}, {}),
         ({"certainty_preserved": 1}, {}),
         ({"unsupported_intensity_added": "false"}, {}),
@@ -247,6 +263,41 @@ async def test_accepted_model_payload_requires_typed_facet_diagnostics(
 
     assert result.accepted is False
     assert result.reason == "realization_validator_schema_invalid"
+
+
+@pytest.mark.asyncio
+async def test_accepted_payload_missing_predicate_preserved_is_fail_closed() -> None:
+    payload = _accepted_payload()
+    checks = payload["semantic_checks"]
+    assert isinstance(checks, dict)
+    del checks["predicate_preserved"]
+
+    result = await _validator(_Model(payload)).validate(
+        _source(),
+        _validated_context(),
+        _response(),
+    )
+
+    assert result.accepted is False
+    assert result.reason == "realization_validator_schema_invalid"
+
+
+@pytest.mark.asyncio
+async def test_model_accept_cannot_override_predicate_preservation_failure() -> None:
+    payload = _accepted_payload()
+    checks = payload["semantic_checks"]
+    assert isinstance(checks, dict)
+    checks["predicate_preserved"] = False
+
+    result = await _validator(_Model(payload)).validate(
+        _source(),
+        _validated_context(),
+        _response(),
+    )
+
+    assert result.accepted is False
+    assert result.reason == "semantic_facet_validation_failed"
+    assert "predicate_preserved" in result.claim_differences
 
 
 @pytest.mark.asyncio

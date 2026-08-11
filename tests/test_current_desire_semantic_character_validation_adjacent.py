@@ -25,16 +25,20 @@ from app.runtime.semantic_utterance_validator import SemanticUtteranceValidator
 
 
 class _CharacterModel:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        speech: str = "うん、好奇心から何かしたい気持ちはあると思うよ。",
+    ) -> None:
+        self.speech = speech
         self.activities: list[Activity] = []
 
     async def generate_character_response(self, activity: Activity) -> str:
         self.activities.append(activity)
         return json.dumps(
             {
-                "speech": "うん、好奇心から何かしたい気持ちはあると思うよ。",
+                "speech": self.speech,
                 "linguistic_performance": {
-                    "phrasing": ["うん、", "好奇心から何かしたい気持ちはあると思うよ。"],
+                    "phrasing": [self.speech],
                     "emphasis": ["好奇心"],
                     "delivery_tags": ["gentle"],
                 },
@@ -45,7 +49,8 @@ class _CharacterModel:
 
 
 class _ValidatorModel:
-    def __init__(self) -> None:
+    def __init__(self, *, predicate_preserved: bool = True) -> None:
+        self.predicate_preserved = predicate_preserved
         self.activities: list[Activity] = []
 
     async def validate_character_response(self, activity: Activity) -> str:
@@ -57,6 +62,7 @@ class _ValidatorModel:
                 "differences": [],
                 "semantic_checks": {
                     "required_facets_preserved": True,
+                    "predicate_preserved": self.predicate_preserved,
                     "state_preserved": True,
                     "certainty_preserved": True,
                     "concept_preserved": True,
@@ -126,11 +132,9 @@ def _profile() -> CharacterProfile:
     )
 
 
-@pytest.mark.asyncio
-async def test_current_desire_medium_certainty_flows_through_semantic_character_validator_boundary() -> None:
+def _validated_context() -> tuple[ResponseContext, Activity]:
     context = _context()
     plan = ResponseSemanticsPlanner().plan(context)
-
     assert plan.propositions[0].predicate == "current_desire"
     assert plan.propositions[0].state == "present"
     assert plan.propositions[0].certainty == "medium"
@@ -142,7 +146,7 @@ async def test_current_desire_medium_certainty_flows_through_semantic_character_
     semantic_validation = SemanticUtteranceValidator().validate(context, plan)
     assert semantic_validation.accepted is True
 
-    context = replace(
+    validated = replace(
         context,
         memory={
             **context.memory,
@@ -160,6 +164,12 @@ async def test_current_desire_medium_certainty_flows_through_semantic_character_
             "activity_turn_id": "turn-current-desire",
         },
     )
+    return validated, source
+
+
+@pytest.mark.asyncio
+async def test_current_desire_medium_certainty_flows_through_semantic_character_validator_boundary() -> None:
+    context, source = _validated_context()
 
     character_model = _CharacterModel()
     realizer = CharacterLanguageRealizerService(
@@ -170,6 +180,8 @@ async def test_current_desire_medium_certainty_flows_through_semantic_character_
     response = await realizer.generate(source, context)
 
     character_prompt = character_model.activities[0].context["plugin_prompt_override"]
+    assert '"required_facets": ["predicate", "state", "certainty", "concept"]' in character_prompt
+    assert '"predicate_semantics": "preserve_target_meaning"' in character_prompt
     assert '"state_semantics": "presence_without_intensity"' in character_prompt
     assert '"certainty_semantics": "epistemic_not_intensity"' in character_prompt
     assert '"certainty_realization": "epistemic_modality"' in character_prompt
@@ -179,7 +191,7 @@ async def test_current_desire_medium_certainty_flows_through_semantic_character_
     assert "少し" not in response.speech
     assert "ちょっと" not in response.speech
 
-    validator_model = _ValidatorModel()
+    validator_model = _ValidatorModel(predicate_preserved=True)
     validator = CharacterRealizationValidator(
         model=validator_model,
         prompt_builder=CharacterRealizationValidatorPromptBuilder(),
@@ -188,6 +200,8 @@ async def test_current_desire_medium_certainty_flows_through_semantic_character_
 
     assert len(validator_model.activities) == 1
     validator_prompt = validator_model.activities[0].context["plugin_prompt_override"]
+    assert '"required_facets": ["predicate", "state", "certainty", "concept"]' in validator_prompt
+    assert '"predicate_semantics": "preserve_target_meaning"' in validator_prompt
     assert '"state": "present"' in validator_prompt
     assert '"certainty": "medium"' in validator_prompt
     assert '"concept": "curiosity"' in validator_prompt
@@ -205,3 +219,28 @@ async def test_current_desire_medium_certainty_flows_through_semantic_character_
     for invocation in (character_model.activities[0], validator_model.activities[0]):
         assert invocation.context["semantic_boundary"] is True
         assert forbidden.isdisjoint(invocation.context.keys())
+
+
+@pytest.mark.asyncio
+async def test_concept_only_current_desire_realization_is_rejected_even_if_model_accepts() -> None:
+    context, source = _validated_context()
+    character_model = _CharacterModel("うん、気になる感じはあるよ。")
+    response = await CharacterLanguageRealizerService(
+        character_model,
+        CharacterLanguageRealizerPromptBuilder(),
+        _profile(),
+    ).generate(source, context)
+
+    assert response.semantic_realizations == ("proposition:0:current_desire",)
+    assert response.speech == "うん、気になる感じはあるよ。"
+
+    validator_model = _ValidatorModel(predicate_preserved=False)
+    result = await CharacterRealizationValidator(
+        model=validator_model,
+        prompt_builder=CharacterRealizationValidatorPromptBuilder(),
+    ).validate(source, context, response)
+
+    assert len(validator_model.activities) == 1
+    assert result.accepted is False
+    assert result.reason == "semantic_facet_validation_failed"
+    assert "predicate_preserved" in result.claim_differences
