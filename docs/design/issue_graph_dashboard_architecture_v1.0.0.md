@@ -186,21 +186,35 @@ export GITHUB_TOKEN=...
 python -m gui.yura_issue_graph
 ```
 
-### Render
+### Render / Blueprint
 
-Build command:
+リポジトリ直下の既存 `render.yaml` をRender Blueprintの正本とする。
 
-```bash
-pip install -r requirements.txt
+既存のRenderサービス定義は維持し、その中へ `yura-issue-graph` を追加する。Issue Graph専用に別のBlueprintファイルを作らない。
+
+`yura-issue-graph` の設定:
+
+```yaml
+- type: web
+  name: yura-issue-graph
+  runtime: python
+  plan: free
+  branch: feature/issue-graph-dashboard
+  buildCommand: pip install -r requirements.txt
+  startCommand: python -m uvicorn gui.yura_issue_graph.server:app --host 0.0.0.0 --port $PORT
+  healthCheckPath: /api/health
+  autoDeployTrigger: commit
 ```
 
-Start command:
+環境変数はBlueprintで以下を管理する。
 
-```bash
-python -m uvicorn gui.yura_issue_graph.server:app --host 0.0.0.0 --port $PORT
-```
+- `GITHUB_TOKEN`: `sync: false` とし、値をGitへ保存しない
+- `YURA_ISSUE_GRAPH_OWNER=ktan514`
+- `YURA_ISSUE_GRAPH_REPOSITORY=ai-liver-yura`
+- `YURA_ISSUE_GRAPH_PROJECT_NUMBER=6`
+- `PYTHON_VERSION=3.10.5`
 
-Render では `GITHUB_TOKEN` を Secret 環境変数として設定する。
+Verification中はDraft PRのhead `feature/issue-graph-dashboard` を明示的に追跡する。ユーザー確認・merge後に常設運用する場合は、Render serviceの追跡branchを正本統合branchへ切り替える。検証用branch削除後も古いbranchを参照し続けないこと。
 
 ## 9. セキュリティ
 
@@ -209,6 +223,7 @@ Render では `GITHUB_TOKEN` を Secret 環境変数として設定する。
 - arbitrary GitHub URL を browser から server へ渡させない
 - repository/project target は server environment で固定
 - GitHub error body に token が含まれる可能性を考慮し、生の request header を exception message 化しない
+- `render.yaml` に `GITHUB_TOKEN` の実値を書かず、`sync: false` でRender側Secret入力を要求する
 
 ## 10. Verification
 
@@ -221,6 +236,9 @@ Render では `GITHUB_TOKEN` を Secret 環境変数として設定する。
 - Project scope + relation context保持
 - token absence degraded mode
 - FastAPI route existence / health response
+- `render.yaml` に `yura-issue-graph` が存在する
+- Blueprint上でtokenが `sync: false` である
+- Blueprintのhealth checkが `/api/health` を参照する
 
 実画面:
 
@@ -231,4 +249,4 @@ Render では `GITHUB_TOKEN` を Secret 環境変数として設定する。
 - node click detail
 - search / filter
 - local 起動
-- Render deploy
+- Render Blueprint sync / deploy
