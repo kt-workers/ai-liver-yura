@@ -49,26 +49,20 @@ class ResponseGeneratorRoleAdapter:
         self._separated_situation_evaluator: (
             OptionalSituationEvaluationModel | None
         ) = None
-        self._last_input_meaning_raw: str | None = None
 
     async def evaluate(self, activity: Activity) -> str:
         if self._uses_separated_user_input_path(activity):
-            self._last_input_meaning_raw = None
             separated = await self._evaluate_user_input_with_separated_roles(activity)
-            if separated is not None:
-                return separated
-            if self._is_legacy_situation_evaluation(self._last_input_meaning_raw):
-                return self._normalize_situation_evaluation(
-                    self._last_input_meaning_raw or ""
-                )
+            # USER_TEXTの意味解釈に失敗した場合、旧Situation JSONやraw textの
+            # lexical fallbackへ戻らない。空結果を返し、上位のSituationEvaluatorで
+            # semantic_unresolvedとして安全側へ処理する。
+            return separated if separated is not None else ""
         raw = await self._generate(activity)
         return self._normalize_situation_evaluation(raw)
 
     async def interpret_input_meaning(self, activity: Activity) -> str:
         request = self._with_input_meaning_role_boundary(activity)
-        raw = await self._generate(request)
-        self._last_input_meaning_raw = raw
-        return raw
+        return await self._generate(request)
 
     async def plan_internal_directive(self, activity: Activity) -> str:
         return await self._generate(activity)
@@ -86,19 +80,10 @@ class ResponseGeneratorRoleAdapter:
 
     @staticmethod
     def _uses_separated_user_input_path(activity: Activity) -> bool:
-        if activity.context.get("llm_role") != "situation_evaluator":
-            return False
-        if not str(activity.context.get("user_input") or "").strip():
-            return False
-        planner_state = activity.context.get("planner_state")
-        if isinstance(planner_state, dict) and isinstance(
-            planner_state.get("ongoing_activity"),
-            dict,
-        ):
-            # 進行中Activityの入力意味はプラグイン契約に依存するため、
-            # 専用契約が整うまでは既存の安全な継続判定へ委ねる。
-            return False
-        return True
+        return bool(
+            activity.context.get("llm_role") == "situation_evaluator"
+            and str(activity.context.get("user_input") or "").strip()
+        )
 
     async def _evaluate_user_input_with_separated_roles(
         self,
@@ -210,20 +195,6 @@ class ResponseGeneratorRoleAdapter:
             and bool(str(item["speech"]).strip())
             for item in segments
         )
-
-    @classmethod
-    def _is_legacy_situation_evaluation(cls, raw: str | None) -> bool:
-        if raw is None:
-            return False
-        payload = cls._json_object(raw)
-        if payload is None:
-            return False
-        return {
-            "decision",
-            "activity_type",
-            "operation",
-            "confidence",
-        }.issubset(payload)
 
     @classmethod
     def _normalize_situation_evaluation(cls, raw: str) -> str:
