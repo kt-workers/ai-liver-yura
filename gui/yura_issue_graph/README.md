@@ -5,13 +5,17 @@ GitHub Issueの親子関係・依存関係と、GitHub Projects v2「プロジ�
 ## 機能
 
 - 親Issue → 子Issueを実線矢印で表示
-- `Depends on:` / `依存:` を破線矢印で表示
-- 親子treeごとに階層配置し、独立treeを2次元へパッキングして全rootを同じ列へ強制しない
-- 親子線はdepth間の空き領域へbranch busを置き、通常のtreeで別ノードを横切らないように描画
-- 依存線は描画済みDOMノードの実サイズを障害物として測定し、直交経路探索で迂回
+- 親子treeごとに階層配置し、tree単位のグループ枠で視覚的に分離
+- 親子関係を持たないIssueは `親子関係なし` エリアへ分離してcompact grid表示
+- 親子線はdepth間の空き領域へbranch busを置き、通常treeで別ノードを横切らないように描画
+- 依存線は初期状態では全表示しない。node選択時はそのIssueへ入る/出る直接依存だけ表示
+- `依存線を全表示` switchをONにした場合のみ全dependency edgeを表示
+- dependency routingは描画済みDOMノードの実サイズを障害物として測定し、直交経路探索で迂回
 - ノードを突っ切るBezier fallbackは使用しない
-- ノード選択時、そのIssueを起点として伸びる線を強調し、その他の線を背景化
-- 初期表示はOpen Issueのみ。`Closedも表示`スイッチでClosed Issueを含む表示へ切替
+- node選択時、選択Issue・直接parent/child/dependency以外のnodeを背景化
+- 初期viewportは全体fitで文字が小さくなりすぎる場合、読める倍率を維持してactive Issue付近から表示
+- `全体表示` buttonでは全graphをfitして俯瞰可能
+- 初期表示はOpen Issueのみ。`Closedも表示` switchでClosed Issueを含む表示へ切替
 - Closed表示切替時はserver-sideのGitHub取得条件自体を切り替え、通常時にClosed Issueを先読みしない
 - Closed Issueには`Closed`バッジを追加し、Projects v2 Statusとは別情報として表示
 - Status / Issueレベルをノードへ表示
@@ -85,4 +89,7 @@ GET /api/graph?include_closed=true
 - Project state: GitHub Projects v2
 - Compatibility only: Issue本文の`Parent:` / `Depends on:`
 
-詳細設計は `docs/design/issue_graph_dashboard_architecture_v1.0.0.md` を参照してください。
+詳細設計:
+
+- `docs/design/issue_graph_dashboard_architecture_v1.0.0.md`
+- `docs/design/issue_graph_dashboard_readability_v1.1.0.md`
