@@ -73,18 +73,20 @@ Project に未登録の Issue は field を未設定として扱う。
 
 `GITHUB_TOKEN` が存在する場合、GitHub GraphQL API を使用する。
 
-1. Repository の Open Issues を pagination して取得
+1. Repository Issues を pagination して取得する。既定は `OPEN` のみ、`include_closed=true` の場合は `OPEN` と `CLOSED` の両方を取得する
 2. `parent` / `subIssues` を取得
 3. ProjectV2 items を pagination して取得
 4. 既知 Project fields を `fieldValueByName` で取得
 5. Issue number で結合
-6. Project itemを主集合とし、親・子・依存関係で必要なOpen Issueだけをcontextとして追加
+6. Project itemを主集合とし、親・子・依存関係で必要な取得対象Issueだけをcontextとして追加
 
 Token は server-side のみで使用し、browser response、HTML、log へ含めない。
 
 ### 4.2 認証なし / Project API failure
 
-public repository では REST Open Issues API を利用し、Issue 本文から Compatibility parent/dependency を抽出する degraded mode へ移行する。
+public repository では REST Issues API を利用し、Issue 本文から Compatibility parent/dependency を抽出する degraded mode へ移行する。
+
+RESTでも既定は `state=open`、`include_closed=true` の場合は `state=all` を使用する。
 
 この場合、Project Status 等は推測せず `null` とし、API response の diagnostics で degraded reason を通知する。
 
@@ -94,6 +96,7 @@ public repository では REST Open Issues API を利用し、Issue 本文から 
 {
   "repository": "ktan514/ai-liver-yura",
   "project": {"owner": "ktan514", "number": 6},
+  "include_closed": false,
   "degraded": false,
   "diagnostics": [],
   "nodes": [
@@ -191,7 +194,19 @@ node click で以下を表示する。
 - related PR
 - body summary
 
-### 6.6 Filter
+### 6.6 Issue state display mode
+
+ヘッダーへ `Closedも表示` スイッチを置く。
+
+- 初期値はOFFで、Open Issueだけを表示する
+- ONにした場合は `/api/graph?include_closed=true` を再取得してClosed Issueもグラフへ含める
+- OFFへ戻した場合は `/api/graph?include_closed=false` を再取得する
+- Closed Issueを常時先読みしてブラウザだけで非表示にする方式にはしない。通常時のAPI取得量とレイアウト負荷を抑えるため、取得対象自体をserver-sideで切り替える
+- switch切替時も検索、Status filter、pan/zoom等の基本機能は維持する
+- OFFへ切り替えた結果、選択中のClosed Issueが取得対象外になった場合はselection/detailを解除する
+- Issue `state` とProjects v2 `Status` は別概念として扱い、混同しない
+
+### 6.7 Filter
 
 - text search: Issue number / title
 - Status filter
@@ -268,6 +283,8 @@ Verification中はDraft PRのhead `feature/issue-graph-dashboard` を明示的�
 - graph edge generation
 - Project scope + relation context保持
 - token absence degraded mode
+- Open-only / include-closed のGraphQL・REST取得条件
+- `/api/graph?include_closed=true|false` のroute契約
 - FastAPI route existence / health response
 - `render.yaml` に `yura-issue-graph` が存在する
 - Blueprint上でtokenが `sync: false` である
@@ -275,6 +292,7 @@ Verification中はDraft PRのhead `feature/issue-graph-dashboard` を明示的�
 - Browser実装にnode obstacle routingとBezier fallbackが存在する
 - selected issueをsourceとするedge focusが存在する
 - 親子と依存の形状差を維持する
+- `Closedも表示` switchがserver-side取得条件を切り替える
 
 実画面:
 
@@ -285,6 +303,7 @@ Verification中はDraft PRのhead `feature/issue-graph-dashboard` を明示的�
 - node click detail
 - edgeが途中のIssue nodeを原則回避して描画される
 - 選択Issueから伸びるedgeが強調され、その他のedgeが背景化する
+- `Closedも表示` OFFでOpenのみ、ONでClosedを含めて表示される
 - search / filter
 - local 起動
 - Render Blueprint sync / deploy
