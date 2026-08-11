@@ -4,24 +4,13 @@
 
 Parent #225 / Work #229 / Draft PR #233。
 
-`character_realization_facet_evidence_v1.0.0.md` で、Character Realization Validator に `predicate / certainty / concept / intensity` の evidence span を返させる契約を導入した。その後、Basic 4 + Extended E1-E8 の全12ケースを2回目Live Verificationした結果、Prompt契約だけでは false accept / false reject を十分に抑止できないことを確認した。
+この文書は、2回目Live Verification後に導入したfacet evidence Runtime gateの経緯と、今回のArchitecture Regression是正後の正規契約を記録する。
 
-本設計は、Promptをケース別にさらに細分化せず、Validator LLMが返した構造診断をRuntimeで fail-closed 検証する次段Gateを定義する。
+**重要:** 旧版に記載していた有限個のdegree markerをRuntimeで検出する方式は廃止した。現在の正規設計は `character_realization_observed_state_gate_v1.0.0.md` である。
 
-## 2回目Liveで確認した事実
+## 2回目Liveで確認した問題
 
-### 改善したもの
-
-- `joy=absent` は「楽しい気持ちはないよ。」として1回で保持
-- `joy=high` は「かなり楽しい」で強度保持
-- `current_desire + concept=connection + certainty=medium` は、predicate / concept / certaintyを同時に保持
-- Drive由来 `curiosity=high` は対象省略せず保持
-
-これにより、前段の #227 / #229 Prompt修正には一般化可能な改善効果がある。
-
-### false accept
-
-#### E8 Drive Energy low
+### E8 Drive Energy low
 
 Semantic Plan:
 
@@ -37,150 +26,183 @@ Character:
 うん、元気はあるよ。
 ```
 
-Validatorは `state_fidelity=exact` とし、`intensity_evidence_spans=["元気はある"]` を返してacceptした。
+Plan-aware Validatorは `state_fidelity=exact` と誤判定した。しかしspeechはenergyのpresenceしか示しておらず、`low` と `present` の差が失われている。
 
-しかし「元気はある」は presence であり、`low` と単なる `present` の差を担う degree evidence ではない。Prompt上の「bare presenceだけでは explicit intensity の根拠にならない」という契約と矛盾する。
+### E4 mixed current feeling
 
-#### E4 mixed current feeling
+`calm=low` supporting propositionをbare presence表現でrealizeしてもexactとしてacceptされた。同じ原因クラスである。
 
-`calm=low` supporting propositionに対して「全体として穏やか」を exact とし、`全体として / 穏やか` を intensity evidence としてacceptした。
+### E3 / current_desire false reject
 
-`全体として` はscopeでありdegreeではなく、`穏やか`単独もcalmのpresence表現である。これも同じ原因クラスである。
+unknownの自然表現や `current_desire + certainty=medium + concept` の自然な言い換えを、Plan-aware Validatorが過剰にrejectするケースも確認した。
 
-### false reject
+## 旧Runtime degree guardの廃止
 
-#### E3 explicit unknown / certainty=high
+一時的に以下の方式を導入したが、Architecture Regressionとして撤去した。
+
+- `_EXPLICIT_INTENSITY_MARKERS`
+- `_explicit_intensity_markers`
+- `_has_explicit_degree_evidence`
+- `_deterministic_surface_differences`
+- finite phrase / keyword / regex / substringによるdegree evidence判定
+
+理由:
+
+1. open-ended自然言語には未列挙paraphraseが必ず存在する
+2. false negativeのたびに語彙追加が必要になり辞書が肥大化する
+3. Runtimeへ自然言語意味判定責務が逆流する
+4. test wordingをProduction既知語へ合わせる誘因を生む
+5. `それなりに` のような自然なvariationを正当に扱えない
+
+Runtimeが「low/moderate/highを表す日本語」を有限列挙する方式は、guard / safety net / compatibility / fallback等の名称に関係なく使用しない。
+
+## 現在の正規フロー
 
 ```text
-悲しさは、あるかどうかまだわからないよ。
+Character speech
+      ↓
+Independent Character Realization Observer
+      ↓
+RealizedSemanticObservation
+      ↓
+Runtime typed comparison
+      ↓
+Plan-aware Character Realization Validator
+      ↓
+accept / reject
 ```
 
-は `sadness=unknown` を直接述べているが、Validatorは「まだわからない」を `certainty=high` 不保持と解釈してrejectした。
+### Independent Observer
 
-ここで `certainty=high` は sadness のpolarityをhigh confidenceで確定する意味ではなく、「現在のcanonical stateがunknownである」というPlanへのepistemic certaintyである。unknownの自然表現そのものをcertainty低下とみなしてはいけない。
+Observerは期待される `state / certainty / concept` を受け取らず、speechが実際に表している意味を観測する。
 
-#### Basic current_desire
+Observerへ渡すのは:
+
+- speech
+- canonical realization ID
+- proposition対応用のkind / predicate
+- predicateの自然語意味枠を補助するbounded User Wording Hint
+
+Observerへ渡さない:
+
+- expected state
+- expected certainty
+- expected concept
+- expected intensity
+- raw Emotion / Desire / Drive
+- Planとの一致判定
+
+Observerはtypedな `RealizedSemanticObservation` を返す。
+
+### Runtime typed comparison
+
+Runtimeが決定論的に行うのは自然言語理解後の構造比較だけである。
+
+許可:
+
+- schema / enum / ID検証
+- `predicate_realized` の確認
+- `observed_state == planned.state` の比較
+- `observed_certainty == planned.certainty` の比較
+- required evidence spanの存在確認
+- evidence spanがspeech中に実在するかの確認
+
+禁止:
+
+- speechやevidence span内の単語からstate/intensity/certaintyを再推定する
+- regex / substring / finite dictionaryで自然文をsemantic categoryへ分類する
+
+例:
 
 ```text
-たぶん、あるよ。何かを知りたい気持ちはある。
+Plan: energy=low
+Observer: observed_state=present
+Runtime: low != present
+=> reject
 ```
 
-に対し、Validatorはpredicateとcertaintyをfalse、state_fidelityをweakenedとした。`たぶん`をmedium certaintyより弱いと判定しており、evidence spanを返していてもfacet解釈が不安定である。
+`それなりに` 等の未列挙paraphraseでも、Observerがspeechの意味として `low` を観測できればRuntimeは語彙を知らずに比較できる。
 
-false rejectは、Runtimeが自然文意味を再解釈して強制acceptするだけでは安全に解消できないため、本Gateではfalse accept抑止と診断構造の整合を先に固定する。
+## Facet evidence contract
 
-## Runtime evidence contract
-
-`accepted=true` を採用する場合、各 `realized_proposition_checks` について以下を必須にする。
-
-### 1. Evidence schema
-
-各checkは次の4配列を必須とする。
+Plan-aware Validatorが返す以下のevidence配列は維持する。
 
 - `predicate_evidence_spans`
 - `certainty_evidence_spans`
 - `concept_evidence_spans`
 - `intensity_evidence_spans`
 
-各要素は:
+Runtimeは各spanについて:
 
-- non-empty string
-- Character `speech` の実部分文字列
+- non-empty stringか
+- Character speechの実部分文字列か
 
-でなければならない。
+だけを検証する。
 
-欠落・型不正は `realization_validator_schema_invalid` としてfail closedする。
+spanの文字列自体から意味カテゴリを推定しない。
 
-### 2. Predicate evidence
+`surface_evidence.intensity_markers` も診断情報に限定する。値がある場合にspeech実在だけを確認し、markerをaccept根拠やstate分類に使わない。
 
-`predicate_preserved=true` とするrealized propositionは、predicate evidenceを1件以上持つ。
+## Plan-aware Validatorが引き続き検証するもの
 
-Runtimeはspanの意味をtarget別辞書で再解釈しない。LLMがpredicate保持を主張したのに証拠spanを示さない／speechに存在しない場合だけ構造的にrejectする。
+- predicate
+- state / polarity
+- certainty
+- concept
+- required semantic content
+- forbidden addition
+- supporting proposition
+- unknown非commit
+- state_fidelity
+- question/new-direction budget
+- existence boundary
+- regeneration後の意味保持
 
-### 3. Certainty evidence
+Independent Observerはこれらを置き換えるのではなく、Plan-aware自己申告だけでは見逃したstate/certaintyの意味変化を独立観測で補強する。
 
-`certainty=medium | low` かつ `certainty_preserved=true` の場合、certainty evidenceを1件以上必須とする。
+## Fail closed
 
-`certainty=high` はunhedged表現を許すためemptyを許可する。
+以下ではsemantic validation済みと扱わない。
 
-Runtimeは `たぶん` 等を特定certainty値へ固定マッピングしない。
+- validation model unavailable
+- Observer invocation failure
+- Observer schema invalid
+- observation missing / duplicate / unexpected
+- typed observed state/certainty mismatch
+- required evidence欠落
+- evidence spanがspeech外
 
-### 4. Concept evidence
+失敗時にfinite lexical fallbackへ戻らない。
 
-Planの `concept != null` かつ `concept_preserved=true` の場合、concept evidenceを1件以上必須とする。
+## Unit / Adjacent Gate
 
-`concept=null` のpropositionでconcept evidenceが返された場合は診断不整合としてrejectする。
+最低限次を固定する。
 
-### 5. Intensity evidence
-
-`state=low | moderate | high | very_high` をexactとしてacceptするには:
-
-- `intensity_semantics_preserved=true`
-- `presence_only_counterfactual_equivalent=false`
-- intensity evidenceが1件以上
-- evidenceがspeech中に実在
-- evidence内に、既存deterministic degree marker guardで認識できる明示的degree表現が1件以上
-
-を要求する。
-
-これにより、`元気はある` や `穏やか` のようなbare presenceをintensity evidenceとして自己申告してもacceptしない。
-
-既存marker guardはtarget別辞書ではなく、意味強度を表す一般表面表現のdeterministic guardとして利用する。`低め / 弱め / 高め / 強め / 控えめ / かなり / 少し`等の一般degree表現を対象にする。
-
-Runtimeはmarkerから `low/moderate/high` のどれかを決定しない。方向・適合性の意味判定は引き続きValidator LLMが担当する。Runtimeは「explicit intensityだと主張したのにdegree evidenceが存在しない」ことだけをrejectする。
-
-## Surface evidence整合
-
-`surface_evidence.intensity_markers` に値がある場合、その値もspeech中の実部分文字列でなければならない。
-
-ただしLLMのsurface marker自己申告だけをaccept根拠にはしない。E4で `全体として` がintensity markerとして誤分類されたため、explicit intensityのacceptにはdeterministic degree evidenceを別途要求する。
-
-## Runtimeが行わないこと
-
-- raw Emotion / Desire / Driveからstateを再計算しない
-- predicateごとの日本語固定辞書を持たない
-- `current_desire`だけの例外を作らない
-- 固定回答文を要求しない
-- Character Profileの表現品質を評価しない
-- false rejectを根拠なく強制acceptしない
-
-## False rejectの扱い
-
-本Gate適用後もfalse rejectが残る場合は、Characterを何度も言い換えさせる前に「Validator判定過剰」を独立原因として扱う。
-
-特に次を区別する。
-
-1. Character speech自体がPlanを壊した
-2. Validatorのfacet解釈がPlan contractを誤読した
-3. Validator出力schema/evidenceが構造的に不正だった
-
-2については、必要なら後続でValidator再判定方式またはfacet判定責務の再分割を設計する。Runtimeのtarget別自然言語辞書で穴埋めしない。
-
-## Unit Gate
-
-最低限以下を固定する。
-
-1. accepted payloadで4種evidence配列が欠落 → schema invalid
-2. predicate evidenceなし / speech外span → reject
-3. medium/low certainty evidenceなし / speech外span → reject
-4. non-null concept evidenceなし / speech外span → reject
-5. concept=nullでconcept evidenceあり → reject
-6. explicit intensityでbare presence evidenceのみ → reject
-7. explicit intensityで一般degree evidenceあり → accept可能
-8. surface intensity markerがspeech外 → reject
-9. E8型 `energy=low` + `元気はある` をacceptさせない
-10. 既存unknown / predicate / supporting / regeneration契約を回帰
+1. E8 `energy=low` + bare presence → Observer `present` → reject
+2. E4 realized supporting intensityのbare presence → typed mismatchでreject
+3. unseen paraphrase (`それなりに` 等) → Observerがplanned stateを観測すればaccept可能
+4. unknownをlow/presentへcommit → typed mismatchでreject
+5. valid unknown → accept
+6. medium/low certainty evidence contract
+7. non-null concept evidence contract
+8. model unavailable/schema invalid → fail closed
+9. Observer Promptへexpected state/certainty/conceptを含めない
+10. Runtime sourceへfinite degree semantic dictionaryを再導入しない
 
 ## 次のGate
 
 ```text
-#229 Runtime evidence fail-closed Unit
+#229 Unit / Architecture
         ↓ PASS
 #226 → #227 → #229 Adjacent
         ↓ PASS
+Representative Desire / Drive / Memory-Knowledge / Profile variation
+        ↓ PASS
+Full regression
+        ↓ PASS
 #223 Labへ同期
         ↓
-全12ケース 3回目Live
+Basic 4 + E1-E8 + 少数paraphrase Live
 ```
 
-3回目Liveでは、まずfalse acceptが構造的に消えたことを確認する。false rejectが残る場合は、Prompt追加ではなくValidator判定責務の再設計へ進む。
+Characterの自然さ・ゆららしさ・Discourse・Speech Performanceは本Issueの完了条件へ広げない。
