@@ -23,13 +23,48 @@ from app.runtime.semantic_utterance_validator import SemanticUtteranceValidator
 
 
 class _Model:
-    def __init__(self, payload: object) -> None:
+    def __init__(
+        self,
+        payload: object,
+        *,
+        observation: dict[str, object] | None = None,
+        observer_raw: str | None = None,
+    ) -> None:
         self.raw = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+        self.observation = observation or _observation()
+        self.observer_raw = observer_raw
         self.activities: list[Activity] = []
 
     async def validate_character_response(self, activity: Activity) -> str:
         self.activities.append(activity)
+        if activity.context.get("llm_role") == "character_realization_observer":
+            if self.observer_raw is not None:
+                return self.observer_raw
+            return json.dumps(
+                {"observations": [self.observation]},
+                ensure_ascii=False,
+            )
         return self.raw
+
+
+def _observation(
+    *,
+    state: str = "absent",
+    certainty: str = "high",
+    predicate_realized: bool = True,
+    predicate_spans: tuple[str, ...] = ("楽しくない",),
+    state_spans: tuple[str, ...] = ("楽しくない",),
+    certainty_spans: tuple[str, ...] = (),
+) -> dict[str, object]:
+    return {
+        "realization_id": "proposition:0:joy",
+        "predicate_realized": predicate_realized,
+        "observed_state": state,
+        "observed_certainty": certainty,
+        "predicate_evidence_spans": list(predicate_spans),
+        "state_evidence_spans": list(state_spans),
+        "certainty_evidence_spans": list(certainty_spans),
+    }
 
 
 def _envelope(target_id: str = "joy") -> dict[str, object]:
@@ -94,7 +129,7 @@ def _validated_context(*, user_input: str = "楽しい？") -> ResponseContext:
 
 
 def _response(
-    speech: str = "今は楽しくないかな。",
+    speech: str = "今は楽しくないよ。",
     *,
     realizations: tuple[str, ...] = ("proposition:0:joy",),
 ) -> CharacterResponse:
@@ -114,6 +149,7 @@ def _response(
 def _accepted_payload(
     *,
     realization_id: str = "proposition:0:joy",
+    surface_markers: tuple[str, ...] = (),
 ) -> dict[str, object]:
     return {
         "accepted": True,
@@ -131,16 +167,19 @@ def _accepted_payload(
             {
                 "realization_id": realization_id,
                 "predicate_preserved": True,
+                "predicate_evidence_spans": ["楽しくない"],
                 "state_preserved": True,
                 "state_fidelity": "exact",
                 "certainty_preserved": True,
+                "certainty_evidence_spans": [],
                 "concept_preserved": True,
+                "concept_evidence_spans": [],
                 "intensity_semantics_preserved": True,
                 "presence_only_counterfactual_equivalent": False,
                 "intensity_evidence_spans": [],
             }
         ],
-        "surface_evidence": {"intensity_markers": []},
+        "surface_evidence": {"intensity_markers": list(surface_markers)},
     }
 
 
@@ -273,9 +312,8 @@ async def test_accepted_model_payload_requires_typed_facet_diagnostics(
     assert isinstance(surface, dict)
     checks.update(checks_patch)
     surface.update(surface_patch)
-    model = _Model(payload)
 
-    result = await _validator(model).validate(
+    result = await _validator(_Model(payload)).validate(
         _source(),
         _validated_context(),
         _response(),
@@ -321,7 +359,7 @@ async def test_model_accept_cannot_override_predicate_preservation_failure() -> 
 
 
 @pytest.mark.asyncio
-async def test_validator_model_invocation_context_is_raw_state_free() -> None:
+async def test_validator_model_invocation_contexts_are_raw_state_free() -> None:
     model = _Model(_accepted_payload())
     result = await _validator(model).validate(
         _source(),
@@ -330,129 +368,99 @@ async def test_validator_model_invocation_context_is_raw_state_free() -> None:
     )
 
     assert result.accepted is True
+    assert len(model.activities) == 2
+    assert model.activities[0].context["llm_role"] == "character_realization_observer"
+    assert model.activities[1].context["llm_role"] == "character_realization_validator"
+    for activity in model.activities:
+        for forbidden_key in (
+            "user_input",
+            "response_context",
+            "character_response",
+            "emotion",
+            "drive",
+            "relationship",
+            "event_payload",
+            "activity_execution_result",
+        ):
+            assert forbidden_key not in activity.context
+
+
+@pytest.mark.asyncio
+async def test_observer_state_mismatch_rejects_before_plan_aware_comparator() -> None:
+    model = _Model(
+        _accepted_payload(),
+        observation=_observation(
+            state="present",
+            certainty="high",
+            predicate_spans=("楽しい",),
+            state_spans=("楽しい",),
+        ),
+    )
+    result = await _validator(model).validate(
+        _source(),
+        _validated_context(),
+        _response(speech="うん、楽しいよ。"),
+    )
+
+    assert result.accepted is False
+    assert result.reason == "observed_semantic_state_mismatch"
+    assert (
+        "proposition:0:joy:observed_state_mismatch:expected=absent:observed=present"
+        in result.claim_differences
+    )
     assert len(model.activities) == 1
-    activity = model.activities[0]
-    for forbidden_key in (
-        "user_input",
-        "response_context",
-        "character_response",
-        "emotion",
-        "drive",
-        "relationship",
-        "event_payload",
-        "activity_execution_result",
-    ):
-        assert forbidden_key not in activity.context
 
 
-def test_surface_marker_detection_consumes_longest_marker_without_duplicate() -> None:
-    markers = CharacterRealizationValidator._explicit_intensity_markers(
-        "ほんの少しだけ気になる"
+@pytest.mark.asyncio
+async def test_observer_schema_failure_is_fail_closed_without_lexical_fallback() -> None:
+    model = _Model(_accepted_payload(), observer_raw="not-json")
+    result = await _validator(model).validate(
+        _source(),
+        _validated_context(),
+        _response(),
     )
 
-    assert markers == ["ほんの少し"]
+    assert result.accepted is False
+    assert result.reason == "realization_observer_schema_invalid"
+    assert len(model.activities) == 1
 
 
-def test_intensity_state_disables_deterministic_marker_rejection() -> None:
+@pytest.mark.asyncio
+async def test_semantic_path_without_model_fails_closed_without_lexical_fallback() -> None:
+    result = await _validator(None).validate(
+        _source(),
+        _validated_context(),
+        _response(speech="少し楽しくないかな。"),
+    )
+
+    assert result.accepted is False
+    assert result.reason == "realization_validator_model_unavailable"
+    assert result.claim_differences == ()
+
+
+def test_surface_marker_is_diagnostic_only_when_reported_span_exists() -> None:
     context = _validated_context()
     plan = SemanticUtterancePlan.from_context(context.memory["semantic_utterance_plan"])
     assert plan is not None
-    intensity_plan = replace(
-        plan,
-        propositions=(replace(plan.propositions[0], state="high"),),
-    )
+    response = _response()
+    payload = _accepted_payload(surface_markers=("今は",))
 
-    assert CharacterRealizationValidator._deterministic_surface_differences(
-        intensity_plan,
-        "かなり楽しい",
-    ) == []
-
-
-def test_overview_with_supporting_intensity_does_not_reject_marker() -> None:
-    context = _validated_context()
-    plan = SemanticUtterancePlan.from_context(context.memory["semantic_utterance_plan"])
-    assert plan is not None
-    assert plan.target is not None
-    overview_plan = replace(
-        plan,
-        target=replace(plan.target, id="current_feeling"),
-        propositions=(
-            replace(
-                plan.propositions[0],
-                kind="self_state",
-                predicate="current_feeling",
-                state="overview",
-            ),
-            replace(
-                plan.propositions[0],
-                kind="self_state_dimension",
-                predicate="joy",
-                state="low",
-            ),
-        ),
-    )
-
-    assert CharacterRealizationValidator._plan_has_intensity_state(overview_plan) is True
-    assert CharacterRealizationValidator._deterministic_surface_differences(
-        overview_plan,
-        "今は落ち着いてるよ。うれしさも、ちょっとある感じ。",
-    ) == []
-
-    response = _response(
-        "今は落ち着いてるよ。うれしさも、ちょっとある感じ。",
-        realizations=("proposition:0:current_feeling",),
-    )
-    payload = _accepted_payload(realization_id="proposition:0:current_feeling")
-    surface = payload["surface_evidence"]
-    assert isinstance(surface, dict)
-    surface["intensity_markers"] = ["ちょっと"]
     assert CharacterRealizationValidator._accepted_facet_differences(
-        overview_plan,
+        plan,
         response,
         payload,
     ) == []
 
 
-def test_overview_without_any_intensity_uses_deterministic_marker_guard() -> None:
+def test_reported_surface_marker_must_exist_in_speech_but_is_not_semantically_classified() -> None:
     context = _validated_context()
     plan = SemanticUtterancePlan.from_context(context.memory["semantic_utterance_plan"])
     assert plan is not None
-    assert plan.target is not None
-    overview_plan = replace(
-        plan,
-        target=replace(plan.target, id="current_feeling"),
-        propositions=(
-            replace(
-                plan.propositions[0],
-                kind="self_state",
-                predicate="current_feeling",
-                state="overview",
-            ),
-            replace(
-                plan.propositions[0],
-                kind="self_state_dimension",
-                predicate="anger",
-                state="absent",
-            ),
-        ),
-    )
+    response = _response()
+    payload = _accepted_payload(surface_markers=("speech外の診断span",))
 
-    assert CharacterRealizationValidator._plan_has_intensity_state(overview_plan) is False
-    assert CharacterRealizationValidator._deterministic_surface_differences(
-        overview_plan,
-        "今はかなり落ち着いてるよ。",
-    ) == ["unsupported_intensity_markers:かなり"]
-
-    response = _response(
-        "今はかなり落ち着いてるよ。",
-        realizations=("proposition:0:current_feeling",),
-    )
-    payload = _accepted_payload(realization_id="proposition:0:current_feeling")
-    surface = payload["surface_evidence"]
-    assert isinstance(surface, dict)
-    surface["intensity_markers"] = ["かなり"]
     assert CharacterRealizationValidator._accepted_facet_differences(
-        overview_plan,
+        plan,
         response,
         payload,
-    ) == []
+    ) == ["surface_intensity_marker_not_in_speech:speech外の診断span"]
