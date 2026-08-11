@@ -229,6 +229,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
 
         required_checks = [
             "required_facets_preserved",
+            "predicate_preserved",
             "state_preserved",
             "certainty_preserved",
             "unsupported_intensity_added",
@@ -246,7 +247,12 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         intensity_markers = [item.strip() for item in markers_value if item.strip()]
 
         differences: list[str] = []
-        for name in ("required_facets_preserved", "state_preserved", "certainty_preserved"):
+        for name in (
+            "required_facets_preserved",
+            "predicate_preserved",
+            "state_preserved",
+            "certainty_preserved",
+        ):
             if checks[name] is False:
                 differences.append(name)
         if plan.propositions[0].concept is not None and checks["concept_preserved"] is False:
