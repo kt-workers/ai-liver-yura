@@ -86,50 +86,51 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "『強いよ』『はっきりしない』等の対象省略だけなら、会話文脈では分かってもspeech単独では"
                 "predicateを保持していないためpredicate_preserved=falseとする",
                 "- predicate_preserved=trueならpredicate_evidence_spansへ、speech中で質問対象・述語関係を"
-                "識別可能にしている実文字列を1件以上列挙する。単なる『ある』『強い』『わからない』等、"
-                "対象を識別しない語だけをpredicate evidenceにしない",
+                "識別可能にしている実文字列を1件以上列挙する。対象を識別しない一般表現だけを"
+                "predicate evidenceにしない",
                 "- primary propositionのconceptがnon-nullなら、そのconceptの意味がspeechに必要。"
-                "conceptを落として単なる『何かある』等の存在表明だけに縮退した場合はrejectする",
+                "conceptを落として単なる存在表明だけに縮退した場合はrejectする",
                 "- conceptはpredicateを修飾するfacetであり代替ではない。conceptだけを表現してpredicateの"
                 "質問対象意味がspeechから消えた場合は、concept_preserved=trueでもpredicate_preserved=falseとする",
                 "- conceptがnon-nullかつconcept_preserved=trueならconcept_evidence_spansへ、そのconceptを"
                 "speechで担う実文字列を1件以上列挙する。concept=nullならconcept_evidence_spans=[]とする",
                 "- 各realized propositionのpolarity/state/certaintyを反転・過大化・矮小化していないかを"
                 "個別に判定する。primaryが正しくても採用済みsupporting propositionが崩れていればrejectする",
+                "- observed_stateはPlanとの一致判定より先に、Character Utterance.speechが実際に表している"
+                "stateを意味として観測した値である。期待されるPlan stateをコピーしてはいけない。",
+                "- observed_stateは absent/low/moderate/high/very_high/present/overview/unknown/omitted の"
+                "いずれかを返す。特定の自然語をenumへ機械的対応させず、speech全体の意味から判断する。",
                 "- state=low/moderate/high/very_highは単なるpresenceではなく明示的な強度stateである。"
                 "speechがその状態の存在だけを示し、Planの強度差を意味的に識別できない場合は"
-                "state_fidelity=weakenedとする。特定の程度副詞を必須にはしない",
+                "observed_state=presentかつstate_fidelity=weakenedとする。特定の程度副詞を必須にはしない",
                 "- explicit intensity stateでは必ずcounterfactualを行う。Planのstateを単なるpresentへ"
                 "置き換えても現在のspeechが同じ意味のまま十分成立するなら、強度差はspeechに現れていない。"
                 "その場合presence_only_counterfactual_equivalent=true、intensity_semantics_preserved=false、"
                 "state_fidelity=weakenedとする",
                 "- explicit intensityをexactとする場合は、presentとの差を担う実際のspeech文字列を"
                 "intensity_evidence_spansへ原文のまま1件以上列挙する。predicateの存在だけを示す裸の表現を"
-                "強度根拠にしない。『低め』『強め』等のdegreeを担う表現は根拠になり得る一方、"
-                "『落ち着いている』『いらだちもある』等のbare presenceだけではlow/moderate/highの"
-                "根拠にならない。程度副詞、構文、反復、強調など手段は固定しない",
+                "強度根拠にしない。強度は程度副詞だけでなく構文・対比・反復・婉曲・強調等でも表現できる。"
+                "表現手段を有限語彙へ限定しない",
                 "- predicate/intensity/certainty/conceptのevidence_spansはすべてCharacter Utterance.speechに"
                 "実在する部分文字列とする。内部state名、Plan JSON、説明用の言い換え、speechに存在しない語を"
                 "根拠として捏造しない",
                 "- state=unknownは存在・不在・強度が未確定である。unknownをpresent/absent/low等へ"
                 "変換した発話はrejectする。hedge付きでも特定polarityを推測していればrejectする",
-                "- state=unknownでは、target predicateについて『当てはまるかはっきりしない』『まだわからない』"
-                "『判断できない』等、predicate自体を現時点で確定できないことを述べる表現はexact realizationに"
-                "なり得る。target predicateを保持しpolarityをcommitしていない限り、これをpredicateから逃げた"
-                "meta-uncertaintyとしてrejectしない",
+                "- state=unknownでは、target predicateについて現時点で確定できないことを述べる表現は"
+                "exact realizationになり得る。target predicateを保持しpolarityをcommitしていない限り、"
+                "これをpredicateから逃げたmeta-uncertaintyとしてrejectしない",
                 "- state=unknownかつcertainty=lowでは、同じ慎重な表現がunknown stateと低い断定度の両方を"
                 "自然に担ってよい。ただしpredicate自体をspeechから省略してよい意味ではない",
-                "- yes/no型User Wording Hintへの『うん』『ううん』『そう』『違う』等も、speech全体として"
-                "present/absentを確定するならunknown保持ではなくstate_fidelity=unknown_committedとする",
-                "- state=presentは存在のみで強度を含まない。Planにlow/moderate/high/very_high等の"
-                "強度stateがないのに『少し』『かなり』等の強度を追加した場合はrejectする",
+                "- yes/no型User Wording Hintへの短い肯定・否定でも、speech全体としてpresent/absentを"
+                "確定するならunknown保持ではなくstate_fidelity=unknown_committedとする",
+                "- state=presentは存在のみで強度を含まない。Planに強度stateがないのにspeechが意味上の"
+                "強度を追加した場合はunsupported_intensity_added=trueとしてrejectする",
                 "- state_fidelityは各realized propositionについてexact/weakened/strengthened/"
                 "polarity_changed/unknown_committed/omittedのいずれかで判定する。accepted=trueにできるのは"
                 "Characterが列挙した全realization IDのstate_fidelityがexactの場合だけ",
                 "- speechに意味上の程度・強弱を与える表現があればsurface_evidence.intensity_markersへ"
-                "原文のまま列挙する。単なる語調filler、時間限定、epistemic hedge、断定度表現は、それ自体が"
-                "predicateの程度・強度を変えない限りintensity markerではない。例えば『今のところ』"
-                "『はっきりしない』『かな』をunknown/certaintyの表現として使うだけならintensity markerにしない",
+                "原文のまま列挙する。これは診断spanであり、Runtimeはその語からstateを再推定しない。"
+                "時間限定、epistemic hedge、断定度表現はpredicateの程度を変えない限りintensity markerではない",
                 "- certaintyは指定stateへのepistemic certaintyである。medium/lowを強度へ変換せず、"
                 "断定度を過大化・矮小化していないことを確認する",
                 "- certainty=medium/lowでcertainty_preserved=trueならcertainty_evidence_spansへepistemicな"
@@ -160,7 +161,7 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "state_fidelityを指定enum、intensity_semantics_preservedと"
                 "presence_only_counterfactual_equivalentをbool、predicate_evidence_spans / "
                 "certainty_evidence_spans / concept_evidence_spans / intensity_evidence_spansをstring配列で返す。"
-                "concept=nullでもconcept_preserved=trueを返す。",
+                "explicit intensity stateではobserved_stateも必須。concept=nullでもconcept_preserved=trueを返す。",
                 "intensity stateでないpropositionではintensity_semantics_preserved=true、"
                 "presence_only_counterfactual_equivalent=false、intensity_evidence_spans=[]を返す。",
                 "raw Emotion/Drive値やevidence pathを推測して検証しない。Semantic Planを正本とする。",
@@ -171,7 +172,7 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 '"unsupported_intensity_added":false},'
                 '"realized_proposition_checks":[{"realization_id":"proposition:0:joy",'
                 '"predicate_preserved":true,"predicate_evidence_spans":["speech中の対象表現"],'
-                '"state_preserved":true,"state_fidelity":"exact",'
+                '"state_preserved":true,"observed_state":"high","state_fidelity":"exact",'
                 '"certainty_preserved":true,"certainty_evidence_spans":[],'
                 '"concept_preserved":true,"concept_evidence_spans":[],'
                 '"intensity_semantics_preserved":true,'
@@ -231,6 +232,11 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                         item.state
                     ),
                     "state_fidelity": "preserve_exact_semantic_state",
+                    "observed_state_policy": (
+                        "required_from_speech_before_plan_comparison"
+                        if intensity_state
+                        else "optional_diagnostic"
+                    ),
                     "intensity_fidelity": (
                         "must_preserve_intensity_if_realized"
                         if intensity_state
