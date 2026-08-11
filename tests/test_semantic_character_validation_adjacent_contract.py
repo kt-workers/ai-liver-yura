@@ -166,6 +166,9 @@ def _accepted_validation_payload(*, target_id: str = "joy") -> dict[str, object]
                 "state_fidelity": "exact",
                 "certainty_preserved": True,
                 "concept_preserved": True,
+                "intensity_semantics_preserved": True,
+                "presence_only_counterfactual_equivalent": False,
+                "intensity_evidence_spans": [],
             }
         ],
         "surface_evidence": {"intensity_markers": []},
