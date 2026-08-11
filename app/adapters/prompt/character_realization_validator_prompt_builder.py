@@ -10,6 +10,7 @@ from app.domain.semantic_utterance import SemanticUtterancePlan
 
 
 _INTERNAL_STATE_TYPES = frozenset({"internal_state", "agent_internal_state"})
+_INTENSITY_STATES = frozenset({"low", "moderate", "high", "very_high"})
 
 
 class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBuilder):
@@ -76,17 +77,29 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "検証基準:",
                 "- primary target propositionはrequired=trueの必須意味単位である。required_facetsに"
                 "列挙されたpredicate/state/certainty/conceptをspeechがすべて意味的に保持していることを確認する",
+                "- supporting propositionは省略可能。ただしCharacter Utteranceのsemantic_realizationsに"
+                "IDが列挙されている場合、そのpropositionをspeechへ採用した主張なので、"
+                "if_realized_required_facetsを独立にすべて検証する",
                 "- predicate_preservedは内部英語ラベルがspeechに存在するかではなく、speech本文だけから"
                 "何について答えているかという質問対象・述語関係の意味を識別できるかで判定する",
                 "- primary propositionのconceptがnon-nullなら、そのconceptの意味がspeechに必要。"
-                "conceptを落として単なる存在表明だけに縮退した場合はrejectする",
+                "conceptを落として単なる『何かある』等の存在表明だけに縮退した場合はrejectする",
                 "- conceptはpredicateを修飾するfacetであり代替ではない。conceptだけを表現してpredicateの"
                 "質問対象意味がspeechから消えた場合は、concept_preserved=trueでもpredicate_preserved=falseとする",
-                "- primary target propositionのpolarity/state/certaintyを反転・過大化・矮小化していない",
+                "- 各realized propositionのpolarity/state/certaintyを反転・過大化・矮小化していないかを"
+                "個別に判定する。primaryが正しくても採用済みsupporting propositionが崩れていればrejectする",
+                "- state=low/moderate/high/very_highは単なるpresenceではなく明示的な強度stateである。"
+                "speechがその状態の存在だけを示し、Planの強度差を意味的に識別できない場合は"
+                "state_fidelity=weakenedとする。特定の程度副詞を必須にはしない",
                 "- state=unknownは存在・不在・強度が未確定である。unknownをpresent/absent/low等へ"
                 "変換した発話はrejectする。hedge付きでも特定polarityを推測していればrejectする",
+                "- yes/no型User Wording Hintへの『うん』『ううん』『そう』『違う』等も、speech全体として"
+                "present/absentを確定するならunknown保持ではなくstate_fidelity=unknown_committedとする",
                 "- state=presentは存在のみで強度を含まない。Planにlow/moderate/high/very_high等の"
                 "強度stateがないのに『少し』『かなり』等の強度を追加した場合はrejectする",
+                "- state_fidelityは各realized propositionについてexact/weakened/strengthened/"
+                "polarity_changed/unknown_committed/omittedのいずれかで判定する。accepted=trueにできるのは"
+                "Characterが列挙した全realization IDのstate_fidelityがexactの場合だけ",
                 "- speechに意味上の程度・強弱を与える表現があればsurface_evidence.intensity_markersへ"
                 "原文のまま列挙する。単なる語調fillerで強度意味を持たないものは列挙しない",
                 "- certaintyは指定stateへのepistemic certaintyである。medium/lowを強度へ変換せず、"
@@ -101,16 +114,24 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "- question_budget/new_direction_budgetを越えていない",
                 "- existence boundaryを破っていない",
                 "- 言い回し、語尾、filler、柔らかさ等のCharacter表現差だけを理由にrejectしない",
-                "- semantic_realizationsは補助診断であり、IDがあるだけでpredicateを含むspeechの意味整合を自動承認しない",
-                "semantic_checksは各facetを独立に判定する。accepted=trueでも、required_facets_preserved、"
-                "predicate_preserved、state_preserved、certainty_preserved、concept_preservedの必要項目がfalse、"
-                "またはunsupported_intensity_added=trueならRuntime側でrejectされる。",
+                "- semantic_realizationsは補助診断だが、Characterが列挙した各IDは採用した意味単位の主張。"
+                "IDがあるだけで意味整合を自動承認せず、realized_proposition_checksで個別検証する",
+                "semantic_checksはprimary aggregate診断として各facetを独立に判定する。accepted=trueでも、"
+                "required_facets_preserved、predicate_preserved、state_preserved、certainty_preserved、"
+                "concept_preservedの必要項目がfalse、またはunsupported_intensity_added=trueならRuntime側でrejectされる。",
+                "realized_proposition_checksはCharacter Utteranceのsemantic_realizationsに列挙された"
+                "各IDについてちょうど1件返す。省略されたsupporting propositionのcheckは返さない。"
+                "各checkはpredicate_preserved/state_preserved/certainty_preserved/concept_preservedをbool、"
+                "state_fidelityを指定enumで返す。concept=nullでもconcept_preserved=trueを返す。",
                 "raw Emotion/Drive値やevidence pathを推測して検証しない。Semantic Planを正本とする。",
                 "JSONのみ返す:",
                 '{"accepted":true,"reason":"semantic_realization_consistent","differences":[],'
                 '"semantic_checks":{"required_facets_preserved":true,"predicate_preserved":true,'
                 '"state_preserved":true,"certainty_preserved":true,"concept_preserved":true,'
                 '"unsupported_intensity_added":false},'
+                '"realized_proposition_checks":[{"realization_id":"proposition:0:joy",'
+                '"predicate_preserved":true,"state_preserved":true,"state_fidelity":"exact",'
+                '"certainty_preserved":true,"concept_preserved":true}],'
                 '"surface_evidence":{"intensity_markers":[]}}',
             ]
         )
@@ -137,11 +158,10 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
         propositions: list[dict[str, object]] = []
         for index, item in enumerate(plan.propositions):
             required = index == 0
-            required_facets: list[str] = []
-            if required:
-                required_facets.extend(("predicate", "state", "certainty"))
-                if item.concept is not None:
-                    required_facets.append("concept")
+            all_facets = ["predicate", "state", "certainty"]
+            if item.concept is not None:
+                all_facets.append("concept")
+            intensity_state = item.state in _INTENSITY_STATES
             propositions.append(
                 {
                     "realization_id": f"proposition:{index}:{item.predicate}",
@@ -154,7 +174,25 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                     "certainty": item.certainty,
                     "concept": item.concept,
                     "required": required,
-                    "required_facets": required_facets,
+                    "required_facets": all_facets if required else [],
+                    "realization_policy": (
+                        "required"
+                        if required
+                        else "optional_but_facet_complete_if_realized"
+                    ),
+                    "if_realized_required_facets": all_facets,
+                    "state_semantics": CharacterRealizationValidatorPromptBuilder._state_semantics(
+                        item.state
+                    ),
+                    "state_fidelity": "preserve_exact_semantic_state",
+                    "intensity_fidelity": (
+                        "must_preserve_intensity_if_realized"
+                        if intensity_state
+                        else "not_applicable"
+                    ),
+                    "polarity_commitment": (
+                        "forbidden" if item.state == "unknown" else "bounded_by_state"
+                    ),
                 }
             )
         return {
@@ -171,3 +209,15 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
             "interpersonal": plan.interpersonal.as_context(),
             "discourse_context": dict(plan.discourse_context),
         }
+
+    @staticmethod
+    def _state_semantics(state: str) -> str:
+        if state == "present":
+            return "presence_without_intensity"
+        if state == "absent":
+            return "absence"
+        if state == "unknown":
+            return "unknown_without_polarity_guess"
+        if state in _INTENSITY_STATES:
+            return "explicit_intensity_state"
+        return "semantic_state"
