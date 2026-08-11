@@ -24,10 +24,39 @@ from app.runtime.character_realization_validator import CharacterRealizationVali
 
 
 class _ValidationModel:
-    def __init__(self, payload: dict[str, object]) -> None:
+    def __init__(
+        self,
+        payload: dict[str, object],
+        *,
+        observed_state: str = "unknown",
+        observed_certainty: str = "low",
+        state_evidence: str = "はっきりしない",
+        certainty_evidence: str = "はっきりしない",
+    ) -> None:
         self.payload = payload
+        self.observed_state = observed_state
+        self.observed_certainty = observed_certainty
+        self.state_evidence = state_evidence
+        self.certainty_evidence = certainty_evidence
 
     async def validate_character_response(self, activity: Activity) -> str:
+        if activity.context.get("llm_role") == "character_realization_observer":
+            return json.dumps(
+                {
+                    "observations": [
+                        {
+                            "realization_id": "proposition:0:sadness",
+                            "predicate_realized": True,
+                            "observed_state": self.observed_state,
+                            "observed_certainty": self.observed_certainty,
+                            "predicate_evidence_spans": ["悲し"],
+                            "state_evidence_spans": [self.state_evidence],
+                            "certainty_evidence_spans": [self.certainty_evidence],
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            )
         return json.dumps(self.payload, ensure_ascii=False)
 
 
@@ -118,9 +147,22 @@ def _accepted_payload(
     }
 
 
-def _validator(payload: dict[str, object]) -> CharacterRealizationValidator:
+def _validator(
+    payload: dict[str, object],
+    *,
+    observed_state: str = "unknown",
+    observed_certainty: str = "low",
+    state_evidence: str = "はっきりしない",
+    certainty_evidence: str = "はっきりしない",
+) -> CharacterRealizationValidator:
     return CharacterRealizationValidator(
-        model=_ValidationModel(payload),
+        model=_ValidationModel(
+            payload,
+            observed_state=observed_state,
+            observed_certainty=observed_certainty,
+            state_evidence=state_evidence,
+            certainty_evidence=certainty_evidence,
+        ),
         prompt_builder=CharacterRealizationValidatorPromptBuilder(),
     )
 
@@ -150,7 +192,9 @@ def test_prompt_treats_predicate_uncertainty_as_exact_unknown_candidate() -> Non
 @pytest.mark.asyncio
 async def test_model_reported_uncertainty_markers_do_not_reject_valid_unknown() -> None:
     result = await _validator(
-        _accepted_payload(surface_markers=["今のところ", "はっきりしない"])
+        _accepted_payload(surface_markers=["今のところ", "はっきりしない"]),
+        state_evidence="はっきりしない",
+        certainty_evidence="はっきりしない",
     ).validate(
         _source(),
         _context(),
@@ -163,9 +207,13 @@ async def test_model_reported_uncertainty_markers_do_not_reject_valid_unknown() 
 
 
 @pytest.mark.asyncio
-async def test_actual_deterministic_intensity_marker_still_rejects_unknown() -> None:
+async def test_unknown_committed_to_low_is_rejected_by_independent_observation() -> None:
     result = await _validator(
-        _accepted_payload(surface_markers=[], certainty_evidence="かも")
+        _accepted_payload(surface_markers=[], certainty_evidence="かも"),
+        observed_state="low",
+        observed_certainty="low",
+        state_evidence="少し悲しい",
+        certainty_evidence="かも",
     ).validate(
         _source(),
         _context(),
@@ -173,5 +221,8 @@ async def test_actual_deterministic_intensity_marker_still_rejects_unknown() -> 
     )
 
     assert result.accepted is False
-    assert result.reason == "semantic_facet_validation_failed"
-    assert "unsupported_intensity_markers:少し" in result.claim_differences
+    assert result.reason == "observed_semantic_state_mismatch"
+    assert (
+        "proposition:0:sadness:observed_state_mismatch:expected=unknown:observed=low"
+        in result.claim_differences
+    )
