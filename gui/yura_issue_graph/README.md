@@ -6,10 +6,12 @@ GitHub Issueの親子関係・依存関係と、GitHub Projects v2「プロジ�
 
 - 親Issue → 子Issueを実線矢印で表示
 - `Depends on:` / `依存:` を破線矢印で表示
+- depthは初期配置の参考だけに使い、固定列へ縛らず衝突回避と関係距離でノードを自由配置
 - 線は表示中Issueノードを障害物として扱い、可能な限りノードを迂回して描画
 - ノード選択時、そのIssueを起点として伸びる線を強調し、その他の線を背景化
 - 初期表示はOpen Issueのみ。`Closedも表示`スイッチでClosed Issueを含む表示へ切替
 - Closed表示切替時はserver-sideのGitHub取得条件自体を切り替え、通常時にClosed Issueを先読みしない
+- Closed Issueには`Closed`バッジを追加し、Projects v2 Statusとは別情報として表示
 - Status / Issueレベルをノードへ表示
 - In progress / Review / Verification / Blocked等のStatus filter
 - Issue番号・タイトル検索
