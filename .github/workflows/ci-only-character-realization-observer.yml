@@ -1,4 +1,4 @@
-name: CI-only Character Realization Observer
+name: CI-only Full Regression Bisect
 
 on:
   pull_request:
@@ -10,10 +10,10 @@ permissions:
   contents: read
 
 jobs:
-  focused:
-    name: character realization focused diagnostics
+  bisect:
+    name: full regression grouped diagnostics
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -30,45 +30,23 @@ jobs:
           python -m pip install --disable-pip-version-check --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
-      - name: Observer contract
+      - name: Tests a-f
         if: always()
-        run: pytest -q tests/test_character_realization_observer_contract.py
-      - name: Foundation completion
+        run: |
+          files=$(find tests -type f -name 'test_*.py' | sort | awk -F/ '{n=$NF; c=substr(n,6,1); if (c >= "a" && c <= "f") print $0}')
+          test -z "$files" || pytest -x -q $files
+      - name: Tests g-l
         if: always()
-        run: pytest -q tests/test_character_realization_foundation_completion.py
-      - name: Facet evidence runtime gate
+        run: |
+          files=$(find tests -type f -name 'test_*.py' | sort | awk -F/ '{n=$NF; c=substr(n,6,1); if (c >= "g" && c <= "l") print $0}')
+          test -z "$files" || pytest -x -q $files
+      - name: Tests m-r
         if: always()
-        run: pytest -q tests/test_character_realization_facet_evidence_runtime_gate.py
-      - name: Unknown state
+        run: |
+          files=$(find tests -type f -name 'test_*.py' | sort | awk -F/ '{n=$NF; c=substr(n,6,1); if (c >= "m" && c <= "r") print $0}')
+          test -z "$files" || pytest -x -q $files
+      - name: Tests s-z
         if: always()
-        run: pytest -q tests/test_character_realization_unknown_state.py
-      - name: Unknown surface evidence
-        if: always()
-        run: pytest -q tests/test_character_realization_unknown_surface_evidence.py
-      - name: Validator facet evidence prompt
-        if: always()
-        run: pytest -q tests/test_character_realization_validator_facet_evidence_prompt.py
-      - name: Validator intensity evidence
-        if: always()
-        run: pytest -q tests/test_character_realization_validator_intensity_evidence.py
-      - name: Validator state fidelity
-        if: always()
-        run: pytest -q tests/test_character_realization_validator_state_fidelity.py
-      - name: Current desire adjacent
-        if: always()
-        run: pytest -q tests/test_current_desire_semantic_character_validation_adjacent.py
-      - name: Semantic character adjacent
-        if: always()
-        run: pytest -q tests/test_semantic_character_validation_adjacent_contract.py
-      - name: Intensity adjacent
-        if: always()
-        run: pytest -q tests/test_semantic_character_validator_intensity_evidence_adjacent.py
-      - name: State fidelity adjacent
-        if: always()
-        run: pytest -q tests/test_semantic_character_validator_state_fidelity_adjacent.py
-      - name: Unknown surface adjacent
-        if: always()
-        run: pytest -q tests/test_semantic_character_validator_unknown_surface_adjacent.py
-      - name: Separated response validation
-        if: always()
-        run: pytest -q tests/test_separated_response_validation.py tests/test_separated_response_validation_unit_gate.py
+        run: |
+          files=$(find tests -type f -name 'test_*.py' | sort | awk -F/ '{n=$NF; c=substr(n,6,1); if (c >= "s" && c <= "z") print $0}')
+          test -z "$files" || pytest -x -q $files
