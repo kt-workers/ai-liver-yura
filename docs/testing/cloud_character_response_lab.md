@@ -4,6 +4,23 @@ Issue #223 の検証画面。
 
 Character生成・Semantic Validator・Character Realization Validatorを全体Runtimeから切り離し、productionの発話生成境界を実OpenAIで検証する。
 
+## Extended Verification 一括実行
+
+Extended Verification をまとめて収集する場合は、既存Lab APIを逐次呼び出す一括ランナーを使用する。
+
+```bash
+export YURA_LAB_USERNAME='...'
+export YURA_LAB_PASSWORD='...'
+
+.venv/bin/python -m cloud_validation.character_semantic_extended_batch \
+  --base-url 'https://<render-service>' \
+  --output extended-verification.json
+```
+
+ランナーは `extended_` で始まるpresetをサーバー返却順に実行し、結果を1つのJSONへまとめる。Character Realization Validator自身が検証対象なので、ランナーはSemantic PASS/FAILを自動判定しない。
+
+詳細契約は `docs/design/character_semantic_extended_batch_runner_v1.0.0.md` を参照する。
+
 ## 対象branch
 
 ```text
