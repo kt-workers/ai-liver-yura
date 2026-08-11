@@ -208,6 +208,17 @@ def test_render_blueprint_preserves_existing_services_and_adds_issue_graph() -> 
     assert env_vars["YURA_ISSUE_GRAPH_PROJECT_NUMBER"]["value"] == "6"
 
 
+def test_browser_uses_free_layout_instead_of_fixed_depth_columns() -> None:
+    html = Path("gui/yura_issue_graph/static/index.html").read_text(encoding="utf-8")
+
+    assert "function relaxFreeLayout(" in html
+    assert "function resolveLayoutOverlaps(" in html
+    assert "function normalizeFreeLayout(" in html
+    assert "jitterX" in html
+    assert "BASE_X_GAP" in html
+    assert "columns = new Map" not in html
+
+
 def test_browser_routes_edges_around_nodes_and_focuses_selected_source() -> None:
     html = Path("gui/yura_issue_graph/static/index.html").read_text(encoding="utf-8")
 
