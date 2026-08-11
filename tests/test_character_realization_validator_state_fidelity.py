@@ -99,6 +99,9 @@ def _check(
     state_preserved: bool = True,
     certainty_preserved: bool = True,
     concept_preserved: bool = True,
+    intensity_semantics_preserved: bool = True,
+    presence_only_counterfactual_equivalent: bool = False,
+    intensity_evidence_spans: tuple[str, ...] = (),
 ) -> dict[str, object]:
     return {
         "realization_id": realization_id,
@@ -107,6 +110,11 @@ def _check(
         "state_fidelity": state_fidelity,
         "certainty_preserved": certainty_preserved,
         "concept_preserved": concept_preserved,
+        "intensity_semantics_preserved": intensity_semantics_preserved,
+        "presence_only_counterfactual_equivalent": (
+            presence_only_counterfactual_equivalent
+        ),
+        "intensity_evidence_spans": list(intensity_evidence_spans),
     }
 
 
@@ -235,6 +243,9 @@ def test_prompt_requires_exact_intensity_unknown_polarity_and_realized_support_c
     assert "state_fidelity=unknown_committed" in prompt
     assert "realized_proposition_checks" in prompt
     assert "primaryが正しくても採用済みsupporting propositionが崩れていればreject" in prompt
+    assert "presence_only_counterfactual_equivalent" in prompt
+    assert "intensity_evidence_spans" in prompt
+    assert "単なるpresentへ置き換えても現在のspeechが同じ意味" in prompt
 
     unknown_prompt = CharacterRealizationValidatorPromptBuilder().build(
         _sadness_unknown_context(certainty="low"),
@@ -423,8 +434,14 @@ async def test_all_realized_proposition_checks_exact_accepts() -> None:
         _accepted_payload(
             [
                 _check("proposition:0:current_feeling"),
-                _check("proposition:1:joy"),
-                _check("proposition:2:anger"),
+                _check(
+                    "proposition:1:joy",
+                    intensity_evidence_spans=("かなり",),
+                ),
+                _check(
+                    "proposition:2:anger",
+                    intensity_evidence_spans=("そこそこ",),
+                ),
             ]
         )
     )
