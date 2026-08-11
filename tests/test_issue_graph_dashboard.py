@@ -154,3 +154,16 @@ def test_render_blueprint_preserves_existing_services_and_adds_issue_graph() -> 
     assert env_vars["YURA_ISSUE_GRAPH_OWNER"]["value"] == "ktan514"
     assert env_vars["YURA_ISSUE_GRAPH_REPOSITORY"]["value"] == "ai-liver-yura"
     assert env_vars["YURA_ISSUE_GRAPH_PROJECT_NUMBER"]["value"] == "6"
+
+
+def test_browser_routes_edges_around_nodes_and_focuses_selected_source() -> None:
+    html = Path("gui/yura_issue_graph/static/index.html").read_text(encoding="utf-8")
+
+    assert "function obstacleRects(" in html
+    assert "function routeEdgeAvoidingNodes(" in html
+    assert "function fallbackBezier(" in html
+    assert "segmentClear(" in html
+    assert "edge.source===state.selected" in html
+    assert ".edge.focused" in html
+    assert ".edge.dimmed" in html
+    assert "dependency focused" not in html
