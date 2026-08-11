@@ -13,9 +13,9 @@ from .models import IssueNode, build_edges
 JsonTransport = Callable[[Request], Any]
 
 _REPOSITORY_ISSUES_QUERY = """
-query($owner: String!, $repository: String!, $cursor: String) {
+query($owner: String!, $repository: String!, $cursor: String, $states: [IssueState!]!) {
   repository(owner: $owner, name: $repository) {
-    issues(first: 100, after: $cursor, states: [OPEN], orderBy: {field: UPDATED_AT, direction: DESC}) {
+    issues(first: 100, after: $cursor, states: $states, orderBy: {field: UPDATED_AT, direction: DESC}) {
       nodes {
         number
         title
@@ -84,23 +84,29 @@ class IssueGraphService:
     config: IssueGraphConfig
     transport: JsonTransport | None = None
 
-    def load_graph(self) -> dict[str, Any]:
+    def load_graph(self, *, include_closed: bool = False) -> dict[str, Any]:
         diagnostics: list[str] = []
         degraded = False
 
         if self.config.token:
             try:
-                nodes = self._load_graphql_issues()
+                nodes = self._load_graphql_issues(include_closed=include_closed)
             except GitHubApiError as error:
                 degraded = True
                 diagnostics.append(f"GraphQL Issue取得失敗: {error.public_message}")
-                nodes = self._load_rest_issues(diagnostics)
+                nodes = self._load_rest_issues(
+                    diagnostics,
+                    include_closed=include_closed,
+                )
         else:
             degraded = True
             diagnostics.append(
                 "GITHUB_TOKEN未設定のためProjects v2を取得せずpublic Issueのdegraded modeで表示しています。"
             )
-            nodes = self._load_rest_issues(diagnostics)
+            nodes = self._load_rest_issues(
+                diagnostics,
+                include_closed=include_closed,
+            )
 
         for node in nodes:
             node.apply_compatibility_relations()
@@ -126,15 +132,17 @@ class IssueGraphService:
                 "number": self.config.project_number,
                 "title": project_title,
             },
+            "include_closed": include_closed,
             "degraded": degraded,
             "diagnostics": diagnostics,
             "nodes": [node.to_dict() for node in nodes],
             "edges": [edge.to_dict() for edge in edges],
         }
 
-    def _load_graphql_issues(self) -> list[IssueNode]:
+    def _load_graphql_issues(self, *, include_closed: bool = False) -> list[IssueNode]:
         cursor: str | None = None
         nodes: list[IssueNode] = []
+        states = ["OPEN", "CLOSED"] if include_closed else ["OPEN"]
         while True:
             data = self._graphql(
                 _REPOSITORY_ISSUES_QUERY,
@@ -142,6 +150,7 @@ class IssueGraphService:
                     "owner": self.config.owner,
                     "repository": self.config.repository,
                     "cursor": cursor,
+                    "states": states,
                 },
             )
             repository = data.get("repository")
@@ -228,12 +237,23 @@ class IssueGraphService:
                 break
         return title, fields
 
-    def _load_rest_issues(self, diagnostics: list[str]) -> list[IssueNode]:
+    def _load_rest_issues(
+        self,
+        diagnostics: list[str],
+        *,
+        include_closed: bool = False,
+    ) -> list[IssueNode]:
         page = 1
         nodes: list[IssueNode] = []
         try:
             while True:
-                query = urlencode({"state": "open", "per_page": 100, "page": page})
+                query = urlencode(
+                    {
+                        "state": "all" if include_closed else "open",
+                        "per_page": 100,
+                        "page": page,
+                    }
+                )
                 url = (
                     f"https://api.github.com/repos/{self.config.owner}/"
                     f"{self.config.repository}/issues?{query}"
