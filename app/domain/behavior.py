@@ -17,12 +17,6 @@ from app.shared.contracts.activity import (
     ActivityDefinition as ActivityDefinition,
 )
 from app.shared.contracts.activity import (
-    ActivityMatcher as ActivityMatcher,
-)
-from app.shared.contracts.activity import (
-    ActivityMatcherContext as ActivityMatcherContext,
-)
-from app.shared.contracts.activity import (
     ActivityOperation as ActivityOperation,
 )
 from app.shared.contracts.activity import (
@@ -33,9 +27,6 @@ from app.shared.contracts.activity import (
 )
 from app.shared.contracts.activity import (
     BehaviorDecision as BehaviorDecision,
-)
-from app.shared.contracts.activity import (
-    DeterministicActivityMatch as DeterministicActivityMatch,
 )
 from app.shared.contracts.activity import (
     OngoingActivityPlanningContext as OngoingActivityPlanningContext,
@@ -122,9 +113,6 @@ class SituationAnalysis:
     ongoing_input_decision: OngoingInputDecision | None = None
     constraint_errors: tuple[ConstraintValidationError, ...] = ()
     constraints_schema_version: str | None = None
-    matcher_id: str | None = None
-    matcher_type: str | None = None
-    matcher_evidence: str | None = None
     semantic_equivalence_evidence: (
         ActivityCandidateSemanticEquivalenceEvidence | None
     ) = None
