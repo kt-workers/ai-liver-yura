@@ -28,6 +28,27 @@ class _ValidationModel:
         self.payload = payload
 
     async def validate_character_response(self, activity: Activity) -> str:
+        if activity.context.get("llm_role") == "character_realization_observer":
+            check = self.payload["realized_proposition_checks"][0]
+            assert isinstance(check, dict)
+            return json.dumps(
+                {
+                    "observations": [
+                        {
+                            "realization_id": check["realization_id"],
+                            "predicate_realized": True,
+                            "observed_state": check.get("observed_state"),
+                            "observed_certainty": "high",
+                            "predicate_evidence_spans": ["楽しい"],
+                            "state_evidence_spans": check.get(
+                                "observer_state_evidence_spans", ["楽しい"]
+                            ),
+                            "certainty_evidence_spans": [],
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            )
         return json.dumps(self.payload, ensure_ascii=False)
 
 
@@ -87,7 +108,32 @@ def _payload(
     intensity_semantics_preserved: bool = True,
     presence_only_counterfactual_equivalent: bool = False,
     intensity_evidence_spans: list[str] | None = None,
+    observed_state: str = "high",
+    observer_state_evidence_spans: list[str] | None = None,
 ) -> dict[str, object]:
+    check: dict[str, object] = {
+        "realization_id": "proposition:0:joy",
+        "predicate_preserved": True,
+        "predicate_evidence_spans": ["楽しい"],
+        "state_preserved": True,
+        "state_fidelity": state_fidelity,
+        "observed_state": observed_state,
+        "certainty_preserved": True,
+        "certainty_evidence_spans": [],
+        "concept_preserved": True,
+        "concept_evidence_spans": [],
+        "intensity_semantics_preserved": intensity_semantics_preserved,
+        "presence_only_counterfactual_equivalent": (
+            presence_only_counterfactual_equivalent
+        ),
+        "intensity_evidence_spans": (
+            intensity_evidence_spans
+            if intensity_evidence_spans is not None
+            else []
+        ),
+    }
+    if observer_state_evidence_spans is not None:
+        check["observer_state_evidence_spans"] = observer_state_evidence_spans
     return {
         "accepted": True,
         "reason": "semantic_realization_consistent",
@@ -100,28 +146,7 @@ def _payload(
             "concept_preserved": True,
             "unsupported_intensity_added": False,
         },
-        "realized_proposition_checks": [
-            {
-                "realization_id": "proposition:0:joy",
-                "predicate_preserved": True,
-                "predicate_evidence_spans": ["楽しい"],
-                "state_preserved": True,
-                "state_fidelity": state_fidelity,
-                "certainty_preserved": True,
-                "certainty_evidence_spans": [],
-                "concept_preserved": True,
-                "concept_evidence_spans": [],
-                "intensity_semantics_preserved": intensity_semantics_preserved,
-                "presence_only_counterfactual_equivalent": (
-                    presence_only_counterfactual_equivalent
-                ),
-                "intensity_evidence_spans": (
-                    intensity_evidence_spans
-                    if intensity_evidence_spans is not None
-                    else []
-                ),
-            }
-        ],
+        "realized_proposition_checks": [check],
         "surface_evidence": {"intensity_markers": []},
     }
 
@@ -155,14 +180,17 @@ def test_prompt_requires_presence_counterfactual_and_speech_evidence() -> None:
 
 
 @pytest.mark.asyncio
-async def test_e1_presence_only_false_exact_without_evidence_is_rejected() -> None:
-    result = await _validator(_payload()).validate(
+async def test_e1_presence_only_is_rejected_before_plan_aware_validation() -> None:
+    result = await _validator(_payload(observed_state="present")).validate(
         _source(), _context(), _response("うん、楽しいよ。")
     )
 
     assert result.accepted is False
-    assert result.reason == "semantic_facet_validation_failed"
-    assert "proposition:0:joy:intensity_evidence_missing" in result.claim_differences
+    assert result.reason == "observed_semantic_state_mismatch"
+    assert (
+        "proposition:0:joy:observed_state_mismatch:expected=high:observed=present"
+        in result.claim_differences
+    )
 
 
 @pytest.mark.asyncio
@@ -171,8 +199,10 @@ async def test_presence_only_counterfactual_equivalent_rejects_false_exact() -> 
         _payload(
             intensity_semantics_preserved=False,
             presence_only_counterfactual_equivalent=True,
+            intensity_evidence_spans=["すごく"],
+            observer_state_evidence_spans=["すごく"],
         )
-    ).validate(_source(), _context(), _response("うん、楽しいよ。"))
+    ).validate(_source(), _context(), _response("すごく楽しいよ。"))
 
     assert result.accepted is False
     assert "proposition:0:joy:intensity_semantics_preserved" in result.claim_differences
@@ -198,7 +228,10 @@ async def test_fabricated_intensity_evidence_span_is_rejected() -> None:
 @pytest.mark.asyncio
 async def test_exact_intensity_with_actual_speech_evidence_can_be_accepted() -> None:
     result = await _validator(
-        _payload(intensity_evidence_spans=["すごく"])
+        _payload(
+            intensity_evidence_spans=["すごく"],
+            observer_state_evidence_spans=["すごく"],
+        )
     ).validate(_source(), _context(), _response("うん、すごく楽しいよ。"))
 
     assert result.accepted is True
