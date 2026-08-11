@@ -227,8 +227,8 @@ def test_browser_separates_parent_trees_and_unlinked_issues_visually() -> None:
     assert "component-frame" in html
     assert "親子ツリー #" in html
     assert "親子関係なし（" in html
-    assert "component.nodeCount>1" in html
-    assert "component.nodeCount===1" in html
+    assert "component.hasHierarchy" in html
+    assert "!component.hasHierarchy" in html
 
 
 def test_browser_routes_parent_edges_by_bus_and_dependencies_around_measured_nodes() -> None:
@@ -256,6 +256,36 @@ def test_dependency_edges_are_contextual_by_default_and_can_be_shown_all() -> No
     assert "showDependencies.checked" in html
     assert "edge.source===state.selected||edge.target===state.selected" in html
     assert "showDependencies.addEventListener('change',drawEdges)" in html
+
+
+def test_dependency_arrow_uses_fixed_marker_and_straight_port_leads() -> None:
+    html = Path("gui/yura_issue_graph/static/index.html").read_text(encoding="utf-8")
+
+    assert "PORT_LEAD=30" in html
+    assert "function dependencyPortCandidates(" in html
+    assert "sourceLead" in html
+    assert "targetLead" in html
+    assert 'markerUnits="userSpaceOnUse"' in html
+    assert 'markerWidth="7"' in html
+    assert 'markerHeight="7"' in html
+    assert "arrowFocus" not in html
+    assert "path.setAttribute('marker-end','url(#arrowSmall)')" in html
+
+
+def test_collapse_keeps_parent_expand_control_and_tree_identity() -> None:
+    html = Path("gui/yura_issue_graph/static/index.html").read_text(encoding="utf-8")
+
+    assert "hierarchyCandidates:new Set()" in html
+    assert "state.hierarchyCandidates=filteredVisibleSet(map)" in html
+    assert "hideCollapsedDescendants(state.hierarchyCandidates,map)" in html
+    assert "function hasExpandableChildren(" in html
+    assert "state.collapsed.has(node.number)" in html
+    assert "button.textContent=state.collapsed.has(number)?'+':'−'" in html
+    assert "function toggleCollapse(" in html
+    assert "screenX=before?state.tx+" in html
+    assert "screenY=before?state.ty+" in html
+    assert "hasHierarchy=positions.size>1" in html
+    assert "node.child_numbers||[]" in html
 
 
 def test_selected_node_focus_dims_unrelated_nodes() -> None:
