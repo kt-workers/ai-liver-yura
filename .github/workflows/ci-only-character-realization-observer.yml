@@ -2,8 +2,7 @@ name: CI-only Full Regression Bisect
 
 on:
   pull_request:
-    branches:
-      - develop
+    branches: [develop]
   workflow_dispatch:
 
 permissions:
@@ -11,14 +10,12 @@ permissions:
 
 jobs:
   bisect:
-    name: full regression s diagnostics
+    name: semantic separated diagnostics
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
           cache: pip
@@ -30,23 +27,18 @@ jobs:
           python -m pip install --disable-pip-version-check --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
-      - name: Tests sa-sf
+      - name: semantic files
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_s*.py' | sort | awk -F/ '{n=$NF; c=substr(n,7,1); if (c >= "a" && c <= "f") print $0}')
+          files=$(find tests -type f -name 'test_semantic*.py' | sort)
           test -z "$files" || pytest -x -q $files
-      - name: Tests sg-sl
+      - name: separated files
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_s*.py' | sort | awk -F/ '{n=$NF; c=substr(n,7,1); if (c >= "g" && c <= "l") print $0}')
+          files=$(find tests -type f -name 'test_separated*.py' | sort)
           test -z "$files" || pytest -x -q $files
-      - name: Tests sm-sr
+      - name: other sa-sf files
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_s*.py' | sort | awk -F/ '{n=$NF; c=substr(n,7,1); if (c >= "m" && c <= "r") print $0}')
-          test -z "$files" || pytest -x -q $files
-      - name: Tests ss-sz
-        if: always()
-        run: |
-          files=$(find tests -type f -name 'test_s*.py' | sort | awk -F/ '{n=$NF; c=substr(n,7,1); if (c >= "s" && c <= "z") print $0}')
+          files=$(find tests -type f -name 'test_s*.py' | sort | grep -Ev '/test_(semantic|separated)' | awk -F/ '{n=$NF; c=substr(n,7,1); if (c >= "a" && c <= "f") print $0}')
           test -z "$files" || pytest -x -q $files
