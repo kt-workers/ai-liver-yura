@@ -211,19 +211,9 @@ def _fix_preset_reason(key: str, reason: str) -> None:
     meaning["reason"] = reason
 
 
-def _fix_current_desire_preset_memory() -> None:
-    """全Runtimeを省略するLabでもproductionと同じDesire上流契約を入力する。"""
-
-    preset = base._PRESETS.get("current_desire")
-    if not isinstance(preset, dict):
-        return
-    data = preset.get("data")
-    if not isinstance(data, dict):
-        return
-    memory_value = data.get("memory")
-    memory = dict(memory_value) if isinstance(memory_value, dict) else {}
-    memory["response_content_plan"] = ResponseContentPlan(
-        primary_desire="curiosity",
+def _desire_content_plan(primary_desire: str) -> dict[str, object]:
+    return ResponseContentPlan(
+        primary_desire=primary_desire,
         conversation_strategies=(
             "ask_for_detail",
             "explore_related_topic",
@@ -243,14 +233,139 @@ def _fix_current_desire_preset_memory() -> None:
             "selection_and_execution_boundaries_unchanged",
         ),
     ).as_context()
+
+
+def _set_desire_preset_memory(key: str, primary_desire: str) -> None:
+    """全Runtimeを省略するLabでもproductionと同じDesire上流契約を入力する。"""
+
+    preset = base._PRESETS.get(key)
+    if not isinstance(preset, dict):
+        return
+    data = preset.get("data")
+    if not isinstance(data, dict):
+        return
+    memory_value = data.get("memory")
+    memory = dict(memory_value) if isinstance(memory_value, dict) else {}
+    memory["response_content_plan"] = _desire_content_plan(primary_desire)
     data["memory"] = memory
 
+
+def _register_extended_presets() -> None:
+    """Semantic形の差を検証するExtended Verification専用プリセットを登録する。"""
+
+    base._PRESETS["extended_joy_high"] = base._preset(
+        label="拡張E1: 高いJoy",
+        user_input="楽しい？",
+        target_id="joy",
+        emotion={
+            "current": {
+                "reactive": {
+                    "joy": 0.78,
+                    "amusement": 0.12,
+                    "calm": 0.42,
+                    "anger": 0.0,
+                }
+            }
+        },
+        drive={"curiosity": 0.48, "engagement": 0.56, "energy": 0.8},
+    )
+    base._PRESETS["extended_sadness_unknown_low"] = base._preset(
+        label="拡張E2: Sadness根拠なし",
+        user_input="悲しい？",
+        target_id="sadness",
+        emotion={
+            "current": {
+                "reactive": {
+                    "joy": 0.22,
+                    "amusement": 0.08,
+                    "calm": 0.55,
+                    "anger": 0.0,
+                }
+            }
+        },
+        drive={"curiosity": 0.52, "engagement": 0.5, "energy": 0.58},
+    )
+    base._PRESETS["extended_sadness_explicit_unknown"] = base._preset(
+        label="拡張E3: Sadness明示Unknown",
+        user_input="悲しい？",
+        target_id="sadness",
+        emotion={
+            "current": {
+                "reactive": {
+                    "joy": 0.22,
+                    "amusement": 0.08,
+                    "calm": 0.55,
+                    "anger": 0.0,
+                    "sadness": None,
+                }
+            }
+        },
+        drive={"curiosity": 0.52, "engagement": 0.5, "energy": 0.58},
+    )
+    base._PRESETS["extended_current_feeling_mixed"] = base._preset(
+        label="拡張E4: 現在の気分・混合",
+        user_input="今どんな気分？",
+        target_id="current_feeling",
+        emotion={
+            "current": {
+                "reactive": {
+                    "joy": 0.78,
+                    "anger": 0.48,
+                    "calm": 0.22,
+                    "amusement": 0.02,
+                }
+            }
+        },
+        drive={"curiosity": 0.57, "engagement": 0.61, "energy": 0.72},
+    )
+    base._PRESETS["extended_current_desire_unknown"] = base._preset(
+        label="拡張E5: 現在の欲求・根拠なし",
+        user_input="何かしたい？",
+        target_id="current_desire",
+        emotion={
+            "current": {
+                "reactive": {
+                    "joy": 0.18,
+                    "amusement": 0.06,
+                    "calm": 0.58,
+                    "anger": 0.0,
+                }
+            }
+        },
+        drive={"curiosity": 0.88, "engagement": 0.76, "energy": 0.7},
+    )
+    base._PRESETS["extended_current_desire_connection"] = base._preset(
+        label="拡張E6: 現在の欲求・Connection",
+        user_input="何かしたい？",
+        target_id="current_desire",
+        emotion={
+            "current": {
+                "reactive": {
+                    "joy": 0.2,
+                    "amusement": 0.08,
+                    "calm": 0.6,
+                    "anger": 0.0,
+                }
+            }
+        },
+        drive={"curiosity": 0.5, "engagement": 0.68, "energy": 0.66},
+    )
+    _set_desire_preset_memory("extended_current_desire_connection", "connection")
+
+
+_register_extended_presets()
 
 _fix_preset_reason("joy_low_curiosity_high", "ユーザーは現在の楽しさを直接尋ねている")
 _fix_preset_reason("current_feeling_repeat", "ユーザーは現在の気分を直接尋ねている")
 _fix_preset_reason("anger_low", "ユーザーは現在怒っているかを直接尋ねている")
 _fix_preset_reason("current_desire", "ユーザーは現在何かしたいことがあるかを直接尋ねている")
-_fix_current_desire_preset_memory()
+_fix_preset_reason("extended_joy_high", "ユーザーは現在の楽しさを直接尋ねている")
+_fix_preset_reason("extended_sadness_unknown_low", "ユーザーは現在悲しいかを直接尋ねている")
+_fix_preset_reason("extended_sadness_explicit_unknown", "ユーザーは現在悲しいかを直接尋ねている")
+_fix_preset_reason("extended_current_feeling_mixed", "ユーザーは現在の気分を直接尋ねている")
+_fix_preset_reason("extended_current_desire_unknown", "ユーザーは現在何かしたいことがあるかを直接尋ねている")
+_fix_preset_reason("extended_current_desire_connection", "ユーザーは現在何かしたいことがあるかを直接尋ねている")
+_set_desire_preset_memory("current_desire", "curiosity")
 
 base._RecordingCharacterModel = _RecordingCharacterModel
 base._RecordingValidatorModel = _RecordingValidatorModel
@@ -258,11 +373,3 @@ base._INDEX_HTML = CHARACTER_SEMANTIC_RESPONSE_LAB_HTML
 
 settings = base.LabSettings.from_env()
 service = CharacterSemanticResponseLabService(settings)
-app = base.create_app(settings=settings, service=service)
-
-__all__ = [
-    "CharacterSemanticResponseLabService",
-    "app",
-    "service",
-    "settings",
-]
