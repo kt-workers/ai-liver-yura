@@ -130,7 +130,26 @@ public repository では REST Open Issues API を利用し、Issue 本文から 
 - Reset view
 - 親 node ごとの collapse
 
-### 6.2 Node
+### 6.2 Edge visibility / focus
+
+Issue数が増えると全エッジを同じ強さで表示した場合に線が重なり、どのノードへ接続しているか判別しにくくなるため、エッジは情報量に応じた視覚的優先順位を持つ。
+
+通常時:
+
+- 親子エッジは実線で表示するが低いopacityとする
+- 依存エッジは破線かつ親子より低いopacityとする
+- 全エッジを完全に隠さず、グラフ全体の構造は把握できる状態を維持する
+
+Issue nodeをhoverまたは選択した場合:
+
+- 対象Issueへ直接接続する親子・依存エッジだけを高opacity・太線で強調する
+- 強調対象の矢印先端も同じ強さで表示する
+- 直接接続していないエッジはさらにfadeし、選択したIssueの関係を追いやすくする
+- click選択は詳細panelを開いている間持続し、hoverは一時的な確認としてclick選択より優先する
+
+エッジの種類そのものは色だけに依存させず、親子=実線、依存=破線の形状差を維持する。
+
+### 6.3 Node
 
 常時表示:
 
@@ -141,7 +160,7 @@ public repository では REST Open Issues API を利用し、Issue 本文から 
 
 Status は色だけに依存せず text badge を必ず表示する。
 
-### 6.3 Detail panel
+### 6.4 Detail panel
 
 node click で以下を表示する。
 
@@ -158,7 +177,7 @@ node click で以下を表示する。
 - related PR
 - body summary
 
-### 6.4 Filter
+### 6.5 Filter
 
 - text search: Issue number / title
 - Status filter
@@ -239,6 +258,7 @@ Verification中はDraft PRのhead `feature/issue-graph-dashboard` を明示的�
 - `render.yaml` に `yura-issue-graph` が存在する
 - Blueprint上でtokenが `sync: false` である
 - Blueprintのhealth checkが `/api/health` を参照する
+- edge focus用のCSS/DOM属性が存在し、親子と依存の形状差を維持する
 
 実画面:
 
@@ -247,6 +267,7 @@ Verification中はDraft PRのhead `feature/issue-graph-dashboard` を明示的�
 - pan / zoom / reset
 - collapse
 - node click detail
+- node hover / clickで接続edgeが強調され、非接続edgeがfadeする
 - search / filter
 - local 起動
 - Render Blueprint sync / deploy
