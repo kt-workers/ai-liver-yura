@@ -8,6 +8,8 @@ GitHub Issueの親子関係・依存関係と、GitHub Projects v2「プロジ�
 - `Depends on:` / `依存:` を破線矢印で表示
 - 線は表示中Issueノードを障害物として扱い、可能な限りノードを迂回して描画
 - ノード選択時、そのIssueを起点として伸びる線を強調し、その他の線を背景化
+- 初期表示はOpen Issueのみ。`Closedも表示`スイッチでClosed Issueを含む表示へ切替
+- Closed表示切替時はserver-sideのGitHub取得条件自体を切り替え、通常時にClosed Issueを先読みしない
 - Status / Issueレベルをノードへ表示
 - In progress / Review / Verification / Blocked等のStatus filter
 - Issue番号・タイトル検索
@@ -68,9 +70,10 @@ feature/issue-graph-dashboard
 ```text
 GET /api/health
 GET /api/graph
+GET /api/graph?include_closed=true
 ```
 
-`/api/graph`はtokenを返しません。
+`/api/graph`は既定でOpen Issueのみを返します。`include_closed=true`の場合はOpen / Closed両方を取得対象にします。tokenは返しません。
 
 ## データ正本
 
