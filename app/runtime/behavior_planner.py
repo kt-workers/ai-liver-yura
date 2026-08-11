@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
-from app.core.plugins.user_request import UserRequestKind, interpret_user_request
 from app.domain.activities import ActivityResult
 from app.domain.activity_constraints import (
     ActivityConstraintValidator,
@@ -21,6 +20,7 @@ from app.domain.behavior import (
     BehaviorDecision,
     BehaviorPlanningContext,
     SituationAnalysis,
+    SpeechAct,
 )
 from app.ports.llm_roles import ResponseGeneratorRoleAdapter
 from app.ports.prompt_builder import SituationPromptBuilder
@@ -286,7 +286,7 @@ class BehaviorPlanner:
             )
 
         if (
-            analysis.evaluator_type == "llm"
+            context.event_type == "user_text"
             and analysis.confidence < self._confidence_threshold
         ):
             return ActivityPlan(
@@ -305,12 +305,16 @@ class BehaviorPlanner:
                 ),
                 operation=analysis.operation,
                 constraints=dict(analysis.constraints),
-                planner_constraints=("低確信度のためActivityを実行しない",),
+                planner_constraints=("意味解釈を確定できないためActivityを実行しない",),
                 speech_act=analysis.speech_act,
                 conversation_phase=analysis.conversation_phase,
                 initiative_level=analysis.initiative_level,
                 confidence=analysis.confidence,
-                reason="semantic_confidence_below_threshold",
+                reason=(
+                    analysis.reason
+                    if analysis.evaluator_type == "semantic_unresolved"
+                    else "semantic_confidence_below_threshold"
+                ),
                 planner_type=analysis.evaluator_type,
                 constraints_schema_version=analysis.constraints_schema_version,
             )
@@ -349,16 +353,14 @@ class BehaviorPlanner:
                 validated_constraints=validation.as_validated(),
             )
 
-        request = interpret_user_request(context.user_text)
         planner_constraints: tuple[str, ...] = ()
         reason = analysis.reason
-        if request.kind == UserRequestKind.EXECUTION:
+        if analysis.speech_act in {SpeechAct.REQUEST, SpeechAct.COMMAND}:
             planner_constraints = (
                 "要求された行為を実行したふりをしない",
                 "同じ実行Activityを再提案しない",
             )
-            if analysis.evaluator_type == "fallback":
-                reason = "execution_request_without_matching_activity"
+            reason = reason or "typed_action_request_without_matching_activity"
         return ActivityPlan(
             decision=BehaviorDecision.CONVERSATION,
             activity_type="conversation",
