@@ -23,6 +23,26 @@ from app.domain.semantic_utterance import (
 from app.runtime.character_realization_validator import CharacterRealizationValidator
 
 
+_DEFAULT_OBSERVED_STATES = {
+    "proposition:0:joy": "high",
+    "proposition:0:sadness": "unknown",
+    "proposition:0:current_feeling": "overview",
+    "proposition:1:joy": "high",
+    "proposition:2:anger": "moderate",
+    "proposition:3:calm": "low",
+    "proposition:4:amusement": "absent",
+}
+_OBSERVER_EVIDENCE = {
+    "proposition:0:joy": "楽しい",
+    "proposition:0:sadness": "悲しい",
+    "proposition:0:current_feeling": "気分",
+    "proposition:1:joy": "うれし",
+    "proposition:2:anger": "腹立たし",
+    "proposition:3:calm": "穏やか",
+    "proposition:4:amusement": "面白",
+}
+
+
 class _RecordingValidationModel:
     def __init__(self, payload: dict[str, object]) -> None:
         self.payload = payload
@@ -30,6 +50,40 @@ class _RecordingValidationModel:
 
     async def validate_character_response(self, activity: Activity) -> str:
         self.activities.append(activity)
+        if activity.context.get("llm_role") == "character_realization_observer":
+            prompt = str(activity.context.get("plugin_prompt_override") or "")
+            lines = prompt.splitlines()
+            marker = lines.index("# Candidate Predicate IDs")
+            candidates = json.loads(lines[marker + 1])
+            overrides = self.payload.get("_observer_overrides", {})
+            override_map = overrides if isinstance(overrides, dict) else {}
+            observations: list[dict[str, object]] = []
+            for candidate in candidates:
+                realization_id = str(candidate["realization_id"])
+                override = override_map.get(realization_id)
+                override_data = override if isinstance(override, dict) else {}
+                evidence = _OBSERVER_EVIDENCE.get(realization_id, "気分")
+                observations.append(
+                    {
+                        "realization_id": realization_id,
+                        "predicate_realized": override_data.get(
+                            "predicate_realized", True
+                        ),
+                        "observed_state": override_data.get(
+                            "observed_state",
+                            _DEFAULT_OBSERVED_STATES[realization_id],
+                        ),
+                        "observed_certainty": override_data.get(
+                            "observed_certainty", "high"
+                        ),
+                        "predicate_evidence_spans": [evidence],
+                        "state_evidence_spans": [evidence],
+                        "certainty_evidence_spans": override_data.get(
+                            "certainty_evidence_spans", []
+                        ),
+                    }
+                )
+            return json.dumps({"observations": observations}, ensure_ascii=False)
         return json.dumps(self.payload, ensure_ascii=False)
 
 
@@ -144,8 +198,9 @@ def _accepted_payload(
     checks: list[dict[str, object]],
     *,
     state_preserved: bool = True,
+    observer_overrides: dict[str, dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "accepted": True,
         "reason": "semantic_realization_consistent",
         "differences": [],
@@ -160,6 +215,9 @@ def _accepted_payload(
         "realized_proposition_checks": checks,
         "surface_evidence": {"intensity_markers": []},
     }
+    if observer_overrides is not None:
+        payload["_observer_overrides"] = observer_overrides
+    return payload
 
 
 def _source() -> Activity:
@@ -344,7 +402,7 @@ async def test_unknown_committed_is_rejected_even_when_model_top_level_accepts()
 
 
 @pytest.mark.asyncio
-async def test_supporting_weakened_is_rejected_even_when_primary_aggregate_is_true() -> None:
+async def test_supporting_bare_presence_is_rejected_by_independent_observation() -> None:
     realizations = (
         "proposition:0:current_feeling",
         "proposition:1:joy",
@@ -355,10 +413,14 @@ async def test_supporting_weakened_is_rejected_even_when_primary_aggregate_is_tr
         _accepted_payload(
             [
                 _check("proposition:0:current_feeling"),
-                _check("proposition:1:joy", state_fidelity="weakened"),
+                _check("proposition:1:joy"),
                 _check("proposition:2:anger"),
-                _check("proposition:3:calm", state_fidelity="weakened"),
-            ]
+                _check("proposition:3:calm"),
+            ],
+            observer_overrides={
+                "proposition:1:joy": {"observed_state": "present"},
+                "proposition:3:calm": {"observed_state": "present"},
+            },
         )
     )
     validator = CharacterRealizationValidator(
@@ -376,9 +438,15 @@ async def test_supporting_weakened_is_rejected_even_when_primary_aggregate_is_tr
     )
 
     assert result.accepted is False
-    assert result.reason == "semantic_facet_validation_failed"
-    assert "proposition:1:joy:state_fidelity:weakened" in result.claim_differences
-    assert "proposition:3:calm:state_fidelity:weakened" in result.claim_differences
+    assert result.reason == "observed_semantic_state_mismatch"
+    assert (
+        "proposition:1:joy:observed_state_mismatch:expected=high:observed=present"
+        in result.claim_differences
+    )
+    assert (
+        "proposition:3:calm:observed_state_mismatch:expected=low:observed=present"
+        in result.claim_differences
+    )
 
 
 @pytest.mark.asyncio
