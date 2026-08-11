@@ -123,23 +123,27 @@ RESTでも既定は `state=open`、`include_closed=true` の場合は `state=all
 
 ## 6. Browser UI
 
-### 6.1 Canvas / free layout
+### 6.1 Canvas / hierarchical component packing
 
-ノードを depth ごとの固定列へ並べる方式は使用しない。親子階層は読みやすさのため左から右へ進む傾向だけを維持し、最終位置は関係性と空き領域から自由配置する。
+2026-08-12 の実画面確認で、depth seedからforce relaxationする自由配置は親子の読み順を崩し、線の追跡も悪化したため採用しない。
+
+一方で、全Issueを同一のdepth列へ強制する単純な2列・3列表示にも戻さない。**親子ツリーごとに読みやすい階層配置を作り、独立したツリーを2次元へパッキングする**。
 
 配置方針:
 
-- parent/subIssue から depth を計算するが、depth は初期位置のseedにのみ使う
-- 初期位置にはIssue番号由来の決定的なX/Yずらしを加え、同一depthのノードを完全な縦一列に揃えない
-- seed後に複数回のlayout relaxationを行う
-- node rectangle同士が近すぎる場合は衝突回避力で離す
-- 親子edgeには左→右の方向制約と適度な距離を与えるが、固定X座標へsnapしない
-- dependency edgeは親子より弱い引力だけを与え、遠すぎる関係を近づける
-- 多数node時は反復回数を減らし、ブラウザ負荷を上限化する
-- relaxation後に全nodeを正座標へnormalizeし、world sizeを実配置boundsから計算する
-- disconnected rootも同一列へ強制せず、複数の開始位置へstaggerして配置する
+- parent/subIssue relationship から親子forestを作る
+- 各rootごとに独立したtree componentを作る
+- 子を持つnodeは、自分のdescendant blockの縦中央へ配置する
+- sibling subtreeは必要な縦幅を先に計算し、node同士が重ならない間隔で積む
+- 同一tree内では親から子へ左→右へ進むため、親子関係の読み順を保証する
+- depthはtree内の相対X距離にのみ利用し、全rootを同じglobal列へ揃えない
+- disconnected root / 管理Issue / 親なしWork Issueは、それぞれ独立componentとして扱う
+- componentごとの実boundsを計算し、canvas上へrow packingして2次元に配置する
+- component間にはedge routing用の余白を確保する
+- Issue番号由来jitter、force relaxation、ランダム位置補正は使用しない
+- 同じデータ・filter状態では毎回同じ位置になるdeterministic layoutとする
 
-目標は、**列の整然さよりも、ノード同士の重なり回避・線の短縮・枝分かれの追いやすさを優先すること**である。
+この方式では、単一tree内に自然な階層性は残るが、画面全体を「2列に揃える」制約は存在しない。独立した枝・rootは上下左右へパッキングされる。
 
 共通操作:
 
@@ -150,26 +154,49 @@ RESTでも既定は `state=open`、`include_closed=true` の場合は `state=all
 - Reset view
 - 親 node ごとの collapse
 
-### 6.2 Edge routing / node avoidance
+### 6.2 Parent edge routing / branch bus
 
-Issue数が増えた状態で単純なBezier曲線をsource右端からtarget左端へ引くと、途中の別Issue nodeの背面を通過して線が見えなくなる。このため、nodeを障害物として扱う経路計算をBrowser側で行う。
+親子線については汎用A*へ任せず、tree layoutそのものと整合する専用routingを使う。
+
+親nodeと子nodeの間にはnodeが存在しない水平gapを保証するため、そのgap内へbranch busを置く。
+
+```text
+parent ─────┐
+            ├──── child A
+            ├──── child B
+            └──── child C
+```
 
 方針:
 
-- 各表示nodeの矩形を、見た目の矩形より数px広げたobstacle rectangleとして登録する
-- source/target node自身はobstacle判定から除外する
-- sourceは原則右側port、targetは原則左側portから接続する
-- source/targetの直近に短いlead segmentを設け、node border直後から経路探索を開始する
-- obstacleを通過しない水平・垂直segmentを候補として、Manhattan/A*経路探索で迂回路を求める
-- 探索gridはnode配置の余白より細かい固定stepを利用し、描画負荷を抑える
-- 取得した経路は不要な同一直線上の中間点を削除して簡略化する
-- 描画時は折れ線を基本とし、角は小さなradiusで丸めて方向を追いやすくする
-- 親子=実線、依存=破線の形状差は維持する
-- 経路探索が失敗した場合のみ、従来のBezier曲線へfallbackする
+- parent右辺中央をsource portとする
+- child左辺中央をtarget portとする
+- parentと次depthの水平gap内へ専用bus Xを置く
+- `source → bus → target Y → target` の直交線で接続する
+- siblingへの線は同じbusを共有してtree trunkとして読めるようにする
+- busはnodeが配置されないdepth gap内に限定するため、別nodeの背面を通らない
+- parentとchildの位置関係が壊れた異常データだけdependency routingへfallbackする
 
-目標は「全線交差ゼロ」ではなく、**edgeがIssue nodeの裏へ隠れて接続先を追えなくなる状態を原則回避すること**である。edge同士の交差・重なりは許容するが、将来はedge lane分離で追加改善できる。
+これにより親子線は「可能な限り回避」ではなく、**通常のtreeでは構造上nodeを横切らない**ことを目標とする。
 
-### 6.3 Selected node edge focus
+### 6.3 Dependency edge routing / measured obstacle routing
+
+依存線は親子treeをまたぐ可能性があるため、障害物回避routingを使用する。ただし旧実装のように定数だけでnode rectangleを推測しない。
+
+方針:
+
+- node DOMを先に配置・描画する
+- `offsetLeft / offsetTop / offsetWidth / offsetHeight` から実際のnode rectangleを取得する
+- 実rectangleにclearanceを加えた領域をobstacleとする
+- source/targetの左右・上下port候補を作る
+- obstacleの左右端・上下端とcanvas外周余白からorthogonal visibility latticeを作る
+- lattice上でManhattan距離 + bend penaltyを用いた経路探索を行う
+- source/target以外のnode rectangleを横切るsegmentは候補から除外する
+- 最短の有効routeを選択し、不要な同一直線上の点を削除する
+- 角は小さく丸めるが、線そのものは直交routingを維持する
+- 経路が求まらない場合はcanvas外周laneを使うfallbackを行い、nodeを突っ切るBezier fallbackは使用しない
+
+### 6.4 Selected node edge focus
 
 nodeをclickして詳細panelを表示した場合、選択Issueを起点とするedgeを強調する。
 
@@ -177,13 +204,11 @@ nodeをclickして詳細panelを表示した場合、選択Issueを起点とす�
 - foreground edgeは通常より高いopacity・太いstrokeとする
 - foreground edgeのarrow headも同じ視覚強度にする
 - 選択中はその他のedgeを低opacityにして背景化する
-- 強調対象は「選択Issueから伸びる線」とし、選択Issueへ入ってくるedgeは通常の背景edgeとして扱う
+- 強調対象は「選択Issueから伸びる線」とし、選択Issueへ入ってくるedgeは背景edgeとする
 - 選択解除時は通常表示へ戻す
 - edge kindの意味は維持し、親子は実線、依存は破線のまま強調する
 
-これにより、詳細を見ているIssueから「次にどのIssueへ枝分かれしているか」を視線で追えるようにする。
-
-### 6.4 Node
+### 6.5 Node
 
 常時表示:
 
@@ -195,7 +220,7 @@ nodeをclickして詳細panelを表示した場合、選択Issueを起点とす�
 
 Status は色だけに依存せず text badge を必ず表示する。
 
-### 6.5 Detail panel
+### 6.6 Detail panel
 
 node click で以下を表示する。
 
@@ -212,19 +237,19 @@ node click で以下を表示する。
 - related PR
 - body summary
 
-### 6.6 Issue state display mode
+### 6.7 Issue state display mode
 
 ヘッダーへ `Closedも表示` スイッチを置く。
 
 - 初期値はOFFで、Open Issueだけを表示する
 - ONにした場合は `/api/graph?include_closed=true` を再取得してClosed Issueもグラフへ含める
 - OFFへ戻した場合は `/api/graph?include_closed=false` を再取得する
-- Closed Issueを常時先読みしてブラウザだけで非表示にする方式にはしない。通常時のAPI取得量とレイアウト負荷を抑えるため、取得対象自体をserver-sideで切り替える
+- Closed Issueを常時先読みしてブラウザだけで非表示にする方式にはしない
 - switch切替時も検索、Status filter、pan/zoom等の基本機能は維持する
 - OFFへ切り替えた結果、選択中のClosed Issueが取得対象外になった場合はselection/detailを解除する
 - Issue `state` とProjects v2 `Status` は別概念として扱い、混同しない
 
-### 6.7 Filter
+### 6.8 Filter
 
 - text search: Issue number / title
 - Status filter
@@ -307,8 +332,11 @@ Verification中はDraft PRのhead `feature/issue-graph-dashboard` を明示的�
 - `render.yaml` に `yura-issue-graph` が存在する
 - Blueprint上でtokenが `sync: false` である
 - Blueprintのhealth checkが `/api/health` を参照する
-- Browser実装にfree-layout relaxationが存在し、固定列へsnapしない
-- Browser実装にnode obstacle routingとBezier fallbackが存在する
+- free-layout relaxationが撤去されている
+- tree component packingが存在する
+- parent edgeにbranch bus routingが存在する
+- dependency edgeがDOM実測rectangleを障害物としてroutingする
+- nodeを突っ切るBezier fallbackを使用しない
 - selected issueをsourceとするedge focusが存在する
 - 親子と依存の形状差を維持する
 - `Closedも表示` switchがserver-side取得条件を切り替える
@@ -316,15 +344,14 @@ Verification中はDraft PRのhead `feature/issue-graph-dashboard` を明示的�
 実画面:
 
 - 3階層以上の親子表示
-- 同一depthでもノードが固定列に縛られず、関係性と空きに応じて配置される
-- node同士が重ならず、親子の左→右方向は概ね維持される
-- In progress / Verification / Blocked 視認性
-- pan / zoom / reset
-- collapse
-- node click detail
-- edgeが途中のIssue nodeを原則回避して描画される
+- 親子の読み順が崩れない
+- 全rootが同じglobal列へ強制されず、tree componentが2次元に配置される
+- node同士が重ならない
+- parent edgeが別nodeの背面を通らない
+- dependency edgeも表示nodeを横切らない
 - 選択Issueから伸びるedgeが強調され、その他のedgeが背景化する
 - `Closedも表示` OFFでOpenのみ、ONでClosedを含めて表示される
-- search / filter
+- In progress / Verification / Blocked 視認性
+- pan / zoom / reset / collapse / search / filter
 - local 起動
 - Render Blueprint sync / deploy
