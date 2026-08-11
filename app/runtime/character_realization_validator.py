@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from typing import cast
 
-from app.adapters.prompt.character_realization_observer_prompt_builder import (
-    CharacterRealizationObserverPromptBuilder,
-)
 from app.domain.activities import Activity, ActivityType
 from app.domain.character_response import (
     CharacterResponse,
@@ -14,6 +12,7 @@ from app.domain.character_response import (
 )
 from app.domain.semantic_utterance import SemanticUtterancePlan
 from app.domain.semantic_validation import RealizedSemanticObservation
+from app.ports.prompt_builder import CharacterRealizationValidationPromptBuilder
 from app.runtime.character_response_pipeline import ResponseValidator as LegacyResponseValidator
 from app.utils.llm_trace import build_llm_trace_context
 
@@ -53,12 +52,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             context.memory.get("semantic_utterance_plan")
         )
         if plan is None or not self._uses_realization_validation(context, plan):
-            return await super().validate(
-                source,
-                context,
-                response,
-                attempt=attempt,
-            )
+            return await super().validate(source, context, response, attempt=attempt)
 
         try:
             extracted_claims = self._claim_extractor.extract(context, response.speech)
@@ -108,8 +102,6 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             self._trace_result(source, result)
             return result
 
-        # Semantic Plan適用経路では、modelがなければ自然言語意味保持を確認できない。
-        # finite lexical fallbackへ戻さずfail closedする。
         if self._model is None:
             result = ResponseValidationResult(
                 accepted=False,
@@ -190,12 +182,8 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             return result
 
         assert isinstance(value, dict)
-        assert isinstance(value["accepted"], bool)
-        assert isinstance(value["reason"], str)
-        assert isinstance(value["differences"], list)
-
         differences = [item.strip() for item in value["differences"] if item.strip()]
-        model_accepted = value["accepted"]
+        model_accepted = bool(value["accepted"])
         if model_accepted:
             facet_differences = self._accepted_facet_differences(plan, response, value)
             if facet_differences is None:
@@ -209,7 +197,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             differences.extend(facet_differences)
 
         accepted = model_accepted and not differences
-        reason = value["reason"].strip()
+        reason = str(value["reason"]).strip()
         if model_accepted and differences:
             reason = "semantic_facet_validation_failed"
 
@@ -242,11 +230,15 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         *,
         attempt: int,
     ) -> tuple[RealizedSemanticObservation, ...] | None:
-        prompt = CharacterRealizationObserverPromptBuilder().build(
-            context,
-            response,
-            plan,
+        builder = cast(
+            CharacterRealizationValidationPromptBuilder,
+            self._require_prompt_builder(),
         )
+        try:
+            prompt = builder.build_observation(context, response, plan)
+        except (AttributeError, TypeError):
+            return None
+
         activity = Activity(
             activity_type=ActivityType.BEHAVIOR_PLANNING,
             goal="Character発話が実際に表した意味を期待値なしで観測する",
@@ -270,12 +262,14 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         raw_observations = value.get("observations")
         if not isinstance(raw_observations, list):
             return None
+
         observations: list[RealizedSemanticObservation] = []
         for raw_observation in raw_observations:
             observation = RealizedSemanticObservation.from_mapping(raw_observation)
             if observation is None:
                 return None
             observations.append(observation)
+
         trace = build_llm_trace_context(activity)
         self._trace_logger.debug(
             "character_realization_observer:model_completed",
@@ -299,6 +293,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             if observation.realization_id in by_id:
                 return [f"duplicate_observation:{observation.realization_id}"]
             by_id[observation.realization_id] = observation
+
         if set(by_id) != set(expected_ids):
             missing = sorted(set(expected_ids) - set(by_id))
             extra = sorted(set(by_id) - set(expected_ids))
@@ -360,9 +355,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         differences = value.get("differences")
         if not isinstance(differences, list):
             return False
-        if any(not isinstance(item, str) for item in differences):
-            return False
-        return True
+        return not any(not isinstance(item, str) for item in differences)
 
     @staticmethod
     def _accepted_facet_differences(
@@ -417,10 +410,9 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             if not isinstance(realization_id, str) or not realization_id.strip():
                 return None
             realization_id = realization_id.strip()
-            if realization_id in checks_by_id:
+            if realization_id in checks_by_id or realization_id not in planned_ids:
                 return None
-            if realization_id not in planned_ids:
-                return None
+
             for name in (
                 "predicate_preserved",
                 "state_preserved",
@@ -446,9 +438,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                     for span in evidence_value
                 ):
                     return None
-                normalized_evidence[field_name] = [
-                    span.strip() for span in evidence_value
-                ]
+                normalized_evidence[field_name] = [span.strip() for span in evidence_value]
 
             checks_by_id[realization_id] = item
             evidence_by_id[realization_id] = normalized_evidence
@@ -470,8 +460,6 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         if checks["unsupported_intensity_added"] is True:
             differences.append("unsupported_intensity_added")
 
-        # Modelが報告したsurface spanが実際のspeechに存在することだけを確認する。
-        # marker文字列そのものからRuntimeが意味カテゴリを再推定してはいけない。
         for marker in surface_markers:
             if marker not in response.speech:
                 differences.append(f"surface_intensity_marker_not_in_speech:{marker}")
@@ -537,9 +525,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
 
             if proposition.state in _INTENSITY_STATES:
                 if item["intensity_semantics_preserved"] is False:
-                    differences.append(
-                        f"{realization_id}:intensity_semantics_preserved"
-                    )
+                    differences.append(f"{realization_id}:intensity_semantics_preserved")
                 if item["presence_only_counterfactual_equivalent"] is True:
                     differences.append(
                         f"{realization_id}:presence_only_counterfactual_equivalent"
@@ -563,9 +549,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                         f"{realization_id}:non_intensity_counterfactual_flag_invalid"
                     )
                 if intensity_spans:
-                    differences.append(
-                        f"{realization_id}:unexpected_intensity_evidence"
-                    )
+                    differences.append(f"{realization_id}:unexpected_intensity_evidence")
 
         return differences
 
