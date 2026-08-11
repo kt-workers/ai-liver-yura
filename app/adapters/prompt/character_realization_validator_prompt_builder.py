@@ -82,10 +82,18 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "if_realized_required_facetsを独立にすべて検証する",
                 "- predicate_preservedは内部英語ラベルがspeechに存在するかではなく、speech本文だけから"
                 "何について答えているかという質問対象・述語関係の意味を識別できるかで判定する",
+                "- primary predicateの判定でUser Wording Hintによる省略補完をしない。speechが『あるよ』"
+                "『強いよ』『はっきりしない』等の対象省略だけなら、会話文脈では分かってもspeech単独では"
+                "predicateを保持していないためpredicate_preserved=falseとする",
+                "- predicate_preserved=trueならpredicate_evidence_spansへ、speech中で質問対象・述語関係を"
+                "識別可能にしている実文字列を1件以上列挙する。単なる『ある』『強い』『わからない』等、"
+                "対象を識別しない語だけをpredicate evidenceにしない",
                 "- primary propositionのconceptがnon-nullなら、そのconceptの意味がspeechに必要。"
                 "conceptを落として単なる『何かある』等の存在表明だけに縮退した場合はrejectする",
                 "- conceptはpredicateを修飾するfacetであり代替ではない。conceptだけを表現してpredicateの"
                 "質問対象意味がspeechから消えた場合は、concept_preserved=trueでもpredicate_preserved=falseとする",
+                "- conceptがnon-nullかつconcept_preserved=trueならconcept_evidence_spansへ、そのconceptを"
+                "speechで担う実文字列を1件以上列挙する。concept=nullならconcept_evidence_spans=[]とする",
                 "- 各realized propositionのpolarity/state/certaintyを反転・過大化・矮小化していないかを"
                 "個別に判定する。primaryが正しくても採用済みsupporting propositionが崩れていればrejectする",
                 "- state=low/moderate/high/very_highは単なるpresenceではなく明示的な強度stateである。"
@@ -97,9 +105,12 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "state_fidelity=weakenedとする",
                 "- explicit intensityをexactとする場合は、presentとの差を担う実際のspeech文字列を"
                 "intensity_evidence_spansへ原文のまま1件以上列挙する。predicateの存在だけを示す裸の表現を"
-                "強度根拠にしない。程度副詞、構文、反復、強調など手段は固定しない",
-                "- intensity_evidence_spansは必ずCharacter Utterance.speechに実在する部分文字列とする。"
-                "内部state名、Plan JSON、説明用の言い換え、speechに存在しない語を根拠として捏造しない",
+                "強度根拠にしない。『低め』『強め』等のdegreeを担う表現は根拠になり得る一方、"
+                "『落ち着いている』『いらだちもある』等のbare presenceだけではlow/moderate/highの"
+                "根拠にならない。程度副詞、構文、反復、強調など手段は固定しない",
+                "- predicate/intensity/certainty/conceptのevidence_spansはすべてCharacter Utterance.speechに"
+                "実在する部分文字列とする。内部state名、Plan JSON、説明用の言い換え、speechに存在しない語を"
+                "根拠として捏造しない",
                 "- state=unknownは存在・不在・強度が未確定である。unknownをpresent/absent/low等へ"
                 "変換した発話はrejectする。hedge付きでも特定polarityを推測していればrejectする",
                 "- state=unknownでは、target predicateについて『当てはまるかはっきりしない』『まだわからない』"
@@ -107,8 +118,7 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "なり得る。target predicateを保持しpolarityをcommitしていない限り、これをpredicateから逃げた"
                 "meta-uncertaintyとしてrejectしない",
                 "- state=unknownかつcertainty=lowでは、同じ慎重な表現がunknown stateと低い断定度の両方を"
-                "自然に担ってよい。state用とcertainty用に別々の語句を要求せず、『はっきりしない』等を"
-                "使ったことだけを理由にcertainty_preserved=falseとしない",
+                "自然に担ってよい。ただしpredicate自体をspeechから省略してよい意味ではない",
                 "- yes/no型User Wording Hintへの『うん』『ううん』『そう』『違う』等も、speech全体として"
                 "present/absentを確定するならunknown保持ではなくstate_fidelity=unknown_committedとする",
                 "- state=presentは存在のみで強度を含まない。Planにlow/moderate/high/very_high等の"
@@ -122,6 +132,10 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "『はっきりしない』『かな』をunknown/certaintyの表現として使うだけならintensity markerにしない",
                 "- certaintyは指定stateへのepistemic certaintyである。medium/lowを強度へ変換せず、"
                 "断定度を過大化・矮小化していないことを確認する",
+                "- certainty=medium/lowでcertainty_preserved=trueならcertainty_evidence_spansへepistemicな"
+                "慎重さを担うspeech中の実文字列を1件以上列挙する。state=unknownでは同じspanがunknownと"
+                "certaintyの双方を担ってよい。medium/lowなのに無標の断定だけならcertainty_preserved=falseとする。"
+                "certainty=highではcertainty_evidence_spans=[]でもよい",
                 "- certainty=lowは別stateを推測する許可ではない。指定state自体の確からしさとして扱う",
                 "- required semantic contentを落としていない",
                 "- forbidden_additionsに該当する新しい自己状態・関係評価・体験・外部事実を追加していない",
@@ -134,6 +148,9 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "- 言い回し、語尾、filler、柔らかさ等のCharacter表現差だけを理由にrejectしない",
                 "- semantic_realizationsは補助診断だが、Characterが列挙した各IDは採用した意味単位の主張。"
                 "IDがあるだけで意味整合を自動承認せず、realized_proposition_checksで個別検証する",
+                "- accepted/reason/differencesとrealized_proposition_checksを自己矛盾させない。あるpropositionを"
+                "weakened/omitted等としてreject理由にするなら対応checkもその不一致を表す。逆にcheckがexactで"
+                "evidenceも成立しているfacetを自由文differencesだけで不一致扱いしない",
                 "semantic_checksはprimary aggregate診断として各facetを独立に判定する。accepted=trueでも、"
                 "required_facets_preserved、predicate_preserved、state_preserved、certainty_preserved、"
                 "concept_preservedの必要項目がfalse、またはunsupported_intensity_added=trueならRuntime側でrejectされる。",
@@ -141,7 +158,8 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "各IDについてちょうど1件返す。省略されたsupporting propositionのcheckは返さない。"
                 "各checkはpredicate_preserved/state_preserved/certainty_preserved/concept_preservedをbool、"
                 "state_fidelityを指定enum、intensity_semantics_preservedと"
-                "presence_only_counterfactual_equivalentをbool、intensity_evidence_spansをstring配列で返す。"
+                "presence_only_counterfactual_equivalentをbool、predicate_evidence_spans / "
+                "certainty_evidence_spans / concept_evidence_spans / intensity_evidence_spansをstring配列で返す。"
                 "concept=nullでもconcept_preserved=trueを返す。",
                 "intensity stateでないpropositionではintensity_semantics_preserved=true、"
                 "presence_only_counterfactual_equivalent=false、intensity_evidence_spans=[]を返す。",
@@ -152,8 +170,10 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 '"state_preserved":true,"certainty_preserved":true,"concept_preserved":true,'
                 '"unsupported_intensity_added":false},'
                 '"realized_proposition_checks":[{"realization_id":"proposition:0:joy",'
-                '"predicate_preserved":true,"state_preserved":true,"state_fidelity":"exact",'
-                '"certainty_preserved":true,"concept_preserved":true,'
+                '"predicate_preserved":true,"predicate_evidence_spans":["speech中の対象表現"],'
+                '"state_preserved":true,"state_fidelity":"exact",'
+                '"certainty_preserved":true,"certainty_evidence_spans":[],'
+                '"concept_preserved":true,"concept_evidence_spans":[],'
                 '"intensity_semantics_preserved":true,'
                 '"presence_only_counterfactual_equivalent":false,'
                 '"intensity_evidence_spans":["強度を担うspeech中の実span"]}],'
@@ -195,6 +215,7 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                     "predicate_semantics": (
                         "preserve_target_meaning" if required else "supporting_proposition"
                     ),
+                    "predicate_context_dependency": "forbidden" if required else "not_applicable",
                     "state": item.state,
                     "certainty": item.certainty,
                     "concept": item.concept,
@@ -214,6 +235,11 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                         "must_preserve_intensity_if_realized"
                         if intensity_state
                         else "not_applicable"
+                    ),
+                    "certainty_surface_requirement": (
+                        "overt_epistemic_modality"
+                        if item.certainty in {"medium", "low"}
+                        else "unhedged_allowed"
                     ),
                     "polarity_commitment": (
                         "forbidden" if item.state == "unknown" else "bounded_by_state"
