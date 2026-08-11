@@ -6,6 +6,9 @@ from typing import Any
 from app.domain.activities import Activity
 from app.domain.response_content_plan import ResponseContentPlan
 from cloud_validation import character_response_lab as base
+from cloud_validation.character_semantic_response_lab_ui import (
+    CHARACTER_SEMANTIC_RESPONSE_LAB_HTML,
+)
 
 
 class _SemanticFakeRoleModel(base._FakeRoleModel):
@@ -251,6 +254,7 @@ _fix_current_desire_preset_memory()
 
 base._RecordingCharacterModel = _RecordingCharacterModel
 base._RecordingValidatorModel = _RecordingValidatorModel
+base._INDEX_HTML = CHARACTER_SEMANTIC_RESPONSE_LAB_HTML
 
 settings = base.LabSettings.from_env()
 service = CharacterSemanticResponseLabService(settings)
