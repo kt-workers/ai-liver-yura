@@ -373,3 +373,11 @@ base._INDEX_HTML = CHARACTER_SEMANTIC_RESPONSE_LAB_HTML
 
 settings = base.LabSettings.from_env()
 service = CharacterSemanticResponseLabService(settings)
+app = base.create_app(settings=settings, service=service)
+
+__all__ = [
+    "CharacterSemanticResponseLabService",
+    "app",
+    "service",
+    "settings",
+]
