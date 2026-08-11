@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   bisect:
-    name: full regression s-z diagnostics
+    name: full regression s diagnostics
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -30,18 +30,23 @@ jobs:
           python -m pip install --disable-pip-version-check --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
-      - name: Tests s
+      - name: Tests sa-sf
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_s*.py' | sort)
+          files=$(find tests -type f -name 'test_s*.py' | sort | awk -F/ '{n=$NF; c=substr(n,7,1); if (c >= "a" && c <= "f") print $0}')
           test -z "$files" || pytest -x -q $files
-      - name: Tests t
+      - name: Tests sg-sl
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_t*.py' | sort)
+          files=$(find tests -type f -name 'test_s*.py' | sort | awk -F/ '{n=$NF; c=substr(n,7,1); if (c >= "g" && c <= "l") print $0}')
           test -z "$files" || pytest -x -q $files
-      - name: Tests u-z
+      - name: Tests sm-sr
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_*.py' | sort | awk -F/ '{n=$NF; c=substr(n,6,1); if (c >= "u" && c <= "z") print $0}')
+          files=$(find tests -type f -name 'test_s*.py' | sort | awk -F/ '{n=$NF; c=substr(n,7,1); if (c >= "m" && c <= "r") print $0}')
+          test -z "$files" || pytest -x -q $files
+      - name: Tests ss-sz
+        if: always()
+        run: |
+          files=$(find tests -type f -name 'test_s*.py' | sort | awk -F/ '{n=$NF; c=substr(n,7,1); if (c >= "s" && c <= "z") print $0}')
           test -z "$files" || pytest -x -q $files
