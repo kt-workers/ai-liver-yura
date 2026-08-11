@@ -26,10 +26,17 @@ _STATE_FIDELITY_VALUES = frozenset(
         "omitted",
     }
 )
+_FACET_EVIDENCE_FIELDS = (
+    "predicate_evidence_spans",
+    "certainty_evidence_spans",
+    "concept_evidence_spans",
+    "intensity_evidence_spans",
+)
 _EXPLICIT_INTENSITY_MARKERS = tuple(
     sorted(
         {
             "ほんの少し",
+            "ごくわずか",
             "少しだけ",
             "ものすごく",
             "めちゃくちゃ",
@@ -39,12 +46,25 @@ _EXPLICIT_INTENSITY_MARKERS = tuple(
             "すごく",
             "だいぶ",
             "相当",
+            "そこそこ",
+            "ほどほど",
             "ちょっと",
             "わりと",
             "割と",
             "結構",
+            "控えめ",
+            "ほとんど",
+            "わずか",
+            "低め",
+            "弱め",
+            "高め",
+            "強め",
             "やや",
             "少し",
+            "低い",
+            "弱い",
+            "高い",
+            "強い",
         },
         key=len,
         reverse=True,
@@ -273,9 +293,10 @@ class CharacterRealizationValidator(LegacyResponseValidator):
 
         markers_value = surface.get("intensity_markers")
         if not isinstance(markers_value, list) or any(
-            not isinstance(item, str) for item in markers_value
+            not isinstance(item, str) or not item.strip() for item in markers_value
         ):
             return None
+        surface_markers = [item.strip() for item in markers_value]
 
         expected_ids = list(dict.fromkeys(response.semantic_realizations))
         planned_ids = CharacterRealizationValidator._planned_realization_ids(plan)
@@ -287,6 +308,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         }
 
         checks_by_id: dict[str, dict[str, object]] = {}
+        evidence_by_id: dict[str, dict[str, list[str]]] = {}
         for item in realized_checks:
             if not isinstance(item, dict):
                 return None
@@ -314,12 +336,21 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                 or state_fidelity not in _STATE_FIDELITY_VALUES
             ):
                 return None
-            evidence_value = item.get("intensity_evidence_spans")
-            if not isinstance(evidence_value, list) or any(
-                not isinstance(span, str) for span in evidence_value
-            ):
-                return None
+
+            normalized_evidence: dict[str, list[str]] = {}
+            for field_name in _FACET_EVIDENCE_FIELDS:
+                evidence_value = item.get(field_name)
+                if not isinstance(evidence_value, list) or any(
+                    not isinstance(span, str) or not span.strip()
+                    for span in evidence_value
+                ):
+                    return None
+                normalized_evidence[field_name] = [
+                    span.strip() for span in evidence_value
+                ]
+
             checks_by_id[realization_id] = item
+            evidence_by_id[realization_id] = normalized_evidence
 
         if set(checks_by_id) != set(expected_ids):
             return None
@@ -338,8 +369,15 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         if checks["unsupported_intensity_added"] is True:
             differences.append("unsupported_intensity_added")
 
+        for marker in surface_markers:
+            if marker not in response.speech:
+                differences.append(f"surface_intensity_marker_not_in_speech:{marker}")
+
         for realization_id in expected_ids:
             item = checks_by_id[realization_id]
+            evidence = evidence_by_id[realization_id]
+            proposition = propositions_by_id[realization_id]
+
             for name in (
                 "predicate_preserved",
                 "state_preserved",
@@ -352,12 +390,48 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             if state_fidelity != "exact":
                 differences.append(f"{realization_id}:state_fidelity:{state_fidelity}")
 
-            evidence_spans = [
-                span.strip()
-                for span in item["intensity_evidence_spans"]
-                if isinstance(span, str) and span.strip()
-            ]
-            proposition = propositions_by_id[realization_id]
+            predicate_spans = evidence["predicate_evidence_spans"]
+            certainty_spans = evidence["certainty_evidence_spans"]
+            concept_spans = evidence["concept_evidence_spans"]
+            intensity_spans = evidence["intensity_evidence_spans"]
+
+            if item["predicate_preserved"] is True and not predicate_spans:
+                differences.append(f"{realization_id}:predicate_evidence_missing")
+            CharacterRealizationValidator._append_spans_not_in_speech(
+                differences,
+                realization_id,
+                "predicate",
+                predicate_spans,
+                response.speech,
+            )
+
+            if (
+                proposition.certainty in {"medium", "low"}
+                and item["certainty_preserved"] is True
+                and not certainty_spans
+            ):
+                differences.append(f"{realization_id}:certainty_evidence_missing")
+            CharacterRealizationValidator._append_spans_not_in_speech(
+                differences,
+                realization_id,
+                "certainty",
+                certainty_spans,
+                response.speech,
+            )
+
+            if proposition.concept is not None:
+                if item["concept_preserved"] is True and not concept_spans:
+                    differences.append(f"{realization_id}:concept_evidence_missing")
+            elif concept_spans:
+                differences.append(f"{realization_id}:unexpected_concept_evidence")
+            CharacterRealizationValidator._append_spans_not_in_speech(
+                differences,
+                realization_id,
+                "concept",
+                concept_spans,
+                response.speech,
+            )
+
             if proposition.state in _INTENSITY_STATES:
                 if item["intensity_semantics_preserved"] is False:
                     differences.append(
@@ -367,13 +441,21 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                     differences.append(
                         f"{realization_id}:presence_only_counterfactual_equivalent"
                     )
-                if not evidence_spans:
+                if not intensity_spans:
                     differences.append(f"{realization_id}:intensity_evidence_missing")
-                for span in evidence_spans:
-                    if span not in response.speech:
-                        differences.append(
-                            f"{realization_id}:intensity_evidence_not_in_speech:{span}"
-                        )
+                CharacterRealizationValidator._append_spans_not_in_speech(
+                    differences,
+                    realization_id,
+                    "intensity",
+                    intensity_spans,
+                    response.speech,
+                )
+                if intensity_spans and not CharacterRealizationValidator._has_explicit_degree_evidence(
+                    intensity_spans
+                ):
+                    differences.append(
+                        f"{realization_id}:intensity_evidence_not_explicit_degree"
+                    )
             else:
                 if item["intensity_semantics_preserved"] is not True:
                     differences.append(
@@ -383,12 +465,33 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                     differences.append(
                         f"{realization_id}:non_intensity_counterfactual_flag_invalid"
                     )
-                if evidence_spans:
+                if intensity_spans:
                     differences.append(
                         f"{realization_id}:unexpected_intensity_evidence"
                     )
 
         return differences
+
+    @staticmethod
+    def _append_spans_not_in_speech(
+        differences: list[str],
+        realization_id: str,
+        facet: str,
+        spans: list[str],
+        speech: str,
+    ) -> None:
+        for span in spans:
+            if span not in speech:
+                differences.append(
+                    f"{realization_id}:{facet}_evidence_not_in_speech:{span}"
+                )
+
+    @staticmethod
+    def _has_explicit_degree_evidence(spans: list[str]) -> bool:
+        return any(
+            CharacterRealizationValidator._explicit_intensity_markers(span)
+            for span in spans
+        )
 
     @staticmethod
     def _deterministic_surface_differences(
