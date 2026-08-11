@@ -73,17 +73,18 @@ Project に未登録の Issue は field を未設定として扱う。
 
 `GITHUB_TOKEN` が存在する場合、GitHub GraphQL API を使用する。
 
-1. Repository Issues を pagination して取得
+1. Repository の Open Issues を pagination して取得
 2. `parent` / `subIssues` を取得
 3. ProjectV2 items を pagination して取得
 4. 既知 Project fields を `fieldValueByName` で取得
 5. Issue number で結合
+6. Project itemを主集合とし、親・子・依存関係で必要なOpen Issueだけをcontextとして追加
 
 Token は server-side のみで使用し、browser response、HTML、log へ含めない。
 
 ### 4.2 認証なし / Project API failure
 
-public repository では REST Issues API を利用し、Issue 本文から Compatibility parent/dependency を抽出する degraded mode へ移行する。
+public repository では REST Open Issues API を利用し、Issue 本文から Compatibility parent/dependency を抽出する degraded mode へ移行する。
 
 この場合、Project Status 等は推測せず `null` とし、API response の diagnostics で degraded reason を通知する。
 
@@ -105,8 +106,7 @@ public repository では REST Issues API を利用し、Issue 本文から Compa
       "parent_number": null,
       "child_numbers": [226, 227],
       "dependency_numbers": [],
-      "related_pr_numbers": [],
-      "project_fields": {}
+      "related_pr_numbers": []
     }
   ],
   "edges": [
@@ -218,6 +218,7 @@ Render では `GITHUB_TOKEN` を Secret 環境変数として設定する。
 - Parent/Depends on/PR compatibility extraction
 - project field normalization
 - graph edge generation
+- Project scope + relation context保持
 - token absence degraded mode
 - FastAPI route existence / health response
 
