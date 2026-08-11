@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 
+from app.adapters.prompt.character_realization_observer_prompt_builder import (
+    CharacterRealizationObserverPromptBuilder,
+)
 from app.adapters.prompt.internal_state_evidence_prompt_builders import (
     ResponseValidatorPromptBuilder as LegacyResponseValidatorPromptBuilder,
 )
@@ -15,6 +18,14 @@ _INTENSITY_STATES = frozenset({"low", "moderate", "high", "very_high"})
 
 class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBuilder):
     """Semantic PlanとCharacter言語実現の意味保持だけを検証するPrompt。"""
+
+    def build_observation(
+        self,
+        context: ResponseContext,
+        response: CharacterResponse,
+        plan: SemanticUtterancePlan,
+    ) -> str:
+        return CharacterRealizationObserverPromptBuilder().build(context, response, plan)
 
     def build(
         self,
@@ -96,13 +107,9 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "speechで担う実文字列を1件以上列挙する。concept=nullならconcept_evidence_spans=[]とする",
                 "- 各realized propositionのpolarity/state/certaintyを反転・過大化・矮小化していないかを"
                 "個別に判定する。primaryが正しくても採用済みsupporting propositionが崩れていればrejectする",
-                "- observed_stateはPlanとの一致判定より先に、Character Utterance.speechが実際に表している"
-                "stateを意味として観測した値である。期待されるPlan stateをコピーしてはいけない。",
-                "- observed_stateは absent/low/moderate/high/very_high/present/overview/unknown/omitted の"
-                "いずれかを返す。特定の自然語をenumへ機械的対応させず、speech全体の意味から判断する。",
                 "- state=low/moderate/high/very_highは単なるpresenceではなく明示的な強度stateである。"
                 "speechがその状態の存在だけを示し、Planの強度差を意味的に識別できない場合は"
-                "observed_state=presentかつstate_fidelity=weakenedとする。特定の程度副詞を必須にはしない",
+                "state_fidelity=weakenedとする。特定の程度副詞を必須にはしない",
                 "- explicit intensity stateでは必ずcounterfactualを行う。Planのstateを単なるpresentへ"
                 "置き換えても現在のspeechが同じ意味のまま十分成立するなら、強度差はspeechに現れていない。"
                 "その場合presence_only_counterfactual_equivalent=true、intensity_semantics_preserved=false、"
@@ -161,7 +168,7 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "state_fidelityを指定enum、intensity_semantics_preservedと"
                 "presence_only_counterfactual_equivalentをbool、predicate_evidence_spans / "
                 "certainty_evidence_spans / concept_evidence_spans / intensity_evidence_spansをstring配列で返す。"
-                "explicit intensity stateではobserved_stateも必須。concept=nullでもconcept_preserved=trueを返す。",
+                "concept=nullでもconcept_preserved=trueを返す。",
                 "intensity stateでないpropositionではintensity_semantics_preserved=true、"
                 "presence_only_counterfactual_equivalent=false、intensity_evidence_spans=[]を返す。",
                 "raw Emotion/Drive値やevidence pathを推測して検証しない。Semantic Planを正本とする。",
@@ -172,7 +179,7 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 '"unsupported_intensity_added":false},'
                 '"realized_proposition_checks":[{"realization_id":"proposition:0:joy",'
                 '"predicate_preserved":true,"predicate_evidence_spans":["speech中の対象表現"],'
-                '"state_preserved":true,"observed_state":"high","state_fidelity":"exact",'
+                '"state_preserved":true,"state_fidelity":"exact",'
                 '"certainty_preserved":true,"certainty_evidence_spans":[],'
                 '"concept_preserved":true,"concept_evidence_spans":[],'
                 '"intensity_semantics_preserved":true,'
@@ -232,11 +239,6 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                         item.state
                     ),
                     "state_fidelity": "preserve_exact_semantic_state",
-                    "observed_state_policy": (
-                        "required_from_speech_before_plan_comparison"
-                        if intensity_state
-                        else "optional_diagnostic"
-                    ),
                     "intensity_fidelity": (
                         "must_preserve_intensity_if_realized"
                         if intensity_state
