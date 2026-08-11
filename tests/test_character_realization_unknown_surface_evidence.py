@@ -81,7 +81,11 @@ def _response(speech: str) -> CharacterResponse:
     )
 
 
-def _accepted_payload(*, surface_markers: list[str]) -> dict[str, object]:
+def _accepted_payload(
+    *,
+    surface_markers: list[str],
+    certainty_evidence: str = "はっきりしない",
+) -> dict[str, object]:
     return {
         "accepted": True,
         "reason": "semantic_realization_consistent",
@@ -98,10 +102,13 @@ def _accepted_payload(*, surface_markers: list[str]) -> dict[str, object]:
             {
                 "realization_id": "proposition:0:sadness",
                 "predicate_preserved": True,
+                "predicate_evidence_spans": ["悲し"],
                 "state_preserved": True,
                 "state_fidelity": "exact",
                 "certainty_preserved": True,
+                "certainty_evidence_spans": [certainty_evidence],
                 "concept_preserved": True,
+                "concept_evidence_spans": [],
                 "intensity_semantics_preserved": True,
                 "presence_only_counterfactual_equivalent": False,
                 "intensity_evidence_spans": [],
@@ -158,7 +165,7 @@ async def test_model_reported_uncertainty_markers_do_not_reject_valid_unknown() 
 @pytest.mark.asyncio
 async def test_actual_deterministic_intensity_marker_still_rejects_unknown() -> None:
     result = await _validator(
-        _accepted_payload(surface_markers=[])
+        _accepted_payload(surface_markers=[], certainty_evidence="かも")
     ).validate(
         _source(),
         _context(),
