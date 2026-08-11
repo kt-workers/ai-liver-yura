@@ -143,7 +143,8 @@
 </div>
 <script>
 (() => {
-  const NODE_W = 260, NODE_H = 118, COL_GAP = 100, ROW_GAP = 34, MARGIN = 60;
+  const NODE_W = 260, NODE_H = 118, BASE_X_GAP = 390, BASE_Y_GAP = 170, MARGIN = 80;
+  const NODE_GAP_X = 76, NODE_GAP_Y = 46;
   const OBSTACLE_PAD = 14, PORT_LEAD = 22, ROUTE_MARGIN = 28;
   const activeStatuses = new Set(['In progress','Review','Verification','Blocked']);
   const state = { data:null, selected:null, collapsed:new Set(), scale:1, tx:40, ty:40, dragging:false, lastX:0, lastY:0 };
@@ -226,13 +227,19 @@
   }
 
   function computeLayout(map, visible) {
-    const parentEdges = (state.data.edges || []).filter(e => e.kind === 'parent' && visible.has(e.source) && visible.has(e.target));
-    const incoming = new Map([...visible].map(n => [n,0]));
-    const children = new Map([...visible].map(n => [n,[]]));
-    for (const edge of parentEdges) { incoming.set(edge.target,(incoming.get(edge.target)||0)+1); children.get(edge.source)?.push(edge.target); }
-    const roots = [...visible].filter(n => (incoming.get(n)||0) === 0).sort((a,b)=>a-b);
+    const visibleEdges = (state.data.edges || []).filter(edge => visible.has(edge.source) && visible.has(edge.target));
+    const parentEdges = visibleEdges.filter(edge => edge.kind === 'parent');
+    const dependencyEdges = visibleEdges.filter(edge => edge.kind === 'dependency');
+    const incoming = new Map([...visible].map(number => [number,0]));
+    const children = new Map([...visible].map(number => [number,[]]));
+    for (const edge of parentEdges) {
+      incoming.set(edge.target,(incoming.get(edge.target)||0)+1);
+      children.get(edge.source)?.push(edge.target);
+    }
+
+    const roots = [...visible].filter(number => (incoming.get(number)||0) === 0).sort((a,b)=>a-b);
     const depth = new Map();
-    const queue = roots.map(n => [n,0]);
+    const queue = roots.map(number => [number,0]);
     while (queue.length) {
       const [number,d] = queue.shift();
       if ((depth.get(number) ?? -1) >= d) continue;
@@ -240,25 +247,178 @@
       for (const child of children.get(number) || []) queue.push([child,d+1]);
     }
     for (const number of visible) if (!depth.has(number)) depth.set(number,0);
-    const columns = new Map();
+
+    const byDepth = new Map();
     for (const number of visible) {
-      const d = depth.get(number) || 0;
-      if (!columns.has(d)) columns.set(d,[]);
-      columns.get(d).push(number);
+      const d=depth.get(number)||0;
+      if(!byDepth.has(d)) byDepth.set(d,[]);
+      byDepth.get(d).push(number);
     }
-    for (const arr of columns.values()) arr.sort((a,b) => {
-      const na=map.get(a), nb=map.get(b);
-      const pa = Number.isFinite(Number(na?.process)) ? Number(na.process) : 99999;
-      const pb = Number.isFinite(Number(nb?.process)) ? Number(nb.process) : 99999;
-      return pa-pb || a-b;
-    });
-    const positions = new Map();
-    let maxRows = 1, maxDepth = 0;
-    for (const [d,arr] of columns) {
-      maxDepth = Math.max(maxDepth,d); maxRows = Math.max(maxRows,arr.length);
-      arr.forEach((number,i)=>positions.set(number,{x:MARGIN+d*(NODE_W+COL_GAP),y:MARGIN+i*(NODE_H+ROW_GAP)}));
+    for (const numbers of byDepth.values()) {
+      numbers.sort((a,b)=>{
+        const na=map.get(a), nb=map.get(b);
+        const pa=Number.isFinite(Number(na?.process))?Number(na.process):99999;
+        const pb=Number.isFinite(Number(nb?.process))?Number(nb.process):99999;
+        return pa-pb||a-b;
+      });
     }
-    return { positions, width:MARGIN*2+(maxDepth+1)*NODE_W+maxDepth*COL_GAP, height:MARGIN*2+maxRows*NODE_H+(maxRows-1)*ROW_GAP };
+
+    const rootRank=new Map(roots.map((number,index)=>[number,index]));
+    const rootOf=new Map();
+    const rootQueue=roots.map(number=>number);
+    for(const root of roots) rootOf.set(root,root);
+    while(rootQueue.length){
+      const current=rootQueue.shift();
+      const root=rootOf.get(current)??current;
+      for(const child of children.get(current)||[]){
+        if(rootOf.has(child)) continue;
+        rootOf.set(child,root);
+        rootQueue.push(child);
+      }
+    }
+
+    const positions=new Map();
+    for(const [d,numbers] of [...byDepth.entries()].sort((a,b)=>a[0]-b[0])){
+      numbers.forEach((number,index)=>{
+        const root=rootOf.get(number)??number;
+        const componentRank=rootRank.get(root)??0;
+        const jitterX=((number*97)%181)-90;
+        const jitterY=((number*53)%73)-36;
+        const stagger=(componentRank%3)*58+(index%2)*28;
+        positions.set(number,{
+          x:MARGIN+d*BASE_X_GAP+jitterX+stagger,
+          y:MARGIN+index*BASE_Y_GAP+jitterY+(d%2)*62+Math.floor(componentRank/3)*52,
+        });
+      });
+    }
+
+    relaxFreeLayout(positions,[...visible],parentEdges,dependencyEdges);
+    return normalizeFreeLayout(positions);
+  }
+
+  function relaxFreeLayout(positions,numbers,parentEdges,dependencyEdges) {
+    const count=numbers.length;
+    const iterations=count<=70?70:count<=160?48:30;
+    const maxMove=count<=120?22:16;
+
+    for(let iteration=0;iteration<iterations;iteration++){
+      const force=new Map(numbers.map(number=>[number,{x:0,y:0}]));
+
+      for(let i=0;i<numbers.length;i++){
+        const aNumber=numbers[i], a=positions.get(aNumber); if(!a) continue;
+        for(let j=i+1;j<numbers.length;j++){
+          const bNumber=numbers[j], b=positions.get(bNumber); if(!b) continue;
+          const dx=(b.x+NODE_W/2)-(a.x+NODE_W/2);
+          const dy=(b.y+NODE_H/2)-(a.y+NODE_H/2);
+          const overlapX=NODE_W+NODE_GAP_X-Math.abs(dx);
+          const overlapY=NODE_H+NODE_GAP_Y-Math.abs(dy);
+          if(overlapX<=0||overlapY<=0) continue;
+          const fa=force.get(aNumber), fb=force.get(bNumber);
+          if(overlapX<overlapY){
+            const sign=dx===0?((aNumber<bNumber)?1:-1):Math.sign(dx);
+            const amount=Math.min(28,overlapX*.28);
+            fa.x-=sign*amount; fb.x+=sign*amount;
+          }else{
+            const sign=dy===0?((aNumber<bNumber)?1:-1):Math.sign(dy);
+            const amount=Math.min(30,overlapY*.32);
+            fa.y-=sign*amount; fb.y+=sign*amount;
+          }
+        }
+      }
+
+      for(const edge of parentEdges){
+        const source=positions.get(edge.source), target=positions.get(edge.target);
+        const fs=force.get(edge.source), ft=force.get(edge.target);
+        if(!source||!target||!fs||!ft) continue;
+        const dx=target.x-source.x;
+        const dy=(target.y+NODE_H/2)-(source.y+NODE_H/2);
+        const minForward=NODE_W+105;
+        if(dx<minForward){
+          const push=Math.min(34,(minForward-dx)*.17);
+          fs.x-=push*.36; ft.x+=push*.64;
+        }else if(dx>NODE_W+330){
+          const pull=Math.min(13,(dx-(NODE_W+330))*.025);
+          fs.x+=pull*.28; ft.x-=pull*.72;
+        }
+        if(Math.abs(dy)>310){
+          const pullY=Math.min(12,(Math.abs(dy)-310)*.028)*Math.sign(dy);
+          fs.y+=pullY*.25; ft.y-=pullY*.75;
+        }
+      }
+
+      for(const edge of dependencyEdges){
+        const source=positions.get(edge.source), target=positions.get(edge.target);
+        const fs=force.get(edge.source), ft=force.get(edge.target);
+        if(!source||!target||!fs||!ft) continue;
+        const dx=(target.x-source.x), dy=(target.y-source.y);
+        const distance=Math.max(1,Math.hypot(dx,dy));
+        if(distance>620){
+          const pull=Math.min(8,(distance-620)*.012);
+          fs.x+=dx/distance*pull*.35; fs.y+=dy/distance*pull*.35;
+          ft.x-=dx/distance*pull*.65; ft.y-=dy/distance*pull*.65;
+        }
+      }
+
+      const cooling=1-iteration/iterations*.42;
+      for(const number of numbers){
+        const p=positions.get(number), f=force.get(number); if(!p||!f) continue;
+        const fx=Math.max(-maxMove,Math.min(maxMove,f.x))*cooling;
+        const fy=Math.max(-maxMove,Math.min(maxMove,f.y))*cooling;
+        p.x+=fx; p.y+=fy;
+      }
+    }
+
+    for(let pass=0;pass<8;pass++){
+      for(const edge of parentEdges){
+        const source=positions.get(edge.source), target=positions.get(edge.target); if(!source||!target) continue;
+        const minimum=NODE_W+82;
+        if(target.x-source.x<minimum){
+          const correction=minimum-(target.x-source.x);
+          source.x-=correction*.28;
+          target.x+=correction*.72;
+        }
+      }
+      resolveLayoutOverlaps(positions,numbers);
+    }
+  }
+
+  function resolveLayoutOverlaps(positions,numbers) {
+    for(let i=0;i<numbers.length;i++){
+      const aNumber=numbers[i], a=positions.get(aNumber); if(!a) continue;
+      for(let j=i+1;j<numbers.length;j++){
+        const bNumber=numbers[j], b=positions.get(bNumber); if(!b) continue;
+        const dx=(b.x+NODE_W/2)-(a.x+NODE_W/2);
+        const dy=(b.y+NODE_H/2)-(a.y+NODE_H/2);
+        const overlapX=NODE_W+NODE_GAP_X-Math.abs(dx);
+        const overlapY=NODE_H+NODE_GAP_Y-Math.abs(dy);
+        if(overlapX<=0||overlapY<=0) continue;
+        if(overlapY<=overlapX){
+          const sign=dy===0?((aNumber<bNumber)?1:-1):Math.sign(dy);
+          const move=overlapY/2+2;
+          a.y-=sign*move; b.y+=sign*move;
+        }else{
+          const sign=dx===0?((aNumber<bNumber)?1:-1):Math.sign(dx);
+          const move=overlapX/2+2;
+          a.x-=sign*move; b.x+=sign*move;
+        }
+      }
+    }
+  }
+
+  function normalizeFreeLayout(positions) {
+    if(!positions.size) return {positions,width:MARGIN*2+NODE_W,height:MARGIN*2+NODE_H};
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for(const p of positions.values()){
+      minX=Math.min(minX,p.x); minY=Math.min(minY,p.y);
+      maxX=Math.max(maxX,p.x+NODE_W); maxY=Math.max(maxY,p.y+NODE_H);
+    }
+    const offsetX=MARGIN-minX, offsetY=MARGIN-minY;
+    for(const p of positions.values()){p.x+=offsetX;p.y+=offsetY;}
+    return {
+      positions,
+      width:Math.ceil(maxX-minX+MARGIN*2),
+      height:Math.ceil(maxY-minY+MARGIN*2),
+    };
   }
 
   function obstacleRects(layout, visible, source, target) {
