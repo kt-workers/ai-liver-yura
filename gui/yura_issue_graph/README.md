@@ -43,30 +43,42 @@ export PORT=8000
 
 ## Render
 
-Render Web Serviceでrepositoryを接続し、次を設定します。
+このrepositoryでは既存のルート `render.yaml` をBlueprintの正本として使用します。Issue Graph用に別サービスを手入力する必要はありません。
 
-Build Command:
-
-```bash
-pip install -r requirements.txt
-```
-
-Start Command:
-
-```bash
-python -m uvicorn gui.yura_issue_graph.server:app --host 0.0.0.0 --port $PORT
-```
-
-Environment:
+Blueprint内のサービス名:
 
 ```text
-GITHUB_TOKEN=<Render Secret>
+yura-issue-graph
+```
+
+定義済み設定:
+
+```text
+Runtime: Python
+Plan: Free
+Branch: feature/issue-graph-dashboard
+Build: pip install -r requirements.txt
+Start: python -m uvicorn gui.yura_issue_graph.server:app --host 0.0.0.0 --port $PORT
+Health Check: /api/health
+Auto Deploy: commit
+```
+
+### Blueprintから作成
+
+Render DashboardでBlueprintを新規作成し、このrepositoryの `render.yaml` を指定します。
+
+`GITHUB_TOKEN` は `render.yaml` で `sync: false` としているため、Blueprint初回同期時にRender側で値を入力します。Tokenの実値はGitへ保存しません。
+
+その他はBlueprintに定義済みです。
+
+```text
 YURA_ISSUE_GRAPH_OWNER=ktan514
 YURA_ISSUE_GRAPH_REPOSITORY=ai-liver-yura
 YURA_ISSUE_GRAPH_PROJECT_NUMBER=6
+PYTHON_VERSION=3.10.5
 ```
 
-`GITHUB_TOKEN`はSecretとして設定し、公開Environment値や画面へ書き込まないでください。
+Verification中は `feature/issue-graph-dashboard` を追跡します。PRを `develop` へ統合して常設運用する場合は、検証用branchを削除する前にRender serviceの追跡branchを統合先へ切り替えます。
 
 ## API
 
