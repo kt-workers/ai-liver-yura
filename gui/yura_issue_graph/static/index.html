@@ -27,9 +27,7 @@
     header h1 { margin:0; font-size:18px; }
     .subtitle { color:var(--muted); font-size:12px; margin-top:3px; }
     .controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-    .controls input[type="search"],.controls select,.controls button {
-      border:1px solid var(--border); background:var(--panel-solid); color:var(--text); border-radius:9px; padding:8px 10px;
-    }
+    .controls input[type="search"],.controls select,.controls button { border:1px solid var(--border); background:var(--panel-solid); color:var(--text); border-radius:9px; padding:8px 10px; }
     .controls input[type="search"] { width:220px; }
     .state-toggle { display:inline-flex; align-items:center; gap:7px; min-height:36px; padding:6px 9px; border:1px solid var(--border); border-radius:9px; background:var(--panel-solid); color:var(--muted); font-size:12px; cursor:pointer; user-select:none; }
     .state-toggle input { appearance:none; width:34px; height:20px; margin:0; border:1px solid var(--border); border-radius:999px; background:var(--border); position:relative; cursor:pointer; transition:background .16s ease,border-color .16s ease; }
@@ -52,13 +50,13 @@
     .component-frame.unlinked { border-style:dashed; background:transparent; }
 
     .edge { fill:none; stroke:var(--edge); stroke-linecap:round; stroke-linejoin:round; transition:opacity .16s ease,stroke-width .16s ease; }
-    .edge.parent { stroke-width:2.3; opacity:.62; }
-    .edge.dependency { stroke-width:1.9; stroke-dasharray:8 7; opacity:.48; }
+    .edge.parent { stroke-width:2.2; opacity:.60; }
+    .edge.dependency { stroke-width:1.8; stroke-dasharray:7 7; opacity:.48; }
     .edge.dimmed { opacity:.08; }
-    .edge.focused { stroke-width:4; opacity:1; }
-    .edge.dependency.focused { stroke-width:3.5; opacity:1; }
+    .edge.focused { stroke-width:3.2; opacity:1; }
+    .edge.dependency.focused { stroke-width:2.7; opacity:1; }
 
-    .node { position:absolute; width:260px; height:122px; overflow:hidden; border:2px solid var(--border); border-left-width:7px; border-radius:16px; background:var(--panel-solid); color:var(--text); padding:12px 38px 11px 13px; box-shadow:0 5px 16px rgba(20,35,45,.08); text-align:left; cursor:pointer; transition:opacity .16s ease, transform .16s ease; }
+    .node { position:absolute; width:260px; height:122px; overflow:hidden; border:2px solid var(--border); border-left-width:7px; border-radius:16px; background:var(--panel-solid); color:var(--text); padding:12px 38px 11px 13px; box-shadow:0 5px 16px rgba(20,35,45,.08); text-align:left; cursor:pointer; transition:opacity .16s ease; }
     .node:hover,.node.selected { outline:3px solid color-mix(in srgb,var(--accent) 50%,transparent); }
     .node.context-dim { opacity:.22; }
     .node.selected { opacity:1; }
@@ -74,7 +72,7 @@
     .node[data-status="Review"] { border-left-color:var(--review); --status-color:var(--review); }
     .node[data-status="Backlog"] { border-left-color:var(--backlog); --status-color:var(--backlog); }
     .node[data-status="Done"] { border-left-color:var(--done); --status-color:var(--done); }
-    .collapse { position:absolute; right:8px; top:8px; width:26px; height:26px; padding:0; border:1px solid var(--border); border-radius:8px; background:var(--panel); color:var(--text); cursor:pointer; }
+    .collapse { position:absolute; right:8px; top:8px; width:28px; height:28px; padding:0; border:1px solid var(--border); border-radius:8px; background:var(--panel); color:var(--text); cursor:pointer; font-weight:700; }
 
     .details { overflow:auto; border-left:1px solid var(--border); background:var(--panel-solid); padding:16px; }
     .details h2 { margin:0; font-size:18px; }
@@ -152,14 +150,14 @@
   const NODE_W=260, NODE_H=122;
   const LEVEL_GAP=170, SIBLING_GAP=42, COMPONENT_GAP_X=90, COMPONENT_GAP_Y=85, GROUP_PAD_X=34, GROUP_PAD_Y=48, MARGIN=80;
   const SINGLE_GAP_X=44, SINGLE_GAP_Y=38, SINGLE_COLUMNS=5;
-  const ROUTE_CLEARANCE=14, BEND_PENALTY=24, MIN_READABLE_SCALE=.65;
+  const ROUTE_CLEARANCE=14, BEND_PENALTY=24, PORT_LEAD=30, MIN_READABLE_SCALE=.65;
   const activeStatuses=new Set(['In progress','Review','Verification','Blocked']);
   const statusPriority=new Map([['In progress',0],['Review',1],['Verification',2],['Blocked',3],['Ready',4],['Backlog',5],['Done',6]]);
 
   const state={
-    data:null, selected:null, collapsed:new Set(),
-    scale:1, tx:40, ty:40, dragging:false, lastX:0, lastY:0,
-    layout:null, visible:new Set(), nodeElements:new Map()
+    data:null, selected:null, collapsed:new Set(), scale:1, tx:40, ty:40,
+    dragging:false, lastX:0, lastY:0, layout:null,
+    hierarchyCandidates:new Set(), visible:new Set(), nodeElements:new Map()
   };
 
   const viewport=document.getElementById('viewport');
@@ -176,7 +174,7 @@
 
   async function load() {
     notice.hidden=false;
-    notice.textContent=includeClosed.checked ? 'Open / Closed IssueをGitHubから取得しています。' : 'Open IssueをGitHubから取得しています。';
+    notice.textContent=includeClosed.checked?'Open / Closed IssueをGitHubから取得しています。':'Open IssueをGitHubから取得しています。';
     includeClosed.disabled=true;
     try {
       const includeClosedValue=includeClosed.checked;
@@ -186,9 +184,9 @@
       includeClosed.checked=Boolean(state.data.include_closed);
       const stateLabel=state.data.include_closed?' / Closed含む':' / Openのみ';
       document.getElementById('sourceLabel').textContent=`${state.data.repository} / Project #${state.data.project.number}${state.data.project.title?' '+state.data.project.title:''}${stateLabel}`;
-
       const loaded=new Set((state.data.nodes||[]).map(node=>node.number));
-      if(state.selected!==null&&!loaded.has(state.selected)) clearSelection();
+      state.collapsed=new Set([...state.collapsed].filter(number=>loaded.has(number)));
+      if(state.selected!==null&&!loaded.has(state.selected)) clearSelectionOnly();
       const messages=state.data.diagnostics||[];
       notice.hidden=messages.length===0;
       notice.textContent=messages.join(' / ');
@@ -197,42 +195,32 @@
     } catch(error) {
       notice.hidden=false;
       notice.textContent=`データ取得に失敗しました: ${error.message}`;
-    } finally {
-      includeClosed.disabled=false;
-    }
+    } finally { includeClosed.disabled=false; }
   }
 
   function nodeMap() { return new Map((state.data?.nodes||[]).map(node=>[node.number,node])); }
 
   function filteredVisibleSet(map) {
-    const query=search.value.trim().toLowerCase();
-    const status=statusFilter.value;
-    const direct=new Set();
+    const query=search.value.trim().toLowerCase(), status=statusFilter.value, direct=new Set();
     for(const node of map.values()){
       const textMatch=!query||(`#${node.number} ${node.title}`).toLowerCase().includes(query);
       const statusMatch=status==='all'||(status==='active'?activeStatuses.has(node.status):node.status===status);
       if(textMatch&&statusMatch) direct.add(node.number);
     }
     if(!query&&status==='all') return new Set(map.keys());
-
     const visible=new Set(direct);
     for(const number of [...direct]){
-      let current=map.get(number);
-      const guard=new Set();
+      let current=map.get(number), guard=new Set();
       while(current?.parent_number&&map.has(current.parent_number)&&!guard.has(current.parent_number)){
-        guard.add(current.parent_number);
-        visible.add(current.parent_number);
-        current=map.get(current.parent_number);
+        guard.add(current.parent_number); visible.add(current.parent_number); current=map.get(current.parent_number);
       }
     }
     return visible;
   }
 
-  function hideCollapsedDescendants(visible,map) {
-    const result=new Set(visible);
-    const walk=number=>{
-      const node=map.get(number);
-      if(!node) return;
+  function hideCollapsedDescendants(candidates,map) {
+    const result=new Set(candidates), walk=number=>{
+      const node=map.get(number); if(!node) return;
       for(const child of node.child_numbers||[]){ result.delete(child); walk(child); }
     };
     for(const number of state.collapsed) walk(number);
@@ -241,175 +229,127 @@
 
   function sortNumbers(numbers,map) {
     return [...numbers].sort((a,b)=>{
-      const na=map.get(a), nb=map.get(b);
-      const sa=statusPriority.get(na?.status)??99, sb=statusPriority.get(nb?.status)??99;
-      const pa=Number.isFinite(Number(na?.process))?Number(na.process):99999;
-      const pb=Number.isFinite(Number(nb?.process))?Number(nb.process):99999;
+      const na=map.get(a),nb=map.get(b),sa=statusPriority.get(na?.status)??99,sb=statusPriority.get(nb?.status)??99;
+      const pa=Number.isFinite(Number(na?.process))?Number(na.process):99999,pb=Number.isFinite(Number(nb?.process))?Number(nb.process):99999;
       return sa-sb||pa-pb||a-b;
     });
   }
 
   function buildForest(map,visible) {
     const parentEdges=(state.data.edges||[]).filter(edge=>edge.kind==='parent'&&visible.has(edge.source)&&visible.has(edge.target));
-    const children=new Map([...visible].map(number=>[number,[]]));
-    const incoming=new Map([...visible].map(number=>[number,0]));
+    const children=new Map([...visible].map(number=>[number,[]])), incoming=new Map([...visible].map(number=>[number,0]));
     for(const edge of parentEdges){
       if(!children.has(edge.source)||!incoming.has(edge.target)) continue;
-      children.get(edge.source).push(edge.target);
-      incoming.set(edge.target,(incoming.get(edge.target)||0)+1);
+      children.get(edge.source).push(edge.target); incoming.set(edge.target,(incoming.get(edge.target)||0)+1);
     }
     for(const [number,list] of children) children.set(number,sortNumbers(new Set(list),map));
-
-    const roots=sortNumbers([...visible].filter(number=>(incoming.get(number)||0)===0),map);
-    const visited=new Set(), orderedRoots=[];
-    const mark=number=>{
-      if(visited.has(number)) return;
-      visited.add(number);
-      for(const child of children.get(number)||[]) mark(child);
-    };
+    const roots=sortNumbers([...visible].filter(number=>(incoming.get(number)||0)===0),map),visited=new Set(),orderedRoots=[];
+    const mark=number=>{ if(visited.has(number)) return; visited.add(number); for(const child of children.get(number)||[]) mark(child); };
     for(const root of roots){ if(!visited.has(root)){ orderedRoots.push(root); mark(root); } }
     for(const number of sortNumbers(visible,map)){ if(!visited.has(number)){ orderedRoots.push(number); mark(number); } }
     return {children,roots:orderedRoots,parentEdges};
   }
 
-  function layoutComponent(root,children) {
-    const spanCache=new Map(), visiting=new Set();
+  function layoutComponent(root,children,map) {
+    const spanCache=new Map(),visiting=new Set();
     const subtreeSpan=number=>{
       if(spanCache.has(number)) return spanCache.get(number);
       if(visiting.has(number)) return NODE_H;
-      visiting.add(number);
-      const list=children.get(number)||[];
+      visiting.add(number); const list=children.get(number)||[];
       let span=NODE_H;
-      if(list.length){
-        const spans=list.map(child=>subtreeSpan(child));
-        span=Math.max(NODE_H,spans.reduce((sum,value)=>sum+value,0)+SIBLING_GAP*(spans.length-1));
-      }
+      if(list.length){ const spans=list.map(child=>subtreeSpan(child)); span=Math.max(NODE_H,spans.reduce((sum,value)=>sum+value,0)+SIBLING_GAP*(spans.length-1)); }
       visiting.delete(number); spanCache.set(number,span); return span;
     };
-
-    const positions=new Map(), placing=new Set();
-    let maxDepth=0;
+    const positions=new Map(),placing=new Set(); let maxDepth=0;
     const place=(number,depth,top)=>{
       if(placing.has(number)||positions.has(number)) return;
-      placing.add(number); maxDepth=Math.max(maxDepth,depth);
-      const span=subtreeSpan(number);
+      placing.add(number); maxDepth=Math.max(maxDepth,depth); const span=subtreeSpan(number);
       positions.set(number,{x:depth*(NODE_W+LEVEL_GAP),y:top+(span-NODE_H)/2});
       let childTop=top;
-      for(const child of children.get(number)||[]){
-        const childSpan=subtreeSpan(child);
-        place(child,depth+1,childTop);
-        childTop+=childSpan+SIBLING_GAP;
-      }
+      for(const child of children.get(number)||[]){ const childSpan=subtreeSpan(child); place(child,depth+1,childTop); childTop+=childSpan+SIBLING_GAP; }
       placing.delete(number);
     };
     const height=subtreeSpan(root); place(root,0,0);
-    return {root,positions,nodeCount:positions.size,width:(maxDepth+1)*NODE_W+maxDepth*LEVEL_GAP,height:Math.max(NODE_H,height)};
+    let hasHierarchy=positions.size>1;
+    if(!hasHierarchy){
+      for(const number of positions.keys()){
+        const node=map.get(number);
+        if(node&&((node.child_numbers||[]).length>0||node.parent_number!==null)){ hasHierarchy=true; break; }
+      }
+    }
+    return {root,positions,nodeCount:positions.size,hasHierarchy,width:(maxDepth+1)*NODE_W+maxDepth*LEVEL_GAP,height:Math.max(NODE_H,height)};
   }
 
   function packHierarchy(components,map) {
-    const trees=components.filter(component=>component.nodeCount>1);
-    const singles=components.filter(component=>component.nodeCount===1);
-    trees.sort((a,b)=>{
-      const sa=statusPriority.get(map.get(a.root)?.status)??99;
-      const sb=statusPriority.get(map.get(b.root)?.status)??99;
-      return sa-sb||b.nodeCount-a.nodeCount||a.root-b.root;
-    });
-    singles.sort((a,b)=>{
-      const sa=statusPriority.get(map.get(a.root)?.status)??99;
-      const sb=statusPriority.get(map.get(b.root)?.status)??99;
-      return sa-sb||a.root-b.root;
-    });
-
-    const targetWidth=Math.max(1300,Math.min(2300,viewport.clientWidth*1.8));
-    const positions=new Map(), groups=[];
-    let cursorX=MARGIN, cursorY=MARGIN, rowHeight=0, maxRight=MARGIN, maxBottom=MARGIN;
-
+    const trees=components.filter(component=>component.hasHierarchy),singles=components.filter(component=>!component.hasHierarchy);
+    const componentSort=(a,b)=>{ const sa=statusPriority.get(map.get(a.root)?.status)??99,sb=statusPriority.get(map.get(b.root)?.status)??99; return sa-sb||b.nodeCount-a.nodeCount||a.root-b.root; };
+    trees.sort(componentSort); singles.sort(componentSort);
+    const targetWidth=Math.max(1300,Math.min(2300,viewport.clientWidth*1.8)),positions=new Map(),groups=[];
+    let cursorX=MARGIN,cursorY=MARGIN,rowHeight=0,maxRight=MARGIN,maxBottom=MARGIN;
     for(const tree of trees){
-      const frameWidth=tree.width+GROUP_PAD_X*2;
-      const frameHeight=tree.height+GROUP_PAD_Y*2;
-      if(cursorX>MARGIN&&cursorX+frameWidth>targetWidth){
-        cursorX=MARGIN; cursorY+=rowHeight+COMPONENT_GAP_Y; rowHeight=0;
-      }
-      const contentX=cursorX+GROUP_PAD_X, contentY=cursorY+GROUP_PAD_Y;
+      const frameWidth=tree.width+GROUP_PAD_X*2,frameHeight=tree.height+GROUP_PAD_Y*2;
+      if(cursorX>MARGIN&&cursorX+frameWidth>targetWidth){ cursorX=MARGIN; cursorY+=rowHeight+COMPONENT_GAP_Y; rowHeight=0; }
+      const contentX=cursorX+GROUP_PAD_X,contentY=cursorY+GROUP_PAD_Y;
       for(const [number,p] of tree.positions) positions.set(number,{x:contentX+p.x,y:contentY+p.y});
       groups.push({kind:'tree',root:tree.root,x:cursorX,y:cursorY,width:frameWidth,height:frameHeight});
       maxRight=Math.max(maxRight,cursorX+frameWidth); maxBottom=Math.max(maxBottom,cursorY+frameHeight);
       cursorX+=frameWidth+COMPONENT_GAP_X; rowHeight=Math.max(rowHeight,frameHeight);
     }
-
     if(trees.length) maxBottom=Math.max(maxBottom,cursorY+rowHeight);
     if(singles.length){
-      const sectionY=maxBottom+(trees.length?COMPONENT_GAP_Y:0);
-      const cols=Math.min(SINGLE_COLUMNS,Math.max(1,singles.length));
-      const sectionWidth=GROUP_PAD_X*2+cols*NODE_W+(cols-1)*SINGLE_GAP_X;
-      const rows=Math.ceil(singles.length/cols);
-      const sectionHeight=GROUP_PAD_Y*2+rows*NODE_H+(rows-1)*SINGLE_GAP_Y;
-      const sectionX=MARGIN;
-      singles.forEach((component,index)=>{
-        const col=index%cols, row=Math.floor(index/cols);
-        positions.set(component.root,{
-          x:sectionX+GROUP_PAD_X+col*(NODE_W+SINGLE_GAP_X),
-          y:sectionY+GROUP_PAD_Y+row*(NODE_H+SINGLE_GAP_Y)
-        });
-      });
+      const sectionY=maxBottom+(trees.length?COMPONENT_GAP_Y:0),cols=Math.min(SINGLE_COLUMNS,Math.max(1,singles.length));
+      const sectionWidth=GROUP_PAD_X*2+cols*NODE_W+(cols-1)*SINGLE_GAP_X,rows=Math.ceil(singles.length/cols),sectionHeight=GROUP_PAD_Y*2+rows*NODE_H+(rows-1)*SINGLE_GAP_Y,sectionX=MARGIN;
+      singles.forEach((component,index)=>{ const col=index%cols,row=Math.floor(index/cols); positions.set(component.root,{x:sectionX+GROUP_PAD_X+col*(NODE_W+SINGLE_GAP_X),y:sectionY+GROUP_PAD_Y+row*(NODE_H+SINGLE_GAP_Y)}); });
       groups.push({kind:'unlinked',count:singles.length,x:sectionX,y:sectionY,width:sectionWidth,height:sectionHeight});
       maxRight=Math.max(maxRight,sectionX+sectionWidth); maxBottom=Math.max(maxBottom,sectionY+sectionHeight);
     }
-
     return {positions,groups,width:Math.ceil(maxRight+MARGIN),height:Math.ceil(maxBottom+MARGIN)};
   }
 
   function computeLayout(map,visible) {
-    const forest=buildForest(map,visible);
-    const components=forest.roots.map(root=>layoutComponent(root,forest.children));
+    const forest=buildForest(map,visible),components=forest.roots.map(root=>layoutComponent(root,forest.children,map));
     return {...packHierarchy(components,map),children:forest.children,parentEdges:forest.parentEdges};
   }
 
   function renderGroups(layout,map) {
     groupLayer.innerHTML='';
     for(const group of layout.groups||[]){
-      const frame=document.createElement('div');
-      frame.className='component-frame'+(group.kind==='unlinked'?' unlinked':'');
+      const frame=document.createElement('div'); frame.className='component-frame'+(group.kind==='unlinked'?' unlinked':'');
       frame.style.left=`${group.x}px`; frame.style.top=`${group.y}px`; frame.style.width=`${group.width}px`; frame.style.height=`${group.height}px`;
       const label=document.createElement('div'); label.className='component-title';
       if(group.kind==='unlinked') label.textContent=`親子関係なし（${group.count}件）`;
-      else {
-        const root=map.get(group.root);
-        label.textContent=`親子ツリー #${group.root}${root?' '+shortTitle(root.title,42):''}`;
-      }
+      else { const root=map.get(group.root); label.textContent=`親子ツリー #${group.root}${root?' '+shortTitle(root.title,42):''}`; }
       frame.appendChild(label); groupLayer.appendChild(frame);
     }
+  }
+
+  function hasExpandableChildren(node) {
+    return Boolean(node&&(state.collapsed.has(node.number)||(node.child_numbers||[]).some(child=>state.hierarchyCandidates.has(child))));
   }
 
   function renderGraph() {
     if(!state.data) return;
     const map=nodeMap();
-    let visible=hideCollapsedDescendants(filteredVisibleSet(map),map);
-    if(state.selected!==null&&!visible.has(state.selected)) clearSelection();
+    state.hierarchyCandidates=filteredVisibleSet(map);
+    const visible=hideCollapsedDescendants(state.hierarchyCandidates,map);
+    if(state.selected!==null&&!visible.has(state.selected)) clearSelectionOnly();
     const layout=computeLayout(map,visible);
     state.layout=layout; state.visible=visible; state.nodeElements=new Map();
-
     world.style.width=`${layout.width}px`; world.style.height=`${layout.height}px`;
     groupLayer.style.width=`${layout.width}px`; groupLayer.style.height=`${layout.height}px`;
     edgeSvg.setAttribute('width',layout.width); edgeSvg.setAttribute('height',layout.height); edgeSvg.setAttribute('viewBox',`0 0 ${layout.width} ${layout.height}`);
-    renderGroups(layout,map);
-
-    nodeLayer.innerHTML='';
+    renderGroups(layout,map); nodeLayer.innerHTML='';
     for(const number of visible){
-      const node=map.get(number), pos=layout.positions.get(number); if(!node||!pos) continue;
-      const el=document.createElement('div');
-      el.className='node'+(state.selected===number?' selected':'');
-      el.dataset.number=String(number); el.dataset.status=node.status||''; el.dataset.issueState=node.state||'';
-      el.style.left=`${pos.x}px`; el.style.top=`${pos.y}px`;
-      const status=node.status||'Project未設定', level=node.issue_level||'未分類';
-      const closedBadge=node.state==='CLOSED'?'<span class="badge">Closed</span>':'';
+      const node=map.get(number),pos=layout.positions.get(number); if(!node||!pos) continue;
+      const el=document.createElement('div'); el.className='node'+(state.selected===number?' selected':'');
+      el.dataset.number=String(number); el.dataset.status=node.status||''; el.dataset.issueState=node.state||''; el.style.left=`${pos.x}px`; el.style.top=`${pos.y}px`;
+      const status=node.status||'Project未設定',level=node.issue_level||'未分類',closedBadge=node.state==='CLOSED'?'<span class="badge">Closed</span>':'';
       el.innerHTML=`<div class="number">#${node.number}</div><div class="title"></div><div class="meta"><span class="badge">${escapeHtml(status)}</span><span class="badge">${escapeHtml(level)}</span>${closedBadge}</div>`;
-      el.querySelector('.title').textContent=node.title;
-      el.addEventListener('click',()=>selectNode(node.number));
-      if((node.child_numbers||[]).some(child=>visible.has(child))){
-        const button=document.createElement('button'); button.type='button'; button.className='collapse'; button.textContent=state.collapsed.has(number)?'+':'−'; button.title='子Issueを折りたたむ';
-        button.addEventListener('click',event=>{ event.stopPropagation(); state.collapsed.has(number)?state.collapsed.delete(number):state.collapsed.add(number); renderGraph(); });
-        el.appendChild(button);
+      el.querySelector('.title').textContent=node.title; el.addEventListener('click',()=>selectNode(node.number));
+      if(hasExpandableChildren(node)){
+        const button=document.createElement('button'); button.type='button'; button.className='collapse'; button.textContent=state.collapsed.has(number)?'+':'−';
+        button.title=state.collapsed.has(number)?'子Issueを展開する':'子Issueを折りたたむ'; button.setAttribute('aria-label',button.title);
+        button.addEventListener('click',event=>{ event.stopPropagation(); toggleCollapse(number); }); el.appendChild(button);
       }
       nodeLayer.appendChild(el); state.nodeElements.set(number,el);
     }
@@ -417,11 +357,17 @@
     if(state.selected!==null&&map.has(state.selected)) renderDetails(map.get(state.selected),map);
   }
 
+  function toggleCollapse(number) {
+    const before=state.layout?.positions.get(number),screenX=before?state.tx+(before.x+NODE_W/2)*state.scale:null,screenY=before?state.ty+(before.y+NODE_H/2)*state.scale:null;
+    if(state.collapsed.has(number)) state.collapsed.delete(number); else state.collapsed.add(number);
+    renderGraph();
+    const after=state.layout?.positions.get(number);
+    if(after&&screenX!==null&&screenY!==null){ state.tx=screenX-(after.x+NODE_W/2)*state.scale; state.ty=screenY-(after.y+NODE_H/2)*state.scale; applyTransform(); }
+  }
+
   function measuredRects() {
     const rects=new Map();
-    for(const [number,el] of state.nodeElements){
-      rects.set(number,{left:el.offsetLeft,top:el.offsetTop,right:el.offsetLeft+el.offsetWidth,bottom:el.offsetTop+el.offsetHeight,width:el.offsetWidth,height:el.offsetHeight,cx:el.offsetLeft+el.offsetWidth/2,cy:el.offsetTop+el.offsetHeight/2});
-    }
+    for(const [number,el] of state.nodeElements) rects.set(number,{left:el.offsetLeft,top:el.offsetTop,right:el.offsetLeft+el.offsetWidth,bottom:el.offsetTop+el.offsetHeight,width:el.offsetWidth,height:el.offsetHeight,cx:el.offsetLeft+el.offsetWidth/2,cy:el.offsetTop+el.offsetHeight/2});
     return rects;
   }
   function clearRect(rect,pad=ROUTE_CLEARANCE) { return {left:rect.left-pad,right:rect.right+pad,top:rect.top-pad,bottom:rect.bottom+pad}; }
@@ -430,20 +376,11 @@
     if(Math.abs(a.y-b.y)<.001){ if(a.y<=rect.top||a.y>=rect.bottom) return false; const lo=Math.min(a.x,b.x),hi=Math.max(a.x,b.x); return hi>rect.left&&lo<rect.right; }
     return true;
   }
-  function pathIsClear(points,obstacles) {
-    for(let i=1;i<points.length;i++) for(const rect of obstacles) if(segmentHitsRect(points[i-1],points[i],rect)) return false;
-    return true;
-  }
+  function pathIsClear(points,obstacles) { for(let i=1;i<points.length;i++) for(const rect of obstacles) if(segmentHitsRect(points[i-1],points[i],rect)) return false; return true; }
   function simplifyRoute(points) {
-    const dedup=[];
-    for(const point of points){ const last=dedup[dedup.length-1]; if(!last||last.x!==point.x||last.y!==point.y) dedup.push(point); }
-    if(dedup.length<3) return dedup;
-    const result=[dedup[0]];
-    for(let i=1;i<dedup.length-1;i++){
-      const prev=result[result.length-1],cur=dedup[i],next=dedup[i+1];
-      if((prev.x===cur.x&&cur.x===next.x)||(prev.y===cur.y&&cur.y===next.y)) continue;
-      result.push(cur);
-    }
+    const dedup=[]; for(const point of points){ const last=dedup[dedup.length-1]; if(!last||last.x!==point.x||last.y!==point.y) dedup.push(point); }
+    if(dedup.length<3) return dedup; const result=[dedup[0]];
+    for(let i=1;i<dedup.length-1;i++){ const prev=result[result.length-1],cur=dedup[i],next=dedup[i+1]; if((prev.x===cur.x&&cur.x===next.x)||(prev.y===cur.y&&cur.y===next.y)) continue; result.push(cur); }
     result.push(dedup[dedup.length-1]); return result;
   }
   function parentBusRoute(edge,rects) {
@@ -457,14 +394,13 @@
   function routeByVisibility(start,goal,obstacles,width,height) {
     const xs=[start.x,goal.x,MARGIN/2,width-MARGIN/2],ys=[start.y,goal.y,MARGIN/2,height-MARGIN/2];
     for(const rect of obstacles){ xs.push(rect.left,rect.right); ys.push(rect.top,rect.bottom); }
-    const xValues=uniqueSorted(xs), yValues=uniqueSorted(ys), candidates=[], indexByKey=new Map();
+    const xValues=uniqueSorted(xs),yValues=uniqueSorted(ys),candidates=[],indexByKey=new Map();
     for(let xi=0;xi<xValues.length;xi++) for(let yi=0;yi<yValues.length;yi++){
       const point={x:xValues[xi],y:yValues[yi],xi,yi}; if(pointInsideAny(point,obstacles)) continue;
       indexByKey.set(`${xi}:${yi}`,candidates.length); candidates.push(point);
     }
-    const startIndex=indexByKey.get(`${xValues.indexOf(start.x)}:${yValues.indexOf(start.y)}`), goalIndex=indexByKey.get(`${xValues.indexOf(goal.x)}:${yValues.indexOf(goal.y)}`);
+    const startIndex=indexByKey.get(`${xValues.indexOf(start.x)}:${yValues.indexOf(start.y)}`),goalIndex=indexByKey.get(`${xValues.indexOf(goal.x)}:${yValues.indexOf(goal.y)}`);
     if(startIndex===undefined||goalIndex===undefined) return null;
-
     const adjacency=Array.from({length:candidates.length},()=>[]),rows=new Map(),cols=new Map();
     candidates.forEach((point,index)=>{ if(!rows.has(point.yi)) rows.set(point.yi,[]); if(!cols.has(point.xi)) cols.set(point.xi,[]); rows.get(point.yi).push(index); cols.get(point.xi).push(index); });
     const connect=(indices,axis)=>{
@@ -475,17 +411,13 @@
       }
     };
     for(const indices of rows.values()) connect(indices,'x'); for(const indices of cols.values()) connect(indices,'y');
-
-    const keyFor=(index,direction)=>`${index}:${direction}`;
-    const open=[{index:startIndex,direction:'s',g:0,f:0,key:keyFor(startIndex,'s')}],best=new Map([[keyFor(startIndex,'s'),0]]),parent=new Map();
-    let end=null;
+    const keyFor=(index,direction)=>`${index}:${direction}`,open=[{index:startIndex,direction:'s',g:0,f:0,key:keyFor(startIndex,'s')}],best=new Map([[keyFor(startIndex,'s'),0]]),parent=new Map(); let end=null;
     while(open.length){
       open.sort((a,b)=>a.f-b.f); const current=open.shift(); if(current.index===goalIndex){ end=current; break; }
       for(const edge of adjacency[current.index]){
         const bend=current.direction!=='s'&&current.direction!==edge.direction?BEND_PENALTY:0,g=current.g+edge.length+bend,key=keyFor(edge.to,edge.direction);
         if(g>=(best.get(key)??Infinity)) continue;
-        best.set(key,g); parent.set(key,current.key); const point=candidates[edge.to],heuristic=Math.abs(point.x-goal.x)+Math.abs(point.y-goal.y);
-        open.push({index:edge.to,direction:edge.direction,g,f:g+heuristic,key});
+        best.set(key,g); parent.set(key,current.key); const point=candidates[edge.to],heuristic=Math.abs(point.x-goal.x)+Math.abs(point.y-goal.y); open.push({index:edge.to,direction:edge.direction,g,f:g+heuristic,key});
       }
     }
     if(!end) return null;
@@ -494,93 +426,94 @@
     points.reverse(); return simplifyRoute(points.map(({x,y})=>({x,y})));
   }
 
-  function dependencyPorts(source,target) {
-    const horizontal=target.cx>=source.cx,vertical=target.cy>=source.cy;
-    return [
-      [{x:horizontal?source.right:source.left,y:source.cy},{x:horizontal?target.left:target.right,y:target.cy}],
-      [{x:source.cx,y:vertical?source.bottom:source.top},{x:target.cx,y:vertical?target.top:target.bottom}],
-      [{x:horizontal?source.left:source.right,y:source.cy},{x:horizontal?target.right:target.left,y:target.cy}],
-      [{x:source.cx,y:vertical?source.top:source.bottom},{x:target.cx,y:vertical?target.bottom:target.top}],
-    ];
+  function dependencyPortCandidates(source,target) {
+    const sourceRight={x:source.right,y:source.cy},sourceLeft={x:source.left,y:source.cy},sourceBottom={x:source.cx,y:source.bottom},sourceTop={x:source.cx,y:source.top};
+    const targetLeft={x:target.left,y:target.cy},targetRight={x:target.right,y:target.cy},targetTop={x:target.cx,y:target.top},targetBottom={x:target.cx,y:target.bottom};
+    const pairs=[];
+    if(target.cx>=source.cx){
+      pairs.push({sourcePort:sourceRight,sourceLead:{x:source.right+PORT_LEAD,y:source.cy},targetLead:{x:target.left-PORT_LEAD,y:target.cy},targetPort:targetLeft});
+      pairs.push({sourcePort:sourceLeft,sourceLead:{x:source.left-PORT_LEAD,y:source.cy},targetLead:{x:target.right+PORT_LEAD,y:target.cy},targetPort:targetRight});
+    } else {
+      pairs.push({sourcePort:sourceLeft,sourceLead:{x:source.left-PORT_LEAD,y:source.cy},targetLead:{x:target.right+PORT_LEAD,y:target.cy},targetPort:targetRight});
+      pairs.push({sourcePort:sourceRight,sourceLead:{x:source.right+PORT_LEAD,y:source.cy},targetLead:{x:target.left-PORT_LEAD,y:target.cy},targetPort:targetLeft});
+    }
+    if(target.cy>=source.cy){
+      pairs.push({sourcePort:sourceBottom,sourceLead:{x:source.cx,y:source.bottom+PORT_LEAD},targetLead:{x:target.cx,y:target.top-PORT_LEAD},targetPort:targetTop});
+      pairs.push({sourcePort:sourceTop,sourceLead:{x:source.cx,y:source.top-PORT_LEAD},targetLead:{x:target.cx,y:target.bottom+PORT_LEAD},targetPort:targetBottom});
+    } else {
+      pairs.push({sourcePort:sourceTop,sourceLead:{x:source.cx,y:source.top-PORT_LEAD},targetLead:{x:target.cx,y:target.bottom+PORT_LEAD},targetPort:targetBottom});
+      pairs.push({sourcePort:sourceBottom,sourceLead:{x:source.cx,y:source.bottom+PORT_LEAD},targetLead:{x:target.cx,y:target.top-PORT_LEAD},targetPort:targetTop});
+    }
+    return pairs;
   }
+
   function routeDependency(edge,rects) {
     const source=rects.get(edge.source),target=rects.get(edge.target); if(!source||!target) return null;
     const obstacles=[]; for(const [number,rect] of rects) if(number!==edge.source&&number!==edge.target) obstacles.push(clearRect(rect));
     let bestRoute=null,bestCost=Infinity;
-    for(const [start,goal] of dependencyPorts(source,target)){
-      const route=routeByVisibility(start,goal,obstacles,state.layout.width,state.layout.height); if(!route) continue;
-      const cost=route.slice(1).reduce((sum,p,index)=>sum+Math.abs(p.x-route[index].x)+Math.abs(p.y-route[index].y),0);
-      if(cost<bestCost){ bestCost=cost; bestRoute=route; }
+    for(const candidate of dependencyPortCandidates(source,target)){
+      const {sourcePort,sourceLead,targetLead,targetPort}=candidate;
+      if(!pathIsClear([sourcePort,sourceLead],obstacles)||!pathIsClear([targetLead,targetPort],obstacles)) continue;
+      const middle=routeByVisibility(sourceLead,targetLead,obstacles,state.layout.width,state.layout.height); if(!middle) continue;
+      const combined=simplifyRoute([sourcePort,sourceLead,...middle.slice(1,-1),targetLead,targetPort]);
+      if(!pathIsClear(combined,obstacles)) continue;
+      const cost=combined.slice(1).reduce((sum,p,index)=>sum+Math.abs(p.x-combined[index].x)+Math.abs(p.y-combined[index].y),0);
+      if(cost<bestCost){ bestCost=cost; bestRoute=combined; }
     }
     if(bestRoute) return bestRoute;
     const topY=MARGIN/3,bottomY=state.layout.height-MARGIN/3;
-    const alternatives=[
-      [{x:source.cx,y:source.top},{x:source.cx,y:topY},{x:target.cx,y:topY},{x:target.cx,y:target.top}],
-      [{x:source.cx,y:source.bottom},{x:source.cx,y:bottomY},{x:target.cx,y:bottomY},{x:target.cx,y:target.bottom}],
-    ];
-    return alternatives.find(points=>pathIsClear(points,obstacles))||null;
+    for(const candidate of dependencyPortCandidates(source,target)){
+      const {sourcePort,sourceLead,targetLead,targetPort}=candidate;
+      const lanes=[
+        [sourcePort,sourceLead,{x:sourceLead.x,y:topY},{x:targetLead.x,y:topY},targetLead,targetPort],
+        [sourcePort,sourceLead,{x:sourceLead.x,y:bottomY},{x:targetLead.x,y:bottomY},targetLead,targetPort],
+      ];
+      const clear=lanes.find(points=>pathIsClear(points,obstacles)); if(clear) return simplifyRoute(clear);
+    }
+    return null;
   }
 
-  function roundedOrthogonalPath(points,radius=8) {
+  function roundedOrthogonalPath(points,radius=7) {
     if(!points?.length) return ''; if(points.length===1) return `M ${points[0].x} ${points[0].y}`;
     let d=`M ${points[0].x} ${points[0].y}`;
     for(let i=1;i<points.length-1;i++){
       const prev=points[i-1],cur=points[i],next=points[i+1],inLen=Math.abs(cur.x-prev.x)+Math.abs(cur.y-prev.y),outLen=Math.abs(next.x-cur.x)+Math.abs(next.y-cur.y),r=Math.min(radius,inLen/2,outLen/2);
-      const before={x:cur.x+(prev.x-cur.x)*(r/(inLen||1)),y:cur.y+(prev.y-cur.y)*(r/(inLen||1))};
-      const after={x:cur.x+(next.x-cur.x)*(r/(outLen||1)),y:cur.y+(next.y-cur.y)*(r/(outLen||1))};
+      const before={x:cur.x+(prev.x-cur.x)*(r/(inLen||1)),y:cur.y+(prev.y-cur.y)*(r/(inLen||1))},after={x:cur.x+(next.x-cur.x)*(r/(outLen||1)),y:cur.y+(next.y-cur.y)*(r/(outLen||1))};
       d+=` L ${before.x} ${before.y} Q ${cur.x} ${cur.y} ${after.x} ${after.y}`;
     }
     const last=points[points.length-1]; return d+` L ${last.x} ${last.y}`;
   }
 
-  function dependencyShouldBeVisible(edge) {
-    if(showDependencies.checked) return true;
-    return state.selected!==null&&(edge.source===state.selected||edge.target===state.selected);
-  }
+  function dependencyShouldBeVisible(edge) { return showDependencies.checked||state.selected!==null&&(edge.source===state.selected||edge.target===state.selected); }
 
   function drawEdges() {
     if(!state.data||!state.layout) return;
     const rects=measuredRects();
-    edgeSvg.innerHTML=`<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--edge)"/></marker><marker id="arrowFocus" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="var(--edge)"/></marker></defs>`;
+    edgeSvg.innerHTML=`<defs><marker id="arrowSmall" markerUnits="userSpaceOnUse" markerWidth="7" markerHeight="7" viewBox="0 0 7 7" refX="6.2" refY="3.5" orient="auto"><path d="M0.7 0.7 L6.2 3.5 L0.7 6.3 Z" fill="var(--edge)"/></marker></defs>`;
     const all=(state.data.edges||[]).filter(edge=>state.visible.has(edge.source)&&state.visible.has(edge.target));
     const edges=all.filter(edge=>edge.kind==='parent'||dependencyShouldBeVisible(edge));
     const ordered=[...edges.filter(edge=>edge.source!==state.selected),...edges.filter(edge=>edge.source===state.selected)];
     for(const edge of ordered){
       let route=edge.kind==='parent'?parentBusRoute(edge,rects):routeDependency(edge,rects); if(!route&&edge.kind==='parent') route=routeDependency(edge,rects); if(!route) continue;
-      const focused=state.selected!==null&&edge.source===state.selected;
-      const related=state.selected!==null&&(edge.source===state.selected||edge.target===state.selected);
-      const dimmed=state.selected!==null&&!related;
-      const path=document.createElementNS('http://www.w3.org/2000/svg','path');
-      path.setAttribute('d',roundedOrthogonalPath(route));
+      const focused=state.selected!==null&&edge.source===state.selected,related=state.selected!==null&&(edge.source===state.selected||edge.target===state.selected),dimmed=state.selected!==null&&!related;
+      const path=document.createElementNS('http://www.w3.org/2000/svg','path'); path.setAttribute('d',roundedOrthogonalPath(route));
       path.setAttribute('class',`edge ${edge.kind==='dependency'?'dependency':'parent'}${focused?' focused':''}${dimmed?' dimmed':''}`);
-      path.setAttribute('marker-end',focused?'url(#arrowFocus)':'url(#arrow)'); edgeSvg.appendChild(path);
+      path.setAttribute('marker-end','url(#arrowSmall)'); edgeSvg.appendChild(path);
     }
   }
 
   function directRelatedNumbers(number) {
     const related=new Set([number]);
-    for(const edge of state.data?.edges||[]){
-      if(edge.source===number) related.add(edge.target);
-      if(edge.target===number) related.add(edge.source);
-    }
+    for(const edge of state.data?.edges||[]){ if(edge.source===number) related.add(edge.target); if(edge.target===number) related.add(edge.source); }
     return related;
   }
   function updateNodeFocus() {
     const related=state.selected===null?null:directRelatedNumbers(state.selected);
-    for(const [number,el] of state.nodeElements){
-      el.classList.toggle('selected',number===state.selected);
-      el.classList.toggle('context-dim',Boolean(related&&!related.has(number)));
-    }
+    for(const [number,el] of state.nodeElements){ el.classList.toggle('selected',number===state.selected); el.classList.toggle('context-dim',Boolean(related&&!related.has(number))); }
   }
-  function clearSelection() {
-    state.selected=null;
-    details.innerHTML='<div class="empty">ノードをクリックするとIssue詳細を表示します。</div>';
-    updateNodeFocus();
-  }
+  function clearSelectionOnly() { state.selected=null; details.innerHTML='<div class="empty">ノードをクリックするとIssue詳細を表示します。</div>'; }
   function selectNode(number) {
-    const value=Number(number);
-    state.selected=state.selected===value?null:value;
-    updateNodeFocus(); drawEdges();
+    const value=Number(number); state.selected=state.selected===value?null:value; updateNodeFocus(); drawEdges();
     if(state.selected===null){ details.innerHTML='<div class="empty">ノードをクリックするとIssue詳細を表示します。</div>'; return; }
     const map=nodeMap(),node=map.get(state.selected); if(node) renderDetails(node,map);
   }
@@ -603,34 +536,21 @@
 
   function applyTransform() { world.style.transform=`translate(${state.tx}px,${state.ty}px) scale(${state.scale})`; }
   function zoomAt(factor,cx=viewport.clientWidth/2,cy=viewport.clientHeight/2) {
-    const old=state.scale,next=Math.max(.25,Math.min(2.2,old*factor)),wx=(cx-state.tx)/old,wy=(cy-state.ty)/old;
-    state.scale=next; state.tx=cx-wx*next; state.ty=cy-wy*next; applyTransform();
+    const old=state.scale,next=Math.max(.25,Math.min(2.2,old*factor)),wx=(cx-state.tx)/old,wy=(cy-state.ty)/old; state.scale=next; state.tx=cx-wx*next; state.ty=cy-wy*next; applyTransform();
   }
-  function fitScaleForWorld() {
-    if(!world.offsetWidth||!world.offsetHeight) return 1;
-    const pad=36; return Math.min(1,(viewport.clientWidth-pad*2)/world.offsetWidth,(viewport.clientHeight-pad*2)/world.offsetHeight);
-  }
-  function fitToView() {
-    const scale=Math.max(.25,fitScaleForWorld()); state.scale=scale;
-    state.tx=(viewport.clientWidth-world.offsetWidth*scale)/2; state.ty=(viewport.clientHeight-world.offsetHeight*scale)/2; applyTransform();
-  }
+  function fitScaleForWorld() { if(!world.offsetWidth||!world.offsetHeight) return 1; const pad=36; return Math.min(1,(viewport.clientWidth-pad*2)/world.offsetWidth,(viewport.clientHeight-pad*2)/world.offsetHeight); }
+  function fitToView() { const scale=Math.max(.25,fitScaleForWorld()); state.scale=scale; state.tx=(viewport.clientWidth-world.offsetWidth*scale)/2; state.ty=(viewport.clientHeight-world.offsetHeight*scale)/2; applyTransform(); }
   function initialFocusNumber() {
-    const map=nodeMap();
-    const candidates=[...state.visible].map(number=>map.get(number)).filter(Boolean).sort((a,b)=>{
-      const ah=(a.child_numbers||[]).some(child=>state.visible.has(child))?0:1,bh=(b.child_numbers||[]).some(child=>state.visible.has(child))?0:1;
+    const map=nodeMap(),candidates=[...state.visible].map(number=>map.get(number)).filter(Boolean).sort((a,b)=>{
+      const ah=(a.child_numbers||[]).some(child=>state.hierarchyCandidates.has(child))?0:1,bh=(b.child_numbers||[]).some(child=>state.hierarchyCandidates.has(child))?0:1;
       return (statusPriority.get(a.status)??99)-(statusPriority.get(b.status)??99)||ah-bh||a.number-b.number;
     });
     return candidates[0]?.number??null;
   }
   function setInitialViewport() {
-    const fit=fitScaleForWorld();
-    if(fit>=MIN_READABLE_SCALE){ fitToView(); return; }
-    state.scale=MIN_READABLE_SCALE;
-    const number=initialFocusNumber(),pos=number===null?null:state.layout?.positions.get(number);
-    if(pos){
-      state.tx=viewport.clientWidth*.30-(pos.x+NODE_W/2)*state.scale;
-      state.ty=viewport.clientHeight*.32-(pos.y+NODE_H/2)*state.scale;
-    } else { state.tx=30; state.ty=30; }
+    const fit=fitScaleForWorld(); if(fit>=MIN_READABLE_SCALE){ fitToView(); return; }
+    state.scale=MIN_READABLE_SCALE; const number=initialFocusNumber(),pos=number===null?null:state.layout?.positions.get(number);
+    if(pos){ state.tx=viewport.clientWidth*.30-(pos.x+NODE_W/2)*state.scale; state.ty=viewport.clientHeight*.32-(pos.y+NODE_H/2)*state.scale; } else { state.tx=30; state.ty=30; }
     applyTransform();
   }
 
@@ -638,7 +558,6 @@
   viewport.addEventListener('pointermove',event=>{ if(!state.dragging) return; state.tx+=event.clientX-state.lastX; state.ty+=event.clientY-state.lastY; state.lastX=event.clientX; state.lastY=event.clientY; applyTransform(); });
   viewport.addEventListener('pointerup',()=>{ state.dragging=false; viewport.classList.remove('dragging'); });
   viewport.addEventListener('wheel',event=>{ event.preventDefault(); const rect=viewport.getBoundingClientRect(); zoomAt(event.deltaY<0?1.12:.89,event.clientX-rect.left,event.clientY-rect.top); },{passive:false});
-
   document.getElementById('zoomIn').addEventListener('click',()=>zoomAt(1.18));
   document.getElementById('zoomOut').addEventListener('click',()=>zoomAt(.84));
   document.getElementById('reset').addEventListener('click',fitToView);
@@ -648,7 +567,6 @@
   includeClosed.addEventListener('change',load);
   showDependencies.addEventListener('change',drawEdges);
   window.addEventListener('resize',()=>applyTransform());
-
   load();
 })();
 </script>
