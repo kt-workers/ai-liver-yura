@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Yura Issue Graph</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f8fb;
+      --panel: rgba(255,255,255,.92);
+      --panel-solid: #fff;
+      --text: #17202a;
+      --muted: #657786;
+      --border: #d9e2ea;
+      --grid: rgba(90,110,130,.22);
+      --accent: #23a8e0;
+      --edge: #17202a;
+      --inprogress: #23a8e0;
+      --verification: #7b61ff;
+      --blocked: #d24b4b;
+      --ready: #3d8f67;
+      --review: #c47b17;
+      --backlog: #7c8794;
+      --done: #55606d;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f151b;
+        --panel: rgba(22,31,39,.94);
+        --panel-solid: #161f27;
+        --text: #edf4f8;
+        --muted: #a8b5c0;
+        --border: #31404c;
+        --grid: rgba(180,200,214,.17);
+        --edge: #e4edf3;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); }
+    button,input,select { font:inherit; }
+    header { min-height:64px; display:flex; gap:16px; align-items:center; justify-content:space-between; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--panel-solid); }
+    header h1 { margin:0; font-size:18px; }
+    .subtitle { color:var(--muted); font-size:12px; margin-top:3px; }
+    .controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .controls input,.controls select,.controls button { border:1px solid var(--border); background:var(--panel-solid); color:var(--text); border-radius:9px; padding:8px 10px; }
+    .controls input { width:220px; }
+    .shell { display:grid; grid-template-columns:minmax(0,1fr) 360px; height:calc(100vh - 65px); }
+    .viewport { position:relative; overflow:hidden; background-color:var(--bg); background-image:radial-gradient(var(--grid) 1.2px, transparent 1.2px); background-size:24px 24px; cursor:grab; touch-action:none; }
+    .viewport.dragging { cursor:grabbing; }
+    #world { position:absolute; left:0; top:0; transform-origin:0 0; }
+    #edges { position:absolute; left:0; top:0; overflow:visible; pointer-events:none; }
+    #nodes { position:absolute; left:0; top:0; }
+    .node { position:absolute; width:260px; min-height:106px; border:2px solid var(--border); border-left-width:7px; border-radius:16px; background:var(--panel-solid); color:var(--text); padding:12px 38px 12px 13px; box-shadow:0 5px 16px rgba(20,35,45,.08); text-align:left; cursor:pointer; }
+    .node:hover,.node.selected { outline:3px solid color-mix(in srgb, var(--accent) 50%, transparent); }
+    .node .number { font-weight:750; font-size:13px; }
+    .node .title { margin-top:7px; line-height:1.35; font-size:14px; max-height:38px; overflow:hidden; }
+    .node .meta { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
+    .badge { display:inline-flex; align-items:center; gap:5px; border:1px solid var(--border); border-radius:999px; padding:3px 7px; font-size:11px; background:var(--panel); }
+    .badge::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--status-color,var(--muted)); }
+    .node[data-status="In progress"] { border-left-color:var(--inprogress); --status-color:var(--inprogress); }
+    .node[data-status="Verification"] { border-left-color:var(--verification); --status-color:var(--verification); }
+    .node[data-status="Blocked"] { border-left-color:var(--blocked); --status-color:var(--blocked); }
+    .node[data-status="Ready"] { border-left-color:var(--ready); --status-color:var(--ready); }
+    .node[data-status="Review"] { border-left-color:var(--review); --status-color:var(--review); }
+    .node[data-status="Backlog"] { border-left-color:var(--backlog); --status-color:var(--backlog); }
+    .node[data-status="Done"] { border-left-color:var(--done); --status-color:var(--done); opacity:.72; }
+    .collapse { position:absolute; right:8px; top:8px; width:26px; height:26px; padding:0; border:1px solid var(--border); border-radius:8px; background:var(--panel); color:var(--text); cursor:pointer; }
+    .details { overflow:auto; border-left:1px solid var(--border); background:var(--panel-solid); padding:16px; }
+    .details h2 { margin:0; font-size:18px; }
+    .details .statusline { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 16px; }
+    .kv { display:grid; grid-template-columns:110px minmax(0,1fr); gap:8px 10px; font-size:13px; }
+    .kv dt { color:var(--muted); }
+    .kv dd { margin:0; overflow-wrap:anywhere; }
+    .relations { display:flex; flex-wrap:wrap; gap:6px; }
+    .chip { border:1px solid var(--border); background:var(--panel); color:var(--text); border-radius:999px; padding:4px 8px; cursor:pointer; font-size:12px; }
+    .summary { margin-top:18px; border-top:1px solid var(--border); padding-top:14px; white-space:pre-wrap; line-height:1.55; font-size:13px; color:var(--muted); }
+    .open-link { display:inline-block; margin-top:14px; color:var(--accent); }
+    .notice { position:absolute; left:12px; top:12px; max-width:560px; z-index:5; border:1px solid var(--border); border-radius:10px; background:var(--panel); padding:9px 11px; font-size:12px; color:var(--muted); }
+    .legend { position:absolute; left:12px; bottom:12px; z-index:5; display:flex; gap:10px; flex-wrap:wrap; border:1px solid var(--border); border-radius:10px; background:var(--panel); padding:7px 10px; font-size:11px; color:var(--muted); }
+    .line { width:28px; height:0; border-top:2px solid var(--edge); display:inline-block; vertical-align:middle; margin-right:5px; }
+    .line.dep { border-top-style:dashed; }
+    .empty { color:var(--muted); padding:16px; }
+    @media (max-width: 900px) {
+      header { align-items:flex-start; flex-direction:column; }
+      .shell { grid-template-columns:1fr; grid-template-rows:minmax(440px,62vh) auto; height:auto; }
+      .details { border-left:0; border-top:1px solid var(--border); max-height:none; }
+      .controls input { width:180px; }
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>プロジェクトゆら Issue Graph</h1>
+    <div class="subtitle" id="sourceLabel">GitHub Issue / Projects v2 を読み込み中…</div>
+  </div>
+  <div class="controls">
+    <input id="search" type="search" placeholder="#229 / Character / Body" aria-label="Issue検索" />
+    <select id="statusFilter" aria-label="Status filter">
+      <option value="all">Status: すべて</option>
+      <option value="active">進行中中心</option>
+      <option value="In progress">In progress</option>
+      <option value="Review">Review</option>
+      <option value="Verification">Verification</option>
+      <option value="Blocked">Blocked</option>
+      <option value="Ready">Ready</option>
+      <option value="Backlog">Backlog</option>
+      <option value="Done">Done</option>
+    </select>
+    <button id="zoomOut" type="button">−</button>
+    <button id="zoomIn" type="button">＋</button>
+    <button id="reset" type="button">全体表示</button>
+    <button id="reload" type="button">再読込</button>
+  </div>
+</header>
+<div class="shell">
+  <main id="viewport" class="viewport" aria-label="Issue relationship graph">
+    <div id="notice" class="notice">GitHubからデータを取得しています。</div>
+    <div id="world">
+      <svg id="edges" aria-label="Issue relations"></svg>
+      <div id="nodes"></div>
+    </div>
+    <div class="legend"><span><i class="line"></i>親 → 子</span><span><i class="line dep"></i>依存元 → 依存先</span></div>
+  </main>
+  <aside id="details" class="details"><div class="empty">ノードをクリックするとIssue詳細を表示します。</div></aside>
+</div>
+<script>
+(() => {
+  const NODE_W = 260, NODE_H = 118, COL_GAP = 100, ROW_GAP = 34, MARGIN = 60;
+  const activeStatuses = new Set(['In progress','Review','Verification','Blocked']);
+  const state = { data:null, selected:null, collapsed:new Set(), scale:1, tx:40, ty:40, dragging:false, lastX:0, lastY:0 };
+  const viewport = document.getElementById('viewport');
+  const world = document.getElementById('world');
+  const edgeSvg = document.getElementById('edges');
+  const nodeLayer = document.getElementById('nodes');
+  const details = document.getElementById('details');
+  const notice = document.getElementById('notice');
+  const search = document.getElementById('search');
+  const statusFilter = document.getElementById('statusFilter');
+
+  async function load() {
+    notice.hidden = false;
+    notice.textContent = 'GitHubからデータを取得しています。';
+    try {
+      const response = await fetch('/api/graph', {cache:'no-store'});
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      state.data = await response.json();
+      document.getElementById('sourceLabel').textContent = `${state.data.repository} / Project #${state.data.project.number}${state.data.project.title ? ' ' + state.data.project.title : ''}`;
+      const messages = state.data.diagnostics || [];
+      notice.hidden = messages.length === 0;
+      notice.textContent = messages.join(' / ');
+      render();
+      fitToView();
+    } catch (error) {
+      notice.hidden = false;
+      notice.textContent = `データ取得に失敗しました: ${error.message}`;
+    }
+  }
+
+  function nodeMap() { return new Map((state.data?.nodes || []).map(n => [n.number,n])); }
+
+  function filteredVisibleSet(map) {
+    const query = search.value.trim().toLowerCase();
+    const status = statusFilter.value;
+    const direct = new Set();
+    for (const node of map.values()) {
+      const textMatch = !query || (`#${node.number} ${node.title}`).toLowerCase().includes(query);
+      const statusMatch = status === 'all' || (status === 'active' ? activeStatuses.has(node.status) : node.status === status);
+      if (textMatch && statusMatch) direct.add(node.number);
+    }
+    if (!query && status === 'all') return new Set(map.keys());
+    const visible = new Set(direct);
+    for (const number of [...direct]) {
+      let current = map.get(number);
+      const guard = new Set();
+      while (current?.parent_number && map.has(current.parent_number) && !guard.has(current.parent_number)) {
+        guard.add(current.parent_number);
+        visible.add(current.parent_number);
+        current = map.get(current.parent_number);
+      }
+    }
+    return visible;
+  }
+
+  function hideCollapsedDescendants(visible,map) {
+    const result = new Set(visible);
+    const walk = number => {
+      const node = map.get(number);
+      if (!node) return;
+      for (const child of node.child_numbers || []) { result.delete(child); walk(child); }
+    };
+    for (const number of state.collapsed) walk(number);
+    return result;
+  }
+
+  function computeLayout(map, visible) {
+    const parentEdges = (state.data.edges || []).filter(e => e.kind === 'parent' && visible.has(e.source) && visible.has(e.target));
+    const incoming = new Map([...visible].map(n => [n,0]));
+    const children = new Map([...visible].map(n => [n,[]]));
+    for (const edge of parentEdges) { incoming.set(edge.target,(incoming.get(edge.target)||0)+1); children.get(edge.source)?.push(edge.target); }
+    const roots = [...visible].filter(n => (incoming.get(n)||0) === 0).sort((a,b)=>a-b);
+    const depth = new Map();
+    const queue = roots.map(n => [n,0]);
+    while (queue.length) {
+      const [number,d] = queue.shift();
+      if ((depth.get(number) ?? -1) >= d) continue;
+      depth.set(number,d);
+      for (const child of children.get(number) || []) queue.push([child,d+1]);
+    }
+    for (const number of visible) if (!depth.has(number)) depth.set(number,0);
+    const columns = new Map();
+    for (const number of visible) {
+      const d = depth.get(number) || 0;
+      if (!columns.has(d)) columns.set(d,[]);
+      columns.get(d).push(number);
+    }
+    for (const arr of columns.values()) arr.sort((a,b) => {
+      const na=map.get(a), nb=map.get(b);
+      const pa = Number.isFinite(Number(na?.process)) ? Number(na.process) : 99999;
+      const pb = Number.isFinite(Number(nb?.process)) ? Number(nb.process) : 99999;
+      return pa-pb || a-b;
+    });
+    const positions = new Map();
+    let maxRows = 1, maxDepth = 0;
+    for (const [d,arr] of columns) {
+      maxDepth = Math.max(maxDepth,d); maxRows = Math.max(maxRows,arr.length);
+      arr.forEach((number,i)=>positions.set(number,{x:MARGIN+d*(NODE_W+COL_GAP),y:MARGIN+i*(NODE_H+ROW_GAP)}));
+    }
+    return { positions, width:MARGIN*2+(maxDepth+1)*NODE_W+maxDepth*COL_GAP, height:MARGIN*2+maxRows*NODE_H+(maxRows-1)*ROW_GAP };
+  }
+
+  function render() {
+    if (!state.data) return;
+    const map = nodeMap();
+    let visible = filteredVisibleSet(map);
+    visible = hideCollapsedDescendants(visible,map);
+    const layout = computeLayout(map,visible);
+    world.style.width = `${layout.width}px`; world.style.height = `${layout.height}px`;
+    edgeSvg.setAttribute('width',layout.width); edgeSvg.setAttribute('height',layout.height); edgeSvg.setAttribute('viewBox',`0 0 ${layout.width} ${layout.height}`);
+    edgeSvg.innerHTML = `<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--edge)"/></marker></defs>`;
+    nodeLayer.innerHTML = '';
+    for (const edge of state.data.edges || []) {
+      if (!visible.has(edge.source) || !visible.has(edge.target)) continue;
+      const a=layout.positions.get(edge.source), b=layout.positions.get(edge.target); if(!a||!b) continue;
+      const sx=a.x+NODE_W, sy=a.y+NODE_H/2, tx=b.x, ty=b.y+NODE_H/2, dx=Math.max(55,(tx-sx)*.48);
+      const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+      path.setAttribute('d',`M ${sx} ${sy} C ${sx+dx} ${sy}, ${tx-dx} ${ty}, ${tx} ${ty}`);
+      path.setAttribute('fill','none'); path.setAttribute('stroke','var(--edge)'); path.setAttribute('stroke-width',edge.kind==='parent'?'2.2':'1.8'); path.setAttribute('marker-end','url(#arrow)');
+      if(edge.kind==='dependency'){ path.setAttribute('stroke-dasharray','8 7'); path.setAttribute('opacity','.62'); }
+      edgeSvg.appendChild(path);
+    }
+    for (const number of visible) {
+      const node=map.get(number), pos=layout.positions.get(number); if(!node||!pos) continue;
+      const el=document.createElement('div'); el.className='node'+(state.selected===number?' selected':'');
+      el.dataset.status=node.status || ''; el.style.left=`${pos.x}px`; el.style.top=`${pos.y}px`;
+      const status=node.status || 'Project未設定', level=node.issue_level || '未分類';
+      el.innerHTML=`<div class="number">#${node.number}</div><div class="title"></div><div class="meta"><span class="badge">${escapeHtml(status)}</span><span class="badge">${escapeHtml(level)}</span></div>`;
+      el.querySelector('.title').textContent=node.title;
+      el.addEventListener('click',()=>selectNode(node.number));
+      if((node.child_numbers||[]).length){
+        const btn=document.createElement('button'); btn.type='button'; btn.className='collapse'; btn.textContent=state.collapsed.has(number)?'+':'−'; btn.title='子Issueを折りたたむ';
+        btn.addEventListener('click',event=>{event.stopPropagation(); state.collapsed.has(number)?state.collapsed.delete(number):state.collapsed.add(number); render();}); el.appendChild(btn);
+      }
+      nodeLayer.appendChild(el);
+    }
+    applyTransform();
+    if (state.selected && map.has(state.selected)) renderDetails(map.get(state.selected),map);
+  }
+
+  function selectNode(number) { state.selected=Number(number); render(); const map=nodeMap(); const node=map.get(state.selected); if(node) renderDetails(node,map); }
+  function relationChips(numbers,map) { if(!numbers?.length) return '<span>なし</span>'; return `<div class="relations">${numbers.map(n=>`<button class="chip" data-jump="${n}">#${n}${map.get(n)?' '+escapeHtml(shortTitle(map.get(n).title)):''}</button>`).join('')}</div>`; }
+  function renderDetails(node,map) {
+    details.innerHTML=`<h2>#${node.number} ${escapeHtml(node.title)}</h2><div class="statusline"><span class="badge">${escapeHtml(node.status||'Project未設定')}</span><span class="badge">${escapeHtml(node.issue_level||'未分類')}</span></div><dl class="kv"><dt>Issue state</dt><dd>${escapeHtml(node.state)}</dd><dt>作業種別</dt><dd>${escapeHtml(node.work_type||'—')}</dd><dt>領域</dt><dd>${escapeHtml(node.area||'—')}</dd><dt>優先度</dt><dd>${escapeHtml(node.priority||'—')}</dd><dt>工程</dt><dd>${escapeHtml(String(node.process??'—'))}</dd><dt>Start date</dt><dd>${escapeHtml(node.start_date||'—')}</dd><dt>Target date</dt><dd>${escapeHtml(node.target_date||'—')}</dd><dt>親Issue</dt><dd>${relationChips(node.parent_number?[node.parent_number]:[],map)}</dd><dt>子Issue</dt><dd>${relationChips(node.child_numbers,map)}</dd><dt>依存元</dt><dd>${relationChips(node.dependency_numbers,map)}</dd><dt>関連PR</dt><dd>${prChips(node.related_pr_numbers)}</dd></dl><a class="open-link" href="${escapeAttr(node.url)}" target="_blank" rel="noreferrer">GitHubでIssueを開く ↗</a><div class="summary">${escapeHtml(node.summary||'')}</div>`;
+    details.querySelectorAll('[data-jump]').forEach(button=>button.addEventListener('click',()=>selectNode(button.dataset.jump)));
+  }
+  function prChips(numbers){ if(!numbers?.length)return '<span>なし</span>'; const [owner,repo]=state.data.repository.split('/'); return `<div class="relations">${numbers.map(n=>`<a class="chip" href="https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pull/${n}" target="_blank" rel="noreferrer">PR #${n}</a>`).join('')}</div>`; }
+  function shortTitle(t){ return t.length>24?t.slice(0,23)+'…':t; }
+  function escapeHtml(value){ return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function escapeAttr(value){ return escapeHtml(value); }
+  function applyTransform(){ world.style.transform=`translate(${state.tx}px,${state.ty}px) scale(${state.scale})`; }
+  function zoomAt(factor,cx=viewport.clientWidth/2,cy=viewport.clientHeight/2){ const old=state.scale; const next=Math.max(.25,Math.min(2.2,old*factor)); const wx=(cx-state.tx)/old, wy=(cy-state.ty)/old; state.scale=next; state.tx=cx-wx*next; state.ty=cy-wy*next; applyTransform(); }
+  function fitToView(){ if(!world.offsetWidth||!world.offsetHeight)return; const pad=36; const sx=(viewport.clientWidth-pad*2)/world.offsetWidth, sy=(viewport.clientHeight-pad*2)/world.offsetHeight; state.scale=Math.max(.25,Math.min(1,Math.min(sx,sy))); state.tx=(viewport.clientWidth-world.offsetWidth*state.scale)/2; state.ty=(viewport.clientHeight-world.offsetHeight*state.scale)/2; applyTransform(); }
+
+  viewport.addEventListener('pointerdown',e=>{ if(e.target.closest('.node'))return; state.dragging=true; state.lastX=e.clientX; state.lastY=e.clientY; viewport.classList.add('dragging'); viewport.setPointerCapture(e.pointerId); });
+  viewport.addEventListener('pointermove',e=>{ if(!state.dragging)return; state.tx+=e.clientX-state.lastX; state.ty+=e.clientY-state.lastY; state.lastX=e.clientX; state.lastY=e.clientY; applyTransform(); });
+  viewport.addEventListener('pointerup',()=>{state.dragging=false; viewport.classList.remove('dragging');});
+  viewport.addEventListener('wheel',e=>{e.preventDefault(); const r=viewport.getBoundingClientRect(); zoomAt(e.deltaY<0?1.12:.89,e.clientX-r.left,e.clientY-r.top);},{passive:false});
+  document.getElementById('zoomIn').addEventListener('click',()=>zoomAt(1.18)); document.getElementById('zoomOut').addEventListener('click',()=>zoomAt(.84)); document.getElementById('reset').addEventListener('click',fitToView); document.getElementById('reload').addEventListener('click',load);
+  search.addEventListener('input',()=>{render(); fitToView();}); statusFilter.addEventListener('change',()=>{render(); fitToView();}); window.addEventListener('resize',()=>applyTransform());
+  load();
+})();
+</script>
+</body>
+</html>
