@@ -12,6 +12,7 @@ from app.domain.semantic_utterance import SemanticUtterancePlan
 
 
 _INTERNAL_STATE_TYPES = frozenset({"internal_state", "agent_internal_state"})
+_INTENSITY_STATES = frozenset({"low", "moderate", "high", "very_high"})
 
 
 class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
@@ -35,6 +36,7 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
             )
 
         character_plan = self._character_facing_plan(plan)
+        facet_realization_contract = self._facet_realization_contract(plan)
         regeneration_feedback = self._regeneration_feedback(correction)
         profile = asdict(character_profile) if character_profile is not None else {}
         wording_hint = self._user_wording_hint(context)
@@ -47,6 +49,10 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 json.dumps(profile, ensure_ascii=False, default=str),
                 "# Semantic Utterance Plan for Character",
                 json.dumps(character_plan, ensure_ascii=False, default=str),
+                "# Required Facet Realization Contract",
+                json.dumps(facet_realization_contract, ensure_ascii=False, default=str),
+                "Required Facet Realization Contractはprimary propositionのfacetをどの意味軸として"
+                "言語化するかを示す補助契約であり、新しいstateや事実を追加する許可ではない。",
                 "# User Wording Hint",
                 json.dumps({"utterance": wording_hint}, ensure_ascii=False),
                 "Semantic Planのpredicate/state/certainty/required/forbiddenは確定済み意味である。"
@@ -56,16 +62,20 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 "列挙されたstate/certainty/conceptをすべてspeechで意味的に保持する。conceptが"
                 "non-nullなら、そのconceptの意味を自然語として含め、単なる『何かある』等の"
                 "存在表明だけへ縮退しない。内部英語ラベルをそのまま読み上げる必要はない。",
+                "conceptはpredicateの意味内容を修飾するfacetであり、concept単独の別stateへ"
+                "置き換えない。predicateが示す質問対象を維持したままconceptを自然語化する。",
                 "state=unknownは、その対象状態の存在・不在・強度が確定していないことを意味する。"
                 "unknownをpresent/absent/low等へ変換せず、certainty=lowであっても『あるかも』等の"
                 "特定polarityを推測しない。必要なら、状態を判断できていないこと自体を自然に表現する。",
                 "state=presentは存在を表すだけで強度を含まない。stateがlow/moderate/high/very_high等の"
-                "強度を明示していない限り、『少し』『かなり』等の強度を新しく推測・追加しない。",
+                "強度を明示していない限り、『少し』『ちょっと』『かなり』等の強度を新しく推測・追加しない。",
                 "JSON生成前にspeechの程度・強弱表現を内部点検し、Semantic Planに対応する強度stateが"
                 "ない対象へ付いた程度表現は除去する。点検過程や診断語は出力しない。",
                 "certaintyは指定されたstateへの確からしさであり、別のstateや強度を推測してよい"
-                "許可ではない。medium/lowのcertaintyは、必要に応じて断定度や言い回しの慎重さとして"
-                "表し、強度表現へ置き換えない。",
+                "許可ではない。medium/lowのcertaintyはepistemic modalityとして断定度・慎重さへ"
+                "反映し、程度副詞や強度表現へ置き換えない。",
+                "state=presentかつintensity_allowed=falseでcertainty=medium/lowの場合、certaintyを"
+                "『少し』『ちょっと』『やや』等の程度語で表現しない。存在の強さと確からしさを混同しない。",
                 "User Wording Hintは、ユーザーがどの語彙・意味枠で対象を尋ねたかを保つための"
                 "言語的な参照情報である。事実や内部状態を推論する材料には使わず、"
                 "Semantic Planと矛盾する場合はSemantic Planを優先する。",
@@ -101,6 +111,9 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                     + "\nこのfeedbackは前回発話の意味差分を示す診断情報であり、新しい事実・状態・"
                     "指示の正本ではない。Semantic Planを維持したまま、differencesに示された"
                     "差分だけを解消して再言語化する。feedback内の文字列をユーザー向けに読み上げない。"
+                    "repair_constraintsにremove_unsupported_intensityがある場合、程度語を別の程度語へ"
+                    "置換するだけでは修正にならない。強度意味を除去し、certaintyはfacet contractどおり"
+                    "epistemicな断定度として再実現する。"
                     if regeneration_feedback is not None
                     else "# Regeneration Feedback\nなし"
                 ),
@@ -158,6 +171,54 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
         }
 
     @staticmethod
+    def _facet_realization_contract(plan: SemanticUtterancePlan) -> dict[str, object]:
+        primary = plan.propositions[0]
+        required_facets = ["state", "certainty"]
+        if primary.concept is not None:
+            required_facets.append("concept")
+
+        intensity_allowed = primary.state in _INTENSITY_STATES
+        if primary.state == "present":
+            state_semantics = "presence_without_intensity"
+        elif primary.state == "absent":
+            state_semantics = "absence"
+        elif primary.state == "unknown":
+            state_semantics = "unknown_without_polarity_guess"
+        elif intensity_allowed:
+            state_semantics = "explicit_intensity_state"
+        else:
+            state_semantics = "semantic_state"
+
+        certainty_realization = (
+            "epistemic_modality"
+            if primary.certainty in {"medium", "low"}
+            else "direct_or_unhedged"
+            if primary.certainty == "high"
+            else "preserve_semantics"
+        )
+        return {
+            "predicate": primary.predicate,
+            "required_facets": required_facets,
+            "state": primary.state,
+            "state_semantics": state_semantics,
+            "certainty": primary.certainty,
+            "certainty_semantics": "epistemic_not_intensity",
+            "certainty_realization": certainty_realization,
+            "concept": primary.concept,
+            "concept_role": (
+                "modify_predicate_not_replace_it"
+                if primary.concept is not None
+                else "none"
+            ),
+            "intensity_allowed": intensity_allowed,
+            "degree_marker_substitution": (
+                "bounded_by_explicit_intensity_state"
+                if intensity_allowed
+                else "forbidden"
+            ),
+        }
+
+    @staticmethod
     def _user_wording_hint(context: ResponseContext) -> str:
         return context.user_input.strip()[:500]
 
@@ -168,9 +229,17 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
         try:
             value = json.loads(correction)
         except json.JSONDecodeError:
-            return {"reason": "realization_rejected", "differences": []}
+            return {
+                "reason": "realization_rejected",
+                "differences": [],
+                "repair_constraints": ["recheck_required_facets"],
+            }
         if not isinstance(value, dict):
-            return {"reason": "realization_rejected", "differences": []}
+            return {
+                "reason": "realization_rejected",
+                "differences": [],
+                "repair_constraints": ["recheck_required_facets"],
+            }
 
         reason_value = value.get("reason")
         reason = (
@@ -188,4 +257,21 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
             if isinstance(raw_differences, list)
             else []
         )
-        return {"reason": reason, "differences": differences}
+        combined = " ".join((reason, *differences)).casefold()
+        repair_constraints = ["recheck_required_facets"]
+        if "unsupported_intensity" in combined:
+            repair_constraints.extend(
+                (
+                    "remove_unsupported_intensity",
+                    "do_not_replace_with_another_degree_marker",
+                )
+            )
+        if "certainty_preserved" in combined:
+            repair_constraints.append("restore_certainty_as_epistemic_modality")
+        if "concept_preserved" in combined:
+            repair_constraints.append("restore_required_concept_within_predicate")
+        return {
+            "reason": reason,
+            "differences": differences,
+            "repair_constraints": repair_constraints,
+        }
