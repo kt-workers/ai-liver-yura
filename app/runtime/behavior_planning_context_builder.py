@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, replace
 
 from app.core.plugins import PluginManager
-from app.core.plugins.user_request import interpret_user_request
 from app.domain.activities import ActivityType, OngoingActivity
 from app.domain.behavior import (
     ActivityDefinition,
@@ -119,11 +118,9 @@ class BehaviorPlanningContextBuilder:
             source_event_id=enriched_event.event_id,
             available_capabilities=self._plugin_manager.list_capabilities(),
             event_type=enriched_event.event_type.value,
-            request_kind=(
-                interpret_user_request(text).kind.value
-                if enriched_event.event_type == AgentEventType.USER_TEXT
-                else None
-            ),
+            # USER_TEXTの意味分類はInputMeaningInterpreterの責務。
+            # Context構築時にraw textを別規則で再解釈しない。
+            request_kind=None,
             authority_role=enriched_event.authority.role,
             instruction_trusted=enriched_event.authority.instruction_trusted,
             activity_definitions=definitions,
