@@ -413,7 +413,7 @@ def test_overview_with_supporting_intensity_does_not_reject_marker() -> None:
     ) == []
 
 
-def test_overview_without_any_intensity_still_rejects_marker() -> None:
+def test_overview_without_any_intensity_uses_deterministic_marker_guard() -> None:
     context = _validated_context()
     plan = SemanticUtterancePlan.from_context(context.memory["semantic_utterance_plan"])
     assert plan is not None
@@ -455,4 +455,4 @@ def test_overview_without_any_intensity_still_rejects_marker() -> None:
         overview_plan,
         response,
         payload,
-    ) == ["unsupported_intensity_markers:かなり"]
+    ) == []
