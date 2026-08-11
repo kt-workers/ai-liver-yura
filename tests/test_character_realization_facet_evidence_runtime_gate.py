@@ -28,6 +28,30 @@ class _ValidationModel:
         self.payload = payload
 
     async def validate_character_response(self, activity: Activity) -> str:
+        if activity.context.get("llm_role") == "character_realization_observer":
+            checks = self.payload.get("realized_proposition_checks", [])
+            observations: list[dict[str, object]] = []
+            if isinstance(checks, list):
+                for check in checks:
+                    if not isinstance(check, dict):
+                        continue
+                    predicate_spans = check.get("predicate_evidence_spans", [])
+                    intensity_spans = check.get("intensity_evidence_spans", [])
+                    certainty_spans = check.get("certainty_evidence_spans", [])
+                    observations.append(
+                        {
+                            "realization_id": check.get("realization_id"),
+                            "predicate_realized": check.get("predicate_preserved", True),
+                            "observed_state": check.get("observed_state"),
+                            "observed_certainty": check.get("observed_certainty", "high"),
+                            "predicate_evidence_spans": predicate_spans,
+                            "state_evidence_spans": (
+                                intensity_spans if intensity_spans else predicate_spans
+                            ),
+                            "certainty_evidence_spans": certainty_spans,
+                        }
+                    )
+            return json.dumps({"observations": observations}, ensure_ascii=False)
         return json.dumps(self.payload, ensure_ascii=False)
 
 
@@ -95,6 +119,8 @@ def _payload(
     concept_spans: list[str] | None = None,
     intensity_spans: list[str] | None = None,
     surface_markers: list[str] | None = None,
+    observed_state: str | None = None,
+    observed_certainty: str = "high",
 ) -> dict[str, object]:
     return {
         "accepted": True,
@@ -115,6 +141,8 @@ def _payload(
                 "predicate_evidence_spans": predicate_spans or [],
                 "state_preserved": True,
                 "state_fidelity": "exact",
+                "observed_state": observed_state,
+                "observed_certainty": observed_certainty,
                 "certainty_preserved": True,
                 "certainty_evidence_spans": certainty_spans or [],
                 "concept_preserved": True,
@@ -246,12 +274,13 @@ async def test_null_concept_rejects_unexpected_concept_evidence() -> None:
 
 
 @pytest.mark.asyncio
-async def test_e8_bare_presence_cannot_be_intensity_evidence() -> None:
+async def test_e8_bare_presence_is_rejected_by_independent_observation() -> None:
     result = await _validator(
         _payload(
             "energy",
             predicate_spans=["元気はある"],
             intensity_spans=["元気はある"],
+            observed_state="present",
         )
     ).validate(
         _source(),
@@ -260,25 +289,27 @@ async def test_e8_bare_presence_cannot_be_intensity_evidence() -> None:
     )
 
     assert result.accepted is False
+    assert result.reason == "observed_semantic_state_mismatch"
     assert (
-        "proposition:0:energy:intensity_evidence_not_explicit_degree"
+        "proposition:0:energy:observed_state_mismatch:expected=low:observed=present"
         in result.claim_differences
     )
 
 
 @pytest.mark.asyncio
-async def test_general_degree_marker_can_support_explicit_intensity() -> None:
+async def test_unlisted_paraphrase_can_preserve_low_without_runtime_dictionary() -> None:
     result = await _validator(
         _payload(
             "energy",
-            predicate_spans=["元気は少しある"],
-            intensity_spans=["少し"],
-            surface_markers=["少し"],
+            predicate_spans=["元気はそれなりに残ってる"],
+            intensity_spans=["それなりに"],
+            surface_markers=["それなりに"],
+            observed_state="low",
         )
     ).validate(
         _source(),
         _context(predicate="energy", state="low"),
-        _response("energy", "元気は少しあるよ。"),
+        _response("energy", "元気はそれなりに残ってるよ。"),
     )
 
     assert result.accepted is True
@@ -286,13 +317,14 @@ async def test_general_degree_marker_can_support_explicit_intensity() -> None:
 
 
 @pytest.mark.asyncio
-async def test_degree_suffix_is_supported_without_target_specific_dictionary() -> None:
+async def test_degree_suffix_can_be_observed_semantically_without_runtime_dictionary() -> None:
     result = await _validator(
         _payload(
             "energy",
             predicate_spans=["元気は低め"],
             intensity_spans=["低め"],
             surface_markers=["低め"],
+            observed_state="low",
         )
     ).validate(
         _source(),
@@ -304,6 +336,25 @@ async def test_degree_suffix_is_supported_without_target_specific_dictionary() -
 
 
 @pytest.mark.asyncio
+async def test_observer_missing_typed_state_fails_closed() -> None:
+    result = await _validator(
+        _payload(
+            "energy",
+            predicate_spans=["元気は控えめ"],
+            intensity_spans=["控えめ"],
+            observed_state=None,
+        )
+    ).validate(
+        _source(),
+        _context(predicate="energy", state="low"),
+        _response("energy", "元気は控えめだよ。"),
+    )
+
+    assert result.accepted is False
+    assert result.reason == "realization_observer_schema_invalid"
+
+
+@pytest.mark.asyncio
 async def test_surface_intensity_marker_must_exist_in_speech() -> None:
     result = await _validator(
         _payload(
@@ -311,6 +362,7 @@ async def test_surface_intensity_marker_must_exist_in_speech() -> None:
             predicate_spans=["元気は少しある"],
             intensity_spans=["少し"],
             surface_markers=["かなり"],
+            observed_state="low",
         )
     ).validate(
         _source(),
