@@ -55,16 +55,26 @@ class _ValidatorModel:
 
     async def validate_character_response(self, activity: Activity) -> str:
         self.activities.append(activity)
+        if self.predicate_preserved:
+            predicate_spans = ["何かしたい気持ち"]
+            certainty_preserved = True
+            certainty_spans = ["と思う"]
+            concept_spans = ["好奇心"]
+        else:
+            predicate_spans = []
+            certainty_preserved = False
+            certainty_spans = []
+            concept_spans = ["気になる"]
         return json.dumps(
             {
                 "accepted": True,
                 "reason": "semantic_realization_consistent",
                 "differences": [],
                 "semantic_checks": {
-                    "required_facets_preserved": True,
+                    "required_facets_preserved": self.predicate_preserved,
                     "predicate_preserved": self.predicate_preserved,
                     "state_preserved": True,
-                    "certainty_preserved": True,
+                    "certainty_preserved": certainty_preserved,
                     "concept_preserved": True,
                     "unsupported_intensity_added": False,
                 },
@@ -72,10 +82,13 @@ class _ValidatorModel:
                     {
                         "realization_id": "proposition:0:current_desire",
                         "predicate_preserved": self.predicate_preserved,
+                        "predicate_evidence_spans": predicate_spans,
                         "state_preserved": True,
                         "state_fidelity": "exact",
-                        "certainty_preserved": True,
+                        "certainty_preserved": certainty_preserved,
+                        "certainty_evidence_spans": certainty_spans,
                         "concept_preserved": True,
+                        "concept_evidence_spans": concept_spans,
                         "intensity_semantics_preserved": True,
                         "presence_only_counterfactual_equivalent": False,
                         "intensity_evidence_spans": [],
