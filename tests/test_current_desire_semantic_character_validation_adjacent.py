@@ -68,6 +68,16 @@ class _ValidatorModel:
                     "concept_preserved": True,
                     "unsupported_intensity_added": False,
                 },
+                "realized_proposition_checks": [
+                    {
+                        "realization_id": "proposition:0:current_desire",
+                        "predicate_preserved": self.predicate_preserved,
+                        "state_preserved": True,
+                        "state_fidelity": "exact",
+                        "certainty_preserved": True,
+                        "concept_preserved": True,
+                    }
+                ],
                 "surface_evidence": {"intensity_markers": []},
             },
             ensure_ascii=False,
