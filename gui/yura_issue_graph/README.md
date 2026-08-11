@@ -11,6 +11,8 @@ GitHub Issueの親子関係・依存関係と、GitHub Projects v2「プロジ�
 - 依存線は初期状態では全表示しない。node選択時はそのIssueへ入る/出る直接依存だけ表示
 - `依存線を全表示` switchをONにした場合のみ全dependency edgeを表示
 - dependency routingは描画済みDOMノードの実サイズを障害物として測定し、直交経路探索で迂回
+- dependency arrowはstroke幅に比例しない固定小型markerを使用し、focus時にも巨大化しない
+- dependencyのsource/target直前にstraight lead segmentを確保し、90度bend直後へarrow headを置かない
 - ノードを突っ切るBezier fallbackは使用しない
 - node選択時、選択Issue・直接parent/child/dependency以外のnodeを背景化
 - 初期viewportは全体fitで文字が小さくなりすぎる場合、読める倍率を維持してactive Issue付近から表示
@@ -22,7 +24,9 @@ GitHub Issueの親子関係・依存関係と、GitHub Projects v2「プロジ�
 - In progress / Review / Verification / Blocked等のStatus filter
 - Issue番号・タイトル検索
 - pan / zoom / 全体表示
-- 親Issue単位の折りたたみ
+- 親Issue単位の折りたたみ。`[-]`後も親nodeと`[+]`を残し、ページreloadなしで再展開可能
+- collapse / expand時は操作した親nodeの画面上の位置を維持し、treeが急に画面外へ移動しない
+- collapseでvisible nodeが1件になっても元のhierarchy情報を保持し、`親子関係なし`へ誤分類しない
 - node clickでProject field、親子、依存、関連PR、Issue概要を表示
 - GitHub token未設定時はpublic Issueだけを使うdegraded mode
 
