@@ -91,6 +91,18 @@ def _response(
     )
 
 
+def _predicate_evidence(realization_id: str) -> tuple[str, ...]:
+    return {
+        "proposition:0:joy": ("楽しい",),
+        "proposition:0:sadness": ("悲しい",),
+        "proposition:0:current_feeling": ("今の気分",),
+        "proposition:1:joy": ("うれし",),
+        "proposition:2:anger": ("腹立たし",),
+        "proposition:3:calm": ("穏やか",),
+        "proposition:4:amusement": ("面白",),
+    }.get(realization_id, ())
+
+
 def _check(
     realization_id: str,
     *,
@@ -102,14 +114,24 @@ def _check(
     intensity_semantics_preserved: bool = True,
     presence_only_counterfactual_equivalent: bool = False,
     intensity_evidence_spans: tuple[str, ...] = (),
+    predicate_evidence_spans: tuple[str, ...] | None = None,
+    certainty_evidence_spans: tuple[str, ...] = (),
+    concept_evidence_spans: tuple[str, ...] = (),
 ) -> dict[str, object]:
     return {
         "realization_id": realization_id,
         "predicate_preserved": predicate_preserved,
+        "predicate_evidence_spans": list(
+            _predicate_evidence(realization_id)
+            if predicate_evidence_spans is None
+            else predicate_evidence_spans
+        ),
         "state_preserved": state_preserved,
         "state_fidelity": state_fidelity,
         "certainty_preserved": certainty_preserved,
+        "certainty_evidence_spans": list(certainty_evidence_spans),
         "concept_preserved": concept_preserved,
+        "concept_evidence_spans": list(concept_evidence_spans),
         "intensity_semantics_preserved": intensity_semantics_preserved,
         "presence_only_counterfactual_equivalent": (
             presence_only_counterfactual_equivalent
