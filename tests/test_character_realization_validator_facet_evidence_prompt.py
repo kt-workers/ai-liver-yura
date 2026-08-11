@@ -101,4 +101,5 @@ def test_free_text_differences_must_match_structured_checks() -> None:
 
     assert "accepted/reason/differencesとrealized_proposition_checksを自己矛盾させない" in prompt
     assert "対応checkもその不一致を表す" in prompt
-    assert "構造checkがexactでevidenceも成立するfacet" in prompt
+    assert "逆にcheckがexactで" in prompt
+    assert "evidenceも成立しているfacet" in prompt
