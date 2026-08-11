@@ -146,6 +146,12 @@ def _character_payload(
 
 
 def _accepted_validation_payload(*, target_id: str = "joy") -> dict[str, object]:
+    if target_id == "fear":
+        predicate_spans = ["怖い"]
+        certainty_spans = ["判断できてない"]
+    else:
+        predicate_spans = ["楽しく"]
+        certainty_spans = []
     return {
         "accepted": True,
         "reason": "semantic_realization_consistent",
@@ -162,10 +168,13 @@ def _accepted_validation_payload(*, target_id: str = "joy") -> dict[str, object]
             {
                 "realization_id": f"proposition:0:{target_id}",
                 "predicate_preserved": True,
+                "predicate_evidence_spans": predicate_spans,
                 "state_preserved": True,
                 "state_fidelity": "exact",
                 "certainty_preserved": True,
+                "certainty_evidence_spans": certainty_spans,
                 "concept_preserved": True,
+                "concept_evidence_spans": [],
                 "intensity_semantics_preserved": True,
                 "presence_only_counterfactual_equivalent": False,
                 "intensity_evidence_spans": [],
