@@ -6,8 +6,10 @@ GitHub Issueの親子関係・依存関係と、GitHub Projects v2「プロジ�
 
 - 親Issue → 子Issueを実線矢印で表示
 - `Depends on:` / `依存:` を破線矢印で表示
-- depthは初期配置の参考だけに使い、固定列へ縛らず衝突回避と関係距離でノードを自由配置
-- 線は表示中Issueノードを障害物として扱い、可能な限りノードを迂回して描画
+- 親子treeごとに階層配置し、独立treeを2次元へパッキングして全rootを同じ列へ強制しない
+- 親子線はdepth間の空き領域へbranch busを置き、通常のtreeで別ノードを横切らないように描画
+- 依存線は描画済みDOMノードの実サイズを障害物として測定し、直交経路探索で迂回
+- ノードを突っ切るBezier fallbackは使用しない
 - ノード選択時、そのIssueを起点として伸びる線を強調し、その他の線を背景化
 - 初期表示はOpen Issueのみ。`Closedも表示`スイッチでClosed Issueを含む表示へ切替
 - Closed表示切替時はserver-sideのGitHub取得条件自体を切り替え、通常時にClosed Issueを先読みしない
