@@ -115,7 +115,14 @@ def _source_and_context(
     return source, context, plan
 
 
-def _check(realization_id: str, state_fidelity: str = "exact") -> dict[str, object]:
+def _check(
+    realization_id: str,
+    state_fidelity: str = "exact",
+    *,
+    intensity_semantics_preserved: bool = True,
+    presence_only_counterfactual_equivalent: bool = False,
+    intensity_evidence_spans: tuple[str, ...] = (),
+) -> dict[str, object]:
     return {
         "realization_id": realization_id,
         "predicate_preserved": True,
@@ -123,6 +130,11 @@ def _check(realization_id: str, state_fidelity: str = "exact") -> dict[str, obje
         "state_fidelity": state_fidelity,
         "certainty_preserved": True,
         "concept_preserved": True,
+        "intensity_semantics_preserved": intensity_semantics_preserved,
+        "presence_only_counterfactual_equivalent": (
+            presence_only_counterfactual_equivalent
+        ),
+        "intensity_evidence_spans": list(intensity_evidence_spans),
     }
 
 
@@ -184,7 +196,14 @@ async def test_high_joy_weakened_diagnosis_is_rejected_after_production_plan() -
         speech="うん、楽しいよ。",
         realization_ids=("proposition:0:joy",),
         validation_payload=_accepted_payload(
-            [_check("proposition:0:joy", "weakened")]
+            [
+                _check(
+                    "proposition:0:joy",
+                    "weakened",
+                    intensity_semantics_preserved=False,
+                    presence_only_counterfactual_equivalent=True,
+                )
+            ]
         ),
     )
 
@@ -297,9 +316,22 @@ async def test_mixed_supporting_weakened_diagnosis_rejects_even_with_primary_agg
     )
     checks = [
         _check("proposition:0:current_feeling"),
-        _check("proposition:1:joy", "weakened"),
-        _check("proposition:2:anger"),
-        _check("proposition:3:calm", "weakened"),
+        _check(
+            "proposition:1:joy",
+            "weakened",
+            intensity_semantics_preserved=False,
+            presence_only_counterfactual_equivalent=True,
+        ),
+        _check(
+            "proposition:2:anger",
+            intensity_evidence_spans=("少し",),
+        ),
+        _check(
+            "proposition:3:calm",
+            "weakened",
+            intensity_semantics_preserved=False,
+            presence_only_counterfactual_equivalent=True,
+        ),
     ]
     _, validation, _, _ = await _realize_and_validate(
         source,
@@ -336,7 +368,14 @@ async def test_all_adopted_mixed_propositions_exact_accept_and_model_boundaries_
         "proposition:1:joy",
         "proposition:2:anger",
     )
-    checks = [_check(realization_id) for realization_id in realization_ids]
+    checks = [
+        _check("proposition:0:current_feeling"),
+        _check("proposition:1:joy", intensity_evidence_spans=("かなり",)),
+        _check(
+            "proposition:2:anger",
+            intensity_evidence_spans=("それなりに",),
+        ),
+    ]
 
     _, validation, character_model, validator_model = await _realize_and_validate(
         source,
