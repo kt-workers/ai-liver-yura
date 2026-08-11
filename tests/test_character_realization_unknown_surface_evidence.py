@@ -181,12 +181,12 @@ def test_prompt_treats_predicate_uncertainty_as_exact_unknown_candidate() -> Non
         _response("悲しいかは、今のところはっきりしないよ。"),
     )
 
+    assert "state=unknownは存在・不在・強度が未確定" in prompt
     assert "predicate自体を現時点で確定できない" in prompt
+    assert "polarityをcommitしていない限り" in prompt
     assert "meta-uncertaintyとしてrejectしない" in prompt
     assert "同じ慎重な表現がunknown stateと低い断定度の両方" in prompt
-    assert "今のところ" in prompt
-    assert "はっきりしない" in prompt
-    assert "intensity markerにしない" in prompt
+    assert "時間限定、epistemic hedge、断定度表現はpredicateの程度を変えない限りintensity markerではない" in prompt
 
 
 @pytest.mark.asyncio
