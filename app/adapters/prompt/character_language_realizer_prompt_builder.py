@@ -63,13 +63,20 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 "predicateは内部英語ラベルを読み上げる要求ではなく、質問対象・述語関係の意味そのもの"
                 "をspeech本文から識別できるように保つ要求である。semantic_realizations等のmetadataを"
                 "見なくても、何について答えた発話か分かる必要がある。",
-                "supporting propositionは省略可能だが、speechへ採用してsemantic_realizationsへIDを"
-                "列挙する場合は、そのpropositionのif_realized_required_facetsをすべて意味的に保持する。"
+                "primary predicateはUser Wording Hintや直前質問を読まない第三者がspeechだけを見ても"
+                "対象を識別できるように言語化する。『あるよ』『強いよ』『はっきりしない』のような"
+                "対象省略だけでprimaryを実現しない。User Wording Hintは自然な語彙選択に使ってよいが、"
+                "省略されたpredicateを会話文脈で補完してよい許可ではない。",
+                "supporting propositionは省略可能であり、primaryだけで自然に完結できるなら省略を優先する。"
+                "supportingを数多く列挙することを品質とみなさない。speechへ採用してsemantic_realizationsへ"
+                "IDを列挙する場合だけ、そのpropositionのif_realized_required_facetsをすべて意味的に保持する。"
                 "supporting stateの強度やcertaintyを落としたpartial realizationを採用済みとして扱わない。",
                 "conceptがnon-nullなら、そのconceptの意味を自然語として含め、単なる『何かある』等の"
                 "存在表明だけへ縮退しない。conceptはpredicateの意味内容を修飾するfacetであり、"
-                "concept単独の別stateへ置き換えない。predicateが示す質問対象を維持したままconceptを"
-                "自然語化する。conceptだけを述べてpredicateの意味をspeechから消すのは不正である。",
+                "concept単独の別stateへ置き換えない。predicateが示す関係をspeechへ残し、その内容・対象・"
+                "方向・理由等としてconceptを結び付ける。conceptだけを述べてpredicateの意味をspeechから"
+                "消すのは不正である。たとえば欲求predicateを関心conceptだけへ、状態predicateを単なる"
+                "強弱表現だけへ置換してはいけない。",
                 "state=unknownは、その対象状態の存在・不在・強度が確定していないことを意味する。"
                 "unknownをpresent/absent/low等へ変換せず、certainty=lowであっても『あるかも』等の"
                 "特定polarityを推測しない。必要なら、状態を判断できていないこと自体を自然に表現する。",
@@ -85,7 +92,9 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 "ない対象へ付いた程度表現は除去する。点検過程や診断語は出力しない。",
                 "certaintyは指定されたstateへの確からしさであり、別のstateや強度を推測してよい"
                 "許可ではない。medium/lowのcertaintyはepistemic modalityとして断定度・慎重さへ"
-                "反映し、程度副詞や強度表現へ置き換えない。",
+                "明示的に反映し、程度副詞や強度表現へ置き換えない。state=unknownではunknownを表す"
+                "慎重な表現がcertaintyも同時に担ってよいが、それ以外でmedium/lowを無標の断定文へ"
+                "縮退させない。",
                 "state=presentかつintensity_allowed=falseでcertainty=medium/lowの場合、certaintyを"
                 "『少し』『ちょっと』『やや』等の程度語で表現しない。存在の強さと確からしさを混同しない。",
                 "User Wording Hintは、ユーザーがどの語彙・意味枠で対象を尋ねたかを保つための"
@@ -131,6 +140,10 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                     "質問対象であるpredicateの意味をspeech本文へ復元する。repair_constraintsに"
                     "restore_state_fidelityがある場合、Planのstateをpresenceだけへ弱めず、unknownを"
                     "肯定/否定へ変換せず、採用したpropositionのstate意味をそのまま復元する。"
+                    "repair_constraintsにrestore_certainty_as_epistemic_modalityがある場合、"
+                    "無標の断定や程度表現ではなくepistemicな慎重さをspeechへ復元する。"
+                    "repair_constraintsにrestore_required_concept_within_predicateがある場合、"
+                    "concept単独ではなくpredicate関係の中へconceptを戻す。"
                     if regeneration_feedback is not None
                     else "# Regeneration Feedback\nなし"
                 ),
@@ -203,6 +216,7 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
             "self_disclosure": plan.self_disclosure,
             "question_budget": plan.question_budget,
             "new_direction_budget": plan.new_direction_budget,
+            "supporting_selection_policy": "minimal_optional_only_when_facet_complete",
             "interpersonal": plan.interpersonal.as_context(),
             "discourse_context": dict(plan.discourse_context),
         }
@@ -230,6 +244,7 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
             "required_facets": required_facets,
             "predicate_semantics": "preserve_target_meaning",
             "predicate_realization": "semantically_explicit_in_speech",
+            "predicate_context_dependency": "forbidden",
             "state": primary.state,
             "state_semantics": state_semantics,
             "state_fidelity": "preserve_exact_semantic_state",
@@ -244,6 +259,11 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
             "certainty": primary.certainty,
             "certainty_semantics": "epistemic_not_intensity",
             "certainty_realization": certainty_realization,
+            "certainty_surface_requirement": (
+                "overt_epistemic_modality"
+                if primary.certainty in {"medium", "low"}
+                else "unhedged_allowed"
+            ),
             "concept": primary.concept,
             "concept_role": (
                 "modify_predicate_not_replace_it"
@@ -318,16 +338,20 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                     "do_not_replace_with_another_degree_marker",
                 )
             )
-        if "state_preserved" in combined:
+        if "state_preserved" in combined or "state_fidelity" in combined:
             repair_constraints.append("restore_state_fidelity")
-        if "certainty_preserved" in combined:
+        if "certainty_preserved" in combined or "certainty" in combined:
             repair_constraints.append("restore_certainty_as_epistemic_modality")
-        if "concept_preserved" in combined:
+        if "concept_preserved" in combined or "concept" in combined:
             repair_constraints.append("restore_required_concept_within_predicate")
-        if "predicate_preserved" in combined or "target_predicate" in combined:
+        if (
+            "predicate_preserved" in combined
+            or "target_predicate" in combined
+            or "predicate" in combined
+        ):
             repair_constraints.append("restore_target_predicate_meaning")
         return {
             "reason": reason,
             "differences": differences,
-            "repair_constraints": repair_constraints,
+            "repair_constraints": list(dict.fromkeys(repair_constraints)),
         }
