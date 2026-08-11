@@ -145,7 +145,7 @@ def _character_payload(
     }
 
 
-def _accepted_validation_payload() -> dict[str, object]:
+def _accepted_validation_payload(*, target_id: str = "joy") -> dict[str, object]:
     return {
         "accepted": True,
         "reason": "semantic_realization_consistent",
@@ -158,6 +158,16 @@ def _accepted_validation_payload() -> dict[str, object]:
             "concept_preserved": True,
             "unsupported_intensity_added": False,
         },
+        "realized_proposition_checks": [
+            {
+                "realization_id": f"proposition:0:{target_id}",
+                "predicate_preserved": True,
+                "state_preserved": True,
+                "state_fidelity": "exact",
+                "certainty_preserved": True,
+                "concept_preserved": True,
+            }
+        ],
         "surface_evidence": {"intensity_markers": []},
     }
 
@@ -292,7 +302,7 @@ async def test_unknown_state_is_preserved_through_character_and_validation() -> 
             "今は怖いかどうか、まだ判断できてないよ。",
             target_id="fear",
         ),
-        validation_payload=_accepted_validation_payload(),
+        validation_payload=_accepted_validation_payload(target_id="fear"),
     )
 
     character_prompt = character_model.activities[0].context["plugin_prompt_override"]
