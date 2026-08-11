@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+import json
 from pathlib import Path
 
 import yaml
@@ -14,7 +16,7 @@ from gui.yura_issue_graph.models import (
     extract_parent_number,
     extract_related_pr_numbers,
 )
-from gui.yura_issue_graph.server import app, health
+from gui.yura_issue_graph.server import app, graph, health
 
 
 def test_compatibility_relationship_extractors() -> None:
@@ -99,8 +101,12 @@ def test_rest_degraded_mode_does_not_require_token() -> None:
     def transport(_request):
         return next(responses)
 
-    service = IssueGraphService(IssueGraphConfig(owner="o", repository="r", token=None), transport=transport)
+    service = IssueGraphService(
+        IssueGraphConfig(owner="o", repository="r", token=None),
+        transport=transport,
+    )
     payload = service.load_graph()
+    assert payload["include_closed"] is False
     assert payload["degraded"] is True
     assert any("GITHUB_TOKEN" in message for message in payload["diagnostics"])
     assert {tuple((e["source"], e["target"], e["kind"])) for e in payload["edges"]} == {
@@ -109,12 +115,58 @@ def test_rest_degraded_mode_does_not_require_token() -> None:
     }
 
 
+def test_graphql_issue_state_scope_switches_between_open_and_all_states() -> None:
+    captured_states: list[list[str]] = []
+
+    def transport(request):
+        payload = json.loads(request.data.decode("utf-8"))
+        captured_states.append(payload["variables"]["states"])
+        return {
+            "data": {
+                "repository": {
+                    "issues": {
+                        "nodes": [],
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    }
+                }
+            }
+        }
+
+    service = IssueGraphService(
+        IssueGraphConfig(owner="o", repository="r", token="token"),
+        transport=transport,
+    )
+    service._load_graphql_issues(include_closed=False)
+    service._load_graphql_issues(include_closed=True)
+
+    assert captured_states == [["OPEN"], ["OPEN", "CLOSED"]]
+
+
+def test_rest_issue_state_scope_switches_between_open_and_all() -> None:
+    urls: list[str] = []
+
+    def transport(request):
+        urls.append(request.full_url)
+        return []
+
+    service = IssueGraphService(
+        IssueGraphConfig(owner="o", repository="r", token=None),
+        transport=transport,
+    )
+    service._load_rest_issues([], include_closed=False)
+    service._load_rest_issues([], include_closed=True)
+
+    assert "state=open" in urls[0]
+    assert "state=all" in urls[1]
+
+
 def test_health_and_routes_exist() -> None:
     assert health() == {"status": "ok", "service": "yura-issue-graph"}
     paths = {route.path for route in app.routes}
     assert "/" in paths
     assert "/api/health" in paths
     assert "/api/graph" in paths
+    assert inspect.signature(graph).parameters["include_closed"].default is False
 
 
 def test_project_scope_keeps_related_context() -> None:
@@ -170,3 +222,12 @@ def test_browser_routes_edges_around_nodes_and_focuses_selected_source() -> None
     readme = Path("gui/yura_issue_graph/README.md").read_text(encoding="utf-8")
     assert "可能な限りノードを迂回" in readme
     assert "そのIssueを起点として伸びる線を強調" in readme
+
+
+def test_browser_closed_issue_switch_requests_server_side_state_scope() -> None:
+    html = Path("gui/yura_issue_graph/static/index.html").read_text(encoding="utf-8")
+
+    assert 'id="includeClosed"' in html
+    assert "include_closed=${includeClosedValue ? 'true' : 'false'}" in html
+    assert "includeClosed.addEventListener('change',load)" in html
+    assert "Closedも表示" in html
