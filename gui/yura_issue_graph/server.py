@@ -26,10 +26,13 @@ def health() -> dict[str, str]:
 
 
 @app.get("/api/graph")
-async def graph() -> dict[str, object]:
+async def graph(include_closed: bool = False) -> dict[str, object]:
     config = IssueGraphConfig.from_env()
     service = IssueGraphService(config)
     try:
-        return await asyncio.to_thread(service.load_graph)
+        return await asyncio.to_thread(
+            service.load_graph,
+            include_closed=include_closed,
+        )
     except GitHubApiError as error:
         raise HTTPException(status_code=502, detail=error.public_message) from error
