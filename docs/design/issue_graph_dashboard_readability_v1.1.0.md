@@ -30,6 +30,22 @@ Render実画面でIssue数が増えた状態を確認した結果、親子tree�
 
 これにより、親子treeを読むときに別treeを横断する依存線が常時ノイズにならないようにする。
 
+### 2.3 dependency arrow geometry
+
+2026-08-12のRender実画面確認では、selected edgeのstrokeを太くした際にSVG markerがstroke幅へ連動して拡大し、大きな三角形がnode間へ食い込んだ。またtarget直前で90度に曲がった直後へmarkerが付くrouteでは、線と矢印の向きが視覚的に分断された。
+
+このためdependency edgeの矢印には以下を適用する。
+
+- SVG markerは `markerUnits="userSpaceOnUse"` とし、stroke幅に比例して拡大させない
+- 通常時・focus時で矢印headの外形寸法を変えない
+- arrow headは小型の固定サイズとし、focusはedge stroke/opacityだけで表現する
+- target portの直前に最低24px程度のstraight approach segmentを確保する
+- routing探索はtarget nodeそのものではなくtarget側lead pointまで行い、最後を `lead point -> target port` の直線で接続する
+- source側にもlead segmentを設け、node border直後で90度に折れないようにする
+- 最後のbendとarrow headが重なるrouteは採用しない
+
+これにより、拡大・focus時でも矢印だけが巨大化せず、線の進行方向とarrow headの向きが自然につながることを目標とする。
+
 ## 3. 親子関係なしIssueの分離
 
 parent edgeを1本も持たないsingle node componentを、親子treeと同じ領域へ混在させない。
@@ -68,14 +84,32 @@ background nodeはopacityを下げるが、位置とtitleは確認できる程�
 - In progress / Verification / Blockedなどactive statusのtreeを初期viewport中心へ寄せる
 - `全体表示` buttonでは従来どおり全graph fitを実行できる
 
-## 6. Verification
+## 6. Collapse / Expand 契約
+
+親Issueの `[-]` は「descendantを一時的に隠す」操作であり、親Issue自体や再展開操作を失わせてはいけない。
+
+- collapse後もparent nodeは同じtree component内に残す
+- collapse後もparent node上に `[+]` buttonを必ず表示する
+- `[+]` clickだけでページreloadなしにdescendantを復帰させる
+- collapse対象の子が非表示になっても、元のparent/subIssue relation情報を使って「子を持つnode」であることを保持する
+- collapseしたrootがvisible node 1件になっても `親子関係なし` sectionへ再分類しない
+- collapse / expandで現在のpan・zoom・選択状態を不必要に初期化しない
+- selectionがcollapseによって非表示descendantを指す場合だけselectionを解除する
+
+表示用 `visible` 集合と、filter適用後かつcollapse適用前の `hierarchy candidate` 集合を分離し、collapse button・tree classificationには後者を使用する。
+
+## 7. Verification
 
 - 親子treeごとのgroupが視覚的に区別できる
 - 親子関係なしIssueがtree領域から分離される
 - 初期状態ではdependency edgeが全画面を横断しない
 - node選択時に直接dependencyだけ確認できる
 - `依存線を全表示` ONで全dependencyを表示できる
+- dependency arrow headがfocus時にも巨大化しない
+- dependency edgeはtarget直前にstraight approach segmentを持ち、90度bend直後へarrow headを置かない
 - node選択時に直接関係するnode以外が背景化する
 - 初期表示のnode title/statusが読める倍率になる
 - `全体表示`で従来どおり全体俯瞰できる
+- `[-]` collapse後もparent nodeと`[+]`が残り、reloadなしで復帰できる
+- collapseしたrootが `親子関係なし` sectionへ移動しない
 - Closed表示切替、検索、Status filter、collapse、pan/zoomを維持する
