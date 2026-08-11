@@ -15,6 +15,7 @@ from app.domain.activities import Activity, ActivityType
 from app.domain.character import CharacterProfile
 from app.domain.character_response import (
     ActivityExecutionStatus,
+    ResponseClaim,
     ResponseContext,
 )
 from app.runtime.character_language_realizer_service import CharacterLanguageRealizerService
@@ -75,7 +76,7 @@ def _context() -> ResponseContext:
         status=ActivityExecutionStatus.WAITING_INPUT,
         failure_reason=None,
         result_summary="",
-        allowed_claims=(),
+        allowed_claims=(ResponseClaim.CONVERSATION_ONLY,),
         forbidden_claims=(),
         activity_goal="現在の欲求へ直接答える",
         speech_act="question",
@@ -185,6 +186,7 @@ async def test_current_desire_medium_certainty_flows_through_semantic_character_
     )
     result = await validator.validate(source, context, response)
 
+    assert len(validator_model.activities) == 1
     validator_prompt = validator_model.activities[0].context["plugin_prompt_override"]
     assert '"state": "present"' in validator_prompt
     assert '"certainty": "medium"' in validator_prompt
