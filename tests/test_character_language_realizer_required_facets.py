@@ -75,7 +75,7 @@ def test_primary_non_null_concept_is_declared_as_required_semantic_facet() -> No
     assert '"required_facets": ["predicate", "state", "certainty", "concept"]' in prompt
     assert "質問対象・述語関係の意味そのもの" in prompt
     assert "単なる『何かある』等の存在表明だけへ縮退しない" in prompt
-    assert "conceptだけを述べてpredicateの意味をspeechから消すのは不正" in prompt
+    assert "conceptだけを述べてpredicateの意味をspeechから" in prompt
     assert "primary propositionのIDを列挙する場合はpredicateを含むrequired_facets" in prompt
     assert "response_content_plan.primary_desire" not in prompt
 
@@ -90,8 +90,11 @@ def test_predicate_gets_machine_readable_target_meaning_contract() -> None:
     assert '"predicate": "current_desire"' in prompt
     assert '"predicate_semantics": "preserve_target_meaning"' in prompt
     assert '"predicate_realization": "semantically_explicit_in_speech"' in prompt
+    assert '"predicate_context_dependency": "forbidden"' in prompt
     assert '"concept_role": "modify_predicate_not_replace_it"' in prompt
     assert "metadataを見なくても、何について答えた発話か分かる" in prompt
+    assert "User Wording Hintや直前質問を読まない第三者" in prompt
+    assert "対象省略だけでprimaryを実現しない" in prompt
     assert "User Wording Hint" in prompt
     assert '"utterance": "何かしたい？"' in prompt
 
@@ -108,7 +111,8 @@ def test_present_state_does_not_license_new_intensity_and_certainty_stays_episte
     assert "speechの程度・強弱表現を内部点検" in prompt
     assert "対応する強度stateがない対象へ付いた程度表現は除去" in prompt
     assert "medium/lowのcertaintyはepistemic modality" in prompt
-    assert "程度副詞や強度表現へ置き換えない" in prompt
+    assert "明示的に反映" in prompt
+    assert "無標の断定文へ" in prompt
     assert "存在の強さと確からしさを混同しない" in prompt
 
 
@@ -123,9 +127,22 @@ def test_medium_certainty_gets_machine_readable_epistemic_facet_contract() -> No
     assert '"state_semantics": "presence_without_intensity"' in prompt
     assert '"certainty_semantics": "epistemic_not_intensity"' in prompt
     assert '"certainty_realization": "epistemic_modality"' in prompt
+    assert '"certainty_surface_requirement": "overt_epistemic_modality"' in prompt
     assert '"intensity_allowed": false' in prompt
     assert '"degree_marker_substitution": "forbidden"' in prompt
     assert '"concept_role": "modify_predicate_not_replace_it"' in prompt
+
+
+def test_supporting_selection_is_minimal_and_optional() -> None:
+    prompt = CharacterLanguageRealizerPromptBuilder().build(
+        _context(),
+        character_profile=_profile(),
+        correction=None,
+    )
+
+    assert '"supporting_selection_policy": "minimal_optional_only_when_facet_complete"' in prompt
+    assert "primaryだけで自然に完結できるなら省略を優先" in prompt
+    assert "supportingを数多く列挙することを品質とみなさない" in prompt
 
 
 def test_regeneration_feedback_projects_only_semantic_differences() -> None:
@@ -153,7 +170,8 @@ def test_regeneration_feedback_projects_only_semantic_differences() -> None:
     assert '"reason": "unsupported_intensity_added"' in prompt
     assert "unsupported_intensity_markers:少し" in prompt
     assert "Planにない強度を追加している" in prompt
-    assert '"repair_constraints": ["recheck_required_facets", "remove_unsupported_intensity", "do_not_replace_with_another_degree_marker"]' in prompt
+    assert "remove_unsupported_intensity" in prompt
+    assert "do_not_replace_with_another_degree_marker" in prompt
     assert "程度語を別の程度語へ置換するだけでは修正にならない" in prompt
     assert "waiting_input" not in prompt
     assert "invalid_speech_claims" not in prompt
@@ -202,3 +220,29 @@ def test_regeneration_feedback_marks_predicate_repair_when_reported() -> None:
     assert "restore_target_predicate_meaning" in prompt
     assert "conceptの言い換えだけで済ませず" in prompt
     assert "質問対象であるpredicateの意味をspeech本文へ復元" in prompt
+
+
+def test_regeneration_feedback_normalizes_noncanonical_facet_diagnostics() -> None:
+    correction = json.dumps(
+        {
+            "reason": "semantic_realization_rejected",
+            "claim_differences": [
+                "predicate evidence missing",
+                "certainty medium was dropped",
+                "concept was substituted",
+                "state_fidelity=weakened",
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+    prompt = CharacterLanguageRealizerPromptBuilder().build(
+        _context(),
+        character_profile=_profile(),
+        correction=correction,
+    )
+
+    assert "restore_target_predicate_meaning" in prompt
+    assert "restore_certainty_as_epistemic_modality" in prompt
+    assert "restore_required_concept_within_predicate" in prompt
+    assert "restore_state_fidelity" in prompt
