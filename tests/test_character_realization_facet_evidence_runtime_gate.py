@@ -29,30 +29,14 @@ class _ValidationModel:
 
     async def validate_character_response(self, activity: Activity) -> str:
         if activity.context.get("llm_role") == "character_realization_observer":
-            checks = self.payload.get("realized_proposition_checks", [])
-            observations: list[dict[str, object]] = []
-            if isinstance(checks, list):
-                for check in checks:
-                    if not isinstance(check, dict):
-                        continue
-                    predicate_spans = check.get("predicate_evidence_spans", [])
-                    intensity_spans = check.get("intensity_evidence_spans", [])
-                    certainty_spans = check.get("certainty_evidence_spans", [])
-                    observations.append(
-                        {
-                            "realization_id": check.get("realization_id"),
-                            "predicate_realized": check.get("predicate_preserved", True),
-                            "observed_state": check.get("observed_state"),
-                            "observed_certainty": check.get("observed_certainty", "high"),
-                            "predicate_evidence_spans": predicate_spans,
-                            "state_evidence_spans": (
-                                intensity_spans if intensity_spans else predicate_spans
-                            ),
-                            "certainty_evidence_spans": certainty_spans,
-                        }
-                    )
+            observations = self.payload.get("_observer_observations")
             return json.dumps({"observations": observations}, ensure_ascii=False)
-        return json.dumps(self.payload, ensure_ascii=False)
+        comparison = {
+            key: value
+            for key, value in self.payload.items()
+            if key != "_observer_observations"
+        }
+        return json.dumps(comparison, ensure_ascii=False)
 
 
 def _context(
@@ -119,10 +103,36 @@ def _payload(
     concept_spans: list[str] | None = None,
     intensity_spans: list[str] | None = None,
     surface_markers: list[str] | None = None,
-    observed_state: str | None = None,
-    observed_certainty: str = "high",
+    observer_state: str | None = "absent",
+    observer_certainty: str = "high",
+    observer_predicate_spans: list[str] | None = None,
+    observer_state_spans: list[str] | None = None,
+    observer_certainty_spans: list[str] | None = None,
 ) -> dict[str, object]:
+    comparison_predicate_spans = predicate_spans or []
+    comparison_intensity_spans = intensity_spans or []
+    observation_predicate_spans = (
+        observer_predicate_spans
+        if observer_predicate_spans is not None
+        else comparison_predicate_spans
+    )
+    observation_state_spans = (
+        observer_state_spans
+        if observer_state_spans is not None
+        else comparison_intensity_spans or observation_predicate_spans
+    )
     return {
+        "_observer_observations": [
+            {
+                "realization_id": f"proposition:0:{predicate}",
+                "predicate_realized": True,
+                "observed_state": observer_state,
+                "observed_certainty": observer_certainty,
+                "predicate_evidence_spans": observation_predicate_spans,
+                "state_evidence_spans": observation_state_spans,
+                "certainty_evidence_spans": observer_certainty_spans or [],
+            }
+        ],
         "accepted": True,
         "reason": "semantic_realization_consistent",
         "differences": [],
@@ -138,18 +148,16 @@ def _payload(
             {
                 "realization_id": f"proposition:0:{predicate}",
                 "predicate_preserved": True,
-                "predicate_evidence_spans": predicate_spans or [],
+                "predicate_evidence_spans": comparison_predicate_spans,
                 "state_preserved": True,
                 "state_fidelity": "exact",
-                "observed_state": observed_state,
-                "observed_certainty": observed_certainty,
                 "certainty_preserved": True,
                 "certainty_evidence_spans": certainty_spans or [],
                 "concept_preserved": True,
                 "concept_evidence_spans": concept_spans or [],
                 "intensity_semantics_preserved": True,
                 "presence_only_counterfactual_equivalent": False,
-                "intensity_evidence_spans": intensity_spans or [],
+                "intensity_evidence_spans": comparison_intensity_spans,
             }
         ],
         "surface_evidence": {"intensity_markers": surface_markers or []},
@@ -194,7 +202,12 @@ async def test_accepted_payload_missing_facet_evidence_field_fails_closed() -> N
 @pytest.mark.asyncio
 async def test_predicate_evidence_must_exist_in_speech() -> None:
     result = await _validator(
-        _payload("joy", predicate_spans=["楽しい気分"])
+        _payload(
+            "joy",
+            predicate_spans=["楽しい気分"],
+            observer_predicate_spans=["楽しい気持ち"],
+            observer_state_spans=["楽しい気持ちはない"],
+        )
     ).validate(
         _source(),
         _context(predicate="joy", state="absent"),
@@ -209,9 +222,15 @@ async def test_predicate_evidence_must_exist_in_speech() -> None:
 
 
 @pytest.mark.asyncio
-async def test_medium_certainty_requires_speech_evidence() -> None:
+async def test_medium_certainty_requires_comparator_speech_evidence() -> None:
     result = await _validator(
-        _payload("current_desire", predicate_spans=["したい気持ちはある"])
+        _payload(
+            "current_desire",
+            predicate_spans=["したい気持ちはある"],
+            observer_state="present",
+            observer_certainty="medium",
+            observer_certainty_spans=["たぶん"],
+        )
     ).validate(
         _source(),
         _context(
@@ -219,7 +238,7 @@ async def test_medium_certainty_requires_speech_evidence() -> None:
             state="present",
             certainty="medium",
         ),
-        _response("current_desire", "したい気持ちはあるよ。"),
+        _response("current_desire", "たぶん、したい気持ちはあるよ。"),
     )
 
     assert result.accepted is False
@@ -236,6 +255,9 @@ async def test_non_null_concept_requires_speech_evidence() -> None:
             "current_desire",
             predicate_spans=["知りたい気持ちはある"],
             certainty_spans=["たぶん"],
+            observer_state="present",
+            observer_certainty="medium",
+            observer_certainty_spans=["たぶん"],
         )
     ).validate(
         _source(),
@@ -280,7 +302,7 @@ async def test_e8_bare_presence_is_rejected_by_independent_observation() -> None
             "energy",
             predicate_spans=["元気はある"],
             intensity_spans=["元気はある"],
-            observed_state="present",
+            observer_state="present",
         )
     ).validate(
         _source(),
@@ -304,7 +326,7 @@ async def test_unlisted_paraphrase_can_preserve_low_without_runtime_dictionary()
             predicate_spans=["元気はそれなりに残ってる"],
             intensity_spans=["それなりに"],
             surface_markers=["それなりに"],
-            observed_state="low",
+            observer_state="low",
         )
     ).validate(
         _source(),
@@ -324,7 +346,7 @@ async def test_degree_suffix_can_be_observed_semantically_without_runtime_dictio
             predicate_spans=["元気は低め"],
             intensity_spans=["低め"],
             surface_markers=["低め"],
-            observed_state="low",
+            observer_state="low",
         )
     ).validate(
         _source(),
@@ -342,7 +364,7 @@ async def test_observer_missing_typed_state_fails_closed() -> None:
             "energy",
             predicate_spans=["元気は控えめ"],
             intensity_spans=["控えめ"],
-            observed_state=None,
+            observer_state=None,
         )
     ).validate(
         _source(),
@@ -362,7 +384,7 @@ async def test_surface_intensity_marker_must_exist_in_speech() -> None:
             predicate_spans=["元気は少しある"],
             intensity_spans=["少し"],
             surface_markers=["かなり"],
-            observed_state="low",
+            observer_state="low",
         )
     ).validate(
         _source(),
