@@ -62,10 +62,8 @@ class CharacterRealizationObserverPromptBuilder:
                 "原文部分だけを列挙する。該当する明示spanが不要または存在しないfacetは空配列でよい。",
                 "- Candidateのcanonical英語IDをspeech中に存在する語だと仮定しない。",
                 "- Characterのsemantic_realizations等の自己申告metadataは観測根拠にしない。",
-                "JSONのみ返す:",
-                '{"observations":[{"realization_id":"proposition:0:energy",'
-                '"predicate_realized":true,"observed_state":"present",'
-                '"observed_certainty":"high","predicate_evidence_spans":["元気"],'
-                '"state_evidence_spans":["元気はある"],"certainty_evidence_spans":[]}]}',
+                "JSONのみ返す。各observationはrealization_id、predicate_realized、observed_state、"
+                "observed_certainty、predicate_evidence_spans、state_evidence_spans、"
+                "certainty_evidence_spansを含める。",
             ]
         )
