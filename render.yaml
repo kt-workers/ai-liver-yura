@@ -41,3 +41,24 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.5
+
+  - type: web
+    name: yura-issue-graph
+    runtime: python
+    plan: free
+    branch: feature/issue-graph-dashboard
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m uvicorn gui.yura_issue_graph.server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.5
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: YURA_ISSUE_GRAPH_OWNER
+        value: ktan514
+      - key: YURA_ISSUE_GRAPH_REPOSITORY
+        value: ai-liver-yura
+      - key: YURA_ISSUE_GRAPH_PROJECT_NUMBER
+        value: "6"
