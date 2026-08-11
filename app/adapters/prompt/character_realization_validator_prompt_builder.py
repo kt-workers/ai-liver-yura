@@ -91,6 +91,15 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "- state=low/moderate/high/very_highは単なるpresenceではなく明示的な強度stateである。"
                 "speechがその状態の存在だけを示し、Planの強度差を意味的に識別できない場合は"
                 "state_fidelity=weakenedとする。特定の程度副詞を必須にはしない",
+                "- explicit intensity stateでは必ずcounterfactualを行う。Planのstateを単なるpresentへ"
+                "置き換えても現在のspeechが同じ意味のまま十分成立するなら、強度差はspeechに現れていない。"
+                "その場合presence_only_counterfactual_equivalent=true、intensity_semantics_preserved=false、"
+                "state_fidelity=weakenedとする",
+                "- explicit intensityをexactとする場合は、presentとの差を担う実際のspeech文字列を"
+                "intensity_evidence_spansへ原文のまま1件以上列挙する。predicateの存在だけを示す裸の表現を"
+                "強度根拠にしない。程度副詞、構文、反復、強調など手段は固定しない",
+                "- intensity_evidence_spansは必ずCharacter Utterance.speechに実在する部分文字列とする。"
+                "内部state名、Plan JSON、説明用の言い換え、speechに存在しない語を根拠として捏造しない",
                 "- state=unknownは存在・不在・強度が未確定である。unknownをpresent/absent/low等へ"
                 "変換した発話はrejectする。hedge付きでも特定polarityを推測していればrejectする",
                 "- yes/no型User Wording Hintへの『うん』『ううん』『そう』『違う』等も、speech全体として"
@@ -122,7 +131,11 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "realized_proposition_checksはCharacter Utteranceのsemantic_realizationsに列挙された"
                 "各IDについてちょうど1件返す。省略されたsupporting propositionのcheckは返さない。"
                 "各checkはpredicate_preserved/state_preserved/certainty_preserved/concept_preservedをbool、"
-                "state_fidelityを指定enumで返す。concept=nullでもconcept_preserved=trueを返す。",
+                "state_fidelityを指定enum、intensity_semantics_preservedと"
+                "presence_only_counterfactual_equivalentをbool、intensity_evidence_spansをstring配列で返す。"
+                "concept=nullでもconcept_preserved=trueを返す。",
+                "intensity stateでないpropositionではintensity_semantics_preserved=true、"
+                "presence_only_counterfactual_equivalent=false、intensity_evidence_spans=[]を返す。",
                 "raw Emotion/Drive値やevidence pathを推測して検証しない。Semantic Planを正本とする。",
                 "JSONのみ返す:",
                 '{"accepted":true,"reason":"semantic_realization_consistent","differences":[],'
@@ -131,7 +144,10 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 '"unsupported_intensity_added":false},'
                 '"realized_proposition_checks":[{"realization_id":"proposition:0:joy",'
                 '"predicate_preserved":true,"state_preserved":true,"state_fidelity":"exact",'
-                '"certainty_preserved":true,"concept_preserved":true}],'
+                '"certainty_preserved":true,"concept_preserved":true,'
+                '"intensity_semantics_preserved":true,'
+                '"presence_only_counterfactual_equivalent":false,'
+                '"intensity_evidence_spans":["強度を担うspeech中の実span"]}],'
                 '"surface_evidence":{"intensity_markers":[]}}',
             ]
         )
