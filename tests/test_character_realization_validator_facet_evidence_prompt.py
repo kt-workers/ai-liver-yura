@@ -74,7 +74,7 @@ def test_primary_predicate_must_be_grounded_in_speech_without_context_completion
     assert "対象省略だけなら" in prompt
     assert "predicate_preserved=false" in prompt
     assert "predicate_evidence_spans" in prompt
-    assert "対象を識別しない語だけをpredicate evidenceにしない" in prompt
+    assert "対象を識別しない一般表現だけをpredicate evidenceにしない" in prompt
     assert '"predicate_context_dependency": "forbidden"' in prompt
 
 
@@ -88,11 +88,13 @@ def test_medium_certainty_and_non_null_concept_require_surface_evidence() -> Non
     assert '"certainty_surface_requirement": "overt_epistemic_modality"' in prompt
 
 
-def test_intensity_evidence_distinguishes_degree_from_bare_presence() -> None:
+def test_intensity_evidence_preserves_semantic_degree_without_fixed_lexicon() -> None:
     prompt = _prompt()
 
-    assert "『低め』『強め』等のdegreeを担う表現は根拠になり得る" in prompt
-    assert "bare presenceだけではlow/moderate/highの" in prompt
+    assert "単なるpresenceではなく明示的な強度state" in prompt
+    assert "特定の程度副詞を必須にはしない" in prompt
+    assert "強度は程度副詞だけでなく構文・対比・反復・婉曲・強調等でも表現できる" in prompt
+    assert "表現手段を有限語彙へ限定しない" in prompt
     assert "intensity_evidence_spans" in prompt
 
 
