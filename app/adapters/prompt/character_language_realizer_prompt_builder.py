@@ -63,6 +63,9 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 "predicateは内部英語ラベルを読み上げる要求ではなく、質問対象・述語関係の意味そのもの"
                 "をspeech本文から識別できるように保つ要求である。semantic_realizations等のmetadataを"
                 "見なくても、何について答えた発話か分かる必要がある。",
+                "supporting propositionは省略可能だが、speechへ採用してsemantic_realizationsへIDを"
+                "列挙する場合は、そのpropositionのif_realized_required_facetsをすべて意味的に保持する。"
+                "supporting stateの強度やcertaintyを落としたpartial realizationを採用済みとして扱わない。",
                 "conceptがnon-nullなら、そのconceptの意味を自然語として含め、単なる『何かある』等の"
                 "存在表明だけへ縮退しない。conceptはpredicateの意味内容を修飾するfacetであり、"
                 "concept単独の別stateへ置き換えない。predicateが示す質問対象を維持したままconceptを"
@@ -70,8 +73,14 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 "state=unknownは、その対象状態の存在・不在・強度が確定していないことを意味する。"
                 "unknownをpresent/absent/low等へ変換せず、certainty=lowであっても『あるかも』等の"
                 "特定polarityを推測しない。必要なら、状態を判断できていないこと自体を自然に表現する。",
+                "yes/no型の質問に対する『うん』『ううん』『そう』『違う』等も、文脈上present/absentを"
+                "確定するならpolarity表現である。state=unknownでは、そのような肯定・否定markerで"
+                "polarityを確定しない。",
                 "state=presentは存在を表すだけで強度を含まない。stateがlow/moderate/high/very_high等の"
                 "強度を明示していない限り、『少し』『ちょっと』『かなり』等の強度を新しく推測・追加しない。",
+                "逆にstate=low/moderate/high/very_highは単なるpresentではなく明示的な強度stateである。"
+                "そのpropositionをspeechへ実現する場合、存在だけへ弱めず強度差を意味的に保持する。"
+                "特定の程度語へ固定対応する必要はないが、speechから強度差が識別できる必要がある。",
                 "JSON生成前にspeechの程度・強弱表現を内部点検し、Semantic Planに対応する強度stateが"
                 "ない対象へ付いた程度表現は除去する。点検過程や診断語は出力しない。",
                 "certaintyは指定されたstateへの確からしさであり、別のstateや強度を推測してよい"
@@ -119,7 +128,9 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                     "置換するだけでは修正にならない。強度意味を除去し、certaintyはfacet contractどおり"
                     "epistemicな断定度として再実現する。repair_constraintsに"
                     "restore_target_predicate_meaningがある場合、conceptの言い換えだけで済ませず、"
-                    "質問対象であるpredicateの意味をspeech本文へ復元する。"
+                    "質問対象であるpredicateの意味をspeech本文へ復元する。repair_constraintsに"
+                    "restore_state_fidelityがある場合、Planのstateをpresenceだけへ弱めず、unknownを"
+                    "肯定/否定へ変換せず、採用したpropositionのstate意味をそのまま復元する。"
                     if regeneration_feedback is not None
                     else "# Regeneration Feedback\nなし"
                 ),
@@ -132,6 +143,9 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
 
     @staticmethod
     def _can_realize(plan: SemanticUtterancePlan) -> bool:
+        # 移行初期はconversation-onlyとして安全にLegacy CharacterResponseへ戻せる
+        # 内部状態直接回答だけを新経路へ切り替える。一般ActivityはSemantic Planが
+        # execution propositionを保持できる段階まで旧経路を維持する。
         return bool(
             plan.target is not None
             and plan.target.type.casefold() in _INTERNAL_STATE_TYPES
@@ -144,11 +158,13 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
         propositions: list[dict[str, object]] = []
         for index, item in enumerate(plan.propositions):
             required = index == 0
-            required_facets: list[str] = []
-            if required:
-                required_facets.extend(("predicate", "state", "certainty"))
-                if item.concept is not None:
-                    required_facets.append("concept")
+            all_facets = ["predicate", "state", "certainty"]
+            if item.concept is not None:
+                all_facets.append("concept")
+            state_semantics = CharacterLanguageRealizerPromptBuilder._state_semantics(
+                item.state
+            )
+            intensity_state = item.state in _INTENSITY_STATES
             propositions.append(
                 {
                     "realization_id": f"proposition:{index}:{item.predicate}",
@@ -158,7 +174,22 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                     "certainty": item.certainty,
                     "concept": item.concept,
                     "required": required,
-                    "required_facets": required_facets,
+                    "required_facets": all_facets if required else [],
+                    "realization_policy": (
+                        "required"
+                        if required
+                        else "optional_but_facet_complete_if_realized"
+                    ),
+                    "if_realized_required_facets": all_facets,
+                    "state_semantics": state_semantics,
+                    "intensity_fidelity": (
+                        "must_preserve_intensity_if_realized"
+                        if intensity_state
+                        else "not_applicable"
+                    ),
+                    "polarity_commitment": (
+                        "forbidden" if item.state == "unknown" else "bounded_by_state"
+                    ),
                 }
             )
         return {
@@ -184,17 +215,9 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
             required_facets.append("concept")
 
         intensity_allowed = primary.state in _INTENSITY_STATES
-        if primary.state == "present":
-            state_semantics = "presence_without_intensity"
-        elif primary.state == "absent":
-            state_semantics = "absence"
-        elif primary.state == "unknown":
-            state_semantics = "unknown_without_polarity_guess"
-        elif intensity_allowed:
-            state_semantics = "explicit_intensity_state"
-        else:
-            state_semantics = "semantic_state"
-
+        state_semantics = CharacterLanguageRealizerPromptBuilder._state_semantics(
+            primary.state
+        )
         certainty_realization = (
             "epistemic_modality"
             if primary.certainty in {"medium", "low"}
@@ -209,6 +232,15 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
             "predicate_realization": "semantically_explicit_in_speech",
             "state": primary.state,
             "state_semantics": state_semantics,
+            "state_fidelity": "preserve_exact_semantic_state",
+            "intensity_fidelity": (
+                "must_preserve_intensity_if_realized"
+                if intensity_allowed
+                else "not_applicable"
+            ),
+            "polarity_commitment": (
+                "forbidden" if primary.state == "unknown" else "bounded_by_state"
+            ),
             "certainty": primary.certainty,
             "certainty_semantics": "epistemic_not_intensity",
             "certainty_realization": certainty_realization,
@@ -225,6 +257,18 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 else "forbidden"
             ),
         }
+
+    @staticmethod
+    def _state_semantics(state: str) -> str:
+        if state == "present":
+            return "presence_without_intensity"
+        if state == "absent":
+            return "absence"
+        if state == "unknown":
+            return "unknown_without_polarity_guess"
+        if state in _INTENSITY_STATES:
+            return "explicit_intensity_state"
+        return "semantic_state"
 
     @staticmethod
     def _user_wording_hint(context: ResponseContext) -> str:
@@ -274,6 +318,8 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                     "do_not_replace_with_another_degree_marker",
                 )
             )
+        if "state_preserved" in combined:
+            repair_constraints.append("restore_state_fidelity")
         if "certainty_preserved" in combined:
             repair_constraints.append("restore_certainty_as_epistemic_modality")
         if "concept_preserved" in combined:
