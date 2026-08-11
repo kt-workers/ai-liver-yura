@@ -208,37 +208,37 @@ def test_render_blueprint_preserves_existing_services_and_adds_issue_graph() -> 
     assert env_vars["YURA_ISSUE_GRAPH_PROJECT_NUMBER"]["value"] == "6"
 
 
-def test_browser_uses_free_layout_instead_of_fixed_depth_columns() -> None:
+def test_browser_uses_hierarchical_component_packing_not_force_relaxation() -> None:
     html = Path("gui/yura_issue_graph/static/index.html").read_text(encoding="utf-8")
 
-    assert "function relaxFreeLayout(" in html
-    assert "function resolveLayoutOverlaps(" in html
-    assert "function normalizeFreeLayout(" in html
-    assert "jitterX" in html
-    assert "BASE_X_GAP" in html
-    assert "columns = new Map" not in html
+    assert "function buildForest(" in html
+    assert "function layoutComponent(" in html
+    assert "function packComponents(" in html
+    assert "subtreeSpan" in html
+    assert "relaxFreeLayout" not in html
+    assert "jitterX" not in html
 
 
-def test_browser_routes_edges_around_nodes_and_focuses_selected_source() -> None:
+def test_browser_routes_parent_edges_by_bus_and_dependencies_around_measured_nodes() -> None:
     html = Path("gui/yura_issue_graph/static/index.html").read_text(encoding="utf-8")
 
-    assert "function obstacleRects(" in html
-    assert "function routeEdgeAvoidingNodes(" in html
-    assert "function fallbackBezier(" in html
-    assert "segmentClear(" in html
+    assert "function parentBusRoute(" in html
+    assert "function measuredRects(" in html
+    assert "el.offsetWidth" in html
+    assert "el.offsetHeight" in html
+    assert "function routeByVisibility(" in html
+    assert "function routeDependency(" in html
+    assert "function pathIsClear(" in html
+    assert "fallbackBezier" not in html
     assert "edge.source===state.selected" in html
     assert ".edge.focused" in html
     assert ".edge.dimmed" in html
-
-    readme = Path("gui/yura_issue_graph/README.md").read_text(encoding="utf-8")
-    assert "可能な限りノードを迂回" in readme
-    assert "そのIssueを起点として伸びる線を強調" in readme
 
 
 def test_browser_closed_issue_switch_requests_server_side_state_scope() -> None:
     html = Path("gui/yura_issue_graph/static/index.html").read_text(encoding="utf-8")
 
     assert 'id="includeClosed"' in html
-    assert "include_closed=${includeClosedValue ? 'true' : 'false'}" in html
+    assert "include_closed=${includeClosedValue?'true':'false'}" in html
     assert "includeClosed.addEventListener('change',load)" in html
     assert "Closedも表示" in html
