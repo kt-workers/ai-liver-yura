@@ -93,7 +93,11 @@ def _validated_context(*, user_input: str = "楽しい？") -> ResponseContext:
     )
 
 
-def _response(speech: str = "今は楽しくないかな。") -> CharacterResponse:
+def _response(
+    speech: str = "今は楽しくないかな。",
+    *,
+    realizations: tuple[str, ...] = ("proposition:0:joy",),
+) -> CharacterResponse:
     return CharacterResponse(
         speech=speech,
         expression="neutral",
@@ -103,11 +107,14 @@ def _response(speech: str = "今は楽しくないかな。") -> CharacterRespon
             emphasis=(),
             delivery_tags=("gentle",),
         ),
-        semantic_realizations=("proposition:0:joy",),
+        semantic_realizations=realizations,
     )
 
 
-def _accepted_payload() -> dict[str, object]:
+def _accepted_payload(
+    *,
+    realization_id: str = "proposition:0:joy",
+) -> dict[str, object]:
     return {
         "accepted": True,
         "reason": "semantic_realization_consistent",
@@ -120,6 +127,19 @@ def _accepted_payload() -> dict[str, object]:
             "concept_preserved": True,
             "unsupported_intensity_added": False,
         },
+        "realized_proposition_checks": [
+            {
+                "realization_id": realization_id,
+                "predicate_preserved": True,
+                "state_preserved": True,
+                "state_fidelity": "exact",
+                "certainty_preserved": True,
+                "concept_preserved": True,
+                "intensity_semantics_preserved": True,
+                "presence_only_counterfactual_equivalent": False,
+                "intensity_evidence_spans": [],
+            }
+        ],
         "surface_evidence": {"intensity_markers": []},
     }
 
@@ -378,12 +398,17 @@ def test_overview_with_supporting_intensity_does_not_reject_marker() -> None:
         "今は落ち着いてるよ。うれしさも、ちょっとある感じ。",
     ) == []
 
-    payload = _accepted_payload()
+    response = _response(
+        "今は落ち着いてるよ。うれしさも、ちょっとある感じ。",
+        realizations=("proposition:0:current_feeling",),
+    )
+    payload = _accepted_payload(realization_id="proposition:0:current_feeling")
     surface = payload["surface_evidence"]
     assert isinstance(surface, dict)
     surface["intensity_markers"] = ["ちょっと"]
     assert CharacterRealizationValidator._accepted_facet_differences(
         overview_plan,
+        response,
         payload,
     ) == []
 
@@ -418,11 +443,16 @@ def test_overview_without_any_intensity_still_rejects_marker() -> None:
         "今はかなり落ち着いてるよ。",
     ) == ["unsupported_intensity_markers:かなり"]
 
-    payload = _accepted_payload()
+    response = _response(
+        "今はかなり落ち着いてるよ。",
+        realizations=("proposition:0:current_feeling",),
+    )
+    payload = _accepted_payload(realization_id="proposition:0:current_feeling")
     surface = payload["surface_evidence"]
     assert isinstance(surface, dict)
     surface["intensity_markers"] = ["かなり"]
     assert CharacterRealizationValidator._accepted_facet_differences(
         overview_plan,
+        response,
         payload,
     ) == ["unsupported_intensity_markers:かなり"]
