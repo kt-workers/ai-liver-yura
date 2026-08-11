@@ -22,19 +22,19 @@ jobs:
           python -m pip install --disable-pip-version-check --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
-      - name: semantic a-f
+      - name: semantic p
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_semantic*.py' | sort | grep -Ev '/test_semantic_(character|utterance)' | awk -F/ '{n=$NF; c=substr(n,15,1); if (c >= "a" && c <= "f") print $0}'); test -z "$files" || pytest -x -q $files
-      - name: semantic g-m
+          files=$(find tests -type f -name 'test_semantic_p*.py' | sort); test -z "$files" || pytest -x -q $files
+      - name: semantic r
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_semantic*.py' | sort | grep -Ev '/test_semantic_(character|utterance)' | awk -F/ '{n=$NF; c=substr(n,15,1); if (c >= "g" && c <= "m") print $0}'); test -z "$files" || pytest -x -q $files
-      - name: semantic n-s
+          files=$(find tests -type f -name 'test_semantic_r*.py' | sort); test -z "$files" || pytest -x -q $files
+      - name: semantic s
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_semantic*.py' | sort | grep -Ev '/test_semantic_(character|utterance)' | awk -F/ '{n=$NF; c=substr(n,15,1); if (c >= "n" && c <= "s") print $0}'); test -z "$files" || pytest -x -q $files
-      - name: semantic t-z
+          files=$(find tests -type f -name 'test_semantic_s*.py' | sort); test -z "$files" || pytest -x -q $files
+      - name: semantic other n-s
         if: always()
         run: |
-          files=$(find tests -type f -name 'test_semantic*.py' | sort | grep -Ev '/test_semantic_(character|utterance)' | awk -F/ '{n=$NF; c=substr(n,15,1); if (c >= "t" && c <= "z") print $0}'); test -z "$files" || pytest -x -q $files
+          files=$(find tests -type f -name 'test_semantic*.py' | sort | grep -Ev '/test_semantic_(character|utterance|p|r|s)' | awk -F/ '{n=$NF; c=substr(n,15,1); if (c >= "n" && c <= "s") print $0}'); test -z "$files" || pytest -x -q $files
