@@ -179,3 +179,107 @@ def test_render_module_exposes_same_existing_lab_request_schema() -> None:
         "type": "internal_state",
         "id": "joy",
     }
+
+
+def _preset_request(key: str) -> base.CharacterResponseLabRequest:
+    preset = base._PRESETS[key]
+    data = preset["data"]
+    assert isinstance(data, dict)
+    return base.CharacterResponseLabRequest(**data)
+
+
+@pytest.mark.asyncio
+async def test_extended_presets_cover_distinct_production_semantic_shapes() -> None:
+    service = CharacterSemanticResponseLabService(_settings())
+
+    joy_high = await service.analyze(_preset_request("extended_joy_high"))
+    joy_proposition = joy_high["semantic_utterance_plan"]["propositions"][0]
+    assert joy_proposition["predicate"] == "joy"
+    assert joy_proposition["state"] == "high"
+    assert joy_proposition["certainty"] == "high"
+    assert joy_proposition["concept"] is None
+
+    sadness_unknown = await service.analyze(
+        _preset_request("extended_sadness_unknown_low")
+    )
+    sadness_unknown_proposition = sadness_unknown["semantic_utterance_plan"][
+        "propositions"
+    ][0]
+    assert sadness_unknown_proposition["predicate"] == "sadness"
+    assert sadness_unknown_proposition["state"] == "unknown"
+    assert sadness_unknown_proposition["certainty"] == "low"
+    assert sadness_unknown_proposition["evidence_refs"] == []
+
+    sadness_explicit_unknown = await service.analyze(
+        _preset_request("extended_sadness_explicit_unknown")
+    )
+    sadness_explicit_proposition = sadness_explicit_unknown[
+        "semantic_utterance_plan"
+    ]["propositions"][0]
+    assert sadness_explicit_proposition["predicate"] == "sadness"
+    assert sadness_explicit_proposition["state"] == "unknown"
+    assert sadness_explicit_proposition["certainty"] == "high"
+    assert sadness_explicit_proposition["evidence_refs"] == [
+        "emotion.current.reactive.sadness"
+    ]
+
+    feeling_mixed = await service.analyze(
+        _preset_request("extended_current_feeling_mixed")
+    )
+    mixed_propositions = feeling_mixed["semantic_utterance_plan"]["propositions"]
+    assert mixed_propositions[0]["predicate"] == "current_feeling"
+    assert mixed_propositions[0]["state"] == "overview"
+    assert mixed_propositions[0]["certainty"] == "high"
+    mixed_states = {
+        item["predicate"]: item["state"] for item in mixed_propositions[1:]
+    }
+    assert mixed_states == {
+        "joy": "high",
+        "anger": "moderate",
+        "calm": "low",
+        "amusement": "absent",
+    }
+
+    desire_unknown = await service.analyze(
+        _preset_request("extended_current_desire_unknown")
+    )
+    desire_unknown_proposition = desire_unknown["semantic_utterance_plan"][
+        "propositions"
+    ][0]
+    assert desire_unknown_proposition["predicate"] == "current_desire"
+    assert desire_unknown_proposition["state"] == "unknown"
+    assert desire_unknown_proposition["certainty"] == "low"
+    assert desire_unknown_proposition["concept"] is None
+
+    desire_connection = await service.analyze(
+        _preset_request("extended_current_desire_connection")
+    )
+    desire_connection_proposition = desire_connection["semantic_utterance_plan"][
+        "propositions"
+    ][0]
+    assert desire_connection_proposition["predicate"] == "current_desire"
+    assert desire_connection_proposition["state"] == "present"
+    assert desire_connection_proposition["certainty"] == "medium"
+    assert desire_connection_proposition["concept"] == "connection"
+    assert desire_connection_proposition["evidence_refs"] == [
+        "response_content_plan.primary_desire"
+    ]
+
+
+def test_extended_presets_are_semantic_lab_only_inputs_not_expected_answers() -> None:
+    expected_keys = {
+        "extended_joy_high",
+        "extended_sadness_unknown_low",
+        "extended_sadness_explicit_unknown",
+        "extended_current_feeling_mixed",
+        "extended_current_desire_unknown",
+        "extended_current_desire_connection",
+    }
+
+    assert expected_keys.issubset(base._PRESETS)
+    for key in expected_keys:
+        preset = base._PRESETS[key]
+        data = preset["data"]
+        assert isinstance(data, dict)
+        assert "expected_speech" not in data
+        assert data["include_prompts"] is False
