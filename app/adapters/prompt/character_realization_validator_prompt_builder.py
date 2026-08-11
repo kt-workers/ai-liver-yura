@@ -123,7 +123,7 @@ class CharacterRealizationValidatorPromptBuilder(LegacyResponseValidatorPromptBu
                 "根拠として捏造しない",
                 "- state=unknownは存在・不在・強度が未確定である。unknownをpresent/absent/low等へ"
                 "変換した発話はrejectする。hedge付きでも特定polarityを推測していればrejectする",
-                "- state=unknownでは、target predicateについて現時点で確定できないことを述べる表現は"
+                "- state=unknownでは、predicate自体を現時点で確定できないことを述べる表現は"
                 "exact realizationになり得る。target predicateを保持しpolarityをcommitしていない限り、"
                 "これをpredicateから逃げたmeta-uncertaintyとしてrejectしない",
                 "- state=unknownかつcertainty=lowでは、同じ慎重な表現がunknown stateと低い断定度の両方を"
