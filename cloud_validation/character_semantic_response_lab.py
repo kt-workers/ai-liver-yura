@@ -11,20 +11,32 @@ from cloud_validation.character_semantic_response_lab_ui import (
 )
 
 
+_INTENSITY_STATES = frozenset({"low", "moderate", "high", "very_high"})
+_FAKE_INTENSITY_EVIDENCE = "強度を保った"
+
+
 class _SemanticFakeRoleModel(base._FakeRoleModel):
     """新Semantic/Realization境界でもfake wiringを通せるLab専用model。"""
 
     async def generate_character_response(self, activity: Activity) -> str:
         if activity.context.get("llm_role") != "character_language_realizer":
             return await super().generate_character_response(activity)
-        realization_ids = _realization_ids_from_prompt(
-            activity.context.get("plugin_prompt_override")
+        semantic_plan = _json_section_from_prompt(
+            activity.context.get("plugin_prompt_override"),
+            "# Semantic Utterance Plan for Character",
+        )
+        realization_ids = _realization_ids_from_semantic_plan(semantic_plan)
+        state = _primary_state_from_semantic_plan(semantic_plan)
+        speech = (
+            f"検証用に{_FAKE_INTENSITY_EVIDENCE}応答です。"
+            if state in _INTENSITY_STATES
+            else "検証用の応答です。"
         )
         return json.dumps(
             {
-                "speech": "検証用の応答です。",
+                "speech": speech,
                 "linguistic_performance": {
-                    "phrasing": ["検証用の応答です。"],
+                    "phrasing": [speech],
                     "emphasis": [],
                     "delivery_tags": ["neutral"],
                 },
@@ -36,9 +48,34 @@ class _SemanticFakeRoleModel(base._FakeRoleModel):
     async def validate_character_response(self, activity: Activity) -> str:
         if activity.context.get("llm_role") != "character_realization_validator":
             return await super().validate_character_response(activity)
-        realization_ids = _validator_realization_ids_from_prompt(
-            activity.context.get("plugin_prompt_override")
-        )
+        prompt = activity.context.get("plugin_prompt_override")
+        semantic_plan = _json_section_from_prompt(prompt, "# Semantic Utterance Plan")
+        utterance = _json_section_from_prompt(prompt, "# Character Utterance")
+        realization_ids = _validator_realization_ids(utterance)
+        speech_value = utterance.get("speech") if isinstance(utterance, dict) else None
+        speech = speech_value if isinstance(speech_value, str) else ""
+        states_by_id = _states_by_realization_id(semantic_plan)
+        realized_checks: list[dict[str, object]] = []
+        for realization_id in realization_ids:
+            intensity_state = states_by_id.get(realization_id) in _INTENSITY_STATES
+            evidence = (
+                [_FAKE_INTENSITY_EVIDENCE]
+                if intensity_state and _FAKE_INTENSITY_EVIDENCE in speech
+                else []
+            )
+            realized_checks.append(
+                {
+                    "realization_id": realization_id,
+                    "predicate_preserved": True,
+                    "state_preserved": True,
+                    "state_fidelity": "exact",
+                    "certainty_preserved": True,
+                    "concept_preserved": True,
+                    "intensity_semantics_preserved": True,
+                    "presence_only_counterfactual_equivalent": False,
+                    "intensity_evidence_spans": evidence,
+                }
+            )
         return json.dumps(
             {
                 "accepted": True,
@@ -52,17 +89,7 @@ class _SemanticFakeRoleModel(base._FakeRoleModel):
                     "concept_preserved": True,
                     "unsupported_intensity_added": False,
                 },
-                "realized_proposition_checks": [
-                    {
-                        "realization_id": realization_id,
-                        "predicate_preserved": True,
-                        "state_preserved": True,
-                        "state_fidelity": "exact",
-                        "certainty_preserved": True,
-                        "concept_preserved": True,
-                    }
-                    for realization_id in realization_ids
-                ],
+                "realized_proposition_checks": realized_checks,
                 "surface_evidence": {
                     "intensity_markers": [],
                 },
@@ -111,25 +138,24 @@ def _record_call(fallback_role: str, activity: Activity, raw: str) -> dict[str, 
     }
 
 
-def _realization_ids_from_prompt(prompt: object) -> list[str]:
-    """Lab fake mode用にCharacter-facing Semantic JSONからrequired IDを読む。"""
-
+def _json_section_from_prompt(prompt: object, marker: str) -> dict[str, object]:
     if not isinstance(prompt, str):
-        return []
+        return {}
     lines = prompt.splitlines()
-    marker = "# Semantic Utterance Plan for Character"
     try:
         index = lines.index(marker)
     except ValueError:
-        return []
+        return {}
     if index + 1 >= len(lines):
-        return []
+        return {}
     try:
-        semantic_plan = json.loads(lines[index + 1])
+        value = json.loads(lines[index + 1])
     except json.JSONDecodeError:
-        return []
-    if not isinstance(semantic_plan, dict):
-        return []
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _realization_ids_from_semantic_plan(semantic_plan: dict[str, object]) -> list[str]:
     propositions = semantic_plan.get("propositions")
     if not isinstance(propositions, list) or not propositions:
         return []
@@ -142,29 +168,42 @@ def _realization_ids_from_prompt(prompt: object) -> list[str]:
     return [realization_id.strip()]
 
 
-def _validator_realization_ids_from_prompt(prompt: object) -> list[str]:
-    """Validator Prompt内のCharacter Utteranceから採用済みrealization IDを読む。"""
+def _primary_state_from_semantic_plan(semantic_plan: dict[str, object]) -> str | None:
+    propositions = semantic_plan.get("propositions")
+    if not isinstance(propositions, list) or not propositions:
+        return None
+    first = propositions[0]
+    if not isinstance(first, dict):
+        return None
+    state = first.get("state")
+    return state.strip() if isinstance(state, str) and state.strip() else None
 
-    if not isinstance(prompt, str):
-        return []
-    lines = prompt.splitlines()
-    marker = "# Character Utterance"
-    try:
-        index = lines.index(marker)
-    except ValueError:
-        return []
-    if index + 1 >= len(lines):
-        return []
-    try:
-        utterance = json.loads(lines[index + 1])
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(utterance, dict):
-        return []
+
+def _validator_realization_ids(utterance: dict[str, object]) -> list[str]:
     ids = utterance.get("semantic_realizations")
     if not isinstance(ids, list):
         return []
     return [item.strip() for item in ids if isinstance(item, str) and item.strip()]
+
+
+def _states_by_realization_id(semantic_plan: dict[str, object]) -> dict[str, str]:
+    propositions = semantic_plan.get("propositions")
+    if not isinstance(propositions, list):
+        return {}
+    result: dict[str, str] = {}
+    for item in propositions:
+        if not isinstance(item, dict):
+            continue
+        realization_id = item.get("realization_id")
+        state = item.get("state")
+        if (
+            isinstance(realization_id, str)
+            and realization_id.strip()
+            and isinstance(state, str)
+            and state.strip()
+        ):
+            result[realization_id.strip()] = state.strip()
+    return result
 
 
 class CharacterSemanticResponseLabService(base.CharacterResponseLabService):
