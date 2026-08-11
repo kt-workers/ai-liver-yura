@@ -25,6 +25,17 @@ _CHARACTER_UTTERANCE_KEYS = frozenset(
 _LINGUISTIC_PERFORMANCE_KEYS = frozenset(
     {"phrasing", "emphasis", "delivery_tags"}
 )
+_STATE_FIDELITY_FEEDBACK_TOKENS = (
+    "state_preserved",
+    "state_fidelity",
+    "state fidelity",
+    "strengthened",
+    "weakened",
+    "unknown_committed",
+    "polarity_changed",
+    "state_intensity_overstated",
+    "state_intensity_understated",
+)
 
 
 class CharacterLanguageRealizerService(AvatarPerformanceCharacterLlmService):
@@ -49,7 +60,7 @@ class CharacterLanguageRealizerService(AvatarPerformanceCharacterLlmService):
         prompt = self._prompt_builder.build(
             context,
             character_profile=self._character_profile,
-            correction=correction,
+            correction=self._normalize_state_fidelity_correction(correction),
         )
         # 新Language Realizer経路ではPrompt外のActivity Contextからraw stateを参照できないよう、
         # Model invocationへuser_input/full ResponseContext/Emotion/Drive/Activity payloadを渡さない。
@@ -184,3 +195,37 @@ class CharacterLanguageRealizerService(AvatarPerformanceCharacterLlmService):
             and plan.speech_act == "direct_answer"
             and plan.propositions
         )
+
+    @staticmethod
+    def _normalize_state_fidelity_correction(correction: str | None) -> str | None:
+        """Validatorのstate fidelity診断を既存Promptのrepair contractへ正規化する。"""
+
+        if not correction:
+            return correction
+        try:
+            value = json.loads(correction)
+        except json.JSONDecodeError:
+            return correction
+        if not isinstance(value, dict):
+            return correction
+
+        reason_value = value.get("reason")
+        reason = str(reason_value).strip() if reason_value is not None else ""
+        raw_differences = value.get("claim_differences")
+        differences = (
+            [item for item in raw_differences if isinstance(item, str)]
+            if isinstance(raw_differences, list)
+            else []
+        )
+        combined = " ".join((reason, *differences)).casefold()
+        if not any(token in combined for token in _STATE_FIDELITY_FEEDBACK_TOKENS):
+            return correction
+        if "state_preserved" in combined:
+            return correction
+
+        normalized = dict(value)
+        normalized["claim_differences"] = [
+            *differences,
+            "state_preserved=false: validator reported state fidelity mismatch",
+        ]
+        return json.dumps(normalized, ensure_ascii=False, default=str)
