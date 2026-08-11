@@ -72,26 +72,31 @@ def _response() -> CharacterResponse:
     )
 
 
-def test_validator_marks_primary_state_certainty_and_non_null_concept_as_required_facets() -> None:
+def test_validator_marks_primary_predicate_state_certainty_and_non_null_concept_as_required_facets() -> None:
     prompt = CharacterRealizationValidatorPromptBuilder().build(
         _context(),
         _response(),
     )
 
     assert '"required": true' in prompt
-    assert '"required_facets": ["state", "certainty", "concept"]' in prompt
-    assert "conceptを落として単なる存在表明だけに縮退した場合はreject" in prompt
+    assert '"required_facets": ["predicate", "state", "certainty", "concept"]' in prompt
+    assert '"if_realized_required_facets": ["predicate", "state", "certainty", "concept"]' in prompt
+    assert "predicate_preservedは内部英語ラベルがspeechに存在するかではなく" in prompt
+    assert "conceptを落として単なる『何かある』等の存在表明だけに縮退した場合はreject" in prompt
     assert "state=presentは存在のみで強度を含まない" in prompt
     assert "『少し』『かなり』等の強度を追加した場合はreject" in prompt
     assert "medium/lowを強度へ変換せず" in prompt
     assert "response_content_plan.primary_desire" not in prompt
 
 
-def test_semantic_realization_id_does_not_override_required_facet_validation_rule() -> None:
+def test_semantic_realization_id_requires_per_proposition_facet_validation() -> None:
     prompt = CharacterRealizationValidatorPromptBuilder().build(
         _context(),
         _response(),
     )
 
     assert '"semantic_realizations": ["proposition:0:current_desire"]' in prompt
-    assert "IDがあるだけでspeechの意味整合を自動承認しない" in prompt
+    assert "IDがあるだけで意味整合を自動承認せず" in prompt
+    assert "realized_proposition_checksで個別検証する" in prompt
+    assert "各IDについてちょうど1件返す" in prompt
+    assert '"state_fidelity":"exact"' in prompt
