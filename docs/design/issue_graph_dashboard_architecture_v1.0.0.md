@@ -149,7 +149,21 @@ Issue数が増えた状態で単純なBezier曲線をsource右端からtarget左
 
 目標は「全線交差ゼロ」ではなく、**edgeがIssue nodeの裏へ隠れて接続先を追えなくなる状態を原則回避すること**である。edge同士の交差・重なりは許容するが、将来はedge lane分離で追加改善できる。
 
-### 6.3 Node
+### 6.3 Selected node edge focus
+
+nodeをclickして詳細panelを表示した場合、選択Issueを起点とするedgeを強調する。
+
+- `edge.source === selected issue number` の親子・依存edgeをforegroundとして描画する
+- foreground edgeは通常より高いopacity・太いstrokeとする
+- foreground edgeのarrow headも同じ視覚強度にする
+- 選択中はその他のedgeを低opacityにして背景化する
+- 強調対象は「選択Issueから伸びる線」とし、選択Issueへ入ってくるedgeは通常の背景edgeとして扱う
+- 選択解除時は通常表示へ戻す
+- edge kindの意味は維持し、親子は実線、依存は破線のまま強調する
+
+これにより、詳細を見ているIssueから「次にどのIssueへ枝分かれしているか」を視線で追えるようにする。
+
+### 6.4 Node
 
 常時表示:
 
@@ -160,7 +174,7 @@ Issue数が増えた状態で単純なBezier曲線をsource右端からtarget左
 
 Status は色だけに依存せず text badge を必ず表示する。
 
-### 6.4 Detail panel
+### 6.5 Detail panel
 
 node click で以下を表示する。
 
@@ -177,7 +191,7 @@ node click で以下を表示する。
 - related PR
 - body summary
 
-### 6.5 Filter
+### 6.6 Filter
 
 - text search: Issue number / title
 - Status filter
@@ -259,6 +273,7 @@ Verification中はDraft PRのhead `feature/issue-graph-dashboard` を明示的�
 - Blueprint上でtokenが `sync: false` である
 - Blueprintのhealth checkが `/api/health` を参照する
 - Browser実装にnode obstacle routingとBezier fallbackが存在する
+- selected issueをsourceとするedge focusが存在する
 - 親子と依存の形状差を維持する
 
 実画面:
@@ -269,6 +284,7 @@ Verification中はDraft PRのhead `feature/issue-graph-dashboard` を明示的�
 - collapse
 - node click detail
 - edgeが途中のIssue nodeを原則回避して描画される
+- 選択Issueから伸びるedgeが強調され、その他のedgeが背景化する
 - search / filter
 - local 起動
 - Render Blueprint sync / deploy
