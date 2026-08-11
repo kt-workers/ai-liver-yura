@@ -282,6 +282,10 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         planned_ids = CharacterRealizationValidator._planned_realization_ids(plan)
         if any(realization_id not in planned_ids for realization_id in expected_ids):
             return None
+        propositions_by_id = {
+            f"proposition:{index}:{proposition.predicate}": proposition
+            for index, proposition in enumerate(plan.propositions)
+        }
 
         checks_by_id: dict[str, dict[str, object]] = {}
         for item in realized_checks:
@@ -300,6 +304,8 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                 "state_preserved",
                 "certainty_preserved",
                 "concept_preserved",
+                "intensity_semantics_preserved",
+                "presence_only_counterfactual_equivalent",
             ):
                 if not isinstance(item.get(name), bool):
                     return None
@@ -307,6 +313,11 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             if (
                 not isinstance(state_fidelity, str)
                 or state_fidelity not in _STATE_FIDELITY_VALUES
+            ):
+                return None
+            evidence_value = item.get("intensity_evidence_spans")
+            if not isinstance(evidence_value, list) or any(
+                not isinstance(span, str) for span in evidence_value
             ):
                 return None
             checks_by_id[realization_id] = item
@@ -341,6 +352,42 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             state_fidelity = item["state_fidelity"]
             if state_fidelity != "exact":
                 differences.append(f"{realization_id}:state_fidelity:{state_fidelity}")
+
+            evidence_spans = [
+                span.strip()
+                for span in item["intensity_evidence_spans"]
+                if isinstance(span, str) and span.strip()
+            ]
+            proposition = propositions_by_id[realization_id]
+            if proposition.state in _INTENSITY_STATES:
+                if item["intensity_semantics_preserved"] is False:
+                    differences.append(
+                        f"{realization_id}:intensity_semantics_preserved"
+                    )
+                if item["presence_only_counterfactual_equivalent"] is True:
+                    differences.append(
+                        f"{realization_id}:presence_only_counterfactual_equivalent"
+                    )
+                if not evidence_spans:
+                    differences.append(f"{realization_id}:intensity_evidence_missing")
+                for span in evidence_spans:
+                    if span not in response.speech:
+                        differences.append(
+                            f"{realization_id}:intensity_evidence_not_in_speech:{span}"
+                        )
+            else:
+                if item["intensity_semantics_preserved"] is not True:
+                    differences.append(
+                        f"{realization_id}:non_intensity_semantics_flag_invalid"
+                    )
+                if item["presence_only_counterfactual_equivalent"] is not False:
+                    differences.append(
+                        f"{realization_id}:non_intensity_counterfactual_flag_invalid"
+                    )
+                if evidence_spans:
+                    differences.append(
+                        f"{realization_id}:unexpected_intensity_evidence"
+                    )
 
         if not CharacterRealizationValidator._plan_has_intensity_state(plan) and intensity_markers:
             differences.append(
