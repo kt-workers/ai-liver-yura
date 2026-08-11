@@ -115,6 +115,17 @@ def _source_and_context(
     return source, context, plan
 
 
+def _predicate_evidence(realization_id: str) -> tuple[str, ...]:
+    return {
+        "proposition:0:joy": ("楽しい",),
+        "proposition:0:sadness": ("悲しい",),
+        "proposition:0:current_feeling": ("気分",),
+        "proposition:1:joy": ("うれし",),
+        "proposition:2:anger": ("腹立たし",),
+        "proposition:3:calm": ("穏やか",),
+    }.get(realization_id, ())
+
+
 def _check(
     realization_id: str,
     state_fidelity: str = "exact",
@@ -122,14 +133,18 @@ def _check(
     intensity_semantics_preserved: bool = True,
     presence_only_counterfactual_equivalent: bool = False,
     intensity_evidence_spans: tuple[str, ...] = (),
+    certainty_evidence_spans: tuple[str, ...] = (),
 ) -> dict[str, object]:
     return {
         "realization_id": realization_id,
         "predicate_preserved": True,
+        "predicate_evidence_spans": list(_predicate_evidence(realization_id)),
         "state_preserved": state_fidelity == "exact",
         "state_fidelity": state_fidelity,
         "certainty_preserved": True,
+        "certainty_evidence_spans": list(certainty_evidence_spans),
         "concept_preserved": True,
+        "concept_evidence_spans": [],
         "intensity_semantics_preserved": intensity_semantics_preserved,
         "presence_only_counterfactual_equivalent": (
             presence_only_counterfactual_equivalent
@@ -239,7 +254,13 @@ async def test_missing_sadness_unknown_committed_diagnosis_is_rejected() -> None
         speech="ううん、悲しいとは言えないかな。",
         realization_ids=("proposition:0:sadness",),
         validation_payload=_accepted_payload(
-            [_check("proposition:0:sadness", "unknown_committed")]
+            [
+                _check(
+                    "proposition:0:sadness",
+                    "unknown_committed",
+                    certainty_evidence_spans=("かな",),
+                )
+            ]
         ),
     )
 
@@ -373,14 +394,14 @@ async def test_all_adopted_mixed_propositions_exact_accept_and_model_boundaries_
         _check("proposition:1:joy", intensity_evidence_spans=("かなり",)),
         _check(
             "proposition:2:anger",
-            intensity_evidence_spans=("それなりに",),
+            intensity_evidence_spans=("そこそこ",),
         ),
     ]
 
     _, validation, character_model, validator_model = await _realize_and_validate(
         source,
         context,
-        speech="今はかなりうれしくて、腹立たしさもそれなりにある気分だよ。",
+        speech="今はかなりうれしくて、腹立たしさもそこそこある気分だよ。",
         realization_ids=realization_ids,
         validation_payload=_accepted_payload(checks),
     )
