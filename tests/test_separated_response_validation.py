@@ -48,10 +48,13 @@ def _accepted_payload(*, intensity_markers: list[str] | None = None) -> dict[str
             {
                 "realization_id": "proposition:0:joy",
                 "predicate_preserved": True,
+                "predicate_evidence_spans": ["楽しくない"],
                 "state_preserved": True,
                 "state_fidelity": "exact",
                 "certainty_preserved": True,
+                "certainty_evidence_spans": [],
                 "concept_preserved": True,
+                "concept_evidence_spans": [],
                 "intensity_semantics_preserved": True,
                 "presence_only_counterfactual_equivalent": False,
                 "intensity_evidence_spans": [],
