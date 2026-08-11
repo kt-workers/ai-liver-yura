@@ -41,12 +41,37 @@ class _CharacterModel:
 
 
 class _ValidatorModel:
-    def __init__(self, payload: dict[str, object]) -> None:
+    def __init__(
+        self,
+        payload: dict[str, object],
+        *,
+        observed_state: str,
+        state_evidence: str,
+    ) -> None:
         self.payload = payload
+        self.observed_state = observed_state
+        self.state_evidence = state_evidence
         self.activities: list[Activity] = []
 
     async def validate_character_response(self, activity: Activity) -> str:
         self.activities.append(activity)
+        if activity.context.get("llm_role") == "character_realization_observer":
+            return json.dumps(
+                {
+                    "observations": [
+                        {
+                            "realization_id": "proposition:0:joy",
+                            "predicate_realized": True,
+                            "observed_state": self.observed_state,
+                            "observed_certainty": "high",
+                            "predicate_evidence_spans": ["楽しい"],
+                            "state_evidence_spans": [self.state_evidence],
+                            "certainty_evidence_spans": [],
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            )
         return json.dumps(self.payload, ensure_ascii=False)
 
 
@@ -152,7 +177,13 @@ def _validation_payload(
     }
 
 
-async def _run(speech: str, payload: dict[str, object]):
+async def _run(
+    speech: str,
+    payload: dict[str, object],
+    *,
+    observed_state: str,
+    state_evidence: str,
+):
     source, context = _source_and_context()
     character_model = _CharacterModel(speech)
     response = await CharacterLanguageRealizerService(
@@ -161,7 +192,11 @@ async def _run(speech: str, payload: dict[str, object]):
         _profile(),
     ).generate(source, context)
 
-    validator_model = _ValidatorModel(payload)
+    validator_model = _ValidatorModel(
+        payload,
+        observed_state=observed_state,
+        state_evidence=state_evidence,
+    )
     validation = await CharacterRealizationValidator(
         model=validator_model,
         prompt_builder=CharacterRealizationValidatorPromptBuilder(),
@@ -170,7 +205,7 @@ async def _run(speech: str, payload: dict[str, object]):
 
 
 @pytest.mark.asyncio
-async def test_e1_bare_presence_false_exact_is_rejected_by_runtime_evidence_gate() -> None:
+async def test_e1_bare_presence_is_rejected_by_independent_observer() -> None:
     validation, character_model, validator_model = await _run(
         "うん、楽しいよ。",
         _validation_payload(
@@ -179,33 +214,44 @@ async def test_e1_bare_presence_false_exact_is_rejected_by_runtime_evidence_gate
             presence_only_counterfactual_equivalent=False,
             evidence_spans=(),
         ),
+        observed_state="present",
+        state_evidence="楽しい",
     )
 
     assert validation.accepted is False
-    assert validation.reason == "semantic_facet_validation_failed"
-    assert "proposition:0:joy:intensity_evidence_missing" in validation.claim_differences
+    assert validation.reason == "observed_semantic_state_mismatch"
+    assert (
+        "proposition:0:joy:observed_state_mismatch:expected=high:observed=present"
+        in validation.claim_differences
+    )
     assert len(character_model.activities) == 1
     assert len(validator_model.activities) == 1
+    assert validator_model.activities[0].context["llm_role"] == "character_realization_observer"
 
 
 @pytest.mark.asyncio
-async def test_e1_presence_only_counterfactual_diagnosis_is_rejected() -> None:
-    validation, _, _ = await _run(
-        "うん、楽しいよ。",
+async def test_plan_aware_counterfactual_diagnosis_is_rejected_after_observer_passes() -> None:
+    validation, _, validator_model = await _run(
+        "うん、かなり楽しいよ。",
         _validation_payload(
             state_fidelity="weakened",
             intensity_semantics_preserved=False,
             presence_only_counterfactual_equivalent=True,
+            evidence_spans=("かなり",),
         ),
+        observed_state="high",
+        state_evidence="かなり楽しい",
     )
 
     assert validation.accepted is False
+    assert validation.reason == "semantic_facet_validation_failed"
     assert "proposition:0:joy:state_fidelity:weakened" in validation.claim_differences
     assert "proposition:0:joy:intensity_semantics_preserved" in validation.claim_differences
     assert (
         "proposition:0:joy:presence_only_counterfactual_equivalent"
         in validation.claim_differences
     )
+    assert len(validator_model.activities) == 2
 
 
 @pytest.mark.asyncio
@@ -218,10 +264,13 @@ async def test_e1_exact_with_actual_speech_evidence_accepts_and_boundaries_are_s
             presence_only_counterfactual_equivalent=False,
             evidence_spans=("すごく",),
         ),
+        observed_state="high",
+        state_evidence="すごく楽しい",
     )
 
     assert validation.accepted is True
     assert validation.reason == "semantic_realization_consistent"
+    assert len(validator_model.activities) == 2
 
     forbidden = {
         "user_input",
@@ -231,6 +280,10 @@ async def test_e1_exact_with_actual_speech_evidence_accepts_and_boundaries_are_s
         "event_payload",
         "activity_execution_result",
     }
-    for invocation in (character_model.activities[0], validator_model.activities[0]):
+    for invocation in (
+        character_model.activities[0],
+        validator_model.activities[0],
+        validator_model.activities[1],
+    ):
         assert invocation.context["semantic_boundary"] is True
         assert forbidden.isdisjoint(invocation.context.keys())
