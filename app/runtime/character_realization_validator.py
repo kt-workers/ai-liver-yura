@@ -16,6 +16,19 @@ from app.utils.llm_trace import build_llm_trace_context
 
 _INTERNAL_STATE_TYPES = frozenset({"internal_state", "agent_internal_state"})
 _INTENSITY_STATES = frozenset({"low", "moderate", "high", "very_high"})
+_OBSERVED_STATE_VALUES = frozenset(
+    {
+        "absent",
+        "low",
+        "moderate",
+        "high",
+        "very_high",
+        "present",
+        "overview",
+        "unknown",
+        "omitted",
+    }
+)
 _STATE_FIDELITY_VALUES = frozenset(
     {
         "exact",
@@ -31,44 +44,6 @@ _FACET_EVIDENCE_FIELDS = (
     "certainty_evidence_spans",
     "concept_evidence_spans",
     "intensity_evidence_spans",
-)
-_EXPLICIT_INTENSITY_MARKERS = tuple(
-    sorted(
-        {
-            "ほんの少し",
-            "ごくわずか",
-            "少しだけ",
-            "ものすごく",
-            "めちゃくちゃ",
-            "非常に",
-            "かなり",
-            "とても",
-            "すごく",
-            "だいぶ",
-            "相当",
-            "そこそこ",
-            "ほどほど",
-            "ちょっと",
-            "わりと",
-            "割と",
-            "結構",
-            "控えめ",
-            "ほとんど",
-            "わずか",
-            "低め",
-            "弱め",
-            "高め",
-            "強め",
-            "やや",
-            "少し",
-            "低い",
-            "弱い",
-            "高い",
-            "強い",
-        },
-        key=len,
-        reverse=True,
-    )
 )
 
 
@@ -142,20 +117,13 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             self._trace_result(source, result)
             return result
 
-        deterministic_surface_differences = self._deterministic_surface_differences(
-            plan,
-            response.speech,
-        )
+        # Semantic Plan適用経路では、modelがなければ自然言語意味保持を確認できない。
+        # finite lexical fallbackへ戻さずfail closedする。
         if self._model is None:
             result = ResponseValidationResult(
-                accepted=not deterministic_surface_differences,
-                reason=(
-                    "semantic_realization_structure_valid"
-                    if not deterministic_surface_differences
-                    else "semantic_facet_validation_failed"
-                ),
+                accepted=False,
+                reason="realization_validator_model_unavailable",
                 extracted_claims=extracted_claims,
-                claim_differences=tuple(deterministic_surface_differences),
             )
             self._trace_result(source, result)
             return result
@@ -217,10 +185,6 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                 self._trace_result(source, result)
                 return result
             differences.extend(facet_differences)
-
-        for difference in deterministic_surface_differences:
-            if difference not in differences:
-                differences.append(difference)
 
         accepted = model_accepted and not differences
         reason = value["reason"].strip()
@@ -318,7 +282,8 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             realization_id = realization_id.strip()
             if realization_id in checks_by_id:
                 return None
-            if realization_id not in planned_ids:
+            proposition = propositions_by_id.get(realization_id)
+            if proposition is None:
                 return None
             for name in (
                 "predicate_preserved",
@@ -334,6 +299,19 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             if (
                 not isinstance(state_fidelity, str)
                 or state_fidelity not in _STATE_FIDELITY_VALUES
+            ):
+                return None
+
+            observed_state = item.get("observed_state")
+            if proposition.state in _INTENSITY_STATES:
+                if (
+                    not isinstance(observed_state, str)
+                    or observed_state not in _OBSERVED_STATE_VALUES
+                ):
+                    return None
+            elif observed_state is not None and (
+                not isinstance(observed_state, str)
+                or observed_state not in _OBSERVED_STATE_VALUES
             ):
                 return None
 
@@ -369,6 +347,8 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         if checks["unsupported_intensity_added"] is True:
             differences.append("unsupported_intensity_added")
 
+        # Modelが報告したsurface spanが実際のspeechに存在することだけを確認する。
+        # marker文字列そのものからRuntimeが意味カテゴリを再推定してはいけない。
         for marker in surface_markers:
             if marker not in response.speech:
                 differences.append(f"surface_intensity_marker_not_in_speech:{marker}")
@@ -389,6 +369,13 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             state_fidelity = item["state_fidelity"]
             if state_fidelity != "exact":
                 differences.append(f"{realization_id}:state_fidelity:{state_fidelity}")
+
+            observed_state = item.get("observed_state")
+            if isinstance(observed_state, str) and observed_state != proposition.state:
+                differences.append(
+                    f"{realization_id}:observed_state_mismatch:"
+                    f"expected={proposition.state}:observed={observed_state}"
+                )
 
             predicate_spans = evidence["predicate_evidence_spans"]
             certainty_spans = evidence["certainty_evidence_spans"]
@@ -450,12 +437,6 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                     intensity_spans,
                     response.speech,
                 )
-                if intensity_spans and not CharacterRealizationValidator._has_explicit_degree_evidence(
-                    intensity_spans
-                ):
-                    differences.append(
-                        f"{realization_id}:intensity_evidence_not_explicit_degree"
-                    )
             else:
                 if item["intensity_semantics_preserved"] is not True:
                     differences.append(
@@ -487,45 +468,11 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                 )
 
     @staticmethod
-    def _has_explicit_degree_evidence(spans: list[str]) -> bool:
-        return any(
-            CharacterRealizationValidator._explicit_intensity_markers(span)
-            for span in spans
-        )
-
-    @staticmethod
-    def _deterministic_surface_differences(
-        plan: SemanticUtterancePlan,
-        speech: str,
-    ) -> list[str]:
-        if CharacterRealizationValidator._plan_has_intensity_state(plan):
-            return []
-        markers = CharacterRealizationValidator._explicit_intensity_markers(speech)
-        if not markers:
-            return []
-        return ["unsupported_intensity_markers:" + ",".join(markers)]
-
-    @staticmethod
     def _planned_realization_ids(plan: SemanticUtterancePlan) -> set[str]:
         return {
             f"proposition:{index}:{proposition.predicate}"
             for index, proposition in enumerate(plan.propositions)
         }
-
-    @staticmethod
-    def _plan_has_intensity_state(plan: SemanticUtterancePlan) -> bool:
-        return any(proposition.state in _INTENSITY_STATES for proposition in plan.propositions)
-
-    @staticmethod
-    def _explicit_intensity_markers(speech: str) -> list[str]:
-        remaining = speech
-        found: list[str] = []
-        for marker in _EXPLICIT_INTENSITY_MARKERS:
-            if marker not in remaining:
-                continue
-            found.append(marker)
-            remaining = remaining.replace(marker, " " * len(marker))
-        return found
 
     @staticmethod
     def _uses_realization_validation(
