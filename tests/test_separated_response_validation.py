@@ -44,6 +44,16 @@ def _accepted_payload(*, intensity_markers: list[str] | None = None) -> dict[str
             "concept_preserved": True,
             "unsupported_intensity_added": False,
         },
+        "realized_proposition_checks": [
+            {
+                "realization_id": "proposition:0:joy",
+                "predicate_preserved": True,
+                "state_preserved": True,
+                "state_fidelity": "exact",
+                "certainty_preserved": True,
+                "concept_preserved": True,
+            }
+        ],
         "surface_evidence": {
             "intensity_markers": intensity_markers or [],
         },
