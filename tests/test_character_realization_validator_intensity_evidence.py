@@ -104,10 +104,13 @@ def _payload(
             {
                 "realization_id": "proposition:0:joy",
                 "predicate_preserved": True,
+                "predicate_evidence_spans": ["楽しい"],
                 "state_preserved": True,
                 "state_fidelity": state_fidelity,
                 "certainty_preserved": True,
+                "certainty_evidence_spans": [],
                 "concept_preserved": True,
+                "concept_evidence_spans": [],
                 "intensity_semantics_preserved": intensity_semantics_preserved,
                 "presence_only_counterfactual_equivalent": (
                     presence_only_counterfactual_equivalent
