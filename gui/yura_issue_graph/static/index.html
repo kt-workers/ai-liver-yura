@@ -51,6 +51,12 @@
     #world { position:absolute; left:0; top:0; transform-origin:0 0; }
     #edges { position:absolute; left:0; top:0; overflow:visible; pointer-events:none; }
     #nodes { position:absolute; left:0; top:0; }
+    .edge { fill:none; stroke:var(--edge); stroke-linecap:round; stroke-linejoin:round; transition:opacity .16s ease, stroke-width .16s ease; }
+    .edge.parent { stroke-width:2.15; opacity:.48; }
+    .edge.dependency { stroke-width:1.75; stroke-dasharray:8 7; opacity:.34; }
+    .edge.dimmed { opacity:.10; }
+    .edge.focused { stroke-width:4; opacity:1; }
+    .edge.dependency.focused { stroke-width:3.4; opacity:1; }
     .node { position:absolute; width:260px; min-height:106px; border:2px solid var(--border); border-left-width:7px; border-radius:16px; background:var(--panel-solid); color:var(--text); padding:12px 38px 12px 13px; box-shadow:0 5px 16px rgba(20,35,45,.08); text-align:left; cursor:pointer; }
     .node:hover,.node.selected { outline:3px solid color-mix(in srgb, var(--accent) 50%, transparent); }
     .node .number { font-weight:750; font-size:13px; }
@@ -128,6 +134,7 @@
 <script>
 (() => {
   const NODE_W = 260, NODE_H = 118, COL_GAP = 100, ROW_GAP = 34, MARGIN = 60;
+  const OBSTACLE_PAD = 14, PORT_LEAD = 22, ROUTE_MARGIN = 28;
   const activeStatuses = new Set(['In progress','Review','Verification','Blocked']);
   const state = { data:null, selected:null, collapsed:new Set(), scale:1, tx:40, ty:40, dragging:false, lastX:0, lastY:0 };
   const viewport = document.getElementById('viewport');
@@ -230,6 +237,172 @@
     return { positions, width:MARGIN*2+(maxDepth+1)*NODE_W+maxDepth*COL_GAP, height:MARGIN*2+maxRows*NODE_H+(maxRows-1)*ROW_GAP };
   }
 
+  function obstacleRects(layout, visible, source, target) {
+    const rects=[];
+    for (const number of visible) {
+      if (number === source || number === target) continue;
+      const p=layout.positions.get(number); if(!p) continue;
+      rects.push({
+        left:p.x-OBSTACLE_PAD,
+        right:p.x+NODE_W+OBSTACLE_PAD,
+        top:p.y-OBSTACLE_PAD,
+        bottom:p.y+NODE_H+OBSTACLE_PAD,
+      });
+    }
+    return rects;
+  }
+
+  function pointInsideRect(point, rect) {
+    return point.x > rect.left && point.x < rect.right && point.y > rect.top && point.y < rect.bottom;
+  }
+
+  function segmentHitsRect(a,b,rect) {
+    if (a.x === b.x) {
+      if (a.x <= rect.left || a.x >= rect.right) return false;
+      const lo=Math.min(a.y,b.y), hi=Math.max(a.y,b.y);
+      return hi > rect.top && lo < rect.bottom;
+    }
+    if (a.y === b.y) {
+      if (a.y <= rect.top || a.y >= rect.bottom) return false;
+      const lo=Math.min(a.x,b.x), hi=Math.max(a.x,b.x);
+      return hi > rect.left && lo < rect.right;
+    }
+    return true;
+  }
+
+  function segmentClear(a,b,rects) {
+    return !rects.some(rect=>segmentHitsRect(a,b,rect));
+  }
+
+  function uniqueSorted(values) {
+    return [...new Set(values.map(value=>Math.round(value*100)/100))].sort((a,b)=>a-b);
+  }
+
+  function buildRoutingLattice(layout, visible, source, target, start, goal) {
+    const rects=obstacleRects(layout,visible,source,target);
+    const xs=[start.x,goal.x,ROUTE_MARGIN,layout.width-ROUTE_MARGIN];
+    const ys=[start.y,goal.y,ROUTE_MARGIN,layout.height-ROUTE_MARGIN];
+    for (const rect of rects) {
+      xs.push(rect.left,rect.right);
+      ys.push(rect.top,rect.bottom);
+    }
+    return {xs:uniqueSorted(xs),ys:uniqueSorted(ys),rects};
+  }
+
+  function pointKey(ix,iy,dir) { return `${ix}:${iy}:${dir}`; }
+
+  function routeEdgeAvoidingNodes(edge,layout,visible) {
+    const a=layout.positions.get(edge.source), b=layout.positions.get(edge.target);
+    if(!a||!b) return null;
+    const sourcePort={x:a.x+NODE_W,y:a.y+NODE_H/2};
+    const targetPort={x:b.x,y:b.y+NODE_H/2};
+    const start={x:sourcePort.x+PORT_LEAD,y:sourcePort.y};
+    const goal={x:targetPort.x-PORT_LEAD,y:targetPort.y};
+    const lattice=buildRoutingLattice(layout,visible,edge.source,edge.target,start,goal);
+    const sx=lattice.xs.indexOf(start.x), sy=lattice.ys.indexOf(start.y);
+    const gx=lattice.xs.indexOf(goal.x), gy=lattice.ys.indexOf(goal.y);
+    if(sx<0||sy<0||gx<0||gy<0) return null;
+
+    const blocked=(ix,iy)=>lattice.rects.some(rect=>pointInsideRect({x:lattice.xs[ix],y:lattice.ys[iy]},rect));
+    const open=[];
+    const best=new Map();
+    const parent=new Map();
+    const directions=[[1,0,'h'],[-1,0,'h'],[0,1,'v'],[0,-1,'v']];
+    const heuristic=(ix,iy)=>Math.abs(lattice.xs[ix]-goal.x)+Math.abs(lattice.ys[iy]-goal.y);
+
+    const startKey=pointKey(sx,sy,'s');
+    open.push({ix:sx,iy:sy,dir:'s',g:0,f:heuristic(sx,sy),key:startKey});
+    best.set(startKey,0);
+    let endState=null;
+
+    while(open.length) {
+      open.sort((p,q)=>p.f-q.f);
+      const current=open.shift();
+      if(current.ix===gx&&current.iy===gy){endState=current;break;}
+      const currentPoint={x:lattice.xs[current.ix],y:lattice.ys[current.iy]};
+      for(const [dx,dy,dir] of directions){
+        const nx=current.ix+dx, ny=current.iy+dy;
+        if(nx<0||ny<0||nx>=lattice.xs.length||ny>=lattice.ys.length) continue;
+        if(blocked(nx,ny) && !(nx===gx&&ny===gy)) continue;
+        const nextPoint={x:lattice.xs[nx],y:lattice.ys[ny]};
+        if(!segmentClear(currentPoint,nextPoint,lattice.rects)) continue;
+        const distance=Math.abs(nextPoint.x-currentPoint.x)+Math.abs(nextPoint.y-currentPoint.y);
+        const turnPenalty=current.dir!=='s'&&current.dir!==dir?22:0;
+        const ng=current.g+distance+turnPenalty;
+        const key=pointKey(nx,ny,dir);
+        if(ng>=(best.get(key)??Infinity)) continue;
+        best.set(key,ng);
+        parent.set(key,current.key);
+        open.push({ix:nx,iy:ny,dir,g:ng,f:ng+heuristic(nx,ny),key});
+      }
+    }
+    if(!endState) return null;
+
+    const keyed=new Map();
+    for(const [key] of best){
+      const [ix,iy,dir]=key.split(':');
+      keyed.set(key,{ix:Number(ix),iy:Number(iy),dir});
+    }
+    const route=[];
+    let key=endState.key;
+    while(key){
+      const item=keyed.get(key);
+      if(!item) break;
+      route.push({x:lattice.xs[item.ix],y:lattice.ys[item.iy]});
+      key=parent.get(key);
+    }
+    route.reverse();
+    const points=[sourcePort,start,...route.slice(1,-1),goal,targetPort];
+    return simplifyRoute(points);
+  }
+
+  function simplifyRoute(points) {
+    const dedup=[];
+    for(const point of points){
+      const last=dedup[dedup.length-1];
+      if(!last||last.x!==point.x||last.y!==point.y) dedup.push(point);
+    }
+    if(dedup.length<3) return dedup;
+    const result=[dedup[0]];
+    for(let i=1;i<dedup.length-1;i++){
+      const prev=result[result.length-1], cur=dedup[i], next=dedup[i+1];
+      if((prev.x===cur.x&&cur.x===next.x)||(prev.y===cur.y&&cur.y===next.y)) continue;
+      result.push(cur);
+    }
+    result.push(dedup[dedup.length-1]);
+    return result;
+  }
+
+  function roundedOrthogonalPath(points,radius=9) {
+    if(!points?.length) return '';
+    if(points.length===1) return `M ${points[0].x} ${points[0].y}`;
+    let d=`M ${points[0].x} ${points[0].y}`;
+    for(let i=1;i<points.length-1;i++){
+      const prev=points[i-1], cur=points[i], next=points[i+1];
+      const inLen=Math.abs(cur.x-prev.x)+Math.abs(cur.y-prev.y);
+      const outLen=Math.abs(next.x-cur.x)+Math.abs(next.y-cur.y);
+      const r=Math.min(radius,inLen/2,outLen/2);
+      const before={
+        x:cur.x+(prev.x-cur.x)*(r/inLen||0),
+        y:cur.y+(prev.y-cur.y)*(r/inLen||0),
+      };
+      const after={
+        x:cur.x+(next.x-cur.x)*(r/outLen||0),
+        y:cur.y+(next.y-cur.y)*(r/outLen||0),
+      };
+      d+=` L ${before.x} ${before.y} Q ${cur.x} ${cur.y} ${after.x} ${after.y}`;
+    }
+    const last=points[points.length-1];
+    return d+` L ${last.x} ${last.y}`;
+  }
+
+  function fallbackBezier(edge,layout) {
+    const a=layout.positions.get(edge.source), b=layout.positions.get(edge.target); if(!a||!b)return '';
+    const sx=a.x+NODE_W, sy=a.y+NODE_H/2, tx=b.x, ty=b.y+NODE_H/2, dx=Math.max(55,Math.abs(tx-sx)*.48);
+    const c1x=sx+(tx>=sx?dx:-dx), c2x=tx-(tx>=sx?dx:-dx);
+    return `M ${sx} ${sy} C ${c1x} ${sy}, ${c2x} ${ty}, ${tx} ${ty}`;
+  }
+
   function render() {
     if (!state.data) return;
     const map = nodeMap();
@@ -238,18 +411,21 @@
     const layout = computeLayout(map,visible);
     world.style.width = `${layout.width}px`; world.style.height = `${layout.height}px`;
     edgeSvg.setAttribute('width',layout.width); edgeSvg.setAttribute('height',layout.height); edgeSvg.setAttribute('viewBox',`0 0 ${layout.width} ${layout.height}`);
-    edgeSvg.innerHTML = `<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--edge)"/></marker></defs>`;
+    edgeSvg.innerHTML = `<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--edge)"/></marker><marker id="arrowFocus" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="var(--edge)"/></marker></defs>`;
     nodeLayer.innerHTML = '';
+
     for (const edge of state.data.edges || []) {
       if (!visible.has(edge.source) || !visible.has(edge.target)) continue;
-      const a=layout.positions.get(edge.source), b=layout.positions.get(edge.target); if(!a||!b) continue;
-      const sx=a.x+NODE_W, sy=a.y+NODE_H/2, tx=b.x, ty=b.y+NODE_H/2, dx=Math.max(55,(tx-sx)*.48);
+      const points=routeEdgeAvoidingNodes(edge,layout,visible);
       const path=document.createElementNS('http://www.w3.org/2000/svg','path');
-      path.setAttribute('d',`M ${sx} ${sy} C ${sx+dx} ${sy}, ${tx-dx} ${ty}, ${tx} ${ty}`);
-      path.setAttribute('fill','none'); path.setAttribute('stroke','var(--edge)'); path.setAttribute('stroke-width',edge.kind==='parent'?'2.2':'1.8'); path.setAttribute('marker-end','url(#arrow)');
-      if(edge.kind==='dependency'){ path.setAttribute('stroke-dasharray','8 7'); path.setAttribute('opacity','.62'); }
+      path.setAttribute('d',points?roundedOrthogonalPath(points):fallbackBezier(edge,layout));
+      const focused=state.selected!==null&&edge.source===state.selected;
+      const dimmed=state.selected!==null&&!focused;
+      path.setAttribute('class',`edge ${edge.kind==='dependency'?'dependency':'parent'}${focused?' focused':''}${dimmed?' dimmed':''}`);
+      path.setAttribute('marker-end',focused?'url(#arrowFocus)':'url(#arrow)');
       edgeSvg.appendChild(path);
     }
+
     for (const number of visible) {
       const node=map.get(number), pos=layout.positions.get(number); if(!node||!pos) continue;
       const el=document.createElement('div'); el.className='node'+(state.selected===number?' selected':'');
