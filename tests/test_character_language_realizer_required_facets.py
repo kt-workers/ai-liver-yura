@@ -72,10 +72,28 @@ def test_primary_non_null_concept_is_declared_as_required_semantic_facet() -> No
     assert '"certainty": "medium"' in prompt
     assert '"concept": "curiosity"' in prompt
     assert '"required": true' in prompt
-    assert '"required_facets": ["state", "certainty", "concept"]' in prompt
+    assert '"required_facets": ["predicate", "state", "certainty", "concept"]' in prompt
+    assert "質問対象・述語関係の意味そのもの" in prompt
     assert "単なる『何かある』等の存在表明だけへ縮退しない" in prompt
-    assert "primary propositionのIDを列挙する場合はrequired_facetsをすべて保持" in prompt
+    assert "conceptだけを述べてpredicateの意味をspeechから消すのは不正" in prompt
+    assert "primary propositionのIDを列挙する場合はpredicateを含むrequired_facets" in prompt
     assert "response_content_plan.primary_desire" not in prompt
+
+
+def test_predicate_gets_machine_readable_target_meaning_contract() -> None:
+    prompt = CharacterLanguageRealizerPromptBuilder().build(
+        _context(),
+        character_profile=_profile(),
+        correction=None,
+    )
+
+    assert '"predicate": "current_desire"' in prompt
+    assert '"predicate_semantics": "preserve_target_meaning"' in prompt
+    assert '"predicate_realization": "semantically_explicit_in_speech"' in prompt
+    assert '"concept_role": "modify_predicate_not_replace_it"' in prompt
+    assert "metadataを見なくても、何について答えた発話か分かる" in prompt
+    assert "User Wording Hint" in prompt
+    assert '"utterance": "何かしたい？"' in prompt
 
 
 def test_present_state_does_not_license_new_intensity_and_certainty_stays_epistemic() -> None:
@@ -164,3 +182,23 @@ def test_regeneration_feedback_marks_certainty_and_concept_repairs_when_reported
 
     assert "restore_certainty_as_epistemic_modality" in prompt
     assert "restore_required_concept_within_predicate" in prompt
+
+
+def test_regeneration_feedback_marks_predicate_repair_when_reported() -> None:
+    correction = json.dumps(
+        {
+            "reason": "semantic_facet_validation_failed",
+            "claim_differences": ["predicate_preserved"],
+        },
+        ensure_ascii=False,
+    )
+
+    prompt = CharacterLanguageRealizerPromptBuilder().build(
+        _context(),
+        character_profile=_profile(),
+        correction=correction,
+    )
+
+    assert "restore_target_predicate_meaning" in prompt
+    assert "conceptの言い換えだけで済ませず" in prompt
+    assert "質問対象であるpredicateの意味をspeech本文へ復元" in prompt
