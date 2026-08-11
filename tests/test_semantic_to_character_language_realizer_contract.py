@@ -14,7 +14,11 @@ from app.domain.character_response import (
     ActivityExecutionStatus,
     ResponseContext,
 )
-from app.domain.semantic_utterance import SemanticUtterancePlan
+from app.domain.semantic_utterance import (
+    SemanticProposition,
+    SemanticTarget,
+    SemanticUtterancePlan,
+)
 from app.runtime.character_language_realizer_service import CharacterLanguageRealizerService
 from app.runtime.internal_state_response_context import InternalStateAwareResponseContextBuilder
 
@@ -298,3 +302,50 @@ def test_missing_or_non_internal_semantic_plan_does_not_select_semantic_route() 
 
     assert CharacterLanguageRealizerService._uses_language_realizer(missing) is False
     assert CharacterLanguageRealizerService._uses_language_realizer(topic) is False
+
+
+def test_current_desire_medium_certainty_crosses_plan_to_character_without_becoming_intensity() -> None:
+    plan = SemanticUtterancePlan(
+        speech_act="direct_answer",
+        target=SemanticTarget("internal_state", "current_desire"),
+        propositions=(
+            SemanticProposition(
+                kind="self_state",
+                predicate="current_desire",
+                state="present",
+                certainty="medium",
+                concept="curiosity",
+                evidence_refs=("response_content_plan.primary_desire",),
+            ),
+        ),
+        response_length="short",
+        self_disclosure="brief",
+        question_budget=0,
+        new_direction_budget=0,
+    )
+    context = ResponseContext(
+        user_input="何かしたい？",
+        activity_type="conversation",
+        operation="discuss",
+        status=ActivityExecutionStatus.WAITING_INPUT,
+        failure_reason=None,
+        result_summary="",
+        allowed_claims=(),
+        forbidden_claims=(),
+        activity_goal="現在の欲求へ直接答える",
+        speech_act="question",
+        memory={"semantic_utterance_plan": plan.as_context()},
+    )
+
+    restored = _plan(context)
+    prompt = _prompt(context)
+
+    assert restored.propositions[0].state == "present"
+    assert restored.propositions[0].certainty == "medium"
+    assert restored.propositions[0].concept == "curiosity"
+    assert '"state_semantics": "presence_without_intensity"' in prompt
+    assert '"certainty_semantics": "epistemic_not_intensity"' in prompt
+    assert '"certainty_realization": "epistemic_modality"' in prompt
+    assert '"intensity_allowed": false' in prompt
+    assert '"concept_role": "modify_predicate_not_replace_it"' in prompt
+    assert "response_content_plan.primary_desire" not in prompt

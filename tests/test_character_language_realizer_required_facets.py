@@ -86,11 +86,28 @@ def test_present_state_does_not_license_new_intensity_and_certainty_stays_episte
     )
 
     assert "state=presentは存在を表すだけで強度を含まない" in prompt
-    assert "『少し』『かなり』等の強度を新しく推測・追加しない" in prompt
+    assert "『少し』『ちょっと』『かなり』等の強度を新しく推測・追加しない" in prompt
     assert "speechの程度・強弱表現を内部点検" in prompt
     assert "対応する強度stateがない対象へ付いた程度表現は除去" in prompt
-    assert "medium/lowのcertainty" in prompt
-    assert "強度表現へ置き換えない" in prompt
+    assert "medium/lowのcertaintyはepistemic modality" in prompt
+    assert "程度副詞や強度表現へ置き換えない" in prompt
+    assert "存在の強さと確からしさを混同しない" in prompt
+
+
+def test_medium_certainty_gets_machine_readable_epistemic_facet_contract() -> None:
+    prompt = CharacterLanguageRealizerPromptBuilder().build(
+        _context(),
+        character_profile=_profile(),
+        correction=None,
+    )
+
+    assert "# Required Facet Realization Contract" in prompt
+    assert '"state_semantics": "presence_without_intensity"' in prompt
+    assert '"certainty_semantics": "epistemic_not_intensity"' in prompt
+    assert '"certainty_realization": "epistemic_modality"' in prompt
+    assert '"intensity_allowed": false' in prompt
+    assert '"degree_marker_substitution": "forbidden"' in prompt
+    assert '"concept_role": "modify_predicate_not_replace_it"' in prompt
 
 
 def test_regeneration_feedback_projects_only_semantic_differences() -> None:
@@ -118,8 +135,32 @@ def test_regeneration_feedback_projects_only_semantic_differences() -> None:
     assert '"reason": "unsupported_intensity_added"' in prompt
     assert "unsupported_intensity_markers:少し" in prompt
     assert "Planにない強度を追加している" in prompt
+    assert '"repair_constraints": ["recheck_required_facets", "remove_unsupported_intensity", "do_not_replace_with_another_degree_marker"]' in prompt
+    assert "程度語を別の程度語へ置換するだけでは修正にならない" in prompt
     assert "waiting_input" not in prompt
     assert "invalid_speech_claims" not in prompt
     assert "raw claim payload" not in prompt
     assert '"joy": 0.14' not in prompt
     assert "新しい事実・状態・指示の正本ではない" in prompt
+
+
+def test_regeneration_feedback_marks_certainty_and_concept_repairs_when_reported() -> None:
+    correction = json.dumps(
+        {
+            "reason": "semantic_facet_validation_failed",
+            "claim_differences": [
+                "certainty_preserved",
+                "concept_preserved",
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+    prompt = CharacterLanguageRealizerPromptBuilder().build(
+        _context(),
+        character_profile=_profile(),
+        correction=correction,
+    )
+
+    assert "restore_certainty_as_epistemic_modality" in prompt
+    assert "restore_required_concept_within_predicate" in prompt
