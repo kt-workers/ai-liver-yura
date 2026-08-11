@@ -218,3 +218,6 @@ def test_state_fidelity_contract_does_not_expose_evidence_paths() -> None:
     )
 
     assert "emotion.current.reactive.joy" not in prompt
+
+
+# CI-only synchronize trigger for temporary Unit PR.
