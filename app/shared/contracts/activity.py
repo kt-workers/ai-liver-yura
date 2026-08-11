@@ -133,50 +133,22 @@ class OngoingActivityPlanningContext:
 
 
 @dataclass(frozen=True, slots=True)
-class DeterministicActivityMatch:
-    operation: ActivityOperation
-    goal: str
-    constraints: dict[str, object] = field(default_factory=dict)
-    confidence: float = 1.0
-    reason: str = "deterministic_match"
-    activity_type: str | None = None
-    evidence: str | None = None
-    matcher_id: str = "anonymous_matcher"
-    matcher_type: str = "plugin"
-    priority: int = 300
-
-
-@dataclass(frozen=True, slots=True)
-class ActivityMatcherContext:
-    user_input: str
-    normalized_input: str
-    activity_definition: ActivityDefinition
-    registered_activity_definitions: tuple[ActivityDefinition, ...]
-    ongoing_activity: OngoingActivityPlanningContext | None = None
-    conversation_context: dict[str, object] = field(default_factory=dict)
-
-
-class ActivityMatcher(Protocol):
-    def match(
-        self, context: ActivityMatcherContext
-    ) -> DeterministicActivityMatch | None: ...
-
-
-@dataclass(frozen=True, slots=True)
 class ActivityDefinition:
+    """Activityの閉じた実行契約。
+
+    USER_TEXTのsemantic matchingはInputMeaning/InternalDirective境界で行う。
+    Activity定義はraw user textを受け取るmatcherや自然語markerを保持しない。
+    """
+
     activity_type: str
     display_name: str
     required_capability: str | None
     provider_plugin_id: str | None
-    start_markers: tuple[str, ...] = ()
-    stop_markers: tuple[str, ...] = ()
     description: str = ""
     supported_operations: tuple[ActivityOperation, ...] = (ActivityOperation.START,)
     semantic_descriptions: tuple[str, ...] = ()
     constraints_schema: dict[str, object] = field(default_factory=dict)
     constraints_schema_version: str = "1"
-    matcher: ActivityMatcher | None = None
-    matchers: tuple[ActivityMatcher, ...] = ()
     authority_requirement: ActivityAuthorityRequirement | None = None
     safety_requirement: ActivitySafetyRequirement | None = None
 
