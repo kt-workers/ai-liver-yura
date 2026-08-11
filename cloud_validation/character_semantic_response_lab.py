@@ -36,6 +36,9 @@ class _SemanticFakeRoleModel(base._FakeRoleModel):
     async def validate_character_response(self, activity: Activity) -> str:
         if activity.context.get("llm_role") != "character_realization_validator":
             return await super().validate_character_response(activity)
+        realization_ids = _validator_realization_ids_from_prompt(
+            activity.context.get("plugin_prompt_override")
+        )
         return json.dumps(
             {
                 "accepted": True,
@@ -43,11 +46,23 @@ class _SemanticFakeRoleModel(base._FakeRoleModel):
                 "differences": [],
                 "semantic_checks": {
                     "required_facets_preserved": True,
+                    "predicate_preserved": True,
                     "state_preserved": True,
                     "certainty_preserved": True,
                     "concept_preserved": True,
                     "unsupported_intensity_added": False,
                 },
+                "realized_proposition_checks": [
+                    {
+                        "realization_id": realization_id,
+                        "predicate_preserved": True,
+                        "state_preserved": True,
+                        "state_fidelity": "exact",
+                        "certainty_preserved": True,
+                        "concept_preserved": True,
+                    }
+                    for realization_id in realization_ids
+                ],
                 "surface_evidence": {
                     "intensity_markers": [],
                 },
@@ -125,6 +140,31 @@ def _realization_ids_from_prompt(prompt: object) -> list[str]:
     if not isinstance(realization_id, str) or not realization_id.strip():
         return []
     return [realization_id.strip()]
+
+
+def _validator_realization_ids_from_prompt(prompt: object) -> list[str]:
+    """Validator Prompt内のCharacter Utteranceから採用済みrealization IDを読む。"""
+
+    if not isinstance(prompt, str):
+        return []
+    lines = prompt.splitlines()
+    marker = "# Character Utterance"
+    try:
+        index = lines.index(marker)
+    except ValueError:
+        return []
+    if index + 1 >= len(lines):
+        return []
+    try:
+        utterance = json.loads(lines[index + 1])
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(utterance, dict):
+        return []
+    ids = utterance.get("semantic_realizations")
+    if not isinstance(ids, list):
+        return []
+    return [item.strip() for item in ids if isinstance(item, str) and item.strip()]
 
 
 class CharacterSemanticResponseLabService(base.CharacterResponseLabService):
