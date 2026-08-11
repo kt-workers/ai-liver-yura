@@ -298,6 +298,7 @@ pytest -q \
   tests/test_character_language_realizer.py \
   tests/test_separated_response_validation.py \
   tests/test_cloud_character_semantic_response_lab.py \
+  tests/test_character_semantic_extended_batch.py \
   tests/test_cloud_character_response_lab.py \
   tests/test_internal_state_response_semantic_consistency.py \
   tests/test_internal_state_target_evidence_prompt.py
