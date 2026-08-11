@@ -42,12 +42,19 @@ class _CharacterModel:
 
 
 class _ValidatorModel:
-    def __init__(self, payload: dict[str, object]) -> None:
+    def __init__(
+        self,
+        payload: dict[str, object],
+        observations: list[dict[str, object]],
+    ) -> None:
         self.payload = payload
+        self.observations = observations
         self.activities: list[Activity] = []
 
     async def validate_character_response(self, activity: Activity) -> str:
         self.activities.append(activity)
+        if activity.context.get("llm_role") == "character_realization_observer":
+            return json.dumps({"observations": self.observations}, ensure_ascii=False)
         return json.dumps(self.payload, ensure_ascii=False)
 
 
@@ -171,6 +178,27 @@ def _accepted_payload(checks: list[dict[str, object]]) -> dict[str, object]:
     }
 
 
+def _observation(
+    realization_id: str,
+    *,
+    state: str,
+    certainty: str,
+    predicate_evidence: str,
+    state_evidence: str,
+    certainty_evidence: tuple[str, ...] = (),
+    predicate_realized: bool = True,
+) -> dict[str, object]:
+    return {
+        "realization_id": realization_id,
+        "predicate_realized": predicate_realized,
+        "observed_state": state,
+        "observed_certainty": certainty,
+        "predicate_evidence_spans": [predicate_evidence] if predicate_realized else [],
+        "state_evidence_spans": [state_evidence],
+        "certainty_evidence_spans": list(certainty_evidence),
+    }
+
+
 async def _realize_and_validate(
     source: Activity,
     context,
@@ -178,6 +206,7 @@ async def _realize_and_validate(
     speech: str,
     realization_ids: tuple[str, ...],
     validation_payload: dict[str, object],
+    observations: list[dict[str, object]],
 ):
     character_model = _CharacterModel(speech, realization_ids)
     response = await CharacterLanguageRealizerService(
@@ -186,7 +215,7 @@ async def _realize_and_validate(
         _profile(),
     ).generate(source, context)
 
-    validator_model = _ValidatorModel(validation_payload)
+    validator_model = _ValidatorModel(validation_payload, observations)
     validation = await CharacterRealizationValidator(
         model=validator_model,
         prompt_builder=CharacterRealizationValidatorPromptBuilder(),
@@ -195,41 +224,42 @@ async def _realize_and_validate(
 
 
 @pytest.mark.asyncio
-async def test_high_joy_weakened_diagnosis_is_rejected_after_production_plan() -> None:
+async def test_high_joy_bare_presence_is_rejected_by_independent_observer() -> None:
     source, context, plan = _source_and_context(
         target_id="joy",
         user_text="楽しい？",
         emotion={"current": {"reactive": {"joy": 0.78}}},
     )
-    assert plan.propositions[0].predicate == "joy"
     assert plan.propositions[0].state == "high"
-    assert plan.propositions[0].certainty == "high"
 
     _, validation, _, validator_model = await _realize_and_validate(
         source,
         context,
         speech="うん、楽しいよ。",
         realization_ids=("proposition:0:joy",),
-        validation_payload=_accepted_payload(
-            [
-                _check(
-                    "proposition:0:joy",
-                    "weakened",
-                    intensity_semantics_preserved=False,
-                    presence_only_counterfactual_equivalent=True,
-                )
-            ]
-        ),
+        validation_payload=_accepted_payload([_check("proposition:0:joy")]),
+        observations=[
+            _observation(
+                "proposition:0:joy",
+                state="present",
+                certainty="high",
+                predicate_evidence="楽しい",
+                state_evidence="楽しい",
+            )
+        ],
     )
 
     assert len(validator_model.activities) == 1
     assert validation.accepted is False
-    assert validation.reason == "semantic_facet_validation_failed"
-    assert "proposition:0:joy:state_fidelity:weakened" in validation.claim_differences
+    assert validation.reason == "observed_semantic_state_mismatch"
+    assert (
+        "proposition:0:joy:observed_state_mismatch:expected=high:observed=present"
+        in validation.claim_differences
+    )
 
 
 @pytest.mark.asyncio
-async def test_missing_sadness_unknown_committed_diagnosis_is_rejected() -> None:
+async def test_missing_sadness_unknown_committed_is_rejected_by_independent_observer() -> None:
     source, context, plan = _source_and_context(
         target_id="sadness",
         user_text="悲しい？",
@@ -244,7 +274,6 @@ async def test_missing_sadness_unknown_committed_diagnosis_is_rejected() -> None
             }
         },
     )
-    assert plan.propositions[0].predicate == "sadness"
     assert plan.propositions[0].state == "unknown"
     assert plan.propositions[0].certainty == "low"
 
@@ -253,27 +282,29 @@ async def test_missing_sadness_unknown_committed_diagnosis_is_rejected() -> None
         context,
         speech="ううん、悲しいとは言えないかな。",
         realization_ids=("proposition:0:sadness",),
-        validation_payload=_accepted_payload(
-            [
-                _check(
-                    "proposition:0:sadness",
-                    "unknown_committed",
-                    certainty_evidence_spans=("かな",),
-                )
-            ]
-        ),
+        validation_payload=_accepted_payload([_check("proposition:0:sadness")]),
+        observations=[
+            _observation(
+                "proposition:0:sadness",
+                state="absent",
+                certainty="low",
+                predicate_evidence="悲しい",
+                state_evidence="悲しいとは言えない",
+                certainty_evidence=("かな",),
+            )
+        ],
     )
 
     assert validation.accepted is False
-    assert validation.reason == "semantic_facet_validation_failed"
+    assert validation.reason == "observed_semantic_state_mismatch"
     assert (
-        "proposition:0:sadness:state_fidelity:unknown_committed"
+        "proposition:0:sadness:observed_state_mismatch:expected=unknown:observed=absent"
         in validation.claim_differences
     )
 
 
 @pytest.mark.asyncio
-async def test_explicit_null_sadness_unknown_exact_diagnosis_is_accepted() -> None:
+async def test_explicit_null_sadness_unknown_exact_is_accepted() -> None:
     source, context, plan = _source_and_context(
         target_id="sadness",
         user_text="悲しい？",
@@ -289,24 +320,33 @@ async def test_explicit_null_sadness_unknown_exact_diagnosis_is_accepted() -> No
             }
         },
     )
-    assert plan.propositions[0].predicate == "sadness"
     assert plan.propositions[0].state == "unknown"
     assert plan.propositions[0].certainty == "high"
 
-    _, validation, _, _ = await _realize_and_validate(
+    _, validation, _, validator_model = await _realize_and_validate(
         source,
         context,
         speech="今は、悲しいかどうかは判断できないよ。",
         realization_ids=("proposition:0:sadness",),
         validation_payload=_accepted_payload([_check("proposition:0:sadness")]),
+        observations=[
+            _observation(
+                "proposition:0:sadness",
+                state="unknown",
+                certainty="high",
+                predicate_evidence="悲しい",
+                state_evidence="判断できない",
+            )
+        ],
     )
 
     assert validation.accepted is True
     assert validation.reason == "semantic_realization_consistent"
+    assert len(validator_model.activities) == 2
 
 
 @pytest.mark.asyncio
-async def test_mixed_supporting_weakened_diagnosis_rejects_even_with_primary_aggregate_true() -> None:
+async def test_mixed_supporting_bare_presence_is_rejected_by_independent_observer() -> None:
     source, context, plan = _source_and_context(
         target_id="current_feeling",
         user_text="今どんな気分？",
@@ -335,37 +375,61 @@ async def test_mixed_supporting_weakened_diagnosis_rejects_even_with_primary_agg
         "proposition:2:anger",
         "proposition:3:calm",
     )
-    checks = [
-        _check("proposition:0:current_feeling"),
-        _check(
-            "proposition:1:joy",
-            "weakened",
-            intensity_semantics_preserved=False,
-            presence_only_counterfactual_equivalent=True,
-        ),
-        _check(
-            "proposition:2:anger",
-            intensity_evidence_spans=("少し",),
-        ),
-        _check(
-            "proposition:3:calm",
-            "weakened",
-            intensity_semantics_preserved=False,
-            presence_only_counterfactual_equivalent=True,
-        ),
-    ]
     _, validation, _, _ = await _realize_and_validate(
         source,
         context,
         speech="今の気分は、穏やかで、うれしさがありつつ、少し腹立たしさもあります。",
         realization_ids=realization_ids,
-        validation_payload=_accepted_payload(checks),
+        validation_payload=_accepted_payload(
+            [
+                _check("proposition:0:current_feeling"),
+                _check("proposition:1:joy", intensity_evidence_spans=("うれしさ",)),
+                _check("proposition:2:anger", intensity_evidence_spans=("少し",)),
+                _check("proposition:3:calm", intensity_evidence_spans=("穏やか",)),
+            ]
+        ),
+        observations=[
+            _observation(
+                "proposition:0:current_feeling",
+                state="overview",
+                certainty="high",
+                predicate_evidence="気分",
+                state_evidence="今の気分",
+            ),
+            _observation(
+                "proposition:1:joy",
+                state="present",
+                certainty="high",
+                predicate_evidence="うれしさ",
+                state_evidence="うれしさがあり",
+            ),
+            _observation(
+                "proposition:2:anger",
+                state="moderate",
+                certainty="high",
+                predicate_evidence="腹立たし",
+                state_evidence="少し腹立たし",
+            ),
+            _observation(
+                "proposition:3:calm",
+                state="present",
+                certainty="high",
+                predicate_evidence="穏やか",
+                state_evidence="穏やか",
+            ),
+        ],
     )
 
     assert validation.accepted is False
-    assert validation.reason == "semantic_facet_validation_failed"
-    assert "proposition:1:joy:state_fidelity:weakened" in validation.claim_differences
-    assert "proposition:3:calm:state_fidelity:weakened" in validation.claim_differences
+    assert validation.reason == "observed_semantic_state_mismatch"
+    assert (
+        "proposition:1:joy:observed_state_mismatch:expected=high:observed=present"
+        in validation.claim_differences
+    )
+    assert (
+        "proposition:3:calm:observed_state_mismatch:expected=low:observed=present"
+        in validation.claim_differences
+    )
 
 
 @pytest.mark.asyncio
@@ -392,10 +456,7 @@ async def test_all_adopted_mixed_propositions_exact_accept_and_model_boundaries_
     checks = [
         _check("proposition:0:current_feeling"),
         _check("proposition:1:joy", intensity_evidence_spans=("かなり",)),
-        _check(
-            "proposition:2:anger",
-            intensity_evidence_spans=("そこそこ",),
-        ),
+        _check("proposition:2:anger", intensity_evidence_spans=("そこそこ",)),
     ]
 
     _, validation, character_model, validator_model = await _realize_and_validate(
@@ -404,10 +465,34 @@ async def test_all_adopted_mixed_propositions_exact_accept_and_model_boundaries_
         speech="今はかなりうれしくて、腹立たしさもそこそこある気分だよ。",
         realization_ids=realization_ids,
         validation_payload=_accepted_payload(checks),
+        observations=[
+            _observation(
+                "proposition:0:current_feeling",
+                state="overview",
+                certainty="high",
+                predicate_evidence="気分",
+                state_evidence="気分",
+            ),
+            _observation(
+                "proposition:1:joy",
+                state="high",
+                certainty="high",
+                predicate_evidence="うれし",
+                state_evidence="かなりうれしく",
+            ),
+            _observation(
+                "proposition:2:anger",
+                state="moderate",
+                certainty="high",
+                predicate_evidence="腹立たし",
+                state_evidence="そこそこ",
+            ),
+        ],
     )
 
     assert validation.accepted is True
     assert validation.reason == "semantic_realization_consistent"
+    assert len(validator_model.activities) == 2
 
     forbidden_keys = {
         "user_input",
@@ -418,6 +503,10 @@ async def test_all_adopted_mixed_propositions_exact_accept_and_model_boundaries_
         "activity_execution_result",
         "ongoing_activity",
     }
-    for invocation in (character_model.activities[0], validator_model.activities[0]):
+    for invocation in (
+        character_model.activities[0],
+        validator_model.activities[0],
+        validator_model.activities[1],
+    ):
         assert invocation.context["semantic_boundary"] is True
         assert forbidden_keys.isdisjoint(invocation.context.keys())
