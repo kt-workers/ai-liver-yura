@@ -43,8 +43,14 @@
     header h1 { margin:0; font-size:18px; }
     .subtitle { color:var(--muted); font-size:12px; margin-top:3px; }
     .controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-    .controls input,.controls select,.controls button { border:1px solid var(--border); background:var(--panel-solid); color:var(--text); border-radius:9px; padding:8px 10px; }
-    .controls input { width:220px; }
+    .controls input[type="search"],.controls select,.controls button { border:1px solid var(--border); background:var(--panel-solid); color:var(--text); border-radius:9px; padding:8px 10px; }
+    .controls input[type="search"] { width:220px; }
+    .state-toggle { display:inline-flex; align-items:center; gap:7px; min-height:36px; padding:6px 9px; border:1px solid var(--border); border-radius:9px; background:var(--panel-solid); color:var(--muted); font-size:12px; cursor:pointer; user-select:none; }
+    .state-toggle input { appearance:none; width:34px; height:20px; margin:0; padding:0; border:1px solid var(--border); border-radius:999px; background:var(--border); position:relative; cursor:pointer; transition:background .16s ease,border-color .16s ease; }
+    .state-toggle input::after { content:""; position:absolute; width:14px; height:14px; left:2px; top:2px; border-radius:50%; background:var(--panel-solid); box-shadow:0 1px 3px rgba(0,0,0,.22); transition:transform .16s ease; }
+    .state-toggle input:checked { background:var(--accent); border-color:var(--accent); }
+    .state-toggle input:checked::after { transform:translateX(14px); }
+    .state-toggle input:disabled { opacity:.55; cursor:wait; }
     .shell { display:grid; grid-template-columns:minmax(0,1fr) 360px; height:calc(100vh - 65px); }
     .viewport { position:relative; overflow:hidden; background-color:var(--bg); background-image:radial-gradient(var(--grid) 1.2px, transparent 1.2px); background-size:24px 24px; cursor:grab; touch-action:none; }
     .viewport.dragging { cursor:grabbing; }
@@ -91,7 +97,7 @@
       header { align-items:flex-start; flex-direction:column; }
       .shell { grid-template-columns:1fr; grid-template-rows:minmax(440px,62vh) auto; height:auto; }
       .details { border-left:0; border-top:1px solid var(--border); max-height:none; }
-      .controls input { width:180px; }
+      .controls input[type="search"] { width:180px; }
     }
   </style>
 </head>
@@ -114,6 +120,10 @@
       <option value="Backlog">Backlog</option>
       <option value="Done">Done</option>
     </select>
+    <label class="state-toggle" title="Closed IssueもGitHubから取得して表示します">
+      <input id="includeClosed" type="checkbox" role="switch" aria-label="Closed Issueも表示" />
+      <span>Closedも表示</span>
+    </label>
     <button id="zoomOut" type="button">−</button>
     <button id="zoomIn" type="button">＋</button>
     <button id="reset" type="button">全体表示</button>
@@ -145,15 +155,27 @@
   const notice = document.getElementById('notice');
   const search = document.getElementById('search');
   const statusFilter = document.getElementById('statusFilter');
+  const includeClosed = document.getElementById('includeClosed');
 
   async function load() {
     notice.hidden = false;
-    notice.textContent = 'GitHubからデータを取得しています。';
+    notice.textContent = includeClosed.checked
+      ? 'Open / Closed IssueをGitHubから取得しています。'
+      : 'Open IssueをGitHubから取得しています。';
+    includeClosed.disabled = true;
     try {
-      const response = await fetch('/api/graph', {cache:'no-store'});
+      const includeClosedValue = includeClosed.checked;
+      const response = await fetch(`/api/graph?include_closed=${includeClosedValue ? 'true' : 'false'}`, {cache:'no-store'});
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       state.data = await response.json();
-      document.getElementById('sourceLabel').textContent = `${state.data.repository} / Project #${state.data.project.number}${state.data.project.title ? ' ' + state.data.project.title : ''}`;
+      includeClosed.checked = Boolean(state.data.include_closed);
+      const stateLabel = state.data.include_closed ? ' / Closed含む' : ' / Openのみ';
+      document.getElementById('sourceLabel').textContent = `${state.data.repository} / Project #${state.data.project.number}${state.data.project.title ? ' ' + state.data.project.title : ''}${stateLabel}`;
+      const loadedNumbers = new Set((state.data.nodes || []).map(node => node.number));
+      if (state.selected !== null && !loadedNumbers.has(state.selected)) {
+        state.selected = null;
+        details.innerHTML = '<div class="empty">選択中のIssueは現在の表示対象外です。</div>';
+      }
       const messages = state.data.diagnostics || [];
       notice.hidden = messages.length === 0;
       notice.textContent = messages.join(' / ');
@@ -162,6 +184,8 @@
     } catch (error) {
       notice.hidden = false;
       notice.textContent = `データ取得に失敗しました: ${error.message}`;
+    } finally {
+      includeClosed.disabled = false;
     }
   }
 
@@ -429,9 +453,10 @@
     for (const number of visible) {
       const node=map.get(number), pos=layout.positions.get(number); if(!node||!pos) continue;
       const el=document.createElement('div'); el.className='node'+(state.selected===number?' selected':'');
-      el.dataset.status=node.status || ''; el.style.left=`${pos.x}px`; el.style.top=`${pos.y}px`;
+      el.dataset.status=node.status || ''; el.dataset.issueState=node.state || ''; el.style.left=`${pos.x}px`; el.style.top=`${pos.y}px`;
       const status=node.status || 'Project未設定', level=node.issue_level || '未分類';
-      el.innerHTML=`<div class="number">#${node.number}</div><div class="title"></div><div class="meta"><span class="badge">${escapeHtml(status)}</span><span class="badge">${escapeHtml(level)}</span></div>`;
+      const closedBadge=node.state==='CLOSED'?'<span class="badge">Closed</span>':'';
+      el.innerHTML=`<div class="number">#${node.number}</div><div class="title"></div><div class="meta"><span class="badge">${escapeHtml(status)}</span><span class="badge">${escapeHtml(level)}</span>${closedBadge}</div>`;
       el.querySelector('.title').textContent=node.title;
       el.addEventListener('click',()=>selectNode(node.number));
       if((node.child_numbers||[]).length){
@@ -463,7 +488,7 @@
   viewport.addEventListener('pointerup',()=>{state.dragging=false; viewport.classList.remove('dragging');});
   viewport.addEventListener('wheel',e=>{e.preventDefault(); const r=viewport.getBoundingClientRect(); zoomAt(e.deltaY<0?1.12:.89,e.clientX-r.left,e.clientY-r.top);},{passive:false});
   document.getElementById('zoomIn').addEventListener('click',()=>zoomAt(1.18)); document.getElementById('zoomOut').addEventListener('click',()=>zoomAt(.84)); document.getElementById('reset').addEventListener('click',fitToView); document.getElementById('reload').addEventListener('click',load);
-  search.addEventListener('input',()=>{render(); fitToView();}); statusFilter.addEventListener('change',()=>{render(); fitToView();}); window.addEventListener('resize',()=>applyTransform());
+  search.addEventListener('input',()=>{render(); fitToView();}); statusFilter.addEventListener('change',()=>{render(); fitToView();}); includeClosed.addEventListener('change',load); window.addEventListener('resize',()=>applyTransform());
   load();
 })();
 </script>
