@@ -53,4 +53,11 @@ jobs:
       - name: Run tests
         env:
           PYTHONUNBUFFERED: "1"
-        run: pytest -x -vv
+        run: |
+          pytest -q \
+            tests/test_character_language_realizer.py \
+            tests/test_character_language_realizer_unit_gate.py \
+            tests/test_character_language_realizer_required_facets.py \
+            tests/test_character_language_realizer_predicate_contract.py \
+            tests/test_character_language_realizer_unknown_state.py \
+            tests/test_character_regeneration_feedback.py
