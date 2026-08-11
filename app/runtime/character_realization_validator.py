@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 
+from app.adapters.prompt.character_realization_observer_prompt_builder import (
+    CharacterRealizationObserverPromptBuilder,
+)
 from app.domain.activities import Activity, ActivityType
 from app.domain.character_response import (
     CharacterResponse,
@@ -10,25 +13,13 @@ from app.domain.character_response import (
     ResponseValidationResult,
 )
 from app.domain.semantic_utterance import SemanticUtterancePlan
+from app.domain.semantic_validation import RealizedSemanticObservation
 from app.runtime.character_response_pipeline import ResponseValidator as LegacyResponseValidator
 from app.utils.llm_trace import build_llm_trace_context
 
 
 _INTERNAL_STATE_TYPES = frozenset({"internal_state", "agent_internal_state"})
 _INTENSITY_STATES = frozenset({"low", "moderate", "high", "very_high"})
-_OBSERVED_STATE_VALUES = frozenset(
-    {
-        "absent",
-        "low",
-        "moderate",
-        "high",
-        "very_high",
-        "present",
-        "overview",
-        "unknown",
-        "omitted",
-    }
-)
 _STATE_FIDELITY_VALUES = frozenset(
     {
         "exact",
@@ -128,6 +119,37 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             self._trace_result(source, result)
             return result
 
+        observations = await self._observe_realized_semantics(
+            source,
+            context,
+            response,
+            plan,
+            attempt=attempt,
+        )
+        if observations is None:
+            result = ResponseValidationResult(
+                accepted=False,
+                reason="realization_observer_schema_invalid",
+                extracted_claims=extracted_claims,
+            )
+            self._trace_result(source, result)
+            return result
+
+        observation_differences = self._observation_differences(
+            plan,
+            response,
+            observations,
+        )
+        if observation_differences:
+            result = ResponseValidationResult(
+                accepted=False,
+                reason="observed_semantic_state_mismatch",
+                extracted_claims=extracted_claims,
+                claim_differences=tuple(observation_differences),
+            )
+            self._trace_result(source, result)
+            return result
+
         prompt = self._require_prompt_builder().build(
             context,
             response,
@@ -211,6 +233,121 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         self._trace_result(source, result)
         return result
 
+    async def _observe_realized_semantics(
+        self,
+        source: Activity,
+        context: ResponseContext,
+        response: CharacterResponse,
+        plan: SemanticUtterancePlan,
+        *,
+        attempt: int,
+    ) -> tuple[RealizedSemanticObservation, ...] | None:
+        prompt = CharacterRealizationObserverPromptBuilder().build(
+            context,
+            response,
+            plan,
+        )
+        activity = Activity(
+            activity_type=ActivityType.BEHAVIOR_PLANNING,
+            goal="Character発話が実際に表した意味を期待値なしで観測する",
+            source_event_id=source.source_event_id,
+            context={
+                "plugin_prompt_override": prompt,
+                "llm_role": "character_realization_observer",
+                "trace_context": source.context.get("trace_context"),
+                "activity_turn_id": source.context.get("activity_turn_id"),
+                "llm_attempt": attempt,
+                "semantic_boundary": True,
+            },
+        )
+        try:
+            raw = await self._model.validate_character_response(activity)
+            value = json.loads(raw)
+        except Exception:
+            return None
+        if not isinstance(value, dict):
+            return None
+        raw_observations = value.get("observations")
+        if not isinstance(raw_observations, list):
+            return None
+        observations: list[RealizedSemanticObservation] = []
+        for raw_observation in raw_observations:
+            observation = RealizedSemanticObservation.from_mapping(raw_observation)
+            if observation is None:
+                return None
+            observations.append(observation)
+        trace = build_llm_trace_context(activity)
+        self._trace_logger.debug(
+            "character_realization_observer:model_completed",
+            **trace.trace_context.as_log_fields(),
+            llm_role="character_realization_observer",
+            attempt=attempt,
+            observation_count=len(observations),
+            semantic_boundary=True,
+        )
+        return tuple(observations)
+
+    @staticmethod
+    def _observation_differences(
+        plan: SemanticUtterancePlan,
+        response: CharacterResponse,
+        observations: tuple[RealizedSemanticObservation, ...],
+    ) -> list[str]:
+        expected_ids = list(dict.fromkeys(response.semantic_realizations))
+        by_id: dict[str, RealizedSemanticObservation] = {}
+        for observation in observations:
+            if observation.realization_id in by_id:
+                return [f"duplicate_observation:{observation.realization_id}"]
+            by_id[observation.realization_id] = observation
+        if set(by_id) != set(expected_ids):
+            missing = sorted(set(expected_ids) - set(by_id))
+            extra = sorted(set(by_id) - set(expected_ids))
+            return [
+                *(f"observation_missing:{item}" for item in missing),
+                *(f"unexpected_observation:{item}" for item in extra),
+            ]
+
+        planned_by_id = {
+            f"proposition:{index}:{proposition.predicate}": proposition
+            for index, proposition in enumerate(plan.propositions)
+        }
+        differences: list[str] = []
+        for realization_id in expected_ids:
+            observation = by_id[realization_id]
+            proposition = planned_by_id[realization_id]
+            if not observation.predicate_realized:
+                differences.append(f"{realization_id}:predicate_not_observed")
+            if observation.observed_state != proposition.state:
+                differences.append(
+                    f"{realization_id}:observed_state_mismatch:"
+                    f"expected={proposition.state}:observed={observation.observed_state}"
+                )
+            if observation.observed_certainty != proposition.certainty:
+                differences.append(
+                    f"{realization_id}:observed_certainty_mismatch:"
+                    f"expected={proposition.certainty}:observed={observation.observed_certainty}"
+                )
+            if observation.predicate_realized and not observation.predicate_evidence_spans:
+                differences.append(f"{realization_id}:observer_predicate_evidence_missing")
+            if observation.observed_state != "omitted" and not observation.state_evidence_spans:
+                differences.append(f"{realization_id}:observer_state_evidence_missing")
+            if (
+                observation.observed_certainty in {"medium", "low"}
+                and not observation.certainty_evidence_spans
+            ):
+                differences.append(f"{realization_id}:observer_certainty_evidence_missing")
+            for facet, spans in (
+                ("predicate", observation.predicate_evidence_spans),
+                ("state", observation.state_evidence_spans),
+                ("certainty", observation.certainty_evidence_spans),
+            ):
+                for span in spans:
+                    if span not in response.speech:
+                        differences.append(
+                            f"{realization_id}:observer_{facet}_evidence_not_in_speech:{span}"
+                        )
+        return differences
+
     @staticmethod
     def _valid_top_level_schema(value: object) -> bool:
         if not isinstance(value, dict):
@@ -282,8 +419,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             realization_id = realization_id.strip()
             if realization_id in checks_by_id:
                 return None
-            proposition = propositions_by_id.get(realization_id)
-            if proposition is None:
+            if realization_id not in planned_ids:
                 return None
             for name in (
                 "predicate_preserved",
@@ -299,19 +435,6 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             if (
                 not isinstance(state_fidelity, str)
                 or state_fidelity not in _STATE_FIDELITY_VALUES
-            ):
-                return None
-
-            observed_state = item.get("observed_state")
-            if proposition.state in _INTENSITY_STATES:
-                if (
-                    not isinstance(observed_state, str)
-                    or observed_state not in _OBSERVED_STATE_VALUES
-                ):
-                    return None
-            elif observed_state is not None and (
-                not isinstance(observed_state, str)
-                or observed_state not in _OBSERVED_STATE_VALUES
             ):
                 return None
 
@@ -369,13 +492,6 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             state_fidelity = item["state_fidelity"]
             if state_fidelity != "exact":
                 differences.append(f"{realization_id}:state_fidelity:{state_fidelity}")
-
-            observed_state = item.get("observed_state")
-            if isinstance(observed_state, str) and observed_state != proposition.state:
-                differences.append(
-                    f"{realization_id}:observed_state_mismatch:"
-                    f"expected={proposition.state}:observed={observed_state}"
-                )
 
             predicate_spans = evidence["predicate_evidence_spans"]
             certainty_spans = evidence["certainty_evidence_spans"]
