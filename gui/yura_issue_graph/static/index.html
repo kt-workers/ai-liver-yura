@@ -9,7 +9,7 @@
       color-scheme: light dark;
       --bg:#f5f8fb; --panel:rgba(255,255,255,.94); --panel-solid:#fff;
       --text:#17202a; --muted:#657786; --border:#d9e2ea; --grid:rgba(90,110,130,.22);
-      --accent:#23a8e0; --edge:#17202a;
+      --accent:#23a8e0; --edge:#17202a; --group:rgba(80,110,135,.10);
       --inprogress:#23a8e0; --verification:#7b61ff; --blocked:#d24b4b;
       --ready:#3d8f67; --review:#c47b17; --backlog:#7c8794; --done:#55606d;
     }
@@ -17,7 +17,7 @@
       :root {
         --bg:#0f151b; --panel:rgba(22,31,39,.95); --panel-solid:#161f27;
         --text:#edf4f8; --muted:#a8b5c0; --border:#31404c;
-        --grid:rgba(180,200,214,.17); --edge:#e4edf3;
+        --grid:rgba(180,200,214,.17); --edge:#e4edf3; --group:rgba(190,215,230,.08);
       }
     }
     * { box-sizing:border-box; }
@@ -28,8 +28,7 @@
     .subtitle { color:var(--muted); font-size:12px; margin-top:3px; }
     .controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
     .controls input[type="search"],.controls select,.controls button {
-      border:1px solid var(--border); background:var(--panel-solid); color:var(--text);
-      border-radius:9px; padding:8px 10px;
+      border:1px solid var(--border); background:var(--panel-solid); color:var(--text); border-radius:9px; padding:8px 10px;
     }
     .controls input[type="search"] { width:220px; }
     .state-toggle { display:inline-flex; align-items:center; gap:7px; min-height:36px; padding:6px 9px; border:1px solid var(--border); border-radius:9px; background:var(--panel-solid); color:var(--muted); font-size:12px; cursor:pointer; user-select:none; }
@@ -43,18 +42,26 @@
     .viewport { position:relative; overflow:hidden; background-color:var(--bg); background-image:radial-gradient(var(--grid) 1.2px,transparent 1.2px); background-size:24px 24px; cursor:grab; touch-action:none; }
     .viewport.dragging { cursor:grabbing; }
     #world { position:absolute; left:0; top:0; transform-origin:0 0; }
-    #edges { position:absolute; left:0; top:0; overflow:visible; pointer-events:none; }
-    #nodes { position:absolute; left:0; top:0; }
+    #groups,#edges,#nodes { position:absolute; left:0; top:0; }
+    #groups { z-index:0; pointer-events:none; }
+    #edges { z-index:1; overflow:visible; pointer-events:none; }
+    #nodes { z-index:2; }
+
+    .component-frame { position:absolute; border:1px solid var(--border); border-radius:22px; background:var(--group); }
+    .component-title { position:absolute; left:16px; top:10px; padding:3px 8px; border-radius:999px; background:var(--panel-solid); border:1px solid var(--border); color:var(--muted); font-size:11px; white-space:nowrap; max-width:420px; overflow:hidden; text-overflow:ellipsis; }
+    .component-frame.unlinked { border-style:dashed; background:transparent; }
 
     .edge { fill:none; stroke:var(--edge); stroke-linecap:round; stroke-linejoin:round; transition:opacity .16s ease,stroke-width .16s ease; }
-    .edge.parent { stroke-width:2.2; opacity:.55; }
-    .edge.dependency { stroke-width:1.8; stroke-dasharray:8 7; opacity:.38; }
-    .edge.dimmed { opacity:.09; }
+    .edge.parent { stroke-width:2.3; opacity:.62; }
+    .edge.dependency { stroke-width:1.9; stroke-dasharray:8 7; opacity:.48; }
+    .edge.dimmed { opacity:.08; }
     .edge.focused { stroke-width:4; opacity:1; }
-    .edge.dependency.focused { stroke-width:3.4; opacity:1; }
+    .edge.dependency.focused { stroke-width:3.5; opacity:1; }
 
-    .node { position:absolute; width:260px; height:122px; overflow:hidden; border:2px solid var(--border); border-left-width:7px; border-radius:16px; background:var(--panel-solid); color:var(--text); padding:12px 38px 11px 13px; box-shadow:0 5px 16px rgba(20,35,45,.08); text-align:left; cursor:pointer; }
+    .node { position:absolute; width:260px; height:122px; overflow:hidden; border:2px solid var(--border); border-left-width:7px; border-radius:16px; background:var(--panel-solid); color:var(--text); padding:12px 38px 11px 13px; box-shadow:0 5px 16px rgba(20,35,45,.08); text-align:left; cursor:pointer; transition:opacity .16s ease, transform .16s ease; }
     .node:hover,.node.selected { outline:3px solid color-mix(in srgb,var(--accent) 50%,transparent); }
+    .node.context-dim { opacity:.22; }
+    .node.selected { opacity:1; }
     .node .number { font-weight:750; font-size:13px; }
     .node .title { margin-top:7px; line-height:1.35; font-size:14px; max-height:38px; overflow:hidden; }
     .node .meta { display:flex; gap:6px; margin-top:9px; overflow:hidden; white-space:nowrap; }
@@ -66,7 +73,7 @@
     .node[data-status="Ready"] { border-left-color:var(--ready); --status-color:var(--ready); }
     .node[data-status="Review"] { border-left-color:var(--review); --status-color:var(--review); }
     .node[data-status="Backlog"] { border-left-color:var(--backlog); --status-color:var(--backlog); }
-    .node[data-status="Done"] { border-left-color:var(--done); --status-color:var(--done); opacity:.72; }
+    .node[data-status="Done"] { border-left-color:var(--done); --status-color:var(--done); }
     .collapse { position:absolute; right:8px; top:8px; width:26px; height:26px; padding:0; border:1px solid var(--border); border-radius:8px; background:var(--panel); color:var(--text); cursor:pointer; }
 
     .details { overflow:auto; border-left:1px solid var(--border); background:var(--panel-solid); padding:16px; }
@@ -116,6 +123,10 @@
       <input id="includeClosed" type="checkbox" role="switch" aria-label="Closed Issueも表示" />
       <span>Closedも表示</span>
     </label>
+    <label class="state-toggle" title="通常は選択Issueに直接関係する依存線だけ表示します">
+      <input id="showDependencies" type="checkbox" role="switch" aria-label="依存線を全表示" />
+      <span>依存線を全表示</span>
+    </label>
     <button id="zoomOut" type="button">−</button>
     <button id="zoomIn" type="button">＋</button>
     <button id="reset" type="button">全体表示</button>
@@ -127,10 +138,11 @@
   <main id="viewport" class="viewport" aria-label="Issue relationship graph">
     <div id="notice" class="notice">GitHubからデータを取得しています。</div>
     <div id="world">
+      <div id="groups"></div>
       <svg id="edges" aria-label="Issue relations"></svg>
       <div id="nodes"></div>
     </div>
-    <div class="legend"><span><i class="line"></i>親 → 子</span><span><i class="line dep"></i>依存元 → 依存先</span></div>
+    <div class="legend"><span><i class="line"></i>親 → 子</span><span><i class="line dep"></i>依存（選択時 / switch ON）</span></div>
   </main>
   <aside id="details" class="details"><div class="empty">ノードをクリックするとIssue詳細を表示します。</div></aside>
 </div>
@@ -138,9 +150,11 @@
 <script>
 (() => {
   const NODE_W=260, NODE_H=122;
-  const LEVEL_GAP=170, SIBLING_GAP=42, COMPONENT_GAP_X=150, COMPONENT_GAP_Y=110, MARGIN=90;
-  const ROUTE_CLEARANCE=14, BEND_PENALTY=24;
+  const LEVEL_GAP=170, SIBLING_GAP=42, COMPONENT_GAP_X=90, COMPONENT_GAP_Y=85, GROUP_PAD_X=34, GROUP_PAD_Y=48, MARGIN=80;
+  const SINGLE_GAP_X=44, SINGLE_GAP_Y=38, SINGLE_COLUMNS=5;
+  const ROUTE_CLEARANCE=14, BEND_PENALTY=24, MIN_READABLE_SCALE=.65;
   const activeStatuses=new Set(['In progress','Review','Verification','Blocked']);
+  const statusPriority=new Map([['In progress',0],['Review',1],['Verification',2],['Blocked',3],['Ready',4],['Backlog',5],['Done',6]]);
 
   const state={
     data:null, selected:null, collapsed:new Set(),
@@ -150,6 +164,7 @@
 
   const viewport=document.getElementById('viewport');
   const world=document.getElementById('world');
+  const groupLayer=document.getElementById('groups');
   const edgeSvg=document.getElementById('edges');
   const nodeLayer=document.getElementById('nodes');
   const details=document.getElementById('details');
@@ -157,6 +172,7 @@
   const search=document.getElementById('search');
   const statusFilter=document.getElementById('statusFilter');
   const includeClosed=document.getElementById('includeClosed');
+  const showDependencies=document.getElementById('showDependencies');
 
   async function load() {
     notice.hidden=false;
@@ -172,15 +188,12 @@
       document.getElementById('sourceLabel').textContent=`${state.data.repository} / Project #${state.data.project.number}${state.data.project.title?' '+state.data.project.title:''}${stateLabel}`;
 
       const loaded=new Set((state.data.nodes||[]).map(node=>node.number));
-      if(state.selected!==null&&!loaded.has(state.selected)){
-        state.selected=null;
-        details.innerHTML='<div class="empty">選択中のIssueは現在の表示対象外です。</div>';
-      }
+      if(state.selected!==null&&!loaded.has(state.selected)) clearSelection();
       const messages=state.data.diagnostics||[];
       notice.hidden=messages.length===0;
       notice.textContent=messages.join(' / ');
       renderGraph();
-      fitToView();
+      setInitialViewport();
     } catch(error) {
       notice.hidden=false;
       notice.textContent=`データ取得に失敗しました: ${error.message}`;
@@ -189,9 +202,7 @@
     }
   }
 
-  function nodeMap() {
-    return new Map((state.data?.nodes||[]).map(node=>[node.number,node]));
-  }
+  function nodeMap() { return new Map((state.data?.nodes||[]).map(node=>[node.number,node])); }
 
   function filteredVisibleSet(map) {
     const query=search.value.trim().toLowerCase();
@@ -222,10 +233,7 @@
     const walk=number=>{
       const node=map.get(number);
       if(!node) return;
-      for(const child of node.child_numbers||[]){
-        result.delete(child);
-        walk(child);
-      }
+      for(const child of node.child_numbers||[]){ result.delete(child); walk(child); }
     };
     for(const number of state.collapsed) walk(number);
     return result;
@@ -234,9 +242,10 @@
   function sortNumbers(numbers,map) {
     return [...numbers].sort((a,b)=>{
       const na=map.get(a), nb=map.get(b);
+      const sa=statusPriority.get(na?.status)??99, sb=statusPriority.get(nb?.status)??99;
       const pa=Number.isFinite(Number(na?.process))?Number(na.process):99999;
       const pb=Number.isFinite(Number(nb?.process))?Number(nb.process):99999;
-      return pa-pb||a-b;
+      return sa-sb||pa-pb||a-b;
     });
   }
 
@@ -252,31 +261,19 @@
     for(const [number,list] of children) children.set(number,sortNumbers(new Set(list),map));
 
     const roots=sortNumbers([...visible].filter(number=>(incoming.get(number)||0)===0),map);
-    const visited=new Set();
-    const orderedRoots=[];
-
+    const visited=new Set(), orderedRoots=[];
     const mark=number=>{
       if(visited.has(number)) return;
       visited.add(number);
       for(const child of children.get(number)||[]) mark(child);
     };
-    for(const root of roots){
-      if(visited.has(root)) continue;
-      orderedRoots.push(root);
-      mark(root);
-    }
-    for(const number of sortNumbers(visible,map)){
-      if(visited.has(number)) continue;
-      orderedRoots.push(number);
-      mark(number);
-    }
+    for(const root of roots){ if(!visited.has(root)){ orderedRoots.push(root); mark(root); } }
+    for(const number of sortNumbers(visible,map)){ if(!visited.has(number)){ orderedRoots.push(number); mark(number); } }
     return {children,roots:orderedRoots,parentEdges};
   }
 
   function layoutComponent(root,children) {
-    const spanCache=new Map();
-    const visiting=new Set();
-
+    const spanCache=new Map(), visiting=new Set();
     const subtreeSpan=number=>{
       if(spanCache.has(number)) return spanCache.get(number);
       if(visiting.has(number)) return NODE_H;
@@ -284,312 +281,221 @@
       const list=children.get(number)||[];
       let span=NODE_H;
       if(list.length){
-        const childSpans=list.map(child=>subtreeSpan(child));
-        span=Math.max(NODE_H,childSpans.reduce((sum,value)=>sum+value,0)+SIBLING_GAP*(childSpans.length-1));
+        const spans=list.map(child=>subtreeSpan(child));
+        span=Math.max(NODE_H,spans.reduce((sum,value)=>sum+value,0)+SIBLING_GAP*(spans.length-1));
       }
-      visiting.delete(number);
-      spanCache.set(number,span);
-      return span;
+      visiting.delete(number); spanCache.set(number,span); return span;
     };
 
-    const positions=new Map();
+    const positions=new Map(), placing=new Set();
     let maxDepth=0;
-    const placing=new Set();
-
     const place=(number,depth,top)=>{
       if(placing.has(number)||positions.has(number)) return;
-      placing.add(number);
-      maxDepth=Math.max(maxDepth,depth);
+      placing.add(number); maxDepth=Math.max(maxDepth,depth);
       const span=subtreeSpan(number);
       positions.set(number,{x:depth*(NODE_W+LEVEL_GAP),y:top+(span-NODE_H)/2});
-      const list=children.get(number)||[];
-      if(list.length){
-        let childTop=top;
-        for(const child of list){
-          const childSpan=subtreeSpan(child);
-          place(child,depth+1,childTop);
-          childTop+=childSpan+SIBLING_GAP;
-        }
+      let childTop=top;
+      for(const child of children.get(number)||[]){
+        const childSpan=subtreeSpan(child);
+        place(child,depth+1,childTop);
+        childTop+=childSpan+SIBLING_GAP;
       }
       placing.delete(number);
     };
-
-    const height=subtreeSpan(root);
-    place(root,0,0);
-    return {
-      root,positions,
-      width:(maxDepth+1)*NODE_W+maxDepth*LEVEL_GAP,
-      height:Math.max(NODE_H,height)
-    };
+    const height=subtreeSpan(root); place(root,0,0);
+    return {root,positions,nodeCount:positions.size,width:(maxDepth+1)*NODE_W+maxDepth*LEVEL_GAP,height:Math.max(NODE_H,height)};
   }
 
-  function packComponents(components) {
-    const totalArea=components.reduce((sum,c)=>sum+(c.width+COMPONENT_GAP_X)*(c.height+COMPONENT_GAP_Y),0);
-    const targetWidth=Math.max(1050,Math.min(2500,Math.sqrt(Math.max(1,totalArea))*1.55));
+  function packHierarchy(components,map) {
+    const trees=components.filter(component=>component.nodeCount>1);
+    const singles=components.filter(component=>component.nodeCount===1);
+    trees.sort((a,b)=>{
+      const sa=statusPriority.get(map.get(a.root)?.status)??99;
+      const sb=statusPriority.get(map.get(b.root)?.status)??99;
+      return sa-sb||b.nodeCount-a.nodeCount||a.root-b.root;
+    });
+    singles.sort((a,b)=>{
+      const sa=statusPriority.get(map.get(a.root)?.status)??99;
+      const sb=statusPriority.get(map.get(b.root)?.status)??99;
+      return sa-sb||a.root-b.root;
+    });
 
+    const targetWidth=Math.max(1300,Math.min(2300,viewport.clientWidth*1.8));
+    const positions=new Map(), groups=[];
     let cursorX=MARGIN, cursorY=MARGIN, rowHeight=0, maxRight=MARGIN, maxBottom=MARGIN;
-    const positions=new Map();
 
-    for(const component of components){
-      if(cursorX>MARGIN&&cursorX+component.width>targetWidth){
-        cursorX=MARGIN;
-        cursorY+=rowHeight+COMPONENT_GAP_Y;
-        rowHeight=0;
+    for(const tree of trees){
+      const frameWidth=tree.width+GROUP_PAD_X*2;
+      const frameHeight=tree.height+GROUP_PAD_Y*2;
+      if(cursorX>MARGIN&&cursorX+frameWidth>targetWidth){
+        cursorX=MARGIN; cursorY+=rowHeight+COMPONENT_GAP_Y; rowHeight=0;
       }
-      for(const [number,p] of component.positions){
-        positions.set(number,{x:cursorX+p.x,y:cursorY+p.y});
-      }
-      maxRight=Math.max(maxRight,cursorX+component.width);
-      maxBottom=Math.max(maxBottom,cursorY+component.height);
-      cursorX+=component.width+COMPONENT_GAP_X;
-      rowHeight=Math.max(rowHeight,component.height);
+      const contentX=cursorX+GROUP_PAD_X, contentY=cursorY+GROUP_PAD_Y;
+      for(const [number,p] of tree.positions) positions.set(number,{x:contentX+p.x,y:contentY+p.y});
+      groups.push({kind:'tree',root:tree.root,x:cursorX,y:cursorY,width:frameWidth,height:frameHeight});
+      maxRight=Math.max(maxRight,cursorX+frameWidth); maxBottom=Math.max(maxBottom,cursorY+frameHeight);
+      cursorX+=frameWidth+COMPONENT_GAP_X; rowHeight=Math.max(rowHeight,frameHeight);
     }
-    return {
-      positions,
-      width:Math.ceil(maxRight+MARGIN),
-      height:Math.ceil(maxBottom+MARGIN)
-    };
+
+    if(trees.length) maxBottom=Math.max(maxBottom,cursorY+rowHeight);
+    if(singles.length){
+      const sectionY=maxBottom+(trees.length?COMPONENT_GAP_Y:0);
+      const cols=Math.min(SINGLE_COLUMNS,Math.max(1,singles.length));
+      const sectionWidth=GROUP_PAD_X*2+cols*NODE_W+(cols-1)*SINGLE_GAP_X;
+      const rows=Math.ceil(singles.length/cols);
+      const sectionHeight=GROUP_PAD_Y*2+rows*NODE_H+(rows-1)*SINGLE_GAP_Y;
+      const sectionX=MARGIN;
+      singles.forEach((component,index)=>{
+        const col=index%cols, row=Math.floor(index/cols);
+        positions.set(component.root,{
+          x:sectionX+GROUP_PAD_X+col*(NODE_W+SINGLE_GAP_X),
+          y:sectionY+GROUP_PAD_Y+row*(NODE_H+SINGLE_GAP_Y)
+        });
+      });
+      groups.push({kind:'unlinked',count:singles.length,x:sectionX,y:sectionY,width:sectionWidth,height:sectionHeight});
+      maxRight=Math.max(maxRight,sectionX+sectionWidth); maxBottom=Math.max(maxBottom,sectionY+sectionHeight);
+    }
+
+    return {positions,groups,width:Math.ceil(maxRight+MARGIN),height:Math.ceil(maxBottom+MARGIN)};
   }
 
   function computeLayout(map,visible) {
     const forest=buildForest(map,visible);
     const components=forest.roots.map(root=>layoutComponent(root,forest.children));
-    const packed=packComponents(components);
-    return {...packed,children:forest.children,parentEdges:forest.parentEdges};
+    return {...packHierarchy(components,map),children:forest.children,parentEdges:forest.parentEdges};
+  }
+
+  function renderGroups(layout,map) {
+    groupLayer.innerHTML='';
+    for(const group of layout.groups||[]){
+      const frame=document.createElement('div');
+      frame.className='component-frame'+(group.kind==='unlinked'?' unlinked':'');
+      frame.style.left=`${group.x}px`; frame.style.top=`${group.y}px`; frame.style.width=`${group.width}px`; frame.style.height=`${group.height}px`;
+      const label=document.createElement('div'); label.className='component-title';
+      if(group.kind==='unlinked') label.textContent=`親子関係なし（${group.count}件）`;
+      else {
+        const root=map.get(group.root);
+        label.textContent=`親子ツリー #${group.root}${root?' '+shortTitle(root.title,42):''}`;
+      }
+      frame.appendChild(label); groupLayer.appendChild(frame);
+    }
   }
 
   function renderGraph() {
     if(!state.data) return;
     const map=nodeMap();
-    let visible=filteredVisibleSet(map);
-    visible=hideCollapsedDescendants(visible,map);
+    let visible=hideCollapsedDescendants(filteredVisibleSet(map),map);
+    if(state.selected!==null&&!visible.has(state.selected)) clearSelection();
     const layout=computeLayout(map,visible);
+    state.layout=layout; state.visible=visible; state.nodeElements=new Map();
 
-    state.layout=layout;
-    state.visible=visible;
-    state.nodeElements=new Map();
-
-    world.style.width=`${layout.width}px`;
-    world.style.height=`${layout.height}px`;
-    edgeSvg.setAttribute('width',layout.width);
-    edgeSvg.setAttribute('height',layout.height);
-    edgeSvg.setAttribute('viewBox',`0 0 ${layout.width} ${layout.height}`);
+    world.style.width=`${layout.width}px`; world.style.height=`${layout.height}px`;
+    groupLayer.style.width=`${layout.width}px`; groupLayer.style.height=`${layout.height}px`;
+    edgeSvg.setAttribute('width',layout.width); edgeSvg.setAttribute('height',layout.height); edgeSvg.setAttribute('viewBox',`0 0 ${layout.width} ${layout.height}`);
+    renderGroups(layout,map);
 
     nodeLayer.innerHTML='';
     for(const number of visible){
-      const node=map.get(number), pos=layout.positions.get(number);
-      if(!node||!pos) continue;
+      const node=map.get(number), pos=layout.positions.get(number); if(!node||!pos) continue;
       const el=document.createElement('div');
       el.className='node'+(state.selected===number?' selected':'');
-      el.dataset.number=String(number);
-      el.dataset.status=node.status||'';
-      el.dataset.issueState=node.state||'';
-      el.style.left=`${pos.x}px`;
-      el.style.top=`${pos.y}px`;
-
-      const status=node.status||'Project未設定';
-      const level=node.issue_level||'未分類';
+      el.dataset.number=String(number); el.dataset.status=node.status||''; el.dataset.issueState=node.state||'';
+      el.style.left=`${pos.x}px`; el.style.top=`${pos.y}px`;
+      const status=node.status||'Project未設定', level=node.issue_level||'未分類';
       const closedBadge=node.state==='CLOSED'?'<span class="badge">Closed</span>':'';
       el.innerHTML=`<div class="number">#${node.number}</div><div class="title"></div><div class="meta"><span class="badge">${escapeHtml(status)}</span><span class="badge">${escapeHtml(level)}</span>${closedBadge}</div>`;
       el.querySelector('.title').textContent=node.title;
       el.addEventListener('click',()=>selectNode(node.number));
-
       if((node.child_numbers||[]).some(child=>visible.has(child))){
-        const button=document.createElement('button');
-        button.type='button';
-        button.className='collapse';
-        button.textContent=state.collapsed.has(number)?'+':'−';
-        button.title='子Issueを折りたたむ';
-        button.addEventListener('click',event=>{
-          event.stopPropagation();
-          state.collapsed.has(number)?state.collapsed.delete(number):state.collapsed.add(number);
-          renderGraph();
-        });
+        const button=document.createElement('button'); button.type='button'; button.className='collapse'; button.textContent=state.collapsed.has(number)?'+':'−'; button.title='子Issueを折りたたむ';
+        button.addEventListener('click',event=>{ event.stopPropagation(); state.collapsed.has(number)?state.collapsed.delete(number):state.collapsed.add(number); renderGraph(); });
         el.appendChild(button);
       }
-      nodeLayer.appendChild(el);
-      state.nodeElements.set(number,el);
+      nodeLayer.appendChild(el); state.nodeElements.set(number,el);
     }
-
-    drawEdges();
-    applyTransform();
+    updateNodeFocus(); drawEdges(); applyTransform();
     if(state.selected!==null&&map.has(state.selected)) renderDetails(map.get(state.selected),map);
   }
 
   function measuredRects() {
     const rects=new Map();
     for(const [number,el] of state.nodeElements){
-      rects.set(number,{
-        left:el.offsetLeft,
-        top:el.offsetTop,
-        right:el.offsetLeft+el.offsetWidth,
-        bottom:el.offsetTop+el.offsetHeight,
-        width:el.offsetWidth,
-        height:el.offsetHeight,
-        cx:el.offsetLeft+el.offsetWidth/2,
-        cy:el.offsetTop+el.offsetHeight/2
-      });
+      rects.set(number,{left:el.offsetLeft,top:el.offsetTop,right:el.offsetLeft+el.offsetWidth,bottom:el.offsetTop+el.offsetHeight,width:el.offsetWidth,height:el.offsetHeight,cx:el.offsetLeft+el.offsetWidth/2,cy:el.offsetTop+el.offsetHeight/2});
     }
     return rects;
   }
-
-  function clearRect(rect,pad=ROUTE_CLEARANCE) {
-    return {left:rect.left-pad,right:rect.right+pad,top:rect.top-pad,bottom:rect.bottom+pad};
-  }
-
+  function clearRect(rect,pad=ROUTE_CLEARANCE) { return {left:rect.left-pad,right:rect.right+pad,top:rect.top-pad,bottom:rect.bottom+pad}; }
   function segmentHitsRect(a,b,rect) {
-    if(Math.abs(a.x-b.x)<0.001){
-      if(a.x<=rect.left||a.x>=rect.right) return false;
-      const lo=Math.min(a.y,b.y), hi=Math.max(a.y,b.y);
-      return hi>rect.top&&lo<rect.bottom;
-    }
-    if(Math.abs(a.y-b.y)<0.001){
-      if(a.y<=rect.top||a.y>=rect.bottom) return false;
-      const lo=Math.min(a.x,b.x), hi=Math.max(a.x,b.x);
-      return hi>rect.left&&lo<rect.right;
-    }
+    if(Math.abs(a.x-b.x)<.001){ if(a.x<=rect.left||a.x>=rect.right) return false; const lo=Math.min(a.y,b.y),hi=Math.max(a.y,b.y); return hi>rect.top&&lo<rect.bottom; }
+    if(Math.abs(a.y-b.y)<.001){ if(a.y<=rect.top||a.y>=rect.bottom) return false; const lo=Math.min(a.x,b.x),hi=Math.max(a.x,b.x); return hi>rect.left&&lo<rect.right; }
     return true;
   }
-
   function pathIsClear(points,obstacles) {
-    for(let i=1;i<points.length;i++){
-      for(const rect of obstacles){
-        if(segmentHitsRect(points[i-1],points[i],rect)) return false;
-      }
-    }
+    for(let i=1;i<points.length;i++) for(const rect of obstacles) if(segmentHitsRect(points[i-1],points[i],rect)) return false;
     return true;
   }
-
   function simplifyRoute(points) {
     const dedup=[];
-    for(const point of points){
-      const last=dedup[dedup.length-1];
-      if(!last||last.x!==point.x||last.y!==point.y) dedup.push(point);
-    }
+    for(const point of points){ const last=dedup[dedup.length-1]; if(!last||last.x!==point.x||last.y!==point.y) dedup.push(point); }
     if(dedup.length<3) return dedup;
     const result=[dedup[0]];
     for(let i=1;i<dedup.length-1;i++){
-      const prev=result[result.length-1], cur=dedup[i], next=dedup[i+1];
+      const prev=result[result.length-1],cur=dedup[i],next=dedup[i+1];
       if((prev.x===cur.x&&cur.x===next.x)||(prev.y===cur.y&&cur.y===next.y)) continue;
       result.push(cur);
     }
-    result.push(dedup[dedup.length-1]);
-    return result;
+    result.push(dedup[dedup.length-1]); return result;
   }
-
   function parentBusRoute(edge,rects) {
-    const source=rects.get(edge.source), target=rects.get(edge.target);
-    if(!source||!target) return null;
-    if(target.left<=source.right+40) return null;
-    const sourcePort={x:source.right,y:source.cy};
-    const targetPort={x:target.left,y:target.cy};
-    const busX=source.right+(target.left-source.right)*0.46;
-    return simplifyRoute([
-      sourcePort,
-      {x:busX,y:source.cy},
-      {x:busX,y:target.cy},
-      targetPort
-    ]);
+    const source=rects.get(edge.source),target=rects.get(edge.target); if(!source||!target||target.left<=source.right+40) return null;
+    const busX=source.right+(target.left-source.right)*.46;
+    return simplifyRoute([{x:source.right,y:source.cy},{x:busX,y:source.cy},{x:busX,y:target.cy},{x:target.left,y:target.cy}]);
   }
-
-  function pointInsideAny(point,obstacles) {
-    return obstacles.some(rect=>point.x>rect.left&&point.x<rect.right&&point.y>rect.top&&point.y<rect.bottom);
-  }
-
-  function uniqueSorted(values) {
-    return [...new Set(values.map(value=>Math.round(value*100)/100))].sort((a,b)=>a-b);
-  }
+  function pointInsideAny(point,obstacles) { return obstacles.some(rect=>point.x>rect.left&&point.x<rect.right&&point.y>rect.top&&point.y<rect.bottom); }
+  function uniqueSorted(values) { return [...new Set(values.map(value=>Math.round(value*100)/100))].sort((a,b)=>a-b); }
 
   function routeByVisibility(start,goal,obstacles,width,height) {
-    const xs=[start.x,goal.x,MARGIN/2,width-MARGIN/2];
-    const ys=[start.y,goal.y,MARGIN/2,height-MARGIN/2];
-    for(const rect of obstacles){
-      xs.push(rect.left,rect.right);
-      ys.push(rect.top,rect.bottom);
+    const xs=[start.x,goal.x,MARGIN/2,width-MARGIN/2],ys=[start.y,goal.y,MARGIN/2,height-MARGIN/2];
+    for(const rect of obstacles){ xs.push(rect.left,rect.right); ys.push(rect.top,rect.bottom); }
+    const xValues=uniqueSorted(xs), yValues=uniqueSorted(ys), candidates=[], indexByKey=new Map();
+    for(let xi=0;xi<xValues.length;xi++) for(let yi=0;yi<yValues.length;yi++){
+      const point={x:xValues[xi],y:yValues[yi],xi,yi}; if(pointInsideAny(point,obstacles)) continue;
+      indexByKey.set(`${xi}:${yi}`,candidates.length); candidates.push(point);
     }
-    const xValues=uniqueSorted(xs);
-    const yValues=uniqueSorted(ys);
-    const candidates=[];
-    const indexByKey=new Map();
-
-    for(let xi=0;xi<xValues.length;xi++){
-      for(let yi=0;yi<yValues.length;yi++){
-        const point={x:xValues[xi],y:yValues[yi],xi,yi};
-        if(pointInsideAny(point,obstacles)) continue;
-        const key=`${xi}:${yi}`;
-        indexByKey.set(key,candidates.length);
-        candidates.push(point);
-      }
-    }
-
-    const startXi=xValues.indexOf(start.x), startYi=yValues.indexOf(start.y);
-    const goalXi=xValues.indexOf(goal.x), goalYi=yValues.indexOf(goal.y);
-    const startIndex=indexByKey.get(`${startXi}:${startYi}`);
-    const goalIndex=indexByKey.get(`${goalXi}:${goalYi}`);
+    const startIndex=indexByKey.get(`${xValues.indexOf(start.x)}:${yValues.indexOf(start.y)}`), goalIndex=indexByKey.get(`${xValues.indexOf(goal.x)}:${yValues.indexOf(goal.y)}`);
     if(startIndex===undefined||goalIndex===undefined) return null;
 
-    const adjacency=Array.from({length:candidates.length},()=>[]);
-    const rows=new Map(), cols=new Map();
-    candidates.forEach((point,index)=>{
-      if(!rows.has(point.yi)) rows.set(point.yi,[]);
-      if(!cols.has(point.xi)) cols.set(point.xi,[]);
-      rows.get(point.yi).push(index);
-      cols.get(point.xi).push(index);
-    });
-
-    const connectList=(indices,axis)=>{
+    const adjacency=Array.from({length:candidates.length},()=>[]),rows=new Map(),cols=new Map();
+    candidates.forEach((point,index)=>{ if(!rows.has(point.yi)) rows.set(point.yi,[]); if(!cols.has(point.xi)) cols.set(point.xi,[]); rows.get(point.yi).push(index); cols.get(point.xi).push(index); });
+    const connect=(indices,axis)=>{
       indices.sort((a,b)=>axis==='x'?candidates[a].x-candidates[b].x:candidates[a].y-candidates[b].y);
       for(let i=1;i<indices.length;i++){
-        const a=indices[i-1], b=indices[i];
-        const pa=candidates[a], pb=candidates[b];
-        if(!pathIsClear([pa,pb],obstacles)) continue;
-        const length=Math.abs(pa.x-pb.x)+Math.abs(pa.y-pb.y);
-        const direction=axis==='x'?'h':'v';
-        adjacency[a].push({to:b,length,direction});
-        adjacency[b].push({to:a,length,direction});
+        const a=indices[i-1],b=indices[i],pa=candidates[a],pb=candidates[b]; if(!pathIsClear([pa,pb],obstacles)) continue;
+        const length=Math.abs(pa.x-pb.x)+Math.abs(pa.y-pb.y),direction=axis==='x'?'h':'v'; adjacency[a].push({to:b,length,direction}); adjacency[b].push({to:a,length,direction});
       }
     };
-    for(const indices of rows.values()) connectList(indices,'x');
-    for(const indices of cols.values()) connectList(indices,'y');
+    for(const indices of rows.values()) connect(indices,'x'); for(const indices of cols.values()) connect(indices,'y');
 
     const keyFor=(index,direction)=>`${index}:${direction}`;
-    const open=[{index:startIndex,direction:'s',g:0,f:0,key:keyFor(startIndex,'s')}];
-    const best=new Map([[keyFor(startIndex,'s'),0]]);
-    const parent=new Map();
+    const open=[{index:startIndex,direction:'s',g:0,f:0,key:keyFor(startIndex,'s')}],best=new Map([[keyFor(startIndex,'s'),0]]),parent=new Map();
     let end=null;
-
     while(open.length){
-      open.sort((a,b)=>a.f-b.f);
-      const current=open.shift();
-      if(current.index===goalIndex){ end=current; break; }
+      open.sort((a,b)=>a.f-b.f); const current=open.shift(); if(current.index===goalIndex){ end=current; break; }
       for(const edge of adjacency[current.index]){
-        const bend=current.direction!=='s'&&current.direction!==edge.direction?BEND_PENALTY:0;
-        const g=current.g+edge.length+bend;
-        const key=keyFor(edge.to,edge.direction);
+        const bend=current.direction!=='s'&&current.direction!==edge.direction?BEND_PENALTY:0,g=current.g+edge.length+bend,key=keyFor(edge.to,edge.direction);
         if(g>=(best.get(key)??Infinity)) continue;
-        best.set(key,g);
-        parent.set(key,current.key);
-        const point=candidates[edge.to];
-        const heuristic=Math.abs(point.x-goal.x)+Math.abs(point.y-goal.y);
+        best.set(key,g); parent.set(key,current.key); const point=candidates[edge.to],heuristic=Math.abs(point.x-goal.x)+Math.abs(point.y-goal.y);
         open.push({index:edge.to,direction:edge.direction,g,f:g+heuristic,key});
       }
     }
     if(!end) return null;
-
-    const points=[];
-    let key=end.key;
-    while(key){
-      const [indexText]=key.split(':');
-      points.push(candidates[Number(indexText)]);
-      key=parent.get(key);
-    }
-    points.reverse();
-    return simplifyRoute(points.map(({x,y})=>({x,y})));
+    const points=[]; let key=end.key;
+    while(key){ const [indexText]=key.split(':'); points.push(candidates[Number(indexText)]); key=parent.get(key); }
+    points.reverse(); return simplifyRoute(points.map(({x,y})=>({x,y})));
   }
 
   function dependencyPorts(source,target) {
-    const horizontal=target.cx>=source.cx;
-    const vertical=target.cy>=source.cy;
+    const horizontal=target.cx>=source.cx,vertical=target.cy>=source.cy;
     return [
       [{x:horizontal?source.right:source.left,y:source.cy},{x:horizontal?target.left:target.right,y:target.cy}],
       [{x:source.cx,y:vertical?source.bottom:source.top},{x:target.cx,y:vertical?target.top:target.bottom}],
@@ -597,27 +503,17 @@
       [{x:source.cx,y:vertical?source.top:source.bottom},{x:target.cx,y:vertical?target.bottom:target.top}],
     ];
   }
-
   function routeDependency(edge,rects) {
-    const source=rects.get(edge.source), target=rects.get(edge.target);
-    if(!source||!target) return null;
-    const obstacles=[];
-    for(const [number,rect] of rects){
-      if(number===edge.source||number===edge.target) continue;
-      obstacles.push(clearRect(rect));
-    }
-
-    let bestRoute=null, bestCost=Infinity;
+    const source=rects.get(edge.source),target=rects.get(edge.target); if(!source||!target) return null;
+    const obstacles=[]; for(const [number,rect] of rects) if(number!==edge.source&&number!==edge.target) obstacles.push(clearRect(rect));
+    let bestRoute=null,bestCost=Infinity;
     for(const [start,goal] of dependencyPorts(source,target)){
-      const route=routeByVisibility(start,goal,obstacles,state.layout.width,state.layout.height);
-      if(!route) continue;
+      const route=routeByVisibility(start,goal,obstacles,state.layout.width,state.layout.height); if(!route) continue;
       const cost=route.slice(1).reduce((sum,p,index)=>sum+Math.abs(p.x-route[index].x)+Math.abs(p.y-route[index].y),0);
       if(cost<bestCost){ bestCost=cost; bestRoute=route; }
     }
     if(bestRoute) return bestRoute;
-
-    const topY=MARGIN/3;
-    const bottomY=state.layout.height-MARGIN/3;
+    const topY=MARGIN/3,bottomY=state.layout.height-MARGIN/3;
     const alternatives=[
       [{x:source.cx,y:source.top},{x:source.cx,y:topY},{x:target.cx,y:topY},{x:target.cx,y:target.top}],
       [{x:source.cx,y:source.bottom},{x:source.cx,y:bottomY},{x:target.cx,y:bottomY},{x:target.cx,y:target.bottom}],
@@ -626,141 +522,131 @@
   }
 
   function roundedOrthogonalPath(points,radius=8) {
-    if(!points?.length) return '';
-    if(points.length===1) return `M ${points[0].x} ${points[0].y}`;
+    if(!points?.length) return ''; if(points.length===1) return `M ${points[0].x} ${points[0].y}`;
     let d=`M ${points[0].x} ${points[0].y}`;
     for(let i=1;i<points.length-1;i++){
-      const prev=points[i-1], cur=points[i], next=points[i+1];
-      const inLen=Math.abs(cur.x-prev.x)+Math.abs(cur.y-prev.y);
-      const outLen=Math.abs(next.x-cur.x)+Math.abs(next.y-cur.y);
-      const r=Math.min(radius,inLen/2,outLen/2);
+      const prev=points[i-1],cur=points[i],next=points[i+1],inLen=Math.abs(cur.x-prev.x)+Math.abs(cur.y-prev.y),outLen=Math.abs(next.x-cur.x)+Math.abs(next.y-cur.y),r=Math.min(radius,inLen/2,outLen/2);
       const before={x:cur.x+(prev.x-cur.x)*(r/(inLen||1)),y:cur.y+(prev.y-cur.y)*(r/(inLen||1))};
       const after={x:cur.x+(next.x-cur.x)*(r/(outLen||1)),y:cur.y+(next.y-cur.y)*(r/(outLen||1))};
       d+=` L ${before.x} ${before.y} Q ${cur.x} ${cur.y} ${after.x} ${after.y}`;
     }
-    const last=points[points.length-1];
-    return d+` L ${last.x} ${last.y}`;
+    const last=points[points.length-1]; return d+` L ${last.x} ${last.y}`;
+  }
+
+  function dependencyShouldBeVisible(edge) {
+    if(showDependencies.checked) return true;
+    return state.selected!==null&&(edge.source===state.selected||edge.target===state.selected);
   }
 
   function drawEdges() {
     if(!state.data||!state.layout) return;
     const rects=measuredRects();
-    edgeSvg.innerHTML=`<defs>
-      <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--edge)"/></marker>
-      <marker id="arrowFocus" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="var(--edge)"/></marker>
-    </defs>`;
-
-    const edges=(state.data.edges||[]).filter(edge=>state.visible.has(edge.source)&&state.visible.has(edge.target));
+    edgeSvg.innerHTML=`<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="var(--edge)"/></marker><marker id="arrowFocus" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="var(--edge)"/></marker></defs>`;
+    const all=(state.data.edges||[]).filter(edge=>state.visible.has(edge.source)&&state.visible.has(edge.target));
+    const edges=all.filter(edge=>edge.kind==='parent'||dependencyShouldBeVisible(edge));
     const ordered=[...edges.filter(edge=>edge.source!==state.selected),...edges.filter(edge=>edge.source===state.selected)];
-
     for(const edge of ordered){
-      let route=edge.kind==='parent'?parentBusRoute(edge,rects):routeDependency(edge,rects);
-      if(!route&&edge.kind==='parent') route=routeDependency(edge,rects);
-      if(!route) continue;
-
+      let route=edge.kind==='parent'?parentBusRoute(edge,rects):routeDependency(edge,rects); if(!route&&edge.kind==='parent') route=routeDependency(edge,rects); if(!route) continue;
       const focused=state.selected!==null&&edge.source===state.selected;
-      const dimmed=state.selected!==null&&!focused;
+      const related=state.selected!==null&&(edge.source===state.selected||edge.target===state.selected);
+      const dimmed=state.selected!==null&&!related;
       const path=document.createElementNS('http://www.w3.org/2000/svg','path');
       path.setAttribute('d',roundedOrthogonalPath(route));
       path.setAttribute('class',`edge ${edge.kind==='dependency'?'dependency':'parent'}${focused?' focused':''}${dimmed?' dimmed':''}`);
-      path.setAttribute('marker-end',focused?'url(#arrowFocus)':'url(#arrow)');
-      edgeSvg.appendChild(path);
+      path.setAttribute('marker-end',focused?'url(#arrowFocus)':'url(#arrow)'); edgeSvg.appendChild(path);
     }
   }
 
+  function directRelatedNumbers(number) {
+    const related=new Set([number]);
+    for(const edge of state.data?.edges||[]){
+      if(edge.source===number) related.add(edge.target);
+      if(edge.target===number) related.add(edge.source);
+    }
+    return related;
+  }
+  function updateNodeFocus() {
+    const related=state.selected===null?null:directRelatedNumbers(state.selected);
+    for(const [number,el] of state.nodeElements){
+      el.classList.toggle('selected',number===state.selected);
+      el.classList.toggle('context-dim',Boolean(related&&!related.has(number)));
+    }
+  }
+  function clearSelection() {
+    state.selected=null;
+    details.innerHTML='<div class="empty">ノードをクリックするとIssue詳細を表示します。</div>';
+    updateNodeFocus();
+  }
   function selectNode(number) {
-    state.selected=Number(number);
-    for(const [nodeNumber,el] of state.nodeElements) el.classList.toggle('selected',nodeNumber===state.selected);
-    drawEdges();
-    const map=nodeMap(), node=map.get(state.selected);
-    if(node) renderDetails(node,map);
+    const value=Number(number);
+    state.selected=state.selected===value?null:value;
+    updateNodeFocus(); drawEdges();
+    if(state.selected===null){ details.innerHTML='<div class="empty">ノードをクリックするとIssue詳細を表示します。</div>'; return; }
+    const map=nodeMap(),node=map.get(state.selected); if(node) renderDetails(node,map);
   }
 
   function relationChips(numbers,map) {
     if(!numbers?.length) return '<span>なし</span>';
     return `<div class="relations">${numbers.map(number=>`<button class="chip" data-jump="${number}">#${number}${map.get(number)?' '+escapeHtml(shortTitle(map.get(number).title)):''}</button>`).join('')}</div>`;
   }
-
   function renderDetails(node,map) {
-    details.innerHTML=`<h2>#${node.number} ${escapeHtml(node.title)}</h2>
-      <div class="statusline"><span class="badge">${escapeHtml(node.status||'Project未設定')}</span><span class="badge">${escapeHtml(node.issue_level||'未分類')}</span>${node.state==='CLOSED'?'<span class="badge">Closed</span>':''}</div>
-      <dl class="kv">
-        <dt>Issue state</dt><dd>${escapeHtml(node.state)}</dd>
-        <dt>作業種別</dt><dd>${escapeHtml(node.work_type||'—')}</dd>
-        <dt>領域</dt><dd>${escapeHtml(node.area||'—')}</dd>
-        <dt>優先度</dt><dd>${escapeHtml(node.priority||'—')}</dd>
-        <dt>工程</dt><dd>${escapeHtml(String(node.process??'—'))}</dd>
-        <dt>Start date</dt><dd>${escapeHtml(node.start_date||'—')}</dd>
-        <dt>Target date</dt><dd>${escapeHtml(node.target_date||'—')}</dd>
-        <dt>親Issue</dt><dd>${relationChips(node.parent_number?[node.parent_number]:[],map)}</dd>
-        <dt>子Issue</dt><dd>${relationChips(node.child_numbers,map)}</dd>
-        <dt>依存元</dt><dd>${relationChips(node.dependency_numbers,map)}</dd>
-        <dt>関連PR</dt><dd>${prChips(node.related_pr_numbers)}</dd>
-      </dl>
-      <a class="open-link" href="${escapeAttr(node.url)}" target="_blank" rel="noreferrer">GitHubでIssueを開く ↗</a>
-      <div class="summary">${escapeHtml(node.summary||'')}</div>`;
+    details.innerHTML=`<h2>#${node.number} ${escapeHtml(node.title)}</h2><div class="statusline"><span class="badge">${escapeHtml(node.status||'Project未設定')}</span><span class="badge">${escapeHtml(node.issue_level||'未分類')}</span>${node.state==='CLOSED'?'<span class="badge">Closed</span>':''}</div><dl class="kv"><dt>Issue state</dt><dd>${escapeHtml(node.state)}</dd><dt>作業種別</dt><dd>${escapeHtml(node.work_type||'—')}</dd><dt>領域</dt><dd>${escapeHtml(node.area||'—')}</dd><dt>優先度</dt><dd>${escapeHtml(node.priority||'—')}</dd><dt>工程</dt><dd>${escapeHtml(String(node.process??'—'))}</dd><dt>Start date</dt><dd>${escapeHtml(node.start_date||'—')}</dd><dt>Target date</dt><dd>${escapeHtml(node.target_date||'—')}</dd><dt>親Issue</dt><dd>${relationChips(node.parent_number?[node.parent_number]:[],map)}</dd><dt>子Issue</dt><dd>${relationChips(node.child_numbers,map)}</dd><dt>依存元</dt><dd>${relationChips(node.dependency_numbers,map)}</dd><dt>関連PR</dt><dd>${prChips(node.related_pr_numbers)}</dd></dl><a class="open-link" href="${escapeAttr(node.url)}" target="_blank" rel="noreferrer">GitHubでIssueを開く ↗</a><div class="summary">${escapeHtml(node.summary||'')}</div>`;
     details.querySelectorAll('[data-jump]').forEach(button=>button.addEventListener('click',()=>selectNode(button.dataset.jump)));
   }
-
   function prChips(numbers) {
-    if(!numbers?.length) return '<span>なし</span>';
-    const [owner,repo]=state.data.repository.split('/');
+    if(!numbers?.length) return '<span>なし</span>'; const [owner,repo]=state.data.repository.split('/');
     return `<div class="relations">${numbers.map(number=>`<a class="chip" href="https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pull/${number}" target="_blank" rel="noreferrer">PR #${number}</a>`).join('')}</div>`;
   }
-
-  function shortTitle(text) { return text.length>24?text.slice(0,23)+'…':text; }
+  function shortTitle(text,max=24) { return text.length>max?text.slice(0,max-1)+'…':text; }
   function escapeHtml(value) { return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])); }
   function escapeAttr(value) { return escapeHtml(value); }
 
   function applyTransform() { world.style.transform=`translate(${state.tx}px,${state.ty}px) scale(${state.scale})`; }
   function zoomAt(factor,cx=viewport.clientWidth/2,cy=viewport.clientHeight/2) {
-    const old=state.scale;
-    const next=Math.max(.25,Math.min(2.2,old*factor));
-    const wx=(cx-state.tx)/old, wy=(cy-state.ty)/old;
-    state.scale=next;
-    state.tx=cx-wx*next;
-    state.ty=cy-wy*next;
-    applyTransform();
+    const old=state.scale,next=Math.max(.25,Math.min(2.2,old*factor)),wx=(cx-state.tx)/old,wy=(cy-state.ty)/old;
+    state.scale=next; state.tx=cx-wx*next; state.ty=cy-wy*next; applyTransform();
+  }
+  function fitScaleForWorld() {
+    if(!world.offsetWidth||!world.offsetHeight) return 1;
+    const pad=36; return Math.min(1,(viewport.clientWidth-pad*2)/world.offsetWidth,(viewport.clientHeight-pad*2)/world.offsetHeight);
   }
   function fitToView() {
-    if(!world.offsetWidth||!world.offsetHeight) return;
-    const pad=36;
-    const sx=(viewport.clientWidth-pad*2)/world.offsetWidth;
-    const sy=(viewport.clientHeight-pad*2)/world.offsetHeight;
-    state.scale=Math.max(.25,Math.min(1,Math.min(sx,sy)));
-    state.tx=(viewport.clientWidth-world.offsetWidth*state.scale)/2;
-    state.ty=(viewport.clientHeight-world.offsetHeight*state.scale)/2;
+    const scale=Math.max(.25,fitScaleForWorld()); state.scale=scale;
+    state.tx=(viewport.clientWidth-world.offsetWidth*scale)/2; state.ty=(viewport.clientHeight-world.offsetHeight*scale)/2; applyTransform();
+  }
+  function initialFocusNumber() {
+    const map=nodeMap();
+    const candidates=[...state.visible].map(number=>map.get(number)).filter(Boolean).sort((a,b)=>{
+      const ah=(a.child_numbers||[]).some(child=>state.visible.has(child))?0:1,bh=(b.child_numbers||[]).some(child=>state.visible.has(child))?0:1;
+      return (statusPriority.get(a.status)??99)-(statusPriority.get(b.status)??99)||ah-bh||a.number-b.number;
+    });
+    return candidates[0]?.number??null;
+  }
+  function setInitialViewport() {
+    const fit=fitScaleForWorld();
+    if(fit>=MIN_READABLE_SCALE){ fitToView(); return; }
+    state.scale=MIN_READABLE_SCALE;
+    const number=initialFocusNumber(),pos=number===null?null:state.layout?.positions.get(number);
+    if(pos){
+      state.tx=viewport.clientWidth*.30-(pos.x+NODE_W/2)*state.scale;
+      state.ty=viewport.clientHeight*.32-(pos.y+NODE_H/2)*state.scale;
+    } else { state.tx=30; state.ty=30; }
     applyTransform();
   }
 
-  viewport.addEventListener('pointerdown',event=>{
-    if(event.target.closest('.node')) return;
-    state.dragging=true;
-    state.lastX=event.clientX; state.lastY=event.clientY;
-    viewport.classList.add('dragging');
-    viewport.setPointerCapture(event.pointerId);
-  });
-  viewport.addEventListener('pointermove',event=>{
-    if(!state.dragging) return;
-    state.tx+=event.clientX-state.lastX;
-    state.ty+=event.clientY-state.lastY;
-    state.lastX=event.clientX; state.lastY=event.clientY;
-    applyTransform();
-  });
+  viewport.addEventListener('pointerdown',event=>{ if(event.target.closest('.node')) return; state.dragging=true; state.lastX=event.clientX; state.lastY=event.clientY; viewport.classList.add('dragging'); viewport.setPointerCapture(event.pointerId); });
+  viewport.addEventListener('pointermove',event=>{ if(!state.dragging) return; state.tx+=event.clientX-state.lastX; state.ty+=event.clientY-state.lastY; state.lastX=event.clientX; state.lastY=event.clientY; applyTransform(); });
   viewport.addEventListener('pointerup',()=>{ state.dragging=false; viewport.classList.remove('dragging'); });
-  viewport.addEventListener('wheel',event=>{
-    event.preventDefault();
-    const rect=viewport.getBoundingClientRect();
-    zoomAt(event.deltaY<0?1.12:.89,event.clientX-rect.left,event.clientY-rect.top);
-  },{passive:false});
+  viewport.addEventListener('wheel',event=>{ event.preventDefault(); const rect=viewport.getBoundingClientRect(); zoomAt(event.deltaY<0?1.12:.89,event.clientX-rect.left,event.clientY-rect.top); },{passive:false});
 
   document.getElementById('zoomIn').addEventListener('click',()=>zoomAt(1.18));
   document.getElementById('zoomOut').addEventListener('click',()=>zoomAt(.84));
   document.getElementById('reset').addEventListener('click',fitToView);
   document.getElementById('reload').addEventListener('click',load);
-  search.addEventListener('input',()=>{ renderGraph(); fitToView(); });
-  statusFilter.addEventListener('change',()=>{ renderGraph(); fitToView(); });
+  search.addEventListener('input',()=>{ renderGraph(); setInitialViewport(); });
+  statusFilter.addEventListener('change',()=>{ renderGraph(); setInitialViewport(); });
   includeClosed.addEventListener('change',load);
+  showDependencies.addEventListener('change',drawEdges);
   window.addEventListener('resize',()=>applyTransform());
 
   load();
