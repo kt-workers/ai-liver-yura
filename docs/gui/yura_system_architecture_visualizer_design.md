@@ -45,6 +45,7 @@ Issue: #312
 - 検索 / カテゴリ絞り込み
 - 選択ノードと接続エッジの強調
 - 詳細パネル
+- 読み込み中 / 完了 / 失敗の表示状態管理
 
 ## 3. ノード粒度
 
@@ -167,6 +168,16 @@ syntax errorを含むファイルがあっても全体解析を停止せず、di
 - エッジは方向付き矢印
 - 選択ノードへ接続するedgeを強調し、無関係edgeを薄くする
 - wheel zoom、drag pan、Fit to viewを提供する
+- 初回表示は全ノードを極端に縮小して読めなくするより、ノード可読性を優先した最低ズーム倍率を持つ
+- 「全体表示」操作では全体を収めるFit to viewを明示的に実行できる
+
+### Loading state
+
+- `/api/graph` リクエスト中だけCanvas全面のloading overlayを表示する
+- 成功・失敗のどちらでもリクエスト完了時にoverlayを必ず解除する
+- HTML `hidden` 属性をUI状態の正本とし、CSSは `[hidden]` を明示的に `display: none` とする
+- CSSの通常display指定で `hidden` が上書きされ、解析完了後も操作不能になる状態を禁止する
+- 解析完了後はノード数・依存数・生成時刻を表示し、ユーザーが完了状態を判別できるようにする
 
 ### Detail panel
 
@@ -230,6 +241,8 @@ Analyzerは一時ディレクトリに最小Python packageを構築して検証�
 - 同一logical module自己参照除外
 - edge集約とweight
 - syntax error時に全体解析継続
+- loading overlayの `hidden` がCSSで確実に非表示化される静的契約
+- 初期表示用の可読性優先fitと、明示的な全体Fit to viewが分離されていること
 
 Serverはgraph DTO生成関数と静的ファイル解決を薄く保ち、AnalyzerのUnit testを中心とする。
 
@@ -241,6 +254,7 @@ Render Verificationでは追加で以下を確認する。
 - `/api/health` が200を返す
 - `/api/graph` が実リポジトリのgraphを返す
 - `/` からWeb UIを表示できる
+- 解析完了後にloading overlayが消え、Canvasを操作できる
 
 ## 11. 非目標
 
