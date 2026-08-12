@@ -4,17 +4,12 @@ import json
 import os
 import urllib.error
 import urllib.request
-from collections.abc import Mapping
 from typing import Any, cast
 from uuid import uuid4
 
 from app.adapters.prompt import SimplePromptBuilder
 from app.domain.activities import Activity
 from app.domain.character import CharacterProfile
-from app.ports.structured_output import (
-    StructuredOutputContract,
-    StructuredOutputGenerationError,
-)
 from app.utils.async_blocking import run_cancellable_blocking
 from app.utils.llm_trace import LlmTraceContext, build_llm_trace_context
 from app.utils.trace import TraceLogger
@@ -112,89 +107,6 @@ class OpenAIResponseGenerator:
             fallback_used=response_text == self._fallback_response,
         )
         return response_text
-
-    async def generate_structured_response(
-        self,
-        activity: Activity,
-        contract: StructuredOutputContract,
-    ) -> Mapping[str, object]:
-        """Schema-critical role向けにResponses API Structured Outputsを使う。
-
-        通常の ``fallback_response`` へは落とさない。Transport/API/schema failureは
-        ``StructuredOutputGenerationError`` としてfail closedする。
-        """
-
-        prompt = self._prompt_builder.build_prompt(
-            character_profile=self._character_profile,
-            activity=activity,
-        )
-        trace_context = build_llm_trace_context(activity)
-        request_input = self._structured_request_payload(prompt, contract)
-        self._trace_logger.llm_request(
-            purpose=trace_context.purpose,
-            provider="openai",
-            model=self._model,
-            activity_id=trace_context.activity_id,
-            event_id=trace_context.event_id,
-            session_id=trace_context.session_id,
-            request=request_input,
-            user_input=trace_context.user_input,
-            available_capabilities=trace_context.available_capabilities,
-            planner_state=trace_context.planner_state,
-            constraints=trace_context.constraints,
-            llm_role=trace_context.llm_role,
-            model_key=trace_context.model_key or self._model,
-            service=trace_context.service or "openai_responses_structured",
-            request_id=trace_context.request_id,
-            attempt=trace_context.attempt,
-            structured_output_contract=contract.name,
-            **trace_context.trace_context.as_log_fields(),
-        )
-        result = await run_cancellable_blocking(
-            self._generate_structured_sync,
-            prompt,
-            contract,
-            trace_context,
-        )
-        self._trace_logger.llm_response(
-            purpose=trace_context.purpose,
-            provider="openai",
-            model=self._model,
-            activity_id=trace_context.activity_id,
-            parsed_response=dict(result),
-            adopted_text=json.dumps(result, ensure_ascii=False),
-            fallback_used=False,
-            stage="structured_adopted",
-            llm_role=trace_context.llm_role,
-            model_key=trace_context.model_key or self._model,
-            service=trace_context.service or "openai_responses_structured",
-            request_id=trace_context.request_id,
-            attempt=trace_context.attempt,
-            structured_output_contract=contract.name,
-            **trace_context.trace_context.as_log_fields(),
-        )
-        return result
-
-    def _structured_request_payload(
-        self,
-        prompt: str,
-        contract: StructuredOutputContract,
-    ) -> dict[str, object]:
-        payload: dict[str, object] = {
-            "model": self._model,
-            "input": prompt,
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": contract.name,
-                    "schema": dict(contract.schema),
-                    "strict": contract.strict,
-                }
-            },
-        }
-        if self._temperature is not None:
-            payload["temperature"] = self._temperature
-        return payload
 
     async def generate(self, prompt: str) -> str:
         request_id = str(uuid4())
@@ -366,89 +278,6 @@ class OpenAIResponseGenerator:
             generated_text_length=len(generated_text.strip()),
         )
         return generated_text.strip()
-
-    def _generate_structured_sync(
-        self,
-        prompt: str,
-        contract: StructuredOutputContract,
-        trace_context: LlmTraceContext | None = None,
-    ) -> Mapping[str, object]:
-        api_key = os.environ.get(self._api_key_env)
-        if not api_key:
-            raise StructuredOutputGenerationError(
-                f"{self._api_key_env} is required for structured output"
-            )
-
-        request_payload = self._structured_request_payload(prompt, contract)
-        request_body = json.dumps(request_payload).encode("utf-8")
-        request = urllib.request.Request(
-            f"{self._base_url.rstrip('/')}/responses",
-            data=request_body,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(
-                request,
-                timeout=self._timeout_seconds,
-            ) as response:
-                response_body = response.read().decode("utf-8")
-        except (urllib.error.URLError, TimeoutError) as error:
-            raise StructuredOutputGenerationError(
-                f"OpenAI structured output request failed: {type(error).__name__}"
-            ) from error
-
-        try:
-            response_json = json.loads(response_body)
-        except json.JSONDecodeError as error:
-            raise StructuredOutputGenerationError(
-                "OpenAI structured output response was not valid JSON"
-            ) from error
-
-        status = response_json.get("status")
-        if status is not None and status != "completed":
-            raise StructuredOutputGenerationError(
-                f"OpenAI structured output response status is {status!r}"
-            )
-
-        generated_text = self._extract_output_text(response_json).strip()
-        if not generated_text:
-            raise StructuredOutputGenerationError(
-                "OpenAI structured output response contained no output text"
-            )
-        try:
-            payload = json.loads(generated_text)
-        except json.JSONDecodeError as error:
-            raise StructuredOutputGenerationError(
-                "OpenAI structured output text was not valid JSON"
-            ) from error
-        if not isinstance(payload, dict):
-            raise StructuredOutputGenerationError(
-                "OpenAI structured output root must be an object"
-            )
-
-        self._trace_logger.llm_response(
-            purpose=trace_context.purpose if trace_context else "structured_generation",
-            provider="openai",
-            model=self._model,
-            activity_id=trace_context.activity_id if trace_context else None,
-            raw_response=response_body,
-            parsed_response=response_json,
-            adopted_text=generated_text,
-            fallback_used=False,
-            stage="structured_parsed",
-            llm_role=trace_context.llm_role if trace_context else None,
-            model_key=self._model,
-            service="openai_responses_structured",
-            request_id=trace_context.request_id if trace_context else None,
-            attempt=trace_context.attempt if trace_context else 1,
-            structured_output_contract=contract.name,
-            **(trace_context.trace_context.as_log_fields() if trace_context else {}),
-        )
-        return dict(payload)
 
     def _extract_output_text(self, response_json: dict[str, Any]) -> str:
         output_text = response_json.get("output_text")
