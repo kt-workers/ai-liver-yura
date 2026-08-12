@@ -1,0 +1,55 @@
+name: CI-only Semantic v2 focused
+
+on:
+  push:
+    branches:
+      - test/ci-semantic-realization-verifier-v2
+
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+      - name: Compile v2 modules
+        run: |
+          python -m compileall -q \
+            app/domain/semantic_utterance.py \
+            app/domain/semantic_validation.py \
+            app/domain/character_utterance.py \
+            app/domain/semantic_character_response.py \
+            app/ports/structured_output.py \
+            app/ports/llm_roles.py \
+            app/adapters/llm/openai_structured_response_generator.py \
+            app/adapters/prompt/character_language_realizer_v2_prompt_builder.py \
+            app/adapters/prompt/character_semantic_verifier_prompt_builder.py \
+            app/runtime/semantic_realization_v2_contracts.py \
+            app/runtime/character_semantic_verification_policy.py \
+            app/runtime/character_semantic_verifier.py \
+            app/runtime/character_language_realizer_v2.py \
+            app/runtime/character_language_realizer_v2_service.py \
+            app/runtime/character_semantic_verifier_validator.py
+      - name: Run Semantic v2 focused tests
+        run: |
+          pytest -q \
+            tests/test_semantic_utterance_v2.py \
+            tests/test_character_utterance_v2.py \
+            tests/test_openai_structured_output.py \
+            tests/test_structured_llm_role_adapter.py \
+            tests/test_character_semantic_verification_v2.py \
+            tests/test_character_language_realizer_v2.py \
+            tests/test_semantic_realization_v2_pipeline_boundary.py
+      - name: Run Full pytest
+        run: pytest -q
