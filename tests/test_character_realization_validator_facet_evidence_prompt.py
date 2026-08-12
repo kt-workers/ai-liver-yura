@@ -96,7 +96,8 @@ def test_post_observation_validator_does_not_receive_expected_state_or_certainty
     assert "intensity" not in proposition
     assert proposition["predicate"] == "current_desire"
     assert proposition["concept"] == "connection"
-    assert "state/polarity/intensity/certaintyは、独立ObserverとRuntimeのtyped comparisonで既に検証済み" in prompt
+    assert "state/polarity/intensity/certaintyは、独立ObserverとRuntimeの" in prompt
+    assert "typed comparisonで既に検証済み" in prompt
     assert "ここではそれらを自然文から再解釈・再判定しない" in prompt
 
 
