@@ -300,7 +300,7 @@ async def test_character_polarity_flip_is_rejected_by_independent_observer() -> 
     )
 
     assert validation.accepted is False
-    assert validation.reason == "observed_semantic_state_mismatch"
+    assert validation.reason == "observed_semantic_state_fidelity_mismatch"
     assert (
         "proposition:0:joy:observed_state_mismatch:expected=absent:observed=present"
         in validation.claim_differences
@@ -332,7 +332,7 @@ async def test_unplanned_intensity_is_rejected_without_runtime_word_dictionary()
     )
 
     assert validation.accepted is False
-    assert validation.reason == "observed_semantic_state_mismatch"
+    assert validation.reason == "observed_semantic_state_fidelity_mismatch"
     assert (
         "proposition:0:joy:observed_state_mismatch:expected=absent:observed=low"
         in validation.claim_differences

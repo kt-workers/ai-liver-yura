@@ -403,7 +403,7 @@ async def test_observer_state_mismatch_rejects_before_post_observation_validator
     )
 
     assert result.accepted is False
-    assert result.reason == "observed_semantic_state_mismatch"
+    assert result.reason == "observed_semantic_state_fidelity_mismatch"
     assert (
         "proposition:0:joy:observed_state_mismatch:expected=absent:observed=present"
         in result.claim_differences

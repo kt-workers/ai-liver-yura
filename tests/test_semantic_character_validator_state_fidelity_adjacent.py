@@ -214,7 +214,7 @@ async def test_high_joy_bare_presence_is_rejected_by_independent_observer() -> N
 
     assert len(validator_model.activities) == 1
     assert validation.accepted is False
-    assert validation.reason == "observed_semantic_state_mismatch"
+    assert validation.reason == "observed_semantic_state_fidelity_mismatch"
 
 
 @pytest.mark.asyncio
@@ -245,7 +245,7 @@ async def test_missing_sadness_unknown_committed_is_rejected_by_independent_obse
     )
 
     assert validation.accepted is False
-    assert validation.reason == "observed_semantic_state_mismatch"
+    assert validation.reason == "observed_semantic_state_fidelity_mismatch"
 
 
 @pytest.mark.asyncio
@@ -323,7 +323,7 @@ async def test_mixed_supporting_bare_presence_is_rejected_by_independent_observe
     )
 
     assert validation.accepted is False
-    assert validation.reason == "observed_semantic_state_mismatch"
+    assert validation.reason == "observed_semantic_state_fidelity_mismatch"
     assert any("proposition:1:joy:observed_state_mismatch" in item for item in validation.claim_differences)
     assert any("proposition:3:calm:observed_state_mismatch" in item for item in validation.claim_differences)
 

@@ -223,7 +223,7 @@ async def test_actual_unknown_to_low_commit_is_rejected_by_independent_observer(
     )
 
     assert validation.accepted is False
-    assert validation.reason == "observed_semantic_state_mismatch"
+    assert validation.reason == "observed_semantic_state_fidelity_mismatch"
     assert (
         "proposition:0:sadness:observed_state_mismatch:expected=unknown:observed=low"
         in validation.claim_differences
@@ -241,7 +241,7 @@ async def test_unknown_committed_to_present_is_rejected_by_independent_observer(
     )
 
     assert validation.accepted is False
-    assert validation.reason == "observed_semantic_state_mismatch"
+    assert validation.reason == "observed_semantic_state_fidelity_mismatch"
     assert (
         "proposition:0:sadness:observed_state_mismatch:expected=unknown:observed=present"
         in validation.claim_differences

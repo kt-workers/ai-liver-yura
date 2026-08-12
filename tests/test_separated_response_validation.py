@@ -277,15 +277,12 @@ async def test_missing_primary_semantic_realization_is_rejected_before_model_cal
 
 @pytest.mark.asyncio
 async def test_post_observation_model_rejection_is_returned_after_observer_passes() -> None:
+    payload = _accepted_payload()
+    checks = payload["semantic_checks"]
+    assert isinstance(checks, dict)
+    checks["unsupported_new_fact_absent"] = False
     model = _RecordingValidationModel(
-        json.dumps(
-            {
-                "accepted": False,
-                "reason": "unsupported_new_fact",
-                "differences": ["unsupported_new_fact_added"],
-            },
-            ensure_ascii=False,
-        )
+        json.dumps(payload, ensure_ascii=False)
     )
     validator = CharacterRealizationValidator(
         model=model,
@@ -294,10 +291,9 @@ async def test_post_observation_model_rejection_is_returned_after_observer_passe
     source = Activity(activity_type=ActivityType.CONVERSATION_WITH_USER, goal="質問へ答える")
     result = await validator.validate(source, _validated_context(), _response())
     assert result.accepted is False
-    assert result.reason == "unsupported_new_fact"
-    assert result.claim_differences == ("unsupported_new_fact_added",)
+    assert result.reason == "post_observation_semantic_contract_failed"
+    assert result.claim_differences == ("unsupported_new_fact_absent",)
     assert len(model.activities) == 2
-
 
 @pytest.mark.asyncio
 async def test_semantic_change_is_rejected_by_independent_observer_without_word_dictionary() -> None:
@@ -322,7 +318,7 @@ async def test_semantic_change_is_rejected_by_independent_observer_without_word_
         _response(speech="少し楽しくないかな。"),
     )
     assert result.accepted is False
-    assert result.reason == "observed_semantic_state_mismatch"
+    assert result.reason == "observed_semantic_state_fidelity_mismatch"
     assert (
         "proposition:0:joy:observed_state_mismatch:expected=absent:observed=low"
         in result.claim_differences

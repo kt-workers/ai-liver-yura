@@ -181,7 +181,7 @@ async def test_e1_bare_presence_is_rejected_by_independent_observer() -> None:
     )
 
     assert validation.accepted is False
-    assert validation.reason == "observed_semantic_state_mismatch"
+    assert validation.reason == "observed_semantic_state_fidelity_mismatch"
     assert (
         "proposition:0:joy:observed_state_mismatch:expected=high:observed=present"
         in validation.claim_differences
