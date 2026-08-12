@@ -68,13 +68,17 @@ def _response() -> CharacterResponse:
     )
 
 
-def test_observer_candidate_payload_does_not_expose_expected_semantic_facets() -> None:
+def _prompt() -> str:
     plan = _plan()
-    prompt = CharacterRealizationObserverPromptBuilder().build(
+    return CharacterRealizationObserverPromptBuilder().build(
         _context(plan),
         _response(),
         plan,
     )
+
+
+def test_observer_candidate_payload_does_not_expose_expected_semantic_facets() -> None:
+    prompt = _prompt()
     lines = prompt.splitlines()
     marker = lines.index("# Candidate Predicate IDs")
     candidates = json.loads(lines[marker + 1])
@@ -92,12 +96,7 @@ def test_observer_candidate_payload_does_not_expose_expected_semantic_facets() -
 
 
 def test_observer_prompt_explicitly_forbids_plan_anchored_state_inference() -> None:
-    plan = _plan()
-    prompt = CharacterRealizationObserverPromptBuilder().build(
-        _context(plan),
-        _response(),
-        plan,
-    )
+    prompt = _prompt()
 
     assert "期待state、期待certainty、期待conceptは与えられていない" in prompt
     assert "期待値を想像して合わせない" in prompt
@@ -106,12 +105,7 @@ def test_observer_prompt_explicitly_forbids_plan_anchored_state_inference() -> N
 
 
 def test_observer_prompt_distinguishes_absence_intensity_overview_and_unknown() -> None:
-    plan = _plan()
-    prompt = CharacterRealizationObserverPromptBuilder().build(
-        _context(plan),
-        _response(),
-        plan,
-    )
+    prompt = _prompt()
 
     assert "否定や非存在をlowへ読み替えない" in prompt
     assert "順序づけられた強度差" in prompt
@@ -121,12 +115,7 @@ def test_observer_prompt_distinguishes_absence_intensity_overview_and_unknown() 
 
 
 def test_observer_certainty_is_target_epistemic_certainty_not_meta_assertiveness() -> None:
-    plan = _plan()
-    prompt = CharacterRealizationObserverPromptBuilder().build(
-        _context(plan),
-        _response(),
-        plan,
-    )
+    prompt = _prompt()
 
     assert "観測器自身の判定自信度" in prompt
     assert "文法上その文を断言している強さでもない" in prompt
@@ -135,12 +124,7 @@ def test_observer_certainty_is_target_epistemic_certainty_not_meta_assertiveness
 
 
 def test_observer_evidence_must_come_only_from_character_speech() -> None:
-    plan = _plan()
-    prompt = CharacterRealizationObserverPromptBuilder().build(
-        _context(plan),
-        _response(),
-        plan,
-    )
+    prompt = _prompt()
 
     assert "User Wording Hintはevidenceではない" in prompt
     assert "Character Speechに実在する原文部分だけ" in prompt
