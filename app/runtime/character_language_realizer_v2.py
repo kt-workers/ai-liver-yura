@@ -22,10 +22,12 @@ class CharacterLanguageRealizerV2:
         prompt_builder: object,
         *,
         character_profile: CharacterProfile | None = None,
+        reasoning_effort: str = "none",
     ) -> None:
         self._model = model
         self._prompt_builder = prompt_builder
         self._character_profile = character_profile
+        self._reasoning_effort = reasoning_effort
 
     async def generate_utterance(
         self,
@@ -55,6 +57,7 @@ class CharacterLanguageRealizerV2:
             context={
                 "plugin_prompt_override": prompt,
                 "llm_role": "character_language_realizer_v2",
+                "reasoning_effort": self._reasoning_effort,
                 "event_id": source.context.get("event_id"),
                 "trace_context": source.context.get("trace_context"),
                 "activity_turn_id": source.context.get("activity_turn_id"),
