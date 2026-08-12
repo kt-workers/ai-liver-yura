@@ -6,6 +6,7 @@ from app.domain.activities import Activity
 from app.domain.behavior import BehaviorPlanningContext
 from app.domain.character import CharacterProfile
 from app.domain.character_response import CharacterResponse, Claim, ResponseContext
+from app.domain.character_utterance import CharacterUtterance
 from app.domain.semantic_utterance import SemanticUtterancePlan
 
 
@@ -46,11 +47,24 @@ class ResponseValidationPromptBuilder(Protocol):
 
 
 class CharacterRealizationValidationPromptBuilder(ResponseValidationPromptBuilder, Protocol):
-    """Character発話の独立観測とSemantic Plan比較Promptを構築するPort。"""
+    """Character発話の独立観測とSemantic Plan比較Promptを構築するv1 Port。"""
 
     def build_observation(
         self,
         context: ResponseContext,
         response: CharacterResponse,
         plan: SemanticUtterancePlan,
+    ) -> str: ...
+
+
+class CharacterSemanticVerifierPromptBuilder(Protocol):
+    """v2 Plan-vs-speech relative semantic verification Prompt Port。"""
+
+    def build(
+        self,
+        context: ResponseContext,
+        utterance: CharacterUtterance,
+        plan: SemanticUtterancePlan,
+        *,
+        existence_boundaries: tuple[str, ...] = (),
     ) -> str: ...
