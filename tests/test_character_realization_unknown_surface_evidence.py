@@ -180,9 +180,10 @@ def test_observer_prompt_treats_predicate_uncertainty_as_unknown_epistemic_state
     assert "unknownは対象の存在・不在・強度・値を現時点で確定していない" in prompt
     assert "特定polarityへcommitしたspeechをunknownにしない" in prompt
     assert "observed_certaintyは、観測器自身の判定自信度でも" in prompt
-    assert "対象stateについてのepistemic確かさ" in prompt
-    assert "observed_state=unknownのとき" in prompt
-    assert "observed_certainty=highへ引き上げない" in prompt
+    assert "このpredicateはobserved_stateである" in prompt
+    assert "Semantic Plan側のcertaintyも同じ命題certainty" in prompt
+    assert "observed_state=unknownでも同じ定義を使う" in prompt
+    assert "unknownだから自動的にcertainty=lowへ固定しない" in prompt
 
 
 @pytest.mark.asyncio
@@ -217,7 +218,7 @@ async def test_unknown_committed_to_low_is_rejected_by_independent_observation()
     )
 
     assert result.accepted is False
-    assert result.reason == "observed_semantic_state_mismatch"
+    assert result.reason == "observed_semantic_state_fidelity_mismatch"
     assert (
         "proposition:0:sadness:observed_state_mismatch:expected=unknown:observed=low"
         in result.claim_differences
