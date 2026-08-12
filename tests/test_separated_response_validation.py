@@ -62,38 +62,27 @@ def _observation(
     }
 
 
-def _accepted_payload(*, intensity_markers: list[str] | None = None) -> dict[str, object]:
+def _accepted_payload() -> dict[str, object]:
     return {
         "accepted": True,
-        "reason": "semantic_realization_consistent",
+        "reason": "post_observation_semantic_contract_consistent",
         "differences": [],
         "semantic_checks": {
-            "required_facets_preserved": True,
-            "predicate_preserved": True,
-            "state_preserved": True,
-            "certainty_preserved": True,
-            "concept_preserved": True,
-            "unsupported_intensity_added": False,
+            "required_content_preserved": True,
+            "forbidden_additions_absent": True,
+            "unsupported_new_fact_absent": True,
+            "existence_boundary_preserved": True,
+            "budget_preserved": True,
         },
         "realized_proposition_checks": [
             {
                 "realization_id": "proposition:0:joy",
                 "predicate_preserved": True,
                 "predicate_evidence_spans": ["楽しくない"],
-                "state_preserved": True,
-                "state_fidelity": "exact",
-                "certainty_preserved": True,
-                "certainty_evidence_spans": [],
                 "concept_preserved": True,
                 "concept_evidence_spans": [],
-                "intensity_semantics_preserved": True,
-                "presence_only_counterfactual_equivalent": False,
-                "intensity_evidence_spans": [],
             }
         ],
-        "surface_evidence": {
-            "intensity_markers": intensity_markers or [],
-        },
     }
 
 
@@ -218,21 +207,22 @@ def test_semantic_validator_rejects_modified_target_proposition() -> None:
     assert "proposition_mismatch" in result.differences
 
 
-def test_realization_validator_prompt_uses_semantic_plan_not_raw_internal_state() -> None:
+def test_post_observation_validator_prompt_uses_only_remaining_semantic_contract() -> None:
     context = _validated_context()
     prompt = CharacterRealizationValidatorPromptBuilder().build(context, _response())
-    assert "# Semantic Utterance Plan" in prompt
+    assert "# Post-Observation Semantic Contract" in prompt
     assert '"predicate": "joy"' in prompt
-    assert '"state": "absent"' in prompt
+    assert '"state": "absent"' not in prompt
+    assert '"certainty": "high"' not in prompt
     assert "emotion.current.reactive.joy" not in prompt
     assert "evidence_refs" not in prompt
     assert "0.82" not in prompt
     assert "0.58" not in prompt
     assert "# User Wording Hint" in prompt
     assert '"utterance": "楽しい？"' in prompt
-    assert "意味の近い別概念へ置換していない" in prompt
-    assert "surface_evidence.intensity_markers" in prompt
-    assert "semantic_checks" in prompt
+    assert "state/polarity/intensity/certaintyはこの工程で判定しない" in prompt
+    assert "required_content_preserved" in prompt
+    assert "forbidden_additions_absent" in prompt
 
 
 @pytest.mark.asyncio
@@ -249,7 +239,7 @@ async def test_realization_validator_model_invocations_are_sanitized() -> None:
     )
     result = await validator.validate(source, _validated_context(), _response())
     assert result.accepted is True
-    assert result.reason == "semantic_realization_consistent"
+    assert result.reason == "post_observation_semantic_contract_consistent"
     assert len(model.activities) == 2
     observer, comparator = model.activities
     assert observer.context["llm_role"] == "character_realization_observer"
@@ -286,13 +276,13 @@ async def test_missing_primary_semantic_realization_is_rejected_before_model_cal
 
 
 @pytest.mark.asyncio
-async def test_plan_aware_model_rejection_is_returned_after_observer_passes() -> None:
+async def test_post_observation_model_rejection_is_returned_after_observer_passes() -> None:
     model = _RecordingValidationModel(
         json.dumps(
             {
                 "accepted": False,
-                "reason": "target_polarity_changed",
-                "differences": ["validator_reported_difference"],
+                "reason": "unsupported_new_fact",
+                "differences": ["unsupported_new_fact_added"],
             },
             ensure_ascii=False,
         )
@@ -304,24 +294,9 @@ async def test_plan_aware_model_rejection_is_returned_after_observer_passes() ->
     source = Activity(activity_type=ActivityType.CONVERSATION_WITH_USER, goal="質問へ答える")
     result = await validator.validate(source, _validated_context(), _response())
     assert result.accepted is False
-    assert result.reason == "target_polarity_changed"
-    assert result.claim_differences == ("validator_reported_difference",)
+    assert result.reason == "unsupported_new_fact"
+    assert result.claim_differences == ("unsupported_new_fact_added",)
     assert len(model.activities) == 2
-
-
-@pytest.mark.asyncio
-async def test_surface_marker_is_diagnostic_only_when_typed_semantics_match() -> None:
-    model = _RecordingValidationModel(
-        json.dumps(_accepted_payload(intensity_markers=["今は"]), ensure_ascii=False)
-    )
-    validator = CharacterRealizationValidator(
-        model=model,
-        prompt_builder=CharacterRealizationValidatorPromptBuilder(),
-    )
-    source = Activity(activity_type=ActivityType.CONVERSATION_WITH_USER, goal="質問へ答える")
-    result = await validator.validate(source, _validated_context(), _response())
-    assert result.accepted is True
-    assert result.reason == "semantic_realization_consistent"
 
 
 @pytest.mark.asyncio
@@ -372,12 +347,12 @@ async def test_semantic_path_without_validator_model_fails_closed_without_lexica
 
 
 @pytest.mark.asyncio
-async def test_model_acceptance_without_facet_diagnostics_fails_closed() -> None:
+async def test_model_acceptance_without_post_observation_diagnostics_fails_closed() -> None:
     model = _RecordingValidationModel(
         json.dumps(
             {
                 "accepted": True,
-                "reason": "semantic_realization_consistent",
+                "reason": "post_observation_semantic_contract_consistent",
                 "differences": [],
             }
         )
