@@ -101,8 +101,50 @@ def test_observer_prompt_explicitly_forbids_plan_anchored_state_inference() -> N
 
     assert "期待state、期待certainty、期待conceptは与えられていない" in prompt
     assert "期待値を想像して合わせない" in prompt
-    assert "有限個の語彙リストへ置き換えて判定しない" in prompt
+    assert "自然言語の意味判定を有限個の単語・phrase・regex・substring対応表へ置き換えない" in prompt
     assert "semantic_realizations等の自己申告metadataは観測根拠にしない" in prompt
+
+
+def test_observer_prompt_distinguishes_absence_intensity_overview_and_unknown() -> None:
+    plan = _plan()
+    prompt = CharacterRealizationObserverPromptBuilder().build(
+        _context(plan),
+        _response(),
+        plan,
+    )
+
+    assert "否定や非存在をlowへ読み替えない" in prompt
+    assert "順序づけられた強度差" in prompt
+    assert "overviewは対象そのものを単にpresentと述べる状態ではない" in prompt
+    assert "全体状態・総合状態" in prompt
+    assert "unknownは対象の存在・不在・強度・値を現時点で確定していない" in prompt
+
+
+def test_observer_certainty_is_target_epistemic_certainty_not_meta_assertiveness() -> None:
+    plan = _plan()
+    prompt = CharacterRealizationObserverPromptBuilder().build(
+        _context(plan),
+        _response(),
+        plan,
+    )
+
+    assert "観測器自身の判定自信度" in prompt
+    assert "文法上その文を断言している強さでもない" in prompt
+    assert "対象stateについてのepistemic確かさ" in prompt
+    assert "observed_certainty=highへ引き上げない" in prompt
+
+
+def test_observer_evidence_must_come_only_from_character_speech() -> None:
+    plan = _plan()
+    prompt = CharacterRealizationObserverPromptBuilder().build(
+        _context(plan),
+        _response(),
+        plan,
+    )
+
+    assert "User Wording Hintはevidenceではない" in prompt
+    assert "Character Speechに実在する原文部分だけ" in prompt
+    assert "User Wording Hint、Candidate ID、説明文をspanへ混ぜない" in prompt
 
 
 def test_runtime_realization_validator_has_no_finite_degree_semantic_dictionary() -> None:
@@ -115,3 +157,18 @@ def test_runtime_realization_validator_has_no_finite_degree_semantic_dictionary(
         "_deterministic_surface_differences",
     ):
         assert forbidden not in source
+
+
+def test_runtime_post_observation_validator_does_not_revalidate_state_fidelity() -> None:
+    source = inspect.getsource(character_realization_validator)
+
+    for removed_post_observation_field in (
+        "state_fidelity",
+        "intensity_semantics_preserved",
+        "presence_only_counterfactual_equivalent",
+        "intensity_evidence_spans",
+        "certainty_evidence_spans",
+        "state_preserved",
+        "certainty_preserved",
+    ):
+        assert removed_post_observation_field not in source
