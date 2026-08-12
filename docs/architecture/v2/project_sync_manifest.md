@@ -1,6 +1,6 @@
 # AI Liver ゆら V2 GitHub Projects Sync Manifest
 
-Status: Draft / #319 / Canonical values resolved 2026-08-13
+Status: Synchronized / #319 PASS / 2026-08-13
 Project: `ktan514 / 6`
 Root: #317
 Canonical: `docs/architecture/v2/system_architecture.md`
@@ -19,39 +19,32 @@ Related canonicals:
 
 ## 1. 目的
 
-V2 Issue hierarchyをGitHub Projects v2「プロジェクトゆら」へ同期する正本。
+V2 Issue hierarchyをGitHub Projects v2「プロジェクトゆら」へ安全に同期する正本。
 
-Project field / formal Sub-issue操作前にGitHub liveからfield ID / option ID / item IDを取得し、旧Snapshot IDを推測利用しない。
+Project field / formal Sub-issue操作時は、必ずGitHub liveからfield ID / option ID / item IDを取得し、旧Snapshot IDを推測利用しない。
 
-実行手順・STOP条件は`project_sync_runbook.md`。
-
----
+2026-08-13に認証済みローカルCodexからRunbookに従って同期を実施し、再監査PASSした。
 
 ## 2. Design Gate Status Policy
 
 - #317: `In progress`
 - #318: `In progress`
-- #319: `Blocked`
+- #319: `Done`
 - Product/Design Work・Parent・Integration: 原則`Blocked` by #317
 
+#319の完了はProject同期作業の完了を意味するだけで、V2 product implementationのfreeze解除を意味しない。
 ユーザーがV2 canonical designを明示確認するまでproduct implementation issueを`In progress`へしない。
-
----
 
 ## 3. `作業種別` canonical rule
 
-`作業種別`は現在の進捗段階ではなく、**Issueの主成果物**を表すsingle-selectとして固定する。
-
-利用する既存Option:
+`作業種別`は現在の進捗段階ではなく、Issueの主成果物を表すsingle-selectとして固定する。
 
 - `設計`: Architecture / Parent設計が主成果物
-- `実装`: Product / Runtime / Provider / UI / Toolの実装が主成果物
+- `実装`: Product / Runtime / Provider / UI / Tool実装が主成果物
 - `検証`: Integration / Validation / System Verificationが主成果物
-- `調査`: Inventory / Migration / Project監査・同期など管理調査が主成果物
+- `調査`: Inventory / Migration / Project監査・同期等が主成果物
 - `ドキュメント`: 人間向け正本文書そのものが主成果物
 - `不具合`: 今回のV2新体系では対象なし
-
-同一Issueで設計→実装→Verificationと進んでも`作業種別`を工程ごとに変更しない。進捗は`Status`で管理する。
 
 特殊ケース:
 - #317 = `設計`
@@ -61,20 +54,16 @@ Project field / formal Sub-issue操作前にGitHub liveからfield ID / option I
 - Integration = 原則`検証`
 - #352 Validation Labs = `検証`
 - #354 Character Bible = `ドキュメント`
-- その他のProduct Work = 原則`実装`
-
----
+- その他Product Work = 原則`実装`
 
 ## 4. `領域` canonical taxonomy
 
-`領域`は詳細Module階層を複製しない。**Project上での広い分類**に限定する。
-詳細責務はformal Parent/Sub-issue hierarchyとIssue本文で表現する。
+`領域`は詳細Module階層を複製せず、Project上の広い分類に限定する。詳細責務はformal Parent/Sub-issue hierarchyとIssue本文で表現する。
 
-### 既存Optionを継続利用
-
+既存Optionを継続利用:
 - `Core`
 - `入力意味解析`
-- `内部指示器`（Legacy用。V2新Issueでは原則使用しない）
+- `内部指示器`（Legacy用）
 - `感情・欲望・善悪`
 - `Body`
 - `Avatar／Live2D`
@@ -82,8 +71,7 @@ Project field / formal Sub-issue操作前にGitHub liveからfield ID / option I
 - `Memory`
 - `Infrastructure`
 
-### V2で追加するOption
-
+V2追加Option:
 - `Management`
 - `Character`
 - `Plugin`
@@ -93,10 +81,7 @@ Project field / formal Sub-issue操作前にGitHub liveからfield ID / option I
 - `Validation`
 - `System Integration`
 
-旧Optionは削除・renameしない。
-V2同期では不足する上記8 Optionだけをexisting `領域` fieldへ非破壊追加する。
-
----
+2026-08-13同期で上記8 Optionをexisting `領域` fieldへ非破壊追加済み。既存Optionの削除・rename・ID変更なし。
 
 ## 5. Parent / Sub-issue hierarchy
 
@@ -153,7 +138,7 @@ V2同期では不足する上記8 Optionだけをexisting `領域` fieldへ非�
 └─ #360 System Integration
 ```
 
----
+Formal hierarchyは2026-08-13再監査で49/49 PASS。
 
 ## 6. Project Items / canonical field values
 
@@ -161,7 +146,7 @@ V2同期では不足する上記8 Optionだけをexisting `領域` fieldへ非�
 |---:|---:|---|---|---|---|---|---|---|
 | 0 | #317 | Management/Root | 設計 | Management | Critical | 2026-08-12 | 2026-10-31 | In progress |
 | 10 | #318 | Management | 調査 | Management | Critical | 2026-08-12 | 2026-08-16 | In progress |
-| 20 | #319 | Management | 調査 | Management | Critical | 2026-08-12 | 2026-08-17 | Blocked |
+| 20 | #319 | Management | 調査 | Management | Critical | 2026-08-12 | 2026-08-17 | Done |
 | 100 | #321 | Work | 実装 | Core | Critical | 2026-08-13 | 2026-08-15 | Blocked |
 | 110 | #322 | Work | 実装 | Core | Critical | 2026-08-15 | 2026-08-21 | Blocked |
 | 120 | #323 | Work | 実装 | Core | Critical | 2026-08-15 | 2026-08-20 | Blocked |
@@ -210,8 +195,6 @@ V2同期では不足する上記8 Optionだけをexisting `領域` fieldへ非�
 | 650 | #345 | Parent | 設計 | Subsystem | High | 2026-09-30 | 2026-10-20 | Blocked |
 | 700 | #360 | Integration | 検証 | System Integration | Critical | 2026-10-20 | 2026-10-31 | Blocked |
 
----
-
 ## 7. Architecture invariants in Project
 
 - variable LLM Role count
@@ -228,24 +211,30 @@ V2同期では不足する上記8 Optionだけをexisting `領域` fieldへ非�
 - Streaming burst isolation
 - Plugin structural definition, not optionality-only
 
----
+## 8. 2026-08-13 Sync Result
 
-## 8. Sync Rule
+Codex live re-audit:
+- Project ID: `PVT_kwHOBdOPDs4Bfhe4`
+- target issues: 50
+- exactly-one-item: 50/50 PASS
+- duplicate item: 0
+- Area options added: 8
+- existing Area option removed/renamed/ID-changed: 0
+- Status/作業種別/領域/優先度/工程/Start/Target: 50/50 PASS
+- formal Parent/Sub-issue: 49/49 PASS
+- #366: parent #325 / 工程235 PASS
+- #361: parent #325 / 工程240 PASS
+- #333: parent #325 / Core / High / 工程330 PASS
+- product code / repo file mutation by Codex: none
+- Design Gate released: no
+- #319 checkpoint: `issuecomment-5269518529`
 
-1. Runbookに従いProject #6 live取得
-2. field/option/item IDs取得
-3. V2追加Area 8 Optionを非破壊で確認/追加
-4. `作業種別`を本Manifestの一意値で解決
-5. duplicate item確認
-6. #361〜#366 existence確認
-7. formal Parent/Sub-issue確認
-8. Manifestとの差分dry-run
-9. canonical一致時のみmutation
-10. mutation後再取得監査
-
-古いIDを推測しない。既存Area optionはこの同期作業では削除・renameしない。
-
----
+ChatGPT-side independent verification:
+- branch HEAD matched Codex report at verification time
+- #319 PASS checkpoint exists on GitHub
+- formal parent for #366 = #325
+- formal parent for #361 = #325
+- formal parent for #333 = #325
 
 ## 9. Completion
 
@@ -254,7 +243,7 @@ V2同期では不足する上記8 Optionだけをexisting `領域` fieldへ非�
 - [x] Start/Target Issue本文設定
 - [x] Design Gate status policy
 - [x] broad Area taxonomy確定
-- [x] V2追加Area Optionを8個へ限定
+- [x] V2追加Area Option 8個を非破壊追加
 - [x] 50 Issueの`作業種別`一意値確定
 - [x] Area / 工程 / Priority / Schedule正本
 - [x] variable LLM / non-serial runtime
@@ -262,8 +251,9 @@ V2同期では不足する上記8 Optionだけをexisting `領域` fieldへ非�
 - [x] persistent Goal State
 - [x] Attention/Focus #333 metadata
 - [x] live-ID/dry-run/mutation/re-audit runbook
-- [ ] missing V2 Area optionsをProjectへ非破壊追加
-- [ ] V2 Issue project一意登録確認
-- [ ] Status/作業種別/領域/優先度/工程/Start/Target同期
-- [ ] formal Parent/Sub-issue同期
-- [ ] re-audit PASS
+- [x] V2 Issue project一意登録確認
+- [x] Status/作業種別/領域/優先度/工程/Start/Target同期
+- [x] formal Parent/Sub-issue同期
+- [x] re-audit PASS
+
+#319は管理作業として完了。以降のProject status変更は各Issue lifecycleに従う。
