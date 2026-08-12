@@ -4,15 +4,18 @@ Status: Draft / #319
 Project: `ktan514 / 6`
 Root: #317
 Canonical architecture: `docs/architecture/v2/system_architecture.md`
+Brain: `docs/architecture/v2/brain_architecture.md`
+Cognitive / LLM: `docs/architecture/v2/cognitive_llm_architecture.md`
+Concurrency: `docs/architecture/v2/concurrency_architecture.md`
 Migration: `docs/architecture/v2/legacy_migration_matrix.md`
 
 ## 1. 目的
 
 V2 Issue hierarchyをGitHub Projects v2「プロジェクトゆら」へ同期するための一括正本。
 
-ChatGPT GitHub Connectorでは現在、Projects v2 field mutation / GitHub正式Sub-issue mutationを直接実行できないため、本Manifestで**値を先に確定し、`gh project` / `gh api graphql`が利用可能な環境で同期する**。
+ChatGPT GitHub ConnectorではProjects v2 field mutation / GitHub正式Sub-issue mutationを直接実行できない場合があるため、本Manifestで値を先に確定し、実行可能な環境で同期する。
 
-同期時はProject field ID / option ID / current item IDをGitHub liveから再取得し、古いSnapshot IDを推測で使用しない。
+同期時はProject field ID / option ID / item IDをGitHub liveから再取得し、古いSnapshot IDを推測で使用しない。
 
 ---
 
@@ -23,21 +26,19 @@ ChatGPT GitHub Connectorでは現在、Projects v2 field mutation / GitHub正式
 | 対象 | Status |
 |---|---|
 | #317 | In progress |
-| #318 | In progress（mapping完了、legacy closeはユーザーDesign承認待ち） |
-| #319 | Blocked（Projects/Sub-issue mutationを実行可能な環境待ち） |
-| #320〜#360のproduct/design Work/Parent/Integration | Blocked by #317 Design Gate |
+| #318 | In progress（mapping完了、legacy closeはDesign承認待ち） |
+| #319 | Blocked（Projects/Sub-issue mutation実行可能環境待ち） |
+| #320〜#364のproduct/design Work/Parent/Integration | Blocked by #317 Design Gate |
 
-ユーザーがV2 canonical designを承認するまで、未来Start dateが近くても製品実装IssueをIn progressへしない。
+ユーザーがV2 canonical designを確認するまで、未来Start dateが近くても製品実装IssueをIn progressへしない。
 
-Design Gate解除後、`工程`順に依存を再確認してReadyへ移す。
+Design Gate解除後、工程順に依存を再確認してReadyへ移す。
 
 ---
 
 # 3. Project field schema for V2
 
 ## Status
-
-既存運用を維持:
 
 - Backlog
 - Ready
@@ -56,8 +57,6 @@ Design Gate解除後、`工程`順に依存を再確認してReadyへ移す。
 
 ## 作業種別
 
-既存Project optionへ合わせる:
-
 - 設計
 - 実装
 - 検証
@@ -66,8 +65,6 @@ Design Gate解除後、`工程`順に依存を再確認してReadyへ移す。
 - ドキュメント
 
 ## 優先度
-
-Issue本文のP表記をProject optionへ変換:
 
 | Issue priority | Project priority |
 |---|---|
@@ -78,17 +75,22 @@ Issue本文のP表記をProject optionへ変換:
 
 ## 領域
 
-旧Project field optionsだけではV2責務境界を表し切れないため、Project fieldは以下のV2分類へ更新することを推奨する。
+V2推奨Area:
 
 - Management
 - Core / Foundation
 - Core / Character Definition
 - Core / Brain / Input
 - Core / Brain / Appraisal
-- Core / Brain / Commander
+- Core / Brain / Executive
+- Core / Brain / Goal Planning
 - Core / Brain / Activity
-- Core / Brain / Speech
+- Core / Brain / Speech Semantics
+- Core / Brain / Character Language
+- Core / Brain / Semantic Verification
+- Core / Brain / Speech Runtime
 - Core / Brain / Memory
+- Core / Brain / Reflection
 - Core / Brain / Autonomy
 - Core / Body
 - Core / Plugin
@@ -102,7 +104,7 @@ Issue本文のP表記をProject optionへ変換:
 - Subsystem / Tooling
 - System Integration
 
-古い領域optionを即削除せず、legacy item整理完了後にunused optionを判断する。
+旧Area optionはlegacy item整理前に削除しない。
 
 ---
 
@@ -114,21 +116,25 @@ Issue本文のP表記をProject optionへ変換:
 ├─ #319 Project Sync [Management]
 ├─ #320 Core Foundation [Parent]
 │  ├─ #321 Typed Contracts [Work]
-│  ├─ #322 Runtime Kernel [Work]
-│  ├─ #323 4 LLM Role Ports [Work]
+│  ├─ #322 Runtime Kernel / Concurrency [Work]
+│  ├─ #323 Variable LLM Role / Invocation Contracts [Work]
 │  └─ #324 Character Definition [Parent]
 │     ├─ #354 Character Bible [Work]
 │     └─ #355 Character Projection [Work]
 ├─ #325 Brain [Parent]
 │  ├─ #349 Input Gateway [Work]
 │  ├─ #326 Input Meaning [Work]
-│  ├─ #327 Appraisal / Internal State [Work]
-│  ├─ #328 Commander [Work]
+│  ├─ #327 Subjective Appraisal / Internal State [Work]
+│  ├─ #328 Executive Deliberation [Work]
+│  ├─ #361 Goal / Activity Planning [Work]
 │  ├─ #329 Activity Execution [Work]
-│  ├─ #330 Character Speech [Work]
+│  ├─ #362 Speech Semantics [Work]
+│  ├─ #330 Character Language [Work]
+│  ├─ #363 Semantic Verification [Work]
 │  ├─ #331 Speech Performance [Work]
 │  ├─ #348 Speech Pipeline [Work]
-│  ├─ #332 Memory [Work]
+│  ├─ #332 Memory Store / Retrieval [Work]
+│  ├─ #364 Reflection / Consolidation [Work]
 │  ├─ #333 Autonomy / Turn [Work]
 │  └─ #334 Brain Integration [Integration]
 ├─ #335 Body [Parent]
@@ -143,25 +149,25 @@ Issue本文のP表記をProject optionへ変換:
 │  └─ #344 Plugin Integration [Integration]
 ├─ #350 Core Lifecycle / Graceful Degradation [Work]
 ├─ #356 Infrastructure Adapters [Parent]
-│  ├─ #357 LLM Provider [Work]
+│  ├─ #357 Variable LLM Provider [Work]
 │  ├─ #358 TTS Provider [Work]
 │  └─ #359 Persistence Provider [Work]
 ├─ #345 Subsystems [Parent]
 │  ├─ #346 Avatar [Work]
 │  ├─ #347 Streaming [Work]
 │  ├─ #351 GUI / Admin [Work]
-│  ├─ #352 Validation Labs [Work]
+│  ├─ #352 Validation / Concurrency Labs [Work]
 │  └─ #353 Development Tooling [Work]
 └─ #360 System Integration [Integration]
 ```
 
-本文`Parent:`とGitHub正式Parent/Sub-issuesが一致しない状態を長期放置しない。
+本文`Parent:`とGitHub正式Parent/Sub-issuesを一致させる。
 
 ---
 
 # 5. V2 Project items
 
-`工程`は小さいほど先。番号の間隔は後でIssue追加できるよう空ける。
+`工程`は小さいほど先。番号間隔はIssue追加余地を残す。
 
 | 工程 | Issue | Level | Type | Area | Priority | Start | Target | Design Gate中Status |
 |---:|---:|---|---|---|---|---|---|---|
@@ -169,31 +175,35 @@ Issue本文のP表記をProject optionへ変換:
 | 10 | #318 | Management | 調査 | Management | Critical | 2026-08-12 | 2026-08-15 | In progress |
 | 20 | #319 | Management | 調査 | Management | Critical | 2026-08-12 | 2026-08-16 | Blocked |
 | 100 | #321 | Work | 実装 | Core / Foundation | Critical | 2026-08-13 | 2026-08-15 | Blocked |
-| 110 | #322 | Work | 実装 | Core / Foundation | Critical | 2026-08-15 | 2026-08-18 | Blocked |
-| 120 | #323 | Work | 実装 | Core / Foundation | Critical | 2026-08-15 | 2026-08-18 | Blocked |
-| 130 | #320 | Parent | 設計 | Core / Foundation | Critical | 2026-08-13 | 2026-08-24 | Blocked |
+| 110 | #322 | Work | 実装 | Core / Foundation | Critical | 2026-08-15 | 2026-08-21 | Blocked |
+| 120 | #323 | Work | 実装 | Core / Foundation | Critical | 2026-08-15 | 2026-08-20 | Blocked |
+| 130 | #320 | Parent | 設計 | Core / Foundation | Critical | 2026-08-13 | 2026-08-26 | Blocked |
 | 140 | #354 | Work | ドキュメント | Core / Character Definition | Critical | 2026-08-17 | 2026-08-21 | Blocked |
 | 150 | #355 | Work | 実装 | Core / Character Definition | Critical | 2026-08-21 | 2026-08-24 | Blocked |
 | 160 | #324 | Parent | 設計 | Core / Character Definition | Critical | 2026-08-17 | 2026-08-24 | Blocked |
-| 170 | #357 | Work | 実装 | Infrastructure / LLM | Critical | 2026-08-18 | 2026-08-25 | Blocked |
+| 170 | #357 | Work | 実装 | Infrastructure / LLM | Critical | 2026-08-18 | 2026-08-27 | Blocked |
 | 200 | #349 | Work | 実装 | Core / Brain / Input | Critical | 2026-08-19 | 2026-08-23 | Blocked |
 | 210 | #326 | Work | 実装 | Core / Brain / Input | Critical | 2026-08-19 | 2026-08-24 | Blocked |
-| 220 | #327 | Work | 実装 | Core / Brain / Appraisal | Critical | 2026-08-24 | 2026-08-30 | Blocked |
-| 230 | #328 | Work | 実装 | Core / Brain / Commander | Critical | 2026-08-31 | 2026-09-05 | Blocked |
-| 240 | #329 | Work | 実装 | Core / Brain / Activity | Critical | 2026-09-05 | 2026-09-10 | Blocked |
-| 250 | #330 | Work | 実装 | Core / Brain / Speech | Critical | 2026-09-08 | 2026-09-14 | Blocked |
-| 260 | #331 | Work | 実装 | Core / Brain / Speech | High | 2026-09-14 | 2026-09-17 | Blocked |
-| 270 | #348 | Work | 実装 | Core / Brain / Speech | Critical | 2026-09-17 | 2026-09-22 | Blocked |
-| 280 | #332 | Work | 実装 | Core / Brain / Memory | High | 2026-09-15 | 2026-09-22 | Blocked |
-| 290 | #333 | Work | 実装 | Core / Brain / Autonomy | High | 2026-09-20 | 2026-09-25 | Blocked |
-| 300 | #350 | Work | 実装 | Core / Foundation | Critical | 2026-09-18 | 2026-09-25 | Blocked |
-| 310 | #358 | Work | 実装 | Infrastructure / TTS | High | 2026-09-22 | 2026-09-27 | Blocked |
-| 320 | #359 | Work | 実装 | Infrastructure / Persistence | High | 2026-09-22 | 2026-09-28 | Blocked |
-| 330 | #334 | Integration | 検証 | System Integration | Critical | 2026-09-25 | 2026-09-30 | Blocked |
-| 340 | #325 | Parent | 設計 | Core / Brain / Commander | Critical | 2026-08-19 | 2026-09-30 | Blocked |
+| 220 | #327 | Work | 実装 | Core / Brain / Appraisal | Critical | 2026-08-24 | 2026-08-31 | Blocked |
+| 230 | #328 | Work | 実装 | Core / Brain / Executive | Critical | 2026-08-31 | 2026-09-06 | Blocked |
+| 240 | #361 | Work | 実装 | Core / Brain / Goal Planning | Critical | 2026-09-06 | 2026-09-11 | Blocked |
+| 250 | #329 | Work | 実装 | Core / Brain / Activity | Critical | 2026-09-05 | 2026-09-10 | Blocked |
+| 260 | #362 | Work | 実装 | Core / Brain / Speech Semantics | Critical | 2026-09-06 | 2026-09-11 | Blocked |
+| 270 | #330 | Work | 実装 | Core / Brain / Character Language | Critical | 2026-09-10 | 2026-09-15 | Blocked |
+| 280 | #363 | Work | 実装 | Core / Brain / Semantic Verification | Critical | 2026-09-12 | 2026-09-17 | Blocked |
+| 290 | #331 | Work | 実装 | Core / Brain / Speech Runtime | High | 2026-09-14 | 2026-09-17 | Blocked |
+| 300 | #348 | Work | 実装 | Core / Brain / Speech Runtime | Critical | 2026-09-17 | 2026-09-22 | Blocked |
+| 310 | #332 | Work | 実装 | Core / Brain / Memory | High | 2026-09-15 | 2026-09-22 | Blocked |
+| 320 | #364 | Work | 実装 | Core / Brain / Reflection | High | 2026-09-18 | 2026-09-24 | Blocked |
+| 330 | #333 | Work | 実装 | Core / Brain / Autonomy | High | 2026-09-20 | 2026-09-25 | Blocked |
+| 340 | #350 | Work | 実装 | Core / Foundation | Critical | 2026-09-18 | 2026-09-25 | Blocked |
+| 350 | #358 | Work | 実装 | Infrastructure / TTS | High | 2026-09-22 | 2026-09-27 | Blocked |
+| 360 | #359 | Work | 実装 | Infrastructure / Persistence | High | 2026-09-22 | 2026-09-28 | Blocked |
+| 370 | #334 | Integration | 検証 | System Integration | Critical | 2026-09-25 | 2026-10-02 | Blocked |
+| 380 | #325 | Parent | 設計 | Core / Brain / Executive | Critical | 2026-08-19 | 2026-10-05 | Blocked |
 | 400 | #336 | Work | 実装 | Core / Body | Critical | 2026-09-01 | 2026-09-07 | Blocked |
 | 410 | #337 | Work | 実装 | Core / Body | Critical | 2026-09-07 | 2026-09-12 | Blocked |
-| 420 | #338 | Work | 実装 | Core / Body | Critical | 2026-09-12 | 2026-09-18 | Blocked |
+| 420 | #338 | Work | 実装 | Core / Body | Critical | 2026-09-12 | 2026-09-19 | Blocked |
 | 430 | #339 | Work | 実装 | Core / Body | Critical | 2026-09-18 | 2026-09-26 | Blocked |
 | 440 | #340 | Work | 実装 | Core / Body | High | 2026-09-26 | 2026-10-01 | Blocked |
 | 450 | #341 | Integration | 検証 | Core / Body | Critical | 2026-10-01 | 2026-10-08 | Blocked |
@@ -203,7 +213,7 @@ Issue本文のP表記をProject optionへ変換:
 | 520 | #342 | Parent | 設計 | Core / Plugin | Critical | 2026-09-10 | 2026-10-05 | Blocked |
 | 530 | #356 | Parent | 設計 | Infrastructure / LLM | High | 2026-08-18 | 2026-09-28 | Blocked |
 | 600 | #347 | Work | 実装 | Subsystem / Streaming | High | 2026-10-01 | 2026-10-12 | Blocked |
-| 610 | #352 | Work | 実装 | Subsystem / Validation | High | 2026-10-01 | 2026-10-14 | Blocked |
+| 610 | #352 | Work | 実装 | Subsystem / Validation | High | 2026-10-01 | 2026-10-16 | Blocked |
 | 620 | #353 | Work | 実装 | Subsystem / Tooling | Medium | 2026-10-05 | 2026-10-18 | Blocked |
 | 630 | #346 | Work | 実装 | Subsystem / Avatar | High | 2026-10-08 | 2026-10-15 | Blocked |
 | 640 | #351 | Work | 実装 | Subsystem / GUI | High | 2026-10-08 | 2026-10-18 | Blocked |
@@ -212,41 +222,52 @@ Issue本文のP表記をProject optionへ変換:
 
 ---
 
-# 6. 工程と日付の意味
+# 6. Concurrency / LLM Project policy
 
-`工程`は実際の開始可能条件を表すが、親Issueの工程は子Workの後ろに置いて「子が全部終わるまで親をDoneにしない」ことを見やすくする。
+Project上でも以下をArchitecture invariantとして扱う。
 
-Start/Targetは計画値であり、Design Gateや依存IssueのVerificationで変わる場合は対象Issueコメントへ理由を残して更新する。
+- LLM Role数は固定しない
+- Single Executive Authority
+- `Role数 != API call数`
+- slow LLMで無関係laneをblockしない
+- foreground user interaction > low-priority background cognition
+- request/resultはrevision / cancel / stale policyを持つ
+- Speech playback中next generation可
+- Body realtimeはLLM待ちで停止しない
+- Game frame loopはExecutive LLM待ちにしない
 
-同じ期間に複数Issueがある場合でも、**依存していないModule Contract / Infrastructure / Body等だけを並行可能**とする。同じWork Issueに複数active implementation lineageは作らない。
+独立責務は別Issueへ分けるが、Issue分割数をRuntimeの直列call数へ変換しない。
 
 ---
 
 # 7. Project sync execution rule
 
-実際のProject更新前:
+実Project更新前:
 
 1. Project #6をGitHub liveから再取得
 2. field ID / option IDを取得
-3. V2用Area optionの不足を確認
-4. Issue itemの重複を確認
+3. V2 Area option不足を確認
+4. Issue item重複を確認
 5. GitHub正式Parent/Sub-issues current stateを確認
-6. 本Manifestとの差分をdry-run出力
-7. 差分がV2 canonicalと一致した場合のみmutation
-8. mutation後にProjectを再取得して完全性監査
+6. #361〜#364を含む新Issue存在確認
+7. 本Manifestとの差分をdry-run
+8. canonicalと一致した場合のみmutation
+9. mutation後Projectを再取得して完全性監査
 
-旧2026-08-07 Snapshotは既存field理解の補助には使えるが、ID/current stateの確定にはlive GitHubを優先する。
+旧2026-08-07 Snapshotはfield理解の補助に限定し、ID/current stateはlive GitHubを優先する。
 
 ---
 
 # 8. Completion
 
-- [x] V2 logical hierarchy確定
-- [x] Start/Targetを全V2 Issue本文へ設定
+- [x] V2 logical hierarchy再設計
+- [x] #361〜#364作成
+- [x] Start/Targetを新規Issue本文へ設定
 - [x] Design Gate中Status policy確定
 - [x] Project priority mapping確定
-- [x] V2 Area案確定
-- [x] 工程案確定
+- [x] V2 Area案更新
+- [x] 工程案更新
+- [x] 4 LLM固定をManifestから撤回
 - [ ] GitHub live Project field IDs取得
 - [ ] V2 Area options更新
 - [ ] V2全IssueをProject #6へ一意登録
