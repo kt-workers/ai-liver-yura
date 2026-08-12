@@ -11,14 +11,18 @@ Management spec: `docs/architecture/v2/project_v2_management_spec.md`
 
 Project #7のlive設定を、旧Project #6から推測して作らない。
 
-必ず二段階で行う。
+必ず次の順で行う。
 
-1. Audit / Dry-run
-2. Canonical resolution後のMutation / Re-audit
+1. Auth Permission Gate
+2. Read-only Audit / Dry-run
+3. Human UI verification（APIで確認不能なWorkflow等）
+4. Canonical resolution
+5. Mutation
+6. Full re-audit
 
-`gh` command実行前には、運用ルールに従って`ktan514`へ認証確認の許可を求める。
+`gh` command実行前には`ktan514`へ認証確認の許可を求める。
 
-## 2. 固定Identity
+## 2. Fixed identity
 
 期待値:
 
@@ -28,88 +32,91 @@ Project #7のlive設定を、旧Project #6から推測して作らない。
 - Repository: `ktan514/ai-liver-yura`
 - Visibility: Private
 
-Project IDは固定値として文書へハードコードせず、毎run live取得する。
+Project ID / field ID / option ID / item IDは毎run live取得し、過去runの値をhard-codeしない。
 
-## 3. Current migration scope
+## 3. Membership invariant
 
-V2として既に明示再計画済みの既存50 Issue:
+Project #7 membershipはrepository label `v2`と一致させる。
+
+- `v2`あり → Project #7管理対象
+- `v2`なし → Project #7管理対象外
+
+V2 Issue / V2 PRにはそれぞれ個別に`v2` labelを付ける。
+
+Project #7に`v2`なしitemが存在する場合は、Project itemだけをmembershipから削除する。
+
+禁止:
+
+- Issue / PR本体のclose/delete
+- labelなしitemのarchiveで代替
+- Assignee / Milestone / bodyをmembership cleanup理由だけで変更
+- 名前やbranch名だけでV2対象へ昇格
+
+## 4. Current V2 scope
+
+V2として明示再計画済みの既存50 Issue:
 
 `#317 #318 #319 #320 #321 #322 #323 #324 #325 #326 #327 #328 #329 #330 #331 #332 #333 #334 #335 #336 #337 #338 #339 #340 #341 #342 #343 #344 #345 #346 #347 #348 #349 #350 #351 #352 #353 #354 #355 #356 #357 #358 #359 #360 #361 #362 #363 #364 #365 #366`
 
 加えてProject #7切替Management Issue #367。
 
-現時点のexpected V2 Issue scope = **51 Issues**。
+expected V2 Issue scope = **51 Issues**。
 
-V2 PRはGitHub live検索で確定する。`v2` labelなしのPRを題名だけでV2と推測しない。ただしV2 implementation lineageとしてIssue / branch / canonicalから一意に確認できたPRがあれば、mutation前に対象として明示し`v2` labelを個別付与する。
+confirmed V2 PRは現時点0件。将来V2 PRを作成したらPRへも`v2` labelを個別付与する。
 
-## 4. Phase A — Auth Permission Gate
+## 5. Auth Permission Gate
 
-Codex / local環境で`gh`を使う場合、最初にユーザーへ次だけを確認する。
+Codex / local環境で`gh`を使う前に、最初にユーザーへ次を確認する。
 
 > GitHub CLIの認証状態を確認するため `gh auth status` を実行してよいですか？
 
-明示許可前に`gh auth status`を含む`gh` commandを実行しない。
+許可前に`gh` commandを実行しない。
 
 許可後:
 
 - `gh auth status`
-- accountが`ch4t9pt`か確認
+- account = `ch4t9pt`を確認
 - account switch / logout禁止
-- required scope不足ならSTOP
+- scope / permission不足ならSTOP
 
-## 5. Phase A — Project live audit
+## 6. Phase A audit result — 2026-08-13
 
-Project #7についてlive取得する。
+確認済み:
 
-最低限:
+- Project identity: PASS
+- Project ID: `PVT_kwHOBdOPDs4BgKgD`（audit時点。mutation時は再取得）
+- viewerCanUpdate: true
+- total Project items: 118
+- expected V2 Issue items: 51
+- `v2`なしscope外items: 67
+- duplicate: 0
+- archived: 0
+- V2 PR: 0
+- formal existing hierarchy: 49/49一致
+- #367 parentのみ未設定
+- `v2` label: 13/51 present, 38 missing
+- Auto-add workflow: enabledは確認、filter / repositoryはAPIでUNVERIFIED
 
-- Project ID
-- title
-- visibility
-- viewerCanUpdate
-- fields
-- single-select options
-- current items
-- item duplicates
-- workflows / Auto-add（API/CLIで取得可能な範囲のみ）
+67 scope外itemsはProject #7 membership invariantに違反するため削除対象。
 
-API / CLIでworkflow条件を確認できない場合、`未確認`として報告しPASS扱いしない。
+## 7. Human UI Workflow Gate
 
-## 6. Phase A — Repository V2 audit
+67件を削除する前に、Project #7 UIでAuto-add workflowを人間確認する。
 
-51 Issue全件についてlive取得:
+確認項目:
 
-- issue state
-- labels
-- body metadata
-- formal parent
-- Start date / Target date
-- Priority
-- Issue level
-- Area
+- workflow = Auto-add to project
+- enabled
+- repository = `ktan514/ai-liver-yura`
+- filter = `label:v2`
 
-V2 PRを検索:
+filterが`label:v2`でない場合、membership cleanupを実行しない。先にUI設定を修正し、その事実をユーザーが明示する。
 
-- existing `label:v2` PR
-- V2 branch / linked V2 Issueから明示的にV2と確認できるPR
-
-旧Issue / 旧PRをscopeへ自動追加しない。
-
-## 7. `v2` label rule
-
-51 V2 Issueには`v2` labelが必要。
-
-- already present → no-op
-- missing → mutation対象
-- unrelated Issueへ追加しない
-
-V2 PRも個別にlabelを付ける。
-
-Issue labelからPRへ自動継承されると考えない。
+APIで確認不能なため、ユーザーのUI確認結果をCheckpointへ記録する。
 
 ## 8. Project fields
 
-期待するfield semantics:
+期待schema:
 
 ### Status
 
@@ -142,138 +149,174 @@ Issue labelからPRへ自動継承されると考えない。
 
 ### Area
 
-Issue本文の`Area:`と一致するoptionを使う。
+Issue本文の`Area:` exact valueを使う。
 
-**旧Project #6のbroad Area mappingを使用しない。**
+Management special cases:
 
-### Optional / schedule fields
+- #317 = `Management`
+- #318 = `Management`
+- #319 = `Management`
+- #367 = `Management`
 
-- Iteration
-- Start date
-- Target date
-- Size
-- Estimate
+Projectに`Management` optionがなければexisting Area fieldへ非破壊追加する。
 
-Iteration / Size / Estimateは根拠がなければ空欄。
-Start / TargetはIssue本文 / V2 canonicalの明示値を使う。
+### Schedule / estimate
 
-## 9. Initial Status / role during #367
+- Start date / Target date: Issue本文の明示値
+- Iteration: canonicalなし → 空欄維持
+- Size: canonicalなし → 空欄維持
+- Estimate: canonicalなし → 空欄維持
 
-Project #7切替作業中:
+## 9. Initial desired Status / role during #367
 
 - #317: `In progress` / `AI作業`
-  - canonical architectureはユーザー承認済み
-  - #367 management gate中
 - #318: `Blocked` / `AI作業`
-  - #367完了後にold lineage整理へ進む
 - #319: `Done` / `AI作業`
 - #367: `In progress` / `AI作業`
-- Product Parent / Work / Integration: 原則 `Blocked` / `AI作業` until #367 PASS
+- その他Product Parent / Work / Integration: `Blocked` / `AI作業`
 
-#367完了後:
+V2 architectureはユーザー承認済みだが、#367 management migrationが完了するまでproduct implementation lineageは開始しない。
 
-- #367 → Done
-- #318 → ReadyまたはIn progress（実際にold lineage整理を開始する時点で決定）
-- 最初の実装Work #321 → dependency再監査後Ready
+## 10. Canonical metadata resolution
 
-他Issueを日程だけで自動Ready/In progressへしない。
+Priority:
 
-## 10. Field creation / option bootstrap
+- #317 = `P0`
+- #318/#319/#367 = bodyの`P0`
+- その他 = Issue本文のP0/P1/P2
 
-不足field / optionがある場合:
+Issue level:
 
-- existing fieldを削除・再作成しない
-- existing optionを理由なくrename/deleteしない
-- IDをlive取得
-- desired schemaをmutation前Dry-runへ明示
-- option追加可能な場合のみ非破壊追加
-- field typeが想定と異なる場合STOP
+- #317/#318/#319/#367 = `Management`
+- その他 = Issue本文
 
-特にAreaは51 Issueのlive bodyからunique valuesを収集してからdesired option setを確定する。
+Area:
 
-## 11. Auto-add workflow
+- #317/#318/#319/#367 = `Management`
+- その他 = Issue本文
 
-Desired:
+Start / Target:
 
-`label:v2`
+- 全51 IssueでIssue本文に明示値あり
 
-ただしworkflow設定をAPI / `gh`で取得・変更できない場合:
+Iteration / Size / Estimateは設定しない。
 
-- 確認済みと主張しない
-- 手動UI操作が必要な項目として報告
-- 他のProject同期がPASSでも`Auto-add workflow: UNVERIFIED`を明記
+## 11. Mutation order
 
-## 12. Project item sync
+Human UI Workflow Gate PASS後のみ以下を実施する。
 
-51 Issue + confirmed V2 PRについて:
+### A. live preflight
 
-- exact one item
-- zero → add
-- one → reuse
-- duplicate → STOP
+- remote canonical再取得
+- Project / field / option / item IDs再取得
+- 51 scope / 67 scope外を再分類
+- duplicate再確認
+- V2 PR再検索
+- formal hierarchy再確認
 
-旧Project #6からitem ID / field ID / option IDを流用しない。
+### B. `v2` label sync
 
-## 13. Formal hierarchy
+51 V2 Issueについて:
 
-formal Parent/Sub-issueは既にGitHub Issue側のV2 hierarchyが正本。
+- already present → no-op
+- missing → `v2`追加
 
-Project #7移行のためにhierarchyを作り直さない。
+scope外Issue/PRへ`v2` labelを付けない。
 
-Auditでcurrent formal hierarchyがV2 canonicalと一致することを確認し、不一致ならProject mutationとは分離してSTOP / reconciliationする。
+### C. Project membership cleanup
 
-#367は#317配下Managementとしてformal parent設定対象。
+Project #7 itemのうち、Repository Issue/PRで`v2` labelがないものをProjectから削除する。
 
-## 14. Mutation後re-audit
+- expected audit baseline: 67 items
+- mutation時live結果を正本にする
+- Issue / PR本体は変更しない
+- archiveしない
 
-最低限:
+cleanup後、Project itemsがV2 labeled scopeと一致することを確認する。
 
-- scope Issue count
-- scope PR count
-- `v2` label
-- exact-one Project item
-- field values
+### D. Area bootstrap
+
+`Management` optionが不足していればnon-destructiveに追加。
+
+- existing field delete/recreate禁止
+- existing options delete/rename禁止
+- existing option identity維持
+
+### E. 51 Issue field sync
+
 - Status
 - 担当ロール
 - Priority
 - Issue level
 - Area
-- Start / Target
-- formal hierarchy
-- duplicate 0
-- unrelated item mutation 0
-- Assignee / Milestone unintended change 0
-- code / branch / PR state / merge unintended change 0
+- Start date
+- Target date
 
-## 15. STOP conditions
+Iteration / Size / Estimateは空欄維持。
 
-以下はmutation前または途中でSTOP:
+### F. Formal parent
 
-- wrong Project owner / number / ID
-- wrong authenticated account
-- missing permission
-- duplicate item
+#367 parentを#317へ追加。
+
+既存49 linksは変更しない。
+
+## 12. Re-audit
+
+mutation後、Project / Issuesを完全再取得する。
+
+必須PASS:
+
+- Project identity一致
+- Project membership = `v2` labeled Issue/PRのみ
+- scope外 `v2`なし item = 0
+- 51 V2 Issues present exactly once
+- confirmed V2 PR present exactly once
+- duplicate = 0
+- 51 Issue `v2` label PASS
+- Status PASS
+- 担当ロール PASS
+- Priority PASS
+- Issue level PASS
+- Area PASS
+- Start / Target PASS
+- Iteration / Size / Estimate unchanged/unset
+- formal hierarchy = existing49 + #367→#317
+- Assignee / Milestone unintended change = 0
+- Issue / PR state unintended change = 0
+- code / branch / merge mutation = 0
+
+## 13. STOP conditions
+
+- wrong Project identity
+- wrong account / missing permission
+- duplicate Project item
 - duplicate same-name field
 - field type conflict
-- Area valueをIssue本文から一意に解決不能
-- Priority / level / dates contradiction
-- formal parent contradiction
+- Auto-add UI verification未完了
+- Auto-add filterが`label:v2`でない
+- V2 scope ambiguity
+- Area / Priority / level / dates contradiction
 - unexpected active V2 implementation lineage
-- scope外Issue / PRへのmutationが必要になる
-- workflowを確認不能なのに確認済みとして進める必要がある
-- canonicalとlive GitHubに矛盾
+- conflicting formal parent
+- scope外itemのIssue/PR本体を変更しないと進められない
+- canonicalとGitHub live矛盾
 
-## 16. #367 completion
+## 14. #367 completion
 
 #367をDoneにできる条件:
 
-- 51 V2 Issueの`v2` label PASS
-- confirmed V2 PR label PASS
-- Project #7 exact-one item PASS
-- required field schema PASS
-- canonical field sync PASS
-- hierarchy PASS
-- re-audit PASS
-- Auto-add workflowは確認済み、またはAPIで確認不能なら人間UI確認待ちとしてVerification / Blockedに残す
+- Auto-add UI verification PASS
+- 51 V2 Issue label PASS
+- V2 PR label PASS
+- Project membership invariant PASS
+- field schema / values PASS
+- formal hierarchy PASS
+- full re-audit PASS
+
+#367完了後:
+
+- #367 → Done
+- #318 → dependency再監査後Ready / In progress
+- #321 → dependency再監査後Ready
 
 Project #7 sync完了前にV2 product implementation lineageを開始しない。
