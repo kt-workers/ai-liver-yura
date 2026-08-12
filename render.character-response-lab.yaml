@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: yura-character-response-lab
+    runtime: python
+    plan: free
+    branch: test/character-semantic-response-cloud-validation
+    buildCommand: python -m pip install -r requirements.txt
+    startCommand: >-
+      python -m uvicorn cloud_validation.character_semantic_contract_completion_lab:app
+      --host 0.0.0.0
+      --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.20
+      - key: YURA_CHARACTER_RESPONSE_LAB_MODE
+        value: live
+      - key: YURA_CHARACTER_RESPONSE_LAB_TIMEOUT_SECONDS
+        value: "60"
+      - key: YURA_CHARACTER_RESPONSE_LAB_MODEL
+        sync: false
+      - key: YURA_CHARACTER_RESPONSE_LAB_VALIDATOR_MODEL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: YURA_LAB_USERNAME
+        sync: false
+      - key: YURA_LAB_PASSWORD
+        sync: false

@@ -1,0 +1,125 @@
+name: Cloud character semantic response validation
+
+on:
+  pull_request:
+    paths:
+      - "cloud_validation/character_response_lab.py"
+      - "cloud_validation/character_semantic_response_lab.py"
+      - "cloud_validation/character_semantic_contract_completion_lab.py"
+      - "cloud_validation/character_semantic_response_lab_ui.py"
+      - "cloud_validation/character_semantic_extended_batch.py"
+      - "tests/test_cloud_character_semantic_response_lab.py"
+      - "tests/test_character_semantic_contract_completion_lab.py"
+      - "tests/test_character_semantic_response_lab_ui.py"
+      - "tests/test_character_semantic_extended_batch.py"
+      - "tests/test_semantic_unknown_and_current_desire_lab.py"
+      - "tests/test_semantic_realization_required_facets.py"
+      - "tests/test_response_semantics_planner.py"
+      - "tests/test_semantic_repetition_context.py"
+      - "tests/test_character_language_realizer.py"
+      - "tests/test_character_language_realizer_required_facets.py"
+      - "tests/test_character_realization_observer_contract.py"
+      - "tests/test_character_realization_foundation_completion.py"
+      - "tests/test_character_realization_validator_facet_evidence_prompt.py"
+      - "tests/test_character_realization_facet_evidence_runtime_gate.py"
+      - "tests/test_character_realization_validator_intensity_evidence.py"
+      - "tests/test_character_realization_validator_state_fidelity.py"
+      - "tests/test_character_realization_unknown_state.py"
+      - "tests/test_character_realization_unknown_surface_evidence.py"
+      - "tests/test_current_desire_semantic_character_validation_adjacent.py"
+      - "tests/test_semantic_character_validation_adjacent_contract.py"
+      - "tests/test_semantic_character_validator_intensity_evidence_adjacent.py"
+      - "tests/test_semantic_character_validator_state_fidelity_adjacent.py"
+      - "tests/test_semantic_character_validator_unknown_surface_adjacent.py"
+      - "tests/test_character_regeneration_feedback.py"
+      - "tests/test_separated_response_validation.py"
+      - "tests/test_internal_state_response_semantic_consistency.py"
+      - "tests/test_internal_state_target_evidence_prompt.py"
+      - "app/domain/character/**"
+      - "app/domain/character_response.py"
+      - "app/domain/character_utterance.py"
+      - "app/domain/semantic_utterance.py"
+      - "app/domain/semantic_validation.py"
+      - "app/runtime/character_response_pipeline.py"
+      - "app/runtime/internal_state_response_context.py"
+      - "app/runtime/response_semantics_planner.py"
+      - "app/runtime/character_language_realizer_service.py"
+      - "app/runtime/semantic_utterance_validator.py"
+      - "app/runtime/semantic_validated_response_context.py"
+      - "app/runtime/character_realization_validator.py"
+      - "app/adapters/prompt/**"
+      - ".github/workflows/cloud-character-response-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-character-semantic-response-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  validation:
+    name: Character Semantic / Realization Lab
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+
+      - name: Compile lab modules
+        run: |
+          python -m py_compile cloud_validation/character_response_lab.py
+          python -m py_compile cloud_validation/character_semantic_response_lab.py
+          python -m py_compile cloud_validation/character_semantic_contract_completion_lab.py
+          python -m py_compile cloud_validation/character_semantic_response_lab_ui.py
+          python -m py_compile cloud_validation/character_semantic_extended_batch.py
+
+      - name: Run focused tests
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          pytest -q \
+            tests/test_response_semantics_planner.py \
+            tests/test_semantic_repetition_context.py \
+            tests/test_character_language_realizer.py \
+            tests/test_character_language_realizer_required_facets.py \
+            tests/test_character_realization_observer_contract.py \
+            tests/test_character_realization_foundation_completion.py \
+            tests/test_character_realization_validator_facet_evidence_prompt.py \
+            tests/test_character_realization_facet_evidence_runtime_gate.py \
+            tests/test_character_realization_validator_intensity_evidence.py \
+            tests/test_character_realization_validator_state_fidelity.py \
+            tests/test_character_realization_unknown_state.py \
+            tests/test_character_realization_unknown_surface_evidence.py \
+            tests/test_current_desire_semantic_character_validation_adjacent.py \
+            tests/test_semantic_character_validation_adjacent_contract.py \
+            tests/test_semantic_character_validator_intensity_evidence_adjacent.py \
+            tests/test_semantic_character_validator_state_fidelity_adjacent.py \
+            tests/test_semantic_character_validator_unknown_surface_adjacent.py \
+            tests/test_character_regeneration_feedback.py \
+            tests/test_separated_response_validation.py \
+            tests/test_cloud_character_semantic_response_lab.py \
+            tests/test_character_semantic_contract_completion_lab.py \
+            tests/test_character_semantic_response_lab_ui.py \
+            tests/test_character_semantic_extended_batch.py \
+            tests/test_semantic_unknown_and_current_desire_lab.py \
+            tests/test_semantic_realization_required_facets.py \
+            tests/test_internal_state_response_semantic_consistency.py \
+            tests/test_internal_state_target_evidence_prompt.py
