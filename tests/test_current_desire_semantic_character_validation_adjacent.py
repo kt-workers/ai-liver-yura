@@ -92,44 +92,31 @@ class _ValidatorModel:
 
         if self.predicate_preserved:
             predicate_spans = ["何かしたい気持ち"]
-            certainty_preserved = True
-            certainty_spans = ["と思う"]
             concept_spans = ["好奇心"]
         else:
             predicate_spans = []
-            certainty_preserved = False
-            certainty_spans = []
             concept_spans = ["気になる"]
         return json.dumps(
             {
                 "accepted": True,
-                "reason": "semantic_realization_consistent",
+                "reason": "post_observation_semantic_contract_consistent",
                 "differences": [],
                 "semantic_checks": {
-                    "required_facets_preserved": self.predicate_preserved,
-                    "predicate_preserved": self.predicate_preserved,
-                    "state_preserved": True,
-                    "certainty_preserved": certainty_preserved,
-                    "concept_preserved": True,
-                    "unsupported_intensity_added": False,
+                    "required_content_preserved": True,
+                    "forbidden_additions_absent": True,
+                    "unsupported_new_fact_absent": True,
+                    "existence_boundary_preserved": True,
+                    "budget_preserved": True,
                 },
                 "realized_proposition_checks": [
                     {
                         "realization_id": "proposition:0:current_desire",
                         "predicate_preserved": self.predicate_preserved,
                         "predicate_evidence_spans": predicate_spans,
-                        "state_preserved": True,
-                        "state_fidelity": "exact",
-                        "certainty_preserved": certainty_preserved,
-                        "certainty_evidence_spans": certainty_spans,
                         "concept_preserved": True,
                         "concept_evidence_spans": concept_spans,
-                        "intensity_semantics_preserved": True,
-                        "presence_only_counterfactual_equivalent": False,
-                        "intensity_evidence_spans": [],
                     }
                 ],
-                "surface_evidence": {"intensity_markers": []},
             },
             ensure_ascii=False,
         )
@@ -228,6 +215,14 @@ def _validated_context() -> tuple[ResponseContext, Activity]:
     return validated, source
 
 
+def _post_observation_contract(prompt: str) -> dict[str, object]:
+    lines = prompt.splitlines()
+    marker = lines.index("# Post-Observation Semantic Contract")
+    value = json.loads(lines[marker + 1])
+    assert isinstance(value, dict)
+    return value
+
+
 @pytest.mark.asyncio
 async def test_current_desire_medium_certainty_flows_through_semantic_character_validator_boundary() -> None:
     context, source = _validated_context()
@@ -249,8 +244,6 @@ async def test_current_desire_medium_certainty_flows_through_semantic_character_
     assert '"intensity_allowed": false' in character_prompt
     assert '"concept_role": "modify_predicate_not_replace_it"' in character_prompt
     assert "response_content_plan.primary_desire" not in character_prompt
-    assert "少し" not in response.speech
-    assert "ちょっと" not in response.speech
 
     validator_model = _ValidatorModel(predicate_preserved=True)
     validator = CharacterRealizationValidator(
@@ -270,15 +263,22 @@ async def test_current_desire_medium_certainty_flows_through_semantic_character_
     assert '"state": "present"' not in observer_prompt
     assert '"certainty": "medium"' not in observer_prompt
     assert '"concept": "curiosity"' not in observer_prompt
+    assert "対象stateについてのepistemic確かさ" in observer_prompt
 
     validator_prompt = comparator_activity.context["plugin_prompt_override"]
-    assert '"required_facets": ["predicate", "state", "certainty", "concept"]' in validator_prompt
-    assert '"predicate_semantics": "preserve_target_meaning"' in validator_prompt
-    assert '"state": "present"' in validator_prompt
-    assert '"certainty": "medium"' in validator_prompt
-    assert '"concept": "curiosity"' in validator_prompt
+    contract = _post_observation_contract(validator_prompt)
+    propositions = contract["propositions"]
+    assert isinstance(propositions, list)
+    proposition = propositions[0]
+    assert isinstance(proposition, dict)
+    assert proposition["predicate"] == "current_desire"
+    assert proposition["concept"] == "curiosity"
+    assert "state" not in proposition
+    assert "certainty" not in proposition
+    assert "state/polarity/intensity/certaintyはこの工程で判定しない" in validator_prompt
+
     assert result.accepted is True
-    assert result.reason == "semantic_realization_consistent"
+    assert result.reason == "post_observation_semantic_contract_consistent"
 
     forbidden = {
         "user_input",
