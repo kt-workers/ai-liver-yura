@@ -45,7 +45,9 @@ _DEGREE_RELATIONS = frozenset(
         "not_applicable",
     }
 )
-_CERTAINTY_RELATIONS = frozenset({"preserved", "stronger", "weaker", "ambiguous"})
+_CERTAINTY_RELATIONS = frozenset(
+    {"preserved", "stronger", "weaker", "ambiguous", "not_applicable"}
+)
 _CONCEPT_RELATIONS = frozenset(
     {"preserved", "omitted", "changed", "ambiguous", "not_applicable"}
 )
