@@ -19,6 +19,40 @@ _OBSERVED_STATES = frozenset(
 )
 _OBSERVED_CERTAINTY = frozenset({"low", "medium", "high", "unknown"})
 
+_PREDICATE_RELATIONS = frozenset(
+    {"preserved", "omitted", "changed", "unrelated", "ambiguous"}
+)
+_VALUE_STATUS_RELATIONS = frozenset(
+    {
+        "preserved",
+        "committed_when_unknown",
+        "unknown_when_known",
+        "omitted",
+        "ambiguous",
+        "not_applicable",
+    }
+)
+_POLARITY_RELATIONS = frozenset(
+    {"preserved", "contradicted", "omitted", "ambiguous", "not_applicable"}
+)
+_DEGREE_RELATIONS = frozenset(
+    {
+        "preserved",
+        "weaker",
+        "stronger",
+        "omitted",
+        "ambiguous",
+        "not_applicable",
+    }
+)
+_CERTAINTY_RELATIONS = frozenset({"preserved", "stronger", "weaker", "ambiguous"})
+_CONCEPT_RELATIONS = frozenset(
+    {"preserved", "omitted", "changed", "ambiguous", "not_applicable"}
+)
+_SUMMARY_RELATIONS = frozenset(
+    {"preserved", "collapsed", "omitted", "ambiguous", "not_applicable"}
+)
+
 
 @dataclass(frozen=True, slots=True)
 class SemanticPlanValidationResult:
@@ -44,7 +78,10 @@ class SemanticPlanValidationResult:
 
 @dataclass(frozen=True, slots=True)
 class RealizedSemanticObservation:
-    """期待値を見ずにCharacter speechから観測したproposition意味。"""
+    """期待値を見ずにCharacter speechから観測したproposition意味。
+
+    v1 compatibility / diagnostic用。v2 production gateではabsolute state再構成を使わない。
+    """
 
     realization_id: str
     predicate_realized: bool
@@ -106,6 +143,180 @@ class RealizedSemanticObservation:
                 predicate_evidence_spans=span_fields[0],
                 state_evidence_spans=span_fields[1],
                 certainty_evidence_spans=span_fields[2],
+            )
+        except ValueError:
+            return None
+
+
+@dataclass(frozen=True, slots=True)
+class PropositionSemanticVerification:
+    """Planに対するCharacter speechの相対的意味関係。absolute stateを再構成しない。"""
+
+    proposition_id: str
+    realized: bool
+    predicate_relation: str
+    value_status_relation: str
+    polarity_relation: str
+    degree_relation: str
+    certainty_relation: str
+    concept_relation: str
+    summary_relation: str
+    evidence_spans: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        proposition_id = self.proposition_id.strip()
+        if not proposition_id:
+            raise ValueError("PropositionSemanticVerification.proposition_idは空にできません。")
+        relation_sets = (
+            (self.predicate_relation, _PREDICATE_RELATIONS, "predicate_relation"),
+            (self.value_status_relation, _VALUE_STATUS_RELATIONS, "value_status_relation"),
+            (self.polarity_relation, _POLARITY_RELATIONS, "polarity_relation"),
+            (self.degree_relation, _DEGREE_RELATIONS, "degree_relation"),
+            (self.certainty_relation, _CERTAINTY_RELATIONS, "certainty_relation"),
+            (self.concept_relation, _CONCEPT_RELATIONS, "concept_relation"),
+            (self.summary_relation, _SUMMARY_RELATIONS, "summary_relation"),
+        )
+        for relation, allowed, field_name in relation_sets:
+            if relation not in allowed:
+                raise ValueError(f"{field_name}が不正です。")
+        if len(self.evidence_spans) > 12:
+            raise ValueError("verification evidence_spansは12件以下にしてください。")
+        normalized_spans: list[str] = []
+        for span in self.evidence_spans:
+            normalized = span.strip()
+            if not normalized:
+                raise ValueError("verification evidence_spansに空文字は使用できません。")
+            if normalized not in normalized_spans:
+                normalized_spans.append(normalized)
+        object.__setattr__(self, "proposition_id", proposition_id)
+        object.__setattr__(self, "evidence_spans", tuple(normalized_spans))
+
+    def as_context(self) -> dict[str, object]:
+        return {
+            "proposition_id": self.proposition_id,
+            "realized": self.realized,
+            "predicate_relation": self.predicate_relation,
+            "value_status_relation": self.value_status_relation,
+            "polarity_relation": self.polarity_relation,
+            "degree_relation": self.degree_relation,
+            "certainty_relation": self.certainty_relation,
+            "concept_relation": self.concept_relation,
+            "summary_relation": self.summary_relation,
+            "evidence_spans": list(self.evidence_spans),
+        }
+
+    @classmethod
+    def from_mapping(cls, value: object) -> "PropositionSemanticVerification" | None:
+        if not isinstance(value, Mapping):
+            return None
+        proposition_id = value.get("proposition_id")
+        realized = value.get("realized")
+        relation_fields = (
+            "predicate_relation",
+            "value_status_relation",
+            "polarity_relation",
+            "degree_relation",
+            "certainty_relation",
+            "concept_relation",
+            "summary_relation",
+        )
+        if (
+            not isinstance(proposition_id, str)
+            or not proposition_id.strip()
+            or not isinstance(realized, bool)
+            or any(not isinstance(value.get(field_name), str) for field_name in relation_fields)
+        ):
+            return None
+        raw_spans = value.get("evidence_spans")
+        if not isinstance(raw_spans, list) or any(
+            not isinstance(span, str) or not span.strip() for span in raw_spans
+        ):
+            return None
+        try:
+            return cls(
+                proposition_id=proposition_id,
+                realized=realized,
+                predicate_relation=str(value["predicate_relation"]),
+                value_status_relation=str(value["value_status_relation"]),
+                polarity_relation=str(value["polarity_relation"]),
+                degree_relation=str(value["degree_relation"]),
+                certainty_relation=str(value["certainty_relation"]),
+                concept_relation=str(value["concept_relation"]),
+                summary_relation=str(value["summary_relation"]),
+                evidence_spans=tuple(raw_spans),
+            )
+        except ValueError:
+            return None
+
+
+@dataclass(frozen=True, slots=True)
+class CharacterSemanticVerification:
+    """CharacterSemanticVerifierのtyped output。acceptedはLLMに持たせない。"""
+
+    propositions: tuple[PropositionSemanticVerification, ...]
+    required_content_preserved: bool
+    forbidden_additions_absent: bool
+    unsupported_new_fact_absent: bool
+    existence_boundary_preserved: bool
+    budget_preserved: bool
+    global_evidence_spans: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        ids = [item.proposition_id for item in self.propositions]
+        if len(ids) != len(set(ids)):
+            raise ValueError("CharacterSemanticVerification proposition_idが重複しています。")
+        if len(self.global_evidence_spans) > 24:
+            raise ValueError("global_evidence_spansは24件以下にしてください。")
+        if any(not item.strip() for item in self.global_evidence_spans):
+            raise ValueError("global_evidence_spansに空文字は使用できません。")
+
+    def as_context(self) -> dict[str, object]:
+        return {
+            "propositions": [item.as_context() for item in self.propositions],
+            "required_content_preserved": self.required_content_preserved,
+            "forbidden_additions_absent": self.forbidden_additions_absent,
+            "unsupported_new_fact_absent": self.unsupported_new_fact_absent,
+            "existence_boundary_preserved": self.existence_boundary_preserved,
+            "budget_preserved": self.budget_preserved,
+            "global_evidence_spans": list(self.global_evidence_spans),
+        }
+
+    @classmethod
+    def from_mapping(cls, value: object) -> "CharacterSemanticVerification" | None:
+        if not isinstance(value, Mapping):
+            return None
+        bool_fields = (
+            "required_content_preserved",
+            "forbidden_additions_absent",
+            "unsupported_new_fact_absent",
+            "existence_boundary_preserved",
+            "budget_preserved",
+        )
+        if any(not isinstance(value.get(field_name), bool) for field_name in bool_fields):
+            return None
+        raw_propositions = value.get("propositions")
+        if not isinstance(raw_propositions, list):
+            return None
+        propositions: list[PropositionSemanticVerification] = []
+        for raw in raw_propositions:
+            parsed = PropositionSemanticVerification.from_mapping(raw)
+            if parsed is None:
+                return None
+            propositions.append(parsed)
+        raw_global_spans = value.get("global_evidence_spans")
+        if not isinstance(raw_global_spans, list) or any(
+            not isinstance(span, str) or not span.strip() for span in raw_global_spans
+        ):
+            return None
+        try:
+            return cls(
+                propositions=tuple(propositions),
+                required_content_preserved=bool(value["required_content_preserved"]),
+                forbidden_additions_absent=bool(value["forbidden_additions_absent"]),
+                unsupported_new_fact_absent=bool(value["unsupported_new_fact_absent"]),
+                existence_boundary_preserved=bool(value["existence_boundary_preserved"]),
+                budget_preserved=bool(value["budget_preserved"]),
+                global_evidence_spans=tuple(raw_global_spans),
             )
         except ValueError:
             return None
