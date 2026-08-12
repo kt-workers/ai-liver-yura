@@ -4,6 +4,9 @@ import json
 
 import pytest
 
+from app.adapters.prompt.character_realization_observer_prompt_builder import (
+    CharacterRealizationObserverPromptBuilder,
+)
 from app.adapters.prompt.character_realization_validator_prompt_builder import (
     CharacterRealizationValidatorPromptBuilder,
 )
@@ -60,8 +63,8 @@ class _ValidationModel:
         return json.dumps(self.payload, ensure_ascii=False)
 
 
-def _context() -> ResponseContext:
-    plan = SemanticUtterancePlan(
+def _plan() -> SemanticUtterancePlan:
+    return SemanticUtterancePlan(
         speech_act="direct_answer",
         target=SemanticTarget("internal_state", "sadness"),
         propositions=(
@@ -78,6 +81,10 @@ def _context() -> ResponseContext:
         question_budget=0,
         new_direction_budget=0,
     )
+
+
+def _context() -> ResponseContext:
+    plan = _plan()
     return ResponseContext(
         user_input="悲しい？",
         activity_type="conversation",
@@ -110,40 +117,27 @@ def _response(speech: str) -> CharacterResponse:
     )
 
 
-def _accepted_payload(
-    *,
-    surface_markers: list[str],
-    certainty_evidence: str = "はっきりしない",
-) -> dict[str, object]:
+def _accepted_payload() -> dict[str, object]:
     return {
         "accepted": True,
-        "reason": "semantic_realization_consistent",
+        "reason": "post_observation_semantic_contract_consistent",
         "differences": [],
         "semantic_checks": {
-            "required_facets_preserved": True,
-            "predicate_preserved": True,
-            "state_preserved": True,
-            "certainty_preserved": True,
-            "concept_preserved": True,
-            "unsupported_intensity_added": False,
+            "required_content_preserved": True,
+            "forbidden_additions_absent": True,
+            "unsupported_new_fact_absent": True,
+            "existence_boundary_preserved": True,
+            "budget_preserved": True,
         },
         "realized_proposition_checks": [
             {
                 "realization_id": "proposition:0:sadness",
                 "predicate_preserved": True,
                 "predicate_evidence_spans": ["悲し"],
-                "state_preserved": True,
-                "state_fidelity": "exact",
-                "certainty_preserved": True,
-                "certainty_evidence_spans": [certainty_evidence],
                 "concept_preserved": True,
                 "concept_evidence_spans": [],
-                "intensity_semantics_preserved": True,
-                "presence_only_counterfactual_equivalent": False,
-                "intensity_evidence_spans": [],
             }
         ],
-        "surface_evidence": {"intensity_markers": surface_markers},
     }
 
 
@@ -175,25 +169,27 @@ def _source() -> Activity:
     )
 
 
-def test_prompt_treats_predicate_uncertainty_as_exact_unknown_candidate() -> None:
-    prompt = CharacterRealizationValidatorPromptBuilder().build(
+def test_observer_prompt_treats_predicate_uncertainty_as_unknown_epistemic_state() -> None:
+    plan = _plan()
+    prompt = CharacterRealizationObserverPromptBuilder().build(
         _context(),
         _response("悲しいかは、今のところはっきりしないよ。"),
+        plan,
     )
 
-    assert "state=unknownは存在・不在・強度が未確定" in prompt
-    assert "predicate自体を現時点で確定できない" in prompt
-    assert "polarityをcommitしていない限り" in prompt
-    assert "meta-uncertaintyとしてrejectしない" in prompt
-    assert "同じ慎重な表現がunknown stateと低い断定度の両方" in prompt
-    assert "時間限定、epistemic hedge、断定度表現はpredicateの程度を変えない限りintensity markerではない" in prompt
+    assert "unknownは対象の存在・不在・強度・値を現時点で確定していない" in prompt
+    assert "特定polarityへcommitしたspeechをunknownにしない" in prompt
+    assert "observed_certaintyは、観測器自身の判定自信度でも" in prompt
+    assert "対象stateについてのepistemic確かさ" in prompt
+    assert "observed_state=unknownのとき" in prompt
+    assert "observed_certainty=highへ引き上げない" in prompt
 
 
 @pytest.mark.asyncio
-async def test_model_reported_uncertainty_markers_do_not_reject_valid_unknown() -> None:
+async def test_valid_unknown_with_explicit_uncertainty_is_accepted_after_observation() -> None:
     result = await _validator(
-        _accepted_payload(surface_markers=["今のところ", "はっきりしない"]),
-        state_evidence="はっきりしない",
+        _accepted_payload(),
+        state_evidence="あるかどうか、はっきりしない",
         certainty_evidence="はっきりしない",
     ).validate(
         _source(),
@@ -202,14 +198,14 @@ async def test_model_reported_uncertainty_markers_do_not_reject_valid_unknown() 
     )
 
     assert result.accepted is True
-    assert result.reason == "semantic_realization_consistent"
+    assert result.reason == "post_observation_semantic_contract_consistent"
     assert result.claim_differences == ()
 
 
 @pytest.mark.asyncio
 async def test_unknown_committed_to_low_is_rejected_by_independent_observation() -> None:
     result = await _validator(
-        _accepted_payload(surface_markers=[], certainty_evidence="かも"),
+        _accepted_payload(),
         observed_state="low",
         observed_certainty="low",
         state_evidence="少し悲しい",
