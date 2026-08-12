@@ -13,6 +13,10 @@ V2では現行実装を修復し続けない。旧Issue / PR / branch / docsか�
 
 設計→Module Contract→Unit→Adjacent Contract→Integration→System Verificationの順で再構築する。
 
+詳細設計は本書の責務境界を変更せず補足する subordinate canonical として置く。
+
+- Speech Pipeline: `docs/architecture/v2/speech_pipeline_architecture.md`
+
 ---
 
 # 2. システム境界
@@ -47,6 +51,8 @@ Coreは以下を満たさなければならない。
 - Persistenceが利用不能でも安全に縮退できる
 - 外部Outputが切断されてもCore loopを破壊しない
 - graceful shutdown / cancellationを正常経路として扱う
+- Speech playbackやTTS待機でBrain decision loopを停止しない
+- Body realtime更新がLLMやTTSの待機時間に引きずられない
 
 ## 2.2 Subsystem
 
@@ -123,18 +129,18 @@ Plugin → Plugin Port / Capability contract
 # 4. Core全体の因果フロー
 
 ```text
-External Input
+External Input / Internal Timer / Execution Result
     ↓
-Input Gateway / Perception normalization
+Input Gateway / Event normalization
     ↓
-[LLM-1] Input Meaning
+[LLM-1] Input Meaning           # natural-language input only
     ↓ StructuredInputMeaning
 Situation / Appraisal
     ↓
 Internal State + Memory + Current Activity + Capability Snapshot
     ↓
 [LLM-2] Commander
-    ↓ SystemCommand / InternalDirective
+    ↓ SystemCommand
     ├───────────────┬───────────────────┬───────────────────┐
     ↓               ↓                   ↓                   ↓
 Activity         SpeechIntent        BodyIntent          Silence/Wait
@@ -149,8 +155,14 @@ Result          Realizer             Planner
     │               ↓              Constraints / IK /
     │         Speech Performance    Continuous Control
     │               ↓                   ↓
-    │         Text / TTS Port       BodyPoseFrame
-    │                                   ↓
+    │         PreparedSpeech        BodyPoseFrame
+    │         Candidate                 ↓
+    │               ↓             Avatar/Output Port
+    │         Speech Presentation
+    │         Pipeline
+    │               ↓
+    │         Text / TTS / Audio
+    │
     └──────────── execution / presentation results ────────┘
                          ↓
                 Event / Appraisal feedback
@@ -164,6 +176,8 @@ Result          Realizer             Planner
 - Characterの出力をBodyの意思決定正本にしない。
 - Bodyの出力をCharacterの発言意味正本にしない。
 - 両方がCommanderの同じSystemCommandに従う。
+- Speechの**生成**と**提示・再生**は別の実行レーンとして扱う。
+- Presentation完了は次Core cycleの開始条件ではない。
 
 ---
 
@@ -236,6 +250,7 @@ typed `unresolved / clarification_required` としてCommanderへ渡す。
 - Capability registry
 - execution facts
 - turn / interruption context
+- prepared / queued / presenting speech facts
 - safety / authority constraints
 
 出力:
@@ -281,6 +296,8 @@ Commander output
 ```
 
 実行結果は`ExecutionResult`としてBrainへ戻す。
+
+Speechの場合、候補準備とPresentation commitを同一時点に固定しない。先行準備済み候補を実際に提示する前に、最新turn/contextでrevalidateする。
 
 ---
 
@@ -342,6 +359,8 @@ CharacterUtterance
 Characterらしさは**意味を変えてよい権限ではない**。
 
 CharacterUtteranceは独立semantic verifierでSpeechIntentとの整合を検証する。
+
+Character生成は、別Speechのaudio playback完了を待つ必要がない。
 
 ---
 
@@ -471,7 +490,7 @@ Activityの意味選択はCommanderが所有し、Activity implementationがraw 
 
 SystemCommandをtyped actionへ分配し、resultを収集する。
 
-- Speech
+- Speech preparation / presentation intent
 - Body
 - Plugin capability
 - Memory operation
@@ -494,21 +513,61 @@ CharacterUtteranceとExpression Intentからengine-independentなspeech performa
 
 具体的provider値への変換はTTS Adapter。
 
-## B11 Autonomy / Turn Management
+## B11 Speech Pipeline
+
+発話のDecision/PreparationとPresentation/Playbackを分離する。
+
+```text
+Decision / Preparation Lane
+  Appraisal
+  → Commander
+  → Character Speech
+  → Semantic Verification
+  → Speech Performance
+  → PreparedSpeechCandidate
+             ↓
+        bounded queue
+             ↓
+Presentation Lane
+  pre-play revalidation
+  → optional TTS preparation
+  → text/audio presentation
+  → Body/viseme synchronization
+  → SpeechPresentationResult
+```
+
+### 不変条件
+
+- 現在Speechの再生完了を次候補生成開始条件にしない
+- TTS/audio playbackをBrain decision loopのblocking awaitにしない
+- Speech A再生中でも条件が許せばSpeech BのAppraisal/Commander/Character生成を進められる
+- queueはboundedとし無制限先読みしない
+- prepared candidateは発話確定ではない
+- Presentation直前にturn/context/state/execution factsを再検証する
+- user input等でstaleになった未再生候補をcancel/supersedeできる
+- 次候補を生成できることと、次候補を実際に喋ることを分離する
+
+詳細: `docs/architecture/v2/speech_pipeline_architecture.md`
+
+## B12 Autonomy / Turn Management
 
 Eventがなくても時間経過と内部状態からAppraisal→Motivation→Commanderを起動できる。
 
 ただし「自律発話専用の別人格/別意思決定器」を作らず、ユーザー応答と同じCommander authorityを使う。
+
+型付きで管理する。
 
 - turn ownership
 - interruption
 - pending response
 - autonomous initiative
 - silence
+- speech preparing / prepared / queued / presenting / completed
+- candidate stale / superseded / cancelled
 
-を型付きで管理する。
+自律発話間隔を固定sleepや「前発話終了後に次生成開始」という直列構造で作らない。
 
-## B12 Runtime Kernel
+## B13 Runtime Kernel
 
 - Event Queue / Buffer
 - prioritization
@@ -518,8 +577,11 @@ Eventがなくても時間経過と内部状態からAppraisal→Motivation→Co
 - scheduler
 - health
 - diagnostics
+- Decision / Preparation / Presentation / Body realtime worker coordination
 
 Domain判断を持たず、各Moduleを協調させる。
+
+一つのTask/workerが長時間awaitしても他レーンを停止しない。
 
 ---
 
@@ -585,6 +647,8 @@ Body full-motion計画とは独立して低遅延で重ねる。
 - breathing
 - viseme / lip sync
 - tiny continuous motion
+
+Speech PipelineのPresentation Laneでcommitされた実Speechだけをviseme/speech sync対象にする。
 
 ## D08 BodyPoseFrame
 
@@ -681,6 +745,8 @@ ClockPort
 
 Provider failureをrole semanticsへ漏らさない。
 
+TTS Providerの待機時間をCore decision loopへ伝播させない。
+
 ---
 
 # 11. Subsystems
@@ -715,6 +781,8 @@ Moduleを単体で実LLM/実Provider検証する再利用可能Harness。
 
 Lab専用ロジックをproduction logicの代わりにしない。
 
+Speech Pipeline Lab/traceではgeneration timingとpresentation timingを別々に観測できるようにする。
+
 ## S05 Reference / Development Tooling
 
 Character reference analysis、architecture graph、Issue graph等。
@@ -742,6 +810,22 @@ or
 Characterはexecution statusより先に実行完了を主張できない。
 
 Speech/Body/Pluginの結果は独立Resultとして保持する。
+
+Speechではさらに、内容準備と実際の提示を分離する。
+
+```text
+prepared
+→ queued
+→ revalidating
+→ ready_to_present
+→ presenting
+→ completed
+
+or
+→ cancelled / superseded / stale / rejected / failed
+```
+
+`prepared`は「話した」という事実ではない。
 
 結果は次cycleのAppraisalへ戻す。
 
@@ -797,6 +881,8 @@ Retrievalは少なくとも次を考慮する。
 
 無関係なMemory本文を大量にLLMへ渡さない。
 
+Speech Pipelineのprepared候補はMemoryの確定発話履歴にしない。実際にcommit/presentされた事実を区別する。
+
 ---
 
 # 15. Body不変条件
@@ -813,10 +899,70 @@ Retrievalは少なくとも次を考慮する。
 - 2D/Live2D制約をCanonical Bodyへ逆流させない
 - Character Body Styleは固定Poseではなくcost/timing/coordination/styleへ作用させる
 - TTS timingがある場合はphoneme/viseme timelineを利用する
+- Speech presentation待機でBody realtime updateを停止しない
 
 ---
 
-# 16. Graceful Degradation / Shutdown
+# 16. Speech Pipeline不変条件
+
+詳細正本: `docs/architecture/v2/speech_pipeline_architecture.md`
+
+## 16.1 生成と再生を別レーンにする
+
+```text
+Decision / Preparation Lane
+  Appraisal → Commander → Character → Validation → Performance → PreparedSpeechCandidate
+
+Presentation Lane
+  revalidate → TTS/audio → playback → Body/viseme → result
+```
+
+Presentation LaneはDecision Laneをblockしない。
+
+## 16.2 開発初期要求の明文化
+
+**現在の発言が終わるまで次発話内容の生成処理が滞らないこと。**
+
+Speech Aを再生中でも、Commanderが次候補準備を許可すればSpeech BのCharacter generationを進める。
+
+禁止:
+
+```text
+await speech_A_playback_complete()
+→ next Appraisal
+→ next Commander
+→ speech_B generation
+```
+
+## 16.3 先行生成と連続発話を混同しない
+
+先行生成した候補は無条件に再生しない。
+
+Presentation commit直前に最低限次を確認する。
+
+- turn ownership
+- user input
+- topic/context revision
+- Emotion/Motivationの重大な変化
+- capability/execution facts
+- candidate preconditions / expiry
+- cancellation / supersede
+
+## 16.4 bounded queue
+
+prepared候補は有限数に制限する。
+
+無制限の未来発話生成、固定3発話先読み、queueの機械的全消化を禁止する。
+
+## 16.5 latency acceptance
+
+fake playback durationを5秒→20秒へ伸ばしても、次Character generation startが同じ15秒だけ後ろへ移動する構造をFAILとする。
+
+発話間隔は自然なTurn/Discourse/Motivationから生じてもよいが、**前Speech再生待ち + 次LLM生成待ちの不要な直列加算**で長くしてはならない。
+
+---
+
+# 17. Graceful Degradation / Shutdown
 
 Coreは以下を正常なdegraded stateとして扱う。
 
@@ -828,12 +974,16 @@ Coreは以下を正常なdegraded stateとして扱う。
 
 retryはbounded backoff / rate-limited diagnosticsを使い、高頻度失敗ログでCoreを飽和させない。
 
+TTS unavailable時もSpeech Decision / Character generation / Text presentationを可能な範囲で継続する。
+
 Shutdown:
 
 ```text
 shutdown requested
 → stop accepting new external work
-→ cancel/finish current interruptible work
+→ stop creating new prepared speech candidates
+→ cancel/supersede queued candidates
+→ cancel/finish current interruptible work/presentation
 → stop frame/event production
 → close adapters/workers
 → await RuntimeCoordinator
@@ -845,7 +995,7 @@ pending task / unretrieved exceptionを残さない。
 
 ---
 
-# 17. Observability
+# 18. Observability
 
 全Moduleは本文ではなくtyped traceを優先する。
 
@@ -855,17 +1005,34 @@ pending task / unretrieved exceptionを残さない。
 - event_id
 - command_id
 - activity_id
+- candidate_id / presentation_id（Speechの場合）
 - module
 - revision
 - started_at / completed_at
 - outcome
 - error_class
 
+Speech Pipelineは少なくとも次を時刻付きで観測する。
+
+```text
+command_decision_started_at
+command_decision_completed_at
+character_generation_started_at
+character_generation_completed_at
+candidate_queued_at
+preplay_revalidation_at
+tts_prepare_started_at / completed_at
+presentation_started_at / completed_at
+candidate_cancelled_at / superseded_at / stale_at
+```
+
+`next_character_generation_started_at`がprevious presentation durationに比例して遅延する構造を検出可能にする。
+
 Raw Prompt / API key /不必要なuser text / memory bodyをdiagnosticsへ無制限に複製しない。
 
 ---
 
-# 18. Module Development Gate
+# 19. Module Development Gate
 
 すべてのWork Issueは次の順を守る。
 
@@ -887,6 +1054,8 @@ Raw Prompt / API key /不必要なuser text / memory bodyをdiagnosticsへ無制
 
 隣接Moduleを修正して通してはいけない。
 
+Speech Pipelineではfake clock / fake playbackでnon-blocking concurrencyをUnit acceptanceに含める。
+
 ## Gate 2: Adjacent Contract
 
 実際の隣接ModuleとのDTO/schema/authority boundaryを検証。
@@ -895,15 +1064,17 @@ Raw Prompt / API key /不必要なuser text / memory bodyをdiagnosticsへ無制
 
 複数Workを接続し、failure/cancellationも含めて確認。
 
+Speech Integrationではplayback中next-generationを必須確認する。
+
 ## Gate 4: System Verification
 
 `python -m app`等の全体起動は最後。
 
-実LLM/実画面が必要ならVerificationでユーザー確認まで止める。
+実LLM/実画面/実TTSが必要ならVerificationでユーザー確認まで止める。
 
 ---
 
-# 19. V2実装順序
+# 20. V2実装順序
 
 重要Moduleから依存順に進める。
 
@@ -919,7 +1090,9 @@ B2 Internal State / Appraisal minimum
 B3 Commander LLM
 B4 Activity / Execution coordination
 B5 Character Speech LLM + semantic verification
-B6 Core text-loop integration
+B6 Speech Performance
+B7 Speech Pipeline: Decision/Preparation vs Presentation concurrency
+B8 Core text-loop integration
 
 Phase C: Body
 C1 Canonical Body / Skeleton
@@ -953,7 +1126,7 @@ Phase番号はIssue分割理由ではない。1つの責務として独立実装
 
 ---
 
-# 20. V2で旧設計から持ち込まないもの
+# 21. V2で旧設計から持ち込まないもの
 
 - 旧branchの実装そのもの
 - Compatibility pathを正規経路とみなす判断
@@ -966,10 +1139,12 @@ Phase番号はIssue分割理由ではない。1つの責務として独立実装
 - StreamingをCore Pluginとして扱う構造
 - 全体起動だけでModule品質を判断する運用
 - 同一Work Issueに複数active implementation lineageを持つ運用
+- Speech playback完了を次LLM生成の開始条件にする直列発話Pipeline
+- future speechを大量に固定生成してqueue順に必ず再生する設計
 
 ---
 
-# 21. V2 Design Gate 完了条件
+# 22. V2 Design Gate 完了条件
 
 - [ ] 本文書をユーザーが確認
 - [ ] 旧Open Issue/PR要求がMigration Matrixへ全件対応付けられている
@@ -977,4 +1152,7 @@ Phase番号はIssue分割理由ではない。1つの責務として独立実装
 - [ ] 各新Work IssueにStart / Target /依存 /検証Gateがある
 - [ ] 旧実装lineageをV2へ直接mergeしないことが確認される
 - [ ] V2 trunkが最古mainから開始している
+- [ ] #348 Speech PipelineがBrain hierarchyへ含まれている
+- [ ] playback中next-generationをRuntime/Brain Integration acceptanceへ含めている
+- [ ] playback durationがnext generation startをblockしない自動テスト条件がある
 - [ ] Design Gateを通過するまで製品コードを変更しない
