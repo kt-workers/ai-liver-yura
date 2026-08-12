@@ -19,6 +19,7 @@ from app.domain.semantic_utterance import (
     SemanticUtterancePlan,
 )
 from app.runtime import character_realization_validator
+from app.runtime.character_realization_validator import CharacterRealizationValidator
 
 
 def _plan() -> SemanticUtterancePlan:
@@ -144,7 +145,10 @@ def test_runtime_realization_validator_has_no_finite_degree_semantic_dictionary(
 
 
 def test_runtime_post_observation_validator_does_not_revalidate_state_fidelity() -> None:
-    source = inspect.getsource(character_realization_validator)
+    downstream_source = inspect.getsource(
+        CharacterRealizationValidator._accepted_post_observation_differences
+    )
+    observer_source = inspect.getsource(CharacterRealizationValidator._observation_differences)
 
     for removed_post_observation_field in (
         "state_fidelity",
@@ -155,4 +159,9 @@ def test_runtime_post_observation_validator_does_not_revalidate_state_fidelity()
         "state_preserved",
         "certainty_preserved",
     ):
-        assert removed_post_observation_field not in source
+        assert removed_post_observation_field not in downstream_source
+
+    assert "observation.observed_state" in observer_source
+    assert "observation.observed_certainty" in observer_source
+    assert "observation.state_evidence_spans" in observer_source
+    assert "observation.certainty_evidence_spans" in observer_source
