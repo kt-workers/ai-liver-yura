@@ -1,41 +1,47 @@
 # AI Liver ゆら V2 GitHub Projects Sync Runbook
 
-Status: Draft / #319
+Status: Draft / #319 / Canonical field values resolved 2026-08-13
 Project: `ktan514 / project #6`
 Repository: `ktan514/ai-liver-yura`
 Manifest: `docs/architecture/v2/project_sync_manifest.md`
 
 ## 1. 目的
 
-`project_sync_manifest.md`をGitHub Projects v2のlive状態へ安全に反映するための実行手順。
+`project_sync_manifest.md`をGitHub Projects v2 liveへ安全に反映する。
 
 重要原則:
 
 - 古いfield ID / option ID / item IDを使わない
-- mutation前に必ずlive取得する
-- 既存itemを重複追加しない
-- 既存Parent/Sub-issueを無条件上書きしない
-- dry-runとmutationを分離する
-- mutation後に再取得してManifestと比較する
+- mutation前に必ずlive取得
+- existing itemをduplicate追加しない
+- existing Parent/Sub-issueを理由不明で上書きしない
+- dry-run→必要Option bootstrap→再dry-run→mutation→re-auditの順
+- canonical Manifestをlive状態へ都合よく書き換えない
 
 ## 2. 前提
-
-GitHub CLIが必要。
 
 ```bash
 gh --version
 gh auth status
-```
-
-Projects操作には`project` scopeが必要。
-
-```bash
 gh auth refresh -s project
 ```
 
-Repository Issue/Sub-issue操作にはIssue write権限が必要。
+Repository Issue/Sub-issue write権限も確認する。
 
-## 3. Live snapshot
+## 3. Canonical authority
+
+必ずremote liveの以下を読む。
+
+- #207
+- #317
+- #319
+- `origin/rebuild/v2-foundation:docs/architecture/v2/project_sync_manifest.md`
+- `origin/rebuild/v2-foundation:docs/architecture/v2/project_sync_runbook.md`
+- `origin/rebuild/v2-foundation:docs/architecture/v2/system_architecture.md`
+
+local checkoutが古ければremoteを正本とする。
+
+## 4. Live snapshot
 
 ```bash
 OWNER=ktan514
@@ -49,16 +55,16 @@ gh project field-list "$PROJECT" --owner "$OWNER" --format json -L 100 > "$TMP/f
 gh project item-list "$PROJECT" --owner "$OWNER" --format json -L 500 > "$TMP/items.before.json"
 ```
 
-確認:
-- project ID
-- Status / 作業種別 / 領域 / 優先度 / 工程 / Start date / Target date field IDs
-- single-select option IDs
-- V2 Issueが既にitemとして存在するか
-- duplicate project itemがないか
+liveから解決する:
+- PROJECT_ID
+- field IDs
+- option IDs
+- item IDs
+- current Project item presence
+- current Parent
 
-## 4. 必要field
+## 5. Required fields
 
-Manifest上:
 - Status
 - 作業種別
 - 領域
@@ -67,112 +73,138 @@ Manifest上:
 - Start date
 - Target date
 
-既存fieldを削除・再作成してIDを変えることは原則禁止。
+既存fieldを削除・再作成しない。
 
-不足fieldのみ作成する例:
+不足field自体がある場合は、そのfieldの安全な追加方法を確認してから追加する。既存同名fieldが複数ならSTOP。
+
+## 6. `領域` Option bootstrap
+
+Manifest §4の32個をcanonical exact option namesとする。
+
+旧Area Optionは削除・renameしない。
+
+### 6.1 初回dry-run
+
+live `領域` optionsとManifest §4を比較し、missing canonical optionsだけを列挙する。
+
+### 6.2 非破壊追加
+
+GitHub UIまたはProjects v2 GraphQLで、**missing canonical optionsのみ**existing `領域` single-select fieldへ追加する。
+
+禁止:
+- field削除/recreate
+- existing option rename
+- existing option delete
+- canonicalにないOptionを推測追加
+
+GraphQLを使う場合、mutation直前にfield ID/project IDをlive解決する。
+
+GitHub API/CLI制約でsingle-select optionを安全に追加できない場合はSTOPし、UI操作が必要なOption一覧を返す。
+
+### 6.3 再取得
+
+Option追加後:
 
 ```bash
-gh project field-create "$PROJECT" --owner "$OWNER" --name "工程" --data-type NUMBER
-gh project field-create "$PROJECT" --owner "$OWNER" --name "Start date" --data-type DATE
-gh project field-create "$PROJECT" --owner "$OWNER" --name "Target date" --data-type DATE
+gh project field-list "$PROJECT" --owner "$OWNER" --format json -L 100 > "$TMP/fields.after-option-bootstrap.json"
 ```
 
-Single-select fieldは既存optionをlive確認する。`領域`のV2 option不足時、既存fieldを削除して作り直さずGitHub UIまたはProjects v2 GraphQLでoption追加後、再度`field-list`してoption IDを取得する。
+32 canonical optionsがexact matchで存在することを確認する。
 
-## 5. V2 IssueをProjectへ一意登録
+## 7. `作業種別`
 
-対象はManifestに記載されたV2 Issue群（#317〜#366のうち対象Issue）。
+Manifest §3/§6がcanonical。
 
-item-listの`content.number`を確認し、存在しないIssueだけ追加する。
+Codexが推測してはならない。
 
-例:
+Manifestに全50 Issueの一意値が明示されているため、その値をそのまま利用する。
+
+利用値:
+- 設計
+- 実装
+- 検証
+- 調査
+- ドキュメント
+
+`不具合`は今回対象なし。
+
+## 8. Project item一意登録
+
+Manifest対象50 Issueについて`content.number`で確認する。
+
+- exactly one: 何もしない
+- zero: item-add
+- two以上: STOP
 
 ```bash
 gh project item-add "$PROJECT" --owner "$OWNER" \
-  --url "https://github.com/$REPO/issues/366" --format json
+  --url "https://github.com/$REPO/issues/$ISSUE" --format json
 ```
 
-追加後:
+## 9. Field mutation
 
-```bash
-gh project item-list "$PROJECT" --owner "$OWNER" --format json -L 500 > "$TMP/items.after-add.json"
-```
+mutation直前に毎回live JSONから:
+- PROJECT_ID
+- ITEM_ID
+- FIELD_ID
+- OPTION_ID
 
-## 6. Field value更新
-
-mutation直前にlive JSONから解決:
-
-- `PROJECT_ID`
-- `ITEM_ID`
-- `FIELD_ID`
-- single-selectなら`OPTION_ID`
+を解決する。
 
 ### Date
 
 ```bash
 gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" \
-  --field-id "$START_FIELD_ID" --date "2026-08-12"
+  --field-id "$FIELD_ID" --date "YYYY-MM-DD"
 ```
 
 ### Number
 
 ```bash
 gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" \
-  --field-id "$PROCESS_FIELD_ID" --number 235
+  --field-id "$FIELD_ID" --number 235
 ```
 
 ### Single select
 
 ```bash
 gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" \
-  --field-id "$STATUS_FIELD_ID" --single-select-option-id "$STATUS_OPTION_ID"
+  --field-id "$FIELD_ID" --single-select-option-id "$OPTION_ID"
 ```
 
-ManifestのStatus / Area / Priority / 工程 / Start / TargetをIssue単位で設定する。
+Manifest §6のStatus / 作業種別 / 領域 / 優先度 / 工程 / Start / Targetを完全同期する。
 
 Design Gate中:
-- #317: In progress
-- #318: In progress
-- #319: Blocked
-- Product/Design Work・Parent・Integration: Blocked
+- #317 = In progress
+- #318 = In progress
+- #319 = Blocked
+- その他47 = Blocked
 
-## 7. Formal Parent/Sub-issue同期
+## 10. Formal Parent/Sub-issue
 
-### 現在Parent確認
+current parentを先に確認:
 
 ```bash
 gh api -H "Accept: application/vnd.github+json" \
   "repos/$REPO/issues/$SUB_NUMBER/parent"
 ```
 
-parentなしの場合のみ新規追加する。
-
-### Sub-issue database ID
+parentなしの場合のみ追加:
 
 ```bash
 SUB_ID=$(gh api "repos/$REPO/issues/$SUB_NUMBER" --jq '.id')
-```
 
-### parentへ追加
-
-```bash
 gh api --method POST \
   -H "Accept: application/vnd.github+json" \
   "repos/$REPO/issues/$PARENT_NUMBER/sub_issues" \
   -F "sub_issue_id=$SUB_ID"
 ```
 
-別Parent設定済みなら自動置換しない。Manifestとliveを照合し意図したreparentと確認できた場合のみ:
+desired parentと同じならno-op。
 
-```bash
-gh api --method POST \
-  -H "Accept: application/vnd.github+json" \
-  "repos/$REPO/issues/$PARENT_NUMBER/sub_issues" \
-  -F "sub_issue_id=$SUB_ID" \
-  -F "replace_parent=true"
-```
+別Parentなら自動置換しない。Manifest/canonicalから意図したreparentと100%確定できる場合のみ`replace_parent=true`。不明ならSTOP。
 
-## 8. Parent/Sub-issue pairs
+Desired pairs:
 
 ```text
 317 <- 318 319 320 325 335 342 350 356 345 360
@@ -185,54 +217,114 @@ gh api --method POST \
 345 <- 346 347 365 351 352 353
 ```
 
-#324は#320のSub-issueであり同時に#354/#355のParent。
+49 links。
 
-## 9. Dry-run
+## 11. STOP conditions
 
-mutation前に最低限:
+次が1つでもあれば、該当phase以降のmutationをSTOPする。
+
+- duplicate Project item
+- duplicate same-name field
+- canonical 32 Area option bootstrapが安全に実行できない
+- bootstrap後もcanonical option不存在
+- Manifestに必要なWork Type/Status/Priority option不存在
+- Issue本文Start/TargetとManifest矛盾
+- #317 Design Gate policyとStatus矛盾
+- unexplained existing different parent
+- Project/account/repo identity mismatch
+- canonical remote contentsと本runbook/manifest矛盾
+- active implementation lineage conflict
+
+Option不足は、Manifestでcanonical exact nameが確定済みの`領域`に限り、§6の非破壊bootstrapを先に試してよい。
+
+## 12. Dry-run sequence
+
+### Dry-run A
+
+mutation前に全50 Issueについて:
 
 ```text
 Issue
-current project item -> desired presence
-current Status -> desired Status
-current Area -> desired Area
-current Priority -> desired Priority
-current 工程 -> desired 工程
-current Start -> desired Start
-current Target -> desired Target
-current parent -> desired parent
+current/desired project presence
+current/desired Status
+current/desired 作業種別
+current/desired 領域
+current/desired 優先度
+current/desired 工程
+current/desired Start
+current/desired Target
+current/desired parent
 ```
 
-次が1つでもあればSTOP:
+### Option bootstrap
 
-- 同一Issueのproject item重複
-- Manifestにない別Parentが設定済みで理由不明
-- 同名fieldが複数存在
-- desired single-select option不存在
-- Issue本文Start/TargetとManifest矛盾
-- #317 Design Gate policyとStatus矛盾
-- #366が#325配下でない / Planner #361より後工程へ誤配置
+必要なら`領域`missing canonical optionsだけ追加。
 
-## 10. 再監査
+### Dry-run B
+
+全field/option/item/parentを再取得し、STOP条件が0であることを確認。
+
+**Dry-run B PASS後のみProject field / Parent mutationへ進む。**
+
+## 13. Re-audit
 
 ```bash
 gh project field-list "$PROJECT" --owner "$OWNER" --format json -L 100 > "$TMP/fields.after.json"
 gh project item-list "$PROJECT" --owner "$OWNER" --format json -L 500 > "$TMP/items.after.json"
 ```
 
-全V2 Issueについて:
+全50 Issue:
+- exactly one item
+- Status一致
+- 作業種別一致
+- 領域一致
+- 優先度一致
+- 工程一致
+- Start一致
+- Target一致
 
-- exactly one project item
-- Status / Area / Priority / 工程一致
-- Start/Target一致
-- formal Parent一致
+全49 Sub-issue:
+- desired Parent一致
 
-PASS後に#319へSync Checkpointを記録する。
+特別確認:
+- #366 parent #325 / 工程235
+- #361 工程240
+- #333 `Core / Brain / Attention & Autonomy` / 工程330
 
-## 11. 現ChatGPT環境の制約
+## 14. #319 Sync Checkpoint
 
-2026-08-12確認時点、このChatGPT GitHub ConnectorにはProjects v2 field mutation / formal Sub-issue mutation actionが公開されていない。また実行containerには`gh` CLI / GitHub tokenがない。
+完全PASSした場合のみ#319へコメント。
 
-そのため本環境ではManifest・Issue本文・runbookまでを正本化し、実mutationは`gh`認証済みローカル/Codex環境で実行する。
+最低情報:
+- timestamp
+- github account
+- Project ID
+- branch/head
+- Manifest blob SHA
+- Runbook blob SHA
+- target count=50
+- Area options added
+- field mutation count
+- parent links added/replaced
+- duplicate=0
+- re-audit PASS
 
-古いIDを推測して書き込まない。
+PARTIAL/STOPならPASSコメントを残さない。
+
+## 15. 禁止
+
+- product code変更
+- implementation branch/PR
+- V1 merge/cherry-pick/一括close
+- canonicalをliveへ合わせて改変
+- ID推測
+- duplicate追加
+- 理由不明reparent
+- Design Gate解除
+- #317/#318以外をIn progressへ変更（#319はBlocked）
+
+## 16. 現ChatGPT環境
+
+Projects v2 field mutation / formal Sub-issue mutationはローカル認証済み`gh`/Codexで実行する。
+
+ChatGPT側はManifest/Runbook/Issue正本化と、Codex結果受領後のGitHub live再監査を担当する。
