@@ -25,7 +25,7 @@ Pluginの追加・削除で、Coreが所有するDomain StateやAuthority境界�
 ある機能をPluginと呼ぶには原則として次を満たす。
 
 1. Core固有Domain Stateの正本を所有しない。
-2. CoreのExecutive / State / Body等のAuthorityを所有しない。
+2. CoreのExecutive / Internal State / Goal State / Body等のAuthorityを所有しない。
 3. Coreの公開Plugin / Capability Contractを通して接続する。
 4. Brain / Bodyの内部実装変更なしに追加・削除できる。
 5. ゆら自身の基本構造ではなく、外部から新しい能力を追加する。
@@ -45,6 +45,7 @@ Pluginの追加・削除で、Coreが所有するDomain StateやAuthority境界�
 - Brain
 - Body
 - Internal State
+- Goal / Commitment State
 - Executive Authority
 
 ### Plugin
@@ -54,8 +55,8 @@ CoreへCapabilityを追加する拡張機構。
 例候補:
 - Web search capability
 - local tool capability
-- game-control capability adapter
-- filesystem/tool capability等
+- lightweight game-control capability adapter
+- filesystem/tool capability
 
 ### Infrastructure Provider / Adapter
 
@@ -72,15 +73,16 @@ Core Portの実装手段。
 
 ### Subsystem
 
-Coreとは別の独立システム境界を持つもの。
+Coreとは別の独立system boundaryを持つもの。
 
 例:
 - Streaming
+- Game Skill Runtime
 - Avatar presentation
 - GUI/Admin
 - Validation Labs
 
-Subsystem内部でAIやPlugin adapterを利用してもよい。
+Subsystem内部でAIやPlugin adapterを利用してよい。
 
 ---
 
@@ -92,7 +94,7 @@ ExecutiveDecision
 → Plugin Capability Contract
 → Plugin execution
 → typed CapabilityExecutionResult
-→ Core Event / Appraisal
+→ Core Event / Appraisal / Executive
 ```
 
 禁止:
@@ -100,7 +102,7 @@ ExecutiveDecision
 ```text
 raw user text
 → Plugin独自意味解釈
-→ 勝手にActivity開始
+→ 勝手にActivity/Goal開始
 ```
 
 ```text
@@ -196,9 +198,7 @@ rejected / unsupported / failed / cancelled / timed_out
 
 ---
 
-## 7. Plugin Registry
-
-Issue: #343
+## 7. Plugin Registry — #343
 
 RegistryはCapability discoveryとlifecycleを所有する。
 
@@ -210,6 +210,7 @@ PluginRegistry
 - health / availability
 - lifecycle state
 - version compatibility
+- registry revision
 ```
 
 Registryは意味判断をしない。
@@ -219,10 +220,6 @@ Executive / PlannerはCapabilitySnapshotをread-onlyで受け取る。
 ---
 
 ## 8. Manifest
-
-Plugin manifestは宣言的情報を持つ。
-
-例:
 
 ```text
 PluginManifest
@@ -253,7 +250,7 @@ Capabilityごとに明示permissionを持てる。
 - game controller output
 - account operation
 
-ExecutiveがCapabilityを選んでも、permission / safety / capability preflightを通す。
+ExecutiveがCapabilityを選んでもpermission / safety / capability preflightを通す。
 
 Plugin自身がpermissionを自己昇格しない。
 
@@ -269,18 +266,11 @@ while
   input reception continues
   Body realtime continues
   current speech continues
+  Game realtime continues
   unrelated Executive work may continue
 ```
 
-requestは:
-
-- priority
-- timeout
-- cancellation
-- source_context_revision
-- preconditions
-
-を持つ。
+requestはpriority / timeout / cancellation / source_context_revision / preconditionsを持つ。
 
 結果到着時にstaleでも、外部効果が既に起きている可能性は区別する。
 
@@ -301,46 +291,38 @@ staleだから実世界の事実を無かったことにはしない。
 
 ## 11. Gameとの境界
 
-ゲーム機能は1種類の実装へ固定しない。
+### Coreから見たGame capability
 
-### 11.1 Coreから見たGame capability
-
-Core Executive / Activity Plannerからは高レベルCapabilityとして見える。
+Core Executive / Plannerからは高レベルCapabilityとして見える。
 
 例:
+- start_game_session
+- join_match
+- set_high_level_strategy
+- request_pause
+- end_session
 
-```text
-start_game_session
-join_match
-set_high_level_strategy
-request_pause
-end_session
-```
-
-### 11.2 Game-specific realtime agent
+### Game-specific realtime agent
 
 frame-level actionはCore Executive LLMへ毎frame問い合わせない。
 
 ```text
 Executive Goal / Strategy
 → Game capability
+→ Game Skill Runtime #365
 → game-specific agent
-   - deterministic logic
-   - search/planner
-   - RL
-   - LLM/VLM where appropriate
 → controller actions
 → typed game events/results
-→ Core Appraisal
+→ Core Appraisal / Executive
 ```
 
-Game-specific agentは技能実行者であり、Core Executive Goal Authorityを奪わない。
+Game Agentは技能実行者でありCore Executive Goal Authorityを奪わない。
 
-### 11.3 PluginかSubsystemか
+### PluginかSubsystemか
 
-軽量なgame integrationはPluginとしてCapabilityを提供できる。
+軽量integrationはPlugin Capabilityとして提供可能。
 
-独立process、リアルタイム制御、複雑な状態管理、専用AI runtime等を持つ場合はSubsystem / Skill serviceとして分離し、Core側のPlugin/Capability adapterが公開契約を橋渡ししてよい。
+独立process、realtime control、複雑な状態管理、専用AI runtime等を持つ場合はSubsystem / Skill Runtimeへ分離し、Core側Capability bridgeから接続する。
 
 分類は「optionalだから」ではなく責務・ownership・process boundaryで決める。
 
@@ -350,7 +332,7 @@ Game-specific agentは技能実行者であり、Core Executive Goal Authority�
 
 検索やTool利用に専用LLM/AIを使ってよい。
 
-それらはSkill AIであり、Core cognitive LLM Role数には含めない場合がある。
+それらはSkill AIでありCore cognitive LLM Role数と別に扱える。
 
 ただし:
 - raw user textを勝手に再解釈してExecutiveを迂回しない
@@ -376,7 +358,7 @@ Plugin external event
 → Appraisal / Executive as appropriate
 ```
 
-PluginがInternal Stateを直接変更しない。
+PluginがInternal State / Goal Stateを直接変更しない。
 
 ---
 
@@ -391,9 +373,7 @@ Capability unavailable
 → Executive may reconsider
 ```
 
-retryはbounded。
-
-高頻度failure logを無制限に出さない。
+retryはbounded。高頻度failure logを無制限に出さない。
 
 shutdown中は新規executionを停止し、interruptible requestをcancelし、resource closeを行う。
 
@@ -420,14 +400,15 @@ Plugin定義とは別のSystem invariantとして:
 
 > Pluginが1つも登録されていない構成でも、Brain / Bodyを含むCoreは自身の基本責務を維持できる。
 
-これは「Coreが外部Providerなしに全機能を実行できる」という意味ではない。
+これは「Coreが外部Providerなしに全外部能力を実行できる」という意味ではない。
 
-例えばLLM ProviderやTTS unavailableでは個別能力がdegradedになるが、それらInfrastructure ProviderをPluginへ再分類しない。
+LLM ProviderやTTS unavailableでは個別能力がdegradedになり得るが、それらInfrastructure ProviderをPluginへ再分類しない。
 
 ---
 
 ## 17. V1から継承する教訓
 
+維持:
 - PluginとSubsystemを混同しない
 - Core Runtimeへ個別game/tool実装を埋め込まない
 - Capability / Activity / Execution Resultをtypedにする
@@ -464,7 +445,7 @@ Plugin定義とは別のSystem invariantとして:
 - stale request before effect
 - stale result after external effect
 - slow Plugin中もunrelated Core lane継続
-- Plugin cannot directly mutate Internal State
+- Plugin cannot mutate Internal State / Goal State
 - Plugin cannot directly command Character/Body
 - add/remove without Brain/Body schema change
 
@@ -477,13 +458,15 @@ Plugin定義とは別のSystem invariantとして:
 
 ---
 
-## 19. Design Gate
+## 19. Design Reconciliation Status
 
-- [ ] #342が本書をcanonicalとして参照
-- [ ] #343/#344が本書と一致
-- [ ] optionality-only Plugin定義がV2から消える
-- [ ] BodyはCoreとして維持
-- [ ] Infrastructure ProviderとPluginを分離
-- [ ] Subsystem / Plugin / Skill AI境界を明示
-- [ ] zero-plugin invariantをPlugin定義と分離
-- [ ] Plugin execution concurrency / cancellation / stale effect semanticsを定義
+- [x] #342が本書をcanonicalとして参照
+- [x] #343/#344が本書とExecutive Authorityへ整合
+- [x] optionality-only Plugin定義を撤回
+- [x] BodyをCoreとして維持
+- [x] Infrastructure ProviderとPluginを分離
+- [x] Subsystem / Plugin / Skill AI境界を明示
+- [x] zero-plugin invariantをPlugin定義と分離
+- [x] Plugin execution concurrency / cancellation / stale effect semanticsを定義
+
+残るのは#317全体Design Gate確認と、実装後のAcceptance Verificationである。
