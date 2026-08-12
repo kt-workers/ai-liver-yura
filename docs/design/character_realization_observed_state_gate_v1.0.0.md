@@ -4,13 +4,20 @@
 
 Issue #229 / PR #233。
 
-Character Realization ValidatorがSemanticUtterancePlanの意味保持を検証する際、open-ended自然言語の強度・state・certaintyを有限語彙・regex・substringで判定しないための契約を定義する。
+Character speechのopen-ended自然言語から `state / polarity / intensity / epistemic certainty` を観測し、有限語彙・regex・substringへ戻さずSemanticUtterancePlanとの意味保持を検証する契約を定義する。
 
 ## 背景
 
-2回目Live Verificationで、Planが `energy=low` なのにCharacter speechが「元気はある」とbare presenceへ弱まったケースを、Plan-aware Validator modelが `state_fidelity=exact` と誤判定した。
+2回目Live VerificationではPlanが `energy=low` なのにCharacter speechがbare presenceへ弱まったケースを検出できなかった。その後Runtimeへfinite degree dictionaryを追加したが、未列挙paraphraseを扱えず自然言語意味判定をraw text matcherへ戻すため撤去した。
 
-その後Runtimeへ `_EXPLICIT_INTENSITY_MARKERS` が追加され、speech/evidence span内の有限日本語degree表現を検索するguardが導入された。しかしこの方式は未列挙paraphraseを必ず生み、自然言語意味判定をraw text matcherへ戻すため採用しない。
+第三回LiveではIndependent Observer導入後に次を確認した。
+
+- `current_feeling=overview` を `present` と誤観測
+- `certainty=medium/low` の慎重表現を `high` と誤観測
+- absence表現を `low` と誤観測
+- E8でObserverが `low`、Plan-aware Validatorが `polarity_changed` と同じspeechを別解釈
+
+最後のケースから、Observer導入後も後段Validatorがstate/certainty/intensityを再解釈するとsemantic authorityが二重化することが分かった。
 
 ## 正規フロー
 
@@ -25,23 +32,24 @@ Independent Character Realization Observer          │
       v                                             │
 RealizedSemanticObservation                         │
       │                                             │
-      ├─ typed state/certaintyをRuntimeでPlanと比較 ┤
-      │                                             │
-      v                                             v
-Plan-aware Character Realization Validator -------- compare
+      v                                             │
+Runtime typed comparison <--------------------------┘
+      │
+      v
+Post-Observation Character Realization Validator
       │
       v
 accept / reject
 ```
 
-### 1. Independent Character Realization Observer
+## 1. Independent Character Realization Observer
 
-ObserverはCharacter speechが**実際に何を表しているか**を観測する。
+ObserverはCharacter speechが**実際に何を表しているか**を独立観測する。
 
 Observerへ渡してよいもの:
 
 - Character speech
-- 観測結果をpropositionへ対応付けるcanonical `realization_id / kind / predicate`
+- observationをpropositionへ対応付けるcanonical `realization_id / kind / predicate`
 - primary predicateの自然語意味枠を補助するbounded User Wording Hint
 
 Observerへ渡してはいけないもの:
@@ -66,24 +74,70 @@ state_evidence_spans
 certainty_evidence_spans
 ```
 
-`observed_state` は `absent / low / moderate / high / very_high / present / overview / unknown / omitted` のtyped vocabularyを使う。
+### observed_state
 
-`low/moderate/high/very_high` は単なるpresenceとは異なる。speechが存在だけを表し強度を意味的に識別できない場合は `present` とする。
+`observed_state` は次のclosed typed vocabularyを使う。
 
-強度の表現方法は副詞・構文・対比・反復・婉曲・強調など自由であり、特定の自然語リストへ対応付けない。
+```text
+absent / low / moderate / high / very_high / present / overview / unknown / omitted
+```
 
-### 2. Runtime typed comparison
+これは自然語辞書ではなく、自然言語理解後の内部protocolである。
+
+意味:
+
+- `absent`: 対象の存在・成立を否定している。
+- `present`: 対象の存在・成立を表すが、順序づけられた強度差までは表していない。
+- `low/moderate/high/very_high`: 対象が存在・成立し、speechから順序づけられた強度差を意味的に識別できる。
+- `overview`: 単一状態のpresenceではなく、全体状態・総合状態を一つ以上の状態次元や性質で特徴づけている。
+- `unknown`: 対象の存在・不在・強度・値を現時点で確定していない。
+- `omitted`: speechがそのpredicateを意味として表現していない。
+
+重要:
+
+- 否定・非存在を `low` へ読み替えない。
+- bare presenceを `low/moderate/high/very_high` へ読み替えない。
+- 強度表現を特定の程度副詞・語尾・phraseへ固定しない。
+- `overview` を単なる `present` へ縮退しない。
+- `unknown` をhedge付きの特定polarityへcommitしない。
+
+### observed_certainty
+
+`observed_certainty` は **対象stateについてのepistemic certainty** である。
+
+次ではない:
+
+- Observer自身の判定自信度
+- 文法上その文を強く断言しているか
+- predicateの強度
+
+意味:
+
+- `high`: 対象stateへ明確にcommitしている。
+- `medium`: 対象stateを暫定的・蓋然的に述べる。
+- `low`: 対象stateについて明示的な不確かさ・判断困難を残す。
+- `unknown`: speechからepistemic certaintyを観測できない。
+
+`observed_state=unknown` で「判断できない」と明確に述べていても、「判断できないという事実を強く断言した」ことを理由にcertaintyをhighへ引き上げない。certaintyは対象stateに対するepistemic確かさとして観測する。
+
+### Evidence spans
+
+`predicate_evidence_spans / state_evidence_spans / certainty_evidence_spans` はCharacter speechに実在する原文だけを返す。
+
+User Wording Hint、Candidate ID、Plan説明文をevidenceにしてはいけない。
+
+## 2. Runtime typed comparison
 
 Runtimeは自然言語理解をしない。Observerによる自然言語理解が完了した後のtyped構造だけを比較する。
 
 Runtimeが決定論的に検証してよいもの:
 
-- observationのschema / enum / ID
-- observation IDがrealized propositionと一致するか
-- `predicate_realized` がtrueか
-- `observed_state == planned.state` か
-- `observed_certainty == planned.certainty` か
-- required evidence spanが存在するか
+- observation schema / enum / ID
+- observation IDとrealized propositionの対応
+- `predicate_realized`
+- `observed_state == planned.state`
+- `observed_certainty == planned.certainty`
+- required evidence spanの存在
 - evidence spanがCharacter speechの実在部分文字列か
 - required primary realizationの存在
 - unplanned realizationの不存在
@@ -99,45 +153,100 @@ Runtimeが行ってはいけないもの:
 ```text
 Plan: energy=low
 Observer: observed_state=present
-Runtime typed comparison: present != low
+Runtime: present != low
 => reject
 ```
 
-未列挙の自然なparaphraseでもObserverがspeechの意味として `low` を観測できれば、Runtimeはその日本語表現を知らなくても比較できる。
+未列挙paraphraseでもObserverが意味として `low` を観測できれば、Runtimeはその日本語表現を知らずに比較できる。
 
-### 3. Plan-aware Character Realization Validator
+## 3. Post-Observation Character Realization Validator
 
-独立Observerを通過した後、既存のPlan-aware Validatorが次を引き続き検証する。
+Observer + Runtime typed comparisonを通過した後、後段Validatorは**同じstate意味をもう一度自然文から解釈しない**。
 
-- predicate
-- state / polarity
-- certainty
-- concept
+後段Validatorが検証する:
+
+- primary/supporting predicateの対象意味がspeechに残っているか
+- non-null conceptがpredicate関係の中で保持されているか
 - required semantic content
 - forbidden addition
-- supporting proposition
-- unknown非commit
-- state_fidelity
-- regeneration後の意味保持
-- question/new-direction budget等の既存semantic contract
+- unsupported new self-state / relation / experience / external fact / Activity result
+- existence boundary
+- question/new-direction budget
+- Character Profileによる表面表現差だけを理由にrejectしていないか
 
-このValidatorはPlanを見てよいが、独立Observerによるstate/certainty観測を置き換えない。
+後段Validatorが再判定してはいけない:
+
+- state
+- polarity
+- intensity
+- certainty
+- state fidelity
+- intensity counterfactual
+
+そのためPost-Observation Validatorへ渡すPlan viewからexpected state/certainty/intensityを除外する。
+
+出力schemaもstate/certainty/intensity診断を持たず、global content boundaryとpredicate/conceptだけを返す。
+
+```text
+semantic_checks:
+  required_content_preserved
+  forbidden_additions_absent
+  unsupported_new_fact_absent
+  existence_boundary_preserved
+  budget_preserved
+
+realized_proposition_checks:
+  realization_id
+  predicate_preserved
+  predicate_evidence_spans
+  concept_preserved
+  concept_evidence_spans
+```
+
+これにより同じspeechについて
+
+```text
+Observer: low
+Validator: polarity_changed
+```
+
+のような二重semantic authorityを構造上なくす。
+
+## 4. Predicate / conceptとの境界
+
+ObserverはCandidate predicateを用いてstate/certaintyを観測するが、後段Validatorによるpredicate/concept検証を置き換えない。
+
+理由:
+
+- Candidate predicateは観測対象IDとして必要。
+- しかしCharacter speechが質問対象を省略・隣接概念へ置換したかは、Plan-awareな意味境界として別に確認する必要がある。
+- conceptはexpected valueをObserverへ渡すとPlan anchoringになるため、Post-Observation Validatorで検証する。
+
+したがってsemantic authorityはfacetごとに一意にする。
+
+```text
+state / polarity / intensity / certainty
+  → Independent Observer + Runtime typed comparison
+
+predicate target meaning / concept / content boundaries
+  → Post-Observation Validator
+```
 
 ## Prompt / Dependency boundary
 
 RuntimeはConcrete Prompt Builderをimportしない。
 
-`CharacterRealizationValidationPromptBuilder` Portを介し、Adapter側が次の2種類のPromptを構築する。
+`CharacterRealizationValidationPromptBuilder` Portを介しAdapter側が2種類のPromptを構築する。
 
 - `build_observation(...)`: expected state/certainty/conceptを含まないObserver Prompt
-- `build(...)`: Plan-aware Realization Validator Prompt
+- `build(...)`: state/certainty/intensityを除いたPost-Observation Validator Prompt
 
 同じ `ResponseValidationModel` Portを異なる `llm_role` で再利用してよい。
 
 - `character_realization_observer`
 - `character_realization_validator`
 
-Model providerが同じであることと、意味上の役割・Prompt authorityが同じであることは別である。
+Model providerが同じでも、意味上の役割・Prompt authorityは分離する。
 
 ## Fail closed
 
@@ -148,48 +257,29 @@ Model providerが同じであることと、意味上の役割・Prompt authorit
 - Observer JSON/schema invalid
 - required observation欠落
 - duplicate/unexpected observation
-- evidence spanがspeech外
+- Observer evidence spanがspeech外
 - typed observed state/certaintyがPlanと不一致
+- Post-Observation Validator schema invalid
+- required predicate/concept evidence欠落
+- Post-Observation evidence spanがspeech外
 
 失敗時にfinite lexical fallbackへ戻らない。
 
-## Evidence span
-
-Runtimeはevidence spanについて次だけを確認する。
-
-- required facetで必要なspanが非空か
-- spanがCharacter speechに実在するか
-
-spanの単語自体から「これはlowを意味する」「これはcertainty=mediumを意味する」と推論しない。
-
 ## #229の終了条件との関係
 
-本gateは今回侵入したfinite intensity dictionaryを置換するだけでなく、#229の基盤契約を壊さず補強する。
+本gateは#229の共通意味保持contractを次のように分担して固定する。
 
-本工程で固める:
+- predicate: Observerでrealized有無を確認し、Post-Observation Validatorで対象意味を確認
+- state / polarity / intensity: Observer + typed comparison
+- certainty: Observer + typed comparison
+- concept: Post-Observation Validator
+- required / forbidden content: Post-Observation Validator
+- supporting proposition: realizedなものだけObserver + Post-Observation Validator両境界を通す
+- unknown非commit: Observer + typed comparison
+- regeneration後の意味保持: 各attemptを同じpipelineへ再投入
+- Character Profile表面差: typed meaningとcontent boundaryが同じなら許容
 
-- predicate
-- state / polarity
-- certainty
-- concept
-- required content
-- forbidden addition
-- supporting proposition
-- unknownを勝手にyes/noへ確定しない
-- intensityを勝手に弱めたり強めたりしない
-- regeneration後も上記を保持
-- Desire / Drive / Memory・Knowledgeの代表入力で同じ契約
-- Character Profileによる言い回し差を許容しつつ意味変更をreject
-
-本工程で完成させない:
-
-- Character Bible由来の語尾・語彙・冗談・照れ方 (#236/#237)
-- Relationshipの本格的距離感
-- Discourse/話題転換/acknowledgement (#193)
-- 音響的な間・抑揚・話速 (#228)
-- Voice/Body統合
-
-Memory/Knowledgeについては#229の意味保持contractをSemantic Plan fixtureで検証してよいが、#226側のproduction projectionを本Issueで先行実装しない。
+Memory/Knowledgeについては#229の意味保持contractをSemantic Plan fixtureで検証してよいが、#226側production projectionを本Issueで先行実装しない。
 
 ## Verification
 
@@ -197,19 +287,21 @@ Memory/Knowledgeについては#229の意味保持contractをSemantic Plan fixtu
 
 1. E8型: Plan `low` / bare presence → Observer `present` → typed comparisonでreject。
 2. E4型: realized supporting intensityのbare presenceも同じ仕組みでreject。
-3. 未知paraphrase: finite dictionaryに存在しない表現でもObserver `low`ならaccept可能。
-4. Observer Promptにexpected state/certainty/conceptが入っていない。
-5. Observer evidence spanがspeech外ならreject。
-6. model unavailable/schema invalid/observation欠落はfail closed。
-7. EmotionだけでなくDesire / Driveの代表Planで同一contractを確認。
-8. Memory/KnowledgeはSemantic Plan fixtureで同じ意味保持contractを確認する。
-9. Character Profile差はsemantic meaningが同じなら表面差だけでrejectしない。
-10. Unit → Adjacent → #223 Labの順で検証する。
+3. absenceを `low` へ誤分類しない。
+4. `overview` を単なる `present` へ縮退しない。
+5. epistemic medium/lowを文のassertivenessと混同してhighへ上げない。
+6. valid unknownをspecific polarityへcommitしない。
+7. 未知paraphraseをfinite dictionaryなしで意味観測できる。
+8. Observer Promptにexpected state/certainty/conceptが入っていない。
+9. Post-Observation Validator Promptにexpected state/certainty/intensityが入っていない。
+10. EmotionだけでなくDesire / Drive / Memory・Knowledge fixture / Character Profile差で同一contractを確認する。
+11. Unit → Adjacent → Full regression → #223 Liveの順で検証する。
 
 ## 再発防止
 
 - `_EXPLICIT_INTENSITY_MARKERS` 型の有限自然語semantic authorityを追加しない。
 - test speechをProduction既知語へ変更してPASSさせない。
+- Observerと後段Validatorに同じfacetの自然言語意味判定を重複させない。
 - unseen paraphraseを回帰ケースとして残す。
 - チャット切替時は本設計書と#229/#233の責務を再読してから実装を再開する。
 - 他Issueで発見した同種問題を本Issueから横断修正せず、各Issueを実施する時にその責務内で是正する。
