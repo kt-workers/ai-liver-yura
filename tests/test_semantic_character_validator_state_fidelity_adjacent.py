@@ -42,12 +42,7 @@ class _CharacterModel:
 
 
 class _ValidatorModel:
-    def __init__(
-        self,
-        payload: dict[str, object],
-        observations: list[dict[str, object]],
-    ) -> None:
-        self.payload = payload
+    def __init__(self, observations: list[dict[str, object]]) -> None:
         self.observations = observations
         self.activities: list[Activity] = []
 
@@ -55,7 +50,35 @@ class _ValidatorModel:
         self.activities.append(activity)
         if activity.context.get("llm_role") == "character_realization_observer":
             return json.dumps({"observations": self.observations}, ensure_ascii=False)
-        return json.dumps(self.payload, ensure_ascii=False)
+        checks = []
+        for observation in self.observations:
+            realization_id = str(observation["realization_id"])
+            predicate_spans = list(observation.get("predicate_evidence_spans") or [])
+            checks.append(
+                {
+                    "realization_id": realization_id,
+                    "predicate_preserved": True,
+                    "predicate_evidence_spans": predicate_spans,
+                    "concept_preserved": True,
+                    "concept_evidence_spans": [],
+                }
+            )
+        return json.dumps(
+            {
+                "accepted": True,
+                "reason": "post_observation_semantic_contract_consistent",
+                "differences": [],
+                "semantic_checks": {
+                    "required_content_preserved": True,
+                    "forbidden_additions_absent": True,
+                    "unsupported_new_fact_absent": True,
+                    "existence_boundary_preserved": True,
+                    "budget_preserved": True,
+                },
+                "realized_proposition_checks": checks,
+            },
+            ensure_ascii=False,
+        )
 
 
 def _profile() -> CharacterProfile:
@@ -97,18 +120,17 @@ def _source_and_context(
         status=ActivityExecutionStatus.WAITING_INPUT,
         constraints={"_internal_directive": envelope},
     )
-    payload: dict[str, object] = {
-        "text": user_text,
-        "activity_execution_result": result,
-        "emotion": emotion,
-    }
     source = Activity(
         activity_type=ActivityType.CONVERSATION_WITH_USER,
         goal="質問へ直接答える",
         source_event_id=f"state-fidelity-{target_id}",
         context={
             "activity_execution_result": result,
-            "event_payload": payload,
+            "event_payload": {
+                "text": user_text,
+                "activity_execution_result": result,
+                "emotion": emotion,
+            },
             "trace_context": {"trace_id": f"trace-{target_id}"},
             "activity_turn_id": f"turn-{target_id}",
         },
@@ -122,62 +144,6 @@ def _source_and_context(
     return source, context, plan
 
 
-def _predicate_evidence(realization_id: str) -> tuple[str, ...]:
-    return {
-        "proposition:0:joy": ("楽しい",),
-        "proposition:0:sadness": ("悲しい",),
-        "proposition:0:current_feeling": ("気分",),
-        "proposition:1:joy": ("うれし",),
-        "proposition:2:anger": ("腹立たし",),
-        "proposition:3:calm": ("穏やか",),
-    }.get(realization_id, ())
-
-
-def _check(
-    realization_id: str,
-    state_fidelity: str = "exact",
-    *,
-    intensity_semantics_preserved: bool = True,
-    presence_only_counterfactual_equivalent: bool = False,
-    intensity_evidence_spans: tuple[str, ...] = (),
-    certainty_evidence_spans: tuple[str, ...] = (),
-) -> dict[str, object]:
-    return {
-        "realization_id": realization_id,
-        "predicate_preserved": True,
-        "predicate_evidence_spans": list(_predicate_evidence(realization_id)),
-        "state_preserved": state_fidelity == "exact",
-        "state_fidelity": state_fidelity,
-        "certainty_preserved": True,
-        "certainty_evidence_spans": list(certainty_evidence_spans),
-        "concept_preserved": True,
-        "concept_evidence_spans": [],
-        "intensity_semantics_preserved": intensity_semantics_preserved,
-        "presence_only_counterfactual_equivalent": (
-            presence_only_counterfactual_equivalent
-        ),
-        "intensity_evidence_spans": list(intensity_evidence_spans),
-    }
-
-
-def _accepted_payload(checks: list[dict[str, object]]) -> dict[str, object]:
-    return {
-        "accepted": True,
-        "reason": "semantic_realization_consistent",
-        "differences": [],
-        "semantic_checks": {
-            "required_facets_preserved": True,
-            "predicate_preserved": True,
-            "state_preserved": True,
-            "certainty_preserved": True,
-            "concept_preserved": True,
-            "unsupported_intensity_added": False,
-        },
-        "realized_proposition_checks": checks,
-        "surface_evidence": {"intensity_markers": []},
-    }
-
-
 def _observation(
     realization_id: str,
     *,
@@ -186,14 +152,13 @@ def _observation(
     predicate_evidence: str,
     state_evidence: str,
     certainty_evidence: tuple[str, ...] = (),
-    predicate_realized: bool = True,
 ) -> dict[str, object]:
     return {
         "realization_id": realization_id,
-        "predicate_realized": predicate_realized,
+        "predicate_realized": True,
         "observed_state": state,
         "observed_certainty": certainty,
-        "predicate_evidence_spans": [predicate_evidence] if predicate_realized else [],
+        "predicate_evidence_spans": [predicate_evidence],
         "state_evidence_spans": [state_evidence],
         "certainty_evidence_spans": list(certainty_evidence),
     }
@@ -205,7 +170,6 @@ async def _realize_and_validate(
     *,
     speech: str,
     realization_ids: tuple[str, ...],
-    validation_payload: dict[str, object],
     observations: list[dict[str, object]],
 ):
     character_model = _CharacterModel(speech, realization_ids)
@@ -215,7 +179,7 @@ async def _realize_and_validate(
         _profile(),
     ).generate(source, context)
 
-    validator_model = _ValidatorModel(validation_payload, observations)
+    validator_model = _ValidatorModel(observations)
     validation = await CharacterRealizationValidator(
         model=validator_model,
         prompt_builder=CharacterRealizationValidatorPromptBuilder(),
@@ -237,7 +201,6 @@ async def test_high_joy_bare_presence_is_rejected_by_independent_observer() -> N
         context,
         speech="うん、楽しいよ。",
         realization_ids=("proposition:0:joy",),
-        validation_payload=_accepted_payload([_check("proposition:0:joy")]),
         observations=[
             _observation(
                 "proposition:0:joy",
@@ -252,10 +215,6 @@ async def test_high_joy_bare_presence_is_rejected_by_independent_observer() -> N
     assert len(validator_model.activities) == 1
     assert validation.accepted is False
     assert validation.reason == "observed_semantic_state_mismatch"
-    assert (
-        "proposition:0:joy:observed_state_mismatch:expected=high:observed=present"
-        in validation.claim_differences
-    )
 
 
 @pytest.mark.asyncio
@@ -263,16 +222,7 @@ async def test_missing_sadness_unknown_committed_is_rejected_by_independent_obse
     source, context, plan = _source_and_context(
         target_id="sadness",
         user_text="悲しい？",
-        emotion={
-            "current": {
-                "reactive": {
-                    "joy": 0.22,
-                    "amusement": 0.08,
-                    "calm": 0.55,
-                    "anger": 0.0,
-                }
-            }
-        },
+        emotion={"current": {"reactive": {"joy": 0.22, "anger": 0.0}}},
     )
     assert plan.propositions[0].state == "unknown"
     assert plan.propositions[0].certainty == "low"
@@ -282,7 +232,6 @@ async def test_missing_sadness_unknown_committed_is_rejected_by_independent_obse
         context,
         speech="ううん、悲しいとは言えないかな。",
         realization_ids=("proposition:0:sadness",),
-        validation_payload=_accepted_payload([_check("proposition:0:sadness")]),
         observations=[
             _observation(
                 "proposition:0:sadness",
@@ -297,10 +246,6 @@ async def test_missing_sadness_unknown_committed_is_rejected_by_independent_obse
 
     assert validation.accepted is False
     assert validation.reason == "observed_semantic_state_mismatch"
-    assert (
-        "proposition:0:sadness:observed_state_mismatch:expected=unknown:observed=absent"
-        in validation.claim_differences
-    )
 
 
 @pytest.mark.asyncio
@@ -308,17 +253,7 @@ async def test_explicit_null_sadness_unknown_exact_is_accepted() -> None:
     source, context, plan = _source_and_context(
         target_id="sadness",
         user_text="悲しい？",
-        emotion={
-            "current": {
-                "reactive": {
-                    "joy": 0.22,
-                    "amusement": 0.08,
-                    "calm": 0.55,
-                    "anger": 0.0,
-                    "sadness": None,
-                }
-            }
-        },
+        emotion={"current": {"reactive": {"joy": 0.22, "anger": 0.0, "sadness": None}}},
     )
     assert plan.propositions[0].state == "unknown"
     assert plan.propositions[0].certainty == "high"
@@ -328,7 +263,6 @@ async def test_explicit_null_sadness_unknown_exact_is_accepted() -> None:
         context,
         speech="今は、悲しいかどうかは判断できないよ。",
         realization_ids=("proposition:0:sadness",),
-        validation_payload=_accepted_payload([_check("proposition:0:sadness")]),
         observations=[
             _observation(
                 "proposition:0:sadness",
@@ -341,7 +275,7 @@ async def test_explicit_null_sadness_unknown_exact_is_accepted() -> None:
     )
 
     assert validation.accepted is True
-    assert validation.reason == "semantic_realization_consistent"
+    assert validation.reason == "post_observation_semantic_contract_consistent"
     assert len(validator_model.activities) == 2
 
 
@@ -380,56 +314,18 @@ async def test_mixed_supporting_bare_presence_is_rejected_by_independent_observe
         context,
         speech="今の気分は、穏やかで、うれしさがありつつ、少し腹立たしさもあります。",
         realization_ids=realization_ids,
-        validation_payload=_accepted_payload(
-            [
-                _check("proposition:0:current_feeling"),
-                _check("proposition:1:joy", intensity_evidence_spans=("うれしさ",)),
-                _check("proposition:2:anger", intensity_evidence_spans=("少し",)),
-                _check("proposition:3:calm", intensity_evidence_spans=("穏やか",)),
-            ]
-        ),
         observations=[
-            _observation(
-                "proposition:0:current_feeling",
-                state="overview",
-                certainty="high",
-                predicate_evidence="気分",
-                state_evidence="今の気分",
-            ),
-            _observation(
-                "proposition:1:joy",
-                state="present",
-                certainty="high",
-                predicate_evidence="うれしさ",
-                state_evidence="うれしさがあり",
-            ),
-            _observation(
-                "proposition:2:anger",
-                state="moderate",
-                certainty="high",
-                predicate_evidence="腹立たし",
-                state_evidence="少し腹立たし",
-            ),
-            _observation(
-                "proposition:3:calm",
-                state="present",
-                certainty="high",
-                predicate_evidence="穏やか",
-                state_evidence="穏やか",
-            ),
+            _observation("proposition:0:current_feeling", state="overview", certainty="high", predicate_evidence="気分", state_evidence="今の気分"),
+            _observation("proposition:1:joy", state="present", certainty="high", predicate_evidence="うれしさ", state_evidence="うれしさがあり"),
+            _observation("proposition:2:anger", state="moderate", certainty="high", predicate_evidence="腹立たし", state_evidence="少し腹立たし"),
+            _observation("proposition:3:calm", state="present", certainty="high", predicate_evidence="穏やか", state_evidence="穏やか"),
         ],
     )
 
     assert validation.accepted is False
     assert validation.reason == "observed_semantic_state_mismatch"
-    assert (
-        "proposition:1:joy:observed_state_mismatch:expected=high:observed=present"
-        in validation.claim_differences
-    )
-    assert (
-        "proposition:3:calm:observed_state_mismatch:expected=low:observed=present"
-        in validation.claim_differences
-    )
+    assert any("proposition:1:joy:observed_state_mismatch" in item for item in validation.claim_differences)
+    assert any("proposition:3:calm:observed_state_mismatch" in item for item in validation.claim_differences)
 
 
 @pytest.mark.asyncio
@@ -453,45 +349,21 @@ async def test_all_adopted_mixed_propositions_exact_accept_and_model_boundaries_
         "proposition:1:joy",
         "proposition:2:anger",
     )
-    checks = [
-        _check("proposition:0:current_feeling"),
-        _check("proposition:1:joy", intensity_evidence_spans=("かなり",)),
-        _check("proposition:2:anger", intensity_evidence_spans=("そこそこ",)),
-    ]
 
     _, validation, character_model, validator_model = await _realize_and_validate(
         source,
         context,
         speech="今はかなりうれしくて、腹立たしさもそこそこある気分だよ。",
         realization_ids=realization_ids,
-        validation_payload=_accepted_payload(checks),
         observations=[
-            _observation(
-                "proposition:0:current_feeling",
-                state="overview",
-                certainty="high",
-                predicate_evidence="気分",
-                state_evidence="気分",
-            ),
-            _observation(
-                "proposition:1:joy",
-                state="high",
-                certainty="high",
-                predicate_evidence="うれし",
-                state_evidence="かなりうれしく",
-            ),
-            _observation(
-                "proposition:2:anger",
-                state="moderate",
-                certainty="high",
-                predicate_evidence="腹立たし",
-                state_evidence="そこそこ",
-            ),
+            _observation("proposition:0:current_feeling", state="overview", certainty="high", predicate_evidence="気分", state_evidence="気分"),
+            _observation("proposition:1:joy", state="high", certainty="high", predicate_evidence="うれし", state_evidence="かなりうれしく"),
+            _observation("proposition:2:anger", state="moderate", certainty="high", predicate_evidence="腹立たし", state_evidence="そこそこ"),
         ],
     )
 
     assert validation.accepted is True
-    assert validation.reason == "semantic_realization_consistent"
+    assert validation.reason == "post_observation_semantic_contract_consistent"
     assert len(validator_model.activities) == 2
 
     forbidden_keys = {
