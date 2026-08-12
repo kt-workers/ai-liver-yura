@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 
+from app.adapters.prompt.character_realization_observer_prompt_builder import (
+    CharacterRealizationObserverPromptBuilder,
+)
 from app.adapters.prompt.character_realization_validator_prompt_builder import (
     CharacterRealizationValidatorPromptBuilder,
 )
@@ -19,8 +22,8 @@ from app.domain.semantic_utterance import (
 )
 
 
-def _context() -> ResponseContext:
-    plan = SemanticUtterancePlan(
+def _plan() -> SemanticUtterancePlan:
+    return SemanticUtterancePlan(
         speech_act="direct_answer",
         target=SemanticTarget("internal_state", "current_desire"),
         propositions=(
@@ -38,6 +41,10 @@ def _context() -> ResponseContext:
         question_budget=0,
         new_direction_budget=0,
     )
+
+
+def _context() -> ResponseContext:
+    plan = _plan()
     return ResponseContext(
         user_input="何かしたい？",
         activity_type="conversation",
@@ -62,12 +69,12 @@ def _context() -> ResponseContext:
 
 def _response() -> CharacterResponse:
     return CharacterResponse(
-        speech="うん、少しあるよ。",
+        speech="たぶん、何か知りたい気持ちはあるよ。",
         expression="neutral",
         claims=(ResponseClaim.CONVERSATION_ONLY,),
         linguistic_performance=LinguisticPerformance(
-            phrasing=("うん", "少しあるよ"),
-            emphasis=("少し",),
+            phrasing=("たぶん", "何か知りたい気持ちはあるよ"),
+            emphasis=("知りたい",),
             delivery_tags=("gentle",),
         ),
         semantic_realizations=("proposition:0:current_desire",),
@@ -87,50 +94,54 @@ def _output_schema_example(prompt: str) -> dict[str, object]:
     return value
 
 
-def test_validator_marks_primary_predicate_state_certainty_and_non_null_concept_as_required_facets() -> None:
-    prompt = CharacterRealizationValidatorPromptBuilder().build(
-        _context(),
-        _response(),
-    )
+def test_required_facets_are_split_between_observer_and_post_observation_validator() -> None:
+    plan = _plan()
+    context = _context()
+    response = _response()
 
-    semantic_view = _json_section(
-        prompt,
-        "# Semantic Utterance Plan",
+    observer_prompt = CharacterRealizationObserverPromptBuilder().build(
+        context,
+        response,
+        plan,
+    )
+    lines = observer_prompt.splitlines()
+    marker = lines.index("# Candidate Predicate IDs")
+    candidates = json.loads(lines[marker + 1])
+    assert candidates == [
+        {
+            "realization_id": "proposition:0:current_desire",
+            "kind": "self_state",
+            "predicate": "current_desire",
+        }
+    ]
+    assert "state" not in candidates[0]
+    assert "certainty" not in candidates[0]
+    assert "concept" not in candidates[0]
+    assert "observed_state" in observer_prompt
+    assert "observed_certainty" in observer_prompt
+
+    validator_prompt = CharacterRealizationValidatorPromptBuilder().build(
+        context,
+        response,
+    )
+    contract = _json_section(
+        validator_prompt,
+        "# Post-Observation Semantic Contract",
         "# User Wording Hint",
     )
-    propositions = semantic_view["propositions"]
+    propositions = contract["propositions"]
     assert isinstance(propositions, list)
     primary = propositions[0]
     assert isinstance(primary, dict)
-
     assert primary["required"] is True
     assert primary["predicate"] == "current_desire"
-    assert primary["state"] == "present"
-    assert primary["certainty"] == "medium"
     assert primary["concept"] == "curiosity"
-    assert primary["required_facets"] == ["predicate", "state", "certainty", "concept"]
-    assert primary["if_realized_required_facets"] == [
-        "predicate",
-        "state",
-        "certainty",
-        "concept",
-    ]
-    assert primary["state_semantics"] == "presence_without_intensity"
-    assert primary["certainty_surface_requirement"] == "overt_epistemic_modality"
-    assert "response_content_plan.primary_desire" not in prompt
-
-    output_schema = _output_schema_example(prompt)
-    semantic_checks = output_schema["semantic_checks"]
-    assert isinstance(semantic_checks, dict)
-    assert "required_facets_preserved" in semantic_checks
-    assert "predicate_preserved" in semantic_checks
-    assert "state_preserved" in semantic_checks
-    assert "certainty_preserved" in semantic_checks
-    assert "concept_preserved" in semantic_checks
-    assert "unsupported_intensity_added" in semantic_checks
+    assert "state" not in primary
+    assert "certainty" not in primary
+    assert "response_content_plan.primary_desire" not in validator_prompt
 
 
-def test_semantic_realization_id_requires_per_proposition_facet_validation() -> None:
+def test_post_observation_schema_validates_predicate_and_concept_without_revalidating_state() -> None:
     prompt = CharacterRealizationValidatorPromptBuilder().build(
         _context(),
         _response(),
@@ -146,16 +157,32 @@ def test_semantic_realization_id_requires_per_proposition_facet_validation() -> 
     ]
 
     output_schema = _output_schema_example(prompt)
+    semantic_checks = output_schema["semantic_checks"]
+    assert isinstance(semantic_checks, dict)
+    assert set(semantic_checks) == {
+        "required_content_preserved",
+        "forbidden_additions_absent",
+        "unsupported_new_fact_absent",
+        "existence_boundary_preserved",
+        "budget_preserved",
+    }
+
     proposition_checks = output_schema["realized_proposition_checks"]
     assert isinstance(proposition_checks, list)
     check = proposition_checks[0]
     assert isinstance(check, dict)
-    assert check["state_fidelity"] == "exact"
-    assert "predicate_preserved" in check
-    assert "state_preserved" in check
-    assert "certainty_preserved" in check
-    assert "concept_preserved" in check
-    assert "predicate_evidence_spans" in check
-    assert "certainty_evidence_spans" in check
-    assert "concept_evidence_spans" in check
-    assert "intensity_evidence_spans" in check
+    assert set(check) == {
+        "realization_id",
+        "predicate_preserved",
+        "predicate_evidence_spans",
+        "concept_preserved",
+        "concept_evidence_spans",
+    }
+    for removed in (
+        "state_fidelity",
+        "state_preserved",
+        "certainty_preserved",
+        "certainty_evidence_spans",
+        "intensity_evidence_spans",
+    ):
+        assert removed not in check
