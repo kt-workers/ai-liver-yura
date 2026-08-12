@@ -4,6 +4,7 @@ Status: Draft / V2 Design Gate
 Parent architecture: `docs/architecture/v2/system_architecture.md`
 Cognitive / LLM: `docs/architecture/v2/cognitive_llm_architecture.md`
 Concurrency: `docs/architecture/v2/concurrency_architecture.md`
+Attention / Focus: #333
 Parent Issue: #335
 Root management: #317
 
@@ -11,45 +12,45 @@ Root management: #317
 
 Bodyは、ゆら自身の身体状態・身体表現・運動実現を所有するCore領域である。
 
-BodyはLive2D、Stick Figure、3D Model等の表示機構そのものではない。
-
-またBodyを、固定Pose/Motion Presetの再生器や「LLMが返るまで停止する身体」にしない。
+BodyはLive2D、Stick Figure、3D Model等のrendererそのものではなく、固定Pose/Motion Preset再生器でもない。
 
 目標:
 
 - current poseから連続して動く
-- 明示指示と自発表現を同じ身体へ合成する
-- 360度の3D方向を扱う
-- 全身関節を協調させる
+- 明示BodyIntentと自発表現を同じ身体へ合成
+- 360度の3D方向
+- 全身関節協調
 - 非指示時も呼吸・瞬き・視線・微動等で生き続ける
-- Speech / Game / Activityと同時並行して動く
-- LLM latencyやAvatar不在でBody realtimeを停止しない
+- Speech / Game / Activityと同時並行
+- Motion Planner/LLM latencyやAvatar不在でrealtime停止なし
 
 ---
 
-## 2. BodyはCoreである
+## 2. BodyはCore
 
-BodyがCoreかどうかは「AvatarがなくてもSystemがtextで動けるか」で決めない。
+Body membershipを「AvatarがなくてもTextで動けるか」で決めない。
 
-Bodyは以下のCore固有責務を所有するためCoreである。
+BodyはCore固有の:
 
 - canonical physical representation
 - current body state
-- embodiment / body expression semantics
+- embodiment / expression semantics
 - motion planning contract
-- movement safety / continuity
+- physical safety / continuity
 - realtime bodily processes
 
-Avatar / Live2D / Stick / 3D rendererはBodyPoseFrameを表示する外側Adapter / Subsystemである。
+を所有する。
+
+Avatar / Live2D / Stick / 3D rendererは外側Presentation Subsystem/Adapter #346。
 
 ---
 
-## 3. Bodyの構造
+## 3. 構造
 
 ```text
 Executive BodyIntent ───────────────┐
-                                    │
-Internal State / Interaction ─→ Body Expression Projection
+Internal State / Activity ─→ Body Expression Projection
+#333 Attention / Focus ──────────────┤
 Character Body Style ───────────────┘
                                     ↓
                            BodyExpressionContext
@@ -62,38 +63,28 @@ Canonical Body Model ───────────────┘        │
                                              ↓
                                       BodyMotionPlan
                                              ↓
-                         Deterministic Motion Compiler / Solver
+                         Deterministic Compiler / Solver
                          - IK / FK / Kinematics
-                         - joint limits
-                         - balance / CoM
-                         - trajectory / timing
-                         - continuity
+                         - limits / balance / CoM
+                         - trajectory / timing / continuity
                                              ↓
                                     Continuous Controller
-                                             ↓
-                              Base / Goal Motion State
                                              │
-            ┌────────────────────────────────┼───────────────────┐
-            ↓                                ↓                   ↓
-      gaze / attention                 breath / blink       speech / viseme
-            └────────────────────────────────┼───────────────────┘
+           ┌─────────────────────────────────┼───────────────────┐
+           ↓                                 ↓                   ↓
+     gaze / attention                 breath / blink       speech / viseme
+           └─────────────────────────────────┼───────────────────┘
                                              ↓
                                       BodyPoseFrame
                                              ↓
-                                Presentation Adapter(s)
+                                  Avatar / Renderer(s)
 ```
 
-この図は責務依存であり、毎frame全段を直列実行する意味ではない。
+責務依存図であり毎frame全段を直列実行する意味ではない。
 
 ---
 
-## 4. D01 Canonical Body Model
-
-Issue: #336
-
-Renderer非依存の身体正本。
-
-最低限:
+## 4. D01 Canonical Body Model — #336
 
 ```text
 CanonicalBodyModel
@@ -109,8 +100,6 @@ CanonicalBodyModel
 - capabilities
 ```
 
-### Joint
-
 ```text
 CanonicalJoint
 - joint_id
@@ -124,65 +113,54 @@ CanonicalJoint
 - relaxed reference
 ```
 
-### 原則
+原則:
 
-- anatomical left/rightを正本とする
+- anatomical left/rightが正本
 - screen mirrorはAdapter責務
-- Live2D parameter / VRM bone / Stick node名をCanonicalへ入れない
-- 2Dモデルの表現限界をCanonical Body能力上限にしない
-- Neutral / relaxed referenceは存在してよいが、毎Motion終了後の強制帰還Poseにはしない
+- Live2D/VRM/Stick固有名をCanonicalへ入れない
+- 2Dモデルの限界をCanonical能力上限にしない
+- relaxed/neutral referenceは存在できるが強制帰還Poseにしない
 
 ---
 
-## 5. D02 Body State
-
-Issue: #336
-
-現在の身体状態はBody自身が所有する。
+## 5. D02 Body State — #336
 
 ```text
 BodyState
 - revision
 - observed_at
 - root transform
-- joint pose
-- joint velocities
+- joint pose / velocities
 - body velocity
 - center_of_mass state
 - active_motion_refs[]
 - active_expression_state
 - attention / gaze state
-- breath state
-- blink state
+- breath / blink state
 - speech_sync state
-- current capability/degraded state
+- capability / degraded state
 ```
 
-Body StateをCharacter / GUI / Avatarが直接書き換えない。
-
-Rendererから観測値をfeedbackする場合もtyped feedback contractを通す。
+Body Stateの書込みAuthorityはBody。
+Character / GUI / Avatarが直接mutationしない。
 
 ---
 
-## 6. D03 Body Expression Projection
-
-Issue: #337
+## 6. D03 Body Expression Projection — #337
 
 質問:
 
-> 現在のゆらの状態・関係・注意・Character Styleを、身体表現としてどのような傾向にするか。
+> 現在の内部状態・関係・活動・注意・Character Styleを身体表現の傾向へどう投影するか。
 
 入力例:
 
-- Emotion
-- Desire / Drive / Motivation
+- Emotion / Desire / Drive / Motivation
 - Energy / Arousal
-- Interaction state
-- Attention
-- Current Activity
-- Character Body Expression Style
+- Interaction / Activity
+- #333 Focus / Attention
+- Character Body Style #355
 
-出力はfixed poseではなく高レベル傾向。
+出力:
 
 ```text
 BodyExpressionContext
@@ -205,27 +183,20 @@ BodyExpressionContext
 ```text
 joy -> HAPPY_POSE_3
 anger -> ANGRY_MOTION_2
-female -> GIRL_POSE
 processing -> THINKING_GESTURE
 ```
 
-Character固有らしさはstyle / cost / tendencyへ作用し、固定Motion選択へしない。
+Character textをBody expression authorityにしない。
 
 ---
 
-## 7. D04 Body Motion Planning
-
-Issue: #338
+## 7. D04 Body Motion Planning — #338
 
 質問:
 
-> ExecutiveのBodyIntentを、現在の身体からどのような運動計画として実現するか。
+> Executive BodyIntentをcurrent bodyからどう運動計画として実現するか。
 
-open-endedな全身motion compositionにはLLMを利用可能。
-
-ただしBody Motionを固定番号のLLM RoleとしてSystemへ縛らない。
-
-入力:
+open-ended全身motion compositionではLLMを利用可能だが、固定Role番号・常時LLM必須にはしない。
 
 ```text
 BodyMotionPlanningRequest
@@ -238,8 +209,6 @@ BodyMotionPlanningRequest
 - priority / interruptibility
 - source_context_revision
 ```
-
-出力:
 
 ```text
 BodyMotionPlan
@@ -255,112 +224,79 @@ BodyMotionPlan
 - coordination constraints
 - balance requirement
 - expression overlays
-- priority
-- interruptibility
+- priority / interruptibility
 - preconditions
 - completion conditions
 ```
 
-### LLMへ出させないもの
+Planner/LLMへ出させない:
 
 - raw user textの再解釈
-- Live2D parameter
-- renderer-specific bone names
+- renderer parameter / bone名
 - unchecked final joint angles
 - every-frame pose stream
 - physical success fact
 
-LLM outputはplan candidateであり実行事実ではない。
+BodyMotionPlanはcandidate/planでありActual Factではない。
 
 ---
 
-## 8. Motion Intent examples
+## 8. Motion examples
 
-### 8.1 右手を高く上げる
+### Right hand up
 
-```text
-BodyIntent
-- target = anatomical right hand
-- spatial relation = above shoulder/head region
-- magnitude = high
-```
+anatomical right hand + spatial targetを指定し、current poseからshoulder/elbow/wrist/torso contributionをSolverが協調。
 
-Planner/Solverはcurrent poseからshoulder / elbow / wrist / scapular/torso contributionを協調させる。
+`RIGHT_ARM_RAISE_PRESET`を正規契約にしない。
 
-`right_arm_raise`という完成Pose名を正規入力にしない。
+### Look direction
 
-### 8.2 右を見る
+eyes→head→neck→torsoへcomfortable rangeに応じて分配。small angleではeyes主体、大きければtorsoまで利用可能。
 
-方向Goalをeyes→head→neck→torsoへcomfortable rangeに応じて分配する。
+### Bilateral gesture
 
-小さい角度ではeyes主体、大きければhead / torsoまで使える。
+left/right chainsを同時対象化し、style/energyに応じて振幅・速度・柔らかさを変える。
 
-### 8.3 両腕を振る
-
-left/right chainを同時に対象化し、shoulder / elbow / wristを協調させる。
-
-movement energy / styleによって振幅・速度・柔らかさが変わる。
-
-### 8.4 Jump
+### Jump
 
 ```text
-prepare
-→ compression
-→ extension
-→ airborne
-→ landing
-→ continuous recovery
+prepare → compression → extension → airborne → landing → recovery
 ```
 
-hip / knee / ankle / root / arms / torsoを協調。
-
-大小ジャンプでpreparation depthやarm contributionが変わる。
-
-固定Jump preset一種類にしない。
+hip/knee/ankle/root/arms/torsoを協調し、大小jumpで深さ・arm contribution等が変化する。
 
 ---
 
-## 9. D05 Deterministic Motion Compiler / Solver
+## 9. D05 Deterministic Compiler / Solver — #339
 
-Issue: #339
-
-LLMの創造的motion compositionと身体制約Authorityを分離する。
+Planner implementationがLLM/軽量Planner/将来方式のどれでも、physical Authorityはdeterministic layerが所有する。
 
 ```text
 BodyMotionPlan
-→ structural validation
-→ capability validation
+→ structural / capability validation
 → kinematic target compilation
 → IK / FK
-→ joint limit enforcement
-→ balance / center of mass validation
-→ trajectory generation
-→ smoothing / continuity
+→ joint limits
+→ balance / center of mass
+→ trajectory / smoothing / continuity
 → executable trajectory
 ```
 
-### Authority
+最終的に守る:
 
-deterministic layerが最終的に守るもの:
-
-- joint limits
-- required DOF
-- kinematic feasibility
+- joint limits / DOF
+- feasibility
 - body capability
 - continuity
-- balance constraints
-- velocity / acceleration constraints as modeled
-- invalid / unsupported motion rejection
+- balance
+- modeled velocity/acceleration
+- unsupported motion rejection
 
-LLMが「できる」と言ってもsolverが不成立ならExecution Factは成功にならない。
+Planner/LLM出力角を無検証で適用しない。
 
 ---
 
-## 10. D06 Continuous Controller
-
-Issue: #339
-
-BodyはMotion Planを1回再生してNeutralへ戻るのではなく、現在状態から次状態へ連続的に合流する。
+## 10. D06 Continuous Controller — #339
 
 ```text
 current trajectory
@@ -374,23 +310,23 @@ current trajectory
 
 - transition blending
 - velocity continuity
-- interruption handling
+- interruption
 - plan replacement / supersede
 - partial completion
 - safe recovery
-- expression baselineへの滑らかな復帰
+- expression baselineへの滑らかな合流
 
-「復帰」は固定Home Poseへ戻ることではない。
+「復帰」をHome/Neutral resetと同義にしない。
+
+Planner応答待ちでもcurrent trajectory continuationを行える。
 
 ---
 
-## 11. D07 Realtime Layers
+## 11. D07 Realtime Layers — #340
 
-Issue: #340
+Body Planning/LLM更新周期に依存しない高頻度process。
 
-LLMを待たず高頻度で更新する身体プロセス。
-
-- gaze tracking / attention micro adjustment
+- gaze tracking / attention micro-adjustment
 - blink
 - breathing
 - viseme / mouth
@@ -398,42 +334,47 @@ LLMを待たず高頻度で更新する身体プロセス。
 - small posture correction
 - current trajectory continuation
 
-### 不変条件
+Motion Plannerを5s/20s遅延させてもRealtime Layerは継続する。
 
-Body Motion LLMが5秒・20秒遅れてもRealtime Layerは継続する。
-
-Bodyは「次のmotion planが来るまで完全静止」しない。
-
-ただしrandom noiseを生物らしさとみなさない。current state / attention / activity / body dynamicsに整合した微動にする。
+random noiseを生物らしさとみなさず、Body State / #333 Focus / Activity / dynamicsへ整合させる。
 
 ---
 
 ## 12. Speech / Viseme
 
-実際にPresentation commitされたSpeechだけがviseme timelineへ入る。
+実際にPresentation commitされたSpeechだけをvisemeへ入れる。
 
 ```text
-Committed speech
+Committed Speech
 + actual audio start
 + pronunciation / viseme timeline
 → Body speech realtime layer
 ```
 
-理想:
+TTS timing unavailableならtyped degradation/fallback。
+未commit prepared speechでは口を動かさない。
 
-- phoneme / mora / viseme timing
-- A/I/U/E/O等のshape variation
-- lip closure
-- silence / pause
-- interpolation
-
-TTS timing unavailable時のみ安全なfallbackへ縮退する。
-
-Speech preparation中の未commit candidateでは口を動かさない。
+Speech/TTS/Verifier待ちでspeech以外のBody realtimeを止めない。
 
 ---
 
-## 13. Executive / Character / Body relationship
+## 13. Attention / Focus
+
+Cognitive Focus Stateの正本は#333。
+
+```text
+#333 AttentionFocusState
+→ Body Expression / gaze target projection
+→ Body realtime gaze
+```
+
+Bodyの視線はFocusの身体表現であり、Bodyが「何に注意すべきか」をconsciousに決めるAuthorityではない。
+
+視覚tracking等の低レベルrealtime adjustmentはBody側で行える。
+
+---
+
+## 14. Executive / Character / Body
 
 ```text
                  ExecutiveDecision
@@ -448,52 +389,37 @@ CharacterとBodyは兄弟Realizer。
 禁止:
 
 ```text
-Character text
-→ Bodyがその日本語を読んでgesture決定
+Character text → Bodyが日本語を読みgesture semanticを決定
+Body pose → Characterが発話意味を再決定
 ```
 
-```text
-Body pose
-→ Characterがそのposeから発言意味を再決定
-```
-
-同じExecutive contextから並行して動ける。
+SpeechとBody planningを並列開始可能。
 
 ---
 
-## 14. Non-blocking Body runtime
-
-Body realtimeは独立lane。
+## 15. Non-blocking Body runtime
 
 ```text
-Motion LLM running
+Motion Planner running
 while
-  current body trajectory continues
-  gaze continues
-  blink continues
-  breath continues
-  viseme continues if speech is presenting
-  new body feedback may arrive
+  current trajectory continues
+  gaze / blink / breath continue
+  viseme continues if presenting
+  balance/subtle correction continues
+  new feedback may arrive
 ```
 
-Character/TTS/DB/Game AIもBody frame loopのblocking prerequisiteにしない。
+Character/TTS/DB/Game AIをBody frame loopのblocking prerequisiteにしない。
 
-### Slow Motion LLM
+new BodyIntent到着時:
 
-新しいIntentがMotion LLM処理中に届いた場合:
-
-- higher priorityでold requestをcancel
-- compatibleならcurrent request継続
-- result arrival時にsource_context_revision / preconditionsを確認
+- priority/compatibilityに応じold planning cancel/supersede
+- result到着時source_context_revision / preconditions確認
 - staleならdiscard
 
 ---
 
-## 15. Multiple simultaneous motions
-
-Bodyは「1 action slot = 1 preset」にしない。
-
-同時に存在し得る例:
+## 16. Multiple simultaneous motions
 
 ```text
 base posture / locomotion
@@ -502,38 +428,27 @@ base posture / locomotion
 + facial expression
 + breathing
 + viseme
-+ small balance correction
++ balance correction
 ```
 
-競合はpriority / body region ownership / additive-vs-exclusive / kinematic constraints等で解決する。
+競合はpriority / body region ownership / additive-vs-exclusive / kinematic constraints等で解決。
 
-具体composition policyは#339/#340で型付きに定義する。
+1 action slot = 1 presetにはしない。
 
 ---
 
-## 16. Execution facts
-
-Body execution lifecycle:
+## 17. Execution facts
 
 ```text
-requested
-→ accepted
-→ planned
-→ started
-→ observable/applied
-→ completed
-
-or
-rejected / unsupported / failed / cancelled / timed_out / superseded
+requested → accepted → planned → started → observable/applied → completed
+or rejected / unsupported / failed / cancelled / timed_out / superseded
 ```
 
-Characterが「右手上げたよ」と言える根拠は`BodyIntent`や`BodyMotionPlan`ではなく、必要なExecution Factである。
+Characterが「右手を上げた」とclaimする根拠はBodyIntent/Planではなく必要なExecution Fact。
 
 ---
 
-## 17. Avatar / Renderer boundary
-
-Bodyのpublic output:
+## 18. Avatar / Renderer boundary
 
 ```text
 BodyPoseFrame
@@ -543,179 +458,144 @@ BodyPoseFrame
 - root transform
 - canonical joint pose
 - gaze / attention channels
-- face / mouth expression channels as canonical signals
+- face / mouth canonical signals
 - speech sync markers
 - active motion refs
 ```
 
-Adapter側:
-
 ```text
 BodyPoseFrame
-→ Stick projection
-→ Live2D projection
-→ 3D / VRM projection
+→ Stick / Live2D / 3D projection
 ```
 
-Renderer制約でCanonical Body contractを縮小しない。
+renderer制約でCanonical Body contractを縮小しない。利用不能parameterはAdapterでdegraded projection。
 
-利用不能parameterはAdapterでbest-effort projection / degraded mappingを行う。
-
----
-
-## 18. Capability / degraded state
-
-Body Capabilityはtypedに扱う。
-
-例:
-
-- has_leg_chain
-- supports_root_translation
-- supports_face_channels
-- supports_gaze
-- supports_viseme
-- renderer/output available
-
-Canonical BodyとPresentation capabilityを区別する。
-
-Avatar不在でもBody State / motion execution semanticsを破壊しない。
+Avatar unavailableでもBody State / semantics維持。
 
 ---
 
 ## 19. Input boundary
 
-Bodyへ直接入れてよいもの:
+Bodyへ入れてよい:
 
 - Executive BodyIntent
 - Internal State-derived expression context
-- attention target
-- actual speech synchronization event
-- typed contact / touch percept
+- #333 typed attention/focus
+- actual speech sync event
+- typed contact/touch percept
 - body feedback / renderer capability
 
-Bodyへ直接入れないもの:
+直接入れない:
 
-- raw user natural language
-- raw YouTube comment
-- Character final textをgesture authorityとして利用
-- GUI-specific commands without typed authority contract
+- raw user NL / raw YouTube comment
+- Character final textをgesture authorityとして使用
+- GUI-specific untyped command
 
-将来Touchでは、click/drag eventとactual avatar/body hitを区別し、body regionをtyped perceptとして扱う。
+Touchはclick/drag情報とactual avatar/body hit、body regionを分離する。
 
 ---
 
 ## 20. V1から継承する教訓
 
-維持する:
+維持:
 
-- Skeleton / DOF / Joint Limits
-- current poseからのGenerative Motion
-- IK / Kinematics
-- anatomical left/right
-- multi-joint full-body coordination
-- 360度3D
+- Skeleton / DOF / limits
+- current poseからGenerative Motion
+- IK/Kinematics
+- anatomical L/R
+- full-body coordination
+- true 3D direction
 - jump / bilateral / diagonal motion
 - Character Body Style
-- viseme同期
+- viseme
 - no Home reset
-- Stick modelを検証Adapterとして使う
+- Stick model as validation adapter
 
-改善する:
+改善:
 
-- fixed Pose axisへ縮退しない
+- finite Pose/Motion preset axisへ縮退しない
 - raw text→motion preset mappingを作らない
-- Motion LLMを毎frame controlへ使わない
-- Motion LLM latencyで身体を停止しない
-- Character→Bodyの直列意味経路にしない
+- Motion LLMを毎frame controllerにしない
+- Planner latencyで身体停止しない
+- Character→Body直列意味経路にしない
 - renderer unavailableをCore failureにしない
 
 ---
 
-## 21. Unit Acceptance
+## 21. Acceptance
 
-### Canonical Model
+### Unit
 
-- hierarchy validation
-- DOF / limit validation
-- anatomical left/right
-- chain / end-effector lookup
-- invalid model reject
+Canonical:
+- hierarchy / DOF / limit / side / chain
 
-### Planner
-
-- direction 3D
-- unilateral / bilateral reach
+Planner:
+- 3D direction
+- unilateral / bilateral
 - jump phases
 - composite motion
-- current pose dependent result
-- unsupported capability
-- stale plan
+- current-pose dependence
+- stale / unsupported
 
-### Solver / Controller
-
-- limit enforcement
-- feasible / infeasible target
+Solver/Controller:
+- feasibility / limits / balance
 - continuity
-- interruption
-- supersede
-- no forced Home reset
+- interruption / supersede
+- no Home reset
 
-### Realtime
+Realtime:
+- slow Planner中frame継続
+- gaze/blink/breath継続
+- viseme overlay
+- no uncontrolled jitter
 
-- slow Motion LLM中もframe継続
-- blink / breath / gaze継続
-- speech viseme overlay
-- no uncontrolled high-frequency jitter
+### Integration #341
 
----
+1. Executive BodyIntent→BodyMotionPlan→continuous BodyPoseFrame
+2. CharacterとBody planning並列開始
+3. Planner 5s/20s delayでもrealtime継続
+4. high-priority new BodyIntentでold planning cancel/supersede
+5. stale plan非適用
+6. right/left/up/down/front/back/diagonal
+7. eye/head/neck/torso協調
+8. one/both arms
+9. large/small jump
+10. expression + motion + gaze + viseme simultaneous
+11. no Home reset
+12. Avatar unavailableでもBody State維持
 
-## 22. Adjacent / Integration Acceptance
-
-Issue #341で最低限:
-
-1. Executive BodyIntent→BodyMotionPlan→continuous BodyPoseFrame。
-2. CharacterとBody planningを並列開始可能。
-3. slow Motion LLM 5s/20sでもBody realtime停止なし。
-4. new high-priority BodyIntentでold planningをcancel/supersede。
-5. stale BodyMotionPlanを適用しない。
-6. right/left/up/down/front/back/diagonalを表現。
-7. eyes/head/neck/torsoの段階協調。
-8. one/both arms。
-9. large/small jump。
-10. simultaneous expression + motion + gaze + speech viseme。
-11. user-directed motion後もHome resetしない。
-12. Avatar unavailableでもBody State維持。
-
-実Motion LLM + Stick/AvatarはVerification。
+実Motion LLM / Stick / AvatarはVerification。
 
 ---
 
-## 23. Observability
-
-最低限:
+## 22. Observability
 
 - body_state_revision
 - motion_request_id / plan_id
-- plan queued / started / completed latency
+- plan queue/provider/planning latency
 - source_context_revision
-- cancel / stale / superseded
-- solver rejection reason
+- cancel / stale / supersede
+- solver reject reason
 - frame interval / jitter
-- dropped frame / output failure
-- realtime overlay state
+- output failure
+- realtime overlay / focus ref
 
-実LLM latencyとBody frame stabilityを同一timelineで観測できるようにする。
+LLM/Planner latencyとBody frame stabilityを同一timelineで確認可能にする。
 
 ---
 
-## 24. Design Gate
+## 23. Design Reconciliation Status
 
-- [ ] #335 parentが本書をcanonicalとして参照
-- [ ] #336〜#341が本書と一致
-- [ ] BodyをPluginと誤定義していない
-- [ ] Motion LLMに固定Role番号を与えていない
-- [ ] CharacterとBodyを兄弟Realizerとして定義
-- [ ] Body realtimeがLLM待ちから独立
-- [ ] current pose / continuous control / no Home resetを維持
-- [ ] Canonical 3D能力を2D mockで弱めない
-- [ ] slow Motion LLM acceptanceをIntegrationへ含める
+- [x] #335 parentが本書をcanonicalとして参照
+- [x] #336〜#341が本書と一致
+- [x] BodyをPluginと誤定義していない
+- [x] Motion LLMに固定Role番号を与えていない
+- [x] Planner implementationとdeterministic physical Authorityを分離
+- [x] CharacterとBodyを兄弟Realizerとして定義
+- [x] #333 Focus/AttentionとBody gaze Authorityを分離
+- [x] Body realtimeがPlanner/LLM待ちから独立
+- [x] current pose / continuous control / no Home reset維持
+- [x] Canonical 3D能力を2D mockで弱めない
+- [x] slow Planner acceptanceを#340/#341へ含める
+
+残るのは#317全体Design Gate確認と実装後Verificationである。
