@@ -6,6 +6,6 @@
 - `concurrency_architecture.md` — non-blocking runtime / LLM invocation topology
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
 - `legacy_migration_matrix.md` — V1 requirement migration
-- `v2_project_sync_manifest.md` — GitHub project synchronization manifest
+- `project_sync_manifest.md` — GitHub Project synchronization manifest
 
 Status: Draft / V2 Design Gate.
