@@ -10,5 +10,6 @@
 - `subsystem_architecture.md` — Streaming, Game Skill, Avatar and specialized AI boundaries
 - `legacy_migration_matrix.md` — V1 requirement migration
 - `project_sync_manifest.md` — GitHub Project synchronization manifest
+- `project_sync_runbook.md` — live ID取得・dry-run・Project fields・formal Parent/Sub-issue同期手順
 
 Status: Draft / V2 Design Gate.
