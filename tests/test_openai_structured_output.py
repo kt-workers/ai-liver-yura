@@ -47,14 +47,17 @@ def _generator() -> OpenAIResponseGenerator:
     )
 
 
-def _activity() -> Activity:
+def _activity(*, reasoning_effort: str | None = None) -> Activity:
+    context: dict[str, object] = {
+        "plugin_prompt_override": "structured prompt",
+        "llm_role": "character_semantic_verifier",
+    }
+    if reasoning_effort is not None:
+        context["reasoning_effort"] = reasoning_effort
     return Activity(
         activity_type=ActivityType.CONVERSATION_WITH_USER,
         goal="structured test",
-        context={
-            "plugin_prompt_override": "structured prompt",
-            "llm_role": "character_semantic_verifier",
-        },
+        context=context,
     )
 
 
@@ -99,6 +102,7 @@ async def test_openai_structured_output_sends_strict_json_schema(
     body = sent["body"]
     assert isinstance(body, dict)
     assert body["model"] == "gpt-5.4-mini"
+    assert "reasoning" not in body
     assert body["text"] == {
         "format": {
             "type": "json_schema",
@@ -112,6 +116,48 @@ async def test_openai_structured_output_sends_strict_json_schema(
             "strict": True,
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_openai_structured_output_sends_role_reasoning_effort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: dict[str, object] = {}
+
+    def fake_urlopen(
+        request: urllib.request.Request,
+        timeout: float,
+    ) -> _FakeHttpResponse:
+        del timeout
+        sent["body"] = json.loads(request.data or b"{}")
+        return _FakeHttpResponse(
+            {
+                "status": "completed",
+                "output_text": json.dumps({"ok": True}),
+            }
+        )
+
+    monkeypatch.setenv("TEST_OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    result = await _generator().generate_structured_response(
+        _activity(reasoning_effort="low"),
+        _contract(),
+    )
+
+    assert result == {"ok": True}
+    body = sent["body"]
+    assert isinstance(body, dict)
+    assert body["reasoning"] == {"effort": "low"}
+
+
+@pytest.mark.asyncio
+async def test_openai_structured_output_rejects_unknown_reasoning_effort() -> None:
+    with pytest.raises(StructuredOutputGenerationError):
+        await _generator().generate_structured_response(
+            _activity(reasoning_effort="unsupported"),
+            _contract(),
+        )
 
 
 @pytest.mark.asyncio
