@@ -34,34 +34,46 @@ class CharacterRealizationObserverPromptBuilder:
 
         return "\n".join(
             [
-                "あなたはCharacter発話の意味観測器です。",
+                "あなたはCharacter発話の独立意味観測器です。",
                 "この工程ではSemantic Planとの一致・不一致を判定しない。期待state、期待certainty、"
-                "期待conceptは与えられていない。Character speechが実際に何を表現しているかだけを観測する。",
+                "期待conceptは与えられていない。Character speechが実際に表現している意味だけを観測する。",
                 "# Candidate Predicate IDs",
                 json.dumps(candidates, ensure_ascii=False),
-                "Candidateは観測対象を対応付けるcanonical IDであり、期待するstateや強度を示さない。",
+                "Candidateは観測対象を対応付けるcanonical IDであり、期待するstate・polarity・強度・certaintyを示さない。",
                 "# User Wording Hint",
                 json.dumps({"utterance": context.user_input.strip()[:500]}, ensure_ascii=False),
                 "User Wording Hintはprimary predicateの自然語意味枠を特定する補助にだけ使う。"
-                "そこからstate、certainty、conceptを推測してはいけない。",
+                "そこからstate、polarity、強度、certainty、conceptを推測してはいけない。",
+                "User Wording Hintはevidenceではない。evidence_spansへUser Wording Hintの文字列を入れてはいけない。",
                 "# Character Speech",
                 json.dumps({"speech": response.speech}, ensure_ascii=False),
                 "観測規則:",
                 "- 各Candidateについて、speechがそのpredicateを実際に表現しているかpredicate_realizedで答える。",
                 "- observed_stateはspeechが実際に表すstateを absent/low/moderate/high/very_high/"
                 "present/overview/unknown/omitted から選ぶ。期待値を想像して合わせない。",
-                "- low/moderate/high/very_highはpresenceとは異なる。speechが存在だけを表し強度を"
-                "意味的に区別できない場合はpresentとする。",
-                "- 強度の表現手段は副詞に限らず、構文、対比、反復、婉曲、強調など自由。"
-                "有限個の語彙リストへ置き換えて判定しない。",
-                "- unknownは対象の存在・不在・強度を確定していない意味。肯定/否定へcommitしたspeechを"
-                "unknownにしない。",
-                "- observed_certaintyはそのobserved_stateへの断定度を high/medium/low/unknown から選ぶ。"
-                "強度とcertaintyを混同しない。",
-                "- predicate_evidence_spans/state_evidence_spans/certainty_evidence_spansにはspeechに実在する"
-                "原文部分だけを列挙する。該当する明示spanが不要または存在しないfacetは空配列でよい。",
+                "- absentは対象の存在・成立を否定している状態。lowは対象が存在・成立した上で弱い強度を"
+                "表している状態であり、否定や非存在をlowへ読み替えない。",
+                "- presentは対象の存在・成立を表すが、順序づけられた強度差までは表していない状態。",
+                "- low/moderate/high/very_highはpresentとは異なり、speechから順序づけられた強度差が"
+                "意味的に識別できる場合だけ選ぶ。強度の表現手段を特定の単語・副詞・語尾へ固定しない。",
+                "- overviewは対象そのものを単にpresentと述べる状態ではない。全体状態・総合状態を、"
+                "一つ以上の状態次元や性質をまとめて特徴づけている場合に使う。",
+                "- unknownは対象の存在・不在・強度・値を現時点で確定していない状態。"
+                "特定polarityへcommitしたspeechをunknownにしない。",
+                "- omittedはspeechがそのpredicateを意味として表現していない場合に使う。",
+                "- observed_certaintyは、観測器自身の判定自信度でも、文法上その文を断言している強さでもない。"
+                "speechが対象のobserved_stateをどの程度epistemically確定しているかを high/medium/low/unknown で表す。",
+                "- highは対象stateへ明確にcommitしている場合、mediumは対象stateを暫定的・蓋然的に述べる場合、"
+                "lowは対象stateについて明示的な不確かさ・判断困難を残す場合に使う。"
+                "certaintyをpredicateの強度へ読み替えない。",
+                "- observed_state=unknownのとき、話者が『判断できないという事実』を強く断言していることを理由に"
+                "observed_certainty=highへ引き上げない。certaintyは対象stateについてのepistemic確かさとして観測する。",
+                "- predicate_evidence_spans/state_evidence_spans/certainty_evidence_spansにはCharacter Speechに"
+                "実在する原文部分だけを列挙する。User Wording Hint、Candidate ID、説明文をspanへ混ぜない。",
+                "- 該当する明示spanが不要または存在しないfacetは空配列でよい。",
                 "- Candidateのcanonical英語IDをspeech中に存在する語だと仮定しない。",
                 "- Characterのsemantic_realizations等の自己申告metadataは観測根拠にしない。",
+                "- 自然言語の意味判定を有限個の単語・phrase・regex・substring対応表へ置き換えない。",
                 "JSONのみ返す。各observationはrealization_id、predicate_realized、observed_state、"
                 "observed_certainty、predicate_evidence_spans、state_evidence_spans、"
                 "certainty_evidence_spansを含める。",
