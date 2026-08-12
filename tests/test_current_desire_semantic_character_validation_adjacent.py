@@ -263,7 +263,8 @@ async def test_current_desire_medium_certainty_flows_through_semantic_character_
     assert '"state": "present"' not in observer_prompt
     assert '"certainty": "medium"' not in observer_prompt
     assert '"concept": "curiosity"' not in observer_prompt
-    assert "対象stateについてのepistemic確かさ" in observer_prompt
+    assert "このpredicateはobserved_stateである" in observer_prompt
+    assert "Semantic Plan側のcertaintyも同じ命題certainty" in observer_prompt
 
     validator_prompt = comparator_activity.context["plugin_prompt_override"]
     contract = _post_observation_contract(validator_prompt)
