@@ -271,10 +271,22 @@ Legacy `state`の意味判定をfinite自然語辞書へ接続しない。
 
 ## 12. Phase A完了条件
 
-- [ ] v2 Domain実装
-- [ ] Legacy Adapter実装
-- [ ] Unit tests PASS
-- [ ] existing production path未変更を差分監査
-- [ ] Full regressionで既存契約へのデグレがないことを確認
+- [x] v2 Domain実装
+- [x] Legacy Adapter実装
+- [x] Unit tests PASS
+- [x] existing production path未変更を差分監査
+- [x] Full regressionで既存契約へのデグレがないことを確認
 
-完了後、#303 Implementation Gateの`v2 Semantic Domain / Legacy Adapter`を完了扱いにし、Phase Bへ進む。
+## 13. Verification evidence
+
+2026-08-12に以下を確認した。
+
+- Implementation PR: #306（Draft / stacked）
+- CI-only PR: #307（`feature/core-development` base、マージ禁止）
+- GitHub Actions: run #1266 / run id `31587316526`
+- `tests` job: SUCCESS
+- completed: `2026-08-12T10:34:58Z`
+
+差分監査ではPhase AのProduct変更は新規`app/domain/semantic_utterance_v2.py`への加算導入に限定され、既存`app/domain/semantic_utterance.py`、Character、Verifier、OpenAI Adapter、Runtime acceptance routingは変更していない。
+
+したがってPhase Aは完了とし、#303 Implementation Gateの`v2 Semantic Domain / Legacy Adapter`を完了扱いにしてPhase Bへ進む。
