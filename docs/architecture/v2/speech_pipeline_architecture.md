@@ -2,189 +2,318 @@
 
 Status: Draft / V2 Design Gate
 Parent architecture: `docs/architecture/v2/system_architecture.md`
+Brain architecture: `docs/architecture/v2/brain_architecture.md`
+Cognitive / LLM: `docs/architecture/v2/cognitive_llm_architecture.md`
+Concurrency: `docs/architecture/v2/concurrency_architecture.md`
 Work Issue: #348
 Root management: #317
 
 ## 1. 目的
 
-この文書は、ゆらの発話について**「内容を考える処理」と「実際に提示・再生する処理」を分離し、現在の発話再生中でも次の発話候補生成が進められること**をV2の構造的不変条件として固定する。
+この文書は、ゆらの発話について次を同時に成立させる。
 
-この要求は単なる低遅延最適化ではない。発話と発話の間が不自然に長くならず、ゆらが会話・自律行動を連続的に行えるための基本設計である。
+1. `What to say` と `How to say it` を責務分離する。
+2. Character発話の意味保持を独立検証可能にする。
+3. 責務分離をそのままLLMの数珠つなぎへ変換しない。
+4. 現在Speechの提示・再生中でも次の認知・発話準備を進められる。
+5. 古い文脈から生成された候補を無条件に提示しない。
 
-禁止する正規構造:
+V1で得た意味保持設計を維持しつつ、LLM latencyの単純加算を避ける。
+
+---
+
+# 2. 禁止する構造
+
+## 2.1 Playback直列化
 
 ```text
-Speech Aを生成
-→ TTS Aを生成
-→ Speech Aの再生完了までawait
-→ 再生完了後に次Appraisal
-→ 次Commander
-→ Speech Bを生成開始
+Speech A生成
+→ TTS A生成
+→ A playback完了までawait
+→ 次Appraisal
+→ 次Executive
+→ Speech B生成
 ```
 
-この構造ではSpeech Aの再生時間がそのままSpeech Bの生成開始遅延へ加算される。V2では採用しない。
+禁止。
 
----
+## 2.2 LLM数珠つなぎ
 
-# 2. 最上位不変条件
-
-1. **Speech playbackはBrain decision loopをblockしない。**
-2. **現在Speechの再生完了を、次のAppraisal / Commander / Character generation開始条件にしない。**
-3. **先行生成した発話候補は、再生直前に最新状態で再検証する。**
-4. **先行生成はboundedであり、未来の会話を無制限に作り置きしない。**
-5. **ユーザー入力・重要Event・内部状態変化で古くなった候補を破棄または再生成できる。**
-6. **生成できることと、連続して発話してよいことを分離する。**
-7. **TTS生成・audio playback・Body/viseme同期はPresentation側の実行責務であり、Character/Commanderの意思決定を待たせない。**
-8. **発話中にもCoreはEventを受け取り、AppraisalとCommanderを進められる。**
-
----
-
-# 3. 2レーン構造
+通常発話を常に次のように処理することも禁止する。
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│ Decision / Preparation Lane                                 │
-│                                                             │
-│ Event / Timer / State change                                │
-│   ↓                                                         │
-│ Appraisal                                                   │
-│   ↓                                                         │
-│ Commander                                                   │
-│   ↓ SpeechIntent                                            │
-│ Character Speech LLM                                        │
-│   ↓ CharacterUtterance                                      │
-│ Independent Semantic Verification                           │
-│   ↓                                                         │
-│ Speech Performance Planning                                 │
-│   ↓                                                         │
-│ PreparedSpeechCandidate                                     │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-                            ▼
-                 bounded Prepared Queue
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────┐
-│ Presentation / Execution Lane                               │
-│                                                             │
-│ Pre-play Revalidation                                       │
-│   ↓                                                         │
-│ TTS Preparation / Audio readiness                           │
-│   ↓                                                         │
-│ Presentation Commit                                         │
-│   ↓                                                         │
-│ Text / Audio Playback + Body / Viseme Sync                  │
-│   ↓                                                         │
-│ SpeechPresentationResult                                    │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-                            └────────→ Event / Appraisal feedback
+Executive
+→ await Speech Semantics LLM
+→ await Character LLM
+→ await Semantic Verifier LLM
+→ await Speech Performance
+→ await TTS
+→ presentation
 ```
 
-重要なのは、**Decision LaneがPresentation Laneの完了を待たない**ことである。
-
-Speech Aが再生中でも、Autonomy / Turn ManagementとCommanderが「次の発話候補を準備してよい」と判断した場合はSpeech BのCharacter生成を開始できる。
+論理責務は分離するが、各責務が常に別の大型LLM API callとしてcritical pathへ直列加算される構造にはしない。
 
 ---
 
-# 4. 責務境界
+# 3. Speech logical responsibilities
 
-## 4.1 Appraisal
+```text
+Executive SpeechIntent
+        ↓
+Speech Semantics
+  What to say
+        ↓
+SpeechSemanticPlan
+        ↓
+Character Language Realization
+  How to say it
+        ↓
+CharacterUtterance
+        ↓
+Independent Semantic Observation
+        ↓
+Closed typed acceptance policy
+        ↓
+Speech Performance
+        ↓
+PreparedSpeechCandidate
+        ↓
+Presentation commit / TTS / playback
+```
 
-発話再生中という事実を含む現在状態を評価する。
+この図はAuthority / data dependencyを表す。固定Runtime call sequenceではない。
 
-例:
+---
 
-- currently_presenting_speech
-- current speech interruptibility
-- turn ownership
-- user response obligation
-- current topic
-- internal motivation
-- recent execution results
-- pending prepared candidate count
+# 4. Authority
 
-Appraisalは「次を必ず喋る」と決めない。
+## 4.1 Executive
 
-## 4.2 Commander
+「発話する／しない」「何のために発話するか」の上位Intentを決める。
 
-次の候補を生成するか、待つか、沈黙するか、別Activityへ移るかを決める。
+Executiveは最終台詞を作らない。
 
-Commanderは次を区別する。
+## 4.2 Speech Semantics
 
-- `prepare_speech`: 内容候補を準備してよい
-- `commit_speech`: Presentationへ出してよい
-- `wait/silence`
-- `cancel/supersede prepared speech`
+Issue: #362
 
-実装上これらが別Command/phaseになるかはContract設計時に確定するが、**準備と提示の権威を同一時点に固定しない**。
+`What to say`を所有する。
 
-## 4.3 Character Speech
+```text
+SpeechSemanticPlan
+- speech_plan_id
+- speech_act
+- target
+- propositions[]
+- required_content[]
+- optional_content[]
+- forbidden_content[]
+- polarity / certainty / degree facets
+- self_disclosure
+- question_budget
+- new_direction_budget
+- execution_truth_constraints
+```
 
-Commanderが確定したSpeech semantic intentからCharacterUtteranceを作る。
+Character Profileは事実決定Authorityではない。
 
-現在別Speechが再生中であること自体を理由に生成を停止しない。
+## 4.3 Character Language Realizer
 
-ただし、Characterへ「再生待ちqueueがあるから適当に続きの話を作る」権限は与えない。
+Issue: #330
 
-## 4.4 Speech Performance
+`How to say it`を所有する。
 
-CharacterUtteranceから音声演技計画を生成する。
+Characterらしさを加えるが、SpeechSemanticPlanの事実・polarity・certainty・degree・execution truth等を変更しない。
 
-これもaudio playback完了を待つ必要はない。
+## 4.4 Independent Semantic Verification
 
-## 4.5 TTS Adapter
+Issue: #363
 
-TTSは可能なら先行準備できる。
+CharacterUtteranceがSpeechSemanticPlanを保持しているかをObserverとして評価する。
 
-ただし、TTS生成コスト・provider rate limit・候補失効率を考慮し、次のpolicyを選択可能にする。
+Verifierは最終発言Intentを変更しない。
 
-- text/characterまで先行し、TTSはcommit直前
-- TTSまで先行する
-- 高優先度候補だけTTS先行
+Verifierのfree-form `accepted/reason`を最終Authorityにしない。Runtimeはtyped observationとclosed checksからaccept/rejectを導出する。
 
-このpolicyはInfrastructure/Runtime policyであり、発話意味を変更しない。
+## 4.5 Speech Performance
+
+Issue: #331
+
+engine-independentな音響演技計画を所有する。
+
+Character Language LLMにVOICEVOX等の具体parameterを生成させない。
 
 ## 4.6 Presentation Executor
 
-実際のText/audio/Body speech syncを所有する。
+実際に外部へ提示された事実を所有する。
 
-Presentation Executorは再生中でもDecision Laneをlockしない。
+Prepared candidateは「話した」という事実ではない。
 
 ---
 
-# 5. PreparedSpeechCandidate
+# 5. Sparse speech path
 
-最低限以下を保持する。
+すべての発話で全RoleをLLM起動しない。
+
+## 5.1 Simple path
+
+ExecutiveのSpeechIntentとtyped factsだけで十分に発言内容が確定できる低複雑度ケースでは、専用Speech Semantics LLMを省略できる。
+
+```text
+Executive SpeechIntent
+→ lightweight / deterministic semantic projection
+→ SpeechSemanticPlan
+→ Character
+```
+
+例:
+
+- 短いacknowledgement
+- 型付きExecution Resultへの短い反応
+- 既に意味内容が完全に確定した単純回答
+
+省略はAuthority混同を意味しない。`SpeechSemanticPlan` contractは維持する。
+
+## 5.2 Complex path
+
+複数proposition、曖昧な自己開示、Memory evidence、Relationship / discourse constraint等を統合する必要がある場合のみSpeech Semantics LLMを起動できる。
+
+```text
+Executive SpeechIntent
+→ Speech Semantics LLM
+→ SpeechSemanticPlan
+→ Character
+```
+
+## 5.3 Verifier activation
+
+Verifierも「LLMがあるから毎回必ず呼ぶ」としない。
+
+semantic risk / required assurance / path policyをtypedに定義する。
+
+- high-risk / complex semantics: verifier required
+- low-riskでclosed deterministic contractが同等保証できるpath: verifier省略を許可可能
+
+省略条件は明示Policyとして検証し、場当たり的にskipしない。
+
+---
+
+# 6. Preparation / Presentation分離
+
+```text
+┌──────────────────────────────────────────────────────┐
+│ Preparation domain                                   │
+│                                                      │
+│ Executive / Speech Semantics / Character / Verifier  │
+│ Performance / optional speculative TTS preparation   │
+│                                                      │
+│ → PreparedSpeechCandidate                            │
+└──────────────────────┬───────────────────────────────┘
+                       │ bounded candidate state
+                       ▼
+┌──────────────────────────────────────────────────────┐
+│ Presentation domain                                  │
+│                                                      │
+│ pre-present revalidation                             │
+│ → required acceptance gates                          │
+│ → TTS/audio readiness                                │
+│ → presentation commit                                │
+│ → text/audio playback + viseme                       │
+│ → SpeechPresentationResult                           │
+└──────────────────────────────────────────────────────┘
+```
+
+Presentation完了は次Preparation開始条件ではない。
+
+---
+
+# 7. Parallelism inside speech preparation
+
+論理依存を壊さない範囲で並行化する。
+
+## 7.1 Character完了後
+
+Verifierが必要な場合:
+
+```text
+CharacterUtterance
+├─ Semantic Verifier
+├─ Speech Performance preparation
+└─ speculative TTS preparation (policy permitting)
+```
+
+外部Presentation commitは必要なVerifier PASS前に行わない。
+
+Verifier FAIL時はspeculative audio等を破棄する。
+
+これによりVerifier latencyとTTS latencyを単純加算しない。
+
+## 7.2 Executive fan-out
+
+同一ExecutiveDecisionにSpeechIntentとBodyIntentがある場合:
+
+```text
+ExecutiveDecision
+├─ Speech preparation
+└─ Body planning
+```
+
+Character completionをBody planningの開始条件にしない。
+Body completionをCharacter generationの開始条件にしない。
+
+---
+
+# 8. Speech A再生中のSpeech B準備
+
+```text
+Speech A presenting
+while
+  new Event may arrive
+  Input Meaning may run
+  Appraisal may run
+  Executive may decide
+  Speech B semantics may be prepared
+  Character B may be generated
+  Verifier B may run
+  TTS B may be prepared speculatively
+```
+
+Aの再生時間がBのgeneration startへ直列加算されてはならない。
+
+ただし「Bを準備できる」と「Bを必ず喋る」は別。
+
+---
+
+# 9. PreparedSpeechCandidate
 
 ```text
 PreparedSpeechCandidate
 - candidate_id
-- source_command_id
-- source_event_id?
-- semantic_revision
-- context_revision
+- source_decision_id
+- source_event_ids[]
+- speech_plan_id
+- source_context_revision
 - created_at
 - priority
 - interruptibility
 - expiry_policy
+- required_preconditions[]
+- invalidation_keys[]
+- semantic_acceptance_state
 - CharacterUtterance
 - SpeechPerformancePlan
 - optional prepared_audio_ref
-- required_preconditions
-- invalidation_keys
 ```
 
-`context_revision`は、候補がどの状態を前提に生成されたかを識別するために使う。
-
-候補がqueueにあることは「発話が確定した」ことを意味しない。
+queueにあるだけではPresentation事実にならない。
 
 ---
 
-# 6. Speech Presentation Lifecycle
+# 10. Candidate lifecycle
 
 ```text
-prepared
+preparing
+→ prepared
 → queued
 → revalidating
 → ready_to_present
@@ -199,297 +328,289 @@ or
 → failed
 ```
 
-`prepared/queued`と`presenting/completed`を明確に分離する。
-
-Characterが「今言った」「今話している」等のexecution claimを行う場合はPresentation lifecycleの事実に従う。
+Semantic verifier lifecycleとPresentation lifecycleを混同しない。
 
 ---
 
-# 7. Pre-play Revalidation
+# 11. Pre-presentation revalidation
 
-先行生成の最大の危険は、生成後に状況が変わっても古い発話をそのまま流してしまうことである。
+commit直前に最低限確認する。
 
-そのためPresentation commit直前に最低限次を再検証する。
-
-- candidate semantic revisionが現行会話文脈と互換か
+- source_context_revision
 - turn ownership
-- 新しいユーザー入力の有無
-- stronger-priority Eventの有無
-- current Emotion/Motivationの重大な変化
-- selected topicの有効性
-- capability / execution factsの変化
+- new user input
+- stronger-priority event
+- current goal / commitment
+- topic / discourse validity
+- major state change
+- capability / execution facts
 - candidate preconditions
-- candidate expiry
-- cancellation / supersede flag
+- expiry
+- cancellation / supersede
 
-再検証で不整合なら、候補は`stale / superseded / cancelled`として再生しない。
+古い候補は再生しない。
+
+意味再判断が必要なら、新しいAppraisal / Executive / Speech preparationへ戻す。
 
 ---
 
-# 8. ユーザー入力との競合
+# 12. User interruption
 
-## 8.1 未再生自律候補
+## 12.1 Queued autonomous candidate
 
-ユーザー入力が到着した場合、queue中の自律候補は原則として再評価対象とする。
-
-通常は次のいずれかになる。
+user input arrival時に原則再評価する。
 
 ```text
 queued autonomous candidate
 + user input
-→ cancel
-or
-→ supersede
-or
-→ preserve only if still contextually valid and Commander explicitly re-commits
+→ cancel / supersede / revalidate
 ```
 
-## 8.2 現在再生中Speech
+機械的にqueueを消化しない。
 
-現在再生中Speechは、内容・優先度・interruptibilityにより次を判断する。
+## 12.2 Currently presenting speech
+
+interruptibility / priority / turn stateに従い:
 
 - continue
 - soft finish
-- interrupt/cancel
+- interrupt
 
-この判断はTTS AdapterではなくCommander/Turn Management側のauthorityに従う。
-
----
-
-# 9. 自律発話での先行生成
-
-自律発話では、Speech Aを再生中にSpeech Bを準備できる。
-
-ただし次を禁止する。
-
-```text
-自律開始
-→ 未来3発話をまとめて固定生成
-→ queue順に必ず全部再生
-```
-
-これは会話状態変化を無視するため採用しない。
-
-正規形:
-
-```text
-Speech A presenting
-→ current state / motivation / turn factsを継続評価
-→ Commanderが次候補準備を許可
-→ Speech B prepared
-→ A presenting中もEvent処理継続
-→ A完了付近/必要時にBをrevalidate
-→ 最新状態でcommitできる場合のみBをpresent
-```
-
-「次発話を先に生成する」と「次発話を必ず行う」は別である。
+TTS Adapter自身が意味判断しない。
 
 ---
 
-# 10. 発話間隔の扱い
+# 13. TTS policy
 
-発話間隔を固定sleep値で作らない。
+TTS準備タイミングはpolicy化する。
 
-間隔は少なくとも以下の結果として決まる。
+- commit直前までTTSしない
+- high-confidence candidateだけ先行TTS
+- verifierと並行してspeculative TTS
 
-- current turn ownership
-- discourse completion
-- user response expectation
-- Motivation / talkativeness
-- interruption sensitivity
-- current activity
-- prepared candidate readiness
-- Character/Speech performance上の自然なpause
+考慮:
 
-ただし**生成待ち時間を会話上の沈黙時間へそのまま加算しない**。
+- provider latency
+- cost
+- rate limits
+- candidate invalidation率
+- privacy / cache policy
 
-つまり、候補が必要になる前から準備できる場合は準備し、LLM latencyを発話間隔からできるだけ隠蔽する。
+TTS policyがSpeech意味を変更してはならない。
 
 ---
 
-# 11. TTSとBody同期
+# 14. Body / viseme
 
-Presentation Laneで実際にcommitされたSpeechだけがBody speech/visemeへ渡る。
+実際にcommitされたSpeechだけをspeech/viseme realtime layerへ渡す。
 
 ```text
 Committed Speech
-+ actual audio start time
-+ pronunciation/viseme timeline
++ actual audio start
++ pronunciation / viseme timeline
 → Body Realtime Layer
 ```
 
-queue中の未commit候補で口を動かさない。
+未commit候補で口を動かさない。
 
-TTS準備中・audio playback中であってもBody full-motion controllerおよびBrain Decision Laneは継続する。
+Body full-motion / gaze / blink / breathingはTTS / verifier / playback待ちで停止しない。
 
 ---
 
-# 12. Queue policy
+# 15. Queue / backpressure
 
-queueはboundedとする。
+future speechを無制限生成しない。
 
-初期設計では原則として、
+初期基準:
 
 - presenting: 最大1
-- immediately prepared next candidate: 少数（通常1を基準）
+- immediately prepared next: 通常1程度
 - unlimited future candidates: 禁止
 
-とする。
+queue pressure時:
 
-実際の上限値は性能検証で調整可能だが、queue sizeそのものをキャラクター性や会話ロジックにしない。
+- low priority candidate discard / supersede
+- duplicate intent coalesce
+- stale candidate drop
+- new LLM call suppression
 
-backpressure時は低優先度・古い候補を破棄/再評価し、無制限LLM callを行わない。
-
----
-
-# 13. Concurrency / Runtime要件
-
-Runtime Kernelは少なくとも次を独立Task/worker境界として扱える必要がある。
-
-- Event/Appraisal/Commander processing
-- Character/Speech preparation
-- TTS preparation
-- Speech presentation/playback
-- Body realtime frame production
-
-一つのTaskが長時間awaitしても他レーンを停止しない。
-
-Cancellationはcandidate_id / command_id / presentation_idで伝播できるようにする。
-
-shutdown時は新規候補生成を停止し、queue中候補をcancelし、presentationをpolicyに従い停止/終了し、全Taskをawaitする。
+foreground user responseをbackground autonomous speech候補でstarveしない。
 
 ---
 
-# 14. Observability
+# 16. Latency model
 
-性能・因果確認のため、本文を過剰保存せず以下の時刻をtraceする。
+`logical responsibility latency`と`critical path latency`を分けて観測する。
+
+直列加算を最小化する。
 
 ```text
-command_decision_started_at
-command_decision_completed_at
-character_generation_started_at
-character_generation_completed_at
-semantic_validation_completed_at
-speech_performance_completed_at
-candidate_queued_at
-preplay_revalidation_at
-tts_prepare_started_at
-tts_prepare_completed_at
-presentation_started_at
-presentation_completed_at
-candidate_cancelled_at / superseded_at / stale_at
+critical_path
+!= meaning_latency
+ + appraisal_latency
+ + executive_latency
+ + semantic_latency
+ + character_latency
+ + verifier_latency
+ + tts_latency
+ + playback_duration
 ```
 
-重要指標:
+必要な依存だけcritical pathに載せ、その他は並行 / deferred / speculative / optionalとする。
+
+---
+
+# 17. Observability
+
+最低時刻:
 
 ```text
-next_generation_start_offset
-  = next_character_generation_started_at
-    - previous_presentation_started_at
-
-presentation_gap
-  = next_presentation_started_at
-    - previous_presentation_completed_at
+event_received_at
+executive_started_at / completed_at
+speech_semantics_queued_at / started_at / completed_at
+character_queued_at / started_at / completed_at
+verifier_queued_at / started_at / completed_at
+performance_started_at / completed_at
+tts_prepare_started_at / completed_at
+candidate_prepared_at
+candidate_revalidated_at
+presentation_started_at / completed_at
+candidate_cancelled_at / stale_at / superseded_at
 ```
 
-`next_generation_start_offset`が前Speechのdurationに比例して増える構造をFAILとする。
+各Role:
+
+- queue wait
+- provider latency
+- source_context_revision
+- priority
+- cancellation / stale outcome
+
+指標:
+
+```text
+user_input_to_first_preparation
+user_input_to_presentation
+previous_playback_to_next_generation_start
+speech_role_critical_path
+speculative_work_discard_rate
+p50 / p95 / p99
+```
 
 ---
 
-# 15. Unit Acceptance
+# 18. Unit Acceptance
 
-最低限、fake clock / fake LLM / fake TTSで次を確認する。
+fake clock / fake LLM / fake TTSで最低限:
 
-1. Speech A playbackが5秒でも、その再生中にSpeech B Character生成が開始・完了する。
-2. Speech A playbackを20秒へ延ばしてもSpeech B生成開始が20秒後へ押し出されない。
-3. TTS preparationが遅くてもAppraisal/Commanderが処理を継続する。
-4. Speech A再生中にユーザー入力が来るとqueued autonomous Bをcancel/supersedeできる。
-5. B生成後にtopic/context revisionが変化した場合Bをstaleとして再生しない。
-6. queue upper boundを越えてLLM生成を増殖させない。
-7. playback failure後もDecision Laneが継続する。
-8. Body/viseme同期処理がDecision Laneをblockしない。
-9. cancellation時にpending taskを残さない。
-10. generation traceとpresentation traceを別々に観測できる。
+1. A playback 5s中にB generation開始・完了可能。
+2. A playback 20sでもB generation startが20s後へ押し出されない。
+3. simple speechで専用Speech Semantics LLMを省略できる。
+4. complex speechでSpeech Semantics LLMを利用できる。
+5. required Verifierが遅くてもSpeech Performance / policy許可されたTTS prepを並行可能。
+6. Verifier FAIL時にspeculative audioをPresentationしない。
+7. slow TTS中もnew Event / Executive workが進む。
+8. user inputでqueued autonomous candidateをcancel / supersede可能。
+9. context revision changeでcandidateをstale扱いできる。
+10. queue upper boundを越えたLLM生成増殖がない。
+11. Body/viseme処理がBrain preparationをblockしない。
+12. cancellation時pending taskなし。
+13. CharacterとBody planningを兄弟として並列開始可能。
+14. background autonomous preparationがforeground user responseをstarveしない。
 
 ---
 
-# 16. Adjacent Contract Acceptance
+# 19. Adjacent Contract Acceptance
 
-## Commander ↔ Speech Pipeline
+## Executive ↔ Speech Semantics
 
-- prepareとpresentation commitの意味を混同しない。
-- stale候補のcommitを拒否できる。
+- SpeechIntentとSpeechSemanticPlanを混同しない。
+- simple path / complex pathをtyped policyで選択可能。
 
-## Character ↔ Speech Pipeline
+## Speech Semantics ↔ Character
 
-- Characterはqueue/presentation lifecycleを意味決定に使わない。
-- candidate revisionを保持する。
+- What to say / How to say itが分離。
+- Characterがsemantic authorityを奪わない。
 
-## Speech Performance ↔ TTS
+## Character ↔ Verifier
 
-- performance計画とaudio generationを分離する。
-- provider latencyでCharacter generationをblockしない。
+- VerifierはObserver。
+- free-form verdictを最終authorityにしない。
+
+## Verifier ↔ Presentation
+
+- required gate PASS前にexternal commitしない。
+- safe speculative preparationは可能。
 
 ## Speech Pipeline ↔ Body
 
-- commitされたspeechだけがviseme/speech realtime layerを開始する。
+- commit Speechだけviseme対象。
+- Body realtimeはSpeech preparation待ちにしない。
 
-## Speech Pipeline ↔ Autonomy / Turn
+## Speech Pipeline ↔ Turn / Autonomy
 
-- 自律候補の準備中/queue中/再生中をtyped factsとして参照できる。
-- user turn acquisitionで候補を再評価できる。
+- preparing / prepared / queued / presenting / completed / staleをtyped factとして参照可能。
 
 ---
 
-# 17. Integration Verification
+# 20. Integration Verification
 
-実LLM + 実TTSでは、発話内容の主観評価だけでなく時間軸を必ず確認する。
+実LLM + 実TTSで時間軸を必ず確認する。
 
-例:
+PASS例:
 
 ```text
-Speech A presentation started  10:00:00.000
-Speech B character gen started 10:00:01.200
-Speech B character gen done    10:00:04.000
-Speech A presentation ended    10:00:08.000
+Speech A presentation start    10:00:00.000
+Speech B semantics start       10:00:00.700
+Speech B character start       10:00:02.000
+Speech B verifier start        10:00:03.600
+Speech B TTS prep start        10:00:03.650
+Speech A presentation end      10:00:08.000
 Speech B revalidated           10:00:08.050
-Speech B presentation started  10:00:08.300
+Speech B presentation start    10:00:08.300
 ```
 
-この場合、Speech B生成はA再生中に進んでいるため構造上PASS。
-
-以下はFAIL:
+FAIL例:
 
 ```text
-Speech A presentation ended    10:00:08.000
-Speech B character gen started 10:00:08.010
-Speech B character gen done    10:00:12.000
-Speech B presentation started  10:00:12.200
+Speech A presentation end      10:00:08.000
+Speech B semantics start       10:00:08.010
+Speech B character start       10:00:10.000
+Speech B verifier start        10:00:12.000
+Speech B TTS start             10:00:14.000
+Speech B presentation start    10:00:17.000
 ```
 
-Aの再生完了までB生成開始を待っているため、たとえ最終的に動作してもV2要求を満たさない。
+前Speech完了後に全LLMを順番に開始しているためFAIL。
 
 ---
 
-# 18. 非目標
+# 21. 非目標
 
-- 必ず休みなく喋り続けること
-- 発話間隔を0秒へ固定すること
-- 未来の会話を大量に事前生成すること
-- ユーザー入力を無視してqueueを消化すること
-- LLM latencyを隠すための固定フィラー台詞生成
-- TTS audioを無制限にキャッシュすること
-- Presentation順序をCharacter LLMへ判断させること
+- 必ず休みなく喋る
+- 発話間隔0秒固定
+- future speech大量先読み
+- user input無視のqueue消化
+- latency隠蔽用固定フィラー
+- verifierをなくすこと自体を目標化
+- LLM call数を増やすこと自体を目標化
+- TTS audio無制限cache
+- Presentation順序をCharacter LLMへ判断させる
 
-目標は**「話すべきかどうかの自然な判断」と「生成計算上の不要な待ち」を分離すること**である。
+目標は、**責務の明確さを保ったまま、必要なLLM latencyだけをcritical pathへ載せること**である。
 
 ---
 
-# 19. V2 Design Gateへの追加条件
+# 22. V2 Design Gate条件
 
-- [ ] #348がV2 Brain hierarchyに含まれる
-- [ ] Runtime KernelがDecision/Preparation/Presentationの独立進行を支援できるContractになっている
-- [ ] Autonomy / Turnがprepared/queued/presentingを区別する
-- [ ] Brain Integrationにplayback中next-generation testが含まれる
-- [ ] 実LLM/TTS Verificationでtime traceを確認する
-- [ ] playback durationがnext generation startを構造的にblockしないことをユーザー確認前に自動テストで証明する
+- [ ] #362 Speech SemanticsがBrain hierarchyに含まれる
+- [ ] #330 Character LanguageとWhat-to-say authorityが分離
+- [ ] #363 VerifierがObserverとして定義される
+- [ ] #348がPreparation / Presentationを非block化
+- [ ] Runtime Kernel #322がRole別Task / priority / cancellationを支援
+- [ ] simple / complex speech pathが設計される
+- [ ] required Verifierとsafe speculative prepを並列化可能
+- [ ] playback中next-generation testがある
+- [ ] Role latency / queue wait / p95/p99を観測できる
+- [ ] playback durationがnext generation startをblockしない
+- [ ] LLM Role数やIssue数が固定直列API call数へ変換されていない
