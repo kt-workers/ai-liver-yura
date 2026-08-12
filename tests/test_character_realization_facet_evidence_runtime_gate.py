@@ -99,10 +99,7 @@ def _payload(
     predicate: str,
     *,
     predicate_spans: list[str] | None = None,
-    certainty_spans: list[str] | None = None,
     concept_spans: list[str] | None = None,
-    intensity_spans: list[str] | None = None,
-    surface_markers: list[str] | None = None,
     observer_state: str | None = "absent",
     observer_certainty: str = "high",
     observer_predicate_spans: list[str] | None = None,
@@ -110,7 +107,6 @@ def _payload(
     observer_certainty_spans: list[str] | None = None,
 ) -> dict[str, object]:
     comparison_predicate_spans = predicate_spans or []
-    comparison_intensity_spans = intensity_spans or []
     observation_predicate_spans = (
         observer_predicate_spans
         if observer_predicate_spans is not None
@@ -119,7 +115,7 @@ def _payload(
     observation_state_spans = (
         observer_state_spans
         if observer_state_spans is not None
-        else comparison_intensity_spans or observation_predicate_spans
+        else observation_predicate_spans
     )
     return {
         "_observer_observations": [
@@ -134,33 +130,24 @@ def _payload(
             }
         ],
         "accepted": True,
-        "reason": "semantic_realization_consistent",
+        "reason": "post_observation_semantic_contract_consistent",
         "differences": [],
         "semantic_checks": {
-            "required_facets_preserved": True,
-            "predicate_preserved": True,
-            "state_preserved": True,
-            "certainty_preserved": True,
-            "concept_preserved": True,
-            "unsupported_intensity_added": False,
+            "required_content_preserved": True,
+            "forbidden_additions_absent": True,
+            "unsupported_new_fact_absent": True,
+            "existence_boundary_preserved": True,
+            "budget_preserved": True,
         },
         "realized_proposition_checks": [
             {
                 "realization_id": f"proposition:0:{predicate}",
                 "predicate_preserved": True,
                 "predicate_evidence_spans": comparison_predicate_spans,
-                "state_preserved": True,
-                "state_fidelity": "exact",
-                "certainty_preserved": True,
-                "certainty_evidence_spans": certainty_spans or [],
                 "concept_preserved": True,
                 "concept_evidence_spans": concept_spans or [],
-                "intensity_semantics_preserved": True,
-                "presence_only_counterfactual_equivalent": False,
-                "intensity_evidence_spans": comparison_intensity_spans,
             }
         ],
-        "surface_evidence": {"intensity_markers": surface_markers or []},
     }
 
 
@@ -180,7 +167,7 @@ def _source() -> Activity:
 
 
 @pytest.mark.asyncio
-async def test_accepted_payload_missing_facet_evidence_field_fails_closed() -> None:
+async def test_accepted_payload_missing_post_observation_evidence_field_fails_closed() -> None:
     payload = _payload(
         "joy",
         predicate_spans=["楽しい気持ち"],
@@ -200,7 +187,7 @@ async def test_accepted_payload_missing_facet_evidence_field_fails_closed() -> N
 
 
 @pytest.mark.asyncio
-async def test_predicate_evidence_must_exist_in_speech() -> None:
+async def test_post_observation_predicate_evidence_must_exist_in_speech() -> None:
     result = await _validator(
         _payload(
             "joy",
@@ -222,14 +209,15 @@ async def test_predicate_evidence_must_exist_in_speech() -> None:
 
 
 @pytest.mark.asyncio
-async def test_medium_certainty_requires_comparator_speech_evidence() -> None:
+async def test_medium_certainty_requires_observer_speech_evidence() -> None:
     result = await _validator(
         _payload(
             "current_desire",
             predicate_spans=["したい気持ちはある"],
             observer_state="present",
             observer_certainty="medium",
-            observer_certainty_spans=["たぶん"],
+            observer_state_spans=["したい気持ちはある"],
+            observer_certainty_spans=[],
         )
     ).validate(
         _source(),
@@ -243,20 +231,20 @@ async def test_medium_certainty_requires_comparator_speech_evidence() -> None:
 
     assert result.accepted is False
     assert (
-        "proposition:0:current_desire:certainty_evidence_missing"
+        "proposition:0:current_desire:observer_certainty_evidence_missing"
         in result.claim_differences
     )
 
 
 @pytest.mark.asyncio
-async def test_non_null_concept_requires_speech_evidence() -> None:
+async def test_non_null_concept_requires_post_observation_speech_evidence() -> None:
     result = await _validator(
         _payload(
             "current_desire",
             predicate_spans=["知りたい気持ちはある"],
-            certainty_spans=["たぶん"],
             observer_state="present",
             observer_certainty="medium",
+            observer_state_spans=["知りたい気持ちはある"],
             observer_certainty_spans=["たぶん"],
         )
     ).validate(
@@ -301,8 +289,8 @@ async def test_e8_bare_presence_is_rejected_by_independent_observation() -> None
         _payload(
             "energy",
             predicate_spans=["元気はある"],
-            intensity_spans=["元気はある"],
             observer_state="present",
+            observer_state_spans=["元気はある"],
         )
     ).validate(
         _source(),
@@ -324,9 +312,8 @@ async def test_unlisted_paraphrase_can_preserve_low_without_runtime_dictionary()
         _payload(
             "energy",
             predicate_spans=["元気はそれなりに残ってる"],
-            intensity_spans=["それなりに"],
-            surface_markers=["それなりに"],
             observer_state="low",
+            observer_state_spans=["それなりに残ってる"],
         )
     ).validate(
         _source(),
@@ -335,7 +322,7 @@ async def test_unlisted_paraphrase_can_preserve_low_without_runtime_dictionary()
     )
 
     assert result.accepted is True
-    assert result.reason == "semantic_realization_consistent"
+    assert result.reason == "post_observation_semantic_contract_consistent"
 
 
 @pytest.mark.asyncio
@@ -344,9 +331,8 @@ async def test_degree_suffix_can_be_observed_semantically_without_runtime_dictio
         _payload(
             "energy",
             predicate_spans=["元気は低め"],
-            intensity_spans=["低め"],
-            surface_markers=["低め"],
             observer_state="low",
+            observer_state_spans=["低め"],
         )
     ).validate(
         _source(),
@@ -363,8 +349,8 @@ async def test_observer_missing_typed_state_fails_closed() -> None:
         _payload(
             "energy",
             predicate_spans=["元気は控えめ"],
-            intensity_spans=["控えめ"],
             observer_state=None,
+            observer_state_spans=["控えめ"],
         )
     ).validate(
         _source(),
@@ -377,23 +363,23 @@ async def test_observer_missing_typed_state_fails_closed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_surface_intensity_marker_must_exist_in_speech() -> None:
+async def test_observer_state_evidence_must_exist_in_speech() -> None:
     result = await _validator(
         _payload(
             "energy",
-            predicate_spans=["元気は少しある"],
-            intensity_spans=["少し"],
-            surface_markers=["かなり"],
+            predicate_spans=["元気"],
             observer_state="low",
+            observer_predicate_spans=["元気"],
+            observer_state_spans=["存在しない強度表現"],
         )
     ).validate(
         _source(),
         _context(predicate="energy", state="low"),
-        _response("energy", "元気は少しあるよ。"),
+        _response("energy", "元気は控えめだよ。"),
     )
 
     assert result.accepted is False
     assert (
-        "surface_intensity_marker_not_in_speech:かなり"
+        "proposition:0:energy:observer_state_evidence_not_in_speech:存在しない強度表現"
         in result.claim_differences
     )
