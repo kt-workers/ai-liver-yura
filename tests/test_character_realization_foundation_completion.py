@@ -129,33 +129,24 @@ class _ValidationModel:
         return json.dumps(
             {
                 "accepted": True,
-                "reason": "semantic_realization_consistent",
+                "reason": "post_observation_semantic_contract_consistent",
                 "differences": [],
                 "semantic_checks": {
-                    "required_facets_preserved": True,
-                    "predicate_preserved": True,
-                    "state_preserved": True,
-                    "certainty_preserved": True,
-                    "concept_preserved": True,
-                    "unsupported_intensity_added": False,
+                    "required_content_preserved": True,
+                    "forbidden_additions_absent": True,
+                    "unsupported_new_fact_absent": True,
+                    "existence_boundary_preserved": True,
+                    "budget_preserved": True,
                 },
                 "realized_proposition_checks": [
                     {
                         "realization_id": "proposition:0:energy",
                         "predicate_preserved": True,
                         "predicate_evidence_spans": ["元気"],
-                        "state_preserved": True,
-                        "state_fidelity": "exact",
-                        "certainty_preserved": True,
-                        "certainty_evidence_spans": [],
                         "concept_preserved": True,
                         "concept_evidence_spans": [],
-                        "intensity_semantics_preserved": True,
-                        "presence_only_counterfactual_equivalent": False,
-                        "intensity_evidence_spans": [self.state_span],
                     }
                 ],
-                "surface_evidence": {"intensity_markers": [self.state_span]},
             },
             ensure_ascii=False,
         )
@@ -207,7 +198,7 @@ async def test_character_profile_surface_variation_preserves_same_semantic_plan(
 
     assert response.speech == speech
     assert validation.accepted is True
-    assert validation.reason == "semantic_realization_consistent"
+    assert validation.reason == "post_observation_semantic_contract_consistent"
     prompt = str(character_model.activities[0].context["plugin_prompt_override"])
     assert profile.speaking_style in prompt
     assert '"predicate": "energy"' in prompt
