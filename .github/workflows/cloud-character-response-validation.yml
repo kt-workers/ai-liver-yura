@@ -19,6 +19,7 @@ on:
       - "tests/test_character_language_realizer.py"
       - "tests/test_character_language_realizer_required_facets.py"
       - "tests/test_character_realization_observer_contract.py"
+      - "tests/test_character_realization_observer_schema_retry.py"
       - "tests/test_character_realization_foundation_completion.py"
       - "tests/test_character_realization_validator_facet_evidence_prompt.py"
       - "tests/test_character_realization_facet_evidence_runtime_gate.py"
@@ -47,6 +48,7 @@ on:
       - "app/runtime/semantic_utterance_validator.py"
       - "app/runtime/semantic_validated_response_context.py"
       - "app/runtime/character_realization_validator.py"
+      - "app/runtime/character_realization_validator_schema_retry.py"
       - "app/adapters/prompt/**"
       - ".github/workflows/cloud-character-response-validation.yml"
   workflow_dispatch:
@@ -90,6 +92,7 @@ jobs:
           python -m py_compile cloud_validation/character_semantic_contract_completion_lab.py
           python -m py_compile cloud_validation/character_semantic_response_lab_ui.py
           python -m py_compile cloud_validation/character_semantic_extended_batch.py
+          python -m py_compile app/runtime/character_realization_validator_schema_retry.py
 
       - name: Run focused tests
         env:
@@ -101,6 +104,7 @@ jobs:
             tests/test_character_language_realizer.py \
             tests/test_character_language_realizer_required_facets.py \
             tests/test_character_realization_observer_contract.py \
+            tests/test_character_realization_observer_schema_retry.py \
             tests/test_character_realization_foundation_completion.py \
             tests/test_character_realization_validator_facet_evidence_prompt.py \
             tests/test_character_realization_facet_evidence_runtime_gate.py \
