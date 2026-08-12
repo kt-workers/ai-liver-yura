@@ -80,10 +80,10 @@ class _ValidatorModel:
                             "realization_id": "proposition:0:current_desire",
                             "predicate_realized": False,
                             "observed_state": "present",
-                            "observed_certainty": "high",
+                            "observed_certainty": "medium",
                             "predicate_evidence_spans": [],
                             "state_evidence_spans": ["感じはある"],
-                            "certainty_evidence_spans": [],
+                            "certainty_evidence_spans": ["感じ"],
                         }
                     ]
                 },
