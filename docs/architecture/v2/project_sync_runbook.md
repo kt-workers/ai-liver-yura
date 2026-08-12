@@ -15,7 +15,7 @@ Manifest: `docs/architecture/v2/project_sync_manifest.md`
 - mutation前に必ずlive取得
 - existing itemをduplicate追加しない
 - existing Parent/Sub-issueを理由不明で上書きしない
-- dry-run→必要Option bootstrap→再dry-run→mutation→re-auditの順
+- dry-run A → 必要Option bootstrap → dry-run B → mutation → re-audit
 - canonical Manifestをlive状態へ都合よく書き換えない
 
 ## 2. 前提
@@ -74,50 +74,74 @@ liveから解決する:
 - Target date
 
 既存fieldを削除・再作成しない。
-
-不足field自体がある場合は、そのfieldの安全な追加方法を確認してから追加する。既存同名fieldが複数ならSTOP。
+同名fieldが複数ならSTOP。
 
 ## 6. `領域` Option bootstrap
 
-Manifest §4の32個をcanonical exact option namesとする。
+Manifest §4がcanonical taxonomy。
 
-旧Area Optionは削除・renameしない。
+### 6.1 既存Option
 
-### 6.1 初回dry-run
+live Projectに既に存在する以下はそのまま利用する。
 
-live `領域` optionsとManifest §4を比較し、missing canonical optionsだけを列挙する。
+- Core
+- 入力意味解析
+- 内部指示器
+- 感情・欲望・善悪
+- Body
+- Avatar／Live2D
+- GUI
+- Memory
+- Infrastructure
 
-### 6.2 非破壊追加
+### 6.2 V2追加Option
 
-GitHub UIまたはProjects v2 GraphQLで、**missing canonical optionsのみ**existing `領域` single-select fieldへ追加する。
+不足する場合のみ次の8個を追加する。
+
+- Management
+- Character
+- Plugin
+- Subsystem
+- Streaming
+- Game
+- Validation
+- System Integration
+
+旧Optionは削除・renameしない。
+
+### 6.3 安全なsingle-select field update
+
+GitHub Projects v2 GraphQLの`updateProjectV2Field`でsingle-select optionsを更新する場合、提供したoption listは既存optionを上書きする扱いになるため、**現在存在する全Optionをlive取得して保持したまま、新しい8 Optionのうち不足分だけを末尾追加する**。
+
+既存Optionは`ProjectV2SingleSelectFieldOptionInput.id`へ現在のoption IDを必ず含め、identityを保持する。
+
+つまり:
+
+```text
+updated options
+= all current options with their current IDs
++ only missing canonical V2 options without IDs
+```
+
+既存Optionのname/color/descriptionもlive値を保持する。
 
 禁止:
 - field削除/recreate
-- existing option rename
-- existing option delete
+- existing option IDを省略して作り直す
+- existing option rename/delete
+- existing option color/descriptionを理由なく変更
 - canonicalにないOptionを推測追加
 
-GraphQLを使う場合、mutation直前にfield ID/project IDをlive解決する。
+mutation後、field-list/GraphQLで全旧OptionのIDが維持され、新Optionだけ増えたことを確認する。
 
-GitHub API/CLI制約でsingle-select optionを安全に追加できない場合はSTOPし、UI操作が必要なOption一覧を返す。
-
-### 6.3 再取得
-
-Option追加後:
-
-```bash
-gh project field-list "$PROJECT" --owner "$OWNER" --format json -L 100 > "$TMP/fields.after-option-bootstrap.json"
-```
-
-32 canonical optionsがexact matchで存在することを確認する。
+安全なGraphQL mutationを組み立てられない場合はOption bootstrap前にSTOPする。
 
 ## 7. `作業種別`
 
 Manifest §3/§6がcanonical。
-
 Codexが推測してはならない。
 
-Manifestに全50 Issueの一意値が明示されているため、その値をそのまま利用する。
+Manifestに全50 Issueの一意値が明示されている。
 
 利用値:
 - 設計
@@ -130,9 +154,9 @@ Manifestに全50 Issueの一意値が明示されているため、その値を�
 
 ## 8. Project item一意登録
 
-Manifest対象50 Issueについて`content.number`で確認する。
+Manifest対象50 Issueについて`content.number`で確認。
 
-- exactly one: 何もしない
+- exactly one: no-op
 - zero: item-add
 - two以上: STOP
 
@@ -141,7 +165,42 @@ gh project item-add "$PROJECT" --owner "$OWNER" \
   --url "https://github.com/$REPO/issues/$ISSUE" --format json
 ```
 
-## 9. Field mutation
+## 9. Dry-run A
+
+全50 Issueについて:
+
+```text
+Issue
+current/desired project presence
+current/desired Status
+current/desired 作業種別
+current/desired 領域
+current/desired 優先度
+current/desired 工程
+current/desired Start
+current/desired Target
+current/desired parent
+```
+
+さらに:
+- duplicate items
+- same-name fields
+- missing work-type/status/priority options
+- missing V2 Area options
+- schedule conflicts
+- current different parents
+
+を列挙する。
+
+## 10. Option bootstrap → Dry-run B
+
+Dry-run Aで不足AreaがManifest §6.2の8 canonical optionだけなら§6.3で非破壊追加してよい。
+
+その後すべてlive再取得し、Dry-run Bを実行する。
+
+**Dry-run BでSTOP条件0の場合のみ**field/formal hierarchy mutationへ進む。
+
+## 11. Field mutation
 
 mutation直前に毎回live JSONから:
 - PROJECT_ID
@@ -172,7 +231,7 @@ gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" \
   --field-id "$FIELD_ID" --single-select-option-id "$OPTION_ID"
 ```
 
-Manifest §6のStatus / 作業種別 / 領域 / 優先度 / 工程 / Start / Targetを完全同期する。
+Manifest §6のStatus / 作業種別 / 領域 / 優先度 / 工程 / Start / Targetを同期する。
 
 Design Gate中:
 - #317 = In progress
@@ -180,7 +239,7 @@ Design Gate中:
 - #319 = Blocked
 - その他47 = Blocked
 
-## 10. Formal Parent/Sub-issue
+## 12. Formal Parent/Sub-issue
 
 current parentを先に確認:
 
@@ -219,15 +278,15 @@ Desired pairs:
 
 49 links。
 
-## 11. STOP conditions
+## 13. STOP conditions
 
-次が1つでもあれば、該当phase以降のmutationをSTOPする。
+次が1つでもあれば該当phase以降のmutationをSTOPする。
 
 - duplicate Project item
 - duplicate same-name field
-- canonical 32 Area option bootstrapが安全に実行できない
-- bootstrap後もcanonical option不存在
-- Manifestに必要なWork Type/Status/Priority option不存在
+- Area bootstrapが既存option identityを保って安全に実行できない
+- bootstrap後もcanonical Area option不存在
+- Manifestに必要な作業種別/Status/Priority option不存在
 - Issue本文Start/TargetとManifest矛盾
 - #317 Design Gate policyとStatus矛盾
 - unexplained existing different parent
@@ -235,38 +294,7 @@ Desired pairs:
 - canonical remote contentsと本runbook/manifest矛盾
 - active implementation lineage conflict
 
-Option不足は、Manifestでcanonical exact nameが確定済みの`領域`に限り、§6の非破壊bootstrapを先に試してよい。
-
-## 12. Dry-run sequence
-
-### Dry-run A
-
-mutation前に全50 Issueについて:
-
-```text
-Issue
-current/desired project presence
-current/desired Status
-current/desired 作業種別
-current/desired 領域
-current/desired 優先度
-current/desired 工程
-current/desired Start
-current/desired Target
-current/desired parent
-```
-
-### Option bootstrap
-
-必要なら`領域`missing canonical optionsだけ追加。
-
-### Dry-run B
-
-全field/option/item/parentを再取得し、STOP条件が0であることを確認。
-
-**Dry-run B PASS後のみProject field / Parent mutationへ進む。**
-
-## 13. Re-audit
+## 14. Re-audit
 
 ```bash
 gh project field-list "$PROJECT" --owner "$OWNER" --format json -L 100 > "$TMP/fields.after.json"
@@ -289,9 +317,14 @@ gh project item-list "$PROJECT" --owner "$OWNER" --format json -L 500 > "$TMP/it
 特別確認:
 - #366 parent #325 / 工程235
 - #361 工程240
-- #333 `Core / Brain / Attention & Autonomy` / 工程330
+- #333 Area `Core` / 工程330
 
-## 14. #319 Sync Checkpoint
+Area Option bootstrapについて:
+- old option IDs unchanged
+- only missing V2 canonical options added
+- no old option deleted/renamed
+
+## 15. #319 Sync Checkpoint
 
 完全PASSした場合のみ#319へコメント。
 
@@ -311,7 +344,7 @@ gh project item-list "$PROJECT" --owner "$OWNER" --format json -L 500 > "$TMP/it
 
 PARTIAL/STOPならPASSコメントを残さない。
 
-## 15. 禁止
+## 16. 禁止
 
 - product code変更
 - implementation branch/PR
@@ -323,7 +356,7 @@ PARTIAL/STOPならPASSコメントを残さない。
 - Design Gate解除
 - #317/#318以外をIn progressへ変更（#319はBlocked）
 
-## 16. 現ChatGPT環境
+## 17. 現ChatGPT環境
 
 Projects v2 field mutation / formal Sub-issue mutationはローカル認証済み`gh`/Codexで実行する。
 
