@@ -16,6 +16,9 @@ from app.utils.async_blocking import run_cancellable_blocking
 from app.utils.llm_trace import build_llm_trace_context
 
 
+_ALLOWED_REASONING_EFFORT = frozenset({"none", "low", "medium", "high", "xhigh"})
+
+
 class OpenAIStructuredResponseGenerator(OpenAIResponseGenerator):
     """既存text Adapterを壊さずschema-critical roleだけStructured Outputsへ接続する。"""
 
@@ -28,8 +31,13 @@ class OpenAIStructuredResponseGenerator(OpenAIResponseGenerator):
             character_profile=self._character_profile,
             activity=activity,
         )
+        reasoning_effort = self._reasoning_effort(activity)
         trace_context = build_llm_trace_context(activity)
-        request_input = self._structured_request_payload(prompt, contract)
+        request_input = self._structured_request_payload(
+            prompt,
+            contract,
+            reasoning_effort=reasoning_effort,
+        )
         self._trace_logger.llm_request(
             purpose=trace_context.purpose,
             provider="openai",
@@ -53,6 +61,7 @@ class OpenAIStructuredResponseGenerator(OpenAIResponseGenerator):
             self._generate_structured_sync,
             prompt,
             contract,
+            reasoning_effort,
         )
         self._trace_logger.llm_response(
             purpose=trace_context.purpose,
@@ -76,6 +85,8 @@ class OpenAIStructuredResponseGenerator(OpenAIResponseGenerator):
         self,
         prompt: str,
         contract: StructuredOutputContract,
+        *,
+        reasoning_effort: str | None = None,
     ) -> dict[str, object]:
         payload: dict[str, object] = {
             "model": self._model,
@@ -89,6 +100,8 @@ class OpenAIStructuredResponseGenerator(OpenAIResponseGenerator):
                 }
             },
         }
+        if reasoning_effort is not None:
+            payload["reasoning"] = {"effort": reasoning_effort}
         if self._temperature is not None:
             payload["temperature"] = self._temperature
         return payload
@@ -97,6 +110,7 @@ class OpenAIStructuredResponseGenerator(OpenAIResponseGenerator):
         self,
         prompt: str,
         contract: StructuredOutputContract,
+        reasoning_effort: str | None,
     ) -> Mapping[str, object]:
         api_key = os.environ.get(self._api_key_env)
         if not api_key:
@@ -105,7 +119,11 @@ class OpenAIStructuredResponseGenerator(OpenAIResponseGenerator):
             )
 
         request_body = json.dumps(
-            self._structured_request_payload(prompt, contract)
+            self._structured_request_payload(
+                prompt,
+                contract,
+                reasoning_effort=reasoning_effort,
+            )
         ).encode("utf-8")
         request = urllib.request.Request(
             f"{self._base_url.rstrip('/')}/responses",
@@ -156,3 +174,14 @@ class OpenAIStructuredResponseGenerator(OpenAIResponseGenerator):
                 "OpenAI structured output root must be an object"
             )
         return dict(payload)
+
+    @staticmethod
+    def _reasoning_effort(activity: Activity) -> str | None:
+        value = activity.context.get("reasoning_effort")
+        if value is None:
+            return None
+        if not isinstance(value, str) or value not in _ALLOWED_REASONING_EFFORT:
+            raise StructuredOutputGenerationError(
+                "unsupported structured output reasoning_effort"
+            )
+        return value
