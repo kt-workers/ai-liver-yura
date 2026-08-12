@@ -11,6 +11,7 @@ from app.domain.body import (
     EmbodiedExpressionIntent,
     SpeechEmphasis,
 )
+from app.domain.character_utterance import LinguisticPerformance
 from app.domain.interaction_intention import InteractionIntention
 from app.shared.contracts.expression import VoiceIntent as VoiceIntent
 
@@ -234,6 +235,8 @@ class CharacterResponse:
     claims: tuple[ResponseClaim, ...] = ()
     claim_details: tuple[Claim, ...] = ()
     reaction_plan: ReactionPlan | None = None
+    linguistic_performance: LinguisticPerformance | None = None
+    semantic_realizations: tuple[str, ...] = ()
 
     def effective_reaction_plan(self) -> ReactionPlan:
         if self.reaction_plan is not None:

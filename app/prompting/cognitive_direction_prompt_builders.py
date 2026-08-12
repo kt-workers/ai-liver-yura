@@ -66,6 +66,20 @@ class InputMeaningPromptBuilder:
                 "『昨日』『以前』『先週』など明確な過去時点を参照する入力は"
                 "past_reference=trueにする。経験が可能かどうかはこの役割では判断しない。",
                 "疑問符、語尾、固定語句だけで分類せず、直近の会話履歴と対象を使う。",
+                "targetは単なるNamed Entityではない。質問、request、command等が意味的に"
+                "対象としている状態、対象物、活動、行為、話題をtypeとidへ構造化する。",
+                "内部状態への質問は意味をcanonical targetへ正規化する。意味分類例: "
+                "『今どんな気分？』→type=internal_state,id=current_feeling、"
+                "『楽しい？』→type=internal_state,id=joy、"
+                "『怒ってる？』→type=internal_state,id=anger、"
+                "『何かしたい？』→type=internal_state,id=current_desire。",
+                "これらは文字列照合規則ではなく意味分類例である。表現が異なっても、意味が"
+                "現在の全体的な内的状態ならinternal_state/current_feelingへ統一する。"
+                "固定フレーズ辞書や正規表現による照合を行わない。",
+                "question、request、command等で意味上の対象が存在する場合、targetをnullに"
+                "してはいけない。曖昧参照はconversation_history、current_topic、"
+                "ongoing_activity等から意味対象を解決する。target=nullは、本当に状態、対象物、"
+                "活動、行為、話題のいずれも対象にしていない入力だけに限定する。",
                 "この役割ではActivity、response_mode、initiative_level、question_budget、"
                 "new_direction_budget、ゆらの発話内容を決めない。",
                 "内部状態は曖昧参照の解決以外に利用しない。",
@@ -75,7 +89,7 @@ class InputMeaningPromptBuilder:
                 json.dumps(reference_context, ensure_ascii=False, default=str),
                 "# 出力JSONスキーマ",
                 json.dumps(schema, ensure_ascii=False),
-                "JSONオブジェクトだけを返す。targetがない場合はnullにする。",
+                "JSONオブジェクトだけを返す。本当に意味上の対象がない場合だけtargetをnullにする。",
             ]
         )
 
@@ -186,24 +200,20 @@ class InternalDirectivePromptBuilder:
                 "直接つながる質問を1件だけ許可できる。この場合question_budget=1、"
                 "同じ対象を掘り下げるだけならnew_direction_budget=0にする。既存Gapを"
                 "new_knowledge_gapsとして作り直してはいけない。",
-                "joyやamusementとengagementを混同しない。内部状態への直接質問では対象の"
-                "感情値を根拠にし、関心の高さを楽しさとして断定しない。",
                 "structured_input_meaning.target.typeがinternal_stateまたは"
-                "agent_internal_stateで、target.idがcurrent_feeling、current_mood、"
-                "current_emotion、mood、feelingのいずれかなら、internal_state.emotionの"
-                "数値が高い1〜2項目をresponse_goalへ具体的に含め、content_requirementsへ"
-                "根拠の項目名と数値を明記する。『現在の気分に直接答える』という抽象方針だけで"
-                "終えてはいけない。",
-                "現在の気分を表す感情値は、0.70以上を強め、0.45以上0.70未満を中程度、"
-                "0.25以上0.45未満を少し、0.25未満を低いものとして扱う。低い項目を"
-                "主感情として誇張してはいけない。",
-                "内部状態のキー名と数値は司令の根拠であり、Character LLMがそのまま読み上げる"
-                "発話内容ではない。content_requirementsには、最終発話で『落ち着きが強め』など"
-                "自然な日本語へ変換し、calm=0.74のような内部表現を読まないことも含める。",
-                "drive.curiosityは好奇心・関心として必要な場合だけ補助的に含め、joyまたは"
-                "amusementの代用にしない。内部状態そのものが直接回答対象なら、必要な内容を"
-                "答えられるようself_disclosure_levelは0.35以上を目安にするが、発話本文は"
-                "生成しない。",
+                "agent_internal_stateである直接質問では、internal_state.emotionや"
+                "internal_state.driveはPlanner判断の材料として利用できる。ただし具体的な"
+                "状態説明、内部キー、数値、強度、分類、自然語へ変換した診断内容を"
+                "response_goal、content_requirements、forbidden_claimsへ発話内容として"
+                "移してはいけない。target.idごとの例外を作らず、すべての内部状態targetへ"
+                "同じ責務境界を適用する。",
+                "内部状態への直接質問のresponse_goalは、ユーザーが尋ねた内的状態について"
+                "現在の状態に沿って自然に直接答える、という会話目的に留める。"
+                "content_requirementsへ状態説明を生成しない。内部状態はCharacter表現を生む"
+                "cause/evidenceであり、Internal Directiveが説明文へ変換する対象ではない。",
+                "engagementやcuriosityを質問対象の内的状態と同一概念として扱わない。"
+                "内部状態そのものが直接回答対象ならself_disclosure_levelは0.35以上を目安に"
+                "するが、固定文、固定フレーズ、状態名ごとの言い換え辞書、発話本文は生成しない。",
                 "Character Profileと存在境界は常に守る。ただし身体経験と無関係な通常の"
                 "相づち、共感、会話終了、Activity継続へ、身体や現実体験の禁止事項を機械的に"
                 "毎回列挙しない。structured_input_meaningが身体状態・物理行動・現実空間の"

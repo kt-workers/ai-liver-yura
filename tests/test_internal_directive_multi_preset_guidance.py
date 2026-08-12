@@ -97,7 +97,7 @@ def test_prompt_covers_multi_preset_decision_rules() -> None:
     assert "closingではresponse_mode=react" in prompt
     assert "既存knowledge_gaps" in prompt
     assert "question_budget=1" in prompt
-    assert "内部表現を読まない" in prompt
+    assert "content_requirementsへ状態説明を生成しない" in prompt
     assert "機械的に毎回列挙しない" in prompt
 
 

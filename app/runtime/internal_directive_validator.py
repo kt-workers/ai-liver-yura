@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import replace
 
 from app.domain.cognitive_direction import (
@@ -112,6 +111,18 @@ class InternalDirectiveValidator:
 
         requirements = list(directive.content_requirements)
         forbidden_claims = list(directive.forbidden_claims)
+        response_goal = directive.response_goal
+        if self._is_direct_internal_state_question(meaning):
+            response_goal, requirements, forbidden_claims = (
+                self._normalize_internal_state_guidance()
+            )
+            forbidden_claims.extend(
+                (
+                    "Emotion/Driveの内部キー名、数値、強度分類を診断結果として読み上げる",
+                    "engagementやcuriosityを、質問対象の内的状態と同一概念として扱う",
+                )
+            )
+            notes.append("internal_state_guidance_normalized")
         if self._is_positive_empathy_input(meaning):
             self._add_positive_empathy_requirements(
                 planning_input,
@@ -133,12 +144,6 @@ class InternalDirectiveValidator:
         if impossible_embodied_experience and target_interest_updates:
             target_interest_updates = ()
             notes.append("impossible_embodied_experience_rejects_knowledge_gaps")
-        self._add_internal_state_requirements(
-            meaning,
-            planning_input,
-            requirements,
-            forbidden_claims,
-        )
         self._add_existence_constraints(
             meaning,
             existence_boundaries,
@@ -148,6 +153,7 @@ class InternalDirectiveValidator:
         validated = replace(
             directive,
             response_mode=response_mode,
+            response_goal=response_goal,
             activity_intent=activity_intent,
             initiative_level=initiative_level,
             question_budget=question_budget,
@@ -370,6 +376,24 @@ class InternalDirectiveValidator:
             "agent_internal_state",
         }
 
+    @classmethod
+    def _is_direct_internal_state_question(
+        cls,
+        meaning: StructuredInputMeaning,
+    ) -> bool:
+        return cls._is_internal_state_target(meaning) and (
+            meaning.expected_response is ExpectedResponse.DIRECT_ANSWER
+            or meaning.input_speech_act is InputSpeechAct.QUESTION
+        )
+
+    @staticmethod
+    def _normalize_internal_state_guidance() -> tuple[str, list[str], list[str]]:
+        return (
+            "ユーザーが尋ねた内的状態について、現在の状態に沿って自然に直接答える",
+            [],
+            [],
+        )
+
     @staticmethod
     def _existence_boundaries(
         character_profile: dict[str, object],
@@ -441,104 +465,6 @@ class InternalDirectiveValidator:
             token in target_id
             for token in ("outing", "travel", "walk", "外出", "旅行", "散歩")
         )
-
-    @staticmethod
-    def _add_internal_state_requirements(
-        meaning: StructuredInputMeaning,
-        planning_input: dict[str, object],
-        requirements: list[str],
-        forbidden_claims: list[str],
-    ) -> None:
-        target = meaning.target
-        if target is None or target.target_type.casefold() not in {
-            "internal_state",
-            "agent_internal_state",
-        }:
-            return
-        emotion = planning_input.get("emotion")
-        emotion_state = emotion if isinstance(emotion, dict) else {}
-        target_id = target.target_id.casefold()
-        if target_id in {
-            "current_feeling",
-            "current_mood",
-            "current_emotion",
-            "mood",
-            "feeling",
-        }:
-            emotion_values = _numeric_state_values(emotion_state)
-            dominant_summary = _dominant_state_summary(emotion_values)
-            requirements.append(
-                "現在の気分全体はEmotionの値が高い1〜2項目を中心に、強度を誇張せず直接回答する"
-            )
-            if dominant_summary:
-                requirements.append(
-                    f"現在の気分の中心候補: {dominant_summary}"
-                )
-            requirements.append(
-                "Emotion evidence: "
-                + json.dumps(
-                    emotion_values,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                )
-            )
-            requirements.append(
-                "Emotionの内部キー名と数値は発話で読み上げず、自然な日本語の気分表現へ変換する"
-            )
-            drive = planning_input.get("drive")
-            drive_state = drive if isinstance(drive, dict) else {}
-            drive_values = _numeric_state_values(drive_state)
-            if "curiosity" in drive_values:
-                requirements.append(
-                    "Drive evidence（感情ではなく補助的な好奇心・関心）: "
-                    f"curiosity={drive_values['curiosity']}"
-                )
-            forbidden_claims.extend(
-                (
-                    "低いEmotion値を主感情として強く誇張する",
-                    "curiosityやengagementだけを根拠に楽しい・うれしいと断定する",
-                    "現在値にない悲しみ、怒り、強い興奮を創作する",
-                    "calm=0.74のような内部キー名と数値をそのまま発話する",
-                )
-            )
-        elif target_id in {"joy", "amusement", "fun", "楽しさ"}:
-            joy = _nested_number(emotion_state, "joy")
-            amusement = _nested_number(emotion_state, "amusement")
-            motivation = planning_input.get("motivation")
-            motivation_state = motivation if isinstance(motivation, dict) else {}
-            engagement_value = _find_nested_number(motivation_state, "engagement")
-            if engagement_value is None:
-                engagement_value = _nested_number(emotion_state, "engagement")
-            requirements.append(
-                "joy/amusementの値を根拠に直接回答し、engagementとは区別する"
-            )
-            requirements.append(
-                "現在値: "
-                f"joy={joy}, amusement={amusement}, engagement={engagement_value}"
-            )
-            requirements.append(
-                "内部キー名と数値は発話で読み上げず、自然な感情表現へ変換する"
-            )
-            forbidden_claims.append(
-                "joyとamusementが低いのにengagementだけを根拠として楽しいと断定する"
-            )
-        elif target_id in {"anger", "怒り", "angry"}:
-            anger = _nested_number(emotion_state, "anger")
-            requirements.append(f"現在のanger={anger}を根拠に率直に回答する")
-            requirements.append(
-                "内部キー名と数値は発話で読み上げず、自然な感情表現へ変換する"
-            )
-        elif target_id in {"current_desire", "desire", "want"}:
-            drive = planning_input.get("drive")
-            requirements.append(
-                "現在の欲求・Driveから最も近い希望を説明し、存在しない身体欲求を創作しない"
-            )
-            requirements.append(
-                "Drive evidence: " + json.dumps(drive, ensure_ascii=False, default=str)
-            )
-            requirements.append(
-                "内部キー名と数値は発話で読み上げず、自然な希望の表現へ変換する"
-            )
 
     @classmethod
     def _add_existence_constraints(
@@ -616,45 +542,3 @@ def _find_nested_number(data: dict[str, object], name: str) -> float | None:
 def _nested_number(data: dict[str, object], name: str) -> float:
     value = _find_nested_number(data, name)
     return value if value is not None else 0.0
-
-
-def _numeric_state_values(data: dict[str, object]) -> dict[str, float]:
-    values: dict[str, float] = {}
-
-    def collect(container: dict[str, object]) -> None:
-        for key, value in container.items():
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                values.setdefault(str(key), float(value))
-
-    collect(data)
-    for container_name in ("current", "reactive", "mood", "state"):
-        nested = data.get(container_name)
-        if not isinstance(nested, dict):
-            continue
-        collect(nested)
-        for nested_container_name in ("reactive", "mood"):
-            sub = nested.get(nested_container_name)
-            if isinstance(sub, dict):
-                collect(sub)
-    return values
-
-
-def _dominant_state_summary(values: dict[str, float]) -> str:
-    strongest = sorted(
-        values.items(),
-        key=lambda item: (-item[1], item[0]),
-    )[:2]
-    return ", ".join(
-        f"{name}={value} ({_intensity_label(value)})"
-        for name, value in strongest
-    )
-
-
-def _intensity_label(value: float) -> str:
-    if value >= 0.70:
-        return "強め"
-    if value >= 0.45:
-        return "中程度"
-    if value >= 0.25:
-        return "少し"
-    return "低め"

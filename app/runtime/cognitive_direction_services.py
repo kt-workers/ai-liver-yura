@@ -64,7 +64,39 @@ class InputMeaningInterpreter:
             raw = await self._model.interpret_input_meaning(request)
         except Exception:
             return None
-        return self._parser.parse(raw, source_text=source_text)
+        meaning = self._parser.parse(raw, source_text=source_text)
+        if meaning is not None or not self._parser.has_missing_semantic_target(raw):
+            return meaning
+        retry_context = dict(request.context)
+        constraints_value = request.context.get("constraints")
+        retry_constraints = (
+            list(constraints_value) if isinstance(constraints_value, list) else []
+        )
+        retry_context["plugin_prompt_override"] = "\n".join(
+            (
+                prompt,
+                "# Contract Repair",
+                "前回のInput Meaning結果は、意味上の対象を持つquestion、request、または"
+                "commandでtarget=nullだったため契約違反である。Raw User TextをCore規則で"
+                "分類せず、会話履歴を含むObservedInputの意味を再評価し、欠落した対象を"
+                "type/idへ構造化してJSONオブジェクト全体を一度だけ再出力する。",
+            )
+        )
+        retry_context["constraints"] = [
+            *retry_constraints,
+            "意味上の対象が欠落したtarget契約を修復する",
+        ]
+        retry_request = Activity(
+            activity_type=request.activity_type,
+            goal="欠落した意味対象をStructuredInputMeaningへ再構造化する",
+            context=retry_context,
+            source_event_id=request.source_event_id,
+        )
+        try:
+            retried_raw = await self._model.interpret_input_meaning(retry_request)
+        except Exception:
+            return None
+        return self._parser.parse(retried_raw, source_text=source_text)
 
 
 class InternalDirectivePlanner:

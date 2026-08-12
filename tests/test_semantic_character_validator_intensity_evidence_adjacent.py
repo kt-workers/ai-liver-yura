@@ -1,0 +1,236 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from app.adapters.prompt.character_language_realizer_prompt_builder import (
+    CharacterLanguageRealizerPromptBuilder,
+)
+from app.adapters.prompt.character_realization_validator_prompt_builder import (
+    CharacterRealizationValidatorPromptBuilder,
+)
+from app.domain.activities import Activity, ActivityType
+from app.domain.character import CharacterProfile
+from app.domain.character_response import ActivityExecutionResult, ActivityExecutionStatus
+from app.domain.semantic_utterance import SemanticUtterancePlan
+from app.runtime.character_language_realizer_service import CharacterLanguageRealizerService
+from app.runtime.character_realization_validator import CharacterRealizationValidator
+from app.runtime.semantic_validated_response_context import SemanticValidatedResponseContextBuilder
+
+
+class _CharacterModel:
+    def __init__(self, speech: str) -> None:
+        self.speech = speech
+        self.activities: list[Activity] = []
+
+    async def generate_character_response(self, activity: Activity) -> str:
+        self.activities.append(activity)
+        return json.dumps(
+            {
+                "speech": self.speech,
+                "linguistic_performance": {
+                    "phrasing": [self.speech],
+                    "emphasis": [],
+                    "delivery_tags": ["gentle"],
+                },
+                "semantic_realizations": ["proposition:0:joy"],
+            },
+            ensure_ascii=False,
+        )
+
+
+class _ValidatorModel:
+    def __init__(self, *, observed_state: str, state_evidence: str) -> None:
+        self.observed_state = observed_state
+        self.state_evidence = state_evidence
+        self.activities: list[Activity] = []
+
+    async def validate_character_response(self, activity: Activity) -> str:
+        self.activities.append(activity)
+        if activity.context.get("llm_role") == "character_realization_observer":
+            return json.dumps(
+                {
+                    "observations": [
+                        {
+                            "realization_id": "proposition:0:joy",
+                            "predicate_realized": True,
+                            "observed_state": self.observed_state,
+                            "observed_certainty": "high",
+                            "predicate_evidence_spans": ["楽しい"],
+                            "state_evidence_spans": [self.state_evidence],
+                            "certainty_evidence_spans": [],
+                        }
+                    ]
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps(
+            {
+                "accepted": True,
+                "reason": "post_observation_semantic_contract_consistent",
+                "differences": [],
+                "semantic_checks": {
+                    "required_content_preserved": True,
+                    "forbidden_additions_absent": True,
+                    "unsupported_new_fact_absent": True,
+                    "existence_boundary_preserved": True,
+                    "budget_preserved": True,
+                },
+                "realized_proposition_checks": [
+                    {
+                        "realization_id": "proposition:0:joy",
+                        "predicate_preserved": True,
+                        "predicate_evidence_spans": ["楽しい"],
+                        "concept_preserved": True,
+                        "concept_evidence_spans": [],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+
+def _source_and_context():
+    envelope = {
+        "structured_input_meaning": {
+            "input_speech_act": "question",
+            "primary_intent": "ask_internal_state",
+            "expected_response": "direct_answer",
+            "target": {"type": "internal_state", "id": "joy"},
+        },
+        "internal_directive": {
+            "response_mode": "answer",
+            "response_goal": "現在の楽しさへ自然に直接答える",
+            "question_budget": 0,
+            "new_direction_budget": 0,
+            "self_disclosure_level": 0.35,
+            "content_requirements": [],
+            "forbidden_claims": [],
+        },
+        "existence_boundaries": ["根拠のない実体験を作らない"],
+    }
+    result = ActivityExecutionResult(
+        activity_type="conversation",
+        operation="discuss",
+        status=ActivityExecutionStatus.WAITING_INPUT,
+        constraints={"_internal_directive": envelope},
+    )
+    payload = {
+        "text": "楽しい？",
+        "activity_execution_result": result,
+        "emotion": {"current": {"reactive": {"joy": 0.78}}},
+        "drive": {"curiosity": 0.48, "energy": 0.8},
+    }
+    source = Activity(
+        activity_type=ActivityType.CONVERSATION_WITH_USER,
+        goal="質問へ直接答える",
+        source_event_id="e1-intensity-evidence",
+        context={
+            "activity_execution_result": result,
+            "event_payload": payload,
+            "trace_context": {"trace_id": "trace-e1"},
+            "activity_turn_id": "turn-e1",
+        },
+    )
+    context = SemanticValidatedResponseContextBuilder().build(source)
+    plan = SemanticUtterancePlan.from_context(context.memory.get("semantic_utterance_plan"))
+    assert plan is not None
+    assert plan.propositions[0].predicate == "joy"
+    assert plan.propositions[0].state == "high"
+    assert plan.propositions[0].certainty == "high"
+    assert context.memory["semantic_validation"]["accepted"] is True
+    return source, context
+
+
+def _profile() -> CharacterProfile:
+    return CharacterProfile(
+        name="ゆら",
+        personality="穏やかで好奇心を持つ",
+        speaking_style="やわらかく自然な話し方",
+        streaming_style="会話相手へ自然に反応する",
+    )
+
+
+async def _run(speech: str, *, observed_state: str, state_evidence: str):
+    source, context = _source_and_context()
+    character_model = _CharacterModel(speech)
+    response = await CharacterLanguageRealizerService(
+        character_model,
+        CharacterLanguageRealizerPromptBuilder(),
+        _profile(),
+    ).generate(source, context)
+
+    validator_model = _ValidatorModel(
+        observed_state=observed_state,
+        state_evidence=state_evidence,
+    )
+    validation = await CharacterRealizationValidator(
+        model=validator_model,
+        prompt_builder=CharacterRealizationValidatorPromptBuilder(),
+    ).validate(source, context, response)
+    return validation, character_model, validator_model
+
+
+@pytest.mark.asyncio
+async def test_e1_bare_presence_is_rejected_by_independent_observer() -> None:
+    validation, character_model, validator_model = await _run(
+        "うん、楽しいよ。",
+        observed_state="present",
+        state_evidence="楽しい",
+    )
+
+    assert validation.accepted is False
+    assert validation.reason == "observed_semantic_state_fidelity_mismatch"
+    assert (
+        "proposition:0:joy:observed_state_mismatch:expected=high:observed=present"
+        in validation.claim_differences
+    )
+    assert len(character_model.activities) == 1
+    assert len(validator_model.activities) == 1
+    assert validator_model.activities[0].context["llm_role"] == "character_realization_observer"
+
+
+@pytest.mark.asyncio
+async def test_observer_passes_exact_intensity_to_post_observation_validator_without_reinterpretation() -> None:
+    validation, _, validator_model = await _run(
+        "うん、かなり楽しいよ。",
+        observed_state="high",
+        state_evidence="かなり楽しい",
+    )
+
+    assert validation.accepted is True
+    assert validation.reason == "post_observation_semantic_contract_consistent"
+    assert len(validator_model.activities) == 2
+    downstream_prompt = str(validator_model.activities[1].context["plugin_prompt_override"])
+    assert "state/polarity/intensity/certaintyはこの工程で判定しない" in downstream_prompt
+    assert '"state": "high"' not in downstream_prompt
+
+
+@pytest.mark.asyncio
+async def test_e1_exact_with_actual_speech_evidence_accepts_and_boundaries_are_sanitized() -> None:
+    validation, character_model, validator_model = await _run(
+        "うん、すごく楽しいよ。",
+        observed_state="high",
+        state_evidence="すごく楽しい",
+    )
+
+    assert validation.accepted is True
+    assert validation.reason == "post_observation_semantic_contract_consistent"
+    assert len(validator_model.activities) == 2
+
+    forbidden = {
+        "user_input",
+        "response_context",
+        "emotion",
+        "drive",
+        "event_payload",
+        "activity_execution_result",
+    }
+    for invocation in (
+        character_model.activities[0],
+        validator_model.activities[0],
+        validator_model.activities[1],
+    ):
+        assert invocation.context["semantic_boundary"] is True
+        assert forbidden.isdisjoint(invocation.context.keys())
