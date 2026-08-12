@@ -72,7 +72,9 @@ def test_observer_contract_and_typed_comparison_reject_unknown_to_guessed_polari
     )
     assert "unknownは対象の存在・不在・強度・値を現時点で確定していない" in observer_prompt
     assert "特定polarityへcommitしたspeechをunknownにしない" in observer_prompt
-    assert "certaintyは対象stateについてのepistemic確かさとして観測する" in observer_prompt
+    assert "このpredicateはobserved_stateである" in observer_prompt
+    assert "Semantic Plan側のcertaintyも同じ命題certainty" in observer_prompt
+    assert "unknownだから自動的にcertainty=lowへ固定しない" in observer_prompt
 
     guessed = RealizedSemanticObservation(
         realization_id="proposition:0:current_desire",
