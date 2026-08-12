@@ -71,6 +71,10 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 "supportingを数多く列挙することを品質とみなさない。speechへ採用してsemantic_realizationsへ"
                 "IDを列挙する場合だけ、そのpropositionのif_realized_required_facetsをすべて意味的に保持する。"
                 "supporting stateの強度やcertaintyを落としたpartial realizationを採用済みとして扱わない。",
+                "optional supporting propositionをfacet-completeに自然に実現できない場合は、そのpropositionを"
+                "speechから完全に省略し、semantic_realizationsにもIDを列挙しない。bare presenceや別概念への"
+                "縮退を残したまま採用しない。regeneration時も同じで、修復不能なoptional propositionは"
+                "表現とIDを一緒に落とす。",
                 "conceptがnon-nullなら、そのconceptの意味を自然語として含め、単なる『何かある』等の"
                 "存在表明だけへ縮退しない。conceptはpredicateの意味内容を修飾するfacetであり、"
                 "concept単独の別stateへ置き換えない。predicateが示す関係をspeechへ残し、その内容・対象・"
@@ -80,6 +84,9 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 "state=unknownは、その対象状態の存在・不在・強度が確定していないことを意味する。"
                 "unknownをpresent/absent/low等へ変換せず、certainty=lowであっても『あるかも』等の"
                 "特定polarityを推測しない。必要なら、状態を判断できていないこと自体を自然に表現する。",
+                "state=unknownかつcertainty=medium/lowでは、certaintyはunknownというstate判定そのものへの"
+                "epistemic commitmentを表す。unknownであることを無標で断定した別節を先に置き、その後だけ"
+                "慎重表現にしてはいけない。unknown判定全体を同じcertainty scopeで言語実現する。",
                 "yes/no型の質問に対する『うん』『ううん』『そう』『違う』等も、文脈上present/absentを"
                 "確定するならpolarity表現である。state=unknownでは、そのような肯定・否定markerで"
                 "polarityを確定しない。",
@@ -95,6 +102,10 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 "明示的に反映し、程度副詞や強度表現へ置き換えない。state=unknownではunknownを表す"
                 "慎重な表現がcertaintyも同時に担ってよいが、それ以外でmedium/lowを無標の断定文へ"
                 "縮退させない。",
+                "certaintyはproposition全体へ作用する。predicate/state/conceptを複数節へ分ける場合でも、"
+                "medium/lowのpropositionについて一部の節だけを無標で断定し、別の節だけをhedgeしてはいけない。"
+                "各節を単独で読んだときにPlanより強いepistemic commitmentを作らず、predicate・state・"
+                "non-null conceptの関係を同じcertainty scopeの中で保持する。",
                 "state=presentかつintensity_allowed=falseでcertainty=medium/lowの場合、certaintyを"
                 "『少し』『ちょっと』『やや』等の程度語で表現しない。存在の強さと確からしさを混同しない。",
                 "User Wording Hintは、ユーザーがどの語彙・意味枠で対象を尋ねたかを保つための"
@@ -142,8 +153,13 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                     "肯定/否定へ変換せず、採用したpropositionのstate意味をそのまま復元する。"
                     "repair_constraintsにrestore_certainty_as_epistemic_modalityがある場合、"
                     "無標の断定や程度表現ではなくepistemicな慎重さをspeechへ復元する。"
-                    "repair_constraintsにrestore_required_concept_within_predicateがある場合、"
+                    "repair_constraintsにrestore_proposition_level_certainty_scopeがある場合、"
+                    "predicate/state/conceptの一部だけを無標断定せず、proposition全体へ同じcertaintyを"
+                    "掛け直す。repair_constraintsにrestore_required_concept_within_predicateがある場合、"
                     "concept単独ではなくpredicate関係の中へconceptを戻す。"
+                    "repair_constraintsにdrop_optional_realization_if_facet_incompleteがある場合、"
+                    "対象がoptional supporting propositionなら、facet-completeに直せない表現とIDを"
+                    "両方とも省略する。primary propositionは省略しない。"
                     if regeneration_feedback is not None
                     else "# Regeneration Feedback\nなし"
                 ),
@@ -203,6 +219,12 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                     "polarity_commitment": (
                         "forbidden" if item.state == "unknown" else "bounded_by_state"
                     ),
+                    "certainty_scope": "entire_proposition",
+                    "optional_failure_policy": (
+                        "not_applicable"
+                        if required
+                        else "omit_entire_proposition_if_facet_incomplete"
+                    ),
                 }
             )
         return {
@@ -217,6 +239,7 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
             "question_budget": plan.question_budget,
             "new_direction_budget": plan.new_direction_budget,
             "supporting_selection_policy": "minimal_optional_only_when_facet_complete",
+            "supporting_failure_policy": "omit_entire_optional_proposition_if_facet_incomplete",
             "interpersonal": plan.interpersonal.as_context(),
             "discourse_context": dict(plan.discourse_context),
         }
@@ -263,6 +286,17 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
                 "overt_epistemic_modality"
                 if primary.certainty in {"medium", "low"}
                 else "unhedged_allowed"
+            ),
+            "certainty_scope": "entire_proposition",
+            "certainty_scope_components": (
+                ["predicate", "state", "concept"]
+                if primary.concept is not None
+                else ["predicate", "state"]
+            ),
+            "unknown_certainty_semantics": (
+                "epistemic_commitment_to_unknown_state_judgment"
+                if primary.state == "unknown"
+                else "not_applicable"
             ),
             "concept": primary.concept,
             "concept_role": (
@@ -341,7 +375,12 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
         if "state_preserved" in combined or "state_fidelity" in combined:
             repair_constraints.append("restore_state_fidelity")
         if "certainty_preserved" in combined or "certainty" in combined:
-            repair_constraints.append("restore_certainty_as_epistemic_modality")
+            repair_constraints.extend(
+                (
+                    "restore_certainty_as_epistemic_modality",
+                    "restore_proposition_level_certainty_scope",
+                )
+            )
         if "concept_preserved" in combined or "concept" in combined:
             repair_constraints.append("restore_required_concept_within_predicate")
         if (
@@ -350,6 +389,19 @@ class CharacterLanguageRealizerPromptBuilder(LegacyCharacterPromptBuilder):
             or "predicate" in combined
         ):
             repair_constraints.append("restore_target_predicate_meaning")
+        if any(
+            marker in combined
+            for marker in (
+                "observed_state_mismatch",
+                "observed_certainty_mismatch",
+                "predicate_not_observed",
+                "concept_preserved",
+                "state_fidelity",
+            )
+        ):
+            repair_constraints.append(
+                "drop_optional_realization_if_facet_incomplete"
+            )
         return {
             "reason": reason,
             "differences": differences,
