@@ -331,7 +331,7 @@ async def test_primary_high_weakened_to_presence_is_rejected_by_observer() -> No
     )
 
     assert result.accepted is False
-    assert result.reason == "observed_semantic_state_mismatch"
+    assert result.reason == "observed_semantic_state_fidelity_mismatch"
     assert (
         "proposition:0:joy:observed_state_mismatch:expected=high:observed=present"
         in result.claim_differences
@@ -362,7 +362,7 @@ async def test_unknown_committed_to_present_is_rejected_by_observer() -> None:
     )
 
     assert result.accepted is False
-    assert result.reason == "observed_semantic_state_mismatch"
+    assert result.reason == "observed_semantic_state_fidelity_mismatch"
     assert (
         "proposition:0:sadness:observed_state_mismatch:expected=unknown:observed=present"
         in result.claim_differences
@@ -401,7 +401,7 @@ async def test_supporting_bare_presence_is_rejected_by_independent_observation()
     )
 
     assert result.accepted is False
-    assert result.reason == "observed_semantic_state_mismatch"
+    assert result.reason == "observed_semantic_state_fidelity_mismatch"
     assert (
         "proposition:1:joy:observed_state_mismatch:expected=high:observed=present"
         in result.claim_differences
