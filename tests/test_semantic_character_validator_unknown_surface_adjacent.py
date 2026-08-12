@@ -41,14 +41,12 @@ class _CharacterModel:
 class _ValidatorModel:
     def __init__(
         self,
-        payload: dict[str, object],
         *,
         observed_state: str,
         observed_certainty: str,
         state_evidence: str,
         certainty_evidence: str | None,
     ) -> None:
-        self.payload = payload
         self.observed_state = observed_state
         self.observed_certainty = observed_certainty
         self.state_evidence = state_evidence
@@ -76,7 +74,30 @@ class _ValidatorModel:
                 },
                 ensure_ascii=False,
             )
-        return json.dumps(self.payload, ensure_ascii=False)
+        return json.dumps(
+            {
+                "accepted": True,
+                "reason": "post_observation_semantic_contract_consistent",
+                "differences": [],
+                "semantic_checks": {
+                    "required_content_preserved": True,
+                    "forbidden_additions_absent": True,
+                    "unsupported_new_fact_absent": True,
+                    "existence_boundary_preserved": True,
+                    "budget_preserved": True,
+                },
+                "realized_proposition_checks": [
+                    {
+                        "realization_id": "proposition:0:sadness",
+                        "predicate_preserved": True,
+                        "predicate_evidence_spans": ["悲し"],
+                        "concept_preserved": True,
+                        "concept_evidence_spans": [],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
 
 
 def _profile() -> CharacterProfile:
@@ -113,20 +134,19 @@ def _source_and_context():
         status=ActivityExecutionStatus.WAITING_INPUT,
         constraints={"_internal_directive": envelope},
     )
-    emotion = {
-        "current": {
-            "reactive": {
-                "joy": 0.22,
-                "amusement": 0.08,
-                "calm": 0.55,
-                "anger": 0.0,
-            }
-        }
-    }
     payload: dict[str, object] = {
         "text": "悲しい？",
         "activity_execution_result": result,
-        "emotion": emotion,
+        "emotion": {
+            "current": {
+                "reactive": {
+                    "joy": 0.22,
+                    "amusement": 0.08,
+                    "calm": 0.55,
+                    "anger": 0.0,
+                }
+            }
+        },
     }
     source = Activity(
         activity_type=ActivityType.CONVERSATION_WITH_USER,
@@ -151,51 +171,9 @@ def _source_and_context():
     return source, context
 
 
-def _validation_payload(
-    *,
-    state_fidelity: str = "exact",
-    surface_markers: list[str] | None = None,
-    certainty_evidence: str = "はっきりしない",
-) -> dict[str, object]:
-    exact = state_fidelity == "exact"
-    return {
-        "accepted": True,
-        "reason": "semantic_realization_consistent",
-        "differences": [],
-        "semantic_checks": {
-            "required_facets_preserved": exact,
-            "predicate_preserved": True,
-            "state_preserved": exact,
-            "certainty_preserved": exact,
-            "concept_preserved": True,
-            "unsupported_intensity_added": False,
-        },
-        "realized_proposition_checks": [
-            {
-                "realization_id": "proposition:0:sadness",
-                "predicate_preserved": True,
-                "predicate_evidence_spans": ["悲し"],
-                "state_preserved": exact,
-                "state_fidelity": state_fidelity,
-                "certainty_preserved": exact,
-                "certainty_evidence_spans": [certainty_evidence] if exact else [],
-                "concept_preserved": True,
-                "concept_evidence_spans": [],
-                "intensity_semantics_preserved": True,
-                "presence_only_counterfactual_equivalent": False,
-                "intensity_evidence_spans": [],
-            }
-        ],
-        "surface_evidence": {
-            "intensity_markers": list(surface_markers or []),
-        },
-    }
-
-
 async def _run(
     *,
     speech: str,
-    validator_payload: dict[str, object],
     observed_state: str,
     observed_certainty: str,
     state_evidence: str,
@@ -209,7 +187,6 @@ async def _run(
     ).generate(source, context)
     validation = await CharacterRealizationValidator(
         model=_ValidatorModel(
-            validator_payload,
             observed_state=observed_state,
             observed_certainty=observed_certainty,
             state_evidence=state_evidence,
@@ -221,12 +198,9 @@ async def _run(
 
 
 @pytest.mark.asyncio
-async def test_valid_unknown_survives_spurious_model_surface_markers() -> None:
+async def test_valid_unknown_is_accepted_after_typed_observation() -> None:
     validation = await _run(
         speech="今のところ、悲しさはあるかどうか、はっきりしないよ。",
-        validator_payload=_validation_payload(
-            surface_markers=["今のところ", "はっきりしない"]
-        ),
         observed_state="unknown",
         observed_certainty="low",
         state_evidence="はっきりしない",
@@ -234,7 +208,7 @@ async def test_valid_unknown_survives_spurious_model_surface_markers() -> None:
     )
 
     assert validation.accepted is True
-    assert validation.reason == "semantic_realization_consistent"
+    assert validation.reason == "post_observation_semantic_contract_consistent"
     assert validation.claim_differences == ()
 
 
@@ -242,7 +216,6 @@ async def test_valid_unknown_survives_spurious_model_surface_markers() -> None:
 async def test_actual_unknown_to_low_commit_is_rejected_by_independent_observer() -> None:
     validation = await _run(
         speech="少し悲しいかも。",
-        validator_payload=_validation_payload(certainty_evidence="かも"),
         observed_state="low",
         observed_certainty="low",
         state_evidence="少し悲しい",
@@ -261,7 +234,6 @@ async def test_actual_unknown_to_low_commit_is_rejected_by_independent_observer(
 async def test_unknown_committed_to_present_is_rejected_by_independent_observer() -> None:
     validation = await _run(
         speech="うん、悲しいよ。",
-        validator_payload=_validation_payload(state_fidelity="unknown_committed"),
         observed_state="present",
         observed_certainty="high",
         state_evidence="悲しい",
