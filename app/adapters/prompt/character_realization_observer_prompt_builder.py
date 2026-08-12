@@ -61,19 +61,23 @@ class CharacterRealizationObserverPromptBuilder:
                 "- unknownは対象の存在・不在・強度・値を現時点で確定していない状態。"
                 "特定polarityへcommitしたspeechをunknownにしない。",
                 "- omittedはspeechがそのpredicateを意味として表現していない場合に使う。",
-                "- observed_certaintyは、観測器自身の判定自信度でも、文法上その文を断言している強さでもない。"
-                "speechが対象のobserved_stateをどの程度epistemically確定しているかを high/medium/low/unknown で表す。",
-                "- highは対象stateへ明確にcommitしている場合、mediumは対象stateを暫定的・蓋然的に述べる場合、"
-                "lowは対象stateについて明示的な不確かさ・判断困難を残す場合に使う。"
-                "certaintyをpredicateの強度へ読み替えない。",
-                "- observed_state=unknownのとき、話者が『判断できないという事実』を強く断言していることを理由に"
-                "observed_certainty=highへ引き上げない。certaintyは対象stateについてのepistemic確かさとして観測する。",
+                "- observed_certaintyは、観測器自身の判定自信度でもpredicateの強度でもない。"
+                "speechが『このpredicateはobserved_stateである』という命題へどの程度epistemically commitしているかを"
+                "high/medium/low/unknownで表す。Semantic Plan側のcertaintyも同じ命題certaintyとして扱う。",
+                "- highはobserved_state自体を明確に確定して述べる場合、mediumはそのstateを暫定的・蓋然的に述べる場合、"
+                "lowはそのstate判定そのものへ強い留保・判断困難を残す場合に使う。certaintyを強度へ読み替えない。",
+                "- observed_state=unknownでも同じ定義を使う。『対象状態が現在unknownである』ことを明確に述べるspeechは"
+                "observed_certainty=highになり得る。一方、unknownという判定自体にも留保を残すspeechはmedium/lowになり得る。"
+                "unknownだから自動的にcertainty=lowへ固定しない。",
                 "- predicate_evidence_spans/state_evidence_spans/certainty_evidence_spansにはCharacter Speechに"
                 "実在する原文部分だけを列挙する。User Wording Hint、Candidate ID、説明文をspanへ混ぜない。",
+                "- certainty_evidence_spansはmedium/lowのepistemic留保をspeech中で支える原文部分を優先する。"
+                "highで無標の直接表現なら空配列でもよい。",
                 "- 該当する明示spanが不要または存在しないfacetは空配列でよい。",
                 "- Candidateのcanonical英語IDをspeech中に存在する語だと仮定しない。",
                 "- Characterのsemantic_realizations等の自己申告metadataは観測根拠にしない。",
                 "- 自然言語の意味判定を有限個の単語・phrase・regex・substring対応表へ置き換えない。",
+                "top-levelは必ずobjectとし、observations配列を1つ含める。",
                 "JSONのみ返す。各observationはrealization_id、predicate_realized、observed_state、"
                 "observed_certainty、predicate_evidence_spans、state_evidence_spans、"
                 "certainty_evidence_spansを含める。",
