@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Protocol
 
 from app.domain.activities import Activity
 from app.ports.response_generator import ResponseGenerator
+from app.ports.structured_output import (
+    StructuredOutputContract,
+    StructuredOutputGenerationError,
+    StructuredOutputUnsupportedError,
+)
 
 
 class SituationEvaluationModel(Protocol):
@@ -23,6 +28,22 @@ class CharacterModel(Protocol):
 
 class ResponseValidationModel(Protocol):
     async def validate_character_response(self, activity: Activity) -> str: ...
+
+
+class StructuredCharacterModel(Protocol):
+    async def generate_structured_character_response(
+        self,
+        activity: Activity,
+        contract: StructuredOutputContract,
+    ) -> Mapping[str, object]: ...
+
+
+class CharacterSemanticVerificationModel(Protocol):
+    async def verify_character_semantics(
+        self,
+        activity: Activity,
+        contract: StructuredOutputContract,
+    ) -> Mapping[str, object]: ...
 
 
 SeparatedSituationEvaluatorFactory = Callable[
@@ -80,9 +101,40 @@ class ResponseGeneratorRoleAdapter:
     async def validate_character_response(self, activity: Activity) -> str:
         return await self._generate(activity)
 
+    async def generate_structured_character_response(
+        self,
+        activity: Activity,
+        contract: StructuredOutputContract,
+    ) -> Mapping[str, object]:
+        return await self._generate_structured(activity, contract)
+
+    async def verify_character_semantics(
+        self,
+        activity: Activity,
+        contract: StructuredOutputContract,
+    ) -> Mapping[str, object]:
+        return await self._generate_structured(activity, contract)
+
     async def _generate(self, activity: Activity) -> str:
         result = await self._generator.generate_response(activity)
         return str(result)
+
+    async def _generate_structured(
+        self,
+        activity: Activity,
+        contract: StructuredOutputContract,
+    ) -> Mapping[str, object]:
+        method = getattr(self._generator, "generate_structured_response", None)
+        if not callable(method):
+            raise StructuredOutputUnsupportedError(
+                "configured ResponseGenerator does not support structured output"
+            )
+        result = await method(activity, contract)
+        if not isinstance(result, Mapping):
+            raise StructuredOutputGenerationError(
+                "structured response generator returned a non-mapping payload"
+            )
+        return dict(result)
 
     @staticmethod
     def _uses_separated_user_input_path(activity: Activity) -> bool:
