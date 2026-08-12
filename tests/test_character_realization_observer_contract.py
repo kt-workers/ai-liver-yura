@@ -115,13 +115,14 @@ def test_observer_prompt_distinguishes_absence_intensity_overview_and_unknown() 
     assert "unknownは対象の存在・不在・強度・値を現時点で確定していない" in prompt
 
 
-def test_observer_certainty_is_target_epistemic_certainty_not_meta_assertiveness() -> None:
+def test_observer_certainty_matches_semantic_proposition_certainty_including_unknown() -> None:
     prompt = _prompt()
 
     assert "観測器自身の判定自信度" in prompt
-    assert "文法上その文を断言している強さでもない" in prompt
-    assert "対象stateについてのepistemic確かさ" in prompt
-    assert "observed_certainty=highへ引き上げない" in prompt
+    assert "このpredicateはobserved_stateである" in prompt
+    assert "Semantic Plan側のcertaintyも同じ命題certainty" in prompt
+    assert "unknownだから自動的にcertainty=lowへ固定しない" in prompt
+    assert "observed_certainty=highになり得る" in prompt
 
 
 def test_observer_evidence_must_come_only_from_character_speech() -> None:
@@ -130,6 +131,7 @@ def test_observer_evidence_must_come_only_from_character_speech() -> None:
     assert "User Wording Hintはevidenceではない" in prompt
     assert "Character Speechに実在する原文部分だけ" in prompt
     assert "User Wording Hint、Candidate ID、説明文をspanへ混ぜない" in prompt
+    assert "top-levelは必ずobject" in prompt
 
 
 def test_runtime_realization_validator_has_no_finite_degree_semantic_dictionary() -> None:
