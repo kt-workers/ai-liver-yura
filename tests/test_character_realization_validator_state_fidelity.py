@@ -4,6 +4,9 @@ import json
 
 import pytest
 
+from app.adapters.prompt.character_realization_observer_prompt_builder import (
+    CharacterRealizationObserverPromptBuilder,
+)
 from app.adapters.prompt.character_realization_validator_prompt_builder import (
     CharacterRealizationValidatorPromptBuilder,
 )
@@ -44,8 +47,14 @@ _OBSERVER_EVIDENCE = {
 
 
 class _RecordingValidationModel:
-    def __init__(self, payload: dict[str, object]) -> None:
+    def __init__(
+        self,
+        payload: dict[str, object],
+        *,
+        observer_overrides: dict[str, dict[str, object]] | None = None,
+    ) -> None:
         self.payload = payload
+        self.observer_overrides = observer_overrides or {}
         self.activities: list[Activity] = []
 
     async def validate_character_response(self, activity: Activity) -> str:
@@ -55,30 +64,28 @@ class _RecordingValidationModel:
             lines = prompt.splitlines()
             marker = lines.index("# Candidate Predicate IDs")
             candidates = json.loads(lines[marker + 1])
-            overrides = self.payload.get("_observer_overrides", {})
-            override_map = overrides if isinstance(overrides, dict) else {}
             observations: list[dict[str, object]] = []
             for candidate in candidates:
                 realization_id = str(candidate["realization_id"])
-                override = override_map.get(realization_id)
-                override_data = override if isinstance(override, dict) else {}
+                override = self.observer_overrides.get(realization_id, {})
                 evidence = _OBSERVER_EVIDENCE.get(realization_id, "気分")
                 observations.append(
                     {
                         "realization_id": realization_id,
-                        "predicate_realized": override_data.get(
-                            "predicate_realized", True
+                        "predicate_realized": override.get("predicate_realized", True),
+                        "observed_state": override.get(
+                            "observed_state", _DEFAULT_OBSERVED_STATES[realization_id]
                         ),
-                        "observed_state": override_data.get(
-                            "observed_state",
-                            _DEFAULT_OBSERVED_STATES[realization_id],
-                        ),
-                        "observed_certainty": override_data.get(
+                        "observed_certainty": override.get(
                             "observed_certainty", "high"
                         ),
-                        "predicate_evidence_spans": [evidence],
-                        "state_evidence_spans": [evidence],
-                        "certainty_evidence_spans": override_data.get(
+                        "predicate_evidence_spans": override.get(
+                            "predicate_evidence_spans", [evidence]
+                        ),
+                        "state_evidence_spans": override.get(
+                            "state_evidence_spans", [evidence]
+                        ),
+                        "certainty_evidence_spans": override.get(
                             "certainty_evidence_spans", []
                         ),
                     }
@@ -129,10 +136,7 @@ def _context(
     )
 
 
-def _response(
-    speech: str,
-    realizations: tuple[str, ...],
-) -> CharacterResponse:
+def _response(speech: str, realizations: tuple[str, ...]) -> CharacterResponse:
     return CharacterResponse(
         speech=speech,
         expression="neutral",
@@ -145,79 +149,31 @@ def _response(
     )
 
 
-def _predicate_evidence(realization_id: str) -> tuple[str, ...]:
-    return {
-        "proposition:0:joy": ("楽しい",),
-        "proposition:0:sadness": ("悲しい",),
-        "proposition:0:current_feeling": ("今の気分",),
-        "proposition:1:joy": ("うれし",),
-        "proposition:2:anger": ("腹立たし",),
-        "proposition:3:calm": ("穏やか",),
-        "proposition:4:amusement": ("面白",),
-    }.get(realization_id, ())
-
-
-def _check(
-    realization_id: str,
-    *,
-    state_fidelity: str = "exact",
-    predicate_preserved: bool = True,
-    state_preserved: bool = True,
-    certainty_preserved: bool = True,
-    concept_preserved: bool = True,
-    intensity_semantics_preserved: bool = True,
-    presence_only_counterfactual_equivalent: bool = False,
-    intensity_evidence_spans: tuple[str, ...] = (),
-    predicate_evidence_spans: tuple[str, ...] | None = None,
-    certainty_evidence_spans: tuple[str, ...] = (),
-    concept_evidence_spans: tuple[str, ...] = (),
-) -> dict[str, object]:
+def _post_observation_check(realization_id: str) -> dict[str, object]:
+    evidence = _OBSERVER_EVIDENCE.get(realization_id, "気分")
     return {
         "realization_id": realization_id,
-        "predicate_preserved": predicate_preserved,
-        "predicate_evidence_spans": list(
-            _predicate_evidence(realization_id)
-            if predicate_evidence_spans is None
-            else predicate_evidence_spans
-        ),
-        "state_preserved": state_preserved,
-        "state_fidelity": state_fidelity,
-        "certainty_preserved": certainty_preserved,
-        "certainty_evidence_spans": list(certainty_evidence_spans),
-        "concept_preserved": concept_preserved,
-        "concept_evidence_spans": list(concept_evidence_spans),
-        "intensity_semantics_preserved": intensity_semantics_preserved,
-        "presence_only_counterfactual_equivalent": (
-            presence_only_counterfactual_equivalent
-        ),
-        "intensity_evidence_spans": list(intensity_evidence_spans),
+        "predicate_preserved": True,
+        "predicate_evidence_spans": [evidence],
+        "concept_preserved": True,
+        "concept_evidence_spans": [],
     }
 
 
-def _accepted_payload(
-    checks: list[dict[str, object]],
-    *,
-    state_preserved: bool = True,
-    observer_overrides: dict[str, dict[str, object]] | None = None,
-) -> dict[str, object]:
-    payload: dict[str, object] = {
+def _accepted_payload(checks: list[dict[str, object]]) -> dict[str, object]:
+    return {
         "accepted": True,
-        "reason": "semantic_realization_consistent",
+        "reason": "post_observation_semantic_contract_consistent",
         "differences": [],
         "semantic_checks": {
-            "required_facets_preserved": True,
-            "predicate_preserved": True,
-            "state_preserved": state_preserved,
-            "certainty_preserved": True,
-            "concept_preserved": True,
-            "unsupported_intensity_added": False,
+            "required_content_preserved": True,
+            "forbidden_additions_absent": True,
+            "unsupported_new_fact_absent": True,
+            "existence_boundary_preserved": True,
+            "budget_preserved": True,
         },
         "realized_proposition_checks": checks,
-        "surface_evidence": {"intensity_markers": []},
     }
-    if observer_overrides is not None:
-        payload["_observer_overrides"] = observer_overrides
-    return payload
 
 
 def _source() -> Activity:
@@ -304,7 +260,7 @@ def _mixed_context() -> ResponseContext:
     )
 
 
-def test_prompt_requires_exact_intensity_unknown_polarity_and_realized_support_checks() -> None:
+def test_state_fidelity_and_unknown_are_observer_responsibility_not_downstream() -> None:
     mixed = _mixed_context()
     mixed_response = _response(
         "今の気分は、うれしさと腹立たしさもある。",
@@ -314,30 +270,27 @@ def test_prompt_requires_exact_intensity_unknown_polarity_and_realized_support_c
             "proposition:2:anger",
         ),
     )
-    prompt = CharacterRealizationValidatorPromptBuilder().build(mixed, mixed_response)
-
-    assert '"realization_policy": "optional_but_facet_complete_if_realized"' in prompt
-    assert '"state_fidelity": "preserve_exact_semantic_state"' in prompt
-    assert '"intensity_fidelity": "must_preserve_intensity_if_realized"' in prompt
-    assert "state_fidelity=weakened" in prompt
-    assert "state_fidelity=unknown_committed" in prompt
-    assert "realized_proposition_checks" in prompt
-    assert "primaryが正しくても採用済みsupporting propositionが崩れていればreject" in prompt
-    assert "presence_only_counterfactual_equivalent" in prompt
-    assert "intensity_evidence_spans" in prompt
-    assert "単なるpresentへ置き換えても現在のspeechが同じ意味" in prompt
-
-    unknown_prompt = CharacterRealizationValidatorPromptBuilder().build(
-        _sadness_unknown_context(certainty="low"),
-        _response("はっきりはわからないかな。", ("proposition:0:sadness",)),
+    post_prompt = CharacterRealizationValidatorPromptBuilder().build(
+        mixed, mixed_response
     )
-    assert '"polarity_commitment": "forbidden"' in unknown_prompt
-    assert "yes/no型User Wording Hint" in unknown_prompt
+    observer_prompt = CharacterRealizationObserverPromptBuilder().build(
+        mixed,
+        mixed_response,
+        SemanticUtterancePlan.from_context(mixed.memory["semantic_utterance_plan"]),
+    )
+
+    assert '"realization_policy": "optional_but_complete_if_realized"' in post_prompt
+    assert "state/polarity/intensity/certaintyはこの工程で判定しない" in post_prompt
+    assert "state_fidelity" not in post_prompt
+    assert "presence_only_counterfactual_equivalent" not in post_prompt
+    assert "low/moderate/high/very_highはpresentとは異なり" in observer_prompt
+    assert "unknownは対象の存在・不在・強度・値を現時点で確定していない" in observer_prompt
+    assert "特定polarityへcommitしたspeechをunknownにしない" in observer_prompt
 
 
 @pytest.mark.asyncio
 async def test_acceptance_without_realized_proposition_checks_fails_closed() -> None:
-    payload = _accepted_payload([_check("proposition:0:joy")])
+    payload = _accepted_payload([_post_observation_check("proposition:0:joy")])
     payload.pop("realized_proposition_checks")
     model = _RecordingValidationModel(payload)
     validator = CharacterRealizationValidator(
@@ -348,7 +301,7 @@ async def test_acceptance_without_realized_proposition_checks_fails_closed() -> 
     result = await validator.validate(
         _source(),
         _joy_high_context(),
-        _response("すごく楽しいよ。", ("proposition:0:joy",)),
+        _response("とても楽しいよ。", ("proposition:0:joy",)),
     )
 
     assert result.accepted is False
@@ -356,11 +309,15 @@ async def test_acceptance_without_realized_proposition_checks_fails_closed() -> 
 
 
 @pytest.mark.asyncio
-async def test_primary_high_weakened_is_rejected_even_when_model_top_level_accepts() -> None:
+async def test_primary_high_weakened_to_presence_is_rejected_by_observer() -> None:
     model = _RecordingValidationModel(
-        _accepted_payload(
-            [_check("proposition:0:joy", state_fidelity="weakened")]
-        )
+        _accepted_payload([_post_observation_check("proposition:0:joy")]),
+        observer_overrides={
+            "proposition:0:joy": {
+                "observed_state": "present",
+                "state_evidence_spans": ["楽しい"],
+            }
+        },
     )
     validator = CharacterRealizationValidator(
         model=model,
@@ -374,16 +331,24 @@ async def test_primary_high_weakened_is_rejected_even_when_model_top_level_accep
     )
 
     assert result.accepted is False
-    assert result.reason == "semantic_facet_validation_failed"
-    assert "proposition:0:joy:state_fidelity:weakened" in result.claim_differences
+    assert result.reason == "observed_semantic_state_mismatch"
+    assert (
+        "proposition:0:joy:observed_state_mismatch:expected=high:observed=present"
+        in result.claim_differences
+    )
 
 
 @pytest.mark.asyncio
-async def test_unknown_committed_is_rejected_even_when_model_top_level_accepts() -> None:
+async def test_unknown_committed_to_present_is_rejected_by_observer() -> None:
     model = _RecordingValidationModel(
-        _accepted_payload(
-            [_check("proposition:0:sadness", state_fidelity="unknown_committed")]
-        )
+        _accepted_payload([_post_observation_check("proposition:0:sadness")]),
+        observer_overrides={
+            "proposition:0:sadness": {
+                "observed_state": "present",
+                "observed_certainty": "high",
+                "state_evidence_spans": ["悲しい"],
+            }
+        },
     )
     validator = CharacterRealizationValidator(
         model=model,
@@ -397,8 +362,11 @@ async def test_unknown_committed_is_rejected_even_when_model_top_level_accepts()
     )
 
     assert result.accepted is False
-    assert result.reason == "semantic_facet_validation_failed"
-    assert "proposition:0:sadness:state_fidelity:unknown_committed" in result.claim_differences
+    assert result.reason == "observed_semantic_state_mismatch"
+    assert (
+        "proposition:0:sadness:observed_state_mismatch:expected=unknown:observed=present"
+        in result.claim_differences
+    )
 
 
 @pytest.mark.asyncio
@@ -411,17 +379,12 @@ async def test_supporting_bare_presence_is_rejected_by_independent_observation()
     )
     model = _RecordingValidationModel(
         _accepted_payload(
-            [
-                _check("proposition:0:current_feeling"),
-                _check("proposition:1:joy"),
-                _check("proposition:2:anger"),
-                _check("proposition:3:calm"),
-            ],
-            observer_overrides={
-                "proposition:1:joy": {"observed_state": "present"},
-                "proposition:3:calm": {"observed_state": "present"},
-            },
-        )
+            [_post_observation_check(realization_id) for realization_id in realizations]
+        ),
+        observer_overrides={
+            "proposition:1:joy": {"observed_state": "present"},
+            "proposition:3:calm": {"observed_state": "present"},
+        },
     )
     validator = CharacterRealizationValidator(
         model=model,
@@ -432,7 +395,7 @@ async def test_supporting_bare_presence_is_rejected_by_independent_observation()
         _source(),
         _mixed_context(),
         _response(
-            "今の気分は、穏やかで、うれしさがありつつ、少し腹立たしさもあります。",
+            "今の気分は、穏やかで、うれしさがありつつ、腹立たしさもあります。",
             realizations,
         ),
     )
@@ -450,40 +413,36 @@ async def test_supporting_bare_presence_is_rejected_by_independent_observation()
 
 
 @pytest.mark.asyncio
-async def test_missing_or_duplicate_realized_check_fails_closed() -> None:
+async def test_missing_or_duplicate_post_observation_check_fails_closed() -> None:
     realizations = (
         "proposition:0:current_feeling",
         "proposition:1:joy",
     )
+    response = _response("今の気分は、うれしさが強くある。", realizations)
+
     missing_model = _RecordingValidationModel(
-        _accepted_payload([_check("proposition:0:current_feeling")])
+        _accepted_payload([_post_observation_check("proposition:0:current_feeling")])
     )
-    validator = CharacterRealizationValidator(
+    missing_result = await CharacterRealizationValidator(
         model=missing_model,
         prompt_builder=CharacterRealizationValidatorPromptBuilder(),
-    )
-    response = _response("今はかなりうれしい気分。", realizations)
-
-    missing_result = await validator.validate(_source(), _mixed_context(), response)
+    ).validate(_source(), _mixed_context(), response)
     assert missing_result.accepted is False
     assert missing_result.reason == "realization_validator_schema_invalid"
 
     duplicate_model = _RecordingValidationModel(
         _accepted_payload(
             [
-                _check("proposition:0:current_feeling"),
-                _check("proposition:1:joy"),
-                _check("proposition:1:joy"),
+                _post_observation_check("proposition:0:current_feeling"),
+                _post_observation_check("proposition:1:joy"),
+                _post_observation_check("proposition:1:joy"),
             ]
         )
     )
-    duplicate_validator = CharacterRealizationValidator(
+    duplicate_result = await CharacterRealizationValidator(
         model=duplicate_model,
         prompt_builder=CharacterRealizationValidatorPromptBuilder(),
-    )
-    duplicate_result = await duplicate_validator.validate(
-        _source(), _mixed_context(), response
-    )
+    ).validate(_source(), _mixed_context(), response)
     assert duplicate_result.accepted is False
     assert duplicate_result.reason == "realization_validator_schema_invalid"
 
@@ -491,7 +450,7 @@ async def test_missing_or_duplicate_realized_check_fails_closed() -> None:
 @pytest.mark.asyncio
 async def test_unplanned_character_realization_is_rejected_before_model_call() -> None:
     model = _RecordingValidationModel(
-        _accepted_payload([_check("proposition:0:joy")])
+        _accepted_payload([_post_observation_check("proposition:0:joy")])
     )
     validator = CharacterRealizationValidator(
         model=model,
@@ -502,7 +461,7 @@ async def test_unplanned_character_realization_is_rejected_before_model_call() -
         _source(),
         _joy_high_context(),
         _response(
-            "すごく楽しいし、悲しくもあるよ。",
+            "とても楽しいし、悲しくもあるよ。",
             ("proposition:0:joy", "proposition:9:sadness"),
         ),
     )
@@ -514,7 +473,7 @@ async def test_unplanned_character_realization_is_rejected_before_model_call() -
 
 
 @pytest.mark.asyncio
-async def test_all_realized_proposition_checks_exact_accepts() -> None:
+async def test_all_realized_observations_and_post_checks_consistent_accepts() -> None:
     realizations = (
         "proposition:0:current_feeling",
         "proposition:1:joy",
@@ -522,18 +481,19 @@ async def test_all_realized_proposition_checks_exact_accepts() -> None:
     )
     model = _RecordingValidationModel(
         _accepted_payload(
-            [
-                _check("proposition:0:current_feeling"),
-                _check(
-                    "proposition:1:joy",
-                    intensity_evidence_spans=("かなり",),
-                ),
-                _check(
-                    "proposition:2:anger",
-                    intensity_evidence_spans=("そこそこ",),
-                ),
-            ]
-        )
+            [_post_observation_check(realization_id) for realization_id in realizations]
+        ),
+        observer_overrides={
+            "proposition:0:current_feeling": {
+                "state_evidence_spans": ["今の気分"],
+            },
+            "proposition:1:joy": {
+                "state_evidence_spans": ["かなりうれしく"],
+            },
+            "proposition:2:anger": {
+                "state_evidence_spans": ["腹立たしさもある"],
+            },
+        },
     )
     validator = CharacterRealizationValidator(
         model=model,
@@ -544,10 +504,10 @@ async def test_all_realized_proposition_checks_exact_accepts() -> None:
         _source(),
         _mixed_context(),
         _response(
-            "今の気分は、かなりうれしくて、そこそこ腹立たしさもある。",
+            "今の気分は、かなりうれしくて、腹立たしさもある。",
             realizations,
         ),
     )
 
     assert result.accepted is True
-    assert result.reason == "semantic_realization_consistent"
+    assert result.reason == "post_observation_semantic_contract_consistent"
