@@ -125,7 +125,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         if observation_differences:
             result = ResponseValidationResult(
                 accepted=False,
-                reason="observed_semantic_state_mismatch",
+                reason=self._observation_failure_reason(observation_differences),
                 extracted_claims=extracted_claims,
                 claim_differences=tuple(observation_differences),
             )
@@ -172,34 +172,31 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             return result
 
         assert isinstance(value, dict)
-        differences = [item.strip() for item in value["differences"] if item.strip()]
-        model_accepted = bool(value["accepted"])
-        if model_accepted:
-            contract_differences = self._accepted_post_observation_differences(
-                plan,
-                response,
-                value,
+        contract_differences = self._accepted_post_observation_differences(
+            plan,
+            response,
+            value,
+        )
+        if contract_differences is None:
+            result = ResponseValidationResult(
+                False,
+                "realization_validator_schema_invalid",
+                extracted_claims=extracted_claims,
             )
-            if contract_differences is None:
-                result = ResponseValidationResult(
-                    False,
-                    "realization_validator_schema_invalid",
-                    extracted_claims=extracted_claims,
-                )
-                self._trace_result(source, result)
-                return result
-            differences.extend(contract_differences)
+            self._trace_result(source, result)
+            return result
 
-        accepted = model_accepted and not differences
-        reason = str(value["reason"]).strip()
-        if model_accepted and differences:
-            reason = "post_observation_semantic_contract_failed"
-
+        accepted = not contract_differences
+        reason = (
+            "post_observation_semantic_contract_consistent"
+            if accepted
+            else "post_observation_semantic_contract_failed"
+        )
         result = ResponseValidationResult(
             accepted=accepted,
             reason=reason,
             extracted_claims=extracted_claims,
-            claim_differences=tuple(differences),
+            claim_differences=tuple(contract_differences),
         )
         trace = build_llm_trace_context(activity)
         self._trace_logger.debug(
@@ -251,9 +248,12 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             value = json.loads(raw)
         except Exception:
             return None
-        if not isinstance(value, dict):
+        if isinstance(value, list):
+            raw_observations = value
+        elif isinstance(value, dict):
+            raw_observations = value.get("observations")
+        else:
             return None
-        raw_observations = value.get("observations")
         if not isinstance(raw_observations, list):
             return None
 
@@ -274,6 +274,14 @@ class CharacterRealizationValidator(LegacyResponseValidator):
             semantic_boundary=True,
         )
         return tuple(observations)
+
+    @staticmethod
+    def _observation_failure_reason(differences: list[str]) -> str:
+        if any(":observed_state_mismatch:" in item for item in differences):
+            return "observed_semantic_state_fidelity_mismatch"
+        if any(":observed_certainty_mismatch:" in item for item in differences):
+            return "observed_semantic_certainty_mismatch"
+        return "observed_semantic_state_mismatch"
 
     @staticmethod
     def _observation_differences(
@@ -435,15 +443,13 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                     differences.append(f"{realization_id}:concept_preserved")
                 elif not concept_spans:
                     differences.append(f"{realization_id}:concept_evidence_missing")
-            elif concept_spans:
-                differences.append(f"{realization_id}:unexpected_concept_evidence")
-            CharacterRealizationValidator._append_spans_not_in_speech(
-                differences,
-                realization_id,
-                "concept",
-                concept_spans,
-                response.speech,
-            )
+                CharacterRealizationValidator._append_spans_not_in_speech(
+                    differences,
+                    realization_id,
+                    "concept",
+                    concept_spans,
+                    response.speech,
+                )
 
         return differences
 
