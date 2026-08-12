@@ -3,24 +3,24 @@
 Status: Draft / V2 Design Gate
 Parent architecture: `docs/architecture/v2/brain_architecture.md`
 Cognitive / LLM: `docs/architecture/v2/cognitive_llm_architecture.md`
+Concurrency: `docs/architecture/v2/concurrency_architecture.md`
 Work Issue: #366
 Root management: #317
 
 ## 1. 目的
 
-ゆらが「その場のLLM応答」ではなく、turn・会話・Activity・LLM context windowを跨いで、自分が何を目指しているか、何を約束したか、何を後でやるつもりかを保持するための正本状態を定義する。
-
-自由意志に近い継続主体には、毎回のExecutive推論だけでは不十分である。
+ゆらが「その場のLLM応答」ではなく、turn・会話・Activity・LLM context windowを跨いで、自分が何を目指しているか、何を約束したか、何を後でやるつもりかを保持する正本状態を定義する。
 
 ```text
 Executive decides a goal
-→ goal is committed into persistent typed state
+→ validated transition
+→ persistent typed Goal / Commitment State
 → time / input / activity may pass
-→ goal remains visible to later cognition
-→ execution result / new decision changes its lifecycle
+→ later cognition still sees the goal
+→ result / new decision changes lifecycle
 ```
 
-Goal/Commitment StateはLLM Roleではない。LLMの自由文ではなく、validated transitionを適用するtyped state ownerを基本とする。
+Goal/Commitment StateはLLM Roleではない。LLM自由文ではなくtyped state owner / reducerを基本とする。
 
 ---
 
@@ -31,63 +31,59 @@ Goal/Commitment StateはLLM Roleではない。LLMの自由文ではなく、val
 唯一のconscious Goal / Action selection Authority。
 
 Executiveが決める:
-- new Goalを採用する
-- Goalを放棄する
-- Goal priorityを変える
-- Goalをsuspend / resumeする意図
-- Commitmentを引き受ける / 解消する意図
+- new Goal採用
+- Goal放棄 / reprioritize
+- suspend / resume intent
+- Commitmentを引き受ける / 解消するintent
 
 ### Goal / Commitment State #366
 
-current Goal / Commitmentの正本を所有する。
+current Goal / Commitmentの正本。
 
-Executiveが出したvalidated transitionを適用し、revision付きの現在状態を公開する。
+Executive由来のvalidated transitionを適用し、revision付きcurrent stateを公開する。
 
-### Goal Planner #361
+### Planner #361
 
-Goalを「どう実行するか」へ分解する。
-Goalそのものを変更しない。
+Goalをどう実行するかへ分解する。Goal自体を変更しない。
 
-### Activity Runtime #329
+### Activity Runtime / Execution #329
 
-現在実行中Activityのexecution lifecycleを所有する。
-Goal正本ではない。
+現在Activityのexecution lifecycle / actual factを所有する。Goal正本ではない。
 
 ### Memory #332 / Reflection #364
 
-過去Goal・約束・結果を記憶できるが、current Goal/Commitmentの正本ではない。
+過去Goal・約束・結果を記憶できるがcurrent Goal/Commitmentの正本ではない。
+
+### Attention / Autonomy / Turn #333
+
+Goal/Commitmentをtrigger source / FocusContextとして利用できるがGoal自体を変更しない。
 
 ---
 
-## 3. GoalとActivityを分離する
-
-例:
+## 3. GoalとActivityを分離
 
 ```text
 Goal:
-  Keiichirouと今夜ゲームをして楽しむ
+  Keiichirouとゲームをして楽しむ
 
 Activity:
   game_session_123
 ```
 
-Activityが一度失敗・中断してもGoalが直ちに消えるとは限らない。
+Activity failure/interruptでGoalが自動消滅するとは限らない。
 
 ```text
 Goal active
 → Activity A failed
-→ Executive re-evaluates
-→ retry with Activity B
-or suspend / abandon Goal
+→ Appraisal / Executive
+→ retry / suspend / abandon / alternate Activity
 ```
 
-逆にActivityが動いているからといって、暗黙に新Goalが作られたことにはしない。
+Activityが存在するだけで暗黙に新Goalを作らない。
 
 ---
 
 ## 4. Goal State
-
-候補Contract:
 
 ```text
 GoalState
@@ -111,28 +107,22 @@ GoalState
 - revision
 ```
 
-`semantic_goal`はtyped semantic representationを基本とし、LLM向けの説明文だけを正本にしない。
+`semantic_goal`はtyped semantic representationを基本とし、LLM説明文だけを正本にしない。
 
-### lifecycle
+Lifecycle:
 
 ```text
-proposed
-→ active
-→ suspended
-→ active
-→ completed
-
-or
-abandoned / failed / superseded
+proposed → active → suspended → active → completed
+or abandoned / failed / superseded
 ```
 
-`failed`はActivity failureと同義ではない。Goal自体が達成不能・不要になった等、Goal lifecycleとして確定した場合に用いる。
+`failed`はActivity failureと同義ではない。
 
 ---
 
 ## 5. Commitment State
 
-Commitmentは単なるMemoryではなく、現在の行動選択へ影響する社会的・自己拘束的状態。
+CommitmentはMemoryだけではなく、現在の行動選択へ影響する社会的・自己拘束的current state。
 
 ```text
 CommitmentState
@@ -153,19 +143,17 @@ CommitmentState
 ```
 
 例:
-
 - 「このゲーム終わったら話そう」
 - 「あとで配信する」
-- 視聴者へ「次の試合で終わる」と伝え、その内容をExecutiveがCommitmentとして受理した場合
+- 「次の試合で終わる」と視聴者へ約束しExecutiveがCommitmentとして受理
 
 Characterが言っただけで自動Commitment化しない。
 
 ```text
-CharacterUtterance
-≠ Commitment Fact
+CharacterUtterance != Commitment Fact
 ```
 
-必要なSpeechSemanticPlan / Executive transition / Presentation Factをもとに、明示contractでcommitする。
+Speech semantic / Executive transition / Presentation Fact等を明示contractで接続する。
 
 ---
 
@@ -184,27 +172,18 @@ GoalTransitionRequest
 ```
 
 Operation例:
-
-- create
-- activate
+- create / activate
 - reprioritize
-- suspend
-- resume
-- complete
-- abandon
-- fail
-- supersede
+- suspend / resume
+- complete / abandon / fail / supersede
 
-Validator確認:
-
+Validation:
 - Executive authority
 - expected revision
 - lifecycle legality
-- referenced Goal/Commitment existence
-- capability/fact claims if relevant
+- referenced state existence
+- capability/fact claim if relevant
 - duplicate/idempotency
-
-適用:
 
 ```text
 Validated GoalTransition
@@ -215,11 +194,9 @@ Validated GoalTransition
 
 ---
 
-## 7. Goal selectionとGoal persistence
+## 7. GoalContextView
 
-Executiveの毎回のPromptへ全Goalを無制限投入しない。
-
-`GoalContextView`をboundedに構築する。
+Executive Promptへ全Goalを無制限投入しない。
 
 ```text
 GoalContextView
@@ -232,34 +209,34 @@ GoalContextView
 - revision
 ```
 
-Goal Storeが存在することで、LLM context window外へ出たGoalが消滅することを防ぐ。
+Goal Storeがあることで、LLM context window外へ出たGoalが消滅することを防ぐ。
 
 ---
 
-## 8. Autonomous trigger
+## 8. Attention / Autonomous Trigger
 
-#333 Autonomy / TurnはGoalを決めないが、次をtrigger sourceとして利用できる。
+#333はGoalを決めず、次をExecutive trigger / attention scheduling sourceとして利用する。
 
 - active Goal with next action due
-- suspended Goal whose resume condition became true
+- resume condition fulfilled
 - Commitment due condition
-- Activity completed and parent Goal remains active
-- Goal deadline/context transition
+- Activity completed while parent Goal remains active
+- Goal context/deadline change
 
 ```text
 Goal/Commitment event
-→ Autonomy eligibility
+→ #333 Attention / Autonomy eligibility
 → Executive trigger
 → Executive decides what to do
 ```
 
 `Goal due → fixed action`にはしない。
 
+Goal/CommitmentがGame foregroundやStreaming secondary monitorと競合する場合も#333のbounded Focus/Turn policyを通す。
+
 ---
 
-## 9. Plannerとのrevision contract
-
-Planner request:
+## 9. Planner Revision Contract
 
 ```text
 GoalPlanningRequest
@@ -270,8 +247,6 @@ GoalPlanningRequest
 - CapabilitySnapshot
 - ActivitySnapshot
 ```
-
-Plan:
 
 ```text
 ActivityPlan
@@ -284,57 +259,48 @@ ActivityPlan
 commit前:
 
 ```text
-current goal_revision == plan.goal_revision ?
+current goal_revision == plan.goal_revision
 ```
 
-不一致ならstale / replan_required。
-
-Goalがabandoned/supersededされた後に古いPlanを実行しない。
+不一致はstale / replan_required。
+Goalがabandoned/supersededされた後にold Planを実行しない。
 
 ---
 
-## 10. Execution resultとのfeedback
+## 10. Execution Result Feedback
 
-Activity/Capability/Game/Streaming結果はGoalを直接書き換えない。
+Activity/Capability/Game/Streaming ResultはGoalを直接書き換えない。
 
 ```text
 Execution Result
 → Appraisal / Executive
-→ Executive chooses goal transition
+→ Executive chooses transition
 → Goal State Reducer
 ```
 
-明白な機械的completion conditionだけは、事前に定義されたclosed deterministic policyでtransition candidateを生成してよいが、意識的Goal AuthorityをRuntimeへ移さない。
+明白なclosed completion conditionではdeterministic transition candidateを生成してよいが、conscious Goal AuthorityをRuntimeへ移さない。
 
 ---
 
-## 11. Memoryとの境界
+## 11. Memory Boundary
 
-### current Goal State
-
-「今も目指している」ことの正本。
-
-### Episodic Memory
-
-「昨日このGoalを持っていた」「達成した」という過去の証拠。
-
-### Semantic / Preference Memory
-
-「このゲームが好き」「配信を続けたい傾向」等。
+- current Goal State: 「今も目指している」の正本
+- Episodic Memory: 「昨日このGoalを持っていた/達成した」の過去証拠
+- Preference/Semantic Memory: 「このゲームが好き」等の傾向
 
 Memory retrievalで古いGoalを見つけてもcurrent Goalへ直接復元しない。
 
 ```text
-Memory evidence
-→ Executive/Appraisal
-→ new validated Goal transition if appropriate
+Memory Evidence
+→ Appraisal / Executive
+→ validated new Goal transition if appropriate
 ```
 
 ---
 
-## 12. Internal Stateとの境界
+## 12. Internal State Boundary
 
-Emotion / Desire / Drive / MotivationはGoal形成の原因になり得るがGoalそのものではない。
+Emotion / Desire / Drive / MotivationはGoal形成原因になり得るがGoalそのものではない。
 
 ```text
 high curiosity
@@ -342,118 +308,115 @@ high curiosity
 → Goal: investigate topic
 ```
 
-Desireが減ったからGoalをdeterministicに即削除しない。CommitmentやValues、進行中Activity等もExecutiveが考慮する。
+Desire低下だけでGoalをdeterministic即削除しない。Commitment、Values、Activity、Relationship等をExecutiveが考慮する。
 
 ---
 
 ## 13. Persistence
 
-Goal/CommitmentはCore Domain Stateであり、Repository Portを通して永続化可能。
+Goal/CommitmentはCore Domain StateでありRepository Port経由で永続化可能。
 
-Persistence provider unavailable時:
+Persistence unavailable:
+- safe範囲でin-memory継続
+- persistence healthをtyped記録
+- durabilityを偽らない
+- reconnect後競合をrevision/provenanceで解決
 
-- in-memory current stateで安全に継続可能な範囲は継続
-- persistence healthをtypedに記録
-- durable guaranteeを偽らない
-- reconnect後の競合解決をrevision/provenanceで行う
-
-DB Providerは#359 InfrastructureでありGoal Authorityを持たない。
+DB Provider #359はGoal Authorityを持たない。
 
 ---
 
 ## 14. Concurrency
 
-Goal State mutationは同一Goal/Commitment単位でatomic / serializedにし、正本競合を防ぐ。
+同一Goal/Commitment mutationはatomic / serialized。
 
-ただしGoal Store処理をCore全体のglobal lockにしない。
+ただしGoal StoreをCore global lockにしない。
 
 ```text
 Goal transition running
 while
   Body realtime continues
-  current speech continues
+  current Speech continues
   Game frame loop continues
+  Streaming ingress continues
   unrelated input reception continues
 ```
 
-long-running LLM/Plannerはsnapshot/revisionを使う。
+long-running Planner/LLMはgoal_revisionを保持する。
 
 ---
 
 ## 15. Truthfulness
 
-次を区別する。
-
 ```text
-I want to do X        → desire / goal semantic state
-I decided to do X     → Executive decision / Goal transition
-I am doing X          → Activity/Execution Fact
-I did X               → completed Execution Fact
-I promised X          → validated Commitment State
-I said "I promise X" → Speech Presentation Fact only
+I want X        → desire / goal semantic state
+I decided X     → Executive decision / Goal transition
+I am doing X    → Activity / Execution Fact
+I did X         → completed Execution Fact
+I promised X    → validated Commitment State
+I said promise  → Speech Presentation Fact only
 ```
 
-Character claimは対応するFact/Stateに従う。
+Character claimは対応Fact/Stateに従う。
 
 ---
 
-## 16. V1からの教訓
+## 16. V1からの改善
 
-V1では会話turn・Activity・Memory・Internal Directive等に意図が分散しやすく、持続Goalの正本境界が明瞭ではなかった。
+V1では会話turn・Activity・Memory・Internal Directive等に意図が分散しやすく、persistent Goal正本が明瞭でなかった。
 
-V2では:
-
-- Executive Authorityは1つ
-- current Goal/Commitment Stateは1つのtyped正本
-- Plannerは実行方法のみ
-- Activityはexecution lifecycleのみ
-- Memoryは過去/evidenceのみ
-
-として分離する。
+V2:
+- Executive Authority = 1
+- current Goal/Commitment State = 1 typed canonical owner
+- Planner = execution method only
+- Activity = execution lifecycle only
+- Memory = past/evidence only
+- Attention/Turn = scheduling/trigger only
 
 ---
 
 ## 17. Acceptance
 
 ### Unit
-
-- create / activate
-- reprioritize
+- create / activate / reprioritize
 - suspend / resume
 - complete / abandon / fail / supersede
-- invalid lifecycle transition reject
+- invalid lifecycle reject
 - stale expected_revision reject
 - duplicate/idempotent transition
-- conflicting commitment representation
+- conflicting commitment
 
 ### Adjacent
-
 - Executive → Goal transition
 - Goal State → Planner
-- Goal State → Autonomy trigger
+- Goal State → #333 Attention/Autonomy trigger
 - Activity Result → Executive → Goal transition
 - Goal State ↔ Persistence Port
 
 ### Integration
-
-- Goal survives multiple conversation turns
+- Goal survives multiple turns
 - Goal survives unrelated user interaction
-- Goal does not vanish because LLM context was truncated
-- suspended Goal can later trigger Executive reconsideration
-- stale Plan from old goal_revision is rejected
+- Goal does not vanish on LLM context truncation
+- suspended Goal can later trigger reconsideration
+- stale Plan rejected
 - Activity failure does not automatically erase Goal
 - Character speech alone does not create Commitment
 - actual Commitment influences later Executive decision
+- Goal mutation does not block Body/Game/Speech realtime
 
 ---
 
-## 18. Design Gate
+## 18. Design Reconciliation Status
 
 - [x] #366 Work Issue created with Start / Target
-- [ ] Brain canonical owns current Goal/Commitment via #366
-- [ ] Cognitive Authority Map includes Goal/Commitment State
-- [ ] #361 Planner consumes goal_revision
-- [ ] #333 Autonomy consumes Goal/Commitment trigger view
-- [ ] #334 Brain Integration covers persistent Goal lifecycle
-- [ ] #360 System Verification covers turn/context-window persistence
-- [ ] Project sync manifest/hierarchy includes #366
+- [x] Brain canonical owns current Goal/Commitment via #366
+- [x] Cognitive Authority Map includes Goal/Commitment State
+- [x] #328 outputs typed Goal/Commitment transition intents
+- [x] #361 Planner consumes goal_revision
+- [x] #333 Attention/Autonomy consumes Goal/Commitment trigger view
+- [x] #334 Brain Integration covers persistent Goal lifecycle
+- [x] #360 System Verification covers turn/context-window persistence
+- [x] Concurrency canonical covers atomic mutation without global lock
+- [x] Project sync manifest/runbook hierarchy includes #366
+
+残るのは#317全体Design Gate確認と実装後Verificationである。
