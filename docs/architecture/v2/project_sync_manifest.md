@@ -9,6 +9,7 @@ Runbook: `docs/architecture/v2/project_sync_runbook.md`
 Related canonicals:
 - `brain_architecture.md`
 - `cognitive_llm_architecture.md`
+- `goal_commitment_architecture.md`
 - `concurrency_architecture.md`
 - `speech_pipeline_architecture.md`
 - `body_architecture.md`
@@ -20,15 +21,13 @@ Related canonicals:
 
 V2 Issue hierarchyをGitHub Projects v2「プロジェクトゆら」へ同期するための正本。
 
-Project field / formal Sub-issueを操作する前にGitHub liveからfield ID / option ID / item IDを再取得し、旧Snapshot IDを推測利用しない。
+Project field / formal Sub-issue操作前にGitHub liveからfield ID / option ID / item IDを再取得し、旧Snapshot IDを推測利用しない。
 
 実行手順・STOP条件は`project_sync_runbook.md`を正本とする。
 
 ---
 
 ## 2. Design Gate Status Policy
-
-現在は#317 V2 Design Gate中。
 
 - #317: In progress
 - #318: In progress（Migration再同期完了、Design Gate確認待ち）
@@ -47,6 +46,7 @@ Project field / formal Sub-issueを操作する前にGitHub liveからfield ID /
 - Core / Brain / Input
 - Core / Brain / Appraisal
 - Core / Brain / Executive
+- Core / Brain / Goal State
 - Core / Brain / Goal Planning
 - Core / Brain / Activity
 - Core / Brain / Speech Semantics
@@ -89,6 +89,7 @@ Project field / formal Sub-issueを操作する前にGitHub liveからfield ID /
 │  ├─ #326 Input Meaning [Work]
 │  ├─ #327 Subjective Appraisal / Internal State [Work]
 │  ├─ #328 Executive Deliberation [Work]
+│  ├─ #366 Goal / Commitment State [Work]
 │  ├─ #361 Goal / Activity Planning [Work]
 │  ├─ #329 Activity Execution [Work]
 │  ├─ #362 Speech Semantics [Work]
@@ -146,6 +147,7 @@ Project field / formal Sub-issueを操作する前にGitHub liveからfield ID /
 | 210 | #326 | Work | Brain/Input | Critical | 2026-08-19 | 2026-08-24 | Blocked |
 | 220 | #327 | Work | Brain/Appraisal | Critical | 2026-08-24 | 2026-08-31 | Blocked |
 | 230 | #328 | Work | Brain/Executive | Critical | 2026-08-31 | 2026-09-06 | Blocked |
+| 235 | #366 | Work | Brain/Goal State | Critical | 2026-09-04 | 2026-09-09 | Blocked |
 | 240 | #361 | Work | Brain/Goal Planning | Critical | 2026-09-06 | 2026-09-11 | Blocked |
 | 250 | #329 | Work | Brain/Activity | Critical | 2026-09-05 | 2026-09-10 | Blocked |
 | 260 | #362 | Work | Brain/Speech Semantics | Critical | 2026-09-06 | 2026-09-11 | Blocked |
@@ -187,11 +189,12 @@ Project field / formal Sub-issueを操作する前にGitHub liveからfield ID /
 
 - LLM Role数を固定しない
 - Single Executive Authority
+- current Goal / Commitment正本は#366
 - `Logical Role count != API call count`
 - responsibility separationを直列LLM chainへしない
 - slow LLM / TTS / DB / Plugin / Subsystemでunrelated laneをblockしない
 - foreground interaction > low-priority background cognition
-- source_context_revision / cancellation / stale / supersede
+- source_context_revision / goal_revision / cancellation / stale / supersede
 - Speech playback中next generation可
 - Body realtimeはLLM待ちで停止しない
 - Game frame loopはCore Executive LLM latency非依存
@@ -206,7 +209,7 @@ Project field / formal Sub-issueを操作する前にGitHub liveからfield ID /
 2. field IDs / option IDs / current item IDsを取得
 3. 新Area optionsを確認/追加
 4. item重複を確認
-5. #361〜#365を含むIssue existence確認
+5. #361〜#366を含むIssue existence確認
 6. formal Parent/Sub-issue current state確認
 7. Manifestとの差分をdry-run
 8. canonicalと一致した場合のみmutation
@@ -219,13 +222,14 @@ Project field / formal Sub-issueを操作する前にGitHub liveからfield ID /
 ## 8. Completion
 
 - [x] V2 logical hierarchy再設計
-- [x] #361〜#365作成
+- [x] #361〜#366作成
 - [x] Start/Targetを新規Issue本文へ設定
 - [x] Design Gate status policy確定
 - [x] Area案更新
 - [x] 工程案更新
 - [x] 4 LLM固定撤回を反映
 - [x] Game SkillをSubsystem hierarchyへ追加
+- [x] Persistent Goal / Commitment StateをBrain hierarchyへ追加
 - [x] live-ID/dry-run/mutation/re-audit runbook作成
 - [ ] GitHub live Project field IDs取得
 - [ ] V2 Area options更新
