@@ -19,16 +19,38 @@ python gui/yura-system-architecture-visualizer/server.py
 
 ## Render
 
+既存GUI用のルート `render.yaml` とは分離し、Architecture Visualizer専用Blueprintを使用します。
+
+Blueprint file:
+
+```text
+render-system-architecture-visualizer.yaml
+```
+
+Render DashboardでBlueprintを作成または更新するとき、**Blueprint Path** に次を指定します。
+
+```text
+render-system-architecture-visualizer.yaml
+```
+
+このBlueprintは `yura-system-architecture-visualizer` の1サービスだけを管理します。既存のInner State / Configuration Harbor / Avatar Runtime Labを重複作成しません。
+
 Build Command:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt && python -m compileall gui/yura-system-architecture-visualizer
 ```
 
 Start Command:
 
 ```bash
 python gui/yura-system-architecture-visualizer/server.py
+```
+
+Health Check:
+
+```text
+/api/health
 ```
 
 Renderが設定する `PORT` をそのまま使用します。
