@@ -20,11 +20,11 @@ class StructuredOutputContract:
         if len(self.name) > 64:
             raise ValueError("StructuredOutputContract.nameは64文字以下にしてください。")
         if not all(
-            char.isalnum() or char in {"_", "-"}
+            char.isascii() and (char.isalnum() or char in {"_", "-"})
             for char in self.name
         ):
             raise ValueError(
-                "StructuredOutputContract.nameは英数字・underscore・hyphenだけを使用してください。"
+                "StructuredOutputContract.nameはASCII英数字・underscore・hyphenだけを使用してください。"
             )
         if not isinstance(self.schema, Mapping) or not self.schema:
             raise ValueError("StructuredOutputContract.schemaは空にできません。")
