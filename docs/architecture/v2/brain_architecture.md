@@ -310,7 +310,7 @@ Character speechやMemory過去値をcurrent stateへ直接代入しない。
 
 # 9. B05 Memory / Reflection
 
-Issue: #332
+Issues: #332 Memory Store / Retrieval, #364 Reflection / Consolidation
 
 Memory categories:
 
@@ -321,13 +321,15 @@ Memory categories:
 - Preference / Interest
 - Activity / Skill
 
-## 9.1 Retrieval
+## 9.1 Retrieval / Store — #332
 
 `MemoryEvidenceView`として現在decisionへ必要な範囲だけ提供する。
 
 Memoryはcurrent Execution Fact / current Internal Stateより強いauthorityを持たない。
 
-## 9.2 Reflection / Consolidation
+保存・merge・update・contradiction・retrievalの最終Authorityは#332のvalidation / store pipelineが持つ。
+
+## 9.2 Reflection / Consolidation — #364
 
 Reflection LLMを数だけを理由に禁止しない。
 
@@ -414,7 +416,7 @@ OutputはSchema / Authority / Capability / Preconditions / Safety Gateを通す�
 
 # 11. B07 Goal / Activity Planning
 
-新規V2 Work Issueを設ける。
+Issue: #361
 
 質問:
 
@@ -520,7 +522,7 @@ or rejected / unsupported / failed / cancelled / timed_out
 
 # 14. B10 Speech Semantics Planning
 
-新規V2 Work Issueを設ける。
+Issue: #362
 
 質問:
 
@@ -558,7 +560,7 @@ SpeechSemanticPlan
 毎回専用大型LLMを必須化しない。
 
 - simple speech: Executiveが十分なtyped semantic constraintsを持つ場合は軽量/決定論的生成または省略可能
-- complex speech:専用Speech Semantics LLMを起動
+- complex speech: 専用Speech Semantics LLMを起動
 
 論理Authorityは分離したまま、call数は最適化できる。
 
@@ -600,7 +602,7 @@ Characterがraw Emotion/Desire/Drive、raw execution payload等を再解釈し�
 
 # 16. B12 Independent Semantic Verification
 
-新規V2 Work Issueを設ける。
+Issue: #363
 
 V1の独立意味検証を、Authorityを閉じた形で継承する。
 
@@ -641,6 +643,8 @@ semantic riskが低く、Verifier不要で同等保証できるcontractが成立
 
 # 17. B13 Speech Performance
 
+Issue: #331
+
 engine-independent。
 
 - phrase timing
@@ -658,6 +662,7 @@ Provider Adapterが具体値へ投影する。
 
 # 18. B14 Speech Pipeline
 
+Issue: #348
 詳細: `docs/architecture/v2/speech_pipeline_architecture.md`
 
 PreparationとPresentationを別laneにする。
@@ -688,6 +693,8 @@ Presentation
 ---
 
 # 19. B15 Autonomy / Turn Management
+
+Issue: #333
 
 「いつExecutive decisionを起動できるか」を管理する。
 
@@ -738,7 +745,7 @@ Brain ExecutiveがGame frame-level操作やStreamingコメント大量分類を�
 
 ```text
 Executive Goal / Strategy
-→ Game capability / agent
+→ Game Skill Runtime (#365)
 → fast game-specific policy
 → Game Result
 → Brain Appraisal
@@ -783,7 +790,7 @@ Provider optimization / batching / fused callを将来採用しても、logical 
 - typed semantic facets
 - finite phrase dictionaryを意味Authorityにしない
 - raw internal stateをCharacterに解釈させない
--実LLM失敗をfailure classとして設計へ戻す
+- 実LLM失敗をfailure classとして設計へ戻す
 
 V1から改善するもの:
 
