@@ -44,12 +44,25 @@ Audit timestamp: 2026-08-13T02:26:48+0900
 - `v2` label missing: 38
 - formal existing canonical links: 49/49 PASS
 - #367 parent missing
-- Auto-add enabled: confirmed
+- Auto-add enabled: confirmed by API
 - Auto-add filter/repository: API UNVERIFIED
 
 Project ID / field IDs / option IDs / item IDsはmutation時にlive再取得する。
 
-## 4. Project field schema
+## 4. Human UI verification — PASS
+
+2026-08-13、ユーザーがGitHub Project #7 UIでAuto-add workflowを確認し、以下へ設定したことを明示報告した。
+
+- Project: `ktan514 / #7 / プロジェクトゆらv2`
+- Auto-add: enabled
+- Repository: `ktan514/ai-liver-yura`
+- Filter: `label:v2`
+
+この人間確認により、Phase B mutationのAuto-add UI GateはPASS。
+
+APIではfilter/repository詳細を取得できないため、今後の自動監査ではこの確認を「UI human verification」として区別して扱う。APIで確認できたとは表現しない。
+
+## 5. Project field schema
 
 ### Status
 
@@ -88,7 +101,7 @@ Audit時Project Areaには`Management` optionが不足。non-destructive add対�
 - Size = unset
 - Estimate = unset
 
-## 5. Canonical metadata exceptions
+## 6. Canonical metadata exceptions
 
 #317:
 
@@ -116,7 +129,7 @@ Audit時Project Areaには`Management` optionが不足。non-destructive add対�
 
 その他IssueはIssue本文のPriority / Issue level / Areaを正本とする。
 
-## 6. Desired migration Status / role
+## 7. Desired migration Status / role
 
 | Issue scope | Status | 担当ロール |
 |---|---|---|
@@ -128,13 +141,9 @@ Audit時Project Areaには`Management` optionが不足。non-destructive add対�
 
 V2 architectureはユーザー承認済み。ただし#367完了まではproduct implementation lineageを開始しない。
 
-## 7. Required mutation
+## 8. Required mutation
 
-Human UIでAuto-add workflowが次であることを確認した後だけ実施:
-
-- enabled
-- repository = `ktan514/ai-liver-yura`
-- filter = `label:v2`
+Auto-add UI GateはPASS済み。
 
 Mutation:
 
@@ -146,7 +155,7 @@ Mutation:
 6. #367 formal parentを#317へ追加
 7. 完全再監査
 
-## 8. Explicit non-mutations
+## 9. Explicit non-mutations
 
 - scope外Issue / PRへ`v2` labelを追加しない
 - Issue / PR本体をclose/deleteしない
@@ -158,7 +167,7 @@ Mutation:
 - V1 lineage変更なし
 - old Project #6 mutationなし
 
-## 9. Completion criteria
+## 10. Completion criteria
 
 #367 PASS条件:
 
@@ -179,7 +188,7 @@ Mutation:
 - formal hierarchy = 50 links including #367→#317
 - unintended Issue/PR/repository mutations = 0
 
-## 10. After #367
+## 11. After #367
 
 Project #7がV2 management authorityとなる。
 
