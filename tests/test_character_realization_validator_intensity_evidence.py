@@ -179,7 +179,7 @@ async def test_e1_presence_only_is_rejected_before_post_observation_validation()
     ).validate(_source(), _context(), _response("うん、楽しいよ。"))
 
     assert result.accepted is False
-    assert result.reason == "observed_semantic_state_mismatch"
+    assert result.reason == "observed_semantic_state_fidelity_mismatch"
     assert (
         "proposition:0:joy:observed_state_mismatch:expected=high:observed=present"
         in result.claim_differences
