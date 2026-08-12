@@ -1,6 +1,6 @@
 # AI Liver ゆら V2 GitHub Projects Sync Manifest
 
-Status: Draft / #319
+Status: Draft / #319 / Canonical values resolved 2026-08-13
 Project: `ktan514 / 6`
 Root: #317
 Canonical: `docs/architecture/v2/system_architecture.md`
@@ -29,49 +29,85 @@ Project field / formal Sub-issue操作前にGitHub liveからfield ID / option I
 
 ## 2. Design Gate Status Policy
 
-- #317: In progress
-- #318: In progress（Migration再同期、Design Gate確認待ち）
-- #319: Blocked（Manifest/Runbook完成、actual mutation環境待ち）
-- Product/Design Work・Parent・Integration: 原則Blocked by #317
+- #317: `In progress`
+- #318: `In progress`
+- #319: `Blocked`
+- Product/Design Work・Parent・Integration: 原則`Blocked` by #317
 
-ユーザーがV2 canonical designを明示確認するまでproduct implementation issueをIn progressへしない。
-
----
-
-## 3. 推奨Area
-
-- Management
-- Core / Foundation
-- Core / Character Definition
-- Core / Brain / Input
-- Core / Brain / Appraisal
-- Core / Brain / Executive
-- Core / Brain / Goal State
-- Core / Brain / Goal Planning
-- Core / Brain / Activity
-- Core / Brain / Speech Semantics
-- Core / Brain / Character Language
-- Core / Brain / Semantic Verification
-- Core / Brain / Speech Runtime
-- Core / Brain / Memory
-- Core / Brain / Reflection
-- **Core / Brain / Attention & Autonomy**
-- Core / Body
-- Core / Plugin
-- Infrastructure / LLM
-- Infrastructure / TTS
-- Infrastructure / Persistence
-- Subsystem / Avatar
-- Subsystem / Streaming
-- Subsystem / Game Skill
-- Subsystem / GUI
-- Subsystem / Validation
-- Subsystem / Tooling
-- System Integration
+ユーザーがV2 canonical designを明示確認するまでproduct implementation issueを`In progress`へしない。
 
 ---
 
-## 4. Parent / Sub-issue hierarchy
+## 3. `作業種別` canonical rule
+
+`作業種別`は現在の進捗段階ではなく、**Issueの主成果物**を表すsingle-selectとして固定する。
+
+利用する既存Option:
+
+- `設計`: Architecture / Parent設計が主成果物
+- `実装`: Product / Runtime / Provider / UI / Toolの実装が主成果物
+- `検証`: Integration / Validation / System Verificationが主成果物
+- `調査`: Inventory / Migration / Project監査・同期など管理調査が主成果物
+- `ドキュメント`: 人間向け正本文書そのものが主成果物
+- `不具合`: V2新体系では現時点の対象なし。将来Bug Issueで使用
+
+同一Issueで設計→実装→Verificationと進んでも`作業種別`を工程ごとに変更しない。進捗は`Status`で管理する。
+
+### V2特殊ケース
+
+- #317 = `設計`
+- #318 = `調査`
+- #319 = `調査`
+- Parent Issue = 原則`設計`
+- Integration Issue = 原則`検証`
+- #352 Validation Labs = `検証`
+- #354 Character Bible = `ドキュメント`
+- その他のProduct Work = 原則`実装`
+
+---
+
+## 4. `領域` canonical option names
+
+以下の**32個を完全一致の正式Option名**とする。スペースやslashを省略した別表記を作らない。
+
+1. `Management`
+2. `Core / Foundation`
+3. `Core / Character`
+4. `Core / Brain`
+5. `Core / Brain / Input`
+6. `Core / Brain / Appraisal`
+7. `Core / Brain / Executive`
+8. `Core / Brain / Goal State`
+9. `Core / Brain / Goal Planning`
+10. `Core / Brain / Activity`
+11. `Core / Brain / Speech Semantics`
+12. `Core / Brain / Character Language`
+13. `Core / Brain / Semantic Verification`
+14. `Core / Brain / Speech Runtime`
+15. `Core / Brain / Memory`
+16. `Core / Brain / Reflection`
+17. `Core / Brain / Attention & Autonomy`
+18. `Core / Brain / Integration`
+19. `Core / Body`
+20. `Core / Plugin`
+21. `Infrastructure`
+22. `Infrastructure / LLM`
+23. `Infrastructure / TTS`
+24. `Infrastructure / Persistence`
+25. `Subsystem`
+26. `Subsystem / Avatar`
+27. `Subsystem / Streaming`
+28. `Subsystem / Game Skill`
+29. `Subsystem / GUI`
+30. `Subsystem / Validation`
+31. `Subsystem / Tooling`
+32. `System Integration`
+
+既存の旧Area Optionは削除しない。V2同期では上記を追加して利用する。旧Issue整理完了後に別IssueでOption統廃合を検討する。
+
+---
+
+## 5. Parent / Sub-issue hierarchy
 
 ```text
 #317 V2 Root
@@ -128,64 +164,64 @@ Project field / formal Sub-issue操作前にGitHub liveからfield ID / option I
 
 ---
 
-## 5. Project Items / Schedule
+## 6. Project Items / canonical field values
 
-| 工程 | Issue | Level | Area | Priority | Start | Target | Gate Status |
-|---:|---:|---|---|---|---|---|---|
-| 0 | #317 | Management/Root | Management | Critical | 2026-08-12 | 2026-10-31 | In progress |
-| 10 | #318 | Management | Management | Critical | 2026-08-12 | 2026-08-16 | In progress |
-| 20 | #319 | Management | Management | Critical | 2026-08-12 | 2026-08-17 | Blocked |
-| 100 | #321 | Work | Core/Foundation | Critical | 2026-08-13 | 2026-08-15 | Blocked |
-| 110 | #322 | Work | Core/Foundation | Critical | 2026-08-15 | 2026-08-21 | Blocked |
-| 120 | #323 | Work | Core/Foundation | Critical | 2026-08-15 | 2026-08-20 | Blocked |
-| 130 | #320 | Parent | Core/Foundation | Critical | 2026-08-13 | 2026-08-26 | Blocked |
-| 140 | #354 | Work | Core/Character | Critical | 2026-08-17 | 2026-08-21 | Blocked |
-| 150 | #355 | Work | Core/Character | Critical | 2026-08-21 | 2026-08-24 | Blocked |
-| 160 | #324 | Parent | Core/Character | Critical | 2026-08-17 | 2026-08-24 | Blocked |
-| 170 | #357 | Work | Infrastructure/LLM | Critical | 2026-08-18 | 2026-08-27 | Blocked |
-| 200 | #349 | Work | Brain/Input | Critical | 2026-08-19 | 2026-08-23 | Blocked |
-| 210 | #326 | Work | Brain/Input | Critical | 2026-08-19 | 2026-08-24 | Blocked |
-| 220 | #327 | Work | Brain/Appraisal | Critical | 2026-08-24 | 2026-08-31 | Blocked |
-| 230 | #328 | Work | Brain/Executive | Critical | 2026-08-31 | 2026-09-06 | Blocked |
-| 235 | #366 | Work | Brain/Goal State | Critical | 2026-09-04 | 2026-09-09 | Blocked |
-| 240 | #361 | Work | Brain/Goal Planning | Critical | 2026-09-06 | 2026-09-11 | Blocked |
-| 250 | #329 | Work | Brain/Activity | Critical | 2026-09-05 | 2026-09-10 | Blocked |
-| 260 | #362 | Work | Brain/Speech Semantics | Critical | 2026-09-06 | 2026-09-11 | Blocked |
-| 270 | #330 | Work | Brain/Character Language | Critical | 2026-09-10 | 2026-09-15 | Blocked |
-| 280 | #363 | Work | Brain/Semantic Verification | Critical | 2026-09-12 | 2026-09-17 | Blocked |
-| 290 | #331 | Work | Brain/Speech Runtime | High | 2026-09-14 | 2026-09-17 | Blocked |
-| 300 | #348 | Work | Brain/Speech Runtime | Critical | 2026-09-17 | 2026-09-23 | Blocked |
-| 310 | #332 | Work | Brain/Memory | High | 2026-09-15 | 2026-09-22 | Blocked |
-| 320 | #364 | Work | Brain/Reflection | High | 2026-09-18 | 2026-09-24 | Blocked |
-| 330 | #333 | Work | Brain/Attention & Autonomy | High | 2026-09-20 | 2026-09-26 | Blocked |
-| 340 | #350 | Work | Core/Foundation | Critical | 2026-09-18 | 2026-09-25 | Blocked |
-| 350 | #358 | Work | Infrastructure/TTS | High | 2026-09-22 | 2026-09-27 | Blocked |
-| 360 | #359 | Work | Infrastructure/Persistence | High | 2026-09-22 | 2026-09-28 | Blocked |
-| 370 | #334 | Integration | Brain Integration | Critical | 2026-09-25 | 2026-10-02 | Blocked |
-| 380 | #325 | Parent | Brain | Critical | 2026-08-19 | 2026-10-05 | Blocked |
-| 400 | #336 | Work | Body | Critical | 2026-09-01 | 2026-09-07 | Blocked |
-| 410 | #337 | Work | Body | Critical | 2026-09-07 | 2026-09-12 | Blocked |
-| 420 | #338 | Work | Body | Critical | 2026-09-12 | 2026-09-19 | Blocked |
-| 430 | #339 | Work | Body | Critical | 2026-09-18 | 2026-09-26 | Blocked |
-| 440 | #340 | Work | Body | High | 2026-09-26 | 2026-10-01 | Blocked |
-| 450 | #341 | Integration | Body | Critical | 2026-10-01 | 2026-10-08 | Blocked |
-| 460 | #335 | Parent | Body | Critical | 2026-09-01 | 2026-10-08 | Blocked |
-| 500 | #343 | Work | Plugin | Critical | 2026-09-10 | 2026-09-18 | Blocked |
-| 510 | #344 | Integration | Plugin | Critical | 2026-09-30 | 2026-10-05 | Blocked |
-| 520 | #342 | Parent | Plugin | Critical | 2026-09-10 | 2026-10-05 | Blocked |
-| 530 | #356 | Parent | Infrastructure | High | 2026-08-18 | 2026-09-28 | Blocked |
-| 600 | #347 | Work | Subsystem/Streaming | High | 2026-10-01 | 2026-10-12 | Blocked |
-| 610 | #352 | Work | Subsystem/Validation | High | 2026-10-01 | 2026-10-16 | Blocked |
-| 620 | #353 | Work | Subsystem/Tooling | Medium | 2026-10-05 | 2026-10-18 | Blocked |
-| 630 | #346 | Work | Subsystem/Avatar | High | 2026-10-08 | 2026-10-15 | Blocked |
-| 640 | #351 | Work | Subsystem/GUI | High | 2026-10-08 | 2026-10-18 | Blocked |
-| 645 | #365 | Work | Subsystem/Game Skill | High | 2026-10-08 | 2026-10-20 | Blocked |
-| 650 | #345 | Parent | Subsystems | High | 2026-09-30 | 2026-10-20 | Blocked |
-| 700 | #360 | Integration | System Integration | Critical | 2026-10-20 | 2026-10-31 | Blocked |
+| 工程 | Issue | Level | 作業種別 | 領域 | 優先度 | Start | Target | Gate Status |
+|---:|---:|---|---|---|---|---|---|---|
+| 0 | #317 | Management/Root | 設計 | Management | Critical | 2026-08-12 | 2026-10-31 | In progress |
+| 10 | #318 | Management | 調査 | Management | Critical | 2026-08-12 | 2026-08-16 | In progress |
+| 20 | #319 | Management | 調査 | Management | Critical | 2026-08-12 | 2026-08-17 | Blocked |
+| 100 | #321 | Work | 実装 | Core / Foundation | Critical | 2026-08-13 | 2026-08-15 | Blocked |
+| 110 | #322 | Work | 実装 | Core / Foundation | Critical | 2026-08-15 | 2026-08-21 | Blocked |
+| 120 | #323 | Work | 実装 | Core / Foundation | Critical | 2026-08-15 | 2026-08-20 | Blocked |
+| 130 | #320 | Parent | 設計 | Core / Foundation | Critical | 2026-08-13 | 2026-08-26 | Blocked |
+| 140 | #354 | Work | ドキュメント | Core / Character | Critical | 2026-08-17 | 2026-08-21 | Blocked |
+| 150 | #355 | Work | 実装 | Core / Character | Critical | 2026-08-21 | 2026-08-24 | Blocked |
+| 160 | #324 | Parent | 設計 | Core / Character | Critical | 2026-08-17 | 2026-08-24 | Blocked |
+| 170 | #357 | Work | 実装 | Infrastructure / LLM | Critical | 2026-08-18 | 2026-08-27 | Blocked |
+| 200 | #349 | Work | 実装 | Core / Brain / Input | Critical | 2026-08-19 | 2026-08-23 | Blocked |
+| 210 | #326 | Work | 実装 | Core / Brain / Input | Critical | 2026-08-19 | 2026-08-24 | Blocked |
+| 220 | #327 | Work | 実装 | Core / Brain / Appraisal | Critical | 2026-08-24 | 2026-08-31 | Blocked |
+| 230 | #328 | Work | 実装 | Core / Brain / Executive | Critical | 2026-08-31 | 2026-09-06 | Blocked |
+| 235 | #366 | Work | 実装 | Core / Brain / Goal State | Critical | 2026-09-04 | 2026-09-09 | Blocked |
+| 240 | #361 | Work | 実装 | Core / Brain / Goal Planning | Critical | 2026-09-06 | 2026-09-11 | Blocked |
+| 250 | #329 | Work | 実装 | Core / Brain / Activity | Critical | 2026-09-05 | 2026-09-10 | Blocked |
+| 260 | #362 | Work | 実装 | Core / Brain / Speech Semantics | Critical | 2026-09-06 | 2026-09-11 | Blocked |
+| 270 | #330 | Work | 実装 | Core / Brain / Character Language | Critical | 2026-09-10 | 2026-09-15 | Blocked |
+| 280 | #363 | Work | 実装 | Core / Brain / Semantic Verification | Critical | 2026-09-12 | 2026-09-17 | Blocked |
+| 290 | #331 | Work | 実装 | Core / Brain / Speech Runtime | High | 2026-09-14 | 2026-09-17 | Blocked |
+| 300 | #348 | Work | 実装 | Core / Brain / Speech Runtime | Critical | 2026-09-17 | 2026-09-23 | Blocked |
+| 310 | #332 | Work | 実装 | Core / Brain / Memory | High | 2026-09-15 | 2026-09-22 | Blocked |
+| 320 | #364 | Work | 実装 | Core / Brain / Reflection | High | 2026-09-18 | 2026-09-24 | Blocked |
+| 330 | #333 | Work | 実装 | Core / Brain / Attention & Autonomy | High | 2026-09-20 | 2026-09-26 | Blocked |
+| 340 | #350 | Work | 実装 | Core / Foundation | Critical | 2026-09-18 | 2026-09-25 | Blocked |
+| 350 | #358 | Work | 実装 | Infrastructure / TTS | High | 2026-09-22 | 2026-09-27 | Blocked |
+| 360 | #359 | Work | 実装 | Infrastructure / Persistence | High | 2026-09-22 | 2026-09-28 | Blocked |
+| 370 | #334 | Integration | 検証 | Core / Brain / Integration | Critical | 2026-09-25 | 2026-10-02 | Blocked |
+| 380 | #325 | Parent | 設計 | Core / Brain | Critical | 2026-08-19 | 2026-10-05 | Blocked |
+| 400 | #336 | Work | 実装 | Core / Body | Critical | 2026-09-01 | 2026-09-07 | Blocked |
+| 410 | #337 | Work | 実装 | Core / Body | Critical | 2026-09-07 | 2026-09-12 | Blocked |
+| 420 | #338 | Work | 実装 | Core / Body | Critical | 2026-09-12 | 2026-09-19 | Blocked |
+| 430 | #339 | Work | 実装 | Core / Body | Critical | 2026-09-18 | 2026-09-26 | Blocked |
+| 440 | #340 | Work | 実装 | Core / Body | High | 2026-09-26 | 2026-10-01 | Blocked |
+| 450 | #341 | Integration | 検証 | Core / Body | Critical | 2026-10-01 | 2026-10-08 | Blocked |
+| 460 | #335 | Parent | 設計 | Core / Body | Critical | 2026-09-01 | 2026-10-08 | Blocked |
+| 500 | #343 | Work | 実装 | Core / Plugin | Critical | 2026-09-10 | 2026-09-18 | Blocked |
+| 510 | #344 | Integration | 検証 | Core / Plugin | Critical | 2026-09-30 | 2026-10-05 | Blocked |
+| 520 | #342 | Parent | 設計 | Core / Plugin | Critical | 2026-09-10 | 2026-10-05 | Blocked |
+| 530 | #356 | Parent | 設計 | Infrastructure | High | 2026-08-18 | 2026-09-28 | Blocked |
+| 600 | #347 | Work | 実装 | Subsystem / Streaming | High | 2026-10-01 | 2026-10-12 | Blocked |
+| 610 | #352 | Work | 検証 | Subsystem / Validation | High | 2026-10-01 | 2026-10-16 | Blocked |
+| 620 | #353 | Work | 実装 | Subsystem / Tooling | Medium | 2026-10-05 | 2026-10-18 | Blocked |
+| 630 | #346 | Work | 実装 | Subsystem / Avatar | High | 2026-10-08 | 2026-10-15 | Blocked |
+| 640 | #351 | Work | 実装 | Subsystem / GUI | High | 2026-10-08 | 2026-10-18 | Blocked |
+| 645 | #365 | Work | 実装 | Subsystem / Game Skill | High | 2026-10-08 | 2026-10-20 | Blocked |
+| 650 | #345 | Parent | 設計 | Subsystem | High | 2026-09-30 | 2026-10-20 | Blocked |
+| 700 | #360 | Integration | 検証 | System Integration | Critical | 2026-10-20 | 2026-10-31 | Blocked |
 
 ---
 
-## 6. Architecture invariants in Project
+## 7. Architecture invariants in Project
 
 - variable LLM Role count
 - Single Executive Authority
@@ -203,37 +239,39 @@ Project field / formal Sub-issue操作前にGitHub liveからfield ID / option I
 
 ---
 
-## 7. Sync Rule
+## 8. Sync Rule
 
 1. Runbookに従いProject #6 live取得
 2. field/option/item IDs取得
-3. new Area options確認
-4. duplicate item確認
-5. #361〜#366 existence確認
-6. formal Parent/Sub-issue確認
-7. Manifestとの差分dry-run
-8. canonical一致時のみmutation
-9. mutation後再取得監査
+3. 32 canonical Area optionsを非破壊で確認/追加
+4. `作業種別`を本Manifestの一意値で解決
+5. duplicate item確認
+6. #361〜#366 existence確認
+7. formal Parent/Sub-issue確認
+8. Manifestとの差分dry-run
+9. canonical一致時のみmutation
+10. mutation後再取得監査
 
-現ChatGPT環境はProjects v2 / formal Sub-issue mutation actionなし、containerにも認証済み`gh`なし。actual mutationのみBlocked。古いIDを推測しない。
+古いIDを推測しない。既存旧Area optionはこの同期作業では削除しない。
 
 ---
 
-## 8. Completion
+## 9. Completion
 
 - [x] V2 logical hierarchy
 - [x] #361〜#366作成
-- [x] Start/Target issue本文設定
+- [x] Start/Target Issue本文設定
 - [x] Design Gate status policy
-- [x] Area / 工程案
+- [x] 32 canonical Area option名確定
+- [x] 50 Issueの`作業種別`一意値確定
+- [x] Area / 工程 / Priority / Schedule正本
 - [x] variable LLM / non-serial runtime
 - [x] Game Skill
 - [x] persistent Goal State
 - [x] Attention/Focus #333 metadata
 - [x] live-ID/dry-run/mutation/re-audit runbook
-- [ ] live Project field IDs取得
-- [ ] V2 Area options更新
-- [ ] V2 Issue project一意登録
-- [ ] Status/Type/Area/Priority/工程/Start/Target同期
+- [ ] missing Area optionsをProjectへ非破壊追加
+- [ ] V2 Issue project一意登録確認
+- [ ] Status/作業種別/領域/優先度/工程/Start/Target同期
 - [ ] formal Parent/Sub-issue同期
 - [ ] re-audit PASS
