@@ -1,5 +1,5 @@
-from app.adapters.prompt.character_realization_validator_prompt_builder import (
-    CharacterRealizationValidatorPromptBuilder,
+from app.adapters.prompt.character_realization_observer_prompt_builder import (
+    CharacterRealizationObserverPromptBuilder,
 )
 from app.domain.character_response import (
     ActivityExecutionStatus,
@@ -13,9 +13,11 @@ from app.domain.semantic_utterance import (
     SemanticTarget,
     SemanticUtterancePlan,
 )
+from app.domain.semantic_validation import RealizedSemanticObservation
+from app.runtime.character_realization_validator import CharacterRealizationValidator
 
 
-def test_validator_reject_contract_covers_unknown_to_guessed_polarity() -> None:
+def test_observer_contract_and_typed_comparison_reject_unknown_to_guessed_polarity() -> None:
     plan = SemanticUtterancePlan(
         speech_act="direct_answer",
         target=SemanticTarget("internal_state", "current_desire"),
@@ -53,20 +55,47 @@ def test_validator_reject_contract_covers_unknown_to_guessed_polarity() -> None:
         },
     )
     response = CharacterResponse(
-        speech="うん、少しあるかも。",
+        speech="うん、何かしたい気持ちはあるかも。",
         expression="neutral",
         claims=(ResponseClaim.CONVERSATION_ONLY,),
         linguistic_performance=LinguisticPerformance(
-            phrasing=("うん", "少しあるかも"),
+            phrasing=("うん", "何かしたい気持ちはあるかも"),
             delivery_tags=("gentle",),
         ),
         semantic_realizations=("proposition:0:current_desire",),
     )
 
-    prompt = CharacterRealizationValidatorPromptBuilder().build(context, response)
+    observer_prompt = CharacterRealizationObserverPromptBuilder().build(
+        context,
+        response,
+        plan,
+    )
+    assert "unknownは対象の存在・不在・強度・値を現時点で確定していない" in observer_prompt
+    assert "特定polarityへcommitしたspeechをunknownにしない" in observer_prompt
+    assert "certaintyは対象stateについてのepistemic確かさとして観測する" in observer_prompt
 
-    assert '"state": "unknown"' in prompt
-    assert '"certainty": "low"' in prompt
-    assert "unknownをpresent/absent/low等へ" in prompt
-    assert "hedge付きでも特定polarityを推測していればreject" in prompt
-    assert "certainty=lowは別stateを推測する許可ではない" in prompt
+    guessed = RealizedSemanticObservation(
+        realization_id="proposition:0:current_desire",
+        predicate_realized=True,
+        observed_state="present",
+        observed_certainty="medium",
+        predicate_evidence_spans=("何かしたい気持ち",),
+        state_evidence_spans=("あるかも",),
+        certainty_evidence_spans=("かも",),
+    )
+    differences = CharacterRealizationValidator._observation_differences(
+        plan,
+        response,
+        (guessed,),
+    )
+
+    assert (
+        "proposition:0:current_desire:observed_state_mismatch:"
+        "expected=unknown:observed=present"
+        in differences
+    )
+    assert (
+        "proposition:0:current_desire:observed_certainty_mismatch:"
+        "expected=low:observed=medium"
+        in differences
+    )
