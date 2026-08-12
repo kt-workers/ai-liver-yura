@@ -6,6 +6,7 @@ MODULE_DIR = (
     / "gui"
     / "yura-system-architecture-visualizer"
 )
+WEB_DIR = MODULE_DIR / "web"
 sys.path.insert(0, str(MODULE_DIR))
 
 from dependency_graph import build_graph  # noqa: E402
@@ -82,3 +83,18 @@ def test_build_graph_keeps_working_when_file_has_syntax_error(tmp_path: Path) ->
 
     assert len(graph["diagnostics"]) == 1
     assert graph["diagnostics"][0]["path"] == "app/runtime/broken.py"
+
+
+def test_loading_overlay_hidden_contract_is_not_overridden_by_css() -> None:
+    styles = (WEB_DIR / "styles.css").read_text(encoding="utf-8")
+
+    assert ".loading[hidden]" in styles
+    assert "display:none" in styles
+
+
+def test_initial_readable_fit_is_separate_from_explicit_fit_to_view() -> None:
+    script = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "function fitReadableView()" in script
+    assert "requestAnimationFrame(fitReadableView)" in script
+    assert "addEventListener('click',fitToView)" in script
