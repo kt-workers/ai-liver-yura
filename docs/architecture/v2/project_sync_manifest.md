@@ -19,22 +19,22 @@ Related canonicals:
 
 ## 1. 目的
 
-V2 Issue hierarchyをGitHub Projects v2「プロジェクトゆら」へ同期するための正本。
+V2 Issue hierarchyをGitHub Projects v2「プロジェクトゆら」へ同期する正本。
 
-Project field / formal Sub-issue操作前にGitHub liveからfield ID / option ID / item IDを再取得し、旧Snapshot IDを推測利用しない。
+Project field / formal Sub-issue操作前にGitHub liveからfield ID / option ID / item IDを取得し、旧Snapshot IDを推測利用しない。
 
-実行手順・STOP条件は`project_sync_runbook.md`を正本とする。
+実行手順・STOP条件は`project_sync_runbook.md`。
 
 ---
 
 ## 2. Design Gate Status Policy
 
 - #317: In progress
-- #318: In progress（Migration再同期完了、Design Gate確認待ち）
-- #319: Blocked（Manifest/Runbook完成、Project/Sub-issue実mutation可能環境待ち）
-- Product/Design Work・Parent・Integration: 原則Blocked by #317 Design Gate
+- #318: In progress（Migration再同期、Design Gate確認待ち）
+- #319: Blocked（Manifest/Runbook完成、actual mutation環境待ち）
+- Product/Design Work・Parent・Integration: 原則Blocked by #317
 
-ユーザーがV2 canonical designを明示確認するまで製品コードIssueをIn progressへしない。
+ユーザーがV2 canonical designを明示確認するまでproduct implementation issueをIn progressへしない。
 
 ---
 
@@ -55,7 +55,7 @@ Project field / formal Sub-issue操作前にGitHub liveからfield ID / option I
 - Core / Brain / Speech Runtime
 - Core / Brain / Memory
 - Core / Brain / Reflection
-- Core / Brain / Autonomy
+- **Core / Brain / Attention & Autonomy**
 - Core / Body
 - Core / Plugin
 - Infrastructure / LLM
@@ -78,52 +78,52 @@ Project field / formal Sub-issue操作前にGitHub liveからfield ID / option I
 ├─ #318 Migration Matrix [Management]
 ├─ #319 Project Sync [Management]
 ├─ #320 Core Foundation [Parent]
-│  ├─ #321 Typed Contracts [Work]
-│  ├─ #322 Runtime Kernel / Concurrency [Work]
-│  ├─ #323 Variable LLM Role / Invocation Contracts [Work]
+│  ├─ #321 Typed Contracts
+│  ├─ #322 Runtime Kernel / Concurrency
+│  ├─ #323 Variable LLM Role / Invocation Contracts
 │  └─ #324 Character Definition [Parent]
-│     ├─ #354 Character Bible [Work]
-│     └─ #355 Character Projection [Work]
+│     ├─ #354 Character Bible
+│     └─ #355 Character Projection
 ├─ #325 Brain [Parent]
-│  ├─ #349 Input Gateway [Work]
-│  ├─ #326 Input Meaning [Work]
-│  ├─ #327 Subjective Appraisal / Internal State [Work]
-│  ├─ #328 Executive Deliberation [Work]
-│  ├─ #366 Goal / Commitment State [Work]
-│  ├─ #361 Goal / Activity Planning [Work]
-│  ├─ #329 Activity Execution [Work]
-│  ├─ #362 Speech Semantics [Work]
-│  ├─ #330 Character Language [Work]
-│  ├─ #363 Semantic Verification [Work]
-│  ├─ #331 Speech Performance [Work]
-│  ├─ #348 Speech Pipeline [Work]
-│  ├─ #332 Memory Store / Retrieval [Work]
-│  ├─ #364 Reflection / Consolidation [Work]
-│  ├─ #333 Autonomy / Turn [Work]
-│  └─ #334 Brain Integration [Integration]
+│  ├─ #349 Input Gateway
+│  ├─ #326 Input Meaning
+│  ├─ #327 Appraisal / Internal State
+│  ├─ #328 Executive Deliberation
+│  ├─ #366 Goal / Commitment State
+│  ├─ #361 Goal / Activity Planning
+│  ├─ #329 Activity Execution
+│  ├─ #362 Speech Semantics
+│  ├─ #330 Character Language
+│  ├─ #363 Semantic Verification
+│  ├─ #331 Speech Performance
+│  ├─ #348 Speech Pipeline
+│  ├─ #332 Memory Store / Retrieval
+│  ├─ #364 Reflection / Consolidation
+│  ├─ #333 Attention / Autonomy / Turn
+│  └─ #334 Brain Integration
 ├─ #335 Body [Parent]
-│  ├─ #336 Canonical Body Model [Work]
-│  ├─ #337 Body Expression [Work]
-│  ├─ #338 Body Motion Planner [Work]
-│  ├─ #339 Solver / Controller [Work]
-│  ├─ #340 Realtime Layers [Work]
-│  └─ #341 Body Integration [Integration]
+│  ├─ #336 Canonical Body Model
+│  ├─ #337 Body Expression
+│  ├─ #338 Body Motion Planner
+│  ├─ #339 Solver / Controller
+│  ├─ #340 Realtime Layers
+│  └─ #341 Body Integration
 ├─ #342 Plugin Architecture [Parent]
-│  ├─ #343 Registry / Manifest / Lifecycle [Work]
-│  └─ #344 Plugin Integration [Integration]
-├─ #350 Core Lifecycle / Graceful Degradation [Work]
+│  ├─ #343 Registry / Manifest / Lifecycle
+│  └─ #344 Plugin Integration
+├─ #350 Core Lifecycle / Graceful Degradation
 ├─ #356 Infrastructure [Parent]
-│  ├─ #357 LLM Provider [Work]
-│  ├─ #358 TTS Provider [Work]
-│  └─ #359 Persistence Provider [Work]
+│  ├─ #357 LLM Provider
+│  ├─ #358 TTS Provider
+│  └─ #359 Persistence Provider
 ├─ #345 Subsystems [Parent]
-│  ├─ #346 Avatar [Work]
-│  ├─ #347 Streaming [Work]
-│  ├─ #365 Game Skill [Work]
-│  ├─ #351 GUI / Admin [Work]
-│  ├─ #352 Validation / Concurrency Labs [Work]
-│  └─ #353 Development Tooling [Work]
-└─ #360 System Integration [Integration]
+│  ├─ #346 Avatar
+│  ├─ #347 Streaming
+│  ├─ #365 Game Skill
+│  ├─ #351 GUI / Admin
+│  ├─ #352 Validation / Concurrency Labs
+│  └─ #353 Development Tooling
+└─ #360 System Integration
 ```
 
 ---
@@ -157,7 +157,7 @@ Project field / formal Sub-issue操作前にGitHub liveからfield ID / option I
 | 300 | #348 | Work | Brain/Speech Runtime | Critical | 2026-09-17 | 2026-09-23 | Blocked |
 | 310 | #332 | Work | Brain/Memory | High | 2026-09-15 | 2026-09-22 | Blocked |
 | 320 | #364 | Work | Brain/Reflection | High | 2026-09-18 | 2026-09-24 | Blocked |
-| 330 | #333 | Work | Brain/Autonomy | High | 2026-09-20 | 2026-09-25 | Blocked |
+| 330 | #333 | Work | Brain/Attention & Autonomy | High | 2026-09-20 | 2026-09-26 | Blocked |
 | 340 | #350 | Work | Core/Foundation | Critical | 2026-09-18 | 2026-09-25 | Blocked |
 | 350 | #358 | Work | Infrastructure/TTS | High | 2026-09-22 | 2026-09-27 | Blocked |
 | 360 | #359 | Work | Infrastructure/Persistence | High | 2026-09-22 | 2026-09-28 | Blocked |
@@ -185,55 +185,55 @@ Project field / formal Sub-issue操作前にGitHub liveからfield ID / option I
 
 ---
 
-## 6. Architecture invariants to preserve in Project
+## 6. Architecture invariants in Project
 
-- LLM Role数を固定しない
+- variable LLM Role count
 - Single Executive Authority
-- current Goal / Commitment正本は#366
-- `Logical Role count != API call count`
-- responsibility separationを直列LLM chainへしない
-- slow LLM / TTS / DB / Plugin / Subsystemでunrelated laneをblockしない
-- foreground interaction > low-priority background cognition
-- source_context_revision / goal_revision / cancellation / stale / supersede
-- Speech playback中next generation可
-- Body realtimeはLLM待ちで停止しない
-- Game frame loopはCore Executive LLM latency非依存
-- Streaming burstでCore starvationなし
-- Pluginをoptional性だけで定義しない
+- current Goal/Commitment = #366
+- current Attention/Focus/Turn = #333
+- `Logical Role != API Call`
+- no serial LLM chain as default
+- source_context_revision / goal_revision / attention_revision
+- foreground > low-priority background
+- Speech playback中next generation
+- Body realtime independent from LLM waits
+- Game frame loop independent from Executive LLM
+- Streaming burst isolation
+- Plugin structural definition, not optionality-only
 
 ---
 
-## 7. Sync execution rule
+## 7. Sync Rule
 
-1. `project_sync_runbook.md`に従いProject #6をlive取得
-2. field IDs / option IDs / current item IDsを取得
-3. 新Area optionsを確認/追加
-4. item重複を確認
-5. #361〜#366を含むIssue existence確認
-6. formal Parent/Sub-issue current state確認
-7. Manifestとの差分をdry-run
-8. canonicalと一致した場合のみmutation
-9. mutation後Projectを再取得して完全性監査
+1. Runbookに従いProject #6 live取得
+2. field/option/item IDs取得
+3. new Area options確認
+4. duplicate item確認
+5. #361〜#366 existence確認
+6. formal Parent/Sub-issue確認
+7. Manifestとの差分dry-run
+8. canonical一致時のみmutation
+9. mutation後再取得監査
 
-現ChatGPT環境ではGitHub ConnectorにProjects v2 / formal Sub-issue mutation actionがなく、containerにも認証済み`gh`がないため、実mutationだけがBlocked。古いIDを推測使用しない。
+現ChatGPT環境はProjects v2 / formal Sub-issue mutation actionなし、containerにも認証済み`gh`なし。actual mutationのみBlocked。古いIDを推測しない。
 
 ---
 
 ## 8. Completion
 
-- [x] V2 logical hierarchy再設計
+- [x] V2 logical hierarchy
 - [x] #361〜#366作成
-- [x] Start/Targetを新規Issue本文へ設定
-- [x] Design Gate status policy確定
-- [x] Area案更新
-- [x] 工程案更新
-- [x] 4 LLM固定撤回を反映
-- [x] Game SkillをSubsystem hierarchyへ追加
-- [x] Persistent Goal / Commitment StateをBrain hierarchyへ追加
-- [x] live-ID/dry-run/mutation/re-audit runbook作成
-- [ ] GitHub live Project field IDs取得
+- [x] Start/Target issue本文設定
+- [x] Design Gate status policy
+- [x] Area / 工程案
+- [x] variable LLM / non-serial runtime
+- [x] Game Skill
+- [x] persistent Goal State
+- [x] Attention/Focus #333 metadata
+- [x] live-ID/dry-run/mutation/re-audit runbook
+- [ ] live Project field IDs取得
 - [ ] V2 Area options更新
-- [ ] V2全IssueをProject #6へ一意登録
-- [ ] Status / Type / Area / Priority / 工程 / Start / Target同期
-- [ ] formal Parent/Sub-issues同期
-- [ ] 再取得監査PASS
+- [ ] V2 Issue project一意登録
+- [ ] Status/Type/Area/Priority/工程/Start/Target同期
+- [ ] formal Parent/Sub-issue同期
+- [ ] re-audit PASS
