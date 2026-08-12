@@ -41,14 +41,7 @@ class _CharacterModel:
 
 
 class _ValidatorModel:
-    def __init__(
-        self,
-        payload: dict[str, object],
-        *,
-        observed_state: str,
-        state_evidence: str,
-    ) -> None:
-        self.payload = payload
+    def __init__(self, *, observed_state: str, state_evidence: str) -> None:
         self.observed_state = observed_state
         self.state_evidence = state_evidence
         self.activities: list[Activity] = []
@@ -72,7 +65,30 @@ class _ValidatorModel:
                 },
                 ensure_ascii=False,
             )
-        return json.dumps(self.payload, ensure_ascii=False)
+        return json.dumps(
+            {
+                "accepted": True,
+                "reason": "post_observation_semantic_contract_consistent",
+                "differences": [],
+                "semantic_checks": {
+                    "required_content_preserved": True,
+                    "forbidden_additions_absent": True,
+                    "unsupported_new_fact_absent": True,
+                    "existence_boundary_preserved": True,
+                    "budget_preserved": True,
+                },
+                "realized_proposition_checks": [
+                    {
+                        "realization_id": "proposition:0:joy",
+                        "predicate_preserved": True,
+                        "predicate_evidence_spans": ["楽しい"],
+                        "concept_preserved": True,
+                        "concept_evidence_spans": [],
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        )
 
 
 def _source_and_context():
@@ -136,54 +152,7 @@ def _profile() -> CharacterProfile:
     )
 
 
-def _validation_payload(
-    *,
-    state_fidelity: str,
-    intensity_semantics_preserved: bool,
-    presence_only_counterfactual_equivalent: bool,
-    evidence_spans: tuple[str, ...] = (),
-) -> dict[str, object]:
-    return {
-        "accepted": True,
-        "reason": "semantic_realization_consistent",
-        "differences": [],
-        "semantic_checks": {
-            "required_facets_preserved": True,
-            "predicate_preserved": True,
-            "state_preserved": state_fidelity == "exact",
-            "certainty_preserved": True,
-            "concept_preserved": True,
-            "unsupported_intensity_added": False,
-        },
-        "realized_proposition_checks": [
-            {
-                "realization_id": "proposition:0:joy",
-                "predicate_preserved": True,
-                "predicate_evidence_spans": ["楽しい"],
-                "state_preserved": state_fidelity == "exact",
-                "state_fidelity": state_fidelity,
-                "certainty_preserved": True,
-                "certainty_evidence_spans": [],
-                "concept_preserved": True,
-                "concept_evidence_spans": [],
-                "intensity_semantics_preserved": intensity_semantics_preserved,
-                "presence_only_counterfactual_equivalent": (
-                    presence_only_counterfactual_equivalent
-                ),
-                "intensity_evidence_spans": list(evidence_spans),
-            }
-        ],
-        "surface_evidence": {"intensity_markers": []},
-    }
-
-
-async def _run(
-    speech: str,
-    payload: dict[str, object],
-    *,
-    observed_state: str,
-    state_evidence: str,
-):
+async def _run(speech: str, *, observed_state: str, state_evidence: str):
     source, context = _source_and_context()
     character_model = _CharacterModel(speech)
     response = await CharacterLanguageRealizerService(
@@ -193,7 +162,6 @@ async def _run(
     ).generate(source, context)
 
     validator_model = _ValidatorModel(
-        payload,
         observed_state=observed_state,
         state_evidence=state_evidence,
     )
@@ -208,12 +176,6 @@ async def _run(
 async def test_e1_bare_presence_is_rejected_by_independent_observer() -> None:
     validation, character_model, validator_model = await _run(
         "うん、楽しいよ。",
-        _validation_payload(
-            state_fidelity="exact",
-            intensity_semantics_preserved=True,
-            presence_only_counterfactual_equivalent=False,
-            evidence_spans=(),
-        ),
         observed_state="present",
         state_evidence="楽しい",
     )
@@ -230,46 +192,31 @@ async def test_e1_bare_presence_is_rejected_by_independent_observer() -> None:
 
 
 @pytest.mark.asyncio
-async def test_plan_aware_counterfactual_diagnosis_is_rejected_after_observer_passes() -> None:
+async def test_observer_passes_exact_intensity_to_post_observation_validator_without_reinterpretation() -> None:
     validation, _, validator_model = await _run(
         "うん、かなり楽しいよ。",
-        _validation_payload(
-            state_fidelity="weakened",
-            intensity_semantics_preserved=False,
-            presence_only_counterfactual_equivalent=True,
-            evidence_spans=("かなり",),
-        ),
         observed_state="high",
         state_evidence="かなり楽しい",
     )
 
-    assert validation.accepted is False
-    assert validation.reason == "semantic_facet_validation_failed"
-    assert "proposition:0:joy:state_fidelity:weakened" in validation.claim_differences
-    assert "proposition:0:joy:intensity_semantics_preserved" in validation.claim_differences
-    assert (
-        "proposition:0:joy:presence_only_counterfactual_equivalent"
-        in validation.claim_differences
-    )
+    assert validation.accepted is True
+    assert validation.reason == "post_observation_semantic_contract_consistent"
     assert len(validator_model.activities) == 2
+    downstream_prompt = str(validator_model.activities[1].context["plugin_prompt_override"])
+    assert "state/polarity/intensity/certaintyはこの工程で判定しない" in downstream_prompt
+    assert '"state": "high"' not in downstream_prompt
 
 
 @pytest.mark.asyncio
 async def test_e1_exact_with_actual_speech_evidence_accepts_and_boundaries_are_sanitized() -> None:
     validation, character_model, validator_model = await _run(
         "うん、すごく楽しいよ。",
-        _validation_payload(
-            state_fidelity="exact",
-            intensity_semantics_preserved=True,
-            presence_only_counterfactual_equivalent=False,
-            evidence_spans=("すごく",),
-        ),
         observed_state="high",
         state_evidence="すごく楽しい",
     )
 
     assert validation.accepted is True
-    assert validation.reason == "semantic_realization_consistent"
+    assert validation.reason == "post_observation_semantic_contract_consistent"
     assert len(validator_model.activities) == 2
 
     forbidden = {
