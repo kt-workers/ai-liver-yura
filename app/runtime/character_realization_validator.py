@@ -18,27 +18,17 @@ from app.utils.llm_trace import build_llm_trace_context
 
 
 _INTERNAL_STATE_TYPES = frozenset({"internal_state", "agent_internal_state"})
-_INTENSITY_STATES = frozenset({"low", "moderate", "high", "very_high"})
-_STATE_FIDELITY_VALUES = frozenset(
-    {
-        "exact",
-        "weakened",
-        "strengthened",
-        "polarity_changed",
-        "unknown_committed",
-        "omitted",
-    }
-)
-_FACET_EVIDENCE_FIELDS = (
-    "predicate_evidence_spans",
-    "certainty_evidence_spans",
-    "concept_evidence_spans",
-    "intensity_evidence_spans",
+_POST_OBSERVATION_CHECKS = (
+    "required_content_preserved",
+    "forbidden_additions_absent",
+    "unsupported_new_fact_absent",
+    "existence_boundary_preserved",
+    "budget_preserved",
 )
 
 
 class CharacterRealizationValidator(LegacyResponseValidator):
-    """Semantic Plan適用時は、Character発話が確定意味を保持したかだけを検証する。"""
+    """Semantic Plan適用時に意味保持をObserverと後段契約へ分離して検証する。"""
 
     async def validate(
         self,
@@ -149,7 +139,7 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         )
         activity = Activity(
             activity_type=ActivityType.BEHAVIOR_PLANNING,
-            goal="Semantic PlanとCharacter言語実現の意味保持を検証する",
+            goal="Observer後のCharacter意味境界を検証する",
             source_event_id=source.source_event_id,
             context={
                 "plugin_prompt_override": prompt,
@@ -185,8 +175,12 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         differences = [item.strip() for item in value["differences"] if item.strip()]
         model_accepted = bool(value["accepted"])
         if model_accepted:
-            facet_differences = self._accepted_facet_differences(plan, response, value)
-            if facet_differences is None:
+            contract_differences = self._accepted_post_observation_differences(
+                plan,
+                response,
+                value,
+            )
+            if contract_differences is None:
                 result = ResponseValidationResult(
                     False,
                     "realization_validator_schema_invalid",
@@ -194,12 +188,12 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                 )
                 self._trace_result(source, result)
                 return result
-            differences.extend(facet_differences)
+            differences.extend(contract_differences)
 
         accepted = model_accepted and not differences
         reason = str(value["reason"]).strip()
         if model_accepted and differences:
-            reason = "semantic_facet_validation_failed"
+            reason = "post_observation_semantic_contract_failed"
 
         result = ResponseValidationResult(
             accepted=accepted,
@@ -358,39 +352,17 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         return not any(not isinstance(item, str) for item in differences)
 
     @staticmethod
-    def _accepted_facet_differences(
+    def _accepted_post_observation_differences(
         plan: SemanticUtterancePlan,
         response: CharacterResponse,
         value: dict[str, object],
     ) -> list[str] | None:
         checks = value.get("semantic_checks")
-        surface = value.get("surface_evidence")
         realized_checks = value.get("realized_proposition_checks")
-        if (
-            not isinstance(checks, dict)
-            or not isinstance(surface, dict)
-            or not isinstance(realized_checks, list)
-        ):
+        if not isinstance(checks, dict) or not isinstance(realized_checks, list):
             return None
-
-        required_checks = [
-            "required_facets_preserved",
-            "predicate_preserved",
-            "state_preserved",
-            "certainty_preserved",
-            "unsupported_intensity_added",
-        ]
-        if plan.propositions[0].concept is not None:
-            required_checks.append("concept_preserved")
-        if any(not isinstance(checks.get(name), bool) for name in required_checks):
+        if any(not isinstance(checks.get(name), bool) for name in _POST_OBSERVATION_CHECKS):
             return None
-
-        markers_value = surface.get("intensity_markers")
-        if not isinstance(markers_value, list) or any(
-            not isinstance(item, str) or not item.strip() for item in markers_value
-        ):
-            return None
-        surface_markers = [item.strip() for item in markers_value]
 
         expected_ids = list(dict.fromkeys(response.semantic_realizations))
         planned_ids = CharacterRealizationValidator._planned_realization_ids(plan)
@@ -402,91 +374,53 @@ class CharacterRealizationValidator(LegacyResponseValidator):
         }
 
         checks_by_id: dict[str, dict[str, object]] = {}
-        evidence_by_id: dict[str, dict[str, list[str]]] = {}
+        evidence_by_id: dict[str, tuple[list[str], list[str]]] = {}
         for item in realized_checks:
             if not isinstance(item, dict):
                 return None
             realization_id = item.get("realization_id")
-            if not isinstance(realization_id, str) or not realization_id.strip():
+            predicate_preserved = item.get("predicate_preserved")
+            concept_preserved = item.get("concept_preserved")
+            predicate_evidence = item.get("predicate_evidence_spans")
+            concept_evidence = item.get("concept_evidence_spans")
+            if (
+                not isinstance(realization_id, str)
+                or not realization_id.strip()
+                or not isinstance(predicate_preserved, bool)
+                or not isinstance(concept_preserved, bool)
+                or not isinstance(predicate_evidence, list)
+                or not isinstance(concept_evidence, list)
+                or any(
+                    not isinstance(span, str) or not span.strip()
+                    for span in (*predicate_evidence, *concept_evidence)
+                )
+            ):
                 return None
             realization_id = realization_id.strip()
             if realization_id in checks_by_id or realization_id not in planned_ids:
                 return None
-
-            for name in (
-                "predicate_preserved",
-                "state_preserved",
-                "certainty_preserved",
-                "concept_preserved",
-                "intensity_semantics_preserved",
-                "presence_only_counterfactual_equivalent",
-            ):
-                if not isinstance(item.get(name), bool):
-                    return None
-            state_fidelity = item.get("state_fidelity")
-            if (
-                not isinstance(state_fidelity, str)
-                or state_fidelity not in _STATE_FIDELITY_VALUES
-            ):
-                return None
-
-            normalized_evidence: dict[str, list[str]] = {}
-            for field_name in _FACET_EVIDENCE_FIELDS:
-                evidence_value = item.get(field_name)
-                if not isinstance(evidence_value, list) or any(
-                    not isinstance(span, str) or not span.strip()
-                    for span in evidence_value
-                ):
-                    return None
-                normalized_evidence[field_name] = [span.strip() for span in evidence_value]
-
             checks_by_id[realization_id] = item
-            evidence_by_id[realization_id] = normalized_evidence
+            evidence_by_id[realization_id] = (
+                [span.strip() for span in predicate_evidence],
+                [span.strip() for span in concept_evidence],
+            )
 
         if set(checks_by_id) != set(expected_ids):
             return None
 
         differences: list[str] = []
-        for name in (
-            "required_facets_preserved",
-            "predicate_preserved",
-            "state_preserved",
-            "certainty_preserved",
-        ):
+        for name in _POST_OBSERVATION_CHECKS:
             if checks[name] is False:
                 differences.append(name)
-        if plan.propositions[0].concept is not None and checks["concept_preserved"] is False:
-            differences.append("concept_preserved")
-        if checks["unsupported_intensity_added"] is True:
-            differences.append("unsupported_intensity_added")
-
-        for marker in surface_markers:
-            if marker not in response.speech:
-                differences.append(f"surface_intensity_marker_not_in_speech:{marker}")
 
         for realization_id in expected_ids:
             item = checks_by_id[realization_id]
-            evidence = evidence_by_id[realization_id]
             proposition = propositions_by_id[realization_id]
+            predicate_spans, concept_spans = evidence_by_id[realization_id]
 
-            for name in (
-                "predicate_preserved",
-                "state_preserved",
-                "certainty_preserved",
-                "concept_preserved",
-            ):
-                if item[name] is False:
-                    differences.append(f"{realization_id}:{name}")
-            state_fidelity = item["state_fidelity"]
-            if state_fidelity != "exact":
-                differences.append(f"{realization_id}:state_fidelity:{state_fidelity}")
-
-            predicate_spans = evidence["predicate_evidence_spans"]
-            certainty_spans = evidence["certainty_evidence_spans"]
-            concept_spans = evidence["concept_evidence_spans"]
-            intensity_spans = evidence["intensity_evidence_spans"]
-
-            if item["predicate_preserved"] is True and not predicate_spans:
+            if item["predicate_preserved"] is False:
+                differences.append(f"{realization_id}:predicate_preserved")
+            elif not predicate_spans:
                 differences.append(f"{realization_id}:predicate_evidence_missing")
             CharacterRealizationValidator._append_spans_not_in_speech(
                 differences,
@@ -496,22 +430,10 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                 response.speech,
             )
 
-            if (
-                proposition.certainty in {"medium", "low"}
-                and item["certainty_preserved"] is True
-                and not certainty_spans
-            ):
-                differences.append(f"{realization_id}:certainty_evidence_missing")
-            CharacterRealizationValidator._append_spans_not_in_speech(
-                differences,
-                realization_id,
-                "certainty",
-                certainty_spans,
-                response.speech,
-            )
-
             if proposition.concept is not None:
-                if item["concept_preserved"] is True and not concept_spans:
+                if item["concept_preserved"] is False:
+                    differences.append(f"{realization_id}:concept_preserved")
+                elif not concept_spans:
                     differences.append(f"{realization_id}:concept_evidence_missing")
             elif concept_spans:
                 differences.append(f"{realization_id}:unexpected_concept_evidence")
@@ -522,34 +444,6 @@ class CharacterRealizationValidator(LegacyResponseValidator):
                 concept_spans,
                 response.speech,
             )
-
-            if proposition.state in _INTENSITY_STATES:
-                if item["intensity_semantics_preserved"] is False:
-                    differences.append(f"{realization_id}:intensity_semantics_preserved")
-                if item["presence_only_counterfactual_equivalent"] is True:
-                    differences.append(
-                        f"{realization_id}:presence_only_counterfactual_equivalent"
-                    )
-                if not intensity_spans:
-                    differences.append(f"{realization_id}:intensity_evidence_missing")
-                CharacterRealizationValidator._append_spans_not_in_speech(
-                    differences,
-                    realization_id,
-                    "intensity",
-                    intensity_spans,
-                    response.speech,
-                )
-            else:
-                if item["intensity_semantics_preserved"] is not True:
-                    differences.append(
-                        f"{realization_id}:non_intensity_semantics_flag_invalid"
-                    )
-                if item["presence_only_counterfactual_equivalent"] is not False:
-                    differences.append(
-                        f"{realization_id}:non_intensity_counterfactual_flag_invalid"
-                    )
-                if intensity_spans:
-                    differences.append(f"{realization_id}:unexpected_intensity_evidence")
 
         return differences
 
