@@ -41,16 +41,3 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.5
-
-  - type: web
-    name: yura-system-architecture-visualizer
-    runtime: python
-    plan: free
-    branch: feature/system-architecture-visualizer
-    buildCommand: pip install -r requirements.txt && python -m compileall gui/yura-system-architecture-visualizer
-    startCommand: python gui/yura-system-architecture-visualizer/server.py
-    healthCheckPath: /api/health
-    autoDeployTrigger: commit
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.10.5
