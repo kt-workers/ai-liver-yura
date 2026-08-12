@@ -179,23 +179,34 @@ syntax errorを含むファイルがあっても全体解析を停止せず、di
 - incoming module一覧
 - outgoing module一覧
 
-## 9. 起動方式
+## 9. 起動・デプロイ方式
 
 FastAPI + Uvicornを使用し、既存root `requirements.txt` の依存範囲で動作させる。
 
-ローカル:
+### ローカル
 
 ```bash
 python gui/yura-system-architecture-visualizer/server.py
 ```
 
-Render:
+既定bindは `0.0.0.0:8765` とし、`HOST` / `PORT` 環境変数で上書きできる。
 
-```bash
-python gui/yura-system-architecture-visualizer/server.py
-```
+### Render
 
-`PORT` 環境変数があればその値を使用する。
+ルート `render.yaml` のBlueprintへ独立Web Serviceとして登録する。
+
+- service name: `yura-system-architecture-visualizer`
+- branch: `feature/system-architecture-visualizer`
+- runtime: Python
+- plan: free
+- build: `pip install -r requirements.txt && python -m compileall gui/yura-system-architecture-visualizer`
+- start: `python gui/yura-system-architecture-visualizer/server.py`
+- health check: `/api/health`
+- `PYTHON_VERSION=3.10.5`
+
+Renderが提供する `PORT` を `server.py` が直接使用するため、Render専用のproduction logicや別サーバー実装は持たない。
+
+Blueprint更新後は対象branchの新しいcommitをSyncし、`Create web service yura-system-architecture-visualizer` が差分に現れることを確認する。
 
 ## 10. テスト
 
@@ -211,6 +222,14 @@ Analyzerは一時ディレクトリに最小Python packageを構築して検証�
 - syntax error時に全体解析継続
 
 Serverはgraph DTO生成関数と静的ファイル解決を薄く保ち、AnalyzerのUnit testを中心とする。
+
+Render Verificationでは追加で以下を確認する。
+
+- Blueprint Syncで対象serviceが作成される
+- Buildが成功する
+- `/api/health` が200を返す
+- `/api/graph` が実リポジトリのgraphを返す
+- `/` からWeb UIを表示できる
 
 ## 11. 非目標
 
