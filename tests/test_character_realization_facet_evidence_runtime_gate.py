@@ -266,7 +266,7 @@ async def test_non_null_concept_requires_post_observation_speech_evidence() -> N
 
 
 @pytest.mark.asyncio
-async def test_null_concept_rejects_unexpected_concept_evidence() -> None:
+async def test_null_concept_treats_model_concept_evidence_as_non_authoritative_na() -> None:
     result = await _validator(
         _payload(
             "joy",
@@ -279,8 +279,9 @@ async def test_null_concept_rejects_unexpected_concept_evidence() -> None:
         _response("joy", "楽しい気持ちはないよ。"),
     )
 
-    assert result.accepted is False
-    assert "proposition:0:joy:unexpected_concept_evidence" in result.claim_differences
+    assert result.accepted is True
+    assert result.reason == "post_observation_semantic_contract_consistent"
+    assert result.claim_differences == ()
 
 
 @pytest.mark.asyncio
@@ -299,7 +300,7 @@ async def test_e8_bare_presence_is_rejected_by_independent_observation() -> None
     )
 
     assert result.accepted is False
-    assert result.reason == "observed_semantic_state_mismatch"
+    assert result.reason == "observed_semantic_state_fidelity_mismatch"
     assert (
         "proposition:0:energy:observed_state_mismatch:expected=low:observed=present"
         in result.claim_differences
