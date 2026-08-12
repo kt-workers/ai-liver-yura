@@ -23,59 +23,31 @@ jobs:
           python -m pip install --disable-pip-version-check --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install -r requirements-dev.txt
-      - name: Compile v2 modules
-        run: |
-          python -m compileall -q \
-            app/domain/semantic_utterance.py \
-            app/domain/semantic_validation.py \
-            app/domain/character_utterance.py \
-            app/domain/semantic_character_response.py \
-            app/ports/structured_output.py \
-            app/ports/llm_roles.py \
-            app/adapters/llm/openai_structured_response_generator.py \
-            app/adapters/prompt/character_language_realizer_v2_prompt_builder.py \
-            app/adapters/prompt/character_semantic_verifier_prompt_builder.py \
-            app/runtime/semantic_realization_v2_contracts.py \
-            app/runtime/character_semantic_verification_policy.py \
-            app/runtime/character_semantic_verifier.py \
-            app/runtime/character_language_realizer_v2.py \
-            app/runtime/character_language_realizer_v2_service.py \
-            app/runtime/character_semantic_verifier_validator.py
-      - name: Run Semantic v2 bundle
+      - name: Run standard pytest command
         continue-on-error: true
-        run: |
-          pytest -q --junitxml=/tmp/bundle.xml \
-            tests/test_semantic_utterance_v2.py \
-            tests/test_character_utterance_v2.py \
-            tests/test_openai_structured_output.py \
-            tests/test_structured_llm_role_adapter.py \
-            tests/test_character_semantic_verification_v2.py \
-            tests/test_character_language_realizer_v2.py \
-            tests/test_semantic_realization_v2_pipeline_boundary.py
-      - name: Run Full pytest
-        continue-on-error: true
-        run: pytest -q --junitxml=/tmp/full.xml
-      - name: Emit failures
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: pytest -x -vv --junitxml=/tmp/standard.xml
+      - name: Emit standard failure
         if: always()
         run: |
           python - <<'PY'
           import xml.etree.ElementTree as ET
           from pathlib import Path
-          for label, filename in [('bundle','/tmp/bundle.xml'),('full','/tmp/full.xml')]:
-              path = Path(filename)
-              if not path.exists():
-                  print(f'::error file=.github,title={label}::junit xml missing')
-                  continue
-              root = ET.parse(path).getroot()
-              total = failures = 0
-              for case in root.iter('testcase'):
-                  total += 1
-                  nodes = list(case.findall('failure')) + list(case.findall('error'))
-                  for node in nodes:
-                      failures += 1
-                      file = case.attrib.get('file') or '.github'
-                      name = f"{case.attrib.get('classname','')}::{case.attrib.get('name','')}"
-                      message = (node.attrib.get('message') or node.text or '').replace('\n',' ')[:2400]
-                      print(f'::error file={file},line=1,title={label}:{name}::{message}')
-              print(f'{label}_total={total} failures={failures}')
+          path = Path('/tmp/standard.xml')
+          if not path.exists():
+              print('::error file=.github,title=standard::junit xml missing')
+              raise SystemExit(0)
+          root = ET.parse(path).getroot()
+          total = failures = 0
+          for case in root.iter('testcase'):
+              total += 1
+              nodes = list(case.findall('failure')) + list(case.findall('error'))
+              for node in nodes:
+                  failures += 1
+                  file = case.attrib.get('file') or '.github'
+                  name = f"{case.attrib.get('classname','')}::{case.attrib.get('name','')}"
+                  message = (node.attrib.get('message') or node.text or '').replace('\n',' ')[:2800]
+                  print(f'::error file={file},line=1,title=standard:{name}::{message}')
+          print(f'standard_total={total} failures={failures}')
           PY
