@@ -2,88 +2,135 @@
 
 Status: Draft / V2 Design Gate
 Parent architecture: `docs/architecture/v2/system_architecture.md`
+Cognitive / LLM: `docs/architecture/v2/cognitive_llm_architecture.md`
+Concurrency: `docs/architecture/v2/concurrency_architecture.md`
 Parent Issue: #325
 Root management: #317
 
 ## 1. 目的
 
-Brainは、入力を理解し、出来事を評価し、内部状態と記憶を更新し、現在の状況で「ゆらが何をする／しない」を決めるCore領域である。
+Brainは、入力や内部Eventを理解・評価し、現在状態・記憶・目標・関係・活動事実を用いて、ゆらが「今何をしたい／する／しない」を決めるCore領域である。
 
-V2ではBrainを巨大な1本のLLM Pipelineにしない。各責務を独立Module Contractへ分け、Module単位で設計・Unit・Adjacent Contractを検証する。
+Brainは巨大な1本のLLM Pipelineにしない。
 
-Brainが使用するLLM責務は次の3つだけである。Body側のLLM-4を合わせ、システム全体で4責務に固定する。
+また、責務を分離してもLLM呼び出しをそのまま直列に数珠つなぎにしない。
 
-1. LLM-1 Input Meaning
-2. LLM-2 Commander
-3. LLM-3 Character Speech
-4. LLM-4 Body Motion（Body所有）
+> **Responsibility graphとRuntime call graphは別物である。**
 
-**Semantic Validator、Memory Summarizer、Appraisal等のために第5のLLM Roleを追加しない。**
+各Moduleは独立Contractを持ち、Event / Snapshot / Candidate / Factを介して疎結合に協調する。
 
 ---
 
-# 2. Brainの境界
+# 2. Brainの基本構造
 
 ```text
-External / Internal Event
-        ↓
-B01 Input Gateway
-        ↓
-B02 Input Meaning  ← Working Reference Context
-        ↓
-B03 Situation / Appraisal
-        ↓
-B04 Internal State
-        ↓
-Decision Context ← B05 Memory / Activity / Capability / Execution Facts / Turn State
-        ↓
-B06 Commander
-        ↓ SystemCommand
-B08 Execution Coordination
-  ├─ B07 Activity Runtime / Plugin Capability
-  ├─ B09 Character Speech → B10 Speech Performance → B11 Speech Pipeline
-  ├─ Body public contract
-  ├─ B05 Memory operation
-  └─ Wait / Silence
-        ↓
-Typed Result / Fact / Event
-        └────────→ next Appraisal cycle
+Typed Event Stream / Runtime Facts
+        │
+        ├─ B01 Input Gateway
+        │      ↓
+        ├─ B02 Input Meaning
+        │
+        ├─ B03 Subjective Appraisal
+        │      ↓ candidate
+        ├─ B04 Internal State Reducer
+        │
+        ├─ B05 Memory / Reflection
+        │
+        ├─ B06 Executive Deliberation
+        │      ↓ ExecutiveDecision
+        │
+        ├─ B07 Goal / Activity Planning
+        ├─ B08 Activity Runtime
+        ├─ B09 Execution Coordination
+        │
+        ├─ B10 Speech Semantics
+        ├─ B11 Character Language Realizer
+        ├─ B12 Semantic Verification
+        ├─ B13 Speech Performance
+        ├─ B14 Speech Pipeline
+        │
+        └─ B15 Autonomy / Turn Management
 
-B12 Autonomy / Turn Management
-  └─ 「いつDecision Cycleを起動できるか」を管理
-     「何をするか」はB06 Commanderが決める
+Body is a sibling Core area.
+Runtime Kernel is Core Foundation, not Brain decision authority.
 ```
 
-Runtime KernelはBrain Domainではない。Event Queue / Scheduler / Task Coordination / cancellation / clock等はCore Foundation (#322) が所有し、BrainはPortとして利用する。
+この図も「B01→B02→…→B15を毎回全部awaitする」という意味ではない。
 
 ---
 
-# 3. Authority Map
+# 3. Concurrency / Snapshot model
 
-| Authority | Owner | 他Moduleがしてはいけないこと |
+Brain Moduleはversion付き`CognitiveSnapshot` / typed read modelを利用する。
+
+```text
+CognitiveSnapshot
+- revision
+- current typed events / meanings
+- appraisal facts
+- internal state
+- memory evidence
+- relationship
+- goals / commitments
+- activity facts
+- capability facts
+- execution facts
+- turn / interruption state
+- speech state
+- body capability summary
+```
+
+長時間LLM requestは開始時点のrevisionを保持する。
+
+結果は直接次LLMを呼び出すのではなく、原則candidate/eventとして返す。
+
+```text
+Role result
+→ schema / responsibility validation
+→ typed candidate/event
+→ interested module may react
+```
+
+commit前にprecondition / revision / stale policyを確認する。
+
+## 3.1 Brain concurrency invariant
+
+- 1 LLM request中でも他Eventを受信できる
+- unrelated decisionを同じLLM request待ちで停止させない
+- Deep Appraisalを全Decisionのblocking prerequisiteにしない
+- Speech playbackをnext decision/generationのblocking prerequisiteにしない
+- Reflectionをforeground conversationのblocking prerequisiteにしない
+- background LLM burstでforeground interactionをstarveしない
+- stale / superseded candidateを最新状態へ誤commitしない
+
+---
+
+# 4. Authority Map
+
+| Authority | Owner | 禁止 |
 |---|---|---|
-| open-ended外部自然言語の意味 | B02 Input Meaning / LLM-1 | Runtime/Plugin/Activityがraw textをregex等で意味分類する |
-| 出来事の状態への影響 | B03 Appraisal + B04 State Reducer | LLMがEmotion等を自由文で直接上書きする |
-| 現在内部状態 | B04 Internal State | Memory/Character/GUIを現在状態の正本にする |
-| 過去の証拠・想起 | B05 Memory | Memoryを現在のExecution Factより優先する |
-| 意識的行動選択 | B06 Commander / LLM-2 | Character/Body/Pluginが独自判断で行動を開始する |
-| Activity lifecycle | B07 Activity Runtime | Activityがraw inputから勝手にstart/stopを決める |
-| 実行事実 | B08 Execution Coordination + typed executor result | Characterが予定を実行済みとして語る |
-| 発言の意味 | B06 SpeechIntent / Semantic Plan | B09 Characterが内容を追加・改変する |
-| 発言の言い回し | B09 Character Speech / LLM-3 | Commanderが最終台詞を書く |
-| 音声演技計画 | B10 Speech Performance | Character LLMがengine parameterを出す |
-| 発話提示状態 | B11 Speech Pipeline | TTS playback完了をBrain decision lockにする |
-| turn / interruption eligibility | B12 Autonomy / Turn | Turn Managerが発話内容そのものを決める |
+| open-ended外部自然言語の意味 | B02 Input Meaning | downstream regex/keywordで再解釈 |
+| 出来事の主観的評価 | B03 Appraisal contract | Character/Activityが独自評価を正本化 |
+| current Internal State | B04 State Reducer | LLM candidateを直接state代入 |
+| 過去の証拠・想起 | B05 Memory | current Execution Factより優先 |
+| 意識的Goal / Action選択 | B06 Executive | Character/Body/Skill AIが独自Goal開始 |
+| 複雑Goalの実行計画 | B07 Planner | Goal自体を勝手に変更 |
+| Activity lifecycle | B08 Activity Runtime | raw inputからstart/stopを独自判断 |
+| 実行事実 | B09 Execution Coordination | Characterが予定を実行済み扱い |
+| 発言内容 / semantic plan | B10 Speech Semantics | Characterが意味を追加・変更 |
+| Characterらしい言語表現 | B11 Character | CharacterがExecutive/Fact authorityを奪う |
+| 発話意味保持の観測 | B12 Verifier | Verifier自由文を最終accept authority化 |
+| Speech performance | B13 Performance | engine parameterをCharacter LLMへ直書き |
+| Speech lifecycle / presentation facts | B14 Pipeline | playback完了でBrain全体lock |
+| initiative / turn eligibility | B15 Autonomy/Turn | Turn Managerが内容/Goalを決める |
 
 ---
 
-# 4. B01 Input Gateway
+# 5. B01 Input Gateway
 
 Issue: #349
 
-## 責務
-
-外部Source差をCore内の型付き`NormalizedInputEvent`へ変換する。
+外部Source差を`NormalizedInputEvent`へ変換する。
 
 ```text
 NormalizedInputEvent
@@ -93,51 +140,41 @@ NormalizedInputEvent
 - modality
 - actor_ref?
 - language?
-- text_payload?          # natural languageの場合
-- structured_payload?    # touch/vision/system等
+- text_payload?
+- structured_payload?
 - correlation_id?
 - trace_context
 ```
 
-## 原則
+原則:
 
-- Text / STT transcriptは同じnatural-language routeへ入る。
-- Touch / Vision / System Eventを無理に文章へ変換しない。
-- device固有SDK objectをBrainへ渡さない。
-- B01は意味・意図を決定しない。
+- Text / STT transcriptは同じnatural-language routeへ入る
+- Touch / Vision / Game state等を無理に文章化しない
+- device SDK objectをBrain Domainへ渡さない
+- 意味・感情・行動をここで決めない
 
 ---
 
-# 5. B02 Input Meaning
+# 6. B02 Input Meaning
 
 Issue: #326
-LLM Role: 1
+LLM candidate role: Input Meaning
 
-## 入力
+質問:
+
+> 外部から何が伝えられたのか。
+
+入力:
 
 ```text
 InputMeaningRequest
 - NormalizedInputEvent(text)
 - bounded ReferenceContext
-- current turn identifier
+- current turn / interaction context
 - source metadata
 ```
 
-`ReferenceContext`はB05 MemoryとB12 Turn Stateから構築するread-only viewであり、全会話履歴を無制限にPromptへ投入しない。
-
-最低限:
-
-```text
-ReferenceContext
-- recent_user_turns
-- recent_yura_turns
-- recent_command_refs
-- recent_activity_refs
-- unresolved_reference_candidates
-- topic/thread refs
-```
-
-## 出力
+出力:
 
 ```text
 StructuredInputMeaning
@@ -157,99 +194,86 @@ StructuredInputMeaning
 - unresolved_fields
 ```
 
-## 「もう一回」等の参照
+### Reference resolution
 
-固定フレーズ専用処理にしない。
+「もう一回」「それ」「さっきの」等を固定phrase専用処理にしない。
 
-```text
-User natural language
-+ bounded ReferenceContext
-→ LLM-1
-→ references[]
-   - reference_type
-   - resolved_target_id?
-   - candidate_ids
-   - confidence
-```
+bounded `ReferenceContext`からcommand/activity/speech/topic等へtyped解決する。
 
-可能なら以前の`command_id / activity_id / speech_id / topic_id`等へ型付き解決する。
+解決不能なら`clarification_required`等へ落とし、Body/Activity/Pluginがraw textを再解釈しない。
 
-解決不能なら`clarification_required`とし、BodyやActivityがraw文面を再解釈しない。
+### Authority
 
-## 禁止
+open-ended外部自然言語のsemantic authorityはB02。
 
-- downstream regex/substring/finite phrase dictionaryによる意味fallback
-- Parserによるraw textの意味再判定
-- Character/Activityが独自にユーザー意図を再解釈
+finite dictionary / regex / substringをfallback authorityにしない。
 
 ---
 
-# 6. B03 Situation / Appraisal
+# 7. B03 Subjective Appraisal
 
 Issue: #327
 
-## 位置付け
+質問:
 
-Appraisalは**LLM Roleではない**。
+> この出来事は、現在のゆらにとってどういう意味を持つか。
 
-入力済みのtyped semantics / events / factsと現在状態から「この出来事がゆらにとってどういう意味を持つか」を計算するDomain/Application moduleである。
+Input MeaningとAppraisalを分離する。
 
-## 入力
+同じ「配信しない？」という提案でも、Energy、Desire、Current Activity、Relationship、Recent Stream、Values等で主観的評価は変わる。
 
-```text
-AppraisalInput
-- StructuredInputMeaning? / typed SystemEvent
-- CurrentInternalStateSnapshot
-- MemoryEvidenceView
-- RelationshipView
-- ActivitySnapshot
-- CapabilitySnapshot
-- ExecutionFactSnapshot
-- TurnState
-- time context
-```
+## 7.1 Implementation policy
 
-## 出力
+Appraisalを「LLMではない」と固定しない。
+
+- 明確・低コストな評価: deterministic model / rules
+- open-endedで文脈依存の主観評価: Appraisal LLMを利用可能
+
+LLMを使う場合も出力はcandidateである。
 
 ```text
-AppraisalResult
-- appraisal_id
+AppraisalCandidate
 - source_event_ids
 - salience
 - novelty
-- relevance
-- valence factors
-- goal/need compatibility
-- social/relationship factors
+- goal_relevance
+- need/desire compatibility
+- pleasantness / aversiveness factors
+- social significance
+- value alignment/conflict
 - uncertainty
 - attention recommendation
 - StateDeltaProposal[]
-- memory_candidate_hints[]
+- memory hints[]
 ```
-
-Appraisalは最終行動を決めない。それはCommanderの責務。
-
-## Awakening / 起動
-
-起動も特別な固定Presetではなくtyped lifecycle eventとしてAppraisalへ入れる。
 
 ```text
-StartupContext
-→ Appraisal
-→ normal StateDeltaProposal
+AppraisalCandidate
+→ validation
+→ B04 State Reducer
 ```
 
-`sleepy → あくび`、`ready → おはよう`のような固定1:1対応は作らない。
+LLMがEmotion / Desire / Drive current valueを直接上書きしない。
+
+## 7.2 Fast / Deep appraisal
+
+Deep LLM Appraisalを毎回blocking dependencyにしない。
+
+```text
+Typed Event
+├─ fast appraisal / existing deterministic transition
+└─ optional deep appraisal async
+```
+
+Deep resultが後着した場合、妥当なら新しいState transition / Executive triggerを発生させる。
 
 ---
 
-# 7. B04 Internal State
+# 8. B04 Internal State
 
 Issue: #327
 
-## State facets
-
-最低限:
+最低facet:
 
 - Emotion
 - Desire
@@ -258,9 +282,9 @@ Issue: #327
 - Moral / Values appraisal
 - Interest / Curiosity per target
 - Relationship state
-- Arousal / Energy等の連続状態
+- Arousal / Energy等
 
-各状態は少なくとも以下を区別する。
+各状態:
 
 ```text
 StateFacet
@@ -272,159 +296,161 @@ StateFacet
 - confidence / stability if needed
 ```
 
-## State ownership
-
-LLMの出力値をそのままStateへ代入しない。
+唯一の書込みAuthorityはState Reducer。
 
 ```text
-AppraisalResult
-→ StateTransitionValidator
+Validated StateDeltaProposal
 → StateReducer
 → NewInternalStateSnapshot
 ```
 
-StateReducerが唯一の書込みauthority。
-
-## 不変条件
-
-- EmotionとInterestを混同しない。
-- DesireとDriveを同一概念に潰さない。
-- Characterの発言内容をState更新の直接根拠にしない。
-- Memory上の過去状態をcurrent stateへ直接復元しない。
-- UIがStateを書き換える場合も明示Command/Debug contractを経由する。
+Character speechやMemory過去値をcurrent stateへ直接代入しない。
 
 ---
 
-# 8. B05 Memory
+# 9. B05 Memory / Reflection
 
 Issue: #332
 
-## Memory categories
+Memory categories:
 
 - Working / Short-term
 - Episodic
 - Semantic
 - Relationship
 - Preference / Interest
-- Activity / Skill（必要な範囲）
+- Activity / Skill
 
-## Write pipeline
+## 9.1 Retrieval
 
-```text
-Typed Event / Meaning / Result / State transition
-→ MemoryCandidate
-→ importance / novelty / persistence / confidence
-→ routing
-→ merge / update / contradiction handling
-→ MemoryRecord
-```
+`MemoryEvidenceView`として現在decisionへ必要な範囲だけ提供する。
 
-Memory用の別LLM Summarizerは追加しない。
+Memoryはcurrent Execution Fact / current Internal Stateより強いauthorityを持たない。
 
-V2初期は、既に構造化されたMeaning / Fact / State transitionを中心に保存し、raw conversation全文の自由要約をMemory正本にしない。
+## 9.2 Reflection / Consolidation
 
-## Retrieval
+Reflection LLMを数だけを理由に禁止しない。
+
+質問:
+
+> 今回の経験から何を長期的に覚える価値があるか。
 
 ```text
-MemoryQuery
-- target/topic/entity refs
-- temporal scope
-- relation type
-- memory categories
-- max_items / token budget
+Typed events / results / state transitions
+→ Reflection / Consolidation
+→ MemoryCandidate[]
+→ provenance / contradiction / freshness / importance validation
+→ Memory Store
 ```
 
-出力は`MemoryEvidenceView`。
+ReflectionはMemory DBへ直接自由文を書き込まない。
 
-## Authority
-
-優先順位:
-
-```text
-current Execution Fact
-> current Internal State
-> current Input Meaning
-> recent typed interaction context
-> retrieved Memory
-```
-
-Memoryは参考証拠であり、現在の事実を上書きしない。
+foreground会話をblockしない低優先background laneとして実行できる。
 
 ---
 
-# 9. B06 Commander
+# 10. B06 Executive Deliberation
 
 Issue: #328
-LLM Role: 2
 
-## Decision Context
+旧Commanderの責務を再定義する。
 
-Commanderへraw implementation objectを渡さず、型付きViewを組み立てる。
+質問:
+
+> 私は今、何をしたい／何をする／何をしないか。
+
+ゆらの意識的Goal / Action selectionの唯一の最終Authority。
+
+入力`DecisionContext`:
 
 ```text
-DecisionContext
-- current meaning / event
-- AppraisalResult
-- InternalStateView
-- MemoryEvidenceView
-- RelationshipView
-- ActivitySnapshot
-- CapabilitySnapshot
-- ExecutionFactSnapshot
-- TurnState
-- SpeechPipelineState
-- BodyCapabilityView
+- current event / meaning
+- Appraisal facts
+- Internal State
+- Memory evidence
+- Relationship
+- current Goals / Commitments
+- Activity snapshot
+- Capability snapshot
+- Execution facts
+- Turn / interruption state
+- Speech state
+- Body capability summary
+- time / environment
 - authority / safety constraints
 ```
 
-## 出力
+出力:
 
 ```text
-SystemCommand
-- command_id
+ExecutiveDecision
+- decision_id
 - source_context_revision
+- selected_goal / intent
 - priority
 - speech_intent?
 - body_intent?
-- activity_request?
+- activity_intent?
 - attention_intent?
-- memory_operation_intent?
-- silence_intent?
-- question_budget
-- new_direction_budget
+- silence / wait?
 - interruptibility
 - preconditions[]
 - forbidden_claims[]
 ```
 
-## Authority
+Executiveがしないこと:
 
-Commanderが唯一「今何をする／しない」を決める。
+- 複雑Activityの全step生成
+- Character最終台詞
+- detailed Speech propositionsを常に全部生成
+- TTS parameter
+- Body joint angle
+- Game frame-level action
+- Memory DB直接更新
 
-ただしLLM出力は必ず以下を通す。
-
-```text
-Schema
-→ Authority
-→ Capability
-→ Preconditions
-→ Safety
-→ accepted / rejected SystemCommand
-```
-
-## 発話準備と提示
-
-`SpeechIntent`生成はPresentation完了を待たない。
-
-Prepared候補の前提が変化した場合は、deterministic revalidationで失効判定し、意味判断が必要なら新しいAppraisal→Commander cycleへ戻す。
+OutputはSchema / Authority / Capability / Preconditions / Safety Gateを通す。
 
 ---
 
-# 10. B07 Activity Runtime
+# 11. B07 Goal / Activity Planning
 
-Issue: #329
+新規V2 Work Issueを設ける。
 
-## Contract
+質問:
+
+> Executiveが選んだ複雑Goalをどう実行するか。
+
+```text
+Executive Goal
++ Capability snapshot
++ Activity facts
++ execution constraints
+→ Activity Planner
+→ ActivityPlan
+```
+
+`ActivityPlan`例:
+
+```text
+- plan_id
+- goal_ref
+- steps[]
+- dependencies
+- required_capabilities
+- checkpoints
+- recovery policy
+- completion conditions
+```
+
+単純ActionではPlanner LLMを呼ばない。
+
+PlannerはGoalを変更するAuthorityを持たず、必要ならExecutiveへ`replan_required / impossible / clarification`を返す。
+
+---
+
+# 12. B08 Activity Runtime
+
+Issue: #329のActivity lifecycle責務。
 
 ```text
 ActivityDefinition
@@ -440,10 +466,10 @@ ActivityInstance
 - started_at
 - current_step_ref?
 - capability bindings
-- latest_result_refs
+- result refs
 ```
 
-Lifecycle例:
+Lifecycle:
 
 ```text
 requested
@@ -456,51 +482,26 @@ requested
 or paused / interrupted / cancelled / failed / unsupported
 ```
 
-## 原則
-
-- start/stop/switchの意味決定はCommander。
-- Activity implementationはraw user textを見て独自判断しない。
-- Activityの進捗はtyped event/resultとしてBrainへ戻す。
-- ActivityがCharacterやBodyへ直接命令しない。必要な表現はCommanderの次cycleで決める。
+Activity Runtimeはraw inputを見て独自Goalを決めない。
 
 ---
 
-# 11. B08 Action / Execution Coordination
+# 13. B09 Execution Coordination
 
-Issue: #329
+Issue: #329のExecution責務。
 
-## 責務
-
-accepted `SystemCommand`を各executorへ非同期dispatchし、実行状態を事実として集約する。
+accepted decision / planを各executorへ非同期dispatchする。
 
 ```text
-AcceptedSystemCommand
-→ ExecutionCoordinator
-   ├─ Activity / Plugin executor
-   ├─ Speech preparation/presentation
-   ├─ Body intent channel
-   ├─ Memory operation
-   └─ Wait / Silence state
+ExecutionCoordinator
+├─ Activity / capability
+├─ Speech preparation / presentation
+├─ Body intent
+├─ Memory operation
+└─ Wait / Silence
 ```
 
-## Execution Fact
-
-```text
-ExecutionFact
-- execution_id
-- command_id
-- target_kind
-- lifecycle_state
-- accepted_at
-- started_at?
-- observable_at?
-- completed_at?
-- failure?
-- capability_ref?
-- result_ref?
-```
-
-事実Lifecycle:
+`ExecutionFact`:
 
 ```text
 requested
@@ -513,20 +514,28 @@ requested
 or rejected / unsupported / failed / cancelled / timed_out
 ```
 
-Characterはこの事実より先に「やった」「できた」と言えない。
-
-## Non-blocking
-
-あるexecutorの長いawaitでCommander/Appraisal/Event処理を止めない。
+あるexecutorの長いawaitで他laneを停止しない。
 
 ---
 
-# 12. B09 Character Speech Realizer
+# 14. B10 Speech Semantics Planning
 
-Issue: #330
-LLM Role: 3
+新規V2 Work Issueを設ける。
 
-## 入力
+質問:
+
+> Executive SpeechIntentを実現するために、何を伝えるか。
+
+V1の`What to say != How to say it`を継承する。
+
+```text
+Executive SpeechIntent
++ facts / appraisal / memory evidence
++ discourse / relationship constraints
++ execution truth
+→ Speech Semantics Planner
+→ SpeechSemanticPlan
+```
 
 ```text
 SpeechSemanticPlan
@@ -537,286 +546,270 @@ SpeechSemanticPlan
 - required_content[]
 - optional_content[]
 - forbidden_content[]
+- certainty / polarity / degree facets
+- self_disclosure
 - question_budget
 - new_direction_budget
-- interpersonal/discourse facets
-- expression tone
+- truth constraints
 ```
 
-加えてCharacter Language Profileを渡す。
+### Invocation policy
 
-raw Emotion / Desire / Drive数値、raw execution payload、Body joint state等は渡さない。
+毎回専用大型LLMを必須化しない。
 
-## 出力
+- simple speech: Executiveが十分なtyped semantic constraintsを持つ場合は軽量/決定論的生成または省略可能
+- complex speech:専用Speech Semantics LLMを起動
+
+論理Authorityは分離したまま、call数は最適化できる。
+
+---
+
+# 15. B11 Character Language Realizer
+
+Issue: #330
+
+質問:
+
+> 確定済みの意味を、ゆらならどう言うか。
+
+```text
+SpeechSemanticPlan
++ Character Language Projection
++ interpersonal / discourse context
++ high-level expression
+→ Character Language Realizer
+→ CharacterUtterance
+```
+
+出力:
 
 ```text
 CharacterUtterance
 - utterance_id
 - speech_plan_id
 - speech
-- phrase_boundaries
-- linguistic_emphasis
-- hesitation/filler metadata
-- semantic_realizations[]
+- phrase boundaries
+- linguistic emphasis
+- hesitation / filler metadata
+- semantic realization references
 ```
 
-`semantic_realizations[]`は各planned proposition/content idと、speech中の実現spanを対応付ける。
-
-## Semantic realization validation
-
-**第5のLLM Validatorを追加しない。**
-
-V2 Productionの基本形:
-
-```text
-LLM-3 Structured Output
-→ schema validation
-→ proposition/realization coverage validation
-→ forbidden structure / execution-claim validation
-→ span existence validation
-→ accepted CharacterUtterance
-```
-
-- required propositionのrealization欠落はreject/同じLLM-3 roleでrepair。
-- unknown extra semantic idはreject。
-- execution claimはExecution Factと照合。
-- open-ended自然語をruntime finite dictionaryで再分類しない。
-
-自然言語意味の完全な再解釈を別Modelへ委ねる設計は採用しない。Live Verificationで意味保持不足が見つかった場合も、直ちに第5LLMを足さず、まずSpeechSemanticPlanとLLM-3 structured realization contractを改善する。
+Characterがraw Emotion/Desire/Drive、raw execution payload等を再解釈して発言意味を作り直さない。
 
 ---
 
-# 13. B10 Speech Performance
+# 16. B12 Independent Semantic Verification
 
-Issue: #331
+新規V2 Work Issueを設ける。
 
-CharacterUtteranceからengine-independentな音声演技計画を作る。LLM Roleは追加しない。
+V1の独立意味検証を、Authorityを閉じた形で継承する。
+
+質問:
+
+> CharacterUtteranceはSpeechSemanticPlanの意味を実際に保持しているか。
 
 ```text
-SpeechPerformancePlan
-- utterance_id
-- phrase_plan[]
-- pause intents
+SpeechSemanticPlan
++ CharacterUtterance
+→ Semantic Verifier
+→ SemanticRelationObservation
+→ deterministic acceptance policy
+```
+
+VerifierはObserver。
+
+禁止:
+
+- Speech Intentを変更
+- Characterを直接指揮
+- Runtime Factを変更
+- free-form accepted/reasonを最終Authority化
+
+最終accept/rejectはtyped checksからRuntimeが導出する。
+
+### Latency policy
+
+Verifierを直列滞留要因にしない。
+
+Character生成後、Verifierと安全に先行可能なSpeech Performance / speculative TTS preparationを並列に進めてよい。
+
+Verifier PASS前にPresentation commitはしない。
+
+semantic riskが低く、Verifier不要で同等保証できるcontractが成立した経路は、明示PolicyでVerifierを省略可能にする。
+
+---
+
+# 17. B13 Speech Performance
+
+engine-independent。
+
+- phrase timing
+- acoustic pause
 - speed intent
 - pitch contour intent
-- intonation intent
-- volume intent
-- breathiness intent
-- emphasis mapping
-- degradation policy
-```
+- intonation
+- volume / breathiness intent
 
-Character Voice Styleは#355 Character Projectionから受け取る。
+Character LLMへVOICEVOX等の実数parameterを生成させない。
 
-VOICEVOX等の具体parameterへ変換するのはInfrastructure Adapter #358。
+Provider Adapterが具体値へ投影する。
 
 ---
 
-# 14. B11 Speech Pipeline
+# 18. B14 Speech Pipeline
 
-Issue: #348
-Canonical: `docs/architecture/v2/speech_pipeline_architecture.md`
+詳細: `docs/architecture/v2/speech_pipeline_architecture.md`
 
-## Core invariant
-
-**現在の発話再生完了を次の発話内容生成開始条件にしない。**
-
-Speech A presenting中に、B12がDecision Cycle開始可能と判定しB06 Commanderが許可すれば、Speech BのB09/B10まで進められる。
+PreparationとPresentationを別laneにする。
 
 ```text
-Speech A presenting
-while
-  Appraisal B
-  → Commander B
-  → Character B
-  → Performance B
-  → Prepared B
+Preparation
+  Speech Semantics
+  → Character
+  → Verifier
+  → Performance
+  → optional TTS prep
+  → PreparedSpeechCandidate
+
+Presentation
+  pre-present revalidation
+  → commit
+  → playback / text
+  → result
 ```
 
-Prepared Bは再生確定ではない。Presentation直前に最新Contextでrevalidateする。
+論理依存はあっても全処理を固定直列awaitにしない。
 
-詳細なqueue/backpressure/invalidation/trace acceptanceはSpeech Pipeline canonicalを参照する。
+- playback中next generation可
+- TTS prepとVerifierの安全な並列化可
+- prepared candidateはbounded
+- stale / superseded / cancelledを扱う
 
 ---
 
-# 15. B12 Autonomy / Turn Management
+# 19. B15 Autonomy / Turn Management
 
-Issue: #333
+「いつExecutive decisionを起動できるか」を管理する。
 
-## 責務
+「何をするか」はB06 Executiveが決める。
 
-「新しいDecision Cycleを開始してよい状況か」を型付きに管理する。
+管理:
 
-```text
-TurnState
-- ownership
-- pending_user_response
-- pending_yura_response
-- interruption_state
-- presenting_speech?
-- prepared_speech_count
-- current_activity_ref?
-- recent_interaction_at
-- initiative_eligibility
-```
+- turn ownership
+- interruption
+- user-attention priority
+- autonomous initiative eligibility
+- silence
+- pending/prepared/presenting speech
+- stale/cancelled candidate
+- cooldown / fairness / anti-starvation
 
-## 自律発話
+ユーザー入力がなくても、Desire / Interest / Memory activation / time / Activity Result等からExecutive triggerを発生させられる。
 
-自律発話専用の別意思決定器を作らない。
-
-```text
-Timer / state change / environment typed event
-→ B12 eligibility
-→ B03 Appraisal
-→ B06 Commander
-→ speech / body / activity / silence
-```
-
-B12は「喋れ」とは決めない。Commanderを起動可能にするだけ。
-
-## 発話中の次Decision
-
-`presenting_speech != null` はDecision Cycle禁止条件ではない。
-
-次の条件を満たす範囲で、再生中にも次Appraisal/Commanderを起動できる。
-
-- prepared queueにcapacityがある
-- user response待ちを侵害しない
-- current activity/interrupt policyに反しない
-- backpressure policyに反しない
-
-これにより発話再生時間を次LLM生成待ちへ加算しない。
-
-## 固定sleep禁止
-
-自律発話間隔の正本を`前発話完了 → sleep N秒 → 次生成`にしない。
-
-時間経過はtriggerの一要素であり、最終判断は現在State/Appraisal/Commanderで行う。
+固定sleepや「前Speech終了→次生成開始」の直列構造を使わない。
 
 ---
 
-# 16. Core Foundationとの境界
+# 20. Runtime KernelはBrainではない
 
-Runtime KernelはBrain Moduleに含めない。
+Core Foundation (#322) が所有する。
 
-Core Foundation #322が所有:
-
-- Event Queue / Buffer
-- clock
+- Event queue / typed stream
 - scheduler
-- task/worker lifecycle
-- cancellation propagation
-- RuntimeCoordinator
-- health / diagnostics primitives
+- task lifecycle
+- cancellation
+- clock
+- priority / backpressure infrastructure
+- health
+- diagnostics
+- worker coordination
 
-Brainは以下のPortとして利用する。
+Runtime KernelはDomain判断を持たない。
+
+1 workerの長いawaitで他laneを止めない。
+
+---
+
+# 21. Skill AIとの境界
+
+Brain ExecutiveがGame frame-level操作やStreamingコメント大量分類を直接行わない。
+
+### Game
 
 ```text
-EventPort
-ClockPort
-SchedulerPort
-TaskDispatchPort
-CancellationPort
-TracePort
+Executive Goal / Strategy
+→ Game capability / agent
+→ fast game-specific policy
+→ Game Result
+→ Brain Appraisal
 ```
 
-Runtime KernelはEmotion、Intent、Activity selection、Speech contentを判断しない。
+### Streaming
+
+comment classification / summary / moderation signal等はSubsystem側の技能AIを利用可能。
+
+Brainへ必要なtyped eventだけ戻す。
+
+### Vision / Audio
+
+Perception model結果をtyped perceptとしてInput Gatewayへ渡す。
 
 ---
 
-# 17. Concurrency Model
+# 22. LLM Role追加・統合基準
 
-最低限、次は互いの長時間awaitで停止しない。
+新Roleは最低限:
 
-```text
-Event / Appraisal / Commander lane
-Character / Speech preparation lane
-Speech Presentation / TTS lane
-Activity / Plugin execution lane
-Body realtime lane
-Persistence lane
-```
+1. 独立した質問を1文で言える
+2. typed input/outputがある
+3. Authority重複がない
+4. Unit評価可能
+5. 独立交換・停止可能
+6. failure/degradationが定義可能
+7. LLMが本当に必要
 
-因果関係が必要な箇所はtyped id/revisionで接続し、巨大なグローバルlockで順序を保証しない。
+逆に、Role分離しても実行時に必ず別API callを行う必要はない。
 
-主要ID:
-
-- event_id
-- meaning_id
-- appraisal_id
-- state_revision
-- command_id
-- execution_id
-- speech_plan_id
-- utterance_id
-- candidate_id
-- presentation_id
-- activity_id
+Provider optimization / batching / fused callを将来採用しても、logical contractsとAuthorityは維持する。
 
 ---
 
-# 18. Failure / Degradation
+# 23. V1から継承するもの
 
-- LLM-1 failure → typed unresolved / clarification path
-- Appraisal failure → eventを破棄せずdiagnostic + safe no-op / bounded fallback
-- LLM-2 failure → unsafe actionを推測せずwait/degraded state
-- LLM-3 failure → speech candidate failure。Body/Activity/Core loopは継続
-- TTS failure → text presentationまたはspeech failedとして継続
-- Memory unavailable → no-memory degraded mode
-- Plugin unavailable → capability absent/failedとしてCommanderへ戻す
-- Body unavailable → BodyIntentをunsupported/degraded fact化。Brain loop継続
+- Input Meaning / Decision分離
+- What to say / How to say it分離
+- Characterへの責務過剰集中回避
+- Independent semantic observation
+- typed semantic facets
+- finite phrase dictionaryを意味Authorityにしない
+- raw internal stateをCharacterに解釈させない
+-実LLM失敗をfailure classとして設計へ戻す
 
-一つの障害を全Core停止へ連鎖させない。
+V1から改善するもの:
 
----
-
-# 19. Module Gate
-
-各Moduleは次の順で検証する。
-
-1. Design Gate
-2. Module Unit Gate
-3. Adjacent Contract Gate
-4. Brain Integration Gate (#334)
-5. System Verification (#360)
-
-隣接Moduleを同時修正してUnit testを通すことを禁止する。
+- Role数を先に固定しない
+- Authorityは一本化する
+- Logical Role分離を直列LLM call chainへしない
+- slow model responseをCore全体へ伝播させない
+- background cognitionとforeground interactionを優先度分離する
 
 ---
 
-# 20. Brain Integration Acceptance
+# 24. Brain Acceptance
 
-Issue: #334
-
-最低限:
-
-1. text input → Input Meaning → Appraisal → State → Commander → Character text responseが成立する。
-2. raw user text semantic authorityがB02以外に存在しない。
-3. 「もう一回」等がReferenceContextからtyped referenceへ解決され、下流でphrase matchingしない。
-4. Emotion / Desire / Drive / Interest等が別facetとして更新される。
-5. Memory unavailableでも会話loopが継続する。
-6. execution予定と実行事実が分離され、Characterが未実行を完了済みと主張しない。
-7. Activity start/stop/continueがCommander authorityを経由する。
-8. Character wordingがSpeechSemanticPlanのrequired propositionを落とさない。
-9. 第5LLM Roleを追加しない。
-10. Speech A再生中にSpeech BのCharacter generationを開始できる。
-11. user input到着でstale autonomous prepared speechをcancel/supersedeできる。
-12. Runtime Kernelの長時間Task待機がBrain decision laneを停止しない。
-13. Body/Plugin/TTS/PersistenceがなくてもBrain minimum text loopを成立させられる。
-
----
-
-# 21. 非目標
-
-この文書では以下の具体実装を決めない。
-
-- OpenAI model名
-- Prompt全文
-- DB schema
-- VOICEVOX parameter
-- Live2D parameter
-- GUI layout
-- Body joint solver
-- Streaming implementation
-
-これらは各Module/AdapterのDesign Gateで決める。
+- [ ] Input Meaningがraw text semantic authorityとして一意
+- [ ] AppraisalとMeaningが分離
+- [ ] Appraisal LLMがStateを直接書かない
+- [ ] Executiveが唯一のconscious Goal/Action authority
+- [ ] Activity PlannerがExecutive Goalを変更しない
+- [ ] What to say / How to say itが分離
+- [ ] Independent VerifierがObserverに限定される
+- [ ] CharacterがExecution Factを捏造しない
+- [ ] ReflectionがMemory Storeへ直接自由書込みしない
+- [ ] LLM Role数が固定されていない
+- [ ] Responsibility graphとLLM call graphが分離されている
+- [ ] slow Appraisal/Reflection/Verifierが無関係laneをblockしない
+- [ ] playback中next generation可能
+- [ ] stale LLM resultを誤commitしない
+- [ ] foreground interactionがbackground LLMでstarveしない
+- [ ] Brain minimum Integration PASS
