@@ -1,68 +1,67 @@
 # 「プロジェクトゆらv2」#7 Sync Manifest
 
-Status: Canonical
+Status: **Synchronized / PASS**
 Effective: 2026-08-13
-Project: `ktan514 / 7`
+Last synchronization: 2026-08-13
+Project: `ktan514 / 7 / プロジェクトゆらv2`
 Repository: `ktan514/ai-liver-yura`
 Root: #317
-Management migration: #367
+Management migration: #367 — **completed / closed**
 Management spec: `docs/architecture/v2/project_v2_management_spec.md`
 Runbook: `docs/architecture/v2/project_v2_sync_runbook.md`
 
-## 1. Membership canonical
+## 1. Current authority
 
-Project #7は`v2` labelがあるIssue / Pull Requestだけを管理する。
+Project #7 is the current GitHub Projects v2 authority for V2 work.
 
-- `v2`あり → membership対象
-- `v2`なし → membership対象外
+Project #6 is historical transition state and must not be used to determine current V2 Project status.
 
-`v2`なしの既存Project itemはProject #7 membershipから削除する。
-Issue / PR本体のclose/delete/archive/label/Assignee/Milestoneは変更しない。
+Membership authority:
 
-Auto-add desired filter: `label:v2`。
+- repository label `v2` present → Project #7 management target
+- repository label `v2` absent → not a Project #7 management target
 
-## 2. Current expected Issue scope
+Issue / PR titles, branch names, old Project membership, or the string `v2` appearing in historical names are not sufficient to establish V2 membership.
 
-51 Issues:
+Auto-add was user-verified in the GitHub UI on 2026-08-13:
+
+- enabled
+- repository = `ktan514/ai-liver-yura`
+- filter = `label:v2`
+
+The filter/repository were not API-readable, so this remains explicitly **human UI verified**, not API verified.
+
+## 2. Synchronized Issue scope
+
+51 V2 Issues:
 
 `#317 #318 #319 #320 #321 #322 #323 #324 #325 #326 #327 #328 #329 #330 #331 #332 #333 #334 #335 #336 #337 #338 #339 #340 #341 #342 #343 #344 #345 #346 #347 #348 #349 #350 #351 #352 #353 #354 #355 #356 #357 #358 #359 #360 #361 #362 #363 #364 #365 #366 #367`
 
-現時点confirmed V2 PR = 0。
+Confirmed current V2 Pull Requests at synchronization: **0**.
 
-## 3. Phase A audit snapshot
+## 3. Final Project #7 synchronization result
 
-Audit timestamp: 2026-08-13T02:26:48+0900
+Phase B mutation and full re-audit completed on 2026-08-13.
 
-- Project identity: PASS
-- Project ID at audit: `PVT_kwHOBdOPDs4BgKgD`
-- total items: 118
-- expected V2 Issue items: 51
-- `v2`なしscope外 items: 67
-- duplicates: 0
-- archived items: 0
-- `v2` label present: 13
-- `v2` label missing: 38
-- formal existing canonical links: 49/49 PASS
-- #367 parent missing
-- Auto-add enabled: confirmed by API
-- Auto-add filter/repository: API UNVERIFIED
+- initial Project items: 118
+- initial V2-labeled items: 13
+- missing V2 labels added: 38 (`#329`–`#366`)
+- final V2 Issue labels: 51/51
+- scope-out labels added: 0
+- non-`v2` Project items removed from Project #7: 67
+- Issue / PR objects deleted or closed by membership cleanup: 0
+- final Project membership: 51
+- final unlabeled Project items: 0
+- final scope-out Project items: 0
+- duplicate Project items: 0
+- archived Project items: 0
+- confirmed V2 PR: 0
+- formal hierarchy: 50/50 PASS including `#367 → #317`
+- Project #6 mutations: 0
+- V1 lineage mutations: 0
+- product implementation started during migration: NO
 
-Project ID / field IDs / option IDs / item IDsはmutation時にlive再取得する。
-
-## 4. Human UI verification — PASS
-
-2026-08-13、ユーザーがGitHub Project #7 UIでAuto-add workflowを確認し、以下へ設定したことを明示報告した。
-
-- Project: `ktan514 / #7 / プロジェクトゆらv2`
-- Auto-add: enabled
-- Repository: `ktan514/ai-liver-yura`
-- Filter: `label:v2`
-
-この人間確認により、Phase B mutationのAuto-add UI GateはPASS。
-
-APIではfilter/repository詳細を取得できないため、今後の自動監査ではこの確認を「UI human verification」として区別して扱う。APIで確認できたとは表現しない。
-
-## 5. Project field schema
+## 4. Project field schema
 
 ### Status
 
@@ -82,7 +81,7 @@ APIではfilter/repository詳細を取得できないため、今後の自動監
 
 ### Area
 
-Issue本文の`Area:` exact value。
+Issue body `Area:` exact value is canonical.
 
 Management special cases:
 
@@ -91,109 +90,72 @@ Management special cases:
 - #319 = `Management`
 - #367 = `Management`
 
-Audit時Project Areaには`Management` optionが不足。non-destructive add対象。
+`Management` Area option was added non-destructively during synchronization. Existing Area options were not removed, renamed, or assigned new IDs.
 
-### Schedule / estimate
+### Schedule / estimates
 
-- Start date = Issue本文の明示値
-- Target date = Issue本文の明示値
-- Iteration = unset
-- Size = unset
-- Estimate = unset
+- Start date = explicit Issue body value
+- Target date = explicit Issue body value
+- Iteration = unset unless separately canonicalized
+- Size = unset unless separately canonicalized
+- Estimate = unset unless separately canonicalized
 
-## 6. Canonical metadata exceptions
+## 5. Final synchronized fields
 
-#317:
+For all 51 Issues:
 
-- Priority = `P0`
-- Issue level = `Management`
-- Area = `Management`
+- Status: 51/51 PASS
+- 担当ロール: 51/51 PASS
+- Priority: 51/51 PASS
+- Issue level: 51/51 PASS
+- Area: 51/51 PASS
+- Start date: 51/51 PASS
+- Target date: 51/51 PASS
+- Iteration: canonical-unset maintained
+- Size: canonical-unset maintained
+- Estimate: canonical-unset maintained
 
-#318:
+Total synchronized required field values: 357.
 
-- Issue level = `Management`
-- Area = `Management`
-- Priority = `P0`
+Priority distribution at sync:
 
-#319:
+- P0: 36
+- P1: 14
+- P2: 1
 
-- Issue level = `Management`
-- Area = `Management`
-- Priority = `P0`
+Issue-level distribution:
 
-#367:
+- Management: 4
+- Parent: 7
+- Work: 36
+- Integration: 4
 
-- Issue level = `Management`
-- Area = `Management`
-- Priority = `P0`
+## 6. Status at migration completion
 
-その他IssueはIssue本文のPriority / Issue level / Areaを正本とする。
+- #317: `In progress` / `AI作業`
+- #318: `Blocked` / `AI作業`
+- #319: `Done` / `AI作業`
+- #367: `Done` / `AI作業`
+- remaining V2 Product Parent / Work / Integration Issues: `Blocked` / `AI作業`
 
-## 7. Desired migration Status / role
+#367 was automatically closed by the enabled Project `Auto-close issue` workflow immediately after its Project Status changed to Done. The temporary execution guard that expected #367 to remain open was not a canonical requirement. The final `Done + completed/closed` state was reconciled and accepted; #367 is not reopened.
 
-| Issue scope | Status | 担当ロール |
-|---|---|---|
-| #317 | In progress | AI作業 |
-| #318 | Blocked | AI作業 |
-| #319 | Done | AI作業 |
-| #367 | In progress | AI作業 |
-| その他V2 Parent / Work / Integration | Blocked | AI作業 |
+## 7. Explicit non-mutations during Project migration
 
-V2 architectureはユーザー承認済み。ただし#367完了まではproduct implementation lineageを開始しない。
+- no source/product code changes
+- no implementation branch or implementation PR creation
+- no old Project #6 mutation
+- no V1 lineage mutation
+- no scope-out `v2` label additions
+- no Assignee or Milestone changes
+- no legacy Issue/PR close as part of Project membership cleanup
 
-## 8. Required mutation
+## 8. Completion state
 
-Auto-add UI GateはPASS済み。
+Project #7 migration gate: **PASS / COMPLETE**.
 
-Mutation:
+V2 architecture Design Gate: **APPROVED** by user.
 
-1. 51 Issueのmissing `v2` labelを追加
-2. `v2` labelなしProject itemsをProject #7 membershipから削除
-3. Area `Management` optionを不足時のみ非破壊追加
-4. 51 IssuesのStatus / 担当ロール / Priority / Issue level / Area / Start / Targetを同期
-5. Iteration / Size / Estimateは未設定維持
-6. #367 formal parentを#317へ追加
-7. 完全再監査
+V2 product implementation: **not started yet**.
 
-## 9. Explicit non-mutations
-
-- scope外Issue / PRへ`v2` labelを追加しない
-- Issue / PR本体をclose/deleteしない
-- scope外Project itemをarchiveで残さない
-- Assignees変更なし
-- Milestone変更なし
-- source code変更なし
-- implementation branch / PR作成なし
-- V1 lineage変更なし
-- old Project #6 mutationなし
-
-## 10. Completion criteria
-
-#367 PASS条件:
-
-- Auto-add UI verification PASS
-- Project membership = `v2` labeled Issue/PR only
-- unlabeled Project item = 0
-- 51 V2 Issue labels = PASS
-- V2 PR labels = PASS
-- exact-one Project item = PASS
-- duplicate = 0
-- Status = PASS
-- 担当ロール = PASS
-- Priority = PASS
-- Issue level = PASS
-- Area = PASS
-- Start / Target = PASS
-- Iteration / Size / Estimate unchanged/unset
-- formal hierarchy = 50 links including #367→#317
-- unintended Issue/PR/repository mutations = 0
-
-## 11. After #367
-
-Project #7がV2 management authorityとなる。
-
-次:
-
-1. #318 old implementation lineage整理のStart Gate
-2. #321 Typed Contracts dependency / Resume Gate
-3. 1 Work Issue = 1 active implementation lineageでV2 product implementation開始
+The next management gate is #318 legacy implementation-lineage cleanup. After #318 completes, #321 Typed Contracts must pass its own Resume/Start Gate before any implementation branch/PR is created.
