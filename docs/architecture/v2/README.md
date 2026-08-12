@@ -7,6 +7,7 @@
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
 - `body_architecture.md` — canonical body, generative motion, realtime control
 - `plugin_architecture.md` — Core extension / capability architecture
+- `subsystem_architecture.md` — Streaming, Game Skill, Avatar and specialized AI boundaries
 - `legacy_migration_matrix.md` — V1 requirement migration
 - `project_sync_manifest.md` — GitHub Project synchronization manifest
 
