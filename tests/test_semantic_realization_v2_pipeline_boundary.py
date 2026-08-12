@@ -30,6 +30,7 @@ class _CharacterModel:
     def __init__(self, proposition_id: str) -> None:
         self.proposition_id = proposition_id
         self.roles: list[str] = []
+        self.reasoning_efforts: list[str] = []
 
     async def generate_structured_character_response(
         self,
@@ -37,6 +38,7 @@ class _CharacterModel:
         contract: StructuredOutputContract,
     ) -> Mapping[str, object]:
         self.roles.append(str(activity.context.get("llm_role")))
+        self.reasoning_efforts.append(str(activity.context.get("reasoning_effort")))
         assert contract.name == "character_utterance_v2"
         return {
             "speech": "たぶん、好奇心から何かしたい感じはあるよ。",
@@ -59,6 +61,7 @@ class _VerifierModel:
         self.proposition_id = proposition_id
         self.certainty_relation = certainty_relation
         self.roles: list[str] = []
+        self.reasoning_efforts: list[str] = []
 
     async def verify_character_semantics(
         self,
@@ -66,6 +69,7 @@ class _VerifierModel:
         contract: StructuredOutputContract,
     ) -> Mapping[str, object]:
         self.roles.append(str(activity.context.get("llm_role")))
+        self.reasoning_efforts.append(str(activity.context.get("reasoning_effort")))
         assert contract.name == "character_semantic_verification_v2"
         return {
             "propositions": [
@@ -189,7 +193,9 @@ async def test_v2_pipeline_uses_one_relative_verifier_and_never_calls_legacy_obs
     assert result.accepted is True
     assert result.reason == "character_semantics_preserved"
     assert character_model.roles == ["character_language_realizer_v2"]
+    assert character_model.reasoning_efforts == ["none"]
     assert verifier_model.roles == ["character_semantic_verifier"]
+    assert verifier_model.reasoning_efforts == ["low"]
 
 
 @pytest.mark.asyncio
@@ -228,3 +234,4 @@ async def test_v2_relative_certainty_change_produces_typed_regeneration_differen
         "repair": "reduce_epistemic_commitment",
     }
     assert verifier_model.roles == ["character_semantic_verifier"]
+    assert verifier_model.reasoning_efforts == ["low"]
