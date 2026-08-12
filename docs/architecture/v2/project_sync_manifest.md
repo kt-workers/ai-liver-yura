@@ -4,6 +4,7 @@ Status: Draft / #319
 Project: `ktan514 / 6`
 Root: #317
 Canonical: `docs/architecture/v2/system_architecture.md`
+Runbook: `docs/architecture/v2/project_sync_runbook.md`
 
 Related canonicals:
 - `brain_architecture.md`
@@ -21,6 +22,8 @@ V2 Issue hierarchyをGitHub Projects v2「プロジェクトゆら」へ同期�
 
 Project field / formal Sub-issueを操作する前にGitHub liveからfield ID / option ID / item IDを再取得し、旧Snapshot IDを推測利用しない。
 
+実行手順・STOP条件は`project_sync_runbook.md`を正本とする。
+
 ---
 
 ## 2. Design Gate Status Policy
@@ -28,8 +31,8 @@ Project field / formal Sub-issueを操作する前にGitHub liveからfield ID /
 現在は#317 V2 Design Gate中。
 
 - #317: In progress
-- #318: In progress
-- #319: Blocked（Project/Sub-issue mutation可能環境待ち）
+- #318: In progress（Migration再同期完了、Design Gate確認待ち）
+- #319: Blocked（Manifest/Runbook完成、Project/Sub-issue実mutation可能環境待ち）
 - Product/Design Work・Parent・Integration: 原則Blocked by #317 Design Gate
 
 ユーザーがV2 canonical designを明示確認するまで製品コードIssueをIn progressへしない。
@@ -129,7 +132,7 @@ Project field / formal Sub-issueを操作する前にGitHub liveからfield ID /
 | 工程 | Issue | Level | Area | Priority | Start | Target | Gate Status |
 |---:|---:|---|---|---|---|---|---|
 | 0 | #317 | Management/Root | Management | Critical | 2026-08-12 | 2026-10-31 | In progress |
-| 10 | #318 | Management | Management | Critical | 2026-08-12 | 2026-08-15 | In progress |
+| 10 | #318 | Management | Management | Critical | 2026-08-12 | 2026-08-16 | In progress |
 | 20 | #319 | Management | Management | Critical | 2026-08-12 | 2026-08-17 | Blocked |
 | 100 | #321 | Work | Core/Foundation | Critical | 2026-08-13 | 2026-08-15 | Blocked |
 | 110 | #322 | Work | Core/Foundation | Critical | 2026-08-15 | 2026-08-21 | Blocked |
@@ -199,7 +202,7 @@ Project field / formal Sub-issueを操作する前にGitHub liveからfield ID /
 
 ## 7. Sync execution rule
 
-1. Project #6をGitHub liveから再取得
+1. `project_sync_runbook.md`に従いProject #6をlive取得
 2. field IDs / option IDs / current item IDsを取得
 3. 新Area optionsを確認/追加
 4. item重複を確認
@@ -208,6 +211,8 @@ Project field / formal Sub-issueを操作する前にGitHub liveからfield ID /
 7. Manifestとの差分をdry-run
 8. canonicalと一致した場合のみmutation
 9. mutation後Projectを再取得して完全性監査
+
+現ChatGPT環境ではGitHub ConnectorにProjects v2 / formal Sub-issue mutation actionがなく、containerにも認証済み`gh`がないため、実mutationだけがBlocked。古いIDを推測使用しない。
 
 ---
 
@@ -221,6 +226,7 @@ Project field / formal Sub-issueを操作する前にGitHub liveからfield ID /
 - [x] 工程案更新
 - [x] 4 LLM固定撤回を反映
 - [x] Game SkillをSubsystem hierarchyへ追加
+- [x] live-ID/dry-run/mutation/re-audit runbook作成
 - [ ] GitHub live Project field IDs取得
 - [ ] V2 Area options更新
 - [ ] V2全IssueをProject #6へ一意登録
