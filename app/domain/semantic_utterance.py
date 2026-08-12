@@ -187,16 +187,29 @@ class SemanticProposition:
             if legacy_state == "overview":
                 normalized_summary_mode = "overview"
         else:
-            if normalized_value.certainty != self.certainty:
-                raise ValueError("SemanticValue.certaintyと互換certaintyが一致しません。")
             if self.state is not None:
                 if self.state not in _ALLOWED_STATES:
                     raise ValueError("SemanticProposition.stateが不正です。")
                 expected_legacy = normalized_value.legacy_state(
                     summary_mode=normalized_summary_mode
                 )
-                if self.state != expected_legacy:
-                    raise ValueError("legacy stateとv2 SemanticValueが矛盾しています。")
+                # 移行互換: 旧コードはdataclasses.replace(state=... / certainty=...)
+                # でPlanを変更する。明示されたlegacy fieldがv2 valueと食い違う場合は
+                # constructor境界でv2 facetへ再正規化し、後段Semantic Validatorに
+                # 意味差分を判定させる。新規v2コードはlegacy stateを意味authorityにしない。
+                if (
+                    self.state != expected_legacy
+                    or normalized_value.certainty != self.certainty
+                ):
+                    normalized_summary_mode = (
+                        "overview" if self.state == "overview" else "detail"
+                    )
+                    normalized_value = SemanticValue.from_legacy_state(
+                        self.state,
+                        certainty=self.certainty,
+                    )
+            elif normalized_value.certainty != self.certainty:
+                raise ValueError("SemanticValue.certaintyと互換certaintyが一致しません。")
 
         if normalized_summary_mode == "overview":
             if (
