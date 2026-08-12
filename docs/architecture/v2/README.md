@@ -3,6 +3,7 @@
 - `system_architecture.md` — system-wide canonical architecture
 - `brain_architecture.md` — Brain modules and authority
 - `cognitive_llm_architecture.md` — cognitive and LLM role design
+- `goal_commitment_architecture.md` — persistent Goal / Commitment state and lifecycle
 - `concurrency_architecture.md` — non-blocking runtime / LLM invocation topology
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
 - `body_architecture.md` — canonical body, generative motion, realtime control
