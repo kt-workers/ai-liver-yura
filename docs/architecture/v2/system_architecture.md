@@ -1,6 +1,6 @@
 # AI Liver ゆら V2 Canonical System Architecture
 
-Status: Draft / V2 Design Gate
+Status: Draft / V2 Design Gate / Design Reconciliation Complete
 Canonical branch: `rebuild/v2-foundation`
 Root: #317
 Base lineage: `main@0500a69c75e46e97c0f849c26a4d3d7f1fb138dd`
@@ -11,7 +11,7 @@ AI Liver ゆら V2の最上位システム構造正本。
 
 旧実装を継ぎ足さず、V1 Issue/PR/docs/Verificationから要求・failure knowledgeだけを回収し、最古mainから再構築する。
 
-詳細:
+詳細正本:
 
 - Brain: `brain_architecture.md`
 - Cognitive / LLM: `cognitive_llm_architecture.md`
@@ -34,27 +34,17 @@ User Messageへの返信器ではない。
 
 ゆらは持続する:
 
-- Internal State
 - Emotion / Desire / Drive / Motivation
 - Values / Moral context
 - Interest / Curiosity
 - Relationship
 - Memory
 - current Goals / Commitments
-- **Attention / Focus / Turn state**
-- Current Activities
+- Attention / Focus / Turn state
+- Current Activities / Actual Execution state
 - Body State
 
-を持ち、外界と自身の変化を受けながら行動を選択する。
-
-代表活動:
-
-- ユーザーとの会話
-- YouTube等のライブ配信 / VTuber活動
-- ユーザーとのゲーム対戦
-- 配信中ゲーム実況・対戦
-- 観察 / 探索 / 沈黙 / 休止
-- 将来のActivity / Capability
+を持ち、外界と自身の変化を受けながら会話・YouTube配信・ゲーム対戦/実況・観察・沈黙等を自ら選択する。
 
 ユーザー発言は重要Eventだが無条件命令ではない。
 
@@ -64,18 +54,11 @@ User Messageへの返信器ではない。
 
 ```text
 AI Liver Yura
-│
 ├─ Core
 │  ├─ Brain
 │  ├─ Body
 │  └─ Plugin Architecture
-│
 ├─ Infrastructure / Providers
-│  ├─ LLM
-│  ├─ TTS
-│  ├─ Persistence
-│  └─ Transport / Adapter
-│
 └─ Subsystems / Skill Runtimes
    ├─ Avatar
    ├─ Streaming
@@ -84,12 +67,6 @@ AI Liver Yura
    ├─ Validation Labs
    └─ Development Tooling
 ```
-
----
-
-## 4. Core Ownership
-
-Coreは「ゆら自身」の正本責務を所有する。
 
 Core membershipをruntime optionalityで決めない。
 
@@ -106,19 +83,9 @@ Core正本例:
 Avatar不在でもBodyはPluginにならない。
 Persistence不在でもGoal/Memory Domain ownershipはInfrastructureへ移らない。
 
-### Degradation
-
-- Plugin 0件でもCore基本責務維持
-- Avatar/Streaming/Game/GUI不在でもCore継続
-- TTS unavailableでも可能なText/Silence/cognition継続
-- Persistence unavailable時durabilityを偽らず安全縮退
-- 1 LLM Role failureでunrelated lane停止なし
-- external output切断でCore停止なし
-- shutdown/cancellationは正常経路
-
 ---
 
-## 5. Clean Architecture
+## 4. Clean Architecture
 
 ```text
 Domain / Contracts
@@ -131,24 +98,22 @@ Adapters / Providers / UI / External systems
 ```
 
 DomainはOpenAI SDK、FastAPI、VOICEVOX、PostgreSQL、Live2D等の具体型を知らない。
-
 Infrastructure ProviderはPluginではない。
 
 ---
 
-## 6. Plugin Boundary
+## 5. Plugin Boundary
 
 Pluginをoptional性だけで定義しない。
 
 > **PluginはCore自身の構成要素ではなく、Core公開拡張契約から外部Capabilityを追加する機構。**
 
 Core固有State/Authorityを所有しない。
-
-`Plugin 0件でもCore基本責務維持`は別のSystem invariant。
+`Plugin 0件でもCore基本責務維持`は別System invariant。
 
 ---
 
-## 7. Subsystem / Skill AI Boundary
+## 6. Subsystem / Skill AI Boundary
 
 Subsystemは独立lifecycle/process/resource ownershipを持てる。
 
@@ -162,42 +127,27 @@ Skill AIはExecutive Goal Authorityを奪わない。
 
 ---
 
-## 8. 認知因果モデル
+## 7. 認知因果モデル
 
 ```text
 External / Internal Events
-        ↓
-Perception / Input Meaning
-        ↓
-Subjective Appraisal / salience
-        ↓
-Internal State
-        ↓
-Attention / Focus eligibility
-        ↓
-Executive Deliberation
-        ↓
-Goal / Commitment transition
-        ↓
-Persistent Goal / Commitment State
-        ↓
-Planning / Realization / Execution
-   ├─ Goal / Activity Planning
-   ├─ Speech
-   ├─ Body
-   ├─ Plugin Capability
-   └─ Subsystem / Skill Runtime
-        ↓
-Actual Result / New Events
-        ↓
-Appraisal / Attention / Executive / Goal / Reflection / Memory
+→ Perception / Input Meaning
+→ Subjective Appraisal / salience
+→ Internal State
+→ Attention / Focus eligibility
+→ Executive Deliberation
+→ Goal / Commitment transition
+→ Persistent Goal / Commitment State
+→ Planning / Realization / Execution
+→ Actual Result / New Events
+→ Appraisal / Attention / Executive / Goal / Reflection / Memory
 ```
 
 因果図であり固定blocking Pipelineではない。
 
 ---
 
-## 9. Runtime Model
+## 8. Runtime Model
 
 - Event-driven
 - snapshot-based
@@ -207,8 +157,7 @@ Appraisal / Attention / Executive / Goal / Reflection / Memory
 - priority / backpressure
 - cancellation / stale / supersede
 - source_context_revision
-- goal_revision where relevant
-- attention_revision where relevant
+- goal_revision / attention_revision where needed
 
 ```text
                          ┌─ Input / Meaning
@@ -223,7 +172,7 @@ Typed Event Stream ──────┼─ Attention / Turn
                          └─ Reflection / Persistence
 ```
 
-### Concurrency Invariant
+必須:
 
 - slow LLM中もunrelated lane継続
 - Speech playback中next cognition/generation可能
@@ -237,10 +186,9 @@ Typed Event Stream ──────┼─ Attention / Turn
 
 ---
 
-## 10. LLM Design
+## 9. LLM Design
 
-旧4-role固定は撤回。
-
+旧system-wide 4-role固定は撤回。
 LLM個数をArchitecture invariantにしない。
 
 初期Role候補:
@@ -259,67 +207,60 @@ LLM個数をArchitecture invariantにしない。
 
 > **conscious Goal / Action Authority = Executive #328 only**
 
-Goal State #366、Attention #333、Internal State Reducer、Activity/Execution、Body physical/realtime等はtyped deterministic ownershipを基本とする。
+Goal State #366、Attention #333、State Reducer、Activity/Execution、Body physical/realtime等はtyped deterministic ownershipを基本とする。
 
-### Logical Role != API Call
-
-責務分離を直列Provider callへ変換しない。
-
-- simple pathでRole省略/非LLM化
-- complex caseだけ専用Role
-- independent fan-out
-- safe speculative preparation
-- low-priority background defer/cancel
+`Logical Role != API Call`。
+責務分離をserial Provider chainへ変換しない。
 
 ---
 
-## 11. System Authority Map
+## 10. System Authority Map
 
 | Authority | Owner |
 |---|---|
-| open-ended NL meaning | Input Meaning #326 |
-| subjective appraisal / salience candidate | #327 |
-| current Internal State | State Reducer #327 |
-| conscious Goal / Action selection | Executive #328 |
+| open-ended NL meaning | #326 |
+| subjective Appraisal / salience candidate | #327 |
+| current Internal State | #327 State Reducer |
+| conscious Goal / Action selection | #328 Executive |
 | current Goal / Commitment | #366 |
-| **current Attention / Focus / Turn scheduling** | **#333** |
+| current Attention / Focus / Turn scheduling | #333 |
 | complex Goal planning | #361 |
 | Activity lifecycle / Actual Fact | #329 |
 | What to say | #362 |
 | How to say | #330 |
 | semantic observation | #363 |
-| Speech performance/presentation | #331/#348 |
-| current Body / physical continuity | #335〜#341 |
-| Memory canonical store/retrieval | #332 |
+| Speech performance / presentation | #331/#348 |
+| Body current state / physical continuity | #335〜#341 |
+| Memory canonical store / retrieval | #332 |
 | Memory Candidate generation | #364 |
 | Game frame-level skill | #365, subordinate to Core Goal |
 
 LLM自由文をState/Factへ直接代入しない。
+Intent / Plan / Character claimをActual Factへ昇格させない。
 
 ---
 
-## 12. Persistent Goal / Commitment — #366
+## 11. Persistent Goal / Commitment — #366
 
 ```text
 Executive chooses Goal
 → validated transition
 → Goal State
-→ later Snapshot / Attention / Planner
+→ later Attention / Executive / Planner
 ```
 
-必須:
-
 - turn/context windowを跨ぐ
-- Activity変更でsuspend/resume可能
-- CommitmentをMemory/Speechと混同しない
-- stale goal_revision plan非実行
+- GoalとActivityを分離
+- GoalとMemoryを分離
+- CommitmentとCharacter utteranceを分離
+- stale goal_revision Plan非実行
 - pending Goal/Commitmentがautonomous triggerになり得る
 
 ---
 
-## 13. Attention / Focus / Turn — #333
+## 12. Attention / Focus / Turn — #333
 
-Game、Streaming、Conversation、Reflection等が並行しても全EventをExecutiveへ同期投入しない。
+Game、Streaming、Conversation、Reflection等の全EventをExecutiveへ同期投入しない。
 
 ```text
 Game realtime             → Skill aggregation
@@ -342,14 +283,12 @@ Executive
 - fairness / anti-starvation
 
 Appraisalはsalience候補、Executiveはdeliberate attention intent、#333はFocus State/schedulingを所有。
-
 意味/Goal/Speech内容は決めない。
-
 Body gazeはFocusの表現でありcognitive Authorityではない。
 
 ---
 
-## 14. Speech Summary
+## 13. Speech Summary
 
 ```text
 Executive SpeechIntent
@@ -361,16 +300,17 @@ Executive SpeechIntent
 → Presentation
 ```
 
-論理責務を固定直列LLM chainにしない。
+logical dependencyをfixed serial LLM chainにしない。
 
 - simple Semantics pathは専用LLM省略可
 - Character後Verifier/Performance/safe TTS prep並列可
 - required PASS前にexternal Presentation commitしない
 - Speech A playback中にSpeech B generation可
+- context/goal/attention revisionでpre-presentation revalidation
 
 ---
 
-## 15. Body Summary
+## 14. Body Summary
 
 - Canonical Skeleton / DOF / limits
 - current pose / velocity
@@ -381,15 +321,13 @@ Executive SpeechIntent
 - gaze/blink/breath/viseme/subtle realtime
 - BodyPoseFrame
 
-fixed presets/no Home reset/current-pose continuity。
-
+fixed presetsを主経路にせず、current pose continuity / no Home reset。
 Motion Planner遅延でもrealtime停止なし。
-
 CharacterとBodyはExecutiveから兄弟fan-out。
 
 ---
 
-## 16. Streaming / Game Summary
+## 15. Streaming / Game Summary
 
 ### Streaming #347
 
@@ -407,11 +345,11 @@ Core Executive / Goal State
 → Appraisal / Attention / Executive
 ```
 
-実況台詞はGame Agentが直接発話しない。
+Game Agentが実況台詞を直接発話しない。
 
 ---
 
-## 17. Natural Language Policy
+## 16. Natural Language Policy
 
 open-ended意味Authorityとしてfinite keyword/marker/regex/substring/startswith等を使わない。
 
@@ -421,9 +359,7 @@ protocol token / enum / exact technical ID / finite-domain vocabularyは例外�
 
 ---
 
-## 18. Execution Truth
-
-Intent / Plan / Actual Factを分離する。
+## 17. Execution Truth
 
 ```text
 requested → accepted → planned → started → observable/applied → completed
@@ -441,7 +377,33 @@ I said promise  → Speech Presentation Fact
 
 ---
 
-## 19. Module Development Gate
+## 18. Character / Body / Skill sibling boundary
+
+```text
+                    ExecutiveDecision
+                  /        |          \
+          SpeechIntent   BodyIntent   Activity/Goal
+              ↓             ↓             ↓
+          Speech path    Body path    Plugin/Subsystem
+```
+
+Character textからBody semantic commandを作らない。
+Body poseからSpeech meaningを決めない。
+Skill AIからCore Goalを作らない。
+
+---
+
+## 19. Memory / Reflection
+
+- #364 Reflection: open-ended MemoryCandidate
+- #332 Memory Store: validation/store/retrieval
+- #359 Persistence Provider: implementation
+
+Memoryはcurrent Internal State / Goal State / Execution Factより強いAuthorityを持たない。
+
+---
+
+## 20. Module Development Gate
 
 ```text
 Canonical Design
@@ -449,7 +411,7 @@ Canonical Design
 → Unit Acceptance
 → implementation lineage / Draft PR
 → Unit PASS
-→ Adjacent Contract PASS
+→ Adjacent PASS
 → Integration
 → User Verification if required
 → Done
@@ -459,21 +421,24 @@ Canonical Design
 
 ---
 
-## 20. Design Gate Status
+## 21. Design Reconciliation Status
+
+設計反映・Issue整合監査は完了済み。
 
 - [x] System / Brain / Cognitive / Goal / Concurrency canonical
 - [x] Speech / Body / Plugin / Subsystem canonical
-- [x] Legacy requirements inventory / cognitive remapping
-- [x] 4 LLM固定撤回 / Single Executive
-- [x] non-sequential LLM/runtime
+- [x] Legacy 44 Open Issue / initial 23 PR requirement mapping
+- [x] variable LLM / Single Executive
+- [x] non-serial LLM/runtime
 - [x] persistent Goal #366
 - [x] Attention/Focus #333
 - [x] Game/Streaming Skill AI boundary
 - [x] Plugin structural definition
-- [ ] Legacy Migration Matrixへ#366/#333 Attention最終追補
-- [ ] subordinate canonical / Issue final cross-audit
-- [ ] Projects v2 actual mutation #319（環境制約でBlocked）
-- [ ] #317 Design Reconciliation Checkpoint
-- [ ] **ユーザーによるV2 canonical architecture確認**
+- [x] current V2 Issueのactive Commander/fixed Role numbering排除
+- [x] subordinate canonical / Issue cross-audit
+- [x] Project sync Manifest / Runbook
 
-ユーザー確認前にproduct implementationをunfreezeしない。
+残るDesign Gateは**ユーザーによるV2 canonical architecture確認**。
+
+#319 actual Projects v2 field / formal Parent-Subissue mutationは現実行環境の制約で別途Blocked管理する。
+Product implementationはユーザー確認前に開始しない。
