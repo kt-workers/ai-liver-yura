@@ -400,7 +400,7 @@ LLMが「成功したと思う」と答えてもExecution Factにはしない。
 ```text
 Yura Executive
 → Goal / Strategy / Activity Intent
-→ Game capability / subsystem
+→ Game Skill Runtime (#365)
 → game-specific agent
    - LLM / VLM
    - RL model
@@ -460,7 +460,7 @@ V1で責務分離したこと自体は失敗ではない。
 
 - LLMの総数を先に制限しない。
 - ただしAuthorityを分散させない。
-- Commander / Executiveへ意味決定、活動計画、発話内容、表現を過剰集中させない。
+- 旧Commander / Executiveへ意味決定、活動計画、発話内容、表現を過剰集中させない。
 - Verifierを自由文の最終Authorityにしない。
 - 長いLLM/TTS/Playback/Memory/Game処理を直列awaitしない。
 
@@ -500,18 +500,28 @@ decide
 
 ---
 
-## 11. Design Gate
+## 11. Design Reconciliation Status
 
-この設計をV2へ反映する際は、少なくとも以下を再設計する。
+2026-08-12時点で、本書から要求したCognitive / LLM再設計はV2 canonical / Issue体系へ反映済み。
 
-- `system_architecture.md` の「4 LLM固定」を撤回する。
-- `brain_architecture.md` のLLM Role invariantを本書へ置換する。
-- CommanderをExecutive Deliberationへ再定義し、Activity Planning / Speech Semanticsを分離する。
-- Appraisalを「非LLM固定」から「typed Appraisal responsibility。実装はLLM/deterministicを評価して選択」へ変更する。
-- Character Semantic Verificationを独立Roleとして再評価する。
-- Memory Consolidation / Reflectionを独立責務として設計する。
-- Runtime Kernelは複数laneのevent/task orchestrationを支えるが、Domain判断を持たない。
-- Speech Pipelineのnon-blocking invariantをCore全体のconcurrency invariantへ一般化する。
-- Game / Streaming等のSkill AIをCore cognitive LLM Role数から分離する。
+- [x] `system_architecture.md` から「4 LLM固定」を撤回
+- [x] `brain_architecture.md` を可変Role / Single Executive Authority / non-sequential runtimeへ更新
+- [x] 旧CommanderをExecutive Deliberation #328へ再定義
+- [x] Goal / Activity Planning #361をExecutiveから分離
+- [x] Speech Semantics #362をWhat-to-say Authorityとして分離
+- [x] Character Language #330をHow-to-sayへ限定
+- [x] Independent Semantic Verification #363をObserver責務として分離
+- [x] Appraisal #327をtyped responsibilityとし、LLM/deterministic選択可能に変更
+- [x] Reflection / Memory Consolidation #364をMemory Store #332から分離
+- [x] Runtime Kernel #322を複数lane orchestrationへ一般化しDomain判断を持たせない
+- [x] Speech Pipeline #348のnon-blocking invariantをCore全体のConcurrencyへ一般化
+- [x] Game Skill #365 / Streaming Skill AIをCore cognitive Role数とExecutive Authorityから分離
+- [x] Legacy Migration Matrixを新しい責務境界へ再マッピング
 
-製品コード実装は、更新後のV2 canonical architectureをユーザーが確認するまで開始しない。
+残るDesign Gate:
+
+- [ ] subordinate canonical全体の用語・Authority・Concurrency整合監査
+- [ ] #317へ最終Design Reconciliation Checkpointを記録
+- [ ] ユーザーによるV2 canonical architecture確認
+
+製品コード実装は、#317 Design Gateが解除されるまで開始しない。
