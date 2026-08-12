@@ -46,10 +46,12 @@ class CharacterSemanticVerifier:
         prompt_builder: CharacterSemanticVerifierPromptBuilder,
         *,
         policy: CharacterSemanticVerificationPolicy | None = None,
+        reasoning_effort: str = "low",
     ) -> None:
         self._model = model
         self._prompt_builder = prompt_builder
         self._policy = policy or CharacterSemanticVerificationPolicy()
+        self._reasoning_effort = reasoning_effort
 
     async def verify(
         self,
@@ -74,6 +76,7 @@ class CharacterSemanticVerifier:
             context={
                 "plugin_prompt_override": prompt,
                 "llm_role": "character_semantic_verifier",
+                "reasoning_effort": self._reasoning_effort,
                 "trace_context": source.context.get("trace_context"),
                 "activity_turn_id": source.context.get("activity_turn_id"),
                 "llm_attempt": attempt,
