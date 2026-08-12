@@ -52,6 +52,45 @@ def _context() -> ResponseContext:
     )
 
 
+def _context_for(
+    *,
+    predicate: str,
+    state: str,
+    certainty: str,
+    concept: str | None = None,
+) -> ResponseContext:
+    plan = SemanticUtterancePlan(
+        speech_act="direct_answer",
+        target=SemanticTarget("internal_state", predicate),
+        propositions=(
+            SemanticProposition(
+                kind="self_state",
+                predicate=predicate,
+                state=state,
+                certainty=certainty,
+                concept=concept,
+            ),
+        ),
+        response_length="short",
+        self_disclosure="brief",
+        question_budget=0,
+        new_direction_budget=0,
+    )
+    return ResponseContext(
+        user_input="今はどう？",
+        activity_type="conversation",
+        operation="discuss",
+        status=ActivityExecutionStatus.WAITING_INPUT,
+        failure_reason=None,
+        result_summary="",
+        allowed_claims=(ResponseClaim.CONVERSATION_ONLY,),
+        forbidden_claims=(),
+        activity_goal="現在の状態へ直接答える",
+        speech_act="question",
+        memory={"semantic_utterance_plan": plan.as_context()},
+    )
+
+
 def _profile() -> CharacterProfile:
     return CharacterProfile(
         name="ゆら",
@@ -128,9 +167,36 @@ def test_medium_certainty_gets_machine_readable_epistemic_facet_contract() -> No
     assert '"certainty_semantics": "epistemic_not_intensity"' in prompt
     assert '"certainty_realization": "epistemic_modality"' in prompt
     assert '"certainty_surface_requirement": "overt_epistemic_modality"' in prompt
+    assert '"certainty_scope": "entire_proposition"' in prompt
+    assert '"certainty_scope_components": ["predicate", "state", "concept"]' in prompt
     assert '"intensity_allowed": false' in prompt
     assert '"degree_marker_substitution": "forbidden"' in prompt
     assert '"concept_role": "modify_predicate_not_replace_it"' in prompt
+    assert "certaintyはproposition全体へ作用する" in prompt
+    assert "一部の節だけを無標で断定" in prompt
+    assert "同じcertainty scope" in prompt
+
+
+def test_unknown_low_certainty_scopes_modality_to_unknown_judgment_itself() -> None:
+    prompt = CharacterLanguageRealizerPromptBuilder().build(
+        _context_for(
+            predicate="sadness",
+            state="unknown",
+            certainty="low",
+        ),
+        character_profile=_profile(),
+        correction=None,
+    )
+
+    assert '"state": "unknown"' in prompt
+    assert '"certainty": "low"' in prompt
+    assert (
+        '"unknown_certainty_semantics": '
+        '"epistemic_commitment_to_unknown_state_judgment"'
+    ) in prompt
+    assert "unknownというstate判定そのものへのepistemic commitment" in prompt
+    assert "unknown判定全体を同じcertainty scope" in prompt
+    assert "特定polarityを推測しない" in prompt
 
 
 def test_supporting_selection_is_minimal_and_optional() -> None:
@@ -141,8 +207,13 @@ def test_supporting_selection_is_minimal_and_optional() -> None:
     )
 
     assert '"supporting_selection_policy": "minimal_optional_only_when_facet_complete"' in prompt
+    assert (
+        '"supporting_failure_policy": '
+        '"omit_entire_optional_proposition_if_facet_incomplete"'
+    ) in prompt
     assert "primaryだけで自然に完結できるなら省略を優先" in prompt
     assert "supportingを数多く列挙することを品質とみなさない" in prompt
+    assert "表現とIDを一緒に落とす" in prompt
 
 
 def test_regeneration_feedback_projects_only_semantic_differences() -> None:
@@ -199,6 +270,7 @@ def test_regeneration_feedback_marks_certainty_and_concept_repairs_when_reported
     )
 
     assert "restore_certainty_as_epistemic_modality" in prompt
+    assert "restore_proposition_level_certainty_scope" in prompt
     assert "restore_required_concept_within_predicate" in prompt
 
 
@@ -244,5 +316,30 @@ def test_regeneration_feedback_normalizes_noncanonical_facet_diagnostics() -> No
 
     assert "restore_target_predicate_meaning" in prompt
     assert "restore_certainty_as_epistemic_modality" in prompt
+    assert "restore_proposition_level_certainty_scope" in prompt
     assert "restore_required_concept_within_predicate" in prompt
     assert "restore_state_fidelity" in prompt
+    assert "drop_optional_realization_if_facet_incomplete" in prompt
+
+
+def test_observer_fidelity_feedback_allows_optional_support_to_be_dropped_wholly() -> None:
+    correction = json.dumps(
+        {
+            "reason": "observed_semantic_state_fidelity_mismatch",
+            "claim_differences": [
+                "proposition:1:calm:observed_state_mismatch:expected=moderate:observed=present",
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+    prompt = CharacterLanguageRealizerPromptBuilder().build(
+        _context(),
+        character_profile=_profile(),
+        correction=correction,
+    )
+
+    assert "restore_state_fidelity" in prompt
+    assert "drop_optional_realization_if_facet_incomplete" in prompt
+    assert "対象がoptional supporting propositionなら" in prompt
+    assert "表現とIDを" in prompt
