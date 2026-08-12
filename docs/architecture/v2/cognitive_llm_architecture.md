@@ -3,525 +3,383 @@
 Status: Draft / V2 Design Gate
 Parent architecture: `docs/architecture/v2/brain_architecture.md`
 System architecture: `docs/architecture/v2/system_architecture.md`
+Goal / Commitment: `docs/architecture/v2/goal_commitment_architecture.md`
+Concurrency: `docs/architecture/v2/concurrency_architecture.md`
 Root management: #317
 
 ## 1. 目的
 
-この文書は、AI Liver ゆらでLLMをどこに、何のために使うかを定義する。
+この文書は、AI Liver ゆらでLLMを**どこに、何のために使うか**を定義する。
 
-V2の最終目標は、ユーザー入力へ応答するチャットボットではない。
+最終目標はユーザー入力へ返答するチャットボットではなく、持続する内部状態・記憶・関係・Goal・Commitment・Activityを持ち、会話・配信・ゲーム・観察・沈黙等を自ら選択する「ゆら」という主体である。
 
-ゆらは、持続する内部状態・記憶・関係・欲求・目標・活動を持ち、外界と自分自身の変化を受け取りながら、会話、YouTube等でのライブ配信、ゲーム、観察、沈黙その他の活動を自ら選択できる主体として設計する。
+LLM個数を先に固定しない。
 
-LLMの個数を先に固定しない。
+> open-endedな意味理解・主観評価・推論・計画・言語実現・意味検証・身体運動構成・内省に独立責務があり、LLMが適切な場合だけ専用Roleを設ける。
 
-> open-endedな意味理解・主観評価・推論・計画・言語実現・意味検証・身体運動構成・内省に独立した責務が存在し、LLMが適切な場合に専用Roleを設ける。
+ただしRole数とAuthority数は別。
 
-ただし、LLM Roleを増やすことと意思決定Authorityを増やすことは別である。
-
-> ゆらの意識的な行動・目標選択の最終AuthorityはExecutive Deliberatorただ1つとする。
+> **ゆらのconscious Goal / Action selectionの最終AuthorityはExecutive Deliberator #328ただ1つ。**
 
 ---
 
-## 2. 「認知サイクル」は1本の直列Pipelineではない
+## 2. 認知サイクルは1本のblocking Pipelineではない
 
-本書でいう認知サイクルは、出来事・評価・状態・意思決定・実行結果が循環して影響し合う**因果関係**を意味する。
-
-実装を次のような1本のblocking chainにはしない。
+因果モデル:
 
 ```text
-Input
-→ Meaning
+External / Internal Events
+→ Meaning / Perception
 → Appraisal
-→ Executive
-→ Speech
-→ TTS
-→ Playback完了
-→ Body完了
-→ Memory保存完了
+→ Internal State
+→ Executive Deliberation
+→ Goal / Commitment transition
+→ Planning / Realization / Execution
+→ Actual Result
+→ Appraisal / Reflection / Memory
+↺
+```
+
+これは固定Runtime順序ではない。
+
+禁止:
+
+```text
+Input Meaning LLM
+→ await Appraisal LLM
+→ await Executive LLM
+→ await Planner LLM
+→ await Speech Semantics LLM
+→ await Character LLM
+→ await Verifier LLM
+→ await TTS
+→ await playback
+→ await Memory
 → next cycle
 ```
 
-この構造は禁止する。長いLLM推論、TTS、音声再生、Body motion、Game、Streaming、Memory処理のいずれかが、他の認知・入力処理を滞留させるためである。
+V2はEvent-driven / snapshot-based / sparse activation / concurrent lanesを正規構造とする。
 
-V2では、**Event-driven / snapshot-based / concurrent lanes** を正規構造とする。
+### 必須Concurrency invariant
 
-```text
-                         ┌─ Perception / Input lane
-                         │
-External / Internal ────→ Event Bus / Typed Event Stream
-                         │
-                         ├─ Appraisal / State lane
-                         │
-                         ├─ Executive Deliberation lane
-                         │
-                         ├─ Speech Preparation lane
-                         │    ├─ Speech Semantics
-                         │    ├─ Character Realizer
-                         │    └─ Semantic Verification
-                         │
-                         ├─ Speech Presentation lane
-                         │    ├─ TTS preparation
-                         │    └─ playback
-                         │
-                         ├─ Body realtime lane
-                         │
-                         ├─ Activity / Game / Streaming lanes
-                         │
-                         └─ Reflection / Memory Consolidation lane
+- 1つのLLM応答待ちでunrelated laneを止めない
+- Speech playback中にnext cognition / generation可能
+- TTS待機中もnew input受付可能
+- Body realtimeはLLM / TTS / DB / Game AI待ちで停止しない
+- Reflectionはforeground interactionをblockしない
+- Game frame loopはExecutive LLM latency非依存
+- Streaming burstでCore starvationなし
+- background cognitionがforeground interactionをstarveしない
+- stale/cancelled/superseded resultを最新stateへ誤commitしない
 
-Each lane
-  → typed result / fact / state transition event
-  → Event Bus
-  → interested lanes may react
-```
+---
 
-### 2.1 必須Concurrency invariant
+## 3. Snapshot / Candidate model
 
-- Speech Aの再生中でも、次のInput Meaning / Appraisal / Executive / Speech preparationを進められる。
-- TTS待機中でもExecutiveは別Eventを処理できる。
-- Body realtime更新はLLM、TTS、DB、Game AIを待たない。
-- Memory consolidationは通常の会話・Body・Activityをblockしない。
-- Gameのframe-level処理をCore Executive LLMの応答待ちにしない。
-- Streamingのコメント大量処理でCore decision loopを止めない。
-- 1つのProvider障害・timeoutが他Roleのtask schedulingを停止させない。
-- shutdown/cancelは各laneを独立して収束させ、pending taskを残さない。
-
-### 2.2 同時実行と因果整合性
-
-並行化しても古い文脈の結果を無条件採用しない。
-
-各long-running処理は最低限、次を持つ。
+long-running Roleは開始時点のtyped snapshot/read modelを受ける。
 
 ```text
 request_id
-source_event_ids
+role_id
+source_event_ids[]
 source_context_revision
-created_at
+goal_revision?
 priority
 interruptibility
-expires_at / stale policy
-preconditions
+preconditions[]
+stale_policy
 ```
 
-結果をcommitする前に、必要に応じて現在のrevision / preconditionを再検証する。
-
-例:
-
-```text
-Speech candidate B generated while Speech A is playing
-↓
-new user input arrives
-↓
-B's source_context_revision becomes stale
-↓
-revalidate / cancel / supersede
-↓
-古いBを自動再生しない
-```
-
-### 2.3 Snapshotの原則
-
-各RoleがCoreのmutable objectを長時間直接共有しない。
-
-開始時点のtyped snapshot / read modelを受け取り、結果をcandidate / eventとして返す。
-
-現在状態の書込みAuthorityはそれぞれの所有Moduleだけが持つ。
-
----
-
-## 3. 継続的な認知・行動の因果モデル
-
-```text
-External / Internal sources
-  ├─ user conversation
-  ├─ YouTube viewers / stream events
-  ├─ game state / result
-  ├─ camera / microphone / touch
-  ├─ time / schedule / environment
-  ├─ memory activation
-  ├─ internal state changes
-  └─ previous execution results
-            ↓ typed events
-Perception / Meaning
-            ↓
-Subjective Appraisal
-            ↓
-Internal State / Motivation / Goal relevance
-            ↓
-Executive Deliberation
-            ↓
-Intent / Goal / Commitment
-            ↓
-Planning / Realization
-   ├─ Activity planning
-   ├─ Speech semantics
-   ├─ Character language
-   └─ Body motion
-            ↓
-Execution
-   ├─ conversation
-   ├─ streaming
-   ├─ game
-   ├─ plugin capability
-   ├─ body / attention
-   └─ silence / observation
-            ↓
-Execution Result / World change
-            ↓
-Appraisal / Memory / Reflection
-```
-
-この図は因果関係であり、すべての箱を毎回順番にawaitする実行Pipelineではない。
-
-ユーザー入力は重要なEventだが常に最上位命令ではない。ゆらは現在の関係、状態、目標、約束、Activity、Capability、Values等を踏まえ、応答、拒否、延期、質問、沈黙、別Activity継続等を選べる。
-
----
-
-## 4. AuthorityとLLM Roleを分離する
-
-最低Authorityは次のように一意にする。
-
-| Authority | Owner |
-|---|---|
-| 外部自然言語が何を意味するか | Input Meaning |
-| 出来事がゆらにとってどう評価されるか | Appraisal contract |
-| 現在のEmotion / Desire / Drive等の状態 | Internal State Reducer |
-| 今何をしたい／する／しないか | Executive Deliberator |
-| 複雑なGoalをどう実行するか | Activity Planner（Executiveに従属） |
-| 発言として何を伝えるか | Speech Semantics Planner（Executive Intentに従属） |
-| それをゆららしくどう言うか | Character Language Realizer |
-| Character発話が意味を保持したかの観測 | Independent Semantic Verifier |
-| 身体意図をどう運動として実現するか | Body Motion Planner |
-| 実際に何が起きたか | Execution Result / Runtime facts |
-| Memoryの永続正本 | Memory Store + validation pipeline |
-
-各LLMの出力はtyped candidate / plan / observationとして扱う。
+結果はDomain Stateへ直接書き込まず:
 
 ```text
 LLM output
 → schema validation
-→ responsibility-specific validation
-→ authority / precondition / fact checks
-→ accepted typed result
+→ responsibility validation
+→ authority / revision / precondition checks
+→ typed candidate / plan / observation
+→ owning Module commits if valid
 ```
 
-LLMの自由文をDomain StateやExecution Factへ直接代入しない。
+各Roleがmutable Core objectを長時間直接共有しない。
 
 ---
 
-## 5. Core Cognitive LLM Roles
+## 4. AuthorityとLLMを分離する
 
-ここに挙げるRoleは初期設計候補であり、個数をArchitecture invariantとして固定しない。
+| Authority | Owner | LLM必須か |
+|---|---|---|
+| open-ended外部自然言語の意味 | Input Meaning #326 | 原則LLM候補 |
+| 出来事の主観的評価 | Appraisal #327 | deterministic / LLM選択 |
+| current Emotion/Desire/Drive等 | Internal State Reducer #327 | **LLMではない** |
+| conscious Goal / Action選択 | Executive #328 | LLM候補 |
+| current Goal / Commitment正本 | Goal State #366 | **LLMではない** |
+| 複雑Goalの実行計画 | Goal Planner #361 | 必要時LLM |
+| Activity lifecycle | Activity Runtime #329 | **LLMではない** |
+| Actual Execution Fact | Execution Coordination #329 | **LLMではない** |
+| What to say | Speech Semantics #362 | simpleは非LLM可 / complexでLLM |
+| How to say it | Character Language #330 | LLM候補 |
+| 発話意味保持の観測 | Semantic Verifier #363 | risk policyでLLM候補 |
+| Body high-level motion composition | Body Motion #338 | 必要時LLM |
+| Body constraints / realtime | Solver/Controller #339/#340 | **LLMではない** |
+| Memory Candidate生成 | Reflection #364 | background LLM候補 |
+| Memory永続正本 | Memory Store #332 | **LLMではない** |
+| Game frame-level技能 | Game Skill #365 | Skill AI方式を選択 |
 
-Role追加・統合・非LLM化は、責務・Authority・入力出力Contract・失敗時挙動を説明できる場合のみ行う。
+重要なのは「LLMに考えさせること」と「正本状態を所有させること」を分けること。
 
-### C01 Input Meaning / Perception Interpretation
+---
+
+## 5. Core Cognitive LLM Role候補
+
+個数はArchitecture invariantではない。
+
+### C01 Input Meaning
 
 質問: **外部から何が伝えられたのか。**
 
-- user text / STT transcript / stream chat等の自然言語をtyped semanticsへ変換する。
-- bounded reference contextを利用できる。
-- 「ゆらがどう感じるか」「従うか」「何をするか」は決めない。
-- Game stateやTouch等、既に構造化できる入力は無理に自然言語LLMへ通さない。
+自然言語→`StructuredInputMeaning`。
+
+- 感情評価をしない
+- 従うか決めない
+- Goalを選ばない
+- structured inputを無理に文章化しない
+- bounded ReferenceContextを使う
+- finite keyword/regexをopen-ended semantic fallbackにしない
 
 ### C02 Subjective Appraisal
 
-質問: **この出来事は、現在のゆらにとってどういう意味を持つか。**
+質問: **この出来事は現在のゆらにとってどういう意味を持つか。**
 
-Input Meaningとは別責務。同じ出来事でもEnergy、Desire、Relationship、Current Goal、Values、Recent Experience等により主観的意味は変わる。
+同じeventでもEnergy、Desire、Relationship、Goal/Commitment、Values、Recent Experience等で評価は変わる。
 
-LLMを利用する場合も出力は`AppraisalCandidate` / `StateDeltaProposal`であり、Internal Stateを直接書き換えない。
+LLMを使う場合も`AppraisalCandidate / StateDeltaProposal`を返し、current stateを直接上書きしない。
 
-```text
-Appraisal LLM / evaluator
-→ typed AppraisalCandidate
-→ StateTransitionValidator
-→ StateReducer
-→ current state
-```
-
-単純で明確なAppraisalはdeterministic rule/modelで処理してよい。LLM利用を必須化しない。
+Deep Appraisalを毎Decisionのblocking prerequisiteにしない。
 
 ### C03 Executive Deliberation
 
 質問: **私は今、何をしたい／何をする／何をしないか。**
 
-ゆらの意識的行動選択の唯一の最終Authority。
+唯一のconscious Goal / Action selection Authority。
 
-入力候補:
+入力には必要な範囲でInternal State、Memory Evidence、Relationship、`GoalContextView`、Activity/Capability/Execution facts、Turn、time/environmentを含む。
 
-- current event / meaning
-- Appraisal
-- Emotion / Desire / Drive / Motivation
-- Values / Moral context
-- Memory evidence
-- Relationship
-- current goals / commitments
-- current activities
-- capabilities
-- execution facts
-- turn / interruption state
-- time / environment
+出力は`ExecutiveDecision`。Goal/Commitment transition intentを含められるが、Storeへ直接自由書込みしない。
 
-出力は`ExecutiveDecision` / high-level `SystemCommand`。
+### C04 Goal / Activity Planning
 
-Character、Body、Activity Planner、Game Agent等はExecutive Authorityを奪わない。
+質問: **選択済みGoalをどう実行するか。**
 
-### C04 Activity / Goal Planning
+#366の`goal_id / goal_revision`を受け、複雑Goalだけをtyped `ActivityPlan`へ分解する。
 
-質問: **Executiveが選んだ目的を、どう実行するか。**
+PlannerはGoalを採用・放棄・変更しない。
 
-「YouTubeでゲーム配信したい」等の複雑Goalを複数step、Capability、失敗回復を含むtyped `ActivityPlan`へする。
+### C05 Speech Semantics
 
-単純ActionではPlanner LLMを呼ばず決定論的Executorへ直接渡してよい。PlannerはGoal自体を勝手に変更しない。
+質問: **このSpeech Intentを実現するため何を伝えるか。**
 
-### C05 Speech Semantics Planning
+V1の`What to say != How to say it`を維持。
 
-質問: **このSpeech Intentを実現するために、何を伝えるか。**
+`SpeechSemanticPlan`にpropositions、required/forbidden、polarity/certainty/degree、question/new-direction budget、execution truth等を閉じる。
 
-V1で得た`What to say != How to say it`の責務分離を維持する。
-
-```text
-Executive SpeechIntent
-+ Appraisal / facts / memory evidence / discourse constraints
-→ Speech Semantics Planner
-→ SpeechSemanticPlan
-```
-
-出力候補:
-
-- propositions
-- required / optional / forbidden content
-- certainty / polarity / degree等のsemantic facet
-- self-disclosure level
-- question / new-direction budget
-- execution truth constraints
-
-Character Profileは事実決定Authorityにしない。
+simple speechでは専用LLMを省略可能。complex speechのみ専用Roleを起動できる。
 
 ### C06 Character Language Realization
 
-質問: **確定済みの意味を、ゆらならどう言うか。**
+質問: **確定済み意味を、ゆらならどう言うか。**
 
-```text
-SpeechSemanticPlan
-+ Character Language Projection
-+ interpersonal / discourse / expression context
-→ Character Language Realizer
-→ CharacterUtterance
-```
-
-Goal、Emotion、Execution Fact等を再解釈して発言意味を変更しない。
+Characterらしさを表現するがGoal/Fact/Semantics Authorityを奪わない。
 
 ### C07 Independent Semantic Verification
 
-質問: **CharacterUtteranceはSpeechSemanticPlanの意味を実際に保持しているか。**
+質問: **CharacterUtteranceはSpeechSemanticPlanを保持しているか。**
 
-独立Verifierを「LLMが増えるから」という理由だけで排除しない。
+VerifierはObserver。
 
-```text
-SpeechSemanticPlan
-+ CharacterUtterance
-→ Independent Semantic Verifier
-→ typed SemanticRelationObservation
-→ deterministic acceptance policy
-```
+- Speech Intentを変更しない
+- Characterを直接指揮しない
+- Runtime Factを変えない
+- free-form verdictを最終Authorityにしない
 
-VerifierはObserverであり、Speech Intentを決めず、Characterを直接指揮せず、Runtime Factを書き換えず、final accept/reject policyを自由文で所有しない。
+final accept/rejectはtyped observation + closed policyから導出する。
 
-Verifier不要で同等以上の保証ができる将来方式が成立した場合はContract Gateを通して非LLM化してよい。
+required verifier待ち中もsafe Performance / speculative TTS prepを並列化可能。PASS前にexternal presentation commitはしない。
 
 ### C08 Body Motion Planning
 
-質問: **高レベルBody Intentを、現在の身体からどう動いて実現するか。**
+質問: **BodyIntentをcurrent bodyからどう動いて実現するか。**
 
-```text
-BodyIntent
-+ current Body State
-+ Canonical Skeleton / DOF / limits
-+ Body Expression Context
-+ Character Body Style
-→ Body Motion Planner LLM
-→ BodyMotionPlan
-→ deterministic compiler / IK / FK / limits / balance
-→ Continuous Controller
-→ BodyPoseFrame
-```
+`BodyIntent + BodyState + Skeleton/DOF/limits + Expression → BodyMotionPlan`。
 
-LLMは毎frame joint angle、Live2D parameter、renderer固有bone名を生成しない。
+毎frame joint angleやrenderer固有parameterをLLMへ生成させない。deterministic solver/controllerが制約とcontinuityを所有する。
 
 ### C09 Reflection / Memory Consolidation
 
-質問: **今回の経験から、何を長期的に覚える価値があるか。**
+質問: **今回の経験から何を長期的に覚える価値があるか。**
 
-会話、配信、ゲーム、活動結果からepisodic / semantic / relationship / preference / skill candidatesを生成できる。
+Conversation / Stream / Game / Activity Result / State transitionsから`MemoryCandidate`を生成し、#332 Storeへ渡す。
 
-```text
-Typed events / results / state transitions
-→ Reflection / Consolidation
-→ MemoryCandidates
-→ provenance / contradiction / freshness / importance validation
-→ Memory Store
-```
-
-Reflection LLMはMemory DBへ直接自由文を書き込むAuthorityを持たない。Activity終了、idle、一定量蓄積時等に非同期実行できる。
+foreground interactionをblockしないbackground責務。
 
 ---
 
-## 6. LLMを使わない方がよい責務
+## 6. Goal / Commitment StateはなぜLLM Roleではないか
 
-原則として以下はdeterministic / typed runtimeを優先する。
+詳細: `goal_commitment_architecture.md` / #366。
 
-- Event queue / scheduler / cancellation / clock
-- Capability availability
-- Authority / permission checks
-- schema validation
-- execution lifecycle facts
-- Internal Stateの最終Reducer
+Executiveが「やりたい」と決めても、その意思が次のLLM callで消えては主体の継続性がない。
+
+```text
+Executive decision
+→ validated Goal transition
+→ Goal State #366
+→ later CognitiveSnapshot / Autonomy trigger / Planner
+```
+
+Goal Stateは:
+
+- goal_id / revision
+- active / suspended / completed等のlifecycle
+- Commitment
+- priority
+- completion/precondition
+
+をtypedに保持する。
+
+新Goalの採用/放棄AuthorityはExecutiveに残し、State ownerとDecision authorityを分離する。
+
+これによりLLM context windowを「人格・意思の正本」にしない。
+
+---
+
+## 7. LLMを使わない方がよい責務
+
+原則deterministic/typedを優先:
+
+- Event queue / scheduler / clock
+- cancellation / priority / backpressure
+- schema / authority / permission checks
+- Internal State reducer
+- Goal / Commitment reducer
+- Activity lifecycle
+- Execution facts
 - resource ownership
-- retry / backoff / timeout policy
-- Body joint limits / collision / IK / FK / balance / interpolation
+- retry / timeout policy
+- Body joint limits / IK / FK / balance / interpolation
 - TTS playback timing
 - speech queue lifecycle
 - persistence transaction
 - secret handling
 
-LLMが「成功したと思う」と答えてもExecution Factにはしない。
+LLMが「成功した」と答えてもExecution Factにしない。
 
 ---
 
-## 7. Core Cognitive AIとSkill / Subsystem AIを分離する
+## 8. Core Cognitive AIとSkill AIを分離
 
-ゲーム、配信、Vision等では、その能力に適した別AIを利用してよい。
-
-### 7.1 Game
+### Game #365
 
 ```text
-Yura Executive
-→ Goal / Strategy / Activity Intent
-→ Game Skill Runtime (#365)
-→ game-specific agent
-   - LLM / VLM
-   - RL model
-   - search/planning algorithm
-   - deterministic policy
-→ controller/action
+Executive Goal / Strategy
+→ Game Skill Runtime
+→ game-specific realtime agent
+→ controller action
 → Game Result
-→ Core Appraisal
+→ Core Appraisal / Executive
 ```
 
-Game Agentは高速な戦術技能を担当できるが、ゆら自身のGoalを勝手に変更しない。対戦中のframe-level action selectionをCore Executive LLMへ毎frame問い合わせない。
+Game AgentはLLM/VLM/RL/search/deterministic/hybridを選べるがCore Goal Authorityを持たない。frame-level actionをExecutive LLMへ毎frame問い合わせない。
 
-### 7.2 Streaming
+### Streaming #347
 
-大量コメント分類、moderation補助、chat summarization、配信情報整理等に専用モデルを使ってよい。
+大量コメント分類、moderation、clustering、summary等に専用AIを利用可能。
 
-それらはCore Executiveの代わりに「配信するか」「誰へどう返すか」を最終決定しない。
+Skill AIは「誰へ返すか」「何を言うか」「配信を続けるか」の最終Authorityを持たない。
 
-### 7.3 Perception
+### Perception
 
-Vision / audio recognition等も専用VLM / speech modelを利用してよい。認識結果はtyped perceptとしてCoreへ渡し、認識モデルがCore内部状態を直接変更しない。
-
----
-
-## 8. Role分離の基準
-
-新しいLLM Roleを追加する場合、最低限次を満たす。
-
-1. 独立した質問を1文で表現できる。
-2. 入力と出力をtyped contractとして定義できる。
-3. 既存RoleとAuthorityが重複しない。
-4. 単独Unit / model evaluationが可能である。
-5. そのRoleだけを交換・改善・停止できる。
-6. failure時のfallback / degradationが定義できる。
-7. LLMが本当に適切であり、deterministic処理で十分な責務を無理にLLM化していない。
-
-逆に、1つのRoleが複数の独立した質問を持ち、別々に検証・交換したい場合は責務過剰を疑う。
+Vision/audio model結果はtyped perceptとしてInput Gatewayへ返す。Perception modelがInternal Stateを直接変更しない。
 
 ---
 
-## 9. V1から継承する教訓
+## 9. Role分離の基準
 
-V1で責務分離したこと自体は失敗ではない。
+新LLM Roleは最低限:
 
-維持する教訓:
+1. 独立した質問を1文で表現できる
+2. typed input/outputがある
+3. Authority重複がない
+4. Unit/model evaluation可能
+5. そのRoleだけ交換・改善・停止可能
+6. failure/degradationを定義できる
+7. deterministic処理では不足する理由がある
 
-- Input MeaningとInternal Directive / Decisionを分離する。
-- `What to say`と`How to say it`を分離する。
-- Characterへraw内部状態を解釈させて事実決定させない。
-- Character発話の意味保持を独立検証可能にする。
-- finite word / regex / substringをopen-ended semantic authorityにしない。
-- LLM outputをtyped contractへ閉じる。
-- Module単位でUnit → Adjacent Contract → Integrationを行う。
-- 実LLMの失敗を個別文言パッチではなくfailure classとして設計へ戻す。
+独立責務がないのに「賢くするため」だけでLLMを増やさない。
 
-改善する教訓:
-
-- LLMの総数を先に制限しない。
-- ただしAuthorityを分散させない。
-- 旧Commander / Executiveへ意味決定、活動計画、発話内容、表現を過剰集中させない。
-- Verifierを自由文の最終Authorityにしない。
-- 長いLLM/TTS/Playback/Memory/Game処理を直列awaitしない。
+Roleを分けても別API callを毎回直列に行う必要はない。Provider batching/fused callを使ってもlogical contract/Authorityは維持する。
 
 ---
 
-## 10. 自由意志に近づけるための必須要素
+## 10. V1から継承する教訓
 
-### 10.1 User input is an event, not an unconditional command
+維持:
 
-ユーザー入力は重要な社会的Eventとして評価するが、常に実行命令として扱わない。
+- Responsibility separation自体は良い
+- Input MeaningとDecisionを分離
+- `What to say` / `How to say it`を分離
+- Characterへraw内部状態を解釈させない
+- independent semantic verification
+- finite lexical matcherをsemantic authorityにしない
+- strict structured output / typed contract
+- 実LLM failureをfailure classとして設計へ戻す
 
-### 10.2 Persistent goals and commitments
+改善:
 
-ゆらはturnを跨いだGoal、約束、Activity、未完了Intentを持てる。
-
-### 10.3 Internal autonomous triggers
-
-ユーザー入力がなくても、Desire、Interest、Memory activation、時間、Activity Result、環境変化からExecutive Deliberationを起動できる。
-
-### 10.4 Single Executive Authority
-
-意識的Goal / Action selectionの最終AuthorityをExecutive Deliberatorへ一本化する。
-
-### 10.5 Closed experience loop
-
-```text
-decide
-→ act
-→ observe actual result
-→ appraise
-→ state changes
-→ remember / reflect
-→ decide again
-```
-
-ただしこのloopは因果モデルであり、各処理を1本のblocking pipelineとして直列実行しない。
+- LLM総数を先に制限しない
+- Authorityを分散させない
+- Executiveへ意味判断/計画/発話内容/表現を過剰集中しない
+- Verifierをfree-form final authorityにしない
+- current Goal/CommitmentをLLM Promptだけに保持しない
+- long LLM/TTS/playback/Memory/Game処理を直列awaitしない
 
 ---
 
-## 11. Design Reconciliation Status
+## 11. 自由意志に近づける必須要素
 
-2026-08-12時点で、本書から要求したCognitive / LLM再設計はV2 canonical / Issue体系へ反映済み。
+1. **User input is an event, not an unconditional command.**
+2. **Persistent Internal State.** Emotion/Desire/Drive/Relationship等がturn外でも存在する。
+3. **Persistent Goal / Commitment #366.** 意思がcontext windowとともに消えない。
+4. **Internal autonomous triggers.** Desire/Interest/Memory/Goal/Commitment/Activity Result/time等からExecutiveを起動できる。
+5. **Single Executive Authority.** Goal/Action選択の主体を分散しない。
+6. **Closed experience loop.** `decide → act → actual result → appraise → state/goal/memory change → decide`。
+7. **Non-blocking runtime.** この因果loopを1本のblocking Pipelineとして実装しない。
 
-- [x] `system_architecture.md` から「4 LLM固定」を撤回
-- [x] `brain_architecture.md` を可変Role / Single Executive Authority / non-sequential runtimeへ更新
-- [x] 旧CommanderをExecutive Deliberation #328へ再定義
-- [x] Goal / Activity Planning #361をExecutiveから分離
-- [x] Speech Semantics #362をWhat-to-say Authorityとして分離
+---
+
+## 12. Design Reconciliation Status
+
+2026-08-12時点:
+
+- [x] 4 LLM固定を撤回
+- [x] Single Executive Authorityへ統一
+- [x] Goal Planning #361分離
+- [x] Speech Semantics #362分離
 - [x] Character Language #330をHow-to-sayへ限定
-- [x] Independent Semantic Verification #363をObserver責務として分離
-- [x] Appraisal #327をtyped responsibilityとし、LLM/deterministic選択可能に変更
-- [x] Reflection / Memory Consolidation #364をMemory Store #332から分離
-- [x] Runtime Kernel #322を複数lane orchestrationへ一般化しDomain判断を持たせない
-- [x] Speech Pipeline #348のnon-blocking invariantをCore全体のConcurrencyへ一般化
-- [x] Game Skill #365 / Streaming Skill AIをCore cognitive Role数とExecutive Authorityから分離
-- [x] Legacy Migration Matrixを新しい責務境界へ再マッピング
+- [x] Semantic Verification #363をObserverとして分離
+- [x] Appraisal #327をLLM/deterministic選択可能に変更
+- [x] Reflection #364をMemory Store #332から分離
+- [x] Runtime Kernel #322をnon-domain concurrent orchestrationへ一般化
+- [x] Speech #348のnon-blocking invariantをCore全体へ一般化
+- [x] Game Skill #365 / Streaming Skill AIをCore cognitive Authorityから分離
+- [x] Persistent Goal / Commitment State #366を追加
+- [x] Legacy Migration Matrixを新責務へ再マッピング
 
 残るDesign Gate:
 
-- [ ] subordinate canonical全体の用語・Authority・Concurrency整合監査
-- [ ] #317へ最終Design Reconciliation Checkpointを記録
+- [ ] subordinate canonical全体の最終整合監査
+- [ ] Project sync manifest/runbookへ#366反映
+- [ ] #317へDesign Reconciliation Checkpoint
 - [ ] ユーザーによるV2 canonical architecture確認
 
-製品コード実装は、#317 Design Gateが解除されるまで開始しない。
+製品コード実装は#317 Design Gate解除まで開始しない。
