@@ -193,7 +193,17 @@ python gui/yura-system-architecture-visualizer/server.py
 
 ### Render
 
-ルート `render.yaml` のBlueprintへ独立Web Serviceとして登録する。
+既存GUI群を管理するルート `render.yaml` とはBlueprintを分離する。
+
+Architecture Visualizer専用Blueprint:
+
+```text
+render-system-architecture-visualizer.yaml
+```
+
+Render DashboardのBlueprint作成・設定画面で **Blueprint Path** に上記ファイルを指定する。
+
+この専用Blueprintが管理するのは以下の1サービスだけとする。
 
 - service name: `yura-system-architecture-visualizer`
 - branch: `feature/system-architecture-visualizer`
@@ -206,7 +216,7 @@ python gui/yura-system-architecture-visualizer/server.py
 
 Renderが提供する `PORT` を `server.py` が直接使用するため、Render専用のproduction logicや別サーバー実装は持たない。
 
-Blueprint更新後は対象branchの新しいcommitをSyncし、`Create web service yura-system-architecture-visualizer` が差分に現れることを確認する。
+既存 `render.yaml` を新規Blueprintへ指定すると既存GUI群も新規リソースとして複製され得るため、Architecture Visualizerの新規Blueprintでは使用しない。
 
 ## 10. テスト
 
@@ -225,7 +235,8 @@ Serverはgraph DTO生成関数と静的ファイル解決を薄く保ち、Analy
 
 Render Verificationでは追加で以下を確認する。
 
-- Blueprint Syncで対象serviceが作成される
+- Blueprint Pathが `render-system-architecture-visualizer.yaml` である
+- Sync差分が `yura-system-architecture-visualizer` のみを対象とする
 - Buildが成功する
 - `/api/health` が200を返す
 - `/api/graph` が実リポジトリのgraphを返す
