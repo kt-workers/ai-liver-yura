@@ -16,6 +16,7 @@ EXIT_CHANGES_REQUESTED = 2
 EXIT_BLOCKED = 3
 EXIT_INTERNAL_ERROR = 4
 STATUS_CONTEXT = "yura/independent-ai-review"
+SUPPORTED_BASE_REF = "rebuild/v2-foundation"
 
 
 def _write_summary(text: str) -> None:
@@ -42,12 +43,40 @@ def _status_for_verdict(verdict: ReviewVerdict) -> tuple[str, str]:
     return "error", "Independent AI review is blocked"
 
 
+def _is_supported_target(repository: str, base_full_name: object, base_ref: object) -> bool:
+    return base_full_name == repository and base_ref == SUPPORTED_BASE_REF
+
+
 def _workflow_run_url(repository: str) -> str | None:
     server = os.getenv("GITHUB_SERVER_URL", "https://github.com")
     run_id = os.getenv("GITHUB_RUN_ID")
     if not run_id:
         return None
     return f"{server}/{repository}/actions/runs/{run_id}"
+
+
+def _set_status(
+    client: GitHubClient,
+    head_sha: str,
+    *,
+    state: str,
+    description: str,
+    target_url: str | None,
+) -> bool:
+    try:
+        client.create_commit_status(
+            head_sha,
+            state=state,
+            context=STATUS_CONTEXT,
+            description=description,
+            target_url=target_url,
+        )
+        return True
+    except GitHubApiError as exc:
+        _write_summary(
+            f"Independent AI Review infrastructure error while writing status: {exc}"
+        )
+        return False
 
 
 def main() -> int:
@@ -76,10 +105,12 @@ def main() -> int:
     base_repo = base.get("repo") if isinstance(base, dict) else None
     head_repo = head.get("repo") if isinstance(head, dict) else None
     base_full_name = base_repo.get("full_name") if isinstance(base_repo, dict) else None
+    base_ref = base.get("ref") if isinstance(base, dict) else None
     head_full_name = head_repo.get("full_name") if isinstance(head_repo, dict) else None
     head_sha = head.get("sha") if isinstance(head, dict) else None
-    if base_full_name != repository or not isinstance(head_sha, str):
-        _write_summary("Independent AI Review: PR repository/head metadata is incomplete.")
+    supported_target = _is_supported_target(repository, base_full_name, base_ref)
+    if not supported_target or not isinstance(head_sha, str):
+        _write_summary("Independent AI Review: PR target is outside the supported V2 base.")
         return EXIT_BLOCKED
 
     # V2's supported automatic path is a same-repository implementation lineage.
@@ -106,17 +137,14 @@ def main() -> int:
 
     client = GitHubClient(repository, token, os.getenv("GITHUB_API_URL", "https://api.github.com"))
     run_url = _workflow_run_url(repository)
-    try:
-        client.create_commit_status(
-            head_sha,
-            state="pending",
-            context=STATUS_CONTEXT,
-            description="Independent AI review is running",
-            target_url=run_url,
-        )
-    except GitHubApiError as exc:
-        _write_summary(f"Independent AI Review BLOCKED: unable to set pending status: {exc}")
-        return EXIT_BLOCKED
+    if not _set_status(
+        client,
+        head_sha,
+        state="pending",
+        description="Independent AI review is running",
+        target_url=run_url,
+    ):
+        return EXIT_INTERNAL_ERROR
 
     model = os.getenv("GEMINI_REVIEW_MODEL", "gemini-3.6-flash")
     run_id = os.getenv("GITHUB_RUN_ID", "local")
@@ -141,13 +169,14 @@ def main() -> int:
 
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        client.create_commit_status(
+        if not _set_status(
+            client,
             head_sha,
             state="error",
-            context=STATUS_CONTEXT,
             description="GEMINI_API_KEY is not configured",
             target_url=run_url,
-        )
+        ):
+            return EXIT_INTERNAL_ERROR
         _write_summary(
             "Independent AI Review: `GEMINI_API_KEY` is not configured; live review is BLOCKED."
         )
@@ -165,20 +194,20 @@ def main() -> int:
     try:
         result = orchestrator.run(pr_number=pr_number, implementer_identity=implementer)
     except (ContextBuildError, GitHubApiError) as exc:
-        client.create_commit_status(
+        _set_status(
+            client,
             head_sha,
             state="error",
-            context=STATUS_CONTEXT,
             description=f"Review blocked: {type(exc).__name__}",
             target_url=run_url,
         )
         _write_summary(f"Independent AI Review BLOCKED: {type(exc).__name__}: {exc}")
         return EXIT_BLOCKED
     except Exception as exc:
-        client.create_commit_status(
+        _set_status(
+            client,
             head_sha,
             state="error",
-            context=STATUS_CONTEXT,
             description=f"Reviewer internal error: {type(exc).__name__}",
             target_url=run_url,
         )
@@ -186,13 +215,14 @@ def main() -> int:
         return EXIT_INTERNAL_ERROR
 
     state, description = _status_for_verdict(result.decision.verdict)
-    client.create_commit_status(
+    if not _set_status(
+        client,
         head_sha,
         state=state,
-        context=STATUS_CONTEXT,
         description=description,
         target_url=run_url,
-    )
+    ):
+        return EXIT_INTERNAL_ERROR
     _write_summary(
         f"Independent AI Review: {result.decision.verdict.value} for "
         f"{result.decision.reviewed_head_sha}; published={result.published}."

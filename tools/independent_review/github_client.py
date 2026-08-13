@@ -107,7 +107,6 @@ class GitHubClient:
             return []
         return [item for item in result if isinstance(item, dict)]
 
-
     def create_commit_status(
         self,
         sha: str,
