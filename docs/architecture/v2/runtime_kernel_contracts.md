@@ -131,6 +131,7 @@ created → running → stopping → stopped
 - startはidempotentではなく重複startを拒否
 - stopping後は通常workを受理しない
 - shutdown controlは受理可能
+- shutdown controlの受付phaseはworker drain前にatomicに閉じる。受付終了後とresource close中は拒否する
 - stop:
   1. new normal/background admission停止
   2. queued itemをpolicyに従いcancel/reject
@@ -166,6 +167,7 @@ metricsはpayload自然言語、Prompt、secretを含めない。
 - failureを該当work/laneへ限定
 - diagnostic counterとtyped dispositionを発行
 - fail-fastが必要なcritical laneだけ明示policyでcoordinator stopを要求可能
+- fail-fastが生成するstop taskはcoordinatorが所有し、呼び出し側が停止完了をawaitできる
 - optional lane failureでCore global shutdownしない
 
 ## 12. Explicit non-goals

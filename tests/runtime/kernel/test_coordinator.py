@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from app.domain.contracts import RevisionVector
 from app.runtime.kernel import (
     FakeRuntimeClock,
+    LaneErrorPolicy,
     QueuePolicy,
     RuntimeCoordinator,
     RuntimeHealth,
@@ -319,6 +320,79 @@ def test_stop_runs_close_hook_and_accepts_only_shutdown_control_while_stopping()
         assert coordinator.submit(control).accepted
         gate.set()
         await stop_task
+        assert closed == ["closed"]
+        assert coordinator.diagnostics().owned_task_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_shutdown_control_is_rejected_after_admission_gate_closes() -> None:
+    async def scenario() -> None:
+        close_started = asyncio.Event()
+        close_gate = asyncio.Event()
+        handled: list[str] = []
+
+        async def handler(work: RuntimeWorkItem[object], _token: object) -> str:
+            handled.append(work.work_id)
+            return work.work_id
+
+        async def close_resource() -> None:
+            close_started.set()
+            await close_gate.wait()
+
+        coordinator = RuntimeCoordinator(FakeRuntimeClock(NOW))
+        coordinator.register_lane(
+            RuntimeLanePolicy("lane", 2, QueuePolicy.REJECT_NEW), handler
+        )
+        coordinator.register_close_hook(close_resource)
+        await coordinator.start()
+        stop_task = asyncio.create_task(coordinator.stop())
+        await close_started.wait()
+        late_control = RuntimeWorkItem(
+            "late-control",
+            "lane",
+            "close",
+            WorkPriority.CRITICAL,
+            RevisionVector(1),
+            NOW,
+            shutdown_control=True,
+        )
+        assert not coordinator.submit(late_control).accepted
+        close_gate.set()
+        await stop_task
+        assert handled == []
+        assert coordinator.diagnostics().lanes[0].queue_depth == 0
+        assert not coordinator.cancel("late-control", "must not be registered")
+
+    asyncio.run(scenario())
+
+
+def test_fail_fast_stop_is_owned_and_awaitable() -> None:
+    async def scenario() -> None:
+        closed: list[str] = []
+
+        async def handler(_work: RuntimeWorkItem[object], _token: object) -> str:
+            raise RuntimeError("provider-secret")
+
+        async def close_resource() -> None:
+            closed.append("closed")
+
+        coordinator = RuntimeCoordinator(FakeRuntimeClock(NOW))
+        coordinator.register_lane(
+            RuntimeLanePolicy(
+                "critical",
+                1,
+                QueuePolicy.REJECT_NEW,
+                error_policy=LaneErrorPolicy.FAIL_FAST,
+            ),
+            handler,
+        )
+        coordinator.register_close_hook(close_resource)
+        await coordinator.start()
+        coordinator.submit(item("bad", "critical"))
+        assert (await coordinator.next_outcome()).disposition is WorkDisposition.FAILED
+        await coordinator.wait_stopped()
+        assert coordinator.state.value == "stopped"
         assert closed == ["closed"]
         assert coordinator.diagnostics().owned_task_count == 0
 

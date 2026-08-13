@@ -79,6 +79,8 @@ class RuntimeCoordinator:
         self._outcomes: asyncio.Queue[WorkOutcome[Any]] = asyncio.Queue()
         self._close_hooks: list[Callable[[], Awaitable[None]]] = []
         self._stop_lock = asyncio.Lock()
+        self._shutdown_control_open = False
+        self._shutdown_task: asyncio.Task[None] | None = None
 
     @property
     def state(self) -> CoordinatorState:
@@ -128,7 +130,9 @@ class RuntimeCoordinator:
     def submit(self, item: RuntimeWorkItem[Any]) -> QueueAdmission:
         lane = self._lanes.get(item.lane_id)
         accepts = self._state is CoordinatorState.RUNNING or (
-            self._state is CoordinatorState.STOPPING and item.shutdown_control
+            self._state is CoordinatorState.STOPPING
+            and self._shutdown_control_open
+            and item.shutdown_control
         )
         if not accepts or lane is None:
             if lane is not None:
@@ -203,6 +207,7 @@ class RuntimeCoordinator:
                 self._state = CoordinatorState.STOPPED
                 return
             self._state = CoordinatorState.STOPPING
+            self._shutdown_control_open = True
             for lane in self._lanes.values():
                 for item in tuple(lane.queue.items()):
                     if not item.shutdown_control:
@@ -210,6 +215,12 @@ class RuntimeCoordinator:
                 lane.wake.set()
             for work_id in tuple(self._running_tasks):
                 self.cancel(work_id, "coordinator shutdown")
+            # Let callers that observed STOPPING submit shutdown controls, then
+            # atomically close admission before workers are allowed to drain.
+            await asyncio.sleep(0)
+            self._shutdown_control_open = False
+            for lane in self._lanes.values():
+                lane.wake.set()
             max_grace = max(
                 (lane.policy.cancellation_grace_seconds for lane in self._lanes.values()),
                 default=0.0,
@@ -219,9 +230,28 @@ class RuntimeCoordinator:
                 lane.wake.set()
             await asyncio.gather(*tuple(self._tasks), return_exceptions=True)
             await self._close_resources()
-            if self._running_tasks or self._tasks:
-                raise RuntimeError("runtime shutdown left pending owned tasks")
+            if (
+                self._running_tasks
+                or self._tasks
+                or any(len(lane.queue) or lane.in_flight for lane in self._lanes.values())
+                or self._cancellations.active_work_ids()
+            ):
+                raise RuntimeError("runtime shutdown left pending owned work")
             self._state = CoordinatorState.STOPPED
+
+    def request_stop(self) -> asyncio.Task[None]:
+        task = self._shutdown_task
+        if task is None or task.done():
+            task = asyncio.create_task(self.stop(), name="runtime-coordinator:stop")
+            self._shutdown_task = task
+        return task
+
+    async def wait_stopped(self) -> None:
+        task = self._shutdown_task
+        if task is not None:
+            await task
+        elif self._state is not CoordinatorState.STOPPED:
+            await self.stop()
 
     async def _await_running_with_grace(self, grace: float) -> None:
         tasks = tuple(self._running_tasks.values())
@@ -273,14 +303,22 @@ class RuntimeCoordinator:
             lane.last_error for lane in self._lanes.values()
         ):
             health = RuntimeHealth.DEGRADED
+        shutdown_owned = int(
+            self._shutdown_task is not None and not self._shutdown_task.done()
+        )
         return RuntimeDiagnosticsSnapshot(
-            self._state, health, len(self._tasks) + len(self._running_tasks), tuple(lanes), now
+            self._state,
+            health,
+            len(self._tasks) + len(self._running_tasks) + shutdown_owned,
+            tuple(lanes),
+            now,
         )
 
     async def _worker(self, lane: _Lane) -> None:
         while True:
             if (
                 self._state is CoordinatorState.STOPPING
+                and not self._shutdown_control_open
                 and not len(lane.queue)
                 and not lane.in_flight
             ):
@@ -300,6 +338,7 @@ class RuntimeCoordinator:
             lane.wake.clear()
             if (
                 self._state is CoordinatorState.STOPPING
+                and not self._shutdown_control_open
                 and not lane.in_flight
                 and not len(lane.queue)
             ):
@@ -342,7 +381,7 @@ class RuntimeCoordinator:
             error = type(exc).__name__
             lane.last_error = error
             if lane.policy.error_policy is LaneErrorPolicy.FAIL_FAST:
-                asyncio.create_task(self.stop())
+                self.request_stop()
         finally:
             lane.in_flight -= 1
             self._running_tasks.pop(item.work_id, None)
