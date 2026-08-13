@@ -1,6 +1,6 @@
 # Implementer Repair Loop Architecture
 
-Status: Canonical design for Issue #372  
+Status: Proposed canonical design for Issue #372  
 Parent: #369  
 Depends on: #370, #371  
 Root: #317  
@@ -17,7 +17,7 @@ Related canonical:
 
 Issue #372 closes the automatic repair half of the Independent AI Review loop.
 
-A trusted `ReviewDecision(CHANGES_REQUESTED)` for an exact PR head SHA is converted by the Orchestrator into a trusted, auditable `RepairRequest`. A local Codex Implementer Worker consumes that request, repairs the same implementation lineage, validates the result, commits and pushes a new head SHA, and thereby causes the existing Independent AI Review workflow to review the new SHA.
+A trusted `ReviewDecision(CHANGES_REQUESTED)` for an exact PR head SHA becomes a trusted, auditable `RepairRequest`. A user-managed local Codex worker consumes only a RepairRequest that is cryptographically content-addressed and **bound to the exact trusted Independent Review workflow run that produced it**. The worker repairs the same implementation lineage, performs fail-closed scope/stale validation, executes PR-controlled tests only inside a credentialless validation sandbox, and then performs one regular fast-forward push. The existing PR `synchronize` trigger starts review of the new head.
 
 No human copies review findings from GitHub into the Implementer prompt between cycles.
 
@@ -25,7 +25,7 @@ No human copies review findings from GitHub into the Implementer prompt between 
 Implementation PR @ H0
         |
         v
-Independent Gemini Review @ H0
+Trusted Independent Gemini Review run R0 @ H0
         |
         +-- PASS ------------------------------> Merge Gate (#373)
         |
@@ -34,36 +34,43 @@ Independent Gemini Review @ H0
         `-- CHANGES_REQUESTED
                 |
                 v
-        Trusted RepairRequest @ H0
+        canonical RepairRequest bytes
+        written by trusted reviewer runtime
                 |
-                v
-        Local Codex Implementer Worker
+                +--> trusted run R0 artifact  <--- AUTHORITY
                 |
-        preflight / repair / validation
-                |
-                v
-        regular fast-forward push H0 -> H1
-                |
-                v
-        existing `synchronize` trigger
-                |
-                v
-        Independent Gemini Review @ H1
-                |
-                `-- repeat boundedly
+                `--> PR Review index          <--- DISCOVERY ONLY
+                         |
+                         v
+                Local Codex Worker
+                         |
+                  provenance preflight
+                         |
+                    repair worktree
+                         |
+                    scope guard
+                         |
+             credentialless validation sandbox
+                         |
+                  live stale re-check
+                         |
+                         v
+              regular fast-forward H0 -> H1
+                         |
+                         v
+               existing synchronize trigger
+                         |
+                         v
+                Independent Review @ H1
 ```
 
-GitHub remains the durable handoff/audit bus. Local worker memory is never the sole source of repair state.
+GitHub is the durable handoff/audit bus. Local worker memory is never repair Authority.
 
-## 2. Role separation
+## 2. Role and credential separation
 
 ### 2.1 Implementer
 
-Initial implementation backend:
-
-`LocalCodexWorker`
-
-Identity contract:
+Initial backend: `LocalCodexWorker`.
 
 ```text
 role = IMPLEMENTER
@@ -73,7 +80,7 @@ session_id = repair:<repair_token>:<local_run_id>
 credential_scope = IMPLEMENTATION_WRITE
 ```
 
-The local Codex worker may edit the authorized implementation worktree. It does not create trusted ReviewDecision objects, write the Independent Review status, or approve/merge its own work.
+The worker may edit and fast-forward the authorized implementation branch. It cannot create trusted Review PASS, write the Independent Review status as success, approve, or merge.
 
 ### 2.2 Primary Reviewer
 
@@ -90,113 +97,86 @@ It never receives the Implementer write credential.
 
 ### 2.3 Secondary Reviewer
 
-GitHub Codex Review remains a secondary independent review lane. #372 does not make its GitHub UI behavior the trusted RepairRequest authority because its delivery/persistence contract is outside this repository's Orchestrator control.
+GitHub Codex Review remains a secondary review lane. Its GitHub UI comments/reactions are not RepairRequest Authority because that persistence/provenance contract is outside the trusted Orchestrator implemented by this repository.
 
-#373 may require both review lanes at the final Merge Gate.
+#373 owns the final rule for combining Gemini, Codex, ordinary CI, unresolved threads, and optional auto merge.
 
 ### 2.4 Orchestrator
 
-The trusted GitHub-side review runtime owns:
+The trusted GitHub-side runtime owns:
 
-- `ReviewDecision` validation;
+- trusted ReviewDecision validation;
 - RepairRequest construction;
-- repair token generation;
-- duplicate/max-cycle policy;
-- trusted request persistence.
+- scope snapshot construction;
+- repair token/digest generation;
+- bounded-attempt policy;
+- writing canonical RepairRequest bytes to a known trusted-runtime output path;
+- publishing a human-readable PR Review index only after normal ReviewDecision persistence succeeds.
 
-The local worker owns deterministic execution of an already-authorized RepairRequest, not the authority to invent one.
+The local worker executes an already-authorized request. It never invents repair Authority from model text or PR comments.
 
-## 3. Deployment architecture
+## 3. Ordered two-phase implementation lineage
 
-### 3.1 Do not attach arbitrary PR workflows to the local machine
+The V2 Reviewer runtime and the secret-bearing/default-branch control plane are separate trust domains. #372 therefore uses the same **sequential two-stage lineage pattern** established by #371.
 
-This repository is public. A persistent user machine must not act as a general-purpose self-hosted runner for arbitrary repository/PR workflow definitions.
+Never keep Phase A and Phase B as parallel active implementation lineages.
 
-The MVP therefore does **not** use `pull_request` jobs targeted at a local self-hosted runner.
+### 3.1 Phase A — V2 runtime and local worker
 
-Instead:
+Base: `rebuild/v2-foundation`
+
+Outputs:
+
+- this design;
+- provider-neutral RepairRequest models/token/scope logic;
+- trusted review-side handoff generation;
+- artifact payload file generation interface;
+- PR Review discovery index persistence;
+- local provenance verifier;
+- local Codex adapter;
+- isolated git worktree wrapper;
+- validation sandbox abstraction and safe container backend;
+- unit/fake E2E tests.
+
+Phase A does not modify `main` workflow control-plane files.
+
+After review/static/fake-E2E gates pass, Phase A is merged into `rebuild/v2-foundation`. A Resume Checkpoint records its final head/merge SHA before Phase B begins.
+
+### 3.2 Phase B — trusted artifact publishing control plane
+
+Begins **only after Phase A is merged**.
+
+Base: current `main`.
+
+Expected scope: `.github/workflows/independent-ai-review.yml` only, unless a separately reviewed trusted workflow helper is explicitly required.
+
+The workflow adds a pinned artifact-upload action/step that:
+
+- executes only in the trusted `pull_request_target` workflow;
+- uploads only the known RepairRequest output file produced in the checked-out trusted Reviewer runtime;
+- runs after the Reviewer step even when CHANGES_REQUESTED intentionally makes that step/job fail;
+- never checks out or executes PR head/merge code;
+- does not add `contents: write` or implementation-branch write permission;
+- names the artifact using trusted run/head metadata;
+- uses bounded retention appropriate for live repair pickup.
+
+Phase B is reviewed/merged to `main`, then Live Verification starts with a controlled V2 test PR and a running local worker.
+
+## 4. Public-repository local-machine boundary
+
+This repository is public. A persistent user machine must not become a general-purpose GitHub self-hosted runner for arbitrary PR-controlled workflows.
+
+MVP therefore does **not** use `pull_request` jobs targeted at the local machine.
+
+The local worker is a separate user-managed process:
 
 ```text
-GitHub trusted control plane
-  Independent Review runtime
-          |
-          | CHANGES_REQUESTED only
-          v
-  PR Review COMMENT
-  `<!-- yura-repair-request:v1 -->`
-          |
-          | GitHub API polling
-          v
-User-managed local machine
-  yura Repair Worker daemon
-          |
-          +--> verify GitHub provenance
-          +--> verify current PR/branch/head
-          +--> create isolated git worktree
-          +--> run local Codex non-interactively
-          +--> deterministic scope/validation guard
-          +--> regular fast-forward git push
+python -m tools.repair_loop.worker --watch
 ```
 
-The worker may be launched manually during development and later kept resident by an OS service. The handoff itself remains automatic while the worker is running.
+It polls GitHub for candidate RepairRequest indexes, then independently verifies the authoritative workflow-run artifact before any local code mutation.
 
-### 3.2 Why no new secret-bearing main workflow is required for MVP
-
-The existing trusted `main` workflow already:
-
-- uses `pull_request_target`;
-- obtains the current trusted V2 Reviewer runtime;
-- has `pull-requests: write`;
-- never executes PR head code.
-
-The #372 V2 runtime can therefore persist the RepairRequest as a second PR Review COMMENT anchored to the exact reviewed head SHA using the existing pull-request write permission. No implementation/contents write permission is added to the Reviewer workflow.
-
-The actual branch write occurs only on the user's local Implementer Worker using its separate local Git/GitHub credential.
-
-## 4. Trust model
-
-### 4.1 Untrusted data
-
-The following remain untrusted input/data even when copied into a repair request:
-
-- PR title/body;
-- source code;
-- source comments;
-- diff;
-- test fixtures;
-- review finding explanation/evidence text originating from model analysis;
-- repository prompt text;
-- arbitrary issue/PR comments.
-
-None of those may override the worker's system policy, target branch, allowed scope, validation policy, or Git safety rules.
-
-### 4.2 Trusted repair authority
-
-A local worker accepts a RepairRequest only after validating all of the following from GitHub live state:
-
-1. request review/comment author is the expected GitHub Actions bot principal;
-2. request marker/version is supported;
-3. `review_run_id` resolves to a real Actions run in the configured repository;
-4. the run uses the configured trusted Independent Review workflow/path;
-5. the run event is the trusted review event type;
-6. the run is associated with the same PR and reviewed head SHA;
-7. the current PR is still open, non-draft, V2-labeled, and same-repository;
-8. current PR head SHA exactly equals `reviewed_head_sha`;
-9. current implementation branch exactly equals the request branch;
-10. the linked Work Issue and canonical refs still match the request context;
-11. the current `yura/independent-ai-review` status for that SHA is the CHANGES_REQUESTED/failure state;
-12. `repair_token` recomputes from the canonical request identity;
-13. the token has not already reached a terminal local outcome.
-
-Bot authorship alone is not sufficient provenance. Workflow-run and exact-SHA binding are required.
-
-### 4.3 Repair token is not a secret
-
-`repair_token` is a deterministic correlation/idempotency token, not an authentication secret.
-
-Authentication/provenance comes from GitHub live evidence. The token protects request identity/equivalence and duplicate execution semantics.
-
-Do not put API keys, Codex auth tokens, GitHub tokens, or other credentials in RepairRequest payloads.
+The local machine's GitHub/Codex credentials never enter GitHub Actions artifacts, PR comments, model prompts, or validation containers.
 
 ## 5. RepairRequest contract
 
@@ -221,12 +201,11 @@ RepairRequest
 - canonical_design_refs[]
 - allowed_scope
 - created_at
+- request_digest
 - repair_token
 ```
 
-### 5.1 Blocking finding snapshot
-
-Only validated blocking findings from the trusted `ReviewDecision` enter the repair request.
+Only validated blocking findings from the trusted ReviewDecision enter an executable request.
 
 ```text
 RepairFinding
@@ -243,9 +222,146 @@ RepairFinding
 - suggested_direction?
 ```
 
-Non-blocking findings may remain visible in the review but do not independently trigger a repair cycle.
+Finding prose remains untrusted model-generated repair data. It cannot override repository/branch/head/scope/policy fields.
 
-### 5.2 RepairScope
+## 6. Canonical serialization, digest, and token
+
+The Orchestrator serializes RepairRequest content as canonical UTF-8 JSON:
+
+- sorted keys;
+- stable separators;
+- no NaN/Infinity;
+- bounded field/list sizes;
+- no secret material.
+
+`request_digest` is SHA-256 of canonical request bytes before the digest/token fields are inserted, using a precisely specified serialization procedure.
+
+`repair_token` is a deterministic idempotency/correlation value derived from trusted request identity and the digest. It is **not an authentication secret**.
+
+At minimum the identity binds:
+
+```text
+repository
+pr_number
+issue_number
+implementation_branch
+reviewed_head_sha
+review_run_id
+review_run_attempt
+review_cycle_key
+repair_attempt
+blocking finding IDs + fingerprints
+canonical refs
+scope digest
+request_digest
+```
+
+Changing the reviewed SHA, finding set, scope, run identity, or request bytes changes the digest/token.
+
+## 7. Trusted run artifact is the RepairRequest Authority
+
+### 7.1 Why PR Review text is not sufficient Authority
+
+Different GitHub Actions workflows can post as the same `github-actions[bot]` principal when granted pull-request write permission. Therefore:
+
+- bot authorship alone is insufficient;
+- a valid referenced run ID alone is insufficient;
+- a recomputable token over comment-controlled bytes alone is insufficient.
+
+A malicious or unrelated workflow must not be able to manufacture executable repair instructions merely by posting a look-alike marker.
+
+### 7.2 Authority rule
+
+The **canonical RepairRequest bytes uploaded as an artifact of the exact trusted Independent Review workflow run are the sole executable RepairRequest Authority**.
+
+The trusted Reviewer runtime writes the request to a fixed relative output path, conceptually:
+
+```text
+reviewer-runtime/.yura/repair-request.json
+```
+
+Only a trusted CHANGES_REQUESTED decision creates this file. PASS/BLOCKED/internal-error paths must leave it absent.
+
+The main trusted workflow uploads that exact path as an Actions artifact in Phase B.
+
+A GitHub artifact belongs to its creating workflow run. Another workflow may create its own artifact but cannot retroactively attach bytes to an already-existing trusted Independent Review run. The local worker therefore binds executable request bytes to the actual trusted run that produced them.
+
+### 7.3 Artifact identity
+
+Artifact name is deterministic from trusted runtime metadata, conceptually:
+
+```text
+yura-repair-request-<run_id>-<reviewed_head_sha>
+```
+
+The worker requires:
+
+- exact expected run ID;
+- exact trusted workflow ID/path;
+- trusted event type;
+- expected repository;
+- expected PR association;
+- exact reviewed head SHA;
+- exactly one acceptable RepairRequest artifact for the cycle;
+- expected artifact name;
+- not expired/deleted;
+- bounded archive/file size;
+- exactly one expected regular file after safe extraction;
+- no symlink/hardlink/path traversal/archive bomb behavior;
+- canonical JSON digest/token verification after extraction.
+
+Missing/expired/ambiguous/malformed artifact means fail closed. There is no fallback to trusting the PR comment payload.
+
+### 7.4 PR Review is discovery/index only
+
+The Orchestrator also persists a PR Review COMMENT anchored to the reviewed commit:
+
+```text
+<!-- yura-repair-request:v1 -->
+Repair-Token: `...`
+Request-Digest: `sha256:...`
+Reviewed-Head-SHA: `...`
+Review-Run-ID: `...`
+Review-Run-Attempt: `...`
+Artifact-Name: `...`
+Repair-Attempt: `N/M`
+Blocking-Finding-IDs: `...`
+```
+
+This index:
+
+- makes requests discoverable by a polling worker;
+- is human-readable audit evidence;
+- contains no executable request payload and no secrets;
+- is never sufficient by itself to authorize repair.
+
+The worker treats index fields as candidate lookup hints and checks them against the authoritative artifact bytes/live run metadata.
+
+## 8. Trusted provenance verification
+
+Before creating a worktree, the local worker verifies all of the following from GitHub live state:
+
+1. candidate index marker/version is supported;
+2. referenced `review_run_id` exists in the configured repository;
+3. run workflow ID/path is the configured trusted Independent Review workflow;
+4. run event is the configured trusted review event;
+5. run attempt matches the request/index;
+6. run is associated with the same PR and exact reviewed head SHA;
+7. the authoritative artifact belongs to that exact run and passes Section 7 checks;
+8. canonical artifact JSON recomputes the advertised digest/token;
+9. artifact repository/PR/head/branch/Issue/run fields agree with live trusted metadata;
+10. PR is still open, non-draft, same-repository, and V2-labeled;
+11. current PR head equals `reviewed_head_sha`;
+12. current implementation branch equals the request branch;
+13. remote implementation branch ref equals `reviewed_head_sha`;
+14. linked Work Issue/canonical refs still match live Issue scope;
+15. `yura/independent-ai-review` for the exact SHA is the CHANGES_REQUESTED/failure state;
+16. token is not superseded or already terminal locally/GitHub-side;
+17. bounded-attempt policy still allows execution.
+
+Any mismatch returns STALE/BLOCKED and performs no model/Git mutation.
+
+## 9. Repair scope and protected paths
 
 MVP scope is deterministic and fail-closed.
 
@@ -258,107 +374,44 @@ RepairScope
 - protected_path_prefixes[]
 ```
 
-The worker computes/validates the effective allowed set from trusted repository/Issue/PR data. Request text does not grant arbitrary filesystem access.
+The trusted Orchestrator computes the scope from GitHub/Issue/canonical data. Finding prose does not grant paths.
 
-Default protected control-plane paths include:
+Default protected control-plane prefixes include:
 
 - `.github/workflows/`
 - `tools/independent_review/`
 - Independent Review canonical documents
-- repository credential/config paths
+- credential/config paths
+- worker security policy/configuration paths
 
-A repair may modify such a path only when the linked Work Issue explicitly owns that control-plane area and its canonical/scope includes the path. Product-code repair findings cannot modify Reviewer implementation to make a review pass.
+A repair may touch a protected path only when the linked Work Issue explicitly owns that control-plane area and the computed scope authorizes it. Product-code findings cannot modify Reviewer logic to make review pass.
 
-### 5.3 Canonical serialization
+Path validation resolves normalized repository-relative paths and rejects:
 
-RepairRequest is serialized to canonical JSON with sorted keys and stable separators.
+- absolute paths;
+- `..` traversal;
+- symlink escape;
+- nested repository/submodule escape;
+- unexpected new files outside approved prefixes.
 
-`repair_token` is derived from SHA-256 over the canonical request identity excluding the token itself. At minimum the digest binds:
+Scope is checked immediately after Codex and again immediately before commit.
 
-```text
-repository
-pr_number
-issue_number
-implementation_branch
-reviewed_head_sha
-review_run_id
-review_cycle_key
-repair_attempt
-blocking finding IDs + fingerprints
-canonical design refs
-scope digest
-```
-
-Duplicate delivery of the same trusted decision therefore produces the same token.
-
-## 6. GitHub persistence
-
-### 6.1 Review marker
-
-RepairRequest is persisted as a PR Review COMMENT anchored to the reviewed commit.
-
-Marker:
-
-```text
-<!-- yura-repair-request:v1 -->
-```
-
-Human-readable header:
-
-```text
-Repair-Token: `...`
-Reviewed-Head-SHA: `...`
-Review-Run-ID: `...`
-Repair-Attempt: `N/M`
-Blocking-Finding-IDs: `...`
-```
-
-Machine payload:
-
-```text
-Repair-Request-Data: `<base64url(canonical JSON)>`
-```
-
-The encoded payload contains no secrets. Encoding prevents Markdown/mention/control-character content inside finding text from becoming GitHub presentation instructions.
-
-### 6.2 Idempotency
-
-Before publishing, the Orchestrator scans existing PR reviews for the same `Repair-Token`.
-
-- same token already persisted -> do not publish a duplicate;
-- same reviewed SHA with a different token -> BLOCKED/ESCALATED unless explained by a newer trusted review cycle;
-- PASS/BLOCKED decision -> no RepairRequest.
-
-### 6.3 Repair outcome marker
-
-The local worker may persist a separate implementation-side audit comment/review after deterministic completion:
-
-```text
-<!-- yura-repair-outcome:v1 -->
-Repair-Token: `...`
-Outcome: PUSHED | STALE | NO_CHANGE | SCOPE_BLOCKED | VALIDATION_FAILED | FAILED
-Old-Head-SHA: `...`
-New-Head-SHA: `...`?
-Commit-SHA: `...`?
-```
-
-This outcome is implementation evidence only. It never grants Review PASS.
-
-## 7. Repair cycle state machine
+## 10. Repair state machine and bounded cycles
 
 ```text
 REVIEWING(Hn)
   |
   +-- PASS ------------------------------> PASS(Hn)
-  |
   +-- BLOCKED ---------------------------> BLOCKED(Hn)
-  |
   `-- CHANGES_REQUESTED
           |
           v
-   REPAIR_REQUESTED(Hn, token N)
+   REPAIR_REQUEST_CREATED(Rn,Hn)
           |
-          +-- duplicate -----------------> existing token owns execution
+          v
+   ARTIFACT_PUBLISHED(Rn,Hn)
+          |
+          +-- duplicate -----------------> same token owns execution
           +-- stale ---------------------> STALE / no repair
           +-- max exceeded -------------> ESCALATED
           |
@@ -366,11 +419,18 @@ REVIEWING(Hn)
       REPAIRING(Hn)
           |
           v
-   REPAIR_VALIDATING(Hn)
+      SCOPE_CHECKED
           |
-          +-- scope violation -----------> ESCALATED/SCOPE_BLOCKED
-          +-- validation failure --------> repair failure evidence
-          +-- no diff -------------------> NO_CHANGE -> ESCALATED
+          v
+   REPAIR_VALIDATING_SANDBOXED
+          |
+          +-- sandbox unavailable -------> VALIDATION_BLOCKED
+          +-- scope violation -----------> SCOPE_BLOCKED
+          +-- validation failure --------> VALIDATION_FAILED
+          +-- no diff -------------------> NO_CHANGE / ESCALATED
+          |
+          v
+      LIVE_STALE_RECHECK
           |
           v
       REPAIR_PUSHED(Hn -> Hn+1)
@@ -382,80 +442,60 @@ REVIEWING(Hn)
    REVIEW_PENDING(Hn+1)
 ```
 
-A repair cycle is not complete until a distinct new head SHA exists.
-
-## 8. Bounded cycle / recurrence policy
-
-MVP defaults:
+MVP default:
 
 ```text
 max_repair_attempts = 3
 ```
 
-Configuration may lower the value but may not make the loop unbounded.
+Attempt history comes from trusted run/artifact/index history for the PR lineage, not from a resettable in-memory counter. Exceeding the maximum creates non-executable ESCALATED evidence.
 
-Attempt calculation is based on trusted RepairRequest history for the PR lineage, not worker-local counters.
+## 11. Local Codex worker
 
-For each new CHANGES_REQUESTED decision:
-
-- collect blocking finding fingerprints;
-- compare with prior repair requests;
-- preserve recurring fingerprint history in audit metadata;
-- if the next repair attempt exceeds the configured maximum -> do not mint a new executable request; persist ESCALATED evidence instead.
-
-Repeated findings are diagnostic evidence. The hard automatic stop is the bounded cycle limit; #373 may add an earlier recurrence threshold after E2E data.
-
-## 9. Local Codex Worker
-
-### 9.1 Process model
-
-Repository-side command:
+### 11.1 Modes
 
 ```text
+python -m tools.repair_loop.worker --once
 python -m tools.repair_loop.worker --watch
 ```
 
-Modes:
+`--watch` is a polling loop while the user-managed process is running. A later OS service may keep it resident, but repository design does not depend on ChatGPT/background execution.
 
-- `--once`: perform one poll/execution iteration;
-- `--watch`: continue polling with a configured interval while the process is running.
+### 11.2 Local prerequisites
 
-The worker is intended for a user-managed trusted machine, not GitHub-hosted untrusted PR execution.
-
-### 9.2 Local prerequisites
-
-- clone of the repository or configured repository root;
-- `git` with push access to authorized implementation branches;
-- GitHub API read access sufficient to verify PR/review/workflow/status evidence;
+- configured clone/repository root;
+- `git` with push access to the authorized implementation branch;
+- GitHub read access for PR/review/run/artifact/status provenance;
+- optional GitHub comment/review write access for RepairOutcome audit only;
 - local Codex CLI already authenticated by the user;
-- Python runtime for the worker.
+- supported container runtime for deterministic validation;
+- trusted worker configuration stored outside PR-controlled files or otherwise pinned to a trusted local/base source.
 
-Credentials remain on the local machine and are never embedded in the GitHub repair request.
+Credentials remain on the host and are not copied into repair worktrees, artifacts, or validation sandboxes.
 
-### 9.3 Isolated worktree
+### 11.3 Isolated worktree
 
-The worker never edits the user's arbitrary current checkout in place.
+For each accepted token:
 
-For each token:
-
-1. fetch the configured remote;
-2. verify remote implementation branch == `reviewed_head_sha`;
-3. create a temporary isolated worktree from that exact commit;
+1. fetch remote;
+2. verify remote implementation branch == reviewed SHA;
+3. create temporary isolated worktree from exact SHA;
 4. run Codex in that worktree;
-5. inspect the resulting diff;
-6. run deterministic scope and validation guards;
-7. re-fetch GitHub current PR head;
-8. if still equal, create one intentional repair commit;
-9. regular fast-forward push to the exact implementation branch;
-10. remove the temporary worktree.
+5. inspect diff;
+6. run first deterministic scope/protected-path guard;
+7. snapshot the repaired tree into a validation input that excludes `.git` and credentials;
+8. run deterministic validation in `ValidationSandbox`;
+9. re-run scope/protected-path guard on the real worktree;
+10. re-fetch PR/current remote head/token status;
+11. if still exact, create one intentional repair commit;
+12. regular fast-forward push to exact branch;
+13. remove temporary worktree/sandbox data.
 
-No force push and no history rewrite.
+No amend/rebase/force push/history rewrite.
 
-If the remote head moves during repair, regular push must fail safely and the result is STALE.
+## 12. Codex invocation boundary
 
-### 9.4 Codex invocation contract
-
-Codex runs non-interactively with an explicit workspace-write sandbox. The adapter must invoke the CLI without a shell string, with a fixed argument vector and a bounded process timeout.
+Codex runs non-interactively with an explicit bounded workspace-write sandbox. The adapter invokes a fixed argument vector without shell interpolation and a process timeout.
 
 Conceptually:
 
@@ -463,17 +503,13 @@ Conceptually:
 codex exec
   --sandbox workspace-write
   --json
-  --output-schema <trusted local RepairOutcome schema>
+  --output-schema <trusted local schema>
   <trusted wrapper prompt + untrusted repair data>
 ```
 
-The exact installed Codex version is an adapter/runtime concern. The worker performs a capability/version preflight rather than silently changing safety flags.
+The adapter preflights installed capability/version. The default worker does not use dangerous bypass flags or unrestricted sandbox modes.
 
-Do not use dangerous bypass flags or unrestricted sandbox modes in the default worker.
-
-### 9.5 Prompt authority
-
-The prompt is constructed by the trusted local adapter with explicit sections:
+Prompt authority is separated:
 
 ```text
 [SYSTEM POLICY: IMPLEMENTER_REPAIR]
@@ -485,268 +521,343 @@ The prompt is constructed by the trusted local adapter with explicit sections:
 [UNTRUSTED: PR_METADATA]
 ```
 
-Finding explanations, source code, PR text, and repository prompt-like text are never placed in the worker's system-policy section.
+Codex is instructed to edit only; it must not commit, push, merge, write review status, broaden scope, or modify protected review infrastructure outside authorized Issue ownership.
 
-Codex is instructed to:
+Codex-run tests are implementation hints only. They are never the deterministic automatic-push Authority.
 
-- repair only the blocking findings;
-- preserve the Issue/canonical responsibility boundary;
-- add/update regression tests where needed;
-- not commit, push, merge, change review status, or edit protected control-plane paths;
-- leave git commit/push to the deterministic wrapper;
-- return structured repair summary only.
+## 13. Credentialless ValidationSandbox
 
-## 10. Deterministic post-Codex guards
+### 13.1 Threat model
 
-The model does not decide whether its own changes are safe to push.
+Tests, build scripts, compiler plugins, package hooks, and static-analysis extensions at the repaired PR head are PR-controlled executable code. Running them directly in the credential-bearing local worker process would expose host files, Git/Codex credentials, network, sockets, or other local capabilities.
 
-Before commit/push, the worker deterministically checks:
+Therefore **no PR-controlled validation command executes directly in the worker host process**.
 
-1. worktree started at the exact reviewed SHA;
-2. working tree has a diff;
-3. every changed path is within effective repair scope;
-4. no protected path was modified without explicit Issue ownership;
-5. no submodule/remote/credential mutation occurred;
-6. no merge/rebase/history rewrite occurred;
-7. configured trusted validation commands pass;
-8. live PR is still open/non-draft/same repo/V2;
-9. live PR head is still the reviewed SHA;
-10. remote branch ref is still the reviewed SHA;
-11. repair token is still current/not superseded.
-
-Any failure prevents push.
-
-## 11. Validation command policy
-
-Validation commands are local trusted worker configuration, never arbitrary strings taken from PR body, review findings, source code, or RepairRequest text.
-
-The MVP supports a configured command list with safe argv execution and no shell interpolation.
-
-Examples may include repository-standard tests, static checks, and compile checks. Which commands are required for a specific final Merge Gate remains #373 authority.
-
-Codex may run additional local checks during implementation, but only deterministic worker-configured checks decide whether automatic push is permitted.
-
-## 12. Git commit / push policy
-
-The wrapper, not Codex, owns Git mutation after repair.
-
-Commit requirements:
-
-- parent == reviewed head SHA;
-- exactly one repair commit per successful RepairRequest execution;
-- message includes Work Issue and short repair token;
-- author/committer use the configured Implementer identity;
-- no amend/rebase/force push;
-- destination == exact request implementation branch;
-- push must be a regular fast-forward update.
-
-After push, GitHub's existing PR `synchronize` event creates the next review cycle automatically.
-
-## 13. Worker local state
-
-Local state is only an execution cache, not Authority.
-
-Suggested path under `CODEX_HOME` or a separate Yura worker state directory:
+### 13.2 Interface
 
 ```text
-repair-state/
-  <repair_token>.json
+ValidationSandbox
+- prepare(snapshot, trusted_config)
+- run(argv[]) -> ValidationResult
+- dispose()
 ```
 
-Record:
+The backend is provider-neutral. MVP provides a container backend suitable for the user's trusted local environment.
 
-- first seen time;
-- provenance validation result;
-- local run id;
-- worktree path (while active);
-- outcome;
-- old/new SHA;
-- validation results.
+### 13.3 Trusted validation image/config
 
-If local state is lost, GitHub RepairRequest/Outcome and current branch state are sufficient to reconstruct whether a token is still executable.
+Validation image, image digest, resource limits, command argv, timeouts, and sandbox policy come only from trusted local worker configuration or another trusted base source. They are not selected by:
 
-## 14. Concurrency and stale guards
+- PR Dockerfiles;
+- PR compose files;
+- PR body;
+- finding text;
+- repair artifact model prose;
+- repository scripts that attempt to change sandbox configuration.
 
-### 14.1 Per-PR single-flight
+Production/live automatic mode requires the configured image to be pinned by immutable digest. Missing/unavailable safe backend means `VALIDATION_BLOCKED`; the worker never falls back to host execution.
 
-Only one RepairRequest for a PR may be actively executed by a worker at a time.
+### 13.4 Validation input
 
-Local worker uses a per-repository/per-PR lock. A second process seeing the same token defers or exits without mutation.
+The worker copies/snapshots the repaired repository content into disposable sandbox input.
 
-### 14.2 New review supersedes old repair
+Do not mount the credential-bearing worktree's `.git` directory into the container. Do not expose host credentials, agent sockets, Docker/container-engine sockets, or arbitrary host directories.
 
-If a new PR head or newer trusted RepairRequest exists before push, the old repair becomes stale.
+Validation may modify only the disposable sandbox copy. The actual repair worktree remains outside the validation container.
 
-Old worktree changes may be retained locally for diagnostics but are never pushed automatically onto the newer branch state.
+### 13.5 Minimum container isolation
 
-### 14.3 Worker crash
+The default safe profile requires at least:
 
-A crash does not implicitly retry a push. On restart, the worker revalidates GitHub provenance/current head before resuming or discarding the request.
+- no GitHub token/environment credential;
+- no Codex auth / `CODEX_HOME`;
+- no SSH agent/socket;
+- no Docker/container-engine socket;
+- no host home mount;
+- no `.git` metadata from the host worktree;
+- network disabled;
+- read-only container root filesystem;
+- explicit disposable writable workspace/tmpfs only where required;
+- dropped Linux capabilities;
+- `no-new-privileges`;
+- bounded CPU/memory/process/time limits;
+- fixed working directory;
+- fixed argv execution without host shell interpolation.
 
-## 15. GitHub client extensions
+The sandbox must not be able to push Git, call GitHub, invoke the host Codex credential, or mutate the host worktree.
 
-Trusted review-side client needs only additional review/read operations required to:
+### 13.6 Dependencies and offline validation
 
-- count/find existing RepairRequest markers;
-- persist a RepairRequest review comment.
+Because network is disabled, required validation dependencies must already exist in the trusted validation image or trusted prebuilt cache/image. The automatic repair loop does not dynamically `pip install`, `npm install`, or fetch untrusted dependencies from the Internet during the privileged local repair transaction.
 
-It must **not** gain contents/branch write APIs.
+Dependency/image refresh is a separate trusted maintenance action, not something PR data can request.
 
-Local worker uses a separate GitHub adapter/credential for:
+### 13.7 Validation result authority
 
-- PR/read review/status/workflow provenance;
-- remote branch/head validation;
-- optional RepairOutcome persistence.
+Only deterministic worker-configured commands executed inside the safe ValidationSandbox authorize an automatic push.
 
-Review-side and implementation-side credentials are never reused across adapters.
+Examples include trusted-configured test, lint, type, compile, and repository invariant commands. #373 owns which exact checks are final Merge Gate requirements.
 
-## 16. Code layout
+## 14. Deterministic post-Codex / pre-push guards
 
-Planned MVP layout:
+The wrapper checks, in order:
+
+1. authoritative artifact provenance and digest/token;
+2. worktree parent == exact reviewed SHA;
+3. non-empty repair diff;
+4. first scope/protected-path guard;
+5. no remote/submodule/credential-policy mutation;
+6. ValidationSandbox available and safe-profile preflight passes;
+7. all configured sandbox validation commands pass;
+8. second scope/protected-path guard on actual worktree;
+9. PR still open/non-draft/same-repo/V2;
+10. live PR head == reviewed SHA;
+11. remote implementation branch == reviewed SHA;
+12. token remains current/not superseded;
+13. no conflicting active local execution;
+14. commit parent still equals reviewed SHA.
+
+Any failure prevents commit/push.
+
+## 15. Git commit and push policy
+
+The deterministic wrapper, not Codex, owns Git mutation after repair.
+
+Successful automatic repair creates exactly one commit:
+
+- parent == reviewed head SHA;
+- message references Work Issue and short repair token;
+- configured Implementer author/committer identity;
+- exact authorized implementation branch;
+- no amend/rebase/merge/force push;
+- regular fast-forward push only.
+
+If remote head moved, normal push fails and outcome is STALE. Worker does not retry by rebasing its generated patch onto the newer head automatically.
+
+The resulting GitHub PR `synchronize` event starts the next Independent Review automatically.
+
+## 16. Persistence and idempotency
+
+### 16.1 Request discovery index
+
+Before publishing a new index, the Orchestrator checks trusted request history for the same token.
+
+- same trusted token/run/digest already indexed -> no duplicate;
+- same reviewed SHA with conflicting executable request identities -> BLOCKED/ESCALATED;
+- PASS/BLOCKED -> no request artifact/index.
+
+### 16.2 Local state
+
+Local state is an execution cache only, e.g.:
+
+```text
+repair-state/<repair_token>.json
+```
+
+It may record first-seen time, local run ID, provenance result, outcome, old/new SHA, validation summary, and temporary paths.
+
+Loss of local state does not create new Authority; GitHub trusted run/artifact/current branch state determines whether a request is executable.
+
+### 16.3 Repair outcome
+
+The worker may publish implementation-side audit evidence:
+
+```text
+<!-- yura-repair-outcome:v1 -->
+Repair-Token: `...`
+Outcome: PUSHED | STALE | NO_CHANGE | SCOPE_BLOCKED | VALIDATION_BLOCKED |
+         VALIDATION_FAILED | FAILED | ESCALATED
+Old-Head-SHA: `...`
+New-Head-SHA: `...`?
+Commit-SHA: `...`?
+```
+
+This is not Reviewer Authority and can never create PASS.
+
+## 17. Concurrency and stale guards
+
+- per-repository/per-PR local lock: one active repair execution;
+- duplicate delivery of same token: one mutation at most;
+- newer PR head/request supersedes older request;
+- current-head checks occur before worktree creation and again immediately before commit/push;
+- worker restart revalidates GitHub artifact/current state; it does not blindly resume a pending push;
+- old local patches may be retained only for diagnostics, never automatically transplanted onto a newer head.
+
+## 18. Code layout
+
+Phase A planned layout:
 
 ```text
 tools/
 ├── independent_review/
 │   ├── orchestrator.py          # invokes handoff after trusted decision
-│   ├── github_client.py         # review-side read/review-write only
+│   ├── persistence.py           # normal review + request discovery index
+│   ├── main.py                  # trusted request output path lifecycle
 │   └── ...
 └── repair_loop/
     ├── __init__.py
-    ├── models.py                # RepairRequest / scope / outcome
-    ├── token.py                 # canonical serialization + token
-    ├── handoff.py               # ReviewDecision -> RepairRequest
-    ├── persistence.py           # repair request marker/idempotency
-    ├── provenance.py            # local GitHub live verification
-    ├── scope.py                 # deterministic changed-path guard
-    ├── codex_adapter.py         # non-interactive local Codex
-    ├── git_workspace.py         # isolated worktree/commit/push guard
-    ├── worker.py                # --once / --watch entrypoint
-    └── schemas/
-        └── repair_outcome.schema.json
+    ├── models.py
+    ├── token.py
+    ├── handoff.py
+    ├── persistence.py
+    ├── artifact.py
+    ├── provenance.py
+    ├── scope.py
+    ├── codex_adapter.py
+    ├── validation.py
+    ├── container_validation.py
+    ├── git_workspace.py
+    └── worker.py
 
 tests/tools/repair_loop/
     ...
 ```
 
-Network/process/Git operations remain behind narrow adapters so state-machine and safety behavior can be unit-tested with fakes.
+Network, process, container, and Git operations remain behind narrow adapters so state-machine and security behavior can be tested with fakes.
 
-## 17. Integration with ReviewOrchestrator
+## 19. Integration order with Independent Review
 
-The handoff executes only **after** a trusted `ReviewDecision` is constructed and final head-stale validation has succeeded.
-
-Order:
+Review-side order:
 
 ```text
 Provider candidate
-  -> deterministic review validation
-  -> final current-head validation
+  -> deterministic ReviewDecision validation
+  -> final head-stale validation
   -> persist ReviewDecision
   -> if CHANGES_REQUESTED:
        build deterministic RepairRequest
-       apply bounded-cycle/idempotency checks
-       persist RepairRequest PR Review
+       enforce max-cycle/idempotency policy
+       write canonical request bytes to fixed trusted output path
+       persist discovery/index Review
+  -> workflow uploads fixed output path as run artifact (Phase B)
 ```
 
-If ReviewDecision persistence fails, no repair request is published.
+If normal ReviewDecision persistence fails, no RepairRequest is produced.
 
-If RepairRequest persistence fails, the review remains CHANGES_REQUESTED but automatic repair is considered BLOCKED infrastructure state; it must not be reported as a successful closed loop.
+If request construction/index persistence/artifact publication fails, review remains CHANGES_REQUESTED but the automatic repair infrastructure is BLOCKED. It must never be reported as a successful closed repair loop.
 
-PASS/BLOCKED decisions never invoke the Implementer.
+PASS/BLOCKED do not create executable RepairRequest bytes.
 
-## 18. Tests
+## 20. Unit and fake-E2E acceptance
 
-### 18.1 Unit
+At minimum Phase A tests cover:
 
-At minimum:
-
-- CHANGES_REQUESTED + blocking findings -> RepairRequest;
-- PASS -> no request;
-- BLOCKED -> no request;
-- token deterministic for same cycle;
-- changed finding/head -> different token;
-- duplicate token -> one persisted request;
+- CHANGES_REQUESTED + validated blocking findings -> canonical RepairRequest;
+- PASS/BLOCKED -> no request;
+- same trusted cycle -> deterministic bytes/digest/token;
+- changed head/finding/scope/run -> changed digest/token;
+- request output absent on non-repair paths;
+- duplicate token -> one index;
 - max cycle -> ESCALATED/no executable request;
-- exact branch/head/Issue/canonical binding;
-- untrusted finding text cannot change trusted request fields;
-- request base64 payload round-trip;
-- unsafe/protected path rejected;
-- list alias/path traversal/symlink-style scope attacks rejected;
-- stale PR head prevents worker execution;
-- workflow-run provenance mismatch prevents worker execution;
-- duplicate local process/token does not double push;
+- untrusted finding text cannot alter trusted target/scope fields;
+- artifact archive path traversal/symlink/size/ambiguity rejection;
+- artifact run/workflow/PR/head mismatch rejection;
+- forged PR Review index with no matching trusted artifact rejection;
+- valid index but artifact digest/token mismatch rejection;
+- stale current PR/remote head rejection;
+- protected/out-of-scope path rejection;
+- two workers on same token -> at most one mutation;
 - Codex no-diff -> no push;
-- validation failure -> no push;
-- remote head movement -> no push;
-- successful repair -> one commit and regular fast-forward push;
-- repair outcome does not create Review PASS.
+- ValidationSandbox unavailable -> no host fallback/no push;
+- sandbox command failure -> no push;
+- container command builder excludes host credentials/network/sockets;
+- validation snapshot excludes `.git` and host credential paths;
+- remote head movement after validation -> no push;
+- successful repair -> one regular fast-forward commit/push;
+- RepairOutcome never creates Review PASS.
 
-### 18.2 Fake adjacent E2E
-
-Using Fake GitHub + Fake Codex + Fake Git:
+Fake adjacent E2E:
 
 ```text
 H0 review -> CHANGES_REQUESTED
--> RepairRequest(token1)
--> worker repair
--> H1 push
+-> trusted run artifact request(token1)
+-> worker provenance PASS
+-> Codex repair
+-> scope PASS
+-> sandbox validation PASS
+-> H1 fast-forward push
 -> simulated synchronize
 -> PASS(H1)
 ```
 
-Also verify:
+Also cover stale H0, forged index, malicious alternate-workflow index, protected-path edit, validation sandbox escape configuration rejection, duplicate worker, and bounded repeated finding escalation.
 
-- H0 changes while worker is repairing -> stale/no push;
-- same finding repeats until configured maximum -> ESCALATED;
-- protected path edit -> SCOPE_BLOCKED;
-- two workers receive same token -> one mutation only.
+## 21. Live Verification
 
-### 18.3 Live Verification
+Live Verification begins only after Phase A and Phase B are merged.
 
-Live Verification requires a deliberately controlled V2 test PR with a known repairable blocking defect.
+Use a deliberately controlled V2 test PR with a known repairable defect.
 
-1. local worker is started on the user's machine;
-2. Gemini returns CHANGES_REQUESTED on exact H0;
-3. trusted RepairRequest appears automatically;
-4. local worker accepts provenance/token/current-head checks;
-5. local Codex changes only authorized files;
-6. deterministic local validation passes;
-7. wrapper pushes H1 without force;
-8. existing Independent AI Review automatically runs on H1;
-9. defect is fixed and review reaches PASS, or another bounded repair request is produced;
-10. full H0 -> finding -> token -> H1 -> review evidence remains inspectable in GitHub.
+1. user starts the local worker in the trusted local environment;
+2. Gemini produces CHANGES_REQUESTED on exact H0;
+3. trusted workflow run produces authoritative RepairRequest artifact and PR discovery index;
+4. local worker verifies run/artifact/digest/token/current head;
+5. local Codex changes only allowed files in isolated worktree;
+6. scope guard passes;
+7. credentialless/networkless validation container passes configured checks;
+8. live stale guard still sees H0;
+9. wrapper pushes one fast-forward H1 commit;
+10. existing Independent Review runs automatically on H1;
+11. loop reaches PASS or another bounded RepairRequest;
+12. GitHub audit evidence can reconstruct H0 -> run -> artifact digest/token -> H1 -> next review.
 
-Actual local-machine/Codex execution is a Verification-stage gate. Repository-side implementation can be unit/fake-E2E complete before that manual environment prerequisite is available.
+Also perform a negative Live Verification where a look-alike PR marker without the trusted run artifact is rejected, and where the validation backend is unavailable and automatic push fails closed.
 
-## 19. Failure / escalation policy
+## 22. Failure and escalation policy
 
-Automatic repair stops and records an explicit outcome on:
+Automatic repair stops without push on:
 
-- untrusted/invalid request provenance;
-- stale PR head/branch mismatch;
-- linked Issue/canonical mismatch;
-- worker/Codex unavailable;
-- Codex timeout;
-- no repair diff;
-- protected/out-of-scope changed files;
-- deterministic validation failure;
-- push rejection/non-fast-forward;
+- invalid/missing/expired/ambiguous trusted artifact;
+- artifact/index/run digest or identity mismatch;
+- stale PR/remote head/branch mismatch;
+- Issue/canonical mismatch;
+- local Codex unavailable/timeout;
+- no diff;
+- out-of-scope/protected-path changes;
+- safe ValidationSandbox unavailable;
+- validation failure;
+- remote head movement/non-fast-forward push rejection;
 - duplicate/conflicting active repair;
 - max repair attempts exceeded.
 
-The worker never resolves those cases with force push, widened sandbox, ignored tests, Reviewer modification, or merge.
+Never recover by:
 
-## 20. Done boundary
+- trusting comment bytes instead of artifact Authority;
+- running PR-controlled tests on the credential-bearing host;
+- enabling validation network access as an automatic fallback;
+- mounting host credentials or container-engine socket;
+- force push/rebase;
+- widening Codex sandbox bypass flags;
+- modifying Reviewer logic to make the finding disappear;
+- merging automatically inside #372.
 
-Issue #372 implementation is complete when:
+## 23. Done boundary
 
-- trusted CHANGES_REQUESTED automatically persists a deterministic RepairRequest;
-- local worker can discover and provenance-validate requests without human copy/paste;
-- local Codex adapter can perform bounded workspace-write repair in an isolated worktree;
-- deterministic scope/stale/validation guards gate commit/push;
-- successful repair creates a new fast-forward implementation head;
-- existing `synchronize` review automatically starts on the new head;
-- duplicate/stale/max-cycle cases fail closed;
-- reviewer and implementer identities/credentials stay separate;
-- Fake E2E covers the full repair loop.
+### Phase A complete
 
-Live local-Codex E2E is then moved through Project Verification. #373 owns final Required Checks / multi-review Merge Gate / optional Auto Merge integration.
+- RepairRequest models/digest/token/scope implemented;
+- trusted Reviewer side writes exact canonical request output for CHANGES_REQUESTED;
+- PR discovery index is explicitly non-authoritative;
+- local worker verifies run-artifact provenance and exact current head;
+- Codex adapter/worktree/scope guards implemented;
+- credentialless ValidationSandbox + safe container backend implemented;
+- successful fake repair produces one fast-forward new head;
+- unit/fake E2E security cases pass;
+- Phase A merged to `rebuild/v2-foundation` with Resume Checkpoint.
+
+### Phase B complete
+
+- `main` trusted workflow uploads only the trusted request output as a run-owned artifact using pinned action code;
+- no PR head code execution or implementation write permission is introduced;
+- workflow behavior for PASS/BLOCKED/no-request is fail-closed;
+- Phase B merged to `main` with Resume Checkpoint.
+
+### Issue #372 complete
+
+- controlled live PR demonstrates CHANGES_REQUESTED -> trusted run artifact -> local Codex repair -> credentialless sandbox validation -> fast-forward push -> automatic new-head review;
+- forged index without matching trusted artifact is rejected;
+- unsafe/unavailable validation sandbox prevents push;
+- stale/duplicate/max-cycle paths fail closed;
+- Reviewer and Implementer credentials/identities remain separate.
+
+After these gates, #373 owns Required Checks, combined Gemini/Codex/CI Merge Gate, unresolved-review-thread policy, and optional Auto Merge.
