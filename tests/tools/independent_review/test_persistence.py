@@ -60,7 +60,7 @@ def test_provider_text_is_neutralized_before_markdown_persistence() -> None:
     item = decision()
     malicious = item.model_copy(
         update={
-            "summary": "@victim <!-- hidden --> [click](https://example.invalid)",
+            "summary": "@victim <!-- hidden --> [click](https://example.invalid) \u202ebidi",
         }
     )
     body = render_review_body(malicious, pr_number=7)
@@ -68,3 +68,4 @@ def test_provider_text_is_neutralized_before_markdown_persistence() -> None:
     assert "@\u200bvictim" in body
     assert "<!-- hidden -->" not in body
     assert "\\[click\\]" in body
+    assert "\u202e" not in body
