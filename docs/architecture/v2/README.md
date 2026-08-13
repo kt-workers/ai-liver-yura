@@ -5,6 +5,7 @@
 - `cognitive_llm_architecture.md` — cognitive and LLM role design
 - `goal_commitment_architecture.md` — persistent Goal / Commitment state and lifecycle
 - `concurrency_architecture.md` — non-blocking runtime / LLM invocation topology
+- `llm_role_contracts.md` — variable logical LLM role / structured request-result contracts
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
 - `body_architecture.md` — canonical body, generative motion, realtime control
 - `plugin_architecture.md` — Core extension / capability architecture
