@@ -173,6 +173,14 @@ Actual execution facts must be represented by execution lifecycle evidence rathe
 
 This rule keeps `ExecutionResult` as evidence of lifecycle history instead of allowing a status enum alone to assert an Actual Execution Fact.
 
+### 10.2 Immutable effect references
+
+`effect_refs` is part of the recorded Actual Execution Fact and must not retain mutable aliases owned by callers.
+
+- construction defensively copies/coerces the supplied collection into the canonical immutable tuple representation before validation/storage;
+- later mutation of an adapter-owned list or other mutable collection must not change an existing `ExecutionResult` snapshot;
+- duplicate and empty effect references remain invalid after normalization.
+
 ## 11. AsyncWorkResult
 
 Long-running preparation work can finish after its assumptions are no longer current. `AsyncWorkResult` therefore distinguishes:
@@ -199,7 +207,11 @@ Contracts expose `to_dict()` using JSON-compatible values.
 
 Nested payload/attribute/precondition/result data is recursively frozen at construction time so caller mutation after construction cannot rewrite a recorded contract snapshot.
 
+JSON object keys must be strings. A runtime/untyped mapping containing a non-string key is rejected during recursive freezing instead of being accepted into a snapshot that cannot be represented faithfully as a JSON object.
+
 JSON-compatible numeric values must be finite. IEEE-754 non-finite values (`NaN`, positive infinity, negative infinity) are rejected during recursive freezing rather than being allowed into an apparently valid Domain snapshot that strict JSON serialization cannot transport.
+
+Collection-valued fact fields that are canonically immutable, including `ExecutionResult.effect_refs`, must take an owned immutable copy during construction. Static type annotations alone are not treated as a runtime immutability boundary.
 
 Timestamps are required to be timezone-aware.
 
@@ -227,10 +239,12 @@ Issue #321 Unit Gate requires:
 - timezone-aware event/command/result timestamps
 - non-negative revision validation
 - immutable nested JSON-like payloads
+- non-string JSON object keys are rejected from JSON-like payloads
 - NaN/+Infinity/-Infinity are rejected from JSON-like payloads
 - invalid execution lifecycle rejection
 - direct non-`requested` `ExecutionResult` construction is rejected
 - valid `ExecutionResult.transition_to()` paths continue to construct immutable successor snapshots
+- `ExecutionResult.effect_refs` owns an immutable tuple copy and cannot be mutated through a caller alias
 - stale/superseded async results are non-committable
 - successful async work requires `started_at`
 - non-success async work may omit `started_at` when it terminated before start
