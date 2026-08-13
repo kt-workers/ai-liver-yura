@@ -54,3 +54,17 @@ def test_duplicate_cycle_is_not_published_twice() -> None:
     assert publish_decision(writer, pr_number=7, decision=item) is True
     assert publish_decision(writer, pr_number=7, decision=item) is False
     assert len(writer.reviews) == 1
+
+
+def test_provider_text_is_neutralized_before_markdown_persistence() -> None:
+    item = decision()
+    malicious = item.model_copy(
+        update={
+            "summary": "@victim <!-- hidden --> [click](https://example.invalid)",
+        }
+    )
+    body = render_review_body(malicious, pr_number=7)
+    assert "@victim" not in body
+    assert "@\u200bvictim" in body
+    assert "<!-- hidden -->" not in body
+    assert "\\[click\\]" in body

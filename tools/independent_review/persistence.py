@@ -5,6 +5,19 @@ from typing import Protocol
 from .models import ReviewDecision
 
 _MARKER = "<!-- yura-independent-ai-review:v1 -->"
+_MARKDOWN_SPECIALS = "\\`*_{}[]()#+.!|>"
+
+
+def _safe_review_text(value: str) -> str:
+    normalized = value.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = "".join(
+        char if char in {"\n", "\t"} or ord(char) >= 32 else "�" for char in normalized
+    )
+    normalized = normalized.replace("@", "@\u200b")
+    normalized = normalized.replace("<", "&lt;").replace(">", "&gt;")
+    for char in _MARKDOWN_SPECIALS:
+        normalized = normalized.replace(char, "\\" + char)
+    return normalized
 
 
 class ReviewWriter(Protocol):
@@ -29,9 +42,10 @@ def render_review_body(decision: ReviewDecision, *, pr_number: int) -> str:
                 location += f":{item.line_start}"
             location += ")"
         findings.append(
-            f"- **{item.severity.value}** `{item.finding_id}` {item.title}{location}\n"
-            f"  - {item.explanation}\n"
-            f"  - Evidence: {'; '.join(item.evidence)}"
+            f"- **{item.severity.value}** `{_safe_review_text(item.finding_id)}` "
+            f"{_safe_review_text(item.title)}{_safe_review_text(location)}\n"
+            f"  - {_safe_review_text(item.explanation)}\n"
+            f"  - Evidence: {_safe_review_text('; '.join(item.evidence))}"
         )
     finding_text = "\n".join(findings) if findings else "- none"
     confidence = "n/a" if decision.confidence is None else f"{decision.confidence:.3f}"
@@ -46,7 +60,7 @@ Cycle-Key: `{key}`<br>
 Confidence: `{confidence}`
 
 ### Summary
-{decision.summary}
+{_safe_review_text(decision.summary)}
 
 ### Findings
 {finding_text}

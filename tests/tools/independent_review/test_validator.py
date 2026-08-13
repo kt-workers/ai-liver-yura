@@ -121,3 +121,13 @@ def test_echoed_head_spoof_is_rejected() -> None:
                 echoed_head_sha="c" * 40,
             )
         )
+
+
+def test_excessive_provider_output_is_rejected() -> None:
+    candidate = ProviderReviewCandidate(
+        verdict_candidate=ReviewVerdict.PASS,
+        findings=[],
+        summary="x" * 8_001,
+    )
+    with pytest.raises(ReviewValidationError, match="summary exceeds"):
+        validate(candidate)

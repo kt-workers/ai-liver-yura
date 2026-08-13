@@ -41,6 +41,15 @@ def validate_candidate(
         raise ReviewValidationError("reviewer has forbidden credential scope")
     if not context_complete:
         raise ReviewValidationError("required review context is incomplete")
+    if len(candidate.findings) > 50:
+        raise ReviewValidationError("provider returned too many findings")
+    if len(candidate.summary) > 8_000:
+        raise ReviewValidationError("provider summary exceeds safety limit")
+    for item in candidate.findings:
+        if len(item.title) > 500 or len(item.explanation) > 8_000:
+            raise ReviewValidationError("provider finding text exceeds safety limit")
+        if len(item.evidence) > 20 or any(len(value) > 2_000 for value in item.evidence):
+            raise ReviewValidationError("provider finding evidence exceeds safety limit")
 
     finding_ids = [item.finding_id for item in candidate.findings]
     fingerprints = [item.fingerprint for item in candidate.findings]
