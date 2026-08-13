@@ -173,13 +173,22 @@ Actual execution facts must be represented by execution lifecycle evidence rathe
 
 This rule keeps `ExecutionResult` as evidence of lifecycle history instead of allowing a status enum alone to assert an Actual Execution Fact.
 
-### 10.2 Immutable effect references
+### 10.2 Monotonic Actual Effect references
 
-`effect_refs` is part of the recorded Actual Execution Fact and must not retain mutable aliases owned by callers.
+`effect_refs` is part of the recorded Actual Execution Fact. It is not generic stage metadata and must be both immutable and monotonic across the lifecycle.
 
 - construction defensively copies/coerces the supplied collection into the canonical immutable tuple representation before validation/storage;
 - later mutation of an adapter-owned list or other mutable collection must not change an existing `ExecutionResult` snapshot;
-- duplicate and empty effect references remain invalid after normalization.
+- duplicate and empty effect references remain invalid after normalization;
+- a `REQUESTED` snapshot must have no `effect_refs`; a request cannot claim an Actual Effect before execution;
+- new effect references may first be introduced only when the successor status is `OBSERVABLE`, `APPLIED`, or `COMPLETED`;
+- `COMPLETED` may introduce a first effect directly because `OBSERVABLE` / `APPLIED` are optional lifecycle milestones and `STARTED -> COMPLETED` is valid;
+- once an effect reference has appeared, every later snapshot must retain it;
+- explicitly supplied transition `effect_refs` are additive to the previously recorded set; supplying `()` or a subset must not erase historical effect facts;
+- a transition may add new unique references while preserving the existing order and all previous references;
+- terminal `FAILED`, `CANCELLED`, `TIMED_OUT`, or `SUPERSEDED` transitions may inherit prior effect references but must not introduce a brand-new effect reference. If an external effect actually occurred before terminal failure, the lifecycle must record `OBSERVABLE` or `APPLIED` before the terminal transition.
+
+`details` has different semantics. When omitted it inherits the previous snapshot, but an explicitly supplied `details` mapping may replace stage-specific annotations. Only `effect_refs` carries the monotonic Actual Effect evidence contract.
 
 ## 11. AsyncWorkResult
 
@@ -252,7 +261,11 @@ Issue #321 Unit Gate requires:
 - NaN/+Infinity/-Infinity are rejected from JSON-like payloads
 - invalid execution lifecycle rejection
 - direct non-`requested` `ExecutionResult` construction is rejected
+- a `REQUESTED` `ExecutionResult` cannot contain effect references
 - valid `ExecutionResult.transition_to()` paths continue to construct immutable successor snapshots
+- previously recorded effect references cannot be erased by explicit or omitted successor input
+- new effect references can be introduced only at `OBSERVABLE`, `APPLIED`, or `COMPLETED`
+- terminal failure/cancellation/stale-style execution outcomes preserve prior effect refs but cannot invent new ones
 - all canonical tuple-valued Foundation fact fields own immutable tuple copies
 - stale/superseded async results are non-committable
 - successful async work requires `started_at`
