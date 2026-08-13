@@ -47,6 +47,34 @@ def test_execution_result_follows_truth_lifecycle() -> None:
     json.dumps(completed.to_dict())
 
 
+def test_execution_result_supports_applied_effect_milestone() -> None:
+    requested = ExecutionResult.requested(
+        execution_id="exec-effect",
+        command_id="command-effect",
+        occurred_at=NOW,
+        revisions=REVISIONS,
+    )
+    accepted = requested.transition_to(
+        ExecutionStatus.ACCEPTED, occurred_at=NOW + timedelta(milliseconds=1)
+    )
+    started = accepted.transition_to(
+        ExecutionStatus.STARTED, occurred_at=NOW + timedelta(milliseconds=2)
+    )
+    applied = started.transition_to(
+        ExecutionStatus.APPLIED,
+        occurred_at=NOW + timedelta(milliseconds=3),
+        details={"external_effect_applied": True},
+        effect_refs=("effect:1",),
+    )
+    completed = applied.transition_to(
+        ExecutionStatus.COMPLETED, occurred_at=NOW + timedelta(milliseconds=4)
+    )
+
+    assert applied.status is ExecutionStatus.APPLIED
+    assert applied.status.is_terminal is False
+    assert completed.status is ExecutionStatus.COMPLETED
+
+
 def test_execution_transition_rejects_intent_to_completed_shortcut() -> None:
     with pytest.raises(ValueError, match="requested -> completed"):
         validate_execution_transition(ExecutionStatus.REQUESTED, ExecutionStatus.COMPLETED)

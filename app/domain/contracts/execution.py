@@ -23,6 +23,7 @@ class ExecutionStatus(str, Enum):
     PLANNED = "planned"
     STARTED = "started"
     OBSERVABLE = "observable"
+    APPLIED = "applied"
     COMPLETED = "completed"
     REJECTED = "rejected"
     UNSUPPORTED = "unsupported"
@@ -79,6 +80,7 @@ _ALLOWED_TRANSITIONS: Mapping[ExecutionStatus, frozenset[ExecutionStatus]] = {
     ExecutionStatus.STARTED: frozenset(
         {
             ExecutionStatus.OBSERVABLE,
+            ExecutionStatus.APPLIED,
             ExecutionStatus.COMPLETED,
             ExecutionStatus.FAILED,
             ExecutionStatus.CANCELLED,
@@ -87,6 +89,15 @@ _ALLOWED_TRANSITIONS: Mapping[ExecutionStatus, frozenset[ExecutionStatus]] = {
         }
     ),
     ExecutionStatus.OBSERVABLE: frozenset(
+        {
+            ExecutionStatus.COMPLETED,
+            ExecutionStatus.FAILED,
+            ExecutionStatus.CANCELLED,
+            ExecutionStatus.TIMED_OUT,
+            ExecutionStatus.SUPERSEDED,
+        }
+    ),
+    ExecutionStatus.APPLIED: frozenset(
         {
             ExecutionStatus.COMPLETED,
             ExecutionStatus.FAILED,

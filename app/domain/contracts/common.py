@@ -123,6 +123,7 @@ class IntentKind(str, Enum):
     PLUGIN = "plugin"
     ATTENTION = "attention"
     GOAL_TRANSITION = "goal_transition"
+    COMMITMENT_TRANSITION = "commitment_transition"
     SYSTEM = "system"
 
 

@@ -84,6 +84,7 @@ Initial kinds:
 - Plugin
 - Attention
 - Goal transition
+- Commitment transition
 - System
 
 The referenced intent payload belongs to the owning Domain module. For example, Body-specific joint values do not enter `SystemCommand` merely because the command references a Body intent.
@@ -117,7 +118,7 @@ It carries:
 - precondition references
 - required capability requirements
 
-A command is a request/intent to execute. It is **not** evidence that execution started, became observable, or completed.
+A command is a request/intent to execute. It is **not** evidence that execution started, became observable, was applied, or completed.
 
 ## 9. CapabilityDescriptor / CapabilityRequirement
 
@@ -141,7 +142,7 @@ Canonical execution statuses:
 requested
 → accepted
 → planned? / started
-→ observable?
+→ observable? / applied?
 → completed
 ```
 
@@ -156,9 +157,9 @@ timed_out
 superseded
 ```
 
-Not every successful execution requires `planned` or `observable`, but a request cannot jump directly from `requested` to `completed`. Actual execution facts must be represented by execution lifecycle evidence rather than by intent or generated language.
+Not every successful execution requires `planned`, `observable`, or `applied`, but a request cannot jump directly from `requested` to `completed`. `observable` and `applied` are alternative typed effect milestones; an operation chooses the milestone that represents its externally relevant execution fact before completion.
 
-`ExecutionResult` is immutable. A transition creates a new snapshot and validates the lifecycle edge.
+Actual execution facts must be represented by execution lifecycle evidence rather than by intent or generated language. `ExecutionResult` is immutable. A transition creates a new snapshot and validates the lifecycle edge.
 
 ## 11. AsyncWorkResult
 

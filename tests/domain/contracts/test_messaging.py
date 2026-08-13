@@ -66,6 +66,7 @@ def test_executive_decision_transports_intent_refs_without_realizer_payload() ->
             IntentRef("speech-1", IntentKind.SPEECH),
             IntentRef("body-1", IntentKind.BODY),
             IntentRef("goal-transition-1", IntentKind.GOAL_TRANSITION),
+            IntentRef("commitment-transition-1", IntentKind.COMMITMENT_TRANSITION),
         ),
         revisions=REVISIONS,
     )
@@ -75,6 +76,7 @@ def test_executive_decision_transports_intent_refs_without_realizer_payload() ->
         "speech",
         "body",
         "goal_transition",
+        "commitment_transition",
     ]
     json.dumps(decision.to_dict())
 
