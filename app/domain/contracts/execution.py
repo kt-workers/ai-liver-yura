@@ -4,7 +4,6 @@ from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
 from datetime import datetime
 from enum import Enum
-from types import MappingProxyType
 from typing import cast
 
 from .common import (
@@ -12,7 +11,9 @@ from .common import (
     JsonValue,
     RevisionVector,
     freeze_json,
+    freeze_json_mapping,
     jsonable,
+    owned_tuple,
     require_aware_datetime,
     require_non_empty,
 )
@@ -145,17 +146,16 @@ class ExecutionResult:
             )
         if self.reason_code is not None:
             require_non_empty("reason_code", self.reason_code)
-        effect_refs = tuple(self.effect_refs)
+        effect_refs = owned_tuple("effect_refs", self.effect_refs)
         object.__setattr__(self, "effect_refs", effect_refs)
         if len(set(effect_refs)) != len(effect_refs):
             raise ValueError("effect_refs must not contain duplicates")
         for effect_ref in effect_refs:
             require_non_empty("effect_ref", effect_ref)
-        frozen = {key: freeze_json(value) for key, value in self.details.items()}
         object.__setattr__(
             self,
             "details",
-            cast(Mapping[str, JsonValue], MappingProxyType(frozen)),
+            freeze_json_mapping("details", self.details),
         )
 
     @classmethod

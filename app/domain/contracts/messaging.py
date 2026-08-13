@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from types import MappingProxyType
 from typing import cast
 
 from .capabilities import CapabilityRequirement
@@ -14,8 +13,9 @@ from .common import (
     JsonValue,
     PreconditionRef,
     RevisionVector,
-    freeze_json,
+    freeze_json_mapping,
     jsonable,
+    owned_tuple,
     require_aware_datetime,
     require_non_empty,
 )
@@ -43,11 +43,10 @@ class EventEnvelope:
         if self.causation_event_id is not None:
             require_non_empty("causation_event_id", self.causation_event_id)
         require_aware_datetime("occurred_at", self.occurred_at)
-        frozen = {key: freeze_json(value) for key, value in self.payload.items()}
         object.__setattr__(
             self,
             "payload",
-            cast(Mapping[str, JsonValue], MappingProxyType(frozen)),
+            freeze_json_mapping("payload", self.payload),
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -76,11 +75,15 @@ class ExecutiveDecision:
     def __post_init__(self) -> None:
         require_non_empty("decision_id", self.decision_id)
         require_aware_datetime("created_at", self.created_at)
-        if len(set(self.source_event_ids)) != len(self.source_event_ids):
+        source_event_ids = owned_tuple("source_event_ids", self.source_event_ids)
+        intent_refs = owned_tuple("intent_refs", self.intent_refs)
+        object.__setattr__(self, "source_event_ids", source_event_ids)
+        object.__setattr__(self, "intent_refs", intent_refs)
+        if len(set(source_event_ids)) != len(source_event_ids):
             raise ValueError("source_event_ids must not contain duplicates")
-        for event_id in self.source_event_ids:
+        for event_id in source_event_ids:
             require_non_empty("source_event_id", event_id)
-        intent_ids = [intent.intent_id for intent in self.intent_refs]
+        intent_ids = [intent.intent_id for intent in intent_refs]
         if len(set(intent_ids)) != len(intent_ids):
             raise ValueError("intent_refs must not contain duplicate intent_id values")
 
@@ -111,11 +114,18 @@ class SystemCommand:
         require_non_empty("command_id", self.command_id)
         require_non_empty("decision_id", self.decision_id)
         require_aware_datetime("issued_at", self.issued_at)
+        preconditions = owned_tuple("preconditions", self.preconditions)
+        required_capabilities = owned_tuple(
+            "required_capabilities",
+            self.required_capabilities,
+        )
+        object.__setattr__(self, "preconditions", preconditions)
+        object.__setattr__(self, "required_capabilities", required_capabilities)
         if self.deadline_at is not None:
             require_aware_datetime("deadline_at", self.deadline_at)
             if self.deadline_at <= self.issued_at:
                 raise ValueError("deadline_at must be later than issued_at")
-        precondition_ids = [item.precondition_id for item in self.preconditions]
+        precondition_ids = [item.precondition_id for item in preconditions]
         if len(set(precondition_ids)) != len(precondition_ids):
             raise ValueError("preconditions must not contain duplicate precondition_id values")
 

@@ -3,14 +3,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
-from types import MappingProxyType
 from typing import cast
 
 from .common import (
     JsonInput,
     JsonValue,
-    freeze_json,
+    freeze_json_mapping,
     jsonable,
+    owned_tuple,
     require_non_empty,
     require_non_negative,
 )
@@ -59,15 +59,16 @@ class CapabilityDescriptor:
         require_non_empty("capability_id", self.capability_id)
         require_non_empty("capability_type", self.capability_type)
         require_non_negative("revision", self.revision)
-        if len(set(self.operations)) != len(self.operations):
+        operations = owned_tuple("operations", self.operations)
+        object.__setattr__(self, "operations", operations)
+        if len(set(operations)) != len(operations):
             raise ValueError("operations must not contain duplicates")
-        for operation in self.operations:
+        for operation in operations:
             require_non_empty("operation", operation)
-        frozen = {key: freeze_json(value) for key, value in self.attributes.items()}
         object.__setattr__(
             self,
             "attributes",
-            cast(Mapping[str, JsonValue], MappingProxyType(frozen)),
+            freeze_json_mapping("attributes", self.attributes),
         )
 
     def supports(self, requirement: CapabilityRequirement) -> bool:

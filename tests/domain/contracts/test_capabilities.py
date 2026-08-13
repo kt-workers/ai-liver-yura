@@ -1,4 +1,5 @@
 import json
+from typing import cast
 
 import pytest
 
@@ -6,6 +7,7 @@ from app.domain.contracts import (
     CapabilityAvailability,
     CapabilityDescriptor,
     CapabilityRequirement,
+    JsonInput,
 )
 
 
@@ -55,4 +57,32 @@ def test_capability_descriptor_rejects_duplicate_operations() -> None:
             capability_type="test",
             operations=("run", "run"),
             availability=CapabilityAvailability.AVAILABLE,
+        )
+
+
+def test_capability_descriptor_owns_operations_snapshot() -> None:
+    operations = ["plan"]
+
+    descriptor = CapabilityDescriptor(
+        capability_id="mutable-operations",
+        capability_type="test",
+        operations=cast(tuple[str, ...], operations),
+        availability=CapabilityAvailability.AVAILABLE,
+    )
+    operations.append("mutated")
+
+    assert descriptor.operations == ("plan",)
+    assert descriptor.to_dict()["operations"] == ["plan"]
+
+
+def test_capability_descriptor_rejects_non_string_attribute_key() -> None:
+    attributes = cast(dict[str, JsonInput], {1: True})
+
+    with pytest.raises(TypeError, match="JSON object keys must be strings"):
+        CapabilityDescriptor(
+            capability_id="invalid-attributes",
+            capability_type="test",
+            operations=("run",),
+            availability=CapabilityAvailability.AVAILABLE,
+            attributes=attributes,
         )

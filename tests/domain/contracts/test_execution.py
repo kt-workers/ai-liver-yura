@@ -9,6 +9,7 @@ from app.domain.contracts import (
     AsyncWorkResult,
     ExecutionResult,
     ExecutionStatus,
+    JsonInput,
     RevisionVector,
     validate_execution_transition,
 )
@@ -132,6 +133,26 @@ def test_execution_result_copies_effect_refs_into_immutable_snapshot() -> None:
 
     assert applied.effect_refs == ("effect:1",)
     assert applied.to_dict()["effect_refs"] == ["effect:1"]
+
+
+def test_execution_result_rejects_non_string_details_key() -> None:
+    requested = ExecutionResult.requested(
+        execution_id="exec-invalid-details",
+        command_id="command-effect",
+        occurred_at=NOW,
+        revisions=REVISIONS,
+    )
+    accepted = requested.transition_to(
+        ExecutionStatus.ACCEPTED, occurred_at=NOW + timedelta(milliseconds=1)
+    )
+    details = cast(dict[str, JsonInput], {1: "invalid"})
+
+    with pytest.raises(TypeError, match="JSON object keys must be strings"):
+        accepted.transition_to(
+            ExecutionStatus.STARTED,
+            occurred_at=NOW + timedelta(milliseconds=2),
+            details=details,
+        )
 
 
 @pytest.mark.parametrize(

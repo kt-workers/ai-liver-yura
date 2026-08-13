@@ -6,11 +6,13 @@ from datetime import datetime
 from enum import Enum
 from math import isfinite
 from types import MappingProxyType
-from typing import TypeAlias, cast
+from typing import TypeAlias, TypeVar, cast
 
 JsonScalar: TypeAlias = None | bool | int | float | str
 JsonValue: TypeAlias = JsonScalar | tuple["JsonValue", ...] | Mapping[str, "JsonValue"]
 JsonInput: TypeAlias = JsonScalar | Sequence["JsonInput"] | Mapping[str, "JsonInput"]
+
+_T = TypeVar("_T")
 
 
 def require_non_empty(name: str, value: str) -> None:
@@ -26,6 +28,15 @@ def require_non_negative(name: str, value: int) -> None:
 def require_aware_datetime(name: str, value: datetime) -> None:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{name} must be timezone-aware")
+
+
+def owned_tuple(name: str, value: Sequence[_T]) -> tuple[_T, ...]:
+    """Take an owned immutable copy of a tuple-valued contract field."""
+    if isinstance(value, (str, bytes, bytearray)):
+        raise TypeError(f"{name} must be a non-string sequence")
+    if not isinstance(value, Sequence):
+        raise TypeError(f"{name} must be a sequence")
+    return tuple(value)
 
 
 def freeze_json(value: JsonInput) -> JsonValue:
@@ -46,6 +57,16 @@ def freeze_json(value: JsonInput) -> JsonValue:
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return tuple(freeze_json(item) for item in value)
     raise TypeError(f"unsupported JSON value type: {type(value).__name__}")
+
+
+def freeze_json_mapping(
+    name: str,
+    value: Mapping[str, JsonInput],
+) -> Mapping[str, JsonValue]:
+    """Freeze a mapping while preserving the mapping contract at runtime."""
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{name} must be a mapping")
+    return cast(Mapping[str, JsonValue], freeze_json(value))
 
 
 def jsonable(value: JsonValue) -> object:

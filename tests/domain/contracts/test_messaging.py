@@ -44,6 +44,21 @@ def test_event_envelope_preserves_trace_and_serializable_payload() -> None:
     json.dumps(serialized, ensure_ascii=False)
 
 
+def test_event_envelope_rejects_non_string_payload_key() -> None:
+    payload = cast(dict[str, JsonInput], {1: "invalid"})
+
+    with pytest.raises(TypeError, match="JSON object keys must be strings"):
+        EventEnvelope(
+            event_id="event-invalid-payload",
+            event_type="test",
+            source="test",
+            occurred_at=NOW,
+            trace_id="trace-invalid-payload",
+            revisions=REVISIONS,
+            payload=payload,
+        )
+
+
 def test_event_envelope_rejects_naive_timestamp() -> None:
     with pytest.raises(ValueError, match="timezone-aware"):
         EventEnvelope(
@@ -81,6 +96,25 @@ def test_executive_decision_transports_intent_refs_without_realizer_payload() ->
     json.dumps(decision.to_dict())
 
 
+def test_executive_decision_owns_sequence_snapshots() -> None:
+    source_event_ids = ["event-1"]
+    intent_refs = [IntentRef("speech-1", IntentKind.SPEECH)]
+
+    decision = ExecutiveDecision(
+        decision_id="decision-owned",
+        created_at=NOW,
+        authority=AUTHORITY,
+        source_event_ids=cast(tuple[str, ...], source_event_ids),
+        intent_refs=cast(tuple[IntentRef, ...], intent_refs),
+        revisions=REVISIONS,
+    )
+    source_event_ids.append("event-2")
+    intent_refs.append(IntentRef("body-1", IntentKind.BODY))
+
+    assert decision.source_event_ids == ("event-1",)
+    assert [item.intent_id for item in decision.intent_refs] == ["speech-1"]
+
+
 def test_system_command_carries_preconditions_capabilities_and_deadline() -> None:
     command = SystemCommand(
         command_id="command-1",
@@ -108,6 +142,44 @@ def test_system_command_carries_preconditions_capabilities_and_deadline() -> Non
     requirements = cast(list[dict[str, object]], serialized["required_capabilities"])
     assert requirements[0]["capability_type"] == "body.motion"
     json.dumps(serialized)
+
+
+def test_system_command_owns_sequence_snapshots() -> None:
+    preconditions = [
+        PreconditionRef(
+            precondition_id="pc-1",
+            predicate="is_available",
+            subject_ref="capability:body",
+        )
+    ]
+    requirements = [CapabilityRequirement(capability_type="body.motion")]
+
+    command = SystemCommand(
+        command_id="command-owned",
+        decision_id="decision-owned",
+        intent_ref=IntentRef("body-owned", IntentKind.BODY),
+        authority=AUTHORITY,
+        issued_at=NOW,
+        revisions=REVISIONS,
+        preconditions=cast(tuple[PreconditionRef, ...], preconditions),
+        required_capabilities=cast(
+            tuple[CapabilityRequirement, ...],
+            requirements,
+        ),
+    )
+    preconditions.append(
+        PreconditionRef(
+            precondition_id="pc-2",
+            predicate="is_available",
+            subject_ref="capability:speech",
+        )
+    )
+    requirements.append(CapabilityRequirement(capability_type="speech.output"))
+
+    assert [item.precondition_id for item in command.preconditions] == ["pc-1"]
+    assert [item.capability_type for item in command.required_capabilities] == [
+        "body.motion"
+    ]
 
 
 def test_system_command_rejects_expired_or_equal_deadline() -> None:
