@@ -18,6 +18,7 @@ from .common import (
     owned_tuple,
     require_aware_datetime,
     require_non_empty,
+    utc_instant,
 )
 
 
@@ -113,7 +114,7 @@ class SystemCommand:
     def __post_init__(self) -> None:
         require_non_empty("command_id", self.command_id)
         require_non_empty("decision_id", self.decision_id)
-        require_aware_datetime("issued_at", self.issued_at)
+        issued_at_instant = utc_instant("issued_at", self.issued_at)
         preconditions = owned_tuple("preconditions", self.preconditions)
         required_capabilities = owned_tuple(
             "required_capabilities",
@@ -122,8 +123,8 @@ class SystemCommand:
         object.__setattr__(self, "preconditions", preconditions)
         object.__setattr__(self, "required_capabilities", required_capabilities)
         if self.deadline_at is not None:
-            require_aware_datetime("deadline_at", self.deadline_at)
-            if self.deadline_at <= self.issued_at:
+            deadline_at_instant = utc_instant("deadline_at", self.deadline_at)
+            if deadline_at_instant <= issued_at_instant:
                 raise ValueError("deadline_at must be later than issued_at")
         precondition_ids = [item.precondition_id for item in preconditions]
         if len(set(precondition_ids)) != len(precondition_ids):

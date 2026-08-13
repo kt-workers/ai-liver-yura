@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from math import isfinite
 from types import MappingProxyType
@@ -28,6 +28,12 @@ def require_non_negative(name: str, value: int) -> None:
 def require_aware_datetime(name: str, value: datetime) -> None:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{name} must be timezone-aware")
+
+
+def utc_instant(name: str, value: datetime) -> datetime:
+    """Return a timezone-aware timestamp normalized for absolute-instant ordering."""
+    require_aware_datetime(name, value)
+    return value.astimezone(timezone.utc)
 
 
 def owned_tuple(name: str, value: Sequence[_T]) -> tuple[_T, ...]:

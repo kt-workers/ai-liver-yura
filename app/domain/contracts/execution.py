@@ -16,6 +16,7 @@ from .common import (
     owned_tuple,
     require_aware_datetime,
     require_non_empty,
+    utc_instant,
 )
 
 
@@ -200,8 +201,8 @@ class ExecutionResult:
         reason_code: str | None = None,
     ) -> ExecutionResult:
         validate_execution_transition(self.status, status)
-        require_aware_datetime("occurred_at", occurred_at)
-        if occurred_at < self.occurred_at:
+        occurred_at_instant = utc_instant("occurred_at", occurred_at)
+        if occurred_at_instant < utc_instant("previous occurred_at", self.occurred_at):
             raise ValueError("occurred_at must not move backwards across execution transitions")
 
         next_effect_refs = self.effect_refs
@@ -265,12 +266,12 @@ class AsyncWorkResult:
 
     def __post_init__(self) -> None:
         require_non_empty("request_id", self.request_id)
-        require_aware_datetime("completed_at", self.completed_at)
+        completed_at_instant = utc_instant("completed_at", self.completed_at)
         if self.status is AsyncResultStatus.SUCCEEDED and self.started_at is None:
             raise ValueError("succeeded async work requires started_at")
         if self.started_at is not None:
-            require_aware_datetime("started_at", self.started_at)
-            if self.started_at > self.completed_at:
+            started_at_instant = utc_instant("started_at", self.started_at)
+            if started_at_instant > completed_at_instant:
                 raise ValueError("started_at must not be later than completed_at")
         if self.reason_code is not None:
             require_non_empty("reason_code", self.reason_code)
