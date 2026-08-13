@@ -110,6 +110,13 @@ _ALLOWED_TRANSITIONS: Mapping[ExecutionStatus, frozenset[ExecutionStatus]] = {
     ),
 }
 
+_EFFECT_INTRODUCTION_STATUSES = frozenset(
+    {
+        ExecutionStatus.OBSERVABLE,
+        ExecutionStatus.APPLIED,
+        ExecutionStatus.COMPLETED,
+    }
+)
 _EXECUTION_TRANSITION_PROOF = object()
 
 
@@ -119,6 +126,15 @@ def validate_execution_transition(
 ) -> None:
     if target not in _ALLOWED_TRANSITIONS.get(current, frozenset()):
         raise ValueError(f"invalid execution transition: {current.value} -> {target.value}")
+
+
+def _normalize_effect_refs(effect_refs: tuple[str, ...]) -> tuple[str, ...]:
+    refs = owned_tuple("effect_refs", effect_refs)
+    if len(set(refs)) != len(refs):
+        raise ValueError("effect_refs must not contain duplicates")
+    for effect_ref in refs:
+        require_non_empty("effect_ref", effect_ref)
+    return refs
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,12 +162,10 @@ class ExecutionResult:
             )
         if self.reason_code is not None:
             require_non_empty("reason_code", self.reason_code)
-        effect_refs = owned_tuple("effect_refs", self.effect_refs)
+        effect_refs = _normalize_effect_refs(self.effect_refs)
+        if self.status is ExecutionStatus.REQUESTED and effect_refs:
+            raise ValueError("requested ExecutionResult must not contain effect_refs")
         object.__setattr__(self, "effect_refs", effect_refs)
-        if len(set(effect_refs)) != len(effect_refs):
-            raise ValueError("effect_refs must not contain duplicates")
-        for effect_ref in effect_refs:
-            require_non_empty("effect_ref", effect_ref)
         object.__setattr__(
             self,
             "details",
@@ -189,6 +203,17 @@ class ExecutionResult:
         require_aware_datetime("occurred_at", occurred_at)
         if occurred_at < self.occurred_at:
             raise ValueError("occurred_at must not move backwards across execution transitions")
+
+        next_effect_refs = self.effect_refs
+        if effect_refs is not None:
+            supplied_refs = _normalize_effect_refs(effect_refs)
+            new_refs = tuple(ref for ref in supplied_refs if ref not in self.effect_refs)
+            if new_refs and status not in _EFFECT_INTRODUCTION_STATUSES:
+                raise ValueError(
+                    f"new effect_refs cannot be introduced at execution status {status.value}"
+                )
+            next_effect_refs = self.effect_refs + new_refs
+
         return ExecutionResult(
             execution_id=self.execution_id,
             command_id=self.command_id,
@@ -196,7 +221,7 @@ class ExecutionResult:
             occurred_at=occurred_at,
             revisions=revisions or self.revisions,
             details=self.details if details is None else details,
-            effect_refs=self.effect_refs if effect_refs is None else effect_refs,
+            effect_refs=next_effect_refs,
             reason_code=reason_code,
             _transition_proof=_EXECUTION_TRANSITION_PROOF,
         )

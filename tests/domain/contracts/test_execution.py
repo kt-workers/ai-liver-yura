@@ -135,6 +135,137 @@ def test_execution_result_copies_effect_refs_into_immutable_snapshot() -> None:
     assert applied.to_dict()["effect_refs"] == ["effect:1"]
 
 
+def test_requested_execution_result_rejects_forged_effect_refs() -> None:
+    with pytest.raises(ValueError, match="must not contain effect_refs"):
+        ExecutionResult(
+            execution_id="exec-forged-request",
+            command_id="command-effect",
+            status=ExecutionStatus.REQUESTED,
+            occurred_at=NOW,
+            revisions=REVISIONS,
+            effect_refs=("effect:forged",),
+        )
+
+
+def test_pre_effect_transition_cannot_introduce_effect_ref() -> None:
+    requested = ExecutionResult.requested(
+        execution_id="exec-pre-effect",
+        command_id="command-effect",
+        occurred_at=NOW,
+        revisions=REVISIONS,
+    )
+
+    with pytest.raises(ValueError, match="cannot be introduced"):
+        requested.transition_to(
+            ExecutionStatus.ACCEPTED,
+            occurred_at=NOW + timedelta(milliseconds=1),
+            effect_refs=("effect:too-early",),
+        )
+
+
+def test_effect_refs_cannot_be_erased_by_explicit_empty_successor() -> None:
+    requested = ExecutionResult.requested(
+        execution_id="exec-preserve-empty",
+        command_id="command-effect",
+        occurred_at=NOW,
+        revisions=REVISIONS,
+    )
+    accepted = requested.transition_to(
+        ExecutionStatus.ACCEPTED, occurred_at=NOW + timedelta(milliseconds=1)
+    )
+    started = accepted.transition_to(
+        ExecutionStatus.STARTED, occurred_at=NOW + timedelta(milliseconds=2)
+    )
+    applied = started.transition_to(
+        ExecutionStatus.APPLIED,
+        occurred_at=NOW + timedelta(milliseconds=3),
+        effect_refs=("effect:1",),
+    )
+    completed = applied.transition_to(
+        ExecutionStatus.COMPLETED,
+        occurred_at=NOW + timedelta(milliseconds=4),
+        effect_refs=(),
+    )
+
+    assert completed.effect_refs == ("effect:1",)
+
+
+def test_effect_refs_are_additive_on_later_effect_fact() -> None:
+    requested = ExecutionResult.requested(
+        execution_id="exec-additive-effects",
+        command_id="command-effect",
+        occurred_at=NOW,
+        revisions=REVISIONS,
+    )
+    accepted = requested.transition_to(
+        ExecutionStatus.ACCEPTED, occurred_at=NOW + timedelta(milliseconds=1)
+    )
+    started = accepted.transition_to(
+        ExecutionStatus.STARTED, occurred_at=NOW + timedelta(milliseconds=2)
+    )
+    applied = started.transition_to(
+        ExecutionStatus.APPLIED,
+        occurred_at=NOW + timedelta(milliseconds=3),
+        effect_refs=("effect:1",),
+    )
+    completed = applied.transition_to(
+        ExecutionStatus.COMPLETED,
+        occurred_at=NOW + timedelta(milliseconds=4),
+        effect_refs=("effect:2",),
+    )
+
+    assert completed.effect_refs == ("effect:1", "effect:2")
+
+
+def test_terminal_failure_cannot_introduce_new_effect_ref() -> None:
+    requested = ExecutionResult.requested(
+        execution_id="exec-terminal-new-effect",
+        command_id="command-effect",
+        occurred_at=NOW,
+        revisions=REVISIONS,
+    )
+    accepted = requested.transition_to(
+        ExecutionStatus.ACCEPTED, occurred_at=NOW + timedelta(milliseconds=1)
+    )
+    started = accepted.transition_to(
+        ExecutionStatus.STARTED, occurred_at=NOW + timedelta(milliseconds=2)
+    )
+    applied = started.transition_to(
+        ExecutionStatus.APPLIED,
+        occurred_at=NOW + timedelta(milliseconds=3),
+        effect_refs=("effect:1",),
+    )
+
+    with pytest.raises(ValueError, match="cannot be introduced"):
+        applied.transition_to(
+            ExecutionStatus.FAILED,
+            occurred_at=NOW + timedelta(milliseconds=4),
+            effect_refs=("effect:2",),
+        )
+
+
+def test_started_can_complete_with_direct_effect_fact() -> None:
+    requested = ExecutionResult.requested(
+        execution_id="exec-direct-complete-effect",
+        command_id="command-effect",
+        occurred_at=NOW,
+        revisions=REVISIONS,
+    )
+    accepted = requested.transition_to(
+        ExecutionStatus.ACCEPTED, occurred_at=NOW + timedelta(milliseconds=1)
+    )
+    started = accepted.transition_to(
+        ExecutionStatus.STARTED, occurred_at=NOW + timedelta(milliseconds=2)
+    )
+    completed = started.transition_to(
+        ExecutionStatus.COMPLETED,
+        occurred_at=NOW + timedelta(milliseconds=3),
+        effect_refs=("effect:direct-complete",),
+    )
+
+    assert completed.effect_refs == ("effect:direct-complete",)
+
+
 def test_execution_result_rejects_non_string_details_key() -> None:
     requested = ExecutionResult.requested(
         execution_id="exec-invalid-details",
