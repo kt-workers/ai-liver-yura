@@ -57,6 +57,8 @@ attention_revision: optional
 
 A missing Goal/Attention revision means the work does not claim consistency against that owner. It does not mean revision zero.
 
+Every present revision value is a non-negative **integer revision number** at the runtime boundary. Python `bool` is intentionally excluded even though `bool` subclasses `int`; `True` must not silently become revision `1`, and `False` must not become revision `0`. Floating-point, string, or other integer-like/untyped values are also rejected rather than coerced. This keeps serialized revisions numeric and prevents equality/order checks from conflating boolean state with a revision generation.
+
 Revision comparison is a consistency mechanism, not semantic authority.
 
 ## 5. AuthorityRef and PreconditionRef
@@ -129,6 +131,8 @@ A command is a request/intent to execute. It is **not** evidence that execution 
 - availability: available / degraded / unavailable / unknown
 - monotonic/non-negative descriptor revision
 - immutable JSON-like attributes
+
+Descriptor `revision` follows the same strict runtime integer rule as `RevisionVector`: it must be a non-negative value whose concrete Python type is `int`; booleans, floats, strings, and implicit coercions are rejected.
 
 `CapabilityRequirement` expresses what a command needs without naming a provider. A degraded capability satisfies a requirement only when the requirement explicitly allows degraded operation.
 
@@ -231,6 +235,8 @@ Collection-valued fact fields that are canonically immutable must take an owned 
 
 Caller-owned lists or other mutable sequences passed through an untyped/adapter boundary must therefore be normalized to tuples before validation and storage.
 
+Revision/count-like fields that represent generations are not generic JSON numbers: they use strict integer validation at construction. In particular, `bool` must never pass revision validation merely because Python considers it an `int` subclass.
+
 Timestamps are required to be timezone-aware. Whenever two aware timestamps are ordered against each other, the ordering is defined by their **absolute instant**, not by local wall-clock fields. Python's direct comparison of two datetimes sharing the same `tzinfo` object can ignore UTC-offset/fold differences during a daylight-saving fall-back, so Foundation ordering checks must normalize both operands to UTC before comparing. This applies to at least:
 
 - `SystemCommand.issued_at` vs `deadline_at`;
@@ -262,7 +268,7 @@ Issue #321 Unit Gate requires:
 - JSON serialization of all public envelopes/snapshots
 - timezone-aware event/command/result timestamps
 - timestamp ordering uses UTC absolute instants, including same-zone DST fall-back fold cases
-- non-negative revision validation
+- revision fields require concrete non-negative integers and reject `bool`, float, string, and negative values
 - immutable nested JSON-like payloads
 - non-string JSON object keys are rejected at both top-level and nested JSON-like mappings
 - NaN/+Infinity/-Infinity are rejected from JSON-like payloads
