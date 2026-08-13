@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Protocol
 
 from .context_builder import ContextBuildError
 from .gemini_backend import GeminiReviewerBackend
@@ -17,6 +18,22 @@ EXIT_BLOCKED = 3
 EXIT_INTERNAL_ERROR = 4
 STATUS_CONTEXT = "yura/independent-ai-review"
 SUPPORTED_BASE_REF = "rebuild/v2-foundation"
+
+
+class PullReader(Protocol):
+    def get_pull(self, pr_number: int) -> dict[str, object]: ...
+
+
+class StatusWriter(Protocol):
+    def create_commit_status(
+        self,
+        sha: str,
+        *,
+        state: str,
+        context: str,
+        description: str,
+        target_url: str | None = None,
+    ) -> None: ...
 
 
 def _write_summary(text: str) -> None:
@@ -55,8 +72,15 @@ def _workflow_run_url(repository: str) -> str | None:
     return f"{server}/{repository}/actions/runs/{run_id}"
 
 
+def _current_head_matches(client: PullReader, pr_number: int, expected_head_sha: str) -> bool:
+    pull = client.get_pull(pr_number)
+    head = pull.get("head")
+    current_head = head.get("sha") if isinstance(head, dict) else None
+    return current_head == expected_head_sha
+
+
 def _set_status(
-    client: GitHubClient,
+    client: StatusWriter,
     head_sha: str,
     *,
     state: str,
@@ -137,6 +161,17 @@ def main() -> int:
 
     client = GitHubClient(repository, token, os.getenv("GITHUB_API_URL", "https://api.github.com"))
     run_url = _workflow_run_url(repository)
+    try:
+        if not _current_head_matches(client, pr_number, head_sha):
+            _write_summary(
+                "Independent AI Review: event head is stale; a newer PR head exists. "
+                "This run will not review or publish a current PASS."
+            )
+            return EXIT_BLOCKED
+    except GitHubApiError as exc:
+        _write_summary(f"Independent AI Review BLOCKED during head preflight: {exc}")
+        return EXIT_BLOCKED
+
     if not _set_status(
         client,
         head_sha,
