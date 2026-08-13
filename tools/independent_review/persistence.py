@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Protocol
+import unicodedata
 
 from .models import ReviewDecision
 
@@ -11,7 +12,10 @@ _MARKDOWN_SPECIALS = "\\`*_{}[]()#+.!|>"
 def _safe_review_text(value: str) -> str:
     normalized = value.replace("\r\n", "\n").replace("\r", "\n")
     normalized = "".join(
-        char if char in {"\n", "\t"} or ord(char) >= 32 else "�" for char in normalized
+        char
+        if char in {"\n", "\t"} or not unicodedata.category(char).startswith("C")
+        else "�"
+        for char in normalized
     )
     normalized = normalized.replace("@", "@\u200b")
     normalized = normalized.replace("<", "&lt;").replace(">", "&gt;")
