@@ -1,5 +1,6 @@
 import json
 from types import MappingProxyType
+from typing import cast
 
 import pytest
 
@@ -61,6 +62,18 @@ def test_precondition_rejects_non_finite_json_numbers(non_finite: float) -> None
             predicate="value_matches",
             subject_ref="value:1",
             expected={"nested": [non_finite]},
+        )
+
+
+def test_precondition_rejects_non_string_json_object_keys() -> None:
+    invalid = cast(JsonInput, {"nested": {1: "numeric-key"}})
+
+    with pytest.raises(TypeError, match="JSON object keys must be strings"):
+        PreconditionRef(
+            precondition_id="pc-non-string-key",
+            predicate="value_matches",
+            subject_ref="value:1",
+            expected=invalid,
         )
 
 

@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timedelta, timezone
+from typing import cast
 
 import pytest
 
@@ -105,6 +106,32 @@ def test_execution_result_preserves_actual_fact_when_later_transition_fails() ->
     assert failed.status is ExecutionStatus.FAILED
     assert failed.to_dict()["details"] == {"external_effect_applied": True}
     assert failed.effect_refs == ("effect:1",)
+
+
+def test_execution_result_copies_effect_refs_into_immutable_snapshot() -> None:
+    requested = ExecutionResult.requested(
+        execution_id="exec-mutable-effect-refs",
+        command_id="command-effect",
+        occurred_at=NOW,
+        revisions=REVISIONS,
+    )
+    accepted = requested.transition_to(
+        ExecutionStatus.ACCEPTED, occurred_at=NOW + timedelta(milliseconds=1)
+    )
+    started = accepted.transition_to(
+        ExecutionStatus.STARTED, occurred_at=NOW + timedelta(milliseconds=2)
+    )
+    mutable_refs = ["effect:1"]
+    applied = started.transition_to(
+        ExecutionStatus.APPLIED,
+        occurred_at=NOW + timedelta(milliseconds=3),
+        effect_refs=cast(tuple[str, ...], mutable_refs),
+    )
+
+    mutable_refs.append("effect:2")
+
+    assert applied.effect_refs == ("effect:1",)
+    assert applied.to_dict()["effect_refs"] == ["effect:1"]
 
 
 @pytest.mark.parametrize(

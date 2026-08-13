@@ -37,7 +37,11 @@ def freeze_json(value: JsonInput) -> JsonValue:
     if value is None or isinstance(value, (bool, int, str)):
         return value
     if isinstance(value, Mapping):
-        frozen = {key: freeze_json(item) for key, item in value.items()}
+        frozen: dict[str, JsonValue] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise TypeError("JSON object keys must be strings")
+            frozen[key] = freeze_json(item)
         return cast(Mapping[str, JsonValue], MappingProxyType(frozen))
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         return tuple(freeze_json(item) for item in value)
