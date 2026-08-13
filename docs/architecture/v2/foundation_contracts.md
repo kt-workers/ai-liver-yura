@@ -207,11 +207,20 @@ Contracts expose `to_dict()` using JSON-compatible values.
 
 Nested payload/attribute/precondition/result data is recursively frozen at construction time so caller mutation after construction cannot rewrite a recorded contract snapshot.
 
-JSON object keys must be strings. A runtime/untyped mapping containing a non-string key is rejected during recursive freezing instead of being accepted into a snapshot that cannot be represented faithfully as a JSON object.
+JSON object keys must be strings. A runtime/untyped mapping containing a non-string key is rejected during recursive freezing instead of being accepted into a snapshot that cannot be represented faithfully as a JSON object. The complete top-level mapping supplied to `EventEnvelope.payload`, `CapabilityDescriptor.attributes`, and `ExecutionResult.details` must pass through the same recursive key/value validation; validating only their nested values is insufficient.
 
 JSON-compatible numeric values must be finite. IEEE-754 non-finite values (`NaN`, positive infinity, negative infinity) are rejected during recursive freezing rather than being allowed into an apparently valid Domain snapshot that strict JSON serialization cannot transport.
 
-Collection-valued fact fields that are canonically immutable, including `ExecutionResult.effect_refs`, must take an owned immutable copy during construction. Static type annotations alone are not treated as a runtime immutability boundary.
+Collection-valued fact fields that are canonically immutable must take an owned immutable copy during construction. Static type annotations alone are not treated as a runtime immutability boundary. For the current Foundation contracts this includes at minimum:
+
+- `CapabilityDescriptor.operations`
+- `ExecutiveDecision.source_event_ids`
+- `ExecutiveDecision.intent_refs`
+- `SystemCommand.preconditions`
+- `SystemCommand.required_capabilities`
+- `ExecutionResult.effect_refs`
+
+Caller-owned lists or other mutable sequences passed through an untyped/adapter boundary must therefore be normalized to tuples before validation and storage.
 
 Timestamps are required to be timezone-aware.
 
@@ -239,12 +248,12 @@ Issue #321 Unit Gate requires:
 - timezone-aware event/command/result timestamps
 - non-negative revision validation
 - immutable nested JSON-like payloads
-- non-string JSON object keys are rejected from JSON-like payloads
+- non-string JSON object keys are rejected at both top-level and nested JSON-like mappings
 - NaN/+Infinity/-Infinity are rejected from JSON-like payloads
 - invalid execution lifecycle rejection
 - direct non-`requested` `ExecutionResult` construction is rejected
 - valid `ExecutionResult.transition_to()` paths continue to construct immutable successor snapshots
-- `ExecutionResult.effect_refs` owns an immutable tuple copy and cannot be mutated through a caller alias
+- all canonical tuple-valued Foundation fact fields own immutable tuple copies
 - stale/superseded async results are non-committable
 - successful async work requires `started_at`
 - non-success async work may omit `started_at` when it terminated before start
