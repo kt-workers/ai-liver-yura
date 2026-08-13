@@ -173,6 +173,65 @@ def test_exchange_validator_rejects_transport_identity_mismatch(mismatch: str) -
     assert failure_value.code is LLMFailureCode.POLICY_VIOLATION
 
 
+@pytest.mark.parametrize("field", ["started_at", "completed_at"])
+def test_exchange_validator_rejects_result_timing_before_request_creation(field: str) -> None:
+    result = success()
+    before_request = request().created_at - timedelta(microseconds=1)
+    started_at = before_request if field in ("started_at", "completed_at") else request().created_at
+    completed_at = before_request if field == "completed_at" else result.completed_at
+    invalid = LLMRoleResult(
+        result.request_id,
+        result.role_id,
+        result.status,
+        result.revisions,
+        completed_at,
+        result.trace_id,
+        result.model_class,
+        result.attempt_count,
+        result.token_usage,
+        result.output,
+        started_at=started_at,
+    )
+    failure_value = validate_role_exchange(descriptor(), request(), invalid)
+    assert failure_value is not None
+    assert failure_value.code is LLMFailureCode.POLICY_VIOLATION
+
+
+def test_exchange_validator_orders_request_result_timing_by_absolute_instant() -> None:
+    zone = ZoneInfo("America/New_York")
+    created = datetime(2026, 11, 1, 1, 30, tzinfo=zone, fold=0)
+    later_same_wall_time = datetime(2026, 11, 1, 1, 30, tzinfo=zone, fold=1)
+    value = request()
+    folded_request = LLMRoleRequest(
+        value.request_id,
+        value.role_id,
+        value.input,
+        value.source_event_ids,
+        value.revisions,
+        value.preconditions,
+        value.priority,
+        value.interruptibility,
+        value.stale_policy,
+        value.execution_policy,
+        created,
+        value.trace_id,
+    )
+    folded_result = LLMRoleResult(
+        value.request_id,
+        value.role_id,
+        LLMRoleStatus.SUCCEEDED,
+        value.revisions,
+        later_same_wall_time,
+        value.trace_id,
+        LLMModelClass.BALANCED,
+        1,
+        LLMTokenUsage(1, 1),
+        StructuredPayload("structured-input-meaning.v1", {"meaning": "greeting"}),
+        started_at=later_same_wall_time,
+    )
+    assert validate_role_exchange(descriptor(), folded_request, folded_result) is None
+
+
 def test_structured_payload_owns_strict_json_object() -> None:
     values = ["first"]
     payload = StructuredPayload(

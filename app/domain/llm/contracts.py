@@ -354,6 +354,14 @@ def validate_role_exchange(
             LLMFailureCode.POLICY_VIOLATION,
             "result trace or revisions do not match request",
         )
+    request_instant = utc_instant(request.created_at)
+    if utc_instant(result.completed_at) < request_instant or (
+        result.started_at is not None and utc_instant(result.started_at) < request_instant
+    ):
+        return LLMRoleFailure(
+            LLMFailureCode.POLICY_VIOLATION,
+            "result timing predates request creation",
+        )
     if (
         result.status is LLMRoleStatus.SUCCEEDED
         and result.output is not None
