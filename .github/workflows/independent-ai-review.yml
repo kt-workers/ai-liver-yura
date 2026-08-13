@@ -1,0 +1,67 @@
+name: Independent AI Review
+
+on:
+  pull_request_target:
+    branches:
+      - rebuild/v2-foundation
+    types:
+      - opened
+      - ready_for_review
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+  actions: read
+  statuses: write
+
+concurrency:
+  group: independent-ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  independent-ai-review:
+    name: Independent AI Review
+    if: >-
+      github.event.pull_request.draft == false &&
+      contains(github.event.pull_request.labels.*.name, 'v2')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout trusted reviewer runtime from PR base SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: reviewer-runtime
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.10'
+
+      - name: Verify trusted runtime exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f reviewer-runtime/tools/independent_review/main.py
+          test -f reviewer-runtime/tools/independent_review/requirements.txt
+
+      - name: Install reviewer-only dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check \
+            -r reviewer-runtime/tools/independent_review/requirements.txt
+
+      - name: Run independent AI review
+        working-directory: reviewer-runtime
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_REVIEW_MODEL: ${{ vars.GEMINI_REVIEW_MODEL || 'gemini-3.6-flash' }}
+        run: python -m tools.independent_review.main
