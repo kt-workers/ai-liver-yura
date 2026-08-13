@@ -11,101 +11,119 @@ Effective: 2026-08-13
 
 Issue #370で確定したIndependent AI Review ContractをGitHub Pull Request上で実行可能にする。
 
-MVPではGitHub ActionsをOrchestrator runtimeとし、最初のReviewer BackendとしてGemini APIを接続する。
-
-完成形は次とする。
+MVPではGitHub Actionsをtrusted trigger/control planeとし、Reviewer runtimeはV2 base branch上のprovider-neutral Python module、最初のReviewer BackendはGemini APIとする。
 
 ```text
-GitHub pull_request event
+Trusted default branch `main`
+  .github/workflows/independent-ai-review.yml
+        |
+        | pull_request_target
+        | secrets + minimal write token
+        v
+checkout PR BASE SHA only (never PR head/merge code)
         |
         v
-Independent AI Review Action
+V2 Reviewer Runtime at trusted base SHA
+  tools/independent_review/
         |
-        +--> Trusted Event / ReviewTarget Builder
-        |       - repository / PR number
-        |       - base/head ref + SHA
-        |       - configured reviewer identity
-        |
-        +--> GitHub Context Collector (REST, read only)
-        |       - PR metadata / diff / changed files
-        |       - linked Issue
-        |       - canonical docs
-        |       - gate evidence
-        |
-        +--> GeminiReviewerBackend
-        |       - PR content is untrusted DATA
-        |       - Pydantic / JSON Schema Structured Output
-        |       - ProviderReviewCandidate only
-        |
-        +--> Deterministic Review Validator
-        |       - refetch current head
-        |       - identity/session separation
-        |       - verdict/finding consistency
-        |       - stale SHA reject
-        |       - evidence provenance validation
-        |
-        +--> Trusted ReviewDecision
-        |
-        +--> PR Review COMMENT + Actions job result
-                PASS                -> exit 0
-                CHANGES_REQUESTED   -> exit non-zero
-                BLOCKED             -> exit non-zero
+        +--> GitHub Context Collector (REST; PR head is DATA only)
+        +--> GeminiReviewerBackend -> ProviderReviewCandidate
+        +--> Deterministic Validator -> trusted ReviewDecision
+        +--> PR Review COMMENT
+        +--> PR HEAD Commit Status `yura/independent-ai-review`
+              PASS              -> success
+              CHANGES_REQUESTED -> failure
+              BLOCKED/error     -> error
 ```
 
-Reviewer Backend自身はPRのapprove / merge / branch updateを行わない。
+Reviewer Backend自身はapprove / merge / branch updateを行わない。
 
-## 2. GitHub Actions Event Policy
+## 2. Trust / Trigger Architecture
 
-### 2.1 Trigger
+### 2.1 なぜ`pull_request`をsecret-bearing triggerにしないか
 
-MVPでは`pull_request`を利用する。
+GitHubの`pull_request` workflowはPR merge commit側のworkflow definitionを実行し得る。same-repository PRではActions secretを利用できるため、PR自身がreview workflowを書き換えた場合に`GEMINI_API_KEY`へ触れる経路を作り得る。
 
-対象activity:
+したがって、#370の「secret-bearing jobでuntrusted PR codeを実行しない」を守るため、secret-bearing triggerはdefault branch `main`に置く。
 
-- `opened`
-- `ready_for_review`
-- `synchronize`
-- `reopened`
+### 2.2 Trigger
 
-Draft PRはreviewを開始しない。`opened`時にdraftなら安全に終了し、`ready_for_review`で開始する。
+`main`のtrusted workflowで`pull_request_target`を使用する。
 
-V2対象は次の両方を満たすPRに限定する。
+対象:
 
-- base branch = `rebuild/v2-foundation`
-- PR labelに`v2`がある
+- base branch: `rebuild/v2-foundation`
+- activity: `opened`, `ready_for_review`, `synchronize`, `reopened`
 
-### 2.2 Fork policy
+Draft PRはreviewを開始しない。V2 PRは`v2` label必須。
 
-fork由来PRではGitHub Actions secretsが利用できず、`GITHUB_TOKEN`も制限されるため、Gemini APIを起動しない。
+### 2.3 Checkout invariant
 
-```text
-head repository != base repository
-→ reviewer secretを要求しない
-→ independent review jobはBLOCKED相当で終了
-→ unsafeなpull_request_target + PR head executionへ切り替えない
-```
+`pull_request_target` jobはPR head / PR merge refをcheckout・executeしない。
 
-V2の通常開発はsame-repository branchを正規経路とする。
-
-### 2.3 Secret-bearing jobのcheckout policy
-
-Reviewer jobはPR head / merge refをcheckoutして実行しない。
-
-実行するReviewer実装はtrusted base SHAからcheckoutする。
+Reviewer runtimeはPRのbase SHAだけをcheckoutする。
 
 ```yaml
-ref: ${{ github.event.pull_request.base.sha }}
+- uses: actions/checkout@v7
+  with:
+    ref: ${{ github.event.pull_request.base.sha }}
+    path: reviewer-runtime
+    persist-credentials: false
 ```
 
-PR headの内容はGitHub REST APIからdiff / file contentとして取得し、実行せずDATAとして扱う。
+実行:
 
-注意:
-- #371をmergeするまでbase branchにreviewer script/workflowが存在しないため、#371自身は新reviewer workflowのE2E対象にできない。
-- これはbootstrap制約であり、#371 merge後の通常PRへは適用しない。
+```text
+reviewer-runtime/tools/independent_review/*
+```
 
-## 3. GitHub Token Permissions
+PR headはGitHub REST APIからdiff/metadataとして取得し、untrusted DATAとしてGeminiへ渡すだけとする。
 
-MVP jobはleast privilegeとする。
+### 2.4 Fork policy
+
+`pull_request_target`はfork PRでもbase repositoryのtrusted workflowを実行できるが、本ProjectのV2正規開発lineageはsame-repository branchとする。
+
+fork PRをreviewする場合もPR head codeは一切実行しない。status書込が対象commitで成立しない等の環境差があれば安全側にBLOCKEDとする。
+
+## 3. Two-stage Bootstrap Lineage
+
+default branchとV2 trunkのtrust boundaryが異なるため、#371は**順序付き2段階lineage**とする。2本を並行activeにしない。
+
+### Phase A: V2 Reviewer Runtime
+
+Base: `rebuild/v2-foundation`
+
+成果物:
+
+- `docs/architecture/v2/review_orchestrator_implementation.md`
+- `tools/independent_review/**`
+- `tests/tools/independent_review/**`
+
+ここではsecret-bearing workflowを追加しない。
+
+Unit / Fake Adjacent / static review完了後にbootstrap例外としてmergeする。
+
+### Phase B: Trusted Trigger Control Plane
+
+Phase A merge後にのみ開始する。
+
+Base: `main`
+
+成果物:
+
+- `.github/workflows/independent-ai-review.yml`のみ
+
+workflowはV2 base SHAにあるPhase A runtimeを実行する。
+
+mainへ製品コード・V2 product implementationを持ち込まない。
+
+Phase B merge後、PR #368を`ready_for_review` eventで起動し最初のLive Reviewとする。
+
+この2段階は同一#371のstacked/ordered implementation lineageとしてResume Checkpointに記録する。
+
+## 4. GitHub Token Permissions
+
+Trusted workflowはleast privilegeとする。
 
 ```yaml
 permissions:
@@ -113,34 +131,45 @@ permissions:
   pull-requests: write
   issues: read
   actions: read
-  checks: read
+  statuses: write
 ```
 
-用途:
+- `contents: read`: base SHA reviewer runtime/canonical取得
+- `pull-requests: write`: PR Review COMMENT
+- `issues: read`: linked Work Issue取得
+- `actions: read`: SHA固定GateEvidence取得
+- `statuses: write`: PR head SHAへReview Gate statusを記録
 
-- `contents: read`: trusted base canonical / repository metadata取得
-- `pull-requests: write`: PR Review COMMENT投稿
-- `issues: read`: linked Issue取得
-- `actions: read` / `checks: read`: GateEvidence取得
+`contents: write`は付与しない。
 
-branch / contents writeは付与しない。
+## 5. PR Head Commit Status
 
-Custom Check RunをRESTで生成する設計にはしない。Actions job自体がGitHub Checkとして残るため、#373でこのjobをRequired Check化する。
+`pull_request_target`自体のActions job SHAはPR headではないため、Review GateはPR headへCommit Status APIで明示的に書く。
 
-## 4. GitHub Persistence Policy
+固定context:
 
-### 4.1 PR review
+`yura/independent-ai-review`
 
-MVPではReview APIの`COMMENT` eventを使用する。
+状態:
 
-理由:
+- review start: `pending`
+- PASS: `success`
+- CHANGES_REQUESTED: `failure`
+- BLOCKED / internal failure / stale: `error`
 
-- `APPROVE`をGitHub Actionsへ許可するrepository settingに依存しない
-- ReviewerのPASSとGitHub human approvalを混同しない
-- `REQUEST_CHANGES`権限/運用差をMerge Gate Authorityにしない
-- merge eligibilityはActions job conclusionで機械判定できる
+statusにはworkflow run URLを`target_url`として付与する。
 
-Review bodyにはmachine-readable markerを含める。
+#373でこのcommit status contextをRequired Status Checkへ昇格する。
+
+## 6. PR Review Persistence
+
+Review APIはMVPでは`COMMENT` eventのみ使用する。
+
+- GitHub ActionsによるAPPROVE許可設定に依存しない
+- Human approvalとAI PASSを混同しない
+- Merge Gate AuthorityはPR head status contextへ集約できる
+
+body marker:
 
 ```text
 <!-- yura-independent-ai-review:v1 -->
@@ -148,194 +177,115 @@ Decision: PASS | CHANGES_REQUESTED | BLOCKED
 Reviewed-Head-SHA: ...
 Reviewer-Agent: ...
 Reviewer-Session: ...
-Provider: gemini
+Provider: google-gemini
 Model: ...
 Cycle-Key: ...
-
-Findings...
 ```
 
-### 4.2 Job conclusion
+同一cycle markerの重複投稿を抑止する。
 
-- PASS: process exit code 0
-- CHANGES_REQUESTED: reviewを投稿後exit code 2
-- BLOCKED: reviewを投稿後exit code 3
-- infrastructure/internal error: exit code 4
-
-GitHub Actions上はいずれも0以外はfailureとなる。詳細decisionはreview body / audit JSONで区別する。
-
-## 5. Reviewer Identity
-
-MVP configured identity:
+## 7. Reviewer Identity
 
 ```text
 role = REVIEWER
 provider = google-gemini
 model = GEMINI_REVIEW_MODEL
 agent_id = yura-independent-reviewer-gemini
-session_id = <workflow run id>:<run attempt>:<PR head SHA>
+session_id = github-actions:<run id>:<attempt>:<PR head SHA>
 principal = github-actions[bot]
 credential_scope = REVIEW_WRITE
 ```
 
-Implementer identityはPR metadata / known implementation provenanceから構築する。
-
-MVPでは最低限:
+MVP Implementer identity:
 
 ```text
-agent_id = PR author / implementation metadataから導出
-session_id = PR head lineage metadataが取得できる場合に使用
+agent_id = github-pr-author:<login>
+session_id = implementation-lineage:<PR number>:<head SHA>
+credential_scope = IMPLEMENTATION_WRITE
 ```
 
-独立性を証明する情報が不足する場合、推測でPASSにせずBLOCKEDにする。
+これは実装lineage identityであり、#372のImplementer Worker導入後は明示agent/session metadataへ置換する。
 
-#372でImplementer Workerが導入された後は、Implementer identityを明示metadataとしてPRへ永続化する。
+Reviewer agent/sessionとlineage identityが衝突した場合はPASS禁止。
 
-## 6. Review Context Collection
+## 8. Review Context
 
-### 6.1 Trusted sources
-
-GitHub RESTから取得する。
+GitHub RESTから取得:
 
 - current PR metadata
-- target base/head SHA
+- base/head SHA
 - diff
-- changed file list
-- linked Issue
-- Issueが参照するcanonical design
-- current workflow/check evidence
+- linked Work Issue
+- Work Issueが指すcanonical design
+- target head SHAのGitHub Actions evidence
 
-PR本文に記載されたテスト結果は参考PR_DATAであり、GateEvidenceにはしない。
+PR本文の「tests passed」は`PR_DATA`であってGateEvidenceではない。
 
-### 6.2 Linked Issue resolution
+### Linked Work Issue
 
-MVPはPR bodyから次を抽出する。
+PR bodyの`Relates to #N` / `Closes|Fixes|Resolves #N`から候補を抽出し、一意な`v2` Work Issueを要求する。曖昧ならBLOCKED。
 
-- `Relates to #N`
-- `Closes #N` / `Fixes #N` / `Resolves #N`
+### Canonical
 
-候補IssueをGitHub APIから取得し、`v2` labelと責務を確認する。
+Issue本文`Canonical:` blockのrepository pathをbase SHAから取得する。
 
-Work Issueを一意に特定できない場合はBLOCKED。
+PR自身がcanonical候補を変更する場合、その変更はPR_DATAであり既存Authorityを上書きしない。
 
-### 6.3 Canonical resolution
+### Context budget
 
-Issue本文の`Canonical:` sectionからrepository pathを抽出する。
+budget超過を黙ってtruncateしてPASSしない。MVPは安全側にBLOCKEDとしてよい。chunked reviewは後続拡張。
 
-canonical pathはbase SHAから取得する。
+## 9. GateEvidence
 
-PR自身がcanonicalを変更している場合:
+MVPはtarget head SHAのGitHub Actions workflow runを取得し、completed resultのみcontextへ渡す。
 
-- base canonical = CANONICAL_REQUIREMENT
-- PRで変更されたcanonical = PR_DATA / proposed change
+別SHAのevidenceは採用しない。
 
-PR側の変更文書をReviewer policyのAuthorityとして使用しない。
+required gate set自体は#373で確定するため、#371では「取得・SHA binding」を実装し、空集合を許容する。
 
-### 6.4 Diff limits
+## 10. Gemini Backend
 
-巨大PRを無制限に一回のpromptへ入れない。
+### SDK
 
-MVP policy:
+CI専用: `google-genai>=2,<3`。
 
-- diff byte/token budgetを設定可能にする
-- budget超過時に内容を黙って切り捨ててPASSしない
-- chunk reviewまたはBLOCKEDへ遷移する
+製品`requirements.txt`へ追加せず、`tools/independent_review/requirements.txt`に隔離する。
 
-初期実装では安全側としてbudget超過をBLOCKEDにしてよい。chunked aggregationは後続拡張可能。
+### Model
 
-## 7. GateEvidence
+Default: `gemini-3.6-flash`
 
-MVPで収集するevidence:
+Repository variable `GEMINI_REVIEW_MODEL`で上書き可能。
 
-- GitHub Actions workflow runs / jobs
-- commit status / checks when取得可能
+### Secret
 
-required gate nameはconfiguration化する。
+Actions repository secret: `GEMINI_API_KEY`
 
-初期値は空配列を許可し、#373でV2 Merge Gate required check setを確定する。
+secret不存在はBLOCKED。値をlog/reviewへ出さない。
 
-ただし取得したevidenceは必ずtarget head SHAと結びつける。
+### API
 
-別SHAの成功結果をcurrent PASS根拠にしない。
+Interactions API + `system_instruction` + JSON Schema Structured Outputを使い、`store=False`のstateless callとする。
 
-## 8. Gemini Reviewer Backend
+Provider output:
 
-### 8.1 SDK
+`ProviderReviewCandidate`
 
-CI専用dependencyとして`google-genai`を利用する。
+Pydantic validation後もuntrusted。Deterministic Validator通過後のみ`ReviewDecision`へ昇格する。
 
-製品runtimeの`requirements.txt`へGemini SDKを追加しない。
-
-専用file:
-
-`tools/independent_review/requirements.txt`
-
-を使用する。
-
-### 8.2 Model
-
-modelはGitHub Actions repository variable `GEMINI_REVIEW_MODEL`で上書き可能にする。
-
-default:
-
-`gemini-3.6-flash`
-
-model名をDomain Contractへ埋め込まない。
-
-### 8.3 Secret
-
-Repository Actions secret:
-
-`GEMINI_API_KEY`
-
-secret不存在はBLOCKED。ログ、review body、auditへ値を出さない。
-
-### 8.4 Structured Output
-
-Pydantic schemaからJSON Schemaを生成し、Gemini Structured Outputへ渡す。
-
-Provider output schema:
+### Prompt Authority Labels
 
 ```text
-ProviderReviewCandidate
-- verdict_candidate
-- findings[]
-- summary
-- confidence?
-- echoed_head_sha?
-```
-
-Provider responseは`model_validate_json()`後もtrustedではない。
-
-Deterministic Validatorを通過した後だけ`ReviewDecision`へ昇格する。
-
-### 8.5 Prompt construction
-
-promptは明示セクションに分割する。
-
-```text
-[SYSTEM REVIEW POLICY]
-固定Reviewer policy
-
 [AUTHORITY: ISSUE_SCOPE]
-...
-
 [AUTHORITY: CANONICAL_REQUIREMENT]
-...
-
-[UNTRUSTED: PR_METADATA]
-...
-
-[UNTRUSTED: PR_DIFF]
-...
-
 [TRUSTED FACTS: GATE_EVIDENCE]
-...
+[UNTRUSTED: PR_METADATA]
+[UNTRUSTED: PR_DIFF]
 ```
 
-`PR_DIFF`内のinstructionをsystem instructionとして扱わないことをReviewer policyに明示する。
+PR diff/comment/Markdown中のinstructionをsystem instructionとして扱わない。
 
-## 9. Python Module Layout
+## 11. Runtime Layout
 
 ```text
 tools/independent_review/
@@ -348,6 +298,7 @@ tools/independent_review/
 ├── gemini_backend.py
 ├── validator.py
 ├── persistence.py
+├── orchestrator.py
 └── main.py
 
 tests/tools/independent_review/
@@ -355,139 +306,114 @@ tests/tools/independent_review/
 ├── test_context_builder.py
 ├── test_validator.py
 ├── test_persistence.py
-└── test_main.py
-
-.github/workflows/
-└── independent-ai-review.yml
+└── test_orchestrator.py
 ```
 
-Network/API部分はPort的に分離し、unit testではFake GitHub / Fake Reviewer Backendを使う。
+Network/APIは分離しUnitではFake GitHub/Fake Reviewerを使用する。
 
-## 10. Deterministic Validation
+## 12. Deterministic Validation
 
-MVPで必須:
+必須:
 
-- PR current headをreview完了直前に再取得
+- review完了直前のcurrent head refetch
 - current head == ReviewTarget.head
-- reviewer agent/session != implementer agent/session
-- reviewer credential scope != implementation write / orchestration
-- finding ID uniqueness
-- fingerprint existence
-- BLOCKING finding集合とdecision consistency
+- reviewer agent/session != implementer lineage identity
+- Reviewer credential scopeにimplementation/orchestration writeなし
+- finding ID/fingerprint uniqueness
 - PASS + BLOCKING reject
 - CHANGES_REQUESTED + BLOCKING 0 reject
-- provider output schema validation
-- candidate echoed SHA mismatch reject
+- BLOCKEDとcode findingの混同reject
+- provider schema validation
+- echoed SHA mismatch reject
 - canonical/context欠損時PASS禁止
 
-## 11. Idempotency / Concurrency
+さらに永続化直前にheadを再取得し、stale runはsuccess statusを出さない。
 
-Actions concurrency:
+## 13. Idempotency / Concurrency
+
+Trusted workflow:
 
 ```text
-group = independent-ai-review-<PR number>
+concurrency group = independent-ai-review-<PR number>
 cancel-in-progress = true
 ```
 
-new synchronize eventが来た場合、旧runをcancelする。
+Python側でも`Cycle-Key`で重複Review COMMENTを抑止する。
 
-さらに永続化直前にcurrent headをrefetchし、old runが遅れて完了してもstale decisionをcurrent PASSとして投稿しない。
+statusは同一contextへ最新stateを書き、old SHAのstatusを新SHAへ継承しない。
 
-review bodyのcycle markerを利用し、同一head/cycleの重複投稿を抑止する。
+## 14. Error Policy
 
-## 12. Error Policy
+- Gemini/provider failure: bounded retry → BLOCKED/error status
+- invalid structured output: bounded retry → BLOCKED
+- GitHub context failure: BLOCKED
+- stale SHA: old result非公開/非success、target old SHAへerror可
+- missing API key: error status / setup blocker
+- context budget overflow: BLOCKED
+- raw provider error/secretsをpublic commentへ出さない
 
-- Gemini timeout / rate limit: bounded retry
-- schema invalid: bounded retry後BLOCKED
-- GitHub context取得失敗: BLOCKED
-- stale SHA: stale audit + failure、old PASS投稿なし
-- missing API key: BLOCKED
-- unsupported fork: BLOCKED
-- context budget overflow: BLOCKED（初期MVP）
-
-内部例外stack traceやprovider raw errorをPRへそのまま出さない。
-
-## 13. Tests
+## 15. Verification
 
 ### Unit
 
-- schema serialization
+- serialization
 - agent/session collision
-- PASS + BLOCKING reject
-- CHANGES_REQUESTED without BLOCKING reject
-- stale head reject
-- echoed head spoof
+- verdict/finding invariant
+- stale/echoed SHA
 - canonical resolution
 - linked Issue ambiguity
-- PR data prompt injection remains DATA
-- duplicate marker detection
-- secret redaction
-- oversized context BLOCKED
+- prompt injection remains UNTRUSTED data
+- duplicate marker
+- context budget
+- status mapping
 
-### Adjacent / Fake E2E
+### Fake Adjacent E2E
 
 Fake GitHub + Fake Reviewer:
 
-1. ready PR
-2. context build
-3. PASS candidate
-4. deterministic PASS
-5. review COMMENT生成
-6. exit 0
-
-Failure variants:
-
-- CHANGES_REQUESTED -> exit 2
-- BLOCKED -> exit 3
-- head changes during review -> stale/no PASS
-- duplicate run -> no duplicate current review
+- PASS -> COMMENT + success status
+- CHANGES_REQUESTED -> COMMENT + failure status
+- BLOCKED -> COMMENT + error status
+- head mutation during review -> stale; no success
+- duplicate cycle -> comment重複なし
 
 ### Live Verification
 
-#371 merge後:
+Phase A + B merge後:
 
-1. Repository secret `GEMINI_API_KEY`設定
-2. optional variable `GEMINI_REVIEW_MODEL`設定（未設定ならdefault）
-3. PR #368をreview eventで再起動
-4. Gemini review resultを確認
-5. reviewed SHAが#368 current headと一致
-6. Reviewerがbranchを変更していないことを確認
-7. PASS / findingsの品質を確認
+1. `GEMINI_API_KEY`設定
+2. optional `GEMINI_REVIEW_MODEL`
+3. PR #368をreview eventで起動
+4. Gemini Review COMMENT確認
+5. `Reviewed-Head-SHA == current #368 head`
+6. commit status `yura/independent-ai-review`確認
+7. Reviewerによるbranch mutationがないことを確認
+8. findings品質確認
 
-実Gemini APIを使うため、この工程はVerificationとして扱う。
+実Gemini API/Actionsを使うためProject StatusはVerificationで止める。
 
-## 14. Bootstrap / Rollout
+## 16. Bootstrap Exception
 
-#371自身がreview workflowを追加するPRでは、base branchにworkflowがまだ存在しないため、その新workflowを#371自身の独立review Authorityにはできない。
+#371はReviewerそのものを作るため、Phase A runtimeとPhase B trusted triggerは新Reviewerによる事前自動reviewを受けられない。
 
-#371実装PRは:
+- #370/#371のUnit/Fake Gateと人間可読final reviewをbootstrap Authorityとする
+- Phase B成立後、#368を最初の正式Independent AI Review対象にする
+- #368 PASS前に#321をmergeしない
+- bootstrap例外を#372以降の通常implementationへ一般化しない
 
-- Unit / fake adjacent test
-- deterministic contract review
-- #370のbootstrap lineageでの最終確認
+## 17. Done Boundary
 
-までを行い、merge後に#368を最初のLive independent review対象とする。
+Implementation完了:
 
-#368がPASSするまで#321をmergeしない。
+- Phase A runtime/tests merge
+- Phase B trusted trigger merge
+- secret-bearing workflowがPR head/merge codeを実行しない
+- PR head statusとCOMMENT persistence実装
 
-#371のbootstrap例外を#372以降へ一般化しない。
+その後Verification:
 
-## 15. Done / Verification Boundary
+- API key setup
+- #368 actual Gemini review
+- SHA/status/permission boundary確認
 
-Implementation Done条件:
-
-- workflow / Python module / tests完成
-- fake E2E PASS
-- secret-bearing jobがPR head codeを実行しない
-- branch write permissionなし
-- Gemini backend provider-neutral contract準拠
-
-その後Project Statusは`Verification`へ進める。
-
-Human Verification / environment setup:
-
-- `GEMINI_API_KEY` secret設定
-- actual Gemini review of #368
-- review結果 / SHA /権限境界確認
-
-Live Verification PASS後に#371をDoneとする。
+Live Verification PASS後に#371 Done。
