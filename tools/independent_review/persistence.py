@@ -1,0 +1,74 @@
+from __future__ import annotations
+
+from typing import Protocol
+
+from .models import ReviewDecision
+
+_MARKER = "<!-- yura-independent-ai-review:v1 -->"
+
+
+class ReviewWriter(Protocol):
+    def list_reviews(self, pr_number: int) -> list[dict[str, object]]: ...
+
+    def create_review_comment(self, pr_number: int, commit_id: str, body: str) -> None: ...
+
+
+def cycle_key(pr_number: int, head_sha: str, reviewer_agent_id: str) -> str:
+    return f"pr:{pr_number}:head:{head_sha}:reviewer:{reviewer_agent_id}"
+
+
+def render_review_body(decision: ReviewDecision, *, pr_number: int) -> str:
+    identity = decision.reviewer_identity
+    key = cycle_key(pr_number, decision.reviewed_head_sha, identity.agent_id)
+    findings = []
+    for item in decision.findings:
+        location = ""
+        if item.file_path:
+            location = f" ({item.file_path}"
+            if item.line_start:
+                location += f":{item.line_start}"
+            location += ")"
+        findings.append(
+            f"- **{item.severity.value}** `{item.finding_id}` {item.title}{location}\n"
+            f"  - {item.explanation}\n"
+            f"  - Evidence: {'; '.join(item.evidence)}"
+        )
+    finding_text = "\n".join(findings) if findings else "- none"
+    confidence = "n/a" if decision.confidence is None else f"{decision.confidence:.3f}"
+    return f"""{_MARKER}
+Decision: **{decision.verdict.value}**  
+Reviewed-Head-SHA: `{decision.reviewed_head_sha}`  
+Reviewer-Agent: `{identity.agent_id}`  
+Reviewer-Session: `{identity.session_id}`  
+Provider: `{identity.provider}`  
+Model: `{identity.model or 'n/a'}`  
+Cycle-Key: `{key}`  
+Confidence: `{confidence}`
+
+### Summary
+{decision.summary}
+
+### Findings
+{finding_text}
+"""
+
+
+def already_published(writer: ReviewWriter, *, pr_number: int, key: str) -> bool:
+    needle = f"Cycle-Key: `{key}`"
+    for review in writer.list_reviews(pr_number):
+        body = review.get("body")
+        if isinstance(body, str) and _MARKER in body and needle in body:
+            return True
+    return False
+
+
+def publish_decision(writer: ReviewWriter, *, pr_number: int, decision: ReviewDecision) -> bool:
+    key = cycle_key(pr_number, decision.reviewed_head_sha, decision.reviewer_identity.agent_id)
+    if already_published(writer, pr_number=pr_number, key=key):
+        return False
+    writer.create_review_comment(
+        pr_number,
+        decision.reviewed_head_sha,
+        render_review_body(decision, pr_number=pr_number),
+    )
+    return True
