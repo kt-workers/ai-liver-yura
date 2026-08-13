@@ -73,11 +73,61 @@ def test_execution_result_supports_applied_effect_milestone() -> None:
     assert applied.status is ExecutionStatus.APPLIED
     assert applied.status.is_terminal is False
     assert completed.status is ExecutionStatus.COMPLETED
+    assert completed.to_dict()["details"] == {"external_effect_applied": True}
+    assert completed.effect_refs == ("effect:1",)
+
+
+def test_execution_result_preserves_actual_fact_when_later_transition_fails() -> None:
+    requested = ExecutionResult.requested(
+        execution_id="exec-failed-after-effect",
+        command_id="command-effect",
+        occurred_at=NOW,
+        revisions=REVISIONS,
+    )
+    accepted = requested.transition_to(
+        ExecutionStatus.ACCEPTED, occurred_at=NOW + timedelta(milliseconds=1)
+    )
+    started = accepted.transition_to(
+        ExecutionStatus.STARTED, occurred_at=NOW + timedelta(milliseconds=2)
+    )
+    applied = started.transition_to(
+        ExecutionStatus.APPLIED,
+        occurred_at=NOW + timedelta(milliseconds=3),
+        details={"external_effect_applied": True},
+        effect_refs=("effect:1",),
+    )
+    failed = applied.transition_to(
+        ExecutionStatus.FAILED,
+        occurred_at=NOW + timedelta(milliseconds=4),
+        reason_code="post_effect_confirmation_failed",
+    )
+
+    assert failed.status is ExecutionStatus.FAILED
+    assert failed.to_dict()["details"] == {"external_effect_applied": True}
+    assert failed.effect_refs == ("effect:1",)
 
 
 def test_execution_transition_rejects_intent_to_completed_shortcut() -> None:
     with pytest.raises(ValueError, match="requested -> completed"):
         validate_execution_transition(ExecutionStatus.REQUESTED, ExecutionStatus.COMPLETED)
+
+
+def test_execution_transition_rejects_backwards_timestamp() -> None:
+    requested = ExecutionResult.requested(
+        execution_id="exec-time",
+        command_id="command-time",
+        occurred_at=NOW,
+        revisions=REVISIONS,
+    )
+    accepted = requested.transition_to(
+        ExecutionStatus.ACCEPTED, occurred_at=NOW + timedelta(milliseconds=2)
+    )
+
+    with pytest.raises(ValueError, match="must not move backwards"):
+        accepted.transition_to(
+            ExecutionStatus.STARTED,
+            occurred_at=NOW + timedelta(milliseconds=1),
+        )
 
 
 def test_terminal_execution_result_cannot_transition_again() -> None:

@@ -170,18 +170,21 @@ class ExecutionResult:
         occurred_at: datetime,
         revisions: RevisionVector | None = None,
         details: Mapping[str, JsonInput] | None = None,
-        effect_refs: tuple[str, ...] = (),
+        effect_refs: tuple[str, ...] | None = None,
         reason_code: str | None = None,
     ) -> ExecutionResult:
         validate_execution_transition(self.status, status)
+        require_aware_datetime("occurred_at", occurred_at)
+        if occurred_at < self.occurred_at:
+            raise ValueError("occurred_at must not move backwards across execution transitions")
         return ExecutionResult(
             execution_id=self.execution_id,
             command_id=self.command_id,
             status=status,
             occurred_at=occurred_at,
             revisions=revisions or self.revisions,
-            details=details or {},
-            effect_refs=effect_refs,
+            details=self.details if details is None else details,
+            effect_refs=self.effect_refs if effect_refs is None else effect_refs,
             reason_code=reason_code,
         )
 
