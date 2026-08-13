@@ -36,13 +36,13 @@ def render_review_body(decision: ReviewDecision, *, pr_number: int) -> str:
     finding_text = "\n".join(findings) if findings else "- none"
     confidence = "n/a" if decision.confidence is None else f"{decision.confidence:.3f}"
     return f"""{_MARKER}
-Decision: **{decision.verdict.value}**  
-Reviewed-Head-SHA: `{decision.reviewed_head_sha}`  
-Reviewer-Agent: `{identity.agent_id}`  
-Reviewer-Session: `{identity.session_id}`  
-Provider: `{identity.provider}`  
-Model: `{identity.model or 'n/a'}`  
-Cycle-Key: `{key}`  
+Decision: **{decision.verdict.value}**<br>
+Reviewed-Head-SHA: `{decision.reviewed_head_sha}`<br>
+Reviewer-Agent: `{identity.agent_id}`<br>
+Reviewer-Session: `{identity.session_id}`<br>
+Provider: `{identity.provider}`<br>
+Model: `{identity.model or 'n/a'}`<br>
+Cycle-Key: `{key}`<br>
 Confidence: `{confidence}`
 
 ### Summary
