@@ -58,6 +58,11 @@ class RuntimeHealth(str, Enum):
     STOPPED = "stopped"
 
 
+class LaneErrorPolicy(str, Enum):
+    ISOLATE = "isolate"
+    FAIL_FAST = "fail_fast"
+
+
 @dataclass(frozen=True, slots=True)
 class RuntimeWorkItem(Generic[T]):
     work_id: str
@@ -69,6 +74,7 @@ class RuntimeWorkItem(Generic[T]):
     queue_key: str | None = None
     deadline_at: datetime | None = None
     interruptible: bool = True
+    shutdown_control: bool = False
 
     def __post_init__(self) -> None:
         require_identifier(self.work_id, "work_id")

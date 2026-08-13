@@ -66,7 +66,7 @@ def test_latest_wins_rejects_missing_key() -> None:
 
 def test_coalesce_uses_module_function_and_reports_both_inputs() -> None:
     def combine(old: RuntimeWorkItem[int], new: RuntimeWorkItem[int]) -> RuntimeWorkItem[int]:
-        return item("combined", key=old.queue_key, payload=old.payload + new.payload)
+        return item(new.work_id, key=old.queue_key, payload=old.payload + new.payload)
 
     queue = BoundedWorkQueue[int](2, QueuePolicy.COALESCE, coalescer=combine)
     queue.put(item("one", key="comments", payload=2))
@@ -74,6 +74,26 @@ def test_coalesce_uses_module_function_and_reports_both_inputs() -> None:
     assert result.status is QueueAdmissionStatus.COALESCED
     assert result.displaced_work_ids == ("one", "two")
     assert queue.items()[0].payload == 5
+
+
+def test_coalescer_failure_or_invalid_identity_does_not_remove_existing_item() -> None:
+    def failing(_old: RuntimeWorkItem[int], _new: RuntimeWorkItem[int]) -> RuntimeWorkItem[int]:
+        raise RuntimeError("bad coalescer")
+
+    queue = BoundedWorkQueue[int](2, QueuePolicy.COALESCE, coalescer=failing)
+    queue.put(item("one", key="same"))
+    with pytest.raises(RuntimeError, match="bad coalescer"):
+        queue.put(item("two", key="same"))
+    assert [value.work_id for value in queue.items()] == ["one"]
+
+    def wrong_id(_old: RuntimeWorkItem[int], _new: RuntimeWorkItem[int]) -> RuntimeWorkItem[int]:
+        return item("unexpected", key="same")
+
+    queue = BoundedWorkQueue[int](2, QueuePolicy.COALESCE, coalescer=wrong_id)
+    queue.put(item("one", key="same"))
+    with pytest.raises(ValueError, match="new work_id"):
+        queue.put(item("two", key="same"))
+    assert [value.work_id for value in queue.items()] == ["one"]
 
 
 def test_duplicate_work_identity_is_rejected_without_queue_mutation() -> None:

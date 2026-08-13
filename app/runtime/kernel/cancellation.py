@@ -58,5 +58,11 @@ class CancellationRegistry:
         self._tokens.pop(work_id, None)
         self._completed.add(work_id)
 
+    def release(self, work_id: str) -> None:
+        self._tokens.pop(work_id, None)
+
+    def is_known(self, work_id: str) -> bool:
+        return work_id in self._tokens or work_id in self._completed
+
     def active_work_ids(self) -> tuple[str, ...]:
         return tuple(self._tokens)

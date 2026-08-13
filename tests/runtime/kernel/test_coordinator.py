@@ -156,7 +156,7 @@ def test_coalesced_admission_registers_actual_combined_work_identity() -> None:
             old: RuntimeWorkItem[object], new: RuntimeWorkItem[object]
         ) -> RuntimeWorkItem[object]:
             return RuntimeWorkItem(
-                "combined",
+                new.work_id,
                 old.lane_id,
                 (old.payload, new.payload),
                 old.priority,
@@ -180,10 +180,146 @@ def test_coalesced_admission_registers_actual_combined_work_identity() -> None:
         )
         coordinator.submit(first)
         admission = coordinator.submit(second)
-        assert admission.admitted_work_id == "combined"
+        assert admission.admitted_work_id == "two"
         await asyncio.sleep(0)
         gate.set()
-        assert (await coordinator.next_outcome()).work_id == "combined"
+        assert (await coordinator.next_outcome()).work_id == "two"
         await coordinator.stop()
+
+    asyncio.run(scenario())
+
+
+def test_cross_lane_duplicate_running_work_id_is_rejected_atomically() -> None:
+    async def scenario() -> None:
+        gate = asyncio.Event()
+
+        async def handler(work: RuntimeWorkItem[object], _token: object) -> str:
+            await gate.wait()
+            return work.work_id
+
+        coordinator = RuntimeCoordinator(FakeRuntimeClock(NOW))
+        coordinator.register_lane(RuntimeLanePolicy("a", 2, QueuePolicy.REJECT_NEW), handler)
+        coordinator.register_lane(RuntimeLanePolicy("b", 2, QueuePolicy.REJECT_NEW), handler)
+        await coordinator.start()
+        assert coordinator.submit(item("same", "a")).accepted
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert not coordinator.submit(item("same", "b")).accepted
+        diagnostics = {lane.lane_id: lane for lane in coordinator.diagnostics().lanes}
+        assert diagnostics["b"].queue_depth == 0
+        gate.set()
+        await coordinator.next_outcome()
+        await coordinator.stop()
+
+    asyncio.run(scenario())
+
+
+def test_non_interruptible_running_work_uses_soft_cancellation() -> None:
+    async def scenario() -> None:
+        gate = asyncio.Event()
+        hard_cancelled = False
+
+        async def handler(work: RuntimeWorkItem[object], _token: object) -> str:
+            nonlocal hard_cancelled
+            try:
+                await gate.wait()
+            except asyncio.CancelledError:
+                hard_cancelled = True
+                raise
+            return work.work_id
+
+        coordinator = RuntimeCoordinator(FakeRuntimeClock(NOW))
+        coordinator.register_lane(RuntimeLanePolicy("lane", 2, QueuePolicy.REJECT_NEW), handler)
+        await coordinator.start()
+        work = RuntimeWorkItem(
+            "soft", "lane", "soft", WorkPriority.NORMAL, RevisionVector(1), NOW, interruptible=False
+        )
+        coordinator.submit(work)
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert coordinator.cancel("soft", "superseded")
+        await asyncio.sleep(0)
+        assert not hard_cancelled
+        gate.set()
+        outcome = await coordinator.next_outcome()
+        assert outcome.disposition is WorkDisposition.CANCELLED
+        await coordinator.stop()
+
+    asyncio.run(scenario())
+
+
+def test_diagnostics_never_include_exception_message() -> None:
+    async def scenario() -> None:
+        async def handler(_work: RuntimeWorkItem[object], _token: object) -> str:
+            raise RuntimeError("secret-token-and-payload")
+
+        coordinator = RuntimeCoordinator(FakeRuntimeClock(NOW))
+        coordinator.register_lane(RuntimeLanePolicy("lane", 1, QueuePolicy.REJECT_NEW), handler)
+        await coordinator.start()
+        coordinator.submit(item("bad", "lane"))
+        outcome = await coordinator.next_outcome()
+        assert outcome.error == "RuntimeError"
+        assert coordinator.diagnostics().lanes[0].last_error == "RuntimeError"
+        await coordinator.stop()
+
+    asyncio.run(scenario())
+
+
+def test_stop_runs_close_hook_and_accepts_only_shutdown_control_while_stopping() -> None:
+    async def scenario() -> None:
+        gate = asyncio.Event()
+        stopping = asyncio.Event()
+        closed: list[str] = []
+
+        async def handler(work: RuntimeWorkItem[object], _token: object) -> str:
+            if work.work_id == "running":
+                stopping.set()
+                await gate.wait()
+            return work.work_id
+
+        async def close_resource() -> None:
+            closed.append("closed")
+
+        coordinator = RuntimeCoordinator(FakeRuntimeClock(NOW))
+        coordinator.register_lane(
+            RuntimeLanePolicy(
+                "lane",
+                4,
+                QueuePolicy.REJECT_NEW,
+                cancellation_grace_seconds=0.1,
+            ),
+            handler,
+        )
+        coordinator.register_close_hook(close_resource)
+        await coordinator.start()
+        running = RuntimeWorkItem(
+            "running",
+            "lane",
+            "running",
+            WorkPriority.NORMAL,
+            RevisionVector(1),
+            NOW,
+            interruptible=False,
+        )
+        coordinator.submit(running)
+        await stopping.wait()
+        stop_task = asyncio.create_task(coordinator.stop())
+        await asyncio.sleep(0)
+        assert coordinator.state.value == "stopping"
+        assert not coordinator.submit(item("normal-late", "lane")).accepted
+        control = RuntimeWorkItem(
+            "shutdown-control",
+            "lane",
+            "close",
+            WorkPriority.CRITICAL,
+            RevisionVector(1),
+            NOW,
+            shutdown_control=True,
+        )
+        assert coordinator.submit(control).accepted
+        gate.set()
+        await stop_task
+        assert closed == ["closed"]
+        assert coordinator.diagnostics().owned_task_count == 0
 
     asyncio.run(scenario())

@@ -66,10 +66,14 @@ class BoundedWorkQueue(Generic[T]):
                 )
         elif self.policy is QueuePolicy.COALESCE and existing is not None:
             assert self._coalescer is not None
-            displaced = self._remove(existing)
-            combined = self._coalescer(displaced, item)
+            combined = self._coalescer(existing, item)
             if combined.queue_key != item.queue_key:
                 raise ValueError("coalescer must preserve queue_key")
+            if combined.work_id != item.work_id:
+                raise ValueError("coalescer must preserve new work_id")
+            if combined.lane_id != item.lane_id:
+                raise ValueError("coalescer must preserve lane_id")
+            displaced = self._remove(existing)
             self._append(combined)
             return QueueAdmission(
                 QueueAdmissionStatus.COALESCED,
