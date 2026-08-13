@@ -161,6 +161,18 @@ Not every successful execution requires `planned`, `observable`, or `applied`, b
 
 Actual execution facts must be represented by execution lifecycle evidence rather than by intent or generated language. `ExecutionResult` is immutable. A transition creates a new snapshot and validates the lifecycle edge. Transition timestamps cannot move backwards, and omitted fact payload/effect references inherit the previous snapshot so already-observed execution facts are not accidentally erased.
 
+### 10.1 Construction authority
+
+`ExecutionResult` creation itself is part of the lifecycle invariant. A caller must not be able to manufacture an `accepted`, `started`, `observable`, `applied`, `completed`, or terminal snapshot merely by choosing a `status` value in the public constructor.
+
+- the public/root construction state is `requested`;
+- every non-`requested` snapshot must be created by a validated transition from an existing snapshot;
+- the implementation may use a module-private construction proof/token internally so `transition_to()` can construct the next immutable dataclass snapshot after validating the edge;
+- callers outside that controlled transition path receive a validation error when attempting direct non-`requested` construction;
+- if persistence rehydration is later required, it must use a separately defined trusted rehydration boundary that validates persisted lifecycle evidence rather than reopening unrestricted public construction.
+
+This rule keeps `ExecutionResult` as evidence of lifecycle history instead of allowing a status enum alone to assert an Actual Execution Fact.
+
 ## 11. AsyncWorkResult
 
 Long-running preparation work can finish after its assumptions are no longer current. `AsyncWorkResult` therefore distinguishes:
@@ -173,7 +185,9 @@ Long-running preparation work can finish after its assumptions are no longer cur
 - superseded
 - rejected
 
-It transports both `started_at` and `completed_at` timing facts required by the concurrency contract. `started_at` is optional so rejected/cancelled-before-start work does not invent a start time; when present it must be timezone-aware and not later than `completed_at`.
+It transports both `started_at` and `completed_at` timing facts required by the concurrency contract. `started_at` is optional for non-success results because rejected/cancelled/stale/superseded/timed-out/failed work may terminate before provider/execution start and must not invent a start fact. When present it must be timezone-aware and not later than `completed_at`.
+
+A `succeeded` result necessarily represents work that started. Therefore `status == succeeded` requires a non-null, timezone-aware `started_at` no later than `completed_at`.
 
 Only `succeeded` is inherently committable. Even a succeeded result is still subject to owning-module authority/precondition validation before an external/domain commit.
 
@@ -184,6 +198,8 @@ Only `succeeded` is inherently committable. Even a succeeded result is still sub
 Contracts expose `to_dict()` using JSON-compatible values.
 
 Nested payload/attribute/precondition/result data is recursively frozen at construction time so caller mutation after construction cannot rewrite a recorded contract snapshot.
+
+JSON-compatible numeric values must be finite. IEEE-754 non-finite values (`NaN`, positive infinity, negative infinity) are rejected during recursive freezing rather than being allowed into an apparently valid Domain snapshot that strict JSON serialization cannot transport.
 
 Timestamps are required to be timezone-aware.
 
@@ -211,8 +227,13 @@ Issue #321 Unit Gate requires:
 - timezone-aware event/command/result timestamps
 - non-negative revision validation
 - immutable nested JSON-like payloads
+- NaN/+Infinity/-Infinity are rejected from JSON-like payloads
 - invalid execution lifecycle rejection
+- direct non-`requested` `ExecutionResult` construction is rejected
+- valid `ExecutionResult.transition_to()` paths continue to construct immutable successor snapshots
 - stale/superseded async results are non-committable
-- async work timing preserves optional start and required completion ordering
+- successful async work requires `started_at`
+- non-success async work may omit `started_at` when it terminated before start
+- async work timing preserves required completion ordering
 - capability availability/operation matching
 - no concrete Provider/SDK imports in `app/domain/contracts/`
