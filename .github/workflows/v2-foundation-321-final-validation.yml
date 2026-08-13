@@ -1,0 +1,60 @@
+name: V2 Foundation #321 Final Validation
+
+on:
+  pull_request:
+    branches:
+      - rebuild/v2-foundation
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+
+jobs:
+  foundation-validation:
+    name: Foundation Final Validation
+    if: github.head_ref == 'test/v2-foundation-321-final-gate'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout exact validation head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.10'
+
+      - name: Install validation tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check pytest ruff mypy
+
+      - name: Ruff
+        run: ruff check app/domain/contracts tests/domain/contracts
+
+      - name: Mypy
+        run: mypy app/domain/contracts tests/domain/contracts
+
+      - name: Unit tests
+        env:
+          PYTHONPATH: .
+        run: pytest -q tests/domain/contracts
+
+      - name: Compile
+        run: python -m compileall -q app tests
+
+      - name: Diff check
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check \
+            "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
