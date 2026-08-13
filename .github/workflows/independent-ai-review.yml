@@ -31,18 +31,54 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Checkout trusted reviewer runtime from PR base SHA
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ github.event.pull_request.base.sha }}
-          path: reviewer-runtime
-          fetch-depth: 1
-          persist-credentials: false
-
       - name: Set up Python 3.10
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.10'
+
+      - name: Resolve trusted reviewer runtime SHA
+        id: trusted-base
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          sha="$(
+            python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          url = (
+              f"{os.environ['GITHUB_API_URL']}/repos/{os.environ['GITHUB_REPOSITORY']}"
+              "/git/ref/heads/rebuild/v2-foundation"
+          )
+          request = urllib.request.Request(
+              url,
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              payload = json.load(response)
+          print(payload["object"]["sha"])
+          PY
+          )"
+          [[ "${sha}" =~ ^[0-9a-f]{40}$ ]]
+          echo "Resolved trusted runtime SHA: ${sha}"
+          printf 'sha=%s\n' "${sha}" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout trusted reviewer runtime
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.trusted-base.outputs.sha }}
+          path: reviewer-runtime
+          fetch-depth: 1
+          persist-credentials: false
 
       - name: Verify trusted runtime exists
         shell: bash
