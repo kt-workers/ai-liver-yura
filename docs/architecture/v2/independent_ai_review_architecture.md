@@ -243,6 +243,7 @@ ReviewFinding
 - findingは具体的evidenceを持つ
 - 根拠なしの一般論をBLOCKINGにしない
 - `fingerprint`で同一findingの再発を追跡する
+- `fingerprint`を無害化した上でレビュー監査記録へ永続化する
 - `blocking_finding_ids`は全`BLOCKING` findingの集合と一致する
 - Reviewerが修正コードを直接commitすることを前提にしない
 
@@ -256,7 +257,7 @@ ProviderReviewCandidate
 - findings[]
 - summary
 - confidence?
-- echoed_head_sha?
+- echoed_head_sha
 ```
 
 禁止:
@@ -265,7 +266,9 @@ ProviderReviewCandidate
 - Provider出力のhead SHAだけをReviewTarget Authorityとして採用しない
 - confidenceだけでPASSへ昇格しない
 
-`echoed_head_sha`を返す場合は追加consistency checkにだけ使う。
+`echoed_head_sha`は必須とし、欠落・空・`ReviewTarget.head_sha`との不一致を
+すべて不正候補として拒否する。Provider出力だけをReviewTarget Authorityには
+使わず、信頼済み対象SHAとの追加consistency checkにだけ使う。
 
 ### 5.6 ReviewDecision
 

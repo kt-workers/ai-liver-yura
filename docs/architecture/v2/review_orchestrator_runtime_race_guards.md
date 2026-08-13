@@ -38,6 +38,8 @@ preflight一致後もreview中にHEADが進む可能性があるため、既存#
 4. PR Review COMMENT永続化直前にもう一度HEADを再取得
 5. staleなら旧結果をcurrent PASSとして永続化しない
 
+永続化直前確認は既存レビューの全ページ重複確認より後、Review API呼出しの直前に行う。
+
 preflightはこの既存stale policyを置換せず、開始時raceを追加で閉じる。
 
 ## 4. Commit Status Invariant

@@ -1,70 +1,119 @@
-# Independent AI Review — Trusted Live Base Resolution
+# 独立AIレビュー — 信頼済み最新V2基準SHAの解決
 
-Status: Canonical supplement for Issue #371
-Effective: 2026-08-13
-Depends on:
+状態: Issue #371 の正本補足
+適用日: 2026-08-13
+
+依存正本:
 - `docs/architecture/v2/independent_ai_review_architecture.md`
 - `docs/architecture/v2/review_orchestrator_implementation.md`
 
-## 1. Problem
+## 1. 問題
 
-`pull_request_target` provides a trusted control-plane workflow from the default branch, but the Pull Request event/API `pull_request.base.sha` must not be assumed to equal the current HEAD of the protected V2 target branch for an older open PR.
+`pull_request_target` は既定ブランチ側の信頼済み制御ワークフローを使用できるが、長期間開いているPRでは `pull_request.base.sha` が現在のV2基幹HEADと一致するとは限らない。
 
-PR #368 demonstrated this condition during #371 Live Verification preparation:
+旧試行のPR #368では、PR関係上の基準SHAが古いまま保持され、後からV2基幹へ追加されたレビュー実行基盤を参照できない状態を確認した。
 
-- event/API-visible PR base SHA candidate: `f4d6f98bd92f256cc30848f0804944b55654c9f9`
-- live `refs/heads/rebuild/v2-foundation`: `a8ff310c2e0bb7be9ae8a2b28659e74deb2037b4`
-
-The older SHA predates the merged Phase A Reviewer Runtime, so checking out `github.event.pull_request.base.sha` can execute a trusted but obsolete runtime or fail because the runtime does not exist there.
+したがって、PR関係上の `base.sha` をレビュー実行基盤や正本文書Authorityの最新基準として扱ってはならない。
 
 ## 2. Authority
 
-The Reviewer executable authority for #371 is the **live HEAD of the fixed trusted branch**:
+#371のレビュー実行基盤および正本文書Authorityを選ぶ信頼済み参照は固定する。
 
 `refs/heads/rebuild/v2-foundation`
 
-The PR author cannot choose this branch. The control-plane workflow target filter is also fixed to `rebuild/v2-foundation`.
+PR作成者はこの参照を選べない。
 
-The PR head, merge ref, PR body, labels, diff, comments, and other PR-controlled content remain untrusted DATA and never choose executable code.
+次は信頼できないPRデータであり、実行基盤・正本Authorityの参照を選択できない。
 
-## 3. Resolution contract
+- PR先端SHA
+- PRマージ参照
+- PR本文
+- ラベル
+- 差分
+- コメント
+- レビュー
+- その他PR側から変更可能な値
 
-Before checkout, the trusted workflow SHALL:
+## 3. 解決契約
 
-1. Query GitHub REST for `refs/heads/rebuild/v2-foundation` using the base repository `GITHUB_TOKEN`.
-2. Extract the returned immutable commit SHA.
-3. Reject empty or malformed SHA resolution.
-4. Pass that resolved SHA as the explicit `actions/checkout` `ref`.
-5. Execute Reviewer Runtime only from that resolved SHA.
+信頼済みワークフローはチェックアウト前に次を行う。
 
-The workflow SHALL NOT:
+1. 基準リポジトリのGitHub APIから `refs/heads/rebuild/v2-foundation` を解決する。
+2. 返された変更不能コミットSHAを取得する。
+3. 空値または不正形式のSHAを拒否する。
+4. 解決したSHAを `actions/checkout` の明示的な `ref` として使用する。
+5. レビュー実行基盤はそのSHAからだけ実行する。
+6. 同じSHAを `YURA_TRUSTED_BASE_SHA` としてレビュー実行基盤へ渡す。
+7. レビュー実行基盤は正本文書を同じ `YURA_TRUSTED_BASE_SHA` から取得する。
 
-- checkout `pull_request.head.sha`;
-- checkout a PR merge ref;
-- execute code downloaded from the PR head;
-- allow PR-controlled input to choose the executable ref;
-- fall back from failed trusted-base resolution to PR code.
+信頼済みワークフローは次を行わない。
 
-## 4. Security rationale
+- `pull_request.head.sha` をチェックアウトする
+- PRマージ参照をチェックアウトする
+- PR先端から取得したコードを秘密情報付き処理で実行する
+- PR側から変更可能な入力に実行参照を選ばせる
+- 信頼済み基準SHAの解決失敗時にPRコードへ代替する
+- レビュー実行基盤SHAと正本文書Authority SHAを別々に解決する
 
-This preserves both required properties:
+## 4. 2種類の基準SHA
 
-- **Freshness:** Reviewer Runtime follows the current trusted V2 trunk rather than an old PR base snapshot.
-- **Immutability during execution:** after resolving the live branch, checkout occurs by immutable commit SHA, so a later branch movement cannot change the code executed by that run.
+レビュー文脈では次を区別して保持する。
 
-The secret-bearing Gemini step remains downstream of trusted SHA resolution and trusted-runtime checkout only.
+### PR関係基準SHA
 
-## 5. Failure policy
+GitHub PRがどの基準コミットとの関係で作られたかを示す履歴情報。
 
-If the trusted branch ref cannot be resolved, checkout fails, or the expected Reviewer Runtime files are missing, the workflow MUST fail closed. It must not invoke Gemini and must not publish a PASS.
+`ReviewTarget.base_sha`
 
-## 6. Verification
+監査情報として保持するが、現在の正本文書Authorityを選ばない。
 
-For PR #368, Live Verification requires:
+### 信頼済みV2基準SHA
 
-- resolved trusted runtime SHA equals the live `rebuild/v2-foundation` HEAD at resolution time;
-- checked-out Reviewer Runtime exists at that SHA;
-- PR head remains `58b1dcd9b33e43ca082c0287ec5d59c39d1ab619` unless independently changed;
-- no PR head/merge code is executed;
-- Gemini Review is emitted against the current PR head SHA;
-- `yura/independent-ai-review` status is written to that same PR head SHA.
+信頼済み固定参照から制御系が解決した、現在実行のレビュー実行基盤・正本文書Authorityの基準。
+
+`ReviewTarget.trusted_base_sha`
+
+このSHAだけを次へ使用する。
+
+- レビュー実行基盤のチェックアウト
+- Issueが列挙する正本文書の取得
+- レビュー入力における正本Authorityの基準
+
+## 5. 安全性の理由
+
+この方式は次を同時に満たす。
+
+- **鮮度:** 古いPR基準スナップショットではなく、信頼済みV2基幹の解決時点HEADを使用する
+- **実行中の不変性:** ブランチ名ではなく解決済みSHAを使用するため、実行中にV2基幹が動いてもその実行内容は変化しない
+- **Authority一致:** レビュー実行基盤と正本文書を同じSHAから取得し、異なる時点の正本と実装を混在させない
+
+## 6. 失敗方針
+
+次の場合は安全側へ停止する。
+
+- 信頼済みV2基幹参照を解決できない
+- 解決SHAが40桁の16進小文字SHAではない
+- チェックアウトに失敗
+- 期待するレビュー実行基盤がそのSHAに存在しない
+- `YURA_TRUSTED_BASE_SHA` がレビュー実行基盤へ渡されていない
+- 正本文書を信頼済みV2基準SHAから取得できない
+
+いずれの場合もGeminiを呼び出さず、合格を公開しない。
+
+## 7. 検証
+
+単体・偽結合:
+
+- PR関係基準SHAと信頼済みV2基準SHAを別項目として保持
+- 正本文書取得に信頼済みV2基準SHAを使用
+- PR関係基準SHAを正本取得へ使用しない
+- 不正形式の信頼済みV2基準SHAを拒否
+
+実環境:
+
+- 信頼済み実行基盤SHAが解決時点の `rebuild/v2-foundation` HEADと一致
+- チェックアウト実行基盤SHAと `YURA_TRUSTED_BASE_SHA` が一致
+- 正本文書取得SHAが同じ値
+- PR先端・マージ参照コードを実行しない
+- Geminiレビュー対象SHAとPR先端SHAが一致
+- `yura/independent-ai-review` 状態が同じPR先端SHAへ書かれる

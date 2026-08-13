@@ -50,10 +50,24 @@ MVP deterministic limit:
 - finding explanation: 最大8,000文字
 - evidence: 1 finding最大20件
 - evidence item: 最大2,000文字
+- Provider候補内の全文字列合計: 最大12,000文字
+- 無害化・整形後のレビュー本文: 最大60,000文字
 
 超過は`ReviewValidationError`として扱い、PASSへ昇格しない。
 
 この上限はGitHub API上限ぎりぎりを狙う値ではなく、reviewを人間・Implementerが追跡可能なサイズへ保つsafety boundである。
+
+## 4.1 日本語公開要件
+
+Provider由来のsummary、finding title、explanation、各evidence、任意のsuggested directionは、
+公開前の決定論的検証で日本語文字を1文字以上含むことを要求する。
+
+- 日本語文字はひらがな字母U+3041〜U+3096、カタカナ字母U+30A1〜U+30FA、
+  CJK統合漢字のUnicode範囲で判定する
+- 中黒U+30FB、長音記号U+30FC等の記号だけでは合格しない
+- コード、パス、識別子、英語用語の併記は許可する
+- 固定句・英単語辞書・内容推測による判定は行わない
+- 違反候補は上限付き再生成の対象とし、上限後はBLOCKEDとする
 
 ## 5. Authority Invariant
 
@@ -78,4 +92,7 @@ ProviderReviewCandidate
 - HTML comment断片がそのまま残らない
 - Markdown link制御文字がescapeされる
 - oversized summaryがdeterministic validationでrejectされる
+- 個別上限内でも全文字列合計が上限を超える候補がrejectされる
+- 無害化・整形後のレビュー本文が最終上限を超えて公開されない
+- 日本語を含まない公開自然言語がdeterministic validationでrejectされる
 - machine marker / reviewed SHA / cycle keyはsanitization対象のprovider textから構築されない
