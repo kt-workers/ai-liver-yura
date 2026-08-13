@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -43,6 +44,16 @@ def test_requested_cannot_claim_effect() -> None:
     with pytest.raises(ValueError, match="cannot contain effect_refs"):
         ExecutionResult(
             "command-1", ExecutionStatus.REQUESTED, NOW, REVISIONS, {}, ("effect-1",)
+        )
+
+
+def test_dataclass_replace_cannot_reuse_transition_authority_proof() -> None:
+    accepted = requested().transition_to(ExecutionStatus.ACCEPTED, NOW)
+    with pytest.raises(ValueError, match="validated transition"):
+        replace(
+            accepted,
+            status=ExecutionStatus.COMPLETED,
+            effect_refs=("invented-effect",),
         )
 
 

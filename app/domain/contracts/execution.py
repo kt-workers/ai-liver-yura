@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import cast
@@ -111,9 +111,9 @@ class ExecutionResult:
     revisions: RevisionVector
     details: JsonValue = field(default_factory=dict)
     effect_refs: tuple[str, ...] = ()
-    _proof: object | None = field(default=None, repr=False, compare=False)
+    _proof: InitVar[object | None] = None
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _proof: object | None) -> None:
         require_identifier(self.command_id, "command_id")
         require_aware(self.occurred_at, "occurred_at")
         object.__setattr__(self, "details", freeze_json(self.details))
@@ -124,11 +124,11 @@ class ExecutionResult:
             raise ValueError("effect_refs must be unique")
         object.__setattr__(self, "effect_refs", effect_refs)
         if self.status is ExecutionStatus.REQUESTED:
-            if self._proof is not None:
+            if _proof is not None:
                 raise ValueError("requested snapshot cannot use transition proof")
             if effect_refs:
                 raise ValueError("requested snapshot cannot contain effect_refs")
-        elif self._proof is not _TRANSITION_PROOF:
+        elif _proof is not _TRANSITION_PROOF:
             raise ValueError("non-requested snapshots require a validated transition")
 
     def transition_to(
