@@ -221,12 +221,17 @@ class AsyncWorkResult:
     status: AsyncResultStatus
     completed_at: datetime
     revisions: RevisionVector
+    started_at: datetime | None = None
     payload: JsonInput = None
     reason_code: str | None = None
 
     def __post_init__(self) -> None:
         require_non_empty("request_id", self.request_id)
         require_aware_datetime("completed_at", self.completed_at)
+        if self.started_at is not None:
+            require_aware_datetime("started_at", self.started_at)
+            if self.started_at > self.completed_at:
+                raise ValueError("started_at must not be later than completed_at")
         if self.reason_code is not None:
             require_non_empty("reason_code", self.reason_code)
         object.__setattr__(self, "payload", freeze_json(self.payload))
@@ -239,6 +244,7 @@ class AsyncWorkResult:
         return {
             "request_id": self.request_id,
             "status": self.status.value,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat(),
             "revisions": self.revisions.to_dict(),
             "payload": jsonable(cast(JsonValue, self.payload)),

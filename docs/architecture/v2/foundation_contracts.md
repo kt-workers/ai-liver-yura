@@ -159,7 +159,7 @@ superseded
 
 Not every successful execution requires `planned`, `observable`, or `applied`, but a request cannot jump directly from `requested` to `completed`. `observable` and `applied` are alternative typed effect milestones; an operation chooses the milestone that represents its externally relevant execution fact before completion.
 
-Actual execution facts must be represented by execution lifecycle evidence rather than by intent or generated language. `ExecutionResult` is immutable. A transition creates a new snapshot and validates the lifecycle edge.
+Actual execution facts must be represented by execution lifecycle evidence rather than by intent or generated language. `ExecutionResult` is immutable. A transition creates a new snapshot and validates the lifecycle edge. Transition timestamps cannot move backwards, and omitted fact payload/effect references inherit the previous snapshot so already-observed execution facts are not accidentally erased.
 
 ## 11. AsyncWorkResult
 
@@ -172,6 +172,8 @@ Long-running preparation work can finish after its assumptions are no longer cur
 - stale
 - superseded
 - rejected
+
+It transports both `started_at` and `completed_at` timing facts required by the concurrency contract. `started_at` is optional so rejected/cancelled-before-start work does not invent a start time; when present it must be timezone-aware and not later than `completed_at`.
 
 Only `succeeded` is inherently committable. Even a succeeded result is still subject to owning-module authority/precondition validation before an external/domain commit.
 
@@ -211,5 +213,6 @@ Issue #321 Unit Gate requires:
 - immutable nested JSON-like payloads
 - invalid execution lifecycle rejection
 - stale/superseded async results are non-committable
+- async work timing preserves optional start and required completion ordering
 - capability availability/operation matching
 - no concrete Provider/SDK imports in `app/domain/contracts/`

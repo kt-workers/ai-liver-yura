@@ -145,6 +145,55 @@ def test_terminal_execution_result_cannot_transition_again() -> None:
         rejected.transition_to(ExecutionStatus.ACCEPTED, occurred_at=NOW + timedelta(seconds=2))
 
 
+def test_async_result_serializes_optional_started_at() -> None:
+    result = AsyncWorkResult(
+        request_id="request-timed",
+        status=AsyncResultStatus.SUCCEEDED,
+        started_at=NOW,
+        completed_at=NOW + timedelta(seconds=1),
+        revisions=REVISIONS,
+        payload={"candidate": "current"},
+    )
+
+    serialized = result.to_dict()
+    assert serialized["started_at"] == NOW.isoformat()
+    assert serialized["completed_at"] == (NOW + timedelta(seconds=1)).isoformat()
+    json.dumps(serialized)
+
+
+def test_async_result_rejects_invalid_started_at() -> None:
+    with pytest.raises(ValueError, match="timezone-aware"):
+        AsyncWorkResult(
+            request_id="request-naive-start",
+            status=AsyncResultStatus.FAILED,
+            started_at=datetime(2026, 8, 13),
+            completed_at=NOW,
+            revisions=REVISIONS,
+        )
+
+    with pytest.raises(ValueError, match="must not be later than completed_at"):
+        AsyncWorkResult(
+            request_id="request-backwards-time",
+            status=AsyncResultStatus.FAILED,
+            started_at=NOW + timedelta(seconds=2),
+            completed_at=NOW + timedelta(seconds=1),
+            revisions=REVISIONS,
+        )
+
+
+def test_async_result_allows_missing_started_at_before_work_begins() -> None:
+    rejected = AsyncWorkResult(
+        request_id="request-rejected-before-start",
+        status=AsyncResultStatus.REJECTED,
+        completed_at=NOW,
+        revisions=REVISIONS,
+        reason_code="precondition_rejected",
+    )
+
+    assert rejected.started_at is None
+    assert rejected.to_dict()["started_at"] is None
+
+
 def test_stale_and_superseded_async_results_are_not_committable() -> None:
     stale = AsyncWorkResult(
         request_id="request-1",
@@ -163,6 +212,7 @@ def test_stale_and_superseded_async_results_are_not_committable() -> None:
     succeeded = AsyncWorkResult(
         request_id="request-3",
         status=AsyncResultStatus.SUCCEEDED,
+        started_at=NOW - timedelta(seconds=1),
         completed_at=NOW,
         revisions=REVISIONS,
         payload={"candidate": "current"},
