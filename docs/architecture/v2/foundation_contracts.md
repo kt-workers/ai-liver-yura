@@ -210,7 +210,7 @@ Only `succeeded` is inherently committable. Even a succeeded result is still sub
 
 `stale` and `superseded` are not rewritten as success and must never become latest-context facts merely because a Provider returned a payload.
 
-## 12. Serialization and immutability
+## 12. Serialization, temporal ordering, and immutability
 
 Contracts expose `to_dict()` using JSON-compatible values.
 
@@ -231,7 +231,13 @@ Collection-valued fact fields that are canonically immutable must take an owned 
 
 Caller-owned lists or other mutable sequences passed through an untyped/adapter boundary must therefore be normalized to tuples before validation and storage.
 
-Timestamps are required to be timezone-aware.
+Timestamps are required to be timezone-aware. Whenever two aware timestamps are ordered against each other, the ordering is defined by their **absolute instant**, not by local wall-clock fields. Python's direct comparison of two datetimes sharing the same `tzinfo` object can ignore UTC-offset/fold differences during a daylight-saving fall-back, so Foundation ordering checks must normalize both operands to UTC before comparing. This applies to at least:
+
+- `SystemCommand.issued_at` vs `deadline_at`;
+- successive `ExecutionResult.occurred_at` values;
+- `AsyncWorkResult.started_at` vs `completed_at`.
+
+The original timezone-aware values may be retained and serialized with their offsets; UTC normalization is required for ordering semantics, not for replacing the recorded timestamp representation.
 
 ## 13. Explicit non-goals
 
@@ -255,6 +261,7 @@ Issue #321 Unit Gate requires:
 
 - JSON serialization of all public envelopes/snapshots
 - timezone-aware event/command/result timestamps
+- timestamp ordering uses UTC absolute instants, including same-zone DST fall-back fold cases
 - non-negative revision validation
 - immutable nested JSON-like payloads
 - non-string JSON object keys are rejected at both top-level and nested JSON-like mappings
