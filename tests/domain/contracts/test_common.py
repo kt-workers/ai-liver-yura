@@ -53,6 +53,17 @@ def test_precondition_freezes_nested_json_and_serializes() -> None:
     json.dumps(precondition.to_dict())
 
 
+@pytest.mark.parametrize("non_finite", [float("nan"), float("inf"), float("-inf")])
+def test_precondition_rejects_non_finite_json_numbers(non_finite: float) -> None:
+    with pytest.raises(ValueError, match="JSON float values must be finite"):
+        PreconditionRef(
+            precondition_id="pc-non-finite",
+            predicate="value_matches",
+            subject_ref="value:1",
+            expected={"nested": [non_finite]},
+        )
+
+
 def test_authority_and_intent_refs_require_explicit_non_empty_identity() -> None:
     authority = AuthorityRef(owner="executive", scope="conscious_goal_action_selection")
     intent = IntentRef(intent_id="speech-42", kind=IntentKind.SPEECH)

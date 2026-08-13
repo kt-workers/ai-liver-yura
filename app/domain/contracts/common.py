@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from math import isfinite
 from types import MappingProxyType
 from typing import TypeAlias, cast
 
@@ -29,7 +30,11 @@ def require_aware_datetime(name: str, value: datetime) -> None:
 
 def freeze_json(value: JsonInput) -> JsonValue:
     """Convert JSON-like data into an immutable representation."""
-    if value is None or isinstance(value, (bool, int, float, str)):
+    if isinstance(value, float):
+        if not isfinite(value):
+            raise ValueError("JSON float values must be finite")
+        return value
+    if value is None or isinstance(value, (bool, int, str)):
         return value
     if isinstance(value, Mapping):
         frozen = {key: freeze_json(item) for key, item in value.items()}

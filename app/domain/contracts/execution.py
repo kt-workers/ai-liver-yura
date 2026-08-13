@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from datetime import datetime
 from enum import Enum
 from types import MappingProxyType
@@ -109,6 +109,8 @@ _ALLOWED_TRANSITIONS: Mapping[ExecutionStatus, frozenset[ExecutionStatus]] = {
     ),
 }
 
+_EXECUTION_TRANSITION_PROOF = object()
+
 
 def validate_execution_transition(
     current: ExecutionStatus,
@@ -128,11 +130,19 @@ class ExecutionResult:
     details: Mapping[str, JsonInput] = field(default_factory=dict)
     effect_refs: tuple[str, ...] = ()
     reason_code: str | None = None
+    _transition_proof: InitVar[object | None] = None
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _transition_proof: object | None) -> None:
         require_non_empty("execution_id", self.execution_id)
         require_non_empty("command_id", self.command_id)
         require_aware_datetime("occurred_at", self.occurred_at)
+        if (
+            self.status is not ExecutionStatus.REQUESTED
+            and _transition_proof is not _EXECUTION_TRANSITION_PROOF
+        ):
+            raise ValueError(
+                "non-requested ExecutionResult snapshots require a validated transition"
+            )
         if self.reason_code is not None:
             require_non_empty("reason_code", self.reason_code)
         if len(set(self.effect_refs)) != len(self.effect_refs):
@@ -186,6 +196,7 @@ class ExecutionResult:
             details=self.details if details is None else details,
             effect_refs=self.effect_refs if effect_refs is None else effect_refs,
             reason_code=reason_code,
+            _transition_proof=_EXECUTION_TRANSITION_PROOF,
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -228,6 +239,8 @@ class AsyncWorkResult:
     def __post_init__(self) -> None:
         require_non_empty("request_id", self.request_id)
         require_aware_datetime("completed_at", self.completed_at)
+        if self.status is AsyncResultStatus.SUCCEEDED and self.started_at is None:
+            raise ValueError("succeeded async work requires started_at")
         if self.started_at is not None:
             require_aware_datetime("started_at", self.started_at)
             if self.started_at > self.completed_at:

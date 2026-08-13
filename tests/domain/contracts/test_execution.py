@@ -107,6 +107,23 @@ def test_execution_result_preserves_actual_fact_when_later_transition_fails() ->
     assert failed.effect_refs == ("effect:1",)
 
 
+@pytest.mark.parametrize(
+    "status",
+    [status for status in ExecutionStatus if status is not ExecutionStatus.REQUESTED],
+)
+def test_execution_result_rejects_direct_non_requested_construction(
+    status: ExecutionStatus,
+) -> None:
+    with pytest.raises(ValueError, match="require a validated transition"):
+        ExecutionResult(
+            execution_id="exec-direct",
+            command_id="command-direct",
+            status=status,
+            occurred_at=NOW,
+            revisions=REVISIONS,
+        )
+
+
 def test_execution_transition_rejects_intent_to_completed_shortcut() -> None:
     with pytest.raises(ValueError, match="requested -> completed"):
         validate_execution_transition(ExecutionStatus.REQUESTED, ExecutionStatus.COMPLETED)
@@ -181,17 +198,32 @@ def test_async_result_rejects_invalid_started_at() -> None:
         )
 
 
-def test_async_result_allows_missing_started_at_before_work_begins() -> None:
-    rejected = AsyncWorkResult(
-        request_id="request-rejected-before-start",
-        status=AsyncResultStatus.REJECTED,
+def test_succeeded_async_result_requires_started_at() -> None:
+    with pytest.raises(ValueError, match="succeeded async work requires started_at"):
+        AsyncWorkResult(
+            request_id="request-success-without-start",
+            status=AsyncResultStatus.SUCCEEDED,
+            completed_at=NOW,
+            revisions=REVISIONS,
+        )
+
+
+@pytest.mark.parametrize(
+    "status",
+    [status for status in AsyncResultStatus if status is not AsyncResultStatus.SUCCEEDED],
+)
+def test_non_success_async_result_may_finish_before_work_begins(
+    status: AsyncResultStatus,
+) -> None:
+    result = AsyncWorkResult(
+        request_id=f"request-{status.value}-before-start",
+        status=status,
         completed_at=NOW,
         revisions=REVISIONS,
-        reason_code="precondition_rejected",
     )
 
-    assert rejected.started_at is None
-    assert rejected.to_dict()["started_at"] is None
+    assert result.started_at is None
+    assert result.to_dict()["started_at"] is None
 
 
 def test_stale_and_superseded_async_results_are_not_committable() -> None:
