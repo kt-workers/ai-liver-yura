@@ -75,6 +75,29 @@ def test_capability_descriptor_owns_operations_snapshot() -> None:
     assert descriptor.to_dict()["operations"] == ["plan"]
 
 
+@pytest.mark.parametrize("invalid", [True, False, 1.5, "1"])
+def test_capability_descriptor_rejects_non_integer_revision(invalid: object) -> None:
+    with pytest.raises(TypeError, match="revision must be an integer"):
+        CapabilityDescriptor(
+            capability_id="invalid-revision",
+            capability_type="test",
+            operations=("run",),
+            availability=CapabilityAvailability.AVAILABLE,
+            revision=cast(int, invalid),
+        )
+
+
+def test_capability_descriptor_rejects_negative_revision() -> None:
+    with pytest.raises(ValueError, match="revision must be non-negative"):
+        CapabilityDescriptor(
+            capability_id="negative-revision",
+            capability_type="test",
+            operations=("run",),
+            availability=CapabilityAvailability.AVAILABLE,
+            revision=-1,
+        )
+
+
 def test_capability_descriptor_rejects_non_string_attribute_key() -> None:
     attributes = cast(dict[str, JsonInput], {1: True})
 

@@ -37,6 +37,17 @@ def test_revision_vector_rejects_negative_revision() -> None:
         RevisionVector(source_context_revision=0, goal_revision=-1)
 
 
+@pytest.mark.parametrize("invalid", [True, False, 1.5, "1"])
+def test_revision_vector_rejects_non_integer_revision(invalid: object) -> None:
+    with pytest.raises(TypeError, match="source_context_revision must be an integer"):
+        RevisionVector(source_context_revision=cast(int, invalid))
+
+
+def test_revision_vector_rejects_boolean_optional_revision() -> None:
+    with pytest.raises(TypeError, match="goal_revision must be an integer"):
+        RevisionVector(source_context_revision=0, goal_revision=cast(int, True))
+
+
 def test_precondition_freezes_nested_json_and_serializes() -> None:
     revision_values = [1, 2]
     source: dict[str, JsonInput] = {"revisions": revision_values, "active": True}

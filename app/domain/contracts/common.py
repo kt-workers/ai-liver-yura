@@ -21,6 +21,8 @@ def require_non_empty(name: str, value: str) -> None:
 
 
 def require_non_negative(name: str, value: int) -> None:
+    if type(value) is not int:
+        raise TypeError(f"{name} must be an integer")
     if value < 0:
         raise ValueError(f"{name} must be non-negative")
 
