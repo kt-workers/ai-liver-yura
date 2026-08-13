@@ -185,6 +185,15 @@ def build_context(
 
 
 def render_reviewer_input(context: ReviewContext) -> str:
+    target = context.target
+    review_target = (
+        f"Repository: {target.repository}\n"
+        f"PR: {target.pr_number}\n"
+        f"Base-Ref: {target.base_ref}\n"
+        f"Base-SHA: {target.base_sha}\n"
+        f"Head-Ref: {target.head_ref}\n"
+        f"Reviewed-Head-SHA: {target.head_sha}"
+    )
     canonical = "\n\n".join(
         f"--- {doc.reference} ---\n{doc.content}" for doc in context.canonical_documents
     )
@@ -192,6 +201,7 @@ def render_reviewer_input(context: ReviewContext) -> str:
         f"- {item.name}: {item.conclusion} @ {item.head_sha}" for item in context.gate_evidence
     ) or "- none"
     return (
+        f"[TRUSTED FACTS: REVIEW_TARGET]\n{review_target}\n\n"
         f"[AUTHORITY: ISSUE_SCOPE]\nIssue #{context.issue_number}: {context.issue_title}\n"
         f"{context.issue_body}\n\n"
         f"[AUTHORITY: CANONICAL_REQUIREMENT]\n{canonical}\n\n"
