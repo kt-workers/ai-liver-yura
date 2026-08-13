@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from types import MappingProxyType
-from typing import Mapping, cast
+from typing import cast
 
 from .common import (
     JsonInput,
@@ -153,7 +154,7 @@ class ExecutionResult:
         command_id: str,
         occurred_at: datetime,
         revisions: RevisionVector,
-    ) -> "ExecutionResult":
+    ) -> ExecutionResult:
         return cls(
             execution_id=execution_id,
             command_id=command_id,
@@ -171,7 +172,7 @@ class ExecutionResult:
         details: Mapping[str, JsonInput] | None = None,
         effect_refs: tuple[str, ...] = (),
         reason_code: str | None = None,
-    ) -> "ExecutionResult":
+    ) -> ExecutionResult:
         validate_execution_transition(self.status, status)
         return ExecutionResult(
             execution_id=self.execution_id,
