@@ -66,7 +66,7 @@ terminalは`REJECTED / UNSUPPORTED / FAILED / CANCELLED / TIMED_OUT / SUPERSEDED
 
 `effect_refs`は実際に観測・適用されたeffectだけを表し、Foundationのmonotonic規則を継承する。Intent、accepted、planned、startedはeffectを主張しない。Adapterはraw `effect_refs`を指定せず、dispatch identity、選択済みCapability ID/revision、operation、effect種別を持つtyped `ExecutionEffectEvidence`を返す。Authorityはrecordへ固定したdispatch、Capability binding、operationとの一致を検証した証拠からだけ`effect_refs`を導出する。Capability bindingがない実行はeffect evidenceを受理しない。
 
-report確定時にもdeadlineを再検証する。期限後の成功reportは`COMPLETED`にせず`TIMED_OUT`へ閉じる。期限後に初めて外部effectが判明した場合は、検証済み証拠を`OBSERVABLE`または`APPLIED`として先に記録し、同じ時刻の`TIMED_OUT`へ遷移してeffect refsを保持する。外部effect後にcontext/goalがstaleになってもeffect refsを消さず、`APPLIED → SUPERSEDED/FAILED/CANCELLED/TIMED_OUT`等の事実系列として保持する。
+report確定時にもdeadlineを再検証する。期限後の成功reportは`COMPLETED`にせず`TIMED_OUT`へ閉じる。期限後に新しい外部effectが判明した場合は、currentが`STARTED`か既存`OBSERVABLE` / `APPLIED`かを問わず、検証済み証拠をFoundationの新規effect必須milestone遷移として先に記録し、同じ時刻の`TIMED_OUT`へ遷移してeffect refsを保持する。外部effect後にcontext/goalがstaleになってもeffect refsを消さず、`APPLIED → SUPERSEDED/FAILED/CANCELLED/TIMED_OUT`等の事実系列として保持する。
 
 ## 6. Dispatch Port
 
