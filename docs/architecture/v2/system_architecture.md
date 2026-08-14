@@ -1,9 +1,10 @@
 # AI Liver ゆら V2 Canonical System Architecture
 
-Status: Draft / V2 Design Gate / Design Reconciliation Complete
+Status: Draft / V2 Design Gate / Design Reconciliation Complete / Streaming Plan Semantic Sync 2026-08-14
 Canonical branch: `rebuild/v2-foundation`
 Root: #317
 Base lineage: `main@0500a69c75e46e97c0f849c26a4d3d7f1fb138dd`
+Streaming plan semantic sync: #396
 
 ## 1. 役割
 
@@ -148,7 +149,7 @@ Core
   recognizes actual result and re-appraises
 ```
 
-Coreは「配信を準備する」「配信を開始する」「配信を終了する」といった高レベルActivityを選択できる。
+Coreは配信準備・配信開始・配信終了等の高レベルActivityを選択できる。
 
 ただしYouTube API、OBS WebSocket、OAuth、provider固有IDやscene等はStreaming Subsystem側だけが所有する。Core production codeはYouTube/OBS等のprovider固有class・port・runtime責務を持たない。
 
@@ -393,7 +394,7 @@ User / Internal Goal
 
 OBS profile / scene graph / encoder等の構成は原則事前準備し、任意構成の自動生成を#347の必須責務にしない。
 
-API観測がなくてもユーザーから「配信が始まった」等の報告を受けて認知候補にできるが、`user_report` provenanceを保持しprovider確認済みFactと区別する。
+API観測がなくても、ユーザーから配信が開始済みである旨などの状態報告を受けて認知候補にできるが、`user_report` provenanceを保持しprovider確認済みFactと区別する。
 
 ### Game #365
 
@@ -414,6 +415,12 @@ Game Agentが実況台詞を直接発話しない。
 ## 16. Natural Language Policy
 
 open-ended意味Authorityとしてfinite keyword/marker/regex/substring/startswith等を使わない。
+
+自然言語の設計文書・Issue・テストに記載する文言は、原則として**意味カテゴリの説明またはillustrative example**であり、その文字列自体をtrigger / allowlist / matcher仕様にしてはならない。
+
+例えば外部Activityについては「配信開始を求める旨を伝える」「配信が開始済みである旨を報告する」のように意味で記述する。実装・検証では同義表現、語順差、敬語、口語、省略、文脈参照を含むparaphraseで同じStructuredInputMeaningへ一般化できることを確認する。
+
+open-ended natural-language meaningのAuthorityは#326 Input Meaningのみ。Streaming Subsystem、Executive、Activity Runtime、Provider Adapterがraw natural languageを再度keyword/regex/substringで独自解釈しない。
 
 protocol token / enum / exact technical ID / finite-domain vocabularyは例外。
 
@@ -437,7 +444,7 @@ I promised X    → Commitment State
 I said promise  → Speech Presentation Fact
 ```
 
-外部Subsystem操作も同じTruth boundaryに従う。`start broadcast`をIntentしたことと、provider上で実際にliveになったことを分離する。
+外部Subsystem操作も同じTruth boundaryに従う。配信開始Intentを持ったことと、provider上で実際にliveになったことを分離する。
 
 ---
 
@@ -503,5 +510,6 @@ Canonical Design
 - [x] subordinate canonical / Issue cross-audit
 - [x] Project sync Manifest / Runbook
 - [x] #394 Streaming Core Decision / Subsystem Execution / External Observation boundary reconciliation
+- [x] #396 Streaming実装計画とnatural-language semantic/paraphrase原則を同期
 
 #319 actual Projects v2 field / formal Parent-Subissue mutationは現実行環境の制約で別途Blocked管理する。

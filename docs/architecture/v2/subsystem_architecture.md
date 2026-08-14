@@ -1,11 +1,12 @@
 # AI Liver ゆら V2 Subsystem / Skill AI Architecture
 
-Status: Draft / V2 Design Gate / Streaming Boundary Reconciled 2026-08-14
+Status: Draft / V2 Design Gate / Streaming Boundary Reconciled 2026-08-14 / Semantic Plan Sync 2026-08-14
 Parent architecture: `docs/architecture/v2/system_architecture.md`
 Plugin architecture: `docs/architecture/v2/plugin_architecture.md`
 Concurrency: `docs/architecture/v2/concurrency_architecture.md`
 Parent Issue: #345
 Streaming boundary reconciliation: #394
+Streaming plan semantic sync: #396
 Root management: #317
 
 ## 1. 目的
@@ -63,6 +64,10 @@ Coreが所有する:
 - 外部結果を受けてGoalを再評価するか
 
 ユーザー発言は重要なEventだが無条件命令ではない。外部操作要求も通常のInput Meaning → Executive → Activity/Capability経路を通す。
+
+open-ended natural-language meaningのAuthorityは#326 Input Meaningであり、Subsystem / Executive / Activity Runtimeがraw user textをkeyword / regex / substring等で独自再解釈しない。
+
+文書中の自然言語表現は意味カテゴリまたはillustrative exampleであり、その文字列自体をtrigger / allowlist仕様にしてはならない。同義表現・語順・敬語・口語・省略・文脈参照を含むparaphraseへ一般化する。
 
 ### 3.2 Execution Authority
 
@@ -171,8 +176,8 @@ Coreは`YouTubeStartRequest`や`OBSSceneCommand`を生成しない。
 Subsystemが登録したCapabilityをgeneric Capability境界から利用する。
 
 ```text
-User: 「配信準備して」
-→ Input Meaning
+Userが配信準備を求める旨を伝える
+→ Input Meaningが意味を構造化
 → Executive decision
 → Activity / generic Capability Request
 → Streaming Subsystem
@@ -182,8 +187,8 @@ User: 「配信準備して」
 ```
 
 ```text
-User: 「配信を開始して」
-→ Input Meaning
+Userが配信開始を求める旨を伝える
+→ Input Meaningが意味を構造化
 → Executive decision
 → generic Capability Request
 → Streaming Subsystem
@@ -192,6 +197,8 @@ User: 「配信を開始して」
 → Execution Result
 → Coreが結果を認知
 ```
+
+上記はsemantic categoryの説明であり、記載文言そのものをliteral triggerとして認識する仕様ではない。
 
 ゆら自身が配信を開始・終了したように振る舞えるが、Core実装そのものはprovider非依存である。
 
@@ -229,12 +236,14 @@ YouTube / OBS / other provider
 #### ユーザー報告
 
 ```text
-User: 「配信始まったよ」
-→ Input Meaning
+Userが配信開始済みである旨を報告する
+→ Input Meaningが意味を構造化
 → reported external fact candidate
 → source=user_report
 → Appraisal / Attention / Executive
 ```
+
+この記述もsemantic categoryであり、特定の報告文言だけを受理する仕様ではない。
 
 後からprovider観測が得られた場合はprovenanceを保持したままreconcileできる。
 
@@ -260,7 +269,7 @@ accepted Activity / Capability Requestに従い、Subsystemは利用可能な外
 
 provider固有operationはSubsystem内で完結し、Coreへ返すのはprovider非依存のExecution Result / External Observationである。
 
-Characterが「配信を始めた」と発話しただけでは開始Factにしない。provider適用結果または信頼済み観測が必要。
+Characterが配信開始済みである旨を発話しただけでは開始Factにしない。provider適用結果または信頼済み観測が必要。
 
 ### 5.7 Streaming Subsystemが存在しない場合
 
@@ -433,8 +442,13 @@ Production contractを再利用してRole/Moduleを独立検証する。
 - priority/backpressure
 - Game Skill realtime independence
 - Streaming burst isolation
+- Streaming Activity requestのparaphrase同値性
+- user reportによる配信状態意味のparaphrase同値性
+- Streaming Subsystem / Executiveによるraw NL再解釈がないこと
 
 を可視化する。
+
+自然言語fixtureは単一の固定文言を正解triggerとして持たず、同じsemantic intent / reported factへ到達する複数の言い換えを含める。
 
 Lab独自Prompt/decision logicをproduction正本にしない。
 
@@ -567,6 +581,8 @@ Core process lifecycleとSubsystem lifecycleを分離する。
 - 配信状態観測をprovider API / user report等の複数provenanceで扱う
 - external operation Actual FactをExecution Resultで確定
 - OBS構成作成とruntime配信実行を分離
+- 外部Activity要求・状態報告を具体的な自然言語文字列ではなくsemantic categoryとして扱う
+- Skill/Subsystemがraw NLを独自keyword matchingしない
 - Game Skill AIを正式境界化
 - Skill AIとCore cognitive AIを分離
 - frame-level Game controlをExecutive LLMから分離
@@ -586,12 +602,16 @@ Core process lifecycleとSubsystem lifecycleを分離する。
 - slow subsystemでunrelated Core lane停止なし
 
 ### Streaming
-- user request→Input Meaning→Executive→generic Capability Requestの経路で配信準備/開始/終了を要求できる
+- 配信準備/開始/終了を求める意味の入力がInput Meaning→Executive→generic Capability Request経路へ到達する
+- 同一semantic intentを表す複数paraphraseで同じ種類のActivity/Capability意味へ一般化できる
+- 特定文字列・word list・regex・substringを配信Activityのopen-ended semantic Authorityにしない
+- Streaming Subsystem / Executive / Activity Runtimeがraw user NLを独自再解釈しない
 - CoreにYouTube/OBS SDK・OAuth・provider ID・provider固有class/portを持たない
 - 配信ドメインのstreaming専用Runtime責務をCoreへ置かない
 - Streaming Subsystemがprovider固有操作を所有する
 - preconfigured OBS環境のreadiness / runtime executionを扱え、OBS構成作成を必須責務にしない
 - API等から配信開始前/ready/live/ended/degradedを観測できる
+- 配信状態を報告する複数paraphraseをuser_reportとして意味解釈できる
 - user reportによる配信状態とprovider観測のprovenanceを区別できる
 - Execution Result / trusted Observationより前に外部操作成功Factを作らない
 - burst commentsでCore starvationなし
@@ -631,5 +651,6 @@ Core process lifecycleとSubsystem lifecycleを分離する。
 - [x] 配信操作をゆらのActivityとして許可しつつYouTube/OBS具象をSubsystemへ隔離
 - [x] provider観測とuser reportのprovenance差を明記
 - [x] 外部操作Actual FactをExecution Result / trusted Observationに限定
+- [x] #396でStreaming実装計画・Validation・System Integrationへsemantic/paraphrase原則を同期
 
-実装時は#347で本境界をUnit / Adjacent / 実OBS・YouTube Verificationする。
+実装時は#347で本境界をUnit / Adjacent / 実OBS・YouTube Verificationし、自然言語要求・報告は固定文言ではなく意味とparaphraseで検証する。
