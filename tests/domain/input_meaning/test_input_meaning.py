@@ -1,10 +1,13 @@
 import asyncio
 import json
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from typing import Any, cast
 
 import pytest
 
 from app.domain.contracts import CapabilityAvailability, RevisionVector
+from app.domain.contracts.common import JsonValue
 from app.domain.input_gateway import (
     InputAdmissionLedger,
     InputModality,
@@ -13,6 +16,7 @@ from app.domain.input_gateway import (
     InputPermission,
     InputSessionRegistry,
     InputSourceState,
+    NormalizedInputEvent,
 )
 from app.domain.input_meaning import (
     OUTPUT_SCHEMA,
@@ -31,6 +35,7 @@ from app.domain.llm import (
     LLMExecutionPolicy,
     LLMModelClass,
     LLMReasoningEffort,
+    LLMRoleRequest,
     LLMRoleResult,
     LLMRoleStatus,
     LLMTokenUsage,
@@ -46,7 +51,10 @@ def policy() -> InputMeaningPolicy:
     )
 
 
-def event(text: str = "それをもう一度説明して", modality: InputModality = InputModality.TEXT):
+def event(
+    text: str = "それをもう一度説明して",
+    modality: InputModality = InputModality.TEXT,
+) -> NormalizedInputEvent:
     observation = InputObservation(
         "obs-1",
         InputSourceState("chat", "user", CapabilityAvailability.AVAILABLE, InputPermission.GRANTED),
@@ -78,11 +86,11 @@ def context() -> ReferenceContext:
 def output(
     *,
     confidence: float = 0.9,
-    unresolved=(),
-    reference="presentation:42",
-    negated=False,
-    hypothetical=False,
-):
+    unresolved: tuple[str, ...] = (),
+    reference: str | None = "presentation:42",
+    negated: bool = False,
+    hypothetical: bool = False,
+) -> dict[str, Any]:
     return {
         "speech_act": "request",
         "primary_intent": "request_information",
@@ -99,7 +107,7 @@ def output(
     }
 
 
-def result(request, value=None):
+def result(request: LLMRoleRequest, value: object | None = None) -> LLMRoleResult:
     return LLMRoleResult(
         request.request_id,
         request.role_id,
@@ -110,7 +118,7 @@ def result(request, value=None):
         LLMModelClass.BALANCED,
         1,
         LLMTokenUsage(20, 10),
-        StructuredPayload(OUTPUT_SCHEMA, output() if value is None else value),
+        StructuredPayload(OUTPUT_SCHEMA, cast(JsonValue, output() if value is None else value)),
         started_at=NOW,
     )
 
@@ -129,10 +137,8 @@ def test_text_and_stt_use_same_role_schema_and_reference_context() -> None:
     )
     assert text_request.role_id == speech_request.role_id == "input_meaning"
     assert text_request.input.schema_id == speech_request.input.schema_id
-    assert (
-        text_request.input.to_dict()["value"]["reference_context"]["entries"][0]["reference_id"]
-        == "speech-1"
-    )
+    request_value = cast(dict[str, Any], text_request.input.to_dict()["value"])
+    assert request_value["reference_context"]["entries"][0]["reference_id"] == "speech-1"
 
 
 @pytest.mark.parametrize("surface", ["それをもう一度説明して", "先ほどの内容を再度教えて"])
@@ -141,7 +147,11 @@ def test_paraphrase_provider_candidates_commit_to_same_typed_meaning(surface: st
         event(surface), context(), request_id="r1", trace_id="t1", created_at=NOW, policy=policy()
     )
     meaning = commit_result(
-        request, result(request), current_source_context_revision=4, policy=policy()
+        request,
+        result(request),
+        reference_context=context(),
+        current_source_context_revision=4,
+        policy=policy(),
     )
     assert meaning.primary_intent is PrimaryIntent.REQUEST_INFORMATION
     assert meaning.expected_response is ExpectedResponse.ANSWER
@@ -157,6 +167,7 @@ def test_low_confidence_and_unresolved_reference_fail_closed_to_clarification() 
     meaning = commit_result(
         request,
         result(request, output(confidence=0.2, reference=None)),
+        reference_context=context(),
         current_source_context_revision=4,
         policy=policy(),
     )
@@ -178,6 +189,7 @@ def test_action_intents_without_target_require_clarification(intent: str) -> Non
     meaning = commit_result(
         request,
         result(request, value),
+        reference_context=context(),
         current_source_context_revision=4,
         policy=policy(),
     )
@@ -197,6 +209,7 @@ def test_negation_and_hypothetical_are_typed_without_surface_matching() -> None:
     meaning = commit_result(
         request,
         result(request, output(negated=True, hypothetical=True)),
+        reference_context=context(),
         current_source_context_revision=4,
         policy=policy(),
     )
@@ -217,12 +230,50 @@ def test_non_language_stale_and_extra_output_fields_are_rejected() -> None:
         event(), context(), request_id="r1", trace_id="t1", created_at=NOW, policy=policy()
     )
     with pytest.raises(ValueError, match="stale"):
-        commit_result(request, result(request), current_source_context_revision=5, policy=policy())
+        commit_result(
+            request,
+            result(request),
+            reference_context=context(),
+            current_source_context_revision=5,
+            policy=policy(),
+        )
     invalid = output()
     invalid["appraisal"] = "happy"
     with pytest.raises(ValueError, match="fields do not match schema"):
         commit_result(
-            request, result(request, invalid), current_source_context_revision=4, policy=policy()
+            request,
+            result(request, invalid),
+            reference_context=context(),
+            current_source_context_revision=4,
+            policy=policy(),
+        )
+
+
+def test_reference_outside_bounded_context_is_rejected() -> None:
+    request = build_request(
+        event(), context(), request_id="r1", trace_id="t1", created_at=NOW, policy=policy()
+    )
+    with pytest.raises(ValueError, match="outside bounded"):
+        commit_result(
+            request,
+            result(request, output(reference="made-up:999")),
+            reference_context=context(),
+            current_source_context_revision=4,
+            policy=policy(),
+        )
+
+
+def test_wrapper_modality_cannot_relabel_vision_envelope_as_text() -> None:
+    vision = event(modality=InputModality.VISION)
+    disguised = replace(vision, modality=InputModality.TEXT)
+    with pytest.raises(ValueError, match="event_type does not match"):
+        build_request(
+            disguised,
+            context(),
+            request_id="r1",
+            trace_id="t1",
+            created_at=NOW,
+            policy=policy(),
         )
 
 
@@ -240,7 +291,7 @@ def test_slow_meaning_port_does_not_block_unrelated_task() -> None:
     observed: list[str] = []
 
     class SlowPort:
-        async def invoke(self, request):
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
             await asyncio.sleep(0.02)
             return result(request)
 

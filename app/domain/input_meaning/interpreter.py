@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import cast
 
-from app.domain.contracts.common import JsonValue, require_revision
+from app.domain.contracts.common import JsonValue, freeze_json, require_revision
 from app.domain.input_gateway import InputModality, NormalizedInputEvent
 from app.domain.llm import (
     LLMActivationPolicy,
@@ -68,7 +68,20 @@ def build_request(
     if event.modality not in (InputModality.TEXT, InputModality.SPEECH):
         raise ValueError("input meaning accepts only text or speech modality")
     payload = event.envelope.payload
+    expected_prefix = f"input.{event.modality.value}."
+    if not event.envelope.event_type.startswith(expected_prefix):
+        raise ValueError("input event_type does not match wrapper modality")
     content = payload.get("content") if isinstance(payload, Mapping) else None
+    payload_modality = payload.get("modality") if isinstance(payload, Mapping) else None
+    payload_source = payload.get("source") if isinstance(payload, Mapping) else None
+    if payload_modality != event.modality.value:
+        raise ValueError("input payload modality does not match wrapper modality")
+    if (
+        not isinstance(payload_source, Mapping)
+        or payload_source.get("source_id") != event.source.source_id
+        or event.envelope.source != event.source.source_id
+    ):
+        raise ValueError("input source identity is inconsistent")
     if not isinstance(content, Mapping) or set(content) != {"text"}:
         raise ValueError("natural language content must contain only text")
     text = content.get("text")
@@ -105,6 +118,7 @@ def commit_result(
     request: LLMRoleRequest,
     result: LLMRoleResult,
     *,
+    reference_context: ReferenceContext,
     current_source_context_revision: int,
     policy: InputMeaningPolicy,
 ) -> StructuredInputMeaning:
@@ -116,12 +130,29 @@ def commit_result(
         raise ValueError("input meaning result is not committable")
     if request.revisions.source_context_revision != current_source_context_revision:
         raise ValueError("input meaning result is stale")
-    return meaning_from_json(
+    request_value = request.input.value
+    if not isinstance(request_value, Mapping):
+        raise ValueError("input meaning request payload is invalid")
+    encoded_context = request_value.get("reference_context")
+    if encoded_context != freeze_json(reference_context.to_dict()):
+        raise ValueError("reference context does not match request snapshot")
+    meaning = meaning_from_json(
         result.output.value,
         source_event_id=request.source_event_ids[0],
         source_context_revision=current_source_context_revision,
         minimum_confidence=policy.minimum_confidence,
     )
+    allowed_refs = {
+        value
+        for item in reference_context.entries
+        for value in (item.reference_id, item.subject_ref)
+    }
+    if any(
+        item.resolved_ref is not None and item.resolved_ref not in allowed_refs
+        for item in meaning.references
+    ):
+        raise ValueError("resolved reference is outside bounded reference context")
+    return meaning
 
 
 class InputMeaningInterpreter:
@@ -150,6 +181,7 @@ class InputMeaningInterpreter:
         return commit_result(
             request,
             result,
+            reference_context=context,
             current_source_context_revision=current_source_context_revision,
             policy=self._policy,
         )
