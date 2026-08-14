@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import TypeVar, cast
+from typing import Protocol, TypeVar, cast
 
 from app.domain.contracts import CapabilityRequirement, RevisionVector
 from app.domain.contracts.common import JsonValue, freeze_json, require_aware, utc_instant
@@ -33,6 +33,7 @@ from .contracts import (
     CommitmentTransitionOperation,
     CommitmentTransitionPayload,
     CommittedExecutiveDecision,
+    ExecutiveCommitState,
     ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
     ExecutiveIntent,
@@ -56,6 +57,12 @@ OUTPUT_SCHEMA = "executive.candidate.v1"
 @dataclass(frozen=True, slots=True)
 class ExecutivePolicy:
     execution: LLMExecutionPolicy
+
+
+class ExecutiveLiveStatePort(Protocol):
+    async def current_for_commit(
+        self, snapshot: ExecutiveContextSnapshot, candidate: ExecutiveDecisionCandidate
+    ) -> ExecutiveCommitState: ...
 
 
 def descriptor(policy: ExecutivePolicy) -> LLMRoleDescriptor:
@@ -154,7 +161,7 @@ def commit_result(
     result: LLMRoleResult,
     *,
     snapshot: ExecutiveContextSnapshot,
-    current_revisions: RevisionVector,
+    current: ExecutiveCommitState,
     authority: ExecutiveDecisionAuthority,
     decision_id: str,
     policy: ExecutivePolicy,
@@ -170,7 +177,7 @@ def commit_result(
     return authority.commit(
         candidate,
         snapshot,
-        current_revisions=current_revisions,
+        current=current,
         decision_id=decision_id,
         committed_at=result.completed_at,
     )
@@ -178,9 +185,16 @@ def commit_result(
 
 class ExecutiveDeliberator:
     def __init__(
-        self, port: LLMRolePort, policy: ExecutivePolicy, authority: ExecutiveDecisionAuthority
+        self,
+        port: LLMRolePort,
+        live_state: ExecutiveLiveStatePort,
+        policy: ExecutivePolicy,
+        authority: ExecutiveDecisionAuthority,
     ) -> None:
-        self._port, self._policy, self._authority = port, policy, authority
+        self._port = port
+        self._live_state = live_state
+        self._policy = policy
+        self._authority = authority
 
     async def deliberate(
         self,
@@ -190,7 +204,6 @@ class ExecutiveDeliberator:
         trace_id: str,
         decision_id: str,
         created_at: datetime,
-        current_revisions: RevisionVector,
     ) -> CommittedExecutiveDecision:
         request = build_request(
             snapshot,
@@ -200,11 +213,18 @@ class ExecutiveDeliberator:
             policy=self._policy,
         )
         result = await self._port.invoke(request)
+        failure = validate_role_exchange(descriptor(self._policy), request, result)
+        if failure is not None:
+            raise ValueError(failure.code.value)
+        if result.status is not LLMRoleStatus.SUCCEEDED or result.output is None:
+            raise ValueError("executive result is not committable")
+        candidate = parse_candidate(result.output.value, snapshot, created_at=result.completed_at)
+        current = await self._live_state.current_for_commit(snapshot, candidate)
         return commit_result(
             request,
             result,
             snapshot=snapshot,
-            current_revisions=current_revisions,
+            current=current,
             authority=self._authority,
             decision_id=decision_id,
             policy=self._policy,

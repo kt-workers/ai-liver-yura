@@ -94,6 +94,7 @@ source_event_ids[]
 source_context_revision
 goal_revision?
 attention_revision?
+internal_state_revision?  # Internal Stateを読むExecutive等の責務固有stamp
 priority
 preconditions[]
 interruptibility
@@ -104,7 +105,8 @@ stale_policy
 LLM result
 → schema validation
 → responsibility validation
-→ authority / revision / precondition checks
+→ await後にcurrent stateを再取得
+→ authority / revision / capability / precondition checks
 → typed candidate / plan / observation
 → owning Module commits
 ```
