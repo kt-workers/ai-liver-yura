@@ -35,6 +35,11 @@ class ActivityInterruptibility(str, Enum):
     NON_INTERRUPTIBLE = "non_interruptible"
 
 
+class ExecutionEffectKind(str, Enum):
+    OBSERVABLE = "observable"
+    APPLIED = "applied"
+
+
 _EXECUTABLE_INTENT_KINDS = frozenset(
     {
         IntentKind.SPEECH,
@@ -174,17 +179,42 @@ class CapabilityBinding:
 
 
 @dataclass(frozen=True, slots=True)
+class ExecutionEffectEvidence:
+    effect_id: str
+    capability_id: str
+    descriptor_revision: int
+    operation_ref: str
+    kind: ExecutionEffectKind
+    payload: JsonValue
+
+    def __post_init__(self) -> None:
+        require_identifier(self.effect_id, "effect_id")
+        require_identifier(self.capability_id, "capability_id")
+        if type(self.descriptor_revision) is not int or self.descriptor_revision < 0:
+            raise ValueError("descriptor_revision must be a non-negative int")
+        require_identifier(self.operation_ref, "operation_ref")
+        if not isinstance(self.kind, ExecutionEffectKind):
+            raise ValueError("kind must be ExecutionEffectKind")
+        payload = freeze_json(self.payload)
+        if not isinstance(payload, Mapping):
+            raise ValueError("payload must be an object")
+        object.__setattr__(self, "payload", payload)
+
+
+@dataclass(frozen=True, slots=True)
 class ExecutionAdapterReport:
     command_id: str
     invocation_id: str
+    dispatch_id: str
     status: ExecutionStatus
     occurred_at: datetime
     details: JsonValue
-    effect_refs: tuple[str, ...] = ()
+    effects: tuple[ExecutionEffectEvidence, ...] = ()
 
     def __post_init__(self) -> None:
         require_identifier(self.command_id, "command_id")
         require_identifier(self.invocation_id, "invocation_id")
+        require_identifier(self.dispatch_id, "dispatch_id")
         allowed = {
             ExecutionStatus.OBSERVABLE,
             ExecutionStatus.APPLIED,
@@ -200,23 +230,31 @@ class ExecutionAdapterReport:
         if not isinstance(details, Mapping):
             raise ValueError("details must be an object")
         object.__setattr__(self, "details", details)
-        refs = _ids(self.effect_refs, "effect_refs")
-        if refs and self.status not in {
+        effects = _owned(self.effects, ExecutionEffectEvidence, "effects")
+        if len({item.effect_id for item in effects}) != len(effects):
+            raise ValueError("effect ids must be unique")
+        if effects and self.status not in {
             ExecutionStatus.OBSERVABLE,
             ExecutionStatus.APPLIED,
             ExecutionStatus.COMPLETED,
         }:
-            raise ValueError("terminal failure report cannot introduce effect refs")
-        object.__setattr__(self, "effect_refs", refs)
+            raise ValueError("terminal failure report cannot introduce effects")
+        if self.status is ExecutionStatus.OBSERVABLE and any(
+            item.kind is ExecutionEffectKind.APPLIED for item in effects
+        ):
+            raise ValueError("observable report cannot introduce applied effect")
+        object.__setattr__(self, "effects", effects)
 
 
 @dataclass(frozen=True, slots=True)
 class ExecutionDispatchRequest:
+    dispatch_id: str
     invocation: ActivityInvocation
     accepted_result: ExecutionResult
     bindings: tuple[CapabilityBinding, ...]
 
     def __post_init__(self) -> None:
+        require_identifier(self.dispatch_id, "dispatch_id")
         if not isinstance(self.invocation, ActivityInvocation):
             raise ValueError("invocation must be ActivityInvocation")
         if not isinstance(self.accepted_result, ExecutionResult):
@@ -233,6 +271,7 @@ class ActivityExecutionRecord:
     invocation: ActivityInvocation
     bindings: tuple[CapabilityBinding, ...]
     result: ExecutionResult
+    dispatch_id: str | None = None
     cancellation_reason: str | None = None
     cancellation_requested_at: datetime | None = None
 
@@ -246,6 +285,8 @@ class ActivityExecutionRecord:
             raise ValueError("result command does not match invocation")
         if self.result.revisions != self.invocation.command.revisions:
             raise ValueError("result revisions do not match command")
+        if self.dispatch_id is not None:
+            require_identifier(self.dispatch_id, "dispatch_id")
         if (self.cancellation_reason is None) != (self.cancellation_requested_at is None):
             raise ValueError("cancellation reason and timestamp must appear together")
         if self.cancellation_reason is not None:

@@ -6,6 +6,8 @@ from .contracts import (
     CapabilityBinding,
     ExecutionAdapterReport,
     ExecutionDispatchRequest,
+    ExecutionEffectEvidence,
+    ExecutionEffectKind,
     ExecutionPreconditionState,
     ExecutionPreflightSnapshot,
 )
@@ -30,6 +32,8 @@ __all__ = [
     "ExecutionCancellationSignal",
     "ExecutionClock",
     "ExecutionDispatchRequest",
+    "ExecutionEffectEvidence",
+    "ExecutionEffectKind",
     "ExecutionPreconditionState",
     "ExecutionPreflightPort",
     "ExecutionPreflightSnapshot",

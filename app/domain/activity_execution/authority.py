@@ -5,13 +5,19 @@ from datetime import datetime
 from threading import Lock
 
 from app.domain.contracts import ExecutionResult, ExecutionStatus, RevisionVector
-from app.domain.contracts.common import freeze_json, require_aware, utc_instant
+from app.domain.contracts.common import (
+    freeze_json,
+    require_aware,
+    require_identifier,
+    utc_instant,
+)
 
 from .contracts import (
     ActivityExecutionRecord,
     ActivityInvocation,
     CapabilityBinding,
     ExecutionAdapterReport,
+    ExecutionEffectKind,
     ExecutionPreflightSnapshot,
 )
 
@@ -82,11 +88,18 @@ class ActivityExecutionAuthority:
             return record
 
     def start(
-        self, command_id: str, current: ExecutionPreflightSnapshot, occurred_at: datetime
+        self,
+        command_id: str,
+        current: ExecutionPreflightSnapshot,
+        occurred_at: datetime,
+        dispatch_id: str,
     ) -> ActivityExecutionRecord:
         require_aware(occurred_at, "occurred_at")
+        require_identifier(dispatch_id, "dispatch_id")
         with self._lock:
             record = self._require_record(command_id)
+            if record.terminal:
+                return record
             if record.result.status not in {ExecutionStatus.ACCEPTED, ExecutionStatus.PLANNED}:
                 raise ValueError("execution is not awaiting start")
             failure = self._preflight_failure(
@@ -97,7 +110,11 @@ class ActivityExecutionAuthority:
             else:
                 status, code = failure
                 result = record.result.transition_to(status, occurred_at, details={"code": code})
-            updated = replace(record, result=result)
+            updated = replace(
+                record,
+                result=result,
+                dispatch_id=dispatch_id if result.status is ExecutionStatus.STARTED else None,
+            )
             self._records[command_id] = updated
             return updated
 
@@ -108,16 +125,82 @@ class ActivityExecutionAuthority:
             record = self._require_record(report.command_id)
             if report.invocation_id != record.invocation.invocation_id:
                 raise ValueError("report invocation does not match record")
+            if report.dispatch_id != record.dispatch_id:
+                raise ValueError("report dispatch does not match record")
+            binding_keys = {
+                (item.capability_id, item.descriptor_revision) for item in record.bindings
+            }
+            for effect in report.effects:
+                if effect.operation_ref != record.invocation.operation_ref:
+                    raise ValueError("effect operation does not match invocation")
+                if (effect.capability_id, effect.descriptor_revision) not in binding_keys:
+                    raise ValueError("effect capability does not match binding")
+            effect_refs = tuple(
+                dict.fromkeys(
+                    (
+                        *record.result.effect_refs,
+                        *(item.effect_id for item in report.effects),
+                    )
+                )
+            )
+            deadline = record.invocation.command.deadline_at
+            if deadline is not None and utc_instant(report.occurred_at) >= utc_instant(deadline):
+                result = record.result
+                if report.effects and result.status is ExecutionStatus.STARTED:
+                    milestone = (
+                        ExecutionStatus.APPLIED
+                        if any(item.kind is ExecutionEffectKind.APPLIED for item in report.effects)
+                        else ExecutionStatus.OBSERVABLE
+                    )
+                    result = result.transition_to(
+                        milestone,
+                        report.occurred_at,
+                        details=report.details,
+                        effect_refs=effect_refs,
+                    )
+                result = result.transition_to(
+                    ExecutionStatus.TIMED_OUT,
+                    report.occurred_at,
+                    details={"code": "deadline_elapsed"},
+                    effect_refs=effect_refs,
+                )
+                updated = replace(record, result=result)
+                self._records[report.command_id] = updated
+                return updated
             updated = replace(
                 record,
                 result=record.result.transition_to(
                     report.status,
                     report.occurred_at,
                     details=report.details,
-                    effect_refs=report.effect_refs,
+                    effect_refs=effect_refs,
                 ),
             )
             self._records[report.command_id] = updated
+            return updated
+
+    def fail_adapter_contract(
+        self, command_id: str, occurred_at: datetime
+    ) -> ActivityExecutionRecord:
+        require_aware(occurred_at, "occurred_at")
+        with self._lock:
+            record = self._require_record(command_id)
+            if record.terminal:
+                return record
+            failure_at = (
+                occurred_at
+                if utc_instant(occurred_at) >= utc_instant(record.result.occurred_at)
+                else record.result.occurred_at
+            )
+            updated = replace(
+                record,
+                result=record.result.transition_to(
+                    ExecutionStatus.FAILED,
+                    failure_at,
+                    details={"code": "adapter_contract_failure"},
+                ),
+            )
+            self._records[command_id] = updated
             return updated
 
     def request_cancellation(
