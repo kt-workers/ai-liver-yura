@@ -109,7 +109,8 @@ class ExecutiveDecisionAuthority:
             if transition.expected_goal_revision != snapshot.goal_revision:
                 raise ValueError("goal transition revision is stale")
             references.extend(transition.reason_refs)
-            references.extend(transition.payload.reference_ids())
+            if set(transition.payload.reference_ids()) - goal_fact_ids:
+                raise ValueError("goal transition payload reference has an invalid fact kind")
             target = transition.goal_ref or transition.goal_spec_ref
             if target not in goal_fact_ids:
                 raise ValueError("goal transition reference is outside bounded context")
@@ -117,7 +118,8 @@ class ExecutiveDecisionAuthority:
             if commitment_transition.expected_goal_revision != snapshot.goal_revision:
                 raise ValueError("commitment transition revision is stale")
             references.extend(commitment_transition.reason_refs)
-            references.extend(commitment_transition.payload.reference_ids())
+            if set(commitment_transition.payload.reference_ids()) - commitment_fact_ids:
+                raise ValueError("commitment transition payload reference has an invalid fact kind")
             target = (
                 commitment_transition.commitment_ref or commitment_transition.commitment_spec_ref
             )

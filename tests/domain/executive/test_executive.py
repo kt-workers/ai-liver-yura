@@ -386,6 +386,50 @@ def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
         )
 
 
+@pytest.mark.parametrize("kind", ["goal", "commitment"])
+def test_transition_payload_rejects_bounded_reference_of_wrong_kind(kind: str) -> None:
+    if kind == "goal":
+        goal_transition = GoalTransitionIntent(
+            "goal-create",
+            GoalTransitionOperation.CREATE,
+            None,
+            "goal-spec",
+            5,
+            GoalTransitionPayload("cap-speech", 50),
+            ("fact-desire",),
+        )
+        proposed = replace(
+            candidate(),
+            outcome=ExecutiveOutcome.CONTINUE_ACTIVITY,
+            intents=(),
+            goal_transition_intents=(goal_transition,),
+        )
+    else:
+        commitment_transition = CommitmentTransitionIntent(
+            "commitment-create",
+            CommitmentTransitionOperation.CREATE,
+            None,
+            "commitment-spec",
+            5,
+            CommitmentTransitionPayload("cap-speech"),
+            ("fact-desire",),
+        )
+        proposed = replace(
+            candidate(),
+            outcome=ExecutiveOutcome.CONTINUE_ACTIVITY,
+            intents=(),
+            commitment_transition_intents=(commitment_transition,),
+        )
+    with pytest.raises(ValueError, match="fact kind"):
+        ExecutiveDecisionAuthority().commit(
+            proposed,
+            snapshot(),
+            current_revisions=REVISIONS,
+            decision_id=f"decision-wrong-{kind}-payload-kind",
+            committed_at=NOW,
+        )
+
+
 def test_competing_decisions_for_same_trigger_commit_only_once_atomically() -> None:
     authority = ExecutiveDecisionAuthority()
 
