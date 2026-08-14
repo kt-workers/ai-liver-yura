@@ -615,6 +615,47 @@ def test_completion_after_deadline_becomes_timed_out_and_preserves_valid_effect(
 
 
 @pytest.mark.parametrize(
+    ("first_status", "first_kind"),
+    [
+        (ExecutionStatus.OBSERVABLE, ExecutionEffectKind.OBSERVABLE),
+        (ExecutionStatus.APPLIED, ExecutionEffectKind.APPLIED),
+    ],
+)
+def test_new_effect_after_existing_milestone_and_deadline_is_preserved(
+    first_status: ExecutionStatus, first_kind: ExecutionEffectKind
+) -> None:
+    deadline = NOW + timedelta(seconds=4)
+    authority = ActivityExecutionAuthority()
+    item = invocation(deadline_at=deadline)
+    authority.admit(item, preflight())
+    authority.start("command-1", preflight(), NOW + timedelta(seconds=1), DISPATCH_ID)
+    authority.apply_report(
+        ExecutionAdapterReport(
+            "command-1",
+            "invocation-command-1",
+            DISPATCH_ID,
+            first_status,
+            NOW + timedelta(seconds=2),
+            {},
+            (effect("effect-before", kind=first_kind),),
+        )
+    )
+    record = authority.apply_report(
+        ExecutionAdapterReport(
+            "command-1",
+            "invocation-command-1",
+            DISPATCH_ID,
+            ExecutionStatus.COMPLETED,
+            deadline + timedelta(seconds=1),
+            {},
+            (effect("effect-after", kind=ExecutionEffectKind.APPLIED),),
+        )
+    )
+    assert record.result.status is ExecutionStatus.TIMED_OUT
+    assert record.result.effect_refs == ("effect-before", "effect-after")
+
+
+@pytest.mark.parametrize(
     ("dispatch_id", "evidence", "message"),
     [
         ("other-dispatch", effect(), "dispatch"),

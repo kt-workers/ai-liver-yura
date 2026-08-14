@@ -143,15 +143,30 @@ class ActivityExecutionAuthority:
                     )
                 )
             )
+            new_effect_refs = tuple(
+                item.effect_id
+                for item in report.effects
+                if item.effect_id not in record.result.effect_refs
+            )
             deadline = record.invocation.command.deadline_at
             if deadline is not None and utc_instant(report.occurred_at) >= utc_instant(deadline):
                 result = record.result
-                if report.effects and result.status is ExecutionStatus.STARTED:
-                    milestone = (
-                        ExecutionStatus.APPLIED
-                        if any(item.kind is ExecutionEffectKind.APPLIED for item in report.effects)
-                        else ExecutionStatus.OBSERVABLE
+                if new_effect_refs:
+                    has_applied = any(
+                        item.kind is ExecutionEffectKind.APPLIED for item in report.effects
                     )
+                    if result.status is ExecutionStatus.STARTED:
+                        milestone = (
+                            ExecutionStatus.APPLIED
+                            if has_applied
+                            else ExecutionStatus.OBSERVABLE
+                        )
+                    elif result.status is ExecutionStatus.OBSERVABLE:
+                        milestone = ExecutionStatus.OBSERVABLE
+                    elif result.status is ExecutionStatus.APPLIED:
+                        milestone = ExecutionStatus.APPLIED
+                    else:
+                        raise ValueError("late effect cannot be recorded from current status")
                     result = result.transition_to(
                         milestone,
                         report.occurred_at,
