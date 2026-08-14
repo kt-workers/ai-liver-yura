@@ -253,18 +253,18 @@ class GoalCommitmentStore:
             duplicate_identity = (
                 semantic_ref,
                 transition.payload.counterparty_ref,
-                transition.payload.related_goal_refs,
-                transition.payload.due_condition_refs,
-                transition.payload.release_condition_refs,
+                frozenset(transition.payload.related_goal_refs),
+                frozenset(transition.payload.due_condition_refs),
+                frozenset(transition.payload.release_condition_refs),
             )
             if any(
                 not item.terminal
                 and (
                     item.semantic_commitment_ref,
                     item.counterparty_ref,
-                    item.related_goal_refs,
-                    item.due_condition_refs,
-                    item.release_condition_refs,
+                    frozenset(item.related_goal_refs),
+                    frozenset(item.due_condition_refs),
+                    frozenset(item.release_condition_refs),
                 )
                 == duplicate_identity
                 for item in commitments.values()

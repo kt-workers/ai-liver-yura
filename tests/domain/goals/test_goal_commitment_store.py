@@ -311,6 +311,41 @@ def test_duplicate_active_commitment_semantic_spec_with_different_id_is_rejected
         store.apply(decision("second", 1, commitments=(second,)))
 
 
+def test_duplicate_commitment_spec_is_order_independent() -> None:
+    store = GoalCommitmentStore()
+    apply_goal(store, GoalTransitionOperation.CREATE, 0, goal_id="goal-a")
+    apply_goal(store, GoalTransitionOperation.CREATE, 1, goal_id="goal-b")
+    first = commitment_transition(
+        CommitmentTransitionOperation.CREATE, 2, commitment_id="commitment-a"
+    )
+    first = replace(
+        first,
+        payload=replace(
+            first.payload,
+            related_goal_refs=("goal-a", "goal-b"),
+            due_condition_refs=("due-a", "due-b"),
+            release_condition_refs=("release-a", "release-b"),
+        ),
+    )
+    store.apply(decision("first-ordered", 2, commitments=(first,)))
+    second = commitment_transition(
+        CommitmentTransitionOperation.CREATE, 3, commitment_id="commitment-b"
+    )
+    second = replace(
+        second,
+        payload=replace(
+            second.payload,
+            semantic_commitment_ref=first.payload.semantic_commitment_ref,
+            counterparty_ref=first.payload.counterparty_ref,
+            related_goal_refs=("goal-b", "goal-a"),
+            due_condition_refs=("due-b", "due-a"),
+            release_condition_refs=("release-b", "release-a"),
+        ),
+    )
+    with pytest.raises(ValueError, match="duplicate active commitment"):
+        store.apply(decision("second-reordered", 3, commitments=(second,)))
+
+
 def test_commitment_can_link_existing_goal_through_typed_transition() -> None:
     store = GoalCommitmentStore()
     apply_goal(store, GoalTransitionOperation.CREATE, 0)
