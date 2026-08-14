@@ -185,6 +185,12 @@ class SpeechSemanticAuthority:
                 raise ValueError("execution fact evidence requires execution claim kind")
             if execution_refs and not execution_refs.issubset(constrained_facts):
                 raise ValueError("execution evidence requires authoritative truth constraint")
+            if (
+                proposition.disposition is not SpeechPropositionDisposition.FORBIDDEN
+                and execution_refs
+                and any(not _semantic_match(proposition, facts[ref]) for ref in execution_refs)
+            ):
+                raise ValueError("execution claim does not match authoritative fact")
         for constraint in constraints.values():
             fact = facts[constraint.fact_ref]
             related = [

@@ -481,7 +481,7 @@ def test_execution_truth_rejects_mismatch_unknown_loss_and_completion_fabricatio
         ),
         deterministic_directive=None,
     )
-    with pytest.raises(ValueError, match="remain unknown"):
+    with pytest.raises(ValueError, match="authoritative fact"):
         SpeechSemanticAuthority().commit(
             candidate(),
             unknown_context,
@@ -496,7 +496,7 @@ def test_execution_truth_rejects_mismatch_unknown_loss_and_completion_fabricatio
         polarity=SemanticPolarity.UNKNOWN,
         certainty=SemanticCertainty.CERTAIN,
     )
-    with pytest.raises(ValueError, match="remain unknown"):
+    with pytest.raises(ValueError, match="authoritative fact"):
         SpeechSemanticAuthority().commit(
             replace(candidate(), propositions=(*candidate().propositions[:-1], half_unknown)),
             unknown_context,
@@ -539,7 +539,7 @@ def test_execution_truth_rejects_mismatch_unknown_loss_and_completion_fabricatio
         predicate="execution.finished",
         value={"status": "completed"},
     )
-    with pytest.raises(ValueError, match="completion claim"):
+    with pytest.raises(ValueError, match="authoritative fact"):
         SpeechSemanticAuthority().commit(
             replace(candidate(), propositions=(*candidate().propositions[:-1], completed_claim)),
             completion_context,
@@ -561,6 +561,21 @@ def test_execution_truth_rejects_mismatch_unknown_loss_and_completion_fabricatio
             completion_context,
             current_revisions=REVISIONS,
             plan_id="plan-disguised-completion",
+            committed_at=NOW,
+        )
+    disguised_status = replace(
+        completed_claim,
+        execution_status=ExecutionStatus.STARTED,
+    )
+    with pytest.raises(ValueError, match="authoritative fact"):
+        SpeechSemanticAuthority().commit(
+            replace(
+                candidate(),
+                propositions=(*candidate().propositions[:-1], disguised_status),
+            ),
+            completion_context,
+            current_revisions=REVISIONS,
+            plan_id="plan-disguised-status",
             committed_at=NOW,
         )
 
