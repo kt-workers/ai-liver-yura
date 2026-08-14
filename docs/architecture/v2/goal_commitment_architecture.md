@@ -187,6 +187,8 @@ Validation:
 
 operation別payloadはfieldのpresenceでstrictに閉じる。`0`はpriority/strengthの合法値であり、未指定を意味しない。値を使用しないoperationへnullable scalarの`0`を含めて渡した場合もschema外として拒否し、silent ignoreしない。
 
+Commitment specの`related_goal_refs / due_condition_refs / release_condition_refs`はuniqueな参照集合であり、tupleの入力順序はidentityへ意味を持たない。active duplicate判定では各集合を順序非依存に正規化し、並べ替えによるduplicate回避を拒否する。
+
 ```text
 Validated GoalTransition
 → GoalStateReducer
