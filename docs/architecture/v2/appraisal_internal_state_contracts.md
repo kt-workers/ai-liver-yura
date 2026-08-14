@@ -29,6 +29,8 @@ facet familyは次を区別する。
 
 Snapshotはmonotonic `revision`とtimezone-aware `updated_at`を持つimmutable owned tupleである。同じ`facet_kind + state_key + target_ref`を重複保持しない。
 
+`revision`は`source_context_revision`とは独立したstate世代である。Reducerがsource contextを変えずにstateだけ更新できるため、Internal Stateを入力にするlong-running Executiveはrequest時のこのrevisionを`ExecutiveFreshnessStamp`へ保持し、LLM完了後にcurrent state revisionを読み直して一致しない結果をcommitしない。これをFoundation共通`RevisionVector`へ暗黙に包含したものとして扱わない。
+
 ## 3. Appraisal Candidate
 
 `AppraisalCandidate`は次を持つ。

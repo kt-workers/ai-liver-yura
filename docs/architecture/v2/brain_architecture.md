@@ -221,6 +221,8 @@ Reflection
 
 Store直接mutation、complex Plan全step、最終台詞、joint angle、Game frame actionは生成しない。
 
+LLM完了後のcommitではsource / goal / attentionに加えてInternal Stateの独立revisionをcurrent ownerから再取得する。Capability / Preconditionもcurrent値を再検証し、intentに必要な条件はLLMの自己申告だけでなく信頼済みpolicyまたはupstream typed contractから導出する。
+
 ---
 
 ## 12. B08 Goal / Commitment State — #366
