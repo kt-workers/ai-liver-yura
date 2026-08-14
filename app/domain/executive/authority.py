@@ -147,13 +147,18 @@ class ExecutiveDecisionAuthority:
         if set(references) - evidence_ids:
             raise ValueError("candidate reference is outside bounded context")
 
-        preconditions = {
-            item.precondition_id: freeze_json(item.actual) for item in current.preconditions
-        }
+        snapshot_preconditions = {item.precondition_id: item for item in snapshot.preconditions}
+        current_preconditions = {item.precondition_id: item for item in current.preconditions}
         for intent in candidate.intents:
             for precondition_requirement in intent.preconditions:
-                if preconditions.get(precondition_requirement.precondition_id) != freeze_json(
-                    precondition_requirement.expected
+                precondition_id = precondition_requirement.precondition_id
+                captured_precondition = snapshot_preconditions[precondition_id]
+                live = current_preconditions.get(precondition_id)
+                if (
+                    live is None
+                    or live.subject_ref != captured_precondition.subject_ref
+                    or live.predicate != captured_precondition.predicate
+                    or freeze_json(live.actual) != freeze_json(precondition_requirement.expected)
                 ):
                     raise ValueError("required precondition does not match")
 

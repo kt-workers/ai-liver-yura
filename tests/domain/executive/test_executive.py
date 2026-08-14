@@ -367,6 +367,18 @@ def test_precondition_expectation_is_revalidated_at_commit() -> None:
         )
 
 
+def test_precondition_identity_cannot_be_replaced_at_commit() -> None:
+    changed_identity = PreconditionFact("pre-turn", "different-subject", "not_equals", "available")
+    with pytest.raises(ValueError, match="precondition"):
+        ExecutiveDecisionAuthority().commit(
+            candidate(),
+            snapshot(),
+            current=live_state(preconditions=(changed_identity,)),
+            decision_id="decision-precondition-identity",
+            committed_at=NOW,
+        )
+
+
 def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
     unknown_goal = GoalTransitionIntent(
         "goal-intent",
