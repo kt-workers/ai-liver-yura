@@ -68,7 +68,7 @@ LLM完了後、`ExecutiveLiveStatePort`はcommit直前のcurrent stateをimmutab
 2. candidateのtrigger、source event、3 revisionがrequest時snapshotと一致する。
 3. request時の`ExecutiveFreshnessStamp`とcommit直前に取得したcurrent stampが一致する。
 4. evidence、precondition、capability参照がsnapshotにgroundされる。
-5. authoritative requirementsがcandidateの申告から欠落しておらず、申告されたrequired capabilityがcurrent stateでavailableまたは明示許可されたdegradedである。開始時snapshotだけで判定しない。
+5. authoritative requirementsがcandidateの申告から欠落しておらず、申告されたrequired capabilityが開始時snapshotに存在し、同じcapability ID・revisionのままcurrent stateでavailableまたは明示許可されたdegradedである。開始時snapshotだけで判定しない。
 6. authoritative requirementsがcandidateの申告から欠落しておらず、申告されたrequired preconditionがcurrent stateで判定済みかつ期待値と一致する。開始時snapshotだけで判定しない。
 7. outcomeとintentの組合せが整合する。
 8. intent IDが一意で、Goal/Commitment transitionがexpected goal revisionを持つ。
