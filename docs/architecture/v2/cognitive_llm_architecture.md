@@ -153,6 +153,8 @@ Deep Appraisalを全Decisionのblocking prerequisiteにしない。
 
 What-to-say Authority。propositions、required/forbidden、polarity/certainty/degree、question budget、truth constraints等を`SpeechSemanticPlan`へ閉じる。simple pathでは専用LLM省略可能。
 
+実装正本は`speech_semantics_contracts.md`。simple pathはtyped directiveの存在で決定し、keyword / regex / fixed phraseをfallback Authorityにしない。complex pathはFoundation LLM Roleのcandidateをawait後live revisionで再検証し、同じDomain commit gateへ通す。
+
 ### C06 Character Language — #330
 
 **確定意味を、ゆらならどう言うか。**

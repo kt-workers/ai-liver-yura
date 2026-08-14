@@ -13,6 +13,7 @@
 - `executive_authority_contracts.md` — Executive Goal・Action Authority / typed decision commit gate
 - `goal_commitment_state_contracts.md` — persistent Goal・Commitment State / atomic lifecycle reducer
 - `activity_execution_contracts.md` — Activity admission / Capability preflight / Actual Execution Fact authority
+- `speech_semantics_contracts.md` — What-to-say Authority / typed SpeechSemanticPlan / simple・complex commit gate
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
 - `body_architecture.md` — canonical body, generative motion, realtime control
 - `plugin_architecture.md` — Core extension / capability architecture
