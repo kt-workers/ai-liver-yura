@@ -1,5 +1,6 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -74,7 +75,15 @@ def goal_transition(
             None,
             goal_id,
             revision,
-            GoalTransitionPayload(f"semantic-{goal_id}", 60),
+            GoalTransitionPayload(
+                f"semantic-{goal_id}",
+                60,
+                goal_kind="social",
+                target_ref=f"target-{goal_id}",
+                precondition_ids=(f"pre-{goal_id}",),
+                completion_condition_refs=(f"complete-{goal_id}",),
+                interruption_policy="protected",
+            ),
             (f"reason-{goal_id}",),
         )
     payload = GoalTransitionPayload(
@@ -109,7 +118,19 @@ def commitment_transition(
         CommitmentTransitionPayload(
             f"semantic-{commitment_id}"
             if operation is CommitmentTransitionOperation.CREATE
-            else None
+            else None,
+            counterparty_ref=f"counterparty-{commitment_id}"
+            if operation is CommitmentTransitionOperation.CREATE
+            else None,
+            related_goal_refs=(),
+            strength=70 if operation is CommitmentTransitionOperation.CREATE else None,
+            priority=65 if operation is CommitmentTransitionOperation.CREATE else None,
+            due_condition_refs=(f"due-{commitment_id}",)
+            if operation is CommitmentTransitionOperation.CREATE
+            else (),
+            release_condition_refs=(f"release-{commitment_id}",)
+            if operation is CommitmentTransitionOperation.CREATE
+            else (),
         ),
         (f"reason-{commitment_id}",),
     )
@@ -166,6 +187,11 @@ def test_goal_lifecycle_create_activate_suspend_resume_complete() -> None:
     goal = store.snapshot().goals[0]
     assert goal.status is GoalStatus.COMPLETED
     assert goal.revision == 5
+    assert goal.kind.value == "social"
+    assert goal.target_ref == "target-goal-1"
+    assert goal.precondition_ids == ("pre-goal-1",)
+    assert goal.completion_condition_refs == ("complete-goal-1",)
+    assert goal.interruption_policy.value == "protected"
 
 
 @pytest.mark.parametrize(
@@ -227,10 +253,57 @@ def test_commitment_lifecycle_and_duplicate_rejection() -> None:
     ):
         apply_commitment(store, operation, revision)
     assert store.snapshot().commitments[0].status is CommitmentStatus.FULFILLED
+    assert store.snapshot().commitments[0].counterparty_ref == "counterparty-commitment-1"
+    assert store.snapshot().commitments[0].strength == 70
+    assert store.snapshot().commitments[0].priority == 65
+    assert store.snapshot().commitments[0].due_condition_refs == ("due-commitment-1",)
     duplicate = commitment_transition(CommitmentTransitionOperation.CREATE, 5)
     with pytest.raises(ValueError, match="already exists"):
         store.apply(decision("duplicate", 5, commitments=(duplicate,)))
     assert store.snapshot().revision == 5
+
+
+def test_duplicate_active_commitment_semantic_spec_with_different_id_is_rejected() -> None:
+    store = GoalCommitmentStore()
+    first = commitment_transition(
+        CommitmentTransitionOperation.CREATE, 0, commitment_id="commitment-a"
+    )
+    store.apply(decision("first", 0, commitments=(first,)))
+    second = commitment_transition(
+        CommitmentTransitionOperation.CREATE, 1, commitment_id="commitment-b"
+    )
+    second = replace(
+        second,
+        payload=replace(
+            second.payload,
+            semantic_commitment_ref=first.payload.semantic_commitment_ref,
+            counterparty_ref=first.payload.counterparty_ref,
+            due_condition_refs=first.payload.due_condition_refs,
+            release_condition_refs=first.payload.release_condition_refs,
+        ),
+    )
+    with pytest.raises(ValueError, match="duplicate active commitment"):
+        store.apply(decision("second", 1, commitments=(second,)))
+
+
+def test_commitment_can_link_existing_goal_through_typed_transition() -> None:
+    store = GoalCommitmentStore()
+    apply_goal(store, GoalTransitionOperation.CREATE, 0)
+    transition = commitment_transition(CommitmentTransitionOperation.CREATE, 1)
+    transition = replace(
+        transition,
+        payload=replace(transition.payload, related_goal_refs=("goal-1",)),
+    )
+    store.apply(decision("linked-commitment", 1, commitments=(transition,)))
+    assert store.snapshot().commitments[0].related_goal_refs == ("goal-1",)
+
+
+def test_initial_snapshot_and_candidate_transition_revision_are_strict() -> None:
+    with pytest.raises(ValueError, match="initial"):
+        GoalCommitmentStore("not-snapshot")  # type: ignore[arg-type]
+    mismatched = goal_transition(GoalTransitionOperation.CREATE, 1)
+    with pytest.raises(ValueError, match="candidate goal_revision"):
+        decision("mismatched", 0, goals=(mismatched,))
 
 
 def test_stale_and_duplicate_decision_are_rejected() -> None:
@@ -306,9 +379,10 @@ def test_bounded_view_orders_by_priority_and_excludes_terminal_state() -> None:
     apply_goal(store, GoalTransitionOperation.ACTIVATE, 2, goal_id="low")
     apply_goal(store, GoalTransitionOperation.ACTIVATE, 3, goal_id="high")
     apply_goal(store, GoalTransitionOperation.REPRIORITIZE, 4, goal_id="high")
-    view = build_goal_context_view(store.snapshot(), max_active=1)
+    view = build_goal_context_view(store.snapshot(), max_active=1, max_recent=1)
     assert [item.goal_id for item in view.active_goals] == ["high"]
     assert view.goal_revision == store.snapshot().revision
+    assert len(view.recently_changed_goals) == 1
 
 
 def test_autonomy_triggers_return_to_executive_without_action() -> None:
@@ -318,6 +392,6 @@ def test_autonomy_triggers_return_to_executive_without_action() -> None:
     triggers = autonomy_triggers(store.snapshot())
     assert {item.kind for item in triggers} == {
         AutonomyTriggerKind.PENDING_GOAL,
-        AutonomyTriggerKind.COMMITMENT_REVIEW,
+        AutonomyTriggerKind.COMMITMENT_DUE_CHECK,
     }
     assert all(not hasattr(item, "action") for item in triggers)

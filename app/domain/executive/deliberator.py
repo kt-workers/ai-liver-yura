@@ -414,7 +414,19 @@ def _commitment_transition(value: object) -> CommitmentTransitionIntent:
 
 def _goal_payload(value: object) -> GoalTransitionPayload:
     item = _object(
-        value, "goal transition payload", {"semantic_goal_ref", "priority", "superseding_goal_ref"}
+        value,
+        "goal transition payload",
+        {
+            "semantic_goal_ref",
+            "priority",
+            "superseding_goal_ref",
+            "goal_kind",
+            "target_ref",
+            "commitment_refs",
+            "precondition_ids",
+            "completion_condition_refs",
+            "interruption_policy",
+        },
     )
     priority = item["priority"]
     if priority is not None:
@@ -423,11 +435,40 @@ def _goal_payload(value: object) -> GoalTransitionPayload:
         _optional_string(item["semantic_goal_ref"], "semantic_goal_ref"),
         priority,
         _optional_string(item["superseding_goal_ref"], "superseding_goal_ref"),
+        _optional_string(item["goal_kind"], "goal_kind"),
+        _optional_string(item["target_ref"], "target_ref"),
+        _strings(item["commitment_refs"], "commitment_refs"),
+        _strings(item["precondition_ids"], "precondition_ids"),
+        _strings(item["completion_condition_refs"], "completion_condition_refs"),
+        _optional_string(item["interruption_policy"], "interruption_policy"),
     )
 
 
 def _commitment_payload(value: object) -> CommitmentTransitionPayload:
-    item = _object(value, "commitment transition payload", {"semantic_commitment_ref"})
+    item = _object(
+        value,
+        "commitment transition payload",
+        {
+            "semantic_commitment_ref",
+            "counterparty_ref",
+            "related_goal_refs",
+            "strength",
+            "priority",
+            "due_condition_refs",
+            "release_condition_refs",
+        },
+    )
+    strength, priority = item["strength"], item["priority"]
+    if strength is not None:
+        strength = _revision(strength, "strength")
+    if priority is not None:
+        priority = _revision(priority, "priority")
     return CommitmentTransitionPayload(
-        _optional_string(item["semantic_commitment_ref"], "semantic_commitment_ref")
+        _optional_string(item["semantic_commitment_ref"], "semantic_commitment_ref"),
+        _optional_string(item["counterparty_ref"], "counterparty_ref"),
+        _strings(item["related_goal_refs"], "related_goal_refs"),
+        strength,
+        priority,
+        _strings(item["due_condition_refs"], "due_condition_refs"),
+        _strings(item["release_condition_refs"], "release_condition_refs"),
     )

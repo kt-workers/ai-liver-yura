@@ -51,6 +51,7 @@ class AutonomyTriggerKind(str, Enum):
     ACTIVE_GOAL = "active_goal"
     SUSPENDED_GOAL = "suspended_goal"
     COMMITMENT_REVIEW = "commitment_review"
+    COMMITMENT_DUE_CHECK = "commitment_due_check"
 
 
 def _ids(values: object, name: str) -> tuple[str, ...]:
@@ -250,6 +251,8 @@ class GoalContextView:
     active_goals: tuple[GoalState, ...]
     suspended_goals: tuple[GoalState, ...]
     commitments: tuple[CommitmentState, ...]
+    recently_changed_goals: tuple[GoalState, ...]
+    recently_changed_commitments: tuple[CommitmentState, ...]
 
     def __post_init__(self) -> None:
         require_revision(self.goal_revision, "goal_revision")
@@ -257,6 +260,8 @@ class GoalContextView:
             ("active_goals", GoalState),
             ("suspended_goals", GoalState),
             ("commitments", CommitmentState),
+            ("recently_changed_goals", GoalState),
+            ("recently_changed_commitments", CommitmentState),
         ):
             values = getattr(self, name)
             if not isinstance(values, (list, tuple)) or any(
@@ -271,6 +276,10 @@ class GoalContextView:
             "active_goals": [item.to_dict() for item in self.active_goals],
             "suspended_goals": [item.to_dict() for item in self.suspended_goals],
             "commitments": [item.to_dict() for item in self.commitments],
+            "recently_changed_goals": [item.to_dict() for item in self.recently_changed_goals],
+            "recently_changed_commitments": [
+                item.to_dict() for item in self.recently_changed_commitments
+            ],
         }
 
 

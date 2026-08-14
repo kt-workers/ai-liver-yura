@@ -79,6 +79,8 @@ class GoalCommitmentStore:
     """current Goal/Commitmentの単一同期State Authority。"""
 
     def __init__(self, initial: GoalCommitmentSnapshot | None = None) -> None:
+        if initial is not None and not isinstance(initial, GoalCommitmentSnapshot):
+            raise ValueError("initial must be GoalCommitmentSnapshot")
         initial_time = datetime.min.replace(tzinfo=timezone.utc)
         self._snapshot = initial or GoalCommitmentSnapshot(0, (), (), initial_time)
         self._decision_ids: set[str] = set()
@@ -103,6 +105,8 @@ class GoalCommitmentStore:
             if intent_ids.intersection(self._intent_ids):
                 raise ValueError("transition intent is already applied")
             current = self._snapshot
+            if candidate.goal_revision != current.revision:
+                raise ValueError("executive candidate goal revision is stale")
             if utc_instant(decision.committed_at) < utc_instant(current.updated_at):
                 raise ValueError("decision time predates current state")
             if any(item.expected_goal_revision != current.revision for item in transitions):
@@ -120,6 +124,7 @@ class GoalCommitmentStore:
                 )
             for commitment_transition in candidate.commitment_transition_intents:
                 self._apply_commitment(
+                    goals,
                     commitments,
                     commitment_transition,
                     candidate.source_event_ids,
@@ -157,19 +162,20 @@ class GoalCommitmentStore:
                 raise ValueError("goal already exists")
             payload = transition.payload
             assert payload.semantic_goal_ref is not None and payload.priority is not None
+            assert payload.goal_kind is not None and payload.interruption_policy is not None
             goals[goal_id] = GoalState(
                 goal_id,
-                GoalKind.GENERAL,
+                GoalKind(payload.goal_kind),
                 payload.semantic_goal_ref,
-                None,
+                payload.target_ref,
                 decision_id,
                 GoalStatus.PROPOSED,
                 payload.priority,
                 transition.reason_refs,
-                (),
-                (),
-                (),
-                InterruptionPolicy.RESUMABLE,
+                payload.commitment_refs,
+                payload.precondition_ids,
+                payload.completion_condition_refs,
+                InterruptionPolicy(payload.interruption_policy),
                 occurred_at,
                 occurred_at,
                 revision,
@@ -206,6 +212,7 @@ class GoalCommitmentStore:
 
     @staticmethod
     def _apply_commitment(
+        goals: dict[str, GoalState],
         commitments: dict[str, CommitmentState],
         transition: object,
         source_event_ids: tuple[str, ...],
@@ -223,19 +230,42 @@ class GoalCommitmentStore:
             if commitment_id in commitments:
                 raise ValueError("commitment already exists")
             semantic_ref = transition.payload.semantic_commitment_ref
-            assert semantic_ref is not None
+            strength, priority = transition.payload.strength, transition.payload.priority
+            assert semantic_ref is not None and strength is not None and priority is not None
+            if set(transition.payload.related_goal_refs) - set(goals):
+                raise ValueError("related commitment goal does not exist")
+            duplicate_identity = (
+                semantic_ref,
+                transition.payload.counterparty_ref,
+                transition.payload.related_goal_refs,
+                transition.payload.due_condition_refs,
+                transition.payload.release_condition_refs,
+            )
+            if any(
+                not item.terminal
+                and (
+                    item.semantic_commitment_ref,
+                    item.counterparty_ref,
+                    item.related_goal_refs,
+                    item.due_condition_refs,
+                    item.release_condition_refs,
+                )
+                == duplicate_identity
+                for item in commitments.values()
+            ):
+                raise ValueError("duplicate active commitment specification")
             commitments[commitment_id] = CommitmentState(
                 commitment_id,
                 semantic_ref,
-                None,
+                transition.payload.counterparty_ref,
                 source_event_ids,
                 decision_id,
-                (),
+                transition.payload.related_goal_refs,
                 CommitmentStatus.PROPOSED,
-                50,
-                50,
-                (),
-                (),
+                strength,
+                priority,
+                transition.payload.due_condition_refs,
+                transition.payload.release_condition_refs,
                 occurred_at,
                 occurred_at,
                 revision,

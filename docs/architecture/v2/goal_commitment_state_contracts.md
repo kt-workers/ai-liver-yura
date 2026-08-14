@@ -66,13 +66,17 @@ duplicate commitment spec、存在しないtarget、二重terminal、違法resum
 `GoalCommitmentStore.apply(decision)`はdecision内のGoal/Commitment transition全件を1 batchとして扱う。
 
 1. decision ID、intent IDの重複を検査する。
-2. 全transitionの`expected_goal_revision`がcurrent global revisionと一致することを検査する。
+2. `candidate.goal_revision`、全transitionの`expected_goal_revision`、current global revisionが同一であることを検査する。
 3. lifecycle、target、spec、参照、duplicateをcopy上で検証・適用する。
 4. 1件でも失敗したらStoreを変更しない。
 5. 全件成功時だけglobal revisionを1増やし、変更stateへ同じ新revisionを付けて一括置換する。
 6. decision / intent IDを処理済みledgerへ追加し、immutable snapshotを返す。
 
 Store lock区間にawait、LLM、Repository I/O、外部callbackを含めない。永続化は後続Port/Integrationがsnapshotまたはeventをlock外で扱う。
+
+CREATE payloadはStateの正規fieldを欠落なく運ぶ。Goalはkind、target、commitment/precondition/completion参照、interruption policyを、Commitmentはcounterparty、related Goal、strength/priority、due/release条件をtyped fieldで受ける。Storeはこれらを固定既定値へ退化させない。同一semantic commitment / counterparty / related Goal / due / release条件を持つnonterminal Commitmentは別IDでもduplicateとして拒否する。
+
+初期snapshotを受けるrehydration境界は`GoalCommitmentSnapshot`のruntime型を必須とする。
 
 ## 6. Bounded view
 
@@ -85,7 +89,7 @@ Store lock区間にawait、LLM、Repository I/O、外部callbackを含めない�
 
 件数上限を必須とし、全履歴をExecutive Promptへ投入しない。Planner requestはgoal IDとstate revisionとglobal goal revisionを保持し、commit前にcurrent revisionを再検証する。
 
-`AutonomyTrigger`はpending/active Goal、due Commitment、resume候補をtyped sourceとして表すだけで、AttentionやStoreが次の行動を決めない。triggerはExecutiveへ戻す。
+`AutonomyTrigger`はpending/active Goal、due条件の再評価が必要なCommitment、通常のCommitment review、resume候補をtyped sourceとして区別するだけで、due成立や次の行動をStoreが決めない。条件成立は後続のcurrent fact評価を経てExecutiveへ戻す。
 
 ## 7. 検証
 

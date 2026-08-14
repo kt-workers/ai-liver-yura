@@ -235,7 +235,12 @@ def test_goal_transition_operations_are_typed_and_do_not_mutate_store(
         operation,
         **kwargs,
         expected_goal_revision=5,
-        payload=GoalTransitionPayload("semantic-goal", 50)
+        payload=GoalTransitionPayload(
+            "semantic-goal",
+            50,
+            goal_kind="general",
+            interruption_policy="resumable",
+        )
         if operation is GoalTransitionOperation.CREATE
         else GoalTransitionPayload(
             priority=50 if operation is GoalTransitionOperation.REPRIORITIZE else None,
@@ -268,7 +273,7 @@ def test_commitment_transition_operations_are_typed(
         operation,
         **kwargs,
         expected_goal_revision=5,
-        payload=CommitmentTransitionPayload("commitment-spec")
+        payload=CommitmentTransitionPayload("commitment-spec", strength=50, priority=50)
         if operation is CommitmentTransitionOperation.CREATE
         else CommitmentTransitionPayload(),
         reason_refs=("fact-desire",),
@@ -395,7 +400,12 @@ def test_transition_payload_rejects_bounded_reference_of_wrong_kind(kind: str) -
             None,
             "goal-spec",
             5,
-            GoalTransitionPayload("cap-speech", 50),
+            GoalTransitionPayload(
+                "cap-speech",
+                50,
+                goal_kind="general",
+                interruption_policy="resumable",
+            ),
             ("fact-desire",),
         )
         proposed = replace(
@@ -411,7 +421,7 @@ def test_transition_payload_rejects_bounded_reference_of_wrong_kind(kind: str) -
             None,
             "commitment-spec",
             5,
-            CommitmentTransitionPayload("cap-speech"),
+            CommitmentTransitionPayload("cap-speech", strength=50, priority=50),
             ("fact-desire",),
         )
         proposed = replace(
