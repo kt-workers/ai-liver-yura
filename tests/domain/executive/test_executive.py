@@ -81,6 +81,20 @@ def snapshot(trigger_id: str = "trigger-1") -> ExecutiveContextSnapshot:
         (
             ExecutiveFactRef("fact-desire", ExecutiveFactKind.GOAL, 5, {"strength": 0.8}),
             ExecutiveFactRef("goal-1", ExecutiveFactKind.GOAL, 5, {"active": True}),
+            ExecutiveFactRef("goal-spec", ExecutiveFactKind.GOAL, 5, {"proposed": True}),
+            ExecutiveFactRef("commitment-1", ExecutiveFactKind.COMMITMENT, 5, {"active": True}),
+            ExecutiveFactRef(
+                "commitment-spec",
+                ExecutiveFactKind.COMMITMENT,
+                5,
+                {"proposed": True},
+            ),
+            ExecutiveFactRef(
+                "unsupported-claim",
+                ExecutiveFactKind.MEMORY_EVIDENCE,
+                1,
+                {"forbidden": True},
+            ),
         ),
         (
             CapabilityDescriptor(
@@ -175,6 +189,34 @@ def test_passive_outcomes_reject_executable_intents(outcome: ExecutiveOutcome) -
         replace(candidate(), outcome=outcome)
 
 
+def test_outcome_requires_semantically_matching_intent_kind() -> None:
+    body = ExecutiveIntent(
+        "intent-body",
+        ExecutiveIntentKind.BODY,
+        "身体表現を準備する",
+        {"motion_goal_ref": "acknowledge"},
+    )
+    with pytest.raises(ValueError, match="speech"):
+        replace(candidate(), intents=(body,))
+    with pytest.raises(ValueError, match="activity or body"):
+        replace(candidate(), outcome=ExecutiveOutcome.ACT)
+
+
+def test_intent_payload_rejects_downstream_responsibility_fields() -> None:
+    with pytest.raises(ValueError, match="responsibility-external"):
+        replace(
+            speech_intent(),
+            payload=cast(
+                JsonValue,
+                {
+                    "final_utterance": "勝手な最終台詞",
+                    "joint_angles": [1, 2],
+                    "execution_completed": True,
+                },
+            ),
+        )
+
+
 @pytest.mark.parametrize("operation", list(GoalTransitionOperation))
 def test_goal_transition_operations_are_typed_and_do_not_mutate_store(
     operation: GoalTransitionOperation,
@@ -185,7 +227,14 @@ def test_goal_transition_operations_are_typed_and_do_not_mutate_store(
         else {"goal_ref": "goal-1", "goal_spec_ref": None}
     )
     intent = GoalTransitionIntent(
-        "goal-intent", operation, **kwargs, expected_goal_revision=5, reason_refs=("fact-desire",)
+        "goal-intent",
+        operation,
+        **kwargs,
+        expected_goal_revision=5,
+        payload={"semantic_goal": {"kind": "respond"}}
+        if operation is GoalTransitionOperation.CREATE
+        else {},
+        reason_refs=("fact-desire",),
     )
     value = replace(
         candidate(),
@@ -210,6 +259,9 @@ def test_commitment_transition_operations_are_typed(
         operation,
         **kwargs,
         expected_goal_revision=5,
+        payload={"semantic_commitment": {"kind": "follow_up"}}
+        if operation is CommitmentTransitionOperation.CREATE
+        else {},
         reason_refs=("fact-desire",),
     )
     assert intent.operation is operation
@@ -229,6 +281,8 @@ def test_authority_commits_grounded_candidate_and_projects_foundation_contracts(
     assert foundation.authority.owner == "executive"
     assert foundation.intent_refs[0].kind is IntentKind.SPEECH
     assert command.required_capabilities[0].capability_type == "speech"
+    assert command.preconditions[0].precondition_id == "pre-turn"
+    assert command.preconditions[0].expected == "available"
 
 
 def test_stale_context_goal_or_attention_revision_is_rejected() -> None:
@@ -273,6 +327,41 @@ def test_precondition_expectation_is_revalidated_at_commit() -> None:
             snapshot(),
             current_revisions=REVISIONS,
             decision_id="decision-precondition",
+            committed_at=NOW,
+        )
+
+
+def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
+    unknown_goal = GoalTransitionIntent(
+        "goal-intent",
+        GoalTransitionOperation.ABANDON,
+        "unknown-goal",
+        None,
+        5,
+        {},
+        ("fact-desire",),
+    )
+    proposed = replace(
+        candidate(),
+        outcome=ExecutiveOutcome.CONTINUE_ACTIVITY,
+        intents=(),
+        goal_transition_intents=(unknown_goal,),
+    )
+    with pytest.raises(ValueError, match="goal transition"):
+        ExecutiveDecisionAuthority().commit(
+            proposed,
+            snapshot(),
+            current_revisions=REVISIONS,
+            decision_id="decision-unknown-goal",
+            committed_at=NOW,
+        )
+    ungrounded_claim = replace(speech_intent(), forbidden_claim_refs=("unknown-claim",))
+    with pytest.raises(ValueError, match="bounded"):
+        ExecutiveDecisionAuthority().commit(
+            replace(candidate(), intents=(ungrounded_claim,)),
+            snapshot(),
+            current_revisions=REVISIONS,
+            decision_id="decision-unknown-claim",
             committed_at=NOW,
         )
 

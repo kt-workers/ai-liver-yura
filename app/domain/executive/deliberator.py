@@ -314,6 +314,7 @@ def _goal_transition(value: object) -> GoalTransitionIntent:
             "goal_ref",
             "goal_spec_ref",
             "expected_goal_revision",
+            "payload",
             "reason_refs",
         },
     )
@@ -328,6 +329,7 @@ def _goal_transition(value: object) -> GoalTransitionIntent:
         goal_ref,
         spec_ref,
         _revision(item["expected_goal_revision"], "expected_goal_revision"),
+        cast(JsonValue, item["payload"]),
         _strings(item["reason_refs"], "reason_refs"),
     )
 
@@ -342,6 +344,7 @@ def _commitment_transition(value: object) -> CommitmentTransitionIntent:
             "commitment_ref",
             "commitment_spec_ref",
             "expected_goal_revision",
+            "payload",
             "reason_refs",
         },
     )
@@ -356,5 +359,6 @@ def _commitment_transition(value: object) -> CommitmentTransitionIntent:
         commitment_ref,
         spec_ref,
         _revision(item["expected_goal_revision"], "expected_goal_revision"),
+        cast(JsonValue, item["payload"]),
         _strings(item["reason_refs"], "reason_refs"),
     )

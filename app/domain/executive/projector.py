@@ -5,6 +5,7 @@ from app.domain.contracts import (
     ExecutiveDecision,
     IntentKind,
     IntentRef,
+    PreconditionRef,
     RevisionVector,
     SystemCommand,
 )
@@ -60,6 +61,16 @@ def to_system_command(
         decision.candidate.goal_revision,
         decision.candidate.attention_revision,
     )
+    facts = {item.precondition_id: item for item in decision.validated_preconditions}
+    preconditions = tuple(
+        PreconditionRef(
+            requirement.precondition_id,
+            facts[requirement.precondition_id].predicate,
+            facts[requirement.precondition_id].subject_ref,
+            requirement.expected,
+        )
+        for requirement in intent.preconditions
+    )
     return SystemCommand(
         command_id,
         decision.decision_id,
@@ -67,5 +78,6 @@ def to_system_command(
         authority_ref(decision.decision_id),
         decision.committed_at,
         revisions,
+        preconditions=preconditions,
         required_capabilities=intent.required_capabilities,
     )

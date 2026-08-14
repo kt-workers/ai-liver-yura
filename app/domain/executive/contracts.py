@@ -260,6 +260,30 @@ class ExecutiveIntent:
         payload = freeze_json(self.payload)
         if not isinstance(payload, Mapping):
             raise ValueError("intent payload must be an object")
+        allowed_fields = {
+            ExecutiveIntentKind.SPEECH: {
+                "semantic_goal_ref",
+                "target_ref",
+                "constraint_refs",
+            },
+            ExecutiveIntentKind.BODY: {
+                "motion_goal_ref",
+                "target_ref",
+                "constraint_refs",
+            },
+            ExecutiveIntentKind.ACTIVITY: {
+                "activity_type",
+                "target_ref",
+                "constraint_refs",
+            },
+            ExecutiveIntentKind.ATTENTION: {
+                "target_ref",
+                "mode",
+                "constraint_refs",
+            },
+        }[self.kind]
+        if set(payload) - allowed_fields:
+            raise ValueError("intent payload contains responsibility-external fields")
         object.__setattr__(self, "payload", payload)
         for name in ("evidence_refs", "forbidden_claim_refs"):
             object.__setattr__(self, name, _ids(getattr(self, name), name))
@@ -300,6 +324,7 @@ class GoalTransitionIntent:
     goal_ref: str | None
     goal_spec_ref: str | None
     expected_goal_revision: int
+    payload: JsonValue
     reason_refs: tuple[str, ...]
 
     def __post_init__(self) -> None:
@@ -316,6 +341,12 @@ class GoalTransitionIntent:
         elif self.goal_ref is None:
             raise ValueError("non-create goal transition requires goal_ref")
         require_revision(self.expected_goal_revision, "expected_goal_revision")
+        payload = freeze_json(self.payload)
+        if not isinstance(payload, Mapping):
+            raise ValueError("goal transition payload must be an object")
+        if self.operation is GoalTransitionOperation.CREATE and not payload:
+            raise ValueError("create goal transition requires typed payload")
+        object.__setattr__(self, "payload", payload)
         object.__setattr__(
             self, "reason_refs", _ids(self.reason_refs, "reason_refs", non_empty=True)
         )
@@ -327,6 +358,7 @@ class GoalTransitionIntent:
             "goal_ref": self.goal_ref,
             "goal_spec_ref": self.goal_spec_ref,
             "expected_goal_revision": self.expected_goal_revision,
+            "payload": thaw_json(self.payload),
             "reason_refs": list(self.reason_refs),
         }
 
@@ -338,6 +370,7 @@ class CommitmentTransitionIntent:
     commitment_ref: str | None
     commitment_spec_ref: str | None
     expected_goal_revision: int
+    payload: JsonValue
     reason_refs: tuple[str, ...]
 
     def __post_init__(self) -> None:
@@ -354,6 +387,12 @@ class CommitmentTransitionIntent:
         elif self.commitment_ref is None:
             raise ValueError("non-create commitment transition requires commitment_ref")
         require_revision(self.expected_goal_revision, "expected_goal_revision")
+        payload = freeze_json(self.payload)
+        if not isinstance(payload, Mapping):
+            raise ValueError("commitment transition payload must be an object")
+        if self.operation is CommitmentTransitionOperation.CREATE and not payload:
+            raise ValueError("create commitment transition requires typed payload")
+        object.__setattr__(self, "payload", payload)
         object.__setattr__(
             self, "reason_refs", _ids(self.reason_refs, "reason_refs", non_empty=True)
         )
@@ -365,6 +404,7 @@ class CommitmentTransitionIntent:
             "commitment_ref": self.commitment_ref,
             "commitment_spec_ref": self.commitment_spec_ref,
             "expected_goal_revision": self.expected_goal_revision,
+            "payload": thaw_json(self.payload),
             "reason_refs": list(self.reason_refs),
         }
 
@@ -430,8 +470,16 @@ class ExecutiveDecisionCandidate:
             self.intents or self.goal_transition_intents or self.commitment_transition_intents
         ):
             raise ValueError("passive outcome cannot contain intents")
-        if self.outcome in (ExecutiveOutcome.RESPOND, ExecutiveOutcome.ACT) and not self.intents:
-            raise ValueError("respond and act require an executable intent")
+        intent_kinds = {item.kind for item in self.intents}
+        if (
+            self.outcome is ExecutiveOutcome.RESPOND
+            and ExecutiveIntentKind.SPEECH not in intent_kinds
+        ):
+            raise ValueError("respond outcome requires speech intent")
+        if self.outcome is ExecutiveOutcome.ACT and not intent_kinds.intersection(
+            {ExecutiveIntentKind.ACTIVITY, ExecutiveIntentKind.BODY}
+        ):
+            raise ValueError("act outcome requires activity or body intent")
         object.__setattr__(
             self, "rationale_refs", _ids(self.rationale_refs, "rationale_refs", non_empty=True)
         )
@@ -462,12 +510,22 @@ class ExecutiveDecisionCandidate:
 class CommittedExecutiveDecision:
     decision_id: str
     candidate: ExecutiveDecisionCandidate
+    validated_preconditions: tuple[PreconditionFact, ...]
     committed_at: datetime
 
     def __post_init__(self) -> None:
         require_identifier(self.decision_id, "decision_id")
         if not isinstance(self.candidate, ExecutiveDecisionCandidate):
             raise ValueError("candidate must be ExecutiveDecisionCandidate")
+        object.__setattr__(
+            self,
+            "validated_preconditions",
+            _owned(
+                self.validated_preconditions,
+                PreconditionFact,
+                "validated_preconditions",
+            ),
+        )
         require_aware(self.committed_at, "committed_at")
         if utc_instant(self.committed_at) < utc_instant(self.candidate.created_at):
             raise ValueError("committed_at cannot predate candidate")
@@ -476,5 +534,6 @@ class CommittedExecutiveDecision:
         return {
             "decision_id": self.decision_id,
             "candidate": self.candidate.to_dict(),
+            "validated_preconditions": [item.to_dict() for item in self.validated_preconditions],
             "committed_at": timestamp_to_json(self.committed_at),
         }

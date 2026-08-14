@@ -35,7 +35,22 @@ class ExecutiveDecisionAuthority:
             if snapshot.trigger_id in self._committed_triggers:
                 raise ValueError("executive trigger is already committed")
             self._validate(candidate, snapshot, current_revisions)
-            decision = CommittedExecutiveDecision(decision_id, candidate, committed_at)
+            required_precondition_ids = {
+                requirement.precondition_id
+                for intent in candidate.intents
+                for requirement in intent.preconditions
+            }
+            validated_preconditions = tuple(
+                item
+                for item in snapshot.preconditions
+                if item.precondition_id in required_precondition_ids
+            )
+            decision = CommittedExecutiveDecision(
+                decision_id,
+                candidate,
+                validated_preconditions,
+                committed_at,
+            )
             self._committed_triggers.add(snapshot.trigger_id)
             return decision
 
@@ -71,9 +86,14 @@ class ExecutiveDecisionAuthority:
         evidence_ids.update(item.fact_id for item in snapshot.facts)
         evidence_ids.update(item.capability_id for item in snapshot.capabilities)
         evidence_ids.update(item.precondition_id for item in snapshot.preconditions)
+        goal_fact_ids = {item.fact_id for item in snapshot.facts if item.kind.value == "goal"}
+        commitment_fact_ids = {
+            item.fact_id for item in snapshot.facts if item.kind.value == "commitment"
+        }
         references = list(candidate.rationale_refs)
         for intent in candidate.intents:
             references.extend(intent.evidence_refs)
+            references.extend(intent.forbidden_claim_refs)
             unknown_preconditions = {item.precondition_id for item in intent.preconditions} - {
                 item.precondition_id for item in snapshot.preconditions
             }
@@ -88,10 +108,18 @@ class ExecutiveDecisionAuthority:
             if transition.expected_goal_revision != snapshot.goal_revision:
                 raise ValueError("goal transition revision is stale")
             references.extend(transition.reason_refs)
+            target = transition.goal_ref or transition.goal_spec_ref
+            if target not in goal_fact_ids:
+                raise ValueError("goal transition reference is outside bounded context")
         for commitment_transition in candidate.commitment_transition_intents:
             if commitment_transition.expected_goal_revision != snapshot.goal_revision:
                 raise ValueError("commitment transition revision is stale")
             references.extend(commitment_transition.reason_refs)
+            target = (
+                commitment_transition.commitment_ref or commitment_transition.commitment_spec_ref
+            )
+            if target not in commitment_fact_ids:
+                raise ValueError("commitment transition reference is outside bounded context")
         if set(references) - evidence_ids:
             raise ValueError("candidate reference is outside bounded context")
 
