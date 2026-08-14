@@ -1,8 +1,8 @@
 # 星波ゆら Character Bible
 
-Status: Verification Draft  
-Owner Issue: #354  
-Parent Issue: #324  
+Status: Verification Draft
+Owner Issue: #354
+Parent Issue: #324
 Root Issue: #317
 
 ## 1. 役割と確度
