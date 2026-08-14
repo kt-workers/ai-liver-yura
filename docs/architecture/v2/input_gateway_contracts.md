@@ -34,7 +34,7 @@ SDK object、socket、image buffer、GUI event object等のraw objectはDomain�
 - permission: granted / denied / unknown / not_required
 - capability reference
 
-permission deniedまたはunavailableのsourceから、通常のobserved eventを生成しない。状態変化通知を生成する場合は`lifecycle` modalityとして明示し、観測内容を捏造しない。
+permission deniedまたはunavailableのsourceから、通常のobserved eventを生成しない。状態変化通知はtyped `InputSourceLifecycleChange`と`source_state_changed` semantic unitだけを許可する。空payload以外、session、pointer、contactを持てず、previous/current stateが異なることを検証する。
 
 ## 4. 正規化結果
 
@@ -92,7 +92,8 @@ pointer座標だけから「ゆらへ触れた」またはbody regionを捏造�
 
 ## 7. Orderingとidempotency
 
-- `observation_id`はprocess lifetimeで一度だけadmitする
+- `observation_id`はprocess共有`InputAdmissionLedger`がatomicに一度だけadmitする
+- continuous lifecycleはprocess共有`InputSessionRegistry`がatomicに検証・遷移する
 - event timestampはAdapter観測時刻を保持する
 - arrival順とoccurred順を混同しない
 - session sequenceでcontinuous orderingを保証する
@@ -110,7 +111,7 @@ Domain model / normalizerはProvider SDKをimportしない。Adapterがraw sourc
 - source unavailable / permission deniedをfail-closedで拒否する
 - duplicateをidempotentに拒否する
 - continuous session lifecycle / sequenceを検証する
-- pointer sampleとactual touch/body regionを分離する
+- pointer sampleとactual touch/body regionを分離し、body regionはYura body hitだけに許可する
 - raw SDK/source objectをDomainへ渡さない
 - Meaning/Appraisal/Goal/Attention判断を含めない
 - Unitで全reject reasonとsession transitionを検証する

@@ -3,10 +3,12 @@ from typing import cast
 
 from app.domain.contracts import CapabilityAvailability, RevisionVector
 from app.domain.input_gateway import (
+    InputAdmissionLedger,
     InputModality,
     InputNormalizer,
     InputObservation,
     InputPermission,
+    InputSessionRegistry,
     InputSourceState,
 )
 
@@ -28,7 +30,9 @@ def test_consumer_can_route_by_modality_without_reinterpreting_source_api() -> N
         RevisionVector(9),
         {"message_ref": "message-42", "author_ref": "viewer-7"},
     )
-    admission = InputNormalizer().normalize(observation)
+    admission = InputNormalizer(InputAdmissionLedger(), InputSessionRegistry()).normalize(
+        observation
+    )
     assert admission.event is not None
     consumer_view = admission.event.to_dict()
     envelope = cast(dict[str, object], consumer_view["envelope"])

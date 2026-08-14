@@ -69,6 +69,15 @@ def test_contact_requires_actual_body_region_for_yura_hit() -> None:
     )
     assert percept.body_region == "left_hand"
 
+    with pytest.raises(ValueError):
+        ContactPercept(
+            ContactTargetKind.ENVIRONMENT,
+            0.8,
+            "vision",
+            1,
+            body_region="head",
+        )
+
 
 def test_pointer_coordinates_do_not_imply_contact() -> None:
     observation = InputObservation(

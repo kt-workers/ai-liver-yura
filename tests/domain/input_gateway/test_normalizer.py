@@ -8,6 +8,7 @@ from app.domain.contracts import CapabilityAvailability, RevisionVector
 from app.domain.input_gateway import (
     ContactPercept,
     ContactTargetKind,
+    InputAdmissionLedger,
     InputAdmissionStatus,
     InputModality,
     InputNormalizer,
@@ -15,12 +16,18 @@ from app.domain.input_gateway import (
     InputPermission,
     InputRejectionReason,
     InputSessionPhase,
+    InputSessionRegistry,
     InputSessionSample,
+    InputSourceLifecycleChange,
     InputSourceState,
     PointerSample,
 )
 
 NOW = datetime(2026, 8, 19, tzinfo=timezone.utc)
+
+
+def normalizer() -> InputNormalizer:
+    return InputNormalizer(InputAdmissionLedger(), InputSessionRegistry())
 
 
 def source(
@@ -53,7 +60,7 @@ def observation(
 
 
 def test_normalizes_source_neutral_foundation_event_without_meaning() -> None:
-    result = InputNormalizer().normalize(observation("obs-1"))
+    result = normalizer().normalize(observation("obs-1"))
     assert result.status is InputAdmissionStatus.ACCEPTED
     assert result.event is not None
     envelope = result.event.envelope
@@ -70,13 +77,13 @@ def test_normalizes_source_neutral_foundation_event_without_meaning() -> None:
 
 
 def test_duplicate_observation_is_idempotently_rejected_even_after_failure() -> None:
-    normalizer = InputNormalizer()
+    gateway = normalizer()
     unavailable = observation(
         "same",
         input_source=source(availability=CapabilityAvailability.UNAVAILABLE),
     )
-    first = normalizer.normalize(unavailable)
-    second = normalizer.normalize(observation("same"))
+    first = gateway.normalize(unavailable)
+    second = gateway.normalize(observation("same"))
     assert first.reason is InputRejectionReason.SOURCE_UNAVAILABLE
     assert second.status is InputAdmissionStatus.DUPLICATE
     assert second.reason is InputRejectionReason.DUPLICATE
@@ -96,28 +103,39 @@ def test_duplicate_observation_is_idempotently_rejected_even_after_failure() -> 
 def test_source_state_fails_closed(
     input_source: InputSourceState, reason: InputRejectionReason
 ) -> None:
-    result = InputNormalizer().normalize(observation("obs", input_source=input_source))
+    result = normalizer().normalize(observation("obs", input_source=input_source))
     assert result.status is InputAdmissionStatus.REJECTED
     assert result.reason is reason
 
 
 def test_lifecycle_event_reports_unavailable_source_without_fabricating_input() -> None:
-    lifecycle = observation(
-        "source-state",
-        input_source=source(
-            availability=CapabilityAvailability.UNAVAILABLE,
-            permission=InputPermission.DENIED,
-        ),
-        modality=InputModality.LIFECYCLE,
+    unavailable = source(
+        availability=CapabilityAvailability.UNAVAILABLE,
+        permission=InputPermission.DENIED,
     )
-    result = InputNormalizer().normalize(lifecycle)
+    lifecycle = InputObservation(
+        "source-state",
+        unavailable,
+        InputModality.LIFECYCLE,
+        "source_state_changed",
+        NOW,
+        "trace-source",
+        RevisionVector(3),
+        {},
+        lifecycle_change=InputSourceLifecycleChange(
+            CapabilityAvailability.AVAILABLE,
+            InputPermission.GRANTED,
+            "adapter_disconnected",
+        ),
+    )
+    result = normalizer().normalize(lifecycle)
     assert result.event is not None
-    assert result.event.envelope.event_type == "input.lifecycle.utterance"
+    assert result.event.envelope.event_type == "input.lifecycle.source_state_changed"
     assert result.event.source.availability is CapabilityAvailability.UNAVAILABLE
 
 
 def test_continuous_session_accepts_strict_lifecycle() -> None:
-    normalizer = InputNormalizer()
+    gateway = normalizer()
     phases = [
         InputSessionSample("gesture", InputSessionPhase.START, 0),
         InputSessionSample("gesture", InputSessionPhase.UPDATE, 1),
@@ -125,32 +143,32 @@ def test_continuous_session_accepts_strict_lifecycle() -> None:
         InputSessionSample("gesture", InputSessionPhase.END, 4),
     ]
     for index, sample in enumerate(phases):
-        result = normalizer.normalize(observation(f"obs-{index}", session=sample))
+        result = gateway.normalize(observation(f"obs-{index}", session=sample))
         assert result.status is InputAdmissionStatus.ACCEPTED
 
 
 def test_session_rejects_missing_duplicate_out_of_order_and_terminal_samples() -> None:
-    normalizer = InputNormalizer()
-    missing = normalizer.normalize(
+    gateway = normalizer()
+    missing = gateway.normalize(
         observation("missing", session=InputSessionSample("g", InputSessionPhase.UPDATE, 1))
     )
     assert missing.reason is InputRejectionReason.SESSION_NOT_ACTIVE
 
-    assert normalizer.normalize(
+    assert gateway.normalize(
         observation("start", session=InputSessionSample("g", InputSessionPhase.START, 0))
     ).event
-    duplicate_start = normalizer.normalize(
+    duplicate_start = gateway.normalize(
         observation("start-2", session=InputSessionSample("g", InputSessionPhase.START, 1))
     )
     assert duplicate_start.reason is InputRejectionReason.SESSION_ALREADY_EXISTS
-    out_of_order = normalizer.normalize(
+    out_of_order = gateway.normalize(
         observation("old", session=InputSessionSample("g", InputSessionPhase.UPDATE, 0))
     )
     assert out_of_order.reason is InputRejectionReason.SESSION_SEQUENCE_OUT_OF_ORDER
-    assert normalizer.normalize(
+    assert gateway.normalize(
         observation("end", session=InputSessionSample("g", InputSessionPhase.END, 2))
     ).event
-    terminal = normalizer.normalize(
+    terminal = gateway.normalize(
         observation("late", session=InputSessionSample("g", InputSessionPhase.UPDATE, 3))
     )
     assert terminal.reason is InputRejectionReason.SESSION_TERMINATED
@@ -176,10 +194,56 @@ def test_touch_event_keeps_pointer_and_actual_contact_separate() -> None:
             body_region="head",
         ),
     )
-    result = InputNormalizer().normalize(touch)
+    result = normalizer().normalize(touch)
     assert result.event is not None
     assert result.event.pointer is not None
     assert result.event.contact is not None
     payload = cast(Mapping[str, object], result.event.envelope.payload)
     contact = cast(Mapping[str, object], payload["contact"])
     assert contact["body_region"] == "head"
+
+
+def test_lifecycle_contract_cannot_bypass_source_gate_or_mutate_session() -> None:
+    unavailable = source(
+        availability=CapabilityAvailability.UNAVAILABLE,
+        permission=InputPermission.DENIED,
+    )
+    with pytest.raises(ValueError):
+        InputObservation(
+            "forged-lifecycle",
+            unavailable,
+            InputModality.LIFECYCLE,
+            "utterance",
+            NOW,
+            "trace",
+            RevisionVector(1),
+            {"text": "secret observation"},
+            session=InputSessionSample("forged", InputSessionPhase.START, 0),
+        )
+
+
+def test_shared_ledger_prevents_duplicate_across_normalizer_instances() -> None:
+    ledger = InputAdmissionLedger()
+    sessions = InputSessionRegistry()
+    first = InputNormalizer(ledger, sessions)
+    second = InputNormalizer(ledger, sessions)
+    assert first.normalize(observation("process-unique")).event is not None
+    duplicate = second.normalize(observation("process-unique"))
+    assert duplicate.status is InputAdmissionStatus.DUPLICATE
+
+
+def test_shared_session_registry_preserves_lifecycle_across_normalizer_instances() -> None:
+    ledger = InputAdmissionLedger()
+    sessions = InputSessionRegistry()
+    first = InputNormalizer(ledger, sessions)
+    second = InputNormalizer(ledger, sessions)
+    start = observation(
+        "shared-start",
+        session=InputSessionSample("shared-session", InputSessionPhase.START, 0),
+    )
+    update = observation(
+        "shared-update",
+        session=InputSessionSample("shared-session", InputSessionPhase.UPDATE, 1),
+    )
+    assert first.normalize(start).event is not None
+    assert second.normalize(update).event is not None

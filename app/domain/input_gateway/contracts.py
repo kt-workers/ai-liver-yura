@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -63,6 +64,24 @@ class InputRejectionReason(str, Enum):
     SESSION_NOT_ACTIVE = "session_not_active"
     SESSION_TERMINATED = "session_terminated"
     SESSION_SEQUENCE_OUT_OF_ORDER = "session_sequence_out_of_order"
+
+
+@dataclass(frozen=True, slots=True)
+class InputSourceLifecycleChange:
+    previous_availability: CapabilityAvailability
+    previous_permission: InputPermission
+    reason_code: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.reason_code is not None:
+            require_identifier(self.reason_code, "reason_code")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "previous_availability": self.previous_availability.value,
+            "previous_permission": self.previous_permission.value,
+            "reason_code": self.reason_code,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,11 +169,8 @@ class ContactPercept:
             require_identifier(self.body_region, "body_region")
         if self.target_kind is ContactTargetKind.YURA_BODY and self.body_region is None:
             raise ValueError("yura_body contact requires body_region")
-        if (
-            self.target_kind in (ContactTargetKind.NONE, ContactTargetKind.UNKNOWN)
-            and self.body_region
-        ):
-            raise ValueError("none or unknown contact cannot have body_region")
+        if self.target_kind is not ContactTargetKind.YURA_BODY and self.body_region:
+            raise ValueError("only yura_body contact can have body_region")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -181,6 +197,7 @@ class InputObservation:
     session: InputSessionSample | None = None
     pointer: PointerSample | None = None
     contact: ContactPercept | None = None
+    lifecycle_change: InputSourceLifecycleChange | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.observation_id, "observation_id")
@@ -197,6 +214,24 @@ class InputObservation:
         ):
             raise ValueError("pointer and contact are only valid for pointer or touch modality")
         object.__setattr__(self, "payload", freeze_json(self.payload))
+        if self.modality is InputModality.LIFECYCLE:
+            if self.semantic_unit != "source_state_changed":
+                raise ValueError("lifecycle semantic_unit must be source_state_changed")
+            if self.lifecycle_change is None:
+                raise ValueError("lifecycle observation requires lifecycle_change")
+            if self.session is not None or self.pointer is not None or self.contact is not None:
+                raise ValueError("lifecycle observation cannot carry session, pointer, or contact")
+            if not isinstance(self.payload, Mapping) or self.payload:
+                raise ValueError("lifecycle observation payload must be an empty object")
+            if (
+                self.lifecycle_change.previous_availability is self.source.availability
+                and self.lifecycle_change.previous_permission is self.source.permission
+            ):
+                raise ValueError(
+                    "lifecycle observation must describe an actual source state change"
+                )
+        elif self.lifecycle_change is not None:
+            raise ValueError("lifecycle_change is only valid for lifecycle modality")
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,6 +283,9 @@ def observation_payload(observation: InputObservation) -> JsonValue:
             "session": None if observation.session is None else observation.session.to_dict(),
             "pointer": None if observation.pointer is None else observation.pointer.to_dict(),
             "contact": None if observation.contact is None else observation.contact.to_dict(),
+            "lifecycle_change": None
+            if observation.lifecycle_change is None
+            else observation.lifecycle_change.to_dict(),
             "content": thaw_json(observation.payload),
         }
     )

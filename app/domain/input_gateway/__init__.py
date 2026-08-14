@@ -9,16 +9,18 @@ from .contracts import (
     InputRejectionReason,
     InputSessionPhase,
     InputSessionSample,
+    InputSourceLifecycleChange,
     InputSourceState,
     NormalizedInputEvent,
     PointerSample,
 )
-from .normalizer import InputNormalizer
+from .normalizer import InputAdmissionLedger, InputNormalizer, InputSessionRegistry
 
 __all__ = [
     "ContactPercept",
     "ContactTargetKind",
     "InputAdmission",
+    "InputAdmissionLedger",
     "InputAdmissionStatus",
     "InputModality",
     "InputNormalizer",
@@ -27,6 +29,8 @@ __all__ = [
     "InputRejectionReason",
     "InputSessionPhase",
     "InputSessionSample",
+    "InputSessionRegistry",
+    "InputSourceLifecycleChange",
     "InputSourceState",
     "NormalizedInputEvent",
     "PointerSample",
