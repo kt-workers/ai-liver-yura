@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from math import exp, isfinite, log
+from threading import Lock
 
 from app.domain.contracts.common import require_aware, require_revision, utc_instant
 
@@ -17,59 +18,79 @@ from .contracts import (
 
 
 class InternalStateReducer:
+    def __init__(self, initial_snapshot: InternalStateSnapshot) -> None:
+        if not isinstance(initial_snapshot, InternalStateSnapshot):
+            raise ValueError("initial_snapshot must be InternalStateSnapshot")
+        self._current = initial_snapshot
+        self._lock = Lock()
+
+    def snapshot(self) -> InternalStateSnapshot:
+        with self._lock:
+            return self._current
+
     def commit(
         self,
-        snapshot: InternalStateSnapshot,
         candidate: AppraisalCandidate,
         *,
         current_source_context_revision: int,
         committed_at: datetime,
     ) -> InternalStateSnapshot:
+        if not isinstance(candidate, AppraisalCandidate):
+            raise ValueError("candidate must be AppraisalCandidate")
         require_revision(current_source_context_revision, "current_source_context_revision")
         require_aware(committed_at, "committed_at")
-        if candidate.base_state_revision != snapshot.revision:
-            raise ValueError("appraisal candidate is stale for current state")
-        if candidate.source_context_revision != current_source_context_revision:
-            raise ValueError("appraisal candidate is stale for source context")
-        if utc_instant(committed_at) < utc_instant(snapshot.updated_at):
-            raise ValueError("commit timestamp cannot predate current state")
-        if utc_instant(candidate.created_at) < utc_instant(snapshot.updated_at):
-            raise ValueError("candidate timestamp cannot predate current state")
-        if utc_instant(committed_at) < utc_instant(candidate.created_at):
-            raise ValueError("commit timestamp cannot predate candidate")
-        if not candidate.proposals:
-            raise ValueError("state commit requires at least one delta proposal")
-        by_ref = {item.ref: item for item in snapshot.facets}
-        for proposal in candidate.proposals:
-            previous = by_ref.get(proposal.facet_ref)
-            old_value = 0.0 if previous is None else previous.current
-            current = old_value + proposal.delta
-            if not -1.0 <= current <= 1.0:
-                raise ValueError("state delta result is outside allowed range")
-            by_ref[proposal.facet_ref] = InternalStateFacet(
-                proposal.facet_ref,
-                current,
-                old_value,
-                proposal.delta,
-                proposal.confidence,
-                proposal.cause_refs,
+        with self._lock:
+            snapshot = self._current
+            if candidate.base_state_revision != snapshot.revision:
+                raise ValueError("appraisal candidate is stale for current state")
+            if candidate.source_context_revision != current_source_context_revision:
+                raise ValueError("appraisal candidate is stale for source context")
+            if utc_instant(committed_at) < utc_instant(snapshot.updated_at):
+                raise ValueError("commit timestamp cannot predate current state")
+            if utc_instant(candidate.created_at) < utc_instant(snapshot.updated_at):
+                raise ValueError("candidate timestamp cannot predate current state")
+            if utc_instant(committed_at) < utc_instant(candidate.created_at):
+                raise ValueError("commit timestamp cannot predate candidate")
+            if not candidate.proposals:
+                raise ValueError("state commit requires at least one delta proposal")
+            allowed_causes = {*candidate.source_event_ids, *candidate.evidence_refs}
+            if any(
+                not set(proposal.cause_refs) <= allowed_causes for proposal in candidate.proposals
+            ):
+                raise ValueError("state delta cause is outside candidate evidence")
+            by_ref = {item.ref: item for item in snapshot.facets}
+            for proposal in candidate.proposals:
+                previous = by_ref.get(proposal.facet_ref)
+                old_value = 0.0 if previous is None else previous.current
+                current = old_value + proposal.delta
+                if not -1.0 <= current <= 1.0:
+                    raise ValueError("state delta result is outside allowed range")
+                by_ref[proposal.facet_ref] = InternalStateFacet(
+                    proposal.facet_ref,
+                    current,
+                    old_value,
+                    proposal.delta,
+                    proposal.confidence,
+                    proposal.cause_refs,
+                    committed_at,
+                )
+            next_snapshot = InternalStateSnapshot(
+                snapshot.revision + 1,
+                current_source_context_revision,
+                tuple(
+                    sorted(
+                        by_ref.values(),
+                        key=lambda item: (
+                            item.ref.kind.value,
+                            item.ref.state_key,
+                            item.ref.target_ref or "",
+                        ),
+                    )
+                ),
                 committed_at,
             )
-        return InternalStateSnapshot(
-            snapshot.revision + 1,
-            current_source_context_revision,
-            tuple(
-                sorted(
-                    by_ref.values(),
-                    key=lambda item: (
-                        item.ref.kind.value,
-                        item.ref.state_key,
-                        item.ref.target_ref or "",
-                    ),
-                )
-            ),
-            committed_at,
-        )
+            self._current = next_snapshot
+            return next_snapshot
 
 
 def decay_candidate(

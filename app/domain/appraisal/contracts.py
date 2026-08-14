@@ -53,6 +53,8 @@ def _number(value: float, name: str, *, minimum: float, maximum: float) -> None:
 
 
 def _owned_ids(values: tuple[str, ...], name: str, *, non_empty: bool = False) -> tuple[str, ...]:
+    if not isinstance(values, (list, tuple)):
+        raise ValueError(f"{name} must be an array")
     result = tuple(values)
     if non_empty and not result:
         raise ValueError(f"{name} must not be empty")
@@ -70,6 +72,8 @@ class FacetRef:
     target_ref: str | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.kind, StateFacetKind):
+            raise ValueError("kind must be StateFacetKind")
         require_identifier(self.state_key, "state_key")
         if self.target_ref is not None:
             require_identifier(self.target_ref, "target_ref")
@@ -92,6 +96,8 @@ class InternalStateFacet:
     updated_at: datetime
 
     def __post_init__(self) -> None:
+        if not isinstance(self.ref, FacetRef):
+            raise ValueError("ref must be FacetRef")
         for name in ("current", "previous", "last_delta"):
             _number(getattr(self, name), name, minimum=-1.0, maximum=1.0)
         _number(self.confidence, "confidence", minimum=0.0, maximum=1.0)
@@ -125,7 +131,11 @@ class InternalStateSnapshot:
         require_revision(self.revision, "revision")
         require_revision(self.source_context_revision, "source_context_revision")
         require_aware(self.updated_at, "updated_at")
+        if not isinstance(self.facets, (list, tuple)):
+            raise ValueError("facets must be an array")
         facets = tuple(self.facets)
+        if any(not isinstance(item, InternalStateFacet) for item in facets):
+            raise ValueError("facets must contain InternalStateFacet")
         refs = [item.ref for item in facets]
         if len(refs) != len(set(refs)):
             raise ValueError("state facet refs must be unique")
@@ -149,6 +159,8 @@ class AppraisalDimension:
     target_ref: str | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.kind, AppraisalDimensionKind):
+            raise ValueError("kind must be AppraisalDimensionKind")
         _number(self.value, "value", minimum=-1.0, maximum=1.0)
         if self.target_ref is not None:
             require_identifier(self.target_ref, "target_ref")
@@ -165,6 +177,8 @@ class StateDeltaProposal:
     cause_refs: tuple[str, ...]
 
     def __post_init__(self) -> None:
+        if not isinstance(self.facet_ref, FacetRef):
+            raise ValueError("facet_ref must be FacetRef")
         _number(self.delta, "delta", minimum=-1.0, maximum=1.0)
         _number(self.confidence, "confidence", minimum=0.0, maximum=1.0)
         if self.delta == 0:
@@ -198,6 +212,8 @@ class AppraisalCandidate:
 
     def __post_init__(self) -> None:
         require_identifier(self.candidate_id, "candidate_id")
+        if not isinstance(self.path, AppraisalPath):
+            raise ValueError("path must be AppraisalPath")
         require_revision(self.source_context_revision, "source_context_revision")
         require_revision(self.base_state_revision, "base_state_revision")
         object.__setattr__(
@@ -206,7 +222,15 @@ class AppraisalCandidate:
             _owned_ids(self.source_event_ids, "source_event_ids", non_empty=True),
         )
         object.__setattr__(self, "evidence_refs", _owned_ids(self.evidence_refs, "evidence_refs"))
+        if not isinstance(self.dimensions, (list, tuple)):
+            raise ValueError("dimensions must be an array")
+        if not isinstance(self.proposals, (list, tuple)):
+            raise ValueError("proposals must be an array")
         dimensions, proposals = tuple(self.dimensions), tuple(self.proposals)
+        if any(not isinstance(item, AppraisalDimension) for item in dimensions):
+            raise ValueError("dimensions must contain AppraisalDimension")
+        if any(not isinstance(item, StateDeltaProposal) for item in proposals):
+            raise ValueError("proposals must contain StateDeltaProposal")
         dimension_refs = [(item.kind, item.target_ref) for item in dimensions]
         if len(dimension_refs) != len(set(dimension_refs)):
             raise ValueError("appraisal dimensions must be unique")
@@ -242,6 +266,8 @@ class DecayPolicy:
     half_life_seconds: float
 
     def __post_init__(self) -> None:
+        if not isinstance(self.facet_ref, FacetRef):
+            raise ValueError("facet_ref must be FacetRef")
         _number(self.neutral, "neutral", minimum=-1.0, maximum=1.0)
         if (
             type(self.half_life_seconds) not in (int, float)
@@ -261,6 +287,8 @@ class LifecycleAppraisalInput:
 
     def __post_init__(self) -> None:
         require_identifier(self.event_id, "event_id")
+        if not isinstance(self.kind, LifecycleKind):
+            raise ValueError("kind must be LifecycleKind")
         require_revision(self.source_context_revision, "source_context_revision")
         require_aware(self.occurred_at, "occurred_at")
         if (

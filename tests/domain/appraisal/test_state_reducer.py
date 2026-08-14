@@ -1,6 +1,7 @@
 import json
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timedelta, timezone
+from typing import Any, cast
 
 import pytest
 
@@ -58,8 +59,8 @@ def proposal(ref: FacetRef = JOY, delta: float = 0.2) -> StateDeltaProposal:
 
 def test_reducer_is_only_immutable_state_transition_authority() -> None:
     before = snapshot(facet())
-    after = InternalStateReducer().commit(
-        before,
+    reducer = InternalStateReducer(before)
+    after = reducer.commit(
         candidate(proposal()),
         current_source_context_revision=7,
         committed_at=NOW + timedelta(seconds=2),
@@ -76,8 +77,8 @@ def test_reducer_is_only_immutable_state_transition_authority() -> None:
 
 
 def test_conflicting_affects_can_coexist_without_overwriting_each_other() -> None:
-    after = InternalStateReducer().commit(
-        snapshot(facet()),
+    reducer = InternalStateReducer(snapshot(facet()))
+    after = reducer.commit(
         candidate(proposal(JOY, 0.1), proposal(FEAR, 0.5)),
         current_source_context_revision=7,
         committed_at=NOW + timedelta(seconds=2),
@@ -85,6 +86,25 @@ def test_conflicting_affects_can_coexist_without_overwriting_each_other() -> Non
     values = {item.ref: item.current for item in after.facets}
     assert values[JOY] == pytest.approx(0.5)
     assert values[FEAR] == pytest.approx(0.5)
+
+
+def test_competing_candidates_from_same_revision_cannot_both_commit() -> None:
+    reducer = InternalStateReducer(snapshot(facet(value=0.2)))
+    first = candidate(proposal(JOY, 0.1))
+    second = candidate(proposal(JOY, -0.1))
+    committed = reducer.commit(
+        first,
+        current_source_context_revision=7,
+        committed_at=NOW + timedelta(seconds=2),
+    )
+    assert committed.revision == 4
+    with pytest.raises(ValueError, match="stale for current state"):
+        reducer.commit(
+            second,
+            current_source_context_revision=7,
+            committed_at=NOW + timedelta(seconds=2),
+        )
+    assert reducer.snapshot() is committed
 
 
 def test_interest_and_relationship_require_target_identity() -> None:
@@ -108,8 +128,7 @@ def test_invalid_or_stale_state_delta_is_rejected(
     bad_candidate: AppraisalCandidate, message: str
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        InternalStateReducer().commit(
-            snapshot(facet()),
+        InternalStateReducer(snapshot(facet())).commit(
             bad_candidate,
             current_source_context_revision=7,
             committed_at=NOW + timedelta(seconds=2),
@@ -123,6 +142,39 @@ def test_duplicate_proposals_and_non_finite_values_are_rejected() -> None:
         StateDeltaProposal(JOY, float("nan"), 0.8, ("event:1",))
     with pytest.raises(ValueError, match="must not be zero"):
         StateDeltaProposal(JOY, 0.0, 0.8, ("event:1",))
+
+
+def test_untyped_enum_nested_contract_and_collection_shapes_are_rejected() -> None:
+    with pytest.raises(ValueError, match="StateFacetKind"):
+        FacetRef(cast(Any, "emotion"), "joy")
+    with pytest.raises(ValueError, match="facets must contain"):
+        InternalStateSnapshot(0, 0, cast(Any, ("not-a-facet",)), NOW)
+    with pytest.raises(ValueError, match="path must be"):
+        AppraisalCandidate(
+            "candidate:bad",
+            ("event:1",),
+            0,
+            0,
+            cast(Any, "deep_llm"),
+            (),
+            (),
+            0.0,
+            0.0,
+            (),
+            NOW,
+        )
+    with pytest.raises(ValueError, match="must be an array"):
+        StateDeltaProposal(JOY, 0.1, 0.8, cast(Any, "event:1"))
+
+
+def test_delta_cause_must_be_grounded_in_candidate_source_or_evidence() -> None:
+    ungrounded = candidate(StateDeltaProposal(JOY, 0.1, 0.8, ("invented:cause",)))
+    with pytest.raises(ValueError, match="outside candidate evidence"):
+        InternalStateReducer(snapshot(facet())).commit(
+            ungrounded,
+            current_source_context_revision=7,
+            committed_at=NOW + timedelta(seconds=2),
+        )
 
 
 def test_candidate_cannot_predate_current_state() -> None:
@@ -141,8 +193,7 @@ def test_candidate_cannot_predate_current_state() -> None:
         NOW - timedelta(seconds=1),
     )
     with pytest.raises(ValueError, match="candidate timestamp"):
-        InternalStateReducer().commit(
-            snapshot(facet()),
+        InternalStateReducer(snapshot(facet())).commit(
             old,
             current_source_context_revision=7,
             committed_at=NOW + timedelta(seconds=2),

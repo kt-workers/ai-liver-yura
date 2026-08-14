@@ -45,6 +45,8 @@ class DeepAppraisalContext:
     context_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.context_refs, (list, tuple)):
+            raise ValueError("context_refs must be an array")
         refs = tuple(self.context_refs)
         if any(not isinstance(item, str) or not item.strip() for item in refs):
             raise ValueError("context_refs must contain non-empty strings")
@@ -59,6 +61,10 @@ class DeepAppraisalContext:
 @dataclass(frozen=True, slots=True)
 class DeepAppraisalPolicy:
     execution: LLMExecutionPolicy
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.execution, LLMExecutionPolicy):
+            raise ValueError("execution must be LLMExecutionPolicy")
 
 
 def descriptor(policy: DeepAppraisalPolicy) -> LLMRoleDescriptor:

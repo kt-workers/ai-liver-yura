@@ -28,6 +28,14 @@ class DeterministicAppraisalRule:
 
         require_identifier(self.rule_id, "rule_id")
         require_identifier(self.event_type, "event_type")
+        if not isinstance(self.dimensions, (list, tuple)):
+            raise ValueError("dimensions must be an array")
+        if not isinstance(self.proposals, (list, tuple)):
+            raise ValueError("proposals must be an array")
+        if any(not isinstance(item, AppraisalDimension) for item in self.dimensions):
+            raise ValueError("dimensions must contain AppraisalDimension")
+        if any(not isinstance(item, StateDeltaProposal) for item in self.proposals):
+            raise ValueError("proposals must contain StateDeltaProposal")
         object.__setattr__(self, "dimensions", tuple(self.dimensions))
         object.__setattr__(self, "proposals", tuple(self.proposals))
         if type(self.salience) not in (int, float) or not 0 <= self.salience <= 1:
