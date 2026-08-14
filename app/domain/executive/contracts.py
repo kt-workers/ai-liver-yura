@@ -7,7 +7,7 @@ from enum import Enum
 from typing import TypeVar, cast
 
 from app.domain.appraisal import InternalStateSnapshot
-from app.domain.contracts import CapabilityDescriptor, CapabilityRequirement
+from app.domain.contracts import CapabilityDescriptor, CapabilityRequirement, RevisionVector
 from app.domain.contracts.common import (
     JsonValue,
     freeze_json,
@@ -172,6 +172,66 @@ class ExecutivePreconditionRequirement:
             "precondition_id": self.precondition_id,
             "expected": thaw_json(self.expected),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutiveFreshnessStamp:
+    revisions: RevisionVector
+    internal_state_revision: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.revisions, RevisionVector):
+            raise ValueError("revisions must be RevisionVector")
+        require_revision(self.internal_state_revision, "internal_state_revision")
+
+
+@dataclass(frozen=True, slots=True)
+class AuthoritativeIntentRequirements:
+    intent_id: str
+    capabilities: tuple[CapabilityRequirement, ...] = ()
+    preconditions: tuple[ExecutivePreconditionRequirement, ...] = ()
+
+    def __post_init__(self) -> None:
+        require_identifier(self.intent_id, "intent_id")
+        object.__setattr__(
+            self, "capabilities", _owned(self.capabilities, CapabilityRequirement, "capabilities")
+        )
+        object.__setattr__(
+            self,
+            "preconditions",
+            _owned(self.preconditions, ExecutivePreconditionRequirement, "preconditions"),
+        )
+        if len(self.capabilities) != len(set(self.capabilities)):
+            raise ValueError("capabilities must be unique")
+        ids = [item.precondition_id for item in self.preconditions]
+        if len(ids) != len(set(ids)):
+            raise ValueError("precondition ids must be unique")
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutiveCommitState:
+    freshness: ExecutiveFreshnessStamp
+    capabilities: tuple[CapabilityDescriptor, ...]
+    preconditions: tuple[PreconditionFact, ...]
+    requirements: tuple[AuthoritativeIntentRequirements, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.freshness, ExecutiveFreshnessStamp):
+            raise ValueError("freshness must be ExecutiveFreshnessStamp")
+        for name, item_type in (
+            ("capabilities", CapabilityDescriptor),
+            ("preconditions", PreconditionFact),
+            ("requirements", AuthoritativeIntentRequirements),
+        ):
+            object.__setattr__(self, name, _owned(getattr(self, name), item_type, name))
+        for values, attribute, name in (
+            (self.capabilities, "capability_id", "capability ids"),
+            (self.preconditions, "precondition_id", "precondition ids"),
+            (self.requirements, "intent_id", "requirement intent ids"),
+        ):
+            identifiers = [getattr(item, attribute) for item in values]
+            if len(identifiers) != len(set(identifiers)):
+                raise ValueError(f"{name} must be unique")
 
 
 @dataclass(frozen=True, slots=True)
