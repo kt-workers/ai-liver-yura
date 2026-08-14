@@ -547,6 +547,22 @@ def test_execution_truth_rejects_mismatch_unknown_loss_and_completion_fabricatio
             plan_id="plan-completion",
             committed_at=NOW,
         )
+    disguised_completion = replace(
+        completed_claim,
+        claim_kind=SemanticClaimKind.GENERAL,
+        execution_status=None,
+    )
+    with pytest.raises(ValueError, match="execution claim kind"):
+        SpeechSemanticAuthority().commit(
+            replace(
+                candidate(),
+                propositions=(*candidate().propositions[:-1], disguised_completion),
+            ),
+            completion_context,
+            current_revisions=REVISIONS,
+            plan_id="plan-disguised-completion",
+            committed_at=NOW,
+        )
 
 
 def test_complex_exchange_is_strict_and_commits_current_result() -> None:

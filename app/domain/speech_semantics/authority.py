@@ -181,6 +181,8 @@ class SpeechSemanticAuthority:
             }
             if proposition.claim_kind is SemanticClaimKind.EXECUTION_STATUS and not execution_refs:
                 raise ValueError("execution claim requires execution fact evidence")
+            if execution_refs and proposition.claim_kind is not SemanticClaimKind.EXECUTION_STATUS:
+                raise ValueError("execution fact evidence requires execution claim kind")
             if execution_refs and not execution_refs.issubset(constrained_facts):
                 raise ValueError("execution evidence requires authoritative truth constraint")
         for constraint in constraints.values():
