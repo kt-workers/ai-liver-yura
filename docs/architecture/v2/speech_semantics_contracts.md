@@ -38,6 +38,7 @@ Speech intentの`semantic_goal_ref`、`target_ref`、`constraint_refs`はsnapsho
 
 - proposition ID
 - subject ref / predicate / strict JSON object
+- typed claim kindと、Execution claimの場合のFoundation `ExecutionStatus`
 - `REQUIRED / OPTIONAL / FORBIDDEN`
 - `AFFIRM / NEGATE / UNKNOWN`
 - `CERTAIN / LIKELY / UNCERTAIN / UNKNOWN`
@@ -47,6 +48,8 @@ Speech intentの`semantic_goal_ref`、`target_ref`、`constraint_refs`はsnapsho
 `SpeechSemanticPlan`はpropositionのほか、self-disclosure policy、question budget、new-direction budget、truth constraint refs、relationship / discourse constraint refsを持つ。
 
 required / optional / forbiddenはproposition IDの別配列へ重複管理せず、各propositionのtyped dispositionを正本にする。Planは最終台詞、固定phrase、SSML、TTS parameter、Body joint、Execution completion factを持たない。
+
+Execution claimかどうかをpredicate文字列、prefix、keyword、regexで分類しない。Fact / Proposition双方のtyped claim kindと`ExecutionStatus`だけをAuthorityにする。degreeは専用fieldだけを正本とし、JSON value内の同名fieldによる二重表現を拒否する。
 
 public callerはcommitted Planをstatus値だけで直接製造できない。LLM / deterministic builderは`SpeechSemanticCandidate`までを作り、Authorityのvalidated commitだけがimmutable Planを構築する。
 
@@ -60,10 +63,12 @@ Authorityは次をfail-closedで検証する。
 4. proposition evidence refsがbounded fact IDsの部分集合。
 5. intentのsemantic goal / target / constraint refsがsnapshotへground済み。
 6. candidate truth constraint refsがExecutive / upstreamのauthoritative集合と完全一致。
-7. execution truth制約の対象factとproposition polarity / certainty / valueのclosed整合。
-8. question / new-direction budgetがauthoritative上限以下。
-9. forbidden propositionをrequired / optionalとして扱わないtyped schema。
-10. 同じplan ID・同じintentの二重commit拒否。
+7. Executiveが要求するsemantic goal / target / evidenceは、`FORBIDDEN`以外で元Factのsubject / predicate / value / claim kind / execution status / polarity / certainty / degreeが全一致するpropositionによって実現する。参照IDだけ、またはFORBIDDEN指定だけでは充足しない。
+8. Executiveのforbidden claimは、`FORBIDDEN`かつ元Factの全semantic facetが一致するpropositionとして保持する。別の禁止内容へ差し替えない。
+9. execution truth制約の対象factとproposition claim kind / status / polarity / certainty / degreeをclosedに照合する。unknown保持はpolarityとcertaintyをともに`UNKNOWN`にする。
+10. question / new-direction budgetがauthoritative上限以下。
+11. forbidden propositionをrequired / optionalとして扱わないtyped schema。
+12. 同じplan ID・同じintentの二重commit拒否。
 
 LLM candidate自身がtruth constraintやbudgetを空にして安全条件を省略することはできない。Authorityはsnapshotのauthoritative要件を正本にする。
 
