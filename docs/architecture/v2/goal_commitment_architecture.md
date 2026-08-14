@@ -181,9 +181,11 @@ Validation:
 - Executive authority
 - expected revision
 - lifecycle legality
-- referenced state existence
+- referenced state existence。batch内の全transitionをcopyへ適用した後、Goalの`commitment_refs`とCommitmentの`related_goal_refs`がfinal copy内に存在することを検証し、dangling referenceをatomic rollbackする
 - capability/fact claim if relevant
 - duplicate/idempotency
+
+operation別payloadはfieldのpresenceでstrictに閉じる。`0`はpriority/strengthの合法値であり、未指定を意味しない。値を使用しないoperationへnullable scalarの`0`を含めて渡した場合もschema外として拒否し、silent ignoreしない。
 
 ```text
 Validated GoalTransition
