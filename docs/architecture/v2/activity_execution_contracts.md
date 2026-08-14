@@ -62,29 +62,31 @@ REQUESTED
 → COMPLETED
 ```
 
-terminalは`REJECTED / UNSUPPORTED / FAILED / CANCELLED / TIMED_OUT / SUPERSEDED`である。Adapter reportは`STARTED`以後の候補milestone、時刻、strict details、effect refsを返すだけで、Authorityがcurrent snapshotから合法なedgeを適用する。
+terminalは`REJECTED / UNSUPPORTED / FAILED / CANCELLED / TIMED_OUT / SUPERSEDED`である。Adapter reportは`STARTED`以後の候補milestone、時刻、strict details、typed effect evidenceを返すだけで、Authorityがcurrent snapshotから合法なedgeを適用する。
 
-`effect_refs`は実際に観測・適用されたeffectだけを表し、Foundationのmonotonic規則を継承する。Intent、accepted、planned、startedはeffectを主張しない。外部effect後にcontext/goalがstaleになってもeffect refsを消さず、`APPLIED → SUPERSEDED/FAILED/CANCELLED`等の事実系列として保持する。
+`effect_refs`は実際に観測・適用されたeffectだけを表し、Foundationのmonotonic規則を継承する。Intent、accepted、planned、startedはeffectを主張しない。Adapterはraw `effect_refs`を指定せず、dispatch identity、選択済みCapability ID/revision、operation、effect種別を持つtyped `ExecutionEffectEvidence`を返す。Authorityはrecordへ固定したdispatch、Capability binding、operationとの一致を検証した証拠からだけ`effect_refs`を導出する。Capability bindingがない実行はeffect evidenceを受理しない。
+
+report確定時にもdeadlineを再検証する。期限後の成功reportは`COMPLETED`にせず`TIMED_OUT`へ閉じる。期限後に初めて外部effectが判明した場合は、検証済み証拠を`OBSERVABLE`または`APPLIED`として先に記録し、同じ時刻の`TIMED_OUT`へ遷移してeffect refsを保持する。外部effect後にcontext/goalがstaleになってもeffect refsを消さず、`APPLIED → SUPERSEDED/FAILED/CANCELLED/TIMED_OUT`等の事実系列として保持する。
 
 ## 6. Dispatch Port
 
-`ActivityExecutionPort.execute(request, cancellation)`はProvider非依存Protocolである。`ExecutionDispatchRequest`はaccepted snapshot、Invocation、Capability bindingを持つ。
+`ActivityExecutionPort.execute(request, cancellation)`はProvider非依存Protocolである。`ExecutionDispatchRequest`は一意なdispatch identity、accepted snapshot、Invocation、Capability bindingを持つ。Authorityは開始時に同じdispatch identityをrecordへ固定する。
 
 Portは次の`ExecutionAdapterReport`を返す。
 
-- command/invocation identity
+- command/invocation/dispatch identity
 - `STARTED / OBSERVABLE / APPLIED / COMPLETED / FAILED / CANCELLED / TIMED_OUT`のreport status
 - occurred_at
 - strict details
-- effect refs
+- typed effect evidence
 
-report identity不一致、時刻逆行、非法edge、effect捏造はAuthorityが拒否する。例外本文・credential・payloadをActual Factやdiagnosticsへコピーせず、closed failure codeへ変換する。
+report identity不一致、時刻逆行、非法edge、Capability binding・descriptor revision・operationと一致しないeffect証拠はAuthorityが拒否する。空report、runtime型不正、非法report系列もCoordinatorが例外を外へ漏らさず、既発effectを保持したtyped `FAILED`へ閉じる。例外本文・credential・payloadをActual Factやdiagnosticsへコピーせず、closed failure codeへ変換する。
 
 ## 7. Cancellationと並行性
 
 - 各invocationは独立taskとして実行し、Core global lockや単一Activity queueを持たない。
 - Authority lockは短い同期state transitionだけを保護し、await、Provider callback、Repository I/Oを含めない。
-- interruptibleはCancellationTokenとtask cancellationを利用可能。
+- CoordinatorはcommandごとのAdapter taskを所有し、interruptibleへの明示cancelではCancellationToken更新と`Task.cancel()`をともに行う。
 - soft_cancel_only / non_interruptibleは強制cancelせず、取消要求を記録してlate resultを再評価する。
 - cancellation後に外部effectが判明した場合もeffectを保持する。
 - slow ActivityがInput、Body realtime、current Speech、別Activityをblockしない。
