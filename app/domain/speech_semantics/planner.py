@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol, TypeVar, cast
 
-from app.domain.contracts import RevisionVector
+from app.domain.contracts import ExecutionStatus, RevisionVector
 from app.domain.contracts.common import JsonValue, freeze_json, require_aware, utc_instant
 from app.domain.llm import (
     LLMActivationPolicy,
@@ -29,6 +29,7 @@ from .contracts import (
     DeterministicSpeechDirective,
     SelfDisclosurePolicy,
     SemanticCertainty,
+    SemanticClaimKind,
     SemanticPolarity,
     SpeechProposition,
     SpeechPropositionDisposition,
@@ -319,6 +320,8 @@ def _proposition(value: object) -> SpeechProposition:
         "polarity",
         "certainty",
         "degree",
+        "claim_kind",
+        "execution_status",
         "evidence_fact_refs",
     }
     if set(item) != required:
@@ -326,6 +329,12 @@ def _proposition(value: object) -> SpeechProposition:
     degree = item["degree"]
     if degree is not None and type(degree) not in (int, float):
         raise ValueError("degree must be a number or null")
+    execution_status_value = item["execution_status"]
+    execution_status = (
+        None
+        if execution_status_value is None
+        else _enum(ExecutionStatus, execution_status_value, "execution_status")
+    )
     return SpeechProposition(
         _string(item["proposition_id"], "proposition_id"),
         _string(item["subject_ref"], "subject_ref"),
@@ -336,4 +345,6 @@ def _proposition(value: object) -> SpeechProposition:
         _enum(SemanticCertainty, item["certainty"], "certainty"),
         _strings(item["evidence_fact_refs"], "evidence_fact_refs"),
         cast(float | None, degree),
+        _enum(SemanticClaimKind, item["claim_kind"], "claim_kind"),
+        execution_status,
     )

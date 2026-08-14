@@ -3,6 +3,7 @@ from .contracts import (
     DeterministicSpeechDirective,
     SelfDisclosurePolicy,
     SemanticCertainty,
+    SemanticClaimKind,
     SemanticPolarity,
     SpeechProposition,
     SpeechPropositionDisposition,
@@ -28,6 +29,7 @@ from .planner import (
 __all__ = [
     "DeterministicSpeechDirective",
     "SelfDisclosurePolicy",
+    "SemanticClaimKind",
     "SemanticCertainty",
     "SemanticPolarity",
     "SpeechProposition",

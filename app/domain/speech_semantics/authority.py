@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from threading import Lock
 
-from app.domain.contracts import RevisionVector
+from app.domain.contracts import ExecutionStatus, RevisionVector
 from app.domain.contracts.common import (
     freeze_json,
     require_aware,
@@ -16,7 +16,9 @@ from .contracts import (
     _PLAN_PROOF,
     SelfDisclosurePolicy,
     SemanticCertainty,
+    SemanticClaimKind,
     SemanticPolarity,
+    SpeechProposition,
     SpeechPropositionDisposition,
     SpeechSemanticCandidate,
     SpeechSemanticContextSnapshot,
@@ -118,20 +120,22 @@ class SpeechSemanticAuthority:
             raise ValueError("question budget exceeds authoritative maximum")
         if candidate.new_direction_budget > snapshot.max_new_direction_budget:
             raise ValueError("new direction budget exceeds authoritative maximum")
-        _validate_self_disclosure_policy(
-            candidate.self_disclosure, snapshot.self_disclosure_policy
-        )
+        _validate_self_disclosure_policy(candidate.self_disclosure, snapshot.self_disclosure_policy)
         intent = snapshot.intent
         payload = intent.payload
         assert isinstance(payload, SpeechIntentPayload)
-        evidence_used = {
-            ref for proposition in candidate.propositions for ref in proposition.evidence_fact_refs
-        }
         required_grounding = {payload.semantic_goal_ref, *intent.evidence_refs}
         if payload.target_ref is not None:
             required_grounding.add(payload.target_ref)
-        if not required_grounding.issubset(evidence_used):
-            raise ValueError("candidate does not use required speech intent evidence")
+        for required_ref in required_grounding:
+            fact = facts[required_ref]
+            if not any(
+                proposition.disposition is not SpeechPropositionDisposition.FORBIDDEN
+                and required_ref in proposition.evidence_fact_refs
+                and _semantic_match(proposition, fact)
+                for proposition in candidate.propositions
+            ):
+                raise ValueError("candidate does not realize required speech intent fact")
         used_constraint_refs = (
             set(candidate.truth_constraint_refs)
             | set(candidate.relationship_constraint_refs)
@@ -140,9 +144,7 @@ class SpeechSemanticAuthority:
         if not set(payload.constraint_refs).issubset(used_constraint_refs):
             raise ValueError("candidate omits Executive speech constraint")
         self_fact_refs = {
-            item.fact_id
-            for item in facts.values()
-            if item.kind is SpeechSemanticFactKind.SELF
+            item.fact_id for item in facts.values() if item.kind is SpeechSemanticFactKind.SELF
         }
         has_self_disclosure = any(
             proposition.disposition is not SpeechPropositionDisposition.FORBIDDEN
@@ -155,9 +157,11 @@ class SpeechSemanticAuthority:
         ):
             raise ValueError("self disclosure proposition is forbidden")
         for forbidden_ref in intent.forbidden_claim_refs:
+            fact = facts[forbidden_ref]
             if not any(
                 forbidden_ref in proposition.evidence_fact_refs
                 and proposition.disposition is SpeechPropositionDisposition.FORBIDDEN
+                and _semantic_match(proposition, fact)
                 for proposition in candidate.propositions
             ):
                 raise ValueError("forbidden Executive claim is not preserved")
@@ -175,7 +179,7 @@ class SpeechSemanticAuthority:
                 for ref in proposition.evidence_fact_refs
                 if facts[ref].kind is SpeechSemanticFactKind.EXECUTION
             }
-            if proposition.predicate.startswith("execution.") and not execution_refs:
+            if proposition.claim_kind is SemanticClaimKind.EXECUTION_STATUS and not execution_refs:
                 raise ValueError("execution claim requires execution fact evidence")
             if execution_refs and not execution_refs.issubset(constrained_facts):
                 raise ValueError("execution evidence requires authoritative truth constraint")
@@ -188,25 +192,34 @@ class SpeechSemanticAuthority:
                 and item.disposition is not SpeechPropositionDisposition.FORBIDDEN
             ]
             if constraint.rule is SpeechTruthRule.REQUIRE_MATCH:
-                if not related or any(
-                    item.subject_ref != fact.subject_ref
-                    or item.predicate != fact.predicate
-                    or freeze_json(item.value) != freeze_json(fact.value)
-                    or item.polarity is not SemanticPolarity.AFFIRM
-                    for item in related
-                ):
+                if not related or any(not _semantic_match(item, fact) for item in related):
                     raise ValueError("proposition does not match authoritative fact")
             elif constraint.rule is SpeechTruthRule.PRESERVE_UNKNOWN:
                 if not related or any(
                     item.polarity is not SemanticPolarity.UNKNOWN
-                    and item.certainty is not SemanticCertainty.UNKNOWN
+                    or item.certainty is not SemanticCertainty.UNKNOWN
+                    or not _semantic_match(item, fact)
                     for item in related
                 ):
                     raise ValueError("unknown fact must remain unknown")
             elif constraint.rule is SpeechTruthRule.FORBID_COMPLETION_CLAIM:
                 if any(
-                    item.predicate == "execution.completed"
+                    item.claim_kind is SemanticClaimKind.EXECUTION_STATUS
+                    and item.execution_status is ExecutionStatus.COMPLETED
                     and item.polarity is SemanticPolarity.AFFIRM
                     for item in related
                 ):
                     raise ValueError("execution completion claim is forbidden")
+
+
+def _semantic_match(proposition: SpeechProposition, fact: SpeechSemanticFact) -> bool:
+    return (
+        proposition.subject_ref == fact.subject_ref
+        and proposition.predicate == fact.predicate
+        and freeze_json(proposition.value) == freeze_json(fact.value)
+        and proposition.claim_kind is fact.claim_kind
+        and proposition.execution_status is fact.execution_status
+        and proposition.polarity is fact.polarity
+        and proposition.certainty is fact.certainty
+        and proposition.degree == fact.degree
+    )

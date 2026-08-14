@@ -6,7 +6,7 @@ from typing import cast
 
 import pytest
 
-from app.domain.contracts import RevisionVector
+from app.domain.contracts import ExecutionStatus, RevisionVector
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import (
     CommittedExecutiveDecision,
@@ -32,6 +32,7 @@ from app.domain.speech_semantics import (
     DeterministicSpeechDirective,
     SelfDisclosurePolicy,
     SemanticCertainty,
+    SemanticClaimKind,
     SemanticPolarity,
     SpeechProposition,
     SpeechPropositionDisposition,
@@ -115,7 +116,8 @@ def facts() -> tuple[SpeechSemanticFact, ...]:
             SpeechSemanticFactKind.SELF,
             "yura",
             "interest",
-            {"degree": 0.8},
+            {"topic_ref": "project-yura"},
+            degree=0.8,
         ),
         SpeechSemanticFact(
             "fact-forbidden",
@@ -130,6 +132,8 @@ def facts() -> tuple[SpeechSemanticFact, ...]:
             "command-1",
             "execution.status",
             {"status": "completed"},
+            claim_kind=SemanticClaimKind.EXECUTION_STATUS,
+            execution_status=ExecutionStatus.COMPLETED,
         ),
     )
 
@@ -150,7 +154,7 @@ def propositions() -> tuple[SpeechProposition, ...]:
             "p-desire",
             "yura",
             "interest",
-            {"degree": 0.8},
+            {"topic_ref": "project-yura"},
             SpeechPropositionDisposition.OPTIONAL,
             SemanticPolarity.AFFIRM,
             SemanticCertainty.CERTAIN,
@@ -176,6 +180,8 @@ def propositions() -> tuple[SpeechProposition, ...]:
             SemanticPolarity.AFFIRM,
             SemanticCertainty.CERTAIN,
             ("fact-execution",),
+            claim_kind=SemanticClaimKind.EXECUTION_STATUS,
+            execution_status=ExecutionStatus.COMPLETED,
         ),
     )
 
@@ -212,9 +218,7 @@ def context(
     )
 
 
-def candidate(
-    *, candidate_id: str = "semantic-candidate-1"
-) -> SpeechSemanticCandidate:
+def candidate(*, candidate_id: str = "semantic-candidate-1") -> SpeechSemanticCandidate:
     item = context()
     value = item.deterministic_directive
     assert value is not None
@@ -274,6 +278,13 @@ def test_contracts_are_immutable_and_plan_requires_authority() -> None:
         replace(
             propositions()[0],
             disposition=cast(SpeechPropositionDisposition, "required"),
+        )
+    with pytest.raises(ValueError, match="degree field"):
+        replace(propositions()[0], value={"degree": 0.5})
+    with pytest.raises(ValueError, match="execution status"):
+        replace(
+            propositions()[0],
+            claim_kind=SemanticClaimKind.EXECUTION_STATUS,
         )
     plan = SpeechSemanticAuthority().commit(
         candidate(),
@@ -359,6 +370,34 @@ def test_authoritative_budget_truth_and_forbidden_claims_cannot_be_omitted() -> 
             plan_id="plan-forbidden",
             committed_at=NOW,
         )
+    hidden_required = tuple(
+        replace(value, disposition=SpeechPropositionDisposition.FORBIDDEN)
+        if value.proposition_id in {"p-goal", "p-desire"}
+        else value
+        for value in candidate().propositions
+    )
+    with pytest.raises(ValueError, match="required speech intent fact"):
+        owner.commit(
+            replace(candidate(), propositions=hidden_required),
+            item,
+            current_revisions=REVISIONS,
+            plan_id="plan-hidden-required",
+            committed_at=NOW,
+        )
+    substituted_forbidden = tuple(
+        replace(value, predicate="different-claim")
+        if value.proposition_id == "p-forbidden"
+        else value
+        for value in candidate().propositions
+    )
+    with pytest.raises(ValueError, match="forbidden Executive claim"):
+        owner.commit(
+            replace(candidate(), propositions=substituted_forbidden),
+            item,
+            current_revisions=REVISIONS,
+            plan_id="plan-substituted-forbidden",
+            committed_at=NOW,
+        )
     with pytest.raises(ValueError, match="omits Executive speech constraint"):
         owner.commit(
             replace(candidate(), relationship_constraint_refs=()),
@@ -405,7 +444,33 @@ def test_execution_truth_rejects_mismatch_unknown_loss_and_completion_fabricatio
             committed_at=NOW,
         )
 
-    unknown_fact = replace(facts()[-1], value={"status": "unknown"})
+    uncertain = replace(candidate().propositions[-1], certainty=SemanticCertainty.UNKNOWN)
+    with pytest.raises(ValueError, match="does not match"):
+        SpeechSemanticAuthority().commit(
+            replace(candidate(), propositions=(*candidate().propositions[:-1], uncertain)),
+            item,
+            current_revisions=REVISIONS,
+            plan_id="plan-certainty",
+            committed_at=NOW,
+        )
+
+    degree_changed = replace(candidate().propositions[-1], degree=0.5)
+    with pytest.raises(ValueError, match="does not match"):
+        SpeechSemanticAuthority().commit(
+            replace(candidate(), propositions=(*candidate().propositions[:-1], degree_changed)),
+            item,
+            current_revisions=REVISIONS,
+            plan_id="plan-degree",
+            committed_at=NOW,
+        )
+
+    unknown_fact = replace(
+        facts()[-1],
+        value={"status": "started"},
+        execution_status=ExecutionStatus.STARTED,
+        polarity=SemanticPolarity.UNKNOWN,
+        certainty=SemanticCertainty.UNKNOWN,
+    )
     unknown_context = replace(
         item,
         facts=(*facts()[:-1], unknown_fact),
@@ -424,8 +489,39 @@ def test_execution_truth_rejects_mismatch_unknown_loss_and_completion_fabricatio
             plan_id="plan-unknown",
             committed_at=NOW,
         )
+    half_unknown = replace(
+        candidate().propositions[-1],
+        value={"status": "started"},
+        execution_status=ExecutionStatus.STARTED,
+        polarity=SemanticPolarity.UNKNOWN,
+        certainty=SemanticCertainty.CERTAIN,
+    )
+    with pytest.raises(ValueError, match="remain unknown"):
+        SpeechSemanticAuthority().commit(
+            replace(candidate(), propositions=(*candidate().propositions[:-1], half_unknown)),
+            unknown_context,
+            current_revisions=REVISIONS,
+            plan_id="plan-half-unknown",
+            committed_at=NOW,
+        )
+    preserved_unknown = replace(
+        half_unknown,
+        certainty=SemanticCertainty.UNKNOWN,
+    )
+    SpeechSemanticAuthority().commit(
+        replace(candidate(), propositions=(*candidate().propositions[:-1], preserved_unknown)),
+        unknown_context,
+        current_revisions=REVISIONS,
+        plan_id="plan-preserved-unknown",
+        committed_at=NOW,
+    )
 
-    started_fact = replace(facts()[-1], predicate="execution.started", value={"status": "started"})
+    started_fact = replace(
+        facts()[-1],
+        predicate="execution.started",
+        value={"status": "started"},
+        execution_status=ExecutionStatus.STARTED,
+    )
     completion_context = replace(
         item,
         facts=(*facts()[:-1], started_fact),
@@ -440,7 +536,7 @@ def test_execution_truth_rejects_mismatch_unknown_loss_and_completion_fabricatio
     )
     completed_claim = replace(
         candidate().propositions[-1],
-        predicate="execution.completed",
+        predicate="execution.finished",
         value={"status": "completed"},
     )
     with pytest.raises(ValueError, match="completion claim"):
@@ -510,9 +606,7 @@ async def test_simple_path_skips_llm_and_reads_live_revision_before_commit() -> 
             return snapshot.revisions
 
     port, live = Port(), Live()
-    plan = await SpeechSemanticsPlanner(
-        port, live, SpeechSemanticAuthority(), policy()
-    ).plan(
+    plan = await SpeechSemanticsPlanner(port, live, SpeechSemanticAuthority(), policy()).plan(
         context(),
         request_id="unused-request",
         trace_id="trace-1",

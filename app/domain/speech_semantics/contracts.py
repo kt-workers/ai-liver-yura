@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
 from datetime import datetime
 from enum import Enum
 from math import isfinite
 from typing import TypeVar, cast
 
-from app.domain.contracts import RevisionVector
+from app.domain.contracts import ExecutionStatus, RevisionVector
 from app.domain.contracts.common import (
     JsonValue,
     freeze_json,
@@ -30,6 +31,11 @@ class SpeechSemanticFactKind(str, Enum):
     RELATIONSHIP = "relationship"
     DISCOURSE = "discourse"
     SELF = "self"
+
+
+class SemanticClaimKind(str, Enum):
+    GENERAL = "general"
+    EXECUTION_STATUS = "execution_status"
 
 
 class SpeechPropositionDisposition(str, Enum):
@@ -94,6 +100,11 @@ class SpeechSemanticFact:
     subject_ref: str
     predicate: str
     value: JsonValue
+    claim_kind: SemanticClaimKind = SemanticClaimKind.GENERAL
+    execution_status: ExecutionStatus | None = None
+    polarity: SemanticPolarity = SemanticPolarity.AFFIRM
+    certainty: SemanticCertainty = SemanticCertainty.CERTAIN
+    degree: float | None = None
     evidence_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -102,7 +113,18 @@ class SpeechSemanticFact:
             raise ValueError("kind must be SpeechSemanticFactKind")
         require_identifier(self.subject_ref, "subject_ref")
         require_identifier(self.predicate, "predicate")
-        object.__setattr__(self, "value", freeze_json(self.value))
+        object.__setattr__(self, "value", _semantic_value(self.value))
+        _validate_semantic_facets(
+            self.claim_kind,
+            self.execution_status,
+            self.polarity,
+            self.certainty,
+            self.degree,
+        )
+        if (self.kind is SpeechSemanticFactKind.EXECUTION) != (
+            self.claim_kind is SemanticClaimKind.EXECUTION_STATUS
+        ):
+            raise ValueError("execution fact kind must match execution claim kind")
         object.__setattr__(self, "evidence_refs", _ids(self.evidence_refs, "evidence_refs"))
 
     def to_dict(self) -> dict[str, object]:
@@ -112,6 +134,13 @@ class SpeechSemanticFact:
             "subject_ref": self.subject_ref,
             "predicate": self.predicate,
             "value": thaw_json(self.value),
+            "claim_kind": self.claim_kind.value,
+            "execution_status": None
+            if self.execution_status is None
+            else self.execution_status.value,
+            "polarity": self.polarity.value,
+            "certainty": self.certainty.value,
+            "degree": self.degree,
             "evidence_refs": list(self.evidence_refs),
         }
 
@@ -127,12 +156,14 @@ class SpeechProposition:
     certainty: SemanticCertainty
     evidence_fact_refs: tuple[str, ...]
     degree: float | None = None
+    claim_kind: SemanticClaimKind = SemanticClaimKind.GENERAL
+    execution_status: ExecutionStatus | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.proposition_id, "proposition_id")
         require_identifier(self.subject_ref, "subject_ref")
         require_identifier(self.predicate, "predicate")
-        object.__setattr__(self, "value", freeze_json(self.value))
+        object.__setattr__(self, "value", _semantic_value(self.value))
         for name, expected in (
             ("disposition", SpeechPropositionDisposition),
             ("polarity", SemanticPolarity),
@@ -145,12 +176,13 @@ class SpeechProposition:
             "evidence_fact_refs",
             _ids(self.evidence_fact_refs, "evidence_fact_refs", non_empty=True),
         )
-        if self.degree is not None and (
-            type(self.degree) not in (int, float)
-            or not isfinite(self.degree)
-            or not 0 <= self.degree <= 1
-        ):
-            raise ValueError("degree must be a finite number between zero and one")
+        _validate_semantic_facets(
+            self.claim_kind,
+            self.execution_status,
+            self.polarity,
+            self.certainty,
+            self.degree,
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -162,6 +194,10 @@ class SpeechProposition:
             "polarity": self.polarity.value,
             "certainty": self.certainty.value,
             "degree": self.degree,
+            "claim_kind": self.claim_kind.value,
+            "execution_status": None
+            if self.execution_status is None
+            else self.execution_status.value,
             "evidence_fact_refs": list(self.evidence_fact_refs),
         }
 
@@ -254,9 +290,7 @@ class SpeechSemanticContextSnapshot:
             raise ValueError("decision must be CommittedExecutiveDecision")
         require_identifier(self.intent_id, "intent_id")
         facts = _owned(self.facts, SpeechSemanticFact, "facts")
-        constraints = _owned(
-            self.truth_constraints, SpeechTruthConstraint, "truth_constraints"
-        )
+        constraints = _owned(self.truth_constraints, SpeechTruthConstraint, "truth_constraints")
         object.__setattr__(self, "facts", facts)
         object.__setattr__(self, "truth_constraints", constraints)
         for values, attribute, name in (
@@ -302,9 +336,7 @@ class SpeechSemanticContextSnapshot:
     @property
     def intent(self) -> ExecutiveIntent:
         matches = [
-            item
-            for item in self.decision.candidate.intents
-            if item.intent_id == self.intent_id
+            item for item in self.decision.candidate.intents if item.intent_id == self.intent_id
         ]
         if len(matches) != 1:
             raise ValueError("speech intent does not belong to decision")
@@ -353,9 +385,7 @@ class SpeechSemanticContextSnapshot:
             raise ValueError("directive question budget exceeds authoritative maximum")
         if directive.new_direction_budget > self.max_new_direction_budget:
             raise ValueError("directive new direction budget exceeds authoritative maximum")
-        _validate_self_disclosure_policy(
-            directive.self_disclosure, self.self_disclosure_policy
-        )
+        _validate_self_disclosure_policy(directive.self_disclosure, self.self_disclosure_policy)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -476,3 +506,33 @@ def _validate_self_disclosure_policy(
     }
     if candidate not in allowed[authoritative]:
         raise ValueError("self disclosure policy exceeds authoritative policy")
+
+
+def _semantic_value(value: JsonValue) -> JsonValue:
+    frozen = freeze_json(value)
+    if isinstance(frozen, Mapping) and "degree" in frozen:
+        raise ValueError("semantic value cannot duplicate the degree field")
+    return frozen
+
+
+def _validate_semantic_facets(
+    claim_kind: SemanticClaimKind,
+    execution_status: ExecutionStatus | None,
+    polarity: SemanticPolarity,
+    certainty: SemanticCertainty,
+    degree: float | None,
+) -> None:
+    if not isinstance(claim_kind, SemanticClaimKind):
+        raise ValueError("claim_kind must be SemanticClaimKind")
+    if (claim_kind is SemanticClaimKind.EXECUTION_STATUS) != (execution_status is not None):
+        raise ValueError("execution status must match execution claim kind")
+    if execution_status is not None and not isinstance(execution_status, ExecutionStatus):
+        raise ValueError("execution_status must be ExecutionStatus")
+    if not isinstance(polarity, SemanticPolarity):
+        raise ValueError("polarity must be SemanticPolarity")
+    if not isinstance(certainty, SemanticCertainty):
+        raise ValueError("certainty must be SemanticCertainty")
+    if degree is not None and (
+        type(degree) not in (int, float) or not isfinite(degree) or not 0 <= degree <= 1
+    ):
+        raise ValueError("degree must be a finite number between zero and one")
