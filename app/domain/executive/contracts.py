@@ -73,6 +73,7 @@ class GoalTransitionOperation(str, Enum):
     SUSPEND = "suspend"
     RESUME = "resume"
     COMPLETE = "complete"
+    FAIL = "fail"
     ABANDON = "abandon"
     SUPERSEDE = "supersede"
 
