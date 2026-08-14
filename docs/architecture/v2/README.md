@@ -9,6 +9,7 @@
 - `llm_role_contracts.md` — variable logical LLM role / structured request-result contracts
 - `input_gateway_contracts.md` — multimodal input normalization / session / touch boundary
 - `input_meaning_contracts.md` — natural-language typed meaning / reference / commit boundary
+- `appraisal_internal_state_contracts.md` — subjective appraisal candidate / causal state reducer
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
 - `body_architecture.md` — canonical body, generative motion, realtime control
 - `plugin_architecture.md` — Core extension / capability architecture
