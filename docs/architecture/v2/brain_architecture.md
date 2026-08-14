@@ -281,6 +281,8 @@ Adapterはtyped reportを返すだけで`ExecutionResult`を直接確定しな�
 
 `What to say` Authority。
 
+実装正本は`speech_semantics_contracts.md`。
+
 Executive SpeechIntentからpropositions、required/forbidden、certainty/polarity/degree、question budget、execution truth等を`SpeechSemanticPlan`へ確定する。
 
 simple pathでは専用LLMを省略可能。
