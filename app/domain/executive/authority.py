@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from threading import Lock
 
-from app.domain.contracts.common import RevisionVector, freeze_json
+from app.domain.contracts import RevisionVector
+from app.domain.contracts.common import freeze_json
 
 from .contracts import (
     CommittedExecutiveDecision,
+    ExecutiveCommitState,
     ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
 )
@@ -23,7 +25,7 @@ class ExecutiveDecisionAuthority:
         candidate: ExecutiveDecisionCandidate,
         snapshot: ExecutiveContextSnapshot,
         *,
-        current_revisions: RevisionVector,
+        current: ExecutiveCommitState,
         decision_id: str,
         committed_at: object,
     ) -> CommittedExecutiveDecision:
@@ -34,7 +36,7 @@ class ExecutiveDecisionAuthority:
         with self._lock:
             if snapshot.trigger_id in self._committed_triggers:
                 raise ValueError("executive trigger is already committed")
-            self._validate(candidate, snapshot, current_revisions)
+            self._validate(candidate, snapshot, current)
             required_precondition_ids = {
                 requirement.precondition_id
                 for intent in candidate.intents
@@ -42,7 +44,7 @@ class ExecutiveDecisionAuthority:
             }
             validated_preconditions = tuple(
                 item
-                for item in snapshot.preconditions
+                for item in current.preconditions
                 if item.precondition_id in required_precondition_ids
             )
             decision = CommittedExecutiveDecision(
@@ -58,7 +60,7 @@ class ExecutiveDecisionAuthority:
     def _validate(
         candidate: ExecutiveDecisionCandidate,
         snapshot: ExecutiveContextSnapshot,
-        current: RevisionVector,
+        current: ExecutiveCommitState,
     ) -> None:
         expected = (
             snapshot.source_context_revision,
@@ -70,17 +72,20 @@ class ExecutiveDecisionAuthority:
             candidate.goal_revision,
             candidate.attention_revision,
         )
-        actual = (
-            current.source_context_revision,
-            current.goal_revision,
-            current.attention_revision,
-        )
+        actual = current.freshness.revisions
+        expected_revisions = RevisionVector(*expected)
         if candidate.trigger_id != snapshot.trigger_id:
             raise ValueError("candidate trigger does not match snapshot")
         if candidate.source_event_ids != snapshot.source_event_ids:
             raise ValueError("candidate source events do not match snapshot")
-        if proposed != expected or actual != expected:
+        if proposed != expected or actual != expected_revisions:
             raise ValueError("executive decision is stale")
+        if current.freshness.internal_state_revision != snapshot.internal_state.revision:
+            raise ValueError("executive internal state is stale")
+
+        requirements = {item.intent_id: item for item in current.requirements}
+        if set(requirements) != {item.intent_id for item in candidate.intents}:
+            raise ValueError("authoritative intent requirements are incomplete")
 
         evidence_ids = set(snapshot.source_event_ids)
         evidence_ids.update(item.fact_id for item in snapshot.facts)
@@ -92,6 +97,11 @@ class ExecutiveDecisionAuthority:
         }
         references = list(candidate.rationale_refs)
         for intent in candidate.intents:
+            authoritative = requirements[intent.intent_id]
+            if not all(item in intent.required_capabilities for item in authoritative.capabilities):
+                raise ValueError("authoritative capability requirement is missing")
+            if not all(item in intent.preconditions for item in authoritative.preconditions):
+                raise ValueError("authoritative precondition requirement is missing")
             references.extend(intent.evidence_refs)
             references.extend(intent.forbidden_claim_refs)
             references.extend(intent.payload.reference_ids())
@@ -101,10 +111,19 @@ class ExecutiveDecisionAuthority:
             if unknown_preconditions:
                 raise ValueError("intent precondition is outside snapshot")
             for capability_requirement in intent.required_capabilities:
+                captured = tuple(
+                    item for item in snapshot.capabilities if item.satisfies(capability_requirement)
+                )
+                if not captured:
+                    raise ValueError("required capability was unavailable in snapshot")
                 if not any(
-                    item.satisfies(capability_requirement) for item in snapshot.capabilities
+                    live.capability_id == previous.capability_id
+                    and live.revision == previous.revision
+                    and live.satisfies(capability_requirement)
+                    for previous in captured
+                    for live in current.capabilities
                 ):
-                    raise ValueError("required capability is unavailable")
+                    raise ValueError("required capability changed or is unavailable")
         for transition in candidate.goal_transition_intents:
             if transition.expected_goal_revision != snapshot.goal_revision:
                 raise ValueError("goal transition revision is stale")
@@ -129,7 +148,7 @@ class ExecutiveDecisionAuthority:
             raise ValueError("candidate reference is outside bounded context")
 
         preconditions = {
-            item.precondition_id: freeze_json(item.actual) for item in snapshot.preconditions
+            item.precondition_id: freeze_json(item.actual) for item in current.preconditions
         }
         for intent in candidate.intents:
             for precondition_requirement in intent.preconditions:

@@ -18,16 +18,19 @@ from app.domain.contracts import (
 )
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import (
+    AuthoritativeIntentRequirements,
     BodyIntentPayload,
     CommitmentTransitionIntent,
     CommitmentTransitionOperation,
     CommitmentTransitionPayload,
+    ExecutiveCommitState,
     ExecutiveContextSnapshot,
     ExecutiveDecisionAuthority,
     ExecutiveDecisionCandidate,
     ExecutiveDeliberator,
     ExecutiveFactKind,
     ExecutiveFactRef,
+    ExecutiveFreshnessStamp,
     ExecutiveIntent,
     ExecutiveIntentKind,
     ExecutiveInterruptibility,
@@ -59,6 +62,31 @@ from app.domain.llm import (
 
 NOW = datetime(2026, 8, 14, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(7, 5, 3)
+
+
+def live_state(
+    *,
+    revisions: RevisionVector = REVISIONS,
+    internal_state_revision: int = 2,
+    capabilities: tuple[CapabilityDescriptor, ...] | None = None,
+    preconditions: tuple[PreconditionFact, ...] | None = None,
+    requirements: tuple[AuthoritativeIntentRequirements, ...] | None = None,
+) -> ExecutiveCommitState:
+    context = snapshot()
+    return ExecutiveCommitState(
+        ExecutiveFreshnessStamp(revisions, internal_state_revision),
+        context.capabilities if capabilities is None else capabilities,
+        context.preconditions if preconditions is None else preconditions,
+        (
+            AuthoritativeIntentRequirements(
+                "intent-speech",
+                (CapabilityRequirement("speech", "prepare"),),
+                (ExecutivePreconditionRequirement("pre-turn", "available"),),
+            ),
+        )
+        if requirements is None
+        else requirements,
+    )
 
 
 def policy() -> ExecutivePolicy:
@@ -281,7 +309,7 @@ def test_authority_commits_grounded_candidate_and_projects_foundation_contracts(
     committed = authority.commit(
         candidate(),
         snapshot(),
-        current_revisions=REVISIONS,
+        current=live_state(),
         decision_id="decision-1",
         committed_at=NOW,
     )
@@ -301,7 +329,7 @@ def test_stale_context_goal_or_attention_revision_is_rejected() -> None:
             authority.commit(
                 candidate(),
                 snapshot(),
-                current_revisions=revisions,
+                current=live_state(revisions=revisions),
                 decision_id="decision",
                 committed_at=NOW,
             )
@@ -311,14 +339,13 @@ def test_unknown_evidence_and_missing_capability_fail_closed() -> None:
     unknown = replace(candidate(), rationale_refs=("invented",))
     with pytest.raises(ValueError, match="bounded"):
         ExecutiveDecisionAuthority().commit(
-            unknown, snapshot(), current_revisions=REVISIONS, decision_id="d1", committed_at=NOW
+            unknown, snapshot(), current=live_state(), decision_id="d1", committed_at=NOW
         )
-    unavailable = replace(snapshot(), capabilities=())
     with pytest.raises(ValueError, match="capability"):
         ExecutiveDecisionAuthority().commit(
             candidate(),
-            unavailable,
-            current_revisions=REVISIONS,
+            snapshot(),
+            current=live_state(capabilities=()),
             decision_id="d2",
             committed_at=NOW,
         )
@@ -334,7 +361,7 @@ def test_precondition_expectation_is_revalidated_at_commit() -> None:
         ExecutiveDecisionAuthority().commit(
             proposed,
             snapshot(),
-            current_revisions=REVISIONS,
+            current=live_state(),
             decision_id="decision-precondition",
             committed_at=NOW,
         )
@@ -360,7 +387,7 @@ def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
         ExecutiveDecisionAuthority().commit(
             proposed,
             snapshot(),
-            current_revisions=REVISIONS,
+            current=live_state(requirements=()),
             decision_id="decision-unknown-goal",
             committed_at=NOW,
         )
@@ -371,7 +398,7 @@ def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
         ExecutiveDecisionAuthority().commit(
             replace(candidate(), intents=(ungrounded_payload,)),
             snapshot(),
-            current_revisions=REVISIONS,
+            current=live_state(),
             decision_id="decision-unknown-payload-ref",
             committed_at=NOW,
         )
@@ -380,7 +407,7 @@ def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
         ExecutiveDecisionAuthority().commit(
             replace(candidate(), intents=(ungrounded_claim,)),
             snapshot(),
-            current_revisions=REVISIONS,
+            current=live_state(),
             decision_id="decision-unknown-claim",
             committed_at=NOW,
         )
@@ -424,7 +451,7 @@ def test_transition_payload_rejects_bounded_reference_of_wrong_kind(kind: str) -
         ExecutiveDecisionAuthority().commit(
             proposed,
             snapshot(),
-            current_revisions=REVISIONS,
+            current=live_state(requirements=()),
             decision_id=f"decision-wrong-{kind}-payload-kind",
             committed_at=NOW,
         )
@@ -438,7 +465,7 @@ def test_competing_decisions_for_same_trigger_commit_only_once_atomically() -> N
             authority.commit(
                 candidate(),
                 snapshot(),
-                current_revisions=REVISIONS,
+                current=live_state(),
                 decision_id=f"decision-{index}",
                 committed_at=NOW,
             )
@@ -472,7 +499,7 @@ def test_role_commit_revalidates_exact_snapshot_and_exchange() -> None:
         request,
         success(request),
         snapshot=context,
-        current_revisions=REVISIONS,
+        current=live_state(),
         authority=ExecutiveDecisionAuthority(),
         decision_id="decision-1",
         policy=policy(),
@@ -486,10 +513,104 @@ def test_role_commit_revalidates_exact_snapshot_and_exchange() -> None:
                 context,
                 facts=context.facts + (ExecutiveFactRef("late", ExecutiveFactKind.TIME, 1, {}),),
             ),
-            current_revisions=REVISIONS,
+            current=live_state(),
             authority=ExecutiveDecisionAuthority(),
             decision_id="decision-2",
             policy=policy(),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "changed",
+    [
+        "source",
+        "goal",
+        "attention",
+        "internal_state",
+        "capability",
+        "capability_revision",
+        "precondition",
+    ],
+)
+async def test_deliberator_reloads_live_state_after_llm_and_rejects_changes(
+    changed: str,
+) -> None:
+    invoked = asyncio.Event()
+    release = asyncio.Event()
+
+    class Port:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            invoked.set()
+            await release.wait()
+            return success(request)
+
+    class LiveState:
+        state = live_state()
+
+        async def current_for_commit(
+            self, context: ExecutiveContextSnapshot, proposed: ExecutiveDecisionCandidate
+        ) -> ExecutiveCommitState:
+            return self.state
+
+    live = LiveState()
+    deliberator = ExecutiveDeliberator(Port(), live, policy(), ExecutiveDecisionAuthority())
+    pending = asyncio.create_task(
+        deliberator.deliberate(
+            snapshot(),
+            request_id="request-live-change",
+            trace_id="trace-live-change",
+            decision_id="decision-live-change",
+            created_at=NOW,
+        )
+    )
+    await invoked.wait()
+    if changed == "source":
+        live.state = live_state(revisions=RevisionVector(8, 5, 3))
+    elif changed == "goal":
+        live.state = live_state(revisions=RevisionVector(7, 6, 3))
+    elif changed == "attention":
+        live.state = live_state(revisions=RevisionVector(7, 5, 4))
+    elif changed == "internal_state":
+        live.state = live_state(internal_state_revision=3)
+    elif changed in {"capability", "capability_revision"}:
+        descriptor = snapshot().capabilities[0]
+        live.state = live_state(
+            capabilities=(
+                replace(
+                    descriptor,
+                    availability=(
+                        CapabilityAvailability.UNAVAILABLE
+                        if changed == "capability"
+                        else CapabilityAvailability.AVAILABLE
+                    ),
+                    revision=descriptor.revision + 1,
+                ),
+            )
+        )
+    else:
+        live.state = live_state(
+            preconditions=(PreconditionFact("pre-turn", "turn", "equals", "busy"),)
+        )
+    release.set()
+    with pytest.raises(ValueError, match="stale|capability|precondition"):
+        await pending
+
+
+@pytest.mark.parametrize("omitted", ["capability", "precondition"])
+def test_candidate_cannot_omit_authoritative_requirements(omitted: str) -> None:
+    intent = speech_intent()
+    if omitted == "capability":
+        intent = replace(intent, required_capabilities=())
+    else:
+        intent = replace(intent, preconditions=())
+    with pytest.raises(ValueError, match=f"authoritative {omitted}"):
+        ExecutiveDecisionAuthority().commit(
+            replace(candidate(), intents=(intent,)),
+            snapshot(),
+            current=live_state(),
+            decision_id=f"decision-omitted-{omitted}",
+            committed_at=NOW,
         )
 
 
@@ -507,7 +628,20 @@ async def test_slow_background_role_does_not_block_foreground_decision() -> None
                 await release_background.wait()
             return success(request, trigger_id)
 
-    deliberator = ExecutiveDeliberator(Port(), policy(), ExecutiveDecisionAuthority())
+    class LiveState:
+        async def current_for_commit(
+            self, context: ExecutiveContextSnapshot, proposed: ExecutiveDecisionCandidate
+        ) -> ExecutiveCommitState:
+            return live_state(
+                requirements=tuple(
+                    AuthoritativeIntentRequirements(
+                        item.intent_id, item.required_capabilities, item.preconditions
+                    )
+                    for item in proposed.intents
+                )
+            )
+
+    deliberator = ExecutiveDeliberator(Port(), LiveState(), policy(), ExecutiveDecisionAuthority())
     background = asyncio.create_task(
         deliberator.deliberate(
             snapshot("background"),
@@ -515,7 +649,6 @@ async def test_slow_background_role_does_not_block_foreground_decision() -> None
             trace_id="trace-bg",
             decision_id="decision-bg",
             created_at=NOW,
-            current_revisions=REVISIONS,
         )
     )
     await background_started.wait()
@@ -526,7 +659,6 @@ async def test_slow_background_role_does_not_block_foreground_decision() -> None
             trace_id="trace-fg",
             decision_id="decision-fg",
             created_at=NOW,
-            current_revisions=REVISIONS,
         ),
         timeout=0.2,
     )
