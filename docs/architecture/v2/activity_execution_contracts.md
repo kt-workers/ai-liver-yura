@@ -88,6 +88,9 @@ report identity不一致、時刻逆行、非法edge、Capability binding・desc
 - Authority lockは短い同期state transitionだけを保護し、await、Provider callback、Repository I/Oを含めない。
 - CoordinatorはcommandごとのAdapter taskを所有し、interruptibleへの明示cancelではCancellationToken更新と`Task.cancel()`をともに行う。
 - soft_cancel_only / non_interruptibleは強制cancelせず、取消要求を記録してlate resultを再評価する。
+- Coordinatorはadmit直後かつsecond preflightのawait前にcommandごとの取消contextを登録する。cancelがstartより先に確定した場合、startは例外を出さず既存`CANCELLED` recordへ収束し、Adapterを開始しない。
+- dispatch前に外側のexecute taskがcancelされた場合もAuthorityへtyped取消を記録し、orphaned `ACCEPTED`を残さない。
+- start後からAdapter task登録までにcancelが競合しても、登録済み取消contextをAdapter signalへ引き継ぐ。interruptible taskを登録した時点ですでに取消済みなら直ちにtask cancellationを適用する。
 - cancellation後に外部effectが判明した場合もeffectを保持する。
 - slow ActivityがInput、Body realtime、current Speech、別Activityをblockしない。
 - timeout/backpressure/schedulingは#322 Runtime Kernel契約へ従い、#329が別のglobal schedulerを作らない。
@@ -105,6 +108,7 @@ report identity不一致、時刻逆行、非法edge、Capability binding・desc
 - source / goal / attention stale before start
 - duplicate command / invocation
 - success / rejection / unsupported / failure / cancellation / timeout
+- second preflight中の明示cancel・外側task cancel、およびstartとAdapter task登録間のcancel競合
 - illegal report identity・edge・timestamp・effect拒否
 - external effect後staleでもeffect refs保持
 - same command競合admissionは高々1件成功
