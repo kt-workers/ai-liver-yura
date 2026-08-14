@@ -309,6 +309,25 @@ def test_commitment_transition_operations_are_typed(
     assert intent.operation is operation
 
 
+@pytest.mark.parametrize("field", ["strength", "priority"])
+def test_non_create_commitment_transition_rejects_zero_payload(field: str) -> None:
+    payload = (
+        CommitmentTransitionPayload(strength=0)
+        if field == "strength"
+        else CommitmentTransitionPayload(priority=0)
+    )
+    with pytest.raises(ValueError, match="does not accept"):
+        CommitmentTransitionIntent(
+            "commitment-intent-zero",
+            CommitmentTransitionOperation.SUSPEND,
+            "commitment-1",
+            None,
+            5,
+            payload,
+            ("fact-desire",),
+        )
+
+
 def test_authority_commits_grounded_candidate_and_projects_foundation_contracts() -> None:
     authority = ExecutiveDecisionAuthority()
     committed = authority.commit(

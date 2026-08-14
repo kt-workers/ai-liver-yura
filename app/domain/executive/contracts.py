@@ -681,17 +681,14 @@ class CommitmentTransitionPayload:
                 or self.priority is None
             ):
                 raise ValueError("create requires semantic ref, strength and priority")
-        elif any(
-            value
-            for value in (
-                self.semantic_commitment_ref,
-                self.counterparty_ref,
-                self.related_goal_refs,
-                self.strength,
-                self.priority,
-                self.due_condition_refs,
-                self.release_condition_refs,
-            )
+        elif (
+            self.semantic_commitment_ref is not None
+            or self.counterparty_ref is not None
+            or bool(self.related_goal_refs)
+            or self.strength is not None
+            or self.priority is not None
+            or bool(self.due_condition_refs)
+            or bool(self.release_condition_refs)
         ):
             raise ValueError("commitment transition operation does not accept payload values")
 

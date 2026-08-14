@@ -83,6 +83,10 @@ class GoalCommitmentStore:
             raise ValueError("initial must be GoalCommitmentSnapshot")
         initial_time = datetime.min.replace(tzinfo=timezone.utc)
         self._snapshot = initial or GoalCommitmentSnapshot(0, (), (), initial_time)
+        self._validate_references(
+            {item.goal_id: item for item in self._snapshot.goals},
+            {item.commitment_id: item for item in self._snapshot.commitments},
+        )
         self._decision_ids: set[str] = set()
         self._intent_ids: set[str] = set()
         self._lock = Lock()
@@ -132,6 +136,7 @@ class GoalCommitmentStore:
                     decision.committed_at,
                     next_revision,
                 )
+            self._validate_references(goals, commitments)
             snapshot = GoalCommitmentSnapshot(
                 next_revision,
                 tuple(sorted(goals.values(), key=lambda item: item.goal_id)),
@@ -142,6 +147,17 @@ class GoalCommitmentStore:
             self._decision_ids.add(decision.decision_id)
             self._intent_ids.update(intent_ids)
             return snapshot
+
+    @staticmethod
+    def _validate_references(
+        goals: dict[str, GoalState], commitments: dict[str, CommitmentState]
+    ) -> None:
+        commitment_ids = set(commitments)
+        if any(set(goal.commitment_refs) - commitment_ids for goal in goals.values()):
+            raise ValueError("goal commitment reference does not exist")
+        goal_ids = set(goals)
+        if any(set(item.related_goal_refs) - goal_ids for item in commitments.values()):
+            raise ValueError("commitment goal reference does not exist")
 
     @staticmethod
     def _apply_goal(

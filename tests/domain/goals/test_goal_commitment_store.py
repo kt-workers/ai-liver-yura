@@ -194,6 +194,31 @@ def test_goal_lifecycle_create_activate_suspend_resume_complete() -> None:
     assert goal.interruption_policy.value == "protected"
 
 
+def test_goal_create_rejects_dangling_commitment_reference_atomically() -> None:
+    store = GoalCommitmentStore()
+    transition = goal_transition(GoalTransitionOperation.CREATE, 0)
+    transition = replace(
+        transition,
+        payload=replace(transition.payload, commitment_refs=("commitment-missing",)),
+    )
+    with pytest.raises(ValueError, match="commitment reference"):
+        store.apply(decision("decision-dangling", 0, goals=(transition,)))
+    assert store.snapshot().revision == 0
+    assert store.snapshot().goals == ()
+
+
+def test_goal_may_reference_commitment_created_in_same_atomic_batch() -> None:
+    store = GoalCommitmentStore()
+    goal = goal_transition(GoalTransitionOperation.CREATE, 0)
+    goal = replace(goal, payload=replace(goal.payload, commitment_refs=("commitment-1",)))
+    commitment = commitment_transition(CommitmentTransitionOperation.CREATE, 0)
+    result = store.apply(
+        decision("decision-same-batch", 0, goals=(goal,), commitments=(commitment,))
+    )
+    assert result.goals[0].commitment_refs == ("commitment-1",)
+    assert result.commitments[0].commitment_id == "commitment-1"
+
+
 @pytest.mark.parametrize(
     "terminal",
     [GoalTransitionOperation.ABANDON, GoalTransitionOperation.COMPLETE],
