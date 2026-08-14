@@ -258,6 +258,8 @@ or paused / interrupted / cancelled / failed / unsupported
 
 Goal正本ではない。
 
+実装正本は`activity_execution_contracts.md`。Foundation `ExecutionResult`をActual Factの唯一のlifecycle正本として使い、別の重複status machineを作らない。開始前とdispatch直前にrevision、Capability binding、Preconditionをcurrent stateで再検証する。
+
 ---
 
 ## 15. B11 Execution Coordination — #329
@@ -270,6 +272,8 @@ or rejected / failed / cancelled / timed_out
 ```
 
 Intent / Plan / Character claimとActual Factを混同しない。
+
+Adapterはtyped reportを返すだけで`ExecutionResult`を直接確定しない。外部effect後にcontextがstaleになってもeffect refを消さず、Appraisal / Executiveへ事実として戻す。
 
 ---
 

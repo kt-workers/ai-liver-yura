@@ -348,6 +348,8 @@ request stale after effect applied
 
 staleだから実世界の事実を消さない。
 
+#329 Activity Executionは開始前とdispatch直前にcurrent revision、Capability ID/revision/availability、Precondition identity/actualを再検証する。dispatch awaitをAuthority lockへ含めず、Adapter reportはFoundation `ExecutionResult`の合法edgeとしてのみcommitする。
+
 ---
 
 ## 13. Streaming / Game Isolation

@@ -102,6 +102,25 @@ def test_effects_are_additive_and_ordered() -> None:
     assert completed.effect_refs == ("effect-1", "effect-2")
 
 
+@pytest.mark.parametrize("status", [ExecutionStatus.OBSERVABLE, ExecutionStatus.APPLIED])
+def test_same_effect_milestone_requires_and_records_new_effect(
+    status: ExecutionStatus,
+) -> None:
+    first = started().transition_to(
+        status,
+        NOW + timedelta(seconds=2),
+        effect_refs=("effect-1",),
+    )
+    second = first.transition_to(
+        status,
+        NOW + timedelta(seconds=3),
+        effect_refs=("effect-2",),
+    )
+    assert second.effect_refs == ("effect-1", "effect-2")
+    with pytest.raises(ValueError, match="requires a new effect_ref"):
+        second.transition_to(status, NOW + timedelta(seconds=4))
+
+
 @pytest.mark.parametrize(
     "status",
     [
