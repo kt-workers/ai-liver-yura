@@ -52,9 +52,9 @@ Executiveが所有しないもの:
 - evidence refs、required capability、precondition ID、forbidden claim refs
 - 候補が読んだ3 revision
 
-`ExecutiveIntent` はspeech/body/activity/attentionの高レベル要求だけを持つ。`payload`はkind別allowlistで、semantic/motion goal、activity type、target、mode、constraintの参照だけを許可する。最終台詞、step列、TTS値、joint角、frame action、実行済みfactを格納しない。
+`ExecutiveIntent` はspeech/body/activity/attentionの高レベル要求だけを持つ。payloadは汎用JSONではなく、`SpeechIntentPayload` / `BodyIntentPayload` / `ActivityIntentPayload` / `AttentionIntentPayload` の個別immutable DTOとする。semantic/motion goal、target、constraintはnon-empty string参照、constraint群はunique tupleとして検証し、commit時にbounded snapshotへgroundする。最終台詞、step列、TTS値、joint角、frame action、実行済みfactを格納しない。
 
-Goal transitionはcreate / activate / reprioritize / suspend / resume / complete / abandon / supersede、Commitment transitionはcreate / activate / suspend / resume / release / fulfill / violateを表す。いずれもexpected goal revisionとstrict typed payloadを持ち、対象・spec参照はbounded Goal/Commitment factにgroundする。#366が後続で再検証・適用するintentである。
+Goal transitionはcreate / activate / reprioritize / suspend / resume / complete / abandon / supersede、Commitment transitionはcreate / activate / suspend / resume / release / fulfill / violateを表す。`GoalTransitionPayload`はoperationに応じてsemantic goal、priority、superseding goalだけを、`CommitmentTransitionPayload`はcreate時のsemantic commitmentだけを許可する。いずれもexpected goal revisionを持ち、対象・spec・payload参照はbounded Goal/Commitment factにgroundする。#366が後続で再検証・適用するintentである。
 
 ## 5. Commit Gate
 

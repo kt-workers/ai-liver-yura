@@ -26,8 +26,12 @@ from app.usecases.ports.llm import LLMRolePort
 
 from .authority import ExecutiveDecisionAuthority
 from .contracts import (
+    ActivityIntentPayload,
+    AttentionIntentPayload,
+    BodyIntentPayload,
     CommitmentTransitionIntent,
     CommitmentTransitionOperation,
+    CommitmentTransitionPayload,
     CommittedExecutiveDecision,
     ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
@@ -39,6 +43,9 @@ from .contracts import (
     ExecutivePriority,
     GoalTransitionIntent,
     GoalTransitionOperation,
+    GoalTransitionPayload,
+    IntentPayload,
+    SpeechIntentPayload,
 )
 
 ROLE_ID = "executive_deliberation"
@@ -274,11 +281,12 @@ def _intent(value: object) -> ExecutiveIntent:
         "forbidden_claim_refs",
     }
     item = _object(value, "executive intent", fields)
+    kind = _enum(ExecutiveIntentKind, item["kind"], "kind")
     return ExecutiveIntent(
         _string(item["intent_id"], "intent_id"),
-        _enum(ExecutiveIntentKind, item["kind"], "kind"),
+        kind,
         _string(item["purpose"], "purpose"),
-        cast(JsonValue, item["payload"]),
+        _intent_payload(kind, item["payload"]),
         _strings(item["evidence_refs"], "evidence_refs"),
         tuple(
             _requirement(entry)
@@ -289,6 +297,44 @@ def _intent(value: object) -> ExecutiveIntent:
             for entry in _array(item["preconditions"], "preconditions")
         ),
         _strings(item["forbidden_claim_refs"], "forbidden_claim_refs"),
+    )
+
+
+def _optional_string(value: object, name: str) -> str | None:
+    return None if value is None else _string(value, name)
+
+
+def _intent_payload(kind: ExecutiveIntentKind, value: object) -> IntentPayload:
+    if kind is ExecutiveIntentKind.SPEECH:
+        item = _object(
+            value, "speech payload", {"semantic_goal_ref", "target_ref", "constraint_refs"}
+        )
+        return SpeechIntentPayload(
+            _string(item["semantic_goal_ref"], "semantic_goal_ref"),
+            _optional_string(item["target_ref"], "target_ref"),
+            _strings(item["constraint_refs"], "constraint_refs"),
+        )
+    if kind is ExecutiveIntentKind.BODY:
+        item = _object(value, "body payload", {"motion_goal_ref", "target_ref", "constraint_refs"})
+        return BodyIntentPayload(
+            _string(item["motion_goal_ref"], "motion_goal_ref"),
+            _optional_string(item["target_ref"], "target_ref"),
+            _strings(item["constraint_refs"], "constraint_refs"),
+        )
+    if kind is ExecutiveIntentKind.ACTIVITY:
+        item = _object(
+            value, "activity payload", {"activity_type", "target_ref", "constraint_refs"}
+        )
+        return ActivityIntentPayload(
+            _string(item["activity_type"], "activity_type"),
+            _optional_string(item["target_ref"], "target_ref"),
+            _strings(item["constraint_refs"], "constraint_refs"),
+        )
+    item = _object(value, "attention payload", {"target_ref", "mode", "constraint_refs"})
+    return AttentionIntentPayload(
+        _string(item["target_ref"], "target_ref"),
+        _string(item["mode"], "mode"),
+        _strings(item["constraint_refs"], "constraint_refs"),
     )
 
 
@@ -323,13 +369,14 @@ def _goal_transition(value: object) -> GoalTransitionIntent:
         goal_ref = _string(goal_ref, "goal_ref")
     if spec_ref is not None:
         spec_ref = _string(spec_ref, "goal_spec_ref")
+    operation = _enum(GoalTransitionOperation, item["operation"], "operation")
     return GoalTransitionIntent(
         _string(item["intent_id"], "intent_id"),
-        _enum(GoalTransitionOperation, item["operation"], "operation"),
+        operation,
         goal_ref,
         spec_ref,
         _revision(item["expected_goal_revision"], "expected_goal_revision"),
-        cast(JsonValue, item["payload"]),
+        _goal_payload(item["payload"]),
         _strings(item["reason_refs"], "reason_refs"),
     )
 
@@ -353,12 +400,34 @@ def _commitment_transition(value: object) -> CommitmentTransitionIntent:
         commitment_ref = _string(commitment_ref, "commitment_ref")
     if spec_ref is not None:
         spec_ref = _string(spec_ref, "commitment_spec_ref")
+    operation = _enum(CommitmentTransitionOperation, item["operation"], "operation")
     return CommitmentTransitionIntent(
         _string(item["intent_id"], "intent_id"),
-        _enum(CommitmentTransitionOperation, item["operation"], "operation"),
+        operation,
         commitment_ref,
         spec_ref,
         _revision(item["expected_goal_revision"], "expected_goal_revision"),
-        cast(JsonValue, item["payload"]),
+        _commitment_payload(item["payload"]),
         _strings(item["reason_refs"], "reason_refs"),
+    )
+
+
+def _goal_payload(value: object) -> GoalTransitionPayload:
+    item = _object(
+        value, "goal transition payload", {"semantic_goal_ref", "priority", "superseding_goal_ref"}
+    )
+    priority = item["priority"]
+    if priority is not None:
+        priority = _revision(priority, "priority")
+    return GoalTransitionPayload(
+        _optional_string(item["semantic_goal_ref"], "semantic_goal_ref"),
+        priority,
+        _optional_string(item["superseding_goal_ref"], "superseding_goal_ref"),
+    )
+
+
+def _commitment_payload(value: object) -> CommitmentTransitionPayload:
+    item = _object(value, "commitment transition payload", {"semantic_commitment_ref"})
+    return CommitmentTransitionPayload(
+        _optional_string(item["semantic_commitment_ref"], "semantic_commitment_ref")
     )

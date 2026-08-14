@@ -242,11 +242,115 @@ class ExecutiveContextSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class SpeechIntentPayload:
+    semantic_goal_ref: str
+    target_ref: str | None = None
+    constraint_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        require_identifier(self.semantic_goal_ref, "semantic_goal_ref")
+        if self.target_ref is not None:
+            require_identifier(self.target_ref, "target_ref")
+        object.__setattr__(self, "constraint_refs", _ids(self.constraint_refs, "constraint_refs"))
+
+    def reference_ids(self) -> tuple[str, ...]:
+        return (
+            (self.semantic_goal_ref,)
+            + (() if self.target_ref is None else (self.target_ref,))
+            + self.constraint_refs
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "semantic_goal_ref": self.semantic_goal_ref,
+            "target_ref": self.target_ref,
+            "constraint_refs": list(self.constraint_refs),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class BodyIntentPayload:
+    motion_goal_ref: str
+    target_ref: str | None = None
+    constraint_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        require_identifier(self.motion_goal_ref, "motion_goal_ref")
+        if self.target_ref is not None:
+            require_identifier(self.target_ref, "target_ref")
+        object.__setattr__(self, "constraint_refs", _ids(self.constraint_refs, "constraint_refs"))
+
+    def reference_ids(self) -> tuple[str, ...]:
+        return (
+            (self.motion_goal_ref,)
+            + (() if self.target_ref is None else (self.target_ref,))
+            + self.constraint_refs
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "motion_goal_ref": self.motion_goal_ref,
+            "target_ref": self.target_ref,
+            "constraint_refs": list(self.constraint_refs),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ActivityIntentPayload:
+    activity_type: str
+    target_ref: str | None = None
+    constraint_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        require_identifier(self.activity_type, "activity_type")
+        if self.target_ref is not None:
+            require_identifier(self.target_ref, "target_ref")
+        object.__setattr__(self, "constraint_refs", _ids(self.constraint_refs, "constraint_refs"))
+
+    def reference_ids(self) -> tuple[str, ...]:
+        return (() if self.target_ref is None else (self.target_ref,)) + self.constraint_refs
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "activity_type": self.activity_type,
+            "target_ref": self.target_ref,
+            "constraint_refs": list(self.constraint_refs),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class AttentionIntentPayload:
+    target_ref: str
+    mode: str
+    constraint_refs: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        require_identifier(self.target_ref, "target_ref")
+        require_identifier(self.mode, "mode")
+        object.__setattr__(self, "constraint_refs", _ids(self.constraint_refs, "constraint_refs"))
+
+    def reference_ids(self) -> tuple[str, ...]:
+        return (self.target_ref,) + self.constraint_refs
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "target_ref": self.target_ref,
+            "mode": self.mode,
+            "constraint_refs": list(self.constraint_refs),
+        }
+
+
+IntentPayload = (
+    SpeechIntentPayload | BodyIntentPayload | ActivityIntentPayload | AttentionIntentPayload
+)
+
+
+@dataclass(frozen=True, slots=True)
 class ExecutiveIntent:
     intent_id: str
     kind: ExecutiveIntentKind
     purpose: str
-    payload: JsonValue
+    payload: IntentPayload
     evidence_refs: tuple[str, ...] = ()
     required_capabilities: tuple[CapabilityRequirement, ...] = ()
     preconditions: tuple[ExecutivePreconditionRequirement, ...] = ()
@@ -257,34 +361,14 @@ class ExecutiveIntent:
         require_identifier(self.purpose, "purpose")
         if not isinstance(self.kind, ExecutiveIntentKind):
             raise ValueError("kind must be ExecutiveIntentKind")
-        payload = freeze_json(self.payload)
-        if not isinstance(payload, Mapping):
-            raise ValueError("intent payload must be an object")
-        allowed_fields = {
-            ExecutiveIntentKind.SPEECH: {
-                "semantic_goal_ref",
-                "target_ref",
-                "constraint_refs",
-            },
-            ExecutiveIntentKind.BODY: {
-                "motion_goal_ref",
-                "target_ref",
-                "constraint_refs",
-            },
-            ExecutiveIntentKind.ACTIVITY: {
-                "activity_type",
-                "target_ref",
-                "constraint_refs",
-            },
-            ExecutiveIntentKind.ATTENTION: {
-                "target_ref",
-                "mode",
-                "constraint_refs",
-            },
+        expected_payload = {
+            ExecutiveIntentKind.SPEECH: SpeechIntentPayload,
+            ExecutiveIntentKind.BODY: BodyIntentPayload,
+            ExecutiveIntentKind.ACTIVITY: ActivityIntentPayload,
+            ExecutiveIntentKind.ATTENTION: AttentionIntentPayload,
         }[self.kind]
-        if set(payload) - allowed_fields:
-            raise ValueError("intent payload contains responsibility-external fields")
-        object.__setattr__(self, "payload", payload)
+        if not isinstance(self.payload, expected_payload):
+            raise ValueError("intent payload type does not match intent kind")
         for name in ("evidence_refs", "forbidden_claim_refs"):
             object.__setattr__(self, name, _ids(getattr(self, name), name))
         object.__setattr__(
@@ -309,11 +393,70 @@ class ExecutiveIntent:
             "intent_id": self.intent_id,
             "kind": self.kind.value,
             "purpose": self.purpose,
-            "payload": thaw_json(self.payload),
+            "payload": self.payload.to_dict(),
             "evidence_refs": list(self.evidence_refs),
             "required_capabilities": [item.to_dict() for item in self.required_capabilities],
             "preconditions": [item.to_dict() for item in self.preconditions],
             "forbidden_claim_refs": list(self.forbidden_claim_refs),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class GoalTransitionPayload:
+    semantic_goal_ref: str | None = None
+    priority: int | None = None
+    superseding_goal_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("semantic_goal_ref", "superseding_goal_ref"):
+            value = getattr(self, name)
+            if value is not None:
+                require_identifier(value, name)
+        if self.priority is not None and (
+            type(self.priority) is not int or not 0 <= self.priority <= 100
+        ):
+            raise ValueError("priority must be an int between 0 and 100")
+
+    def validate_for(self, operation: GoalTransitionOperation) -> None:
+        if operation is GoalTransitionOperation.CREATE:
+            if (
+                self.semantic_goal_ref is None
+                or self.priority is None
+                or self.superseding_goal_ref is not None
+            ):
+                raise ValueError("create requires semantic_goal_ref and priority")
+        elif operation is GoalTransitionOperation.REPRIORITIZE:
+            if (
+                self.priority is None
+                or self.semantic_goal_ref is not None
+                or self.superseding_goal_ref is not None
+            ):
+                raise ValueError("reprioritize requires only priority")
+        elif operation is GoalTransitionOperation.SUPERSEDE:
+            if (
+                self.superseding_goal_ref is None
+                or self.semantic_goal_ref is not None
+                or self.priority is not None
+            ):
+                raise ValueError("supersede requires only superseding_goal_ref")
+        elif any(
+            value is not None
+            for value in (self.semantic_goal_ref, self.priority, self.superseding_goal_ref)
+        ):
+            raise ValueError("goal transition operation does not accept payload values")
+
+    def reference_ids(self) -> tuple[str, ...]:
+        return tuple(
+            value
+            for value in (self.semantic_goal_ref, self.superseding_goal_ref)
+            if value is not None
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "semantic_goal_ref": self.semantic_goal_ref,
+            "priority": self.priority,
+            "superseding_goal_ref": self.superseding_goal_ref,
         }
 
 
@@ -324,7 +467,7 @@ class GoalTransitionIntent:
     goal_ref: str | None
     goal_spec_ref: str | None
     expected_goal_revision: int
-    payload: JsonValue
+    payload: GoalTransitionPayload
     reason_refs: tuple[str, ...]
 
     def __post_init__(self) -> None:
@@ -341,12 +484,9 @@ class GoalTransitionIntent:
         elif self.goal_ref is None:
             raise ValueError("non-create goal transition requires goal_ref")
         require_revision(self.expected_goal_revision, "expected_goal_revision")
-        payload = freeze_json(self.payload)
-        if not isinstance(payload, Mapping):
-            raise ValueError("goal transition payload must be an object")
-        if self.operation is GoalTransitionOperation.CREATE and not payload:
-            raise ValueError("create goal transition requires typed payload")
-        object.__setattr__(self, "payload", payload)
+        if not isinstance(self.payload, GoalTransitionPayload):
+            raise ValueError("payload must be GoalTransitionPayload")
+        self.payload.validate_for(self.operation)
         object.__setattr__(
             self, "reason_refs", _ids(self.reason_refs, "reason_refs", non_empty=True)
         )
@@ -358,9 +498,31 @@ class GoalTransitionIntent:
             "goal_ref": self.goal_ref,
             "goal_spec_ref": self.goal_spec_ref,
             "expected_goal_revision": self.expected_goal_revision,
-            "payload": thaw_json(self.payload),
+            "payload": self.payload.to_dict(),
             "reason_refs": list(self.reason_refs),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class CommitmentTransitionPayload:
+    semantic_commitment_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.semantic_commitment_ref is not None:
+            require_identifier(self.semantic_commitment_ref, "semantic_commitment_ref")
+
+    def validate_for(self, operation: CommitmentTransitionOperation) -> None:
+        if operation is CommitmentTransitionOperation.CREATE:
+            if self.semantic_commitment_ref is None:
+                raise ValueError("create requires semantic_commitment_ref")
+        elif self.semantic_commitment_ref is not None:
+            raise ValueError("commitment transition operation does not accept payload values")
+
+    def reference_ids(self) -> tuple[str, ...]:
+        return () if self.semantic_commitment_ref is None else (self.semantic_commitment_ref,)
+
+    def to_dict(self) -> dict[str, object]:
+        return {"semantic_commitment_ref": self.semantic_commitment_ref}
 
 
 @dataclass(frozen=True, slots=True)
@@ -370,7 +532,7 @@ class CommitmentTransitionIntent:
     commitment_ref: str | None
     commitment_spec_ref: str | None
     expected_goal_revision: int
-    payload: JsonValue
+    payload: CommitmentTransitionPayload
     reason_refs: tuple[str, ...]
 
     def __post_init__(self) -> None:
@@ -387,12 +549,9 @@ class CommitmentTransitionIntent:
         elif self.commitment_ref is None:
             raise ValueError("non-create commitment transition requires commitment_ref")
         require_revision(self.expected_goal_revision, "expected_goal_revision")
-        payload = freeze_json(self.payload)
-        if not isinstance(payload, Mapping):
-            raise ValueError("commitment transition payload must be an object")
-        if self.operation is CommitmentTransitionOperation.CREATE and not payload:
-            raise ValueError("create commitment transition requires typed payload")
-        object.__setattr__(self, "payload", payload)
+        if not isinstance(self.payload, CommitmentTransitionPayload):
+            raise ValueError("payload must be CommitmentTransitionPayload")
+        self.payload.validate_for(self.operation)
         object.__setattr__(
             self, "reason_refs", _ids(self.reason_refs, "reason_refs", non_empty=True)
         )
@@ -404,7 +563,7 @@ class CommitmentTransitionIntent:
             "commitment_ref": self.commitment_ref,
             "commitment_spec_ref": self.commitment_spec_ref,
             "expected_goal_revision": self.expected_goal_revision,
-            "payload": thaw_json(self.payload),
+            "payload": self.payload.to_dict(),
             "reason_refs": list(self.reason_refs),
         }
 

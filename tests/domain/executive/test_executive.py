@@ -18,8 +18,10 @@ from app.domain.contracts import (
 )
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import (
+    BodyIntentPayload,
     CommitmentTransitionIntent,
     CommitmentTransitionOperation,
+    CommitmentTransitionPayload,
     ExecutiveContextSnapshot,
     ExecutiveDecisionAuthority,
     ExecutiveDecisionCandidate,
@@ -35,7 +37,9 @@ from app.domain.executive import (
     ExecutivePriority,
     GoalTransitionIntent,
     GoalTransitionOperation,
+    GoalTransitionPayload,
     PreconditionFact,
+    SpeechIntentPayload,
     build_request,
     commit_result,
     parse_candidate,
@@ -82,6 +86,8 @@ def snapshot(trigger_id: str = "trigger-1") -> ExecutiveContextSnapshot:
             ExecutiveFactRef("fact-desire", ExecutiveFactKind.GOAL, 5, {"strength": 0.8}),
             ExecutiveFactRef("goal-1", ExecutiveFactKind.GOAL, 5, {"active": True}),
             ExecutiveFactRef("goal-spec", ExecutiveFactKind.GOAL, 5, {"proposed": True}),
+            ExecutiveFactRef("answer-user", ExecutiveFactKind.GOAL, 5, {"semantic": True}),
+            ExecutiveFactRef("semantic-goal", ExecutiveFactKind.GOAL, 5, {"semantic": True}),
             ExecutiveFactRef("commitment-1", ExecutiveFactKind.COMMITMENT, 5, {"active": True}),
             ExecutiveFactRef(
                 "commitment-spec",
@@ -116,7 +122,7 @@ def speech_intent() -> ExecutiveIntent:
         "intent-speech",
         ExecutiveIntentKind.SPEECH,
         "応答を準備する",
-        {"semantic_goal_ref": "answer-user"},
+        SpeechIntentPayload("answer-user"),
         ("fact-desire",),
         (CapabilityRequirement("speech", "prepare"),),
         (ExecutivePreconditionRequirement("pre-turn", "available"),),
@@ -194,7 +200,7 @@ def test_outcome_requires_semantically_matching_intent_kind() -> None:
         "intent-body",
         ExecutiveIntentKind.BODY,
         "身体表現を準備する",
-        {"motion_goal_ref": "acknowledge"},
+        BodyIntentPayload("answer-user"),
     )
     with pytest.raises(ValueError, match="speech"):
         replace(candidate(), intents=(body,))
@@ -202,19 +208,17 @@ def test_outcome_requires_semantically_matching_intent_kind() -> None:
         replace(candidate(), outcome=ExecutiveOutcome.ACT)
 
 
-def test_intent_payload_rejects_downstream_responsibility_fields() -> None:
-    with pytest.raises(ValueError, match="responsibility-external"):
-        replace(
-            speech_intent(),
-            payload=cast(
-                JsonValue,
-                {
-                    "final_utterance": "勝手な最終台詞",
-                    "joint_angles": [1, 2],
-                    "execution_completed": True,
-                },
-            ),
-        )
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"final_utterance": "勝手な最終台詞", "execution_completed": True},
+        {"joint_angles": [1, 2, 3]},
+        123,
+    ],
+)
+def test_intent_payload_rejects_nested_or_non_string_references(payload: object) -> None:
+    with pytest.raises(ValueError):
+        SpeechIntentPayload(cast(str, payload))
 
 
 @pytest.mark.parametrize("operation", list(GoalTransitionOperation))
@@ -231,9 +235,14 @@ def test_goal_transition_operations_are_typed_and_do_not_mutate_store(
         operation,
         **kwargs,
         expected_goal_revision=5,
-        payload={"semantic_goal": {"kind": "respond"}}
+        payload=GoalTransitionPayload("semantic-goal", 50)
         if operation is GoalTransitionOperation.CREATE
-        else {},
+        else GoalTransitionPayload(
+            priority=50 if operation is GoalTransitionOperation.REPRIORITIZE else None,
+            superseding_goal_ref="goal-1"
+            if operation is GoalTransitionOperation.SUPERSEDE
+            else None,
+        ),
         reason_refs=("fact-desire",),
     )
     value = replace(
@@ -259,9 +268,9 @@ def test_commitment_transition_operations_are_typed(
         operation,
         **kwargs,
         expected_goal_revision=5,
-        payload={"semantic_commitment": {"kind": "follow_up"}}
+        payload=CommitmentTransitionPayload("commitment-spec")
         if operation is CommitmentTransitionOperation.CREATE
-        else {},
+        else CommitmentTransitionPayload(),
         reason_refs=("fact-desire",),
     )
     assert intent.operation is operation
@@ -338,7 +347,7 @@ def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
         "unknown-goal",
         None,
         5,
-        {},
+        GoalTransitionPayload(),
         ("fact-desire",),
     )
     proposed = replace(
@@ -353,6 +362,17 @@ def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
             snapshot(),
             current_revisions=REVISIONS,
             decision_id="decision-unknown-goal",
+            committed_at=NOW,
+        )
+    ungrounded_payload = replace(
+        speech_intent(), payload=SpeechIntentPayload("unknown-semantic-goal")
+    )
+    with pytest.raises(ValueError, match="bounded"):
+        ExecutiveDecisionAuthority().commit(
+            replace(candidate(), intents=(ungrounded_payload,)),
+            snapshot(),
+            current_revisions=REVISIONS,
+            decision_id="decision-unknown-payload-ref",
             committed_at=NOW,
         )
     ungrounded_claim = replace(speech_intent(), forbidden_claim_refs=("unknown-claim",))

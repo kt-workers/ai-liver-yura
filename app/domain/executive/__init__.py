@@ -1,7 +1,11 @@
 from .authority import ExecutiveDecisionAuthority
 from .contracts import (
+    ActivityIntentPayload,
+    AttentionIntentPayload,
+    BodyIntentPayload,
     CommitmentTransitionIntent,
     CommitmentTransitionOperation,
+    CommitmentTransitionPayload,
     CommittedExecutiveDecision,
     ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
@@ -15,7 +19,9 @@ from .contracts import (
     ExecutivePriority,
     GoalTransitionIntent,
     GoalTransitionOperation,
+    GoalTransitionPayload,
     PreconditionFact,
+    SpeechIntentPayload,
 )
 from .deliberator import (
     ExecutiveDeliberator,
@@ -28,8 +34,12 @@ from .deliberator import (
 from .projector import authority_ref, to_foundation_decision, to_system_command
 
 __all__ = [
+    "ActivityIntentPayload",
+    "AttentionIntentPayload",
+    "BodyIntentPayload",
     "CommitmentTransitionIntent",
     "CommitmentTransitionOperation",
+    "CommitmentTransitionPayload",
     "CommittedExecutiveDecision",
     "ExecutiveContextSnapshot",
     "ExecutiveDecisionAuthority",
@@ -46,7 +56,9 @@ __all__ = [
     "ExecutivePriority",
     "GoalTransitionIntent",
     "GoalTransitionOperation",
+    "GoalTransitionPayload",
     "PreconditionFact",
+    "SpeechIntentPayload",
     "authority_ref",
     "build_request",
     "commit_result",

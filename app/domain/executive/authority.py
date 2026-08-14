@@ -94,6 +94,7 @@ class ExecutiveDecisionAuthority:
         for intent in candidate.intents:
             references.extend(intent.evidence_refs)
             references.extend(intent.forbidden_claim_refs)
+            references.extend(intent.payload.reference_ids())
             unknown_preconditions = {item.precondition_id for item in intent.preconditions} - {
                 item.precondition_id for item in snapshot.preconditions
             }
@@ -108,6 +109,7 @@ class ExecutiveDecisionAuthority:
             if transition.expected_goal_revision != snapshot.goal_revision:
                 raise ValueError("goal transition revision is stale")
             references.extend(transition.reason_refs)
+            references.extend(transition.payload.reference_ids())
             target = transition.goal_ref or transition.goal_spec_ref
             if target not in goal_fact_ids:
                 raise ValueError("goal transition reference is outside bounded context")
@@ -115,6 +117,7 @@ class ExecutiveDecisionAuthority:
             if commitment_transition.expected_goal_revision != snapshot.goal_revision:
                 raise ValueError("commitment transition revision is stale")
             references.extend(commitment_transition.reason_refs)
+            references.extend(commitment_transition.payload.reference_ids())
             target = (
                 commitment_transition.commitment_ref or commitment_transition.commitment_spec_ref
             )
