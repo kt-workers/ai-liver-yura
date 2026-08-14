@@ -73,6 +73,7 @@ class GoalTransitionOperation(str, Enum):
     SUSPEND = "suspend"
     RESUME = "resume"
     COMPLETE = "complete"
+    FAIL = "fail"
     ABANDON = "abandon"
     SUPERSEDE = "supersede"
 
@@ -466,9 +467,21 @@ class GoalTransitionPayload:
     semantic_goal_ref: str | None = None
     priority: int | None = None
     superseding_goal_ref: str | None = None
+    goal_kind: str | None = None
+    target_ref: str | None = None
+    commitment_refs: tuple[str, ...] = ()
+    precondition_ids: tuple[str, ...] = ()
+    completion_condition_refs: tuple[str, ...] = ()
+    interruption_policy: str | None = None
 
     def __post_init__(self) -> None:
-        for name in ("semantic_goal_ref", "superseding_goal_ref"):
+        for name in (
+            "semantic_goal_ref",
+            "superseding_goal_ref",
+            "goal_kind",
+            "target_ref",
+            "interruption_policy",
+        ):
             value = getattr(self, name)
             if value is not None:
                 require_identifier(value, name)
@@ -476,40 +489,105 @@ class GoalTransitionPayload:
             type(self.priority) is not int or not 0 <= self.priority <= 100
         ):
             raise ValueError("priority must be an int between 0 and 100")
+        if self.goal_kind is not None and self.goal_kind not in {
+            "general",
+            "activity",
+            "social",
+            "exploration",
+            "maintenance",
+        }:
+            raise ValueError("goal_kind has an invalid value")
+        if self.interruption_policy is not None and self.interruption_policy not in {
+            "interruptible",
+            "resumable",
+            "protected",
+        }:
+            raise ValueError("interruption_policy has an invalid value")
+        for name in (
+            "commitment_refs",
+            "precondition_ids",
+            "completion_condition_refs",
+        ):
+            object.__setattr__(self, name, _ids(getattr(self, name), name))
+
+    def _has_create_values(self) -> bool:
+        return any(
+            value
+            for value in (
+                self.semantic_goal_ref,
+                self.goal_kind,
+                self.target_ref,
+                self.commitment_refs,
+                self.precondition_ids,
+                self.completion_condition_refs,
+                self.interruption_policy,
+            )
+        )
 
     def validate_for(self, operation: GoalTransitionOperation) -> None:
         if operation is GoalTransitionOperation.CREATE:
             if (
                 self.semantic_goal_ref is None
                 or self.priority is None
+                or self.goal_kind is None
+                or self.interruption_policy is None
                 or self.superseding_goal_ref is not None
             ):
-                raise ValueError("create requires semantic_goal_ref and priority")
+                raise ValueError(
+                    "create requires semantic goal, kind, priority and interruption policy"
+                )
         elif operation is GoalTransitionOperation.REPRIORITIZE:
             if (
                 self.priority is None
-                or self.semantic_goal_ref is not None
+                or self._has_create_values()
                 or self.superseding_goal_ref is not None
             ):
                 raise ValueError("reprioritize requires only priority")
         elif operation is GoalTransitionOperation.SUPERSEDE:
             if (
                 self.superseding_goal_ref is None
-                or self.semantic_goal_ref is not None
                 or self.priority is not None
+                or self._has_create_values()
             ):
                 raise ValueError("supersede requires only superseding_goal_ref")
-        elif any(
-            value is not None
-            for value in (self.semantic_goal_ref, self.priority, self.superseding_goal_ref)
+        elif (
+            self.priority is not None
+            or self.superseding_goal_ref is not None
+            or self._has_create_values()
         ):
             raise ValueError("goal transition operation does not accept payload values")
 
     def reference_ids(self) -> tuple[str, ...]:
+        return (
+            tuple(
+                value
+                for value in (
+                    self.semantic_goal_ref,
+                    self.superseding_goal_ref,
+                    self.target_ref,
+                )
+                if value is not None
+            )
+            + self.commitment_refs
+            + self.precondition_ids
+            + self.completion_condition_refs
+        )
+
+    def goal_fact_reference_ids(self) -> tuple[str, ...]:
         return tuple(
             value
             for value in (self.semantic_goal_ref, self.superseding_goal_ref)
             if value is not None
+        )
+
+    def commitment_fact_reference_ids(self) -> tuple[str, ...]:
+        return self.commitment_refs
+
+    def bounded_reference_ids(self) -> tuple[str, ...]:
+        return (
+            (() if self.target_ref is None else (self.target_ref,))
+            + self.precondition_ids
+            + self.completion_condition_refs
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -517,6 +595,12 @@ class GoalTransitionPayload:
             "semantic_goal_ref": self.semantic_goal_ref,
             "priority": self.priority,
             "superseding_goal_ref": self.superseding_goal_ref,
+            "goal_kind": self.goal_kind,
+            "target_ref": self.target_ref,
+            "commitment_refs": list(self.commitment_refs),
+            "precondition_ids": list(self.precondition_ids),
+            "completion_condition_refs": list(self.completion_condition_refs),
+            "interruption_policy": self.interruption_policy,
         }
 
 
@@ -566,23 +650,80 @@ class GoalTransitionIntent:
 @dataclass(frozen=True, slots=True)
 class CommitmentTransitionPayload:
     semantic_commitment_ref: str | None = None
+    counterparty_ref: str | None = None
+    related_goal_refs: tuple[str, ...] = ()
+    strength: int | None = None
+    priority: int | None = None
+    due_condition_refs: tuple[str, ...] = ()
+    release_condition_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.semantic_commitment_ref is not None:
             require_identifier(self.semantic_commitment_ref, "semantic_commitment_ref")
+        if self.counterparty_ref is not None:
+            require_identifier(self.counterparty_ref, "counterparty_ref")
+        for name in (
+            "related_goal_refs",
+            "due_condition_refs",
+            "release_condition_refs",
+        ):
+            object.__setattr__(self, name, _ids(getattr(self, name), name))
+        for name in ("strength", "priority"):
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or not 0 <= value <= 100):
+                raise ValueError(f"{name} must be an int between 0 and 100")
 
     def validate_for(self, operation: CommitmentTransitionOperation) -> None:
         if operation is CommitmentTransitionOperation.CREATE:
-            if self.semantic_commitment_ref is None:
-                raise ValueError("create requires semantic_commitment_ref")
-        elif self.semantic_commitment_ref is not None:
+            if (
+                self.semantic_commitment_ref is None
+                or self.strength is None
+                or self.priority is None
+            ):
+                raise ValueError("create requires semantic ref, strength and priority")
+        elif (
+            self.semantic_commitment_ref is not None
+            or self.counterparty_ref is not None
+            or bool(self.related_goal_refs)
+            or self.strength is not None
+            or self.priority is not None
+            or bool(self.due_condition_refs)
+            or bool(self.release_condition_refs)
+        ):
             raise ValueError("commitment transition operation does not accept payload values")
 
     def reference_ids(self) -> tuple[str, ...]:
+        return (
+            (() if self.semantic_commitment_ref is None else (self.semantic_commitment_ref,))
+            + (() if self.counterparty_ref is None else (self.counterparty_ref,))
+            + self.related_goal_refs
+            + self.due_condition_refs
+            + self.release_condition_refs
+        )
+
+    def commitment_fact_reference_ids(self) -> tuple[str, ...]:
         return () if self.semantic_commitment_ref is None else (self.semantic_commitment_ref,)
 
+    def goal_fact_reference_ids(self) -> tuple[str, ...]:
+        return self.related_goal_refs
+
+    def bounded_reference_ids(self) -> tuple[str, ...]:
+        return (
+            (() if self.counterparty_ref is None else (self.counterparty_ref,))
+            + self.due_condition_refs
+            + self.release_condition_refs
+        )
+
     def to_dict(self) -> dict[str, object]:
-        return {"semantic_commitment_ref": self.semantic_commitment_ref}
+        return {
+            "semantic_commitment_ref": self.semantic_commitment_ref,
+            "counterparty_ref": self.counterparty_ref,
+            "related_goal_refs": list(self.related_goal_refs),
+            "strength": self.strength,
+            "priority": self.priority,
+            "due_condition_refs": list(self.due_condition_refs),
+            "release_condition_refs": list(self.release_condition_refs),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -679,6 +820,15 @@ class ExecutiveDecisionCandidate:
         ]
         if len(all_ids) != len(set(all_ids)):
             raise ValueError("all intent ids must be unique")
+        if any(
+            item.expected_goal_revision != self.goal_revision
+            for values in (
+                self.goal_transition_intents,
+                self.commitment_transition_intents,
+            )
+            for item in values
+        ):
+            raise ValueError("transition revision must match candidate goal_revision")
         passive = {
             ExecutiveOutcome.WAIT,
             ExecutiveOutcome.IGNORE,
