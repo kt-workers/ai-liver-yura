@@ -33,6 +33,11 @@ class PlanFailurePolicy(str, Enum):
     REPLAN_REQUIRED = "replan_required"
 
 
+class PlanningBlockerKind(str, Enum):
+    PRECONDITION_UNSATISFIED = "precondition_unsatisfied"
+    CONSTRAINT_CONFLICT = "constraint_conflict"
+
+
 T = TypeVar("T")
 _PLAN_PROOF = object()
 
@@ -56,6 +61,9 @@ class _PlanShape(Protocol):
     @property
     def unmet_capabilities(self) -> tuple[CapabilityRequirement, ...]: ...
 
+    @property
+    def impossibility_blocker_ids(self) -> tuple[str, ...]: ...
+
 
 def _owned(values: object, expected: type[T], name: str) -> tuple[T, ...]:
     if not isinstance(values, (list, tuple)):
@@ -78,16 +86,42 @@ def _ids(values: object, name: str, *, non_empty: bool = False) -> tuple[str, ..
 
 
 @dataclass(frozen=True, slots=True)
+class PlanningBlocker:
+    blocker_id: str
+    kind: PlanningBlockerKind
+    subject_ref: str
+
+    def __post_init__(self) -> None:
+        require_identifier(self.blocker_id, "blocker_id")
+        if not isinstance(self.kind, PlanningBlockerKind):
+            raise ValueError("kind must be PlanningBlockerKind")
+        require_identifier(self.subject_ref, "subject_ref")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "blocker_id": self.blocker_id,
+            "kind": self.kind.value,
+            "subject_ref": self.subject_ref,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ActivityContextRef:
     activity_id: str
     goal_id: str
     operation_ref: str
     status: ExecutionStatus
     effect_refs: tuple[str, ...] = ()
+    activity_type: str | None = None
+    capability_id: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("activity_id", "goal_id", "operation_ref"):
             require_identifier(getattr(self, name), name)
+        for name in ("activity_type", "capability_id"):
+            value = getattr(self, name)
+            if value is not None:
+                require_identifier(value, name)
         if not isinstance(self.status, ExecutionStatus):
             raise ValueError("status must be ExecutionStatus")
         object.__setattr__(self, "effect_refs", _ids(self.effect_refs, "effect_refs"))
@@ -96,6 +130,8 @@ class ActivityContextRef:
         return {
             "activity_id": self.activity_id,
             "goal_id": self.goal_id,
+            "activity_type": self.activity_type,
+            "capability_id": self.capability_id,
             "operation_ref": self.operation_ref,
             "status": self.status.value,
             "effect_refs": list(self.effect_refs),
@@ -172,6 +208,7 @@ class DeterministicPlanningDirective:
     checkpoint_step_ids: tuple[str, ...]
     failure_policy: PlanFailurePolicy
     unmet_capabilities: tuple[CapabilityRequirement, ...] = ()
+    impossibility_blocker_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         _validate_plan_shape(self)
@@ -191,6 +228,7 @@ class GoalPlanningContextSnapshot:
     activities: tuple[ActivityContextRef, ...]
     captured_at: datetime
     deterministic_directive: DeterministicPlanningDirective | None = None
+    planning_blockers: tuple[PlanningBlocker, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.revisions, RevisionVector):
@@ -223,6 +261,15 @@ class GoalPlanningContextSnapshot:
         )
         if len(planning_requirements) != len(set(planning_requirements)):
             raise ValueError("planning_requirements must be unique")
+        blockers = _owned(self.planning_blockers, PlanningBlocker, "planning_blockers")
+        if len({item.blocker_id for item in blockers}) != len(blockers):
+            raise ValueError("planning blocker ids must be unique")
+        if any(
+            item.kind is PlanningBlockerKind.PRECONDITION_UNSATISFIED
+            and item.subject_ref not in self.goal.precondition_ids
+            for item in blockers
+        ):
+            raise ValueError("precondition blocker is outside target goal")
         activities = _owned(self.activities, ActivityContextRef, "activities")
         for values, attribute, name in (
             (capabilities, "capability_id", "capability ids"),
@@ -233,9 +280,42 @@ class GoalPlanningContextSnapshot:
                 raise ValueError(f"{name} must be unique")
         if any(item.goal_id != self.goal.goal_id for item in activities):
             raise ValueError("activity context must belong to target goal")
+        normalized_activities: list[ActivityContextRef] = []
+        for activity in activities:
+            matches = [
+                descriptor
+                for descriptor in capabilities
+                if activity.operation_ref in descriptor.operations
+                and (
+                    activity.activity_type is None
+                    or descriptor.capability_type == activity.activity_type
+                )
+                and (
+                    activity.capability_id is None
+                    or descriptor.capability_id == activity.capability_id
+                )
+            ]
+            if len(matches) != 1:
+                raise ValueError(
+                    "activity context capability identity must resolve exactly one bounded capability"
+                )
+            descriptor = matches[0]
+            normalized_activities.append(
+                ActivityContextRef(
+                    activity.activity_id,
+                    activity.goal_id,
+                    activity.operation_ref,
+                    activity.status,
+                    activity.effect_refs,
+                    descriptor.capability_type,
+                    descriptor.capability_id,
+                )
+            )
+        activities = tuple(normalized_activities)
         object.__setattr__(self, "capabilities", capabilities)
         object.__setattr__(self, "planning_requirements", planning_requirements)
         object.__setattr__(self, "activities", activities)
+        object.__setattr__(self, "planning_blockers", blockers)
         require_aware(self.captured_at, "captured_at")
         if utc_instant(self.captured_at) < utc_instant(self.goal.updated_at):
             raise ValueError("snapshot cannot predate target goal")
@@ -252,6 +332,7 @@ class GoalPlanningContextSnapshot:
             "source_event_ids": list(self.source_event_ids),
             "capabilities": [item.to_dict() for item in self.capabilities],
             "planning_requirements": [item.to_dict() for item in self.planning_requirements],
+            "planning_blockers": [item.to_dict() for item in self.planning_blockers],
             "activities": [item.to_dict() for item in self.activities],
             "captured_at": timestamp_to_json(self.captured_at),
             "deterministic_directive": None
@@ -274,6 +355,7 @@ class GoalPlanningCandidate:
     failure_policy: PlanFailurePolicy
     unmet_capabilities: tuple[CapabilityRequirement, ...]
     created_at: datetime
+    impossibility_blocker_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("candidate_id", "goal_id"):
@@ -306,6 +388,7 @@ class GoalPlanningCommitState:
     revisions: RevisionVector
     goal: GoalState
     capabilities: tuple[CapabilityDescriptor, ...]
+    planning_blockers: tuple[PlanningBlocker, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.revisions, RevisionVector):
@@ -315,7 +398,11 @@ class GoalPlanningCommitState:
         capabilities = _owned(self.capabilities, CapabilityDescriptor, "capabilities")
         if len({item.capability_id for item in capabilities}) != len(capabilities):
             raise ValueError("capability ids must be unique")
+        blockers = _owned(self.planning_blockers, PlanningBlocker, "planning_blockers")
+        if len({item.blocker_id for item in blockers}) != len(blockers):
+            raise ValueError("planning blocker ids must be unique")
         object.__setattr__(self, "capabilities", capabilities)
+        object.__setattr__(self, "planning_blockers", blockers)
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,12 +445,14 @@ def _validate_plan_shape(value: _PlanShape) -> None:
         CapabilityRequirement,
         "unmet_capabilities",
     )
+    blocker_ids = _ids(value.impossibility_blocker_ids, "impossibility_blocker_ids")
     if len(unmet) != len(set(unmet)):
         raise ValueError("unmet_capabilities must be unique")
     object.__setattr__(value, "steps", steps)
     object.__setattr__(value, "completion_condition_refs", completion_refs)
     object.__setattr__(value, "checkpoint_step_ids", checkpoint_ids)
     object.__setattr__(value, "unmet_capabilities", unmet)
+    object.__setattr__(value, "impossibility_blocker_ids", blocker_ids)
     ids = [item.step_id for item in steps]
     if len(ids) != len(set(ids)):
         raise ValueError("step ids must be unique")
@@ -376,14 +465,14 @@ def _validate_plan_shape(value: _PlanShape) -> None:
         raise ValueError("checkpoint is outside candidate")
     _reject_cycles(steps)
     if outcome is GoalPlanningOutcome.PLANNED:
-        if not steps or not completion_refs or unmet:
-            raise ValueError("planned outcome requires steps and completion conditions")
+        if not steps or not completion_refs or unmet or blocker_ids:
+            raise ValueError("planned outcome requires plan structure without impossibility reasons")
     elif steps or completion_refs or checkpoint_ids:
         raise ValueError("non-planned outcome cannot contain plan structure")
-    elif outcome is GoalPlanningOutcome.IMPOSSIBLE and not unmet:
-        raise ValueError("impossible outcome requires unmet capabilities")
-    elif outcome is GoalPlanningOutcome.NO_PLAN_REQUIRED and unmet:
-        raise ValueError("no-plan outcome cannot contain unmet capabilities")
+    elif outcome is GoalPlanningOutcome.IMPOSSIBLE and not (unmet or blocker_ids):
+        raise ValueError("impossible outcome requires a trusted impossibility reason")
+    elif outcome is GoalPlanningOutcome.NO_PLAN_REQUIRED and (unmet or blocker_ids):
+        raise ValueError("no-plan outcome cannot contain impossibility reasons")
     if outcome is not GoalPlanningOutcome.PLANNED:
         if failure_policy is not PlanFailurePolicy.FAIL:
             raise ValueError("non-planned outcome requires fail policy")
@@ -422,6 +511,27 @@ def _reject_cycles(steps: tuple[ActivityPlanStep, ...]) -> None:
         visit(step_id)
 
 
+def _activity_matches_step(
+    activity: ActivityContextRef,
+    step: ActivityPlanStep,
+    descriptors: dict[str, CapabilityDescriptor],
+) -> bool:
+    if (
+        activity.activity_type is None
+        or activity.capability_id is None
+        or activity.activity_type != step.activity_type
+        or activity.operation_ref != step.operation_ref
+    ):
+        return False
+    descriptor = descriptors.get(activity.capability_id)
+    return (
+        descriptor is not None
+        and descriptor.capability_type == step.activity_type
+        and step.operation_ref in descriptor.operations
+        and all(descriptor.satisfies(requirement) for requirement in step.required_capabilities)
+    )
+
+
 def _validate_refs(value: _PlanShape, snapshot: GoalPlanningContextSnapshot) -> None:
     goal = snapshot.goal
     steps = value.steps
@@ -435,6 +545,7 @@ def _validate_refs(value: _PlanShape, snapshot: GoalPlanningContextSnapshot) -> 
         raise ValueError("step completion is outside target goal")
     if any(ref not in completions for ref in value.completion_condition_refs):
         raise ValueError("plan completion is outside target goal")
+    descriptors = {item.capability_id: item for item in snapshot.capabilities}
     for step in steps:
         if not any(
             descriptor.capability_type == step.activity_type
@@ -446,7 +557,7 @@ def _validate_refs(value: _PlanShape, snapshot: GoalPlanningContextSnapshot) -> 
         active_matches = [
             activity
             for activity in snapshot.activities
-            if activity.operation_ref == step.operation_ref
+            if _activity_matches_step(activity, step, descriptors)
             and activity.status
             not in {
                 ExecutionStatus.COMPLETED,
@@ -478,6 +589,11 @@ def _validate_refs(value: _PlanShape, snapshot: GoalPlanningContextSnapshot) -> 
     for requirement in value.unmet_capabilities:
         if any(descriptor.satisfies(requirement) for descriptor in snapshot.capabilities):
             raise ValueError("unmet capability is available in snapshot")
+    trusted_blockers = {item.blocker_id for item in snapshot.planning_blockers}
+    if value.outcome is GoalPlanningOutcome.IMPOSSIBLE and not set(
+        value.impossibility_blocker_ids
+    ).issubset(trusted_blockers):
+        raise ValueError("impossibility blocker is outside trusted planning blockers")
 
 
 def _plan_shape_dict(value: _PlanShape) -> dict[str, object]:
@@ -488,4 +604,5 @@ def _plan_shape_dict(value: _PlanShape) -> dict[str, object]:
         "checkpoint_step_ids": list(value.checkpoint_step_ids),
         "failure_policy": value.failure_policy.value,
         "unmet_capabilities": [item.to_dict() for item in value.unmet_capabilities],
+        "impossibility_blocker_ids": list(value.impossibility_blocker_ids),
     }
