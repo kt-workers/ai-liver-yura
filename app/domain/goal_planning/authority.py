@@ -64,11 +64,13 @@ class GoalPlanningAuthority:
                 or candidate.checkpoint_step_ids != directive.checkpoint_step_ids
                 or candidate.failure_policy is not directive.failure_policy
                 or candidate.unmet_capabilities != directive.unmet_capabilities
+                or candidate.impossibility_blocker_ids != directive.impossibility_blocker_ids
             ):
                 raise ValueError("candidate does not match deterministic directive")
         elif candidate.outcome is GoalPlanningOutcome.NO_PLAN_REQUIRED:
             raise ValueError("no-plan outcome requires trusted deterministic directive")
         self._validate_current_capabilities(candidate, snapshot, current)
+        self._validate_current_blockers(candidate, snapshot, current)
         key = (candidate.goal_id, snapshot.goal_context.goal_revision)
         with self._lock:
             if plan_id in self._plans:
@@ -113,3 +115,15 @@ class GoalPlanningAuthority:
         for requirement in candidate.unmet_capabilities:
             if any(item.satisfies(requirement) for item in current.capabilities):
                 raise ValueError("unmet capability became available while planning")
+
+    @staticmethod
+    def _validate_current_blockers(
+        candidate: GoalPlanningCandidate,
+        snapshot: GoalPlanningContextSnapshot,
+        current: GoalPlanningCommitState,
+    ) -> None:
+        initial = {item.blocker_id: item for item in snapshot.planning_blockers}
+        live = {item.blocker_id: item for item in current.planning_blockers}
+        for blocker_id in candidate.impossibility_blocker_ids:
+            if blocker_id not in initial or live.get(blocker_id) != initial[blocker_id]:
+                raise ValueError("planning blocker changed while planning")
