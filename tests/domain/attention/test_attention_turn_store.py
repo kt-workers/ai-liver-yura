@@ -92,6 +92,13 @@ def test_source_is_coalesced_without_raw_payload_or_mutable_alias() -> None:
     assert "payload" not in state.sources[0].to_dict()
 
 
+def test_user_interaction_cannot_be_demoted_and_public_values_serialize() -> None:
+    with pytest.raises(ValueError, match="direct user"):
+        source("user", AttentionPriority.NORMAL, AttentionSourceKind.USER_INTERACTION)
+    item = transition(AttentionTransitionOperation.RELEASE_FOREGROUND, 0)
+    assert item.to_dict()["operation"] == "release_foreground"
+
+
 def test_budget_rejects_equal_priority_then_replaces_lower_priority() -> None:
     store = AttentionTurnStore(attention_budget=1)
     first = store.offer(1, source("background", AttentionPriority.BACKGROUND, seconds=1))

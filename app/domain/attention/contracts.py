@@ -68,6 +68,11 @@ class AttentionSource:
             self.priority, AttentionPriority
         ):
             raise ValueError("source kind と priority は型付き列挙値でなければなりません")
+        if (
+            self.kind is AttentionSourceKind.USER_INTERACTION
+            and self.priority is not AttentionPriority.DIRECT_USER
+        ):
+            raise ValueError("user interactionはdirect user priorityでなければなりません")
         require_aware(self.occurred_at, "occurred_at")
         if type(self.coalesced_count) is not int or self.coalesced_count < 1:
             raise ValueError("coalesced_count は正の整数でなければなりません")
@@ -178,6 +183,16 @@ class AttentionTransition:
         if self.operation not in needs_value and self.value is not None:
             raise ValueError("このoperationにvalueは指定できません")
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "transition_id": self.transition_id,
+            "operation": self.operation.value,
+            "expected_attention_revision": self.expected_attention_revision,
+            "occurred_at": timestamp_to_json(self.occurred_at),
+            "target_ref": self.target_ref,
+            "value": self.value,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class ExecutiveTriggerEligibility:
@@ -200,3 +215,15 @@ class ExecutiveTriggerEligibility:
         for name in ("source_context_revision", "goal_revision", "attention_revision"):
             require_revision(getattr(self, name), name)
         require_aware(self.created_at, "created_at")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "trigger_id": self.trigger_id,
+            "source_ref": self.source_ref,
+            "reason_kind": self.reason_kind.value,
+            "priority": self.priority.name.lower(),
+            "source_context_revision": self.source_context_revision,
+            "goal_revision": self.goal_revision,
+            "attention_revision": self.attention_revision,
+            "created_at": timestamp_to_json(self.created_at),
+        }
