@@ -37,6 +37,8 @@ checkout後に`git rev-parse HEAD`とeventのhead SHAが一致することを検
 
 CI専用の別依存リストは作らない。
 
+V2 test suiteには`pytest.mark.asyncio`を使うasync testがあるため、`pytest-asyncio`はvalidation dependencyとして`requirements-dev.txt`に含める。ローカル環境だけに偶然導入されているpluginへ依存させない。
+
 現時点の`requirements*.txt`はversion pinを持たないため、これは完全なhermetic buildではない。Issue #406の責務はまず「同じ検証コマンド・同じPython contract・同じrepository dependency sourceによる機械Gate」を成立させることとし、dependency lock/hash固定が必要になった場合は独立Work Issueで扱う。
 
 ## 5. Supply-chain boundary
@@ -92,6 +94,7 @@ CIは次を行わない。
 - `rebuild/v2-foundation`向けPRでworkflowが起動する
 - checked-out HEADがeventのPR head SHAと一致する
 - pytest / Ruff / Mypy / compileall / diff-checkの各失敗がjob failureになる
+- async test pluginをrepositoryのvalidation dependencyとして再現できる
 - secretなし・read-only tokenで実行する
 - Actionsの参照先がcommit SHA固定される
 - workflow run / check結果をGitHubから取得してexact headの検証証拠にできる
