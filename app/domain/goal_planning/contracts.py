@@ -243,10 +243,10 @@ class GoalPlanningContextSnapshot:
             raise ValueError("planning requires an active goal")
         if self.goal_context.goal_revision != self.revisions.goal_revision:
             raise ValueError("goal context revision must match revisions")
-        matches = [
+        goal_matches = [
             item for item in self.goal_context.active_goals if item.goal_id == self.goal.goal_id
         ]
-        if matches != [self.goal]:
+        if goal_matches != [self.goal]:
             raise ValueError("goal must exactly match one active goal in context")
         object.__setattr__(
             self,
@@ -282,7 +282,7 @@ class GoalPlanningContextSnapshot:
             raise ValueError("activity context must belong to target goal")
         normalized_activities: list[ActivityContextRef] = []
         for activity in activities:
-            matches = [
+            capability_matches = [
                 descriptor
                 for descriptor in capabilities
                 if activity.operation_ref in descriptor.operations
@@ -295,12 +295,12 @@ class GoalPlanningContextSnapshot:
                     or descriptor.capability_id == activity.capability_id
                 )
             ]
-            if len(matches) != 1:
+            if len(capability_matches) != 1:
                 raise ValueError(
                     "activity context capability identity must resolve "
                     "exactly one bounded capability"
                 )
-            descriptor = matches[0]
+            descriptor = capability_matches[0]
             normalized_activities.append(
                 ActivityContextRef(
                     activity.activity_id,
