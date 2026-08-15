@@ -329,6 +329,8 @@ PreparationとPresentationを分離。
 
 ## 21. B17 Attention / Autonomy / Turn — #333
 
+実装の詳細契約は[`attention_turn_contracts.md`](attention_turn_contracts.md)とする。
+
 複数Activityの注意資源・Focus・Turn・Executive trigger eligibilityを所有する。
 
 ```text
