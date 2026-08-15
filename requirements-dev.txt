@@ -3,5 +3,6 @@ pytest-asyncio
 ruff
 mypy
 types-PyYAML
+types-jsonschema
 black
 pyinstaller

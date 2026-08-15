@@ -20,7 +20,7 @@ Parent: `docs/architecture/v2/llm_role_contracts.md`
 
 1. role descriptorとrequest schemaが一致しない場合、Provider呼出前に`POLICY_VIOLATION`で失敗する。
 2. Adapterはrequestごとに独立したattemptを実行し、共有Provider clientは許可するがrequest/result/metricsは共有しない。
-3. timeoutは`asyncio.timeout`でrequest policyに従う。取消は`CancelledError`を握り潰さず、呼出済みrequestには`CANCELLED`結果を返す。
+3. timeoutはPython 3.10互換の`asyncio.wait_for`でrequest policyに従う。取消は`CancelledError`を通常の成功として扱わず、呼出済みrequestには`CANCELLED`結果を返す。
 4. retryは`RETRY_BOUNDED`かつretryable provider failureだけに限定し、最大attempt数を超えない。deadline超過時はretryしない。
 5. `foreground`、`normal`、`background`の優先・queue・max-in-flightはRuntime Kernel #322の責務であり、Adapterは再実装しない。
 
