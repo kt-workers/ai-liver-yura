@@ -9,6 +9,8 @@ from .contracts import (
     GoalPlanningContextSnapshot,
     GoalPlanningOutcome,
     PlanFailurePolicy,
+    PlanningBlocker,
+    PlanningBlockerKind,
 )
 from .planner import (
     GoalPlanner,
@@ -35,6 +37,8 @@ __all__ = [
     "GoalPlanningLiveStatePort",
     "GoalPlanningPolicy",
     "PlanFailurePolicy",
+    "PlanningBlocker",
+    "PlanningBlockerKind",
     "build_request",
     "candidate_from_directive",
     "commit_result",
