@@ -2,6 +2,7 @@ from .contracts import (
     AppraisalCandidate,
     AppraisalDimension,
     AppraisalDimensionKind,
+    AppraisalFactsSnapshot,
     AppraisalPath,
     DecayPolicy,
     FacetRef,
@@ -11,6 +12,7 @@ from .contracts import (
     LifecycleKind,
     StateDeltaProposal,
     StateFacetKind,
+    freeze_appraisal_facts,
 )
 from .deep import (
     INPUT_SCHEMA,
@@ -28,6 +30,7 @@ from .reducer import InternalStateReducer, decay_candidate, lifecycle_candidate
 
 __all__ = [
     "AppraisalCandidate",
+    "AppraisalFactsSnapshot",
     "AppraisalDimension",
     "AppraisalDimensionKind",
     "AppraisalPath",
@@ -45,6 +48,7 @@ __all__ = [
     "OUTPUT_SCHEMA",
     "ROLE_ID",
     "StateDeltaProposal",
+    "freeze_appraisal_facts",
     "StateFacetKind",
     "DeterministicAppraisalRule",
     "appraise_event",

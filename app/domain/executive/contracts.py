@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TypeVar, cast
 
-from app.domain.appraisal import InternalStateSnapshot
+from app.domain.appraisal import AppraisalFactsSnapshot, InternalStateSnapshot
 from app.domain.contracts import CapabilityDescriptor, CapabilityRequirement, RevisionVector
 from app.domain.contracts.common import (
     JsonValue,
@@ -179,11 +179,13 @@ class ExecutivePreconditionRequirement:
 class ExecutiveFreshnessStamp:
     revisions: RevisionVector
     internal_state_revision: int
+    appraisal_facts_revision: int
 
     def __post_init__(self) -> None:
         if not isinstance(self.revisions, RevisionVector):
             raise ValueError("revisions must be RevisionVector")
         require_revision(self.internal_state_revision, "internal_state_revision")
+        require_revision(self.appraisal_facts_revision, "appraisal_facts_revision")
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,6 +250,7 @@ class ExecutiveContextSnapshot:
     capabilities: tuple[CapabilityDescriptor, ...]
     preconditions: tuple[PreconditionFact, ...]
     captured_at: datetime
+    appraisal_facts: AppraisalFactsSnapshot
 
     def __post_init__(self) -> None:
         require_identifier(self.trigger_id, "trigger_id")
@@ -269,6 +272,12 @@ class ExecutiveContextSnapshot:
             raise ValueError("internal_state must be InternalStateSnapshot")
         if self.internal_state.source_context_revision != self.source_context_revision:
             raise ValueError("internal state context revision must match snapshot")
+        if not isinstance(self.appraisal_facts, AppraisalFactsSnapshot):
+            raise ValueError("appraisal_facts must be AppraisalFactsSnapshot")
+        if self.appraisal_facts.source_context_revision != self.source_context_revision:
+            raise ValueError("appraisal facts context revision must match snapshot")
+        if self.appraisal_facts.internal_state_revision != self.internal_state.revision:
+            raise ValueError("appraisal facts state revision must match internal state")
         for name, item_type in (
             ("facts", ExecutiveFactRef),
             ("capabilities", CapabilityDescriptor),
@@ -299,6 +308,7 @@ class ExecutiveContextSnapshot:
             "capabilities": [item.to_dict() for item in self.capabilities],
             "preconditions": [item.to_dict() for item in self.preconditions],
             "captured_at": timestamp_to_json(self.captured_at),
+            "appraisal_facts": self.appraisal_facts.to_dict(),
         }
 
 

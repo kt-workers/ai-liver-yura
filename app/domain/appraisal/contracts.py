@@ -259,6 +259,89 @@ class AppraisalCandidate:
         }
 
 
+_MAX_APPRAISAL_EVIDENCE_REFS = 16
+
+
+@dataclass(frozen=True, slots=True)
+class AppraisalFactsSnapshot:
+    revision: int
+    source_context_revision: int
+    internal_state_revision: int
+    source_event_ids: tuple[str, ...]
+    dimensions: tuple[AppraisalDimension, ...]
+    salience: float
+    relevance: float
+    evidence_refs: tuple[str, ...]
+    captured_at: datetime
+
+    def __post_init__(self) -> None:
+        for name in ("revision", "source_context_revision", "internal_state_revision"):
+            require_revision(getattr(self, name), name)
+        object.__setattr__(
+            self,
+            "source_event_ids",
+            _owned_ids(self.source_event_ids, "source_event_ids", non_empty=True),
+        )
+        if not isinstance(self.dimensions, (list, tuple)):
+            raise ValueError("dimensions must be an array")
+        dimensions = tuple(self.dimensions)
+        if any(not isinstance(item, AppraisalDimension) for item in dimensions):
+            raise ValueError("dimensions must contain AppraisalDimension")
+        if len({(item.kind, item.target_ref) for item in dimensions}) != len(dimensions):
+            raise ValueError("appraisal dimensions must be unique")
+        object.__setattr__(self, "dimensions", dimensions)
+        _number(self.salience, "salience", minimum=0.0, maximum=1.0)
+        _number(self.relevance, "relevance", minimum=0.0, maximum=1.0)
+        evidence_refs = _owned_ids(self.evidence_refs, "evidence_refs")
+        if len(evidence_refs) > _MAX_APPRAISAL_EVIDENCE_REFS:
+            raise ValueError("evidence_refs exceeds the bounded maximum")
+        object.__setattr__(self, "evidence_refs", evidence_refs)
+        require_aware(self.captured_at, "captured_at")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "revision": self.revision,
+            "source_context_revision": self.source_context_revision,
+            "internal_state_revision": self.internal_state_revision,
+            "source_event_ids": list(self.source_event_ids),
+            "dimensions": [item.to_dict() for item in self.dimensions],
+            "salience": self.salience,
+            "relevance": self.relevance,
+            "evidence_refs": list(self.evidence_refs),
+            "captured_at": timestamp_to_json(self.captured_at),
+        }
+
+
+def freeze_appraisal_facts(
+    candidate: AppraisalCandidate,
+    state: InternalStateSnapshot,
+    *,
+    revision: int,
+    captured_at: datetime,
+) -> AppraisalFactsSnapshot:
+    if not isinstance(candidate, AppraisalCandidate) or not isinstance(
+        state, InternalStateSnapshot
+    ):
+        raise ValueError("candidate and state must be appraisal contracts")
+    if candidate.source_context_revision != state.source_context_revision:
+        raise ValueError("candidate context revision must match state")
+    if candidate.base_state_revision != state.revision:
+        raise ValueError("candidate state revision must match state")
+    if utc_instant(candidate.created_at) > utc_instant(captured_at):
+        raise ValueError("facts cannot predate candidate")
+    return AppraisalFactsSnapshot(
+        revision,
+        candidate.source_context_revision,
+        state.revision,
+        candidate.source_event_ids,
+        candidate.dimensions,
+        candidate.salience,
+        candidate.relevance,
+        candidate.evidence_refs,
+        captured_at,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class DecayPolicy:
     facet_ref: FacetRef
