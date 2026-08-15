@@ -40,6 +40,7 @@ Goal Planningが所有するもの:
 - #366 `GoalContextView`
 - 対象active `GoalState`
 - bounded `CapabilityDescriptor`
+- upstream/policy由来のtrusted planning `CapabilityRequirement`
 - bounded current `ActivityContextRef`
 - trusted simple-path `DeterministicPlanningDirective`（任意）
 - captured timestamp
@@ -86,6 +87,8 @@ Goal Planningが所有するもの:
 - `no_plan_required / impossible`はstep/checkpoint/completionを持たない
 - `no_plan_required`はtrusted deterministic directive由来だけを許可する
 - `impossible`は1件以上の未充足Capability requirementを必要とし、bounded/current snapshotの双方で本当に満たせないことをAuthorityが検証する
+- `impossible`の未充足requirementはtrusted planning requirement集合にgroundし、無関係な架空Capabilityを不能理由にできない
+- `planned`のstep群はtrusted planning requirementをすべて充足する
 - step precondition/completion refsは対象Goalの正本集合からのみ選ぶ
 - targetは対象Goalのtargetと同一、またはnullに限る
 - nonterminal Activityと同じoperationを計画する場合はbounded Activity IDを明示してresumeし、暗黙の二重起動を拒否する
