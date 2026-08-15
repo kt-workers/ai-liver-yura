@@ -1,3 +1,4 @@
+import json
 from dataclasses import FrozenInstanceError
 from datetime import datetime, timedelta, timezone
 
@@ -80,6 +81,7 @@ def test_model_and_state_are_immutable_and_json_serializable() -> None:
     state = BodyState(model().body_model_id, 2, current, pose(), body_velocity())
     state.validate_for(model())
     assert state.to_dict()["revision"] == 2
+    assert json.loads(json.dumps(state.to_dict()))["body_model_id"] == "yura.canonical.v1"
     with pytest.raises(FrozenInstanceError):
         state.revision = 3  # type: ignore[misc]
 
