@@ -161,8 +161,8 @@ Body以外の領域はsnapshotを読めるが、書込みは新しいrevisionを
 - root transformだけがworld座標であり、root以外のjoint transform及びrest offsetは
   親jointに対するlocal座標である。world transformの合成、FK、IK及びrenderer座標への
   投影は後続のSolver又はAdapterの責務であり、Canonical Modelは所有しない。
-- `BodyPose` はroot world transformと、全jointを一意に含むlocal transformから成る。
-  `BodyVelocity` はrootのworld線形・角速度と、全jointのlocal線形・角速度を同じ識別子で
+- `BodyPose` はroot world transformと、root以外の全jointを一意に含むlocal transformから成る。
+  `BodyVelocity` はrootのworld線形・角速度と、root以外の全jointのlocal線形・角速度を同じ識別子で
   保持する。過去poseはimmutableな時系列snapshotとしてのみ保存する。
 
 #### Skeleton、可動域及び検証
@@ -175,7 +175,7 @@ Body以外の領域はsnapshotを読めるが、書込みは新しいrevisionを
   rangeはhard range内、relaxed referenceはcomfortable range内とする。DOFのないjointは
   rotationを持たない固定jointである。
 - `BodyState` は既知のbody model ID、非負revision、timezone-aware観測時刻を持つ。pose、
-  velocity、historyは同じskeletonの全joint集合を持ち、historyの時刻はcurrent snapshotを
+  velocity、historyはrootを除く同じskeletonのjoint集合を持ち、historyの時刻はcurrent snapshotを
   超えてはならない。不正な入力はProvider、renderer又はsolverを呼ぶ前にrejectする。
 
 この契約はDomainの身体同一性を固定するが、Motion Planner、Solver、Continuous Controller及び

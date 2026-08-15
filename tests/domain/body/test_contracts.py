@@ -57,11 +57,11 @@ def model() -> CanonicalBodyModel:
 
 
 def pose() -> BodyPose:
-    return BodyPose(transform(), (("root", transform()), ("right_hand", transform())))
+    return BodyPose(transform(), (("right_hand", transform()),))
 
 
 def body_velocity() -> BodyVelocity:
-    return BodyVelocity(velocity(), (("root", velocity()), ("right_hand", velocity())))
+    return BodyVelocity(velocity(), (("right_hand", velocity()),))
 
 
 def test_canonical_model_keeps_anatomical_sides_and_renderer_independent_coordinates() -> None:
@@ -185,11 +185,11 @@ def test_model_rejects_unknown_or_duplicate_end_effector_and_bad_chain_end() -> 
 
 def test_pose_and_velocity_must_cover_exactly_the_model_skeleton() -> None:
     canonical = model()
-    invalid_pose = BodyPose(transform(), (("root", transform()),))
-    with pytest.raises(ValueError, match="全joint"):
+    invalid_pose = BodyPose(transform(), (("root", transform()), ("right_hand", transform())))
+    with pytest.raises(ValueError, match="root以外"):
         invalid_pose.validate_for(canonical)
-    invalid_velocity = BodyVelocity(velocity(), (("root", velocity()),))
-    with pytest.raises(ValueError, match="全joint"):
+    invalid_velocity = BodyVelocity(velocity(), (("root", velocity()), ("right_hand", velocity())))
+    with pytest.raises(ValueError, match="root以外"):
         invalid_velocity.validate_for(canonical)
 
 

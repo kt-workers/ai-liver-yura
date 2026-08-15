@@ -341,6 +341,10 @@ class CanonicalBodyModel:
     def joint_ids(self) -> tuple[str, ...]:
         return tuple(item.joint_id for item in self.joints)
 
+    @property
+    def root_joint_id(self) -> str:
+        return next(item.joint_id for item in self.joints if item.parent_joint_id is None)
+
     def to_dict(self) -> dict[str, object]:
         return {
             "body_model_id": self.body_model_id,
@@ -381,8 +385,10 @@ class BodyPose:
     def validate_for(self, model: CanonicalBodyModel) -> None:
         if not isinstance(model, CanonicalBodyModel):
             raise ValueError("model は CanonicalBodyModel でなければなりません")
-        if {item[0] for item in self.joint_local_transforms} != set(model.joint_ids):
-            raise ValueError("pose はskeletonの全jointを一度ずつ含まなければなりません")
+        if {item[0] for item in self.joint_local_transforms} != {
+            joint_id for joint_id in model.joint_ids if joint_id != model.root_joint_id
+        }:
+            raise ValueError("pose はroot以外の全jointを一度ずつ含まなければなりません")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -425,8 +431,10 @@ class BodyVelocity:
         object.__setattr__(self, "joint_local_velocities", velocities)
 
     def validate_for(self, model: CanonicalBodyModel) -> None:
-        if {item[0] for item in self.joint_local_velocities} != set(model.joint_ids):
-            raise ValueError("velocity はskeletonの全jointを一度ずつ含まなければなりません")
+        if {item[0] for item in self.joint_local_velocities} != {
+            joint_id for joint_id in model.joint_ids if joint_id != model.root_joint_id
+        }:
+            raise ValueError("velocity はroot以外の全jointを一度ずつ含まなければなりません")
 
     def to_dict(self) -> dict[str, object]:
         return {
