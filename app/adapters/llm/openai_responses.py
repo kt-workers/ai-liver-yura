@@ -6,13 +6,17 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from types import MappingProxyType
 from typing import Protocol, cast
 
 from jsonschema import ValidationError, validate
+from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from app.domain.llm import (
     LLMFailureCode,
     LLMFailurePolicy,
+    LLMModelClass,
+    LLMReasoningEffort,
     LLMRoleFailure,
     LLMRoleRequest,
     LLMRoleResult,
@@ -27,9 +31,38 @@ class ResponsesClient(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class OpenAIResponsesModelPolicy:
+    """Roleに許可したmodel classをProvider固有設定へ解決する不変policy。"""
+
+    model: str
+    reasoning_by_effort: Mapping[LLMReasoningEffort, str]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.model, str) or not self.model.strip():
+            raise ValueError("Provider modelは空にできません")
+        if not isinstance(self.reasoning_by_effort, Mapping):
+            raise ValueError("reasoning mappingはMappingでなければなりません")
+        reasoning_by_effort = dict(self.reasoning_by_effort)
+        if not reasoning_by_effort:
+            raise ValueError("reasoning mappingは空にできません")
+        if any(
+            not isinstance(effort, LLMReasoningEffort)
+            or not isinstance(value, str)
+            or not value.strip()
+            for effort, value in reasoning_by_effort.items()
+        ):
+            raise ValueError("reasoning mappingが不正です")
+        object.__setattr__(
+            self,
+            "reasoning_by_effort",
+            MappingProxyType(reasoning_by_effort),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class OpenAIResponsesRoleConfig:
     role_id: str
-    model: str
+    model_policies: Mapping[LLMModelClass, OpenAIResponsesModelPolicy]
     input_schema_id: str
     output_schema_id: str
     output_json_schema: Mapping[str, object]
@@ -41,7 +74,6 @@ class OpenAIResponsesRoleConfig:
             isinstance(value, str) and value.strip()
             for value in (
                 self.role_id,
-                self.model,
                 self.input_schema_id,
                 self.output_schema_id,
                 self.instructions,
@@ -50,6 +82,22 @@ class OpenAIResponsesRoleConfig:
             raise ValueError("Role設定の文字列は空にできません")
         if not isinstance(self.output_json_schema, Mapping):
             raise ValueError("出力JSON Schemaはobjectでなければなりません")
+        if not isinstance(self.model_policies, Mapping):
+            raise ValueError("model policyはMappingでなければなりません")
+        model_policies = dict(self.model_policies)
+        if not model_policies or any(
+            not isinstance(model_class, LLMModelClass)
+            or not isinstance(policy, OpenAIResponsesModelPolicy)
+            for model_class, policy in model_policies.items()
+        ):
+            raise ValueError("model policyが不正です")
+        object.__setattr__(self, "model_policies", MappingProxyType(model_policies))
+
+
+@dataclass(frozen=True, slots=True)
+class _ProviderFailureClassification:
+    code: LLMFailureCode
+    retryable: bool
 
 
 class OpenAIResponsesAdapter:
@@ -93,13 +141,27 @@ class OpenAIResponsesAdapter:
                 0,
                 started_at,
             )
+        provider_policy = config.model_policies.get(request.execution_policy.model_class)
+        if provider_policy is None or (
+            request.execution_policy.reasoning_effort not in provider_policy.reasoning_by_effort
+        ):
+            return self._failure(
+                request,
+                LLMFailureCode.POLICY_VIOLATION,
+                "RoleのProvider model policyが未登録です",
+                0,
+                started_at,
+            )
         for attempt in range(1, request.execution_policy.max_attempts + 1):
             timeout = self._remaining_timeout(request)
             if timeout <= 0:
                 return self._timed_out(request, attempt - 1, started_at)
             try:
                 response = await asyncio.wait_for(
-                    self._client.create(**self._request_arguments(request, config)), timeout=timeout
+                    self._client.create(
+                        **self._request_arguments(request, config, provider_policy)
+                    ),
+                    timeout=timeout,
                 )
                 output = self._parse_output(response, config)
                 completed_at = self._now()
@@ -140,33 +202,41 @@ class OpenAIResponsesAdapter:
                     started_at,
                 )
             except Exception as error:
+                classification = self._classify_provider_failure(error)
                 if (
-                    request.execution_policy.max_attempts > attempt
+                    classification.retryable
+                    and request.execution_policy.max_attempts > attempt
                     and request.execution_policy.max_attempts > 1
                     and self._retry_allowed(config)
                 ):
                     continue
-                code = self._provider_failure_code(error)
                 return self._failure(
                     request,
-                    code,
+                    classification.code,
                     "Provider呼出に失敗しました",
                     attempt,
                     started_at,
-                    retryable=self._retry_allowed(config),
+                    retryable=classification.retryable,
                 )
         raise AssertionError("到達不能なretry状態です")
 
     def _request_arguments(
-        self, request: LLMRoleRequest, config: OpenAIResponsesRoleConfig
+        self,
+        request: LLMRoleRequest,
+        config: OpenAIResponsesRoleConfig,
+        provider_policy: OpenAIResponsesModelPolicy,
     ) -> dict[str, object]:
         return {
-            "model": config.model,
+            "model": provider_policy.model,
             "instructions": config.instructions,
             "input": json.dumps(request.input.to_dict()["value"], ensure_ascii=False),
             "max_output_tokens": request.execution_policy.max_output_tokens,
             "temperature": request.execution_policy.temperature,
-            "reasoning": {"effort": request.execution_policy.reasoning_effort.value},
+            "reasoning": {
+                "effort": provider_policy.reasoning_by_effort[
+                    request.execution_policy.reasoning_effort
+                ]
+            },
             "text": {
                 "format": {
                     "type": "json_schema",
@@ -200,11 +270,14 @@ class OpenAIResponsesAdapter:
         return config.failure_policy is LLMFailurePolicy.RETRY_BOUNDED
 
     @staticmethod
-    def _provider_failure_code(error: Exception | None = None) -> LLMFailureCode:
-        status_code = getattr(error, "status_code", None)
-        if status_code in {408, 429, 500, 502, 503, 504}:
-            return LLMFailureCode.PROVIDER_UNAVAILABLE
-        return LLMFailureCode.PROVIDER_ERROR
+    def _classify_provider_failure(error: Exception) -> _ProviderFailureClassification:
+        if isinstance(error, (APIConnectionError, APITimeoutError)):
+            return _ProviderFailureClassification(LLMFailureCode.PROVIDER_UNAVAILABLE, True)
+        if isinstance(error, APIStatusError):
+            status_code = error.status_code
+            if status_code == 408 or status_code == 429 or 500 <= status_code <= 599:
+                return _ProviderFailureClassification(LLMFailureCode.PROVIDER_UNAVAILABLE, True)
+        return _ProviderFailureClassification(LLMFailureCode.PROVIDER_ERROR, False)
 
     def _timed_out(
         self, request: LLMRoleRequest, attempts: int, started_at: datetime
