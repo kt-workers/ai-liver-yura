@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -65,6 +66,7 @@ class OpenAIResponsesRoleConfig:
     model_policies: Mapping[LLMModelClass, OpenAIResponsesModelPolicy]
     input_schema_id: str
     output_schema_id: str
+    provider_output_format_name: str
     output_json_schema: Mapping[str, object]
     instructions: str
     failure_policy: LLMFailurePolicy
@@ -76,10 +78,13 @@ class OpenAIResponsesRoleConfig:
                 self.role_id,
                 self.input_schema_id,
                 self.output_schema_id,
+                self.provider_output_format_name,
                 self.instructions,
             )
         ):
             raise ValueError("Role設定の文字列は空にできません")
+        if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", self.provider_output_format_name) is None:
+            raise ValueError("Provider output format nameがOpenAI制約に一致しません")
         if not isinstance(self.output_json_schema, Mapping):
             raise ValueError("出力JSON Schemaはobjectでなければなりません")
         if not isinstance(self.model_policies, Mapping):
@@ -113,6 +118,9 @@ class OpenAIResponsesAdapter:
         configs = {config.role_id: config for config in role_configs}
         if len(configs) != len(role_configs):
             raise ValueError("Role設定は重複できません")
+        provider_format_names = {config.provider_output_format_name for config in role_configs}
+        if len(provider_format_names) != len(role_configs):
+            raise ValueError("Provider output format nameはRole間で重複できません")
         self._client = client
         self._role_configs = configs
         self._now = now or (lambda: datetime.now(timezone.utc))
@@ -240,7 +248,7 @@ class OpenAIResponsesAdapter:
             "text": {
                 "format": {
                     "type": "json_schema",
-                    "name": config.output_schema_id,
+                    "name": config.provider_output_format_name,
                     "strict": True,
                     "schema": dict(config.output_json_schema),
                 }

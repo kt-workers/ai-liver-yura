@@ -15,6 +15,8 @@ Parent: `docs/architecture/v2/llm_role_contracts.md`
 - `LLMModelClass`と`LLMReasoningEffort`をProvider固有model/reasoning設定へ解決する責務はAdapterにある。
 - Roleごとのmodel mapping、system instruction、strict JSON schemaは不変のregistryから取得し、Role間で混ぜない。
 - Provider policyはRoleごとに許可した`LLMModelClass`と`LLMReasoningEffort`の組だけを、具体model名とreasoning parameterへ解決する。不明な組はProvider呼出前に`POLICY_VIOLATION`でfail-closedにする。
+- Domainの`output_schema_id`はcanonicalなschema identityであり、Providerのstructured-output format nameではない。AdapterはRole設定に明示したProvider固有のformat nameを用いて、両者を分離する。
+- OpenAI Responses APIのformat nameは`^[A-Za-z0-9_-]{1,64}$`を満たさなければならない。不正値またはRole間で重複するProvider format nameはconstructorで拒否し、Provider呼出前にfail-closedにする。Domain schema IDを文字置換してProvider名へ暗黙変換してはならない。
 - schema validation、revision/preconditionのcommit再検証はそれぞれAdapter後段のschema registry、Owning Moduleが所有する。
 
 ## 3. 実行
@@ -27,7 +29,7 @@ Parent: `docs/architecture/v2/llm_role_contracts.md`
 
 ## 4. Provider response
 
-- strict JSON objectだけを`StructuredPayload`へ変換する。
+- strict JSON objectだけを`StructuredPayload`へ変換する。Provider response成功後も`StructuredPayload.schema_id`はProvider format nameではなく、元のDomain `output_schema_id`を保持する。
 - response schema IDはdescriptorのoutput schema IDと完全一致しなければならない。
 - malformed JSON、object以外、schema mismatchは`SCHEMA_INVALID`へ正規化する。
 - provider unavailable、rate limit、transport errorは`PROVIDER_UNAVAILABLE`または`PROVIDER_ERROR`へ正規化する。
@@ -41,6 +43,6 @@ Parent: `docs/architecture/v2/llm_role_contracts.md`
 
 ## 6. 検証
 
-- fake injected clientで成功、malformed response、timeout、cancel、deadline開始前/再試行中の失効、retry上限、transient/permanent provider failure、Role/schema隔離、model/reasoning mapping、credential・Prompt・SDK例外の非露出を検証する。
+- fake injected clientで成功、malformed response、timeout、cancel、deadline開始前/再試行中の失効、retry上限、transient/permanent provider failure、Role/schema隔離、model/reasoning mapping、credential・Prompt・SDK例外の非露出を検証する。dotを含むDomain schema ID、妥当な明示Provider format name、format nameのdot・65文字超過・空文字のconstructor拒否、Role間のProvider format name重複拒否も検証する。
 - slow background requestとforeground requestの独立性はRuntime #322とのAdjacent testで検証する。
 - real Providerはstrict output、timeout、credential非露出をVerificationで確認する。

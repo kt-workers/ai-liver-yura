@@ -85,6 +85,7 @@ def make_config(
     role_id: str = "meaning",
     input_schema_id: str = "meaning.input.v1",
     output_schema_id: str = "meaning.output.v1",
+    provider_output_format_name: str = "meaning_output_v1",
     instructions: str = "JSON objectだけを返してください。",
     model_policies: dict[LLMModelClass, OpenAIResponsesModelPolicy] | None = None,
     failure_policy: LLMFailurePolicy = LLMFailurePolicy.RETRY_BOUNDED,
@@ -105,6 +106,7 @@ def make_config(
         },
         input_schema_id=input_schema_id,
         output_schema_id=output_schema_id,
+        provider_output_format_name=provider_output_format_name,
         output_json_schema={
             "type": "object",
             "properties": {"ok": {"type": "boolean"}},
@@ -140,7 +142,7 @@ def test_success_uses_strict_json_schema_and_typed_result() -> None:
         assert client.calls[0]["text"] == {
             "format": {
                 "type": "json_schema",
-                "name": "meaning.output.v1",
+                "name": "meaning_output_v1",
                 "strict": True,
                 "schema": make_config().output_json_schema,
             }
@@ -169,6 +171,7 @@ def test_role_policy_isolation_uses_the_selected_role_only() -> None:
             role_id="other",
             input_schema_id="other.input.v1",
             output_schema_id="other.output.v1",
+            provider_output_format_name="other_output_v1",
             instructions="other instruction",
             model_policies={
                 LLMModelClass.BALANCED: OpenAIResponsesModelPolicy(
@@ -194,6 +197,55 @@ def test_role_policy_isolation_uses_the_selected_role_only() -> None:
         assert client.calls[0]["reasoning"] == {"effort": "other-medium"}
 
     asyncio.run(scenario())
+
+
+def test_provider_format_name_is_explicit_and_does_not_change_domain_schema_id() -> None:
+    async def scenario() -> None:
+        client = FakeClient(FakeResponse('{"ok": true}'))
+        config = make_config(
+            output_schema_id="meaning.output.v1",
+            provider_output_format_name="meaning_output_v1",
+        )
+        result = await OpenAIResponsesAdapter(client, (config,), now=lambda: NOW).invoke(
+            make_request()
+        )
+
+        assert result.status is LLMRoleStatus.SUCCEEDED
+        assert result.output is not None
+        assert result.output.schema_id == "meaning.output.v1"
+        text = client.calls[0]["text"]
+        assert isinstance(text, dict)
+        format_config = text["format"]
+        assert isinstance(format_config, dict)
+        assert format_config["name"] == "meaning_output_v1"
+
+    asyncio.run(scenario())
+
+
+def test_invalid_provider_format_names_fail_closed_before_provider_call() -> None:
+    for provider_output_format_name in ("meaning.output.v1", "a" * 65, ""):
+        try:
+            make_config(provider_output_format_name=provider_output_format_name)
+        except ValueError:
+            continue
+        raise AssertionError("不正なProvider format nameが受理されました")
+
+
+def test_duplicate_provider_format_names_across_roles_are_rejected() -> None:
+    client = FakeClient(FakeResponse('{"ok": true}'))
+    other = make_config(
+        role_id="other",
+        input_schema_id="other.input.v1",
+        output_schema_id="other.output.v1",
+        provider_output_format_name="meaning_output_v1",
+    )
+
+    try:
+        OpenAIResponsesAdapter(client, (make_config(), other), now=lambda: NOW)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Role間で重複するProvider format nameが受理されました")
 
 
 def test_fast_balanced_and_deep_model_policy_mappings_are_explicit() -> None:
