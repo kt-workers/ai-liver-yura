@@ -7,6 +7,7 @@
 - `concurrency_architecture.md` — non-blocking runtime / LLM invocation topology
 - `runtime_kernel_contracts.md` — bounded queue / scheduler / cancellation / lifecycle contracts
 - `llm_role_contracts.md` — variable logical LLM role / structured request-result contracts
+- `llm_provider_adapter_contracts.md` — provider SDK boundary / model policy resolution / typed failure normalization
 - `input_gateway_contracts.md` — multimodal input normalization / session / touch boundary
 - `input_meaning_contracts.md` — natural-language typed meaning / reference / commit boundary
 - `appraisal_internal_state_contracts.md` — subjective appraisal candidate / causal state reducer
