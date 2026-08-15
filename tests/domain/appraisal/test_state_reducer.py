@@ -7,6 +7,7 @@ import pytest
 
 from app.domain.appraisal import (
     AppraisalCandidate,
+    AppraisalFactsSnapshot,
     AppraisalPath,
     DecayPolicy,
     FacetRef,
@@ -18,6 +19,7 @@ from app.domain.appraisal import (
     StateDeltaProposal,
     StateFacetKind,
     decay_candidate,
+    freeze_appraisal_facts,
     lifecycle_candidate,
 )
 
@@ -74,6 +76,39 @@ def test_reducer_is_only_immutable_state_transition_authority() -> None:
     with pytest.raises(FrozenInstanceError):
         after.facets[0].current = 1.0  # type: ignore[misc]
     json.dumps(after.to_dict(), allow_nan=False)
+
+
+def test_appraisal_facts_freeze_candidate_at_a_matching_state_revision() -> None:
+    state = snapshot(facet())
+    facts = freeze_appraisal_facts(
+        candidate(proposal()), state, revision=4, captured_at=NOW + timedelta(seconds=2)
+    )
+    assert facts.internal_state_revision == state.revision
+    assert facts.source_event_ids == ("event:1",)
+    assert facts.evidence_refs == ("rule:1",)
+    assert facts.to_dict()["revision"] == 4
+
+
+def test_appraisal_facts_reject_stale_candidate_and_unbounded_evidence() -> None:
+    with pytest.raises(ValueError, match="state revision"):
+        freeze_appraisal_facts(
+            candidate(proposal(), base=2),
+            snapshot(facet()),
+            revision=4,
+            captured_at=NOW + timedelta(seconds=2),
+        )
+    with pytest.raises(ValueError, match="bounded maximum"):
+        AppraisalFactsSnapshot(
+            4,
+            7,
+            3,
+            ("event:1",),
+            (),
+            0.7,
+            0.8,
+            tuple(f"evidence:{index}" for index in range(17)),
+            NOW + timedelta(seconds=2),
+        )
 
 
 def test_conflicting_affects_can_coexist_without_overwriting_each_other() -> None:

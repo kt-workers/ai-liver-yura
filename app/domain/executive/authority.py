@@ -82,6 +82,8 @@ class ExecutiveDecisionAuthority:
             raise ValueError("executive decision is stale")
         if current.freshness.internal_state_revision != snapshot.internal_state.revision:
             raise ValueError("executive internal state is stale")
+        if current.freshness.appraisal_facts_revision != snapshot.appraisal_facts.revision:
+            raise ValueError("executive appraisal facts are stale")
 
         requirements = {item.intent_id: item for item in current.requirements}
         if set(requirements) != {item.intent_id for item in candidate.intents}:
