@@ -241,6 +241,8 @@ pending Goal/CommitmentはB17のExecutive trigger sourceになり得る。
 
 active Goalを複雑な`ActivityPlan`へ分解する。
 
+実装契約の正本は[`goal_planning_contracts.md`](goal_planning_contracts.md)とする。
+
 `goal_id / goal_revision`を保持し、旧revision planはstale/replan扱い。
 
 simple actionでは専用Planner LLMを呼ばなくてよい。
