@@ -11,6 +11,7 @@
 - `input_gateway_contracts.md` — multimodal input normalization / session / touch boundary
 - `input_meaning_contracts.md` — natural-language typed meaning / reference / commit boundary
 - `appraisal_internal_state_contracts.md` — subjective appraisal candidate / causal state reducer
+- `executive_appraisal_facts_contracts.md` — Appraisal facts snapshot / Executive freshness boundary
 - `executive_authority_contracts.md` — Executive Goal・Action Authority / typed decision commit gate
 - `goal_commitment_state_contracts.md` — persistent Goal・Commitment State / atomic lifecycle reducer
 - `activity_execution_contracts.md` — Activity admission / Capability preflight / Actual Execution Fact authority
