@@ -8,7 +8,7 @@ from typing import cast
 
 import pytest
 
-from app.domain.appraisal import InternalStateSnapshot
+from app.domain.appraisal import AppraisalFactsSnapshot, InternalStateSnapshot
 from app.domain.contracts import (
     CapabilityAvailability,
     CapabilityDescriptor,
@@ -68,13 +68,14 @@ def live_state(
     *,
     revisions: RevisionVector = REVISIONS,
     internal_state_revision: int = 2,
+    appraisal_facts_revision: int = 1,
     capabilities: tuple[CapabilityDescriptor, ...] | None = None,
     preconditions: tuple[PreconditionFact, ...] | None = None,
     requirements: tuple[AuthoritativeIntentRequirements, ...] | None = None,
 ) -> ExecutiveCommitState:
     context = snapshot()
     return ExecutiveCommitState(
-        ExecutiveFreshnessStamp(revisions, internal_state_revision),
+        ExecutiveFreshnessStamp(revisions, internal_state_revision, appraisal_facts_revision),
         context.capabilities if capabilities is None else capabilities,
         context.preconditions if preconditions is None else preconditions,
         (
@@ -142,6 +143,17 @@ def snapshot(trigger_id: str = "trigger-1") -> ExecutiveContextSnapshot:
         ),
         (PreconditionFact("pre-turn", "turn", "equals", "available"),),
         NOW,
+        AppraisalFactsSnapshot(
+            1,
+            7,
+            2,
+            (f"event-{trigger_id}",),
+            (),
+            0.5,
+            0.5,
+            (),
+            NOW,
+        ),
     )
 
 
@@ -569,6 +581,7 @@ def test_role_commit_revalidates_exact_snapshot_and_exchange() -> None:
         "goal",
         "attention",
         "internal_state",
+        "appraisal_facts",
         "capability",
         "capability_revision",
         "precondition",
@@ -614,6 +627,8 @@ async def test_deliberator_reloads_live_state_after_llm_and_rejects_changes(
         live.state = live_state(revisions=RevisionVector(7, 5, 4))
     elif changed == "internal_state":
         live.state = live_state(internal_state_revision=3)
+    elif changed == "appraisal_facts":
+        live.state = live_state(appraisal_facts_revision=2)
     elif changed in {"capability", "capability_revision"}:
         descriptor = snapshot().capabilities[0]
         live.state = live_state(
