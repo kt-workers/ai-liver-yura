@@ -147,6 +147,8 @@ Deep Appraisalを全Decisionのblocking prerequisiteにしない。
 
 #366の`goal_id / goal_revision`を受けcomplex GoalをActivityPlanへ分解する。Goal自体を変更しない。
 
+typed snapshot・candidate・commit gate・simple/complex経路の実装正本は[`goal_planning_contracts.md`](goal_planning_contracts.md)とする。
+
 ### C05 Speech Semantics — #362
 
 **Speech Intentを実現するため何を伝えるか。**
