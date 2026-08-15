@@ -297,7 +297,8 @@ class GoalPlanningContextSnapshot:
             ]
             if len(matches) != 1:
                 raise ValueError(
-                    "activity context capability identity must resolve exactly one bounded capability"
+                    "activity context capability identity must resolve "
+                    "exactly one bounded capability"
                 )
             descriptor = matches[0]
             normalized_activities.append(
@@ -466,7 +467,9 @@ def _validate_plan_shape(value: _PlanShape) -> None:
     _reject_cycles(steps)
     if outcome is GoalPlanningOutcome.PLANNED:
         if not steps or not completion_refs or unmet or blocker_ids:
-            raise ValueError("planned outcome requires plan structure without impossibility reasons")
+            raise ValueError(
+                "planned outcome requires plan structure without impossibility reasons"
+            )
     elif steps or completion_refs or checkpoint_ids:
         raise ValueError("non-planned outcome cannot contain plan structure")
     elif outcome is GoalPlanningOutcome.IMPOSSIBLE and not (unmet or blocker_ids):
