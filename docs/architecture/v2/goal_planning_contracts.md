@@ -56,7 +56,7 @@ Goal Planningが所有するもの:
 
 候補はblockerそのものを新規生成せず、bounded Snapshotに存在する`blocker_id`だけを参照できる。
 
-`ActivityContextRef`は再開対象を曖昧化しないため、`activity_id / goal_id / activity_type / capability_id / operation_ref / status`を保持する。Snapshot構築時に`capability_id`がbounded `CapabilityDescriptor`へ存在し、`activity_type / operation_ref`がそのDescriptorと一致することを検証する。
+`ActivityContextRef`は再開対象を曖昧化しないため、正規化後に`activity_id / goal_id / activity_type / capability_id / operation_ref / status`を保持する。producerは`activity_type / capability_id`を明示することを原則とする。互換入力としてそれらが省略された場合でも、Snapshot構築時に`operation_ref`と指定済みidentityからbounded `CapabilityDescriptor`がexactly oneに決まる場合だけ補完し、0件または複数候補ならfail-closedで拒否する。明示済みidentityは同じDescriptorと一致しなければならない。
 
 ## 4. typed候補
 
@@ -107,6 +107,7 @@ Goal Planningが所有するもの:
 - targetは対象Goalのtargetと同一、またはnullに限る
 - nonterminal Activityの重複判定は`activity_type + operation_ref`のnamespaceを最低条件とし、resume時はbounded `activity_id`とその`capability_id`がstepを満たすDescriptorへgroundする
 - 別Capability namespaceで同名`operation_ref`が存在しても重複Activityとして扱わない
+- identity省略の互換ActivityContextはbounded Capabilityがexactly oneへ解決できる場合だけ正規化する
 - 全Capability requirementはbounded Capability snapshotで満たされる
 - degraded Capabilityはrequirementが明示許可した場合だけ使用可能
 - `activity_type / operation_ref`は同じCapabilityDescriptorで満たせる組合せに限る
