@@ -9,6 +9,13 @@ from app.domain.attention import (
     AttentionTransition,
     AttentionTransitionOperation,
     AttentionTurnStore,
+    transition_from_executive_intent,
+)
+from app.domain.executive import (
+    AttentionIntentPayload,
+    ExecutiveIntent,
+    ExecutiveIntentKind,
+    SpeechIntentPayload,
 )
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
@@ -97,6 +104,23 @@ def test_user_interaction_cannot_be_demoted_and_public_values_serialize() -> Non
         source("user", AttentionPriority.NORMAL, AttentionSourceKind.USER_INTERACTION)
     item = transition(AttentionTransitionOperation.RELEASE_FOREGROUND, 0)
     assert item.to_dict()["operation"] == "release_foreground"
+
+
+def test_only_typed_executive_attention_intent_can_create_transition() -> None:
+    intent = ExecutiveIntent(
+        "attention-1",
+        ExecutiveIntentKind.ATTENTION,
+        "focus user",
+        AttentionIntentPayload("user-1", "acquire_foreground"),
+    )
+    transition_value = transition_from_executive_intent(intent, 4, NOW)
+    assert transition_value.operation is AttentionTransitionOperation.ACQUIRE_FOREGROUND
+    assert transition_value.target_ref == "user-1"
+    wrong = ExecutiveIntent(
+        "speech-1", ExecutiveIntentKind.SPEECH, "speak", SpeechIntentPayload("semantic-1")
+    )
+    with pytest.raises(ValueError, match="attention intent"):
+        transition_from_executive_intent(wrong, 4, NOW)
 
 
 def test_budget_rejects_equal_priority_then_replaces_lower_priority() -> None:

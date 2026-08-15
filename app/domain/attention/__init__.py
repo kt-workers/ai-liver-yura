@@ -1,3 +1,4 @@
+from .authority import transition_from_executive_intent
 from .contracts import (
     AttentionFocusState,
     AttentionFocusView,
@@ -20,4 +21,5 @@ __all__ = [
     "AttentionTransitionOperation",
     "AttentionTurnStore",
     "ExecutiveTriggerEligibility",
+    "transition_from_executive_intent",
 ]

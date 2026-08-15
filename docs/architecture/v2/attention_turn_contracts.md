@@ -42,6 +42,7 @@ set_response_obligation / clear_response_obligation
 ```
 
 - transitionはExecutive由来のtyped intent又は信頼済みruntime factにより作られる。raw text、Appraisal candidate、Body outputから直接mutationしない。
+- Executive由来の`AttentionIntentPayload`はoperationを明示的に検証して`AttentionTransition`へ射影する。未知mode、非Attention intent及びraw inputはrejectする。
 - expected revisionがcurrentと異なる場合、batch全体をfail-closedでrejectする。
 - batchはcopy上でvalidateし、成功時だけrevisionを一回増やしてatomicに置換する。
 - 同一transition IDはidempotentに再適用せずrejectする。lock区間にawait、LLM、外部I/O、callbackを含めない。
