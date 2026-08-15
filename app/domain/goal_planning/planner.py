@@ -121,6 +121,7 @@ def candidate_from_directive(
         directive.failure_policy,
         directive.unmet_capabilities,
         created_at,
+        directive.impossibility_blocker_ids,
     )
 
 
@@ -227,6 +228,7 @@ def parse_candidate(value: object, *, created_at: datetime) -> GoalPlanningCandi
         "checkpoint_step_ids",
         "failure_policy",
         "unmet_capabilities",
+        "impossibility_blocker_ids",
     }
     if set(item) != required:
         raise ValueError("goal planning candidate fields do not match schema")
@@ -257,6 +259,7 @@ def parse_candidate(value: object, *, created_at: datetime) -> GoalPlanningCandi
             for value in _array(item["unmet_capabilities"], "unmet_capabilities")
         ),
         created_at,
+        _strings(item["impossibility_blocker_ids"], "impossibility_blocker_ids"),
     )
 
 
