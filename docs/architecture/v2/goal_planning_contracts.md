@@ -66,6 +66,7 @@ Goal Planningが所有するもの:
 - `activity_type`
 - `operation_ref`
 - optional target ref
+- optional resume activity ID
 - dependency step IDs
 - required `CapabilityRequirement`
 - Goal由来precondition IDs
@@ -87,6 +88,7 @@ Goal Planningが所有するもの:
 - `impossible`は1件以上の未充足Capability requirementを必要とし、bounded/current snapshotの双方で本当に満たせないことをAuthorityが検証する
 - step precondition/completion refsは対象Goalの正本集合からのみ選ぶ
 - targetは対象Goalのtargetと同一、またはnullに限る
+- nonterminal Activityと同じoperationを計画する場合はbounded Activity IDを明示してresumeし、暗黙の二重起動を拒否する
 - 全Capability requirementはbounded Capability snapshotで満たされる
 - degraded Capabilityはrequirementが明示許可した場合だけ使用可能
 - `activity_type / operation_ref`は同じCapabilityDescriptorで満たせる組合せに限る
