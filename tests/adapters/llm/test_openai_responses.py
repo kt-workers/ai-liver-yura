@@ -1,9 +1,8 @@
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, cast
 
-import httpx
+import httpx2
 from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from app.adapters.llm.openai_responses import (
@@ -117,10 +116,10 @@ def make_config(
 
 
 def status_error(status_code: int, message: str = "provider failure") -> APIStatusError:
-    request = httpx.Request("POST", "https://api.example.invalid/v1/responses")
+    request = httpx2.Request("POST", "https://api.example.invalid/v1/responses")
     return APIStatusError(
         message,
-        response=cast(Any, httpx.Response(status_code, request=request)),
+        response=httpx2.Response(status_code, request=request),
         body=None,
     )
 
@@ -257,7 +256,7 @@ def test_malformed_provider_output_and_schema_violation_are_schema_failures() ->
 
 def test_retryable_transport_and_rate_limit_errors_retry_with_bounded_policy() -> None:
     async def scenario() -> None:
-        request = cast(Any, httpx.Request("POST", "https://api.example.invalid/v1/responses"))
+        request = httpx2.Request("POST", "https://api.example.invalid/v1/responses")
         transport = APIConnectionError(
             request=request
         )
