@@ -6,6 +6,9 @@ from enum import Enum
 from typing import Any
 
 import yaml
+from yaml.constructor import ConstructorError
+from yaml.nodes import MappingNode
+from yaml.resolver import BaseResolver
 
 from app.domain.character.contracts import (
     CharacterAuthority,
@@ -58,25 +61,55 @@ _CATEGORIES = (
     "voice",
     "body",
 )
-_FORBIDDEN_FACET_ID_PARTS = {
-    "voice": frozenset({"engine", "provider", "speaker", "pitch", "speed", "volume"}),
+_ALLOWED_FACET_IDS = {
+    "voice": frozenset(
+        {
+            "baseline_softness",
+            "calmness_tendency",
+            "emotional_expressiveness_tendency",
+            "energy_tendency",
+            "pacing_tendency",
+        }
+    ),
     "body": frozenset(
         {
-            "angle",
-            "dof",
-            "gesture",
-            "home",
-            "ik",
-            "joint",
-            "limit",
-            "neutral",
-            "pose",
-            "preset",
-            "skeleton",
-            "solver",
+            "amplitude_tendency",
+            "continuity_tendency",
+            "gaze_tendency",
+            "head_expression_tendency",
+            "motion_softness",
+            "posture_expression_tendency",
+            "spatial_extent_tendency",
+            "symmetry_tendency",
         }
     ),
 }
+
+
+class _StrictYamlLoader(yaml.SafeLoader):
+    pass
+
+
+def _construct_mapping_no_duplicates(
+    loader: _StrictYamlLoader, node: MappingNode, deep: bool = False
+) -> dict[object, object]:
+    mapping: dict[object, object] = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in mapping:
+            raise ConstructorError(
+                "mapping",
+                node.start_mark,
+                f"重複keyを許可しません: {key}",
+                key_node.start_mark,
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)
+    return mapping
+
+
+_StrictYamlLoader.add_constructor(
+    BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping_no_duplicates
+)
 
 
 def _mapping(value: Any, name: str) -> Mapping[str, Any]:
@@ -103,8 +136,8 @@ def _facet(value: Any, category: str, *, keyed_id: str | None = None) -> Charact
         facet_id = keyed_id if keyed_id is not None else raw["id"]
         if not isinstance(facet_id, str) or not facet_id.strip():
             raise ValueError("facet id が不正です")
-        forbidden_parts = _FORBIDDEN_FACET_ID_PARTS.get(category, frozenset())
-        if any(part in facet_id.lower().split("_") for part in forbidden_parts):
+        allowed_ids = _ALLOWED_FACET_IDS.get(category)
+        if allowed_ids is not None and facet_id not in allowed_ids:
             raise ValueError("実行用facetはCharacter Definitionに指定できません")
         certainty = CharacterCertainty(raw["state"])
         tags_raw = raw.get("tags", [])
@@ -133,7 +166,7 @@ def _category(value: Any, category: str) -> tuple[CharacterFacet, ...]:
 
 def load_character_definition_yaml(source: str | bytes) -> CharacterDefinitionDocument:
     try:
-        parsed = yaml.safe_load(source)
+        parsed = yaml.load(source, Loader=_StrictYamlLoader)
     except yaml.YAMLError as error:
         raise CharacterDefinitionLoadError(
             CharacterDefinitionLoadFailureCode.MALFORMED_YAML, "YAML 構文が不正です"

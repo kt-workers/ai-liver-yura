@@ -36,7 +36,7 @@ def _yaml() -> str:
             "self_model: []",
             "language: []",
             "voice:",
-            "  - id: voice_style",
+            "  - id: baseline_softness",
             "    state: not_configured",
             "body: []",
             "",
@@ -120,16 +120,16 @@ def test_rejects_duplicate_facet_id() -> None:
 
 @pytest.mark.parametrize(
     "facet_id",
-    ["speaker_id", "provider_pitch", "engine_speed", "joint_angles", "pose", "gesture_preset"],
+    ["speaker-id", "speakerId", "provider_pitch", "joint-angles", "pose", "gesture_preset"],
 )
 def test_rejects_voice_and_body_execution_facets(facet_id: str) -> None:
-    category = "voice" if facet_id in {"speaker_id", "provider_pitch", "engine_speed"} else "body"
-    source = _yaml().replace(
-        f"{category}:\n  - id: " + ("voice_style" if category == "voice" else "body: []"),
-        f"{category}:\n  - id: {facet_id}",
-    )
-    if category == "body":
-        source = _yaml().replace("body: []", f"body:\n  - id: {facet_id}\n    state: confirmed\n    value: forbidden")
+    if facet_id in {"speaker-id", "speakerId", "provider_pitch"}:
+        source = _yaml().replace("  - id: baseline_softness", f"  - id: {facet_id}")
+    else:
+        source = _yaml().replace(
+            "body: []",
+            f"body:\n  - id: {facet_id}\n    state: confirmed\n    value: forbidden",
+        )
     with pytest.raises(CharacterDefinitionLoadError):
         load_character_definition_yaml(source)
 
@@ -142,3 +142,23 @@ def test_accepts_keyed_mapping_facets() -> None:
     document = load_character_definition_yaml(source)
     assert document.language[0].facet_id == "first_person"
     assert document.language[0].value == "私"
+
+
+def test_accepts_allowed_voice_and_body_facets() -> None:
+    source = _yaml().replace(
+        "body: []",
+        "body:\n  - id: motion_softness\n    state: confirmed\n    value: smooth",
+    )
+    document = load_character_definition_yaml(source)
+    assert document.voice[0].facet_id == "baseline_softness"
+    assert document.body[0].facet_id == "motion_softness"
+
+
+def test_rejects_duplicate_yaml_mapping_keys() -> None:
+    source = _yaml().replace(
+        "language: []",
+        "language:\n  first_person:\n    state: confirmed\n    value: 私\n  first_person:\n    state: confirmed\n    value: 僕",
+    )
+    with pytest.raises(CharacterDefinitionLoadError) as error:
+        load_character_definition_yaml(source)
+    assert error.value.code is CharacterDefinitionLoadFailureCode.MALFORMED_YAML
