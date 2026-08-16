@@ -178,20 +178,27 @@ class CharacterDefinitionDocument:
 
         visiting: set[str] = set()
         visited: set[str] = set()
-
-        def visit(reference: str) -> None:
-            if reference in visiting:
-                raise ValueError("basis_refs に循環参照は指定できません")
-            if reference in visited:
-                return
-            visiting.add(reference)
-            for dependency in dependencies[reference]:
-                visit(dependency)
-            visiting.remove(reference)
-            visited.add(reference)
-
         for facet_reference in dependencies:
-            visit(facet_reference)
+            if facet_reference in visited:
+                continue
+            stack: list[tuple[str, bool]] = [(facet_reference, False)]
+            while stack:
+                reference, completed = stack.pop()
+                if completed:
+                    visiting.remove(reference)
+                    visited.add(reference)
+                    continue
+                if reference in visited:
+                    continue
+                if reference in visiting:
+                    raise ValueError("basis_refs に循環参照は指定できません")
+                visiting.add(reference)
+                stack.append((reference, True))
+                for dependency in reversed(dependencies[reference]):
+                    if dependency in visiting:
+                        raise ValueError("basis_refs に循環参照は指定できません")
+                    if dependency not in visited:
+                        stack.append((dependency, False))
 
 
 @dataclass(frozen=True, slots=True)

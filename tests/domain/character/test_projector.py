@@ -151,6 +151,29 @@ def test_domain_rejects_cyclic_basis_refs() -> None:
         )
 
 
+def test_domain_accepts_large_acyclic_basis_ref_chain() -> None:
+    count = 1_100
+    facets = tuple(
+        CharacterFacet(
+            f"facet_{index}",
+            CharacterCertainty.CONFIRMED,
+            "value",
+            basis_refs=(f"identity.facet_{index + 1}",) if index + 1 < count else (),
+        )
+        for index in range(count)
+    )
+
+    document = CharacterDefinitionDocument(
+        schema_version=1,
+        character_id="generic",
+        definition_revision=7,
+        authority=CharacterAuthority("docs/character/v2/generic.md", 354),
+        identity=facets,
+    )
+
+    assert len(document.identity) == count
+
+
 def test_same_projector_handles_alternate_character_and_data_only_change() -> None:
     alternate = _document("alternate")
     changed = CharacterDefinitionDocument(
