@@ -156,6 +156,24 @@ def test_versioned_stable_source_requires_open_refresh_and_close_cas() -> None:
     assert closed.sources == ()
 
 
+def test_duplicate_versioned_lifecycle_fact_is_no_commit() -> None:
+    store = AttentionTurnStore()
+    store.offer(signal("goal", AttentionSourceKind.GOAL, source_revision=1))
+    refresh = signal(
+        "goal",
+        AttentionSourceKind.GOAL,
+        seconds=2,
+        operation=AttentionIngressOperation.REFRESH,
+        source_revision=2,
+        expected_source_revision=1,
+    )
+    store.offer(refresh)
+    before = store.snapshot()
+    with pytest.raises(ValueError, match="stale"):
+        store.offer(refresh)
+    assert store.snapshot() == before
+
+
 def test_policy_rejects_direct_user_spoofing_and_out_of_range_priority() -> None:
     store = AttentionTurnStore()
     with pytest.raises(ValueError, match="priority"):
@@ -285,9 +303,28 @@ def test_direct_user_foreground_blocks_lower_priority_interrupt_claims() -> None
     assert store.interruption_decision("background", NOW + timedelta(seconds=10)).allowed is False
 
 
-def test_claim_relation_separates_continuation_from_challenger_interrupt() -> None:
+@pytest.mark.parametrize(
+    ("kind", "priority", "source_revision"),
+    (
+        (AttentionSourceKind.APPRAISAL, AttentionPriority.NORMAL, None),
+        (AttentionSourceKind.GOAL, AttentionPriority.FOREGROUND, 1),
+    ),
+)
+def test_claim_relation_separates_continuation_from_challenger_interrupt(
+    kind: AttentionSourceKind,
+    priority: AttentionPriority,
+    source_revision: int | None,
+) -> None:
     store = AttentionTurnStore()
-    store.offer(signal("normal", seconds=1))
+    store.offer(
+        signal(
+            "focus",
+            kind,
+            seconds=1,
+            priority=priority,
+            source_revision=source_revision,
+        )
+    )
     store.apply(
         1,
         (
@@ -295,14 +332,14 @@ def test_claim_relation_separates_continuation_from_challenger_interrupt() -> No
                 AttentionTransitionOperation.ACQUIRE_FOREGROUND,
                 1,
                 1,
-                target_ref="normal",
-                source_intent_ref="intent-normal",
+                target_ref="focus",
+                source_intent_ref="intent-focus",
             ),
         ),
     )
     claimed = store.claim_next(0, NOW + timedelta(seconds=2))
     assert claimed is not None
-    assert claimed.source_ref == "normal"
+    assert claimed.source_ref == "focus"
     assert claimed.claim_relation is AttentionClaimRelation.FOREGROUND_CONTINUATION
     assert claimed.interruption_allowed is False
 
@@ -410,6 +447,31 @@ def test_expired_direct_user_no_longer_protects_claims() -> None:
     assert claimed is not None
     assert claimed.source_ref == "normal"
     assert claimed.claim_relation is AttentionClaimRelation.IDLE_START
+
+
+def test_obligation_release_restores_normal_fairness() -> None:
+    store = AttentionTurnStore()
+    store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
+    store.offer(signal("normal", seconds=2))
+    store.apply(
+        1,
+        (
+            transition(AttentionTransitionOperation.ASSIGN_TURN, 2, 1, value="user"),
+            transition(AttentionTransitionOperation.SET_RESPONSE_OBLIGATION, 2, 1, value="user"),
+        ),
+    )
+    store.apply(
+        1,
+        (
+            transition(AttentionTransitionOperation.RELEASE_TURN, 3, 1),
+            transition(AttentionTransitionOperation.CLEAR_RESPONSE_OBLIGATION, 3, 1),
+        ),
+    )
+    first = store.claim_next(0, NOW + timedelta(seconds=4))
+    second = store.claim_next(0, NOW + timedelta(seconds=5))
+    third = store.claim_next(0, NOW + timedelta(seconds=6))
+    assert first is not None and second is not None and third is not None
+    assert (first.source_ref, second.source_ref, third.source_ref) == ("user", "user", "normal")
 
 
 def test_transition_rejects_authoritative_context_advanced_after_creation() -> None:
