@@ -3,198 +3,227 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.domain.attention import (
+    AttentionIngressOperation,
+    AttentionIngressSignal,
     AttentionPriority,
-    AttentionSource,
     AttentionSourceKind,
     AttentionTransition,
     AttentionTransitionOperation,
     AttentionTurnStore,
-    transition_from_executive_intent,
-)
-from app.domain.executive import (
-    AttentionIntentPayload,
-    ExecutiveIntent,
-    ExecutiveIntentKind,
-    SpeechIntentPayload,
 )
 
-NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 16, tzinfo=timezone.utc)
+
+
+def signal(
+    source_ref: str,
+    kind: AttentionSourceKind = AttentionSourceKind.APPRAISAL,
+    revision: int = 1,
+    seconds: int = 1,
+    *,
+    operation: AttentionIngressOperation = AttentionIngressOperation.OFFER,
+    priority: AttentionPriority | None = None,
+    trusted_direct_user: bool = False,
+    expires_in: int | None = None,
+) -> AttentionIngressSignal:
+    occurred_at = NOW + timedelta(seconds=seconds)
+    return AttentionIngressSignal(
+        f"signal-{operation.value}-{source_ref}-{revision}-{seconds}",
+        operation,
+        source_ref,
+        kind,
+        revision,
+        occurred_at,
+        requested_priority=priority,
+        expires_at=None if expires_in is None else occurred_at + timedelta(seconds=expires_in),
+        trusted_direct_user=trusted_direct_user,
+    )
 
 
 def transition(
     operation: AttentionTransitionOperation,
-    revision: int,
+    attention_revision: int,
+    source_revision: int,
     *,
     target_ref: str | None = None,
     value: str | None = None,
+    source_intent_ref: str | None = None,
 ) -> AttentionTransition:
+    transition_id = (
+        f"transition-{operation.value}-{attention_revision}-{source_revision}-"
+        f"{target_ref or value or 'none'}"
+    )
     return AttentionTransition(
-        f"transition-{operation.value}-{revision}-{target_ref or value or 'none'}",
+        transition_id,
         operation,
-        revision,
-        NOW + timedelta(seconds=revision),
+        attention_revision,
+        source_revision,
+        NOW + timedelta(seconds=20 + attention_revision),
         target_ref,
         value,
+        source_intent_ref,
     )
 
 
-def source(
-    source_ref: str,
-    priority: AttentionPriority = AttentionPriority.NORMAL,
-    kind: AttentionSourceKind = AttentionSourceKind.APPRAISAL,
-    seconds: int = 1,
-) -> AttentionSource:
-    return AttentionSource(source_ref, kind, priority, NOW + timedelta(seconds=seconds))
+def test_policy_is_immutable_and_covers_all_source_kinds() -> None:
+    policy = AttentionTurnStore().policy
+    assert policy.attention_budget == 8
+    assert policy.max_same_source_burst == 2
+    assert {kind for kind, _ in policy.source_kind_budgets} == set(AttentionSourceKind)
 
 
-def test_transition_updates_focus_turn_and_obligation_atomically() -> None:
+def test_offer_refresh_resolve_and_monotonic_source_context_revision() -> None:
     store = AttentionTurnStore()
+    state = store.offer(signal("appraisal", revision=3))
+    refreshed = store.offer(
+        signal("appraisal", revision=4, seconds=2, operation=AttentionIngressOperation.REFRESH)
+    )
+    assert refreshed.sources[0].coalesced_count == 2
+    with pytest.raises(ValueError, match="巻き戻せません"):
+        store.offer(signal("goal", AttentionSourceKind.GOAL, revision=3))
+    resolved = store.resolve(
+        signal("appraisal", revision=4, seconds=3, operation=AttentionIngressOperation.RESOLVE)
+    )
+    assert resolved.sources == () and state.revision < resolved.revision
+
+
+def test_policy_rejects_direct_user_spoofing_and_out_of_range_priority() -> None:
+    store = AttentionTurnStore()
+    with pytest.raises(ValueError, match="priority"):
+        store.offer(
+            signal("stream", AttentionSourceKind.STREAMING, priority=AttentionPriority.DIRECT_USER)
+        )
+    with pytest.raises(ValueError, match="許可範囲"):
+        store.offer(
+            signal("reflection", AttentionSourceKind.REFLECTION, priority=AttentionPriority.NORMAL)
+        )
+    state = store.offer(
+        signal(
+            "user",
+            AttentionSourceKind.USER_INTERACTION,
+            priority=AttentionPriority.DIRECT_USER,
+            trusted_direct_user=True,
+        )
+    )
+    assert state.sources[0].effective_priority is AttentionPriority.DIRECT_USER
+
+
+def test_budget_and_focus_provenance_are_bounded() -> None:
+    store = AttentionTurnStore()
+    store.offer(signal("appraisal-1"))
+    store.offer(signal("appraisal-2", seconds=2))
+    assert store.offer(signal("appraisal-3", seconds=3)) is store.snapshot()
+    store.offer(
+        signal("user", AttentionSourceKind.USER_INTERACTION, seconds=4, trusted_direct_user=True)
+    )
     state = store.apply(
-        3,
+        1,
         (
-            transition(AttentionTransitionOperation.ACQUIRE_FOREGROUND, 0, target_ref="user-1"),
-            transition(AttentionTransitionOperation.ADD_MONITOR, 0, target_ref="stream-1"),
-            transition(AttentionTransitionOperation.ASSIGN_TURN, 0, value="user-1"),
-            transition(AttentionTransitionOperation.SET_RESPONSE_OBLIGATION, 0, value="reply-1"),
+            transition(
+                AttentionTransitionOperation.ACQUIRE_FOREGROUND,
+                3,
+                1,
+                target_ref="user",
+                source_intent_ref="intent-user",
+            ),
         ),
     )
-    assert state.revision == 1
-    assert state.source_context_revision == 3
-    assert state.foreground_focus_ref == state.current_turn_owner == "user-1"
-    assert state.secondary_monitor_refs == ("stream-1",)
-    assert state.response_obligation == "reply-1"
+    assert state.foreground_focus_ref == "user" and state.active_focus_intent_ref == "intent-user"
 
 
-def test_stale_or_duplicate_transition_fails_without_mutation() -> None:
+def test_transition_rejects_stale_context_and_unknown_foreground_source() -> None:
     store = AttentionTurnStore()
-    first = transition(AttentionTransitionOperation.ACQUIRE_FOREGROUND, 0, target_ref="user")
-    store.apply(1, (first,))
+    store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
     with pytest.raises(ValueError, match="stale"):
-        store.apply(2, (transition(AttentionTransitionOperation.RELEASE_FOREGROUND, 0),))
-    with pytest.raises(ValueError, match="適用済み"):
-        store.apply(2, (first,))
-    assert store.snapshot().revision == 1
+        store.apply(1, (transition(AttentionTransitionOperation.RELEASE_FOREGROUND, 0, 0),))
+    with pytest.raises(ValueError, match="既知"):
+        store.apply(
+            1,
+            (
+                transition(
+                    AttentionTransitionOperation.ACQUIRE_FOREGROUND,
+                    1,
+                    1,
+                    target_ref="missing",
+                    source_intent_ref="intent",
+                ),
+            ),
+        )
 
 
-def test_invalid_batch_rolls_back_all_changes() -> None:
+def test_peek_is_read_only_but_claim_records_bounded_same_source_fairness() -> None:
     store = AttentionTurnStore()
+    store.offer(signal("a", seconds=1))
+    store.offer(signal("b", seconds=2))
+    before = store.snapshot()
+    assert store.peek_eligibility(0, NOW + timedelta(seconds=3))[0].source_ref == "a"
+    assert store.snapshot() == before
+    first = store.claim_next(0, NOW + timedelta(seconds=3))
+    second = store.claim_next(0, NOW + timedelta(seconds=4))
+    assert first is not None and first.source_ref == "a"
+    assert second is not None and second.source_ref == "a"
+    third = store.claim_next(0, NOW + timedelta(seconds=5))
+    assert third is not None and third.source_ref == "b" and store.snapshot().selection_epoch == 3
+
+
+def test_direct_user_turn_protects_against_background_interruption() -> None:
+    store = AttentionTurnStore()
+    store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
+    store.offer(signal("reflection", AttentionSourceKind.REFLECTION, seconds=2))
+    store.apply(
+        1,
+        (
+            transition(AttentionTransitionOperation.ASSIGN_TURN, 2, 1, value="user"),
+            transition(AttentionTransitionOperation.SET_RESPONSE_OBLIGATION, 2, 1, value="user"),
+        ),
+    )
+    assert store.peek_eligibility(0, NOW + timedelta(seconds=3))[0].source_ref == "user"
+    assert store.interruption_decision("reflection", NOW + timedelta(seconds=3)).allowed is False
+
+
+def test_expiry_and_resolve_clear_invalid_references() -> None:
+    store = AttentionTurnStore()
+    store.offer(
+        signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True, expires_in=1)
+    )
+    store.apply(
+        1,
+        (
+            transition(
+                AttentionTransitionOperation.ACQUIRE_FOREGROUND,
+                1,
+                1,
+                target_ref="user",
+                source_intent_ref="intent-user",
+            ),
+            transition(AttentionTransitionOperation.ASSIGN_TURN, 1, 1, value="user"),
+            transition(AttentionTransitionOperation.SET_RESPONSE_OBLIGATION, 1, 1, value="user"),
+        ),
+    )
+    expired = store.expire(1, NOW + timedelta(seconds=3))
+    assert expired.foreground_focus_ref is None and expired.active_focus_intent_ref is None
+    assert expired.current_turn_owner is None and expired.response_obligation is None
+
+
+def test_transition_batch_is_atomic_and_duplicate_transition_is_rejected() -> None:
+    store = AttentionTurnStore()
+    store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
+    first = transition(
+        AttentionTransitionOperation.ACQUIRE_FOREGROUND,
+        1,
+        1,
+        target_ref="user",
+        source_intent_ref="intent",
+    )
     with pytest.raises(ValueError, match="monitorが存在"):
         store.apply(
             1,
             (
-                transition(AttentionTransitionOperation.ACQUIRE_FOREGROUND, 0, target_ref="user"),
-                transition(AttentionTransitionOperation.REMOVE_MONITOR, 0, target_ref="missing"),
+                first,
+                transition(AttentionTransitionOperation.REMOVE_MONITOR, 1, 1, target_ref="missing"),
             ),
         )
-    assert store.snapshot().foreground_focus_ref is None
-    assert store.snapshot().revision == 0
-
-
-def test_source_is_coalesced_without_raw_payload_or_mutable_alias() -> None:
-    store = AttentionTurnStore()
-    store.offer(1, source("comment", seconds=1))
-    state = store.offer(2, source("comment", AttentionPriority.FOREGROUND, seconds=2))
-    assert state.sources[0].coalesced_count == 2
-    assert state.sources[0].priority is AttentionPriority.FOREGROUND
-    assert "payload" not in state.sources[0].to_dict()
-
-
-def test_user_interaction_cannot_be_demoted_and_public_values_serialize() -> None:
-    with pytest.raises(ValueError, match="direct user"):
-        source("user", AttentionPriority.NORMAL, AttentionSourceKind.USER_INTERACTION)
-    item = transition(AttentionTransitionOperation.RELEASE_FOREGROUND, 0)
-    assert item.to_dict()["operation"] == "release_foreground"
-
-
-def test_only_typed_executive_attention_intent_can_create_transition() -> None:
-    intent = ExecutiveIntent(
-        "attention-1",
-        ExecutiveIntentKind.ATTENTION,
-        "focus user",
-        AttentionIntentPayload("user-1", "acquire_foreground"),
-    )
-    transition_value = transition_from_executive_intent(intent, 4, NOW)
-    assert transition_value.operation is AttentionTransitionOperation.ACQUIRE_FOREGROUND
-    assert transition_value.target_ref == "user-1"
-    wrong = ExecutiveIntent(
-        "speech-1", ExecutiveIntentKind.SPEECH, "speak", SpeechIntentPayload("semantic-1")
-    )
-    with pytest.raises(ValueError, match="attention intent"):
-        transition_from_executive_intent(wrong, 4, NOW)
-
-
-@pytest.mark.parametrize(
-    ("mode", "operation"),
-    [
-        ("release_foreground", AttentionTransitionOperation.RELEASE_FOREGROUND),
-        ("release_turn", AttentionTransitionOperation.RELEASE_TURN),
-        ("clear_response_obligation", AttentionTransitionOperation.CLEAR_RESPONSE_OBLIGATION),
-    ],
-)
-def test_executive_attention_intent_projects_legal_release_operations(
-    mode: str, operation: AttentionTransitionOperation
-) -> None:
-    intent = ExecutiveIntent(
-        f"attention-{mode}",
-        ExecutiveIntentKind.ATTENTION,
-        "注意状態を解放する",
-        AttentionIntentPayload("current-user", mode),
-    )
-    transition_value = transition_from_executive_intent(intent, 4, NOW)
-    assert transition_value.operation is operation
-    assert transition_value.target_ref is None
-    assert transition_value.value is None
-
-
-def test_budget_rejects_equal_priority_then_replaces_lower_priority() -> None:
-    store = AttentionTurnStore(attention_budget=1)
-    first = store.offer(1, source("background", AttentionPriority.BACKGROUND, seconds=1))
-    assert store.offer(2, source("normal", AttentionPriority.BACKGROUND, seconds=2)) is first
-    state = store.offer(
-        3, source("user", AttentionPriority.DIRECT_USER, AttentionSourceKind.USER_INTERACTION, 3)
-    )
-    assert tuple(item.source_ref for item in state.sources) == ("user",)
-
-
-def test_eligibility_prioritizes_user_then_oldest_equal_priority_for_fairness() -> None:
-    store = AttentionTurnStore(attention_budget=3)
-    store.offer(1, source("later", AttentionPriority.NORMAL, seconds=3))
-    store.offer(2, source("earlier", AttentionPriority.NORMAL, seconds=2))
-    store.offer(
-        3, source("user", AttentionPriority.DIRECT_USER, AttentionSourceKind.USER_INTERACTION, 4)
-    )
-    entries = store.eligibility(7, NOW + timedelta(seconds=5), limit=3)
-    assert [item.source_ref for item in entries] == ["user", "earlier", "later"]
-    assert all(item.goal_revision == 7 for item in entries)
-    assert all(item.attention_revision == store.snapshot().revision for item in entries)
-
-
-def test_background_source_cannot_bypass_current_turn_or_response_obligation() -> None:
-    store = AttentionTurnStore(attention_budget=3)
-    store.offer(1, source("reflection", AttentionPriority.BACKGROUND, seconds=1))
-    store.offer(2, source("appraisal", AttentionPriority.NORMAL, seconds=2))
-    store.apply(
-        3,
-        (
-            transition(AttentionTransitionOperation.ASSIGN_TURN, 2, value="user-1"),
-            transition(AttentionTransitionOperation.SET_RESPONSE_OBLIGATION, 2, value="reply-1"),
-        ),
-    )
-    entries = store.eligibility(7, NOW + timedelta(seconds=5), limit=3)
-    assert [item.source_ref for item in entries] == ["appraisal"]
-
-
-@pytest.mark.parametrize(
-    ("operation", "target_ref", "value"),
-    [
-        (AttentionTransitionOperation.ACQUIRE_FOREGROUND, None, None),
-        (AttentionTransitionOperation.RELEASE_FOREGROUND, "unexpected", None),
-        (AttentionTransitionOperation.ASSIGN_TURN, None, None),
-        (AttentionTransitionOperation.CLEAR_RESPONSE_OBLIGATION, None, "unexpected"),
-    ],
-)
-def test_transition_rejects_operation_payload_mismatch(
-    operation: AttentionTransitionOperation, target_ref: str | None, value: str | None
-) -> None:
-    with pytest.raises(ValueError, match="payload|指定"):
-        transition(operation, 0, target_ref=target_ref, value=value)
+    assert store.snapshot().revision == 1
+    store.apply(1, (first,))
+    with pytest.raises(ValueError, match="適用済み"):
+        store.apply(1, (first,))

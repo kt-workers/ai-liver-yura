@@ -8,7 +8,10 @@ from .contracts import AttentionTransition, AttentionTransitionOperation
 
 
 def transition_from_executive_intent(
-    intent: ExecutiveIntent, expected_attention_revision: int, occurred_at: datetime
+    intent: ExecutiveIntent,
+    expected_attention_revision: int,
+    expected_source_context_revision: int,
+    occurred_at: datetime,
 ) -> AttentionTransition:
     """Executiveのtyped Attention IntentだけをState transitionへ射影する。"""
     if not isinstance(intent, ExecutiveIntent) or intent.kind is not ExecutiveIntentKind.ATTENTION:
@@ -38,6 +41,7 @@ def transition_from_executive_intent(
             intent.intent_id,
             operation,
             expected_attention_revision,
+            expected_source_context_revision,
             occurred_at,
             value=payload.target_ref,
         )
@@ -50,12 +54,17 @@ def transition_from_executive_intent(
             intent.intent_id,
             operation,
             expected_attention_revision,
+            expected_source_context_revision,
             occurred_at,
         )
     return AttentionTransition(
         intent.intent_id,
         operation,
         expected_attention_revision,
+        expected_source_context_revision,
         occurred_at,
         target_ref=payload.target_ref,
+        source_intent_ref=intent.intent_id
+        if operation is AttentionTransitionOperation.ACQUIRE_FOREGROUND
+        else None,
     )
