@@ -1,8 +1,8 @@
 # V2 Character Definition / Projection Contracts
 
-Owner Issue: #355  
-Parent: #324  
-Upstream Character content: #354 / PR #390  
+Owner Issue: #355
+Parent: #324
+Upstream Character content: #354 / PR #390
 Status: Canonical Design
 
 ## 1. Purpose
