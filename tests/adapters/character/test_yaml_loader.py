@@ -29,11 +29,20 @@ def _yaml() -> str:
             "    state: candidate",
             "    value: calm",
             "deep_priors: []",
+            "formative_history: []",
+            "beliefs:",
+            "  - id: learning_belief",
+            "    state: confirmed",
+            "    value: learn",
+            "    basis_refs:",
+            "      - dispositions.calmness",
             "values: []",
             "preferences:",
             "  - id: tea",
             "    state: unknown",
             "self_model: []",
+            "narrative_identity: []",
+            "adaptations: []",
             "language: []",
             "voice:",
             "  - id: baseline_softness",
@@ -168,3 +177,14 @@ def test_rejects_unhashable_yaml_mapping_key_as_typed_failure() -> None:
     with pytest.raises(CharacterDefinitionLoadError) as error:
         load_character_definition_yaml("? [invalid]\n: value\n")
     assert error.value.code is CharacterDefinitionLoadFailureCode.MALFORMED_YAML
+
+
+@pytest.mark.parametrize(
+    "basis_ref",
+    ["emotion.current", "beliefs.learning_belief"],
+)
+def test_rejects_unknown_and_self_basis_refs(basis_ref: str) -> None:
+    source = _yaml().replace("dispositions.calmness", basis_ref)
+    with pytest.raises(CharacterDefinitionLoadError) as error:
+        load_character_definition_yaml(source)
+    assert error.value.code is CharacterDefinitionLoadFailureCode.INVALID_SCHEMA

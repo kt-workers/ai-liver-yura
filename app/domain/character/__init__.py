@@ -6,6 +6,7 @@ from app.domain.character.contracts import (
     CharacterDefinitionDocument,
     CharacterFacet,
     CharacterProjectionBundle,
+    CharacterPsychologicalProfile,
     RuntimeAvailability,
 )
 from app.domain.character.projector import project_character_definition
@@ -15,6 +16,7 @@ __all__ = [
     "CharacterCertainty",
     "CharacterDefinitionDocument",
     "CharacterFacet",
+    "CharacterPsychologicalProfile",
     "CharacterProjectionBundle",
     "RuntimeAvailability",
     "project_character_definition",

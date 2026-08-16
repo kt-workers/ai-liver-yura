@@ -39,24 +39,32 @@ _TOP_LEVEL_KEYS = frozenset(
         "identity",
         "dispositions",
         "deep_priors",
+        "formative_history",
+        "beliefs",
         "values",
         "preferences",
         "self_model",
+        "narrative_identity",
+        "adaptations",
         "language",
         "voice",
         "body",
     }
 )
 _AUTHORITY_KEYS = frozenset({"bible_path", "owner_issue"})
-_FACET_KEYS = frozenset({"id", "state", "value", "description", "tags"})
+_FACET_KEYS = frozenset({"id", "state", "value", "description", "tags", "basis_refs"})
 _KEYED_FACET_KEYS = _FACET_KEYS - {"id"}
 _CATEGORIES = (
     "identity",
     "dispositions",
     "deep_priors",
+    "formative_history",
+    "beliefs",
     "values",
     "preferences",
     "self_model",
+    "narrative_identity",
+    "adaptations",
     "language",
     "voice",
     "body",
@@ -124,12 +132,16 @@ def _facet(value: Any, category: str, *, keyed_id: str | None = None) -> Charact
         tags_raw = raw.get("tags", [])
         if not isinstance(tags_raw, list):
             raise ValueError("tags は配列でなければなりません")
+        basis_refs_raw = raw.get("basis_refs", [])
+        if not isinstance(basis_refs_raw, list):
+            raise ValueError("basis_refs は配列でなければなりません")
         return CharacterFacet(
             facet_id=facet_id,
             certainty=certainty,
             value=raw.get("value"),
             description=raw.get("description"),
             tags=tuple(tags_raw),
+            basis_refs=tuple(basis_refs_raw),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise CharacterDefinitionLoadError(
