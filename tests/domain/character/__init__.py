@@ -1,0 +1,1 @@
+"""Character Domain tests."""
