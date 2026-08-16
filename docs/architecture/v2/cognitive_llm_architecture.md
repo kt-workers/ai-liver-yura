@@ -94,6 +94,7 @@ source_event_ids[]
 source_context_revision
 goal_revision?
 attention_revision?
+internal_state_revision?  # Internal Stateを読むExecutive等の責務固有stamp
 priority
 preconditions[]
 interruptibility
@@ -104,7 +105,8 @@ stale_policy
 LLM result
 → schema validation
 → responsibility validation
-→ authority / revision / precondition checks
+→ await後にcurrent stateを再取得
+→ authority / revision / capability / precondition checks
 → typed candidate / plan / observation
 → owning Module commits
 ```
@@ -145,11 +147,15 @@ Deep Appraisalを全Decisionのblocking prerequisiteにしない。
 
 #366の`goal_id / goal_revision`を受けcomplex GoalをActivityPlanへ分解する。Goal自体を変更しない。
 
+typed snapshot・candidate・commit gate・simple/complex経路の実装正本は[`goal_planning_contracts.md`](goal_planning_contracts.md)とする。
+
 ### C05 Speech Semantics — #362
 
 **Speech Intentを実現するため何を伝えるか。**
 
 What-to-say Authority。propositions、required/forbidden、polarity/certainty/degree、question budget、truth constraints等を`SpeechSemanticPlan`へ閉じる。simple pathでは専用LLM省略可能。
+
+実装正本は`speech_semantics_contracts.md`。simple pathはtyped directiveの存在で決定し、keyword / regex / fixed phraseをfallback Authorityにしない。complex pathはFoundation LLM Roleのcandidateをawait後live revisionで再検証し、同じDomain commit gateへ通す。
 
 ### C06 Character Language — #330
 

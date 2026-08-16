@@ -186,6 +186,7 @@ This rule keeps `ExecutionResult` as evidence of lifecycle history instead of al
 - duplicate and empty effect references remain invalid after normalization;
 - a `REQUESTED` snapshot must have no `effect_refs`; a request cannot claim an Actual Effect before execution;
 - new effect references may first be introduced only when the successor status is `OBSERVABLE`, `APPLIED`, or `COMPLETED`;
+- 実行継続中に追加の外部effectが後から判明する場合、`OBSERVABLE -> OBSERVABLE`または`APPLIED -> APPLIED`を追加effect snapshotとして許可する。この自己遷移は少なくとも1件の新しい`effect_refs`を必須とし、時刻前進とmonotonic ownershipを通常遷移と同様に検証する。stageを進めず同じ内容を複製するno-op自己遷移は拒否する;
 - `COMPLETED` may introduce a first effect directly because `OBSERVABLE` / `APPLIED` are optional lifecycle milestones and `STARTED -> COMPLETED` is valid;
 - once an effect reference has appeared, every later snapshot must retain it;
 - explicitly supplied transition `effect_refs` are additive to the previously recorded set; supplying `()` or a subset must not erase historical effect facts;
@@ -278,6 +279,7 @@ Issue #321 Unit Gate requires:
 - valid `ExecutionResult.transition_to()` paths continue to construct immutable successor snapshots
 - previously recorded effect references cannot be erased by explicit or omitted successor input
 - new effect references can be introduced only at `OBSERVABLE`, `APPLIED`, or `COMPLETED`
+- 継続するobservable/applied effectは新規effect必須の同一milestone遷移で記録し、no-op自己遷移を拒否する
 - terminal failure/cancellation/stale-style execution outcomes preserve prior effect refs but cannot invent new ones
 - all canonical tuple-valued Foundation fact fields own immutable tuple copies
 - stale/superseded async results are non-committable
