@@ -151,6 +151,25 @@ def test_domain_rejects_cyclic_basis_refs() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("category", "facet_id"),
+    [
+        ("dispositions", "current_emotion"),
+        ("preferences", "current_interest"),
+        ("values", "goal"),
+    ],
+)
+def test_domain_rejects_dynamic_state_facets(category: str, facet_id: str) -> None:
+    with pytest.raises(ValueError, match="動的状態facet"):
+        CharacterDefinitionDocument(
+            schema_version=1,
+            character_id="generic",
+            definition_revision=7,
+            authority=CharacterAuthority("docs/character/v2/generic.md", 354),
+            **{category: (CharacterFacet(facet_id, CharacterCertainty.CONFIRMED, "value"),)},
+        )
+
+
 def test_domain_accepts_large_acyclic_basis_ref_chain() -> None:
     count = 1_100
     facets = tuple(

@@ -188,3 +188,12 @@ def test_rejects_unknown_and_self_basis_refs(basis_ref: str) -> None:
     with pytest.raises(CharacterDefinitionLoadError) as error:
         load_character_definition_yaml(source)
     assert error.value.code is CharacterDefinitionLoadFailureCode.INVALID_SCHEMA
+
+
+def test_rejects_dynamic_state_facet() -> None:
+    source = _yaml().replace("  - id: tea", "  - id: current_interest")
+
+    with pytest.raises(CharacterDefinitionLoadError) as error:
+        load_character_definition_yaml(source)
+
+    assert error.value.code is CharacterDefinitionLoadFailureCode.INVALID_SCHEMA

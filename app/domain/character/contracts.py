@@ -67,6 +67,26 @@ _PSYCHOLOGICAL_CATEGORIES = (
     "narrative_identity",
     "adaptations",
 )
+_DYNAMIC_FACET_IDS = frozenset(
+    {
+        "emotion",
+        "desire",
+        "drive",
+        "motivation",
+        "relationship",
+        "goal",
+        "commitment",
+        "attention",
+        "focus",
+        "turn",
+        "interest",
+        "memory",
+        "activity",
+        "execution",
+        "situation",
+        "meaning",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +175,12 @@ class CharacterDefinitionDocument:
         for profile_name, allowed_ids in _PROFILE_ALLOWED_FACET_IDS.items():
             if any(facet.facet_id not in allowed_ids for facet in getattr(self, profile_name)):
                 raise ValueError(f"{profile_name} に未許可のfacet idがあります")
+        if any(
+            facet.facet_id in _DYNAMIC_FACET_IDS or facet.facet_id.startswith("current_")
+            for name in _CATEGORIES
+            for facet in getattr(self, name)
+        ):
+            raise ValueError("CharacterDefinition に動的状態facetは指定できません")
         all_ids = [facet.facet_id for name in _CATEGORIES for facet in getattr(self, name)]
         if len(all_ids) != len(set(all_ids)):
             raise ValueError("CharacterDefinition の facet id は文書内で一意でなければなりません")

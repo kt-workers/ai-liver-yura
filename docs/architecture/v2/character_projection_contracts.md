@@ -51,6 +51,7 @@ Runtime Profile は CharacterDefinition から決定論的に生成される der
 - Profile を編集して Character Definition を変更しない。
 - Profile を persistence の人物設定正本にしない。
 - current Emotion / Desire / Drive / Relationship / Goal / Attention / Interest / Memory current fact / Activity state を Profile へ保存しない。
+- Layer 7を表すfacet IDおよび`current_`接頭辞のfacet IDは、CharacterDefinition schemaでfail-closedに拒否する。
 - Profile は What-to-say / Actual Fact / Executive decision の Authority を持たない。
 
 ## 3. CharacterDefinition document format
