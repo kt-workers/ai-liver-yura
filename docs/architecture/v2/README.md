@@ -22,6 +22,7 @@
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
 - `body_architecture.md` — canonical body, generative motion, realtime control
 - `body_expression_contracts.md` — #337 Internal State / Focus / Character Style→normalized BodyExpressionContext projection contracts
+- `body_motion_planning_contracts.md` — #338 Executive BODY intent→compositional BodyMotionPlan / LLM・commit・rebase contracts
 - `plugin_architecture.md` — Core extension / capability architecture
 - `subsystem_architecture.md` — Streaming, Game Skill, Avatar and specialized AI boundaries
 - `legacy_migration_matrix.md` — V1 requirement migration
