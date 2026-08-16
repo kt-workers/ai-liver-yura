@@ -402,7 +402,7 @@ class AttentionTurnStore:
 
     def _ordered_eligible(self, state: AttentionFocusState, now: datetime) -> list[AttentionSource]:
         active = [source for source in state.sources if self._active(source, now)]
-        protected = self._protected_direct_user(state)
+        protected = self._protected_direct_user(state, now)
         if protected:
             active = [
                 source
@@ -429,7 +429,7 @@ class AttentionTurnStore:
         claimable = [
             source
             for source in active
-            if self._claim_relation(state, source)
+            if self._claim_relation(state, source, now)
             is not AttentionClaimRelation.CHALLENGER_INTERRUPT
             or self._interruption_decision(state, source.source_ref, now).allowed
         ]
@@ -470,10 +470,12 @@ class AttentionTurnStore:
     def _active(source: AttentionSource, now: datetime) -> bool:
         return source.expires_at is None or source.expires_at > now
 
-    def _protected_direct_user(self, state: AttentionFocusState) -> bool:
+    def _protected_direct_user(self, state: AttentionFocusState, now: datetime) -> bool:
         refs = {state.current_turn_owner, state.response_obligation}
         return any(
-            source.source_ref in refs and source.effective_priority is AttentionPriority.DIRECT_USER
+            source.source_ref in refs
+            and self._active(source, now)
+            and source.effective_priority is AttentionPriority.DIRECT_USER
             for source in state.sources
         )
 
@@ -497,7 +499,7 @@ class AttentionTurnStore:
         now: datetime,
         epoch: str,
     ) -> ExecutiveTriggerEligibility:
-        relation = self._claim_relation(state, source)
+        relation = self._claim_relation(state, source, now)
         decision = self._interruption_decision(state, source.source_ref, now)
         return ExecutiveTriggerEligibility(
             f"attention-{epoch}-{source.source_ref}",
@@ -514,13 +516,15 @@ class AttentionTurnStore:
         )
 
     def _claim_relation(
-        self, state: AttentionFocusState, source: AttentionSource
+        self, state: AttentionFocusState, source: AttentionSource, now: datetime
     ) -> AttentionClaimRelation:
         if source.source_ref in {state.current_turn_owner, state.response_obligation}:
             return AttentionClaimRelation.OBLIGATION_CONTINUATION
+        if self._protected_direct_user(state, now):
+            return AttentionClaimRelation.CHALLENGER_INTERRUPT
         if source.source_ref == state.foreground_focus_ref:
             return AttentionClaimRelation.FOREGROUND_CONTINUATION
-        if state.foreground_focus_ref is None and not self._protected_direct_user(state):
+        if state.foreground_focus_ref is None:
             return AttentionClaimRelation.IDLE_START
         return AttentionClaimRelation.CHALLENGER_INTERRUPT
 
@@ -530,13 +534,25 @@ class AttentionTurnStore:
         source = next((item for item in state.sources if item.source_ref == challenger_ref), None)
         if source is None or not self._active(source, now):
             raise ValueError("challenger sourceはactiveでなければなりません")
-        foreground = next(
-            (item for item in state.sources if item.source_ref == state.foreground_focus_ref), None
-        )
+        protected_refs = {
+            ref
+            for ref in (
+                state.foreground_focus_ref,
+                state.current_turn_owner,
+                state.response_obligation,
+            )
+            if ref is not None and ref != challenger_ref
+        }
+        protected_priorities = [
+            item.effective_priority
+            for item in state.sources
+            if item.source_ref in protected_refs and self._active(item, now)
+        ]
+        protected_priority = max(protected_priorities, default=None)
         minimum = self._policy.interruption_minimum_for(
-            None if foreground is None else foreground.effective_priority
+            protected_priority
         )
-        protected_user = self._protected_direct_user(state)
+        protected_user = self._protected_direct_user(state, now)
         if protected_user:
             minimum = AttentionPriority.DIRECT_USER
         allowed = source.effective_priority >= minimum

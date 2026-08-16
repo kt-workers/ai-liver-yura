@@ -339,6 +339,79 @@ def test_direct_user_obligation_without_foreground_only_claims_direct_users() ->
     assert any(item.source_ref == "user-b" for item in claimed)
 
 
+def test_direct_user_obligation_blocks_lower_foreground_continuation() -> None:
+    store = AttentionTurnStore()
+    store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
+    store.offer(
+        signal(
+            "game",
+            AttentionSourceKind.GOAL,
+            seconds=2,
+            priority=AttentionPriority.FOREGROUND,
+            source_revision=1,
+        )
+    )
+    store.apply(
+        1,
+        (
+            transition(
+                AttentionTransitionOperation.ACQUIRE_FOREGROUND,
+                2,
+                1,
+                target_ref="game",
+                source_intent_ref="intent-game",
+            ),
+            transition(AttentionTransitionOperation.ASSIGN_TURN, 2, 1, value="user"),
+            transition(AttentionTransitionOperation.SET_RESPONSE_OBLIGATION, 2, 1, value="user"),
+        ),
+    )
+    claimed = store.claim_next(0, NOW + timedelta(seconds=3))
+    assert claimed is not None
+    assert claimed.source_ref == "user"
+    assert claimed.claim_relation is AttentionClaimRelation.OBLIGATION_CONTINUATION
+
+
+def test_active_non_direct_turn_is_included_in_challenger_threshold() -> None:
+    store = AttentionTurnStore()
+    store.offer(
+        signal(
+            "turn",
+            AttentionSourceKind.GOAL,
+            priority=AttentionPriority.FOREGROUND,
+            source_revision=1,
+        )
+    )
+    store.offer(signal("normal", seconds=2))
+    store.apply(
+        1,
+        (transition(AttentionTransitionOperation.ASSIGN_TURN, 2, 1, value="turn"),),
+    )
+    assert store.interruption_decision("normal", NOW + timedelta(seconds=3)).allowed is False
+    claimed = store.claim_next(0, NOW + timedelta(seconds=3))
+    assert claimed is not None and claimed.source_ref == "turn"
+
+
+def test_expired_direct_user_no_longer_protects_claims() -> None:
+    store = AttentionTurnStore()
+    store.offer(
+        signal(
+            "user",
+            AttentionSourceKind.USER_INTERACTION,
+            trusted_direct_user=True,
+            expires_in=1,
+        )
+    )
+    store.offer(signal("normal", seconds=2))
+    store.apply(
+        1,
+        (transition(AttentionTransitionOperation.ASSIGN_TURN, 2, 1, value="user"),),
+    )
+    claimed = store.claim_next(0, NOW + timedelta(seconds=3))
+    assert claimed is not None
+    assert claimed.source_ref == "normal"
+    assert claimed.claim_relation is AttentionClaimRelation.IDLE_START
+
+
 def test_transition_rejects_authoritative_context_advanced_after_creation() -> None:
     store = AttentionTurnStore()
     store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
