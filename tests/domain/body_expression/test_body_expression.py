@@ -187,6 +187,92 @@ def test_focus_is_categorical_and_does_not_create_numeric_gaze_bias() -> None:
     assert _axis(result, BodyExpressionAxis.GAZE_FREEDOM) == 0.0
 
 
+@pytest.mark.parametrize(
+    ("scope", "attention"),
+    [
+        (BodyExpressionTargetScope.FOREGROUND, _attention()),
+        (BodyExpressionTargetScope.TURN_OWNER, _attention()),
+    ],
+)
+def test_targeted_scope_does_not_match_absent_target_and_focus(
+    scope: BodyExpressionTargetScope,
+    attention: AttentionFocusView,
+) -> None:
+    rule = BodyExpressionInfluenceRule(
+        "targeted",
+        StateFacetKind.EMOTION,
+        "joy",
+        scope,
+        BodyExpressionComponent.CURRENT,
+        BodyExpressionTransform.SIGNED,
+        (_weight(BodyExpressionAxis.MOVEMENT_ENERGY, 1.0),),
+    )
+    result = _project(
+        _policy(state_rules=(rule,)),
+        _snapshot(_facet(target=None, current=1.0, confidence=1.0)),
+        _style(None, availability=RuntimeAvailability.NOT_CONFIGURED),
+        attention,
+    )
+    assert _axis(result, BodyExpressionAxis.MOVEMENT_ENERGY) == 0.0
+
+
+@pytest.mark.parametrize(
+    ("scope", "matching_attention", "mismatching_attention"),
+    [
+        (
+            BodyExpressionTargetScope.FOREGROUND,
+            _attention(foreground="user:1"),
+            _attention(foreground="user:2"),
+        ),
+        (
+            BodyExpressionTargetScope.TURN_OWNER,
+            _attention(owner="user:1"),
+            _attention(owner="user:2"),
+        ),
+    ],
+)
+def test_targeted_scope_requires_exact_present_focus_reference(
+    scope: BodyExpressionTargetScope,
+    matching_attention: AttentionFocusView,
+    mismatching_attention: AttentionFocusView,
+) -> None:
+    rule = BodyExpressionInfluenceRule(
+        "targeted",
+        StateFacetKind.EMOTION,
+        "joy",
+        scope,
+        BodyExpressionComponent.CURRENT,
+        BodyExpressionTransform.SIGNED,
+        (_weight(BodyExpressionAxis.MOVEMENT_ENERGY, 1.0),),
+    )
+    snapshot = _snapshot(_facet(target="user:1", current=0.5, confidence=1.0))
+    policy = _policy(state_rules=(rule,))
+    assert (
+        _axis(
+            _project(
+                policy,
+                snapshot,
+                _style(None, availability=RuntimeAvailability.NOT_CONFIGURED),
+                matching_attention,
+            ),
+            BodyExpressionAxis.MOVEMENT_ENERGY,
+        )
+        == 0.5
+    )
+    assert (
+        _axis(
+            _project(
+                policy,
+                snapshot,
+                _style(None, availability=RuntimeAvailability.NOT_CONFIGURED),
+                mismatching_attention,
+            ),
+            BodyExpressionAxis.MOVEMENT_ENERGY,
+        )
+        == 0.0
+    )
+
+
 def test_policy_rejects_duplicate_rules_invalid_weights_and_unknown_style_facet() -> None:
     with pytest.raises(ValueError):
         CharacterStyleInfluenceRule(
@@ -256,6 +342,46 @@ def test_store_detects_non_deterministic_recalculation_and_idempotent_replay() -
     assert error.value.code is BodyExpressionFailureCode.DETERMINISM
 
 
+def test_store_rejects_source_and_native_revision_rollback() -> None:
+    candidate = _project(
+        _policy(), style=_style(None, availability=RuntimeAvailability.NOT_CONFIGURED)
+    )
+    store = BodyExpressionStore()
+    accepted = store.commit(0, candidate)
+    rollback_candidates = (
+        replace(candidate, revision=2, capture_source_context_revision=7),
+        replace(
+            candidate,
+            revision=2,
+            capture_source_context_revision=9,
+            internal_state_revision=4,
+        ),
+        replace(
+            candidate,
+            revision=2,
+            capture_source_context_revision=9,
+            attention_revision=3,
+        ),
+        replace(
+            candidate,
+            revision=2,
+            capture_source_context_revision=9,
+            character_definition_revision=2,
+        ),
+        replace(
+            candidate,
+            revision=2,
+            capture_source_context_revision=9,
+            projection_policy_revision=1,
+        ),
+    )
+    for rollback_candidate in rollback_candidates:
+        with pytest.raises(BodyExpressionProjectionError) as error:
+            store.commit(1, rollback_candidate)
+        assert error.value.code is BodyExpressionFailureCode.STALE
+        assert store.current is accepted
+
+
 class _StatePort:
     def __init__(self, value: InternalStateSnapshot) -> None:
         self._value = value
@@ -296,6 +422,59 @@ class _LiveContextPort:
         return self._revisions.pop(0)
 
 
+class _SequenceStatePort:
+    def __init__(self, values: list[InternalStateSnapshot]) -> None:
+        self._values = values
+
+    def current_snapshot(self) -> InternalStateSnapshot:
+        return self._values.pop(0)
+
+
+class _SequenceAttentionPort:
+    def __init__(self, values: list[AttentionFocusView]) -> None:
+        self._values = values
+
+    def current_view(self) -> AttentionFocusView:
+        return self._values.pop(0)
+
+
+class _SequenceCharacterPort:
+    def __init__(self, values: list[CharacterBodyStyleProfile]) -> None:
+        self._values = values
+
+    def current_profile(self) -> CharacterBodyStyleProfile:
+        return self._values.pop(0)
+
+
+class _SequencePolicyPort:
+    def __init__(self, values: list[BodyExpressionProjectionPolicy]) -> None:
+        self._values = values
+
+    def current_policy(self) -> BodyExpressionProjectionPolicy:
+        return self._values.pop(0)
+
+
+def _coordinator_with(
+    store: BodyExpressionStore,
+    *,
+    state_port: _StatePort | _SequenceStatePort | None = None,
+    attention_port: _AttentionPort | _SequenceAttentionPort | None = None,
+    character_port: _CharacterPort | _SequenceCharacterPort | None = None,
+    policy_port: _PolicyPort | _SequencePolicyPort | None = None,
+    live_port: _LiveContextPort | None = None,
+) -> BodyExpressionCoordinator:
+    return BodyExpressionCoordinator(
+        state_port or _StatePort(_snapshot()),
+        attention_port or _AttentionPort(_attention()),
+        character_port
+        or _CharacterPort(_style(None, availability=RuntimeAvailability.NOT_CONFIGURED)),
+        policy_port or _PolicyPort(_policy()),
+        live_port or _LiveContextPort([8, 8]),
+        store,
+        max_stable_read_attempts=1,
+    )
+
+
 def test_coordinator_commits_only_a_stable_multi_owner_cut() -> None:
     coordinator = BodyExpressionCoordinator(
         _StatePort(_snapshot()),
@@ -325,3 +504,58 @@ def test_coordinator_rejects_changed_global_generation_without_commit() -> None:
         coordinator.refresh(NOW)
     assert error.value.code is BodyExpressionFailureCode.INCOHERENT
     assert store.current is None
+
+
+@pytest.mark.parametrize("race_owner", ("state", "attention", "character", "policy"))
+def test_coordinator_rejects_native_owner_revision_race(race_owner: str) -> None:
+    state_port: _StatePort | _SequenceStatePort = _StatePort(_snapshot())
+    attention_port: _AttentionPort | _SequenceAttentionPort = _AttentionPort(_attention())
+    character_port: _CharacterPort | _SequenceCharacterPort = _CharacterPort(
+        _style(None, availability=RuntimeAvailability.NOT_CONFIGURED)
+    )
+    policy_port: _PolicyPort | _SequencePolicyPort = _PolicyPort(_policy())
+    if race_owner == "state":
+        state_port = _SequenceStatePort([_snapshot(), replace(_snapshot(), revision=6)])
+    elif race_owner == "attention":
+        attention_port = _SequenceAttentionPort([_attention(), replace(_attention(), revision=5)])
+    elif race_owner == "character":
+        profile = _style(None, availability=RuntimeAvailability.NOT_CONFIGURED)
+        character_port = _SequenceCharacterPort([profile, replace(profile, definition_revision=4)])
+    else:
+        policy = _policy()
+        policy_port = _SequencePolicyPort([policy, replace(policy, policy_revision=3)])
+
+    store = BodyExpressionStore()
+    coordinator = _coordinator_with(
+        store,
+        state_port=state_port,
+        attention_port=attention_port,
+        character_port=character_port,
+        policy_port=policy_port,
+    )
+    with pytest.raises(BodyExpressionProjectionError) as error:
+        coordinator.refresh(NOW)
+    assert error.value.code is BodyExpressionFailureCode.INCOHERENT
+    assert store.current is None
+
+
+def test_coordinator_rejects_source_future_context_without_commit() -> None:
+    store = BodyExpressionStore()
+    coordinator = _coordinator_with(
+        store,
+        state_port=_StatePort(replace(_snapshot(), source_context_revision=9)),
+    )
+    with pytest.raises(BodyExpressionProjectionError) as error:
+        coordinator.refresh(NOW)
+    assert error.value.code is BodyExpressionFailureCode.STALE
+    assert store.current is None
+
+
+def test_invalid_projection_keeps_previous_accepted_context() -> None:
+    store = BodyExpressionStore()
+    accepted = _coordinator_with(store).refresh(NOW)
+    coordinator = _coordinator_with(store, character_port=_CharacterPort(_style("unmapped")))
+    with pytest.raises(BodyExpressionProjectionError) as error:
+        coordinator.refresh(NOW)
+    assert error.value.code is BodyExpressionFailureCode.UNMAPPED_CHARACTER_STYLE
+    assert store.current is accepted

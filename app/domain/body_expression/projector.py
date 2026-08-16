@@ -46,9 +46,17 @@ def _matches_scope(
     if rule.target_scope is BodyExpressionTargetScope.ANY_TARGET:
         return True
     if rule.target_scope is BodyExpressionTargetScope.FOREGROUND:
-        return target_ref == focus.foreground_focus_ref
+        return (
+            target_ref is not None
+            and focus.foreground_focus_ref is not None
+            and target_ref == focus.foreground_focus_ref
+        )
     if rule.target_scope is BodyExpressionTargetScope.TURN_OWNER:
-        return target_ref == focus.current_turn_owner
+        return (
+            target_ref is not None
+            and focus.current_turn_owner is not None
+            and target_ref == focus.current_turn_owner
+        )
     raise AssertionError("未対応の target_scope です")
 
 
