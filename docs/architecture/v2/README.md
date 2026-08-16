@@ -21,6 +21,7 @@
 - `character_psychological_projection_contracts.md` — Character精神構造Layers 1–6 / causal refs / dynamic Layer 7 boundary
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
 - `body_architecture.md` — canonical body, generative motion, realtime control
+- `body_expression_contracts.md` — #337 Internal State / Focus / Character Style→normalized BodyExpressionContext projection contracts
 - `plugin_architecture.md` — Core extension / capability architecture
 - `subsystem_architecture.md` — Streaming, Game Skill, Avatar and specialized AI boundaries
 - `legacy_migration_matrix.md` — V1 requirement migration
