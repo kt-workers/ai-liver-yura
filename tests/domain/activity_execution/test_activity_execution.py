@@ -10,6 +10,7 @@ import pytest
 from app.domain.activity_execution import (
     ActivityExecutionAuthority,
     ActivityExecutionCoordinator,
+    ActivityExecutionLifecycleFact,
     ActivityExecutionRecord,
     ActivityInterruptibility,
     ActivityInvocation,
@@ -111,7 +112,7 @@ def started(
     owner.admit(item, preflight())
     record = owner.start(
         item.command.command_id, preflight(), NOW + timedelta(seconds=1), DISPATCH_ID
-    )
+    ).record
     return owner, record
 
 
@@ -160,7 +161,7 @@ def test_admission_binds_current_capability_and_accepts_valid_command() -> None:
 def test_activity_owner_facts_carry_requested_open_and_execution_lifecycle() -> None:
     authority = ActivityExecutionAuthority()
     accepted = authority.admit(invocation(), preflight())
-    opened, admitted = authority.lifecycle_facts()
+    opened, admitted = accepted.lifecycle_facts
     assert opened.operation is SourceLifecycleOperation.OPEN
     assert opened.status is ExecutionStatus.REQUESTED
     assert admitted.operation is SourceLifecycleOperation.REFRESH
@@ -168,7 +169,7 @@ def test_activity_owner_facts_carry_requested_open_and_execution_lifecycle() -> 
     started_record = authority.start(
         accepted.result.command_id, preflight(), NOW + timedelta(seconds=1), DISPATCH_ID
     )
-    started_fact = authority.lifecycle_facts()[-1]
+    started_fact = started_record.lifecycle_facts[-1]
     assert started_record.record_revision == started_fact.source_revision
     assert started_fact.operation is SourceLifecycleOperation.REFRESH
     completed = authority.apply_report(
@@ -181,10 +182,51 @@ def test_activity_owner_facts_carry_requested_open_and_execution_lifecycle() -> 
             {},
         )
     )
-    closed = authority.lifecycle_facts()[-1]
+    closed = completed.lifecycle_facts[-1]
     assert completed.terminal is True
     assert closed.operation is SourceLifecycleOperation.CLOSE
     assert closed.expected_source_revision == completed.record_revision - 1
+    assert authority.snapshot("command-1") == completed.record
+    assert not hasattr(authority, "lifecycle_facts")
+
+
+def test_activity_commit_results_keep_each_mutation_output_without_history() -> None:
+    authority = ActivityExecutionAuthority()
+    admitted = authority.admit(invocation(), preflight())
+    started_result = authority.start(
+        admitted.result.command_id, preflight(), NOW + timedelta(seconds=1), DISPATCH_ID
+    )
+    assert len(admitted.lifecycle_facts) == 2
+    assert started_result.lifecycle_facts[0].operation is SourceLifecycleOperation.REFRESH
+    assert admitted.lifecycle_facts[0].operation is SourceLifecycleOperation.OPEN
+    before = authority.snapshot("command-1")
+    with pytest.raises(ValueError):
+        authority.start("command-1", preflight(), NOW + timedelta(seconds=2), DISPATCH_ID)
+    assert authority.snapshot("command-1") == before
+
+
+@pytest.mark.parametrize(
+    ("operation", "status"),
+    (
+        (SourceLifecycleOperation.OPEN, ExecutionStatus.STARTED),
+        (SourceLifecycleOperation.REFRESH, ExecutionStatus.COMPLETED),
+        (SourceLifecycleOperation.CLOSE, ExecutionStatus.STARTED),
+    ),
+)
+def test_activity_lifecycle_operation_status_mismatch_is_rejected(
+    operation: SourceLifecycleOperation, status: ExecutionStatus
+) -> None:
+    with pytest.raises(ValueError):
+        ActivityExecutionLifecycleFact(
+            "activity-invalid",
+            "command-1",
+            operation,
+            2,
+            None if operation is SourceLifecycleOperation.OPEN else 1,
+            status,
+            NOW,
+            (),
+        )
 
 
 def test_command_authority_reference_must_match_decision() -> None:
@@ -360,7 +402,7 @@ def test_actual_execution_fact_projects_to_bounded_foundation_event() -> None:
             (effect(),),
         )
     )
-    event = to_execution_event(record, event_id="event-execution-1", trace_id="trace-1")
+    event = to_execution_event(record.record, event_id="event-execution-1", trace_id="trace-1")
     assert event.event_type == "execution.completed"
     assert event.source == "activity_execution"
     assert event.revisions == REVISIONS
@@ -404,7 +446,8 @@ def test_cancellation_before_start_is_terminal_and_idempotent() -> None:
         "command-1", "different_reason", NOW + timedelta(seconds=2)
     )
     assert cancelled.result.status is ExecutionStatus.CANCELLED
-    assert repeated == cancelled
+    assert repeated.record == cancelled.record
+    assert repeated.lifecycle_facts == ()
     assert repeated.cancellation_reason == "user_cancelled"
 
 

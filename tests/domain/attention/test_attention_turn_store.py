@@ -156,6 +156,32 @@ def test_versioned_stable_source_requires_open_refresh_and_close_cas() -> None:
     assert closed.sources == ()
 
 
+@pytest.mark.parametrize(
+    "kind", (AttentionSourceKind.GOAL, AttentionSourceKind.COMMITMENT, AttentionSourceKind.ACTIVITY)
+)
+def test_versioned_close_before_open_is_rejected_without_mutation(
+    kind: AttentionSourceKind,
+) -> None:
+    store = AttentionTurnStore()
+    before = store.snapshot()
+    close = signal(
+        "stable-source",
+        kind,
+        revision=1,
+        operation=AttentionIngressOperation.RESOLVE,
+        source_revision=2,
+        expected_source_revision=1,
+    )
+    with pytest.raises(ValueError, match="resolve対象"):
+        store.resolve(close)
+    assert store.snapshot() == before
+    store.offer(
+        signal("stable-source", kind, revision=1, source_revision=1)
+    )
+    closed = store.resolve(close)
+    assert closed.sources == ()
+
+
 def test_duplicate_versioned_lifecycle_fact_is_no_commit() -> None:
     store = AttentionTurnStore()
     store.offer(signal("goal", AttentionSourceKind.GOAL, source_revision=1))

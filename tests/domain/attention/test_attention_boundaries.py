@@ -116,7 +116,7 @@ def actual_execution_record() -> tuple[ActivityInvocation, ActivityExecutionReco
             NOW + timedelta(seconds=2),
             {},
         )
-    )
+    ).record
 
 
 def test_user_projector_requires_accepted_input_gateway_provenance() -> None:

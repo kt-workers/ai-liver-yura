@@ -130,6 +130,8 @@ class AttentionTurnStore:
             state = self._state
             self._validate_global_context(state, signal.source_context_revision)
             if signal.source_ref not in {source.source_ref for source in state.sources}:
+                if self._is_versioned_stable(signal.source_kind):
+                    raise ValueError("versioned stable sourceのresolve対象が存在しません")
                 return state
             source = next(
                 source for source in state.sources if source.source_ref == signal.source_ref

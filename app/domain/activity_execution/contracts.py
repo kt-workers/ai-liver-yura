@@ -339,8 +339,76 @@ class ActivityExecutionLifecycleFact:
             self.expected_source_revision is None
         ):
             raise ValueError("activity lifecycle operationとexpected revisionが一致しません")
+        terminal = {
+            ExecutionStatus.COMPLETED,
+            ExecutionStatus.REJECTED,
+            ExecutionStatus.UNSUPPORTED,
+            ExecutionStatus.FAILED,
+            ExecutionStatus.CANCELLED,
+            ExecutionStatus.TIMED_OUT,
+            ExecutionStatus.SUPERSEDED,
+        }
+        if (
+            self.operation is SourceLifecycleOperation.OPEN
+            and self.status is not ExecutionStatus.REQUESTED
+        ):
+            raise ValueError("Activity openはREQUESTEDだけに許可されます")
+        if self.operation is SourceLifecycleOperation.REFRESH and self.status in terminal:
+            raise ValueError("terminal Activityはrefreshできません")
+        if self.operation is SourceLifecycleOperation.CLOSE and self.status not in terminal:
+            raise ValueError("terminal Activityだけをcloseできます")
         require_aware(self.occurred_at, "occurred_at")
         refs = tuple(self.effect_refs)
         if any(not isinstance(item, str) or not item.strip() for item in refs):
             raise ValueError("effect_refsが不正です")
         object.__setattr__(self, "effect_refs", refs)
+
+
+@dataclass(frozen=True, slots=True)
+class ActivityExecutionCommitResult:
+    """単一public owner mutationと、そのlifecycle出力。"""
+
+    record: ActivityExecutionRecord
+    lifecycle_facts: tuple[ActivityExecutionLifecycleFact, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.record, ActivityExecutionRecord):
+            raise ValueError("recordが不正です")
+        facts = tuple(self.lifecycle_facts)
+        if any(not isinstance(item, ActivityExecutionLifecycleFact) for item in facts):
+            raise ValueError("typed Activity lifecycle factsだけを受理します")
+        if any(item.command_id != self.record.result.command_id for item in facts):
+            raise ValueError("lifecycle fact commandがrecordと一致しません")
+        object.__setattr__(self, "lifecycle_facts", facts)
+
+    @property
+    def invocation(self) -> ActivityInvocation:
+        return self.record.invocation
+
+    @property
+    def bindings(self) -> tuple[CapabilityBinding, ...]:
+        return self.record.bindings
+
+    @property
+    def result(self) -> ExecutionResult:
+        return self.record.result
+
+    @property
+    def dispatch_id(self) -> str | None:
+        return self.record.dispatch_id
+
+    @property
+    def cancellation_reason(self) -> str | None:
+        return self.record.cancellation_reason
+
+    @property
+    def cancellation_requested_at(self) -> datetime | None:
+        return self.record.cancellation_requested_at
+
+    @property
+    def record_revision(self) -> int:
+        return self.record.record_revision
+
+    @property
+    def terminal(self) -> bool:
+        return self.record.terminal

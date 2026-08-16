@@ -65,7 +65,7 @@ class ActivityExecutionCoordinator:
 
     async def execute(self, invocation: ActivityInvocation) -> ActivityExecutionRecord:
         initial = await self._preflight.current_for(invocation)
-        record = self._authority.admit(invocation, initial)
+        record = self._authority.admit(invocation, initial).record
         if record.terminal:
             return record
         command_id = invocation.command.command_id
@@ -79,7 +79,9 @@ class ActivityExecutionCoordinator:
         try:
             current = await self._preflight.current_for(invocation)
             accepted_result = record.result
-            record = self._authority.start(command_id, current, self._clock.now(), dispatch_id)
+            record = self._authority.start(
+                command_id, current, self._clock.now(), dispatch_id
+            ).record
             if record.terminal:
                 return record
             request = ExecutionDispatchRequest(
@@ -110,7 +112,7 @@ class ActivityExecutionCoordinator:
                             occurred_at=self._clock.now(),
                             details={"code": "adapter_cancelled"},
                         )
-                    )
+                    ).record
                 self._authority.request_cancellation(
                     command_id, "execution_task_cancelled", self._clock.now()
                 )
@@ -126,21 +128,21 @@ class ActivityExecutionCoordinator:
                         occurred_at=self._clock.now(),
                         details={"code": "adapter_failure"},
                     )
-                )
+                ).record
             if not reports:
-                return self._authority.fail_adapter_contract(command_id, self._clock.now())
+                return self._authority.fail_adapter_contract(command_id, self._clock.now()).record
             try:
                 for report in reports:
                     if not isinstance(report, ExecutionAdapterReport):
                         raise ValueError("adapter returned an invalid report")
-                    record = self._authority.apply_report(report)
+                    record = self._authority.apply_report(report).record
             except (TypeError, ValueError):
-                return self._authority.fail_adapter_contract(command_id, self._clock.now())
+                return self._authority.fail_adapter_contract(command_id, self._clock.now()).record
             return record
         except asyncio.CancelledError:
             record = self._authority.request_cancellation(
                 command_id, "execution_task_cancelled", self._clock.now()
-            )
+            ).record
             signal.cancelled = True
             if record.terminal:
                 return record
@@ -157,7 +159,7 @@ class ActivityExecutionCoordinator:
                     occurred_at=self._clock.now(),
                     details={"code": "execution_task_cancelled"},
                 )
-            )
+            ).record
         finally:
             async with self._signal_lock:
                 self._signals.pop(command_id, None)
@@ -166,7 +168,9 @@ class ActivityExecutionCoordinator:
                     self._adapter_tasks.pop(command_id, None)
 
     async def cancel(self, command_id: str, reason: str) -> ActivityExecutionRecord:
-        record = self._authority.request_cancellation(command_id, reason, self._clock.now())
+        record = self._authority.request_cancellation(
+            command_id, reason, self._clock.now()
+        ).record
         async with self._signal_lock:
             signal = self._signals.get(command_id)
             if signal is not None:

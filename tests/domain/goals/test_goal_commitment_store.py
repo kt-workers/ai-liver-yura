@@ -21,8 +21,11 @@ from app.domain.executive import (
 )
 from app.domain.goals import (
     AutonomyTriggerKind,
+    CommitmentLifecycleProjectionFact,
     CommitmentStatus,
+    GoalCommitmentCommitResult,
     GoalCommitmentStore,
+    GoalLifecycleProjectionFact,
     GoalStatus,
     autonomy_triggers,
     build_goal_context_view,
@@ -144,14 +147,14 @@ def apply_goal(
     *,
     goal_id: str = "goal-1",
     superseding_goal_ref: str | None = None,
-) -> None:
+) -> GoalCommitmentCommitResult:
     transition = goal_transition(
         operation,
         revision,
         goal_id=goal_id,
         superseding_goal_ref=superseding_goal_ref,
     )
-    store.apply(
+    return store.apply(
         decision(f"goal-{operation.value}-{revision}-{goal_id}", revision, goals=(transition,))
     )
 
@@ -162,9 +165,9 @@ def apply_commitment(
     revision: int,
     *,
     commitment_id: str = "commitment-1",
-) -> None:
+) -> GoalCommitmentCommitResult:
     transition = commitment_transition(operation, revision, commitment_id=commitment_id)
-    store.apply(
+    return store.apply(
         decision(
             f"commitment-{operation.value}-{revision}-{commitment_id}",
             revision,
@@ -197,29 +200,64 @@ def test_goal_lifecycle_create_activate_suspend_resume_complete() -> None:
 
 def test_goal_and_commitment_owner_facts_carry_open_refresh_and_close_cas() -> None:
     store = GoalCommitmentStore()
-    apply_goal(store, GoalTransitionOperation.CREATE, 0)
-    opened = store.lifecycle_facts()
+    opened = apply_goal(store, GoalTransitionOperation.CREATE, 0).lifecycle_facts
     assert len(opened) == 1
     assert opened[0].operation is SourceLifecycleOperation.OPEN
     assert opened[0].expected_source_revision is None
-    apply_goal(store, GoalTransitionOperation.ACTIVATE, 1)
-    refreshed = store.lifecycle_facts()
+    refreshed = apply_goal(store, GoalTransitionOperation.ACTIVATE, 1).lifecycle_facts
     assert len(refreshed) == 1
     assert refreshed[0].operation is SourceLifecycleOperation.REFRESH
     assert refreshed[0].expected_source_revision == 1
-    apply_goal(store, GoalTransitionOperation.COMPLETE, 2)
-    closed = store.lifecycle_facts()
+    closed = apply_goal(store, GoalTransitionOperation.COMPLETE, 2).lifecycle_facts
     assert len(closed) == 1
     assert closed[0].operation is SourceLifecycleOperation.CLOSE
     assert closed[0].expected_source_revision == 2
 
     commitment_store = GoalCommitmentStore()
-    apply_commitment(commitment_store, CommitmentTransitionOperation.CREATE, 0)
-    assert commitment_store.lifecycle_facts()[0].operation is SourceLifecycleOperation.OPEN
-    apply_commitment(commitment_store, CommitmentTransitionOperation.ACTIVATE, 1)
-    assert commitment_store.lifecycle_facts()[0].operation is SourceLifecycleOperation.REFRESH
-    apply_commitment(commitment_store, CommitmentTransitionOperation.RELEASE, 2)
-    assert commitment_store.lifecycle_facts()[0].operation is SourceLifecycleOperation.CLOSE
+    opened_commitment = apply_commitment(
+        commitment_store, CommitmentTransitionOperation.CREATE, 0
+    )
+    assert opened_commitment.lifecycle_facts[0].operation is SourceLifecycleOperation.OPEN
+    refreshed_commitment = apply_commitment(
+        commitment_store, CommitmentTransitionOperation.ACTIVATE, 1
+    )
+    assert refreshed_commitment.lifecycle_facts[0].operation is SourceLifecycleOperation.REFRESH
+    closed_commitment = apply_commitment(
+        commitment_store, CommitmentTransitionOperation.RELEASE, 2
+    )
+    assert closed_commitment.lifecycle_facts[0].operation is SourceLifecycleOperation.CLOSE
+
+
+def test_goal_and_commitment_lifecycle_operation_status_mismatch_is_rejected() -> None:
+    with pytest.raises(ValueError, match="terminal Goal"):
+        GoalLifecycleProjectionFact(
+            "goal-close-active", "goal-1", SourceLifecycleOperation.CLOSE, 2, 1,
+            GoalStatus.ACTIVE, 50, 2, NOW,
+        )
+    with pytest.raises(ValueError, match="terminal Goal"):
+        GoalLifecycleProjectionFact(
+            "goal-refresh-completed", "goal-1", SourceLifecycleOperation.REFRESH, 2, 1,
+            GoalStatus.COMPLETED, 50, 2, NOW,
+        )
+    with pytest.raises(ValueError, match="terminal Commitment"):
+        CommitmentLifecycleProjectionFact(
+            "commitment-close-active", "commitment-1", SourceLifecycleOperation.CLOSE, 2, 1,
+            CommitmentStatus.ACTIVE, 50, 2, NOW,
+        )
+
+
+def test_goal_commit_results_keep_each_commit_output_without_owner_history() -> None:
+    store = GoalCommitmentStore()
+    opened = apply_goal(store, GoalTransitionOperation.CREATE, 0)
+    refreshed = apply_goal(store, GoalTransitionOperation.ACTIVATE, 1)
+    assert opened.lifecycle_facts[0].operation is SourceLifecycleOperation.OPEN
+    assert refreshed.lifecycle_facts[0].operation is SourceLifecycleOperation.REFRESH
+    assert opened.snapshot.revision == 1
+    assert store.snapshot().revision == 2
+    with pytest.raises(ValueError):
+        store.apply(decision("invalid-empty", 2))
+    assert store.snapshot().revision == 2
+    assert not hasattr(store, "lifecycle_facts")
 
 
 def test_goal_create_rejects_dangling_commitment_reference_atomically() -> None:
@@ -243,8 +281,8 @@ def test_goal_may_reference_commitment_created_in_same_atomic_batch() -> None:
     result = store.apply(
         decision("decision-same-batch", 0, goals=(goal,), commitments=(commitment,))
     )
-    assert result.goals[0].commitment_refs == ("commitment-1",)
-    assert result.commitments[0].commitment_id == "commitment-1"
+    assert result.snapshot.goals[0].commitment_refs == ("commitment-1",)
+    assert result.snapshot.commitments[0].commitment_id == "commitment-1"
 
 
 @pytest.mark.parametrize(

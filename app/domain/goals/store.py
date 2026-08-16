@@ -16,6 +16,7 @@ from .contracts import (
     CommitmentLifecycleProjectionFact,
     CommitmentState,
     CommitmentStatus,
+    GoalCommitmentCommitResult,
     GoalCommitmentSnapshot,
     GoalKind,
     GoalLifecycleProjectionFact,
@@ -92,22 +93,13 @@ class GoalCommitmentStore:
         )
         self._decision_ids: set[str] = set()
         self._intent_ids: set[str] = set()
-        self._lifecycle_facts: tuple[
-            GoalLifecycleProjectionFact | CommitmentLifecycleProjectionFact, ...
-        ] = ()
         self._lock = Lock()
 
     def snapshot(self) -> GoalCommitmentSnapshot:
         with self._lock:
             return self._snapshot
 
-    def lifecycle_facts(
-        self,
-    ) -> tuple[GoalLifecycleProjectionFact | CommitmentLifecycleProjectionFact, ...]:
-        with self._lock:
-            return self._lifecycle_facts
-
-    def apply(self, decision: CommittedExecutiveDecision) -> GoalCommitmentSnapshot:
+    def apply(self, decision: CommittedExecutiveDecision) -> GoalCommitmentCommitResult:
         if not isinstance(decision, CommittedExecutiveDecision):
             raise ValueError("decision must be CommittedExecutiveDecision")
         candidate = decision.candidate
@@ -155,11 +147,11 @@ class GoalCommitmentStore:
                 tuple(sorted(commitments.values(), key=lambda item: item.commitment_id)),
                 decision.committed_at,
             )
+            lifecycle_facts = self._facts(current, snapshot)
             self._snapshot = snapshot
-            self._lifecycle_facts = self._facts(current, snapshot)
             self._decision_ids.add(decision.decision_id)
             self._intent_ids.update(intent_ids)
-            return snapshot
+            return GoalCommitmentCommitResult(snapshot, lifecycle_facts)
 
     @staticmethod
     def _facts(
