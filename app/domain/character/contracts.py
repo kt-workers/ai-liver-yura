@@ -83,7 +83,7 @@ class CharacterDefinitionDocument:
     body: tuple[CharacterFacet, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.schema_version != 1:
+        if type(self.schema_version) is not int or self.schema_version != 1:
             raise ValueError("未対応の schema_version です")
         require_identifier(self.character_id, "character_id")
         require_revision(self.definition_revision, "definition_revision")
@@ -143,7 +143,7 @@ class _ProfileBase:
 
     def __post_init__(self) -> None:
         require_identifier(self.character_id, "character_id")
-        if self.schema_version != 1:
+        if type(self.schema_version) is not int or self.schema_version != 1:
             raise ValueError("未対応の schema_version です")
         require_revision(self.definition_revision, "definition_revision")
         facets = tuple(self.facets)
