@@ -10,11 +10,14 @@ from app.domain.appraisal import (
     AppraisalDimensionKind,
     AppraisalPath,
     DeepAppraisalContext,
+    DeepAppraisalFreshnessStamp,
     DeepAppraisalInterpreter,
+    DeepAppraisalLiveStatePort,
     DeepAppraisalPolicy,
     DeterministicAppraisalRule,
     FacetRef,
     InternalStateFacet,
+    InternalStateReducer,
     InternalStateSnapshot,
     StateDeltaProposal,
     StateFacetKind,
@@ -79,9 +82,9 @@ def meaning() -> StructuredInputMeaning:
     )
 
 
-def state(value: float = 0.2) -> InternalStateSnapshot:
+def state(value: float = 0.2, revision: int = 3) -> InternalStateSnapshot:
     facet = InternalStateFacet(JOY, value, 0.0, value, 0.8, ("event:seed",), NOW)
-    return InternalStateSnapshot(3, 7, (facet,), NOW)
+    return InternalStateSnapshot(revision, 7, (facet,), NOW)
 
 
 def policy() -> DeepAppraisalPolicy:
@@ -362,9 +365,13 @@ def test_slow_deep_appraisal_does_not_block_unrelated_task() -> None:
             await asyncio.sleep(0.02)
             return result(request)
 
+    class LiveState:
+        async def freshness_stamp(self) -> DeepAppraisalFreshnessStamp:
+            return DeepAppraisalFreshnessStamp(7, 3)
+
     async def scenario() -> None:
         task = asyncio.create_task(
-            DeepAppraisalInterpreter(SlowPort(), policy()).appraise(
+            DeepAppraisalInterpreter(SlowPort(), LiveState(), policy()).appraise(
                 event(),
                 None,
                 state(),
@@ -372,8 +379,6 @@ def test_slow_deep_appraisal_does_not_block_unrelated_task() -> None:
                 request_id="request:1",
                 trace_id="trace:1",
                 created_at=NOW,
-                current_source_context_revision=7,
-                current_state_revision=3,
             )
         )
         await asyncio.sleep(0)
@@ -382,3 +387,197 @@ def test_slow_deep_appraisal_does_not_block_unrelated_task() -> None:
 
     asyncio.run(scenario())
     assert observed == ["unrelated"]
+
+
+@pytest.mark.parametrize(
+    "advanced_stamp",
+    [DeepAppraisalFreshnessStamp(8, 3), DeepAppraisalFreshnessStamp(7, 4)],
+)
+def test_interpret_rejects_stale_post_await_live_freshness(
+    advanced_stamp: DeepAppraisalFreshnessStamp,
+) -> None:
+    class ControlledPort:
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            self.started.set()
+            await self.release.wait()
+            return result(request)
+
+    class LiveState:
+        stamp = DeepAppraisalFreshnessStamp(7, 3)
+
+        async def freshness_stamp(self) -> DeepAppraisalFreshnessStamp:
+            return self.stamp
+
+    async def scenario() -> None:
+        provider = ControlledPort()
+        live_state = LiveState()
+        task = asyncio.create_task(
+            DeepAppraisalInterpreter(provider, live_state, policy()).appraise(
+                event(),
+                None,
+                state(),
+                DeepAppraisalContext(),
+                request_id="request:1",
+                trace_id="trace:1",
+                created_at=NOW,
+            )
+        )
+        await provider.started.wait()
+        live_state.stamp = advanced_stamp
+        provider.release.set()
+        with pytest.raises(ValueError, match="stale"):
+            await task
+
+    asyncio.run(scenario())
+
+
+def test_interpret_preserves_request_revisions_after_live_freshness_gate() -> None:
+    class ImmediatePort:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            return result(request)
+
+    class LiveState:
+        async def freshness_stamp(self) -> DeepAppraisalFreshnessStamp:
+            return DeepAppraisalFreshnessStamp(7, 3)
+
+    candidate = asyncio.run(
+        DeepAppraisalInterpreter(ImmediatePort(), LiveState(), policy()).appraise(
+            event(),
+            None,
+            state(),
+            DeepAppraisalContext(),
+            request_id="request:1",
+            trace_id="trace:1",
+            created_at=NOW,
+        )
+    )
+    assert candidate.source_context_revision == 7
+    assert candidate.base_state_revision == 3
+
+
+@pytest.mark.parametrize(
+    "error", [RuntimeError("live state unavailable"), ValueError("no stable pair")]
+)
+def test_interpret_fails_closed_when_live_freshness_read_cannot_succeed(error: Exception) -> None:
+    class ImmediatePort:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            return result(request)
+
+    class FailingLiveState:
+        async def freshness_stamp(self) -> DeepAppraisalFreshnessStamp:
+            raise error
+
+    with pytest.raises(type(error), match=str(error)):
+        asyncio.run(
+            DeepAppraisalInterpreter(ImmediatePort(), FailingLiveState(), policy()).appraise(
+                event(),
+                None,
+                state(),
+                DeepAppraisalContext(),
+                request_id="request:1",
+                trace_id="trace:1",
+                created_at=NOW,
+            )
+        )
+
+
+def test_old_deep_result_cannot_be_reused_with_new_snapshot_or_context() -> None:
+    request = build_deep_request(
+        event(),
+        None,
+        state(),
+        DeepAppraisalContext(),
+        request_id="request:1",
+        trace_id="trace:1",
+        created_at=NOW,
+        policy=policy(),
+    )
+    with pytest.raises(ValueError, match="state does not match request snapshot"):
+        commit_deep_result(
+            request,
+            result(request),
+            event=event(),
+            snapshot=state(value=0.8),
+            context=DeepAppraisalContext(),
+            current_source_context_revision=7,
+            current_state_revision=3,
+            policy=policy(),
+        )
+    with pytest.raises(ValueError, match="context does not match request snapshot"):
+        commit_deep_result(
+            request,
+            result(request),
+            event=event(),
+            snapshot=state(),
+            context=DeepAppraisalContext(("goal:1",)),
+            current_source_context_revision=7,
+            current_state_revision=3,
+            policy=policy(),
+        )
+
+
+def test_live_state_port_returns_one_typed_freshness_stamp() -> None:
+    class LiveState:
+        async def freshness_stamp(self) -> DeepAppraisalFreshnessStamp:
+            return DeepAppraisalFreshnessStamp(7, 3)
+
+    port: DeepAppraisalLiveStatePort = LiveState()
+    assert asyncio.run(port.freshness_stamp()) == DeepAppraisalFreshnessStamp(7, 3)
+
+
+def test_reducer_rejects_conflict_that_occurs_after_live_freshness_gate() -> None:
+    class ImmediatePort:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            return result(request)
+
+    class LiveState:
+        async def freshness_stamp(self) -> DeepAppraisalFreshnessStamp:
+            return DeepAppraisalFreshnessStamp(7, 3)
+
+    live_gated = asyncio.run(
+        DeepAppraisalInterpreter(ImmediatePort(), LiveState(), policy()).appraise(
+            event(),
+            None,
+            state(),
+            DeepAppraisalContext(),
+            request_id="request:1",
+            trace_id="trace:1",
+            created_at=NOW,
+        )
+    )
+    competing_request = build_deep_request(
+        event(),
+        None,
+        state(),
+        DeepAppraisalContext(),
+        request_id="request:2",
+        trace_id="trace:2",
+        created_at=NOW,
+        policy=policy(),
+    )
+    competing = commit_deep_result(
+        competing_request,
+        result(competing_request),
+        event=event(),
+        snapshot=state(),
+        context=DeepAppraisalContext(),
+        current_source_context_revision=7,
+        current_state_revision=3,
+        policy=policy(),
+    )
+    reducer = InternalStateReducer(state())
+    reducer.commit(
+        competing,
+        current_source_context_revision=7,
+        committed_at=NOW + timedelta(seconds=3),
+    )
+    with pytest.raises(ValueError, match="stale for current state"):
+        reducer.commit(
+            live_gated,
+            current_source_context_revision=7,
+            committed_at=NOW + timedelta(seconds=4),
+        )
