@@ -157,6 +157,9 @@ def test_domain_rejects_cyclic_basis_refs() -> None:
         ("dispositions", "current_emotion"),
         ("preferences", "current_interest"),
         ("values", "goal"),
+        ("dispositions", "Current_emotion"),
+        ("preferences", "CURRENT_INTEREST"),
+        ("values", "Emotion"),
     ],
 )
 def test_domain_rejects_dynamic_state_facets(category: str, facet_id: str) -> None:

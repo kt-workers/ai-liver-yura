@@ -89,6 +89,11 @@ _DYNAMIC_FACET_IDS = frozenset(
 )
 
 
+def _is_dynamic_facet_id(facet_id: str) -> bool:
+    normalized = facet_id.casefold()
+    return normalized in _DYNAMIC_FACET_IDS or normalized.startswith("current_")
+
+
 @dataclass(frozen=True, slots=True)
 class CharacterAuthority:
     bible_path: str
@@ -176,7 +181,7 @@ class CharacterDefinitionDocument:
             if any(facet.facet_id not in allowed_ids for facet in getattr(self, profile_name)):
                 raise ValueError(f"{profile_name} に未許可のfacet idがあります")
         if any(
-            facet.facet_id in _DYNAMIC_FACET_IDS or facet.facet_id.startswith("current_")
+            _is_dynamic_facet_id(facet.facet_id)
             for name in _CATEGORIES
             for facet in getattr(self, name)
         ):
