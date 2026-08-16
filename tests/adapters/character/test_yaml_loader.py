@@ -60,6 +60,10 @@ def test_loads_valid_immutable_document() -> None:
             CharacterDefinitionLoadFailureCode.INVALID_SCHEMA,
         ),
         (
+            _yaml().replace("    value: Generic", "    unexpected: value"),
+            CharacterDefinitionLoadFailureCode.INVALID_SCHEMA,
+        ),
+        (
             _yaml().replace("schema_version: 1", "schema_version: 2"),
             CharacterDefinitionLoadFailureCode.UNSUPPORTED_SCHEMA_VERSION,
         ),
@@ -73,6 +77,16 @@ def test_loads_valid_immutable_document() -> None:
         ),
         (
             _yaml().replace("state: confirmed", "state: unknown", 1),
+            CharacterDefinitionLoadFailureCode.INVALID_SCHEMA,
+        ),
+        (
+            _yaml().replace("state: confirmed", "state: guessed", 1),
+            CharacterDefinitionLoadFailureCode.INVALID_SCHEMA,
+        ),
+        (
+            _yaml().replace(
+                "    state: not_configured", "    state: not_configured\n    value: forbidden"
+            ),
             CharacterDefinitionLoadFailureCode.INVALID_SCHEMA,
         ),
         (
