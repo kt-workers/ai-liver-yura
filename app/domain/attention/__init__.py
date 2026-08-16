@@ -23,16 +23,6 @@ from .contracts import (
 )
 from .coordinator import AttentionCoordinator
 from .ports import AttentionIngressPort, AttentionTriggerPort
-from .projectors import (
-    ActivityAttentionProjector,
-    AppraisalAttentionProjector,
-    AttentionProjectableFact,
-    CommitmentAttentionProjector,
-    GameAttentionProjector,
-    GoalAttentionProjector,
-    StreamingAttentionProjector,
-    UserInteractionAttentionProjector,
-)
 from .speech import scheduling_directives_for_trigger
 from .store import AttentionTurnStore
 
@@ -50,25 +40,17 @@ __all__ = [
     "AttentionCooldown",
     "AttentionCoordinator",
     "AttentionIngressPort",
-    "AttentionProjectableFact",
     "AttentionTransition",
     "AttentionTransitionOperation",
     "AttentionTurnStore",
     "AttentionTriggerPort",
-    "ActivityAttentionProjector",
-    "AppraisalAttentionProjector",
-    "CommitmentAttentionProjector",
     "ExecutiveTriggerEligibility",
     "InterruptionThreshold",
-    "GameAttentionProjector",
-    "GoalAttentionProjector",
     "SpeechCandidateSchedulingFact",
     "SpeechCandidateSchedulingPhase",
     "SpeechSchedulingDirective",
     "SpeechSchedulingOperation",
     "SpeechSchedulingView",
-    "StreamingAttentionProjector",
-    "UserInteractionAttentionProjector",
     "scheduling_directives_for_trigger",
     "transition_from_executive_intent",
 ]

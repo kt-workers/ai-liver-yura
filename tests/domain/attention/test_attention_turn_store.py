@@ -181,6 +181,58 @@ def test_direct_user_turn_protects_against_background_interruption() -> None:
     assert store.interruption_decision("reflection", NOW + timedelta(seconds=3)).allowed is False
 
 
+def test_direct_user_foreground_blocks_lower_priority_interrupt_claims() -> None:
+    store = AttentionTurnStore()
+    store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
+    store.offer(signal("normal", AttentionSourceKind.APPRAISAL, seconds=2))
+    store.offer(
+        signal(
+            "foreground",
+            AttentionSourceKind.GOAL,
+            seconds=3,
+            priority=AttentionPriority.FOREGROUND,
+        )
+    )
+    store.offer(signal("background", AttentionSourceKind.REFLECTION, seconds=4))
+    store.apply(
+        1,
+        (
+            transition(
+                AttentionTransitionOperation.ACQUIRE_FOREGROUND,
+                4,
+                1,
+                target_ref="user",
+                source_intent_ref="intent-user",
+            ),
+            transition(AttentionTransitionOperation.ASSIGN_TURN, 4, 1, value="user"),
+            transition(AttentionTransitionOperation.SET_RESPONSE_OBLIGATION, 4, 1, value="user"),
+        ),
+    )
+    claimed = [store.claim_next(0, NOW + timedelta(seconds=5 + item)) for item in range(5)]
+    assert {item.source_ref for item in claimed if item is not None} == {"user"}
+    assert store.interruption_decision("normal", NOW + timedelta(seconds=10)).allowed is False
+    assert store.interruption_decision("foreground", NOW + timedelta(seconds=10)).allowed is False
+    assert store.interruption_decision("background", NOW + timedelta(seconds=10)).allowed is False
+
+
+def test_transition_rejects_authoritative_context_advanced_after_creation() -> None:
+    store = AttentionTurnStore()
+    store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
+    old = transition(
+        AttentionTransitionOperation.ACQUIRE_FOREGROUND,
+        1,
+        1,
+        target_ref="user",
+        source_intent_ref="intent-user",
+    )
+    before = store.snapshot()
+    with pytest.raises(ValueError, match="stale"):
+        store.apply(2, (old,))
+    assert store.snapshot() == before
+    committed = store.apply(1, (old,))
+    assert committed.foreground_focus_ref == "user"
+
+
 def test_expiry_and_resolve_clear_invalid_references() -> None:
     store = AttentionTurnStore()
     store.offer(

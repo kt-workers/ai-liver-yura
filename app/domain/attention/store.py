@@ -231,6 +231,7 @@ class AttentionTurnStore:
                 raise ValueError("transitionは既に適用済みです")
             if any(item.expected_attention_revision != state.revision for item in values) or any(
                 item.expected_source_context_revision != state.source_context_revision
+                or item.expected_source_context_revision != source_context_revision
                 for item in values
             ):
                 raise ValueError("attention transitionはstaleです")
@@ -267,7 +268,7 @@ class AttentionTurnStore:
     ) -> ExecutiveTriggerEligibility | None:
         with self._lock:
             state = self._state
-            ordered = self._ordered_eligible(state, now)
+            ordered = self._ordered_claimable(state, now)
             if not ordered:
                 return None
             selected = ordered[0]
@@ -380,6 +381,15 @@ class AttentionTurnStore:
             candidates,
             key=lambda source: (-source.effective_priority, source.occurred_at, source.source_ref),
         )
+
+    def _ordered_claimable(
+        self, state: AttentionFocusState, now: datetime
+    ) -> list[AttentionSource]:
+        return [
+            source
+            for source in self._ordered_eligible(state, now)
+            if self._interruption_decision(state, source.source_ref, now).allowed
+        ]
 
     def _apply_priority_fairness(
         self, state: AttentionFocusState, candidates: list[AttentionSource]

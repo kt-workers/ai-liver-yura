@@ -2,15 +2,13 @@ import asyncio
 from datetime import datetime, timezone
 
 from app.domain.attention import (
-    AppraisalAttentionProjector,
     AttentionCoordinator,
     AttentionIngressOperation,
     AttentionIngressSignal,
-    AttentionProjectableFact,
+    AttentionPriority,
     AttentionSourceKind,
     AttentionTurnStore,
     ExecutiveTriggerEligibility,
-    UserInteractionAttentionProjector,
 )
 from app.domain.contracts import RevisionVector
 from app.runtime.kernel import (
@@ -84,8 +82,14 @@ def test_slow_preparation_and_presentation_do_not_block_attention_claim() -> Non
             _work(
                 "user-input",
                 "attention",
-                UserInteractionAttentionProjector().project(
-                    AttentionProjectableFact("user-1", 1, NOW)
+                AttentionIngressSignal(
+                    "user-signal",
+                    AttentionIngressOperation.OFFER,
+                    "user-1",
+                    AttentionSourceKind.USER_INTERACTION,
+                    1,
+                    NOW,
+                    trusted_direct_user=True,
                 ),
             )
         )
@@ -112,8 +116,14 @@ def test_slow_preparation_and_presentation_do_not_block_attention_claim() -> Non
             _work(
                 "appraisal",
                 "attention",
-                AppraisalAttentionProjector().project(
-                    AttentionProjectableFact("appraisal-1", 3, NOW)
+                AttentionIngressSignal(
+                    "appraisal-signal",
+                    AttentionIngressOperation.OFFER,
+                    "appraisal-1",
+                    AttentionSourceKind.APPRAISAL,
+                    3,
+                    NOW,
+                    requested_priority=AttentionPriority.NORMAL,
                 ),
             )
         )
