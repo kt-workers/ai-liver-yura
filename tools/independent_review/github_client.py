@@ -92,14 +92,22 @@ class GitHubClient:
         return base64.b64decode(content).decode("utf-8")
 
     def list_workflow_runs_for_head(self, head_sha: str) -> list[dict[str, object]]:
-        query = urllib.parse.urlencode({"head_sha": head_sha, "per_page": 50})
-        result = self._json("GET", f"/repos/{self.repository}/actions/runs?{query}")
-        if not isinstance(result, dict):
-            raise GitHubApiError("workflow run一覧の応答形式が不正です")
-        runs = result.get("workflow_runs")
-        if not isinstance(runs, list):
-            raise GitHubApiError("workflow run一覧が存在しないか形式が不正です")
-        return [item for item in runs if isinstance(item, dict)]
+        runs: list[dict[str, object]] = []
+        page = 1
+        while True:
+            query = urllib.parse.urlencode({"head_sha": head_sha, "per_page": 100, "page": page})
+            result = self._json("GET", f"/repos/{self.repository}/actions/runs?{query}")
+            if not isinstance(result, dict):
+                raise GitHubApiError("workflow run一覧の応答形式が不正です")
+            page_runs = result.get("workflow_runs")
+            if not isinstance(page_runs, list) or any(
+                not isinstance(item, dict) for item in page_runs
+            ):
+                raise GitHubApiError("workflow run一覧が存在しないか形式が不正です")
+            runs.extend(page_runs)
+            if len(page_runs) < 100:
+                return runs
+            page += 1
 
     def list_reviews(self, pr_number: int) -> list[dict[str, object]]:
         reviews: list[dict[str, object]] = []

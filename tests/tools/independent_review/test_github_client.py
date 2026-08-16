@@ -12,9 +12,7 @@ class PagingGitHubClient(GitHubClient):
         super().__init__("o/r", "token", "https://example.invalid")
         self.paths: list[str] = []
 
-    def _json(
-        self, method: str, path: str, *, data: dict[str, Any] | None = None
-    ) -> Any:
+    def _json(self, method: str, path: str, *, data: dict[str, Any] | None = None) -> Any:
         self.paths.append(path)
         if path.endswith("&page=1"):
             return [{"id": index} for index in range(100)]
@@ -34,11 +32,42 @@ def test_list_reviews_fetches_all_pages() -> None:
 @pytest.mark.parametrize("response", [[], {"workflow_runs": {}}, {}])
 def test_malformed_workflow_runs_response_is_rejected(response: object) -> None:
     class MalformedWorkflowRunsClient(GitHubClient):
-        def _json(
-            self, method: str, path: str, *, data: dict[str, Any] | None = None
-        ) -> Any:
+        def _json(self, method: str, path: str, *, data: dict[str, Any] | None = None) -> Any:
             return response
 
     client = MalformedWorkflowRunsClient("o/r", "token", "https://example.invalid")
+    with pytest.raises(GitHubApiError, match="workflow run一覧"):
+        client.list_workflow_runs_for_head("a" * 40)
+
+
+class WorkflowPagingGitHubClient(GitHubClient):
+    def __init__(self) -> None:
+        super().__init__("o/r", "token", "https://example.invalid")
+        self.paths: list[str] = []
+
+    def _json(self, method: str, path: str, *, data: dict[str, Any] | None = None) -> Any:
+        self.paths.append(path)
+        if path.endswith("&page=1"):
+            return {"workflow_runs": [{"id": index} for index in range(100)]}
+        return {"workflow_runs": [{"id": 100}]}
+
+
+def test_list_workflow_runs_fetches_all_pages() -> None:
+    client = WorkflowPagingGitHubClient()
+    runs = client.list_workflow_runs_for_head("a" * 40)
+
+    assert len(runs) == 101
+    assert client.paths == [
+        "/repos/o/r/actions/runs?head_sha=" + "a" * 40 + "&per_page=100&page=1",
+        "/repos/o/r/actions/runs?head_sha=" + "a" * 40 + "&per_page=100&page=2",
+    ]
+
+
+def test_non_mapping_workflow_run_is_rejected() -> None:
+    class InvalidElementClient(GitHubClient):
+        def _json(self, method: str, path: str, *, data: dict[str, Any] | None = None) -> Any:
+            return {"workflow_runs": [{"id": 1}, "invalid"]}
+
+    client = InvalidElementClient("o/r", "token", "https://example.invalid")
     with pytest.raises(GitHubApiError, match="workflow run一覧"):
         client.list_workflow_runs_for_head("a" * 40)
