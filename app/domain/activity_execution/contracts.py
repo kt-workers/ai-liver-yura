@@ -16,6 +16,7 @@ from app.domain.contracts import (
     IntentRef,
     PreconditionRef,
     RevisionVector,
+    SourceLifecycleOperation,
     SystemCommand,
 )
 from app.domain.contracts.common import (
@@ -274,6 +275,7 @@ class ActivityExecutionRecord:
     dispatch_id: str | None = None
     cancellation_reason: str | None = None
     cancellation_requested_at: datetime | None = None
+    record_revision: int = 0
 
     def __post_init__(self) -> None:
         if not isinstance(self.invocation, ActivityInvocation):
@@ -293,6 +295,8 @@ class ActivityExecutionRecord:
             require_identifier(self.cancellation_reason, "cancellation_reason")
             assert self.cancellation_requested_at is not None
             require_aware(self.cancellation_requested_at, "cancellation_requested_at")
+        if type(self.record_revision) is not int or self.record_revision < 0:
+            raise ValueError("record_revision must be a non-negative int")
 
     @property
     def terminal(self) -> bool:
@@ -305,3 +309,38 @@ class ActivityExecutionRecord:
             ExecutionStatus.TIMED_OUT,
             ExecutionStatus.SUPERSEDED,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class ActivityExecutionLifecycleFact:
+    fact_id: str
+    command_id: str
+    operation: SourceLifecycleOperation
+    source_revision: int
+    expected_source_revision: int | None
+    status: ExecutionStatus
+    occurred_at: datetime
+    effect_refs: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        for name in ("fact_id", "command_id"):
+            require_identifier(getattr(self, name), name)
+        if not isinstance(self.operation, SourceLifecycleOperation) or not isinstance(
+            self.status, ExecutionStatus
+        ):
+            raise ValueError("activity lifecycle factが不正です")
+        if type(self.source_revision) is not int or self.source_revision < 0:
+            raise ValueError("source_revisionが不正です")
+        if self.expected_source_revision is not None and (
+            type(self.expected_source_revision) is not int or self.expected_source_revision < 0
+        ):
+            raise ValueError("expected_source_revisionが不正です")
+        if (self.operation is SourceLifecycleOperation.OPEN) != (
+            self.expected_source_revision is None
+        ):
+            raise ValueError("activity lifecycle operationとexpected revisionが一致しません")
+        require_aware(self.occurred_at, "occurred_at")
+        refs = tuple(self.effect_refs)
+        if any(not isinstance(item, str) or not item.strip() for item in refs):
+            raise ValueError("effect_refsが不正です")
+        object.__setattr__(self, "effect_refs", refs)

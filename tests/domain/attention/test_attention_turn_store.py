@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.domain.attention import (
+    AttentionClaimRelation,
     AttentionIngressOperation,
     AttentionIngressSignal,
     AttentionPriority,
@@ -25,6 +26,8 @@ def signal(
     priority: AttentionPriority | None = None,
     trusted_direct_user: bool = False,
     expires_in: int | None = None,
+    source_revision: int | None = None,
+    expected_source_revision: int | None = None,
 ) -> AttentionIngressSignal:
     occurred_at = NOW + timedelta(seconds=seconds)
     return AttentionIngressSignal(
@@ -34,6 +37,8 @@ def signal(
         kind,
         revision,
         occurred_at,
+        source_revision=source_revision,
+        expected_source_revision=expected_source_revision,
         requested_priority=priority,
         expires_at=None if expires_in is None else occurred_at + timedelta(seconds=expires_in),
         trusted_direct_user=trusted_direct_user,
@@ -80,11 +85,75 @@ def test_offer_refresh_resolve_and_monotonic_source_context_revision() -> None:
     )
     assert refreshed.sources[0].coalesced_count == 2
     with pytest.raises(ValueError, match="巻き戻せません"):
-        store.offer(signal("goal", AttentionSourceKind.GOAL, revision=3))
+        store.offer(
+            signal(
+                "goal",
+                AttentionSourceKind.GOAL,
+                revision=3,
+                source_revision=1,
+            )
+        )
     resolved = store.resolve(
         signal("appraisal", revision=4, seconds=3, operation=AttentionIngressOperation.RESOLVE)
     )
     assert resolved.sources == () and state.revision < resolved.revision
+
+
+def test_versioned_stable_source_requires_open_refresh_and_close_cas() -> None:
+    store = AttentionTurnStore()
+    store.offer(
+        signal(
+            "goal",
+            AttentionSourceKind.GOAL,
+            source_revision=1,
+        )
+    )
+    refreshed = store.offer(
+        signal(
+            "goal",
+            AttentionSourceKind.GOAL,
+            seconds=2,
+            operation=AttentionIngressOperation.REFRESH,
+            source_revision=2,
+            expected_source_revision=1,
+        )
+    )
+    before = refreshed
+    with pytest.raises(ValueError, match="stale"):
+        store.offer(
+            signal(
+                "goal",
+                AttentionSourceKind.GOAL,
+                seconds=3,
+                operation=AttentionIngressOperation.REFRESH,
+                source_revision=3,
+                expected_source_revision=1,
+            )
+        )
+    assert store.snapshot() == before
+    with pytest.raises(ValueError, match="stale"):
+        store.resolve(
+            signal(
+                "goal",
+                AttentionSourceKind.GOAL,
+                seconds=3,
+                operation=AttentionIngressOperation.RESOLVE,
+                source_revision=3,
+                expected_source_revision=1,
+            )
+        )
+    assert store.snapshot() == before
+    closed = store.resolve(
+        signal(
+            "goal",
+            AttentionSourceKind.GOAL,
+            seconds=4,
+            operation=AttentionIngressOperation.RESOLVE,
+            source_revision=3,
+            expected_source_revision=2,
+        )
+    )
+    assert closed.sources == ()
 
 
 def test_policy_rejects_direct_user_spoofing_and_out_of_range_priority() -> None:
@@ -191,6 +260,7 @@ def test_direct_user_foreground_blocks_lower_priority_interrupt_claims() -> None
             AttentionSourceKind.GOAL,
             seconds=3,
             priority=AttentionPriority.FOREGROUND,
+            source_revision=1,
         )
     )
     store.offer(signal("background", AttentionSourceKind.REFLECTION, seconds=4))
@@ -213,6 +283,60 @@ def test_direct_user_foreground_blocks_lower_priority_interrupt_claims() -> None
     assert store.interruption_decision("normal", NOW + timedelta(seconds=10)).allowed is False
     assert store.interruption_decision("foreground", NOW + timedelta(seconds=10)).allowed is False
     assert store.interruption_decision("background", NOW + timedelta(seconds=10)).allowed is False
+
+
+def test_claim_relation_separates_continuation_from_challenger_interrupt() -> None:
+    store = AttentionTurnStore()
+    store.offer(signal("normal", seconds=1))
+    store.apply(
+        1,
+        (
+            transition(
+                AttentionTransitionOperation.ACQUIRE_FOREGROUND,
+                1,
+                1,
+                target_ref="normal",
+                source_intent_ref="intent-normal",
+            ),
+        ),
+    )
+    claimed = store.claim_next(0, NOW + timedelta(seconds=2))
+    assert claimed is not None
+    assert claimed.source_ref == "normal"
+    assert claimed.claim_relation is AttentionClaimRelation.FOREGROUND_CONTINUATION
+    assert claimed.interruption_allowed is False
+
+
+def test_direct_user_obligation_without_foreground_only_claims_direct_users() -> None:
+    store = AttentionTurnStore()
+    store.offer(signal("user-a", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
+    store.offer(
+        signal("user-b", AttentionSourceKind.USER_INTERACTION, seconds=2, trusted_direct_user=True)
+    )
+    store.offer(signal("normal", seconds=3))
+    store.offer(
+        signal(
+            "foreground",
+            AttentionSourceKind.GOAL,
+            seconds=4,
+            priority=AttentionPriority.FOREGROUND,
+            source_revision=1,
+        )
+    )
+    store.apply(
+        1,
+        (
+            transition(AttentionTransitionOperation.ASSIGN_TURN, 4, 1, value="user-a"),
+            transition(AttentionTransitionOperation.SET_RESPONSE_OBLIGATION, 4, 1, value="user-a"),
+        ),
+    )
+    first = store.claim_next(0, NOW + timedelta(seconds=5))
+    second = store.claim_next(0, NOW + timedelta(seconds=6))
+    third = store.claim_next(0, NOW + timedelta(seconds=7))
+    claimed = [item for item in (first, second, third) if item is not None]
+    assert {item.source_ref for item in claimed} <= {"user-a", "user-b"}
+    assert claimed[0].claim_relation is AttentionClaimRelation.OBLIGATION_CONTINUATION
+    assert any(item.source_ref == "user-b" for item in claimed)
 
 
 def test_transition_rejects_authoritative_context_advanced_after_creation() -> None:

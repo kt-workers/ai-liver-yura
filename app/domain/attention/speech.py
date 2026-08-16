@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from .contracts import (
+    AttentionClaimRelation,
     ExecutiveTriggerEligibility,
     SpeechCandidateSchedulingFact,
     SpeechSchedulingDirective,
@@ -38,6 +39,7 @@ def scheduling_directives_for_trigger(
         presenting is not None
         and presenting.interruptible
         and presenting.priority < trigger.priority
+        and trigger.claim_relation is AttentionClaimRelation.CHALLENGER_INTERRUPT
         and trigger.interruption_allowed
     ):
         directives.append(

@@ -32,6 +32,7 @@ from app.domain.contracts import (
     IntentRef,
     PreconditionRef,
     RevisionVector,
+    SourceLifecycleOperation,
     SystemCommand,
 )
 from app.domain.contracts.common import JsonValue
@@ -154,6 +155,36 @@ def test_admission_binds_current_capability_and_accepts_valid_command() -> None:
     assert record.result.status is ExecutionStatus.ACCEPTED
     assert record.bindings[0].capability_id == "capability-1"
     assert record.bindings[0].descriptor_revision == 2
+
+
+def test_activity_owner_facts_carry_requested_open_and_execution_lifecycle() -> None:
+    authority = ActivityExecutionAuthority()
+    accepted = authority.admit(invocation(), preflight())
+    opened, admitted = authority.lifecycle_facts()
+    assert opened.operation is SourceLifecycleOperation.OPEN
+    assert opened.status is ExecutionStatus.REQUESTED
+    assert admitted.operation is SourceLifecycleOperation.REFRESH
+    assert admitted.expected_source_revision == opened.source_revision
+    started_record = authority.start(
+        accepted.result.command_id, preflight(), NOW + timedelta(seconds=1), DISPATCH_ID
+    )
+    started_fact = authority.lifecycle_facts()[-1]
+    assert started_record.record_revision == started_fact.source_revision
+    assert started_fact.operation is SourceLifecycleOperation.REFRESH
+    completed = authority.apply_report(
+        ExecutionAdapterReport(
+            accepted.result.command_id,
+            accepted.invocation.invocation_id,
+            DISPATCH_ID,
+            ExecutionStatus.COMPLETED,
+            NOW + timedelta(seconds=2),
+            {},
+        )
+    )
+    closed = authority.lifecycle_facts()[-1]
+    assert completed.terminal is True
+    assert closed.operation is SourceLifecycleOperation.CLOSE
+    assert closed.expected_source_revision == completed.record_revision - 1
 
 
 def test_command_authority_reference_must_match_decision() -> None:

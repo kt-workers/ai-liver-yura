@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.domain.contracts import SourceLifecycleOperation
 from app.domain.executive import (
     CommitmentTransitionIntent,
     CommitmentTransitionOperation,
@@ -192,6 +193,33 @@ def test_goal_lifecycle_create_activate_suspend_resume_complete() -> None:
     assert goal.precondition_ids == ("pre-goal-1",)
     assert goal.completion_condition_refs == ("complete-goal-1",)
     assert goal.interruption_policy.value == "protected"
+
+
+def test_goal_and_commitment_owner_facts_carry_open_refresh_and_close_cas() -> None:
+    store = GoalCommitmentStore()
+    apply_goal(store, GoalTransitionOperation.CREATE, 0)
+    opened = store.lifecycle_facts()
+    assert len(opened) == 1
+    assert opened[0].operation is SourceLifecycleOperation.OPEN
+    assert opened[0].expected_source_revision is None
+    apply_goal(store, GoalTransitionOperation.ACTIVATE, 1)
+    refreshed = store.lifecycle_facts()
+    assert len(refreshed) == 1
+    assert refreshed[0].operation is SourceLifecycleOperation.REFRESH
+    assert refreshed[0].expected_source_revision == 1
+    apply_goal(store, GoalTransitionOperation.COMPLETE, 2)
+    closed = store.lifecycle_facts()
+    assert len(closed) == 1
+    assert closed[0].operation is SourceLifecycleOperation.CLOSE
+    assert closed[0].expected_source_revision == 2
+
+    commitment_store = GoalCommitmentStore()
+    apply_commitment(commitment_store, CommitmentTransitionOperation.CREATE, 0)
+    assert commitment_store.lifecycle_facts()[0].operation is SourceLifecycleOperation.OPEN
+    apply_commitment(commitment_store, CommitmentTransitionOperation.ACTIVATE, 1)
+    assert commitment_store.lifecycle_facts()[0].operation is SourceLifecycleOperation.REFRESH
+    apply_commitment(commitment_store, CommitmentTransitionOperation.RELEASE, 2)
+    assert commitment_store.lifecycle_facts()[0].operation is SourceLifecycleOperation.CLOSE
 
 
 def test_goal_create_rejects_dangling_commitment_reference_atomically() -> None:

@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from threading import Lock
 
+from app.domain.contracts import SourceLifecycleOperation
 from app.domain.contracts.common import utc_instant
 from app.domain.executive import (
     CommitmentTransitionOperation,
@@ -12,10 +13,12 @@ from app.domain.executive import (
 )
 
 from .contracts import (
+    CommitmentLifecycleProjectionFact,
     CommitmentState,
     CommitmentStatus,
     GoalCommitmentSnapshot,
     GoalKind,
+    GoalLifecycleProjectionFact,
     GoalState,
     GoalStatus,
     InterruptionPolicy,
@@ -89,11 +92,20 @@ class GoalCommitmentStore:
         )
         self._decision_ids: set[str] = set()
         self._intent_ids: set[str] = set()
+        self._lifecycle_facts: tuple[
+            GoalLifecycleProjectionFact | CommitmentLifecycleProjectionFact, ...
+        ] = ()
         self._lock = Lock()
 
     def snapshot(self) -> GoalCommitmentSnapshot:
         with self._lock:
             return self._snapshot
+
+    def lifecycle_facts(
+        self,
+    ) -> tuple[GoalLifecycleProjectionFact | CommitmentLifecycleProjectionFact, ...]:
+        with self._lock:
+            return self._lifecycle_facts
 
     def apply(self, decision: CommittedExecutiveDecision) -> GoalCommitmentSnapshot:
         if not isinstance(decision, CommittedExecutiveDecision):
@@ -144,9 +156,71 @@ class GoalCommitmentStore:
                 decision.committed_at,
             )
             self._snapshot = snapshot
+            self._lifecycle_facts = self._facts(current, snapshot)
             self._decision_ids.add(decision.decision_id)
             self._intent_ids.update(intent_ids)
             return snapshot
+
+    @staticmethod
+    def _facts(
+        before: GoalCommitmentSnapshot, after: GoalCommitmentSnapshot
+    ) -> tuple[GoalLifecycleProjectionFact | CommitmentLifecycleProjectionFact, ...]:
+        result: list[GoalLifecycleProjectionFact | CommitmentLifecycleProjectionFact] = []
+        old_goals = {item.goal_id: item for item in before.goals}
+        for goal in after.goals:
+            old = old_goals.get(goal.goal_id)
+            if old == goal:
+                continue
+            op = (
+                SourceLifecycleOperation.OPEN
+                if old is None
+                else (
+                    SourceLifecycleOperation.CLOSE
+                    if goal.terminal
+                    else SourceLifecycleOperation.REFRESH
+                )
+            )
+            result.append(
+                GoalLifecycleProjectionFact(
+                    f"goal-lifecycle-{goal.goal_id}-{goal.revision}",
+                    goal.goal_id,
+                    op,
+                    goal.revision,
+                    None if old is None else old.revision,
+                    goal.status,
+                    goal.priority,
+                    after.revision,
+                    after.updated_at,
+                )
+            )
+        old_commitments = {item.commitment_id: item for item in before.commitments}
+        for commitment in after.commitments:
+            previous = old_commitments.get(commitment.commitment_id)
+            if previous == commitment:
+                continue
+            op = (
+                SourceLifecycleOperation.OPEN
+                if previous is None
+                else (
+                    SourceLifecycleOperation.CLOSE
+                    if commitment.terminal
+                    else SourceLifecycleOperation.REFRESH
+                )
+            )
+            result.append(
+                CommitmentLifecycleProjectionFact(
+                    f"commitment-lifecycle-{commitment.commitment_id}-{commitment.revision}",
+                    commitment.commitment_id,
+                    op,
+                    commitment.revision,
+                    None if previous is None else previous.revision,
+                    commitment.status,
+                    commitment.priority,
+                    after.revision,
+                    after.updated_at,
+                )
+            )
+        return tuple(result)
 
     @staticmethod
     def _validate_references(

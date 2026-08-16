@@ -4,7 +4,12 @@ from dataclasses import replace
 from datetime import datetime
 from threading import Lock
 
-from app.domain.contracts import ExecutionResult, ExecutionStatus, RevisionVector
+from app.domain.contracts import (
+    ExecutionResult,
+    ExecutionStatus,
+    RevisionVector,
+    SourceLifecycleOperation,
+)
 from app.domain.contracts.common import (
     freeze_json,
     require_aware,
@@ -13,6 +18,7 @@ from app.domain.contracts.common import (
 )
 
 from .contracts import (
+    ActivityExecutionLifecycleFact,
     ActivityExecutionRecord,
     ActivityInvocation,
     CapabilityBinding,
@@ -35,6 +41,7 @@ class ActivityExecutionAuthority:
         self._allowed_authorities = frozenset(allowed_authorities)
         self._records: dict[str, ActivityExecutionRecord] = {}
         self._invocation_ids: set[str] = set()
+        self._lifecycle_facts: list[ActivityExecutionLifecycleFact] = []
         self._lock = Lock()
 
     def admit(
@@ -82,8 +89,10 @@ class ActivityExecutionAuthority:
             else:
                 result = requested.transition_to(ExecutionStatus.ACCEPTED, admitted_at)
                 bindings_tuple = bindings
-            record = ActivityExecutionRecord(invocation, bindings_tuple, result)
-            self._records[command.command_id] = record
+            requested_record = ActivityExecutionRecord(invocation, bindings_tuple, requested)
+            self._commit(None, requested_record)
+            record = replace(requested_record, result=result, record_revision=1)
+            self._commit(requested_record, record)
             self._invocation_ids.add(invocation.invocation_id)
             return record
 
@@ -115,7 +124,8 @@ class ActivityExecutionAuthority:
                 result=result,
                 dispatch_id=dispatch_id if result.status is ExecutionStatus.STARTED else None,
             )
-            self._records[command_id] = updated
+            updated = replace(updated, record_revision=record.record_revision + 1)
+            self._commit(record, updated)
             return updated
 
     def apply_report(self, report: ExecutionAdapterReport) -> ActivityExecutionRecord:
@@ -157,9 +167,7 @@ class ActivityExecutionAuthority:
                     )
                     if result.status is ExecutionStatus.STARTED:
                         milestone = (
-                            ExecutionStatus.APPLIED
-                            if has_applied
-                            else ExecutionStatus.OBSERVABLE
+                            ExecutionStatus.APPLIED if has_applied else ExecutionStatus.OBSERVABLE
                         )
                     elif result.status is ExecutionStatus.OBSERVABLE:
                         milestone = ExecutionStatus.OBSERVABLE
@@ -180,7 +188,8 @@ class ActivityExecutionAuthority:
                     effect_refs=effect_refs,
                 )
                 updated = replace(record, result=result)
-                self._records[report.command_id] = updated
+                updated = replace(updated, record_revision=record.record_revision + 1)
+                self._commit(record, updated)
                 return updated
             updated = replace(
                 record,
@@ -191,7 +200,8 @@ class ActivityExecutionAuthority:
                     effect_refs=effect_refs,
                 ),
             )
-            self._records[report.command_id] = updated
+            updated = replace(updated, record_revision=record.record_revision + 1)
+            self._commit(record, updated)
             return updated
 
     def fail_adapter_contract(
@@ -215,7 +225,8 @@ class ActivityExecutionAuthority:
                     details={"code": "adapter_contract_failure"},
                 ),
             )
-            self._records[command_id] = updated
+            updated = replace(updated, record_revision=record.record_revision + 1)
+            self._commit(record, updated)
             return updated
 
     def request_cancellation(
@@ -249,7 +260,8 @@ class ActivityExecutionAuthority:
                 cancellation_reason=reason,
                 cancellation_requested_at=requested_at,
             )
-            self._records[command_id] = updated
+            updated = replace(updated, record_revision=record.record_revision + 1)
+            self._commit(record, updated)
             return updated
 
     def supersede(self, command_id: str, occurred_at: datetime) -> ActivityExecutionRecord:
@@ -263,12 +275,43 @@ class ActivityExecutionAuthority:
                     details={"code": "stale_after_start"},
                 ),
             )
-            self._records[command_id] = updated
+            updated = replace(updated, record_revision=record.record_revision + 1)
+            self._commit(record, updated)
             return updated
 
     def snapshot(self, command_id: str) -> ActivityExecutionRecord | None:
         with self._lock:
             return self._records.get(command_id)
+
+    def lifecycle_facts(self) -> tuple[ActivityExecutionLifecycleFact, ...]:
+        with self._lock:
+            return tuple(self._lifecycle_facts)
+
+    def _commit(
+        self, before: ActivityExecutionRecord | None, after: ActivityExecutionRecord
+    ) -> None:
+        self._records[after.result.command_id] = after
+        operation = (
+            SourceLifecycleOperation.OPEN
+            if before is None
+            else (
+                SourceLifecycleOperation.CLOSE
+                if after.terminal
+                else SourceLifecycleOperation.REFRESH
+            )
+        )
+        self._lifecycle_facts.append(
+            ActivityExecutionLifecycleFact(
+                f"activity-lifecycle-{after.result.command_id}-{after.record_revision}",
+                after.result.command_id,
+                operation,
+                after.record_revision,
+                None if before is None else before.record_revision,
+                after.result.status,
+                after.result.occurred_at,
+                after.result.effect_refs,
+            )
+        )
 
     def _require_record(self, command_id: str) -> ActivityExecutionRecord:
         record = self._records.get(command_id)

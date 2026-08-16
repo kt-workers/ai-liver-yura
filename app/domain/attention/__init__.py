@@ -1,5 +1,6 @@
 from .authority import transition_from_executive_intent
 from .contracts import (
+    AttentionClaimRelation,
     AttentionCooldown,
     AttentionFocusState,
     AttentionFocusView,
@@ -38,6 +39,7 @@ __all__ = [
     "AttentionSource",
     "AttentionSourceKind",
     "AttentionCooldown",
+    "AttentionClaimRelation",
     "AttentionCoordinator",
     "AttentionIngressPort",
     "AttentionTransition",

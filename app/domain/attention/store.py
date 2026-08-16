@@ -6,6 +6,7 @@ from threading import Lock
 from typing import Any
 
 from .contracts import (
+    AttentionClaimRelation,
     AttentionCooldown,
     AttentionFocusState,
     AttentionFocusView,
@@ -76,6 +77,7 @@ class AttentionTurnStore:
                 raise ValueError("既知sourceにはrefresh signalが必要です")
             if signal.operation is AttentionIngressOperation.REFRESH and current is None:
                 raise ValueError("未知sourceはrefreshできません")
+            self._validate_lifecycle_offer_or_refresh(signal, current)
             effective = self._effective_priority(signal)
             if current is not None:
                 if current.kind is not signal.source_kind:
@@ -84,12 +86,6 @@ class AttentionTurnStore:
                     raise ValueError("refresh時刻を巻き戻せません")
                 if signal.source_context_revision < current.source_context_revision:
                     raise ValueError("source context revisionを巻き戻せません")
-                if (
-                    signal.source_revision is not None
-                    and current.source_revision is not None
-                    and signal.source_revision < current.source_revision
-                ):
-                    raise ValueError("source revisionを巻き戻せません")
                 source_by_ref[signal.source_ref] = AttentionSource(
                     current.source_ref,
                     current.kind,
@@ -140,6 +136,20 @@ class AttentionTurnStore:
             )
             if source.kind is not signal.source_kind:
                 raise ValueError("resolveはsource kindを変更できません")
+            if self._is_versioned_stable(source.kind):
+                current_source_revision = source.source_revision
+                if (
+                    signal.source_revision is None
+                    or current_source_revision is None
+                    or signal.expected_source_revision != current_source_revision
+                    or signal.source_revision <= current_source_revision
+                ):
+                    raise ValueError("resolve source revisionがstaleです")
+            elif source.source_revision is not None:
+                if signal.expected_source_revision != source.source_revision:
+                    raise ValueError("resolve source revisionがstaleです")
+            elif signal.occurred_at < source.last_refreshed_at:
+                raise ValueError("resolve時刻がstaleです")
             sources = tuple(
                 source for source in state.sources if source.source_ref != signal.source_ref
             )
@@ -324,6 +334,36 @@ class AttentionTurnStore:
             )
         return requested
 
+    @staticmethod
+    def _is_versioned_stable(kind: AttentionSourceKind) -> bool:
+        return kind in {
+            AttentionSourceKind.GOAL,
+            AttentionSourceKind.COMMITMENT,
+            AttentionSourceKind.ACTIVITY,
+        }
+
+    def _validate_lifecycle_offer_or_refresh(
+        self, signal: AttentionIngressSignal, current: AttentionSource | None
+    ) -> None:
+        if not self._is_versioned_stable(signal.source_kind):
+            return
+        if signal.operation is AttentionIngressOperation.OFFER:
+            if (
+                current is not None
+                or signal.source_revision is None
+                or signal.expected_source_revision is not None
+            ):
+                raise ValueError("versioned stable sourceのopenが不正です")
+            return
+        if (
+            current is None
+            or current.source_revision is None
+            or signal.source_revision is None
+            or signal.expected_source_revision != current.source_revision
+            or signal.source_revision <= current.source_revision
+        ):
+            raise ValueError("versioned stable sourceのrefreshがstaleです")
+
     def _admit(
         self,
         sources: dict[str, AttentionSource],
@@ -385,11 +425,28 @@ class AttentionTurnStore:
     def _ordered_claimable(
         self, state: AttentionFocusState, now: datetime
     ) -> list[AttentionSource]:
-        return [
+        active = [source for source in state.sources if self._active(source, now)]
+        claimable = [
             source
-            for source in self._ordered_eligible(state, now)
-            if self._interruption_decision(state, source.source_ref, now).allowed
+            for source in active
+            if self._claim_relation(state, source)
+            is not AttentionClaimRelation.CHALLENGER_INTERRUPT
+            or self._interruption_decision(state, source.source_ref, now).allowed
         ]
+        cooldown_refs = {
+            item.source_ref
+            for item in state.cooldowns
+            if item.eligible_after_epoch > state.selection_epoch
+        }
+        without_cooldown = [
+            source for source in claimable if source.source_ref not in cooldown_refs
+        ]
+        candidates = without_cooldown or claimable
+        candidates = self._apply_priority_fairness(state, candidates)
+        return sorted(
+            candidates,
+            key=lambda source: (-source.effective_priority, source.occurred_at, source.source_ref),
+        )
 
     def _apply_priority_fairness(
         self, state: AttentionFocusState, candidates: list[AttentionSource]
@@ -440,6 +497,7 @@ class AttentionTurnStore:
         now: datetime,
         epoch: str,
     ) -> ExecutiveTriggerEligibility:
+        relation = self._claim_relation(state, source)
         decision = self._interruption_decision(state, source.source_ref, now)
         return ExecutiveTriggerEligibility(
             f"attention-{epoch}-{source.source_ref}",
@@ -451,8 +509,20 @@ class AttentionTurnStore:
             state.revision,
             now,
             source.source_revision,
-            decision.allowed,
+            decision.allowed if relation is AttentionClaimRelation.CHALLENGER_INTERRUPT else False,
+            relation,
         )
+
+    def _claim_relation(
+        self, state: AttentionFocusState, source: AttentionSource
+    ) -> AttentionClaimRelation:
+        if source.source_ref in {state.current_turn_owner, state.response_obligation}:
+            return AttentionClaimRelation.OBLIGATION_CONTINUATION
+        if source.source_ref == state.foreground_focus_ref:
+            return AttentionClaimRelation.FOREGROUND_CONTINUATION
+        if state.foreground_focus_ref is None and not self._protected_direct_user(state):
+            return AttentionClaimRelation.IDLE_START
+        return AttentionClaimRelation.CHALLENGER_INTERRUPT
 
     def _interruption_decision(
         self, state: AttentionFocusState, challenger_ref: str, now: datetime
@@ -467,9 +537,9 @@ class AttentionTurnStore:
             None if foreground is None else foreground.effective_priority
         )
         protected_user = self._protected_direct_user(state)
-        allowed = source.effective_priority >= minimum and not (
-            protected_user and source.effective_priority is AttentionPriority.BACKGROUND
-        )
+        if protected_user:
+            minimum = AttentionPriority.DIRECT_USER
+        allowed = source.effective_priority >= minimum
         return AttentionInterruptionDecision(challenger_ref, allowed, minimum)
 
     @staticmethod

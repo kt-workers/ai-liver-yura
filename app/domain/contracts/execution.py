@@ -218,9 +218,7 @@ class AsyncWorkResult:
             "request_id": self.request_id,
             "status": self.status.value,
             "revisions": self.revisions.to_dict(),
-            "started_at": None
-            if self.started_at is None
-            else timestamp_to_json(self.started_at),
+            "started_at": None if self.started_at is None else timestamp_to_json(self.started_at),
             "completed_at": timestamp_to_json(self.completed_at),
             "result": thaw_json(self.result),
             "error_code": self.error_code,

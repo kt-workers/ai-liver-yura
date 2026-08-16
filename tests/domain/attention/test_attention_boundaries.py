@@ -4,6 +4,7 @@ import pytest
 
 from app.domain.activity_execution import (
     ActivityExecutionAuthority,
+    ActivityExecutionLifecycleFact,
     ActivityExecutionRecord,
     ActivityInterruptibility,
     ActivityInvocation,
@@ -30,9 +31,15 @@ from app.domain.contracts import (
     IntentKind,
     IntentRef,
     RevisionVector,
+    SourceLifecycleOperation,
     SystemCommand,
 )
-from app.domain.goals import AutonomyTrigger, AutonomyTriggerKind
+from app.domain.goals import (
+    CommitmentLifecycleProjectionFact,
+    CommitmentStatus,
+    GoalLifecycleProjectionFact,
+    GoalStatus,
+)
 from app.domain.input_gateway import (
     InputAdmission,
     InputAdmissionStatus,
@@ -44,9 +51,9 @@ from app.domain.input_gateway import (
 from app.usecases.attention import (
     ActivityAttentionProjector,
     AppraisalAttentionProjector,
+    AttentionProjectionEnvelope,
     CommitmentAttentionProjector,
     GoalAttentionProjector,
-    GoalCommitmentAttentionFact,
     UserInteractionAttentionProjector,
 )
 
@@ -123,20 +130,38 @@ def test_user_projector_requires_accepted_input_gateway_provenance() -> None:
 
 def test_typed_appraisal_and_goal_commitment_facts_are_projected() -> None:
     assert AppraisalAttentionProjector().project(appraisal_candidate()).source_ref == "appraisal-1"
-    goal = GoalCommitmentAttentionFact(
-        AutonomyTrigger("goal-1", AutonomyTriggerKind.ACTIVE_GOAL, "goal-1", 4, 80), 4, NOW
-    )
-    commitment = GoalCommitmentAttentionFact(
-        AutonomyTrigger(
-            "commitment-1", AutonomyTriggerKind.COMMITMENT_DUE_CHECK, "commitment-1", 4, 80
+    goal = AttentionProjectionEnvelope(
+        GoalLifecycleProjectionFact(
+            "goal-fact-1",
+            "goal-1",
+            SourceLifecycleOperation.OPEN,
+            4,
+            None,
+            GoalStatus.ACTIVE,
+            80,
+            4,
+            NOW,
         ),
         4,
-        NOW,
+    )
+    commitment = AttentionProjectionEnvelope(
+        CommitmentLifecycleProjectionFact(
+            "commitment-fact-1",
+            "commitment-1",
+            SourceLifecycleOperation.OPEN,
+            4,
+            None,
+            CommitmentStatus.ACTIVE,
+            80,
+            4,
+            NOW,
+        ),
+        4,
     )
     assert GoalAttentionProjector().project(goal).source_ref == "goal-1"
     assert CommitmentAttentionProjector().project(commitment).source_ref == "commitment-1"
     with pytest.raises(ValueError):
-        GoalAttentionProjector().project(commitment)
+        GoalAttentionProjector().project(commitment)  # type: ignore[arg-type]
 
 
 def test_activity_projector_rejects_intent_and_accepts_actual_execution_fact() -> None:
@@ -144,7 +169,19 @@ def test_activity_projector_rejects_intent_and_accepts_actual_execution_fact() -
     projector = ActivityAttentionProjector()
     with pytest.raises(ValueError):
         projector.project(invocation)  # type: ignore[arg-type]
-    assert projector.project(record).source_ref == "command-1"
+    lifecycle = ActivityExecutionLifecycleFact(
+        "activity-fact-1",
+        record.result.command_id,
+        SourceLifecycleOperation.CLOSE,
+        3,
+        2,
+        record.result.status,
+        record.result.occurred_at,
+        (),
+    )
+    signal = projector.project(AttentionProjectionEnvelope(lifecycle, 5))
+    assert signal.source_ref == "command-1"
+    assert signal.operation.value == "resolve"
 
 
 def test_user_projector_and_coordinator_enqueue_without_executive_completion() -> None:
@@ -170,8 +207,5 @@ def test_speech_boundary_emits_directives_without_mutating_view() -> None:
     )
     view = SpeechSchedulingView(7, presenting, (queued,))
     directives = scheduling_directives_for_trigger(view, trigger, NOW + timedelta(seconds=1))
-    assert {item.operation for item in directives} == {
-        SpeechSchedulingOperation.REQUEST_INTERRUPT,
-        SpeechSchedulingOperation.SUPERSEDE_QUEUED,
-    }
+    assert {item.operation for item in directives} == {SpeechSchedulingOperation.SUPERSEDE_QUEUED}
     assert view.presenting_candidate == presenting and view.queued_candidates == (queued,)

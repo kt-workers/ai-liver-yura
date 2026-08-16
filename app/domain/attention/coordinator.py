@@ -35,7 +35,6 @@ class AttentionCoordinator:
         else:
             self._ingress.offer(signal)
         claimed = self._trigger.claim_next(current_goal_revision, now)
-        if claimed is not None and claimed.interruption_allowed:
+        if claimed is not None:
             self._enqueue_executive(claimed)
-            return claimed
-        return None
+        return claimed

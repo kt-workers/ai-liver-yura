@@ -2,33 +2,32 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Generic, TypeVar
 
-from app.domain.activity_execution import ActivityExecutionRecord
+from app.domain.activity_execution import ActivityExecutionLifecycleFact
 from app.domain.appraisal import AppraisalCandidate
 from app.domain.attention import (
     AttentionIngressOperation,
     AttentionIngressSignal,
     AttentionSourceKind,
 )
-from app.domain.contracts import ExecutionStatus
-from app.domain.contracts.common import require_aware, require_revision
-from app.domain.goals import AutonomyTrigger, AutonomyTriggerKind
+from app.domain.contracts import SourceLifecycleOperation
+from app.domain.contracts.common import require_revision
+from app.domain.goals import CommitmentLifecycleProjectionFact, GoalLifecycleProjectionFact
 from app.domain.input_gateway import InputAdmission, InputAdmissionStatus, InputModality
+
+T = TypeVar("T")
 
 
 @dataclass(frozen=True, slots=True)
-class GoalCommitmentAttentionFact:
-    """Goal/Commitment ownerが発行するbounded change/due fact。"""
+class AttentionProjectionEnvelope(Generic[T]):
+    """Application境界でowner factへ現在のsource contextを付与する。"""
 
-    trigger: AutonomyTrigger
+    owner_fact: T
     source_context_revision: int
-    occurred_at: datetime
 
     def __post_init__(self) -> None:
-        if not isinstance(self.trigger, AutonomyTrigger):
-            raise ValueError("Goal/Commitmentのtyped triggerが必要です")
         require_revision(self.source_context_revision, "source_context_revision")
-        require_aware(self.occurred_at, "occurred_at")
 
 
 class UserInteractionAttentionProjector:
@@ -71,62 +70,97 @@ class AppraisalAttentionProjector:
             AttentionSourceKind.APPRAISAL,
             candidate.source_context_revision,
             candidate.created_at,
-            candidate.base_state_revision,
+            source_revision=candidate.base_state_revision,
         )
 
 
 class ActivityAttentionProjector:
-    def project(self, record: ActivityExecutionRecord) -> AttentionIngressSignal:
-        if not isinstance(record, ActivityExecutionRecord):
-            raise ValueError("Activity Intent又はPlanは受理できません")
-        result = record.result
-        if result.status not in {
-            ExecutionStatus.OBSERVABLE,
-            ExecutionStatus.APPLIED,
-            ExecutionStatus.COMPLETED,
-        }:
-            raise ValueError("Actual Execution Factだけを受理します")
-        return AttentionIngressSignal(
-            f"attention-signal-{result.command_id}-{result.status.value}",
-            AttentionIngressOperation.OFFER,
-            result.command_id,
+    def project(
+        self, envelope: AttentionProjectionEnvelope[ActivityExecutionLifecycleFact]
+    ) -> AttentionIngressSignal:
+        if not isinstance(envelope, AttentionProjectionEnvelope) or not isinstance(
+            envelope.owner_fact, ActivityExecutionLifecycleFact
+        ):
+            raise ValueError("typed Activity execution lifecycle factだけを受理します")
+        fact = envelope.owner_fact
+        return _lifecycle_signal(
+            f"attention-signal-{fact.fact_id}",
+            fact.operation,
+            fact.command_id,
             AttentionSourceKind.ACTIVITY,
-            result.revisions.source_context_revision,
-            result.occurred_at,
+            envelope.source_context_revision,
+            fact.occurred_at,
+            fact.source_revision,
+            fact.expected_source_revision,
         )
 
 
 class GoalAttentionProjector:
-    def project(self, fact: GoalCommitmentAttentionFact) -> AttentionIngressSignal:
-        if not isinstance(fact, GoalCommitmentAttentionFact) or fact.trigger.kind not in {
-            AutonomyTriggerKind.PENDING_GOAL,
-            AutonomyTriggerKind.ACTIVE_GOAL,
-            AutonomyTriggerKind.SUSPENDED_GOAL,
-        }:
-            raise ValueError("Goalのtyped change factだけを受理します")
-        return _goal_commitment_signal(fact, AttentionSourceKind.GOAL)
+    def project(
+        self, envelope: AttentionProjectionEnvelope[GoalLifecycleProjectionFact]
+    ) -> AttentionIngressSignal:
+        if not isinstance(envelope, AttentionProjectionEnvelope) or not isinstance(
+            envelope.owner_fact, GoalLifecycleProjectionFact
+        ):
+            raise ValueError("typed Goal lifecycle factだけを受理します")
+        fact = envelope.owner_fact
+        return _lifecycle_signal(
+            f"attention-signal-{fact.fact_id}",
+            fact.operation,
+            fact.goal_id,
+            AttentionSourceKind.GOAL,
+            envelope.source_context_revision,
+            fact.occurred_at,
+            fact.source_revision,
+            fact.expected_source_revision,
+        )
 
 
 class CommitmentAttentionProjector:
-    def project(self, fact: GoalCommitmentAttentionFact) -> AttentionIngressSignal:
-        if not isinstance(fact, GoalCommitmentAttentionFact) or fact.trigger.kind not in {
-            AutonomyTriggerKind.COMMITMENT_REVIEW,
-            AutonomyTriggerKind.COMMITMENT_DUE_CHECK,
-        }:
-            raise ValueError("Commitmentのtyped change/due factだけを受理します")
-        return _goal_commitment_signal(fact, AttentionSourceKind.COMMITMENT)
+    def project(
+        self, envelope: AttentionProjectionEnvelope[CommitmentLifecycleProjectionFact]
+    ) -> AttentionIngressSignal:
+        if not isinstance(envelope, AttentionProjectionEnvelope) or not isinstance(
+            envelope.owner_fact, CommitmentLifecycleProjectionFact
+        ):
+            raise ValueError("typed Commitment lifecycle factだけを受理します")
+        fact = envelope.owner_fact
+        return _lifecycle_signal(
+            f"attention-signal-{fact.fact_id}",
+            fact.operation,
+            fact.commitment_id,
+            AttentionSourceKind.COMMITMENT,
+            envelope.source_context_revision,
+            fact.occurred_at,
+            fact.source_revision,
+            fact.expected_source_revision,
+        )
 
 
-def _goal_commitment_signal(
-    fact: GoalCommitmentAttentionFact, kind: AttentionSourceKind
+def _lifecycle_signal(
+    signal_id: str,
+    operation: object,
+    source_ref: str,
+    source_kind: AttentionSourceKind,
+    source_context_revision: int,
+    occurred_at: datetime,
+    source_revision: int,
+    expected_source_revision: int | None,
 ) -> AttentionIngressSignal:
-    trigger = fact.trigger
+    operations = {
+        SourceLifecycleOperation.OPEN: AttentionIngressOperation.OFFER,
+        SourceLifecycleOperation.REFRESH: AttentionIngressOperation.REFRESH,
+        SourceLifecycleOperation.CLOSE: AttentionIngressOperation.RESOLVE,
+    }
+    if not isinstance(operation, SourceLifecycleOperation):
+        raise ValueError("typed SourceLifecycleOperationが必要です")
     return AttentionIngressSignal(
-        f"attention-signal-{trigger.trigger_id}",
-        AttentionIngressOperation.OFFER,
-        trigger.source_ref,
-        kind,
-        fact.source_context_revision,
-        fact.occurred_at,
-        trigger.goal_revision,
+        signal_id,
+        operations[operation],
+        source_ref,
+        source_kind,
+        source_context_revision,
+        occurred_at,
+        source_revision=source_revision,
+        expected_source_revision=expected_source_revision,
     )

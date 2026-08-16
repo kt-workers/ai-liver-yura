@@ -88,6 +88,12 @@ class RevisionVector:
         }
 
 
+class SourceLifecycleOperation(str, Enum):
+    OPEN = "open"
+    REFRESH = "refresh"
+    CLOSE = "close"
+
+
 @dataclass(frozen=True, slots=True)
 class AuthorityRef:
     owner: str

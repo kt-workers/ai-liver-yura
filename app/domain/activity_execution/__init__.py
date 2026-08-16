@@ -1,5 +1,6 @@
 from .authority import ActivityExecutionAuthority
 from .contracts import (
+    ActivityExecutionLifecycleFact,
     ActivityExecutionRecord,
     ActivityInterruptibility,
     ActivityInvocation,
@@ -25,6 +26,7 @@ __all__ = [
     "ActivityExecutionCoordinator",
     "ActivityExecutionPort",
     "ActivityExecutionRecord",
+    "ActivityExecutionLifecycleFact",
     "ActivityInterruptibility",
     "ActivityInvocation",
     "CapabilityBinding",

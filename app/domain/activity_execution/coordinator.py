@@ -60,9 +60,7 @@ class ActivityExecutionCoordinator:
         self._authority = authority
         self._clock = clock
         self._signals: dict[str, _CancellationSignal] = {}
-        self._adapter_tasks: dict[
-            str, asyncio.Task[Sequence[ExecutionAdapterReport]]
-        ] = {}
+        self._adapter_tasks: dict[str, asyncio.Task[Sequence[ExecutionAdapterReport]]] = {}
         self._signal_lock = asyncio.Lock()
 
     async def execute(self, invocation: ActivityInvocation) -> ActivityExecutionRecord:
@@ -81,9 +79,7 @@ class ActivityExecutionCoordinator:
         try:
             current = await self._preflight.current_for(invocation)
             accepted_result = record.result
-            record = self._authority.start(
-                command_id, current, self._clock.now(), dispatch_id
-            )
+            record = self._authority.start(command_id, current, self._clock.now(), dispatch_id)
             if record.terminal:
                 return record
             request = ExecutionDispatchRequest(

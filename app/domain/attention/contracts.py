@@ -37,6 +37,13 @@ class AttentionIngressOperation(str, Enum):
     RESOLVE = "resolve"
 
 
+class AttentionClaimRelation(str, Enum):
+    OBLIGATION_CONTINUATION = "obligation_continuation"
+    FOREGROUND_CONTINUATION = "foreground_continuation"
+    IDLE_START = "idle_start"
+    CHALLENGER_INTERRUPT = "challenger_interrupt"
+
+
 class AttentionTransitionOperation(str, Enum):
     ACQUIRE_FOREGROUND = "acquire_foreground"
     RELEASE_FOREGROUND = "release_foreground"
@@ -262,6 +269,7 @@ class AttentionIngressSignal:
     source_context_revision: int
     occurred_at: datetime
     source_revision: int | None = None
+    expected_source_revision: int | None = None
     requested_priority: AttentionPriority | None = None
     expires_at: datetime | None = None
     trusted_direct_user: bool = False
@@ -276,6 +284,8 @@ class AttentionIngressSignal:
         require_revision(self.source_context_revision, "source_context_revision")
         if self.source_revision is not None:
             require_revision(self.source_revision, "source_revision")
+        if self.expected_source_revision is not None:
+            require_revision(self.expected_source_revision, "expected_source_revision")
         if self.requested_priority is not None and not isinstance(
             self.requested_priority, AttentionPriority
         ):
@@ -564,6 +574,7 @@ class ExecutiveTriggerEligibility:
     created_at: datetime
     source_revision: int | None = None
     interruption_allowed: bool = False
+    claim_relation: AttentionClaimRelation = AttentionClaimRelation.IDLE_START
 
     def __post_init__(self) -> None:
         require_identifier(self.trigger_id, "trigger_id")
@@ -578,6 +589,8 @@ class ExecutiveTriggerEligibility:
             require_revision(self.source_revision, "source_revision")
         if type(self.interruption_allowed) is not bool:
             raise ValueError("interruption_allowedはboolでなければなりません")
+        if not isinstance(self.claim_relation, AttentionClaimRelation):
+            raise ValueError("claim_relationが不正です")
         require_aware(self.created_at, "created_at")
 
 
