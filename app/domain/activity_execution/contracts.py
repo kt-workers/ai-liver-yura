@@ -353,8 +353,18 @@ class ActivityExecutionLifecycleFact:
             and self.status is not ExecutionStatus.REQUESTED
         ):
             raise ValueError("Activity openはREQUESTEDだけに許可されます")
-        if self.operation is SourceLifecycleOperation.REFRESH and self.status in terminal:
-            raise ValueError("terminal Activityはrefreshできません")
+        refreshable = {
+            ExecutionStatus.ACCEPTED,
+            ExecutionStatus.PLANNED,
+            ExecutionStatus.STARTED,
+            ExecutionStatus.OBSERVABLE,
+            ExecutionStatus.APPLIED,
+        }
+        if (
+            self.operation is SourceLifecycleOperation.REFRESH
+            and self.status not in refreshable
+        ):
+            raise ValueError("Activity refreshに許可されないstatusです")
         if self.operation is SourceLifecycleOperation.CLOSE and self.status not in terminal:
             raise ValueError("terminal Activityだけをcloseできます")
         require_aware(self.occurred_at, "occurred_at")

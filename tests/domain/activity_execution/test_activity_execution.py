@@ -209,6 +209,7 @@ def test_activity_commit_results_keep_each_mutation_output_without_history() -> 
     ("operation", "status"),
     (
         (SourceLifecycleOperation.OPEN, ExecutionStatus.STARTED),
+        (SourceLifecycleOperation.REFRESH, ExecutionStatus.REQUESTED),
         (SourceLifecycleOperation.REFRESH, ExecutionStatus.COMPLETED),
         (SourceLifecycleOperation.CLOSE, ExecutionStatus.STARTED),
     ),
