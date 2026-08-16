@@ -84,7 +84,14 @@ Plannerが利用してよい自然言語semanticは、**Executiveがcommitした
 - `command.authority.scope == conscious_goal_action`
 - command revision / precondition / capability requirementはExecutive commit結果と一致
 
-LLM candidateはpriority、interruptibility、precondition、required capabilityを上書きできない。committed PlanではAuthorityがtrusted Executive/SystemCommand値をコピーする。
+LLM candidateはpriority、interruptibility、precondition、required capabilityを上書きできない。
+
+committed Planでは:
+
+- `priority / interruptibility`は`CommittedExecutiveDecision`から
+- `preconditions / required_capabilities`はvalidated `SystemCommand`から
+
+Authorityがcopyする。
 
 ### 2.3 Body Model / Body State
 
@@ -115,16 +122,18 @@ Plannerはexpression valueを最終Motion値として焼き付けない。
 
 Executive `constraint_refs[]` が参照する制約について、trusted upstream owner / snapshot builderはbounded read-only `BodyMotionConstraintView`へ投影する。
 
-概念上:
-
 ```text
 BodyMotionConstraintView
 - constraint_id
 - kind
-- revision
+- source_owner
+- source_ref
+- source_revision
 - semantic_description
 - subject_refs[]
 ```
+
+`source_owner / source_ref / source_revision` は**upstream canonical sourceのprovenance**であり、#338独自の新しいconstraint state世代ではない。
 
 初回`kind`:
 
@@ -137,16 +146,18 @@ BodyMotionConstraintView
 - `PRESERVE_ACTIVE_MOTION`
 - `ENVIRONMENT`
 
-`semantic_description`はtrusted upstreamが確定したconstraint semanticsであり、raw user textではない。Plannerがconstraint ID文字列の名前から意味を推測してはならない。
+`semantic_description`はtrusted upstreamが確定したconstraint semanticsであり、raw user textではない。Plannerがconstraint ID / source_refの文字列名から意味を推測してはならない。
 
 必須:
 
-- ViewはExecutive intentの`constraint_refs[]`に存在するIDだけを持つ
-- revisionはnon-negative
+- `constraint_id`はExecutive intentの`constraint_refs[]`に存在する
+- `source_owner / source_ref`はnon-empty
+- `source_revision`はnon-negative
 - subject refはbounded/current sourceから取得
 - LLMは新しいconstraintを作れない
 - candidateは未知constraint IDを参照できない
-- current constraint revisionが変わった場合はhard stale/replanとする
+- live commitではsame source owner/ref/revisionを再検証する
+- same revisionでpayloadが変わるowner invariant violationはfail closed
 
 ---
 
@@ -201,7 +212,8 @@ BodyMotionPlanningContextSnapshot
 - snapshot内のBODY intent / command identityが一致
 - commandのFoundation revisionsとintent revisionが一致
 - expressionはcurrent accepted `BodyExpressionContext`
-- constraint ID集合はintentの`constraint_refs[]`とexactly一致するか、明示的に未解決をfail-closedする
+- constraint ID集合はintentの`constraint_refs[]`とexactly一致する。欠損・余剰はreject
+- duplicate constraint ID/source identity reject
 - raw provider SDK objectを含めない
 - raw user text / Character utterance / renderer stateを含めない
 
@@ -211,7 +223,7 @@ Body realtimeはPlanner/LLM待ち中も更新し続ける。
 
 > `BodyState.revision` の完全一致をBodyMotionPlan commitの必須条件にしてはならない。
 
-そうするとslow LLM中にBodyが1frameでも更新しただけで全Planがstaleになり、Body realtime非停止というV2 invariantと矛盾する。
+slow LLM中にBodyが1frameでも更新しただけで全Planをstaleにすると、Body realtime非停止というV2 invariantと矛盾する。
 
 Planはcurrent poseを参考に構成するが、最終trajectoryは#339が**commit後のlatest BodyStateからrebase / solve**する。
 
@@ -229,15 +241,20 @@ Planにexpression値そのものを固定せず、後述するExpression Binding
 
 Activity / Environment constraintはPlanの構造自体を変え得るため、BodyState / Expressionとは扱いを分ける。
 
-LLM await中に同じconstraint IDのrevisionが進んだ、constraintが消えた、又は別内容へ置換された場合:
+LLM await中に:
+
+- same source owner/refのrevisionが進んだ
+- constraintが消えた
+- source identityが置換された
+- same revisionでdifferent payloadになった
+
+場合:
 
 ```text
 old planning candidate
 → stale / replan_required
 → no commit
 ```
-
-古いconstraintを「BodyStateはrebase可能だから」と流用してはならない。
 
 ---
 
@@ -272,6 +289,7 @@ BodyMotionSelector
 - renderer bone名禁止
 - screen-left/right禁止。anatomical left/rightを使う
 - chain / end-effectorはModel内へground
+- specified end-effectorは指定chainの末端又はmodel上整合するend-effectorでなければならない
 
 ### 5.3 BodySpatialTarget
 
@@ -289,12 +307,14 @@ BodySpatialTarget
 - `+X` anatomical right
 - `+Y` up
 - `+Z` forward
-- directionはfinite non-zero vectorでunit invariantを満たす
+- directionはfinite non-zero unit vector
+- `target_ref`はNone
 - `extent`はphysical distanceやjoint角ではなく相対的motion extent / effort hint
 
 `TARGET_REF`:
 
 - `target_ref`はExecutive BodyIntentが許可したtargetだけ
+- `direction`はNone
 - Plannerはworld座標を捏造しない
 - #339又はPerception/Body integrationがcurrent geometryをresolveする
 
@@ -315,6 +335,33 @@ BodyMotionGoal
 `intensity`はforce / velocity / joint angleではない。大小jump、small/large gesture等の高レベル相対強度である。
 
 Constraint refはsnapshot内の`BodyMotionConstraintView`だけを参照できる。
+
+### 5.5 Effect-specific structural invariants
+
+`ORIENT`:
+
+- selectorにregion又はchainが必要
+- spatial target必須
+- direction又はallowed target refへ向ける
+
+`TRANSLATE`:
+
+- selectorにregion / chain / end-effectorの少なくとも1つが必要
+- spatial target必須
+
+`CONTACT`:
+
+- selectorにknown end-effectorが1件以上必要
+- spatial targetは`TARGET_REF`必須
+- target refはExecutive intent targetと一致
+
+`IMPULSE`:
+
+- selectorにroot / region / chainの対象が必要
+- spatial targetは`DIRECTION`必須
+- intensityは0より大きい
+
+これらはphysical feasibility判定ではない。構造的に意味のないCandidateを#339へ渡さないためのschema invariantである。
 
 ---
 
@@ -420,13 +467,24 @@ BodyMotionPlanCandidate
 - body_model_id
 - planning_body_state_revision
 - planning_expression_revision
-- planning_constraint_revisions[]
+- planning_constraint_stamps[]
 - goals[]
 - phases[]
 - coordination_constraints[]
 - expression_bindings[]
 - created_at
 ```
+
+`planning_constraint_stamps`は:
+
+```text
+constraint_id
+source_owner
+source_ref
+source_revision
+```
+
+のimmutable provenanceであり、LLMが変更できないrequest echoとしてvalidateする。
 
 Candidateが所有しないもの:
 
@@ -457,7 +515,7 @@ BodyMotionPlan
 - body_model_id
 - planning_body_state_revision
 - planning_expression_revision
-- planning_constraint_revisions[]
+- planning_constraint_stamps[]
 - goals[]
 - phases[]
 - coordination_constraints[]
@@ -469,7 +527,7 @@ BodyMotionPlan
 - committed_at
 ```
 
-`priority / interruptibility / preconditions / required_capabilities`はExecutive/SystemCommandからcopyし、candidateの自由出力にしない。
+`priority / interruptibility / preconditions / required_capabilities`はtrusted Executive/SystemCommandからcopyし、candidateの自由出力にしない。
 
 BodyMotionPlanは#339へ渡すplanning artifactであり、current active trajectoryやExecution Factの正本ではない。
 
@@ -481,7 +539,7 @@ BodyMotionPlanは#339へ渡すplanning artifactであり、current active trajec
 
 - request / decision / intent / body model identity一致
 - source revision一致
-- candidate source IDsはrequestから変更不可
+- candidate source IDs / planning provenanceはrequestから変更不可
 
 ### Canonical body references
 
@@ -491,17 +549,18 @@ BodyMotionPlanは#339へ渡すplanning artifactであり、current active trajec
 - selectorのchain / end-effector関係がmodelと矛盾しない
 - renderer固有名禁止
 
-### Spatial target
+### Spatial target / effect
 
 - DIRECTIONはfinite non-zero unit 3D vector
 - TARGET_REFはExecutiveで許可済みtargetだけ
 - extent / intensityはfinite `[0,1]`
+- effect-specific invariantを満たす
 
 ### Constraints
 
 - candidate constraint refはsnapshotの`BodyMotionConstraintView`にground
 - unknown ref reject
-- planning constraint revisionをcandidateが変更不可
+- planning constraint stampをcandidateが変更不可
 
 ### Phase graph
 
@@ -614,7 +673,7 @@ Authorityは:
 5. SystemCommand precondition identity / actual / expectedをcurrent stateで再検証
 6. required Capability ID / revision / availabilityをcurrent stateで再検証
 7. current CanonicalBodyModel IDがplanning snapshotと一致
-8. current constraint ID/revision/semantic identityがplanning snapshotと一致
+8. current constraint source owner/ref/revisionとsemantic payloadがplanning snapshotと一致
 9. candidateのregion / chain / end-effector / target / constraint refsをcurrent model/intentionへ再ground
 10. candidate構造を再validation
 
@@ -638,8 +697,9 @@ body_model_id変更、source revision rollback、same revision/different immutab
 
 constraintはhard freshness。
 
-- revision advance
+- source revision advance
 - constraint disappearance
+- source identity replacement
 - same revision/different payload
 
 のいずれかでcandidateをstale/replan_requiredとしてrejectする。
@@ -773,10 +833,11 @@ prepare → compression → extension → airborne → landing → recovery。
 
 - strict IDs / tuple ownership
 - finite `[0,1]` extent / intensity / expression influence
-- invalid direction zero / non-finite reject
+- invalid direction zero / non-finite / non-unit reject
 - duplicate goal / phase / coordination / binding ID reject
 - dangling goal / binding refs reject
-- constraint ID/revision validation
+- constraint source provenance validation
+- effect-specific structural invariant
 
 ### Executive boundary
 
@@ -790,15 +851,16 @@ prepare → compression → extension → airborne → landing → recovery。
 
 - all intent constraint refs resolve exactly once
 - unknown/missing constraint reject
-- constraint ID nameからsemantic推測しない
-- revision drift reject
-- disappearance reject
+- constraint ID/source ref名からsemantic推測しない
+- source revision drift reject
+- disappearance/source replacement reject
 - same revision/different payload reject
 
 ### Canonical Body references
 
 - known region / side / chain / end-effector accept
 - unknown chain / end-effector reject
+- selector chain/end-effector inconsistency reject
 - anatomical left/right維持
 - renderer bone / Live2D parameter field不存在
 
@@ -812,6 +874,8 @@ prepare → compression → extension → airborne → landing → recovery。
 - multiple goals in same phase
 - coordination constraint
 - expression binding without baking current expression value
+- CONTACT requires allowed target + end-effector
+- IMPULSE requires direction + positive intensity
 
 ### Freshness / concurrency
 
@@ -823,7 +887,7 @@ prepare → compression → extension → airborne → landing → recovery。
 - precondition change reject
 - capability revision/availability change reject
 - body model change reject
-- constraint revision change reject
+- constraint source revision change reject
 - **BodyState native revision advance alone does not reject**
 - **BodyExpression revision advance alone does not reject**
 - same body model / same intentでlatest state rebase前提Planをcommit可能
@@ -884,8 +948,8 @@ Live LLM品質確認はProject `Verification`対象とする。
 - baseはcurrent `rebuild/v2-foundation`
 - Executive BODY intent / SystemCommand bindingが確定
 - raw user text禁止とExecutive purpose利用境界が確定
-- Activity / Environment constraintsのbounded typed view / freshnessが確定
-- high-level compositional primitive schemaが確定
+- Activity / Environment constraintsのbounded upstream provenance / freshnessが確定
+- high-level compositional primitive schemaとeffect-specific invariantが確定
 - current BodyState / Expression revision driftをrebaseableとして扱うboundaryが確定
 - #339 physical Authority boundaryが確定
 - LLM / deterministic pathが同一candidate / commit gateを通る
