@@ -332,6 +332,7 @@ class BodyMotionPlanningContextSnapshot:
     body_state: BodyState
     expression: BodyExpressionContext
     constraints: tuple[BodyMotionConstraintView, ...]
+    capabilities: tuple[CapabilityDescriptor, ...]
     captured_at: datetime
     trace_id: str
     deterministic_directive: DeterministicBodyPlanningDirective | None = None
@@ -356,6 +357,15 @@ class BodyMotionPlanningContextSnapshot:
         if len({(item.source_owner, item.source_ref) for item in constraints}) != len(constraints):
             raise ValueError("constraint source identity は一意でなければなりません")
         object.__setattr__(self, "constraints", constraints)
+        capabilities = _owned(self.capabilities, CapabilityDescriptor, "capabilities")
+        if len({item.capability_id for item in capabilities}) != len(capabilities):
+            raise ValueError("capability_id は一意でなければなりません")
+        if not all(
+            any(item.satisfies(requirement) for item in capabilities)
+            for requirement in self.intent.required_capabilities
+        ):
+            raise ValueError("required capability を満たすsnapshotが必要です")
+        object.__setattr__(self, "capabilities", capabilities)
         if self.deterministic_directive is not None and not isinstance(
             self.deterministic_directive,
             DeterministicBodyPlanningDirective,

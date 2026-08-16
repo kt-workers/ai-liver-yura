@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
+from typing import cast
 
 import pytest
 
@@ -42,6 +43,7 @@ from app.domain.body_motion_planning import (
     BodyMotionPhase,
     BodyMotionPlanAuthority,
     BodyMotionPlanCandidate,
+    BodyMotionPlanner,
     BodyMotionPlanningCommitState,
     BodyMotionPlanningContextSnapshot,
     BodyMotionPlanningPolicy,
@@ -51,16 +53,40 @@ from app.domain.body_motion_planning import (
     DeterministicBodyMotionPlanner,
     DeterministicBodyPlanningDirective,
     build_request,
+    parse_candidate,
 )
 from app.domain.contracts import (
+    AuthorityRef,
     CapabilityAvailability,
     CapabilityDescriptor,
     CapabilityRequirement,
+    IntentKind,
+    IntentRef,
     PreconditionRef,
     RevisionVector,
+    SystemCommand,
 )
-from app.domain.executive import ExecutiveInterruptibility, ExecutivePriority
-from app.domain.llm import LLMExecutionPolicy, LLMModelClass, LLMReasoningEffort
+from app.domain.contracts.common import JsonValue
+from app.domain.executive import (
+    BodyIntentPayload,
+    CommittedExecutiveDecision,
+    ExecutiveDecisionCandidate,
+    ExecutiveIntent,
+    ExecutiveIntentKind,
+    ExecutiveInterruptibility,
+    ExecutiveOutcome,
+    ExecutivePriority,
+)
+from app.domain.llm import (
+    LLMExecutionPolicy,
+    LLMModelClass,
+    LLMReasoningEffort,
+    LLMRoleRequest,
+    LLMRoleResult,
+    LLMRoleStatus,
+    LLMTokenUsage,
+    StructuredPayload,
+)
 
 NOW = datetime(2026, 8, 17, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(7, 5, 3)
@@ -168,6 +194,11 @@ def _snapshot() -> BodyMotionPlanningContextSnapshot:
         _state(),
         _expression(),
         (_constraint(),),
+        (
+            CapabilityDescriptor(
+                "cap:1", "body", ("motion",), CapabilityAvailability.AVAILABLE, 1, {}
+            ),
+        ),
         NOW,
         "trace:1",
     )
@@ -225,6 +256,61 @@ def _current() -> BodyMotionPlanningCommitState:
         (PreconditionRef("pre:1", "ready", "body", True),),
         NOW,
     )
+
+
+def _candidate_value() -> dict[str, object]:
+    return {
+        "candidate_id": "candidate:1",
+        "request_id": "request:1",
+        "source_decision_id": "decision:1",
+        "source_intent_id": "intent:1",
+        "revisions": REVISIONS.to_dict(),
+        "body_model_id": "body.v1",
+        "planning_body_state_revision": 2,
+        "planning_expression_revision": 4,
+        "planning_constraints": [
+            {
+                "constraint_id": "constraint:1",
+                "kind": "environment",
+                "source_owner": "environment",
+                "source_ref": "zone:1",
+                "source_revision": 1,
+                "semantic_description": "trusted boundary",
+                "subject_refs": ["body:1"],
+            }
+        ],
+        "goals": [
+            {
+                "goal_id": "goal:1",
+                "effect": "translate",
+                "selector": {
+                    "region": "hand",
+                    "side": "right",
+                    "chain_ids": ["right_arm"],
+                    "end_effector_joint_ids": ["right_hand"],
+                },
+                "spatial_target": {
+                    "kind": "target_ref",
+                    "direction": None,
+                    "target_ref": "target:1",
+                    "extent": 0.5,
+                },
+                "intensity": 0.5,
+                "constraint_refs": ["constraint:1"],
+            }
+        ],
+        "phases": [
+            {
+                "phase_id": "phase:1",
+                "goal_ids": ["goal:1"],
+                "relative_duration_weight": 1.0,
+                "balance_mode": "stable_support_required",
+                "expression_binding_ids": [],
+            }
+        ],
+        "coordination_constraints": [],
+        "expression_bindings": [],
+    }
 
 
 @pytest.mark.parametrize(
@@ -358,6 +444,16 @@ def test_request_contains_expression_context_but_no_raw_input_field() -> None:
     assert set(tuple(item.items()) for item in expression["axes"]) == {
         (("axis", axis.value), ("value", 0.0)) for axis in BodyExpressionAxis
     }
+    assert payload["capabilities"] == [
+        {
+            "capability_id": "cap:1",
+            "capability_type": "body",
+            "operations": ["motion"],
+            "availability": "available",
+            "revision": 1,
+            "attributes": {},
+        }
+    ]
     assert "raw_user_text" not in payload
     assert "character_utterance" not in payload
 
@@ -378,6 +474,11 @@ def test_contract_rejects_duplicate_or_dangling_shape_references() -> None:
             (),
             (),
         )
+
+
+def test_snapshot_requires_a_capability_snapshot_for_the_committed_command() -> None:
+    with pytest.raises(ValueError, match="required capability"):
+        replace(_snapshot(), capabilities=())
 
 
 @pytest.mark.parametrize(
@@ -474,3 +575,198 @@ async def test_separate_deterministic_plans_do_not_wait_on_a_global_planner_lock
         timeout=1,
     )
     assert entered == 2
+
+
+def test_parser_rejects_unknown_nested_physical_output_and_round_trips() -> None:
+    value = _candidate_value()
+    assert parse_candidate(value, created_at=NOW) == _candidate()
+    cast(dict[str, object], cast(list[object], value["goals"])[0])["joint_angles"] = [0.1]
+    with pytest.raises(ValueError, match="goal fields"):
+        parse_candidate(value, created_at=NOW)
+
+
+def test_authority_rejects_unapproved_target_for_all_targeted_effects() -> None:
+    unapproved = replace(
+        _goal(),
+        spatial_target=BodySpatialTarget(BodySpatialTargetKind.TARGET_REF, None, "target:2", 0.5),
+    )
+    candidate = replace(_candidate(), goals=(unapproved,))
+    with pytest.raises(ValueError, match="Executive target"):
+        BodyMotionPlanAuthority().commit(
+            candidate, _snapshot(), _current(), plan_id="plan:1", committed_at=NOW
+        )
+
+
+def test_authority_rejects_body_model_payload_or_capability_revision_drift() -> None:
+    changed_model = CanonicalBodyModel(
+        "body.v1",
+        _model().joints,
+        _model().segments,
+        _model().end_effector_joint_ids,
+        _model().kinematic_chains,
+        _model().center_of_mass,
+        reference_height=1.1,
+    )
+    changed_capability = (
+        CapabilityDescriptor("cap:1", "body", ("motion",), CapabilityAvailability.AVAILABLE, 2, {}),
+    )
+    for current in (
+        replace(_current(), body_model=changed_model),
+        replace(_current(), capabilities=changed_capability),
+    ):
+        with pytest.raises(ValueError):
+            BodyMotionPlanAuthority().commit(
+                _candidate(), _snapshot(), current, plan_id="plan:1", committed_at=NOW
+            )
+
+
+def _decision_and_command() -> tuple[CommittedExecutiveDecision, ExecutiveIntent, SystemCommand]:
+    intent = ExecutiveIntent(
+        "intent:1",
+        ExecutiveIntentKind.BODY,
+        "右手を対象へ向ける",
+        BodyIntentPayload("motion:reach", "target:1", ("constraint:1",)),
+    )
+    candidate = ExecutiveDecisionCandidate(
+        "candidate:decision",
+        "trigger:1",
+        ("event:1",),
+        7,
+        5,
+        3,
+        ExecutiveOutcome.ACT,
+        ExecutivePriority.FOREGROUND,
+        ExecutiveInterruptibility.INTERRUPTIBLE,
+        (intent,),
+        (),
+        (),
+        ("reason:1",),
+        NOW,
+    )
+    decision = CommittedExecutiveDecision("decision:1", candidate, (), NOW)
+    command = SystemCommand(
+        "command:1",
+        "decision:1",
+        IntentRef(IntentKind.BODY, "intent:1"),
+        AuthorityRef("executive", "conscious_goal_action", "decision:1"),
+        NOW,
+        REVISIONS,
+        preconditions=(PreconditionRef("pre:1", "ready", "body", True),),
+        required_capabilities=(CapabilityRequirement("body", "motion"),),
+    )
+    return decision, intent, command
+
+
+def test_executive_binding_copies_only_trusted_command_metadata() -> None:
+    from app.domain.body_motion_planning import bind_body_motion_intent
+
+    decision, intent, command = _decision_and_command()
+    bound = bind_body_motion_intent(decision, intent, command)
+    assert bound.purpose == intent.purpose
+    assert bound.priority is decision.candidate.priority
+    assert bound.preconditions == command.preconditions
+    assert bound.required_capabilities == command.required_capabilities
+    with pytest.raises(ValueError):
+        bind_body_motion_intent(decision, intent, replace(command, decision_id="decision:2"))
+    with pytest.raises(ValueError):
+        bind_body_motion_intent(
+            decision,
+            replace(intent, kind=ExecutiveIntentKind.SPEECH),
+            command,
+        )
+
+
+def _policy() -> BodyMotionPlanningPolicy:
+    return BodyMotionPlanningPolicy(
+        LLMExecutionPolicy(LLMModelClass.BALANCED, LLMReasoningEffort.MEDIUM, 10, 1, 100)
+    )
+
+
+def _success(request: LLMRoleRequest) -> LLMRoleResult:
+    return LLMRoleResult(
+        request.request_id,
+        request.role_id,
+        LLMRoleStatus.SUCCEEDED,
+        request.revisions,
+        NOW,
+        request.trace_id,
+        LLMModelClass.BALANCED,
+        1,
+        LLMTokenUsage(1, 1),
+        StructuredPayload("body.motion-planning.candidate.v1", cast(JsonValue, _candidate_value())),
+        started_at=NOW,
+    )
+
+
+@pytest.mark.asyncio
+async def test_conditional_llm_path_uses_same_live_authority_gate() -> None:
+    class Port:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            return _success(request)
+
+    class LiveState:
+        async def current_commit_state(
+            self, snapshot: BodyMotionPlanningContextSnapshot
+        ) -> BodyMotionPlanningCommitState:
+            return _current()
+
+    plan = await BodyMotionPlanner(
+        Port(), LiveState(), BodyMotionPlanAuthority(), _policy()
+    ).plan(_snapshot(), candidate_id="ignored", plan_id="plan:1", created_at=NOW)
+    assert plan.candidate == _candidate()
+
+
+@pytest.mark.asyncio
+async def test_conditional_llm_path_rejects_stale_live_state_before_commit() -> None:
+    class Port:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            return _success(request)
+
+    class StaleLiveState:
+        async def current_commit_state(
+            self, snapshot: BodyMotionPlanningContextSnapshot
+        ) -> BodyMotionPlanningCommitState:
+            return replace(_current(), revisions=RevisionVector(8, 5, 3))
+
+    with pytest.raises(ValueError, match="stale"):
+        await BodyMotionPlanner(
+            Port(), StaleLiveState(), BodyMotionPlanAuthority(), _policy()
+        ).plan(_snapshot(), candidate_id="ignored", plan_id="plan:1", created_at=NOW)
+
+
+@pytest.mark.asyncio
+async def test_slow_llm_does_not_block_unrelated_deterministic_body_planning() -> None:
+    gate = asyncio.Event()
+
+    class DelayedPort:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            await gate.wait()
+            return _success(request)
+
+    class LiveState:
+        async def current_commit_state(
+            self, snapshot: BodyMotionPlanningContextSnapshot
+        ) -> BodyMotionPlanningCommitState:
+            return replace(_current(), active_intent=snapshot.intent)
+
+    authority = BodyMotionPlanAuthority()
+    slow = BodyMotionPlanner(DelayedPort(), LiveState(), authority, _policy())
+    slow_task = asyncio.create_task(
+        slow.plan(_snapshot(), candidate_id="ignored", plan_id="plan:slow", created_at=NOW)
+    )
+    await asyncio.sleep(0)
+    directive = DeterministicBodyPlanningDirective(_candidate().goals, _candidate().phases, (), ())
+    fast_snapshot = replace(
+        _snapshot(),
+        request_id="request:2",
+        intent=replace(_intent(), decision_id="decision:2", intent_id="intent:2"),
+        deterministic_directive=directive,
+    )
+    fast = DeterministicBodyMotionPlanner(LiveState(), authority)
+    fast_plan = await asyncio.wait_for(
+        fast.plan(fast_snapshot, candidate_id="candidate:2", plan_id="plan:fast", created_at=NOW),
+        timeout=1,
+    )
+    assert fast_plan.plan_id == "plan:fast"
+    gate.set()
+    await slow_task

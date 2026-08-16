@@ -139,6 +139,7 @@ def build_request(
             }
             for item in snapshot.constraints
         ],
+        "capabilities": [item.to_dict() for item in snapshot.capabilities],
     }
     return LLMRoleRequest(
         snapshot.request_id,
@@ -184,7 +185,11 @@ def parse_candidate(value: object, *, created_at: datetime) -> BodyMotionPlanCan
     }
     if set(value) != required:
         raise ValueError("candidate fields がschemaと一致しません")
-    revisions = _mapping(value["revisions"], "revisions")
+    revisions = _exact_mapping(
+        value["revisions"],
+        "revisions",
+        {"source_context_revision", "goal_revision", "attention_revision"},
+    )
     candidate = BodyMotionPlanCandidate(
         _string(value["candidate_id"], "candidate_id"),
         _string(value["request_id"], "request_id"),
@@ -222,10 +227,17 @@ def _mapping(value: object, name: str) -> Mapping[str, object]:
     return cast(Mapping[str, object], value)
 
 
-def _array(value: object, name: str) -> list[object]:
-    if not isinstance(value, list):
+def _exact_mapping(value: object, name: str, fields: set[str]) -> Mapping[str, object]:
+    item = _mapping(value, name)
+    if set(item) != fields:
+        raise ValueError(f"{name} fields がschemaと一致しません")
+    return item
+
+
+def _array(value: object, name: str) -> tuple[object, ...]:
+    if not isinstance(value, (list, tuple)):
         raise ValueError(f"{name} がarrayではありません")
-    return value
+    return tuple(value)
 
 
 def _string(value: object, name: str) -> str:
@@ -252,7 +264,19 @@ def _strings(value: object, name: str) -> tuple[str, ...]:
 
 
 def _constraint(value: object) -> BodyMotionConstraintView:
-    item = _mapping(value, "constraint")
+    item = _exact_mapping(
+        value,
+        "constraint",
+        {
+            "constraint_id",
+            "kind",
+            "source_owner",
+            "source_ref",
+            "source_revision",
+            "semantic_description",
+            "subject_refs",
+        },
+    )
     return BodyMotionConstraintView(
         _string(item.get("constraint_id"), "constraint_id"),
         BodyMotionConstraintKind(_string(item.get("kind"), "kind")),
@@ -265,7 +289,11 @@ def _constraint(value: object) -> BodyMotionConstraintView:
 
 
 def _selector(value: object) -> BodyMotionSelector:
-    item = _mapping(value, "selector")
+    item = _exact_mapping(
+        value,
+        "selector",
+        {"region", "side", "chain_ids", "end_effector_joint_ids"},
+    )
     region = item.get("region")
     side = item.get("side")
     return BodyMotionSelector(
@@ -279,11 +307,15 @@ def _selector(value: object) -> BodyMotionSelector:
 def _target(value: object | None) -> BodySpatialTarget | None:
     if value is None:
         return None
-    item = _mapping(value, "spatial_target")
+    item = _exact_mapping(
+        value,
+        "spatial_target",
+        {"kind", "direction", "target_ref", "extent"},
+    )
     direction = item.get("direction")
     vector = None
     if direction is not None:
-        direction_map = _mapping(direction, "direction")
+        direction_map = _exact_mapping(direction, "direction", {"x", "y", "z"})
         vector = Vector3(
             _number(direction_map["x"], "direction.x"),
             _number(direction_map["y"], "direction.y"),
@@ -299,7 +331,11 @@ def _target(value: object | None) -> BodySpatialTarget | None:
 
 
 def _goal(value: object) -> BodyMotionGoal:
-    item = _mapping(value, "goal")
+    item = _exact_mapping(
+        value,
+        "goal",
+        {"goal_id", "effect", "selector", "spatial_target", "intensity", "constraint_refs"},
+    )
     return BodyMotionGoal(
         _string(item.get("goal_id"), "goal_id"),
         BodyMotionEffect(_string(item.get("effect"), "effect")),
@@ -311,7 +347,7 @@ def _goal(value: object) -> BodyMotionGoal:
 
 
 def _binding(value: object) -> BodyExpressionBinding:
-    item = _mapping(value, "binding")
+    item = _exact_mapping(value, "binding", {"binding_id", "axis", "influence"})
     return BodyExpressionBinding(
         _string(item.get("binding_id"), "binding_id"),
         BodyExpressionAxis(_string(item.get("axis"), "axis")),
@@ -320,7 +356,17 @@ def _binding(value: object) -> BodyExpressionBinding:
 
 
 def _phase(value: object) -> BodyMotionPhase:
-    item = _mapping(value, "phase")
+    item = _exact_mapping(
+        value,
+        "phase",
+        {
+            "phase_id",
+            "goal_ids",
+            "relative_duration_weight",
+            "balance_mode",
+            "expression_binding_ids",
+        },
+    )
     return BodyMotionPhase(
         _string(item.get("phase_id"), "phase_id"),
         _strings(item.get("goal_ids"), "goal_ids"),
@@ -331,7 +377,11 @@ def _phase(value: object) -> BodyMotionPhase:
 
 
 def _coordination(value: object) -> BodyCoordinationConstraint:
-    item = _mapping(value, "coordination")
+    item = _exact_mapping(
+        value,
+        "coordination",
+        {"coordination_id", "goal_ids", "mode"},
+    )
     return BodyCoordinationConstraint(
         _string(item.get("coordination_id"), "coordination_id"),
         _strings(item.get("goal_ids"), "goal_ids"),

@@ -7,11 +7,11 @@ from app.domain.contracts.common import require_aware, require_identifier, utc_i
 
 from .contracts import (
     _PLAN_PROOF,
-    BodyMotionEffect,
     BodyMotionPlan,
     BodyMotionPlanCandidate,
     BodyMotionPlanningCommitState,
     BodyMotionPlanningContextSnapshot,
+    BodySpatialTargetKind,
 )
 
 
@@ -81,11 +81,11 @@ class BodyMotionPlanAuthority:
             raise ValueError("candidate constraint ref が不正です")
         for goal in candidate.goals:
             if (
-                goal.effect is BodyMotionEffect.CONTACT
-                and goal.spatial_target is not None
+                goal.spatial_target is not None
+                and goal.spatial_target.kind is BodySpatialTargetKind.TARGET_REF
                 and goal.spatial_target.target_ref != snapshot.intent.target_ref
             ):
-                raise ValueError("CONTACT target はExecutive targetと一致しなければなりません")
+                raise ValueError("target はExecutive targetと一致しなければなりません")
         _validate_model_grounding(candidate, snapshot)
 
     @staticmethod
@@ -97,10 +97,12 @@ class BodyMotionPlanAuthority:
             raise ValueError("planning source revisions がstaleです")
         if current.active_intent != snapshot.intent:
             raise ValueError("BODY intent はsuperseded又はchangedです")
-        if current.body_model.body_model_id != snapshot.body_model.body_model_id:
+        if current.body_model != snapshot.body_model:
             raise ValueError("body model がchangedです")
         if current.constraints != snapshot.constraints:
             raise ValueError("constraint はchangedです")
+        if current.capabilities != snapshot.capabilities:
+            raise ValueError("capability はchangedです")
         required = {item.precondition_id: item for item in snapshot.intent.preconditions}
         if {item.precondition_id: item for item in current.preconditions} != required:
             raise ValueError("precondition はchangedです")

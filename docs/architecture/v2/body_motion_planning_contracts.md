@@ -201,6 +201,7 @@ BodyMotionPlanningContextSnapshot
 - body_state: BodyState
 - expression: BodyExpressionContext
 - constraints: BodyMotionConstraintView[]
+- capabilities: CapabilityDescriptor[]（`required_capabilities[]` を満たす開始時の限定snapshot）
 - deterministic_directive?
 - captured_at
 - trace_id
@@ -214,6 +215,7 @@ BodyMotionPlanningContextSnapshot
 - expressionはcurrent accepted `BodyExpressionContext`
 - constraint ID集合はintentの`constraint_refs[]`とexactly一致する。欠損・余剰はreject
 - duplicate constraint ID/source identity reject
+- capability snapshotはrequired capabilityを満たすdescriptorだけを保持し、ID/revision/availability/attributesを不変にfreezeする
 - raw provider SDK objectを含めない
 - raw user text / Character utterance / renderer stateを含めない
 
@@ -610,6 +612,7 @@ Request inputはPlanning Context Snapshotをstrict structured payloadへfreeze�
 - current BodyState snapshot
 - current BodyExpressionContext
 - bounded BodyMotionConstraintView
+- required capabilityを満たす限定したCapabilityDescriptor snapshot
 
 含めない:
 
