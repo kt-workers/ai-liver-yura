@@ -76,6 +76,14 @@ def _workflow_run_url(repository: str) -> str | None:
     return f"{server}/{repository}/actions/runs/{run_id}"
 
 
+def _integer_setting(name: str, default: str) -> int:
+    raw = os.getenv(name, default)
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name}の形式が不正です") from exc
+
+
 def _live_target_matches(
     client: PullReader,
     *,
@@ -180,17 +188,20 @@ def main() -> int:
         _write_summary(f"信頼済みV2基準SHAを採用できません: {exc}")
         return EXIT_BLOCKED
 
-    client = GitHubClient(repository, token, os.getenv("GITHUB_API_URL", "https://api.github.com"))
-    run_url = _workflow_run_url(repository)
     try:
         trusted_workflow_ids = frozenset(
             int(value.strip())
             for value in os.getenv("YURA_TRUSTED_WORKFLOW_IDS", "").split(",")
             if value.strip()
         )
+        max_context_chars = _integer_setting("YURA_REVIEW_MAX_CONTEXT_CHARS", "600000")
+        max_backend_attempts = _integer_setting("YURA_REVIEW_MAX_BACKEND_ATTEMPTS", "2")
     except ValueError:
-        _write_summary("信頼済みworkflow IDの形式が不正です")
+        _write_summary("独立AIレビューの数値設定または信頼済みworkflow IDの形式が不正です")
         return EXIT_BLOCKED
+
+    client = GitHubClient(repository, token, os.getenv("GITHUB_API_URL", "https://api.github.com"))
+    run_url = _workflow_run_url(repository)
     try:
         if not _live_target_matches(
             client,
@@ -251,8 +262,8 @@ def main() -> int:
         backend=GeminiReviewerBackend(api_key=api_key, model=model),
         repository=repository,
         reviewer_identity=reviewer,
-        max_context_chars=int(os.getenv("YURA_REVIEW_MAX_CONTEXT_CHARS", "600000")),
-        max_backend_attempts=int(os.getenv("YURA_REVIEW_MAX_BACKEND_ATTEMPTS", "2")),
+        max_context_chars=max_context_chars,
+        max_backend_attempts=max_backend_attempts,
         trusted_workflow_ids=trusted_workflow_ids,
     )
     try:
@@ -301,6 +312,25 @@ def main() -> int:
             target_url=run_url,
         )
         _write_summary("レビュー対象の変化を検出したため、最終状態を採用しません")
+        return EXIT_BLOCKED
+
+    try:
+        orchestrator.assert_authority_generation_current(
+            expected_authority_generation=result.authority_generation,
+            pr_number=pr_number,
+            implementer_identity=implementer,
+            expected_head_sha=head_sha,
+            trusted_base_sha=trusted_base_sha,
+        )
+    except (ContextBuildError, GitHubApiError) as exc:
+        _set_status(
+            client,
+            head_sha,
+            state="error",
+            description="最終状態の正本世代が変化しました",
+            target_url=run_url,
+        )
+        _write_summary(f"最終状態の正本世代確認に失敗しました: {type(exc).__name__}")
         return EXIT_BLOCKED
 
     state, description = _status_for_verdict(result.decision.verdict)

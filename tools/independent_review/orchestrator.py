@@ -14,6 +14,7 @@ from .validator import ReviewValidationError, validate_candidate
 class ReviewRunResult:
     decision: ReviewDecision
     published: bool
+    authority_generation: str
 
 
 def _fallback_blocked_decision(
@@ -80,10 +81,10 @@ class ReviewOrchestrator:
         )
         return cast(dict[str, object], current)
 
-    def _assert_authority_generation(
+    def assert_authority_generation_current(
         self,
         *,
-        context: ReviewContext,
+        expected_authority_generation: str,
         pr_number: int,
         implementer_identity: AgentIdentity,
         expected_head_sha: str,
@@ -95,7 +96,7 @@ class ReviewOrchestrator:
             expected_head_sha=expected_head_sha,
             trusted_base_sha=trusted_base_sha,
         )
-        if current.authority_generation != context.authority_generation:
+        if current.authority_generation != expected_authority_generation:
             raise ContextBuildError("公開直前に正本世代が変化しました")
 
     def run(
@@ -158,7 +159,11 @@ class ReviewOrchestrator:
                 reviewer_identity=self.reviewer_identity,
                 summary="レビュー対象SHAと実行開始時SHAが一致しないため結果を破棄しました",
             )
-            return ReviewRunResult(decision=blocked, published=False)
+            return ReviewRunResult(
+                decision=blocked,
+                published=False,
+                authority_generation=context.authority_generation,
+            )
 
         current_context = self._build_context(
             pr_number=pr_number,
@@ -172,18 +177,26 @@ class ReviewOrchestrator:
                 reviewer_identity=self.reviewer_identity,
                 summary="正本世代がレビュー開始時から変化したため結果を破棄しました",
             )
-            return ReviewRunResult(decision=blocked, published=False)
+            return ReviewRunResult(
+                decision=blocked,
+                published=False,
+                authority_generation=context.authority_generation,
+            )
 
         published = publish_decision(
             self.github,  # type: ignore[arg-type]
             pr_number=pr_number,
             decision=decision,
-            before_publish=lambda: self._assert_authority_generation(
-                context=context,
+            before_publish=lambda: self.assert_authority_generation_current(
+                expected_authority_generation=context.authority_generation,
                 pr_number=pr_number,
                 implementer_identity=implementer_identity,
                 expected_head_sha=expected_head_sha,
                 trusted_base_sha=trusted_base_sha,
             ),
         )
-        return ReviewRunResult(decision=decision, published=published)
+        return ReviewRunResult(
+            decision=decision,
+            published=published,
+            authority_generation=context.authority_generation,
+        )

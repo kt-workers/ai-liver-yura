@@ -8,10 +8,11 @@ from tools.independent_review.models import (
     CredentialScope,
     FindingSeverity,
     ProviderReviewCandidate,
+    ReviewContext,
     ReviewFinding,
     ReviewVerdict,
 )
-from tools.independent_review.orchestrator import ReviewOrchestrator
+from tools.independent_review.orchestrator import ReviewOrchestrator, ReviewRunResult
 
 
 class FakeGitHub:
@@ -80,7 +81,7 @@ class FakeBackend:
     def __init__(self) -> None:
         self.calls = 0
 
-    def review(self, context):
+    def review(self, context: ReviewContext) -> ProviderReviewCandidate:
         self.calls += 1
         return ProviderReviewCandidate(
             verdict_candidate=ReviewVerdict.PASS,
@@ -109,7 +110,7 @@ def _reviewer() -> AgentIdentity:
     )
 
 
-def _run(github: FakeGitHub, backend: FakeBackend):
+def _run(github: FakeGitHub, backend: FakeBackend) -> ReviewRunResult:
     return ReviewOrchestrator(
         github=github,
         backend=backend,
@@ -130,6 +131,7 @@ def test_fake_e2e_pass_and_publish() -> None:
     result = _run(github, backend)
     assert result.decision.verdict == ReviewVerdict.PASS
     assert result.published is True
+    assert len(result.authority_generation) == 64
     assert backend.calls == 1
     assert len(github.reviews) == 1
     assert github.content_refs == ["d" * 40, "d" * 40, "d" * 40]
@@ -158,7 +160,7 @@ def test_head_change_during_review_is_not_published() -> None:
     expected = github.head
 
     class MutatingBackend(FakeBackend):
-        def review(self, context):
+        def review(self, context: ReviewContext) -> ProviderReviewCandidate:
             self.calls += 1
             github.head = "c" * 40
             return ProviderReviewCandidate(
@@ -205,7 +207,7 @@ def test_retryable_semantic_error_is_retried() -> None:
     github = FakeGitHub()
 
     class RetryBackend(FakeBackend):
-        def review(self, context):
+        def review(self, context: ReviewContext) -> ProviderReviewCandidate:
             self.calls += 1
             if self.calls == 1:
                 return ProviderReviewCandidate(
@@ -241,7 +243,7 @@ def test_retry_exhaustion_becomes_blocked() -> None:
     github = FakeGitHub()
 
     class InvalidBackend(FakeBackend):
-        def review(self, context):
+        def review(self, context: ReviewContext) -> ProviderReviewCandidate:
             self.calls += 1
             return ProviderReviewCandidate(
                 verdict_candidate=ReviewVerdict.CHANGES_REQUESTED,
@@ -261,7 +263,7 @@ def test_authority_generation_change_before_publish_is_not_published() -> None:
     github = FakeGitHub()
 
     class AuthorityMutatingBackend(FakeBackend):
-        def review(self, context):
+        def review(self, context: ReviewContext) -> ProviderReviewCandidate:
             candidate = super().review(context)
             github.issue_body += "\n\n## 追加要件\n公開前に変更"
             return candidate
@@ -270,6 +272,31 @@ def test_authority_generation_change_before_publish_is_not_published() -> None:
     assert result.decision.verdict == ReviewVerdict.BLOCKED
     assert result.published is False
     assert github.reviews == []
+
+
+def test_authority_generation_change_before_final_status_is_rejected() -> None:
+    github = FakeGitHub()
+    orchestrator = ReviewOrchestrator(
+        github=github,
+        backend=FakeBackend(),
+        repository=github.repository,
+        reviewer_identity=_reviewer(),
+    )
+    result = orchestrator.run(
+        pr_number=1,
+        implementer_identity=_implementer(),
+        expected_head_sha=github.head,
+        trusted_base_sha="d" * 40,
+    )
+    github.issue_body += "\n\n## 最終状態前の変更\n"
+    with pytest.raises(ContextBuildError, match="正本世代"):
+        orchestrator.assert_authority_generation_current(
+            expected_authority_generation=result.authority_generation,
+            pr_number=1,
+            implementer_identity=_implementer(),
+            expected_head_sha=github.head,
+            trusted_base_sha="d" * 40,
+        )
 
 
 def test_head_change_during_duplicate_lookup_is_not_published() -> None:

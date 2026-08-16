@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 import pytest
@@ -232,7 +233,9 @@ def test_relationship_base_sha_changes_authority_generation() -> None:
         ),
     ],
 )
-def test_scope_mutation_is_rejected(mutation, message: str) -> None:
+def test_scope_mutation_is_rejected(
+    mutation: Callable[[dict[str, object]], None], message: str
+) -> None:
     github = FakeGitHub()
     pr = github.get_pull(1)
     mutation(pr)

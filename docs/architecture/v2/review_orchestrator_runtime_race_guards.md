@@ -21,6 +21,10 @@ Reviewer runtimeはGemini起動や`pending` status永続化より前にGitHub RE
 event_head_sha == live_current_pr_head_sha
 ```
 
+同じ境界で、信頼済みworkflow ID、文脈容量、backend試行回数などの
+実行設定を完全に構文検証する。不正な設定は`pending`を残さず、Geminiを
+呼ばずに`BLOCKED`として終了する。
+
 不一致ならそのrunはstale eventとして停止する。
 
 - Geminiを起動しない
@@ -47,6 +51,12 @@ preflightはこの既存stale policyを置換せず、開始時raceを追加で�
 Commit Status contextは`yura/independent-ai-review`へ固定する。
 
 statusを書き込むSHAは、当該runが固定したreview target SHAと一致しなければならない。
+
+最終`success` / `failure`状態を書き込む直前には、レビュー実行結果が保持する
+`authority_generation`と、GitHub liveから再構築したReviewContextの世代を完全一致
+で再検証する。PRコメント公開後に関連Issue、正本文書、PR relationship base、
+または信頼済み検証証拠が変化していた場合、古いAuthorityに基づく最終状態を
+書き込まない。
 
 - start: `pending`
 - PASS: `success`

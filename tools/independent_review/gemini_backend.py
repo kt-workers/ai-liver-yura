@@ -43,7 +43,7 @@ class GeminiReviewerBackend:
 
     def review(self, context: ReviewContext) -> ProviderReviewCandidate:
         try:
-            from google import genai
+            from google import genai  # type: ignore[import-untyped]
         except ImportError as exc:  # pragma: no cover - CI環境で確認する経路
             raise ReviewerBackendError("google-genai がインストールされていません") from exc
         try:

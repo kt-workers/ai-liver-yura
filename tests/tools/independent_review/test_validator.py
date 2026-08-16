@@ -9,6 +9,7 @@ from tools.independent_review.models import (
     CredentialScope,
     FindingSeverity,
     ProviderReviewCandidate,
+    ReviewDecision,
     ReviewFinding,
     ReviewTarget,
     ReviewVerdict,
@@ -51,7 +52,9 @@ def blocking() -> ReviewFinding:
     )
 
 
-def validate(candidate: ProviderReviewCandidate, *, reviewer: AgentIdentity | None = None):
+def validate(
+    candidate: ProviderReviewCandidate, *, reviewer: AgentIdentity | None = None
+) -> ReviewDecision:
     t = target()
     if candidate.echoed_head_sha is None:
         candidate = candidate.model_copy(update={"echoed_head_sha": t.head_sha})
