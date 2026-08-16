@@ -39,8 +39,7 @@ class BoundedWorkQueue(Generic[T]):
             priority: deque() for priority in WorkPriority
         }
         self._size = 0
-        self._last_priority: WorkPriority | None = None
-        self._priority_burst = 0
+        self._fairness_debt = 0
 
     def __len__(self) -> int:
         return self._size
@@ -105,24 +104,24 @@ class BoundedWorkQueue(Generic[T]):
         available = [priority for priority in WorkPriority if self._queues[priority]]
         if not available:
             return None
-        selected = available[0]
-        if (
-            self._last_priority is selected
-            and self._priority_burst >= self.max_priority_burst
-            and len(available) > 1
-            and selected is not WorkPriority.CRITICAL
-        ):
+        strict_priority = available[0]
+        strict_item = self._queues[strict_priority][0]
+        lower_priorities = available[1:]
+        selected = strict_priority
+        if not lower_priorities:
+            self._fairness_debt = 0
+        elif strict_item.shutdown_control:
+            self._fairness_debt = max(self._fairness_debt, self.max_priority_burst)
+        elif self._fairness_debt >= self.max_priority_burst:
             selected = min(
-                available[1:],
+                lower_priorities,
                 key=lambda priority: self._queues[priority][0].created_at.timestamp(),
             )
+            self._fairness_debt = 0
+        else:
+            self._fairness_debt += 1
         item = self._queues[selected].popleft()
         self._size -= 1
-        if selected is self._last_priority:
-            self._priority_burst += 1
-        else:
-            self._last_priority = selected
-            self._priority_burst = 1
         return item
 
     def drain(self) -> tuple[RuntimeWorkItem[T], ...]:

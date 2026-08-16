@@ -21,6 +21,7 @@ def item(
     key: str | None = None,
     seconds: int = 0,
     payload: int = 1,
+    shutdown_control: bool = False,
 ) -> RuntimeWorkItem[int]:
     return RuntimeWorkItem(
         work_id,
@@ -30,6 +31,7 @@ def item(
         RevisionVector(1),
         NOW + timedelta(seconds=seconds),
         key,
+        shutdown_control=shutdown_control,
     )
 
 
@@ -129,13 +131,75 @@ def test_oldest_lower_priority_progresses_when_intermediate_priority_is_busy() -
     ]
 
 
-def test_critical_priority_can_override_fairness() -> None:
+def test_non_shutdown_critical_is_subject_to_bounded_fairness() -> None:
     queue = BoundedWorkQueue[int](5, QueuePolicy.REJECT_NEW, max_priority_burst=1)
-    queue.put(item("normal", WorkPriority.NORMAL))
+    queue.put(item("background", WorkPriority.BACKGROUND))
     queue.put(item("critical-1", WorkPriority.CRITICAL))
     queue.put(item("critical-2", WorkPriority.CRITICAL))
     assert queue.get().work_id == "critical-1"  # type: ignore[union-attr]
-    assert queue.get().work_id == "critical-2"  # type: ignore[union-attr]
+    assert queue.get().work_id == "background"  # type: ignore[union-attr]
+
+
+def test_strict_priority_class_changes_do_not_reset_fairness_debt() -> None:
+    queue = BoundedWorkQueue[int](8, QueuePolicy.REJECT_NEW, max_priority_burst=2)
+    queue.put(item("background", WorkPriority.BACKGROUND, seconds=0))
+    queue.put(item("critical", WorkPriority.CRITICAL, seconds=1))
+    queue.put(item("foreground-1", WorkPriority.FOREGROUND, seconds=2))
+    queue.put(item("foreground-2", WorkPriority.FOREGROUND, seconds=3))
+    assert [queue.get().work_id for _ in range(3)] == [  # type: ignore[union-attr]
+        "critical",
+        "foreground-1",
+        "background",
+    ]
+
+
+def test_shutdown_control_overrides_fairness_without_resetting_debt() -> None:
+    queue = BoundedWorkQueue[int](8, QueuePolicy.REJECT_NEW, max_priority_burst=1)
+    queue.put(item("background", WorkPriority.BACKGROUND, seconds=0))
+    queue.put(
+        item(
+            "shutdown-1",
+            WorkPriority.CRITICAL,
+            seconds=1,
+            shutdown_control=True,
+        )
+    )
+    queue.put(
+        item(
+            "shutdown-2",
+            WorkPriority.CRITICAL,
+            seconds=2,
+            shutdown_control=True,
+        )
+    )
+    queue.put(item("normal-critical", WorkPriority.CRITICAL, seconds=3))
+    assert [queue.get().work_id for _ in range(4)] == [  # type: ignore[union-attr]
+        "shutdown-1",
+        "shutdown-2",
+        "background",
+        "normal-critical",
+    ]
+
+
+def test_shutdown_control_does_not_bypass_same_priority_head() -> None:
+    queue = BoundedWorkQueue[int](5, QueuePolicy.REJECT_NEW, max_priority_burst=2)
+    queue.put(item("critical-head", WorkPriority.CRITICAL, seconds=0))
+    queue.put(
+        item(
+            "shutdown-behind-head",
+            WorkPriority.CRITICAL,
+            seconds=1,
+            shutdown_control=True,
+        )
+    )
+    queue.put(item("background", WorkPriority.BACKGROUND, seconds=2))
+    assert queue.get().work_id == "critical-head"  # type: ignore[union-attr]
+    assert queue.get().work_id == "shutdown-behind-head"  # type: ignore[union-attr]
+
+
+def test_non_critical_shutdown_control_is_rejected() -> None:
+    with pytest.raises(ValueError, match="critical priority"):
+        item("invalid-control", WorkPriority.FOREGROUND, shutdown_control=True)
 
 
 def test_work_item_uses_absolute_deadline_ordering() -> None:

@@ -199,3 +199,64 @@ metricsはpayload自然言語、Prompt、secretを含めない。
 - diagnostics snapshot
 - payloadを解釈するDomain判断なし
 - Provider/SDK importなし
+
+## 14. Typed fairness override — Issue #415
+
+bounded anti-starvationは全priority classの通常workへ適用する。`WorkPriority.CRITICAL`であること自体はfairness override Authorityではない。
+
+### 14.1 fairness budgetの意味
+
+`max_priority_burst`は「同じpriorityを何回選んだか」ではなく、**lower-priority waiterが存在する間にstrict-priority selectionでそのwaiterを何回連続して追い越したか**の上限として扱う。
+
+したがって、CRITICALとFOREGROUNDが交互に選択される等、strict-priority側のclassが途中で変化してもfairness debtをリセットしない。
+
+正規選択は次の順序とする。
+
+1. 現在待機中の最上位priorityのqueue headをstrict-priority candidateとする。
+2. そのcandidateより低いpriorityに待機itemがなければ通常どおりcandidateをdispatchし、fairness debtを0とする。
+3. lower waiterが存在し、fairness debtが`max_priority_burst`未満ならstrict-priority candidateをdispatchし、debtを1増やす。
+4. lower waiterが存在し、debtが上限以上なら、fairness override資格がない限り、lower-priority各queueのheadから`created_at`が最古のitemを1件dispatchし、debtを0へ戻す。
+5. 同priority queue内では常にFIFOを維持し、override対象を探すためにheadを飛び越えない。
+
+このため、通常CRITICALが継続供給されても、CRITICAL/FOREGROUND/NORMALが混在して高優先度側のclassが変化しても、lower-priority waiterを永久starveさせない。
+
+### 14.2 fairness override Authority
+
+Issue #415で既存実装が持つoverride資格は、typed control-plane marker `RuntimeWorkItem.shutdown_control == True` **だけ**とする。payload本文、lane名、work id、priority名、文字列、例外内容等からshutdown/safety意味を推測してはならない。
+
+`shutdown_control=True`は通常Domain workが自由に意味付けするflagではなく、Runtime control-planeが付与済みのtyped metadataとして扱う。少なくとも次を契約とする。
+
+- `shutdown_control=True`のitemは`WorkPriority.CRITICAL`でなければならない。非CRITICAL shutdown controlはinvalidとしてfail-closedする。
+- queueは`shutdown_control`のprovenanceをpayload解釈で再判定しない。Coordinator / composition境界は、このmarkerをtrusted control-plane用途だけに付与する責務を持つ。
+- 通常CRITICAL (`shutdown_control=False`) は必ずbounded fairnessに従う。
+- 将来shutdown以外のsafety controlへoverrideを拡張する場合は、明示typed contract / policyを追加してから行う。CRITICAL class全体を再び例外化してはならない。
+
+### 14.3 override時のfairness debt
+
+lower waiterが存在する状態でshutdown controlをdispatchする場合、control-plane安全性のためfairnessをoverrideしてよい。ただしoverride dispatchはfairness debtを帳消しにしない。
+
+- override dispatchでlower waiterを追い越した場合、debtは少なくとも`max_priority_burst`へsaturateした状態を維持する。
+- shutdown controlがなくなった次の非override strict-priority candidateは、lower waiterが残っていればfairness dispatchへ譲る。
+- shutdown controlが連続する間は必要なcontrolを先にdispatchできる。
+
+これによりshutdown sequenceを優先しつつ、control完了後に通常CRITICALへさらに無制限の追い越し権を与えない。
+
+### 14.4 shutdown lifecycleとの整合
+
+`RuntimeCoordinator.stop()`の既存契約を維持する。
+
+- STOPPING移行時、queued non-shutdown workはcancel/reject対象。
+- `_shutdown_control_open`中だけlate shutdown controlを受理できる。
+- control受付phase終了後やresource close中はshutdown controlも拒否する。
+- fairness修正のためにshutdown admission gate、cancellation grace、worker drain順序を変更しない。
+
+### 14.5 必須Regression
+
+- non-shutdown CRITICALを連続投入しBACKGROUNDが待機 → `max_priority_burst`後にBACKGROUNDが進む
+- CRITICAL / FOREGROUND等のstrict-priority classが切り替わりながら連続負荷 → lower waiterが永久starveしない
+- 通常CRITICALとshutdown controlを明確に区別する
+- `shutdown_control=True`かつ非CRITICALをfail-closedで拒否する
+- trusted CRITICAL shutdown controlはlower waiterがいてもfairnessをoverrideできる
+- shutdown control連続後、lower waiterが残る場合は次の通常strict-priority workより先にfairness dispatchされる
+- same-priority FIFOを維持し、shutdown controlを探すためにqueue headを飛び越えない
+- 既存bounded queue policy、cancellation、shutdown admission、shutdown drain、post-stop rejectionを維持する
