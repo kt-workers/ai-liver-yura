@@ -22,6 +22,7 @@ from app.domain.input_meaning import (
     OUTPUT_SCHEMA,
     ExpectedResponse,
     InputMeaningInterpreter,
+    InputMeaningLiveContextPort,
     InputMeaningPolicy,
     MeaningResolution,
     PrimaryIntent,
@@ -72,9 +73,9 @@ def event(
     return admission.event
 
 
-def context() -> ReferenceContext:
+def context(revision: int = 4) -> ReferenceContext:
     return ReferenceContext(
-        4,
+        revision,
         (
             ReferenceContextEntry(
                 "speech-1", ReferenceContextKind.RECENT_SPEECH, "presentation:42", 3
@@ -295,15 +296,18 @@ def test_slow_meaning_port_does_not_block_unrelated_task() -> None:
             await asyncio.sleep(0.02)
             return result(request)
 
+    class LiveContext:
+        async def current_source_context_revision(self) -> int:
+            return 4
+
     async def scenario() -> None:
         task = asyncio.create_task(
-            InputMeaningInterpreter(SlowPort(), policy()).interpret(
+            InputMeaningInterpreter(SlowPort(), LiveContext(), policy()).interpret(
                 event(),
                 context(),
                 request_id="r1",
                 trace_id="t1",
                 created_at=NOW,
-                current_source_context_revision=4,
             )
         )
         await asyncio.sleep(0)
@@ -312,3 +316,94 @@ def test_slow_meaning_port_does_not_block_unrelated_task() -> None:
 
     asyncio.run(scenario())
     assert observed == ["unrelated"]
+
+
+def test_interpret_rejects_result_when_live_context_advances_during_provider_wait() -> None:
+    class AdvancingPort:
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            self.started.set()
+            await self.release.wait()
+            return result(request)
+
+    class LiveContext:
+        revision = 4
+
+        async def current_source_context_revision(self) -> int:
+            return self.revision
+
+    async def scenario() -> None:
+        provider = AdvancingPort()
+        live_context = LiveContext()
+        task = asyncio.create_task(
+            InputMeaningInterpreter(provider, live_context, policy()).interpret(
+                event(), context(), request_id="r1", trace_id="t1", created_at=NOW
+            )
+        )
+        await provider.started.wait()
+        live_context.revision = 5
+        provider.release.set()
+        with pytest.raises(ValueError, match="stale"):
+            await task
+
+    asyncio.run(scenario())
+
+
+def test_interpret_preserves_request_revision_after_post_await_live_read() -> None:
+    class ImmediatePort:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            return result(request)
+
+    class LiveContext:
+        async def current_source_context_revision(self) -> int:
+            return 4
+
+    meaning = asyncio.run(
+        InputMeaningInterpreter(ImmediatePort(), LiveContext(), policy()).interpret(
+            event(), context(), request_id="r1", trace_id="t1", created_at=NOW
+        )
+    )
+    assert meaning.source_context_revision == 4
+
+
+def test_interpret_fails_closed_when_live_context_read_fails() -> None:
+    class ImmediatePort:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            return result(request)
+
+    class FailingLiveContext:
+        async def current_source_context_revision(self) -> int:
+            raise RuntimeError("live context unavailable")
+
+    with pytest.raises(RuntimeError, match="live context unavailable"):
+        asyncio.run(
+            InputMeaningInterpreter(ImmediatePort(), FailingLiveContext(), policy()).interpret(
+                event(), context(), request_id="r1", trace_id="t1", created_at=NOW
+            )
+        )
+
+
+def test_live_context_port_is_read_only_protocol() -> None:
+    class LiveContext:
+        async def current_source_context_revision(self) -> int:
+            return 4
+
+    port: InputMeaningLiveContextPort = LiveContext()
+    assert asyncio.run(port.current_source_context_revision()) == 4
+
+
+def test_old_result_cannot_be_reused_with_new_reference_context() -> None:
+    request = build_request(
+        event(), context(), request_id="r1", trace_id="t1", created_at=NOW, policy=policy()
+    )
+    with pytest.raises(ValueError, match="reference context does not match request snapshot"):
+        commit_result(
+            request,
+            result(request),
+            reference_context=context(5),
+            current_source_context_revision=4,
+            policy=policy(),
+        )

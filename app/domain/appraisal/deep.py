@@ -3,10 +3,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import cast
+from typing import Protocol, cast
 
 from app.domain.contracts import EventEnvelope
-from app.domain.contracts.common import JsonValue, freeze_json, require_identifier
+from app.domain.contracts.common import JsonValue, freeze_json, require_identifier, require_revision
 from app.domain.input_meaning import StructuredInputMeaning
 from app.domain.llm import (
     LLMActivationPolicy,
@@ -65,6 +65,24 @@ class DeepAppraisalPolicy:
     def __post_init__(self) -> None:
         if not isinstance(self.execution, LLMExecutionPolicy):
             raise ValueError("execution must be LLMExecutionPolicy")
+
+
+@dataclass(frozen=True, slots=True)
+class DeepAppraisalFreshnessStamp:
+    """Deep Appraisalのcommit直前に一貫して読んだ世代対。"""
+
+    source_context_revision: int
+    state_revision: int
+
+    def __post_init__(self) -> None:
+        require_revision(self.source_context_revision, "source_context_revision")
+        require_revision(self.state_revision, "state_revision")
+
+
+class DeepAppraisalLiveStatePort(Protocol):
+    """source contextとInternal Stateの一貫したread-only freshness境界。"""
+
+    async def freshness_stamp(self) -> DeepAppraisalFreshnessStamp: ...
 
 
 def descriptor(policy: DeepAppraisalPolicy) -> LLMRoleDescriptor:
@@ -174,8 +192,14 @@ def commit_deep_result(
 
 
 class DeepAppraisalInterpreter:
-    def __init__(self, port: LLMRolePort, policy: DeepAppraisalPolicy) -> None:
+    def __init__(
+        self,
+        port: LLMRolePort,
+        live_state: DeepAppraisalLiveStatePort,
+        policy: DeepAppraisalPolicy,
+    ) -> None:
         self._port = port
+        self._live_state = live_state
         self._policy = policy
 
     async def appraise(
@@ -188,8 +212,6 @@ class DeepAppraisalInterpreter:
         request_id: str,
         trace_id: str,
         created_at: datetime,
-        current_source_context_revision: int,
-        current_state_revision: int,
     ) -> AppraisalCandidate:
         request = build_deep_request(
             event,
@@ -202,14 +224,15 @@ class DeepAppraisalInterpreter:
             policy=self._policy,
         )
         result = await self._port.invoke(request)
+        freshness = await self._live_state.freshness_stamp()
         return commit_deep_result(
             request,
             result,
             event=event,
             snapshot=snapshot,
             context=context,
-            current_source_context_revision=current_source_context_revision,
-            current_state_revision=current_state_revision,
+            current_source_context_revision=freshness.source_context_revision,
+            current_state_revision=freshness.state_revision,
             policy=self._policy,
         )
 

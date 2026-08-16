@@ -86,6 +86,10 @@ class RuntimeWorkItem(Generic[T]):
             require_aware(self.deadline_at, "deadline_at")
             if utc_instant(self.deadline_at) <= utc_instant(self.created_at):
                 raise ValueError("deadline_at must be later than created_at")
+        if type(self.shutdown_control) is not bool:
+            raise ValueError("shutdown_control must be a bool")
+        if self.shutdown_control and self.priority is not WorkPriority.CRITICAL:
+            raise ValueError("shutdown_control requires critical priority")
 
 
 @dataclass(frozen=True, slots=True)
