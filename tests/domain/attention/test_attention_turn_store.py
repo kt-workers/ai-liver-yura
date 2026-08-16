@@ -123,6 +123,29 @@ def test_only_typed_executive_attention_intent_can_create_transition() -> None:
         transition_from_executive_intent(wrong, 4, NOW)
 
 
+@pytest.mark.parametrize(
+    ("mode", "operation"),
+    [
+        ("release_foreground", AttentionTransitionOperation.RELEASE_FOREGROUND),
+        ("release_turn", AttentionTransitionOperation.RELEASE_TURN),
+        ("clear_response_obligation", AttentionTransitionOperation.CLEAR_RESPONSE_OBLIGATION),
+    ],
+)
+def test_executive_attention_intent_projects_legal_release_operations(
+    mode: str, operation: AttentionTransitionOperation
+) -> None:
+    intent = ExecutiveIntent(
+        f"attention-{mode}",
+        ExecutiveIntentKind.ATTENTION,
+        "注意状態を解放する",
+        AttentionIntentPayload("current-user", mode),
+    )
+    transition_value = transition_from_executive_intent(intent, 4, NOW)
+    assert transition_value.operation is operation
+    assert transition_value.target_ref is None
+    assert transition_value.value is None
+
+
 def test_budget_rejects_equal_priority_then_replaces_lower_priority() -> None:
     store = AttentionTurnStore(attention_budget=1)
     first = store.offer(1, source("background", AttentionPriority.BACKGROUND, seconds=1))
@@ -144,6 +167,21 @@ def test_eligibility_prioritizes_user_then_oldest_equal_priority_for_fairness() 
     assert [item.source_ref for item in entries] == ["user", "earlier", "later"]
     assert all(item.goal_revision == 7 for item in entries)
     assert all(item.attention_revision == store.snapshot().revision for item in entries)
+
+
+def test_background_source_cannot_bypass_current_turn_or_response_obligation() -> None:
+    store = AttentionTurnStore(attention_budget=3)
+    store.offer(1, source("reflection", AttentionPriority.BACKGROUND, seconds=1))
+    store.offer(2, source("appraisal", AttentionPriority.NORMAL, seconds=2))
+    store.apply(
+        3,
+        (
+            transition(AttentionTransitionOperation.ASSIGN_TURN, 2, value="user-1"),
+            transition(AttentionTransitionOperation.SET_RESPONSE_OBLIGATION, 2, value="reply-1"),
+        ),
+    )
+    entries = store.eligibility(7, NOW + timedelta(seconds=5), limit=3)
+    assert [item.source_ref for item in entries] == ["appraisal"]
 
 
 @pytest.mark.parametrize(

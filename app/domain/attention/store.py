@@ -8,6 +8,7 @@ from app.domain.contracts.common import utc_instant
 
 from .contracts import (
     AttentionFocusState,
+    AttentionPriority,
     AttentionSource,
     AttentionTransition,
     AttentionTransitionOperation,
@@ -106,8 +107,15 @@ class AttentionTurnStore:
             raise ValueError("limit は正の整数でなければなりません")
         with self._lock:
             state = self._state
+            source_values = state.sources
+            if state.current_turn_owner is not None or state.response_obligation is not None:
+                source_values = tuple(
+                    item
+                    for item in source_values
+                    if item.priority is not AttentionPriority.BACKGROUND
+                )
             sources = sorted(
-                state.sources, key=lambda item: (-item.priority, item.occurred_at, item.source_ref)
+                source_values, key=lambda item: (-item.priority, item.occurred_at, item.source_ref)
             )[:limit]
             return tuple(
                 ExecutiveTriggerEligibility(
