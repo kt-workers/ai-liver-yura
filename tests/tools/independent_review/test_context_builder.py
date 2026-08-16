@@ -119,6 +119,7 @@ class FakeGitHub:
         self.head_sha = "b" * 40
         self.relationship_base_sha = "a" * 40
         self.content_refs: list[str] = []
+        self.diff_refs: list[tuple[str, str]] = []
 
     def get_pull(self, pr_number: int) -> dict[str, object]:
         return {
@@ -138,7 +139,8 @@ class FakeGitHub:
             },
         }
 
-    def get_pull_diff(self, pr_number: int) -> str:
+    def get_pull_diff(self, base_sha: str, head_sha: str) -> str:
+        self.diff_refs.append((base_sha, head_sha))
         return "+安全な変更"
 
     def get_issue(self, issue_number: int) -> dict[str, object]:
@@ -171,6 +173,7 @@ def test_canonical_is_loaded_from_trusted_base_sha() -> None:
     assert context.target.base_sha == github.relationship_base_sha
     assert context.target.trusted_base_sha == trusted
     assert github.content_refs == [trusted]
+    assert github.diff_refs == [(github.relationship_base_sha, github.head_sha)]
 
 
 def test_authority_generation_is_deterministic() -> None:
@@ -352,3 +355,41 @@ def test_pr_modified_allowlisted_workflow_is_not_trusted_evidence() -> None:
         trusted_workflow_ids=frozenset({101}),
     )
     assert context.gate_evidence == []
+
+
+def test_workflow_definition_comparison_is_cached_per_fixed_refs() -> None:
+    class RepeatedWorkflowGitHub(FakeGitHub):
+        def get_content(self, path: str, ref: str) -> str:
+            self.content_refs.append(ref)
+            return f"{path}: trusted workflow"
+
+        def list_workflow_runs_for_head(self, head_sha: str) -> list[dict[str, object]]:
+            return [
+                {
+                    "id": run_id,
+                    "workflow_id": 101,
+                    "name": "信頼済み試験",
+                    "head_sha": head_sha,
+                    "path": ".github/workflows/v2-ci.yml",
+                    "event": "pull_request",
+                    "head_repository": {"full_name": self.repository},
+                    "conclusion": "success",
+                    "updated_at": "2026-08-13T00:00:00Z",
+                }
+                for run_id in range(1, 4)
+            ]
+
+    github = RepeatedWorkflowGitHub()
+    context = build_context(
+        github,
+        repository=github.repository,
+        pr_number=1,
+        implementer_identity=_implementer(),
+        expected_head_sha=github.head_sha,
+        trusted_base_sha="d" * 40,
+        max_context_chars=100_000,
+        trusted_workflow_ids=frozenset({101}),
+    )
+    assert len(context.gate_evidence) == 3
+    assert github.content_refs.count("d" * 40) == 2
+    assert github.content_refs.count(github.head_sha) == 1

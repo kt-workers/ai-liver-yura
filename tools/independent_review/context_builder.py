@@ -33,7 +33,7 @@ class ContextBuildError(RuntimeError):
 class GitHubReader(Protocol):
     def get_pull(self, pr_number: int) -> dict[str, object]: ...
 
-    def get_pull_diff(self, pr_number: int) -> str: ...
+    def get_pull_diff(self, base_sha: str, head_sha: str) -> str: ...
 
     def get_issue(self, issue_number: int) -> dict[str, object]: ...
 
@@ -184,6 +184,7 @@ def _is_trusted_workflow_run(
     expected_head_sha: str,
     trusted_base_sha: str,
     trusted_workflow_ids: frozenset[int],
+    workflow_definition_matches: dict[tuple[str, str, str], bool],
 ) -> bool:
     """PR側で改変されたworkflowの実行を信頼済み証拠から除外する。"""
     workflow_id = run.get("workflow_id")
@@ -200,12 +201,18 @@ def _is_trusted_workflow_run(
     head_repository = run.get("head_repository")
     if not isinstance(head_repository, dict) or head_repository.get("full_name") != repository:
         return False
+    cache_key = (workflow_path, trusted_base_sha, expected_head_sha)
+    cached = workflow_definition_matches.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         trusted_definition = github.get_content(workflow_path, trusted_base_sha)
         reviewed_definition = github.get_content(workflow_path, expected_head_sha)
     except Exception as error:
         raise ContextBuildError("信頼済みworkflow定義を確認できません") from error
-    return trusted_definition == reviewed_definition
+    matches = trusted_definition == reviewed_definition
+    workflow_definition_matches[cache_key] = matches
+    return matches
 
 
 def build_context(
@@ -265,9 +272,10 @@ def build_context(
         )
         for path in canonical_paths
     ]
-    diff = github.get_pull_diff(pr_number)
+    diff = github.get_pull_diff(relationship_base_sha, expected_head_sha)
 
     gate_evidence: list[GateEvidence] = []
+    workflow_definition_matches: dict[tuple[str, str, str], bool] = {}
     for run in github.list_workflow_runs_for_head(expected_head_sha):
         if not _is_trusted_workflow_run(
             github,
@@ -276,6 +284,7 @@ def build_context(
             expected_head_sha=expected_head_sha,
             trusted_base_sha=trusted_base_sha,
             trusted_workflow_ids=trusted_workflow_ids,
+            workflow_definition_matches=workflow_definition_matches,
         ):
             continue
         run_name = run.get("name")

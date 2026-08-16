@@ -29,6 +29,32 @@ def test_list_reviews_fetches_all_pages() -> None:
     ]
 
 
+def test_get_pull_diff_uses_fixed_base_and_head_shas() -> None:
+    class DiffGitHubClient(GitHubClient):
+        def __init__(self) -> None:
+            super().__init__("o/r", "token", "https://example.invalid")
+            self.path: str | None = None
+            self.accept: str | None = None
+
+        def _request(
+            self,
+            method: str,
+            path: str,
+            *,
+            accept: str = "application/vnd.github+json",
+            data: dict[str, Any] | None = None,
+        ) -> tuple[bytes, dict[str, str]]:
+            self.path = path
+            self.accept = accept
+            return "固定差分".encode(), {}
+
+    client = DiffGitHubClient()
+    diff = client.get_pull_diff("a" * 40, "b" * 40)
+    assert diff == "固定差分"
+    assert client.path == "/repos/o/r/compare/" + "a" * 40 + "..." + "b" * 40
+    assert client.accept == "application/vnd.github.v3.diff"
+
+
 @pytest.mark.parametrize("response", [[], {"workflow_runs": {}}, {}])
 def test_malformed_workflow_runs_response_is_rejected(response: object) -> None:
     class MalformedWorkflowRunsClient(GitHubClient):

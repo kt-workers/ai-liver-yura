@@ -64,10 +64,12 @@ class GitHubClient:
             raise GitHubApiError("PR情報の応答形式が不正です")
         return result
 
-    def get_pull_diff(self, pr_number: int) -> str:
+    def get_pull_diff(self, base_sha: str, head_sha: str) -> str:
+        encoded_base_sha = urllib.parse.quote(base_sha, safe="")
+        encoded_head_sha = urllib.parse.quote(head_sha, safe="")
         raw, _ = self._request(
             "GET",
-            f"/repos/{self.repository}/pulls/{pr_number}",
+            f"/repos/{self.repository}/compare/{encoded_base_sha}...{encoded_head_sha}",
             accept="application/vnd.github.v3.diff",
         )
         return raw.decode("utf-8", errors="replace")

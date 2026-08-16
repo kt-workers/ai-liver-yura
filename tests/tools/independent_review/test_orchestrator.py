@@ -44,7 +44,7 @@ class FakeGitHub:
             },
         }
 
-    def get_pull_diff(self, pr_number: int) -> str:
+    def get_pull_diff(self, base_sha: str, head_sha: str) -> str:
         return "+安全な変更"
 
     def get_issue(self, issue_number: int) -> dict[str, object]:
