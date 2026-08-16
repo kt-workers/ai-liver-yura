@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -32,6 +33,7 @@ from app.domain.body_expression import (
 )
 from app.domain.body_motion_planning import (
     BodyBalanceMode,
+    BodyExpressionBinding,
     BodyMotionConstraintKind,
     BodyMotionConstraintView,
     BodyMotionEffect,
@@ -42,9 +44,13 @@ from app.domain.body_motion_planning import (
     BodyMotionPlanCandidate,
     BodyMotionPlanningCommitState,
     BodyMotionPlanningContextSnapshot,
+    BodyMotionPlanningPolicy,
     BodyMotionSelector,
     BodySpatialTarget,
     BodySpatialTargetKind,
+    DeterministicBodyMotionPlanner,
+    DeterministicBodyPlanningDirective,
+    build_request,
 )
 from app.domain.contracts import (
     CapabilityAvailability,
@@ -54,6 +60,7 @@ from app.domain.contracts import (
     RevisionVector,
 )
 from app.domain.executive import ExecutiveInterruptibility, ExecutivePriority
+from app.domain.llm import LLMExecutionPolicy, LLMModelClass, LLMReasoningEffort
 
 NOW = datetime(2026, 8, 17, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(7, 5, 3)
@@ -318,3 +325,152 @@ def test_authority_rejects_contact_target_outside_executive_authority() -> None:
         BodyMotionPlanAuthority().commit(
             candidate, _snapshot(), _current(), plan_id="plan:1", committed_at=NOW
         )
+
+
+def test_request_contains_expression_context_but_no_raw_input_field() -> None:
+    request = build_request(
+        _snapshot(),
+        trace_id="trace:1",
+        created_at=NOW,
+        policy=BodyMotionPlanningPolicy(
+            LLMExecutionPolicy(LLMModelClass.BALANCED, LLMReasoningEffort.MEDIUM, 10, 1, 100)
+        ),
+    )
+    payload = request.input.to_dict()["value"]
+    assert isinstance(payload, dict)
+    expression = payload["expression"]
+    assert isinstance(expression, dict)
+    assert expression["revision"] == 4
+    assert expression["capture_source_context_revision"] == 7
+    assert expression["internal_state_revision"] == 2
+    assert expression["attention_revision"] == 3
+    assert expression["character_id"] == "generic"
+    assert expression["character_definition_revision"] == 1
+    assert expression["projection_policy_id"] == "policy"
+    assert expression["projection_policy_revision"] == 1
+    assert expression["focus"] == {
+        "foreground_focus_ref": None,
+        "active_focus_intent_ref": None,
+        "secondary_monitor_refs": [],
+        "current_turn_owner": None,
+        "response_obligation": None,
+    }
+    assert set(tuple(item.items()) for item in expression["axes"]) == {
+        (("axis", axis.value), ("value", 0.0)) for axis in BodyExpressionAxis
+    }
+    assert "raw_user_text" not in payload
+    assert "character_utterance" not in payload
+
+
+def test_contract_rejects_duplicate_or_dangling_shape_references() -> None:
+    goal = _goal()
+    phase = BodyMotionPhase("phase:1", ("goal:1",), 1.0, BodyBalanceMode.STABLE_SUPPORT_REQUIRED)
+    with pytest.raises(ValueError):
+        DeterministicBodyPlanningDirective((goal, goal), (phase,), (), ())
+    with pytest.raises(ValueError):
+        DeterministicBodyPlanningDirective(
+            (goal,),
+            (
+                BodyMotionPhase(
+                    "phase:1", ("missing",), 1.0, BodyBalanceMode.STABLE_SUPPORT_REQUIRED
+                ),
+            ),
+            (),
+            (),
+        )
+
+
+@pytest.mark.parametrize(
+    "direction",
+    (Vector3(1 / 3**0.5, 1 / 3**0.5, 1 / 3**0.5), Vector3(-1 / 2**0.5, 0, 1 / 2**0.5)),
+)
+def test_direction_accepts_normalized_diagonals(direction: Vector3) -> None:
+    assert (
+        BodySpatialTarget(BodySpatialTargetKind.DIRECTION, direction, None, 0.5).direction
+        == direction
+    )
+
+
+def test_authority_rejects_model_and_live_command_boundary_drift() -> None:
+    changed_precondition = (PreconditionRef("pre:1", "ready", "body", False),)
+    changed_capability = (
+        CapabilityDescriptor(
+            "cap:1", "body", ("motion",), CapabilityAvailability.UNAVAILABLE, 2, {}
+        ),
+    )
+    for current in (
+        replace(_current(), preconditions=changed_precondition),
+        replace(_current(), capabilities=changed_capability),
+        replace(
+            _current(),
+            body_model=replace(_model(), body_model_id="body.v2"),
+            body_state=replace(_state(), body_model_id="body.v2"),
+        ),
+        replace(
+            _current(),
+            constraints=(replace(_constraint(), semantic_description="different trusted meaning"),),
+        ),
+    ):
+        with pytest.raises(ValueError):
+            BodyMotionPlanAuthority().commit(
+                _candidate(), _snapshot(), current, plan_id="plan:1", committed_at=NOW
+            )
+
+
+def test_authority_preserves_expression_as_binding_not_baked_axis_value() -> None:
+    candidate = replace(
+        _candidate(),
+        expression_bindings=(
+            BodyExpressionBinding("binding:1", BodyExpressionAxis.MOVEMENT_ENERGY, 0.5),
+        ),
+        phases=(
+            BodyMotionPhase(
+                "phase:1",
+                ("goal:1",),
+                1.0,
+                BodyBalanceMode.STABLE_SUPPORT_REQUIRED,
+                ("binding:1",),
+            ),
+        ),
+    )
+    plan = BodyMotionPlanAuthority().commit(
+        candidate, _snapshot(), _current(), plan_id="plan:1", committed_at=NOW
+    )
+    assert plan.candidate.expression_bindings[0].axis is BodyExpressionAxis.MOVEMENT_ENERGY
+    assert not hasattr(plan.candidate.expression_bindings[0], "value")
+
+
+@pytest.mark.asyncio
+async def test_separate_deterministic_plans_do_not_wait_on_a_global_planner_lock() -> None:
+    entered = 0
+    release = asyncio.Event()
+
+    class LiveState:
+        async def current_commit_state(
+            self, snapshot: BodyMotionPlanningContextSnapshot
+        ) -> BodyMotionPlanningCommitState:
+            nonlocal entered
+            entered += 1
+            if entered == 2:
+                release.set()
+            await release.wait()
+            return replace(_current(), active_intent=snapshot.intent)
+
+    directive = DeterministicBodyPlanningDirective(
+        _candidate().goals, _candidate().phases, (), ()
+    )
+    first = replace(_snapshot(), deterministic_directive=directive)
+    second = replace(
+        first,
+        request_id="request:2",
+        intent=replace(_intent(), decision_id="decision:2", intent_id="intent:2"),
+    )
+    planner = DeterministicBodyMotionPlanner(LiveState(), BodyMotionPlanAuthority())
+    await asyncio.wait_for(
+        asyncio.gather(
+            planner.plan(first, candidate_id="candidate:1", plan_id="plan:1", created_at=NOW),
+            planner.plan(second, candidate_id="candidate:2", plan_id="plan:2", created_at=NOW),
+        ),
+        timeout=1,
+    )
+    assert entered == 2

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, cast
 
@@ -49,11 +50,13 @@ INPUT_SCHEMA = "body.motion-planning.context.v1"
 OUTPUT_SCHEMA = "body.motion-planning.candidate.v1"
 
 
+@dataclass(frozen=True, slots=True)
 class BodyMotionPlanningPolicy:
-    def __init__(self, execution: LLMExecutionPolicy) -> None:
-        if not isinstance(execution, LLMExecutionPolicy):
+    execution: LLMExecutionPolicy
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.execution, LLMExecutionPolicy):
             raise ValueError("execution が不正です")
-        self.execution = execution
 
 
 class BodyMotionPlanningLiveStatePort(Protocol):
@@ -99,6 +102,31 @@ def build_request(
         },
         "body_model": snapshot.body_model.to_dict(),
         "body_state": snapshot.body_state.to_dict(),
+        "expression": {
+            "revision": snapshot.expression.revision,
+            "capture_source_context_revision": snapshot.expression.capture_source_context_revision,
+            "internal_state_revision": snapshot.expression.internal_state_revision,
+            "attention_revision": snapshot.expression.attention_revision,
+            "character_id": snapshot.expression.character_id,
+            "character_definition_revision": snapshot.expression.character_definition_revision,
+            "projection_policy_id": snapshot.expression.projection_policy_id,
+            "projection_policy_revision": snapshot.expression.projection_policy_revision,
+            "axes": [
+                {"axis": item.axis.value, "value": item.value.value}
+                for item in snapshot.expression.axes
+            ],
+            "focus": {
+                "foreground_focus_ref": snapshot.expression.focus_constraint.foreground_focus_ref,
+                "active_focus_intent_ref": (
+                    snapshot.expression.focus_constraint.active_focus_intent_ref
+                ),
+                "secondary_monitor_refs": list(
+                    snapshot.expression.focus_constraint.secondary_monitor_refs
+                ),
+                "current_turn_owner": snapshot.expression.focus_constraint.current_turn_owner,
+                "response_obligation": snapshot.expression.focus_constraint.response_obligation,
+            },
+        },
         "constraints": [
             {
                 "constraint_id": item.constraint_id,
