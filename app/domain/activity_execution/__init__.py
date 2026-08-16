@@ -1,5 +1,7 @@
 from .authority import ActivityExecutionAuthority
 from .contracts import (
+    ActivityExecutionCommitResult,
+    ActivityExecutionLifecycleFact,
     ActivityExecutionRecord,
     ActivityInterruptibility,
     ActivityInvocation,
@@ -22,9 +24,11 @@ from .projector import to_execution_event
 
 __all__ = [
     "ActivityExecutionAuthority",
+    "ActivityExecutionCommitResult",
     "ActivityExecutionCoordinator",
     "ActivityExecutionPort",
     "ActivityExecutionRecord",
+    "ActivityExecutionLifecycleFact",
     "ActivityInterruptibility",
     "ActivityInvocation",
     "CapabilityBinding",

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 
+from app.domain.contracts import SourceLifecycleOperation
 from app.domain.contracts.common import (
     require_aware,
     require_identifier,
@@ -307,3 +308,108 @@ class AutonomyTrigger:
             "goal_revision": self.goal_revision,
             "priority": self.priority,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class GoalLifecycleProjectionFact:
+    fact_id: str
+    goal_id: str
+    operation: SourceLifecycleOperation
+    source_revision: int
+    expected_source_revision: int | None
+    status: GoalStatus
+    priority: int
+    goal_store_revision: int
+    occurred_at: datetime
+
+    def __post_init__(self) -> None:
+        for name in ("fact_id", "goal_id"):
+            require_identifier(getattr(self, name), name)
+        if not isinstance(self.operation, SourceLifecycleOperation) or not isinstance(
+            self.status, GoalStatus
+        ):
+            raise ValueError("goal lifecycle factが不正です")
+        require_revision(self.source_revision, "source_revision")
+        require_revision(self.expected_source_revision, "expected_source_revision", optional=True)
+        if (self.operation is SourceLifecycleOperation.OPEN) != (
+            self.expected_source_revision is None
+        ):
+            raise ValueError("goal lifecycle operationとexpected revisionが一致しません")
+        if self.operation is SourceLifecycleOperation.CLOSE and self.status not in {
+            GoalStatus.COMPLETED,
+            GoalStatus.ABANDONED,
+            GoalStatus.FAILED,
+            GoalStatus.SUPERSEDED,
+        }:
+            raise ValueError("terminal Goalだけをcloseできます")
+        if self.operation is not SourceLifecycleOperation.CLOSE and self.status in {
+            GoalStatus.COMPLETED,
+            GoalStatus.ABANDONED,
+            GoalStatus.FAILED,
+            GoalStatus.SUPERSEDED,
+        }:
+            raise ValueError("terminal Goalはclose lifecycle factでなければなりません")
+        _score(self.priority, "priority")
+        require_revision(self.goal_store_revision, "goal_store_revision")
+        require_aware(self.occurred_at, "occurred_at")
+
+
+@dataclass(frozen=True, slots=True)
+class CommitmentLifecycleProjectionFact:
+    fact_id: str
+    commitment_id: str
+    operation: SourceLifecycleOperation
+    source_revision: int
+    expected_source_revision: int | None
+    status: CommitmentStatus
+    priority: int
+    goal_store_revision: int
+    occurred_at: datetime
+
+    def __post_init__(self) -> None:
+        for name in ("fact_id", "commitment_id"):
+            require_identifier(getattr(self, name), name)
+        if not isinstance(self.operation, SourceLifecycleOperation) or not isinstance(
+            self.status, CommitmentStatus
+        ):
+            raise ValueError("commitment lifecycle factが不正です")
+        require_revision(self.source_revision, "source_revision")
+        require_revision(self.expected_source_revision, "expected_source_revision", optional=True)
+        if (self.operation is SourceLifecycleOperation.OPEN) != (
+            self.expected_source_revision is None
+        ):
+            raise ValueError("commitment lifecycle operationとexpected revisionが一致しません")
+        if self.operation is SourceLifecycleOperation.CLOSE and self.status not in {
+            CommitmentStatus.RELEASED,
+            CommitmentStatus.FULFILLED,
+            CommitmentStatus.VIOLATED,
+        }:
+            raise ValueError("terminal Commitmentだけをcloseできます")
+        if self.operation is not SourceLifecycleOperation.CLOSE and self.status in {
+            CommitmentStatus.RELEASED,
+            CommitmentStatus.FULFILLED,
+            CommitmentStatus.VIOLATED,
+        }:
+            raise ValueError("terminal Commitmentはclose lifecycle factでなければなりません")
+        _score(self.priority, "priority")
+        require_revision(self.goal_store_revision, "goal_store_revision")
+        require_aware(self.occurred_at, "occurred_at")
+
+
+@dataclass(frozen=True, slots=True)
+class GoalCommitmentCommitResult:
+    """単一owner commitと、そのlock外handoff用lifecycle出力。"""
+
+    snapshot: GoalCommitmentSnapshot
+    lifecycle_facts: tuple[GoalLifecycleProjectionFact | CommitmentLifecycleProjectionFact, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.snapshot, GoalCommitmentSnapshot):
+            raise ValueError("snapshotが不正です")
+        facts = tuple(self.lifecycle_facts)
+        if not facts or any(
+            not isinstance(item, (GoalLifecycleProjectionFact, CommitmentLifecycleProjectionFact))
+            for item in facts
+        ):
+            raise ValueError("typed lifecycle factsが必要です")
+        object.__setattr__(self, "lifecycle_facts", facts)

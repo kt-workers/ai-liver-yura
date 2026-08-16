@@ -16,6 +16,7 @@ from app.domain.contracts import (
     IntentRef,
     PreconditionRef,
     RevisionVector,
+    SourceLifecycleOperation,
     SystemCommand,
 )
 from app.domain.contracts.common import (
@@ -274,6 +275,7 @@ class ActivityExecutionRecord:
     dispatch_id: str | None = None
     cancellation_reason: str | None = None
     cancellation_requested_at: datetime | None = None
+    record_revision: int = 0
 
     def __post_init__(self) -> None:
         if not isinstance(self.invocation, ActivityInvocation):
@@ -293,6 +295,8 @@ class ActivityExecutionRecord:
             require_identifier(self.cancellation_reason, "cancellation_reason")
             assert self.cancellation_requested_at is not None
             require_aware(self.cancellation_requested_at, "cancellation_requested_at")
+        if type(self.record_revision) is not int or self.record_revision < 0:
+            raise ValueError("record_revision must be a non-negative int")
 
     @property
     def terminal(self) -> bool:
@@ -305,3 +309,116 @@ class ActivityExecutionRecord:
             ExecutionStatus.TIMED_OUT,
             ExecutionStatus.SUPERSEDED,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class ActivityExecutionLifecycleFact:
+    fact_id: str
+    command_id: str
+    operation: SourceLifecycleOperation
+    source_revision: int
+    expected_source_revision: int | None
+    status: ExecutionStatus
+    occurred_at: datetime
+    effect_refs: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        for name in ("fact_id", "command_id"):
+            require_identifier(getattr(self, name), name)
+        if not isinstance(self.operation, SourceLifecycleOperation) or not isinstance(
+            self.status, ExecutionStatus
+        ):
+            raise ValueError("activity lifecycle factが不正です")
+        if type(self.source_revision) is not int or self.source_revision < 0:
+            raise ValueError("source_revisionが不正です")
+        if self.expected_source_revision is not None and (
+            type(self.expected_source_revision) is not int or self.expected_source_revision < 0
+        ):
+            raise ValueError("expected_source_revisionが不正です")
+        if (self.operation is SourceLifecycleOperation.OPEN) != (
+            self.expected_source_revision is None
+        ):
+            raise ValueError("activity lifecycle operationとexpected revisionが一致しません")
+        terminal = {
+            ExecutionStatus.COMPLETED,
+            ExecutionStatus.REJECTED,
+            ExecutionStatus.UNSUPPORTED,
+            ExecutionStatus.FAILED,
+            ExecutionStatus.CANCELLED,
+            ExecutionStatus.TIMED_OUT,
+            ExecutionStatus.SUPERSEDED,
+        }
+        if (
+            self.operation is SourceLifecycleOperation.OPEN
+            and self.status is not ExecutionStatus.REQUESTED
+        ):
+            raise ValueError("Activity openはREQUESTEDだけに許可されます")
+        refreshable = {
+            ExecutionStatus.ACCEPTED,
+            ExecutionStatus.PLANNED,
+            ExecutionStatus.STARTED,
+            ExecutionStatus.OBSERVABLE,
+            ExecutionStatus.APPLIED,
+        }
+        if (
+            self.operation is SourceLifecycleOperation.REFRESH
+            and self.status not in refreshable
+        ):
+            raise ValueError("Activity refreshに許可されないstatusです")
+        if self.operation is SourceLifecycleOperation.CLOSE and self.status not in terminal:
+            raise ValueError("terminal Activityだけをcloseできます")
+        require_aware(self.occurred_at, "occurred_at")
+        refs = tuple(self.effect_refs)
+        if any(not isinstance(item, str) or not item.strip() for item in refs):
+            raise ValueError("effect_refsが不正です")
+        object.__setattr__(self, "effect_refs", refs)
+
+
+@dataclass(frozen=True, slots=True)
+class ActivityExecutionCommitResult:
+    """単一public owner mutationと、そのlifecycle出力。"""
+
+    record: ActivityExecutionRecord
+    lifecycle_facts: tuple[ActivityExecutionLifecycleFact, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.record, ActivityExecutionRecord):
+            raise ValueError("recordが不正です")
+        facts = tuple(self.lifecycle_facts)
+        if any(not isinstance(item, ActivityExecutionLifecycleFact) for item in facts):
+            raise ValueError("typed Activity lifecycle factsだけを受理します")
+        if any(item.command_id != self.record.result.command_id for item in facts):
+            raise ValueError("lifecycle fact commandがrecordと一致しません")
+        object.__setattr__(self, "lifecycle_facts", facts)
+
+    @property
+    def invocation(self) -> ActivityInvocation:
+        return self.record.invocation
+
+    @property
+    def bindings(self) -> tuple[CapabilityBinding, ...]:
+        return self.record.bindings
+
+    @property
+    def result(self) -> ExecutionResult:
+        return self.record.result
+
+    @property
+    def dispatch_id(self) -> str | None:
+        return self.record.dispatch_id
+
+    @property
+    def cancellation_reason(self) -> str | None:
+        return self.record.cancellation_reason
+
+    @property
+    def cancellation_requested_at(self) -> datetime | None:
+        return self.record.cancellation_requested_at
+
+    @property
+    def record_revision(self) -> int:
+        return self.record.record_revision
+
+    @property
+    def terminal(self) -> bool:
+        return self.record.terminal

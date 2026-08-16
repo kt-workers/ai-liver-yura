@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from threading import Lock
 
+from app.domain.contracts import SourceLifecycleOperation
 from app.domain.contracts.common import utc_instant
 from app.domain.executive import (
     CommitmentTransitionOperation,
@@ -12,10 +13,13 @@ from app.domain.executive import (
 )
 
 from .contracts import (
+    CommitmentLifecycleProjectionFact,
     CommitmentState,
     CommitmentStatus,
+    GoalCommitmentCommitResult,
     GoalCommitmentSnapshot,
     GoalKind,
+    GoalLifecycleProjectionFact,
     GoalState,
     GoalStatus,
     InterruptionPolicy,
@@ -95,7 +99,7 @@ class GoalCommitmentStore:
         with self._lock:
             return self._snapshot
 
-    def apply(self, decision: CommittedExecutiveDecision) -> GoalCommitmentSnapshot:
+    def apply(self, decision: CommittedExecutiveDecision) -> GoalCommitmentCommitResult:
         if not isinstance(decision, CommittedExecutiveDecision):
             raise ValueError("decision must be CommittedExecutiveDecision")
         candidate = decision.candidate
@@ -143,10 +147,72 @@ class GoalCommitmentStore:
                 tuple(sorted(commitments.values(), key=lambda item: item.commitment_id)),
                 decision.committed_at,
             )
+            lifecycle_facts = self._facts(current, snapshot)
             self._snapshot = snapshot
             self._decision_ids.add(decision.decision_id)
             self._intent_ids.update(intent_ids)
-            return snapshot
+            return GoalCommitmentCommitResult(snapshot, lifecycle_facts)
+
+    @staticmethod
+    def _facts(
+        before: GoalCommitmentSnapshot, after: GoalCommitmentSnapshot
+    ) -> tuple[GoalLifecycleProjectionFact | CommitmentLifecycleProjectionFact, ...]:
+        result: list[GoalLifecycleProjectionFact | CommitmentLifecycleProjectionFact] = []
+        old_goals = {item.goal_id: item for item in before.goals}
+        for goal in after.goals:
+            old = old_goals.get(goal.goal_id)
+            if old == goal:
+                continue
+            op = (
+                SourceLifecycleOperation.OPEN
+                if old is None
+                else (
+                    SourceLifecycleOperation.CLOSE
+                    if goal.terminal
+                    else SourceLifecycleOperation.REFRESH
+                )
+            )
+            result.append(
+                GoalLifecycleProjectionFact(
+                    f"goal-lifecycle-{goal.goal_id}-{goal.revision}",
+                    goal.goal_id,
+                    op,
+                    goal.revision,
+                    None if old is None else old.revision,
+                    goal.status,
+                    goal.priority,
+                    after.revision,
+                    after.updated_at,
+                )
+            )
+        old_commitments = {item.commitment_id: item for item in before.commitments}
+        for commitment in after.commitments:
+            previous = old_commitments.get(commitment.commitment_id)
+            if previous == commitment:
+                continue
+            op = (
+                SourceLifecycleOperation.OPEN
+                if previous is None
+                else (
+                    SourceLifecycleOperation.CLOSE
+                    if commitment.terminal
+                    else SourceLifecycleOperation.REFRESH
+                )
+            )
+            result.append(
+                CommitmentLifecycleProjectionFact(
+                    f"commitment-lifecycle-{commitment.commitment_id}-{commitment.revision}",
+                    commitment.commitment_id,
+                    op,
+                    commitment.revision,
+                    None if previous is None else previous.revision,
+                    commitment.status,
+                    commitment.priority,
+                    after.revision,
+                    after.updated_at,
+                )
+            )
+        return tuple(result)
 
     @staticmethod
     def _validate_references(
