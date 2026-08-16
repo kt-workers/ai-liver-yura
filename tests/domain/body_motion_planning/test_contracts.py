@@ -34,6 +34,8 @@ from app.domain.body_expression import (
 )
 from app.domain.body_motion_planning import (
     BodyBalanceMode,
+    BodyCoordinationConstraint,
+    BodyCoordinationMode,
     BodyExpressionBinding,
     BodyMotionConstraintKind,
     BodyMotionConstraintView,
@@ -67,6 +69,7 @@ from app.domain.contracts import (
     SystemCommand,
 )
 from app.domain.contracts.common import JsonValue
+from app.domain.contracts.execution import ExecutionResult
 from app.domain.executive import (
     BodyIntentPayload,
     CommittedExecutiveDecision,
@@ -481,6 +484,39 @@ def test_snapshot_requires_a_capability_snapshot_for_the_committed_command() -> 
         replace(_snapshot(), capabilities=())
 
 
+def test_contract_rejects_duplicate_phase_coordination_and_binding_ids() -> None:
+    goal = _goal()
+    second = replace(goal, goal_id="goal:2")
+    phase = BodyMotionPhase(
+        "phase:1", ("goal:1", "goal:2"), 1.0, BodyBalanceMode.STABLE_SUPPORT_REQUIRED
+    )
+    coordination = BodyCoordinationConstraint(
+        "coordination:1", ("goal:1", "goal:2"), BodyCoordinationMode.SYNCHRONIZED
+    )
+    binding = BodyExpressionBinding("binding:1", BodyExpressionAxis.MOVEMENT_ENERGY, 0.5)
+    with pytest.raises(ValueError):
+        DeterministicBodyPlanningDirective(
+            (goal, second), (phase,), (coordination, coordination), ()
+        )
+    with pytest.raises(ValueError):
+        DeterministicBodyPlanningDirective((goal, second), (phase,), (), (binding, binding))
+    with pytest.raises(ValueError):
+        DeterministicBodyPlanningDirective(
+            (goal,),
+            (
+                BodyMotionPhase(
+                    "phase:1",
+                    ("goal:1",),
+                    1.0,
+                    BodyBalanceMode.STABLE_SUPPORT_REQUIRED,
+                    ("missing",),
+                ),
+            ),
+            (),
+            (),
+        )
+
+
 @pytest.mark.parametrize(
     "direction",
     (Vector3(1 / 3**0.5, 1 / 3**0.5, 1 / 3**0.5), Vector3(-1 / 2**0.5, 0, 1 / 2**0.5)),
@@ -770,3 +806,148 @@ async def test_slow_llm_does_not_block_unrelated_deterministic_body_planning() -
     assert fast_plan.plan_id == "plan:fast"
     gate.set()
     await slow_task
+
+
+def test_authority_rejects_unknown_or_inconsistent_canonical_selector() -> None:
+    unknown_chain = replace(
+        _goal(),
+        selector=BodyMotionSelector(AnatomicalRegion.HAND, AnatomicalSide.RIGHT, ("missing",)),
+    )
+    inconsistent_effector = replace(
+        _goal(),
+        selector=BodyMotionSelector(
+            AnatomicalRegion.HAND,
+            AnatomicalSide.RIGHT,
+            ("right_arm",),
+            ("root",),
+        ),
+    )
+    wrong_side = replace(
+        _goal(),
+        selector=BodyMotionSelector(AnatomicalRegion.HAND, AnatomicalSide.LEFT, ("right_arm",)),
+    )
+    for goal in (unknown_chain, inconsistent_effector, wrong_side):
+        with pytest.raises(ValueError):
+            BodyMotionPlanAuthority().commit(
+                replace(_candidate(), goals=(goal,)),
+                _snapshot(),
+                _current(),
+                plan_id="plan:1",
+                committed_at=NOW,
+            )
+
+
+def test_authority_accepts_composed_multi_goal_and_whole_body_motion(
+) -> None:
+    left_and_right = (
+        _goal(),
+        replace(_goal(), goal_id="goal:2"),
+        BodyMotionGoal(
+            "goal:3",
+            BodyMotionEffect.IMPULSE,
+            BodyMotionSelector(AnatomicalRegion.ROOT, AnatomicalSide.CENTER, (), ()),
+            BodySpatialTarget(BodySpatialTargetKind.DIRECTION, Vector3(0, 1, 0), None, 0.5),
+            0.8,
+            ("constraint:1",),
+        ),
+    )
+    phases = (
+        BodyMotionPhase(
+            "phase:prepare",
+            ("goal:1", "goal:2"),
+            1.0,
+            BodyBalanceMode.STABLE_SUPPORT_REQUIRED,
+        ),
+        BodyMotionPhase(
+            "phase:impulse",
+            ("goal:3",),
+            1.0,
+            BodyBalanceMode.TEMPORARY_FLIGHT_ALLOWED,
+        ),
+    )
+    candidate = replace(
+        _candidate(),
+        goals=left_and_right,
+        phases=phases,
+        coordination_constraints=(
+            BodyCoordinationConstraint(
+                "coordination:1", ("goal:1", "goal:2"), BodyCoordinationMode.SYNCHRONIZED
+            ),
+        ),
+    )
+    before_state = _state()
+    plan = BodyMotionPlanAuthority().commit(
+        candidate, _snapshot(), _current(), plan_id="plan:1", committed_at=NOW
+    )
+    assert len(plan.candidate.goals) == 3
+    assert len(plan.candidate.phases) == 2
+    assert not isinstance(plan, ExecutionResult)
+    assert _state() == before_state
+
+
+def test_authority_accepts_bilateral_motion_with_canonical_left_and_right_chains() -> None:
+    root, right = _model().joints
+    left = JointDefinition(
+        "left_hand",
+        "root",
+        AnatomicalRegion.HAND,
+        AnatomicalSide.LEFT,
+        _transform(),
+        (JointLimit(Axis.Z, -1, 1, -0.5, 0.5, 0),),
+    )
+    model = CanonicalBodyModel(
+        "body.v1",
+        (root, right, left),
+        (
+            SegmentDefinition("right_arm", "root", "right_hand", 0.4, 1.0),
+            SegmentDefinition("left_arm", "root", "left_hand", 0.4, 1.0),
+        ),
+        ("right_hand", "left_hand"),
+        (
+            KinematicChain("right_arm", ("root", "right_hand"), "right_hand"),
+            KinematicChain("left_arm", ("root", "left_hand"), "left_hand"),
+        ),
+        CenterOfMassReference("root", Vector3(0, 0, 0)),
+    )
+    zero = JointVelocity(Vector3(0, 0, 0), Vector3(0, 0, 0))
+    state = BodyState(
+        "body.v1",
+        2,
+        NOW,
+        BodyPose(_transform(), (("right_hand", _transform()), ("left_hand", _transform()))),
+        BodyVelocity(zero, (("right_hand", zero), ("left_hand", zero))),
+    )
+    right_goal = _goal()
+    left_goal = replace(
+        right_goal,
+        goal_id="goal:left",
+        selector=BodyMotionSelector(
+            AnatomicalRegion.HAND, AnatomicalSide.LEFT, ("left_arm",), ("left_hand",)
+        ),
+    )
+    candidate = replace(
+        _candidate(),
+        goals=(right_goal, left_goal),
+        phases=(
+            BodyMotionPhase(
+                "phase:1",
+                ("goal:1", "goal:left"),
+                1.0,
+                BodyBalanceMode.STABLE_SUPPORT_REQUIRED,
+            ),
+        ),
+        coordination_constraints=(
+            BodyCoordinationConstraint(
+                "coordination:1", ("goal:1", "goal:left"), BodyCoordinationMode.SYNCHRONIZED
+            ),
+        ),
+    )
+    snapshot = replace(_snapshot(), body_model=model, body_state=state)
+    current = replace(_current(), body_model=model, body_state=state)
+    plan = BodyMotionPlanAuthority().commit(
+        candidate, snapshot, current, plan_id="plan:bilateral", committed_at=NOW
+    )
+    assert {goal.selector.side for goal in plan.candidate.goals} == {
+        AnatomicalSide.LEFT,
+        AnatomicalSide.RIGHT,
+    }
