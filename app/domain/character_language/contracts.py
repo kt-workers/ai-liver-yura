@@ -9,6 +9,7 @@ from app.domain.character import RuntimeAvailability
 from app.domain.character.contracts import CharacterLanguageProfile, RuntimeCharacterFacet
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import require_aware, require_identifier, utc_instant
+from app.domain.llm import LLMInterruptibility, LLMPriority
 from app.domain.speech_semantics import (
     SpeechPropositionDisposition,
     SpeechSemanticCandidate,
@@ -149,6 +150,8 @@ class CharacterLanguageContextSnapshot:
     semantic_plan: SpeechSemanticPlan
     character_profile: CharacterLanguageProfile
     constraints: tuple[CharacterLanguageConstraintView, ...]
+    llm_priority: LLMPriority
+    interruptibility: LLMInterruptibility
     captured_at: datetime
     trace_id: str
 
@@ -163,6 +166,10 @@ class CharacterLanguageContextSnapshot:
         if len({item.constraint_id for item in constraints}) != len(constraints):
             raise ValueError("constraint_id は一意でなければなりません")
         object.__setattr__(self, "constraints", constraints)
+        if not isinstance(self.llm_priority, LLMPriority):
+            raise ValueError("llm_priority は LLMPriority でなければなりません")
+        if not isinstance(self.interruptibility, LLMInterruptibility):
+            raise ValueError("interruptibility は LLMInterruptibility でなければなりません")
         require_aware(self.captured_at, "captured_at")
         if utc_instant(self.captured_at) < utc_instant(self.semantic_plan.committed_at):
             raise ValueError("snapshot はcommit済みPlanより前にできません")

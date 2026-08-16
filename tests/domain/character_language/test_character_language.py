@@ -44,8 +44,12 @@ from app.domain.executive import (
 )
 from app.domain.llm import (
     LLMExecutionPolicy,
+    LLMFailureCode,
+    LLMInterruptibility,
     LLMModelClass,
+    LLMPriority,
     LLMReasoningEffort,
+    LLMRoleFailure,
     LLMRoleRequest,
     LLMRoleResult,
     LLMRoleStatus,
@@ -132,10 +136,17 @@ def semantic_plan() -> SpeechSemanticPlan:
         "unsupported",
         {"value": True},
     )
+    optional_fact = SpeechSemanticFact(
+        "fact-optional",
+        SpeechSemanticFactKind.GENERAL,
+        "yura",
+        "context",
+        {"topic_ref": "topic-1"},
+    )
     context = SpeechSemanticContextSnapshot(
         decision(),
         "intent-speech",
-        (fact, forbidden_fact),
+        (fact, forbidden_fact, optional_fact),
         (),
         ("relationship-soft", "discourse-answer"),
         SelfDisclosurePolicy.FORBIDDEN,
@@ -163,13 +174,23 @@ def semantic_plan() -> SpeechSemanticPlan:
         SemanticCertainty.CERTAIN,
         ("fact-forbidden",),
     )
+    optional_proposition = SpeechProposition(
+        "proposition-optional",
+        "yura",
+        "context",
+        {"topic_ref": "topic-1"},
+        SpeechPropositionDisposition.OPTIONAL,
+        SemanticPolarity.AFFIRM,
+        SemanticCertainty.CERTAIN,
+        ("fact-optional",),
+    )
     candidate = SpeechSemanticCandidate(
         "semantic-candidate-1",
         "decision-1",
         "intent-speech",
         ("event-1",),
         REVISIONS,
-        (proposition, forbidden_proposition),
+        (proposition, forbidden_proposition, optional_proposition),
         SelfDisclosurePolicy.FORBIDDEN,
         1,
         1,
@@ -226,14 +247,19 @@ def constraints(*, revision: int = 5) -> tuple[CharacterLanguageConstraintView, 
 def context(
     *,
     request_id: str = "request-1",
+    item_plan: SpeechSemanticPlan | None = None,
     item_profile: CharacterLanguageProfile | None = None,
     item_constraints: tuple[CharacterLanguageConstraintView, ...] | None = None,
+    llm_priority: LLMPriority = LLMPriority.FOREGROUND,
+    interruptibility: LLMInterruptibility = LLMInterruptibility.INTERRUPTIBLE,
 ) -> CharacterLanguageContextSnapshot:
     return CharacterLanguageContextSnapshot(
         request_id,
-        semantic_plan(),
+        item_plan or semantic_plan(),
         item_profile or profile(),
         item_constraints or constraints(),
+        llm_priority,
+        interruptibility,
         NOW,
         "trace-1",
     )
@@ -308,6 +334,26 @@ def result_for(request: LLMRoleRequest, value: object) -> LLMRoleResult:
     )
 
 
+def failed_result_for(
+    request: LLMRoleRequest,
+    status: LLMRoleStatus,
+    code: LLMFailureCode,
+) -> LLMRoleResult:
+    return LLMRoleResult(
+        request.request_id,
+        request.role_id,
+        status,
+        request.revisions,
+        NOW + timedelta(seconds=2),
+        request.trace_id,
+        LLMModelClass.BALANCED,
+        1,
+        LLMTokenUsage(10, 0),
+        failure=LLMRoleFailure(code, "Provider失敗"),
+        started_at=NOW + timedelta(seconds=1),
+    )
+
+
 def test_snapshot_filters_unresolved_profile_values_and_exactly_grounds_constraints() -> None:
     snapshot = context()
     payload = snapshot.to_dict()
@@ -345,6 +391,44 @@ def test_confirmed_profile_only_changes_request_payload() -> None:
     changed_payload = build_request(changed_snapshot, created_at=NOW, policy=policy()).input.value
     assert original_payload != changed_payload
     assert "pending_style" not in str(changed_payload)
+
+
+@pytest.mark.parametrize(
+    ("priority", "interruptibility"),
+    [
+        (LLMPriority.FOREGROUND, LLMInterruptibility.INTERRUPTIBLE),
+        (LLMPriority.BACKGROUND, LLMInterruptibility.NON_INTERRUPTIBLE),
+    ],
+)
+def test_build_request_propagates_trusted_scheduling_metadata(
+    priority: LLMPriority, interruptibility: LLMInterruptibility
+) -> None:
+    snapshot = context(llm_priority=priority, interruptibility=interruptibility)
+    request = build_request(snapshot, created_at=NOW, policy=policy())
+    assert request.priority is priority
+    assert request.interruptibility is interruptibility
+
+
+def test_same_plan_scheduling_difference_changes_request_metadata_not_candidate_schema() -> None:
+    plan = semantic_plan()
+    foreground = context(item_plan=plan, llm_priority=LLMPriority.FOREGROUND)
+    background = context(
+        request_id="request-background",
+        item_plan=plan,
+        llm_priority=LLMPriority.BACKGROUND,
+        interruptibility=LLMInterruptibility.NON_INTERRUPTIBLE,
+    )
+    foreground_request = build_request(foreground, created_at=NOW, policy=policy())
+    background_request = build_request(background, created_at=NOW, policy=policy())
+    assert foreground_request.priority is LLMPriority.FOREGROUND
+    assert background_request.priority is LLMPriority.BACKGROUND
+    assert background_request.interruptibility is LLMInterruptibility.NON_INTERRUPTIBLE
+    payload = candidate_payload(candidate(background, candidate_id="candidate-background"))
+    assert "llm_priority" not in payload
+    assert "interruptibility" not in payload
+    payload["llm_priority"] = "foreground"
+    with pytest.raises(ValueError, match="schema"):
+        parse_candidate(payload, created_at=NOW + timedelta(seconds=2))
 
 
 def test_candidate_and_utterance_are_immutable_and_authority_only() -> None:
@@ -385,6 +469,49 @@ def test_authority_requires_required_refs_rejects_forbidden_refs_and_budget_over
             utterance_id="utterance-2",
             committed_at=NOW + timedelta(seconds=2),
         )
+    with pytest.raises(CharacterLanguageError, match="new direction budget"):
+        authority.commit(
+            replace(candidate(snapshot), new_direction_budget_used=2),
+            snapshot,
+            current=current(snapshot),
+            utterance_id="utterance-3",
+            committed_at=NOW + timedelta(seconds=2),
+        )
+
+
+def test_optional_proposition_omission_and_budget_boundary_are_valid() -> None:
+    snapshot = context()
+    item = replace(
+        candidate(snapshot),
+        question_budget_used=1,
+        new_direction_budget_used=1,
+    )
+    utterance = CharacterLanguageAuthority().commit(
+        item,
+        snapshot,
+        current=current(snapshot),
+        utterance_id="utterance-optional-omitted",
+        committed_at=NOW + timedelta(seconds=2),
+    )
+    assert utterance.candidate.realization_refs == ("proposition-required",)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("question_budget_used", -1),
+        ("question_budget_used", True),
+        ("new_direction_budget_used", -1),
+        ("new_direction_budget_used", True),
+    ],
+)
+def test_candidate_rejects_negative_and_bool_budgets(field: str, value: object) -> None:
+    item = candidate(context())
+    with pytest.raises(ValueError, match="0以上"):
+        if field == "question_budget_used":
+            replace(item, question_budget_used=cast(int, value))
+        else:
+            replace(item, new_direction_budget_used=cast(int, value))
 
 
 def test_same_plan_allows_multiple_variants_but_rejects_duplicate_candidate_and_request() -> None:
@@ -495,6 +622,75 @@ def test_parser_rejects_unknown_fields_and_preserves_strict_candidate_schema() -
         parse_candidate(value, created_at=NOW + timedelta(seconds=2))
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("boundary_after", "unknown"),
+        ("emphasis", "unknown"),
+        ("hesitation", "unknown"),
+    ],
+)
+def test_parser_rejects_unknown_linguistic_enum(field: str, value: str) -> None:
+    payload = candidate_payload(candidate(context()))
+    segments = cast(list[dict[str, object]], payload["segments"])
+    segments[0][field] = value
+    with pytest.raises(ValueError, match="不正"):
+        parse_candidate(payload, created_at=NOW + timedelta(seconds=2))
+
+
+def test_authority_rejects_unknown_proposition_ref() -> None:
+    snapshot = context()
+    with pytest.raises(CharacterLanguageError, match="未知"):
+        CharacterLanguageAuthority().commit(
+            candidate(snapshot, refs=("unknown-proposition",)),
+            snapshot,
+            current=current(snapshot),
+            utterance_id="utterance-unknown-proposition",
+            committed_at=NOW + timedelta(seconds=2),
+        )
+
+
+def test_snapshot_rejects_duplicate_unknown_and_wrong_kind_constraints() -> None:
+    known = constraints()
+    with pytest.raises(ValueError, match="一意"):
+        context(item_constraints=(*known, known[0]))
+    with pytest.raises(ValueError, match="完全一致"):
+        context(
+            item_constraints=(
+                replace(known[0], kind=CharacterLanguageConstraintKind.DISCOURSE),
+                known[1],
+            )
+        )
+    unknown = CharacterLanguageConstraintView(
+        "relationship-unknown",
+        CharacterLanguageConstraintKind.RELATIONSHIP,
+        "relationship",
+        "user-1",
+        5,
+        "未知のconstraint",
+    )
+    with pytest.raises(ValueError, match="完全一致"):
+        context(item_constraints=(known[0], known[1], unknown))
+
+
+@pytest.mark.parametrize(
+    ("override_name", "override_value"),
+    [
+        ("polarity", "affirm"),
+        ("certainty", "certain"),
+        ("degree", 1),
+        ("execution_status", "completed"),
+    ],
+)
+def test_candidate_schema_rejects_semantic_override_fields(
+    override_name: str, override_value: object
+) -> None:
+    payload = candidate_payload(candidate(context()))
+    payload[override_name] = override_value
+    with pytest.raises(ValueError, match="schema"):
+        parse_candidate(payload, created_at=NOW + timedelta(seconds=2))
+
+
 def test_commit_result_rejects_profile_and_constraint_payload_drift() -> None:
     snapshot = context()
     request = build_request(snapshot, created_at=NOW, policy=policy())
@@ -521,6 +717,55 @@ def test_commit_result_rejects_profile_and_constraint_payload_drift() -> None:
             policy=policy(),
         )
     assert constraint_error.value.code is CharacterLanguageFailureCode.CONSTRAINT_STALE
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [
+        (LLMRoleStatus.FAILED, LLMFailureCode.PROVIDER_ERROR),
+        (LLMRoleStatus.TIMED_OUT, LLMFailureCode.TIMEOUT),
+    ],
+)
+def test_provider_failure_or_timeout_never_commits_a_fixed_fallback(
+    status: LLMRoleStatus, code: LLMFailureCode
+) -> None:
+    snapshot = context()
+    request = build_request(snapshot, created_at=NOW, policy=policy())
+    authority = CharacterLanguageAuthority()
+    with pytest.raises(ValueError, match="commit"):
+        commit_result(
+            request,
+            failed_result_for(request, status, code),
+            snapshot=snapshot,
+            current=current(snapshot),
+            authority=authority,
+            utterance_id="utterance-provider-failure",
+            policy=policy(),
+        )
+    assert authority.snapshot("utterance-provider-failure") is None
+
+
+def test_invalid_output_schema_never_commits() -> None:
+    snapshot = context()
+    request = build_request(snapshot, created_at=NOW, policy=policy())
+    valid = result_for(request, candidate_payload(candidate(snapshot)))
+    assert valid.output is not None
+    invalid = replace(
+        valid,
+        output=StructuredPayload("invalid.character.language.schema", valid.output.value),
+    )
+    authority = CharacterLanguageAuthority()
+    with pytest.raises(ValueError, match="schema_invalid"):
+        commit_result(
+            request,
+            invalid,
+            snapshot=snapshot,
+            current=current(snapshot),
+            authority=authority,
+            utterance_id="utterance-invalid-schema",
+            policy=policy(),
+        )
+    assert authority.snapshot("utterance-invalid-schema") is None
 
 
 class _LiveState:
@@ -572,7 +817,23 @@ async def test_slow_realizer_does_not_block_unrelated_work_and_reads_live_state_
         realizer.realize(snapshot, utterance_id="utterance-1", created_at=NOW)
     )
     await started.wait()
-    assert await asyncio.wait_for(asyncio.sleep(0, result="continued"), timeout=1) == "continued"
+    speech_presentation_heartbeat: list[int] = []
+    body_realtime_heartbeat: list[int] = []
+
+    async def heartbeat(values: list[int]) -> None:
+        for tick in range(3):
+            values.append(tick)
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(
+        asyncio.gather(
+            heartbeat(speech_presentation_heartbeat),
+            heartbeat(body_realtime_heartbeat),
+        ),
+        timeout=1,
+    )
+    assert speech_presentation_heartbeat == [0, 1, 2]
+    assert body_realtime_heartbeat == [0, 1, 2]
     release.set()
     assert (await task).utterance_id == "utterance-1"
 
@@ -621,3 +882,59 @@ async def test_separate_plan_generations_are_not_serialized_by_a_global_plan_slo
         second.realize(second_snapshot, utterance_id="utterance-2", created_at=NOW),
     )
     assert {left.utterance_id, right.utterance_id} == {"utterance-1", "utterance-2"}
+
+
+@pytest.mark.asyncio
+async def test_body_motion_planning_equivalent_task_can_start_while_character_role_waits() -> None:
+    snapshot = context()
+    started = asyncio.Event()
+    release = asyncio.Event()
+    realizer = CharacterLanguageRealizer(
+        _DelayedPort(candidate_payload(candidate(snapshot)), started, release),
+        _LiveState(current(snapshot)),
+        CharacterLanguageAuthority(),
+        policy(),
+    )
+    character_task = asyncio.create_task(
+        realizer.realize(snapshot, utterance_id="utterance-1", created_at=NOW)
+    )
+    await started.wait()
+    body_motion_started = asyncio.Event()
+
+    async def body_motion_planning() -> str:
+        body_motion_started.set()
+        await asyncio.sleep(0)
+        return "body-motion-started"
+
+    assert await asyncio.wait_for(body_motion_planning(), timeout=1) == "body-motion-started"
+    assert body_motion_started.is_set()
+    release.set()
+    await character_task
+
+
+@pytest.mark.asyncio
+async def test_previous_speech_playback_does_not_block_next_character_generation() -> None:
+    playback_started = asyncio.Event()
+    playback_release = asyncio.Event()
+
+    async def previous_playback() -> None:
+        playback_started.set()
+        await playback_release.wait()
+
+    playback_task = asyncio.create_task(previous_playback())
+    await playback_started.wait()
+    snapshot = context()
+    realizer = CharacterLanguageRealizer(
+        _ImmediatePort(candidate_payload(candidate(snapshot))),
+        _LiveState(current(snapshot)),
+        CharacterLanguageAuthority(),
+        policy(),
+    )
+    utterance = await asyncio.wait_for(
+        realizer.realize(snapshot, utterance_id="utterance-next", created_at=NOW),
+        timeout=1,
+    )
+    assert utterance.utterance_id == "utterance-next"
+    assert not playback_task.done()
+    playback_release.set()
+    await playback_task

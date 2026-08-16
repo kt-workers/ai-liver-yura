@@ -184,6 +184,8 @@ CharacterLanguageContextSnapshot
 - semantic_plan: SpeechSemanticPlan
 - character_profile: CharacterLanguageProfile
 - constraints[]: CharacterLanguageConstraintView
+- llm_priority: LLMPriority
+- interruptibility: LLMInterruptibility
 - captured_at
 - trace_id
 ```
@@ -197,6 +199,17 @@ Snapshot構築条件:
 - LLMへ渡すprofile facetはCONFIRMEDだけにfilterする。
 - raw Emotion等をsnapshotへ追加しない。
 - raw user text / Character history / provider SDK objectを追加しない。
+
+### 5.1 スケジューリングメタデータ
+
+`llm_priority`と`interruptibility`は、commit済みのExecutive Decision又はSpeech preparation scheduling側がrequestごとに確定したread-onlyメタデータを搬送する。
+
+- スケジューリングメタデータはWhat-to-sayでもCharacter Styleでもない。
+- `SpeechSemanticPlan`のschemaへpriorityを追加しない。Snapshotを構築するupstream scheduling boundaryが、Planと対応する確定済みmetadataを渡す。
+- #330は`purpose`、proposition、raw text、Character Profile又はconstraintからpriority / interruptibilityを推測・再決定しない。
+- LLM candidate schemaはpriority / interruptibilityを持たず、これらを書き換えられない。
+- `build_request()`はSnapshotの`llm_priority` / `interruptibility`をそのままFoundation `LLMRoleRequest`へ渡す。
+- #322のscheduling / backpressure policyが、そのメタデータに基づきforegroundとbackgroundを扱う。#330はglobal queueを所有しない。
 
 Snapshotは入力のcopyであり、新しいsemantic Authorityではない。
 
@@ -241,6 +254,7 @@ Provider failure時にCharacter未設定の定型文を発明して成功扱い�
 - Character LLM await中にAuthority lockを保持しない。
 - unrelated input / Body / Activity / Speech Presentationをglobal waitさせない。
 - same planからのregenerationを可能にし、`1 plan = 1 global Character slot`にしない。
+- background requestをFOREGROUNDへ昇格させず、Snapshotから搬送された`LLMPriority` / `LLMInterruptibility`をそのまま利用する。
 
 ---
 
@@ -559,6 +573,7 @@ Character contentの具体値変更は#354/#355のdefinition revision更新で�
 - Character generation中にもnew input / Appraisal / Executiveは進行可能。
 - atomic validation区間へawait / Provider callbackを含めない。
 - background Character generationがforeground speechをstarveしないよう#322 scheduling policyを利用する。
+- #330はSnapshotの信頼済みスケジューリングメタデータをFoundation requestへ伝播するだけであり、background / foregroundを意味内容やCharacter Styleから判定しない。
 
 Character module自身がglobal queue/schedulerを再実装しない。
 
@@ -630,6 +645,14 @@ Prompt本文、Character Bible全文、secretをmetricsへ記録しない。
 - plan superseded/cancelled reject
 - Character profile revision drift reject
 - constraint revision drift reject
+
+### Scheduling metadata
+
+- `LLMPriority.FOREGROUND`のSnapshotはFOREGROUND requestへそのまま伝播する
+- `LLMPriority.BACKGROUND`のSnapshotはBACKGROUND requestへそのまま伝播する
+- interruptibilityをそのまま伝播する
+- same Planでもupstream scheduling metadata差がLLM request metadataへ反映される
+- priority / interruptibilityはcandidate output schemaに存在せず、candidateは書き換えられない
 
 ### Concurrency
 
