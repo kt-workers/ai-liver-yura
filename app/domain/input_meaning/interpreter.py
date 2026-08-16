@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import cast
+from typing import Protocol, cast
 
 from app.domain.contracts.common import JsonValue, freeze_json, require_revision
 from app.domain.input_gateway import InputModality, NormalizedInputEvent
@@ -41,6 +41,12 @@ class InputMeaningPolicy:
             or not 0 <= self.minimum_confidence <= 1
         ):
             raise ValueError("minimum_confidence must be between 0 and 1")
+
+
+class InputMeaningLiveContextPort(Protocol):
+    """Input Meaning commit直前のsource context世代を読み取る境界。"""
+
+    async def current_source_context_revision(self) -> int: ...
 
 
 def descriptor(policy: InputMeaningPolicy) -> LLMRoleDescriptor:
@@ -156,8 +162,15 @@ def commit_result(
 
 
 class InputMeaningInterpreter:
-    def __init__(self, port: LLMRolePort, policy: InputMeaningPolicy) -> None:
-        self._port, self._policy = port, policy
+    def __init__(
+        self,
+        port: LLMRolePort,
+        live_context: InputMeaningLiveContextPort,
+        policy: InputMeaningPolicy,
+    ) -> None:
+        self._port = port
+        self._live_context = live_context
+        self._policy = policy
 
     async def interpret(
         self,
@@ -167,7 +180,6 @@ class InputMeaningInterpreter:
         request_id: str,
         trace_id: str,
         created_at: datetime,
-        current_source_context_revision: int,
     ) -> StructuredInputMeaning:
         request = build_request(
             event,
@@ -178,6 +190,7 @@ class InputMeaningInterpreter:
             policy=self._policy,
         )
         result = await self._port.invoke(request)
+        current_source_context_revision = await self._live_context.current_source_context_revision()
         return commit_result(
             request,
             result,
