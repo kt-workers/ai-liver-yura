@@ -19,6 +19,31 @@ class RuntimeAvailability(str, Enum):
     NOT_CONFIGURED = "not_configured"
 
 
+_PROFILE_ALLOWED_FACET_IDS = {
+    "voice": frozenset(
+        {
+            "baseline_softness",
+            "calmness_tendency",
+            "emotional_expressiveness_tendency",
+            "energy_tendency",
+            "pacing_tendency",
+        }
+    ),
+    "body": frozenset(
+        {
+            "amplitude_tendency",
+            "continuity_tendency",
+            "gaze_tendency",
+            "head_expression_tendency",
+            "motion_softness",
+            "posture_expression_tendency",
+            "spatial_extent_tendency",
+            "symmetry_tendency",
+        }
+    ),
+}
+
+
 @dataclass(frozen=True, slots=True)
 class CharacterAuthority:
     bible_path: str
@@ -101,6 +126,9 @@ class CharacterDefinitionDocument:
             "body",
         ):
             object.__setattr__(self, name, _facets(getattr(self, name), name))
+        for profile_name, allowed_ids in _PROFILE_ALLOWED_FACET_IDS.items():
+            if any(facet.facet_id not in allowed_ids for facet in getattr(self, profile_name)):
+                raise ValueError(f"{profile_name} に未許可のfacet idがあります")
         all_ids = [
             facet.facet_id
             for name in (

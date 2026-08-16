@@ -162,3 +162,9 @@ def test_rejects_duplicate_yaml_mapping_keys() -> None:
     with pytest.raises(CharacterDefinitionLoadError) as error:
         load_character_definition_yaml(source)
     assert error.value.code is CharacterDefinitionLoadFailureCode.MALFORMED_YAML
+
+
+def test_rejects_unhashable_yaml_mapping_key_as_typed_failure() -> None:
+    with pytest.raises(CharacterDefinitionLoadError) as error:
+        load_character_definition_yaml("? [invalid]\n: value\n")
+    assert error.value.code is CharacterDefinitionLoadFailureCode.MALFORMED_YAML

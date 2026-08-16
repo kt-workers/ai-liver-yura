@@ -61,31 +61,6 @@ _CATEGORIES = (
     "voice",
     "body",
 )
-_ALLOWED_FACET_IDS = {
-    "voice": frozenset(
-        {
-            "baseline_softness",
-            "calmness_tendency",
-            "emotional_expressiveness_tendency",
-            "energy_tendency",
-            "pacing_tendency",
-        }
-    ),
-    "body": frozenset(
-        {
-            "amplitude_tendency",
-            "continuity_tendency",
-            "gaze_tendency",
-            "head_expression_tendency",
-            "motion_softness",
-            "posture_expression_tendency",
-            "spatial_extent_tendency",
-            "symmetry_tendency",
-        }
-    ),
-}
-
-
 class _StrictYamlLoader(yaml.SafeLoader):
     pass
 
@@ -96,7 +71,16 @@ def _construct_mapping_no_duplicates(
     mapping: dict[object, object] = {}
     for key_node, value_node in node.value:
         key = loader.construct_object(key_node, deep=deep)
-        if key in mapping:
+        try:
+            duplicate = key in mapping
+        except TypeError as error:
+            raise ConstructorError(
+                "mapping",
+                node.start_mark,
+                "マッピングのキーはハッシュ可能でなければなりません",
+                key_node.start_mark,
+            ) from error
+        if duplicate:
             raise ConstructorError(
                 "mapping",
                 node.start_mark,
@@ -136,9 +120,6 @@ def _facet(value: Any, category: str, *, keyed_id: str | None = None) -> Charact
         facet_id = keyed_id if keyed_id is not None else raw["id"]
         if not isinstance(facet_id, str) or not facet_id.strip():
             raise ValueError("facet id が不正です")
-        allowed_ids = _ALLOWED_FACET_IDS.get(category)
-        if allowed_ids is not None and facet_id not in allowed_ids:
-            raise ValueError("実行用facetはCharacter Definitionに指定できません")
         certainty = CharacterCertainty(raw["state"])
         tags_raw = raw.get("tags", [])
         if not isinstance(tags_raw, list):

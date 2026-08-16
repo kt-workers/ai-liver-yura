@@ -25,8 +25,8 @@ def _document(character_id: str = "generic") -> CharacterDefinitionDocument:
         values=(CharacterFacet("honesty", CharacterCertainty.CONFIRMED, "truthful"),),
         preferences=(CharacterFacet("tea", CharacterCertainty.UNKNOWN),),
         language=(CharacterFacet("first_person", CharacterCertainty.CONFIRMED, "私"),),
-        voice=(CharacterFacet("calmness", CharacterCertainty.NOT_CONFIGURED),),
-        body=(CharacterFacet("motion", CharacterCertainty.CANDIDATE, "soft"),),
+        voice=(CharacterFacet("calmness_tendency", CharacterCertainty.NOT_CONFIGURED),),
+        body=(CharacterFacet("motion_softness", CharacterCertainty.CANDIDATE, "soft"),),
     )
 
 
@@ -42,6 +42,26 @@ def test_projector_preserves_provenance_and_hides_candidate_value() -> None:
     assert result.preferences_values.facets[0].availability is RuntimeAvailability.UNRESOLVED
     assert result.voice.facets[0].availability is RuntimeAvailability.NOT_CONFIGURED
     assert result.body.facets[0].value is None
+
+
+@pytest.mark.parametrize(
+    ("profile", "facet_id"),
+    [("voice", "speaker_id"), ("body", "joint_angles")],
+)
+def test_domain_rejects_execution_facets_before_projection(profile: str, facet_id: str) -> None:
+    fields: dict[str, tuple[CharacterFacet, ...]] = {
+        "voice": (),
+        "body": (),
+    }
+    fields[profile] = (CharacterFacet(facet_id, CharacterCertainty.CONFIRMED, "forbidden"),)
+    with pytest.raises(ValueError, match="未許可"):
+        CharacterDefinitionDocument(
+            schema_version=1,
+            character_id="generic",
+            definition_revision=7,
+            authority=CharacterAuthority("docs/character/v2/generic.md", 354),
+            **fields,
+        )
 
 
 def test_same_projector_handles_alternate_character_and_data_only_change() -> None:
