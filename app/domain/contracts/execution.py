@@ -78,6 +78,7 @@ _ALLOWED_TRANSITIONS: dict[ExecutionStatus, frozenset[ExecutionStatus]] = {
     ),
     ExecutionStatus.OBSERVABLE: frozenset(
         {
+            ExecutionStatus.OBSERVABLE,
             ExecutionStatus.COMPLETED,
             ExecutionStatus.FAILED,
             ExecutionStatus.CANCELLED,
@@ -87,6 +88,7 @@ _ALLOWED_TRANSITIONS: dict[ExecutionStatus, frozenset[ExecutionStatus]] = {
     ),
     ExecutionStatus.APPLIED: frozenset(
         {
+            ExecutionStatus.APPLIED,
             ExecutionStatus.COMPLETED,
             ExecutionStatus.FAILED,
             ExecutionStatus.CANCELLED,
@@ -147,6 +149,8 @@ class ExecutionResult:
 
         supplied_refs = () if effect_refs is None else tuple(effect_refs)
         new_refs = tuple(item for item in supplied_refs if item not in self.effect_refs)
+        if status is self.status and not new_refs:
+            raise ValueError("same execution milestone requires a new effect_ref")
         if new_refs and status not in _EFFECT_STATUSES:
             raise ValueError(f"{status.value} cannot introduce effect_refs")
         merged_refs = self.effect_refs + new_refs
@@ -214,9 +218,7 @@ class AsyncWorkResult:
             "request_id": self.request_id,
             "status": self.status.value,
             "revisions": self.revisions.to_dict(),
-            "started_at": None
-            if self.started_at is None
-            else timestamp_to_json(self.started_at),
+            "started_at": None if self.started_at is None else timestamp_to_json(self.started_at),
             "completed_at": timestamp_to_json(self.completed_at),
             "result": thaw_json(self.result),
             "error_code": self.error_code,

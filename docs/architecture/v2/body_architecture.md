@@ -144,6 +144,44 @@ BodyState
 Body Stateの書込みAuthorityはBody。
 Character / GUI / Avatarが直接mutationしない。
 
+### 5.1 #336 の詳細契約
+
+`CanonicalBodyModel` と `BodyState` はrenderer非依存の不変値である。各値は
+JSON互換の辞書へ直列化でき、生成後に内部の配列又は対応表を書き換えてはならない。
+Body以外の領域はsnapshotを読めるが、書込みは新しいrevisionを持つ
+`BodyState` をBodyが生成することでのみ行う。
+
+#### 座標、姿勢及び責務
+
+- Canonical座標系は右手系の3次元座標である。`+X` は解剖学的右、`+Y` は上方、
+  `+Z` は前方とする。単位はmeter、body modelの長さはreference heightを`1.0`とした
+  正規化長で表す。
+- 向きは単位quaternionの`(x, y, z, w)`で表す。位置、quaternion、速度、質量割合及び
+  制限値へNaN又は無限大を入れてはならない。
+- root transformだけがworld座標であり、root以外のjoint transform及びrest offsetは
+  親jointに対するlocal座標である。world transformの合成、FK、IK及びrenderer座標への
+  投影は後続のSolver又はAdapterの責務であり、Canonical Modelは所有しない。
+- `BodyPose` はroot world transformと、root以外の全jointを一意に含むlocal transformから成る。
+  `BodyVelocity` はrootのworld線形・角速度と、root以外の全jointのlocal線形・角速度を同じ識別子で
+  保持する。過去poseはimmutableな時系列snapshotとしてのみ保存する。
+
+#### Skeleton、可動域及び検証
+
+- jointは一意なIDと、rootを一つだけ持つ親子木で構成する。自己親、存在しない親、cycle、
+  複数rootはrejectする。解剖学的left/right/centerはCanonicalでありscreen mirrorではない。
+- segmentは直接の親子jointを結び、正の正規化長及び質量割合を持つ。end effectorは既知の
+  jointを参照し、kinematic chainはroot側から末端側へ連続する既知joint列である。
+- 各DOFは`X`、`Y`又は`Z`軸を一度だけ指定する。hard rangeはmin ≤ max、comfortable
+  rangeはhard range内、relaxed referenceはcomfortable range内とする。DOFのないjointは
+  rotationを持たない固定jointである。
+- `BodyState` は既知のbody model ID、非負revision、timezone-aware観測時刻を持つ。pose、
+  velocity、historyはrootを除く同じskeletonのjoint集合を持ち、historyの時刻はcurrent snapshotを
+  超えてはならない。不正な入力はProvider、renderer又はsolverを呼ぶ前にrejectする。
+
+この契約はDomainの身体同一性を固定するが、Motion Planner、Solver、Continuous Controller及び
+Avatar Adapterの実装又は実行責務を先取りしない。特にrenderer bone名、画面座標、Live2D又は
+Stick固有の制約を含めない。
+
 ---
 
 ## 6. D03 Body Expression Projection — #337

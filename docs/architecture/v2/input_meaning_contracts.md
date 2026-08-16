@@ -1,0 +1,99 @@
+# V2 Input Meaning実装契約
+
+Status: Issue #326 implementation canonical / Issue #413 live freshness amendment
+Parent: `brain_architecture.md`
+Input: `input_gateway_contracts.md`
+LLM: `llm_role_contracts.md`
+
+## 1. 責務
+
+Input MeaningはText/STTの自然言語を`StructuredInputMeaning`へ変換する唯一のopen-ended semantic authorityである。Appraisal、Goal、Attention、返答内容、Activity実行を決定しない。下流はraw textを再解釈しない。
+
+## 2. 入出力
+
+入力は#349の`NormalizedInputEvent`とbounded `ReferenceContext`。Text/Speech以外、lifecycle、空の`text`、schema不一致をfail-closedで拒否する。TextとSTT transcriptは同じRoleとschemaを使う。
+
+出力はimmutableな`StructuredInputMeaning`であり、speech act、primary intent、expected response、target、entities、references、provided information、negation、hypothetical、temporal relation、confidence、unresolved fieldsを持つ。confirmation、Activity start/stop、internal-state questionはprimary intentのtyped値として表す。
+
+## 3. ReferenceContext
+
+`ReferenceContext`はrevision付きbounded snapshotで、recent speech/presentation、Executive decision、Goal/Commitment、Activity/Actual Fact、current topic、Memory evidenceへのtyped referenceを保持する。上限超過、重複ID、future revisionを拒否する。LLMがreferenceを解決できなければ`unresolved_fields`へ残し、clarificationへ閉じる。
+
+## 4. LLM境界
+
+Input Meaning Roleは#323の可変Role契約を使う。requestはsource event/context revision、foreground priority、cancellation、stale policyを運ぶ。Provider名や固定Role番号を持たない。Provider resultはexchange identity/schema/revision/timestampを検証後、Input Meaning所有validatorが厳密なoutput schemaを構築する。
+
+## 5. commit policy
+
+次は`clarification_required`とする。
+
+- confidenceがpolicy threshold未満
+- target/reference等の必須解決項目が未解決
+- Roleが明示的にclarificationを要求
+
+current context revisionとrequest revisionが異なるresult、非success、schema/identity違反はcommitしない。`mark_stale`や`revalidate`であっても本Issueのcommit関数は最新revisionの明示一致を要求する。
+
+### 5.1 post-await live freshness — #413
+
+LLM request開始時にfreezeした`NormalizedInputEvent` / `ReferenceContext` / `request.revisions.source_context_revision`は、Providerへ渡す入力世代の正本である。一方、LLM完了後のcommit freshnessを判断する「current source context」は開始時snapshotではなく、commit直前に取得したauthoritative live revisionを正本とする。
+
+production `InputMeaningInterpreter`は、LLM完了後に`InputMeaningLiveContextPort`（名称は実装上同等のtyped read Portでもよい）からimmutableなlive commit stateを取得する。最低限、そのstateはcurrent `source_context_revision`を持つ。
+
+正規順序は次とする。
+
+```text
+freeze request input at revision N
+→ invoke Input Meaning Role
+→ await provider result
+→ read authoritative live source_context_revision
+→ validate exchange / request snapshot / live revision
+→ construct StructuredInputMeaning only if live revision == request revision N
+```
+
+禁止する。
+
+- callerがLLM開始前に取得した`current_source_context_revision`を、await後もcurrent Authorityとして再利用すること
+- stale resultを新しいrevisionへ付け替えること
+- old resultを新しい`ReferenceContext`で再解釈・再利用すること
+- stale検出後にInput Meaning内部で暗黙retryして新しい意味を補作すること
+- live freshness確認のためにCore global lockやLLM待機を含む長時間lockを導入すること
+
+live revisionがrequest revisionと異なる場合はfail-closedでstale rejectし、`StructuredInputMeaning`を返さない。live read自体が失敗しcurrent revisionを確定できない場合もfail-closedとする。必要な再解釈は、上流が新しいevent/context generationに対して新しいrequestとして起動する。
+
+live readからcommitまでの区間に外部awaitやProvider callを挟まない。Input Meaningのcommitはsource context ownerをmutationしないため、成功したmeaningにはrequest時の`source_context_revision`をprovenanceとして保持する。その直後にcontextが進んだ場合は、下流のrevision gateがこの世代をstaleとして扱えるようrevisionを失わない。
+
+### 5.2 Port / ownership boundary
+
+`InputMeaningLiveContextPort`はread-onlyであり、Input Meaningへsource-context mutation Authorityを与えない。Port実装はcurrent source-context ownerからrevision付きsnapshotを読み、Provider SDK型やraw mutable objectをDomainへ露出しない。
+
+`InputMeaningInterpreter`のproduction APIは、開始時callerが渡す`current_source_context_revision`をpost-await freshness Authorityとして要求しない。テスト専用にcommit関数へ明示revisionを渡す場合でも、その関数はpure validatorとして扱い、production orchestrationでは必ずpost-await live readの値を使用する。
+
+## 6. 禁止事項
+
+- keyword、正規表現、substring、固定phrase辞書をsemantic authorityにすること
+- raw textを`StructuredInputMeaning`へ残し、下流に再解釈させること
+- Vision/Touch/Game等を自然言語へ強制変換すること
+- Input MeaningがAppraisal、Internal State、Goal、Attention、Execution Factを変更すること
+- LLM自由文やProvider objectをDomain出力にすること
+
+## 7. 並行性
+
+Role Portの1 requestだけをawaitし、global lockや直列queueを所有しない。Runtime priority/backpressureは#322が所有する。slow Input Meaningがunrelated laneを停止しないことはFake Portを用いた隣接testで確認する。
+
+post-await live readは当該requestのcommit gateだけに必要な短いreadであり、他requestやunrelated laneをserializeしない。slow Input Meaning request AのProvider待機中に、別laneや別request Bが進行できる構造を維持する。
+
+## 8. 受入条件
+
+- 全公開snapshotがstrict JSON serializableかつimmutable
+- Text/STTが同一semantic authorityを通る
+- paraphraseはProvider出力に基づき同一typed meaningとして受理できる
+- missing target、general reference、negation、hypotheticalを構造化できる
+- low confidence/unresolvedをclarificationへfail-closedにする
+- stale、schema違反、非言語eventをcommitしない
+- runtime codeにfinite surface matcherを置かない
+- Provider SDK import、Appraisal/Goal/Attention判断を持たない
+- request revision NでLLM開始後、live source-contextがN+1へ進んだ場合、production `interpret()`経路がold resultをstale rejectする
+- request revisionとpost-await live revisionが一致する場合だけ正常commitする
+- live revisionを取得できない場合は意味を補作せずfail-closedにする
+- stale reject時にold resultをnew revisionへ付け替えない
+- post-await live read導入後もslow Input Meaning中にunrelated workが進行できる

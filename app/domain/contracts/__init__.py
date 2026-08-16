@@ -3,7 +3,14 @@ from .capabilities import (
     CapabilityDescriptor,
     CapabilityRequirement,
 )
-from .common import AuthorityRef, IntentKind, IntentRef, PreconditionRef, RevisionVector
+from .common import (
+    AuthorityRef,
+    IntentKind,
+    IntentRef,
+    PreconditionRef,
+    RevisionVector,
+    SourceLifecycleOperation,
+)
 from .execution import AsyncWorkResult, AsyncWorkStatus, ExecutionResult, ExecutionStatus
 from .messaging import EventEnvelope, ExecutiveDecision, SystemCommand
 
@@ -23,4 +30,5 @@ __all__ = [
     "PreconditionRef",
     "RevisionVector",
     "SystemCommand",
+    "SourceLifecycleOperation",
 ]

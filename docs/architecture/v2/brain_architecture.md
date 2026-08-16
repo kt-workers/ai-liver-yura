@@ -221,6 +221,8 @@ Reflection
 
 Store直接mutation、complex Plan全step、最終台詞、joint angle、Game frame actionは生成しない。
 
+LLM完了後のcommitではsource / goal / attentionに加えてInternal Stateの独立revisionをcurrent ownerから再取得する。Capability / Preconditionもcurrent値を再検証し、intentに必要な条件はLLMの自己申告だけでなく信頼済みpolicyまたはupstream typed contractから導出する。
+
 ---
 
 ## 12. B08 Goal / Commitment State — #366
@@ -239,6 +241,8 @@ pending Goal/CommitmentはB17のExecutive trigger sourceになり得る。
 
 active Goalを複雑な`ActivityPlan`へ分解する。
 
+実装契約の正本は[`goal_planning_contracts.md`](goal_planning_contracts.md)とする。
+
 `goal_id / goal_revision`を保持し、旧revision planはstale/replan扱い。
 
 simple actionでは専用Planner LLMを呼ばなくてよい。
@@ -256,6 +260,8 @@ or paused / interrupted / cancelled / failed / unsupported
 
 Goal正本ではない。
 
+実装正本は`activity_execution_contracts.md`。Foundation `ExecutionResult`をActual Factの唯一のlifecycle正本として使い、別の重複status machineを作らない。開始前とdispatch直前にrevision、Capability binding、Preconditionをcurrent stateで再検証する。
+
 ---
 
 ## 15. B11 Execution Coordination — #329
@@ -269,11 +275,15 @@ or rejected / failed / cancelled / timed_out
 
 Intent / Plan / Character claimとActual Factを混同しない。
 
+Adapterはtyped reportを返すだけで`ExecutionResult`を直接確定しない。外部effect後にcontextがstaleになってもeffect refを消さず、Appraisal / Executiveへ事実として戻す。
+
 ---
 
 ## 16. B12 Speech Semantics — #362
 
 `What to say` Authority。
+
+実装正本は`speech_semantics_contracts.md`。
 
 Executive SpeechIntentからpropositions、required/forbidden、certainty/polarity/degree、question budget、execution truth等を`SpeechSemanticPlan`へ確定する。
 
@@ -318,6 +328,8 @@ PreparationとPresentationを分離。
 ---
 
 ## 21. B17 Attention / Autonomy / Turn — #333
+
+実装の詳細契約は[`attention_turn_contracts.md`](attention_turn_contracts.md)とする。
 
 複数Activityの注意資源・Focus・Turn・Executive trigger eligibilityを所有する。
 

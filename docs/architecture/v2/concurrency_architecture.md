@@ -134,7 +134,13 @@ Goalをabandon / supersede / reprioritizeした後、旧revisionで生成済みA
 
 Focus/turn/priorityが大きく変化した後、旧focusを前提にした低優先候補を無条件commitしない。
 
+### internal_state_revision
+
+#327 `InternalStateSnapshot`の独立世代。Internal State Reducerは`source_context_revision`を変えずにstate revisionだけを進められるため、Emotion / Desire / Drive / Motivation等を読むExecutiveは3要素のFoundation `RevisionVector`に加えてこのrevisionを責務固有の`ExecutiveFreshnessStamp`へ含める。Foundation共通型へ全Module固有revisionを追加しない。
+
 すべての処理へ3 revisionを必須化するわけではない。責務上必要なrevisionだけをContractに含める。
+
+Executiveのlong-running LLMは開始時snapshotをrequestへfreezeするが、開始時に得たcurrent値をcommitへ再利用しない。result到着後に`ExecutiveLiveStatePort`から3 revision、Internal State revision、Capability、Preconditionを一貫したcurrent snapshotとして読み直し、Authorityがrequest時snapshotと照合する。Capability/Preconditionの必須集合はLLMの自己申告ではなく信頼済みpolicy/upstream contractが導出し、候補申告との欠落もfail-closedにする。
 
 ---
 
@@ -341,6 +347,8 @@ request stale after effect applied
 ```
 
 staleだから実世界の事実を消さない。
+
+#329 Activity Executionは開始前とdispatch直前にcurrent revision、Capability ID/revision/availability、Precondition identity/actualを再検証する。dispatch awaitをAuthority lockへ含めず、Adapter reportはFoundation `ExecutionResult`の合法edgeとしてのみcommitする。
 
 ---
 

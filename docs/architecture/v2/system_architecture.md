@@ -1,9 +1,10 @@
 # AI Liver ゆら V2 Canonical System Architecture
 
-Status: Draft / V2 Design Gate / Design Reconciliation Complete
+Status: Draft / V2 Design Gate / Design Reconciliation Complete / Streaming Plan Semantic Sync 2026-08-14
 Canonical branch: `rebuild/v2-foundation`
 Root: #317
 Base lineage: `main@0500a69c75e46e97c0f849c26a4d3d7f1fb138dd`
+Streaming plan semantic sync: #396
 
 ## 1. 役割
 
@@ -47,6 +48,8 @@ User Messageへの返信器ではない。
 を持ち、外界と自身の変化を受けながら会話・YouTube配信・ゲーム対戦/実況・観察・沈黙等を自ら選択する。
 
 ユーザー発言は重要Eventだが無条件命令ではない。
+
+「ゆらが配信する」「ゆらがゲームをする」等の主体性はCoreのGoal / Activity Authorityで表現し、外部サービス固有の実装をCoreへ持ち込むことでは表現しない。
 
 ---
 
@@ -100,6 +103,8 @@ Adapters / Providers / UI / External systems
 DomainはOpenAI SDK、FastAPI、VOICEVOX、PostgreSQL、Live2D等の具体型を知らない。
 Infrastructure ProviderはPluginではない。
 
+外部サービス固有のSDK / protocol / credential / resource IDをCore Domain / Runtimeへ持ち込まない。
+
 ---
 
 ## 5. Plugin Boundary
@@ -124,6 +129,33 @@ Subsystemは独立lifecycle/process/resource ownershipを持てる。
 - Vision / recognition
 
 Skill AIはExecutive Goal Authorityを奪わない。
+
+### 6.1 Core Decision / Subsystem Execution / External Observation
+
+外部サービスを伴うActivityでは3つのAuthorityを分ける。
+
+```text
+Core Executive
+  decides what Yura does
+        ↓
+generic Activity / Capability Request
+        ↓
+Subsystem
+  executes provider-specific operation
+        ↓
+Execution Result / External Observation
+        ↓
+Core
+  recognizes actual result and re-appraises
+```
+
+Coreは配信準備・配信開始・配信終了等の高レベルActivityを選択できる。
+
+ただしYouTube API、OBS WebSocket、OAuth、provider固有IDやscene等はStreaming Subsystem側だけが所有する。Core production codeはYouTube/OBS等のprovider固有class・port・runtime責務を持たない。
+
+外界状態はSubsystem/API観測だけでなくユーザー報告等からも認知できる。source / provenance / confidenceを保持し、報告とprovider確認済み事実を無条件に同一視しない。
+
+IntentやCharacter発話は外部操作成功Factではない。Actual Factはtrusted Execution Result / Observationで確定する。
 
 ---
 
@@ -184,6 +216,8 @@ Typed Event Stream ──────┼─ Attention / Turn
 - Streaming burstでCore starvationなし
 - background workがforeground interactionをstarveしない
 
+Subsystemの外部API待ちをCore Runtimeの専用配信処理として抱え込まず、generic async Capability / Event境界で隔離する。
+
 ---
 
 ## 9. LLM Design
@@ -234,6 +268,7 @@ Goal State #366、Attention #333、State Reducer、Activity/Execution、Body phy
 | Memory canonical store / retrieval | #332 |
 | Memory Candidate generation | #364 |
 | Game frame-level skill | #365, subordinate to Core Goal |
+| Streaming provider execution / observation | #347 Subsystem, subordinate to Core Activity |
 
 LLM自由文をState/Factへ直接代入しない。
 Intent / Plan / Character claimをActual Factへ昇格させない。
@@ -331,7 +366,35 @@ CharacterとBodyはExecutiveから兄弟fan-out。
 
 ### Streaming #347
 
-bounded comment ingress / aggregation / backpressure。Skill AIは分類等を担当可。reply/stream continuation/What-to-sayはCore Authority。
+Streamingは**Coreの配信Moduleではなく独立Subsystem**。
+
+Coreが所有する:
+
+- 配信を準備/開始/継続/終了するかというActivity/Goal判断
+- viewer commentへ反応するか
+- 何を言うか
+
+Streaming Subsystemが所有する:
+
+- provider固有のreadiness / prepare / start / end実行
+- YouTube/OBS等のAPI・protocol・authentication
+- 配信状態/healthのprovider観測
+- comment ingestion / aggregation / backpressure
+- provider結果のtyped Execution Result / External Observation化
+
+```text
+User / Internal Goal
+→ Input / Executive
+→ generic Capability Request
+→ Streaming Subsystem
+→ external provider operation
+→ Execution Result / Observation
+→ Appraisal / Attention / Executive
+```
+
+OBS profile / scene graph / encoder等の構成は原則事前準備し、任意構成の自動生成を#347の必須責務にしない。
+
+API観測がなくても、ユーザーから配信が開始済みである旨などの状態報告を受けて認知候補にできるが、`user_report` provenanceを保持しprovider確認済みFactと区別する。
 
 ### Game #365
 
@@ -352,6 +415,12 @@ Game Agentが実況台詞を直接発話しない。
 ## 16. Natural Language Policy
 
 open-ended意味Authorityとしてfinite keyword/marker/regex/substring/startswith等を使わない。
+
+自然言語の設計文書・Issue・テストに記載する文言は、原則として**意味カテゴリの説明またはillustrative example**であり、その文字列自体をtrigger / allowlist / matcher仕様にしてはならない。
+
+例えば外部Activityについては「配信開始を求める旨を伝える」「配信が開始済みである旨を報告する」のように意味で記述する。実装・検証では同義表現、語順差、敬語、口語、省略、文脈参照を含むparaphraseで同じStructuredInputMeaningへ一般化できることを確認する。
+
+open-ended natural-language meaningのAuthorityは#326 Input Meaningのみ。Streaming Subsystem、Executive、Activity Runtime、Provider Adapterがraw natural languageを再度keyword/regex/substringで独自解釈しない。
 
 protocol token / enum / exact technical ID / finite-domain vocabularyは例外。
 
@@ -375,6 +444,8 @@ I promised X    → Commitment State
 I said promise  → Speech Presentation Fact
 ```
 
+外部Subsystem操作も同じTruth boundaryに従う。配信開始Intentを持ったことと、provider上で実際にliveになったことを分離する。
+
 ---
 
 ## 18. Character / Body / Skill sibling boundary
@@ -390,6 +461,7 @@ I said promise  → Speech Presentation Fact
 Character textからBody semantic commandを作らない。
 Body poseからSpeech meaningを決めない。
 Skill AIからCore Goalを作らない。
+Subsystem Execution Resultからのみ外部実行Factを確定し、Character claimから逆算しない。
 
 ---
 
@@ -437,8 +509,7 @@ Canonical Design
 - [x] current V2 Issueのactive Commander/fixed Role numbering排除
 - [x] subordinate canonical / Issue cross-audit
 - [x] Project sync Manifest / Runbook
-
-残るDesign Gateは**ユーザーによるV2 canonical architecture確認**。
+- [x] #394 Streaming Core Decision / Subsystem Execution / External Observation boundary reconciliation
+- [x] #396 Streaming実装計画とnatural-language semantic/paraphrase原則を同期
 
 #319 actual Projects v2 field / formal Parent-Subissue mutationは現実行環境の制約で別途Blocked管理する。
-Product implementationはユーザー確認前に開始しない。
