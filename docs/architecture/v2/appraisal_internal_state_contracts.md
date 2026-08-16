@@ -116,3 +116,101 @@ Deep Appraisal awaitは呼出taskだけを待たせ、global lock/queueを所有
 - slow Deep Appraisal中もunrelated async taskが進行
 - Input Meaning、Goal、Attention、Character、Body、MemoryのAuthorityを奪わない
 - 全公開snapshotがstrict JSON serializableかつimmutable
+
+## 12. Deep Appraisalのpost-await live freshness — Issue #414
+
+Deep Appraisalは、LLM開始時にfreezeした入力snapshotと、LLM完了後のcommit freshness Authorityを分離する。
+
+開始時の世代は次の2値で固定する。
+
+- `request.revisions.source_context_revision`
+- requestへ埋め込んだ`InternalStateSnapshot.revision`
+
+これらはProviderへ渡した入力世代のprovenanceであり、LLM完了後のcurrent値として再利用しない。
+
+production `DeepAppraisalInterpreter.appraise()` はProvider完了後、candidate確定直前にread-onlyなlive state read境界から、少なくとも次を一組のimmutable freshness stampとして取得する。
+
+```text
+DeepAppraisalFreshnessStamp
+- source_context_revision
+- state_revision
+```
+
+実装上のPort名は`DeepAppraisalLiveStatePort`または同等の責務名とする。Portはsource contextやInternal Stateをmutationせず、Provider SDK objectやmutable owner objectを返さない。
+
+### 12.1 live readの一貫性
+
+`source_context_revision`と`state_revision`を、LLM開始前にcallerが個別取得した値の寄せ集めで構成してはならない。post-await時点のlive世代を一貫したlogical readとして取得する。
+
+所有Storeが別の場合、実装は次のいずれか同等の方法でstable readを成立させる。
+
+- composition層が提供するversioned composite snapshot
+- owner側のserialized read境界
+- boundedなversion-stabilized readにより、読取中の世代変化を検出してretryまたはfail-closedする方式
+
+stableな一組を確立できない場合はfail-closedとし、古い候補を採用するためにglobal lockへ拡張しない。
+
+### 12.2 production commit順序
+
+正規経路は次とする。
+
+```text
+request snapshot freeze
+→ await Deep Appraisal Provider
+→ post-await live freshness read
+→ request時世代との完全一致検証
+→ pure candidate commit validation
+→ AppraisalCandidate
+→ InternalStateReducer
+```
+
+`DeepAppraisalInterpreter.appraise()`は、開始時の`current_source_context_revision`や`current_state_revision`をpost-await Authorityとして受け取るproduction APIを持たない。既存のpure `commit_deep_result()`がexplicit current revisionを受け取る形を維持することはできるが、production orchestrationは必ずpost-await live stampを渡す。
+
+live read完了から`commit_deep_result()`までに、Provider call、別の外部I/O、不要なasync waitを挟まない。
+
+### 12.3 stale判定
+
+次のどちらかが一致しなければDeep resultはstaleとしてfail-closedする。
+
+```text
+request.revisions.source_context_revision
+== live.source_context_revision
+
+request時 InternalStateSnapshot.revision
+== live.state_revision
+```
+
+staleまたはlive read failure時は`AppraisalCandidate`を生成しない。特に禁止する。
+
+- old resultのsource context revisionをlive revisionへ付け替える
+- old resultのbase state revisionをlive state revisionへ付け替える
+- old resultをnew InternalStateSnapshot / new contextで再利用する
+- stale検出時に暗黙の再LLM requestを開始する
+- fallback AppraisalCandidateを補作する
+
+再評価が必要なら、上流が新しいrequest generationとして起動する。
+
+### 12.4 provenanceとReducerの二重Gate
+
+正常に生成した`AppraisalCandidate`は、**request時**の`source_context_revision`と`base_state_revision`を保持する。post-await live stampは「まだ同じ世代か」を確認するAuthorityであり、candidate provenanceを書き換える値ではない。
+
+LLM待機中にstaleになった候補はReducerへ渡す前に拒否する。その後、live gate通過からReducer atomic commitまでの短い競合窓で世代が進んだ場合は、`InternalStateReducer.commit()`自身のcurrent source/state revision検証が最終Authorityとして拒否する。したがってpre-reducer gateとReducer gateの両方を維持し、どちらか一方へ統合しない。
+
+### 12.5 concurrency invariant
+
+- post-await live readのためにCore global lockを導入しない
+- Deep Appraisal待機中もnew Input、fast Appraisal、Body realtime、Speech/Game等を継続できる
+- Deep Appraisal専用のserial blocking cycleを作らない
+- stale Deep resultを最新stateへmergeしない
+
+### 12.6 必須Regression
+
+- request `(source=N, state=S)` でDeep LLM開始後、sourceだけ`N+1`へ進む → production `appraise()`でstale reject
+- request `(N, S)` でDeep LLM開始後、stateだけ`S+1`へ進む → production `appraise()`でstale reject
+- source/stateとも不変 → 正常candidate生成
+- live freshness read失敗またはstable pair確立失敗 → fail-closed / candidateなし
+- stale resultのsource/state revision付替えがない
+- old resultをnew snapshot/contextへ再利用しない
+- LLM待機中にstaleとなった候補がReducerへ渡らない
+- live gate後に競合が発生した場合はReducerのatomic stale gateで拒否される
+- slow Deep Appraisal中もunrelated async workが進行する
