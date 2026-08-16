@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import importlib
+from typing import Any
+
 from .context_builder import render_reviewer_input
 from .models import ProviderReviewCandidate, ReviewContext
 from .reviewer_backend import ReviewerBackendError
@@ -43,7 +46,7 @@ class GeminiReviewerBackend:
 
     def review(self, context: ReviewContext) -> ProviderReviewCandidate:
         try:
-            from google import genai  # type: ignore[import-untyped]
+            genai: Any = importlib.import_module("google.genai")
         except ImportError as exc:  # pragma: no cover - CI環境で確認する経路
             raise ReviewerBackendError("google-genai がインストールされていません") from exc
         try:
