@@ -275,6 +275,9 @@ def test_pull_request_cannot_be_used_as_work_issue() -> None:
 
 def test_only_allowlisted_workflow_is_trusted_evidence() -> None:
     class EvidenceGitHub(FakeGitHub):
+        def get_content(self, path: str, ref: str) -> str:
+            return f"{path}: trusted workflow"
+
         def list_workflow_runs_for_head(self, head_sha: str) -> list[dict[str, object]]:
             return [
                 {
@@ -282,6 +285,9 @@ def test_only_allowlisted_workflow_is_trusted_evidence() -> None:
                     "workflow_id": 101,
                     "name": "信頼済み試験",
                     "head_sha": head_sha,
+                    "path": ".github/workflows/v2-ci.yml",
+                    "event": "pull_request",
+                    "head_repository": {"full_name": self.repository},
                     "conclusion": "success",
                     "updated_at": "2026-08-13T00:00:00Z",
                 },
@@ -290,6 +296,9 @@ def test_only_allowlisted_workflow_is_trusted_evidence() -> None:
                     "workflow_id": 202,
                     "name": "信頼済み試験",
                     "head_sha": head_sha,
+                    "path": ".github/workflows/v2-ci.yml",
+                    "event": "pull_request",
+                    "head_repository": {"full_name": self.repository},
                     "conclusion": "success",
                     "updated_at": "2026-08-13T00:00:00Z",
                 },
@@ -307,3 +316,39 @@ def test_only_allowlisted_workflow_is_trusted_evidence() -> None:
         trusted_workflow_ids=frozenset({101}),
     )
     assert [item.name for item in context.gate_evidence] == ["信頼済み試験"]
+
+
+def test_pr_modified_allowlisted_workflow_is_not_trusted_evidence() -> None:
+    class ModifiedWorkflowGitHub(FakeGitHub):
+        def get_content(self, path: str, ref: str) -> str:
+            if ref == self.head_sha:
+                return "PR側で改変されたworkflow"
+            return "信頼済みworkflow"
+
+        def list_workflow_runs_for_head(self, head_sha: str) -> list[dict[str, object]]:
+            return [
+                {
+                    "id": 1,
+                    "workflow_id": 101,
+                    "name": "信頼済み試験を装う実行",
+                    "head_sha": head_sha,
+                    "path": ".github/workflows/v2-ci.yml",
+                    "event": "pull_request",
+                    "head_repository": {"full_name": self.repository},
+                    "conclusion": "success",
+                    "updated_at": "2026-08-13T00:00:00Z",
+                }
+            ]
+
+    github = ModifiedWorkflowGitHub()
+    context = build_context(
+        github,
+        repository=github.repository,
+        pr_number=1,
+        implementer_identity=_implementer(),
+        expected_head_sha=github.head_sha,
+        trusted_base_sha="d" * 40,
+        max_context_chars=100_000,
+        trusted_workflow_ids=frozenset({101}),
+    )
+    assert context.gate_evidence == []

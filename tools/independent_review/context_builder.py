@@ -23,6 +23,7 @@ _CANONICAL_PATH = re.compile(r"`(docs/[^`]+\.md)`")
 _CANONICAL_MARKER = re.compile(r"(?im)^\s*正本:\s*$")
 _COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 _SUPPORTED_BASE_REF = "rebuild/v2-foundation"
+_WORKFLOW_PATH_PREFIX = ".github/workflows/"
 
 
 class ContextBuildError(RuntimeError):
@@ -175,6 +176,38 @@ def _authority_generation(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _is_trusted_workflow_run(
+    github: GitHubReader,
+    run: dict[str, object],
+    *,
+    repository: str,
+    expected_head_sha: str,
+    trusted_base_sha: str,
+    trusted_workflow_ids: frozenset[int],
+) -> bool:
+    """PR側で改変されたworkflowの実行を信頼済み証拠から除外する。"""
+    workflow_id = run.get("workflow_id")
+    workflow_path = run.get("path")
+    if (
+        not isinstance(workflow_id, int)
+        or workflow_id not in trusted_workflow_ids
+        or not isinstance(workflow_path, str)
+        or not workflow_path.startswith(_WORKFLOW_PATH_PREFIX)
+        or run.get("head_sha") != expected_head_sha
+        or run.get("event") != "pull_request"
+    ):
+        return False
+    head_repository = run.get("head_repository")
+    if not isinstance(head_repository, dict) or head_repository.get("full_name") != repository:
+        return False
+    try:
+        trusted_definition = github.get_content(workflow_path, trusted_base_sha)
+        reviewed_definition = github.get_content(workflow_path, expected_head_sha)
+    except Exception as error:
+        raise ContextBuildError("信頼済みworkflow定義を確認できません") from error
+    return trusted_definition == reviewed_definition
+
+
 def build_context(
     github: GitHubReader,
     *,
@@ -236,16 +269,20 @@ def build_context(
 
     gate_evidence: list[GateEvidence] = []
     for run in github.list_workflow_runs_for_head(expected_head_sha):
-        workflow_id = run.get("workflow_id")
-        if not isinstance(workflow_id, int) or workflow_id not in trusted_workflow_ids:
+        if not _is_trusted_workflow_run(
+            github,
+            run,
+            repository=repository,
+            expected_head_sha=expected_head_sha,
+            trusted_base_sha=trusted_base_sha,
+            trusted_workflow_ids=trusted_workflow_ids,
+        ):
             continue
         run_name = run.get("name")
         if not isinstance(run_name, str):
             continue
         conclusion = run.get("conclusion")
         if not isinstance(conclusion, str) or not conclusion:
-            continue
-        if run.get("head_sha") != expected_head_sha:
             continue
         updated_at_raw = run.get("updated_at")
         try:
