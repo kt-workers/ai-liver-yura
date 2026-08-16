@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from tools.independent_review.github_client import GitHubClient
+import pytest
+
+from tools.independent_review.github_client import GitHubApiError, GitHubClient
 
 
 class PagingGitHubClient(GitHubClient):
@@ -27,3 +29,16 @@ def test_list_reviews_fetches_all_pages() -> None:
         "/repos/o/r/pulls/7/reviews?per_page=100&page=1",
         "/repos/o/r/pulls/7/reviews?per_page=100&page=2",
     ]
+
+
+@pytest.mark.parametrize("response", [[], {"workflow_runs": {}}, {}])
+def test_malformed_workflow_runs_response_is_rejected(response: object) -> None:
+    class MalformedWorkflowRunsClient(GitHubClient):
+        def _json(
+            self, method: str, path: str, *, data: dict[str, Any] | None = None
+        ) -> Any:
+            return response
+
+    client = MalformedWorkflowRunsClient("o/r", "token", "https://example.invalid")
+    with pytest.raises(GitHubApiError, match="workflow run一覧"):
+        client.list_workflow_runs_for_head("a" * 40)

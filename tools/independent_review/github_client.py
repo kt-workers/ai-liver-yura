@@ -95,10 +95,10 @@ class GitHubClient:
         query = urllib.parse.urlencode({"head_sha": head_sha, "per_page": 50})
         result = self._json("GET", f"/repos/{self.repository}/actions/runs?{query}")
         if not isinstance(result, dict):
-            return []
+            raise GitHubApiError("workflow run一覧の応答形式が不正です")
         runs = result.get("workflow_runs")
         if not isinstance(runs, list):
-            return []
+            raise GitHubApiError("workflow run一覧が存在しないか形式が不正です")
         return [item for item in runs if isinstance(item, dict)]
 
     def list_reviews(self, pr_number: int) -> list[dict[str, object]]:
