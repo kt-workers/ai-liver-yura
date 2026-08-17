@@ -22,6 +22,14 @@ Issue #427 の Render Lab は、production #363 Semantic Verification を実LLM�
 
 常時表示する要約は、最終判定、期待結果、total latency、input/output token。詳細はRole A、Role B、Runtime、完全結果JSONの順に折りたたみ表示する。
 
+## Live fixture timing
+
+Labは#362/#330 Authorityを通すために1ms単位のsynthetic provenance timestampを生成する。Render実LLMでは、このsynthetic timeline全体を実時計より十分過去へ配置する。
+
+人工timestampを現在時刻より未来へ進めてはならない。そうするとproduction `validate_role_exchange()`がProvider開始時刻よりrequest作成時刻の方が新しいと正しく判定し、`POLICY_VIOLATION`でfail-closedするためである。
+
+この補修はvalidation fixtureの時刻生成だけに限定し、#363 verifier / #357 adapterのtransport invariantを緩めない。
+
 ## Export
 
 Exportには日本語プリセット名、stable case ID、expected/actual、latency、検証入力JSON、本番検証結果JSONを含める。
