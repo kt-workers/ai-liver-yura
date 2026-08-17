@@ -30,18 +30,19 @@ def _gpt56_model_policy(model: str) -> dict[LLMModelClass, OpenAIResponsesModelP
 
 
 def _load_preset_display() -> dict[str, dict[str, str]]:
-    value = json.loads(
+    raw_value: object = json.loads(
         _ROOT.joinpath("v2_semantic_verification_presets_ja.json").read_text(
             encoding="utf-8"
         )
     )
-    if not isinstance(value, dict):
+    if not isinstance(raw_value, dict):
         raise RuntimeError("preset display metadata must be an object")
+    value = cast(dict[object, object], raw_value)
     result: dict[str, dict[str, str]] = {}
     for preset_id, metadata_value in value.items():
         if not isinstance(preset_id, str) or not isinstance(metadata_value, dict):
             raise RuntimeError("preset display metadata is invalid")
-        metadata = cast(dict[str, object], metadata_value)
+        metadata = cast(dict[object, object], metadata_value)
         label = metadata.get("label")
         description = metadata.get("description")
         if not isinstance(label, str) or not label.strip():
