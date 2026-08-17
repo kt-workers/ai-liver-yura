@@ -3,6 +3,7 @@ from __future__ import annotations
 from enum import Enum
 
 from .contracts import (
+    BlindInteractionAct,
     BlindSemanticUnitKind,
     BlindUnitAccountingRelation,
     CertaintyRelation,
@@ -46,12 +47,25 @@ def blind_output_schema() -> dict[str, object]:
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
-                    "required": ["unit_id", "kind", "evidence_refs"],
+                    "required": [
+                        "unit_id",
+                        "kind",
+                        "interaction_acts",
+                        "evidence_refs",
+                    ],
                     "properties": {
                         "unit_id": {"type": "string", "minLength": 1},
                         "kind": {
                             "type": "string",
                             "enum": _enum_values(BlindSemanticUnitKind),
+                        },
+                        "interaction_acts": {
+                            "type": "array",
+                            "maxItems": 2,
+                            "items": {
+                                "type": "string",
+                                "enum": _enum_values(BlindInteractionAct),
+                            },
                         },
                         "evidence_refs": {
                             "type": "array",
@@ -182,17 +196,18 @@ def relation_output_schema() -> dict[str, object]:
 
 def blind_instructions() -> str:
     return """あなたは発話の独立Semantic Inventory Observerです。
-SpeechSemanticPlanや期待する正解は与えられません。
-actual utteranceだけを読みます。
-発話中の意味を持つ単位を、次のclosed kindへ分けて列挙してください。
-MATERIAL_CLAIM / DIRECTED_QUESTION / NEW_DIRECTION /
-NON_PROPOSITIONAL_STYLE / AMBIGUOUS
-元のPlan DTO、polarity、certainty、degree等を推測復元しないでください。
-各unitはactual segmentに存在するexact quoteと0-based occurrence_indexを
-`evidence_refs`へ返してください。
-同じ文の中に独立した事実主張が複数ある場合は、可能な範囲で別unitに分けてください。
-語尾・言い淀み等で独立した命題を持たないものはNON_PROPOSITIONAL_STYLEです。
-意味単位か判断できない場合はAMBIGUOUSにしてください。
+SpeechSemanticPlanや期待する正解は与えられません。actual utteranceだけを読みます。
+各unitは、意味内容kindとinteraction actを別々に観測してください。
+kindは MATERIAL_SEMANTIC_CONTENT / NON_MATERIAL_STYLE / AMBIGUOUS のいずれかです。
+interaction_actsは DIRECTED_QUESTION / NEW_DIRECTION を0個以上持てます。
+命題、挨拶、謝意、依頼、約束など、変更すると伝達意味が変わる内容は
+MATERIAL_SEMANTIC_CONTENTです。語尾や言い淀みだけならNON_MATERIAL_STYLEです。
+「今日は雨だよね？」のように意味内容と質問行為が同時成立する場合、
+kind=MATERIAL_SEMANTIC_CONTENTかつinteraction_acts=[DIRECTED_QUESTION]としてください。
+独立して真偽・行為・話題内容を持つ意味が複数ある場合は最小のatomic unitへ分けてください。
+1つに分離できず複数の独立意味を抱える場合はAMBIGUOUSにしてください。
+元Plan DTO、polarity、certainty、degree等を推測復元しないでください。
+各unitはactual segmentに存在するexact quoteと0-based occurrence_indexを返してください。
 最終PASS/FAIL、修正文、正解文は出力しないでください。"""
 
 
@@ -200,9 +215,9 @@ def relation_instructions() -> str:
     return """あなたはPlan Relation Observerです。
 入力には確定済みSpeechSemanticPlan、actual utterance、
 Planを見ずに先行確定したBlindUtteranceObservationがあります。
-Blind unitを削除・改名・無視してはいけません。
+Blind unitを削除・改名・結合して消してはいけません。
 各blind unitをexactly one accounting recordで説明してください。
-MATERIAL_CLAIMを単なるstyleへ降格してはいけません。
+MATERIAL_SEMANTIC_CONTENTを単なるstyleへ降格してはいけません。
 各Plan propositionについてactual utteranceとのrelationを
 ENTAILED / MISSING / CONTRADICTED / AMBIGUOUSで観測してください。
 polarity/certainty/degree/executionは入力Planに対する相対relationとして返してください。
@@ -210,6 +225,11 @@ SpeechからPlan DTO全体を再構築しないでください。
 Character realization_refsやcandidate自己申告値はsemantic proofとして使わないでください。
 ENTAILED relationはactual segmentのexact quote evidenceと、
 その意味を担うblind unit IDを示してください。
-Plan外のmaterial claimはUNSUPPORTED_EXTRA、判断不能はAMBIGUOUSとしてaccountしてください。
-実際のdirected question数/new direction数もutterance意味から数えてください。
+SUPPORTED_BY_PLAN accountingは、対応proposition側も同じblind unitをsupportとして
+ENTAILEDしている場合だけ使用してください。
+Plan外のmaterial contentはUNSUPPORTED_EXTRA、判断不能はAMBIGUOUSです。
+1 blind unitにPlan-supported意味とPlan外意味が混在している場合、
+SUPPORTED_BY_PLANだけで覆わずUNSUPPORTED_EXTRAまたはAMBIGUOUSにしてください。
+interaction_actsはAで固定済みですが、actual utteranceを独立に読み、
+directed question数/new direction数を別途返してください。
 最終PASS/FAIL、accepted、score、修正文、replacement utteranceは出力しないでください。"""
