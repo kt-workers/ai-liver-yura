@@ -9,10 +9,7 @@ services:
     healthCheckPath: /health
     autoDeployTrigger: commit
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.10.5
-      - key: OPENAI_API_KEY
-        sync: false
+      - fromGroup: yura-common-secrets
       - key: YURA_SEMANTIC_VERIFICATION_LAB_MODEL
         value: gpt-5.6-sol
       - key: YURA_LAB_USERNAME
