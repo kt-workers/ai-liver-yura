@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from time import perf_counter
+from typing import TypeVar
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -79,6 +80,7 @@ from app.domain.speech_semantics import (
     SpeechSemanticContextSnapshot,
     SpeechSemanticFact,
     SpeechSemanticFactKind,
+    SpeechSemanticPlan,
     SpeechTruthConstraint,
     SpeechTruthRule,
 )
@@ -159,7 +161,7 @@ class LabSettings:
 
 @dataclass(frozen=True, slots=True)
 class LabFixture:
-    semantic_plan: object
+    semantic_plan: SpeechSemanticPlan
     utterance: CharacterUtterance
     snapshot: SemanticVerificationContextSnapshot
 
@@ -196,7 +198,10 @@ def _offset(base: datetime, milliseconds: int) -> datetime:
     return base + timedelta(milliseconds=milliseconds)
 
 
-def _enum_value(enum_type: type[Enum], value: str, field_name: str) -> Enum:
+E = TypeVar("E", bound=Enum)
+
+
+def _enum_value(enum_type: type[E], value: str, field_name: str) -> E:
     try:
         return enum_type(value)
     except ValueError as error:
