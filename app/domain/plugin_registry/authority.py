@@ -30,13 +30,15 @@ class PluginRegistryRevisionStaleError(ValueError):
     def __init__(self, expected_registry_revision: int, current_registry_revision: int) -> None:
         self.expected_registry_revision = expected_registry_revision
         self.current_registry_revision = current_registry_revision
-        super().__init__(
-            f"{self.code}: expected={expected_registry_revision}, current={current_registry_revision}"
+        message = (
+            f"{self.code}: expected={expected_registry_revision}, "
+            f"current={current_registry_revision}"
         )
+        super().__init__(message)
 
 
 class PluginRegistryAuthority:
-    """Pluginの宣言・permission・healthを短い同期的commitで公開するDomain Authority。"""
+    """Plugin宣言・permission・healthを短い同期commitで公開するDomain Authority。"""
 
     def __init__(self) -> None:
         self._plugins: dict[str, RegisteredPluginView] = {}
@@ -173,7 +175,9 @@ class PluginRegistryAuthority:
                     raise ValueError("health observation revisionがstaleです")
                 if observation.observation_revision == previous.observation_revision:
                     if observation != previous:
-                        raise ValueError("同一health observation revisionのpayloadが不一致です")
+                        raise ValueError(
+                            "同一health observation revisionのpayloadが不一致です"
+                        )
                     return self.snapshot(observation.observed_at)
                 if utc_instant(observation.observed_at) < utc_instant(previous.observed_at):
                     raise ValueError("health observation時刻を巻き戻せません")

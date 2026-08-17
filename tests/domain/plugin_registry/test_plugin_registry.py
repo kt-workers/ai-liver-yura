@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
@@ -142,7 +143,7 @@ def test_manifest_is_strict_and_owns_mutable_caller_collections() -> None:
     assert tuple(item.capability_id for item in value.capabilities) == ("capability-a",)
 
     with pytest.raises(ValueError, match="contract_version"):
-        manifest(contract_version=True)  # type: ignore[arg-type]
+        manifest(contract_version=True)
     with pytest.raises(ValueError, match="未対応"):
         manifest(contract_version=2)
     with pytest.raises(ValueError, match="自分自身"):
@@ -497,7 +498,7 @@ def test_expected_registry_revision_is_fail_closed_and_typed() -> None:
         registry.begin_stop(
             "plugin-a",
             NOW,
-            expected_registry_revision=True,  # type: ignore[arg-type]
+            expected_registry_revision=True,
         )
 
 
@@ -558,6 +559,7 @@ def test_foundation_projection_is_deterministic_closed_and_requirement_compatibl
     )
     descriptor = snapshot.foundation_capabilities[0]
     assert descriptor.satisfies(CapabilityRequirement("plugin", "execute"))
+    assert isinstance(descriptor.attributes, Mapping)
     assert set(descriptor.attributes) == {
         "schema_id",
         "plugin_id",
