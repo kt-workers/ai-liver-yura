@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import cast
 
@@ -10,6 +11,8 @@ from cloud_validation import v2_semantic_verification_lab as lab
 from cloud_validation.v2_semantic_verification_matrix import EXTRA_PRESETS
 
 _ROOT = Path(__file__).parent
+_SYNTHETIC_TIMELINE_MARGIN = timedelta(milliseconds=100)
+_BASE_BUILD_VALIDATION_FIXTURE = lab.build_validation_fixture
 
 
 def _gpt56_model_policy(model: str) -> dict[LLMModelClass, OpenAIResponsesModelPolicy]:
@@ -27,6 +30,20 @@ def _gpt56_model_policy(model: str) -> dict[LLMModelClass, OpenAIResponsesModelP
             LLMModelClass.DEEP_REASONING,
         )
     }
+
+
+def _render_build_validation_fixture(
+    request: lab.SemanticVerificationLabRequest,
+    *,
+    now: datetime | None = None,
+) -> lab.LabFixture:
+    reference = now or datetime.now(timezone.utc)
+    if reference.tzinfo is None or reference.utcoffset() is None:
+        raise ValueError("now はtimezone-awareでなければなりません")
+    return _BASE_BUILD_VALIDATION_FIXTURE(
+        request,
+        now=reference - _SYNTHETIC_TIMELINE_MARGIN,
+    )
 
 
 def _load_preset_display() -> dict[str, dict[str, str]]:
@@ -76,6 +93,7 @@ def _workspace_html() -> str:
 _PRESET_DISPLAY = _load_preset_display()
 lab._model_policy = _gpt56_model_policy
 lab._PRESETS.update(EXTRA_PRESETS)
+lab.build_validation_fixture = _render_build_validation_fixture
 if set(lab._PRESETS) != set(_PRESET_DISPLAY):
     raise RuntimeError("all Render presets must have display metadata")
 lab._INDEX_HTML = _workspace_html()
