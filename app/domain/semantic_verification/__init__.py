@@ -14,6 +14,7 @@ from .contracts import (
     PolarityRelation,
     PropositionRelation,
     PropositionSemanticObservation,
+    SelfDisclosureRelation,
     SemanticAcceptance,
     SemanticAcceptanceState,
     SemanticRejectionCategory,
@@ -22,7 +23,6 @@ from .contracts import (
     SemanticVerificationEligibilityView,
     SemanticVerificationError,
     SemanticVerificationFailureCode,
-    SelfDisclosureRelation,
     SpeechActBudgetObservation,
     UtteranceEvidenceRef,
 )
