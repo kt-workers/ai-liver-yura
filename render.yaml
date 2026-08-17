@@ -14,7 +14,7 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: YURA_SEMANTIC_VERIFICATION_LAB_MODEL
-        sync: false
+        value: gpt-5.6-sol
       - key: YURA_LAB_USERNAME
         sync: false
       - key: YURA_LAB_PASSWORD
