@@ -1,7 +1,7 @@
 # V2 Plugin Registry 実装整合ノート
 
-Owner Issue: #343  
-Active implementation: `feature/v2-plugin-registry` / PR #424  
+Owner Issue: #343
+Active implementation: `feature/v2-plugin-registry` / PR #424
 Status: Implementation Alignment Note
 
 ## 1. Authority
