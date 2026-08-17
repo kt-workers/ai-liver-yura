@@ -35,6 +35,7 @@ def test_render_fixture_timeline_finishes_before_live_request_time() -> None:
 
     assert fixture.snapshot.captured_at < reference
     assert request_created_at < reference
+    assert reference - request_created_at >= timedelta(milliseconds=90)
 
 
 def test_every_render_preset_has_japanese_display_metadata() -> None:
