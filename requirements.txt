@@ -4,3 +4,5 @@ PyYAML
 pydantic
 openai
 jsonschema
+fastapi
+uvicorn
