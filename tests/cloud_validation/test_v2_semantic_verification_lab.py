@@ -5,6 +5,7 @@ from typing import cast
 
 import pytest
 
+from app.domain.contracts.common import JsonValue
 from app.domain.llm import (
     LLMRoleRequest,
     LLMRoleResult,
@@ -139,7 +140,7 @@ class FakePort(LLMRolePort):
             request.execution_policy.model_class,
             1,
             LLMTokenUsage(10, 12),
-            StructuredPayload(schema_id, output),
+            StructuredPayload(schema_id, cast(JsonValue, output)),
             started_at=started,
         )
 
