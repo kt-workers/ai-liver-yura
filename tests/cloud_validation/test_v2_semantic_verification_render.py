@@ -51,6 +51,7 @@ def test_lab_html_uses_fixed_workspace_and_collapsed_detail_sections() -> None:
 
     assert "height:100vh" in html
     assert "overflow:hidden" in html
+    assert "[hidden]{display:none!important}" in html
     assert "検証プリセット" in html
     assert "選択内容を適用" in html
     assert "実LLMで検証" in html
