@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: yura-v2-semantic-verification-lab
+    runtime: python
+    plan: free
+    branch: test/v2-semantic-verification-render-lab
+    buildCommand: pip install -r requirements.txt && python -m compileall app cloud_validation
+    startCommand: uvicorn cloud_validation.v2_semantic_verification_lab:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.5
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: YURA_SEMANTIC_VERIFICATION_LAB_MODEL
+        sync: false
+      - key: YURA_LAB_USERNAME
+        sync: false
+      - key: YURA_LAB_PASSWORD
+        sync: false
