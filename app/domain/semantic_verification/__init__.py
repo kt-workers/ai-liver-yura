@@ -1,5 +1,6 @@
 from .authority import SemanticVerificationAuthority
 from .contracts import (
+    BlindInteractionAct,
     BlindSemanticUnit,
     BlindSemanticUnitKind,
     BlindUnitAccounting,
@@ -58,6 +59,7 @@ __all__ = [
     "RELATION_INPUT_SCHEMA",
     "RELATION_OUTPUT_SCHEMA",
     "RELATION_ROLE_ID",
+    "BlindInteractionAct",
     "BlindSemanticUnit",
     "BlindSemanticUnitKind",
     "BlindUnitAccounting",
