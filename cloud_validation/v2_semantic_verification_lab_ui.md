@@ -28,7 +28,7 @@ Labは#362/#330 Authorityを通すために1ms単位のsynthetic provenance time
 
 人工timestampを現在時刻より未来へ進めてはならない。そうするとproduction `validate_role_exchange()`がProvider開始時刻よりrequest作成時刻の方が新しいと正しく判定し、`POLICY_VIOLATION`でfail-closedするためである。
 
-Render entrypointではsynthetic baseを実時計より100ms過去に置く。現在の7ms synthetic timeline + request作成1msを差し引いても90ms以上の余裕を残すことを回帰テストで固定する。
+Render entrypointではsynthetic baseを実時計より100ms過去に置く。現在の7ms synthetic timeline + request作成1msを差し引いても90ms以上の余裕を残す `test_render_fixture_does_not_create_future_transport_timestamps` を回帰Gateとする。
 
 この補修はvalidation fixtureの時刻生成だけに限定し、#363 verifier / #357 adapterのtransport invariantを緩めない。自動Gate通過後、Render上の同一 `exact_preservation` caseを再実行してtransport violationが解消したことを確認する。
 
