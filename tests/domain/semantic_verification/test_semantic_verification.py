@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ast
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -45,6 +47,7 @@ from app.domain.llm import (
 from app.domain.semantic_verification import (
     BLIND_ROLE_ID,
     RELATION_ROLE_ID,
+    BlindInteractionAct,
     BlindSemanticUnit,
     BlindSemanticUnitKind,
     BlindUnitAccounting,
@@ -284,42 +287,39 @@ def _evidence(quote: str = TEXT) -> UtteranceEvidenceRef:
     return UtteranceEvidenceRef("segment-1", quote, 0)
 
 
+def _unit(
+    *,
+    unit_id: str = "unit-required",
+    quote: str = TEXT,
+    acts: tuple[BlindInteractionAct, ...] = (),
+) -> BlindSemanticUnit:
+    return BlindSemanticUnit(
+        unit_id,
+        BlindSemanticUnitKind.MATERIAL_SEMANTIC_CONTENT,
+        acts,
+        (_evidence(quote),),
+    )
+
+
 def _blind_candidate(
     snapshot: SemanticVerificationContextSnapshot,
     *,
-    extra: bool = False,
+    units: tuple[BlindSemanticUnit, ...] | None = None,
 ) -> BlindUtteranceObservationCandidate:
-    units = [
-        BlindSemanticUnit(
-            "unit-required",
-            BlindSemanticUnitKind.MATERIAL_CLAIM,
-            (_evidence(),),
-        )
-    ]
-    if extra:
-        units.append(
-            BlindSemanticUnit(
-                "unit-extra",
-                BlindSemanticUnitKind.MATERIAL_CLAIM,
-                (UtteranceEvidenceRef("segment-1", "昨日は買い物した", 0),),
-            )
-        )
     return BlindUtteranceObservationCandidate(
         "blind-candidate",
         snapshot.blind_request_id,
         snapshot.utterance.utterance_id,
-        tuple(units),
+        units or (_unit(),),
         NOW + timedelta(seconds=2),
     )
 
 
-def _relation_candidate(
-    snapshot: SemanticVerificationContextSnapshot,
-    blind_id: str,
+def _proposition_observations(
     *,
-    accounting: tuple[BlindUnitAccounting, ...] | None = None,
-) -> PlanRelationObservationCandidate:
-    observations = (
+    required_support: tuple[str, ...] = ("unit-required",),
+) -> tuple[PropositionSemanticObservation, ...]:
+    return (
         PropositionSemanticObservation(
             "prop-required",
             PropositionRelation.ENTAILED,
@@ -328,7 +328,7 @@ def _relation_candidate(
             DegreeRelation.PRESERVED,
             ExecutionRelation.NOT_APPLICABLE,
             (_evidence(),),
-            ("unit-required",),
+            required_support,
         ),
         PropositionSemanticObservation(
             "prop-forbidden",
@@ -341,13 +341,23 @@ def _relation_candidate(
             (),
         ),
     )
+
+
+def _relation_candidate(
+    snapshot: SemanticVerificationContextSnapshot,
+    blind_id: str,
+    *,
+    observations: tuple[PropositionSemanticObservation, ...] | None = None,
+    accounting: tuple[BlindUnitAccounting, ...] | None = None,
+    budget: SpeechActBudgetObservation | None = None,
+) -> PlanRelationObservationCandidate:
     return PlanRelationObservationCandidate(
         "relation-candidate",
         snapshot.relation_request_id,
         snapshot.semantic_plan.plan_id,
         snapshot.utterance.utterance_id,
         blind_id,
-        observations,
+        observations or _proposition_observations(),
         accounting
         or (
             BlindUnitAccounting(
@@ -357,7 +367,7 @@ def _relation_candidate(
                 (_evidence(),),
             ),
         ),
-        SpeechActBudgetObservation(0, 0),
+        budget or SpeechActBudgetObservation(0, 0),
         SelfDisclosureRelation.WITHIN_POLICY,
         NOW + timedelta(seconds=3),
     )
@@ -408,7 +418,7 @@ def test_closed_reconciliation_accepts_preserved_required_and_missing_forbidden(
         observation_id="relation-observation",
         committed_at=NOW + timedelta(seconds=3),
     )
-    _, acceptance = authority.reconcile(
+    observation, acceptance = authority.reconcile(
         snapshot,
         blind,
         relation,
@@ -418,9 +428,50 @@ def test_closed_reconciliation_accepts_preserved_required_and_missing_forbidden(
     )
     assert acceptance.state is SemanticAcceptanceState.ACCEPTED
     assert acceptance.rejection_categories == ()
+    assert not hasattr(observation, "rejection_categories")
 
 
-def test_material_claim_cannot_be_downgraded_to_style() -> None:
+def test_material_content_can_also_be_directed_question() -> None:
+    snapshot = _snapshot()
+    authority = SemanticVerificationAuthority()
+    blind = authority.commit_blind(
+        _blind_candidate(
+            snapshot,
+            units=(
+                _unit(acts=(BlindInteractionAct.DIRECTED_QUESTION,)),
+            ),
+        ),
+        snapshot,
+        observation_id="blind-observation",
+        committed_at=NOW + timedelta(seconds=2),
+    )
+    relation = authority.commit_relation(
+        _relation_candidate(
+            snapshot,
+            blind.observation_id,
+            budget=SpeechActBudgetObservation(1, 0),
+        ),
+        snapshot,
+        blind,
+        observation_id="relation-observation",
+        committed_at=NOW + timedelta(seconds=3),
+    )
+    _, acceptance = authority.reconcile(
+        snapshot,
+        blind,
+        relation,
+        observation_id="semantic-observation",
+        acceptance_id="acceptance-1",
+        committed_at=NOW + timedelta(seconds=3),
+    )
+    assert acceptance.state is SemanticAcceptanceState.REJECTED
+    assert (
+        SemanticRejectionCategory.QUESTION_BUDGET_EXCEEDED
+        in acceptance.rejection_categories
+    )
+
+
+def test_material_content_cannot_be_downgraded_to_style() -> None:
     snapshot = _snapshot()
     authority = SemanticVerificationAuthority()
     blind = authority.commit_blind(
@@ -435,7 +486,7 @@ def test_material_claim_cannot_be_downgraded_to_style() -> None:
         accounting=(
             BlindUnitAccounting(
                 "unit-required",
-                BlindUnitAccountingRelation.PERMITTED_NON_PROPOSITIONAL_STYLE,
+                BlindUnitAccountingRelation.PERMITTED_NON_MATERIAL_STYLE,
                 (),
                 (_evidence(),),
             ),
@@ -451,20 +502,44 @@ def test_material_claim_cannot_be_downgraded_to_style() -> None:
         )
 
 
-def test_evidence_must_exist_in_actual_utterance() -> None:
+def test_supported_accounting_must_match_entailed_proposition_support() -> None:
     snapshot = _snapshot()
-    candidate = BlindUtteranceObservationCandidate(
-        "blind-candidate",
-        snapshot.blind_request_id,
-        snapshot.utterance.utterance_id,
-        (
-            BlindSemanticUnit(
+    authority = SemanticVerificationAuthority()
+    blind = authority.commit_blind(
+        _blind_candidate(snapshot),
+        snapshot,
+        observation_id="blind-observation",
+        committed_at=NOW + timedelta(seconds=2),
+    )
+    candidate = _relation_candidate(
+        snapshot,
+        blind.observation_id,
+        accounting=(
+            BlindUnitAccounting(
                 "unit-required",
-                BlindSemanticUnitKind.MATERIAL_CLAIM,
-                (UtteranceEvidenceRef("segment-1", "存在しない引用", 0),),
+                BlindUnitAccountingRelation.SUPPORTED_BY_PLAN,
+                ("prop-forbidden",),
+                (_evidence(),),
             ),
         ),
-        NOW + timedelta(seconds=2),
+    )
+    with pytest.raises(ValueError, match="一致しません"):
+        authority.commit_relation(
+            candidate,
+            snapshot,
+            blind,
+            observation_id="relation-observation",
+            committed_at=NOW + timedelta(seconds=3),
+        )
+
+
+def test_evidence_must_exist_in_actual_utterance() -> None:
+    snapshot = _snapshot()
+    candidate = _blind_candidate(
+        snapshot,
+        units=(
+            _unit(quote="存在しない引用"),
+        ),
     )
     with pytest.raises(ValueError, match="ground"):
         SemanticVerificationAuthority().commit_blind(
@@ -475,54 +550,42 @@ def test_evidence_must_exist_in_actual_utterance() -> None:
         )
 
 
-def test_unsupported_extra_material_claim_is_rejected() -> None:
-    text = f"{TEXT}昨日は買い物した。"
+def test_unsupported_extra_material_content_is_rejected() -> None:
+    extra_text = "昨日は買い物した"
+    text = f"{TEXT}{extra_text}。"
     snapshot = _snapshot(text=text)
     authority = SemanticVerificationAuthority()
-    blind_candidate = BlindUtteranceObservationCandidate(
-        "blind-candidate",
-        snapshot.blind_request_id,
-        snapshot.utterance.utterance_id,
-        (
-            BlindSemanticUnit(
-                "unit-required",
-                BlindSemanticUnitKind.MATERIAL_CLAIM,
-                (UtteranceEvidenceRef("segment-1", TEXT, 0),),
-            ),
-            BlindSemanticUnit(
-                "unit-extra",
-                BlindSemanticUnitKind.MATERIAL_CLAIM,
-                (UtteranceEvidenceRef("segment-1", "昨日は買い物した", 0),),
+    blind = authority.commit_blind(
+        _blind_candidate(
+            snapshot,
+            units=(
+                _unit(),
+                _unit(unit_id="unit-extra", quote=extra_text),
             ),
         ),
-        NOW + timedelta(seconds=2),
-    )
-    blind = authority.commit_blind(
-        blind_candidate,
         snapshot,
         observation_id="blind-observation",
         committed_at=NOW + timedelta(seconds=2),
     )
-    relation_candidate = _relation_candidate(
-        snapshot,
-        blind.observation_id,
-        accounting=(
-            BlindUnitAccounting(
-                "unit-required",
-                BlindUnitAccountingRelation.SUPPORTED_BY_PLAN,
-                ("prop-required",),
-                (UtteranceEvidenceRef("segment-1", TEXT, 0),),
-            ),
-            BlindUnitAccounting(
-                "unit-extra",
-                BlindUnitAccountingRelation.UNSUPPORTED_EXTRA,
-                (),
-                (UtteranceEvidenceRef("segment-1", "昨日は買い物した", 0),),
+    relation = authority.commit_relation(
+        _relation_candidate(
+            snapshot,
+            blind.observation_id,
+            accounting=(
+                BlindUnitAccounting(
+                    "unit-required",
+                    BlindUnitAccountingRelation.SUPPORTED_BY_PLAN,
+                    ("prop-required",),
+                    (_evidence(),),
+                ),
+                BlindUnitAccounting(
+                    "unit-extra",
+                    BlindUnitAccountingRelation.UNSUPPORTED_EXTRA,
+                    (),
+                    (_evidence(extra_text),),
+                ),
             ),
         ),
-    )
-    relation = authority.commit_relation(
-        relation_candidate,
         snapshot,
         blind,
         observation_id="relation-observation",
@@ -558,7 +621,8 @@ class _SequencePort:
                 "units": [
                     {
                         "unit_id": "unit-required",
-                        "kind": "material_claim",
+                        "kind": "material_semantic_content",
+                        "interaction_acts": [],
                         "evidence_refs": [
                             {
                                 "segment_id": "segment-1",
@@ -715,3 +779,32 @@ async def test_stale_after_blind_does_not_invoke_plan_relation() -> None:
         )
     assert captured.value.code is SemanticVerificationFailureCode.STALE
     assert [item.role_id for item in port.requests] == [BLIND_ROLE_ID]
+
+
+def test_semantic_module_has_no_finite_lexical_authority_scaffolding() -> None:
+    root = Path("app/domain/semantic_verification")
+    forbidden_name_fragments = (
+        "keyword",
+        "marker",
+        "phrase",
+        "synonym",
+        "antonym",
+    )
+    violations: list[str] = []
+    for path in sorted(root.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(alias.name == "re" for alias in node.names):
+                    violations.append(f"{path}: import re")
+            elif isinstance(node, ast.ImportFrom) and node.module == "re":
+                violations.append(f"{path}: from re")
+            elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                for target in targets:
+                    if not isinstance(target, ast.Name):
+                        continue
+                    lowered = target.id.lower()
+                    if any(fragment in lowered for fragment in forbidden_name_fragments):
+                        violations.append(f"{path}: {target.id}")
+    assert violations == []
