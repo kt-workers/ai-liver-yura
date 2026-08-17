@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from time import perf_counter
-from typing import TypeVar
+from typing import TypeVar, cast
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -19,7 +19,7 @@ from app.adapters.llm.openai_responses import (
     OpenAIResponsesModelPolicy,
     OpenAIResponsesRoleConfig,
 )
-from app.domain.character import CharacterLanguageProfile
+from app.domain.character.contracts import CharacterLanguageProfile
 from app.domain.character_language import (
     CharacterLanguageAuthority,
     CharacterLanguageCommitState,
@@ -32,6 +32,7 @@ from app.domain.character_language import (
     LinguisticHesitation,
 )
 from app.domain.contracts import ExecutionStatus, RevisionVector
+from app.domain.contracts.common import JsonValue
 from app.domain.executive import (
     CommittedExecutiveDecision,
     ExecutiveDecisionCandidate,
@@ -244,7 +245,7 @@ def build_validation_fixture(
                 fact_kind,
                 item.subject_ref,
                 item.predicate,
-                item.value,
+                cast(JsonValue, item.value),
                 claim_kind=claim_kind,
                 execution_status=execution_status,
                 polarity=polarity,
@@ -257,7 +258,7 @@ def build_validation_fixture(
                 item.proposition_id,
                 item.subject_ref,
                 item.predicate,
-                item.value,
+                cast(JsonValue, item.value),
                 disposition,
                 polarity,
                 certainty,
@@ -374,16 +375,16 @@ def build_validation_fixture(
         if item.disposition is SpeechPropositionDisposition.REQUIRED
     )
     segments: list[CharacterUtteranceSegment] = []
-    for index, item in enumerate(request.segments):
+    for index, segment_input in enumerate(request.segments):
         refs = (
-            tuple(item.realization_refs)
-            if item.realization_refs is not None
+            tuple(segment_input.realization_refs)
+            if segment_input.realization_refs is not None
             else (required_refs if index == 0 else ())
         )
         segments.append(
             CharacterUtteranceSegment(
-                item.segment_id,
-                item.text,
+                segment_input.segment_id,
+                segment_input.text,
                 refs,
                 LinguisticBoundary.SENTENCE,
                 LinguisticEmphasis.NEUTRAL,
@@ -822,7 +823,7 @@ def create_app(
 
     @application.get("/api/presets")
     async def presets(_: str = Depends(require_auth)) -> dict[str, object]:
-        return _PRESETS
+        return cast(dict[str, object], _PRESETS)
 
     @application.post("/api/verify")
     async def verify(
