@@ -1,0 +1,22 @@
+{
+  "exact_preservation": {"label": "意味をそのまま保持", "description": "Planの意味を変えずに自然な発話へ実現した正常系を確認します。"},
+  "unseen_paraphrase": {"label": "未知の言い換えでも意味保持", "description": "固定語彙に依存せず、未登録の言い換えでも同じ意味として受理できるか確認します。"},
+  "polarity_reversal": {"label": "肯定・否定の反転を検出", "description": "Planの肯定内容が発話で否定へ反転した場合に拒否できるか確認します。"},
+  "unknown_committed": {"label": "不明情報の断定化を検出", "description": "unknownの内容をCharacterが確定情報として断定した場合に拒否できるか確認します。"},
+  "unsupported_extra": {"label": "Plan外の追加主張を検出", "description": "Planにない経験や事実を発話へ付け足した場合に検出できるか確認します。"},
+  "communicative_gratitude": {"label": "感謝という発話行為を保持", "description": "感謝というcommunicative material contentを自然表現へ実現して受理できるか確認します。"},
+  "question_budget_exceeded": {"label": "質問予算の超過を検出", "description": "質問予算0のPlanに質問を追加した場合、実発話から拒否できるか確認します。"},
+  "certainty_strengthened": {"label": "確信度の過剰強化を検出", "description": "likely程度の情報を確実だと強めてしまった場合に拒否できるか確認します。"},
+  "required_missing": {"label": "必須命題の欠落を検出", "description": "REQUIREDな意味内容を発話が実現していない場合に拒否できるか確認します。"},
+  "forbidden_realized": {"label": "禁止命題の実現を検出", "description": "FORBIDDENな経験・事実を発話へ混入した場合に拒否できるか確認します。"},
+  "degree_strengthened": {"label": "程度の過剰強化を検出", "description": "Planより強い程度表現へ変化した場合に拒否できるか確認します。"},
+  "degree_weakened": {"label": "程度の弱化を検出", "description": "Planより弱い程度表現へ変化した場合に拒否できるか確認します。"},
+  "degree_omitted": {"label": "程度情報の欠落を検出", "description": "意味上必要な程度情報が発話から抜けた場合に拒否できるか確認します。"},
+  "likely_paraphrase_preserved": {"label": "推定表現の言い換えを保持", "description": "likelyの意味を別の自然な言い回しで保持できるか確認します。"},
+  "execution_completion_fabricated": {"label": "実行完了の捏造を検出", "description": "REQUESTED段階の実行を完了済みと語る事実性違反を拒否できるか確認します。"},
+  "optional_omitted": {"label": "任意命題の省略を許容", "description": "OPTIONALな意味内容を省略しても正常系として受理できるか確認します。"},
+  "multiple_material_contents": {"label": "複数の意味内容を保持", "description": "複数の独立したmaterial contentを漏れなく対応付けられるか確認します。"},
+  "wrong_realization_refs": {"label": "誤ったrealization_refsに依存しない", "description": "構造上validでも誤ったrealization_refsをsemantic proofとして信用しないことを確認します。"},
+  "plan_anchoring_extra_claim": {"label": "Plan誘導下の追加主張を検出", "description": "Plan-aware観測でもPlan外の追加意味を見落とさないか確認します。"},
+  "communicative_apology": {"label": "謝罪という発話行為を保持", "description": "謝罪というcommunicative material contentを自然表現へ実現して受理できるか確認します。"}
+}
