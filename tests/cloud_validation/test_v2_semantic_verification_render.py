@@ -41,3 +41,6 @@ def test_lab_html_uses_fixed_workspace_and_collapsed_detail_sections() -> None:
     assert "本番検証結果" in html
     assert '<details><summary>Role A' in html
     assert '<details open>' not in html
+    assert "__WORKSPACE_STYLE__" not in html
+    assert "__WORKSPACE_SCRIPT__" not in html
+    assert "__PRESET_DISPLAY__" not in html
