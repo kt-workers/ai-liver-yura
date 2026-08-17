@@ -217,8 +217,10 @@ def relation_instructions() -> str:
     return """あなたはPlan Relation Observerです。
 入力には確定済みSpeechSemanticPlan、actual utterance、
 Planを見ずに先行確定したBlindUtteranceObservationがあります。
-入力のrequest_id、semantic_plan.plan_id、utterance.utterance_id、blind_observation.observation_idはtrusted identityです。
-出力のrequest_id / semantic_plan_id / utterance_id / blind_observation_idには対応する入力値をexactにそのまま返し、新しいIDを生成しないでください。
+入力のrequest_id、semantic_plan.plan_id、utterance.utterance_id、
+blind_observation.observation_idはtrusted identityです。
+出力のrequest_id / semantic_plan_id / utterance_id / blind_observation_idには、
+対応する入力値をexactにそのまま返し、新しいIDを生成しないでください。
 Blind unitを削除・改名・結合して消してはいけません。
 各blind unitをexactly one accounting recordで説明してください。
 MATERIAL_SEMANTIC_CONTENTを単なるstyleへ降格してはいけません。
