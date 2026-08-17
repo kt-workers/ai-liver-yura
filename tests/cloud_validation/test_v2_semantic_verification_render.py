@@ -24,7 +24,7 @@ def test_render_entrypoint_registers_extended_failure_matrix() -> None:
     assert set(EXTRA_PRESETS).issubset(lab._PRESETS)
 
 
-def test_render_fixture_timeline_finishes_before_live_request_time() -> None:
+def test_render_fixture_does_not_create_future_transport_timestamps() -> None:
     reference = datetime(2026, 8, 18, 0, 45, tzinfo=timezone.utc)
     request = lab.SemanticVerificationLabRequest.model_validate(
         lab._PRESETS["exact_preservation"]
