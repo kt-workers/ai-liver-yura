@@ -90,6 +90,8 @@ semantic_verification_blind_inventory
 
 Role AへPlan、expected facet、Character `realization_refs`を渡さない。
 
+transport/provenance identityは例外で、Providerが推測してはならない。Role inputへtrusted `request_id` / `utterance_id`を明示し、candidateの同名identity fieldは入力値を**exact echo**する。`request_id`は意味情報ではなく、candidateをexact requestへbindするためだけに使い、semantic observationへ影響させない。
+
 ```text
 BlindSemanticUnit
 - unit_id
@@ -145,6 +147,9 @@ semantic_verification_plan_relation
 - actual `CharacterUtterance`
 - immutable `BlindUtteranceObservation`
 - exact pair identity
+- trusted `request_id`
+
+Role B candidateの`request_id / semantic_plan_id / utterance_id / blind_observation_id`は、対応するtrusted input identityを**exact echo**する。Providerが新しいidentityを生成したcandidateはcommitしない。identity echoはsemantic relationの判定材料ではない。
 
 ### Proposition relation
 
@@ -406,6 +411,8 @@ Protocol token、enum、schema field名等のclosed technical identifierはこ�
 最低限:
 
 - blind requestへPlan/realization refs非漏洩
+- Role A/B request identityをProvider inputへ明示し、candidateがexact echoできる
+- Providerがidentityを推測・再生成しなくてもAuthority commit可能
 - preserved required + missing forbidden ACCEPT
 - material content + directed question同時成立
 - material content→style降格reject
