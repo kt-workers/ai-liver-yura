@@ -6,8 +6,12 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol, TypeVar, cast
 
-from app.domain.contracts import RevisionVector
-from app.domain.contracts.common import JsonValue, require_aware, timestamp_to_json, utc_instant
+from app.domain.contracts.common import (
+    JsonValue,
+    require_aware,
+    timestamp_to_json,
+    utc_instant,
+)
 from app.domain.llm import (
     LLMActivationPolicy,
     LLMExecutionPolicy,
@@ -38,13 +42,13 @@ from .contracts import (
     PolarityRelation,
     PropositionRelation,
     PropositionSemanticObservation,
+    SelfDisclosureRelation,
     SemanticAcceptance,
     SemanticRelationObservation,
     SemanticVerificationContextSnapshot,
     SemanticVerificationEligibilityView,
     SemanticVerificationError,
     SemanticVerificationFailureCode,
-    SelfDisclosureRelation,
     SpeechActBudgetObservation,
     UtteranceEvidenceRef,
 )
@@ -235,17 +239,27 @@ def parse_relation_candidate(
         _string(item["blind_observation_id"], "blind_observation_id"),
         tuple(
             _proposition_observation(part)
-            for part in _array(item["proposition_observations"], "proposition_observations")
+            for part in _array(
+                item["proposition_observations"],
+                "proposition_observations",
+            )
         ),
         tuple(
             _accounting(part)
             for part in _array(item["blind_unit_accounting"], "blind_unit_accounting")
         ),
         SpeechActBudgetObservation(
-            _non_negative_int(budget["directed_question_count"], "directed_question_count"),
+            _non_negative_int(
+                budget["directed_question_count"],
+                "directed_question_count",
+            ),
             _non_negative_int(budget["new_direction_count"], "new_direction_count"),
         ),
-        _enum(SelfDisclosureRelation, item["self_disclosure_relation"], "self_disclosure_relation"),
+        _enum(
+            SelfDisclosureRelation,
+            item["self_disclosure_relation"],
+            "self_disclosure_relation",
+        ),
         observed_at,
     )
 
@@ -281,7 +295,12 @@ class SemanticVerifier:
             policy=self._policy,
         )
         blind_result = await self._port.invoke(blind_request)
-        _ensure_success(blind_descriptor(self._policy), blind_request, blind_result, "blind")
+        _ensure_success(
+            blind_descriptor(self._policy),
+            blind_request,
+            blind_result,
+            "blind",
+        )
         if blind_result.output is None:
             raise SemanticVerificationError(
                 SemanticVerificationFailureCode.PROVIDER_FAILED,
@@ -396,7 +415,9 @@ def _ensure_eligible(
         )
 
 
-def _utterance_segments(snapshot: SemanticVerificationContextSnapshot) -> list[dict[str, str]]:
+def _utterance_segments(
+    snapshot: SemanticVerificationContextSnapshot,
+) -> list[dict[str, str]]:
     return [
         {"segment_id": item.segment_id, "text": item.text}
         for item in snapshot.utterance.candidate.segments
@@ -407,7 +428,9 @@ E = TypeVar("E", bound=Enum)
 
 
 def _mapping(value: object, name: str) -> Mapping[str, object]:
-    if not isinstance(value, Mapping) or any(not isinstance(key, str) for key in value):
+    if not isinstance(value, Mapping) or any(
+        not isinstance(key, str) for key in value
+    ):
         raise ValueError(f"{name} はobjectでなければなりません")
     return cast(Mapping[str, object], value)
 
@@ -461,7 +484,10 @@ def _blind_unit(value: object) -> BlindSemanticUnit:
     return BlindSemanticUnit(
         _string(item["unit_id"], "unit_id"),
         _enum(BlindSemanticUnitKind, item["kind"], "kind"),
-        tuple(_evidence(part) for part in _array(item["evidence_refs"], "evidence_refs")),
+        tuple(
+            _evidence(part)
+            for part in _array(item["evidence_refs"], "evidence_refs")
+        ),
     )
 
 
@@ -483,21 +509,39 @@ def _proposition_observation(value: object) -> PropositionSemanticObservation:
         _string(item["proposition_id"], "proposition_id"),
         _enum(PropositionRelation, item["relation"], "relation"),
         _enum(PolarityRelation, item["polarity_relation"], "polarity_relation"),
-        _enum(CertaintyRelation, item["certainty_relation"], "certainty_relation"),
+        _enum(
+            CertaintyRelation,
+            item["certainty_relation"],
+            "certainty_relation",
+        ),
         _enum(DegreeRelation, item["degree_relation"], "degree_relation"),
-        _enum(ExecutionRelation, item["execution_relation"], "execution_relation"),
-        tuple(_evidence(part) for part in _array(item["evidence_refs"], "evidence_refs")),
-        _strings(item["supporting_blind_unit_ids"], "supporting_blind_unit_ids"),
+        _enum(
+            ExecutionRelation,
+            item["execution_relation"],
+            "execution_relation",
+        ),
+        tuple(
+            _evidence(part)
+            for part in _array(item["evidence_refs"], "evidence_refs")
+        ),
+        _strings(
+            item["supporting_blind_unit_ids"],
+            "supporting_blind_unit_ids",
+        ),
     )
 
 
 def _accounting(value: object) -> BlindUnitAccounting:
     item = _mapping(value, "blind unit accounting")
-    if set(item) != {"blind_unit_id", "relation", "proposition_ids", "evidence_refs"}:
+    required = {"blind_unit_id", "relation", "proposition_ids", "evidence_refs"}
+    if set(item) != required:
         raise ValueError("blind unit accounting fieldがschemaと一致しません")
     return BlindUnitAccounting(
         _string(item["blind_unit_id"], "blind_unit_id"),
         _enum(BlindUnitAccountingRelation, item["relation"], "relation"),
         _strings(item["proposition_ids"], "proposition_ids"),
-        tuple(_evidence(part) for part in _array(item["evidence_refs"], "evidence_refs")),
+        tuple(
+            _evidence(part)
+            for part in _array(item["evidence_refs"], "evidence_refs")
+        ),
     )
