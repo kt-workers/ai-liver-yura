@@ -30,16 +30,28 @@ from app.domain.speech_semantics import (
 
 NOW = datetime(2026, 8, 17, 13, 0, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(20, 7, 3)
+COMMUNICATIVE_ACTS = (
+    "greeting",
+    "acknowledgement",
+    "gratitude",
+    "apology",
+    "request",
+)
 
 
-def _decision() -> CommittedExecutiveDecision:
+def _fact_id(act: str) -> str:
+    return f"fact-{act}"
+
+
+def _decision(act: str = "gratitude") -> CommittedExecutiveDecision:
     assert REVISIONS.goal_revision is not None
     assert REVISIONS.attention_revision is not None
+    fact_id = _fact_id(act)
     intent = ExecutiveIntent(
         "intent-communicative",
         ExecutiveIntentKind.SPEECH,
-        "相手への謝意を伝える",
-        SpeechIntentPayload("fact-gratitude"),
+        "communicative semantic goalを実現する",
+        SpeechIntentPayload(fact_id),
         (),
         (),
         (),
@@ -58,19 +70,19 @@ def _decision() -> CommittedExecutiveDecision:
         (intent,),
         (),
         (),
-        ("fact-gratitude",),
+        (fact_id,),
         NOW,
     )
     return CommittedExecutiveDecision("decision-1", candidate, (), NOW)
 
 
-def _facts() -> tuple[SpeechSemanticFact, SpeechSemanticFact]:
+def _facts(act: str = "gratitude") -> tuple[SpeechSemanticFact, SpeechSemanticFact]:
     communicative = SpeechSemanticFact(
-        "fact-gratitude",
+        _fact_id(act),
         SpeechSemanticFactKind.DISCOURSE,
         "current-interaction",
         "communicative-act",
-        {"kind": "gratitude", "target_ref": "user"},
+        {"kind": act, "target_ref": "user"},
         polarity=SemanticPolarity.AFFIRM,
         certainty=SemanticCertainty.CERTAIN,
     )
@@ -86,11 +98,11 @@ def _facts() -> tuple[SpeechSemanticFact, SpeechSemanticFact]:
     return communicative, unrelated
 
 
-def _context() -> SpeechSemanticContextSnapshot:
+def _context(act: str = "gratitude") -> SpeechSemanticContextSnapshot:
     return SpeechSemanticContextSnapshot(
-        _decision(),
+        _decision(act),
         "intent-communicative",
-        _facts(),
+        _facts(act),
         (),
         (),
         SelfDisclosurePolicy.FACT_GROUNDED,
@@ -100,10 +112,11 @@ def _context() -> SpeechSemanticContextSnapshot:
     )
 
 
-def test_communicative_act_fact_can_be_committed_as_required_proposition() -> None:
-    communicative, _ = _facts()
+@pytest.mark.parametrize("act", COMMUNICATIVE_ACTS)
+def test_communicative_act_fact_can_be_committed_as_required_proposition(act: str) -> None:
+    communicative, _ = _facts(act)
     proposition = SpeechProposition(
-        "prop-gratitude",
+        f"prop-{act}",
         communicative.subject_ref,
         communicative.predicate,
         communicative.value,
@@ -130,9 +143,9 @@ def test_communicative_act_fact_can_be_committed_as_required_proposition() -> No
 
     plan = SpeechSemanticAuthority().commit(
         candidate,
-        _context(),
+        _context(act),
         current_revisions=REVISIONS,
-        plan_id="plan-communicative",
+        plan_id=f"plan-{act}",
         committed_at=NOW,
     )
 
