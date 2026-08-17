@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from app.domain.llm import LLMModelClass, LLMReasoningEffort
 from cloud_validation import v2_semantic_verification_lab as lab
 from cloud_validation.v2_semantic_verification_matrix import EXTRA_PRESETS
 from cloud_validation.v2_semantic_verification_render import (
     _PRESET_DISPLAY,
     _gpt56_model_policy,
+    _render_build_validation_fixture,
 )
 
 
@@ -19,6 +22,19 @@ def test_gpt56_minimal_maps_to_provider_none() -> None:
 
 def test_render_entrypoint_registers_extended_failure_matrix() -> None:
     assert set(EXTRA_PRESETS).issubset(lab._PRESETS)
+
+
+def test_render_fixture_timeline_finishes_before_live_request_time() -> None:
+    reference = datetime(2026, 8, 18, 0, 45, tzinfo=timezone.utc)
+    request = lab.SemanticVerificationLabRequest.model_validate(
+        lab._PRESETS["exact_preservation"]
+    )
+
+    fixture = _render_build_validation_fixture(request, now=reference)
+    request_created_at = fixture.snapshot.captured_at + timedelta(milliseconds=1)
+
+    assert fixture.snapshot.captured_at < reference
+    assert request_created_at < reference
 
 
 def test_every_render_preset_has_japanese_display_metadata() -> None:
