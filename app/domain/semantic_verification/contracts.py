@@ -18,11 +18,14 @@ from app.domain.speech_semantics import SpeechSemanticPlan
 
 
 class BlindSemanticUnitKind(str, Enum):
-    MATERIAL_CLAIM = "material_claim"
+    MATERIAL_SEMANTIC_CONTENT = "material_semantic_content"
+    NON_MATERIAL_STYLE = "non_material_style"
+    AMBIGUOUS = "ambiguous"
+
+
+class BlindInteractionAct(str, Enum):
     DIRECTED_QUESTION = "directed_question"
     NEW_DIRECTION = "new_direction"
-    NON_PROPOSITIONAL_STYLE = "non_propositional_style"
-    AMBIGUOUS = "ambiguous"
 
 
 class PropositionRelation(str, Enum):
@@ -72,8 +75,7 @@ class ExecutionRelation(str, Enum):
 class BlindUnitAccountingRelation(str, Enum):
     SUPPORTED_BY_PLAN = "supported_by_plan"
     UNSUPPORTED_EXTRA = "unsupported_extra"
-    PERMITTED_NON_PROPOSITIONAL_STYLE = "permitted_non_propositional_style"
-    QUESTION_OR_DIRECTION = "question_or_direction"
+    PERMITTED_NON_MATERIAL_STYLE = "permitted_non_material_style"
     AMBIGUOUS = "ambiguous"
 
 
@@ -179,21 +181,27 @@ class UtteranceEvidenceRef:
 class BlindSemanticUnit:
     unit_id: str
     kind: BlindSemanticUnitKind
+    interaction_acts: tuple[BlindInteractionAct, ...]
     evidence_refs: tuple[UtteranceEvidenceRef, ...]
 
     def __post_init__(self) -> None:
         require_identifier(self.unit_id, "unit_id")
         if not isinstance(self.kind, BlindSemanticUnitKind):
             raise ValueError("kind は BlindSemanticUnitKind でなければなりません")
+        acts = _owned(self.interaction_acts, BlindInteractionAct, "interaction_acts")
+        if len(set(acts)) != len(acts):
+            raise ValueError("interaction_acts は重複できません")
         refs = _owned(self.evidence_refs, UtteranceEvidenceRef, "evidence_refs")
         if not refs:
             raise ValueError("blind semantic unitにはevidenceが必要です")
+        object.__setattr__(self, "interaction_acts", acts)
         object.__setattr__(self, "evidence_refs", refs)
 
     def to_dict(self) -> dict[str, object]:
         return {
             "unit_id": self.unit_id,
             "kind": self.kind.value,
+            "interaction_acts": [item.value for item in self.interaction_acts],
             "evidence_refs": [item.to_dict() for item in self.evidence_refs],
         }
 
@@ -271,14 +279,11 @@ class PropositionSemanticObservation:
             if not isinstance(getattr(self, name), expected):
                 raise ValueError(f"{name} が不正です")
         refs = _owned(self.evidence_refs, UtteranceEvidenceRef, "evidence_refs")
+        supports = _ids(self.supporting_blind_unit_ids, "supporting_blind_unit_ids")
+        if self.relation is PropositionRelation.ENTAILED and (not refs or not supports):
+            raise ValueError("ENTAILED propositionにはevidenceとblind unit supportが必要です")
         object.__setattr__(self, "evidence_refs", refs)
-        object.__setattr__(
-            self,
-            "supporting_blind_unit_ids",
-            _ids(self.supporting_blind_unit_ids, "supporting_blind_unit_ids"),
-        )
-        if self.relation is PropositionRelation.ENTAILED and not refs:
-            raise ValueError("ENTAILED propositionにはevidenceが必要です")
+        object.__setattr__(self, "supporting_blind_unit_ids", supports)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -304,16 +309,15 @@ class BlindUnitAccounting:
         require_identifier(self.blind_unit_id, "blind_unit_id")
         if not isinstance(self.relation, BlindUnitAccountingRelation):
             raise ValueError("relation が不正です")
-        object.__setattr__(
-            self,
-            "proposition_ids",
-            _ids(self.proposition_ids, "proposition_ids"),
-        )
-        object.__setattr__(
-            self,
-            "evidence_refs",
-            _owned(self.evidence_refs, UtteranceEvidenceRef, "evidence_refs"),
-        )
+        proposition_ids = _ids(self.proposition_ids, "proposition_ids")
+        refs = _owned(self.evidence_refs, UtteranceEvidenceRef, "evidence_refs")
+        if self.relation is BlindUnitAccountingRelation.SUPPORTED_BY_PLAN:
+            if not proposition_ids:
+                raise ValueError("SUPPORTED_BY_PLANにはproposition参照が必要です")
+        elif proposition_ids:
+            raise ValueError("SUPPORTED_BY_PLAN以外はproposition参照を持てません")
+        object.__setattr__(self, "proposition_ids", proposition_ids)
+        object.__setattr__(self, "evidence_refs", refs)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -367,21 +371,21 @@ class PlanRelationObservationCandidate:
             PropositionSemanticObservation,
             "proposition_observations",
         )
-        if len({item.proposition_id for item in observations}) != len(observations):
-            raise ValueError("proposition observationは重複できません")
         accounting = _owned(
             self.blind_unit_accounting,
             BlindUnitAccounting,
             "blind_unit_accounting",
         )
+        if len({item.proposition_id for item in observations}) != len(observations):
+            raise ValueError("proposition observationは重複できません")
         if len({item.blind_unit_id for item in accounting}) != len(accounting):
             raise ValueError("blind unit accountingは重複できません")
-        object.__setattr__(self, "proposition_observations", observations)
-        object.__setattr__(self, "blind_unit_accounting", accounting)
         if not isinstance(self.budget_observation, SpeechActBudgetObservation):
             raise ValueError("budget_observation が不正です")
         if not isinstance(self.self_disclosure_relation, SelfDisclosureRelation):
             raise ValueError("self_disclosure_relation が不正です")
+        object.__setattr__(self, "proposition_observations", observations)
+        object.__setattr__(self, "blind_unit_accounting", accounting)
         require_aware(self.observed_at, "observed_at")
 
 
@@ -500,7 +504,6 @@ class SemanticRelationObservation:
     relation_observation_id: str
     semantic_plan_id: str
     utterance_id: str
-    rejection_categories: tuple[SemanticRejectionCategory, ...]
     committed_at: datetime
     _proof: InitVar[object | None] = None
 
@@ -514,14 +517,6 @@ class SemanticRelationObservation:
             "utterance_id",
         ):
             require_identifier(getattr(self, name), name)
-        categories = _owned(
-            self.rejection_categories,
-            SemanticRejectionCategory,
-            "rejection_categories",
-        )
-        if len(set(categories)) != len(categories):
-            raise ValueError("rejection categoryは重複できません")
-        object.__setattr__(self, "rejection_categories", categories)
         require_aware(self.committed_at, "committed_at")
         if _proof is not _OBSERVATION_PROOF:
             raise ValueError("SemanticRelationObservationはAuthority経由でのみ構築できます")
