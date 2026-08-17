@@ -129,6 +129,7 @@ def build_blind_request(
     payload: JsonValue = cast(
         JsonValue,
         {
+            "request_id": snapshot.blind_request_id,
             "verification_id": snapshot.verification_id,
             "utterance_id": snapshot.utterance.utterance_id,
             "segments": _utterance_segments(snapshot),
@@ -166,6 +167,7 @@ def build_relation_request(
     payload: JsonValue = cast(
         JsonValue,
         {
+            "request_id": snapshot.relation_request_id,
             "verification_id": snapshot.verification_id,
             "pair": snapshot.pair_dict(),
             "semantic_plan": snapshot.semantic_plan.to_dict(),
