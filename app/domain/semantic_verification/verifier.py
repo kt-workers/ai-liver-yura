@@ -28,6 +28,7 @@ from app.usecases.ports.llm import LLMRolePort
 
 from .authority import SemanticVerificationAuthority
 from .contracts import (
+    BlindInteractionAct,
     BlindSemanticUnit,
     BlindSemanticUnitKind,
     BlindUnitAccounting,
@@ -479,11 +480,16 @@ def _evidence(value: object) -> UtteranceEvidenceRef:
 
 def _blind_unit(value: object) -> BlindSemanticUnit:
     item = _mapping(value, "blind unit")
-    if set(item) != {"unit_id", "kind", "evidence_refs"}:
+    required = {"unit_id", "kind", "interaction_acts", "evidence_refs"}
+    if set(item) != required:
         raise ValueError("blind unit fieldがschemaと一致しません")
     return BlindSemanticUnit(
         _string(item["unit_id"], "unit_id"),
         _enum(BlindSemanticUnitKind, item["kind"], "kind"),
+        tuple(
+            _enum(BlindInteractionAct, part, "interaction_acts")
+            for part in _array(item["interaction_acts"], "interaction_acts")
+        ),
         tuple(
             _evidence(part)
             for part in _array(item["evidence_refs"], "evidence_refs")
