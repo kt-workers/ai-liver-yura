@@ -49,7 +49,10 @@ def blind_output_schema() -> dict[str, object]:
                     "required": ["unit_id", "kind", "evidence_refs"],
                     "properties": {
                         "unit_id": {"type": "string", "minLength": 1},
-                        "kind": {"type": "string", "enum": _enum_values(BlindSemanticUnitKind)},
+                        "kind": {
+                            "type": "string",
+                            "enum": _enum_values(BlindSemanticUnitKind),
+                        },
                         "evidence_refs": {
                             "type": "array",
                             "minItems": 1,
@@ -80,10 +83,22 @@ def relation_output_schema() -> dict[str, object]:
         "properties": {
             "proposition_id": {"type": "string", "minLength": 1},
             "relation": {"type": "string", "enum": _enum_values(PropositionRelation)},
-            "polarity_relation": {"type": "string", "enum": _enum_values(PolarityRelation)},
-            "certainty_relation": {"type": "string", "enum": _enum_values(CertaintyRelation)},
-            "degree_relation": {"type": "string", "enum": _enum_values(DegreeRelation)},
-            "execution_relation": {"type": "string", "enum": _enum_values(ExecutionRelation)},
+            "polarity_relation": {
+                "type": "string",
+                "enum": _enum_values(PolarityRelation),
+            },
+            "certainty_relation": {
+                "type": "string",
+                "enum": _enum_values(CertaintyRelation),
+            },
+            "degree_relation": {
+                "type": "string",
+                "enum": _enum_values(DegreeRelation),
+            },
+            "execution_relation": {
+                "type": "string",
+                "enum": _enum_values(ExecutionRelation),
+            },
             "evidence_refs": {
                 "type": "array",
                 "maxItems": 8,
@@ -102,7 +117,10 @@ def relation_output_schema() -> dict[str, object]:
         "required": ["blind_unit_id", "relation", "proposition_ids", "evidence_refs"],
         "properties": {
             "blind_unit_id": {"type": "string", "minLength": 1},
-            "relation": {"type": "string", "enum": _enum_values(BlindUnitAccountingRelation)},
+            "relation": {
+                "type": "string",
+                "enum": _enum_values(BlindUnitAccountingRelation),
+            },
             "proposition_ids": {
                 "type": "array",
                 "maxItems": 16,
@@ -164,10 +182,14 @@ def relation_output_schema() -> dict[str, object]:
 
 def blind_instructions() -> str:
     return """あなたは発話の独立Semantic Inventory Observerです。
-SpeechSemanticPlanや期待する正解は与えられません。actual utteranceだけを読みます。
-発話中の意味を持つ単位を、MATERIAL_CLAIM / DIRECTED_QUESTION / NEW_DIRECTION / NON_PROPOSITIONAL_STYLE / AMBIGUOUSに分けて列挙してください。
-元のPlan DTO、polarity、certainty、degree等を推測復元しようとしないでください。
-各unitはactual segmentに存在するexact quoteと0-based occurrence_indexをevidence_refsへ返してください。
+SpeechSemanticPlanや期待する正解は与えられません。
+actual utteranceだけを読みます。
+発話中の意味を持つ単位を、次のclosed kindへ分けて列挙してください。
+MATERIAL_CLAIM / DIRECTED_QUESTION / NEW_DIRECTION /
+NON_PROPOSITIONAL_STYLE / AMBIGUOUS
+元のPlan DTO、polarity、certainty、degree等を推測復元しないでください。
+各unitはactual segmentに存在するexact quoteと0-based occurrence_indexを
+`evidence_refs`へ返してください。
 同じ文の中に独立した事実主張が複数ある場合は、可能な範囲で別unitに分けてください。
 語尾・言い淀み等で独立した命題を持たないものはNON_PROPOSITIONAL_STYLEです。
 意味単位か判断できない場合はAMBIGUOUSにしてください。
@@ -176,13 +198,18 @@ SpeechSemanticPlanや期待する正解は与えられません。actual utteran
 
 def relation_instructions() -> str:
     return """あなたはPlan Relation Observerです。
-入力には確定済みSpeechSemanticPlan、actual utterance、およびPlanを見ずに先行確定したBlindUtteranceObservationがあります。
-Blind unitを削除・改名・無視してはいけません。各blind unitをexactly one accounting recordで説明してください。
+入力には確定済みSpeechSemanticPlan、actual utterance、
+Planを見ずに先行確定したBlindUtteranceObservationがあります。
+Blind unitを削除・改名・無視してはいけません。
+各blind unitをexactly one accounting recordで説明してください。
 MATERIAL_CLAIMを単なるstyleへ降格してはいけません。
-各Plan propositionについてactual utteranceとのrelationを ENTAILED / MISSING / CONTRADICTED / AMBIGUOUS で観測し、polarity/certainty/degree/executionは入力Planに対する相対relationとして返してください。
+各Plan propositionについてactual utteranceとのrelationを
+ENTAILED / MISSING / CONTRADICTED / AMBIGUOUSで観測してください。
+polarity/certainty/degree/executionは入力Planに対する相対relationとして返してください。
 SpeechからPlan DTO全体を再構築しないでください。
 Character realization_refsやcandidate自己申告値はsemantic proofとして使わないでください。
-ENTAILED relationはactual segmentのexact quote evidenceと、その意味を担うblind unit IDを示してください。
+ENTAILED relationはactual segmentのexact quote evidenceと、
+その意味を担うblind unit IDを示してください。
 Plan外のmaterial claimはUNSUPPORTED_EXTRA、判断不能はAMBIGUOUSとしてaccountしてください。
 実際のdirected question数/new direction数もutterance意味から数えてください。
 最終PASS/FAIL、accepted、score、修正文、replacement utteranceは出力しないでください。"""
