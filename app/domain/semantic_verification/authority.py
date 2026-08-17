@@ -23,12 +23,12 @@ from .contracts import (
     PlanRelationObservationCandidate,
     PolarityRelation,
     PropositionRelation,
+    SelfDisclosureRelation,
     SemanticAcceptance,
     SemanticAcceptanceState,
     SemanticRejectionCategory,
     SemanticRelationObservation,
     SemanticVerificationContextSnapshot,
-    SelfDisclosureRelation,
     UtteranceEvidenceRef,
 )
 
@@ -105,7 +105,10 @@ class SemanticVerificationAuthority:
             raise ValueError("blind unitごとにexactly one accountingが必要です")
 
         for observation in candidate.proposition_observations:
-            if any(unit_id not in blind_by_id for unit_id in observation.supporting_blind_unit_ids):
+            if any(
+                unit_id not in blind_by_id
+                for unit_id in observation.supporting_blind_unit_ids
+            ):
                 raise ValueError("unknown blind unitがproposition relationへ参照されています")
             self._validate_all_evidence(snapshot.utterance, observation.evidence_refs)
             supporting_evidence = {
@@ -120,7 +123,9 @@ class SemanticVerificationAuthority:
                     self._evidence_key(ref) not in supporting_evidence
                     for ref in observation.evidence_refs
                 ):
-                    raise ValueError("proposition evidenceはsupporting blind unitへgroundする必要があります")
+                    raise ValueError(
+                        "proposition evidenceはsupporting blind unitへgroundする必要があります"
+                    )
 
         for accounting in candidate.blind_unit_accounting:
             unit = blind_by_id[accounting.blind_unit_id]
@@ -128,7 +133,10 @@ class SemanticVerificationAuthority:
                 raise ValueError("blind unit accountingがunknown propositionを参照しています")
             self._validate_all_evidence(snapshot.utterance, accounting.evidence_refs)
             own_evidence = {self._evidence_key(ref) for ref in unit.evidence_refs}
-            if any(self._evidence_key(ref) not in own_evidence for ref in accounting.evidence_refs):
+            if any(
+                self._evidence_key(ref) not in own_evidence
+                for ref in accounting.evidence_refs
+            ):
                 raise ValueError("blind unit accounting evidenceは元unitへgroundする必要があります")
             if (
                 unit.kind is BlindSemanticUnitKind.MATERIAL_CLAIM
@@ -191,7 +199,10 @@ class SemanticVerificationAuthority:
                     categories.add(SemanticRejectionCategory.PROPOSITION_CONTRADICTED)
                 elif observed.relation is PropositionRelation.AMBIGUOUS:
                     categories.add(SemanticRejectionCategory.AMBIGUOUS_SEMANTIC_OBSERVATION)
-            elif observed.relation in {PropositionRelation.ENTAILED, PropositionRelation.AMBIGUOUS}:
+            elif observed.relation in {
+                PropositionRelation.ENTAILED,
+                PropositionRelation.AMBIGUOUS,
+            }:
                 categories.add(SemanticRejectionCategory.FORBIDDEN_PROPOSITION_REALIZED)
 
             if observed.relation is PropositionRelation.ENTAILED:
@@ -216,7 +227,10 @@ class SemanticVerificationAuthority:
                 elif item.relation is not BlindUnitAccountingRelation.SUPPORTED_BY_PLAN:
                     categories.add(SemanticRejectionCategory.UNACCOUNTED_MATERIAL_CLAIM)
             elif unit.kind is BlindSemanticUnitKind.NON_PROPOSITIONAL_STYLE:
-                if item.relation is not BlindUnitAccountingRelation.PERMITTED_NON_PROPOSITIONAL_STYLE:
+                if (
+                    item.relation
+                    is not BlindUnitAccountingRelation.PERMITTED_NON_PROPOSITIONAL_STYLE
+                ):
                     categories.add(SemanticRejectionCategory.OBSERVER_DISAGREEMENT)
             elif unit.kind in {
                 BlindSemanticUnitKind.DIRECTED_QUESTION,
@@ -232,7 +246,10 @@ class SemanticVerificationAuthority:
             1 for unit in blind.units if unit.kind is BlindSemanticUnitKind.NEW_DIRECTION
         )
         budget = candidate.budget_observation
-        if budget.directed_question_count != a_questions or budget.new_direction_count != a_directions:
+        if (
+            budget.directed_question_count != a_questions
+            or budget.new_direction_count != a_directions
+        ):
             categories.add(SemanticRejectionCategory.OBSERVER_DISAGREEMENT)
         plan_candidate = snapshot.semantic_plan.candidate
         if budget.directed_question_count > plan_candidate.question_budget:
@@ -264,7 +281,11 @@ class SemanticVerificationAuthority:
             committed_at,
             _proof=_OBSERVATION_PROOF,
         )
-        state = SemanticAcceptanceState.ACCEPTED if not ordered else SemanticAcceptanceState.REJECTED
+        state = (
+            SemanticAcceptanceState.ACCEPTED
+            if not ordered
+            else SemanticAcceptanceState.REJECTED
+        )
         acceptance = SemanticAcceptance(
             acceptance_id,
             observation.observation_id,
