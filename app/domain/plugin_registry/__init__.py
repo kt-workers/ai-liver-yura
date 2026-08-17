@@ -1,4 +1,4 @@
-from .authority import PluginRegistryAuthority
+from .authority import PluginRegistryAuthority, PluginRegistryRevisionStaleError
 from .contracts import (
     PluginCancellationSupport,
     PluginCapabilityDeclaration,
@@ -22,6 +22,7 @@ from .projector import project_capability
 
 __all__ = [
     "PluginRegistryAuthority",
+    "PluginRegistryRevisionStaleError",
     "PluginManifest",
     "PluginCapabilityDeclaration",
     "PluginOperationDeclaration",

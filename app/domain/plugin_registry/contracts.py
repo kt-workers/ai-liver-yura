@@ -133,9 +133,9 @@ class PluginOperationDeclaration:
             require_identifier(getattr(self, name), name)
         if not isinstance(self.side_effect_class, PluginSideEffectClass):
             raise ValueError("side_effect_class が不正です")
-        permissions = _unique(
-            _owned(self.required_permissions, PluginPermissionRef, "required_permissions"),
-            "permission_id",
+        permissions = _owned(
+            self.required_permissions,
+            PluginPermissionRef,
             "required_permissions",
         )
         if len({(p.permission_id, p.scope_ref) for p in permissions}) != len(permissions):
