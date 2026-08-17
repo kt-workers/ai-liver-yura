@@ -11,6 +11,7 @@ from app.domain.character_language import (
     CharacterLanguageAuthority,
     CharacterLanguageCommitState,
     CharacterLanguageContextSnapshot,
+    CharacterUtterance,
     CharacterUtteranceCandidate,
     CharacterUtteranceSegment,
     LinguisticBoundary,
@@ -56,6 +57,7 @@ from app.domain.semantic_verification import (
     PolarityRelation,
     PropositionRelation,
     PropositionSemanticObservation,
+    SelfDisclosureRelation,
     SemanticAcceptanceState,
     SemanticRejectionCategory,
     SemanticVerificationAuthority,
@@ -65,7 +67,6 @@ from app.domain.semantic_verification import (
     SemanticVerificationFailureCode,
     SemanticVerificationPolicy,
     SemanticVerifier,
-    SelfDisclosureRelation,
     SpeechActBudgetObservation,
     UtteranceEvidenceRef,
     build_blind_request,
@@ -81,6 +82,7 @@ from app.domain.speech_semantics import (
     SpeechSemanticContextSnapshot,
     SpeechSemanticFact,
     SpeechSemanticFactKind,
+    SpeechSemanticPlan,
 )
 
 NOW = datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc)
@@ -135,7 +137,7 @@ def _decision() -> CommittedExecutiveDecision:
     return CommittedExecutiveDecision("decision-1", candidate, (), NOW)
 
 
-def _semantic_plan():
+def _semantic_plan() -> SpeechSemanticPlan:
     required_fact = SpeechSemanticFact(
         "fact-required",
         SpeechSemanticFactKind.SELF,
@@ -209,7 +211,11 @@ def _semantic_plan():
     )
 
 
-def _utterance(plan=None, *, text: str = TEXT):
+def _utterance(
+    plan: SpeechSemanticPlan | None = None,
+    *,
+    text: str = TEXT,
+) -> CharacterUtterance:
     plan = plan or _semantic_plan()
     profile = CharacterLanguageProfile("yura", 1, 1, ())
     context = CharacterLanguageContextSnapshot(
@@ -278,8 +284,18 @@ def _evidence(quote: str = TEXT) -> UtteranceEvidenceRef:
     return UtteranceEvidenceRef("segment-1", quote, 0)
 
 
-def _blind_candidate(snapshot: SemanticVerificationContextSnapshot, *, extra: bool = False):
-    units = [BlindSemanticUnit("unit-required", BlindSemanticUnitKind.MATERIAL_CLAIM, (_evidence(),))]
+def _blind_candidate(
+    snapshot: SemanticVerificationContextSnapshot,
+    *,
+    extra: bool = False,
+) -> BlindUtteranceObservationCandidate:
+    units = [
+        BlindSemanticUnit(
+            "unit-required",
+            BlindSemanticUnitKind.MATERIAL_CLAIM,
+            (_evidence(),),
+        )
+    ]
     if extra:
         units.append(
             BlindSemanticUnit(
@@ -347,7 +363,11 @@ def _relation_candidate(
     )
 
 
-def _eligible(snapshot: SemanticVerificationContextSnapshot, *, revisions=REVISIONS):
+def _eligible(
+    snapshot: SemanticVerificationContextSnapshot,
+    *,
+    revisions: RevisionVector = REVISIONS,
+) -> SemanticVerificationEligibilityView:
     return SemanticVerificationEligibilityView(
         snapshot.semantic_plan.plan_id,
         snapshot.utterance.utterance_id,
@@ -517,7 +537,10 @@ def test_unsupported_extra_material_claim_is_rejected() -> None:
         committed_at=NOW + timedelta(seconds=3),
     )
     assert acceptance.state is SemanticAcceptanceState.REJECTED
-    assert SemanticRejectionCategory.UNSUPPORTED_EXTRA_CLAIM in acceptance.rejection_categories
+    assert (
+        SemanticRejectionCategory.UNSUPPORTED_EXTRA_CLAIM
+        in acceptance.rejection_categories
+    )
 
 
 class _SequencePort:
@@ -537,7 +560,11 @@ class _SequencePort:
                         "unit_id": "unit-required",
                         "kind": "material_claim",
                         "evidence_refs": [
-                            {"segment_id": "segment-1", "quote": TEXT, "occurrence_index": 0}
+                            {
+                                "segment_id": "segment-1",
+                                "quote": TEXT,
+                                "occurrence_index": 0,
+                            }
                         ],
                     }
                 ],
@@ -561,7 +588,11 @@ class _SequencePort:
                         "degree_relation": "preserved",
                         "execution_relation": "not_applicable",
                         "evidence_refs": [
-                            {"segment_id": "segment-1", "quote": TEXT, "occurrence_index": 0}
+                            {
+                                "segment_id": "segment-1",
+                                "quote": TEXT,
+                                "occurrence_index": 0,
+                            }
                         ],
                         "supporting_blind_unit_ids": ["unit-required"],
                     },
@@ -582,7 +613,11 @@ class _SequencePort:
                         "relation": "supported_by_plan",
                         "proposition_ids": ["prop-required"],
                         "evidence_refs": [
-                            {"segment_id": "segment-1", "quote": TEXT, "occurrence_index": 0}
+                            {
+                                "segment_id": "segment-1",
+                                "quote": TEXT,
+                                "occurrence_index": 0,
+                            }
                         ],
                     }
                 ],
@@ -647,7 +682,10 @@ async def test_verifier_runs_blind_before_plan_relation_and_accepts() -> None:
         acceptance_id="acceptance-1",
         created_at=snapshot.captured_at,
     )
-    assert [item.role_id for item in port.requests] == [BLIND_ROLE_ID, RELATION_ROLE_ID]
+    assert [item.role_id for item in port.requests] == [
+        BLIND_ROLE_ID,
+        RELATION_ROLE_ID,
+    ]
     assert run.acceptance.state is SemanticAcceptanceState.ACCEPTED
     relation_payload = str(port.requests[1].input.value)
     assert "unit-required" in relation_payload
