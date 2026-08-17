@@ -30,7 +30,7 @@ Labは#362/#330 Authorityを通すために1ms単位のsynthetic provenance time
 
 Render entrypointではsynthetic baseを実時計より100ms過去に置く。現在の7ms synthetic timeline + request作成1msを差し引いても90ms以上の余裕を残すことを回帰テストで固定する。
 
-この補修はvalidation fixtureの時刻生成だけに限定し、#363 verifier / #357 adapterのtransport invariantを緩めない。
+この補修はvalidation fixtureの時刻生成だけに限定し、#363 verifier / #357 adapterのtransport invariantを緩めない。自動Gate通過後、Render上の同一 `exact_preservation` caseを再実行してtransport violationが解消したことを確認する。
 
 ## Export
 
