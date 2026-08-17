@@ -6,158 +6,79 @@ Parent: #325
 Upstream: #362 / #330
 Provider: #357
 Related: #348 / #352
-Status: Detailed Design Reconciliation / Implementation-to-Live-Validation Gate
+Status: Canonical Supplement / Implementation-to-Live-Validation Gate
 
 ## 1. 目的
 
-この文書は `semantic_verification_contracts.md` のうち **open-ended natural-language semantic observation方式とLive Validation Gate** を補足し、V1 #288 / #293 / #303で確認した失敗をV2へ持ち込まないための正本supplementである。
+V1 #288 / #293 / #303で確認したSemantic Verificationの失敗をV2へ持ち込まないため、open-ended Character発話の意味保持を**本番Module + 実LLM**で早期検証する。
 
-V1では次の両側で問題が出た。
+V1では両方向の失敗を経験した。
 
 1. blind extraction / speech→元semantic enum再構成
-   - medium/low certainty、unknown、degree、concept等でfalse reject
+   - certainty / unknown / degree / concept等でfalse reject
    - schema負荷が高い
 2. Plan-aware verification
-   - expected facetへObserverがanchoringしfalse acceptし得る
+   - expected facetへのanchoringでfalse acceptし得る
 
-したがってV2では、どちらか一方を万能なsemantic proofとして採用しない。
-finite word / phrase / regex / substring / synonym / antonym listをsemantic authorityへ戻さない。
+さらにfinite word / phrase / regex / substring / synonym / antonym listをsemantic authorityへ使う方式は、unseen paraphrase、辞書肥大、test wording最適化を起こした。
 
----
+V2では、どれか1方式を万能なsemantic proofとみなさない。
 
-## 2. 前提: 自由自然言語の意味保持に完全な決定論的proofはない
+## 2. 基本原則
 
-#330がopen-ended LLMで自由な`CharacterUtterance`を生成する限り、Runtimeだけで自然言語意味を完全証明することはできない。
+自由自然言語に完全な決定論的semantic proofはない。
+そのため次を守る。
 
-設計目標は次とする。
+- open-ended意味を有限候補集へ閉じ込めない
+- Runtimeは自然語keywordから意味を推定しない
+- 1つのVerifier LLMの自己判定をPASS根拠にしない
+- Planを見ない観測でactual utteranceのmaterial semantic contentを先に固定する
+- Plan-aware観測は先行blind observationを消去・改名・再分類できない
+- ambiguity / observer disagreementはfail-closed
+- Providerの`PASS / accepted / score`を最終Authorityにしない
+- Characterの`realization_refs` / budget自己申告をsemantic proofにしない
+- 最終accept/rejectはRuntime closed policyが所有する
+- 実LLM false accept / false rejectをMerge Gateへ含める
 
-- semantic uncertaintyを隠さない
-- 1種類のObserverの自己一致をPASS根拠にしない
-- open-ended意味を有限候補へ閉じ込めない
-- Planを見ない観測でmaterial claim inventoryを先に固定する
-- Plan-aware観測は、その独立inventoryを消したり作り替えたりできない
-- disagreement / ambiguityはfail-closed
-- 実LLM false accept / false rejectを早期計測しMerge Gateへ使う
+## 3. Production topology
 
-LLMは観測candidateを返し、最終acceptanceはRuntime closed policyが所有する。
-
----
-
-## 3. Production verification topology
-
-初期productionは**品質優先の2-stage observer**とする。
+初期productionは品質優先の2-stage observerとする。
 
 ```text
 SpeechSemanticPlan + CharacterUtterance
         ↓
 0. Deterministic Pair / Provenance Gate
         ↓
-A. Blind Utterance Inventory Observer
-   input = utterance only
-   Plan / realization_refs非提示
+A. Plan-blind Utterance Inventory Observer
         ↓
    immutable BlindUtteranceObservation
         ↓
 B. Plan Relation Observer
-   input = Plan + utterance + frozen blind units
+   Plan + Utterance + frozen blind units
         ↓
-   PlanRelationObservationCandidate
+   immutable PlanRelationObservation
         ↓
 C. Runtime deterministic reconciliation
-        ├─ proposition fidelity
-        ├─ blind unit accounting
-        ├─ unsupported extra
-        ├─ actual speech-act budget
-        └─ optional closed-facet counterfactual probes
         ↓
-SemanticRelationObservation
+   SemanticRelationObservation
         ↓
-Runtime Closed Acceptance
+D. Runtime closed acceptance policy
+        ↓
+   SemanticAcceptance
 ```
 
-A→Bはsemantic verification内部ではdata dependencyを持つ。
-**初期版ではここを無理に並列化しない。**
+A→Bはsemantic safety上のdata dependencyであるため、初期版では無理に並列化しない。
+ただしA/B await中もcurrent playback、Body realtime、unrelated input/Activity、#331 Speech Performance、policy許可されたspeculative TTS preparationは停止させない。
 
-理由:
+## 4. Role A — Plan-blind Inventory
 
-- AがPlanを知らない状態でmaterial unitを固定する必要がある
-- BがAのunitを1件ずつ説明し、Plan-aware anchoringでclaim自体を消す余地を減らす
-- 完全並列A/BではBがAの独立unitを知らず、Plan外claimの対応付けが弱くなる
-
-ただしA/B await中も:
-
-- current speech playback
-- Body realtime
-- unrelated input / Activity
-- #331 Speech Performance
-- #348 policyで許可されたspeculative TTS preparation
-
-は停止させない。
-
-quality / latencyを#427で実測後、semantic contractを維持できる場合にのみbatch/fused/parallel optimizationを検討する。
-
----
-
-## 4. Logical LLM Roles
-
-#363 Moduleは2つのlogical Roleを所有する。
-
-### Role A
+Role ID:
 
 ```text
-role_id: semantic_verification_blind_inventory
-input_schema_id: semantic.verification.blind.context.v1
-output_schema_id: semantic.verification.blind.candidate.v1
+semantic_verification_blind_inventory
 ```
 
-### Role B
-
-```text
-role_id: semantic_verification_plan_relation
-input_schema_id: semantic.verification.relation.context.v1
-output_schema_id: semantic.verification.relation.candidate.v1
-```
-
-Role A/Bは#323の可変Role contractと#357 production `LLMRolePort`を利用する。
-
-- Provider SDK型をDomainへ出さない
-- strict Structured Output
-- roleごとにmodel / reasoning policyを独立設定可能
-- Role数を固定system invariantにしない
-- A/Bが同Providerを共有してもlogical responsibilityは混ぜない
-
-contrastive probeは初期版ではB request内の補助input/outputとして扱い、第三の常時LLM Roleを追加しない。
-
----
-
-## 5. Stage 0 — Deterministic Pair / Provenance Gate
-
-LLM呼出前にRuntimeだけで確認する。
-
-- committed `SpeechSemanticPlan`
-- committed `CharacterUtterance`
-- exact plan / utterance / decision / intent / event identity
-- source / goal / attention revision
-- current eligibility
-- superseded / cancelled
-- strict DTO / enum / bounded size
-
-`CharacterUtterance.realization_refs`は構造hintとして存在しても、Role A/Bのsemantic proofへ渡さない。
-
-このGateで失敗したpairをsemantic LLMへ送らない。
-
----
-
-## 6. Role A — Blind Utterance Inventory Observer
-
-### 6.1 目的
-
-Planを見せずactual utterance内の**material semantic units**を観測し、Plan anchoringでextra claimが消えることを防ぐ。
-
-Aは元`SpeechSemanticPlan`を再構築しない。
-polarity / certainty / degree等をPlan schemaへround-tripすることも要求しない。
-
-### 6.2 入力
+### 入力
 
 - actual `CharacterUtterance.segments[].text`
 - segment identity
@@ -165,44 +86,55 @@ polarity / certainty / degree等をPlan schemaへround-tripすることも要求
 
 渡さないもの:
 
-- SpeechSemanticPlan
-- expected proposition ID
-- expected polarity / certainty / degree / execution state
+- `SpeechSemanticPlan`
+- proposition ID
+- expected polarity / certainty / degree / execution
 - Character `realization_refs`
-- Character candidate自己申告budget
-- raw user text
-- raw internal state
-- raw execution payload
+- Character budget自己申告
+- raw user text / internal state / execution payload
 
-### 6.3 出力
+### 出力
+
+Role AはPlan DTOを再構築しない。
+actual utteranceを最小のsemantic unitへ分ける。
 
 ```text
-BlindUtteranceObservationCandidate
-- candidate_id
-- request_id
-- utterance_id
-- units[]
-
 BlindSemanticUnit
 - unit_id
 - kind
+- interaction_acts[]
 - evidence_refs[]
 ```
 
-初期closed `kind`:
+`kind`:
 
-- `MATERIAL_CLAIM`
-- `DIRECTED_QUESTION`
-- `NEW_DIRECTION`
-- `NON_PROPOSITIONAL_STYLE`
+- `MATERIAL_SEMANTIC_CONTENT`
+- `NON_MATERIAL_STYLE`
 - `AMBIGUOUS`
 
-Aの目的はpredicate/value/facetを完全抽出することではない。
-まず**発話中に独立して説明責任を持つsemantic unitがどこにあるか**をPlan非依存で固定する。
+`interaction_acts`:
 
-必要な場合のみbounded diagnostic glossを研究表示用に持てるが、Runtime acceptance Authorityにしない。
+- `DIRECTED_QUESTION`
+- `NEW_DIRECTION`
 
-### 6.4 Evidence
+意味内容とinteraction actは**直交**する。
+
+例:
+
+```text
+「今日は雨だよね？」
+→ kind = MATERIAL_SEMANTIC_CONTENT
+→ interaction_acts = [DIRECTED_QUESTION]
+```
+
+命題だけでなく、挨拶、謝意、依頼、約束等も、変えると伝達意味が変わるなら`MATERIAL_SEMANTIC_CONTENT`として扱う。
+語尾・言い淀み等で独立した伝達意味を持たない表面だけを`NON_MATERIAL_STYLE`とする。
+
+独立した意味を1 unitへまとめるとPlan外claimを隠し得るため、可能な限りatomicに分割する。分離不能なら`AMBIGUOUS`としfail-closed側へ送る。
+
+## 5. Evidence grounding
+
+LLMへ文字offsetを数えさせない。
 
 ```text
 UtteranceEvidenceRef
@@ -211,334 +143,225 @@ UtteranceEvidenceRef
 - occurrence_index
 ```
 
-Runtimeはexact quoteの位置だけを検証する。
-quote内単語からpolarity/certainty/degree/claim kindを再判定しない。
+Runtimeはactual segment内のexact quote occurrenceを位置groundingするだけである。
+quote内の単語からpolarity / certainty / degree / claim kind等を再推定しない。
 
-### 6.5 Role A commit
+## 6. Role B — Plan Relation / Accounting
 
-strict schema / identity / evidence grounding成功後、#363 Authorityがimmutable `BlindUtteranceObservation`を構築する。
+Role ID:
 
-Provider candidateをそのままB入力の正本にしない。
+```text
+semantic_verification_plan_relation
+```
 
----
-
-## 7. Role B — Plan Relation Observer
-
-### 7.1 目的
-
-Aで固定済みのblind unitを保持したまま、Plan propositionとの意味関係を観測する。
-
-Bは「PASSか」を答えない。
-
-### 7.2 入力
+### 入力
 
 - typed `SpeechSemanticPlan`
-- actual `CharacterUtterance.segments[].text`
+- actual `CharacterUtterance`
 - immutable `BlindUtteranceObservation`
 - exact pair identity
-- relation enum definition
-- optional request-local closed-facet probe set
+- closed relation enum definition
 
-BはAのunitを:
+### Plan proposition relation
 
-- 削除
-- 結合して消去
-- unit_idを変更
-- `NON_PROPOSITIONAL_STYLE`へ勝手に再分類
+各Plan propositionについてexactly one:
 
-できない。
-Bは**各blind unitがPlan上どう説明されるか**を返す。
+- `ENTAILED`
+- `MISSING`
+- `CONTRADICTED`
+- `AMBIGUOUS`
 
-渡さない/信用しないもの:
+を返す。
 
-- Character `realization_refs`をsemantic proofとして利用
-- Character budget自己申告をactual speech proofとして利用
-- Provider自身の`accepted/pass/score`
-- fixed natural-language answer list
+closed semantic facetはPlanに対する**relative relation**として観測する。
 
-### 7.3 Plan proposition relation
+- polarity: preserved / reversed / unknown committed / ambiguous
+- certainty: preserved / strengthened / weakened / ambiguous
+- degree: preserved / strengthened / weakened / omitted / added / ambiguous
+- execution: preserved / strengthened / weakened / contradicted / ambiguous
 
-```text
-PropositionRelation
-- proposition_id
-- relation: ENTAILED | MISSING | CONTRADICTED | AMBIGUOUS
-- polarity_relation
-- certainty_relation
-- degree_relation
-- execution_relation
-- evidence_refs[]
-- supporting_blind_unit_ids[]
-```
+speechからPlan DTO全体をround-trip再構築しない。
 
-closed facet relation例:
+### Blind unit accounting
 
-- polarity: `PRESERVED / REVERSED / UNKNOWN_COMMITTED / AMBIGUOUS / NOT_APPLICABLE`
-- certainty: `PRESERVED / STRENGTHENED / WEAKENED / AMBIGUOUS / NOT_APPLICABLE`
-- degree: `PRESERVED / STRENGTHENED / WEAKENED / OMITTED / ADDED / AMBIGUOUS / NOT_APPLICABLE`
-- execution: `PRESERVED / STRENGTHENED / WEAKENED / CONTRADICTED / AMBIGUOUS / NOT_APPLICABLE`
-
-speechからPlan DTO全体を再構築しない。
-
-### 7.4 Blind unit accounting
-
-BはAの各unitについてexactly one accounting recordを返す。
-
-```text
-BlindUnitAccounting
-- blind_unit_id
-- relation
-- proposition_ids[]
-- evidence_refs[]
-```
-
-relation:
+Aの各unitについてexactly one accountingを返す。
 
 - `SUPPORTED_BY_PLAN`
 - `UNSUPPORTED_EXTRA`
-- `PERMITTED_NON_PROPOSITIONAL_STYLE`
-- `QUESTION_OR_DIRECTION`
+- `PERMITTED_NON_MATERIAL_STYLE`
 - `AMBIGUOUS`
 
-Aが`MATERIAL_CLAIM`としたunitをBが`PERMITTED_NON_PROPOSITIONAL_STYLE`へ無条件降格することは禁止。
-その組み合わせはRuntimeでschema/policy conflictとしてrejectする。
+`SUPPORTED_BY_PLAN`だけがproposition IDを持てる。
 
-### 7.5 Budget / self-disclosure
+A/Bは双方向に一致しなければならない。
 
-actual utteranceから:
+- Accountingが`SUPPORTED_BY_PLAN(P)`なら、P側も`ENTAILED`で同じblind unitをsupportとして参照する
+- Proposition Pがblind unit Uをsupportに使うなら、U側accountingも`SUPPORTED_BY_PLAN`でPを参照する
 
-- directed question count
-- new-direction count
-- self-disclosure relation
+片方向だけの自己申告ではcommitしない。
 
-を観測する。
-Character候補の自己申告値をAuthorityにしない。
+Aの`MATERIAL_SEMANTIC_CONTENT`をBがstyleへ降格することは禁止する。
+1 blind unitにPlan-supported意味とPlan外意味が混在している場合、Bは`SUPPORTED_BY_PLAN`だけで覆わず`UNSUPPORTED_EXTRA`または`AMBIGUOUS`とする。
 
----
+## 7. Speech act / budget
 
-## 8. Closed-facet Counterfactual Probe — supplemental only
+Aの`interaction_acts`と、Bがactual utteranceから独立観測したdirected question / new direction countをRuntimeで照合する。
 
-contrastive probeはAcceptance completenessの根拠にしない。
+A/B countが不一致なら`OBSERVER_DISAGREEMENT`。
+Planのquestion/new-direction budgetを超過すればrejectする。
 
-生成責務:
+Character candidateのbudget自己申告はsemantic acceptance Authorityにしない。
 
-- `SemanticProbeSetBuilder`（#363 deterministic helper）
-- Stage 0 snapshot確定後
-- Planのclosed facetからrequest-localに生成
+## 8. Runtime structural gate
+
+Provider candidateをそのままRuntime正本にしない。
+
+### A commit前
+
+- request / utterance identity
+- strict schema / closed enum
+- unit ID uniqueness / bounds
+- exact evidence grounding
+
+### B commit前
+
+- exact Plan / Utterance / BlindObservation identity
+- Plan proposition全件exactly one observation
+- blind unit全件exactly one accounting
+- unknown/duplicate IDなし
+- proposition evidenceがsupporting blind unit evidenceへground
+- A↔B bidirectional support/accounting consistency
+- material content→style降格禁止
+
+成功後だけimmutable A/B Observationを構築する。
+
+## 9. SemanticRelationObservationとAcceptanceの分離
+
+`SemanticRelationObservation`は**Observer fact**であり、accept/reject policyを内包しない。
+
+保持するのは:
+
+- exact pair identity
+- BlindUtteranceObservation ID
+- PlanRelationObservation ID
+- commit timestamp
+
+とする。
+
+`rejection_categories`は`SemanticAcceptance`だけが所有する。
+
+これにより、観測結果と現在のclosed acceptance policyを分離する。
+Provider candidateにもfinal accept/pass fieldを持たせない。
+
+## 10. Closed acceptance policy
+
+Runtimeはimmutable A/B observations + authoritative Planからaccept/rejectを導出する。
+
+主なreject:
+
+- required proposition missing
+- forbidden proposition realized / ambiguous
+- proposition contradicted
+- polarity changed
+- certainty strengthened / weakened / lost
+- degree strengthened / weakened / omitted / added
+- execution truth strengthened / weakened / contradicted
+- unsupported material semantic content
+- unaccounted material semantic content
+- question / new-direction budget exceeded
+- self-disclosure exceeded / ambiguous
+- A/B ambiguity / disagreement
+
+`naturalだから`、`Characterらしいから`、`Provider confidenceが高いから`でoverrideしない。
+
+## 11. Counterfactual / contrastive probe
+
+contrastive verificationは**補助機構のみ**で、初期production completenessの根拠にしない。
 
 固定してよいもの:
 
 - relation algebra
-- Planが既に持つclosed facet
-
-生成例:
-
-- polarity preserved vs reversed
-- certainty preserved vs strengthened/weakened
-- degree preserved vs strengthened/weakened/omitted
-- execution preserved vs completion-strengthening/contradiction
+- Planが元から持つclosed facet
 
 禁止:
 
-- semantic content dictionary
-- synonym/antonym list
+- semantic content候補集
+- synonym / antonym dictionary
 - predicate/value replacement library
-- 「猫→犬」等content-specific fixed candidate
+- content-specific対立パターン
 - natural-language phrase candidate library
 
-probe IDはopaque / request-localとする。
-候補順序はdeterministically seeded shuffle等で位置biasを固定しない。
+将来導入する場合はrequest-localにclosed facet counterfactualだけを生成し、通常relationと矛盾したら投票多数決でPASSせずambiguity/disagreementへ送る。
 
-probe結果と通常relationが矛盾した場合、投票多数決でPASSへ寄せず`AMBIGUOUS / OBSERVER_DISAGREEMENT`とする。
+## 12. V1との差
 
----
+### blind round-tripではない
 
-## 9. Runtime Reconciliation
+Role Aは元semantic enumを再構築しない。
+Planを見ず、material content inventoryとevidenceだけを固定する。
 
-Role A/Bのcandidateはstrict parse / identity / evidence grounding後にimmutable observer factへcommitする。
+### Plan anchoringだけに依存しない
 
-最終`SemanticRelationObservation`は:
+Role BがPlanを見ても、Role Aが先に固定したmaterial contentを消せない。
+全blind unitへaccounting obligationを課す。
 
-- pair identity
-- BlindUtteranceObservation ID
-- PlanRelationObservation ID
-- proposition relations
-- blind unit accounting
-- budget observation
-- optional probe result
+### finite lexical matcherを使わない
 
-へbindする。
+Runtimeは自然文の表面語彙から意味を判定しない。
+static testでsemantic moduleへの`re`やkeyword/marker/phrase/synonym/antonym型semantic scaffolding再侵入を監査する。
 
-### 9.1 REQUIRED
+### LLM自己採点を使わない
 
-- B relation = ENTAILED
-- valid evidence
-- supporting blind unitあり
-- closed facetにreject relationなし
+A/Bのどちらにもfinal PASS Authorityを渡さない。
 
-### 9.2 OPTIONAL
+## 13. Freshness / stale / cancellation
 
-- MISSINGは許容
-- 実現した場合はREQUIREDと同じfidelity条件
+Provider起動前、A完了後、B完了後にlive pair stateを再取得する。
 
-### 9.3 FORBIDDEN
+確認:
 
-- ENTAILED / AMBIGUOUSならreject
+- semantic plan ID
+- utterance ID
+- source / goal / attention revision
+- active
+- superseded
+- cancelled
 
-### 9.4 Blind material unit
+A後にstaleならBを呼ばない。
+B後にstaleならObservation/Acceptanceをcommitしない。
+開始時のcurrent値をpost-await Authorityとして再利用しない。
 
-A `MATERIAL_CLAIM`はBで:
+## 14. Failure policy
 
-- `SUPPORTED_BY_PLAN`
+- A schema/provider failure → acceptance生成なし
+- A ambiguity → fail-closed
+- B schema/provider failure → acceptance生成なし
+- B ambiguity/disagreement → reject
+- Provider unavailable → fixed sentence / regex / Character自己申告へfallbackしない
+- #363はreplacement utteranceを生成しない
 
-でなければacceptしない。
+regeneration/retryは#348 Speech preparation policyがboundedに制御する。
 
-`UNSUPPORTED_EXTRA / AMBIGUOUS`はreject。
-`PERMITTED_NON_PROPOSITIONAL_STYLE`への降格もreject。
+## 15. #427 Render Live Validation
 
-### 9.5 Question / direction
+#427はこのproduction contractをそのまま呼ぶ。
+Lab独自semantic logicやLab専用Verifier Promptでproductionを置換しない。
 
-A/B observationのtyped unit/countとPlan budgetをRuntimeが決定論的比較する。
+表示対象:
 
-### 9.6 Observer disagreement
-
-以下は初期policyでreject。
-
-- A unitがB accountingから欠落
-- unknown/duplicate blind unit ID
-- A material claimをBがstyleへ降格
-- A/B evidence identity不整合
-- proposition relationとblind accountingが矛盾
-- counterfactual probeとrelationが矛盾
-- A/BどちらかがAMBIGUOUS
-
-Lab側だけでこのpolicyを緩めない。
-
----
-
-## 10. Why this differs from V1 failures
-
-### V1 blind round-tripとの違い
-
-AはPlan DTOを再構築しない。
-Aはmaterial semantic unit inventoryだけをPlan非依存で固定する。
-
-### V1 Plan anchoringとの違い
-
-BがPlanを見ても、Aが先に固定したmaterial unitsを消せない。
-全unitへaccounting obligationを課すため、Plan外claimを「見なかったこと」にしにくい。
-
-### V1 finite lexical guardとの違い
-
-Runtimeは自然語の単語から意味relationを推定しない。
-exact quote matchingはevidence位置groundingだけ。
-
-### LLM自己採点との違い
-
-A/B/probeのどれにもfinal PASS Authorityを与えない。
-Runtimeがclosed policyからACCEPT/REJECTを導出する。
-
----
-
-## 11. Failure / retry policy
-
-- Role A schema/provider failure → acceptance生成なし
-- Role A ambiguity → fail-closed
-- Role B schema/provider failure → acceptance生成なし
-- Role B ambiguity/disagreement → reject
-- stale / superseded / cancelled during A → Bを開始しない
-- stale / superseded / cancelled during B → Observation/Acceptanceをcommitしない
-
-regeneration / retryは#348 Speech preparation policyがboundedに制御する。
-#363はreplacement utteranceを生成しない。
-
-Provider unavailable時にfixed sentence / regex / Character自己申告へfallbackしてACCEPTしない。
-
----
-
-## 12. Concurrency / latency policy
-
-A→Bはsemantic safety上のdata dependencyであり、初期productionでは2 LLM callsを許容する。
-
-これはSystem全体のblocking chainを意味しない。
-
-```text
-Verifier A running
-while Body/current playback/Performance may continue
-        ↓
-Verifier B running
-while Body/current playback/Performance/safe TTS prep may continue
-        ↓
-ACCEPTED before external Presentation commit
-```
-
-#427で:
-
-- A latency
-- B latency
-- total verification latency
-- TTS/Performance overlap
-- false accept/false reject
-
-を同時測定する。
-
-品質が成立してからのみ:
-
-- model軽量化
-- A/B shared-provider batching
-- fused provider call（blind independenceを失わない方法がある場合のみ）
-- selective deterministic proof path
-
-を検討する。
-
-「遅いからPlanをAへ渡す」「遅いからAを削除する」はDesign Gateなしに行わない。
-
----
-
-## 13. Remaining uncertainty
-
-この方式も数学的semantic proofではない。
-A/Bが同Provider/model familyならcorrelated errorは残り得る。
-
-そのため実LLM比較対象:
-
-- same model A/B
-- A軽量 + B高精度
-- A/B別model class
-- reasoning effort差
-- repeated runs
-
-を#427で測る。
-
-上位modelだけPASSし軽量baselineが崩れる場合、modelを上げるだけで解決扱いにせずcontract/prompt負荷を再評価する。
-
----
-
-## 14. #427 Render Live Validation
-
-#427はproduction contractをそのまま呼ぶ。
-Lab独自semantic authorityは持たない。
-
-表示:
-
-- Plan
-- Utterance
-- Stage 0 gate
-- Role A blind units
+- SpeechSemanticPlan
+- CharacterUtterance
+- Stage 0 pair gate
+- Role A blind units / interaction acts / evidence
 - Role B proposition relations
 - Role B blind-unit accounting
-- optional probe result
-- Runtime reconciliation
 - SemanticRelationObservation
 - SemanticAcceptance / rejection categories
-- A/B/total latency
+- A latency / B latency / total
 - token usage
 - provider/schema/stale/cancel failure
 
-Shadow diagnosticsは比較研究用に持てるがproduction acceptanceへ混ぜない。
-
----
-
-## 15. V1 failure matrix
+### V1 failure matrix
 
 最低限:
 
@@ -555,49 +378,53 @@ Shadow diagnosticsは比較研究用に持てるがproduction acceptanceへ混�
 - optional omission / partial realization
 - Plan anchoring trap
 - blind extraction trap
-- multiple material claims in one sentence
+- multiple material contents in one sentence
+- proposition + question simultaneous
 - overlapping proposition realization
 - incorrect Character realization_refs
 - question/new-direction budget
 
-同じsemantic caseへ複数の自然言語variationを持たせる。
-fixture wordingをproduction matcherへ追加してPASSさせることは禁止。
+同じsemantic caseに複数の自然言語variationを用意し、fixture wordingをproduction matcherへ追加してPASSさせることは禁止する。
 
----
+## 16. Model / latency evaluation
 
-## 16. Gate policy
+A/Bが同じProvider/model familyならcorrelated errorは残り得る。
+#427で最低限比較する。
 
-### Design Gate A — PASS_FOR_IMPLEMENTATION_TO_LIVE_VALIDATION
+- same model A/B
+- A軽量 + B高精度
+- A/B別model class
+- reasoning effort差
+- repeated runs
 
-以下が確定したためproduction branch実装を許可できる。
+上位modelだけ通る場合はmodel切替だけで解決扱いせず、contract/prompt負荷を再評価する。
 
-- Stage 0 deterministic pair gate
-- Role A blind inventory
-- immutable blind observation
-- Role B plan relation + blind unit accounting
-- Runtime reconciliation
-- finite lexical authority禁止
-- Provider final PASS禁止
-- strict evidence grounding
-- stale/supersede/cancel gate
-- #427 Live Validation計画
+品質確立後にのみbatch/fusion/parallel optimizationを検討する。
 
-これは**Merge PASSではない**。
+## 17. Gate policy
+
+### Design Gate A
+
+`PASS_FOR_IMPLEMENTATION_TO_LIVE_VALIDATION`
+
+本番Moduleを作って実LLM検証へ進む責務境界は確定。
 
 ### Implementation Gate
 
-- production #363 Module Unit/Adjacent PASS
-- strict schema tests
-- fake A/B Provider tests
-- no finite lexical semantic authority scan PASS
-- stale/cancel/supersede tests
-- current-head deterministic CI PASS
+- Unit / Adjacent PASS
+- Ruff
+- Mypy strict
+- full pytest
+- compileall
+- diff check
+- finite lexical semantic authority static audit
+- exact-head CI
+- current-head code review
 
 ### Live Validation Gate
 
 Render #427でV1 failure matrixを実LLM実行する。
-
-初回baselineでは都合のよいthresholdを後付けしない。
+初回baselineで都合のよいthresholdを後付けしない。
 false accept / false reject / ambiguity / provider failureをcase単位で記録する。
 
 ### Merge Gate
@@ -606,43 +433,18 @@ false accept / false reject / ambiguity / provider failureをcase単位で記録
 
 - V1既知failure classの重大false acceptが解消
 - unseen paraphraseで系統的false rejectが残らない
-- Plan anchoring trap / blind extraction trapの両方評価済み
-- unsupported extra claim見逃しがacceptance基盤として残らない
+- anchoring trap / blind trap両方評価済み
+- unsupported extra claim見逃しが基盤として残らない
 - A/B disagreement policyが実測で妥当
-- model / reasoning policy記録済み
-- latencyが観測され、System non-blocking invariantを壊していない
-- #330 final canonicalと再照合済み
-
-数値thresholdが必要ならbaseline実測後に#363 canonicalへ明示し、Labだけで変更しない。
-
----
-
-## 17. Early implementation dependency
-
-#330 PR #423はVerification中でtrunk未統合。
-
-#363 Module単体の早期実LLM検証は:
-
-- production `SpeechSemanticPlan`
-- fixture/manual `CharacterUtterance`
-
-で先行可能。
-
-実Character LLM→#363 end-to-endは#330 final canonical再照合後に追加する。
-
-#357 OpenAI Responses Adapterはtrunkへ統合済みなので、#427はproduction `LLMRolePort`から実OpenAIへ接続する。
-
-#363 implementationを#330 current reviewed headへstackする場合はbase SHAを明示し、#330変更時に再照合する。
-#363を別の重複implementation lineageで作らない。
-
----
+- model/reasoning policy記録済み
+- latency/non-blocking invariant確認
+- #330 final canonical再照合
 
 ## 18. Design decision
 
-V2 Semantic Verificationは初期productionで次を採用する。
+V2初期productionは次を採用する。
 
-> **Plan-blind material inventory → Plan-aware per-unit relation/accounting → closed-facet supplemental probes → deterministic fail-closed reconciliation → early real-LLM Render validation**
+> **Plan-blind atomic semantic inventory + orthogonal interaction acts → Plan-aware bidirectional relation/accounting → pure Observer fact → deterministic fail-closed Acceptance → early real-LLM Render validation**
 
 固定候補集合を意味完全性の根拠にしない。
-
-自由自然言語を維持する以上残るsemantic uncertaintyは隠さず、#427の継続的な実LLM観測をMerge Gateへ組み込む。
+自由自然言語に残るsemantic uncertaintyは隠さず、#427の実LLM観測をMerge Gateへ組み込む。
