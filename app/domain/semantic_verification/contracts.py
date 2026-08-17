@@ -7,7 +7,12 @@ from typing import TypeVar, cast
 
 from app.domain.character_language import CharacterUtterance
 from app.domain.contracts import RevisionVector
-from app.domain.contracts.common import require_aware, require_identifier, timestamp_to_json, utc_instant
+from app.domain.contracts.common import (
+    require_aware,
+    require_identifier,
+    timestamp_to_json,
+    utc_instant,
+)
 from app.domain.llm import LLMInterruptibility, LLMPriority
 from app.domain.speech_semantics import SpeechSemanticPlan
 
@@ -299,7 +304,11 @@ class BlindUnitAccounting:
         require_identifier(self.blind_unit_id, "blind_unit_id")
         if not isinstance(self.relation, BlindUnitAccountingRelation):
             raise ValueError("relation が不正です")
-        object.__setattr__(self, "proposition_ids", _ids(self.proposition_ids, "proposition_ids"))
+        object.__setattr__(
+            self,
+            "proposition_ids",
+            _ids(self.proposition_ids, "proposition_ids"),
+        )
         object.__setattr__(
             self,
             "evidence_refs",
@@ -407,7 +416,12 @@ class SemanticVerificationContextSnapshot:
     trace_id: str
 
     def __post_init__(self) -> None:
-        for name in ("verification_id", "blind_request_id", "relation_request_id", "trace_id"):
+        for name in (
+            "verification_id",
+            "blind_request_id",
+            "relation_request_id",
+            "trace_id",
+        ):
             require_identifier(getattr(self, name), name)
         if self.blind_request_id == self.relation_request_id:
             raise ValueError("A/B request IDは別でなければなりません")
@@ -525,7 +539,12 @@ class SemanticAcceptance:
     _proof: InitVar[object | None] = None
 
     def __post_init__(self, _proof: object | None) -> None:
-        for name in ("acceptance_id", "observation_id", "semantic_plan_id", "utterance_id"):
+        for name in (
+            "acceptance_id",
+            "observation_id",
+            "semantic_plan_id",
+            "utterance_id",
+        ):
             require_identifier(getattr(self, name), name)
         if not isinstance(self.state, SemanticAcceptanceState):
             raise ValueError("state が不正です")
