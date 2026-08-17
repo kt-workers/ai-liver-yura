@@ -32,7 +32,6 @@ from .contracts import (
     UtteranceEvidenceRef,
 )
 
-
 _SAFE_POLARITY = frozenset({PolarityRelation.PRESERVED, PolarityRelation.NOT_APPLICABLE})
 _SAFE_CERTAINTY = frozenset({CertaintyRelation.PRESERVED, CertaintyRelation.NOT_APPLICABLE})
 _SAFE_DEGREE = frozenset({DegreeRelation.PRESERVED, DegreeRelation.NOT_APPLICABLE})
