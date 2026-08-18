@@ -24,7 +24,7 @@ def test_render_entrypoint_registers_extended_failure_matrix() -> None:
     assert set(EXTRA_PRESETS).issubset(lab._PRESETS)
 
 
-def test_paraphrase_and_shared_stance_are_separate_validation_cases() -> None:
+def test_rain_variations_are_grouped_by_input_content() -> None:
     paraphrase = lab._PRESETS["unseen_paraphrase"]
     shared_stance = lab._PRESETS["shared_stance_not_question"]
 
@@ -33,7 +33,12 @@ def test_paraphrase_and_shared_stance_are_separate_validation_cases() -> None:
     assert paraphrase["segments"] != shared_stance["segments"]
     assert "落ち続けているよ。" in str(paraphrase["segments"])
     assert "落ちてきてるね。" in str(shared_stance["segments"])
-    assert _PRESET_DISPLAY["unseen_paraphrase"]["label"] == "異なる表現でも意味保持"
+    assert _PRESET_DISPLAY["exact_preservation"]["label"] == "雨を伝える①：直接表現"
+    assert _PRESET_DISPLAY["unseen_paraphrase"]["label"] == "雨を伝える②：水滴表現"
+    assert (
+        _PRESET_DISPLAY["shared_stance_not_question"]["label"]
+        == "雨を伝える③：共有スタンス付き"
+    )
 
 
 def test_render_fixture_does_not_create_future_transport_timestamps() -> None:
