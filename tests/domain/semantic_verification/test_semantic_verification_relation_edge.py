@@ -28,6 +28,15 @@ def test_relation_instruction_declares_accounting_as_single_support_source() -> 
     assert "同じsupport IDを重複出力してはいけません" in instructions
 
 
+def test_relation_instruction_separates_forbidden_disposition_from_support() -> None:
+    instructions = relation_instructions()
+
+    assert "SUPPORTED_BY_PLANはsemantic groundingを意味し、発話許可を意味しません" in instructions
+    assert "Plan propositionがFORBIDDENでも" in instructions
+    assert "対応blind unitをSUPPORTED_BY_PLANへaccount" in instructions
+    assert "FORBIDDENだからという理由だけでUNSUPPORTED_EXTRA" in instructions
+
+
 def test_accounting_overwrites_duplicate_provider_support_claim() -> None:
     value = {
         "proposition_observations": [
