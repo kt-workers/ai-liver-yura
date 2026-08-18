@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: yura-v2-character-language-lab
+    runtime: python
+    plan: free
+    branch: test/v2-character-language-lab
+    buildCommand: pip install -r requirements.txt && python -m compileall app cloud_validation
+    startCommand: uvicorn cloud_validation.v2_character_language_render:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - fromGroup: yura-common-secrets
+      - key: YURA_CHARACTER_LANGUAGE_LAB_MODEL
+        value: gpt-5.6-sol
+      - key: YURA_SEMANTIC_VERIFICATION_LAB_MODEL
+        value: gpt-5.6-sol
+      - key: YURA_CHARACTER_DEFINITION_PATH
+        value: character_definitions/v2/yura.yaml
+      - key: YURA_LAB_USERNAME
+        sync: false
+      - key: YURA_LAB_PASSWORD
+        sync: false
