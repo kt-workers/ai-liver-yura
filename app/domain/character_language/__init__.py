@@ -23,6 +23,7 @@ from .realizer import (
     descriptor,
     parse_candidate,
 )
+from .schemas import character_language_instructions, character_language_output_schema
 
 __all__ = [
     "CharacterLanguageAuthority",
@@ -42,6 +43,8 @@ __all__ = [
     "LinguisticEmphasis",
     "LinguisticHesitation",
     "build_request",
+    "character_language_instructions",
+    "character_language_output_schema",
     "commit_result",
     "descriptor",
     "parse_candidate",
