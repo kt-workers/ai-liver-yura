@@ -67,7 +67,25 @@ def test_forbidden_and_allowed_extra_self_claim_differ_only_by_policy() -> None:
     assert allowed["self_disclosure"] == "allowed"
     assert forbidden["propositions"] == allowed["propositions"]
     assert forbidden["segments"] == allowed["segments"]
+    assert forbidden["new_direction_budget"] == allowed["new_direction_budget"] == 1
+    assert forbidden["new_direction_budget_used"] == allowed["new_direction_budget_used"] == 0
     assert "電車は遅れてるよ。私は紅茶が好きだよ。" in str(forbidden["segments"])
+
+
+def test_self_disclosure_comparison_allows_observed_new_direction() -> None:
+    for case_id in (
+        "self_disclosure_forbidden_exceeded",
+        "self_disclosure_allowed_unsupported",
+    ):
+        preset = PRESET_OVERRIDES[case_id]
+        request = lab.SemanticVerificationLabRequest.model_validate(preset)
+        fixture = _render_build_validation_fixture(
+            request,
+            now=datetime(2026, 8, 18, 14, 45, tzinfo=timezone.utc),
+        )
+
+        assert fixture.semantic_plan.candidate.new_direction_budget == 1
+        assert fixture.utterance.candidate.new_direction_budget_used == 0
 
 
 def test_self_disclosure_display_metadata_explains_cross_axis_expectation() -> None:
