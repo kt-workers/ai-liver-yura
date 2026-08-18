@@ -126,7 +126,10 @@ def test_production_config_owns_role_schema_format_and_default_reasoning_mapping
     assert config.model_policies[LLMModelClass.BALANCED].model == "model-balanced"
     assert config.model_policies[LLMModelClass.DEEP_REASONING].model == "model-deep"
     expected_reasoning = {effort: effort.value for effort in LLMReasoningEffort}
-    assert dict(config.model_policies[LLMModelClass.BALANCED].reasoning_by_effort) == expected_reasoning
+    actual_reasoning = dict(
+        config.model_policies[LLMModelClass.BALANCED].reasoning_by_effort
+    )
+    assert actual_reasoning == expected_reasoning
     assert character_language_openai_role_configs(
         {LLMModelClass.BALANCED: "model-balanced"}
     ) == (character_language_openai_role_config({LLMModelClass.BALANCED: "model-balanced"}),)
