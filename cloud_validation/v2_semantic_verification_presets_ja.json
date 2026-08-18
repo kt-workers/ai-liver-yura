@@ -1,7 +1,7 @@
 {
-  "exact_preservation": {"label": "意味をそのまま保持", "description": "Planの意味を変えずに自然な発話へ実現した正常系を確認します。"},
-  "unseen_paraphrase": {"label": "異なる表現でも意味保持", "description": "自然言語の固定辞書を持たず、Planと異なる言い回しでも同じ意味として受理できるか確認します。"},
-  "shared_stance_not_question": {"label": "共有スタンスを質問扱いしない", "description": "相手へ返答を要求しないshared-stance表現をDIRECTED_QUESTIONへ誤分類しないか確認します。"},
+  "exact_preservation": {"label": "雨を伝える①：直接表現", "description": "「今日は雨が降っているよ。」という直接的な表現で、基準となる正常系を確認します。"},
+  "unseen_paraphrase": {"label": "雨を伝える②：水滴表現", "description": "同じ雨の意味を「空から水滴が落ち続けている」と別の自然表現で伝えても、同じ意味として受理できるか確認します。"},
+  "shared_stance_not_question": {"label": "雨を伝える③：共有スタンス付き", "description": "同じ雨の意味にshared-stanceを加えた表現でも、相手へ返答を要求していなければDIRECTED_QUESTIONへ誤分類しないか確認します。"},
   "polarity_reversal": {"label": "肯定・否定の反転を検出", "description": "Planの肯定内容が発話で否定へ反転した場合に拒否できるか確認します。"},
   "unknown_committed": {"label": "不明情報の断定化を検出", "description": "unknownの内容をCharacterが確定情報として断定した場合に拒否できるか確認します。"},
   "unsupported_extra": {"label": "Plan外の追加主張を検出", "description": "Planにない経験や事実を発話へ付け足した場合に検出できるか確認します。"},
