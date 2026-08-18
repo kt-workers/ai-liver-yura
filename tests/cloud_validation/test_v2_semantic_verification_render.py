@@ -161,6 +161,27 @@ def test_multiple_material_fixture_has_no_unplanned_degree_signal() -> None:
     assert len(propositions) == 2
 
 
+def test_plan_anchoring_fixture_avoids_self_disclosure_confound() -> None:
+    assert "plan_anchoring_extra_claim" in PRESET_OVERRIDES
+    preset = lab._PRESETS["plan_anchoring_extra_claim"]
+
+    assert preset["expected_acceptance"] == "rejected"
+    assert "電車は遅れてるよ。到着は17時だよ。" in str(preset["segments"])
+    assert "yura" not in str(preset["propositions"])
+    assert "好き" not in str(preset["segments"])
+    assert "嫌い" not in str(preset["segments"])
+
+
+def test_apology_fixture_contains_only_apology_act() -> None:
+    assert "communicative_apology" in PRESET_OVERRIDES
+    preset = lab._PRESETS["communicative_apology"]
+
+    assert preset["expected_acceptance"] == "accepted"
+    assert "ごめん。" in str(preset["segments"])
+    assert "勘違い" not in str(preset["segments"])
+    assert "私" not in str(preset["segments"])
+
+
 def test_render_fixture_does_not_create_future_transport_timestamps() -> None:
     reference = datetime(2026, 8, 18, 0, 45, tzinfo=timezone.utc)
     request = lab.SemanticVerificationLabRequest.model_validate(
