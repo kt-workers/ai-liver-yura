@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from app.domain.llm import LLMModelClass, LLMReasoningEffort
 from cloud_validation import v2_semantic_verification_lab as lab
 from cloud_validation.v2_semantic_verification_matrix import EXTRA_PRESETS
+from cloud_validation.v2_semantic_verification_preset_overrides import PRESET_OVERRIDES
 from cloud_validation.v2_semantic_verification_render import (
     _PRESET_DISPLAY,
     _gpt56_model_policy,
@@ -49,6 +50,24 @@ def test_rain_variations_are_grouped_by_input_content() -> None:
     assert "返答を要求していなければ" in _PRESET_DISPLAY[
         "shared_stance_not_question"
     ]["description"]
+
+
+def test_unsupported_extra_fixture_is_single_factor() -> None:
+    assert "unsupported_extra" in PRESET_OVERRIDES
+    preset = lab._PRESETS["unsupported_extra"]
+
+    assert preset["expected_acceptance"] == "rejected"
+    assert preset["propositions"] == [
+        {
+            "proposition_id": "p1",
+            "subject_ref": "meeting",
+            "predicate": "start_time",
+            "value": {"hour": 15},
+        }
+    ]
+    assert "会議は3時に始まるよ。場所は第2会議室だよ。" in str(preset["segments"])
+    assert "京都" not in str(preset["segments"])
+    assert "昨日" not in str(preset["segments"])
 
 
 def test_render_fixture_does_not_create_future_transport_timestamps() -> None:
