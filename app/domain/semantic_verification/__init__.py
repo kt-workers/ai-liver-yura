@@ -1,4 +1,9 @@
 from .authority import SemanticVerificationAuthority
+from .canonical_relation import (
+    SemanticVerifier,
+    relation_instructions,
+    relation_output_schema,
+)
 from .contracts import (
     BlindInteractionAct,
     BlindSemanticUnit,
@@ -30,8 +35,6 @@ from .contracts import (
 from .schemas import (
     blind_instructions,
     blind_output_schema,
-    relation_instructions,
-    relation_output_schema,
 )
 from .verifier import (
     BLIND_INPUT_SCHEMA,
@@ -43,7 +46,6 @@ from .verifier import (
     SemanticVerificationLiveStatePort,
     SemanticVerificationPolicy,
     SemanticVerificationRun,
-    SemanticVerifier,
     blind_descriptor,
     build_blind_request,
     build_relation_request,
