@@ -101,3 +101,9 @@ def test_self_disclosure_display_metadata_explains_cross_axis_expectation() -> N
     assert "UNSUPPORTED_EXTRA" in _PRESET_DISPLAY[
         "self_disclosure_allowed_unsupported"
     ]["description"]
+    assert "budget内" in _PRESET_DISPLAY[
+        "self_disclosure_forbidden_exceeded"
+    ]["description"]
+    assert "budget内" in _PRESET_DISPLAY[
+        "self_disclosure_allowed_unsupported"
+    ]["description"]
