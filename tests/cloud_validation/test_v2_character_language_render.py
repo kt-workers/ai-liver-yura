@@ -1,3 +1,5 @@
+from typing import cast
+
 from cloud_validation.v2_character_language_gate import CharacterLanguageLabGate
 from cloud_validation.v2_character_language_render import (
     _service,
@@ -12,7 +14,11 @@ def test_render_runtime_is_wrapped_by_final_evidence_gate() -> None:
 
 def test_render_exposes_health_readiness_run_and_workspace_routes() -> None:
     app = create_app(_service)
-    paths = {route.path for route in app.routes}
+    paths = {
+        cast(str, getattr(route, "path"))
+        for route in app.routes
+        if hasattr(route, "path")
+    }
     assert {"/", "/health", "/api/readiness", "/api/run"}.issubset(paths)
 
 
