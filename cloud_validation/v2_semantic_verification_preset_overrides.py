@@ -76,7 +76,7 @@ PRESET_OVERRIDES: dict[str, dict[str, object]] = {
             {
                 "segment_id": "s1",
                 "text": "今日は寒いよ。",
-                "realization_refs": ["p2"],
+                "realization_refs": ["p1"],
             }
         ],
     },
