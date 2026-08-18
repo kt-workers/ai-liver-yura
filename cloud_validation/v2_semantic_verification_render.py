@@ -5,8 +5,16 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import cast
 
-from app.adapters.llm.openai_responses import OpenAIResponsesModelPolicy
-from app.domain.llm import LLMModelClass, LLMReasoningEffort
+from app.adapters.llm.openai_responses import (
+    OpenAIResponsesAdapter,
+    OpenAIResponsesModelPolicy,
+)
+from app.domain.llm import (
+    LLMModelClass,
+    LLMReasoningEffort,
+    LLMRoleRequest,
+    LLMRoleResult,
+)
 from cloud_validation import v2_semantic_verification_lab as lab
 from cloud_validation.v2_semantic_verification_matrix import EXTRA_PRESETS
 
@@ -90,6 +98,43 @@ def _workspace_html() -> str:
     )
 
 
+class _RecordingPort:
+    def __init__(self, settings: lab.LabSettings) -> None:
+        self._settings = settings
+        self._inner: OpenAIResponsesAdapter | None = None
+        self.results: list[LLMRoleResult] = []
+
+    def reset(self) -> None:
+        self.results.clear()
+
+    async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+        if self._inner is None:
+            self._inner = OpenAIResponsesAdapter.from_environment(
+                lab._role_configs(self._settings)
+            )
+        result = await self._inner.invoke(request)
+        self.results.append(result)
+        return result
+
+
+class _DiagnosticLabService(lab.SemanticVerificationLabService):
+    def __init__(self, settings: lab.LabSettings) -> None:
+        self._recording_port = _RecordingPort(settings)
+        super().__init__(settings, self._recording_port)
+
+    async def verify(
+        self,
+        request: lab.SemanticVerificationLabRequest,
+    ) -> dict[str, object]:
+        self._recording_port.reset()
+        result = await super().verify(request)
+        if not bool(result.get("ok")):
+            result["provider_results"] = [
+                item.to_dict() for item in self._recording_port.results
+            ]
+        return result
+
+
 _PRESET_DISPLAY = _load_preset_display()
 lab._model_policy = _gpt56_model_policy
 lab._PRESETS.update(EXTRA_PRESETS)
@@ -97,6 +142,7 @@ lab.build_validation_fixture = _render_build_validation_fixture
 if set(lab._PRESETS) != set(_PRESET_DISPLAY):
     raise RuntimeError("all Render presets must have display metadata")
 lab._INDEX_HTML = _workspace_html()
-app = lab.create_app(settings=lab.settings, service=lab.service)
+service = _DiagnosticLabService(lab.settings)
+app = lab.create_app(settings=lab.settings, service=service)
 
 __all__ = ["app"]
