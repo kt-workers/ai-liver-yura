@@ -4,6 +4,7 @@ from .canonical_relation import (
     relation_instructions,
     relation_output_schema,
 )
+from .canonical_speech_act import blind_instructions
 from .contracts import (
     BlindInteractionAct,
     BlindSemanticUnit,
@@ -32,10 +33,7 @@ from .contracts import (
     SpeechActBudgetObservation,
     UtteranceEvidenceRef,
 )
-from .schemas import (
-    blind_instructions,
-    blind_output_schema,
-)
+from .schemas import blind_output_schema
 from .verifier import (
     BLIND_INPUT_SCHEMA,
     BLIND_OUTPUT_SCHEMA,
