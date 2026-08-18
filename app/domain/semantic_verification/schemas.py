@@ -229,10 +229,15 @@ SpeechSemanticPlanや期待する正解は与えられません。actual utteran
 各unitは、意味内容kindとinteraction actを別々に観測してください。
 kindは MATERIAL_SEMANTIC_CONTENT / NON_MATERIAL_STYLE / AMBIGUOUS のいずれかです。
 interaction_actsは DIRECTED_QUESTION / NEW_DIRECTION を0個以上持てます。
+DIRECTED_QUESTIONは、actual utterance自身が相手へ情報・選択・判断・確認・明確化などの
+回答内容を求め、返答期待またはresponse obligationを新たに作る場合だけ付けてください。
+疑問符、疑問語、文法上の疑問形、終助詞、語尾、固定phraseなどの表層形だけで
+DIRECTED_QUESTIONへ分類してはいけません。
+自己内省、推量やhedge、共感・shared-stance、修辞、引用/報告された質問、
+unknownやquestion topicへの言及は、現在の発話自身が相手へ返答を要求しない限り質問ではありません。
 命題、挨拶、謝意、依頼、約束など、変更すると伝達意味が変わる内容は
 MATERIAL_SEMANTIC_CONTENTです。語尾や言い淀みだけならNON_MATERIAL_STYLEです。
-「今日は雨だよね？」のように意味内容と質問行為が同時成立する場合、
-kind=MATERIAL_SEMANTIC_CONTENTかつinteraction_acts=[DIRECTED_QUESTION]としてください。
+意味内容とinteraction actは直交しており、同じevidenceが両方を担うことはあります。
 独立して真偽・行為・話題内容を持つ意味が複数ある場合は最小のatomic unitへ分けてください。
 1つに分離できず複数の独立意味を抱える場合はAMBIGUOUSにしてください。
 元Plan DTO、polarity、certainty、degree等を推測復元しないでください。
@@ -268,4 +273,10 @@ SUPPORTED_BY_PLANだけで覆わずUNSUPPORTED_EXTRAまたはAMBIGUOUSにして�
 その場合もproposition_idsは[]とし、関連しそうなPlan IDを診断目的で入れないでください。
 interaction_actsはAで固定済みですが、actual utteranceを独立に読み、
 directed question数/new direction数を別途返してください。
+DIRECTED_QUESTIONは、actual utterance自身が相手へ回答内容を求め、
+返答期待またはresponse obligationを新たに作る場合だけ数えてください。
+疑問符、疑問語、文法上の疑問形、終助詞、語尾、固定phrase等の表層形だけで数えず、
+自己内省、推量/hedge、shared-stance、修辞、引用/報告された質問は、
+現在の発話が相手へ返答を要求しない限り0件として扱ってください。
+Planのquestion_budget値にcountを合わせず、actual utteranceから独立観測してください。
 最終PASS/FAIL、accepted、score、修正文、replacement utteranceは出力しないでください。"""
