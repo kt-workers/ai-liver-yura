@@ -12,9 +12,9 @@ from app.domain.semantic_verification import (
     SemanticVerifier,
     relation_instructions,
 )
+from app.domain.semantic_verification import canonical_relation
 from app.domain.semantic_verification.canonical_relation import (
     _canonicalize_relation_value,
-    _LegacySemanticVerifier,
 )
 
 
@@ -93,8 +93,9 @@ async def test_candidate_value_error_is_structured_schema_invalid(
         del args, kwargs
         raise ValueError("ENTAILED propositionにはevidenceとblind unit supportが必要です")
 
-    monkeypatch.setattr(_LegacySemanticVerifier, "verify", fail)
-    verifier = cast(SemanticVerifier, object.__new__(SemanticVerifier))
+    legacy_verifier = getattr(canonical_relation, "_LegacySemanticVerifier")
+    monkeypatch.setattr(legacy_verifier, "verify", fail)
+    verifier = object.__new__(SemanticVerifier)
 
     with pytest.raises(SemanticVerificationError) as caught:
         await verifier.verify(
