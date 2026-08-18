@@ -24,11 +24,11 @@ from app.adapters.llm.openai_responses import (
     OpenAIResponsesModelPolicy,
     OpenAIResponsesRoleConfig,
 )
-from app.domain.character import (
+from app.domain.character import project_character_definition
+from app.domain.character.contracts import (
     CharacterLanguageProfile,
     RuntimeAvailability,
     RuntimeCharacterFacet,
-    project_character_definition,
 )
 from app.domain.character_language import (
     CharacterLanguageAuthority,
@@ -36,6 +36,7 @@ from app.domain.character_language import (
     CharacterLanguageContextSnapshot,
     CharacterLanguagePolicy,
     CharacterLanguageRealizer,
+    CharacterUtterance,
 )
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import JsonValue
@@ -87,6 +88,7 @@ from app.domain.speech_semantics import (
     SpeechSemanticContextSnapshot,
     SpeechSemanticFact,
     SpeechSemanticFactKind,
+    SpeechSemanticPlan,
     SpeechSemanticsPlanner,
     SpeechSemanticsPolicy,
 )
@@ -269,7 +271,9 @@ _SCENARIOS = {
 
 class _NoopPort:
     async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
-        raise RuntimeError(f"deterministic pathでProviderを呼んではいけません: {request.role_id}")
+        raise RuntimeError(
+            f"deterministic pathでProviderを呼んではいけません: {request.role_id}"
+        )
 
 
 class _StaticSpeechLiveState:
@@ -316,7 +320,9 @@ class _RecordingPort:
         started = perf_counter()
         result = await self._delegate.invoke(request)
         self.results.append(result)
-        self.latency_ms.append((request.role_id, round((perf_counter() - started) * 1000, 3)))
+        self.latency_ms.append(
+            (request.role_id, round((perf_counter() - started) * 1000, 3))
+        )
         return result
 
     def metrics(self) -> list[dict[str, object]]:
@@ -392,7 +398,7 @@ def _isolation_profile() -> CharacterLanguageProfile:
     )
 
 
-def _decision(now: datetime, revisions: RevisionVector, scenario: _Scenario) -> CommittedExecutiveDecision:
+def _decision(now: datetime, revisions: RevisionVector) -> CommittedExecutiveDecision:
     if revisions.goal_revision is None or revisions.attention_revision is None:
         raise ValueError("Lab scenarioにはgoal/attention revisionが必要です")
     intent = ExecutiveIntent(
@@ -416,7 +422,6 @@ def _decision(now: datetime, revisions: RevisionVector, scenario: _Scenario) -> 
         ExecutivePriority.FOREGROUND,
         ExecutiveInterruptibility.INTERRUPTIBLE,
         (intent,),
-        (),
         (),
         (),
         ("fact-main",),
@@ -456,7 +461,7 @@ def _semantic_context(now: datetime, scenario: _Scenario) -> SpeechSemanticConte
         (),
     )
     return SpeechSemanticContextSnapshot(
-        _decision(now, revisions, scenario),
+        _decision(now, revisions),
         "intent-speech",
         (fact,),
         (),
@@ -469,7 +474,7 @@ def _semantic_context(now: datetime, scenario: _Scenario) -> SpeechSemanticConte
     )
 
 
-async def _committed_plan(scenario: _Scenario) -> object:
+async def _committed_plan(scenario: _Scenario) -> SpeechSemanticPlan:
     now = datetime.now(timezone.utc)
     snapshot = _semantic_context(now, scenario)
     policy = SpeechSemanticsPolicy(
@@ -579,7 +584,9 @@ def _character_source(
         }
     profile = project_character_definition(document).language
     confirmed = tuple(
-        item for item in profile.facets if item.availability is RuntimeAvailability.CONFIRMED
+        item
+        for item in profile.facets
+        if item.availability is RuntimeAvailability.CONFIRMED
     )
     if not confirmed:
         return None, {
@@ -642,9 +649,12 @@ class CharacterLanguageLabService:
         if profile is None:
             return {
                 "ok": False,
-                "status": CharacterLanguageLabStatus.BLOCKED_UPSTREAM_CHARACTER_DEFINITION.value,
+                "status": (
+                    CharacterLanguageLabStatus.BLOCKED_UPSTREAM_CHARACTER_DEFINITION.value
+                ),
                 "mode": request.mode.value,
                 "evidence_class": "not_eligible",
+                "integrated_evidence_eligible": False,
                 "character_source": source,
                 "runs": [],
             }
@@ -656,7 +666,8 @@ class CharacterLanguageLabService:
             character_config = character_language_openai_role_config(
                 {request.character_model_class: request.character_model},
                 reasoning_by_effort={
-                    request.character_reasoning_effort: request.character_reasoning_effort.value
+                    request.character_reasoning_effort:
+                    request.character_reasoning_effort.value
                 },
             )
             configs: tuple[OpenAIResponsesRoleConfig, ...] = (character_config,)
@@ -686,9 +697,13 @@ class CharacterLanguageLabService:
             "status": CharacterLanguageLabStatus.COMPLETED.value,
             "mode": request.mode.value,
             "evidence_class": (
-                "integrated" if request.mode is CharacterLanguageLabMode.INTEGRATED else "isolation_only"
+                "integrated"
+                if request.mode is CharacterLanguageLabMode.INTEGRATED
+                else "isolation_only"
             ),
-            "integrated_evidence_eligible": request.mode is CharacterLanguageLabMode.INTEGRATED,
+            "integrated_evidence_eligible": (
+                request.mode is CharacterLanguageLabMode.INTEGRATED
+            ),
             "scenario": {"id": scenario.scenario_id, "label": scenario.label},
             "character_source": source,
             "model_policy": {
@@ -721,7 +736,7 @@ class CharacterLanguageLabService:
         repetition_index: int,
     ) -> dict[str, object]:
         run_id = f"character-language-run-{uuid4().hex}"
-        plan = cast("SpeechSemanticPlan", await _committed_plan(scenario))
+        plan = await _committed_plan(scenario)
         snapshot = CharacterLanguageContextSnapshot(
             f"character-request-{uuid4().hex}",
             plan,
@@ -758,7 +773,7 @@ class CharacterLanguageLabService:
                 "run_id": run_id,
                 "repetition_index": repetition_index,
                 "status": CharacterLanguageLabStatus.CHARACTER_COMMIT_REJECTED.value,
-                "error": str(error),
+                "error_type": type(error).__name__,
                 "semantic_plan": plan.to_dict(),
                 "character_profile": _profile_dict(profile),
                 "character_source_kind": source.get("kind"),
@@ -767,7 +782,12 @@ class CharacterLanguageLabService:
         character_latency = round((perf_counter() - started) * 1000, 3)
         semantic_result: dict[str, object] | None = None
         if request.run_semantic_verification:
-            semantic_result = await self._verify_semantics(request, plan, utterance, recorder)
+            semantic_result = await self._verify_semantics(
+                request,
+                plan,
+                utterance,
+                recorder,
+            )
         return {
             "ok": semantic_result is None or bool(semantic_result.get("ok")),
             "run_id": run_id,
@@ -784,21 +804,16 @@ class CharacterLanguageLabService:
     async def _verify_semantics(
         self,
         request: CharacterLanguageLabRequest,
-        plan: object,
-        utterance: object,
+        plan: SpeechSemanticPlan,
+        utterance: CharacterUtterance,
         recorder: _RecordingPort,
     ) -> dict[str, object]:
-        from app.domain.character_language import CharacterUtterance
-        from app.domain.speech_semantics import SpeechSemanticPlan
-
-        semantic_plan = cast(SpeechSemanticPlan, plan)
-        actual_utterance = cast(CharacterUtterance, utterance)
         snapshot = SemanticVerificationContextSnapshot(
             f"verification-{uuid4().hex}",
             f"blind-request-{uuid4().hex}",
             f"relation-request-{uuid4().hex}",
-            semantic_plan,
-            actual_utterance,
+            plan,
+            utterance,
             LLMPriority.FOREGROUND,
             LLMInterruptibility.INTERRUPTIBLE,
             datetime.now(timezone.utc),
@@ -835,8 +850,10 @@ class CharacterLanguageLabService:
         except Exception as error:
             return {
                 "ok": False,
-                "status": CharacterLanguageLabStatus.SEMANTIC_VERIFICATION_FAILED.value,
-                "error": str(error),
+                "status": (
+                    CharacterLanguageLabStatus.SEMANTIC_VERIFICATION_FAILED.value
+                ),
+                "error_type": type(error).__name__,
                 "latency_ms": round((perf_counter() - started) * 1000, 3),
             }
         return {
