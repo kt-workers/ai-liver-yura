@@ -22,7 +22,6 @@ def _payload(*, relation: str, proposition_ids: list[str]) -> dict[str, object]:
                 "degree_relation": "not_applicable",
                 "execution_relation": "not_applicable",
                 "evidence_refs": [],
-                "supporting_blind_unit_ids": ["u1"],
             }
         ],
         "blind_unit_accounting": [
@@ -39,6 +38,21 @@ def _payload(*, relation: str, proposition_ids: list[str]) -> dict[str, object]:
         },
         "self_disclosure_relation": "within_policy",
     }
+
+
+def test_proposition_observation_does_not_duplicate_support_edge() -> None:
+    schema = relation_output_schema()
+    properties = schema["properties"]
+    assert isinstance(properties, dict)
+    observations = properties["proposition_observations"]
+    assert isinstance(observations, dict)
+    item = observations["items"]
+    assert isinstance(item, dict)
+    item_properties = item["properties"]
+    assert isinstance(item_properties, dict)
+
+    assert "supporting_blind_unit_ids" not in item_properties
+    assert "supporting_blind_unit_ids" not in item["required"]
 
 
 def test_supported_by_plan_requires_proposition_reference() -> None:
