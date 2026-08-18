@@ -17,6 +17,7 @@ from app.domain.llm import (
 )
 from cloud_validation import v2_semantic_verification_lab as lab
 from cloud_validation.v2_semantic_verification_matrix import EXTRA_PRESETS
+from cloud_validation.v2_semantic_verification_preset_overrides import PRESET_OVERRIDES
 
 _ROOT = Path(__file__).parent
 _SYNTHETIC_TIMELINE_MARGIN = timedelta(milliseconds=100)
@@ -138,6 +139,7 @@ class _DiagnosticLabService(lab.SemanticVerificationLabService):
 _PRESET_DISPLAY = _load_preset_display()
 lab._model_policy = _gpt56_model_policy
 lab._PRESETS.update(EXTRA_PRESETS)
+lab._PRESETS.update(PRESET_OVERRIDES)
 lab.build_validation_fixture = _render_build_validation_fixture
 if set(lab._PRESETS) != set(_PRESET_DISPLAY):
     raise RuntimeError("all Render presets must have display metadata")
