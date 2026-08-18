@@ -24,6 +24,18 @@ def test_render_entrypoint_registers_extended_failure_matrix() -> None:
     assert set(EXTRA_PRESETS).issubset(lab._PRESETS)
 
 
+def test_paraphrase_and_shared_stance_are_separate_validation_cases() -> None:
+    paraphrase = lab._PRESETS["unseen_paraphrase"]
+    shared_stance = lab._PRESETS["shared_stance_not_question"]
+
+    assert paraphrase["expected_acceptance"] == "accepted"
+    assert shared_stance["expected_acceptance"] == "accepted"
+    assert paraphrase["segments"] != shared_stance["segments"]
+    assert "落ち続けているよ。" in str(paraphrase["segments"])
+    assert "落ちてきてるね。" in str(shared_stance["segments"])
+    assert _PRESET_DISPLAY["unseen_paraphrase"]["label"] == "異なる表現でも意味保持"
+
+
 def test_render_fixture_does_not_create_future_transport_timestamps() -> None:
     reference = datetime(2026, 8, 18, 0, 45, tzinfo=timezone.utc)
     request = lab.SemanticVerificationLabRequest.model_validate(
