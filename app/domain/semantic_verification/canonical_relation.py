@@ -56,7 +56,12 @@ ENTAILEDしている場合だけ使用してください。"""
     new = """ENTAILED relationにはactual segmentのexact quote evidenceを示してください。
 Plan propositionとblind unitのsupport対応はblind_unit_accountingだけを正本として出力してください。
 proposition_observations側へ同じsupport IDを重複出力してはいけません。
-SUPPORTED_BY_PLAN accountingは、対応するPlan propositionがENTAILEDの場合だけ使用してください。"""
+SUPPORTED_BY_PLAN accountingは、対応するPlan propositionがENTAILEDの場合だけ使用してください。
+SUPPORTED_BY_PLANはsemantic groundingを意味し、発話許可を意味しません。
+Plan propositionがFORBIDDENでもactual utteranceがその禁止命題を実現した場合は、
+そのpropositionをENTAILEDとし、対応blind unitをSUPPORTED_BY_PLANへaccountしてください。
+FORBIDDENだからという理由だけでUNSUPPORTED_EXTRAへ分類してはいけません。
+UNSUPPORTED_EXTRAは対応するPlan proposition自体がないmaterial contentに使用してください。"""
     if old not in legacy:
         raise RuntimeError("legacy relation instructionのsupport contractを更新できません")
     return augment_relation_instructions(legacy.replace(old, new))
