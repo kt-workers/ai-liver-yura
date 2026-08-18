@@ -61,7 +61,7 @@ Integrated ModeではLab-owned Profile / Plan / Prompt / schema / provider forma
 - fixed Profile + fixed Planで#330だけ反復
 - fixed PlanでProfile facet差比較
 - fixed Profile/Planでmodel / reasoning差比較
-- variation 5–10回比較
+- variation 5〜10回比較
 - #363 rejection reproduction
 - malformed Provider output / schema failureの診断
 
@@ -99,9 +99,9 @@ character_definitions/v2/<character_id>.yaml
 
 ### Character projection
 
-- `CharacterDefinitionYamlLoader`
+- `load_character_definition_yaml()`
 - #355 Character Definition contracts
-- `project_character_language()`
+- `project_character_definition()`で`CharacterProjectionBundle`を生成し、その`.language`を使用
 
 ### Speech Semantics
 
@@ -344,7 +344,7 @@ Production sourceが未準備ならGenerateを無効化し、blockerを具体表
 ### Isolation panel
 
 - fixture Profile / Plan選択・編集
-- repetition count 1–10
+- repetition count 1〜10
 - model / reasoning selection
 - #330 generation results
 - optional #363 diagnosis
@@ -427,14 +427,14 @@ Secret / API key / provider raw exception secretは含めない。
 3. #354 production Character Definition/YAML readiness確認
 4. Integrated smoke run
 5. representative context matrix
-6. same-case 5–10 variation run
+6. same-case 5〜10 variation run
 7. model/reasoning comparison
 8. Human evaluation
 9. same actual utteranceの#363 evaluation
 10. evidence export review
 11. #330 / #363 / #434へ同一run evidenceを記録
 
-#354未準備の間は1–2およびIsolation診断まで可能だが、3以降のIntegrated GateをPASSにしない。
+#354未準備の間は1〜2およびIsolation診断まで可能だが、3以降のIntegrated GateをPASSにしない。
 
 ---
 
