@@ -28,7 +28,7 @@ EXTRA_PRESETS: dict[str, dict[str, object]] = {
         "segments": [
             {
                 "segment_id": "s1",
-                "text": "今日は空から水滴がずっと落ち続けているよ。",
+                "text": "今日は空から水滴が落ちているよ。",
                 "realization_refs": ["p1"],
             }
         ],
@@ -44,7 +44,7 @@ EXTRA_PRESETS: dict[str, dict[str, object]] = {
         "segments": [
             {
                 "segment_id": "s1",
-                "text": "今日は空から水滴がずっと落ちてきてるね。",
+                "text": "今日は空から水滴が落ちてきてるね。",
                 "realization_refs": ["p1"],
             }
         ],
