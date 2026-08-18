@@ -73,14 +73,18 @@ def test_unsupported_extra_fixture_is_single_factor() -> None:
 def test_new_direction_fixture_is_plan_supported_and_single_factor() -> None:
     assert "new_direction_budget_exceeded" in PRESET_OVERRIDES
     preset = lab._PRESETS["new_direction_budget_exceeded"]
+    propositions = preset["propositions"]
+    segments = preset["segments"]
 
     assert preset["expected_acceptance"] == "rejected"
     assert preset["new_direction_budget"] == 0
     assert preset["new_direction_budget_used"] == 0
-    assert len(preset["propositions"]) == 2
-    assert len(preset["segments"]) == 2
-    assert "会議は3時に始まるよ。" in str(preset["segments"])
-    assert "明日は雨が降るよ。" in str(preset["segments"])
+    assert isinstance(propositions, list)
+    assert isinstance(segments, list)
+    assert len(propositions) == 2
+    assert len(segments) == 2
+    assert "会議は3時に始まるよ。" in str(segments)
+    assert "明日は雨が降るよ。" in str(segments)
     assert _PRESET_DISPLAY["new_direction_budget_exceeded"]["label"] == (
         "別の話題への展開を検出"
     )
