@@ -70,6 +70,25 @@ def test_unsupported_extra_fixture_is_single_factor() -> None:
     assert "昨日" not in str(preset["segments"])
 
 
+def test_new_direction_fixture_is_plan_supported_and_single_factor() -> None:
+    assert "new_direction_budget_exceeded" in PRESET_OVERRIDES
+    preset = lab._PRESETS["new_direction_budget_exceeded"]
+
+    assert preset["expected_acceptance"] == "rejected"
+    assert preset["new_direction_budget"] == 0
+    assert preset["new_direction_budget_used"] == 0
+    assert len(preset["propositions"]) == 2
+    assert len(preset["segments"]) == 2
+    assert "会議は3時に始まるよ。" in str(preset["segments"])
+    assert "明日は雨が降るよ。" in str(preset["segments"])
+    assert _PRESET_DISPLAY["new_direction_budget_exceeded"]["label"] == (
+        "別の話題への展開を検出"
+    )
+    assert "両方の内容自体はPlan内" in _PRESET_DISPLAY[
+        "new_direction_budget_exceeded"
+    ]["description"]
+
+
 def test_render_fixture_does_not_create_future_transport_timestamps() -> None:
     reference = datetime(2026, 8, 18, 0, 45, tzinfo=timezone.utc)
     request = lab.SemanticVerificationLabRequest.model_validate(
