@@ -14,7 +14,19 @@ Issue #427 の Render Lab は、production #363 Semantic Verification を実LLM�
 
 ## プリセット
 
-内部case IDは英語のstable IDを維持し、UIでは日本語表示名と説明を表示する。プリセット選択時は説明を更新し、`選択内容を適用`で入力JSON全体を選択caseの値へ置換する。英語IDはExport・GitHub記録・再現性のため残す。
+内部case IDは英語のstable IDを維持する。
+
+UI表示名は「何を検証しているか」という抽象的な分類名より、**実際にどんな入力内容を扱うケースか**を優先する。同じ意味内容のvariationは同じテーマ名でまとめ、番号や短い補足で差を示す。検証目的・期待する性質はdescription側へ置く。
+
+現在の雨系variationは次のように表示する。
+
+- `exact_preservation` → `雨を伝える①：直接表現`
+- `unseen_paraphrase` → `雨を伝える②：水滴表現`
+- `shared_stance_not_question` → `雨を伝える③：共有スタンス付き`
+
+これにより、①と②が同じ雨の意味を別表現で比較するケース、③が同じ意味へspeech-act要素を加えたケースだと画面だけで把握できるようにする。
+
+プリセット選択時は説明を更新し、入力JSON全体を選択caseの値へ即時置換する。英語IDはExport・GitHub記録・再現性のため残す。
 
 表示メタデータは `v2_semantic_verification_presets_ja.json` へ分離し、semantic fixture自体には混入させない。
 
