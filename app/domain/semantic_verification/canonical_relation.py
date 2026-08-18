@@ -11,6 +11,7 @@ from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
 from app.usecases.ports.llm import LLMRolePort
 
 from .authority import SemanticVerificationAuthority
+from .canonical_speech_act import augment_relation_instructions
 from .contracts import (
     BlindUnitAccountingRelation,
     SemanticVerificationContextSnapshot,
@@ -45,7 +46,7 @@ def relation_output_schema() -> dict[str, object]:
 
 
 def relation_instructions() -> str:
-    """Role Bへsupport edgeの単一正本を明示するproduction instruction。"""
+    """Role Bへsupport edgeとspeech-actのcanonical意味境界を明示する。"""
 
     legacy = _legacy_relation_instructions()
     old = """ENTAILED relationはactual segmentのexact quote evidenceと、
@@ -58,7 +59,7 @@ proposition_observations側へ同じsupport IDを重複出力してはいけま�
 SUPPORTED_BY_PLAN accountingは、対応するPlan propositionがENTAILEDの場合だけ使用してください。"""
     if old not in legacy:
         raise RuntimeError("legacy relation instructionのsupport contractを更新できません")
-    return legacy.replace(old, new)
+    return augment_relation_instructions(legacy.replace(old, new))
 
 
 def _canonicalize_relation_value(value: object) -> object:
