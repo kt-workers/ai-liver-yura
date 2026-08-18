@@ -19,6 +19,36 @@ def _prop(
 
 
 EXTRA_PRESETS: dict[str, dict[str, object]] = {
+    "unseen_paraphrase": {
+        "name": "unseen_paraphrase",
+        "expected_acceptance": "accepted",
+        "propositions": [
+            _prop("p1", "weather-today", "rain_status", {"raining": True})
+        ],
+        "segments": [
+            {
+                "segment_id": "s1",
+                "text": "今日は空から水滴がずっと落ち続けているよ。",
+                "realization_refs": ["p1"],
+            }
+        ],
+    },
+    "shared_stance_not_question": {
+        "name": "shared_stance_not_question",
+        "expected_acceptance": "accepted",
+        "propositions": [
+            _prop("p1", "weather-today", "rain_status", {"raining": True})
+        ],
+        "question_budget": 0,
+        "question_budget_used": 0,
+        "segments": [
+            {
+                "segment_id": "s1",
+                "text": "今日は空から水滴がずっと落ちてきてるね。",
+                "realization_refs": ["p1"],
+            }
+        ],
+    },
     "required_missing": {
         "name": "required_missing",
         "expected_acceptance": "rejected",
