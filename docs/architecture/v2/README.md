@@ -18,6 +18,7 @@
 - `activity_execution_contracts.md` — Activity admission / Capability preflight / Actual Execution Fact authority
 - `speech_semantics_contracts.md` — What-to-say Authority / typed SpeechSemanticPlan / simple・complex commit gate
 - `character_language_contracts.md` — #330 SpeechSemanticPlan→CharacterUtterance How-to-say realization / live freshness / #363 boundary contracts
+- `character_language_provider_contracts.md` — #330 production instructions / strict output schema / OpenAI Role config / #434 reuse contracts
 - `character_projection_contracts.md` — Human-readable Character Definition / structured document / typed Runtime Profile projection contracts
 - `character_psychological_projection_contracts.md` — Character精神構造Layers 1–6 / causal refs / dynamic Layer 7 boundary
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
