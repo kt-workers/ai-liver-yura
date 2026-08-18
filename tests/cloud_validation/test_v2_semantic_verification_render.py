@@ -93,6 +93,39 @@ def test_new_direction_fixture_is_plan_supported_and_single_factor() -> None:
     ]["description"]
 
 
+def test_required_missing_fixture_uses_only_optional_supported_content() -> None:
+    assert "required_missing" in PRESET_OVERRIDES
+    preset = lab._PRESETS["required_missing"]
+
+    assert preset["expected_acceptance"] == "rejected"
+    assert "今日は寒いよ。" in str(preset["segments"])
+    assert "うん、そうだね。" not in str(preset["segments"])
+    assert "disposition': 'optional'" in str(preset["propositions"])
+    assert "OPTIONALな内容だけ" in _PRESET_DISPLAY["required_missing"]["description"]
+
+
+def test_forbidden_realized_fixture_avoids_self_disclosure_and_topic_switch() -> None:
+    assert "forbidden_realized" in PRESET_OVERRIDES
+    preset = lab._PRESETS["forbidden_realized"]
+
+    assert preset["expected_acceptance"] == "rejected"
+    assert "今日は雨だよ。風も強いよ。" in str(preset["segments"])
+    assert "京都" not in str(preset["segments"])
+    assert "yura" not in str(preset["propositions"])
+    assert "disposition': 'forbidden'" in str(preset["propositions"])
+    assert "同じ話題内" in _PRESET_DISPLAY["forbidden_realized"]["description"]
+
+
+def test_gratitude_fixture_contains_only_gratitude_act() -> None:
+    assert "communicative_gratitude" in PRESET_OVERRIDES
+    preset = lab._PRESETS["communicative_gratitude"]
+
+    assert preset["expected_acceptance"] == "accepted"
+    assert "ありがとう！" in str(preset["segments"])
+    assert "助かった" not in str(preset["segments"])
+    assert "感謝だけ" in _PRESET_DISPLAY["communicative_gratitude"]["description"]
+
+
 def test_render_fixture_does_not_create_future_transport_timestamps() -> None:
     reference = datetime(2026, 8, 18, 0, 45, tzinfo=timezone.utc)
     request = lab.SemanticVerificationLabRequest.model_validate(
