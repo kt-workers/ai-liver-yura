@@ -23,6 +23,6 @@
   "communicative_apology": {"label": "謝罪という発話行為を保持", "description": "謝罪というcommunicative material contentを自然表現へ実現して受理できるか確認します。"},
   "self_disclosure_not_applicable": {"label": "自己開示なしを正しく判定", "description": "自己開示FORBIDDENでも外部事実だけならself-disclosureをNOT_APPLICABLEとして受理できるか確認します。"},
   "self_disclosure_within_policy": {"label": "Plan内の自己開示を許容", "description": "FACT_GROUNDED policyでPlanにgroundされたゆら自身の好みをWITHIN_POLICYとして受理できるか確認します。"},
-  "self_disclosure_forbidden_exceeded": {"label": "禁止された自己開示を検出", "description": "FORBIDDEN policyでPlan外の自己開示を追加したとき、UNSUPPORTED_EXTRAとself-disclosure EXCEEDEDを別軸で検出できるか確認します。"},
-  "self_disclosure_allowed_unsupported": {"label": "自己開示許可とPlan外主張を分離", "description": "ALLOWED policyでは自己開示自体をEXCEEDEDにせず、Plan外の自己主張だけをUNSUPPORTED_EXTRAとして拒否できるか確認します。"}
+  "self_disclosure_forbidden_exceeded": {"label": "禁止された自己開示を検出", "description": "FORBIDDEN policyでPlan外の自己開示を追加したとき、話題転換はbudget内に隔離し、UNSUPPORTED_EXTRAとself-disclosure EXCEEDEDを別軸で検出できるか確認します。"},
+  "self_disclosure_allowed_unsupported": {"label": "自己開示許可とPlan外主張を分離", "description": "ALLOWED policyでは話題転換をbudget内に隔離し、自己開示自体をEXCEEDEDにせず、Plan外の自己主張だけをUNSUPPORTED_EXTRAとして拒否できるか確認します。"}
 }
