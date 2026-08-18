@@ -93,15 +93,28 @@ def test_new_direction_fixture_is_plan_supported_and_single_factor() -> None:
     ]["description"]
 
 
-def test_required_missing_fixture_uses_only_optional_supported_content() -> None:
+def test_required_missing_fixture_reaches_semantic_verification_gate() -> None:
     assert "required_missing" in PRESET_OVERRIDES
     preset = lab._PRESETS["required_missing"]
+    segments = preset["segments"]
 
     assert preset["expected_acceptance"] == "rejected"
-    assert "今日は寒いよ。" in str(preset["segments"])
-    assert "うん、そうだね。" not in str(preset["segments"])
+    assert isinstance(segments, list)
+    assert len(segments) == 1
+    segment = segments[0]
+    assert isinstance(segment, dict)
+    assert segment["text"] == "今日は寒いよ。"
+    assert segment["realization_refs"] == ["p1"]
+    assert "うん、そうだね。" not in str(segments)
     assert "disposition': 'optional'" in str(preset["propositions"])
     assert "OPTIONALな内容だけ" in _PRESET_DISPLAY["required_missing"]["description"]
+
+    request = lab.SemanticVerificationLabRequest.model_validate(preset)
+    fixture = _render_build_validation_fixture(
+        request,
+        now=datetime(2026, 8, 18, 11, 50, tzinfo=timezone.utc),
+    )
+    assert fixture.utterance.candidate.segments[0].realization_refs == ("p1",)
 
 
 def test_forbidden_realized_fixture_avoids_self_disclosure_and_topic_switch() -> None:
