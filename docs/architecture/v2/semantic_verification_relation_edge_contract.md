@@ -87,6 +87,41 @@ Runtime derived
 
 つまり削除するのは**同じLLMの重複自己申告**だけで、Plan↔actual utteranceのgrounding obligationは維持する。
 
+### 4.1 Support edgeとproposition dispositionは別軸
+
+`SUPPORTED_BY_PLAN` の `supported` は「発話内容がPlan内のpropositionと意味的に対応している」という **relation/accounting上のgrounding** を意味し、「発話してよい」「許可されている」というpolicy判定を意味しない。
+
+したがってPlan propositionのdispositionが `FORBIDDEN` であっても、actual utteranceがその禁止命題を実際に表現している場合は:
+
+- proposition relation = `ENTAILED`
+- 対応blind unit accounting = `SUPPORTED_BY_PLAN [forbidden proposition id]`
+
+とする。
+
+その後Runtime Acceptanceがproposition dispositionを見て `FORBIDDEN_PROPOSITION_REALIZED` を導出する。
+
+禁止命題を実現したblind unitを、`FORBIDDEN`だからという理由だけで`UNSUPPORTED_EXTRA`へ分類してはならない。`UNSUPPORTED_EXTRA`は**対応するPlan proposition自体が存在しないmaterial content**に使用する。
+
+```text
+Plan:
+  p1 REQUIRED rain=true
+  p2 FORBIDDEN strong_wind=true
+
+Actual:
+  "今日は雨だよ。風も強いよ。"
+
+Role B:
+  p1 -> ENTAILED
+  p2 -> ENTAILED
+  rain unit -> SUPPORTED_BY_PLAN [p1]
+  wind unit -> SUPPORTED_BY_PLAN [p2]
+
+Runtime Acceptance:
+  FORBIDDEN_PROPOSITION_REALIZED
+```
+
+これによりsupport edgeはsemantic grounding、dispositionはspeech policyという責務分離を維持する。
+
 ## 5. Provider schema
 
 production `relation_output_schema()`は`proposition_observations[].supporting_blind_unit_ids`を公開しない。
@@ -134,6 +169,8 @@ real Provider strict Structured Outputでは新schemaにより重複field自体�
 
 shared-stance確認も同様に、semantic contentを固定したままinteraction actだけを変える。
 
+failure matrixの単一要因caseも同じ原則で構成する。特に`forbidden_realized`はself-disclosure / new-direction等を混ぜず、同一topic内のexternal FORBIDDEN propositionを実現して、`FORBIDDEN_PROPOSITION_REALIZED`だけを観測できるfixtureを優先する。
+
 ## 9. Verification
 
 自動:
@@ -142,6 +179,7 @@ shared-stance確認も同様に、semantic contentを固定したままinteracti
 - Provider schemaに`supporting_blind_unit_ids`が存在しない
 - mismatched legacy support自己申告をaccounting由来値で上書きする
 - non-SUPPORTED accountingからsupportを生成しない
+- `FORBIDDEN` propositionの実現もsemantic support edgeを持ち、permissionとsupportを混同しないPrompt契約
 - candidate/Authority contract `ValueError`が`SCHEMA_INVALID`へ正規化される
 - existing Authority / evidence / acceptance tests PASS
 - Ruff / Mypy strict / full pytest / compileall / diff check
@@ -151,7 +189,8 @@ shared-stance確認も同様に、semantic contentを固定したままinteracti
 1. `雨を伝える②：水滴表現`をdegree要因なしのfixtureで再実行
 2. Role B semantic relation / evidence / final acceptanceを確認
 3. `雨を伝える③：共有スタンス付き`もdegree要因なしで再実行
-4. 失敗時もExportしてfailure code / resultを保存
+4. `禁止命題の実現を検出`を単一要因fixtureで再実行し、schema invalidではなく`FORBIDDEN_PROPOSITION_REALIZED`へ到達することを確認
+5. 失敗時もExportしてfailure code / resultを保存
 
 ## 10. Merge Gate
 
