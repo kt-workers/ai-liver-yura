@@ -121,7 +121,8 @@ class SemanticVerificationAuthority:
             if observation.relation in _GROUNDED_RELATIONS:
                 if not observation.evidence_refs or not observation.supporting_blind_unit_ids:
                     raise ValueError(
-                        "ENTAILED / CONTRADICTED propositionにはevidenceとblind unit groundingが必要です"
+                        "ENTAILED / CONTRADICTED propositionにはevidenceと"
+                        "blind unit groundingが必要です"
                     )
                 supporting_evidence = {
                     self._evidence_key(ref)
