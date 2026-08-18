@@ -13,8 +13,8 @@ from app.domain.semantic_verification import (
     relation_instructions,
 )
 from app.domain.semantic_verification.canonical_relation import (
-    _LegacySemanticVerifier,
     _canonicalize_relation_value,
+    _LegacySemanticVerifier,
 )
 
 
