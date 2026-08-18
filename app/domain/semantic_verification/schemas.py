@@ -32,6 +32,35 @@ def _evidence_schema() -> dict[str, object]:
     }
 
 
+def _accounting_variant(
+    relation: BlindUnitAccountingRelation,
+    *,
+    supported_by_plan: bool,
+) -> dict[str, object]:
+    proposition_ids: dict[str, object] = {
+        "type": "array",
+        "maxItems": 16 if supported_by_plan else 0,
+        "items": {"type": "string", "minLength": 1},
+    }
+    if supported_by_plan:
+        proposition_ids["minItems"] = 1
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["blind_unit_id", "relation", "proposition_ids", "evidence_refs"],
+        "properties": {
+            "blind_unit_id": {"type": "string", "minLength": 1},
+            "relation": {"type": "string", "enum": [relation.value]},
+            "proposition_ids": proposition_ids,
+            "evidence_refs": {
+                "type": "array",
+                "maxItems": 8,
+                "items": _evidence_schema(),
+            },
+        },
+    }
+
+
 def blind_output_schema() -> dict[str, object]:
     return {
         "type": "object",
@@ -126,26 +155,24 @@ def relation_output_schema() -> dict[str, object]:
         },
     }
     accounting: dict[str, object] = {
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["blind_unit_id", "relation", "proposition_ids", "evidence_refs"],
-        "properties": {
-            "blind_unit_id": {"type": "string", "minLength": 1},
-            "relation": {
-                "type": "string",
-                "enum": _enum_values(BlindUnitAccountingRelation),
-            },
-            "proposition_ids": {
-                "type": "array",
-                "maxItems": 16,
-                "items": {"type": "string", "minLength": 1},
-            },
-            "evidence_refs": {
-                "type": "array",
-                "maxItems": 8,
-                "items": _evidence_schema(),
-            },
-        },
+        "anyOf": [
+            _accounting_variant(
+                BlindUnitAccountingRelation.SUPPORTED_BY_PLAN,
+                supported_by_plan=True,
+            ),
+            _accounting_variant(
+                BlindUnitAccountingRelation.UNSUPPORTED_EXTRA,
+                supported_by_plan=False,
+            ),
+            _accounting_variant(
+                BlindUnitAccountingRelation.PERMITTED_NON_MATERIAL_STYLE,
+                supported_by_plan=False,
+            ),
+            _accounting_variant(
+                BlindUnitAccountingRelation.AMBIGUOUS,
+                supported_by_plan=False,
+            ),
+        ]
     }
     return {
         "type": "object",
@@ -233,9 +260,12 @@ ENTAILED relationはactual segmentのexact quote evidenceと、
 その意味を担うblind unit IDを示してください。
 SUPPORTED_BY_PLAN accountingは、対応proposition側も同じblind unitをsupportとして
 ENTAILEDしている場合だけ使用してください。
+SUPPORTED_BY_PLANのproposition_idsにはsupportするPlan proposition IDを1件以上入れてください。
+UNSUPPORTED_EXTRA / PERMITTED_NON_MATERIAL_STYLE / AMBIGUOUSのproposition_idsは必ず[]です。
 Plan外のmaterial contentはUNSUPPORTED_EXTRA、判断不能はAMBIGUOUSです。
 1 blind unitにPlan-supported意味とPlan外意味が混在している場合、
 SUPPORTED_BY_PLANだけで覆わずUNSUPPORTED_EXTRAまたはAMBIGUOUSにしてください。
+その場合もproposition_idsは[]とし、関連しそうなPlan IDを診断目的で入れないでください。
 interaction_actsはAで固定済みですが、actual utteranceを独立に読み、
 directed question数/new direction数を別途返してください。
 最終PASS/FAIL、accepted、score、修正文、replacement utteranceは出力しないでください。"""
