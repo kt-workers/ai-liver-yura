@@ -39,6 +39,11 @@ def test_rain_variations_are_grouped_by_input_content() -> None:
         _PRESET_DISPLAY["shared_stance_not_question"]["label"]
         == "雨を伝える③：共有スタンス付き"
     )
+    assert "基準となる正常系" in _PRESET_DISPLAY["exact_preservation"]["description"]
+    assert "別の自然表現" in _PRESET_DISPLAY["unseen_paraphrase"]["description"]
+    assert "返答を要求していなければ" in _PRESET_DISPLAY[
+        "shared_stance_not_question"
+    ]["description"]
 
 
 def test_render_fixture_does_not_create_future_transport_timestamps() -> None:
