@@ -255,6 +255,8 @@ PRESET_OVERRIDES: dict[str, dict[str, object]] = {
         "name": "self_disclosure_forbidden_exceeded",
         "expected_acceptance": "rejected",
         "self_disclosure": "forbidden",
+        "new_direction_budget": 1,
+        "new_direction_budget_used": 0,
         "propositions": [
             {
                 "proposition_id": "p1",
@@ -275,6 +277,8 @@ PRESET_OVERRIDES: dict[str, dict[str, object]] = {
         "name": "self_disclosure_allowed_unsupported",
         "expected_acceptance": "rejected",
         "self_disclosure": "allowed",
+        "new_direction_budget": 1,
+        "new_direction_budget_used": 0,
         "propositions": [
             {
                 "proposition_id": "p1",
