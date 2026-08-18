@@ -5,6 +5,7 @@ Live Validation: #427
 Supersedes:
 - `semantic_verification_contracts.md` の Role B bidirectional support/accounting における Provider二重出力部分
 - `semantic_verification_observer_strategy.md` の proposition側とaccounting側へ同一support edgeを重複申告させる部分
+- 上記2文書に残る `SUPPORTED_BY_PLAN` を `ENTAILED` のみに限定する旧記述
 
 Status: Canonical Supplement / Live Validation feedback
 
@@ -25,13 +26,19 @@ Status: Canonical Supplement / Live Validation feedback
 
 これは独立Observer間の照合ではない。同じRole B / 同じProvider response内で同じ関係を二重記述しているだけであり、semantic safetyを実質的に増やさず、構造的不一致のfailure surfaceを増やす。
 
+さらに#427の実LLM failure matrixで、`unknown_committed` と `execution_completion_fabricated` はactual material unitが既存Plan propositionを明確に**矛盾**しているにもかかわらず、旧Authorityの `SUPPORTED_BY_PLAN = ENTAILED only` 制約により対応edgeを持てず、同じunitが `UNSUPPORTED_EXTRA` へ強制分類された。
+
+これは `UNSUPPORTED_EXTRA = 対応するPlan proposition自体が存在しないmaterial content` という既存canonical定義と矛盾する。
+
 ## 2. Canonical decision
 
-Role B Provider outputにおけるPlan proposition↔blind unit support edgeの唯一の正本は:
+Role B Provider outputにおけるPlan proposition↔blind unit grounding edgeの唯一の正本は:
 
 `blind_unit_accounting[].proposition_ids`
 
 とする。
+
+`SUPPORTED_BY_PLAN` の名称に含まれる `supported` は、**Plan propositionとの意味的対応 / grounding** を表す。最終的にその発話が正しい、許可される、acceptされることを意味しない。
 
 ### Provider output
 
@@ -50,6 +57,15 @@ Providerへ`supporting_blind_unit_ids`を重複出力させない。
 - `UNSUPPORTED_EXTRA` → proposition_ids=[]
 - `PERMITTED_NON_MATERIAL_STYLE` → proposition_ids=[]
 - `AMBIGUOUS` → proposition_ids=[]
+
+`SUPPORTED_BY_PLAN`が参照できるPlan proposition relationは:
+
+- `ENTAILED`
+- `CONTRADICTED`
+
+とする。
+
+`MISSING`はactual support unitを持たない。`AMBIGUOUS`は対応関係自体を安全に確定できないため、`SUPPORTED_BY_PLAN`へ閉じずfail-closedする。
 
 ## 3. Runtime normalization
 
@@ -71,21 +87,22 @@ Runtime derived
 
 ## 4. Safety invariants retained
 
-単一正本化は検証を緩めない。
+単一正本化とCONTRADICTED groundingは検証を緩めない。
 
-既存Authorityで次を維持する。
+Authorityで次を維持する。
 
 - blind unit全件exactly one accounting
 - unknown proposition / blind unit拒否
-- `SUPPORTED_BY_PLAN`が参照するpropositionは`ENTAILED`でなければならない
+- `SUPPORTED_BY_PLAN`が参照するproposition relationは `ENTAILED` または `CONTRADICTED`
 - ENTAILED propositionはRuntime導出supportを1件以上持つ
-- proposition evidenceは導出support blind unitのevidenceへgroundする
+- actual evidenceを伴うCONTRADICTED propositionも、対応Plan propositionが存在するならRuntime導出supportを1件以上持つ
+- ENTAILED / CONTRADICTED proposition evidenceは導出support blind unitのevidenceへgroundする
 - accounting evidenceは元blind unit evidenceへgroundする
 - MATERIAL_SEMANTIC_CONTENTをPERMITTED_NON_MATERIAL_STYLEへ降格禁止
 - unsupported / ambiguous material contentはfail-closed
 - Character `realization_refs`をsemantic proofにしない
 
-つまり削除するのは**同じLLMの重複自己申告**だけで、Plan↔actual utteranceのgrounding obligationは維持する。
+つまりsupport edgeは「一致している」という判定ではなく、**どのPlan propositionとactual unitを比較した結果なのか**を保持するgrounding edgeである。
 
 ### 4.1 Support edgeとproposition dispositionは別軸
 
@@ -120,7 +137,56 @@ Runtime Acceptance:
   FORBIDDEN_PROPOSITION_REALIZED
 ```
 
-これによりsupport edgeはsemantic grounding、dispositionはspeech policyという責務分離を維持する。
+### 4.2 Contradictionとunsupportednessは別軸
+
+actual unitが既存Plan propositionと同じsemantic subject / propositionについて**反対・不整合な内容を述べている**場合、そのunitはPlan外ではない。
+
+この場合:
+
+- proposition relation = `CONTRADICTED`
+- 対応blind unit = `SUPPORTED_BY_PLAN [that proposition id]`
+- Runtime Acceptance = `PROPOSITION_CONTRADICTED`
+
+とする。
+
+同じunitを `UNSUPPORTED_EXTRA` にも分類してはいけない。`PROPOSITION_CONTRADICTED` と `UNSUPPORTED_EXTRA_CLAIM` の二重rejectは、別のPlan外material contentが実際に存在するときだけ成立する。
+
+例:
+
+```text
+Plan:
+  p1 museum.open_status = unknown
+
+Actual:
+  "博物館は今日は開いてるよ。"
+
+Role B:
+  p1 -> CONTRADICTED
+  polarity_relation -> UNKNOWN_COMMITTED
+  certainty_relation -> STRENGTHENED
+  utterance unit -> SUPPORTED_BY_PLAN [p1]
+
+Runtime Acceptance:
+  PROPOSITION_CONTRADICTED
+```
+
+```text
+Plan:
+  p1 execution.status = requested
+
+Actual:
+  "その操作はもう完了したよ。"
+
+Role B:
+  p1 -> CONTRADICTED
+  execution_relation -> CONTRADICTED
+  utterance unit -> SUPPORTED_BY_PLAN [p1]
+
+Runtime Acceptance:
+  PROPOSITION_CONTRADICTED
+```
+
+この変更は矛盾発話を許可するものではない。むしろ、**何に矛盾したのかというgroundingを保持したまま、正しいreject categoryへ到達する**ための責務分離である。
 
 ## 5. Provider schema
 
@@ -135,8 +201,9 @@ real Provider strict Structured Outputでは新schemaにより重複field自体�
 単一正本化後も、Role Bはproposition relationとblind-unit accountingという異なる観測事実を返すため、次のようなcross-field不整合は起こり得る。
 
 - propositionは`ENTAILED`だが、accountingから導出できるsupport blind unitが0件
+- actual evidenceを伴う`CONTRADICTED` propositionだが、対応Plan grounding edgeが0件
 - proposition evidenceが導出supportへgroundしない
-- `SUPPORTED_BY_PLAN` accountingが`ENTAILED`でないpropositionを参照する
+- `SUPPORTED_BY_PLAN` accountingが`MISSING` / `AMBIGUOUS` propositionを参照する
 
 これらはactual utteranceを受理してよいことを意味しない。Provider candidateがproduction Domain contractを満たしていないため、**commitせずfail-closed**する。
 
@@ -160,6 +227,7 @@ real Provider strict Structured Outputでは新schemaにより重複field自体�
 - finite自然語matcherを導入しない
 - Plan-aware Role Bのsemantic relation観測自体は維持する
 - Plan-blind Role Aとの独立性は維持する
+- contradictionとunsupportednessを混同しない
 
 ## 8. Validation fixture separation
 
@@ -171,6 +239,8 @@ shared-stance確認も同様に、semantic contentを固定したままinteracti
 
 failure matrixの単一要因caseも同じ原則で構成する。特に`forbidden_realized`はself-disclosure / new-direction等を混ぜず、同一topic内のexternal FORBIDDEN propositionを実現して、`FORBIDDEN_PROPOSITION_REALIZED`だけを観測できるfixtureを優先する。
 
+`question_budget_exceeded`のように1つの追加material unitが同時にDIRECTED_QUESTIONであるcaseは、Plan外material contentとquestion budgetという**本当に別の意味軸**が同時成立し得る。この場合の複数reject categoryはdiagnostic duplicationではなくmulti-axis observationとして扱う。
+
 ## 9. Verification
 
 自動:
@@ -179,21 +249,22 @@ failure matrixの単一要因caseも同じ原則で構成する。特に`forbidd
 - Provider schemaに`supporting_blind_unit_ids`が存在しない
 - mismatched legacy support自己申告をaccounting由来値で上書きする
 - non-SUPPORTED accountingからsupportを生成しない
-- `FORBIDDEN` propositionの実現もsemantic support edgeを持ち、permissionとsupportを混同しないPrompt契約
+- `FORBIDDEN` propositionの実現もsemantic grounding edgeを持ち、permissionとsupportを混同しないPrompt契約
+- `CONTRADICTED` propositionも対応Plan grounding edgeを持ち、unsupportednessとcontradictionを混同しない
+- ENTAILED / CONTRADICTED evidenceがgrounding unit evidenceへbindされる
 - candidate/Authority contract `ValueError`が`SCHEMA_INVALID`へ正規化される
 - existing Authority / evidence / acceptance tests PASS
 - Ruff / Mypy strict / full pytest / compileall / diff check
 
 実LLM #427:
 
-1. `雨を伝える②：水滴表現`をdegree要因なしのfixtureで再実行
-2. Role B semantic relation / evidence / final acceptanceを確認
-3. `雨を伝える③：共有スタンス付き`もdegree要因なしで再実行
-4. `禁止命題の実現を検出`を単一要因fixtureで再実行し、schema invalidではなく`FORBIDDEN_PROPOSITION_REALIZED`へ到達することを確認
-5. 失敗時もExportしてfailure code / resultを保存
+1. `unknown_committed` を再実行し、p1=CONTRADICTED + unit=SUPPORTED_BY_PLAN [p1] + final `PROPOSITION_CONTRADICTED` を確認
+2. `execution_completion_fabricated` を再実行し、p1=CONTRADICTED + unit=SUPPORTED_BY_PLAN [p1] + final `PROPOSITION_CONTRADICTED` を確認
+3. `question_budget_exceeded` は既存実LLM証跡をmulti-axis PASSとして保持する
+4. 失敗時もExportしてfailure code / resultを保存
 
 ## 10. Merge Gate
 
 この補修だけで#363をmergeしない。
 
-#427 failure matrix、degree/speech-actを含むfalse accept / false reject評価、#330 final canonical再照合が完了するまでMerge GateはHOLDを維持する。
+#427 live rerun、#330 final canonical再照合が完了するまでMerge GateはHOLDを維持する。
