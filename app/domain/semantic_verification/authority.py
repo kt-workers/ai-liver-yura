@@ -37,6 +37,9 @@ _SAFE_POLARITY = frozenset({PolarityRelation.PRESERVED, PolarityRelation.NOT_APP
 _SAFE_CERTAINTY = frozenset({CertaintyRelation.PRESERVED, CertaintyRelation.NOT_APPLICABLE})
 _SAFE_DEGREE = frozenset({DegreeRelation.PRESERVED, DegreeRelation.NOT_APPLICABLE})
 _SAFE_EXECUTION = frozenset({ExecutionRelation.PRESERVED, ExecutionRelation.NOT_APPLICABLE})
+_GROUNDED_RELATIONS = frozenset(
+    {PropositionRelation.ENTAILED, PropositionRelation.CONTRADICTED}
+)
 
 
 class SemanticVerificationAuthority:
@@ -115,18 +118,26 @@ class SemanticVerificationAuthority:
             ):
                 raise ValueError("unknown blind unitがproposition relationへ参照されています")
             self._validate_all_evidence(snapshot.utterance, observation.evidence_refs)
-            supporting_evidence = {
-                self._evidence_key(ref)
-                for unit_id in observation.supporting_blind_unit_ids
-                for ref in blind_by_id[unit_id].evidence_refs
-            }
-            if observation.relation is PropositionRelation.ENTAILED and any(
-                self._evidence_key(ref) not in supporting_evidence
-                for ref in observation.evidence_refs
-            ):
-                raise ValueError(
-                    "proposition evidenceはsupporting blind unitへgroundする必要があります"
-                )
+            if observation.relation in _GROUNDED_RELATIONS:
+                if not observation.evidence_refs or not observation.supporting_blind_unit_ids:
+                    raise ValueError(
+                        "ENTAILED / CONTRADICTED propositionにはevidenceと"
+                        "blind unit groundingが必要です"
+                    )
+                supporting_evidence = {
+                    self._evidence_key(ref)
+                    for unit_id in observation.supporting_blind_unit_ids
+                    for ref in blind_by_id[unit_id].evidence_refs
+                }
+                if any(
+                    self._evidence_key(ref) not in supporting_evidence
+                    for ref in observation.evidence_refs
+                ):
+                    raise ValueError(
+                        "proposition evidenceはsupporting blind unitへgroundする必要があります"
+                    )
+            elif observation.supporting_blind_unit_ids:
+                raise ValueError("MISSING / AMBIGUOUS propositionはblind unit supportを持てません")
 
         for item in candidate.blind_unit_accounting:
             unit = blind_by_id[item.blind_unit_id]
@@ -147,7 +158,7 @@ class SemanticVerificationAuthority:
                 for proposition_id in item.proposition_ids:
                     proposition_observation = observations[proposition_id]
                     if (
-                        proposition_observation.relation is not PropositionRelation.ENTAILED
+                        proposition_observation.relation not in _GROUNDED_RELATIONS
                         or item.blind_unit_id
                         not in proposition_observation.supporting_blind_unit_ids
                     ):
@@ -156,7 +167,7 @@ class SemanticVerificationAuthority:
                         )
 
         for proposition_id, proposition_observation in observations.items():
-            if proposition_observation.relation is not PropositionRelation.ENTAILED:
+            if proposition_observation.relation not in _GROUNDED_RELATIONS:
                 continue
             for unit_id in proposition_observation.supporting_blind_unit_ids:
                 item = accounting[unit_id]
