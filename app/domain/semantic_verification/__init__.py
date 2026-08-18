@@ -1,4 +1,9 @@
 from .authority import SemanticVerificationAuthority
+from .canonical_relation import (
+    SemanticVerifier,
+    relation_instructions,
+    relation_output_schema,
+)
 from .contracts import (
     BlindInteractionAct,
     BlindSemanticUnit,
@@ -47,11 +52,6 @@ from .verifier import (
     parse_blind_candidate,
     parse_relation_candidate,
     relation_descriptor,
-)
-from .canonical_relation import (
-    SemanticVerifier,
-    relation_instructions,
-    relation_output_schema,
 )
 
 __all__ = [
