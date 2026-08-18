@@ -126,4 +126,24 @@ PRESET_OVERRIDES: dict[str, dict[str, object]] = {
             }
         ],
     },
+    "degree_weakened": {
+        "name": "degree_weakened",
+        "expected_acceptance": "rejected",
+        "propositions": [
+            {
+                "proposition_id": "p1",
+                "subject_ref": "yura",
+                "predicate": "interest",
+                "value": {"topic_ref": "astronomy"},
+                "degree": 0.8,
+            }
+        ],
+        "segments": [
+            {
+                "segment_id": "s1",
+                "text": "天文学にはほんの少しだけ興味あるよ。",
+                "realization_refs": ["p1"],
+            }
+        ],
+    },
 }
