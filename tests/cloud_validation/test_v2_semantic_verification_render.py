@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timedelta, timezone
 
 from app.domain.llm import LLMModelClass, LLMReasoningEffort
@@ -9,6 +10,7 @@ from cloud_validation.v2_semantic_verification_render import (
     _PRESET_DISPLAY,
     _gpt56_model_policy,
     _render_build_validation_fixture,
+    service,
 )
 
 
@@ -31,8 +33,11 @@ def test_rain_variations_are_grouped_by_input_content() -> None:
     assert paraphrase["expected_acceptance"] == "accepted"
     assert shared_stance["expected_acceptance"] == "accepted"
     assert paraphrase["segments"] != shared_stance["segments"]
-    assert "落ち続けているよ。" in str(paraphrase["segments"])
-    assert "落ちてきてるね。" in str(shared_stance["segments"])
+    assert "空から水滴が落ちているよ。" in str(paraphrase["segments"])
+    assert "空から水滴が落ちてきてるね。" in str(shared_stance["segments"])
+    assert "ずっと" not in str(paraphrase["segments"])
+    assert "ずっと" not in str(shared_stance["segments"])
+    assert "落ち続け" not in str(paraphrase["segments"])
     assert _PRESET_DISPLAY["exact_preservation"]["label"] == "雨を伝える①：直接表現"
     assert _PRESET_DISPLAY["unseen_paraphrase"]["label"] == "雨を伝える②：水滴表現"
     assert (
@@ -102,3 +107,10 @@ def test_lab_keeps_failed_run_exportable() -> None:
     assert "検証データをExportできます。" in html
     assert "http_status:response.status" in html
     assert "- エラー:" in html
+
+
+def test_failed_production_run_keeps_provider_results_for_export() -> None:
+    assert type(service).__name__ == "_DiagnosticLabService"
+    source = inspect.getsource(type(service).verify)
+    assert 'result["provider_results"]' in source
+    assert "item.to_dict()" in source
