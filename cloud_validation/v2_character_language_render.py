@@ -65,11 +65,18 @@ def _require_auth(
         )
 
 
-def _enum(enum_type: type[LLMModelClass] | type[LLMReasoningEffort], value: str):
+def _model_class(value: str) -> LLMModelClass:
     try:
-        return enum_type(value)
+        return LLMModelClass(value)
     except ValueError as error:
-        raise HTTPException(status_code=422, detail=f"invalid enum value: {value}") from error
+        raise HTTPException(status_code=422, detail=f"invalid model class: {value}") from error
+
+
+def _reasoning_effort(value: str) -> LLMReasoningEffort:
+    try:
+        return LLMReasoningEffort(value)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=f"invalid reasoning effort: {value}") from error
 
 
 def _workspace_html() -> str:
@@ -127,11 +134,11 @@ def create_app(
             payload.scenario_id,
             payload.repetitions,
             character_model,
-            _enum(LLMModelClass, payload.character_model_class),
-            _enum(LLMReasoningEffort, payload.character_reasoning_effort),
+            _model_class(payload.character_model_class),
+            _reasoning_effort(payload.character_reasoning_effort),
             semantic_model or character_model,
-            _enum(LLMModelClass, payload.semantic_model_class),
-            _enum(LLMReasoningEffort, payload.semantic_reasoning_effort),
+            _model_class(payload.semantic_model_class),
+            _reasoning_effort(payload.semantic_reasoning_effort),
             run_semantic_verification=payload.run_semantic_verification,
             timeout_seconds=payload.timeout_seconds,
             max_output_tokens=payload.max_output_tokens,
