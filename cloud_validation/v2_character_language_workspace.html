@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ゆら Character Language Lab</title>
+  <style>__STYLE__</style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">AI Liver ゆら / V2 Verification</p>
+        <h1>Character Language Lab</h1>
+        <p class="lead">意味は変えずに、どこまで自然に「ゆらの言葉」へできるかを確認する。</p>
+      </div>
+      <div id="readinessBadge" class="badge">loading</div>
+    </header>
+
+    <section id="blocker" class="blocker hidden"></section>
+
+    <section class="grid controls">
+      <article class="card">
+        <h2>Run</h2>
+        <label>Mode
+          <select id="mode">
+            <option value="integrated">Integrated</option>
+            <option value="isolation" selected>Isolation</option>
+          </select>
+        </label>
+        <label>Scenario
+          <select id="scenario"></select>
+        </label>
+        <label>Repetitions
+          <input id="repetitions" type="number" min="1" max="10" value="3" />
+        </label>
+        <label class="check"><input id="semantic" type="checkbox" checked /> #363 semantic verification</label>
+      </article>
+
+      <article class="card">
+        <h2>Character Language</h2>
+        <label>Model<input id="characterModel" type="text" /></label>
+        <label>Model class
+          <select id="characterClass">
+            <option value="fast">fast</option>
+            <option value="balanced" selected>balanced</option>
+            <option value="deep_reasoning">deep_reasoning</option>
+          </select>
+        </label>
+        <label>Reasoning
+          <select id="characterReasoning">
+            <option value="minimal">minimal</option>
+            <option value="low">low</option>
+            <option value="medium" selected>medium</option>
+            <option value="high">high</option>
+          </select>
+        </label>
+      </article>
+
+      <article class="card">
+        <h2>Semantic Observer</h2>
+        <label>Model<input id="semanticModel" type="text" /></label>
+        <label>Model class
+          <select id="semanticClass">
+            <option value="fast">fast</option>
+            <option value="balanced" selected>balanced</option>
+            <option value="deep_reasoning">deep_reasoning</option>
+          </select>
+        </label>
+        <label>Reasoning
+          <select id="semanticReasoning">
+            <option value="minimal">minimal</option>
+            <option value="low">low</option>
+            <option value="medium" selected>medium</option>
+            <option value="high">high</option>
+          </select>
+        </label>
+      </article>
+    </section>
+
+    <section class="actions">
+      <button id="runButton">Generate</button>
+      <button id="exportButton" class="secondary" disabled>Export JSON</button>
+      <span id="runState"></span>
+    </section>
+
+    <section class="grid results">
+      <article class="card span2">
+        <div class="sectionHead"><h2>Generated Variants</h2><span id="evidenceClass"></span></div>
+        <div id="variants" class="variants empty">まだrunしていません。</div>
+      </article>
+
+      <article class="card">
+        <h2>Human Evaluation</h2>
+        <p class="hint">#363の意味判定とは独立。ここでは「ゆらとして自然か」を評価。</p>
+        <div id="humanAxes"></div>
+        <label>Notes<textarea id="humanNotes" rows="5" placeholder="自然さ、違和感、繰り返し癖など"></textarea></label>
+      </article>
+
+      <article class="card">
+        <h2>Provenance</h2>
+        <pre id="provenance">—</pre>
+      </article>
+
+      <article class="card span2">
+        <h2>Raw Result</h2>
+        <pre id="rawResult">—</pre>
+      </article>
+    </section>
+  </main>
+  <script>__SCRIPT__</script>
+</body>
+</html>
