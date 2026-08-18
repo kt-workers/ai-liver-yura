@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import cast
-
 from cloud_validation.v2_character_language_lab import (
     CharacterLanguageLabMode,
     CharacterLanguageLabRequest,
