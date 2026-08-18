@@ -42,7 +42,10 @@ def test_relation_role_limits_self_disclosure_to_speaker_owned_content() -> None
     instructions = relation_instructions()
 
     assert "話者自身についてのmaterial content" in instructions
-    assert "外部entity / eventの事実は、Plan外であってもself-disclosureではありません" in instructions
+    assert (
+        "外部entity / eventの事実は、Plan外であってもself-disclosureではありません"
+        in instructions
+    )
     assert "self-disclosure material contentがなければNOT_APPLICABLE" in instructions
     assert "UNSUPPORTED_EXTRAを理由にself_disclosure_relationを自動的にEXCEEDED" in instructions
 
