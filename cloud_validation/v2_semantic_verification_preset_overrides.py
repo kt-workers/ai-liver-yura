@@ -210,4 +210,85 @@ PRESET_OVERRIDES: dict[str, dict[str, object]] = {
             }
         ],
     },
+    "self_disclosure_not_applicable": {
+        "name": "self_disclosure_not_applicable",
+        "expected_acceptance": "accepted",
+        "self_disclosure": "forbidden",
+        "propositions": [
+            {
+                "proposition_id": "p1",
+                "subject_ref": "train",
+                "predicate": "delay_status",
+                "value": {"delayed": True},
+            }
+        ],
+        "segments": [
+            {
+                "segment_id": "s1",
+                "text": "電車は遅れてるよ。",
+                "realization_refs": ["p1"],
+            }
+        ],
+    },
+    "self_disclosure_within_policy": {
+        "name": "self_disclosure_within_policy",
+        "expected_acceptance": "accepted",
+        "self_disclosure": "fact_grounded",
+        "propositions": [
+            {
+                "proposition_id": "p1",
+                "subject_ref": "yura",
+                "predicate": "preference",
+                "value": {"item": "tea", "likes": True},
+                "fact_kind": "self",
+            }
+        ],
+        "segments": [
+            {
+                "segment_id": "s1",
+                "text": "私は紅茶が好きだよ。",
+                "realization_refs": ["p1"],
+            }
+        ],
+    },
+    "self_disclosure_forbidden_exceeded": {
+        "name": "self_disclosure_forbidden_exceeded",
+        "expected_acceptance": "rejected",
+        "self_disclosure": "forbidden",
+        "propositions": [
+            {
+                "proposition_id": "p1",
+                "subject_ref": "train",
+                "predicate": "delay_status",
+                "value": {"delayed": True},
+            }
+        ],
+        "segments": [
+            {
+                "segment_id": "s1",
+                "text": "電車は遅れてるよ。私は紅茶が好きだよ。",
+                "realization_refs": ["p1"],
+            }
+        ],
+    },
+    "self_disclosure_allowed_unsupported": {
+        "name": "self_disclosure_allowed_unsupported",
+        "expected_acceptance": "rejected",
+        "self_disclosure": "allowed",
+        "propositions": [
+            {
+                "proposition_id": "p1",
+                "subject_ref": "train",
+                "predicate": "delay_status",
+                "value": {"delayed": True},
+            }
+        ],
+        "segments": [
+            {
+                "segment_id": "s1",
+                "text": "電車は遅れてるよ。私は紅茶が好きだよ。",
+                "realization_refs": ["p1"],
+            }
+        ],
+    },
 }
