@@ -34,6 +34,8 @@ UI表示名は「何を検証しているか」という抽象的な分類名よ
 
 常時表示する要約は、最終判定、期待結果、total latency、input/output token。詳細はRole A、Role B、Runtime、完全結果JSONの順に折りたたみ表示する。
 
+新しい実行を開始した瞬間に、前回の結果表示・KPI・詳細JSONとExport対象をクリアする。新しいProvider/Runtime結果が返るまでは「実行中」と表示し、前回結果を現在実行中caseの結果と誤認できないようにする。
+
 ## Live fixture timing
 
 Labは#362/#330 Authorityを通すために1ms単位のsynthetic provenance timestampを生成する。Render実LLMでは、このsynthetic timeline全体を実時計より十分過去へ配置する。
@@ -46,7 +48,11 @@ Render entrypointではsynthetic baseを実時計より100ms過去に置く。�
 
 ## Export
 
-Exportには日本語プリセット名、stable case ID、expected/actual、latency、検証入力JSON、本番検証結果JSONを含める。
+Exportには日本語プリセット名、stable case ID、expected/actual、error message、latency、検証入力JSON、本番検証結果JSONを含める。
+
+成功・semantic reject・Provider fail-closedだけでなく、Domain invariant違反など `/api/verify` がHTTP 4xx/5xxを返した実行も検証結果として保存する。HTTP status、response body、エラーメッセージ、実行時input snapshotを保持し、失敗後も `検証データをExport` できるようにする。
+
+fetch/JSON parse等のclient-side failureも、取得できた範囲のcase/input/errorをfailure resultとして保持してExport可能にする。新しい実行開始時にはこのExport対象も必ず破棄し、前回失敗/成功を誤ってExportしない。
 
 ## Authority境界
 
