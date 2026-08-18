@@ -17,8 +17,8 @@ from .verifier import (
     RELATION_ROLE_ID,
     SemanticVerificationLiveStatePort,
     SemanticVerificationPolicy,
-    SemanticVerifier as _LegacySemanticVerifier,
 )
+from .verifier import SemanticVerifier as _LegacySemanticVerifier
 
 _SUPPORT_FIELD = "supporting_blind_unit_ids"
 
