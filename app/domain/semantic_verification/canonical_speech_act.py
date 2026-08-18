@@ -1,7 +1,4 @@
-from __future__ import annotations
-
 from .schemas import blind_instructions as _legacy_blind_instructions
-
 
 _NEW_DIRECTION_CONTRACT = """
 NEW_DIRECTIONは、actual utteranceが現在のtopic / discourse objective / initiativeから、
