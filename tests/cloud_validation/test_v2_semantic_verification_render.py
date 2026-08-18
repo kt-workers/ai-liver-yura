@@ -84,3 +84,21 @@ def test_lab_html_uses_fixed_workspace_and_collapsed_detail_sections() -> None:
     assert "__WORKSPACE_STYLE__" not in html
     assert "__WORKSPACE_SCRIPT__" not in html
     assert "__PRESET_DISPLAY__" not in html
+
+
+def test_lab_clears_previous_result_when_a_new_run_starts() -> None:
+    html = lab._INDEX_HTML
+
+    assert "clearResultForRun()" in html
+    assert "前回結果をクリアし、新しい実LLM結果を待っています。" in html
+    assert "lastResult=null;lastInputText=null" in html
+
+
+def test_lab_keeps_failed_run_exportable() -> None:
+    html = lab._INDEX_HTML
+
+    assert "request_failed" in html
+    assert "client_error" in html
+    assert "検証データをExportできます。" in html
+    assert "http_status:response.status" in html
+    assert "- エラー:" in html
