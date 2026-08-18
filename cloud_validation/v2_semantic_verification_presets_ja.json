@@ -5,6 +5,7 @@
   "polarity_reversal": {"label": "肯定・否定の反転を検出", "description": "Planの肯定内容が発話で否定へ反転した場合に拒否できるか確認します。"},
   "unknown_committed": {"label": "不明情報の断定化を検出", "description": "unknownの内容をCharacterが確定情報として断定した場合に拒否できるか確認します。"},
   "unsupported_extra": {"label": "Plan外の追加主張を検出", "description": "Planにない経験や事実を発話へ付け足した場合に検出できるか確認します。"},
+  "new_direction_budget_exceeded": {"label": "別の話題への展開を検出", "description": "会議から天気へ別の会話継続先を開いた場合に、new-direction予算0として拒否できるか確認します。両方の内容自体はPlan内です。"},
   "communicative_gratitude": {"label": "感謝という発話行為を保持", "description": "感謝というcommunicative material contentを自然表現へ実現して受理できるか確認します。"},
   "question_budget_exceeded": {"label": "質問予算の超過を検出", "description": "質問予算0のPlanに、相手へ実際に返答を要求する問いを追加した場合に拒否できるか確認します。"},
   "certainty_strengthened": {"label": "確信度の過剰強化を検出", "description": "likely程度の情報を確実だと強めてしまった場合に拒否できるか確認します。"},
