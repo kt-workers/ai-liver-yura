@@ -22,10 +22,8 @@ _ALLOWED_MODEL_CLASSES = frozenset(
 
 
 def _reasoning_mapping(
-    reasoning_by_effort: Mapping[LLMReasoningEffort, str] | None,
+    reasoning_by_effort: Mapping[LLMReasoningEffort, str],
 ) -> dict[LLMReasoningEffort, str]:
-    if reasoning_by_effort is None:
-        return {effort: effort.value for effort in LLMReasoningEffort}
     if not isinstance(reasoning_by_effort, Mapping):
         raise ValueError("Character Language reasoning mappingはMappingでなければなりません")
     mapping = dict(reasoning_by_effort)
@@ -42,7 +40,7 @@ def _reasoning_mapping(
 def character_language_openai_role_config(
     model_by_class: Mapping[LLMModelClass, str],
     *,
-    reasoning_by_effort: Mapping[LLMReasoningEffort, str] | None = None,
+    reasoning_by_effort: Mapping[LLMReasoningEffort, str],
 ) -> OpenAIResponsesRoleConfig:
     """#330 production Roleを#357 OpenAI Responses Adapterへ登録する。"""
 
@@ -80,7 +78,7 @@ def character_language_openai_role_config(
 def character_language_openai_role_configs(
     model_by_class: Mapping[LLMModelClass, str],
     *,
-    reasoning_by_effort: Mapping[LLMReasoningEffort, str] | None = None,
+    reasoning_by_effort: Mapping[LLMReasoningEffort, str],
 ) -> tuple[OpenAIResponsesRoleConfig, ...]:
     """OpenAIResponsesAdapter.from_environment()へ渡すproduction registration tuple。"""
 
