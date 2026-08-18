@@ -149,6 +149,16 @@ def test_degree_weakened_fixture_changes_degree_without_certainty_hedge() -> Non
     assert "degree': 0.8" in str(preset["propositions"])
 
 
+def test_multiple_material_fixture_has_no_unplanned_degree_signal() -> None:
+    assert "multiple_material_contents" in PRESET_OVERRIDES
+    preset = lab._PRESETS["multiple_material_contents"]
+
+    assert preset["expected_acceptance"] == "accepted"
+    assert "今日は雨が降っていて、寒いよ。" in str(preset["segments"])
+    assert "かなり" not in str(preset["segments"])
+    assert len(preset["propositions"]) == 2
+
+
 def test_render_fixture_does_not_create_future_transport_timestamps() -> None:
     reference = datetime(2026, 8, 18, 0, 45, tzinfo=timezone.utc)
     request = lab.SemanticVerificationLabRequest.model_validate(
