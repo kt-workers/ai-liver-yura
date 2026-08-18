@@ -53,6 +53,41 @@ Execution claimかどうかをpredicate文字列、prefix、keyword、regexで�
 
 public callerはcommitted Planをstatus値だけで直接製造できない。LLM / deterministic builderは`SpeechSemanticCandidate`までを作り、Authorityのvalidated commitだけがimmutable Planを構築する。
 
+### 4.1 Communicative material content
+
+What-to-sayは事実命題だけではない。次のような**発話行為そのものの意味**も、変更・欠落すると伝達意味が変わる場合は`SpeechSemanticPlan`へpropositionとして明示する。
+
+- greeting
+- acknowledgement
+- gratitude
+- apology
+- request
+- promise / commitment expression
+- consent / refusal
+- farewell
+- その他、Executiveが選択したcommunicative goal
+
+これらを自然言語フレーズの固定辞書で判定しない。
+
+Executive / trusted upstreamが確定したcommunicative semantic goalを、bounded `SpeechSemanticFact`としてsnapshotへ供給する。既存`SpeechSemanticFactKind.DISCOURSE`を使用できる。
+
+illustrative example:
+
+```text
+SpeechSemanticFact
+- fact_id = discourse-goal-1
+- kind = DISCOURSE
+- subject_ref = current_interaction
+- predicate = communicative_act
+- value = {kind: gratitude, target_ref: ...}
+```
+
+上記のpredicate/value文字列はtrigger仕様ではない。必要なdomain表現をtrusted upstreamがtyped/bounded factとして確定し、#362はそのFactを通常の`SpeechProposition`へgroundする。
+
+`SpeechIntentPayload.semantic_goal_ref`がcommunicative act Factを指す場合、そのFactとsemantic facetが一致するnon-`FORBIDDEN` propositionをPlanへ必ず保持する。Character #330はその意味を自然な文面へ実現するだけで、挨拶・謝意・謝罪・依頼等の有無を独自に発明・削除しない。
+
+これにより#363は、actual utterance内で独立観測したcommunicative material contentをPlan propositionへaccountできる。正常な挨拶等を「Plan外の追加」と誤判定しない一方、Planにないcommunicative actをCharacterが勝手に追加した場合は検証対象にできる。
+
 ## 5. Commit gate
 
 Authorityは次をfail-closedで検証する。
@@ -63,7 +98,7 @@ Authorityは次をfail-closedで検証する。
 4. proposition evidence refsがbounded fact IDsの部分集合。
 5. intentのsemantic goal / target / constraint refsがsnapshotへground済み。
 6. candidate truth constraint refsがExecutive / upstreamのauthoritative集合と完全一致。
-7. Executiveが要求するsemantic goal / target / evidenceは、`FORBIDDEN`以外で元Factのsubject / predicate / value / claim kind / execution status / polarity / certainty / degreeが全一致するpropositionによって実現する。参照IDだけ、またはFORBIDDEN指定だけでは充足しない。
+7. Executiveが要求するsemantic goal / target / evidenceは、`FORBIDDEN`以外で元Factのsubject / predicate / value / claim kind / execution status / polarity / certainty / degreeが全一致するpropositionによって実現する。**communicative actを表すDISCOURSE Factも同じGateを通し、特別扱いで省略しない。** 参照IDだけ、またはFORBIDDEN指定だけでは充足しない。
 8. Executiveのforbidden claimは、`FORBIDDEN`かつ元Factの全semantic facetが一致するpropositionとして保持する。別の禁止内容へ差し替えない。
 9. execution truth制約の対象factとproposition claim kind / status / polarity / certainty / degreeをclosedに照合する。unknown保持はpolarityとcertaintyをともに`UNKNOWN`にする。
 10. question / new-direction budgetがauthoritative上限以下。
@@ -90,13 +125,15 @@ slow Speech Semantics中もcurrent Speech、Body、Input、unrelated Activityを
 
 schema不正、stale、unbounded ref、truth矛盾、budget超過はPlanをcommitしない。free-form Provider例外やpayloadをPlanへコピーしない。
 
-#330は`SpeechSemanticPlan`だけを入力Authorityとして使い、raw Executive contextやraw internal stateを再解釈しない。#363はPlanのproposition IDとCharacter realization refsを比較できる。
+#330は`SpeechSemanticPlan`だけを入力Authorityとして使い、raw Executive contextやraw internal stateを再解釈しない。#363はPlanのproposition IDとactual Character textの意味関係を独立観測する。Character `realization_refs`はalignment hintでありsemantic proofではない。
 
 ## 9. 検証
 
 - direct answer / self-disclosure / unknown
 - positive / negative / certainty / degree
 - required / optional / forbidden
+- communicative material content: greeting / acknowledgement / gratitude / apology / request等
+- communicative semantic goalがnon-FORBIDDEN propositionへ必ずgroundされる
 - question / new-direction budget
 - execution truth一致・完了捏造拒否
 - snapshot外fact / constraint / target拒否
@@ -106,3 +143,4 @@ schema不正、stale、unbounded ref、truth矛盾、budget超過はPlanをcommi
 - slow complex Role中にunrelated simple pathが完了
 - same intent / plan競合commitは高々1件成功
 - final utterance / Character style / TTS / Body / Execution Authority非混入
+- finite natural-language phrase/keyword/regexをcommunicative act Authorityにしない
