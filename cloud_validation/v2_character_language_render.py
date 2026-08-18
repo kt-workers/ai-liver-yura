@@ -10,6 +10,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
 
 from app.domain.llm import LLMModelClass, LLMReasoningEffort
+from cloud_validation.v2_character_language_gate import CharacterLanguageLabGate
 from cloud_validation.v2_character_language_lab import (
     CharacterLanguageLabMode,
     CharacterLanguageLabRequest,
@@ -20,7 +21,8 @@ from cloud_validation.v2_character_language_lab import (
 _ROOT = Path(__file__).parent
 _security = HTTPBasic(auto_error=False)
 _settings = CharacterLanguageLabSettings.from_environment()
-_service = CharacterLanguageLabService(_settings)
+_engine = CharacterLanguageLabService(_settings)
+_service = CharacterLanguageLabGate(_engine)
 
 
 class RunInput(BaseModel):
@@ -93,7 +95,7 @@ def _workspace_html() -> str:
 
 
 def create_app(
-    service: CharacterLanguageLabService | None = None,
+    service: CharacterLanguageLabGate | None = None,
 ) -> FastAPI:
     lab_service = service or _service
     app = FastAPI(title="Yura V2 Character Language Lab")
