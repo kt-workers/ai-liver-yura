@@ -95,18 +95,46 @@ production `relation_output_schema()`は`proposition_observations[].supporting_b
 
 real Provider strict Structured Outputでは新schemaにより重複field自体を生成させない。
 
-## 6. V1/V2原則との整合
+## 6. Cross-field inconsistency failure policy
+
+単一正本化後も、Role Bはproposition relationとblind-unit accountingという異なる観測事実を返すため、次のようなcross-field不整合は起こり得る。
+
+- propositionは`ENTAILED`だが、accountingから導出できるsupport blind unitが0件
+- proposition evidenceが導出supportへgroundしない
+- `SUPPORTED_BY_PLAN` accountingが`ENTAILED`でないpropositionを参照する
+
+これらはactual utteranceを受理してよいことを意味しない。Provider candidateがproduction Domain contractを満たしていないため、**commitせずfail-closed**する。
+
+ただしDomain `ValueError`をHTTP 400等へ生で漏らしてはならない。production `SemanticVerifier`は、既存`SemanticVerificationError`を除くcandidate parse / Authority contract `ValueError`を `SCHEMA_INVALID` へ正規化する。
+
+これにより:
+
+- invalid Provider candidateはObservation / Acceptanceをcommitしない
+- callerはstructured failure codeを受け取れる
+- transport/UI固有のHTTP例外へ意味契約違反を混ぜない
+- failureをfixed phrase / regex / fallback判定で受理へ変えない
+
+## 7. V1/V2原則との整合
 
 この変更は以下の既存原則と一致する。
 
 - Provider自己申告をAuthority化しない
 - 同じ意味関係の二重正本を持たない
 - Runtimeで決定可能な派生値をLLMへ生成させない
+- invalid Provider candidateはcommitしない
 - finite自然語matcherを導入しない
 - Plan-aware Role Bのsemantic relation観測自体は維持する
 - Plan-blind Role Aとの独立性は維持する
 
-## 7. Verification
+## 8. Validation fixture separation
+
+「同じ意味を別表現で保持できるか」を測るcaseへ、継続時間・強度・程度など別facetを混ぜない。
+
+雨の`raining=true`だけを比較するbaseline variationでは、`ずっと`や`落ち続けている`のようにduration/degreeへ解釈し得る表現を除く。degree validationはdegreeを明示した専用caseで別途行う。
+
+shared-stance確認も同様に、semantic contentを固定したままinteraction actだけを変える。
+
+## 9. Verification
 
 自動:
 
@@ -114,17 +142,18 @@ real Provider strict Structured Outputでは新schemaにより重複field自体�
 - Provider schemaに`supporting_blind_unit_ids`が存在しない
 - mismatched legacy support自己申告をaccounting由来値で上書きする
 - non-SUPPORTED accountingからsupportを生成しない
+- candidate/Authority contract `ValueError`が`SCHEMA_INVALID`へ正規化される
 - existing Authority / evidence / acceptance tests PASS
 - Ruff / Mypy strict / full pytest / compileall / diff check
 
 実LLM #427:
 
-1. `雨を伝える②：水滴表現`を再実行
-2. `proposition supportとblind unit accountingが一致しません`が消えること
-3. Role B semantic relation / evidence / final acceptanceを確認
-4. 失敗時もExportしてProvider resultを保存
+1. `雨を伝える②：水滴表現`をdegree要因なしのfixtureで再実行
+2. Role B semantic relation / evidence / final acceptanceを確認
+3. `雨を伝える③：共有スタンス付き`もdegree要因なしで再実行
+4. 失敗時もExportしてfailure code / resultを保存
 
-## 8. Merge Gate
+## 10. Merge Gate
 
 この補修だけで#363をmergeしない。
 

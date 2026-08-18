@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import replace
+from datetime import datetime
 from typing import cast
 
 from app.domain.contracts.common import JsonValue
@@ -10,13 +11,19 @@ from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
 from app.usecases.ports.llm import LLMRolePort
 
 from .authority import SemanticVerificationAuthority
-from .contracts import BlindUnitAccountingRelation
+from .contracts import (
+    BlindUnitAccountingRelation,
+    SemanticVerificationContextSnapshot,
+    SemanticVerificationError,
+    SemanticVerificationFailureCode,
+)
 from .schemas import relation_instructions as _legacy_relation_instructions
 from .schemas import relation_output_schema as _legacy_relation_output_schema
 from .verifier import (
     RELATION_ROLE_ID,
     SemanticVerificationLiveStatePort,
     SemanticVerificationPolicy,
+    SemanticVerificationRun,
 )
 from .verifier import SemanticVerifier as _LegacySemanticVerifier
 
@@ -137,6 +144,33 @@ class SemanticVerifier(_LegacySemanticVerifier):
             authority,
             policy,
         )
+
+    async def verify(
+        self,
+        snapshot: SemanticVerificationContextSnapshot,
+        *,
+        blind_observation_id: str,
+        relation_observation_id: str,
+        semantic_observation_id: str,
+        acceptance_id: str,
+        created_at: datetime,
+    ) -> SemanticVerificationRun:
+        try:
+            return await super().verify(
+                snapshot,
+                blind_observation_id=blind_observation_id,
+                relation_observation_id=relation_observation_id,
+                semantic_observation_id=semantic_observation_id,
+                acceptance_id=acceptance_id,
+                created_at=created_at,
+            )
+        except SemanticVerificationError:
+            raise
+        except ValueError as error:
+            raise SemanticVerificationError(
+                SemanticVerificationFailureCode.SCHEMA_INVALID,
+                f"Semantic Verification candidate contract invalid: {error}",
+            ) from error
 
 
 __all__ = [

@@ -1,6 +1,17 @@
 from __future__ import annotations
 
-from app.domain.semantic_verification import SemanticVerifier, relation_instructions
+from datetime import datetime, timezone
+from typing import NoReturn, cast
+
+import pytest
+
+from app.domain.semantic_verification import (
+    SemanticVerificationContextSnapshot,
+    SemanticVerificationError,
+    SemanticVerificationFailureCode,
+    SemanticVerifier,
+    relation_instructions,
+)
 from app.domain.semantic_verification.canonical_relation import (
     _canonicalize_relation_value,
 )
@@ -71,3 +82,29 @@ def test_non_supported_accounting_derives_no_proposition_support() -> None:
     first = observations[0]
     assert isinstance(first, dict)
     assert first["supporting_blind_unit_ids"] == []
+
+
+@pytest.mark.asyncio
+async def test_candidate_value_error_is_structured_schema_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fail(*args: object, **kwargs: object) -> NoReturn:
+        del args, kwargs
+        raise ValueError("ENTAILED propositionにはevidenceとblind unit supportが必要です")
+
+    legacy_verifier = SemanticVerifier.__mro__[1]
+    monkeypatch.setattr(legacy_verifier, "verify", fail)
+    verifier = object.__new__(SemanticVerifier)
+
+    with pytest.raises(SemanticVerificationError) as caught:
+        await verifier.verify(
+            cast(SemanticVerificationContextSnapshot, object()),
+            blind_observation_id="blind-observation",
+            relation_observation_id="relation-observation",
+            semantic_observation_id="semantic-observation",
+            acceptance_id="acceptance",
+            created_at=datetime(2026, 8, 18, tzinfo=timezone.utc),
+        )
+
+    assert caught.value.code is SemanticVerificationFailureCode.SCHEMA_INVALID
+    assert "ENTAILED proposition" in str(caught.value)
