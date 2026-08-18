@@ -152,11 +152,13 @@ def test_degree_weakened_fixture_changes_degree_without_certainty_hedge() -> Non
 def test_multiple_material_fixture_has_no_unplanned_degree_signal() -> None:
     assert "multiple_material_contents" in PRESET_OVERRIDES
     preset = lab._PRESETS["multiple_material_contents"]
+    propositions = preset["propositions"]
 
     assert preset["expected_acceptance"] == "accepted"
     assert "今日は雨が降っていて、寒いよ。" in str(preset["segments"])
     assert "かなり" not in str(preset["segments"])
-    assert len(preset["propositions"]) == 2
+    assert isinstance(propositions, list)
+    assert len(propositions) == 2
 
 
 def test_render_fixture_does_not_create_future_transport_timestamps() -> None:
