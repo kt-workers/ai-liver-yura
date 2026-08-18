@@ -171,4 +171,43 @@ PRESET_OVERRIDES: dict[str, dict[str, object]] = {
             }
         ],
     },
+    "plan_anchoring_extra_claim": {
+        "name": "plan_anchoring_extra_claim",
+        "expected_acceptance": "rejected",
+        "propositions": [
+            {
+                "proposition_id": "p1",
+                "subject_ref": "train",
+                "predicate": "delay_status",
+                "value": {"delayed": True},
+            }
+        ],
+        "segments": [
+            {
+                "segment_id": "s1",
+                "text": "電車は遅れてるよ。到着は17時だよ。",
+                "realization_refs": ["p1"],
+            }
+        ],
+    },
+    "communicative_apology": {
+        "name": "communicative_apology",
+        "expected_acceptance": "accepted",
+        "propositions": [
+            {
+                "proposition_id": "p1",
+                "subject_ref": "current-interaction",
+                "predicate": "communicative-act",
+                "value": {"kind": "apology", "target_ref": "user"},
+                "fact_kind": "discourse",
+            }
+        ],
+        "segments": [
+            {
+                "segment_id": "s1",
+                "text": "ごめん。",
+                "realization_refs": ["p1"],
+            }
+        ],
+    },
 }
