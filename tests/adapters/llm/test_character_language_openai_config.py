@@ -31,6 +31,7 @@ from app.domain.llm import (
 )
 
 NOW = datetime(2026, 8, 19, tzinfo=timezone.utc)
+REASONING_BY_EFFORT = {effort: effort.value for effort in LLMReasoningEffort}
 
 
 @dataclass
@@ -107,13 +108,14 @@ def _candidate_payload() -> dict[str, object]:
     }
 
 
-def test_production_config_owns_role_schema_format_and_default_reasoning_mapping() -> None:
+def test_production_config_owns_role_schema_format_and_explicit_reasoning_mapping() -> None:
     config = character_language_openai_role_config(
         {
             LLMModelClass.FAST: "model-fast",
             LLMModelClass.BALANCED: "model-balanced",
             LLMModelClass.DEEP_REASONING: "model-deep",
-        }
+        },
+        reasoning_by_effort=REASONING_BY_EFFORT,
     )
 
     assert config.role_id == ROLE_ID
@@ -125,14 +127,19 @@ def test_production_config_owns_role_schema_format_and_default_reasoning_mapping
     assert config.model_policies[LLMModelClass.FAST].model == "model-fast"
     assert config.model_policies[LLMModelClass.BALANCED].model == "model-balanced"
     assert config.model_policies[LLMModelClass.DEEP_REASONING].model == "model-deep"
-    expected_reasoning = {effort: effort.value for effort in LLMReasoningEffort}
     actual_reasoning = dict(
         config.model_policies[LLMModelClass.BALANCED].reasoning_by_effort
     )
-    assert actual_reasoning == expected_reasoning
+    assert actual_reasoning == REASONING_BY_EFFORT
     assert character_language_openai_role_configs(
-        {LLMModelClass.BALANCED: "model-balanced"}
-    ) == (character_language_openai_role_config({LLMModelClass.BALANCED: "model-balanced"}),)
+        {LLMModelClass.BALANCED: "model-balanced"},
+        reasoning_by_effort=REASONING_BY_EFFORT,
+    ) == (
+        character_language_openai_role_config(
+            {LLMModelClass.BALANCED: "model-balanced"},
+            reasoning_by_effort=REASONING_BY_EFFORT,
+        ),
+    )
 
 
 def test_custom_reasoning_mapping_is_explicit_and_preserved() -> None:
@@ -157,7 +164,27 @@ def test_invalid_or_multimodal_model_mapping_is_rejected(
     models: dict[LLMModelClass, str],
 ) -> None:
     with pytest.raises(ValueError, match="model mapping"):
-        character_language_openai_role_config(models)
+        character_language_openai_role_config(
+            models,
+            reasoning_by_effort=REASONING_BY_EFFORT,
+        )
+
+
+@pytest.mark.parametrize(
+    "reasoning",
+    [
+        {},
+        {LLMReasoningEffort.MEDIUM: ""},
+    ],
+)
+def test_invalid_reasoning_mapping_is_rejected(
+    reasoning: dict[LLMReasoningEffort, str],
+) -> None:
+    with pytest.raises(ValueError, match="reasoning mapping"):
+        character_language_openai_role_config(
+            {LLMModelClass.BALANCED: "model-balanced"},
+            reasoning_by_effort=reasoning,
+        )
 
 
 def test_missing_model_or_reasoning_mapping_fails_before_provider_call() -> None:
@@ -217,7 +244,8 @@ def test_schema_violation_fails_closed_without_character_fallback() -> None:
         invalid["unexpected_semantic_override"] = "invented"
         client = FakeClient(FakeResponse(json.dumps(invalid, ensure_ascii=False)))
         config = character_language_openai_role_config(
-            {LLMModelClass.BALANCED: "model-balanced"}
+            {LLMModelClass.BALANCED: "model-balanced"},
+            reasoning_by_effort=REASONING_BY_EFFORT,
         )
         result = await OpenAIResponsesAdapter(client, (config,), now=lambda: NOW).invoke(_request())
 
