@@ -139,6 +139,16 @@ def test_gratitude_fixture_contains_only_gratitude_act() -> None:
     assert "感謝だけ" in _PRESET_DISPLAY["communicative_gratitude"]["description"]
 
 
+def test_degree_weakened_fixture_changes_degree_without_certainty_hedge() -> None:
+    assert "degree_weakened" in PRESET_OVERRIDES
+    preset = lab._PRESETS["degree_weakened"]
+
+    assert preset["expected_acceptance"] == "rejected"
+    assert "ほんの少しだけ興味あるよ。" in str(preset["segments"])
+    assert "かな" not in str(preset["segments"])
+    assert "degree': 0.8" in str(preset["propositions"])
+
+
 def test_render_fixture_does_not_create_future_transport_timestamps() -> None:
     reference = datetime(2026, 8, 18, 0, 45, tzinfo=timezone.utc)
     request = lab.SemanticVerificationLabRequest.model_validate(
