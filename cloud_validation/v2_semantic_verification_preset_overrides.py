@@ -146,4 +146,29 @@ PRESET_OVERRIDES: dict[str, dict[str, object]] = {
             }
         ],
     },
+    "multiple_material_contents": {
+        "name": "multiple_material_contents",
+        "expected_acceptance": "accepted",
+        "propositions": [
+            {
+                "proposition_id": "p1",
+                "subject_ref": "weather-today",
+                "predicate": "rain_status",
+                "value": {"raining": True},
+            },
+            {
+                "proposition_id": "p2",
+                "subject_ref": "temperature-today",
+                "predicate": "condition",
+                "value": {"cold": True},
+            },
+        ],
+        "segments": [
+            {
+                "segment_id": "s1",
+                "text": "今日は雨が降っていて、寒いよ。",
+                "realization_refs": ["p1", "p2"],
+            }
+        ],
+    },
 }
