@@ -19,6 +19,7 @@
 - `speech_semantics_contracts.md` — What-to-say Authority / typed SpeechSemanticPlan / simple・complex commit gate
 - `character_language_contracts.md` — #330 SpeechSemanticPlan→CharacterUtterance How-to-say realization / live freshness / #363 boundary contracts
 - `character_language_provider_contracts.md` — #330 production instructions / strict output schema / OpenAI Role config / #434 reuse contracts
+- `character_language_variation_contracts.md` — #330 same-Plan bounded prior realization / repetition-awareness / variation quality contracts
 - `character_language_lab_contracts.md` — #434 Integrated/Isolation Character Language quality Lab / Human + #363 dual evaluation contracts
 - `character_language_lab_evidence_gate.md` — #434 engine→machine gate→Human gate / Integrated evidence fail-closed contracts
 - `character_projection_contracts.md` — Human-readable Character Definition / structured document / typed Runtime Profile projection contracts
