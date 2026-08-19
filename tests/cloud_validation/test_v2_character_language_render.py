@@ -1,7 +1,11 @@
 from fastapi.routing import APIRoute
 
+from cloud_validation.v2_character_language_diagnostics import (
+    DiagnosticCharacterLanguageLabService,
+)
 from cloud_validation.v2_character_language_gate import CharacterLanguageLabGate
 from cloud_validation.v2_character_language_render import (
+    _engine,
     _service,
     _workspace_html,
     create_app,
@@ -10,6 +14,7 @@ from cloud_validation.v2_character_language_render import (
 
 def test_render_runtime_is_wrapped_by_final_evidence_gate() -> None:
     assert isinstance(_service, CharacterLanguageLabGate)
+    assert isinstance(_engine, DiagnosticCharacterLanguageLabService)
 
 
 def test_render_exposes_health_readiness_run_and_workspace_routes() -> None:
