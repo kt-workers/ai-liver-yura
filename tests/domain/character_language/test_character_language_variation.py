@@ -146,7 +146,12 @@ def test_prior_realizations_require_same_plan_character_and_constraints() -> Non
         )
 
 
-def test_prior_realizations_reject_future_commit() -> None:
+def test_prior_realizations_reject_before_plan_commit_and_future_commit() -> None:
+    with pytest.raises(ValueError, match="Plan commitより前"):
+        replace(
+            context(),
+            prior_realizations=(replace(prior_view(1), committed_at=NOW - timedelta(seconds=1)),),
+        )
     with pytest.raises(ValueError, match="未来"):
         replace(
             context(),
