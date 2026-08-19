@@ -98,7 +98,7 @@ Human評価を#363判定へ入力しない。
 
 ---
 
-## 5. UI constraint
+## 5. UI / API constraints
 
 Integrated Mode選択時はUIで#363 semantic verificationを必須ONとし、利用者がOFFにできないようにする。
 
@@ -106,6 +106,21 @@ APIを直接呼んでOFF指定された場合もserver-side evidence gateでfail
 UI制約だけをsecurity/authority boundaryにしない。
 
 #354 production Character Definitionが未準備ならIntegrated Generateを無効化し、Isolationのみ利用可能とする。
+
+### 5.1 Reasoning comparison range
+
+#434 current Labのmodel/reasoning比較はProvider固有変換を暗黙補完しない。
+
+現時点でUI/APIが比較用に受け付けるFoundation reasoning effortは次の3値だけとする。
+
+- `low`
+- `medium`
+- `high`
+
+`minimal`はmodel/providerごとの明示mappingが#434側で確定するまで拒否する。
+UIから隠すだけでなくAPI request validationでもfail-closedする。
+
+#330 production helper自体の契約を狭めるものではない。これは#434 Labの比較条件を、実測済みの明示mapping範囲へ限定するvalidation policyである。
 
 ---
 
@@ -137,3 +152,4 @@ Human rating入力完了をもって自動的に`integrated_evidence_eligible=tr
 - 全actual utteranceが`ACCEPTED`ならmachine gate PASS
 - machine gate PASS後もHuman評価前はIntegrated evidence未確定
 - readiness取得時点でIntegrated evidence PASSを主張しない
+- `minimal` reasoningはUI/APIの双方で拒否
