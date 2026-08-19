@@ -24,8 +24,14 @@ from .realizer import (
     parse_candidate,
 )
 from .schemas import character_language_instructions, character_language_output_schema
+from .variation import (
+    MAX_PRIOR_REALIZATIONS,
+    CharacterLanguagePriorConstraintRevision,
+    CharacterLanguagePriorRealizationView,
+)
 
 __all__ = [
+    "MAX_PRIOR_REALIZATIONS",
     "CharacterLanguageAuthority",
     "CharacterLanguageCommitState",
     "CharacterLanguageConstraintKind",
@@ -35,6 +41,8 @@ __all__ = [
     "CharacterLanguageFailureCode",
     "CharacterLanguageLiveStatePort",
     "CharacterLanguagePolicy",
+    "CharacterLanguagePriorConstraintRevision",
+    "CharacterLanguagePriorRealizationView",
     "CharacterLanguageRealizer",
     "CharacterUtterance",
     "CharacterUtteranceCandidate",
