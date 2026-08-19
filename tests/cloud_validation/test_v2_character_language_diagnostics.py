@@ -24,7 +24,10 @@ def test_semantic_verification_error_exports_domain_safe_code_and_message() -> N
 
 
 def test_domain_value_error_exports_bounded_validation_message() -> None:
-    value = semantic_failure_diagnostic(ValueError("relation identity mismatch"), latency_ms=1.0)
+    value = semantic_failure_diagnostic(
+        ValueError("relation identity mismatch"),
+        latency_ms=1.0,
+    )
 
     assert value["error_type"] == "ValueError"
     assert value["error_code"] is None
@@ -32,7 +35,10 @@ def test_domain_value_error_exports_bounded_validation_message() -> None:
 
 
 def test_unknown_exception_does_not_export_raw_message() -> None:
-    value = semantic_failure_diagnostic(RuntimeError("SECRET_PROVIDER_DETAIL"), latency_ms=2.0)
+    value = semantic_failure_diagnostic(
+        RuntimeError("SECRET_PROVIDER_DETAIL"),
+        latency_ms=2.0,
+    )
 
     assert value["error_type"] == "RuntimeError"
     assert "error_code" not in value
