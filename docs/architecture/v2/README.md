@@ -24,6 +24,7 @@
 - `character_language_lab_contracts.md` — #434 Integrated/Isolation Character Language quality Lab / Human + #363 dual evaluation contracts
 - `character_language_lab_evidence_gate.md` — #434 engine→machine gate→Human gate / Integrated evidence fail-closed contracts
 - `character_language_lab_same_plan_variation.md` — #434 strict 1-batch/1-Plan repeated variation / bounded prior observability contracts
+- `character_language_lab_character_failure_diagnostics.md` — #434 Character Provider failure / Domain commit rejectionのsafe diagnostics contracts
 - `character_projection_contracts.md` — Human-readable Character Definition / structured document / typed Runtime Profile projection contracts
 - `character_psychological_projection_contracts.md` — Character精神構造Layers 1–6 / causal refs / dynamic Layer 7 boundary
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
