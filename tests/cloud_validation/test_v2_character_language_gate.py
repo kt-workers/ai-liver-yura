@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from typing import cast
 
+import pytest
+
 from app.domain.llm import LLMModelClass, LLMReasoningEffort
 from cloud_validation.v2_character_language_gate import CharacterLanguageLabGate
 from cloud_validation.v2_character_language_lab import (
@@ -27,6 +29,8 @@ def _request(
     mode: CharacterLanguageLabMode,
     *,
     semantic: bool = True,
+    character_reasoning: LLMReasoningEffort = LLMReasoningEffort.MEDIUM,
+    semantic_reasoning: LLMReasoningEffort = LLMReasoningEffort.MEDIUM,
 ) -> CharacterLanguageLabRequest:
     return CharacterLanguageLabRequest(
         mode,
@@ -34,10 +38,10 @@ def _request(
         1,
         "character-model",
         LLMModelClass.BALANCED,
-        LLMReasoningEffort.MEDIUM,
+        character_reasoning,
         "semantic-model",
         LLMModelClass.BALANCED,
-        LLMReasoningEffort.MEDIUM,
+        semantic_reasoning,
         run_semantic_verification=semantic,
     )
 
@@ -120,3 +124,26 @@ def test_integrated_acceptance_still_waits_for_human_character_evaluation() -> N
     assert result["integrated_evidence_eligible"] is False
     assert result["human_evaluation_required"] is True
     assert result["gate_blocker"] == "HUMAN_CHARACTER_EVALUATION_REQUIRED"
+
+
+@pytest.mark.parametrize(
+    ("character_reasoning", "semantic_reasoning"),
+    [
+        (LLMReasoningEffort.MINIMAL, LLMReasoningEffort.MEDIUM),
+        (LLMReasoningEffort.MEDIUM, LLMReasoningEffort.MINIMAL),
+    ],
+)
+def test_minimal_reasoning_is_rejected_before_engine_execution(
+    character_reasoning: LLMReasoningEffort,
+    semantic_reasoning: LLMReasoningEffort,
+) -> None:
+    with pytest.raises(ValueError, match="minimal reasoning"):
+        asyncio.run(
+            _gate({"ok": True, "runs": []}).run(
+                _request(
+                    CharacterLanguageLabMode.ISOLATION,
+                    character_reasoning=character_reasoning,
+                    semantic_reasoning=semantic_reasoning,
+                )
+            )
+        )
