@@ -142,6 +142,25 @@ JSON Exportには最低限:
 Human rating入力完了をもって自動的に`integrated_evidence_eligible=true`へ書き換えない。
 最終PASSはHuman判断とGitHub Verification evidence reviewで確定する。
 
+### 6.1 Semantic failure diagnostics
+
+Isolation / Integratedのどちらでも、#363が`SEMANTIC_VERIFICATION_FAILED`になった場合は、再現に必要な**Domain-safe診断情報**をExportへ残す。
+
+`SemanticVerificationError`では最低限:
+
+- `error_type`
+- `error_code`
+- `error_message`
+- `latency_ms`
+
+を記録する。
+
+`error_code` / `error_message`は#363 Domainが生成した固定のfailure code / validation messageに限定し、Provider SDK例外、API key、HTTP header、credential、raw secretをExportしない。
+
+`ValueError`等のDomain validation failureでは、固定のvalidation messageを最大500文字まで記録してよい。未知の例外は`error_type`のみとし、raw exception文字列をExportしない。
+
+このdiagnostic情報はrelease evidenceそのものではなく、`Provider succeeded`と`Domain commit rejected`を区別するためのLab observabilityである。診断追加のために#363 production semantic policyを緩和してはならない。
+
 ---
 
 ## 7. Required regression
@@ -153,3 +172,5 @@ Human rating入力完了をもって自動的に`integrated_evidence_eligible=tr
 - machine gate PASS後もHuman評価前はIntegrated evidence未確定
 - readiness取得時点でIntegrated evidence PASSを主張しない
 - `minimal` reasoningはUI/APIの双方で拒否
+- `SemanticVerificationError`はcode / Domain-safe messageをExportできる
+- 未知例外はraw messageをExportしない
