@@ -78,6 +78,12 @@ UNSUPPORTED_EXTRAは対応するPlan proposition自体がないmaterial content�
     return augment_relation_instructions(legacy.replace(old, new))
 
 
+def _plain_evidence_ref(value: object) -> object:
+    if not isinstance(value, Mapping):
+        return value
+    return {str(key): item for key, item in value.items()}
+
+
 def _blind_evidence_by_unit(relation_input: object) -> dict[str, list[object]]:
     if not isinstance(relation_input, Mapping):
         return {}
@@ -96,7 +102,9 @@ def _blind_evidence_by_unit(relation_input: object) -> dict[str, list[object]]:
         evidence_refs = raw_unit.get("evidence_refs")
         if not isinstance(unit_id, str) or not isinstance(evidence_refs, (list, tuple)):
             continue
-        evidence_by_unit[unit_id] = [deepcopy(item) for item in evidence_refs]
+        evidence_by_unit[unit_id] = [
+            _plain_evidence_ref(item) for item in evidence_refs
+        ]
     return evidence_by_unit
 
 
