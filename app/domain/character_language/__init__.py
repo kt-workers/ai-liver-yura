@@ -29,6 +29,7 @@ from .variation import (
     CharacterLanguagePriorConstraintRevision,
     CharacterLanguagePriorRealizationView,
 )
+from .variation_builder import prior_realization_from_utterance
 
 __all__ = [
     "MAX_PRIOR_REALIZATIONS",
@@ -56,5 +57,6 @@ __all__ = [
     "commit_result",
     "descriptor",
     "parse_candidate",
+    "prior_realization_from_utterance",
     "validate_candidate_structure",
 ]
