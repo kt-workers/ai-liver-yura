@@ -29,33 +29,39 @@ from .verifier import (
 from .verifier import SemanticVerifier as _LegacySemanticVerifier
 
 _SUPPORT_FIELD = "supporting_blind_unit_ids"
+_EVIDENCE_FIELD = "evidence_refs"
+_DERIVED_PROPOSITION_FIELDS = frozenset({_SUPPORT_FIELD, _EVIDENCE_FIELD})
 
 
 def relation_output_schema() -> dict[str, object]:
-    """Role B Provider schemaから重複support edgeを除いたproduction schema。"""
+    """Role B Provider schemaからRuntime導出可能なgrounding fieldを除く。"""
 
     schema = deepcopy(_legacy_relation_output_schema())
     properties = cast(dict[str, object], schema["properties"])
     observations = cast(dict[str, object], properties["proposition_observations"])
     observation = cast(dict[str, object], observations["items"])
     required = cast(list[str], observation["required"])
-    observation["required"] = [item for item in required if item != _SUPPORT_FIELD]
+    observation["required"] = [
+        item for item in required if item not in _DERIVED_PROPOSITION_FIELDS
+    ]
     observation_properties = cast(dict[str, object], observation["properties"])
-    observation_properties.pop(_SUPPORT_FIELD, None)
+    for field in _DERIVED_PROPOSITION_FIELDS:
+        observation_properties.pop(field, None)
     return schema
 
 
 def relation_instructions() -> str:
-    """Role Bへsupport edgeとspeech-actのcanonical意味境界を明示する。"""
+    """Role Bへsupport edge・evidence・speech-actのcanonical境界を明示する。"""
 
     legacy = _legacy_relation_instructions()
     old = """ENTAILED relationはactual segmentのexact quote evidenceと、
 その意味を担うblind unit IDを示してください。
 SUPPORTED_BY_PLAN accountingは、対応proposition側も同じblind unitをsupportとして
 ENTAILEDしている場合だけ使用してください。"""
-    new = """ENTAILED relationにはactual segmentのexact quote evidenceを示してください。
-Plan propositionとblind unitのsupport対応はblind_unit_accountingだけを正本として出力してください。
-proposition_observations側へ同じsupport IDを重複出力してはいけません。
+    new = """Plan propositionとblind unitのsupport対応はblind_unit_accountingだけを正本として出力してください。
+proposition_observations側へsupport IDやevidence_refsを重複出力してはいけません。
+proposition grounding evidenceは、先行確定済みBlindUtteranceObservationのsupport対象unitから
+Runtimeが決定論的に導出します。Role Bが別quoteを再生成してはいけません。
 SUPPORTED_BY_PLANはsemantic groundingを意味し、発話許可を意味しません。
 actual unitがどのPlan propositionと意味的に対応するかを表します。
 対応するPlan propositionのrelationがENTAILEDまたはCONTRADICTEDの場合に使用してください。
@@ -71,8 +77,33 @@ UNSUPPORTED_EXTRAは対応するPlan proposition自体がないmaterial content�
     return augment_relation_instructions(legacy.replace(old, new))
 
 
-def _canonicalize_relation_value(value: object) -> object:
-    """accountingを唯一のsupport edgeとして逆向きsupportを決定論的に導出する。"""
+def _blind_evidence_by_unit(relation_input: object) -> dict[str, list[object]]:
+    if not isinstance(relation_input, Mapping):
+        return {}
+    blind_value = relation_input.get("blind_observation")
+    if not isinstance(blind_value, Mapping):
+        return {}
+    units_value = blind_value.get("units")
+    if not isinstance(units_value, (list, tuple)):
+        return {}
+
+    evidence_by_unit: dict[str, list[object]] = {}
+    for raw_unit in units_value:
+        if not isinstance(raw_unit, Mapping):
+            continue
+        unit_id = raw_unit.get("unit_id")
+        evidence_refs = raw_unit.get("evidence_refs")
+        if not isinstance(unit_id, str) or not isinstance(evidence_refs, (list, tuple)):
+            continue
+        evidence_by_unit[unit_id] = [deepcopy(item) for item in evidence_refs]
+    return evidence_by_unit
+
+
+def _canonicalize_relation_value(
+    value: object,
+    relation_input: object | None = None,
+) -> object:
+    """accountingとfixed blind evidenceからproposition groundingを決定論的に導出する。"""
 
     if not isinstance(value, Mapping):
         return value
@@ -103,6 +134,7 @@ def _canonicalize_relation_value(value: object) -> object:
                     blind_unit_id
                 )
 
+    evidence_by_unit = _blind_evidence_by_unit(relation_input)
     normalized_observations: list[object] = []
     for raw_observation in observations_value:
         if not isinstance(raw_observation, Mapping):
@@ -110,11 +142,18 @@ def _canonicalize_relation_value(value: object) -> object:
             continue
         observation = dict(cast(Mapping[str, object], raw_observation))
         proposition_id = observation.get("proposition_id")
-        observation[_SUPPORT_FIELD] = (
+        support_ids = (
             list(support_by_proposition.get(proposition_id, ()))
             if isinstance(proposition_id, str)
             else []
         )
+        evidence_refs: list[object] = []
+        for unit_id in support_ids:
+            for evidence_ref in evidence_by_unit.get(unit_id, ()):  # pragma: no branch
+                if evidence_ref not in evidence_refs:
+                    evidence_refs.append(deepcopy(evidence_ref))
+        observation[_SUPPORT_FIELD] = support_ids
+        observation[_EVIDENCE_FIELD] = evidence_refs
         normalized_observations.append(observation)
     candidate["proposition_observations"] = normalized_observations
     return candidate
@@ -128,7 +167,10 @@ class _CanonicalRelationOutputPort:
         result = await self._inner.invoke(request)
         if request.role_id != RELATION_ROLE_ID or result.output is None:
             return result
-        normalized = _canonicalize_relation_value(result.output.value)
+        normalized = _canonicalize_relation_value(
+            result.output.value,
+            request.input.value,
+        )
         return replace(
             result,
             output=StructuredPayload(
@@ -139,7 +181,7 @@ class _CanonicalRelationOutputPort:
 
 
 class SemanticVerifier(_LegacySemanticVerifier):
-    """Role B support edgeを単一正本化して既存Authorityへ渡すproduction Verifier。"""
+    """Role B groundingを単一正本化して既存Authorityへ渡すproduction Verifier。"""
 
     def __init__(
         self,
