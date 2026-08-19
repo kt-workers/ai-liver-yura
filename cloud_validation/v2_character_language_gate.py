@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.domain.llm import LLMReasoningEffort
 from cloud_validation.v2_character_language_lab import (
     CharacterLanguageLabMode,
     CharacterLanguageLabRequest,
@@ -20,6 +21,12 @@ class CharacterLanguageLabGate:
         return value
 
     async def run(self, request: CharacterLanguageLabRequest) -> dict[str, object]:
+        if (
+            request.character_reasoning_effort is LLMReasoningEffort.MINIMAL
+            or request.semantic_reasoning_effort is LLMReasoningEffort.MINIMAL
+        ):
+            raise ValueError("#434 Labではminimal reasoningをまだ比較対象にできません")
+
         result = dict(await self._service.run(request))
         if request.mode is CharacterLanguageLabMode.ISOLATION:
             result["evidence_class"] = "isolation_only"
