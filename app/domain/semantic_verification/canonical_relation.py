@@ -58,7 +58,8 @@ def relation_instructions() -> str:
 その意味を担うblind unit IDを示してください。
 SUPPORTED_BY_PLAN accountingは、対応proposition側も同じblind unitをsupportとして
 ENTAILEDしている場合だけ使用してください。"""
-    new = """Plan propositionとblind unitのsupport対応はblind_unit_accountingだけを正本として出力してください。
+    new = """Plan propositionとblind unitのsupport対応は
+blind_unit_accountingだけを正本として出力してください。
 proposition_observations側へsupport IDやevidence_refsを重複出力してはいけません。
 proposition grounding evidenceは、先行確定済みBlindUtteranceObservationのsupport対象unitから
 Runtimeが決定論的に導出します。Role Bが別quoteを再生成してはいけません。
@@ -149,7 +150,7 @@ def _canonicalize_relation_value(
         )
         evidence_refs: list[object] = []
         for unit_id in support_ids:
-            for evidence_ref in evidence_by_unit.get(unit_id, ()):  # pragma: no branch
+            for evidence_ref in evidence_by_unit.get(unit_id, ()):
                 if evidence_ref not in evidence_refs:
                     evidence_refs.append(deepcopy(evidence_ref))
         observation[_SUPPORT_FIELD] = support_ids
