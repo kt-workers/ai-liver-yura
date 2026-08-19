@@ -5,16 +5,20 @@ from typing import cast
 import pytest
 
 from app.domain.character_language import (
+    CharacterLanguageAuthority,
     CharacterLanguagePriorConstraintRevision,
     CharacterLanguagePriorRealizationView,
     build_request,
     character_language_instructions,
+    prior_realization_from_utterance,
 )
 from app.domain.contracts.common import thaw_json
 from tests.domain.character_language.test_character_language import (
     NOW,
+    candidate,
     constraints,
     context,
+    current,
     policy,
 )
 
@@ -72,6 +76,33 @@ def test_bounded_prior_realizations_project_style_only_input_v2() -> None:
     assert "semantic_plan_id" not in prior[0]
     assert "constraint_revisions" not in prior[0]
     assert "history" not in payload
+
+
+def test_committed_utterance_builder_preserves_style_only_provenance() -> None:
+    source_snapshot = context()
+    utterance = CharacterLanguageAuthority().commit(
+        candidate(source_snapshot, text="もちろん、一緒に進めよう。"),
+        source_snapshot,
+        current=current(source_snapshot),
+        utterance_id="utterance-source",
+        committed_at=NOW + timedelta(seconds=2),
+    )
+    prior = prior_realization_from_utterance(utterance, source_snapshot.constraints)
+    next_snapshot = replace(
+        source_snapshot,
+        request_id="request-next",
+        captured_at=NOW + timedelta(seconds=3),
+        prior_realizations=(prior,),
+    )
+
+    payload = next_snapshot.to_dict()
+    assert payload["prior_realizations"] == [
+        {
+            "source_utterance_id": "utterance-source",
+            "text": "もちろん、一緒に進めよう。",
+            "committed_at": (NOW + timedelta(seconds=2)).isoformat(),
+        }
+    ]
 
 
 def test_prior_realizations_reject_more_than_three() -> None:
