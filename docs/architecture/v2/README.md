@@ -21,6 +21,10 @@
 - `character_language_provider_contracts.md` — #330 production instructions / strict output schema / OpenAI Role config / #434 reuse contracts
 - `character_language_variation_contracts.md` — #330 same-Plan bounded prior realization / weak repetition-awareness / variation quality contracts
 - `character_language_semantic_repair_contracts.md` — #330 one-shot generation / #363 REJECTED時のみbounded semantic-safe repair contracts
+- `semantic_verification_contracts.md` — #363 two-stage independent semantic observation / closed acceptance contracts
+- `semantic_verification_observer_strategy.md` — #363 Plan-blind inventory → Plan-aware relation/accounting / live validation strategy
+- `semantic_verification_relation_edge_contract.md` — #363 Role B support/evidence single-source normalization / relation edge contracts
+- `semantic_verification_self_disclosure_relation_contract.md` — #363 Plan-supported contentとself-disclosure追加意味の整合 / false-reject prevention contracts
 - `character_projection_contracts.md` — Human-readable Character Definition / structured document / typed Runtime Profile projection contracts
 - `character_psychological_projection_contracts.md` — Character精神構造Layers 1–6 / causal refs / dynamic Layer 7 boundary
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
