@@ -10,20 +10,20 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
 
 from app.domain.llm import LLMModelClass, LLMReasoningEffort
-from cloud_validation.v2_character_language_diagnostics import (
-    DiagnosticCharacterLanguageLabService,
-)
 from cloud_validation.v2_character_language_gate import CharacterLanguageLabGate
 from cloud_validation.v2_character_language_lab import (
     CharacterLanguageLabMode,
     CharacterLanguageLabRequest,
     CharacterLanguageLabSettings,
 )
+from cloud_validation.v2_character_language_same_plan import (
+    StrictSamePlanCharacterLanguageLabService,
+)
 
 _ROOT = Path(__file__).parent
 _security = HTTPBasic(auto_error=False)
 _settings = CharacterLanguageLabSettings.from_environment()
-_engine = DiagnosticCharacterLanguageLabService(_settings)
+_engine = StrictSamePlanCharacterLanguageLabService(_settings)
 _service = CharacterLanguageLabGate(_engine)
 
 
