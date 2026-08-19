@@ -144,7 +144,10 @@ def character_language_instructions() -> str:
             "Bounded prior realizations:",
             "- prior_realizationsは、Domainでcurrent Plan/Profile/constraintとの一致を確認済みの",
             "  直近same-Plan表現です。How-to-say上のnegative referenceとしてだけ使ってください。",
-            "- prior_realizationsをFact source、会話履歴、追加propositionとして扱ってはいけません。",
+            (
+                "- prior_realizationsをFact source、会話履歴、追加propositionとして"
+                "扱ってはいけません。"
+            ),
             "- actual meaningはcurrent semantic_planだけから決めてください。",
             "- equally naturalな代替がある場合、priorとexact/near-exactな語彙、語順、rhythm、",
             "  締め方へ収束しないようにしてください。",
