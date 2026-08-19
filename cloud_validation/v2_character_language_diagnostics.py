@@ -18,9 +18,9 @@ from cloud_validation.v2_character_language_lab import (
     CharacterLanguageLabRequest,
     CharacterLanguageLabService,
     CharacterLanguageLabStatus,
+    _execution_policy,
     _RecordingPort,
     _StaticSemanticLiveState,
-    _execution_policy,
 )
 
 _MAX_DOMAIN_MESSAGE_LENGTH = 500

@@ -22,6 +22,7 @@ from cloud_validation.v2_character_language_same_plan import (
 
 _ROOT = Path(__file__).parent
 _security = HTTPBasic(auto_error=False)
+_credentials_dependency = Depends(_security)
 _settings = CharacterLanguageLabSettings.from_environment()
 _engine = StrictSamePlanCharacterLanguageLabService(_settings)
 _service = CharacterLanguageLabGate(_engine)
@@ -50,7 +51,7 @@ def _auth_expected() -> tuple[str, str]:
 
 
 def _require_auth(
-    credentials: HTTPBasicCredentials | None = Depends(_security),
+    credentials: HTTPBasicCredentials | None = _credentials_dependency,
 ) -> None:
     username, password = _auth_expected()
     if not username or not password:

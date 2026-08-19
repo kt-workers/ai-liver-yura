@@ -59,6 +59,7 @@ from app.domain.llm import (
     LLMReasoningEffort,
     LLMRoleRequest,
     LLMRoleResult,
+    LLMRoleStatus,
 )
 from app.domain.semantic_verification import (
     BLIND_INPUT_SCHEMA,
@@ -313,37 +314,74 @@ class _StaticSemanticLiveState:
 class _RecordingPort:
     def __init__(self, delegate: LLMRolePort) -> None:
         self._delegate = delegate
-        self.results: list[LLMRoleResult] = []
-        self.latency_ms: list[tuple[str, float]] = []
+        self._records: list[tuple[LLMRoleRequest, LLMRoleResult, float]] = []
+        self._results_by_request: dict[tuple[str, str], LLMRoleResult] = {}
 
     async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
         started = perf_counter()
         result = await self._delegate.invoke(request)
-        self.results.append(result)
-        self.latency_ms.append(
-            (request.role_id, round((perf_counter() - started) * 1000, 3))
-        )
+        latency = round((perf_counter() - started) * 1000, 3)
+        self._records.append((request, result, latency))
+        self._results_by_request[(request.request_id, request.role_id)] = result
         return result
+
+    def result_for(self, request_id: str, role_id: str) -> LLMRoleResult | None:
+        return self._results_by_request.get((request_id, role_id))
 
     def metrics(self) -> list[dict[str, object]]:
         values: list[dict[str, object]] = []
-        for index, result in enumerate(self.results):
-            role_id, latency = self.latency_ms[index]
-            values.append(
-                {
-                    "role_id": role_id,
-                    "status": result.status.value,
-                    "model_class": result.model_class.value,
-                    "attempt_count": result.attempt_count,
-                    "token_usage": result.token_usage.to_dict(),
-                    "provider_latency_ms": latency,
-                    "started_at": None
-                    if result.started_at is None
-                    else result.started_at.isoformat(),
-                    "completed_at": result.completed_at.isoformat(),
-                }
-            )
+        for request, result, latency in self._records:
+            value: dict[str, object] = {
+                "request_id": request.request_id,
+                "role_id": request.role_id,
+                "status": result.status.value,
+                "model_class": result.model_class.value,
+                "attempt_count": result.attempt_count,
+                "token_usage": result.token_usage.to_dict(),
+                "provider_latency_ms": latency,
+                "started_at": None
+                if result.started_at is None
+                else result.started_at.isoformat(),
+                "completed_at": result.completed_at.isoformat(),
+            }
+            if result.failure is not None:
+                value["failure_code"] = result.failure.code.value
+                value["failure_message"] = result.failure.message[:500]
+                value["retryable"] = result.failure.retryable
+            values.append(value)
         return values
+
+
+def _character_failure_diagnostic(
+    error: Exception,
+    *,
+    request_id: str,
+    recorder: _RecordingPort,
+) -> dict[str, object]:
+    """#434のCharacter failureをtyped Provider結果とDomain rejectionへ分離する。"""
+
+    result = recorder.result_for(request_id, "character_language")
+    if result is not None and result.status is not LLMRoleStatus.SUCCEEDED:
+        failure = result.failure
+        if failure is None:
+            raise AssertionError("非成功LLMRoleResultにはfailureが必要です")
+        return {
+            "status": CharacterLanguageLabStatus.PROVIDER_FAILED.value,
+            "provider_result_status": result.status.value,
+            "failure_code": failure.code.value,
+            "failure_message": failure.message[:500],
+            "retryable": failure.retryable,
+        }
+
+    value: dict[str, object] = {
+        "status": CharacterLanguageLabStatus.CHARACTER_COMMIT_REJECTED.value,
+        "error_type": type(error).__name__,
+    }
+    if result is not None:
+        value["provider_result_status"] = result.status.value
+    if isinstance(error, ValueError):
+        value["error_message"] = str(error)[:500]
+    return value
 
 
 def _profile_dict(profile: CharacterLanguageProfile) -> dict[str, object]:
@@ -772,12 +810,15 @@ class CharacterLanguageLabService:
                 "ok": False,
                 "run_id": run_id,
                 "repetition_index": repetition_index,
-                "status": CharacterLanguageLabStatus.CHARACTER_COMMIT_REJECTED.value,
-                "error_type": type(error).__name__,
                 "semantic_plan": plan.to_dict(),
                 "character_profile": _profile_dict(profile),
                 "character_source_kind": source.get("kind"),
                 "character_latency_ms": round((perf_counter() - started) * 1000, 3),
+                **_character_failure_diagnostic(
+                    error,
+                    request_id=snapshot.request_id,
+                    recorder=recorder,
+                ),
             }
         character_latency = round((perf_counter() - started) * 1000, 3)
         semantic_result: dict[str, object] | None = None

@@ -1,19 +1,27 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import cast
 
 import pytest
 
+from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import JsonValue, thaw_json
 from app.domain.llm import (
+    LLMExecutionPolicy,
+    LLMFailureCode,
+    LLMInterruptibility,
     LLMModelClass,
+    LLMPriority,
     LLMReasoningEffort,
+    LLMRoleFailure,
     LLMRoleRequest,
     LLMRoleResult,
     LLMRoleStatus,
+    LLMStalePolicy,
     LLMTokenUsage,
     StructuredPayload,
 )
@@ -23,6 +31,7 @@ from cloud_validation.v2_character_language_lab import (
     CharacterLanguageLabService,
     CharacterLanguageLabSettings,
     CharacterLanguageLabStatus,
+    _RecordingPort,
 )
 
 
@@ -88,6 +97,50 @@ class FakeCharacterPort:
             StructuredPayload("character.language.candidate.v1", output),
             started_at=request.created_at,
         )
+
+
+class FailedCharacterPort:
+    def __init__(
+        self,
+        status: LLMRoleStatus,
+        code: LLMFailureCode,
+        message: str,
+        retryable: bool,
+    ) -> None:
+        self._status = status
+        self._code = code
+        self._message = message
+        self._retryable = retryable
+        self.calls: list[LLMRoleRequest] = []
+
+    async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+        self.calls.append(request)
+        return LLMRoleResult(
+            request.request_id,
+            request.role_id,
+            self._status,
+            request.revisions,
+            request.created_at,
+            request.trace_id,
+            request.execution_policy.model_class,
+            1,
+            LLMTokenUsage(0, 0),
+            failure=LLMRoleFailure(self._code, self._message, self._retryable),
+        )
+
+
+class InvalidCandidatePort(FakeCharacterPort):
+    async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+        result = await super().invoke(request)
+        return replace(
+            result,
+            output=StructuredPayload("character.language.candidate.v1", {}),
+        )
+
+
+class UnknownFailurePort:
+    async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+        raise RuntimeError("secret=sk-should-not-appear")
 
 
 def _settings(path: Path) -> CharacterLanguageLabSettings:
@@ -236,3 +289,156 @@ def test_multimodal_model_class_is_rejected() -> None:
             LLMReasoningEffort.MEDIUM,
             run_semantic_verification=False,
         )
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [
+        (LLMRoleStatus.FAILED, LLMFailureCode.SCHEMA_INVALID),
+        (LLMRoleStatus.FAILED, LLMFailureCode.PROVIDER_ERROR),
+        (LLMRoleStatus.FAILED, LLMFailureCode.PROVIDER_UNAVAILABLE),
+        (LLMRoleStatus.TIMED_OUT, LLMFailureCode.TIMEOUT),
+    ],
+)
+def test_provider_result_failure_is_exported_without_semantic_verification(
+    tmp_path: Path,
+    status: LLMRoleStatus,
+    code: LLMFailureCode,
+) -> None:
+    port = FailedCharacterPort(status, code, "safe provider failure", True)
+    result = asyncio.run(
+        CharacterLanguageLabService(_settings(tmp_path / "missing.yaml"), port).run(
+            _request(CharacterLanguageLabMode.ISOLATION)
+        )
+    )
+
+    runs = result["runs"]
+    assert isinstance(runs, list)
+    run = runs[0]
+    assert run["status"] == CharacterLanguageLabStatus.PROVIDER_FAILED.value
+    assert run["provider_result_status"] == status.value
+    assert run["failure_code"] == code.value
+    assert run["failure_message"] == "safe provider failure"
+    assert run["retryable"] is True
+    assert "character_utterance" not in run
+    assert "semantic_verification" not in run
+
+    metrics = result["provider_metrics"]
+    assert isinstance(metrics, list)
+    assert metrics[0]["failure_code"] == code.value
+    assert metrics[0]["retryable"] is True
+
+
+def test_provider_failure_message_is_bounded_to_domain_safe_limit(tmp_path: Path) -> None:
+    port = FailedCharacterPort(
+        LLMRoleStatus.FAILED,
+        LLMFailureCode.PROVIDER_ERROR,
+        "x" * 700,
+        False,
+    )
+    result = asyncio.run(
+        CharacterLanguageLabService(_settings(tmp_path / "missing.yaml"), port).run(
+            _request(CharacterLanguageLabMode.ISOLATION)
+        )
+    )
+
+    runs = result["runs"]
+    assert isinstance(runs, list)
+    assert len(runs[0]["failure_message"]) == 500
+
+
+def test_succeeded_provider_then_domain_value_error_is_commit_rejection(tmp_path: Path) -> None:
+    result = asyncio.run(
+        CharacterLanguageLabService(
+            _settings(tmp_path / "missing.yaml"),
+            InvalidCandidatePort(),
+        ).run(_request(CharacterLanguageLabMode.ISOLATION))
+    )
+
+    runs = result["runs"]
+    assert isinstance(runs, list)
+    run = runs[0]
+    assert run["status"] == CharacterLanguageLabStatus.CHARACTER_COMMIT_REJECTED.value
+    assert run["provider_result_status"] == LLMRoleStatus.SUCCEEDED.value
+    assert run["error_type"] == "ValueError"
+    assert isinstance(run["error_message"], str)
+
+
+def test_unknown_character_exception_does_not_export_raw_message(tmp_path: Path) -> None:
+    result = asyncio.run(
+        CharacterLanguageLabService(
+            _settings(tmp_path / "missing.yaml"),
+            UnknownFailurePort(),
+        ).run(_request(CharacterLanguageLabMode.ISOLATION))
+    )
+
+    runs = result["runs"]
+    assert isinstance(runs, list)
+    run = runs[0]
+    assert run["status"] == CharacterLanguageLabStatus.CHARACTER_COMMIT_REJECTED.value
+    assert run["error_type"] == "RuntimeError"
+    assert "error_message" not in run
+    assert "sk-should-not-appear" not in str(result)
+
+
+def test_recording_port_correlates_each_request_to_its_exact_role_result() -> None:
+    now = datetime.now(timezone.utc)
+    policy = LLMExecutionPolicy(
+        LLMModelClass.BALANCED,
+        LLMReasoningEffort.MEDIUM,
+        1,
+        1,
+        100,
+    )
+    character_request = LLMRoleRequest(
+        "character-request",
+        "character_language",
+        StructuredPayload("fixture", {"value": True}),
+        ("event-1",),
+        RevisionVector(1),
+        (),
+        LLMPriority.FOREGROUND,
+        LLMInterruptibility.INTERRUPTIBLE,
+        LLMStalePolicy.REJECT,
+        policy,
+        now,
+        "character-trace",
+    )
+    semantic_request = replace(
+        character_request,
+        request_id="semantic-request",
+        role_id="semantic_blind",
+        trace_id="semantic-trace",
+    )
+
+    class TwoRolePort:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            return LLMRoleResult(
+                request.request_id,
+                request.role_id,
+                LLMRoleStatus.FAILED,
+                request.revisions,
+                request.created_at,
+                request.trace_id,
+                request.execution_policy.model_class,
+                1,
+                LLMTokenUsage(0, 0),
+                failure=LLMRoleFailure(
+                    LLMFailureCode.PROVIDER_ERROR,
+                    f"safe failure for {request.role_id}",
+                ),
+            )
+
+    async def scenario() -> _RecordingPort:
+        recorder = _RecordingPort(TwoRolePort())
+        await recorder.invoke(character_request)
+        await recorder.invoke(semantic_request)
+        return recorder
+
+    recorder = asyncio.run(scenario())
+    character = recorder.result_for("character-request", "character_language")
+    semantic = recorder.result_for("semantic-request", "semantic_blind")
+    assert character is not None
+    assert semantic is not None
+    assert character.role_id == "character_language"
+    assert semantic.role_id == "semantic_blind"

@@ -6,14 +6,17 @@ from typing import cast
 
 from app.domain.contracts.common import JsonValue, thaw_json
 from app.domain.llm import (
+    LLMFailureCode,
     LLMModelClass,
     LLMReasoningEffort,
+    LLMRoleFailure,
     LLMRoleRequest,
     LLMRoleResult,
     LLMRoleStatus,
     LLMTokenUsage,
     StructuredPayload,
 )
+from app.usecases.ports.llm import LLMRolePort
 from cloud_validation.v2_character_language_lab import (
     CharacterLanguageLabMode,
     CharacterLanguageLabRequest,
@@ -90,9 +93,32 @@ class SequencedCharacterPort:
         )
 
 
+class FailedCharacterPort:
+    def __init__(self) -> None:
+        self.calls: list[LLMRoleRequest] = []
+
+    async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+        self.calls.append(request)
+        return LLMRoleResult(
+            request.request_id,
+            request.role_id,
+            LLMRoleStatus.FAILED,
+            request.revisions,
+            request.created_at,
+            request.trace_id,
+            request.execution_policy.model_class,
+            1,
+            LLMTokenUsage(0, 0),
+            failure=LLMRoleFailure(
+                LLMFailureCode.SCHEMA_INVALID,
+                "safe schema diagnostic",
+            ),
+        )
+
+
 def _service(
     tmp_path: Path,
-    port: SequencedCharacterPort,
+    port: LLMRolePort,
 ) -> StrictSamePlanCharacterLanguageLabService:
     settings = CharacterLanguageLabSettings(
         tmp_path / "missing.yaml",
@@ -174,3 +200,20 @@ def test_exact_duplicate_output_is_not_duplicated_in_prior_list(tmp_path: Path) 
     assert _prior_texts(port.calls[1]) == ["同じ表現"]
     assert _prior_texts(port.calls[2]) == ["同じ表現"]
     assert _prior_texts(port.calls[3]) == ["同じ表現", "別表現"]
+
+
+def test_strict_same_plan_exports_provider_failure_without_prior_or_semantic_run(
+    tmp_path: Path,
+) -> None:
+    port = FailedCharacterPort()
+    result = asyncio.run(_service(tmp_path, port).run(_request(1)))
+
+    runs = result["runs"]
+    assert isinstance(runs, list)
+    run = runs[0]
+    assert run["status"] == "PROVIDER_FAILED"
+    assert run["provider_result_status"] == "failed"
+    assert run["failure_code"] == "schema_invalid"
+    assert run["prior_realizations_used"] == []
+    assert "character_utterance" not in run
+    assert "semantic_verification" not in run

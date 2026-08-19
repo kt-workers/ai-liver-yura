@@ -28,18 +28,19 @@ from cloud_validation.v2_character_language_diagnostics import (
     DiagnosticCharacterLanguageLabService,
 )
 from cloud_validation.v2_character_language_lab import (
+    _SCENARIOS,
     LAB_BRANCH,
     CharacterLanguageLabMode,
     CharacterLanguageLabRequest,
     CharacterLanguageLabStatus,
-    _RecordingPort,
-    _SCENARIOS,
-    _StaticCharacterLiveState,
+    _character_failure_diagnostic,
     _character_source,
     _committed_plan,
     _execution_policy,
     _profile_dict,
+    _RecordingPort,
     _semantic_role_configs,
+    _StaticCharacterLiveState,
 )
 
 
@@ -191,13 +192,16 @@ class StrictSamePlanCharacterLanguageLabService(DiagnosticCharacterLanguageLabSe
                     "ok": False,
                     "run_id": run_id,
                     "repetition_index": repetition_index,
-                    "status": CharacterLanguageLabStatus.CHARACTER_COMMIT_REJECTED.value,
-                    "error_type": type(error).__name__,
                     "semantic_plan": plan.to_dict(),
                     "prior_realizations_used": prior_projection,
                     "character_profile": _profile_dict(profile),
                     "character_source_kind": source.get("kind"),
                     "character_latency_ms": round((perf_counter() - started) * 1000, 3),
+                    **_character_failure_diagnostic(
+                        error,
+                        request_id=snapshot.request_id,
+                        recorder=recorder,
+                    ),
                 },
                 None,
             )
