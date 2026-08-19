@@ -16,6 +16,11 @@ from app.domain.speech_semantics import (
     SpeechSemanticPlan,
 )
 
+from .variation import (
+    MAX_PRIOR_REALIZATIONS,
+    CharacterLanguagePriorRealizationView,
+)
+
 
 class CharacterLanguageConstraintKind(str, Enum):
     RELATIONSHIP = "relationship"
@@ -154,6 +159,7 @@ class CharacterLanguageContextSnapshot:
     interruptibility: LLMInterruptibility
     captured_at: datetime
     trace_id: str
+    prior_realizations: tuple[CharacterLanguagePriorRealizationView, ...] = ()
 
     def __post_init__(self) -> None:
         require_identifier(self.request_id, "request_id")
@@ -174,6 +180,7 @@ class CharacterLanguageContextSnapshot:
         if utc_instant(self.captured_at) < utc_instant(self.semantic_plan.committed_at):
             raise ValueError("snapshot はcommit済みPlanより前にできません")
         self._validate_constraints()
+        self._validate_prior_realizations()
 
     @property
     def candidate(self) -> SpeechSemanticCandidate:
@@ -213,6 +220,47 @@ class CharacterLanguageContextSnapshot:
                 "Plan constraint refs はtyped constraint viewと完全一致しなければなりません"
             )
 
+    def _validate_prior_realizations(self) -> None:
+        values = _owned(
+            self.prior_realizations,
+            CharacterLanguagePriorRealizationView,
+            "prior_realizations",
+        )
+        if len(values) > MAX_PRIOR_REALIZATIONS:
+            raise ValueError(
+                f"prior_realizations は最大{MAX_PRIOR_REALIZATIONS}件です"
+            )
+        if len({item.source_utterance_id for item in values}) != len(values):
+            raise ValueError("prior source_utterance_id は重複できません")
+        if len({item.text for item in values}) != len(values):
+            raise ValueError("prior realization text は重複できません")
+        expected_constraints = {
+            (item.constraint_id, item.source_revision) for item in self.constraints
+        }
+        profile = self.character_profile
+        plan_committed_at = utc_instant(self.semantic_plan.committed_at)
+        for item in values:
+            if item.semantic_plan_id != self.semantic_plan.plan_id:
+                raise ValueError("prior realizationは同一Planでなければなりません")
+            if (
+                item.character_id != profile.character_id
+                or item.character_schema_version != profile.schema_version
+                or item.character_definition_revision != profile.definition_revision
+            ):
+                raise ValueError("prior realizationのCharacter provenanceが一致しません")
+            actual_constraints = {
+                (part.constraint_id, part.source_revision)
+                for part in item.constraint_revisions
+            }
+            if actual_constraints != expected_constraints:
+                raise ValueError("prior realizationのconstraint provenanceが一致しません")
+            prior_committed_at = utc_instant(item.committed_at)
+            if prior_committed_at < plan_committed_at:
+                raise ValueError("prior realizationはPlan commitより前にできません")
+            if prior_committed_at > utc_instant(self.captured_at):
+                raise ValueError("prior realizationはsnapshotより未来にできません")
+        object.__setattr__(self, "prior_realizations", values)
+
     def to_dict(self) -> dict[str, object]:
         return {
             "request_id": self.request_id,
@@ -231,6 +279,9 @@ class CharacterLanguageContextSnapshot:
                 ],
             },
             "constraints": [item.to_dict() for item in self.constraints],
+            "prior_realizations": [
+                item.to_prompt_dict() for item in self.prior_realizations
+            ],
             "source_event_ids": list(self.source_event_ids),
             "revisions": self.revisions.to_dict(),
             "captured_at": self.captured_at.isoformat(),

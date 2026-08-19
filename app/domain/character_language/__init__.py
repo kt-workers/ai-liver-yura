@@ -24,8 +24,15 @@ from .realizer import (
     parse_candidate,
 )
 from .schemas import character_language_instructions, character_language_output_schema
+from .variation import (
+    MAX_PRIOR_REALIZATIONS,
+    CharacterLanguagePriorConstraintRevision,
+    CharacterLanguagePriorRealizationView,
+)
+from .variation_builder import prior_realization_from_utterance
 
 __all__ = [
+    "MAX_PRIOR_REALIZATIONS",
     "CharacterLanguageAuthority",
     "CharacterLanguageCommitState",
     "CharacterLanguageConstraintKind",
@@ -35,6 +42,8 @@ __all__ = [
     "CharacterLanguageFailureCode",
     "CharacterLanguageLiveStatePort",
     "CharacterLanguagePolicy",
+    "CharacterLanguagePriorConstraintRevision",
+    "CharacterLanguagePriorRealizationView",
     "CharacterLanguageRealizer",
     "CharacterUtterance",
     "CharacterUtteranceCandidate",
@@ -48,5 +57,6 @@ __all__ = [
     "commit_result",
     "descriptor",
     "parse_candidate",
+    "prior_realization_from_utterance",
     "validate_candidate_structure",
 ]

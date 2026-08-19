@@ -34,7 +34,7 @@ from .contracts import (
 )
 
 ROLE_ID = "character_language"
-INPUT_SCHEMA = "character.language.context.v1"
+INPUT_SCHEMA = "character.language.context.v2"
 OUTPUT_SCHEMA = "character.language.candidate.v1"
 
 
