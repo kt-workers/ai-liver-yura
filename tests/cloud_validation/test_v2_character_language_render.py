@@ -30,5 +30,7 @@ def test_workspace_explains_integrated_isolation_and_human_semantic_split() -> N
     assert "Human Evaluation" in html
     assert "#363 semantic verification" in html
     assert "Export JSON" in html
+    assert "Strict same-Plan batch" in html
+    assert "直近のunique表現を最大3件" in html
     assert "Integratedは#363 ACCEPTED後もHuman評価が必要" in html
     assert "Isolation only / release evidenceには使用不可" in html
