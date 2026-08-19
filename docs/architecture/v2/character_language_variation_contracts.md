@@ -5,6 +5,18 @@ Validation: #434
 Parent canonical: `character_language_contracts.md`
 Status: Canonical Supplement / Design Gate
 
+## Canonical precedence
+
+本書は`character_language_contracts.md`の既存Role identity記載のうち、**input schema IDだけ**を次のようにsupersedeする。
+
+```text
+character.language.context.v1
+  -> character.language.context.v2
+```
+
+Role ID、output schema、Character/semantic Authority境界その他の親正本契約は変更しない。
+`character_language_provider_contracts.md`も本書のinput schema v2を使用する。
+
 ## 1. Purpose
 
 #434 real-LLM Isolation検証で、意味内容・Character Profile・constraint条件を同一にした10回生成が、実質2表現へ収束した。
@@ -85,6 +97,8 @@ CharacterLanguagePriorConstraintRevision
 - source_revision
 ```
 
+production callerは任意文字列からpriorを組み立てるのではなく、commit済み`CharacterUtterance`から`prior_realization_from_utterance()`で投影する。
+
 ### 4.1 boundedness
 
 1 requestへ渡せるprior realizationは最大3件とする。
@@ -114,7 +128,7 @@ prior realizationはcurrent snapshotと次が全て一致するときだけ利�
 
 - source utterance IDは一意
 - exact textは一意
-- `committed_at <= snapshot.captured_at`
+- `semantic_plan.committed_at <= prior.committed_at <= snapshot.captured_at`
 - committed sourceだけを使う
 
 不一致はProvider呼出前にrejectする。
@@ -183,6 +197,7 @@ Variationはquality objectiveであり、semantic hard constraintではない。
 ### #330 owns
 
 - prior realization typed contract
+- committed utterance -> prior view production projector
 - snapshot eligibility validation
 - bounded max count
 - input schema v2
@@ -199,7 +214,7 @@ Variationはquality objectiveであり、semantic hard constraintではない。
 
 ### caller / orchestration owns
 
-regeneration時に、利用可能なsame-context committed utteranceから最大3件を選択してSnapshotへ渡す。
+regeneration時に、利用可能なsame-context committed utteranceから最大3件を選択し、production projectorを使ってSnapshotへ渡す。
 
 #330はStoreを検索しない。
 
@@ -234,7 +249,9 @@ Isolation結果は引き続きIntegrated evidenceへ昇格しない。
 - different plan ID reject
 - different character ID/schema/definition revision reject
 - current constraint ID/revision不一致reject
+- Plan commitより古いprior reject
 - future committed_at reject
+- committed `CharacterUtterance`からproduction projectorでpriorを構築
 - request payloadへCONFIRMED Profile + bounded priorだけを投影
 - raw history fieldなし
 
@@ -253,7 +270,7 @@ same Plan / same Profile / same constraintsで5〜10回。
 - semantic acceptance
 - exact duplicate率
 - unique表現数
--語彙 / 語順 / rhythm / phrase segmentation
+- 語彙 / 語順 / rhythm / phrase segmentation
 - naturalness
 - latency / token cost増加
 
