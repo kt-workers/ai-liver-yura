@@ -21,7 +21,6 @@ def _payload(*, relation: str, proposition_ids: list[str]) -> dict[str, object]:
                 "certainty_relation": "preserved",
                 "degree_relation": "not_applicable",
                 "execution_relation": "not_applicable",
-                "evidence_refs": [],
             }
         ],
         "blind_unit_accounting": [
@@ -40,7 +39,7 @@ def _payload(*, relation: str, proposition_ids: list[str]) -> dict[str, object]:
     }
 
 
-def test_proposition_observation_does_not_duplicate_support_edge() -> None:
+def test_proposition_observation_does_not_duplicate_runtime_grounding() -> None:
     schema = relation_output_schema()
     properties = schema["properties"]
     assert isinstance(properties, dict)
@@ -50,9 +49,13 @@ def test_proposition_observation_does_not_duplicate_support_edge() -> None:
     assert isinstance(item, dict)
     item_properties = item["properties"]
     assert isinstance(item_properties, dict)
+    required = item["required"]
+    assert isinstance(required, list)
 
     assert "supporting_blind_unit_ids" not in item_properties
-    assert "supporting_blind_unit_ids" not in item["required"]
+    assert "supporting_blind_unit_ids" not in required
+    assert "evidence_refs" not in item_properties
+    assert "evidence_refs" not in required
 
 
 def test_supported_by_plan_requires_proposition_reference() -> None:
