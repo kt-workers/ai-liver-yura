@@ -23,10 +23,12 @@ from app.domain.character_language import (
 )
 from app.domain.llm import LLMInterruptibility, LLMPriority
 from app.domain.speech_semantics import SpeechSemanticPlan
+from app.usecases.ports.llm import LLMRolePort
 from cloud_validation.v2_character_language_diagnostics import (
     DiagnosticCharacterLanguageLabService,
 )
 from cloud_validation.v2_character_language_lab import (
+    LAB_BRANCH,
     CharacterLanguageLabMode,
     CharacterLanguageLabRequest,
     CharacterLanguageLabStatus,
@@ -116,11 +118,11 @@ class StrictSamePlanCharacterLanguageLabService(DiagnosticCharacterLanguageLabSe
             },
             "runs": runs,
             "provider_metrics": recorder.metrics(),
-            "branch": self.readiness().get("branch"),
+            "branch": LAB_BRANCH,
             "git_head": self._settings.git_head,
         }
 
-    def _role_port(self, request: CharacterLanguageLabRequest):
+    def _role_port(self, request: CharacterLanguageLabRequest) -> LLMRolePort:
         if self._injected_port is not None:
             return self._injected_port
         if not self._settings.provider_configured:
