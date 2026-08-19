@@ -159,11 +159,11 @@ def test_prior_realizations_reject_before_plan_commit_and_future_commit() -> Non
         )
 
 
-def test_production_instructions_keep_prior_realizations_style_only() -> None:
+def test_production_instructions_keep_prior_realizations_as_weak_style_reference() -> None:
     instructions = character_language_instructions()
 
     assert "prior_realizations" in instructions
-    assert "How-to-say上のnegative reference" in instructions
+    assert "How-to-say上のweak repetition-awareness reference" in instructions
     assert "Fact source、会話履歴、追加propositionとして扱ってはいけません" in instructions
     assert "actual meaningはcurrent semantic_planだけから" in instructions
     assert "不自然な同義語置換" in instructions

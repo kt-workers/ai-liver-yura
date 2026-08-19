@@ -122,3 +122,28 @@ def test_production_instructions_keep_authority_boundaries_explicit() -> None:
         "TTS parameter、SSML、Body gesture、motion",
     ):
         assert required_text in instructions
+
+
+def test_production_instructions_use_weak_repetition_awareness() -> None:
+    instructions = character_language_instructions()
+
+    for required_text in (
+        "意味保持、自然さ、Characterらしさ、反復回避の順で優先",
+        "weak repetition-awareness reference",
+        "自然で意味安全な別表現が明らかにある場合だけ避けても構いません",
+        "同じ表現が最も自然で意味安全なら、そのまま再使用して構いません",
+        "exact duplicate自体をfailureとして扱わない",
+        "uniqueな表現を作ること自体を目的にしてはいけません",
+        "actual meaningはcurrent semantic_planだけから決めてください",
+        "Fact source、会話履歴、追加propositionとして扱ってはいけません",
+    ):
+        assert required_text in instructions
+
+    for forbidden_text in (
+        "negative reference",
+        "感じ",
+        "みたい",
+        "synonym dictionary",
+        "sentence-ending rotation",
+    ):
+        assert forbidden_text not in instructions
