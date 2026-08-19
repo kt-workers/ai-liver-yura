@@ -2,6 +2,7 @@
 
 Owner Issue: #330
 Parent canonical: `docs/architecture/v2/character_language_contracts.md`
+Related canonical: `docs/architecture/v2/character_language_variation_contracts.md`
 Related: #323 / #357 / #362 / #363 / #434
 Status: Canonical Supplement / Provider Verification Gate
 
@@ -14,6 +15,7 @@ Status: Canonical Supplement / Provider Verification Gate
 - `SpeechSemanticPlan` = sole What-to-say Authority
 - `CharacterLanguageProfile` = confirmed static How-to-say Style Authority
 - bounded relationship/discourse constraints = read-only language guidance
+- bounded same-Plan prior realizations = style-only repetition avoidance reference
 - `CharacterUtterance` structural commit != #363 semantic acceptance
 
 Dedicated Lab #434 は本書のproduction instructions / output schema / Role configを再利用し、Lab専用Prompt・schema・provider formatを発明してはならない。
@@ -41,15 +43,18 @@ Adapter composition側だけがDomainのRole/schema定数と#357 provider型を�
 
 ## 3. Production Role identity
 
-既存#330 logical Role identityをそのまま使用する。
+#330 bounded variation input拡張後のlogical Role identityを使用する。
 
 ```text
 role_id: character_language
-input_schema_id: character.language.context.v1
+input_schema_id: character.language.context.v2
 output_schema_id: character.language.candidate.v1
 provider_output_format_name: character_language_candidate_v1
 failure_policy: FAIL_CLOSED
 ```
+
+`context.v2`は`prior_realizations`を追加したinput contractである。
+output candidate shapeは変更しないため`character.language.candidate.v1`を維持する。
 
 `output_schema_id`はDomain identity、`provider_output_format_name`はOpenAI Structured Output用safe nameであり、同一概念として扱わない。
 Provider format nameは他Roleと重複させない。
@@ -78,13 +83,22 @@ production instructionsは最低限次を明示する。
 - Characterらしさを口癖、固定導入、固定締め、過剰な修辞だけで表現しない。
 - 語彙、語順、rhythm、phrase segmentation等の自然なvariationを許可する。
 
-### 4.3 Relationship / discourse constraints
+### 4.3 Bounded prior realizations
+
+- `prior_realizations`はDomainでsame Plan / Character revision / constraint revisionを確認済みの最大3件だけを受け取る。
+- priorはHow-to-say上のnegative referenceであり、Fact source / conversation history / additional propositionではない。
+- current `semantic_plan`だけをactual meaning sourceとして使う。
+- equally naturalな代替があるときだけexact/near-exactな語彙・語順・rhythm・締め方への収束を避ける。
+- variationのために意味を追加・削除・弱化・強化しない。
+- 不自然な同義語置換や過剰なCharacter演技で差分を作らない。
+
+### 4.4 Relationship / discourse constraints
 
 - `constraints[].language_guidance`はbounded style/discourse constraintとして守る。
 - constraint ID文字列やsource refを新しいsemantic contentとして解釈しない。
 - constraintから新しいRelationship Fact、質問、話題を発明しない。
 
-### 4.4 Candidate identity / provenance
+### 4.5 Candidate identity / provenance
 
 出力では入力値をexactにコピーする。
 
@@ -100,7 +114,7 @@ production instructionsは最低限次を明示する。
 
 LLMはこれらのtrusted identityを言い換え・再生成しない。
 
-### 4.5 Segments
+### 4.6 Segments
 
 - `segments[].text`には実際に発話する自然言語だけを入れる。
 - Markdown説明、分析、schema説明を混ぜない。
@@ -109,7 +123,7 @@ LLMはこれらのtrusted identityを言い換え・再生成しない。
 - boundary / emphasis / hesitationは既存closed enumだけを使う。
 - TTS parameter / SSML / Body gesture / motionを出力しない。
 
-### 4.6 Budget self-report
+### 4.7 Budget self-report
 
 `question_budget_used` / `new_direction_budget_used`はactual candidateで使用した数を申告し、Plan上限を超えない。
 ただしこの自己申告はsemantic proofではなく、actual textは#363が独立観測する。
@@ -171,7 +185,7 @@ LLMModelClass -> provider model string
 LLMReasoningEffort -> provider reasoning effort string
 ```
 
-Character Language v1はtext generation Roleのため、`FAST` / `BALANCED` / `DEEP_REASONING`だけを許可対象とし、`MULTIMODAL`を暗黙変換しない。
+Character Language v1 outputはtext generation Roleのため、`FAST` / `BALANCED` / `DEEP_REASONING`だけを許可対象とし、`MULTIMODAL`を暗黙変換しない。
 
 reasoning effortはFoundation enum `minimal / low / medium / high`をProviderへ明示mappingする。
 未登録model class / reasoning combinationはProvider呼出前にfail-closedとする。
@@ -185,6 +199,7 @@ model名をcanonical Character意味仕様として固定しない。#434でqual
 - unknown Role -> no Character config fallback
 - wrong input schema -> fail-closed
 - unsupported model class/reasoning -> fail-closed before Provider call
+- malformed / mismatched prior realization -> fail before Provider call
 - Provider error/timeout -> no `CharacterUtterance` commit
 - Provider output schema invalid -> no commit
 - fixed generic Character phraseへfallbackしない
@@ -209,6 +224,8 @@ Dedicated Character Language Lab #434はIntegrated Gateで最低限次をproduct
 8. actual `CharacterUtterance`
 9. downstream #363 production Semantic Verification
 
+same-Plan variation試験ではbatchごとに1つのproduction Planをcommitし、repetition 2以降へ最大3件のproduction `prior_realizations` viewを渡す。
+
 Labはmodel mappingだけを比較条件として差し替えられる。
 Prompt/schema/format nameを差し替えたrunはIsolation診断であってIntegrated Gate evidenceにしない。
 
@@ -225,7 +242,18 @@ Prompt/schema/format nameを差し替えたrunはIsolation診断であってInte
 - negative budget/revision reject
 - nullable goal/attention revision accept
 - semantic override fieldをschemaが許可しない
-- production instructionsがWhat-to-say / Style / constraint / provenance / budget / downstream semantic boundaryを分離している
+- production instructionsがWhat-to-say / Style / prior variation / constraint / provenance / budget / downstream semantic boundaryを分離している
+
+### Input variation
+
+- input schema ID = `character.language.context.v2`
+- 0〜3件prior accept
+- 4件以上reject
+- duplicate prior ID/text reject
+- plan/profile/constraint provenance mismatch reject
+- future prior reject
+- Provider payloadへstyle-only bounded viewだけを投影
+- raw/unbounded historyなし
 
 ### Provider config
 
@@ -256,6 +284,7 @@ Prompt/schema/format nameを差し替えたrunはIsolation診断であってInte
 - production strict output JSON Schema実装済み
 - production OpenAI Role config/helper実装済み
 - provider format / model-reasoning mapping明示
+- bounded prior realization input / schema v2 regression PASS
 - Role/schema isolation regression PASS
 - targeted / adjacent / full / Ruff / strict Mypy / compileall / diff check PASS
 - exact-head CI SUCCESS
