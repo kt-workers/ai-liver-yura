@@ -90,7 +90,10 @@ class SequencedCharacterPort:
         )
 
 
-def _service(tmp_path: Path, port: SequencedCharacterPort):
+def _service(
+    tmp_path: Path,
+    port: SequencedCharacterPort,
+) -> StrictSamePlanCharacterLanguageLabService:
     settings = CharacterLanguageLabSettings(
         tmp_path / "missing.yaml",
         "model-character",
@@ -157,9 +160,9 @@ def test_repeated_variants_use_one_exact_plan_and_bounded_priors(tmp_path: Path)
 
     for index, run in enumerate(runs):
         assert isinstance(run, dict)
-        assert run["prior_realizations_used"] == thaw_json(
-            port.calls[index].input.value
-        )["prior_realizations"]
+        request_payload = thaw_json(port.calls[index].input.value)
+        assert isinstance(request_payload, dict)
+        assert run["prior_realizations_used"] == request_payload["prior_realizations"]
 
 
 def test_exact_duplicate_output_is_not_duplicated_in_prior_list(tmp_path: Path) -> None:
