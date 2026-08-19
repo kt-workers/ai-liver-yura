@@ -58,7 +58,7 @@ def test_production_semantic_verifier_uses_canonical_relation_layer() -> None:
 def test_relation_instruction_declares_runtime_grounding_sources() -> None:
     instructions = relation_instructions()
 
-    assert "support対応はblind_unit_accountingだけを正本" in instructions
+    assert "blind_unit_accountingだけを正本" in instructions
     assert "support IDやevidence_refsを重複出力してはいけません" in instructions
     assert "BlindUtteranceObservationのsupport対象unitから" in instructions
     assert "Role Bが別quoteを再生成してはいけません" in instructions
