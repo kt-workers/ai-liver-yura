@@ -3,6 +3,7 @@
 Owner Issue: #330
 Parent canonical: `docs/architecture/v2/character_language_contracts.md`
 Related canonical: `docs/architecture/v2/character_language_variation_contracts.md`
+Related canonical: `docs/architecture/v2/character_language_semantic_repair_contracts.md`
 Related: #323 / #357 / #362 / #363 / #434
 Status: Canonical Supplement / Provider Verification Gate
 
@@ -15,8 +16,11 @@ Status: Canonical Supplement / Provider Verification Gate
 - `SpeechSemanticPlan` = sole What-to-say Authority
 - `CharacterLanguageProfile` = confirmed static How-to-say Style Authority
 - bounded relationship/discourse constraints = read-only language guidance
-- bounded same-Plan prior realizations = style-only repetition avoidance reference
+- bounded same-Plan prior realizations = weak style-only repetition-awareness reference
 - `CharacterUtterance` structural commit != #363 semantic acceptance
+
+productionは**原則1回生成**であり、best-of-N候補探索を行わない。
+semantic `REJECTED`時のbounded repairだけは`character_language_semantic_repair_contracts.md`に従う。
 
 Dedicated Lab #434 は本書のproduction instructions / output schema / Role configを再利用し、Lab専用Prompt・schema・provider formatを発明してはならない。
 
@@ -81,16 +85,18 @@ production instructionsは最低限次を明示する。
 - すべてのfacetを毎回盛り込まない。
 - 普通のneutral speechが自然なSituationでは自然体を優先する。
 - Characterらしさを口癖、固定導入、固定締め、過剰な修辞だけで表現しない。
-- 語彙、語順、rhythm、phrase segmentation等の自然なvariationを許可する。
+- 語彙、語順、rhythm、phrase segmentation等の自然なvariationを**許可**するが、unique表現生成を義務化しない。
 
 ### 4.3 Bounded prior realizations
 
 - `prior_realizations`はDomainでsame Plan / Character revision / constraint revisionを確認済みの最大3件だけを受け取る。
-- priorはHow-to-say上のnegative referenceであり、Fact source / conversation history / additional propositionではない。
+- priorはHow-to-say上の**weak repetition-awareness reference**であり、Fact source / conversation history / additional propositionではない。
 - current `semantic_plan`だけをactual meaning sourceとして使う。
-- equally naturalな代替があるときだけexact/near-exactな語彙・語順・rhythm・締め方への収束を避ける。
+- equally natural **かつ意味安全**な代替が明らかにあるときだけ、priorとの過度なexact/near-exact収束を避けてもよい。
+- priorと同じ表現を使う方が自然・意味安全なら、そのまま再使用してよい。
 - variationのために意味を追加・削除・弱化・強化しない。
-- 不自然な同義語置換や過剰なCharacter演技で差分を作らない。
+- certaintyを弱める婉曲表現、不自然な同義語置換、過剰なCharacter演技で差分を作らない。
+- semantic preservation / naturalnessをrepetition avoidanceより優先する。
 
 ### 4.4 Relationship / discourse constraints
 
@@ -206,6 +212,9 @@ model名をcanonical Character意味仕様として固定しない。#434でqual
 - 他Roleのinstructions/schema/provider formatをCharacter Languageへ流用しない
 - Character Language configを他Roleへ暗黙適用しない
 
+Provider/Verifier infrastructure failureを理由にCharacter文を別表現へ作り直して原因を隠さない。
+semantic `REJECTED`だけがbounded Character repair triggerになり得る。
+
 Prompt本文、API key、SDK exception本文をruntime output/metricsへ露出しない。
 
 ---
@@ -224,7 +233,17 @@ Dedicated Character Language Lab #434はIntegrated Gateで最低限次をproduct
 8. actual `CharacterUtterance`
 9. downstream #363 production Semantic Verification
 
-same-Plan variation試験ではbatchごとに1つのproduction Planをcommitし、repetition 2以降へ最大3件のproduction `prior_realizations` viewを渡す。
+same-Plan variation characterizationではbatchごとに1つのproduction Planをcommitし、複数repetitionを**品質測定**として実行できる。ただしrepetition数をproduction候補数と解釈しない。
+
+production-flow verificationは`character_language_semantic_repair_contracts.md`に従い:
+
+```text
+initial generation x1
+#363
+REJECTED時だけ repair x1
+```
+
+を別測定として扱う。
 
 Labはmodel mappingだけを比較条件として差し替えられる。
 Prompt/schema/format nameを差し替えたrunはIsolation診断であってIntegrated Gate evidenceにしない。
@@ -242,7 +261,9 @@ Prompt/schema/format nameを差し替えたrunはIsolation診断であってInte
 - negative budget/revision reject
 - nullable goal/attention revision accept
 - semantic override fieldをschemaが許可しない
-- production instructionsがWhat-to-say / Style / prior variation / constraint / provenance / budget / downstream semantic boundaryを分離している
+- production instructionsがWhat-to-say / Style / weak repetition-awareness / constraint / provenance / budget / downstream semantic boundaryを分離している
+- same prior表現の再使用を許可する
+- semantic preservationがvariationより明示的に上位
 
 ### Input variation
 
@@ -273,6 +294,15 @@ Prompt/schema/format nameを差し替えたrunはIsolation診断であってInte
 - Provider timeout/error -> no commit / no generic fallback
 - wrong Role/schema result -> no commit
 
+### Semantic repair orchestration
+
+- ACCEPTEDなら1 generationで終了
+- REJECTED時だけ最大1 repair
+- repairはsame Plan/Profile/constraintsで`prior_realizations=[]`
+- repair後REJECTで追加生成なし
+- #363 execution failureではCharacter repairしない
+- REJECTED utteranceをfuture priorへ追加しない
+
 ---
 
 ## 10. Verification readiness gate
@@ -285,6 +315,7 @@ Prompt/schema/format nameを差し替えたrunはIsolation診断であってInte
 - production OpenAI Role config/helper実装済み
 - provider format / model-reasoning mapping明示
 - bounded prior realization input / schema v2 regression PASS
+- one-shot + bounded semantic repair policyの実装/回帰PASS
 - Role/schema isolation regression PASS
 - targeted / adjacent / full / Ruff / strict Mypy / compileall / diff check PASS
 - exact-head CI SUCCESS
