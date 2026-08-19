@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 from typing import cast
 
@@ -24,8 +24,6 @@ from cloud_validation.v2_character_language_lab import (
     CharacterLanguageLabSettings,
     CharacterLanguageLabStatus,
 )
-
-NOW = datetime(2026, 8, 19, tzinfo=timezone.utc)
 
 
 class FakeCharacterPort:
@@ -82,13 +80,13 @@ class FakeCharacterPort:
             request.role_id,
             LLMRoleStatus.SUCCEEDED,
             request.revisions,
-            NOW + timedelta(seconds=1),
+            request.created_at + timedelta(seconds=1),
             request.trace_id,
             request.execution_policy.model_class,
             1,
             LLMTokenUsage(100, 20),
             StructuredPayload("character.language.candidate.v1", output),
-            started_at=NOW,
+            started_at=request.created_at,
         )
 
 
