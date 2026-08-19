@@ -238,6 +238,7 @@ class CharacterLanguageContextSnapshot:
             (item.constraint_id, item.source_revision) for item in self.constraints
         }
         profile = self.character_profile
+        plan_committed_at = utc_instant(self.semantic_plan.committed_at)
         for item in values:
             if item.semantic_plan_id != self.semantic_plan.plan_id:
                 raise ValueError("prior realizationは同一Planでなければなりません")
@@ -253,7 +254,10 @@ class CharacterLanguageContextSnapshot:
             }
             if actual_constraints != expected_constraints:
                 raise ValueError("prior realizationのconstraint provenanceが一致しません")
-            if utc_instant(item.committed_at) > utc_instant(self.captured_at):
+            prior_committed_at = utc_instant(item.committed_at)
+            if prior_committed_at < plan_committed_at:
+                raise ValueError("prior realizationはPlan commitより前にできません")
+            if prior_committed_at > utc_instant(self.captured_at):
                 raise ValueError("prior realizationはsnapshotより未来にできません")
         object.__setattr__(self, "prior_realizations", values)
 
