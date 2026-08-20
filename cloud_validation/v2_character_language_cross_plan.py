@@ -13,6 +13,7 @@ from cloud_validation.v2_character_language_lab import (
 )
 from cloud_validation.v2_character_language_same_plan import (
     StrictSamePlanCharacterLanguageLabService,
+    _model_policy,
 )
 
 
@@ -47,6 +48,8 @@ class CrossPlanConversationCharacterLanguageLabService(StrictSamePlanCharacterLa
             return await super().run(request)
         if request.mode is not CharacterLanguageLabMode.ISOLATION:
             raise ValueError("Cross-Plan conversationはIsolation fixtureだけで実行します")
+        if request.scenario_id != "gratitude":
+            raise ValueError("Cross-Plan conversationのscenario_idはgratitudeでなければなりません")
         if request.repetitions != len(_GRATITUDE_TURNS):
             raise ValueError("Gratitude Cross-Plan conversationは5 turnで実行します")
 
@@ -85,6 +88,7 @@ class CrossPlanConversationCharacterLanguageLabService(StrictSamePlanCharacterLa
             "integrated_evidence_eligible": False,
             "scenario_set": "gratitude_conversation_v1",
             "character_source": source,
+            "model_policy": _model_policy(request),
             "conversation": {
                 "turns": len(_GRATITUDE_TURNS),
                 "prior_realizations": "各turnは空。same-Plan専用provenance契約を越えない",

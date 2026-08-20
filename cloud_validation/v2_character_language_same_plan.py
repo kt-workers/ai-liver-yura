@@ -97,20 +97,7 @@ class StrictSamePlanCharacterLanguageLabService(DiagnosticCharacterLanguageLabSe
             ),
             "scenario": {"id": scenario.scenario_id, "label": scenario.label},
             "character_source": source,
-            "model_policy": {
-                "character": {
-                    "provider_model": request.character_model,
-                    "model_class": request.character_model_class.value,
-                    "reasoning_effort": request.character_reasoning_effort.value,
-                    "provider_format": CHARACTER_LANGUAGE_PROVIDER_FORMAT_NAME,
-                },
-                "semantic": {
-                    "enabled": request.run_semantic_verification,
-                    "provider_model": request.semantic_model,
-                    "model_class": request.semantic_model_class.value,
-                    "reasoning_effort": request.semantic_reasoning_effort.value,
-                },
-            },
+            "model_policy": _model_policy(request),
             "variation_batch": {
                 "semantic_plan_id": plan.plan_id,
                 "repetitions": request.repetitions,
@@ -239,6 +226,23 @@ def _append_unique_prior(
     if any(item.text == value.text for item in priors):
         return priors
     return (*priors, value)[-MAX_PRIOR_REALIZATIONS:]
+
+
+def _model_policy(request: CharacterLanguageLabRequest) -> dict[str, object]:
+    return {
+        "character": {
+            "provider_model": request.character_model,
+            "model_class": request.character_model_class.value,
+            "reasoning_effort": request.character_reasoning_effort.value,
+            "provider_format": CHARACTER_LANGUAGE_PROVIDER_FORMAT_NAME,
+        },
+        "semantic": {
+            "enabled": request.run_semantic_verification,
+            "provider_model": request.semantic_model,
+            "model_class": request.semantic_model_class.value,
+            "reasoning_effort": request.semantic_reasoning_effort.value,
+        },
+    }
 
 
 __all__ = ["StrictSamePlanCharacterLanguageLabService"]

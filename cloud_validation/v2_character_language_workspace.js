@@ -68,12 +68,15 @@ function syncMode(){
   if(!readiness)return;
   const crossPlanConversation=$('probe').value==='cross_plan_conversation';
   const repetitions=$('repetitions');
+  const scenario=$('scenario');
   if(crossPlanConversation){
     $('mode').value='isolation';
     repetitions.value='5';
+    scenario.value='gratitude';
   }
   $('mode').disabled=crossPlanConversation;
   repetitions.disabled=crossPlanConversation;
+  scenario.disabled=crossPlanConversation;
   const integrated=$('mode').value==='integrated';
   $('semantic').checked=integrated||$('semantic').checked;
   $('semantic').disabled=integrated;
