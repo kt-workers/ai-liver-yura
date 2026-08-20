@@ -100,6 +100,9 @@ def test_relation_prompt_keeps_self_disclosure_as_additional_content_boundary() 
     instructions = relation_instructions()
 
     assert "self_disclosure_relationはPlan-supported contentの再解釈ではありません" in instructions
-    assert "SUPPORTED_BY_PLANのmaterial contentだけを根拠にEXCEEDEDへしてはいけません" in instructions
+    assert (
+        "SUPPORTED_BY_PLANのmaterial contentだけを根拠にEXCEEDEDへしてはいけません"
+        in instructions
+    )
     assert "UNSUPPORTED_EXTRAまたはAMBIGUOUS" in instructions
     assert "first-personやepistemicな表面表現だけでEXCEEDEDへしてはいけません" in instructions
