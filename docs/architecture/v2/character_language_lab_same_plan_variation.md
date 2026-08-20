@@ -22,6 +22,25 @@ Status: Canonical Supplement / Live Variation Verification
 
 本補助正本は、#434 repeated-variant runを「1 batch = 1 committed SpeechSemanticPlan」へ修正する。
 
+## Cross-Plan conversation観測
+
+Strict same-Plan repeated generationは、同一Planに対するCharacter Languageの挙動を観測するprobeとして残す。
+しかし、同一Planのunique率だけを#330 production Prompt変更の根拠にしてはならない。Cross-Plan baselineでは、別turn・別Plan・別contextだけで自然なvariationが生じるかを観測する。
+
+Cross-Plan conversationはIsolation fixtureとして、gratitude → userの中心speech actを維持した次の5 contextを順にcommitする。
+
+1. 作業を手伝ってもらった
+2. 情報を教えてもらった
+3. 待ってもらった
+4. 修正してもらった
+5. 結果を確認してもらった
+
+各turnの`SpeechSemanticPlan`はproduction `SpeechSemanticsPlanner` / `SpeechSemanticAuthority`経由で個別にcommitする。plan IDだけを変更して別contextを偽装しない。
+
+`CharacterLanguagePriorRealizationView`はsame-Plan専用のprovenance契約である。Cross-Plan baselineはその契約を変更・偽装せず、全turnで`prior_realizations = []`とする。accepted utteranceの蓄積・注入はしない。same-Plan prior probeの既存動作は変更しない。
+
+Cross-Planも各utteranceを#363へ独立投入し、`isolation_only`のままとする。#354未完了によるIntegrated Blockedを回避・偽装しない。
+
 ---
 
 ## 2. Strict batch identity

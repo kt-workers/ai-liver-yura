@@ -28,13 +28,16 @@
             <option value="isolation" selected>Isolation</option>
           </select>
         </label>
+        <label>Conversation probe
+          <select id="probe"><option value="strict_same_plan">Strict same Plan</option><option value="cross_plan_conversation">Cross-Plan conversation</option></select>
+        </label>
         <label>Scenario
           <select id="scenario"></select>
         </label>
         <label>Repetitions
           <input id="repetitions" type="number" min="1" max="10" value="3" />
         </label>
-        <p class="hint">Strict same-Plan batch: 全repetitionで同じPlanを共有し、直近のunique表現を最大3件だけ重複回避の参考にする。</p>
+        <p class="hint">Strict same-Plan batchは同じPlanを共有します。Cross-Plan conversationは別turn・別Plan・別contextのbaselineで、各turnのpriorは空です。</p>
         <label class="check"><input id="semantic" type="checkbox" checked /> #363 semantic verification</label>
       </article>
 

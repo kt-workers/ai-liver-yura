@@ -10,21 +10,22 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
 
 from app.domain.llm import LLMModelClass, LLMReasoningEffort
+from cloud_validation.v2_character_language_cross_plan import (
+    CrossPlanConversationCharacterLanguageLabService,
+)
 from cloud_validation.v2_character_language_gate import CharacterLanguageLabGate
 from cloud_validation.v2_character_language_lab import (
     CharacterLanguageLabMode,
+    CharacterLanguageLabProbe,
     CharacterLanguageLabRequest,
     CharacterLanguageLabSettings,
-)
-from cloud_validation.v2_character_language_same_plan import (
-    StrictSamePlanCharacterLanguageLabService,
 )
 
 _ROOT = Path(__file__).parent
 _security = HTTPBasic(auto_error=False)
 _credentials_dependency = Depends(_security)
 _settings = CharacterLanguageLabSettings.from_environment()
-_engine = StrictSamePlanCharacterLanguageLabService(_settings)
+_engine = CrossPlanConversationCharacterLanguageLabService(_settings)
 _service = CharacterLanguageLabGate(_engine)
 
 
@@ -41,6 +42,7 @@ class RunInput(BaseModel):
     run_semantic_verification: bool = True
     timeout_seconds: float = Field(default=60, gt=0, le=300)
     max_output_tokens: int = Field(default=2400, ge=128, le=12000)
+    probe: str = "strict_same_plan"
 
 
 def _auth_expected() -> tuple[str, str]:
@@ -82,6 +84,13 @@ def _reasoning_effort(value: str) -> LLMReasoningEffort:
         return LLMReasoningEffort(value)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=f"invalid reasoning effort: {value}") from error
+
+
+def _probe(value: str) -> CharacterLanguageLabProbe:
+    try:
+        return CharacterLanguageLabProbe(value)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail="probeが不正です") from error
 
 
 def _workspace_html() -> str:
@@ -147,6 +156,7 @@ def create_app(
             run_semantic_verification=payload.run_semantic_verification,
             timeout_seconds=payload.timeout_seconds,
             max_output_tokens=payload.max_output_tokens,
+            probe=_probe(payload.probe),
         )
         try:
             return await lab_service.run(request)

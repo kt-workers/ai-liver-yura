@@ -104,6 +104,11 @@ class CharacterLanguageLabMode(str, Enum):
     ISOLATION = "isolation"
 
 
+class CharacterLanguageLabProbe(str, Enum):
+    STRICT_SAME_PLAN = "strict_same_plan"
+    CROSS_PLAN_CONVERSATION = "cross_plan_conversation"
+
+
 class CharacterLanguageLabStatus(str, Enum):
     READY = "READY"
     BLOCKED_UPSTREAM_CHARACTER_DEFINITION = "BLOCKED_UPSTREAM_CHARACTER_DEFINITION"
@@ -154,10 +159,13 @@ class CharacterLanguageLabRequest:
     run_semantic_verification: bool = True
     timeout_seconds: float = 30
     max_output_tokens: int = 1200
+    probe: CharacterLanguageLabProbe = CharacterLanguageLabProbe.STRICT_SAME_PLAN
 
     def __post_init__(self) -> None:
         if not isinstance(self.mode, CharacterLanguageLabMode):
             raise ValueError("modeが不正です")
+        if not isinstance(self.probe, CharacterLanguageLabProbe):
+            raise ValueError("probeが不正です")
         if not self.scenario_id.strip():
             raise ValueError("scenario_idは空にできません")
         if type(self.repetitions) is not int or not 1 <= self.repetitions <= 10:
@@ -911,6 +919,7 @@ class CharacterLanguageLabService:
 
 
 __all__ = [
+    "CharacterLanguageLabProbe",
     "CharacterLanguageLabMode",
     "CharacterLanguageLabRequest",
     "CharacterLanguageLabService",
