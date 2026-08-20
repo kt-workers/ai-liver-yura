@@ -13,7 +13,9 @@ from .contracts import (
     _OBSERVATION_PROOF,
     _RELATION_PROOF,
     BlindInteractionAct,
+    BlindSemanticUnit,
     BlindSemanticUnitKind,
+    BlindUnitAccounting,
     BlindUnitAccountingRelation,
     BlindUtteranceObservation,
     BlindUtteranceObservationCandidate,
@@ -40,6 +42,24 @@ _SAFE_EXECUTION = frozenset({ExecutionRelation.PRESERVED, ExecutionRelation.NOT_
 _GROUNDED_RELATIONS = frozenset(
     {PropositionRelation.ENTAILED, PropositionRelation.CONTRADICTED}
 )
+
+
+def _has_plan_extra_material(
+    units: Iterable[BlindSemanticUnit],
+    accounting: dict[str, BlindUnitAccounting],
+) -> bool:
+    """self-disclosure excessを支えるPlan外/ambiguous materialがあるか返す。"""
+
+    for unit in units:
+        if unit.kind is not BlindSemanticUnitKind.MATERIAL_SEMANTIC_CONTENT:
+            continue
+        relation = accounting[unit.unit_id].relation
+        if relation in {
+            BlindUnitAccountingRelation.UNSUPPORTED_EXTRA,
+            BlindUnitAccountingRelation.AMBIGUOUS,
+        }:
+            return True
+    return False
 
 
 class SemanticVerificationAuthority:
@@ -277,7 +297,10 @@ class SemanticVerificationAuthority:
             categories.add(SemanticRejectionCategory.QUESTION_BUDGET_EXCEEDED)
         if budget.new_direction_count > plan_candidate.new_direction_budget:
             categories.add(SemanticRejectionCategory.NEW_DIRECTION_BUDGET_EXCEEDED)
-        if candidate.self_disclosure_relation is SelfDisclosureRelation.EXCEEDED:
+        if (
+            candidate.self_disclosure_relation is SelfDisclosureRelation.EXCEEDED
+            and _has_plan_extra_material(blind.units, accounting)
+        ):
             categories.add(SemanticRejectionCategory.SELF_DISCLOSURE_EXCEEDED)
         elif candidate.self_disclosure_relation is SelfDisclosureRelation.AMBIGUOUS:
             categories.add(SemanticRejectionCategory.AMBIGUOUS_SEMANTIC_OBSERVATION)
