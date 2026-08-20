@@ -271,6 +271,11 @@ Plan外のmaterial contentはUNSUPPORTED_EXTRA、判断不能はAMBIGUOUSです�
 1 blind unitにPlan-supported意味とPlan外意味が混在している場合、
 SUPPORTED_BY_PLANだけで覆わずUNSUPPORTED_EXTRAまたはAMBIGUOUSにしてください。
 その場合もproposition_idsは[]とし、関連しそうなPlan IDを診断目的で入れないでください。
+self_disclosure_relationはPlan-supported contentの再解釈ではありません。
+SUPPORTED_BY_PLANのmaterial contentだけを根拠にEXCEEDEDへしてはいけません。
+first-personやepistemicな表面表現だけでEXCEEDEDへしてはいけません。
+EXCEEDEDはPlan propositionが支えない追加のmaterial meaningがある場合だけ使用し、
+その追加意味はblind-unit accountingにもUNSUPPORTED_EXTRAまたはAMBIGUOUSとして必ず現してください。
 interaction_actsはAで固定済みですが、actual utteranceを独立に読み、
 directed question数/new direction数を別途返してください。
 DIRECTED_QUESTIONは、actual utterance自身が相手へ回答内容を求め、
