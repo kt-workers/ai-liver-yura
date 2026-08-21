@@ -47,6 +47,22 @@
 - コミット前に差分、対象ブランチ、変更ファイルを確認する。
 - コミット後かつpush前に、コミット内容と親SHAを再確認する。
 
+## GitHub変更安全規則
+
+詳細正本は `docs/architecture/v2/repository_hygiene_and_mutation_safety.md` とする。
+
+- read/search/fetch/list/compareと、create/update/delete/merge/ref move/file writeを明確に分離する。
+- Mutation APIを機能確認、接続確認、schema確認、試行目的で呼ばない。
+- すべてのGitHub/Git mutation直前に、Repository、Issue、PRまたは対象、target branch、expected HEAD、path/ref、operation、expected deltaを確定する。
+- content writeでbranch/refを省略しない。
+- `main`、`develop`、`rebuild/v2-foundation`へ直接content writeしない。
+- `update_file`やcommit前にcurrent content/treeとの差分を確認し、real deltaが0なら変更しない。
+- `NOOP`、`nonexistent`、`.trigger`、`.issue_sync_marker`、一時marker、直後に削除する前提のfileをshared historyへ追加しない。
+- CIやreviewを再実行するためだけにrepository contentやcommit historyを変更しない。rerun、reopen、workflow dispatch等の正規手段を使う。
+- branch作成前にlinked Issue、purpose、exact base SHA、予定PR base、既存active lineageとの重複なしを確認する。
+- PRをmerge/closeしただけでbranch lifecycle完了としない。MERGED、ABANDONED、TEST_ONLYはいずれも証拠記録後のbranch ref削除までを完了条件とする。
+- 誤mutationを検知したら追加mutationを止め、live状態を取得し、Issueへ記録してから最小安全手段でreconcileする。事故を隠すためのforce pushや無断history rewriteを行わない。
+
 ## 設計と実装
 
 - 設計を先に確定し、その後に実装する。
