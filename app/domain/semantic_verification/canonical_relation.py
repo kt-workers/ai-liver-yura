@@ -31,18 +31,26 @@ from .verifier import SemanticVerifier as _LegacySemanticVerifier
 _SUPPORT_FIELD = "supporting_blind_unit_ids"
 _EVIDENCE_FIELD = "evidence_refs"
 _DERIVED_PROPOSITION_FIELDS = frozenset({_SUPPORT_FIELD, _EVIDENCE_FIELD})
+_RUNTIME_IDENTITY_FIELDS = frozenset(
+    {"request_id", "semantic_plan_id", "utterance_id", "blind_observation_id"}
+)
 
 
 def relation_output_schema() -> dict[str, object]:
-    """Role B Provider schemaからRuntime導出可能なgrounding fieldを除く。"""
+    """Role B Provider schemaからRuntime導出可能なfieldを除く。"""
 
     schema = deepcopy(_legacy_relation_output_schema())
     properties = cast(dict[str, object], schema["properties"])
+    required = cast(list[str], schema["required"])
+    schema["required"] = [item for item in required if item not in _RUNTIME_IDENTITY_FIELDS]
+    for field in _RUNTIME_IDENTITY_FIELDS:
+        properties.pop(field, None)
+
     observations = cast(dict[str, object], properties["proposition_observations"])
     observation = cast(dict[str, object], observations["items"])
-    required = cast(list[str], observation["required"])
+    observation_required = cast(list[str], observation["required"])
     observation["required"] = [
-        item for item in required if item not in _DERIVED_PROPOSITION_FIELDS
+        item for item in observation_required if item not in _DERIVED_PROPOSITION_FIELDS
     ]
     observation_properties = cast(dict[str, object], observation["properties"])
     for field in _DERIVED_PROPOSITION_FIELDS:
@@ -51,9 +59,21 @@ def relation_output_schema() -> dict[str, object]:
 
 
 def relation_instructions() -> str:
-    """Role Bへsupport edge・evidence・speech-actのcanonical境界を明示する。"""
+    """Role Bへsemantic payloadだけを出力させるcanonical境界を明示する。"""
 
     legacy = _legacy_relation_instructions()
+    identity_old = """入力のrequest_id、semantic_plan.plan_id、utterance.utterance_id、
+blind_observation.observation_idはtrusted identityです。
+出力のrequest_id / semantic_plan_id / utterance_id / blind_observation_idには、
+対応する入力値をexactにそのまま返し、新しいIDを生成しないでください。"""
+    identity_new = """request_id、Plan/Utterance pair、blind observation identityはtrusted Runtime情報ですが、
+Role B Providerの出力責務ではありません。
+これらのtransport/pair identityはRuntimeがtrusted relation requestから決定論的に付与します。
+Role Bはidentityを再生成せず、semantic relation/accounting payloadだけを出力してください。"""
+    if identity_old not in legacy:
+        raise RuntimeError("legacy relation instructionのidentity contractを更新できません")
+    legacy = legacy.replace(identity_old, identity_new)
+
     old = """ENTAILED relationはactual segmentのexact quote evidenceと、
 その意味を担うblind unit IDを示してください。
 SUPPORTED_BY_PLAN accountingは、対応proposition側も同じblind unitをsupportとして
@@ -108,21 +128,55 @@ def _blind_evidence_by_unit(relation_input: object) -> dict[str, list[object]]:
     return evidence_by_unit
 
 
+def _runtime_relation_identity(
+    request_id: str,
+    relation_input: object,
+) -> dict[str, str]:
+    """trusted relation requestからDomain candidate用identity envelopeを導出する。"""
+
+    result = {"request_id": request_id}
+    if not isinstance(relation_input, Mapping):
+        return result
+
+    pair = relation_input.get("pair")
+    if isinstance(pair, Mapping):
+        semantic_plan_id = pair.get("semantic_plan_id")
+        utterance_id = pair.get("utterance_id")
+        if isinstance(semantic_plan_id, str) and semantic_plan_id.strip():
+            result["semantic_plan_id"] = semantic_plan_id
+        if isinstance(utterance_id, str) and utterance_id.strip():
+            result["utterance_id"] = utterance_id
+
+    blind = relation_input.get("blind_observation")
+    if isinstance(blind, Mapping):
+        blind_observation_id = blind.get("observation_id")
+        if isinstance(blind_observation_id, str) and blind_observation_id.strip():
+            result["blind_observation_id"] = blind_observation_id
+    return result
+
+
 def _canonicalize_relation_value(
     value: object,
     relation_input: object | None = None,
+    *,
+    request_id: str | None = None,
 ) -> object:
-    """accountingとfixed blind evidenceからproposition groundingを決定論的に導出する。"""
+    """trusted identity/accounting/fixed blind evidenceからRuntime candidateを構築する。"""
 
     if not isinstance(value, Mapping):
         return value
     candidate = dict(cast(Mapping[str, object], value))
+    for field in _RUNTIME_IDENTITY_FIELDS:
+        candidate.pop(field, None)
+    if request_id is not None:
+        candidate.update(_runtime_relation_identity(request_id, relation_input))
+
     accounting_value = candidate.get("blind_unit_accounting")
     observations_value = candidate.get("proposition_observations")
     if not isinstance(accounting_value, (list, tuple)) or not isinstance(
         observations_value, (list, tuple)
     ):
-        return value
+        return candidate
 
     support_by_proposition: dict[str, list[str]] = {}
     for raw_accounting in accounting_value:
@@ -179,6 +233,7 @@ class _CanonicalRelationOutputPort:
         normalized = _canonicalize_relation_value(
             result.output.value,
             request.input.value,
+            request_id=request.request_id,
         )
         return replace(
             result,
@@ -190,7 +245,7 @@ class _CanonicalRelationOutputPort:
 
 
 class SemanticVerifier(_LegacySemanticVerifier):
-    """Role B groundingを単一正本化して既存Authorityへ渡すproduction Verifier。"""
+    """Role B raw semantic payloadをRuntime canonical candidateへ包むproduction Verifier。"""
 
     def __init__(
         self,
