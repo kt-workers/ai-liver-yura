@@ -5,14 +5,17 @@ from jsonschema import ValidationError, validate
 
 from app.domain.semantic_verification import relation_output_schema
 
+_RUNTIME_IDENTITY_FIELDS = (
+    "request_id",
+    "semantic_plan_id",
+    "utterance_id",
+    "blind_observation_id",
+)
+
 
 def _payload(*, relation: str, proposition_ids: list[str]) -> dict[str, object]:
     return {
         "candidate_id": "candidate-1",
-        "request_id": "request-1",
-        "semantic_plan_id": "plan-1",
-        "utterance_id": "utterance-1",
-        "blind_observation_id": "blind-1",
         "proposition_observations": [
             {
                 "proposition_id": "p1",
@@ -37,6 +40,24 @@ def _payload(*, relation: str, proposition_ids: list[str]) -> dict[str, object]:
         },
         "self_disclosure_relation": "within_policy",
     }
+
+
+def test_relation_provider_schema_excludes_runtime_owned_identity() -> None:
+    schema = relation_output_schema()
+    properties = schema["properties"]
+    required = schema["required"]
+    assert isinstance(properties, dict)
+    assert isinstance(required, list)
+
+    for field in _RUNTIME_IDENTITY_FIELDS:
+        assert field not in properties
+        assert field not in required
+
+    payload = _payload(relation="supported_by_plan", proposition_ids=["p1"])
+    validate(payload, schema)
+    for field in _RUNTIME_IDENTITY_FIELDS:
+        with pytest.raises(ValidationError):
+            validate({**payload, field: "provider-echo"}, schema)
 
 
 def test_proposition_observation_does_not_duplicate_runtime_grounding() -> None:
