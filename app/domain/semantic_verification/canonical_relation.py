@@ -66,8 +66,8 @@ def relation_instructions() -> str:
 blind_observation.observation_idはtrusted identityです。
 出力のrequest_id / semantic_plan_id / utterance_id / blind_observation_idには、
 対応する入力値をexactにそのまま返し、新しいIDを生成しないでください。"""
-    identity_new = """request_id、Plan/Utterance pair、blind observation identityはtrusted Runtime情報ですが、
-Role B Providerの出力責務ではありません。
+    identity_new = """request_id、Plan/Utterance pair、blind observation identityは
+trusted Runtime情報ですが、Role B Providerの出力責務ではありません。
 これらのtransport/pair identityはRuntimeがtrusted relation requestから決定論的に付与します。
 Role Bはidentityを再生成せず、semantic relation/accounting payloadだけを出力してください。"""
     if identity_old not in legacy:
