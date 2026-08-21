@@ -77,7 +77,7 @@ def test_blind_provider_payload_exposes_exact_request_identity() -> None:
     assert "exact" in blind_instructions().lower()
 
 
-def test_relation_provider_payload_exposes_exact_request_identity() -> None:
+def test_relation_input_keeps_trusted_identity_without_provider_output_echo() -> None:
     blind_value = SimpleNamespace(
         candidate=SimpleNamespace(utterance_id="utterance-1"),
         committed_at=NOW,
@@ -92,6 +92,11 @@ def test_relation_provider_payload_exposes_exact_request_identity() -> None:
         policy=_policy(),
     )
     payload = cast(dict[str, JsonValue], request.input.to_dict()["value"])
+    instructions = relation_instructions()
 
     assert payload["request_id"] == request.request_id == "relation-request-1"
-    assert "exact" in relation_instructions().lower()
+    assert "Role B Providerの出力責務ではありません" in instructions
+    assert (
+        "出力のrequest_id / semantic_plan_id / utterance_id / blind_observation_id"
+        not in instructions
+    )
