@@ -21,6 +21,16 @@
 - `speech_semantics_contracts.md` — What-to-say Authority / typed SpeechSemanticPlan / simple・complex commit gate
 - `character_projection_contracts.md` — Human-readable Character Definition / structured document / typed Runtime Profile projection contracts
 - `character_psychological_projection_contracts.md` — Character精神構造Layers 1–6 / causal refs / dynamic Layer 7 boundary
+- `character_language_contracts.md` — #330 How-to-say / CharacterUtterance / authority and freshness contracts
+- `character_language_provider_contracts.md` — #330 production Character Language role / provider schema boundary
+- `character_language_variation_contracts.md` — #330 bounded prior-realization awareness / semantic-safe variation
+- `character_language_semantic_repair_contracts.md` — #330 same-Plan semantic-safe regeneration input contract
+- `semantic_verification_contracts.md` — #363 independent semantic observation / closed acceptance contracts
+- `semantic_verification_observer_strategy.md` — #363 Plan-blind inventory + Plan relation observer topology
+- `semantic_verification_relation_edge_contract.md` — #363 relation edge / evidence reconciliation details
+- `semantic_verification_self_disclosure_relation_contract.md` — #363 self-disclosure relation boundary
+- `semantic_verification_speech_act_contract.md` — #363 speech-act observation/acceptance boundary
+- `semantic_verification_transport_identity_contract.md` — #363/#438 provider transport identity binding
 - `speech_performance_contracts.md` — #331 CharacterUtterance＋Voice Style＋Expression→engine-independent SpeechPerformancePlan
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
 - `speech_runtime_presentation_contracts.md` — #348 component readiness / repair / queue / revalidation / Presentation commit
