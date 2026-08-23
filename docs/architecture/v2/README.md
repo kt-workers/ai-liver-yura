@@ -8,6 +8,7 @@
 - `runtime_kernel_contracts.md` — bounded queue / scheduler / cancellation / lifecycle contracts
 - `runtime_lifecycle_contracts.md` — degraded operation / availability / retry / graceful shutdown contracts
 - `llm_role_contracts.md` — variable logical LLM role / structured request-result contracts
+- `../../character/v2/yura_character_bible.md` — 星波ゆらの人物設定正本
 - `llm_provider_adapter_contracts.md` — provider SDK boundary / model policy resolution / typed failure normalization
 - `input_gateway_contracts.md` — multimodal input normalization / session / touch boundary
 - `input_meaning_contracts.md` — natural-language typed meaning / reference / commit boundary
@@ -25,6 +26,8 @@
 - `semantic_verification_observer_strategy.md` — #363 Plan-blind inventory → Plan-aware relation/accounting / live validation strategy
 - `semantic_verification_relation_edge_contract.md` — #363 Role B support/evidence single-source normalization / relation edge contracts
 - `semantic_verification_self_disclosure_relation_contract.md` — #363 Plan-supported contentとself-disclosure追加意味の整合 / false-reject prevention contracts
+- `semantic_verification_speech_act_contract.md` — #363 communicative act semantic preservation / plan-accounting contracts
+- `semantic_verification_transport_identity_contract.md` — #363 trusted Runtime transport identity / Provider semantic payload boundary contracts
 - `character_language_lab_contracts.md` — #434 Integrated/Isolation Character Language quality Lab / Human + #363 dual evaluation contracts
 - `character_language_lab_evidence_gate.md` — #434 engine→machine gate→Human gate / Integrated evidence fail-closed contracts
 - `character_language_lab_same_plan_variation.md` — #434 strict 1-batch/1-Plan repeated variation / bounded prior observability contracts
