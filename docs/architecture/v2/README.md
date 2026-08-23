@@ -3,6 +3,7 @@
 - `system_architecture.md` — system-wide canonical architecture
 - `design_completion_matrix.md` — #445 全V2詳細設計の完了状態・不足設計・Implementation Freeze Gate
 - `brain_architecture.md` — Brain modules and authority
+- `brain_integration_contracts.md` — #334 non-serial Brain composition / trigger / revision / concurrency integration
 - `cognitive_llm_architecture.md` — cognitive and LLM role design
 - `goal_commitment_architecture.md` — persistent Goal / Commitment state and lifecycle
 - `concurrency_architecture.md` — non-blocking runtime / LLM invocation topology
@@ -56,6 +57,7 @@
 - `validation_lab_contracts.md` — #352 production-path Validation Harness / provenance / timeline / Human context / Export
 - `development_tooling_contracts.md` — #353 read-only development evidence / visualizer / reference analysis / security boundary
 - `game_skill_runtime_contracts.md` — #365 high-level Core Goal vs realtime game perception/tactics/action/runtime contracts
+- `system_integration_contracts.md` — #360 staged composition / degraded startup / cross-lane latency / System Verification contracts
 - `legacy_migration_matrix.md` — V1 requirement migration
 - `project_sync_manifest.md` — GitHub Project synchronization manifest
 - `project_sync_runbook.md` — live ID取得・dry-run・Project fields・formal Parent/Sub-issue同期手順
