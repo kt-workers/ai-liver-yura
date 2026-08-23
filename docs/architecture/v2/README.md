@@ -1,14 +1,15 @@
 # V2 Architecture Canonical Index
 
 - `system_architecture.md` — system-wide canonical architecture
-- `design_completion_matrix.md` — #445 全V2詳細設計の完了状態・不足設計・Implementation Freeze Gate
+- `design_completion_matrix.md` — #445 全V2詳細設計の完了状態・Implementation Freeze Gate
+- `design_cross_audit_report.md` — D8 Authority / dependency / truth / revision / concurrency / lineage横断監査
 - `brain_architecture.md` — Brain modules and authority
 - `brain_integration_contracts.md` — #334 non-serial Brain composition / trigger / revision / concurrency integration
 - `cognitive_llm_architecture.md` — cognitive and LLM role design
 - `goal_commitment_architecture.md` — persistent Goal / Commitment state and lifecycle
 - `concurrency_architecture.md` — non-blocking runtime / LLM invocation topology
 - `runtime_kernel_contracts.md` — bounded queue / scheduler / cancellation / lifecycle contracts
-- `runtime_lifecycle_contracts.md` — degraded operation / availability / retry / graceful shutdown contracts
+- `runtime_lifecycle_contracts.md` — degraded operation / availability / retry / persistence-before-close graceful shutdown contracts
 - `llm_role_contracts.md` — variable logical LLM role / structured request-result contracts
 - `../../character/v2/yura_character_bible.md` — 星波ゆらの人物設定正本
 - `llm_provider_adapter_contracts.md` — provider SDK boundary / model policy resolution / typed failure normalization
@@ -37,6 +38,7 @@
 - `semantic_verification_speech_act_contract.md` — #363 speech-act observation/acceptance boundary
 - `semantic_verification_transport_identity_contract.md` — #363/#438 provider transport identity binding
 - `speech_performance_contracts.md` — #331 CharacterUtterance＋Voice Style＋Expression→engine-independent SpeechPerformancePlan
+- `speech_expression_projection_contracts.md` — #331 versioned Character Voice Style / Internal State→SpeechExpression/Performance projection policy
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
 - `speech_runtime_presentation_contracts.md` — #348 component readiness / repair / queue / revalidation / Presentation commit
 - `tts_provider_contracts.md` — #358 TTS voice binding / provider mapping / audio artifact / timing / degradation
@@ -62,4 +64,4 @@
 - `project_sync_manifest.md` — GitHub Project synchronization manifest
 - `project_sync_runbook.md` — live ID取得・dry-run・Project fields・formal Parent/Sub-issue同期手順
 
-Status: Draft / V2 Design Completion Gate (#445).
+Status: Draft / V2 Design Completion Gate (#445). D1–D7 DONE, D8 cross-audit in final verification, D9 user confirmation pending.
