@@ -18,6 +18,9 @@
 - `executive_authority_contracts.md` — Executive Goal・Action Authority / typed decision commit gate
 - `goal_commitment_state_contracts.md` — persistent Goal・Commitment State / atomic lifecycle reducer
 - `activity_execution_contracts.md` — Activity admission / Capability preflight / Actual Execution Fact authority
+- `memory_store_retrieval_contracts.md` — #332 canonical Memory Store / reconciliation / contradiction / bounded retrieval
+- `memory_reflection_contracts.md` — #364 bounded source evidence / candidate proposal / support observation / Reflection acceptance
+- `persistence_repository_contracts.md` — #359 Memory repository / restart-safe snapshot / migration / rehydration infrastructure
 - `speech_semantics_contracts.md` — What-to-say Authority / typed SpeechSemanticPlan / simple・complex commit gate
 - `character_projection_contracts.md` — Human-readable Character Definition / structured document / typed Runtime Profile projection contracts
 - `character_psychological_projection_contracts.md` — Character精神構造Layers 1–6 / causal refs / dynamic Layer 7 boundary
