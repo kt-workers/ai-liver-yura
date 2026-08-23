@@ -51,14 +51,6 @@ Status: Architecture Freeze / Design Completion Gate
 | Reflection | #364 | A | `memory_reflection_contracts.md` |
 | Brain Integration | #334 | D | `brain_integration_contracts.md`をD7で新規作成 |
 
-### Brain cross-audit pending
-
-- Meaning / Appraisal / State / Memory / Goal / Attention / ExecutiveのAuthority重複なし。
-- Memory過去値をcurrent Stateへ直接復元しない。
-- Character/Verifier/PerformanceがWhat-to-sayを変更しない。
-- Speech playback中も次のcognition/preparationを進められる。
-- background Reflectionでforeground interactionをstarveさせない。
-
 ## 5. D2 Speech design — DONE
 
 Completed:
@@ -67,9 +59,8 @@ Completed:
 - [x] #331 `speech_performance_contracts.md`
 - [x] #348 `speech_runtime_presentation_contracts.md`
 - [x] #358 `tts_provider_contracts.md`
-- [x] Architecture Index updated
 
-Resulting authority/data topology:
+Topology:
 
 ```text
 #362 SpeechSemanticPlan
@@ -86,7 +77,7 @@ Resulting authority/data topology:
 → committed/started timing only → #340 viseme
 ```
 
-This is not a fixed serial await chain.
+Key invariant: responsibility graph is not a fixed serial await chain.
 
 ## 6. D3 Memory design — DONE
 
@@ -94,9 +85,8 @@ Completed:
 - [x] #332 `memory_store_retrieval_contracts.md` exact reconciliation from design-only PR #444
 - [x] #364 `memory_reflection_contracts.md`
 - [x] #359 `persistence_repository_contracts.md`
-- [x] Architecture Index updated
 
-Resulting topology:
+Topology:
 
 ```text
 trusted historical evidence
@@ -105,15 +95,12 @@ trusted historical evidence
    └─ proposal LLM → support observer → closed acceptance
 → ValidatedMemoryCandidate
 → #332 deterministic reconciliation
-   ├─ store / duplicate / provenance merge
-   ├─ supersede
-   └─ contradiction link
 → canonical Memory / bounded MemoryEvidenceView
 → #359 durable Memory repository
 
 #366 GoalCommitmentSnapshot
-→ #359 asynchronous restart-safe snapshot persistence
-→ owner-validated rehydration candidate on next runtime
+→ #359 asynchronous restart-safe persistence
+→ owner-validated rehydration candidate
 ```
 
 Key invariants:
@@ -121,31 +108,20 @@ Key invariants:
 - prepared speech / planned Activity are not actual-history evidence.
 - old Memory never directly restores current Emotion/Relationship/Goal/Execution state.
 - vector similarity is retrieval evidence, not merge/supersede authority.
-- DB schema is not Domain authority.
 - only owner-declared restart-safe snapshots can be restored as current state.
-- #366 commit lock contains no DB await; durability truth is separately observable.
 
 ## 7. D4 Body design — DONE
 
-| Area | Issue | Status | Canonical / action |
+| Area | Issue | Status | Canonical |
 |---|---:|---|---|
-| Canonical Body Model / State | #336 | A | PR #411 merged; `body_architecture.md` detailed D01/D02 contract is current authority |
+| Canonical Body Model / State | #336 | A | `body_architecture.md` D01/D02; PR #411 merged |
 | Body Expression | #337 | A | `body_expression_contracts.md` |
-| Body Motion Planning | #338 | A | `body_motion_planning_contracts.md` exact-recovered from PR #422 current design blob |
+| Body Motion Planning | #338 | A | `body_motion_planning_contracts.md` exact-recovered from PR #422 |
 | Solver / IK / Kinematics / Controller | #339 | A | `body_solver_controller_contracts.md` |
 | Realtime Layers | #340 | A | `body_realtime_layers_contracts.md` |
 | Body Integration | #341 | A | `body_integration_contracts.md` |
 
-Completed:
-- [x] #336 current trunk authority verified
-- [x] #337 expression contract reused
-- [x] #338 active-lineage design exact reconciliation
-- [x] #339 physical solver/controller contract
-- [x] #340 realtime overlay contract
-- [x] #341 integration contract
-- [x] Architecture Index updated
-
-Resulting topology:
+Topology:
 
 ```text
 Committed Executive BODY intent
@@ -162,62 +138,75 @@ Committed Executive BODY intent
 ```
 
 Key invariants:
-- #339 is the single physical BodyState writer.
-- #340 emits overlays only and cannot bypass hard limits/balance.
-- fixed Pose/Motion preset is not the canonical path.
-- motion starts from current pose/velocity; no Home/Neutral snap-back.
-- canonical 3D capability is not reduced to a 2D renderer's limits.
-- Planner/Character/TTS/renderer latency does not stop realtime Body continuation.
-- Character text is never Body motion semantic authority.
-- anatomical left/right remains canonical; mirroring is Adapter responsibility.
-- Prepared speech/speculative TTS does not drive viseme; actual Presentation timing does.
-- BODY intent/plan is not Actual Execution Fact; physical observation is required.
+- #339 single physical BodyState writer.
+- #340 overlay only; hard limits/balanceを迂回しない。
+- current pose/velocity continuity; no Home reset.
+- 3D Canonical capabilityをrenderer都合で縮退しない。
+- Planner/Character/TTS/renderer latencyでBody realtime停止なし。
+- Character textはBody motion Authorityではない。
 
-## 8. Plugin
+## 8. D5 Plugin / Infrastructure design — DONE
 
-| Area | Issue | Status | Canonical / action |
+| Area | Issue | Status | Canonical |
 |---|---:|---|---|
-| Manifest / Registry / Capability | #343 | A | `plugin_registry_contracts.md` + permission principal contracts |
-| Zero/One Plugin Integration | #344 | D | `plugin_integration_contracts.md`をD5で作成 |
-
-## 9. Infrastructure
-
-| Area | Issue | Status | Canonical / action |
-|---|---:|---|---|
+| Plugin Registry / Permission | #343 | A | `plugin_registry_contracts.md` + permission principal supplement |
+| Plugin Integration | #344 | A | `plugin_integration_contracts.md` |
 | LLM Provider | #357 | A | `llm_provider_adapter_contracts.md` |
-| LLM operational diagnostics | #437 | A/B audit | existing evidenceを#357とD5で整合監査 |
+| LLM operational diagnostics | #437 | A | `llm_provider_operational_diagnostics_contracts.md` |
 | TTS Provider | #358 | A | `tts_provider_contracts.md` |
 | Persistence | #359 | A | `persistence_repository_contracts.md` |
 
-Infrastructure invariant:
-- provider SDK型/HTTP object/secretをCore Domainへ露出しない。
-- timeout/cancel/errorをtyped failureへ変換。
-- Provider unavailableでDomain semantic contractを変更しない。
-- TTS/DB待ちでunrelated laneをblockしない。
+Key invariants:
+- zero-plugin is valid Core state.
+- Plugin adds capabilities only through public extension contract.
+- Plugin execution/Actual Fact flows through #329.
+- permission/health/lifecycle/generation races are fenced.
+- Provider/Adapter != Plugin; Subsystem != Registry-owned Plugin process.
+- Provider HTTP/SDK cause stays Infrastructure diagnostic, not Domain semantic detail.
+- 429 is not uniformly retryable; quota/non-transient and unknown classification fail closed against immediate retry.
+- secrets/raw provider response/exception remain outside Domain/GUI/Export.
 
-## 10. Subsystems
+## 9. D6 Subsystem design — DONE
+
+| Area | Issue | Status | Canonical |
+|---|---:|---|---|
+| Avatar Presentation | #346 | A | `avatar_presentation_contracts.md` |
+| Streaming | #347 | A | `streaming_subsystem_contracts.md`, reconciles #394/#396 |
+| GUI/Admin | #351 | A | `gui_admin_contracts.md` |
+| Validation Labs | #352 | A | `validation_lab_contracts.md` |
+| Development Tooling | #353 | A | `development_tooling_contracts.md` |
+| Game Skill Runtime | #365 | A | `game_skill_runtime_contracts.md` |
+
+Subsystem invariants:
+- public typed boundary only; no Core internal object ownership.
+- Subsystem AI never takes Executive Goal Authority.
+- open-ended raw NL semantic Authority remains #326.
+- high-volume/realtime workload uses bounded aggregation/backpressure.
+- Subsystem absence/failure does not stop Core.
+- provider-specific SDK/credential/ID remains outside Core.
+- observed external effect and requested/intended effect remain distinct.
+
+Special reconciliations:
+- Streaming uses Core Decision / Subsystem Execution / External Observation three-way boundary.
+- Streaming provider observation and user report preserve distinct provenance.
+- Validation fixtures are not production trigger rules.
+- Human context-dependent rating receives source-grounded context; explanatory UI context is not silently fed into LLM.
+- #434 formal Character Human quality remains deferred until actual speech Presentation chain exists.
+- Game frame loop is independent from Executive/Character/TTS latency.
+- Avatar projects canonical BodyPoseFrame only; renderer limitations do not shrink Body contract.
+
+## 10. Integration / System
 
 | Area | Issue | Status | Canonical / action |
 |---|---:|---|---|
-| Avatar Presentation | #346 | C | `avatar_presentation_contracts.md` |
-| Streaming | #347 | B/C audit | #394/#396を統合し詳細contractを一本化 |
-| GUI/Admin | #351 | C | `gui_admin_contracts.md` |
-| Validation Labs | #352 | C | `validation_lab_contracts.md` |
-| Development Tooling | #353 | C | `development_tooling_contracts.md` |
-| Game Skill Runtime | #365 | C | `game_skill_runtime_contracts.md` |
-
-## 11. Integration / System
-
-| Area | Issue | Status | Canonical / action |
-|---|---:|---|---|
-| Brain Integration | #334 | D | `brain_integration_contracts.md` |
-| Body Integration | #341 | A | `body_integration_contracts.md` completed in D4 |
-| Plugin Integration | #344 | D | `plugin_integration_contracts.md` |
-| System Integration | #360 | D | `system_integration_contracts.md` |
+| Brain Integration | #334 | D | `brain_integration_contracts.md` — D7 |
+| Body Integration | #341 | A | `body_integration_contracts.md` — completed D4 |
+| Plugin Integration | #344 | A | `plugin_integration_contracts.md` — completed D5 |
+| System Integration | #360 | D | `system_integration_contracts.md` — D7 |
 
 Integration design must define composition topology, startup/degraded topology, identity/revision/cancellation propagation, trace schema, fake-provider test topology, system acceptance and defect ownership without reimplementing Work logic.
 
-## 12. Design work sequence
+## 11. Design work sequence
 
 ```text
 D1 Existing detailed-design audit                    [DONE]
@@ -228,12 +217,12 @@ D3 Memory design                                     [DONE]
 ↓
 D4 Body design                                       [DONE]
 ↓
-D5 Plugin / Infrastructure boundary design           [NEXT]
-   #343 audit → #344 detailed integration + #357/#437 cross-provider audit
+D5 Plugin / Infrastructure boundary design           [DONE]
 ↓
-D6 Subsystems
+D6 Subsystems                                        [DONE]
 ↓
-D7 Remaining Integration
+D7 Remaining Integration                             [NEXT]
+   #334 Brain Integration → #360 System Integration
 ↓
 D8 Cross-design authority / DTO / lifecycle / failure / concurrency audit
 ↓
@@ -242,7 +231,7 @@ D9 User Design Completion Gate
 Implementation planning / Codex coding
 ```
 
-## 13. Active implementation lineage treatment during Freeze
+## 12. Active implementation lineage treatment during Freeze
 
 Existing product implementation PRs remain preserved and receive no new product code.
 
@@ -252,17 +241,17 @@ Current preserved lineages include:
 - #338 / PR #422
 - #434 / PR #435 validation-only
 
-#332 / PR #444 is design-only historical lineage; its design has now been recovered into #445. It is not automatically the future implementation starting point. After D9 PASS, implementation lineage is resolved from live trunk under Resume Gate.
+#332 / PR #444 is design-only historical lineage; its design has been recovered into #445. It is not automatically the future implementation starting point. After D9 PASS, implementation lineage is resolved from live trunk under Resume Gate.
 
-## 14. Gate
+## 13. Gate
 
 Current status:
 - [x] D1 detailed-design audit
 - [x] D2 Speech
 - [x] D3 Memory
 - [x] D4 Body
-- [ ] D5 Plugin/Infrastructure
-- [ ] D6 Subsystems
+- [x] D5 Plugin/Infrastructure
+- [x] D6 Subsystems
 - [ ] D7 Remaining Integrations
 - [ ] D8 cross-design audit PASS
 - [ ] D9 User Design Completion confirmation
