@@ -23,6 +23,8 @@
 - `character_psychological_projection_contracts.md` — Character精神構造Layers 1–6 / causal refs / dynamic Layer 7 boundary
 - `speech_performance_contracts.md` — #331 CharacterUtterance＋Voice Style＋Expression→engine-independent SpeechPerformancePlan
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
+- `speech_runtime_presentation_contracts.md` — #348 component readiness / repair / queue / revalidation / Presentation commit
+- `tts_provider_contracts.md` — #358 TTS voice binding / provider mapping / audio artifact / timing / degradation
 - `body_architecture.md` — canonical body, generative motion, realtime control
 - `body_expression_contracts.md` — #337 Internal State / Focus / Character Style→normalized BodyExpressionContext projection contracts
 - `plugin_architecture.md` — Core extension / capability architecture
