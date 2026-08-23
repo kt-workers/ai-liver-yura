@@ -18,9 +18,14 @@
 - `goal_commitment_state_contracts.md` — persistent Goal・Commitment State / atomic lifecycle reducer
 - `activity_execution_contracts.md` — Activity admission / Capability preflight / Actual Execution Fact authority
 - `speech_semantics_contracts.md` — What-to-say Authority / typed SpeechSemanticPlan / simple・complex commit gate
+- `character_projection_contracts.md` — Human-readable Character Definition / structured document / typed Runtime Profile projection contracts
+- `character_psychological_projection_contracts.md` — Character精神構造Layers 1–6 / causal refs / dynamic Layer 7 boundary
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
 - `body_architecture.md` — canonical body, generative motion, realtime control
+- `body_expression_contracts.md` — #337 Internal State / Focus / Character Style→normalized BodyExpressionContext projection contracts
 - `plugin_architecture.md` — Core extension / capability architecture
+- `plugin_registry_contracts.md` — #343 Plugin manifest / Registry lifecycle / permission / health / CapabilityDescriptor projection contracts
+- `plugin_registry_permission_principal_contracts.md` — #343 Plugin permission grant principal isolation / revocation security contracts
 - `subsystem_architecture.md` — Streaming, Game Skill, Avatar and specialized AI boundaries
 - `legacy_migration_matrix.md` — V1 requirement migration
 - `project_sync_manifest.md` — GitHub Project synchronization manifest
