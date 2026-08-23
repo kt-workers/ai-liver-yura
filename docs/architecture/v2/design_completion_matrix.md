@@ -49,7 +49,7 @@ Status: Architecture Freeze / Design Completion Gate
 | Speech Runtime / Presentation | #348 | A | `speech_runtime_presentation_contracts.md` + pipeline architecture |
 | Memory Store / Retrieval | #332 | A | `memory_store_retrieval_contracts.md`をPR #444 design HEADからexact回収済み |
 | Reflection | #364 | A | `memory_reflection_contracts.md` |
-| Brain Integration | #334 | D | `brain_integration_contracts.md`を新規作成 |
+| Brain Integration | #334 | D | `brain_integration_contracts.md`をD7で新規作成 |
 
 ### Brain cross-audit pending
 
@@ -125,31 +125,60 @@ Key invariants:
 - only owner-declared restart-safe snapshots can be restored as current state.
 - #366 commit lock contains no DB await; durability truth is separately observable.
 
-## 7. Body
+## 7. D4 Body design — DONE
 
 | Area | Issue | Status | Canonical / action |
 |---|---:|---|---|
-| Canonical Body Model / State | #336 | A/B audit | current Body detailed contractsとtrunk/active lineageをD4で照合 |
+| Canonical Body Model / State | #336 | A | PR #411 merged; `body_architecture.md` detailed D01/D02 contract is current authority |
 | Body Expression | #337 | A | `body_expression_contracts.md` |
-| Body Motion Planning | #338 | B | `body_motion_planning_contracts.md`がactive #338 lineage。D4でexact回収 |
-| Solver / IK / Kinematics / Controller | #339 | C | `body_solver_controller_contracts.md` |
-| Realtime Layers | #340 | C | `body_realtime_layers_contracts.md` |
-| Body Integration | #341 | D | `body_integration_contracts.md` |
+| Body Motion Planning | #338 | A | `body_motion_planning_contracts.md` exact-recovered from PR #422 current design blob |
+| Solver / IK / Kinematics / Controller | #339 | A | `body_solver_controller_contracts.md` |
+| Realtime Layers | #340 | A | `body_realtime_layers_contracts.md` |
+| Body Integration | #341 | A | `body_integration_contracts.md` |
 
-Body invariant:
-- fixed Pose/Motion presetを正規経路にしない。
-- current poseから連続運動する。
-- 3D canonical能力を2D/Live2D制約で縮退させない。
-- Body realtimeをLLM/TTS/Character待ちで停止しない。
-- Character textをBody motion Authorityにしない。
-- anatomical left/rightをCanonicalとしmirrorはAdapter責務。
+Completed:
+- [x] #336 current trunk authority verified
+- [x] #337 expression contract reused
+- [x] #338 active-lineage design exact reconciliation
+- [x] #339 physical solver/controller contract
+- [x] #340 realtime overlay contract
+- [x] #341 integration contract
+- [x] Architecture Index updated
+
+Resulting topology:
+
+```text
+Committed Executive BODY intent
+→ #338 BodyMotionPlan
+→ #339 deterministic physical solve / current trajectory
+
+#327/#333/#355 → #337 BodyExpressionContext ─┐
+#333 Focus / low-level timing → #340 overlays ├→ #339 final composition
+#348+#358 actual speech timing → #340 viseme ──┘
+                                              ↓
+                                   BodyState / BodyPoseFrame
+                                              ↓
+                                          #346 Avatar
+```
+
+Key invariants:
+- #339 is the single physical BodyState writer.
+- #340 emits overlays only and cannot bypass hard limits/balance.
+- fixed Pose/Motion preset is not the canonical path.
+- motion starts from current pose/velocity; no Home/Neutral snap-back.
+- canonical 3D capability is not reduced to a 2D renderer's limits.
+- Planner/Character/TTS/renderer latency does not stop realtime Body continuation.
+- Character text is never Body motion semantic authority.
+- anatomical left/right remains canonical; mirroring is Adapter responsibility.
+- Prepared speech/speculative TTS does not drive viseme; actual Presentation timing does.
+- BODY intent/plan is not Actual Execution Fact; physical observation is required.
 
 ## 8. Plugin
 
 | Area | Issue | Status | Canonical / action |
 |---|---:|---|---|
 | Manifest / Registry / Capability | #343 | A | `plugin_registry_contracts.md` + permission principal contracts |
-| Zero/One Plugin Integration | #344 | D | `plugin_integration_contracts.md` |
+| Zero/One Plugin Integration | #344 | D | `plugin_integration_contracts.md`をD5で作成 |
 
 ## 9. Infrastructure
 
@@ -182,7 +211,7 @@ Infrastructure invariant:
 | Area | Issue | Status | Canonical / action |
 |---|---:|---|---|
 | Brain Integration | #334 | D | `brain_integration_contracts.md` |
-| Body Integration | #341 | D | `body_integration_contracts.md` |
+| Body Integration | #341 | A | `body_integration_contracts.md` completed in D4 |
 | Plugin Integration | #344 | D | `plugin_integration_contracts.md` |
 | System Integration | #360 | D | `system_integration_contracts.md` |
 
@@ -197,14 +226,14 @@ D2 Speech end-to-end design                          [DONE]
 ↓
 D3 Memory design                                     [DONE]
 ↓
-D4 Body design                                       [NEXT]
-   #336/#337/#338 reconcile → #339 → #340 → #341
+D4 Body design                                       [DONE]
 ↓
-D5 Plugin / Infrastructure boundary design
+D5 Plugin / Infrastructure boundary design           [NEXT]
+   #343 audit → #344 detailed integration + #357/#437 cross-provider audit
 ↓
 D6 Subsystems
 ↓
-D7 Integration
+D7 Remaining Integration
 ↓
 D8 Cross-design authority / DTO / lifecycle / failure / concurrency audit
 ↓
@@ -220,6 +249,7 @@ Existing product implementation PRs remain preserved and receive no new product 
 Current preserved lineages include:
 - #330 / PR #423
 - #363 / PR #428
+- #338 / PR #422
 - #434 / PR #435 validation-only
 
 #332 / PR #444 is design-only historical lineage; its design has now been recovered into #445. It is not automatically the future implementation starting point. After D9 PASS, implementation lineage is resolved from live trunk under Resume Gate.
@@ -230,10 +260,10 @@ Current status:
 - [x] D1 detailed-design audit
 - [x] D2 Speech
 - [x] D3 Memory
-- [ ] D4 Body
+- [x] D4 Body
 - [ ] D5 Plugin/Infrastructure
 - [ ] D6 Subsystems
-- [ ] D7 Integrations
+- [ ] D7 Remaining Integrations
 - [ ] D8 cross-design audit PASS
 - [ ] D9 User Design Completion confirmation
 
