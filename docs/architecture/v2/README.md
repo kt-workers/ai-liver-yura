@@ -50,6 +50,12 @@
 - `plugin_registry_permission_principal_contracts.md` — #343 Plugin permission grant principal isolation / revocation security contracts
 - `plugin_integration_contracts.md` — #344 zero-plugin / capability execution / effect fence / generation integration contracts
 - `subsystem_architecture.md` — Streaming, Game Skill, Avatar and specialized AI boundaries
+- `avatar_presentation_contracts.md` — #346 canonical BodyPoseFrame→Stick/Live2D/3D renderer projection / degradation
+- `streaming_subsystem_contracts.md` — #347/#394/#396 Core Decision / Streaming Execution / External Observation / comment ingestion contracts
+- `gui_admin_contracts.md` — #351 immutable Read Model / typed Admin Command / secret-safe GUI boundary
+- `validation_lab_contracts.md` — #352 production-path Validation Harness / provenance / timeline / Human context / Export
+- `development_tooling_contracts.md` — #353 read-only development evidence / visualizer / reference analysis / security boundary
+- `game_skill_runtime_contracts.md` — #365 high-level Core Goal vs realtime game perception/tactics/action/runtime contracts
 - `legacy_migration_matrix.md` — V1 requirement migration
 - `project_sync_manifest.md` — GitHub Project synchronization manifest
 - `project_sync_runbook.md` — live ID取得・dry-run・Project fields・formal Parent/Sub-issue同期手順
