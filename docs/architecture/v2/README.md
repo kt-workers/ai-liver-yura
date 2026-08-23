@@ -11,6 +11,7 @@
 - `llm_role_contracts.md` — variable logical LLM role / structured request-result contracts
 - `../../character/v2/yura_character_bible.md` — 星波ゆらの人物設定正本
 - `llm_provider_adapter_contracts.md` — provider SDK boundary / model policy resolution / typed failure normalization
+- `llm_provider_operational_diagnostics_contracts.md` — #437 safe provider operational failure categories / retry truth / observability boundary
 - `input_gateway_contracts.md` — multimodal input normalization / session / touch boundary
 - `input_meaning_contracts.md` — natural-language typed meaning / reference / commit boundary
 - `appraisal_internal_state_contracts.md` — subjective appraisal candidate / causal state reducer
@@ -47,6 +48,7 @@
 - `plugin_architecture.md` — Core extension / capability architecture
 - `plugin_registry_contracts.md` — #343 Plugin manifest / Registry lifecycle / permission / health / CapabilityDescriptor projection contracts
 - `plugin_registry_permission_principal_contracts.md` — #343 Plugin permission grant principal isolation / revocation security contracts
+- `plugin_integration_contracts.md` — #344 zero-plugin / capability execution / effect fence / generation integration contracts
 - `subsystem_architecture.md` — Streaming, Game Skill, Avatar and specialized AI boundaries
 - `legacy_migration_matrix.md` — V1 requirement migration
 - `project_sync_manifest.md` — GitHub Project synchronization manifest
