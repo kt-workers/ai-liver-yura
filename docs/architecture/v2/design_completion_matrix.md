@@ -16,17 +16,17 @@ Status: Architecture Freeze / Design Completion Gate
 
 ## 2. Design completeness levels
 
-### A — TRUNK_DETAILED
+### A — DETAILED_CANONICAL
 
-`rebuild/v2-foundation`上のcanonical supplementで、実装に必要な主要境界が既に詳細化されている。
+現行V2 trunk、または#445のarchitecture-only Design Completion lineage上に、実装に必要な主要境界を定めた詳細canonical supplementが存在する。
 
-#445では内容を再監査し、他設計との矛盾だけ補正する。
+#445 final Gateでは全A文書を同一設計世代としてtrunkへ統合してからImplementation Freezeを解除する。
 
 ### B — ACTIVE_LINEAGE_DETAILED
 
-詳細設計は存在するが、現在のV2 trunkではなくactive design/implementation lineage上にある。
+詳細設計は存在するが、#445設計Authorityへまだ回収されていないactive design/implementation lineage上にある。
 
-#445の最終Gate前に、current canonicalとの整合を確認し、詳細設計のAuthorityを一本化する。
+内容をレビュー済みblobから回収し、Authorityを一本化する必要がある。
 
 ### C — DETAIL_REQUIRED
 
@@ -73,11 +73,11 @@ Common invariant:
 | Activity / Actual Fact | #329 | A | `activity_execution_contracts.md` |
 | Attention / Turn / Autonomy | #333 | A | `attention_turn_contracts.md` + source-owner lifecycle |
 | Speech Semantics | #362 | A | `speech_semantics_contracts.md` |
-| Character Language | #330 | B | `character_language_contracts.md`等をactive #330 lineageから最終canonicalへreconcile |
-| Semantic Verification | #363 | B | `semantic_verification_contracts.md` / observer strategyをactive lineageからreconcile |
-| Speech Performance | #331 | C | `speech_performance_contracts.md`を新規作成 |
-| Speech Runtime / Presentation | #348 | C | `speech_pipeline_architecture.md`を基に、runtime contract supplementを追加 |
-| Memory Store / Retrieval | #332 | B | `memory_store_retrieval_contracts.md`はdesign-only #444に存在。#445へAuthorityを統合 |
+| Character Language | #330 | A | 4 detailed supplementsをPR #423 reviewed HEADから#445へexact blob回収済み |
+| Semantic Verification | #363 | A | 6 detailed supplementsをPR #428 reviewed HEADから#445へexact blob回収済み |
+| Speech Performance | #331 | A | `speech_performance_contracts.md`新規作成済み |
+| Speech Runtime / Presentation | #348 | A | `speech_runtime_presentation_contracts.md`新規作成済み + pipeline architecture |
+| Memory Store / Retrieval | #332 | B | `memory_store_retrieval_contracts.md`はdesign-only #444に存在。D3で#445へexact回収 |
 | Reflection | #364 | C | `memory_reflection_contracts.md`を新規作成 |
 | Brain Integration | #334 | D | `brain_integration_contracts.md`を新規作成 |
 
@@ -88,6 +88,37 @@ Brain横断で最終監査する事項:
 - Speech playback中も次のcognition/preparationを進められる。
 - background Reflectionでforeground interactionをstarveさせない。
 
+### D2 Speech design status
+
+D2新規詳細設計:
+- [x] #331 `speech_performance_contracts.md`
+- [x] #348 `speech_runtime_presentation_contracts.md`
+- [x] #358 `tts_provider_contracts.md`
+
+D2 active-lineage canonical reconciliation:
+- [x] #330 Character Language 4 supplements copied exactly from reviewed `827eb667...`
+- [x] #363 Semantic Verification 6 supplements copied exactly from reviewed `a08d8837...`
+- [x] Architecture Index updated
+
+D2で確定した主要flow:
+
+```text
+#362 SpeechSemanticPlan
+→ #330 CharacterUtterance
+   ├─ #363 Semantic Verification
+   └─ #331 SpeechPerformancePlan
+             ↓
+        #358 TTS preparation
+   ↓ readiness convergence
+#348 live revalidation / Presentation commit
+→ Presentation Adapter
+→ trusted Presentation report
+→ #329 Actual Execution Fact normalization
+→ committed/started timing only → #340 viseme
+```
+
+これは固定serial await列ではない。
+
 ---
 
 ## 5. Body
@@ -96,7 +127,7 @@ Brain横断で最終監査する事項:
 |---|---:|---|---|
 | Canonical Body Model / State | #336 | A/B audit | current Body detailed contractsとtrunk/active lineageを照合しAuthorityを一本化 |
 | Body Expression | #337 | A | `body_expression_contracts.md` |
-| Body Motion Planning | #338 | B | `body_motion_planning_contracts.md`がactive #338 lineageに存在。最終canonicalへreconcile |
+| Body Motion Planning | #338 | B | `body_motion_planning_contracts.md`がactive #338 lineageに存在。D4でexact回収 |
 | Solver / IK / Kinematics / Controller | #339 | C | `body_solver_controller_contracts.md`を新規作成 |
 | Realtime Layers | #340 | C | `body_realtime_layers_contracts.md`を新規作成 |
 | Body Integration | #341 | D | `body_integration_contracts.md`を新規作成 |
@@ -132,7 +163,7 @@ Plugin横断invariant:
 |---|---:|---|---|
 | LLM Provider | #357 | A | `llm_provider_adapter_contracts.md` |
 | LLM operational diagnostics | #437 | A/B audit | existing design/implementation evidenceを#357 contractと整合監査 |
-| TTS Provider | #358 | C | `tts_provider_contracts.md`を新規作成 |
+| TTS Provider | #358 | A | `tts_provider_contracts.md`新規作成済み |
 | Persistence | #359 | C | `persistence_repository_contracts.md`を新規作成 |
 
 Infrastructure横断invariant:
@@ -188,15 +219,13 @@ Integration設計は個別Workのlogicを再実装しない。
 
 ## 10. Design work sequence under #445
 
-設計作業順:
-
 ```text
-D1 Existing detailed-design audit
+D1 Existing detailed-design audit                    [DONE]
 ↓
-D2 Speech end-to-end design
-   #331 → #348 detail → #358
+D2 Speech end-to-end design                          [DONE]
+   #330/#363 reconcile + #331 + #348 + #358
 ↓
-D3 Memory design
+D3 Memory design                                     [NEXT]
    #332 reconcile → #364 → #359
 ↓
 D4 Body design
@@ -227,30 +256,33 @@ Implementation planning / Codex coding
 - current HEAD / base / ownershipを保持する。
 - 新機能コードを追加しない。
 - canonicalが更新されたら、Implementation Freeze解除前に設計世代との整合だけ監査する。
-- implementation branch上だけに存在する重要な設計文書は、最終Design Gateまでにcanonical Authorityを明確化する。
+- implementation branch上だけに存在する重要な設計文書は、最終Design Gateまでに#445 Authorityへ回収する。
 
-特に現時点では:
+現在保全対象:
 - #330 / PR #423
 - #363 / PR #428
 - #434 / PR #435（validation-only）
 
-を保全する。
-
-#332 / PR #444はdesign-only成果を#445設計lineageへ回収した後、product implementation開始点としては使用しない。Freeze解除後にlive trunkからimplementation lineageを改めて確定する。
+#332 / PR #444はdesign-only成果をD3で#445設計lineageへ回収し、product implementation開始点としては使用しない。Freeze解除後にlive trunkからimplementation lineageを改めて確定する。
 
 ---
 
 ## 12. Gate
 
-D1完了条件:
-- [x] 主要V2 Work/IntegrationをA/B/C/Dへ分類
-- [x] Active lineage上だけにある詳細設計を識別
-- [x] 新規詳細設計が必要な領域を識別
-- [x] 設計順序を確定
-- [ ] 各C/D領域の専用canonical supplement完成
-- [ ] B領域のcanonical Authority統合
-- [ ] Architecture Index更新
-- [ ] 全体cross-design audit PASS
-- [ ] User Design Completion確認
+Current status:
+- [x] D1 主要V2 Work/IntegrationをA/B/C/Dへ分類
+- [x] D1 Active lineage上だけにある詳細設計を識別
+- [x] D1 新規詳細設計が必要な領域を識別
+- [x] D1 設計順序を確定
+- [x] D2 Speech新規詳細契約 #331/#348/#358
+- [x] D2 #330/#363 active-lineage canonical Authority回収
+- [x] D2 Speech関連Architecture Index更新
+- [ ] D3 Memory
+- [ ] D4 Body
+- [ ] D5 Plugin/Infrastructure
+- [ ] D6 Subsystems
+- [ ] D7 Integrations
+- [ ] D8 全体cross-design audit PASS
+- [ ] D9 User Design Completion確認
 
 Implementation Freezeは最後のUser Design Completion確認まで維持する。
