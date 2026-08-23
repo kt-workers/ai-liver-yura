@@ -1,6 +1,7 @@
 # V2 Architecture Canonical Index
 
 - `system_architecture.md` — system-wide canonical architecture
+- `design_completion_matrix.md` — #445 全V2詳細設計の完了状態・不足設計・Implementation Freeze Gate
 - `brain_architecture.md` — Brain modules and authority
 - `cognitive_llm_architecture.md` — cognitive and LLM role design
 - `goal_commitment_architecture.md` — persistent Goal / Commitment state and lifecycle
@@ -20,6 +21,7 @@
 - `speech_semantics_contracts.md` — What-to-say Authority / typed SpeechSemanticPlan / simple・complex commit gate
 - `character_projection_contracts.md` — Human-readable Character Definition / structured document / typed Runtime Profile projection contracts
 - `character_psychological_projection_contracts.md` — Character精神構造Layers 1–6 / causal refs / dynamic Layer 7 boundary
+- `speech_performance_contracts.md` — #331 CharacterUtterance＋Voice Style＋Expression→engine-independent SpeechPerformancePlan
 - `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
 - `body_architecture.md` — canonical body, generative motion, realtime control
 - `body_expression_contracts.md` — #337 Internal State / Focus / Character Style→normalized BodyExpressionContext projection contracts
@@ -31,4 +33,4 @@
 - `project_sync_manifest.md` — GitHub Project synchronization manifest
 - `project_sync_runbook.md` — live ID取得・dry-run・Project fields・formal Parent/Sub-issue同期手順
 
-Status: Draft / V2 Design Gate.
+Status: Draft / V2 Design Completion Gate (#445).
