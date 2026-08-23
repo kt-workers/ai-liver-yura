@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -613,6 +614,9 @@ class _SequencePort:
 
     async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
         self.requests.append(request)
+        return self._result_for(request)
+
+    def _result_for(self, request: LLMRoleRequest) -> LLMRoleResult:
         if request.role_id == BLIND_ROLE_ID:
             value: object = {
                 "candidate_id": "blind-candidate",
@@ -708,6 +712,26 @@ class _SequencePort:
         )
 
 
+class _BlockingSequencePort(_SequencePort):
+    def __init__(self, snapshot: SemanticVerificationContextSnapshot) -> None:
+        super().__init__(snapshot)
+        self.blind_started = asyncio.Event()
+        self.blind_release = asyncio.Event()
+        self.relation_started = asyncio.Event()
+        self.relation_release = asyncio.Event()
+
+    async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+        self.requests.append(request)
+        if request.role_id == BLIND_ROLE_ID:
+            self.blind_started.set()
+            await self.blind_release.wait()
+        else:
+            assert request.role_id == RELATION_ROLE_ID
+            self.relation_started.set()
+            await self.relation_release.wait()
+        return self._result_for(request)
+
+
 class _LiveState:
     def __init__(
         self,
@@ -779,6 +803,50 @@ async def test_stale_after_blind_does_not_invoke_plan_relation() -> None:
         )
     assert captured.value.code is SemanticVerificationFailureCode.STALE
     assert [item.role_id for item in port.requests] == [BLIND_ROLE_ID]
+
+
+@pytest.mark.asyncio
+async def test_slow_provider_awaits_do_not_block_unrelated_tasks() -> None:
+    snapshot = _snapshot()
+    port = _BlockingSequencePort(snapshot)
+    verifier = SemanticVerifier(
+        port,
+        _LiveState(snapshot),
+        SemanticVerificationAuthority(),
+        verification_policy(),
+    )
+    verification = asyncio.create_task(
+        verifier.verify(
+            snapshot,
+            blind_observation_id="blind-observation",
+            relation_observation_id="relation-observation",
+            semantic_observation_id="semantic-observation",
+            acceptance_id="acceptance-1",
+            created_at=snapshot.captured_at,
+        )
+    )
+
+    await asyncio.wait_for(port.blind_started.wait(), timeout=1)
+    blind_heartbeat = asyncio.Event()
+    asyncio.create_task(_heartbeat(blind_heartbeat))
+    await asyncio.wait_for(blind_heartbeat.wait(), timeout=1)
+    assert not verification.done()
+
+    port.blind_release.set()
+    await asyncio.wait_for(port.relation_started.wait(), timeout=1)
+    relation_heartbeat = asyncio.Event()
+    asyncio.create_task(_heartbeat(relation_heartbeat))
+    await asyncio.wait_for(relation_heartbeat.wait(), timeout=1)
+    assert not verification.done()
+
+    port.relation_release.set()
+    run = await verification
+    assert run.acceptance.state is SemanticAcceptanceState.ACCEPTED
+    assert [item.role_id for item in port.requests] == [BLIND_ROLE_ID, RELATION_ROLE_ID]
+
+
+async def _heartbeat(completed: asyncio.Event) -> None:
+    completed.set()
 
 
 def test_semantic_module_has_no_finite_lexical_authority_scaffolding() -> None:
