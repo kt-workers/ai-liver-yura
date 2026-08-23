@@ -8,6 +8,7 @@
 - `runtime_kernel_contracts.md` — bounded queue / scheduler / cancellation / lifecycle contracts
 - `runtime_lifecycle_contracts.md` — degraded operation / availability / retry / graceful shutdown contracts
 - `llm_role_contracts.md` — variable logical LLM role / structured request-result contracts
+- `../../character/v2/yura_character_bible.md` — 星波ゆらの人物設定正本
 - `llm_provider_adapter_contracts.md` — provider SDK boundary / model policy resolution / typed failure normalization
 - `input_gateway_contracts.md` — multimodal input normalization / session / touch boundary
 - `input_meaning_contracts.md` — natural-language typed meaning / reference / commit boundary
