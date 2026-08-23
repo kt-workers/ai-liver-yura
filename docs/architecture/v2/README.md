@@ -40,6 +40,10 @@
 - `tts_provider_contracts.md` — #358 TTS voice binding / provider mapping / audio artifact / timing / degradation
 - `body_architecture.md` — canonical body, generative motion, realtime control
 - `body_expression_contracts.md` — #337 Internal State / Focus / Character Style→normalized BodyExpressionContext projection contracts
+- `body_motion_planning_contracts.md` — #338 Executive BODY intent→solver-safe high-level BodyMotionPlan
+- `body_solver_controller_contracts.md` — #339 IK/FK / limits / balance / trajectory / continuous BodyState commit authority
+- `body_realtime_layers_contracts.md` — #340 gaze / blink / breath / viseme / subtle realtime overlay contracts
+- `body_integration_contracts.md` — #341 Executive BodyIntent→continuous BodyPoseFrame integration / concurrency / degradation
 - `plugin_architecture.md` — Core extension / capability architecture
 - `plugin_registry_contracts.md` — #343 Plugin manifest / Registry lifecycle / permission / health / CapabilityDescriptor projection contracts
 - `plugin_registry_permission_principal_contracts.md` — #343 Plugin permission grant principal isolation / revocation security contracts
