@@ -2,314 +2,246 @@
 
 Owner: #445
 Root: #317
-Status: D8 Cross-Design Audit
+Status: D8 Cross-Design Audit — PASS candidate
 Audit date: 2026-08-23
 
 ## 1. Purpose
 
-本書は、D1〜D7で揃えたV2詳細設計を個別文書の存在確認で終わらせず、**System全体として実装時に矛盾・Authority重複・循環依存・暗黙の意味解釈・誤ったFact昇格を生まないか**を横断監査する正本である。
+D1〜D7で揃えたV2詳細設計をSystem全体で横断し、実装前にAuthority重複、循環/過剰依存、暗黙意味解釈、Fact誤昇格、revision誤用、serial blocking、provider leakage、Verification不成立が残っていないかを確認する。
 
-D8がPASSするまで「全詳細設計完了」としない。
-
----
+D8の最終PASSは、本書のresolutionとPR #446 exact-head CI/review確認をもって確定する。
 
 ## 2. Audit dimensions
 
-横断監査は最低限次を対象とする。
-
 1. Authority ownership
-2. Dependency graph / Work vs Integration dependency
+2. Work / Integration dependency graph
 3. DTO / identity / provenance
-4. Revision / freshness / generation fencing
-5. lifecycle / cancellation / supersede / stale
-6. intent / plan / prepared / actual-effect truth boundary
+4. revision / freshness / generation fencing
+5. lifecycle / cancel / stale / supersede
+6. intent / plan / prepared / actual-effect truth
 7. concurrency / backpressure / starvation
-8. static Character / dynamic State / Memory separation
+8. Character / dynamic State / Memory separation
 9. open-ended natural-language Authority
-10. provider / SDK / secret boundary
+10. Provider / SDK / secret boundary
 11. Plugin / Infrastructure / Subsystem classification
 12. Presentation / renderer boundary
-13. persistence / rehydration / shutdown ordering
-14. Human Verification readiness / evidence class
-15. active implementation lineage vs current canonical generation
+13. persistence / rehydration / shutdown
+14. Human Verification readiness
+15. active implementation lineage vs canonical generation
 
 ---
 
-## 3. Canonical Authority map after D8
+## 3. Authority result
 
-| Concern | Authority owner | Explicit non-owner examples |
-|---|---|---|
-| open-ended external NL meaning | #326 Input Meaning | Executive, Streaming, Game, GUI, Plugin |
-| subjective appraisal / current Internal State | #327 reducer | Character, Memory, Body, GUI |
-| conscious Goal / Action selection | #328 Executive | Planner, Skill AI, Plugin, Character |
-| current Goal / Commitment | #366 | Memory, Activity, Character |
-| Attention / Focus / Turn / scheduling | #333 | Body gaze, Game Skill, Streaming |
-| complex Goal planning | #361 | Executive Goal authority unchanged |
-| Activity lifecycle / Actual Execution Fact | #329 | Intent, Plan, Character claim, Plugin report alone |
-| What-to-say | #362 | #330/#331/#363 |
-| How-to-say words | #330 | #331/TTS/Body |
-| speech semantic observation | #363 | not Character quality / repair authority |
-| speech performance intent | #331 | not TTS provider values |
-| Speech preparation/presentation lifecycle | #348 | not What-to-say |
-| provider TTS/audio/timing | #358 | not Character Voice Style authority |
-| canonical Body Model / State identity | #336 | renderer |
-| Body expression projection | #337 | not Motion/Goal authority |
-| high-level Body motion plan | #338 | not physical fact |
-| physical solve / final BodyState commit | #339 | #340/Avatar cannot write BodyState |
-| realtime Body overlays | #340 | not cognitive Focus / final physical commit |
-| canonical Memory / retrieval | #332 | Reflection / DB / embedding |
-| Memory candidate reflection | #364 | cannot mutate Store directly |
-| persistence mechanism | #359 | not Domain semantic authority |
-| Plugin registry/capability availability | #343 | not Goal/Actual Fact |
-| Plugin execution fact | #329 path | Plugin cannot self-certify effect |
-| Avatar rendering | #346 | not Body/Speech semantic authority |
-| Streaming external execution/observation | #347 | Core decision remains #328/#329 |
-| Game frame-level skill | #365 | high-level Goal remains Core |
-| GUI/Admin presentation/control | #351 typed read/command boundary | no direct state mutation |
-| Validation evidence/harness | #352 | no production semantic authority |
-| Development tooling evidence | #353 | no production authority |
+| Concern | Authority |
+|---|---|
+| open-ended external NL meaning | #326 |
+| subjective Appraisal / current Internal State | #327 |
+| conscious Goal / Action selection | #328 |
+| persistent Goal / Commitment | #366 |
+| Attention / Focus / Turn / scheduling | #333 |
+| complex Goal planning | #361 |
+| Activity lifecycle / Actual Execution Fact | #329 |
+| What-to-say | #362 |
+| Character words / How-to-say | #330 |
+| speech semantic observation | #363 |
+| speech performance intent | #331 |
+| Speech preparation / Presentation lifecycle | #348 |
+| TTS/audio/pronunciation timing | #358 |
+| canonical Body identity/state model | #336 |
+| Body expression projection | #337 |
+| high-level Body motion plan | #338 |
+| physical solve / final BodyState commit | #339 |
+| realtime Body overlays | #340 |
+| canonical Memory / retrieval | #332 |
+| Memory candidate Reflection | #364 |
+| persistence mechanism | #359 |
+| Plugin registry / capability availability | #343 |
+| Avatar renderer projection | #346 |
+| Streaming execution/observation | #347, while Core decision/fact stays #328/#329 |
+| Game frame-level skill | #365, subordinate to Core Goal |
+| GUI/Admin read/control surface | #351 typed boundary only |
+| Validation evidence/harness | #352 |
+| Development tooling evidence | #353 |
 
-Audit result: no known same-state dual Authority remains after the resolutions below.
+Result: no known same-state dual Authority remains.
 
 ---
 
-## 4. Findings and resolutions
+## 4. Blocking findings resolved
 
-### D8-F01 — Runtime shutdown / Persistence ordering conflict
+### F01 — #350 shutdown vs #359 Persistence ordering
 
-**Severity:** BLOCKING design conflict
+Old shutdown could close adapters before final persistence.
 
-Conflict:
-- old #350 order could close adapters/workers before optional final persistence;
-- #359 requires persistence transport to remain usable during bounded final snapshot flush.
-
-Resolution:
-- `runtime_lifecycle_contracts.md` corrected;
-- #350 Issue synchronized;
-- canonical order is:
+Resolved order:
 
 ```text
 admission close
-→ cancel/supersede queued/new work
+→ cancel/supersede queued work
 → bounded grace
 → producer stop
-→ owner-declared final snapshot capture
-→ bounded persistence flush while persistence is writable
-→ persistence retry/admission stop
-→ persistence settle/close
+→ owner-declared restart-safe snapshot capture
+→ bounded flush while Persistence remains writable
+→ Persistence retry/admission stop
+→ Persistence settle/close
 → remaining resource close
-→ owned task join
-→ pending task 0
+→ owned task join / pending 0
 ```
 
-Final flush remains best-effort. Runtime durability is not shutdown-only.
+Runtime durability remains continuous/best-effort and is not shutdown-only.
 
-Status: RESOLVED.
+### F02 — #331 Speech Expression projection gap
 
-### D8-F02 — #331 SpeechExpressionContext mapping was implementation-defined
-
-**Severity:** BLOCKING design gap
-
-Problem:
-- type existed, but mapping from #327 Internal State and Human-readable #355 Voice Style into normalized performance axes could be implemented as hidden `Emotion -> preset` or free-text interpretation.
+`SpeechExpressionContext` existed without a sufficiently explicit semantic projection policy.
 
 Resolution:
 - added `speech_expression_projection_contracts.md`;
-- versioned `SpeechPerformanceProjectionPolicy` owns projection semantics;
-- Character Voice Style values use exact confirmed-value bindings;
-- substring / embedding / LLM implicit interpretation is forbidden;
-- Yura baseline softness/calmness and dynamic expressiveness/energy semantics are policy data;
-- generic dynamic modulation initially uses standardized ENERGY/AROUSAL evidence;
-- unknown Emotion/state key has no hidden Voice preset;
-- policy revision/provenance is observable;
-- #331 direct dependency updated to include #327.
+- versioned `SpeechPerformanceProjectionPolicy`;
+- exact confirmed Character Voice value binding;
+- no substring/embedding/LLM free interpretation of Voice Style text;
+- no hidden Emotion→Voice preset;
+- standardized ENERGY/AROUSAL evidence for generic modulation;
+- policy revision/provenance is explicit;
+- #327 is now direct #331 dependency.
 
-Status: RESOLVED.
+### F03 — #340 dependency cycle / indirect source
 
-### D8-F03 — #340 Work dependency cycle / indirect speech dependency
+Old: #340 depended on #331 and #339.
 
-**Severity:** BLOCKING implementation-order ambiguity
+Resolved direct dependencies:
+`#333, #336, #337, #358`.
 
-Old Issue dependency:
-`#331, #333, #336, #339`
+#339 is final overlay consumer/Adjacent target; #341 integrates #339/#340. #331 is indirect through #358.
 
-Problem:
-- #339 consumes #340 overlays in final composition, while #340 listed #339 as a Work prerequisite;
-- #331 is not direct viseme timing source; #358 is.
+### F04 — #365 Game Skill misclassified through Plugin dependency
 
-Resolution:
-- #340 direct dependencies are now `#333, #336, #337, #358`;
-- #339 is consumer/Adjacent target, not #340 Unit prerequisite;
-- #331 remains Related through #358;
-- #341 owns #339/#340 integration.
+Removed #344 from #365 `Depends on`.
 
-Status: RESOLVED.
+Game Skill is a dedicated realtime Subsystem/Skill Runtime. It may use generic Activity/Execution contracts without becoming a Plugin.
 
-### D8-F04 — Game Skill incorrectly depended on Plugin Integration
+### F05 — #346 implied direct Speech timing ownership
 
-**Severity:** architecture classification conflict
-
-Problem:
-- #365 is a dedicated Subsystem/Skill Runtime but depended on #344 Plugin Integration.
-
-Resolution:
-- removed #344 from #365 dependencies;
-- #344/#342 are Related classification context;
-- Game Skill uses generic Core Activity/Execution boundary without becoming a Plugin;
-- a future lightweight game Plugin may exist separately.
-
-Status: RESOLVED.
-
-### D8-F05 — Avatar Issue title implied direct Speech timing ownership
-
-**Severity:** responsibility ambiguity
-
-Problem:
-- old #346 title implied Avatar consumes/interprets Speech timing directly.
-
-Resolution:
+#346 title/responsibility corrected to BodyPoseFrame renderer projection.
 
 ```text
-#348 Presentation STARTED
-+ #358 actual timing
-→ #340 mouth/face realtime channels
-→ #339 BodyState / BodyPoseFrame
-→ #346 renderer projection
+#348 Presentation STARTED + #358 timing
+→ #340 mouth/face channel
+→ #339 BodyPoseFrame
+→ #346 renderer
 ```
 
-- #346 renamed to BodyPoseFrame projection only;
-- Avatar cannot regenerate viseme from Character text/TTS.
+### F06 — #434 Human quality happened too early
 
-Status: RESOLVED.
+Text-only Character output was insufficient for final Human context/performance judgment.
 
-### D8-F06 — #434 Human gate evaluated Character text too early
+#434 now requires full actual Speech Presentation after #331/#348/#358 and source-grounded Conversation/Situation Context. Machine semantic PASS remains separate from Human quality PASS.
 
-**Severity:** Verification validity blocker
+### F07 — #332 stale Codex implementation instruction
 
-Problem:
-- text-only CharacterUtterance did not expose sufficient conversation/situation context or actual speech performance;
-- Human could not validly judge context fit / spoken Yura quality.
+PR #444 is historical design-only. Its contract is exact-recovered into #445. It is not the future implementation branch.
 
-Resolution:
-- #434 renamed to Speech Character Quality Human Gate;
-- formal Human Verification deferred until #331/#348/#358 actual production speech Presentation exists;
-- Human context must be source-grounded and separately displayed from LLM input;
-- Machine semantic PASS cannot auto-become Human PASS;
-- historical text-only Lab evidence remains diagnostic only.
+### F08 — stale #330/#363/#338 Issue and PR state
 
-Status: RESOLVED.
+Current preserved heads are recorded and frozen:
+- #330 / PR #423 / `827eb66797e8ab1c38990bf5f0228eeae1e6e223`
+- #363 / PR #428 / `a08d88373b9f294b547e98a06bd99b7dd5c3e0d3`
+- #338 / PR #422 / `e3376f07d1d88c0dafcb4f4b384cc3887e8b40fa`
 
-### D8-F07 — #332 Issue still instructed Codex implementation during #445 Freeze
+Their Issue/PR descriptions now say HOLD under #445 and require a post-D9 Resume Gate.
 
-**Severity:** process/canonical conflict
+### F09 — #338 historical base generation
 
-Resolution:
-- #332 design-only PR #444 explicitly marked historical design lineage;
-- its design was exact-recovered into #445;
-- old Codex implementation instruction withdrawn;
-- future implementation lineage is resolved from live trunk after D9.
+PR #422 uses historical trunk base `7b251d9...`.
 
-Status: RESOLVED.
+Design is recovered; implementation remains preserved only. Post-D9 live reconciliation decides reuse vs new lineage.
 
-### D8-F08 — #330/#363 Issue states were stale relative to live implementation PRs
+### F10 — Root #317 pre-#445 unfreeze rule
 
-**Severity:** resume/canonical integrity risk
+#317 synchronized. Product unfreeze now requires:
+D1–D7 complete → D8 PASS → D9 explicit user confirmation → per-Work Resume Gate.
 
-Resolution:
-- #330 now records PR #423 exact HEAD `827eb66797e8ab1c38990bf5f0228eeae1e6e223`;
-- #363 now records PR #428 exact HEAD `a08d88373b9f294b547e98a06bd99b7dd5c3e0d3`;
-- both are Draft/Open/unmerged and frozen under #445;
-- old “implementation unstarted/provider path incomplete” text removed where stale;
-- design supplements exact-recovered into #445 authority.
+### F11 — PR #435 no longer matches formal #434 scope
 
-Status: RESOLVED.
+PR #435 reclassified as historical diagnostic validation lineage, not future full #434 implementation/merge gate.
 
-### D8-F09 — #338 active implementation is based on an older V2 trunk generation
+### F12 — PR #446 stale progress metadata
 
-**Severity:** future reconciliation blocker, not current design blocker
+PR #446 synchronized to D1–D7 DONE, D8 current, D9 pending.
 
-Evidence:
-- PR #422 head `e3376f07d1d88c0dafcb4f4b384cc3887e8b40fa`;
-- base is historical `rebuild/v2-foundation@7b251d9...`.
+### F13 — #358 depended on downstream Presentation Runtime
 
-Resolution for Design Gate:
-- #338 design blob exact-recovered into #445;
-- PR #422 preserved, no product changes under Freeze;
-- after D9, Resume Gate must compare current trunk/canonical and choose rebase/reconciliation/new lineage without assuming old branch is current.
+Old #358 depended on #348 although #348 is its consumer/orchestrator.
 
-Status: RESOLVED_FOR_DESIGN / IMPLEMENTATION_RECONCILIATION_REQUIRED_AFTER_D9.
+Resolved:
+- #358 direct dependency: #331 only;
+- #348/#340/#434 are Related/Adjacent consumers.
 
-### D8-F10 — Root #317 unfreeze rule predates #445
+### F14 — #346 depended on downstream Body Integration
 
-**Severity:** management Gate conflict
+Avatar Unit implementation only needs canonical body identity and final BodyPoseFrame producer contract.
 
-Problem:
-- #317 still states only final user canonical confirmation remains before product unfreeze.
+Resolved direct dependencies:
+`#336, #339`.
 
-Required resolution:
-- synchronize #317 to #445: D1–D7 detailed design, D8 cross-audit PASS, D9 explicit user Design Completion confirmation, then implementation planning/Resume Gates.
+#340/#341 are Related/Integration context.
 
-Status: RESOLUTION_REQUIRED before D8 PASS.
+### F15 — #347 depended on Brain Integration
 
-### D8-F11 — PR #435 scope no longer equals current #434 formal work
+Streaming Work can implement execution/observation/ingestion against #329/#333 without waiting for #334.
 
-**Severity:** implementation lineage classification risk
+Resolved direct dependencies:
+`#329, #333`.
 
-Problem:
-- PR #435 implements the earlier Character Language diagnostic Lab, while #434 now owns full actual-Speech Human quality.
+#334 is Adjacent/System integration context.
 
-Required resolution:
-- preserve PR #435 as Draft/historical diagnostic validation lineage;
-- explicitly state it is not the future full #434 implementation or merge gate;
-- future #434 implementation after #331/#348/#358 is re-resolved from current live trunk.
+### F16 — #345 Parent ↔ #360 completion dependency cycle
 
-Status: RESOLUTION_REQUIRED before D8 PASS.
+#345 completion expects System Integration evidence, while old #360 `Depends on` included #345.
 
-### D8-F12 — PR #446 description is stale
+Resolved #360 direct dependencies to concrete integration/work surfaces:
+`#334, #341, #344, #350, #346, #347, #351, #352, #358, #359, #365`.
 
-**Severity:** progress metadata inconsistency
-
-Problem:
-- PR body still says D2 started / D3 next.
-
-Required resolution:
-- update PR body to D1–D7 DONE, D8 audit current, D9 pending.
-
-Status: RESOLUTION_REQUIRED before D8 PASS.
+#345/#356 are Related parent architecture, not implementation prerequisites.
 
 ---
 
-## 5. Dependency graph rules after audit
+## 5. Dependency semantics after correction
 
-### Work dependencies
+`Depends on` means the Work cannot satisfy its own direct implementation/Unit contract without the upstream contract/implementation.
 
-`Depends on` means implementation of this Work cannot satisfy its own direct contract without the upstream contract/implementation.
+Do not use it merely because two modules are later integrated.
 
-Do not use `Depends on` merely because modules interact later in Integration.
+Integration Issues may depend on multiple Work outputs because binding them is the Integration responsibility.
 
-Examples after correction:
-- #331 directly depends on #327/#330/#355.
-- #340 directly depends on #333/#336/#337/#358; #339 is Adjacent consumer.
-- #365 does not depend on Plugin Integration #344.
-- #346 depends on Body-produced BodyPoseFrame path, not raw Speech timing.
+No known Work now depends on its own downstream Integration solely to define its Unit implementation.
 
-### Integration dependencies
+Final high-risk chains:
 
-Integration Work may depend on multiple completed Work contracts because its purpose is to bind them.
+```text
+#327 + #330 + #355 → #331 → #358
+                           ↘
+#330 → #363                 #348 consumes readiness/artifacts
 
-Examples:
-- #341 binds #336/#337/#338/#339/#340.
-- #334 binds Brain modules.
-- #344 validates Registry + #329 execution integration.
-- #360 binds system stages.
+#333 + #336 + #337 + #358 → #340
+#336 + #337 + #338 → #339
+#339 + #340 → #341 Integration
+#336 + #339 → #346 Avatar
 
-No Work should depend on its downstream Integration just to define its own Unit contract.
+#329 + #333 → #347 Streaming
+#328/#366/#333/#361/#329 → #365 Game Skill
+
+#334/#341/#344/#350/#346/#347/#351/#352/#358/#359/#365
+→ #360 System Integration
+```
+
+No known blocking cycle remains in these chains.
 
 ---
 
-## 6. DTO / truth boundary audit
+## 6. Truth boundary audit
 
-Across detailed contracts, preserve:
+System-wide invariant:
 
 ```text
 Event / Meaning
@@ -324,44 +256,43 @@ Event / Meaning
 != historical Memory
 ```
 
-Specific invariants:
+Examples:
 - CharacterUtterance generated != spoken.
-- PreparedAudioArtifact generated != played.
-- BodyMotionPlan generated != body moved.
-- Plugin operation accepted != external side effect occurred.
+- PreparedAudioArtifact != played audio.
+- BodyMotionPlan != body moved.
+- Plugin request accepted != external side effect.
 - Game action selected != controller action applied.
 - Streaming start requested != stream live.
-- Memory candidate proposed != canonical Memory stored.
+- Memory candidate != canonical stored Memory.
 
-Actual effect/history requires the owning execution/observation evidence.
+Actual fact/history requires trusted owner execution/observation evidence.
 
-Audit result: no known design intentionally collapses these states after resolutions.
+Result: PASS.
 
 ---
 
 ## 7. Revision / freshness audit
 
-Global equality of every revision is forbidden.
+Global revision equality and `any revision changed -> cancel all` are forbidden.
 
-Each long-running result validates only declared dependencies.
+Long-running work validates declared dependencies only.
 
 Examples:
-- Deep Appraisal: source context + state revision.
-- Character: source/goal/attention/Profile/constraint generation.
-- Speech Performance: utterance/Character/projection policy + relevant current expression.
-- Body Planner: source/goal/attention/intent/model/constraint/capability; normal BodyState drift is rebaseable.
-- Plugin: capability descriptor revision + plugin generation.
-- Game Skill: goal revision + strategy revision.
-- Avatar: model/binding generation + frame ordering.
+- Deep Appraisal: source context + State revision.
+- Character: source/goal/attention/Profile/constraints.
+- Speech Performance: utterance/Profile/projection policy/current expression.
+- Body Planner: intent/model/constraints/capabilities; ordinary BodyState drift is rebaseable.
+- Plugin: descriptor revision + plugin generation.
+- Game: goal + strategy revision.
+- Avatar: binding/model generation + frame ordering.
 
-`any revision changed -> cancel all` is not a valid System strategy.
+Result: PASS.
 
 ---
 
 ## 8. Concurrency / backpressure audit
 
-The following are independent lanes unless an explicit data dependency exists:
-
+Independent lanes remain able to progress unless an explicit data edge exists:
 - new Input reception
 - current Speech playback
 - next Speech preparation
@@ -372,120 +303,134 @@ The following are independent lanes unless an explicit data dependency exists:
 - background Reflection
 - Persistence/index repair
 
-Required invariants:
-- current playback does not gate next cognition.
-- Body realtime does not wait for Motion LLM/TTS/Character.
-- Game frame loop does not wait for Executive/Character/TTS.
-- Reflection does not starve foreground interaction.
-- comment/frame bursts are aggregated/bounded.
-- Provider retries are bounded and shutdown-aware.
+Required:
+- playback does not gate next cognition;
+- Body realtime does not wait for Motion LLM/TTS/Character;
+- Game frame loop does not wait for Executive/Character/TTS;
+- Reflection does not starve foreground;
+- burst input is bounded/coalesced;
+- retries are bounded/shutdown-aware;
 - no Integration global async lock.
 
-Audit result: no known intended global serial barrier remains.
+Result: PASS.
 
 ---
 
 ## 9. Character / State / Memory audit
 
-- Character Definition: stable personality/content authority.
-- Internal State: current dynamic causal state.
-- Memory: historical/contextual evidence.
-- Goal/Commitment: current persistent intention/obligation state.
+- Character Definition = stable personality/content authority.
+- Internal State = current dynamic causal state.
+- Memory = historical/contextual evidence.
+- Goal/Commitment = persistent current intention/obligation.
 
-Forbidden conversions remain:
-- Character trait -> current Emotion fact.
-- past Emotion Memory -> current Emotion restore.
-- Preference Memory -> current Interest without owner evaluation.
-- Character Profile -> Speech proposition.
-- Body expression -> cognitive Focus.
-- Character utterance -> Execution Fact.
+Forbidden:
+- Character trait → current Emotion fact.
+- old Memory Emotion → current Emotion restore.
+- Preference Memory → current Interest without owner evaluation.
+- Character Profile → new Speech fact.
+- Body gaze/expression → cognitive Focus truth.
+- Character utterance → Execution Fact.
 
-Speech/Body projection policies may translate source evidence into presentation tendencies, but those projections are derived read-only views and cannot mutate source Authority.
+Derived Speech/Body projection policies are read-only and cannot mutate their source Authority.
+
+Result: PASS.
 
 ---
 
 ## 10. Natural-language audit
 
-Open-ended external natural-language meaning Authority is #326 only.
+Open-ended external NL meaning Authority is #326 only.
 
-No other module may use keyword/regex/substring/finite phrase allowlist as semantic fallback for open-ended input.
+No Streaming/Game/Executive/GUI/Plugin/Lab finite keyword/regex/substring fallback may become semantic Authority.
 
-Provider-internal closed identifiers such as typed operation IDs, enum names, exact configuration keys and exact Character style bindings are not natural-language semantic fallback; they operate only after meaning/authoring has already been established by the owning contract.
+Typed operation IDs, enums, exact configuration IDs and exact authoring-style bindings operate only after semantics/authoring are already established and are not open-ended NL fallbacks.
+
+Result: PASS.
 
 ---
 
 ## 11. Provider / security audit
 
-- SDK/HTTP objects remain Infrastructure/Subsystem Adapter side.
-- Domain receives typed result/failure only.
-- Provider operational diagnostics are safe closed metadata (#437), not Domain semantics.
-- credentials/API keys/raw headers/raw bodies/raw arbitrary exception strings do not enter Domain/GUI/Lab exports.
+- SDK/HTTP objects stay inside Infrastructure/Subsystem adapters.
+- Domain receives typed results/failures.
+- #437 operational diagnostics are safe metadata, not semantics.
+- API keys/credentials/raw headers/raw bodies/arbitrary exception strings stay out of Domain/GUI/Lab Export.
 - GUI/Tooling browser does not receive server credentials.
+
+Result: PASS.
 
 ---
 
 ## 12. Human Verification audit
 
-Machine contract PASS is not subjective quality PASS.
+Machine PASS does not imply subjective quality PASS.
 
-Human gates occur only when the relevant observable experience exists.
+Human evaluation starts only when the observable surface exists:
+- #434 after actual Speech Presentation;
+- Body/Avatar after real visual motion;
+- Game/Streaming after real provider/runtime;
+- GUI after browser interaction.
 
-Examples:
-- #434: actual speech Presentation required.
-- Avatar visual quality: actual renderer output required.
-- Body naturalness: actual motion/visual output required.
-- Game/Streaming real service behavior: live provider/runtime required.
-- GUI usability: real browser interaction required.
+Human evidence binds exact implementation/config/Character/provider provenance.
 
-Human evidence must bind exact implementation/config/Character/provider provenance.
+Result: PASS.
 
 ---
 
 ## 13. Active implementation lineage audit
 
-During #445 Freeze, preserved implementation lineages are evidence/implementation history, not automatic current canonical Authority.
+Exact open-head searches confirm the expected preserved PR heads:
+- `feature/v2-character-language` → PR #423 only
+- `feature/v2-semantic-verification` → PR #428 only
+- `feature/v2-body-motion-planner` → PR #422 only
+- `test/v2-character-language-lab` → PR #435, explicitly historical diagnostic
+- `feature/v2-memory-store-retrieval` → PR #444, explicitly historical design-only
 
-Known preserved lineages:
-- #330 / PR #423 / `827eb667...`
-- #363 / PR #428 / `a08d8837...`
-- #338 / PR #422 / `e3376f07...`
-- #434 old diagnostic Lab / PR #435 / `30291dfd...`
+These are preserved history/implementation evidence, not automatic current canonical Authority.
 
 Before any post-D9 implementation/merge:
 1. fetch live trunk;
 2. fetch target Issue/current canonical;
-3. compare active PR base/head/delta;
+3. inspect active PR/branch/base/head/diff;
 4. verify no competing implementation lineage;
-5. issue a new Resume Certificate;
-6. reconcile only if the lineage still matches current design ownership.
+5. issue Resume Certificate;
+6. reconcile or supersede from live evidence.
 
-No old branch is presumed to be the implementation starting point merely because it exists.
+Result: PASS_FOR_DESIGN. Implementation reconciliation remains intentionally deferred until after D9.
 
 ---
 
-## 14. D8 PASS conditions
+## 14. PR #446 design-lineage integrity
 
-D8 may be marked PASS only when:
+PR #446 changed-file enumeration contains only `docs/architecture/v2/*.md` files.
 
+No Python/product/config/runtime code is present in the design PR diff.
+
+The branch is therefore architecture-only as required by #445.
+
+---
+
+## 15. D8 final gate
+
+Completed:
 - [x] D1–D7 dedicated design documents exist.
-- [x] known Authority overlaps audited.
+- [x] Authority overlaps audited.
 - [x] truth/effect boundary audited.
+- [x] revision/freshness audited.
 - [x] concurrency/backpressure audited.
-- [x] provider/security boundary audited.
-- [x] #350/#359 shutdown conflict resolved.
-- [x] #331 projection gap resolved.
-- [x] #340 dependency ambiguity resolved.
-- [x] #365 Plugin dependency misclassification resolved.
-- [x] #346 Speech timing ownership ambiguity resolved.
-- [x] #434 Human Gate scope corrected.
-- [x] #332 stale implementation instruction removed.
-- [x] #330/#363/#338 current lineage status synchronized.
-- [ ] Root #317 synchronized to #445 Gate.
-- [ ] PR #435 reclassified as historical diagnostic validation lineage.
-- [ ] PR #446 progress body synchronized.
-- [ ] Architecture Index includes all final supplements + this report.
-- [ ] Design Completion Matrix marks all planned detail/integration areas resolved.
-- [ ] final open-Issue dependency scan has no known blocking cycle/misclassification.
-- [ ] PR #446 docs-only diff / CI / review gate checked at final D8 HEAD.
+- [x] Character/State/Memory separation audited.
+- [x] NL authority audited.
+- [x] provider/security audited.
+- [x] Human Verification gate audited.
+- [x] dependency cycles/overdependencies corrected.
+- [x] Root #317 synchronized.
+- [x] active implementation PR metadata synchronized to Freeze.
+- [x] PR #435 reclassified.
+- [x] Architecture Index synchronized.
+- [x] Design Completion Matrix shows no remaining B/C/D detail gaps.
+- [x] PR #446 diff is docs-only.
+- [x] active lineage scan found no competing open head for the preserved Work lineages.
+- [ ] exact final HEAD deterministic CI SUCCESS.
+- [ ] exact final HEAD design review/checkpoint recorded.
 
-After all boxes pass, D9 is the only remaining Design Completion Gate: explicit user review/confirmation.
+If the final two items PASS without new branch mutation, D8 is PASS and D9 is the only remaining Design Completion Gate.
