@@ -24,6 +24,7 @@ from app.domain.speech_performance import (
     SpeechPerformanceContextSnapshot,
     SpeechPerformanceDegradationReason,
     SpeechPerformanceSegment,
+    validate_plan_segments,
 )
 from app.domain.speech_performance.planner import SpeechPerformancePlanner, project_expression
 from app.domain.speech_performance.policy import yura_revision_1_policy
@@ -193,6 +194,8 @@ def test_snapshot_rejects_mixed_expression_generation() -> None:
             utterance.candidate.revisions.attention_revision,
             datetime.now(timezone.utc),
             "trace",
+            "yura-speech-performance",
+            1,
         )
 
 
@@ -219,6 +222,8 @@ def test_unknown_constraint_is_fail_closed() -> None:
         utterance.candidate.revisions.attention_revision,
         datetime.now(timezone.utc),
         "trace",
+        "yura-speech-performance",
+        1,
     )
     with pytest.raises(ValueError, match="未知"):
         SpeechPerformancePlanner(yura_revision_1_policy()).plan_snapshot(
@@ -338,8 +343,77 @@ def test_invalid_policy_definition_and_constraint_schema_fail_closed() -> None:
         utterance.candidate.revisions.attention_revision,
         datetime.now(timezone.utc),
         "trace",
+        "yura-speech-performance",
+        1,
     )
     with pytest.raises(ValueError, match="未知"):
         SpeechPerformancePlanner(yura_revision_1_policy()).plan_snapshot(
             snapshot, "performance-plan", datetime.now(timezone.utc)
+        )
+
+
+def test_segment_mapping_rejects_unknown_and_duplicate_utterance_refs() -> None:
+    utterance = _utterance()
+    plan = SpeechPerformancePlanner(yura_revision_1_policy()).plan(
+        "performance-plan", utterance, None, None, datetime.now(timezone.utc)
+    )
+    unknown = replace(plan.segments[0], utterance_segment_id="unknown-segment")
+    with pytest.raises(ValueError, match="一致"):
+        validate_plan_segments(utterance, replace(plan, segments=(unknown,)))
+    with pytest.raises(ValueError, match="一対一"):
+        replace(plan, segments=(plan.segments[0], plan.segments[0]))
+
+
+def test_policy_revision_is_retained_in_performance_plan() -> None:
+    utterance = _utterance()
+    revised_policy = replace(yura_revision_1_policy(), policy_revision=2)
+    plan = SpeechPerformancePlanner(revised_policy).plan(
+        "performance-plan", utterance, None, None, datetime.now(timezone.utc)
+    )
+    assert plan.policy_id == revised_policy.policy_id
+    assert plan.policy_revision == 2
+
+
+def test_planner_has_no_verifier_or_playback_prerequisite() -> None:
+    source = Path("app/domain/speech_performance/planner.py").read_text(encoding="utf-8")
+    assert "semantic_verification" not in source
+    assert "presentation" not in source.casefold()
+    assert "playback" not in source.casefold()
+
+
+def test_mixed_generation_snapshot_is_rejected_before_performance_composition() -> None:
+    utterance = _utterance()
+    policy = yura_revision_1_policy()
+    snapshot = SpeechPerformanceContextSnapshot(
+        "request",
+        utterance,
+        None,
+        None,
+        (),
+        utterance.candidate.revisions.source_context_revision,
+        utterance.candidate.revisions.goal_revision,
+        utterance.candidate.revisions.attention_revision,
+        datetime.now(timezone.utc),
+        "trace",
+        policy.policy_id,
+        policy.policy_revision,
+    )
+    with pytest.raises(ValueError, match="policy generation"):
+        SpeechPerformancePlanner(replace(policy, policy_revision=2)).plan_snapshot(
+            snapshot, "performance-plan", datetime.now(timezone.utc)
+        )
+    with pytest.raises(ValueError, match="provenance"):
+        SpeechPerformanceContextSnapshot(
+            "request",
+            utterance,
+            CharacterVoiceStyleProfile("other", 1, 1, ()),
+            None,
+            (),
+            utterance.candidate.revisions.source_context_revision,
+            utterance.candidate.revisions.goal_revision,
+            utterance.candidate.revisions.attention_revision,
+            datetime.now(timezone.utc),
+            "trace",
+            policy.policy_id,
+            policy.policy_revision,
         )

@@ -373,16 +373,28 @@ class SpeechPerformanceContextSnapshot:
     attention_revision: int | None
     captured_at: datetime
     trace_id: str
+    policy_id: str
+    policy_revision: int
 
     def __post_init__(self) -> None:
         require_identifier(self.performance_request_id, "performance_request_id")
         require_identifier(self.trace_id, "trace_id")
+        require_identifier(self.policy_id, "policy_id")
+        require_revision(self.policy_revision, "policy_revision")
         if not isinstance(self.utterance, CharacterUtterance):
             raise ValueError("utterance が不正です")
         if self.voice_style is not None and not isinstance(
             self.voice_style, CharacterVoiceStyleProfile
         ):
             raise ValueError("voice_style が不正です")
+        if self.voice_style is not None:
+            candidate = self.utterance.candidate
+            if (
+                self.voice_style.character_id != candidate.character_id
+                or self.voice_style.schema_version != candidate.character_schema_version
+                or self.voice_style.definition_revision != candidate.character_definition_revision
+            ):
+                raise ValueError("voice_style provenanceがutteranceと一致しません")
         if self.expression is not None and not isinstance(self.expression, SpeechExpressionContext):
             raise ValueError("expression が不正です")
         require_revision(self.source_context_revision, "source_context_revision")
@@ -488,3 +500,17 @@ class SpeechPerformancePlan:
         if len(reasons) != len(set(reasons)) or self.degraded != bool(reasons):
             raise ValueError("degradation state が不整合です")
         object.__setattr__(self, "degradation_reasons", reasons)
+
+
+def validate_plan_segments(
+    utterance: CharacterUtterance,
+    plan: SpeechPerformancePlan,
+) -> None:
+    if plan.utterance_id != utterance.utterance_id:
+        raise ValueError("performance planのutteranceが一致しません")
+    expected = {segment.segment_id for segment in utterance.candidate.segments}
+    actual = tuple(segment.utterance_segment_id for segment in plan.segments)
+    if len(actual) != len(set(actual)):
+        raise ValueError("performance segment mappingは重複できません")
+    if set(actual) != expected:
+        raise ValueError("performance segment mappingがutteranceと一致しません")

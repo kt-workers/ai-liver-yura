@@ -23,6 +23,7 @@ from .contracts import (
     StateTargetScope,
     StateTransform,
     VoiceStyleDisposition,
+    validate_plan_segments,
 )
 from .planner import SpeechPerformancePlanner, project_expression
 
@@ -52,5 +53,6 @@ __all__ = [
     "StateTargetScope",
     "StateTransform",
     "VoiceStyleDisposition",
+    "validate_plan_segments",
     "project_expression",
 ]

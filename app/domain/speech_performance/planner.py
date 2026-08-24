@@ -25,6 +25,7 @@ from .contracts import (
     SpeechPerformanceProjectionPolicy,
     SpeechPerformanceSegment,
     VoiceStyleDisposition,
+    validate_plan_segments,
 )
 
 
@@ -105,6 +106,8 @@ class SpeechPerformancePlanner:
             attention_revision=utterance.candidate.revisions.attention_revision,
             captured_at=created_at,
             trace_id=performance_plan_id,
+            policy_id=self._policy.policy_id,
+            policy_revision=self._policy.policy_revision,
         )
         return self.plan_snapshot(snapshot, performance_plan_id, created_at)
 
@@ -118,6 +121,11 @@ class SpeechPerformancePlanner:
         voice_style = snapshot.voice_style
         expression = snapshot.expression
         candidate = utterance.candidate
+        if (
+            snapshot.policy_id != self._policy.policy_id
+            or snapshot.policy_revision != self._policy.policy_revision
+        ):
+            raise ValueError("snapshot policy generationが一致しません")
         if (
             candidate.character_schema_version
             not in self._policy.compatible_character_schema_versions
@@ -228,7 +236,7 @@ class SpeechPerformancePlanner:
             )
             for index, segment in enumerate(candidate.segments, 1)
         )
-        return SpeechPerformancePlan(
+        plan = SpeechPerformancePlan(
             performance_plan_id,
             utterance.utterance_id,
             candidate.source_decision_id,
@@ -246,6 +254,8 @@ class SpeechPerformancePlanner:
             self._policy.policy_revision,
             created_at,
         )
+        validate_plan_segments(utterance, plan)
+        return plan
 
     def _segment_emphasis(
         self,
