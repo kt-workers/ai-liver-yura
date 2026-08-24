@@ -17,12 +17,30 @@ from app.domain.speech_runtime.contracts import (
     SpeechReadinessState,
     VerifierReadinessState,
 )
+from app.domain.speech_runtime.discard import (
+    PreparedAudioDiscarder,
+    PreparedAudioDiscardPort,
+    PreparedAudioDiscardRequest,
+)
 from app.domain.speech_runtime.repair import (
     SemanticRepairEvidence,
     SpeechSemanticRepairExecutor,
 )
 from app.domain.speech_runtime.runtime import SpeechRuntime
 from app.domain.speech_runtime.tasks import CandidateTaskKey, CandidateTaskRegistry
+
+
+class _FakeOwner(PreparedAudioDiscardPort):
+    def __init__(self, *refs: str) -> None:
+        self.refs = set(refs)
+        self.requests: list[PreparedAudioDiscardRequest] = []
+
+    def resolve(self, ref: str) -> str | None:
+        return ref if ref in self.refs else None
+
+    async def discard(self, request: PreparedAudioDiscardRequest) -> None:
+        self.requests.append(request)
+        self.refs.discard(request.audio_ref)
 
 
 def _candidate(candidate_id: str = "candidate") -> PreparedSpeechCandidate:
@@ -338,3 +356,84 @@ async def test_only_accepted_utterance_enters_prior_pool() -> None:
         repair_character=_repair,
     )
     assert tuple(executor.accepted_priors) == ("utterance-g2",)
+
+
+@pytest.mark.asyncio
+async def test_repair_discards_actual_g1_resource_before_starting_g2() -> None:
+    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    await runtime.register(_candidate())
+    await runtime.commit_generation_result(
+        "candidate",
+        1,
+        readiness=_ready(audio=AudioReadinessState.READY),
+        performance_plan_id="performance-g1",
+        prepared_audio_ref="audio-g1",
+    )
+    owner = _FakeOwner("audio-g1")
+    executor = SpeechSemanticRepairExecutor(runtime, tasks, PreparedAudioDiscarder(runtime, owner))
+    attempts: list[SemanticRepairAttempt] = []
+
+    async def repair(attempt: SemanticRepairAttempt) -> None:
+        attempts.append(attempt)
+
+    await executor.handle_verifier_result(
+        candidate_id="candidate",
+        generation=1,
+        semantic_accepted=False,
+        semantic_acceptance_id=None,
+        verifier_execution_failed=False,
+        speech_plan_stale=False,
+        evidence=SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",)),
+        repair_character=repair,
+    )
+    current = await runtime.candidate("candidate")
+    assert current.prepared_audio_ref is None
+    assert runtime.generation("candidate") == 2
+    assert owner.resolve("audio-g1") is None
+    assert len(owner.requests) == 1
+    assert attempts[0].speech_plan_id == "speech-plan"
+    assert attempts[0].prior_realizations == ()
+
+
+@pytest.mark.asyncio
+async def test_second_reject_discards_actual_g2_resource_without_third_generation() -> None:
+    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    await runtime.register(_candidate())
+    owner = _FakeOwner("audio-g2")
+    executor = SpeechSemanticRepairExecutor(runtime, tasks, PreparedAudioDiscarder(runtime, owner))
+    evidence = SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",))
+    await executor.handle_verifier_result(
+        candidate_id="candidate",
+        generation=1,
+        semantic_accepted=False,
+        semantic_acceptance_id=None,
+        verifier_execution_failed=False,
+        speech_plan_stale=False,
+        evidence=evidence,
+        repair_character=_repair,
+    )
+    await runtime.commit_generation_result(
+        "candidate",
+        2,
+        readiness=_ready(audio=AudioReadinessState.READY),
+        utterance_id="utterance-g2",
+        performance_plan_id="performance-g2",
+        prepared_audio_ref="audio-g2",
+    )
+    result = await executor.handle_verifier_result(
+        candidate_id="candidate",
+        generation=2,
+        semantic_accepted=False,
+        semantic_acceptance_id=None,
+        verifier_execution_failed=False,
+        speech_plan_stale=False,
+        evidence=evidence,
+        repair_character=_repair,
+    )
+    current = await runtime.candidate("candidate")
+    assert result is not None and result.value == "rejected_final"
+    assert runtime.generation("candidate") == 2
+    assert current.lifecycle is CandidateLifecycle.REJECTED
+    assert current.prepared_audio_ref is None
+    assert owner.resolve("audio-g2") is None
+    assert len(owner.requests) == 1

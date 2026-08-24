@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Callable
 
 from .contracts import (
     SpeechPresentationCommand,
@@ -10,7 +10,7 @@ from .contracts import (
 from .runtime import SpeechRuntime
 from .tasks import CandidateTaskKey, CandidateTaskRegistry
 
-PresentationAdapter = Callable[[SpeechPresentationCommand], Awaitable[SpeechPresentationReport]]
+PresentationAdapter = Callable[[SpeechPresentationCommand], AsyncIterator[SpeechPresentationReport]]
 
 
 class SpeechPresentationExecutor:
@@ -31,9 +31,13 @@ class SpeechPresentationExecutor:
         command = await self._runtime.commit(candidate_id, state, presentation_id)
 
         async def run() -> object:
-            report = await adapter(command)
-            await self._runtime.accept_report(report)
-            return report
+            terminal: SpeechPresentationReport | None = None
+            async for report in adapter(command):
+                await self._runtime.accept_report(report)
+                terminal = report
+            if terminal is None:
+                raise ValueError("Presentation Adapterはreportを返す必要があります")
+            return terminal
 
         generation = self._runtime.generation(candidate_id)
         self._tasks.start(CandidateTaskKey(candidate_id, generation, "presentation"), run())

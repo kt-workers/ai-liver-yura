@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -21,6 +22,11 @@ from app.domain.speech_runtime.contracts import (
     SpeechPresentationReportStatus,
     SpeechReadinessState,
     VerifierReadinessState,
+)
+from app.domain.speech_runtime.observation import (
+    SpeechTimingTrackReference,
+    execution_observation_from_report,
+    timing_publication_eligible,
 )
 from app.domain.speech_runtime.orchestrator import SpeechPreparationOrchestrator
 from app.domain.speech_runtime.presentation import SpeechPresentationExecutor
@@ -73,6 +79,8 @@ def _state() -> SpeechPresentationCommitState:
         capability=SpeechPresentationCapabilityView("capability", 1, True, False, True, False),
         expression_revision=None,
         observed_at=datetime.now(timezone.utc),
+        semantic_acceptance_id="acceptance",
+        performance_plan_id="performance",
     )
 
 
@@ -82,12 +90,25 @@ async def test_presentation_adapter_runs_after_commit_without_blocking_next_prep
     await runtime.register(_ready_candidate())
     started, release, next_preparation = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
-    async def adapter(command: SpeechPresentationCommand) -> SpeechPresentationReport:
+    async def adapter(
+        command: SpeechPresentationCommand,
+    ) -> AsyncIterator[SpeechPresentationReport]:
         started.set()
+        now = datetime.now(timezone.utc)
+        yield SpeechPresentationReport(
+            presentation_id="presentation",
+            candidate_id="candidate",
+            status=SpeechPresentationReportStatus.STARTED,
+            output_modes=(SpeechPresentationMode.TEXT_ONLY,),
+            started_at=now,
+            completed_at=None,
+            audio_ref=None,
+            timing_ref=None,
+        )
         await release.wait()
         assert command.candidate_id == "candidate"
         now = datetime.now(timezone.utc)
-        return SpeechPresentationReport(
+        yield SpeechPresentationReport(
             presentation_id="presentation",
             candidate_id="candidate",
             status=SpeechPresentationReportStatus.COMPLETED,
@@ -152,6 +173,19 @@ async def test_terminal_presentation_reports_are_truthful(
     await runtime.register(_ready_candidate())
     await runtime.commit("candidate", _state(), "presentation")
     now = datetime.now(timezone.utc)
+    if started:
+        await runtime.accept_report(
+            SpeechPresentationReport(
+                "presentation",
+                "candidate",
+                SpeechPresentationReportStatus.STARTED,
+                (SpeechPresentationMode.TEXT_ONLY,),
+                now,
+                None,
+                None,
+                None,
+            )
+        )
     report = SpeechPresentationReport(
         presentation_id="presentation",
         candidate_id="candidate",
@@ -164,7 +198,7 @@ async def test_terminal_presentation_reports_are_truthful(
     )
     updated = await runtime.accept_report(report)
     assert updated.lifecycle is expected
-    assert (await runtime.presentation_reports("presentation")) == (report,)
+    assert (await runtime.presentation_reports("presentation"))[-1] == report
 
 
 @pytest.mark.asyncio
@@ -207,11 +241,22 @@ async def test_playback_wait_does_not_block_next_candidate_preparation_or_heartb
     playback_started, release_playback = asyncio.Event(), asyncio.Event()
     verifier_done, performance_done, heartbeat = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
-    async def adapter(_: SpeechPresentationCommand) -> SpeechPresentationReport:
+    async def adapter(_: SpeechPresentationCommand) -> AsyncIterator[SpeechPresentationReport]:
         playback_started.set()
+        now = datetime.now(timezone.utc)
+        yield SpeechPresentationReport(
+            "presentation",
+            "candidate",
+            SpeechPresentationReportStatus.STARTED,
+            (SpeechPresentationMode.TEXT_ONLY,),
+            now,
+            None,
+            None,
+            None,
+        )
         await release_playback.wait()
         now = datetime.now(timezone.utc)
-        return SpeechPresentationReport(
+        yield SpeechPresentationReport(
             "presentation",
             "candidate",
             SpeechPresentationReportStatus.COMPLETED,
@@ -326,6 +371,78 @@ async def test_audio_required_policy_fails_closed_when_audio_is_unavailable() ->
     )
     with pytest.raises(ValueError, match="mode"):
         await runtime.commit("candidate", _state(), "presentation")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("terminal", "expected"),
+    [
+        (SpeechPresentationReportStatus.COMPLETED, CandidateLifecycle.COMPLETED),
+        (SpeechPresentationReportStatus.FAILED_AFTER_START, CandidateLifecycle.FAILED),
+        (SpeechPresentationReportStatus.INTERRUPTED, CandidateLifecycle.INTERRUPTED),
+    ],
+)
+async def test_executor_stream_accepts_started_before_terminal_and_preserves_effect(
+    terminal: SpeechPresentationReportStatus, expected: CandidateLifecycle
+) -> None:
+    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    candidate = replace(
+        _ready_candidate(),
+        prepared_audio_ref="audio",
+        presentation_modes=(SpeechPresentationMode.AUDIO_WITH_TEXT,),
+    )
+    await runtime.register(candidate)
+    state = replace(
+        _state(),
+        capability=SpeechPresentationCapabilityView("capability", 1, True, True, True, True),
+        prepared_audio_ref="audio",
+    )
+    emitted, release = asyncio.Event(), asyncio.Event()
+
+    async def adapter(_: SpeechPresentationCommand) -> AsyncIterator[SpeechPresentationReport]:
+        now = datetime.now(timezone.utc)
+        emitted.set()
+        yield SpeechPresentationReport(
+            "presentation",
+            "candidate",
+            SpeechPresentationReportStatus.STARTED,
+            (SpeechPresentationMode.AUDIO_WITH_TEXT,),
+            now,
+            None,
+            "audio",
+            "timing",
+        )
+        await release.wait()
+        yield SpeechPresentationReport(
+            "presentation",
+            "candidate",
+            terminal,
+            (SpeechPresentationMode.AUDIO_WITH_TEXT,),
+            now,
+            now,
+            "audio",
+            "timing",
+        )
+
+    await SpeechPresentationExecutor(runtime, tasks).commit_and_present(
+        candidate_id="candidate", state=state, presentation_id="presentation", adapter=adapter
+    )
+    await emitted.wait()
+    await asyncio.sleep(0)
+    current = await runtime.candidate("candidate")
+    history = await runtime.presentation_reports("presentation")
+    assert current.lifecycle is CandidateLifecycle.PRESENTING
+    assert history[0].status is SpeechPresentationReportStatus.STARTED
+    assert timing_publication_eligible(
+        current, history[0], SpeechTimingTrackReference("audio", "timing")
+    )
+    assert execution_observation_from_report(history[0]) is not None
+    assert tasks.pending_task_count == 1
+    release.set()
+    while tasks.pending_task_count:
+        await asyncio.sleep(0)
+    assert (await runtime.candidate("candidate")).lifecycle is expected
+    assert len(await runtime.presentation_reports("presentation")) == 2
 
 
 @pytest.mark.asyncio

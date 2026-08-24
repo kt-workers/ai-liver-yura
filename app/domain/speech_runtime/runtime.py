@@ -26,6 +26,7 @@ class SpeechRuntime:
     def __init__(self) -> None:
         self._candidates: dict[str, PreparedSpeechCandidate] = {}
         self._presentations: dict[str, str] = {}
+        self._commands: dict[str, SpeechPresentationCommand] = {}
         self._reports: dict[str, tuple[SpeechPresentationReport, ...]] = {}
         self._generations: dict[str, int] = {}
         self._lock = asyncio.Lock()
@@ -123,6 +124,7 @@ class SpeechRuntime:
         performance_plan_id: str | None = None,
         semantic_acceptance_id: str | None = None,
         prepared_audio_ref: str | None = None,
+        clear_prepared_audio: bool = False,
     ) -> PreparedSpeechCandidate | None:
         """全Role完了が共有する世代fence付きcommit境界。"""
         async with self._lock:
@@ -165,7 +167,9 @@ class SpeechRuntime:
                     else candidate.semantic_acceptance_id
                 ),
                 prepared_audio_ref=(
-                    prepared_audio_ref
+                    None
+                    if clear_prepared_audio
+                    else prepared_audio_ref
                     if prepared_audio_ref is not None
                     else candidate.prepared_audio_ref
                 ),
@@ -288,14 +292,34 @@ class SpeechRuntime:
                     state.prepared_audio_ref is not None
                     and candidate.prepared_audio_ref != state.prepared_audio_ref
                 )
+                or (candidate.response_obligation_id != state.response_obligation_id)
+                or (
+                    candidate.character_definition_revision is not None
+                    and candidate.character_definition_revision
+                    != state.character_definition_revision
+                )
+                or not state.character_compatible
+                or not state.expiry_valid
+                or (candidate.expires_at is not None and candidate.expires_at <= state.observed_at)
                 or not state.capability.output_available
             ):
                 raise ValueError("live revalidationに失敗しました")
-            if (
-                candidate.semantic_requirement is SemanticVerificationRequirement.REQUIRED
-                and candidate.semantic_acceptance_id is None
+            if candidate.semantic_requirement is SemanticVerificationRequirement.REQUIRED and (
+                candidate.semantic_acceptance_id is None
+                or state.semantic_acceptance_id is None
+                or candidate.semantic_acceptance_id != state.semantic_acceptance_id
             ):
                 raise ValueError("SemanticAcceptanceが必要です")
+            if candidate.performance_plan_id is None or (
+                state.performance_plan_id is None
+                or candidate.performance_plan_id != state.performance_plan_id
+            ):
+                raise ValueError("current PerformancePlanが必要です")
+            if (
+                candidate.expression_revision is not None
+                and candidate.expression_revision != state.expression_revision
+            ):
+                raise ValueError("expression driftにはperformance rebindが必要です")
             if (
                 not set(candidate.required_preconditions) <= set(state.satisfied_preconditions)
                 or candidate.utterance_id is None
@@ -306,6 +330,11 @@ class SpeechRuntime:
                 and state.capability.audio_available
                 and SpeechPresentationMode.AUDIO_WITH_TEXT in candidate.presentation_modes
             ):
+                if (
+                    state.prepared_audio_ref is None
+                    or state.prepared_audio_ref != candidate.prepared_audio_ref
+                ):
+                    raise ValueError("current prepared audioが必要です")
                 modes = (SpeechPresentationMode.AUDIO_WITH_TEXT,)
             elif (
                 state.capability.text_available
@@ -315,10 +344,7 @@ class SpeechRuntime:
             else:
                 raise ValueError("Presentation modeが利用不能です")
             self._presentations[presentation_id] = candidate_id
-            self._candidates[candidate_id] = replace(
-                candidate, lifecycle=CandidateLifecycle.PRESENTING, updated_at=state.observed_at
-            )
-            return SpeechPresentationCommand(
+            command = SpeechPresentationCommand(
                 presentation_id,
                 candidate_id,
                 candidate.utterance_id,
@@ -326,15 +352,38 @@ class SpeechRuntime:
                 modes,
                 state.observed_at,
             )
+            self._commands[presentation_id] = command
+            self._candidates[candidate_id] = replace(
+                candidate, lifecycle=CandidateLifecycle.PRESENTING, updated_at=state.observed_at
+            )
+            return command
 
     async def accept_report(self, report: SpeechPresentationReport) -> PreparedSpeechCandidate:
         async with self._lock:
             candidate = self._active(report.candidate_id)
             if self._presentations.get(report.presentation_id) != report.candidate_id:
                 raise ValueError("Presentation reportのidentityが不正です")
+            command = self._commands[report.presentation_id]
+            if report.output_modes != command.modes or report.audio_ref != command.audio_ref:
+                raise ValueError("Presentation reportのasset identityが不正です")
             previous = self._reports.get(report.presentation_id, ())
-            if report.status is SpeechPresentationReportStatus.STARTED and previous:
-                raise ValueError("STARTED reportは重複できません")
+            if not previous:
+                if report.status not in {
+                    SpeechPresentationReportStatus.STARTED,
+                    SpeechPresentationReportStatus.FAILED_BEFORE_START,
+                }:
+                    raise ValueError("terminal reportの前にSTARTEDが必要です")
+            elif (
+                len(previous) != 1
+                or previous[0].status is not SpeechPresentationReportStatus.STARTED
+                or report.status
+                not in {
+                    SpeechPresentationReportStatus.COMPLETED,
+                    SpeechPresentationReportStatus.FAILED_AFTER_START,
+                    SpeechPresentationReportStatus.INTERRUPTED,
+                }
+            ):
+                raise ValueError("Presentation reportの順序が不正です")
             if candidate.lifecycle is not CandidateLifecycle.PRESENTING:
                 raise ValueError("Presentation reportのlifecycleが不正です")
             lifecycle = {

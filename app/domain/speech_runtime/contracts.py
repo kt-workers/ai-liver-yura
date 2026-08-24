@@ -124,6 +124,7 @@ class SpeechPreparationRequest:
     presentation_policy_ref: str
     created_at: datetime
     trace_id: str
+    semantic_skip_proof: SemanticVerificationSkipProof | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -151,6 +152,19 @@ class SpeechPreparationRequest:
             raise ValueError("priority/interruptibility が不正です")
         if not isinstance(self.semantic_verification_requirement, SemanticVerificationRequirement):
             raise ValueError("semantic verification requirement が不正です")
+        if (
+            self.semantic_verification_requirement
+            is (SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY)
+            and self.semantic_skip_proof is None
+        ):
+            raise ValueError("verifier skipにはclosed policy proofが必要です")
+        if self.semantic_verification_requirement is SemanticVerificationRequirement.REQUIRED:
+            if self.semantic_skip_proof is not None:
+                raise ValueError("REQUIRED verifierにskip proofは指定できません")
+        if self.semantic_skip_proof is not None and not isinstance(
+            self.semantic_skip_proof, SemanticVerificationSkipProof
+        ):
+            raise ValueError("semantic_skip_proof が不正です")
         preconditions = tuple(self.required_preconditions)
         if any(not isinstance(item, str) or not item.strip() for item in preconditions):
             raise ValueError("required_preconditions が不正です")
@@ -260,6 +274,10 @@ class PreparedSpeechCandidate:
     repair_count: int = 0
     turn_id: str | None = None
     focus_revision: int | None = None
+    semantic_skip_proof: SemanticVerificationSkipProof | None = None
+    response_obligation_id: str | None = None
+    expires_at: datetime | None = None
+    character_definition_revision: int | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -294,6 +312,27 @@ class PreparedSpeechCandidate:
         if self.turn_id is not None:
             require_identifier(self.turn_id, "turn_id")
         require_revision(self.focus_revision, "focus_revision", optional=True)
+        if (
+            self.semantic_requirement
+            is SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
+        ):
+            if self.semantic_skip_proof is None:
+                raise ValueError("verifier skipにはclosed policy proofが必要です")
+        elif self.semantic_skip_proof is not None:
+            raise ValueError("REQUIRED verifierにskip proofは指定できません")
+        if self.semantic_skip_proof is not None and not isinstance(
+            self.semantic_skip_proof, SemanticVerificationSkipProof
+        ):
+            raise ValueError("semantic_skip_proof が不正です")
+        if self.response_obligation_id is not None:
+            require_identifier(self.response_obligation_id, "response_obligation_id")
+        if self.expires_at is not None:
+            require_aware(self.expires_at, "expires_at")
+        require_revision(
+            self.character_definition_revision,
+            "character_definition_revision",
+            optional=True,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,6 +350,9 @@ class SpeechPresentationCommitState:
     semantic_acceptance_id: str | None = None
     performance_plan_id: str | None = None
     prepared_audio_ref: str | None = None
+    character_definition_revision: int | None = None
+    character_compatible: bool = True
+    expiry_valid: bool = True
 
     def __post_init__(self) -> None:
         require_revision(self.source_context_revision, "source_context_revision")
@@ -318,6 +360,13 @@ class SpeechPresentationCommitState:
         require_revision(self.attention_revision, "attention_revision", optional=True)
         require_revision(self.expression_revision, "expression_revision", optional=True)
         require_revision(self.focus_revision, "focus_revision", optional=True)
+        require_revision(
+            self.character_definition_revision,
+            "character_definition_revision",
+            optional=True,
+        )
+        if type(self.character_compatible) is not bool or type(self.expiry_valid) is not bool:
+            raise ValueError("live compatibility/expiry が不正です")
         require_identifier(self.turn_id, "turn_id")
         if self.response_obligation_id is not None:
             require_identifier(self.response_obligation_id, "response_obligation_id")

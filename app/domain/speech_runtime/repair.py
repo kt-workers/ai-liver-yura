@@ -11,6 +11,7 @@ from .contracts import (
     SpeechComponentReadiness,
     VerifierReadinessState,
 )
+from .discard import PreparedAudioDiscarder, PreparedAudioDiscardReason
 from .runtime import SpeechRuntime
 from .tasks import CandidateTaskRegistry
 
@@ -38,9 +39,15 @@ CharacterRepairWork = Callable[[SemanticRepairAttempt], Awaitable[None]]
 class SpeechSemanticRepairExecutor:
     """#363結果から最大一回だけ同一semantic planのCharacter repairを起動する。"""
 
-    def __init__(self, runtime: SpeechRuntime, tasks: CandidateTaskRegistry) -> None:
+    def __init__(
+        self,
+        runtime: SpeechRuntime,
+        tasks: CandidateTaskRegistry,
+        discarder: PreparedAudioDiscarder | None = None,
+    ) -> None:
         self._runtime = runtime
         self._tasks = tasks
+        self._discarder = discarder
         self._accepted_priors: list[str] = []
 
     @property
@@ -90,6 +97,10 @@ class SpeechSemanticRepairExecutor:
         if disposition is SemanticRepairDisposition.REPAIR_ONCE:
             if evidence is None or candidate.utterance_id is None:
                 raise ValueError("repairにはtyped evidenceとutteranceが必要です")
+            if self._discarder is not None:
+                await self._discarder.discard_current(
+                    candidate_id, generation, PreparedAudioDiscardReason.CHARACTER_REPAIRED
+                )
             next_generation = await self._runtime.supersede_generation(candidate_id)
             await self._tasks.cancel_candidate(candidate_id, before_generation=next_generation)
             attempt = SemanticRepairAttempt(
@@ -104,6 +115,10 @@ class SpeechSemanticRepairExecutor:
             await repair_character(attempt)
             return disposition
         if disposition is SemanticRepairDisposition.REJECTED_FINAL:
+            if self._discarder is not None:
+                await self._discarder.discard_current(
+                    candidate_id, generation, PreparedAudioDiscardReason.SEMANTIC_REJECTED
+                )
             await self._runtime.commit_generation_result(
                 candidate_id,
                 generation,

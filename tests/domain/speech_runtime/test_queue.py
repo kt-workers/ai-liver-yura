@@ -122,3 +122,46 @@ async def test_shutdown_cancels_candidate_local_tasks_and_drains_queue() -> None
     assert tasks.pending_task_count == 0
     assert len(queue) == 0
     assert (await runtime.candidate("candidate-a")).lifecycle is CandidateLifecycle.CANCELLED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "terminal",
+    [CandidateLifecycle.CANCELLED, CandidateLifecycle.STALE, CandidateLifecycle.SUPERSEDED],
+)
+async def test_pop_uses_live_terminal_state_not_queued_snapshot(
+    terminal: CandidateLifecycle,
+) -> None:
+    runtime = SpeechRuntime()
+    await runtime.register(_prepared("candidate", LLMPriority.FOREGROUND))
+    coordinator = PreparedSpeechQueueCoordinator(runtime, PreparedSpeechQueue(2))
+    assert await coordinator.enqueue_current("candidate", 1, foreground=True)
+    await runtime.cancel("candidate", terminal)
+    assert await coordinator.pop_for_revalidation() is None
+
+
+@pytest.mark.asyncio
+async def test_bounded_fairness_serves_eligible_background_after_foreground_burst() -> None:
+    runtime = SpeechRuntime()
+    for candidate_id, priority in (
+        ("background", LLMPriority.BACKGROUND),
+        ("foreground-1", LLMPriority.FOREGROUND),
+        ("foreground-2", LLMPriority.FOREGROUND),
+    ):
+        await runtime.register(_prepared(candidate_id, priority))
+    coordinator = PreparedSpeechQueueCoordinator(runtime, PreparedSpeechQueue(3, 1))
+    assert await coordinator.enqueue_current("background", 1, foreground=False)
+    assert await coordinator.enqueue_current("foreground-1", 1, foreground=True)
+    assert await coordinator.enqueue_current("foreground-2", 1, foreground=True)
+    assert (await coordinator.pop_for_revalidation()).candidate_id == "foreground-1"  # type: ignore[union-attr]
+    assert (await coordinator.pop_for_revalidation()).candidate_id == "background"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_old_generation_entry_is_dropped_before_revalidation() -> None:
+    runtime = SpeechRuntime()
+    await runtime.register(_prepared("candidate", LLMPriority.FOREGROUND))
+    coordinator = PreparedSpeechQueueCoordinator(runtime, PreparedSpeechQueue(1))
+    assert await coordinator.enqueue_current("candidate", 1, foreground=True)
+    await runtime.supersede_generation("candidate")
+    assert await coordinator.pop_for_revalidation() is None
