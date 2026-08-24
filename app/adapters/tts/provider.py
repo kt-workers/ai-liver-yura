@@ -5,6 +5,7 @@ import hashlib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from math import isfinite
 from typing import Protocol
 
 from app.domain.speech_performance import PerformanceAxis
@@ -14,7 +15,6 @@ from .contracts import (
     SpeechTimingKind,
     SpeechTimingTrack,
     SpeechTimingUnit,
-    TTSCapabilityView,
     TTSDegradationReason,
     TTSFailureCode,
     TTSSynthesisPriority,
@@ -33,6 +33,11 @@ class ProviderParameterRange:
     maximum: float
 
     def __post_init__(self) -> None:
+        if any(
+            type(value) not in (int, float) or not isfinite(value)
+            for value in (self.minimum, self.neutral, self.maximum)
+        ):
+            raise ValueError("provider parameter range は有限数でなければなりません")
         if not self.minimum <= self.neutral <= self.maximum:
             raise ValueError("provider parameter range が不正です")
 
@@ -85,6 +90,12 @@ class TTSProviderResponse:
     content_digest: str
     duration_ms: int | None
     timing_units: tuple[ProviderTimingUnit, ...] = ()
+    timing_trustworthy: bool = True
+
+    def __post_init__(self) -> None:
+        if type(self.timing_trustworthy) is not bool:
+            raise ValueError("timing_trustworthy が不正です")
+        object.__setattr__(self, "timing_units", tuple(self.timing_units))
 
 
 class TTSProviderError(Exception):
@@ -107,7 +118,9 @@ class TTSProviderClient(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class TTSProviderMappingPolicy:
+    provider_id: str
     provider_config_revision: int
+    compatible_provider_revisions: tuple[int, ...]
     max_attempts: int
     timeout_seconds: float
     global_ranges: tuple[tuple[PerformanceAxis, ProviderParameterRange], ...]
@@ -127,10 +140,18 @@ class TTSProviderMappingPolicy:
     )
 
     def __post_init__(self) -> None:
+        if not isinstance(self.provider_id, str) or not self.provider_id.strip():
+            raise ValueError("provider_id が不正です")
         if type(self.provider_config_revision) is not int or self.provider_config_revision < 0:
             raise ValueError("provider_config_revision が不正です")
         if type(self.max_attempts) is not int or self.max_attempts < 1:
             raise ValueError("max_attempts が不正です")
+        revisions = tuple(self.compatible_provider_revisions)
+        if not revisions or any(type(value) is not int or value < 0 for value in revisions):
+            raise ValueError("compatible_provider_revisions が不正です")
+        if len(revisions) != len(set(revisions)):
+            raise ValueError("compatible_provider_revisions は一意です")
+        object.__setattr__(self, "compatible_provider_revisions", revisions)
         if type(self.timeout_seconds) not in (int, float) or self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds が不正です")
         ranges = tuple(self.global_ranges)
@@ -162,7 +183,9 @@ class TTSProviderMappingPolicy:
         normalized = ProviderParameterRange(-100.0, 0.0, 100.0)
         unit = ProviderParameterRange(0.0, 0.5, 1.0)
         return cls(
+            "fake",
             1,
+            (1,),
             2,
             1.0,
             tuple((axis, normalized) for axis in PerformanceAxis),
@@ -197,6 +220,29 @@ class CandidateArtifactStore:
         return self._artifacts.get(candidate_id)
 
 
+class PreparedAudioResourceStore(Protocol):
+    """public DTOへprovider refを出さず、#358内だけでsafe handleを解決するPort。"""
+
+    def store(self, artifact_id: str, request_id: str, raw_resource_ref: str) -> str: ...
+
+    def resolve(self, artifact_ref: str) -> str | None: ...
+
+
+@dataclass(slots=True)
+class InMemoryPreparedAudioResourceStore:
+    _resources: dict[str, tuple[str, str, str]] = field(default_factory=dict)
+
+    def store(self, artifact_id: str, request_id: str, raw_resource_ref: str) -> str:
+        material = f"{artifact_id}\x1f{request_id}\x1f{raw_resource_ref}"
+        artifact_ref = f"artifact://prepared/{hashlib.sha256(material.encode('utf-8')).hexdigest()}"
+        self._resources[artifact_ref] = (artifact_id, request_id, raw_resource_ref)
+        return artifact_ref
+
+    def resolve(self, artifact_ref: str) -> str | None:
+        resource = self._resources.get(artifact_ref)
+        return None if resource is None else resource[2]
+
+
 class TTSProviderAdapter:
     """Provider呼出だけを所有し、再生・Presentation・Body副作用を持たない。"""
 
@@ -207,11 +253,13 @@ class TTSProviderAdapter:
         *,
         now: Callable[[], datetime] | None = None,
         sleep: Callable[[float], Awaitable[None]] | None = None,
+        resource_store: PreparedAudioResourceStore | None = None,
     ) -> None:
         self._client = client
         self._policy = policy
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._sleep = sleep or asyncio.sleep
+        self._resource_store = resource_store or InMemoryPreparedAudioResourceStore()
         self._foreground_slots = asyncio.Semaphore(policy.max_foreground_synthesis)
         self._speculative_slots = asyncio.Semaphore(policy.max_speculative_synthesis)
         self._pending: set[asyncio.Task[object]] = set()
@@ -244,7 +292,7 @@ class TTSProviderAdapter:
                 self._pending.discard(task)
 
     async def _synthesize(self, request: TTSSynthesisRequest) -> TTSSynthesisResult:
-        if request.provider_config_revision != self._policy.provider_config_revision:
+        if not self._policy_matches(request):
             return self._failure(request, TTSFailureCode.INVALID_REQUEST, 0)
         provider_input, degraded = self._map(request)
         texts = self._pronunciation_texts(request)
@@ -262,8 +310,12 @@ class TTSProviderAdapter:
                     ),
                     timeout=float(self._policy.timeout_seconds),
                 )
+                artifact_id = f"artifact-{request.request_id}"
+                safe_ref = self._resource_store.store(
+                    artifact_id, request.request_id, response.raw_audio_ref
+                )
                 artifact = PreparedAudioArtifact(
-                    f"artifact-{request.request_id}",
+                    artifact_id,
                     request.request_id,
                     request.candidate_id,
                     request.utterance.utterance_id,
@@ -273,13 +325,16 @@ class TTSProviderAdapter:
                     request.capability.provider_revision,
                     request.provider_config_revision,
                     request.pronunciation_config_revision,
-                    self._safe_artifact_ref(response),
+                    safe_ref,
                     response.audio_format,
                     response.content_digest,
                     self._now(),
                     response.duration_ms,
                 )
-                timing = self._normalize_timing(request.capability, artifact, response)
+                try:
+                    timing = self._normalize_timing(request, artifact, response)
+                except (KeyError, TypeError, ValueError):
+                    timing = None
                 reasons: tuple[TTSDegradationReason, ...] = ()
                 if degraded:
                     reasons += (TTSDegradationReason.UNSUPPORTED_DIMENSION,)
@@ -419,27 +474,26 @@ class TTSProviderAdapter:
         return tuple(texts)
 
     @staticmethod
-    def _safe_artifact_ref(response: TTSProviderResponse) -> str:
-        material = (
-            f"{response.raw_audio_ref}\x1f{response.audio_format}\x1f{response.content_digest}"
-        )
-        return f"artifact://prepared/{hashlib.sha256(material.encode('utf-8')).hexdigest()}"
-
-    @staticmethod
     def _normalize_timing(
-        capability: TTSCapabilityView,
+        request: TTSSynthesisRequest,
         artifact: PreparedAudioArtifact,
         response: TTSProviderResponse,
     ) -> SpeechTimingTrack | None:
-        if not response.timing_units:
+        if not response.timing_units or not response.timing_trustworthy:
             return None
         supported = {
-            SpeechTimingKind.PHONEME: capability.supports_phoneme_timing,
-            SpeechTimingKind.MORA: capability.supports_mora_timing,
-            SpeechTimingKind.VISEME: capability.supports_viseme_timing,
+            SpeechTimingKind.PHONEME: request.capability.supports_phoneme_timing,
+            SpeechTimingKind.MORA: request.capability.supports_mora_timing,
+            SpeechTimingKind.VISEME: request.capability.supports_viseme_timing,
             SpeechTimingKind.WORD_BOUNDARY: True,
         }
-        if any(not supported[unit.kind] for unit in response.timing_units):
+        expected_segments = {segment.segment_id for segment in request.utterance.candidate.segments}
+        if any(
+            not isinstance(unit, ProviderTimingUnit)
+            or unit.segment_id not in expected_segments
+            or not supported[unit.kind]
+            for unit in response.timing_units
+        ):
             raise ValueError("provider timing capabilityが一致しません")
         units = tuple(
             SpeechTimingUnit(
@@ -457,6 +511,14 @@ class TTSProviderAdapter:
 
     def _retry_allowed(self, error: TTSProviderError) -> bool:
         return error.retryable and error.code in self._policy.retryable_failure_codes
+
+    def _policy_matches(self, request: TTSSynthesisRequest) -> bool:
+        return (
+            request.provider_config_revision == self._policy.provider_config_revision
+            and request.voice_binding.provider_id == self._policy.provider_id
+            and request.capability.provider_id == self._policy.provider_id
+            and request.capability.provider_revision in self._policy.compatible_provider_revisions
+        )
 
     def _failure(
         self,

@@ -11,6 +11,8 @@ from .contracts import (
 )
 from .provider import (
     CandidateArtifactStore,
+    InMemoryPreparedAudioResourceStore,
+    PreparedAudioResourceStore,
     ProviderParameterRange,
     ProviderPitchAnchor,
     ProviderSegmentParameters,
@@ -24,10 +26,12 @@ from .provider import (
 __all__ = [
     "PreparedAudioArtifact",
     "CandidateArtifactStore",
+    "InMemoryPreparedAudioResourceStore",
     "ProviderParameterRange",
     "ProviderPitchAnchor",
     "ProviderSegmentParameters",
     "ProviderSynthesisInput",
+    "PreparedAudioResourceStore",
     "PronunciationOverrideView",
     "SpeechTimingTrack",
     "SpeechTimingUnit",

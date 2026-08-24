@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -8,8 +9,10 @@ import pytest
 
 from app.adapters.tts import (
     CandidateArtifactStore,
+    InMemoryPreparedAudioResourceStore,
     PreparedAudioArtifact,
     PronunciationOverrideView,
+    ProviderParameterRange,
     ProviderSynthesisInput,
     TTSCapabilityView,
     TTSProviderAdapter,
@@ -72,7 +75,9 @@ def _policy(
 ) -> TTSProviderMappingPolicy:
     base = TTSProviderMappingPolicy.revision_1()
     return TTSProviderMappingPolicy(
+        base.provider_id,
         base.provider_config_revision,
+        base.compatible_provider_revisions,
         max_attempts,
         base.timeout_seconds,
         base.global_ranges,
@@ -412,15 +417,101 @@ async def test_provider_timing_is_normalized_only_when_trustworthy_units_are_ret
 
 @pytest.mark.asyncio
 async def test_secret_bearing_provider_audio_ref_is_normalized_before_public_artifact() -> None:
+    store = InMemoryPreparedAudioResourceStore()
     result = await TTSProviderAdapter(
         FakeTTS([_response(raw_audio_ref="https://example.invalid/audio?token=VERY_SECRET")]),
         _policy(max_attempts=1),
         now=lambda: NOW,
+        resource_store=store,
     ).synthesize(_request())
     assert result.artifact is not None
     assert result.artifact.audio_ref.startswith("artifact://prepared/")
     assert "VERY_SECRET" not in result.artifact.audio_ref
     assert "VERY_SECRET" not in repr(result)
+    assert (
+        store.resolve(result.artifact.audio_ref)
+        == "https://example.invalid/audio?token=VERY_SECRET"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "timing_units",
+    (
+        (
+            ProviderTimingUnit("first", "segment-1", SpeechTimingKind.PHONEME, "a", 0, 20),
+            ProviderTimingUnit("second", "segment-1", SpeechTimingKind.PHONEME, "i", 10, 30),
+        ),
+        (ProviderTimingUnit("overrun", "segment-1", SpeechTimingKind.PHONEME, "a", 0, 41),),
+        (ProviderTimingUnit("unknown", "unknown-segment", SpeechTimingKind.PHONEME, "a", 0, 10),),
+    ),
+)
+async def test_invalid_provider_timing_degrades_without_discarding_valid_audio(
+    timing_units: tuple[ProviderTimingUnit, ...],
+) -> None:
+    capability = replace(_request().capability, supports_phoneme_timing=True)
+    result = await TTSProviderAdapter(
+        FakeTTS([_response(duration_ms=40, timing_units=timing_units)]),
+        _policy(max_attempts=1),
+        now=lambda: NOW,
+    ).synthesize(_request(capability=capability))
+    assert result.status is TTSSynthesisStatus.SUCCEEDED
+    assert result.artifact is not None
+    assert result.timing_track is None
+    assert TTSDegradationReason.TIMING_UNAVAILABLE in result.degradation_reasons
+
+
+@pytest.mark.asyncio
+async def test_untrusted_provider_timing_is_not_published_but_audio_succeeds() -> None:
+    capability = replace(_request().capability, supports_phoneme_timing=True)
+    response = TTSProviderResponse(
+        "memory://audio",
+        "wav",
+        "digest",
+        10,
+        (ProviderTimingUnit("unit", "segment-1", SpeechTimingKind.PHONEME, "a", 0, 10),),
+        False,
+    )
+    result = await TTSProviderAdapter(
+        FakeTTS([response]), _policy(max_attempts=1), now=lambda: NOW
+    ).synthesize(_request(capability=capability))
+    assert result.status is TTSSynthesisStatus.SUCCEEDED
+    assert result.timing_track is None
+    assert TTSDegradationReason.TIMING_UNAVAILABLE in result.degradation_reasons
+
+
+@pytest.mark.asyncio
+async def test_provider_policy_identity_revision_and_config_mismatches_fail_before_invocation() -> (
+    None
+):
+    request = _request()
+    for policy in (
+        replace(_policy(), provider_id="other"),
+        replace(_policy(), compatible_provider_revisions=(2,)),
+        replace(_policy(), provider_config_revision=2),
+    ):
+        client = FakeTTS([_response()])
+        result = await TTSProviderAdapter(client, policy, now=lambda: NOW).synthesize(request)
+        assert result.failure_code is TTSFailureCode.INVALID_REQUEST
+        assert client.calls == []
+
+
+@pytest.mark.parametrize(
+    "bounds",
+    (
+        (True, 0.0, 1.0),
+        (0.0, math.nan, 1.0),
+        (0.0, 0.5, math.inf),
+        (-math.inf, 0.0, 1.0),
+        (1.0, 0.0, 2.0),
+        (0.0, 2.0, 1.0),
+    ),
+)
+def test_provider_parameter_range_rejects_non_finite_bool_or_non_monotonic_bounds(
+    bounds: tuple[float, float, float],
+) -> None:
+    with pytest.raises(ValueError):
+        ProviderParameterRange(*bounds)
 
 
 def test_timing_supports_monotonic_phoneme_mora_and_viseme_and_rejects_duration_overrun() -> None:
