@@ -11,6 +11,9 @@ from app.domain.speech_performance import PerformanceAxis
 
 from .contracts import (
     PreparedAudioArtifact,
+    SpeechTimingKind,
+    SpeechTimingTrack,
+    SpeechTimingUnit,
     TTSCapabilityView,
     TTSDegradationReason,
     TTSFailureCode,
@@ -19,6 +22,69 @@ from .contracts import (
     TTSSynthesisResult,
     TTSSynthesisStatus,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderParameterRange:
+    """provider固有の実値範囲。正規化値はこの境界を越えない。"""
+
+    minimum: float
+    neutral: float
+    maximum: float
+
+    def __post_init__(self) -> None:
+        if not self.minimum <= self.neutral <= self.maximum:
+            raise ValueError("provider parameter range が不正です")
+
+    def project(self, normalized: float) -> float:
+        value = max(-1.0, min(1.0, normalized))
+        if value < 0.0:
+            return self.neutral + value * (self.neutral - self.minimum)
+        return self.neutral + value * (self.maximum - self.neutral)
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderPitchAnchor:
+    position: float
+    relative_pitch: float
+    strength: float
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderSegmentParameters:
+    utterance_segment_id: str
+    boundary_strength: float
+    pause_after: float | None
+    duration_bias: float
+    emphasis_strength: float
+    hesitation_strength: float
+    local_intent_parameters: tuple[tuple[str, float], ...]
+    pitch_anchors: tuple[ProviderPitchAnchor, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderSynthesisInput:
+    global_parameters: tuple[tuple[str, float], ...]
+    segments: tuple[ProviderSegmentParameters, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderTimingUnit:
+    unit_id: str
+    segment_id: str
+    kind: SpeechTimingKind
+    symbol: str
+    start_ms: int
+    end_ms: int
+
+
+@dataclass(frozen=True, slots=True)
+class TTSProviderResponse:
+    raw_audio_ref: str
+    audio_format: str
+    content_digest: str
+    duration_ms: int | None
+    timing_units: tuple[ProviderTimingUnit, ...] = ()
 
 
 class TTSProviderError(Exception):
@@ -32,8 +98,11 @@ class TTSProviderError(Exception):
 
 class TTSProviderClient(Protocol):
     async def synthesize(
-        self, voice_ref: str, texts: tuple[str, ...], parameters: dict[str, float]
-    ) -> tuple[str, str, str, int | None]: ...
+        self,
+        voice_ref: str,
+        texts: tuple[str, ...],
+        provider_input: ProviderSynthesisInput,
+    ) -> TTSProviderResponse: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +110,13 @@ class TTSProviderMappingPolicy:
     provider_config_revision: int
     max_attempts: int
     timeout_seconds: float
+    global_ranges: tuple[tuple[PerformanceAxis, ProviderParameterRange], ...]
+    boundary_strength_range: ProviderParameterRange
+    phrase_pause_range: ProviderParameterRange
+    duration_bias_range: ProviderParameterRange
+    emphasis_strength_range: ProviderParameterRange
+    hesitation_strength_range: ProviderParameterRange
+    pitch_anchor_range: ProviderParameterRange
     retry_backoff_seconds: float = 0.0
     max_foreground_synthesis: int = 1
     max_speculative_synthesis: int = 1
@@ -57,12 +133,46 @@ class TTSProviderMappingPolicy:
             raise ValueError("max_attempts が不正です")
         if type(self.timeout_seconds) not in (int, float) or self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds が不正です")
+        ranges = tuple(self.global_ranges)
+        if len({axis for axis, _ in ranges}) != len(ranges) or any(
+            not isinstance(axis, PerformanceAxis) or not isinstance(item, ProviderParameterRange)
+            for axis, item in ranges
+        ):
+            raise ValueError("global_ranges が不正です")
+        object.__setattr__(self, "global_ranges", ranges)
+        for name in (
+            "boundary_strength_range",
+            "phrase_pause_range",
+            "duration_bias_range",
+            "emphasis_strength_range",
+            "hesitation_strength_range",
+            "pitch_anchor_range",
+        ):
+            if not isinstance(getattr(self, name), ProviderParameterRange):
+                raise ValueError(f"{name} が不正です")
         if type(self.retry_backoff_seconds) not in (int, float) or self.retry_backoff_seconds < 0:
             raise ValueError("retry_backoff_seconds が不正です")
         if self.max_foreground_synthesis < 1 or self.max_speculative_synthesis < 1:
             raise ValueError("synthesis concurrency が不正です")
         if any(not isinstance(code, TTSFailureCode) for code in self.retryable_failure_codes):
             raise ValueError("retryable_failure_codes が不正です")
+
+    @classmethod
+    def revision_1(cls) -> TTSProviderMappingPolicy:
+        normalized = ProviderParameterRange(-100.0, 0.0, 100.0)
+        unit = ProviderParameterRange(0.0, 0.5, 1.0)
+        return cls(
+            1,
+            2,
+            1.0,
+            tuple((axis, normalized) for axis in PerformanceAxis),
+            unit,
+            ProviderParameterRange(0.0, 0.0, 1000.0),
+            normalized,
+            unit,
+            unit,
+            normalized,
+        )
 
 
 @dataclass(slots=True)
@@ -136,21 +246,19 @@ class TTSProviderAdapter:
     async def _synthesize(self, request: TTSSynthesisRequest) -> TTSSynthesisResult:
         if request.provider_config_revision != self._policy.provider_config_revision:
             return self._failure(request, TTSFailureCode.INVALID_REQUEST, 0)
-        parameters, degraded = self._map(
-            request.capability, request.performance_plan.global_intent.values
-        )
+        provider_input, degraded = self._map(request)
         texts = self._pronunciation_texts(request)
         if (
             request.pronunciation_overrides
             and not request.capability.supports_pronunciation_override
         ):
             texts = tuple(segment.text for segment in request.utterance.candidate.segments)
-            degraded.append(TTSDegradationReason.UNSUPPORTED_DIMENSION)
+            degraded.append("pronunciation_override")
         for attempt in range(1, self._policy.max_attempts + 1):
             try:
-                audio_ref, audio_format, content_digest, duration_ms = await asyncio.wait_for(
+                response = await asyncio.wait_for(
                     self._client.synthesize(
-                        request.voice_binding.provider_voice_ref, texts, parameters
+                        request.voice_binding.provider_voice_ref, texts, provider_input
                     ),
                     timeout=float(self._policy.timeout_seconds),
                 )
@@ -165,21 +273,28 @@ class TTSProviderAdapter:
                     request.capability.provider_revision,
                     request.provider_config_revision,
                     request.pronunciation_config_revision,
-                    audio_ref,
-                    audio_format,
-                    content_digest,
+                    self._safe_artifact_ref(response),
+                    response.audio_format,
+                    response.content_digest,
                     self._now(),
-                    duration_ms,
+                    response.duration_ms,
                 )
+                timing = self._normalize_timing(request.capability, artifact, response)
+                reasons: tuple[TTSDegradationReason, ...] = ()
+                if degraded:
+                    reasons += (TTSDegradationReason.UNSUPPORTED_DIMENSION,)
+                if timing is None:
+                    reasons += (TTSDegradationReason.TIMING_UNAVAILABLE,)
                 return TTSSynthesisResult(
                     request.request_id,
                     TTSSynthesisStatus.SUCCEEDED,
                     attempt,
                     self._now(),
                     artifact,
-                    degradation_reasons=tuple(degraded)
-                    + (TTSDegradationReason.TIMING_UNAVAILABLE,),
-                    applied_dimensions=tuple(parameters),
+                    timing_track=timing,
+                    degradation_reasons=reasons,
+                    applied_dimensions=self._applied_dimensions(provider_input),
+                    degraded_dimensions=tuple(dict.fromkeys(degraded)),
                 )
             except asyncio.CancelledError:
                 return self._failure(
@@ -195,19 +310,101 @@ class TTSProviderAdapter:
                         await self._sleep(float(self._policy.retry_backoff_seconds))
                     except asyncio.CancelledError:
                         return self._failure(
-                            request,
-                            TTSFailureCode.CANCELLED,
-                            attempt,
-                            TTSSynthesisStatus.CANCELLED,
+                            request, TTSFailureCode.CANCELLED, attempt, TTSSynthesisStatus.CANCELLED
                         )
                     continue
                 return self._failure(request, error.code, attempt)
+            except ValueError:
+                return self._failure(
+                    request, TTSFailureCode.AUDIO_DECODE_OR_STORAGE_FAILED, attempt
+                )
             except Exception:
                 return self._failure(request, TTSFailureCode.PROVIDER_SERVER_ERROR, attempt)
         raise AssertionError("到達不能なretry状態です")
 
-    def _retry_allowed(self, error: TTSProviderError) -> bool:
-        return error.retryable and error.code in self._policy.retryable_failure_codes
+    def _map(self, request: TTSSynthesisRequest) -> tuple[ProviderSynthesisInput, list[str]]:
+        ranges = dict(self._policy.global_ranges)
+        support = {
+            PerformanceAxis.PACE: request.capability.supports_rate,
+            PerformanceAxis.PITCH_CENTER: request.capability.supports_pitch_center,
+            PerformanceAxis.PITCH_RANGE: request.capability.supports_pitch_range,
+            PerformanceAxis.LOUDNESS: request.capability.supports_loudness,
+            PerformanceAxis.BREATHINESS: request.capability.supports_breathiness,
+        }
+        degraded: list[str] = []
+        global_parameters = self._project_intent(
+            request.performance_plan.global_intent.values, ranges, support, degraded
+        )
+        segments: list[ProviderSegmentParameters] = []
+        for segment in request.performance_plan.segments:
+            local = self._project_intent(
+                segment.local_intent_delta.values, ranges, support, degraded
+            )
+            pause_after: float | None = None
+            if request.capability.supports_phrase_pause:
+                pause_after = self._policy.phrase_pause_range.project(segment.pause_after_intent)
+            elif segment.pause_after_intent != 0.0:
+                degraded.append("phrase_pause")
+            anchors = tuple(
+                ProviderPitchAnchor(
+                    anchor.position,
+                    self._policy.pitch_anchor_range.project(anchor.relative_pitch),
+                    anchor.strength,
+                )
+                for anchor in segment.pitch_anchors
+            )
+            segments.append(
+                ProviderSegmentParameters(
+                    segment.utterance_segment_id,
+                    self._policy.boundary_strength_range.project(
+                        segment.boundary_strength * 2.0 - 1.0
+                    ),
+                    pause_after,
+                    self._policy.duration_bias_range.project(segment.duration_bias * 2.0 - 1.0),
+                    self._policy.emphasis_strength_range.project(
+                        segment.emphasis_strength * 2.0 - 1.0
+                    ),
+                    self._policy.hesitation_strength_range.project(
+                        segment.hesitation_strength * 2.0 - 1.0
+                    ),
+                    tuple(local.items()),
+                    anchors,
+                )
+            )
+        return ProviderSynthesisInput(tuple(global_parameters.items()), tuple(segments)), degraded
+
+    @staticmethod
+    def _project_intent(
+        values: tuple[tuple[PerformanceAxis, float], ...],
+        ranges: dict[PerformanceAxis, ProviderParameterRange],
+        support: dict[PerformanceAxis, bool],
+        degraded: list[str],
+    ) -> dict[str, float]:
+        parameters: dict[str, float] = {}
+        for axis, value in values:
+            if axis not in support:
+                if value != 0.0:
+                    degraded.append(axis.value)
+                continue
+            if support[axis] and axis in ranges:
+                parameters[axis.value] = ranges[axis].project(value)
+            elif value != 0.0:
+                degraded.append(axis.value)
+        return parameters
+
+    @staticmethod
+    def _applied_dimensions(provider_input: ProviderSynthesisInput) -> tuple[str, ...]:
+        dimensions = [name for name, _ in provider_input.global_parameters]
+        for segment in provider_input.segments:
+            dimensions.extend(
+                ("boundary_strength", "duration_bias", "emphasis_strength", "hesitation_strength")
+            )
+            if segment.pause_after is not None:
+                dimensions.append("phrase_pause")
+            dimensions.extend(name for name, _ in segment.local_intent_parameters)
+            if segment.pitch_anchors:
+                dimensions.append("pitch_anchors")
+        return tuple(dict.fromkeys(dimensions))
 
     @staticmethod
     def _pronunciation_texts(request: TTSSynthesisRequest) -> tuple[str, ...]:
@@ -222,26 +419,44 @@ class TTSProviderAdapter:
         return tuple(texts)
 
     @staticmethod
-    def _map(
-        capability: TTSCapabilityView, values: tuple[tuple[PerformanceAxis, float], ...]
-    ) -> tuple[dict[str, float], list[TTSDegradationReason]]:
+    def _safe_artifact_ref(response: TTSProviderResponse) -> str:
+        material = (
+            f"{response.raw_audio_ref}\x1f{response.audio_format}\x1f{response.content_digest}"
+        )
+        return f"artifact://prepared/{hashlib.sha256(material.encode('utf-8')).hexdigest()}"
+
+    @staticmethod
+    def _normalize_timing(
+        capability: TTSCapabilityView,
+        artifact: PreparedAudioArtifact,
+        response: TTSProviderResponse,
+    ) -> SpeechTimingTrack | None:
+        if not response.timing_units:
+            return None
         supported = {
-            PerformanceAxis.PACE: capability.supports_rate,
-            PerformanceAxis.PITCH_CENTER: capability.supports_pitch_center,
-            PerformanceAxis.PITCH_RANGE: capability.supports_pitch_range,
-            PerformanceAxis.LOUDNESS: capability.supports_loudness,
-            PerformanceAxis.BREATHINESS: capability.supports_breathiness,
+            SpeechTimingKind.PHONEME: capability.supports_phoneme_timing,
+            SpeechTimingKind.MORA: capability.supports_mora_timing,
+            SpeechTimingKind.VISEME: capability.supports_viseme_timing,
+            SpeechTimingKind.WORD_BOUNDARY: True,
         }
-        parameters: dict[str, float] = {}
-        degraded: list[TTSDegradationReason] = []
-        for axis, value in values:
-            if axis not in supported:
-                continue
-            if supported[axis]:
-                parameters[axis.value] = max(-1.0, min(1.0, value))
-            elif value != 0.0:
-                degraded.append(TTSDegradationReason.UNSUPPORTED_DIMENSION)
-        return parameters, list(dict.fromkeys(degraded))
+        if any(not supported[unit.kind] for unit in response.timing_units):
+            raise ValueError("provider timing capabilityが一致しません")
+        units = tuple(
+            SpeechTimingUnit(
+                unit.unit_id, unit.segment_id, unit.kind, unit.symbol, unit.start_ms, unit.end_ms
+            )
+            for unit in response.timing_units
+        )
+        return SpeechTimingTrack(
+            f"timing-{artifact.audio_artifact_id}",
+            artifact.audio_artifact_id,
+            units,
+            artifact.created_at,
+            artifact.duration_ms,
+        )
+
+    def _retry_allowed(self, error: TTSProviderError) -> bool:
+        return error.retryable and error.code in self._policy.retryable_failure_codes
 
     def _failure(
         self,

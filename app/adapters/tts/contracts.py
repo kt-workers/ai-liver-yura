@@ -290,6 +290,7 @@ class TTSSynthesisResult:
     timing_track: SpeechTimingTrack | None = None
     degradation_reasons: tuple[TTSDegradationReason, ...] = ()
     applied_dimensions: tuple[str, ...] = ()
+    degraded_dimensions: tuple[str, ...] = ()
     failure_code: TTSFailureCode | None = None
 
     def __post_init__(self) -> None:
@@ -305,6 +306,13 @@ class TTSSynthesisResult:
         if any(not isinstance(item, TTSDegradationReason) for item in reasons):
             raise ValueError("degradation_reasons が不正です")
         object.__setattr__(self, "degradation_reasons", reasons)
+        for name in ("applied_dimensions", "degraded_dimensions"):
+            dimensions = tuple(getattr(self, name))
+            if any(not isinstance(item, str) or not item.strip() for item in dimensions) or len(
+                dimensions
+            ) != len(set(dimensions)):
+                raise ValueError(f"{name} が不正です")
+            object.__setattr__(self, name, dimensions)
         if self.status is TTSSynthesisStatus.SUCCEEDED:
             if (
                 not isinstance(self.artifact, PreparedAudioArtifact)

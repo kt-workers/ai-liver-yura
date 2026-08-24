@@ -10,9 +10,11 @@ from app.adapters.tts import (
     CandidateArtifactStore,
     PreparedAudioArtifact,
     PronunciationOverrideView,
+    ProviderSynthesisInput,
     TTSCapabilityView,
     TTSProviderAdapter,
     TTSProviderMappingPolicy,
+    TTSProviderResponse,
     TTSSynthesisPriority,
     TTSSynthesisRequest,
     TTSVoiceBinding,
@@ -26,9 +28,14 @@ from app.adapters.tts.contracts import (
     TTSFailureCode,
     TTSSynthesisStatus,
 )
-from app.adapters.tts.provider import TTSProviderError
+from app.adapters.tts.provider import ProviderTimingUnit, TTSProviderError
 from app.domain.speech_performance import SpeechPerformancePlanner
-from app.domain.speech_performance.contracts import PerformanceAxis, PerformanceIntentVector
+from app.domain.speech_performance.contracts import (
+    PerformanceAxis,
+    PerformanceIntentDelta,
+    PerformanceIntentVector,
+    PitchAnchor,
+)
 from app.domain.speech_performance.policy import yura_revision_1_policy
 from tests.domain.semantic_verification.test_semantic_verification import _utterance
 
@@ -38,17 +45,48 @@ NOW = datetime(2026, 8, 24, tzinfo=timezone.utc)
 class FakeTTS:
     def __init__(self, outcomes: list[object]) -> None:
         self.outcomes = outcomes
-        self.calls: list[tuple[str, tuple[str, ...], dict[str, float]]] = []
+        self.calls: list[tuple[str, tuple[str, ...], ProviderSynthesisInput]] = []
 
     async def synthesize(
-        self, voice_ref: str, texts: tuple[str, ...], parameters: dict[str, float]
-    ) -> tuple[str, str, str, int | None]:
+        self, voice_ref: str, texts: tuple[str, ...], parameters: ProviderSynthesisInput
+    ) -> TTSProviderResponse:
         self.calls.append((voice_ref, texts, parameters))
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
-        assert isinstance(outcome, tuple)
+        assert isinstance(outcome, TTSProviderResponse)
         return outcome
+
+
+def _response(
+    *,
+    raw_audio_ref: str = "memory://audio",
+    duration_ms: int | None = None,
+    timing_units: tuple[ProviderTimingUnit, ...] = (),
+) -> TTSProviderResponse:
+    return TTSProviderResponse(raw_audio_ref, "wav", "digest", duration_ms, timing_units)
+
+
+def _policy(
+    *, max_attempts: int = 2, retry_backoff_seconds: float = 0.0
+) -> TTSProviderMappingPolicy:
+    base = TTSProviderMappingPolicy.revision_1()
+    return TTSProviderMappingPolicy(
+        base.provider_config_revision,
+        max_attempts,
+        base.timeout_seconds,
+        base.global_ranges,
+        base.boundary_strength_range,
+        base.phrase_pause_range,
+        base.duration_bias_range,
+        base.emphasis_strength_range,
+        base.hesitation_strength_range,
+        base.pitch_anchor_range,
+        retry_backoff_seconds,
+        base.max_foreground_synthesis,
+        base.max_speculative_synthesis,
+        base.retryable_failure_codes,
+    )
 
 
 def _request(
@@ -85,10 +123,8 @@ def _request(
 @pytest.mark.asyncio
 async def test_success_preserves_text_and_never_fabricates_timing() -> None:
     request = _request()
-    client = FakeTTS([("memory://audio", "wav", "digest", None)])
-    result = await TTSProviderAdapter(
-        client, TTSProviderMappingPolicy(1, 2, 1), now=lambda: NOW
-    ).synthesize(request)
+    client = FakeTTS([_response()])
+    result = await TTSProviderAdapter(client, _policy(), now=lambda: NOW).synthesize(request)
     assert result.status is TTSSynthesisStatus.SUCCEEDED
     assert result.artifact is not None and result.timing_track is None
     assert TTSDegradationReason.TIMING_UNAVAILABLE in result.degradation_reasons
@@ -101,12 +137,10 @@ async def test_retryable_failure_is_bounded_and_raw_error_is_not_exposed() -> No
     client = FakeTTS(
         [
             TTSProviderError(TTSFailureCode.PROVIDER_UNAVAILABLE, True),
-            ("memory://audio", "wav", "digest", None),
+            _response(),
         ]
     )
-    result = await TTSProviderAdapter(
-        client, TTSProviderMappingPolicy(1, 2, 1), now=lambda: NOW
-    ).synthesize(request)
+    result = await TTSProviderAdapter(client, _policy(), now=lambda: NOW).synthesize(request)
     assert result.status is TTSSynthesisStatus.SUCCEEDED and result.attempts == 2
     assert len(client.calls) == 2
 
@@ -116,12 +150,12 @@ async def test_non_retryable_failure_and_timeout_are_typed() -> None:
     request = _request()
     rejected = await TTSProviderAdapter(
         FakeTTS([TTSProviderError(TTSFailureCode.PROVIDER_REJECTED, False)]),
-        TTSProviderMappingPolicy(1, 2, 1),
+        _policy(),
         now=lambda: NOW,
     ).synthesize(request)
     assert rejected.failure_code is TTSFailureCode.PROVIDER_REJECTED and rejected.attempts == 1
     timed_out = await TTSProviderAdapter(
-        FakeTTS([asyncio.TimeoutError()]), TTSProviderMappingPolicy(1, 2, 1), now=lambda: NOW
+        FakeTTS([asyncio.TimeoutError()]), _policy(), now=lambda: NOW
     ).synthesize(request)
     assert timed_out.failure_code is TTSFailureCode.REQUEST_TIMEOUT
 
@@ -141,8 +175,8 @@ async def test_unsupported_dimension_is_degraded_without_changing_plan() -> None
     request = replace(request, performance_plan=plan)
     original = request.performance_plan.global_intent
     result = await TTSProviderAdapter(
-        FakeTTS([("memory://audio", "wav", "digest", None)]),
-        TTSProviderMappingPolicy(1, 1, 1),
+        FakeTTS([_response()]),
+        _policy(max_attempts=1),
         now=lambda: NOW,
     ).synthesize(request)
     assert request.performance_plan.global_intent == original
@@ -210,10 +244,8 @@ async def test_pronunciation_changes_provider_reading_only_and_revision_changes_
         ),
         overrides=(override,),
     )
-    client = FakeTTS([("memory://audio", "wav", "digest", None)])
-    await TTSProviderAdapter(client, TTSProviderMappingPolicy(1, 1, 1), now=lambda: NOW).synthesize(
-        request
-    )
+    client = FakeTTS([_response()])
+    await TTSProviderAdapter(client, _policy(max_attempts=1), now=lambda: NOW).synthesize(request)
     assert client.calls[0][1] == ("ひょうじぶんは変えない",)
     assert request.utterance.candidate.segments[0].text == "表示文は変えない"
     assert synthesis_cache_identity(request) != synthesis_cache_identity(
@@ -250,29 +282,145 @@ async def test_unsupported_rate_pitch_and_breathiness_are_omitted_but_audio_succ
         ),
     )
     request = replace(request, performance_plan=plan)
-    client = FakeTTS([("memory://audio", "wav", "digest", None)])
-    result = await TTSProviderAdapter(
-        client, TTSProviderMappingPolicy(1, 1, 1), now=lambda: NOW
-    ).synthesize(request)
+    client = FakeTTS([_response()])
+    result = await TTSProviderAdapter(client, _policy(max_attempts=1), now=lambda: NOW).synthesize(
+        request
+    )
     assert result.status is TTSSynthesisStatus.SUCCEEDED
     assert TTSDegradationReason.UNSUPPORTED_DIMENSION in result.degradation_reasons
-    assert client.calls[0][2] == {}
+    assert {"pace", "pitch_center", "breathiness"} <= set(result.degraded_dimensions)
+    assert client.calls[0][2].global_parameters == ()
     assert request.performance_plan is plan
 
 
-def test_provider_mapping_clamps_normalized_values_at_adapter_boundary() -> None:
-    capability = TTSCapabilityView(
-        "fake", 1, 1, True, True, False, False, True, False, False, False, False, False, False
-    )
-    parameters, _ = TTSProviderAdapter._map(
-        capability,
-        (
-            (PerformanceAxis.PACE, 4.0),
-            (PerformanceAxis.PITCH_CENTER, -4.0),
-            (PerformanceAxis.BREATHINESS, 2.0),
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("axis", "dimension"),
+    (
+        (PerformanceAxis.PACE, "pace"),
+        (PerformanceAxis.PITCH_CENTER, "pitch_center"),
+        (PerformanceAxis.BREATHINESS, "breathiness"),
+    ),
+)
+async def test_each_unsupported_provider_dimension_is_identified(
+    axis: PerformanceAxis, dimension: str
+) -> None:
+    request = _request()
+    if axis is PerformanceAxis.PACE:
+        capability = replace(request.capability, supports_rate=False)
+    elif axis is PerformanceAxis.PITCH_CENTER:
+        capability = replace(request.capability, supports_pitch_center=False)
+    else:
+        capability = replace(request.capability, supports_breathiness=False)
+    plan = replace(
+        request.performance_plan,
+        global_intent=PerformanceIntentVector(
+            tuple(
+                (current_axis, 0.5 if current_axis is axis else value)
+                for current_axis, value in request.performance_plan.global_intent.values
+            )
         ),
     )
-    assert parameters == {"pace": 1.0, "pitch_center": -1.0, "breathiness": 1.0}
+    result = await TTSProviderAdapter(
+        FakeTTS([_response()]), _policy(max_attempts=1), now=lambda: NOW
+    ).synthesize(replace(request, capability=capability, performance_plan=plan))
+    assert dimension in result.degraded_dimensions
+    assert dimension not in result.applied_dimensions
+
+
+@pytest.mark.asyncio
+async def test_provider_mapping_projects_normalized_values_to_configured_ranges() -> None:
+    request = _request()
+    plan = replace(
+        request.performance_plan,
+        global_intent=PerformanceIntentVector(
+            tuple(
+                (axis, 1.0 if axis is PerformanceAxis.PACE else value)
+                for axis, value in request.performance_plan.global_intent.values
+            )
+        ),
+    )
+    client = FakeTTS([_response()])
+    await TTSProviderAdapter(client, _policy(max_attempts=1), now=lambda: NOW).synthesize(
+        replace(request, performance_plan=plan)
+    )
+    assert dict(client.calls[0][2].global_parameters)["pace"] == 100.0
+
+
+@pytest.mark.asyncio
+async def test_segment_performance_maps_to_versioned_provider_input_and_uses_phrase_pause() -> None:
+    capability = replace(
+        _request().capability,
+        supports_phrase_pause=True,
+        supports_pitch_center=True,
+        supports_pitch_range=True,
+        supports_loudness=True,
+        supports_breathiness=True,
+    )
+    request = _request(capability=capability)
+    original = request.performance_plan.segments[0]
+    segment = replace(
+        original,
+        boundary_strength=0.5,
+        pause_after_intent=0.6,
+        duration_bias=0.7,
+        emphasis_strength=0.8,
+        hesitation_strength=0.9,
+        local_intent_delta=PerformanceIntentDelta(((PerformanceAxis.PACE, 0.4),)),
+        pitch_anchors=(PitchAnchor(0.5, 0.3, 0.8),),
+    )
+    client = FakeTTS([_response()])
+    await TTSProviderAdapter(client, _policy(max_attempts=1), now=lambda: NOW).synthesize(
+        replace(request, performance_plan=replace(request.performance_plan, segments=(segment,)))
+    )
+    mapped = client.calls[0][2].segments[0]
+    assert mapped.utterance_segment_id == segment.utterance_segment_id
+    assert mapped.pause_after == 600.0
+    assert mapped.boundary_strength == 0.5
+    assert mapped.duration_bias == pytest.approx(40.0)
+    assert mapped.emphasis_strength == 0.8
+    assert mapped.hesitation_strength == 0.9
+    assert mapped.local_intent_parameters == (("pace", 40.0),)
+    assert mapped.pitch_anchors[0].relative_pitch == 30.0
+
+
+@pytest.mark.asyncio
+async def test_provider_timing_is_normalized_only_when_trustworthy_units_are_returned() -> None:
+    capability = replace(
+        _request().capability,
+        supports_phoneme_timing=True,
+        supports_mora_timing=True,
+        supports_viseme_timing=True,
+    )
+    timing = (
+        ProviderTimingUnit("phoneme", "segment-1", SpeechTimingKind.PHONEME, "a", 0, 10),
+        ProviderTimingUnit("mora", "segment-1", SpeechTimingKind.MORA, "あ", 10, 20),
+        ProviderTimingUnit("viseme", "segment-1", SpeechTimingKind.VISEME, "A", 20, 30),
+        ProviderTimingUnit("word", "segment-1", SpeechTimingKind.WORD_BOUNDARY, "語", 30, 40),
+    )
+    result = await TTSProviderAdapter(
+        FakeTTS([_response(duration_ms=40, timing_units=timing)]),
+        _policy(max_attempts=1),
+        now=lambda: NOW,
+    ).synthesize(_request(capability=capability))
+    assert result.timing_track is not None
+    assert tuple(unit.kind for unit in result.timing_track.units) == tuple(
+        unit.kind for unit in timing
+    )
+    assert TTSDegradationReason.TIMING_UNAVAILABLE not in result.degradation_reasons
+
+
+@pytest.mark.asyncio
+async def test_secret_bearing_provider_audio_ref_is_normalized_before_public_artifact() -> None:
+    result = await TTSProviderAdapter(
+        FakeTTS([_response(raw_audio_ref="https://example.invalid/audio?token=VERY_SECRET")]),
+        _policy(max_attempts=1),
+        now=lambda: NOW,
+    ).synthesize(_request())
+    assert result.artifact is not None
+    assert result.artifact.audio_ref.startswith("artifact://prepared/")
+    assert "VERY_SECRET" not in result.artifact.audio_ref
+    assert "VERY_SECRET" not in repr(result)
 
 
 def test_timing_supports_monotonic_phoneme_mora_and_viseme_and_rejects_duration_overrun() -> None:
@@ -298,19 +446,19 @@ async def test_all_failure_categories_are_typed_and_raw_provider_secrets_do_not_
     ):
         result = await TTSProviderAdapter(
             FakeTTS([TTSProviderError(code, False)]),
-            TTSProviderMappingPolicy(1, 1, 1),
+            _policy(max_attempts=1),
             now=lambda: NOW,
         ).synthesize(request)
         assert result.failure_code is code and result.artifact is None
 
     class LeakingProvider:
         async def synthesize(
-            self, voice_ref: str, texts: tuple[str, ...], parameters: dict[str, float]
-        ) -> tuple[str, str, str, int | None]:
+            self, voice_ref: str, texts: tuple[str, ...], parameters: ProviderSynthesisInput
+        ) -> TTSProviderResponse:
             raise RuntimeError("Authorization: Bearer secret-token https://secret.example/raw-body")
 
     result = await TTSProviderAdapter(
-        LeakingProvider(), TTSProviderMappingPolicy(1, 1, 1), now=lambda: NOW
+        LeakingProvider(), _policy(max_attempts=1), now=lambda: NOW
     ).synthesize(request)
     assert result.failure_code is TTSFailureCode.PROVIDER_SERVER_ERROR
     assert "secret-token" not in repr(result)
@@ -323,15 +471,13 @@ async def test_cancellation_during_call_and_retry_wait_is_typed_and_bounded() ->
 
     class BlockingProvider:
         async def synthesize(
-            self, voice_ref: str, texts: tuple[str, ...], parameters: dict[str, float]
-        ) -> tuple[str, str, str, int | None]:
+            self, voice_ref: str, texts: tuple[str, ...], parameters: ProviderSynthesisInput
+        ) -> TTSProviderResponse:
             entered.set()
             await release.wait()
-            return "memory://audio", "wav", "digest", None
+            return _response()
 
-    adapter = TTSProviderAdapter(
-        BlockingProvider(), TTSProviderMappingPolicy(1, 2, 1), now=lambda: NOW
-    )
+    adapter = TTSProviderAdapter(BlockingProvider(), _policy(), now=lambda: NOW)
     task = asyncio.create_task(adapter.synthesize(_request()))
     await entered.wait()
     task.cancel()
@@ -350,7 +496,7 @@ async def test_cancellation_during_retry_wait_and_shutdown_settles_all_tasks() -
 
     adapter = TTSProviderAdapter(
         FakeTTS([TTSProviderError(TTSFailureCode.RATE_LIMITED, True)]),
-        TTSProviderMappingPolicy(1, 2, 1, retry_backoff_seconds=1),
+        _policy(retry_backoff_seconds=1),
         now=lambda: NOW,
         sleep=waiting_sleep,
     )
@@ -405,18 +551,16 @@ async def test_speculative_does_not_starve_foreground_or_block_unrelated_corouti
 
     class PriorityProvider:
         async def synthesize(
-            self, voice_ref: str, texts: tuple[str, ...], parameters: dict[str, float]
-        ) -> tuple[str, str, str, int | None]:
+            self, voice_ref: str, texts: tuple[str, ...], parameters: ProviderSynthesisInput
+        ) -> TTSProviderResponse:
             if voice_ref == "speculative":
                 speculative_entered.set()
                 await speculative_release.wait()
             else:
                 foreground_entered.set()
-            return "memory://audio", "wav", "digest", None
+            return _response()
 
-    adapter = TTSProviderAdapter(
-        PriorityProvider(), TTSProviderMappingPolicy(1, 1, 1), now=lambda: NOW
-    )
+    adapter = TTSProviderAdapter(PriorityProvider(), _policy(max_attempts=1), now=lambda: NOW)
     speculative = asyncio.create_task(
         adapter.synthesize(
             replace(
@@ -448,16 +592,14 @@ async def test_cancelling_candidate_a_does_not_cancel_unrelated_candidate_b() ->
 
     class IndependentProvider:
         async def synthesize(
-            self, voice_ref: str, texts: tuple[str, ...], parameters: dict[str, float]
-        ) -> tuple[str, str, str, int | None]:
+            self, voice_ref: str, texts: tuple[str, ...], parameters: ProviderSynthesisInput
+        ) -> TTSProviderResponse:
             if voice_ref == "candidate-a":
                 candidate_a_entered.set()
                 await candidate_a_release.wait()
-            return "memory://audio", "wav", "digest", None
+            return _response()
 
-    adapter = TTSProviderAdapter(
-        IndependentProvider(), TTSProviderMappingPolicy(1, 1, 1), now=lambda: NOW
-    )
+    adapter = TTSProviderAdapter(IndependentProvider(), _policy(max_attempts=1), now=lambda: NOW)
     candidate_a = _request(priority=TTSSynthesisPriority.SPECULATIVE)
     candidate_a = replace(
         candidate_a,
@@ -475,8 +617,8 @@ async def test_cancelling_candidate_a_does_not_cancel_unrelated_candidate_b() ->
 @pytest.mark.asyncio
 async def test_prepared_audio_is_not_playback_or_actual_speech_fact() -> None:
     result = await TTSProviderAdapter(
-        FakeTTS([("memory://audio", "wav", "digest", None)]),
-        TTSProviderMappingPolicy(1, 1, 1),
+        FakeTTS([_response()]),
+        _policy(max_attempts=1),
         now=lambda: NOW,
     ).synthesize(_request(priority=TTSSynthesisPriority.SPECULATIVE))
     assert result.status is TTSSynthesisStatus.SUCCEEDED

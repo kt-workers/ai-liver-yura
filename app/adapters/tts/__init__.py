@@ -11,14 +11,23 @@ from .contracts import (
 )
 from .provider import (
     CandidateArtifactStore,
+    ProviderParameterRange,
+    ProviderPitchAnchor,
+    ProviderSegmentParameters,
+    ProviderSynthesisInput,
     TTSProviderAdapter,
     TTSProviderMappingPolicy,
+    TTSProviderResponse,
     synthesis_cache_identity,
 )
 
 __all__ = [
     "PreparedAudioArtifact",
     "CandidateArtifactStore",
+    "ProviderParameterRange",
+    "ProviderPitchAnchor",
+    "ProviderSegmentParameters",
+    "ProviderSynthesisInput",
     "PronunciationOverrideView",
     "SpeechTimingTrack",
     "SpeechTimingUnit",
@@ -28,6 +37,7 @@ __all__ = [
     "TTSSynthesisPriority",
     "TTSProviderAdapter",
     "TTSProviderMappingPolicy",
+    "TTSProviderResponse",
     "TTSVoiceBinding",
     "synthesis_cache_identity",
 ]
