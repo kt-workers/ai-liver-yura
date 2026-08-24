@@ -1,0 +1,340 @@
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timezone
+
+import pytest
+
+from app.domain.llm import LLMInterruptibility, LLMPriority
+from app.domain.speech_runtime.contracts import (
+    AudioReadinessState,
+    CandidateLifecycle,
+    PreparedSpeechCandidate,
+    SemanticRepairAttempt,
+    SemanticVerificationRequirement,
+    SpeechComponentReadiness,
+    SpeechPresentationMode,
+    SpeechReadinessState,
+    VerifierReadinessState,
+)
+from app.domain.speech_runtime.repair import (
+    SemanticRepairEvidence,
+    SpeechSemanticRepairExecutor,
+)
+from app.domain.speech_runtime.runtime import SpeechRuntime
+from app.domain.speech_runtime.tasks import CandidateTaskKey, CandidateTaskRegistry
+
+
+def _candidate(candidate_id: str = "candidate") -> PreparedSpeechCandidate:
+    now = datetime.now(timezone.utc)
+    return PreparedSpeechCandidate(
+        candidate_id=candidate_id,
+        preparation_id=f"preparation-{candidate_id}",
+        source_decision_id="decision",
+        source_event_ids=("event",),
+        speech_plan_id="speech-plan",
+        utterance_id="utterance-g1",
+        performance_plan_id=None,
+        source_context_revision=1,
+        goal_revision=1,
+        attention_revision=1,
+        priority=LLMPriority.FOREGROUND,
+        interruptibility=LLMInterruptibility.INTERRUPTIBLE,
+        expiry_policy_ref="expiry",
+        required_preconditions=(),
+        semantic_requirement=SemanticVerificationRequirement.REQUIRED,
+        semantic_acceptance_id=None,
+        prepared_audio_ref=None,
+        presentation_modes=(SpeechPresentationMode.TEXT_ONLY,),
+        readiness=SpeechComponentReadiness(
+            SpeechReadinessState.READY,
+            SpeechReadinessState.READY,
+            VerifierReadinessState.PENDING,
+            SpeechReadinessState.READY,
+            AudioReadinessState.NOT_REQUESTED,
+        ),
+        lifecycle=CandidateLifecycle.PREPARING,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _ready(
+    *,
+    verifier: VerifierReadinessState = VerifierReadinessState.PENDING,
+    audio: AudioReadinessState = AudioReadinessState.NOT_REQUESTED,
+) -> SpeechComponentReadiness:
+    return SpeechComponentReadiness(
+        SpeechReadinessState.READY,
+        SpeechReadinessState.READY,
+        verifier,
+        SpeechReadinessState.READY,
+        audio,
+    )
+
+
+async def _repair(_: object) -> None:
+    return None
+
+
+@pytest.mark.asyncio
+async def test_first_reject_repairs_once_with_empty_priors_and_same_plan() -> None:
+    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    await runtime.register(_candidate())
+    executor = SpeechSemanticRepairExecutor(runtime, tasks)
+    received: list[SemanticRepairAttempt] = []
+
+    async def repair(attempt: SemanticRepairAttempt) -> None:
+        received.append(attempt)
+
+    result = await executor.handle_verifier_result(
+        candidate_id="candidate",
+        generation=1,
+        semantic_accepted=False,
+        semantic_acceptance_id=None,
+        verifier_execution_failed=False,
+        speech_plan_stale=False,
+        evidence=SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",)),
+        repair_character=repair,
+    )
+    current = await runtime.candidate("candidate")
+    assert result is not None and result.value == "repair_once"
+    assert runtime.generation("candidate") == 2
+    assert current.speech_plan_id == "speech-plan"
+    assert len(received) == 1
+    assert received[0].prior_realizations == ()
+
+
+@pytest.mark.asyncio
+async def test_second_reject_is_final_and_never_calls_third_character() -> None:
+    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    await runtime.register(_candidate())
+    executor = SpeechSemanticRepairExecutor(runtime, tasks)
+    calls = 0
+
+    async def repair(_: object) -> None:
+        nonlocal calls
+        calls += 1
+
+    evidence = SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",))
+    await executor.handle_verifier_result(
+        candidate_id="candidate",
+        generation=1,
+        semantic_accepted=False,
+        semantic_acceptance_id=None,
+        verifier_execution_failed=False,
+        speech_plan_stale=False,
+        evidence=evidence,
+        repair_character=repair,
+    )
+    await runtime.commit_generation_result(
+        "candidate", 2, readiness=_ready(), utterance_id="utterance-g2"
+    )
+    result = await executor.handle_verifier_result(
+        candidate_id="candidate",
+        generation=2,
+        semantic_accepted=False,
+        semantic_acceptance_id=None,
+        verifier_execution_failed=False,
+        speech_plan_stale=False,
+        evidence=evidence,
+        repair_character=repair,
+    )
+    assert result is not None and result.value == "rejected_final"
+    assert calls == 1
+    assert runtime.generation("candidate") == 2
+    assert (await runtime.candidate("candidate")).lifecycle is CandidateLifecycle.REJECTED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failed,stale,expected",
+    [(True, False, "verifier_failed"), (False, True, "replan_required")],
+)
+async def test_verifier_failure_or_stale_plan_never_repairs(
+    failed: bool, stale: bool, expected: str
+) -> None:
+    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    await runtime.register(_candidate())
+    calls = 0
+
+    async def repair(_: object) -> None:
+        nonlocal calls
+        calls += 1
+
+    result = await SpeechSemanticRepairExecutor(runtime, tasks).handle_verifier_result(
+        candidate_id="candidate",
+        generation=1,
+        semantic_accepted=None,
+        semantic_acceptance_id=None,
+        verifier_execution_failed=failed,
+        speech_plan_stale=stale,
+        evidence=None,
+        repair_character=repair,
+    )
+    assert result is not None and result.value == expected
+    assert calls == 0
+    assert runtime.generation("candidate") == 1
+
+
+@pytest.mark.asyncio
+async def test_old_generation_performance_tts_and_verifier_cannot_overwrite_g2() -> None:
+    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    await runtime.register(_candidate())
+    executor = SpeechSemanticRepairExecutor(runtime, tasks)
+    evidence = SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",))
+    await executor.handle_verifier_result(
+        candidate_id="candidate",
+        generation=1,
+        semantic_accepted=False,
+        semantic_acceptance_id=None,
+        verifier_execution_failed=False,
+        speech_plan_stale=False,
+        evidence=evidence,
+        repair_character=_repair,
+    )
+    await runtime.commit_generation_result(
+        "candidate",
+        2,
+        readiness=_ready(verifier=VerifierReadinessState.ACCEPTED, audio=AudioReadinessState.READY),
+        utterance_id="utterance-g2",
+        performance_plan_id="performance-g2",
+        semantic_acceptance_id="acceptance-g2",
+        prepared_audio_ref="audio-g2",
+    )
+    late = await runtime.commit_generation_result(
+        "candidate",
+        1,
+        readiness=_ready(verifier=VerifierReadinessState.ACCEPTED, audio=AudioReadinessState.READY),
+        performance_plan_id="performance-g1",
+        semantic_acceptance_id="acceptance-g1",
+        prepared_audio_ref="audio-g1",
+    )
+    current = await runtime.candidate("candidate")
+    assert late is None
+    assert runtime.generation("candidate") == 2
+    assert current.performance_plan_id == "performance-g2"
+    assert current.prepared_audio_ref == "audio-g2"
+    assert current.semantic_acceptance_id == "acceptance-g2"
+
+
+@pytest.mark.asyncio
+async def test_speculative_g1_artifact_is_discarded_before_repair_g2() -> None:
+    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    await runtime.register(_candidate())
+    await runtime.commit_generation_result(
+        "candidate",
+        1,
+        readiness=_ready(audio=AudioReadinessState.READY),
+        prepared_audio_ref="speculative-audio-g1",
+    )
+    await SpeechSemanticRepairExecutor(runtime, tasks).handle_verifier_result(
+        candidate_id="candidate",
+        generation=1,
+        semantic_accepted=False,
+        semantic_acceptance_id=None,
+        verifier_execution_failed=False,
+        speech_plan_stale=False,
+        evidence=SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",)),
+        repair_character=_repair,
+    )
+    current = await runtime.candidate("candidate")
+    assert current.prepared_audio_ref is None
+    assert current.readiness.audio is AudioReadinessState.NOT_REQUESTED
+    assert current.lifecycle is CandidateLifecycle.PREPARING
+
+
+@pytest.mark.asyncio
+async def test_late_g1_verifier_result_does_not_restore_presentation_eligibility() -> None:
+    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    await runtime.register(_candidate())
+    executor = SpeechSemanticRepairExecutor(runtime, tasks)
+    evidence = SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",))
+    await executor.handle_verifier_result(
+        candidate_id="candidate",
+        generation=1,
+        semantic_accepted=False,
+        semantic_acceptance_id=None,
+        verifier_execution_failed=False,
+        speech_plan_stale=False,
+        evidence=evidence,
+        repair_character=_repair,
+    )
+    late = await executor.handle_verifier_result(
+        candidate_id="candidate",
+        generation=1,
+        semantic_accepted=True,
+        semantic_acceptance_id="late-acceptance",
+        verifier_execution_failed=False,
+        speech_plan_stale=False,
+        evidence=None,
+        repair_character=_repair,
+    )
+    current = await runtime.candidate("candidate")
+    assert late is None
+    assert current.semantic_acceptance_id is None
+    assert current.lifecycle is CandidateLifecycle.PREPARING
+
+
+@pytest.mark.asyncio
+async def test_repair_cancels_only_old_generation_and_other_candidate_continues() -> None:
+    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    await runtime.register(_candidate("candidate-a"))
+    await runtime.register(_candidate("candidate-b"))
+    entered_a, entered_b, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def blocked(entered: asyncio.Event) -> object:
+        entered.set()
+        await release.wait()
+        return object()
+
+    task_a = tasks.start(CandidateTaskKey("candidate-a", 1, "performance"), blocked(entered_a))
+    task_b = tasks.start(CandidateTaskKey("candidate-b", 1, "performance"), blocked(entered_b))
+    await entered_a.wait()
+    await entered_b.wait()
+    await SpeechSemanticRepairExecutor(runtime, tasks).handle_verifier_result(
+        candidate_id="candidate-a",
+        generation=1,
+        semantic_accepted=False,
+        semantic_acceptance_id=None,
+        verifier_execution_failed=False,
+        speech_plan_stale=False,
+        evidence=SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",)),
+        repair_character=_repair,
+    )
+    assert task_a.cancelled()
+    assert not task_b.done()
+    release.set()
+    await task_b
+
+
+@pytest.mark.asyncio
+async def test_only_accepted_utterance_enters_prior_pool() -> None:
+    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    await runtime.register(_candidate())
+    executor = SpeechSemanticRepairExecutor(runtime, tasks)
+    await executor.handle_verifier_result(
+        candidate_id="candidate",
+        generation=1,
+        semantic_accepted=False,
+        semantic_acceptance_id=None,
+        verifier_execution_failed=False,
+        speech_plan_stale=False,
+        evidence=SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",)),
+        repair_character=_repair,
+    )
+    assert executor.accepted_priors == ()
+    await runtime.commit_generation_result(
+        "candidate", 2, readiness=_ready(), utterance_id="utterance-g2"
+    )
+    await executor.handle_verifier_result(
+        candidate_id="candidate",
+        generation=2,
+        semantic_accepted=True,
+        semantic_acceptance_id="acceptance-g2",
+        verifier_execution_failed=False,
+        speech_plan_stale=False,
+        evidence=None,
+        repair_character=_repair,
+    )
+    assert tuple(executor.accepted_priors) == ("utterance-g2",)
