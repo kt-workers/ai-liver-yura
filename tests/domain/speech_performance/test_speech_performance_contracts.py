@@ -2,14 +2,30 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from app.domain.appraisal import FacetRef, InternalStateFacet, InternalStateSnapshot, StateFacetKind
 from app.domain.character import RuntimeAvailability
-from app.domain.character.contracts import CharacterVoiceStyleProfile, RuntimeCharacterFacet
+from app.domain.character.contracts import (
+    CharacterLanguageProfile,
+    CharacterVoiceStyleProfile,
+    RuntimeCharacterFacet,
+)
+from app.domain.character_language import (
+    CharacterLanguageAuthority,
+    CharacterLanguageCommitState,
+    CharacterLanguageContextSnapshot,
+    CharacterUtterance,
+    CharacterUtteranceCandidate,
+    CharacterUtteranceSegment,
+    LinguisticBoundary,
+    LinguisticEmphasis,
+    LinguisticHesitation,
+)
+from app.domain.llm import LLMInterruptibility, LLMPriority
 from app.domain.speech_performance import (
     ConstraintValueSchema,
     ExpressionAxis,
@@ -28,7 +44,62 @@ from app.domain.speech_performance import (
 )
 from app.domain.speech_performance.planner import SpeechPerformancePlanner, project_expression
 from app.domain.speech_performance.policy import yura_revision_1_policy
-from tests.domain.semantic_verification.test_semantic_verification import _utterance
+from tests.domain.semantic_verification.test_semantic_verification import (
+    NOW,
+    REVISIONS,
+    _semantic_plan,
+    _utterance,
+)
+
+
+def _utterance_with_linguistics(
+    *, emphasis: LinguisticEmphasis, hesitation: LinguisticHesitation
+) -> CharacterUtterance:
+    plan = _semantic_plan()
+    profile = CharacterLanguageProfile("yura", 1, 1, ())
+    context = CharacterLanguageContextSnapshot(
+        "performance-character-request",
+        plan,
+        profile,
+        (),
+        LLMPriority.FOREGROUND,
+        LLMInterruptibility.INTERRUPTIBLE,
+        NOW,
+        "performance-character-trace",
+    )
+    source = plan.candidate
+    candidate = CharacterUtteranceCandidate(
+        "performance-utterance-candidate",
+        context.request_id,
+        plan.plan_id,
+        source.decision_id,
+        source.intent_id,
+        source.source_event_ids,
+        source.revisions,
+        profile.character_id,
+        profile.schema_version,
+        profile.definition_revision,
+        (
+            CharacterUtteranceSegment(
+                "performance-segment",
+                "そのままの発話です。",
+                ("prop-required",),
+                LinguisticBoundary.SENTENCE,
+                emphasis,
+                hesitation,
+            ),
+        ),
+        0,
+        0,
+        NOW + timedelta(seconds=1),
+    )
+    return CharacterLanguageAuthority().commit(
+        candidate,
+        context,
+        current=CharacterLanguageCommitState(REVISIONS, plan, True, profile, ()),
+        utterance_id="performance-utterance",
+        committed_at=NOW + timedelta(seconds=1),
+    )
 
 
 def test_normalized_contracts_reject_bool_nan_and_infinity() -> None:
@@ -417,3 +488,94 @@ def test_mixed_generation_snapshot_is_rejected_before_performance_composition() 
             policy.policy_id,
             policy.policy_revision,
         )
+
+
+def test_planner_keeps_emphasized_segment_at_linguistic_minimum() -> None:
+    utterance = _utterance_with_linguistics(
+        emphasis=LinguisticEmphasis.EMPHASIZED,
+        hesitation=LinguisticHesitation.NONE,
+    )
+    policy = yura_revision_1_policy()
+    plan = SpeechPerformancePlanner(policy).plan(
+        "performance-plan", utterance, None, None, datetime.now(timezone.utc)
+    )
+    assert plan.segments[0].emphasis_strength >= policy.linguistic_rules.emphasized_min_strength
+
+
+def test_planner_never_inverts_deemphasized_segment_under_positive_bias() -> None:
+    utterance = _utterance_with_linguistics(
+        emphasis=LinguisticEmphasis.DEEMPHASIZED,
+        hesitation=LinguisticHesitation.NONE,
+    )
+    policy = yura_revision_1_policy()
+    expression = SpeechExpressionContext(
+        "expression",
+        utterance.candidate.revisions.source_context_revision,
+        1,
+        utterance.candidate.revisions.attention_revision,
+        ("state",),
+        ((ExpressionAxis.EMPHASIS_BIAS, 1.0),),
+        (),
+        datetime.now(timezone.utc),
+    )
+    plan = SpeechPerformancePlanner(policy).plan(
+        "performance-plan", utterance, None, expression, datetime.now(timezone.utc)
+    )
+    assert plan.segments[0].emphasis_strength <= policy.linguistic_rules.deemphasized_max_strength
+
+
+def test_planner_preserves_hesitant_text_without_filler_or_extra_segments() -> None:
+    utterance = _utterance_with_linguistics(
+        emphasis=LinguisticEmphasis.NEUTRAL,
+        hesitation=LinguisticHesitation.HESITANT,
+    )
+    original_text = utterance.candidate.segments[0].text
+    plan = SpeechPerformancePlanner(yura_revision_1_policy()).plan(
+        "performance-plan", utterance, None, None, datetime.now(timezone.utc)
+    )
+    assert plan.segments[0].hesitation_strength > 0.0
+    assert utterance.candidate.segments[0].text == original_text
+    assert len(plan.segments) == len(utterance.candidate.segments) == 1
+    assert all(filler not in original_text for filler in ("えっと", "あの"))
+
+
+def test_same_text_different_confirmed_voice_style_changes_only_performance_intent() -> None:
+    utterance = _utterance(text="同じ言葉")
+    policy = yura_revision_1_policy()
+    first_rule = policy.character_style_rules[0]
+    alternate_rule = replace(
+        first_rule,
+        rule_id="yura-alternate-softness",
+        expected_confirmed_value="硬質で張りがある",
+        baseline_delta=PerformanceIntentDelta(((PerformanceAxis.ENERGY, 0.5),)),
+    )
+    planner = SpeechPerformancePlanner(
+        replace(policy, character_style_rules=(first_rule, alternate_rule))
+    )
+    soft = CharacterVoiceStyleProfile(
+        "yura",
+        1,
+        1,
+        (
+            RuntimeCharacterFacet(
+                "baseline_softness", RuntimeAvailability.CONFIRMED, "柔らかく親しみがある"
+            ),
+        ),
+    )
+    alternate = CharacterVoiceStyleProfile(
+        "yura",
+        1,
+        1,
+        (
+            RuntimeCharacterFacet(
+                "baseline_softness", RuntimeAvailability.CONFIRMED, "硬質で張りがある"
+            ),
+        ),
+    )
+    soft_plan = planner.plan("soft-plan", utterance, soft, None, datetime.now(timezone.utc))
+    alternate_plan = planner.plan(
+        "alternate-plan", utterance, alternate, None, datetime.now(timezone.utc)
+    )
+    assert soft_plan.global_intent != alternate_plan.global_intent
+    assert utterance.candidate.segments[0].text == "同じ言葉"
+    assert soft_plan.utterance_id == alternate_plan.utterance_id == utterance.utterance_id
