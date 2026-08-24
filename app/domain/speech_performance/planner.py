@@ -14,6 +14,7 @@ from app.domain.character_language import (
 
 from .contracts import (
     ExpressionAxis,
+    NeutralFallbackPolicy,
     PerformanceAxis,
     PerformanceIntentDelta,
     PerformanceIntentVector,
@@ -23,6 +24,7 @@ from .contracts import (
     SpeechPerformancePlan,
     SpeechPerformanceProjectionPolicy,
     SpeechPerformanceSegment,
+    VoiceStyleDisposition,
 )
 
 
@@ -116,10 +118,17 @@ class SpeechPerformancePlanner:
         voice_style = snapshot.voice_style
         expression = snapshot.expression
         candidate = utterance.candidate
+        if (
+            candidate.character_schema_version
+            not in self._policy.compatible_character_schema_versions
+        ):
+            raise ValueError("Character schemaがpolicyと互換ではありません")
         reasons: list[SpeechPerformanceDegradationReason] = []
         intent = PerformanceIntentVector.neutral()
         dynamic_gains: dict[str, float] = {}
         if voice_style is None:
+            if self._policy.neutral_fallback_policy is NeutralFallbackPolicy.FORBID:
+                raise ValueError("system neutral fallbackはpolicyで禁止されています")
             reasons += [
                 SpeechPerformanceDegradationReason.CHARACTER_VOICE_STYLE_UNAVAILABLE,
                 SpeechPerformanceDegradationReason.SYSTEM_NEUTRAL_FALLBACK,
@@ -143,6 +152,8 @@ class SpeechPerformancePlanner:
                 if facet.availability is RuntimeAvailability.CONFIRMED
             )
             if not confirmed_facets:
+                if self._policy.neutral_fallback_policy is NeutralFallbackPolicy.FORBID:
+                    raise ValueError("system neutral fallbackはpolicyで禁止されています")
                 reasons += [
                     SpeechPerformanceDegradationReason.CHARACTER_VOICE_STYLE_UNAVAILABLE,
                     SpeechPerformanceDegradationReason.SYSTEM_NEUTRAL_FALLBACK,
@@ -160,19 +171,24 @@ class SpeechPerformancePlanner:
                         SpeechPerformanceDegradationReason.UNMAPPED_CHARACTER_VOICE_STYLE
                     )
                     continue
-                intent = _apply(intent, rules[0].baseline_delta)
-                dynamic_gains.update(rules[0].dynamic_gains)
+                style_rule = rules[0]
+                if style_rule.disposition is VoiceStyleDisposition.APPLY:
+                    intent = _apply(intent, style_rule.baseline_delta)
+                    dynamic_gains.update(style_rule.dynamic_gains)
+                elif style_rule.disposition is VoiceStyleDisposition.NO_BASELINE_ONLY_DYNAMIC:
+                    dynamic_gains.update(style_rule.dynamic_gains)
         if expression is None:
             reasons.append(SpeechPerformanceDegradationReason.EXPRESSION_CONTEXT_UNAVAILABLE)
         else:
-            for rule in self._policy.expression_rules:
-                amount = dict(expression.axes).get(rule.expression_axis, 0.0)
-                amount *= dynamic_gains.get(rule.expression_axis, 1.0)
+            for expression_rule in self._policy.expression_rules:
+                amount = dict(expression.axes).get(expression_rule.expression_axis, 0.0)
+                amount *= dynamic_gains.get(expression_rule.expression_axis, 1.0)
                 intent = _apply(
                     intent,
                     PerformanceIntentDelta(
                         tuple(
-                            (axis, value * amount) for axis, value in rule.performance_delta.values
+                            (axis, value * amount)
+                            for axis, value in expression_rule.performance_delta.values
                         )
                     ),
                 )
@@ -189,6 +205,14 @@ class SpeechPerformancePlanner:
             LinguisticEmphasis.NEUTRAL: 0.5,
             LinguisticEmphasis.EMPHASIZED: self._policy.linguistic_rules.emphasized_min_strength,
         }
+        emphasis_bias = 0.0
+        if expression is not None:
+            for expression_rule in self._policy.expression_rules:
+                if expression_rule.expression_axis is ExpressionAxis.EMPHASIS_BIAS:
+                    emphasis_bias += (
+                        dict(expression.axes).get(ExpressionAxis.EMPHASIS_BIAS, 0.0)
+                        * expression_rule.segment_emphasis_gain
+                    )
         segments = tuple(
             SpeechPerformanceSegment(
                 f"{performance_plan_id}-{index}",
@@ -196,7 +220,7 @@ class SpeechPerformancePlanner:
                 boundaries[segment.boundary_after],
                 boundaries[segment.boundary_after],
                 0.0,
-                emphases[segment.emphasis],
+                self._segment_emphasis(segment.emphasis, emphases, emphasis_bias),
                 self._policy.linguistic_rules.hesitant_min_strength
                 if segment.hesitation is LinguisticHesitation.HESITANT
                 else 0.0,
@@ -223,6 +247,19 @@ class SpeechPerformancePlanner:
             created_at,
         )
 
+    def _segment_emphasis(
+        self,
+        emphasis: LinguisticEmphasis,
+        values: dict[LinguisticEmphasis, float],
+        bias: float,
+    ) -> float:
+        result = max(0.0, min(1.0, values[emphasis] + bias))
+        if emphasis is LinguisticEmphasis.EMPHASIZED:
+            return max(self._policy.linguistic_rules.emphasized_min_strength, result)
+        if emphasis is LinguisticEmphasis.DEEMPHASIZED:
+            return min(self._policy.linguistic_rules.deemphasized_max_strength, result)
+        return result
+
     def _apply_constraints(
         self,
         intent: PerformanceIntentVector,
@@ -233,6 +270,8 @@ class SpeechPerformancePlanner:
             rule = rules.get(constraint.kind)
             if rule is None:
                 raise ValueError("未知のperformance constraintは受理できません")
+            if constraint.value_schema is not rule.accepted_typed_value_schema:
+                raise ValueError("performance constraint value schemaが一致しません")
             delta = PerformanceIntentDelta(
                 tuple((axis, constraint.value) for axis in rule.affected_axes)
             )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,8 +11,10 @@ from app.domain.appraisal import FacetRef, InternalStateFacet, InternalStateSnap
 from app.domain.character import RuntimeAvailability
 from app.domain.character.contracts import CharacterVoiceStyleProfile, RuntimeCharacterFacet
 from app.domain.speech_performance import (
+    ConstraintValueSchema,
     ExpressionAxis,
     LinguisticPerformancePolicy,
+    NeutralFallbackPolicy,
     PerformanceAxis,
     PerformanceIntentDelta,
     PerformanceIntentVector,
@@ -200,7 +203,17 @@ def test_unknown_constraint_is_fail_closed() -> None:
         utterance,
         None,
         None,
-        (SpeechPerformanceConstraintView("constraint", "test", "ref", 1, "unknown", 0.1),),
+        (
+            SpeechPerformanceConstraintView(
+                "constraint",
+                "test",
+                "ref",
+                1,
+                "unknown",
+                ConstraintValueSchema.NORMALIZED_SCALAR,
+                0.1,
+            ),
+        ),
         utterance.candidate.revisions.source_context_revision,
         utterance.candidate.revisions.goal_revision,
         utterance.candidate.revisions.attention_revision,
@@ -261,3 +274,72 @@ def test_unconfirmed_voice_style_is_not_character_fact() -> None:
         SpeechPerformanceDegradationReason.CHARACTER_VOICE_STYLE_UNAVAILABLE
         in plan.degradation_reasons
     )
+
+
+def test_policy_compatibility_revision_and_explicit_fallback_are_observable() -> None:
+    policy = yura_revision_1_policy()
+    assert policy.compatible_character_schema_versions == (1,)
+    assert policy.neutral_fallback_policy is NeutralFallbackPolicy.ALLOW_SYSTEM_NEUTRAL
+    assert policy.policy_revision == 1
+    utterance = _utterance()
+    incompatible = replace(policy, compatible_character_schema_versions=(2,))
+    with pytest.raises(ValueError, match="互換"):
+        SpeechPerformancePlanner(incompatible).plan(
+            "performance-plan", utterance, None, None, datetime.now(timezone.utc)
+        )
+    no_fallback = replace(policy, neutral_fallback_policy=NeutralFallbackPolicy.FORBID)
+    with pytest.raises(ValueError, match="fallback"):
+        SpeechPerformancePlanner(no_fallback).plan(
+            "performance-plan", utterance, None, None, datetime.now(timezone.utc)
+        )
+
+
+def test_emphasis_bias_is_explicitly_projected_without_text_mutation() -> None:
+    utterance = _utterance(text="変えない")
+    expression = SpeechExpressionContext(
+        "expression",
+        utterance.candidate.revisions.source_context_revision,
+        1,
+        utterance.candidate.revisions.attention_revision,
+        ("arousal",),
+        ((ExpressionAxis.EMPHASIS_BIAS, 0.5),),
+        (),
+        datetime.now(timezone.utc),
+    )
+    plan = SpeechPerformancePlanner(yura_revision_1_policy()).plan(
+        "performance-plan", utterance, None, expression, datetime.now(timezone.utc)
+    )
+    assert plan.segments[0].emphasis_strength == pytest.approx(0.75)
+    assert utterance.candidate.segments[0].text == "変えない"
+
+
+def test_invalid_policy_definition_and_constraint_schema_fail_closed() -> None:
+    with pytest.raises(ValueError):
+        replace(yura_revision_1_policy(), compatible_character_schema_versions=())
+    utterance = _utterance()
+    snapshot = SpeechPerformanceContextSnapshot(
+        "request",
+        utterance,
+        None,
+        None,
+        (
+            SpeechPerformanceConstraintView(
+                "constraint",
+                "test",
+                "ref",
+                1,
+                "unknown",
+                ConstraintValueSchema.NORMALIZED_SCALAR,
+                0.1,
+            ),
+        ),
+        utterance.candidate.revisions.source_context_revision,
+        utterance.candidate.revisions.goal_revision,
+        utterance.candidate.revisions.attention_revision,
+        datetime.now(timezone.utc),
+        "trace",
+    )
+    with pytest.raises(ValueError, match="未知"):
+        SpeechPerformancePlanner(yura_revision_1_policy()).plan_snapshot(
+            snapshot, "performance-plan", datetime.now(timezone.utc)
+        )

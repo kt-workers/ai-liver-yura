@@ -1,9 +1,11 @@
 from .contracts import (
     CharacterVoiceStyleInfluenceRule,
     ConstraintCombinationMode,
+    ConstraintValueSchema,
     ExpressionAxis,
     ExpressionPerformanceRule,
     LinguisticPerformancePolicy,
+    NeutralFallbackPolicy,
     PerformanceAxis,
     PerformanceIntentDelta,
     PerformanceIntentVector,
@@ -20,15 +22,18 @@ from .contracts import (
     StateComponent,
     StateTargetScope,
     StateTransform,
+    VoiceStyleDisposition,
 )
 from .planner import SpeechPerformancePlanner, project_expression
 
 __all__ = [
     "CharacterVoiceStyleInfluenceRule",
     "ConstraintCombinationMode",
+    "ConstraintValueSchema",
     "ExpressionAxis",
     "ExpressionPerformanceRule",
     "LinguisticPerformancePolicy",
+    "NeutralFallbackPolicy",
     "PerformanceAxis",
     "PerformanceIntentDelta",
     "PerformanceIntentVector",
@@ -46,5 +51,6 @@ __all__ = [
     "StateComponent",
     "StateTargetScope",
     "StateTransform",
+    "VoiceStyleDisposition",
     "project_expression",
 ]

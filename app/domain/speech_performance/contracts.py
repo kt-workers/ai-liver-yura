@@ -58,6 +58,21 @@ class ConstraintCombinationMode(str, Enum):
     MAXIMUM = "maximum"
 
 
+class NeutralFallbackPolicy(str, Enum):
+    ALLOW_SYSTEM_NEUTRAL = "allow_system_neutral"
+    FORBID = "forbid"
+
+
+class VoiceStyleDisposition(str, Enum):
+    APPLY = "apply"
+    NO_BASELINE_ONLY_DYNAMIC = "no_baseline_only_dynamic"
+    IGNORE_EXPLICITLY = "ignore_explicitly"
+
+
+class ConstraintValueSchema(str, Enum):
+    NORMALIZED_SCALAR = "normalized_scalar"
+
+
 class SpeechPerformanceDegradationReason(str, Enum):
     UNMAPPED_CHARACTER_VOICE_STYLE = "unmapped_character_voice_style"
     INVALID_PERFORMANCE_PROJECTION_POLICY = "invalid_performance_projection_policy"
@@ -125,12 +140,15 @@ class CharacterVoiceStyleInfluenceRule:
     expected_confirmed_value: str
     baseline_delta: PerformanceIntentDelta
     dynamic_gains: tuple[tuple[ExpressionAxis, float], ...] = ()
+    disposition: VoiceStyleDisposition = VoiceStyleDisposition.APPLY
 
     def __post_init__(self) -> None:
         for name in ("rule_id", "character_id", "facet_id", "expected_confirmed_value"):
             require_identifier(getattr(self, name), name)
         if not isinstance(self.baseline_delta, PerformanceIntentDelta):
             raise ValueError("baseline_delta が不正です")
+        if not isinstance(self.disposition, VoiceStyleDisposition):
+            raise ValueError("disposition が不正です")
         gains = tuple(self.dynamic_gains)
         if len({axis for axis, _ in gains}) != len(gains):
             raise ValueError("dynamic_gains は一意です")
@@ -185,10 +203,20 @@ class SpeechStateInfluenceRule:
 class ExpressionPerformanceRule:
     expression_axis: ExpressionAxis
     performance_delta: PerformanceIntentDelta
+    segment_emphasis_gain: float = 0.0
 
     def __post_init__(self) -> None:
         if not isinstance(self.expression_axis, ExpressionAxis):
             raise ValueError("expression_axis が不正です")
+        if not isinstance(self.performance_delta, PerformanceIntentDelta):
+            raise ValueError("performance_delta が不正です")
+        object.__setattr__(
+            self,
+            "segment_emphasis_gain",
+            normalized(self.segment_emphasis_gain, "segment_emphasis_gain"),
+        )
+        if not self.performance_delta.values and self.segment_emphasis_gain == 0.0:
+            raise ValueError("expression rule は投影先を必要とします")
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,15 +241,25 @@ class LinguisticPerformancePolicy:
 class SpeechPerformanceProjectionPolicy:
     policy_id: str
     policy_revision: int
+    compatible_character_schema_versions: tuple[int, ...]
     character_style_rules: tuple[CharacterVoiceStyleInfluenceRule, ...]
     state_rules: tuple[SpeechStateInfluenceRule, ...]
     expression_rules: tuple[ExpressionPerformanceRule, ...]
     linguistic_rules: LinguisticPerformancePolicy
     constraint_rules: tuple[SpeechPerformanceConstraintRule, ...] = ()
+    neutral_fallback_policy: NeutralFallbackPolicy = NeutralFallbackPolicy.FORBID
 
     def __post_init__(self) -> None:
         require_identifier(self.policy_id, "policy_id")
         require_revision(self.policy_revision, "policy_revision")
+        versions = tuple(self.compatible_character_schema_versions)
+        if not versions or any(type(value) is not int or value < 0 for value in versions):
+            raise ValueError("compatible_character_schema_versions が不正です")
+        if len(versions) != len(set(versions)):
+            raise ValueError("compatible_character_schema_versions は一意です")
+        object.__setattr__(self, "compatible_character_schema_versions", versions)
+        if not isinstance(self.neutral_fallback_policy, NeutralFallbackPolicy):
+            raise ValueError("neutral_fallback_policy が不正です")
         if not isinstance(self.linguistic_rules, LinguisticPerformancePolicy):
             raise ValueError("linguistic_rules が不正です")
         for name, expected in (
@@ -239,11 +277,14 @@ class SpeechPerformanceProjectionPolicy:
 @dataclass(frozen=True, slots=True)
 class SpeechPerformanceConstraintRule:
     kind: str
+    accepted_typed_value_schema: ConstraintValueSchema
     combination_mode: ConstraintCombinationMode
     affected_axes: tuple[PerformanceAxis, ...]
 
     def __post_init__(self) -> None:
         require_identifier(self.kind, "kind")
+        if not isinstance(self.accepted_typed_value_schema, ConstraintValueSchema):
+            raise ValueError("accepted_typed_value_schema が不正です")
         if not isinstance(self.combination_mode, ConstraintCombinationMode):
             raise ValueError("combination_mode が不正です")
         if not self.affected_axes or any(
@@ -308,12 +349,15 @@ class SpeechPerformanceConstraintView:
     source_ref: str
     source_revision: int
     kind: str
+    value_schema: ConstraintValueSchema
     value: float
 
     def __post_init__(self) -> None:
         for name in ("constraint_id", "source_owner", "source_ref", "kind"):
             require_identifier(getattr(self, name), name)
         require_revision(self.source_revision, "source_revision")
+        if not isinstance(self.value_schema, ConstraintValueSchema):
+            raise ValueError("value_schema が不正です")
         object.__setattr__(self, "value", normalized(self.value, "value"))
 
 

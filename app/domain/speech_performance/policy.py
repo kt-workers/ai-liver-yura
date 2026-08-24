@@ -7,6 +7,7 @@ from .contracts import (
     ExpressionAxis,
     ExpressionPerformanceRule,
     LinguisticPerformancePolicy,
+    NeutralFallbackPolicy,
     PerformanceAxis,
     PerformanceIntentDelta,
     SpeechPerformanceProjectionPolicy,
@@ -14,6 +15,7 @@ from .contracts import (
     StateComponent,
     StateTargetScope,
     StateTransform,
+    VoiceStyleDisposition,
 )
 
 SUBTLE = 0.15
@@ -29,6 +31,7 @@ def yura_revision_1_policy() -> SpeechPerformanceProjectionPolicy:
     return SpeechPerformanceProjectionPolicy(
         "yura-speech-performance",
         1,
+        (1,),
         (
             CharacterVoiceStyleInfluenceRule(
                 "yura-baseline-softness",
@@ -36,6 +39,8 @@ def yura_revision_1_policy() -> SpeechPerformanceProjectionPolicy:
                 "baseline_softness",
                 "柔らかく親しみがある",
                 _delta((PerformanceAxis.SOFTNESS, MODERATE), (PerformanceAxis.TENSION, -MILD)),
+                (),
+                VoiceStyleDisposition.APPLY,
             ),
             CharacterVoiceStyleInfluenceRule(
                 "yura-calmness",
@@ -48,6 +53,8 @@ def yura_revision_1_policy() -> SpeechPerformanceProjectionPolicy:
                     (PerformanceAxis.TENSION, -MILD),
                     (PerformanceAxis.PITCH_RANGE, -SUBTLE),
                 ),
+                (),
+                VoiceStyleDisposition.APPLY,
             ),
             CharacterVoiceStyleInfluenceRule(
                 "yura-expressive",
@@ -56,6 +63,7 @@ def yura_revision_1_policy() -> SpeechPerformanceProjectionPolicy:
                 "EmotionやSituationに応じて相対的に変化し、喜びや驚きが強い時は普段より素直に表出が増え得る",
                 _delta(),
                 ((ExpressionAxis.EXPRESSIVENESS, 1.15), (ExpressionAxis.ENERGY, 1.10)),
+                VoiceStyleDisposition.NO_BASELINE_ONLY_DYNAMIC,
             ),
             CharacterVoiceStyleInfluenceRule(
                 "yura-energy",
@@ -64,6 +72,7 @@ def yura_revision_1_policy() -> SpeechPerformanceProjectionPolicy:
                 "常時高energyで押さず、現在のEmotionやSituationに応じて自然に変化する",
                 _delta(),
                 ((ExpressionAxis.ENERGY, 1.0),),
+                VoiceStyleDisposition.NO_BASELINE_ONLY_DYNAMIC,
             ),
         ),
         (
@@ -137,6 +146,9 @@ def yura_revision_1_policy() -> SpeechPerformanceProjectionPolicy:
             ExpressionPerformanceRule(
                 ExpressionAxis.PACING_BIAS, _delta((PerformanceAxis.PACE, MODERATE))
             ),
+            ExpressionPerformanceRule(ExpressionAxis.EMPHASIS_BIAS, _delta(), MODERATE),
         ),
         LinguisticPerformancePolicy(0.2, 0.5, 0.8, 0.8, 0.2, 0.5),
+        (),
+        NeutralFallbackPolicy.ALLOW_SYSTEM_NEUTRAL,
     )
