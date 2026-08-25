@@ -8,6 +8,10 @@ from datetime import datetime, timezone
 import pytest
 
 from app.domain.llm import LLMInterruptibility, LLMPriority
+from app.domain.speech_runtime.admission import (
+    SpeechPreparationAdmission,
+    SpeechPreparationAdmissionPolicy,
+)
 from app.domain.speech_runtime.contracts import (
     AudioReadinessState,
     CandidateLifecycle,
@@ -283,7 +287,9 @@ async def test_playback_wait_does_not_block_next_candidate_preparation_or_heartb
     async def unrelated() -> None:
         heartbeat.set()
 
-    SpeechPreparationOrchestrator(tasks).fan_out_after_character(
+    SpeechPreparationOrchestrator(
+        tasks, SpeechPreparationAdmission(SpeechPreparationAdmissionPolicy(2, 2, 4))
+    ).fan_out_after_character(
         "candidate-b", 1, verifier, performance
     )
     await unrelated()
@@ -443,6 +449,32 @@ async def test_executor_stream_accepts_started_before_terminal_and_preserves_eff
         await asyncio.sleep(0)
     assert (await runtime.candidate("candidate")).lifecycle is expected
     assert len(await runtime.presentation_reports("presentation")) == 2
+
+
+@pytest.mark.asyncio
+async def test_started_only_stream_fails_closed_instead_of_stranding_presentation() -> None:
+    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    await runtime.register(_ready_candidate())
+
+    async def adapter(_: SpeechPresentationCommand) -> AsyncIterator[SpeechPresentationReport]:
+        now = datetime.now(timezone.utc)
+        yield SpeechPresentationReport(
+            "presentation",
+            "candidate",
+            SpeechPresentationReportStatus.STARTED,
+            (SpeechPresentationMode.TEXT_ONLY,),
+            now,
+            None,
+            None,
+            None,
+        )
+
+    await SpeechPresentationExecutor(runtime, tasks).commit_and_present(
+        candidate_id="candidate", state=_state(), presentation_id="presentation", adapter=adapter
+    )
+    while tasks.pending_task_count:
+        await asyncio.sleep(0)
+    assert (await runtime.candidate("candidate")).lifecycle is CandidateLifecycle.FAILED
 
 
 @pytest.mark.asyncio

@@ -23,6 +23,8 @@ class SpeechPreparationAdmissionPolicy:
             raise ValueError("admission bound が不正です")
         if self.max_active_total < self.max_active_foreground:
             raise ValueError("total bound がforeground boundより小さいです")
+        if self.max_active_background >= self.max_active_total:
+            raise ValueError("foreground reservationが必要です")
 
 
 class SpeechPreparationAdmission:

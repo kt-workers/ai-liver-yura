@@ -4,6 +4,7 @@ from collections import deque
 from dataclasses import dataclass
 
 from .contracts import CandidateLifecycle, PreparedSpeechCandidate
+from .discard import PreparedAudioDiscarder, PreparedAudioDiscardReason
 from .runtime import SpeechRuntime
 
 
@@ -100,9 +101,15 @@ class PreparedSpeechQueue:
 class PreparedSpeechQueueCoordinator:
     """generation fence後の候補だけをqueue/revalidationへ進める。"""
 
-    def __init__(self, runtime: SpeechRuntime, queue: PreparedSpeechQueue) -> None:
+    def __init__(
+        self,
+        runtime: SpeechRuntime,
+        queue: PreparedSpeechQueue,
+        discarder: PreparedAudioDiscarder,
+    ) -> None:
         self._runtime = runtime
         self._queue = queue
+        self._discarder = discarder
 
     def __len__(self) -> int:
         return len(self._queue)
@@ -120,10 +127,10 @@ class PreparedSpeechQueueCoordinator:
         )
         if not accepted:
             # queueへ入らないcandidateをactiveのまま放置しない。
-            await self._runtime.cancel(candidate_id, CandidateLifecycle.SUPERSEDED)
+            await self._terminate(candidate_id, CandidateLifecycle.SUPERSEDED)
             return False
         if suppressed is not None:
-            await self._runtime.cancel(suppressed.candidate_id, CandidateLifecycle.SUPERSEDED)
+            await self._terminate(suppressed.candidate_id, CandidateLifecycle.SUPERSEDED)
         return True
 
     async def pop_for_revalidation(self) -> PreparedSpeechCandidate | None:
@@ -145,7 +152,32 @@ class PreparedSpeechQueueCoordinator:
         passed: bool,
         failure: CandidateLifecycle | None = None,
     ) -> PreparedSpeechCandidate:
+        if not passed:
+            if failure is None:
+                raise ValueError("revalidation failure lifecycle が必要です")
+            await self._discarder.discard_current(
+                candidate_id,
+                self._runtime.generation(candidate_id),
+                self._discard_reason(failure),
+            )
         return await self._runtime.complete_revalidation(candidate_id, passed, failure)
 
     def shutdown(self) -> tuple[PreparedSpeechQueueEntry, ...]:
         return self._queue.drain()
+
+    async def _terminate(self, candidate_id: str, lifecycle: CandidateLifecycle) -> None:
+        generation = self._runtime.generation(candidate_id)
+        await self._discarder.discard_current(
+            candidate_id, generation, self._discard_reason(lifecycle)
+        )
+        if await self._runtime.is_current_generation(candidate_id, generation):
+            await self._runtime.cancel(candidate_id, lifecycle)
+
+    @staticmethod
+    def _discard_reason(lifecycle: CandidateLifecycle) -> PreparedAudioDiscardReason:
+        return {
+            CandidateLifecycle.CANCELLED: PreparedAudioDiscardReason.CANDIDATE_CANCELLED,
+            CandidateLifecycle.STALE: PreparedAudioDiscardReason.CANDIDATE_STALE,
+            CandidateLifecycle.SUPERSEDED: PreparedAudioDiscardReason.CANDIDATE_SUPERSEDED,
+            CandidateLifecycle.FAILED: PreparedAudioDiscardReason.VERIFIER_FAILED,
+        }[lifecycle]

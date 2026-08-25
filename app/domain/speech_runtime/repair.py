@@ -43,7 +43,7 @@ class SpeechSemanticRepairExecutor:
         self,
         runtime: SpeechRuntime,
         tasks: CandidateTaskRegistry,
-        discarder: PreparedAudioDiscarder | None = None,
+        discarder: PreparedAudioDiscarder,
     ) -> None:
         self._runtime = runtime
         self._tasks = tasks
@@ -97,10 +97,11 @@ class SpeechSemanticRepairExecutor:
         if disposition is SemanticRepairDisposition.REPAIR_ONCE:
             if evidence is None or candidate.utterance_id is None:
                 raise ValueError("repairにはtyped evidenceとutteranceが必要です")
-            if self._discarder is not None:
-                await self._discarder.discard_current(
-                    candidate_id, generation, PreparedAudioDiscardReason.CHARACTER_REPAIRED
-                )
+            await self._discarder.discard_current(
+                candidate_id, generation, PreparedAudioDiscardReason.CHARACTER_REPAIRED
+            )
+            if not await self._runtime.is_current_generation(candidate_id, generation):
+                return None
             next_generation = await self._runtime.supersede_generation(candidate_id)
             await self._tasks.cancel_candidate(candidate_id, before_generation=next_generation)
             attempt = SemanticRepairAttempt(
@@ -115,10 +116,11 @@ class SpeechSemanticRepairExecutor:
             await repair_character(attempt)
             return disposition
         if disposition is SemanticRepairDisposition.REJECTED_FINAL:
-            if self._discarder is not None:
-                await self._discarder.discard_current(
-                    candidate_id, generation, PreparedAudioDiscardReason.SEMANTIC_REJECTED
-                )
+            await self._discarder.discard_current(
+                candidate_id, generation, PreparedAudioDiscardReason.SEMANTIC_REJECTED
+            )
+            if not await self._runtime.is_current_generation(candidate_id, generation):
+                return None
             await self._runtime.commit_generation_result(
                 candidate_id,
                 generation,
@@ -136,6 +138,14 @@ class SpeechSemanticRepairExecutor:
             if disposition is SemanticRepairDisposition.REPLAN_REQUIRED
             else CandidateLifecycle.FAILED
         )
+        discard_reason = (
+            PreparedAudioDiscardReason.CANDIDATE_STALE
+            if terminal is CandidateLifecycle.STALE
+            else PreparedAudioDiscardReason.VERIFIER_FAILED
+        )
+        await self._discarder.discard_current(candidate_id, generation, discard_reason)
+        if not await self._runtime.is_current_generation(candidate_id, generation):
+            return None
         await self._runtime.cancel(candidate_id, terminal)
         return disposition
 

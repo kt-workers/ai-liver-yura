@@ -95,11 +95,17 @@ async def _repair(_: object) -> None:
     return None
 
 
+def _executor(runtime: SpeechRuntime, tasks: CandidateTaskRegistry) -> SpeechSemanticRepairExecutor:
+    return SpeechSemanticRepairExecutor(
+        runtime, tasks, PreparedAudioDiscarder(runtime, _FakeOwner())
+    )
+
+
 @pytest.mark.asyncio
 async def test_first_reject_repairs_once_with_empty_priors_and_same_plan() -> None:
     runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate())
-    executor = SpeechSemanticRepairExecutor(runtime, tasks)
+    executor = _executor(runtime, tasks)
     received: list[SemanticRepairAttempt] = []
 
     async def repair(attempt: SemanticRepairAttempt) -> None:
@@ -127,7 +133,7 @@ async def test_first_reject_repairs_once_with_empty_priors_and_same_plan() -> No
 async def test_second_reject_is_final_and_never_calls_third_character() -> None:
     runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate())
-    executor = SpeechSemanticRepairExecutor(runtime, tasks)
+    executor = _executor(runtime, tasks)
     calls = 0
 
     async def repair(_: object) -> None:
@@ -180,7 +186,7 @@ async def test_verifier_failure_or_stale_plan_never_repairs(
         nonlocal calls
         calls += 1
 
-    result = await SpeechSemanticRepairExecutor(runtime, tasks).handle_verifier_result(
+    result = await _executor(runtime, tasks).handle_verifier_result(
         candidate_id="candidate",
         generation=1,
         semantic_accepted=None,
@@ -199,7 +205,7 @@ async def test_verifier_failure_or_stale_plan_never_repairs(
 async def test_old_generation_performance_tts_and_verifier_cannot_overwrite_g2() -> None:
     runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate())
-    executor = SpeechSemanticRepairExecutor(runtime, tasks)
+    executor = _executor(runtime, tasks)
     evidence = SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",))
     await executor.handle_verifier_result(
         candidate_id="candidate",
@@ -244,9 +250,10 @@ async def test_speculative_g1_artifact_is_discarded_before_repair_g2() -> None:
         "candidate",
         1,
         readiness=_ready(audio=AudioReadinessState.READY),
+        performance_plan_id="performance-g1",
         prepared_audio_ref="speculative-audio-g1",
     )
-    await SpeechSemanticRepairExecutor(runtime, tasks).handle_verifier_result(
+    await _executor(runtime, tasks).handle_verifier_result(
         candidate_id="candidate",
         generation=1,
         semantic_accepted=False,
@@ -266,7 +273,7 @@ async def test_speculative_g1_artifact_is_discarded_before_repair_g2() -> None:
 async def test_late_g1_verifier_result_does_not_restore_presentation_eligibility() -> None:
     runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate())
-    executor = SpeechSemanticRepairExecutor(runtime, tasks)
+    executor = _executor(runtime, tasks)
     evidence = SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",))
     await executor.handle_verifier_result(
         candidate_id="candidate",
@@ -310,7 +317,7 @@ async def test_repair_cancels_only_old_generation_and_other_candidate_continues(
     task_b = tasks.start(CandidateTaskKey("candidate-b", 1, "performance"), blocked(entered_b))
     await entered_a.wait()
     await entered_b.wait()
-    await SpeechSemanticRepairExecutor(runtime, tasks).handle_verifier_result(
+    await _executor(runtime, tasks).handle_verifier_result(
         candidate_id="candidate-a",
         generation=1,
         semantic_accepted=False,
@@ -330,7 +337,7 @@ async def test_repair_cancels_only_old_generation_and_other_candidate_continues(
 async def test_only_accepted_utterance_enters_prior_pool() -> None:
     runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate())
-    executor = SpeechSemanticRepairExecutor(runtime, tasks)
+    executor = _executor(runtime, tasks)
     await executor.handle_verifier_result(
         candidate_id="candidate",
         generation=1,

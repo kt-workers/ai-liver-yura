@@ -90,7 +90,10 @@ async def test_expression_only_rebind_preserves_utterance_semantics_and_rejects_
 ):
     runtime = SpeechRuntime()
     await runtime.register(_candidate())
-    generation = await runtime.rebind_performance_for_expression("candidate", 2)
+    owner = _FakeResourceOwner()
+    generation = await SpeechCandidateLifecycleExecutor(
+        runtime, PreparedAudioDiscarder(runtime, owner)
+    ).rebind_performance("candidate", 2)
     rebound = await runtime.candidate("candidate")
     assert generation == 2
     assert rebound.utterance_id == "utterance"

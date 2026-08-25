@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timezone
 
 import pytest
@@ -15,6 +16,11 @@ from app.domain.speech_runtime.contracts import (
     SpeechPresentationMode,
     SpeechReadinessState,
     VerifierReadinessState,
+)
+from app.domain.speech_runtime.discard import (
+    PreparedAudioDiscarder,
+    PreparedAudioDiscardPort,
+    PreparedAudioDiscardRequest,
 )
 from app.domain.speech_runtime.queue import PreparedSpeechQueue, PreparedSpeechQueueCoordinator
 from app.domain.speech_runtime.runtime import SpeechRuntime
@@ -56,11 +62,29 @@ def _prepared(candidate_id: str, priority: LLMPriority) -> PreparedSpeechCandida
     )
 
 
+class _DiscardOwner(PreparedAudioDiscardPort):
+    def __init__(self, *refs: str) -> None:
+        self.refs = set(refs)
+        self.requests: list[PreparedAudioDiscardRequest] = []
+
+    async def discard(self, request: PreparedAudioDiscardRequest) -> None:
+        self.requests.append(request)
+        self.refs.discard(request.audio_ref)
+
+
+def _coordinator(
+    runtime: SpeechRuntime, queue: PreparedSpeechQueue, owner: _DiscardOwner | None = None
+) -> PreparedSpeechQueueCoordinator:
+    return PreparedSpeechQueueCoordinator(
+        runtime, queue, PreparedAudioDiscarder(runtime, owner or _DiscardOwner())
+    )
+
+
 @pytest.mark.asyncio
 async def test_only_current_generation_can_enqueue_and_duplicate_is_rejected() -> None:
     runtime = SpeechRuntime()
     await runtime.register(_prepared("candidate", LLMPriority.FOREGROUND))
-    coordinator = PreparedSpeechQueueCoordinator(runtime, PreparedSpeechQueue(2))
+    coordinator = _coordinator(runtime, PreparedSpeechQueue(2))
     await runtime.supersede_generation("candidate")
     assert not await coordinator.enqueue_current("candidate", 1, foreground=True)
     # G2が再びPREPAREDへ収束した後だけqueueへ入れられる。
@@ -87,7 +111,7 @@ async def test_foreground_suppression_closes_displaced_background_candidate() ->
     runtime = SpeechRuntime()
     await runtime.register(_prepared("background", LLMPriority.BACKGROUND))
     await runtime.register(_prepared("foreground", LLMPriority.FOREGROUND))
-    coordinator = PreparedSpeechQueueCoordinator(runtime, PreparedSpeechQueue(1))
+    coordinator = _coordinator(runtime, PreparedSpeechQueue(1))
     assert await coordinator.enqueue_current("background", 1, foreground=False)
     assert await coordinator.enqueue_current("foreground", 1, foreground=True)
     assert (await runtime.candidate("background")).lifecycle is CandidateLifecycle.SUPERSEDED
@@ -102,7 +126,7 @@ async def test_shutdown_cancels_candidate_local_tasks_and_drains_queue() -> None
     runtime = SpeechRuntime()
     await runtime.register(_prepared("candidate-a", LLMPriority.FOREGROUND))
     await runtime.register(_prepared("candidate-b", LLMPriority.BACKGROUND))
-    queue = PreparedSpeechQueueCoordinator(runtime, PreparedSpeechQueue(2))
+    queue = _coordinator(runtime, PreparedSpeechQueue(2))
     await queue.enqueue_current("candidate-a", 1, foreground=True)
     await queue.enqueue_current("candidate-b", 1, foreground=False)
     tasks = CandidateTaskRegistry()
@@ -116,12 +140,42 @@ async def test_shutdown_cancels_candidate_local_tasks_and_drains_queue() -> None
 
     task = tasks.start(CandidateTaskKey("candidate-a", 1, "tts"), pending())
     await entered.wait()
-    closed = await SpeechRuntimeShutdown(runtime, tasks, queue).close()
+    closed = await SpeechRuntimeShutdown(
+        runtime, tasks, queue, PreparedAudioDiscarder(runtime, _DiscardOwner())
+    ).close()
     assert set(closed) == {"candidate-a", "candidate-b"}
     assert task.cancelled()
     assert tasks.pending_task_count == 0
     assert len(queue) == 0
     assert (await runtime.candidate("candidate-a")).lifecycle is CandidateLifecycle.CANCELLED
+
+
+@pytest.mark.asyncio
+async def test_shutdown_discards_bound_audio_resource_before_terminal_transition() -> None:
+    runtime = SpeechRuntime()
+    candidate = _prepared("candidate", LLMPriority.FOREGROUND)
+    candidate = replace(
+        candidate,
+        prepared_audio_ref="audio-candidate",
+        presentation_modes=(SpeechPresentationMode.AUDIO_WITH_TEXT,),
+        readiness=SpeechComponentReadiness(
+            SpeechReadinessState.READY,
+            SpeechReadinessState.READY,
+            VerifierReadinessState.ACCEPTED,
+            SpeechReadinessState.READY,
+            AudioReadinessState.READY,
+        ),
+    )
+    await runtime.register(candidate)
+    owner = _DiscardOwner("audio-candidate")
+    coordinator = _coordinator(runtime, PreparedSpeechQueue(1), owner)
+    closed = await SpeechRuntimeShutdown(
+        runtime, CandidateTaskRegistry(), coordinator, PreparedAudioDiscarder(runtime, owner)
+    ).close()
+    assert closed == ("candidate",)
+    assert not owner.refs
+    assert owner.requests[0].audio_ref == "audio-candidate"
+    assert (await runtime.candidate("candidate")).prepared_audio_ref is None
 
 
 @pytest.mark.asyncio
@@ -134,7 +188,7 @@ async def test_pop_uses_live_terminal_state_not_queued_snapshot(
 ) -> None:
     runtime = SpeechRuntime()
     await runtime.register(_prepared("candidate", LLMPriority.FOREGROUND))
-    coordinator = PreparedSpeechQueueCoordinator(runtime, PreparedSpeechQueue(2))
+    coordinator = _coordinator(runtime, PreparedSpeechQueue(2))
     assert await coordinator.enqueue_current("candidate", 1, foreground=True)
     await runtime.cancel("candidate", terminal)
     assert await coordinator.pop_for_revalidation() is None
@@ -149,7 +203,7 @@ async def test_bounded_fairness_serves_eligible_background_after_foreground_burs
         ("foreground-2", LLMPriority.FOREGROUND),
     ):
         await runtime.register(_prepared(candidate_id, priority))
-    coordinator = PreparedSpeechQueueCoordinator(runtime, PreparedSpeechQueue(3, 1))
+    coordinator = _coordinator(runtime, PreparedSpeechQueue(3, 1))
     assert await coordinator.enqueue_current("background", 1, foreground=False)
     assert await coordinator.enqueue_current("foreground-1", 1, foreground=True)
     assert await coordinator.enqueue_current("foreground-2", 1, foreground=True)
@@ -161,7 +215,7 @@ async def test_bounded_fairness_serves_eligible_background_after_foreground_burs
 async def test_old_generation_entry_is_dropped_before_revalidation() -> None:
     runtime = SpeechRuntime()
     await runtime.register(_prepared("candidate", LLMPriority.FOREGROUND))
-    coordinator = PreparedSpeechQueueCoordinator(runtime, PreparedSpeechQueue(1))
+    coordinator = _coordinator(runtime, PreparedSpeechQueue(1))
     assert await coordinator.enqueue_current("candidate", 1, foreground=True)
     await runtime.supersede_generation("candidate")
     assert await coordinator.pop_for_revalidation() is None

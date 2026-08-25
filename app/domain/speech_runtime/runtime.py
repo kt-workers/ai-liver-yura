@@ -89,6 +89,8 @@ class SpeechRuntime:
             candidate = self._active(candidate_id)
             if candidate.utterance_id is None or candidate.semantic_acceptance_id is None:
                 raise ValueError("valid Character/semantic acceptance が必要です")
+            if candidate.prepared_audio_ref is not None:
+                raise ValueError("prepared audioのperformance rebindにはdiscardが必要です")
             self._generations[candidate_id] += 1
             generation = self._generations[candidate_id]
             self._candidates[candidate_id] = replace(
@@ -201,6 +203,8 @@ class SpeechRuntime:
             raise ValueError("terminal lifecycle が不正です")
         async with self._lock:
             candidate = self._active(candidate_id)
+            if candidate.prepared_audio_ref is not None:
+                raise ValueError("prepared audioのterminal遷移にはdiscardが必要です")
             updated = replace(candidate, lifecycle=lifecycle, updated_at=datetime.now(timezone.utc))
             self._candidates[candidate_id] = updated
             return updated
@@ -252,6 +256,8 @@ class SpeechRuntime:
                     CandidateLifecycle.FAILED,
                 }:
                     raise ValueError("revalidation failure lifecycle が不正です")
+                if candidate.prepared_audio_ref is not None:
+                    raise ValueError("prepared audioのrevalidation failureにはdiscardが必要です")
                 lifecycle = failure
             updated = replace(
                 candidate,
@@ -408,6 +414,20 @@ class SpeechRuntime:
         async with self._lock:
             return self._reports.get(presentation_id, ())
 
+    async def fail_presentation_stream(self, candidate_id: str) -> PreparedSpeechCandidate:
+        """STARTED後にterminal reportを失ったAdapter streamをfail-closedで閉じる。"""
+        async with self._lock:
+            candidate = self._active(candidate_id)
+            if candidate.lifecycle is not CandidateLifecycle.PRESENTING:
+                raise ValueError("presentation stream failureのlifecycleが不正です")
+            updated = replace(
+                candidate,
+                lifecycle=CandidateLifecycle.FAILED,
+                updated_at=datetime.now(timezone.utc),
+            )
+            self._candidates[candidate_id] = updated
+            return updated
+
     async def shutdown(self) -> tuple[str, ...]:
         """外部I/Oを待たず、active candidateをterminalへ閉じる。"""
         async with self._lock:
@@ -423,6 +443,8 @@ class SpeechRuntime:
             }
             for candidate_id, candidate in tuple(self._candidates.items()):
                 if candidate.lifecycle not in terminal:
+                    if candidate.prepared_audio_ref is not None:
+                        raise ValueError("prepared audioのshutdownにはdiscardが必要です")
                     self._candidates[candidate_id] = replace(
                         candidate,
                         lifecycle=CandidateLifecycle.CANCELLED,
@@ -430,6 +452,24 @@ class SpeechRuntime:
                     )
                     closed.append(candidate_id)
             return tuple(closed)
+
+    async def active_candidate_ids(self) -> tuple[str, ...]:
+        """shutdown等がdiscardを先行させるためのcandidate局所snapshotを返す。"""
+        async with self._lock:
+            terminal = {
+                CandidateLifecycle.CANCELLED,
+                CandidateLifecycle.SUPERSEDED,
+                CandidateLifecycle.STALE,
+                CandidateLifecycle.REJECTED,
+                CandidateLifecycle.FAILED,
+                CandidateLifecycle.COMPLETED,
+                CandidateLifecycle.INTERRUPTED,
+            }
+            return tuple(
+                candidate_id
+                for candidate_id, candidate in self._candidates.items()
+                if candidate.lifecycle not in terminal
+            )
 
     def _active(self, candidate_id: str) -> PreparedSpeechCandidate:
         candidate = self._candidates.get(candidate_id)

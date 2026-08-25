@@ -125,6 +125,7 @@ class SpeechPreparationRequest:
     created_at: datetime
     trace_id: str
     semantic_skip_proof: SemanticVerificationSkipProof | None = None
+    semantic_verification_policy_revision: int | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -146,6 +147,11 @@ class SpeechPreparationRequest:
         require_revision(self.source_context_revision, "source_context_revision")
         require_revision(self.goal_revision, "goal_revision", optional=True)
         require_revision(self.attention_revision, "attention_revision", optional=True)
+        require_revision(
+            self.semantic_verification_policy_revision,
+            "semantic_verification_policy_revision",
+            optional=True,
+        )
         if not isinstance(self.priority, LLMPriority) or not isinstance(
             self.interruptibility, LLMInterruptibility
         ):
@@ -165,6 +171,16 @@ class SpeechPreparationRequest:
             self.semantic_skip_proof, SemanticVerificationSkipProof
         ):
             raise ValueError("semantic_skip_proof が不正です")
+        if self.semantic_verification_requirement is (
+            SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
+        ) and (
+            self.semantic_verification_policy_revision is None
+            or self.semantic_skip_proof is None
+            or self.semantic_skip_proof.policy_id != self.semantic_verification_policy_ref
+            or self.semantic_skip_proof.policy_revision
+            != self.semantic_verification_policy_revision
+        ):
+            raise ValueError("verifier skip proofのpolicy bindingが不正です")
         preconditions = tuple(self.required_preconditions)
         if any(not isinstance(item, str) or not item.strip() for item in preconditions):
             raise ValueError("required_preconditions が不正です")
@@ -278,6 +294,8 @@ class PreparedSpeechCandidate:
     response_obligation_id: str | None = None
     expires_at: datetime | None = None
     character_definition_revision: int | None = None
+    semantic_verification_policy_ref: str | None = None
+    semantic_verification_policy_revision: int | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -324,6 +342,29 @@ class PreparedSpeechCandidate:
             self.semantic_skip_proof, SemanticVerificationSkipProof
         ):
             raise ValueError("semantic_skip_proof が不正です")
+        if self.semantic_verification_policy_ref is not None:
+            require_identifier(
+                self.semantic_verification_policy_ref,
+                "semantic_verification_policy_ref",
+            )
+        require_revision(
+            self.semantic_verification_policy_revision,
+            "semantic_verification_policy_revision",
+            optional=True,
+        )
+        if (
+            self.semantic_requirement
+            is SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
+            and (
+                self.semantic_verification_policy_ref is None
+                or self.semantic_verification_policy_revision is None
+                or self.semantic_skip_proof is None
+                or self.semantic_skip_proof.policy_id != self.semantic_verification_policy_ref
+                or self.semantic_skip_proof.policy_revision
+                != self.semantic_verification_policy_revision
+            )
+        ):
+            raise ValueError("verifier skip proofのpolicy bindingが不正です")
         if self.response_obligation_id is not None:
             require_identifier(self.response_obligation_id, "response_obligation_id")
         if self.expires_at is not None:

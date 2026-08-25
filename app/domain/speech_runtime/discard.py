@@ -11,6 +11,7 @@ from .runtime import SpeechRuntime
 class PreparedAudioDiscardReason(str, Enum):
     SEMANTIC_REJECTED = "semantic_rejected"
     CHARACTER_REPAIRED = "character_repaired"
+    VERIFIER_FAILED = "verifier_failed"
     PERFORMANCE_REBOUND = "performance_rebound"
     CANDIDATE_STALE = "candidate_stale"
     CANDIDATE_SUPERSEDED = "candidate_superseded"
