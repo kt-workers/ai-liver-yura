@@ -83,6 +83,10 @@ class SpeechPreparationOrchestrator:
     def complete_preparation(self, candidate_id: str, generation: int) -> None:
         """candidateがterminal又はqueueへ移った後にlifecycle leaseを返す。"""
         _, release = self._require_lease(candidate_id, generation)
+        if self._tasks.has_pending_candidate_work(
+            candidate_id, generation, excluding_role="admission"
+        ):
+            raise ValueError("未完了Roleがある間はSpeech preparation leaseを解放できません")
         release.set()
 
     def _require_lease(

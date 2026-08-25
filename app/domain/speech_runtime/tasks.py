@@ -32,6 +32,18 @@ class CandidateTaskRegistry:
     def pending_task_count(self) -> int:
         return sum(not task.done() for task in self._tasks.values())
 
+    def has_pending_candidate_work(
+        self, candidate_id: str, generation: int, *, excluding_role: str | None = None
+    ) -> bool:
+        """admission hold以外のcandidate局所Roleが未完了かを返す。"""
+        return any(
+            key.candidate_id == candidate_id
+            and key.generation == generation
+            and key.role != excluding_role
+            and not task.done()
+            for key, task in self._tasks.items()
+        )
+
     def start(
         self, key: CandidateTaskKey, work: Coroutine[Any, Any, object]
     ) -> asyncio.Task[object]:

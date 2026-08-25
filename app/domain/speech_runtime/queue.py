@@ -163,7 +163,12 @@ class PreparedSpeechQueueCoordinator:
             )
             if not await self._runtime.is_current_generation(candidate_id, generation):
                 raise ValueError("revalidation generation が更新されました")
-        return await self._runtime.complete_revalidation(candidate_id, passed, failure)
+        completed = await self._runtime.complete_revalidation(
+            candidate_id, generation, passed, failure
+        )
+        if completed is None:
+            raise ValueError("revalidation generation が更新されました")
+        return completed
 
     def shutdown(self) -> tuple[PreparedSpeechQueueEntry, ...]:
         return self._queue.drain()

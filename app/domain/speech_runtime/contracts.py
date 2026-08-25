@@ -159,15 +159,37 @@ class SpeechPreparationRequest:
             raise ValueError("priority/interruptibility が不正です")
         if not isinstance(self.semantic_verification_requirement, SemanticVerificationRequirement):
             raise ValueError("semantic verification requirement が不正です")
-        if (
+        preconditions = tuple(self.required_preconditions)
+        if any(not isinstance(item, str) or not item.strip() for item in preconditions):
+            raise ValueError("required_preconditions が不正です")
+        if len(preconditions) != len(set(preconditions)):
+            raise ValueError("required_preconditions は一意です")
+        object.__setattr__(self, "required_preconditions", preconditions)
+        if self.semantic_verification_policy is not None:
+            decision = self.semantic_verification_policy.decision_for(
+                self.required_preconditions
+            )
+            if decision is None:
+                if (
+                    self.semantic_verification_requirement
+                    is not SemanticVerificationRequirement.REQUIRED
+                ):
+                    raise ValueError("current closed conditionsではverifier skipを選べません")
+                if self.semantic_skip_proof is not None:
+                    raise ValueError("REQUIRED verifierにskip proofは指定できません")
+            elif (
+                self.semantic_verification_requirement
+                is not SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
+                or self.semantic_skip_proof != decision
+            ):
+                raise ValueError(
+                    "verifier skip decisionはcurrent closed conditionsから導出されます"
+                )
+        elif (
             self.semantic_verification_requirement
-            is (SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY)
-            and self.semantic_skip_proof is None
+            is SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
         ):
-            raise ValueError("verifier skipにはclosed policy proofが必要です")
-        if self.semantic_verification_requirement is SemanticVerificationRequirement.REQUIRED:
-            if self.semantic_skip_proof is not None:
-                raise ValueError("REQUIRED verifierにskip proofは指定できません")
+            raise ValueError("verifier skipにはclosed policy authorityが必要です")
         if self.semantic_skip_proof is not None and not isinstance(
             self.semantic_skip_proof, SemanticVerificationSkipProof
         ):
@@ -184,12 +206,6 @@ class SpeechPreparationRequest:
             or not self.semantic_verification_policy.accepts(self.semantic_skip_proof)
         ):
             raise ValueError("verifier skip proofのpolicy bindingが不正です")
-        preconditions = tuple(self.required_preconditions)
-        if any(not isinstance(item, str) or not item.strip() for item in preconditions):
-            raise ValueError("required_preconditions が不正です")
-        if len(preconditions) != len(set(preconditions)):
-            raise ValueError("required_preconditions は一意です")
-        object.__setattr__(self, "required_preconditions", preconditions)
         require_aware(self.created_at, "created_at")
 
 
@@ -239,6 +255,20 @@ class SemanticVerificationRequirementPolicy:
 
     def accepts(self, proof: SemanticVerificationSkipProof) -> bool:
         return proof in self.closed_skip_proofs
+
+    def decision_for(
+        self, current_closed_conditions: tuple[str, ...]
+    ) -> SemanticVerificationSkipProof | None:
+        """現在requestのbounded closed conditionsからskip decisionを一意に導出する。"""
+        current = frozenset(current_closed_conditions)
+        matches = tuple(
+            proof
+            for proof in self.closed_skip_proofs
+            if frozenset(proof.closed_conditions).issubset(current)
+        )
+        if len(matches) == 1:
+            return matches[0]
+        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -363,14 +393,34 @@ class PreparedSpeechCandidate:
         if self.turn_id is not None:
             require_identifier(self.turn_id, "turn_id")
         require_revision(self.focus_revision, "focus_revision", optional=True)
-        if (
+        preconditions = tuple(self.required_preconditions)
+        if any(not isinstance(item, str) or not item.strip() for item in preconditions):
+            raise ValueError("required_preconditions が不正です")
+        if len(preconditions) != len(set(preconditions)):
+            raise ValueError("required_preconditions は一意です")
+        object.__setattr__(self, "required_preconditions", preconditions)
+        if self.semantic_verification_policy is not None:
+            decision = self.semantic_verification_policy.decision_for(
+                self.required_preconditions
+            )
+            if decision is None:
+                if self.semantic_requirement is not SemanticVerificationRequirement.REQUIRED:
+                    raise ValueError("current closed conditionsではverifier skipを選べません")
+                if self.semantic_skip_proof is not None:
+                    raise ValueError("REQUIRED verifierにskip proofは指定できません")
+            elif (
+                self.semantic_requirement
+                is not SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
+                or self.semantic_skip_proof != decision
+            ):
+                raise ValueError(
+                    "verifier skip decisionはcurrent closed conditionsから導出されます"
+                )
+        elif (
             self.semantic_requirement
             is SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
         ):
-            if self.semantic_skip_proof is None:
-                raise ValueError("verifier skipにはclosed policy proofが必要です")
-        elif self.semantic_skip_proof is not None:
-            raise ValueError("REQUIRED verifierにskip proofは指定できません")
+            raise ValueError("verifier skipにはclosed policy authorityが必要です")
         if self.semantic_skip_proof is not None and not isinstance(
             self.semantic_skip_proof, SemanticVerificationSkipProof
         ):

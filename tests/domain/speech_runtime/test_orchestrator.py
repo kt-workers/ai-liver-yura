@@ -181,3 +181,34 @@ async def test_background_burst_cannot_fan_out_after_fast_character_completion()
     orchestrator.complete_preparation("background-0", 1)
     await asyncio.sleep(0)
     assert admission.active_count == 0
+
+
+@pytest.mark.asyncio
+async def test_admission_lease_cannot_release_while_downstream_roles_are_pending() -> None:
+    admission = SpeechPreparationAdmission(SpeechPreparationAdmissionPolicy(1, 1, 2))
+    tasks = CandidateTaskRegistry()
+    orchestrator = SpeechPreparationOrchestrator(tasks, admission)
+    release = asyncio.Event()
+
+    async def character() -> object:
+        return object()
+
+    async def blocked() -> object:
+        await release.wait()
+        return object()
+
+    first = orchestrator.start_preparation("first", 1, LLMPriority.BACKGROUND, character)
+    assert first is not None
+    await first
+    verifier, performance = orchestrator.fan_out_after_character("first", 1, blocked, blocked)
+    with pytest.raises(ValueError, match="未完了Role"):
+        orchestrator.complete_preparation("first", 1)
+    assert orchestrator.start_preparation("second", 1, LLMPriority.BACKGROUND, character) is None
+    release.set()
+    await asyncio.gather(verifier, performance)
+    orchestrator.complete_preparation("first", 1)
+    await asyncio.sleep(0)
+    second = orchestrator.start_preparation("second", 1, LLMPriority.BACKGROUND, character)
+    assert second is not None
+    await second
+    orchestrator.complete_preparation("second", 1)

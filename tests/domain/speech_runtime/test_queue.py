@@ -84,6 +84,44 @@ class _BlockingDiscardOwner(_DiscardOwner):
         await super().discard(request)
 
 
+class _PostCheckGenerationRaceRuntime(SpeechRuntime):
+    """queueの外部generation確認後、runtime mutation直前にG2を作る。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.inject_race = False
+
+    async def complete_revalidation(
+        self,
+        candidate_id: str,
+        expected_generation: int,
+        passed: bool,
+        failure: CandidateLifecycle | None = None,
+    ) -> PreparedSpeechCandidate | None:
+        if self.inject_race:
+            self.inject_race = False
+            await self.supersede_generation(candidate_id)
+            await self.commit_generation_result(
+                candidate_id,
+                2,
+                readiness=SpeechComponentReadiness(
+                    SpeechReadinessState.READY,
+                    SpeechReadinessState.READY,
+                    VerifierReadinessState.ACCEPTED,
+                    SpeechReadinessState.READY,
+                    AudioReadinessState.NOT_REQUESTED,
+                ),
+                utterance_id="utterance-g2",
+                performance_plan_id="performance-g2",
+                semantic_acceptance_id="acceptance-g2",
+            )
+            await self.queue_for_generation(candidate_id, 2)
+            await self.begin_revalidation(candidate_id)
+        return await super().complete_revalidation(
+            candidate_id, expected_generation, passed, failure
+        )
+
+
 def _coordinator(
     runtime: SpeechRuntime, queue: PreparedSpeechQueue, owner: _DiscardOwner | None = None
 ) -> PreparedSpeechQueueCoordinator:
@@ -272,6 +310,22 @@ async def test_old_revalidation_failure_cannot_terminalize_new_generation_after_
     assert current.prepared_audio_ref == "audio-g2"
     assert "audio-g1" not in owner.refs
     assert "audio-g2" in owner.refs
+
+
+@pytest.mark.asyncio
+async def test_post_check_generation_race_cannot_mutate_new_revalidation_generation() -> None:
+    runtime = _PostCheckGenerationRaceRuntime()
+    await runtime.register(_prepared("candidate", LLMPriority.FOREGROUND))
+    coordinator = _coordinator(runtime, PreparedSpeechQueue(2))
+    assert await coordinator.enqueue_current("candidate", 1, foreground=True)
+    assert (await coordinator.pop_for_revalidation()) is not None
+    runtime.inject_race = True
+    with pytest.raises(ValueError, match="generation"):
+        await coordinator.complete_revalidation("candidate", passed=True)
+    current = await runtime.candidate("candidate")
+    assert runtime.generation("candidate") == 2
+    assert current.lifecycle is CandidateLifecycle.REVALIDATING
+    assert current.utterance_id == "utterance-g2"
 
 
 @pytest.mark.asyncio

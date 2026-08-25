@@ -240,9 +240,15 @@ class SpeechRuntime:
             return updated
 
     async def complete_revalidation(
-        self, candidate_id: str, passed: bool, failure: CandidateLifecycle | None = None
-    ) -> PreparedSpeechCandidate:
+        self,
+        candidate_id: str,
+        expected_generation: int,
+        passed: bool,
+        failure: CandidateLifecycle | None = None,
+    ) -> PreparedSpeechCandidate | None:
         async with self._lock:
+            if self._generations.get(candidate_id) != expected_generation:
+                return None
             candidate = self._active(candidate_id)
             if candidate.lifecycle is not CandidateLifecycle.REVALIDATING:
                 raise ValueError("revalidation中のcandidateが必要です")
