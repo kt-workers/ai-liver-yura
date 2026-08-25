@@ -73,6 +73,40 @@ Checkpointには最低限、次を記録する。
 
 修正可能である限りfix / test / review loopを継続する。
 
+### 外部canonical review待ち
+
+`independent canonical review pending` は Human Intervention ではなく、
+`PAUSED_FOR_INTERVENTION` / Mission STOP条件として扱わない。
+
+current Workだけを `REVIEW_PENDING` として記録し、Mission stateは `ACTIVE` を維持する。
+
+同一exact HEADについては次を厳守する。
+
+- independent canonical reviewの依頼・要求は1回だけ行う
+- review到着確認のためにsleep / retry / pollingを繰り返さない
+- 同じHEADへ重複review依頼を投稿しない
+- 新しいHEADが作られた場合だけ、新HEADに対するreview依頼を新規に行える
+
+review待ち中に、そのWorkへ依存しないdependency-ready Workが存在する場合は、
+GitHub live dependency graphを確認し、fresh Resume Gateを通してそちらを進める。
+review待ちのlineageへ無関係な変更を混ぜてはならない。
+
+進められる独立Workが存在しない場合は、その実行runを安全に終了してよいが、
+MissionをHuman Intervention待ちへ変更しない。
+
+pending reviewを再確認してよいのは、原則として次の場合だけとする。
+
+- reviewerから新しいreview / notificationが到着した
+- 別の有用なWorkが完了した
+- dependency判断上、そのreview結果が必要になった
+- ユーザーが明示的に状態確認を依頼した
+
+reviewがHOLDの場合は通常のfix / test / new-head review loopへ戻る。
+blocking 0の場合はReady / merge / trunk verification / Work Completionへ進む。
+
+reviewerは、同一exact HEADについて確認可能なblocking findingを可能な限り一度のreviewへまとめ、
+既に確認可能だった指摘を細切れに後出しして不要なreview cycleを増やさない。
+
 ### MissionとWorkの関係
 
 Autonomous Completion Missionは個別Work Issueより上位の継続目標である。
