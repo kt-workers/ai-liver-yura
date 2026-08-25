@@ -26,6 +26,15 @@ from app.domain.llm import (
     StructuredPayload,
 )
 
+from .operational_diagnostics import (
+    LLMProviderOperationalDiagnostic,
+    LLMProviderOperationalDiagnosticPublicationPolicy,
+    LLMProviderOperationalDiagnosticPublisher,
+    LLMProviderOperationalDiagnosticSink,
+    LLMProviderOperationalFailureCategory,
+    LLMProviderSanitizedDetailCode,
+)
+
 
 class ResponsesClient(Protocol):
     async def create(self, **kwargs: object) -> object: ...
@@ -103,6 +112,10 @@ class OpenAIResponsesRoleConfig:
 class _ProviderFailureClassification:
     code: LLMFailureCode
     retryable: bool
+    category: LLMProviderOperationalFailureCategory
+    http_status: int | None
+    provider_request_id: str | None
+    sanitized_detail_code: LLMProviderSanitizedDetailCode
 
 
 class OpenAIResponsesAdapter:
@@ -114,6 +127,10 @@ class OpenAIResponsesAdapter:
         role_configs: tuple[OpenAIResponsesRoleConfig, ...],
         *,
         now: Callable[[], datetime] | None = None,
+        diagnostic_sink: LLMProviderOperationalDiagnosticSink | None = None,
+        diagnostic_publication_policy: LLMProviderOperationalDiagnosticPublicationPolicy
+        | None = None,
+        is_shutdown: Callable[[], bool] | None = None,
     ) -> None:
         configs = {config.role_id: config for config in role_configs}
         if len(configs) != len(role_configs):
@@ -124,6 +141,13 @@ class OpenAIResponsesAdapter:
         self._client = client
         self._role_configs = configs
         self._now = now or (lambda: datetime.now(timezone.utc))
+        self._diagnostics = LLMProviderOperationalDiagnosticPublisher(
+            diagnostic_sink,
+            diagnostic_publication_policy
+            or LLMProviderOperationalDiagnosticPublicationPolicy(),
+            now=self._now,
+        )
+        self._is_shutdown = is_shutdown or (lambda: False)
 
     @classmethod
     def from_environment(
@@ -160,10 +184,19 @@ class OpenAIResponsesAdapter:
                 0,
                 started_at,
             )
+        if self._is_shutdown():
+            return await self._cancelled(request, config, provider_policy, 0, started_at)
         for attempt in range(1, request.execution_policy.max_attempts + 1):
             timeout = self._remaining_timeout(request)
             if timeout <= 0:
-                return self._timed_out(request, attempt - 1, started_at)
+                return await self._timed_out(
+                    request,
+                    config,
+                    provider_policy,
+                    attempt - 1,
+                    started_at,
+                    LLMProviderSanitizedDetailCode.CLIENT_DEADLINE_EXCEEDED,
+                )
             try:
                 response = await asyncio.wait_for(
                     self._client.create(
@@ -187,19 +220,17 @@ class OpenAIResponsesAdapter:
                     started_at=started_at,
                 )
             except asyncio.TimeoutError:
-                return self._timed_out(request, attempt, started_at)
-            except asyncio.CancelledError:
-                return LLMRoleResult(
-                    request.request_id, request.role_id, LLMRoleStatus.CANCELLED, request.revisions,
-                    self._now(),
-                    request.trace_id,
-                    request.execution_policy.model_class,
+                return await self._timed_out(
+                    request,
+                    config,
+                    provider_policy,
                     attempt,
-                    LLMTokenUsage(0, 0),
-                    failure=LLMRoleFailure(
-                        LLMFailureCode.CANCELLED, "Provider呼出は取り消されました"
-                    ),
-                    started_at=started_at,
+                    started_at,
+                    LLMProviderSanitizedDetailCode.CLIENT_TIMEOUT,
+                )
+            except asyncio.CancelledError:
+                return await self._cancelled(
+                    request, config, provider_policy, attempt, started_at
                 )
             except (ValidationError, ValueError):
                 return self._failure(
@@ -211,12 +242,24 @@ class OpenAIResponsesAdapter:
                 )
             except Exception as error:
                 classification = self._classify_provider_failure(error)
-                if (
-                    classification.retryable
-                    and request.execution_policy.max_attempts > attempt
-                    and request.execution_policy.max_attempts > 1
-                    and self._retry_allowed(config)
-                ):
+                if self._is_shutdown():
+                    return await self._cancelled(
+                        request, config, provider_policy, attempt, started_at
+                    )
+                if self._remaining_timeout(request) <= 0:
+                    return await self._timed_out(
+                        request,
+                        config,
+                        provider_policy,
+                        attempt,
+                        started_at,
+                        LLMProviderSanitizedDetailCode.CLIENT_DEADLINE_EXCEEDED,
+                    )
+                retryable = self._retry_allowed(request, config, classification, attempt)
+                self._publish_diagnostic(
+                    request, config, provider_policy, classification, attempt, retryable
+                )
+                if retryable:
                     continue
                 return self._failure(
                     request,
@@ -224,7 +267,7 @@ class OpenAIResponsesAdapter:
                     "Provider呼出に失敗しました",
                     attempt,
                     started_at,
-                    retryable=classification.retryable,
+                    retryable=retryable,
                 )
         raise AssertionError("到達不能なretry状態です")
 
@@ -273,23 +316,145 @@ class OpenAIResponsesAdapter:
             timeout = min(timeout, (request.deadline_at - self._now()).total_seconds())
         return timeout
 
-    @staticmethod
-    def _retry_allowed(config: OpenAIResponsesRoleConfig) -> bool:
-        return config.failure_policy is LLMFailurePolicy.RETRY_BOUNDED
+    def _retry_allowed(
+        self,
+        request: LLMRoleRequest,
+        config: OpenAIResponsesRoleConfig,
+        classification: _ProviderFailureClassification,
+        attempt: int,
+    ) -> bool:
+        return (
+            classification.retryable
+            and config.failure_policy is LLMFailurePolicy.RETRY_BOUNDED
+            and attempt < request.execution_policy.max_attempts
+            and self._remaining_timeout(request) > 0
+            and not self._is_shutdown()
+        )
 
     @staticmethod
     def _classify_provider_failure(error: Exception) -> _ProviderFailureClassification:
         if isinstance(error, (APIConnectionError, APITimeoutError)):
-            return _ProviderFailureClassification(LLMFailureCode.PROVIDER_UNAVAILABLE, True)
+            if isinstance(error, APITimeoutError):
+                return _ProviderFailureClassification(
+                    LLMFailureCode.PROVIDER_UNAVAILABLE,
+                    True,
+                    LLMProviderOperationalFailureCategory.REQUEST_TIMEOUT,
+                    None,
+                    None,
+                    LLMProviderSanitizedDetailCode.SDK_TIMEOUT,
+                )
+            return _ProviderFailureClassification(
+                LLMFailureCode.PROVIDER_UNAVAILABLE,
+                True,
+                LLMProviderOperationalFailureCategory.TRANSPORT_UNAVAILABLE,
+                None,
+                None,
+                LLMProviderSanitizedDetailCode.SDK_CONNECTION,
+            )
         if isinstance(error, APIStatusError):
             status_code = error.status_code
-            if status_code == 408 or status_code == 429 or 500 <= status_code <= 599:
-                return _ProviderFailureClassification(LLMFailureCode.PROVIDER_UNAVAILABLE, True)
-        return _ProviderFailureClassification(LLMFailureCode.PROVIDER_ERROR, False)
+            provider_request_id = _safe_provider_request_id(error)
+            if status_code == 408:
+                return _ProviderFailureClassification(
+                    LLMFailureCode.PROVIDER_UNAVAILABLE,
+                    True,
+                    LLMProviderOperationalFailureCategory.REQUEST_TIMEOUT,
+                    status_code,
+                    provider_request_id,
+                    LLMProviderSanitizedDetailCode.HTTP_408,
+                )
+            if status_code == 429:
+                safe_code = _safe_provider_code(error)
+                if safe_code in {"rate_limit_exceeded", "rate_limit"}:
+                    return _ProviderFailureClassification(
+                        LLMFailureCode.PROVIDER_UNAVAILABLE,
+                        True,
+                        LLMProviderOperationalFailureCategory.RATE_LIMITED_TRANSIENT,
+                        status_code,
+                        provider_request_id,
+                        LLMProviderSanitizedDetailCode.HTTP_429_TRANSIENT,
+                    )
+                if safe_code in {"insufficient_quota", "billing_hard_limit_reached"}:
+                    return _ProviderFailureClassification(
+                        LLMFailureCode.PROVIDER_UNAVAILABLE,
+                        False,
+                        LLMProviderOperationalFailureCategory.QUOTA_OR_BILLING_EXHAUSTED,
+                        status_code,
+                        provider_request_id,
+                        LLMProviderSanitizedDetailCode.HTTP_429_QUOTA_OR_BILLING,
+                    )
+                return _ProviderFailureClassification(
+                    LLMFailureCode.PROVIDER_UNAVAILABLE,
+                    False,
+                    LLMProviderOperationalFailureCategory.RATE_LIMITED_TRANSIENT,
+                    status_code,
+                    provider_request_id,
+                    LLMProviderSanitizedDetailCode.HTTP_429_UNCLASSIFIED,
+                )
+            if 500 <= status_code <= 599:
+                return _ProviderFailureClassification(
+                    LLMFailureCode.PROVIDER_UNAVAILABLE,
+                    True,
+                    LLMProviderOperationalFailureCategory.PROVIDER_SERVER_ERROR,
+                    status_code,
+                    provider_request_id,
+                    LLMProviderSanitizedDetailCode.HTTP_5XX,
+                )
+            if status_code == 401:
+                return _ProviderFailureClassification(
+                    LLMFailureCode.PROVIDER_ERROR,
+                    False,
+                    LLMProviderOperationalFailureCategory.AUTHENTICATION_OR_PERMISSION_FAILED,
+                    status_code,
+                    provider_request_id,
+                    LLMProviderSanitizedDetailCode.HTTP_AUTHENTICATION,
+                )
+            if status_code == 403:
+                return _ProviderFailureClassification(
+                    LLMFailureCode.PROVIDER_ERROR,
+                    False,
+                    LLMProviderOperationalFailureCategory.AUTHENTICATION_OR_PERMISSION_FAILED,
+                    status_code,
+                    provider_request_id,
+                    LLMProviderSanitizedDetailCode.HTTP_PERMISSION,
+                )
+            return _ProviderFailureClassification(
+                LLMFailureCode.PROVIDER_ERROR,
+                False,
+                LLMProviderOperationalFailureCategory.PROVIDER_REQUEST_REJECTED,
+                status_code,
+                provider_request_id,
+                LLMProviderSanitizedDetailCode.HTTP_REQUEST_REJECTED,
+            )
+        return _ProviderFailureClassification(
+            LLMFailureCode.PROVIDER_ERROR,
+            False,
+            LLMProviderOperationalFailureCategory.UNKNOWN_PROVIDER_FAILURE,
+            None,
+            None,
+            LLMProviderSanitizedDetailCode.UNKNOWN,
+        )
 
-    def _timed_out(
-        self, request: LLMRoleRequest, attempts: int, started_at: datetime
+    async def _timed_out(
+        self,
+        request: LLMRoleRequest,
+        config: OpenAIResponsesRoleConfig,
+        provider_policy: OpenAIResponsesModelPolicy,
+        attempts: int,
+        started_at: datetime,
+        detail_code: LLMProviderSanitizedDetailCode,
     ) -> LLMRoleResult:
+        classification = _ProviderFailureClassification(
+            LLMFailureCode.TIMEOUT,
+            False,
+            LLMProviderOperationalFailureCategory.REQUEST_TIMEOUT,
+            None,
+            None,
+            detail_code,
+        )
+        self._publish_diagnostic(
+            request, config, provider_policy, classification, attempts, False
+        )
         return LLMRoleResult(
             request.request_id,
             request.role_id,
@@ -302,6 +467,65 @@ class OpenAIResponsesAdapter:
             LLMTokenUsage(0, 0),
             failure=LLMRoleFailure(LLMFailureCode.TIMEOUT, "Provider呼出がtimeoutしました"),
             started_at=started_at,
+        )
+
+    async def _cancelled(
+        self,
+        request: LLMRoleRequest,
+        config: OpenAIResponsesRoleConfig,
+        provider_policy: OpenAIResponsesModelPolicy,
+        attempts: int,
+        started_at: datetime,
+    ) -> LLMRoleResult:
+        classification = _ProviderFailureClassification(
+            LLMFailureCode.CANCELLED,
+            False,
+            LLMProviderOperationalFailureCategory.CANCELLED,
+            None,
+            None,
+            LLMProviderSanitizedDetailCode.CANCELLED_BY_CALLER,
+        )
+        self._publish_diagnostic(
+            request, config, provider_policy, classification, attempts, False
+        )
+        return LLMRoleResult(
+            request.request_id,
+            request.role_id,
+            LLMRoleStatus.CANCELLED,
+            request.revisions,
+            self._now(),
+            request.trace_id,
+            request.execution_policy.model_class,
+            attempts,
+            LLMTokenUsage(0, 0),
+            failure=LLMRoleFailure(LLMFailureCode.CANCELLED, "Provider呼出は取り消されました"),
+            started_at=started_at,
+        )
+
+    def _publish_diagnostic(
+        self,
+        request: LLMRoleRequest,
+        config: OpenAIResponsesRoleConfig,
+        provider_policy: OpenAIResponsesModelPolicy,
+        classification: _ProviderFailureClassification,
+        attempt: int,
+        retryable: bool,
+    ) -> None:
+        self._diagnostics.publish(
+            LLMProviderOperationalDiagnostic(
+                f"llm-diagnostic:{request.request_id}:{attempt}:{classification.category.value}",
+                request.request_id,
+                request.role_id,
+                "openai_responses",
+                provider_policy.model,
+                classification.category,
+                classification.http_status,
+                classification.provider_request_id,
+                attempt,
+                retryable,
+                self._now(),
+                classification.sanitized_detail_code,
+            )
         )
 
     def _failure(
@@ -332,3 +556,25 @@ class OpenAIResponsesAdapter:
         if type(output_tokens) is not int or output_tokens < 0:
             output_tokens = 0
         return LLMTokenUsage(input_tokens, output_tokens)
+
+
+_SAFE_PROVIDER_REQUEST_ID = re.compile(r"[A-Za-z0-9._:-]{1,256}")
+_SAFE_PROVIDER_CODES = frozenset(
+    {"rate_limit_exceeded", "rate_limit", "insufficient_quota", "billing_hard_limit_reached"}
+)
+
+
+def _safe_provider_code(error: APIStatusError) -> str | None:
+    value = getattr(error, "code", None)
+    if not isinstance(value, str) or value not in _SAFE_PROVIDER_CODES:
+        return None
+    return value
+
+
+def _safe_provider_request_id(error: APIStatusError) -> str | None:
+    response = getattr(error, "response", None)
+    headers = getattr(response, "headers", None)
+    value = None if headers is None else headers.get("x-request-id")
+    if not isinstance(value, str) or _SAFE_PROVIDER_REQUEST_ID.fullmatch(value) is None:
+        return None
+    return value
