@@ -151,6 +151,32 @@ def test_provider_unavailable_and_post_execution_generation_drift_fail_closed() 
     asyncio.run(scenario())
 
 
+def test_shutdown_cancels_and_awaits_inflight_provider_execution() -> None:
+    class BlockingProvider(Provider):
+        def __init__(self) -> None:
+            super().__init__(delay=True)
+            self.started = asyncio.Event()
+
+        async def execute(self, value: StreamingExecutionRequest) -> StreamingExecutionReport:
+            self.calls.append(value)
+            self.started.set()
+            await asyncio.Event().wait()
+            raise AssertionError("cancelled provider execution must not complete")
+
+    async def scenario() -> None:
+        provider = BlockingProvider()
+        runtime = StreamingSubsystemRuntime(provider, capability(), clock=lambda: NOW)
+        execution = asyncio.create_task(runtime.execute(request()))
+        await provider.started.wait()
+        await runtime.shutdown()
+        result = await execution
+        assert result.status is StreamingExecutionStatus.CANCELLED
+        assert result.effect_state is StreamingEffectState.AMBIGUOUS
+        assert runtime.pending_task_count == 0
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize(
     ("status", "effect"),
     (
@@ -250,6 +276,57 @@ def test_stale_provider_observation_is_rejected_but_user_needs_no_provider_gener
     )
 
 
+def test_old_same_generation_provider_observation_cannot_reconcile_newer_user_report() -> None:
+    runtime = StreamingSubsystemRuntime(Provider(), capability(), clock=lambda: NOW)
+    user = StreamingExternalObservation(
+        "observation:user-newer",
+        StreamingExternalState.LIVE,
+        StreamingObservationSourceKind.USER_REPORT,
+        "stream:1",
+        NOW + timedelta(minutes=2),
+        0.5,
+        None,
+    )
+    older = StreamingExternalObservation(
+        "observation:provider-older",
+        StreamingExternalState.READY,
+        StreamingObservationSourceKind.PROVIDER_OBSERVATION,
+        "stream:1",
+        NOW + timedelta(minutes=1),
+        1,
+        3,
+    )
+    newer = StreamingExternalObservation(
+        "observation:provider-newer",
+        StreamingExternalState.LIVE,
+        StreamingObservationSourceKind.PROVIDER_OBSERVATION,
+        "stream:1",
+        NOW + timedelta(minutes=3),
+        1,
+        3,
+    )
+    delayed_older = StreamingExternalObservation(
+        "observation:provider-delayed-older",
+        StreamingExternalState.READY,
+        StreamingObservationSourceKind.PROVIDER_OBSERVATION,
+        "stream:1",
+        NOW + timedelta(minutes=2),
+        1,
+        3,
+    )
+
+    assert runtime.accept_observation(user)
+    assert runtime.accept_observation(older)
+    assert runtime.observation_history(
+        StreamingObservationSourceKind.USER_REPORT, "stream:1"
+    )[0].reconciliation is StreamingObservationReconciliation.UNRECONCILED
+    assert runtime.accept_observation(newer)
+    assert not runtime.accept_observation(delayed_older)
+    assert runtime.observation_history(
+        StreamingObservationSourceKind.USER_REPORT, "stream:1"
+    )[0].reconciliation is StreamingObservationReconciliation.CONFIRMED
+
+
 def comment(event_id: str) -> StreamingCommentEvent:
     return StreamingCommentEvent(event_id, "channel:1", "こんにちは\u0000", NOW, "author:1")
 
@@ -315,7 +392,7 @@ def test_slow_moderation_does_not_block_comment_ingestion_or_execution() -> None
     asyncio.run(scenario())
 
 
-def test_reconnect_is_bounded_and_streaming_absence_does_not_block_core() -> None:
+def test_reconnect_requires_a_fresh_capability_snapshot_before_execution_resumes() -> None:
     class ReconnectingProvider(Provider):
         def __init__(self) -> None:
             super().__init__()
@@ -332,11 +409,17 @@ def test_reconnect_is_bounded_and_streaming_absence_does_not_block_core() -> Non
         )
         absent = await runtime.execute(request())
         assert absent.status is StreamingExecutionStatus.PROVIDER_UNAVAILABLE
-        runtime.update_capability(capability())
         assert runtime.start_reconnect()
         await asyncio.sleep(0)
         await asyncio.sleep(0)
-        assert runtime.lifecycle is StreamingSubsystemLifecycle.AVAILABLE
+        assert runtime.lifecycle is StreamingSubsystemLifecycle.DEGRADED
+        still_unavailable = await runtime.execute(request())
+        assert still_unavailable.status is StreamingExecutionStatus.PROVIDER_UNAVAILABLE
+        runtime.update_capability(capability(generation=2))
+        resumed = await runtime.execute(request())
+        lifecycle = StreamingSubsystemLifecycle(runtime.lifecycle.value)
+        assert lifecycle is StreamingSubsystemLifecycle.AVAILABLE
+        assert resumed.status is StreamingExecutionStatus.SUCCEEDED
         await runtime.shutdown()
         assert runtime.pending_task_count == 0
 

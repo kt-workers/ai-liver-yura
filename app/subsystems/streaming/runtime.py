@@ -61,6 +61,7 @@ class StreamingSubsystemRuntime:
             tuple[StreamingObservationSourceKind, str], list[StreamingExternalObservation]
         ] = {}
         self._provider_generations: dict[str, int] = {}
+        self._provider_observed_at: dict[str, datetime] = {}
         self._comments: deque[StreamingCommentEvent] = deque(maxlen=comment_limit)
         self._comment_signals: dict[str, StreamingCommentSignal] = {}
         self._dropped_comments = 0
@@ -90,11 +91,15 @@ class StreamingSubsystemRuntime:
             )
         generation = self._capability.provider_generation
         try:
+            provider_task = cast(
+                asyncio.Task[StreamingExecutionReport],
+                self._track(asyncio.create_task(self._provider.execute(request))),
+            )
             if request.deadline_at is None:
-                report = await self._provider.execute(request)
+                report = await provider_task
             else:
                 remaining = (request.deadline_at - now).total_seconds()
-                report = await asyncio.wait_for(self._provider.execute(request), timeout=remaining)
+                report = await asyncio.wait_for(provider_task, timeout=remaining)
         except asyncio.TimeoutError:
             return self._report(
                 request,
@@ -147,12 +152,21 @@ class StreamingSubsystemRuntime:
         if observation.source_kind is StreamingObservationSourceKind.PROVIDER_OBSERVATION:
             assert observation.provider_generation is not None
             current_generation = self._provider_generations.get(observation.source_ref)
+            current_observed_at = self._provider_observed_at.get(observation.source_ref)
             if (
                 current_generation is not None
-                and observation.provider_generation < current_generation
+                and (
+                    observation.provider_generation < current_generation
+                    or (
+                        observation.provider_generation == current_generation
+                        and current_observed_at is not None
+                        and observation.observed_at <= current_observed_at
+                    )
+                )
             ):
                 return False
             self._provider_generations[observation.source_ref] = observation.provider_generation
+            self._provider_observed_at[observation.source_ref] = observation.observed_at
             observation = self._reconcile_user_reports(observation)
         key = (observation.source_kind, observation.source_ref)
         self._observations.setdefault(key, []).append(observation)
@@ -249,15 +263,27 @@ class StreamingSubsystemRuntime:
         if not user_history:
             return provider
         reconciled: list[StreamingExternalObservation] = []
+        reconciled_any = False
         for user in user_history:
+            if user.observed_at > provider.observed_at:
+                reconciled.append(user)
+                continue
             reconciliation = (
                 StreamingObservationReconciliation.CONFIRMED
                 if user.state is provider.state
                 else StreamingObservationReconciliation.CONTRADICTED
             )
             reconciled.append(replace(user, reconciliation=reconciliation))
+            reconciled_any = True
         self._observations[user_key] = reconciled
-        return replace(provider, reconciliation=StreamingObservationReconciliation.CONFIRMED)
+        return replace(
+            provider,
+            reconciliation=(
+                StreamingObservationReconciliation.CONFIRMED
+                if reconciled_any
+                else StreamingObservationReconciliation.UNRECONCILED
+            ),
+        )
 
     def _normalize_comment(self, comment: StreamingCommentEvent) -> StreamingCommentEvent:
         text = "".join(character for character in comment.text if character >= " ").strip()
@@ -300,7 +326,9 @@ class StreamingSubsystemRuntime:
                 return
             try:
                 if await reconnect():
-                    self._lifecycle = StreamingSubsystemLifecycle.AVAILABLE
+                    # reconnect成功はprovider capability/descriptor snapshotの再取得を意味しない。
+                    # 外部ownerがupdate_capability()で新snapshotを公開するまで実行を再開しない。
+                    self._lifecycle = StreamingSubsystemLifecycle.DEGRADED
                     return
             except RuntimeError:
                 pass
