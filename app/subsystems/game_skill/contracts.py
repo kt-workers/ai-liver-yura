@@ -35,6 +35,15 @@ class GameActionEffectState(str, Enum):
     FAILED = "failed"
 
 
+class GameActionExecutionStatus(str, Enum):
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    TIMED_OUT = "timed_out"
+    STALE = "stale"
+    UNKNOWN_EFFECT = "unknown_effect"
+
+
 class GameObservationCategory(str, Enum):
     SESSION_STATE_CHANGE = "session_state_change"
     SCORE_OR_RESULT_MILESTONE = "score_or_result_milestone"
@@ -145,6 +154,7 @@ class GameFrameAction:
 class GameActionReport:
     action_id: str
     session_id: str
+    status: GameActionExecutionStatus
     effect_state: GameActionEffectState
     applied_at: datetime | None
     game_state_revision_after: int | None
@@ -153,11 +163,41 @@ class GameActionReport:
     def __post_init__(self) -> None:
         require_identifier(self.action_id, "action_id")
         require_identifier(self.session_id, "session_id")
-        if not isinstance(self.effect_state, GameActionEffectState):
+        if not isinstance(self.status, GameActionExecutionStatus) or not isinstance(
+            self.effect_state, GameActionEffectState
+        ):
             raise ValueError("effect_state が不正です")
         if self.applied_at is not None:
             require_aware(self.applied_at, "applied_at")
         require_revision(self.game_state_revision_after, "game_state_revision_after", optional=True)
+        allowed_effects = {
+            GameActionExecutionStatus.SUCCEEDED: {GameActionEffectState.APPLIED},
+            GameActionExecutionStatus.FAILED: {
+                GameActionEffectState.NOT_APPLIED,
+                GameActionEffectState.AMBIGUOUS,
+                GameActionEffectState.FAILED,
+            },
+            GameActionExecutionStatus.CANCELLED: {
+                GameActionEffectState.NOT_APPLIED,
+                GameActionEffectState.AMBIGUOUS,
+            },
+            GameActionExecutionStatus.TIMED_OUT: {GameActionEffectState.AMBIGUOUS},
+            GameActionExecutionStatus.STALE: {
+                GameActionEffectState.APPLIED,
+                GameActionEffectState.AMBIGUOUS,
+            },
+            GameActionExecutionStatus.UNKNOWN_EFFECT: {GameActionEffectState.AMBIGUOUS},
+        }
+        if self.effect_state not in allowed_effects[self.status]:
+            raise ValueError("action report effect truth が不正です")
+        if self.effect_state is GameActionEffectState.APPLIED and (
+            self.applied_at is None or self.game_state_revision_after is None
+        ):
+            raise ValueError("applied action report が不正です")
+        if self.effect_state is GameActionEffectState.NOT_APPLIED and (
+            self.applied_at is not None or self.game_state_revision_after is not None
+        ):
+            raise ValueError("not applied action report が不正です")
         object.__setattr__(
             self,
             "sanitized_diagnostics",

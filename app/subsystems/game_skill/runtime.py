@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from typing import Protocol
 
 from app.domain.contracts.common import JsonValue
 from app.subsystems.game_skill.contracts import (
+    GameActionEffectState,
+    GameActionExecutionStatus,
     GameActionReport,
     GameFrameAction,
     GameObservationEvent,
@@ -43,6 +47,7 @@ class GameSkillRuntime:
         tactical_policy: GameTacticalPolicy,
         *,
         observation_limit: int = 32,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         if type(observation_limit) is not int or observation_limit < 1:
             raise ValueError("observation_limit が不正です")
@@ -51,6 +56,9 @@ class GameSkillRuntime:
         self._states: dict[str, GameSessionState] = {}
         self._observations: deque[GameObservationEvent] = deque(maxlen=observation_limit)
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._tick_locks: dict[str, asyncio.Lock] = {}
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._deadline_miss_count = 0
 
     def admit(self, intent: GameSessionIntent) -> GameSessionState:
         if intent.session_request_id in self._states:
@@ -64,6 +72,7 @@ class GameSkillRuntime:
             intent.high_level_strategy,
         )
         self._states[state.session_id] = state
+        self._tick_locks[state.session_id] = asyncio.Lock()
         return state
 
     def activate(self, session_id: str) -> GameSessionState:
@@ -117,32 +126,87 @@ class GameSkillRuntime:
         return updated
 
     async def tick(self, session_id: str) -> GameActionReport | None:
-        state = self._require(session_id)
-        if state.lifecycle is not GameSessionLifecycle.ACTIVE:
-            return None
-        action = await self._tactical_policy.select(state)
-        if action is None:
-            return None
-        current = self._require(session_id)
-        if (
-            action.session_id != session_id
-            or action.strategy_revision != current.strategy_revision
-            or action.game_state_revision != current.game_state_revision
-        ):
-            return None
-        report = await self._controller.apply(action)
-        if report.session_id != session_id or report.action_id != action.action_id:
-            raise ValueError("controller report identityが不正です")
-        if report.game_state_revision_after is not None:
-            self._states[session_id] = GameSessionState(
-                current.session_id,
-                current.intent,
-                current.lifecycle,
-                report.game_state_revision_after,
-                current.strategy_revision,
-                current.strategy_payload,
-            )
-        return report
+        async with self._tick_locks[session_id]:
+            state = self._require(session_id)
+            if state.lifecycle is not GameSessionLifecycle.ACTIVE:
+                return None
+            action = await self._tactical_policy.select(state)
+            if action is None:
+                return None
+            current = self._require(session_id)
+            if (
+                action.session_id != session_id
+                or action.strategy_revision != current.strategy_revision
+                or action.game_state_revision != current.game_state_revision
+            ):
+                return None
+            if action.deadline_at is not None and action.deadline_at <= self._now():
+                return self._report(
+                    action, GameActionExecutionStatus.FAILED, GameActionEffectState.NOT_APPLIED
+                )
+            try:
+                if action.deadline_at is None:
+                    report = await self._controller.apply(action)
+                else:
+                    report = await asyncio.wait_for(
+                        self._controller.apply(action),
+                        timeout=(action.deadline_at - self._now()).total_seconds(),
+                    )
+            except asyncio.TimeoutError:
+                self._deadline_miss_count += 1
+                return self._report(
+                    action, GameActionExecutionStatus.TIMED_OUT, GameActionEffectState.AMBIGUOUS
+                )
+            except asyncio.CancelledError:
+                return self._report(
+                    action, GameActionExecutionStatus.CANCELLED, GameActionEffectState.AMBIGUOUS
+                )
+            if report.session_id != session_id or report.action_id != action.action_id:
+                raise ValueError("controller report identityが不正です")
+            live = self._require(session_id)
+            if (
+                live.strategy_revision != current.strategy_revision
+                or live.lifecycle is not current.lifecycle
+            ):
+                return replace(
+                    report,
+                    status=GameActionExecutionStatus.STALE,
+                    sanitized_diagnostics=(
+                        report.sanitized_diagnostics + ("STALE_AFTER_CONTROLLER",)
+                    ),
+                )
+            if report.game_state_revision_after is not None:
+                self._states[session_id] = GameSessionState(
+                    live.session_id,
+                    live.intent,
+                    live.lifecycle,
+                    report.game_state_revision_after,
+                    live.strategy_revision,
+                    live.strategy_payload,
+                )
+            return report
+
+    def _report(
+        self,
+        action: GameFrameAction,
+        status: GameActionExecutionStatus,
+        effect_state: GameActionEffectState,
+    ) -> GameActionReport:
+        return GameActionReport(
+            action.action_id,
+            action.session_id,
+            status,
+            effect_state,
+            None,
+            None,
+            (status.value,),
+        )
+
+    def _now(self) -> datetime:
+        value = self._clock()
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("clock がaware datetimeを返しません")
+        return value
 
     def start_loop(self, session_id: str, *, interval_seconds: float) -> None:
         """game固有cadenceで動くlaneを開始する。CoreのturnやLLM待ちへ従属しない。"""
@@ -156,6 +220,8 @@ class GameSkillRuntime:
         )
 
     async def _run_loop(self, session_id: str, interval_seconds: float) -> None:
+        loop = asyncio.get_running_loop()
+        next_deadline = loop.time()
         try:
             while self._require(session_id).lifecycle in (
                 GameSessionLifecycle.ADMITTED,
@@ -164,10 +230,19 @@ class GameSkillRuntime:
             ):
                 if self._require(session_id).lifecycle is GameSessionLifecycle.ACTIVE:
                     try:
-                        await asyncio.wait_for(self.tick(session_id), timeout=interval_seconds)
+                        next_deadline += interval_seconds
+                        await asyncio.wait_for(
+                            self.tick(session_id), timeout=max(0.0, next_deadline - loop.time())
+                        )
                     except asyncio.TimeoutError:
-                        pass
-                await asyncio.sleep(interval_seconds)
+                        self._deadline_miss_count += 1
+                else:
+                    next_deadline = loop.time() + interval_seconds
+                remaining = next_deadline - loop.time()
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+                else:
+                    next_deadline = loop.time()
         except asyncio.CancelledError:
             raise
         finally:

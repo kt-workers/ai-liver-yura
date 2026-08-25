@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from app.domain.llm import LLMInterruptibility, LLMPriority
 from app.subsystems.game_skill.contracts import (
     GameActionEffectState,
+    GameActionExecutionStatus,
     GameActionReport,
     GameFrameAction,
     GameObservationCategory,
@@ -44,6 +45,7 @@ class Controller:
         return GameActionReport(
             action.action_id,
             action.session_id,
+            GameActionExecutionStatus.SUCCEEDED,
             GameActionEffectState.APPLIED,
             NOW,
             action.game_state_revision + 1,
@@ -118,6 +120,66 @@ def test_stale_tactical_action_is_discarded_before_controller_effect() -> None:
         runtime.activate("session:1")
         assert await runtime.tick("session:1") is None
         assert controller.calls == 0
+
+    asyncio.run(scenario())
+
+
+def test_strategy_update_during_controller_wait_keeps_new_strategy_and_marks_report_stale() -> None:
+    class WaitingController(Controller):
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def apply(self, action: GameFrameAction) -> GameActionReport:
+            self.started.set()
+            await self.release.wait()
+            return await super().apply(action)
+
+    async def scenario() -> None:
+        controller = WaitingController()
+        runtime = GameSkillRuntime(controller, Policy())
+        runtime.admit(intent())
+        runtime.activate("session:1")
+        pending = asyncio.create_task(runtime.tick("session:1"))
+        await controller.started.wait()
+        runtime.apply_strategy(
+            GameStrategyUpdate("strategy:2", "session:1", "goal:1", 3, 2, {}, "decision:2", NOW)
+        )
+        controller.release.set()
+        report = await pending
+        assert report is not None and report.status is GameActionExecutionStatus.STALE
+        assert runtime.snapshot("session:1").strategy_revision == 2
+        assert runtime.snapshot("session:1").game_state_revision == 0
+
+    asyncio.run(scenario())
+
+
+def test_action_deadline_timeout_keeps_effect_ambiguous() -> None:
+    class SlowController(Controller):
+        async def apply(self, action: GameFrameAction) -> GameActionReport:
+            await asyncio.Event().wait()
+            raise AssertionError("deadline must cancel controller await")
+
+    class DeadlinePolicy(Policy):
+        async def select(self, state: GameSessionState) -> GameFrameAction:
+            return GameFrameAction(
+                "action:deadline",
+                state.session_id,
+                state.game_state_revision,
+                state.strategy_revision,
+                "press",
+                {},
+                NOW,
+                NOW + timedelta(milliseconds=1),
+            )
+
+    async def scenario() -> None:
+        runtime = GameSkillRuntime(SlowController(), DeadlinePolicy(), clock=lambda: NOW)
+        runtime.admit(intent())
+        runtime.activate("session:1")
+        report = await runtime.tick("session:1")
+        assert report is not None and report.status is GameActionExecutionStatus.TIMED_OUT
+        assert report.effect_state is GameActionEffectState.AMBIGUOUS
 
     asyncio.run(scenario())
 
