@@ -35,7 +35,7 @@ class MemoryStoreAuthority:
 
     def write(self, request: MemoryWriteRequest) -> MemoryWriteResult:
         try:
-            records = self._repository.list_records()
+            records = self._repository.snapshot().records
         except RuntimeError:
             return MemoryWriteResult(
                 MemoryDisposition.REJECT,
@@ -67,7 +67,11 @@ class MemoryStoreAuthority:
                 and request.expected_revision != exact.revision
             ):
                 return MemoryWriteResult(MemoryDisposition.REJECT, None, None)
-            if candidate.provenance in exact.provenance:
+            if any(
+                self._provenance_identity(candidate.provenance)
+                == self._provenance_identity(provenance)
+                for provenance in exact.provenance
+            ):
                 return MemoryWriteResult(MemoryDisposition.NOOP_DUPLICATE, exact, None)
             merged = replace(
                 exact,
@@ -113,8 +117,6 @@ class MemoryStoreAuthority:
             candidate.created_at,
             candidate.created_at,
         )
-        if not self._repository.save_record(record, expected_revision=None):
-            return MemoryWriteResult(MemoryDisposition.REJECT, None, None)
         relation = MemoryRelation(
             f"relation:{target.memory_id}:{record.memory_id}:{relation_kind.value}",
             target.memory_id,
@@ -125,8 +127,7 @@ class MemoryStoreAuthority:
             or (candidate.candidate_id,),
             candidate.created_at,
         )
-        if not self._repository.save_relation(relation):
-            return MemoryWriteResult(MemoryDisposition.REJECT, None, None)
+        superseded: MemoryRecord | None = None
         if relation_kind is MemoryRelationKind.SUPERSEDES:
             superseded = replace(
                 target,
@@ -134,8 +135,14 @@ class MemoryStoreAuthority:
                 lifecycle=MemoryLifecycle.SUPERSEDED,
                 updated_at=candidate.created_at,
             )
-            if not self._repository.save_record(superseded, expected_revision=target.revision):
-                return MemoryWriteResult(MemoryDisposition.REJECT, None, None)
+        if not self._repository.commit_related(
+            record,
+            relation,
+            target_update=superseded,
+            expected_target_revision=target.revision if superseded is not None else None,
+        ):
+            return MemoryWriteResult(MemoryDisposition.REJECT, None, None)
+        if superseded is not None:
             return self._indexed(MemoryDisposition.SUPERSEDE, record, relation)
         disposition = (
             MemoryDisposition.LINK_CONTRADICTION
@@ -146,8 +153,7 @@ class MemoryStoreAuthority:
 
     def retrieve(self, query: MemoryRetrievalQuery) -> MemoryEvidenceView:
         try:
-            records = self._repository.list_records()
-            relations = self._repository.list_relations()
+            snapshot = self._repository.snapshot()
         except RuntimeError:
             return MemoryEvidenceView(
                 query.query_id,
@@ -158,7 +164,7 @@ class MemoryStoreAuthority:
                 (MemoryDegradationReason.REPOSITORY_UNAVAILABLE,),
             )
         conflicting: dict[str, tuple[str, ...]] = {}
-        for relation in relations:
+        for relation in snapshot.relations:
             if relation.kind is MemoryRelationKind.CONTRADICTS:
                 conflicting[relation.left_memory_id] = conflicting.get(
                     relation.left_memory_id, ()
@@ -166,8 +172,16 @@ class MemoryStoreAuthority:
                 conflicting[relation.right_memory_id] = conflicting.get(
                     relation.right_memory_id, ()
                 ) + (relation.left_memory_id,)
-        filtered = [record for record in records if self._matches(record, query, conflicting)]
-        ranked = sorted(filtered, key=lambda record: (-self._score(record), record.memory_id))
+        related_ids, reasons = self._semantic_related_ids(query)
+        filtered = [
+            record
+            for record in snapshot.records
+            if self._matches(record, query, conflicting)
+        ]
+        ranked = sorted(
+            filtered,
+            key=lambda record: (-self._score(record, related_ids), record.memory_id),
+        )
         items: list[MemoryEvidenceItem] = []
         tokens = 0
         truncated = False
@@ -187,11 +201,18 @@ class MemoryStoreAuthority:
                     record.lifecycle,
                     conflicting.get(record.memory_id, ()),
                     estimate,
-                    self._score(record),
+                    self._score(record, related_ids),
                 )
             )
             tokens += estimate
-        return MemoryEvidenceView(query.query_id, query.created_at, tuple(items), truncated, False)
+        return MemoryEvidenceView(
+            query.query_id,
+            query.created_at,
+            tuple(items),
+            truncated,
+            bool(reasons),
+            reasons,
+        )
 
     def _indexed(
         self, disposition: MemoryDisposition, record: MemoryRecord, relation: MemoryRelation | None
@@ -220,6 +241,35 @@ class MemoryStoreAuthority:
         return sha256(payload.encode()).hexdigest()
 
     @staticmethod
+    def _provenance_identity(provenance: object) -> tuple[object, ...]:
+        from app.domain.memory.contracts import MemoryProvenance
+
+        if not isinstance(provenance, MemoryProvenance):
+            raise ValueError("provenance が不正です")
+        return (
+            provenance.source_kind,
+            provenance.source_event_refs,
+            provenance.source_fact_refs,
+            provenance.source_memory_candidate_id,
+            provenance.observed_at,
+        )
+
+    def _semantic_related_ids(
+        self, query: MemoryRetrievalQuery
+    ) -> tuple[frozenset[str], tuple[MemoryDegradationReason, ...]]:
+        if query.semantic_query is None:
+            return frozenset(), ()
+        if self._semantic_index is None:
+            return frozenset(), (MemoryDegradationReason.SEMANTIC_INDEX_UNAVAILABLE,)
+        try:
+            related_ids = self._semantic_index.related_ids(
+                query.semantic_query, limit=query.max_items
+            )
+            return frozenset(related_ids), ()
+        except RuntimeError:
+            return frozenset(), (MemoryDegradationReason.SEMANTIC_INDEX_UNAVAILABLE,)
+
+    @staticmethod
     def _matches(
         record: MemoryRecord, query: MemoryRetrievalQuery, conflicts: dict[str, tuple[str, ...]]
     ) -> bool:
@@ -232,19 +282,29 @@ class MemoryStoreAuthority:
             and record.content.temporal_scope_ref != query.temporal_scope_ref
         ):
             return False
+        observed_at = record.temporal.observed_at
+        if query.observed_from is not None and (
+            observed_at is None or observed_at < query.observed_from
+        ):
+            return False
+        if query.observed_until is not None and (
+            observed_at is None or observed_at > query.observed_until
+        ):
+            return False
         if record.lifecycle is MemoryLifecycle.ARCHIVED:
             return False
         return query.include_conflicted or record.memory_id not in conflicts
 
     @staticmethod
-    def _score(record: MemoryRecord) -> float:
+    def _score(record: MemoryRecord, related_ids: frozenset[str] = frozenset()) -> float:
         freshness = {
             MemoryFreshnessState.FRESH: 0.2,
             MemoryFreshnessState.STALE: 0.1,
             MemoryFreshnessState.HISTORICAL: 0.0,
         }[record.temporal.freshness]
         lifecycle = 0.1 if record.lifecycle is MemoryLifecycle.ACTIVE else 0.0
-        return record.confidence.value + freshness + lifecycle
+        semantic_relevance = 0.3 if record.memory_id in related_ids else 0.0
+        return record.confidence.value + freshness + lifecycle + semantic_relevance
 
     @staticmethod
     def _estimate_tokens(content: MemoryContent) -> int:

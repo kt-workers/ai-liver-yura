@@ -363,6 +363,9 @@ class MemoryRetrievalQuery:
     memory_kinds: tuple[MemoryKind, ...] = ()
     subject_refs: tuple[str, ...] = ()
     temporal_scope_ref: str | None = None
+    observed_from: datetime | None = None
+    observed_until: datetime | None = None
+    semantic_query: str | None = None
     max_items: int = 8
     max_estimated_tokens: int = 512
     include_conflicted: bool = False
@@ -378,6 +381,23 @@ class MemoryRetrievalQuery:
         object.__setattr__(self, "subject_refs", _ids(self.subject_refs, "subject_refs"))
         if self.temporal_scope_ref is not None:
             require_identifier(self.temporal_scope_ref, "temporal_scope_ref")
+        for name in ("observed_from", "observed_until"):
+            value = getattr(self, name)
+            if value is not None:
+                require_aware(value, name)
+        if (
+            self.observed_from is not None
+            and self.observed_until is not None
+            and self.observed_from > self.observed_until
+        ):
+            raise ValueError("retrieval temporal range が不正です")
+        if self.semantic_query is not None:
+            if (
+                not isinstance(self.semantic_query, str)
+                or not self.semantic_query.strip()
+                or len(self.semantic_query) > 1_000
+            ):
+                raise ValueError("semantic_query が不正です")
         if (
             type(self.max_items) is not int
             or self.max_items < 1

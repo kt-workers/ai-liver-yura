@@ -10,6 +10,7 @@ from app.domain.memory.contracts import (
     MemoryKind,
     MemoryLifecycle,
     MemoryProvenance,
+    MemoryRecord,
     MemoryRelation,
     MemoryRelationKind,
     MemoryRetrievalQuery,
@@ -22,6 +23,7 @@ from app.domain.memory.contracts import (
 from app.domain.memory.repository import (
     InMemoryMemoryRepository,
     MemoryRepositoryPort,
+    MemoryRepositorySnapshot,
     MemorySemanticIndexPort,
 )
 
@@ -37,9 +39,11 @@ __all__ = [
     "MemoryKind",
     "MemoryLifecycle",
     "MemoryProvenance",
+    "MemoryRecord",
     "MemoryRelation",
     "MemoryRelationKind",
     "MemoryRepositoryPort",
+    "MemoryRepositorySnapshot",
     "MemoryRetrievalQuery",
     "MemorySemanticIndexPort",
     "MemorySourceKind",
