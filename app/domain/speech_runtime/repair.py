@@ -144,9 +144,13 @@ class SpeechSemanticRepairExecutor:
             else PreparedAudioDiscardReason.VERIFIER_FAILED
         )
         await self._discarder.discard_current(candidate_id, generation, discard_reason)
-        if not await self._runtime.is_current_generation(candidate_id, generation):
+        if (
+            await self._runtime.cancel(
+                candidate_id, terminal, expected_generation=generation
+            )
+            is None
+        ):
             return None
-        await self._runtime.cancel(candidate_id, terminal)
         return disposition
 
 

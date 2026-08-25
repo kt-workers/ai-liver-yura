@@ -17,10 +17,8 @@ class SpeechCandidateLifecycleExecutor:
         await self._discarder.discard_current(
             candidate_id, generation, PreparedAudioDiscardReason.PERFORMANCE_REBOUND
         )
-        if not await self._runtime.is_current_generation(candidate_id, generation):
-            return None
         return await self._runtime.rebind_performance_for_expression(
-            candidate_id, expression_revision
+            candidate_id, generation, expression_revision
         )
 
     async def terminate(
@@ -35,7 +33,9 @@ class SpeechCandidateLifecycleExecutor:
             raise ValueError("discard lifecycle が不正です")
         generation = self._runtime.generation(candidate_id)
         await self._discarder.discard_current(candidate_id, generation, reasons[lifecycle])
-        if not await self._runtime.is_current_generation(candidate_id, generation):
+        updated = await self._runtime.cancel(
+            candidate_id, lifecycle, expected_generation=generation
+        )
+        if updated is None:
             return None
-        await self._runtime.cancel(candidate_id, lifecycle)
         return lifecycle

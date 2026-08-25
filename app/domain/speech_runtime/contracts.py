@@ -122,6 +122,7 @@ class SpeechPreparationRequest:
     semantic_verification_policy_ref: str
     semantic_verification_policy_revision: int
     semantic_verification_policy: SemanticVerificationRequirementPolicy
+    semantic_verification_policy_context: SemanticVerificationPolicyContext
     presentation_policy_ref: str
     created_at: datetime
     trace_id: str
@@ -165,13 +166,28 @@ class SpeechPreparationRequest:
             != self.semantic_verification_policy_revision
         ):
             raise ValueError("semantic verification policyのbindingが不正です")
+        if not isinstance(
+            self.semantic_verification_policy_context, SemanticVerificationPolicyContext
+        ):
+            raise ValueError("semantic_verification_policy_context が不正です")
+        if (
+            self.semantic_verification_policy_context.source_decision_id
+            != self.source_decision_id
+            or self.semantic_verification_policy_context.source_context_revision
+            != self.source_context_revision
+            or self.semantic_verification_policy_context.attention_revision
+            != self.attention_revision
+        ):
+            raise ValueError("semantic verification policy contextのgeneration bindingが不正です")
         preconditions = tuple(self.required_preconditions)
         if any(not isinstance(item, str) or not item.strip() for item in preconditions):
             raise ValueError("required_preconditions が不正です")
         if len(preconditions) != len(set(preconditions)):
             raise ValueError("required_preconditions は一意です")
         object.__setattr__(self, "required_preconditions", preconditions)
-        decision = self.semantic_verification_policy.decision_for(self.required_preconditions)
+        decision = self.semantic_verification_policy.decision_for(
+            self.semantic_verification_policy_context
+        )
         object.__setattr__(
             self,
             "semantic_verification_requirement",
@@ -205,6 +221,29 @@ class SemanticVerificationSkipProof:
 
 
 @dataclass(frozen=True, slots=True)
+class SemanticVerificationPolicyContext:
+    """#348がtrusted runtime factsから得るclosed verifier-policy評価入力。"""
+
+    source_decision_id: str
+    source_context_revision: int
+    attention_revision: int | None
+    context_revision: int
+    closed_conditions: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        require_identifier(self.source_decision_id, "source_decision_id")
+        require_revision(self.source_context_revision, "source_context_revision")
+        require_revision(self.attention_revision, "attention_revision", optional=True)
+        require_revision(self.context_revision, "context_revision")
+        conditions = tuple(self.closed_conditions)
+        if any(not isinstance(item, str) or not item.strip() for item in conditions):
+            raise ValueError("closed_conditions が不正です")
+        if len(conditions) != len(set(conditions)):
+            raise ValueError("closed_conditions は一意です")
+        object.__setattr__(self, "closed_conditions", conditions)
+
+
+@dataclass(frozen=True, slots=True)
 class SemanticVerificationRequirementPolicy:
     """#348が所有するclosed verifier-skip decisionのimmutable authority。"""
 
@@ -233,10 +272,10 @@ class SemanticVerificationRequirementPolicy:
         return proof in self.closed_skip_proofs
 
     def decision_for(
-        self, current_closed_conditions: tuple[str, ...]
+        self, context: SemanticVerificationPolicyContext
     ) -> SemanticVerificationSkipProof | None:
         """現在requestのbounded closed conditionsからskip decisionを一意に導出する。"""
-        current = frozenset(current_closed_conditions)
+        current = frozenset(context.closed_conditions)
         matches = tuple(
             proof
             for proof in self.closed_skip_proofs
@@ -335,6 +374,7 @@ class PreparedSpeechCandidate:
     semantic_verification_policy_ref: str | None = None
     semantic_verification_policy_revision: int | None = None
     semantic_verification_policy: SemanticVerificationRequirementPolicy | None = None
+    semantic_verification_policy_context: SemanticVerificationPolicyContext | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -376,8 +416,23 @@ class PreparedSpeechCandidate:
             raise ValueError("required_preconditions は一意です")
         object.__setattr__(self, "required_preconditions", preconditions)
         if self.semantic_verification_policy is not None:
+            if not isinstance(
+                self.semantic_verification_policy_context, SemanticVerificationPolicyContext
+            ):
+                raise ValueError("semantic_verification_policy_context が不正です")
+            if (
+                self.semantic_verification_policy_context.source_decision_id
+                != self.source_decision_id
+                or self.semantic_verification_policy_context.source_context_revision
+                != self.source_context_revision
+                or self.semantic_verification_policy_context.attention_revision
+                != self.attention_revision
+            ):
+                raise ValueError(
+                    "semantic verification policy contextのgeneration bindingが不正です"
+                )
             decision = self.semantic_verification_policy.decision_for(
-                self.required_preconditions
+                self.semantic_verification_policy_context
             )
             if decision is None:
                 if self.semantic_requirement is not SemanticVerificationRequirement.REQUIRED:

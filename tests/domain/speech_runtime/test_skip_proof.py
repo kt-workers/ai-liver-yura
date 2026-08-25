@@ -10,6 +10,7 @@ from app.domain.speech_runtime.contracts import (
     AudioReadinessState,
     CandidateLifecycle,
     PreparedSpeechCandidate,
+    SemanticVerificationPolicyContext,
     SemanticVerificationRequirement,
     SemanticVerificationRequirementPolicy,
     SemanticVerificationSkipProof,
@@ -34,6 +35,10 @@ def _policy(
     )
 
 
+def _context(*, conditions: tuple[str, ...] = ("condition",)) -> SemanticVerificationPolicyContext:
+    return SemanticVerificationPolicyContext("decision", 1, None, 3, conditions)
+
+
 def _request(**changes: object) -> SpeechPreparationRequest:
     values: dict[str, object] = {
         "preparation_id": "preparation",
@@ -53,6 +58,7 @@ def _request(**changes: object) -> SpeechPreparationRequest:
         "created_at": datetime.now(timezone.utc),
         "trace_id": "trace",
         "semantic_verification_policy": _policy(),
+        "semantic_verification_policy_context": _context(),
     }
     values.update(changes)
     return SpeechPreparationRequest(**values)  # type: ignore[arg-type]
@@ -93,6 +99,7 @@ def _candidate(**changes: object) -> PreparedSpeechCandidate:
         "semantic_verification_policy_ref": "semantic-policy",
         "semantic_verification_policy_revision": 7,
         "semantic_verification_policy": _policy(),
+        "semantic_verification_policy_context": _context(),
     }
     values.update(changes)
     return PreparedSpeechCandidate(**values)  # type: ignore[arg-type]
@@ -139,9 +146,18 @@ def test_required_verifier_cannot_be_replaced_by_caller_supplied_skip_proof() ->
 def test_closed_policy_derives_skip_only_from_current_request_conditions() -> None:
     policy = _policy()
     required = _request(
-        required_preconditions=(),
+        semantic_verification_policy_context=_context(conditions=()),
         semantic_verification_policy=policy,
     )
     assert required.semantic_verification_requirement is SemanticVerificationRequirement.REQUIRED
+    still_required = _request(
+        required_preconditions=("condition",),
+        semantic_verification_policy_context=_context(conditions=()),
+        semantic_verification_policy=policy,
+    )
+    assert (
+        still_required.semantic_verification_requirement
+        is SemanticVerificationRequirement.REQUIRED
+    )
     with pytest.raises(ValueError, match="current closed conditions"):
-        _candidate(required_preconditions=())
+        _candidate(semantic_verification_policy_context=_context(conditions=()))

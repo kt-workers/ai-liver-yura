@@ -80,12 +80,14 @@ class SpeechRuntime:
             return generation
 
     async def rebind_performance_for_expression(
-        self, candidate_id: str, expression_revision: int
-    ) -> int:
+        self, candidate_id: str, expected_generation: int, expression_revision: int
+    ) -> int | None:
         """意味・Characterを保ったままdynamic expressionだけを最新化する。"""
         if type(expression_revision) is not int or expression_revision < 1:
             raise ValueError("expression_revision が不正です")
         async with self._lock:
+            if self._generations.get(candidate_id) != expected_generation:
+                return None
             candidate = self._active(candidate_id)
             if candidate.utterance_id is None or candidate.semantic_acceptance_id is None:
                 raise ValueError("valid Character/semantic acceptance が必要です")
@@ -192,8 +194,12 @@ class SpeechRuntime:
         return updated
 
     async def cancel(
-        self, candidate_id: str, lifecycle: CandidateLifecycle = CandidateLifecycle.CANCELLED
-    ) -> PreparedSpeechCandidate:
+        self,
+        candidate_id: str,
+        lifecycle: CandidateLifecycle = CandidateLifecycle.CANCELLED,
+        *,
+        expected_generation: int | None = None,
+    ) -> PreparedSpeechCandidate | None:
         if lifecycle not in {
             CandidateLifecycle.CANCELLED,
             CandidateLifecycle.SUPERSEDED,
@@ -202,6 +208,11 @@ class SpeechRuntime:
         }:
             raise ValueError("terminal lifecycle が不正です")
         async with self._lock:
+            if (
+                expected_generation is not None
+                and self._generations.get(candidate_id) != expected_generation
+            ):
+                return None
             candidate = self._active(candidate_id)
             if candidate.prepared_audio_ref is not None:
                 raise ValueError("prepared audioのterminal遷移にはdiscardが必要です")
@@ -226,11 +237,17 @@ class SpeechRuntime:
             self._candidates[candidate_id] = updated
             return updated
 
-    async def begin_revalidation(self, candidate_id: str) -> PreparedSpeechCandidate:
+    async def begin_revalidation(
+        self, candidate_id: str, expected_generation: int
+    ) -> PreparedSpeechCandidate | None:
         async with self._lock:
-            candidate = self._active(candidate_id)
+            if self._generations.get(candidate_id) != expected_generation:
+                return None
+            candidate = self._candidates.get(candidate_id)
+            if candidate is None:
+                raise ValueError("candidateが存在しません")
             if candidate.lifecycle is not CandidateLifecycle.QUEUED:
-                raise ValueError("QUEUED candidateだけをrevalidateできます")
+                return None
             updated = replace(
                 candidate,
                 lifecycle=CandidateLifecycle.REVALIDATING,

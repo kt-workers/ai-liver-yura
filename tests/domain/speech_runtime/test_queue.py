@@ -116,10 +116,39 @@ class _PostCheckGenerationRaceRuntime(SpeechRuntime):
                 semantic_acceptance_id="acceptance-g2",
             )
             await self.queue_for_generation(candidate_id, 2)
-            await self.begin_revalidation(candidate_id)
+            await self.begin_revalidation(candidate_id, 2)
         return await super().complete_revalidation(
             candidate_id, expected_generation, passed, failure
         )
+
+
+class _QueuePopGenerationRaceRuntime(SpeechRuntime):
+    def __init__(self) -> None:
+        super().__init__()
+        self.inject_race = False
+
+    async def begin_revalidation(
+        self, candidate_id: str, expected_generation: int
+    ) -> PreparedSpeechCandidate | None:
+        if self.inject_race:
+            self.inject_race = False
+            await self.supersede_generation(candidate_id)
+            await self.commit_generation_result(
+                candidate_id,
+                2,
+                readiness=SpeechComponentReadiness(
+                    SpeechReadinessState.READY,
+                    SpeechReadinessState.READY,
+                    VerifierReadinessState.ACCEPTED,
+                    SpeechReadinessState.READY,
+                    AudioReadinessState.NOT_REQUESTED,
+                ),
+                utterance_id="utterance-g2",
+                performance_plan_id="performance-g2",
+                semantic_acceptance_id="acceptance-g2",
+            )
+            await self.queue_for_generation(candidate_id, 2)
+        return await super().begin_revalidation(candidate_id, expected_generation)
 
 
 def _coordinator(
@@ -329,6 +358,19 @@ async def test_post_check_generation_race_cannot_mutate_new_revalidation_generat
 
 
 @pytest.mark.asyncio
+async def test_stale_queue_pop_cannot_revalidate_generation_two() -> None:
+    runtime = _QueuePopGenerationRaceRuntime()
+    await runtime.register(_prepared("candidate", LLMPriority.FOREGROUND))
+    coordinator = _coordinator(runtime, PreparedSpeechQueue(2))
+    assert await coordinator.enqueue_current("candidate", 1, foreground=True)
+    runtime.inject_race = True
+    assert await coordinator.pop_for_revalidation() is None
+    current = await runtime.candidate("candidate")
+    assert runtime.generation("candidate") == 2
+    assert current.lifecycle is CandidateLifecycle.QUEUED
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "terminal",
     [CandidateLifecycle.CANCELLED, CandidateLifecycle.STALE, CandidateLifecycle.SUPERSEDED],
@@ -340,7 +382,9 @@ async def test_pop_uses_live_terminal_state_not_queued_snapshot(
     await runtime.register(_prepared("candidate", LLMPriority.FOREGROUND))
     coordinator = _coordinator(runtime, PreparedSpeechQueue(2))
     assert await coordinator.enqueue_current("candidate", 1, foreground=True)
-    await runtime.cancel("candidate", terminal)
+    await runtime.cancel(
+        "candidate", terminal, expected_generation=runtime.generation("candidate")
+    )
     assert await coordinator.pop_for_revalidation() is None
 
 

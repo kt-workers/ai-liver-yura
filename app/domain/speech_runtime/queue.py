@@ -135,14 +135,9 @@ class PreparedSpeechQueueCoordinator:
 
     async def pop_for_revalidation(self) -> PreparedSpeechCandidate | None:
         while (entry := self._queue.pop()) is not None:
-            live = await self._runtime.candidate(entry.candidate_id)
-            if (
-                self._runtime.generation(entry.candidate_id) != entry.generation
-                or live.candidate_id != entry.candidate_id
-                or live.lifecycle is not CandidateLifecycle.QUEUED
-            ):
-                continue
-            return await self._runtime.begin_revalidation(entry.candidate_id)
+            begun = await self._runtime.begin_revalidation(entry.candidate_id, entry.generation)
+            if begun is not None:
+                return begun
         return None
 
     async def complete_revalidation(
@@ -178,8 +173,7 @@ class PreparedSpeechQueueCoordinator:
         await self._discarder.discard_current(
             candidate_id, generation, self._discard_reason(lifecycle)
         )
-        if await self._runtime.is_current_generation(candidate_id, generation):
-            await self._runtime.cancel(candidate_id, lifecycle)
+        await self._runtime.cancel(candidate_id, lifecycle, expected_generation=generation)
 
     @staticmethod
     def _discard_reason(lifecycle: CandidateLifecycle) -> PreparedAudioDiscardReason:

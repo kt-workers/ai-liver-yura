@@ -49,6 +49,24 @@ class _BlockingOwner(_FakeResourceOwner):
         await super().discard(request)
 
 
+async def _advance_to_generation_two(runtime: SpeechRuntime) -> None:
+    await runtime.supersede_generation("candidate")
+    await runtime.commit_generation_result(
+        "candidate",
+        2,
+        readiness=SpeechComponentReadiness(
+            SpeechReadinessState.READY,
+            SpeechReadinessState.READY,
+            VerifierReadinessState.ACCEPTED,
+            SpeechReadinessState.READY,
+            AudioReadinessState.NOT_REQUESTED,
+        ),
+        utterance_id="utterance-g2",
+        performance_plan_id="performance-g2",
+        semantic_acceptance_id="acceptance-g2",
+    )
+
+
 def _candidate() -> PreparedSpeechCandidate:
     now = datetime.now(timezone.utc)
     return PreparedSpeechCandidate(
@@ -203,3 +221,38 @@ async def test_discard_wait_race_never_restores_or_discards_g2_audio() -> None:
     assert current.prepared_audio_ref == "audio-g2"
     assert owner.resolve("audio-g1") is None
     assert owner.resolve("audio-g2") == "audio-g2"
+
+
+@pytest.mark.asyncio
+async def test_stale_expression_rebind_cannot_mutate_generation_two_after_discard() -> None:
+    runtime = SpeechRuntime()
+    await runtime.register(_candidate())
+    owner = _BlockingOwner()
+    executor = SpeechCandidateLifecycleExecutor(runtime, PreparedAudioDiscarder(runtime, owner))
+    stale_rebind = asyncio.create_task(executor.rebind_performance("candidate", 2))
+    await owner.entered.wait()
+    await _advance_to_generation_two(runtime)
+    owner.release.set()
+    assert await stale_rebind is None
+    current = await runtime.candidate("candidate")
+    assert runtime.generation("candidate") == 2
+    assert current.lifecycle is CandidateLifecycle.PREPARED
+    assert current.performance_plan_id == "performance-g2"
+
+
+@pytest.mark.asyncio
+async def test_stale_terminate_cannot_cancel_generation_two_after_discard() -> None:
+    runtime = SpeechRuntime()
+    await runtime.register(_candidate())
+    owner = _BlockingOwner()
+    executor = SpeechCandidateLifecycleExecutor(runtime, PreparedAudioDiscarder(runtime, owner))
+    stale_terminate = asyncio.create_task(
+        executor.terminate("candidate", CandidateLifecycle.STALE)
+    )
+    await owner.entered.wait()
+    await _advance_to_generation_two(runtime)
+    owner.release.set()
+    assert await stale_terminate is None
+    current = await runtime.candidate("candidate")
+    assert runtime.generation("candidate") == 2
+    assert current.lifecycle is CandidateLifecycle.PREPARED
