@@ -47,15 +47,11 @@ def _request(**changes: object) -> SpeechPreparationRequest:
         "interruptibility": LLMInterruptibility.INTERRUPTIBLE,
         "required_preconditions": ("condition",),
         "expiry_policy_ref": "expiry",
-        "semantic_verification_requirement": (
-            SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
-        ),
         "semantic_verification_policy_ref": "semantic-policy",
         "semantic_verification_policy_revision": 7,
         "presentation_policy_ref": "presentation-policy",
         "created_at": datetime.now(timezone.utc),
         "trace_id": "trace",
-        "semantic_skip_proof": _proof(),
         "semantic_verification_policy": _policy(),
     }
     values.update(changes)
@@ -103,27 +99,18 @@ def _candidate(**changes: object) -> PreparedSpeechCandidate:
 
 
 def test_closed_policy_skip_proof_is_bound_to_request_generation_policy() -> None:
-    assert _request().semantic_skip_proof == _proof()
-    with pytest.raises(ValueError, match="導出"):
-        _request(semantic_skip_proof=None)
-    with pytest.raises(ValueError, match="binding|導出"):
-        _request(semantic_skip_proof=_proof("other-policy"), semantic_verification_policy=_policy())
-    with pytest.raises(ValueError, match="binding|導出"):
-        _request(semantic_skip_proof=_proof(revision=8), semantic_verification_policy=_policy())
-    with pytest.raises(ValueError, match="binding|導出"):
-        _request(
-            semantic_skip_proof=SemanticVerificationSkipProof(
-                "semantic-policy", 7, "wrong-reason", ("condition",)
-            ),
-            semantic_verification_policy=_policy(),
-        )
-    with pytest.raises(ValueError, match="binding|導出"):
-        _request(
-            semantic_skip_proof=SemanticVerificationSkipProof(
-                "semantic-policy", 7, "closed-policy", ("wrong-condition",)
-            ),
-            semantic_verification_policy=_policy(),
-        )
+    request = _request()
+    assert (
+        request.semantic_verification_requirement
+        is SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
+    )
+    assert request.semantic_skip_proof == _proof()
+    with pytest.raises(ValueError, match="binding"):
+        _request(semantic_verification_policy_ref="other-policy")
+    with pytest.raises(ValueError, match="binding"):
+        _request(semantic_verification_policy_revision=8)
+    with pytest.raises(TypeError, match="unexpected keyword"):
+        _request(semantic_skip_proof=_proof())
 
 
 def test_closed_policy_skip_proof_is_bound_to_candidate_generation_policy() -> None:
@@ -143,22 +130,16 @@ def test_closed_policy_skip_proof_is_bound_to_candidate_generation_policy() -> N
 
 
 def test_required_verifier_cannot_be_replaced_by_caller_supplied_skip_proof() -> None:
-    with pytest.raises(ValueError, match="導出"):
-        _request(
-            semantic_verification_requirement=SemanticVerificationRequirement.REQUIRED,
-        )
+    with pytest.raises(TypeError, match="unexpected keyword"):
+        _request(semantic_verification_requirement=SemanticVerificationRequirement.REQUIRED)
     with pytest.raises(ValueError, match="導出"):
         _candidate(semantic_requirement=SemanticVerificationRequirement.REQUIRED)
 
 
 def test_closed_policy_derives_skip_only_from_current_request_conditions() -> None:
     policy = _policy()
-    with pytest.raises(ValueError, match="current closed conditions"):
-        _request(required_preconditions=(), semantic_verification_policy=policy)
     required = _request(
         required_preconditions=(),
-        semantic_verification_requirement=SemanticVerificationRequirement.REQUIRED,
-        semantic_skip_proof=None,
         semantic_verification_policy=policy,
     )
     assert required.semantic_verification_requirement is SemanticVerificationRequirement.REQUIRED

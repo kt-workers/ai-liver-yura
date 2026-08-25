@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 
@@ -119,14 +119,14 @@ class SpeechPreparationRequest:
     interruptibility: LLMInterruptibility
     required_preconditions: tuple[str, ...]
     expiry_policy_ref: str
-    semantic_verification_requirement: SemanticVerificationRequirement
     semantic_verification_policy_ref: str
+    semantic_verification_policy_revision: int
+    semantic_verification_policy: SemanticVerificationRequirementPolicy
     presentation_policy_ref: str
     created_at: datetime
     trace_id: str
-    semantic_skip_proof: SemanticVerificationSkipProof | None = None
-    semantic_verification_policy_revision: int | None = None
-    semantic_verification_policy: SemanticVerificationRequirementPolicy | None = None
+    semantic_verification_requirement: SemanticVerificationRequirement = field(init=False)
+    semantic_skip_proof: SemanticVerificationSkipProof | None = field(init=False, default=None)
 
     def __post_init__(self) -> None:
         for name in (
@@ -151,61 +151,37 @@ class SpeechPreparationRequest:
         require_revision(
             self.semantic_verification_policy_revision,
             "semantic_verification_policy_revision",
-            optional=True,
+            optional=False,
         )
         if not isinstance(self.priority, LLMPriority) or not isinstance(
             self.interruptibility, LLMInterruptibility
         ):
             raise ValueError("priority/interruptibility が不正です")
-        if not isinstance(self.semantic_verification_requirement, SemanticVerificationRequirement):
-            raise ValueError("semantic verification requirement が不正です")
+        if not isinstance(self.semantic_verification_policy, SemanticVerificationRequirementPolicy):
+            raise ValueError("semantic_verification_policy が不正です")
+        if (
+            self.semantic_verification_policy.policy_id != self.semantic_verification_policy_ref
+            or self.semantic_verification_policy.policy_revision
+            != self.semantic_verification_policy_revision
+        ):
+            raise ValueError("semantic verification policyのbindingが不正です")
         preconditions = tuple(self.required_preconditions)
         if any(not isinstance(item, str) or not item.strip() for item in preconditions):
             raise ValueError("required_preconditions が不正です")
         if len(preconditions) != len(set(preconditions)):
             raise ValueError("required_preconditions は一意です")
         object.__setattr__(self, "required_preconditions", preconditions)
-        if self.semantic_verification_policy is not None:
-            decision = self.semantic_verification_policy.decision_for(
-                self.required_preconditions
-            )
-            if decision is None:
-                if (
-                    self.semantic_verification_requirement
-                    is not SemanticVerificationRequirement.REQUIRED
-                ):
-                    raise ValueError("current closed conditionsではverifier skipを選べません")
-                if self.semantic_skip_proof is not None:
-                    raise ValueError("REQUIRED verifierにskip proofは指定できません")
-            elif (
-                self.semantic_verification_requirement
-                is not SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
-                or self.semantic_skip_proof != decision
-            ):
-                raise ValueError(
-                    "verifier skip decisionはcurrent closed conditionsから導出されます"
-                )
-        elif (
-            self.semantic_verification_requirement
-            is SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
-        ):
-            raise ValueError("verifier skipにはclosed policy authorityが必要です")
-        if self.semantic_skip_proof is not None and not isinstance(
-            self.semantic_skip_proof, SemanticVerificationSkipProof
-        ):
-            raise ValueError("semantic_skip_proof が不正です")
-        if self.semantic_verification_requirement is (
-            SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
-        ) and (
-            self.semantic_verification_policy_revision is None
-            or self.semantic_skip_proof is None
-            or self.semantic_verification_policy is None
-            or self.semantic_skip_proof.policy_id != self.semantic_verification_policy_ref
-            or self.semantic_skip_proof.policy_revision
-            != self.semantic_verification_policy_revision
-            or not self.semantic_verification_policy.accepts(self.semantic_skip_proof)
-        ):
-            raise ValueError("verifier skip proofのpolicy bindingが不正です")
+        decision = self.semantic_verification_policy.decision_for(self.required_preconditions)
+        object.__setattr__(
+            self,
+            "semantic_verification_requirement",
+            (
+                SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
+                if decision is not None
+                else SemanticVerificationRequirement.REQUIRED
+            ),
+        )
+        object.__setattr__(self, "semantic_skip_proof", decision)
         require_aware(self.created_at, "created_at")
 
 
