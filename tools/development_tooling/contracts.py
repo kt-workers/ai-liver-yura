@@ -70,6 +70,19 @@ class CharacterFindingKind(str, Enum):
     INTERPRETATION = "interpretation"
 
 
+class ToolingResultStatus(str, Enum):
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class ToolingFailureCategory(str, Enum):
+    SOURCE_UNAVAILABLE = "source_unavailable"
+    INPUT_INVALID = "input_invalid"
+    TOOL_UNAVAILABLE = "tool_unavailable"
+    PROCESSING_FAILED = "processing_failed"
+    CANCELLED = "cancelled"
+
+
 @dataclass(frozen=True, slots=True)
 class SourceReference:
     source_ref: str
@@ -97,7 +110,9 @@ class ToolingFinding:
         _require_text(self.finding_id, "finding_id", maximum=256)
         _require_text(self.summary, "summary")
         references = tuple(self.source_refs)
-        if not references:
+        if not references or any(
+            not isinstance(reference, SourceReference) for reference in references
+        ):
             raise ValueError("source_refsは空にできません")
         if len({reference.source_ref for reference in references}) != len(references):
             raise ValueError("source_refsのsource_refは一意である必要があります")
@@ -130,17 +145,27 @@ class ToolingEvidenceArtifact:
     methodology_revision: str
     findings: tuple[ToolingFinding, ...]
     limitations: tuple[str, ...] = ()
+    processing_duration_ms: float = 0.0
+    deployment_generation: str = "local"
+    result_status: ToolingResultStatus = ToolingResultStatus.SUCCEEDED
+    failure_category: ToolingFailureCategory | None = None
 
     def __post_init__(self) -> None:
         _require_text(self.artifact_id, "artifact_id", maximum=256)
+        if not isinstance(self.tool_kind, ToolKind):
+            raise ValueError("tool_kindが不正です")
         source_refs = tuple(self.source_refs)
-        if not source_refs:
+        if not source_refs or any(
+            not isinstance(reference, SourceReference) for reference in source_refs
+        ):
             raise ValueError("source_refsは空にできません")
         object.__setattr__(self, "source_refs", source_refs)
         _require_aware(self.generated_at, "generated_at")
         object.__setattr__(self, "generated_at", self.generated_at.astimezone(timezone.utc))
         _require_text(self.methodology_revision, "methodology_revision", maximum=512)
         findings = tuple(self.findings)
+        if any(not isinstance(finding, ToolingFinding) for finding in findings):
+            raise ValueError("findingsが不正です")
         if len({finding.finding_id for finding in findings}) != len(findings):
             raise ValueError("findingsのfinding_idは一意である必要があります")
         object.__setattr__(self, "findings", findings)
@@ -148,6 +173,24 @@ class ToolingEvidenceArtifact:
         for limitation in limitations:
             _require_text(limitation, "limitation")
         object.__setattr__(self, "limitations", limitations)
+        if (
+            type(self.processing_duration_ms) not in {int, float}
+            or not isfinite(self.processing_duration_ms)
+            or self.processing_duration_ms < 0
+        ):
+            raise ValueError("processing_duration_msが不正です")
+        object.__setattr__(self, "processing_duration_ms", float(self.processing_duration_ms))
+        _require_text(self.deployment_generation, "deployment_generation", maximum=256)
+        if not isinstance(self.result_status, ToolingResultStatus):
+            raise ValueError("result_statusが不正です")
+        if self.failure_category is not None and not isinstance(
+            self.failure_category, ToolingFailureCategory
+        ):
+            raise ValueError("failure_categoryが不正です")
+        if (self.result_status is ToolingResultStatus.FAILED) != (
+            self.failure_category is not None
+        ):
+            raise ValueError("result_statusとfailure_categoryが一致しません")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -158,6 +201,12 @@ class ToolingEvidenceArtifact:
             "methodology_revision": self.methodology_revision,
             "findings": [finding.to_dict() for finding in self.findings],
             "limitations": list(self.limitations),
+            "processing_duration_ms": self.processing_duration_ms,
+            "deployment_generation": self.deployment_generation,
+            "result_status": self.result_status.value,
+            "failure_category": None
+            if self.failure_category is None
+            else self.failure_category.value,
         }
 
 
@@ -254,8 +303,12 @@ class ArchitectureEdge:
         _require_text(self.relation, "relation", maximum=256)
         if self.source_module == self.target_module:
             raise ValueError("Architecture graphでは自己edgeを許可しません")
+        if not isinstance(self.evidence, ArchitectureEdgeEvidence):
+            raise ValueError("evidenceが不正です")
         references = tuple(self.source_refs)
-        if not references:
+        if not references or any(
+            not isinstance(reference, SourceReference) for reference in references
+        ):
             raise ValueError("source_refsは空にできません")
         object.__setattr__(self, "source_refs", references)
 
@@ -316,6 +369,12 @@ class ReferenceCharacterFinding:
     def __post_init__(self) -> None:
         _require_text(self.finding_id, "finding_id", maximum=256)
         _require_text(self.observed_feature, "observed_feature")
+        if not isinstance(self.finding_kind, CharacterFindingKind):
+            raise ValueError("finding_kindが不正です")
+        if not isinstance(self.source_media, SourceReference):
+            raise ValueError("source_mediaが不正です")
+        if not isinstance(self.analysis_provenance, MediaAnalysisProvenance):
+            raise ValueError("analysis_provenanceが不正です")
         if self.evidence_interval is not None:
             interval = tuple(self.evidence_interval)
             if len(interval) != 2 or any(type(point) not in {int, float} for point in interval):

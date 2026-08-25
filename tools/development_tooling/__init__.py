@@ -13,7 +13,9 @@ from .contracts import (
     ReferenceCharacterFinding,
     SourceReference,
     ToolingEvidenceArtifact,
+    ToolingFailureCategory,
     ToolingFinding,
+    ToolingResultStatus,
     ToolingServerConfig,
     ToolKind,
 )
@@ -42,6 +44,8 @@ __all__ = [
     "SourceReference",
     "ToolKind",
     "ToolingEvidenceArtifact",
+    "ToolingFailureCategory",
     "ToolingFinding",
     "ToolingServerConfig",
+    "ToolingResultStatus",
 ]

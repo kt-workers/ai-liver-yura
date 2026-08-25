@@ -43,11 +43,18 @@ ToolingEvidenceArtifact
 - generated_at
 - methodology_revision
 - findings[]
-- confidence?
 - limitations[]
+- processing_duration_ms
+- deployment_generation
+- result_status
+- failure_category?
 ```
 
 Every finding must preserve source provenance where feasible.
+
+`confidence`はartifact全体を確定する値ではなく、根拠ごとの
+`ToolingFinding`または`ReferenceCharacterFinding`に限定する。analysis失敗は
+empty findingへ縮退させず、`result_status=FAILED`とtyped `failure_category`で記録する。
 
 Artifact is not canonical Domain State.
 

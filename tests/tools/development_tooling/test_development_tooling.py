@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
@@ -16,9 +17,12 @@ from tools.development_tooling import (
     IssueGraphEdge,
     MediaAnalysisProvenance,
     ReferenceAnalysisProjector,
+    ReferenceCharacterFinding,
     SourceReference,
     ToolingEvidenceArtifact,
+    ToolingFailureCategory,
     ToolingFinding,
+    ToolingResultStatus,
     ToolingServerConfig,
     ToolKind,
 )
@@ -249,6 +253,99 @@ def test_evidence_artifact_requires_source_provenance_and_methodology_revision()
         ToolingEvidenceArtifact(
             "artifact-1", ToolKind.ISSUE_GRAPH, (CANONICAL,), NOW, "", (finding,)
         )
+
+
+def test_artifact_observability_preserves_success_or_typed_failure_without_artifact_confidence(
+) -> None:
+    finding = ToolingFinding("finding-1", "確認", (CANONICAL,), 0.8)
+    success = ToolingEvidenceArtifact(
+        "artifact-1",
+        ToolKind.ISSUE_GRAPH,
+        (CANONICAL,),
+        NOW,
+        "method-1",
+        (finding,),
+        processing_duration_ms=12.5,
+        deployment_generation="deployment-4",
+    )
+    failed = ToolingEvidenceArtifact(
+        "artifact-2",
+        ToolKind.MEDIA_ANALYSIS,
+        (CANONICAL,),
+        NOW,
+        "method-1",
+        (),
+        processing_duration_ms=4,
+        deployment_generation="deployment-4",
+        result_status=ToolingResultStatus.FAILED,
+        failure_category=ToolingFailureCategory.TOOL_UNAVAILABLE,
+    )
+
+    assert success.to_dict()["deployment_generation"] == "deployment-4"
+    assert success.to_dict()["processing_duration_ms"] == 12.5
+    assert failed.to_dict()["failure_category"] == "tool_unavailable"
+    assert "confidence" not in success.to_dict()
+    with pytest.raises(ValueError):
+        ToolingEvidenceArtifact(
+            "artifact-3",
+            ToolKind.ISSUE_GRAPH,
+            (CANONICAL,),
+            NOW,
+            "method-1",
+            (),
+            result_status=ToolingResultStatus.FAILED,
+        )
+
+
+@pytest.mark.parametrize(
+    "factory",
+    (
+        lambda: ToolingEvidenceArtifact(
+            "artifact-1", "invalid", (CANONICAL,), NOW, "method-1", ()  # type: ignore[arg-type]
+        ),
+        lambda: ArchitectureEdge(
+            "left", "right", "reads", "invalid", (CANONICAL,)  # type: ignore[arg-type]
+        ),
+        lambda: ArchitectureEdge(
+            "left", "right", "reads", ArchitectureEdgeEvidence.CANONICAL, ("invalid",)  # type: ignore[arg-type]
+        ),
+        lambda: ReferenceCharacterFinding(
+            "finding-1",
+            "invalid",  # type: ignore[arg-type]
+            CANONICAL,
+            MEDIA_ANALYSIS,
+            "特徴",
+            None,
+            None,
+        ),
+    ),
+)
+def test_public_contract_constructors_reject_invalid_typed_children(
+    factory: Callable[[], object],
+) -> None:
+    with pytest.raises(ValueError):
+        factory()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        b'{"value": NaN}',
+        b'{"value": Infinity}',
+        b'{"nested": "' + b"x" * 16_385 + b'"}',
+        b"{" + b",".join(f'"key{index}":0'.encode() for index in range(257)) + b"}",
+    ),
+)
+def test_untrusted_json_rejects_nonfinite_or_unbounded_nested_values(payload: bytes) -> None:
+    with pytest.raises(ValueError):
+        parse_bounded_json_object(payload)
+
+
+def test_untrusted_json_rejects_excessive_nesting() -> None:
+    payload = b'{"nested":' + b"[" * 18 + b"0" + b"]" * 18 + b"}"
+
+    with pytest.raises(ValueError):
+        parse_bounded_json_object(payload)
 
 
 def test_production_runtime_does_not_import_development_tooling() -> None:
