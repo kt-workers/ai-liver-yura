@@ -38,6 +38,21 @@ class GameSessionState:
     strategy_payload: JsonValue
 
 
+@dataclass(frozen=True, slots=True)
+class GameRuntimeMetrics:
+    deadline_miss_count: int
+    pending_loop_count: int
+
+    def __post_init__(self) -> None:
+        if (
+            type(self.deadline_miss_count) is not int
+            or type(self.pending_loop_count) is not int
+            or self.deadline_miss_count < 0
+            or self.pending_loop_count < 0
+        ):
+            raise ValueError("runtime metricsが不正です")
+
+
 class GameSkillRuntime:
     """専用frame lane。CoreのGoal/Attentionを変更せず、bounded eventだけを返す。"""
 
@@ -55,6 +70,7 @@ class GameSkillRuntime:
         self._tactical_policy = tactical_policy
         self._states: dict[str, GameSessionState] = {}
         self._observations: deque[GameObservationEvent] = deque(maxlen=observation_limit)
+        self._interrupted_reports: deque[GameActionReport] = deque(maxlen=observation_limit)
         self._tasks: dict[str, asyncio.Task[None]] = {}
         self._tick_locks: dict[str, asyncio.Lock] = {}
         self._clock = clock or (lambda: datetime.now(timezone.utc))
@@ -158,9 +174,14 @@ class GameSkillRuntime:
                     action, GameActionExecutionStatus.TIMED_OUT, GameActionEffectState.AMBIGUOUS
                 )
             except asyncio.CancelledError:
-                return self._report(
-                    action, GameActionExecutionStatus.CANCELLED, GameActionEffectState.AMBIGUOUS
+                self._interrupted_reports.append(
+                    self._report(
+                        action,
+                        GameActionExecutionStatus.CANCELLED,
+                        GameActionEffectState.AMBIGUOUS,
+                    )
                 )
+                raise
             if report.session_id != session_id or report.action_id != action.action_id:
                 raise ValueError("controller report identityが不正です")
             live = self._require(session_id)
@@ -259,12 +280,13 @@ class GameSkillRuntime:
         self._observations.clear()
         return events
 
+    def drain_interrupted_reports(self) -> tuple[GameActionReport, ...]:
+        reports = tuple(self._interrupted_reports)
+        self._interrupted_reports.clear()
+        return reports
+
     async def stop(self, session_id: str, *, cancelled: bool) -> GameSessionState:
         state = self._require(session_id)
-        task = self._tasks.pop(session_id, None)
-        if task is not None:
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
         lifecycle = GameSessionLifecycle.CANCELLED if cancelled else GameSessionLifecycle.ENDED
         updated = GameSessionState(
             state.session_id,
@@ -275,6 +297,10 @@ class GameSkillRuntime:
             state.strategy_payload,
         )
         self._states[session_id] = updated
+        task = self._tasks.pop(session_id, None)
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         return updated
 
     async def shutdown(self) -> None:
@@ -289,6 +315,10 @@ class GameSkillRuntime:
     @property
     def pending_task_count(self) -> int:
         return sum(not task.done() for task in self._tasks.values())
+
+    @property
+    def metrics(self) -> GameRuntimeMetrics:
+        return GameRuntimeMetrics(self._deadline_miss_count, self.pending_task_count)
 
     def _require(self, session_id: str) -> GameSessionState:
         try:

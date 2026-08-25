@@ -180,6 +180,8 @@ def test_action_deadline_timeout_keeps_effect_ambiguous() -> None:
         report = await runtime.tick("session:1")
         assert report is not None and report.status is GameActionExecutionStatus.TIMED_OUT
         assert report.effect_state is GameActionEffectState.AMBIGUOUS
+        assert runtime.metrics.deadline_miss_count == 1
+        assert runtime.metrics.pending_loop_count == 0
 
     asyncio.run(scenario())
 
@@ -219,5 +221,63 @@ def test_realtime_loop_has_bounded_cadence_and_shutdown_cancels_its_own_task() -
         await runtime.shutdown()
         assert runtime.pending_task_count == 0
         assert runtime.snapshot("session:1").lifecycle.value == "cancelled"
+
+    asyncio.run(scenario())
+
+
+def test_shutdown_during_controller_wait_finishes_and_retains_ambiguous_effect_evidence() -> None:
+    class WaitingController(Controller):
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+
+        async def apply(self, action: GameFrameAction) -> GameActionReport:
+            self.started.set()
+            await asyncio.Event().wait()
+            raise AssertionError("cancelled controllerは完了しません")
+
+    async def scenario() -> None:
+        controller = WaitingController()
+        runtime = GameSkillRuntime(controller, Policy())
+        runtime.admit(intent())
+        runtime.activate("session:1")
+        runtime.start_loop("session:1", interval_seconds=1)
+        await controller.started.wait()
+
+        await asyncio.wait_for(runtime.shutdown(), timeout=0.1)
+
+        reports = runtime.drain_interrupted_reports()
+        assert runtime.pending_task_count == 0
+        assert runtime.snapshot("session:1").lifecycle.value == "cancelled"
+        assert reports[0].status is GameActionExecutionStatus.CANCELLED
+        assert reports[0].effect_state is GameActionEffectState.AMBIGUOUS
+
+    asyncio.run(scenario())
+
+
+def test_concurrent_ticks_are_session_local_single_flight_and_bind_each_effect_to_live_revision(
+) -> None:
+    class RecordingController(Controller):
+        def __init__(self) -> None:
+            self.revisions: list[int] = []
+
+        async def apply(self, action: GameFrameAction) -> GameActionReport:
+            self.revisions.append(action.game_state_revision)
+            await asyncio.sleep(0)
+            return await super().apply(action)
+
+    async def scenario() -> None:
+        controller = RecordingController()
+        runtime = GameSkillRuntime(controller, Policy())
+        runtime.admit(intent())
+        runtime.activate("session:1")
+
+        first, second = await asyncio.gather(
+            runtime.tick("session:1"),
+            runtime.tick("session:1"),
+        )
+
+        assert first is not None and second is not None
+        assert controller.revisions == [0, 1]
+        assert runtime.snapshot("session:1").game_state_revision == 2
 
     asyncio.run(scenario())
