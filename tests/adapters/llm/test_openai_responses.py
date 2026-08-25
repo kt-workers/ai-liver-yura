@@ -293,9 +293,9 @@ def test_fast_balanced_and_deep_model_policy_mappings_are_explicit() -> None:
             ),
         ):
             client = FakeClient(FakeResponse('{"ok": true}'))
-            result = await OpenAIResponsesAdapter(
-                client, (make_config(),), now=lambda: NOW
-            ).invoke(make_request(model_class=model_class, reasoning_effort=effort))
+            result = await OpenAIResponsesAdapter(client, (make_config(),), now=lambda: NOW).invoke(
+                make_request(model_class=model_class, reasoning_effort=effort)
+            )
             assert result.status is LLMRoleStatus.SUCCEEDED
             assert client.calls[0]["model"] == expected_model
             assert client.calls[0]["reasoning"] == {"effort": expected_effort}
@@ -333,13 +333,10 @@ def test_malformed_provider_output_and_schema_violation_are_schema_failures() ->
     asyncio.run(scenario())
 
 
-def test_retryable_transport_timeout_and_classified_rate_limit_retry_with_bounded_policy(
-) -> None:
+def test_retryable_transport_timeout_and_classified_rate_limit_retry_with_bounded_policy() -> None:
     async def scenario() -> None:
         request = httpx2.Request("POST", "https://api.example.invalid/v1/responses")
-        transport = APIConnectionError(
-            request=request
-        )
+        transport = APIConnectionError(request=request)
         for error in (
             transport,
             APITimeoutError(request),
@@ -427,14 +424,24 @@ def test_timeout_and_cancellation_return_non_committable_typed_results() -> None
             raise AssertionError("到達不能")
 
     async def scenario() -> None:
+        class TimeoutThenSuccess:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def create(self, **kwargs: object) -> object:
+                self.calls += 1
+                if self.calls == 1:
+                    await asyncio.sleep(0.01)
+                return FakeResponse('{"ok": true}')
+
         sink = DiagnosticSink()
         timeout_result = await OpenAIResponsesAdapter(
-            SlowClient(), (make_config(),), now=lambda: NOW, diagnostic_sink=sink
+            TimeoutThenSuccess(), (make_config(),), now=lambda: NOW, diagnostic_sink=sink
         ).invoke(make_request(timeout_seconds=0.001))
-        assert timeout_result.status is LLMRoleStatus.TIMED_OUT
+        assert timeout_result.status is LLMRoleStatus.SUCCEEDED
+        assert timeout_result.attempt_count == 2
         assert (
-            sink.diagnostics[-1].category
-            is LLMProviderOperationalFailureCategory.REQUEST_TIMEOUT
+            sink.diagnostics[-1].category is LLMProviderOperationalFailureCategory.REQUEST_TIMEOUT
         )
 
         client = SlowClient()
@@ -449,8 +456,7 @@ def test_timeout_and_cancellation_return_non_committable_typed_results() -> None
         cancelled_result = await task
         assert cancelled_result.status is LLMRoleStatus.CANCELLED
         assert (
-            cancel_sink.diagnostics[-1].category
-            is LLMProviderOperationalFailureCategory.CANCELLED
+            cancel_sink.diagnostics[-1].category is LLMProviderOperationalFailureCategory.CANCELLED
         )
 
     asyncio.run(scenario())
@@ -604,7 +610,7 @@ def test_quota_and_unclassified_rate_limit_fail_closed_without_immediate_retry()
             ),
             (
                 None,
-                LLMProviderOperationalFailureCategory.RATE_LIMITED_TRANSIENT,
+                LLMProviderOperationalFailureCategory.UNKNOWN_PROVIDER_FAILURE,
                 LLMProviderSanitizedDetailCode.HTTP_429_UNCLASSIFIED,
             ),
         ):
@@ -621,6 +627,83 @@ def test_quota_and_unclassified_rate_limit_fail_closed_without_immediate_retry()
             assert sink.diagnostics[0].category is category
             assert sink.diagnostics[0].sanitized_detail_code is detail
             assert not sink.diagnostics[0].retryable
+
+    asyncio.run(scenario())
+
+
+def test_provider_envelope_anomaly_is_protocol_error_not_schema_error() -> None:
+    async def scenario() -> None:
+        sink = DiagnosticSink()
+        result = await OpenAIResponsesAdapter(
+            FakeClient(object()), (make_config(),), now=lambda: NOW, diagnostic_sink=sink
+        ).invoke(make_request(max_attempts=1))
+        assert result.failure is not None
+        assert result.failure.code is LLMFailureCode.PROVIDER_ERROR
+        assert (
+            sink.diagnostics[0].category
+            is LLMProviderOperationalFailureCategory.PROVIDER_PROTOCOL_ERROR
+        )
+        malformed = await OpenAIResponsesAdapter(
+            FakeClient(FakeResponse("not-json")), (make_config(),), now=lambda: NOW
+        ).invoke(make_request(max_attempts=1))
+        assert malformed.failure is not None
+        assert malformed.failure.code is LLMFailureCode.SCHEMA_INVALID
+
+    asyncio.run(scenario())
+
+
+def test_actual_provider_cause_diagnostic_survives_shutdown_and_deadline() -> None:
+    class Clock:
+        value = NOW
+
+        def now(self) -> datetime:
+            return self.value
+
+    class FailureThenShutdown(FakeClient):
+        async def create(self, **kwargs: object) -> object:
+            return await super().create(**kwargs)
+
+    async def scenario() -> None:
+        shutdown = {"value": False}
+
+        class ShutdownClient(FailureThenShutdown):
+            async def create(self, **kwargs: object) -> object:
+                shutdown["value"] = True
+                return await super().create(**kwargs)
+
+        shutdown_sink = DiagnosticSink()
+        result = await OpenAIResponsesAdapter(
+            ShutdownClient(status_error(503)),
+            (make_config(),),
+            now=lambda: NOW,
+            diagnostic_sink=shutdown_sink,
+            is_shutdown=lambda: shutdown["value"],
+        ).invoke(make_request(max_attempts=2))
+        assert result.status is LLMRoleStatus.CANCELLED
+        assert (
+            shutdown_sink.diagnostics[0].category
+            is LLMProviderOperationalFailureCategory.PROVIDER_SERVER_ERROR
+        )
+
+        clock = Clock()
+
+        class DeadlineClient(FakeClient):
+            async def create(self, **kwargs: object) -> object:
+                clock.value = NOW + timedelta(seconds=2)
+                return await super().create(**kwargs)
+
+        deadline_sink = DiagnosticSink()
+        timed_out = await OpenAIResponsesAdapter(
+            DeadlineClient(status_error(503)),
+            (make_config(),),
+            now=clock.now,
+            diagnostic_sink=deadline_sink,
+        ).invoke(make_request(deadline_at=NOW + timedelta(seconds=1), max_attempts=2))
+        assert timed_out.status is LLMRoleStatus.TIMED_OUT
+        assert (
+            deadline_sink.diagnostics[0].category
+            is LLMProviderOperationalFailureCategory.PROVIDER_SERVER_ERROR
+        )
 
     asyncio.run(scenario())
 
@@ -653,9 +736,7 @@ def test_diagnostic_publication_is_secret_safe_best_effort_and_rate_limited() ->
             (make_config(instructions=f"prompt={secret}"),),
             now=lambda: NOW,
             diagnostic_sink=sink,
-            diagnostic_publication_policy=LLMProviderOperationalDiagnosticPublicationPolicy(
-                60
-            ),
+            diagnostic_publication_policy=LLMProviderOperationalDiagnosticPublicationPolicy(60),
         )
         await adapter.invoke(make_request(max_attempts=1))
         await adapter.invoke(make_request(max_attempts=1))

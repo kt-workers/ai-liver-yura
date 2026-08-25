@@ -118,6 +118,10 @@ class _ProviderFailureClassification:
     sanitized_detail_code: LLMProviderSanitizedDetailCode
 
 
+class _ProviderProtocolError(ValueError):
+    """Provider成功応答のenvelopeがAdapter契約に適合しない。"""
+
+
 class OpenAIResponsesAdapter:
     """OpenAI Responses APIを論理Role Portへ隔離して接続するAdapter。"""
 
@@ -143,8 +147,7 @@ class OpenAIResponsesAdapter:
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._diagnostics = LLMProviderOperationalDiagnosticPublisher(
             diagnostic_sink,
-            diagnostic_publication_policy
-            or LLMProviderOperationalDiagnosticPublicationPolicy(),
+            diagnostic_publication_policy or LLMProviderOperationalDiagnosticPublicationPolicy(),
             now=self._now,
         )
         self._is_shutdown = is_shutdown or (lambda: False)
@@ -220,18 +223,39 @@ class OpenAIResponsesAdapter:
                     started_at=started_at,
                 )
             except asyncio.TimeoutError:
-                return await self._timed_out(
-                    request,
-                    config,
-                    provider_policy,
-                    attempt,
-                    started_at,
+                classification = _ProviderFailureClassification(
+                    LLMFailureCode.PROVIDER_UNAVAILABLE,
+                    True,
+                    LLMProviderOperationalFailureCategory.REQUEST_TIMEOUT,
+                    None,
+                    None,
                     LLMProviderSanitizedDetailCode.CLIENT_TIMEOUT,
                 )
-            except asyncio.CancelledError:
-                return await self._cancelled(
-                    request, config, provider_policy, attempt, started_at
+                result, retry = await self._handle_provider_failure(
+                    request, config, provider_policy, classification, attempt, started_at
                 )
+                if retry:
+                    continue
+                assert result is not None
+                return result
+            except asyncio.CancelledError:
+                return await self._cancelled(request, config, provider_policy, attempt, started_at)
+            except _ProviderProtocolError:
+                classification = _ProviderFailureClassification(
+                    LLMFailureCode.PROVIDER_ERROR,
+                    False,
+                    LLMProviderOperationalFailureCategory.PROVIDER_PROTOCOL_ERROR,
+                    None,
+                    None,
+                    LLMProviderSanitizedDetailCode.UNKNOWN,
+                )
+                result, retry = await self._handle_provider_failure(
+                    request, config, provider_policy, classification, attempt, started_at
+                )
+                if retry:
+                    continue
+                assert result is not None
+                return result
             except (ValidationError, ValueError):
                 return self._failure(
                     request,
@@ -242,33 +266,13 @@ class OpenAIResponsesAdapter:
                 )
             except Exception as error:
                 classification = self._classify_provider_failure(error)
-                if self._is_shutdown():
-                    return await self._cancelled(
-                        request, config, provider_policy, attempt, started_at
-                    )
-                if self._remaining_timeout(request) <= 0:
-                    return await self._timed_out(
-                        request,
-                        config,
-                        provider_policy,
-                        attempt,
-                        started_at,
-                        LLMProviderSanitizedDetailCode.CLIENT_DEADLINE_EXCEEDED,
-                    )
-                retryable = self._retry_allowed(request, config, classification, attempt)
-                self._publish_diagnostic(
-                    request, config, provider_policy, classification, attempt, retryable
+                result, retry = await self._handle_provider_failure(
+                    request, config, provider_policy, classification, attempt, started_at
                 )
-                if retryable:
+                if retry:
                     continue
-                return self._failure(
-                    request,
-                    classification.code,
-                    "Provider呼出に失敗しました",
-                    attempt,
-                    started_at,
-                    retryable=retryable,
-                )
+                assert result is not None
+                return result
         raise AssertionError("到達不能なretry状態です")
 
     def _request_arguments(
@@ -303,12 +307,59 @@ class OpenAIResponsesAdapter:
     ) -> StructuredPayload:
         output_text = getattr(response, "output_text", None)
         if not isinstance(output_text, str):
-            raise ValueError("output_textがありません")
+            raise _ProviderProtocolError("output_textがありません")
         value = json.loads(output_text)
         if not isinstance(value, dict):
             raise ValueError("出力はJSON objectではありません")
         validate(instance=value, schema=dict(config.output_json_schema))
         return StructuredPayload(config.output_schema_id, value)
+
+    async def _handle_provider_failure(
+        self,
+        request: LLMRoleRequest,
+        config: OpenAIResponsesRoleConfig,
+        provider_policy: OpenAIResponsesModelPolicy,
+        classification: _ProviderFailureClassification,
+        attempt: int,
+        started_at: datetime,
+    ) -> tuple[LLMRoleResult | None, bool]:
+        retryable = self._retry_allowed(request, config, classification, attempt)
+        self._publish_diagnostic(
+            request, config, provider_policy, classification, attempt, retryable
+        )
+        if self._is_shutdown():
+            return (
+                await self._cancelled(
+                    request, config, provider_policy, attempt, started_at, publish=False
+                ),
+                False,
+            )
+        if self._remaining_timeout(request) <= 0:
+            return (
+                await self._timed_out(
+                    request,
+                    config,
+                    provider_policy,
+                    attempt,
+                    started_at,
+                    LLMProviderSanitizedDetailCode.CLIENT_DEADLINE_EXCEEDED,
+                    publish=False,
+                ),
+                False,
+            )
+        if retryable:
+            return None, True
+        return (
+            self._failure(
+                request,
+                classification.code,
+                "Provider呼出に失敗しました",
+                attempt,
+                started_at,
+                retryable=False,
+            ),
+            False,
+        )
 
     def _remaining_timeout(self, request: LLMRoleRequest) -> float:
         timeout = request.execution_policy.timeout_seconds
@@ -386,7 +437,7 @@ class OpenAIResponsesAdapter:
                 return _ProviderFailureClassification(
                     LLMFailureCode.PROVIDER_UNAVAILABLE,
                     False,
-                    LLMProviderOperationalFailureCategory.RATE_LIMITED_TRANSIENT,
+                    LLMProviderOperationalFailureCategory.UNKNOWN_PROVIDER_FAILURE,
                     status_code,
                     provider_request_id,
                     LLMProviderSanitizedDetailCode.HTTP_429_UNCLASSIFIED,
@@ -443,6 +494,8 @@ class OpenAIResponsesAdapter:
         attempts: int,
         started_at: datetime,
         detail_code: LLMProviderSanitizedDetailCode,
+        *,
+        publish: bool = True,
     ) -> LLMRoleResult:
         classification = _ProviderFailureClassification(
             LLMFailureCode.TIMEOUT,
@@ -452,9 +505,10 @@ class OpenAIResponsesAdapter:
             None,
             detail_code,
         )
-        self._publish_diagnostic(
-            request, config, provider_policy, classification, attempts, False
-        )
+        if publish:
+            self._publish_diagnostic(
+                request, config, provider_policy, classification, attempts, False
+            )
         return LLMRoleResult(
             request.request_id,
             request.role_id,
@@ -476,6 +530,8 @@ class OpenAIResponsesAdapter:
         provider_policy: OpenAIResponsesModelPolicy,
         attempts: int,
         started_at: datetime,
+        *,
+        publish: bool = True,
     ) -> LLMRoleResult:
         classification = _ProviderFailureClassification(
             LLMFailureCode.CANCELLED,
@@ -485,9 +541,10 @@ class OpenAIResponsesAdapter:
             None,
             LLMProviderSanitizedDetailCode.CANCELLED_BY_CALLER,
         )
-        self._publish_diagnostic(
-            request, config, provider_policy, classification, attempts, False
-        )
+        if publish:
+            self._publish_diagnostic(
+                request, config, provider_policy, classification, attempts, False
+            )
         return LLMRoleResult(
             request.request_id,
             request.role_id,
@@ -529,8 +586,14 @@ class OpenAIResponsesAdapter:
         )
 
     def _failure(
-        self, request: LLMRoleRequest, code: LLMFailureCode, message: str, attempts: int,
-        started_at: datetime, *, retryable: bool = False,
+        self,
+        request: LLMRoleRequest,
+        code: LLMFailureCode,
+        message: str,
+        attempts: int,
+        started_at: datetime,
+        *,
+        retryable: bool = False,
     ) -> LLMRoleResult:
         return LLMRoleResult(
             request.request_id,
