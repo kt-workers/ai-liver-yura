@@ -1,55 +1,86 @@
-# AI共通作業規則
+## 自律Completion Missionの継続
 
-このリポジトリで作業するすべてのAIは、以下を必ず守る。
+このリポジトリでAutonomous Completion MissionがACTIVEの場合、
+個別のユーザープロンプトを新しい独立Missionとして扱わない。
 
-## 日本語のみ使用
+ユーザーからの修正指示、設計判断、質問への回答、blocker解消指示、
+調査依頼、優先順位変更等は、明示的なMission終了指示がない限り、
+現在のMissionへの一時的な介入として扱う。
 
-自然言語として生成する文章は、すべて日本語にする。
+介入処理が完了したら、その介入だけを完了して停止してはならない。
 
-対象:
-- コミットメッセージ
-- Issueのタイトル・本文・コメント
-- Pull Requestのタイトル・本文・コメント
-- コードレビューの要約・指摘・提案
-- 設計書・運用書・作業記録・チェックポイント
-- ユーザー向け報告
-- AI間の引き継ぎ文
-- プロンプト内の説明文
-- エラーメッセージを新規に設計する場合の説明文
+必ず次を行う。
 
-英語の自然文、英語の見出し、英語の定型句を新規に作成しない。
+1. GitHub live状態を再確認する
+2. Missionの最新Checkpointを確認する
+3. current WorkのResume Gateを再確認する
+4. blockerが解消したことを確認する
+5. Mission stateをACTIVEへ戻す
+6. 元のcurrent Workを再開する
+7. Work Completion後はdependency-readyな次Workをfresh Resume Gateで選択して継続する
 
-次は機械的識別子なので例外とする:
-- ソースコード上の識別子
-- クラス名・関数名・変数名
-- API名・SDK名・モデル名・製品名
-- ファイル名・パス・ブランチ名
-- SHA・ID・URL
-- 外部仕様で固定された列挙値・JSONキー・プロトコル値
-- 外部ツールが返した生ログや原文エラーを証拠としてそのまま示す必要がある場合
+### Missionの終了
 
-例外の識別子や原文を説明するときの文章は日本語にする。
+Missionを終了できるのは、ユーザーが明示的に次のいずれかを指示した場合だけとする。
 
-## AI別の適用
+- `MISSION END`
+- `MISSION CANCEL`
+- Autonomous Completion Missionそのものを終了する明示指示
 
-- ChatGPT: 作業報告、Issue/PR操作、設計、コミット文を日本語にする。
-- ローカルCodex: 実装説明、コミット文、PR文、修正報告を日本語にする。
-- GitHub Codex Review: レビュー要約、指摘、修正提案を日本語にする。
-- Gemini: 構造化レビューの文字列フィールド、要約、指摘、根拠、修正提案を日本語にする。
-- 将来追加するAI: 同じ規則を既定で継承する。
+単なる質問、修正依頼、方針回答、調査依頼、
+「Aで進めて」「それを修正して」「この方針で進めて」等は
+Mission終了として扱わない。
 
-## Git運用
+### 一時停止
 
-- V2の通常マージは履歴上で合流するマージコミット方式を用いる。
-- マージ済みブランチへ追加コミットしない。
-- 追加修正はマージ先最新から新しいブランチを作る。
-- 履歴を動かすためだけの空コミット、一時ファイル、仮文字追加を禁止する。
-- コミット前に差分、対象ブランチ、変更ファイルを確認する。
-- コミット後かつpush前に、コミット内容と親SHAを再確認する。
+真のSTOP条件が発生した場合は作業を一時停止してよいが、
+Mission自体を終了してはならない。
 
-## 設計と実装
+Mission stateを `PAUSED_FOR_INTERVENTION` とし、
+GitHubのMission管理Issueおよび必要に応じてcurrent Work Issueへ
+Checkpointを残す。
 
-- 設計を先に確定し、その後に実装する。
-- Issueが指す正本設計と実装を一致させる。
-- 実装変更時は関連設計文書も同時に更新する。
-- V2の作業再開時はResume Gateを通し、GitHub live状態を正本として確認する。
+Checkpointには最低限、次を記録する。
+
+- Mission名
+- Mission state
+- current Work Issue
+- current PR / branch
+- exact HEAD
+- 完了済み作業
+- STOP reason
+- ユーザー判断が必要な内容
+- 再開後の最初のaction
+
+ユーザーの介入によってSTOP理由が解消した場合は、
+その介入処理だけで終了せず、元のMissionへ自動復帰する。
+
+### STOP条件ではないもの
+
+次は通常の作業継続条件であり、STOP理由にしない。
+
+- test failure
+- lint / type check failure
+- CI failure
+- canonical reviewのblocking finding
+- 修正可能なbug
+- targeted test PASS
+- commit完了
+- push完了
+- PR更新完了
+- 個別工程完了
+- Work Issue単体の実装完了
+
+修正可能である限りfix / test / review loopを継続する。
+
+### MissionとWorkの関係
+
+Autonomous Completion Missionは個別Work Issueより上位の継続目標である。
+
+個別Workの完了はMission完了を意味しない。
+
+current Workが完了したらGitHub live dependency graphを再確認し、
+次のdependency-ready Workについてfresh Resume Gateを通して継続する。
+
+Missionの最終完了条件は、Mission管理IssueおよびRoot Issueが定義する
+全体完成条件を満たした場合だけとする。
