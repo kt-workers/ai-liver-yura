@@ -128,26 +128,28 @@ def _validate_model_grounding(
     joints = {item.joint_id: item for item in model.joints}
     for goal in candidate.goals:
         selector = goal.selector
+        selected_chain_ids = set(selector.chain_ids)
+        selected_end_effector_joint_ids = set(selector.end_effector_joint_ids)
         if (
-            set(selector.chain_ids) - set(chains)
-            or set(selector.end_effector_joint_ids) - end_effectors
+            selected_chain_ids - set(chains)
+            or selected_end_effector_joint_ids - end_effectors
         ):
             raise ValueError("selector がCanonical Body Modelへgroundされていません")
-        for chain_id in selector.chain_ids:
-            if selector.end_effector_joint_ids and not set(
-                selector.end_effector_joint_ids
-            ).issubset({chains[chain_id].end_effector_joint_id}):
+        chain_terminal_joint_ids = {
+            chains[chain_id].end_effector_joint_id for chain_id in selected_chain_ids
+        }
+        if selected_chain_ids and selected_end_effector_joint_ids:
+            if selected_end_effector_joint_ids != chain_terminal_joint_ids:
                 raise ValueError("chain/end-effector関係が不正です")
         selected_joint_ids = {
             joint_id
-            for chain_id in selector.chain_ids
+            for chain_id in selected_chain_ids
             for joint_id in chains[chain_id].joint_ids
-        } | set(selector.end_effector_joint_ids)
-        if selected_joint_ids and selector.region is not None and not any(
-            joints[joint_id].region is selector.region for joint_id in selected_joint_ids
+        } | selected_end_effector_joint_ids
+        grounding_joint_ids = selected_joint_ids or set(joints)
+        if (selector.region is not None or selector.side is not None) and not any(
+            (selector.region is None or joints[joint_id].region is selector.region)
+            and (selector.side is None or joints[joint_id].side is selector.side)
+            for joint_id in grounding_joint_ids
         ):
-            raise ValueError("selector region がCanonical Body Modelと一致しません")
-        if selected_joint_ids and selector.side is not None and not any(
-            joints[joint_id].side is selector.side for joint_id in selected_joint_ids
-        ):
-            raise ValueError("selector side がCanonical Body Modelと一致しません")
+            raise ValueError("selector region/side がCanonical Body Modelと一致しません")

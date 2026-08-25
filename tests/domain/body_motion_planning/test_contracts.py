@@ -484,6 +484,20 @@ def test_snapshot_requires_a_capability_snapshot_for_the_committed_command() -> 
         replace(_snapshot(), capabilities=())
 
 
+def test_snapshot_keeps_only_descriptors_required_by_the_committed_command() -> None:
+    unrelated = CapabilityDescriptor(
+        "cap:vision", "vision", ("observe",), CapabilityAvailability.AVAILABLE, 1, {}
+    )
+    with pytest.raises(ValueError, match="限定"):
+        replace(_snapshot(), capabilities=(*_snapshot().capabilities, unrelated))
+    no_requirement_intent = replace(_intent(), required_capabilities=())
+    with pytest.raises(ValueError, match="限定"):
+        replace(_snapshot(), intent=no_requirement_intent)
+    assert replace(
+        _snapshot(), intent=no_requirement_intent, capabilities=()
+    ).capabilities == ()
+
+
 def test_contract_rejects_duplicate_phase_coordination_and_binding_ids() -> None:
     goal = _goal()
     second = replace(goal, goal_id="goal:2")
@@ -835,6 +849,92 @@ def test_authority_rejects_unknown_or_inconsistent_canonical_selector() -> None:
                 plan_id="plan:1",
                 committed_at=NOW,
             )
+
+
+def test_authority_rejects_region_only_selector_absent_from_current_model() -> None:
+    absent_region_goal = BodyMotionGoal(
+        "goal:1",
+        BodyMotionEffect.ORIENT,
+        BodyMotionSelector(AnatomicalRegion.FOOT),
+        BodySpatialTarget(BodySpatialTargetKind.TARGET_REF, None, "target:1", 0.5),
+        0.5,
+        ("constraint:1",),
+    )
+    with pytest.raises(ValueError, match="region/side"):
+        BodyMotionPlanAuthority().commit(
+            replace(_candidate(), goals=(absent_region_goal,)),
+            _snapshot(),
+            _current(),
+            plan_id="plan:1",
+            committed_at=NOW,
+        )
+
+
+def test_authority_grounding_validates_multi_chain_end_effector_coverage() -> None:
+    root, right = _model().joints
+    left = JointDefinition(
+        "left_hand",
+        "root",
+        AnatomicalRegion.HAND,
+        AnatomicalSide.LEFT,
+        _transform(),
+        (JointLimit(Axis.Z, -1, 1, -0.5, 0.5, 0),),
+    )
+    model = CanonicalBodyModel(
+        "body.v1",
+        (root, right, left),
+        (
+            SegmentDefinition("right_arm", "root", "right_hand", 0.4, 1.0),
+            SegmentDefinition("left_arm", "root", "left_hand", 0.4, 1.0),
+        ),
+        ("right_hand", "left_hand"),
+        (
+            KinematicChain("right_arm", ("root", "right_hand"), "right_hand"),
+            KinematicChain("left_arm", ("root", "left_hand"), "left_hand"),
+        ),
+        CenterOfMassReference("root", Vector3(0, 0, 0)),
+    )
+    zero = JointVelocity(Vector3(0, 0, 0), Vector3(0, 0, 0))
+    state = BodyState(
+        "body.v1",
+        2,
+        NOW,
+        BodyPose(_transform(), (("right_hand", _transform()), ("left_hand", _transform()))),
+        BodyVelocity(zero, (("right_hand", zero), ("left_hand", zero))),
+    )
+    valid = replace(
+        _goal(),
+        selector=BodyMotionSelector(
+            AnatomicalRegion.HAND,
+            None,
+            ("right_arm", "left_arm"),
+            ("right_hand", "left_hand"),
+        ),
+    )
+    snapshot = replace(_snapshot(), body_model=model, body_state=state)
+    current = replace(_current(), body_model=model, body_state=state)
+    plan = BodyMotionPlanAuthority().commit(
+        replace(_candidate(), goals=(valid,)),
+        snapshot,
+        current,
+        plan_id="plan:valid",
+        committed_at=NOW,
+    )
+    assert plan.candidate.goals == (valid,)
+    crossed = replace(
+        valid,
+        selector=BodyMotionSelector(
+            AnatomicalRegion.HAND, None, ("right_arm",), ("left_hand",)
+        ),
+    )
+    with pytest.raises(ValueError, match="chain/end-effector"):
+        BodyMotionPlanAuthority().commit(
+            replace(_candidate(), goals=(crossed,)),
+            snapshot,
+            current,
+            plan_id="plan:crossed",
+            committed_at=NOW,
+        )
 
 
 def test_authority_accepts_composed_multi_goal_and_whole_body_motion(

@@ -365,6 +365,14 @@ class BodyMotionPlanningContextSnapshot:
             for requirement in self.intent.required_capabilities
         ):
             raise ValueError("required capability を満たすsnapshotが必要です")
+        if any(
+            not any(
+                descriptor.satisfies(requirement)
+                for requirement in self.intent.required_capabilities
+            )
+            for descriptor in capabilities
+        ):
+            raise ValueError("capability snapshot はrequired capabilityに限定しなければなりません")
         object.__setattr__(self, "capabilities", capabilities)
         if self.deterministic_directive is not None and not isinstance(
             self.deterministic_directive,
