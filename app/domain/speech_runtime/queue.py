@@ -152,14 +152,17 @@ class PreparedSpeechQueueCoordinator:
         passed: bool,
         failure: CandidateLifecycle | None = None,
     ) -> PreparedSpeechCandidate:
+        generation = self._runtime.generation(candidate_id)
         if not passed:
             if failure is None:
                 raise ValueError("revalidation failure lifecycle が必要です")
             await self._discarder.discard_current(
                 candidate_id,
-                self._runtime.generation(candidate_id),
+                generation,
                 self._discard_reason(failure),
             )
+            if not await self._runtime.is_current_generation(candidate_id, generation):
+                raise ValueError("revalidation generation が更新されました")
         return await self._runtime.complete_revalidation(candidate_id, passed, failure)
 
     def shutdown(self) -> tuple[PreparedSpeechQueueEntry, ...]:

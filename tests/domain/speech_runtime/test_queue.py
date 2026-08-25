@@ -72,6 +72,18 @@ class _DiscardOwner(PreparedAudioDiscardPort):
         self.refs.discard(request.audio_ref)
 
 
+class _BlockingDiscardOwner(_DiscardOwner):
+    def __init__(self, *refs: str) -> None:
+        super().__init__(*refs)
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def discard(self, request: PreparedAudioDiscardRequest) -> None:
+        self.entered.set()
+        await self.release.wait()
+        await super().discard(request)
+
+
 def _coordinator(
     runtime: SpeechRuntime, queue: PreparedSpeechQueue, owner: _DiscardOwner | None = None
 ) -> PreparedSpeechQueueCoordinator:
@@ -176,6 +188,90 @@ async def test_shutdown_discards_bound_audio_resource_before_terminal_transition
     assert not owner.refs
     assert owner.requests[0].audio_ref == "audio-candidate"
     assert (await runtime.candidate("candidate")).prepared_audio_ref is None
+
+
+@pytest.mark.asyncio
+async def test_queue_suppression_discards_displaced_audio_resource() -> None:
+    runtime = SpeechRuntime()
+    background = replace(
+        _prepared("background", LLMPriority.BACKGROUND),
+        prepared_audio_ref="audio-background",
+        presentation_modes=(SpeechPresentationMode.AUDIO_WITH_TEXT,),
+        readiness=SpeechComponentReadiness(
+            SpeechReadinessState.READY,
+            SpeechReadinessState.READY,
+            VerifierReadinessState.ACCEPTED,
+            SpeechReadinessState.READY,
+            AudioReadinessState.READY,
+        ),
+    )
+    await runtime.register(background)
+    await runtime.register(_prepared("foreground", LLMPriority.FOREGROUND))
+    owner = _DiscardOwner("audio-background")
+    coordinator = _coordinator(runtime, PreparedSpeechQueue(1), owner)
+    assert await coordinator.enqueue_current("background", 1, foreground=False)
+    assert await coordinator.enqueue_current("foreground", 1, foreground=True)
+    assert owner.requests[0].audio_ref == "audio-background"
+    assert not owner.refs
+    displaced = await runtime.candidate("background")
+    assert displaced.lifecycle is CandidateLifecycle.SUPERSEDED
+    assert displaced.prepared_audio_ref is None
+
+
+@pytest.mark.asyncio
+async def test_old_revalidation_failure_cannot_terminalize_new_generation_after_slow_discard(
+) -> None:
+    runtime = SpeechRuntime()
+    candidate = replace(
+        _prepared("candidate", LLMPriority.FOREGROUND),
+        prepared_audio_ref="audio-g1",
+        presentation_modes=(SpeechPresentationMode.AUDIO_WITH_TEXT,),
+        readiness=SpeechComponentReadiness(
+            SpeechReadinessState.READY,
+            SpeechReadinessState.READY,
+            VerifierReadinessState.ACCEPTED,
+            SpeechReadinessState.READY,
+            AudioReadinessState.READY,
+        ),
+    )
+    await runtime.register(candidate)
+    owner = _BlockingDiscardOwner("audio-g1", "audio-g2")
+    coordinator = _coordinator(runtime, PreparedSpeechQueue(2), owner)
+    assert await coordinator.enqueue_current("candidate", 1, foreground=True)
+    assert (await coordinator.pop_for_revalidation()) is not None
+    stale_g1 = asyncio.create_task(
+        coordinator.complete_revalidation(
+            "candidate", passed=False, failure=CandidateLifecycle.STALE
+        )
+    )
+    await owner.entered.wait()
+    await runtime.supersede_generation("candidate")
+    await runtime.commit_generation_result(
+        "candidate",
+        2,
+        readiness=SpeechComponentReadiness(
+            SpeechReadinessState.READY,
+            SpeechReadinessState.READY,
+            VerifierReadinessState.ACCEPTED,
+            SpeechReadinessState.READY,
+            AudioReadinessState.READY,
+        ),
+        utterance_id="utterance-g2",
+        performance_plan_id="performance-g2",
+        semantic_acceptance_id="acceptance-g2",
+        prepared_audio_ref="audio-g2",
+    )
+    assert await coordinator.enqueue_current("candidate", 2, foreground=True)
+    assert (await coordinator.pop_for_revalidation()) is not None
+    owner.release.set()
+    with pytest.raises(ValueError, match="generation"):
+        await stale_g1
+    current = await runtime.candidate("candidate")
+    assert runtime.generation("candidate") == 2
+    assert current.lifecycle is CandidateLifecycle.REVALIDATING
+    assert current.prepared_audio_ref == "audio-g2"
+    assert "audio-g1" not in owner.refs
+    assert "audio-g2" in owner.refs
 
 
 @pytest.mark.asyncio

@@ -126,6 +126,7 @@ class SpeechPreparationRequest:
     trace_id: str
     semantic_skip_proof: SemanticVerificationSkipProof | None = None
     semantic_verification_policy_revision: int | None = None
+    semantic_verification_policy: SemanticVerificationRequirementPolicy | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -176,9 +177,11 @@ class SpeechPreparationRequest:
         ) and (
             self.semantic_verification_policy_revision is None
             or self.semantic_skip_proof is None
+            or self.semantic_verification_policy is None
             or self.semantic_skip_proof.policy_id != self.semantic_verification_policy_ref
             or self.semantic_skip_proof.policy_revision
             != self.semantic_verification_policy_revision
+            or not self.semantic_verification_policy.accepts(self.semantic_skip_proof)
         ):
             raise ValueError("verifier skip proofのpolicy bindingが不正です")
         preconditions = tuple(self.required_preconditions)
@@ -207,6 +210,35 @@ class SemanticVerificationSkipProof:
         ):
             raise ValueError("closed_conditions が不正です")
         object.__setattr__(self, "closed_conditions", conditions)
+
+
+@dataclass(frozen=True, slots=True)
+class SemanticVerificationRequirementPolicy:
+    """#348が所有するclosed verifier-skip decisionのimmutable authority。"""
+
+    policy_id: str
+    policy_revision: int
+    closed_skip_proofs: tuple[SemanticVerificationSkipProof, ...]
+
+    def __post_init__(self) -> None:
+        require_identifier(self.policy_id, "policy_id")
+        require_revision(self.policy_revision, "policy_revision")
+        proofs = tuple(self.closed_skip_proofs)
+        if not proofs or any(
+            not isinstance(proof, SemanticVerificationSkipProof) for proof in proofs
+        ):
+            raise ValueError("closed_skip_proofs が不正です")
+        if len({(proof.reason_code, proof.closed_conditions) for proof in proofs}) != len(proofs):
+            raise ValueError("closed skip decision は一意です")
+        if any(
+            proof.policy_id != self.policy_id or proof.policy_revision != self.policy_revision
+            for proof in proofs
+        ):
+            raise ValueError("closed skip decisionのpolicy bindingが不正です")
+        object.__setattr__(self, "closed_skip_proofs", proofs)
+
+    def accepts(self, proof: SemanticVerificationSkipProof) -> bool:
+        return proof in self.closed_skip_proofs
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,6 +328,7 @@ class PreparedSpeechCandidate:
     character_definition_revision: int | None = None
     semantic_verification_policy_ref: str | None = None
     semantic_verification_policy_revision: int | None = None
+    semantic_verification_policy: SemanticVerificationRequirementPolicy | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -359,9 +392,11 @@ class PreparedSpeechCandidate:
                 self.semantic_verification_policy_ref is None
                 or self.semantic_verification_policy_revision is None
                 or self.semantic_skip_proof is None
+                or self.semantic_verification_policy is None
                 or self.semantic_skip_proof.policy_id != self.semantic_verification_policy_ref
                 or self.semantic_skip_proof.policy_revision
                 != self.semantic_verification_policy_revision
+                or not self.semantic_verification_policy.accepts(self.semantic_skip_proof)
             )
         ):
             raise ValueError("verifier skip proofのpolicy bindingが不正です")

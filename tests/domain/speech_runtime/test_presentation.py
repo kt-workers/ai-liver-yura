@@ -287,9 +287,19 @@ async def test_playback_wait_does_not_block_next_candidate_preparation_or_heartb
     async def unrelated() -> None:
         heartbeat.set()
 
-    SpeechPreparationOrchestrator(
+    orchestrator = SpeechPreparationOrchestrator(
         tasks, SpeechPreparationAdmission(SpeechPreparationAdmissionPolicy(2, 2, 4))
-    ).fan_out_after_character(
+    )
+
+    async def character() -> object:
+        return object()
+
+    character_task = orchestrator.start_preparation(
+        "candidate-b", 1, LLMPriority.FOREGROUND, character
+    )
+    assert character_task is not None
+    await character_task
+    orchestrator.fan_out_after_character(
         "candidate-b", 1, verifier, performance
     )
     await unrelated()
@@ -298,6 +308,7 @@ async def test_playback_wait_does_not_block_next_candidate_preparation_or_heartb
     assert heartbeat.is_set()
     assert (await runtime.candidate("candidate")).lifecycle is CandidateLifecycle.PRESENTING
     release_playback.set()
+    orchestrator.complete_preparation("candidate-b", 1)
     while tasks.pending_task_count:
         await asyncio.sleep(0)
 

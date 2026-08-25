@@ -11,6 +11,7 @@ from app.domain.speech_runtime.contracts import (
     CandidateLifecycle,
     PreparedSpeechCandidate,
     SemanticVerificationRequirement,
+    SemanticVerificationRequirementPolicy,
     SemanticVerificationSkipProof,
     SpeechComponentReadiness,
     SpeechPreparationRequest,
@@ -22,6 +23,15 @@ from app.domain.speech_runtime.contracts import (
 
 def _proof(policy_id: str = "semantic-policy", revision: int = 7) -> SemanticVerificationSkipProof:
     return SemanticVerificationSkipProof(policy_id, revision, "closed-policy", ("condition",))
+
+
+def _policy(
+    proof: SemanticVerificationSkipProof | None = None,
+) -> SemanticVerificationRequirementPolicy:
+    accepted = proof or _proof()
+    return SemanticVerificationRequirementPolicy(
+        accepted.policy_id, accepted.policy_revision, (accepted,)
+    )
 
 
 def _request(**changes: object) -> SpeechPreparationRequest:
@@ -46,6 +56,7 @@ def _request(**changes: object) -> SpeechPreparationRequest:
         "created_at": datetime.now(timezone.utc),
         "trace_id": "trace",
         "semantic_skip_proof": _proof(),
+        "semantic_verification_policy": _policy(),
     }
     values.update(changes)
     return SpeechPreparationRequest(**values)  # type: ignore[arg-type]
@@ -85,6 +96,7 @@ def _candidate(**changes: object) -> PreparedSpeechCandidate:
         "semantic_skip_proof": _proof(),
         "semantic_verification_policy_ref": "semantic-policy",
         "semantic_verification_policy_revision": 7,
+        "semantic_verification_policy": _policy(),
     }
     values.update(changes)
     return PreparedSpeechCandidate(**values)  # type: ignore[arg-type]
@@ -95,9 +107,23 @@ def test_closed_policy_skip_proof_is_bound_to_request_generation_policy() -> Non
     with pytest.raises(ValueError, match="proof"):
         _request(semantic_skip_proof=None)
     with pytest.raises(ValueError, match="binding"):
-        _request(semantic_skip_proof=_proof("other-policy"))
+        _request(semantic_skip_proof=_proof("other-policy"), semantic_verification_policy=_policy())
     with pytest.raises(ValueError, match="binding"):
-        _request(semantic_skip_proof=_proof(revision=8))
+        _request(semantic_skip_proof=_proof(revision=8), semantic_verification_policy=_policy())
+    with pytest.raises(ValueError, match="binding"):
+        _request(
+            semantic_skip_proof=SemanticVerificationSkipProof(
+                "semantic-policy", 7, "wrong-reason", ("condition",)
+            ),
+            semantic_verification_policy=_policy(),
+        )
+    with pytest.raises(ValueError, match="binding"):
+        _request(
+            semantic_skip_proof=SemanticVerificationSkipProof(
+                "semantic-policy", 7, "closed-policy", ("wrong-condition",)
+            ),
+            semantic_verification_policy=_policy(),
+        )
 
 
 def test_closed_policy_skip_proof_is_bound_to_candidate_generation_policy() -> None:
@@ -107,6 +133,13 @@ def test_closed_policy_skip_proof_is_bound_to_candidate_generation_policy() -> N
         replace(candidate, semantic_skip_proof=None)
     with pytest.raises(ValueError, match="binding"):
         replace(candidate, semantic_verification_policy_revision=8)
+    with pytest.raises(ValueError, match="binding"):
+        replace(
+            candidate,
+            semantic_skip_proof=SemanticVerificationSkipProof(
+                "semantic-policy", 7, "wrong-reason", ("condition",)
+            ),
+        )
 
 
 def test_required_verifier_cannot_be_replaced_by_caller_supplied_skip_proof() -> None:
