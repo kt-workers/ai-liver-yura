@@ -49,9 +49,30 @@ class StreamingExternalState(str, Enum):
     UNKNOWN = "unknown"
 
 
+class StreamingSubsystemLifecycle(str, Enum):
+    STOPPED = "stopped"
+    STARTING = "starting"
+    AVAILABLE = "available"
+    DEGRADED = "degraded"
+    RECONNECTING = "reconnecting"
+    STOPPING = "stopping"
+
+
 class StreamingObservationSourceKind(str, Enum):
     PROVIDER_OBSERVATION = "provider_observation"
     USER_REPORT = "user_report"
+
+
+class StreamingObservationReconciliation(str, Enum):
+    UNRECONCILED = "unreconciled"
+    CONFIRMED = "confirmed"
+    CONTRADICTED = "contradicted"
+
+
+class StreamingCommentModerationState(str, Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
 
 
 def _refs(values: tuple[str, ...], name: str) -> tuple[str, ...]:
@@ -98,6 +119,30 @@ class StreamingExecutionRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class StreamingCapabilityView:
+    """provider非依存の現在capability/descriptor世代。"""
+
+    capability_id: str
+    descriptor_revision: int
+    operations: tuple[StreamingOperation, ...]
+    available: bool
+    provider_generation: int
+
+    def __post_init__(self) -> None:
+        require_identifier(self.capability_id, "capability_id")
+        require_revision(self.descriptor_revision, "descriptor_revision")
+        require_revision(self.provider_generation, "provider_generation")
+        if (
+            not isinstance(self.operations, tuple)
+            or not self.operations
+            or any(not isinstance(operation, StreamingOperation) for operation in self.operations)
+            or len(set(self.operations)) != len(self.operations)
+            or type(self.available) is not bool
+        ):
+            raise ValueError("streaming capability が不正です")
+
+
+@dataclass(frozen=True, slots=True)
 class StreamingExecutionReport:
     execution_id: str
     operation: StreamingOperation
@@ -121,6 +166,34 @@ class StreamingExecutionReport:
         if self.started_at is not None:
             require_aware(self.started_at, "started_at")
         require_aware(self.completed_at, "completed_at")
+        if self.started_at is not None and self.started_at > self.completed_at:
+            raise ValueError("execution report time が不正です")
+        allowed_effects = {
+            StreamingExecutionStatus.SUCCEEDED: {StreamingEffectState.APPLIED},
+            StreamingExecutionStatus.FAILED: {
+                StreamingEffectState.NOT_APPLIED,
+                StreamingEffectState.AMBIGUOUS,
+                StreamingEffectState.UNKNOWN,
+            },
+            StreamingExecutionStatus.CANCELLED: {
+                StreamingEffectState.AMBIGUOUS,
+                StreamingEffectState.UNKNOWN,
+            },
+            StreamingExecutionStatus.TIMED_OUT: {
+                StreamingEffectState.AMBIGUOUS,
+                StreamingEffectState.UNKNOWN,
+            },
+            StreamingExecutionStatus.PROVIDER_UNAVAILABLE: {
+                StreamingEffectState.NOT_APPLIED,
+                StreamingEffectState.UNKNOWN,
+            },
+            StreamingExecutionStatus.UNKNOWN_EFFECT: {
+                StreamingEffectState.AMBIGUOUS,
+                StreamingEffectState.UNKNOWN,
+            },
+        }
+        if self.effect_state not in allowed_effects[self.status]:
+            raise ValueError("execution report effect truth が不正です")
         object.__setattr__(
             self, "observation_refs", _refs(self.observation_refs, "observation_refs")
         )
@@ -139,8 +212,11 @@ class StreamingExternalObservation:
     source_ref: str
     observed_at: datetime
     confidence: float
-    provider_generation: int
+    provider_generation: int | None
     trace_id: str | None = None
+    reconciliation: StreamingObservationReconciliation = (
+        StreamingObservationReconciliation.UNRECONCILED
+    )
 
     def __post_init__(self) -> None:
         for field in ("observation_id", "source_ref"):
@@ -156,7 +232,49 @@ class StreamingExternalObservation:
         ):
             raise ValueError("confidence が不正です")
         object.__setattr__(self, "confidence", float(self.confidence))
-        require_revision(self.provider_generation, "provider_generation")
+        if self.source_kind is StreamingObservationSourceKind.PROVIDER_OBSERVATION:
+            require_revision(self.provider_generation, "provider_generation")
+        elif self.provider_generation is not None:
+            raise ValueError("user reportにprovider_generationは指定できません")
         if self.trace_id is not None:
             require_identifier(self.trace_id, "trace_id")
         require_aware(self.observed_at, "observed_at")
+        if not isinstance(self.reconciliation, StreamingObservationReconciliation):
+            raise ValueError("observation reconciliation が不正です")
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingCommentEvent:
+    event_id: str
+    source_channel_ref: str
+    text: str
+    observed_at: datetime
+    author_ref: str | None = None
+    moderation_state: StreamingCommentModerationState = StreamingCommentModerationState.PENDING
+
+    def __post_init__(self) -> None:
+        for name in ("event_id", "source_channel_ref"):
+            require_identifier(getattr(self, name), name)
+        if self.author_ref is not None:
+            require_identifier(self.author_ref, "author_ref")
+        if not isinstance(self.text, str) or not self.text.strip() or len(self.text) > 500:
+            raise ValueError("comment text が不正です")
+        require_aware(self.observed_at, "observed_at")
+        if not isinstance(self.moderation_state, StreamingCommentModerationState):
+            raise ValueError("comment moderation state が不正です")
+
+
+@dataclass(frozen=True, slots=True)
+class StreamingCommentSignal:
+    signal_id: str
+    source_channel_ref: str
+    representative_event_id: str
+    count: int
+    generated_at: datetime
+
+    def __post_init__(self) -> None:
+        for name in ("signal_id", "source_channel_ref", "representative_event_id"):
+            require_identifier(getattr(self, name), name)
+        if type(self.count) is not int or self.count < 1:
+            raise ValueError("comment signal count が不正です")
+        require_aware(self.generated_at, "generated_at")
