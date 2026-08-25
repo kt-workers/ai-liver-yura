@@ -100,7 +100,7 @@ class _PostCheckGenerationRaceRuntime(SpeechRuntime):
     ) -> PreparedSpeechCandidate | None:
         if self.inject_race:
             self.inject_race = False
-            await self.supersede_generation(candidate_id)
+            await self.supersede_generation(candidate_id, self.generation(candidate_id))
             await self.commit_generation_result(
                 candidate_id,
                 2,
@@ -132,7 +132,7 @@ class _QueuePopGenerationRaceRuntime(SpeechRuntime):
     ) -> PreparedSpeechCandidate | None:
         if self.inject_race:
             self.inject_race = False
-            await self.supersede_generation(candidate_id)
+            await self.supersede_generation(candidate_id, self.generation(candidate_id))
             await self.commit_generation_result(
                 candidate_id,
                 2,
@@ -164,7 +164,7 @@ async def test_only_current_generation_can_enqueue_and_duplicate_is_rejected() -
     runtime = SpeechRuntime()
     await runtime.register(_prepared("candidate", LLMPriority.FOREGROUND))
     coordinator = _coordinator(runtime, PreparedSpeechQueue(2))
-    await runtime.supersede_generation("candidate")
+    await runtime.supersede_generation("candidate", runtime.generation("candidate"))
     assert not await coordinator.enqueue_current("candidate", 1, foreground=True)
     # G2が再びPREPAREDへ収束した後だけqueueへ入れられる。
     await runtime.commit_generation_result(
@@ -312,7 +312,7 @@ async def test_old_revalidation_failure_cannot_terminalize_new_generation_after_
         )
     )
     await owner.entered.wait()
-    await runtime.supersede_generation("candidate")
+    await runtime.supersede_generation("candidate", runtime.generation("candidate"))
     await runtime.commit_generation_result(
         "candidate",
         2,
@@ -411,5 +411,5 @@ async def test_old_generation_entry_is_dropped_before_revalidation() -> None:
     await runtime.register(_prepared("candidate", LLMPriority.FOREGROUND))
     coordinator = _coordinator(runtime, PreparedSpeechQueue(1))
     assert await coordinator.enqueue_current("candidate", 1, foreground=True)
-    await runtime.supersede_generation("candidate")
+    await runtime.supersede_generation("candidate", runtime.generation("candidate"))
     assert await coordinator.pop_for_revalidation() is None

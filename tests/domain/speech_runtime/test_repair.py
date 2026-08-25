@@ -43,6 +43,33 @@ class _FakeOwner(PreparedAudioDiscardPort):
         self.refs.discard(request.audio_ref)
 
 
+class _PostDiscardSupersedeRaceRuntime(SpeechRuntime):
+    """G1 repairのsupersede mutation直前に別owner結果でG2を確立する。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.inject_race = False
+
+    async def supersede_generation(
+        self, candidate_id: str, expected_generation: int
+    ) -> int | None:
+        if self.inject_race:
+            self.inject_race = False
+            generation_two = await super().supersede_generation(
+                candidate_id, expected_generation
+            )
+            assert generation_two == 2
+            await self.commit_generation_result(
+                candidate_id,
+                generation_two,
+                readiness=_ready(verifier=VerifierReadinessState.ACCEPTED),
+                utterance_id="utterance-g2",
+                performance_plan_id="performance-g2",
+                semantic_acceptance_id="acceptance-g2",
+            )
+        return await super().supersede_generation(candidate_id, expected_generation)
+
+
 def _candidate(candidate_id: str = "candidate") -> PreparedSpeechCandidate:
     now = datetime.now(timezone.utc)
     return PreparedSpeechCandidate(
@@ -299,6 +326,40 @@ async def test_late_g1_verifier_result_does_not_restore_presentation_eligibility
     assert late is None
     assert current.semantic_acceptance_id is None
     assert current.lifecycle is CandidateLifecycle.PREPARING
+
+
+@pytest.mark.asyncio
+async def test_stale_g1_repair_cannot_supersede_or_cancel_generation_two() -> None:
+    runtime = _PostDiscardSupersedeRaceRuntime()
+    tasks = CandidateTaskRegistry()
+    await runtime.register(_candidate())
+    release = asyncio.Event()
+
+    async def g2_work() -> object:
+        await release.wait()
+        return object()
+
+    task_g2 = tasks.start(CandidateTaskKey("candidate", 2, "performance"), g2_work())
+    runtime.inject_race = True
+    result = await _executor(runtime, tasks).handle_verifier_result(
+        candidate_id="candidate",
+        generation=1,
+        semantic_accepted=False,
+        semantic_acceptance_id=None,
+        verifier_execution_failed=False,
+        speech_plan_stale=False,
+        evidence=SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",)),
+        repair_character=_repair,
+    )
+    current = await runtime.candidate("candidate")
+    assert result is None
+    assert runtime.generation("candidate") == 2
+    assert current.lifecycle is CandidateLifecycle.PREPARED
+    assert current.utterance_id == "utterance-g2"
+    assert current.performance_plan_id == "performance-g2"
+    assert not task_g2.done()
+    release.set()
+    await task_g2
 
 
 @pytest.mark.asyncio

@@ -53,9 +53,13 @@ class SpeechRuntime:
         async with self._lock:
             return self._generations.get(candidate_id) == generation
 
-    async def supersede_generation(self, candidate_id: str) -> int:
+    async def supersede_generation(
+        self, candidate_id: str, expected_generation: int
+    ) -> int | None:
         """repair/rebind前に古いperformance/audio結果をcandidate局所で無効化する。"""
         async with self._lock:
+            if self._generations.get(candidate_id) != expected_generation:
+                return None
             candidate = self._active(candidate_id)
             self._generations[candidate_id] += 1
             generation = self._generations[candidate_id]

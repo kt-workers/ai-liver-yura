@@ -100,9 +100,11 @@ class SpeechSemanticRepairExecutor:
             await self._discarder.discard_current(
                 candidate_id, generation, PreparedAudioDiscardReason.CHARACTER_REPAIRED
             )
-            if not await self._runtime.is_current_generation(candidate_id, generation):
+            next_generation = await self._runtime.supersede_generation(
+                candidate_id, generation
+            )
+            if next_generation is None:
                 return None
-            next_generation = await self._runtime.supersede_generation(candidate_id)
             await self._tasks.cancel_candidate(candidate_id, before_generation=next_generation)
             attempt = SemanticRepairAttempt(
                 attempt=1,

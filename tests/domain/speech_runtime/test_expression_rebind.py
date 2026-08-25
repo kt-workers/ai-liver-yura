@@ -50,7 +50,7 @@ class _BlockingOwner(_FakeResourceOwner):
 
 
 async def _advance_to_generation_two(runtime: SpeechRuntime) -> None:
-    await runtime.supersede_generation("candidate")
+    await runtime.supersede_generation("candidate", runtime.generation("candidate"))
     await runtime.commit_generation_result(
         "candidate",
         2,
@@ -185,7 +185,7 @@ async def test_discard_wait_race_never_restores_or_discards_g2_audio() -> None:
         discarder.discard_current("candidate", 1, PreparedAudioDiscardReason.PERFORMANCE_REBOUND)
     )
     await owner.entered.wait()
-    await runtime.supersede_generation("candidate")
+    await runtime.supersede_generation("candidate", runtime.generation("candidate"))
     await runtime.commit_generation_result(
         "candidate",
         2,
