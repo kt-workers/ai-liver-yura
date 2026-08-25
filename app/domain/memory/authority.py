@@ -251,7 +251,6 @@ class MemoryStoreAuthority:
             provenance.source_event_refs,
             provenance.source_fact_refs,
             provenance.source_memory_candidate_id,
-            provenance.observed_at,
         )
 
     def _semantic_related_ids(

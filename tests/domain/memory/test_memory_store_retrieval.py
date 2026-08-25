@@ -119,7 +119,7 @@ def test_exact_duplicate_noops_and_new_provenance_merges_without_losing_history(
     assert {item.source_fact_refs[0] for item in merged.record.provenance} == {"fact:1", "fact:2"}  # type: ignore[union-attr]
 
 
-def test_same_immutable_provenance_with_later_recorded_at_is_noop() -> None:
+def test_same_immutable_provenance_with_later_observation_and_recording_is_noop() -> None:
     store, repository = authority()
     store.write(MemoryWriteRequest(candidate()))
     repeated = candidate("candidate:2")
@@ -131,7 +131,7 @@ def test_same_immutable_provenance_with_later_recorded_at_is_noop() -> None:
                 repeated.provenance.source_event_refs,
                 repeated.provenance.source_fact_refs,
                 repeated.provenance.source_memory_candidate_id,
-                repeated.provenance.observed_at,
+                NOW + timedelta(minutes=1),
                 NOW + timedelta(minutes=1),
             )
         }
