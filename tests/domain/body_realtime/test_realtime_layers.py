@@ -183,6 +183,56 @@ def test_gaze_smooths_and_saturates_without_full_body_authority() -> None:
     assert all(item.layer is not RealtimeLayer.POSTURE_ASSIST for item in second.channel_overlays)
 
 
+def test_gaze_release_keeps_a_smoothed_overlay_instead_of_dropping_it() -> None:
+    engine = BodyRealtimeEngine()
+    target = BodyGazeTargetView("focus", 1.0, 0.0, 5, "attention", 1.0, NOW)
+    acquired = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=target,
+        speech=None,
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    released = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=None,
+        now=NOW + timedelta(milliseconds=20),
+        monotonic_now_s=0.02,
+    )
+    acquired_x = next(
+        item.value for item in acquired.channel_overlays if item.channel is RealtimeChannel.GAZE_X
+    )
+    released_x = next(
+        item.value for item in released.channel_overlays if item.channel is RealtimeChannel.GAZE_X
+    )
+    assert 0 < released_x < acquired_x
+
+
+def test_late_blink_tick_consumes_phase_overshoot_without_replaying_a_full_blink() -> None:
+    engine = BodyRealtimeEngine(seed=4)
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=None,
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    late = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=None,
+        now=NOW + timedelta(seconds=3),
+        monotonic_now_s=3,
+    )
+    detail = next(item.detail for item in late.layer_statuses if item.layer is RealtimeLayer.BLINK)
+    assert detail == "open"
+
+
 def test_breath_and_blink_continue_when_speech_is_absent() -> None:
     bundle = BodyRealtimeEngine().tick(
         body_state=_body_state(),

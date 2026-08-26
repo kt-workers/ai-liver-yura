@@ -142,6 +142,26 @@ class BodyRealtimeEngine:
         elapsed: float,
     ) -> None:
         if target is None or not target.has_spatial_target:
+            release = min(1.0, elapsed * 8.0)
+            self._state.gaze_x += (0.0 - self._state.gaze_x) * release
+            self._state.gaze_y += (0.0 - self._state.gaze_y) * release
+            if abs(self._state.gaze_x) > 1e-6 or abs(self._state.gaze_y) > 1e-6:
+                self._add(
+                    overlays,
+                    RealtimeLayer.GAZE,
+                    RealtimeChannel.GAZE_X,
+                    self._state.gaze_x,
+                    1.0,
+                    90,
+                )
+                self._add(
+                    overlays,
+                    RealtimeLayer.GAZE,
+                    RealtimeChannel.GAZE_Y,
+                    self._state.gaze_y,
+                    1.0,
+                    90,
+                )
             states.append(
                 RealtimeLayerState(
                     RealtimeLayer.GAZE,
@@ -181,21 +201,33 @@ class BodyRealtimeEngine:
     ) -> None:
         progress = self._state.blink_progress
         phase = self._state.blink_phase
-        if phase is BlinkPhase.OPEN:
-            self._state.blink_elapsed += elapsed
-            if self._state.blink_elapsed >= self._state.next_blink_after_s:
+        remaining = elapsed
+        while remaining > 0:
+            if phase is BlinkPhase.OPEN:
+                until_blink = self._state.next_blink_after_s - self._state.blink_elapsed
+                consumed = min(remaining, max(until_blink, 0.0))
+                self._state.blink_elapsed += consumed
+                remaining -= consumed
+                if self._state.blink_elapsed < self._state.next_blink_after_s:
+                    break
                 phase, progress = BlinkPhase.CLOSING, 0.0
-        elif phase is BlinkPhase.CLOSING:
-            progress += elapsed / 0.08
-            if progress >= 1:
+                continue
+            duration = {
+                BlinkPhase.CLOSING: 0.08,
+                BlinkPhase.CLOSED: 0.04,
+                BlinkPhase.OPENING: 0.1,
+            }[phase]
+            until_transition = (1.0 - progress) * duration
+            consumed = min(remaining, until_transition)
+            progress += consumed / duration
+            remaining -= consumed
+            if progress < 1.0:
+                break
+            if phase is BlinkPhase.CLOSING:
                 phase, progress = BlinkPhase.CLOSED, 0.0
-        elif phase is BlinkPhase.CLOSED:
-            progress += elapsed / 0.04
-            if progress >= 1:
+            elif phase is BlinkPhase.CLOSED:
                 phase, progress = BlinkPhase.OPENING, 0.0
-        elif phase is BlinkPhase.OPENING:
-            progress += elapsed / 0.1
-            if progress >= 1:
+            else:
                 phase, progress = BlinkPhase.OPEN, 0.0
                 self._state.blink_elapsed = 0.0
                 cycle = self._sequence + self._seed
