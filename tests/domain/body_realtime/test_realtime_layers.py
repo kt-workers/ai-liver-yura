@@ -1095,6 +1095,35 @@ def test_subtle_motion_intensity_revision_is_interpolated_locally() -> None:
     assert 0 < strength <= 0.12
 
 
+def test_subtle_motion_intensity_uses_elapsed_scaling_beneath_displacement_cap() -> None:
+    def strength_after(elapsed_s: float) -> float:
+        engine = BodyRealtimeEngine()
+        engine.tick(
+            body_state=_body_state(),
+            expression=_expression(idle=0),
+            gaze_target=None,
+            speech=None,
+            now=NOW,
+            monotonic_now_s=0,
+        )
+        bundle = engine.tick(
+            body_state=_body_state(),
+            expression=_expression(idle=0.1),
+            gaze_target=None,
+            speech=None,
+            now=NOW + timedelta(seconds=elapsed_s),
+            monotonic_now_s=elapsed_s,
+        )
+        return next(
+            item.strength
+            for item in bundle.channel_overlays
+            if item.channel is RealtimeChannel.SUBTLE_SWAY
+        )
+
+    assert strength_after(0.02) == pytest.approx(0.008)
+    assert strength_after(0.1) == pytest.approx(0.04)
+
+
 @pytest.mark.asyncio
 async def test_runtime_is_cancellable_without_pending_task_and_does_not_mutate_body() -> None:
     published: list[RealtimeOverlayBundle] = []

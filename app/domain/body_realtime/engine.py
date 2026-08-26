@@ -289,11 +289,11 @@ class BodyRealtimeEngine:
             0.0, 0.5 + self._axis(expression, BodyExpressionAxis.BREATHING_AMPLITUDE) / 2
         )
         self._state.breath_amplitude = self._approach_parameter(
-            self._state.breath_amplitude, target_amplitude, 0.12
+            self._state.breath_amplitude, target_amplitude, elapsed, 0.12
         )
         target_tempo = max(0.1, 1 + self._axis(expression, BodyExpressionAxis.BREATHING_TEMPO))
         self._state.breath_tempo = self._approach_parameter(
-            self._state.breath_tempo, target_tempo, 0.2
+            self._state.breath_tempo, target_tempo, elapsed, 0.2
         )
         self._state.breath_phase = (
             self._state.breath_phase + elapsed * self._state.breath_tempo / 4
@@ -460,7 +460,7 @@ class BodyRealtimeEngine:
     ) -> None:
         target_intensity = max(0.0, self._axis(expression, BodyExpressionAxis.IDLE_VARIATION))
         self._state.subtle_intensity = self._approach_parameter(
-            self._state.subtle_intensity, target_intensity, 0.12
+            self._state.subtle_intensity, target_intensity, elapsed, 0.12
         )
         intensity = self._state.subtle_intensity
         self._state.subtle_phase += elapsed * 1.7
@@ -480,6 +480,9 @@ class BodyRealtimeEngine:
         )
 
     @staticmethod
-    def _approach_parameter(current: float, target: float, maximum_delta: float) -> float:
-        """expression revisionとscheduler遅延を切り離した局所parameter遷移。"""
-        return current + max(-maximum_delta, min(maximum_delta, target - current))
+    def _approach_parameter(
+        current: float, target: float, elapsed: float, maximum_delta: float
+    ) -> float:
+        """elapsed-time比例の局所parameter遷移へ一frame変位上限を重ねる。"""
+        proposed_delta = (target - current) * min(1.0, elapsed * 4.0)
+        return current + max(-maximum_delta, min(maximum_delta, proposed_delta))
