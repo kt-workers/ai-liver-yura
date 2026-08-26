@@ -388,9 +388,12 @@ class ReferenceCharacterFinding:
             type(self.confidence) not in {int, float} or not 0 <= self.confidence <= 1
         ):
             raise ValueError("confidenceは[0, 1]の範囲である必要があります")
-        if self.finding_kind is CharacterFindingKind.OBSERVATION and self.interpretation_notes:
-            raise ValueError("observationにinterpretation_notesを含められません")
-        if self.interpretation_notes is not None:
+        if self.finding_kind is CharacterFindingKind.OBSERVATION:
+            if self.interpretation_notes is not None:
+                raise ValueError("observationにinterpretation_notesを含められません")
+        elif self.interpretation_notes is None:
+            raise ValueError("interpretationにはinterpretation_notesが必要です")
+        else:
             _require_text(self.interpretation_notes, "interpretation_notes")
 
     def to_dict(self) -> dict[str, object]:

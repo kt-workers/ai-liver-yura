@@ -12,6 +12,7 @@ from tools.development_tooling import (
     ArchitectureEdge,
     ArchitectureEdgeEvidence,
     ArchitectureGraphProjector,
+    CharacterFindingKind,
     DevelopmentAuditService,
     GitHubIssueProjector,
     IssueGraphEdge,
@@ -194,6 +195,20 @@ def test_reference_observation_and_interpretation_are_separate() -> None:
     assert interpretation.to_dict()["interpretation_notes"] == "緊張の可能性"
 
 
+def test_interpretation_requires_nonempty_interpretation_notes() -> None:
+    with pytest.raises(ValueError, match="interpretation_notes"):
+        ReferenceCharacterFinding(
+            "interpretation-missing-notes",
+            CharacterFindingKind.INTERPRETATION,
+            CANONICAL,
+            MEDIA_ANALYSIS,
+            "視線の変化",
+            None,
+            None,
+            None,
+        )
+
+
 def test_media_analysis_provenance_retains_tool_parameters_and_retention_policy() -> None:
     assert MEDIA_ANALYSIS.to_dict() == {
         "tool_revision": "model-1",
@@ -241,6 +256,26 @@ def test_audit_only_creates_evidence_without_implicit_mutation() -> None:
     assert isinstance(artifact, ToolingEvidenceArtifact)
     assert artifact.to_dict()["findings"] == [finding.to_dict()]
     assert not {name for name in dir(DevelopmentAuditService) if "mutat" in name.lower()}
+
+
+def test_audit_report_preserves_typed_deployment_observability() -> None:
+    artifact = DevelopmentAuditService().report(
+        artifact_id="artifact-failed",
+        tool_kind=ToolKind.ISSUE_GRAPH,
+        source_refs=(CANONICAL,),
+        generated_at=NOW,
+        methodology_revision="method-1",
+        findings=(),
+        processing_duration_ms=12.5,
+        deployment_generation="deployment-7",
+        result_status=ToolingResultStatus.FAILED,
+        failure_category=ToolingFailureCategory.TOOL_UNAVAILABLE,
+    )
+
+    assert artifact.processing_duration_ms == 12.5
+    assert artifact.deployment_generation == "deployment-7"
+    assert artifact.result_status is ToolingResultStatus.FAILED
+    assert artifact.failure_category is ToolingFailureCategory.TOOL_UNAVAILABLE
 
 
 def test_evidence_artifact_requires_source_provenance_and_methodology_revision() -> None:
@@ -343,6 +378,13 @@ def test_untrusted_json_rejects_nonfinite_or_unbounded_nested_values(payload: by
 
 def test_untrusted_json_rejects_excessive_nesting() -> None:
     payload = b'{"nested":' + b"[" * 18 + b"0" + b"]" * 18 + b"}"
+
+    with pytest.raises(ValueError):
+        parse_bounded_json_object(payload)
+
+
+def test_untrusted_json_normalizes_decode_recursion_failure_to_value_error() -> None:
+    payload = b'{"nested":' + b"[" * 1_100 + b"0" + b"]" * 1_100 + b"}"
 
     with pytest.raises(ValueError):
         parse_bounded_json_object(payload)

@@ -23,7 +23,7 @@ def parse_bounded_json_object(
         raise ValueError("untrusted payloadが許容sizeを超えています")
     try:
         value = json.loads(payload.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
         raise ValueError("untrusted payloadは有効なUTF-8 JSONではありません") from error
     if not isinstance(value, dict):
         raise ValueError("untrusted payloadはJSON objectである必要があります")

@@ -17,7 +17,9 @@ from .contracts import (
     ReferenceCharacterFinding,
     SourceReference,
     ToolingEvidenceArtifact,
+    ToolingFailureCategory,
     ToolingFinding,
+    ToolingResultStatus,
     ToolKind,
     bounded_text_sequence,
 )
@@ -142,6 +144,10 @@ class DevelopmentAuditService:
         methodology_revision: str,
         findings: Sequence[ToolingFinding],
         limitations: Sequence[str] = (),
+        processing_duration_ms: float = 0.0,
+        deployment_generation: str = "local",
+        result_status: ToolingResultStatus = ToolingResultStatus.SUCCEEDED,
+        failure_category: ToolingFailureCategory | None = None,
     ) -> ToolingEvidenceArtifact:
         return ToolingEvidenceArtifact(
             artifact_id=artifact_id,
@@ -151,4 +157,8 @@ class DevelopmentAuditService:
             methodology_revision=methodology_revision,
             findings=tuple(findings),
             limitations=bounded_text_sequence(limitations, "limitations"),
+            processing_duration_ms=processing_duration_ms,
+            deployment_generation=deployment_generation,
+            result_status=result_status,
+            failure_category=failure_category,
         )
