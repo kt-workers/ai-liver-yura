@@ -10,6 +10,9 @@ not mutate GitHub Projects or start an OpenAI request.
   identifiers are never an input to this command.
 - Project #7 is the only Project this command may inspect.  It never invokes a
   Project mutation command and never addresses Project #6.
+- Every invocation performs all three Project #7 read probes (`view`,
+  `field-list`, and `item-list`), including after a Codex/VS Code restart.
+  They are not cached from a previous successful run.
 - A missing reviewer credential, Docker, or PostgreSQL capability is reported
   as work-scoped unavailable.  It is not a Mission-wide stop condition.
 - Command output is reduced to a boolean capability result and a stable,
@@ -47,3 +50,11 @@ when only work-scoped capabilities are unavailable, otherwise `PASS`.
 The Project write result is deliberately an injected evidence flag.  A normal
 preflight must not alter Project data merely to prove a permission; the
 controlled #462/#463 Project #7 mutation and readback is the initial evidence.
+
+## Restart verification
+
+Before #463 can be completed, start a fresh minimal process with only the
+credential injection supplied by the Codex environment and run the GitHub and
+Project #7 read probes.  It must succeed without `gh auth login`,
+`gh auth refresh`, or any interactive action.  This verifies credential
+injection into a new process; it does not mutate a Project.

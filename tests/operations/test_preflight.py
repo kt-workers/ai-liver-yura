@@ -45,6 +45,24 @@ def test_missing_project_read_is_bootstrap_blocker() -> None:
     assert "GITHUB_PROJECT_READ" in result.blocking_for_loop_bootstrap
 
 
+def test_every_invocation_rechecks_all_project_seven_reads_without_mutation() -> None:
+    runner = FakeRunner()
+    preflight = EnvironmentCapabilityPreflight(
+        runner, {"OPENAI_API_KEY": "present"}, verified_project_write=True
+    )
+
+    preflight.run()
+    preflight.run()
+
+    project_commands = [call for call in runner.calls if call[:2] == ("gh", "project")]
+    assert project_commands == [
+        ("gh", "project", "view", "7", "--owner", "ktan514"),
+        ("gh", "project", "field-list", "7", "--owner", "ktan514"),
+        ("gh", "project", "item-list", "7", "--owner", "ktan514"),
+    ] * 2
+    assert all("item-edit" not in command and "6" not in command for command in project_commands)
+
+
 def test_missing_reviewer_is_work_scoped_and_secret_is_not_serialized() -> None:
     result = EnvironmentCapabilityPreflight(FakeRunner(), {}, verified_project_write=True).run()
     serialized = json.loads(result.as_json())
