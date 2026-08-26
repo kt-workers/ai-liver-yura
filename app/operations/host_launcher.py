@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
 import sys
 from collections.abc import Mapping
@@ -21,37 +20,33 @@ class ReviewerCredentialUnavailable(RuntimeError):
     """The dedicated reviewer credential is intentionally unavailable."""
 
 
-class MacOSKeychainSecretProvider:
-    """Reads the token only into the child process environment; never prints it."""
+class GitHubCredentialUnavailable(RuntimeError):
+    """The GitHub credential is intentionally unavailable."""
+
+
+class EnvironmentSecretProvider:
+    """Reads credentials already injected into the host process environment."""
+
+    def __init__(self, values: Mapping[str, str]) -> None:
+        self._values = values
 
     def github_token(self) -> str:
-        return self._password("yura-codex-github", "GitHub credential unavailable")
+        try:
+            return self._required("GH_TOKEN", "GitHub credential unavailable")
+        except RuntimeError as error:
+            raise GitHubCredentialUnavailable(str(error)) from error
 
     def reviewer_api_key(self) -> str:
-        return self._password("yura-openai-reviewer", "Reviewer credential unavailable")
+        try:
+            return self._required("OPENAI_API_KEY_REVIEWER", "Reviewer credential unavailable")
+        except RuntimeError as error:
+            raise ReviewerCredentialUnavailable(str(error)) from error
 
-    @staticmethod
-    def _password(service: str, unavailable_message: str) -> str:
-        result = subprocess.run(
-            (
-                "security",
-                "find-generic-password",
-                "-a",
-                os.environ["USER"],
-                "-s",
-                service,
-                "-w",
-            ),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        token = result.stdout.strip()
-        if result.returncode != 0 or not token:
-            if service == "yura-openai-reviewer":
-                raise ReviewerCredentialUnavailable(unavailable_message)
-            raise RuntimeError(unavailable_message)
-        return token
+    def _required(self, name: str, message: str) -> str:
+        value = self._values.get(name, "")
+        if not value:
+            raise RuntimeError(message)
+        return value
 
 
 @dataclass(frozen=True, slots=True)

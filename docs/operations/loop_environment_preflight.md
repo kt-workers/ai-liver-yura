@@ -70,12 +70,14 @@ injection into a new process; it does not mutate a Project.
 
 ## macOS host launcher
 
-Run `python scripts/launch-codex-v2.py` from the repository host. It reads the
-`yura-codex-github` Keychain item only into VS Code's child environment, derives
-Goal version/generation/SHA-256 from the canonical file, retains PATH for
-Homebrew tooling, and launches VS Code. It neither writes a token to disk nor
-prints one. After VS Code creates a fresh Codex process, run normal Preflight;
-no manual `export`, `gh auth login`, or `gh auth refresh` is part of the flow.
+Run `python scripts/launch-codex-v2.py` from the repository host. The launcher
+never reads `.env` directly. An approved host-side environment loader injects
+`GH_TOKEN` before launch; the launcher passes it only to the GitHub/VS Code
+child environment, derives Goal version/generation/SHA-256 from the canonical
+file, retains PATH for Homebrew tooling, and launches VS Code. It neither
+prints nor persists a credential. After VS Code creates a fresh Codex process,
+run normal Preflight; no manual `export`, `gh auth login`, or `gh auth refresh`
+is part of the flow.
 
 ## One-shot independent reviewer
 
@@ -88,8 +90,9 @@ python scripts/launch-codex-v2.py \
   --expected-head <exact-current-head-sha>
 ```
 
-For this mode only, the launcher reads the distinct Keychain service
-`yura-openai-reviewer`. The key is passed solely to the reviewer subprocess.
+For this mode only, the launcher reads already-injected
+`OPENAI_API_KEY_REVIEWER` and passes it solely to the reviewer subprocess as
+`OPENAI_API_KEY`.
 That subprocess receives an explicit environment containing only `PATH`,
 `OPENAI_API_KEY`, the repository-owned reviewer model/config, and non-secret
 review context on stdin. It receives neither `GH_TOKEN`/`GITHUB_TOKEN`, any
@@ -98,7 +101,7 @@ GitHub write credential, database credential, nor inherited parent secrets.
 Before starting, the launcher reads the live PR and rejects an expected/head
 mismatch as `NOT_RUN` / `STALE_TARGET`. The reviewer performs configured-model
 lookup plus a bounded Responses API health request before the bounded review
-request. A missing Keychain item returns `NOT_RUN` /
+request. A missing injected reviewer credential returns `NOT_RUN` /
 `OPENAI_CREDENTIAL_UNAVAILABLE`; it does not consume a review attempt. After
 the subprocess returns, the launcher rereads the live PR head and discards any
 result as `STALE_TARGET` if it changed. The only emitted result is bounded

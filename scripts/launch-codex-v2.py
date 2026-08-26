@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Host-side launcher: Keychain -> ephemeral environment -> VS Code/reviewer."""
+"""Host-side launcher: injected environment -> VS Code/reviewer."""
 
 from __future__ import annotations
 
@@ -25,7 +25,8 @@ if TYPE_CHECKING:
 
 def main() -> int:
     from app.operations.host_launcher import (
-        MacOSKeychainSecretProvider,
+        EnvironmentSecretProvider,
+        GitHubCredentialUnavailable,
         ReviewerCredentialUnavailable,
         build_launch_environment,
         build_reviewer_environment,
@@ -43,8 +44,11 @@ def main() -> int:
     if args.expected_head and not args.canonical_review_pr:
         parser.error("--expected-head requires --canonical-review-pr")
 
-    secrets = MacOSKeychainSecretProvider()
-    environment = build_launch_environment(root, secrets, os.environ)
+    secrets = EnvironmentSecretProvider(os.environ)
+    try:
+        environment = build_launch_environment(root, secrets, os.environ)
+    except GitHubCredentialUnavailable:
+        return _not_run("GITHUB_CREDENTIAL_UNAVAILABLE")
     if args.preflight:
         return subprocess.run(
             (sys.executable, "-m", "app.operations.preflight"),

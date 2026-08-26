@@ -1,8 +1,17 @@
 import hashlib
+import subprocess
 from pathlib import Path
 
+import pytest
+
 from app.operations.canonical_reviewer import ReviewStatus, _provider_failure_reason, review
-from app.operations.host_launcher import build_launch_environment, build_reviewer_environment
+from app.operations.host_launcher import (
+    EnvironmentSecretProvider,
+    GitHubCredentialUnavailable,
+    ReviewerCredentialUnavailable,
+    build_launch_environment,
+    build_reviewer_environment,
+)
 
 
 class FakeSecrets:
@@ -72,6 +81,32 @@ def test_reviewer_without_key_is_typed_not_run() -> None:
 
     assert result.review_status is ReviewStatus.NOT_RUN
     assert result.reason == "OPENAI_CREDENTIAL_UNAVAILABLE"
+
+
+def test_environment_credentials_are_injected_and_dotenv_is_git_ignored() -> None:
+    provider = EnvironmentSecretProvider(
+        {"GH_TOKEN": "github-token", "OPENAI_API_KEY_REVIEWER": "reviewer-token"}
+    )
+    repository_root = Path(__file__).resolve().parents[2]
+
+    assert provider.github_token() == "github-token"
+    assert provider.reviewer_api_key() == "reviewer-token"
+    assert ".env" in (repository_root / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert subprocess.run(
+        ("git", "check-ignore", "-q", ".env"), cwd=repository_root, check=False
+    ).returncode == 0
+
+
+def test_missing_reviewer_environment_key_is_typed_unavailable() -> None:
+
+    with pytest.raises(ReviewerCredentialUnavailable):
+        EnvironmentSecretProvider({"GH_TOKEN": "github-token"}).reviewer_api_key()
+
+
+def test_missing_github_environment_key_is_typed_unavailable() -> None:
+
+    with pytest.raises(GitHubCredentialUnavailable):
+        EnvironmentSecretProvider({"OPENAI_API_KEY_REVIEWER": "reviewer-token"}).github_token()
 
 
 def test_reviewer_provider_errors_have_secret_safe_typed_reasons() -> None:
