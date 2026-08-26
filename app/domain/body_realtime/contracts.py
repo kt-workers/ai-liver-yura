@@ -108,6 +108,7 @@ class RealtimeSpeechView:
     presentation: SpeechPresentationReport
     artifact: PreparedAudioArtifact
     timing_track: SpeechTimingTrack | None
+    presentation_monotonic_started_at_s: float
 
     def __post_init__(self) -> None:
         if not isinstance(self.presentation, SpeechPresentationReport):
@@ -116,6 +117,17 @@ class RealtimeSpeechView:
             raise ValueError("STARTED以外のPresentationはspeech realtimeを開始できません")
         if self.presentation.started_at is None:
             raise ValueError("STARTED Presentationにはactual start時刻が必要です")
+        if (
+            type(self.presentation_monotonic_started_at_s) not in (int, float)
+            or not isfinite(self.presentation_monotonic_started_at_s)
+            or self.presentation_monotonic_started_at_s < 0
+        ):
+            raise ValueError("presentation_monotonic_started_at_sが不正です")
+        object.__setattr__(
+            self,
+            "presentation_monotonic_started_at_s",
+            float(self.presentation_monotonic_started_at_s),
+        )
         if SpeechPresentationMode.AUDIO_WITH_TEXT not in self.presentation.output_modes:
             raise ValueError("音声再生なしのPresentationはspeech realtimeを開始できません")
         if not isinstance(self.artifact, PreparedAudioArtifact):

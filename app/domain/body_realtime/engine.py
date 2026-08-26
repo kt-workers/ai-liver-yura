@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from math import isfinite, pi, sin
 
-from app.adapters.tts.contracts import SpeechTimingKind
+from app.adapters.tts.contracts import SpeechTimingKind, SpeechTimingUnit
 from app.domain.body import BodyState
 from app.domain.body_expression import BodyExpressionAxis, BodyExpressionContext
 
@@ -334,20 +334,14 @@ class BodyRealtimeEngine:
         presentation_id = speech.presentation.presentation_id
         if self._state.speech_presentation_id != presentation_id:
             self._state.speech_presentation_id = presentation_id
-            if monotonic_now_s is None:
-                self._state.speech_monotonic_anchor_s = None
-            else:
-                initial_elapsed_s = max(
-                    0.0,
-                    (now - speech.presentation.started_at).total_seconds(),  # type: ignore[operator]
-                )
-                self._state.speech_monotonic_anchor_s = float(monotonic_now_s) - initial_elapsed_s
+            self._state.speech_monotonic_anchor_s = speech.presentation_monotonic_started_at_s
         if self._state.speech_monotonic_anchor_s is not None and monotonic_now_s is not None:
             elapsed_ms = int(
                 max(0.0, float(monotonic_now_s) - self._state.speech_monotonic_anchor_s) * 1000
             )
         else:
-            elapsed_ms = int((now - speech.presentation.started_at).total_seconds() * 1000)  # type: ignore[operator]
+            # monotonic clockを渡せない呼出しでもwall clock差分で推測しない。
+            elapsed_ms = 0
         unit = next(
             (item for item in track.units if item.start_ms <= elapsed_ms < item.end_ms), None
         )
@@ -358,19 +352,7 @@ class BodyRealtimeEngine:
             else:
                 try:
                     if unit.kind is SpeechTimingKind.MORA and unit.symbol in {"ー", "ｰ"}:
-                        previous_mora = next(
-                            (
-                                item
-                                for item in reversed(track.units)
-                                if item.end_ms <= unit.start_ms
-                                and item.kind is SpeechTimingKind.MORA
-                                and item.segment_id == unit.segment_id
-                            ),
-                            None,
-                        )
-                        if previous_mora is None:
-                            raise ValueError("先行moraがありません")
-                        target = articulation_for(previous_mora.symbol, previous_mora.kind)
+                        target = self._standalone_long_mora_articulation(track.units, unit)
                     else:
                         target = articulation_for(unit.symbol, unit.kind)
                 except ValueError:
@@ -407,6 +389,20 @@ class BodyRealtimeEngine:
                 speech.presentation.presentation_id,
             )
         )
+
+    def _standalone_long_mora_articulation(
+        self, units: tuple[SpeechTimingUnit, ...], unit: SpeechTimingUnit
+    ) -> tuple[float, float, float, float]:
+        """同一segmentで連続する単独長音を、直近の発音可能moraへ遡って継承する。"""
+        for item in reversed(units):
+            if item.end_ms > unit.start_ms:
+                continue
+            if item.kind is not SpeechTimingKind.MORA or item.segment_id != unit.segment_id:
+                continue
+            if item.symbol in {"ー", "ｰ"}:
+                continue
+            return articulation_for(item.symbol, item.kind)
+        raise ValueError("先行moraがありません")
 
     def _subtle(
         self,

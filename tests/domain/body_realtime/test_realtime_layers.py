@@ -125,6 +125,7 @@ def _speech(
     timing: SpeechTimingTrack | None,
     output_modes: tuple[SpeechPresentationMode, ...] = (SpeechPresentationMode.AUDIO_WITH_TEXT,),
     artifact: PreparedAudioArtifact | None = None,
+    presentation_monotonic_started_at_s: float = 0,
 ) -> RealtimeSpeechView:
     report = SpeechPresentationReport(
         "presentation",
@@ -136,7 +137,12 @@ def _speech(
         "artifact://prepared/audio",
         "timing",
     )
-    return RealtimeSpeechView(report, _artifact() if artifact is None else artifact, timing)
+    return RealtimeSpeechView(
+        report,
+        _artifact() if artifact is None else artifact,
+        timing,
+        presentation_monotonic_started_at_s,
+    )
 
 
 def _status(bundle: RealtimeOverlayBundle, layer: RealtimeLayer) -> RealtimeLayerStatus:
@@ -397,7 +403,7 @@ def test_prepared_or_nonstarted_presentation_cannot_activate_viseme() -> None:
         "timing",
     )
     with pytest.raises(ValueError, match="STARTED"):
-        RealtimeSpeechView(report, _artifact(), None)
+        RealtimeSpeechView(report, _artifact(), None, 0)
 
 
 def test_text_only_presentation_cannot_activate_speech_realtime() -> None:
@@ -524,6 +530,52 @@ def test_standalone_long_vowel_mora_keeps_preceding_mora_articulation() -> None:
     ) == pytest.approx(0.9)
 
 
+def test_consecutive_standalone_long_vowel_mora_inherits_canonical_articulation() -> None:
+    track = SpeechTimingTrack(
+        "timing",
+        "artifact",
+        (
+            SpeechTimingUnit("ka", "segment", SpeechTimingKind.MORA, "か", 0, 100),
+            SpeechTimingUnit("long-one", "segment", SpeechTimingKind.MORA, "ー", 100, 200),
+            SpeechTimingUnit("long-two", "segment", SpeechTimingKind.MORA, "ー", 200, 300),
+        ),
+        NOW,
+        1000,
+    )
+    engine = BodyRealtimeEngine()
+    for now, monotonic_now_s in ((NOW, 0), (NOW + timedelta(milliseconds=90), 0.09)):
+        engine.tick(
+            body_state=_body_state(),
+            expression=None,
+            gaze_target=None,
+            speech=_speech(timing=track),
+            now=now,
+            monotonic_now_s=monotonic_now_s,
+        )
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW + timedelta(milliseconds=100),
+        monotonic_now_s=0.1,
+    )
+    long_chain = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW + timedelta(milliseconds=200),
+        monotonic_now_s=0.2,
+    )
+    assert _status(long_chain, RealtimeLayer.SPEECH_ARTICULATION) is RealtimeLayerStatus.ACTIVE
+    assert next(
+        item.value
+        for item in long_chain.channel_overlays
+        if item.channel is RealtimeChannel.MOUTH_OPENNESS
+    ) == pytest.approx(0.9)
+
+
 def test_timing_unavailable_degrades_only_speech_layer_without_fake_mouth_motion() -> None:
     bundle = BodyRealtimeEngine().tick(
         body_state=_body_state(),
@@ -631,6 +683,33 @@ def test_speech_timeline_uses_monotonic_clock_after_started_admission() -> None:
         for item in after_wall_clock_jump.channel_overlays
         if item.channel is RealtimeChannel.MOUTH_OPENNESS
     ) == pytest.approx(0.35)
+
+
+def test_speech_timeline_uses_started_monotonic_reference_without_wall_clock_offset() -> None:
+    track = SpeechTimingTrack(
+        "timing",
+        "artifact",
+        (
+            SpeechTimingUnit("a", "segment", SpeechTimingKind.VISEME, "A", 0, 100),
+            SpeechTimingUnit("i", "segment", SpeechTimingKind.VISEME, "I", 100, 200),
+        ),
+        NOW,
+        1000,
+    )
+    bundle = BodyRealtimeEngine().tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track, presentation_monotonic_started_at_s=99.85),
+        now=NOW + timedelta(hours=12),
+        monotonic_now_s=100,
+    )
+    assert _status(bundle, RealtimeLayer.SPEECH_ARTICULATION) is RealtimeLayerStatus.ACTIVE
+    assert next(
+        item.value
+        for item in bundle.channel_overlays
+        if item.channel is RealtimeChannel.MOUTH_ROUNDNESS
+    ) < 0
 
 
 def test_word_boundary_fades_articulation_to_neutral_without_dropping_overlays() -> None:

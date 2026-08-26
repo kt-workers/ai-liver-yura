@@ -267,6 +267,7 @@ SpeechPresentationStarted
 - audio_artifact_id?
 - timing_track_id?
 - actual_start_time
+- realtime monotonic start reference
 ```
 
 Prepared/speculative Speech does not move the mouth.
