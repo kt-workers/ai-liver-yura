@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -39,7 +41,11 @@ def _sanitize_presentation(value: str) -> str:
     """モデル由来表示値を、通知・HTML・Markdown制御なしの平文へ正規化する。"""
 
     _require_text(value, "表示値")
-    result = "".join(character for character in value if character >= " " or character in "\n\t")
+    result = "".join(
+        character
+        for character in value
+        if character in "\n\t" or not unicodedata.category(character).startswith("C")
+    )
     result = result.replace("@", "＠")
     for source, replacement in (
         ("<", "＆lt;"),
@@ -202,20 +208,33 @@ class ReviewContext:
         _require_text(self.untrusted_pr_data, "untrusted_pr_data")
         if self.collected_at.tzinfo is None:
             raise ValueError("collected_at はtimezone-awareである必要があります。")
-        generation_source = "\n".join(
-            (
-                self.target.repository,
-                str(self.target.pull_request_number),
-                self.target.base_sha,
-                self.target.head_sha,
-                self.implementer.agent_id,
-                self.implementer.session_id,
-                self.reviewer.agent_id,
-                self.reviewer.session_id,
-                *map(str, self.issue_references),
-                *self.canonical_references,
-                *self.gate_evidence,
-            )
+        generation_source = json.dumps(
+            {
+                "target": {
+                    "repository": self.target.repository,
+                    "pull_request_number": self.target.pull_request_number,
+                    "base_ref": self.target.base_ref,
+                    "base_sha": self.target.base_sha,
+                    "head_ref": self.target.head_ref,
+                    "head_sha": self.target.head_sha,
+                },
+                "implementer": {
+                    "agent_id": self.implementer.agent_id,
+                    "session_id": self.implementer.session_id,
+                    "provider": self.implementer.provider,
+                },
+                "reviewer": {
+                    "agent_id": self.reviewer.agent_id,
+                    "session_id": self.reviewer.session_id,
+                    "provider": self.reviewer.provider,
+                },
+                "issue_references": self.issue_references,
+                "canonical_references": self.canonical_references,
+                "gate_evidence": self.gate_evidence,
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
         )
         object.__setattr__(
             self, "context_generation", sha256(generation_source.encode()).hexdigest()
@@ -251,6 +270,7 @@ class ReviewAdvisory:
 
     target: ReviewTarget
     context_generation: str
+    collected_at: datetime
     availability: ReviewAdvisoryAvailability
     summary: str
     findings: tuple[AdvisoryFinding, ...] = ()
@@ -262,6 +282,8 @@ class ReviewAdvisory:
         if not isinstance(self.availability, ReviewAdvisoryAvailability):
             raise ValueError("availability が不正です。")
         _require_text(self.context_generation, "context_generation", 64)
+        if self.collected_at.tzinfo is None:
+            raise ValueError("collected_at はtimezone-awareである必要があります。")
         _require_text(self.summary, "summary")
         if self.diagnostic_code is not None:
             _require_text(self.diagnostic_code, "diagnostic_code", 128)

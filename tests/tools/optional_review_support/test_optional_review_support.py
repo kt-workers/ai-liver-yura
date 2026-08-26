@@ -22,15 +22,19 @@ from tools.optional_review_support import (
 
 
 class FakeBackend:
-    def __init__(self, candidate: AdvisoryCandidate | None = None, raises: bool = False) -> None:
+    def __init__(
+        self,
+        candidate: AdvisoryCandidate | None = None,
+        exception: Exception | None = None,
+    ) -> None:
         self.candidate = candidate
-        self.raises = raises
+        self.exception = exception
         self.calls = 0
 
     def review(self, context: ReviewContext) -> AdvisoryCandidate:
         self.calls += 1
-        if self.raises:
-            raise RuntimeError("secret-token-must-not-leak")
+        if self.exception is not None:
+            raise self.exception
         assert self.candidate is not None
         return self.candidate
 
@@ -77,9 +81,19 @@ def _candidate(target: ReviewTarget, echoed_head_sha: str | None = None) -> Advi
 def test_context_generation_is_immutable_and_untrusted_data_does_not_change_it() -> None:
     context = _context()
     changed_untrusted_data = replace(context, untrusted_pr_data="different untrusted body")
+    joined_reference = replace(context, canonical_references=("a\nb",))
+    separated_references = replace(context, canonical_references=("a", "b"))
+    changed_base_ref = replace(context, target=replace(context.target, base_ref="stable-base"))
+    changed_provider = replace(
+        context,
+        reviewer=replace(context.reviewer, provider="different-optional-provider"),
+    )
 
     assert context.context_generation == changed_untrusted_data.context_generation
     assert context.target.head_sha == "a" * 40
+    assert joined_reference.context_generation != separated_references.context_generation
+    assert context.context_generation != changed_base_ref.context_generation
+    assert context.context_generation != changed_provider.context_generation
 
 
 def test_read_only_collector_keeps_caller_fixed_target() -> None:
@@ -131,7 +145,7 @@ def test_unconfigured_and_failed_backend_are_typed_non_blocking_availability() -
     unconfigured = service.run(context, backend=None, current_head=lambda target: target.head_sha)
     unavailable = service.run(
         replace(context, target=_target("c" * 40)),
-        backend=FakeBackend(raises=True),
+        backend=FakeBackend(exception=RuntimeError("secret-token-must-not-leak")),
         current_head=lambda target: target.head_sha,
     )
 
@@ -139,6 +153,58 @@ def test_unconfigured_and_failed_backend_are_typed_non_blocking_availability() -
     assert unconfigured.diagnostic_code == "BACKEND_NOT_CONFIGURED"
     assert unavailable.availability is ReviewAdvisoryAvailability.UNAVAILABLE
     assert "secret" not in unavailable.summary
+
+
+def test_unavailable_result_is_not_cached_and_can_be_explicitly_retried() -> None:
+    context = _context()
+    backend = FakeBackend(exception=RuntimeError("temporary"))
+    service = OptionalReviewService()
+
+    unavailable = service.run(
+        context, backend=backend, current_head=lambda target: target.head_sha
+    )
+    backend.exception = None
+    backend.candidate = _candidate(context.target)
+    available = service.run(context, backend=backend, current_head=lambda target: target.head_sha)
+
+    assert unavailable.availability is ReviewAdvisoryAvailability.UNAVAILABLE
+    assert available.availability is ReviewAdvisoryAvailability.AVAILABLE
+    assert backend.calls == 2
+
+
+def test_invalid_backend_output_is_not_cached_and_is_classified_separately() -> None:
+    context = _context()
+    backend = FakeBackend(exception=ValueError("provider schema is invalid"))
+    service = OptionalReviewService()
+
+    invalid = service.run(context, backend=backend, current_head=lambda target: target.head_sha)
+    backend.exception = None
+    backend.candidate = _candidate(context.target)
+    available = service.run(context, backend=backend, current_head=lambda target: target.head_sha)
+
+    assert invalid.availability is ReviewAdvisoryAvailability.INVALID_OUTPUT
+    assert invalid.diagnostic_code == "INVALID_OUTPUT"
+    assert available.availability is ReviewAdvisoryAvailability.AVAILABLE
+    assert backend.calls == 2
+
+
+def test_sanitization_invalid_output_is_not_cached_and_can_be_retried() -> None:
+    context = _context()
+    invalid_candidate = AdvisoryCandidate(
+        echoed_head_sha=context.target.head_sha,
+        summary="summary",
+        findings=(AdvisoryFinding(title="\x7f", explanation="説明"),),
+    )
+    backend = FakeBackend(invalid_candidate)
+    service = OptionalReviewService()
+
+    invalid = service.run(context, backend=backend, current_head=lambda target: target.head_sha)
+    backend.candidate = _candidate(context.target)
+    available = service.run(context, backend=backend, current_head=lambda target: target.head_sha)
+
+    assert invalid.availability is ReviewAdvisoryAvailability.INVALID_OUTPUT
+    assert available.availability is ReviewAdvisoryAvailability.AVAILABLE
+    assert backend.calls == 2
 
 
 def test_wrong_echoed_sha_is_invalid_output() -> None:
@@ -168,9 +234,23 @@ def test_candidate_bounds_and_repository_relative_finding_path_are_enforced() ->
 
 def test_presentation_is_sanitized_without_changing_target_identity() -> None:
     target = _target()
+    candidate = _candidate(target)
+    candidate = replace(
+        candidate,
+        summary="確認\x7f\u202e @person <b>[link]`code`",
+        findings=(
+            AdvisoryFinding(
+                title="指摘\x7f\u202e @team",
+                explanation="説明 <script>bad</script>",
+                path="tools/optional_review_support/service.py",
+                line=1,
+            ),
+        ),
+    )
+    context = _context(target)
     advisory = OptionalReviewService().run(
-        _context(target),
-        backend=FakeBackend(_candidate(target)),
+        context,
+        backend=FakeBackend(candidate),
         current_head=lambda current: current.head_sha,
     )
 
@@ -179,7 +259,10 @@ def test_presentation_is_sanitized_without_changing_target_identity() -> None:
     assert "@" not in advisory.summary
     assert "<" not in advisory.summary
     assert "[" not in advisory.summary
+    assert "\x7f" not in advisory.summary
+    assert "\u202e" not in advisory.summary
     assert advisory.findings[0].title == "指摘 ＠team"
+    assert advisory.collected_at == context.collected_at
 
 
 def test_same_target_generation_is_bounded_idempotent_without_retry_or_poll() -> None:

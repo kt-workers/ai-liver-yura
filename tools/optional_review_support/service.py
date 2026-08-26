@@ -88,6 +88,7 @@ class OptionalReviewService:
                 return ReviewAdvisory(
                     target=context.target,
                     context_generation=context.context_generation,
+                    collected_at=context.collected_at,
                     availability=ReviewAdvisoryAvailability.STALE_TARGET,
                     summary=(
                         "対象headが収集時点から変化したため、助言をcurrent targetとして扱いません。"
@@ -98,59 +99,41 @@ class OptionalReviewService:
             return cached
 
         if backend is None:
-            return self._remember(
-                cache_key,
-                self._unavailable(
-                    context, "BACKEND_NOT_CONFIGURED", "任意review backendは設定されていません。"
-                ),
+            return self._unavailable(
+                context, "BACKEND_NOT_CONFIGURED", "任意review backendは設定されていません。"
             )
 
         try:
             candidate = backend.review(context)
+        except (TypeError, ValueError):
+            return self._invalid_output(context)
         except Exception:
-            return self._remember(
-                cache_key,
-                self._unavailable(
-                    context, "BACKEND_UNAVAILABLE", "任意review backendを利用できません。"
-                ),
+            return self._unavailable(
+                context, "BACKEND_UNAVAILABLE", "任意review backendを利用できません。"
             )
 
         try:
             live_head = current_head(context.target)
         except Exception:
-            return self._remember(
-                cache_key,
-                self._unavailable(
-                    context, "TARGET_READ_UNAVAILABLE", "対象headを再確認できません。"
-                ),
+            return self._unavailable(
+                context, "TARGET_READ_UNAVAILABLE", "対象headを再確認できません。"
             )
         if live_head != context.target.head_sha:
-            return self._remember(
-                cache_key,
-                ReviewAdvisory(
-                    target=context.target,
-                    context_generation=context.context_generation,
-                    availability=ReviewAdvisoryAvailability.STALE_TARGET,
-                    summary=(
-                        "対象headが収集時点から変化したため、助言をcurrent targetとして扱いません。"
-                    ),
-                    diagnostic_code="STALE_TARGET",
+            return ReviewAdvisory(
+                target=context.target,
+                context_generation=context.context_generation,
+                collected_at=context.collected_at,
+                availability=ReviewAdvisoryAvailability.STALE_TARGET,
+                summary=(
+                    "対象headが収集時点から変化したため、助言をcurrent targetとして扱いません。"
                 ),
+                diagnostic_code="STALE_TARGET",
             )
         if (
             not isinstance(candidate, AdvisoryCandidate)
             or candidate.echoed_head_sha != context.target.head_sha
         ):
-            return self._remember(
-                cache_key,
-                ReviewAdvisory(
-                    target=context.target,
-                    context_generation=context.context_generation,
-                    availability=ReviewAdvisoryAvailability.INVALID_OUTPUT,
-                    summary="任意review backendの出力をtrusted advisoryへ変換できません。",
-                    diagnostic_code="INVALID_OUTPUT",
-                ),
-            )
+            return self._invalid_output(context)
         try:
             findings = tuple(
                 AdvisoryFinding(
@@ -164,6 +147,7 @@ class OptionalReviewService:
             advisory = ReviewAdvisory(
                 target=context.target,
                 context_generation=context.context_generation,
+                collected_at=context.collected_at,
                 availability=ReviewAdvisoryAvailability.AVAILABLE,
                 summary=_sanitize_presentation(candidate.summary),
                 findings=findings,
@@ -172,6 +156,7 @@ class OptionalReviewService:
             advisory = ReviewAdvisory(
                 target=context.target,
                 context_generation=context.context_generation,
+                collected_at=context.collected_at,
                 availability=ReviewAdvisoryAvailability.INVALID_OUTPUT,
                 summary="任意review backendの出力をtrusted advisoryへ変換できません。",
                 diagnostic_code="INVALID_OUTPUT",
@@ -179,6 +164,8 @@ class OptionalReviewService:
         return self._remember(cache_key, advisory)
 
     def _remember(self, cache_key: tuple[str, str], advisory: ReviewAdvisory) -> ReviewAdvisory:
+        if advisory.availability is not ReviewAdvisoryAvailability.AVAILABLE:
+            return advisory
         self._cache[cache_key] = advisory
         self._cache.move_to_end(cache_key)
         while len(self._cache) > self._cache_limit:
@@ -190,7 +177,19 @@ class OptionalReviewService:
         return ReviewAdvisory(
             target=context.target,
             context_generation=context.context_generation,
+            collected_at=context.collected_at,
             availability=ReviewAdvisoryAvailability.UNAVAILABLE,
             summary=summary,
             diagnostic_code=diagnostic_code,
+        )
+
+    @staticmethod
+    def _invalid_output(context: ReviewContext) -> ReviewAdvisory:
+        return ReviewAdvisory(
+            target=context.target,
+            context_generation=context.context_generation,
+            collected_at=context.collected_at,
+            availability=ReviewAdvisoryAvailability.INVALID_OUTPUT,
+            summary="任意review backendの出力をtrusted advisoryへ変換できません。",
+            diagnostic_code="INVALID_OUTPUT",
         )

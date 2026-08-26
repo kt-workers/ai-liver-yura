@@ -37,7 +37,7 @@ Root: #317
   → 人間またはImplementerが通常のreview/merge判断を行う
 ```
 
-起動は明示要求に限る。同一head SHAに対する重複起動を避けるためのlocal idempotencyは許可するが、未実行・失敗・provider不在を再試行loopや停止状態へ昇格しない。
+起動は明示要求に限る。同一head SHAに対する重複起動を避けるため、validated `AVAILABLE` advisoryだけをlocal bounded cacheで再利用してよい。未実行、失敗、provider不在、構造化出力不正、stale targetはcacheせず、利用者が明示的に再実行できる。これらを再試行loopや停止状態へ昇格しない。
 
 ## 4. 読取専用境界
 
@@ -72,7 +72,7 @@ backendの自然言語とfindingはuntrusted presentation dataである。determ
 - trusted `ReviewTarget.head_sha`とのexact binding
 - configured reviewer identityと実装者identityの監査可能な分離
 - 上限付き件数・文字数・ネスト深さ
-- 表示用Markdownのmention、HTML、link/image制御、control characterの安全化
+- 表示用Markdownのmention、HTML、link/image制御、Unicode control characterの安全化（許可した改行・tabを除く）
 - evidence path/locationのbounded validation
 
 validated advisoryも**助言**であり、`PASS`、`CHANGES_REQUESTED`、confidenceその他の値をmerge gate、Actual Fact、canonical Authorityへ昇格しない。
