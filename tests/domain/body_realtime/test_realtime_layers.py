@@ -621,6 +621,53 @@ def test_timing_unavailable_degrades_only_speech_layer_without_fake_mouth_motion
     assert _status(bundle, RealtimeLayer.BREATH) is RealtimeLayerStatus.ACTIVE
 
 
+def test_presentation_end_fades_retained_articulation_before_releasing_speech_source() -> None:
+    track = SpeechTimingTrack(
+        "timing",
+        "artifact",
+        (SpeechTimingUnit("a", "segment", SpeechTimingKind.VISEME, "A", 0, 100),),
+        NOW,
+        1000,
+    )
+    engine = BodyRealtimeEngine()
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    speaking = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW + timedelta(milliseconds=90),
+        monotonic_now_s=0.09,
+    )
+    ended = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=None,
+        now=NOW + timedelta(milliseconds=100),
+        monotonic_now_s=0.1,
+    )
+    speaking_openness = next(
+        item.value
+        for item in speaking.channel_overlays
+        if item.channel is RealtimeChannel.MOUTH_OPENNESS
+    )
+    ended_openness = next(
+        item.value
+        for item in ended.channel_overlays
+        if item.channel is RealtimeChannel.MOUTH_OPENNESS
+    )
+    assert 0 < ended_openness < speaking_openness
+    assert _status(ended, RealtimeLayer.SPEECH_ARTICULATION) is RealtimeLayerStatus.ACTIVE
+
+
 def test_articulation_blends_at_timing_unit_boundary_and_fades_in_gap() -> None:
     track = SpeechTimingTrack(
         "timing",

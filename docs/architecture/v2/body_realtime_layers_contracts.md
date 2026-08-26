@@ -325,6 +325,7 @@ For each timing unit:
 - avoid instantaneous discontinuity
 - coarticulation/blending between adjacent units allowed
 - interruption truncates future units without replaying them
+- Presentation終端でspeech sourceが外れた場合も、保持中のarticulationをneutralへboundedにfadeしてから解放する
 
 Exact interpolation is deterministic configuration, not LLM-generated per frame.
 

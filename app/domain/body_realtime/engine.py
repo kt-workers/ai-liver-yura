@@ -311,9 +311,26 @@ class BodyRealtimeEngine:
         monotonic_now_s: float | None,
     ) -> None:
         if speech is None:
-            self._state.articulation = (0.0, 0.0, 0.0, 0.0)
             self._state.speech_presentation_id = None
             self._state.speech_monotonic_anchor_s = None
+            blend = min(1.0, elapsed * 20.0)
+            openness, roundness, jaw, closure = self._state.articulation
+            self._state.articulation = (
+                openness * (1.0 - blend),
+                roundness * (1.0 - blend),
+                jaw * (1.0 - blend),
+                closure * (1.0 - blend),
+            )
+            if any(abs(value) > 1e-6 for value in self._state.articulation):
+                self._add_articulation_overlays(overlays)
+                states.append(
+                    RealtimeLayerState(
+                        RealtimeLayer.SPEECH_ARTICULATION,
+                        RealtimeLayerStatus.ACTIVE,
+                        detail="ending_fade",
+                    )
+                )
+                return
             states.append(
                 RealtimeLayerState(
                     RealtimeLayer.SPEECH_ARTICULATION, RealtimeLayerStatus.INACTIVE_NO_SOURCE
@@ -374,6 +391,16 @@ class BodyRealtimeEngine:
             current_jaw + (target_jaw - current_jaw) * blend,
             current_closure + (target_closure - current_closure) * blend,
         )
+        self._add_articulation_overlays(overlays)
+        states.append(
+            RealtimeLayerState(
+                RealtimeLayer.SPEECH_ARTICULATION,
+                RealtimeLayerStatus.ACTIVE,
+                speech.presentation.presentation_id,
+            )
+        )
+
+    def _add_articulation_overlays(self, overlays: list[ChannelOverlay]) -> None:
         openness, roundness, jaw, closure = self._state.articulation
         for channel, value in (
             (RealtimeChannel.MOUTH_OPENNESS, openness),
@@ -382,13 +409,6 @@ class BodyRealtimeEngine:
             (RealtimeChannel.LIP_CLOSURE, closure),
         ):
             self._add(overlays, RealtimeLayer.SPEECH_ARTICULATION, channel, value, 1.0, 100)
-        states.append(
-            RealtimeLayerState(
-                RealtimeLayer.SPEECH_ARTICULATION,
-                RealtimeLayerStatus.ACTIVE,
-                speech.presentation.presentation_id,
-            )
-        )
 
     def _standalone_long_mora_articulation(
         self, units: tuple[SpeechTimingUnit, ...], unit: SpeechTimingUnit
