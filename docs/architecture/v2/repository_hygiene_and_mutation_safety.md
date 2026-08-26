@@ -168,7 +168,16 @@ GitHub live branch headを再取得し、local/remote/PR headがexpected SHAへ�
 - next resume gate
 をIssueへ記録する。
 
-Target dateを超えたOpen Draftを無言でACTIVE扱いしない。
+### 日程の正本
+
+日程の唯一の正本はGitHub Projectの`Start date`および`Target date`フィールドである。
+
+- Issue本文に記載された日付は日程の正本として使用しない。
+- 本文とProjectフィールドが不一致の場合は、必ずProjectフィールドを優先する。
+- Issue本文を根拠にProjectフィールドを更新しない。
+- 必要時は本文の日付をProjectフィールドへ同期するか、本文の重複記載を削除する。
+- 日程は予定情報であり、着手、完了、Resume Gate、STOPの条件ではない。
+- 日程の変更はGitHub Projectフィールドで行う。
 
 ### MERGED
 
@@ -196,7 +205,6 @@ PR mergeだけではlifecycle完了ではない。
 
 定期監査で最低限次を確認する。
 
-- Target date超過
 - base branchからのbehind count
 - 最終checkpointの古さ
 - active owner Issueの存在

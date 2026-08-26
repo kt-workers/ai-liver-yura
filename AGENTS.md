@@ -60,6 +60,9 @@
 - `NOOP`、`nonexistent`、`.trigger`、`.issue_sync_marker`、一時marker、直後に削除する前提のfileをshared historyへ追加しない。
 - CIやreviewを再実行するためだけにrepository contentやcommit historyを変更しない。rerun、reopen、workflow dispatch等の正規手段を使う。
 - branch作成前にlinked Issue、purpose、exact base SHA、予定PR base、既存active lineageとの重複なしを確認する。
+- 日程の唯一の正本はGitHub Projectの`Start date`および`Target date`フィールドとする。Issue本文の日付は正本として参照せず、不一致時は必ずProjectフィールドを優先する。
+- Issue本文の日付を根拠にProjectフィールドを上書きしない。必要時は本文をProjectフィールドへ同期するか、本文の重複日付を削除する。
+- 日程は予定情報であり、着手・完了・Resume Gate・STOP条件にはしない。日程を変更する場合はGitHub Projectフィールドを更新する。
 - PRをmerge/closeしただけでbranch lifecycle完了としない。MERGED、ABANDONED、TEST_ONLYはいずれも証拠記録後のbranch ref削除までを完了条件とする。
 - 誤mutationを検知したら追加mutationを止め、live状態を取得し、Issueへ記録してから最小安全手段でreconcileする。事故を隠すためのforce pushや無断history rewriteを行わない。
 
