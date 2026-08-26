@@ -1,6 +1,7 @@
 name: V2 Deterministic CI
 
 on:
+  workflow_dispatch:
   pull_request:
     branches:
       - rebuild/v2-foundation
