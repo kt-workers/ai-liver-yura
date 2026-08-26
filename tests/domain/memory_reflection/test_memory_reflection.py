@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -42,12 +43,13 @@ def source(
     kind: ReflectionSourceKind,
     *,
     retracted: bool = False,
+    revision: int = 1,
 ) -> ReflectionSourceEvidence:
     return ReflectionSourceEvidence(
         source_ref,
         kind,
         "trusted_owner",
-        1,
+        revision,
         NOW,
         {"summary": "bounded"},
         (f"provenance:{source_ref}",),
@@ -106,7 +108,14 @@ def support(
     *refs: str,
     relation: ReflectionSupportRelation = ReflectionSupportRelation.SUPPORTED,
 ) -> ReflectionSupportObservation:
-    return ReflectionSupportObservation("proposal-1", relation, refs, (), (), 0.75)
+    return ReflectionSupportObservation(
+        "proposal-1",
+        relation,
+        refs,
+        (),
+        refs if relation is ReflectionSupportRelation.CONTRADICTED else (),
+        0.75,
+    )
 
 
 def authority() -> ReflectionCandidateAuthority:
@@ -320,19 +329,15 @@ def test_unknown_memory_kind_and_unresolved_support_diagnostics_are_rejected() -
             0.6,
             MemoryTemporalState(freshness=MemoryFreshnessState.HISTORICAL),
         )
-    snapshot = context(source("fact-1", ReflectionSourceKind.PRESENTATION_FACT))
-    observation = ReflectionSupportObservation(
-        "proposal-1",
-        ReflectionSupportRelation.SUPPORTED,
-        ("fact-1",),
-        ("unresolved",),
-        (),
-        0.8,
-    )
-
-    assert authority().accept(snapshot, proposal("fact-1"), observation).status is (
-        ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE
-    )
+    with pytest.raises(ValueError, match="SUPPORTED observation"):
+        ReflectionSupportObservation(
+            "proposal-1",
+            ReflectionSupportRelation.SUPPORTED,
+            ("fact-1",),
+            ("unresolved",),
+            (),
+            0.8,
+        )
 
 
 class FakeProposalPort:
@@ -358,7 +363,14 @@ class FakeSupportPort:
         _: ReflectionContextSnapshot,
         candidate: MemoryCandidateProposal,
     ) -> ReflectionSupportObservation:
-        return support(*candidate.source_refs)
+        return ReflectionSupportObservation(
+            candidate.proposal_id,
+            ReflectionSupportRelation.SUPPORTED,
+            candidate.source_refs,
+            (),
+            (),
+            0.75,
+        )
 
 
 def test_zero_candidate_is_a_valid_background_result() -> None:
@@ -400,6 +412,68 @@ def test_slow_reflection_does_not_block_foreground_and_burst_coalesces() -> None
         assert result.telemetry.support_latency_ms >= 0
         assert provider.calls == 1
         assert coordinator.pending_task_count == 0
+
+    asyncio.run(run())
+
+
+def test_different_immutable_context_generations_do_not_coalesce() -> None:
+    async def run() -> None:
+        first_context = context(source("fact-1", ReflectionSourceKind.PRESENTATION_FACT))
+        second_context = context(
+            source("fact-1", ReflectionSourceKind.PRESENTATION_FACT, revision=2)
+        )
+        gate = asyncio.Event()
+        provider = FakeProposalPort((proposal("fact-1"),), gate)
+        coordinator = ReflectionCoordinator(provider, FakeSupportPort(), authority())
+
+        first = coordinator.submit(first_context)
+        second = coordinator.submit(second_context)
+        await asyncio.sleep(0)
+
+        assert first is not second
+        gate.set()
+        await asyncio.gather(first, second)
+        assert provider.calls == 2
+
+    asyncio.run(run())
+
+
+def test_live_retracted_source_after_provider_await_is_rejected_as_stale() -> None:
+    async def run() -> None:
+        captured = context(source("fact-1", ReflectionSourceKind.PRESENTATION_FACT))
+        retracted = context(
+            source("fact-1", ReflectionSourceKind.PRESENTATION_FACT, retracted=True)
+        )
+        coordinator = ReflectionCoordinator(
+            FakeProposalPort((proposal("fact-1"),)),
+            FakeSupportPort(),
+            authority(),
+            live_context=lambda _: retracted,
+        )
+
+        result = await coordinator.submit(captured)
+
+        assert result.results[0].status is ReflectionCandidateStatus.REJECTED_STALE
+
+    asyncio.run(run())
+
+
+def test_maximum_proposals_have_bounded_aggregate_telemetry() -> None:
+    async def run() -> None:
+        snapshot = context(source("fact-1", ReflectionSourceKind.PRESENTATION_FACT))
+        proposals = tuple(
+            replace(proposal("fact-1"), proposal_id=f"proposal-{index}")
+            for index in range(32)
+        )
+        coordinator = ReflectionCoordinator(
+            FakeProposalPort(proposals), FakeSupportPort(), authority()
+        )
+
+        result = await coordinator.submit(snapshot)
+
+        assert result.telemetry is not None
+        assert result.telemetry.proposal_count == 32
+        assert len(result.telemetry.event_kinds) <= 64
 
     asyncio.run(run())
 
@@ -494,14 +568,22 @@ def test_deterministic_capture_requires_closed_fact_source_and_keeps_current_sta
     )
     snapshot = context(state_source)
 
-    rejected = authority().accept(
-        snapshot,
-        proposal("state-1", deterministic_capture=True),
-        None,
+    rejected = authority().accept_trusted_deterministic_capture(
+        snapshot, proposal("state-1", deterministic_capture=True)
     )
 
     assert rejected.status is ReflectionCandidateStatus.REJECTED_POLICY
     assert state_payload == {"energy": 0.6}
+
+
+def test_provider_deterministic_flag_cannot_skip_support_observation() -> None:
+    snapshot = context(source("fact-1", ReflectionSourceKind.PRESENTATION_FACT))
+
+    result = authority().accept(
+        snapshot, proposal("fact-1", deterministic_capture=True), None
+    )
+
+    assert result.status is ReflectionCandidateStatus.SUPPORT_PROVIDER_UNAVAILABLE
 
 
 def test_accepted_candidate_is_submission_only_and_does_not_claim_store_success() -> None:

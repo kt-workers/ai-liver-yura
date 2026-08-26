@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable
+from hashlib import sha256
 from time import perf_counter
 from typing import Protocol
 
@@ -34,6 +36,11 @@ class ReflectionSupportPort(Protocol):
     ) -> ReflectionSupportObservation: ...
 
 
+LiveReflectionContextReader = Callable[
+    [ReflectionContextSnapshot], ReflectionContextSnapshot | None
+]
+
+
 class ReflectionCoordinator:
     """background taskをbounded/coalescedにし、foregroundをawaitしない。"""
 
@@ -45,6 +52,7 @@ class ReflectionCoordinator:
         *,
         max_concurrency: int = 2,
         max_pending_tasks: int = 64,
+        live_context: LiveReflectionContextReader | None = None,
     ) -> None:
         if type(max_concurrency) is not int or not 1 <= max_concurrency <= 16:
             raise ValueError("max_concurrencyが不正です")
@@ -55,11 +63,12 @@ class ReflectionCoordinator:
         self._authority = authority
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self._max_pending_tasks = max_pending_tasks
-        self._tasks: dict[tuple[str, ...], asyncio.Task[ReflectionRunResult]] = {}
-        self._coalesced_keys: set[tuple[str, ...]] = set()
+        self._live_context = live_context or (lambda context: context)
+        self._tasks: dict[str, asyncio.Task[ReflectionRunResult]] = {}
+        self._coalesced_keys: set[str] = set()
 
     def submit(self, context: ReflectionContextSnapshot) -> asyncio.Task[ReflectionRunResult]:
-        key = tuple(sorted(source.source_ref for source in context.primary_sources))
+        key = self._context_key(context)
         existing = self._tasks.get(key)
         if existing is not None and not existing.done():
             self._coalesced_keys.add(key)
@@ -77,7 +86,7 @@ class ReflectionCoordinator:
         return task
 
     async def cancel(self, context: ReflectionContextSnapshot) -> None:
-        key = tuple(sorted(source.source_ref for source in context.primary_sources))
+        key = self._context_key(context)
         task = self._tasks.get(key)
         if task is None:
             return
@@ -102,7 +111,7 @@ class ReflectionCoordinator:
     async def _run(
         self,
         context: ReflectionContextSnapshot,
-        key: tuple[str, ...],
+        key: str,
     ) -> ReflectionRunResult:
         try:
             async with self._semaphore:
@@ -128,7 +137,7 @@ class ReflectionCoordinator:
                                 (),
                             ),
                         ),
-                        tuple(key) if key in self._coalesced_keys else (),
+                        self._source_refs(context) if key in self._coalesced_keys else (),
                         telemetry=self._telemetry(
                             context,
                             events,
@@ -139,17 +148,36 @@ class ReflectionCoordinator:
                         ),
                     )
                 events.append(ReflectionEventKind.PROPOSAL_COMPLETED)
-                results, support_latency = await self._validate_all(context, proposals, events)
-                events.extend(
-                    ReflectionEventKind.CANDIDATE_ACCEPTED
-                    if result.status is ReflectionCandidateStatus.ACCEPTED_FOR_STORE_SUBMISSION
-                    else ReflectionEventKind.CANDIDATE_REJECTED
+                live_context = self._live_context(context)
+                if live_context is None:
+                    results = [
+                        ReflectionCandidateResult(
+                            proposal.proposal_id,
+                            ReflectionCandidateStatus.REJECTED_STALE,
+                            None,
+                            proposal.source_refs,
+                        )
+                        for proposal in proposals
+                    ]
+                    support_latency = 0.0
+                else:
+                    results, support_latency = await self._validate_all(
+                        live_context, proposals, events
+                    )
+                if any(
+                    result.status is ReflectionCandidateStatus.ACCEPTED_FOR_STORE_SUBMISSION
                     for result in results
-                )
+                ):
+                    events.append(ReflectionEventKind.CANDIDATE_ACCEPTED)
+                if any(
+                    result.status is not ReflectionCandidateStatus.ACCEPTED_FOR_STORE_SUBMISSION
+                    for result in results
+                ):
+                    events.append(ReflectionEventKind.CANDIDATE_REJECTED)
                 return ReflectionRunResult(
                     context.reflection_id,
                     tuple(results),
-                    tuple(key) if key in self._coalesced_keys else (),
+                    self._source_refs(context) if key in self._coalesced_keys else (),
                     telemetry=self._telemetry(
                         context,
                         events,
@@ -203,19 +231,41 @@ class ReflectionCoordinator:
         results: list[ReflectionCandidateResult] = []
         support_latency = 0.0
         for proposal in proposals:
-            events.append(ReflectionEventKind.SUPPORT_STARTED)
             started = perf_counter()
             try:
                 support = await self._support_port.observe(context, proposal)
             except RuntimeError:
                 support_latency += perf_counter() - started
-                events.append(ReflectionEventKind.SUPPORT_FAILED)
-                results.append(self._authority.accept(context, proposal, None))
+                if ReflectionEventKind.SUPPORT_FAILED not in events:
+                    events.append(ReflectionEventKind.SUPPORT_FAILED)
+                live_context = self._live_context(context)
+                results.append(
+                    self._authority.accept(
+                        context if live_context is None else live_context, proposal, None
+                    )
+                )
             else:
                 support_latency += perf_counter() - started
-                events.append(ReflectionEventKind.SUPPORT_COMPLETED)
-                results.append(self._authority.accept(context, proposal, support))
+                if ReflectionEventKind.SUPPORT_COMPLETED not in events:
+                    events.append(ReflectionEventKind.SUPPORT_COMPLETED)
+                live_context = self._live_context(context)
+                results.append(
+                    self._authority.accept(
+                        context if live_context is None else live_context, proposal, support
+                    )
+                )
         return results, support_latency
+
+    @staticmethod
+    def _source_refs(context: ReflectionContextSnapshot) -> tuple[str, ...]:
+        return tuple(sorted(source.source_ref for source in context.primary_sources))
+
+    @staticmethod
+    def _context_key(context: ReflectionContextSnapshot) -> str:
+        encoded = json.dumps(
+            context.to_dict(), ensure_ascii=True, sort_keys=True, separators=(",", ":")
+        )
+        return sha256(encoded.encode()).hexdigest()
 
     @staticmethod
     def _telemetry(

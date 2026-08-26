@@ -50,8 +50,6 @@ class ReflectionCandidateAuthority:
             return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_STALE)
         if not self._source_claim_is_allowed(proposal, source_map):
             return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE)
-        if proposal.deterministic_capture:
-            return self._accept_deterministic(context, proposal)
         if support is None:
             return self._rejected(proposal, ReflectionCandidateStatus.SUPPORT_PROVIDER_UNAVAILABLE)
         support_refs = (
@@ -72,6 +70,12 @@ class ReflectionCandidateAuthority:
             support.evidence_refs,
             proposal.relation_hints,
         )
+
+    def accept_trusted_deterministic_capture(
+        self, context: ReflectionContextSnapshot, proposal: MemoryCandidateProposal
+    ) -> ReflectionCandidateResult:
+        """trusted callerだけがclosed policyを満たしたexact captureへ使う入口。"""
+        return self._accept_deterministic(context, proposal)
 
     def _accept_deterministic(
         self, context: ReflectionContextSnapshot, proposal: MemoryCandidateProposal

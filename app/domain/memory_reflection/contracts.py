@@ -425,6 +425,17 @@ class ReflectionSupportObservation:
             _identifiers(self.contradiction_refs, "contradiction_refs"),
         )
         object.__setattr__(self, "confidence", _unit(self.confidence, "confidence"))
+        if self.support_relation is ReflectionSupportRelation.SUPPORTED:
+            if not self.evidence_refs or self.unsupported_content_refs or self.contradiction_refs:
+                raise ValueError("SUPPORTED observationのevidenceが不正です")
+        elif self.support_relation is ReflectionSupportRelation.UNSUPPORTED:
+            if self.contradiction_refs:
+                raise ValueError("UNSUPPORTED observationのevidenceが不正です")
+        elif self.support_relation is ReflectionSupportRelation.CONTRADICTED:
+            if not self.contradiction_refs or self.unsupported_content_refs:
+                raise ValueError("CONTRADICTED observationのevidenceが不正です")
+        elif self.unsupported_content_refs or self.contradiction_refs:
+            raise ValueError("support observationのevidenceが不正です")
 
 
 @dataclass(frozen=True, slots=True)

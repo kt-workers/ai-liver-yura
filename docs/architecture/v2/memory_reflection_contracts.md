@@ -217,6 +217,8 @@ trusted typed source
 
 The deterministic path must not use keyword/regex/substring over open-ended raw NL as semantic authority.
 
+`MemoryCandidateProposal.deterministic_capture` はprovider由来の主張であり、acceptance pathを切替えるAuthorityではない。support observerを省略できるのは、trusted callerがclosed deterministic capture policyとexact typed source-to-content mappingを検証して明示的に選んだ場合だけである。
+
 ---
 
 ## 8. Complex Reflection role
@@ -370,6 +372,8 @@ Closed `support_relation`:
 
 The observer does not decide Store disposition.
 
+`SUPPORTED` は空でない`evidence_refs`を必要とし、`unsupported_content_refs` / `contradiction_refs`を同時に含められない。`UNSUPPORTED`と`CONTRADICTED`も、相互に矛盾するevidence fieldを混在させない。空または矛盾したobservationはaccepted candidateを作らず、invalid provenanceとしてrejectする。
+
 ---
 
 ## 14. Support-observer independence
@@ -459,6 +463,7 @@ Reject/cancel when:
 Changes to unrelated current Emotion/Goal/Attention do not invalidate historical evidence automatically.
 
 The support/acceptance gate re-reads current related Memory revisions when the proposed relation depends on them.
+proposal providerまたはsupport observerのawait後は、source retraction/correctionとrelation hintが依存するMemory revisionをlive snapshotから再検証する。unrelated current-state driftだけではhistorical evidenceをrejectしない。
 
 ---
 
@@ -485,6 +490,8 @@ Allowed:
 - bounded source aggregation
 - latest/batch threshold triggers
 - duplicate trigger coalescing
+
+coalescing identityはsource ref名だけではなく、source revision、retracted状態、related Memory view、trigger、reflection IDを含むimmutable context generationにexact bindする。異なるsnapshotは同じin-flight taskへ合流しない。
 
 Forbidden:
 - every chat message → mandatory durable-memory LLM call
@@ -546,6 +553,8 @@ reflection_support_started/completed/failed
 reflection_candidate_accepted/rejected
 memory_store_submission_started/completed/failed
 ```
+
+telemetryのevent列はbounded aggregateであり、許容された32 proposalについてcandidateごとのeventを無制限に積み増さない。proposal/support/candidateの種別とcountは既存count fieldsで監査する。
 
 Metrics:
 - trigger count by kind
