@@ -58,6 +58,7 @@
 - `gui_admin_contracts.md` — #351 immutable Read Model / typed Admin Command / secret-safe GUI boundary
 - `validation_lab_contracts.md` — #352 production-path Validation Harness / provenance / timeline / Human context / Export
 - `development_tooling_contracts.md` — #353 read-only development evidence / visualizer / reference analysis / security boundary
+- `optional_review_support_contracts.md` — #371 任意・読取専用・非ブロッキングのレビュー支援契約
 - `game_skill_runtime_contracts.md` — #365 high-level Core Goal vs realtime game perception/tactics/action/runtime contracts
 - `system_integration_contracts.md` — #360 staged composition / degraded startup / cross-lane latency / System Verification contracts
 - `legacy_migration_matrix.md` — V1 requirement migration

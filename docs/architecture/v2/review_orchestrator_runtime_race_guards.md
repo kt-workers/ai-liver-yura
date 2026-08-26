@@ -1,9 +1,11 @@
 # Review Orchestrator Runtime Race Guards
 
-Status: Canonical amendment for Issue #371  
+Status: 歴史参照。Issue #371の現行実装Authorityではない。
 Extends: `docs/architecture/v2/review_orchestrator_implementation.md` Sections 12–13  
 Parent contract: `docs/architecture/v2/independent_ai_review_architecture.md`  
 Effective: 2026-08-13
+
+> 本書は旧GitHub workflow実行のrace guard知見を保持する。現行#371はworkflow・Commit Statusを書き込まず、`optional_review_support_contracts.md`を正本とする。
 
 ## 1. 目的
 

@@ -1,11 +1,13 @@
 # GitHub Review Orchestrator / Gemini Reviewer Implementation Design
 
-Status: Canonical implementation design for Issue #371  
+Status: 歴史参照。Issue #371の現行実装Authorityではない。
 Parent: #369  
 Depends on: #370  
 Canonical contract: `docs/architecture/v2/independent_ai_review_architecture.md`  
 Area: Development Tooling  
 Effective: 2026-08-13
+
+> 2026-08-26の人間判断により、本書のsecret-bearing workflow、Gemini必須化、Commit Status、Merge Gateを含む自動統括案は現行#371の実装対象から外れた。現行canonicalは`optional_review_support_contracts.md`である。本書は旧設計知見としてのみ保持する。
 
 ## 1. 目的
 
