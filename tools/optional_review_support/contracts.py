@@ -57,6 +57,13 @@ def _sanitize_presentation(value: str) -> str:
         ("[", "［"),
         ("]", "］"),
         ("`", "｀"),
+        ("*", "＊"),
+        ("_", "＿"),
+        ("#", "＃"),
+        ("~", "～"),
+        ("\\", "￥"),
+        ("|", "｜"),
+        (">", "＞"),
     ):
         result = result.replace(source, replacement)
     return result
@@ -241,6 +248,9 @@ class ReviewContext:
                 "issue_references": self.issue_references,
                 "canonical_references": self.canonical_references,
                 "gate_evidence": self.gate_evidence,
+                "untrusted_pr_data_hash": sha256(
+                    self.untrusted_pr_data.encode("utf-8")
+                ).hexdigest(),
             },
             ensure_ascii=True,
             separators=(",", ":"),

@@ -37,7 +37,7 @@ Root: #317
   → 人間またはImplementerが通常のreview/merge判断を行う
 ```
 
-起動は明示要求に限る。同一head SHAに対する重複起動を避けるため、validated `AVAILABLE` advisoryだけをlocal bounded cacheで再利用してよい。未実行、失敗、provider不在、構造化出力不正、stale targetはcacheせず、利用者が明示的に再実行できる。これらを再試行loopや停止状態へ昇格しない。
+起動は明示要求に限る。同一head SHAかつ同一のuntrusted PR data hashに対する重複起動を避けるため、validated `AVAILABLE` advisoryだけをlocal bounded cacheで再利用してよい。未実行、失敗、provider不在、構造化出力不正、stale targetはcacheせず、利用者が明示的に再実行できる。これらを再試行loopや停止状態へ昇格しない。
 
 ## 4. 読取専用境界
 

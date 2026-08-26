@@ -79,7 +79,7 @@ def _candidate(target: ReviewTarget, echoed_head_sha: str | None = None) -> Advi
     )
 
 
-def test_context_generation_is_immutable_and_untrusted_data_does_not_change_it() -> None:
+def test_context_generation_binds_untrusted_data_without_exposing_it() -> None:
     context = _context()
     changed_untrusted_data = replace(context, untrusted_pr_data="different untrusted body")
     joined_reference = replace(context, canonical_references=("a\nb",))
@@ -90,7 +90,7 @@ def test_context_generation_is_immutable_and_untrusted_data_does_not_change_it()
         reviewer=replace(context.reviewer, provider="different-optional-provider"),
     )
 
-    assert context.context_generation == changed_untrusted_data.context_generation
+    assert context.context_generation != changed_untrusted_data.context_generation
     assert context.target.head_sha == "a" * 40
     assert joined_reference.context_generation != separated_references.context_generation
     assert context.context_generation != changed_base_ref.context_generation
@@ -252,7 +252,7 @@ def test_presentation_is_sanitized_without_changing_target_identity() -> None:
     candidate = _candidate(target)
     candidate = replace(
         candidate,
-        summary="確認\x7f\u202e @person <b>[link]`code`",
+        summary="確認\x7f\u202e @person <b>[link]`code` **PASS**\n# PASS ~x~ \\ | >",
         findings=(
             AdvisoryFinding(
                 title="指摘\x7f\u202e @team",
@@ -277,7 +277,11 @@ def test_presentation_is_sanitized_without_changing_target_identity() -> None:
     assert "\x7f" not in advisory.summary
     assert "\u202e" not in advisory.summary
     assert advisory.findings[0].title == "指摘 ＠team"
-    assert advisory.findings[0].path == "tools/＠maintainers/［optional］_review_support/service.py"
+    assert advisory.findings[0].path == (
+        "tools/＠maintainers/［optional］＿review＿support/service.py"
+    )
+    for marker in ("*", "_", "#", "~", "`", "\\", "|", ">"):
+        assert marker not in advisory.summary
     assert advisory.collected_at == context.collected_at
 
 
