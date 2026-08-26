@@ -59,6 +59,8 @@ class ReflectionCandidateAuthority:
         )
         if not set(support_refs).issubset(source_map):
             return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE)
+        if not set(support.evidence_refs).issubset(proposal.source_refs):
+            return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE)
         status = self._support_status(proposal, support)
         if status is not ReflectionCandidateStatus.ACCEPTED_FOR_STORE_SUBMISSION:
             return self._rejected(proposal, status, support.evidence_refs)
@@ -80,6 +82,17 @@ class ReflectionCandidateAuthority:
     def _accept_deterministic(
         self, context: ReflectionContextSnapshot, proposal: MemoryCandidateProposal
     ) -> ReflectionCandidateResult:
+        source_map = {source.source_ref: source for source in context.primary_sources}
+        if any(source_ref not in source_map for source_ref in proposal.source_refs):
+            return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE)
+        if any(
+            source.retracted
+            for source in source_map.values()
+            if source.source_ref in proposal.source_refs
+        ) or not self._relation_hints_current(context, proposal):
+            return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_STALE)
+        if not self._source_claim_is_allowed(proposal, source_map):
+            return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE)
         if proposal.proposed_kind is not MemoryKind.WORKING and not any(
             source.source_kind
             in {ReflectionSourceKind.PRESENTATION_FACT, ReflectionSourceKind.EXECUTION_FACT}

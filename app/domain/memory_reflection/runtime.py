@@ -127,6 +127,7 @@ class ReflectionCoordinator:
                     proposals = await self._proposal_port.propose(context)
                 except RuntimeError:
                     events.append(ReflectionEventKind.PROPOSAL_FAILED)
+                    self._append_coalesced_event(events, key)
                     return ReflectionRunResult(
                         context.reflection_id,
                         (
@@ -164,6 +165,7 @@ class ReflectionCoordinator:
                     results, support_latency = await self._validate_all(
                         live_context, proposals, events
                     )
+                self._append_coalesced_event(events, key)
                 if any(
                     result.status is ReflectionCandidateStatus.ACCEPTED_FOR_STORE_SUBMISSION
                     for result in results
@@ -240,9 +242,9 @@ class ReflectionCoordinator:
                     events.append(ReflectionEventKind.SUPPORT_FAILED)
                 live_context = self._live_context(context)
                 results.append(
-                    self._authority.accept(
-                        context if live_context is None else live_context, proposal, None
-                    )
+                    self._stale_result(proposal)
+                    if live_context is None
+                    else self._authority.accept(live_context, proposal, None)
                 )
             else:
                 support_latency += perf_counter() - started
@@ -250,15 +252,28 @@ class ReflectionCoordinator:
                     events.append(ReflectionEventKind.SUPPORT_COMPLETED)
                 live_context = self._live_context(context)
                 results.append(
-                    self._authority.accept(
-                        context if live_context is None else live_context, proposal, support
-                    )
+                    self._stale_result(proposal)
+                    if live_context is None
+                    else self._authority.accept(live_context, proposal, support)
                 )
         return results, support_latency
 
     @staticmethod
     def _source_refs(context: ReflectionContextSnapshot) -> tuple[str, ...]:
         return tuple(sorted(source.source_ref for source in context.primary_sources))
+
+    @staticmethod
+    def _stale_result(proposal: MemoryCandidateProposal) -> ReflectionCandidateResult:
+        return ReflectionCandidateResult(
+            proposal.proposal_id,
+            ReflectionCandidateStatus.REJECTED_STALE,
+            None,
+            proposal.source_refs,
+        )
+
+    def _append_coalesced_event(self, events: list[ReflectionEventKind], key: str) -> None:
+        if key in self._coalesced_keys and ReflectionEventKind.COALESCED not in events:
+            events.append(ReflectionEventKind.COALESCED)
 
     @staticmethod
     def _context_key(context: ReflectionContextSnapshot) -> str:

@@ -218,6 +218,7 @@ trusted typed source
 The deterministic path must not use keyword/regex/substring over open-ended raw NL as semantic authority.
 
 `MemoryCandidateProposal.deterministic_capture` はprovider由来の主張であり、acceptance pathを切替えるAuthorityではない。support observerを省略できるのは、trusted callerがclosed deterministic capture policyとexact typed source-to-content mappingを検証して明示的に選んだ場合だけである。
+この省略はsource存在、retraction、actual-claim、relation revisionを含む共通のprovenance/staleness検証を省略しない。
 
 ---
 
@@ -464,6 +465,7 @@ Changes to unrelated current Emotion/Goal/Attention do not invalidate historical
 
 The support/acceptance gate re-reads current related Memory revisions when the proposed relation depends on them.
 proposal providerまたはsupport observerのawait後は、source retraction/correctionとrelation hintが依存するMemory revisionをlive snapshotから再検証する。unrelated current-state driftだけではhistorical evidenceをrejectしない。
+live snapshotが消失した場合は、capture時snapshotへfallbackせず`REJECTED_STALE`とする。
 
 ---
 
@@ -492,6 +494,7 @@ Allowed:
 - duplicate trigger coalescing
 
 coalescing identityはsource ref名だけではなく、source revision、retracted状態、related Memory view、trigger、reflection IDを含むimmutable context generationにexact bindする。異なるsnapshotは同じin-flight taskへ合流しない。
+trigger identityにはkind、source context revision、priority、interruptibility、created_atを含める。proposal開始後に同一generationがcoalesceした場合も、最終telemetryに一度だけ`COALESCED`を記録する。
 
 Forbidden:
 - every chat message → mandatory durable-memory LLM call

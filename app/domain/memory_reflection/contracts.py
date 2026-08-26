@@ -275,6 +275,8 @@ class ReflectionContextSnapshot:
         )
         if not sources:
             raise ValueError("primary_sourcesは空にできません")
+        if len({source.source_ref for source in sources}) != len(sources):
+            raise ValueError("primary_sourcesが重複しています")
         if {source.source_ref for source in sources} != set(self.trigger.source_refs):
             raise ValueError("primary_sourcesとtrigger source_refsが一致しません")
         object.__setattr__(self, "primary_sources", sources)
@@ -309,7 +311,15 @@ class ReflectionContextSnapshot:
     def to_dict(self) -> dict[str, object]:
         return {
             "reflection_id": self.reflection_id,
-            "trigger_id": self.trigger.trigger_id,
+            "trigger": {
+                "trigger_id": self.trigger.trigger_id,
+                "kind": self.trigger.kind.value,
+                "source_refs": list(self.trigger.source_refs),
+                "source_context_revision": self.trigger.source_context_revision,
+                "priority": self.trigger.priority,
+                "interruptible": self.trigger.interruptible,
+                "created_at": self.trigger.created_at.isoformat(),
+            },
             "primary_sources": [source.to_dict() for source in self.primary_sources],
             "related_memory_view": [
                 {"memory_id": item.memory_id, "revision": item.revision}

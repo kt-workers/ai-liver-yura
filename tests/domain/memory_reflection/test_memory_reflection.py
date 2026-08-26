@@ -586,6 +586,107 @@ def test_provider_deterministic_flag_cannot_skip_support_observation() -> None:
     assert result.status is ReflectionCandidateStatus.SUPPORT_PROVIDER_UNAVAILABLE
 
 
+def test_deterministic_capture_reuses_retraction_and_actual_claim_provenance_checks() -> None:
+    retracted = context(source("fact-1", ReflectionSourceKind.PRESENTATION_FACT, retracted=True))
+    assert authority().accept_trusted_deterministic_capture(
+        retracted, proposal("fact-1", deterministic_capture=True)
+    ).status is ReflectionCandidateStatus.REJECTED_STALE
+    untrusted = context(source("meaning-1", ReflectionSourceKind.INPUT_MEANING))
+    assert authority().accept_trusted_deterministic_capture(
+        untrusted,
+        proposal("meaning-1", predicate="actual_speech", deterministic_capture=True),
+    ).status is ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE
+
+
+def test_supported_evidence_must_be_part_of_accepted_candidate_provenance() -> None:
+    snapshot = context(
+        source("fact-1", ReflectionSourceKind.PRESENTATION_FACT),
+        source("fact-2", ReflectionSourceKind.PRESENTATION_FACT),
+    )
+    result = authority().accept(snapshot, proposal("fact-1"), support("fact-2"))
+    assert result.status is ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE
+
+
+def test_context_rejects_duplicate_primary_source_reference() -> None:
+    duplicated = source("fact-1", ReflectionSourceKind.PRESENTATION_FACT)
+    base = context(duplicated)
+    with pytest.raises(ValueError, match="primary_sourcesが重複"):
+        ReflectionContextSnapshot(
+            base.reflection_id,
+            base.trigger,
+            (duplicated, duplicated),
+            base.related_memory_view,
+            base.source_context_revision,
+            base.memory_store_revision,
+            base.captured_at,
+            base.trace_id,
+        )
+
+
+def test_trigger_generation_fields_prevent_coalescing() -> None:
+    async def run() -> None:
+        first = context(source("fact-1", ReflectionSourceKind.PRESENTATION_FACT))
+        second_trigger = ReflectionTrigger(
+            first.trigger.trigger_id,
+            ReflectionTriggerKind.IDLE_CONSOLIDATION,
+            first.trigger.source_refs,
+            first.trigger.source_context_revision,
+            first.trigger.priority,
+            first.trigger.interruptible,
+            first.trigger.created_at,
+        )
+        second = replace(first, trigger=second_trigger)
+        gate = asyncio.Event()
+        provider = FakeProposalPort((proposal("fact-1"),), gate)
+        coordinator = ReflectionCoordinator(provider, FakeSupportPort(), authority())
+        left = coordinator.submit(first)
+        right = coordinator.submit(second)
+        await asyncio.sleep(0)
+        assert left is not right
+        gate.set()
+        await asyncio.gather(left, right)
+
+    asyncio.run(run())
+
+
+def test_live_context_disappearance_after_support_and_late_coalescing_are_recorded() -> None:
+    class WaitingSupport(FakeSupportPort):
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def observe(
+            self, value: ReflectionContextSnapshot, candidate: MemoryCandidateProposal
+        ) -> ReflectionSupportObservation:
+            self.started.set()
+            await self.release.wait()
+            return await super().observe(value, candidate)
+
+    async def run() -> None:
+        snapshot = context(source("fact-1", ReflectionSourceKind.PRESENTATION_FACT))
+        support_port = WaitingSupport()
+        reads = 0
+
+        def live(_: ReflectionContextSnapshot) -> ReflectionContextSnapshot | None:
+            nonlocal reads
+            reads += 1
+            return snapshot if reads == 1 else None
+
+        coordinator = ReflectionCoordinator(
+            FakeProposalPort((proposal("fact-1"),)), support_port, authority(), live_context=live
+        )
+        first = coordinator.submit(snapshot)
+        await support_port.started.wait()
+        assert coordinator.submit(snapshot) is first
+        support_port.release.set()
+        result = await first
+        assert result.results[0].status is ReflectionCandidateStatus.REJECTED_STALE
+        assert result.telemetry is not None
+        assert ReflectionEventKind.COALESCED in result.telemetry.event_kinds
+
+    asyncio.run(run())
+
+
 def test_accepted_candidate_is_submission_only_and_does_not_claim_store_success() -> None:
     snapshot = context(source("fact-1", ReflectionSourceKind.PRESENTATION_FACT))
 
