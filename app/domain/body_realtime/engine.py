@@ -1,0 +1,308 @@
+"""#340の短時間・決定論的なRealtime overlay生成。BodyStateは変更しない。"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+from math import pi, sin
+
+from app.domain.body import BodyState
+from app.domain.body_expression import BodyExpressionAxis, BodyExpressionContext
+
+from .contracts import (
+    BlinkPhase,
+    BodyGazeTargetView,
+    ChannelOverlay,
+    RealtimeChannel,
+    RealtimeLayer,
+    RealtimeLayerState,
+    RealtimeLayerStatus,
+    RealtimeOverlayBundle,
+    RealtimeSpeechView,
+    articulation_for,
+)
+
+
+@dataclass(slots=True)
+class _LocalState:
+    last_tick: datetime | None = None
+    gaze_x: float = 0.0
+    gaze_y: float = 0.0
+    blink_phase: BlinkPhase = BlinkPhase.OPEN
+    blink_progress: float = 0.0
+    breath_phase: float = 0.0
+    subtle_phase: float = 0.0
+
+
+class BodyRealtimeEngine:
+    """外部I/O・await・BodyState書込みを持たない、runtime lane用の局所状態機械。"""
+
+    def __init__(self, *, seed: int = 0, target_interval_s: float = 1 / 60) -> None:
+        if (
+            type(seed) is not int
+            or type(target_interval_s) not in (int, float)
+            or not 0 < target_interval_s <= 1
+        ):
+            raise ValueError("realtime engine設定が不正です")
+        self._state = _LocalState(subtle_phase=float(seed % 997) / 997 * 2 * pi)
+        self._target_interval_s = float(target_interval_s)
+        self._sequence = 0
+
+    def tick(
+        self,
+        *,
+        body_state: BodyState,
+        expression: BodyExpressionContext | None,
+        gaze_target: BodyGazeTargetView | None,
+        speech: RealtimeSpeechView | None,
+        now: datetime,
+    ) -> RealtimeOverlayBundle:
+        if not isinstance(body_state, BodyState):
+            raise ValueError("body_stateが不正です")
+        if expression is not None and not isinstance(expression, BodyExpressionContext):
+            raise ValueError("expressionが不正です")
+        if gaze_target is not None and not isinstance(gaze_target, BodyGazeTargetView):
+            raise ValueError("gaze_targetが不正です")
+        if speech is not None and not isinstance(speech, RealtimeSpeechView):
+            raise ValueError("speechが不正です")
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError("nowはtimezone-awareである必要があります")
+        elapsed = self._elapsed(now)
+        overlays: list[ChannelOverlay] = []
+        states: list[RealtimeLayerState] = []
+        self._gaze(overlays, states, gaze_target, elapsed)
+        self._blink(overlays, states, elapsed)
+        self._breath(overlays, states, expression, elapsed)
+        self._speech(overlays, states, speech, now)
+        self._subtle(overlays, states, expression, elapsed)
+        states.append(
+            RealtimeLayerState(RealtimeLayer.POSTURE_ASSIST, RealtimeLayerStatus.INACTIVE_NO_SOURCE)
+        )
+        self._sequence += 1
+        return RealtimeOverlayBundle(
+            f"realtime-overlay-{self._sequence}",
+            body_state.revision,
+            None if expression is None else expression.revision,
+            None if gaze_target is None else gaze_target.source_attention_revision,
+            None if speech is None else speech.presentation.presentation_id,
+            now,
+            tuple(overlays),
+            tuple(states),
+        )
+
+    def _elapsed(self, now: datetime) -> float:
+        previous = self._state.last_tick
+        self._state.last_tick = now
+        if previous is None:
+            return self._target_interval_s
+        value = (now - previous).total_seconds()
+        return min(max(value, 0.0), 0.25)
+
+    def _add(
+        self,
+        values: list[ChannelOverlay],
+        layer: RealtimeLayer,
+        channel: RealtimeChannel,
+        value: float,
+        strength: float,
+        priority: int,
+    ) -> None:
+        values.append(
+            ChannelOverlay(
+                f"{layer.value}-{self._sequence}-{channel.value}",
+                layer,
+                channel,
+                value,
+                strength,
+                priority,
+            )
+        )
+
+    def _gaze(
+        self,
+        overlays: list[ChannelOverlay],
+        states: list[RealtimeLayerState],
+        target: BodyGazeTargetView | None,
+        elapsed: float,
+    ) -> None:
+        if target is None or not target.has_spatial_target:
+            states.append(
+                RealtimeLayerState(
+                    RealtimeLayer.GAZE,
+                    RealtimeLayerStatus.DEGRADED
+                    if target
+                    else RealtimeLayerStatus.INACTIVE_NO_SOURCE,
+                    None if target is None else target.target_ref,
+                    "spatial_target_unavailable",
+                )
+            )
+            return
+        step = min(1.0, elapsed * 8.0)
+        self._state.gaze_x += (target.horizontal - self._state.gaze_x) * step  # type: ignore[operator]
+        self._state.gaze_y += (target.vertical - self._state.gaze_y) * step  # type: ignore[operator]
+        self._add(
+            overlays,
+            RealtimeLayer.GAZE,
+            RealtimeChannel.GAZE_X,
+            self._state.gaze_x,
+            target.confidence,
+            90,
+        )
+        self._add(
+            overlays,
+            RealtimeLayer.GAZE,
+            RealtimeChannel.GAZE_Y,
+            self._state.gaze_y,
+            target.confidence,
+            90,
+        )
+        states.append(
+            RealtimeLayerState(RealtimeLayer.GAZE, RealtimeLayerStatus.ACTIVE, target.target_ref)
+        )
+
+    def _blink(
+        self, overlays: list[ChannelOverlay], states: list[RealtimeLayerState], elapsed: float
+    ) -> None:
+        progress = self._state.blink_progress + elapsed * 5.0
+        phase = self._state.blink_phase
+        if phase is BlinkPhase.OPEN and progress >= 1:
+            phase, progress = BlinkPhase.CLOSING, 0.0
+        elif phase is BlinkPhase.CLOSING and progress >= 1:
+            phase, progress = BlinkPhase.CLOSED, 0.0
+        elif phase is BlinkPhase.CLOSED and progress >= 0.25:
+            phase, progress = BlinkPhase.OPENING, 0.0
+        elif phase is BlinkPhase.OPENING and progress >= 1:
+            phase, progress = BlinkPhase.OPEN, 0.0
+        self._state.blink_phase, self._state.blink_progress = phase, progress
+        openness = (
+            1.0
+            if phase is BlinkPhase.OPEN
+            else (
+                0.0
+                if phase is BlinkPhase.CLOSED
+                else (1 - progress if phase is BlinkPhase.CLOSING else progress)
+            )
+        )
+        self._add(overlays, RealtimeLayer.BLINK, RealtimeChannel.EYELID_OPENNESS, openness, 1.0, 80)
+        states.append(
+            RealtimeLayerState(RealtimeLayer.BLINK, RealtimeLayerStatus.ACTIVE, detail=phase.value)
+        )
+
+    def _axis(self, expression: BodyExpressionContext | None, axis: BodyExpressionAxis) -> float:
+        if expression is None:
+            return 0.0
+        return next(item.value.value for item in expression.axes if item.axis is axis)
+
+    def _breath(
+        self,
+        overlays: list[ChannelOverlay],
+        states: list[RealtimeLayerState],
+        expression: BodyExpressionContext | None,
+        elapsed: float,
+    ) -> None:
+        amplitude = max(
+            0.0, 0.5 + self._axis(expression, BodyExpressionAxis.BREATHING_AMPLITUDE) / 2
+        )
+        tempo = max(0.1, 1 + self._axis(expression, BodyExpressionAxis.BREATHING_TEMPO))
+        self._state.breath_phase = (self._state.breath_phase + elapsed * tempo / 4) % 1.0
+        self._add(
+            overlays,
+            RealtimeLayer.BREATH,
+            RealtimeChannel.BREATH_PHASE,
+            self._state.breath_phase,
+            1.0,
+            50,
+        )
+        self._add(
+            overlays, RealtimeLayer.BREATH, RealtimeChannel.BREATH_AMPLITUDE, amplitude, 1.0, 50
+        )
+        states.append(RealtimeLayerState(RealtimeLayer.BREATH, RealtimeLayerStatus.ACTIVE))
+
+    def _speech(
+        self,
+        overlays: list[ChannelOverlay],
+        states: list[RealtimeLayerState],
+        speech: RealtimeSpeechView | None,
+        now: datetime,
+    ) -> None:
+        if speech is None:
+            states.append(
+                RealtimeLayerState(
+                    RealtimeLayer.SPEECH_ARTICULATION, RealtimeLayerStatus.INACTIVE_NO_SOURCE
+                )
+            )
+            return
+        track = speech.timing_track
+        if track is None:
+            states.append(
+                RealtimeLayerState(
+                    RealtimeLayer.SPEECH_ARTICULATION,
+                    RealtimeLayerStatus.DEGRADED,
+                    speech.presentation.presentation_id,
+                    "timing_unavailable",
+                )
+            )
+            return
+        elapsed_ms = int((now - speech.presentation.started_at).total_seconds() * 1000)  # type: ignore[operator]
+        unit = next(
+            (item for item in track.units if item.start_ms <= elapsed_ms < item.end_ms), None
+        )
+        if unit is None:
+            states.append(
+                RealtimeLayerState(
+                    RealtimeLayer.SPEECH_ARTICULATION,
+                    RealtimeLayerStatus.ACTIVE,
+                    speech.presentation.presentation_id,
+                )
+            )
+            return
+        try:
+            openness, roundness, jaw, closure = articulation_for(unit.symbol, unit.kind)
+        except ValueError:
+            states.append(
+                RealtimeLayerState(
+                    RealtimeLayer.SPEECH_ARTICULATION,
+                    RealtimeLayerStatus.DEGRADED,
+                    speech.presentation.presentation_id,
+                    "unsupported_timing_symbol",
+                )
+            )
+            return
+        for channel, value in (
+            (RealtimeChannel.MOUTH_OPENNESS, openness),
+            (RealtimeChannel.MOUTH_ROUNDNESS, roundness),
+            (RealtimeChannel.JAW_OPENNESS, jaw),
+            (RealtimeChannel.LIP_CLOSURE, closure),
+        ):
+            self._add(overlays, RealtimeLayer.SPEECH_ARTICULATION, channel, value, 1.0, 100)
+        states.append(
+            RealtimeLayerState(
+                RealtimeLayer.SPEECH_ARTICULATION,
+                RealtimeLayerStatus.ACTIVE,
+                speech.presentation.presentation_id,
+            )
+        )
+
+    def _subtle(
+        self,
+        overlays: list[ChannelOverlay],
+        states: list[RealtimeLayerState],
+        expression: BodyExpressionContext | None,
+        elapsed: float,
+    ) -> None:
+        intensity = max(0.0, self._axis(expression, BodyExpressionAxis.IDLE_VARIATION))
+        self._state.subtle_phase += elapsed * 1.7
+        self._add(
+            overlays,
+            RealtimeLayer.SUBTLE_MOTION,
+            RealtimeChannel.SUBTLE_SWAY,
+            sin(self._state.subtle_phase) * intensity * 0.1,
+            intensity,
+            10,
+        )
+        states.append(
+            RealtimeLayerState(
+                RealtimeLayer.SUBTLE_MOTION,
+                RealtimeLayerStatus.ACTIVE if intensity else RealtimeLayerStatus.INACTIVE_NO_SOURCE,
+            )
+        )
