@@ -467,19 +467,9 @@ class BodyRealtimeEngine:
         elapsed: float,
     ) -> None:
         if motion_constraint is None or not motion_constraint.subtle_motion_permitted:
-            self._state.subtle_intensity = self._approach_parameter(
-                self._state.subtle_intensity, 0.0, elapsed, 0.12
-            )
-            if self._state.subtle_intensity:
-                self._state.subtle_phase += elapsed * 1.7
-                self._add(
-                    overlays,
-                    RealtimeLayer.SUBTLE_MOTION,
-                    RealtimeChannel.SUBTLE_SWAY,
-                    sin(self._state.subtle_phase) * self._state.subtle_intensity * 0.1,
-                    self._state.subtle_intensity,
-                    10,
-                )
+            # active planが明示的に禁止した後は、fade中の新規swayも提案しない。
+            # phaseを凍結しておけば、再許可時に禁止期間を不可視に消費しない。
+            self._state.subtle_intensity = 0.0
             states.append(
                 RealtimeLayerState(
                     RealtimeLayer.SUBTLE_MOTION,

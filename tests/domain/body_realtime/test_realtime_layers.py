@@ -983,6 +983,48 @@ def test_subtle_motion_is_suppressed_when_active_plan_disallows_it() -> None:
     assert subtle_state.detail == "suppressed_by_active_plan"
 
 
+def test_subtle_motion_stops_immediately_when_active_plan_revokes_permission() -> None:
+    engine = BodyRealtimeEngine(seed=7)
+    allowed = _motion_constraint(permitted=True, active_plan_id="free")
+    engine.tick(
+        body_state=_body_state(),
+        expression=_expression(idle=1),
+        gaze_target=None,
+        speech=None,
+        motion_constraint=allowed,
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    active = engine.tick(
+        body_state=_body_state(),
+        expression=_expression(idle=1),
+        gaze_target=None,
+        speech=None,
+        motion_constraint=allowed,
+        now=NOW + timedelta(milliseconds=100),
+        monotonic_now_s=0.1,
+    )
+    assert any(item.channel is RealtimeChannel.SUBTLE_SWAY for item in active.channel_overlays)
+
+    suppressed = engine.tick(
+        body_state=_body_state(),
+        expression=_expression(idle=1),
+        gaze_target=None,
+        speech=None,
+        motion_constraint=_motion_constraint(permitted=False, active_plan_id="hard-contact"),
+        now=NOW + timedelta(milliseconds=200),
+        monotonic_now_s=0.2,
+    )
+
+    assert not any(
+        item.channel is RealtimeChannel.SUBTLE_SWAY for item in suppressed.channel_overlays
+    )
+    state = next(
+        item for item in suppressed.layer_statuses if item.layer is RealtimeLayer.SUBTLE_MOTION
+    )
+    assert state.detail == "suppressed_by_active_plan"
+
+
 def test_subtle_motion_requires_a_typed_motion_constraint() -> None:
     bundle = BodyRealtimeEngine(seed=7).tick(
         body_state=_body_state(),

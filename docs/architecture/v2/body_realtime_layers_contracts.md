@@ -349,7 +349,7 @@ Subtle motion is generated from:
 `RealtimeMotionConstraintView` は、Activity / physical ownerが既に確定したplan occupancyを#340へ渡すためのimmutable typed inputである。#340はraw Activity、free-text payload、Capability detailsを解釈しない。
 
 - `subtle_motion_permitted=True` のときだけsubtle swayを出力する
-- active hard task / contact / balance constraintがsubtle motionを許可しない場合は、ownerが `False` を明示し、#340は保持中intensityをboundedにneutralへfadeする
+- active hard task / contact / balance constraintがsubtle motionを許可しない場合は、ownerが `False` を明示し、#340は保持中intensityを即時に破棄してsubtle swayを出力しない。許可されないactive taskへ、fade中であっても新しいswayを提案しない
 - constraint viewが未提供の場合は、安全側にsubtle swayを出力しない。これはActivityの意味やCharacter factを推測するものではない
 - breathingおよびspeech articulationのAuthorityはこのViewで変更しない
 
