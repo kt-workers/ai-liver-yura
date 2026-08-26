@@ -58,11 +58,12 @@
 - `gui_admin_contracts.md` — #351 immutable Read Model / typed Admin Command / secret-safe GUI boundary
 - `validation_lab_contracts.md` — #352 production-path Validation Harness / provenance / timeline / Human context / Export
 - `development_tooling_contracts.md` — #353 read-only development evidence / visualizer / reference analysis / security boundary
+- `loop_mission_supervisor.md` — #465 GitHub-live Mission Supervisor / Work Scheduler / Resume Gate / Task Packet / Write Gate contracts
 - `optional_review_support_contracts.md` — #371 任意・読取専用・非ブロッキングのレビュー支援契約
 - `game_skill_runtime_contracts.md` — #365 high-level Core Goal vs realtime game perception/tactics/action/runtime contracts
 - `system_integration_contracts.md` — #360 staged composition / degraded startup / cross-lane latency / System Verification contracts
 - `legacy_migration_matrix.md` — V1 requirement migration
-- `project_sync_manifest.md` — GitHub Project synchronization manifest
+- `project_sync_manifest.md` — historical GitHub Project synchronization manifest; current V2 planning Authority is Project #7
 - `project_sync_runbook.md` — live ID取得・dry-run・Project fields・formal Parent/Sub-issue同期手順
 
-Status: Draft / V2 Design Completion Gate (#445). D1–D7 DONE, D8 cross-audit in final verification, D9 user confirmation pending.
+Status: V2 Design Completion Gate #445 D1–D9 PASS / Implementation Freeze released. Current implementation work still requires per-Work fresh Resume Gate.
