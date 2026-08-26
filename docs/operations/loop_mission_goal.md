@@ -1,7 +1,7 @@
 # AI Liver ゆら V2 Autonomous Completion Loop Mission
 
 version: 2
-generation: 2
+generation: 3
 
 ## Mission
 
@@ -18,6 +18,19 @@ Never embed a fixed PR number or HEAD in this Goal; obtain them from the latest
   never receives GitHub write credentials or rewrites an implementation branch.
 - Secrets, tokens, request headers, database URLs, and raw provider failures do
   not enter repository files, Issues, PRs, checkpoints, or ordinary logs.
+
+## GitHub human communication language
+
+Write all human-facing GitHub communication in Japanese: Issue bodies, Issue
+comments and checkpoints, PR bodies, PR comments/review explanations, Mission
+Checkpoints, and Resume Certificates. Keep only machine-like or proper technical
+terms in English: status values such as `ACTIVE`, `PASS`, `NOT_RUN`, and
+`REQUEST_CHANGES`; branch names; commands; file paths; SHAs; API/class/function/
+field names; machine-readable JSON keys and values; and verbatim external API
+output when quoting it is necessary. Use those terms within Japanese prose.
+
+Apply this rule to newly created communication only. Do not rewrite historical
+GitHub posts solely to translate them.
 
 ## Resume Gate and Task Packet
 

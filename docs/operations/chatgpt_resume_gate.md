@@ -132,17 +132,17 @@ SHAが進んでいる場合は、その差分が同じlineageの継続として�
 
 ```text
 Resume Gate: PASS / STOP
-Target Issue: #N <title>
-Canonical design: <path / PR>
-Active lineage: <PR chain>
-Working branch: <branch>
+対象Issue: #N <title>
+設計正本: <path / PR>
+active lineage: <PR chain>
+作業branch: <branch>
 Base: <branch>@<SHA>
 Head: <branch>@<SHA>
-Current phase/status: <state>
-Last verified: <CI/manual/date>
-Next action: <one concrete action>
-Conflicts: none / <details>
-Source freshness: <GitHub checked timestamp / snapshot timestamp>
+現在のphase/status: <state>
+最終検証: <CI/manual/date>
+次のaction: <one concrete action>
+conflicts: none / <details>
+情報鮮度: <GitHub checked timestamp / snapshot timestamp>
 ```
 
 これを作れない場合はPASSにしてはならない。
@@ -170,6 +170,11 @@ Resume GateがPASSした後にのみ、既存lineageの続きを実行する。
 STOP時は推測で補完しない。reconciliationのみ行う。
 
 ## 6. Resume Checkpoint
+
+GitHubへ投稿するResume CheckpointおよびResume Certificateの人間向け説明は
+日本語で書く。status値、branch名、command、file path、SHA、API/class/function/
+field名、machine-readable JSON、外部API原文の必要な引用だけは英語のままでよい。
+既存投稿の翻訳は要求しない。
 
 対象Work Issueへ、重要な状態遷移のたびに次の形式でコメントする。
 
