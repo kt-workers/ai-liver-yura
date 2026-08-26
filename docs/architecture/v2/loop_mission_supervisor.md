@@ -12,6 +12,32 @@ Loop Engineering の制御中枢として、GitHub live state を観測し、現
 
 Supervisor は product runtime の一部ではない。Development Tooling / Operations control plane であり、AI Liver ゆらの Core State、Goal、Attention、Memory、Body 等の production Authority を持たない。
 
+### 1.1 Package boundary
+
+Supervisor の正規配置は product package の外側にある
+`tools/loop_engine/` とする。
+
+```text
+tools/loop_engine/
+├─ __init__.py
+├─ models.py          # typed contracts
+├─ reconciliation.py  # observation conflict reconciliation
+├─ scheduler.py       # readiness, selection, ScheduleKey
+├─ write_gate.py      # mutation precondition/effect checks
+└─ supervisor.py      # composition, certificate, packet, disposition
+```
+
+`app/operations/mission_supervisor.py` は旧配置であり、存在してはならない。
+`tools.loop_engine` は Development Tooling のみから利用し、`app/runtime`、
+`app/domain`、`app/usecases`、`app/adapters`、`app/infrastructure` および
+`python -m app` の起動経路は import しない。したがってSupervisorはproduct
+runtimeの起動・可用性・Authorityに不要である。
+
+テストも `tests/tools/loop_engine/` に配置する。package boundary変更は
+snapshot、reconciliation、selection、Write Gateの意味を変えず、OpenAI Reviewer
+credential、`.env`、PostgreSQL operational store、GitHub mutation transportを
+導入しない。
+
 正規ループは次である。
 
 ```text
