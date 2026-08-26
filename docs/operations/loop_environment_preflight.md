@@ -67,3 +67,12 @@ credential injection supplied by the Codex environment and run the GitHub and
 Project #7 read probes.  It must succeed without `gh auth login`,
 `gh auth refresh`, or any interactive action.  This verifies credential
 injection into a new process; it does not mutate a Project.
+
+## macOS host launcher
+
+Run `python scripts/launch-codex-v2.py` from the repository host. It reads the
+`yura-codex-github` Keychain item only into VS Code's child environment, derives
+Goal version/generation/SHA-256 from the canonical file, retains PATH for
+Homebrew tooling, and launches VS Code. It neither writes a token to disk nor
+prints one. After VS Code creates a fresh Codex process, run normal Preflight;
+no manual `export`, `gh auth login`, or `gh auth refresh` is part of the flow.
