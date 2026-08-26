@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,11 +14,24 @@ from typing import Protocol
 class SecretProvider(Protocol):
     def github_token(self) -> str: ...
 
+    def reviewer_api_key(self) -> str: ...
+
+
+class ReviewerCredentialUnavailable(RuntimeError):
+    """The dedicated reviewer credential is intentionally unavailable."""
+
 
 class MacOSKeychainSecretProvider:
     """Reads the token only into the child process environment; never prints it."""
 
     def github_token(self) -> str:
+        return self._password("yura-codex-github", "GitHub credential unavailable")
+
+    def reviewer_api_key(self) -> str:
+        return self._password("yura-openai-reviewer", "Reviewer credential unavailable")
+
+    @staticmethod
+    def _password(service: str, unavailable_message: str) -> str:
         result = subprocess.run(
             (
                 "security",
@@ -24,22 +39,28 @@ class MacOSKeychainSecretProvider:
                 "-a",
                 os.environ["USER"],
                 "-s",
-                "yura-codex-github",
+                service,
                 "-w",
             ),
-            check=True,
             capture_output=True,
             text=True,
             timeout=10,
         )
         token = result.stdout.strip()
-        if not token:
-            raise RuntimeError("GitHub credential unavailable")
+        if result.returncode != 0 or not token:
+            if service == "yura-openai-reviewer":
+                raise ReviewerCredentialUnavailable(unavailable_message)
+            raise RuntimeError(unavailable_message)
         return token
 
 
 @dataclass(frozen=True, slots=True)
 class LaunchEnvironment:
+    values: Mapping[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewerLaunchEnvironment:
     values: Mapping[str, str]
 
 
@@ -65,5 +86,43 @@ def build_launch_environment(
     )
 
 
+def build_reviewer_environment(
+    root: Path, secrets: SecretProvider, parent: Mapping[str, str]
+) -> ReviewerLaunchEnvironment:
+    """Build the minimal environment for the independent reviewer child only."""
+    config = root / "docs" / "operations" / "reviewer_config.json"
+    try:
+        model = json.loads(config.read_text(encoding="utf-8"))["default_model"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
+        raise RuntimeError("Reviewer configuration unavailable") from error
+    if not isinstance(model, str) or not model:
+        raise RuntimeError("Reviewer configuration unavailable")
+    return ReviewerLaunchEnvironment(
+        {
+            "PATH": parent.get("PATH", "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"),
+            "OPENAI_API_KEY": secrets.reviewer_api_key(),
+            "OPENAI_REVIEWER_MODEL": model,
+            "OPENAI_REVIEWER_CONFIG": str(config),
+        }
+    )
+
+
 def launch_vscode(root: Path, environment: LaunchEnvironment) -> None:
     subprocess.run(("code", str(root)), check=True, env=dict(environment.values), timeout=30)
+
+
+def run_reviewer_subprocess(
+    root: Path, environment: ReviewerLaunchEnvironment, context: Mapping[str, object]
+) -> subprocess.CompletedProcess[str]:
+    """Run a reviewer with no GitHub, database, or inherited parent secrets."""
+    return subprocess.run(
+        (sys.executable, "-m", "app.operations.canonical_reviewer"),
+        check=False,
+        cwd=root,
+        env=dict(environment.values),
+        input=json.dumps(context, ensure_ascii=False),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        timeout=90,
+    )

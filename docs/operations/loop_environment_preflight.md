@@ -76,3 +76,32 @@ Goal version/generation/SHA-256 from the canonical file, retains PATH for
 Homebrew tooling, and launches VS Code. It neither writes a token to disk nor
 prints one. After VS Code creates a fresh Codex process, run normal Preflight;
 no manual `export`, `gh auth login`, or `gh auth refresh` is part of the flow.
+
+## One-shot independent reviewer
+
+The optional canonical review is deliberately separate from normal Preflight.
+Run it only after live PR/CI identity has been verified:
+
+```text
+python scripts/launch-codex-v2.py \
+  --canonical-review-pr 464 \
+  --expected-head <exact-current-head-sha>
+```
+
+For this mode only, the launcher reads the distinct Keychain service
+`yura-openai-reviewer`. The key is passed solely to the reviewer subprocess.
+That subprocess receives an explicit environment containing only `PATH`,
+`OPENAI_API_KEY`, the repository-owned reviewer model/config, and non-secret
+review context on stdin. It receives neither `GH_TOKEN`/`GITHUB_TOKEN`, any
+GitHub write credential, database credential, nor inherited parent secrets.
+
+Before starting, the launcher reads the live PR and rejects an expected/head
+mismatch as `NOT_RUN` / `STALE_TARGET`. The reviewer performs configured-model
+lookup plus a bounded Responses API health request before the bounded review
+request. A missing Keychain item returns `NOT_RUN` /
+`OPENAI_CREDENTIAL_UNAVAILABLE`; it does not consume a review attempt. After
+the subprocess returns, the launcher rereads the live PR head and discards any
+result as `STALE_TARGET` if it changed. The only emitted result is bounded
+JSON with `review_status`, target SHA, verdict, and sanitized findings; no
+credential, raw provider response, request header, or command stderr is
+printed or persisted.
