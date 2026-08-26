@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -53,7 +54,8 @@ class SnapshotPersistenceWorker:
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._tasks: dict[tuple[str, str], asyncio.Task[None]] = {}
         self._queued: dict[
-            tuple[str, str], tuple[SnapshotPersistenceRequest, asyncio.Future[DurabilityReceipt]]
+            tuple[str, str],
+            deque[tuple[SnapshotPersistenceRequest, asyncio.Future[DurabilityReceipt]]],
         ] = {}
         self._closed = False
 
@@ -67,30 +69,38 @@ class SnapshotPersistenceWorker:
         key = (request.envelope.owner_id, request.envelope.snapshot_kind)
         existing = self._tasks.get(key)
         future: asyncio.Future[DurabilityReceipt] = asyncio.get_running_loop().create_future()
+        queue = self._queued.setdefault(key, deque())
         if request.latest_state_coalescible and existing is not None and not existing.done():
-            previous = self._queued.get(key)
-            if previous is not None:
-                previous[1].set_result(
-                    self._receipt(
-                        previous[0],
-                        DurabilityStatus.SUPERSEDED_BY_NEWER_SNAPSHOT,
-                        None,
+            for index in range(len(queue) - 1, -1, -1):
+                previous = queue[index]
+                if not previous[0].latest_state_coalescible:
+                    continue
+                if not previous[1].done():
+                    previous[1].set_result(
+                        self._receipt(
+                            previous[0],
+                            DurabilityStatus.SUPERSEDED_BY_NEWER_SNAPSHOT,
+                            None,
+                        )
                     )
-                )
-            self._queued[key] = (request, future)
+                del queue[index]
+                break
+            queue.append((request, future))
             return future
-        elif self.pending_task_count >= self._max_pending:
+        if (existing is None or existing.done()) and self.pending_task_count >= self._max_pending:
+            self._queued.pop(key, None)
             return self._immediate(
                 request,
                 DurabilityStatus.PENDING_RETRY,
                 PersistenceFailureCode.UNAVAILABLE,
             )
-        self._queued[key] = (request, future)
-        task = asyncio.create_task(
-            self._run_key(key),
-            name=f"snapshot-persistence:{request.request_id}",
-        )
-        self._tasks[key] = task
+        queue.append((request, future))
+        if existing is None or existing.done():
+            task = asyncio.create_task(
+                self._run_key(key),
+                name=f"snapshot-persistence:{request.request_id}",
+            )
+            self._tasks[key] = task
         return future
 
     @property
@@ -104,21 +114,25 @@ class SnapshotPersistenceWorker:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        for request, future in self._queued.values():
-            if not future.done():
-                future.set_result(
-                    self._receipt(
-                        request,
-                        DurabilityStatus.CANCELLED,
-                        PersistenceFailureCode.CANCELLED,
+        for queue in self._queued.values():
+            for request, future in queue:
+                if not future.done():
+                    future.set_result(
+                        self._receipt(
+                            request,
+                            DurabilityStatus.CANCELLED,
+                            PersistenceFailureCode.CANCELLED,
+                        )
                     )
-                )
         self._queued.clear()
         self._tasks.clear()
 
     async def _run_key(self, key: tuple[str, str]) -> None:
         try:
-            while item := self._queued.pop(key, None):
+            while queue := self._queued.get(key):
+                item = queue.popleft()
+                if not queue:
+                    self._queued.pop(key, None)
                 request, future = item
                 receipt = await self._write(request)
                 if not future.done():

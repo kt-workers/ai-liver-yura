@@ -106,6 +106,35 @@ def test_snapshot_worker_is_bounded_coalesced_and_shutdown_leaves_no_pending_tas
     asyncio.run(run())
 
 
+def test_non_coalescible_snapshot_requests_for_same_owner_are_each_completed() -> None:
+    class DelayedRepository(InMemoryLifecycleSnapshotRepository):
+        def put_snapshot(
+            self,
+            item: PersistenceSnapshotEnvelope,
+            *,
+            expected_revision: int | None = None,
+        ) -> DurabilityReceipt:
+            sleep(0.01)
+            return super().put_snapshot(item, expected_revision=expected_revision)
+
+    async def run() -> None:
+        worker = SnapshotPersistenceWorker(DelayedRepository(lambda: NOW))
+        first = worker.submit(
+            SnapshotPersistenceRequest("request-1", envelope("snapshot-1", 1), False)
+        )
+        second = worker.submit(
+            SnapshotPersistenceRequest("request-2", envelope("snapshot-2", 2), False)
+        )
+
+        first_receipt, second_receipt = await asyncio.gather(first, second)
+        await worker.close()
+
+        assert first_receipt.status is DurabilityStatus.DURABLE
+        assert second_receipt.status is DurabilityStatus.DURABLE
+
+    asyncio.run(run())
+
+
 def test_sqlite_snapshot_survives_restart_without_exposing_raw_storage_shape(
     tmp_path: Path,
 ) -> None:
@@ -121,6 +150,26 @@ def test_sqlite_snapshot_survives_restart_without_exposing_raw_storage_shape(
     assert candidate is not None
     assert candidate.snapshot_ref == "snapshot-1"
     assert candidate.decoded_payload == {"goal": "keep"}
+
+
+def test_sqlite_snapshot_revision_check_and_write_are_atomic(tmp_path: Path) -> None:
+    repository = SqliteLifecycleSnapshotRepository(str(tmp_path / "atomic.sqlite"), lambda: NOW)
+
+    async def write(snapshot_id: str) -> object:
+        try:
+            return await asyncio.to_thread(repository.put_snapshot, envelope(snapshot_id, 1))
+        except PersistenceError as error:
+            return error
+
+    async def run() -> tuple[object, object]:
+        values = await asyncio.gather(write("snapshot-1"), write("snapshot-2"))
+        return values[0], values[1]
+
+    first, second = asyncio.run(run())
+    repository.close()
+
+    assert sum(isinstance(value, DurabilityReceipt) for value in (first, second)) == 1
+    assert sum(isinstance(value, PersistenceError) for value in (first, second)) == 1
 
 
 def test_transient_failure_is_bounded_retried_without_blocking_foreground() -> None:

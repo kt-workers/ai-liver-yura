@@ -293,6 +293,10 @@ Requirements:
 
 Event/history records that require every transition must use an event/journal contract instead; snapshot coalescing cannot silently delete required history.
 
+coalescibleでないrequestは、同じowner/kindで先行writeが実行中でも個別queue entryとして保持し、各callerへterminal `DurabilityReceipt`を返す。latest-state coalescingは明示的に許可されたpending snapshotだけを置換でき、event/history requestを置換してはならない。
+
+Storage adapterはexpected revision検査とdurable mutationを同一lock / transaction内で実行する。複数tableから構成されるMemory repository snapshotは、一つのread transactionでrecordsとrelationsを読み、異なるcommit世代を混在させない。
+
 ---
 
 ## 12. Storage schema versions

@@ -63,7 +63,20 @@ class SqliteMemoryRepository:
         )
 
     def snapshot(self) -> MemoryRepositorySnapshot:
-        return MemoryRepositorySnapshot(self.list_records(), self.list_relations())
+        with self._transaction() as cursor:
+            records = tuple(
+                decode_memory_record(row[0])
+                for row in cursor.execute(
+                    "SELECT payload FROM memory_records ORDER BY memory_id"
+                ).fetchall()
+            )
+            relations = tuple(
+                _decode_relation(row[0])
+                for row in cursor.execute(
+                    "SELECT payload FROM memory_relations ORDER BY relation_id"
+                ).fetchall()
+            )
+            return MemoryRepositorySnapshot(records, relations)
 
     def save_record(self, record: MemoryRecord, *, expected_revision: int | None) -> bool:
         with self._transaction() as cursor:

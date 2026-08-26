@@ -217,11 +217,11 @@ class SqliteLifecycleSnapshotRepository(InMemoryLifecycleSnapshotRepository):
         *,
         expected_revision: int | None = None,
     ) -> DurabilityReceipt:
-        receipt = super().put_snapshot(envelope, expected_revision=expected_revision)
-        if receipt.status is not DurabilityStatus.DURABLE:
-            return receipt
         try:
             with self._lock:
+                receipt = super().put_snapshot(envelope, expected_revision=expected_revision)
+                if receipt.status is not DurabilityStatus.DURABLE:
+                    return receipt
                 self._connection.execute(
                     "INSERT INTO lifecycle_snapshots VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
