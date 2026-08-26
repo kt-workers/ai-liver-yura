@@ -194,6 +194,45 @@ def test_breath_and_blink_continue_when_speech_is_absent() -> None:
     )
 
 
+def test_expression_change_interpolates_breath_without_phase_reset_and_emits_interval_metrics() -> (
+    None
+):
+    engine = BodyRealtimeEngine(target_interval_s=0.02)
+    first = engine.tick(
+        body_state=_body_state(),
+        expression=_expression(breath=-1),
+        gaze_target=None,
+        speech=None,
+        now=NOW,
+    )
+    second = engine.tick(
+        body_state=_body_state(),
+        expression=_expression(breath=1),
+        gaze_target=None,
+        speech=None,
+        now=NOW + timedelta(milliseconds=20),
+    )
+    first_phase = next(
+        item.value
+        for item in first.channel_overlays
+        if item.channel is RealtimeChannel.BREATH_PHASE
+    )
+    second_phase = next(
+        item.value
+        for item in second.channel_overlays
+        if item.channel is RealtimeChannel.BREATH_PHASE
+    )
+    second_amplitude = next(
+        item.value
+        for item in second.channel_overlays
+        if item.channel is RealtimeChannel.BREATH_AMPLITUDE
+    )
+    assert second_phase > first_phase
+    assert 0 < second_amplitude < 1
+    assert second.actual_interval_ms == pytest.approx(20)
+    assert second.jitter_ms == pytest.approx(0)
+
+
 def test_prepared_or_nonstarted_presentation_cannot_activate_viseme() -> None:
     report = SpeechPresentationReport(
         "presentation",

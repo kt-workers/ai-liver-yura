@@ -31,6 +31,7 @@ class _LocalState:
     blink_phase: BlinkPhase = BlinkPhase.OPEN
     blink_progress: float = 0.0
     breath_phase: float = 0.0
+    breath_amplitude: float = 0.5
     subtle_phase: float = 0.0
 
 
@@ -86,6 +87,8 @@ class BodyRealtimeEngine:
             None if gaze_target is None else gaze_target.source_attention_revision,
             None if speech is None else speech.presentation.presentation_id,
             now,
+            elapsed * 1000,
+            abs(elapsed - self._target_interval_s) * 1000,
             tuple(overlays),
             tuple(states),
         )
@@ -200,9 +203,13 @@ class BodyRealtimeEngine:
         expression: BodyExpressionContext | None,
         elapsed: float,
     ) -> None:
-        amplitude = max(
+        target_amplitude = max(
             0.0, 0.5 + self._axis(expression, BodyExpressionAxis.BREATHING_AMPLITUDE) / 2
         )
+        transition = min(1.0, elapsed * 4)
+        self._state.breath_amplitude += (
+            target_amplitude - self._state.breath_amplitude
+        ) * transition
         tempo = max(0.1, 1 + self._axis(expression, BodyExpressionAxis.BREATHING_TEMPO))
         self._state.breath_phase = (self._state.breath_phase + elapsed * tempo / 4) % 1.0
         self._add(
@@ -214,7 +221,12 @@ class BodyRealtimeEngine:
             50,
         )
         self._add(
-            overlays, RealtimeLayer.BREATH, RealtimeChannel.BREATH_AMPLITUDE, amplitude, 1.0, 50
+            overlays,
+            RealtimeLayer.BREATH,
+            RealtimeChannel.BREATH_AMPLITUDE,
+            self._state.breath_amplitude,
+            1.0,
+            50,
         )
         states.append(RealtimeLayerState(RealtimeLayer.BREATH, RealtimeLayerStatus.ACTIVE))
 

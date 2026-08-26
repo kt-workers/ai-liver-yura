@@ -27,7 +27,7 @@
 | 9–10 | local blink phaseとcontinuous breath phaseを保持し、expression updateでphaseをresetしない。 |
 | 11–14 | actual `STARTED` + artifact/timing identityだけをspeech articulationへ通す。timing欠落時はtyped degradationであり、架空mouth motionを作らない。 |
 | 15–18 | seedable smooth subtle variationとlayer別statusを保持し、一層のdegradationが他層を止めない。 |
-| 19–23 | engineは同期・I/Oなし、runtimeはcancellable。outputはsource revisionとlayer statusを含む。 |
+| 19–23 | engineは同期・I/Oなし、runtimeはcancellable。outputはsource revision、layer status、actual interval/jitterを含む。breath parameterはbounded transitionで更新する。 |
 
 ## 後続境界
 

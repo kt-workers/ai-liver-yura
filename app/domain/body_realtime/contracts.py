@@ -181,6 +181,8 @@ class RealtimeOverlayBundle:
     attention_revision: int | None
     speech_presentation_id: str | None
     generated_at: datetime
+    actual_interval_ms: float
+    jitter_ms: float
     channel_overlays: tuple[ChannelOverlay, ...]
     layer_statuses: tuple[RealtimeLayerState, ...]
 
@@ -192,6 +194,17 @@ class RealtimeOverlayBundle:
         if self.speech_presentation_id is not None:
             require_identifier(self.speech_presentation_id, "speech_presentation_id")
         require_aware(self.generated_at, "generated_at")
+        if (
+            type(self.actual_interval_ms) not in (int, float)
+            or not isfinite(self.actual_interval_ms)
+            or self.actual_interval_ms < 0
+            or type(self.jitter_ms) not in (int, float)
+            or not isfinite(self.jitter_ms)
+            or self.jitter_ms < 0
+        ):
+            raise ValueError("realtime interval telemetryが不正です")
+        object.__setattr__(self, "actual_interval_ms", float(self.actual_interval_ms))
+        object.__setattr__(self, "jitter_ms", float(self.jitter_ms))
         overlays = tuple(self.channel_overlays)
         states = tuple(self.layer_statuses)
         if any(not isinstance(value, ChannelOverlay) for value in overlays):
