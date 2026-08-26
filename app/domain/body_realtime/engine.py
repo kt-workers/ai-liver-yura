@@ -29,6 +29,7 @@ class _LocalState:
     last_monotonic_tick_s: float | None = None
     gaze_x: float = 0.0
     gaze_y: float = 0.0
+    gaze_strength: float = 0.0
     blink_phase: BlinkPhase = BlinkPhase.OPEN
     blink_progress: float = 0.0
     blink_elapsed: float = 0.0
@@ -152,13 +153,14 @@ class BodyRealtimeEngine:
             release = min(1.0, elapsed * 8.0)
             self._state.gaze_x += (0.0 - self._state.gaze_x) * release
             self._state.gaze_y += (0.0 - self._state.gaze_y) * release
+            self._state.gaze_strength += (0.0 - self._state.gaze_strength) * release
             if abs(self._state.gaze_x) > 1e-6 or abs(self._state.gaze_y) > 1e-6:
                 self._add(
                     overlays,
                     RealtimeLayer.GAZE,
                     RealtimeChannel.GAZE_X,
                     self._state.gaze_x,
-                    1.0,
+                    self._state.gaze_strength,
                     90,
                 )
                 self._add(
@@ -166,7 +168,7 @@ class BodyRealtimeEngine:
                     RealtimeLayer.GAZE,
                     RealtimeChannel.GAZE_Y,
                     self._state.gaze_y,
-                    1.0,
+                    self._state.gaze_strength,
                     90,
                 )
             states.append(
@@ -183,12 +185,13 @@ class BodyRealtimeEngine:
         step = min(1.0, elapsed * 8.0)
         self._state.gaze_x += (target.horizontal - self._state.gaze_x) * step  # type: ignore[operator]
         self._state.gaze_y += (target.vertical - self._state.gaze_y) * step  # type: ignore[operator]
+        self._state.gaze_strength += (target.confidence - self._state.gaze_strength) * step
         self._add(
             overlays,
             RealtimeLayer.GAZE,
             RealtimeChannel.GAZE_X,
             self._state.gaze_x,
-            target.confidence,
+            self._state.gaze_strength,
             90,
         )
         self._add(
@@ -196,7 +199,7 @@ class BodyRealtimeEngine:
             RealtimeLayer.GAZE,
             RealtimeChannel.GAZE_Y,
             self._state.gaze_y,
-            target.confidence,
+            self._state.gaze_strength,
             90,
         )
         states.append(

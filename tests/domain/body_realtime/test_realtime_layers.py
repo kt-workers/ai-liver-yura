@@ -99,11 +99,11 @@ def _expression(*, idle: float = 0, breath: float = 0, tempo: float = 0) -> Body
     )
 
 
-def _artifact() -> PreparedAudioArtifact:
+def _artifact(*, candidate_id: str = "candidate") -> PreparedAudioArtifact:
     return PreparedAudioArtifact(
         "artifact",
         "request",
-        "candidate",
+        candidate_id,
         "utterance",
         "performance",
         "voice",
@@ -119,18 +119,23 @@ def _artifact() -> PreparedAudioArtifact:
     )
 
 
-def _speech(*, timing: SpeechTimingTrack | None) -> RealtimeSpeechView:
+def _speech(
+    *,
+    timing: SpeechTimingTrack | None,
+    output_modes: tuple[SpeechPresentationMode, ...] = (SpeechPresentationMode.AUDIO_WITH_TEXT,),
+    artifact: PreparedAudioArtifact | None = None,
+) -> RealtimeSpeechView:
     report = SpeechPresentationReport(
         "presentation",
         "candidate",
         SpeechPresentationReportStatus.STARTED,
-        (SpeechPresentationMode.AUDIO_WITH_TEXT,),
+        output_modes,
         NOW,
         None,
         "artifact://prepared/audio",
         "timing",
     )
-    return RealtimeSpeechView(report, _artifact(), timing)
+    return RealtimeSpeechView(report, _artifact() if artifact is None else artifact, timing)
 
 
 def _status(bundle: RealtimeOverlayBundle, layer: RealtimeLayer) -> RealtimeLayerStatus:
@@ -209,6 +214,37 @@ def test_gaze_release_keeps_a_smoothed_overlay_instead_of_dropping_it() -> None:
         item.value for item in released.channel_overlays if item.channel is RealtimeChannel.GAZE_X
     )
     assert 0 < released_x < acquired_x
+
+
+def test_gaze_confidence_changes_are_smoothed_with_the_spatial_target() -> None:
+    engine = BodyRealtimeEngine()
+    first_target = BodyGazeTargetView("focus", 1.0, 0.0, 5, "attention", 1.0, NOW)
+    first = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=first_target,
+        speech=None,
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    reduced_target = BodyGazeTargetView("focus", 1.0, 0.0, 6, "attention", 0.0, NOW)
+    reduced = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=reduced_target,
+        speech=None,
+        now=NOW + timedelta(milliseconds=20),
+        monotonic_now_s=0.02,
+    )
+    first_strength = next(
+        item.strength for item in first.channel_overlays if item.channel is RealtimeChannel.GAZE_X
+    )
+    reduced_strength = next(
+        item.strength
+        for item in reduced.channel_overlays
+        if item.channel is RealtimeChannel.GAZE_X
+    )
+    assert 0 < reduced_strength < first_strength
 
 
 def test_late_blink_tick_consumes_phase_overshoot_without_replaying_a_full_blink() -> None:
@@ -329,6 +365,16 @@ def test_prepared_or_nonstarted_presentation_cannot_activate_viseme() -> None:
     )
     with pytest.raises(ValueError, match="STARTED"):
         RealtimeSpeechView(report, _artifact(), None)
+
+
+def test_text_only_presentation_cannot_activate_speech_realtime() -> None:
+    with pytest.raises(ValueError, match="音声再生なし"):
+        _speech(timing=None, output_modes=(SpeechPresentationMode.TEXT_ONLY,))
+
+
+def test_speech_realtime_rejects_artifact_from_another_candidate() -> None:
+    with pytest.raises(ValueError, match="candidate identity"):
+        _speech(timing=None, artifact=_artifact(candidate_id="other-candidate"))
 
 
 def test_started_presentation_with_trusted_timing_activates_canonical_articulation() -> None:

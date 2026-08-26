@@ -14,6 +14,7 @@ from app.adapters.tts.contracts import (
 )
 from app.domain.contracts.common import require_aware, require_identifier, require_revision
 from app.domain.speech_runtime.contracts import (
+    SpeechPresentationMode,
     SpeechPresentationReport,
     SpeechPresentationReportStatus,
 )
@@ -115,8 +116,12 @@ class RealtimeSpeechView:
             raise ValueError("STARTED以外のPresentationはspeech realtimeを開始できません")
         if self.presentation.started_at is None:
             raise ValueError("STARTED Presentationにはactual start時刻が必要です")
+        if SpeechPresentationMode.AUDIO_WITH_TEXT not in self.presentation.output_modes:
+            raise ValueError("音声再生なしのPresentationはspeech realtimeを開始できません")
         if not isinstance(self.artifact, PreparedAudioArtifact):
             raise ValueError("artifactが不正です")
+        if self.presentation.candidate_id != self.artifact.candidate_id:
+            raise ValueError("Presentationとartifactのcandidate identityが一致しません")
         if self.presentation.audio_ref != self.artifact.audio_ref:
             raise ValueError("Presentationとartifactのaudio identityが一致しません")
         if self.timing_track is not None and not isinstance(self.timing_track, SpeechTimingTrack):
