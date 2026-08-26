@@ -36,3 +36,17 @@ checkout treats a broker result as current only when its returned
 installed and operated outside this repository; its credential source, API
 client, and trusted validator are deliberately not repository code. This keeps
 future Autonomous Loop/Codex processes unable to retrieve reviewer credentials.
+
+## CI and repository permission evidence
+
+The CI identity resolver treats a PR number and exact expected head SHA as a
+pair. For `workflow_dispatch`, it fetches the live PR and rejects any mismatch;
+`github.sha` is never treated as proof of PR-head identity. For `pull_request`,
+the event head/base are additionally checked against that same live identity.
+All checkout and quality inputs use only resolved live SHAs.
+
+Repository write capability is likewise read-only evidence: Preflight queries
+`permissions.push` for the fixed `ktan514/ai-liver-yura` repository. Local
+remotes, upstreams, forks, and `git push --dry-run` are not authority for that
+capability. These evidence checks neither access reviewer credentials nor
+mutate Project #6 or any repository resource.

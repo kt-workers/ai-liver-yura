@@ -124,6 +124,7 @@ class EnvironmentCapabilityPreflight:
 
     def run(self) -> PreflightResult:
         capability = self._command_capabilities()
+        capability["github_repo_write"] = self._repository_write_allowed()
         capability["github_project_write"] = self._project_write_allowed()
         capability["mission_goal"] = self._mission_goal_matches()
         capability["project_venv"] = sys.prefix != sys.base_prefix
@@ -170,7 +171,6 @@ class EnvironmentCapabilityPreflight:
         probes = {
             "github_cli": ("gh", "auth", "status"),
             "github_repo_read": ("gh", "repo", "view", self._REPOSITORY),
-            "github_repo_write": ("git", "push", "--dry-run"),
             "github_project_view": ("gh", "project", "view", "7", "--owner", "ktan514"),
             "github_project_fields": ("gh", "project", "field-list", "7", "--owner", "ktan514"),
             "github_project_items": ("gh", "project", "item-list", "7", "--owner", "ktan514"),
@@ -189,6 +189,15 @@ class EnvironmentCapabilityPreflight:
             for name in ("github_project_view", "github_project_fields", "github_project_items")
         )
         return capability
+
+    def _repository_write_allowed(self) -> bool:
+        result = self._run(
+            "github_repo_write", ("gh", "api", f"repos/{self._REPOSITORY}")
+        )
+        try:
+            return result.succeeded and bool(json.loads(result.output)["permissions"]["push"])
+        except (KeyError, TypeError, json.JSONDecodeError):
+            return False
 
     def _project_write_allowed(self) -> bool:
         result = self._run(

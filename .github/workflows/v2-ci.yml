@@ -7,6 +7,10 @@ on:
         description: Exact Pull Request number to validate
         required: true
         type: string
+      expected_head_sha:
+        description: Exact live PR head SHA expected for this dispatch
+        required: true
+        type: string
   pull_request:
     branches:
       - rebuild/v2-foundation
@@ -44,7 +48,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
           EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          DISPATCH_SHA: ${{ github.sha }}
+          EXPECTED_DISPATCH_HEAD_SHA: ${{ inputs.expected_head_sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           test -n "$PR_NUMBER"
@@ -59,7 +63,8 @@ jobs:
             test "$head_sha" = "$EVENT_HEAD_SHA"
             test "$base_sha" = "$EVENT_BASE_SHA"
           else
-            test "$head_sha" = "$DISPATCH_SHA"
+            test -n "$EXPECTED_DISPATCH_HEAD_SHA"
+            test "$head_sha" = "$EXPECTED_DISPATCH_HEAD_SHA"
           fi
           {
             echo "pr_number=$PR_NUMBER"

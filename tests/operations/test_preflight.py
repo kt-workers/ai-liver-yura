@@ -8,10 +8,15 @@ from app.operations.preflight import CommandResult, EnvironmentCapabilityPreflig
 
 class FakeRunner:
     def __init__(
-        self, failed: tuple[tuple[str, ...], ...] = (), *, project_write: bool = True
+        self,
+        failed: tuple[tuple[str, ...], ...] = (),
+        *,
+        project_write: bool = True,
+        repository_write: bool = True,
     ) -> None:
         self.failed = failed
         self.project_write = project_write
+        self.repository_write = repository_write
         self.calls: list[tuple[str, ...]] = []
         self.environments: list[Mapping[str, str] | None] = []
 
@@ -24,6 +29,8 @@ class FakeRunner:
         if call[:3] == ("gh", "api", "graphql"):
             payload = {"data": {"user": {"projectV2": {"viewerCanUpdate": self.project_write}}}}
             return CommandResult(True, json.dumps(payload))
+        if call == ("gh", "api", "repos/ktan514/ai-liver-yura"):
+            return CommandResult(True, json.dumps({"permissions": {"push": self.repository_write}}))
         return CommandResult(not any(call[: len(prefix)] == prefix for prefix in self.failed))
 
 
@@ -65,6 +72,30 @@ def test_project_write_is_live_graphql_evidence_not_an_injected_boolean(tmp_path
     assert result.capabilities["github_project_write"]
     assert any(call[:3] == ("gh", "api", "graphql") for call in runner.calls)
     assert all("item-edit" not in call and "6" not in call for call in runner.calls)
+
+
+def test_repository_write_uses_fixed_read_only_permission_evidence(tmp_path: Path) -> None:
+    runner = FakeRunner(repository_write=True)
+    result = EnvironmentCapabilityPreflight(
+        runner, environment(), reviewer_probe=FakeReviewer(True), project_root=goal_root(tmp_path)
+    ).run()
+
+    assert result.capabilities["github_repo_write"]
+    assert ("gh", "api", "repos/ktan514/ai-liver-yura") in runner.calls
+    assert ("git", "push", "--dry-run") not in runner.calls
+    assert all("6" not in call for call in runner.calls)
+
+
+def test_repository_write_denial_is_fail_closed(tmp_path: Path) -> None:
+    result = EnvironmentCapabilityPreflight(
+        FakeRunner(repository_write=False),
+        environment(),
+        reviewer_probe=FakeReviewer(True),
+        project_root=goal_root(tmp_path),
+    ).run()
+
+    assert not result.capabilities["github_repo_write"]
+    assert "GITHUB_REPO_WRITE" in result.blocking_for_loop_bootstrap
 
 
 def test_project_write_denial_blocks_without_project_mutation(tmp_path: Path) -> None:

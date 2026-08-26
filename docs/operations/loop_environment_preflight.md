@@ -41,7 +41,7 @@ when only work-scoped capabilities are unavailable, otherwise `PASS`.
 | Capability | Evidence command | Classification on failure |
 | --- | --- | --- |
 | GitHub repository read | `gh repo view` | bootstrap blocking |
-| GitHub repository write | `git push --dry-run` | bootstrap blocking |
+| GitHub repository write | fixed repository REST permission query (`permissions.push`) | bootstrap blocking |
 | Project #7 read | `gh project view`, `field-list`, `item-list` | bootstrap blocking |
 | Project #7 write | GraphQL `viewerCanUpdate` read-only query | bootstrap blocking |
 | OpenAI reviewer | trusted host brokerへのbounded health request | work scoped |
@@ -53,6 +53,22 @@ when only work-scoped capabilities are unavailable, otherwise `PASS`.
 The Project write result is a fresh, side-effect-free GitHub permission query.
 It is not an injected test flag, cached field ID, or mutation. The controlled
 #462/#463 Project #7 mutation remains independent historical evidence.
+
+The repository write result is also a fresh, side-effect-free query, fixed to
+`ktan514/ai-liver-yura`. Preflight reads only the authenticated viewer's
+`permissions.push` value from that repository; it never uses `git push
+--dry-run`, the current remote, upstream, or a fork as evidence. A missing,
+malformed, or false permission result is fail-closed.
+
+## CI exact-head identity
+
+`workflow_dispatch` accepts both `pr_number` and `expected_head_sha`. The
+identity job reads the live PR by number, requires the live head to equal the
+explicit expected SHA, requires base ref `rebuild/v2-foundation`, and emits the
+resolved live head/base SHAs. It does not use `github.sha` as PR-head evidence.
+For `pull_request`, those resolved values must also match the event head/base.
+Checkout, exact-head verification, and diff-check consume only the resolved
+outputs. The concurrency key remains PR-number based for both event types.
 
 `LOOP_DATABASE_URL` is used only to derive `PG*` variables for child probes;
 it is never included in a command argument, result, or diagnostic. #463
