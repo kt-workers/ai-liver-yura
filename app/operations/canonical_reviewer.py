@@ -41,6 +41,26 @@ def _not_run(reason: str) -> ReviewResult:
     return ReviewResult(ReviewStatus.NOT_RUN, reason=reason)
 
 
+def _provider_failure_reason(error: Exception) -> str:
+    """Classify provider failures without retaining provider messages or payloads."""
+    error_type = type(error).__name__
+    status = getattr(error, "status_code", None)
+    code = getattr(error, "code", None)
+    if error_type == "AuthenticationError" or status == 401:
+        return "OPENAI_CREDENTIAL_INVALID"
+    if error_type == "PermissionDeniedError" or status == 403:
+        return "OPENAI_MODEL_ACCESS_DENIED"
+    if error_type == "RateLimitError" or status == 429:
+        if code in {"insufficient_quota", "billing_not_active"}:
+            return "OPENAI_BILLING_OR_TIER_UNAVAILABLE"
+        return "OPENAI_RATE_LIMITED"
+    if error_type == "APIConnectionError":
+        return "OPENAI_NETWORK_UNAVAILABLE"
+    if error_type == "APITimeoutError":
+        return "OPENAI_HEALTHCHECK_TIMEOUT"
+    return "OPENAI_PROVIDER_ERROR"
+
+
 def _validated_context(raw: object) -> dict[str, str] | None:
     if not isinstance(raw, dict):
         return None
@@ -138,8 +158,8 @@ Reviewed-Head-SHA exactly. Each finding needs severity, path, and message.
                 }
             },
         )
-    except Exception:
-        return _not_run("OPENAI_REVIEWER_UNAVAILABLE")
+    except Exception as error:
+        return _not_run(_provider_failure_reason(error))
     try:
         candidate: Any = json.loads(response.output_text)
         if candidate["echoed_head_sha"] != context["head_sha"]:

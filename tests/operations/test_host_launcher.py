@@ -1,7 +1,7 @@
 import hashlib
 from pathlib import Path
 
-from app.operations.canonical_reviewer import ReviewStatus, review
+from app.operations.canonical_reviewer import ReviewStatus, _provider_failure_reason, review
 from app.operations.host_launcher import build_launch_environment, build_reviewer_environment
 
 
@@ -72,3 +72,33 @@ def test_reviewer_without_key_is_typed_not_run() -> None:
 
     assert result.review_status is ReviewStatus.NOT_RUN
     assert result.reason == "OPENAI_CREDENTIAL_UNAVAILABLE"
+
+
+def test_reviewer_provider_errors_have_secret_safe_typed_reasons() -> None:
+    class AuthenticationError(Exception):
+        status_code = 401
+
+    class PermissionDeniedError(Exception):
+        status_code = 403
+
+    class RateLimitError(Exception):
+        status_code = 429
+
+        def __init__(self, code: str) -> None:
+            self.code = code
+
+    class APIConnectionError(Exception):
+        pass
+
+    class APITimeoutError(Exception):
+        pass
+
+    assert _provider_failure_reason(AuthenticationError()) == "OPENAI_CREDENTIAL_INVALID"
+    assert _provider_failure_reason(PermissionDeniedError()) == "OPENAI_MODEL_ACCESS_DENIED"
+    assert (
+        _provider_failure_reason(RateLimitError("insufficient_quota"))
+        == "OPENAI_BILLING_OR_TIER_UNAVAILABLE"
+    )
+    assert _provider_failure_reason(RateLimitError("rate_limit_exceeded")) == "OPENAI_RATE_LIMITED"
+    assert _provider_failure_reason(APIConnectionError()) == "OPENAI_NETWORK_UNAVAILABLE"
+    assert _provider_failure_reason(APITimeoutError()) == "OPENAI_HEALTHCHECK_TIMEOUT"
