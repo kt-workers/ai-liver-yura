@@ -22,7 +22,7 @@
 | canonical節 | 実装対応 |
 | --- | --- |
 | 3–4 | immutable `RealtimeOverlayBundle`はbody revisionを保持し、`BodyState` mutation APIを持たない。 |
-| 5 | runtimeは単一lane・target interval・late tickのbounded skipでcatch-up burstを作らない。 |
+| 5 | runtimeは単一lane・target interval・late tickのbounded skipでcatch-up burstを作らず、engineは実elapsedを一tickの連続状態更新へ使う。 |
 | 6–8 | typed spatial gazeだけをsmooth/saturateし、full-body orientationを生成しない。 |
 | 9–10 | local blink phaseとcontinuous breath phaseを保持し、expression updateでphaseをresetしない。 |
 | 11–14 | actual `STARTED` + artifact/timing identityだけをspeech articulationへ通す。timing欠落時はtyped degradationであり、架空mouth motionを作らない。 |

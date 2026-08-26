@@ -30,6 +30,8 @@ class _LocalState:
     gaze_y: float = 0.0
     blink_phase: BlinkPhase = BlinkPhase.OPEN
     blink_progress: float = 0.0
+    blink_elapsed: float = 0.0
+    next_blink_after_s: float = 2.0
     breath_phase: float = 0.0
     breath_amplitude: float = 0.5
     subtle_phase: float = 0.0
@@ -45,7 +47,12 @@ class BodyRealtimeEngine:
             or not 0 < target_interval_s <= 1
         ):
             raise ValueError("realtime engine設定が不正です")
-        self._state = _LocalState(subtle_phase=float(seed % 997) / 997 * 2 * pi)
+        initial_blink = 2.0 + (float(seed % 101) / 100 - 0.5)
+        self._state = _LocalState(
+            subtle_phase=float(seed % 997) / 997 * 2 * pi,
+            next_blink_after_s=initial_blink,
+        )
+        self._seed = seed
         self._target_interval_s = float(target_interval_s)
         self._sequence = 0
 
@@ -99,7 +106,7 @@ class BodyRealtimeEngine:
         if previous is None:
             return self._target_interval_s
         value = (now - previous).total_seconds()
-        return min(max(value, 0.0), 0.25)
+        return max(value, 0.0)
 
     def _add(
         self,
@@ -166,16 +173,27 @@ class BodyRealtimeEngine:
     def _blink(
         self, overlays: list[ChannelOverlay], states: list[RealtimeLayerState], elapsed: float
     ) -> None:
-        progress = self._state.blink_progress + elapsed * 5.0
+        progress = self._state.blink_progress
         phase = self._state.blink_phase
-        if phase is BlinkPhase.OPEN and progress >= 1:
-            phase, progress = BlinkPhase.CLOSING, 0.0
-        elif phase is BlinkPhase.CLOSING and progress >= 1:
-            phase, progress = BlinkPhase.CLOSED, 0.0
-        elif phase is BlinkPhase.CLOSED and progress >= 0.25:
-            phase, progress = BlinkPhase.OPENING, 0.0
-        elif phase is BlinkPhase.OPENING and progress >= 1:
-            phase, progress = BlinkPhase.OPEN, 0.0
+        if phase is BlinkPhase.OPEN:
+            self._state.blink_elapsed += elapsed
+            if self._state.blink_elapsed >= self._state.next_blink_after_s:
+                phase, progress = BlinkPhase.CLOSING, 0.0
+        elif phase is BlinkPhase.CLOSING:
+            progress += elapsed / 0.08
+            if progress >= 1:
+                phase, progress = BlinkPhase.CLOSED, 0.0
+        elif phase is BlinkPhase.CLOSED:
+            progress += elapsed / 0.04
+            if progress >= 1:
+                phase, progress = BlinkPhase.OPENING, 0.0
+        elif phase is BlinkPhase.OPENING:
+            progress += elapsed / 0.1
+            if progress >= 1:
+                phase, progress = BlinkPhase.OPEN, 0.0
+                self._state.blink_elapsed = 0.0
+                cycle = self._sequence + self._seed
+                self._state.next_blink_after_s = 2.0 + (float(cycle % 101) / 100 - 0.5)
         self._state.blink_phase, self._state.blink_progress = phase, progress
         openness = (
             1.0

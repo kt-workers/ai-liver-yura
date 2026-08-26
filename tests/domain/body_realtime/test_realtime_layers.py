@@ -233,6 +233,31 @@ def test_expression_change_interpolates_breath_without_phase_reset_and_emits_int
     assert second.jitter_ms == pytest.approx(0)
 
 
+def test_blink_state_machine_is_seed_reproducible_and_has_bounded_interval_variation() -> None:
+    def phases(seed: int) -> list[str]:
+        engine = BodyRealtimeEngine(seed=seed)
+        result: list[str] = []
+        for offset in (index / 10 for index in range(25)):
+            bundle = engine.tick(
+                body_state=_body_state(),
+                expression=None,
+                gaze_target=None,
+                speech=None,
+                now=NOW + timedelta(seconds=offset),
+            )
+            detail = next(
+                item.detail for item in bundle.layer_statuses if item.layer is RealtimeLayer.BLINK
+            )
+            assert detail is not None
+            result.append(detail)
+        return result
+
+    assert phases(4) == phases(4)
+    assert phases(4)[0] == "open"
+    assert "closing" in phases(4)
+    assert phases(4) != phases(90)
+
+
 def test_prepared_or_nonstarted_presentation_cannot_activate_viseme() -> None:
     report = SpeechPresentationReport(
         "presentation",
