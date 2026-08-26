@@ -37,6 +37,7 @@ class _LocalState:
     breath_phase: float = 0.0
     breath_amplitude: float = 0.5
     breath_tempo: float = 1.0
+    subtle_intensity: float = 0.0
     articulation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     speech_presentation_id: str | None = None
     speech_monotonic_anchor_s: float | None = None
@@ -287,12 +288,13 @@ class BodyRealtimeEngine:
         target_amplitude = max(
             0.0, 0.5 + self._axis(expression, BodyExpressionAxis.BREATHING_AMPLITUDE) / 2
         )
-        transition = min(1.0, elapsed * 4)
-        self._state.breath_amplitude += (
-            target_amplitude - self._state.breath_amplitude
-        ) * transition
+        self._state.breath_amplitude = self._approach_parameter(
+            self._state.breath_amplitude, target_amplitude, 0.12
+        )
         target_tempo = max(0.1, 1 + self._axis(expression, BodyExpressionAxis.BREATHING_TEMPO))
-        self._state.breath_tempo += (target_tempo - self._state.breath_tempo) * transition
+        self._state.breath_tempo = self._approach_parameter(
+            self._state.breath_tempo, target_tempo, 0.2
+        )
         self._state.breath_phase = (
             self._state.breath_phase + elapsed * self._state.breath_tempo / 4
         ) % 1.0
@@ -456,7 +458,11 @@ class BodyRealtimeEngine:
         expression: BodyExpressionContext | None,
         elapsed: float,
     ) -> None:
-        intensity = max(0.0, self._axis(expression, BodyExpressionAxis.IDLE_VARIATION))
+        target_intensity = max(0.0, self._axis(expression, BodyExpressionAxis.IDLE_VARIATION))
+        self._state.subtle_intensity = self._approach_parameter(
+            self._state.subtle_intensity, target_intensity, 0.12
+        )
+        intensity = self._state.subtle_intensity
         self._state.subtle_phase += elapsed * 1.7
         self._add(
             overlays,
@@ -472,3 +478,8 @@ class BodyRealtimeEngine:
                 RealtimeLayerStatus.ACTIVE if intensity else RealtimeLayerStatus.INACTIVE_NO_SOURCE,
             )
         )
+
+    @staticmethod
+    def _approach_parameter(current: float, target: float, maximum_delta: float) -> float:
+        """expression revisionとscheduler遅延を切り離した局所parameter遷移。"""
+        return current + max(-maximum_delta, min(maximum_delta, target - current))

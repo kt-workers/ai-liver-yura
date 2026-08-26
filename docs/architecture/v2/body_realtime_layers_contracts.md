@@ -422,6 +422,9 @@ Do not hard reset:
 
 on every expression revision.
 
+Breathing amplitude / tempoとsubtle-motion intensityは、scheduler遅延の長さに関わらない
+boundedな一frame parameter displacementで遷移する。
+
 ---
 
 ## 20. Motion Planner delay

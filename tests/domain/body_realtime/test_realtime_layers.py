@@ -392,6 +392,37 @@ def test_expression_change_interpolates_breath_without_phase_reset_and_emits_int
     assert second.jitter_ms == pytest.approx(0)
 
 
+def test_delayed_expression_revision_bounds_breath_parameter_displacement() -> None:
+    engine = BodyRealtimeEngine()
+    first = engine.tick(
+        body_state=_body_state(),
+        expression=_expression(breath=-1, tempo=-0.9),
+        gaze_target=None,
+        speech=None,
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    delayed = engine.tick(
+        body_state=_body_state(),
+        expression=_expression(breath=1, tempo=1),
+        gaze_target=None,
+        speech=None,
+        now=NOW + timedelta(milliseconds=250),
+        monotonic_now_s=0.25,
+    )
+    first_amplitude = next(
+        item.value
+        for item in first.channel_overlays
+        if item.channel is RealtimeChannel.BREATH_AMPLITUDE
+    )
+    delayed_amplitude = next(
+        item.value
+        for item in delayed.channel_overlays
+        if item.channel is RealtimeChannel.BREATH_AMPLITUDE
+    )
+    assert 0 < delayed_amplitude - first_amplitude <= 0.12
+
+
 def test_blink_state_machine_is_seed_reproducible_and_has_bounded_interval_variation() -> None:
     def phases(seed: int) -> list[str]:
         engine = BodyRealtimeEngine(seed=seed)
@@ -1036,6 +1067,32 @@ def test_subtle_motion_is_seed_reproducible_and_not_framewise_white_noise() -> N
         if item.channel is RealtimeChannel.SUBTLE_SWAY
     )
     assert first_value == second_value
+
+
+def test_subtle_motion_intensity_revision_is_interpolated_locally() -> None:
+    engine = BodyRealtimeEngine(seed=7)
+    engine.tick(
+        body_state=_body_state(),
+        expression=_expression(idle=0),
+        gaze_target=None,
+        speech=None,
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    revised = engine.tick(
+        body_state=_body_state(),
+        expression=_expression(idle=1),
+        gaze_target=None,
+        speech=None,
+        now=NOW + timedelta(milliseconds=20),
+        monotonic_now_s=0.02,
+    )
+    strength = next(
+        item.strength
+        for item in revised.channel_overlays
+        if item.channel is RealtimeChannel.SUBTLE_SWAY
+    )
+    assert 0 < strength <= 0.12
 
 
 @pytest.mark.asyncio
