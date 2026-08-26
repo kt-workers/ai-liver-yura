@@ -154,6 +154,7 @@ class GameSkillRuntime:
                 action.session_id != session_id
                 or action.strategy_revision != current.strategy_revision
                 or action.game_state_revision != current.game_state_revision
+                or current.lifecycle is not GameSessionLifecycle.ACTIVE
             ):
                 return None
             if action.deadline_at is not None and action.deadline_at <= self._now():
@@ -189,9 +190,33 @@ class GameSkillRuntime:
                 live.strategy_revision != current.strategy_revision
                 or live.lifecycle is not current.lifecycle
             ):
+                if (
+                    report.effect_state is GameActionEffectState.APPLIED
+                    and report.game_state_revision_after is not None
+                    and report.game_state_revision_after > live.game_state_revision
+                ):
+                    self._states[session_id] = GameSessionState(
+                        live.session_id,
+                        live.intent,
+                        live.lifecycle,
+                        report.game_state_revision_after,
+                        live.strategy_revision,
+                        live.strategy_payload,
+                    )
+                # STALE は APPLIED または AMBIGUOUS のeffect truthだけを表せる。
+                # controllerの通常失敗は世代交代後に再解釈しない。
+                effect_state = (
+                    report.effect_state
+                    if report.effect_state in (
+                        GameActionEffectState.APPLIED,
+                        GameActionEffectState.AMBIGUOUS,
+                    )
+                    else GameActionEffectState.AMBIGUOUS
+                )
                 return replace(
                     report,
                     status=GameActionExecutionStatus.STALE,
+                    effect_state=effect_state,
                     sanitized_diagnostics=(
                         report.sanitized_diagnostics + ("STALE_AFTER_CONTROLLER",)
                     ),

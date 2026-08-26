@@ -124,6 +124,43 @@ def test_stale_tactical_action_is_discarded_before_controller_effect() -> None:
     asyncio.run(scenario())
 
 
+def test_pause_during_selection_prevents_controller_apply() -> None:
+    class WaitingPolicy(Policy):
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def select(self, state: GameSessionState) -> GameFrameAction:
+            self.started.set()
+            await self.release.wait()
+            action = await super().select(state)
+            assert action is not None
+            return action
+
+    class RecordingController(Controller):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def apply(self, action: GameFrameAction) -> GameActionReport:
+            self.calls += 1
+            return await super().apply(action)
+
+    async def scenario() -> None:
+        policy = WaitingPolicy()
+        controller = RecordingController()
+        runtime = GameSkillRuntime(controller, policy)
+        runtime.admit(intent())
+        runtime.activate("session:1")
+        pending = asyncio.create_task(runtime.tick("session:1"))
+        await policy.started.wait()
+        runtime.pause("session:1")
+        policy.release.set()
+        assert await pending is None
+        assert controller.calls == 0
+
+    asyncio.run(scenario())
+
+
 def test_strategy_update_during_controller_wait_keeps_new_strategy_and_marks_report_stale() -> None:
     class WaitingController(Controller):
         def __init__(self) -> None:
@@ -149,7 +186,45 @@ def test_strategy_update_during_controller_wait_keeps_new_strategy_and_marks_rep
         report = await pending
         assert report is not None and report.status is GameActionExecutionStatus.STALE
         assert runtime.snapshot("session:1").strategy_revision == 2
-        assert runtime.snapshot("session:1").game_state_revision == 0
+        assert runtime.snapshot("session:1").game_state_revision == 1
+
+    asyncio.run(scenario())
+
+
+def test_stale_failed_controller_report_is_returned_with_ambiguous_effect_truth() -> None:
+    class WaitingFailedController(Controller):
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def apply(self, action: GameFrameAction) -> GameActionReport:
+            self.started.set()
+            await self.release.wait()
+            return GameActionReport(
+                action.action_id,
+                action.session_id,
+                GameActionExecutionStatus.FAILED,
+                GameActionEffectState.NOT_APPLIED,
+                None,
+                None,
+            )
+
+    async def scenario() -> None:
+        controller = WaitingFailedController()
+        runtime = GameSkillRuntime(controller, Policy())
+        runtime.admit(intent())
+        runtime.activate("session:1")
+        pending = asyncio.create_task(runtime.tick("session:1"))
+        await controller.started.wait()
+        runtime.apply_strategy(
+            GameStrategyUpdate("strategy:2", "session:1", "goal:1", 3, 2, {}, "decision:2", NOW)
+        )
+        controller.release.set()
+        report = await pending
+        assert report is not None
+        assert report.status is GameActionExecutionStatus.STALE
+        assert report.effect_state is GameActionEffectState.AMBIGUOUS
+        assert "STALE_AFTER_CONTROLLER" in report.sanitized_diagnostics
 
     asyncio.run(scenario())
 
