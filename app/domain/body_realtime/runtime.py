@@ -10,7 +10,12 @@ from datetime import datetime, timezone
 from app.domain.body import BodyState
 from app.domain.body_expression import BodyExpressionContext
 
-from .contracts import BodyGazeTargetView, RealtimeOverlayBundle, RealtimeSpeechView
+from .contracts import (
+    BodyGazeTargetView,
+    RealtimeMotionConstraintView,
+    RealtimeOverlayBundle,
+    RealtimeSpeechView,
+)
 from .engine import BodyRealtimeEngine
 
 
@@ -20,6 +25,7 @@ class RealtimeTickInput:
     expression: BodyExpressionContext | None
     gaze_target: BodyGazeTargetView | None
     speech: RealtimeSpeechView | None
+    motion_constraint: RealtimeMotionConstraintView | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.body_state, BodyState):
@@ -30,6 +36,10 @@ class RealtimeTickInput:
             raise ValueError("gaze_targetが不正です")
         if self.speech is not None and not isinstance(self.speech, RealtimeSpeechView):
             raise ValueError("speechが不正です")
+        if self.motion_constraint is not None and not isinstance(
+            self.motion_constraint, RealtimeMotionConstraintView
+        ):
+            raise ValueError("motion_constraintが不正です")
 
 
 RealtimeInputReadPort = Callable[[], RealtimeTickInput]
@@ -99,6 +109,7 @@ class BodyRealtimeRuntime:
                 expression=value.expression,
                 gaze_target=value.gaze_target,
                 speech=value.speech,
+                motion_constraint=value.motion_constraint,
                 now=now,
                 monotonic_now_s=loop.time(),
             )

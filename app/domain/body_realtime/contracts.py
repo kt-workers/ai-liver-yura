@@ -72,6 +72,24 @@ class BlinkPhase(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class RealtimeMotionConstraintView:
+    """Activity / physical ownerが確定した#340向けのmotion許可だけを表すView。"""
+
+    source_owner: str
+    source_revision: int
+    active_plan_id: str | None
+    subtle_motion_permitted: bool
+
+    def __post_init__(self) -> None:
+        require_identifier(self.source_owner, "source_owner")
+        require_revision(self.source_revision, "source_revision")
+        if self.active_plan_id is not None:
+            require_identifier(self.active_plan_id, "active_plan_id")
+        if type(self.subtle_motion_permitted) is not bool:
+            raise ValueError("subtle_motion_permittedが不正です")
+
+
+@dataclass(frozen=True, slots=True)
 class BodyGazeTargetView:
     target_ref: str
     horizontal: float | None

@@ -33,6 +33,7 @@ from app.domain.body_realtime import (
     RealtimeChannel,
     RealtimeLayer,
     RealtimeLayerStatus,
+    RealtimeMotionConstraintView,
     RealtimeOverlayBundle,
     RealtimeSpeechView,
     RealtimeTickInput,
@@ -142,6 +143,14 @@ def _speech(
         _artifact() if artifact is None else artifact,
         timing,
         presentation_monotonic_started_at_s,
+    )
+
+
+def _motion_constraint(
+    *, permitted: bool, active_plan_id: str | None = None
+) -> RealtimeMotionConstraintView:
+    return RealtimeMotionConstraintView(
+        "activity-owner", 7, active_plan_id, permitted
     )
 
 
@@ -501,8 +510,8 @@ def test_started_presentation_with_trusted_timing_activates_canonical_articulati
     )
     values = {item.channel: item.value for item in bundle.channel_overlays}
     assert _status(bundle, RealtimeLayer.SPEECH_ARTICULATION) is RealtimeLayerStatus.ACTIVE
-    assert values[RealtimeChannel.MOUTH_OPENNESS] == pytest.approx(0.9)
-    assert values[RealtimeChannel.JAW_OPENNESS] == pytest.approx(0.8)
+    assert 0 < values[RealtimeChannel.MOUTH_OPENNESS] < 0.9
+    assert 0 < values[RealtimeChannel.JAW_OPENNESS] < 0.8
 
 
 def test_trusted_mora_timing_maps_to_canonical_articulation_without_provider_parameter() -> None:
@@ -534,7 +543,7 @@ def test_trusted_mora_timing_maps_to_canonical_articulation_without_provider_par
         item.value
         for item in bundle.channel_overlays
         if item.channel is RealtimeChannel.MOUTH_OPENNESS
-    ) == pytest.approx(0.9)
+    ) > 0
 
 
 def test_ordinary_japanese_mora_normalizes_to_canonical_vowel_or_closure() -> None:
@@ -612,7 +621,7 @@ def test_standalone_long_vowel_mora_keeps_preceding_mora_articulation() -> None:
         item.value
         for item in long_vowel.channel_overlays
         if item.channel is RealtimeChannel.MOUTH_OPENNESS
-    ) == pytest.approx(0.9)
+    ) > 0
 
 
 def test_consecutive_standalone_long_vowel_mora_inherits_canonical_articulation() -> None:
@@ -658,7 +667,7 @@ def test_consecutive_standalone_long_vowel_mora_inherits_canonical_articulation(
         item.value
         for item in long_chain.channel_overlays
         if item.channel is RealtimeChannel.MOUTH_OPENNESS
-    ) == pytest.approx(0.9)
+    ) > 0
 
 
 def test_timing_unavailable_degrades_only_speech_layer_without_fake_mouth_motion() -> None:
@@ -909,9 +918,88 @@ def test_articulation_blends_at_timing_unit_boundary_and_fades_in_gap() -> None:
         for item in third.channel_overlays
         if item.channel is RealtimeChannel.MOUTH_OPENNESS
     )
-    assert 0 < first_open < 0.9
-    assert second_open == pytest.approx(0.9)
+    assert 0 < first_open < second_open < 0.9
     assert 0 < third_open < second_open
+
+
+def test_articulation_uses_elapsed_scaling_beneath_the_frame_displacement_cap() -> None:
+    track = SpeechTimingTrack(
+        "timing",
+        "artifact",
+        (SpeechTimingUnit("a", "segment", SpeechTimingKind.VISEME, "A", 0, 2000),),
+        NOW,
+        2000,
+    )
+
+    def openness_after(elapsed_s: float) -> float:
+        engine = BodyRealtimeEngine()
+        engine.tick(
+            body_state=_body_state(),
+            expression=None,
+            gaze_target=None,
+            speech=_speech(timing=track),
+            now=NOW,
+            monotonic_now_s=0,
+        )
+        bundle = engine.tick(
+            body_state=_body_state(),
+            expression=None,
+            gaze_target=None,
+            speech=_speech(timing=track),
+            now=NOW + timedelta(seconds=elapsed_s),
+            monotonic_now_s=elapsed_s,
+        )
+        return next(
+            item.value
+            for item in bundle.channel_overlays
+            if item.channel is RealtimeChannel.MOUTH_OPENNESS
+        )
+
+    assert openness_after(0.02) == pytest.approx(0.1272)
+    assert openness_after(0.1) == pytest.approx(0.396)
+    assert openness_after(1.0) == pytest.approx(0.51)
+
+
+def test_subtle_motion_is_suppressed_when_active_plan_disallows_it() -> None:
+    engine = BodyRealtimeEngine(seed=7)
+    bundle = engine.tick(
+        body_state=_body_state(),
+        expression=_expression(idle=1),
+        gaze_target=None,
+        speech=None,
+        motion_constraint=_motion_constraint(permitted=False, active_plan_id="hard-contact"),
+        now=NOW,
+        monotonic_now_s=0,
+    )
+
+    assert not any(
+        item.channel is RealtimeChannel.SUBTLE_SWAY for item in bundle.channel_overlays
+    )
+    subtle_state = next(
+        item for item in bundle.layer_statuses if item.layer is RealtimeLayer.SUBTLE_MOTION
+    )
+    assert subtle_state.status is RealtimeLayerStatus.INACTIVE_NO_SOURCE
+    assert subtle_state.source_ref == "hard-contact"
+    assert subtle_state.detail == "suppressed_by_active_plan"
+
+
+def test_subtle_motion_requires_a_typed_motion_constraint() -> None:
+    bundle = BodyRealtimeEngine(seed=7).tick(
+        body_state=_body_state(),
+        expression=_expression(idle=1),
+        gaze_target=None,
+        speech=None,
+        now=NOW,
+        monotonic_now_s=0,
+    )
+
+    assert not any(
+        item.channel is RealtimeChannel.SUBTLE_SWAY for item in bundle.channel_overlays
+    )
+    state = next(
+        item for item in bundle.layer_statuses if item.layer is RealtimeLayer.SUBTLE_MOTION
+    )
+    assert state.detail == "motion_constraint_unavailable"
 
 
 def test_speech_timeline_uses_monotonic_clock_after_started_admission() -> None:
@@ -946,7 +1034,7 @@ def test_speech_timeline_uses_monotonic_clock_after_started_admission() -> None:
         item.value
         for item in after_wall_clock_jump.channel_overlays
         if item.channel is RealtimeChannel.MOUTH_OPENNESS
-    ) == pytest.approx(0.35)
+    ) == pytest.approx(0.234)
 
 
 def test_speech_timeline_uses_started_monotonic_reference_without_wall_clock_offset() -> None:
@@ -1049,6 +1137,7 @@ def test_subtle_motion_is_seed_reproducible_and_not_framewise_white_noise() -> N
         expression=_expression(idle=1),
         gaze_target=None,
         speech=None,
+        motion_constraint=_motion_constraint(permitted=True),
         now=NOW,
     )
     second = BodyRealtimeEngine(seed=7).tick(
@@ -1056,6 +1145,7 @@ def test_subtle_motion_is_seed_reproducible_and_not_framewise_white_noise() -> N
         expression=_expression(idle=1),
         gaze_target=None,
         speech=None,
+        motion_constraint=_motion_constraint(permitted=True),
         now=NOW,
     )
     first_value = next(
@@ -1076,6 +1166,7 @@ def test_subtle_motion_intensity_revision_is_interpolated_locally() -> None:
         expression=_expression(idle=0),
         gaze_target=None,
         speech=None,
+        motion_constraint=_motion_constraint(permitted=True),
         now=NOW,
         monotonic_now_s=0,
     )
@@ -1084,6 +1175,7 @@ def test_subtle_motion_intensity_revision_is_interpolated_locally() -> None:
         expression=_expression(idle=1),
         gaze_target=None,
         speech=None,
+        motion_constraint=_motion_constraint(permitted=True),
         now=NOW + timedelta(milliseconds=20),
         monotonic_now_s=0.02,
     )
@@ -1103,6 +1195,7 @@ def test_subtle_motion_intensity_uses_elapsed_scaling_beneath_displacement_cap()
             expression=_expression(idle=0),
             gaze_target=None,
             speech=None,
+            motion_constraint=_motion_constraint(permitted=True),
             now=NOW,
             monotonic_now_s=0,
         )
@@ -1111,6 +1204,7 @@ def test_subtle_motion_intensity_uses_elapsed_scaling_beneath_displacement_cap()
             expression=_expression(idle=0.1),
             gaze_target=None,
             speech=None,
+            motion_constraint=_motion_constraint(permitted=True),
             now=NOW + timedelta(seconds=elapsed_s),
             monotonic_now_s=elapsed_s,
         )

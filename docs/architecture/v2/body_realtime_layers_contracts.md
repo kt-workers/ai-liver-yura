@@ -329,6 +329,7 @@ For each timing unit:
 - timing unavailableやunsupported symbolへのtyped degradationでも、直前articulationをneutralへboundedにfadeする
 - 遅延tickでもgazeの一frame変位はboundedにし、target座標へsnapしない
 - speech articulationも通常のtiming遷移・gap・degradation fadeの全経路で一frame変位をboundedにする
+- speech articulationの提案変位はelapsed timeに比例させ、その提案値だけを一frame上限でclampする。これにより短いtickで過剰に進めず、遅延tickでもmouth poseをsnapさせない
 
 Exact interpolation is deterministic configuration, not LLM-generated per frame.
 
@@ -344,6 +345,13 @@ Subtle motion is generated from:
 - breathing phase
 - current active plan occupancy
 - gaze state
+
+`RealtimeMotionConstraintView` は、Activity / physical ownerが既に確定したplan occupancyを#340へ渡すためのimmutable typed inputである。#340はraw Activity、free-text payload、Capability detailsを解釈しない。
+
+- `subtle_motion_permitted=True` のときだけsubtle swayを出力する
+- active hard task / contact / balance constraintがsubtle motionを許可しない場合は、ownerが `False` を明示し、#340は保持中intensityをboundedにneutralへfadeする
+- constraint viewが未提供の場合は、安全側にsubtle swayを出力しない。これはActivityの意味やCharacter factを推測するものではない
+- breathingおよびspeech articulationのAuthorityはこのViewで変更しない
 
 Use smooth band-limited/stateful variation.
 

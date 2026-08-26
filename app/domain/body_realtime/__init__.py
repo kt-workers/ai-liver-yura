@@ -6,6 +6,7 @@ from .contracts import (
     RealtimeLayer,
     RealtimeLayerState,
     RealtimeLayerStatus,
+    RealtimeMotionConstraintView,
     RealtimeOverlayBundle,
     RealtimeSpeechView,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "RealtimeLayer",
     "RealtimeLayerState",
     "RealtimeLayerStatus",
+    "RealtimeMotionConstraintView",
     "RealtimeOverlayBundle",
     "RealtimeSpeechView",
     "BodyRealtimeRuntime",

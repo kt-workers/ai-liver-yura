@@ -18,6 +18,7 @@ from .contracts import (
     RealtimeLayer,
     RealtimeLayerState,
     RealtimeLayerStatus,
+    RealtimeMotionConstraintView,
     RealtimeOverlayBundle,
     RealtimeSpeechView,
     articulation_for,
@@ -74,6 +75,7 @@ class BodyRealtimeEngine:
         expression: BodyExpressionContext | None,
         gaze_target: BodyGazeTargetView | None,
         speech: RealtimeSpeechView | None,
+        motion_constraint: RealtimeMotionConstraintView | None = None,
         now: datetime,
         monotonic_now_s: float | None = None,
     ) -> RealtimeOverlayBundle:
@@ -85,6 +87,10 @@ class BodyRealtimeEngine:
             raise ValueError("gaze_targetが不正です")
         if speech is not None and not isinstance(speech, RealtimeSpeechView):
             raise ValueError("speechが不正です")
+        if motion_constraint is not None and not isinstance(
+            motion_constraint, RealtimeMotionConstraintView
+        ):
+            raise ValueError("motion_constraintが不正です")
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("nowはtimezone-awareである必要があります")
         elapsed = self._elapsed(monotonic_now_s)
@@ -94,7 +100,7 @@ class BodyRealtimeEngine:
         self._blink(overlays, states, elapsed)
         self._breath(overlays, states, expression, elapsed)
         self._speech(overlays, states, speech, now, elapsed, monotonic_now_s)
-        self._subtle(overlays, states, expression, elapsed)
+        self._subtle(overlays, states, expression, motion_constraint, elapsed)
         states.append(
             RealtimeLayerState(RealtimeLayer.POSTURE_ASSIST, RealtimeLayerStatus.INACTIVE_NO_SOURCE)
         )
@@ -328,7 +334,7 @@ class BodyRealtimeEngine:
         if speech is None:
             self._state.speech_presentation_id = None
             self._state.speech_monotonic_anchor_s = None
-            if self._fade_articulation(overlays):
+            if self._fade_articulation(overlays, elapsed):
                 states.append(
                     RealtimeLayerState(
                         RealtimeLayer.SPEECH_ARTICULATION,
@@ -347,7 +353,7 @@ class BodyRealtimeEngine:
         if track is None:
             self._state.speech_presentation_id = speech.presentation.presentation_id
             self._state.speech_monotonic_anchor_s = speech.presentation_monotonic_started_at_s
-            self._fade_articulation(overlays)
+            self._fade_articulation(overlays, elapsed)
             states.append(
                 RealtimeLayerState(
                     RealtimeLayer.SPEECH_ARTICULATION,
@@ -382,7 +388,7 @@ class BodyRealtimeEngine:
                     else:
                         target = articulation_for(unit.symbol, unit.kind)
                 except ValueError:
-                    self._fade_articulation(overlays)
+                    self._fade_articulation(overlays, elapsed)
                     states.append(
                         RealtimeLayerState(
                             RealtimeLayer.SPEECH_ARTICULATION,
@@ -395,10 +401,10 @@ class BodyRealtimeEngine:
         current_openness, current_roundness, current_jaw, current_closure = self._state.articulation
         target_openness, target_roundness, target_jaw, target_closure = target
         self._state.articulation = (
-            self._approach_articulation(current_openness, target_openness),
-            self._approach_articulation(current_roundness, target_roundness),
-            self._approach_articulation(current_jaw, target_jaw),
-            self._approach_articulation(current_closure, target_closure),
+            self._approach_articulation(current_openness, target_openness, elapsed),
+            self._approach_articulation(current_roundness, target_roundness, elapsed),
+            self._approach_articulation(current_jaw, target_jaw, elapsed),
+            self._approach_articulation(current_closure, target_closure, elapsed),
         )
         self._add_articulation_overlays(overlays)
         states.append(
@@ -410,17 +416,18 @@ class BodyRealtimeEngine:
         )
 
     @staticmethod
-    def _approach_articulation(current: float, target: float) -> float:
-        """scheduler遅延の長さに関わらずmouth channelの一frame変位を制限する。"""
-        return current + max(-0.45, min(0.45, target - current))
+    def _approach_articulation(current: float, target: float, elapsed: float) -> float:
+        """elapsed-time比例のmouth遷移へ一frame変位上限を重ねる。"""
+        proposed_delta = (target - current) * min(1.0, elapsed * 4.0)
+        return current + max(-0.45, min(0.45, proposed_delta))
 
-    def _fade_articulation(self, overlays: list[ChannelOverlay]) -> bool:
+    def _fade_articulation(self, overlays: list[ChannelOverlay], elapsed: float) -> bool:
         openness, roundness, jaw, closure = self._state.articulation
         self._state.articulation = (
-            self._approach_articulation(openness, 0.0),
-            self._approach_articulation(roundness, 0.0),
-            self._approach_articulation(jaw, 0.0),
-            self._approach_articulation(closure, 0.0),
+            self._approach_articulation(openness, 0.0, elapsed),
+            self._approach_articulation(roundness, 0.0, elapsed),
+            self._approach_articulation(jaw, 0.0, elapsed),
+            self._approach_articulation(closure, 0.0, elapsed),
         )
         if not any(abs(value) > 1e-6 for value in self._state.articulation):
             return False
@@ -456,8 +463,34 @@ class BodyRealtimeEngine:
         overlays: list[ChannelOverlay],
         states: list[RealtimeLayerState],
         expression: BodyExpressionContext | None,
+        motion_constraint: RealtimeMotionConstraintView | None,
         elapsed: float,
     ) -> None:
+        if motion_constraint is None or not motion_constraint.subtle_motion_permitted:
+            self._state.subtle_intensity = self._approach_parameter(
+                self._state.subtle_intensity, 0.0, elapsed, 0.12
+            )
+            if self._state.subtle_intensity:
+                self._state.subtle_phase += elapsed * 1.7
+                self._add(
+                    overlays,
+                    RealtimeLayer.SUBTLE_MOTION,
+                    RealtimeChannel.SUBTLE_SWAY,
+                    sin(self._state.subtle_phase) * self._state.subtle_intensity * 0.1,
+                    self._state.subtle_intensity,
+                    10,
+                )
+            states.append(
+                RealtimeLayerState(
+                    RealtimeLayer.SUBTLE_MOTION,
+                    RealtimeLayerStatus.INACTIVE_NO_SOURCE,
+                    None if motion_constraint is None else motion_constraint.active_plan_id,
+                    "motion_constraint_unavailable"
+                    if motion_constraint is None
+                    else "suppressed_by_active_plan",
+                )
+            )
+            return
         target_intensity = max(0.0, self._axis(expression, BodyExpressionAxis.IDLE_VARIATION))
         self._state.subtle_intensity = self._approach_parameter(
             self._state.subtle_intensity, target_intensity, elapsed, 0.12
