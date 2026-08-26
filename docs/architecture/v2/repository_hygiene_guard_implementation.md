@@ -1,10 +1,10 @@
-# Repository Hygiene Guard 実装設計
+# リポジトリ衛生ガード実装設計
 
-Status: Proposed canonical supplement
-Effective: 2026-08-22
-Management Issue: #384
-Parent canonical: `docs/architecture/v2/repository_hygiene_and_mutation_safety.md`
-Related canonical: `docs/architecture/v2/branch_lifecycle_and_commit_hygiene.md`
+状態: 正本への追加提案
+発効日: 2026-08-22
+管理Issue: #384
+親正本: `docs/architecture/v2/repository_hygiene_and_mutation_safety.md`
+関連正本: `docs/architecture/v2/branch_lifecycle_and_commit_hygiene.md`
 
 ## 1. 目的
 
@@ -70,7 +70,7 @@ python -m tools.repository_hygiene.commit_hygiene \
 
 network、GitHub API、環境固有DB、LLM、Node.jsへ依存しない。
 
-## 5. Exit code
+## 5. 終了コード
 
 - `0`: findingなし
 - `1`: policy violationを1件以上検出
@@ -78,7 +78,7 @@ network、GitHub API、環境固有DB、LLM、Node.jsへ依存しない。
 
 入力不正やGit inspection失敗を「問題なし」へfallbackしない。
 
-## 6. Commit range
+## 6. コミット範囲
 
 commit順序は次で固定する。
 
@@ -90,7 +90,7 @@ git rev-list --reverse --topo-order <base_sha>..<head_sha>
 
 base/head自身の文字列だけを信頼せず、Git revisionとしてresolveできることを検証する。
 
-## 7. Empty commit検出
+## 7. 空コミット検出
 
 ### 7.1 対象
 
@@ -104,7 +104,7 @@ reason_code = empty_single_parent_commit
 
 として拒否する。
 
-### 7.2 Merge commit
+### 7.2 マージコミット
 
 merge commitは、first parentとtreeが同一という理由だけでempty扱いしない。
 
@@ -114,9 +114,9 @@ merge commitのchanged pathは、merge resultとfirst parentの差分としてpl
 したがって、競合解決またはmerge時の追加stageで初めて導入された禁止pathも
 検出する。tree equalityだけをempty判定に使わない。
 
-## 8. 禁止placeholder path
+## 8. 禁止する仮置きパス
 
-### 8.1 Exact path
+### 8.1 完全一致パス
 
 最低限、次を禁止する。
 
@@ -131,7 +131,7 @@ ISSUE_PLAN.md
 DO_NOT_USE
 ```
 
-### 8.2 Prefix
+### 8.2 接頭辞
 
 次のrepository path prefixを禁止する。
 
@@ -153,7 +153,7 @@ reason_code = prohibited_placeholder_path
 
 事故回復でfileを消せなくなることを防ぐためである。
 
-## 9. Add -> Delete pair
+## 9. 追加から削除の組
 
 同じPR range内で、禁止placeholder pathが追加され、後続commitで削除された場合、各commit個別findingに加えてrange-level findingを出す。
 
@@ -183,7 +183,7 @@ findingには最低限次を含む。
 
 自然言語やcommit messageから「これはCI trigger目的だろう」と推測しない。
 
-## 11. Git inspection
+## 11. Git検査
 
 Python標準libraryの`subprocess`からGit CLIを呼び、stdout/stderr/return codeを明示的に扱う。
 
@@ -212,7 +212,7 @@ reason_code = invalid_revision_range
 exit_code = 2
 ```
 
-## 12. Finding model
+## 12. 指摘モデル
 
 内部findingは少なくとも次を保持する。
 
@@ -260,7 +260,7 @@ python -m compileall -q app tests tools
 
 full pytestは既存`python -m pytest -q`を維持し、`tests/tools/**`もtestpaths=`tests`により実行対象とする。
 
-## 14. Unit / regression test
+## 14. ユニット・回帰テスト
 
 最低限次を固定する。
 
@@ -278,7 +278,7 @@ full pytestは既存`python -m pytest -q`を維持し、`tests/tools/**`もtestp
 
 テスト用Git repositoryはtemporary directoryへ作り、実repositoryのbranch/refを変更しない。
 
-## 15. Security / safety
+## 15. セキュリティ・安全性
 
 - Guard自身はread-only Git inspectionだけを行う。
 - `git reset`、`git rebase`、`git checkout`、`git switch`、`git branch -D`、`git push`、`git update-ref`を実行しない。
@@ -286,7 +286,7 @@ full pytestは既存`python -m pytest -q`を維持し、`tests/tools/**`もtestp
 - secretやenvironment credentialを取得しない。
 - findingから外部commandを組み立てない。
 
-## 16. Branch protectionとの関係
+## 16. ブランチ保護との関係
 
 このGuardはGitHub branch protection / Rulesetの代替ではない。
 
@@ -300,7 +300,7 @@ full pytestは既存`python -m pytest -q`を維持し、`tests/tools/**`もtestp
 
 GuardはPR historyの内容検査、Rulesetはshared targetへの物理的mutation制御を担当する。
 
-## 17. 実装Gate
+## 17. 実装ゲート
 
 local Codexは実装開始前に次をlive確認する。
 

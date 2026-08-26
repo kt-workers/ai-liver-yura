@@ -1,9 +1,9 @@
-# V2 Repository Hygiene / Mutation Safety Contract
+# V2リポジトリ衛生・変更安全性契約
 
-Status: Canonical supplement for #384
-Effective: 2026-08-21
-Owner: #384
-Related: #207
+状態: #384の正本補足
+発効日: 2026-08-21
+所有Issue: #384
+関連Issue: #207
 
 ## 1. 目的
 
@@ -21,7 +21,7 @@ Related: #207
 
 注意喚起だけに依存しない。可能なものはdeterministic gateでfail-closedにする。
 
-## 2. Authority
+## 2. 正本
 
 優先順位:
 
@@ -44,7 +44,7 @@ create/update/delete/merge/ref move/file writeはMutationである。
 
 利用可能なMutation toolを確認する場合は、tool schemaやread-only metadataを確認する。実repositoryへdummy branch/file/commitを作って試さない。
 
-## 4. Write Gate
+## 4. 書込みゲート
 
 すべてのGitHub/Git mutationの直前に、最低限次を確定する。
 
@@ -76,7 +76,7 @@ content writeでbranch/refを省略してはならない。
 
 GitHub APIがbranch省略時にdefault branchへfallbackする仕様を安全機構として利用しない。省略は入力不備として扱う。
 
-## 6. Branch Creation Gate
+## 6. ブランチ作成ゲート
 
 branch作成前に次を確定する。
 
@@ -93,7 +93,7 @@ branchを作成した後、予定したreal deltaを入れずに終了する場�
 
 `tmp/*`、`*DO_NOT_USE*`など「使わないこと」を名前で表現するshared branchを履歴保管目的で維持しない。必要な証拠はIssue/PR/commit SHAへ記録する。
 
-## 7. No-op / Placeholder Gate
+## 7. 無変更・仮置きゲート
 
 commit/write前にcurrent content/blob/treeとintended contentを比較する。
 
@@ -114,7 +114,7 @@ real deltaが0ならcommitしない。
 
 CI再実行にはworkflow rerun、PR reopen、workflow_dispatch等の正規mechanismを使う。履歴を動かすためにrepository contentを変更しない。
 
-## 8. Commit Preflight / Postflight
+## 8. コミット前後の確認
 
 ### commit前
 
@@ -141,7 +141,7 @@ CI再実行にはworkflow rerun、PR reopen、workflow_dispatch等の正規mecha
 
 GitHub live branch headを再取得し、local/remote/PR headがexpected SHAへ一致することを確認する。
 
-## 9. PR / Branch Lifecycle
+## 9. PR・ブランチのライフサイクル
 
 非trunk branchは必ず次のどれかである。
 
@@ -201,7 +201,7 @@ PR mergeだけではlifecycle完了ではない。
 
 再利用可能なCI utilityだけは、owner Issueと再利用理由を明示した場合に限り例外的に保持できる。
 
-## 10. Stale Open PR Gate
+## 10. 古いOpen PRのゲート
 
 定期監査で最低限次を確認する。
 
@@ -219,7 +219,7 @@ PR mergeだけではlifecycle完了ではない。
 
 固有成果がcurrent owner branchへ完全吸収済みの場合は、古いPRをsupersededとしてclose-unmergedしbranch refを削除する。
 
-## 11. Zero-unique Branch
+## 11. 固有コミットのないブランチ
 
 Git branchは必ずcommitを指すため「0 commit branch」は、基準branchに対してunique commitが0件という意味で扱う。
 
@@ -227,7 +227,7 @@ Git branchは必ずcommitを指すため「0 commit branch」は、基準branch�
 
 branchが単に古いbase commitを指しており、現在baseよりbehindだけの状態も同様である。
 
-## 12. Incident Response
+## 12. 事故対応
 
 誤mutationを検知したら:
 
@@ -244,43 +244,43 @@ branchが単に古いbase commitを指しており、現在baseよりbehindだ�
 
 ## 13. 既知事故からの原因分類
 
-### Mutation-as-discovery
+### 変更操作を探索へ流用
 
 create/update APIをcapability確認に使い、dummy branch/fileを作成した。
 
 対策: DiscoveryとMutationをtool levelで分離し、MutationはWrite Gate後だけ許可する。
 
-### Implicit target fallback
+### 暗黙の対象フォールバック
 
 branchを省略したfile writeがdefault `main`へ到達した。
 
 対策: branch/refを必須入力として扱い、protected trunk direct writeを禁止する。
 
-### No-op write
+### 無変更書込み
 
 current contentと同一内容をupdateし、tree差分0 commitを作成した。
 
 対策: pre-write blob/content equality gate。
 
-### CI trigger history mutation
+### CI起動のための履歴変更
 
 workflow起動目的のplaceholder/temporary commitを作った。
 
 対策: rerun/reopen/dispatchを使用し、content mutationを禁止する。
 
-### Lifecycle cleanup欠落
+### ライフサイクル後始末の欠落
 
 PR close/merge後にbranch refが残った。
 
 対策: close/mergeとref deleteを1つのlifecycle完了条件として扱う。
 
-### Stale-open監査欠落
+### 古いOpen PR監査の欠落
 
 Target超過・base driftがあるPRがOpen Draftのまま残った。
 
 対策: 定期stale audit + explicit BLOCKED/PAUSED/Replan分類。
 
-## 14. Deterministic Commit Hygiene Guard
+## 14. 決定論的なコミット衛生ガード
 
 #384完了には、文書ルールだけでなくdeterministic guardを追加する。
 
@@ -302,7 +302,7 @@ Guardは外部LLM/APIを必要としない。
 - commit parent/tree relation
 - bounded explicit placeholder deny-list
 
-## 15. Repository Protection
+## 15. リポジトリ保護
 
 GitHub側でも事故を止めるため、権限が許す場合は少なくとも次をRuleset/branch protection対象とする。
 
@@ -320,7 +320,7 @@ GitHub側でも事故を止めるため、権限が許す場合は少なくと�
 
 現在のAPI監査で少なくとも`main`と`develop`は`protected=false`だったため、repository-side protectionは別途設定確認・導入対象とする。
 
-## 16. AI / Codexへの周知
+## 16. AI・Codexへの周知
 
 Repository rootの`AGENTS.md`を全AI共通の最短実行規則とする。
 
