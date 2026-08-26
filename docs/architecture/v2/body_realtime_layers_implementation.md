@@ -24,10 +24,10 @@
 | 3–4 | immutable `RealtimeOverlayBundle`はbody revisionを保持し、`BodyState` mutation APIを持たない。 |
 | 5 | runtimeは単一lane・target interval・late tickのbounded skipでcatch-up burstを作らず、engineは実elapsedを一tickの連続状態更新へ使う。 |
 | 6–8 | typed spatial gazeだけをsmooth/saturateし、full-body orientationを生成しない。 |
-| 9–10 | local blink phaseとcontinuous breath phaseを保持し、expression updateでphaseをresetしない。 |
-| 11–14 | actual `STARTED` + artifact/timing identityだけをspeech articulationへ通す。timing欠落時はtyped degradationであり、架空mouth motionを作らない。 |
+| 9–10 | seedable bounded open intervalを持つlocal blink phaseとcontinuous breath phaseを保持し、amplitude/tempoをbounded transitionし、expression updateでphaseをresetしない。 |
+| 11–14 | actual `STARTED` + report timing ref + artifact/timing identityだけをspeech articulationへ通す。timing unit境界はlocal articulation stateでblendし、timing欠落時はtyped degradationであり、架空mouth motionを作らない。 |
 | 15–18 | seedable smooth subtle variationとlayer別statusを保持し、一層のdegradationが他層を止めない。 |
-| 19–23 | engineは同期・I/Oなし、runtimeはcancellable。outputはsource revision、layer status、actual interval/jitterを含む。breath parameterはbounded transitionで更新する。 |
+| 19–23 | engineは同期・I/Oなし、runtimeはcancellable。runtimeのmonotonic clockをengineへ渡し、outputはsource revision、layer status、actual interval/jitterを含む。breath parameterはbounded transitionで更新する。 |
 
 ## 後続境界
 

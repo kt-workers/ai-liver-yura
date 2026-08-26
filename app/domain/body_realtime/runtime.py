@@ -98,6 +98,7 @@ class BodyRealtimeRuntime:
                 gaze_target=value.gaze_target,
                 speech=value.speech,
                 now=now,
+                monotonic_now_s=loop.time(),
             )
             self._publish_overlay(overlay)
             next_tick += self._interval

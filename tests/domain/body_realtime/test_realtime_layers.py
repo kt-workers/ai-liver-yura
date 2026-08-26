@@ -60,16 +60,20 @@ def _body_state(revision: int = 2) -> BodyState:
     )
 
 
-def _expression(*, idle: float = 0, breath: float = 0) -> BodyExpressionContext:
+def _expression(*, idle: float = 0, breath: float = 0, tempo: float = 0) -> BodyExpressionContext:
     axes = tuple(
         BodyExpressionAxisValue(
             axis,
             NormalizedExpressionValue(
                 idle
                 if axis is BodyExpressionAxis.IDLE_VARIATION
-                else breath
-                if axis is BodyExpressionAxis.BREATHING_AMPLITUDE
-                else 0
+                else (
+                    breath
+                    if axis is BodyExpressionAxis.BREATHING_AMPLITUDE
+                    else tempo
+                    if axis is BodyExpressionAxis.BREATHING_TEMPO
+                    else 0
+                )
             ),
         )
         for axis in BodyExpressionAxis
@@ -186,6 +190,7 @@ def test_breath_and_blink_continue_when_speech_is_absent() -> None:
         gaze_target=None,
         speech=None,
         now=NOW,
+        monotonic_now_s=0,
     )
     assert _status(bundle, RealtimeLayer.BREATH) is RealtimeLayerStatus.ACTIVE
     assert _status(bundle, RealtimeLayer.BLINK) is RealtimeLayerStatus.ACTIVE
@@ -200,17 +205,18 @@ def test_expression_change_interpolates_breath_without_phase_reset_and_emits_int
     engine = BodyRealtimeEngine(target_interval_s=0.02)
     first = engine.tick(
         body_state=_body_state(),
-        expression=_expression(breath=-1),
+        expression=_expression(breath=-1, tempo=-0.9),
         gaze_target=None,
         speech=None,
         now=NOW,
     )
     second = engine.tick(
         body_state=_body_state(),
-        expression=_expression(breath=1),
+        expression=_expression(breath=1, tempo=1),
         gaze_target=None,
         speech=None,
         now=NOW + timedelta(milliseconds=20),
+        monotonic_now_s=0.02,
     )
     first_phase = next(
         item.value
@@ -228,6 +234,7 @@ def test_expression_change_interpolates_breath_without_phase_reset_and_emits_int
         if item.channel is RealtimeChannel.BREATH_AMPLITUDE
     )
     assert second_phase > first_phase
+    assert second_phase - first_phase < 0.008
     assert 0 < second_amplitude < 1
     assert second.actual_interval_ms == pytest.approx(20)
     assert second.jitter_ms == pytest.approx(0)
@@ -244,6 +251,7 @@ def test_blink_state_machine_is_seed_reproducible_and_has_bounded_interval_varia
                 gaze_target=None,
                 speech=None,
                 now=NOW + timedelta(seconds=offset),
+                monotonic_now_s=offset,
             )
             detail = next(
                 item.detail for item in bundle.layer_statuses if item.layer is RealtimeLayer.BLINK
@@ -281,17 +289,27 @@ def test_started_presentation_with_trusted_timing_activates_canonical_articulati
         NOW,
         1000,
     )
-    bundle = BodyRealtimeEngine().tick(
+    engine = BodyRealtimeEngine()
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    bundle = engine.tick(
         body_state=_body_state(),
         expression=None,
         gaze_target=None,
         speech=_speech(timing=track),
         now=NOW + timedelta(milliseconds=20),
+        monotonic_now_s=0.1,
     )
     values = {item.channel: item.value for item in bundle.channel_overlays}
     assert _status(bundle, RealtimeLayer.SPEECH_ARTICULATION) is RealtimeLayerStatus.ACTIVE
-    assert values[RealtimeChannel.MOUTH_OPENNESS] == 0.9
-    assert values[RealtimeChannel.JAW_OPENNESS] == 0.8
+    assert values[RealtimeChannel.MOUTH_OPENNESS] == pytest.approx(0.9)
+    assert values[RealtimeChannel.JAW_OPENNESS] == pytest.approx(0.8)
 
 
 def test_trusted_mora_timing_maps_to_canonical_articulation_without_provider_parameter() -> None:
@@ -302,21 +320,28 @@ def test_trusted_mora_timing_maps_to_canonical_articulation_without_provider_par
         NOW,
         1000,
     )
-    bundle = BodyRealtimeEngine().tick(
+    engine = BodyRealtimeEngine()
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    bundle = engine.tick(
         body_state=_body_state(),
         expression=None,
         gaze_target=None,
         speech=_speech(timing=track),
         now=NOW + timedelta(milliseconds=20),
+        monotonic_now_s=0.1,
     )
-    assert (
-        next(
-            item.value
-            for item in bundle.channel_overlays
-            if item.channel is RealtimeChannel.MOUTH_OPENNESS
-        )
-        == 0.9
-    )
+    assert next(
+        item.value
+        for item in bundle.channel_overlays
+        if item.channel is RealtimeChannel.MOUTH_OPENNESS
+    ) == pytest.approx(0.9)
 
 
 def test_timing_unavailable_degrades_only_speech_layer_without_fake_mouth_motion() -> None:
@@ -335,6 +360,68 @@ def test_timing_unavailable_degrades_only_speech_layer_without_fake_mouth_motion
         RealtimeChannel.LIP_CLOSURE,
     }
     assert _status(bundle, RealtimeLayer.BREATH) is RealtimeLayerStatus.ACTIVE
+
+
+def test_articulation_blends_at_timing_unit_boundary_and_fades_in_gap() -> None:
+    track = SpeechTimingTrack(
+        "timing",
+        "artifact",
+        (
+            SpeechTimingUnit("a", "segment", SpeechTimingKind.VISEME, "A", 0, 100),
+            SpeechTimingUnit("i", "segment", SpeechTimingKind.VISEME, "I", 100, 200),
+        ),
+        NOW,
+        1000,
+    )
+    engine = BodyRealtimeEngine()
+    first = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    second = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW + timedelta(milliseconds=110),
+        monotonic_now_s=0.02,
+    )
+    third = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW + timedelta(milliseconds=250),
+        monotonic_now_s=0.04,
+    )
+    first_open = next(
+        item.value
+        for item in first.channel_overlays
+        if item.channel is RealtimeChannel.MOUTH_OPENNESS
+    )
+    second_open = next(
+        item.value
+        for item in second.channel_overlays
+        if item.channel is RealtimeChannel.MOUTH_OPENNESS
+    )
+    third_open = next(
+        item.value
+        for item in third.channel_overlays
+        if item.channel is RealtimeChannel.MOUTH_OPENNESS
+    )
+    assert 0 < first_open < 0.9
+    assert 0 < second_open < 0.9
+    assert 0 < third_open < second_open
+
+
+def test_presentation_timing_ref_must_exactly_bind_the_track() -> None:
+    track = SpeechTimingTrack("other-timing", "artifact", (), NOW, 1000)
+    with pytest.raises(ValueError, match="Presentationとtiming"):
+        _speech(timing=track)
 
 
 def test_speech_timing_must_bind_to_started_audio_artifact() -> None:

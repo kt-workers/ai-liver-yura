@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from math import pi, sin
+from math import isfinite, pi, sin
 
 from app.domain.body import BodyState
 from app.domain.body_expression import BodyExpressionAxis, BodyExpressionContext
@@ -25,7 +25,7 @@ from .contracts import (
 
 @dataclass(slots=True)
 class _LocalState:
-    last_tick: datetime | None = None
+    last_monotonic_tick_s: float | None = None
     gaze_x: float = 0.0
     gaze_y: float = 0.0
     blink_phase: BlinkPhase = BlinkPhase.OPEN
@@ -34,6 +34,8 @@ class _LocalState:
     next_blink_after_s: float = 2.0
     breath_phase: float = 0.0
     breath_amplitude: float = 0.5
+    breath_tempo: float = 1.0
+    articulation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
     subtle_phase: float = 0.0
 
 
@@ -64,6 +66,7 @@ class BodyRealtimeEngine:
         gaze_target: BodyGazeTargetView | None,
         speech: RealtimeSpeechView | None,
         now: datetime,
+        monotonic_now_s: float | None = None,
     ) -> RealtimeOverlayBundle:
         if not isinstance(body_state, BodyState):
             raise ValueError("body_stateが不正です")
@@ -75,13 +78,13 @@ class BodyRealtimeEngine:
             raise ValueError("speechが不正です")
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("nowはtimezone-awareである必要があります")
-        elapsed = self._elapsed(now)
+        elapsed = self._elapsed(monotonic_now_s)
         overlays: list[ChannelOverlay] = []
         states: list[RealtimeLayerState] = []
         self._gaze(overlays, states, gaze_target, elapsed)
         self._blink(overlays, states, elapsed)
         self._breath(overlays, states, expression, elapsed)
-        self._speech(overlays, states, speech, now)
+        self._speech(overlays, states, speech, now, elapsed)
         self._subtle(overlays, states, expression, elapsed)
         states.append(
             RealtimeLayerState(RealtimeLayer.POSTURE_ASSIST, RealtimeLayerStatus.INACTIVE_NO_SOURCE)
@@ -100,13 +103,16 @@ class BodyRealtimeEngine:
             tuple(states),
         )
 
-    def _elapsed(self, now: datetime) -> float:
-        previous = self._state.last_tick
-        self._state.last_tick = now
+    def _elapsed(self, monotonic_now_s: float | None) -> float:
+        if monotonic_now_s is None:
+            return self._target_interval_s
+        if type(monotonic_now_s) not in (int, float) or not isfinite(monotonic_now_s):
+            raise ValueError("monotonic_now_sが不正です")
+        previous = self._state.last_monotonic_tick_s
+        self._state.last_monotonic_tick_s = float(monotonic_now_s)
         if previous is None:
             return self._target_interval_s
-        value = (now - previous).total_seconds()
-        return max(value, 0.0)
+        return max(float(monotonic_now_s) - previous, 0.0)
 
     def _add(
         self,
@@ -228,8 +234,11 @@ class BodyRealtimeEngine:
         self._state.breath_amplitude += (
             target_amplitude - self._state.breath_amplitude
         ) * transition
-        tempo = max(0.1, 1 + self._axis(expression, BodyExpressionAxis.BREATHING_TEMPO))
-        self._state.breath_phase = (self._state.breath_phase + elapsed * tempo / 4) % 1.0
+        target_tempo = max(0.1, 1 + self._axis(expression, BodyExpressionAxis.BREATHING_TEMPO))
+        self._state.breath_tempo += (target_tempo - self._state.breath_tempo) * transition
+        self._state.breath_phase = (
+            self._state.breath_phase + elapsed * self._state.breath_tempo / 4
+        ) % 1.0
         self._add(
             overlays,
             RealtimeLayer.BREATH,
@@ -254,8 +263,10 @@ class BodyRealtimeEngine:
         states: list[RealtimeLayerState],
         speech: RealtimeSpeechView | None,
         now: datetime,
+        elapsed: float,
     ) -> None:
         if speech is None:
+            self._state.articulation = (0.0, 0.0, 0.0, 0.0)
             states.append(
                 RealtimeLayerState(
                     RealtimeLayer.SPEECH_ARTICULATION, RealtimeLayerStatus.INACTIVE_NO_SOURCE
@@ -277,27 +288,30 @@ class BodyRealtimeEngine:
         unit = next(
             (item for item in track.units if item.start_ms <= elapsed_ms < item.end_ms), None
         )
-        if unit is None:
-            states.append(
-                RealtimeLayerState(
-                    RealtimeLayer.SPEECH_ARTICULATION,
-                    RealtimeLayerStatus.ACTIVE,
-                    speech.presentation.presentation_id,
+        target = (0.0, 0.0, 0.0, 0.0)
+        if unit is not None:
+            try:
+                target = articulation_for(unit.symbol, unit.kind)
+            except ValueError:
+                states.append(
+                    RealtimeLayerState(
+                        RealtimeLayer.SPEECH_ARTICULATION,
+                        RealtimeLayerStatus.DEGRADED,
+                        speech.presentation.presentation_id,
+                        "unsupported_timing_symbol",
+                    )
                 )
-            )
-            return
-        try:
-            openness, roundness, jaw, closure = articulation_for(unit.symbol, unit.kind)
-        except ValueError:
-            states.append(
-                RealtimeLayerState(
-                    RealtimeLayer.SPEECH_ARTICULATION,
-                    RealtimeLayerStatus.DEGRADED,
-                    speech.presentation.presentation_id,
-                    "unsupported_timing_symbol",
-                )
-            )
-            return
+                return
+        blend = min(1.0, elapsed * 20.0)
+        current_openness, current_roundness, current_jaw, current_closure = self._state.articulation
+        target_openness, target_roundness, target_jaw, target_closure = target
+        self._state.articulation = (
+            current_openness + (target_openness - current_openness) * blend,
+            current_roundness + (target_roundness - current_roundness) * blend,
+            current_jaw + (target_jaw - current_jaw) * blend,
+            current_closure + (target_closure - current_closure) * blend,
+        )
+        openness, roundness, jaw, closure = self._state.articulation
         for channel, value in (
             (RealtimeChannel.MOUTH_OPENNESS, openness),
             (RealtimeChannel.MOUTH_ROUNDNESS, roundness),

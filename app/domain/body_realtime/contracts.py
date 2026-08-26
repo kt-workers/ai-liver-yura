@@ -126,6 +126,11 @@ class RealtimeSpeechView:
             and self.timing_track.audio_artifact_id != self.artifact.audio_artifact_id
         ):
             raise ValueError("timing trackとartifactのidentityが一致しません")
+        if (
+            self.timing_track is not None
+            and self.presentation.timing_ref != self.timing_track.timing_track_id
+        ):
+            raise ValueError("Presentationとtiming trackのidentityが一致しません")
 
 
 @dataclass(frozen=True, slots=True)
