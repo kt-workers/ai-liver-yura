@@ -1,10 +1,12 @@
 # Independent AI Review — Trusted Live Base Resolution
 
-Status: Canonical supplement for Issue #371
+Status: 歴史参照。Issue #371の現行実装Authorityではない。
 Effective: 2026-08-13
 Depends on:
 - `docs/architecture/v2/independent_ai_review_architecture.md`
 - `docs/architecture/v2/review_orchestrator_implementation.md`
+
+> 本書は旧`pull_request_target` workflow案の履歴補足である。現行#371の任意・非ブロッキング支援はworkflowを実装せず、`optional_review_support_contracts.md`を正本とする。
 
 ## 1. Problem
 
