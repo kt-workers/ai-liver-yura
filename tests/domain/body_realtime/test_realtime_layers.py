@@ -486,6 +486,33 @@ def test_ordinary_japanese_mora_normalizes_to_canonical_vowel_or_closure() -> No
     assert articulation_for("ん", SpeechTimingKind.MORA) == pytest.approx((0.0, 0.0, 0.0, 1.0))
 
 
+def test_trusted_japanese_consonant_phonemes_map_to_canonical_consonant_or_closure() -> None:
+    assert articulation_for("k", SpeechTimingKind.PHONEME) == pytest.approx((0.2, 0.0, 0.15, 0.0))
+    assert articulation_for("s", SpeechTimingKind.PHONEME) == pytest.approx((0.2, 0.0, 0.15, 0.0))
+    assert articulation_for("t", SpeechTimingKind.PHONEME) == pytest.approx((0.2, 0.0, 0.15, 0.0))
+    assert articulation_for("m", SpeechTimingKind.PHONEME) == pytest.approx((0.0, 0.0, 0.0, 1.0))
+
+
+def test_trusted_consonant_phoneme_timing_keeps_speech_layer_active() -> None:
+    track = SpeechTimingTrack(
+        "timing",
+        "artifact",
+        (SpeechTimingUnit("k", "segment", SpeechTimingKind.PHONEME, "k", 0, 100),),
+        NOW,
+        1000,
+    )
+    bundle = BodyRealtimeEngine().tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    assert _status(bundle, RealtimeLayer.SPEECH_ARTICULATION) is RealtimeLayerStatus.ACTIVE
+    assert any(item.channel is RealtimeChannel.MOUTH_OPENNESS for item in bundle.channel_overlays)
+
+
 def test_standalone_long_vowel_mora_keeps_preceding_mora_articulation() -> None:
     track = SpeechTimingTrack(
         "timing",

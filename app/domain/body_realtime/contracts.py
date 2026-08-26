@@ -250,14 +250,63 @@ def articulation_for(symbol: str, kind: SpeechTimingKind) -> tuple[float, float,
             "U": (0.35, 0.8, 0.25, 0.0),
             "E": (0.45, -0.45, 0.35, 0.0),
             "O": (0.6, 0.75, 0.5, 0.0),
+            "C": (0.2, 0.0, 0.15, 0.0),
             "M": (0.0, 0.0, 0.0, 1.0),
         }
         if symbol in mapping:
             return mapping[symbol]
-    if kind in {SpeechTimingKind.PHONEME, SpeechTimingKind.MORA}:
+    if kind is SpeechTimingKind.PHONEME:
+        vowel = _canonical_phoneme_viseme_symbol(symbol)
+        return articulation_for(vowel, SpeechTimingKind.VISEME)
+    if kind is SpeechTimingKind.MORA:
         vowel = _canonical_viseme_symbol(symbol, kind)
         return articulation_for(vowel, SpeechTimingKind.VISEME)
     raise ValueError("未対応timing symbolです")
+
+
+def _canonical_phoneme_viseme_symbol(symbol: str) -> str:
+    """trustedな汎用日本語phonemeを、closed-setのcanonical articulationへ写像する。"""
+    mapping = {
+        "a": "A",
+        "i": "I",
+        "u": "U",
+        "e": "E",
+        "o": "O",
+        "m": "M",
+        "b": "M",
+        "p": "M",
+        "N": "M",
+        "k": "C",
+        "g": "C",
+        "s": "C",
+        "z": "C",
+        "t": "C",
+        "d": "C",
+        "n": "C",
+        "h": "C",
+        "f": "C",
+        "r": "C",
+        "j": "C",
+        "w": "C",
+        "y": "C",
+        "q": "C",
+        "ky": "C",
+        "gy": "C",
+        "sh": "C",
+        "ch": "C",
+        "ts": "C",
+        "dz": "C",
+        "ny": "C",
+        "hy": "C",
+        "by": "C",
+        "py": "C",
+        "my": "C",
+        "ry": "C",
+    }
+    try:
+        return mapping[symbol]
+    except KeyError as error:
+        raise ValueError("未対応phoneme symbolです") from error
 
 
 def _canonical_viseme_symbol(symbol: str, kind: SpeechTimingKind) -> str:

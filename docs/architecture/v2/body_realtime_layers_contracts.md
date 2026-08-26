@@ -280,6 +280,10 @@ Presentation interruption/completion stops or transitions the speech-mouth layer
 
 #358 provides provider-independent `SpeechTimingTrack` when available.
 
+`PHONEME` は#358から渡るtrustedな汎用日本語phonemeのclosed setを用いる。#340は母音を
+`A/I/U/E/O`、両唇閉鎖を`M`、それ以外の対応子音を中立の子音channelへ正規化する。raw provider
+IDやrenderer parameterをこの境界へ入れない。未対応symbolはspeech layerだけをtyped degradationする。
+
 #340 maps timing symbols to canonical articulatory channels, not renderer-specific mouth parameters.
 
 Preferred evidence order:
