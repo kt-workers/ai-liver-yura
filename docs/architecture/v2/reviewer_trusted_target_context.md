@@ -1,9 +1,11 @@
 # Independent AI Reviewer — Trusted Review Target Context
 
-Status: Canonical supplement for Issue #379
+Status: 歴史参照。現行#371の実装Authorityではない。
 Parent: #369
 Depends on: #370, #371
 Effective: 2026-08-13
+
+> trusted targetとuntrusted review dataの分離知見は、現行#371では`optional_review_support_contracts.md`に再定義する。本書は旧provider workflow案の履歴補足である。
 
 Related canonical:
 - `docs/architecture/v2/independent_ai_review_architecture.md`
