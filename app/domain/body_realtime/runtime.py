@@ -53,6 +53,8 @@ class BodyRealtimeRuntime:
             raise ValueError("realtime Portが不正です")
         if type(target_interval_s) not in (int, float) or not 0 < target_interval_s <= 1:
             raise ValueError("target_interval_sが不正です")
+        if engine.target_interval_s != float(target_interval_s):
+            raise ValueError("engineとruntimeのtarget_interval_sは一致する必要があります")
         self._engine = engine
         self._read_input = read_input
         self._publish_overlay = publish_overlay

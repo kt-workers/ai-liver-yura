@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from math import isfinite, pi, sin
 
+from app.adapters.tts.contracts import SpeechTimingKind
 from app.domain.body import BodyState
 from app.domain.body_expression import BodyExpressionAxis, BodyExpressionContext
 
@@ -36,6 +37,8 @@ class _LocalState:
     breath_amplitude: float = 0.5
     breath_tempo: float = 1.0
     articulation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+    speech_presentation_id: str | None = None
+    speech_monotonic_anchor_s: float | None = None
     subtle_phase: float = 0.0
 
 
@@ -57,6 +60,10 @@ class BodyRealtimeEngine:
         self._seed = seed
         self._target_interval_s = float(target_interval_s)
         self._sequence = 0
+
+    @property
+    def target_interval_s(self) -> float:
+        return self._target_interval_s
 
     def tick(
         self,
@@ -84,7 +91,7 @@ class BodyRealtimeEngine:
         self._gaze(overlays, states, gaze_target, elapsed)
         self._blink(overlays, states, elapsed)
         self._breath(overlays, states, expression, elapsed)
-        self._speech(overlays, states, speech, now, elapsed)
+        self._speech(overlays, states, speech, now, elapsed, monotonic_now_s)
         self._subtle(overlays, states, expression, elapsed)
         states.append(
             RealtimeLayerState(RealtimeLayer.POSTURE_ASSIST, RealtimeLayerStatus.INACTIVE_NO_SOURCE)
@@ -296,9 +303,12 @@ class BodyRealtimeEngine:
         speech: RealtimeSpeechView | None,
         now: datetime,
         elapsed: float,
+        monotonic_now_s: float | None,
     ) -> None:
         if speech is None:
             self._state.articulation = (0.0, 0.0, 0.0, 0.0)
+            self._state.speech_presentation_id = None
+            self._state.speech_monotonic_anchor_s = None
             states.append(
                 RealtimeLayerState(
                     RealtimeLayer.SPEECH_ARTICULATION, RealtimeLayerStatus.INACTIVE_NO_SOURCE
@@ -316,24 +326,43 @@ class BodyRealtimeEngine:
                 )
             )
             return
-        elapsed_ms = int((now - speech.presentation.started_at).total_seconds() * 1000)  # type: ignore[operator]
+        presentation_id = speech.presentation.presentation_id
+        if self._state.speech_presentation_id != presentation_id:
+            self._state.speech_presentation_id = presentation_id
+            if monotonic_now_s is None:
+                self._state.speech_monotonic_anchor_s = None
+            else:
+                initial_elapsed_s = max(
+                    0.0,
+                    (now - speech.presentation.started_at).total_seconds(),  # type: ignore[operator]
+                )
+                self._state.speech_monotonic_anchor_s = float(monotonic_now_s) - initial_elapsed_s
+        if self._state.speech_monotonic_anchor_s is not None and monotonic_now_s is not None:
+            elapsed_ms = int(
+                max(0.0, float(monotonic_now_s) - self._state.speech_monotonic_anchor_s) * 1000
+            )
+        else:
+            elapsed_ms = int((now - speech.presentation.started_at).total_seconds() * 1000)  # type: ignore[operator]
         unit = next(
             (item for item in track.units if item.start_ms <= elapsed_ms < item.end_ms), None
         )
         target = (0.0, 0.0, 0.0, 0.0)
         if unit is not None:
-            try:
-                target = articulation_for(unit.symbol, unit.kind)
-            except ValueError:
-                states.append(
-                    RealtimeLayerState(
-                        RealtimeLayer.SPEECH_ARTICULATION,
-                        RealtimeLayerStatus.DEGRADED,
-                        speech.presentation.presentation_id,
-                        "unsupported_timing_symbol",
+            if unit.kind is SpeechTimingKind.WORD_BOUNDARY:
+                target = (0.0, 0.0, 0.0, 0.0)
+            else:
+                try:
+                    target = articulation_for(unit.symbol, unit.kind)
+                except ValueError:
+                    states.append(
+                        RealtimeLayerState(
+                            RealtimeLayer.SPEECH_ARTICULATION,
+                            RealtimeLayerStatus.DEGRADED,
+                            speech.presentation.presentation_id,
+                            "unsupported_timing_symbol",
+                        )
                     )
-                )
-                return
+                    return
         blend = min(1.0, elapsed * 20.0)
         current_openness, current_roundness, current_jaw, current_closure = self._state.articulation
         target_openness, target_roundness, target_jaw, target_closure = target

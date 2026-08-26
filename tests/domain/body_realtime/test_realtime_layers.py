@@ -354,7 +354,7 @@ def test_started_presentation_with_trusted_timing_activates_canonical_articulati
         gaze_target=None,
         speech=_speech(timing=track),
         now=NOW + timedelta(milliseconds=20),
-        monotonic_now_s=0.1,
+        monotonic_now_s=0.05,
     )
     values = {item.channel: item.value for item in bundle.channel_overlays}
     assert _status(bundle, RealtimeLayer.SPEECH_ARTICULATION) is RealtimeLayerStatus.ACTIVE
@@ -385,7 +385,7 @@ def test_trusted_mora_timing_maps_to_canonical_articulation_without_provider_par
         gaze_target=None,
         speech=_speech(timing=track),
         now=NOW + timedelta(milliseconds=20),
-        monotonic_now_s=0.1,
+        monotonic_now_s=0.05,
     )
     assert next(
         item.value
@@ -418,7 +418,7 @@ def test_articulation_blends_at_timing_unit_boundary_and_fades_in_gap() -> None:
         "artifact",
         (
             SpeechTimingUnit("a", "segment", SpeechTimingKind.VISEME, "A", 0, 100),
-            SpeechTimingUnit("i", "segment", SpeechTimingKind.VISEME, "I", 100, 200),
+            SpeechTimingUnit("i", "segment", SpeechTimingKind.VISEME, "I", 100, 110),
         ),
         NOW,
         1000,
@@ -437,16 +437,16 @@ def test_articulation_blends_at_timing_unit_boundary_and_fades_in_gap() -> None:
         expression=None,
         gaze_target=None,
         speech=_speech(timing=track),
-        now=NOW + timedelta(milliseconds=110),
-        monotonic_now_s=0.02,
+        now=NOW + timedelta(milliseconds=90),
+        monotonic_now_s=0.09,
     )
     third = engine.tick(
         body_state=_body_state(),
         expression=None,
         gaze_target=None,
         speech=_speech(timing=track),
-        now=NOW + timedelta(milliseconds=250),
-        monotonic_now_s=0.04,
+        now=NOW + timedelta(milliseconds=100),
+        monotonic_now_s=0.1,
     )
     first_open = next(
         item.value
@@ -464,8 +464,95 @@ def test_articulation_blends_at_timing_unit_boundary_and_fades_in_gap() -> None:
         if item.channel is RealtimeChannel.MOUTH_OPENNESS
     )
     assert 0 < first_open < 0.9
-    assert 0 < second_open < 0.9
+    assert second_open == pytest.approx(0.9)
     assert 0 < third_open < second_open
+
+
+def test_speech_timeline_uses_monotonic_clock_after_started_admission() -> None:
+    track = SpeechTimingTrack(
+        "timing",
+        "artifact",
+        (
+            SpeechTimingUnit("a", "segment", SpeechTimingKind.VISEME, "A", 0, 100),
+            SpeechTimingUnit("i", "segment", SpeechTimingKind.VISEME, "I", 100, 200),
+        ),
+        NOW,
+        1000,
+    )
+    engine = BodyRealtimeEngine()
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    after_wall_clock_jump = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW - timedelta(days=1),
+        monotonic_now_s=0.15,
+    )
+    assert next(
+        item.value
+        for item in after_wall_clock_jump.channel_overlays
+        if item.channel is RealtimeChannel.MOUTH_OPENNESS
+    ) == pytest.approx(0.35)
+
+
+def test_word_boundary_fades_articulation_to_neutral_without_dropping_overlays() -> None:
+    track = SpeechTimingTrack(
+        "timing",
+        "artifact",
+        (
+            SpeechTimingUnit("a", "segment", SpeechTimingKind.VISEME, "A", 0, 100),
+            SpeechTimingUnit(
+                "word", "segment", SpeechTimingKind.WORD_BOUNDARY, "boundary", 100, 200
+            ),
+        ),
+        NOW,
+        1000,
+    )
+    engine = BodyRealtimeEngine()
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    before_boundary = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW + timedelta(milliseconds=90),
+        monotonic_now_s=0.09,
+    )
+    at_boundary = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW + timedelta(milliseconds=100),
+        monotonic_now_s=0.1,
+    )
+    before_open = next(
+        item.value
+        for item in before_boundary.channel_overlays
+        if item.channel is RealtimeChannel.MOUTH_OPENNESS
+    )
+    boundary_open = next(
+        item.value
+        for item in at_boundary.channel_overlays
+        if item.channel is RealtimeChannel.MOUTH_OPENNESS
+    )
+    assert 0 < boundary_open < before_open
+    assert _status(at_boundary, RealtimeLayer.SPEECH_ARTICULATION) is RealtimeLayerStatus.ACTIVE
 
 
 def test_presentation_timing_ref_must_exactly_bind_the_track() -> None:
@@ -511,7 +598,7 @@ async def test_runtime_is_cancellable_without_pending_task_and_does_not_mutate_b
     published: list[RealtimeOverlayBundle] = []
     state = _body_state()
     runtime = BodyRealtimeRuntime(
-        BodyRealtimeEngine(),
+        BodyRealtimeEngine(target_interval_s=0.001),
         lambda: RealtimeTickInput(state, _expression(), None, None),
         published.append,
         target_interval_s=0.001,
@@ -522,6 +609,16 @@ async def test_runtime_is_cancellable_without_pending_task_and_does_not_mutate_b
     assert published
     assert state.revision == 2
     assert runtime.pending_task_count == 0
+
+
+def test_runtime_rejects_target_interval_that_would_skew_engine_telemetry() -> None:
+    with pytest.raises(ValueError, match="target_interval_s"):
+        BodyRealtimeRuntime(
+            BodyRealtimeEngine(target_interval_s=1 / 60),
+            lambda: RealtimeTickInput(_body_state(), None, None, None),
+            lambda _overlay: None,
+            target_interval_s=0.001,
+        )
 
 
 def test_realtime_domain_does_not_take_over_adjacent_authority() -> None:
