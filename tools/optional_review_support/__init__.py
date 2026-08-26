@@ -3,6 +3,7 @@
 from .contracts import (
     AdvisoryCandidate,
     AdvisoryFinding,
+    OptionalReviewOutputError,
     ReviewAdvisory,
     ReviewAdvisoryAvailability,
     ReviewContext,
@@ -15,6 +16,7 @@ from .service import OptionalReviewService, ReadOnlyReviewContextCollector
 __all__ = [
     "AdvisoryCandidate",
     "AdvisoryFinding",
+    "OptionalReviewOutputError",
     "OptionalReviewService",
     "ReadOnlyReviewContextCollector",
     "ReviewAdvisory",

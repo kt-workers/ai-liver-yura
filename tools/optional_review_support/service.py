@@ -11,6 +11,7 @@ from typing import Protocol
 from .contracts import (
     AdvisoryCandidate,
     AdvisoryFinding,
+    OptionalReviewOutputError,
     ReviewAdvisory,
     ReviewAdvisoryAvailability,
     ReviewContext,
@@ -24,7 +25,7 @@ class OptionalReviewBackend(Protocol):
     """任意providerのread-only advisory候補生成Port。"""
 
     def review(self, context: ReviewContext) -> AdvisoryCandidate:
-        """未信頼candidateだけを返す。"""
+        """未信頼candidateだけを返す。出力変換失敗だけはOptionalReviewOutputErrorで示す。"""
 
 
 CurrentHeadReader = Callable[[ReviewTarget], str]
@@ -105,7 +106,7 @@ class OptionalReviewService:
 
         try:
             candidate = backend.review(context)
-        except (TypeError, ValueError):
+        except OptionalReviewOutputError:
             return self._invalid_output(context)
         except Exception:
             return self._unavailable(
@@ -139,7 +140,9 @@ class OptionalReviewService:
                 AdvisoryFinding(
                     title=_sanitize_presentation(finding.title),
                     explanation=_sanitize_presentation(finding.explanation),
-                    path=finding.path,
+                    path=None
+                    if finding.path is None
+                    else _sanitize_presentation(finding.path),
                     line=finding.line,
                 )
                 for finding in candidate.findings

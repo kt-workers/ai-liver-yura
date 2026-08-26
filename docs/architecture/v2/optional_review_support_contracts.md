@@ -63,6 +63,8 @@ credential未設定、quota、network失敗、backend未設定、構造化出力
 - `INVALID_OUTPUT`: backend出力をtrusted advisoryへ変換できなかった
 - `STALE_TARGET`: 対象headが収集中または検証中に変化した
 
+backend invocation自体で発生した設定・transport・provider準備その他の例外は`UNAVAILABLE`とする。`INVALID_OUTPUT`は、backendが明示的な出力変換失敗を通知した場合、または返却済みcandidateがschema / exact head binding / presentation validationを満たさない場合だけに用いる。backendの任意の`TypeError`や`ValueError`を出力不正と推測してはならない。
+
 `UNAVAILABLE`、`INVALID_OUTPUT`、`STALE_TARGET`は、製品実装、CI、PR、Issue、Missionの成功/失敗を変更しない。利用者が再実行するか、通常の人間レビューだけで進めるかを選べる。
 
 ## 6. 助言の信頼境界
@@ -73,7 +75,7 @@ backendの自然言語とfindingはuntrusted presentation dataである。determ
 - configured reviewer identityと実装者identityの監査可能な分離
 - 上限付き件数・文字数・ネスト深さ
 - 表示用Markdownのmention、HTML、link/image制御、Unicode control characterの安全化（許可した改行・tabを除く）
-- evidence path/locationのbounded validation
+- evidence path/locationのbounded validation。pathはrepository相対で、control characterを拒否し、表示用advisoryへ渡す際にもmention / Markdown制御を安全化する
 
 validated advisoryも**助言**であり、`PASS`、`CHANGES_REQUESTED`、confidenceその他の値をmerge gate、Actual Fact、canonical Authorityへ昇格しない。
 

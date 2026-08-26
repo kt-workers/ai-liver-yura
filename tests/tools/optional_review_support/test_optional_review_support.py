@@ -11,6 +11,7 @@ import pytest
 from tools.optional_review_support import (
     AdvisoryCandidate,
     AdvisoryFinding,
+    OptionalReviewOutputError,
     OptionalReviewService,
     ReadOnlyReviewContextCollector,
     ReviewAdvisoryAvailability,
@@ -174,7 +175,7 @@ def test_unavailable_result_is_not_cached_and_can_be_explicitly_retried() -> Non
 
 def test_invalid_backend_output_is_not_cached_and_is_classified_separately() -> None:
     context = _context()
-    backend = FakeBackend(exception=ValueError("provider schema is invalid"))
+    backend = FakeBackend(exception=OptionalReviewOutputError("provider schema is invalid"))
     service = OptionalReviewService()
 
     invalid = service.run(context, backend=backend, current_head=lambda target: target.head_sha)
@@ -186,6 +187,18 @@ def test_invalid_backend_output_is_not_cached_and_is_classified_separately() -> 
     assert invalid.diagnostic_code == "INVALID_OUTPUT"
     assert available.availability is ReviewAdvisoryAvailability.AVAILABLE
     assert backend.calls == 2
+
+
+def test_backend_setup_value_error_is_unavailable_not_invalid_output() -> None:
+    context = _context()
+    advisory = OptionalReviewService().run(
+        context,
+        backend=FakeBackend(exception=ValueError("設定値が不正です")),
+        current_head=lambda target: target.head_sha,
+    )
+
+    assert advisory.availability is ReviewAdvisoryAvailability.UNAVAILABLE
+    assert advisory.diagnostic_code == "BACKEND_UNAVAILABLE"
 
 
 def test_sanitization_invalid_output_is_not_cached_and_can_be_retried() -> None:
@@ -230,6 +243,8 @@ def test_candidate_bounds_and_repository_relative_finding_path_are_enforced() ->
         )
     with pytest.raises(ValueError, match="repository相対"):
         AdvisoryFinding(title="t", explanation="e", path="../outside.py")
+    with pytest.raises(ValueError, match="control character"):
+        AdvisoryFinding(title="t", explanation="e", path="src/x.py\n@maintainers")
 
 
 def test_presentation_is_sanitized_without_changing_target_identity() -> None:
@@ -242,7 +257,7 @@ def test_presentation_is_sanitized_without_changing_target_identity() -> None:
             AdvisoryFinding(
                 title="指摘\x7f\u202e @team",
                 explanation="説明 <script>bad</script>",
-                path="tools/optional_review_support/service.py",
+                path="tools/@maintainers/[optional]_review_support/service.py",
                 line=1,
             ),
         ),
@@ -262,6 +277,7 @@ def test_presentation_is_sanitized_without_changing_target_identity() -> None:
     assert "\x7f" not in advisory.summary
     assert "\u202e" not in advisory.summary
     assert advisory.findings[0].title == "指摘 ＠team"
+    assert advisory.findings[0].path == "tools/＠maintainers/［optional］_review_support/service.py"
     assert advisory.collected_at == context.collected_at
 
 

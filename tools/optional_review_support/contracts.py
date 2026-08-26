@@ -24,6 +24,10 @@ class ReviewAdvisoryAvailability(str, Enum):
     STALE_TARGET = "STALE_TARGET"
 
 
+class OptionalReviewOutputError(ValueError):
+    """backendが構造化出力の変換失敗だけを明示するための専用例外。"""
+
+
 def _require_text(value: str, field_name: str, maximum: int = MAX_TEXT_LENGTH) -> None:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{field_name} は空でない文字列である必要があります。")
@@ -56,6 +60,11 @@ def _sanitize_presentation(value: str) -> str:
     ):
         result = result.replace(source, replacement)
     return result
+
+
+def _require_safe_repository_path(value: str) -> None:
+    if any(unicodedata.category(character).startswith("C") for character in value):
+        raise ValueError("finding path にcontrol characterは使用できません。")
 
 
 @dataclass(frozen=True)
@@ -117,6 +126,7 @@ class AdvisoryFinding:
         _require_text(self.explanation, "finding explanation")
         if self.path is not None:
             _require_text(self.path, "finding path", MAX_PATH_LENGTH)
+            _require_safe_repository_path(self.path)
             if self.path.startswith("/") or ".." in self.path.split("/"):
                 raise ValueError("finding path はrepository相対の安全なpathである必要があります。")
         if self.line is not None and (
