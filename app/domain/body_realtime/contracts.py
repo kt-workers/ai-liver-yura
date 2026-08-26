@@ -243,12 +243,26 @@ def articulation_for(symbol: str, kind: SpeechTimingKind) -> tuple[float, float,
         if symbol in mapping:
             return mapping[symbol]
     if kind in {SpeechTimingKind.PHONEME, SpeechTimingKind.MORA}:
-        vowel = {
-            "あ": "A",
-            "い": "I",
-            "う": "U",
-            "え": "E",
-            "お": "O",
-        }.get(symbol[-1:], symbol[-1:].upper())
+        vowel = _canonical_viseme_symbol(symbol, kind)
         return articulation_for(vowel, SpeechTimingKind.VISEME)
     raise ValueError("未対応timing symbolです")
+
+
+def _canonical_viseme_symbol(symbol: str, kind: SpeechTimingKind) -> str:
+    """日本語moraをrendererやproviderに依存しないcanonical visemeへ縮約する。"""
+    if kind is SpeechTimingKind.MORA:
+        if symbol[-1:] in {"ー", "ｰ"} and len(symbol) > 1:
+            return _canonical_viseme_symbol(symbol[:-1], kind)
+        kana_vowels = {
+            "A": "あかさたなはまやらわがざだばぱぁゃアカサタナハマヤラワガザダバパァャ",
+            "I": "いきしちにひみりゐぎじぢびぴぃイキシチニヒミリヰギジヂビピィ",
+            "U": "うくすつぬふむゆるぐずづぶぷぅゅゔウクスツヌフムユルグズヅブプゥュヴ",
+            "E": "えけせてねへめれゑげぜでべぺぇエケセテネヘメレヱゲゼデベペェ",
+            "O": "おこそとのほもよろをごぞどぼぽぉょオコソトノホモヨロヲゴゾドボポォョ",
+            "M": "んンっッ",
+        }
+        last = symbol[-1:]
+        for viseme, kana in kana_vowels.items():
+            if last in kana:
+                return viseme
+    return symbol[-1:].upper()

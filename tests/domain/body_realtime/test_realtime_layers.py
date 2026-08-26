@@ -37,6 +37,7 @@ from app.domain.body_realtime import (
     RealtimeSpeechView,
     RealtimeTickInput,
 )
+from app.domain.body_realtime.contracts import articulation_for
 from app.domain.speech_runtime.contracts import (
     SpeechPresentationMode,
     SpeechPresentationReport,
@@ -438,6 +439,13 @@ def test_trusted_mora_timing_maps_to_canonical_articulation_without_provider_par
         for item in bundle.channel_overlays
         if item.channel is RealtimeChannel.MOUTH_OPENNESS
     ) == pytest.approx(0.9)
+
+
+def test_ordinary_japanese_mora_normalizes_to_canonical_vowel_or_closure() -> None:
+    assert articulation_for("か", SpeechTimingKind.MORA) == pytest.approx((0.9, 0.0, 0.8, 0.0))
+    assert articulation_for("キャ", SpeechTimingKind.MORA) == pytest.approx((0.9, 0.0, 0.8, 0.0))
+    assert articulation_for("カー", SpeechTimingKind.MORA) == pytest.approx((0.9, 0.0, 0.8, 0.0))
+    assert articulation_for("ん", SpeechTimingKind.MORA) == pytest.approx((0.0, 0.0, 0.0, 1.0))
 
 
 def test_timing_unavailable_degrades_only_speech_layer_without_fake_mouth_motion() -> None:
