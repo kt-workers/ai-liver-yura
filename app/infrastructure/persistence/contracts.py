@@ -125,16 +125,20 @@ def canonical_json(value: JsonValue) -> str:
 
 def snapshot_digest(
     *,
+    snapshot_id: str,
     owner_id: str,
     snapshot_kind: str,
     snapshot_schema_id: str,
     snapshot_schema_version: int,
     owner_state_revision: int,
     runtime_epoch: str,
+    captured_at: datetime,
     payload: JsonValue,
     source_refs: tuple[str, ...],
 ) -> str:
     material = {
+        "snapshot_id": snapshot_id,
+        "captured_at": captured_at.isoformat(),
         "owner_id": owner_id,
         "snapshot_kind": snapshot_kind,
         "snapshot_schema_id": snapshot_schema_id,
@@ -186,6 +190,8 @@ class PersistenceSnapshotEnvelope:
         refs = _identifiers(self.source_refs, "source_refs")
         object.__setattr__(self, "source_refs", refs)
         expected = snapshot_digest(
+            snapshot_id=self.snapshot_id,
+            captured_at=self.captured_at,
             owner_id=self.owner_id,
             snapshot_kind=self.snapshot_kind,
             snapshot_schema_id=self.snapshot_schema_id,

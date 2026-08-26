@@ -57,6 +57,7 @@ class SnapshotPersistenceWorker:
             tuple[str, str],
             deque[tuple[SnapshotPersistenceRequest, asyncio.Future[DurabilityReceipt]]],
         ] = {}
+        self._active_writes = 0
         self._closed = False
 
     def submit(self, request: SnapshotPersistenceRequest) -> asyncio.Future[DurabilityReceipt]:
@@ -87,7 +88,7 @@ class SnapshotPersistenceWorker:
                 break
             queue.append((request, future))
             return future
-        if (existing is None or existing.done()) and self.pending_task_count >= self._max_pending:
+        if self._outstanding_request_count() >= self._max_pending:
             self._queued.pop(key, None)
             return self._immediate(
                 request,
@@ -128,43 +129,50 @@ class SnapshotPersistenceWorker:
         self._tasks.clear()
 
     async def _run_key(self, key: tuple[str, str]) -> None:
+        current_item: (
+            tuple[SnapshotPersistenceRequest, asyncio.Future[DurabilityReceipt]] | None
+        ) = None
         try:
             while queue := self._queued.get(key):
                 item = queue.popleft()
+                current_item = item
                 if not queue:
                     self._queued.pop(key, None)
                 request, future = item
-                receipt = await self._write(request)
+                self._active_writes += 1
+                try:
+                    receipt = await self._write(request)
+                finally:
+                    self._active_writes -= 1
                 if not future.done():
                     future.set_result(receipt)
+                current_item = None
         except asyncio.CancelledError:
-            return
+            if current_item is not None and not current_item[1].done():
+                current_item[1].set_result(
+                    self._receipt(
+                        current_item[0],
+                        DurabilityStatus.CANCELLED,
+                        PersistenceFailureCode.CANCELLED,
+                    )
+                )
+            raise
         finally:
             current = self._tasks.get(key)
             if current is asyncio.current_task():
                 self._tasks.pop(key, None)
 
     async def _write(self, request: SnapshotPersistenceRequest) -> DurabilityReceipt:
-        try:
-            for attempt in range(1, self._retry_policy.max_attempts + 1):
-                try:
-                    return await asyncio.to_thread(
-                        self._repository.put_snapshot,
-                        request.envelope,
-                    )
-                except PersistenceError as error:
-                    if (
-                        not self._retryable(error.code)
-                        or attempt == self._retry_policy.max_attempts
-                    ):
-                        return self._receipt(request, DurabilityStatus.FAILED, error.code)
-                    await asyncio.sleep(self._retry_policy.delay_for(attempt))
-        except asyncio.CancelledError:
-            return self._receipt(
-                request,
-                DurabilityStatus.CANCELLED,
-                PersistenceFailureCode.CANCELLED,
-            )
+        for attempt in range(1, self._retry_policy.max_attempts + 1):
+            try:
+                return await asyncio.to_thread(
+                    self._repository.put_snapshot,
+                    request.envelope,
+                )
+            except PersistenceError as error:
+                if not self._retryable(error.code) or attempt == self._retry_policy.max_attempts:
+                    return self._receipt(request, DurabilityStatus.FAILED, error.code)
+                await asyncio.sleep(self._retry_policy.delay_for(attempt))
         return self._receipt(
             request,
             DurabilityStatus.FAILED,
@@ -204,3 +212,6 @@ class SnapshotPersistenceWorker:
             status,
             failure_code=code,
         )
+
+    def _outstanding_request_count(self) -> int:
+        return self._active_writes + sum(len(queue) for queue in self._queued.values())

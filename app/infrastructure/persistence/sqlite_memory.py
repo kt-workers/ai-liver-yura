@@ -48,10 +48,13 @@ class SqliteMemoryRepository:
         return None if row is None else decode_memory_record(row[0])
 
     def list_records(self) -> tuple[MemoryRecord, ...]:
-        return tuple(
-            decode_memory_record(row[0])
-            for row in self._query_all("SELECT payload FROM memory_records ORDER BY memory_id", ())
-        )
+        records: list[MemoryRecord] = []
+        for row in self._query_all("SELECT payload FROM memory_records ORDER BY memory_id", ()):
+            try:
+                records.append(decode_memory_record(row[0]))
+            except PersistenceError:
+                continue
+        return tuple(records)
 
     def list_relations(self) -> tuple[MemoryRelation, ...]:
         return tuple(
@@ -157,11 +160,22 @@ class SqliteMemoryRepository:
         row = self._connection.execute(
             "SELECT value FROM persistence_meta WHERE key = 'memory_schema_version'"
         ).fetchone()
-        if row is not None and int(row[0]) > self.storage_schema_version:
-            raise PersistenceError(
-                PersistenceFailureCode.INCOMPATIBLE_STORAGE_VERSION,
-                "Memory storage schemaが新しすぎます",
-            )
+        if row is not None:
+            try:
+                stored_version = int(row[0])
+            except (TypeError, ValueError) as error:
+                raise PersistenceError(
+                    PersistenceFailureCode.MIGRATION_FAILED, "Memory storage schemaが不正です"
+                ) from error
+            if stored_version < 0:
+                raise PersistenceError(
+                    PersistenceFailureCode.MIGRATION_FAILED, "Memory storage schemaが不正です"
+                )
+            if stored_version > self.storage_schema_version:
+                raise PersistenceError(
+                    PersistenceFailureCode.INCOMPATIBLE_STORAGE_VERSION,
+                    "Memory storage schemaが新しすぎます",
+                )
         self._connection.execute(
             "INSERT OR REPLACE INTO persistence_meta VALUES ('memory_schema_version', ?)",
             (str(self.storage_schema_version),),

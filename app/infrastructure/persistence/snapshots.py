@@ -249,15 +249,31 @@ class SqliteLifecycleSnapshotRepository(InMemoryLifecycleSnapshotRepository):
             ) from error
         return receipt
 
+    def get_latest(self, owner_id: str, snapshot_kind: str) -> RehydrationCandidate | None:
+        with self._lock:
+            return super().get_latest(owner_id, snapshot_kind)
+
+    def list_compatible(
+        self, owner_id: str, snapshot_kind: str, *, limit: int
+    ) -> tuple[RehydrationCandidate, ...]:
+        with self._lock:
+            return super().list_compatible(owner_id, snapshot_kind, limit=limit)
+
     def mark_rejected_or_obsolete(self, snapshot_ref: str, reason: str) -> None:
-        super().mark_rejected_or_obsolete(snapshot_ref, reason)
         try:
             with self._lock:
+                if snapshot_ref not in self._records:
+                    raise PersistenceError(
+                        PersistenceFailureCode.CORRUPT_RECORD, "snapshotがありません"
+                    )
+                if not isinstance(reason, str) or not reason.strip() or len(reason) > 256:
+                    raise ValueError("reasonが不正です")
                 self._connection.execute(
                     "UPDATE lifecycle_snapshots SET obsolete = 1 WHERE snapshot_id = ?",
                     (snapshot_ref,),
                 )
                 self._connection.commit()
+                self._obsolete.add(snapshot_ref)
         except sqlite3.Error as error:
             raise PersistenceError(
                 PersistenceFailureCode.UNAVAILABLE,
