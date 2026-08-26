@@ -328,6 +328,7 @@ For each timing unit:
 - Presentation終端でspeech sourceが外れた場合も、保持中のarticulationをneutralへboundedにfadeしてから解放する
 - timing unavailableやunsupported symbolへのtyped degradationでも、直前articulationをneutralへboundedにfadeする
 - 遅延tickでもgazeの一frame変位はboundedにし、target座標へsnapしない
+- speech articulationも通常のtiming遷移・gap・degradation fadeの全経路で一frame変位をboundedにする
 
 Exact interpolation is deterministic configuration, not LLM-generated per frame.
 

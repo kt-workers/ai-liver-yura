@@ -695,6 +695,53 @@ def test_presentation_end_fades_retained_articulation_before_releasing_speech_so
     assert _status(ended, RealtimeLayer.SPEECH_ARTICULATION) is RealtimeLayerStatus.ACTIVE
 
 
+def test_delayed_presentation_end_keeps_a_bounded_articulation_fade() -> None:
+    track = SpeechTimingTrack(
+        "timing",
+        "artifact",
+        (SpeechTimingUnit("a", "segment", SpeechTimingKind.VISEME, "A", 0, 100),),
+        NOW,
+        1000,
+    )
+    engine = BodyRealtimeEngine()
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    speaking = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW + timedelta(milliseconds=20),
+        monotonic_now_s=0.02,
+    )
+    delayed_end = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=None,
+        now=NOW + timedelta(milliseconds=220),
+        monotonic_now_s=0.22,
+    )
+    speaking_openness = next(
+        item.value
+        for item in speaking.channel_overlays
+        if item.channel is RealtimeChannel.MOUTH_OPENNESS
+    )
+    ended_openness = next(
+        item.value
+        for item in delayed_end.channel_overlays
+        if item.channel is RealtimeChannel.MOUTH_OPENNESS
+    )
+    assert 0 < ended_openness < speaking_openness
+    assert speaking_openness - ended_openness <= 0.45
+
+
 def test_new_presentation_without_timing_releases_prior_articulation_in_its_degraded_frame() -> (
     None
 ):

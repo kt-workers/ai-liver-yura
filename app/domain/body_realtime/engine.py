@@ -326,7 +326,7 @@ class BodyRealtimeEngine:
         if speech is None:
             self._state.speech_presentation_id = None
             self._state.speech_monotonic_anchor_s = None
-            if self._fade_articulation(overlays, elapsed):
+            if self._fade_articulation(overlays):
                 states.append(
                     RealtimeLayerState(
                         RealtimeLayer.SPEECH_ARTICULATION,
@@ -345,7 +345,7 @@ class BodyRealtimeEngine:
         if track is None:
             self._state.speech_presentation_id = speech.presentation.presentation_id
             self._state.speech_monotonic_anchor_s = speech.presentation_monotonic_started_at_s
-            self._fade_articulation(overlays, elapsed)
+            self._fade_articulation(overlays)
             states.append(
                 RealtimeLayerState(
                     RealtimeLayer.SPEECH_ARTICULATION,
@@ -380,7 +380,7 @@ class BodyRealtimeEngine:
                     else:
                         target = articulation_for(unit.symbol, unit.kind)
                 except ValueError:
-                    self._fade_articulation(overlays, elapsed)
+                    self._fade_articulation(overlays)
                     states.append(
                         RealtimeLayerState(
                             RealtimeLayer.SPEECH_ARTICULATION,
@@ -390,14 +390,13 @@ class BodyRealtimeEngine:
                         )
                     )
                     return
-        blend = min(1.0, elapsed * 20.0)
         current_openness, current_roundness, current_jaw, current_closure = self._state.articulation
         target_openness, target_roundness, target_jaw, target_closure = target
         self._state.articulation = (
-            current_openness + (target_openness - current_openness) * blend,
-            current_roundness + (target_roundness - current_roundness) * blend,
-            current_jaw + (target_jaw - current_jaw) * blend,
-            current_closure + (target_closure - current_closure) * blend,
+            self._approach_articulation(current_openness, target_openness),
+            self._approach_articulation(current_roundness, target_roundness),
+            self._approach_articulation(current_jaw, target_jaw),
+            self._approach_articulation(current_closure, target_closure),
         )
         self._add_articulation_overlays(overlays)
         states.append(
@@ -408,14 +407,18 @@ class BodyRealtimeEngine:
             )
         )
 
-    def _fade_articulation(self, overlays: list[ChannelOverlay], elapsed: float) -> bool:
-        blend = min(1.0, elapsed * 20.0)
+    @staticmethod
+    def _approach_articulation(current: float, target: float) -> float:
+        """scheduler遅延の長さに関わらずmouth channelの一frame変位を制限する。"""
+        return current + max(-0.45, min(0.45, target - current))
+
+    def _fade_articulation(self, overlays: list[ChannelOverlay]) -> bool:
         openness, roundness, jaw, closure = self._state.articulation
         self._state.articulation = (
-            openness * (1.0 - blend),
-            roundness * (1.0 - blend),
-            jaw * (1.0 - blend),
-            closure * (1.0 - blend),
+            self._approach_articulation(openness, 0.0),
+            self._approach_articulation(roundness, 0.0),
+            self._approach_articulation(jaw, 0.0),
+            self._approach_articulation(closure, 0.0),
         )
         if not any(abs(value) > 1e-6 for value in self._state.articulation):
             return False
