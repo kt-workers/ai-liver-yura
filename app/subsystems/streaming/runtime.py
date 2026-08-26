@@ -145,6 +145,15 @@ class StreamingSubsystemRuntime:
         return report
 
     def update_capability(self, capability: StreamingCapabilityView) -> None:
+        current = self._capability
+        if (
+            capability.provider_generation < current.provider_generation
+            or (
+                capability.provider_generation == current.provider_generation
+                and capability.descriptor_revision < current.descriptor_revision
+            )
+        ):
+            raise ValueError("capability generationまたはdescriptor revisionが巻戻っています")
         self._capability = capability
         self._lifecycle = (
             StreamingSubsystemLifecycle.AVAILABLE
@@ -156,6 +165,8 @@ class StreamingSubsystemRuntime:
         """providerとuserのprovenance履歴を別保持し、後続provider観測でのみreconcileする。"""
         if observation.source_kind is StreamingObservationSourceKind.PROVIDER_OBSERVATION:
             assert observation.provider_generation is not None
+            if observation.provider_generation != self._capability.provider_generation:
+                return False
             current_generation = self._provider_generations.get(observation.source_ref)
             current_observed_at = self._provider_observed_at.get(observation.source_ref)
             if (
@@ -276,7 +287,10 @@ class StreamingSubsystemRuntime:
         reconciled: list[StreamingExternalObservation] = []
         reconciled_any = False
         for user in user_history:
-            if user.observed_at > provider.observed_at:
+            if (
+                user.reconciliation is not StreamingObservationReconciliation.UNRECONCILED
+                or user.observed_at > provider.observed_at
+            ):
                 reconciled.append(user)
                 continue
             reconciliation = (
@@ -335,7 +349,7 @@ class StreamingSubsystemRuntime:
             )
 
     async def _run_reconnect(self, reconnect: Callable[[], Awaitable[bool]]) -> None:
-        for _ in range(self._reconnect_attempt_limit):
+        for attempt in range(self._reconnect_attempt_limit):
             if self._stopping:
                 return
             try:
@@ -346,7 +360,8 @@ class StreamingSubsystemRuntime:
                     return
             except RuntimeError:
                 pass
-            await asyncio.sleep(self._reconnect_delay_s * (_ + 1))
+            if attempt + 1 < self._reconnect_attempt_limit:
+                await asyncio.sleep(self._reconnect_delay_s * (attempt + 1))
         self._lifecycle = StreamingSubsystemLifecycle.DEGRADED
 
     def _track(self, task: asyncio.Task[object]) -> asyncio.Task[object]:

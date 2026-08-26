@@ -209,7 +209,7 @@ def test_execution_report_rejects_inverted_timestamps() -> None:
 
 
 def test_provider_observation_and_user_report_keep_separate_provenance_and_reconcile() -> None:
-    runtime = StreamingSubsystemRuntime(Provider(), capability(), clock=lambda: NOW)
+    runtime = StreamingSubsystemRuntime(Provider(), capability(generation=2), clock=lambda: NOW)
     user = StreamingExternalObservation(
         "observation:user",
         StreamingExternalState.LIVE,
@@ -242,7 +242,7 @@ def test_provider_observation_and_user_report_keep_separate_provenance_and_recon
 
 
 def test_stale_provider_observation_is_rejected_but_user_needs_no_provider_generation() -> None:
-    runtime = StreamingSubsystemRuntime(Provider(), capability(), clock=lambda: NOW)
+    runtime = StreamingSubsystemRuntime(Provider(), capability(generation=2), clock=lambda: NOW)
     current = StreamingExternalObservation(
         "observation:2",
         StreamingExternalState.LIVE,
@@ -277,7 +277,7 @@ def test_stale_provider_observation_is_rejected_but_user_needs_no_provider_gener
 
 
 def test_old_same_generation_provider_observation_cannot_reconcile_newer_user_report() -> None:
-    runtime = StreamingSubsystemRuntime(Provider(), capability(), clock=lambda: NOW)
+    runtime = StreamingSubsystemRuntime(Provider(), capability(generation=3), clock=lambda: NOW)
     user = StreamingExternalObservation(
         "observation:user-newer",
         StreamingExternalState.LIVE,
@@ -325,6 +325,82 @@ def test_old_same_generation_provider_observation_cannot_reconcile_newer_user_re
     assert runtime.observation_history(
         StreamingObservationSourceKind.USER_REPORT, "stream:1"
     )[0].reconciliation is StreamingObservationReconciliation.CONFIRMED
+
+
+def test_capability_snapshot_rollbacks_and_wrong_active_generation_observations_are_rejected(
+) -> None:
+    runtime = StreamingSubsystemRuntime(
+        Provider(), capability(generation=2, revision=3), clock=lambda: NOW
+    )
+    with pytest.raises(ValueError, match="巻戻"):
+        runtime.update_capability(capability(generation=1, revision=99))
+    with pytest.raises(ValueError, match="巻戻"):
+        runtime.update_capability(capability(generation=2, revision=2))
+    assert not runtime.accept_observation(
+        StreamingExternalObservation(
+            "observation:stale-generation",
+            StreamingExternalState.LIVE,
+            StreamingObservationSourceKind.PROVIDER_OBSERVATION,
+            "stream:new-source",
+            NOW,
+            1,
+            1,
+        )
+    )
+    assert runtime.observation_history(
+        StreamingObservationSourceKind.PROVIDER_OBSERVATION, "stream:new-source"
+    ) == ()
+
+
+def test_finalized_user_report_is_not_reconciled_again_after_later_provider_transition() -> None:
+    runtime = StreamingSubsystemRuntime(Provider(), capability(generation=2), clock=lambda: NOW)
+    user = StreamingExternalObservation(
+        "observation:user",
+        StreamingExternalState.LIVE,
+        StreamingObservationSourceKind.USER_REPORT,
+        "stream:1",
+        NOW,
+        0.4,
+        None,
+    )
+    confirmed = StreamingExternalObservation(
+        "observation:live",
+        StreamingExternalState.LIVE,
+        StreamingObservationSourceKind.PROVIDER_OBSERVATION,
+        "stream:1",
+        NOW + timedelta(seconds=1),
+        1,
+        2,
+    )
+    ended = StreamingExternalObservation(
+        "observation:ended",
+        StreamingExternalState.ENDED,
+        StreamingObservationSourceKind.PROVIDER_OBSERVATION,
+        "stream:1",
+        NOW + timedelta(seconds=2),
+        1,
+        2,
+    )
+    assert runtime.accept_observation(user)
+    assert runtime.accept_observation(confirmed)
+    assert runtime.accept_observation(ended)
+    assert runtime.observation_history(
+        StreamingObservationSourceKind.USER_REPORT, "stream:1"
+    )[0].reconciliation is StreamingObservationReconciliation.CONFIRMED
+
+
+def test_final_failed_reconnect_does_not_wait_for_another_backoff() -> None:
+    async def reconnect() -> bool:
+        return False
+
+    async def scenario() -> None:
+        runtime = StreamingSubsystemRuntime(
+            Provider(), capability(available=False), reconnect_attempt_limit=1, reconnect_delay_s=10
+        )
+        await asyncio.wait_for(runtime._run_reconnect(reconnect), timeout=0.01)
+        assert runtime.lifecycle is StreamingSubsystemLifecycle.DEGRADED
+
+    asyncio.run(scenario())
 
 
 def comment(event_id: str) -> StreamingCommentEvent:
