@@ -52,6 +52,10 @@ ToolingEvidenceArtifact
 
 Every finding must preserve source provenance where feasible.
 
+`SourceReference`のidentityは`(source_ref, source_revision)`である。同一sourceの比較では、
+異なるrevisionを両方保持できなければならない。`limitations`は空でない文字列のsequenceだけを受け、
+scalar stringを文字単位のsequenceとして解釈してはならない。
+
 `confidence`はartifact全体を確定する値ではなく、根拠ごとの
 `ToolingFinding`または`ReferenceCharacterFinding`に限定する。analysis失敗は
 empty findingへ縮退させず、`result_status=FAILED`とtyped `failure_category`で記録する。

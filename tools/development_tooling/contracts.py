@@ -51,6 +51,15 @@ def _freeze_text_mapping(value: Mapping[str, str], field_name: str) -> Mapping[s
     return MappingProxyType(frozen)
 
 
+def _freeze_text_sequence(value: Sequence[str], field_name: str) -> tuple[str, ...]:
+    if isinstance(value, str):
+        raise ValueError(f"{field_name}はscalar stringにできません")
+    values = tuple(value)
+    for item in values:
+        _require_text(item, field_name)
+    return values
+
+
 class ToolKind(str, Enum):
     ISSUE_GRAPH = "issue_graph"
     ARCHITECTURE_GRAPH = "architecture_graph"
@@ -114,17 +123,17 @@ class ToolingFinding:
             not isinstance(reference, SourceReference) for reference in references
         ):
             raise ValueError("source_refsは空にできません")
-        if len({reference.source_ref for reference in references}) != len(references):
-            raise ValueError("source_refsのsource_refは一意である必要があります")
+        identities = {(reference.source_ref, reference.source_revision) for reference in references}
+        if len(identities) != len(references):
+            raise ValueError("source_refsのsource identityは一意である必要があります")
         object.__setattr__(self, "source_refs", references)
         if self.confidence is not None and (
             type(self.confidence) not in {int, float} or not 0 <= self.confidence <= 1
         ):
             raise ValueError("confidenceは[0, 1]の範囲である必要があります")
-        limitations = tuple(self.limitations)
-        for limitation in limitations:
-            _require_text(limitation, "limitation")
-        object.__setattr__(self, "limitations", limitations)
+        object.__setattr__(
+            self, "limitations", _freeze_text_sequence(self.limitations, "limitation")
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -169,10 +178,9 @@ class ToolingEvidenceArtifact:
         if len({finding.finding_id for finding in findings}) != len(findings):
             raise ValueError("findingsのfinding_idは一意である必要があります")
         object.__setattr__(self, "findings", findings)
-        limitations = tuple(self.limitations)
-        for limitation in limitations:
-            _require_text(limitation, "limitation")
-        object.__setattr__(self, "limitations", limitations)
+        object.__setattr__(
+            self, "limitations", _freeze_text_sequence(self.limitations, "limitation")
+        )
         if (
             type(self.processing_duration_ms) not in {int, float}
             or not isfinite(self.processing_duration_ms)

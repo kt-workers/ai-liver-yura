@@ -290,6 +290,31 @@ def test_evidence_artifact_requires_source_provenance_and_methodology_revision()
         )
 
 
+def test_finding_can_retain_two_revisions_of_one_source_but_rejects_duplicate_identity() -> None:
+    earlier = SourceReference("docs/architecture/v2/brain_architecture.md", "revision-1")
+    later = SourceReference("docs/architecture/v2/brain_architecture.md", "revision-2")
+    finding = ToolingFinding("finding-comparison", "差分", (earlier, later))
+    assert finding.source_refs == (earlier, later)
+    with pytest.raises(ValueError, match="source identity"):
+        ToolingFinding("finding-duplicate", "重複", (earlier, earlier))
+
+
+@pytest.mark.parametrize("limitations", ("制約", "一文字"))
+def test_scalar_string_limitations_are_rejected(limitations: str) -> None:
+    with pytest.raises(ValueError, match="scalar string"):
+        ToolingFinding("finding-limitation", "確認", (CANONICAL,), limitations=limitations)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="scalar string"):
+        ToolingEvidenceArtifact(
+            "artifact-limitation",
+            ToolKind.ISSUE_GRAPH,
+            (CANONICAL,),
+            NOW,
+            "method-1",
+            (),
+            limitations=limitations,  # type: ignore[arg-type]
+        )
+
+
 def test_artifact_observability_preserves_success_or_typed_failure_without_artifact_confidence(
 ) -> None:
     finding = ToolingFinding("finding-1", "確認", (CANONICAL,), 0.8)
