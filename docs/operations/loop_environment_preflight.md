@@ -43,13 +43,22 @@ when only work-scoped capabilities are unavailable, otherwise `PASS`.
 | GitHub repository read | `gh repo view` | bootstrap blocking |
 | GitHub repository write | `git push --dry-run` | bootstrap blocking |
 | Project #7 read | `gh project view`, `field-list`, `item-list` | bootstrap blocking |
-| Project #7 write | supplied, independently verified live evidence | bootstrap blocking |
-| OpenAI reviewer | `OPENAI_API_KEY` presence only | work scoped |
-| Docker / PostgreSQL tooling | `docker version` / `pg_isready --version` | work scoped |
+| Project #7 write | GraphQL `viewerCanUpdate` read-only query | bootstrap blocking |
+| OpenAI reviewer | configured-model lookup + bounded Responses API health request | work scoped |
+| PostgreSQL client | `psql --version` | work scoped |
+| PostgreSQL server / database | `pg_isready`, then `SELECT 1` using secret-only process environment | work scoped |
+| PostgreSQL migration | `alembic current` only when `alembic.ini` exists | work scoped |
+| Toolchain | project Python/venv, pytest, Ruff, Mypy, compileall, Codex CLI | bootstrap blocking |
 
-The Project write result is deliberately an injected evidence flag.  A normal
-preflight must not alter Project data merely to prove a permission; the
-controlled #462/#463 Project #7 mutation and readback is the initial evidence.
+The Project write result is a fresh, side-effect-free GitHub permission query.
+It is not an injected test flag, cached field ID, or mutation. The controlled
+#462/#463 Project #7 mutation remains independent historical evidence.
+
+`LOOP_DATABASE_URL` is used only to derive `PG*` variables for child probes;
+it is never included in a command argument, result, or diagnostic. #463
+verifies migration *capability* when a migration configuration exists. It does
+not create the Loop Operational Store schema or apply a migration: those belong
+to the later operational-store implementation under #462.
 
 ## Restart verification
 
