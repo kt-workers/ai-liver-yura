@@ -1,10 +1,12 @@
 # Independent AI Review Architecture
 
-Status: Canonical candidate for Issue #370  
+Status: 歴史参照。Issue #371の現行実装Authorityではない。
 Parent: #369  
 Root: #317  
 Area: Development Tooling  
 Effective design date: 2026-08-13
+
+> 2026-08-26の人間判断により、独立AIレビューをV2開発の必須Gateとして扱う方針は撤回された。#371の現行canonicalは`optional_review_support_contracts.md`である。本書は旧自動レビュー設計の知見を保持する履歴参照であり、workflow、provider、Merge Gate、Mission停止を要求しない。
 
 ## 1. 目的
 

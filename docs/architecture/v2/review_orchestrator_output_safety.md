@@ -1,9 +1,11 @@
 # Review Orchestrator Output Safety
 
-Status: Canonical amendment for Issue #371  
+Status: 歴史参照。出力安全化の知見は保持するが、Issue #371の現行実装Authorityではない。
 Extends: `docs/architecture/v2/review_orchestrator_implementation.md`  
 Parent contract: `docs/architecture/v2/independent_ai_review_architecture.md`  
 Effective: 2026-08-13
+
+> 現行#371の出力安全境界は`optional_review_support_contracts.md`に従う。本書は旧自動GitHub Review投稿案の履歴補足である。
 
 ## 1. 目的
 
