@@ -42,12 +42,15 @@ class StreamingSubsystemRuntime:
         moderator: StreamingCommentModerationPort | None = None,
         comment_limit: int = 64,
         reconnect_attempt_limit: int = 2,
+        reconnect_delay_s: float = 0.05,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         if type(comment_limit) is not int or comment_limit < 1:
             raise ValueError("comment_limit が不正です")
         if type(reconnect_attempt_limit) is not int or reconnect_attempt_limit < 1:
             raise ValueError("reconnect_attempt_limit が不正です")
+        if type(reconnect_delay_s) not in {int, float} or not 0 < reconnect_delay_s <= 10:
+            raise ValueError("reconnect_delay_s が不正です")
         self._provider = provider
         self._capability = capability
         self._moderator = moderator
@@ -68,6 +71,7 @@ class StreamingSubsystemRuntime:
         self._tasks: set[asyncio.Task[object]] = set()
         self._comment_worker: asyncio.Task[object] | None = None
         self._reconnect_attempt_limit = reconnect_attempt_limit
+        self._reconnect_delay_s = float(reconnect_delay_s)
         self._stopping = False
 
     async def execute(self, request: StreamingExecutionRequest) -> StreamingExecutionReport:
@@ -117,6 +121,7 @@ class StreamingSubsystemRuntime:
                 "EXECUTION_CANCELLED",
             )
         except RuntimeError:
+            self._lifecycle = StreamingSubsystemLifecycle.DEGRADED
             return self._report(
                 request,
                 StreamingExecutionStatus.PROVIDER_UNAVAILABLE,
@@ -168,6 +173,11 @@ class StreamingSubsystemRuntime:
             self._provider_generations[observation.source_ref] = observation.provider_generation
             self._provider_observed_at[observation.source_ref] = observation.observed_at
             observation = self._reconcile_user_reports(observation)
+        else:
+            observation = replace(
+                observation,
+                reconciliation=StreamingObservationReconciliation.UNRECONCILED,
+            )
         key = (observation.source_kind, observation.source_ref)
         self._observations.setdefault(key, []).append(observation)
         return True
@@ -230,6 +240,7 @@ class StreamingSubsystemRuntime:
         capability = self._capability
         return (
             not self._stopping
+            and self._lifecycle is StreamingSubsystemLifecycle.AVAILABLE
             and capability.available
             and request.capability_id == capability.capability_id
             and request.descriptor_revision == capability.descriptor_revision
@@ -292,13 +303,16 @@ class StreamingSubsystemRuntime:
     async def _run_comment_worker(self) -> None:
         while self._comments and not self._stopping:
             comment = self._comments.popleft()
-            state = StreamingCommentModerationState.ACCEPTED
-            if self._moderator is not None:
-                try:
-                    state = await self._moderator.moderate(comment)
-                except RuntimeError:
-                    self._dropped_comments += 1
-                    continue
+            state = comment.moderation_state
+            if state is StreamingCommentModerationState.PENDING:
+                if self._moderator is None:
+                    state = StreamingCommentModerationState.ACCEPTED
+                else:
+                    try:
+                        state = await self._moderator.moderate(comment)
+                    except RuntimeError:
+                        self._dropped_comments += 1
+                        continue
             if state is not StreamingCommentModerationState.ACCEPTED:
                 continue
             existing = self._comment_signals.get(comment.source_channel_ref)
@@ -332,7 +346,7 @@ class StreamingSubsystemRuntime:
                     return
             except RuntimeError:
                 pass
-            await asyncio.sleep(0)
+            await asyncio.sleep(self._reconnect_delay_s * (_ + 1))
         self._lifecycle = StreamingSubsystemLifecycle.DEGRADED
 
     def _track(self, task: asyncio.Task[object]) -> asyncio.Task[object]:

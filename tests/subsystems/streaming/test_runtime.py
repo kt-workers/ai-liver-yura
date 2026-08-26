@@ -405,13 +405,15 @@ def test_reconnect_requires_a_fresh_capability_snapshot_before_execution_resumes
     async def scenario() -> None:
         provider = ReconnectingProvider()
         runtime = StreamingSubsystemRuntime(
-            provider, capability(available=False), clock=lambda: NOW
+            provider,
+            capability(available=False),
+            reconnect_delay_s=0.001,
+            clock=lambda: NOW,
         )
         absent = await runtime.execute(request())
         assert absent.status is StreamingExecutionStatus.PROVIDER_UNAVAILABLE
         assert runtime.start_reconnect()
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
+        await asyncio.sleep(0.005)
         assert runtime.lifecycle is StreamingSubsystemLifecycle.DEGRADED
         still_unavailable = await runtime.execute(request())
         assert still_unavailable.status is StreamingExecutionStatus.PROVIDER_UNAVAILABLE
