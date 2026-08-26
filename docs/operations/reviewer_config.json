@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "default_model": "gpt-5.6-terra",
+  "preflight_timeout_seconds": 10
+}

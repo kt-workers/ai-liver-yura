@@ -1,3 +1,4 @@
+import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -12,12 +13,14 @@ class FakeRunner:
         self.failed = failed
         self.project_write = project_write
         self.calls: list[tuple[str, ...]] = []
+        self.environments: list[Mapping[str, str] | None] = []
 
     def run(
         self, command: Sequence[str], environment: Mapping[str, str] | None = None
     ) -> CommandResult:
         call = tuple(command)
         self.calls.append(call)
+        self.environments.append(environment)
         if call[:3] == ("gh", "api", "graphql"):
             payload = {"data": {"user": {"projectV2": {"viewerCanUpdate": self.project_write}}}}
             return CommandResult(True, json.dumps(payload))
@@ -29,7 +32,7 @@ class FakeReviewer:
         self.available = available
         self.calls: list[tuple[str, str]] = []
 
-    def check(self, api_key: str, model: str) -> bool:
+    def check(self, api_key: str, model: str, timeout_seconds: float) -> bool:
         self.calls.append((api_key, model))
         return self.available
 
@@ -37,15 +40,22 @@ class FakeReviewer:
 def goal_root(tmp_path: Path) -> Path:
     path = tmp_path / "docs" / "operations"
     path.mkdir(parents=True)
-    (path / "loop_mission_goal.md").write_text("generation: 7\n", encoding="utf-8")
+    content = b"version: 2\ngeneration: 7\nfull mission\n"
+    (path / "loop_mission_goal.md").write_bytes(content)
+    (path / "reviewer_config.json").write_text(
+        '{"default_model":"gpt-5.6-terra"}', encoding="utf-8"
+    )
     return tmp_path
 
 
 def environment() -> dict[str, str]:
     return {
         "OPENAI_API_KEY": "secret",
-        "OPENAI_REVIEWER_MODEL": "reviewer",
         "CODEX_MISSION_GOAL_GENERATION": "7",
+        "CODEX_MISSION_GOAL_VERSION": "2",
+        "CODEX_MISSION_GOAL_SHA256": hashlib.sha256(
+            b"version: 2\ngeneration: 7\nfull mission\n"
+        ).hexdigest(),
     }
 
 
@@ -80,7 +90,7 @@ def test_reviewer_requires_live_probe_not_just_a_key(tmp_path: Path) -> None:
 
     assert not result.capabilities["openai_reviewer"]
     assert "OPENAI_REVIEWER" in result.work_scoped_unavailable
-    assert reviewer.calls == [("secret", "reviewer")]
+    assert reviewer.calls == [("secret", "gpt-5.6-terra")]
     assert "secret" not in result.as_json()
 
 
@@ -107,3 +117,52 @@ def test_goal_generation_mismatch_is_blocking(tmp_path: Path) -> None:
     ).run()
 
     assert "MISSION_GOAL" in result.blocking_for_loop_bootstrap
+
+
+def test_goal_content_hash_mismatch_is_blocking(tmp_path: Path) -> None:
+    env = environment() | {"CODEX_MISSION_GOAL_SHA256": "stale"}
+    result = EnvironmentCapabilityPreflight(
+        FakeRunner(), env, reviewer_probe=FakeReviewer(True), project_root=goal_root(tmp_path)
+    ).run()
+
+    assert "MISSION_GOAL" in result.blocking_for_loop_bootstrap
+
+
+def test_postgresql_probe_preserves_only_path_and_pg_environment(tmp_path: Path) -> None:
+    root = goal_root(tmp_path)
+    env = environment() | {
+        "PATH": "/opt/homebrew/bin:/usr/bin",
+        "LOOP_DATABASE_URL": "postgresql://user:password@db.example/loop",
+    }
+    runner = FakeRunner()
+    EnvironmentCapabilityPreflight(
+        runner, env, reviewer_probe=FakeReviewer(True), project_root=root
+    ).run()
+
+    database_environment = next(
+        environment
+        for call, environment in zip(runner.calls, runner.environments, strict=True)
+        if call == ("pg_isready",)
+    )
+    assert database_environment is not None
+    assert database_environment["PATH"] == "/opt/homebrew/bin:/usr/bin"
+    assert "OPENAI_API_KEY" not in database_environment
+
+
+def test_timeout_becomes_a_typed_diagnostic(tmp_path: Path) -> None:
+    class TimeoutRunner(FakeRunner):
+        def run(
+            self, command: Sequence[str], environment: Mapping[str, str] | None = None
+        ) -> CommandResult:
+            if tuple(command) == ("docker", "version"):
+                return CommandResult(False, timed_out=True)
+            return super().run(command, environment)
+
+    result = EnvironmentCapabilityPreflight(
+        TimeoutRunner(),
+        environment(),
+        reviewer_probe=FakeReviewer(True),
+        project_root=goal_root(tmp_path),
+    ).run()
+
+    assert "DOCKER_TIMEOUT" in result.diagnostics
