@@ -242,6 +242,8 @@ class BodyRealtimeEngine:
                 self._state.blink_elapsed = 0.0
                 cycle = self._sequence + self._seed
                 self._state.next_blink_after_s = 2.0 + (float(cycle % 101) / 100 - 0.5)
+                # 遅延tickで複数周期を見えないまま消費せず、完了した現在blinkで止める。
+                remaining = 0.0
         self._state.blink_phase, self._state.blink_progress = phase, progress
         openness = (
             1.0
@@ -355,7 +357,22 @@ class BodyRealtimeEngine:
                 target = (0.0, 0.0, 0.0, 0.0)
             else:
                 try:
-                    target = articulation_for(unit.symbol, unit.kind)
+                    if unit.kind is SpeechTimingKind.MORA and unit.symbol in {"ー", "ｰ"}:
+                        previous_mora = next(
+                            (
+                                item
+                                for item in reversed(track.units)
+                                if item.end_ms <= unit.start_ms
+                                and item.kind is SpeechTimingKind.MORA
+                                and item.segment_id == unit.segment_id
+                            ),
+                            None,
+                        )
+                        if previous_mora is None:
+                            raise ValueError("先行moraがありません")
+                        target = articulation_for(previous_mora.symbol, previous_mora.kind)
+                    else:
+                        target = articulation_for(unit.symbol, unit.kind)
                 except ValueError:
                     states.append(
                         RealtimeLayerState(

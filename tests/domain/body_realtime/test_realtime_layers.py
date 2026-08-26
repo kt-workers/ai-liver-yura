@@ -270,6 +270,38 @@ def test_late_blink_tick_consumes_phase_overshoot_without_replaying_a_full_blink
     assert detail == "open"
 
 
+def test_very_late_blink_tick_does_not_hidden_catch_up_multiple_blink_cycles() -> None:
+    engine = BodyRealtimeEngine(seed=4)
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=None,
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=None,
+        now=NOW + timedelta(seconds=10),
+        monotonic_now_s=10,
+    )
+    after_late = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=None,
+        now=NOW + timedelta(seconds=10, milliseconds=20),
+        monotonic_now_s=10.02,
+    )
+    detail = next(
+        item.detail for item in after_late.layer_statuses if item.layer is RealtimeLayer.BLINK
+    )
+    assert detail == "open"
+
+
 def test_breath_and_blink_continue_when_speech_is_absent() -> None:
     bundle = BodyRealtimeEngine().tick(
         body_state=_body_state(),
@@ -446,6 +478,50 @@ def test_ordinary_japanese_mora_normalizes_to_canonical_vowel_or_closure() -> No
     assert articulation_for("キャ", SpeechTimingKind.MORA) == pytest.approx((0.9, 0.0, 0.8, 0.0))
     assert articulation_for("カー", SpeechTimingKind.MORA) == pytest.approx((0.9, 0.0, 0.8, 0.0))
     assert articulation_for("ん", SpeechTimingKind.MORA) == pytest.approx((0.0, 0.0, 0.0, 1.0))
+
+
+def test_standalone_long_vowel_mora_keeps_preceding_mora_articulation() -> None:
+    track = SpeechTimingTrack(
+        "timing",
+        "artifact",
+        (
+            SpeechTimingUnit("ka", "segment", SpeechTimingKind.MORA, "か", 0, 100),
+            SpeechTimingUnit("long", "segment", SpeechTimingKind.MORA, "ー", 100, 200),
+        ),
+        NOW,
+        1000,
+    )
+    engine = BodyRealtimeEngine()
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW + timedelta(milliseconds=90),
+        monotonic_now_s=0.09,
+    )
+    long_vowel = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW + timedelta(milliseconds=100),
+        monotonic_now_s=0.1,
+    )
+    assert _status(long_vowel, RealtimeLayer.SPEECH_ARTICULATION) is RealtimeLayerStatus.ACTIVE
+    assert next(
+        item.value
+        for item in long_vowel.channel_overlays
+        if item.channel is RealtimeChannel.MOUTH_OPENNESS
+    ) == pytest.approx(0.9)
 
 
 def test_timing_unavailable_degrades_only_speech_layer_without_fake_mouth_motion() -> None:
