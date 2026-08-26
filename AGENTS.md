@@ -1,5 +1,21 @@
 ## 自律Completion Missionの継続
 
+## GitHub上の人間向けコミュニケーション言語
+
+Issue本文、Issue comment / Checkpoint、PR本文、PR comment / review説明、
+Mission Checkpoint、Resume Certificateは、原則として日本語で記載する。
+
+次は機械的・固有の技術表現なので英語のままでよい。
+
+- status値（`ACTIVE`、`PASS`、`NOT_RUN`、`REQUEST_CHANGES`等）
+- branch名、command、file path、SHA
+- API / class / function / field名
+- machine-readable JSONのkey/value
+- 外部APIが返した原文を引用する必要がある箇所
+
+英語の文章を丸ごと投稿せず、日本語の説明文の中で上記技術語を使う。
+この規則は新規投稿から適用し、既存のGitHub投稿を遡及修正しない。
+
 このリポジトリでAutonomous Completion MissionがACTIVEの場合、
 個別のユーザープロンプトを新しい独立Missionとして扱わない。
 

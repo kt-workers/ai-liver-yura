@@ -1,15 +1,31 @@
 name: V2 Deterministic CI
 
 on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Exact Pull Request number to validate
+        required: true
+        type: string
+      expected_head_sha:
+        description: Exact live PR head SHA expected for this dispatch
+        required: true
+        type: string
   pull_request:
     branches:
       - rebuild/v2-foundation
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
-  group: v2-ci-${{ github.event.pull_request.number }}
+  group: v2-ci-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
   cancel-in-progress: true
 
 env:
@@ -18,16 +34,55 @@ env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
 jobs:
+  resolve-pr-identity:
+    name: resolve-pr-identity
+    runs-on: ubuntu-24.04
+    outputs:
+      pr_number: ${{ steps.resolve.outputs.pr_number }}
+      head_sha: ${{ steps.resolve.outputs.head_sha }}
+      base_sha: ${{ steps.resolve.outputs.base_sha }}
+    steps:
+      - id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EXPECTED_DISPATCH_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -n "$PR_NUMBER"
+          pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
+          head_sha="$(jq -r '.head.sha' <<<"$pr")"
+          base_sha="$(jq -r '.base.sha' <<<"$pr")"
+          base_ref="$(jq -r '.base.ref' <<<"$pr")"
+          test "$base_ref" = "rebuild/v2-foundation"
+          test "$head_sha" != "null"
+          test "$base_sha" != "null"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            test "$head_sha" = "$EVENT_HEAD_SHA"
+            test "$base_sha" = "$EVENT_BASE_SHA"
+          else
+            test -n "$EXPECTED_DISPATCH_HEAD_SHA"
+            test "$head_sha" = "$EXPECTED_DISPATCH_HEAD_SHA"
+          fi
+          {
+            echo "pr_number=$PR_NUMBER"
+            echo "head_sha=$head_sha"
+            echo "base_sha=$base_sha"
+          } >> "$GITHUB_OUTPUT"
+
   quality:
     name: quality
+    needs: resolve-pr-identity
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:
-      - name: Checkout exact PR head
+      - name: Checkout resolved exact PR head
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ needs.resolve-pr-identity.outputs.head_sha }}
           fetch-depth: 0
 
       - name: Set up Python from repository contract
@@ -44,7 +99,7 @@ jobs:
 
       - name: Verify exact head identity
         env:
-          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_HEAD_SHA: ${{ needs.resolve-pr-identity.outputs.head_sha }}
         run: |
           actual_head="$(git rev-parse HEAD)"
           test "$actual_head" = "$EXPECTED_HEAD_SHA"
@@ -66,6 +121,6 @@ jobs:
 
       - name: Check diff whitespace
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ needs.resolve-pr-identity.outputs.base_sha }}
+          HEAD_SHA: ${{ needs.resolve-pr-identity.outputs.head_sha }}
         run: git diff --check "$BASE_SHA...$HEAD_SHA"
