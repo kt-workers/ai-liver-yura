@@ -110,7 +110,9 @@ merge commitは、first parentとtreeが同一という理由だけでempty扱�
 
 reconciliation merge、ancestry記録、既に他parentで導入済みの履歴合流等で正当なmerge commitが存在し得るためである。
 
-merge commitのchanged pathはplaceholder検査対象にできるが、tree equalityだけをempty判定に使わない。
+merge commitのchanged pathは、merge resultとfirst parentの差分としてplaceholder検査対象にする。
+したがって、競合解決またはmerge時の追加stageで初めて導入された禁止pathも
+検出する。tree equalityだけをempty判定に使わない。
 
 ## 8. 禁止placeholder path
 

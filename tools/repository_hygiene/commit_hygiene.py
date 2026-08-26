@@ -66,17 +66,29 @@ def _is_prohibited_path(path: str) -> bool:
 
 
 def _commit_paths(repository: Path, commit_sha: str) -> list[tuple[str, str]]:
-    output = _git(
-        repository,
-        (
+    parents = _git(repository, ("show", "-s", "--format=%P", commit_sha)).split()
+    arguments: tuple[str, ...]
+    if parents:
+        arguments = (
+            "diff-tree",
+            "--no-commit-id",
+            "--name-status",
+            "-r",
+            parents[0],
+            commit_sha,
+        )
+    else:
+        arguments = (
             "diff-tree",
             "--root",
             "--no-commit-id",
             "--name-status",
             "-r",
-            "--first-parent",
             commit_sha,
-        ),
+        )
+    output = _git(
+        repository,
+        arguments,
     )
     paths: list[tuple[str, str]] = []
     for line in output.splitlines():

@@ -113,6 +113,27 @@ def test_merge_commit_is_not_empty_only_from_first_parent_tree(repository: Path)
     assert inspect_commit_range(repository, base, head) == []
 
 
+def test_merge_commit_specific_placeholder_path_is_rejected(repository: Path) -> None:
+    base = _git(repository, "rev-parse", "HEAD")
+    _git(repository, "checkout", "-b", "topic")
+    _commit(repository, "topic.md", "topic\n", "topic変更")
+    _git(repository, "checkout", "main")
+    _commit(repository, "main.md", "main\n", "main変更")
+    _git(repository, "merge", "--no-ff", "--no-commit", "topic")
+    (repository / "NOOP").write_text("temporary\n", encoding="utf-8")
+    _git(repository, "add", "NOOP")
+    _git(repository, "commit", "-m", "履歴合流時の誤追加")
+    head = _git(repository, "rev-parse", "HEAD")
+
+    findings = inspect_commit_range(repository, base, head)
+
+    assert [finding.reason_code for finding in findings] == [
+        "prohibited_placeholder_path",
+    ]
+    assert findings[0].commit_sha == head
+    assert findings[0].path == "NOOP"
+
+
 def test_invalid_revision_has_invocation_exit_two(repository: Path) -> None:
     base = _git(repository, "rev-parse", "HEAD")
 
