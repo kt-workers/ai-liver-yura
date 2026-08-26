@@ -150,10 +150,11 @@ class BodyRealtimeEngine:
         elapsed: float,
     ) -> None:
         if target is None or not target.has_spatial_target:
-            release = min(1.0, elapsed * 8.0)
-            self._state.gaze_x += (0.0 - self._state.gaze_x) * release
-            self._state.gaze_y += (0.0 - self._state.gaze_y) * release
-            self._state.gaze_strength += (0.0 - self._state.gaze_strength) * release
+            self._state.gaze_x = self._approach_gaze(self._state.gaze_x, 0.0, elapsed)
+            self._state.gaze_y = self._approach_gaze(self._state.gaze_y, 0.0, elapsed)
+            self._state.gaze_strength = self._approach_gaze(
+                self._state.gaze_strength, 0.0, elapsed
+            )
             if abs(self._state.gaze_x) > 1e-6 or abs(self._state.gaze_y) > 1e-6:
                 self._add(
                     overlays,
@@ -182,10 +183,15 @@ class BodyRealtimeEngine:
                 )
             )
             return
-        step = min(1.0, elapsed * 8.0)
-        self._state.gaze_x += (target.horizontal - self._state.gaze_x) * step  # type: ignore[operator]
-        self._state.gaze_y += (target.vertical - self._state.gaze_y) * step  # type: ignore[operator]
-        self._state.gaze_strength += (target.confidence - self._state.gaze_strength) * step
+        self._state.gaze_x = self._approach_gaze(
+            self._state.gaze_x, target.horizontal, elapsed  # type: ignore[arg-type]
+        )
+        self._state.gaze_y = self._approach_gaze(
+            self._state.gaze_y, target.vertical, elapsed  # type: ignore[arg-type]
+        )
+        self._state.gaze_strength = self._approach_gaze(
+            self._state.gaze_strength, target.confidence, elapsed
+        )
         self._add(
             overlays,
             RealtimeLayer.GAZE,
@@ -205,6 +211,13 @@ class BodyRealtimeEngine:
         states.append(
             RealtimeLayerState(RealtimeLayer.GAZE, RealtimeLayerStatus.ACTIVE, target.target_ref)
         )
+
+    @staticmethod
+    def _approach_gaze(current: float, target: float, elapsed: float) -> float:
+        """遅延tickでも一frameで視線位置を飛ばさないbounded low-pass。"""
+        proposed_delta = (target - current) * min(0.25, elapsed * 8.0)
+        bounded_delta = max(-0.12, min(0.12, proposed_delta))
+        return current + bounded_delta
 
     def _blink(
         self, overlays: list[ChannelOverlay], states: list[RealtimeLayerState], elapsed: float
@@ -313,16 +326,7 @@ class BodyRealtimeEngine:
         if speech is None:
             self._state.speech_presentation_id = None
             self._state.speech_monotonic_anchor_s = None
-            blend = min(1.0, elapsed * 20.0)
-            openness, roundness, jaw, closure = self._state.articulation
-            self._state.articulation = (
-                openness * (1.0 - blend),
-                roundness * (1.0 - blend),
-                jaw * (1.0 - blend),
-                closure * (1.0 - blend),
-            )
-            if any(abs(value) > 1e-6 for value in self._state.articulation):
-                self._add_articulation_overlays(overlays)
+            if self._fade_articulation(overlays, elapsed):
                 states.append(
                     RealtimeLayerState(
                         RealtimeLayer.SPEECH_ARTICULATION,
@@ -339,6 +343,9 @@ class BodyRealtimeEngine:
             return
         track = speech.timing_track
         if track is None:
+            self._state.speech_presentation_id = speech.presentation.presentation_id
+            self._state.speech_monotonic_anchor_s = speech.presentation_monotonic_started_at_s
+            self._fade_articulation(overlays, elapsed)
             states.append(
                 RealtimeLayerState(
                     RealtimeLayer.SPEECH_ARTICULATION,
@@ -373,6 +380,7 @@ class BodyRealtimeEngine:
                     else:
                         target = articulation_for(unit.symbol, unit.kind)
                 except ValueError:
+                    self._fade_articulation(overlays, elapsed)
                     states.append(
                         RealtimeLayerState(
                             RealtimeLayer.SPEECH_ARTICULATION,
@@ -399,6 +407,20 @@ class BodyRealtimeEngine:
                 speech.presentation.presentation_id,
             )
         )
+
+    def _fade_articulation(self, overlays: list[ChannelOverlay], elapsed: float) -> bool:
+        blend = min(1.0, elapsed * 20.0)
+        openness, roundness, jaw, closure = self._state.articulation
+        self._state.articulation = (
+            openness * (1.0 - blend),
+            roundness * (1.0 - blend),
+            jaw * (1.0 - blend),
+            closure * (1.0 - blend),
+        )
+        if not any(abs(value) > 1e-6 for value in self._state.articulation):
+            return False
+        self._add_articulation_overlays(overlays)
+        return True
 
     def _add_articulation_overlays(self, overlays: list[ChannelOverlay]) -> None:
         openness, roundness, jaw, closure = self._state.articulation

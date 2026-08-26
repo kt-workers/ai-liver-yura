@@ -247,11 +247,38 @@ def test_gaze_confidence_changes_are_smoothed_with_the_spatial_target() -> None:
         item.strength for item in first.channel_overlays if item.channel is RealtimeChannel.GAZE_X
     )
     reduced_strength = next(
-        item.strength
-        for item in reduced.channel_overlays
-        if item.channel is RealtimeChannel.GAZE_X
+        item.strength for item in reduced.channel_overlays if item.channel is RealtimeChannel.GAZE_X
     )
     assert 0 < reduced_strength < first_strength
+
+
+def test_late_gaze_tick_has_bounded_displacement_without_snap() -> None:
+    engine = BodyRealtimeEngine()
+    initial = BodyGazeTargetView("first", -1.0, 0.0, 5, "attention", 1.0, NOW)
+    first = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=initial,
+        speech=None,
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    retargeted = BodyGazeTargetView("second", 1.0, 0.0, 6, "attention", 1.0, NOW)
+    late = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=retargeted,
+        speech=None,
+        now=NOW + timedelta(milliseconds=200),
+        monotonic_now_s=0.2,
+    )
+    first_x = next(
+        item.value for item in first.channel_overlays if item.channel is RealtimeChannel.GAZE_X
+    )
+    late_x = next(
+        item.value for item in late.channel_overlays if item.channel is RealtimeChannel.GAZE_X
+    )
+    assert 0 < late_x - first_x <= 0.12
 
 
 def test_late_blink_tick_consumes_phase_overshoot_without_replaying_a_full_blink() -> None:
@@ -668,6 +695,91 @@ def test_presentation_end_fades_retained_articulation_before_releasing_speech_so
     assert _status(ended, RealtimeLayer.SPEECH_ARTICULATION) is RealtimeLayerStatus.ACTIVE
 
 
+def test_new_presentation_without_timing_releases_prior_articulation_in_its_degraded_frame() -> (
+    None
+):
+    track = SpeechTimingTrack(
+        "timing",
+        "artifact",
+        (SpeechTimingUnit("a", "segment", SpeechTimingKind.VISEME, "A", 0, 100),),
+        NOW,
+        1000,
+    )
+    engine = BodyRealtimeEngine()
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW + timedelta(milliseconds=90),
+        monotonic_now_s=0.09,
+    )
+    unavailable = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=None),
+        now=NOW + timedelta(milliseconds=100),
+        monotonic_now_s=0.1,
+    )
+    assert _status(unavailable, RealtimeLayer.SPEECH_ARTICULATION) is RealtimeLayerStatus.DEGRADED
+    assert any(
+        item.channel is RealtimeChannel.MOUTH_OPENNESS for item in unavailable.channel_overlays
+    )
+
+
+def test_unsupported_timing_symbol_fades_retained_articulation_while_degrading() -> None:
+    track = SpeechTimingTrack(
+        "timing",
+        "artifact",
+        (
+            SpeechTimingUnit("a", "segment", SpeechTimingKind.VISEME, "A", 0, 100),
+            SpeechTimingUnit(
+                "unknown", "segment", SpeechTimingKind.PHONEME, "unsupported", 100, 200
+            ),
+        ),
+        NOW,
+        1000,
+    )
+    engine = BodyRealtimeEngine()
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW,
+        monotonic_now_s=0,
+    )
+    engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW + timedelta(milliseconds=90),
+        monotonic_now_s=0.09,
+    )
+    unsupported = engine.tick(
+        body_state=_body_state(),
+        expression=None,
+        gaze_target=None,
+        speech=_speech(timing=track),
+        now=NOW + timedelta(milliseconds=100),
+        monotonic_now_s=0.1,
+    )
+    assert _status(unsupported, RealtimeLayer.SPEECH_ARTICULATION) is RealtimeLayerStatus.DEGRADED
+    assert any(
+        item.channel is RealtimeChannel.MOUTH_OPENNESS for item in unsupported.channel_overlays
+    )
+
+
 def test_articulation_blends_at_timing_unit_boundary_and_fades_in_gap() -> None:
     track = SpeechTimingTrack(
         "timing",
@@ -779,11 +891,14 @@ def test_speech_timeline_uses_started_monotonic_reference_without_wall_clock_off
         monotonic_now_s=100,
     )
     assert _status(bundle, RealtimeLayer.SPEECH_ARTICULATION) is RealtimeLayerStatus.ACTIVE
-    assert next(
-        item.value
-        for item in bundle.channel_overlays
-        if item.channel is RealtimeChannel.MOUTH_ROUNDNESS
-    ) < 0
+    assert (
+        next(
+            item.value
+            for item in bundle.channel_overlays
+            if item.channel is RealtimeChannel.MOUTH_ROUNDNESS
+        )
+        < 0
+    )
 
 
 def test_word_boundary_fades_articulation_to_neutral_without_dropping_overlays() -> None:
