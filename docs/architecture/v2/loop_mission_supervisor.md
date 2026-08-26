@@ -603,7 +603,9 @@ invariant:
 
 ## 17. Ports and implementation boundary
 
-#465 の実装は `app/operations` 配下の production runtime 非依存 tooling とする。
+#465 の実装は `tools/loop_engine/` 配下の production runtime 非依存 tooling
+とする。`tools/loop_engine/` が唯一の正規implementation packageであり、
+`app/operations/mission_supervisor.py` を含む `app/` 配下の配置は許可しない。
 
 期待する logical components:
 
