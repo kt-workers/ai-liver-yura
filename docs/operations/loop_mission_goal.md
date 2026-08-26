@@ -1,7 +1,7 @@
 # AI Liver ゆら V2 Autonomous Completion Loop Mission
 
-version: 2
-generation: 3
+version: 3
+generation: 4
 
 ## Mission
 
@@ -16,6 +16,9 @@ Never embed a fixed PR number or HEAD in this Goal; obtain them from the latest
 - Repository canonical design and the selected Work Issue define design intent.
 - Codex is implementer; the OpenAI Responses API reviewer is independent and
   never receives GitHub write credentials or rewrites an implementation branch.
+- The trusted reviewer boundary is defined in
+  `docs/architecture/v2/trusted_host_reviewer_boundary.md`. Reviewer credentials
+  are never available to Codex or a reviewed checkout.
 - Secrets, tokens, request headers, database URLs, and raw provider failures do
   not enter repository files, Issues, PRs, checkpoints, or ordinary logs.
 

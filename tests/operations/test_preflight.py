@@ -30,10 +30,10 @@ class FakeRunner:
 class FakeReviewer:
     def __init__(self, available: bool) -> None:
         self.available = available
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[str] = []
 
-    def check(self, api_key: str, model: str, timeout_seconds: float) -> bool:
-        self.calls.append((api_key, model))
+    def check(self, socket_path: str, timeout_seconds: float) -> bool:
+        self.calls.append(socket_path)
         return self.available
 
 
@@ -42,15 +42,12 @@ def goal_root(tmp_path: Path) -> Path:
     path.mkdir(parents=True)
     content = b"version: 2\ngeneration: 7\nfull mission\n"
     (path / "loop_mission_goal.md").write_bytes(content)
-    (path / "reviewer_config.json").write_text(
-        '{"default_model":"gpt-5.6-terra"}', encoding="utf-8"
-    )
     return tmp_path
 
 
 def environment() -> dict[str, str]:
     return {
-        "OPENAI_API_KEY": "secret",
+        "YURA_TRUSTED_REVIEWER_SOCKET": "/private/tmp/yura-reviewer.sock",
         "CODEX_MISSION_GOAL_GENERATION": "7",
         "CODEX_MISSION_GOAL_VERSION": "2",
         "CODEX_MISSION_GOAL_SHA256": hashlib.sha256(
@@ -82,16 +79,17 @@ def test_project_write_denial_blocks_without_project_mutation(tmp_path: Path) ->
     assert "GITHUB_PROJECT_WRITE" in result.blocking_for_loop_bootstrap
 
 
-def test_reviewer_requires_live_probe_not_just_a_key(tmp_path: Path) -> None:
+def test_reviewer_requires_trusted_broker_and_never_receives_reviewer_key(tmp_path: Path) -> None:
     reviewer = FakeReviewer(False)
+    env = environment() | {"OPENAI_API_KEY_REVIEWER": "reviewer-secret"}
     result = EnvironmentCapabilityPreflight(
-        FakeRunner(), environment(), reviewer_probe=reviewer, project_root=goal_root(tmp_path)
+        FakeRunner(), env, reviewer_probe=reviewer, project_root=goal_root(tmp_path)
     ).run()
 
     assert not result.capabilities["openai_reviewer"]
     assert "OPENAI_REVIEWER" in result.work_scoped_unavailable
-    assert reviewer.calls == [("secret", "gpt-5.6-terra")]
-    assert "secret" not in result.as_json()
+    assert reviewer.calls == ["/private/tmp/yura-reviewer.sock"]
+    assert "reviewer-secret" not in result.as_json()
 
 
 def test_postgresql_separates_client_server_database_and_migration(tmp_path: Path) -> None:
@@ -146,7 +144,21 @@ def test_postgresql_probe_preserves_only_path_and_pg_environment(tmp_path: Path)
     )
     assert database_environment is not None
     assert database_environment["PATH"] == "/opt/homebrew/bin:/usr/bin"
-    assert "OPENAI_API_KEY" not in database_environment
+    assert "OPENAI_API_KEY_REVIEWER" not in database_environment
+
+
+def test_postgresql_malformed_port_fails_closed_and_remains_secret_safe(tmp_path: Path) -> None:
+    env = environment() | {
+        "LOOP_DATABASE_URL": "postgresql://user:database-secret@db.example:not-a-port/loop"
+    }
+    result = EnvironmentCapabilityPreflight(
+        FakeRunner(), env, reviewer_probe=FakeReviewer(True), project_root=goal_root(tmp_path)
+    ).run()
+
+    assert not result.capabilities["postgresql_server"]
+    assert not result.capabilities["postgresql_database"]
+    assert not result.capabilities["postgresql_migration"]
+    assert "database-secret" not in result.as_json()
 
 
 def test_timeout_becomes_a_typed_diagnostic(tmp_path: Path) -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import socket
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
@@ -58,25 +59,31 @@ class SubprocessCommandRunner:
         return CommandResult(result.returncode == 0, result.stdout)
 
 
-class ReviewerProbe(Protocol):
-    def check(self, api_key: str, model: str, timeout_seconds: float) -> bool: ...
+class TrustedReviewerBrokerProbe(Protocol):
+    """Checks a non-secret health endpoint owned by the trusted host broker."""
+
+    def check(self, socket_path: str, timeout_seconds: float) -> bool: ...
 
 
-class OpenAIResponsesReviewerProbe:
-    """Checks both configured model access and a bounded Responses API request."""
+class UnixSocketTrustedReviewerBrokerProbe:
+    """Uses a bounded, credential-free request to the host-side broker."""
 
-    def check(self, api_key: str, model: str, timeout_seconds: float) -> bool:
+    _MAX_RESPONSE_BYTES = 4096
+
+    def check(self, socket_path: str, timeout_seconds: float) -> bool:
         try:
-            from openai import OpenAI
-
-            client = OpenAI(api_key=api_key, timeout=timeout_seconds, max_retries=0)
-            client.models.retrieve(model)
-            client.responses.create(
-                model=model, input="preflight health check", max_output_tokens=16
-            )
-        except Exception:  # Provider errors may carry credential or request details.
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+                connection.settimeout(timeout_seconds)
+                connection.connect(socket_path)
+                connection.sendall(b'{"action":"health"}\n')
+                response = connection.recv(self._MAX_RESPONSE_BYTES)
+        except (OSError, TimeoutError):
             return False
-        return True
+        try:
+            payload = json.loads(response.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        return isinstance(payload, dict) and payload == {"availability": "PASS"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,12 +113,12 @@ class EnvironmentCapabilityPreflight:
         runner: CommandRunner,
         environment: Mapping[str, str] | None = None,
         *,
-        reviewer_probe: ReviewerProbe | None = None,
+        reviewer_probe: TrustedReviewerBrokerProbe | None = None,
         project_root: Path | None = None,
     ) -> None:
         self._runner = runner
         self._environment = environment if environment is not None else os.environ
-        self._reviewer_probe = reviewer_probe or OpenAIResponsesReviewerProbe()
+        self._reviewer_probe = reviewer_probe or UnixSocketTrustedReviewerBrokerProbe()
         self._project_root = project_root or Path.cwd()
         self._timeouts: list[str] = []
 
@@ -196,9 +203,8 @@ class EnvironmentCapabilityPreflight:
             return False
 
     def _reviewer_available(self) -> bool:
-        key = self._environment.get("OPENAI_API_KEY")
-        model = self._reviewer_model()
-        return bool(key and model and self._reviewer_probe.check(key, model, 10.0))
+        socket_path = self._environment.get("YURA_TRUSTED_REVIEWER_SOCKET")
+        return bool(socket_path and self._reviewer_probe.check(socket_path, 10.0))
 
     def _postgresql_capabilities(self) -> dict[str, bool]:
         url = self._environment.get("LOOP_DATABASE_URL")
@@ -215,10 +221,18 @@ class EnvironmentCapabilityPreflight:
                 "postgresql_database": False,
                 "postgresql_migration": False,
             }
+        try:
+            port = parsed.port
+        except ValueError:
+            return {
+                "postgresql_server": False,
+                "postgresql_database": False,
+                "postgresql_migration": False,
+            }
         database_env = {
             "PATH": self._environment.get("PATH", os.defpath),
             "PGHOST": parsed.hostname,
-            "PGPORT": str(parsed.port or 5432),
+            "PGPORT": str(port or 5432),
             "PGUSER": parsed.username or "",
             "PGPASSWORD": parsed.password or "",
             "PGDATABASE": parsed.path.lstrip("/"),
@@ -257,14 +271,6 @@ class EnvironmentCapabilityPreflight:
             and f"version: {version}" in lines
             and hashlib.sha256(content).hexdigest() == content_hash
         )
-
-    def _reviewer_model(self) -> str | None:
-        config = self._project_root / "docs" / "operations" / "reviewer_config.json"
-        try:
-            model = json.loads(config.read_text(encoding="utf-8"))["default_model"]
-        except (OSError, KeyError, TypeError, json.JSONDecodeError):
-            return None
-        return model if isinstance(model, str) and model else None
 
     def _run(
         self, name: str, command: Sequence[str], environment: Mapping[str, str] | None = None

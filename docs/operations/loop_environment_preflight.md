@@ -44,7 +44,7 @@ when only work-scoped capabilities are unavailable, otherwise `PASS`.
 | GitHub repository write | `git push --dry-run` | bootstrap blocking |
 | Project #7 read | `gh project view`, `field-list`, `item-list` | bootstrap blocking |
 | Project #7 write | GraphQL `viewerCanUpdate` read-only query | bootstrap blocking |
-| OpenAI reviewer | configured-model lookup + bounded Responses API health request | work scoped |
+| OpenAI reviewer | trusted host brokerへのbounded health request | work scoped |
 | PostgreSQL client | `psql --version` | work scoped |
 | PostgreSQL server / database | `pg_isready`, then `SELECT 1` using secret-only process environment | work scoped |
 | PostgreSQL migration | `alembic current` only when `alembic.ini` exists | work scoped |
@@ -79,32 +79,19 @@ prints nor persists a credential. After VS Code creates a fresh Codex process,
 run normal Preflight; no manual `export`, `gh auth login`, or `gh auth refresh`
 is part of the flow.
 
-## One-shot independent reviewer
+## Trusted host independent reviewer
 
 The optional canonical review is deliberately separate from normal Preflight.
-Run it only after live PR/CI identity has been verified:
+Its complete authority boundary is [Trusted Host Reviewer Boundary](../architecture/v2/trusted_host_reviewer_boundary.md).
 
-```text
-python scripts/launch-codex-v2.py \
-  --canonical-review-pr 464 \
-  --expected-head <exact-current-head-sha>
-```
+The target checkout never imports a reviewer client or receives
+`OPENAI_API_KEY_REVIEWER`. It may receive only the non-secret
+`YURA_TRUSTED_REVIEWER_SOCKET`, and Preflight uses that path for a bounded
+health request. The trusted host broker, outside every target checkout, owns
+credential validation, model lookup, bounded Responses API health check, live
+PR identity/diff retrieval, review invocation, and result validation. It must
+independently bind and recheck the exact HEAD, return `NOT_RUN` for a stale
+target, and never pass GitHub write or database credentials to the reviewer.
 
-For this mode only, the launcher reads already-injected
-`OPENAI_API_KEY_REVIEWER` and passes it solely to the reviewer subprocess as
-`OPENAI_API_KEY`.
-That subprocess receives an explicit environment containing only `PATH`,
-`OPENAI_API_KEY`, the repository-owned reviewer model/config, and non-secret
-review context on stdin. It receives neither `GH_TOKEN`/`GITHUB_TOKEN`, any
-GitHub write credential, database credential, nor inherited parent secrets.
-
-Before starting, the launcher reads the live PR and rejects an expected/head
-mismatch as `NOT_RUN` / `STALE_TARGET`. The reviewer performs configured-model
-lookup plus a bounded Responses API health request before the bounded review
-request. A missing injected reviewer credential returns `NOT_RUN` /
-`OPENAI_CREDENTIAL_UNAVAILABLE`; it does not consume a review attempt. After
-the subprocess returns, the launcher rereads the live PR head and discards any
-result as `STALE_TARGET` if it changed. The only emitted result is bounded
-JSON with `review_status`, target SHA, verdict, and sanitized findings; no
-credential, raw provider response, request header, or command stderr is
-printed or persisted.
+The launcher uses only the host-injected `GH_TOKEN` for GitHub/VS Code. It
+does not read `.env`, retrieve reviewer credentials, or start reviewer code.
