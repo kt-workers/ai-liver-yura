@@ -385,7 +385,7 @@ ResumeCertificate
 - observation_id
 ```
 
-`conflicts` が 1 件でも unresolved なら `STOP`。
+Mission-wide Authority conflict が 1 件でも unresolved なら `STOP`。ただしWork固有の lineage / checkpoint / CI / review conflict は、そのWorkだけを候補から除外してreconcileする。無関係なWorkの stale / unknown lineage が、independentかつdependency-readyな actionable Work の継続を停止させてはならない。候補全件がWork固有conflictで除外された場合だけ、Task Packetを生成せず外部state待ちとして扱う。
 
 `PASS` は「品質が最終完了した」意味ではなく、「この exact state から next action を安全に開始できる」ことだけを表す。
 
@@ -541,6 +541,8 @@ Write Gate:
 2. expected preconditions と比較
 3. mismatch があれば mutation せず `STALE_WRITE_GATE`
 4. re-observe / reconcile
+
+GitHub publisherを含むすべてのProject #7 mutationは、対象Project / item / field / option identityを独立したfresh readbackで再確認してからだけ実行する。mutation後は同じowned fieldのeffect readbackを必須化し、不一致なら成功を返さず`MUTATION_EFFECT_MISMATCH`としてfail-closedにする。item addも同じprecondition/effect readback境界に含める。
 5. PASS 時のみ adapter へ mutation を許可
 6. mutation 後に readback し effect を確認
 

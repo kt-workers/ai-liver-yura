@@ -123,30 +123,59 @@ class FakeRunner:
     def __init__(self, *, existing: bool = False) -> None:
         self.commands: list[tuple[str, ...]] = []
         self.existing = existing
+        self.item_added = existing
+        self.edit_count = 0
 
     def run(self, args: Sequence[str]) -> str:
         command = tuple(args)
         self.commands.append(command)
-        if command[:3] == ("gh", "issue", "list"):
+        if command[:2] == ("gh", "api"):
             if not self.existing:
-                return "[]"
+                return "[[]]"
             candidate = _candidate()
             return json.dumps(
-                [
+                [[
                     {
                         "number": 501,
                         "url": "https://github.com/ktan514/ai-liver-yura/issues/501",
                         "body": marker(candidate.improvement_key),
                     }
-                ]
+                ]]
             )
         if command[:3] == ("gh", "issue", "create"):
             return "https://github.com/ktan514/ai-liver-yura/issues/502\n"
         if command[:4] == ("gh", "project", "view", "7"):
             return '{"id":"PVT7"}'
         if command[:4] == ("gh", "project", "item-list", "7"):
-            return '{"items":[]}'
+            if not self.item_added:
+                return '{"items":[]}'
+            number = 501 if self.existing else 502
+            values: list[dict[str, object]] = []
+            if self.edit_count >= 6:
+                values = [
+                    {"field": {"name": "Status"}, "name": "Ready"},
+                    {"field": {"name": "Priority"}, "name": "P1"},
+                    {"field": {"name": "Area"}, "name": "Subsystem/Development Tooling"},
+                    {"field": {"name": "Issue level"}, "name": "Work"},
+                    {"field": {"name": "Start date"}, "date": "2026-08-27"},
+                    {"field": {"name": "Target date"}, "date": "2026-08-31"},
+                ]
+            return json.dumps(
+                {
+                    "items": [
+                        {
+                            "id": "ITEM7",
+                            "content": {
+                                "url": "https://github.com/ktan514/ai-liver-yura/issues/"
+                                f"{number}",
+                            },
+                            "fieldValues": values,
+                        }
+                    ]
+                }
+            )
         if command[:4] == ("gh", "project", "item-add", "7"):
+            self.item_added = True
             return '{"id":"ITEM7"}'
         if command[:4] == ("gh", "project", "field-list", "7"):
             return json.dumps(
@@ -183,6 +212,7 @@ class FakeRunner:
                 }
             )
         if command[:3] == ("gh", "project", "item-edit"):
+            self.edit_count += 1
             return ""
         raise AssertionError(command)
 
@@ -194,6 +224,7 @@ def test_publisher_creates_loop_issue_and_project_7_fields() -> None:
     assert result.issue_number == 502
     flat = "\n".join(" ".join(command) for command in runner.commands)
     assert "gh issue create" in flat
+    assert "gh api --paginate --slurp" in flat
     assert "--label loop-engineering" in flat
     assert "gh project view 7" in flat
     assert "gh project item-add 7" in flat
@@ -206,7 +237,52 @@ def test_publisher_reuses_existing_open_issue_and_repairs_project() -> None:
     assert not result.created
     assert result.issue_number == 501
     assert not any(command[:3] == ("gh", "issue", "create") for command in runner.commands)
-    assert any(command[:4] == ("gh", "project", "item-add", "7") for command in runner.commands)
+    assert not any(command[:4] == ("gh", "project", "item-add", "7") for command in runner.commands)
+
+
+class PagedMarkerRunner(FakeRunner):
+    def run(self, args: Sequence[str]) -> str:
+        command = tuple(args)
+        if command[:2] == ("gh", "api"):
+            candidate = _candidate()
+            return json.dumps(
+                [
+                    [],
+                    [
+                        {
+                            "number": 601,
+                            "url": "https://github.com/ktan514/ai-liver-yura/issues/601",
+                            "body": marker(candidate.improvement_key),
+                        }
+                    ],
+                ]
+            )
+        return super().run(args)
+
+
+def test_publisher_searches_all_paginated_issue_pages_for_marker() -> None:
+    found = GitHubImprovementIssuePublisher(PagedMarkerRunner())._find_open_issue(
+        _candidate().improvement_key
+    )
+    assert found == (601, "https://github.com/ktan514/ai-liver-yura/issues/601")
+
+
+class MismatchedReadbackRunner(FakeRunner):
+    def run(self, args: Sequence[str]) -> str:
+        command = tuple(args)
+        value = super().run(args)
+        if command[:4] == ("gh", "project", "item-list", "7") and self.edit_count >= 6:
+            payload = json.loads(value)
+            payload["items"][0]["fieldValues"][0]["name"] = "Blocked"
+            return json.dumps(payload)
+        return value
+
+
+def test_publisher_fails_closed_when_project_effect_readback_mismatches() -> None:
+    with pytest.raises(ValueError, match="MUTATION_EFFECT_MISMATCH"):
+        GitHubImprovementIssuePublisher(MismatchedReadbackRunner()).publish(
+            improvement_intent(_candidate())
+        )
 
 
 def test_publisher_hard_rejects_project_6() -> None:

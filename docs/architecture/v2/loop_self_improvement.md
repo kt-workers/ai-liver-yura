@@ -110,7 +110,7 @@ Issue本文へ次のdurable markerを埋め込む。
 <!-- loop-improvement-key:<sha256> -->
 ```
 
-同じkeyのopen `loop-engineering` Issueが存在する場合、新Issueを作らない。
+同じkeyのopen `loop-engineering` Issueが存在する場合、新Issueを作らない。publisherは先頭固定件数ではなく、GitHub paginationを最後まで走査してdurable markerを探索する。
 Checkpointですでに同じkeyをdispatch済みの場合も同一observationから重複生成しない。
 
 closed Issueの原因が後に再発した場合は新しいrun evidenceとして再作成を許可する。
@@ -143,11 +143,14 @@ ImprovementCandidate
 → Project #7 item add / reuse
 → live field / option ID resolve
 → Ready / Priority / Area / Work / Start / Target
-→ readback / next Observation
+→ fresh Write Gate
+→ mutation
+→ owned field effect readback / next Observation
 ```
 
 Project #6およびProject #7以外はhard rejectする。
 Project field/option IDをcache・固定値として保持しない。
+Project mutationの直前にはproject / item / field / option identityをfresh readbackし、mutation後にはitem field value effectをreadbackする。不一致時に`project_configured=True`を返してはならない。
 
 初期Project値:
 
@@ -194,10 +197,12 @@ Self-Improvement publisher失敗をMission completionと扱わない。
 - 2回目の同一Human InterventionでP0改善candidateが生成される
 - repeated failure threshold到達でMissionを止めずcandidate生成
 - same open improvement keyを重複作成しない
+- pagination後方にあるdurable markerも見落とさない
 - 1run最大3candidate
 - Issue本文にdurable keyとStart/Targetを持つ
 - `loop-engineering`ラベルでIssue作成
 - Project #7へlive ID解決後にReady/Priority/Area/Work/Start/Targetを設定
+- Project mutation前のfresh Write Gateとmutation後effect readback
 - Project #6をhard reject
 - product `app/**`非依存
 - generated improvement Workを通常Schedulerが選択可能

@@ -18,7 +18,7 @@ from .models import (
     WriteGateResult,
     WriteIntent,
 )
-from .reconciliation import reconcile
+from .reconciliation import reconcile, reconcile_global, reconcile_work
 from .scheduler import canonical_lineage, is_duplicate, schedule_key, select_work
 from .write_gate import validate
 
@@ -56,10 +56,16 @@ class MissionSupervisor:
         )
 
     def _decide_primary(self, epoch: ObservationEpoch) -> SupervisorDecision:
-        conflicts = self.reconcile(epoch)
-        selected = None if conflicts else select_work(epoch)
-        certificate = self._certificate(epoch, selected, conflicts)
-        if conflicts:
+        global_conflicts = reconcile_global(epoch)
+        eligible = tuple(
+            work
+            for work in epoch.works
+            if not reconcile_work(epoch, work.issue_number)
+        )
+        selectable_epoch = replace(epoch, works=eligible)
+        selected = None if global_conflicts else select_work(selectable_epoch)
+        certificate = self._certificate(epoch, selected, global_conflicts)
+        if global_conflicts:
             return SupervisorDecision(
                 epoch.observation_id,
                 RunDisposition.INTERVENTION_REQUIRED,
@@ -77,8 +83,8 @@ class MissionSupervisor:
             return SupervisorDecision(
                 epoch.observation_id, disposition, None, certificate, None, False
             )
-        key = schedule_key(epoch, selected, "IMPLEMENT")
-        if is_duplicate(epoch, key):
+        key = schedule_key(selectable_epoch, selected, "IMPLEMENT")
+        if is_duplicate(selectable_epoch, key):
             return SupervisorDecision(
                 epoch.observation_id,
                 RunDisposition.YIELD_EXTERNAL,
@@ -92,7 +98,7 @@ class MissionSupervisor:
             RunDisposition.CONTINUE,
             selected.issue_number,
             certificate,
-            self._packet(epoch, selected, key),
+            self._packet(selectable_epoch, selected, key),
             False,
         )
 
