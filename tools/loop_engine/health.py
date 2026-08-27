@@ -113,14 +113,16 @@ def plan_improvements(
     planning_date: date,
     max_candidates: int = 3,
 ) -> tuple[ImprovementCandidate, ...]:
-    """Create bounded, deterministic, open-issue-deduped improvement candidates."""
+    """Create bounded, deterministic, repairable improvement candidates."""
     if max_candidates < 1:
         return ()
 
-    open_keys = {
-        item.improvement_key for item in existing_issues if item.state.lower() == "open"
+    completed_open_keys = {
+        item.improvement_key
+        for item in existing_issues
+        if item.state.lower() == "open" and item.project_configured
     }
-    suppressed = open_keys | set(checkpoint_keys)
+    suppressed = completed_open_keys | set(checkpoint_keys)
     candidates: list[ImprovementCandidate] = []
 
     for event in sorted(events, key=_event_rank):
@@ -170,6 +172,7 @@ def render_issue_body(candidate: ImprovementCandidate) -> str:
     evidence = "\n".join(f"- `{item}`" for item in candidate.evidence_refs) or "- なし"
     return (
         f"{marker(candidate.improvement_key)}\n\n"
+        "Parent: #462\nMission: #450\nIssue level: Work\n\n"
         "## 自動生成元\n\n"
         "Loop Engineering Self-Improvement Laneが通常run中のtyped health evidenceから"
         "生成した改善Workです。\n\n"
