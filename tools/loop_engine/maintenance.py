@@ -49,7 +49,8 @@ class SelfImprovementController:
             try:
                 published.append(self.publisher.publish(improvement_intent(candidate)))
             except Exception:
-                # Raw exception text can contain command/provider details. Keep only a stable reason.
+                # Raw exception text can contain command/provider details.
+                # Keep only a stable public reason.
                 failures.append(ImprovementPublishFailure(candidate.improvement_key))
         return MaintenancePublication(tuple(published), tuple(failures))
 
