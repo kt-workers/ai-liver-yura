@@ -59,6 +59,7 @@
 - `validation_lab_contracts.md` — #352 production-path Validation Harness / provenance / timeline / Human context / Export
 - `development_tooling_contracts.md` — #353 read-only development evidence / visualizer / reference analysis / security boundary
 - `loop_mission_supervisor.md` — #465 GitHub-live Mission Supervisor / Work Scheduler / Resume Gate / Task Packet / Write Gate contracts
+- `loop_self_improvement.md` — #465 Loop Health / automatic improvement Issue / Project #7 / maintenance scheduling contracts
 - `optional_review_support_contracts.md` — #371 任意・読取専用・非ブロッキングのレビュー支援契約
 - `game_skill_runtime_contracts.md` — #365 high-level Core Goal vs realtime game perception/tactics/action/runtime contracts
 - `system_integration_contracts.md` — #360 staged composition / degraded startup / cross-lane latency / System Verification contracts
