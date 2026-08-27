@@ -42,6 +42,22 @@ class LineageClassification(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
+class LoopHealthKind(str, Enum):
+    REPEATED_FAILURE = "REPEATED_FAILURE"
+    NO_PROGRESS = "NO_PROGRESS"
+    MANUAL_INTERVENTION = "MANUAL_INTERVENTION"
+    MANUAL_OPERATION_REPEAT = "MANUAL_OPERATION_REPEAT"
+    STALE_STATE_RECURRENCE = "STALE_STATE_RECURRENCE"
+    DUPLICATE_SCHEDULING = "DUPLICATE_SCHEDULING"
+    RECOVERY_REPETITION = "RECOVERY_REPETITION"
+
+
+class ImprovementSeverity(str, Enum):
+    P0 = "P0"
+    P1 = "P1"
+    P2 = "P2"
+
+
 @dataclass(frozen=True, slots=True)
 class SourceIdentity:
     source_kind: str
@@ -107,6 +123,56 @@ class CanonicalDesignSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
+class LoopHealthEvent:
+    kind: LoopHealthKind
+    fingerprint: str
+    occurrence_count: int
+    affected_work_ids: tuple[int, ...] = ()
+    source_refs: tuple[str, ...] = ()
+    blocked_work_count: int = 0
+    manual_intervention_required: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ExistingImprovementIssue:
+    issue_number: int
+    improvement_key: str
+    state: str
+
+
+@dataclass(frozen=True, slots=True)
+class ImprovementCandidate:
+    improvement_key: str
+    kind: LoopHealthKind
+    severity: ImprovementSeverity
+    title: str
+    problem: str
+    evidence_refs: tuple[str, ...]
+    affected_work_ids: tuple[int, ...]
+    start_date: str
+    target_date: str
+
+
+@dataclass(frozen=True, slots=True)
+class ImprovementIssueIntent:
+    repository: str
+    project_number: int
+    label: str
+    status: str
+    area: str
+    issue_level: str
+    candidate: ImprovementCandidate
+
+
+@dataclass(frozen=True, slots=True)
+class ImprovementPublishResult:
+    issue_number: int
+    issue_url: str
+    created: bool
+    project_configured: bool
+
+
+@dataclass(frozen=True, slots=True)
 class ObservationEpoch:
     observation_id: str
     repository: str
@@ -120,6 +186,9 @@ class ObservationEpoch:
     lineages: tuple[LineageSnapshot, ...]
     canonical_designs: tuple[CanonicalDesignSnapshot, ...]
     checkpoint_schedule_keys: tuple[str, ...] = ()
+    health_events: tuple[LoopHealthEvent, ...] = ()
+    open_improvement_issues: tuple[ExistingImprovementIssue, ...] = ()
+    checkpoint_improvement_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +231,8 @@ class SupervisorDecision:
     resume_certificate: ResumeCertificate
     task_packet: TaskPacket | None
     duplicate_suppressed: bool
+    health_events: tuple[LoopHealthEvent, ...] = ()
+    improvement_candidates: tuple[ImprovementCandidate, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
