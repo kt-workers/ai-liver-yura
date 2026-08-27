@@ -22,25 +22,21 @@ def test_health_state_round_trip_is_restart_safe() -> None:
 
 
 def test_health_state_rejects_unknown_fields_and_kinds() -> None:
-    payload = {
-        "version": 1,
-        "events": [
-            {
-                "kind": "UNKNOWN",
-                "fingerprint": "bad",
-                "occurrence_count": 1,
-                "affected_work_ids": [],
-                "source_refs": [],
-                "blocked_work_count": 0,
-                "manual_intervention_required": False,
-            }
-        ],
+    event_payload: dict[str, object] = {
+        "kind": "UNKNOWN",
+        "fingerprint": "bad",
+        "occurrence_count": 1,
+        "affected_work_ids": [],
+        "source_refs": [],
+        "blocked_work_count": 0,
+        "manual_intervention_required": False,
     }
+    payload: dict[str, object] = {"version": 1, "events": [event_payload]}
     with pytest.raises(ValueError, match="unknown loop health kind"):
         decode_health_state(json.dumps(payload))
 
-    payload["events"][0]["kind"] = "NO_PROGRESS"
-    payload["events"][0]["unexpected"] = "data"
+    event_payload["kind"] = "NO_PROGRESS"
+    event_payload["unexpected"] = "data"
     with pytest.raises(ValueError, match="fields mismatch"):
         decode_health_state(json.dumps(payload))
 
