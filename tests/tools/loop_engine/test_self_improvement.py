@@ -137,7 +137,7 @@ class FakeRunner:
                 [[
                     {
                         "number": 501,
-                        "url": "https://github.com/ktan514/ai-liver-yura/issues/501",
+                        "url": "https://api.github.com/repos/ktan514/ai-liver-yura/issues/501",
                         "body": marker(candidate.improvement_key),
                     }
                 ]]
@@ -150,16 +150,15 @@ class FakeRunner:
             if not self.item_added:
                 return '{"items":[]}'
             number = 501 if self.existing else 502
-            values: list[dict[str, object]] = []
-            if self.edit_count >= 6:
-                values = [
-                    {"field": {"name": "Status"}, "name": "Ready"},
-                    {"field": {"name": "Priority"}, "name": "P1"},
-                    {"field": {"name": "Area"}, "name": "Subsystem/Development Tooling"},
-                    {"field": {"name": "Issue level"}, "name": "Work"},
-                    {"field": {"name": "Start date"}, "date": "2026-08-27"},
-                    {"field": {"name": "Target date"}, "date": "2026-08-31"},
-                ]
+            all_values: list[dict[str, object]] = [
+                {"field": {"name": "Status"}, "name": "Ready"},
+                {"field": {"name": "Priority"}, "name": "P1"},
+                {"field": {"name": "Area"}, "name": "Subsystem/Development Tooling"},
+                {"field": {"name": "Issue level"}, "name": "Work"},
+                {"field": {"name": "Start date"}, "date": "2026-08-27"},
+                {"field": {"name": "Target date"}, "date": "2026-08-31"},
+            ]
+            values = all_values[: self.edit_count]
             return json.dumps(
                 {
                     "items": [
@@ -228,6 +227,7 @@ def test_publisher_creates_loop_issue_and_project_7_fields() -> None:
     assert "--label loop-engineering" in flat
     assert "gh project view 7" in flat
     assert "gh project item-add 7" in flat
+    assert "gh project item-list 7 --owner ktan514 --limit 100000" in flat
     assert " 6 --owner" not in flat
 
 
@@ -238,6 +238,7 @@ def test_publisher_reuses_existing_open_issue_and_repairs_project() -> None:
     assert result.issue_number == 501
     assert not any(command[:3] == ("gh", "issue", "create") for command in runner.commands)
     assert not any(command[:4] == ("gh", "project", "item-add", "7") for command in runner.commands)
+    assert result.issue_url == "https://github.com/ktan514/ai-liver-yura/issues/501"
 
 
 class PagedMarkerRunner(FakeRunner):
@@ -285,6 +286,24 @@ def test_publisher_fails_closed_when_project_effect_readback_mismatches() -> Non
         )
 
 
+class StaleFieldIdentityRunner(FakeRunner):
+    def run(self, args: Sequence[str]) -> str:
+        command = tuple(args)
+        value = super().run(args)
+        if command[:4] == ("gh", "project", "field-list", "7") and self.edit_count >= 1:
+            payload = json.loads(value)
+            payload["fields"][0]["id"] = "F_STATUS_REPLACED"
+            return json.dumps(payload)
+        return value
+
+
+def test_publisher_rechecks_write_gate_before_each_project_field_mutation() -> None:
+    runner = StaleFieldIdentityRunner()
+    with pytest.raises(ValueError, match="STALE_WRITE_GATE"):
+        GitHubImprovementIssuePublisher(runner).publish(improvement_intent(_candidate()))
+    assert runner.edit_count == 1
+
+
 def test_publisher_hard_rejects_project_6() -> None:
     candidate = _candidate()
     bad = ImprovementIssueIntent(
@@ -298,6 +317,22 @@ def test_publisher_hard_rejects_project_6() -> None:
     )
     with pytest.raises(ValueError, match="Project #6"):
         GitHubImprovementIssuePublisher(FakeRunner()).publish(bad)
+
+
+def test_issue_body_redacts_credential_like_health_fingerprint_and_source_reference() -> None:
+    secret = "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"
+    candidate = _planned(
+        LoopHealthEvent(
+            LoopHealthKind.REPEATED_FAILURE,
+            secret,
+            3,
+            source_refs=("ghp_abcdefghijklmnopqrstuvwxyz0123456789",),
+        )
+    )
+    body = render_issue_body(candidate)
+    assert secret not in body
+    assert "ghp_abcdefghijklmnopqrstuvwxyz0123456789" not in body
+    assert "sha256:" in body
 
 
 class RecordingPublisher:

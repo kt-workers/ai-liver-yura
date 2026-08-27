@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from datetime import date, timedelta
 
 from .models import (
@@ -42,9 +41,6 @@ _TITLES = {
     LoopHealthKind.DUPLICATE_SCHEDULING: "Loop改善: duplicate scheduling再発を防止する",
     LoopHealthKind.RECOVERY_REPETITION: "Loop改善: 反復recovery手順を自動化する",
 }
-
-_SAFE_REF = re.compile(r"[^A-Za-z0-9._:/#-]")
-
 
 def advance_health(
     previous: tuple[LoopHealthEvent, ...],
@@ -140,7 +136,7 @@ def plan_improvements(
                 severity=severity,
                 title=_TITLES[event.kind],
                 problem=_problem(event),
-                evidence_refs=tuple(_sanitize_ref(item) for item in event.source_refs),
+                evidence_refs=tuple(_redacted_reference(item) for item in event.source_refs),
                 affected_work_ids=event.affected_work_ids,
                 start_date=planning_date.isoformat(),
                 target_date=target.isoformat(),
@@ -254,7 +250,7 @@ def _event_rank(event: LoopHealthEvent) -> tuple[int, int, str, str]:
 
 
 def _problem(event: LoopHealthEvent) -> str:
-    fingerprint = _sanitize_ref(event.fingerprint)
+    fingerprint = _redacted_reference(event.fingerprint)
     return (
         f"`{event.kind.value}` が同一fingerprint `{fingerprint}` で "
         f"{event.occurrence_count} 回観測されました。"
@@ -263,5 +259,11 @@ def _problem(event: LoopHealthEvent) -> str:
     )
 
 
-def _sanitize_ref(value: str) -> str:
-    return _SAFE_REF.sub("?", value)[:160]
+def _redacted_reference(value: str) -> str:
+    """Return a bounded opaque identity for untrusted health metadata.
+
+    Health adapters may observe arbitrary external text.  A character allowlist
+    is not secret-safe because common credential alphabets are allowlisted too.
+    Issue bodies therefore retain correlation only through an irreversible hash.
+    """
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]

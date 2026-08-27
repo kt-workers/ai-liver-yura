@@ -53,7 +53,7 @@ class GitHubImprovementIssuePublisher:
         self._validate_intent(intent)
         existing = self._find_open_issue(intent.candidate.improvement_key)
         if existing is None:
-            issue_url = self.runner.run(
+            created_issue_url = self.runner.run(
                 (
                     "gh",
                     "issue",
@@ -68,7 +68,8 @@ class GitHubImprovementIssuePublisher:
                     _LABEL,
                 )
             ).strip()
-            issue_number = _issue_number(issue_url)
+            issue_number = _issue_number(created_issue_url)
+            issue_url = _web_issue_url(issue_number)
             created = True
         else:
             issue_number, issue_url = existing
@@ -92,8 +93,7 @@ class GitHubImprovementIssuePublisher:
             if marker(improvement_key) not in body:
                 continue
             number = _integer(item.get("number"), "issue.number")
-            url = _string(item.get("url"), "issue.url")
-            return number, url
+            return number, _web_issue_url(number)
         return None
 
     def _ensure_project_configuration(
@@ -156,46 +156,14 @@ class GitHubImprovementIssuePublisher:
         expected_preconditions = self._configuration_preconditions(
             project_id, item_id, fields, intent
         )
-        fresh_preconditions = self._fresh_configuration_preconditions(issue_url, intent)
-        self._require_write_gate(
-            WriteIntent(
-                "improvement-project-configure",
-                "project",
-                str(_PROJECT_NUMBER),
-                "verify_effect",
-                tuple(expected_preconditions.items()),
-                tuple(
-                    (f"value:{name}", value)
-                    for name, value in self._expected_values(intent).items()
-                ),
-                "publisher-live-readback",
-            ),
-            fresh_preconditions,
-        )
-        self._edit_single_select(project_id, item_id, fields, "Status", intent.status)
-        self._edit_single_select(
-            project_id,
-            item_id,
-            fields,
-            "Priority",
-            intent.candidate.severity.value,
-        )
-        self._edit_single_select(project_id, item_id, fields, "Area", intent.area)
-        self._edit_single_select(project_id, item_id, fields, "Issue level", intent.issue_level)
-        self._edit_date(
-            project_id,
-            item_id,
-            fields,
-            "Start date",
-            intent.candidate.start_date,
-        )
-        self._edit_date(
-            project_id,
-            item_id,
-            fields,
-            "Target date",
-            intent.candidate.target_date,
-        )
+        for field_name, value in self._expected_values(intent).items():
+            self._edit_field_with_fresh_gate(
+                issue_url,
+                intent,
+                expected_preconditions,
+                field_name,
+                value,
+            )
         readback = self._project_field_values(issue_url)
         self._require_write_gate(
             WriteIntent(
@@ -214,9 +182,9 @@ class GitHubImprovementIssuePublisher:
             {f"value:{name}": value for name, value in readback.items()},
         )
 
-    def _fresh_configuration_preconditions(
+    def _fresh_configuration_snapshot(
         self, issue_url: str, intent: ImprovementIssueIntent
-    ) -> dict[str, str]:
+    ) -> tuple[str, str, dict[str, dict[str, object]], dict[str, str]]:
         project = _object(
             self.runner.run(
                 (
@@ -228,8 +196,57 @@ class GitHubImprovementIssuePublisher:
         item_id = self._project_item_id(issue_url)
         if item_id is None:
             raise ValueError("Project #7 item disappeared before mutation")
-        return self._configuration_preconditions(
-            _string(project.get("id"), "project.id"), item_id, self._fields(), intent
+        project_id = _string(project.get("id"), "project.id")
+        fields = self._fields()
+        return (
+            project_id,
+            item_id,
+            fields,
+            self._configuration_preconditions(project_id, item_id, fields, intent),
+        )
+
+    def _edit_field_with_fresh_gate(
+        self,
+        issue_url: str,
+        intent: ImprovementIssueIntent,
+        expected_preconditions: dict[str, str],
+        field_name: str,
+        value: str,
+    ) -> None:
+        project_id, item_id, fields, fresh_preconditions = (
+            self._fresh_configuration_snapshot(issue_url, intent)
+        )
+        self._require_write_gate(
+            WriteIntent(
+                f"improvement-project-edit-{field_name}",
+                "project",
+                str(_PROJECT_NUMBER),
+                "edit_improvement_field",
+                tuple(expected_preconditions.items()),
+                ((f"value:{field_name}", value),),
+                "publisher-live-readback",
+            ),
+            fresh_preconditions,
+        )
+        if field_name in {"Start date", "Target date"}:
+            self._edit_date(project_id, item_id, fields, field_name, value)
+        else:
+            self._edit_single_select(project_id, item_id, fields, field_name, value)
+        self._require_write_gate(
+            WriteIntent(
+                f"improvement-project-edit-{field_name}-effect",
+                "project",
+                str(_PROJECT_NUMBER),
+                "verify_effect",
+                (),
+                ((f"value:{field_name}", value),),
+                "publisher-live-readback",
+            ),
+            {},
+            {
+                f"value:{name}": observed
+                for name, observed in self._project_field_values(issue_url).items()
+            },
         )
 
     def _require_item_add_gate(self, project_id: str, issue_url: str) -> None:
@@ -475,6 +492,10 @@ def improvement_intent(candidate: ImprovementCandidate) -> ImprovementIssueInten
         issue_level="Work",
         candidate=candidate,
     )
+
+
+def _web_issue_url(number: int) -> str:
+    return f"https://github.com/{_REPOSITORY}/issues/{number}"
 
 
 def _issue_number(url: str) -> int:
