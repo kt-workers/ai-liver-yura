@@ -441,6 +441,8 @@ Task Packet は implementer へ current state を伝える durable contract で�
 
 同じ ScheduleKey と next transition が既に dispatch / checkpoint 済みなら duplicate として抑止する。
 
+`ScheduleKey` は上記identityを省略してはならない。dependency completion evidence、Work Resume Checkpoint、Mission Checkpointのいずれかが変化した場合は同じWork / transitionでも新しいkeyとなり、restart後に必要なdispatchを過去keyで抑止しない。
+
 ### 11.2 Restart-safe suppression
 
 #465 自身は PostgreSQL operational store を所有しない。
@@ -553,6 +555,7 @@ hard deny:
 - expected branch / PR / head identity 不明
 - no-op / duplicate mutation
 - stale Project field / option ID
+- content mutationでexpected branch / PR / head identityが不明
 
 Write Gate は mutation API を discovery / probing に使わない。
 

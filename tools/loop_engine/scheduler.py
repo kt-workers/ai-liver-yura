@@ -41,6 +41,7 @@ def schedule_key(epoch: ObservationEpoch, work: WorkSnapshot, transition: str) -
             (item.identity.stable_id, item.live_blob_sha) for item in epoch.canonical_designs
         ),
         "issue": work.issue_number,
+        "dependency_completion_identities": sorted(work.dependency_completion_identities),
         "lineage": (
             lineage.classification.value if lineage else None,
             lineage.base_sha if lineage else None,
@@ -48,11 +49,16 @@ def schedule_key(epoch: ObservationEpoch, work: WorkSnapshot, transition: str) -
             lineage.ci_head_sha if lineage else None,
             lineage.review_head_sha if lineage else None,
         ),
-        "mission": (epoch.mission.identity.stable_id, epoch.mission.identity.source_revision),
+        "mission": (
+            epoch.mission.identity.stable_id,
+            epoch.mission.identity.source_revision,
+            epoch.mission.checkpoint_identity,
+        ),
         "priority": work.priority,
         "project_number": epoch.project_number,
         "project_status": work.project_status,
         "source_revision": work.identity.source_revision,
+        "work_checkpoint_identity": work.checkpoint_identity,
         "transition": transition,
     }
     serialized = json.dumps(state, sort_keys=True, separators=(",", ":")).encode()

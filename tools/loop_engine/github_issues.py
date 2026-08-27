@@ -143,7 +143,7 @@ class GitHubImprovementIssuePublisher:
                     "improvement-project-item-add-effect",
                     "project",
                     str(_PROJECT_NUMBER),
-                    "add_improvement_item",
+                    "verify_effect",
                     (),
                     (("item_id", item_id),),
                     "publisher-live-readback",
@@ -162,7 +162,7 @@ class GitHubImprovementIssuePublisher:
                 "improvement-project-configure",
                 "project",
                 str(_PROJECT_NUMBER),
-                "configure_improvement",
+                "verify_effect",
                 tuple(expected_preconditions.items()),
                 tuple(
                     (f"value:{name}", value)
@@ -202,7 +202,7 @@ class GitHubImprovementIssuePublisher:
                 "improvement-project-effect",
                 "project",
                 str(_PROJECT_NUMBER),
-                "configure_improvement",
+                "verify_effect",
                 (),
                 tuple(
                     (f"value:{name}", value)
@@ -249,7 +249,7 @@ class GitHubImprovementIssuePublisher:
                 str(_PROJECT_NUMBER),
                 "add_improvement_item",
                 (("project_id", project_id), ("item_presence", "absent")),
-                (),
+                (("item_id", "pending"),),
                 "publisher-live-readback",
             ),
             {
@@ -325,7 +325,7 @@ class GitHubImprovementIssuePublisher:
                     "--owner",
                     _OWNER,
                     "--limit",
-                    "1000",
+                    "100000",
                     "--format",
                     "json",
                 )

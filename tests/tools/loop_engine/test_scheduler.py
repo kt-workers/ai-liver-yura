@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from tools.loop_engine.models import MissionSnapshot
 from tools.loop_engine.scheduler import is_duplicate, schedule_key, select_work
 
@@ -51,3 +53,27 @@ def test_schedule_key_is_restart_stable_and_checkpoint_suppresses_duplicate() ->
     restarted = epoch(observation_id="epoch-2", checkpoint_schedule_keys=(key,))
     assert key == schedule_key(restarted, work(), "IMPLEMENT")
     assert is_duplicate(restarted, key)
+
+
+def test_schedule_key_changes_for_dependency_and_checkpoint_identities() -> None:
+    observed = epoch()
+    initial = schedule_key(observed, observed.works[0], "IMPLEMENT")
+    dependency_changed = replace(
+        observed,
+        works=(replace(observed.works[0], dependency_completion_identities=("dep:done:2",)),),
+    )
+    work_checkpoint_changed = replace(
+        observed,
+        works=(replace(observed.works[0], checkpoint_identity="resume:2"),),
+    )
+    mission_checkpoint_changed = replace(
+        observed,
+        mission=replace(observed.mission, checkpoint_identity="mission:2"),
+    )
+    assert initial != schedule_key(dependency_changed, dependency_changed.works[0], "IMPLEMENT")
+    assert initial != schedule_key(
+        work_checkpoint_changed, work_checkpoint_changed.works[0], "IMPLEMENT"
+    )
+    assert initial != schedule_key(
+        mission_checkpoint_changed, mission_checkpoint_changed.works[0], "IMPLEMENT"
+    )

@@ -24,6 +24,8 @@ class ConflictKind(str, Enum):
     STALE_WRITE_GATE = "STALE_WRITE_GATE"
     MUTATION_EFFECT_MISMATCH = "MUTATION_EFFECT_MISMATCH"
     DIRECT_TRUNK_WRITE_FORBIDDEN = "DIRECT_TRUNK_WRITE_FORBIDDEN"
+    NO_OP_MUTATION_FORBIDDEN = "NO_OP_MUTATION_FORBIDDEN"
+    UNKNOWN_WRITE_IDENTITY_FORBIDDEN = "UNKNOWN_WRITE_IDENTITY_FORBIDDEN"
 
 
 class RunDisposition(str, Enum):
@@ -71,6 +73,7 @@ class MissionSnapshot:
     current_work_id: int | None
     checkpoint_is_stale: bool = False
     root_completion_evidence_complete: bool = False
+    checkpoint_identity: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +89,8 @@ class WorkSnapshot:
     wait_only: bool = False
     wait_reason: str | None = None
     checkpoint_matches_live: bool = True
+    dependency_completion_identities: tuple[str, ...] = ()
+    checkpoint_identity: str | None = None
 
     @property
     def dependency_ready(self) -> bool:

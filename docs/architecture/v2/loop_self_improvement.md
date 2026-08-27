@@ -148,7 +148,7 @@ ImprovementCandidate
 → owned field effect readback / next Observation
 ```
 
-Project #6およびProject #7以外はhard rejectする。
+Project #6およびProject #7以外はhard rejectする。Project item lookupも先頭固定件数へ依存せず、全pageを走査して既存item identityを解決する。
 Project field/option IDをcache・固定値として保持しない。
 Project mutationの直前にはproject / item / field / option identityをfresh readbackし、mutation後にはitem field value effectをreadbackする。不一致時に`project_configured=True`を返してはならない。
 
