@@ -21,6 +21,18 @@ def test_review_and_verification_wait_select_independent_work() -> None:
     assert verification_choice is not None and verification_choice.issue_number == 500
 
 
+def test_generated_loop_improvement_work_reenters_normal_scheduler() -> None:
+    product_review_wait = work(
+        465,
+        actionable=False,
+        wait_only=True,
+        wait_reason="canonical review pending",
+    )
+    generated_improvement = work(900, priority="P0", status="Ready")
+    choice = select_work(epoch(works=(product_review_wait, generated_improvement)))
+    assert choice is not None and choice.issue_number == 900
+
+
 def test_priority_and_stable_issue_number_tie_break() -> None:
     choices = (
         work(600, priority="P1", status="Ready"),
