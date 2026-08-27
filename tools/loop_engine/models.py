@@ -138,6 +138,7 @@ class ExistingImprovementIssue:
     issue_number: int
     improvement_key: str
     state: str
+    project_configured: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +171,12 @@ class ImprovementPublishResult:
     issue_url: str
     created: bool
     project_configured: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ImprovementPublishFailure:
+    improvement_key: str
+    reason: str = "IMPROVEMENT_PUBLISH_FAILED"
 
 
 @dataclass(frozen=True, slots=True)
