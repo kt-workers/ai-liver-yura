@@ -12,14 +12,20 @@ from tools.loop_engine.github_issues import (
     improvement_intent,
 )
 from tools.loop_engine.health import marker, plan_improvements, render_issue_body
+from tools.loop_engine.maintenance import (
+    LoopMaintenanceCycle,
+    SelfImprovementController,
+)
 from tools.loop_engine.models import (
     ExistingImprovementIssue,
     ImprovementCandidate,
     ImprovementIssueIntent,
+    ImprovementPublishResult,
     ImprovementSeverity,
     LoopHealthEvent,
     LoopHealthKind,
     MissionSnapshot,
+    RunDisposition,
 )
 from tools.loop_engine.supervisor import MissionSupervisor
 
@@ -57,18 +63,14 @@ def test_repeated_failure_generates_candidate_without_stopping_current_work() ->
     )
     observed = replace(epoch(), health_events=(event,))
     decision = MissionSupervisor().decide(observed, planning_date=date(2026, 8, 27))
+    assert decision.disposition is RunDisposition.CONTINUE
     assert decision.task_packet is not None
     assert decision.improvement_candidates[0].kind is LoopHealthKind.REPEATED_FAILURE
 
 
-def test_open_improvement_issue_suppresses_duplicate() -> None:
+def test_open_configured_improvement_issue_suppresses_duplicate() -> None:
     event = LoopHealthEvent(LoopHealthKind.NO_PROGRESS, "same-state", 2)
-    first = plan_improvements(
-        (event,),
-        existing_issues=(),
-        checkpoint_keys=(),
-        planning_date=date(2026, 8, 27),
-    )[0]
+    first = _planned(event)
     candidates = plan_improvements(
         (event,),
         existing_issues=(ExistingImprovementIssue(500, first.improvement_key, "open"),),
@@ -76,6 +78,21 @@ def test_open_improvement_issue_suppresses_duplicate() -> None:
         planning_date=date(2026, 8, 27),
     )
     assert candidates == ()
+
+
+def test_open_but_unconfigured_issue_is_replanned_for_project_repair() -> None:
+    event = LoopHealthEvent(LoopHealthKind.NO_PROGRESS, "same-state", 2)
+    first = _planned(event)
+    candidates = plan_improvements(
+        (event,),
+        existing_issues=(
+            ExistingImprovementIssue(500, first.improvement_key, "open", False),
+        ),
+        checkpoint_keys=(),
+        planning_date=date(2026, 8, 27),
+    )
+    assert len(candidates) == 1
+    assert candidates[0].improvement_key == first.improvement_key
 
 
 def test_candidate_generation_is_bounded_to_three() -> None:
@@ -92,10 +109,11 @@ def test_candidate_generation_is_bounded_to_three() -> None:
     assert len(candidates) == 3
 
 
-def test_generated_issue_body_has_durable_marker_and_dates() -> None:
+def test_generated_issue_body_has_durable_marker_dates_and_parent() -> None:
     candidate = _candidate()
     body = render_issue_body(candidate)
     assert marker(candidate.improvement_key) in body
+    assert "Parent: #462" in body
     assert "Start date: `2026-08-27`" in body
     assert "Target date: `2026-08-31`" in body
     assert "Project #6" in body
@@ -182,12 +200,13 @@ def test_publisher_creates_loop_issue_and_project_7_fields() -> None:
     assert " 6 --owner" not in flat
 
 
-def test_publisher_dedupes_existing_open_issue() -> None:
+def test_publisher_reuses_existing_open_issue_and_repairs_project() -> None:
     runner = FakeRunner(existing=True)
     result = GitHubImprovementIssuePublisher(runner).publish(improvement_intent(_candidate()))
     assert not result.created
     assert result.issue_number == 501
     assert not any(command[:3] == ("gh", "issue", "create") for command in runner.commands)
+    assert any(command[:4] == ("gh", "project", "item-add", "7") for command in runner.commands)
 
 
 def test_publisher_hard_rejects_project_6() -> None:
@@ -205,11 +224,63 @@ def test_publisher_hard_rejects_project_6() -> None:
         GitHubImprovementIssuePublisher(FakeRunner()).publish(bad)
 
 
-def _candidate() -> ImprovementCandidate:
+class RecordingPublisher:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.intents: list[ImprovementIssueIntent] = []
+
+    def publish(self, intent: ImprovementIssueIntent) -> ImprovementPublishResult:
+        self.intents.append(intent)
+        if self.fail:
+            raise RuntimeError("raw secret-bearing failure must not escape")
+        return ImprovementPublishResult(
+            600,
+            "https://github.com/ktan514/ai-liver-yura/issues/600",
+            True,
+            True,
+        )
+
+
+def test_maintenance_cycle_publishes_candidate_in_same_iteration() -> None:
     event = LoopHealthEvent(LoopHealthKind.REPEATED_FAILURE, "provider-timeout", 3)
+    observed = replace(epoch(), health_events=(event,))
+    publisher = RecordingPublisher()
+    cycle = LoopMaintenanceCycle(
+        MissionSupervisor(),
+        SelfImprovementController(publisher),
+    )
+    result = cycle.run(observed, planning_date=date(2026, 8, 27))
+    assert result.decision.disposition is RunDisposition.CONTINUE
+    assert len(result.publication.published) == 1
+    assert result.publication.failures == ()
+    assert publisher.intents[0].label == "loop-engineering"
+    assert publisher.intents[0].project_number == 7
+
+
+def test_publisher_failure_is_typed_and_does_not_replace_primary_decision() -> None:
+    event = LoopHealthEvent(LoopHealthKind.REPEATED_FAILURE, "provider-timeout", 3)
+    observed = replace(epoch(), health_events=(event,))
+    cycle = LoopMaintenanceCycle(
+        MissionSupervisor(),
+        SelfImprovementController(RecordingPublisher(fail=True)),
+    )
+    result = cycle.run(observed, planning_date=date(2026, 8, 27))
+    assert result.decision.disposition is RunDisposition.CONTINUE
+    assert result.publication.published == ()
+    assert len(result.publication.failures) == 1
+    assert result.publication.failures[0].reason == "IMPROVEMENT_PUBLISH_FAILED"
+    assert "secret-bearing" not in repr(result.publication.failures)
+
+
+def _planned(event: LoopHealthEvent) -> ImprovementCandidate:
     return plan_improvements(
         (event,),
         existing_issues=(),
         checkpoint_keys=(),
         planning_date=date(2026, 8, 27),
     )[0]
+
+
+def _candidate() -> ImprovementCandidate:
+    event = LoopHealthEvent(LoopHealthKind.REPEATED_FAILURE, "provider-timeout", 3)
+    return _planned(event)
