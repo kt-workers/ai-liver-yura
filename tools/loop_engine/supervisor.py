@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
+from datetime import date
 
+from .health import advance_health, plan_improvements
 from .models import (
     ConflictKind,
     ObservationEpoch,
@@ -26,7 +29,33 @@ class MissionSupervisor:
     def reconcile(self, epoch: ObservationEpoch) -> tuple[ConflictKind, ...]:
         return reconcile(epoch)
 
-    def decide(self, epoch: ObservationEpoch) -> SupervisorDecision:
+    def decide(
+        self,
+        epoch: ObservationEpoch,
+        *,
+        planning_date: date | None = None,
+    ) -> SupervisorDecision:
+        decision = self._decide_primary(epoch)
+        health_events = advance_health(
+            epoch.health_events,
+            conflicts=decision.resume_certificate.conflicts,
+            disposition=decision.disposition,
+            duplicate_suppressed=decision.duplicate_suppressed,
+            selected_work_id=decision.selected_work_id,
+        )
+        improvements = plan_improvements(
+            health_events,
+            existing_issues=epoch.open_improvement_issues,
+            checkpoint_keys=epoch.checkpoint_improvement_keys,
+            planning_date=planning_date or date.today(),
+        )
+        return replace(
+            decision,
+            health_events=health_events,
+            improvement_candidates=improvements,
+        )
+
+    def _decide_primary(self, epoch: ObservationEpoch) -> SupervisorDecision:
         conflicts = self.reconcile(epoch)
         selected = None if conflicts else select_work(epoch)
         certificate = self._certificate(epoch, selected, conflicts)
