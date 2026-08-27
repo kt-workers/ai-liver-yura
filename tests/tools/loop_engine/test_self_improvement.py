@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -13,6 +14,7 @@ from tools.loop_engine.github_issues import (
 from tools.loop_engine.health import marker, plan_improvements, render_issue_body
 from tools.loop_engine.models import (
     ExistingImprovementIssue,
+    ImprovementCandidate,
     ImprovementIssueIntent,
     ImprovementSeverity,
     LoopHealthEvent,
@@ -34,19 +36,11 @@ def test_second_same_intervention_generates_p0_improvement() -> None:
         1,
         True,
     )
-    decision = MissionSupervisor().decide(
-        epoch(
-            mission=MissionSnapshot(identity("issue", "450"), 465, True),
-        ).__class__(
-            **{
-                **epoch(
-                    mission=MissionSnapshot(identity("issue", "450"), 465, True)
-                ).__dict__,
-                "health_events": (prior,),
-            }
-        ),
-        planning_date=date(2026, 8, 27),
+    observed = replace(
+        epoch(mission=MissionSnapshot(identity("issue", "450"), 465, True)),
+        health_events=(prior,),
     )
+    decision = MissionSupervisor().decide(observed, planning_date=date(2026, 8, 27))
     candidate = decision.improvement_candidates[0]
     assert candidate.kind is LoopHealthKind.MANUAL_INTERVENTION
     assert candidate.severity is ImprovementSeverity.P0
@@ -61,22 +55,7 @@ def test_repeated_failure_generates_candidate_without_stopping_current_work() ->
         3,
         source_refs=("run:10", "run:11", "run:12"),
     )
-    base = epoch()
-    observed = base.__class__(
-        base.observation_id,
-        base.repository,
-        base.canonical_trunk_ref,
-        base.canonical_trunk_sha,
-        base.project_number,
-        base.project_available,
-        base.authorities_available,
-        base.mission,
-        base.works,
-        base.lineages,
-        base.canonical_designs,
-        base.checkpoint_schedule_keys,
-        (event,),
-    )
+    observed = replace(epoch(), health_events=(event,))
     decision = MissionSupervisor().decide(observed, planning_date=date(2026, 8, 27))
     assert decision.task_packet is not None
     assert decision.improvement_candidates[0].kind is LoopHealthKind.REPEATED_FAILURE
@@ -226,7 +205,7 @@ def test_publisher_hard_rejects_project_6() -> None:
         GitHubImprovementIssuePublisher(FakeRunner()).publish(bad)
 
 
-def _candidate():
+def _candidate() -> ImprovementCandidate:
     event = LoopHealthEvent(LoopHealthKind.REPEATED_FAILURE, "provider-timeout", 3)
     return plan_improvements(
         (event,),
