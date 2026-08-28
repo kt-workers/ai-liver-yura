@@ -18,20 +18,38 @@
 英語だけで成立する文章、見出し、説明段落、comment、docstringは作成しない。
 既存の英語文章も翻訳対象とし、安全な通常変更で順次日本語へ置き換える。
 
-次のような英語は、日本語文の中で技術用語または一般語として使用してよい。
+### 英語技術語の扱い
 
-- `GitHub`、`API`、`Work`、`Issue`、`PR`、`branch`、`commit`、`push`、`merge`
+人間向け文章では、英語の概念名や技術語を日本語文の名詞としてそのまま置かない。
+意味を自然な日本語で先に表現し、原語を残す必要がある場合だけ括弧内へ併記する。
+
+例:
+
+- NG: `directed questionの意味契約を正本化する`
+- OK: `相手へ回答を求める問いかけ（directed question）の意味契約を正本化する`
+- NG: `fallback policyを更新する`
+- OK: `失敗時の代替方針（fallback policy）を更新する`
+- NG: `stale resultを拒否する`
+- OK: `古くなった結果（stale result）を拒否する`
+
+直訳して不自然になる場合は直訳を使わず、その概念がこのRepository内で意味する内容を自然な日本語で表す。
+原語の併記は識別・検索・外部仕様との対応付けに必要な場合だけ行う。
+同じ節や短い文脈内で意味が明らかな場合は、2回目以降の原語併記を省略してよい。
+
+次は機械識別子や固有表現として、そのまま使用してよい。
+
+- `GitHub`、`API`、`Issue`、`PR`等の固有名詞・広く定着した名称
 - `PASS`、`FAIL`、`ACTIVE`、`NOT_RUN`、`REQUEST_CHANGES`等のstatus値
-- command、file path、SHA、class名、function名、field名
+- command、file path、branch名、SHA、class名、function名、field名
 - machine-readable JSONのkey/value
-- 製品名、ライブラリ名、protocol名、固有名詞
-- 中学生程度の一般的な英単語を、日本語文章の一部として自然に使用する場合
+- 製品名、ライブラリ名、protocol名、外部仕様の固定値
 - 外部API等の原文を、原文であることを明示して引用する必要がある場合
 
-技術識別子に英語が含まれていても、説明文章全体は日本語として成立させる。
+これらを日本語文章の中で使う場合も、説明文章全体は日本語として成立させる。
 コードの識別子、schema、protocol値、機械可読値は文章言語ルールの対象外とする。
 
-共有済みcommitのmessageは、このルールだけを理由にforce pushやrebaseで履歴を書き換えない。
+既存の英語commit messageは最終状態として残さず、Repository全体の日本語化と機能修正が完了した後に、#384の管理下で現在の完成treeを日本語commit系列として再構成する。
+新しい系列のtree、CI、PR、Checkpoint、SHA参照を再照合する前に、旧commit/refを削除しない。
 編集可能な既存文書、comment、docstring、GitHub comment類は日本語へ是正する。
 
 ## 自律Completion Missionの継続
