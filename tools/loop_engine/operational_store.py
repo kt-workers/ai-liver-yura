@@ -67,23 +67,41 @@ class PostgreSQLOperationalStore:
         if table not in self._TABLES or not identity or not self._is_safe(metadata):
             return StoreResult(StoreStatus.INVALID, identity)
         try:
+            serialized_metadata = json.dumps(dict(metadata), sort_keys=True)
+        except (TypeError, ValueError, RecursionError):
+            return StoreResult(StoreStatus.INVALID, identity)
+        try:
             connection = self._connect()
-        except OSError:
+        except Exception:
             return StoreResult(StoreStatus.DB_UNAVAILABLE, identity)
         try:
             cursor = connection.cursor()
             cursor.execute(
                 f"INSERT INTO {table} (identity, metadata) VALUES (%s, %s) "
                 "ON CONFLICT (identity) DO NOTHING",
-                (identity, json.dumps(dict(metadata), sort_keys=True)),
+                (identity, serialized_metadata),
             )
             connection.commit()
-        except OSError:
-            connection.rollback()
+        except Exception:
+            self._best_effort_rollback(connection)
             return StoreResult(StoreStatus.DB_UNAVAILABLE, identity)
         finally:
-            connection.close()
+            self._best_effort_close(connection)
         return StoreResult(StoreStatus.STORED, identity)
+
+    @staticmethod
+    def _best_effort_rollback(connection: Connection) -> None:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _best_effort_close(connection: Connection) -> None:
+        try:
+            connection.close()
+        except Exception:
+            pass
 
     @classmethod
     def _is_safe(cls, metadata: Mapping[str, object]) -> bool:
