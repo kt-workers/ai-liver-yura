@@ -30,6 +30,21 @@ class FakeConnection:
         self.closed = True
 
 
+class DatabaseDriverError(Exception):
+    pass
+
+
+class FailingCursor(FakeCursor):
+    def execute(self, query: str, parameters: tuple[object, ...]) -> None:
+        raise DatabaseDriverError("database unavailable")
+
+
+class FailingConnection(FakeConnection):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cursor_value = FailingCursor()
+
+
 def test_records_bounded_secret_safe_operational_evidence() -> None:
     connection = FakeConnection()
     result = PostgreSQLOperationalStore(lambda: connection).record(
@@ -54,3 +69,21 @@ def test_database_outage_is_typed_degraded_path() -> None:
         "loop_events", "event-1", {"transition": "OBSERVE"}
     )
     assert result.status is StoreStatus.DB_UNAVAILABLE
+
+
+def test_database_driver_failure_does_not_escape_store_boundary() -> None:
+    connection = FailingConnection()
+    result = PostgreSQLOperationalStore(lambda: connection).record(
+        "loop_events", "event-driver-failure", {"transition": "VERIFY"}
+    )
+
+    assert result.status is StoreStatus.DB_UNAVAILABLE
+    assert connection.closed
+
+
+def test_unserializable_metadata_is_invalid_without_connecting() -> None:
+    result = PostgreSQLOperationalStore(lambda: (_ for _ in ()).throw(AssertionError())).record(
+        "loop_events", "event-invalid", {"value": object()}
+    )
+
+    assert result.status is StoreStatus.INVALID
