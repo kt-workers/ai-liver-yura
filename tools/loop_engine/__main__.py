@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from .host_runtime import HostTransitionStatus
+from .runtime_console import RuntimeConsole, VisibleSubprocessLocalRunner
 
 
 def main() -> int:
@@ -23,7 +25,16 @@ def main() -> int:
 
     from .host_entrypoint import run_actual_host_transition
 
-    result = run_actual_host_transition()
+    root = Path(__file__).resolve().parents[2]
+    console = RuntimeConsole(root)
+    console.event("START")
+    console.event(f"log: {console.path}")
+    console.event("preflight / GitHub observe: begin")
+    result = run_actual_host_transition(
+        root=root,
+        local_runner=VisibleSubprocessLocalRunner(console),
+    )
+    console.event(f"RESULT status={result.status.value} detail={result.detail}")
     print(result.as_json())
     if result.status is HostTransitionStatus.COMPLETED:
         return 0
