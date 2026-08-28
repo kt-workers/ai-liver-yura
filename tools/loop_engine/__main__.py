@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 
+from .host_runtime import HostTransitionStatus
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run one bounded Loop Engineering transition.")
@@ -18,7 +20,15 @@ def main() -> int:
     if arguments.validate_installation:
         print("LOOP_ENGINE_INSTALLATION=PASS")
         return 0
-    parser.error("a host-specific Observer/Executor composition is required")
+
+    from .host_entrypoint import run_actual_host_transition
+
+    result = run_actual_host_transition()
+    print(result.as_json())
+    if result.status is HostTransitionStatus.COMPLETED:
+        return 0
+    if result.status is HostTransitionStatus.YIELD_EXTERNAL:
+        return 2
     return 3
 
 
