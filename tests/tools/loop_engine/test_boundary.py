@@ -23,3 +23,4 @@ def test_loop_engine_is_outside_app_and_old_operations_module_is_absent() -> Non
     root = Path(__file__).resolve().parents[3]
     assert (root / "tools" / "loop_engine" / "supervisor.py").is_file()
     assert not (root / "app" / "operations" / "mission_supervisor.py").exists()
+    assert not (root / "app" / "operations").exists()
