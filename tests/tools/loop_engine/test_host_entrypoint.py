@@ -9,6 +9,7 @@ import pytest
 from tools.loop_engine.ci_gate import CIGateStatus
 from tools.loop_engine.host_entrypoint import (
     PilotAwareMissionPort,
+    PilotPlanningImplementer,
     StrictGhMissionPort,
 )
 from tools.loop_engine.host_runtime import HostTarget, LocalCommandResult
@@ -35,6 +36,24 @@ class FakeLocalRunner:
         if endpoint not in self._responses:
             raise AssertionError(f"unexpected endpoint: {endpoint}")
         return LocalCommandResult(0, json.dumps(self._responses[endpoint]))
+
+
+class RecordingCodexRunner:
+    def __init__(self) -> None:
+        self.commands: list[tuple[str, ...]] = []
+
+    def run(
+        self,
+        command: Sequence[str],
+        *,
+        cwd: Path | None = None,
+        environment: Mapping[str, str] | None = None,
+        timeout_seconds: int = 120,
+        capture_output: bool = True,
+    ) -> LocalCommandResult:
+        del cwd, environment, timeout_seconds, capture_output
+        self.commands.append(tuple(command))
+        return LocalCommandResult(0, "")
 
 
 class FakeMissionPort:
@@ -136,6 +155,24 @@ def test_471_bootstrap_completion_keeps_integration_issue_open() -> None:
     assert "PILOT_REQUIRED" in checkpoint
     assert "current Work: #471" in checkpoint
     assert "actual V2 Work pilot evidence pending" in checkpoint
+
+
+def test_471_planning_excludes_loop_engineering_and_self_from_pilot() -> None:
+    runner = RecordingCodexRunner()
+    implementer = PilotPlanningImplementer(
+        runner,
+        Path("/repo"),
+        {"PATH": "/usr/bin"},
+        ("codex", "exec"),
+    )
+
+    assert implementer.plan_next_work(471)
+    assert len(runner.commands) == 1
+    instruction = runner.commands[0][-1]
+    assert "actual V2 product pilot" in instruction
+    assert "#462/#471自身" in instruction
+    assert "loop-engineering基盤責務" in instruction
+    assert "dependency-readyなV2 product Work" in instruction
 
 
 def test_non_integration_work_closes_normally() -> None:
