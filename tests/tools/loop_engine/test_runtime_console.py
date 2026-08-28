@@ -55,19 +55,25 @@ def test_verbose_mode_streams_child_output_and_details(
 def test_codex_lifecycle_stays_visible_without_raw_output(
     tmp_path: Path, capsys: CaptureFixture[str]
 ) -> None:
+    codex = tmp_path / "codex"
+    codex.write_text("#!/bin/sh\necho CODEX_RAW_DETAIL\n", encoding="utf-8")
+    codex.chmod(0o755)
     console = RuntimeConsole(tmp_path)
     runner = VisibleSubprocessLocalRunner(console)
 
     result = runner.run(
-        ("codex",),
+        (str(codex),),
         cwd=tmp_path,
         timeout_seconds=10,
         capture_output=False,
     )
 
-    assert result.returncode in (0, 127)
+    assert result.succeeded
     stderr = capsys.readouterr().err
     assert "codex: start" in stderr
+    assert "codex: done" in stderr
+    assert "CODEX_RAW_DETAIL" not in stderr
+    assert "CODEX_RAW_DETAIL" in console.path.read_text(encoding="utf-8")
 
 
 def test_captured_failure_is_concise_and_full_error_is_persisted(
