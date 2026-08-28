@@ -30,6 +30,14 @@ If the latest Mission Checkpoint is missing an explicit current target, has an i
 
 Planning-only Codex output that selects the next Work must therefore write a new Mission Checkpoint with the explicit current Work/PR/HEAD identity needed by the next host invocation.
 
+## #471 bootstrap and pilot completion
+
+PR #477 is the bootstrap implementation that makes the actual host Loop executable. Merging PR #477 is **not** #471 completion evidence by itself. After #477 reaches trunk, #471 remains open and the host selects an actual dependency-ready V2 product Work as the pilot.
+
+#471 may be completed only after the installed trunk Loop has driven at least one actual V2 Work through the applicable bounded stages without a human copying TaskPackets/review findings, with exact-head CI/merge identity and restart-safe GitHub checkpoints. The pilot Work's own completion and #471 integration completion are distinct records.
+
+Therefore the host completion path special-cases #471 bootstrap: merge/readback #477, publish an `ACTIVE / PILOT_REQUIRED` Mission Checkpoint, keep #471 open, and perform a planning-only selection of the actual V2 pilot Work. Ordinary Work issues may be closed after their own successful expected-head merge/readback.
+
 ## Exact-head CI ordering
 
 CI evidence is first bound to the expected current head, then interpreted by lifecycle status. If an observed workflow run belongs to another head, the result is `STALE` even when that old run is still `queued` or `in_progress`. An old-head pending run must never yield the current Work as if its CI were legitimately pending.
