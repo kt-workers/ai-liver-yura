@@ -220,7 +220,8 @@ class PilotPlanningImplementer(CodexImplementer):
             "Gitのbranch作成・切替・merge・add・commit・push・rebase・force pushは"
             "実行しないでください。Git metadataの変更は信頼済みホストが担当します。"
             "GitHubへのIssue/PR/Checkpoint等の書込みも行わないでください。"
-            "ファイル編集と必要なmachine gateだけを実施し、変更はworktreeへ未commitで残してください。"
+            "ファイル編集と必要な機械検査（machine gate）だけを実施し、"
+            "変更は作業領域（worktree）へ未コミットで残してください。"
             "正本レビュー（canonical review）の非機能指摘やprovider `NOT_RUN`を理由に停止せず、"
             "Project #6の変更とreviewer credential利用は禁止です。"
         )
