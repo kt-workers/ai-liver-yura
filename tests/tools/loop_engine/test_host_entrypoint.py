@@ -10,10 +10,15 @@ from tools.loop_engine.ci_gate import CIGateStatus
 from tools.loop_engine.host_entrypoint import (
     PilotAwareMissionPort,
     PilotPlanningImplementer,
+    ReconciliationAwareHostLoopController,
     StrictGhMissionPort,
     _codex_argv,
 )
-from tools.loop_engine.host_runtime import HostTarget, LocalCommandResult
+from tools.loop_engine.host_runtime import (
+    HostTarget,
+    HostTransitionStatus,
+    LocalCommandResult,
+)
 
 
 class FakeLocalRunner:
@@ -190,6 +195,70 @@ def test_471_planning_excludes_loop_engineering_and_self_from_pilot() -> None:
     assert "#462/#471自身" in instruction
     assert "loop-engineering基盤責務" in instruction
     assert "dependency-readyなV2 product Work" in instruction
+
+
+def test_dirty_product_pr_dispatches_reconciliation_without_ready_or_merge() -> None:
+    head = "d" * 40
+    comments_endpoint = (
+        "repos/ktan514/ai-liver-yura/issues/450/comments?per_page=100&page=1"
+    )
+    responses = {
+        comments_endpoint: [
+            {
+                "id": 10,
+                "body": (
+                    "## Mission Checkpoint — ACTIVE\n\n"
+                    "- current Work: #338\n"
+                    "- current PR: #422\n"
+                    f"- exact HEAD: `{head}`\n"
+                    "- next action: fresh Resume Gate / reconcile"
+                ),
+            }
+        ],
+        "repos/ktan514/ai-liver-yura/issues/338": {"state": "open"},
+        "repos/ktan514/ai-liver-yura/pulls/422": {
+            "head": {"sha": head},
+            "merged": False,
+            "draft": True,
+            "mergeable": False,
+            "mergeable_state": "dirty",
+        },
+        f"repos/ktan514/ai-liver-yura/actions/runs?head_sha={head}&per_page=100": {
+            "workflow_runs": [
+                {
+                    "id": 20,
+                    "name": "V2 Deterministic CI",
+                    "head_sha": head,
+                    "status": "completed",
+                    "conclusion": "success",
+                }
+            ]
+        },
+    }
+    mission = PilotAwareMissionPort(
+        StrictGhMissionPort(FakeLocalRunner(responses), {"PATH": "/usr/bin"})
+    )
+    codex_runner = RecordingCodexRunner()
+    implementer = PilotPlanningImplementer(
+        codex_runner,
+        Path("/repo"),
+        {"PATH": "/usr/bin"},
+        _codex_argv({}),
+    )
+
+    result = ReconciliationAwareHostLoopController(mission, implementer).run_once()
+
+    assert result.status is HostTransitionStatus.COMPLETED
+    assert result.detail == "MERGE_RECONCILIATION_DISPATCHED"
+    assert result.work_issue == 338
+    assert result.pr_number == 422
+    assert result.head_sha == head
+    assert len(codex_runner.commands) == 1
+    instruction = codex_runner.commands[0][-1]
+    assert "Resume Gate" in instruction
+    assert "mergeable_state=dirty" in instruction
+    assert "Ready/mergeしない" in instruction
+    assert "rebase/force pushは禁止" in instruction
 
 
 def test_non_integration_work_closes_normally() -> None:
