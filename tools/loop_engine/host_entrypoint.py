@@ -1,4 +1,4 @@
-"""Safe actual-host entrypoint layered on the Loop host runtime."""
+"""Loop Engineをactual hostへ接続する安全なentrypoint。"""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ _EXACT_HEAD_RE = re.compile(
 
 
 class StrictGhMissionPort(GhMissionPort):
-    """Never falls back from the latest Mission Checkpoint to an older target."""
+    """最新Mission Checkpointだけを採用し、古いtargetへfallbackしない。"""
 
     def __init__(self, runner: LocalRunner, environment: Mapping[str, str]) -> None:
         super().__init__(runner, environment)
@@ -122,7 +122,7 @@ class StrictGhMissionPort(GhMissionPort):
 
 
 class PilotAwareMissionPort(MissionPort):
-    """Keeps #471 open after its bootstrap PR until an actual V2 pilot completes."""
+    """#471 bootstrap後もactual V2 pilot完了まではIntegration Issueをopenで保持する。"""
 
     def __init__(self, delegate: MissionPort) -> None:
         self._delegate = delegate
@@ -164,16 +164,16 @@ class PilotAwareMissionPort(MissionPort):
             f"- current Work: #{target.work_issue}\n"
             f"{pr_line}"
             f"{head_line}"
-            "- #477 bootstrap: merged/readback completed\n"
-            "- #471 state: open; actual V2 Work pilot evidence pending\n"
+            "- #477 bootstrap: mergeとreadbackは完了\n"
+            "- #471 state: openのままactual V2 Workのpilot証拠を待つ\n"
             "- next action: Project #7とGitHub liveからactual V2 pilot Workを1件fresh選択する\n"
-            "- review policy: non-functional findings / `NOT_RUN` are non-blocking"
+            "- review policy: 非機能findingと`NOT_RUN`はnon-blocking"
         )
         return self._delegate.publish_checkpoint(checkpoint)
 
 
 class PilotPlanningImplementer(CodexImplementer):
-    """After #471 bootstrap, planning must select a real V2 product Work."""
+    """#471 bootstrap後のplanningでactual V2 product Workを選択する。"""
 
     def continue_work(self, target: HostTarget, *, repair: bool) -> bool:
         if not repair:
@@ -232,7 +232,7 @@ class PilotPlanningImplementer(CodexImplementer):
 
 
 class ReconciliationAwareHostLoopController(HostLoopController):
-    """Turns a confirmed merge conflict into one bounded Codex reconciliation."""
+    """merge conflictと#471 pilot planningをbounded transitionへ振り分ける。"""
 
     def __init__(
         self,
@@ -244,13 +244,74 @@ class ReconciliationAwareHostLoopController(HostLoopController):
         self._reconciliation_implementer = implementer
 
     def run_once(self) -> HostTransitionResult:
+        try:
+            initial_target = self._reconciliation_mission.current_target()
+        except RuntimeError:
+            initial_target = None
+
+        if (
+            initial_target is not None
+            and initial_target.work_issue == _INTEGRATION_WORK
+            and initial_target.issue_open
+            and initial_target.pr_number is None
+        ):
+            return self._run_pilot_planning(initial_target)
+
         result = super().run_once()
         if (
-            result.status is not HostTransitionStatus.INTERVENTION_REQUIRED
-            or result.detail != "EXPECTED_HEAD_MERGE_FAILED"
+            result.status is HostTransitionStatus.INTERVENTION_REQUIRED
+            and result.detail == "EXPECTED_HEAD_MERGE_FAILED"
         ):
-            return result
+            result = self._run_merge_reconciliation(result)
 
+        if (
+            initial_target is not None
+            and result.status is HostTransitionStatus.COMPLETED
+            and result.detail
+            in {
+                "IMPLEMENTER_DISPATCHED",
+                "CI_REPAIR_DISPATCHED",
+                "MERGE_RECONCILIATION_DISPATCHED",
+            }
+        ):
+            return self._verify_implementation_progress(initial_target, result)
+        return result
+
+    def _run_pilot_planning(self, target: HostTarget) -> HostTransitionResult:
+        before_checkpoint = target.checkpoint_comment_id
+        if not self._reconciliation_implementer.plan_next_work(_INTEGRATION_WORK):
+            return HostTransitionResult(
+                HostTransitionStatus.INTERVENTION_REQUIRED,
+                "PILOT_PLANNING_UNAVAILABLE",
+                target.work_issue,
+            )
+        try:
+            fresh = self._reconciliation_mission.current_target()
+        except RuntimeError:
+            fresh = None
+        if fresh is None or fresh.checkpoint_comment_id == before_checkpoint:
+            return HostTransitionResult(
+                HostTransitionStatus.INTERVENTION_REQUIRED,
+                "PILOT_PLANNING_NO_PROGRESS",
+                target.work_issue,
+            )
+        if fresh.work_issue == _INTEGRATION_WORK:
+            return HostTransitionResult(
+                HostTransitionStatus.YIELD_EXTERNAL,
+                "PILOT_DEPENDENCY_WAIT",
+                target.work_issue,
+            )
+        return HostTransitionResult(
+            HostTransitionStatus.COMPLETED,
+            "PILOT_PLANNING_DISPATCHED",
+            fresh.work_issue,
+            fresh.pr_number,
+            fresh.head_sha,
+        )
+
+    def _run_merge_reconciliation(
+        self, result: HostTransitionResult
+    ) -> HostTransitionResult:
         try:
             target = self._reconciliation_mission.current_target()
         except RuntimeError:
@@ -279,6 +340,37 @@ class ReconciliationAwareHostLoopController(HostLoopController):
             target.pr_number,
             target.head_sha,
         )
+
+    def _verify_implementation_progress(
+        self,
+        before: HostTarget,
+        result: HostTransitionResult,
+    ) -> HostTransitionResult:
+        try:
+            after = self._reconciliation_mission.current_target()
+        except RuntimeError:
+            after = None
+        if after is None:
+            return HostTransitionResult(
+                HostTransitionStatus.INTERVENTION_REQUIRED,
+                "IMPLEMENTER_PROGRESS_UNRESOLVED",
+                before.work_issue,
+                before.pr_number,
+                before.head_sha,
+            )
+        identity_changed = (
+            after.pr_number != before.pr_number or after.head_sha != before.head_sha
+        )
+        checkpoint_changed = after.checkpoint_comment_id != before.checkpoint_comment_id
+        if not identity_changed or not checkpoint_changed:
+            return HostTransitionResult(
+                HostTransitionStatus.INTERVENTION_REQUIRED,
+                "IMPLEMENTER_NO_PROGRESS",
+                before.work_issue,
+                before.pr_number,
+                before.head_sha,
+            )
+        return result
 
 
 def run_actual_host_transition(
@@ -348,9 +440,7 @@ def _codex_argv(environment: Mapping[str, str]) -> tuple[str, ...]:
             "never",
             "exec",
             "--sandbox",
-            "workspace-write",
-            "-c",
-            "sandbox_workspace_write.network_access=true",
+            "danger-full-access",
         )
     try:
         payload = json.loads(configured)
