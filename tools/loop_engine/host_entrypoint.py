@@ -129,15 +129,21 @@ class PilotPlanningImplementer(CodexImplementer):
             return super().plan_next_work(completed_work)
         instruction = (
             "Mission #450のactual V2 product pilot planning-only transitionです。"
-            "Loop Engineering bootstrap #471/#477はtrunkへ統合済みですが、#471はpilot evidence待ちで"
-            "openのままです。#207/#317/#450/#462、Project #7、GitHub live Issue/PRをfresh readし、"
+            "Loop Engineering bootstrap #471/#477はtrunkへ統合済みです。"
+            "#471はpilot evidence待ちでopenのままです。"
+            "#207/#317/#450/#462、Project #7、GitHub live Issue/PRをfresh readし、"
             "dependency-readyなV2 product Work/Integrationを1件選択してください。"
-            "#462/#471自身、およびloop-engineering基盤責務のIssueはpilot candidateから除外してください。"
-            "dependency-readyなV2 product Workが無い場合は外部/依存待ちをCheckpointへ明示してください。"
-            "repository code・design file・branch・PRを変更せず、merge/reviewも実行しないでください。"
-            "選択したWorkについてcurrent Work、current PR（存在時）、exact HEAD（存在時）、next actionを"
+            "#462/#471自身、およびloop-engineering基盤責務のIssueは"
+            "pilot candidateから除外してください。"
+            "dependency-readyなV2 product Workが無い場合は"
+            "外部/依存待ちをCheckpointへ明示してください。"
+            "repository code・design file・branch・PRを変更せず、"
+            "merge/reviewも実行しないでください。"
+            "選択したWorkについてcurrent Work、current PR（存在時）、"
+            "exact HEAD（存在時）、next actionを"
             "#450へ日本語のMission Checkpointとして1回だけ記録してください。"
-            "Root #317 completionをlive evidenceで証明できない限りMISSION_COMPLETEにしないでください。"
+            "Root #317 completionをlive evidenceで証明できない限り"
+            "MISSION_COMPLETEにしないでください。"
         )
         return self._run_codex(instruction)
 
