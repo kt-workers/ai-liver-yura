@@ -58,21 +58,21 @@ class TrustedWorktree:
             branch = self._prepare_new_branch(target.work_issue)
             if branch is None:
                 return None
-            head = self._git_output(("rev-parse", "HEAD"))
-            if head is None:
+            current_head = self._git_output(("rev-parse", "HEAD"))
+            if current_head is None:
                 return None
-            return PreparedWorktree(branch, head, None, False)
+            return PreparedWorktree(branch, current_head, None, False)
 
         if target.head_sha is None:
             return None
         pull = self._api_json(f"repos/{_REPOSITORY}/pulls/{target.pr_number}")
         if pull is None:
             return None
-        head = pull.get("head")
-        if not isinstance(head, dict):
+        head_value = pull.get("head")
+        if not isinstance(head_value, dict):
             return None
-        branch_value = head.get("ref")
-        live_head = head.get("sha")
+        branch_value = head_value.get("ref")
+        live_head = head_value.get("sha")
         if not isinstance(branch_value, str) or not isinstance(live_head, str):
             return None
         if live_head != target.head_sha:
