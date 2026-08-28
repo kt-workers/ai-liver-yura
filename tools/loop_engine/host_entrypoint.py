@@ -178,21 +178,32 @@ class PilotPlanningImplementer(CodexImplementer):
     def continue_work(self, target: HostTarget, *, repair: bool) -> bool:
         if not repair:
             return super().continue_work(target, repair=False)
-        pr_text = f"PR #{target.pr_number}" if target.pr_number is not None else "current Work lineage"
+        pr_text = (
+            f"PR #{target.pr_number}"
+            if target.pr_number is not None
+            else "current Work lineage"
+        )
         instruction = (
-            f"Mission #450 / Parent #462 の current Work #{target.work_issue} ({pr_text}) を、"
-            "functional repair / lineage reconciliationとして1 bounded transitionだけ進めてください。"
-            "GitHub live state、最新Mission Checkpoint、current trunk、Repository canonical、"
-            "Work固有のResume Gateと依存状態をfresh readしてください。"
-            "exact-head CI failureが現在のblockerならそのfunctional failureだけを修正してください。"
-            "PRがmergeable_state=dirty、又はCheckpointのnext actionがResume Gate/reconcileを要求する場合は、"
-            "mergeを試さずfresh Resume Gateを実施し、既存lineageをcurrent trunkへnormal mergeして"
-            "競合解消するか、canonical上obsoleteならcurrent trunkから新lineageを作るかを確定してください。"
-            "rebase/force pushは禁止です。このtransitionではproduct PRをReady/mergeしないでください。"
-            "必要な設計・コード・テスト更新とmachine gateを行い、normal push後はexact HEADをfresh readbackし、"
-            "current Work/current PR/current branch/exact HEAD/next actionを#450へ日本語のMission Checkpointとして"
-            "1回だけ記録してください。canonical reviewの非機能findingやprovider NOT_RUNを理由に停止せず、"
-            "Project #6 mutationとreviewer credential利用は禁止です。"
+            f"Mission #450 / Parent #462 の current Work #{target.work_issue} "
+            f"({pr_text}) を、"
+            "functional repair / lineage reconciliationとして"
+            "1 bounded transitionだけ進めてください。"
+            "GitHub live state、最新Mission Checkpoint、current trunk、"
+            "Repository canonical、Work固有のResume Gateと依存状態をfresh readしてください。"
+            "exact-head CI failureが現在のblockerなら"
+            "そのfunctional failureだけを修正してください。"
+            "PRがmergeable_state=dirty、又はCheckpointのnext actionが"
+            "Resume Gate/reconcileを要求する場合は、mergeを試さずfresh Resume Gateを実施し、"
+            "既存lineageをcurrent trunkへnormal mergeして競合解消するか、"
+            "canonical上obsoleteならcurrent trunkから新lineageを作るかを確定してください。"
+            "rebase/force pushは禁止です。"
+            "このtransitionではproduct PRをReady/mergeしないでください。"
+            "必要な設計・コード・テスト更新とmachine gateを行い、"
+            "normal push後はexact HEADをfresh readbackし、current Work/current PR/"
+            "current branch/exact HEAD/next actionを#450へ日本語のMission Checkpointとして"
+            "1回だけ記録してください。canonical reviewの非機能findingや"
+            "provider NOT_RUNを理由に停止せず、Project #6 mutationと"
+            "reviewer credential利用は禁止です。"
         )
         return self._run_codex(instruction)
 
