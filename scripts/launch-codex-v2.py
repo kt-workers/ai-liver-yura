@@ -14,7 +14,7 @@ sys.path.insert(0, str(root))
 
 
 def main() -> int:
-    from app.operations.host_launcher import (
+    from tools.loop_engine.host_launcher import (
         EnvironmentSecretProvider,
         GitHubCredentialUnavailable,
         build_launch_environment,
@@ -33,7 +33,7 @@ def main() -> int:
         return 0
     if args.preflight:
         return subprocess.run(
-            (sys.executable, "-m", "app.operations.preflight"),
+            (sys.executable, "-m", "tools.loop_engine.preflight"),
             cwd=root,
             env=dict(environment.values),
             check=False,

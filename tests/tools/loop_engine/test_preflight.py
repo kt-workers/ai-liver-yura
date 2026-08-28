@@ -3,7 +3,11 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from app.operations.preflight import CommandResult, EnvironmentCapabilityPreflight, PreflightStatus
+from tools.loop_engine.preflight import (
+    CommandResult,
+    EnvironmentCapabilityPreflight,
+    PreflightStatus,
+)
 
 
 class FakeRunner:

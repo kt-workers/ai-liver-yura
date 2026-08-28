@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from app.operations.host_launcher import (
+from tools.loop_engine.host_launcher import (
     EnvironmentSecretProvider,
     GitHubCredentialUnavailable,
     build_launch_environment,
@@ -33,7 +33,7 @@ def test_launcher_injects_goal_identity_and_path_without_persisting_token(tmp_pa
 
 def test_environment_credentials_are_injected_and_dotenv_is_git_ignored() -> None:
     provider = EnvironmentSecretProvider({"GH_TOKEN": "github-token"})
-    repository_root = Path(__file__).resolve().parents[2]
+    repository_root = Path(__file__).resolve().parents[3]
 
     assert provider.github_token() == "github-token"
     assert ".env" in (repository_root / ".gitignore").read_text(encoding="utf-8").splitlines()
@@ -48,8 +48,8 @@ def test_missing_github_environment_key_is_typed_unavailable() -> None:
 
 
 def test_target_checkout_operations_do_not_reference_reviewer_credentials_or_client() -> None:
-    repository_root = Path(__file__).resolve().parents[2]
-    operations = repository_root / "app" / "operations"
+    repository_root = Path(__file__).resolve().parents[3]
+    operations = repository_root / "tools" / "loop_engine"
     source = "\n".join(
         [
             *(path.read_text(encoding="utf-8") for path in operations.glob("*.py")),

@@ -21,7 +21,7 @@ not mutate GitHub Projects or start an OpenAI request.
 
 ## Contract
 
-`python -m app.operations.preflight` emits one JSON object:
+`python -m tools.loop_engine.preflight` emits one JSON object:
 
 ```json
 {
