@@ -1,4 +1,4 @@
-"""Loop Engineをactual hostへ接続する安全なentrypoint。"""
+"""Loop Engineを実ホストへ安全に接続する入口。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
@@ -27,6 +27,7 @@ from .preflight import (
     PreflightStatus,
     SubprocessCommandRunner,
 )
+from .trusted_worktree import TrustedWorktree
 
 _INTEGRATION_WORK = 471
 _MISSION_ISSUE = 450
@@ -42,7 +43,7 @@ _EXACT_HEAD_RE = re.compile(
 
 
 class StrictGhMissionPort(GhMissionPort):
-    """最新Mission Checkpointだけを採用し、古いtargetへfallbackしない。"""
+    """最新のMission Checkpointだけを採用し、古い対象へ戻らない。"""
 
     def __init__(self, runner: LocalRunner, environment: Mapping[str, str]) -> None:
         super().__init__(runner, environment)
@@ -122,7 +123,7 @@ class StrictGhMissionPort(GhMissionPort):
 
 
 class PilotAwareMissionPort(MissionPort):
-    """#471 bootstrap後もactual V2 pilot完了まではIntegration Issueをopenで保持する。"""
+    """#471の基盤統合後も、実製品作業の試験完了までは統合Issueを開いたままにする。"""
 
     def __init__(self, delegate: MissionPort) -> None:
         self._delegate = delegate
@@ -159,80 +160,100 @@ class PilotAwareMissionPort(MissionPort):
             f"- exact HEAD: `{target.head_sha}`\n" if target.head_sha is not None else ""
         )
         checkpoint = (
-            "## Mission Checkpoint — ACTIVE / PILOT_REQUIRED\n\n"
+            "## Mission Checkpoint — ACTIVE / 実製品試験が必要\n\n"
             "- Mission state: `ACTIVE`\n"
             f"- current Work: #{target.work_issue}\n"
             f"{pr_line}"
             f"{head_line}"
-            "- #477 bootstrap: mergeとreadbackは完了\n"
-            "- #471 state: openのままactual V2 Workのpilot証拠を待つ\n"
-            "- next action: Project #7とGitHub liveからactual V2 pilot Workを1件fresh選択する\n"
-            "- review policy: 非機能findingと`NOT_RUN`はnon-blocking"
+            "- #477 基盤統合: mergeとGitHub再確認は完了\n"
+            "- #471 状態: openのまま実製品Workの試験証拠を待つ\n"
+            "- next action: Project #7とGitHub liveから実製品の試験対象Workを1件fresh選択する\n"
+            "- review policy: 非機能の指摘と`NOT_RUN`は停止条件にしない"
         )
         return self._delegate.publish_checkpoint(checkpoint)
 
 
 class PilotPlanningImplementer(CodexImplementer):
-    """#471 bootstrap後のplanningでactual V2 product Workを選択する。"""
+    """実製品試験の選択と、Codex編集後の信頼済みGit操作を担当する。"""
+
+    def __init__(
+        self,
+        runner: LocalRunner,
+        root: Path,
+        environment: Mapping[str, str],
+        argv_prefix: Sequence[str],
+    ) -> None:
+        super().__init__(runner, root, environment, argv_prefix)
+        self._trusted_worktree = TrustedWorktree(runner, root, environment)
 
     def continue_work(self, target: HostTarget, *, repair: bool) -> bool:
-        if not repair:
-            return super().continue_work(target, repair=False)
+        prepared = self._trusted_worktree.prepare(target)
+        if prepared is None:
+            return False
+
+        if prepared.reconciliation_started:
+            task = (
+                "現在の作業系統へ最新基幹を通常mergeした状態を確認し、"
+                "競合箇所をRepository正本に従って解消してください。"
+            )
+        elif repair:
+            task = (
+                "現在のexact HEADで実際に動作を妨げている不具合だけを修正してください。"
+            )
+        else:
+            task = "現在Workの次の実装工程を1回分だけ進めてください。"
+
         pr_text = (
             f"PR #{target.pr_number}"
             if target.pr_number is not None
-            else "current Work lineage"
+            else "まだPRがない現在Work"
         )
         instruction = (
-            f"Mission #450 / Parent #462 の current Work #{target.work_issue} "
-            f"({pr_text}) を、"
-            "functional repair / lineage reconciliationとして"
-            "1 bounded transitionだけ進めてください。"
-            "GitHub live state、最新Mission Checkpoint、current trunk、"
-            "Repository canonical、Work固有のResume Gateと依存状態をfresh readしてください。"
-            "exact-head CI failureが現在のblockerなら"
-            "そのfunctional failureだけを修正してください。"
-            "PRがmergeable_state=dirty、又はCheckpointのnext actionが"
-            "Resume Gate/reconcileを要求する場合は、mergeを試さずfresh Resume Gateを実施し、"
-            "既存lineageをcurrent trunkへnormal mergeして競合解消するか、"
-            "canonical上obsoleteならcurrent trunkから新lineageを作るかを確定してください。"
-            "rebase/force pushは禁止です。"
-            "このtransitionではproduct PRをReady/mergeしないでください。"
-            "必要な設計・コード・テスト更新とmachine gateを行い、"
-            "normal push後はexact HEADをfresh readbackし、current Work/current PR/"
-            "current branch/exact HEAD/next actionを#450へ日本語のMission Checkpointとして"
-            "1回だけ記録してください。canonical reviewの非機能findingや"
-            "provider NOT_RUNを理由に停止せず、Project #6 mutationと"
-            "reviewer credential利用は禁止です。"
+            f"Mission #450 / Parent #462 の current Work #{target.work_issue}（{pr_text}）を"
+            "1回分の限定された遷移として進めます。"
+            f"{task}"
+            "GitHubの現在状態、最新Mission Checkpoint、現在基幹、Repository正本、"
+            "Work固有の再開確認（Resume Gate）と依存状態をfresh readしてください。"
+            "設計→コード→テストの順序を守ってください。"
+            "コードや文書内の人間向け文章は日本語で記述し、英語の概念名が必要な場合は"
+            "自然な日本語の意味表現を先に書いてから原語を括弧内へ併記してください。"
+            "Gitのbranch作成・切替・merge・add・commit・push・rebase・force pushは"
+            "実行しないでください。Git metadataの変更は信頼済みホストが担当します。"
+            "GitHubへのIssue/PR/Checkpoint等の書込みも行わないでください。"
+            "ファイル編集と必要なmachine gateだけを実施し、変更はworktreeへ未commitで残してください。"
+            "正本レビュー（canonical review）の非機能指摘やprovider `NOT_RUN`を理由に停止せず、"
+            "Project #6の変更とreviewer credential利用は禁止です。"
         )
-        return self._run_codex(instruction)
+        if not self._run_codex(instruction):
+            self._trusted_worktree.abort_merge_if_needed(prepared)
+            return False
+        finalized = self._trusted_worktree.finalize(target, prepared, repair=repair)
+        return finalized is not None
 
     def plan_next_work(self, completed_work: int | None) -> bool:
         if completed_work != _INTEGRATION_WORK:
             return super().plan_next_work(completed_work)
         instruction = (
-            "Mission #450のactual V2 product pilot planning-only transitionです。"
-            "Loop Engineering bootstrap #471/#477はtrunkへ統合済みです。"
-            "#471はpilot evidence待ちでopenのままです。"
-            "#207/#317/#450/#462、Project #7、GitHub live Issue/PRをfresh readし、"
-            "dependency-readyなV2 product Work/Integrationを1件選択してください。"
-            "#462/#471自身、およびloop-engineering基盤責務のIssueは"
-            "pilot candidateから除外してください。"
-            "dependency-readyなV2 product Workが無い場合は"
-            "外部/依存待ちをCheckpointへ明示してください。"
-            "repository code・design file・branch・PRを変更せず、"
-            "merge/reviewも実行しないでください。"
-            "選択したWorkについてcurrent Work、current PR（存在時）、"
-            "exact HEAD（存在時）、next actionを"
-            "#450へ日本語のMission Checkpointとして1回だけ記録してください。"
-            "Root #317 completionをlive evidenceで証明できない限り"
-            "MISSION_COMPLETEにしないでください。"
+            "Mission #450の実製品試験対象を選択する計画専用の遷移です。"
+            "Loop Engineeringの基盤統合 #471/#477は基幹へ統合済みです。"
+            "#471は実製品試験の証拠待ちでopenのままです。"
+            "#207/#317/#450/#462、Project #7、GitHub上の現在Issue/PRをfresh readし、"
+            "依存関係を満たしたV2製品Workまたは統合Workを1件選択してください。"
+            "#462/#471自身とLoop Engineering基盤責務のIssueは試験候補から除外してください。"
+            "依存関係を満たした製品Workが無い場合は、外部または依存待ちをCheckpointへ明示してください。"
+            "Repositoryのコード・設計file・branch・PRを変更せず、mergeやreviewも実行しないでください。"
+            "選択したWorkは必ずliteral field `- current Work: #<issue>` で記録してください。"
+            "active PRが存在する場合は `- current PR: #<pr>` と"
+            " `- exact HEAD: <40-hex-sha>` も記録してください。"
+            "active PRが無い場合はPR/HEADを捏造せず省略してください。"
+            "#450へ日本語のMission Checkpointを1回だけ記録してください。"
+            "Root #317の完成をlive evidenceで証明できない限りMISSION_COMPLETEにしないでください。"
         )
         return self._run_codex(instruction)
 
 
 class ReconciliationAwareHostLoopController(HostLoopController):
-    """merge conflictと#471 pilot planningをbounded transitionへ振り分ける。"""
+    """merge競合と#471の実製品試験計画を限定された遷移へ振り分ける。"""
 
     def __init__(
         self,
@@ -440,14 +461,16 @@ def _codex_argv(environment: Mapping[str, str]) -> tuple[str, ...]:
             "never",
             "exec",
             "--sandbox",
-            "danger-full-access",
+            "workspace-write",
+            "-c",
+            "sandbox_workspace_write.network_access=true",
         )
     try:
         payload = json.loads(configured)
     except json.JSONDecodeError as error:
-        raise ValueError("invalid Codex command") from error
+        raise ValueError("Codexコマンドが不正です") from error
     if not isinstance(payload, list) or not payload or not all(
         isinstance(item, str) and item for item in payload
     ):
-        raise ValueError("invalid Codex command")
+        raise ValueError("Codexコマンドが不正です")
     return tuple(cast(list[str], payload))
