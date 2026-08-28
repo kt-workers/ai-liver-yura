@@ -30,6 +30,15 @@ _ROOT_ISSUE = 317
 _PARENT_ISSUE = 462
 _TRUNK = "rebuild/v2-foundation"
 _CI_WORKFLOW_NAME = "V2 Deterministic CI"
+_SAFE_OBSERVE_FAILURES = frozenset(
+    {
+        "MISSION_CHECKPOINT_TARGET_UNRESOLVED",
+        "GitHub comments response is not a list",
+        "GitHub API response is not an object",
+        "GitHub API unavailable",
+        "GitHub API returned invalid JSON",
+    }
+)
 
 _CURRENT_WORK_RE = re.compile(r"(?im)^.*?current\s+Work(?:\s*/\s*Integration)?\s*:\s*`?#?(\d+)")
 _CURRENT_PR_RE = re.compile(r"(?im)^.*?current\s+PR(?:\s*/\s*branch)?\s*:\s*`?#?(\d+)")
@@ -354,10 +363,20 @@ class CodexImplementer:
         completed = f"#{completed_work}" if completed_work is not None else "current Work未解決"
         instruction = (
             f"Mission #450のplanning-only transitionです。直前Workは{completed}です。"
-            "#207/#317/#450/#462、Project #7、GitHub live Issue/PRをfresh readし、次のdependency-ready Workを1件選択してください。"
-            "repository code・design file・branch・PRを変更せず、merge/reviewも実行しないでください。"
-            "選択結果または外部待機状態を#450へ日本語のMission Checkpointとして1回だけ記録してください。"
-            "Root #317 completionをlive evidenceで証明できない限りMISSION_COMPLETEにしないでください。"
+            "#207/#317/#450/#462、Project #7、GitHub live Issue/PRをfresh readし、"
+            "次のdependency-ready Workを1件選択してください。"
+            "repository code・design file・branch・PRを変更せず、"
+            "merge/reviewも実行しないでください。"
+            "#450へ日本語のMission Checkpointを1回だけ記録し、"
+            "選択したWorkは必ずliteral field `- current Work: #<issue>` で記録してください。"
+            "active PRが存在する場合は `- current PR: #<pr>` と"
+            " `- exact HEAD: <40-hex-sha>` も記録してください。"
+            "active PRが無い場合はPR/HEADを捏造せず省略してください。"
+            "`選択した次Work:`等の別名だけでcurrent Workを代用してはいけません。"
+            "外部待機状態を選ぶ場合も、再開対象Workがあるなら"
+            "同じliteral current Work fieldを必ず残してください。"
+            "Root #317 completionをlive evidenceで証明できない限り"
+            "MISSION_COMPLETEにしないでください。"
         )
         return self._run_codex(instruction)
 
@@ -380,9 +399,10 @@ class HostLoopController:
     def run_once(self) -> HostTransitionResult:
         try:
             target = self._mission.current_target()
-        except RuntimeError:
+        except RuntimeError as error:
             return HostTransitionResult(
-                HostTransitionStatus.INTERVENTION_REQUIRED, "GITHUB_OBSERVE_FAILED"
+                HostTransitionStatus.INTERVENTION_REQUIRED,
+                _observe_failure_detail(error),
             )
         if target is None:
             if self._implementer.plan_next_work(None):
@@ -541,6 +561,13 @@ def _codex_environment(environment: Mapping[str, str]) -> dict[str, str]:
         "CODEX_MISSION_GOAL_SHA256",
     }
     return {key: value for key, value in environment.items() if key in allowed}
+
+
+def _observe_failure_detail(error: RuntimeError) -> str:
+    reason = str(error)
+    if reason in _SAFE_OBSERVE_FAILURES:
+        return f"GITHUB_OBSERVE_FAILED:{reason}"
+    return "GITHUB_OBSERVE_FAILED"
 
 
 def _target_result(
