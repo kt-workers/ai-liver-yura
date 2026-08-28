@@ -103,6 +103,33 @@ def test_codex_heartbeat_shows_liveness_without_raw_output(
     assert "CODEX_HIDDEN_DETAIL" in console.path.read_text(encoding="utf-8")
 
 
+def test_codex_is_not_killed_by_generic_wall_clock_timeout(
+    tmp_path: Path, capsys: CaptureFixture[str]
+) -> None:
+    codex = tmp_path / "codex"
+    codex.write_text(
+        "#!/bin/sh\nsleep 0.15\necho CODEX_FINISHED\n",
+        encoding="utf-8",
+    )
+    codex.chmod(0o755)
+    console = RuntimeConsole(tmp_path)
+    runner = VisibleSubprocessLocalRunner(console, heartbeat_seconds=0.03)
+
+    result = runner.run(
+        (str(codex),),
+        cwd=tmp_path,
+        timeout_seconds=0,
+        capture_output=False,
+    )
+
+    assert result.succeeded
+    stderr = capsys.readouterr().err
+    assert "timeout" not in stderr
+    assert "codex: running" in stderr
+    assert "codex: done" in stderr
+    assert "CODEX_FINISHED" in console.path.read_text(encoding="utf-8")
+
+
 def test_captured_failure_is_concise_and_full_error_is_persisted(
     tmp_path: Path, capsys: CaptureFixture[str]
 ) -> None:
