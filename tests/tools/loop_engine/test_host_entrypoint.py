@@ -11,6 +11,7 @@ from tools.loop_engine.host_entrypoint import (
     PilotAwareMissionPort,
     PilotPlanningImplementer,
     StrictGhMissionPort,
+    _codex_argv,
 )
 from tools.loop_engine.host_runtime import HostTarget, LocalCommandResult
 
@@ -157,18 +158,34 @@ def test_471_bootstrap_completion_keeps_integration_issue_open() -> None:
     assert "actual V2 Work pilot evidence pending" in checkpoint
 
 
+def test_default_codex_command_uses_current_exec_contract() -> None:
+    assert _codex_argv({}) == (
+        "codex",
+        "-a",
+        "never",
+        "exec",
+        "--sandbox",
+        "workspace-write",
+        "-c",
+        "sandbox_workspace_write.network_access=true",
+    )
+    assert "--full-auto" not in _codex_argv({})
+
+
 def test_471_planning_excludes_loop_engineering_and_self_from_pilot() -> None:
     runner = RecordingCodexRunner()
     implementer = PilotPlanningImplementer(
         runner,
         Path("/repo"),
         {"PATH": "/usr/bin"},
-        ("codex", "exec"),
+        _codex_argv({}),
     )
 
     assert implementer.plan_next_work(471)
     assert len(runner.commands) == 1
-    instruction = runner.commands[0][-1]
+    command = runner.commands[0]
+    assert command[:8] == _codex_argv({})
+    instruction = command[-1]
     assert "actual V2 product pilot" in instruction
     assert "#462/#471自身" in instruction
     assert "loop-engineering基盤責務" in instruction
