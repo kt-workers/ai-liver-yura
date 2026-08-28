@@ -1,109 +1,112 @@
-# Loop Integration and Recovery
+# Loop統合と復旧
 
-## Field-specific source of truth
+## フィールド別の正本
 
-| Field | Authority |
+| フィールド | 正本 |
 | --- | --- |
-| Issue state | GitHub live Issue |
-| PR/head/base | GitHub live PR and branch |
-| CI | exact-head GitHub Actions evidence |
-| Project Status/Priority/Area/Issue level/Start/Target | Project #7 live |
-| Canonical design | repository canonical blob identity |
-| Work checkpoint | transition, TaskPacket, health, durable narrative |
-| Mission checkpoint | current-work narrative and next action |
+| Issue状態 | GitHub live Issue |
+| PR / head / base | GitHub live PRとbranch |
+| CI | exact-headのGitHub Actions証拠 |
+| Project Status / Priority / Area / Issue level / Start / Target | Project #7 live |
+| canonical design | repository canonicalのblob identity |
+| Work checkpoint | transition、TaskPacket、health、永続的な経緯 |
+| Mission checkpoint | current Workの経緯とnext action |
 
-Checkpoint data never overwrites Project #7-owned fields. A conflict with a live authority is repaired from live state or fails closed.
+Checkpointの値でProject #7が所有するフィールドを上書きしない。liveの正本と矛盾した場合はlive stateから修復するか、fail-closedで停止する。
 
-## Recovery ordering
+## 復旧順序
 
-Every mutation-capable transition is `fresh observe → WriteIntent → fresh precondition → effect → effect readback → checkpoint → fresh observe`. On timeout or crash, the effect is unknown until the remote target is read back.
+変更を伴うtransitionは、必ず `fresh observe → WriteIntent → fresh precondition → effect → effect readback → checkpoint → fresh observe` の順で実行する。timeoutやcrashが発生した場合、remote targetをreadbackするまでeffectの成否を確定しない。
 
-One trusted host holds the mutation lease in v1. Concurrent external waits are allowed, but only one actionable mutation transition runs at a time. Multi-host active-active is outside v1.
+v1では1つのtrusted hostだけがmutation leaseを保持する。外部待機は並行して存在してよいが、変更可能なactionable transitionは同時に1つだけ実行する。multi-host active-activeはv1の対象外とする。
 
-## Actual host target resolution
+## actual hostのtarget解決
 
-The normal Loop CLI uses the **latest** `Mission Checkpoint` comment on #450 as a discovery record and never searches backward for an older apparently-parseable target. A mutation-capable checkpoint must explicitly identify at least `current Work`; when a PR exists it also records `current PR` and the observed exact HEAD.
+通常のLoop CLIは、#450の**最新** `Mission Checkpoint` commentだけをdiscovery recordとして使用し、古いparse可能なCheckpointへ遡らない。変更可能なCheckpointは最低でも`current Work`を明示し、PRが存在する場合は`current PR`と観測したexact HEADも記録する。
 
-The checkpoint target is not execution authority. After parsing it, the host fresh-reads the Work Issue and PR/branch HEAD from GitHub before CI interpretation, Codex dispatch, Ready, merge, Issue close, or checkpoint publication. A checkpoint HEAD that differs from the live PR HEAD is stale and blocks mutation until reconciliation.
+Checkpointのtarget自体は実行Authorityではない。parse後、CI判定、Codex dispatch、Ready、merge、Issue close、Checkpoint投稿の前に、Work IssueとPR / branch HEADをGitHubからfresh readする。Checkpoint HEADとlive PR HEADが異なる場合はstaleとして扱い、reconciliationが完了するまで変更しない。
 
-If the latest Mission Checkpoint is missing an explicit current target, has an invalid target identity, or cannot be reconciled with live GitHub state, the host returns a fail-closed typed result. It must not silently fall back to an older Mission Checkpoint because doing so could execute a previously completed Work.
+最新Mission Checkpointに明示的なcurrent targetがない、target identityが不正、またはGitHub live stateとreconcileできない場合、hostはtypedなfail-closed結果を返す。過去の完了済みWorkを再実行する危険があるため、古いMission Checkpointへsilent fallbackしてはならない。
 
-Planning-only Codex output that selects the next Work must therefore write a new Mission Checkpoint with the explicit current Work/PR/HEAD identity needed by the next host invocation.
+次Workを選択するplanning-only Codexは、次のhost invocationが必要とするcurrent Work / PR / HEAD identityを明示した新しいMission Checkpointを必ず作成する。
 
-## Merge conflict reconciliation
+## merge conflictのreconciliation
 
-PR mergeability is GitHub live authority and is checked again immediately before any Ready or merge mutation. A PR reported as `mergeable=false` or `mergeable_state=dirty` must not be marked Ready and must not be sent directly to the merge command even when exact-head CI is successful.
+PRのmergeabilityはGitHub liveを正本とし、Readyまたはmerge mutationの直前にも再確認する。PRが`mergeable=false`または`mergeable_state=dirty`の場合、exact-head CIが成功していてもReady化せず、直接merge commandへ送らない。
 
-A merge conflict is an actionable product-lineage state, not a Human intervention by itself. The host dispatches one bounded Codex functional reconciliation transition. Codex must fresh-read the latest Mission Checkpoint, current Work/PR, current trunk, canonical design, dependency state, and the Work-specific Resume Gate requirements before choosing the repair:
+merge conflictは、それ自体ではHuman interventionではなく、対処可能なproduct lineage状態である。hostはCodexへ1 bounded transitionだけfunctional reconciliationをdispatchする。Codexは修復方法を決める前に、最新Mission Checkpoint、current Work / PR、current trunk、canonical design、dependency state、Work固有のResume Gateをfresh readする。
 
-- reconcile the existing lineage by normally merging current trunk into the feature branch and resolving conflicts, or
-- when the canonical Resume Gate says the preserved lineage is obsolete, create a new lineage from current trunk and record that identity instead.
+- 既存lineageが有効なら、current trunkをfeature branchへnormal mergeし、競合を解消する。
+- canonical Resume Gateが既存lineageをobsoleteと判定した場合は、current trunkから新しいlineageを作成してidentityを記録する。
 
-Force push and rebase remain prohibited. Codex does not merge the product PR in the reconciliation transition. It updates design/code/tests as required, runs the applicable machine gates, performs a normal push, fresh-reads the new exact HEAD, and records one explicit Mission Checkpoint. The next host invocation re-observes that new state and handles CI/merge normally.
+force pushとrebaseは禁止する。reconciliation transition内ではproduct PRをmergeしない。必要なdesign / code / testを更新し、適用可能なmachine gateを実行し、normal push後に新しいexact HEADをfresh readして明示的なMission Checkpointを1回記録する。次のhost invocationが新しい状態を再観測し、CI / mergeを通常経路で処理する。
 
-If the expected-head merge command fails for a reason that fresh GitHub readback does **not** identify as a merge conflict, the host keeps the typed `EXPECTED_HEAD_MERGE_FAILED` intervention rather than treating credential, permission, or transport failures as source conflicts.
+expected-head merge commandが失敗し、fresh GitHub readbackでもmerge conflictと確認できない場合、credential、permission、transport failure等をsource conflictとして誤分類せず、`EXPECTED_HEAD_MERGE_FAILED`を維持する。
 
-## Codex host execution contract
+## Codex host実行契約
 
-The trusted host invokes Codex with an **explicit current CLI contract** instead of depending on the deprecated/compatibility `--full-auto` shortcut.
+trusted hostは、廃止・互換用の`--full-auto` shortcutへ依存せず、現在のCLI contractを明示してCodexを起動する。
 
-The default Codex child must be equivalent to:
+actual hostでbranch / commit / pushを含む通常のGit操作まで自律実行するため、既定のCodex childは次と同等とする。
 
 ```text
-codex -a never exec --sandbox workspace-write \
-  -c sandbox_workspace_write.network_access=true <instruction>
+codex -a never exec --sandbox danger-full-access <instruction>
 ```
 
-This is required because Loop Engineering needs both:
+`workspace-write`では`.git` metadataへの書込みが拒否される環境があり、branch作成、commit、normal pushを完遂できない。その状態でCodexがexit 0を返しても実装成功とは扱わない。
 
-- workspace writes for design/code/test/branch work inside the target checkout
-- outbound network access for `gh` read/write operations against GitHub live state
+`codex --version`の成功だけでは、この実行契約が利用可能という証拠にならない。actual pilotでは、childが必要なbounded transitionを実際に実行できることを証明する。CLI syntax不整合、実効read-only状態、network不可、Git metadata書込み不可等で割り当てたtransitionを実行できない場合はfunctional blockerとして扱う。
 
-`codex --version` alone is not sufficient evidence that this execution contract is usable. The actual pilot must prove that the child can execute the required bounded transition. A CLI syntax incompatibility, effective read-only sandbox, or unavailable network that prevents the child from performing the assigned transition is a functional blocker, not a review-hardening concern.
+Codex childへ渡すenvironmentは引き続きhost側で制限する。Reviewer credentialやdatabase credentialをchild environmentへ追加しない。`LOOP_CODEX_COMMAND_JSON`でtrusted host用commandを上書きできるが、上書き側も必要なGit操作能力とsecret boundaryを維持しなければならない。
 
-`LOOP_CODEX_COMMAND_JSON` may override the default command for a trusted host, but the override is responsible for preserving the same minimum capabilities and secret boundary. Reviewer credentials remain excluded from the Codex child.
+## implementer進捗のreadback
 
-## Runtime observability contract
+Codex processのexit code 0だけでは`COMPLETED`にしない。実装、CI repair、merge reconciliationをdispatchした後はGitHub live stateをfresh readし、次の両方を確認する。
 
-The normal CLI must never appear silently hung during a bounded transition, but default terminal output must remain readable. Human-visible progress, detailed diagnostics, and machine-readable completion output use separate channels:
+- Mission Checkpointのcomment identityが更新されている。
+- current PRまたはexact HEADのidentityが実際に前進している。
 
-- default stderr shows only concise lifecycle events: startup, log path, major stage entry, Codex dispatch/completion, failures, and final result
-- repetitive successful GitHub/API child command start/done events and raw Codex output are written to the persistent run log but are hidden from the default terminal
-- `--verbose` enables the detailed child-command and raw Codex stream on stderr for live diagnosis
-- stdout remains reserved for the final `HostTransitionResult` JSON so scripts can parse the terminal result deterministically
-- every run persists the full safe child output under `logs/loop_engine/`, regardless of terminal verbosity
-- logs must not print secret values, `.env` content, reviewer credentials, database credentials, full sanitized environments, or full argv containing prompt/secret-like values
+どちらかが変化していない場合は`IMPLEMENTER_NO_PROGRESS`としてfail-closedにする。これにより、Codex内部でGit操作が失敗したのにprocessだけ正常終了し、同一transitionを連続再実行する状態を防ぐ。
 
-A failure must identify the stage and exit/result code on the default terminal and point to the persistent log for full evidence. Observability is part of actual-host operability, but observability must not flood the operator console with routine low-level traffic.
+## #471 bootstrap後のrouting
 
-## #471 bootstrap and pilot completion
+PR #477はactual host Loopを実行可能にするbootstrap implementationである。PR #477のmergeだけでは#471のcompletion evidenceにならない。#477がtrunkへ入った後も#471はopenのまま保持し、hostがdependency-readyなactual V2 product Workをpilotとして選択する。
 
-PR #477 is the bootstrap implementation that makes the actual host Loop executable. Merging PR #477 is **not** #471 completion evidence by itself. After #477 reaches trunk, #471 remains open and the host selects an actual dependency-ready V2 product Work as the pilot.
+`current Work: #471`かつactive PRなしの状態は、通常のimplementation continuationではなく**pilot planning-only state**として扱う。この状態でCodexへ#471のコード実装を再dispatchしてはならない。
 
-The post-bootstrap planning transition treats #471 and #462 as orchestration/integration state, not pilot candidates. It must select a **V2 product Work/Integration** that is dependency-ready under GitHub live state and Project #7. Issues whose work identity is Loop Engineering infrastructure (`loop-engineering` responsibility) are excluded from the actual product pilot. The planner must not select #471 itself merely because #471 remains open while pilot evidence is pending.
+hostは#471をcompleted_workとしてplanning-only Codexを1回起動し、#462 / #471自身とLoop Engineering基盤Issueを除外してactual V2 product Workを選択させる。planning後は最新Checkpointをfresh readし、別のproduct Workへcurrent Workが移動したことを確認する。
 
-If no dependency-ready V2 product Work exists, the planner records a typed external/dependency wait instead of fabricating a pilot or closing #471.
+Checkpointは更新されたがcurrent Workが#471のままなら、dependency-readyなproduct Workが存在しない待機状態として`PILOT_DEPENDENCY_WAIT`を返す。Checkpoint自体が更新されなければ`PILOT_PLANNING_NO_PROGRESS`として停止する。
 
-#471 may be completed only after the installed trunk Loop has driven at least one actual V2 product Work through the applicable bounded stages without a human copying TaskPackets/review findings, with exact-head CI/merge identity and restart-safe GitHub checkpoints. The pilot Work's own completion and #471 integration completion are distinct records.
+## runtime observability契約
 
-Therefore the host completion path special-cases #471 bootstrap: merge/readback #477, keep #471 open, and perform a planning-only selection of the actual V2 product pilot Work. Ordinary Work issues may be closed after their own successful expected-head merge/readback.
+通常CLIはbounded transition中に無反応へ見えてはならないが、既定のterminal出力は読みやすく保つ。人間向けprogress、詳細diagnostic、machine-readable completion outputを分離する。
 
-## Exact-head CI ordering
+- 既定stderrにはstartup、log path、主要stage開始、Codex dispatch / completion、failure、final resultだけを簡潔に表示する。
+- 成功したGitHub / API child commandの反復start / doneとCodex raw outputはpersistent run logへ保存し、既定terminalでは非表示にする。
+- `--verbose`指定時だけ詳細child commandとCodex raw streamをstderrへ表示する。
+- stdoutはfinal `HostTransitionResult` JSON専用とし、scriptが決定論的にparseできるようにする。
+- terminal verbosityに関係なく、すべてのrunで安全なchild outputを`logs/loop_engine/`配下へ保存する。
+- secret値、`.env`内容、Reviewer credential、database credential、sanitized environment全体、promptやsecret相当値を含むfull argvはlogへ出さない。
 
-CI evidence is first bound to the expected current head, then interpreted by lifecycle status. If an observed workflow run belongs to another head, the result is `STALE` even when that old run is still `queued` or `in_progress`. An old-head pending run must never yield the current Work as if its CI were legitimately pending.
+failure時は既定terminalへstageとexit / result codeを表示し、詳細log pathを案内する。observabilityはactual-host operabilityの一部だが、通常の低レベルtrafficでoperator consoleを埋めてはならない。
 
-Only after `evidence.head_sha == expected_head_sha` is established may `queued` / `in_progress` become `YIELD_EXTERNAL`, `success` become `PASS`, or another terminal conclusion become `FAILED`.
+## exact-head CIの判定順序
 
-## Wait and completion
+CI evidenceは、まずexpected current headへbindしてからlifecycle statusを解釈する。observed workflow runが別HEADのものなら、そのrunが`queued`または`in_progress`でも`STALE`とする。old headのpending runによってcurrent Workを誤ってCI pendingとしてyieldしてはならない。
 
-`CI_PENDING`, `REVIEW_PENDING`, `HUMAN_VERIFICATION_PENDING`, credential, provider, Project, and database outages are typed waits. Independent actionable Work may proceed; otherwise the runner yields without busy retry.
+`evidence.head_sha == expected_head_sha`を確認した後にのみ、`queued` / `in_progress`を`YIELD_EXTERNAL`、`success`を`PASS`、その他のterminal conclusionを`FAILED`として扱える。
 
-A review wait or provider-side `NOT_RUN` is not a completion blocker by itself. Review findings are blocking only when deterministic or reproducible evidence establishes a functional failure under the current Mission policy.
+## 待機と完了
 
-`MISSION_COMPLETE` requires explicit Root #317, required Work/Integration, human/system verification, runtime boot/continuous/restart/graceful-shutdown, and zero functional blocking conflicts. Zero candidates or one merged Work is insufficient.
+`CI_PENDING`、`REVIEW_PENDING`、`HUMAN_VERIFICATION_PENDING`、credential、provider、Project、database outageはtyped waitとして扱う。独立したactionable Workがあれば進め、なければbusy retryせずrunnerをyieldする。
 
-## E2E acceptance
+review waitやprovider側の`NOT_RUN`だけではcompletion blockerにならない。review findingは、現在のMission policyでdeterministicまたはreproducibleなfunctional failureが証明された場合だけblockingとする。
 
-The integration suite covers new Work to normal merge, functional repair, pending yield/resume, stale CI/review rejection, crash recovery after push/review/merge, DB degradation, Project #7 outage, Project #6 reject, self-improvement dedupe, SIGINT, competing lineage stop, and false-completion prevention.
+`MISSION_COMPLETE`には、Root #317、required Work / Integration、human / system verification、runtime boot / continuous / restart / graceful-shutdown、functional blocking conflict 0件の明示的な証拠が必要である。candidate 0件やWork 1件のmergeだけでは不十分とする。
 
-Controlled fake-port integration is necessary but not sufficient for #471 completion. The repository must also provide a host composition reachable from the normal Loop CLI so that the real Preflight/Observe/Supervisor/Implementer/Verify/Checkpoint boundaries can execute one bounded transition without a human copying a TaskPacket or review finding between agents.
+## E2E受け入れ条件
+
+integration suiteでは、new Workからnormal merge、functional repair、pending yield / resume、stale CI / review rejection、push / review / merge後のcrash recovery、DB degradation、Project #7 outage、Project #6 reject、self-improvement dedupe、SIGINT、competing lineage stop、false-completion防止を検証する。
+
+controlled fake-port integrationは必要だが、#471 completionには十分ではない。normal Loop CLIから到達できるhost compositionをrepositoryに備え、実際のPreflight / Observe / Supervisor / Implementer / Verify / Checkpoint境界で、人間がTaskPacketやreview findingをagent間転記せずにbounded transitionを実行できることを証明する。
