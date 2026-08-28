@@ -15,6 +15,7 @@ from tools.loop_engine.host_entrypoint import (
     _codex_argv,
 )
 from tools.loop_engine.host_runtime import (
+    HostLoopController,
     HostTarget,
     HostTransitionStatus,
     LocalCommandResult,
@@ -89,6 +90,37 @@ class FakeMissionPort:
         return True
 
 
+class FailingMissionPort:
+    def current_target(self) -> HostTarget | None:
+        raise RuntimeError("MISSION_CHECKPOINT_TARGET_UNRESOLVED")
+
+    def ci_status(self, target: HostTarget) -> CIGateStatus:
+        del target
+        return CIGateStatus.PASS
+
+    def merge_current(self, target: HostTarget) -> bool:
+        del target
+        return False
+
+    def complete_work(self, target: HostTarget) -> bool:
+        del target
+        return False
+
+    def publish_checkpoint(self, body: str) -> bool:
+        del body
+        return False
+
+
+class NoopImplementer:
+    def continue_work(self, target: HostTarget, *, repair: bool) -> bool:
+        del target, repair
+        return False
+
+    def plan_next_work(self, completed_work: int | None) -> bool:
+        del completed_work
+        return False
+
+
 def test_latest_ambiguous_mission_checkpoint_does_not_fall_back() -> None:
     responses = {
         "repos/ktan514/ai-liver-yura/issues/450/comments?per_page=100&page=1": [
@@ -148,6 +180,15 @@ def test_latest_explicit_target_is_fresh_read_from_github() -> None:
     assert not target.stale_checkpoint
 
 
+def test_checkpoint_parse_failure_is_exposed_as_typed_observe_detail() -> None:
+    result = HostLoopController(FailingMissionPort(), NoopImplementer()).run_once()
+
+    assert result.status is HostTransitionStatus.INTERVENTION_REQUIRED
+    assert result.detail == (
+        "GITHUB_OBSERVE_FAILED:MISSION_CHECKPOINT_TARGET_UNRESOLVED"
+    )
+
+
 def test_471_bootstrap_completion_keeps_integration_issue_open() -> None:
     target = HostTarget(471, True, 477, "b" * 40, False, True, 4, "b" * 40)
     delegate = FakeMissionPort(target)
@@ -175,6 +216,24 @@ def test_default_codex_command_uses_current_exec_contract() -> None:
         "sandbox_workspace_write.network_access=true",
     )
     assert "--full-auto" not in _codex_argv({})
+
+
+def test_generic_planning_requires_machine_readable_current_work_field() -> None:
+    runner = RecordingCodexRunner()
+    implementer = PilotPlanningImplementer(
+        runner,
+        Path("/repo"),
+        {"PATH": "/usr/bin"},
+        _codex_argv({}),
+    )
+
+    assert implementer.plan_next_work(338)
+    assert len(runner.commands) == 1
+    instruction = runner.commands[0][-1]
+    assert "`- current Work: #<issue>`" in instruction
+    assert "`- current PR: #<pr>`" in instruction
+    assert "`- exact HEAD: <40-hex-sha>`" in instruction
+    assert "別名だけでcurrent Workを代用してはいけません" in instruction
 
 
 def test_471_planning_excludes_loop_engineering_and_self_from_pilot() -> None:
