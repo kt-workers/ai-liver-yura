@@ -766,3 +766,12 @@ production `app/runtime`, Brain, Body, Subsystem は Mission Supervisor を impo
 #465は、GitHub live snapshotから deterministic に SupervisorDecision を生成し、conflict時fail-closed、dependency-ready Work選定、Resume Certificate / Task Packet、wait切替、duplicate suppression、Write Gate、Mission completion非誤判定を automated test で証明し、exact-head CI と canonical review PASS を得た時点で implementation completion candidate となる。
 
 個別 #465 完了後も Mission #450 は Root #317 completion まで `ACTIVE` を継続する。
+
+## 23. Loop Engineering field-specific authority
+
+`loop_integration_recovery.md` のfield-specific Source-of-Truth Matrixを
+本Supervisorの上位契約として採用する。特にProject #7が所有する
+`Status`、`Priority`、`Area`、`Issue level`、`Start date`、`Target date`は
+Project #7 liveのみがAuthorityであり、Work/Mission Checkpointはそれらを
+上書きしない。Checkpointはtransition、TaskPacket、health、narrativeの
+durable evidenceに限定し、liveとの不一致はrepairまたはconflictとする。

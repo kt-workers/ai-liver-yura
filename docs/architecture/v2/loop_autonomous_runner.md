@@ -1,0 +1,27 @@
+# Loop Autonomous Runner
+
+## One-transition command
+
+`python -m tools.loop_engine` performs one bounded control-plane transition:
+
+`Preflight → Observe → Reconcile → Resume Gate → Select → Plan → Execute → Readback → Checkpoint`
+
+It is neither a product runtime service nor a polling daemon. Pending CI, review, human verification, credential, Project, or provider work produces a typed `YIELD_EXTERNAL`; the next explicit run re-observes GitHub live state.
+
+## Ports and execution boundary
+
+The Runner composes `Observer`, `MissionSupervisor`, `CodexExecutor`, `CIGate`, `ReviewGate`, `IntegrationPort`, checkpoint publisher, and optional operational store ports. Ports accept typed snapshots and return typed evidence. Failures to observe an authority are conflicts, never empty lists.
+
+`CodexExecutor` uses a fixed argv and sanitized child environment. It passes no reviewer, database, or unnecessary GitHub credential, does not shell-interpolate TaskPacket text, and checks worktree/remote live head after child exit. One run may start only one Codex child under the trusted-host execution lease.
+
+## Transition rules
+
+- Resume conflicts generate no implementation TaskPacket and no mutation.
+- CI evidence is exact live PR head/base evidence. Pending/running CI yields; failure returns the same lineage to a fix transition.
+- Review is requested once per exact `ReviewTargetKey`; `REQUEST_CHANGES` is a same-lineage fix transition, and only fresh `PASS` reaches merge.
+- Mutation follows fresh precondition → effect → effect readback → checkpoint. Direct implementation write to canonical trunk and Project #6 target are hard rejects.
+- SIGINT stops accepting new mutation, bounds child termination, releases the local lease, and records enough state for next-run reconciliation.
+
+## CLI exit semantics
+
+`0` means a completed safe transition, `2` means `YIELD_EXTERNAL`, and `3` means fail-closed intervention/reconciliation. Exit status never upgrades an external API response into effect truth.
