@@ -1,3 +1,36 @@
+## 文章言語の恒久ルール
+
+このリポジトリで人間向けに書く文章は、日本語を唯一の基本言語とする。
+
+対象は次を含む。
+
+- Repository内のMarkdown、README、設計書、運用書、説明文
+- Issue本文、Issue comment、Checkpoint
+- PR本文、PR comment、review説明
+- Mission Checkpoint、Resume Certificate
+- コミットメッセージの件名と本文
+- コード内コメント
+- docstring
+- ログやエラーメッセージのうち、人間へ説明するための文章
+
+英語の文章、英語だけの見出し、英語だけの説明段落は作成しない。
+
+ただし、日本語文の中で次のような一般的な英単語や技術識別子を使用してよい。
+
+- `GitHub`、`API`、`Work`、`Issue`、`PR`、`branch`、`commit`、`push`、`merge`
+- `PASS`、`FAIL`、`ACTIVE`、`NOT_RUN`、`REQUEST_CHANGES`等のstatus値
+- command、file path、SHA、class名、function名、field名
+- machine-readable JSONのkey/value
+- 製品名、ライブラリ名、プロトコル名等の固有名詞
+- 中学生程度の一般的な英単語を、日本語文の一部として自然に使う場合
+- 外部API等が返した原文を、原文であることを明示して引用する必要がある場合
+
+技術用語に英語が含まれていても、文章全体は日本語として成立させる。
+コード上の識別子や機械可読値はこの文章言語ルールの対象外とする。
+
+既存履歴の英語コミットメッセージは、この規則だけを理由にforce pushやrebaseで書き換えない。
+既存ドキュメントやコードコメントで英語文章を発見した場合は、安全な通常変更の範囲で日本語へ是正する。
+
 ## 自律Completion Missionの継続
 
 ## GitHub上の人間向けコミュニケーション言語
