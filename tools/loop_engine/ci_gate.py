@@ -1,0 +1,27 @@
+"""Exact-head CI evidence gate; transport is injected to keep it testable."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+
+
+class CIGateStatus(str, Enum):
+    PASS = "PASS"
+    YIELD_EXTERNAL = "YIELD_EXTERNAL"
+    FAILED = "FAILED"
+    STALE = "STALE"
+
+
+@dataclass(frozen=True, slots=True)
+class CIObservation:
+    head_sha: str
+    conclusion: str | None
+
+
+def evaluate_exact_head(expected_head_sha: str, evidence: CIObservation | None) -> CIGateStatus:
+    if evidence is None or evidence.conclusion in {None, "queued", "in_progress"}:
+        return CIGateStatus.YIELD_EXTERNAL
+    if evidence.head_sha != expected_head_sha:
+        return CIGateStatus.STALE
+    return CIGateStatus.PASS if evidence.conclusion == "success" else CIGateStatus.FAILED
