@@ -83,8 +83,7 @@ class VisibleSubprocessLocalRunner:
                 env=dict(environment) if environment is not None else None,
                 check=False,
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 text=True,
                 timeout=timeout_seconds,
             )
