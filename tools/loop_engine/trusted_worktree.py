@@ -28,7 +28,7 @@ class PreparedWorktree:
 
 @dataclass(frozen=True, slots=True)
 class FinalizedWorktree:
-    """信頼済みホストがcommitとpushを完了した作業結果。"""
+    """信頼済みホストがコミット（commit）と送信（push）を完了した作業結果。"""
 
     branch: str
     head_sha: str
@@ -36,7 +36,7 @@ class FinalizedWorktree:
 
 
 class TrustedWorktree:
-    """Gitのmetadata変更をCodexから分離して信頼済みホストだけで実行する。"""
+    """Gitの管理情報（metadata）の変更をCodexから分離し、信頼済みホストだけで実行する。"""
 
     def __init__(
         self,
@@ -49,7 +49,7 @@ class TrustedWorktree:
         self._environment = _trusted_environment(environment)
 
     def prepare(self, target: HostTarget) -> PreparedWorktree | None:
-        """対象branchをexact HEADへ合わせ、必要なら通常mergeを開始する。"""
+        """作業ブランチ（branch）を厳密なHEADへ合わせ、必要なら通常統合（merge）を開始する。"""
 
         if not self._worktree_is_clean():
             return None
@@ -100,7 +100,7 @@ class TrustedWorktree:
         *,
         repair: bool,
     ) -> FinalizedWorktree | None:
-        """Codexのworktree差分を検証し、信頼済みホストでcommit・pushする。"""
+        """Codexの作業領域（worktree）の差分を検証し、信頼済みホストでコミット・送信する。"""
 
         unresolved = self._git_output(("diff", "--name-only", "--diff-filter=U"))
         if unresolved is None or unresolved.strip():
@@ -144,7 +144,7 @@ class TrustedWorktree:
         return FinalizedWorktree(prepared.branch, head_sha, pr_number)
 
     def abort_merge_if_needed(self, prepared: PreparedWorktree | None) -> None:
-        """Codex失敗時に信頼済みホストが開始した未完了mergeだけを取り消す。"""
+        """Codex失敗時に信頼済みホストが開始した未完了の統合（merge）だけを取り消す。"""
 
         if prepared is None or not prepared.reconciliation_started:
             return
@@ -203,7 +203,7 @@ class TrustedWorktree:
     def _create_draft_pr(self, work_issue: int, branch: str) -> int | None:
         title = f"#{work_issue} の実装を進める"
         body = (
-            f"Issue #{work_issue} のLoop Engineering自動実装用Draft PR。\n\n"
+            f"Issue #{work_issue} のLoop Engineeringによる自動実装用の下書きPR（Draft PR）。\n\n"
             "設計・実装・検証はRepository正本とAGENTS.mdに従う。"
         )
         created = self._gh(
@@ -251,7 +251,8 @@ class TrustedWorktree:
             f"- current PR: #{pr_number}\n"
             f"- current branch: `{branch}`\n"
             f"- exact HEAD: `{head_sha}`\n"
-            "- 完了済み: Codexによるファイル編集と検証後、信頼済みホストがcommit / pushを実施\n"
+            "- 完了済み: Codexによるファイル編集と検証後、"
+            "信頼済みホストがコミット（commit）と送信（push）を実施\n"
             "- next action: exact HEADのCIを確認し、結果に応じて継続する"
         )
         return self._gh(
