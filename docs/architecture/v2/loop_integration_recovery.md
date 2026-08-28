@@ -30,6 +30,26 @@ If the latest Mission Checkpoint is missing an explicit current target, has an i
 
 Planning-only Codex output that selects the next Work must therefore write a new Mission Checkpoint with the explicit current Work/PR/HEAD identity needed by the next host invocation.
 
+## Codex host execution contract
+
+The trusted host invokes Codex with an **explicit current CLI contract** instead of depending on the deprecated/compatibility `--full-auto` shortcut.
+
+The default Codex child must be equivalent to:
+
+```text
+codex -a never exec --sandbox workspace-write \
+  -c sandbox_workspace_write.network_access=true <instruction>
+```
+
+This is required because Loop Engineering needs both:
+
+- workspace writes for design/code/test/branch work inside the target checkout
+- outbound network access for `gh` read/write operations against GitHub live state
+
+`codex --version` alone is not sufficient evidence that this execution contract is usable. The actual pilot must prove that the child can execute the required bounded transition. A CLI syntax incompatibility, effective read-only sandbox, or unavailable network that prevents the child from performing the assigned transition is a functional blocker, not a review-hardening concern.
+
+`LOOP_CODEX_COMMAND_JSON` may override the default command for a trusted host, but the override is responsible for preserving the same minimum capabilities and secret boundary. Reviewer credentials remain excluded from the Codex child.
+
 ## #471 bootstrap and pilot completion
 
 PR #477 is the bootstrap implementation that makes the actual host Loop executable. Merging PR #477 is **not** #471 completion evidence by itself. After #477 reaches trunk, #471 remains open and the host selects an actual dependency-ready V2 product Work as the pilot.
