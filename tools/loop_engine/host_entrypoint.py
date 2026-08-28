@@ -22,15 +22,23 @@ from .host_runtime import (
     MissionPort,
     SubprocessLocalRunner,
 )
-from .preflight import EnvironmentCapabilityPreflight, PreflightStatus, SubprocessCommandRunner
+from .preflight import (
+    EnvironmentCapabilityPreflight,
+    PreflightStatus,
+    SubprocessCommandRunner,
+)
 
 _INTEGRATION_WORK = 471
 _MISSION_ISSUE = 450
 _CURRENT_WORK_RE = re.compile(
     r"(?im)^.*?current\s+Work(?:\s*/\s*Integration)?\s*:\s*`?#?(\d+)"
 )
-_CURRENT_PR_RE = re.compile(r"(?im)^.*?current\s+PR(?:\s*/\s*branch)?\s*:\s*`?#?(\d+)")
-_EXACT_HEAD_RE = re.compile(r"(?im)^.*?(?:exact\s+HEAD|HEAD)\s*:\s*`?([0-9a-f]{40})")
+_CURRENT_PR_RE = re.compile(
+    r"(?im)^.*?current\s+PR(?:\s*/\s*branch)?\s*:\s*`?#?(\d+)"
+)
+_EXACT_HEAD_RE = re.compile(
+    r"(?im)^.*?(?:exact\s+HEAD|HEAD)\s*:\s*`?([0-9a-f]{40})"
+)
 
 
 class StrictGhMissionPort(GhMissionPort):
@@ -93,8 +101,12 @@ class PilotAwareMissionPort(MissionPort):
         target = self._bootstrap_target
         if target is None:
             return self._delegate.publish_checkpoint(body)
-        pr_line = f"- current PR: #{target.pr_number}\n" if target.pr_number is not None else ""
-        head_line = f"- exact HEAD: `{target.head_sha}`\n" if target.head_sha is not None else ""
+        pr_line = (
+            f"- current PR: #{target.pr_number}\n" if target.pr_number is not None else ""
+        )
+        head_line = (
+            f"- exact HEAD: `{target.head_sha}`\n" if target.head_sha is not None else ""
+        )
         checkpoint = (
             "## Mission Checkpoint — ACTIVE / PILOT_REQUIRED\n\n"
             "- Mission state: `ACTIVE`\n"
@@ -130,23 +142,35 @@ def run_actual_host_transition(
     try:
         argv_prefix = _codex_argv(values)
     except ValueError:
-        return HostTransitionResult(HostTransitionStatus.INTERVENTION_REQUIRED, "CODEX_COMMAND_INVALID")
+        return HostTransitionResult(
+            HostTransitionStatus.INTERVENTION_REQUIRED,
+            "CODEX_COMMAND_INVALID",
+        )
 
     mission = PilotAwareMissionPort(StrictGhMissionPort(runner, values))
     implementer = CodexImplementer(runner, project_root, values, argv_prefix)
     return HostLoopController(mission, implementer).run_once()
 
 
-def _canonical_goal_environment(root: Path, environment: Mapping[str, str]) -> dict[str, str]:
+def _canonical_goal_environment(
+    root: Path, environment: Mapping[str, str]
+) -> dict[str, str]:
     values = dict(environment)
     goal = root / "docs" / "operations" / "loop_mission_goal.md"
     if not goal.is_file():
         return values
     content = goal.read_bytes()
     lines = content.decode("utf-8").splitlines()
-    version = next((line.removeprefix("version: ") for line in lines if line.startswith("version: ")), "")
+    version = next(
+        (line.removeprefix("version: ") for line in lines if line.startswith("version: ")),
+        "",
+    )
     generation = next(
-        (line.removeprefix("generation: ") for line in lines if line.startswith("generation: ")),
+        (
+            line.removeprefix("generation: ")
+            for line in lines
+            if line.startswith("generation: ")
+        ),
         "",
     )
     values["CODEX_MISSION_GOAL_VERSION"] = version
