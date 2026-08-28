@@ -48,7 +48,7 @@ LoopHealthEvent
 - manual_intervention_required
 ```
 
-`fingerprint`はraw error本文ではなくsecret-freeなstable category identityとする。
+`fingerprint`はraw error本文ではなくsecret-freeなstable category identityとする。external adapterから受け取るfingerprint / source referenceはuntrusted inputであり、in-memory observationであってもGitHub Checkpointへ永続化する前には不可逆かつboundedなcanonical identityへ正規化する。許可文字filterだけでcredential-like値を通過させてはならない。decode後も同じcanonical identityを用いるため、restart前後で同一health eventのcorrelationが変わらない。
 
 初期`kind`:
 
@@ -110,7 +110,7 @@ Issue本文へ次のdurable markerを埋め込む。
 <!-- loop-improvement-key:<sha256> -->
 ```
 
-同じkeyのopen `loop-engineering` Issueが存在する場合、新Issueを作らない。publisherは先頭固定件数ではなく、GitHub paginationを最後まで走査してdurable markerを探索する。
+同じkeyのopen `loop-engineering` Issueが存在する場合、新Issueを作らない。publisherは先頭固定件数ではなく、GitHub paginationを最後まで走査してdurable markerを探索する。探索からIssue create、Project #7設定までを、`improvement_key`ごとのtrusted host advisory lockで直列化する。#465ではPostgreSQL shared storeを所有しないため、複数hostから同じkeyを同時publishする構成はfail-closedに禁止する。単一trusted host内の並行runは同じlockを共有し、lock取得後に必ずmarkerを再探索してからcreateを許可する。
 Checkpointですでに同じkeyをdispatch済みの場合も同一observationから重複生成しない。
 
 closed Issueの原因が後に再発した場合は新しいrun evidenceとして再作成を許可する。
@@ -137,7 +137,8 @@ trusted host publisherは固定repository `ktan514/ai-liver-yura`だけを対象
 ```text
 ImprovementCandidate
 → ImprovementIssueIntent
-→ open Issue duplicate check
+→ keyed publisher lock
+→ open Issue duplicate check / re-check
 → gh issue create
 → Project #7 live readback
 → Project #7 item add / reuse
@@ -150,7 +151,7 @@ ImprovementCandidate
 
 Project #6およびProject #7以外はhard rejectする。Project item lookupも先頭固定件数へ依存せず、全pageを走査して既存item identityを解決する。
 Project field/option IDをcache・固定値として保持しない。
-Project mutationの直前にはproject / item / field / option identityをfresh readbackし、mutation後にはitem field value effectをreadbackする。不一致時に`project_configured=True`を返してはならない。
+Project mutationの直前にはproject / item / field / option identityをfresh readbackし、mutation後にはitem field value effectをreadbackする。effect readbackはoptionalではなく、effectを持つmutation intentの必須postconditionである。readback不能・欠落・不一致時は`MUTATION_EFFECT_MISMATCH`としてfail-closedにし、`project_configured=True`を返してはならない。
 
 初期Project値:
 

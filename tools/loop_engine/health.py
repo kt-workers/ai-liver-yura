@@ -6,6 +6,7 @@ import hashlib
 import json
 from datetime import date, timedelta
 
+from .health_state import canonicalize_event, durable_identity
 from .models import (
     ConflictKind,
     ExistingImprovementIssue,
@@ -51,14 +52,17 @@ def advance_health(
     selected_work_id: int | None,
 ) -> tuple[LoopHealthEvent, ...]:
     """Return cumulative health snapshots after one supervisor decision."""
-    current = {(item.kind, item.fingerprint): item for item in previous}
+    current = {
+        (item.kind, item.fingerprint): item
+        for item in (canonicalize_event(item) for item in previous)
+    }
     affected = (selected_work_id,) if selected_work_id is not None else ()
 
     if duplicate_suppressed:
         _increment(
             current,
             LoopHealthKind.DUPLICATE_SCHEDULING,
-            "same-schedule-key",
+            durable_identity("same-schedule-key"),
             affected,
             ("supervisor:duplicate-suppressed",),
         )
@@ -81,19 +85,21 @@ def advance_health(
         _increment(
             current,
             LoopHealthKind.STALE_STATE_RECURRENCE,
-            conflict.value,
+            durable_identity(conflict.value),
             affected,
             (f"conflict:{conflict.value}",),
         )
 
     if disposition is RunDisposition.INTERVENTION_REQUIRED:
-        fingerprint = ",".join(sorted(item.value for item in conflicts)) or "human-authority"
+        fingerprint = durable_identity(
+            ",".join(sorted(item.value for item in conflicts)) or "human-authority"
+        )
         _increment(
             current,
             LoopHealthKind.MANUAL_INTERVENTION,
             fingerprint,
             affected,
-            tuple(f"conflict:{item.value}" for item in conflicts),
+            tuple(durable_identity(f"conflict:{item.value}") for item in conflicts),
             blocked_work_count=1 if affected else 0,
             manual_intervention_required=True,
         )
@@ -201,6 +207,8 @@ def _increment(
     blocked_work_count: int = 0,
     manual_intervention_required: bool = False,
 ) -> None:
+    fingerprint = durable_identity(fingerprint)
+    source_refs = tuple(durable_identity(item) for item in source_refs)
     key = (kind, fingerprint)
     prior = events.get(key)
     if prior is None:
@@ -266,4 +274,4 @@ def _redacted_reference(value: str) -> str:
     is not secret-safe because common credential alphabets are allowlisted too.
     Issue bodies therefore retain correlation only through an irreversible hash.
     """
-    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
+    return durable_identity(value)

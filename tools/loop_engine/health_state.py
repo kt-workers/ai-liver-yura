@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from typing import cast
 
 from .models import LoopHealthEvent, LoopHealthKind
@@ -13,6 +15,7 @@ _MAX_AFFECTED_WORKS = 32
 _MAX_SOURCE_REFS = 32
 _MAX_TEXT = 160
 _MAX_OCCURRENCES = 1_000_000
+_DURABLE_IDENTITY = re.compile(r"sha256:[0-9a-f]{24}\Z")
 
 
 def encode_health_state(events: tuple[LoopHealthEvent, ...]) -> str:
@@ -39,7 +42,7 @@ def decode_health_state(raw: str) -> tuple[LoopHealthEvent, ...]:
 
 
 def _encode_event(event: LoopHealthEvent) -> dict[str, object]:
-    _validate_event(event)
+    event = canonicalize_event(event)
     return {
         "kind": event.kind.value,
         "fingerprint": event.fingerprint,
@@ -98,7 +101,27 @@ def _decode_event(raw: object) -> LoopHealthEvent:
         ),
     )
     _validate_event(event)
-    return event
+    return canonicalize_event(event)
+
+
+def canonicalize_event(event: LoopHealthEvent) -> LoopHealthEvent:
+    """Replace untrusted durable text with opaque, restart-stable identities."""
+    _validate_event(event)
+    return LoopHealthEvent(
+        kind=event.kind,
+        fingerprint=durable_identity(event.fingerprint),
+        occurrence_count=event.occurrence_count,
+        affected_work_ids=event.affected_work_ids,
+        source_refs=tuple(durable_identity(item) for item in event.source_refs),
+        blocked_work_count=event.blocked_work_count,
+        manual_intervention_required=event.manual_intervention_required,
+    )
+
+
+def durable_identity(value: str) -> str:
+    if _DURABLE_IDENTITY.fullmatch(value):
+        return value
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
 
 
 def _validate_event(event: LoopHealthEvent) -> None:

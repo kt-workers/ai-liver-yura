@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import date
 
@@ -239,6 +240,39 @@ def test_publisher_reuses_existing_open_issue_and_repairs_project() -> None:
     assert not any(command[:3] == ("gh", "issue", "create") for command in runner.commands)
     assert not any(command[:4] == ("gh", "project", "item-add", "7") for command in runner.commands)
     assert result.issue_url == "https://github.com/ktan514/ai-liver-yura/issues/501"
+
+
+class LockAwareRunner(FakeRunner):
+    def __init__(self) -> None:
+        super().__init__()
+        self.created_issue = False
+
+    def run(self, args: Sequence[str]) -> str:
+        command = tuple(args)
+        if command[:2] == ("gh", "api"):
+            if not self.created_issue:
+                return "[[]]"
+            candidate = _candidate()
+            return json.dumps(
+                [[{"number": 502, "body": marker(candidate.improvement_key)}]]
+            )
+        if command[:3] == ("gh", "issue", "create"):
+            if self.created_issue:
+                raise AssertionError("duplicate create")
+            self.created_issue = True
+            self.commands.append(command)
+            return "https://github.com/ktan514/ai-liver-yura/issues/502\n"
+        return super().run(args)
+
+
+def test_publisher_keyed_lock_prevents_concurrent_duplicate_issue_create() -> None:
+    runner = LockAwareRunner()
+    publisher = GitHubImprovementIssuePublisher(runner)
+    intent = improvement_intent(_candidate())
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = tuple(executor.map(publisher.publish, (intent, intent)))
+    assert sorted(result.created for result in results) == [False, True]
+    assert sum(command[:3] == ("gh", "issue", "create") for command in runner.commands) == 1
 
 
 class PagedMarkerRunner(FakeRunner):

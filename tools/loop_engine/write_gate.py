@@ -22,10 +22,12 @@ def validate(
             return WriteGateResult(False, ConflictKind.UNKNOWN_WRITE_IDENTITY_FORBIDDEN)
     if intent.mutation_kind != "verify_effect" and not intent.expected_preconditions:
         return WriteGateResult(False, ConflictKind.NO_OP_MUTATION_FORBIDDEN)
-    if intent.mutation_kind != "verify_effect" and not intent.expected_effect:
-        return WriteGateResult(False, ConflictKind.NO_OP_MUTATION_FORBIDDEN)
     if any(fresh_preconditions.get(key) != value for key, value in intent.expected_preconditions):
         return WriteGateResult(False, ConflictKind.STALE_WRITE_GATE)
+    if intent.mutation_kind == "verify_effect" and not intent.expected_effect:
+        return WriteGateResult(False, ConflictKind.NO_OP_MUTATION_FORBIDDEN)
+    if intent.expected_effect and readback_effect is None:
+        return WriteGateResult(False, ConflictKind.MUTATION_EFFECT_MISMATCH)
     if readback_effect is not None and any(
         readback_effect.get(key) != value for key, value in intent.expected_effect
     ):

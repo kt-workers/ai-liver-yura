@@ -2,7 +2,11 @@ import json
 
 import pytest
 
-from tools.loop_engine.health_state import decode_health_state, encode_health_state
+from tools.loop_engine.health_state import (
+    canonicalize_event,
+    decode_health_state,
+    encode_health_state,
+)
 from tools.loop_engine.models import LoopHealthEvent, LoopHealthKind
 
 
@@ -17,8 +21,19 @@ def test_health_state_round_trip_is_restart_safe() -> None:
         ),
     )
     encoded = encode_health_state(events)
-    assert decode_health_state(encoded) == events
+    assert decode_health_state(encoded) == tuple(canonicalize_event(event) for event in events)
     assert encode_health_state(decode_health_state(encoded)) == encoded
+
+
+def test_health_state_redacts_raw_credential_like_evidence_before_persistence() -> None:
+    raw = "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"
+    encoded = encode_health_state(
+        (LoopHealthEvent(LoopHealthKind.REPEATED_FAILURE, raw, 3, source_refs=(raw,)),)
+    )
+    assert raw not in encoded
+    restored = decode_health_state(encoded)[0]
+    assert restored.fingerprint.startswith("sha256:")
+    assert restored.source_refs[0].startswith("sha256:")
 
 
 def test_health_state_rejects_unknown_fields_and_kinds() -> None:

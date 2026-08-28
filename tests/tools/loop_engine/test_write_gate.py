@@ -26,7 +26,9 @@ def test_write_gate_requires_exact_precondition_and_effect_readback() -> None:
     )
     mismatch = validate(intent, {"head": "h"}, {"status": "In progress"})
     passed = validate(intent, {"head": "h"}, {"status": "Done"})
+    missing = validate(intent, {"head": "h"})
     assert mismatch.conflict is ConflictKind.MUTATION_EFFECT_MISMATCH
+    assert missing.conflict is ConflictKind.MUTATION_EFFECT_MISMATCH
     assert passed.allowed
 
 

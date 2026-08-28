@@ -544,7 +544,7 @@ Write Gate:
 3. mismatch があれば mutation せず `STALE_WRITE_GATE`
 4. re-observe / reconcile
 
-GitHub publisherを含むすべてのProject #7 mutationは、対象Project / item / field / option identityを独立したfresh readbackで再確認してからだけ実行する。複数fieldを更新する場合でも、batch開始時の一回の確認を後続mutationへ流用してはならない。**各 `item-edit` の直前**に、同じmutationで使用するProject / item / field / option identityをfresh snapshotから再解決し、Write Gateを通す。mismatchなら後続fieldを編集せず`STALE_WRITE_GATE`としてfail-closedにする。mutation後は同じowned fieldのeffect readbackを必須化し、不一致なら成功を返さず`MUTATION_EFFECT_MISMATCH`としてfail-closedにする。item addも同じprecondition/effect readback境界に含める。
+GitHub publisherを含むすべてのProject #7 mutationは、対象Project / item / field / option identityを独立したfresh readbackで再確認してからだけ実行する。複数fieldを更新する場合でも、batch開始時の一回の確認を後続mutationへ流用してはならない。**各 `item-edit` の直前**に、同じmutationで使用するProject / item / field / option identityをfresh snapshotから再解決し、Write Gateを通す。mismatchなら後続fieldを編集せず`STALE_WRITE_GATE`としてfail-closedにする。effectを期待するmutationは、同じowned fieldのeffect readbackを必ず渡さなければならない。readback不能・未指定・欠落・不一致のいずれも成功を返さず`MUTATION_EFFECT_MISMATCH`としてfail-closedにする。item addも同じprecondition/effect readback境界に含める。
 
 GitHub Issues REST APIの`url`はAPI endpointであり、Project itemの`content.url`および`gh project item-add --url`に使用してはならない。既存Issue再利用時のProject lookup/addには、repository / Issue numberへbindしたGitHub web URLだけを用いる。
 5. PASS 時のみ adapter へ mutation を許可

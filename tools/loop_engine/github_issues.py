@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
+import os
 import subprocess
-from collections.abc import Sequence
+import tempfile
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from .health import marker, render_issue_body
@@ -22,6 +27,7 @@ _REPOSITORY = "ktan514/ai-liver-yura"
 _OWNER = "ktan514"
 _PROJECT_NUMBER = 7
 _LABEL = "loop-engineering"
+_LOCK_DIRECTORY = Path(tempfile.gettempdir()) / "yura-loop-engine-improvement-locks"
 
 
 class CommandRunner(Protocol):
@@ -51,32 +57,33 @@ class GitHubImprovementIssuePublisher:
 
     def publish(self, intent: ImprovementIssueIntent) -> ImprovementPublishResult:
         self._validate_intent(intent)
-        existing = self._find_open_issue(intent.candidate.improvement_key)
-        if existing is None:
-            created_issue_url = self.runner.run(
-                (
-                    "gh",
-                    "issue",
-                    "create",
-                    "--repo",
-                    _REPOSITORY,
-                    "--title",
-                    intent.candidate.title,
-                    "--body",
-                    render_issue_body(intent.candidate),
-                    "--label",
-                    _LABEL,
+        with _improvement_lock(intent.candidate.improvement_key):
+            existing = self._find_open_issue(intent.candidate.improvement_key)
+            if existing is None:
+                created_issue_url = self.runner.run(
+                    (
+                        "gh",
+                        "issue",
+                        "create",
+                        "--repo",
+                        _REPOSITORY,
+                        "--title",
+                        intent.candidate.title,
+                        "--body",
+                        render_issue_body(intent.candidate),
+                        "--label",
+                        _LABEL,
+                    )
                 )
-            ).strip()
-            issue_number = _issue_number(created_issue_url)
-            issue_url = _web_issue_url(issue_number)
-            created = True
-        else:
-            issue_number, issue_url = existing
-            created = False
+                issue_number = _issue_number(created_issue_url.strip())
+                issue_url = _web_issue_url(issue_number)
+                created = True
+            else:
+                issue_number, issue_url = existing
+                created = False
 
-        self._ensure_project_configuration(issue_url, intent)
-        return ImprovementPublishResult(issue_number, issue_url, created, True)
+            self._ensure_project_configuration(issue_url, intent)
+            return ImprovementPublishResult(issue_number, issue_url, created, True)
 
     def _find_open_issue(self, improvement_key: str) -> tuple[int, str] | None:
         raw = self.runner.run(
@@ -223,7 +230,7 @@ class GitHubImprovementIssuePublisher:
                 str(_PROJECT_NUMBER),
                 "edit_improvement_field",
                 tuple(expected_preconditions.items()),
-                ((f"value:{field_name}", value),),
+                (),
                 "publisher-live-readback",
             ),
             fresh_preconditions,
@@ -266,7 +273,7 @@ class GitHubImprovementIssuePublisher:
                 str(_PROJECT_NUMBER),
                 "add_improvement_item",
                 (("project_id", project_id), ("item_presence", "absent")),
-                (("item_id", "pending"),),
+                (),
                 "publisher-live-readback",
             ),
             {
@@ -496,6 +503,31 @@ def improvement_intent(candidate: ImprovementCandidate) -> ImprovementIssueInten
 
 def _web_issue_url(number: int) -> str:
     return f"https://github.com/{_REPOSITORY}/issues/{number}"
+
+
+@contextmanager
+def _improvement_lock(improvement_key: str) -> Iterator[None]:
+    """Serialize one key on the single trusted publisher host.
+
+    #465 deliberately has no shared operational store; a multi-host publisher
+    is therefore not an allowed topology until that store provides a durable
+    distributed idempotency primitive.
+    """
+    is_sha256 = len(improvement_key) == 64 and all(
+        char in "0123456789abcdef" for char in improvement_key
+    )
+    if not is_sha256:
+        raise ValueError("invalid improvement key")
+    _LOCK_DIRECTORY.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(_LOCK_DIRECTORY, 0o700)
+    path = _LOCK_DIRECTORY / f"{improvement_key}.lock"
+    with path.open("a", encoding="utf-8") as lock_file:
+        os.chmod(path, 0o600)
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _issue_number(url: str) -> int:
