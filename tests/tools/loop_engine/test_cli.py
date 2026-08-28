@@ -28,8 +28,9 @@ def test_default_cli_runs_one_actual_host_transition(
     received: dict[str, object] = {}
 
     class FakeConsole:
-        def __init__(self, root: Path) -> None:
+        def __init__(self, root: Path, *, verbose: bool = False) -> None:
             self.path = root / "logs" / "loop_engine" / "test.log"
+            received["verbose"] = verbose
 
         def event(self, message: str) -> None:
             events.append(message)
@@ -59,8 +60,39 @@ def test_default_cli_runs_one_actual_host_transition(
     output = capsys.readouterr().out
     assert '"status": "YIELD_EXTERNAL"' in output
     assert '"detail": "CI_PENDING"' in output
+    assert received["verbose"] is False
     assert events[0] == "START"
     assert "preflight / GitHub observe: begin" in events
     assert events[-1] == "RESULT status=YIELD_EXTERNAL detail=CI_PENDING"
     assert "root" in received
     assert "local_runner" in received
+
+
+def test_verbose_flag_reaches_runtime_console(monkeypatch: MonkeyPatch) -> None:
+    received: dict[str, object] = {}
+
+    class FakeConsole:
+        def __init__(self, root: Path, *, verbose: bool = False) -> None:
+            self.path = root / "test.log"
+            received["verbose"] = verbose
+
+        def event(self, message: str) -> None:
+            del message
+
+    class FakeRunner:
+        def __init__(self, console: object) -> None:
+            del console
+
+    def fake_transition(**kwargs: object) -> HostTransitionResult:
+        del kwargs
+        return HostTransitionResult(HostTransitionStatus.COMPLETED, "DONE")
+
+    monkeypatch.setattr(cli, "RuntimeConsole", FakeConsole)
+    monkeypatch.setattr(cli, "VisibleSubprocessLocalRunner", FakeRunner)
+    monkeypatch.setattr(
+        "tools.loop_engine.host_entrypoint.run_actual_host_transition", fake_transition
+    )
+    monkeypatch.setattr(sys, "argv", ["tools.loop_engine", "--verbose"])
+
+    assert cli.main() == 0
+    assert received["verbose"] is True

@@ -15,6 +15,11 @@ def main() -> int:
         action="store_true",
         help="Validate the control-plane package without observing or mutating external systems.",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Show detailed child-process output on stderr in addition to the persistent run log.",
+    )
     arguments = parser.parse_args()
     if arguments.version:
         print("tools.loop_engine 1")
@@ -26,7 +31,7 @@ def main() -> int:
     from .host_entrypoint import run_actual_host_transition
 
     root = Path(__file__).resolve().parents[2]
-    console = RuntimeConsole(root)
+    console = RuntimeConsole(root, verbose=arguments.verbose)
     console.event("START")
     console.event(f"log: {console.path}")
     console.event("preflight / GitHub observe: begin")

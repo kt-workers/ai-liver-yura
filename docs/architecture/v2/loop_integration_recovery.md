@@ -65,14 +65,16 @@ This is required because Loop Engineering needs both:
 
 ## Runtime observability contract
 
-The normal CLI must never appear silently hung during a bounded transition. Human-visible progress and machine-readable completion output use separate streams:
+The normal CLI must never appear silently hung during a bounded transition, but default terminal output must remain readable. Human-visible progress, detailed diagnostics, and machine-readable completion output use separate channels:
 
-- stderr carries concise stage progress such as startup, Preflight, GitHub observation, target reconciliation, Codex dispatch, CI observation, merge/checkpoint work, and failure stage
-- stdout remains reserved for the final `HostTransitionResult` JSON so scripts can continue to parse the terminal result deterministically
-- a Codex child launched for planning/implementation/repair inherits the host terminal stdout/stderr instead of discarding them, so Codex startup, activity, and CLI failures are visible while the host is waiting
-- logs must not print secret values, `.env` content, reviewer credentials, database credentials, or full sanitized environments
+- default stderr shows only concise lifecycle events: startup, log path, major stage entry, Codex dispatch/completion, failures, and final result
+- repetitive successful GitHub/API child command start/done events and raw Codex output are written to the persistent run log but are hidden from the default terminal
+- `--verbose` enables the detailed child-command and raw Codex stream on stderr for live diagnosis
+- stdout remains reserved for the final `HostTransitionResult` JSON so scripts can parse the terminal result deterministically
+- every run persists the full safe child output under `logs/loop_engine/`, regardless of terminal verbosity
+- logs must not print secret values, `.env` content, reviewer credentials, database credentials, full sanitized environments, or full argv containing prompt/secret-like values
 
-A failure must identify the stage that failed before the final typed result is emitted. Observability is part of actual-host operability: a control loop that can run but cannot show whether it is active or where it failed is not sufficient pilot evidence.
+A failure must identify the stage and exit/result code on the default terminal and point to the persistent log for full evidence. Observability is part of actual-host operability, but observability must not flood the operator console with routine low-level traffic.
 
 ## #471 bootstrap and pilot completion
 
