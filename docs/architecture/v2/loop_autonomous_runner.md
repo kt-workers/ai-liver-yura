@@ -22,6 +22,10 @@ The deterministic Core keeps `MissionSupervisor`, typed snapshots, Resume/Write 
 
 The host composition treats the latest #450 Mission Checkpoint as a discovery candidate only. It does not search backward for an older parseable checkpoint. The latest checkpoint must explicitly state `current Work`; a PR-backed Work also states `current PR` and exact HEAD. Missing or invalid current target identity is fail-closed and cannot dispatch Codex or mutate GitHub.
 
+Planning-only Codex output is part of this machine-readable contract. Every selected next Work checkpoint must contain the literal field `- current Work: #<issue>`. When an active PR exists, it must also contain `- current PR: #<pr>` and `- exact HEAD: <40-hex-sha>`. Narrative aliases such as `選択した次Work:` do not replace these fields. A Work with no active PR omits PR/HEAD rather than inventing them.
+
+Known safe observation failures are surfaced with their typed cause instead of being collapsed into an opaque status. In particular, an invalid latest checkpoint is reported as `GITHUB_OBSERVE_FAILED:MISSION_CHECKPOINT_TARGET_UNRESOLVED`; credentials, transport, invalid JSON, and incompatible GitHub response shape remain separately classifiable safe diagnostics without exposing secrets.
+
 Before any Codex start, CI interpretation, Ready transition, merge, Issue close, or checkpoint, the host fresh-reads the live Issue/PR/branch/HEAD and rejects a stale checkpoint target. It never treats chat memory as execution authority.
 
 `CodexExecutor` uses a fixed argv and sanitized child environment. It passes no reviewer or database credential, does not shell-interpolate TaskPacket or Mission instruction text, runs from the repository root, and checks the live PR head after child exit. One bounded transition may start only one Codex child.
