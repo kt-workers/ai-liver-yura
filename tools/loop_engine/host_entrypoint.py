@@ -2,32 +2,42 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
+import re
 from collections.abc import Mapping
 from pathlib import Path
+from typing import cast
 
+from .ci_gate import CIGateStatus
 from .host_runtime import (
     CodexImplementer,
     GhMissionPort,
     HostLoopController,
     HostTarget,
     HostTransitionResult,
+    HostTransitionStatus,
     LocalRunner,
     MissionPort,
     SubprocessLocalRunner,
-    _codex_argv,
-    _with_goal_identity,
 )
 from .preflight import EnvironmentCapabilityPreflight, PreflightStatus, SubprocessCommandRunner
 
 _INTEGRATION_WORK = 471
+_MISSION_ISSUE = 450
+_CURRENT_WORK_RE = re.compile(
+    r"(?im)^.*?current\s+Work(?:\s*/\s*Integration)?\s*:\s*`?#?(\d+)"
+)
+_CURRENT_PR_RE = re.compile(r"(?im)^.*?current\s+PR(?:\s*/\s*branch)?\s*:\s*`?#?(\d+)")
+_EXACT_HEAD_RE = re.compile(r"(?im)^.*?(?:exact\s+HEAD|HEAD)\s*:\s*`?([0-9a-f]{40})")
 
 
 class StrictGhMissionPort(GhMissionPort):
     """Never falls back from the latest Mission Checkpoint to an older target."""
 
     def _checkpoint_candidate(self) -> tuple[int, int | None, str | None, int] | None:
-        comments = self._issue_comments(450)
+        comments = self._issue_comments(_MISSION_ISSUE)
         latest_checkpoint: dict[str, object] | None = None
         for comment in reversed(comments):
             body = comment.get("body")
@@ -40,29 +50,12 @@ class StrictGhMissionPort(GhMissionPort):
         body_value = latest_checkpoint.get("body")
         if not isinstance(body_value, str):
             raise RuntimeError("MISSION_CHECKPOINT_TARGET_UNRESOLVED")
-
-        work_match = self._CURRENT_WORK_RE.search(body_value) if hasattr(self, "_CURRENT_WORK_RE") else None
-        if work_match is None:
-            # Regex constants are module-level in host_runtime, so use the same accepted syntax here.
-            import re
-
-            work_match = re.search(
-                r"(?im)^.*?current\s+Work(?:\s*/\s*Integration)?\s*:\s*`?#?(\d+)",
-                body_value,
-            )
+        work_match = _CURRENT_WORK_RE.search(body_value)
         if work_match is None:
             raise RuntimeError("MISSION_CHECKPOINT_TARGET_UNRESOLVED")
 
-        import re
-
-        pr_match = re.search(
-            r"(?im)^.*?current\s+PR(?:\s*/\s*branch)?\s*:\s*`?#?(\d+)",
-            body_value,
-        )
-        head_match = re.search(
-            r"(?im)^.*?(?:exact\s+HEAD|HEAD)\s*:\s*`?([0-9a-f]{40})",
-            body_value,
-        )
+        pr_match = _CURRENT_PR_RE.search(body_value)
+        head_match = _EXACT_HEAD_RE.search(body_value)
         comment_id = latest_checkpoint.get("id")
         if not isinstance(comment_id, int):
             raise RuntimeError("MISSION_CHECKPOINT_TARGET_UNRESOLVED")
@@ -84,7 +77,7 @@ class PilotAwareMissionPort(MissionPort):
     def current_target(self) -> HostTarget | None:
         return self._delegate.current_target()
 
-    def ci_status(self, target: HostTarget):  # type: ignore[no-untyped-def]
+    def ci_status(self, target: HostTarget) -> CIGateStatus:
         return self._delegate.ci_status(target)
 
     def merge_current(self, target: HostTarget) -> bool:
@@ -116,10 +109,6 @@ class PilotAwareMissionPort(MissionPort):
         return self._delegate.publish_checkpoint(checkpoint)
 
 
-class ActualHostController(HostLoopController):
-    """Named composition boundary for the normal CLI."""
-
-
 def run_actual_host_transition(
     *,
     root: Path | None = None,
@@ -127,13 +116,11 @@ def run_actual_host_transition(
     local_runner: LocalRunner | None = None,
 ) -> HostTransitionResult:
     project_root = root or Path(__file__).resolve().parents[2]
-    values = _with_goal_identity(project_root, environment or os.environ)
+    values = _canonical_goal_environment(project_root, environment or os.environ)
     preflight = EnvironmentCapabilityPreflight(
         SubprocessCommandRunner(), values, project_root=project_root
     ).run()
     if preflight.status is PreflightStatus.BLOCKED:
-        from .host_runtime import HostTransitionStatus
-
         return HostTransitionResult(
             HostTransitionStatus.INTERVENTION_REQUIRED,
             "PREFLIGHT_BLOCKED:" + ",".join(preflight.blocking_for_loop_bootstrap),
@@ -143,10 +130,41 @@ def run_actual_host_transition(
     try:
         argv_prefix = _codex_argv(values)
     except ValueError:
-        from .host_runtime import HostTransitionStatus
-
         return HostTransitionResult(HostTransitionStatus.INTERVENTION_REQUIRED, "CODEX_COMMAND_INVALID")
 
     mission = PilotAwareMissionPort(StrictGhMissionPort(runner, values))
     implementer = CodexImplementer(runner, project_root, values, argv_prefix)
-    return ActualHostController(mission, implementer).run_once()
+    return HostLoopController(mission, implementer).run_once()
+
+
+def _canonical_goal_environment(root: Path, environment: Mapping[str, str]) -> dict[str, str]:
+    values = dict(environment)
+    goal = root / "docs" / "operations" / "loop_mission_goal.md"
+    if not goal.is_file():
+        return values
+    content = goal.read_bytes()
+    lines = content.decode("utf-8").splitlines()
+    version = next((line.removeprefix("version: ") for line in lines if line.startswith("version: ")), "")
+    generation = next(
+        (line.removeprefix("generation: ") for line in lines if line.startswith("generation: ")),
+        "",
+    )
+    values["CODEX_MISSION_GOAL_VERSION"] = version
+    values["CODEX_MISSION_GOAL_GENERATION"] = generation
+    values["CODEX_MISSION_GOAL_SHA256"] = hashlib.sha256(content).hexdigest()
+    return values
+
+
+def _codex_argv(environment: Mapping[str, str]) -> tuple[str, ...]:
+    configured = environment.get("LOOP_CODEX_COMMAND_JSON")
+    if not configured:
+        return ("codex", "exec", "--full-auto")
+    try:
+        payload = json.loads(configured)
+    except json.JSONDecodeError as error:
+        raise ValueError("invalid Codex command") from error
+    if not isinstance(payload, list) or not payload or not all(
+        isinstance(item, str) and item for item in payload
+    ):
+        raise ValueError("invalid Codex command")
+    return tuple(cast(list[str], payload))
