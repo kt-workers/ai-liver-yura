@@ -24,7 +24,13 @@ def test_default_cli_runs_one_actual_host_transition(
     monkeypatch: MonkeyPatch, capsys: CaptureFixture[str]
 ) -> None:
     def fake_transition() -> HostTransitionResult:
-        return HostTransitionResult(HostTransitionStatus.YIELD_EXTERNAL, "CI_PENDING", 471, 477, "a" * 40)
+        return HostTransitionResult(
+            HostTransitionStatus.YIELD_EXTERNAL,
+            "CI_PENDING",
+            471,
+            477,
+            "a" * 40,
+        )
 
     monkeypatch.setattr(
         "tools.loop_engine.host_entrypoint.run_actual_host_transition", fake_transition
