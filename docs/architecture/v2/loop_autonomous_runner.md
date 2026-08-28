@@ -8,11 +8,15 @@
 
 It is neither a product runtime service nor a polling daemon. Pending CI, human verification, credential, Project, or provider work produces a typed `YIELD_EXTERNAL`; the next explicit run re-observes GitHub live state.
 
+`python -m tools.loop_engine --validate-installation` is the non-mutating installation smoke path. With no special mode option, the CLI enters the ai-liver-yura trusted-host composition and prints one secret-safe structured transition result. Exit code `0/2/3` follows the result semantics below.
+
 ## Ports and execution boundary
 
 The deterministic Core keeps `MissionSupervisor`, typed snapshots, Resume/Write gates, and injected executor/verifier/checkpoint ports. The repository also provides an ai-liver-yura host composition that binds these control-plane concepts to `gh`, Codex, and the repository root without moving Loop Engineering into `app/**`.
 
-The host composition treats the latest #450 Mission Checkpoint as a discovery candidate only. Before any Codex start, CI interpretation, Ready transition, merge, Issue close, or checkpoint, it fresh-reads the live Issue/PR/branch/HEAD and rejects a stale checkpoint target. It never treats chat memory as execution authority.
+The host composition treats the latest #450 Mission Checkpoint as a discovery candidate only. It does not search backward for an older parseable checkpoint. The latest checkpoint must explicitly state `current Work`; a PR-backed Work also states `current PR` and exact HEAD. Missing or invalid current target identity is fail-closed and cannot dispatch Codex or mutate GitHub.
+
+Before any Codex start, CI interpretation, Ready transition, merge, Issue close, or checkpoint, the host fresh-reads the live Issue/PR/branch/HEAD and rejects a stale checkpoint target. It never treats chat memory as execution authority.
 
 `CodexExecutor` uses a fixed argv and sanitized child environment. It passes no reviewer or database credential, does not shell-interpolate TaskPacket or Mission instruction text, runs from the repository root, and checks the live PR head after child exit. One run may start only one Codex child.
 
@@ -29,7 +33,7 @@ For the current Work discovered from #450 and then fresh-resolved:
 - stale CI/head/checkpoint identity → fail closed for reconciliation;
 - review `REQUEST_CHANGES` / `NOT_RUN` alone → record diagnostic evidence but do not block the functional path under the current Mission policy.
 
-After a Work merge, the host may invoke Codex once in a **planning-only** transition to fresh-read #207/#317/#450/#462 and Project #7, select the next dependency-ready Work, and write the next Mission Checkpoint. That planning transition must not modify product/control-plane code or perform a merge.
+After a Work merge, the host may invoke Codex once in a **planning-only** transition to fresh-read #207/#317/#450/#462 and Project #7, select the next dependency-ready Work, and write the next Mission Checkpoint. That planning transition must not modify product/control-plane code or perform a merge, and its checkpoint must explicitly identify the next current Work/PR/HEAD for the following CLI invocation.
 
 ## Transition rules
 
