@@ -209,7 +209,16 @@ def _canonical_goal_environment(
 def _codex_argv(environment: Mapping[str, str]) -> tuple[str, ...]:
     configured = environment.get("LOOP_CODEX_COMMAND_JSON")
     if not configured:
-        return ("codex", "exec", "--full-auto")
+        return (
+            "codex",
+            "-a",
+            "never",
+            "exec",
+            "--sandbox",
+            "workspace-write",
+            "-c",
+            "sandbox_workspace_write.network_access=true",
+        )
     try:
         payload = json.loads(configured)
     except json.JSONDecodeError as error:
