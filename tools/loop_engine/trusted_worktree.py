@@ -71,13 +71,13 @@ class TrustedWorktree:
         head = pull.get("head")
         if not isinstance(head, dict):
             return None
-        branch = head.get("ref")
+        branch_value = head.get("ref")
         live_head = head.get("sha")
-        if not isinstance(branch, str) or not isinstance(live_head, str):
+        if not isinstance(branch_value, str) or not isinstance(live_head, str):
             return None
         if live_head != target.head_sha:
             return None
-        if not self._checkout_existing_branch(branch, target.head_sha):
+        if not self._checkout_existing_branch(branch_value, target.head_sha):
             return None
 
         reconciliation_started = False
@@ -87,7 +87,7 @@ class TrustedWorktree:
                 return None
 
         return PreparedWorktree(
-            branch,
+            branch_value,
             target.head_sha,
             target.pr_number,
             reconciliation_started,
@@ -275,7 +275,7 @@ class TrustedWorktree:
         if not result.succeeded:
             return None
         try:
-            return json.loads(result.output)
+            return cast(object, json.loads(result.output))
         except json.JSONDecodeError:
             return None
 
