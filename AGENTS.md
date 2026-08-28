@@ -1,20 +1,40 @@
-## 自律Completion Missionの継続
+## Repository文章言語ルール
 
-## GitHub上の人間向けコミュニケーション言語
+このリポジトリで人間が読むために書く文章は、日本語を唯一の基本言語とする。
 
-Issue本文、Issue comment / Checkpoint、PR本文、PR comment / review説明、
-Mission Checkpoint、Resume Certificateは、原則として日本語で記載する。
+対象は次を含む。
 
-次は機械的・固有の技術表現なので英語のままでよい。
+- Markdown、README、設計書、運用書、履歴文書
+- Issue本文、Issue comment、Checkpoint
+- PR本文、PR comment、review説明
+- Mission Checkpoint、Resume Certificate
+- commit messageの件名と本文
+- GitHubのcommit comment
+- コード内comment
+- docstring
+- 人間向けのlog、warning、error説明文
+- 設定ファイルやworkflow内の人間向けcomment
 
-- status値（`ACTIVE`、`PASS`、`NOT_RUN`、`REQUEST_CHANGES`等）
-- branch名、command、file path、SHA
-- API / class / function / field名
+英語だけで成立する文章、見出し、説明段落、comment、docstringは作成しない。
+既存の英語文章も翻訳対象とし、安全な通常変更で順次日本語へ置き換える。
+
+次のような英語は、日本語文の中で技術用語または一般語として使用してよい。
+
+- `GitHub`、`API`、`Work`、`Issue`、`PR`、`branch`、`commit`、`push`、`merge`
+- `PASS`、`FAIL`、`ACTIVE`、`NOT_RUN`、`REQUEST_CHANGES`等のstatus値
+- command、file path、SHA、class名、function名、field名
 - machine-readable JSONのkey/value
-- 外部APIが返した原文を引用する必要がある箇所
+- 製品名、ライブラリ名、protocol名、固有名詞
+- 中学生程度の一般的な英単語を、日本語文章の一部として自然に使用する場合
+- 外部API等の原文を、原文であることを明示して引用する必要がある場合
 
-英語の文章を丸ごと投稿せず、日本語の説明文の中で上記技術語を使う。
-この規則は新規投稿から適用し、既存のGitHub投稿を遡及修正しない。
+技術識別子に英語が含まれていても、説明文章全体は日本語として成立させる。
+コードの識別子、schema、protocol値、機械可読値は文章言語ルールの対象外とする。
+
+共有済みcommitのmessageは、このルールだけを理由にforce pushやrebaseで履歴を書き換えない。
+編集可能な既存文書、comment、docstring、GitHub comment類は日本語へ是正する。
+
+## 自律Completion Missionの継続
 
 このリポジトリでAutonomous Completion MissionがACTIVEの場合、
 個別のユーザープロンプトを新しい独立Missionとして扱わない。
