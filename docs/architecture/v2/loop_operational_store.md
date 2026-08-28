@@ -22,3 +22,9 @@ No table stores credentials, authorization data, raw provider response/error, pr
 Migrations are Alembic-owned and run separately from normal observation. Every write validates bounded values, uses a transaction, and has a unique identity. An in-flight reservation is durable before provider work; provider outcome is durable before terminal result. After crash, uncertain records are reconciled with live GitHub/broker evidence and never resent solely because a local result is absent.
 
 Retention removes only aged operational rows after preserving the minimum identity/audit evidence needed for idempotency; it never deletes GitHub authority. Optional PostgreSQL advisory locking is an execution exclusion aid, not mission authority and not active-active multi-host support.
+
+## Database failure normalization
+
+The Operational Store is optional and therefore a database-driver failure must not terminate the Loop Engine process. Connection creation, cursor acquisition, statement execution, commit, rollback, and close are all adapter-side operations. A failure raised from those DB-API boundaries is normalized to `DB_UNAVAILABLE`; cleanup is best-effort and a cleanup failure must not replace that typed degraded result.
+
+Metadata serialization happens before the database effect. A value that cannot be safely serialized is `INVALID` and must not open a database connection. The adapter does not convert a successful GitHub/checkpoint transition into failure merely because optional PostgreSQL memory is unavailable.

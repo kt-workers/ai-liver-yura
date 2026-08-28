@@ -60,14 +60,24 @@ class CheckpointPublisher(Protocol):
     def publish(self, decision: SupervisorDecision, result: str) -> None: ...
 
 
+class HeadResolver(Protocol):
+    def resolve_head(self) -> str | None: ...
+
+
 class SubprocessCodexExecutor:
     """Runs fixed argv only; no reviewer or database secret crosses this boundary."""
 
-    def __init__(self, argv_prefix: Sequence[str], environment: Mapping[str, str]) -> None:
+    def __init__(
+        self,
+        argv_prefix: Sequence[str],
+        environment: Mapping[str, str],
+        head_resolver: HeadResolver | None = None,
+    ) -> None:
         self._argv_prefix = tuple(argv_prefix)
         self._environment = {
             key: value for key, value in environment.items() if key in {"PATH", "GH_TOKEN"}
         }
+        self._head_resolver = head_resolver
 
     def execute(self, packet: TaskPacket) -> ExecutionEvidence:
         instruction = "\n".join(
@@ -92,8 +102,23 @@ class SubprocessCodexExecutor:
             return ExecutionEvidence(
                 ExecutionStatus.INTERRUPTED, None, "CODEX_EXECUTION_UNAVAILABLE"
             )
-        status = ExecutionStatus.COMPLETED if completed.returncode == 0 else ExecutionStatus.FAILED
-        return ExecutionEvidence(status, None, "CODEX_EXITED")
+        if completed.returncode != 0:
+            return ExecutionEvidence(ExecutionStatus.FAILED, None, "CODEX_EXITED")
+        if self._head_resolver is None:
+            return ExecutionEvidence(
+                ExecutionStatus.INTERRUPTED, None, "EXECUTION_HEAD_READBACK_UNAVAILABLE"
+            )
+        try:
+            observed_head_sha = self._head_resolver.resolve_head()
+        except Exception:
+            return ExecutionEvidence(
+                ExecutionStatus.INTERRUPTED, None, "EXECUTION_HEAD_READBACK_UNAVAILABLE"
+            )
+        if not observed_head_sha:
+            return ExecutionEvidence(
+                ExecutionStatus.INTERRUPTED, None, "EXECUTION_HEAD_READBACK_UNAVAILABLE"
+            )
+        return ExecutionEvidence(ExecutionStatus.COMPLETED, observed_head_sha, "CODEX_EXITED")
 
 
 class LoopRunner:
@@ -130,6 +155,21 @@ class LoopRunner:
         verification = self._verifier.verify(decision.task_packet, execution)
         if not verification.passed:
             self._checkpoints.publish(decision, verification.detail)
+            return RunnerResult(
+                RunDisposition.INTERVENTION_REQUIRED,
+                decision,
+                execution,
+                verification,
+                True,
+                None,
+                None,
+            )
+        if (
+            execution.observed_head_sha is None
+            or verification.exact_head_sha is None
+            or verification.exact_head_sha != execution.observed_head_sha
+        ):
+            self._checkpoints.publish(decision, "VERIFICATION_HEAD_MISMATCH")
             return RunnerResult(
                 RunDisposition.INTERVENTION_REQUIRED,
                 decision,

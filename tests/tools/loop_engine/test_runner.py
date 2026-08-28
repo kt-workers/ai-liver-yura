@@ -81,6 +81,51 @@ def test_runner_executes_one_transition_checkpoints_and_selects_next_work() -> N
     assert checkpoints.events == ["VERIFIED"]
 
 
+def test_runner_rejects_verification_for_a_different_execution_head() -> None:
+    class MismatchedVerifier:
+        def verify(self, packet, execution):  # type: ignore[no-untyped-def]
+            return VerificationEvidence(True, "other-head", "EXACT_HEAD_CI_SUCCESS")
+
+    observer = Observer()
+    checkpoints = Checkpoints()
+    result = LoopRunner(
+        observer,
+        MissionSupervisor(),
+        Executor(),
+        MismatchedVerifier(),
+        checkpoints,
+        PostgreSQLOperationalStore(Connection),
+    ).run_once()
+
+    assert result.disposition is RunDisposition.INTERVENTION_REQUIRED
+    assert result.execution is not None and result.execution.observed_head_sha == "head"
+    assert result.verification is not None and result.verification.exact_head_sha == "other-head"
+    assert result.operational_store_status is None
+    assert observer.calls == 1
+    assert checkpoints.events == ["VERIFICATION_HEAD_MISMATCH"]
+
+
+def test_runner_rejects_verification_when_execution_head_is_missing() -> None:
+    class MissingHeadExecutor:
+        def execute(self, packet):  # type: ignore[no-untyped-def]
+            return ExecutionEvidence(ExecutionStatus.COMPLETED, None, "CODEX_EXITED")
+
+    observer = Observer()
+    checkpoints = Checkpoints()
+    result = LoopRunner(
+        observer,
+        MissionSupervisor(),
+        MissingHeadExecutor(),
+        Verifier(),
+        checkpoints,
+    ).run_once()
+
+    assert result.disposition is RunDisposition.INTERVENTION_REQUIRED
+    assert result.operational_store_status is None
+    assert observer.calls == 1
+    assert checkpoints.events == ["VERIFICATION_HEAD_MISMATCH"]
+
+
 def test_runner_yields_without_executor_for_wait_only_decision() -> None:
     class WaitingObserver(Observer):
         def observe(self):  # type: ignore[no-untyped-def]
