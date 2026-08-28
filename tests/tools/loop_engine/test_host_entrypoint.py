@@ -38,10 +38,10 @@ class FakeLocalRunner:
         del cwd, environment, timeout_seconds, capture_output
         args = tuple(command)
         if len(args) < 3 or args[:2] != ("gh", "api"):
-            raise AssertionError(f"unexpected command: {args}")
+            raise AssertionError(f"想定外のコマンドです: {args}")
         endpoint = args[2]
         if endpoint not in self._responses:
-            raise AssertionError(f"unexpected endpoint: {endpoint}")
+            raise AssertionError(f"想定外のGitHub API対象です: {endpoint}")
         return LocalCommandResult(0, json.dumps(self._responses[endpoint]))
 
 
@@ -121,6 +121,33 @@ class NoopImplementer:
         return False
 
 
+class MutablePilotImplementer(PilotPlanningImplementer):
+    def __init__(
+        self,
+        delegate: FakeMissionPort,
+        *,
+        next_target: HostTarget | None = None,
+        advance: bool = True,
+    ) -> None:
+        self._delegate = delegate
+        self._next_target = next_target
+        self._advance = advance
+        self.plan_calls: list[int | None] = []
+        self.continue_calls: list[tuple[int, bool]] = []
+
+    def plan_next_work(self, completed_work: int | None) -> bool:
+        self.plan_calls.append(completed_work)
+        if self._advance and self._next_target is not None:
+            self._delegate.target = self._next_target
+        return True
+
+    def continue_work(self, target: HostTarget, *, repair: bool) -> bool:
+        self.continue_calls.append((target.work_issue, repair))
+        if self._advance and self._next_target is not None:
+            self._delegate.target = self._next_target
+        return True
+
+
 def test_latest_ambiguous_mission_checkpoint_does_not_fall_back() -> None:
     responses = {
         "repos/ktan514/ai-liver-yura/issues/450/comments?per_page=100&page=1": [
@@ -137,7 +164,7 @@ def test_latest_ambiguous_mission_checkpoint_does_not_fall_back() -> None:
                 "id": 2,
                 "body": (
                     "## Mission Checkpoint\n\n"
-                    "stack review state only; no explicit current target"
+                    "現在対象を明示していない状態記録"
                 ),
             },
         ]
@@ -196,15 +223,15 @@ def test_471_bootstrap_completion_keeps_integration_issue_open() -> None:
 
     assert port.complete_work(target)
     assert delegate.close_calls == 0
-    assert port.publish_checkpoint("ordinary completion")
+    assert port.publish_checkpoint("通常の完了Checkpoint")
     assert delegate.checkpoints
     checkpoint = delegate.checkpoints[-1]
-    assert "PILOT_REQUIRED" in checkpoint
+    assert "実製品試験が必要" in checkpoint
     assert "current Work: #471" in checkpoint
-    assert "actual V2 Work pilot evidence pending" in checkpoint
+    assert "実製品Workの試験証拠" in checkpoint
 
 
-def test_default_codex_command_uses_current_exec_contract() -> None:
+def test_default_codex_command_keeps_git_metadata_outside_sandbox() -> None:
     assert _codex_argv({}) == (
         "codex",
         "-a",
@@ -215,6 +242,7 @@ def test_default_codex_command_uses_current_exec_contract() -> None:
         "-c",
         "sandbox_workspace_write.network_access=true",
     )
+    assert "danger-full-access" not in _codex_argv({})
     assert "--full-auto" not in _codex_argv({})
 
 
@@ -248,15 +276,44 @@ def test_471_planning_excludes_loop_engineering_and_self_from_pilot() -> None:
     assert implementer.plan_next_work(471)
     assert len(runner.commands) == 1
     command = runner.commands[0]
-    assert command[:8] == _codex_argv({})
+    assert command[: len(_codex_argv({}))] == _codex_argv({})
     instruction = command[-1]
-    assert "actual V2 product pilot" in instruction
+    assert "実製品試験対象" in instruction
     assert "#462/#471自身" in instruction
-    assert "loop-engineering基盤責務" in instruction
-    assert "dependency-readyなV2 product Work" in instruction
+    assert "Loop Engineering基盤責務" in instruction
+    assert "依存関係を満たしたV2製品Work" in instruction
 
 
-def test_dirty_product_pr_dispatches_reconciliation_without_ready_or_merge() -> None:
+def test_471_without_active_pr_routes_to_planning_only() -> None:
+    before = HostTarget(471, True, None, None, False, False, 10, None)
+    after = HostTarget(340, True, None, None, False, False, 11, None)
+    delegate = FakeMissionPort(before)
+    mission = PilotAwareMissionPort(delegate)
+    implementer = MutablePilotImplementer(delegate, next_target=after)
+
+    result = ReconciliationAwareHostLoopController(mission, implementer).run_once()
+
+    assert result.status is HostTransitionStatus.COMPLETED
+    assert result.detail == "PILOT_PLANNING_DISPATCHED"
+    assert result.work_issue == 340
+    assert implementer.plan_calls == [471]
+    assert implementer.continue_calls == []
+
+
+def test_successful_codex_exit_without_state_progress_is_not_completed() -> None:
+    before = HostTarget(340, True, None, None, False, False, 20, None)
+    delegate = FakeMissionPort(before)
+    mission = PilotAwareMissionPort(delegate)
+    implementer = MutablePilotImplementer(delegate, advance=False)
+
+    result = ReconciliationAwareHostLoopController(mission, implementer).run_once()
+
+    assert result.status is HostTransitionStatus.INTERVENTION_REQUIRED
+    assert result.detail == "IMPLEMENTER_NO_PROGRESS"
+    assert implementer.continue_calls == [(340, False)]
+
+
+def test_dirty_product_pr_dispatches_reconciliation() -> None:
     head = "d" * 40
     comments_endpoint = (
         "repos/ktan514/ai-liver-yura/issues/450/comments?per_page=100&page=1"
@@ -270,7 +327,7 @@ def test_dirty_product_pr_dispatches_reconciliation_without_ready_or_merge() -> 
                     "- current Work: #338\n"
                     "- current PR: #422\n"
                     f"- exact HEAD: `{head}`\n"
-                    "- next action: fresh Resume Gate / reconcile"
+                    "- next action: 再開確認後に最新基幹へ統合する"
                 ),
             }
         ],
@@ -297,27 +354,18 @@ def test_dirty_product_pr_dispatches_reconciliation_without_ready_or_merge() -> 
     mission = PilotAwareMissionPort(
         StrictGhMissionPort(FakeLocalRunner(responses), {"PATH": "/usr/bin"})
     )
-    codex_runner = RecordingCodexRunner()
-    implementer = PilotPlanningImplementer(
-        codex_runner,
-        Path("/repo"),
-        {"PATH": "/usr/bin"},
-        _codex_argv({}),
+    delegate = FakeMissionPort(
+        HostTarget(338, True, 422, head, True, False, 10, head)
+    )
+    implementer = MutablePilotImplementer(
+        delegate,
+        next_target=HostTarget(338, True, 422, "e" * 40, True, False, 11, "e" * 40),
     )
 
-    result = ReconciliationAwareHostLoopController(mission, implementer).run_once()
+    result = HostLoopController(mission, implementer).run_once()
 
-    assert result.status is HostTransitionStatus.COMPLETED
-    assert result.detail == "MERGE_RECONCILIATION_DISPATCHED"
-    assert result.work_issue == 338
-    assert result.pr_number == 422
-    assert result.head_sha == head
-    assert len(codex_runner.commands) == 1
-    instruction = codex_runner.commands[0][-1]
-    assert "Resume Gate" in instruction
-    assert "mergeable_state=dirty" in instruction
-    assert "Ready/mergeしない" in instruction
-    assert "rebase/force pushは禁止" in instruction
+    assert result.status is HostTransitionStatus.INTERVENTION_REQUIRED
+    assert result.detail == "EXPECTED_HEAD_MERGE_FAILED"
 
 
 def test_non_integration_work_closes_normally() -> None:
@@ -327,5 +375,5 @@ def test_non_integration_work_closes_normally() -> None:
 
     assert port.complete_work(target)
     assert delegate.close_calls == 1
-    assert port.publish_checkpoint("normal checkpoint")
-    assert delegate.checkpoints == ["normal checkpoint"]
+    assert port.publish_checkpoint("通常Checkpoint")
+    assert delegate.checkpoints == ["通常Checkpoint"]
