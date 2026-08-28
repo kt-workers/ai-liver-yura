@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 
 from tools.loop_engine.ci_gate import CIGateStatus
-from tools.loop_engine.host_entrypoint import PilotAwareMissionPort, StrictGhMissionPort
+from tools.loop_engine.host_entrypoint import (
+    PilotAwareMissionPort,
+    StrictGhMissionPort,
+)
 from tools.loop_engine.host_runtime import HostTarget, LocalCommandResult
 
 
@@ -75,7 +78,10 @@ def test_latest_ambiguous_mission_checkpoint_does_not_fall_back() -> None:
             },
             {
                 "id": 2,
-                "body": "## Mission Checkpoint\n\nstack review state only; no explicit current target",
+                "body": (
+                    "## Mission Checkpoint\n\n"
+                    "stack review state only; no explicit current target"
+                ),
             },
         ]
     }
