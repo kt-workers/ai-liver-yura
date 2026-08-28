@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 from pytest import CaptureFixture, MonkeyPatch
 
@@ -23,7 +24,22 @@ def test_cli_validates_installation_without_external_mutation() -> None:
 def test_default_cli_runs_one_actual_host_transition(
     monkeypatch: MonkeyPatch, capsys: CaptureFixture[str]
 ) -> None:
-    def fake_transition() -> HostTransitionResult:
+    events: list[str] = []
+    received: dict[str, object] = {}
+
+    class FakeConsole:
+        def __init__(self, root: Path) -> None:
+            self.path = root / "logs" / "loop_engine" / "test.log"
+
+        def event(self, message: str) -> None:
+            events.append(message)
+
+    class FakeRunner:
+        def __init__(self, console: object) -> None:
+            received["console"] = console
+
+    def fake_transition(**kwargs: object) -> HostTransitionResult:
+        received.update(kwargs)
         return HostTransitionResult(
             HostTransitionStatus.YIELD_EXTERNAL,
             "CI_PENDING",
@@ -32,6 +48,8 @@ def test_default_cli_runs_one_actual_host_transition(
             "a" * 40,
         )
 
+    monkeypatch.setattr(cli, "RuntimeConsole", FakeConsole)
+    monkeypatch.setattr(cli, "VisibleSubprocessLocalRunner", FakeRunner)
     monkeypatch.setattr(
         "tools.loop_engine.host_entrypoint.run_actual_host_transition", fake_transition
     )
@@ -41,3 +59,8 @@ def test_default_cli_runs_one_actual_host_transition(
     output = capsys.readouterr().out
     assert '"status": "YIELD_EXTERNAL"' in output
     assert '"detail": "CI_PENDING"' in output
+    assert events[0] == "START"
+    assert "preflight / GitHub observe: begin" in events
+    assert events[-1] == "RESULT status=YIELD_EXTERNAL detail=CI_PENDING"
+    assert "root" in received
+    assert "local_runner" in received
