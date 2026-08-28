@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from pytest import CaptureFixture, MonkeyPatch
@@ -124,7 +125,7 @@ def test_default_cli_continues_completed_and_ci_pending_without_operator(
 
     monkeypatch.setattr(cli, "RuntimeConsole", FakeConsole)
     monkeypatch.setattr(cli, "VisibleSubprocessLocalRunner", FakeRunner)
-    monkeypatch.setattr(cli.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(time, "sleep", lambda seconds: sleeps.append(seconds))
     monkeypatch.setattr(
         "tools.loop_engine.host_entrypoint.run_actual_host_transition", fake_transition
     )
