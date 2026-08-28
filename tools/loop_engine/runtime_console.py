@@ -139,8 +139,8 @@ class VisibleSubprocessLocalRunner:
                     process.kill()
                     break
                 events = selector.select(timeout=min(0.5, remaining))
-                for key, _ in events:
-                    line = key.fileobj.readline()
+                for _key, _ in events:
+                    line = process.stdout.readline()
                     if line:
                         self._console.child_output(line)
                 if process.poll() is not None:
