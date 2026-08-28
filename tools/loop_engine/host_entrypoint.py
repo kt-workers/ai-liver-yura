@@ -121,6 +121,27 @@ class PilotAwareMissionPort(MissionPort):
         return self._delegate.publish_checkpoint(checkpoint)
 
 
+class PilotPlanningImplementer(CodexImplementer):
+    """After #471 bootstrap, planning must select a real V2 product Work."""
+
+    def plan_next_work(self, completed_work: int | None) -> bool:
+        if completed_work != _INTEGRATION_WORK:
+            return super().plan_next_work(completed_work)
+        instruction = (
+            "Mission #450のactual V2 product pilot planning-only transitionです。"
+            "Loop Engineering bootstrap #471/#477はtrunkへ統合済みですが、#471はpilot evidence待ちで"
+            "openのままです。#207/#317/#450/#462、Project #7、GitHub live Issue/PRをfresh readし、"
+            "dependency-readyなV2 product Work/Integrationを1件選択してください。"
+            "#462/#471自身、およびloop-engineering基盤責務のIssueはpilot candidateから除外してください。"
+            "dependency-readyなV2 product Workが無い場合は外部/依存待ちをCheckpointへ明示してください。"
+            "repository code・design file・branch・PRを変更せず、merge/reviewも実行しないでください。"
+            "選択したWorkについてcurrent Work、current PR（存在時）、exact HEAD（存在時）、next actionを"
+            "#450へ日本語のMission Checkpointとして1回だけ記録してください。"
+            "Root #317 completionをlive evidenceで証明できない限りMISSION_COMPLETEにしないでください。"
+        )
+        return self._run_codex(instruction)
+
+
 def run_actual_host_transition(
     *,
     root: Path | None = None,
@@ -148,7 +169,7 @@ def run_actual_host_transition(
         )
 
     mission = PilotAwareMissionPort(StrictGhMissionPort(runner, values))
-    implementer = CodexImplementer(runner, project_root, values, argv_prefix)
+    implementer = PilotPlanningImplementer(runner, project_root, values, argv_prefix)
     return HostLoopController(mission, implementer).run_once()
 
 
