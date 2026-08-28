@@ -1,72 +1,96 @@
-# Loop Autonomous Runner
+# Loop自律Runner
 
-## Continuous host command
+## continuous host command
 
-`python -m tools.loop_engine` is the trusted-host **continuous Mission runtime**. Each internal control-plane transition remains bounded:
+`python -m tools.loop_engine`はtrusted host上で動く**continuous Mission runtime**である。内部のcontrol-plane transitionは引き続きboundedとする。
 
 `Preflight → Observe → Reconcile → Resume Gate → Select → Plan/Execute/Wait/Integrate → Readback → Checkpoint`
 
-The process does not stop merely because one safe transition completed. After `COMPLETED`, it fresh-observes GitHub and starts the next bounded transition automatically. This preserves one-transition mutation safety while removing the requirement for a human to repeatedly re-run the command.
+安全なtransitionが1回完了しただけではprocessを終了しない。`COMPLETED`後はGitHubをfresh observeし、次のbounded transitionを自動開始する。これにより1 transitionごとのmutation safetyを維持しながら、人間がcommandを繰り返し起動する必要をなくす。
 
-`python -m tools.loop_engine --once` retains the diagnostic one-transition behavior.
+`python -m tools.loop_engine --once`は診断用の1 transition実行を維持する。
 
-The continuous runtime may wait and automatically re-observe **machine-resolvable current-head CI pending state** at a coarse bounded interval. This is not permission to busy-poll review, Human Verification, credential, provider, or other external conditions. Those conditions continue to produce typed `YIELD_EXTERNAL` and terminate the current runtime when no independent actionable Work is available.
+continuous runtimeは、machineで解決可能なcurrent-head CI pending状態だけを粗いbounded intervalで待機し、自動でfresh observeしてよい。review、Human Verification、credential、provider等の外部条件をbusy pollingしてよいという意味ではない。独立したactionable Workがない場合、これらはtypedな`YIELD_EXTERNAL`として現在のruntimeを終了する。
 
-Codex execution has **no fixed wall-clock kill timeout**. A long but live Codex child remains attached to the current bounded transition and emits heartbeat progress while running. The old fixed 30-minute kill boundary is prohibited because task duration is not failure evidence and would convert legitimate long-running implementation into an operator-monitoring requirement. Explicit process failure, launch failure, SIGINT, or other deterministic failure remains fail-closed.
+Codex executionには固定wall-clock kill timeoutを設けない。長時間でも生存しているCodex childは現在のbounded transitionへ接続したままにし、実行中はheartbeatを出す。処理時間そのものはfailure evidenceではないため、旧30分kill境界は禁止する。明示的なprocess failure、launch failure、SIGINT等のdeterministic failureは引き続きfail-closedとする。
 
-`python -m tools.loop_engine --validate-installation` is the non-mutating installation smoke path. The CLI prints secret-safe transition progress to stderr and structured transition results to stdout.
+`python -m tools.loop_engine --validate-installation`は非変更のinstallation smoke pathである。CLIはsecret-safeなtransition progressをstderrへ、構造化されたtransition resultをstdoutへ出力する。
 
-## Ports and execution boundary
+## portと実行境界
 
-The deterministic Core keeps `MissionSupervisor`, typed snapshots, Resume/Write gates, and injected executor/verifier/checkpoint ports. The repository also provides an ai-liver-yura host composition that binds these control-plane concepts to `gh`, Codex, and the repository root without moving Loop Engineering into `app/**`.
+決定論的Coreは`MissionSupervisor`、typed snapshot、Resume / Write gate、注入されたexecutor / verifier / checkpoint portを保持する。repositoryはこれらのcontrol-plane概念を`gh`、Codex、repository rootへ接続するai-liver-yura host compositionも提供し、Loop Engineeringを`app/**`へ混在させない。
 
-The host composition treats the latest #450 Mission Checkpoint as a discovery candidate only. It does not search backward for an older parseable checkpoint. The latest checkpoint must explicitly state `current Work`; a PR-backed Work also states `current PR` and exact HEAD. Missing or invalid current target identity is fail-closed and cannot dispatch Codex or mutate GitHub.
+host compositionは最新#450 Mission Checkpointをdiscovery candidateとしてのみ扱う。古いparse可能なCheckpointへ遡らない。最新Checkpointは`current Work`を明示し、PR-backed Workなら`current PR`とexact HEADも記録する。current target identityが欠落または不正な場合はfail-closedとし、Codex dispatchやGitHub mutationへ進まない。
 
-Planning-only Codex output is part of this machine-readable contract. Every selected next Work checkpoint must contain the literal field `- current Work: #<issue>`. When an active PR exists, it must also contain `- current PR: #<pr>` and `- exact HEAD: <40-hex-sha>`. Narrative aliases such as `選択した次Work:` do not replace these fields. A Work with no active PR omits PR/HEAD rather than inventing them.
+planning-only Codexの出力もmachine-readable contractの一部である。選択した次WorkのCheckpointにはliteral field `- current Work: #<issue>`を必須とする。active PRがある場合は`- current PR: #<pr>`と`- exact HEAD: <40-hex-sha>`も必須とする。`選択した次Work:`等の別名で代用しない。active PRがないWorkではPR / HEADを捏造せず省略する。
 
-Known safe observation failures are surfaced with their typed cause instead of being collapsed into an opaque status. In particular, an invalid latest checkpoint is reported as `GITHUB_OBSERVE_FAILED:MISSION_CHECKPOINT_TARGET_UNRESOLVED`; credentials, transport, invalid JSON, and incompatible GitHub response shape remain separately classifiable safe diagnostics without exposing secrets.
+安全に分類可能なobserve failureは、曖昧なstatusへ潰さずtyped causeを表示する。特に不正な最新Checkpointは`GITHUB_OBSERVE_FAILED:MISSION_CHECKPOINT_TARGET_UNRESOLVED`として表示する。credential、transport、invalid JSON、GitHub response shape不整合もsecretを出さずに個別分類する。
 
-Before any Codex start, CI interpretation, Ready transition, merge, Issue close, or checkpoint, the host fresh-reads the live Issue/PR/branch/HEAD and rejects a stale checkpoint target. It never treats chat memory as execution authority.
+Codex start、CI判定、Ready、merge、Issue close、Checkpointの前に、hostはlive Issue / PR / branch / HEADをfresh readし、staleなCheckpoint targetを拒否する。chat memoryを実行Authorityとして扱わない。
 
-`CodexExecutor` uses a fixed argv and sanitized child environment. It passes no reviewer or database credential, does not shell-interpolate TaskPacket or Mission instruction text, runs from the repository root, and checks the live PR head after child exit. One bounded transition may start only one Codex child.
+`CodexExecutor`は固定argvとsanitized child environmentを使用する。Reviewer credentialやdatabase credentialを渡さず、TaskPacketやMission instructionをshell interpolationせず、repository rootから実行する。1 bounded transitionで起動できるCodex childは1つだけとする。
 
-A successful implementer process exit is not execution identity evidence by itself. After the child exits successfully, the trusted host must fresh-read the live PR/branch head and attach that SHA to execution evidence. Verification evidence is accepted only when its exact head is present and matches the execution readback SHA. Missing or mismatched identity is fail-closed and must not advance to integration.
+## CodexのGit操作境界
 
-## Host stage routing
+actual hostのImplementerはbranch作成、commit、push等のGit metadata変更を必要とする。`workspace-write` sandboxでは`.git`への書込みが拒否されるため、既定commandは`danger-full-access`を明示する。
 
-For the current Work discovered from #450 and then fresh-resolved:
+```text
+codex -a never exec --sandbox danger-full-access <instruction>
+```
 
-- no current implementation PR / implementation or CI repair required → invoke Codex once with the bounded Mission/Work target, then fresh-read GitHub and checkpoint the observed result;
-- exact current-head CI absent or `queued` / `in_progress` → `YIELD_EXTERNAL` from that bounded transition; continuous CLI may wait and fresh-reobserve current-head CI without operator intervention;
-- exact current-head CI failed → invoke Codex once for the same-lineage functional repair;
-- exact current-head CI passed and no known reproducible functional blocker → Ready if needed, normal expected-head merge, merge/trunk readback, Work completion checkpoint;
-- stale CI/head/checkpoint identity → fail closed for reconciliation;
-- review `REQUEST_CHANGES` / `NOT_RUN` alone → record diagnostic evidence but do not block the functional path under the current Mission policy.
+これはactual host上の自律実装を成立させるための機能要件である。child environmentのsecret制限は別境界として維持する。
 
-After a Work merge, the next bounded transition may invoke Codex once in a **planning-only** transition to fresh-read #207/#317/#450/#462 and Project #7, select the next dependency-ready Work, and write the next Mission Checkpoint. That planning transition must not modify product/control-plane code or perform a merge, and its checkpoint must explicitly identify the next current Work/PR/HEAD for the following transition.
+Codex processがexit 0でも、それだけではexecution identity evidenceにならない。実装、CI repair、merge reconciliationの後はtrusted hostがGitHub live stateをfresh readし、Checkpoint identityとPR / HEAD identityが実際に前進したことを確認する。進捗がなければ`IMPLEMENTER_NO_PROGRESS`としてfail-closedにする。
 
-## Continuous runtime rules
+## #471 pilot routing
 
-- `COMPLETED` → immediately fresh-observe and continue to the next bounded transition.
-- `YIELD_EXTERNAL / CI_PENDING` → in continuous mode, wait at a coarse interval and fresh-observe again; no mutation occurs during the wait.
-- other `YIELD_EXTERNAL` → stop the process cleanly unless a separate dependency-ready Work was already selected by the scheduler.
-- `INTERVENTION_REQUIRED` → stop fail-closed with the typed reason and log path.
-- Mission completion → terminate normally only when Root #317 completion evidence satisfies the canonical completion contract.
-- `--once` → return after exactly one bounded transition regardless of the above continuation rules.
+#471はLoop Engineering bootstrap / integrationの状態を保持するIssueであり、actual product pilotそのものではない。
 
-A continuous host runtime is not permission for same-head review polling. Review pending, Human Verification, credentials, provider recovery, and equivalent external waits retain their explicit no-busy-poll rules.
+#477 merge後に`current Work: #471`かつactive PRなしとなった場合、通常implementation continuationへ送ってはならない。hostはこの状態をpilot planning-only stateとして扱い、#471をcompleted_workとしてplanning-only Codexを起動する。
 
-## Transition rules
+plannerは#462 / #471自身とLoop Engineering基盤Issueを除外し、GitHub live stateとProject #7からdependency-readyなactual V2 product Workを1件選択する。
 
-- Resume conflicts generate no implementation TaskPacket and no mutation.
-- CI evidence is bound to the expected live head before pending/success/failure classification. Pending/running current-head CI yields; failure returns the same lineage to a repair transition.
-- Independent review is diagnostic. Only a deterministic/reproducible functional blocker forces repair; review-provider failure or non-functional hardening does not stop merge.
-- Mutation follows fresh precondition → effect → effect readback → checkpoint. Direct implementation write to canonical trunk and Project #6 target are hard rejects.
-- Implementer completion → live-head readback → exact-head verification is one identity chain. A process exit code, an old CI result, or a verification result for another SHA cannot advance the transition.
-- SIGINT stops accepting new mutation, terminates the current child under the existing graceful-shutdown boundary, and leaves GitHub state sufficient for next-run reconciliation.
+planning後は最新Mission Checkpointをfresh readする。
+
+- 別product Workへcurrent Workが移動した場合は`PILOT_PLANNING_DISPATCHED`として次transitionへ進む。
+- Checkpointは更新されたがcurrent Workが#471のままなら`PILOT_DEPENDENCY_WAIT`としてyieldする。
+- Checkpointが更新されなければ`PILOT_PLANNING_NO_PROGRESS`としてfail-closedにする。
+
+## host stage routing
+
+#450からdiscoveryしfresh resolveしたcurrent Workについて、次のように処理する。
+
+- current implementation PRがない通常Work、またはimplementation / CI repairが必要な場合はCodexを1回起動し、その後GitHubをfresh readしてobserved resultをCheckpointへ記録する。
+- exact current-head CIがない、または`queued` / `in_progress`ならbounded transitionは`YIELD_EXTERNAL`とする。continuous CLIはoperator介入なしで待機し、current-head CIをfresh re-observeしてよい。
+- exact current-head CIがfailedなら同一lineageのfunctional repairとしてCodexを1回起動する。
+- exact current-head CIがPASSし、既知のreproducible functional blockerがなければ、必要に応じてReady化し、normal expected-head merge、merge / trunk readback、Work completionへ進む。
+- stale CI / head / checkpoint identityはreconciliationのためfail-closedにする。
+- review `REQUEST_CHANGES` / `NOT_RUN`だけでは、現在のMission policy上functional pathをblockしない。
+
+Work merge後は、次のbounded transitionでCodexをplanning-onlyとして1回起動し、#207 / #317 / #450 / #462とProject #7をfresh readして、次のdependency-ready Workを選択してよい。このplanning transitionではproduct / control-plane codeを変更せず、mergeも行わない。Checkpointには次transition用のcurrent Work / PR / HEADを明示する。
+
+## continuous runtimeの規則
+
+- `COMPLETED`なら直ちにfresh observeし、次のbounded transitionへ進む。
+- `YIELD_EXTERNAL / CI_PENDING`ならcontinuous modeでは粗いintervalで待機し、fresh observeする。待機中はmutationしない。
+- その他の`YIELD_EXTERNAL`は、schedulerが別のdependency-ready Workを既に選択していない限り安全にprocessを終了する。
+- `INTERVENTION_REQUIRED`はtyped reasonとlog pathを残してfail-closedで停止する。
+- Mission completionはRoot #317のcompletion evidenceがcanonical completion contractを満たした場合だけ正常終了する。
+- `--once`は上記に関係なく1 bounded transitionでreturnする。
+
+continuous host runtimeであっても、same-head review pollingは禁止する。review pending、Human Verification、credential、provider recovery等の外部待機はno-busy-poll規則を維持する。
+
+## transition規則
+
+- Resume conflictではimplementation TaskPacketを生成せず、mutationしない。
+- CI evidenceはpending / success / failure判定の前にexpected live headへbindする。current-head CIがpending / runningならyieldし、failureなら同一lineageのrepair transitionへ戻す。
+- independent reviewはdiagnosticである。deterministic / reproducibleなfunctional blockerだけがrepairを強制し、review provider failureやnon-functional hardeningではmergeを止めない。
+- mutationはfresh precondition → effect → effect readback → checkpointの順で行う。canonical trunkへのdirect implementation writeとProject #6 targetはhard rejectする。
+- Implementer completion → live-head readback → exact-head verificationを1つのidentity chainとして扱う。process exit code、old CI result、別SHAのverification resultだけでtransitionを前進させない。
+- SIGINTでは新しいmutationを受け付けず、既存graceful-shutdown境界でcurrent childを終了し、次runでreconcileできるGitHub stateを残す。
 
 ## CLI exit semantics
 
-For `--once`, `0` means a completed safe transition, `2` means `YIELD_EXTERNAL`, and `3` means fail-closed intervention/reconciliation.
+`--once`では、`0`は安全なtransition完了、`2`は`YIELD_EXTERNAL`、`3`はfail-closed intervention / reconciliationを意味する。
 
-For the default continuous runtime, intermediate completed transitions do not cause process exit. Final exit uses the same typed semantics when the runtime reaches a non-auto-resumable yield, intervention, or Mission completion. Exit status never upgrades an external API response into effect truth.
+既定continuous runtimeでは中間のcompleted transitionでprocessを終了しない。non-auto-resumable yield、intervention、またはMission completionに達した時だけ最終exitする。exit statusだけで外部API responseをeffect truthへ格上げしない。
