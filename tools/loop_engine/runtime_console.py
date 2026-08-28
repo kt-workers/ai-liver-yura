@@ -45,8 +45,9 @@ class RuntimeConsole:
 class VisibleSubprocessLocalRunner:
     """LocalRunner that keeps routine child traffic in the persistent run log."""
 
-    def __init__(self, console: RuntimeConsole) -> None:
+    def __init__(self, console: RuntimeConsole, *, heartbeat_seconds: float = 60.0) -> None:
         self._console = console
+        self._heartbeat_seconds = heartbeat_seconds
 
     def run(
         self,
@@ -84,6 +85,12 @@ class VisibleSubprocessLocalRunner:
 
     def _failure_event(self, label: str, message: str) -> None:
         self._console.event(f"{label}: {message}; see log: {self._console.path}")
+
+    def _heartbeat(self, label: str, elapsed_seconds: float) -> None:
+        if label != "codex" or self._console.verbose:
+            return
+        elapsed = max(1, int(elapsed_seconds))
+        self._console.event(f"codex: running ({elapsed}s); details in log")
 
     def _run_captured(
         self,
@@ -147,11 +154,14 @@ class VisibleSubprocessLocalRunner:
         assert process.stdout is not None
         selector = selectors.DefaultSelector()
         selector.register(process.stdout, selectors.EVENT_READ)
-        deadline = time.monotonic() + timeout_seconds
+        started = time.monotonic()
+        deadline = started + timeout_seconds
+        next_heartbeat = started + self._heartbeat_seconds
         timed_out = False
         try:
             while True:
-                remaining = deadline - time.monotonic()
+                now = time.monotonic()
+                remaining = deadline - now
                 if remaining <= 0:
                     timed_out = True
                     process.kill()
@@ -161,6 +171,10 @@ class VisibleSubprocessLocalRunner:
                     line = process.stdout.readline()
                     if line:
                         self._console.child_output(line)
+                now = time.monotonic()
+                if now >= next_heartbeat:
+                    self._heartbeat(label, now - started)
+                    next_heartbeat = now + self._heartbeat_seconds
                 if process.poll() is not None:
                     remainder = process.stdout.read()
                     if remainder:
