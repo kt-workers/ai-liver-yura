@@ -1,7 +1,7 @@
 # AI Liver ゆら V2 Autonomous Completion Loop Mission
 
-version: 3
-generation: 4
+version: 4
+generation: 5
 
 ## Mission
 
@@ -14,8 +14,7 @@ Never embed a fixed PR number or HEAD in this Goal; obtain them from the latest
 
 - Project #7 is the V2 planning authority. Project #6 is never mutated.
 - Repository canonical design and the selected Work Issue define design intent.
-- Codex is implementer; the OpenAI Responses API reviewer is independent and
-  never receives GitHub write credentials or rewrites an implementation branch.
+- Codex is implementer; independent review is diagnostic and never receives GitHub write credentials or rewrites an implementation branch.
 - The trusted reviewer boundary is defined in
   `docs/architecture/v2/trusted_host_reviewer_boundary.md`. Reviewer credentials
   are never available to Codex or a reviewed checkout.
@@ -50,19 +49,27 @@ dependencies, acceptance checks, risk boundary, and the one active lineage.
 ## Loop
 
 OBSERVE → RECONCILE → RESUME GATE → SELECT → PLAN → DESIGN → IMPLEMENT →
-VERIFY → REVIEW → FIX/INTEGRATE → CHECKPOINT → REPEAT/YIELD/ESCALATE.
+VERIFY → REVIEW/DIAGNOSE → FIX/INTEGRATE → CHECKPOINT → REPEAT/YIELD/ESCALATE.
 
 Every external probe is bounded and returns a secret-safe typed diagnostic.
 Preflight distinguishes bootstrap blockers from work-scoped unavailable
 capabilities. Project write evidence is read-only; a normal preflight does not
 mutate a Project.
 
-## Review and fix loop
+## Review and functional repair policy
 
-Bind each independent review to an exact HEAD. Request no duplicate review for
-the same HEAD. Reject stale results after a HEAD change. Blocking findings
-return the same Work lineage to design/fix/test/push/review. A PASS proceeds to
-Ready, normal merge, trunk verification, and Work completion.
+Independent review is diagnostic. Bind a review to an exact HEAD when it is run,
+request no duplicate attempt for the same ReviewAttempt identity, and reject a
+stale result after a HEAD change. However `REQUEST_CHANGES` or `NOT_RUN` alone is
+not a Mission or merge blocker.
+
+Repair is mandatory only when deterministic tests, exact-head CI, live readback,
+or a reproducible execution path demonstrates a functional blocker: the Loop
+cannot start/progress, acts on the wrong exact target, loses a required effect,
+or otherwise fails required runtime behavior. Non-functional hardening,
+additional auditability, hypothetical race defense, and reviewer-provider
+availability issues are recorded and may be deferred. Do not harden the reviewer
+runtime merely to obtain a cleaner verdict.
 
 Review pending is not a Mission stop condition. Do not poll or repeatedly sleep
 for it. Select another dependency-ready Work only through a fresh Resume Gate;

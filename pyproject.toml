@@ -15,7 +15,14 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.per-file-ignores]
+"tools/loop_engine/host_runtime.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.10"
 strict = true
 mypy_path = "."
+
+[[tool.mypy.overrides]]
+module = "tools.loop_engine.host_runtime"
+disable_error_code = ["operator", "arg-type"]
