@@ -30,6 +30,19 @@ If the latest Mission Checkpoint is missing an explicit current target, has an i
 
 Planning-only Codex output that selects the next Work must therefore write a new Mission Checkpoint with the explicit current Work/PR/HEAD identity needed by the next host invocation.
 
+## Merge conflict reconciliation
+
+PR mergeability is GitHub live authority and is checked again immediately before any Ready or merge mutation. A PR reported as `mergeable=false` or `mergeable_state=dirty` must not be marked Ready and must not be sent directly to the merge command even when exact-head CI is successful.
+
+A merge conflict is an actionable product-lineage state, not a Human intervention by itself. The host dispatches one bounded Codex functional reconciliation transition. Codex must fresh-read the latest Mission Checkpoint, current Work/PR, current trunk, canonical design, dependency state, and the Work-specific Resume Gate requirements before choosing the repair:
+
+- reconcile the existing lineage by normally merging current trunk into the feature branch and resolving conflicts, or
+- when the canonical Resume Gate says the preserved lineage is obsolete, create a new lineage from current trunk and record that identity instead.
+
+Force push and rebase remain prohibited. Codex does not merge the product PR in the reconciliation transition. It updates design/code/tests as required, runs the applicable machine gates, performs a normal push, fresh-reads the new exact HEAD, and records one explicit Mission Checkpoint. The next host invocation re-observes that new state and handles CI/merge normally.
+
+If the expected-head merge command fails for a reason that fresh GitHub readback does **not** identify as a merge conflict, the host keeps the typed `EXPECTED_HEAD_MERGE_FAILED` intervention rather than treating credential, permission, or transport failures as source conflicts.
+
 ## Codex host execution contract
 
 The trusted host invokes Codex with an **explicit current CLI contract** instead of depending on the deprecated/compatibility `--full-auto` shortcut.
