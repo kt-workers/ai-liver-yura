@@ -34,9 +34,13 @@ Planning-only Codex output that selects the next Work must therefore write a new
 
 PR #477 is the bootstrap implementation that makes the actual host Loop executable. Merging PR #477 is **not** #471 completion evidence by itself. After #477 reaches trunk, #471 remains open and the host selects an actual dependency-ready V2 product Work as the pilot.
 
-#471 may be completed only after the installed trunk Loop has driven at least one actual V2 Work through the applicable bounded stages without a human copying TaskPackets/review findings, with exact-head CI/merge identity and restart-safe GitHub checkpoints. The pilot Work's own completion and #471 integration completion are distinct records.
+The post-bootstrap planning transition treats #471 and #462 as orchestration/integration state, not pilot candidates. It must select a **V2 product Work/Integration** that is dependency-ready under GitHub live state and Project #7. Issues whose work identity is Loop Engineering infrastructure (`loop-engineering` responsibility) are excluded from the actual product pilot. The planner must not select #471 itself merely because #471 remains open while pilot evidence is pending.
 
-Therefore the host completion path special-cases #471 bootstrap: merge/readback #477, publish an `ACTIVE / PILOT_REQUIRED` Mission Checkpoint, keep #471 open, and perform a planning-only selection of the actual V2 pilot Work. Ordinary Work issues may be closed after their own successful expected-head merge/readback.
+If no dependency-ready V2 product Work exists, the planner records a typed external/dependency wait instead of fabricating a pilot or closing #471.
+
+#471 may be completed only after the installed trunk Loop has driven at least one actual V2 product Work through the applicable bounded stages without a human copying TaskPackets/review findings, with exact-head CI/merge identity and restart-safe GitHub checkpoints. The pilot Work's own completion and #471 integration completion are distinct records.
+
+Therefore the host completion path special-cases #471 bootstrap: merge/readback #477, keep #471 open, and perform a planning-only selection of the actual V2 product pilot Work. Ordinary Work issues may be closed after their own successful expected-head merge/readback.
 
 ## Exact-head CI ordering
 
