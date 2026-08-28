@@ -50,6 +50,17 @@ This is required because Loop Engineering needs both:
 
 `LOOP_CODEX_COMMAND_JSON` may override the default command for a trusted host, but the override is responsible for preserving the same minimum capabilities and secret boundary. Reviewer credentials remain excluded from the Codex child.
 
+## Runtime observability contract
+
+The normal CLI must never appear silently hung during a bounded transition. Human-visible progress and machine-readable completion output use separate streams:
+
+- stderr carries concise stage progress such as startup, Preflight, GitHub observation, target reconciliation, Codex dispatch, CI observation, merge/checkpoint work, and failure stage
+- stdout remains reserved for the final `HostTransitionResult` JSON so scripts can continue to parse the terminal result deterministically
+- a Codex child launched for planning/implementation/repair inherits the host terminal stdout/stderr instead of discarding them, so Codex startup, activity, and CLI failures are visible while the host is waiting
+- logs must not print secret values, `.env` content, reviewer credentials, database credentials, or full sanitized environments
+
+A failure must identify the stage that failed before the final typed result is emitted. Observability is part of actual-host operability: a control loop that can run but cannot show whether it is active or where it failed is not sufficient pilot evidence.
+
 ## #471 bootstrap and pilot completion
 
 PR #477 is the bootstrap implementation that makes the actual host Loop executable. Merging PR #477 is **not** #471 completion evidence by itself. After #477 reaches trunk, #471 remains open and the host selects an actual dependency-ready V2 product Work as the pilot.
