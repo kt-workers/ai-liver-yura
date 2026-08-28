@@ -170,7 +170,8 @@ def test_finalize_commits_pushes_and_publishes_checkpoint_in_japanese() -> None:
                     "- current PR: #500\n"
                     "- current branch: `feature/work`\n"
                     f"- exact HEAD: `{new_head}`\n"
-                    "- 完了済み: Codexによるファイル編集と検証後、信頼済みホストがcommit / pushを実施\n"
+                    "- 完了済み: Codexによるファイル編集と検証後、"
+                    "信頼済みホストがコミット（commit）と送信（push）を実施\n"
                     "- next action: exact HEADのCIを確認し、結果に応じて継続する"
                 ),
             ): LocalCommandResult(0, ""),
