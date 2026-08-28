@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from tools.loop_engine.integration import run_controlled_transition
 from tools.loop_engine.models import RunDisposition
 from tools.loop_engine.operational_store import PostgreSQLOperationalStore, StoreStatus
 from tools.loop_engine.runner import (
@@ -82,14 +83,15 @@ def test_e2e_observe_select_execute_verify_checkpoint_store_and_next_selection()
     executor = ScenarioExecutor()
     checkpoints = ScenarioCheckpoints()
     connection = Connection()
-    result = LoopRunner(
+    runner = LoopRunner(
         observer,
         MissionSupervisor(),
         executor,
         ScenarioVerifier(),
         checkpoints,
         PostgreSQLOperationalStore(lambda: connection),
-    ).run_once()
+    )
+    result = run_controlled_transition(runner)
 
     assert executor.packet_ids
     assert result.verification is not None and result.verification.passed
@@ -102,14 +104,15 @@ def test_e2e_observe_select_execute_verify_checkpoint_store_and_next_selection()
 
 def test_e2e_db_outage_keeps_github_checkpoint_path_safe() -> None:
     checkpoints = ScenarioCheckpoints()
-    result = LoopRunner(
+    runner = LoopRunner(
         ScenarioObserver(),
         MissionSupervisor(),
         ScenarioExecutor(),
         ScenarioVerifier(),
         checkpoints,
         PostgreSQLOperationalStore(lambda: (_ for _ in ()).throw(OSError())),
-    ).run_once()
+    )
+    result = run_controlled_transition(runner)
 
     assert result.operational_store_status is StoreStatus.DB_UNAVAILABLE
     assert checkpoints.records == [(465, "VERIFIED")]
