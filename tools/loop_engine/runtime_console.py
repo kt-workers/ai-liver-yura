@@ -155,18 +155,22 @@ class VisibleSubprocessLocalRunner:
         selector = selectors.DefaultSelector()
         selector.register(process.stdout, selectors.EVENT_READ)
         started = time.monotonic()
-        deadline = started + timeout_seconds
+        deadline = None if label == "codex" else started + timeout_seconds
         next_heartbeat = started + self._heartbeat_seconds
         timed_out = False
         try:
             while True:
                 now = time.monotonic()
-                remaining = deadline - now
-                if remaining <= 0:
-                    timed_out = True
-                    process.kill()
-                    break
-                events = selector.select(timeout=min(0.5, remaining))
+                if deadline is not None:
+                    remaining = deadline - now
+                    if remaining <= 0:
+                        timed_out = True
+                        process.kill()
+                        break
+                    select_timeout = min(0.5, remaining)
+                else:
+                    select_timeout = 0.5
+                events = selector.select(timeout=select_timeout)
                 for _key, _ in events:
                     line = process.stdout.readline()
                     if line:
