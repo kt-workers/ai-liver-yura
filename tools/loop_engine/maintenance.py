@@ -1,4 +1,4 @@
-"""Self-improvement publication orchestration."""
+"""自己改善Workの公開処理を統括する。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from .supervisor import MissionSupervisor
 
 class ImprovementPublisher(Protocol):
     def publish(self, intent: ImprovementIssueIntent) -> ImprovementPublishResult:
-        """Publish one deterministic improvement issue intent."""
+        """決定論的な改善Issue作成意図を1件公開する。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,8 +49,8 @@ class SelfImprovementController:
             try:
                 published.append(self.publisher.publish(improvement_intent(candidate)))
             except Exception:
-                # Raw exception text can contain command/provider details.
-                # Keep only a stable public reason.
+                # 生の例外文章にはコマンドや提供元の詳細が含まれる可能性がある。
+                # 公開結果には安定した理由だけを残す。
                 failures.append(ImprovementPublishFailure(candidate.improvement_key))
         return MaintenancePublication(tuple(published), tuple(failures))
 
@@ -60,7 +60,7 @@ class SelfImprovementController:
 
 @dataclass(slots=True)
 class LoopMaintenanceCycle:
-    """One normal loop control-plane iteration including self-improvement publication."""
+    """自己改善Workの公開を含む、通常Loop制御系の1回分の処理。"""
 
     supervisor: MissionSupervisor
     controller: SelfImprovementController
