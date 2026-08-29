@@ -1,4 +1,4 @@
-"""Exact-head CI evidence gate; transport is injected to keep it testable."""
+"""厳密HEADのCI証拠を判定する。試験可能性のため通信処理は外部から注入する。"""
 
 from __future__ import annotations
 
