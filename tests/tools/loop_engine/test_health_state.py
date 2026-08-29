@@ -47,12 +47,12 @@ def test_health_state_rejects_unknown_fields_and_kinds() -> None:
         "manual_intervention_required": False,
     }
     payload: dict[str, object] = {"version": 1, "events": [event_payload]}
-    with pytest.raises(ValueError, match="unknown loop health kind"):
+    with pytest.raises(ValueError, match="未知のLoop健全性種別"):
         decode_health_state(json.dumps(payload))
 
     event_payload["kind"] = "NO_PROGRESS"
     event_payload["unexpected"] = "data"
-    with pytest.raises(ValueError, match="fields mismatch"):
+    with pytest.raises(ValueError, match="項目構成が一致しません"):
         decode_health_state(json.dumps(payload))
 
 
@@ -67,5 +67,5 @@ def test_health_state_is_bounded() -> None:
         LoopHealthEvent(LoopHealthKind.NO_PROGRESS, f"state-{index}", 2)
         for index in range(257)
     )
-    with pytest.raises(ValueError, match="too many"):
+    with pytest.raises(ValueError, match="上限を超えています"):
         encode_health_state(too_many)
