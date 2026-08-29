@@ -13,18 +13,18 @@ class SecretProvider(Protocol):
 
 
 class GitHubCredentialUnavailable(RuntimeError):
-    """The GitHub credential is intentionally unavailable."""
+    """GitHub認証情報を意図的に利用できない状態。"""
 
 
 class EnvironmentSecretProvider:
-    """Reads credentials already injected into the host process environment."""
+    """ホストプロセス環境へ既に注入された認証情報を読み取る。"""
 
     def __init__(self, values: Mapping[str, str]) -> None:
         self._values = values
 
     def github_token(self) -> str:
         try:
-            return self._required("GH_TOKEN", "GitHub credential unavailable")
+            return self._required("GH_TOKEN", "GitHub認証情報を利用できません")
         except RuntimeError as error:
             raise GitHubCredentialUnavailable(str(error)) from error
 
