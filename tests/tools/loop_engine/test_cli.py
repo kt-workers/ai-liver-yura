@@ -62,9 +62,9 @@ def test_once_cli_runs_one_actual_host_transition(
     assert '"status": "YIELD_EXTERNAL"' in output
     assert '"detail": "CI_PENDING"' in output
     assert received["verbose"] is False
-    assert events[0] == "START mode=once"
-    assert "transition 1: begin" in events
-    assert events[-1] == "transition 1: YIELD_EXTERNAL detail=CI_PENDING"
+    assert events[0] == "開始 mode=once（1回実行）"
+    assert "遷移 1: 開始" in events
+    assert events[-1] == "遷移 1: YIELD_EXTERNAL 詳細=CI_PENDING"
     assert "root" in received
     assert "local_runner" in received
 
@@ -136,10 +136,10 @@ def test_default_cli_continues_completed_and_ci_pending_without_operator(
     assert output.count("\n") == 1
     assert '"detail": "HUMAN_VERIFICATION_PENDING"' in output
     assert sleeps == [60.0]
-    assert events[0] == "START mode=continuous"
-    assert events.count("continue: fresh observe") == 2
-    assert "CI_PENDING: auto-resume in 60s" in events
-    assert "transition 4: YIELD_EXTERNAL detail=HUMAN_VERIFICATION_PENDING" in events
+    assert events[0] == "開始 mode=continuous（継続実行）"
+    assert events.count("継続: 現在状態を再観測します") == 2
+    assert "CI待機: 60秒後に自動再開します" in events
+    assert "遷移 4: YIELD_EXTERNAL 詳細=HUMAN_VERIFICATION_PENDING" in events
 
 
 def test_continuous_cli_stops_repeated_completed_no_progress(
