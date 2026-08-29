@@ -1,4 +1,4 @@
-"""Trusted-review result gate without provider or credential ownership."""
+"""提供元や認証情報を所有せず、信頼済みレビュー結果を判定する。"""
 
 from __future__ import annotations
 
