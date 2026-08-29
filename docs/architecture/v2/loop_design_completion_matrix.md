@@ -1,28 +1,26 @@
-# Loop Engineering Design Completion Matrix
+# Loop Engineering 設計完了表
 
-## Purpose
+## 目的
 
-This matrix is the implementation authority for Loop Engineering under #462.
-It deliberately separates development control-plane code in `tools/loop_engine/`
-from the AI Liver product runtime in `app/`.
+この表は#462配下のLoop Engineering実装で参照する設計上の正本である。開発制御系の`tools/loop_engine/`と、AI Liver製品実行系の`app/`を意図的に分離する。
 
-| Area | Canonical artifact | Owning work | Completion contract |
+| 領域 | 正本文書 | 所有Work | 完了契約 |
 | --- | --- | --- | --- |
-| A: environment | `docs/operations/loop_environment_preflight.md` | #463 / #469 | Capability checks and host launch are product-independent. |
-| B: supervisor | `loop_mission_supervisor.md`, `loop_self_improvement.md` | #465 | Observe, reconcile, select, plan, and write-gate are deterministic. |
-| C: canonical review | `loop_canonical_review_pipeline.md` | #472 | A trusted host broker binds a structured result to a live exact head. |
-| D: operational memory | `loop_operational_store.md` | #470 | PostgreSQL retains execution evidence only; it never becomes GitHub authority. |
-| E: runner | `loop_autonomous_runner.md` | #467 | One bounded transition connects Observe through Checkpoint. |
-| F: integration and recovery | `loop_integration_recovery.md` | #471 | Recovery, wait, lease, and end-to-end acceptance are explicit. |
+| A: 環境 | `docs/operations/loop_environment_preflight.md` | #463 / #469 | 利用能力確認とホスト起動は製品に依存しない |
+| B: 監督 | `loop_mission_supervisor.md`, `loop_self_improvement.md` | #465 | 観測、再調整、選択、計画、書込み判定を決定論的に行う |
+| C: 正本レビュー | `loop_canonical_review_pipeline.md` | #472 | 信頼済みホスト仲介器が構造化結果を現在の厳密HEADへ結び付ける |
+| D: 運用記憶 | `loop_operational_store.md` | #470 | PostgreSQLは実行証拠だけを保持し、GitHubの正本にはならない |
+| E: 実行機 | `loop_autonomous_runner.md` | #467 | 1回の限定遷移で観測からCheckpointまでを接続する |
+| F: 統合と復旧 | `loop_integration_recovery.md` | #471 | 復旧、待機、変更権、一連動作の受け入れ条件を明示する |
 
-## Cross-cutting invariants
+## 横断不変条件
 
-- GitHub live Issue, PR, branch, Actions, and Project #7 are current-state authority. Repository canonical blobs are design authority. Checkpoints and PostgreSQL are durable operational evidence, not replacements for either.
-- Project #6 is a hard deny target. No Loop Engine command may read or mutate it.
-- `app/**` never imports `tools.loop_engine`; Loop Engineering is not product runtime infrastructure.
-- Credentials, provider payloads, request bodies, prompts, and diffs are not stored in the repository, checkpoints, or ordinary diagnostics.
-- A normal run performs at most one mutation-capable transition. It does not busy-poll external work.
+- GitHub上の現在Issue、PR、branch、Actions、Project #7を現在状態の正本とする。Repositoryの正本blobを設計の正本とする。CheckpointとPostgreSQLは永続的な運用証拠であり、どちらの代替にもならない。
+- Project #6は明示的な変更禁止対象である。Loop Engineコマンドは読み書きしない。
+- `app/**`から`tools.loop_engine`を取り込まない。Loop Engineeringは製品実行基盤ではない。
+- 認証情報、提供元の生データ、要求本文、指示文、差分をRepository、Checkpoint、通常診断へ保存しない。
+- 通常実行で変更可能な遷移は最大1回とする。外部待機を高頻度に監視しない。
 
-## Design completion verdict
+## 設計完了判定
 
-The C/D/E/F contracts below cover all #462 completion responsibilities. Their implementation is independently owned by #467, #470, #472, and #471. A Work is not complete merely because no candidate is visible: Root #317 completion, required verification, and runtime lifecycle evidence remain mandatory.
+C/D/E/Fの契約は#462の完了責務を設計上すべて覆う。各実装は#467、#470、#472、#471が独立して所有する。候補が見えないだけではWork完了にならない。Root #317の完了、必須確認、実行時の起動・継続・終了証拠は引き続き必要である。
