@@ -1,4 +1,4 @@
-"""Pure Write Gate; adapters must perform mutations only after this check."""
+"""副作用を持たない書込み判定。接続層はこの確認後だけ変更を実行する。"""
 
 from __future__ import annotations
 
