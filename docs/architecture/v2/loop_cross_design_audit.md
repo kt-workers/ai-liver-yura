@@ -1,21 +1,21 @@
-# Loop Engineering Cross-design Audit
+# Loop Engineering 設計横断監査
 
-## Result
+## 結果
 
-The Design Completion Matrix has no unowned design responsibility. C/D/E/F are canonicalized by this changeset; A and B remain their existing canonical documents. `OptionalReviewSupport` and `LoopCanonicalReviewGate` are separate.
+設計完了表（Design Completion Matrix）に所有者不明の設計責務はない。C/D/E/Fは本変更系列で正本化し、AとBは既存の正本文書を維持する。`OptionalReviewSupport`と`LoopCanonicalReviewGate`は別責務である。
 
-## Blocking findings
+## 停止要因となる指摘
 
-None. The previously identified Project-field precedence ambiguity is resolved by the field-specific authority matrix in `loop_integration_recovery.md`; the same rule is reflected in `loop_mission_supervisor.md`.
+なし。以前確認されたProject項目の優先順位の曖昧さは、`loop_integration_recovery.md`の項目別正本表で解消済みであり、同じ規則を`loop_mission_supervisor.md`にも反映している。
 
-## Implementation gaps tracked by Work
+## Workで管理する実装不足
 
-| Gap | Work | Boundary |
+| 不足 | Work | 境界 |
 | --- | --- | --- |
-| Autonomous execution | #467 | `tools/loop_engine`, no product runtime dependency |
-| Physical preflight/launcher boundary | #469 | move existing tooling out of `app/operations` |
-| Operational memory | #470 | PostgreSQL adapter and Alembic migration only |
-| Trusted review runtime | #472 | host control-plane only; no target credential |
-| E2E/pilot | #471 | integration harness and controlled Work |
+| 自律実行 | #467 | `tools/loop_engine`。製品実行系へ依存しない |
+| 物理的な事前確認・起動境界 | #469 | 既存開発用機能を`app/operations`から移動する |
+| 運用記憶 | #470 | PostgreSQL接続層とAlembic移行だけを担当する |
+| 信頼済みレビュー実行 | #472 | ホスト制御系だけで動作し、対象側へ認証情報を渡さない |
+| 一連動作・実製品試験 | #471 | 統合試験器と制御された製品Workを担当する |
 
-All implementations must preserve Project #7-only mutation, secret-safe diagnostics, exact-head identity, normal merge, and restart idempotency.
+すべての実装は、Project #7だけを変更対象にすること、秘密情報を除外した診断、厳密HEAD identity、通常統合、再起動時の重複防止を維持する。
