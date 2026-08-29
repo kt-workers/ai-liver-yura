@@ -1,27 +1,18 @@
-# Loop Environment & Capability Preflight
+# Loop環境・利用能力の事前確認
 
-Issue #463 implements the bootstrap gate for Loop Engineering (#462).  It
-checks the execution environment before a work lineage is selected; it does
-not mutate GitHub Projects or start an OpenAI request.
+Issue #463はLoop Engineering（#462）の起動前判定を実装する。作業系列を選択する前に実行環境を確認し、GitHub Projectsを変更したりOpenAI要求を開始したりしない。
 
-## Authority and boundaries
+## 正本と境界
 
-- GitHub Issue, PR, and Project #7 are live-state authorities.  Cached field
-  identifiers are never an input to this command.
-- Project #7 is the only Project this command may inspect.  It never invokes a
-  Project mutation command and never addresses Project #6.
-- Every invocation performs all three Project #7 read probes (`view`,
-  `field-list`, and `item-list`), including after a Codex/VS Code restart.
-  They are not cached from a previous successful run.
-- A missing reviewer credential, Docker, or PostgreSQL capability is reported
-  as work-scoped unavailable.  It is not a Mission-wide stop condition.
-- Command output is reduced to a boolean capability result and a stable,
-  secret-safe diagnostic code.  It must not expose command output, token
-  values, database URLs, or environment values.
+- GitHub Issue、PR、Project #7を現在状態の正本とする。保存済みの項目識別子をこのコマンドの入力にしない。
+- このコマンドが確認してよいProjectは#7だけである。Project変更コマンドを実行せず、Project #6を対象にしない。
+- Codex/VS Code再起動後を含め、実行のたびにProject #7の3つの読取確認（`view`、`field-list`、`item-list`）をすべて実施する。過去の成功結果を再利用しない。
+- レビューワー認証情報、Docker、PostgreSQLの利用能力がない場合はWork単位の利用不可として報告する。Mission全体の停止条件にはしない。
+- コマンド出力は真偽の利用能力結果と、安定した秘密情報を含まない診断コードへ縮約する。コマンドの生出力、token値、データベースURL、環境変数値を公開しない。
 
-## Contract
+## 契約
 
-`python -m tools.loop_engine.preflight` emits one JSON object:
+`python -m tools.loop_engine.preflight`はJSONオブジェクトを1つ出力する。
 
 ```json
 {
@@ -33,81 +24,44 @@ not mutate GitHub Projects or start an OpenAI request.
 }
 ```
 
-`status` is `BLOCKED` when a bootstrap capability is unavailable, `DEGRADED`
-when only work-scoped capabilities are unavailable, otherwise `PASS`.
+`status`は起動に必須の利用能力がない場合`BLOCKED`、Work単位の利用能力だけがない場合`DEGRADED`、それ以外は`PASS`とする。
 
-## Checks
+## 確認項目
 
-| Capability | Evidence command | Classification on failure |
+| 利用能力 | 証拠コマンド | 失敗時の分類 |
 | --- | --- | --- |
-| GitHub repository read | `gh repo view` | bootstrap blocking |
-| GitHub repository write | fixed repository REST permission query (`permissions.push`) | bootstrap blocking |
-| Project #7 read | `gh project view`, `field-list`, `item-list` | bootstrap blocking |
-| Project #7 write | GraphQL `viewerCanUpdate` read-only query | bootstrap blocking |
-| OpenAI reviewer | trusted host brokerへのbounded health request | work scoped |
-| PostgreSQL client | `psql --version` | work scoped |
-| PostgreSQL server / database | `pg_isready`, then `SELECT 1` using secret-only process environment | work scoped |
-| PostgreSQL migration | `alembic current` only when `alembic.ini` exists | work scoped |
-| Toolchain | project Python/venv, pytest, Ruff, Mypy, compileall, Codex CLI | bootstrap blocking |
+| GitHub Repository読取 | `gh repo view` | 起動停止 |
+| GitHub Repository書込 | 固定RepositoryへのREST権限照会（`permissions.push`） | 起動停止 |
+| Project #7読取 | `gh project view`、`field-list`、`item-list` | 起動停止 |
+| Project #7書込 | GraphQLの読取専用`viewerCanUpdate`照会 | 起動停止 |
+| OpenAIレビューワー | 信頼済みホスト仲介器への上限付き健全性要求 | Work単位 |
+| PostgreSQLクライアント | `psql --version` | Work単位 |
+| PostgreSQLサーバー・DB | `pg_isready`後、秘密情報だけを含む子プロセス環境で`SELECT 1` | Work単位 |
+| PostgreSQL移行 | `alembic.ini`が存在する場合だけ`alembic current` | Work単位 |
+| 開発道具 | プロジェクトPython/venv、pytest、Ruff、Mypy、compileall、Codex CLI | 起動停止 |
 
-The Project write result is a fresh, side-effect-free GitHub permission query.
-It is not an injected test flag, cached field ID, or mutation. The controlled
-#462/#463 Project #7 mutation remains independent historical evidence.
+Project書込結果は、毎回取得する副作用のないGitHub権限照会である。注入された試験用フラグ、保存済み項目ID、変更操作ではない。#462/#463で制御して実施したProject #7変更は独立した履歴証拠として保持する。
 
-The repository write result is also a fresh, side-effect-free query, fixed to
-`ktan514/ai-liver-yura`. Preflight reads only the authenticated viewer's
-`permissions.push` value from that repository; it never uses `git push
---dry-run`, the current remote, upstream, or a fork as evidence. A missing,
-malformed, or false permission result is fail-closed.
+Repository書込結果も、`ktan514/ai-liver-yura`へ固定した副作用のない照会を毎回実施する。事前確認は認証済み利用者の当該Repositoryに対する`permissions.push`だけを読む。`git push --dry-run`、現在remote、upstream、forkを証拠として使用しない。権限結果が欠落、不正、またはfalseの場合は安全側停止にする。
 
-## CI exact-head identity
+## 厳密HEAD CIの識別
 
-`workflow_dispatch` accepts both `pr_number` and `expected_head_sha`. The
-identity job reads the live PR by number, requires the live head to equal the
-explicit expected SHA, requires base ref `rebuild/v2-foundation`, and emits the
-resolved live head/base SHAs. It does not use `github.sha` as PR-head evidence.
-For `pull_request`, those resolved values must also match the event head/base.
-Checkout, exact-head verification, and diff-check consume only the resolved
-outputs. The concurrency key remains PR-number based for both event types.
+`workflow_dispatch`は`pr_number`と`expected_head_sha`を受け取る。識別処理は番号から現在PRを読み、現在HEADが明示された期待SHAと一致すること、基点refが`rebuild/v2-foundation`であることを要求し、解決した現在HEAD/基点SHAを出力する。`github.sha`をPR HEADの証拠として使用しない。`pull_request`の場合は、解決値がイベントのHEAD/基点とも一致する必要がある。checkout、厳密HEAD検証、差分確認は解決済み出力だけを使用する。並行実行キーはどちらのイベントでもPR番号を基準にする。
 
-`LOOP_DATABASE_URL` is used only to derive `PG*` variables for child probes;
-it is never included in a command argument, result, or diagnostic. #463
-verifies migration *capability* when a migration configuration exists. It does
-not create the Loop Operational Store schema or apply a migration: those belong
-to the later operational-store implementation under #462.
+`LOOP_DATABASE_URL`は子プロセス確認用の`PG*`変数を導出するためだけに使用し、コマンド引数、結果、診断へ含めない。#463が検証するのは、移行設定が存在する場合の移行**利用能力**である。Loop運用記憶の表を作成したり移行を適用したりしない。それらは#462配下の後続運用記憶実装が担当する。
 
-## Restart verification
+## 再起動確認
 
-Before #463 can be completed, start a fresh minimal process with only the
-credential injection supplied by the Codex environment and run the GitHub and
-Project #7 read probes.  It must succeed without `gh auth login`,
-`gh auth refresh`, or any interactive action.  This verifies credential
-injection into a new process; it does not mutate a Project.
+#463完了前に、Codex環境から供給される認証情報注入だけを持つ新しい最小プロセスを起動し、GitHubとProject #7の読取確認を実施する。`gh auth login`、`gh auth refresh`、対話操作なしで成功しなければならない。これは新しいプロセスへの認証情報注入を確認するものであり、Projectを変更しない。
 
-## macOS host launcher
+## macOSホスト起動器
 
-Run `python scripts/launch-codex-v2.py` from the repository host. The launcher
-never reads `.env` directly. An approved host-side environment loader injects
-`GH_TOKEN` before launch; the launcher passes it only to the GitHub/VS Code
-child environment, derives Goal version/generation/SHA-256 from the canonical
-file, retains PATH for Homebrew tooling, and launches VS Code. It neither
-prints nor persists a credential. After VS Code creates a fresh Codex process,
-run normal Preflight; no manual `export`, `gh auth login`, or `gh auth refresh`
-is part of the flow.
+Repositoryホストから`python scripts/launch-codex-v2.py`を実行する。起動器は`.env`を直接読まない。承認済みのホスト側環境読込器が起動前に`GH_TOKEN`を注入し、起動器はGitHub/VS Code子プロセス環境だけへ渡す。Goalの版・世代・SHA-256は正本ファイルから導出し、Homebrew用のPATHを維持してVS Codeを起動する。認証情報は表示も保存もしない。VS Codeが新しいCodexプロセスを作成した後、通常の事前確認を実施する。手動`export`、`gh auth login`、`gh auth refresh`は運用経路に含めない。
 
-## Trusted host independent reviewer
+## 信頼済みホストの独立レビューワー
 
-The optional canonical review is deliberately separate from normal Preflight.
-Its complete authority boundary is [Trusted Host Reviewer Boundary](../architecture/v2/trusted_host_reviewer_boundary.md).
+任意の正本レビューは通常の事前確認から意図的に分離する。完全な正本境界は[信頼済みホストレビューワー境界](../architecture/v2/trusted_host_reviewer_boundary.md)に定義する。
 
-The target checkout never imports a reviewer client or receives
-`OPENAI_API_KEY_REVIEWER`. It may receive only the non-secret
-`YURA_TRUSTED_REVIEWER_SOCKET`, and Preflight uses that path for a bounded
-health request. The trusted host broker, outside every target checkout, owns
-credential validation, model lookup, bounded Responses API health check, live
-PR identity/diff retrieval, review invocation, and result validation. It must
-independently bind and recheck the exact HEAD, return `NOT_RUN` for a stale
-target, and never pass GitHub write or database credentials to the reviewer.
+対象作業領域はレビューワークライアントを取り込まず、`OPENAI_API_KEY_REVIEWER`も受け取らない。秘密情報を含まない`YURA_TRUSTED_REVIEWER_SOCKET`だけを受け取ってよく、事前確認はこの経路で上限付き健全性要求を行う。すべての対象作業領域の外側にある信頼済みホスト仲介器が、認証情報検証、モデル照会、上限付きResponses API健全性確認、現在PR識別・差分取得、レビュー呼出、結果検証を所有する。仲介器は厳密HEADを独立して結び付けて再確認し、対象が古ければ`NOT_RUN`を返し、GitHub書込権限やデータベース認証情報をレビューワーへ渡さない。
 
-The launcher uses only the host-injected `GH_TOKEN` for GitHub/VS Code. It
-does not read `.env`, retrieve reviewer credentials, or start reviewer code.
+起動器はGitHub/VS Code用にホスト注入済み`GH_TOKEN`だけを使用する。`.env`を読まず、レビューワー認証情報を取得せず、レビューワーコードを起動しない。
