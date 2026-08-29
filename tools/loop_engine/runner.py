@@ -1,4 +1,4 @@
-"""Bounded, product-independent Loop Engineering control-loop runner."""
+"""製品に依存せず、1回ごとの範囲を限定したLoop Engineering制御実行機。"""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ class HeadResolver(Protocol):
 
 
 class SubprocessCodexExecutor:
-    """Runs fixed argv only; no reviewer or database secret crosses this boundary."""
+    """固定引数だけで実行し、レビューワーやDBの秘密情報を境界外へ渡さない。"""
 
     def __init__(
         self,
@@ -82,10 +82,10 @@ class SubprocessCodexExecutor:
     def execute(self, packet: TaskPacket) -> ExecutionEvidence:
         instruction = "\n".join(
             (
-                f"TaskPacket: {packet.packet_id}",
-                f"Scope: {', '.join(packet.scope)}",
-                f"Target: {', '.join(packet.exact_target)}",
-                f"Acceptance: {', '.join(packet.acceptance_checks)}",
+                f"作業パケット（TaskPacket）: {packet.packet_id}",
+                f"対象範囲: {', '.join(packet.scope)}",
+                f"厳密対象: {', '.join(packet.exact_target)}",
+                f"受け入れ確認: {', '.join(packet.acceptance_checks)}",
             )
         )
         try:
@@ -122,7 +122,7 @@ class SubprocessCodexExecutor:
 
 
 class LoopRunner:
-    """Executes one safe transition and then re-observes exactly once."""
+    """安全な遷移を1回実行し、その後に現在状態を1回だけ再観測する。"""
 
     def __init__(
         self,
