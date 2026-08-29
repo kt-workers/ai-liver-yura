@@ -1,4 +1,4 @@
-"""Deterministic Loop Engineering health and self-improvement policy."""
+"""決定論的なLoop Engineering健全性判定と自己改善方針。"""
 
 from __future__ import annotations
 
@@ -34,14 +34,15 @@ _TARGET_DAYS = {
 }
 
 _TITLES = {
-    LoopHealthKind.REPEATED_FAILURE: "Loop改善: 反復failureを自動回復可能にする",
-    LoopHealthKind.NO_PROGRESS: "Loop改善: no-progress反復を解消する",
-    LoopHealthKind.MANUAL_INTERVENTION: "Loop改善: 反復Human Interventionを削減する",
+    LoopHealthKind.REPEATED_FAILURE: "Loop改善: 反復失敗を自動回復可能にする",
+    LoopHealthKind.NO_PROGRESS: "Loop改善: 進捗停止の反復を解消する",
+    LoopHealthKind.MANUAL_INTERVENTION: "Loop改善: 反復する人間介入を削減する",
     LoopHealthKind.MANUAL_OPERATION_REPEAT: "Loop改善: 反復手動操作を自動化する",
-    LoopHealthKind.STALE_STATE_RECURRENCE: "Loop改善: stale state再発を防止する",
-    LoopHealthKind.DUPLICATE_SCHEDULING: "Loop改善: duplicate scheduling再発を防止する",
-    LoopHealthKind.RECOVERY_REPETITION: "Loop改善: 反復recovery手順を自動化する",
+    LoopHealthKind.STALE_STATE_RECURRENCE: "Loop改善: 古い状態の再発を防止する",
+    LoopHealthKind.DUPLICATE_SCHEDULING: "Loop改善: 重複割当の再発を防止する",
+    LoopHealthKind.RECOVERY_REPETITION: "Loop改善: 反復復旧手順を自動化する",
 }
+
 
 def advance_health(
     previous: tuple[LoopHealthEvent, ...],
@@ -51,7 +52,7 @@ def advance_health(
     duplicate_suppressed: bool,
     selected_work_id: int | None,
 ) -> tuple[LoopHealthEvent, ...]:
-    """Return cumulative health snapshots after one supervisor decision."""
+    """監督判断1回後の累積健全性スナップショットを返す。"""
     current = {
         (item.kind, item.fingerprint): item
         for item in (canonicalize_event(item) for item in previous)
@@ -115,7 +116,7 @@ def plan_improvements(
     planning_date: date,
     max_candidates: int = 3,
 ) -> tuple[ImprovementCandidate, ...]:
-    """Create bounded, deterministic, repairable improvement candidates."""
+    """上限付き・決定論的・修復可能な改善候補を生成する。"""
     if max_candidates < 1:
         return ()
 
@@ -174,26 +175,25 @@ def render_issue_body(candidate: ImprovementCandidate) -> str:
     evidence = "\n".join(f"- `{item}`" for item in candidate.evidence_refs) or "- なし"
     return (
         f"{marker(candidate.improvement_key)}\n\n"
-        "Parent: #462\nMission: #450\nIssue level: Work\n\n"
+        "親Issue: #462\nMission: #450\nIssue階層: Work\n\n"
         "## 自動生成元\n\n"
-        "Loop Engineering Self-Improvement Laneが通常run中のtyped health evidenceから"
-        "生成した改善Workです。\n\n"
-        f"- trigger: `{candidate.kind.value}`\n"
-        f"- priority: `{candidate.severity.value}`\n"
-        f"- affected Work: {affected}\n"
-        f"- Start date: `{candidate.start_date}`\n"
-        f"- Target date: `{candidate.target_date}`\n\n"
+        "Loop Engineeringの自己改善系統（Self-Improvement Lane）が、通常実行中の"
+        "型付き健全性証拠から生成した改善Workです。\n\n"
+        f"- 発火条件: `{candidate.kind.value}`\n"
+        f"- 優先度: `{candidate.severity.value}`\n"
+        f"- 影響Work: {affected}\n"
+        f"- 開始日: `{candidate.start_date}`\n"
+        f"- 目標日: `{candidate.target_date}`\n\n"
         "## 問題\n\n"
         f"{candidate.problem}\n\n"
-        "## Evidence\n\n"
+        "## 証拠\n\n"
         f"{evidence}\n\n"
         "## 完了条件\n\n"
-        "- 同じhealth fingerprintの再発原因を設計・実装で解消する\n"
-        "- failure/recoveryをtypedかつsecret-safeに維持する\n"
-        "- 自動回復可能なものをHuman Interventionへ送らない\n"
-        "- targeted tests / Ruff / strict Mypy / full pytest / exact-head CI / "
-        "canonical reviewを通す\n\n"
-        "Project #6は参照・mutationしない。\n"
+        "- 同じ健全性指紋（health fingerprint）の再発原因を設計・実装で解消する\n"
+        "- 失敗・復旧情報を型付きかつ秘密情報を含まない状態で維持する\n"
+        "- 自動回復可能な事象を人間介入へ送らない\n"
+        "- 対象試験、Ruff、厳格Mypy、全pytest、厳密HEAD CI、正本レビューを実行する\n\n"
+        "Project #6は参照・変更しない。\n"
     )
 
 
@@ -260,18 +260,18 @@ def _event_rank(event: LoopHealthEvent) -> tuple[int, int, str, str]:
 def _problem(event: LoopHealthEvent) -> str:
     fingerprint = _redacted_reference(event.fingerprint)
     return (
-        f"`{event.kind.value}` が同一fingerprint `{fingerprint}` で "
-        f"{event.occurrence_count} 回観測されました。"
-        "通常runを停止して人間が後追い保守するのではなく、原因をLoop Engineering"
-        "自身の改善Workとして解消します。"
+        f"`{event.kind.value}`が同一の健全性指紋（fingerprint）`{fingerprint}`で"
+        f"{event.occurrence_count}回観測されました。"
+        "通常実行を停止して人間が後追い保守するのではなく、原因をLoop Engineering自身の"
+        "改善Workとして解消します。"
     )
 
 
 def _redacted_reference(value: str) -> str:
-    """Return a bounded opaque identity for untrusted health metadata.
+    """信頼できない健全性管理情報を、上限付きの不透明identityへ変換して返す。
 
-    Health adapters may observe arbitrary external text.  A character allowlist
-    is not secret-safe because common credential alphabets are allowlisted too.
-    Issue bodies therefore retain correlation only through an irreversible hash.
+    健全性接続層は任意の外部文章を観測し得る。文字種許可方式では一般的な認証情報文字列も
+    許可対象になり得るため、秘密情報の安全性を保証できない。Issue本文には不可逆ハッシュを
+    通じた相関情報だけを残す。
     """
     return durable_identity(value)
