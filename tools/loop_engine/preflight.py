@@ -34,7 +34,7 @@ class CommandRunner(Protocol):
 
 
 class SubprocessCommandRunner:
-    """Captures probe output only for local parsing; it is never emitted."""
+    """確認出力はローカル解析だけに保持し、人間向け出力へそのまま流さない。"""
 
     _TIMEOUT_SECONDS = 10
 
@@ -60,13 +60,13 @@ class SubprocessCommandRunner:
 
 
 class TrustedReviewerBrokerProbe(Protocol):
-    """Checks a non-secret health endpoint owned by the trusted host broker."""
+    """信頼済みホスト仲介器が提供する、秘密情報を含まない健全性接続口を確認する。"""
 
     def check(self, socket_path: str, timeout_seconds: float) -> bool: ...
 
 
 class UnixSocketTrustedReviewerBrokerProbe:
-    """Uses a bounded, credential-free request to the host-side broker."""
+    """ホスト側仲介器へ、認証情報を含まない上限付き要求を送信する。"""
 
     _MAX_RESPONSE_BYTES = 4096
 

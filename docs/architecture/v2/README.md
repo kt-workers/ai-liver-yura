@@ -1,76 +1,76 @@
-# V2 Architecture Canonical Index
+# V2アーキテクチャ正本索引
 
-- `system_architecture.md` — system-wide canonical architecture
-- `design_completion_matrix.md` — #445 全V2詳細設計の完了状態・Implementation Freeze Gate
-- `design_cross_audit_report.md` — D8 Authority / dependency / truth / revision / concurrency / lineage横断監査
-- `brain_architecture.md` — Brain modules and authority
-- `brain_integration_contracts.md` — #334 non-serial Brain composition / trigger / revision / concurrency integration
-- `cognitive_llm_architecture.md` — cognitive and LLM role design
-- `goal_commitment_architecture.md` — persistent Goal / Commitment state and lifecycle
-- `concurrency_architecture.md` — non-blocking runtime / LLM invocation topology
-- `runtime_kernel_contracts.md` — bounded queue / scheduler / cancellation / lifecycle contracts
-- `runtime_lifecycle_contracts.md` — degraded operation / availability / retry / persistence-before-close graceful shutdown contracts
-- `llm_role_contracts.md` — variable logical LLM role / structured request-result contracts
+- `system_architecture.md` — システム全体の正本アーキテクチャ
+- `design_completion_matrix.md` — #445 全V2詳細設計の完了状態・実装凍結判定（Implementation Freeze Gate）
+- `design_cross_audit_report.md` — D8 正本性・依存関係・真実境界・revision・並行性・作業系列の横断監査
+- `brain_architecture.md` — Brainのモジュール構成と正本責務
+- `brain_integration_contracts.md` — #334 Brainの非直列構成、trigger、revision、並行統合契約
+- `cognitive_llm_architecture.md` — 認知処理とLLM役割の設計
+- `goal_commitment_architecture.md` — 永続Goal / Commitment状態とライフサイクル
+- `concurrency_architecture.md` — 非停止実行系とLLM呼出し構成
+- `runtime_kernel_contracts.md` — 上限付きqueue、scheduler、cancellation、lifecycle契約
+- `runtime_lifecycle_contracts.md` — 縮退運転、可用性、再試行、永続化後終了の安全停止契約
+- `llm_role_contracts.md` — 可変論理LLM役割と構造化要求・結果契約
 - `../../character/v2/yura_character_bible.md` — 星波ゆらの人物設定正本
-- `llm_provider_adapter_contracts.md` — provider SDK boundary / model policy resolution / typed failure normalization
-- `llm_provider_operational_diagnostics_contracts.md` — #437 safe provider operational failure categories / retry truth / observability boundary
-- `input_gateway_contracts.md` — multimodal input normalization / session / touch boundary
-- `input_meaning_contracts.md` — natural-language typed meaning / reference / commit boundary
-- `appraisal_internal_state_contracts.md` — subjective appraisal candidate / causal state reducer
-- `executive_appraisal_facts_contracts.md` — Appraisal facts snapshot / Executive freshness boundary
-- `executive_authority_contracts.md` — Executive Goal・Action Authority / typed decision commit gate
-- `goal_commitment_state_contracts.md` — persistent Goal・Commitment State / atomic lifecycle reducer
-- `activity_execution_contracts.md` — Activity admission / Capability preflight / Actual Execution Fact authority
-- `memory_store_retrieval_contracts.md` — #332 canonical Memory Store / reconciliation / contradiction / bounded retrieval
-- `memory_reflection_contracts.md` — #364 bounded source evidence / candidate proposal / support observation / Reflection acceptance
-- `persistence_repository_contracts.md` — #359 Memory repository / restart-safe snapshot / migration / rehydration infrastructure
-- `speech_semantics_contracts.md` — What-to-say Authority / typed SpeechSemanticPlan / simple・complex commit gate
-- `character_projection_contracts.md` — Human-readable Character Definition / structured document / typed Runtime Profile projection contracts
-- `character_psychological_projection_contracts.md` — Character精神構造Layers 1–6 / causal refs / dynamic Layer 7 boundary
-- `character_language_contracts.md` — #330 How-to-say / CharacterUtterance / authority and freshness contracts
-- `character_language_provider_contracts.md` — #330 production Character Language role / provider schema boundary
-- `character_language_variation_contracts.md` — #330 bounded prior-realization awareness / semantic-safe variation
-- `character_language_semantic_repair_contracts.md` — #330 same-Plan semantic-safe regeneration input contract
-- `semantic_verification_contracts.md` — #363 independent semantic observation / closed acceptance contracts
-- `semantic_verification_observer_strategy.md` — #363 Plan-blind inventory + Plan relation observer topology
-- `semantic_verification_relation_edge_contract.md` — #363 relation edge / evidence reconciliation details
-- `semantic_verification_self_disclosure_relation_contract.md` — #363 self-disclosure relation boundary
-- `semantic_verification_speech_act_contract.md` — #363 speech-act observation/acceptance boundary
-- `semantic_verification_transport_identity_contract.md` — #363/#438 provider transport identity binding
-- `speech_performance_contracts.md` — #331 CharacterUtterance＋Voice Style＋Expression→engine-independent SpeechPerformancePlan
-- `speech_expression_projection_contracts.md` — #331 versioned Character Voice Style / Internal State→SpeechExpression/Performance projection policy
-- `speech_pipeline_architecture.md` — speech preparation/presentation concurrency
-- `speech_runtime_presentation_contracts.md` — #348 component readiness / repair / queue / revalidation / Presentation commit
-- `tts_provider_contracts.md` — #358 TTS voice binding / provider mapping / audio artifact / timing / degradation
-- `body_architecture.md` — canonical body, generative motion, realtime control
-- `body_expression_contracts.md` — #337 Internal State / Focus / Character Style→normalized BodyExpressionContext projection contracts
-- `body_motion_planning_contracts.md` — #338 Executive BODY intent→solver-safe high-level BodyMotionPlan
-- `body_solver_controller_contracts.md` — #339 IK/FK / limits / balance / trajectory / continuous BodyState commit authority
-- `body_realtime_layers_contracts.md` — #340 gaze / blink / breath / viseme / subtle realtime overlay contracts
-- `body_integration_contracts.md` — #341 Executive BodyIntent→continuous BodyPoseFrame integration / concurrency / degradation
-- `plugin_architecture.md` — Core extension / capability architecture
-- `plugin_registry_contracts.md` — #343 Plugin manifest / Registry lifecycle / permission / health / CapabilityDescriptor projection contracts
-- `plugin_registry_permission_principal_contracts.md` — #343 Plugin permission grant principal isolation / revocation security contracts
-- `plugin_integration_contracts.md` — #344 zero-plugin / capability execution / effect fence / generation integration contracts
-- `subsystem_architecture.md` — Streaming, Game Skill, Avatar and specialized AI boundaries
-- `avatar_presentation_contracts.md` — #346 canonical BodyPoseFrame→Stick/Live2D/3D renderer projection / degradation
-- `streaming_subsystem_contracts.md` — #347/#394/#396 Core Decision / Streaming Execution / External Observation / comment ingestion contracts
-- `gui_admin_contracts.md` — #351 immutable Read Model / typed Admin Command / secret-safe GUI boundary
-- `validation_lab_contracts.md` — #352 production-path Validation Harness / provenance / timeline / Human context / Export
-- `development_tooling_contracts.md` — #353 read-only development evidence / visualizer / reference analysis / security boundary
-- `loop_mission_supervisor.md` — #465 GitHub-live Mission Supervisor / Work Scheduler / Resume Gate / Task Packet / Write Gate contracts
-- `loop_self_improvement.md` — #465 Loop Health / automatic improvement Issue / Project #7 / maintenance scheduling contracts
+- `llm_provider_adapter_contracts.md` — LLM提供元SDK境界、model方針解決、型付き失敗正規化
+- `llm_provider_operational_diagnostics_contracts.md` — #437 提供元運用失敗の安全な分類、再試行の真実境界、可観測性
+- `input_gateway_contracts.md` — 複数入力形式の正規化、session、touch境界
+- `input_meaning_contracts.md` — 自然言語の型付き意味、参照、確定境界
+- `appraisal_internal_state_contracts.md` — 主観評価候補と因果状態reducer
+- `executive_appraisal_facts_contracts.md` — 評価事実snapshotとExecutiveの鮮度境界
+- `executive_authority_contracts.md` — Executive Goal・Action正本と型付き決定確定判定
+- `goal_commitment_state_contracts.md` — 永続Goal・Commitment状態と原子的ライフサイクルreducer
+- `activity_execution_contracts.md` — Activity受付、利用能力の事前確認、実行事実の正本
+- `memory_store_retrieval_contracts.md` — #332 Memory Store正本、再調整、矛盾、上限付き検索
+- `memory_reflection_contracts.md` — #364 上限付き情報源証拠、候補提案、支持観測、Reflection受理
+- `persistence_repository_contracts.md` — #359 Memory repository、再起動安全snapshot、移行、復元基盤
+- `speech_semantics_contracts.md` — 発話内容の正本、型付き`SpeechSemanticPlan`、単純・複雑確定判定
+- `character_projection_contracts.md` — 人間可読Character Definition、構造化文書、型付きRuntime Profile投影契約
+- `character_psychological_projection_contracts.md` — Character精神構造Layers 1–6、因果参照、動的Layer 7境界
+- `character_language_contracts.md` — #330 言い方、`CharacterUtterance`、正本性と鮮度契約
+- `character_language_provider_contracts.md` — #330 本番Character Language役割と提供元schema境界
+- `character_language_variation_contracts.md` — #330 上限付きの過去実現参照と意味を壊さない変化
+- `character_language_semantic_repair_contracts.md` — #330 同一Planに対する意味安全な再生成入力契約
+- `semantic_verification_contracts.md` — #363 独立意味観測と閉じた受け入れ契約
+- `semantic_verification_observer_strategy.md` — #363 Plan非参照の在庫観測とPlan関係観測の構成
+- `semantic_verification_relation_edge_contract.md` — #363 関係edgeと証拠再調整の詳細
+- `semantic_verification_self_disclosure_relation_contract.md` — #363 自己開示の関係境界
+- `semantic_verification_speech_act_contract.md` — #363 発話行為の観測・受け入れ境界
+- `semantic_verification_transport_identity_contract.md` — #363/#438 提供元通信identityの結び付け
+- `speech_performance_contracts.md` — #331 `CharacterUtterance`＋Voice Style＋Expressionからengine非依存`SpeechPerformancePlan`への変換
+- `speech_expression_projection_contracts.md` — #331 版管理されたCharacter Voice StyleとInternal StateからSpeechExpression/Performanceへの投影方針
+- `speech_pipeline_architecture.md` — 発話準備と提示の並行処理
+- `speech_runtime_presentation_contracts.md` — #348 構成要素準備、修復、queue、再検証、提示確定
+- `tts_provider_contracts.md` — #358 TTS音声結び付け、提供元対応、音声成果物、時刻、縮退
+- `body_architecture.md` — Body正本、生成的動作、実時間制御
+- `body_expression_contracts.md` — #337 Internal State / Focus / Character Styleから正規化`BodyExpressionContext`への投影契約
+- `body_motion_planning_contracts.md` — #338 Executive BODY意図からsolver安全な高水準`BodyMotionPlan`への変換
+- `body_solver_controller_contracts.md` — #339 IK/FK、制限、平衡、軌道、連続`BodyState`確定正本
+- `body_realtime_layers_contracts.md` — #340 視線、瞬き、呼吸、viseme、微細な実時間重ね合わせ契約
+- `body_integration_contracts.md` — #341 Executive BodyIntentから連続`BodyPoseFrame`への統合、並行性、縮退
+- `plugin_architecture.md` — Core拡張と利用能力のアーキテクチャ
+- `plugin_registry_contracts.md` — #343 Plugin manifest、Registry lifecycle、権限、健全性、`CapabilityDescriptor`投影契約
+- `plugin_registry_permission_principal_contracts.md` — #343 Plugin権限付与主体の分離と失効の安全契約
+- `plugin_integration_contracts.md` — #344 Plugin 0件、利用能力実行、効果fence、世代統合契約
+- `subsystem_architecture.md` — Streaming、Game Skill、Avatar、専用AIの境界
+- `avatar_presentation_contracts.md` — #346 正本`BodyPoseFrame`から棒人間 / Live2D / 3D rendererへの投影と縮退
+- `streaming_subsystem_contracts.md` — #347/#394/#396 Core Decision、Streaming実行、外部観測、comment取込契約
+- `gui_admin_contracts.md` — #351 不変Read Model、型付き管理Command、秘密情報を守るGUI境界
+- `validation_lab_contracts.md` — #352 本番経路Validation Harness、出自、timeline、人間文脈、Export
+- `development_tooling_contracts.md` — #353 読取専用の開発証拠、可視化、参照解析、安全境界
+- `loop_mission_supervisor.md` — #465 GitHub現在状態を使うMission監督、Work選択、Resume Gate、Task Packet、Write Gate契約
+- `loop_self_improvement.md` — #465 Loop健全性、自動改善Issue、Project #7、保守割当契約
 - `optional_review_support_contracts.md` — #371 任意・読取専用・非ブロッキングのレビュー支援契約
-- `loop_design_completion_matrix.md` — #462 Loop Engineering責務とimplementation ownerの完了行列
-- `loop_canonical_review_pipeline.md` — exact-head mandatory canonical reviewとtrusted broker境界
-- `loop_operational_store.md` — PostgreSQL operational memoryのAuthority・transaction・retention契約
-- `loop_autonomous_runner.md` — 1 transition Runner、Codex境界、CI/review/merge gate
-- `loop_integration_recovery.md` — field-specific Authority、recovery、wait、E2E acceptance
-- `loop_cross_design_audit.md` — #468横断監査とremaining implementation Work
-- `game_skill_runtime_contracts.md` — #365 high-level Core Goal vs realtime game perception/tactics/action/runtime contracts
-- `system_integration_contracts.md` — #360 staged composition / degraded startup / cross-lane latency / System Verification contracts
-- `legacy_migration_matrix.md` — V1 requirement migration
-- `project_sync_manifest.md` — historical GitHub Project synchronization manifest; current V2 planning Authority is Project #7
-- `project_sync_runbook.md` — live ID取得・dry-run・Project fields・formal Parent/Sub-issue同期手順
+- `loop_design_completion_matrix.md` — #462 Loop Engineering責務と実装所有者の完了表
+- `loop_canonical_review_pipeline.md` — 厳密HEADへ結び付ける正本レビューと信頼済み仲介境界
+- `loop_operational_store.md` — PostgreSQL運用記憶の正本性、取引、保持期限契約
+- `loop_autonomous_runner.md` — 1回の限定遷移、Codex境界、CI / review / merge判定
+- `loop_integration_recovery.md` — 項目別正本、復旧、待機、一連動作受け入れ条件
+- `loop_cross_design_audit.md` — #468 横断監査と残存実装Work
+- `game_skill_runtime_contracts.md` — #365 高水準Core Goalと実時間game認識・戦術・action・runtime契約
+- `system_integration_contracts.md` — #360 段階的構成、縮退起動、系統間遅延、System Verification契約
+- `legacy_migration_matrix.md` — V1要件移行表
+- `project_sync_manifest.md` — 過去のGitHub Project同期表。現在V2計画の正本はProject #7
+- `project_sync_runbook.md` — 現在ID取得、dry-run、Project field、正式Parent/Sub-issue同期手順
 
-Status: V2 Design Completion Gate #445 D1–D9 PASS / Implementation Freeze released. Current implementation work still requires per-Work fresh Resume Gate.
+状態: V2 Design Completion Gate #445 D1–D9 `PASS` / 実装凍結解除済み。現在の実装WorkでもWork単位の新しいResume Gateを必須とする。
