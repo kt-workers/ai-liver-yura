@@ -1,29 +1,29 @@
-# AI Liver ゆら V2 Canonical System Architecture
+# AI Liver ゆら V2 正本システムアーキテクチャ
 
-Status: Draft / V2 Design Gate / Design Reconciliation Complete / Streaming Plan Semantic Sync 2026-08-14
-Canonical branch: `rebuild/v2-foundation`
-Root: #317
-Base lineage: `main@0500a69c75e46e97c0f849c26a4d3d7f1fb138dd`
-Streaming plan semantic sync: #396
+状態: Draft / V2設計判定 / 設計再調整完了 / Streaming計画意味同期 2026-08-14  
+正本branch: `rebuild/v2-foundation`  
+Root: #317  
+基点作業系列: `main@0500a69c75e46e97c0f849c26a4d3d7f1fb138dd`  
+Streaming計画意味同期: #396
 
 ## 1. 役割
 
 AI Liver ゆら V2の最上位システム構造正本。
 
-旧実装を継ぎ足さず、V1 Issue/PR/docs/Verificationから要求・failure knowledgeだけを回収し、最古mainから再構築する。
+旧実装を継ぎ足さず、V1 Issue / PR / docs / Verificationから要求と失敗知見だけを回収し、最古mainから再構築する。
 
 詳細正本:
 
 - Brain: `brain_architecture.md`
-- Cognitive / LLM: `cognitive_llm_architecture.md`
+- 認知 / LLM: `cognitive_llm_architecture.md`
 - Goal / Commitment: `goal_commitment_architecture.md`
-- Concurrency: `concurrency_architecture.md`
-- Speech: `speech_pipeline_architecture.md`
+- 並行性: `concurrency_architecture.md`
+- 発話: `speech_pipeline_architecture.md`
 - Body: `body_architecture.md`
 - Plugin: `plugin_architecture.md`
 - Subsystem / Skill AI: `subsystem_architecture.md`
-- Migration: `legacy_migration_matrix.md`
-- Project sync: `project_sync_manifest.md`
+- 移行: `legacy_migration_matrix.md`
+- Project同期: `project_sync_manifest.md`
 
 ---
 
@@ -31,29 +31,29 @@ AI Liver ゆら V2の最上位システム構造正本。
 
 **自由意志をもった「ゆら」という継続主体**を作る。
 
-User Messageへの返信器ではない。
+ユーザー発言への返信器ではない。
 
-ゆらは持続する:
+ゆらは持続する次の状態を持つ。
 
-- Emotion / Desire / Drive / Motivation
-- Values / Moral context
-- Interest / Curiosity
-- Relationship
-- Memory
-- current Goals / Commitments
-- Attention / Focus / Turn state
-- Current Activities / Actual Execution state
+- 感情・欲求・駆動・動機（Emotion / Desire / Drive / Motivation）
+- 価値観・道徳文脈（Values / Moral context）
+- 興味・好奇心（Interest / Curiosity）
+- 関係性（Relationship）
+- 記憶（Memory）
+- 現在Goal / Commitment
+- 注意・焦点・Turn状態（Attention / Focus / Turn state）
+- 現在Activity / 実実行状態
 - Body State
 
-を持ち、外界と自身の変化を受けながら会話・YouTube配信・ゲーム対戦/実況・観察・沈黙等を自ら選択する。
+外界と自身の変化を受けながら、会話、YouTube配信、ゲーム対戦・実況、観察、沈黙などを自ら選択する。
 
 ユーザー発言は重要Eventだが無条件命令ではない。
 
-「ゆらが配信する」「ゆらがゲームをする」等の主体性はCoreのGoal / Activity Authorityで表現し、外部サービス固有の実装をCoreへ持ち込むことでは表現しない。
+「ゆらが配信する」「ゆらがゲームをする」などの主体性はCoreのGoal / Activity正本で表現し、外部サービス固有実装をCoreへ持ち込むことでは表現しない。
 
 ---
 
-## 3. System Boundary
+## 3. システム境界
 
 ```text
 AI Liver Yura
@@ -71,24 +71,23 @@ AI Liver Yura
    └─ Development Tooling
 ```
 
-Core membershipをruntime optionalityで決めない。
+Core所属を実行時の任意性だけで決めない。
 
 Core正本例:
 
-- Brain cognition
+- Brain認知
 - Internal State
-- Executive Authority
+- Executive正本
 - Goal / Commitment State #366
 - Attention / Focus / Turn State #333
 - Body / Body State
-- Plugin extension contract
+- Plugin拡張契約
 
-Avatar不在でもBodyはPluginにならない。
-Persistence不在でもGoal/Memory Domain ownershipはInfrastructureへ移らない。
+Avatar不在でもBodyはPluginにならない。Persistence不在でもGoal / MemoryのDomain所有権はInfrastructureへ移らない。
 
 ---
 
-## 4. Clean Architecture
+## 4. クリーンアーキテクチャ
 
 ```text
 Domain / Contracts
@@ -100,62 +99,60 @@ Ports
 Adapters / Providers / UI / External systems
 ```
 
-DomainはOpenAI SDK、FastAPI、VOICEVOX、PostgreSQL、Live2D等の具体型を知らない。
-Infrastructure ProviderはPluginではない。
+DomainはOpenAI SDK、FastAPI、VOICEVOX、PostgreSQL、Live2Dなどの具体型を知らない。Infrastructure ProviderはPluginではない。
 
-外部サービス固有のSDK / protocol / credential / resource IDをCore Domain / Runtimeへ持ち込まない。
-
----
-
-## 5. Plugin Boundary
-
-Pluginをoptional性だけで定義しない。
-
-> **PluginはCore自身の構成要素ではなく、Core公開拡張契約から外部Capabilityを追加する機構。**
-
-Core固有State/Authorityを所有しない。
-`Plugin 0件でもCore基本責務維持`は別System invariant。
+外部サービス固有のSDK、protocol、credential、resource IDをCore Domain / Runtimeへ持ち込まない。
 
 ---
 
-## 6. Subsystem / Skill AI Boundary
+## 5. Plugin境界
 
-Subsystemは独立lifecycle/process/resource ownershipを持てる。
+Pluginを任意性だけで定義しない。
+
+> **PluginはCore自身の構成要素ではなく、Core公開拡張契約から外部利用能力（Capability）を追加する機構である。**
+
+Core固有State / Authorityを所有しない。`Plugin 0件でもCore基本責務維持`は別のシステム不変条件とする。
+
+---
+
+## 6. Subsystem / Skill AI境界
+
+Subsystemは独立したライフサイクル、process、resource所有権を持てる。
 
 専門AIは「選択済みActivityを実行する技能」であり、ゆらの意思そのものではない。
 
 - Game Agent
-- Streaming classifier/moderation/aggregation
+- Streaming分類・moderation・aggregation
 - Vision / recognition
 
-Skill AIはExecutive Goal Authorityを奪わない。
+Skill AIはExecutive Goal正本を奪わない。
 
-### 6.1 Core Decision / Subsystem Execution / External Observation
+### 6.1 Core判断 / Subsystem実行 / 外界観測
 
-外部サービスを伴うActivityでは3つのAuthorityを分ける。
+外部サービスを伴うActivityでは3つの正本責務を分ける。
 
 ```text
 Core Executive
-  decides what Yura does
+  ゆらが何をするか決める
         ↓
-generic Activity / Capability Request
+汎用Activity / Capability Request
         ↓
 Subsystem
-  executes provider-specific operation
+  提供元固有操作を実行する
         ↓
 Execution Result / External Observation
         ↓
 Core
-  recognizes actual result and re-appraises
+  実結果を認識して再評価する
 ```
 
-Coreは配信準備・配信開始・配信終了等の高レベルActivityを選択できる。
+Coreは配信準備、配信開始、配信終了などの高水準Activityを選択できる。
 
-ただしYouTube API、OBS WebSocket、OAuth、provider固有IDやscene等はStreaming Subsystem側だけが所有する。Core production codeはYouTube/OBS等のprovider固有class・port・runtime責務を持たない。
+ただしYouTube API、OBS WebSocket、OAuth、提供元固有IDやsceneなどはStreaming Subsystem側だけが所有する。Core本番コードはYouTube / OBSなどの提供元固有class、port、runtime責務を持たない。
 
-外界状態はSubsystem/API観測だけでなくユーザー報告等からも認知できる。source / provenance / confidenceを保持し、報告とprovider確認済み事実を無条件に同一視しない。
+外界状態はSubsystem / API観測だけでなくユーザー報告などからも認知できる。情報源、出自、確信度（source / provenance / confidence）を保持し、報告と提供元確認済み事実を無条件に同一視しない。
 
-IntentやCharacter発話は外部操作成功Factではない。Actual Factはtrusted Execution Result / Observationで確定する。
+IntentやCharacter発話は外部操作成功Factではない。Actual Factは信頼済みExecution Result / Observationで確定する。
 
 ---
 
@@ -175,21 +172,21 @@ External / Internal Events
 → Appraisal / Attention / Executive / Goal / Reflection / Memory
 ```
 
-因果図であり固定blocking Pipelineではない。
+これは因果図であり、固定された直列停止処理ではない。
 
 ---
 
-## 8. Runtime Model
+## 8. 実行モデル
 
-- Event-driven
-- snapshot-based
-- sparse activation
-- concurrent lanes
-- bounded queues
-- priority / backpressure
+- Event駆動
+- snapshot基準
+- 必要時だけ活性化
+- 並行処理系統
+- 上限付きqueue
+- 優先度 / backpressure
 - cancellation / stale / supersede
-- source_context_revision
-- goal_revision / attention_revision where needed
+- `source_context_revision`
+- 必要箇所で`goal_revision` / `attention_revision`
 
 ```text
                          ┌─ Input / Meaning
@@ -206,76 +203,73 @@ Typed Event Stream ──────┼─ Attention / Turn
 
 必須:
 
-- slow LLM中もunrelated lane継続
-- Speech playback中next cognition/generation可能
-- TTS待機中new input可能
-- Goal/Focus mutationをCore global lockにしない
-- Body realtimeはLLM/TTS/DB/Game AI待ちで停止しない
-- Reflectionはforeground interactionをblockしない
-- Game frame loopはExecutive LLM latency非依存
-- Streaming burstでCore starvationなし
-- background workがforeground interactionをstarveしない
+- 遅いLLM処理中も無関係な系統を継続する。
+- 発話再生中に次の認知・生成を実行できる。
+- TTS待機中に新しい入力を受けられる。
+- Goal / Focus変更をCore全体lockにしない。
+- Body実時間処理はLLM / TTS / DB / Game AI待ちで停止しない。
+- Reflectionは前景対話を停止させない。
+- Game frame loopはExecutive LLM遅延に依存しない。
+- Streaming大量入力でCoreを飢餓状態にしない。
+- 背景処理が前景対話を飢餓状態にしない。
 
-Subsystemの外部API待ちをCore Runtimeの専用配信処理として抱え込まず、generic async Capability / Event境界で隔離する。
+Subsystemの外部API待ちをCore Runtimeの専用配信処理として抱え込まず、汎用非同期Capability / Event境界で隔離する。
 
 ---
 
-## 9. LLM Design
+## 9. LLM設計
 
-旧system-wide 4-role固定は撤回。
-LLM個数をArchitecture invariantにしない。
+旧システム全体4-role固定は撤回する。LLM個数をアーキテクチャ不変条件にしない。
 
-初期Role候補:
+初期役割候補:
 
-- Input Meaning
-- Subjective Appraisal（必要時）
-- Executive Deliberation
-- Goal / Activity Planning
-- Speech Semantics
+- 入力意味解析（Input Meaning）
+- 主観評価（Subjective Appraisal、必要時）
+- Executive熟考（Executive Deliberation）
+- Goal / Activity計画
+- 発話意味（Speech Semantics）
 - Character Language
-- Independent Semantic Verification
-- Body Motion Planning
+- 独立意味検証（Independent Semantic Verification）
+- Body動作計画（Body Motion Planning）
 - Reflection
 
 ただし:
 
-> **conscious Goal / Action Authority = Executive #328 only**
+> **意識的なGoal / Action正本 = Executive #328だけ**
 
-Goal State #366、Attention #333、State Reducer、Activity/Execution、Body physical/realtime等はtyped deterministic ownershipを基本とする。
+Goal State #366、Attention #333、State Reducer、Activity / Execution、Body物理・実時間処理などは型付き決定論的所有を基本とする。
 
-`Logical Role != API Call`。
-責務分離をserial Provider chainへ変換しない。
+`Logical Role != API Call`。責務分離を直列の提供元呼出し鎖へ変換しない。
 
 ---
 
-## 10. System Authority Map
+## 10. システム正本対応表
 
-| Authority | Owner |
+| 正本責務 | 所有者 |
 |---|---|
-| open-ended NL meaning | #326 |
-| subjective Appraisal / salience candidate | #327 |
-| current Internal State | #327 State Reducer |
-| conscious Goal / Action selection | #328 Executive |
-| current Goal / Commitment | #366 |
-| current Attention / Focus / Turn scheduling | #333 |
-| complex Goal planning | #361 |
-| Activity lifecycle / Actual Fact | #329 |
-| What to say | #362 |
-| How to say | #330 |
-| semantic observation | #363 |
-| Speech performance / presentation | #331/#348 |
-| Body current state / physical continuity | #335〜#341 |
-| Memory canonical store / retrieval | #332 |
-| Memory Candidate generation | #364 |
-| Game frame-level skill | #365, subordinate to Core Goal |
-| Streaming provider execution / observation | #347 Subsystem, subordinate to Core Activity |
+| 開かれた自然言語意味 | #326 |
+| 主観評価・重要度候補 | #327 |
+| 現在Internal State | #327 State Reducer |
+| 意識的Goal / Action選択 | #328 Executive |
+| 現在Goal / Commitment | #366 |
+| 現在Attention / Focus / Turn割当 | #333 |
+| 複雑Goal計画 | #361 |
+| Activityライフサイクル / Actual Fact | #329 |
+| 何を言うか | #362 |
+| どう言うか | #330 |
+| 意味観測 | #363 |
+| 発話演技 / 提示 | #331/#348 |
+| Body現在状態 / 物理的連続性 | #335〜#341 |
+| Memory正本保存 / 検索 | #332 |
+| Memory候補生成 | #364 |
+| Game frame単位の技能 | #365、Core Goalに従属 |
+| Streaming提供元実行 / 観測 | #347 Subsystem、Core Activityに従属 |
 
-LLM自由文をState/Factへ直接代入しない。
-Intent / Plan / Character claimをActual Factへ昇格させない。
+LLM自由文をState / Factへ直接代入しない。Intent / Plan / Character claimをActual Factへ昇格させない。
 
 ---
 
-## 11. Persistent Goal / Commitment — #366
+## 11. 永続Goal / Commitment — #366
 
 ```text
 Executive chooses Goal
@@ -284,18 +278,18 @@ Executive chooses Goal
 → later Attention / Executive / Planner
 ```
 
-- turn/context windowを跨ぐ
-- GoalとActivityを分離
-- GoalとMemoryを分離
-- CommitmentとCharacter utteranceを分離
-- stale goal_revision Plan非実行
-- pending Goal/Commitmentがautonomous triggerになり得る
+- turn / context windowをまたぐ。
+- GoalとActivityを分離する。
+- GoalとMemoryを分離する。
+- CommitmentとCharacter utteranceを分離する。
+- 古い`goal_revision`のPlanを実行しない。
+- 未完了Goal / Commitmentが自律起動条件になり得る。
 
 ---
 
 ## 12. Attention / Focus / Turn — #333
 
-Game、Streaming、Conversation、Reflection等の全EventをExecutiveへ同期投入しない。
+Game、Streaming、Conversation、Reflectionなどの全EventをExecutiveへ同期投入しない。
 
 ```text
 Game realtime             → Skill aggregation
@@ -308,79 +302,75 @@ Reflection                → background
 Executive
 ```
 
-#333 owns:
+#333が所有するもの:
 
-- foreground focus
-- secondary monitors
-- turn / response obligation
-- attention/source budgets
-- interrupt thresholds
-- fairness / anti-starvation
+- 前景Focus
+- 副次監視
+- Turn / 応答義務
+- Attention / 情報源budget
+- 割込みしきい値
+- 公平性 / 飢餓防止
 
-Appraisalはsalience候補、Executiveはdeliberate attention intent、#333はFocus State/schedulingを所有。
-意味/Goal/Speech内容は決めない。
-Body gazeはFocusの表現でありcognitive Authorityではない。
+Appraisalは重要度候補、Executiveは意識的な注意意図、#333はFocus State / schedulingを所有する。意味、Goal、発話内容は決めない。Body gazeはFocusの表現であり認知正本ではない。
 
 ---
 
-## 13. Speech Summary
+## 13. 発話概要
 
 ```text
 Executive SpeechIntent
-→ SpeechSemanticPlan       # What
-→ CharacterUtterance       # How
+→ SpeechSemanticPlan       # 何を言うか
+→ CharacterUtterance       # どう言うか
 → Semantic Observation
 → closed acceptance
 → Performance / Prepared candidate
 → Presentation
 ```
 
-logical dependencyをfixed serial LLM chainにしない。
+論理依存関係を固定直列LLM呼出し鎖にしない。
 
-- simple Semantics pathは専用LLM省略可
-- Character後Verifier/Performance/safe TTS prep並列可
-- required PASS前にexternal Presentation commitしない
-- Speech A playback中にSpeech B generation可
-- context/goal/attention revisionでpre-presentation revalidation
-
----
-
-## 14. Body Summary
-
-- Canonical Skeleton / DOF / limits
-- current pose / velocity
-- Expression Projection
-- Motion Planning（LLMは必要時）
-- deterministic IK/FK/balance/trajectory
-- Continuous Controller
-- gaze/blink/breath/viseme/subtle realtime
-- BodyPoseFrame
-
-fixed presetsを主経路にせず、current pose continuity / no Home reset。
-Motion Planner遅延でもrealtime停止なし。
-CharacterとBodyはExecutiveから兄弟fan-out。
+- 単純な意味経路では専用LLMを省略できる。
+- Character後のVerifier / Performance / 安全なTTS準備を並行実行できる。
+- 必須`PASS`前に外部提示を確定しない。
+- Speech A再生中にSpeech Bを生成できる。
+- context / goal / attention revisionで提示直前再検証する。
 
 ---
 
-## 15. Streaming / Game Summary
+## 14. Body概要
+
+- 正本Skeleton / DOF / limits
+- 現在pose / velocity
+- Expression投影
+- Motion Planning（必要時だけLLM）
+- 決定論的IK / FK / balance / trajectory
+- 連続Controller
+- gaze / blink / breath / viseme / 微細実時間処理
+- `BodyPoseFrame`
+
+固定presetを主経路にせず、現在poseの連続性を維持しHomeへ強制resetしない。Motion Plannerが遅延しても実時間処理を停止しない。CharacterとBodyはExecutiveから兄弟関係として分岐する。
+
+---
+
+## 15. Streaming / Game概要
 
 ### Streaming #347
 
-Streamingは**Coreの配信Moduleではなく独立Subsystem**。
+Streamingは**Core内の配信Moduleではなく独立Subsystem**である。
 
-Coreが所有する:
+Coreが所有するもの:
 
-- 配信を準備/開始/継続/終了するかというActivity/Goal判断
-- viewer commentへ反応するか
+- 配信を準備・開始・継続・終了するかというActivity / Goal判断
+- 視聴者commentへ反応するか
 - 何を言うか
 
-Streaming Subsystemが所有する:
+Streaming Subsystemが所有するもの:
 
-- provider固有のreadiness / prepare / start / end実行
-- YouTube/OBS等のAPI・protocol・authentication
-- 配信状態/healthのprovider観測
-- comment ingestion / aggregation / backpressure
-- provider結果のtyped Execution Result / External Observation化
+- 提供元固有の準備確認・prepare / start / end実行
+- YouTube / OBSなどのAPI、protocol、authentication
+- 配信状態 / healthの提供元観測
+- comment取込、集約、backpressure
+- 提供元結果の型付きExecution Result / External Observation化
 
 ```text
 User / Internal Goal
@@ -392,9 +382,9 @@ User / Internal Goal
 → Appraisal / Attention / Executive
 ```
 
-OBS profile / scene graph / encoder等の構成は原則事前準備し、任意構成の自動生成を#347の必須責務にしない。
+OBS profile、scene graph、encoderなどの構成は原則事前準備し、任意構成の自動生成を#347の必須責務にしない。
 
-API観測がなくても、ユーザーから配信が開始済みである旨などの状態報告を受けて認知候補にできるが、`user_report` provenanceを保持しprovider確認済みFactと区別する。
+API観測がなくても、ユーザーから配信開始済みなどの状態報告を受けて認知候補にできる。ただし`user_report`の出自を保持し、提供元確認済みFactと区別する。
 
 ### Game #365
 
@@ -412,23 +402,21 @@ Game Agentが実況台詞を直接発話しない。
 
 ---
 
-## 16. Natural Language Policy
+## 16. 自然言語方針
 
-open-ended意味Authorityとしてfinite keyword/marker/regex/substring/startswith等を使わない。
+開かれた意味の正本として、有限keyword、marker、regex、substring、`startswith`などを使わない。
 
-自然言語の設計文書・Issue・テストに記載する文言は、原則として**意味カテゴリの説明またはillustrative example**であり、その文字列自体をtrigger / allowlist / matcher仕様にしてはならない。
+自然言語の設計文書、Issue、テストに記載する文言は原則として**意味カテゴリの説明または例示**であり、その文字列自体をtrigger、allowlist、matcher仕様にしてはならない。
 
-例えば外部Activityについては「配信開始を求める旨を伝える」「配信が開始済みである旨を報告する」のように意味で記述する。実装・検証では同義表現、語順差、敬語、口語、省略、文脈参照を含むparaphraseで同じStructuredInputMeaningへ一般化できることを確認する。
+例えば外部Activityは「配信開始を求める旨を伝える」「配信が開始済みである旨を報告する」のように意味で記述する。実装・検証では同義表現、語順差、敬語、口語、省略、文脈参照を含む言い換え（paraphrase）で同じ`StructuredInputMeaning`へ一般化できることを確認する。
 
-open-ended natural-language meaningのAuthorityは#326 Input Meaningのみ。Streaming Subsystem、Executive、Activity Runtime、Provider Adapterがraw natural languageを再度keyword/regex/substringで独自解釈しない。
+開かれた自然言語意味の正本は#326 Input Meaningだけとする。Streaming Subsystem、Executive、Activity Runtime、Provider Adapterが生の自然言語をkeyword / regex / substringで再解釈しない。
 
-protocol token / enum / exact technical ID / finite-domain vocabularyは例外。
-
-解決不能はunresolved / clarification / fail-closed。
+protocol token、enum、厳密technical ID、有限領域語彙は例外とする。解決不能はunresolved / clarification / fail-closedとする。
 
 ---
 
-## 17. Execution Truth
+## 17. 実行事実
 
 ```text
 requested → accepted → planned → started → observable/applied → completed
@@ -444,11 +432,11 @@ I promised X    → Commitment State
 I said promise  → Speech Presentation Fact
 ```
 
-外部Subsystem操作も同じTruth boundaryに従う。配信開始Intentを持ったことと、provider上で実際にliveになったことを分離する。
+外部Subsystem操作も同じ真実境界に従う。配信開始Intentを持ったことと、提供元上で実際にliveになったことを分離する。
 
 ---
 
-## 18. Character / Body / Skill sibling boundary
+## 18. Character / Body / Skillの兄弟境界
 
 ```text
                     ExecutiveDecision
@@ -458,24 +446,21 @@ I said promise  → Speech Presentation Fact
           Speech path    Body path    Plugin/Subsystem
 ```
 
-Character textからBody semantic commandを作らない。
-Body poseからSpeech meaningを決めない。
-Skill AIからCore Goalを作らない。
-Subsystem Execution Resultからのみ外部実行Factを確定し、Character claimから逆算しない。
+Character textからBody semantic commandを作らない。Body poseからSpeech meaningを決めない。Skill AIからCore Goalを作らない。Subsystem Execution Resultからのみ外部実行Factを確定し、Character claimから逆算しない。
 
 ---
 
 ## 19. Memory / Reflection
 
-- #364 Reflection: open-ended MemoryCandidate
-- #332 Memory Store: validation/store/retrieval
-- #359 Persistence Provider: implementation
+- #364 Reflection: 開かれた`MemoryCandidate`
+- #332 Memory Store: validation / store / retrieval
+- #359 Persistence Provider: 実装
 
-Memoryはcurrent Internal State / Goal State / Execution Factより強いAuthorityを持たない。
+Memoryは現在Internal State / Goal State / Execution Factより強い正本性を持たない。
 
 ---
 
-## 20. Module Development Gate
+## 20. Module開発判定
 
 ```text
 Canonical Design
@@ -489,27 +474,27 @@ Canonical Design
 → Done
 ```
 
-1 Work Issue = 1 active implementation lineage。
+1 Work Issueにつき有効な実装作業系列は1本とする。
 
 ---
 
-## 21. Design Reconciliation Status
+## 21. 設計再調整状態
 
-設計反映・Issue整合監査は完了済み。
+設計反映とIssue整合監査は完了済み。
 
-- [x] System / Brain / Cognitive / Goal / Concurrency canonical
-- [x] Speech / Body / Plugin / Subsystem canonical
-- [x] Legacy 44 Open Issue / initial 23 PR requirement mapping
-- [x] variable LLM / Single Executive
-- [x] non-serial LLM/runtime
-- [x] persistent Goal #366
-- [x] Attention/Focus #333
-- [x] Game/Streaming Skill AI boundary
-- [x] Plugin structural definition
-- [x] current V2 Issueのactive Commander/fixed Role numbering排除
-- [x] subordinate canonical / Issue cross-audit
-- [x] Project sync Manifest / Runbook
-- [x] #394 Streaming Core Decision / Subsystem Execution / External Observation boundary reconciliation
-- [x] #396 Streaming実装計画とnatural-language semantic/paraphrase原則を同期
+- [x] System / Brain / Cognitive / Goal / Concurrency正本
+- [x] Speech / Body / Plugin / Subsystem正本
+- [x] Legacy 44 Open Issue / initial 23 PRの要件対応付け
+- [x] 可変LLM / Single Executive
+- [x] 非直列LLM / runtime
+- [x] 永続Goal #366
+- [x] Attention / Focus #333
+- [x] Game / Streaming Skill AI境界
+- [x] Plugin構造定義
+- [x] 現在V2 Issueからactive Commander / fixed Role番号を排除
+- [x] 従属正本 / Issue横断監査
+- [x] Project同期Manifest / Runbook
+- [x] #394 StreamingのCore判断 / Subsystem実行 / 外界観測境界を再調整
+- [x] #396 Streaming実装計画と自然言語の意味・言い換え原則を同期
 
-#319 actual Projects v2 field / formal Parent-Subissue mutationは現実行環境の制約で別途Blocked管理する。
+#319の実GitHub Projects v2 field / 正式Parent-Subissue変更は現実行環境の制約により別途`Blocked`管理する。
