@@ -1,4 +1,4 @@
-"""Composition root for deterministic Loop Engineering decisions."""
+"""Loop Engineeringの決定論的な判断を構成する入口。"""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from .write_gate import validate
 
 
 class MissionSupervisor:
-    """Makes decisions from supplied live observations; it has no GitHub transport."""
+    """供給された現在観測だけから判断し、GitHub通信そのものは担当しない。"""
 
     def reconcile(self, epoch: ObservationEpoch) -> tuple[ConflictKind, ...]:
         return reconcile(epoch)
@@ -125,9 +125,9 @@ class MissionSupervisor:
             lineage.branch_ref if lineage else None,
             lineage.base_sha if lineage else None,
             lineage.head_sha if lineage else None,
-            work.project_status if work else "no actionable work",
+            work.project_status if work else "実行可能なWorkなし",
             tuple(item.identity.stable_id for item in epoch.canonical_designs),
-            "reconcile conflicts" if conflicts else "implement selected work",
+            "競合を再調整する" if conflicts else "選択したWorkを実装する",
             tuple(conflicts),
             epoch.observation_id,
         )
@@ -140,12 +140,12 @@ class MissionSupervisor:
             key,
             epoch.observation_id,
             ("#207", "#317", "#450", "#462", f"#{work.issue_number}"),
-            ("development tooling", "deterministic supervisor"),
-            ("OpenAI reviewer transport", "PostgreSQL store", "product runtime scheduler"),
+            ("開発支援基盤", "決定論的なMission監督"),
+            ("OpenAIレビューワー通信", "PostgreSQL運用記憶", "製品実行時の割当"),
             exact,
-            ("live dependency evidence",),
-            ("targeted tests", "Ruff", "strict Mypy", "full pytest", "exact-head CI"),
-            ("Project #7 only", "no secrets", "no direct trunk write"),
+            ("現在の依存関係完了証拠",),
+            ("対象試験", "Ruff", "厳格Mypy", "全pytest", "厳密HEAD CI"),
+            ("Project #7だけを変更対象にする", "秘密情報を含めない", "基幹へ直接書き込まない"),
             lineage.identity.stable_id if lineage else None,
             "IMPLEMENT",
         )

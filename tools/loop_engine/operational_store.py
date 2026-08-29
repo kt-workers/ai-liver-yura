@@ -1,7 +1,7 @@
-"""Secret-safe PostgreSQL operational memory for Loop Engineering.
+"""Loop Engineering用の秘密情報を保存しないPostgreSQL運用記憶。
 
-GitHub remains current-state authority.  This adapter records only bounded
-execution evidence and exposes a typed degraded result when PostgreSQL is down.
+現在状態の正本は引き続きGitHubである。この接続層は上限付きの実行証拠だけを記録し、
+PostgreSQL停止時には型付きの縮退結果を返す。
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ ConnectionFactory = Callable[[], Connection]
 
 
 class PostgreSQLOperationalStore:
-    """One-transaction, unique-identity writes with no secret payload storage."""
+    """秘密情報を保存せず、一意identityを1取引で記録する。"""
 
     _TABLES = frozenset({"review_jobs", "review_results", "api_usage", "loop_events"})
     _FORBIDDEN = frozenset(

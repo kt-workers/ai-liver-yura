@@ -1,4 +1,4 @@
-"""Typed, secret-free contracts for the Loop Engineering control plane."""
+"""Loop Engineering制御系で使用する型付き・秘密情報を含まない契約。"""
 
 from __future__ import annotations
 

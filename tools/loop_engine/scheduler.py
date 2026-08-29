@@ -1,4 +1,4 @@
-"""Pure readiness, work-selection, and duplicate-scheduling rules."""
+"""実行可能性、Work選択、重複割当の純粋な判定規則。"""
 
 from __future__ import annotations
 

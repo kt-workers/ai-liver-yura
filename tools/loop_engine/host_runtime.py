@@ -1,9 +1,8 @@
-"""ai-liver-yura host composition for one bounded Loop Engineering transition.
+"""ai-liver-yura上で、範囲を限定したLoop Engineering遷移を1回実行するホスト構成。
 
-The deterministic domain remains in the other ``tools.loop_engine`` modules.  This
-module binds the current Mission checkpoint to fresh GitHub readback, Codex, CI,
-and the normal expected-head merge path so the CLI can make real progress without
-copying TaskPackets between humans and agents.
+決定論的な領域処理は他の``tools.loop_engine``モジュールへ保持する。このモジュールは
+現在Mission CheckpointをGitHubの現在状態、Codex、CI、期待HEADを固定した通常統合経路へ
+接続し、人間とAIの間で作業パケット（TaskPacket）を手動転記せずCLIが前進できるようにする。
 """
 
 from __future__ import annotations
@@ -33,10 +32,10 @@ _CI_WORKFLOW_NAME = "V2 Deterministic CI"
 _SAFE_OBSERVE_FAILURES = frozenset(
     {
         "MISSION_CHECKPOINT_TARGET_UNRESOLVED",
-        "GitHub comments response is not a list",
-        "GitHub API response is not an object",
-        "GitHub API unavailable",
-        "GitHub API returned invalid JSON",
+        "GitHubコメント応答が一覧ではありません",
+        "GitHub API応答がオブジェクトではありません",
+        "GitHub APIを利用できません",
+        "GitHub APIが不正なJSONを返しました",
     }
 )
 
@@ -146,7 +145,7 @@ class ImplementerPort(Protocol):
 
 
 class GhMissionPort:
-    """Trusted-host GitHub adapter. Checkpoint values are candidates, never authority."""
+    """信頼済みホストのGitHub接続層。Checkpoint値は候補であり、正本ではない。"""
 
     def __init__(self, runner: LocalRunner, environment: Mapping[str, str]) -> None:
         self._runner = runner
@@ -300,7 +299,7 @@ class GhMissionPort:
                 f"repos/{_REPOSITORY}/issues/{issue_number}/comments?per_page=100&page={page}"
             )
             if not isinstance(raw, list):
-                raise RuntimeError("GitHub comments response is not a list")
+                raise RuntimeError("GitHubコメント応答が一覧ではありません")
             page_items: list[dict[str, object]] = []
             for item in raw:
                 if isinstance(item, dict):
@@ -313,17 +312,17 @@ class GhMissionPort:
     def _api_json(self, endpoint: str) -> dict[str, object]:
         raw = self._api_value(endpoint)
         if not isinstance(raw, dict):
-            raise RuntimeError("GitHub API response is not an object")
+            raise RuntimeError("GitHub API応答がオブジェクトではありません")
         return cast(dict[str, object], raw)
 
     def _api_value(self, endpoint: str) -> object:
         result = self._run_gh(("api", endpoint))
         if not result.succeeded:
-            raise RuntimeError("GitHub API unavailable")
+            raise RuntimeError("GitHub APIを利用できません")
         try:
             return json.loads(result.output)
         except json.JSONDecodeError as error:
-            raise RuntimeError("GitHub API returned invalid JSON") from error
+            raise RuntimeError("GitHub APIが不正なJSONを返しました") from error
 
     def _run_gh(
         self, arguments: Sequence[str], *, timeout_seconds: int = 60
@@ -347,36 +346,34 @@ class CodexImplementer:
         self._argv_prefix = tuple(argv_prefix)
 
     def continue_work(self, target: HostTarget, *, repair: bool) -> bool:
-        mode = "functional CI repair" if repair else "implementation continuation"
-        pr_text = f"PR #{target.pr_number}" if target.pr_number is not None else "current Work lineage"
+        mode = "機能的なCI不具合修正" if repair else "実装の続行"
+        pr_text = f"PR #{target.pr_number}" if target.pr_number is not None else "現在Workの作業系列"
         instruction = (
-            f"Mission #450 / Parent #462 の current Work #{target.work_issue} ({pr_text}) を、"
-            f"{mode}として1 bounded transitionだけ進めてください。GitHub live stateとRepository canonicalをfresh readし、"
-            "設計→コード→テストの順序を守り、実際に動かないfunctional blockerだけを修正必須としてください。"
-            "canonical reviewの非機能findingやprovider NOT_RUNを理由に停止・reviewer hardeningしないでください。"
-            "normal push後はexact HEADをfresh readbackし、#450へ日本語のMission Checkpointを1回記録してください。"
-            "force push/rebase、Project #6 mutation、reviewer credential利用は禁止です。"
+            f"Mission #450 / Parent #462 の current Work #{target.work_issue}（{pr_text}）を、"
+            f"{mode}として範囲を限定した遷移（bounded transition）1回だけ進めてください。"
+            "GitHubの現在状態とRepository正本を取得し直し、設計→コード→テストの順序を守ってください。"
+            "実際に動作を妨げる機能停止要因だけを修正必須としてください。"
+            "正本レビュー（canonical review）の非機能指摘や提供元の`NOT_RUN`を理由に停止したり、"
+            "レビューワー基盤を強化したりしないでください。"
+            "通常push後は厳密HEADを取得し直し、#450へ日本語のMission Checkpointを1回記録してください。"
+            "force push、rebase、Project #6の変更、レビューワー認証情報の利用は禁止です。"
         )
         return self._run_codex(instruction)
 
     def plan_next_work(self, completed_work: int | None) -> bool:
-        completed = f"#{completed_work}" if completed_work is not None else "current Work未解決"
+        completed = f"#{completed_work}" if completed_work is not None else "現在Work未解決"
         instruction = (
-            f"Mission #450のplanning-only transitionです。直前Workは{completed}です。"
-            "#207/#317/#450/#462、Project #7、GitHub live Issue/PRをfresh readし、"
-            "次のdependency-ready Workを1件選択してください。"
-            "repository code・design file・branch・PRを変更せず、"
-            "merge/reviewも実行しないでください。"
+            f"Mission #450の計画専用遷移です。直前Workは{completed}です。"
+            "#207/#317/#450/#462、Project #7、GitHub上の現在Issue/PRを取得し直し、"
+            "次の依存関係を満たしたWorkを1件選択してください。"
+            "Repositoryコード、設計ファイル、branch、PRを変更せず、統合やレビューも実行しないでください。"
             "#450へ日本語のMission Checkpointを1回だけ記録し、"
-            "選択したWorkは必ずliteral field `- current Work: #<issue>` で記録してください。"
-            "active PRが存在する場合は `- current PR: #<pr>` と"
-            " `- exact HEAD: <40-hex-sha>` も記録してください。"
-            "active PRが無い場合はPR/HEADを捏造せず省略してください。"
-            "`選択した次Work:`等の別名だけでcurrent Workを代用してはいけません。"
-            "外部待機状態を選ぶ場合も、再開対象Workがあるなら"
-            "同じliteral current Work fieldを必ず残してください。"
-            "Root #317 completionをlive evidenceで証明できない限り"
-            "MISSION_COMPLETEにしないでください。"
+            "選択したWorkは必ず固定項目`- current Work: #<issue>`で記録してください。"
+            "有効なPRが存在する場合は`- current PR: #<pr>`と`- exact HEAD: <40-hex-sha>`も記録してください。"
+            "有効なPRがない場合はPR/HEADを捏造せず省略してください。"
+            "`選択した次Work:`などの別名だけで現在Workを代用してはいけません。"
+            "外部待機状態を選ぶ場合も、再開対象Workがあるなら同じ固定項目を必ず残してください。"
+            "Root #317の完了を現在証拠で証明できない限り`MISSION_COMPLETE`にしないでください。"
         )
         return self._run_codex(instruction)
 
@@ -459,13 +456,13 @@ class HostLoopController:
                 HostTransitionStatus.INTERVENTION_REQUIRED, "WORK_CLOSE_FAILED", target
             )
         checkpoint = (
-            "## Mission Checkpoint — functional completion / next selection\n\n"
+            "## Mission Checkpoint — 機能完了 / 次作業選択\n\n"
             "- Mission state: `ACTIVE`\n"
-            f"- completed Work: #{target.work_issue}\n"
-            f"- merged PR: #{target.pr_number}\n"
-            f"- merged exact HEAD: `{target.head_sha}`\n"
-            "- review policy: non-functional findings / `NOT_RUN` are non-blocking\n"
-            "- next action: Project #7とGitHub liveから次のdependency-ready Workをfresh選択する"
+            f"- 完了Work: #{target.work_issue}\n"
+            f"- 統合済みPR: #{target.pr_number}\n"
+            f"- 統合済み厳密HEAD: `{target.head_sha}`\n"
+            "- レビュー方針: 非機能指摘と`NOT_RUN`は停止条件にしない\n"
+            "- 次の作業: Project #7とGitHubの現在状態から、依存関係を満たした次Workを選択し直す"
         )
         if not self._mission.publish_checkpoint(checkpoint):
             return _target_result(
@@ -533,11 +530,11 @@ def _codex_argv(environment: Mapping[str, str]) -> tuple[str, ...]:
     try:
         payload = json.loads(configured)
     except json.JSONDecodeError as error:
-        raise ValueError("invalid Codex command") from error
+        raise ValueError("Codexコマンドが不正です") from error
     if not isinstance(payload, list) or not payload or not all(
         isinstance(item, str) and item for item in payload
     ):
-        raise ValueError("invalid Codex command")
+        raise ValueError("Codexコマンドが不正です")
     return tuple(cast(list[str], payload))
 
 

@@ -1,4 +1,4 @@
-"""Conflict reconciliation over already-observed live state."""
+"""すでに観測済みの現在状態に対して競合再調整を行う。"""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def reconcile_global(epoch: ObservationEpoch) -> tuple[ConflictKind, ...]:
 
 
 def reconcile_work(epoch: ObservationEpoch, issue_number: int) -> tuple[ConflictKind, ...]:
-    """Return only conflicts that make one observed Work unsafe to select."""
+    """観測済みWorkを安全に選択できなくする競合だけを返す。"""
     conflicts: list[ConflictKind] = []
     work = next((item for item in epoch.works if item.issue_number == issue_number), None)
     if work is None or not work.checkpoint_matches_live:
@@ -50,7 +50,7 @@ def reconcile_work(epoch: ObservationEpoch, issue_number: int) -> tuple[Conflict
 
 
 def reconcile(epoch: ObservationEpoch) -> tuple[ConflictKind, ...]:
-    """Aggregate view for reporting; scheduling must use scoped functions."""
+    """報告用の集約結果を返す。作業選択では対象範囲別の関数を使用する。"""
     conflicts = list(reconcile_global(epoch))
     for work in epoch.works:
         conflicts.extend(reconcile_work(epoch, work.issue_number))
