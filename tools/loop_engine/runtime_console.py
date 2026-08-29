@@ -12,7 +12,7 @@ from .host_runtime import LocalCommandResult
 
 
 class RuntimeConsole:
-    """Writes concise progress to stderr and full safe diagnostics to a local log."""
+    """標準エラーへ簡潔な進捗を出し、安全な詳細情報を実行ログへ保存する。"""
 
     def __init__(self, root: Path, *, verbose: bool = False) -> None:
         log_dir = root / "logs" / "loop_engine"
@@ -43,7 +43,7 @@ class RuntimeConsole:
 
 
 class VisibleSubprocessLocalRunner:
-    """LocalRunner that keeps routine child traffic in the persistent run log."""
+    """通常の子プロセス通信を永続実行ログへ保存するローカル実行器。"""
 
     def __init__(self, console: RuntimeConsole, *, heartbeat_seconds: float = 60.0) -> None:
         self._console = console
@@ -59,7 +59,7 @@ class VisibleSubprocessLocalRunner:
         capture_output: bool = True,
     ) -> LocalCommandResult:
         label = _safe_command_label(command)
-        self._command_event(label, "start")
+        self._command_event(label, "開始")
         if capture_output:
             return self._run_captured(
                 command,
@@ -84,13 +84,13 @@ class VisibleSubprocessLocalRunner:
             self._console.detail(message)
 
     def _failure_event(self, label: str, message: str) -> None:
-        self._console.event(f"{label}: {message}; see log: {self._console.path}")
+        self._console.event(f"{label}: {message}; 詳細ログ: {self._console.path}")
 
     def _heartbeat(self, label: str, elapsed_seconds: float) -> None:
         if label != "codex" or self._console.verbose:
             return
         elapsed = max(1, int(elapsed_seconds))
-        self._console.event(f"codex: running ({elapsed}s); details in log")
+        self._console.event(f"codex: 実行中（{elapsed}秒）; 詳細はログを参照")
 
     def _run_captured(
         self,
@@ -113,18 +113,18 @@ class VisibleSubprocessLocalRunner:
                 timeout=timeout_seconds,
             )
         except subprocess.TimeoutExpired:
-            self._failure_event(label, "timeout")
+            self._failure_event(label, "時間超過")
             return LocalCommandResult(124)
         except OSError:
-            self._failure_event(label, "launch failed")
+            self._failure_event(label, "起動失敗")
             return LocalCommandResult(127)
 
         if completed.stderr:
             self._console.child_output(completed.stderr)
         if completed.returncode == 0:
-            self._command_event(label, "done")
+            self._command_event(label, "完了")
         else:
-            self._failure_event(label, f"failed exit={completed.returncode}")
+            self._failure_event(label, f"失敗 終了コード={completed.returncode}")
         return LocalCommandResult(completed.returncode, completed.stdout or "")
 
     def _run_streamed(
@@ -148,7 +148,7 @@ class VisibleSubprocessLocalRunner:
                 bufsize=1,
             )
         except OSError:
-            self._failure_event(label, "launch failed")
+            self._failure_event(label, "起動失敗")
             return LocalCommandResult(127)
 
         assert process.stdout is not None
@@ -189,24 +189,24 @@ class VisibleSubprocessLocalRunner:
 
         if timed_out:
             process.wait()
-            self._failure_event(label, "timeout")
+            self._failure_event(label, "時間超過")
             return LocalCommandResult(124)
         returncode = process.wait()
         if returncode == 0:
-            self._command_event(label, "done")
+            self._command_event(label, "完了")
         else:
-            self._failure_event(label, f"failed exit={returncode}")
+            self._failure_event(label, f"失敗 終了コード={returncode}")
         return LocalCommandResult(returncode)
 
 
 def _safe_command_label(command: Sequence[str]) -> str:
     if not command:
-        return "child"
+        return "子プロセス"
     executable = Path(command[0]).name
     if executable == "codex":
         return "codex"
     if executable == "gh":
         if len(command) > 1 and command[1] == "api":
-            return "github observe"
-        return "github"
+            return "GitHub観測"
+        return "GitHub"
     return executable
