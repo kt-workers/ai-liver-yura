@@ -1,31 +1,31 @@
-# Loop Canonical Review Pipeline
+# Loop正本レビュー経路
 
-## Boundary
+## 境界
 
-`LoopCanonicalReviewGate` is an independent diagnostic reviewer for Loop Engineering changes. It is distinct from `OptionalReviewSupport`, but under the current Mission policy a review verdict alone is not a merge blocker. Functional completion is prioritized over review perfection.
+`LoopCanonicalReviewGate`はLoop Engineering変更を診断する独立レビューワーである。`OptionalReviewSupport`とは別の責務だが、現在のMission方針ではレビュー判定だけを統合停止条件にしない。レビューの完全性より、必要な機能が成立していることを優先する。
 
-The provider client and `OPENAI_API_KEY_REVIEWER` exist only in a trusted host control-plane process outside the target checkout. Codex and target checkout receive, at most, the non-secret `YURA_TRUSTED_REVIEWER_SOCKET`. The broker has no GitHub write or database credential and never imports or executes target checkout code.
+提供元（provider）のクライアントと`OPENAI_API_KEY_REVIEWER`は、対象作業領域の外側にある信頼済みホスト制御プロセスだけが保持する。Codexと対象作業領域へ渡してよいのは、多くても秘密情報を含まない`YURA_TRUSTED_REVIEWER_SOCKET`だけとする。仲介器（broker）はGitHub書込み権限やデータベース認証情報を持たず、対象作業領域のコードを取り込んだり実行したりしない。
 
-## Identity and state machine
+## 識別情報と状態遷移
 
-1. The caller supplies repository, PR number, and expected head only.
-2. The broker read-only resolves the live PR, base ref/SHA, head SHA, and canonical blob set. Any mismatch is `NOT_RUN / STALE_TARGET`.
-3. `ReviewTargetKey` hashes the repository, PR, live head, policy generation, model policy, canonical blob identity, and review-context identity.
-4. The durable allocator reserves a monotonically increasing `ReviewAttemptKey` before one provider invocation. A used key is never sent again, including after a crash. Gaps are valid and never backfilled.
-5. The broker writes a secret-safe provider outcome before terminal verdict normalization. Result is accepted only after a second live-head readback.
+1. 呼出側はRepository、PR番号、期待HEADだけを渡す。
+2. 仲介器は読取専用で現在PR、基点ref/SHA、HEAD SHA、正本blob集合を解決する。不一致は`NOT_RUN / STALE_TARGET`とする。
+3. `ReviewTargetKey`はRepository、PR、現在HEAD、方針世代、モデル方針、正本blob identity、レビュー文脈identityから算出する。
+4. 永続割当器は提供元を1回呼び出す前に、単調増加する`ReviewAttemptKey`を予約する。使用済みキーは異常終了後も再送しない。番号の欠落は有効であり、後から埋めない。
+5. 仲介器は秘密情報を除外した提供元結果を保存してから最終判定へ正規化する。結果は現在HEADをもう一度再取得した後だけ採用する。
 
-Terminal verdicts are `PASS`, `REQUEST_CHANGES`, or `ESCALATE`. Refusal, incomplete output, transport failure, invalid structure, timeout, stale target, and unavailable capability are typed `NOT_RUN`; they do not masquerade as a canonical verdict.
+最終判定は`PASS`、`REQUEST_CHANGES`、`ESCALATE`とする。拒否、不完全出力、通信失敗、構造不正、時間超過、古い対象、利用能力なしは型付き`NOT_RUN`とし、正本レビュー判定を装わない。
 
-## Result contract and functional-blocker policy
+## 結果契約と機能停止要因の方針
 
-The provider uses Structured Outputs with a strict bounded schema. The trusted broker, not the provider, attaches reviewed head/base, policy identity, request identity, and reviewer identity. Findings remain diagnostic evidence and raw provider output is never persisted.
+提供元は厳格で上限付きの構造化出力（Structured Outputs）を使用する。レビュー対象HEAD/基点、方針identity、要求identity、レビューワーidentityを付与する責任は提供元ではなく信頼済み仲介器が持つ。指摘は診断証拠のままとし、提供元の生出力は保存しない。
 
-A `REQUEST_CHANGES` verdict does not by itself stop completion. A finding becomes a functional blocker only when it is corroborated by deterministic tests, CI, an exact live-state readback, or a reproducible execution path showing that the Loop cannot start/progress, operates on the wrong exact target, loses a required effect, or otherwise fails its required runtime behavior. Such a blocker returns the same lineage to design/fix/test.
+`REQUEST_CHANGES`だけでは完了を止めない。決定論的テスト、CI、現在状態の厳密な再取得、または再現可能な実行経路によって、Loopが起動・前進できない、誤った厳密対象を操作する、必要な効果を失う、その他必須の実行時挙動を満たさないことが裏付けられた場合だけ、その指摘を機能停止要因として扱う。その場合は同じ作業系列を設計・修正・テストへ戻す。
 
-Non-functional hardening, additional auditability, stricter metadata validation, hypothetical race defense, or other findings that do not prevent required behavior are recorded and may be deferred. `NOT_RUN`, including provider failure, does not block a Work when machine gates and required functional evidence pass. Reviewer infrastructure is not hardened merely to obtain a cleaner verdict.
+非機能的な強化、追加監査性、より厳格な管理情報検証、仮説的な競合防御など、必須挙動を妨げない指摘は記録して後回しにしてよい。提供元失敗を含む`NOT_RUN`は、機械検査と必須機能証拠が通っているWorkを停止しない。よりきれいなレビュー判定を得ることだけを目的にレビューワー基盤を強化しない。
 
-## Merge gate
+## 統合判定
 
-Before Ready or merge, the Runner re-resolves PR/head/base, required exact-head machine gates, functional completion evidence, and Write Gate preconditions. Merge uses the normal GitHub merge path with expected head binding, then reads trunk and merge effect back.
+Ready化または統合の前に、実行機はPR/HEAD/基点、必須の厳密HEAD機械検査、機能完了証拠、書込み判定（Write Gate）の事前条件を再解決する。統合は期待HEADへ結び付けた通常GitHub経路で実施し、その後に基幹と統合効果を再取得する。
 
-A current review result may contribute diagnostic evidence but is not required to manufacture a PASS. Merge is prohibited when there is a known reproducible functional blocker, stale exact-target evidence, failed required machine gate, or failed Write Gate. An old review, API success response, or checkpoint alone is never effect truth.
+現在レビュー結果は診断証拠として利用してよいが、`PASS`を作り出すための必須条件ではない。既知で再現可能な機能停止要因、古い厳密対象証拠、必須機械検査の失敗、書込み判定の失敗がある場合は統合しない。古いレビュー、API成功応答、Checkpointだけを実効果の真実として扱わない。

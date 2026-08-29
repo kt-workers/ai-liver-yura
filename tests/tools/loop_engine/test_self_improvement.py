@@ -114,9 +114,9 @@ def test_generated_issue_body_has_durable_marker_dates_and_parent() -> None:
     candidate = _candidate()
     body = render_issue_body(candidate)
     assert marker(candidate.improvement_key) in body
-    assert "Parent: #462" in body
-    assert "Start date: `2026-08-27`" in body
-    assert "Target date: `2026-08-31`" in body
+    assert "親Issue: #462" in body
+    assert "開始日: `2026-08-27`" in body
+    assert "目標日: `2026-08-31`" in body
     assert "Project #6" in body
 
 

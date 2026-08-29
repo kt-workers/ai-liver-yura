@@ -1,21 +1,20 @@
-# Loop Engineering Self-Improvement Lane
+# Loop Engineering 自己改善系統
 
-Owner Issue: #465
-Parent: #462
+所有Issue: #465
+親Issue: #462
 Root: #317
 Mission: #450
-Status: Canonical supplement / implementation contract
+状態: 正本補足 / 実装契約
 
-## 1. Purpose
+## 1. 目的
 
-Loop Engineeringを「不足が原因で停止してから人間が保守する」仕組みにしない。
-通常run中にLoop自身の反復failure、no-progress、不要なHuman Intervention、反復手動操作、stale state、duplicate scheduling、反復recoveryをtyped health evidenceとして観測し、改善が必要ならLoop Engineering自身のWorkを自動生成して通常Schedulerへ投入する。
+Loop Engineeringを「不足が原因で停止してから人間が保守する」仕組みにしない。通常実行中にLoop自身の反復失敗、進捗停止（no-progress）、不要な人間介入、反復手動操作、古い状態、重複割当、反復復旧を型付き健全性証拠として観測し、改善が必要ならLoop Engineering自身のWorkを自動生成して通常Schedulerへ投入する。
 
-Self-Improvement LaneはMissionの別停止モードではない。recoverableな改善候補が存在してもMissionは`ACTIVE`を維持し、product Workと同じdependency / Priority / actionability規則で選択する。
+自己改善系統（Self-Improvement Lane）はMissionの別停止モードではない。回復可能な改善候補が存在してもMissionは`ACTIVE`を維持し、製品Workと同じ依存関係・優先度・実行可能性の規則で選択する。
 
-## 2. Boundary
+## 2. 境界
 
-正規package:
+正規配置:
 
 ```text
 tools/loop_engine/
@@ -25,17 +24,17 @@ tools/loop_engine/
 └─ existing supervisor modules
 ```
 
-production `app/**`はSelf-Improvement Laneをimportしない。
+製品実行系`app/**`は自己改善系統を取り込まない。
 
-Self-Improvement Laneは次を所有しない。
+自己改善系統は次を所有しない。
 
-- AI Liver ゆらのCore State / Goal / Attention / Body / Memory Authority
-- product runtime scheduling
-- OpenAI Reviewer credential / verdict Authority
-- PostgreSQL operational store Authority
-- GitHub Project #6 support
+- AI Liver ゆらのCore State / Goal / Attention / Body / Memoryの正本
+- 製品実行時の割当
+- OpenAIレビューワー認証情報・判定の正本
+- PostgreSQL運用記憶の正本
+- GitHub Project #6対応
 
-## 3. LoopHealthEvent
+## 3. Loop健全性事象
 
 ```text
 LoopHealthEvent
@@ -48,7 +47,7 @@ LoopHealthEvent
 - manual_intervention_required
 ```
 
-`fingerprint`はraw error本文ではなくsecret-freeなstable category identityとする。external adapterから受け取るfingerprint / source referenceはuntrusted inputであり、in-memory observationであってもGitHub Checkpointへ永続化する前には不可逆かつboundedなcanonical identityへ正規化する。許可文字filterだけでcredential-like値を通過させてはならない。decode後も同じcanonical identityを用いるため、restart前後で同一health eventのcorrelationが変わらない。
+`fingerprint`は生のエラー本文ではなく、秘密情報を含まない安定した分類identityとする。外部接続層から受け取る指紋（fingerprint）と証拠参照は信頼できない入力であり、メモリ内観測であってもGitHub Checkpointへ永続化する前に不可逆かつ上限付きの正規identityへ変換する。許可文字だけの絞込みでは認証情報らしい値が通過し得るため使用しない。復元後も同じ正規identityを用い、再起動前後で同一健全性事象の相関を変えない。
 
 初期`kind`:
 
@@ -60,17 +59,15 @@ LoopHealthEvent
 - `DUPLICATE_SCHEDULING`
 - `RECOVERY_REPETITION`
 
-Supervisor自身が観測可能なduplicate suppression / stale conflict / Human Intervention dispositionは各runで累積health snapshotへ反映する。
-CI / Reviewer / external adapter / operator interaction等の実行層も、同じtyped event contractへsecret-free evidenceを供給できる。
+Supervisor自身が観測できる重複抑止、古い状態の競合、人間介入の実行結果は、実行ごとに累積健全性スナップショットへ反映する。CI、レビューワー、外部接続層、操作者操作などの実行層も、同じ型付き事象契約へ秘密情報を含まない証拠を供給できる。
 
-health snapshotはCheckpointへ永続化可能な型であり、PostgreSQL導入前でもGitHub durable checkpointから次runへ復元できる。
+健全性スナップショットはCheckpointへ永続化可能な型とし、PostgreSQL導入前でもGitHub上の永続Checkpointから次回実行へ復元できる。
 
-## 4. Trigger policy
+## 4. 発火方針
 
-1回の偶発failureですぐ改善Issueを量産しない。
-初期threshold:
+1回の偶発失敗ですぐ改善Issueを量産しない。初期しきい値は次とする。
 
-| kind | threshold |
+| 種別 | しきい値 |
 | --- | ---: |
 | `REPEATED_FAILURE` | 3 |
 | `NO_PROGRESS` | 2 |
@@ -80,23 +77,23 @@ health snapshotはCheckpointへ永続化可能な型であり、PostgreSQL導入
 | `DUPLICATE_SCHEDULING` | 2 |
 | `RECOVERY_REPETITION` | 2 |
 
-thresholdはdeterministic policyでありLLM自由判断にしない。
+しきい値は決定論的方針とし、LLMの自由判断にしない。
 
-## 5. Priority / dates
+## 5. 優先度と日程
 
-- Human Interventionを要求する、またはWorkをblockする改善: `P0`
-- repeated failure / no-progress / repeated manual operation / stale / recovery: 原則`P1`
-- duplicate suppression等の非blocking効率改善: `P2`
+- 人間介入を要求する、またはWorkを停止させる改善: `P0`
+- 反復失敗、進捗停止、反復手動操作、古い状態、反復復旧: 原則`P1`
+- 重複抑止など停止を伴わない効率改善: `P2`
 
-改善Issueには必ずStart / Target予定日を生成する。
+改善Issueには必ず開始予定日と目標予定日を生成する。
 
-- `P0`: Start当日 / Target +2日
-- `P1`: Start当日 / Target +4日
-- `P2`: Start当日 / Target +7日
+- `P0`: 開始は当日 / 目標は+2日
+- `P1`: 開始は当日 / 目標は+4日
+- `P2`: 開始は当日 / 目標は+7日
 
-日程は品質Gateを緩めない。
+日程は品質判定を緩めない。
 
-## 6. Improvement key / duplicate suppression
+## 6. 改善キーと重複抑止
 
 ```text
 improvement_key = SHA256(
@@ -104,109 +101,108 @@ improvement_key = SHA256(
 )
 ```
 
-Issue本文へ次のdurable markerを埋め込む。
+Issue本文へ次の永続印を埋め込む。
 
 ```text
 <!-- loop-improvement-key:<sha256> -->
 ```
 
-同じkeyのopen `loop-engineering` Issueが存在する場合、新Issueを作らない。publisherは先頭固定件数ではなく、GitHub paginationを最後まで走査してdurable markerを探索する。探索からIssue create、Project #7設定までを、`improvement_key`ごとのtrusted host advisory lockで直列化する。#465ではPostgreSQL shared storeを所有しないため、複数hostから同じkeyを同時publishする構成はfail-closedに禁止する。単一trusted host内の並行runは同じlockを共有し、lock取得後に必ずmarkerを再探索してからcreateを許可する。
-Checkpointですでに同じkeyをdispatch済みの場合も同一observationから重複生成しない。
+同じkeyのopen `loop-engineering` Issueが存在する場合は新しいIssueを作らない。公開処理は先頭固定件数ではなく、GitHubの全ページを走査して永続印を探索する。探索からIssue作成、Project #7設定までを、`improvement_key`ごとの信頼済みホスト助言ロック（advisory lock）で直列化する。#465はPostgreSQL共有記憶を所有しないため、複数ホストから同じkeyを同時公開する構成は安全側停止で禁止する。単一信頼済みホスト内の並行実行は同じロックを共有し、ロック取得後に必ず印を再探索してから作成を許可する。
 
-closed Issueの原因が後に再発した場合は新しいrun evidenceとして再作成を許可する。
+Checkpointですでに同じkeyを送出済みの場合も、同一観測から重複生成しない。
 
-## 7. Issue storm guard
+終了済みIssueの原因が後に再発した場合は、新しい実行証拠として再作成を許可する。
 
-1回のSupervisor decisionから新規改善候補を最大3件に制限する。
+## 7. Issue大量生成の防止
 
-candidate ranking:
+1回のSupervisor判断から新規改善候補を最大3件に制限する。
+
+候補順位:
 
 1. `P0 > P1 > P2`
-2. occurrence count降順
-3. kind / fingerprint stable order
+2. 発生回数の降順
+3. 種別・指紋の安定順
 
-大量failureをIssue stormへ変換しない。
+大量の失敗をIssue大量生成へ変換しない。
 
-## 8. GitHub issue publication
+## 8. GitHub Issue公開
 
-改善Workの人間向けGitHub自然言語は日本語とする。
-自動生成Issueには`loop-engineering`ラベルだけを使用し、V2 product用`v2`ラベルを付けない。
+改善Workの人間向けGitHub文章は日本語とする。自動生成Issueには`loop-engineering`ラベルだけを使用し、V2製品用`v2`ラベルを付けない。
 
-trusted host publisherは固定repository `ktan514/ai-liver-yura`だけを対象にする。
+信頼済みホスト公開処理は固定Repository `ktan514/ai-liver-yura`だけを対象にする。
 
 ```text
 ImprovementCandidate
 → ImprovementIssueIntent
-→ keyed publisher lock
-→ open Issue duplicate check / re-check
+→ key単位の公開ロック
+→ open Issue重複確認 / 再確認
 → gh issue create
-→ Project #7 live readback
-→ Project #7 item add / reuse
-→ live field / option ID resolve
+→ Project #7現在状態の再取得
+→ Project #7 item追加 / 再利用
+→ 現在field / option ID解決
 → Ready / Priority / Area / Work / Start / Target
-→ fresh Write Gate
-→ mutation
-→ owned field effect readback / next Observation
+→ 新しいWrite Gate
+→ 変更
+→ 所有fieldの効果再取得 / 次Observation
 ```
 
-Project #6およびProject #7以外はhard rejectする。Project item lookupも先頭固定件数へ依存せず、全pageを走査して既存item identityを解決する。
-Project field/option IDをcache・固定値として保持しない。
-Project mutationの直前にはproject / item / field / option identityをfresh readbackし、mutation後にはitem field value effectをreadbackする。effect readbackはoptionalではなく、effectを持つmutation intentの必須postconditionである。readback不能・欠落・不一致時は`MUTATION_EFFECT_MISMATCH`としてfail-closedにし、`project_configured=True`を返してはならない。
+Project #6およびProject #7以外は明示拒否する。Project項目探索も先頭固定件数へ依存せず、全ページを走査して既存項目identityを解決する。Projectのfield/option IDを保存・固定値として保持しない。
+
+Project変更の直前にはproject、item、field、option identityを現在状態から再取得し、変更後にはitem field valueの効果を再取得する。効果の再取得は任意ではなく、効果を持つ変更意図の必須事後条件である。再取得不能、欠落、不一致の場合は`MUTATION_EFFECT_MISMATCH`として安全側停止にし、`project_configured=True`を返してはならない。
 
 初期Project値:
 
 - Status: `Ready`
-- Priority: candidate severity
+- Priority: 候補の重要度
 - Area: `Subsystem/Development Tooling`
 - Issue level: `Work`
-- Start date: candidate start
-- Target date: candidate target
+- Start date: 候補開始日
+- Target date: 候補目標日
 
-## 9. Trust / secret safety
+## 9. 信頼境界と秘密情報保護
 
-- Issue / PR bodyをcommandとして実行しない
-- `gh`は固定shape argument listで起動しshell展開しない
-- stderr / raw provider payload / token / `.env` / DB URLをIssueへ転記しない
-- titleはtyped kindから固定日本語文言を生成する
-- fingerprint / evidenceはsecret-free stable refsだけを入力にする
-- Reviewer credentialをpublisherへ渡さない
+- Issue / PR本文をコマンドとして実行しない
+- `gh`は固定形状の引数列で起動し、shell展開しない
+- 標準エラー、生の提供元データ、token、`.env`、DB URLをIssueへ転記しない
+- titleは型付き種別から固定日本語文言を生成する
+- 指紋・証拠は秘密情報を含まない安定参照だけを入力にする
+- レビューワー認証情報を公開処理へ渡さない
 
-## 10. Scheduler integration
+## 10. Scheduler統合
 
-改善IssueがProject #7 `Ready`になった後は特殊な別queueへ隔離しない。
-通常`WorkSnapshot`としてObserveされ、既存Schedulerのdependency / Priority / actionability / current-lineage continuityに従う。
+改善IssueがProject #7の`Ready`になった後は、特殊な別queueへ隔離しない。通常`WorkSnapshot`として観測し、既存Schedulerの依存関係、優先度、実行可能性、現在作業系列の継続性に従う。
 
 このため:
 
-- current product Workがactionableなら無条件に横取りしない
-- current Workがwait-onlyで、改善Workがdependency-ready/actionableなら選択可能
-- P0改善が通常candidate群に入ればP0規則で選択される
-- 改善Work自身もResume Gate / CI / exact-head canonical review / merge gateに従う
+- 現在製品Workが実行可能なら無条件に横取りしない
+- 現在Workが待機専用で、改善Workが依存関係を満たして実行可能なら選択できる
+- P0改善が通常候補群に入ればP0規則で選択される
+- 改善Work自身も再開判定、CI、厳密HEAD正本レビュー、統合判定に従う
 
-## 11. Failure semantics
+## 11. 失敗時の意味
 
-Self-Improvement publisher失敗をMission completionと扱わない。
+自己改善公開処理の失敗をMission完了として扱わない。
 
-- deterministic coreはcandidateを保持できる
-- GitHub/Project mutation失敗はtyped operational failureとして次runで再試行可能
-- issue作成済み・Project設定途中の場合、durable markerで同一Issueを再利用しProject設定をrepairする
-- recoverable publisher failureだけで`MISSION_COMPLETE`にしない
-- 本当に権限/人間判断が必要な場合のみ`INTERVENTION_REQUIRED`
+- 決定論的Coreは候補を保持できる
+- GitHub/Project変更失敗は型付き運用失敗として次回実行で再試行できる
+- Issue作成済み・Project設定途中の場合、永続印で同一Issueを再利用してProject設定を修復する
+- 回復可能な公開失敗だけで`MISSION_COMPLETE`にしない
+- 本当に権限または人間判断が必要な場合だけ`INTERVENTION_REQUIRED`
 
-## 12. Acceptance
+## 12. 受け入れ条件
 
-- 2回目の同一Human InterventionでP0改善candidateが生成される
-- repeated failure threshold到達でMissionを止めずcandidate生成
-- same open improvement keyを重複作成しない
-- pagination後方にあるdurable markerも見落とさない
-- 1run最大3candidate
-- Issue本文にdurable keyとStart/Targetを持つ
+- 2回目の同一人間介入でP0改善候補が生成される
+- 反復失敗がしきい値へ到達してもMissionを止めず候補生成する
+- 同じopen improvement keyを重複作成しない
+- 後方ページにある永続印も見落とさない
+- 1回の実行で最大3候補
+- Issue本文に永続keyと開始・目標日を持つ
 - `loop-engineering`ラベルでIssue作成
-- Project #7へlive ID解決後にReady/Priority/Area/Work/Start/Targetを設定
-- Project mutation前のfresh Write Gateとmutation後effect readback
-- Project #6をhard reject
-- product `app/**`非依存
-- generated improvement Workを通常Schedulerが選択可能
-- self-improvement failureだけでMission completionを主張しない
-- targeted tests / Ruff / strict Mypy / full pytest / compileall / diff-check / exact-head CI
-- exact-head canonical review PASS
+- Project #7へ現在ID解決後にReady/Priority/Area/Work/Start/Targetを設定
+- Project変更前の新しいWrite Gateと変更後の効果再取得
+- Project #6を明示拒否
+- 製品`app/**`へ依存しない
+- 生成した改善Workを通常Schedulerが選択できる
+- 自己改善失敗だけでMission完了を主張しない
+- 対象試験 / Ruff / 厳格Mypy / 全pytest / compileall / 差分確認 / 厳密HEAD CI
+- 厳密HEAD正本レビューを実施する

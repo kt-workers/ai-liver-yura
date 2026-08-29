@@ -1,30 +1,30 @@
-# Loop Operational Store
+# Loop運用記憶
 
-## Authority and availability
+## 正本性と可用性
 
-PostgreSQL is a Loop Engine operational memory, not an authority for GitHub Issue/PR/Project #7 state, CI, review current head, or repository canonical design. A live GitHub/repository contradiction wins and stale operational rows are reconciled or marked stale.
+PostgreSQLはLoop Engineの運用記憶であり、GitHub Issue/PR/Project #7の状態、CI、レビュー対象の現在HEAD、Repository正本設計の正本ではない。GitHubまたはRepositoryの現在状態と矛盾した場合は現在状態を優先し、古い運用行は再調整するか古い状態として扱う。
 
-The store is optional for safe observation and GitHub-durable checkpoint paths. When unavailable, operations that need durable exclusive reservation return `DB_UNAVAILABLE`/`YIELD_EXTERNAL` or a documented GitHub-only degraded path; they must not infer that an unrecorded mutation did not occur.
+運用記憶は、安全な観測とGitHub上に永続化されるCheckpoint経路では任意である。利用できない場合、排他的な永続予約が必要な処理は`DB_UNAVAILABLE`/`YIELD_EXTERNAL`、または文書化されたGitHubだけの縮退経路を返す。ローカル記録がないことだけを理由に「変更は発生しなかった」と推定してはならない。
 
-## Tables and identities
+## 表と識別情報
 
-| Table | Unique identity | Purpose |
+| 表 | 一意識別情報 | 目的 |
 | --- | --- | --- |
-| `review_jobs` | review target and attempt key | reservation, provider lifecycle, duplicate suppression |
-| `review_results` | review attempt key | sanitized terminal result and finding metadata |
-| `api_usage` | provider invocation identity | bounded model/token/duration/cost evidence only |
-| `loop_events` | event identity | transition, checkpoint, health, and recovery evidence |
+| `review_jobs` | レビュー対象と試行キー | 予約、提供元の実行状態、重複抑止 |
+| `review_results` | レビュー試行キー | 秘密情報を除外した最終結果と指摘管理情報 |
+| `api_usage` | 提供元呼出identity | 上限付きのモデル・token・所要時間・費用証拠だけを保持 |
+| `loop_events` | 事象identity | 遷移、Checkpoint、健全性、復旧証拠 |
 
-No table stores credentials, authorization data, raw provider response/error, prompt, diff, request body, or unrestricted Issue/PR body. Usage fields are nullable where absent; zero is not used as an absence sentinel.
+どの表にも認証情報、認可情報、提供元の生応答・生エラー、指示文、差分、要求本文、制限のないIssue/PR本文を保存しない。利用量項目は値がない場合にnullを許可し、不在を0で表現しない。
 
-## Transaction and recovery contract
+## 取引と復旧契約
 
-Migrations are Alembic-owned and run separately from normal observation. Every write validates bounded values, uses a transaction, and has a unique identity. An in-flight reservation is durable before provider work; provider outcome is durable before terminal result. After crash, uncertain records are reconciled with live GitHub/broker evidence and never resent solely because a local result is absent.
+移行はAlembicが所有し、通常観測とは分離して実行する。すべての書込みは値の上限を検証し、取引内で処理し、一意識別情報を持つ。処理中予約は提供元処理より先に永続化し、提供元結果は最終結果より先に永続化する。異常終了後の不確定記録はGitHub/仲介器の現在証拠と再調整し、ローカル結果がないという理由だけで再送しない。
 
-Retention removes only aged operational rows after preserving the minimum identity/audit evidence needed for idempotency; it never deletes GitHub authority. Optional PostgreSQL advisory locking is an execution exclusion aid, not mission authority and not active-active multi-host support.
+保持期限による削除は、重複防止に必要な最低限の識別・監査証拠を残したうえで古い運用行だけを削除する。GitHubの正本情報を削除しない。PostgreSQLの助言ロック（advisory lock）は実行排他を補助するだけであり、Missionの正本でも複数ホスト同時能動運転の仕組みでもない。
 
-## Database failure normalization
+## データベース失敗の正規化
 
-The Operational Store is optional and therefore a database-driver failure must not terminate the Loop Engine process. Connection creation, cursor acquisition, statement execution, commit, rollback, and close are all adapter-side operations. A failure raised from those DB-API boundaries is normalized to `DB_UNAVAILABLE`; cleanup is best-effort and a cleanup failure must not replace that typed degraded result.
+運用記憶は任意機能なので、データベース接続層の失敗でLoop Engineプロセスを終了させない。接続生成、cursor取得、文実行、commit、rollback、closeはすべて接続層側の処理である。これらDB-API境界で発生した失敗は`DB_UNAVAILABLE`へ正規化する。後片付けは可能な範囲で行い、後片付けの失敗で型付き縮退結果を置き換えない。
 
-Metadata serialization happens before the database effect. A value that cannot be safely serialized is `INVALID` and must not open a database connection. The adapter does not convert a successful GitHub/checkpoint transition into failure merely because optional PostgreSQL memory is unavailable.
+管理情報の直列化はデータベース効果より前に行う。安全に直列化できない値は`INVALID`とし、データベース接続を開始しない。任意のPostgreSQL記憶が利用できないという理由だけで、成功したGitHub/Checkpoint遷移を失敗へ変換しない。

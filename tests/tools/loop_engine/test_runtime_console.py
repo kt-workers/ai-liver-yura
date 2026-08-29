@@ -24,12 +24,12 @@ def test_streamed_child_output_is_hidden_by_default_but_persisted(
     assert result.succeeded
     stderr = capsys.readouterr().err
     assert "CHILD_DETAIL" not in stderr
-    assert "python: start" not in stderr
-    assert "python: done" not in stderr
+    assert "python: 開始" not in stderr
+    assert "python: 完了" not in stderr
     log = console.path.read_text(encoding="utf-8")
     assert "CHILD_DETAIL" in log
-    assert "python: start" in log
-    assert "python: done" in log
+    assert "python: 開始" in log
+    assert "python: 完了" in log
 
 
 def test_verbose_mode_streams_child_output_and_details(
@@ -48,8 +48,8 @@ def test_verbose_mode_streams_child_output_and_details(
     assert result.succeeded
     stderr = capsys.readouterr().err
     assert "CHILD_VISIBLE" in stderr
-    assert "python: start" in stderr
-    assert "python: done" in stderr
+    assert "python: 開始" in stderr
+    assert "python: 完了" in stderr
 
 
 def test_codex_lifecycle_stays_visible_without_raw_output(
@@ -70,8 +70,8 @@ def test_codex_lifecycle_stays_visible_without_raw_output(
 
     assert result.succeeded
     stderr = capsys.readouterr().err
-    assert "codex: start" in stderr
-    assert "codex: done" in stderr
+    assert "codex: 開始" in stderr
+    assert "codex: 完了" in stderr
     assert "CODEX_RAW_DETAIL" not in stderr
     assert "CODEX_RAW_DETAIL" in console.path.read_text(encoding="utf-8")
 
@@ -97,8 +97,8 @@ def test_codex_heartbeat_shows_liveness_without_raw_output(
 
     assert result.succeeded
     stderr = capsys.readouterr().err
-    assert "codex: running" in stderr
-    assert "details in log" in stderr
+    assert "codex: 実行中" in stderr
+    assert "詳細はログを参照" in stderr
     assert "CODEX_HIDDEN_DETAIL" not in stderr
     assert "CODEX_HIDDEN_DETAIL" in console.path.read_text(encoding="utf-8")
 
@@ -124,9 +124,9 @@ def test_codex_is_not_killed_by_generic_wall_clock_timeout(
 
     assert result.succeeded
     stderr = capsys.readouterr().err
-    assert "timeout" not in stderr
-    assert "codex: running" in stderr
-    assert "codex: done" in stderr
+    assert "時間超過" not in stderr
+    assert "codex: 実行中" in stderr
+    assert "codex: 完了" in stderr
     assert "CODEX_FINISHED" in console.path.read_text(encoding="utf-8")
 
 
@@ -152,8 +152,8 @@ def test_captured_failure_is_concise_and_full_error_is_persisted(
     assert result.returncode == 7
     stderr = capsys.readouterr().err
     assert "SAFE_ERROR" not in stderr
-    assert "failed exit=7" in stderr
-    assert "see log:" in stderr
+    assert "失敗 終了コード=7" in stderr
+    assert "詳細ログ:" in stderr
     log = console.path.read_text(encoding="utf-8")
     assert "SAFE_ERROR" in log
     assert secret_like_argument not in stderr

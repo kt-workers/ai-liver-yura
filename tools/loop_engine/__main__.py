@@ -13,22 +13,22 @@ _MAX_IDENTICAL_COMPLETED = 3
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the Loop Engineering Mission runtime.")
+    parser = argparse.ArgumentParser(description="Loop EngineeringのMission実行系を起動する。")
     parser.add_argument("--version", action="store_true")
     parser.add_argument(
         "--validate-installation",
         action="store_true",
-        help="Validate the control-plane package without observing or mutating external systems.",
+        help="外部システムを観測・変更せずに制御系パッケージの導入状態を確認する。",
     )
     parser.add_argument(
         "--once",
         action="store_true",
-        help="Run exactly one bounded transition instead of the continuous Mission runtime.",
+        help="継続実行ではなく、範囲を限定した遷移を1回だけ実行する。",
     )
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help="Show detailed child-process output on stderr in addition to the persistent run log.",
+        help="永続実行ログに加えて、子プロセスの詳細出力を標準エラーにも表示する。",
     )
     arguments = parser.parse_args()
     if arguments.version:
@@ -44,8 +44,9 @@ def main() -> int:
     console = RuntimeConsole(root, verbose=arguments.verbose)
     runner = VisibleSubprocessLocalRunner(console)
     mode = "once" if arguments.once else "continuous"
-    console.event(f"START mode={mode}")
-    console.event(f"log: {console.path}")
+    mode_label = "1回実行" if arguments.once else "継続実行"
+    console.event(f"開始 mode={mode}（{mode_label}）")
+    console.event(f"ログ: {console.path}")
 
     ci_wait_seconds = _CI_RECHECK_INITIAL_SECONDS
     previous_completed: tuple[str, int | None, int | None, str | None] | None = None
@@ -55,11 +56,11 @@ def main() -> int:
     try:
         while True:
             transition_number += 1
-            console.event(f"transition {transition_number}: begin")
+            console.event(f"遷移 {transition_number}: 開始")
             result = run_actual_host_transition(root=root, local_runner=runner)
             console.event(
-                f"transition {transition_number}: "
-                f"{result.status.value} detail={result.detail}"
+                f"遷移 {transition_number}: "
+                f"{result.status.value} 詳細={result.detail}"
             )
 
             if arguments.once:
@@ -86,11 +87,11 @@ def main() -> int:
                         result.pr_number,
                         result.head_sha,
                     )
-                    console.event("NO_PROGRESS_GUARD: identical completed transition repeated")
+                    console.event("進捗停止検知: 同一の完了遷移が繰り返されました")
                     print(blocked.as_json())
                     return 3
                 ci_wait_seconds = _CI_RECHECK_INITIAL_SECONDS
-                console.event("continue: fresh observe")
+                console.event("継続: 現在状態を再観測します")
                 continue
 
             previous_completed = None
@@ -101,7 +102,7 @@ def main() -> int:
                 and result.detail == "CI_PENDING"
             ):
                 console.event(
-                    f"CI_PENDING: auto-resume in {int(ci_wait_seconds)}s"
+                    f"CI待機: {int(ci_wait_seconds)}秒後に自動再開します"
                 )
                 time.sleep(ci_wait_seconds)
                 ci_wait_seconds = min(
@@ -113,7 +114,7 @@ def main() -> int:
             print(result.as_json())
             return _exit_code(result)
     except KeyboardInterrupt:
-        console.event("STOP requested by operator")
+        console.event("操作者の要求により停止します")
         return 130
 
 
