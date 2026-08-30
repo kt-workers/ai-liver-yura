@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from tools.repository_hygiene.commit_hygiene import inspect_commit_range, main
+from tools.repository_hygiene.commit_hygiene import (
+    GitInspectionError,
+    _decode_nul_fields,
+    inspect_commit_range,
+    main,
+)
 
 
 def _git(repository: Path, *arguments: str) -> str:
@@ -65,11 +70,14 @@ def test_single_parent_tree_equal_commit_is_rejected(repository: Path) -> None:
     assert _reason_codes(repository, base, head) == ["empty_single_parent_commit"]
 
 
-@pytest.mark.parametrize("path", ("NOOP", "tmp/example.txt"))
+@pytest.mark.parametrize("path", ("NOOP", "tmp/example.txt", "tmp/日本語.txt"))
 def test_prohibited_placeholder_path_is_rejected(repository: Path, path: str) -> None:
     base, head = _range(repository, ((path, "temporary\n", "仮ファイル"),))
 
-    assert _reason_codes(repository, base, head) == ["prohibited_placeholder_path"]
+    findings = inspect_commit_range(repository, base, head)
+
+    assert [finding.reason_code for finding in findings] == ["prohibited_placeholder_path"]
+    assert findings[0].path == path
 
 
 def test_placeholder_add_then_delete_has_range_finding(repository: Path) -> None:
@@ -132,6 +140,16 @@ def test_merge_commit_specific_placeholder_path_is_rejected(repository: Path) ->
     ]
     assert findings[0].commit_sha == head
     assert findings[0].path == "NOOP"
+
+
+def test_nul_path_output_must_be_complete() -> None:
+    with pytest.raises(GitInspectionError):
+        _decode_nul_fields(b"A\0tmp/example.txt")
+
+
+def test_nul_path_output_must_be_utf8() -> None:
+    with pytest.raises(GitInspectionError):
+        _decode_nul_fields(b"A\0tmp/\xff.txt\0")
 
 
 def test_invalid_revision_has_invocation_exit_two(repository: Path) -> None:
