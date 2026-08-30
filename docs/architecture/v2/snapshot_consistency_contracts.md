@@ -54,6 +54,7 @@ FAILなら:
 
 - attempt < max_attempts の場合だけ再試行。
 - `allow_event_loop_yield_between_attempts=true`かつasync orchestrationの場合、**高々1回のevent-loop cooperative yield**を挟んでよい。実時間sleep/backoffを入れない。
+- cooperative yieldは他taskへ実行機会を渡す契約であり、他taskがさらに別のawait/yieldを必要とする場合の完了までは保証しない。
 - `false`なら直ちに次read cycle。
 - max attempt失敗後はtyped `SNAPSHOT_INCOHERENT` / owner-specific equivalentとしてfail-closed。
 
@@ -117,7 +118,25 @@ max attemptsでstable setを得られない場合:
 - max_attempts=1
 - policy invalid/0/bool reject
 - event-loop yield有無でsemantic result不変
+- cooperative yield時にunrelated taskへ少なくとも1回の実行機会を渡し、追加awaitの完了までは要求しない
 - same owner revision + different immutable payloadをinvariant violation
 - policy revision mid-readでold/new generationを混ぜない
 - failure時capture-time fallbackなし
 - unrelated async workをglobal lock/spinでstarveしない
+
+## 10. Production implementation mapping
+
+D10後の共有実装は次を正本実装とする。
+
+- `app/domain/contracts/snapshots.py`
+  - `SnapshotStabilizationPolicy`
+  - `SnapshotGenerationSample`
+  - `SnapshotReadCycle`
+  - sync / async bounded stabilizer
+  - `SNAPSHOT_INCOHERENT` fail-closed
+  - same revisionでpayload/generationが変化した場合のinvariant violation
+- `tests/domain/contracts/test_snapshot_consistency.py`
+  - 本書Section 9の共有mechanicsを直接検証する。
+
+consumer固有のread順・optional degradation・owner-specific generation identityは各consumer ownerの
+実装責務として残し、共有stabilizerがそれらのAuthorityを奪わない。
