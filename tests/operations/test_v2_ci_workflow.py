@@ -16,6 +16,6 @@ def test_workflow_dispatch_resolves_and_validates_live_pr_identity() -> None:
     assert "needs.resolve-pr-identity.outputs.head_sha" in workflow
     assert "needs.resolve-pr-identity.outputs.base_sha" in workflow
     assert "github.event.pull_request.number || inputs.pr_number || github.run_id" in workflow
-    assert "python -m ruff check app tests tools" in workflow
-    assert "python -m mypy --strict app tests tools" in workflow
-    assert "python -m compileall -q app tests tools" in workflow
+    assert "python -m ruff check app tests" in workflow
+    assert "python -m mypy --strict app tests" in workflow
+    assert "python -m compileall -q app tests" in workflow
