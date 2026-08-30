@@ -13,15 +13,41 @@ from app.domain.attention import (
 from app.domain.contracts import RevisionVector
 from app.runtime.kernel import (
     FakeRuntimeClock,
+    LaneErrorPolicy,
     QueuePolicy,
-    RuntimeCoordinator,
-    RuntimeLanePolicy,
+    RuntimeSchedulerPolicy,
     RuntimeWorkItem,
     WorkDisposition,
     WorkPriority,
 )
+from app.runtime.kernel import (
+    RuntimeCoordinator as KernelRuntimeCoordinator,
+)
+from app.runtime.kernel import (
+    RuntimeLanePolicy as KernelRuntimeLanePolicy,
+)
 
 NOW = datetime(2026, 8, 16, tzinfo=timezone.utc)
+TEST_SCHEDULER_POLICY = RuntimeSchedulerPolicy("test.scheduler", 1, 8)
+
+
+def RuntimeCoordinator(clock: FakeRuntimeClock) -> KernelRuntimeCoordinator:
+    return KernelRuntimeCoordinator(clock, TEST_SCHEDULER_POLICY)
+
+
+def RuntimeLanePolicy(
+    lane_id: str,
+    queue_capacity: int,
+    queue_policy: QueuePolicy,
+) -> KernelRuntimeLanePolicy:
+    return KernelRuntimeLanePolicy(
+        lane_id,
+        queue_capacity,
+        queue_policy,
+        1,
+        1.0,
+        LaneErrorPolicy.ISOLATE,
+    )
 
 
 def _work(work_id: str, lane: str, payload: object) -> RuntimeWorkItem[object]:

@@ -6,15 +6,44 @@ from app.runtime.kernel import (
     FakeRuntimeClock,
     LaneErrorPolicy,
     QueuePolicy,
-    RuntimeCoordinator,
     RuntimeHealth,
-    RuntimeLanePolicy,
+    RuntimeSchedulerPolicy,
     RuntimeWorkItem,
     WorkDisposition,
     WorkPriority,
 )
+from app.runtime.kernel import (
+    RuntimeCoordinator as KernelRuntimeCoordinator,
+)
+from app.runtime.kernel import (
+    RuntimeLanePolicy as KernelRuntimeLanePolicy,
+)
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
+TEST_SCHEDULER_POLICY = RuntimeSchedulerPolicy("test.scheduler", 1, 8)
+
+
+def RuntimeCoordinator(clock: FakeRuntimeClock) -> KernelRuntimeCoordinator:
+    return KernelRuntimeCoordinator(clock, TEST_SCHEDULER_POLICY)
+
+
+def RuntimeLanePolicy(
+    lane_id: str,
+    queue_capacity: int,
+    queue_policy: QueuePolicy,
+    *,
+    max_in_flight: int = 1,
+    cancellation_grace_seconds: float = 1.0,
+    error_policy: LaneErrorPolicy = LaneErrorPolicy.ISOLATE,
+) -> KernelRuntimeLanePolicy:
+    return KernelRuntimeLanePolicy(
+        lane_id,
+        queue_capacity,
+        queue_policy,
+        max_in_flight,
+        cancellation_grace_seconds,
+        error_policy,
+    )
 
 
 def item(work_id: str, lane: str, *, deadline_seconds: int | None = None) -> RuntimeWorkItem[str]:
@@ -118,12 +147,15 @@ def test_stale_deadline_and_error_are_isolated_and_diagnosed() -> None:
         coordinator.submit(item("stale", "lane"))
         coordinator.submit(item("bad", "lane"))
         coordinator.submit(item("good", "lane"))
-        outcomes = {outcome.work_id: outcome for outcome in [
-            await coordinator.next_outcome(),
-            await coordinator.next_outcome(),
-            await coordinator.next_outcome(),
-            await coordinator.next_outcome(),
-        ]}
+        outcomes = {
+            outcome.work_id: outcome
+            for outcome in [
+                await coordinator.next_outcome(),
+                await coordinator.next_outcome(),
+                await coordinator.next_outcome(),
+                await coordinator.next_outcome(),
+            ]
+        }
         assert outcomes["expired"].disposition is WorkDisposition.TIMED_OUT
         assert outcomes["stale"].disposition is WorkDisposition.STALE
         assert outcomes["bad"].disposition is WorkDisposition.FAILED
@@ -199,8 +231,12 @@ def test_cross_lane_duplicate_running_work_id_is_rejected_atomically() -> None:
             return work.work_id
 
         coordinator = RuntimeCoordinator(FakeRuntimeClock(NOW))
-        coordinator.register_lane(RuntimeLanePolicy("a", 2, QueuePolicy.REJECT_NEW), handler)
-        coordinator.register_lane(RuntimeLanePolicy("b", 2, QueuePolicy.REJECT_NEW), handler)
+        coordinator.register_lane(
+            RuntimeLanePolicy("a", 2, QueuePolicy.REJECT_NEW), handler
+        )
+        coordinator.register_lane(
+            RuntimeLanePolicy("b", 2, QueuePolicy.REJECT_NEW), handler
+        )
         await coordinator.start()
         assert coordinator.submit(item("same", "a")).accepted
         await asyncio.sleep(0)
@@ -230,10 +266,18 @@ def test_non_interruptible_running_work_uses_soft_cancellation() -> None:
             return work.work_id
 
         coordinator = RuntimeCoordinator(FakeRuntimeClock(NOW))
-        coordinator.register_lane(RuntimeLanePolicy("lane", 2, QueuePolicy.REJECT_NEW), handler)
+        coordinator.register_lane(
+            RuntimeLanePolicy("lane", 2, QueuePolicy.REJECT_NEW), handler
+        )
         await coordinator.start()
         work = RuntimeWorkItem(
-            "soft", "lane", "soft", WorkPriority.NORMAL, RevisionVector(1), NOW, interruptible=False
+            "soft",
+            "lane",
+            "soft",
+            WorkPriority.NORMAL,
+            RevisionVector(1),
+            NOW,
+            interruptible=False,
         )
         coordinator.submit(work)
         await asyncio.sleep(0)
@@ -255,7 +299,9 @@ def test_diagnostics_never_include_exception_message() -> None:
             raise RuntimeError("secret-token-and-payload")
 
         coordinator = RuntimeCoordinator(FakeRuntimeClock(NOW))
-        coordinator.register_lane(RuntimeLanePolicy("lane", 1, QueuePolicy.REJECT_NEW), handler)
+        coordinator.register_lane(
+            RuntimeLanePolicy("lane", 1, QueuePolicy.REJECT_NEW), handler
+        )
         await coordinator.start()
         coordinator.submit(item("bad", "lane"))
         outcome = await coordinator.next_outcome()
@@ -383,7 +429,7 @@ def test_fail_fast_stop_is_owned_and_awaitable() -> None:
                 "critical",
                 1,
                 QueuePolicy.REJECT_NEW,
-                error_policy=LaneErrorPolicy.FAIL_FAST,
+                error_policy=LaneErrorPolicy.FAIL_FAST_CONTROLLED,
             ),
             handler,
         )

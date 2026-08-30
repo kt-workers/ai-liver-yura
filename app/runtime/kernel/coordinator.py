@@ -16,9 +16,10 @@ from .contracts import (
     LaneErrorPolicy,
     QueueAdmission,
     QueueAdmissionStatus,
-    QueuePolicy,
     RuntimeDiagnosticsSnapshot,
     RuntimeHealth,
+    RuntimeLanePolicy,
+    RuntimeSchedulerPolicy,
     RuntimeWorkItem,
     WorkDisposition,
     WorkOutcome,
@@ -27,28 +28,6 @@ from .queue import BoundedWorkQueue, Coalescer
 
 WorkHandler = Callable[[RuntimeWorkItem[Any], CancellationToken], Awaitable[Any]]
 StaleValidator = Callable[[RuntimeWorkItem[Any]], bool]
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeLanePolicy:
-    lane_id: str
-    capacity: int
-    queue_policy: QueuePolicy
-    max_in_flight: int = 1
-    max_priority_burst: int = 8
-    cancellation_grace_seconds: float = 1.0
-    error_policy: LaneErrorPolicy = LaneErrorPolicy.ISOLATE
-
-    def __post_init__(self) -> None:
-        if not self.lane_id.strip():
-            raise ValueError("lane_id must be non-empty")
-        if type(self.max_in_flight) is not int or self.max_in_flight < 1:
-            raise ValueError("max_in_flight must be a positive int")
-        if (
-            type(self.cancellation_grace_seconds) not in (int, float)
-            or self.cancellation_grace_seconds < 0
-        ):
-            raise ValueError("cancellation_grace_seconds must be non-negative")
 
 
 @dataclass(slots=True)
@@ -68,8 +47,13 @@ class _Lane:
 
 
 class RuntimeCoordinator:
-    def __init__(self, clock: RuntimeClock) -> None:
+    def __init__(
+        self,
+        clock: RuntimeClock,
+        scheduler_policy: RuntimeSchedulerPolicy,
+    ) -> None:
         self._clock = clock
+        self._scheduler_policy = scheduler_policy
         self._state = CoordinatorState.CREATED
         self._lanes: dict[str, _Lane] = {}
         self._tasks: set[asyncio.Task[None]] = set()
@@ -86,6 +70,10 @@ class RuntimeCoordinator:
     def state(self) -> CoordinatorState:
         return self._state
 
+    @property
+    def scheduler_policy(self) -> RuntimeSchedulerPolicy:
+        return self._scheduler_policy
+
     def register_lane(
         self,
         policy: RuntimeLanePolicy,
@@ -101,9 +89,9 @@ class RuntimeCoordinator:
         self._lanes[policy.lane_id] = _Lane(
             policy,
             BoundedWorkQueue(
-                policy.capacity,
+                policy.queue_capacity,
                 policy.queue_policy,
-                max_priority_burst=policy.max_priority_burst,
+                max_priority_burst=self._scheduler_policy.max_priority_burst,
                 coalescer=coalescer,
             ),
             handler,
@@ -166,9 +154,7 @@ class RuntimeCoordinator:
             if removed is not None:
                 token = self._cancellations.token_for(work_id)
                 if token is not None:
-                    token.cancel(
-                        self._cancellation_record(work_id, reason)
-                    )
+                    token.cancel(self._cancellation_record(work_id, reason))
                 self._cancellations.complete(work_id)
                 lane.cancelled += 1
                 self._outcomes.put_nowait(
@@ -215,14 +201,15 @@ class RuntimeCoordinator:
                 lane.wake.set()
             for work_id in tuple(self._running_tasks):
                 self.cancel(work_id, "coordinator shutdown")
-            # Let callers that observed STOPPING submit shutdown controls, then
-            # atomically close admission before workers are allowed to drain.
             await asyncio.sleep(0)
             self._shutdown_control_open = False
             for lane in self._lanes.values():
                 lane.wake.set()
             max_grace = max(
-                (lane.policy.cancellation_grace_seconds for lane in self._lanes.values()),
+                (
+                    lane.policy.cancellation_grace_seconds
+                    for lane in self._lanes.values()
+                ),
                 default=0.0,
             )
             await self._await_running_with_grace(max_grace)
@@ -258,12 +245,10 @@ class RuntimeCoordinator:
         if not tasks:
             return
         _, pending = await asyncio.wait(tasks, timeout=grace)
-        for task in pending:
-            task.cancel()
         if pending:
-            _, still_pending = await asyncio.wait(pending, timeout=max(grace, 0.05))
-            if still_pending:
-                raise RuntimeError("runtime tasks ignored cancellation grace")
+            for task in pending:
+                task.cancel()
+            raise RuntimeError("runtime tasks exceeded cancellation grace")
 
     async def _close_resources(self) -> None:
         for hook in reversed(self._close_hooks):
@@ -360,7 +345,10 @@ class RuntimeCoordinator:
         error: str | None = None
         try:
             now = self._clock.now()
-            if item.deadline_at is not None and utc_instant(now) >= utc_instant(item.deadline_at):
+            if (
+                item.deadline_at is not None
+                and utc_instant(now) >= utc_instant(item.deadline_at)
+            ):
                 disposition = WorkDisposition.TIMED_OUT
             elif not lane.stale_validator(item):
                 disposition = WorkDisposition.STALE
@@ -370,8 +358,10 @@ class RuntimeCoordinator:
                     disposition = WorkDisposition.CANCELLED
                 elif not lane.stale_validator(item):
                     disposition = WorkDisposition.STALE
-                elif item.deadline_at is not None and utc_instant(self._clock.now()) >= utc_instant(
-                    item.deadline_at
+                elif (
+                    item.deadline_at is not None
+                    and utc_instant(self._clock.now())
+                    >= utc_instant(item.deadline_at)
                 ):
                     disposition = WorkDisposition.TIMED_OUT
         except asyncio.CancelledError:
@@ -380,7 +370,7 @@ class RuntimeCoordinator:
             disposition = WorkDisposition.FAILED
             error = type(exc).__name__
             lane.last_error = error
-            if lane.policy.error_policy is LaneErrorPolicy.FAIL_FAST:
+            if lane.policy.error_isolation is LaneErrorPolicy.FAIL_FAST_CONTROLLED:
                 self.request_stop()
         finally:
             lane.in_flight -= 1

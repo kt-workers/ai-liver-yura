@@ -52,6 +52,7 @@ RuntimeSchedulerPolicy
 - grace超過後もlate resultをsuccessへcommitしない。
 - Python task hard-cancel等を行ってもexternal effectが既に起きた可能性はowner reconciliationへ残す。
 - grace timeoutはDomain failureを捏造せずRuntime disposition/diagnosticへ記録する。
+- grace超過後に別のhidden cleanup timeoutを追加せず、停止を成功扱いしない。
 
 ## 4. Dependency retry policy
 
@@ -141,3 +142,22 @@ Runtime policy snapshotは起動generationへbindする。
 - persistence grace後にwrite再開なし
 - policy revision supersedeで旧cycle resultをnew generationへcommitしない
 - policy missing/invalid時にhidden defaultを使わない
+
+## 9. Production implementation mapping
+
+工程110 / #322のD10 owner amendmentは次へ対応する。
+
+- `app/runtime/kernel/contracts.py`
+  - explicit `RuntimeLanePolicy`
+  - versioned `RuntimeSchedulerPolicy`
+  - strict count / finite grace validation
+  - `FAIL_FAST_CONTROLLED`
+- `app/runtime/kernel/queue.py`
+  - `max_priority_burst`を必須入力としhidden `8`を持たない。
+- `app/runtime/kernel/coordinator.py`
+  - scheduler policyをruntime generationへ明示bindする。
+  - laneのqueue/concurrency/cancellation graceを全てexplicit policyから取得する。
+  - cancellation grace超過後に別のhidden実時間waitを追加しない。
+- Runtime Kernel既存Unit/Adjacent testでは、シナリオ用数値をtest fixture/helperで明示し、test値をproduction defaultとして再利用しない。
+
+Section 4–7の#350 dependency retry / diagnostic / shutdown policyは工程340のowner amendmentで実装する。
