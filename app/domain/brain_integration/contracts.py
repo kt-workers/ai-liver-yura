@@ -45,6 +45,8 @@ class BrainWorkStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    TIMED_OUT = "timed_out"
+    STALE = "stale"
     SUPERSEDED = "superseded"
     REJECTED = "rejected"
     FAILED = "failed"
@@ -53,6 +55,8 @@ class BrainWorkStatus(str, Enum):
 class BrainIntegrationTerminalOutcome(str, Enum):
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    TIMED_OUT = "timed_out"
+    STALE = "stale"
     SUPERSEDED = "superseded"
     REJECTED = "rejected"
     FAILED = "failed"
@@ -62,6 +66,8 @@ _TERMINAL_WORK_STATUSES = frozenset(
     {
         BrainWorkStatus.COMPLETED,
         BrainWorkStatus.CANCELLED,
+        BrainWorkStatus.TIMED_OUT,
+        BrainWorkStatus.STALE,
         BrainWorkStatus.SUPERSEDED,
         BrainWorkStatus.REJECTED,
         BrainWorkStatus.FAILED,
@@ -170,7 +176,11 @@ class BrainWorkInterval:
                 raise ValueError("終了状態には完了時刻が必要です")
         elif self.completed_at is not None:
             raise ValueError("終了していない状態に完了時刻は設定できません")
-        for field_name in ("source_context_revision", "goal_revision", "attention_revision"):
+        for field_name in (
+            "source_context_revision",
+            "goal_revision",
+            "attention_revision",
+        ):
             require_revision(getattr(self, field_name), field_name, optional=True)
 
 
@@ -217,7 +227,12 @@ class BrainIntegrationTrace:
             raise ValueError("revision_events の識別子は重複してはいけません")
         object.__setattr__(self, "revision_events", revision_events)
         if self.terminal_outcome is not None:
-            if not isinstance(self.terminal_outcome, BrainIntegrationTerminalOutcome):
+            if not isinstance(
+                self.terminal_outcome,
+                BrainIntegrationTerminalOutcome,
+            ):
                 raise ValueError("terminal_outcome が不正です")
             if any(item.status not in _TERMINAL_WORK_STATUSES for item in intervals):
-                raise ValueError("未終了の作業がある追跡記録に終了結果は設定できません")
+                raise ValueError(
+                    "未終了の作業がある追跡記録に終了結果は設定できません"
+                )
