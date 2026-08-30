@@ -6,15 +6,40 @@ from app.runtime.kernel import (
     FakeRuntimeClock,
     LaneErrorPolicy,
     QueuePolicy,
-    RuntimeCoordinator,
+    RuntimeCoordinator as KernelRuntimeCoordinator,
     RuntimeHealth,
-    RuntimeLanePolicy,
+    RuntimeLanePolicy as KernelRuntimeLanePolicy,
+    RuntimeSchedulerPolicy,
     RuntimeWorkItem,
     WorkDisposition,
     WorkPriority,
 )
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
+TEST_SCHEDULER_POLICY = RuntimeSchedulerPolicy("test.scheduler", 1, 8)
+
+
+def RuntimeCoordinator(clock: FakeRuntimeClock) -> KernelRuntimeCoordinator:
+    return KernelRuntimeCoordinator(clock, TEST_SCHEDULER_POLICY)
+
+
+def RuntimeLanePolicy(
+    lane_id: str,
+    queue_capacity: int,
+    queue_policy: QueuePolicy,
+    *,
+    max_in_flight: int = 1,
+    cancellation_grace_seconds: float = 1.0,
+    error_policy: LaneErrorPolicy = LaneErrorPolicy.ISOLATE,
+) -> KernelRuntimeLanePolicy:
+    return KernelRuntimeLanePolicy(
+        lane_id,
+        queue_capacity,
+        queue_policy,
+        max_in_flight,
+        cancellation_grace_seconds,
+        error_policy,
+    )
 
 
 def item(work_id: str, lane: str, *, deadline_seconds: int | None = None) -> RuntimeWorkItem[str]:
@@ -383,7 +408,7 @@ def test_fail_fast_stop_is_owned_and_awaitable() -> None:
                 "critical",
                 1,
                 QueuePolicy.REJECT_NEW,
-                error_policy=LaneErrorPolicy.FAIL_FAST,
+                error_policy=LaneErrorPolicy.FAIL_FAST_CONTROLLED,
             ),
             handler,
         )

@@ -12,6 +12,7 @@ from app.runtime.kernel import (
 )
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
+TEST_PRIORITY_BURST = 8
 
 
 def item(
@@ -36,14 +37,18 @@ def item(
 
 
 def test_reject_new_is_bounded_and_explicit() -> None:
-    queue = BoundedWorkQueue[int](1, QueuePolicy.REJECT_NEW)
+    queue = BoundedWorkQueue[int](
+        1, QueuePolicy.REJECT_NEW, max_priority_burst=TEST_PRIORITY_BURST
+    )
     assert queue.put(item("one")).status is QueueAdmissionStatus.ACCEPTED
     assert queue.put(item("two")).status is QueueAdmissionStatus.REJECTED
     assert [value.work_id for value in queue.items()] == ["one"]
 
 
 def test_drop_oldest_reports_displaced_work() -> None:
-    queue = BoundedWorkQueue[int](2, QueuePolicy.DROP_OLDEST)
+    queue = BoundedWorkQueue[int](
+        2, QueuePolicy.DROP_OLDEST, max_priority_burst=TEST_PRIORITY_BURST
+    )
     queue.put(item("old", seconds=0))
     queue.put(item("newer", seconds=1))
     result = queue.put(item("newest", seconds=2))
@@ -53,7 +58,9 @@ def test_drop_oldest_reports_displaced_work() -> None:
 
 @pytest.mark.parametrize("policy", [QueuePolicy.LATEST_WINS, QueuePolicy.REPLACE_SAME_KEY])
 def test_key_replacement_owns_latest_item(policy: QueuePolicy) -> None:
-    queue = BoundedWorkQueue[int](2, policy)
+    queue = BoundedWorkQueue[int](
+        2, policy, max_priority_burst=TEST_PRIORITY_BURST
+    )
     queue.put(item("old", key="same"))
     result = queue.put(item("new", key="same"))
     assert result.status is QueueAdmissionStatus.REPLACED
@@ -62,7 +69,9 @@ def test_key_replacement_owns_latest_item(policy: QueuePolicy) -> None:
 
 
 def test_latest_wins_rejects_missing_key() -> None:
-    queue = BoundedWorkQueue[int](2, QueuePolicy.LATEST_WINS)
+    queue = BoundedWorkQueue[int](
+        2, QueuePolicy.LATEST_WINS, max_priority_burst=TEST_PRIORITY_BURST
+    )
     assert queue.put(item("one")).status is QueueAdmissionStatus.REJECTED
 
 
@@ -70,7 +79,12 @@ def test_coalesce_uses_module_function_and_reports_both_inputs() -> None:
     def combine(old: RuntimeWorkItem[int], new: RuntimeWorkItem[int]) -> RuntimeWorkItem[int]:
         return item(new.work_id, key=old.queue_key, payload=old.payload + new.payload)
 
-    queue = BoundedWorkQueue[int](2, QueuePolicy.COALESCE, coalescer=combine)
+    queue = BoundedWorkQueue[int](
+        2,
+        QueuePolicy.COALESCE,
+        max_priority_burst=TEST_PRIORITY_BURST,
+        coalescer=combine,
+    )
     queue.put(item("one", key="comments", payload=2))
     result = queue.put(item("two", key="comments", payload=3))
     assert result.status is QueueAdmissionStatus.COALESCED
@@ -82,7 +96,12 @@ def test_coalescer_failure_or_invalid_identity_does_not_remove_existing_item() -
     def failing(_old: RuntimeWorkItem[int], _new: RuntimeWorkItem[int]) -> RuntimeWorkItem[int]:
         raise RuntimeError("bad coalescer")
 
-    queue = BoundedWorkQueue[int](2, QueuePolicy.COALESCE, coalescer=failing)
+    queue = BoundedWorkQueue[int](
+        2,
+        QueuePolicy.COALESCE,
+        max_priority_burst=TEST_PRIORITY_BURST,
+        coalescer=failing,
+    )
     queue.put(item("one", key="same"))
     with pytest.raises(RuntimeError, match="bad coalescer"):
         queue.put(item("two", key="same"))
@@ -91,7 +110,12 @@ def test_coalescer_failure_or_invalid_identity_does_not_remove_existing_item() -
     def wrong_id(_old: RuntimeWorkItem[int], _new: RuntimeWorkItem[int]) -> RuntimeWorkItem[int]:
         return item("unexpected", key="same")
 
-    queue = BoundedWorkQueue[int](2, QueuePolicy.COALESCE, coalescer=wrong_id)
+    queue = BoundedWorkQueue[int](
+        2,
+        QueuePolicy.COALESCE,
+        max_priority_burst=TEST_PRIORITY_BURST,
+        coalescer=wrong_id,
+    )
     queue.put(item("one", key="same"))
     with pytest.raises(ValueError, match="new work_id"):
         queue.put(item("two", key="same"))
@@ -99,7 +123,9 @@ def test_coalescer_failure_or_invalid_identity_does_not_remove_existing_item() -
 
 
 def test_duplicate_work_identity_is_rejected_without_queue_mutation() -> None:
-    queue = BoundedWorkQueue[int](2, QueuePolicy.REJECT_NEW)
+    queue = BoundedWorkQueue[int](
+        2, QueuePolicy.REJECT_NEW, max_priority_burst=TEST_PRIORITY_BURST
+    )
     queue.put(item("same", payload=1))
     result = queue.put(item("same", payload=2))
     assert result.status is QueueAdmissionStatus.REJECTED

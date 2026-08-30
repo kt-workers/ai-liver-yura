@@ -158,5 +158,6 @@ Runtime policy snapshotは起動generationへbindする。
   - scheduler policyをruntime generationへ明示bindする。
   - laneのqueue/concurrency/cancellation graceを全てexplicit policyから取得する。
   - cancellation grace超過後に別のhidden実時間waitを追加しない。
+- Runtime Kernel既存Unit/Adjacent testでは、シナリオ用数値をtest fixture/helperで明示し、test値をproduction defaultとして再利用しない。
 
 Section 4–7の#350 dependency retry / diagnostic / shutdown policyは工程340のowner amendmentで実装する。
