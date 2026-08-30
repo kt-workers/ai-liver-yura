@@ -57,12 +57,43 @@ def _git(repository: Path, arguments: Sequence[str]) -> str:
     return completed.stdout
 
 
+def _git_bytes(repository: Path, arguments: Sequence[str]) -> bytes:
+    """pathをGitの表示用quoteへ変換させずbyte列として取得する。"""
+
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=repository,
+        check=False,
+        capture_output=True,
+        text=False,
+    )
+    if completed.returncode != 0:
+        raw_detail = completed.stderr or completed.stdout
+        detail = raw_detail.decode("utf-8", errors="replace").strip()
+        raise GitInspectionError(detail or "Git コマンドが失敗しました。")
+    return completed.stdout
+
+
 def _resolve_commit(repository: Path, revision: str) -> str:
     return _git(repository, ("rev-parse", "--verify", f"{revision}^{{commit}}")).strip()
 
 
 def _is_prohibited_path(path: str) -> bool:
     return path in PROHIBITED_EXACT_PATHS or path.startswith(PROHIBITED_PREFIXES)
+
+
+def _decode_nul_fields(output: bytes) -> list[str]:
+    """NUL区切りのGit出力を実path文字列へ復号する。"""
+
+    if output and not output.endswith(b"\0"):
+        raise GitInspectionError("Git のNUL区切りpath出力が途中で終了しています。")
+    raw_fields = output.split(b"\0")
+    if raw_fields and raw_fields[-1] == b"":
+        raw_fields.pop()
+    try:
+        return [field.decode("utf-8") for field in raw_fields]
+    except UnicodeDecodeError as error:
+        raise GitInspectionError("Git のpathをUTF-8として復号できません。") from error
 
 
 def _commit_paths(repository: Path, commit_sha: str) -> list[tuple[str, str]]:
@@ -74,6 +105,7 @@ def _commit_paths(repository: Path, commit_sha: str) -> list[tuple[str, str]]:
             "--no-commit-id",
             "--name-status",
             "-r",
+            "-z",
             parents[0],
             commit_sha,
         )
@@ -84,24 +116,29 @@ def _commit_paths(repository: Path, commit_sha: str) -> list[tuple[str, str]]:
             "--no-commit-id",
             "--name-status",
             "-r",
+            "-z",
             commit_sha,
         )
-    output = _git(
-        repository,
-        arguments,
-    )
+    fields = _decode_nul_fields(_git_bytes(repository, arguments))
     paths: list[tuple[str, str]] = []
-    for line in output.splitlines():
-        columns = line.split("\t")
-        if len(columns) < 2:
+    index = 0
+    while index < len(fields):
+        status = fields[index]
+        index += 1
+        if not status:
             raise GitInspectionError("Git の path status 出力を解釈できません。")
-        status = columns[0]
         if status.startswith(("R", "C")):
-            if len(columns) != 3:
+            if index + 1 >= len(fields):
                 raise GitInspectionError("Git の rename/copy status 出力を解釈できません。")
-            paths.append((status, columns[2]))
+            index += 1
+            path = fields[index]
+            index += 1
         else:
-            paths.append((status, columns[1]))
+            if index >= len(fields):
+                raise GitInspectionError("Git の path status 出力を解釈できません。")
+            path = fields[index]
+            index += 1
+        paths.append((status, path))
     return paths
 
 
