@@ -121,3 +121,20 @@ max attemptsでstable setを得られない場合:
 - policy revision mid-readでold/new generationを混ぜない
 - failure時capture-time fallbackなし
 - unrelated async workをglobal lock/spinでstarveしない
+
+## 10. Production implementation mapping
+
+D10後の共有実装は次を正本実装とする。
+
+- `app/domain/contracts/snapshots.py`
+  - `SnapshotStabilizationPolicy`
+  - `SnapshotGenerationSample`
+  - `SnapshotReadCycle`
+  - sync / async bounded stabilizer
+  - `SNAPSHOT_INCOHERENT` fail-closed
+  - same revisionでpayload/generationが変化した場合のinvariant violation
+- `tests/domain/contracts/test_snapshot_consistency.py`
+  - 本書Section 9の共有mechanicsを直接検証する。
+
+consumer固有のread順・optional degradation・owner-specific generation identityは各consumer ownerの
+実装責務として残し、共有stabilizerがそれらのAuthorityを奪わない。
