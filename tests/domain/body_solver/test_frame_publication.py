@@ -2,7 +2,14 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.domain.body import BodyPose, BodyVelocity, JointTransform, JointVelocity, Quaternion, Vector3
+from app.domain.body import (
+    BodyPose,
+    BodyVelocity,
+    JointTransform,
+    JointVelocity,
+    Quaternion,
+    Vector3,
+)
 from app.domain.body_solver import (
     BodyFramePublicationError,
     BodyFramePublicationFailureCode,
