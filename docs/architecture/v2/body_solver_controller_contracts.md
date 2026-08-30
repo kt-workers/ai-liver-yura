@@ -116,6 +116,23 @@ Compilation uses only canonical joint/chain/end-effector IDs and 3D canonical co
 
 No renderer parameter names or screen coordinates enter the compiled trajectory.
 
+### 4.1 初回実装の境界
+
+初回の実装は、確定済み `BodyMotionPlan` と `CanonicalBodyModel`、最新の
+`BodyState` から、実行候補である `ExecutableBodyTrajectory` を決定論的に
+組み立てるところまでとする。
+
+- Plan が束縛した身体モデルと現在の身体モデルの一致を検証する。
+- selector の chain、末端 joint、および解決された joint 集合を正本モデルだけから得る。
+- phase の相対時間を、単調増加する具体的な時刻区間へ変換する。
+- 各 goal を型付きの task 制約へ変換し、phase の平衡方針とともに保持する。
+- 現在の `BodyState` revision が Plan 作成時より進んでいても、同じ Plan を
+  最新状態へ再束縛できる。過去の pose に戻さない。
+
+この段階では数値 IK/FK、重心計算、joint 値の更新、`BodyState` の確定、
+実時間重ね合わせの合成は行わない。これらは、型付き軌道契約を入力として後続段階で
+追加する。したがって、初回実装の出力は物理的な実行完了や実際の身体変化を意味しない。
+
 ---
 
 ## 5. ExecutableBodyTrajectory
