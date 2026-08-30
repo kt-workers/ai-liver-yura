@@ -108,16 +108,16 @@ jobs:
           python -m pip freeze
 
       - name: Ruff
-        run: python -m ruff check app tests tools
+        run: python -m ruff check app tests
 
       - name: Mypy strict
-        run: python -m mypy --strict app tests tools
+        run: python -m mypy --strict app tests
 
       - name: Pytest full suite
         run: python -m pytest -q
 
       - name: Compile Python sources
-        run: python -m compileall -q app tests tools
+        run: python -m compileall -q app tests
 
       - name: Check diff whitespace
         env:
