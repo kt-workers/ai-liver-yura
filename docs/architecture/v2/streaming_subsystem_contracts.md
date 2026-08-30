@@ -384,9 +384,13 @@ Streaming Subsystem absent/unavailable:
 ## 15. Reconnect / rate limit
 
 - provider retry is bounded/backoff controlled
+- `RECONNECTING` / `DEGRADED`中は既存capabilityの`available`値だけでprovider operationをadmitせず、新しいavailable capability snapshotが公開されるまで閉じる
+- reconnect attempt間にはconfigured bounded delayを置き、単なるevent-loop yieldでretry budgetを消費しない
 - reconnect loop does not block Core
 - shutdown stops new retries
-- stale provider generation observation not applied after reconnect generation changes
+- capability snapshotはprovider generationを巻戻してはならない。同一generationでは古いdescriptor revisionで既存bindingを置換してはならない
+- provider observationはsourceごとの時刻・generationだけでなく、active capabilityのprovider generationとも一致しなければ受理しない
+- retry budgetを使い切った最終失敗後に、次attemptのためのbackoffを待たない
 - repeated error diagnostics are coalesced/rate-limited
 - credential failure not treated as infinite transient retry
 
@@ -483,6 +487,8 @@ No secret/raw provider SDK object in trace.
 - READY/LIVE/ENDED/degraded transitions
 - provider observation vs user report provenance
 - contradiction/reconciliation preservation
+- user reportはprovider観測前に`UNRECONCILED`へ正規化し、`CONFIRMED` / `CONTRADICTED`は後続provider observationだけが付与する
+- いったん`CONFIRMED`または`CONTRADICTED`になったuser reportは後続のprovider状態遷移で再計算しない
 
 ### NL boundary
 - paraphrase matrix through #326
