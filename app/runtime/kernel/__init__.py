@@ -10,12 +10,14 @@ from .contracts import (
     QueuePolicy,
     RuntimeDiagnosticsSnapshot,
     RuntimeHealth,
+    RuntimeLanePolicy,
+    RuntimeSchedulerPolicy,
     RuntimeWorkItem,
     WorkDisposition,
     WorkOutcome,
     WorkPriority,
 )
-from .coordinator import RuntimeCoordinator, RuntimeLanePolicy
+from .coordinator import RuntimeCoordinator
 from .queue import BoundedWorkQueue
 
 __all__ = [
@@ -35,6 +37,7 @@ __all__ = [
     "RuntimeDiagnosticsSnapshot",
     "RuntimeHealth",
     "RuntimeLanePolicy",
+    "RuntimeSchedulerPolicy",
     "RuntimeWorkItem",
     "SystemRuntimeClock",
     "WorkDisposition",
