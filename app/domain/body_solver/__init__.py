@@ -22,6 +22,11 @@ from .frame_publication import (
     BodyFrameTakeResult,
     LatestBodyFrameBuffer,
 )
+from .frame_validation import (
+    BodyFrameValidationError,
+    BodyFrameValidationFailureCode,
+    validate_body_pose_frame,
+)
 from .kinematics import forward_kinematics
 from .state_authority import BodyStateAuthority, BodyStateCommitError
 
@@ -32,6 +37,8 @@ __all__ = [
     "BodyFramePublicationError",
     "BodyFramePublicationFailureCode",
     "BodyFrameTakeResult",
+    "BodyFrameValidationError",
+    "BodyFrameValidationFailureCode",
     "BodyMotionExecutionReport",
     "BodyMotionExecutionStatus",
     "BodyMotionExecutionTracker",
@@ -47,4 +54,5 @@ __all__ = [
     "LatestBodyFrameBuffer",
     "compile_body_motion_plan",
     "forward_kinematics",
+    "validate_body_pose_frame",
 ]

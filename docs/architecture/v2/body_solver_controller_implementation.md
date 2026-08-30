@@ -35,6 +35,7 @@ PR #501では、後続physical controllerの基盤として次まで実装済み
 - stale/duplicate revisionと異なるCanonical Body Modelのpublication拒否
 - `BodyMotionExecutionTracker`によるPLANNED→STARTED→OBSERVABLE→COMPLETEDの証拠昇格
 - physical evidence時刻の逆行拒否と、不正transition時のcurrent report保持
+- `BodyPoseFrame`のmodel identity、skeleton、motion identityをpublication前に検証する互換性Gate
 
 ## 未実装で今回完成させる範囲
 
