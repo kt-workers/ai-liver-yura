@@ -11,11 +11,20 @@ from .contracts import (
     BodyTrajectoryPhase,
     ExecutableBodyTrajectory,
 )
+from .frame_publication import (
+    BodyFramePublicationError,
+    BodyFramePublicationFailureCode,
+    BodyFrameTakeResult,
+    LatestBodyFrameBuffer,
+)
 from .kinematics import forward_kinematics
 from .state_authority import BodyStateAuthority, BodyStateCommitError
 
 __all__ = [
     "BodyFrameChannelValue",
+    "BodyFramePublicationError",
+    "BodyFramePublicationFailureCode",
+    "BodyFrameTakeResult",
     "BodyMotionExecutionReport",
     "BodyMotionExecutionStatus",
     "BodyMotionResidual",
@@ -27,6 +36,7 @@ __all__ = [
     "BodyStateCommitError",
     "BodyTrajectoryPhase",
     "ExecutableBodyTrajectory",
+    "LatestBodyFrameBuffer",
     "compile_body_motion_plan",
     "forward_kinematics",
 ]

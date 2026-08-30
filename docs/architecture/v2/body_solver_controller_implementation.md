@@ -23,6 +23,17 @@ PR #497で次が実装済み。
 
 これは正本 Section 4.1 の初回実装境界に一致する。
 
+PR #501では、後続physical controllerの基盤として次まで実装済み。
+
+- immutable `BodyPoseFrame` とcanonical realtime channel値
+- `BodyMotionExecutionReport` とtyped solver failure
+- `BodyStateAuthority`による単一書込みrevision commit境界
+- stale writer / 時刻逆行の拒否とbounded immutable history
+- deterministic Forward Kinematics
+- renderer固有値を含まないframe identity / active plan / trajectory / overlay証拠
+- slow outputが過去frameを蓄積しない`LatestBodyFrameBuffer`
+- stale/duplicate revisionと異なるCanonical Body Modelのpublication拒否
+
 ## 未実装で今回完成させる範囲
 
 正本 Sections 6–24 を実装対象とする。
@@ -96,6 +107,8 @@ support/CoM、airborne/landing、#340 overlay適用後の安全再検証を追�
 ### Stage E — runtime / integration evidence
 
 Planner遅延中もcurrent trajectoryを継続し、renderer遅延をCore frame loopへ伝播させない。#341と#346へ渡せるcanonical `BodyPoseFrame`を確定する。
+
+frame publicationでは出力先ごとに最新frameのみを保持でき、遅いconsumerのために過去frameを無制限蓄積しない。
 
 ## 完了判定
 
