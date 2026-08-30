@@ -6,11 +6,15 @@ from app.runtime.kernel import (
     FakeRuntimeClock,
     LaneErrorPolicy,
     QueuePolicy,
-    RuntimeCoordinator as KernelRuntimeCoordinator,
-    RuntimeLanePolicy as KernelRuntimeLanePolicy,
     RuntimeSchedulerPolicy,
     RuntimeWorkItem,
     WorkPriority,
+)
+from app.runtime.kernel import (
+    RuntimeCoordinator as KernelRuntimeCoordinator,
+)
+from app.runtime.kernel import (
+    RuntimeLanePolicy as KernelRuntimeLanePolicy,
 )
 from app.runtime.lifecycle import DependencyState, RetryPolicy, RuntimeLifecycle
 
