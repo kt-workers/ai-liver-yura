@@ -221,7 +221,11 @@ class BodyPoseFrame:
         if len({item.channel for item in channels}) != len(channels):
             raise ValueError("canonical channel は一意でなければなりません")
         object.__setattr__(self, "channel_values", channels)
-        applied = _identifiers(tuple(self.applied_overlay_refs), "applied_overlay_refs", non_empty=False)
+        applied = _identifiers(
+            tuple(self.applied_overlay_refs),
+            "applied_overlay_refs",
+            non_empty=False,
+        )
         degraded = _identifiers(
             tuple(self.degraded_overlay_refs), "degraded_overlay_refs", non_empty=False
         )
@@ -254,7 +258,11 @@ class BodyMotionResidual:
 
     def __post_init__(self) -> None:
         require_identifier(self.target_ref, "target_ref")
-        if type(self.residual) not in (int, float) or not isfinite(self.residual) or self.residual < 0:
+        if (
+            type(self.residual) not in (int, float)
+            or not isfinite(self.residual)
+            or self.residual < 0
+        ):
             raise ValueError("residual は0以上の有限値でなければなりません")
         object.__setattr__(self, "residual", float(self.residual))
 
@@ -312,7 +320,11 @@ class BodyMotionExecutionReport:
             raise ValueError("failure statusにはfailure_codeが必要です")
         if self.status not in failure_statuses and self.failure_code is not None:
             raise ValueError("非failure statusはfailure_codeを持てません")
-        targets = _identifiers(tuple(self.achieved_target_refs), "achieved_target_refs", non_empty=False)
+        targets = _identifiers(
+            tuple(self.achieved_target_refs),
+            "achieved_target_refs",
+            non_empty=False,
+        )
         residuals = tuple(self.residuals)
         if any(not isinstance(item, BodyMotionResidual) for item in residuals):
             raise ValueError("residuals が不正です")
