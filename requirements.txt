@@ -1,0 +1,6 @@
+PyQt6
+python-dotenv
+PyYAML
+pydantic
+openai
+jsonschema
