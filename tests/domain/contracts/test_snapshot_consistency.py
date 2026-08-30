@@ -143,7 +143,6 @@ async def test_async_retry_yields_without_starving_unrelated_work() -> None:
     heartbeat = asyncio.Event()
 
     async def unrelated() -> None:
-        await asyncio.sleep(0)
         heartbeat.set()
 
     async def read_cycle() -> SnapshotReadCycle[str]:
