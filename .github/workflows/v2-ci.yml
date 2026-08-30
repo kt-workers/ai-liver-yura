@@ -32,6 +32,7 @@ env:
   PYTHONHASHSEED: "0"
   TZ: UTC
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIPENV_VERSION: "2026.8.0"
 
 jobs:
   resolve-pr-identity:
@@ -40,28 +41,28 @@ jobs:
     outputs:
       pr_number: ${{ steps.resolve.outputs.pr_number }}
       head_sha: ${{ steps.resolve.outputs.head_sha }}
-      base_sha: ${{ steps.resolve.outputs.base_sha }}
+      base_ref: ${{ steps.resolve.outputs.base_ref }}
+      live_base_sha: ${{ steps.resolve.outputs.live_base_sha }}
     steps:
       - id: resolve
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
           EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          EVENT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           EXPECTED_DISPATCH_HEAD_SHA: ${{ inputs.expected_head_sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
           test -n "$PR_NUMBER"
           pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
           head_sha="$(jq -r '.head.sha' <<<"$pr")"
-          base_sha="$(jq -r '.base.sha' <<<"$pr")"
           base_ref="$(jq -r '.base.ref' <<<"$pr")"
           test "$base_ref" = "rebuild/v2-foundation"
           test "$head_sha" != "null"
-          test "$base_sha" != "null"
+          live_base_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$base_ref" --jq '.object.sha')"
+          test -n "$live_base_sha"
+          test "$live_base_sha" != "null"
           if [ "$EVENT_NAME" = "pull_request" ]; then
             test "$head_sha" = "$EVENT_HEAD_SHA"
-            test "$base_sha" = "$EVENT_BASE_SHA"
           else
             test -n "$EXPECTED_DISPATCH_HEAD_SHA"
             test "$head_sha" = "$EXPECTED_DISPATCH_HEAD_SHA"
@@ -69,7 +70,8 @@ jobs:
           {
             echo "pr_number=$PR_NUMBER"
             echo "head_sha=$head_sha"
-            echo "base_sha=$base_sha"
+            echo "base_ref=$base_ref"
+            echo "live_base_sha=$live_base_sha"
           } >> "$GITHUB_OUTPUT"
 
   quality:
@@ -85,17 +87,35 @@ jobs:
           ref: ${{ needs.resolve-pr-identity.outputs.head_sha }}
           fetch-depth: 0
 
+      - name: Verify live base generation and freshness
+        env:
+          BASE_REF: ${{ needs.resolve-pr-identity.outputs.base_ref }}
+          LIVE_BASE_SHA: ${{ needs.resolve-pr-identity.outputs.live_base_sha }}
+          EXPECTED_HEAD_SHA: ${{ needs.resolve-pr-identity.outputs.head_sha }}
+        run: |
+          git fetch --no-tags origin "refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+          fetched_base_sha="$(git rev-parse "refs/remotes/origin/$BASE_REF")"
+          test "$fetched_base_sha" = "$LIVE_BASE_SHA"
+          git merge-base --is-ancestor "$LIVE_BASE_SHA" "$EXPECTED_HEAD_SHA"
+
       - name: Set up Python from repository contract
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version-file: .python-version
           cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
+          cache-dependency-path: Pipfile.lock
 
-      - name: Install dependencies
-        run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Verify dependency source invariant
+        run: |
+          test -f Pipfile
+          test -f Pipfile.lock
+          test ! -e requirements.txt
+          test ! -e requirements-dev.txt
+
+      - name: Install dependencies from Pipfile.lock
+        run: |
+          python -m pip install "pipenv==$PIPENV_VERSION"
+          python -m pipenv install --system --deploy --dev
 
       - name: Verify exact head identity
         env:
@@ -119,8 +139,17 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q app tests
 
-      - name: Check diff whitespace
+      - name: Check diff whitespace against live base
         env:
-          BASE_SHA: ${{ needs.resolve-pr-identity.outputs.base_sha }}
+          LIVE_BASE_SHA: ${{ needs.resolve-pr-identity.outputs.live_base_sha }}
           HEAD_SHA: ${{ needs.resolve-pr-identity.outputs.head_sha }}
-        run: git diff --check "$BASE_SHA...$HEAD_SHA"
+        run: git diff --check "$LIVE_BASE_SHA...$HEAD_SHA"
+
+      - name: Verify base generation remained stable
+        env:
+          BASE_REF: ${{ needs.resolve-pr-identity.outputs.base_ref }}
+          LIVE_BASE_SHA: ${{ needs.resolve-pr-identity.outputs.live_base_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          current_base_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$BASE_REF" --jq '.object.sha')"
+          test "$current_base_sha" = "$LIVE_BASE_SHA"
