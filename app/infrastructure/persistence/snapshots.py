@@ -217,8 +217,8 @@ class SqliteLifecycleSnapshotRepository(InMemoryLifecycleSnapshotRepository):
         *,
         expected_revision: int | None = None,
     ) -> DurabilityReceipt:
-        try:
-            with self._lock:
+        with self._lock:
+            try:
                 receipt = super().put_snapshot(envelope, expected_revision=expected_revision)
                 if receipt.status is not DurabilityStatus.DURABLE:
                     return receipt
@@ -241,12 +241,13 @@ class SqliteLifecycleSnapshotRepository(InMemoryLifecycleSnapshotRepository):
                     ),
                 )
                 self._connection.commit()
-        except sqlite3.Error as error:
-            self._records.pop(envelope.snapshot_id, None)
-            raise PersistenceError(
-                PersistenceFailureCode.UNAVAILABLE,
-                "snapshotの永続化に失敗しました",
-            ) from error
+            except sqlite3.Error as error:
+                self._connection.rollback()
+                self._records.pop(envelope.snapshot_id, None)
+                raise PersistenceError(
+                    PersistenceFailureCode.UNAVAILABLE,
+                    "snapshotの永続化に失敗しました",
+                ) from error
         return receipt
 
     def get_latest(self, owner_id: str, snapshot_kind: str) -> RehydrationCandidate | None:

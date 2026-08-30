@@ -4,7 +4,9 @@ import asyncio
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Event, Thread
 from time import sleep
+from typing import Any
 
 import pytest
 
@@ -170,6 +172,73 @@ def test_sqlite_snapshot_revision_check_and_write_are_atomic(tmp_path: Path) -> 
 
     assert sum(isinstance(value, DurabilityReceipt) for value in (first, second)) == 1
     assert sum(isinstance(value, PersistenceError) for value in (first, second)) == 1
+
+
+def test_sqlite_commit_failure_never_exposes_undurable_snapshot(tmp_path: Path) -> None:
+    class CommitFailureConnection:
+        def __init__(self, connection: sqlite3.Connection) -> None:
+            self._connection = connection
+
+        def execute(self, *args: Any, **kwargs: Any) -> sqlite3.Cursor:
+            return self._connection.execute(*args, **kwargs)
+
+        def commit(self) -> None:
+            raise sqlite3.OperationalError("commit失敗")
+
+        def rollback(self) -> None:
+            self._connection.rollback()
+
+        def close(self) -> None:
+            self._connection.close()
+
+    class PausingRecords(dict[str, PersistenceSnapshotEnvelope]):
+        def __init__(self, pop_started: Event, allow_pop: Event) -> None:
+            super().__init__()
+            self._pop_started = pop_started
+            self._allow_pop = allow_pop
+
+        def pop(  # type: ignore[override]
+            self, key: str, default: PersistenceSnapshotEnvelope | None = None
+        ) -> PersistenceSnapshotEnvelope | None:
+            self._pop_started.set()
+            self._allow_pop.wait()
+            return super().pop(key, default)
+
+    repository = SqliteLifecycleSnapshotRepository(str(tmp_path / "failure.sqlite"), lambda: NOW)
+    pop_started = Event()
+    allow_pop = Event()
+    records = PausingRecords(pop_started, allow_pop)
+    repository._records = records
+    repository._connection = CommitFailureConnection(repository._connection)  # type: ignore[assignment]
+    writer_error: list[PersistenceError] = []
+    reader_result: list[object] = []
+    reader_returned = Event()
+
+    def write() -> None:
+        try:
+            repository.put_snapshot(envelope("snapshot-1", 1))
+        except PersistenceError as error:
+            writer_error.append(error)
+
+    def read() -> None:
+        reader_result.append(repository.get_latest("goals", "goal_commitment"))
+        reader_returned.set()
+
+    writer = Thread(target=write)
+    writer.start()
+    assert pop_started.wait()
+
+    reader = Thread(target=read)
+    reader.start()
+    assert not reader_returned.is_set()
+
+    allow_pop.set()
+    writer.join()
+    reader.join()
+    repository.close()
+
+    assert writer_error[0].code is PersistenceFailureCode.UNAVAILABLE
+    assert reader_result == [None]
 
 
 def test_transient_failure_is_bounded_retried_without_blocking_foreground() -> None:
