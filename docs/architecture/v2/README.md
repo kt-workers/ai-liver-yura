@@ -1,8 +1,10 @@
 # V2アーキテクチャ正本索引
 
 - `system_architecture.md` — システム全体の正本アーキテクチャ
-- `design_completion_matrix.md` — #445 全V2詳細設計の完了状態・実装凍結判定（Implementation Freeze Gate）
+- `foundation_contracts.md` — #321 Event/Revision/Authority/Capability/ExecutionResult等の共有typed Foundation契約
+- `design_completion_matrix.md` — #445 全V2詳細設計の完了状態・実装凍結判定
 - `design_cross_audit_report.md` — D8 正本性・依存関係・真実境界・revision・並行性・作業系列の横断監査
+- `design_implementation_decidability_audit.md` — #445 D10 実装者が重要事項を発明せず製造できること、元工程、計画外必須Task回収の再監査
 - `brain_architecture.md` — Brainのモジュール構成と正本責務
 - `brain_integration_contracts.md` — #334 Brainの非直列構成、trigger、revision、並行統合契約
 - `cognitive_llm_architecture.md` — 認知処理とLLM役割の設計
@@ -10,17 +12,24 @@
 - `concurrency_architecture.md` — 非停止実行系とLLM呼出し構成
 - `runtime_kernel_contracts.md` — 上限付きqueue、scheduler、cancellation、lifecycle契約
 - `runtime_lifecycle_contracts.md` — 縮退運転、可用性、再試行、永続化後終了の安全停止契約
+- `runtime_operational_numeric_contracts.md` — #322/#350 queue/concurrency、cancel grace、retry/backoff、diagnostic rate limit、shutdown graceのD10数値契約
 - `llm_role_contracts.md` — 可変論理LLM役割と構造化要求・結果契約
+- `llm_execution_numeric_contracts.md` — #323/#357 timeout、attempt、token、temperature、retry/backoffのD10数値契約
 - `../../character/v2/yura_character_bible.md` — 星波ゆらの人物設定正本
 - `llm_provider_adapter_contracts.md` — LLM提供元SDK境界、model方針解決、型付き失敗正規化
 - `llm_provider_operational_diagnostics_contracts.md` — #437 提供元運用失敗の安全な分類、再試行の真実境界、可観測性
 - `input_gateway_contracts.md` — 複数入力形式の正規化、session、touch境界
 - `input_meaning_contracts.md` — 自然言語の型付き意味、参照、確定境界
 - `appraisal_internal_state_contracts.md` — 主観評価候補と因果状態reducer
+- `appraisal_decay_numeric_contracts.md` — #327 half-life decay式、rule選択、missing policy、freshnessのD10数値契約
 - `executive_appraisal_facts_contracts.md` — 評価事実snapshotとExecutiveの鮮度境界
 - `executive_authority_contracts.md` — Executive Goal・Action正本と型付き決定確定判定
 - `goal_commitment_state_contracts.md` — 永続Goal・Commitment状態と原子的ライフサイクルreducer
+- `goal_planning_contracts.md` — #361 active Goalから依存グラフ型ActivityPlanへの計画Authority契約
 - `activity_execution_contracts.md` — Activity受付、利用能力の事前確認、実行事実の正本
+- `attention_turn_contracts.md` — #333 Focus/Turn/response obligation、bounded source scheduling、fairness契約
+- `attention_source_owner_lifecycle_contracts.md` — #333 source owner/lifecycle、refresh/resolve/expiry境界
+- `attention_turn_contracts_amendment_2026-08-16.md` — #333 live freshness・claim等の後続補足正本
 - `memory_store_retrieval_contracts.md` — #332 Memory Store正本、再調整、矛盾、上限付き検索
 - `memory_reflection_contracts.md` — #364 上限付き情報源証拠、候補提案、支持観測、Reflection受理
 - `persistence_repository_contracts.md` — #359 Memory repository、再起動安全snapshot、移行、復元基盤
@@ -46,6 +55,7 @@
 - `body_expression_contracts.md` — #337 Internal State / Focus / Character Styleから正規化`BodyExpressionContext`への投影契約
 - `body_motion_planning_contracts.md` — #338 Executive BODY意図からsolver安全な高水準`BodyMotionPlan`への変換
 - `body_solver_controller_contracts.md` — #339 IK/FK、制限、平衡、軌道、連続`BodyState`確定正本
+- `body_physical_numeric_contracts.md` — #336/#338/#339 scalar DOF、target geometry、extent、CoM/contact、dynamic limit、数値solver policy
 - `body_realtime_layers_contracts.md` — #340 視線、瞬き、呼吸、viseme、微細な実時間重ね合わせ契約
 - `body_integration_contracts.md` — #341 Executive BodyIntentから連続`BodyPoseFrame`への統合、並行性、縮退
 - `plugin_architecture.md` — Core拡張と利用能力のアーキテクチャ
@@ -61,7 +71,7 @@
 - `game_skill_runtime_contracts.md` — #365 高水準Core Goalと実時間game認識・戦術・action・runtime契約
 - `system_integration_contracts.md` — #360 段階的構成、縮退起動、系統間遅延、System Verification契約
 - `legacy_migration_matrix.md` — V1要件移行表
-- `project_sync_manifest.md` — 過去のGitHub Project同期表。現在V2計画の正本はProject #7
+- `project_sync_manifest.md` — 初期V2の工程・依存・日程を作った元製造順。Project #7移行後も工程再整合の基準として保持
 - `project_sync_runbook.md` — 現在ID取得、dry-run、Project field、正式Parent/Sub-issue同期手順
 
-状態: V2 Design Completion Gate #445 D1–D9 `PASS` / 実装凍結解除済み。現在の実装WorkでもWork単位の新しいResume Gateを必須とする。
+状態: D1–D9は2026-08-23に一度PASS済み。ただし2026-08-30に実装決定可能性の設計不足を検出したため、#445を再openしD10再整合中。D10 PASSまではproduction implementationを再凍結し、architecture-only修正を行う。

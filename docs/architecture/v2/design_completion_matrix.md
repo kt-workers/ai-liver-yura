@@ -2,22 +2,26 @@
 
 Owner: #445
 Root: #317
-Status: Architecture Freeze / Design Completion Gate
+Status: Architecture Reconciliation / D10 Implementation Decidability Gate
 
 ## 1. Purpose
 
 AI Liver ゆら V2について、実装前に詳細設計が十分に確定しているかを一元管理する。
 
-2026-08-23以降、#445がPASSし、D9でユーザーが完成設計を明示確認するまで新規production implementationを開始しない。
+D1〜D9は2026-08-23に一度PASSし、ユーザーによるDesign Completion確認まで完了した。しかし2026-08-30、#339製造再開時に実装者が追加設計判断を行わないと製造できないBody physical/numerical gapを検出した。
 
-高レベルArchitectureやIssue本文だけでは設計完了とみなさない。実装担当が重要な責務、型、lifecycle、failure、freshness、concurrencyを推測しなくてよいことを基準とする。
+このため#445を再openし、D10 `Implementation Decidability Reconciliation`を追加する。D10では「設計書が存在する」ことではなく、実装担当が重要な責務、型、lifecycle、failure、freshness、concurrency、数値変換、数学表現、依存順を推測しなくてよいことを設計完了基準とする。
+
+D10 PASSまでproduction implementationを再凍結する。
 
 ## 2. Status definition
 
-- **A — DETAILED_CANONICAL**: trunkまたは#445 architecture-only lineageに詳細canonicalが存在する。
+- **A — DETAILED_CANONICAL**: 詳細canonicalが存在し、D9時点の設計内容として有効。
 - **POST_D9_RECONCILIATION**: 設計はAだが、既存implementation lineageを現行canonical generationへ照合する必要がある。
+- **D10_RECONCILIATION_REQUIRED**: D9後の製造再開でimplementation-decidability gapが見つかり、canonical補修とowner Work再評価が必要。
+- **D10_REAUDIT_PENDING**: D9設計は存在するが、D10追加監査dimensionでの再確認がまだ完了していない。
 
-D1〜D8後、planned V2 Work/IntegrationにB/C/Dの詳細設計不足は残していない。
+D10の監査基準は `design_implementation_decidability_audit.md` を正本とする。
 
 ---
 
@@ -25,15 +29,15 @@ D1〜D8後、planned V2 Work/IntegrationにB/C/Dの詳細設計不足は残し�
 
 | Area | Issue | Status | Canonical |
 |---|---:|---|---|
-| Foundation typed contracts | #321 | A | Foundation contract set |
-| Runtime Kernel | #322 | A | `runtime_kernel_contracts.md` |
-| Variable LLM Role | #323 | A | `llm_role_contracts.md` |
-| Runtime lifecycle | #350 | A | `runtime_lifecycle_contracts.md` |
-| Character Bible | #354 | A | `docs/character/v2/yura_character_bible.md` |
-| production Character Definition | #442 | A | `character_definitions/v2/yura.yaml` |
-| Character Projection | #355 | A | `character_projection_contracts.md` / psychological projection |
+| Foundation typed contracts | #321 | A / D10_REAUDIT_PENDING | Foundation contract set |
+| Runtime Kernel | #322 | A / D10_REAUDIT_PENDING | `runtime_kernel_contracts.md` |
+| Variable LLM Role | #323 | A / D10_REAUDIT_PENDING | `llm_role_contracts.md` |
+| Runtime lifecycle | #350 | A / D10_REAUDIT_PENDING | `runtime_lifecycle_contracts.md` |
+| Character Bible | #354 | A / D10_REAUDIT_PENDING | `docs/character/v2/yura_character_bible.md` |
+| production Character Definition | #442 | A / D10_REAUDIT_PENDING | `character_definitions/v2/yura.yaml` |
+| Character Projection | #355 | A / D10_REAUDIT_PENDING | `character_projection_contracts.md` / psychological projection |
 
-#350/#359 shutdown ordering is reconciled: bounded final snapshot/flush occurs before Persistence close.
+#350/#359 shutdown orderingはD8でreconcile済み。D10では実装に必要なtyped lifecycle/failure値が不足していないかを再確認する。
 
 ---
 
@@ -41,22 +45,22 @@ D1〜D8後、planned V2 Work/IntegrationにB/C/Dの詳細設計不足は残し�
 
 | Area | Issue | Status | Canonical |
 |---|---:|---|---|
-| Input Gateway | #349 | A | `input_gateway_contracts.md` |
-| Input Meaning | #326 | A | `input_meaning_contracts.md` |
-| Appraisal / Internal State | #327 | A | `appraisal_internal_state_contracts.md` |
-| Executive | #328 | A | `executive_authority_contracts.md` |
-| Goal / Commitment | #366 | A | `goal_commitment_state_contracts.md` |
-| Goal Planning | #361 | A | `goal_planning_contracts.md` |
-| Activity / Actual Fact | #329 | A | `activity_execution_contracts.md` |
-| Attention / Turn / Autonomy | #333 | A | `attention_turn_contracts.md` + source lifecycle supplements |
-| Speech Semantics | #362 | A | `speech_semantics_contracts.md` |
-| Character Language | #330 | A / POST_D9_RECONCILIATION | 4 supplements exact-recovered from PR #423 |
-| Semantic Verification | #363 | A / POST_D9_RECONCILIATION | 6 supplements exact-recovered from PR #428 |
-| Speech Performance | #331 | A | `speech_performance_contracts.md` + `speech_expression_projection_contracts.md` |
-| Speech Runtime / Presentation | #348 | A | `speech_runtime_presentation_contracts.md` |
-| Memory Store / Retrieval | #332 | A | `memory_store_retrieval_contracts.md` |
-| Reflection | #364 | A | `memory_reflection_contracts.md` |
-| Brain Integration | #334 | A | `brain_integration_contracts.md` |
+| Input Gateway | #349 | A / D10_REAUDIT_PENDING | `input_gateway_contracts.md` |
+| Input Meaning | #326 | A / D10_REAUDIT_PENDING | `input_meaning_contracts.md` |
+| Appraisal / Internal State | #327 | A / D10_REAUDIT_PENDING | `appraisal_internal_state_contracts.md` |
+| Executive | #328 | A / D10_REAUDIT_PENDING | `executive_authority_contracts.md` |
+| Goal / Commitment | #366 | A / D10_REAUDIT_PENDING | `goal_commitment_state_contracts.md` |
+| Goal Planning | #361 | A / D10_REAUDIT_PENDING | `goal_planning_contracts.md` |
+| Activity / Actual Fact | #329 | A / D10_REAUDIT_PENDING | `activity_execution_contracts.md` |
+| Attention / Turn / Autonomy | #333 | A / D10_REAUDIT_PENDING | `attention_turn_contracts.md` + source lifecycle supplements |
+| Speech Semantics | #362 | A / D10_REAUDIT_PENDING | `speech_semantics_contracts.md` |
+| Character Language | #330 | A / POST_D9_RECONCILIATION / D10_REAUDIT_PENDING | 4 supplements exact-recovered from PR #423 |
+| Semantic Verification | #363 | A / POST_D9_RECONCILIATION / D10_REAUDIT_PENDING | 6 supplements exact-recovered from PR #428 |
+| Speech Performance | #331 | A / D10_REAUDIT_PENDING | `speech_performance_contracts.md` + `speech_expression_projection_contracts.md` |
+| Speech Runtime / Presentation | #348 | A / D10_REAUDIT_PENDING | `speech_runtime_presentation_contracts.md` |
+| Memory Store / Retrieval | #332 | A / D10_REAUDIT_PENDING | `memory_store_retrieval_contracts.md` |
+| Reflection | #364 | A / D10_REAUDIT_PENDING | `memory_reflection_contracts.md` |
+| Brain Integration | #334 | A / D10_REAUDIT_PENDING | `brain_integration_contracts.md` |
 
 Speech:
 
@@ -92,12 +96,12 @@ Historical Memory never directly becomes current Emotion/Goal/Relationship truth
 
 | Area | Issue | Status | Canonical |
 |---|---:|---|---|
-| Canonical Body Model / State | #336 | A | `body_architecture.md` D01/D02 |
-| Body Expression | #337 | A | `body_expression_contracts.md` |
-| Body Motion Planning | #338 | A / POST_D9_RECONCILIATION | `body_motion_planning_contracts.md` exact-recovered from PR #422 |
-| Solver / Controller | #339 | A | `body_solver_controller_contracts.md` |
-| Realtime Layers | #340 | A | `body_realtime_layers_contracts.md` |
-| Body Integration | #341 | A | `body_integration_contracts.md` |
+| Canonical Body Model / State | #336 | **D10_RECONCILIATION_REQUIRED** | `body_architecture.md` D01/D02 + `body_physical_numeric_contracts.md` |
+| Body Expression | #337 | A / D10_REAUDIT_PENDING | `body_expression_contracts.md` |
+| Body Motion Planning | #338 | **D10_RECONCILIATION_REQUIRED** / POST_D9_RECONCILIATION | `body_motion_planning_contracts.md` + `body_physical_numeric_contracts.md` |
+| Solver / Controller | #339 | **D10_RECONCILIATION_REQUIRED** | `body_solver_controller_contracts.md` + `body_physical_numeric_contracts.md` |
+| Realtime Layers | #340 | A / D10_REAUDIT_PENDING | `body_realtime_layers_contracts.md` |
+| Body Integration | #341 | A / D10_REAUDIT_PENDING | `body_integration_contracts.md` |
 
 ```text
 Executive BODY intent → #338 Plan → #339 physical trajectory
@@ -113,7 +117,15 @@ D8 direct dependencies:
 - #340: #333/#336/#337/#358; #339 is Adjacent consumer.
 - #346: #336/#339; #340/#341 are Related integration context.
 
-Body invariants: #339 sole BodyState writer, #340 overlays only, no Home reset, no fixed preset canonical path, 3D Canonical not reduced by renderer, realtime does not wait for LLM/TTS/renderer.
+D10 correction:
+- scalar DOF state is physical joint-coordinate Authority; quaternion is derived projection.
+- fixed rest-local X→Y→Z composition eliminates hard-limit quaternion decomposition ambiguity.
+- model revision/fingerprint, dynamic limits, segment CoM, end-effector frame, contact/support geometry are explicit.
+- `TARGET_REF` geometry comes from trusted typed resolver; ref文字列から推測しない。
+- `extent` is converted by closed effect-specific rules.
+- numerical tolerance/iteration/residual/completion policy is versioned canonical data.
+
+Body invariants remain: #339 sole BodyState writer, #340 overlays only, no Home reset, no fixed preset canonical path, 3D Canonical not reduced by renderer, realtime does not wait for LLM/TTS/renderer.
 
 ---
 
@@ -121,12 +133,12 @@ Body invariants: #339 sole BodyState writer, #340 overlays only, no Home reset, 
 
 | Area | Issue | Status | Canonical |
 |---|---:|---|---|
-| Plugin Registry / Permission | #343 | A | `plugin_registry_contracts.md` + permission supplement |
-| Plugin Integration | #344 | A | `plugin_integration_contracts.md` |
-| LLM Provider | #357 | A | `llm_provider_adapter_contracts.md` |
-| LLM operational diagnostics | #437 | A | `llm_provider_operational_diagnostics_contracts.md` |
-| TTS Provider | #358 | A | `tts_provider_contracts.md` |
-| Persistence | #359 | A | `persistence_repository_contracts.md` |
+| Plugin Registry / Permission | #343 | A / D10_REAUDIT_PENDING | `plugin_registry_contracts.md` + permission supplement |
+| Plugin Integration | #344 | A / D10_REAUDIT_PENDING | `plugin_integration_contracts.md` |
+| LLM Provider | #357 | A / D10_REAUDIT_PENDING | `llm_provider_adapter_contracts.md` |
+| LLM operational diagnostics | #437 | A / D10_REAUDIT_PENDING | `llm_provider_operational_diagnostics_contracts.md` |
+| TTS Provider | #358 | A / D10_REAUDIT_PENDING | `tts_provider_contracts.md` |
+| Persistence | #359 | A / D10_REAUDIT_PENDING | `persistence_repository_contracts.md` |
 
 D8 direct dependency correction: #358 directly depends on #331; #348 is downstream Presentation consumer/orchestrator.
 
@@ -138,13 +150,13 @@ Invariants: Plugin 0 valid; Plugin adds Capability not Core Authority; actual ef
 
 | Area | Issue | Status | Canonical |
 |---|---:|---|---|
-| Avatar | #346 | A | `avatar_presentation_contracts.md` |
-| Streaming | #347 | A | `streaming_subsystem_contracts.md` |
-| GUI/Admin | #351 | A | `gui_admin_contracts.md` |
-| Validation Labs | #352 | A | `validation_lab_contracts.md` |
-| Development Tooling | #353 | A | `development_tooling_contracts.md` |
-| Game Skill | #365 | A | `game_skill_runtime_contracts.md` |
-| Speech Character Human Gate | #434 | A design / implementation HOLD | Validation + Speech canonical set |
+| Avatar | #346 | A / D10_REAUDIT_PENDING | `avatar_presentation_contracts.md` |
+| Streaming | #347 | A / D10_REAUDIT_PENDING | `streaming_subsystem_contracts.md` |
+| GUI/Admin | #351 | A / D10_REAUDIT_PENDING | `gui_admin_contracts.md` |
+| Validation Labs | #352 | A / D10_REAUDIT_PENDING | `validation_lab_contracts.md` |
+| Development Tooling | #353 | A / D10_REAUDIT_PENDING | `development_tooling_contracts.md` |
+| Game Skill | #365 | A / D10_REAUDIT_PENDING | `game_skill_runtime_contracts.md` |
+| Speech Character Human Gate | #434 | A design / implementation HOLD / D10_REAUDIT_PENDING | Validation + Speech canonical set |
 
 D8 corrections:
 - #347 direct dependencies #329/#333; #334 is Adjacent/System target.
@@ -158,10 +170,10 @@ D8 corrections:
 
 | Area | Issue | Status | Canonical |
 |---|---:|---|---|
-| Brain Integration | #334 | A | `brain_integration_contracts.md` |
-| Body Integration | #341 | A | `body_integration_contracts.md` |
-| Plugin Integration | #344 | A | `plugin_integration_contracts.md` |
-| System Integration | #360 | A | `system_integration_contracts.md` |
+| Brain Integration | #334 | A / D10_REAUDIT_PENDING | `brain_integration_contracts.md` |
+| Body Integration | #341 | A / D10_REAUDIT_PENDING | `body_integration_contracts.md` |
+| Plugin Integration | #344 | A / D10_REAUDIT_PENDING | `plugin_integration_contracts.md` |
+| System Integration | #360 | A / D10_REAUDIT_PENDING | `system_integration_contracts.md` |
 
 #360 direct dependencies after D8:
 `#334, #341, #344, #350, #346, #347, #351, #352, #358, #359, #365`.
@@ -186,11 +198,37 @@ This is staging order, not runtime serialization.
 
 ---
 
-## 9. D8 Cross-design audit
+## 9. Original production sequence authority
+
+V2初期製造順の根拠は `project_sync_manifest.md` の `工程`。
+
+```text
+100 #321
+110 #322
+120 #323
+130 #320
+140 #354
+150 #355
+160 #324
+170 #357
+200〜380 Brain / Speech / Memory / Infrastructure / Brain Integration
+400〜460 Body
+500〜520 Plugin
+600〜650 Subsystems
+700 #360 System Integration
+```
+
+工程は日付から逆算しない。元工程作成後に発見された必須Taskは、`design_implementation_decidability_audit.md`の規則に従い既存Workへ回収するか、独立責務ならIssue化して依存上の正しい工程へ挿入する。
+
+計画にないことを理由に必須機能を未対応のままV2完成扱いしてはならない。
+
+---
+
+## 10. D8 Cross-design audit
 
 Canonical: `design_cross_audit_report.md`
 
-PASS content audit covers:
+D8 PASS content audit covered:
 - Authority ownership
 - dependency graph / overdependency/cycle corrections
 - DTO/provenance
@@ -203,22 +241,11 @@ PASS content audit covers:
 - Human Verification readiness
 - implementation lineage/canonical-generation separation
 
-Resolved findings include #350/#359, #331 projection, #340 dependency, #365 classification, #346 responsibility, #434 scope, #332 stale implementation direction, active PR metadata, #358/#347 overdependency and #360 Parent cycle.
-
-PR #446 changed-file scan is architecture-only (`docs/architecture/v2/*.md`).
-
-Preserved implementation heads were rechecked and remain one open head per intended Work lineage:
-- #330 / PR #423 / `827eb667...`
-- #363 / PR #428 / `a08d8837...`
-- #338 / PR #422 / `e3376f07...`
-- historical diagnostic #434 / PR #435 / `30291dfd...`
-- historical design-only #332 / PR #444
-
-Final D8 evidence still requires exact final HEAD CI/review/checkpoint without further branch mutation.
+D10はD8を否定するものではなく、D8で不足していたimplementation-decidability / data sufficiency / completion-state consistency / plan coverageを追加する。
 
 ---
 
-## 10. Design Completion stages
+## 11. Design Completion stages
 
 - [x] D1 Existing detailed-design audit
 - [x] D2 Speech end-to-end detailed design
@@ -228,10 +255,21 @@ Final D8 evidence still requires exact final HEAD CI/review/checkpoint without f
 - [x] D6 Subsystems detailed design
 - [x] D7 Brain / Body / Plugin / System Integration design
 - [x] D8 Cross-design content audit and corrections
-- [ ] D9 explicit User Design Completion confirmation
+- [x] D9 explicit User Design Completion confirmation — PASS 2026-08-23
+- [ ] **D10 Implementation Decidability / Plan Coverage / Completion-State reconciliation**
 
-## 11. Implementation Freeze
+## 12. Implementation Freeze
 
-Implementation Freeze remains active through D9.
+D9で一度解除したImplementation Freezeは、2026-08-30にblocking design gapを検出したためD10完了まで再有効化する。
 
-After D9 PASS, implementation does not resume from old branches automatically. Every Work must run a fresh GitHub-live Resume Gate and emit a Resume Certificate before code/reconciliation/merge.
+D10 PASSまで:
+- production implementationを増やさない。
+- architecture-only reconciliationを行う。
+- PR #501等の既存production成果は保全する。
+
+D10 PASS後:
+1. `project_sync_manifest.md`の元工程を基準にする。
+2. 後発必須Taskを依存位置へ挿入したcurrent工程へProject #7を同期する。
+3. 工程先頭からclosed/implementation responsibilityを順に照合する。
+4. 最初の未完了Workをfresh Resume Gateする。
+5. 1 Work = 1 active implementation lineage、1 commit = 1 taskで製造を再開する。
