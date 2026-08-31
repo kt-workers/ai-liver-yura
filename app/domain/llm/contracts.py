@@ -232,6 +232,30 @@ class LLMExecutionPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class LLMExecutionProvenance:
+    """Provider実行に使用した安全なPolicy/Mapping世代識別。"""
+
+    policy_id: str
+    policy_revision: int
+    mapping_id: str
+    mapping_revision: int
+
+    def __post_init__(self) -> None:
+        require_identifier(self.policy_id, "policy_id")
+        require_revision(self.policy_revision, "policy_revision")
+        require_identifier(self.mapping_id, "mapping_id")
+        require_revision(self.mapping_revision, "mapping_revision")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "policy_id": self.policy_id,
+            "policy_revision": self.policy_revision,
+            "mapping_id": self.mapping_id,
+            "mapping_revision": self.mapping_revision,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class LLMRoleDescriptor:
     role_id: str
     responsibility: str
@@ -359,6 +383,7 @@ class LLMRoleResult:
     output: StructuredPayload | None = None
     failure: LLMRoleFailure | None = None
     started_at: datetime | None = None
+    execution_provenance: LLMExecutionProvenance | None = None
 
     def __post_init__(self) -> None:
         for name in ("request_id", "role_id", "trace_id"):
@@ -370,6 +395,10 @@ class LLMRoleResult:
                 raise ValueError("started_at cannot be later than completed_at")
         if type(self.attempt_count) is not int or self.attempt_count < 0:
             raise ValueError("attempt_count must be a non-negative int")
+        if self.execution_provenance is not None and not isinstance(
+            self.execution_provenance, LLMExecutionProvenance
+        ):
+            raise ValueError("execution_provenance が不正です")
         if self.status is LLMRoleStatus.SUCCEEDED:
             if self.started_at is None or self.output is None or self.failure is not None:
                 raise ValueError("succeeded result requires start and output without failure")
@@ -399,6 +428,9 @@ class LLMRoleResult:
             "token_usage": self.token_usage.to_dict(),
             "output": None if self.output is None else self.output.to_dict(),
             "failure": None if self.failure is None else self.failure.to_dict(),
+            "execution_provenance": None
+            if self.execution_provenance is None
+            else self.execution_provenance.to_dict(),
         }
 
 
