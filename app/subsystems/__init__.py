@@ -1,1 +1,1 @@
-"""Core public contractだけを使用するSubsystem群。"""
+"""Core public contractだけを使用する外部Subsystem群。"""
