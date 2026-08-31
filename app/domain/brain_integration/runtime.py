@@ -234,7 +234,6 @@ class BrainIntegrationRuntime:
         self._started = False
 
         for lane_policy in policy.lane_policies:
-            lane = BrainIntegrationLane(lane_policy.lane_id)
             self._runtime.register_lane(
                 lane_policy,
                 self._execute_runtime_work,
