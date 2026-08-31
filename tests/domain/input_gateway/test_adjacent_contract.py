@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import cast
 
+from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import CapabilityAvailability, RevisionVector
 from app.domain.input_gateway import (
     InputAdmissionLedger,
@@ -30,9 +31,11 @@ def test_consumer_can_route_by_modality_without_reinterpreting_source_api() -> N
         RevisionVector(9),
         {"message_ref": "message-42", "author_ref": "viewer-7"},
     )
-    admission = InputNormalizer(InputAdmissionLedger(), InputSessionRegistry()).normalize(
-        observation
-    )
+    admission = InputNormalizer(
+        InputAdmissionLedger(),
+        InputSessionRegistry(),
+        bounds_policy=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    ).normalize(observation)
     assert admission.event is not None
     consumer_view = admission.event.to_dict()
     envelope = cast(dict[str, object], consumer_view["envelope"])
