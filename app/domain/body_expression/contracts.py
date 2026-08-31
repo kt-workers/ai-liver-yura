@@ -49,6 +49,12 @@ def _normalized(value: float, field_name: str) -> float:
     return float(value)
 
 
+def _gain(value: float, field_name: str) -> float:
+    if type(value) not in (int, float) or not isfinite(value) or not 0.0 <= value <= 2.0:
+        raise ValueError(f"{field_name} は有限の [0, 2] でなければなりません")
+    return float(value)
+
+
 @dataclass(frozen=True, slots=True)
 class NormalizedExpressionValue:
     value: float
@@ -126,12 +132,22 @@ class BodyExpressionTargetScope(str, Enum):
     TURN_OWNER = "turn_owner"
 
 
+class CharacterStyleRuleDisposition(str, Enum):
+    APPLY = "apply"
+    NO_BASELINE_ONLY_DYNAMIC = "no_baseline_only_dynamic"
+    IGNORE_EXPLICITLY = "ignore_explicitly"
+
+
 def _axis_weights(
     values: tuple[BodyExpressionAxisValue, ...],
+    *,
+    allow_empty: bool = False,
 ) -> tuple[BodyExpressionAxisValue, ...]:
     result = tuple(values)
-    if not result or any(not isinstance(item, BodyExpressionAxisValue) for item in result):
-        raise ValueError("axis_weights は空でない BodyExpressionAxisValue の列でなければなりません")
+    if (not allow_empty and not result) or any(
+        not isinstance(item, BodyExpressionAxisValue) for item in result
+    ):
+        raise ValueError("axis_weights が不正です")
     if len({item.axis for item in result}) != len(result):
         raise ValueError("axis_weights の axis は一意でなければなりません")
     return result
@@ -163,11 +179,24 @@ class BodyExpressionInfluenceRule:
 
 
 @dataclass(frozen=True, slots=True)
+class BodyExpressionDynamicGainOverride:
+    axis: BodyExpressionAxis
+    gain: float
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.axis, BodyExpressionAxis):
+            raise ValueError("axis は BodyExpressionAxis でなければなりません")
+        object.__setattr__(self, "gain", _gain(self.gain, "gain"))
+
+
+@dataclass(frozen=True, slots=True)
 class CharacterStyleInfluenceRule:
     rule_id: str
     facet_id: str
     confirmed_value: str
     axis_weights: tuple[BodyExpressionAxisValue, ...]
+    dynamic_gain_overrides: tuple[BodyExpressionDynamicGainOverride, ...] = ()
+    disposition: CharacterStyleRuleDisposition = CharacterStyleRuleDisposition.APPLY
 
     def __post_init__(self) -> None:
         require_identifier(self.rule_id, "rule_id")
@@ -175,7 +204,26 @@ class CharacterStyleInfluenceRule:
         if self.facet_id not in _BODY_STYLE_FACET_IDS:
             raise ValueError("facet_id は既知の Character Body Style facet でなければなりません")
         require_identifier(self.confirmed_value, "confirmed_value")
-        object.__setattr__(self, "axis_weights", _axis_weights(self.axis_weights))
+        if not isinstance(self.disposition, CharacterStyleRuleDisposition):
+            raise ValueError("disposition が不正です")
+        weights = _axis_weights(self.axis_weights, allow_empty=True)
+        gains = tuple(self.dynamic_gain_overrides)
+        if any(not isinstance(item, BodyExpressionDynamicGainOverride) for item in gains):
+            raise ValueError("dynamic_gain_overrides が不正です")
+        if len({item.axis for item in gains}) != len(gains):
+            raise ValueError("dynamic_gain_overrides の axis は一意でなければなりません")
+        if self.disposition is CharacterStyleRuleDisposition.APPLY and not weights:
+            raise ValueError("APPLY rule はaxis_weightsを必要とします")
+        if self.disposition is CharacterStyleRuleDisposition.NO_BASELINE_ONLY_DYNAMIC:
+            if weights or not gains:
+                raise ValueError("NO_BASELINE_ONLY_DYNAMIC rule はgainだけを必要とします")
+        if (
+            self.disposition is CharacterStyleRuleDisposition.IGNORE_EXPLICITLY
+            and (weights or gains)
+        ):
+            raise ValueError("IGNORE_EXPLICITLY rule は寄与を持てません")
+        object.__setattr__(self, "axis_weights", weights)
+        object.__setattr__(self, "dynamic_gain_overrides", gains)
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,6 +248,11 @@ class BodyExpressionProjectionPolicy:
         ]
         if len(identifiers) != len(set(identifiers)):
             raise ValueError("policy 内の rule_id は一意でなければなりません")
+        style_bindings = [
+            (rule.facet_id, rule.confirmed_value) for rule in character_style_rules
+        ]
+        if len(style_bindings) != len(set(style_bindings)):
+            raise ValueError("同一facet_id + confirmed_valueはexactly one ruleでなければなりません")
         object.__setattr__(self, "state_rules", state_rules)
         object.__setattr__(self, "character_style_rules", character_style_rules)
 
@@ -266,6 +319,7 @@ class BodyExpressionContext:
 
 class BodyExpressionFailureCode(str, Enum):
     UNMAPPED_CHARACTER_STYLE = "unmapped_character_style"
+    INVALID_POLICY = "invalid_policy"
     STALE = "stale"
     INCOHERENT = "incoherent"
     DETERMINISM = "determinism"

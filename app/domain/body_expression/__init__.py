@@ -3,6 +3,7 @@ from .contracts import (
     BodyExpressionAxisValue,
     BodyExpressionComponent,
     BodyExpressionContext,
+    BodyExpressionDynamicGainOverride,
     BodyExpressionFailureCode,
     BodyExpressionInfluenceRule,
     BodyExpressionProjectionError,
@@ -11,6 +12,7 @@ from .contracts import (
     BodyExpressionTransform,
     BodyFocusExpressionConstraint,
     CharacterStyleInfluenceRule,
+    CharacterStyleRuleDisposition,
     NormalizedExpressionValue,
 )
 from .coordinator import BodyExpressionCoordinator
@@ -29,6 +31,7 @@ __all__ = [
     "BodyExpressionAxisValue",
     "BodyExpressionComponent",
     "BodyExpressionContext",
+    "BodyExpressionDynamicGainOverride",
     "BodyExpressionFailureCode",
     "BodyExpressionInfluenceRule",
     "BodyExpressionProjectionError",
@@ -37,6 +40,7 @@ __all__ = [
     "BodyExpressionTransform",
     "BodyFocusExpressionConstraint",
     "CharacterStyleInfluenceRule",
+    "CharacterStyleRuleDisposition",
     "NormalizedExpressionValue",
     "project",
     "AttentionFocusReadPort",

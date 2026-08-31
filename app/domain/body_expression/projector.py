@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from math import fsum
+from math import fsum, isfinite
 
 from app.domain.appraisal import InternalStateFacet, InternalStateSnapshot
 from app.domain.attention import AttentionFocusView
@@ -19,6 +19,7 @@ from .contracts import (
     BodyExpressionTargetScope,
     BodyExpressionTransform,
     BodyFocusExpressionConstraint,
+    CharacterStyleRuleDisposition,
     NormalizedExpressionValue,
 )
 
@@ -78,6 +79,18 @@ def _facet_reference(facet: InternalStateFacet) -> str:
     return f"{facet.ref.kind.value}.{facet.ref.state_key}.{facet.ref.target_ref}"
 
 
+def _dynamic_gain(
+    axis: BodyExpressionAxis,
+    gain_rules: dict[BodyExpressionAxis, list[tuple[str, float]]],
+) -> float:
+    gain = 1.0
+    for _, value in sorted(gain_rules[axis], key=lambda item: item[0]):
+        gain *= value
+    if not isfinite(gain) or not 0.0 <= gain <= 2.0:
+        raise BodyExpressionProjectionError(BodyExpressionFailureCode.INVALID_POLICY)
+    return gain
+
+
 def project(
     snapshot: InternalStateSnapshot,
     attention: AttentionFocusView,
@@ -90,7 +103,15 @@ def project(
 ) -> BodyExpressionContext:
     """immutable source snapshots から BodyExpressionContext を決定論的に投影する。"""
     focus = BodyFocusExpressionConstraint.from_view(attention)
-    contributions: dict[BodyExpressionAxis, list[float]] = {axis: [] for axis in BodyExpressionAxis}
+    static_contributions: dict[BodyExpressionAxis, list[float]] = {
+        axis: [] for axis in BodyExpressionAxis
+    }
+    dynamic_contributions: dict[BodyExpressionAxis, list[float]] = {
+        axis: [] for axis in BodyExpressionAxis
+    }
+    gain_rules: dict[BodyExpressionAxis, list[tuple[str, float]]] = {
+        axis: [] for axis in BodyExpressionAxis
+    }
     applied_state_rule_ids: list[str] = []
     applied_character_rule_ids: list[str] = []
     source_facet_refs: list[str] = []
@@ -98,23 +119,23 @@ def project(
     for style_facet in sorted(style.facets, key=lambda item: item.facet_id):
         if style_facet.availability is not RuntimeAvailability.CONFIRMED:
             continue
-        style_matching_rules = sorted(
-            (
-                rule
-                for rule in policy.character_style_rules
-                if (
-                    rule.facet_id == style_facet.facet_id
-                    and rule.confirmed_value == style_facet.value
-                )
-            ),
-            key=lambda rule: rule.rule_id,
+        style_matching_rules = tuple(
+            rule
+            for rule in policy.character_style_rules
+            if (
+                rule.facet_id == style_facet.facet_id
+                and rule.confirmed_value == style_facet.value
+            )
         )
-        if not style_matching_rules:
+        if len(style_matching_rules) != 1:
             raise BodyExpressionProjectionError(BodyExpressionFailureCode.UNMAPPED_CHARACTER_STYLE)
-        for style_rule in style_matching_rules:
-            applied_character_rule_ids.append(style_rule.rule_id)
+        style_rule = style_matching_rules[0]
+        applied_character_rule_ids.append(style_rule.rule_id)
+        if style_rule.disposition is CharacterStyleRuleDisposition.APPLY:
             for weight in style_rule.axis_weights:
-                contributions[weight.axis].append(weight.value.value)
+                static_contributions[weight.axis].append(weight.value.value)
+        for override in style_rule.dynamic_gain_overrides:
+            gain_rules[override.axis].append((style_rule.rule_id, override.gain))
 
     for state_facet in sorted(
         snapshot.facets,
@@ -134,12 +155,21 @@ def project(
             applied_state_rule_ids.append(state_rule.rule_id)
             source_facet_refs.append(_facet_reference(state_facet))
             for weight in state_rule.axis_weights:
-                contributions[weight.axis].append(signal * weight.value.value)
+                dynamic_contributions[weight.axis].append(signal * weight.value.value)
 
     axes = tuple(
         BodyExpressionAxisValue(
             axis=axis,
-            value=NormalizedExpressionValue(max(-1.0, min(1.0, fsum(contributions[axis])))),
+            value=NormalizedExpressionValue(
+                max(
+                    -1.0,
+                    min(
+                        1.0,
+                        fsum(static_contributions[axis])
+                        + fsum(dynamic_contributions[axis]) * _dynamic_gain(axis, gain_rules),
+                    ),
+                )
+            ),
         )
         for axis in BodyExpressionAxis
     )
