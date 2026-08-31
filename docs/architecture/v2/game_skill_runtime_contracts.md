@@ -212,6 +212,15 @@ Actual game Activity/Skill execution evidence can be aggregated and returned to 
 
 Timeout/cancel after an external input may have been applied must preserve ambiguous/applied effect state.
 
+`select()` のawait完了後からcontroller適用直前まで、およびcontroller応答後には、live sessionの
+`ACTIVE` lifecycle、strategy revision、game state revisionを再照合する。pause、end、cancel、
+strategy更新でselection世代が変わったactionを新たに適用してはならない。
+
+controllerがすでに `APPLIED` と確認したactionは、strategy/lifecycleがそのawait中に変化していても、
+確認済み `game_state_revision_after` をlive stateへ単調に反映する。一方、selection世代が古くなった
+reportは `STALE` として返す。`STALE` のeffect truthは `APPLIED` または `AMBIGUOUS` に限定し、
+元の `NOT_APPLIED` / `FAILED` をcontract不正な組合せのまま置換しない。
+
 ---
 
 ## 10. Salient event projection
