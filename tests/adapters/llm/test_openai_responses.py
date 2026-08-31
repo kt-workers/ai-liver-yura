@@ -1,14 +1,16 @@
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 
 import httpx2
+import pytest
 from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from app.adapters.llm.openai_responses import (
     OpenAIResponsesAdapter,
     OpenAIResponsesModelPolicy,
     OpenAIResponsesRoleConfig,
+    OpenAIResponsesTemperatureMapping,
 )
 from app.adapters.llm.operational_diagnostics import (
     LLMProviderOperationalDiagnostic,
@@ -24,6 +26,7 @@ from app.domain.llm import (
     LLMModelClass,
     LLMPriority,
     LLMReasoningEffort,
+    LLMRequestRetryPolicy,
     LLMRoleRequest,
     LLMRoleStatus,
     LLMStalePolicy,
@@ -67,8 +70,21 @@ def make_request(
     reasoning_effort: LLMReasoningEffort = LLMReasoningEffort.LOW,
     timeout_seconds: float = 1,
     max_attempts: int = 2,
+    max_output_tokens: int = 100,
+    temperature_normalized: float | None = None,
+    retry_policy: LLMRequestRetryPolicy | None = None,
     deadline_at: datetime | None = None,
 ) -> LLMRoleRequest:
+    execution_policy = make_execution_policy(
+        model_class,
+        reasoning_effort,
+        timeout_seconds,
+        max_attempts,
+        max_output_tokens,
+        temperature_normalized,
+    )
+    if retry_policy is not None:
+        execution_policy = replace(execution_policy, retry_policy=retry_policy)
     return LLMRoleRequest(
         "request-1",
         role_id,
@@ -79,7 +95,7 @@ def make_request(
         LLMPriority.FOREGROUND,
         LLMInterruptibility.INTERRUPTIBLE,
         LLMStalePolicy.REJECT,
-        make_execution_policy(model_class, reasoning_effort, timeout_seconds, max_attempts, 100),
+        execution_policy,
         NOW,
         "trace-1",
         deadline_at,
@@ -101,13 +117,16 @@ def make_config(
         model_policies=model_policies
         or {
             LLMModelClass.FAST: OpenAIResponsesModelPolicy(
-                "provider-fast", {LLMReasoningEffort.LOW: "fast-low"}
+                "meaning.openai.fast", 1, "provider-fast", {LLMReasoningEffort.LOW: "fast-low"}
             ),
             LLMModelClass.BALANCED: OpenAIResponsesModelPolicy(
-                "provider-balanced", {LLMReasoningEffort.MEDIUM: "balanced-medium"}
+                "meaning.openai.balanced",
+                1,
+                "provider-balanced",
+                {LLMReasoningEffort.MEDIUM: "balanced-medium"},
             ),
             LLMModelClass.DEEP_REASONING: OpenAIResponsesModelPolicy(
-                "provider-deep", {LLMReasoningEffort.HIGH: "deep-high"}
+                "meaning.openai.deep", 1, "provider-deep", {LLMReasoningEffort.HIGH: "deep-high"}
             ),
         },
         input_schema_id=input_schema_id,
@@ -202,7 +221,10 @@ def test_role_policy_isolation_uses_the_selected_role_only() -> None:
             instructions="other instruction",
             model_policies={
                 LLMModelClass.BALANCED: OpenAIResponsesModelPolicy(
-                    "other-balanced", {LLMReasoningEffort.MEDIUM: "other-medium"}
+                    "other.openai.balanced",
+                    1,
+                    "other-balanced",
+                    {LLMReasoningEffort.MEDIUM: "other-medium"},
                 )
             },
         )
@@ -411,6 +433,155 @@ def test_transient_failure_does_not_retry_without_retry_bounded_policy() -> None
         assert len(client.calls) == 1
 
     asyncio.run(scenario())
+
+
+def test_d10_mapping_resolves_temperature_enforces_token_limit_and_keeps_provenance() -> None:
+    async def scenario() -> None:
+        mapping = OpenAIResponsesModelPolicy(
+            "meaning.openai.fast.v2",
+            2,
+            "provider-fast",
+            {LLMReasoningEffort.LOW: "fast-low"},
+            OpenAIResponsesTemperatureMapping(0.2, 1.4),
+            120,
+        )
+        config = make_config(model_policies={LLMModelClass.FAST: mapping})
+        client = FakeClient(
+            FakeResponse('{"ok": true}'),
+            FakeResponse('{"ok": true}'),
+            FakeResponse('{"ok": true}'),
+            FakeResponse('{"ok": true}'),
+        )
+        adapter = OpenAIResponsesAdapter(client, (config,), now=lambda: NOW)
+        for normalized in (0.0, 0.5, 1.0):
+            result = await adapter.invoke(
+                make_request(temperature_normalized=normalized, max_output_tokens=120)
+            )
+            assert result.status is LLMRoleStatus.SUCCEEDED
+            assert result.execution_provenance is not None
+            assert result.execution_provenance.to_dict() == {
+                "policy_id": "test.llm.execution",
+                "policy_revision": 1,
+                "mapping_id": "meaning.openai.fast.v2",
+                "mapping_revision": 2,
+            }
+        assert [call["temperature"] for call in client.calls[:3]] == [0.2, 0.8, 1.4]
+
+        no_temperature = await adapter.invoke(make_request(max_output_tokens=120))
+        assert no_temperature.status is LLMRoleStatus.SUCCEEDED
+        assert "temperature" not in client.calls[3]
+
+        token_limit = await adapter.invoke(make_request(max_output_tokens=121))
+        assert token_limit.failure is not None
+        assert token_limit.failure.code is LLMFailureCode.POLICY_VIOLATION
+        assert len(client.calls) == 4
+
+        unsupported_client = FakeClient(FakeResponse('{"ok": true}'))
+        unsupported = await OpenAIResponsesAdapter(
+            unsupported_client,
+            (make_config(),),
+            now=lambda: NOW,
+        ).invoke(make_request(temperature_normalized=0.4))
+        assert unsupported.failure is not None
+        assert unsupported.failure.code is LLMFailureCode.POLICY_VIOLATION
+        assert unsupported_client.calls == []
+
+    asyncio.run(scenario())
+
+
+def test_d10_retry_uses_deterministic_backoff_and_rechecks_deadline_and_shutdown() -> None:
+    async def scenario() -> None:
+        delays: list[float] = []
+
+        async def record_sleep(delay: float) -> None:
+            delays.append(delay)
+
+        retry_policy = LLMRequestRetryPolicy(1, 2, 3)
+        client = FakeClient(
+            APIConnectionError(
+                request=httpx2.Request("POST", "https://api.example.invalid/v1/responses")
+            ),
+            APIConnectionError(
+                request=httpx2.Request("POST", "https://api.example.invalid/v1/responses")
+            ),
+            FakeResponse('{"ok": true}'),
+        )
+        result = await OpenAIResponsesAdapter(
+            client,
+            (make_config(),),
+            now=lambda: NOW,
+            sleep=record_sleep,
+        ).invoke(make_request(max_attempts=3, retry_policy=retry_policy))
+        assert result.status is LLMRoleStatus.SUCCEEDED
+        assert delays == [1.0, 2.0]
+        assert len(client.calls) == 3
+
+        class Clock:
+            def __init__(self) -> None:
+                self.value = NOW
+
+            def now(self) -> datetime:
+                return self.value
+
+        clock = Clock()
+
+        async def elapse_past_deadline(delay: float) -> None:
+            clock.value += timedelta(seconds=delay)
+
+        expired_client = FakeClient(
+            APIConnectionError(
+                request=httpx2.Request("POST", "https://api.example.invalid/v1/responses")
+            ),
+            FakeResponse('{"ok": true}'),
+        )
+        expired = await OpenAIResponsesAdapter(
+            expired_client,
+            (make_config(),),
+            now=clock.now,
+            sleep=elapse_past_deadline,
+        ).invoke(
+            make_request(
+                max_attempts=2,
+                retry_policy=LLMRequestRetryPolicy(2, 1, 2),
+                deadline_at=NOW + timedelta(seconds=1),
+            )
+        )
+        assert expired.status is LLMRoleStatus.TIMED_OUT
+        assert len(expired_client.calls) == 1
+
+        shutdown = {"requested": False}
+
+        async def request_shutdown(_: float) -> None:
+            shutdown["requested"] = True
+
+        shutdown_client = FakeClient(
+            APIConnectionError(
+                request=httpx2.Request("POST", "https://api.example.invalid/v1/responses")
+            ),
+            FakeResponse('{"ok": true}'),
+        )
+        cancelled = await OpenAIResponsesAdapter(
+            shutdown_client,
+            (make_config(),),
+            now=lambda: NOW,
+            is_shutdown=lambda: shutdown["requested"],
+            sleep=request_shutdown,
+        ).invoke(make_request(max_attempts=2, retry_policy=retry_policy))
+        assert cancelled.status is LLMRoleStatus.CANCELLED
+        assert len(shutdown_client.calls) == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "provider_min,provider_max",
+    [(True, 1.0), (0.0, float("nan")), (2.0, 1.0)],
+)
+def test_temperature_mapping_rejects_invalid_provider_numeric_values(
+    provider_min: object, provider_max: object
+) -> None:
+    with pytest.raises(ValueError):
+        OpenAIResponsesTemperatureMapping(provider_min, provider_max)  # type: ignore[arg-type]
 
 
 def test_timeout_and_cancellation_return_non_committable_typed_results() -> None:

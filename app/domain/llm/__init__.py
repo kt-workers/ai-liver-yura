@@ -1,6 +1,7 @@
 from .contracts import (
     LLMActivationPolicy,
     LLMExecutionPolicy,
+    LLMExecutionProvenance,
     LLMFailureCode,
     LLMFailurePolicy,
     LLMInterruptibility,
@@ -22,6 +23,7 @@ from .contracts import (
 __all__ = [
     "LLMActivationPolicy",
     "LLMExecutionPolicy",
+    "LLMExecutionProvenance",
     "LLMFailureCode",
     "LLMFailurePolicy",
     "LLMInterruptibility",

@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from types import MappingProxyType
@@ -14,6 +15,7 @@ from jsonschema import ValidationError, validate
 from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from app.domain.llm import (
+    LLMExecutionProvenance,
     LLMFailureCode,
     LLMFailurePolicy,
     LLMModelClass,
@@ -41,13 +43,46 @@ class ResponsesClient(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class OpenAIResponsesTemperatureMapping:
+    """normalized temperatureをOpenAI設定値へ線形変換する不変mapping。"""
+
+    provider_min: float
+    provider_max: float
+
+    def __post_init__(self) -> None:
+        for field_name, value in (
+            ("provider_min", self.provider_min),
+            ("provider_max", self.provider_max),
+        ):
+            if type(value) not in (int, float) or not math.isfinite(value):
+                raise ValueError(f"{field_name} は有限数でなければなりません")
+        if self.provider_min > self.provider_max:
+            raise ValueError("provider_min は provider_max 以下でなければなりません")
+        object.__setattr__(self, "provider_min", float(self.provider_min))
+        object.__setattr__(self, "provider_max", float(self.provider_max))
+
+    def resolve(self, temperature_normalized: float) -> float:
+        return self.provider_min + temperature_normalized * (
+            self.provider_max - self.provider_min
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class OpenAIResponsesModelPolicy:
     """Roleに許可したmodel classをProvider固有設定へ解決する不変policy。"""
 
+    mapping_id: str
+    mapping_revision: int
     model: str
     reasoning_by_effort: Mapping[LLMReasoningEffort, str]
+    temperature_mapping: OpenAIResponsesTemperatureMapping | None = None
+    provider_max_output_tokens: int | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.mapping_id, str) or not self.mapping_id.strip():
+            raise ValueError("Provider mapping_idは空にできません")
+        if type(self.mapping_revision) is not int or self.mapping_revision < 0:
+            raise ValueError("Provider mapping_revisionが不正です")
         if not isinstance(self.model, str) or not self.model.strip():
             raise ValueError("Provider modelは空にできません")
         if not isinstance(self.reasoning_by_effort, Mapping):
@@ -67,6 +102,15 @@ class OpenAIResponsesModelPolicy:
             "reasoning_by_effort",
             MappingProxyType(reasoning_by_effort),
         )
+        if self.temperature_mapping is not None and not isinstance(
+            self.temperature_mapping, OpenAIResponsesTemperatureMapping
+        ):
+            raise ValueError("temperature mappingが不正です")
+        if self.provider_max_output_tokens is not None and (
+            type(self.provider_max_output_tokens) is not int
+            or self.provider_max_output_tokens < 1
+        ):
+            raise ValueError("Provider max output tokensが不正です")
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +179,7 @@ class OpenAIResponsesAdapter:
         diagnostic_publication_policy: LLMProviderOperationalDiagnosticPublicationPolicy
         | None = None,
         is_shutdown: Callable[[], bool] | None = None,
+        sleep: Callable[[float], Awaitable[object]] | None = None,
     ) -> None:
         configs = {config.role_id: config for config in role_configs}
         if len(configs) != len(role_configs):
@@ -151,6 +196,7 @@ class OpenAIResponsesAdapter:
             now=self._now,
         )
         self._is_shutdown = is_shutdown or (lambda: False)
+        self._sleep = sleep or asyncio.sleep
 
     @classmethod
     def from_environment(
@@ -187,8 +233,26 @@ class OpenAIResponsesAdapter:
                 0,
                 started_at,
             )
+        provenance = self._provenance(request, provider_policy)
+        mapping_failure = self._mapping_failure(request, provider_policy)
+        if mapping_failure is not None:
+            return self._failure(
+                request,
+                LLMFailureCode.POLICY_VIOLATION,
+                mapping_failure,
+                0,
+                started_at,
+                execution_provenance=provenance,
+            )
         if self._is_shutdown():
-            return await self._cancelled(request, config, provider_policy, 0, started_at)
+            return await self._cancelled(
+                request,
+                config,
+                provider_policy,
+                0,
+                started_at,
+                execution_provenance=provenance,
+            )
         for attempt in range(1, request.execution_policy.max_attempts + 1):
             timeout = self._remaining_timeout(request)
             if timeout <= 0:
@@ -199,6 +263,7 @@ class OpenAIResponsesAdapter:
                     attempt - 1,
                     started_at,
                     LLMProviderSanitizedDetailCode.CLIENT_DEADLINE_EXCEEDED,
+                    execution_provenance=provenance,
                 )
             try:
                 response = await asyncio.wait_for(
@@ -221,6 +286,7 @@ class OpenAIResponsesAdapter:
                     self._token_usage(response),
                     output=output,
                     started_at=started_at,
+                    execution_provenance=provenance,
                 )
             except asyncio.TimeoutError:
                 classification = _ProviderFailureClassification(
@@ -235,11 +301,23 @@ class OpenAIResponsesAdapter:
                     request, config, provider_policy, classification, attempt, started_at
                 )
                 if retry:
+                    terminal = await self._wait_for_retry(
+                        request, config, provider_policy, attempt, started_at, provenance
+                    )
+                    if terminal is not None:
+                        return terminal
                     continue
                 assert result is not None
                 return result
             except asyncio.CancelledError:
-                return await self._cancelled(request, config, provider_policy, attempt, started_at)
+                return await self._cancelled(
+                    request,
+                    config,
+                    provider_policy,
+                    attempt,
+                    started_at,
+                    execution_provenance=provenance,
+                )
             except _ProviderProtocolError:
                 classification = _ProviderFailureClassification(
                     LLMFailureCode.PROVIDER_ERROR,
@@ -253,6 +331,11 @@ class OpenAIResponsesAdapter:
                     request, config, provider_policy, classification, attempt, started_at
                 )
                 if retry:
+                    terminal = await self._wait_for_retry(
+                        request, config, provider_policy, attempt, started_at, provenance
+                    )
+                    if terminal is not None:
+                        return terminal
                     continue
                 assert result is not None
                 return result
@@ -263,6 +346,7 @@ class OpenAIResponsesAdapter:
                     "Provider出力がstrict JSON schemaに一致しません",
                     attempt,
                     started_at,
+                    execution_provenance=provenance,
                 )
             except Exception as error:
                 classification = self._classify_provider_failure(error)
@@ -270,6 +354,11 @@ class OpenAIResponsesAdapter:
                     request, config, provider_policy, classification, attempt, started_at
                 )
                 if retry:
+                    terminal = await self._wait_for_retry(
+                        request, config, provider_policy, attempt, started_at, provenance
+                    )
+                    if terminal is not None:
+                        return terminal
                     continue
                 assert result is not None
                 return result
@@ -281,12 +370,11 @@ class OpenAIResponsesAdapter:
         config: OpenAIResponsesRoleConfig,
         provider_policy: OpenAIResponsesModelPolicy,
     ) -> dict[str, object]:
-        return {
+        arguments: dict[str, object] = {
             "model": provider_policy.model,
             "instructions": config.instructions,
             "input": json.dumps(request.input.to_dict()["value"], ensure_ascii=False),
             "max_output_tokens": request.execution_policy.max_output_tokens,
-            "temperature": request.execution_policy.temperature,
             "reasoning": {
                 "effort": provider_policy.reasoning_by_effort[
                     request.execution_policy.reasoning_effort
@@ -301,6 +389,13 @@ class OpenAIResponsesAdapter:
                 }
             },
         }
+        temperature_normalized = request.execution_policy.temperature_normalized
+        if temperature_normalized is not None:
+            assert provider_policy.temperature_mapping is not None
+            arguments["temperature"] = provider_policy.temperature_mapping.resolve(
+                temperature_normalized
+            )
+        return arguments
 
     def _parse_output(
         self, response: object, config: OpenAIResponsesRoleConfig
@@ -357,9 +452,79 @@ class OpenAIResponsesAdapter:
                 attempt,
                 started_at,
                 retryable=False,
+                execution_provenance=self._provenance(request, provider_policy),
             ),
             False,
         )
+
+    async def _wait_for_retry(
+        self,
+        request: LLMRoleRequest,
+        config: OpenAIResponsesRoleConfig,
+        provider_policy: OpenAIResponsesModelPolicy,
+        attempt: int,
+        started_at: datetime,
+        provenance: LLMExecutionProvenance,
+    ) -> LLMRoleResult | None:
+        try:
+            await self._sleep(request.execution_policy.retry_policy.delay_seconds(attempt))
+        except asyncio.CancelledError:
+            return await self._cancelled(
+                request,
+                config,
+                provider_policy,
+                attempt,
+                started_at,
+                execution_provenance=provenance,
+            )
+        if self._is_shutdown():
+            return await self._cancelled(
+                request,
+                config,
+                provider_policy,
+                attempt,
+                started_at,
+                execution_provenance=provenance,
+            )
+        if self._remaining_timeout(request) <= 0:
+            return await self._timed_out(
+                request,
+                config,
+                provider_policy,
+                attempt,
+                started_at,
+                LLMProviderSanitizedDetailCode.CLIENT_DEADLINE_EXCEEDED,
+                execution_provenance=provenance,
+            )
+        return None
+
+    @staticmethod
+    def _provenance(
+        request: LLMRoleRequest, provider_policy: OpenAIResponsesModelPolicy
+    ) -> LLMExecutionProvenance:
+        return LLMExecutionProvenance(
+            request.execution_policy.policy_id,
+            request.execution_policy.policy_revision,
+            provider_policy.mapping_id,
+            provider_policy.mapping_revision,
+        )
+
+    @staticmethod
+    def _mapping_failure(
+        request: LLMRoleRequest, provider_policy: OpenAIResponsesModelPolicy
+    ) -> str | None:
+        if (
+            request.execution_policy.temperature_normalized is not None
+            and provider_policy.temperature_mapping is None
+        ):
+            return "RoleのProvider temperature mappingが未登録です"
+        if (
+            provider_policy.provider_max_output_tokens is not None
+            and request.execution_policy.max_output_tokens
+            > provider_policy.provider_max_output_tokens
+        ):
+            return "RoleのProvider max output token上限を超えています"
+        return None
 
     def _remaining_timeout(self, request: LLMRoleRequest) -> float:
         timeout = request.execution_policy.timeout_seconds
@@ -496,6 +661,7 @@ class OpenAIResponsesAdapter:
         detail_code: LLMProviderSanitizedDetailCode,
         *,
         publish: bool = True,
+        execution_provenance: LLMExecutionProvenance | None = None,
     ) -> LLMRoleResult:
         classification = _ProviderFailureClassification(
             LLMFailureCode.TIMEOUT,
@@ -521,6 +687,8 @@ class OpenAIResponsesAdapter:
             LLMTokenUsage(0, 0),
             failure=LLMRoleFailure(LLMFailureCode.TIMEOUT, "Provider呼出がtimeoutしました"),
             started_at=started_at,
+            execution_provenance=execution_provenance
+            or self._provenance(request, provider_policy),
         )
 
     async def _cancelled(
@@ -532,6 +700,7 @@ class OpenAIResponsesAdapter:
         started_at: datetime,
         *,
         publish: bool = True,
+        execution_provenance: LLMExecutionProvenance | None = None,
     ) -> LLMRoleResult:
         classification = _ProviderFailureClassification(
             LLMFailureCode.CANCELLED,
@@ -557,6 +726,8 @@ class OpenAIResponsesAdapter:
             LLMTokenUsage(0, 0),
             failure=LLMRoleFailure(LLMFailureCode.CANCELLED, "Provider呼出は取り消されました"),
             started_at=started_at,
+            execution_provenance=execution_provenance
+            or self._provenance(request, provider_policy),
         )
 
     def _publish_diagnostic(
@@ -594,6 +765,7 @@ class OpenAIResponsesAdapter:
         started_at: datetime,
         *,
         retryable: bool = False,
+        execution_provenance: LLMExecutionProvenance | None = None,
     ) -> LLMRoleResult:
         return LLMRoleResult(
             request.request_id,
@@ -607,6 +779,7 @@ class OpenAIResponsesAdapter:
             LLMTokenUsage(0, 0),
             failure=LLMRoleFailure(code, message, retryable),
             started_at=started_at,
+            execution_provenance=execution_provenance,
         )
 
     @staticmethod

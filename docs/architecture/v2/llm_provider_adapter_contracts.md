@@ -15,6 +15,7 @@ Parent: `docs/architecture/v2/llm_role_contracts.md`
 - `LLMModelClass`と`LLMReasoningEffort`をProvider固有model/reasoning設定へ解決する責務はAdapterにある。
 - Roleごとのmodel mapping、system instruction、strict JSON schemaは不変のregistryから取得し、Role間で混ぜない。
 - Provider policyはRoleごとに許可した`LLMModelClass`と`LLMReasoningEffort`の組だけを、具体model名とreasoning parameterへ解決する。不明な組はProvider呼出前に`POLICY_VIOLATION`でfail-closedにする。
+- D10の`LLMProviderExecutionMapping`は`mapping_id / mapping_revision`、temperature線形mapping、既知のProvider output token上限を明示して不変registryへ保持する。Adapterはrequestの`policy_id / policy_revision`と使用mapping世代を安全なexecution provenanceへ保持するが、concrete Provider値やSDK詳細をDomainへ露出しない。
 - Domainの`output_schema_id`はcanonicalなschema identityであり、Providerのstructured-output format nameではない。AdapterはRole設定に明示したProvider固有のformat nameを用いて、両者を分離する。
 - OpenAI Responses APIのformat nameは`^[A-Za-z0-9_-]{1,64}$`を満たさなければならない。不正値またはRole間で重複するProvider format nameはconstructorで拒否し、Provider呼出前にfail-closedにする。Domain schema IDを文字置換してProvider名へ暗黙変換してはならない。
 - schema validation、revision/preconditionのcommit再検証はそれぞれAdapter後段のschema registry、Owning Moduleが所有する。
@@ -24,7 +25,7 @@ Parent: `docs/architecture/v2/llm_role_contracts.md`
 1. role descriptorとrequest schemaが一致しない場合、Provider呼出前に`POLICY_VIOLATION`で失敗する。
 2. Adapterはrequestごとに独立したattemptを実行し、共有Provider clientは許可するがrequest/result/metricsは共有しない。
 3. timeoutはPython 3.10互換の`asyncio.wait_for`でrequest policyに従う。取消は`CancelledError`を通常の成功として扱わず、呼出済みrequestには`CANCELLED`結果を返す。
-4. retryはprovider例外を先にtyped分類した上で、`RETRY_BOUNDED`かつretryable provider failureだけに限定し、最大attempt数を超えない。deadline超過時はretryしない。OpenAI SDKのconnection/timeout、HTTP `408`、`429`、`5xx`はretryable候補とし、認証・権限・不正request・unsupported parameter等の恒久failureはretryしない。`LLMRoleFailure.retryable`はRole policyではなく実際の分類結果と一致させる。
+4. retryはprovider例外を先にtyped分類した上で、`RETRY_BOUNDED`かつretryable provider failureだけに限定し、最大attempt数を超えない。delayはrequestの`LLMRequestRetryPolicy`による決定的backoffを使い、sleep後にdeadlineとshutdownを再確認する。deadline超過時はretryしない。OpenAI SDKのconnection/timeout、HTTP `408`、`429`、`5xx`はretryable候補とし、認証・権限・不正request・unsupported parameter等の恒久failureはretryしない。`LLMRoleFailure.retryable`はRole policyではなく実際の分類結果と一致させる。
 5. `foreground`、`normal`、`background`の優先・queue・max-in-flightはRuntime Kernel #322の責務であり、Adapterは再実装しない。
 
 ## 4. Provider response
