@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, cast
 
-from app.domain.contracts.common import JsonValue, freeze_json, require_revision
+from app.domain.contracts.common import JsonValue, freeze_json
 from app.domain.input_gateway import InputModality, NormalizedInputEvent
 from app.domain.llm import (
     LLMActivationPolicy,
@@ -23,7 +23,13 @@ from app.domain.llm import (
 )
 from app.usecases.ports.llm import LLMRolePort
 
-from .contracts import ReferenceContext, StructuredInputMeaning, meaning_from_json
+from .contracts import (
+    InputMeaningAcceptancePolicy,
+    InputMeaningFreshnessStamp,
+    ReferenceContext,
+    StructuredInputMeaning,
+    meaning_from_json,
+)
 
 INPUT_SCHEMA = "yura.input-meaning.request.v1"
 OUTPUT_SCHEMA = "yura.input-meaning.result.v1"
@@ -33,20 +39,17 @@ ROLE_ID = "input_meaning"
 @dataclass(frozen=True, slots=True)
 class InputMeaningPolicy:
     execution: LLMExecutionPolicy
-    minimum_confidence: float = 0.65
+    acceptance: InputMeaningAcceptancePolicy
 
     def __post_init__(self) -> None:
-        if (
-            type(self.minimum_confidence) not in (int, float)
-            or not 0 <= self.minimum_confidence <= 1
-        ):
-            raise ValueError("minimum_confidence must be between 0 and 1")
+        if not isinstance(self.acceptance, InputMeaningAcceptancePolicy):
+            raise ValueError("acceptance は InputMeaningAcceptancePolicy でなければなりません")
 
 
 class InputMeaningLiveContextPort(Protocol):
-    """Input Meaning commit直前のsource context世代を読み取る境界。"""
+    """Input Meaning commit直前の世代付き採用状態を読み取る境界。"""
 
-    async def current_source_context_revision(self) -> int: ...
+    async def current_freshness_stamp(self) -> InputMeaningFreshnessStamp: ...
 
 
 def descriptor(policy: InputMeaningPolicy) -> LLMRoleDescriptor:
@@ -101,6 +104,7 @@ def build_request(
             "text": text,
             "modality": event.modality.value,
             "reference_context": context.to_dict(),
+            "acceptance_policy": policy.acceptance.to_dict(),
         },
     )
     structured_input = StructuredPayload(INPUT_SCHEMA, request_value)
@@ -125,28 +129,37 @@ def commit_result(
     result: LLMRoleResult,
     *,
     reference_context: ReferenceContext,
-    current_source_context_revision: int,
+    freshness_stamp: InputMeaningFreshnessStamp,
     policy: InputMeaningPolicy,
 ) -> StructuredInputMeaning:
-    require_revision(current_source_context_revision, "current_source_context_revision")
+    if not isinstance(freshness_stamp, InputMeaningFreshnessStamp):
+        raise ValueError("freshness_stamp は InputMeaningFreshnessStamp でなければなりません")
     failure = validate_role_exchange(descriptor(policy), request, result)
     if failure is not None:
         raise ValueError(failure.code.value)
     if result.status is not LLMRoleStatus.SUCCEEDED or result.output is None:
         raise ValueError("input meaning result is not committable")
-    if request.revisions.source_context_revision != current_source_context_revision:
+    if request.revisions.source_context_revision != freshness_stamp.source_context_revision:
         raise ValueError("input meaning result is stale")
+    if (
+        freshness_stamp.acceptance_policy_id != policy.acceptance.policy_id
+        or freshness_stamp.acceptance_policy_revision != policy.acceptance.policy_revision
+    ):
+        raise ValueError("Input Meaningの採用方針が古くなっています")
     request_value = request.input.value
     if not isinstance(request_value, Mapping):
         raise ValueError("input meaning request payload is invalid")
     encoded_context = request_value.get("reference_context")
     if encoded_context != freeze_json(reference_context.to_dict()):
         raise ValueError("reference context does not match request snapshot")
+    encoded_acceptance = request_value.get("acceptance_policy")
+    if encoded_acceptance != freeze_json(policy.acceptance.to_dict()):
+        raise ValueError("採用方針がrequest snapshotと一致しません")
     meaning = meaning_from_json(
         result.output.value,
         source_event_id=request.source_event_ids[0],
-        source_context_revision=current_source_context_revision,
-        minimum_confidence=policy.minimum_confidence,
+        source_context_revision=request.revisions.source_context_revision,
+        acceptance_policy=policy.acceptance,
     )
     allowed_refs = {
         value
@@ -190,11 +203,11 @@ class InputMeaningInterpreter:
             policy=self._policy,
         )
         result = await self._port.invoke(request)
-        current_source_context_revision = await self._live_context.current_source_context_revision()
+        freshness_stamp = await self._live_context.current_freshness_stamp()
         return commit_result(
             request,
             result,
             reference_context=context,
-            current_source_context_revision=current_source_context_revision,
+            freshness_stamp=freshness_stamp,
             policy=self._policy,
         )

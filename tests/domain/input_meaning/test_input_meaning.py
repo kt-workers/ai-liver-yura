@@ -22,6 +22,8 @@ from app.domain.input_gateway import (
 from app.domain.input_meaning import (
     OUTPUT_SCHEMA,
     ExpectedResponse,
+    InputMeaningAcceptancePolicy,
+    InputMeaningFreshnessStamp,
     InputMeaningInterpreter,
     InputMeaningLiveContextPort,
     InputMeaningPolicy,
@@ -48,9 +50,26 @@ NOW = datetime(2026, 8, 19, tzinfo=timezone.utc)
 
 
 def policy() -> InputMeaningPolicy:
+    required_fields: dict[PrimaryIntent, tuple[str, ...]] = {
+        intent: ("references",) for intent in PrimaryIntent
+    }
+    for intent in (
+        PrimaryIntent.REQUEST_ACTION,
+        PrimaryIntent.START_ACTIVITY,
+        PrimaryIntent.STOP_ACTIVITY,
+    ):
+        required_fields[intent] = ("target_ref", "references")
     return InputMeaningPolicy(
-        make_execution_policy(LLMModelClass.BALANCED, LLMReasoningEffort.MEDIUM, 10, 1, 800), 0.7
+        make_execution_policy(LLMModelClass.BALANCED, LLMReasoningEffort.MEDIUM, 10, 1, 800),
+        InputMeaningAcceptancePolicy("yura.input-meaning.acceptance", 1, 0.7, required_fields),
     )
+
+
+def freshness_stamp(
+    revision: int = 4, acceptance: InputMeaningAcceptancePolicy | None = None
+) -> InputMeaningFreshnessStamp:
+    value = policy().acceptance if acceptance is None else acceptance
+    return InputMeaningFreshnessStamp(revision, value.policy_id, value.policy_revision)
 
 
 def event(
@@ -154,7 +173,7 @@ def test_paraphrase_provider_candidates_commit_to_same_typed_meaning(surface: st
         request,
         result(request),
         reference_context=context(),
-        current_source_context_revision=4,
+        freshness_stamp=freshness_stamp(),
         policy=policy(),
     )
     assert meaning.primary_intent is PrimaryIntent.REQUEST_INFORMATION
@@ -172,11 +191,51 @@ def test_low_confidence_and_unresolved_reference_fail_closed_to_clarification() 
         request,
         result(request, output(confidence=0.2, reference=None)),
         reference_context=context(),
-        current_source_context_revision=4,
+        freshness_stamp=freshness_stamp(),
         policy=policy(),
     )
     assert meaning.resolution is MeaningResolution.CLARIFICATION_REQUIRED
     assert set(meaning.unresolved_fields) == {"confidence", "references"}
+
+
+def test_acceptance_policy_controls_threshold_required_resolution_and_provenance() -> None:
+    request = build_request(
+        event(), context(), request_id="r1", trace_id="t1", created_at=NOW, policy=policy()
+    )
+    at_threshold = commit_result(
+        request,
+        result(request, output(confidence=0.7)),
+        reference_context=context(),
+        freshness_stamp=freshness_stamp(),
+        policy=policy(),
+    )
+    assert at_threshold.resolution is MeaningResolution.RESOLVED
+    assert at_threshold.acceptance_policy_id == "yura.input-meaning.acceptance"
+    assert at_threshold.acceptance_policy_revision == 1
+
+    action = output()
+    action["primary_intent"] = PrimaryIntent.REQUEST_ACTION.value
+    action["target_ref"] = None
+    clarification = commit_result(
+        request,
+        result(request, action),
+        reference_context=context(),
+        freshness_stamp=freshness_stamp(),
+        policy=policy(),
+    )
+    assert clarification.resolution is MeaningResolution.CLARIFICATION_REQUIRED
+    assert "target_ref" in clarification.unresolved_fields
+
+
+def test_acceptance_policy_requires_closed_full_intent_mapping() -> None:
+    full_mapping: dict[PrimaryIntent, tuple[str, ...]] = {
+        intent: () for intent in PrimaryIntent
+    }
+    with pytest.raises(ValueError, match="全primary intent"):
+        InputMeaningAcceptancePolicy("policy", 1, 0.7, {})
+    full_mapping[PrimaryIntent.REQUEST_ACTION] = ("unknown",)
+    with pytest.raises(ValueError, match="不正"):
+        InputMeaningAcceptancePolicy("policy", 1, 0.7, full_mapping)
 
 
 @pytest.mark.parametrize(
@@ -194,7 +253,7 @@ def test_action_intents_without_target_require_clarification(intent: str) -> Non
         request,
         result(request, value),
         reference_context=context(),
-        current_source_context_revision=4,
+        freshness_stamp=freshness_stamp(),
         policy=policy(),
     )
     assert meaning.resolution is MeaningResolution.CLARIFICATION_REQUIRED
@@ -214,7 +273,7 @@ def test_negation_and_hypothetical_are_typed_without_surface_matching() -> None:
         request,
         result(request, output(negated=True, hypothetical=True)),
         reference_context=context(),
-        current_source_context_revision=4,
+        freshness_stamp=freshness_stamp(),
         policy=policy(),
     )
     assert meaning.negated is True and meaning.hypothetical is True
@@ -238,7 +297,7 @@ def test_non_language_stale_and_extra_output_fields_are_rejected() -> None:
             request,
             result(request),
             reference_context=context(),
-            current_source_context_revision=5,
+            freshness_stamp=freshness_stamp(5),
             policy=policy(),
         )
     invalid = output()
@@ -248,7 +307,7 @@ def test_non_language_stale_and_extra_output_fields_are_rejected() -> None:
             request,
             result(request, invalid),
             reference_context=context(),
-            current_source_context_revision=4,
+            freshness_stamp=freshness_stamp(),
             policy=policy(),
         )
 
@@ -262,7 +321,7 @@ def test_reference_outside_bounded_context_is_rejected() -> None:
             request,
             result(request, output(reference="made-up:999")),
             reference_context=context(),
-            current_source_context_revision=4,
+            freshness_stamp=freshness_stamp(),
             policy=policy(),
         )
 
@@ -300,8 +359,8 @@ def test_slow_meaning_port_does_not_block_unrelated_task() -> None:
             return result(request)
 
     class LiveContext:
-        async def current_source_context_revision(self) -> int:
-            return 4
+        async def current_freshness_stamp(self) -> InputMeaningFreshnessStamp:
+            return freshness_stamp()
 
     async def scenario() -> None:
         task = asyncio.create_task(
@@ -335,8 +394,8 @@ def test_interpret_rejects_result_when_live_context_advances_during_provider_wai
     class LiveContext:
         revision = 4
 
-        async def current_source_context_revision(self) -> int:
-            return self.revision
+        async def current_freshness_stamp(self) -> InputMeaningFreshnessStamp:
+            return freshness_stamp(self.revision)
 
     async def scenario() -> None:
         provider = AdvancingPort()
@@ -355,14 +414,31 @@ def test_interpret_rejects_result_when_live_context_advances_during_provider_wai
     asyncio.run(scenario())
 
 
+def test_interpret_rejects_result_when_live_acceptance_policy_advances() -> None:
+    class ImmediatePort:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            return result(request)
+
+    class LiveContext:
+        async def current_freshness_stamp(self) -> InputMeaningFreshnessStamp:
+            return InputMeaningFreshnessStamp(4, "yura.input-meaning.acceptance", 2)
+
+    with pytest.raises(ValueError, match="採用方針が古く"):
+        asyncio.run(
+            InputMeaningInterpreter(ImmediatePort(), LiveContext(), policy()).interpret(
+                event(), context(), request_id="r1", trace_id="t1", created_at=NOW
+            )
+        )
+
+
 def test_interpret_preserves_request_revision_after_post_await_live_read() -> None:
     class ImmediatePort:
         async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
             return result(request)
 
     class LiveContext:
-        async def current_source_context_revision(self) -> int:
-            return 4
+        async def current_freshness_stamp(self) -> InputMeaningFreshnessStamp:
+            return freshness_stamp()
 
     meaning = asyncio.run(
         InputMeaningInterpreter(ImmediatePort(), LiveContext(), policy()).interpret(
@@ -378,7 +454,7 @@ def test_interpret_fails_closed_when_live_context_read_fails() -> None:
             return result(request)
 
     class FailingLiveContext:
-        async def current_source_context_revision(self) -> int:
+        async def current_freshness_stamp(self) -> InputMeaningFreshnessStamp:
             raise RuntimeError("live context unavailable")
 
     with pytest.raises(RuntimeError, match="live context unavailable"):
@@ -391,11 +467,11 @@ def test_interpret_fails_closed_when_live_context_read_fails() -> None:
 
 def test_live_context_port_is_read_only_protocol() -> None:
     class LiveContext:
-        async def current_source_context_revision(self) -> int:
-            return 4
+        async def current_freshness_stamp(self) -> InputMeaningFreshnessStamp:
+            return freshness_stamp()
 
     port: InputMeaningLiveContextPort = LiveContext()
-    assert asyncio.run(port.current_source_context_revision()) == 4
+    assert asyncio.run(port.current_freshness_stamp()) == freshness_stamp()
 
 
 def test_old_result_cannot_be_reused_with_new_reference_context() -> None:
@@ -407,6 +483,6 @@ def test_old_result_cannot_be_reused_with_new_reference_context() -> None:
             request,
             result(request),
             reference_context=context(5),
-            current_source_context_revision=4,
+            freshness_stamp=freshness_stamp(),
             policy=policy(),
         )
