@@ -11,6 +11,7 @@ from app.domain.executive import (
     CommitmentTransitionOperation,
     CommitmentTransitionPayload,
     CommittedExecutiveDecision,
+    ExecutiveBoundsProvenance,
     ExecutiveDecisionCandidate,
     ExecutiveInterruptibility,
     ExecutiveOutcome,
@@ -62,6 +63,7 @@ def decision(
         candidate,
         (),
         NOW + timedelta(seconds=revision),
+        ExecutiveBoundsProvenance("test-bounds", 1),
     )
 
 

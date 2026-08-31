@@ -34,6 +34,7 @@ from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import (
     CommittedExecutiveDecision,
+    ExecutiveBoundsProvenance,
     ExecutiveDecisionCandidate,
     ExecutiveIntent,
     ExecutiveIntentKind,
@@ -118,7 +119,9 @@ def decision() -> CommittedExecutiveDecision:
         ("fact-goal",),
         NOW,
     )
-    return CommittedExecutiveDecision("decision-1", candidate, (), NOW)
+    return CommittedExecutiveDecision(
+        "decision-1", candidate, (), NOW, ExecutiveBoundsProvenance("test-bounds", 1)
+    )
 
 
 def semantic_plan() -> SpeechSemanticPlan:
