@@ -52,6 +52,7 @@ class ExecutiveDecisionAuthority:
                 candidate,
                 validated_preconditions,
                 committed_at,
+                snapshot.bounds_provenance,
             )
             self._committed_triggers.add(snapshot.trigger_id)
             return decision
@@ -84,6 +85,8 @@ class ExecutiveDecisionAuthority:
             raise ValueError("executive internal state is stale")
         if current.freshness.appraisal_facts_revision != snapshot.appraisal_facts.revision:
             raise ValueError("executive appraisal facts are stale")
+        if current.bounds_provenance != snapshot.bounds_provenance:
+            raise ValueError("executive bounds policy is stale")
 
         requirements = {item.intent_id: item for item in current.requirements}
         if set(requirements) != {item.intent_id for item in candidate.intents}:

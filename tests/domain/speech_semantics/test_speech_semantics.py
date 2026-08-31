@@ -10,6 +10,7 @@ from app.domain.contracts import ExecutionStatus, RevisionVector
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import (
     CommittedExecutiveDecision,
+    ExecutiveBoundsProvenance,
     ExecutiveDecisionCandidate,
     ExecutiveIntent,
     ExecutiveIntentKind,
@@ -99,7 +100,9 @@ def decision(
         ("fact-goal",),
         NOW,
     )
-    return CommittedExecutiveDecision(f"decision-{intent_id}", candidate, (), NOW)
+    return CommittedExecutiveDecision(
+        f"decision-{intent_id}", candidate, (), NOW, ExecutiveBoundsProvenance("test-bounds", 1)
+    )
 
 
 def facts() -> tuple[SpeechSemanticFact, ...]:

@@ -73,6 +73,7 @@ from app.domain.contracts.execution import ExecutionResult
 from app.domain.executive import (
     BodyIntentPayload,
     CommittedExecutiveDecision,
+    ExecutiveBoundsProvenance,
     ExecutiveDecisionCandidate,
     ExecutiveIntent,
     ExecutiveIntentKind,
@@ -693,7 +694,9 @@ def _decision_and_command() -> tuple[CommittedExecutiveDecision, ExecutiveIntent
         ("reason:1",),
         NOW,
     )
-    decision = CommittedExecutiveDecision("decision:1", candidate, (), NOW)
+    decision = CommittedExecutiveDecision(
+        "decision:1", candidate, (), NOW, ExecutiveBoundsProvenance("test-bounds", 1)
+    )
     command = SystemCommand(
         "command:1",
         "decision:1",
