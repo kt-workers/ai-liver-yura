@@ -6,6 +6,7 @@ from typing import Any, cast
 
 import pytest
 
+from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import CapabilityAvailability, RevisionVector
 from app.domain.contracts.common import JsonValue
 from app.domain.input_gateway import (
@@ -66,9 +67,11 @@ def event(
         RevisionVector(4),
         {"text": text},
     )
-    admission = InputNormalizer(InputAdmissionLedger(), InputSessionRegistry()).normalize(
-        observation
-    )
+    admission = InputNormalizer(
+        InputAdmissionLedger(),
+        InputSessionRegistry(),
+        bounds_policy=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    ).normalize(observation)
     assert admission.event is not None
     return admission.event
 
