@@ -18,7 +18,6 @@ from app.domain.character_language import (
 from app.domain.character_language.realizer import INPUT_SCHEMA, OUTPUT_SCHEMA, ROLE_ID
 from app.domain.contracts import RevisionVector
 from app.domain.llm import (
-    LLMExecutionPolicy,
     LLMFailureCode,
     LLMInterruptibility,
     LLMModelClass,
@@ -29,6 +28,7 @@ from app.domain.llm import (
     LLMStalePolicy,
     StructuredPayload,
 )
+from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 19, tzinfo=timezone.utc)
 REASONING_BY_EFFORT = {effort: effort.value for effort in LLMReasoningEffort}
@@ -71,7 +71,7 @@ def _request(
         LLMPriority.FOREGROUND,
         LLMInterruptibility.INTERRUPTIBLE,
         LLMStalePolicy.REJECT,
-        LLMExecutionPolicy(model_class, reasoning_effort, 5, 1, 1000),
+        make_execution_policy(model_class, reasoning_effort, 5, 1, 1000),
         NOW,
         "trace-1",
     )
