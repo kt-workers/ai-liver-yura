@@ -79,6 +79,8 @@ def meaning() -> StructuredInputMeaning:
         0.9,
         (),
         MeaningResolution.RESOLVED,
+        "yura.input-meaning.acceptance",
+        1,
     )
 
 
