@@ -11,7 +11,8 @@ from app.domain.character.contracts import (
 from app.domain.character.projector import project_character_definition
 
 _ROOT = Path(__file__).resolve().parents[3]
-_YURA_DEFINITION = _ROOT / "character_definitions" / "v2" / "yura.yaml"
+_YURA_DEFINITION = _ROOT / "resources" / "character_definitions" / "v2" / "yura.yaml"
+_LEGACY_YURA_DEFINITION = _ROOT / "character_definitions" / "v2" / "yura.yaml"
 _DYNAMIC_FACET_IDS = frozenset(
     {
         "emotion",
@@ -36,6 +37,11 @@ _DYNAMIC_FACET_IDS = frozenset(
 
 def _document() -> CharacterDefinitionDocument:
     return load_character_definition_yaml(_YURA_DEFINITION.read_text(encoding="utf-8"))
+
+
+def test_yura_definition_uses_versioned_runtime_resource_location() -> None:
+    assert _YURA_DEFINITION.is_file()
+    assert not _LEGACY_YURA_DEFINITION.exists()
 
 
 def test_yura_definition_strict_loads_with_expected_provenance() -> None:
