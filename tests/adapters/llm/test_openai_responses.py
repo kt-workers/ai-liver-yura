@@ -633,6 +633,72 @@ def test_timeout_and_cancellation_return_non_committable_typed_results() -> None
     asyncio.run(scenario())
 
 
+def test_local_request_policy_timeout_has_typed_terminal_result_and_keeps_provenance() -> None:
+    class SlowClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def create(self, **kwargs: object) -> object:
+            self.calls += 1
+            await asyncio.Event().wait()
+            raise AssertionError("到達不能")
+
+    async def scenario() -> None:
+        prompt = "非公開の指示"
+        for failure_policy, max_attempts, expected_calls in (
+            (LLMFailurePolicy.FAIL_CLOSED, 2, 1),
+            (LLMFailurePolicy.RETRY_BOUNDED, 1, 1),
+            (LLMFailurePolicy.RETRY_BOUNDED, 2, 2),
+        ):
+            sink = DiagnosticSink()
+            client = SlowClient()
+            result = await OpenAIResponsesAdapter(
+                client,
+                (make_config(instructions=prompt, failure_policy=failure_policy),),
+                now=lambda: NOW,
+                diagnostic_sink=sink,
+                sleep=lambda _: asyncio.sleep(0),
+            ).invoke(make_request(timeout_seconds=0.001, max_attempts=max_attempts))
+
+            assert result.status is LLMRoleStatus.TIMED_OUT
+            assert result.failure is not None
+            assert result.failure.code is LLMFailureCode.TIMEOUT
+            assert not result.failure.retryable
+            assert result.attempt_count == expected_calls
+            assert client.calls == expected_calls
+            assert result.execution_provenance is not None
+            assert result.execution_provenance.mapping_id == "meaning.openai.fast"
+            assert sink.diagnostics[-1].sanitized_detail_code is (
+                LLMProviderSanitizedDetailCode.CLIENT_TIMEOUT
+            )
+            rendered = str(result.to_dict())
+            assert prompt not in rendered
+            assert "Provider呼出に失敗しました" not in rendered
+
+    asyncio.run(scenario())
+
+
+def test_sdk_timeout_and_http_408_keep_provider_failure_terminal_classification() -> None:
+    async def scenario() -> None:
+        request = httpx2.Request("POST", "https://api.example.invalid/v1/responses")
+        for error, detail in (
+            (APITimeoutError(request), LLMProviderSanitizedDetailCode.SDK_TIMEOUT),
+            (status_error(408), LLMProviderSanitizedDetailCode.HTTP_408),
+        ):
+            sink = DiagnosticSink()
+            result = await OpenAIResponsesAdapter(
+                FakeClient(error), (make_config(),), now=lambda: NOW, diagnostic_sink=sink
+            ).invoke(make_request(max_attempts=1))
+
+            assert result.status is LLMRoleStatus.FAILED
+            assert result.failure is not None
+            assert result.failure.code is LLMFailureCode.PROVIDER_UNAVAILABLE
+            assert not result.failure.retryable
+            assert sink.diagnostics[-1].sanitized_detail_code is detail
+
+    asyncio.run(scenario())
+
+
 def test_expired_deadline_prevents_provider_call_and_stops_a_retry() -> None:
     class Clock:
         value = NOW

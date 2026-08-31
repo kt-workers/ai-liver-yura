@@ -297,7 +297,7 @@ class OpenAIResponsesAdapter:
                     None,
                     LLMProviderSanitizedDetailCode.CLIENT_TIMEOUT,
                 )
-                result, retry = await self._handle_provider_failure(
+                result, retry = await self._handle_local_timeout(
                     request, config, provider_policy, classification, attempt, started_at
                 )
                 if retry:
@@ -453,6 +453,55 @@ class OpenAIResponsesAdapter:
                 started_at,
                 retryable=False,
                 execution_provenance=self._provenance(request, provider_policy),
+            ),
+            False,
+        )
+
+    async def _handle_local_timeout(
+        self,
+        request: LLMRoleRequest,
+        config: OpenAIResponsesRoleConfig,
+        provider_policy: OpenAIResponsesModelPolicy,
+        classification: _ProviderFailureClassification,
+        attempt: int,
+        started_at: datetime,
+    ) -> tuple[LLMRoleResult | None, bool]:
+        """request policyのwait_for timeoutをProvider障害と区別する。"""
+        retryable = self._retry_allowed(request, config, classification, attempt)
+        self._publish_diagnostic(
+            request, config, provider_policy, classification, attempt, retryable
+        )
+        if self._is_shutdown():
+            return (
+                await self._cancelled(
+                    request, config, provider_policy, attempt, started_at, publish=False
+                ),
+                False,
+            )
+        if self._remaining_timeout(request) <= 0:
+            return (
+                await self._timed_out(
+                    request,
+                    config,
+                    provider_policy,
+                    attempt,
+                    started_at,
+                    LLMProviderSanitizedDetailCode.CLIENT_DEADLINE_EXCEEDED,
+                    publish=False,
+                ),
+                False,
+            )
+        if retryable:
+            return None, True
+        return (
+            await self._timed_out(
+                request,
+                config,
+                provider_policy,
+                attempt,
+                started_at,
+                LLMProviderSanitizedDetailCode.CLIENT_TIMEOUT,
+                publish=False,
             ),
             False,
         )

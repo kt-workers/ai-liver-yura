@@ -24,7 +24,7 @@ Parent: `docs/architecture/v2/llm_role_contracts.md`
 
 1. role descriptorとrequest schemaが一致しない場合、Provider呼出前に`POLICY_VIOLATION`で失敗する。
 2. Adapterはrequestごとに独立したattemptを実行し、共有Provider clientは許可するがrequest/result/metricsは共有しない。
-3. timeoutはPython 3.10互換の`asyncio.wait_for`でrequest policyに従う。取消は`CancelledError`を通常の成功として扱わず、呼出済みrequestには`CANCELLED`結果を返す。
+3. timeoutはPython 3.10互換の`asyncio.wait_for`でrequest policyに従う。request policyに起因する`asyncio.TimeoutError`は、retryが許される間だけ上限付き再試行の候補とし、retryしない又はattemptを使い切った終端は`TIMED_OUT` / `TIMEOUT`とする。OpenAI SDKの`APITimeoutError`及びHTTP `408`等のProvider側timeout分類とは区別する。取消は`CancelledError`を通常の成功として扱わず、呼出済みrequestには`CANCELLED`結果を返す。
 4. retryはprovider例外を先にtyped分類した上で、`RETRY_BOUNDED`かつretryable provider failureだけに限定し、最大attempt数を超えない。delayはrequestの`LLMRequestRetryPolicy`による決定的backoffを使い、sleep後にdeadlineとshutdownを再確認する。deadline超過時はretryしない。OpenAI SDKのconnection/timeout、HTTP `408`、`429`、`5xx`はretryable候補とし、認証・権限・不正request・unsupported parameter等の恒久failureはretryしない。`LLMRoleFailure.retryable`はRole policyではなく実際の分類結果と一致させる。
 5. `foreground`、`normal`、`background`の優先・queue・max-in-flightはRuntime Kernel #322の責務であり、Adapterは再実装しない。
 
