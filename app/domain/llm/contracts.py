@@ -104,9 +104,16 @@ _STATUS_FAILURE: dict[LLMRoleStatus, frozenset[LLMFailureCode]] = {
 }
 
 
-def _strict_positive_number(value: float, field_name: str) -> None:
+def _strict_positive_number(value: float, field_name: str) -> float:
     if type(value) not in (int, float) or not isfinite(value) or value <= 0:
-        raise ValueError(f"{field_name} must be a positive number")
+        raise ValueError(f"{field_name} は有限の正数でなければなりません")
+    return float(value)
+
+
+def _strict_at_least_one_number(value: float, field_name: str) -> float:
+    if type(value) not in (int, float) or not isfinite(value) or value < 1:
+        raise ValueError(f"{field_name} は有限の1以上の数値でなければなりません")
+    return float(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,36 +133,101 @@ class StructuredPayload:
 
 
 @dataclass(frozen=True, slots=True)
+class LLMRequestRetryPolicy:
+    initial_backoff_seconds: float
+    backoff_multiplier: float
+    max_backoff_seconds: float
+
+    def __post_init__(self) -> None:
+        initial = _strict_positive_number(
+            self.initial_backoff_seconds, "initial_backoff_seconds"
+        )
+        multiplier = _strict_at_least_one_number(
+            self.backoff_multiplier, "backoff_multiplier"
+        )
+        maximum = _strict_positive_number(self.max_backoff_seconds, "max_backoff_seconds")
+        if maximum < initial:
+            raise ValueError(
+                "max_backoff_seconds は initial_backoff_seconds 以上でなければなりません"
+            )
+        object.__setattr__(self, "initial_backoff_seconds", initial)
+        object.__setattr__(self, "backoff_multiplier", multiplier)
+        object.__setattr__(self, "max_backoff_seconds", maximum)
+
+    def delay_seconds(self, retry_number: int) -> float:
+        if type(retry_number) is not int or retry_number < 1:
+            raise ValueError("retry_number は1以上の整数でなければなりません")
+        return min(
+            self.max_backoff_seconds,
+            self.initial_backoff_seconds
+            * self.backoff_multiplier ** (retry_number - 1),
+        )
+
+    def to_dict(self) -> dict[str, float]:
+        return {
+            "initial_backoff_seconds": self.initial_backoff_seconds,
+            "backoff_multiplier": self.backoff_multiplier,
+            "max_backoff_seconds": self.max_backoff_seconds,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class LLMExecutionPolicy:
+    policy_id: str
+    policy_revision: int
     model_class: LLMModelClass
     reasoning_effort: LLMReasoningEffort
     timeout_seconds: float
     max_attempts: int
     max_output_tokens: int
-    temperature: float | None = None
+    retry_policy: LLMRequestRetryPolicy
+    temperature_normalized: float | None = None
 
     def __post_init__(self) -> None:
-        _strict_positive_number(self.timeout_seconds, "timeout_seconds")
+        require_identifier(self.policy_id, "policy_id")
+        require_revision(self.policy_revision, "policy_revision")
+        if not isinstance(self.model_class, LLMModelClass):
+            raise ValueError("model_class は LLMModelClass でなければなりません")
+        if not isinstance(self.reasoning_effort, LLMReasoningEffort):
+            raise ValueError("reasoning_effort は LLMReasoningEffort でなければなりません")
+        object.__setattr__(
+            self,
+            "timeout_seconds",
+            _strict_positive_number(self.timeout_seconds, "timeout_seconds"),
+        )
         if type(self.max_attempts) is not int or self.max_attempts < 1:
-            raise ValueError("max_attempts must be a positive int")
+            raise ValueError("max_attempts は1以上の整数でなければなりません")
         if type(self.max_output_tokens) is not int or self.max_output_tokens < 1:
-            raise ValueError("max_output_tokens must be a positive int")
-        if self.temperature is not None:
+            raise ValueError("max_output_tokens は1以上の整数でなければなりません")
+        if not isinstance(self.retry_policy, LLMRequestRetryPolicy):
+            raise ValueError("retry_policy は LLMRequestRetryPolicy でなければなりません")
+        if self.temperature_normalized is not None:
             if (
-                type(self.temperature) not in (int, float)
-                or not isfinite(self.temperature)
-                or not 0 <= self.temperature <= 2
+                type(self.temperature_normalized) not in (int, float)
+                or not isfinite(self.temperature_normalized)
+                or not 0 <= self.temperature_normalized <= 1
             ):
-                raise ValueError("temperature must be between 0 and 2")
+                raise ValueError("temperature_normalized は有限の [0, 1] でなければなりません")
+            object.__setattr__(
+                self, "temperature_normalized", float(self.temperature_normalized)
+            )
+
+    @property
+    def temperature(self) -> float | None:
+        """#357移行までの読み取り互換。Provider値としての意味は持たない。"""
+        return self.temperature_normalized
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "policy_id": self.policy_id,
+            "policy_revision": self.policy_revision,
             "model_class": self.model_class.value,
             "reasoning_effort": self.reasoning_effort.value,
             "timeout_seconds": self.timeout_seconds,
             "max_attempts": self.max_attempts,
             "max_output_tokens": self.max_output_tokens,
-            "temperature": self.temperature,
+            "temperature_normalized": self.temperature_normalized,
+            "retry_policy": self.retry_policy.to_dict(),
         }
 
 
@@ -219,6 +291,8 @@ class LLMRoleRequest:
             raise ValueError("source_event_ids must be unique")
         object.__setattr__(self, "source_event_ids", source_event_ids)
         object.__setattr__(self, "preconditions", tuple(self.preconditions))
+        if not isinstance(self.execution_policy, LLMExecutionPolicy):
+            raise ValueError("execution_policy は LLMExecutionPolicy でなければなりません")
         require_aware(self.created_at, "created_at")
         if self.deadline_at is not None:
             require_aware(self.deadline_at, "deadline_at")

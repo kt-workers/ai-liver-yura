@@ -19,7 +19,6 @@ from app.domain.executive import (
     SpeechIntentPayload,
 )
 from app.domain.llm import (
-    LLMExecutionPolicy,
     LLMModelClass,
     LLMReasoningEffort,
     LLMRoleRequest,
@@ -50,6 +49,7 @@ from app.domain.speech_semantics import (
     commit_result,
     parse_candidate,
 )
+from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(7, 5, 3)
@@ -57,7 +57,7 @@ REVISIONS = RevisionVector(7, 5, 3)
 
 def policy() -> SpeechSemanticsPolicy:
     return SpeechSemanticsPolicy(
-        LLMExecutionPolicy(
+        make_execution_policy(
             LLMModelClass.BALANCED,
             LLMReasoningEffort.MEDIUM,
             10,

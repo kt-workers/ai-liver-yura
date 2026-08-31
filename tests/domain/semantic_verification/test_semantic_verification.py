@@ -88,6 +88,7 @@ from app.domain.speech_semantics import (
     SpeechSemanticFactKind,
     SpeechSemanticPlan,
 )
+from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(10, 4, 2)
@@ -95,7 +96,7 @@ TEXT = "今はそこまで楽しいって感じじゃないかな。"
 
 
 def execution_policy() -> LLMExecutionPolicy:
-    return LLMExecutionPolicy(
+    return make_execution_policy(
         LLMModelClass.BALANCED,
         LLMReasoningEffort.MEDIUM,
         20,

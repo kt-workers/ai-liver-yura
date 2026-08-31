@@ -50,7 +50,6 @@ from app.domain.executive import (
     to_system_command,
 )
 from app.domain.llm import (
-    LLMExecutionPolicy,
     LLMModelClass,
     LLMReasoningEffort,
     LLMRoleRequest,
@@ -59,6 +58,7 @@ from app.domain.llm import (
     LLMTokenUsage,
     StructuredPayload,
 )
+from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 14, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(7, 5, 3)
@@ -92,7 +92,7 @@ def live_state(
 
 def policy() -> ExecutivePolicy:
     return ExecutivePolicy(
-        LLMExecutionPolicy(
+        make_execution_policy(
             LLMModelClass.BALANCED,
             LLMReasoningEffort.MEDIUM,
             10,

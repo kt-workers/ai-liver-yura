@@ -18,7 +18,6 @@ from app.adapters.llm.operational_diagnostics import (
 )
 from app.domain.contracts import RevisionVector
 from app.domain.llm import (
-    LLMExecutionPolicy,
     LLMFailureCode,
     LLMFailurePolicy,
     LLMInterruptibility,
@@ -30,6 +29,7 @@ from app.domain.llm import (
     LLMStalePolicy,
     StructuredPayload,
 )
+from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 
@@ -79,7 +79,7 @@ def make_request(
         LLMPriority.FOREGROUND,
         LLMInterruptibility.INTERRUPTIBLE,
         LLMStalePolicy.REJECT,
-        LLMExecutionPolicy(model_class, reasoning_effort, timeout_seconds, max_attempts, 100),
+        make_execution_policy(model_class, reasoning_effort, timeout_seconds, max_attempts, 100),
         NOW,
         "trace-1",
         deadline_at,
