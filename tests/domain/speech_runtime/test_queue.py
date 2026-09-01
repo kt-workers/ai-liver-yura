@@ -263,14 +263,14 @@ async def test_canonical_queue_order_is_priority_then_prepared_at_then_candidate
             prepared_at=base + timedelta(seconds=10),
         ),
     )
-    for candidate in candidates:
-        await runtime.register(candidate)
+    for prepared_candidate in candidates:
+        await runtime.register(prepared_candidate)
     coordinator = _coordinator(runtime, policy)
-    for candidate in candidates:
-        assert (await coordinator.enqueue_current(candidate.candidate_id, 1)).admitted
+    for prepared_candidate in candidates:
+        assert (await coordinator.enqueue_current(prepared_candidate.candidate_id, 1)).admitted
     popped: list[str] = []
-    while (candidate := await coordinator.pop_for_revalidation()) is not None:
-        popped.append(candidate.candidate_id)
+    while (next_candidate := await coordinator.pop_for_revalidation()) is not None:
+        popped.append(next_candidate.candidate_id)
     assert popped == ["direct", "foreground-a", "foreground-b", "normal"]
 
 
