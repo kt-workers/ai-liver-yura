@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
+from time import monotonic_ns
 
 from .contracts import (
     AudioReadinessState,
@@ -18,12 +20,29 @@ from .contracts import (
     SpeechReadinessState,
     VerifierReadinessState,
 )
+from .policy import SpeechRuntimeOperationalPolicy, V2_SPEECH_RUNTIME_OPERATIONAL_POLICY
+
+MonotonicMsSource = Callable[[], int]
+
+
+def _system_monotonic_ms() -> int:
+    return monotonic_ns() // 1_000_000
 
 
 class SpeechRuntime:
     """候補局所の短い状態遷移だけを所有し、Role/Provider awaitを直列化しない。"""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        policy: SpeechRuntimeOperationalPolicy = V2_SPEECH_RUNTIME_OPERATIONAL_POLICY,
+        monotonic_ms: MonotonicMsSource = _system_monotonic_ms,
+    ) -> None:
+        if not isinstance(policy, SpeechRuntimeOperationalPolicy):
+            raise ValueError("Speech Runtime operational policy が不正です")
+        if not callable(monotonic_ms):
+            raise ValueError("monotonic_ms source が不正です")
+        self._policy = policy
+        self._monotonic_ms = monotonic_ms
         self._candidates: dict[str, PreparedSpeechCandidate] = {}
         self._presentations: dict[str, str] = {}
         self._commands: dict[str, SpeechPresentationCommand] = {}
@@ -31,10 +50,62 @@ class SpeechRuntime:
         self._generations: dict[str, int] = {}
         self._lock = asyncio.Lock()
 
+    @property
+    def operational_policy(self) -> SpeechRuntimeOperationalPolicy:
+        return self._policy
+
+    async def update_operational_policy(self, policy: SpeechRuntimeOperationalPolicy) -> None:
+        """新generationをcurrentにする。既存candidateへ新しい数値は付け替えない。"""
+        if not isinstance(policy, SpeechRuntimeOperationalPolicy):
+            raise ValueError("Speech Runtime operational policy が不正です")
+        async with self._lock:
+            self._policy = policy
+
+    def _now_mono_ms(self) -> int:
+        value = self._monotonic_ms()
+        if type(value) is not int or value < 0:
+            raise ValueError("monotonic clock は0以上の整数msを返す必要があります")
+        return value
+
+    def _policy_matches(self, candidate: PreparedSpeechCandidate) -> bool:
+        return (
+            candidate.runtime_policy_id == self._policy.policy_id
+            and candidate.runtime_policy_revision == self._policy.policy_revision
+        )
+
+    async def operational_failure(self, candidate_id: str) -> str | None:
+        """raw payloadを含めずcandidateのD10 operational failureだけを返す。"""
+        async with self._lock:
+            candidate = self._candidates.get(candidate_id)
+            if candidate is None:
+                raise ValueError("candidateが存在しません")
+            if not self._policy_matches(candidate):
+                return "runtime_policy_stale"
+            now = self._now_mono_ms()
+            if candidate.is_expired_mono(now):
+                return "prepared_candidate_expired"
+            if candidate.revalidation_is_too_old(now):
+                return "revalidation_too_old"
+            return None
+
     async def register(self, candidate: PreparedSpeechCandidate) -> None:
         async with self._lock:
             if candidate.candidate_id in self._candidates:
                 raise ValueError("candidateは一意です")
+            now = self._now_mono_ms()
+            if candidate.has_operational_snapshot:
+                if not self._policy_matches(candidate):
+                    raise ValueError("candidate runtime policy generation がcurrentではありません")
+            else:
+                candidate = replace(
+                    candidate,
+                    runtime_policy_id=self._policy.policy_id,
+                    runtime_policy_revision=self._policy.policy_revision,
+                    created_mono_ms=now,
+                    prepared_mono_ms=now,
+                    prepared_ttl_ms=self._policy.prepared_candidate_ttl_ms,
+                    revalidation_max_age_ms=self._policy.revalidation_max_age_ms,
+                )
             self._candidates[candidate.candidate_id] = candidate
             self._generations[candidate.candidate_id] = 1
 
@@ -61,9 +132,10 @@ class SpeechRuntime:
             if self._generations.get(candidate_id) != expected_generation:
                 return None
             candidate = self._active(candidate_id)
+            if not self._policy_matches(candidate):
+                return None
             self._generations[candidate_id] += 1
             generation = self._generations[candidate_id]
-            # 旧世代のartifact/acceptance/performanceはrepairへ継承しない。
             self._candidates[candidate_id] = replace(
                 candidate,
                 utterance_id=None,
@@ -79,6 +151,7 @@ class SpeechRuntime:
                 ),
                 lifecycle=CandidateLifecycle.PREPARING,
                 repair_count=candidate.repair_count + 1,
+                revalidation_started_mono_ms=None,
                 updated_at=datetime.now(timezone.utc),
             )
             return generation
@@ -93,6 +166,8 @@ class SpeechRuntime:
             if self._generations.get(candidate_id) != expected_generation:
                 return None
             candidate = self._active(candidate_id)
+            if not self._policy_matches(candidate):
+                return None
             if candidate.utterance_id is None or candidate.semantic_acceptance_id is None:
                 raise ValueError("valid Character/semantic acceptance が必要です")
             if candidate.prepared_audio_ref is not None:
@@ -113,6 +188,7 @@ class SpeechRuntime:
                     audio=AudioReadinessState.NOT_REQUESTED,
                 ),
                 lifecycle=CandidateLifecycle.PREPARING,
+                revalidation_started_mono_ms=None,
                 updated_at=datetime.now(timezone.utc),
             )
             return generation
@@ -139,6 +215,8 @@ class SpeechRuntime:
             if self._generations.get(candidate_id) != generation:
                 return None
             candidate = self._active(candidate_id)
+            if not self._policy_matches(candidate):
+                return None
             verifier_ok = (
                 candidate.semantic_requirement
                 is SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
@@ -161,6 +239,9 @@ class SpeechRuntime:
                 and verifier_ok
             ):
                 lifecycle = CandidateLifecycle.PREPARED
+            prepared_mono_ms = candidate.prepared_mono_ms
+            if lifecycle is CandidateLifecycle.PREPARED and candidate.lifecycle is not CandidateLifecycle.PREPARED:
+                prepared_mono_ms = self._now_mono_ms()
             updated = replace(
                 candidate,
                 utterance_id=utterance_id if utterance_id is not None else candidate.utterance_id,
@@ -183,6 +264,7 @@ class SpeechRuntime:
                 ),
                 readiness=readiness,
                 lifecycle=lifecycle,
+                prepared_mono_ms=prepared_mono_ms,
                 updated_at=datetime.now(timezone.utc),
             )
             self._candidates[candidate_id] = updated
@@ -193,8 +275,8 @@ class SpeechRuntime:
     ) -> PreparedSpeechCandidate:
         generation = self.generation(candidate_id)
         updated = await self.commit_generation_result(candidate_id, generation, readiness=readiness)
-        if updated is None:  # pragma: no cover - 同一event loop内では発生しない防御。
-            raise ValueError("candidate generation が更新されました")
+        if updated is None:
+            raise ValueError("candidate generation又はruntime policyが更新されました")
         return updated
 
     async def cancel(
@@ -231,6 +313,8 @@ class SpeechRuntime:
             if self._generations.get(candidate_id) != generation:
                 return None
             candidate = self._active(candidate_id)
+            if not self._policy_matches(candidate) or candidate.is_expired_mono(self._now_mono_ms()):
+                return None
             if candidate.lifecycle is not CandidateLifecycle.PREPARED:
                 raise ValueError("PREPARED candidateだけをqueueへ入れられます")
             updated = replace(
@@ -250,11 +334,14 @@ class SpeechRuntime:
             candidate = self._candidates.get(candidate_id)
             if candidate is None:
                 raise ValueError("candidateが存在しません")
+            if not self._policy_matches(candidate) or candidate.is_expired_mono(self._now_mono_ms()):
+                return None
             if candidate.lifecycle is not CandidateLifecycle.QUEUED:
                 return None
             updated = replace(
                 candidate,
                 lifecycle=CandidateLifecycle.REVALIDATING,
+                revalidation_started_mono_ms=self._now_mono_ms(),
                 updated_at=datetime.now(timezone.utc),
             )
             self._candidates[candidate_id] = updated
@@ -273,6 +360,15 @@ class SpeechRuntime:
             candidate = self._active(candidate_id)
             if candidate.lifecycle is not CandidateLifecycle.REVALIDATING:
                 raise ValueError("revalidation中のcandidateが必要です")
+            if not self._policy_matches(candidate):
+                passed = False
+                failure = CandidateLifecycle.STALE
+            now_mono_ms = self._now_mono_ms()
+            if candidate.is_expired_mono(now_mono_ms) or candidate.revalidation_is_too_old(
+                now_mono_ms
+            ):
+                passed = False
+                failure = CandidateLifecycle.STALE
             if passed:
                 lifecycle = CandidateLifecycle.READY_TO_PRESENT
             else:
@@ -299,6 +395,13 @@ class SpeechRuntime:
     ) -> SpeechPresentationCommand:
         async with self._lock:
             candidate = self._active(candidate_id)
+            now_mono_ms = self._now_mono_ms()
+            if (
+                not self._policy_matches(candidate)
+                or candidate.is_expired_mono(now_mono_ms)
+                or candidate.revalidation_is_too_old(now_mono_ms)
+            ):
+                raise ValueError("Speech Runtime operational revalidationに失敗しました")
             if (
                 candidate.lifecycle is not CandidateLifecycle.READY_TO_PRESENT
                 or presentation_id in self._presentations
@@ -333,7 +436,6 @@ class SpeechRuntime:
                 )
                 or not state.character_compatible
                 or not state.expiry_valid
-                or (candidate.expires_at is not None and candidate.expires_at <= state.observed_at)
                 or not state.capability.output_available
             ):
                 raise ValueError("live revalidationに失敗しました")
