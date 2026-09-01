@@ -45,16 +45,19 @@ class SpeechSemanticRepairExecutor:
         runtime: SpeechRuntime,
         tasks: CandidateTaskRegistry,
         discarder: PreparedAudioDiscarder,
-        policy: SpeechRuntimeOperationalPolicy,
+        policy: SpeechRuntimeOperationalPolicy | None = None,
     ) -> None:
-        if not isinstance(policy, SpeechRuntimeOperationalPolicy):
+        resolved_policy = runtime.operational_policy if policy is None else policy
+        if not isinstance(resolved_policy, SpeechRuntimeOperationalPolicy):
             raise ValueError("Speech Runtime operational policy が必要です")
-        if not runtime.operational_policy.same_generation(policy.policy_id, policy.policy_revision):
+        if not runtime.operational_policy.same_generation(
+            resolved_policy.policy_id, resolved_policy.policy_revision
+        ):
             raise ValueError("runtimeとrepairのoperational policy generationが一致しません")
         self._runtime = runtime
         self._tasks = tasks
         self._discarder = discarder
-        self._policy = policy
+        self._policy = resolved_policy
         self._accepted_priors: list[str] = []
 
     @property
