@@ -364,13 +364,13 @@ class BodyIntegrationRuntime:
             )
             self._clear_current_planning()
             return
-        error = task.exception()
-        if error is not None:
+        planning_error = task.exception()
+        if planning_error is not None:
             self._terminalize_planning_session(
                 submission.session_id,
                 BodyExecutionSessionStatus.FAILED,
                 observed_at,
-                f"planning_failed:{type(error).__name__}",
+                f"planning_failed:{type(planning_error).__name__}",
             )
             self._clear_current_planning()
             return
@@ -403,12 +403,12 @@ class BodyIntegrationRuntime:
                 observed_at=observed_at,
                 started_monotonic_s=monotonic_now_s,
             )
-        except BodySolverError as error:
+        except BodySolverError as solver_error:
             self._terminalize_planning_session(
                 submission.session_id,
                 BodyExecutionSessionStatus.REJECTED,
                 observed_at,
-                f"trajectory_admission_rejected:{error.code.value}",
+                f"trajectory_admission_rejected:{solver_error.code.value}",
             )
             self._clear_current_planning()
             return
