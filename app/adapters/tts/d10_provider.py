@@ -23,8 +23,10 @@ from .contracts import (
 )
 from .policy import (
     TTSMappingDimension,
+    TTSParameterMappingRule,
     TTSPerformanceMappingPolicy,
     TTSProviderOperationalPolicy,
+    TTSUnitParameterMappingRule,
     validate_tts_policy_bundle,
 )
 from .provider import (
@@ -101,7 +103,12 @@ class TTSProviderAdapter:
 
     async def synthesize(self, request: TTSSynthesisRequest) -> TTSSynthesisResult:
         if self._shutdown:
-            return self._failure(request, TTSFailureCode.CANCELLED, 0, TTSSynthesisStatus.CANCELLED)
+            return self._failure(
+                request,
+                TTSFailureCode.CANCELLED,
+                0,
+                TTSSynthesisStatus.CANCELLED,
+            )
         task = asyncio.current_task()
         if task is not None:
             self._pending.add(task)
@@ -121,21 +128,37 @@ class TTSProviderAdapter:
         if not self._policy_matches(request):
             return self._failure(request, TTSFailureCode.INVALID_REQUEST, 0)
         if self._deadline_expired(request):
-            return self._failure(request, TTSFailureCode.REQUEST_TIMEOUT, 0, TTSSynthesisStatus.TIMED_OUT)
+            return self._failure(
+                request,
+                TTSFailureCode.REQUEST_TIMEOUT,
+                0,
+                TTSSynthesisStatus.TIMED_OUT,
+            )
         try:
             provider_input, degraded = self._map(request)
         except (TypeError, ValueError):
             return self._failure(request, TTSFailureCode.INVALID_REQUEST, 0)
         texts = self._pronunciation_texts(request)
-        if request.pronunciation_overrides and not request.capability.supports_pronunciation_override:
+        if (
+            request.pronunciation_overrides
+            and not request.capability.supports_pronunciation_override
+        ):
             texts = tuple(segment.text for segment in request.utterance.candidate.segments)
             degraded.append("pronunciation_override")
 
         attempt = 0
         while True:
             if self._shutdown or self._deadline_expired(request):
-                status = TTSSynthesisStatus.CANCELLED if self._shutdown else TTSSynthesisStatus.TIMED_OUT
-                code = TTSFailureCode.CANCELLED if self._shutdown else TTSFailureCode.REQUEST_TIMEOUT
+                status = (
+                    TTSSynthesisStatus.CANCELLED
+                    if self._shutdown
+                    else TTSSynthesisStatus.TIMED_OUT
+                )
+                code = (
+                    TTSFailureCode.CANCELLED
+                    if self._shutdown
+                    else TTSFailureCode.REQUEST_TIMEOUT
+                )
                 return self._failure(request, code, attempt, status)
             attempt += 1
             try:
@@ -339,13 +362,19 @@ class TTSProviderAdapter:
                 degraded.append(dimension.value)
         return parameters
 
-    def _required_signed(self, dimension: TTSMappingDimension):
+    def _required_signed(
+        self,
+        dimension: TTSMappingDimension,
+    ) -> TTSParameterMappingRule:
         rule = self._mapping_policy.signed_rule_for(dimension)
         if rule is None:
             raise ValueError(f"required signed mapping ruleがありません: {dimension.value}")
         return rule
 
-    def _required_unit(self, dimension: TTSMappingDimension):
+    def _required_unit(
+        self,
+        dimension: TTSMappingDimension,
+    ) -> TTSUnitParameterMappingRule:
         rule = self._mapping_policy.unit_rule_for(dimension)
         if rule is None:
             raise ValueError(f"required unit mapping ruleがありません: {dimension.value}")
