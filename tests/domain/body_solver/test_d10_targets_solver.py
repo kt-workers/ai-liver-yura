@@ -5,9 +5,9 @@ import pytest
 from app.domain.body import Quaternion
 from app.domain.body_motion_planning import BodySpatialTarget, BodySpatialTargetKind
 from app.domain.body_solver import (
+    BodySolveFeasibility,
     BodySolverError,
     BodySolverFailureCode,
-    BodySolveFeasibility,
     BodySolveTask,
     BodySolveTaskKind,
     BodySpatialTargetSnapshot,
