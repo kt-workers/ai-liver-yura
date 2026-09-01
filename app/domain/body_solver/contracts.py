@@ -108,7 +108,11 @@ class BodySolveTask:
         if not isinstance(self.kind, BodySolveTaskKind):
             raise ValueError("kind が不正です")
         object.__setattr__(self, "joint_ids", _identifiers(self.joint_ids, "joint_ids"))
-        object.__setattr__(self, "chain_ids", _identifiers(self.chain_ids, "chain_ids"))
+        object.__setattr__(
+            self,
+            "chain_ids",
+            _identifiers(self.chain_ids, "chain_ids", non_empty=False),
+        )
         if self.spatial_target is not None and not isinstance(
             self.spatial_target, BodySpatialTarget
         ):
