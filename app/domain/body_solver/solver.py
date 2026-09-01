@@ -252,9 +252,9 @@ def solve_body_tasks(
         )
 
     iterations = 0
+    step = policy.max_per_iteration_dof_step_radians
     for iteration in range(policy.max_ik_iterations):
         iterations = iteration + 1
-        step = policy.max_per_iteration_dof_step_radians * (0.5 ** (iteration // 8))
         improved = False
         baseline_residuals = evaluate_body_task_residuals(
             model,
@@ -328,7 +328,9 @@ def solve_body_tasks(
                 residuals,
             )
         if not improved:
-            break
+            step *= 0.5
+            if step <= policy.numeric_epsilon:
+                break
 
     residuals = evaluate_body_task_residuals(model, pose, tasks, targets)
     return BodyIKSolution(
