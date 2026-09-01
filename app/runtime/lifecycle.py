@@ -64,7 +64,7 @@ class DependencyRetryPolicy:
             )
 
     @staticmethod
-    def _finite_positive(value: object, name: str) -> None:
+    def _finite_positive(value: int | float, name: str) -> None:
         if type(value) not in (int, float) or not isfinite(value) or value <= 0:
             raise ValueError(f"{name}はfiniteな正のnumberでなければなりません")
 
