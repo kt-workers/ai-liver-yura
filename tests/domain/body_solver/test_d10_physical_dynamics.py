@@ -167,13 +167,15 @@ def test_joint_tick_bounds_velocity_acceleration_and_jerk_across_frames() -> Non
         next_dofs = advance_joint_dofs(model, state, target_states, dt)
         coordinate = next_dofs[0].coordinates[0]
         jerk = (coordinate.acceleration_radians_per_second2 - previous_acceleration) / dt
-        assert abs(coordinate.velocity_radians_per_second) <= pytest.approx(
-            dynamic.max_velocity_radians_per_second
+        assert (
+            abs(coordinate.velocity_radians_per_second)
+            <= dynamic.max_velocity_radians_per_second + 1e-12
         )
-        assert abs(coordinate.acceleration_radians_per_second2) <= pytest.approx(
-            dynamic.max_acceleration_radians_per_second2
+        assert (
+            abs(coordinate.acceleration_radians_per_second2)
+            <= dynamic.max_acceleration_radians_per_second2 + 1e-12
         )
-        assert abs(jerk) <= pytest.approx(dynamic.max_jerk_radians_per_second3)
+        assert abs(jerk) <= dynamic.max_jerk_radians_per_second3 + 1e-12
 
         next_pose = project_body_pose_from_dof(
             model,
