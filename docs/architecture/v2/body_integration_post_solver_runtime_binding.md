@@ -93,6 +93,8 @@ BodyPlanningSubmission
 
 `decision_id` / `intent_id` / revisions / body_model_id / trace_idはsnapshotのtrusted値をそのまま`BodyIntegrationTrace`へ投影する。
 
+`RevisionVector`の`goal_revision` / `attention_revision`はupstream契約どおりoptionalであり、#341 traceも`None`を真正な「そのrevision provenanceなし」として保持する。0等の架空revisionを補完してはならない。`source_context_revision`は常に必須とする。
+
 `command_id`はSystemCommand identityとして上流から明示的に渡し、#341が捏造しない。
 
 ## 6. Supersede admission boundary
@@ -101,9 +103,9 @@ BodyPlanningSubmission
 
 新しいsubmissionを現在のplanning/trajectoryへ割り込ませるかは、上流のtrusted routingで決定済みでなければならない。Runtime APIはその事実を明示する`supersede_allowed`を受ける。
 
-- pending plannerがあり`supersede_allowed=False`ならrejectする。
-- `supersede_allowed=True`ならold owned planner taskをcancelし、新generationへ進む。
-- old plannerがcancelを無視してlate returnしてもgeneration mismatchなら#339へadmitしない。
+- current planner resultがpending又は未consumeであり`supersede_allowed=False`ならrejectする。
+- `supersede_allowed=True`ならold owned planner taskをcancel可能ならcancelし、未consume completed taskを含めretired generationへ移して新generationへ進む。
+- old plannerがcancelを無視してlate returnしてもretired generationのresultは#339へadmitしない。
 - #338自身のcommit freshness gateもそのまま通る。
 - accepted new planのphysical transitionは#339 `supersede_trajectory`へ委譲し、#341がjoint/velocity/accelerationを変更しない。
 
@@ -192,6 +194,7 @@ controller physical stateをshutdownでHome/Neutralへresetしない。
 10. `LatestBodyFrameBuffer`でslow consumer中のframeがcoalesceされ、producerをawaitしない。
 11. shutdown後owned planning + realtime pending taskが0。
 12. no Home/Neutral reset。
+13. optional goal/attention revisionを捏造せずtraceへ保持する。
 
 full GateはV2 Deterministic CIのRuff / strict Mypy / full pytest / compileall / diff-check / base freshnessを使用する。
 
