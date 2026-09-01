@@ -12,7 +12,7 @@ from .contracts import (
     VerifierReadinessState,
 )
 from .discard import PreparedAudioDiscarder, PreparedAudioDiscardReason
-from .policy import SpeechRuntimeOperationalPolicy, V2_SPEECH_RUNTIME_OPERATIONAL_POLICY
+from .policy import V2_SPEECH_RUNTIME_OPERATIONAL_POLICY, SpeechRuntimeOperationalPolicy
 from .runtime import SpeechRuntime
 from .tasks import CandidateTaskRegistry
 
@@ -155,7 +155,9 @@ class SpeechSemanticRepairExecutor:
         )
         await self._discarder.discard_current(candidate_id, generation, discard_reason)
         if (
-            await self._runtime.cancel(candidate_id, terminal, expected_generation=generation)
+            await self._runtime.cancel(
+                candidate_id, terminal, expected_generation=generation
+            )
             is None
         ):
             return None
