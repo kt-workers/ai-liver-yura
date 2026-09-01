@@ -19,15 +19,18 @@ class SpeechPreparationOrchestrator:
         self,
         tasks: CandidateTaskRegistry,
         admission: SpeechPreparationAdmission,
-        policy: SpeechRuntimeOperationalPolicy,
+        policy: SpeechRuntimeOperationalPolicy | None = None,
     ) -> None:
-        if not isinstance(policy, SpeechRuntimeOperationalPolicy):
+        resolved_policy = admission.policy if policy is None else policy
+        if not isinstance(resolved_policy, SpeechRuntimeOperationalPolicy):
             raise ValueError("Speech Runtime operational policy が必要です")
-        if not admission.policy.same_generation(policy.policy_id, policy.policy_revision):
+        if not admission.policy.same_generation(
+            resolved_policy.policy_id, resolved_policy.policy_revision
+        ):
             raise ValueError("admissionとorchestratorのoperational policy generationが一致しません")
         self._tasks = tasks
         self._admission = admission
-        self._policy = policy
+        self._policy = resolved_policy
         self._leases: dict[tuple[str, int], tuple[SpeechCandidatePriority, asyncio.Event]] = {}
         self._active_speculative_tts = 0
 
