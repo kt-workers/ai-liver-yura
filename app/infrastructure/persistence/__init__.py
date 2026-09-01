@@ -16,7 +16,11 @@ from .snapshots import (
     SqliteLifecycleSnapshotRepository,
 )
 from .sqlite_memory import SqliteMemoryRepository
-from .worker import SnapshotPersistenceRequest, SnapshotPersistenceWorker
+from .worker import (
+    SnapshotPersistenceRequest,
+    SnapshotPersistenceRetryPolicy,
+    SnapshotPersistenceWorker,
+)
 
 __all__ = [
     "DurabilityReceipt",
@@ -30,6 +34,7 @@ __all__ = [
     "PersistenceSnapshotEnvelope",
     "RehydrationCandidate",
     "SnapshotPersistenceRequest",
+    "SnapshotPersistenceRetryPolicy",
     "SnapshotPersistenceWorker",
     "SqliteLifecycleSnapshotRepository",
     "SqliteMemoryRepository",

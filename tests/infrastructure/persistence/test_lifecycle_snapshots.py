@@ -19,10 +19,10 @@ from app.infrastructure.persistence import (
     PersistenceFailureCode,
     PersistenceSnapshotEnvelope,
     SnapshotPersistenceRequest,
+    SnapshotPersistenceRetryPolicy,
     SnapshotPersistenceWorker,
     SqliteLifecycleSnapshotRepository,
 )
-from app.runtime.lifecycle import RetryPolicy
 
 NOW = datetime(2026, 8, 26, tzinfo=timezone.utc)
 
@@ -263,7 +263,7 @@ def test_transient_failure_is_bounded_retried_without_blocking_foreground() -> N
         repository = DelayedRepository()
         worker = SnapshotPersistenceWorker(
             repository,
-            retry_policy=RetryPolicy(2, 0, 0),
+            retry_policy=SnapshotPersistenceRetryPolicy(2, 0, 0),
         )
         receipt_task = worker.submit(
             SnapshotPersistenceRequest("request-1", envelope("snapshot-1", 1), False)

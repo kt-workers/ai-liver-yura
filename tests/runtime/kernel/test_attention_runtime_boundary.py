@@ -27,13 +27,15 @@ from app.runtime.kernel import (
 from app.runtime.kernel import (
     RuntimeLanePolicy as KernelRuntimeLanePolicy,
 )
+from app.runtime.shutdown import RuntimeShutdownPolicy
 
 NOW = datetime(2026, 8, 16, tzinfo=timezone.utc)
 TEST_SCHEDULER_POLICY = RuntimeSchedulerPolicy("test.scheduler", 1, 8)
+TEST_SHUTDOWN_POLICY = RuntimeShutdownPolicy("test.attention.shutdown", 1, 1.0, 1.0, 1.0, 1.0)
 
 
 def RuntimeCoordinator(clock: FakeRuntimeClock) -> KernelRuntimeCoordinator:
-    return KernelRuntimeCoordinator(clock, TEST_SCHEDULER_POLICY)
+    return KernelRuntimeCoordinator(clock, TEST_SCHEDULER_POLICY, TEST_SHUTDOWN_POLICY)
 
 
 def RuntimeLanePolicy(

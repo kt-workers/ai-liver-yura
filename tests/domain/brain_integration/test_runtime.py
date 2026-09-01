@@ -27,8 +27,10 @@ from app.runtime.kernel import (
     RuntimeLanePolicy,
     RuntimeSchedulerPolicy,
 )
+from app.runtime.shutdown import RuntimeShutdownPolicy
 
 NOW = datetime(2026, 8, 31, tzinfo=timezone.utc)
+TEST_SHUTDOWN_POLICY = RuntimeShutdownPolicy("test.brain.shutdown", 1, 1.0, 1.0, 1.0, 1.0)
 
 
 @dataclass
@@ -74,6 +76,7 @@ def policy(
             )
             for lane in BrainIntegrationLane
         ),
+        TEST_SHUTDOWN_POLICY,
     )
 
 

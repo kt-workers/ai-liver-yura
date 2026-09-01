@@ -7,8 +7,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-
-from app.runtime.lifecycle import RetryPolicy
+from math import isfinite
 
 from .contracts import (
     DurabilityReceipt,
@@ -18,6 +17,32 @@ from .contracts import (
     PersistenceSnapshotEnvelope,
 )
 from .snapshots import LifecycleSnapshotRepositoryPort
+
+
+@dataclass(frozen=True, slots=True)
+class SnapshotPersistenceRetryPolicy:
+    max_attempts: int
+    base_delay_seconds: float
+    max_delay_seconds: float
+
+    def __post_init__(self) -> None:
+        if type(self.max_attempts) is not int or self.max_attempts < 1:
+            raise ValueError("max_attemptsは1以上のintでなければなりません")
+        for value, name in (
+            (self.base_delay_seconds, "base_delay_seconds"),
+            (self.max_delay_seconds, "max_delay_seconds"),
+        ):
+            if type(value) not in (int, float) or not isfinite(value) or value < 0:
+                raise ValueError(f"{name}はfiniteな0以上のnumberでなければなりません")
+        if self.max_delay_seconds < self.base_delay_seconds:
+            raise ValueError("max_delay_secondsはbase_delay_seconds以上でなければなりません")
+
+    def delay_for(self, attempt: int) -> float:
+        if type(attempt) is not int or attempt < 1:
+            raise ValueError("attemptは1以上のintでなければなりません")
+        return float(
+            min(self.max_delay_seconds, self.base_delay_seconds * 2 ** (attempt - 1))
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,14 +68,14 @@ class SnapshotPersistenceWorker:
         repository: LifecycleSnapshotRepositoryPort,
         *,
         max_pending: int = 32,
-        retry_policy: RetryPolicy | None = None,
+        retry_policy: SnapshotPersistenceRetryPolicy | None = None,
         now: Callable[[], datetime] | None = None,
     ) -> None:
         if type(max_pending) is not int or not 1 <= max_pending <= 256:
             raise ValueError("max_pendingが不正です")
         self._repository = repository
         self._max_pending = max_pending
-        self._retry_policy = retry_policy or RetryPolicy(3, 0.01, 0.1)
+        self._retry_policy = retry_policy or SnapshotPersistenceRetryPolicy(3, 0.01, 0.1)
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._tasks: dict[tuple[str, str], asyncio.Task[None]] = {}
         self._queued: dict[
