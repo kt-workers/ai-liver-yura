@@ -195,35 +195,32 @@ def test_dependency_16_17_boundary(dependency_count: int) -> None:
             validate_plan_bounds(value, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY)
 
 
-@pytest.mark.parametrize(
-    ("field_name", "equal_count", "above_count"),
-    [
-        ("precondition_ids", 32, 33),
-        ("completion_condition_refs", 32, 33),
-    ],
-)
-def test_step_reference_boundaries(
-    field_name: str,
-    equal_count: int,
-    above_count: int,
-) -> None:
-    equal_step = replace(
+@pytest.mark.parametrize("count", [32, 33])
+def test_step_precondition_32_33_boundary(count: int) -> None:
+    bounded_step = replace(
         step(),
-        **{field_name: tuple(f"ref-{index}" for index in range(equal_count))},
+        precondition_ids=tuple(f"precondition-{index}" for index in range(count)),
     )
-    validate_plan_bounds(
-        replace(candidate(), steps=(equal_step,), checkpoint_step_ids=()),
-        V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
-    )
-    above_step = replace(
+    value = replace(candidate(), steps=(bounded_step,), checkpoint_step_ids=())
+    if count == 32:
+        validate_plan_bounds(value, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY)
+    else:
+        with pytest.raises(GoalPlanningBoundsError):
+            validate_plan_bounds(value, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY)
+
+
+@pytest.mark.parametrize("count", [32, 33])
+def test_step_completion_32_33_boundary(count: int) -> None:
+    bounded_step = replace(
         step(),
-        **{field_name: tuple(f"ref-{index}" for index in range(above_count))},
+        completion_condition_refs=tuple(f"completion-{index}" for index in range(count)),
     )
-    with pytest.raises(GoalPlanningBoundsError):
-        validate_plan_bounds(
-            replace(candidate(), steps=(above_step,), checkpoint_step_ids=()),
-            V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
-        )
+    value = replace(candidate(), steps=(bounded_step,), checkpoint_step_ids=())
+    if count == 32:
+        validate_plan_bounds(value, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY)
+    else:
+        with pytest.raises(GoalPlanningBoundsError):
+            validate_plan_bounds(value, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY)
 
 
 @pytest.mark.parametrize("count", [64, 65])
