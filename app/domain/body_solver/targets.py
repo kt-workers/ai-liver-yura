@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import acos, cos, isclose, sin, sqrt
+from math import acos, isclose, sin, sqrt
 
-from app.domain.body import CanonicalBodyModel, Quaternion, Vector3
+from app.domain.body import BodyPose, CanonicalBodyModel, Quaternion, Vector3
 from app.domain.body_motion_planning import BodySpatialTargetKind
 
-from .contracts import BodySolveTask, BodySolveTaskKind, BodySolverError, BodySolverFailureCode
-from .physical import EndEffectorWorldFrame, end_effector_world_frame
+from .contracts import (
+    BodySolveTask,
+    BodySolveTaskKind,
+    BodySolverError,
+    BodySolverFailureCode,
+)
+from .physical import end_effector_world_frame
 from .spatial import BodySpatialTargetResolverPort, BodySpatialTargetSnapshot
 
 
@@ -91,28 +96,6 @@ def _slerp(left: Quaternion, right: Quaternion, fraction: float) -> Quaternion:
     )
 
 
-def _frame_orientation(frame: EndEffectorWorldFrame) -> Quaternion:
-    forward = _normalize(frame.forward_axis)
-    up = _normalize(frame.up_axis)
-    right = _normalize(_vector_cross(up, forward))
-    up = _normalize(_vector_cross(forward, right))
-    m00, m01, m02 = right.x, up.x, forward.x
-    m10, m11, m12 = right.y, up.y, forward.y
-    m20, m21, m22 = right.z, up.z, forward.z
-    trace = m00 + m11 + m22
-    if trace > 0:
-        scale = sqrt(trace + 1.0) * 2.0
-        return Quaternion((m21 - m12) / scale, (m02 - m20) / scale, (m10 - m01) / scale, scale / 4.0)
-    if m00 > m11 and m00 > m22:
-        scale = sqrt(1.0 + m00 - m11 - m22) * 2.0
-        return Quaternion(scale / 4.0, (m01 + m10) / scale, (m02 + m20) / scale, (m21 - m12) / scale)
-    if m11 > m22:
-        scale = sqrt(1.0 + m11 - m00 - m22) * 2.0
-        return Quaternion((m01 + m10) / scale, scale / 4.0, (m12 + m21) / scale, (m02 - m20) / scale)
-    scale = sqrt(1.0 + m22 - m00 - m11) * 2.0
-    return Quaternion((m02 + m20) / scale, (m12 + m21) / scale, scale / 4.0, (m10 - m01) / scale)
-
-
 def _rotation_between(source: Vector3, target: Vector3) -> Quaternion:
     start = _normalize(source)
     end = _normalize(target)
@@ -129,10 +112,20 @@ def _rotation_between(source: Vector3, target: Vector3) -> Quaternion:
     return Quaternion(axis.x * inverse, axis.y * inverse, axis.z * inverse, scale / 2.0)
 
 
+def _rotate_forward(rotation: Quaternion) -> Vector3:
+    return Vector3(
+        2.0 * (rotation.x * rotation.z + rotation.w * rotation.y),
+        2.0 * (rotation.y * rotation.z - rotation.w * rotation.x),
+        1.0 - 2.0 * (rotation.x * rotation.x + rotation.y * rotation.y),
+    )
+
+
 def _task_end_effector_id(task: BodySolveTask, model: CanonicalBodyModel) -> str:
     if len(task.chain_ids) == 1:
-        chain_id = task.chain_ids[0]
-        chain = next((item for item in model.kinematic_chains if item.chain_id == chain_id), None)
+        chain = next(
+            (item for item in model.kinematic_chains if item.chain_id == task.chain_ids[0]),
+            None,
+        )
         if chain is None or chain.end_effector_id is None:
             raise BodySolverError(BodySolverFailureCode.UNKNOWN_BODY_REFERENCE)
         return chain.end_effector_id
@@ -176,25 +169,24 @@ def _target_snapshot(
     return snapshot
 
 
-def resolve_body_task_target(
+def _is_root_task(task: BodySolveTask, model: CanonicalBodyModel) -> bool:
+    return not task.chain_ids and set(task.joint_ids) == {model.root_joint_id}
+
+
+def _resolve_root_target(
     task: BodySolveTask,
     model: CanonicalBodyModel,
-    pose: object,
+    pose: BodyPose,
     resolver: BodySpatialTargetResolverPort,
 ) -> ResolvedBodyTaskTarget:
-    from app.domain.body import BodyPose
-
-    if not isinstance(pose, BodyPose):
-        raise BodySolverError(BodySolverFailureCode.INVALID_DOF_STATE)
     spatial = task.spatial_target
     if spatial is None:
         raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
-
+    limit = model.root_dynamic_limit
+    if limit is None:
+        raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
     if task.kind is BodySolveTaskKind.ROOT_IMPULSE_TARGET:
         if spatial.kind is not BodySpatialTargetKind.DIRECTION or spatial.direction is None:
-            raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
-        limit = model.root_dynamic_limit
-        if limit is None:
             raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
         return ResolvedBodyTaskTarget(
             task.goal_id,
@@ -203,6 +195,77 @@ def resolve_body_task_target(
                 spatial.extent * limit.impulse_budget_mps,
             ),
         )
+    if task.kind is BodySolveTaskKind.POSITION_TARGET:
+        current = pose.root_world_transform.position
+        if spatial.kind is BodySpatialTargetKind.DIRECTION:
+            if spatial.direction is None:
+                raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
+            return ResolvedBodyTaskTarget(
+                task.goal_id,
+                position=_vector_add(
+                    current,
+                    _vector_scale(
+                        spatial.direction,
+                        spatial.extent * limit.directional_translation_budget_m,
+                    ),
+                ),
+            )
+        if spatial.target_ref is None:
+            raise BodySolverError(BodySolverFailureCode.TARGET_GEOMETRY_UNAVAILABLE)
+        snapshot = _target_snapshot(spatial.target_ref, resolver)
+        if snapshot.position is None:
+            raise BodySolverError(BodySolverFailureCode.TARGET_GEOMETRY_UNAVAILABLE)
+        delta = Vector3(
+            snapshot.position.x - current.x,
+            snapshot.position.y - current.y,
+            snapshot.position.z - current.z,
+        )
+        return ResolvedBodyTaskTarget(
+            task.goal_id,
+            position=_vector_add(current, _vector_scale(delta, spatial.extent)),
+            target_ref=snapshot.target_ref,
+            target_generation=snapshot.generation,
+        )
+    if task.kind is BodySolveTaskKind.ORIENTATION_TARGET:
+        current = pose.root_world_transform.rotation
+        if spatial.kind is BodySpatialTargetKind.DIRECTION:
+            if spatial.direction is None:
+                raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
+            full = _quaternion_multiply(
+                _rotation_between(_rotate_forward(current), spatial.direction),
+                current,
+            )
+            return ResolvedBodyTaskTarget(
+                task.goal_id,
+                orientation=_slerp(current, full, spatial.extent),
+            )
+        if spatial.target_ref is None:
+            raise BodySolverError(BodySolverFailureCode.TARGET_GEOMETRY_UNAVAILABLE)
+        snapshot = _target_snapshot(spatial.target_ref, resolver)
+        if snapshot.orientation is None:
+            raise BodySolverError(BodySolverFailureCode.TARGET_GEOMETRY_UNAVAILABLE)
+        return ResolvedBodyTaskTarget(
+            task.goal_id,
+            orientation=_slerp(current, snapshot.orientation, spatial.extent),
+            target_ref=snapshot.target_ref,
+            target_generation=snapshot.generation,
+        )
+    raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
+
+
+def resolve_body_task_target(
+    task: BodySolveTask,
+    model: CanonicalBodyModel,
+    pose: BodyPose,
+    resolver: BodySpatialTargetResolverPort,
+) -> ResolvedBodyTaskTarget:
+    if not isinstance(pose, BodyPose):
+        raise BodySolverError(BodySolverFailureCode.INVALID_DOF_STATE)
+    spatial = task.spatial_target
+    if spatial is None:
+        raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
+    if _is_root_task(task, model) or task.kind is BodySolveTaskKind.ROOT_IMPULSE_TARGET:
+        return _resolve_root_target(task, model, pose, resolver)
 
     end_effector_id = _task_end_effector_id(task, model)
     current = end_effector_world_frame(model, pose, end_effector_id)
@@ -210,11 +273,17 @@ def resolve_body_task_target(
         if spatial.target_ref is None:
             raise BodySolverError(BodySolverFailureCode.TARGET_GEOMETRY_UNAVAILABLE)
         snapshot = _target_snapshot(spatial.target_ref, resolver)
-        if task.kind in {BodySolveTaskKind.POSITION_TARGET, BodySolveTaskKind.CONTACT_TARGET}:
+        if task.kind in {
+            BodySolveTaskKind.POSITION_TARGET,
+            BodySolveTaskKind.CONTACT_TARGET,
+        }:
             if snapshot.position is None:
                 raise BodySolverError(BodySolverFailureCode.TARGET_GEOMETRY_UNAVAILABLE)
             if task.kind is BodySolveTaskKind.CONTACT_TARGET and not isclose(
-                spatial.extent, 1.0, rel_tol=0.0, abs_tol=0.0
+                spatial.extent,
+                1.0,
+                rel_tol=0.0,
+                abs_tol=0.0,
             ):
                 raise BodySolverError(BodySolverFailureCode.CONTACT_INFEASIBLE)
             delta = Vector3(
@@ -224,17 +293,23 @@ def resolve_body_task_target(
             )
             return ResolvedBodyTaskTarget(
                 task.goal_id,
-                position=_vector_add(current.position, _vector_scale(delta, spatial.extent)),
+                position=_vector_add(
+                    current.position,
+                    _vector_scale(delta, spatial.extent),
+                ),
                 target_ref=snapshot.target_ref,
                 target_generation=snapshot.generation,
             )
         if task.kind is BodySolveTaskKind.ORIENTATION_TARGET:
             if snapshot.orientation is None:
                 raise BodySolverError(BodySolverFailureCode.TARGET_GEOMETRY_UNAVAILABLE)
-            current_orientation = _frame_orientation(current)
             return ResolvedBodyTaskTarget(
                 task.goal_id,
-                orientation=_slerp(current_orientation, snapshot.orientation, spatial.extent),
+                orientation=_slerp(
+                    current.orientation,
+                    snapshot.orientation,
+                    spatial.extent,
+                ),
                 target_ref=snapshot.target_ref,
                 target_generation=snapshot.generation,
             )
@@ -243,22 +318,28 @@ def resolve_body_task_target(
     if spatial.direction is None:
         raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
     if task.kind is BodySolveTaskKind.POSITION_TARGET:
-        if task.chain_ids:
-            distance = spatial.extent * _chain_reach_budget_m(task, model)
-            return ResolvedBodyTaskTarget(
-                task.goal_id,
-                position=_vector_add(current.position, _vector_scale(spatial.direction, distance)),
-            )
-        raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
+        if not task.chain_ids:
+            raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
+        distance = spatial.extent * _chain_reach_budget_m(task, model)
+        return ResolvedBodyTaskTarget(
+            task.goal_id,
+            position=_vector_add(
+                current.position,
+                _vector_scale(spatial.direction, distance),
+            ),
+        )
     if task.kind is BodySolveTaskKind.ORIENTATION_TARGET:
-        current_orientation = _frame_orientation(current)
         full_alignment = _quaternion_multiply(
             _rotation_between(current.forward_axis, spatial.direction),
-            current_orientation,
+            current.orientation,
         )
         return ResolvedBodyTaskTarget(
             task.goal_id,
-            orientation=_slerp(current_orientation, full_alignment, spatial.extent),
+            orientation=_slerp(
+                current.orientation,
+                full_alignment,
+                spatial.extent,
+            ),
         )
     raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
 
