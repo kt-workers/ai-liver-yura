@@ -102,9 +102,11 @@ RuntimeShutdownPolicy
 7. close hooksをreverse orderで実行
 8. producer stop / 各close hookはresource停止操作として`resource_close_grace_seconds`でboundし、1件のtimeout/failureでも後続hookを必ず試す
 9. runtime-owned worker taskを`owned_task_join_grace_seconds`内でjoin
-10. pending owned workが0で、かつowned task join graceを超過していないときだけSTOPPEDへ遷移
+10. pending owned workが0で、`in_flight_settle_grace_seconds`と`owned_task_join_grace_seconds`のどちらも超過していないときだけSTOPPEDへ遷移
 
 producer stop hookはPersistence flushより前に実行する。これによりfinal snapshot capture中に新しいframe/eventが流入し続ける状態を作らない。
+
+`in_flight_settle_grace_seconds`を一度でも超過したshutdownは、その直後のhard cancel cleanupでpending taskが0になっても正常STOPPEDへ読み替えない。超過事実をtyped failureとしてそのshutdown generationに固定する。
 
 final persistence hookはowner-declared restart-safe stateを外から注入する。#350がEmotion/Attention/Speech/Activityをgeneric snapshotしない。
 
@@ -122,7 +124,7 @@ RuntimeShutdownFailure
 - producer stop failure/timeoutでもfinal persistenceとresource closeを続行する。
 - final persistence failure/timeoutでもresource closeを続行する。
 - resource close failure/timeoutでも後続closeを続行する。
-- owned task join timeout / pending owned workが残る場合、STOPPED成功を捏造しない。
+- in-flight settle timeout / owned task join timeout / pending owned workが残る場合、STOPPED成功を捏造しない。
 - terminal shutdown failure後の`stop()`二重要求は同じshutdown generationの同じfailureへ収束し、producer/persistence/close hookを再実行しない。
 
 ## 9. RuntimeLifecycle dependency close
@@ -171,6 +173,7 @@ RuntimeShutdownFailure
 - final persistenceはresource close前
 - final persistence timeout/failure後もclose継続
 - resource close timeout/failure後も後続close実行
+- in-flight settle grace超過で、その直後にpending workが0になってもSTOPPEDを捏造しない
 - owned task join grace超過でSTOPPEDを捏造しない
 - terminal failure後のdouble stopでhook再実行なし
 - successful double stop idempotent
