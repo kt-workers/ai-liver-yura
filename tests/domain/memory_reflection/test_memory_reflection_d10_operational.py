@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from typing import cast
+from typing import Callable, cast
 
 import pytest
 
@@ -135,24 +135,25 @@ def authority() -> ReflectionCandidateAuthority:
 
 
 @pytest.mark.parametrize(
-    "field_name",
+    "factory",
     (
-        "max_primary_sources",
-        "max_related_memory_items",
-        "max_context_estimated_tokens",
-        "max_source_excerpt_codepoints",
-        "max_proposals_per_reflection",
-        "max_relation_hints_per_proposal",
-        "max_evidence_refs_per_proposal",
-        "max_concurrent_reflections",
+        lambda: reflection_operational_policy(max_primary_sources=cast(int, True)),
+        lambda: reflection_operational_policy(max_related_memory_items=cast(int, True)),
+        lambda: reflection_operational_policy(max_context_estimated_tokens=cast(int, True)),
+        lambda: reflection_operational_policy(max_source_excerpt_codepoints=cast(int, True)),
+        lambda: reflection_operational_policy(max_proposals_per_reflection=cast(int, True)),
+        lambda: reflection_operational_policy(
+            max_relation_hints_per_proposal=cast(int, True)
+        ),
+        lambda: reflection_operational_policy(max_evidence_refs_per_proposal=cast(int, True)),
+        lambda: reflection_operational_policy(max_concurrent_reflections=cast(int, True)),
     ),
 )
-def test_operational_policy_rejects_bool_for_every_numeric_field(field_name: str) -> None:
+def test_operational_policy_rejects_bool_for_every_numeric_field(
+    factory: Callable[[], ReflectionOperationalPolicy],
+) -> None:
     with pytest.raises(ValueError):
-        replace(
-            reflection_operational_policy(),
-            **{field_name: cast(int, True)},
-        )
+        factory()
 
 
 def test_primary_source_bound_accepts_below_and_equal_but_rejects_above() -> None:
@@ -551,5 +552,12 @@ def test_production_coordinator_has_no_hidden_operational_or_queue_default() -> 
         ) -> ReflectionSupportObservation:
             raise AssertionError(item.proposal_id)
 
+    constructor = cast(
+        Callable[
+            [ProposalPort, SupportPort, ReflectionCandidateAuthority],
+            ReflectionCoordinator,
+        ],
+        ReflectionCoordinator,
+    )
     with pytest.raises(TypeError):
-        cast(object, ReflectionCoordinator)(ProposalPort(), SupportPort(), authority())
+        constructor(ProposalPort(), SupportPort(), authority())
