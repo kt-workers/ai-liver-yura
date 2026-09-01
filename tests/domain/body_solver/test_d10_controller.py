@@ -5,7 +5,12 @@ from datetime import timedelta
 
 import pytest
 
-from app.domain.body import CanonicalBodyModel
+from app.domain.body import CanonicalBodyModel, Vector3
+from app.domain.body_motion_planning import (
+    BodyBalanceMode,
+    BodySpatialTarget,
+    BodySpatialTargetKind,
+)
 from app.domain.body_realtime.contracts import (
     ChannelOverlay,
     RealtimeChannel,
@@ -20,6 +25,8 @@ from app.domain.body_solver import (
     BodyMotionExecutionStatus,
     BodySolverError,
     BodySolverFailureCode,
+    BodySolveTask,
+    BodySolveTaskKind,
     BodySpatialTargetSnapshot,
     BodyStateAuthority,
     ExecutableBodyTrajectory,
@@ -208,6 +215,37 @@ def test_controller_starts_from_current_pose_without_home_reset() -> None:
     coordinate = authority.current.joint_dof_states[0].coordinates[0]
     assert coordinate.position_radians > 0.39
     assert coordinate.position_radians <= 0.4 + 1.5 / 60.0
+
+
+def test_root_impulse_residual_keeps_velocity_error_separate_from_position() -> None:
+    task = BodySolveTask(
+        "goal:root-impulse",
+        BodySolveTaskKind.ROOT_IMPULSE_TARGET,
+        ("root",),
+        (),
+        BodySpatialTarget(
+            BodySpatialTargetKind.DIRECTION,
+            Vector3(1.0, 0.0, 0.0),
+            None,
+            0.5,
+        ),
+        1.0,
+    )
+    trajectory = trajectory_for(
+        task,
+        balance_mode=BodyBalanceMode.TEMPORARY_FLIGHT_ALLOWED,
+        duration_s=1.0,
+    )
+    resolver = CountingTargetResolver(())
+    _, _, controller = _controller(resolver, trajectory=trajectory)
+
+    result = _tick(controller, index=1, monotonic_s=100.0, supports=())
+
+    residual = result.actual_residuals[0]
+    assert residual.position_error_m is None
+    assert residual.orientation_error_radians is None
+    assert residual.linear_velocity_error_mps is not None
+    assert residual.linear_velocity_error_mps > 0.0
 
 
 def test_overlay_conflict_is_deterministic_and_stale_bundle_degrades() -> None:
