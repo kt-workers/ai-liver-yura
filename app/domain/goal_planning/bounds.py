@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Protocol
 
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
-from app.domain.contracts import CapabilityDescriptor
+from app.domain.contracts import CapabilityDescriptor, CapabilityRequirement
 
 from .contracts import (
     DeterministicPlanningDirective,
@@ -39,11 +39,12 @@ def _require_policy(bounds_policy: BrainOperationalBoundsPolicy) -> BrainOperati
     return bounds_policy
 
 
-def _is_requirement_relevant(descriptor: CapabilityDescriptor, requirement: object) -> bool:
+def _is_requirement_relevant(
+    descriptor: CapabilityDescriptor,
+    requirement: CapabilityRequirement,
+) -> bool:
     return (
-        hasattr(requirement, "capability_type")
-        and hasattr(requirement, "operation")
-        and descriptor.capability_type == requirement.capability_type
+        descriptor.capability_type == requirement.capability_type
         and requirement.operation in descriptor.operations
     )
 
