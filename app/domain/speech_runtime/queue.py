@@ -139,6 +139,9 @@ class PreparedSpeechQueueCoordinator:
     ) -> bool:
         if self._queue.contains(candidate_id):
             return False
+        if await self._runtime.operational_failure(candidate_id) is not None:
+            await self._terminate(candidate_id, CandidateLifecycle.STALE)
+            return False
         candidate = await self._runtime.queue_for_generation(candidate_id, generation)
         if candidate is None:
             return False
@@ -154,6 +157,9 @@ class PreparedSpeechQueueCoordinator:
 
     async def pop_for_revalidation(self) -> PreparedSpeechCandidate | None:
         while (entry := self._queue.pop()) is not None:
+            if await self._runtime.operational_failure(entry.candidate_id) is not None:
+                await self._terminate(entry.candidate_id, CandidateLifecycle.STALE)
+                continue
             begun = await self._runtime.begin_revalidation(entry.candidate_id, entry.generation)
             if begun is not None:
                 return begun
@@ -167,6 +173,9 @@ class PreparedSpeechQueueCoordinator:
         failure: CandidateLifecycle | None = None,
     ) -> PreparedSpeechCandidate:
         generation = self._runtime.generation(candidate_id)
+        if passed and await self._runtime.operational_failure(candidate_id) is not None:
+            passed = False
+            failure = CandidateLifecycle.STALE
         if not passed:
             if failure is None:
                 raise ValueError("revalidation failure lifecycle が必要です")
