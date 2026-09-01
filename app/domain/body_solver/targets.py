@@ -196,14 +196,14 @@ def _resolve_root_target(
             ),
         )
     if task.kind is BodySolveTaskKind.POSITION_TARGET:
-        current = pose.root_world_transform.position
+        current_position = pose.root_world_transform.position
         if spatial.kind is BodySpatialTargetKind.DIRECTION:
             if spatial.direction is None:
                 raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
             return ResolvedBodyTaskTarget(
                 task.goal_id,
                 position=_vector_add(
-                    current,
+                    current_position,
                     _vector_scale(
                         spatial.direction,
                         spatial.extent * limit.directional_translation_budget_m,
@@ -216,28 +216,31 @@ def _resolve_root_target(
         if snapshot.position is None:
             raise BodySolverError(BodySolverFailureCode.TARGET_GEOMETRY_UNAVAILABLE)
         delta = Vector3(
-            snapshot.position.x - current.x,
-            snapshot.position.y - current.y,
-            snapshot.position.z - current.z,
+            snapshot.position.x - current_position.x,
+            snapshot.position.y - current_position.y,
+            snapshot.position.z - current_position.z,
         )
         return ResolvedBodyTaskTarget(
             task.goal_id,
-            position=_vector_add(current, _vector_scale(delta, spatial.extent)),
+            position=_vector_add(current_position, _vector_scale(delta, spatial.extent)),
             target_ref=snapshot.target_ref,
             target_generation=snapshot.generation,
         )
     if task.kind is BodySolveTaskKind.ORIENTATION_TARGET:
-        current = pose.root_world_transform.rotation
+        current_orientation = pose.root_world_transform.rotation
         if spatial.kind is BodySpatialTargetKind.DIRECTION:
             if spatial.direction is None:
                 raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
             full = _quaternion_multiply(
-                _rotation_between(_rotate_forward(current), spatial.direction),
-                current,
+                _rotation_between(
+                    _rotate_forward(current_orientation),
+                    spatial.direction,
+                ),
+                current_orientation,
             )
             return ResolvedBodyTaskTarget(
                 task.goal_id,
-                orientation=_slerp(current, full, spatial.extent),
+                orientation=_slerp(current_orientation, full, spatial.extent),
             )
         if spatial.target_ref is None:
             raise BodySolverError(BodySolverFailureCode.TARGET_GEOMETRY_UNAVAILABLE)
@@ -246,7 +249,11 @@ def _resolve_root_target(
             raise BodySolverError(BodySolverFailureCode.TARGET_GEOMETRY_UNAVAILABLE)
         return ResolvedBodyTaskTarget(
             task.goal_id,
-            orientation=_slerp(current, snapshot.orientation, spatial.extent),
+            orientation=_slerp(
+                current_orientation,
+                snapshot.orientation,
+                spatial.extent,
+            ),
             target_ref=snapshot.target_ref,
             target_generation=snapshot.generation,
         )
