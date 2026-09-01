@@ -527,11 +527,16 @@ class PreparedSpeechCandidate:
             if self.prepared_mono_ms < self.created_mono_ms:
                 raise ValueError("prepared_mono_ms は created_mono_ms より前にできません")
             if self.prepared_ttl_ms <= self.revalidation_max_age_ms:
-                raise ValueError("prepared_ttl_ms は revalidation_max_age_ms より大きい必要があります")
+                raise ValueError(
+                    "prepared_ttl_ms は revalidation_max_age_ms より大きい必要があります"
+                )
         if self.revalidation_started_mono_ms is not None:
             if not self.has_operational_snapshot:
                 raise ValueError("revalidation monotonic時刻にはruntime policy snapshotが必要です")
-            if type(self.revalidation_started_mono_ms) is not int or self.revalidation_started_mono_ms < 0:
+            if (
+                type(self.revalidation_started_mono_ms) is not int
+                or self.revalidation_started_mono_ms < 0
+            ):
                 raise ValueError("revalidation_started_mono_ms が不正です")
 
     @property
