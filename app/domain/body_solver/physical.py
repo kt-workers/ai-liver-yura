@@ -15,6 +15,7 @@ from .policy import BodySolverPolicy
 class EndEffectorWorldFrame:
     end_effector_id: str
     position: Vector3
+    orientation: Quaternion
     forward_axis: Vector3
     up_axis: Vector3
 
@@ -43,6 +44,66 @@ def _rotate(rotation: Quaternion, value: Vector3) -> Vector3:
     )
 
 
+def _normalize(value: Vector3) -> Vector3:
+    magnitude = value.magnitude
+    if magnitude == 0:
+        raise BodySolverError(BodySolverFailureCode.NUMERICAL_FAILURE)
+    return Vector3(value.x / magnitude, value.y / magnitude, value.z / magnitude)
+
+
+def _orientation_from_axes(forward_axis: Vector3, up_axis: Vector3) -> Quaternion:
+    forward = _normalize(forward_axis)
+    right = _normalize(
+        Vector3(
+            up_axis.y * forward.z - up_axis.z * forward.y,
+            up_axis.z * forward.x - up_axis.x * forward.z,
+            up_axis.x * forward.y - up_axis.y * forward.x,
+        )
+    )
+    up = _normalize(
+        Vector3(
+            forward.y * right.z - forward.z * right.y,
+            forward.z * right.x - forward.x * right.z,
+            forward.x * right.y - forward.y * right.x,
+        )
+    )
+    m00, m01, m02 = right.x, up.x, forward.x
+    m10, m11, m12 = right.y, up.y, forward.y
+    m20, m21, m22 = right.z, up.z, forward.z
+    trace = m00 + m11 + m22
+    if trace > 0:
+        scale = sqrt(trace + 1.0) * 2.0
+        return Quaternion(
+            (m21 - m12) / scale,
+            (m02 - m20) / scale,
+            (m10 - m01) / scale,
+            scale / 4.0,
+        )
+    if m00 > m11 and m00 > m22:
+        scale = sqrt(1.0 + m00 - m11 - m22) * 2.0
+        return Quaternion(
+            scale / 4.0,
+            (m01 + m10) / scale,
+            (m02 + m20) / scale,
+            (m21 - m12) / scale,
+        )
+    if m11 > m22:
+        scale = sqrt(1.0 + m11 - m00 - m22) * 2.0
+        return Quaternion(
+            (m01 + m10) / scale,
+            scale / 4.0,
+            (m12 + m21) / scale,
+            (m02 - m20) / scale,
+        )
+    scale = sqrt(1.0 + m22 - m00 - m11) * 2.0
+    return Quaternion(
+        (m02 + m20) / scale,
+        (m12 + m21) / scale,
+        scale / 4.0,
+        (m10 - m01) / scale,
+    )
+
+
 def _translate(transform: JointTransform, local: Vector3) -> Vector3:
     offset = _rotate(transform.rotation, local)
     return Vector3(
@@ -65,11 +126,14 @@ def end_effector_world_frame(
     if definition is None:
         raise BodySolverError(BodySolverFailureCode.UNKNOWN_BODY_REFERENCE)
     joint_world = worlds[definition.joint_id]
+    forward_axis = _rotate(joint_world.rotation, definition.local_forward_axis)
+    up_axis = _rotate(joint_world.rotation, definition.local_up_axis)
     return EndEffectorWorldFrame(
         definition.end_effector_id,
         _translate(joint_world, definition.local_position),
-        _rotate(joint_world.rotation, definition.local_forward_axis),
-        _rotate(joint_world.rotation, definition.local_up_axis),
+        _orientation_from_axes(forward_axis, up_axis),
+        forward_axis,
+        up_axis,
     )
 
 
