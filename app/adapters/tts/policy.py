@@ -31,7 +31,7 @@ class TTSMappingDimension(str, Enum):
     PITCH_ANCHOR = "pitch_anchor"
 
 
-def _finite(value: object, name: str) -> float:
+def _finite(value: int | float, name: str) -> float:
     if type(value) not in (int, float) or not isfinite(value):
         raise ValueError(f"{name}はfinite numberでなければなりません")
     return float(value)
