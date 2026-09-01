@@ -365,7 +365,8 @@ async def test_queue_eviction_discards_displaced_audio_resource() -> None:
 
 
 @pytest.mark.asyncio
-async def test_old_revalidation_failure_cannot_terminalize_new_generation_after_slow_discard() -> None:
+async def test_old_revalidation_failure_cannot_terminalize_new_generation_after_slow_discard(
+) -> None:
     policy = runtime_policy(queue_capacity=2)
     runtime = SpeechRuntime(policy)
     candidate = replace(
