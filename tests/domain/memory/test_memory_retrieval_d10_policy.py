@@ -183,9 +183,11 @@ def test_recency_half_life_is_point_five_and_two_half_lives_is_point_two_five() 
 
 def test_future_reference_time_is_excluded_with_typed_diagnostic() -> None:
     store, _ = store_with_policy(policy(rule(MemoryRankingSignal.RECENCY)))
-    store.write(
-        MemoryWriteRequest(memory_candidate("memory:future", observed_at=NOW + timedelta(seconds=1)))
+    future = memory_candidate(
+        "memory:future",
+        observed_at=NOW + timedelta(seconds=1),
     )
+    store.write(MemoryWriteRequest(future))
     view = store.retrieve(retrieval_query())
     assert view.items == ()
     assert view.diagnostics[0].code is MemoryRetrievalDiagnosticCode.INVALID_RECORD_TIME
