@@ -9,6 +9,7 @@ from app.domain.contracts.common import require_identifier, require_revision
 
 class RuntimeShutdownStage(str, Enum):
     IN_FLIGHT_SETTLE = "in_flight_settle"
+    PRODUCER_STOP = "producer_stop"
     FINAL_PERSISTENCE = "final_persistence"
     RESOURCE_CLOSE = "resource_close"
     OWNED_TASK_JOIN = "owned_task_join"
@@ -56,4 +57,4 @@ class RuntimeShutdownError(RuntimeError):
         if any(not isinstance(item, RuntimeShutdownFailure) for item in failures):
             raise ValueError("shutdown failureが不正です")
         self.failures = failures
-        super().__init__("runtime shutdown did not complete cleanly")
+        super().__init__("Runtime shutdownを正常完了できませんでした")
