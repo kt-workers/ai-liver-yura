@@ -1,0 +1,177 @@
+from math import pi, sqrt
+
+import pytest
+
+from app.domain.body import Quaternion
+from app.domain.body_motion_planning import BodySpatialTarget, BodySpatialTargetKind
+from app.domain.body_solver import (
+    BodySolverError,
+    BodySolverFailureCode,
+    BodySolveFeasibility,
+    BodySolveTask,
+    BodySolveTaskKind,
+    BodySpatialTargetSnapshot,
+    resolve_body_task_target,
+    solve_body_tasks,
+    v2_baseline_body_solver_policy,
+    validate_tracking_update,
+)
+from tests.domain.body_solver.d10_fixtures import (
+    NOW,
+    StaticTargetResolver,
+    physical_model,
+    physical_state,
+    position_snapshot,
+    reach_task,
+)
+
+
+@pytest.mark.parametrize(
+    ("extent", "expected_x", "expected_y"),
+    (
+        (0.0, 1.0, 0.0),
+        (0.5, 0.5, 0.5),
+        (1.0, 0.0, 1.0),
+    ),
+)
+def test_target_ref_position_extent_uses_metric_interpolation(
+    extent: float,
+    expected_x: float,
+    expected_y: float,
+) -> None:
+    model = physical_model()
+    state = physical_state()
+    task = reach_task(extent=extent)
+    resolver = StaticTargetResolver((position_snapshot(pi / 2),))
+
+    target = resolve_body_task_target(task, model, state.pose, resolver)
+
+    assert target.position is not None
+    assert target.position.x == pytest.approx(expected_x)
+    assert target.position.y == pytest.approx(expected_y)
+    assert target.position.z == pytest.approx(0.0)
+    assert target.target_ref == "target:hand"
+    assert target.target_generation == 1
+
+
+def test_target_ref_orientation_uses_trusted_snapshot_geometry() -> None:
+    model = physical_model()
+    state = physical_state()
+    orientation = Quaternion(0.0, 0.0, sqrt(0.5), sqrt(0.5))
+    snapshot = BodySpatialTargetSnapshot(
+        "target:orient",
+        None,
+        orientation,
+        None,
+        "test.geometry",
+        "geometry:orient",
+        1,
+        3,
+        NOW,
+    )
+    resolver = StaticTargetResolver((snapshot,))
+    task = BodySolveTask(
+        "goal:orient",
+        BodySolveTaskKind.ORIENTATION_TARGET,
+        ("arm", "root"),
+        ("chain:arm",),
+        BodySpatialTarget(
+            BodySpatialTargetKind.TARGET_REF,
+            None,
+            "target:orient",
+            1.0,
+        ),
+        1.0,
+    )
+
+    target = resolve_body_task_target(task, model, state.pose, resolver)
+
+    assert target.orientation == orientation
+    assert target.target_ref == "target:orient"
+    assert target.target_generation == 3
+
+
+def test_target_ref_unavailable_fails_closed() -> None:
+    with pytest.raises(BodySolverError) as error:
+        resolve_body_task_target(
+            reach_task(),
+            physical_model(),
+            physical_state().pose,
+            StaticTargetResolver(()),
+        )
+
+    assert error.value.code is BodySolverFailureCode.TARGET_GEOMETRY_UNAVAILABLE
+
+
+def test_contact_requires_full_extent() -> None:
+    task = BodySolveTask(
+        "goal:contact",
+        BodySolveTaskKind.CONTACT_TARGET,
+        ("arm", "root"),
+        ("chain:arm",),
+        BodySpatialTarget(
+            BodySpatialTargetKind.TARGET_REF,
+            None,
+            "target:hand",
+            0.5,
+        ),
+        1.0,
+    )
+
+    with pytest.raises(BodySolverError) as error:
+        resolve_body_task_target(
+            task,
+            physical_model(),
+            physical_state().pose,
+            StaticTargetResolver((position_snapshot(0.5),)),
+        )
+
+    assert error.value.code is BodySolverFailureCode.CONTACT_INFEASIBLE
+
+
+def test_tracking_generation_change_is_typed_failure() -> None:
+    previous = position_snapshot(0.2, generation=1)
+    current = position_snapshot(0.3, generation=2)
+
+    with pytest.raises(BodySolverError) as error:
+        validate_tracking_update(previous, current)
+
+    assert error.value.code is BodySolverFailureCode.TARGET_GENERATION_CHANGED
+
+
+def test_scalar_ik_is_deterministic_and_respects_hard_limit() -> None:
+    model = physical_model()
+    state = physical_state()
+    task = reach_task()
+    resolver = StaticTargetResolver((position_snapshot(0.6),))
+    target = resolve_body_task_target(task, model, state.pose, resolver)
+    policy = v2_baseline_body_solver_policy()
+
+    first = solve_body_tasks(model, state, (task,), (target,), policy)
+    second = solve_body_tasks(model, state, (task,), (target,), policy)
+
+    assert first == second
+    assert first.feasibility is BodySolveFeasibility.FEASIBLE
+    assert first.iterations <= policy.max_ik_iterations
+    coordinate = first.joint_dof_states[0].coordinates[0]
+    assert -1.2 <= coordinate.position_radians <= 1.2
+    assert first.residuals[0].position_error_m is not None
+    assert first.residuals[0].position_error_m <= policy.position_tolerance_m(
+        model.reference_height
+    )
+
+
+def test_unreachable_target_returns_original_state_instead_of_last_iterate() -> None:
+    model = physical_model()
+    state = physical_state()
+    task = reach_task()
+    resolver = StaticTargetResolver((position_snapshot(pi),))
+    target = resolve_body_task_target(task, model, state.pose, resolver)
+    policy = v2_baseline_body_solver_policy()
+
+    solution = solve_body_tasks(model, state, (task,), (target,), policy)
+
+    assert solution.feasibility is BodySolveFeasibility.INFEASIBLE
+    assert solution.iterations == policy.max_ik_iterations
+    assert solution.joint_dof_states == state.joint_dof_states
+    assert solution.pose == state.pose
