@@ -122,11 +122,13 @@ Canonical solver pathはrandomnessを使わない。
 1. current `JointDofState`を開始点にする。
 2. taskがbindするchainのDOFをcanonical joint順・X→Y→Z順で固定列挙する。
 3. end-effector position/orientation residualを計算する。
-4. 各iterationで各DOFについて `±max_per_iteration_dof_step_radians` の候補をhard limit内で評価する。
-5. residualを最も減少させる候補だけを採用する。equal within `numeric_epsilon` はstable `(joint_id, axis, signed_step)`順で決定する。
-6. tolerance内ならsuccess、`max_ik_iterations`到達時はlast iterateをcommitせずtyped infeasible/numerical resultへ閉じる。
+4. 初期search stepは`max_per_iteration_dof_step_radians`とする。各iterationで各DOFについて `±current_step` の候補をhard limit内で評価する。
+5. residualを`numeric_epsilon`より大きく減少させる候補のうち最良だけを採用する。equal within `numeric_epsilon` はstable `(joint_id, axis, signed_step)`順で決定する。
+6. 現在のstepで改善候補が無いがtolerance未達の場合、`current_step /= 2`として同じcurrent iterateから探索を継続する。これによりpolicy値を「固定格子間隔」と誤解せず、名称どおり1 iterationの**最大**DOF stepとして扱う。
+7. `current_step <= numeric_epsilon`、または`max_ik_iterations`までにtoleranceへ入れない場合は、last iterateをcommitせずtyped infeasible/numerical resultへ閉じる。明らかなstagnationを検出した場合は64回を必ず消費する必要はないが、iteration countは常に`max_ik_iterations`以下で決定論的でなければならない。
+8. tolerance内ならsuccessとする。
 
-この方式は最速解を目的にせず、D10のdeterminism / bounded iteration / hard-limit / residual contractを優先する。
+この方式は最速解を目的にせず、D10のdeterminism / bounded iteration / hard-limit / residual contractを優先する。特に`max_per_iteration_dof_step_radians`を固定量としてのみ使用し、到達可能なtargetがstep gridの間にあるだけでINFEASIBLEへ落ちる実装は禁止する。
 
 ## 7. FK / end-effector frame
 
@@ -238,8 +240,10 @@ Stage 5 — execution/frame integration + D10 tests
 - extent 0 / 0.5 / 1
 - CONTACT extent != 1 reject
 - scalar hard limit exact boundary
-- bounded IK iteration / repeated determinism / unreachable typed failure
+- bounded/adaptive IK iteration / repeated determinism / unreachable typed failure
+- fixed-step grid間targetもtolerance内へ収束
 - dynamic velocity/acceleration/jerk bound
+- root dynamic velocity/acceleration/jerk bound
 - dynamic CoM explicit fraction
 - support polygon inside/outside/margin / insufficient geometry
 - airborne release / support recovery
