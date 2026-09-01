@@ -5,7 +5,7 @@ from .contracts import (
     SpeechPreparationRequest,
     SpeechReadinessState,
 )
-from .policy import SpeechRuntimeOperationalPolicy, V2_SPEECH_RUNTIME_OPERATIONAL_POLICY
+from .policy import V2_SPEECH_RUNTIME_OPERATIONAL_POLICY, SpeechRuntimeOperationalPolicy
 from .runtime import SpeechRuntime
 from .tasks import CandidateTaskKey, CandidateTaskRegistry
 
