@@ -253,9 +253,10 @@ def test_provider_schemas_derive_d10_owned_limits_from_shared_policy() -> None:
 
 
 def test_blind_request_binds_policy_generation() -> None:
+    snapshot = _snapshot()
     request = build_blind_request(
-        _snapshot(),
-        created_at=NOW,
+        snapshot,
+        created_at=snapshot.captured_at,
         policy=verification_policy(),
     )
     payload = cast(dict[str, object], request.input.value)
@@ -355,7 +356,7 @@ async def test_policy_change_during_role_a_await_stops_before_role_b_and_accepta
             relation_observation_id="relation-observation",
             semantic_observation_id="semantic-observation",
             acceptance_id="acceptance",
-            created_at=NOW,
+            created_at=snapshot.captured_at,
         )
     )
     await asyncio.wait_for(port.blind_started.wait(), timeout=5)
@@ -390,7 +391,7 @@ async def test_policy_change_during_role_b_await_stops_before_acceptance() -> No
             relation_observation_id="relation-observation",
             semantic_observation_id="semantic-observation",
             acceptance_id="acceptance",
-            created_at=NOW,
+            created_at=snapshot.captured_at,
         )
     )
     await asyncio.wait_for(port.blind_started.wait(), timeout=5)
@@ -442,7 +443,7 @@ async def test_role_a_overflow_never_invokes_role_b() -> None:
             relation_observation_id="relation-observation",
             semantic_observation_id="semantic-observation",
             acceptance_id="acceptance",
-            created_at=NOW,
+            created_at=snapshot.captured_at,
         )
     assert [request.role_id for request in port.requests] == [BLIND_ROLE_ID]
 
@@ -488,6 +489,6 @@ async def test_role_b_overflow_fails_before_reconciliation() -> None:
             relation_observation_id="relation-observation",
             semantic_observation_id="semantic-observation",
             acceptance_id="acceptance",
-            created_at=NOW,
+            created_at=snapshot.captured_at,
         )
     assert [request.role_id for request in port.requests] == [BLIND_ROLE_ID, RELATION_ROLE_ID]
