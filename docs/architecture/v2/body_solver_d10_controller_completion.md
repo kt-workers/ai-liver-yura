@@ -173,7 +173,26 @@ per tick:
 
 solver/tick失敗時は未検証candidateをcommitしない。
 
-## 10. Overlay boundary
+## 10. Execution lifecycle / supersede
+
+accepted Plan / compiled trajectoryだけではactual executionを開始しない。`BodyMotionExecutionReport`はControllerがvalidated frameをcommitした後だけ`PLANNED`から`STARTED` / `OBSERVABLE`へ進む。
+
+`INTERRUPTED` / `SUPERSEDED`はactual motionを開始済みの`STARTED` / `OBSERVABLE`からだけ遷移可能とする。未実行の`PLANNED` trajectoryを入れ替えることをactual interruptionとして報告しない。
+
+既存report schemaの`completed_at`はactual executionのterminal timestampとして`COMPLETED`だけでなく`INTERRUPTED` / `SUPERSEDED`でも必須とし、終端時点のachieved targetとresidualを保持する。terminal reportから再度progress/complete/terminal遷移しない。
+
+supersedeはController instanceを破棄して新規作成する方式をcanonical pathにしない。同一`BodyContinuousController`内で:
+
+1. new trajectoryのmodel generation / solver policy bindingとactivation monotonic timeを先に検証する。
+2. old trackerを`SUPERSEDED`へ終端する。
+3. `BodyStateAuthority.current`、previous committed scalar DOF position/velocity/acceleration、root dynamic acceleration state、last control monotonic timeを保持する。
+4. phase target snapshotとphase-relative originだけをnew trajectory用にresetする。
+5. new trackerは`PLANNED`から開始し、次のvalidated frame commit後にのみactualへ昇格する。
+6. new desired targetは通常のjerk → acceleration → velocity → position limiterを通すため、暗黙Home/Neutral resetや無制限stepを作らない。
+
+interrupt後はControllerから追加frameをcommitできない。supersede後は旧trajectoryでは追加frameをcommitできず、新trajectoryだけが継続する。
+
+## 11. Overlay boundary
 
 #340はBodyState writerではない。#339が最終commit Authorityを維持する。
 
@@ -184,7 +203,7 @@ solver/tick失敗時は未検証candidateをcommitしない。
 
 applied/degraded refsはframe evidenceへ保持する。
 
-## 11. Failure追加
+## 12. Failure追加
 
 `BodySolverFailureCode`へD10で区別された次を追加する。
 
@@ -199,7 +218,7 @@ applied/degraded refsはframe evidenceへ保持する。
 
 generic FAILEDへ潰さない。
 
-## 12. 実装順
+## 13. 実装順
 
 Stage 1 — Policy / provenance / geometry contracts
 Stage 2 — FK end-effector + CoM/support utilities
@@ -209,7 +228,7 @@ Stage 5 — execution/frame integration + D10 tests
 
 各Stageは同じbranchで継続し、新しい#339実装lineageを作らない。
 
-## 13. Required verification
+## 14. Required verification
 
 最低限:
 - model ID/revision/fingerprint mismatch
@@ -228,5 +247,8 @@ Stage 5 — execution/frame integration + D10 tests
 - overlay後もscalar hard limit unchanged
 - accepted Planだけではactual completionにならない
 - failed tick does not commit BodyState
+- interruption / supersedeはactual start後だけterminal化し、terminal timestamp / residualを保持する
+- supersede後もposition / velocity / acceleration continuityをprevious committed stateから維持する
+- terminal old trajectoryから追加frameをcommitしない
 
 full repository GateはRuff / strict Mypy / full pytest / compileall / diff-check / base freshnessを使用する。
