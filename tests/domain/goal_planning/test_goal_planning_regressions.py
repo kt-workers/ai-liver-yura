@@ -105,7 +105,7 @@ def context(
     blockers: tuple[PlanningBlocker, ...] = (),
 ) -> GoalPlanningContextSnapshot:
     item = goal()
-    view = GoalContextView(4, (item,), (), (), (item,), ())
+    view = GoalContextView(4, "test.goal-context", 1, (item,), (), (), (item,), ())
     bounded_capabilities = capabilities or (research_capability("collect"),)
     planning_requirements = requirements or (CapabilityRequirement("research", "collect"),)
     return GoalPlanningContextSnapshot(

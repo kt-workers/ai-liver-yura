@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import SourceLifecycleOperation
 from app.domain.executive import (
     CommitmentTransitionIntent,
@@ -23,11 +24,20 @@ from app.domain.executive import (
 from app.domain.goals import (
     AutonomyTriggerKind,
     CommitmentLifecycleProjectionFact,
+    CommitmentState,
     CommitmentStatus,
+    DueCommitmentOrder,
     GoalCommitmentCommitResult,
+    GoalCommitmentSnapshot,
     GoalCommitmentStore,
+    GoalContextBuildError,
+    GoalContextFailureCode,
+    GoalContextView,
+    GoalKind,
     GoalLifecycleProjectionFact,
+    GoalState,
     GoalStatus,
+    InterruptionPolicy,
     autonomy_triggers,
     build_goal_context_view,
 )
@@ -216,35 +226,52 @@ def test_goal_and_commitment_owner_facts_carry_open_refresh_and_close_cas() -> N
     assert closed[0].expected_source_revision == 2
 
     commitment_store = GoalCommitmentStore()
-    opened_commitment = apply_commitment(
-        commitment_store, CommitmentTransitionOperation.CREATE, 0
-    )
+    opened_commitment = apply_commitment(commitment_store, CommitmentTransitionOperation.CREATE, 0)
     assert opened_commitment.lifecycle_facts[0].operation is SourceLifecycleOperation.OPEN
     refreshed_commitment = apply_commitment(
         commitment_store, CommitmentTransitionOperation.ACTIVATE, 1
     )
     assert refreshed_commitment.lifecycle_facts[0].operation is SourceLifecycleOperation.REFRESH
-    closed_commitment = apply_commitment(
-        commitment_store, CommitmentTransitionOperation.RELEASE, 2
-    )
+    closed_commitment = apply_commitment(commitment_store, CommitmentTransitionOperation.RELEASE, 2)
     assert closed_commitment.lifecycle_facts[0].operation is SourceLifecycleOperation.CLOSE
 
 
 def test_goal_and_commitment_lifecycle_operation_status_mismatch_is_rejected() -> None:
     with pytest.raises(ValueError, match="terminal Goal"):
         GoalLifecycleProjectionFact(
-            "goal-close-active", "goal-1", SourceLifecycleOperation.CLOSE, 2, 1,
-            GoalStatus.ACTIVE, 50, 2, NOW,
+            "goal-close-active",
+            "goal-1",
+            SourceLifecycleOperation.CLOSE,
+            2,
+            1,
+            GoalStatus.ACTIVE,
+            50,
+            2,
+            NOW,
         )
     with pytest.raises(ValueError, match="terminal Goal"):
         GoalLifecycleProjectionFact(
-            "goal-refresh-completed", "goal-1", SourceLifecycleOperation.REFRESH, 2, 1,
-            GoalStatus.COMPLETED, 50, 2, NOW,
+            "goal-refresh-completed",
+            "goal-1",
+            SourceLifecycleOperation.REFRESH,
+            2,
+            1,
+            GoalStatus.COMPLETED,
+            50,
+            2,
+            NOW,
         )
     with pytest.raises(ValueError, match="terminal Commitment"):
         CommitmentLifecycleProjectionFact(
-            "commitment-close-active", "commitment-1", SourceLifecycleOperation.CLOSE, 2, 1,
-            CommitmentStatus.ACTIVE, 50, 2, NOW,
+            "commitment-close-active",
+            "commitment-1",
+            SourceLifecycleOperation.CLOSE,
+            2,
+            1,
+            CommitmentStatus.ACTIVE,
+            50,
+            2,
+            NOW,
         )
 
 
@@ -507,10 +534,197 @@ def test_bounded_view_orders_by_priority_and_excludes_terminal_state() -> None:
     apply_goal(store, GoalTransitionOperation.ACTIVATE, 2, goal_id="low")
     apply_goal(store, GoalTransitionOperation.ACTIVATE, 3, goal_id="high")
     apply_goal(store, GoalTransitionOperation.REPRIORITIZE, 4, goal_id="high")
-    view = build_goal_context_view(store.snapshot(), max_active=1, max_recent=1)
-    assert [item.goal_id for item in view.active_goals] == ["high"]
+    view = build_goal_context_view(store.snapshot())
+    assert [item.goal_id for item in view.active_goals] == ["high", "low"]
     assert view.goal_revision == store.snapshot().revision
-    assert len(view.recently_changed_goals) == 1
+    assert view.policy_id == V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_id
+
+
+def _goal(
+    goal_id: str,
+    status: GoalStatus,
+    priority: int,
+    updated_at: datetime,
+    *,
+    refs: int = 0,
+) -> GoalState:
+    return GoalState(
+        goal_id,
+        GoalKind.SOCIAL,
+        f"semantic-{goal_id}",
+        None,
+        "decision-1",
+        status,
+        priority,
+        tuple(f"motivation-{index}" for index in range(refs)),
+        (),
+        (),
+        (),
+        InterruptionPolicy.INTERRUPTIBLE,
+        NOW,
+        updated_at,
+        1,
+    )
+
+
+def _commitment(
+    commitment_id: str,
+    status: CommitmentStatus,
+    priority: int,
+    updated_at: datetime,
+    *,
+    refs: int = 0,
+) -> CommitmentState:
+    return CommitmentState(
+        commitment_id,
+        f"semantic-{commitment_id}",
+        None,
+        ("event-1",),
+        "decision-1",
+        (),
+        status,
+        50,
+        priority,
+        tuple(f"due-{index}" for index in range(refs)),
+        (),
+        NOW,
+        updated_at,
+        1,
+    )
+
+
+def _snapshot(
+    goals: tuple[GoalState, ...] = (), commitments: tuple[CommitmentState, ...] = ()
+) -> GoalCommitmentSnapshot:
+    return GoalCommitmentSnapshot(1, goals, commitments, NOW + timedelta(days=2))
+
+
+def test_bounded_view_uses_policy_provenance_and_goal_ordering() -> None:
+    later = NOW + timedelta(hours=2)
+    snapshot = _snapshot(
+        (
+            _goal("goal-b", GoalStatus.ACTIVE, 70, NOW),
+            _goal("goal-a", GoalStatus.ACTIVE, 70, NOW),
+            _goal("goal-later", GoalStatus.ACTIVE, 70, later),
+            _goal("suspended-b", GoalStatus.SUSPENDED, 60, NOW),
+            _goal("suspended-a", GoalStatus.SUSPENDED, 60, NOW),
+        )
+    )
+    view = build_goal_context_view(snapshot)
+    assert view.policy_id == V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_id
+    assert view.policy_revision == V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_revision
+    assert [item.goal_id for item in view.active_goals] == ["goal-later", "goal-a", "goal-b"]
+    assert [item.goal_id for item in view.suspended_goals] == ["suspended-a", "suspended-b"]
+
+
+def test_bounded_view_selects_due_then_active_and_excludes_unrelated() -> None:
+    snapshot = _snapshot(
+        commitments=(
+            _commitment("due", CommitmentStatus.PROPOSED, 1, NOW),
+            _commitment("active-low", CommitmentStatus.ACTIVE, 10, NOW),
+            _commitment("active-high", CommitmentStatus.ACTIVE, 90, NOW),
+            _commitment("suspended", CommitmentStatus.SUSPENDED, 100, NOW),
+            _commitment("terminal", CommitmentStatus.FULFILLED, 100, NOW),
+        )
+    )
+    view = build_goal_context_view(snapshot, due_order=DueCommitmentOrder(1, ("due",)))
+    assert [item.commitment_id for item in view.commitments] == ["due", "active-high", "active-low"]
+
+
+def test_bounded_view_fallback_commitment_order_uses_updated_at_then_id() -> None:
+    later = NOW + timedelta(hours=1)
+    snapshot = _snapshot(
+        commitments=(
+            _commitment("commitment-b", CommitmentStatus.ACTIVE, 10, NOW),
+            _commitment("commitment-a", CommitmentStatus.ACTIVE, 10, NOW),
+            _commitment("commitment-later", CommitmentStatus.ACTIVE, 10, later),
+        )
+    )
+    view = build_goal_context_view(snapshot)
+    assert [item.commitment_id for item in view.commitments] == [
+        "commitment-later",
+        "commitment-a",
+        "commitment-b",
+    ]
+
+
+def test_recent_changes_are_selected_once_across_goal_and_commitment() -> None:
+    at_same_time = NOW + timedelta(hours=1)
+    snapshot = _snapshot(
+        (
+            _goal("goal-b", GoalStatus.ACTIVE, 1, at_same_time),
+            _goal("goal-a", GoalStatus.ACTIVE, 1, at_same_time),
+        ),
+        (_commitment("commitment-a", CommitmentStatus.ACTIVE, 1, at_same_time),),
+    )
+    policy = replace(
+        V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+        goal_context=replace(
+            V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.goal_context,
+            max_recently_changed_items=2,
+        ),
+    )
+    view = build_goal_context_view(snapshot, bounds_policy=policy)
+    assert [item.goal_id for item in view.recently_changed_goals] == ["goal-a", "goal-b"]
+    assert view.recently_changed_commitments == ()
+
+
+@pytest.mark.parametrize("status", [GoalStatus.ACTIVE, GoalStatus.SUSPENDED])
+@pytest.mark.parametrize("count", [32, 33])
+def test_goal_section_count_bounds(status: GoalStatus, count: int) -> None:
+    goals = tuple(_goal(f"goal-{index}", status, 1, NOW) for index in range(count))
+    view = build_goal_context_view(_snapshot(goals))
+    selected = view.active_goals if status is GoalStatus.ACTIVE else view.suspended_goals
+    assert len(selected) == 32
+
+
+@pytest.mark.parametrize("count", [64, 65])
+def test_commitment_and_recent_count_bounds(count: int) -> None:
+    commitments = tuple(
+        _commitment(f"commitment-{index}", CommitmentStatus.ACTIVE, 1, NOW)
+        for index in range(count)
+    )
+    view = build_goal_context_view(_snapshot(commitments=commitments))
+    assert len(view.commitments) == min(count, 64)
+    assert len(view.recently_changed_goals) + len(view.recently_changed_commitments) == min(
+        count, 64
+    )
+
+
+@pytest.mark.parametrize(
+    ("is_goal", "refs", "too_large"),
+    [(True, 64, False), (True, 65, True), (False, 63, False), (False, 64, True)],
+)
+def test_reference_bounds_fail_closed_without_mutation(
+    is_goal: bool, refs: int, too_large: bool
+) -> None:
+    snapshot = (
+        _snapshot(goals=(_goal("goal-1", GoalStatus.ACTIVE, 1, NOW, refs=refs),))
+        if is_goal
+        else _snapshot(
+            commitments=(_commitment("commitment-1", CommitmentStatus.ACTIVE, 1, NOW, refs=refs),)
+        )
+    )
+    before = snapshot.to_dict()
+    if too_large:
+        with pytest.raises(GoalContextBuildError) as error:
+            build_goal_context_view(snapshot)
+        assert error.value.code is GoalContextFailureCode.ITEM_TOO_LARGE
+    else:
+        build_goal_context_view(snapshot)
+    assert snapshot.to_dict() == before
+
+
+def test_goal_context_view_rejects_duplicates_within_a_section() -> None:
+    goal = _goal("goal-1", GoalStatus.ACTIVE, 1, NOW)
+    with pytest.raises(ValueError, match="重複"):
+        GoalContextView(1, "policy", 1, (goal, goal), (), (), (), ())
+
+
+def test_goal_context_view_allows_same_goal_across_sections() -> None:
+    goal = _goal("goal-1", GoalStatus.ACTIVE, 1, NOW)
+    view = GoalContextView(1, "policy", 1, (goal,), (), (), (goal,), ())
+    assert view.active_goals == view.recently_changed_goals
 
 
 def test_autonomy_triggers_return_to_executive_without_action() -> None:

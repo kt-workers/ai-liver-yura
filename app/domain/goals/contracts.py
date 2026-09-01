@@ -41,6 +41,15 @@ class CommitmentStatus(str, Enum):
     VIOLATED = "violated"
 
 
+class GoalContextFailureCode(str, Enum):
+    ITEM_TOO_LARGE = "goal_context_item_too_large"
+
+
+class GoalContextItemKind(Enum):
+    GOAL = 0
+    COMMITMENT = 1
+
+
 class InterruptionPolicy(str, Enum):
     INTERRUPTIBLE = "interruptible"
     RESUMABLE = "resumable"
@@ -249,6 +258,8 @@ class GoalCommitmentSnapshot:
 @dataclass(frozen=True, slots=True)
 class GoalContextView:
     goal_revision: int
+    policy_id: str
+    policy_revision: int
     active_goals: tuple[GoalState, ...]
     suspended_goals: tuple[GoalState, ...]
     commitments: tuple[CommitmentState, ...]
@@ -257,6 +268,8 @@ class GoalContextView:
 
     def __post_init__(self) -> None:
         require_revision(self.goal_revision, "goal_revision")
+        require_identifier(self.policy_id, "policy_id")
+        require_revision(self.policy_revision, "policy_revision")
         for name, expected in (
             ("active_goals", GoalState),
             ("suspended_goals", GoalState),
@@ -269,11 +282,19 @@ class GoalContextView:
                 not isinstance(item, expected) for item in values
             ):
                 raise ValueError(f"{name} contains an invalid value")
-            object.__setattr__(self, name, tuple(values))
+            values = tuple(values)
+            identifiers = [
+                getattr(item, "goal_id", getattr(item, "commitment_id", None)) for item in values
+            ]
+            if len(identifiers) != len(set(identifiers)):
+                raise ValueError(f"{name} に重複した識別子があります")
+            object.__setattr__(self, name, values)
 
     def to_dict(self) -> dict[str, object]:
         return {
             "goal_revision": self.goal_revision,
+            "policy_id": self.policy_id,
+            "policy_revision": self.policy_revision,
             "active_goals": [item.to_dict() for item in self.active_goals],
             "suspended_goals": [item.to_dict() for item in self.suspended_goals],
             "commitments": [item.to_dict() for item in self.commitments],
@@ -282,6 +303,24 @@ class GoalContextView:
                 item.to_dict() for item in self.recently_changed_commitments
             ],
         }
+
+
+class GoalContextBuildError(ValueError):
+    def __init__(self, code: GoalContextFailureCode) -> None:
+        self.code = code
+        super().__init__(code.value)
+
+
+@dataclass(frozen=True, slots=True)
+class DueCommitmentOrder:
+    """信頼済みownerが評価したdue Commitmentの順序。"""
+
+    goal_revision: int
+    commitment_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        require_revision(self.goal_revision, "goal_revision")
+        object.__setattr__(self, "commitment_ids", _ids(self.commitment_ids, "commitment_ids"))
 
 
 @dataclass(frozen=True, slots=True)

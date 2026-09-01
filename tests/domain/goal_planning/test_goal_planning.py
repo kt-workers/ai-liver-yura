@@ -113,7 +113,7 @@ def directive() -> DeterministicPlanningDirective:
 
 def context(*, deterministic: bool = True) -> GoalPlanningContextSnapshot:
     item = goal()
-    view = GoalContextView(4, (item,), (), (), (item,), ())
+    view = GoalContextView(4, "test.goal-context", 1, (item,), (), (), (item,), ())
     return GoalPlanningContextSnapshot(
         REVISIONS,
         view,
