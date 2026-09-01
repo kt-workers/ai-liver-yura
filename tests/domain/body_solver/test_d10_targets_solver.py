@@ -1,4 +1,4 @@
-from math import cos, pi, sin, sqrt
+from math import pi, sqrt
 
 import pytest
 
@@ -25,6 +25,14 @@ from tests.domain.body_solver.d10_fixtures import (
     position_snapshot,
     reach_task,
 )
+
+
+def _rotate_forward(rotation: Quaternion) -> Vector3:
+    return Vector3(
+        2.0 * (rotation.x * rotation.z + rotation.w * rotation.y),
+        2.0 * (rotation.y * rotation.z - rotation.w * rotation.x),
+        1.0 - 2.0 * (rotation.x * rotation.x + rotation.y * rotation.y),
+    )
 
 
 @pytest.mark.parametrize(
@@ -104,6 +112,10 @@ def test_target_ref_orientation_uses_trusted_snapshot_geometry() -> None:
 
 
 def test_direction_orientation_extent_uses_shortest_arc_fraction() -> None:
+    model = physical_model()
+    state = physical_state()
+    current = end_effector_world_frame(model, state.pose, "effector:hand")
+    assert current.forward_axis == Vector3(1.0, 0.0, 0.0)
     task = BodySolveTask(
         "goal:orient-direction",
         BodySolveTaskKind.ORIENTATION_TARGET,
@@ -120,16 +132,16 @@ def test_direction_orientation_extent_uses_shortest_arc_fraction() -> None:
 
     target = resolve_body_task_target(
         task,
-        physical_model(),
-        physical_state().pose,
+        model,
+        state.pose,
         StaticTargetResolver(()),
     )
 
     assert target.orientation is not None
-    assert target.orientation.x == pytest.approx(0.0)
-    assert target.orientation.y == pytest.approx(0.0)
-    assert target.orientation.z == pytest.approx(sin(pi / 8))
-    assert target.orientation.w == pytest.approx(cos(pi / 8))
+    halfway_forward = _rotate_forward(target.orientation)
+    assert halfway_forward.x == pytest.approx(sqrt(0.5))
+    assert halfway_forward.y == pytest.approx(sqrt(0.5))
+    assert halfway_forward.z == pytest.approx(0.0)
 
 
 def test_chain_direction_translate_uses_explicit_reach_budget() -> None:
