@@ -52,6 +52,58 @@
 新しい系列のtree、CI、PR、Checkpoint、SHA参照を再照合する前に、旧commit/refを削除しない。
 編集可能な既存文書、comment、docstring、GitHub comment類は日本語へ是正する。
 
+## 作業ブランチ系統の整合性
+
+Issueの実装・修正・設計作業を開始または再開する前に、同一Issueに関係する既存PRとbranchをGitHubの現在状態から必ず確認する。
+詳細規約は `docs/architecture/v2/branch_lineage_integrity_contract.md` を正とする。
+
+### 作業開始前
+
+1. Issue番号に関連するopen / closed / merged PRを列挙する。
+2. Issue番号や既知のbranch名から関連branchを列挙する。
+3. 各branchを現在の本流と比較し、固有commitの有無を確認する。
+4. 各作業系統を `ACTIVE / MERGED / SUPERSEDED / ABANDONED / HISTORICAL / ZERO_UNIQUE` のいずれかへ分類する。
+5. 現在採用する正規作業系統を1本に決める。
+
+`ACTIVE`または未分類で、現在の本流に対して固有commitを持つ作業系統がある場合、同一Issue用の新しい実装branchを作成してはならない。
+本流から大きく遅れたbranchでも、まず既存作業系統を継続・整合できるか確認する。
+
+### 「すでに実装済み」と判断するとき
+
+本流に同じ、または似たコードが存在することだけを理由に、古い作業branchを不要と判断してはならない。
+
+必ず次を説明できる状態にする。
+
+- その成果物がどのPR / merge commitから本流へ入ったか。
+- 旧branchの変更項目が設計書・試験を含めて全件回収されているか。
+- 回収しない変更がある場合、その理由が`SUPERSEDED / ABANDONED / HISTORICAL`としてGitHub上に記録されているか。
+
+由来を説明できない作業系統は未解決として扱う。
+
+### 別の作業系統へ置き換える場合
+
+同一Issueを別branchでやり直す場合、旧branchを放置しない。
+
+- 旧PRへ `SUPERSEDED_BY: #<後継PR>` を記録する。
+- 後継PRへ `SUPERSEDES: #<旧PR>` を記録する。
+- 旧系統の変更を「後継へ引継ぎ」「不要化」「誤実装」に分類する。
+- 新branchを作って同じ機能をゼロから再実装することを第一選択にしない。
+
+既存branchを継続できる場合は、rebaseやforce pushで履歴を作り替えず、必要に応じて現在の本流をそのbranchへ通常mergeして整合する。
+
+### 次工程・Issue完了前
+
+次のIssueへ進む前、およびIssueを`completed`へ変更する直前に、同一Issueの全PR・branchを再列挙する。
+
+次のいずれかがある場合は次工程へ進まず、Issueも完了にしない。
+
+- 未分類の作業系統が残っている。
+- 別の`ACTIVE`作業系統が残っている。
+- 現在の本流に対して固有commitを持つ未マージbranchに、明示的な処理理由がない。
+- 取り込み済みと判断した成果のPR / commit由来を説明できない。
+
+Codexへ作業を依頼する場合も、この確認を省略してはならない。Codexへの指示には、新規branch作成前に同一Issueの既存作業系統を確認し、未解決の固有commitを持つbranchがあれば新しいbranchを作らないことを含める。
+
 ## 自律Completion Missionの継続
 
 このリポジトリでAutonomous Completion MissionがACTIVEの場合、

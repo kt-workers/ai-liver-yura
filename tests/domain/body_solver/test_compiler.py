@@ -105,6 +105,9 @@ def _plan(model_id: str = "body.v1") -> BodyMotionPlan:
         (),
         NOW,
     )
+    model = _model()
+    fingerprint = model.body_model_fingerprint
+    assert fingerprint is not None
     return BodyMotionPlan(
         "plan:1",
         candidate,
@@ -113,6 +116,9 @@ def _plan(model_id: str = "body.v1") -> BodyMotionPlan:
         ExecutiveInterruptibility.INTERRUPTIBLE,
         (),
         (),
+        model_id,
+        model.body_model_revision,
+        fingerprint,
         NOW,
         _proof=_PLAN_PROOF,
     )
