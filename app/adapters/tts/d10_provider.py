@@ -460,7 +460,6 @@ class TTSProviderAdapter:
             and request.mapping_revision == self._mapping_policy.mapping_revision
             and request.retry_policy_id == self._retry_policy.policy_id
             and request.retry_policy_revision == self._retry_policy.policy_revision
-            and request.provider_config_revision == self._operational_policy.policy_revision
             and request.voice_binding.provider_id == self._operational_policy.provider_id
             and request.capability.provider_id == self._operational_policy.provider_id
             and request.capability.provider_revision == self._operational_policy.provider_revision
