@@ -5,6 +5,7 @@ from .contracts import (
     BodyMotionExecutionStatus,
     BodyMotionResidual,
     BodyPoseFrame,
+    BodySolverError,
     BodySolverFailureCode,
     BodySolveTask,
     BodySolveTaskKind,
@@ -28,6 +29,12 @@ from .frame_validation import (
     validate_body_pose_frame,
 )
 from .kinematics import forward_kinematics
+from .policy import BodySolverPolicy, v2_baseline_body_solver_policy
+from .spatial import (
+    BodySpatialTargetResolverPort,
+    BodySpatialTargetSnapshot,
+    BodyTargetTrackingMode,
+)
 from .state_authority import BodyStateAuthority, BodyStateCommitError
 
 __all__ = [
@@ -44,15 +51,21 @@ __all__ = [
     "BodyMotionExecutionTracker",
     "BodyMotionResidual",
     "BodyPoseFrame",
+    "BodySolverError",
     "BodySolverFailureCode",
+    "BodySolverPolicy",
     "BodySolveTask",
     "BodySolveTaskKind",
+    "BodySpatialTargetResolverPort",
+    "BodySpatialTargetSnapshot",
     "BodyStateAuthority",
     "BodyStateCommitError",
+    "BodyTargetTrackingMode",
     "BodyTrajectoryPhase",
     "ExecutableBodyTrajectory",
     "LatestBodyFrameBuffer",
     "compile_body_motion_plan",
     "forward_kinematics",
+    "v2_baseline_body_solver_policy",
     "validate_body_pose_frame",
 ]
