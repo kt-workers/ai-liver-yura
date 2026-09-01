@@ -79,12 +79,12 @@ def memory_candidate(
     *,
     confidence: float = 0.8,
     observed_at: datetime = NOW,
-    value: JsonValue = "value",
+    value: JsonValue | None = None,
 ) -> ValidatedMemoryCandidate:
     return ValidatedMemoryCandidate(
         memory_id,
         MemoryKind.SEMANTIC,
-        MemoryContent("fact", value),
+        MemoryContent("fact", memory_id if value is None else value),
         MemoryProvenance(
             MemorySourceKind.TYPED_FACT,
             (),
