@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.domain.llm import LLMInterruptibility, LLMPriority
+from app.domain.llm import LLMInterruptibility
 from app.domain.speech_runtime.contracts import (
     AudioReadinessState,
     CandidateLifecycle,
@@ -20,6 +20,10 @@ from app.domain.speech_runtime.contracts import (
     SpeechReadinessState,
     VerifierReadinessState,
 )
+from app.domain.speech_runtime.policy import SpeechCandidatePriority
+from tests.domain.speech_runtime.policy_fixtures import runtime_policy
+
+_RUNTIME_POLICY = runtime_policy()
 
 
 def _proof(policy_id: str = "semantic-policy", revision: int = 7) -> SemanticVerificationSkipProof:
@@ -48,10 +52,12 @@ def _request(**changes: object) -> SpeechPreparationRequest:
         "source_context_revision": 1,
         "goal_revision": None,
         "attention_revision": None,
-        "priority": LLMPriority.FOREGROUND,
+        "priority": SpeechCandidatePriority.FOREGROUND,
         "interruptibility": LLMInterruptibility.INTERRUPTIBLE,
         "required_preconditions": ("condition",),
         "expiry_policy_ref": "expiry",
+        "runtime_policy_id": _RUNTIME_POLICY.policy_id,
+        "runtime_policy_revision": _RUNTIME_POLICY.policy_revision,
         "semantic_verification_policy_ref": "semantic-policy",
         "semantic_verification_policy_revision": 7,
         "presentation_policy_ref": "presentation-policy",
@@ -77,9 +83,11 @@ def _candidate(**changes: object) -> PreparedSpeechCandidate:
         "source_context_revision": 1,
         "goal_revision": None,
         "attention_revision": None,
-        "priority": LLMPriority.FOREGROUND,
+        "priority": SpeechCandidatePriority.FOREGROUND,
         "interruptibility": LLMInterruptibility.INTERRUPTIBLE,
         "expiry_policy_ref": "expiry",
+        "runtime_policy_id": _RUNTIME_POLICY.policy_id,
+        "runtime_policy_revision": _RUNTIME_POLICY.policy_revision,
         "required_preconditions": ("condition",),
         "semantic_requirement": SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY,
         "semantic_acceptance_id": None,
@@ -95,6 +103,7 @@ def _candidate(**changes: object) -> PreparedSpeechCandidate:
         "lifecycle": CandidateLifecycle.PREPARED,
         "created_at": now,
         "updated_at": now,
+        "prepared_at": now,
         "semantic_skip_proof": _proof(),
         "semantic_verification_policy_ref": "semantic-policy",
         "semantic_verification_policy_revision": 7,
