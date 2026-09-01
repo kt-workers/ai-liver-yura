@@ -6,6 +6,7 @@ from math import inf, nan
 
 import pytest
 
+from app.domain.contracts.common import JsonValue
 from app.domain.memory import (
     CANONICAL_MEMORY_TOKEN_ESTIMATOR_ID,
     InMemoryMemoryRepository,
@@ -78,7 +79,7 @@ def memory_candidate(
     *,
     confidence: float = 0.8,
     observed_at: datetime = NOW,
-    value: object = "value",
+    value: JsonValue = "value",
 ) -> ValidatedMemoryCandidate:
     return ValidatedMemoryCandidate(
         memory_id,
@@ -250,6 +251,7 @@ def test_zero_denominator_excludes_item_with_diagnostic() -> None:
     store.write(MemoryWriteRequest(memory_candidate("memory:unrankable")))
     view = store.retrieve(retrieval_query())
     assert view.items == ()
+    assert view.degraded
     assert view.diagnostics[0].code is (
         MemoryRetrievalDiagnosticCode.UNRANKABLE_ZERO_DENOMINATOR
     )
