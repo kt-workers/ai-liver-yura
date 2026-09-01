@@ -20,7 +20,7 @@ from .contracts import (
     SpeechReadinessState,
     VerifierReadinessState,
 )
-from .policy import SpeechRuntimeOperationalPolicy, V2_SPEECH_RUNTIME_OPERATIONAL_POLICY
+from .policy import V2_SPEECH_RUNTIME_OPERATIONAL_POLICY, SpeechRuntimeOperationalPolicy
 
 MonotonicMsSource = Callable[[], int]
 
@@ -240,7 +240,10 @@ class SpeechRuntime:
             ):
                 lifecycle = CandidateLifecycle.PREPARED
             prepared_mono_ms = candidate.prepared_mono_ms
-            if lifecycle is CandidateLifecycle.PREPARED and candidate.lifecycle is not CandidateLifecycle.PREPARED:
+            if (
+                lifecycle is CandidateLifecycle.PREPARED
+                and candidate.lifecycle is not CandidateLifecycle.PREPARED
+            ):
                 prepared_mono_ms = self._now_mono_ms()
             updated = replace(
                 candidate,
@@ -313,7 +316,9 @@ class SpeechRuntime:
             if self._generations.get(candidate_id) != generation:
                 return None
             candidate = self._active(candidate_id)
-            if not self._policy_matches(candidate) or candidate.is_expired_mono(self._now_mono_ms()):
+            if not self._policy_matches(candidate) or candidate.is_expired_mono(
+                self._now_mono_ms()
+            ):
                 return None
             if candidate.lifecycle is not CandidateLifecycle.PREPARED:
                 raise ValueError("PREPARED candidateだけをqueueへ入れられます")
@@ -334,7 +339,9 @@ class SpeechRuntime:
             candidate = self._candidates.get(candidate_id)
             if candidate is None:
                 raise ValueError("candidateが存在しません")
-            if not self._policy_matches(candidate) or candidate.is_expired_mono(self._now_mono_ms()):
+            if not self._policy_matches(candidate) or candidate.is_expired_mono(
+                self._now_mono_ms()
+            ):
                 return None
             if candidate.lifecycle is not CandidateLifecycle.QUEUED:
                 return None
