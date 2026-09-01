@@ -11,10 +11,16 @@ from app.domain.body import (
     CanonicalBodyModel,
     JointDofCoordinate,
     JointDofState,
+    Quaternion,
     project_body_pose_from_dof,
 )
 
-from .contracts import BodySolveTask, BodySolveTaskKind, BodySolverError, BodySolverFailureCode
+from .contracts import (
+    BodySolveTask,
+    BodySolveTaskKind,
+    BodySolverError,
+    BodySolverFailureCode,
+)
 from .physical import end_effector_world_frame
 from .policy import BodySolverPolicy
 from .targets import ResolvedBodyTaskTarget
@@ -60,18 +66,14 @@ def _task_end_effector_id(task: BodySolveTask, model: CanonicalBodyModel) -> str
     return matching[0]
 
 
-def _rotate_forward(rotation: object) -> tuple[float, float, float]:
-    from app.domain.body import Quaternion
-
-    if not isinstance(rotation, Quaternion):
-        raise BodySolverError(BodySolverFailureCode.NUMERICAL_FAILURE)
-    x = 2.0 * (rotation.x * rotation.z + rotation.w * rotation.y)
-    y = 2.0 * (rotation.y * rotation.z - rotation.w * rotation.x)
-    z = 1.0 - 2.0 * (rotation.x * rotation.x + rotation.y * rotation.y)
-    magnitude = sqrt(x * x + y * y + z * z)
-    if magnitude == 0:
-        raise BodySolverError(BodySolverFailureCode.NUMERICAL_FAILURE)
-    return x / magnitude, y / magnitude, z / magnitude
+def _quaternion_distance(left: Quaternion, right: Quaternion) -> float:
+    dot = abs(
+        left.x * right.x
+        + left.y * right.y
+        + left.z * right.z
+        + left.w * right.w
+    )
+    return 2.0 * acos(max(-1.0, min(1.0, dot)))
 
 
 def _residuals(
@@ -97,29 +99,38 @@ def _residuals(
             dz = target.position.z - frame.position.z
             position_error = sqrt(dx * dx + dy * dy + dz * dz)
         if target.orientation is not None:
-            desired = _rotate_forward(target.orientation)
-            actual_magnitude = frame.forward_axis.magnitude
-            if actual_magnitude == 0:
-                raise BodySolverError(BodySolverFailureCode.NUMERICAL_FAILURE)
-            actual = (
-                frame.forward_axis.x / actual_magnitude,
-                frame.forward_axis.y / actual_magnitude,
-                frame.forward_axis.z / actual_magnitude,
-            )
-            dot = max(-1.0, min(1.0, actual[0] * desired[0] + actual[1] * desired[1] + actual[2] * desired[2]))
-            orientation_error = acos(dot)
+            orientation_error = _quaternion_distance(frame.orientation, target.orientation)
         result.append(
-            BodyTaskResidual(
-                task.goal_id,
-                position_error,
-                orientation_error,
-            )
+            BodyTaskResidual(task.goal_id, position_error, orientation_error)
         )
     return tuple(result)
 
 
+def _comfort_penalty(
+    states: tuple[JointDofState, ...],
+    model: CanonicalBodyModel,
+) -> float:
+    definitions = {item.joint_id: item for item in model.joints}
+    penalty = 0.0
+    for state in states:
+        definition = definitions[state.joint_id]
+        limits = {item.axis: item for item in definition.limits}
+        for coordinate in state.coordinates:
+            limit = limits[coordinate.axis]
+            hard_span = max(limit.hard_max_radians - limit.hard_min_radians, 1e-12)
+            if coordinate.position_radians < limit.comfortable_min_radians:
+                distance = limit.comfortable_min_radians - coordinate.position_radians
+            elif coordinate.position_radians > limit.comfortable_max_radians:
+                distance = coordinate.position_radians - limit.comfortable_max_radians
+            else:
+                distance = 0.1 * abs(coordinate.position_radians - limit.relaxed_radians)
+            penalty += (distance / hard_span) ** 2
+    return penalty
+
+
 def _objective(
     residuals: tuple[BodyTaskResidual, ...],
+    states: tuple[JointDofState, ...],
     model: CanonicalBodyModel,
     policy: BodySolverPolicy,
 ) -> float:
@@ -133,7 +144,7 @@ def _objective(
                 residual.orientation_error_radians
                 / policy.orientation_residual_tolerance_radians
             ) ** 2
-    return value
+    return value + 1e-9 * _comfort_penalty(states, model)
 
 
 def _within_tolerance(
@@ -152,7 +163,9 @@ def _within_tolerance(
     )
 
 
-def _state_map(states: tuple[JointDofState, ...]) -> dict[tuple[str, Axis], JointDofCoordinate]:
+def _state_map(
+    states: tuple[JointDofState, ...],
+) -> dict[tuple[str, Axis], JointDofCoordinate]:
     return {
         (state.joint_id, coordinate.axis): coordinate
         for state in states
@@ -174,7 +187,9 @@ def _replace_coordinate(
         coordinates = tuple(
             JointDofCoordinate(
                 coordinate.axis,
-                position_radians if coordinate.axis is axis else coordinate.position_radians,
+                position_radians
+                if coordinate.axis is axis
+                else coordinate.position_radians,
                 coordinate.velocity_radians_per_second,
                 coordinate.acceleration_radians_per_second2,
             )
@@ -213,9 +228,9 @@ def solve_body_tasks(
     definitions = {item.joint_id: item for item in model.joints}
     coordinate_keys = sorted(
         (
-            (joint_id, coordinate.axis)
-            for joint_id, state_item in ((item.joint_id, item) for item in current)
-            if joint_id in relevant_joint_ids
+            (state_item.joint_id, coordinate.axis)
+            for state_item in current
+            if state_item.joint_id in relevant_joint_ids
             for coordinate in state_item.coordinates
         ),
         key=lambda item: (item[0], item[1].value),
@@ -228,7 +243,13 @@ def solve_body_tasks(
     pose = project_body_pose_from_dof(model, state.pose.root_world_transform, current)
     residuals = _residuals(model, pose, tasks, target_by_goal)
     if _within_tolerance(residuals, model, policy):
-        return BodyIKSolution(BodySolveFeasibility.FEASIBLE, current, pose, 0, residuals)
+        return BodyIKSolution(
+            BodySolveFeasibility.FEASIBLE,
+            current,
+            pose,
+            0,
+            residuals,
+        )
 
     iterations = 0
     for iteration in range(policy.max_ik_iterations):
@@ -236,7 +257,12 @@ def solve_body_tasks(
         step = policy.max_per_iteration_dof_step_radians * (0.5 ** (iteration // 8))
         improved = False
         baseline_residuals = _residuals(model, pose, tasks, target_by_goal)
-        baseline_objective = _objective(baseline_residuals, model, policy)
+        baseline_objective = _objective(
+            baseline_residuals,
+            current,
+            model,
+            policy,
+        )
         state_coordinates = _state_map(current)
         for joint_id, axis in coordinate_keys:
             coordinate = state_coordinates[(joint_id, axis)]
@@ -248,7 +274,10 @@ def solve_body_tasks(
             for direction in (-1.0, 1.0):
                 candidate_position = max(
                     limit.hard_min_radians,
-                    min(limit.hard_max_radians, coordinate.position_radians + direction * step),
+                    min(
+                        limit.hard_max_radians,
+                        coordinate.position_radians + direction * step,
+                    ),
                 )
                 if candidate_position == coordinate.position_radians:
                     continue
@@ -265,6 +294,7 @@ def solve_body_tasks(
                 )
                 candidate_objective = _objective(
                     _residuals(model, candidate_pose, tasks, target_by_goal),
+                    candidate_states,
                     model,
                     policy,
                 )
