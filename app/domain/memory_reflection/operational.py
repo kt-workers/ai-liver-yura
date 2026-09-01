@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from typing import Protocol
 
 from app.domain.contracts.common import require_identifier, require_revision, utc_instant
@@ -16,7 +17,7 @@ from .contracts import (
 )
 
 
-class ReflectionOperationalFailureCode(str):
+class ReflectionOperationalFailureCode(str, Enum):
     CONTEXT_TOO_LARGE = "reflection_context_too_large"
     CONTEXT_ORDER_INVALID = "reflection_context_order_invalid"
     PROPOSAL_RESULT_TOO_LARGE = "reflection_proposal_result_too_large"
@@ -25,8 +26,8 @@ class ReflectionOperationalFailureCode(str):
 
 
 class ReflectionOperationalError(ValueError):
-    def __init__(self, code: str, detail: str) -> None:
-        super().__init__(f"{code}: {detail}")
+    def __init__(self, code: ReflectionOperationalFailureCode, detail: str) -> None:
+        super().__init__(f"{code.value}: {detail}")
         self.code = code
         self.detail = detail
 
@@ -118,7 +119,6 @@ def reflection_source_order_key(
 def estimate_reflection_context_tokens(context: ReflectionContextSnapshot) -> int:
     payload = context.to_dict()
     payload.pop("estimated_tokens", None)
-    payload.pop("max_estimated_tokens", None)
     return estimate_memory_token_units(payload)
 
 
