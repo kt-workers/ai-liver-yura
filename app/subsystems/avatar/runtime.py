@@ -6,6 +6,7 @@ from threading import Lock
 from typing import Protocol
 
 from app.domain.body import CanonicalBodyModel
+from app.domain.body_realtime import RealtimeChannel
 from app.domain.body_solver import BodyPoseFrame
 from app.domain.contracts.common import require_aware
 
@@ -270,7 +271,7 @@ class AvatarPresentationRuntime:
         completed_at: datetime,
         dropped: int,
         applied_joint_ids: tuple[str, ...],
-        applied_channels: tuple,
+        applied_channels: tuple[RealtimeChannel, ...],
         degraded_items: tuple[str, ...],
         diagnostics: tuple[str, ...],
     ) -> AvatarProjectionReport:
