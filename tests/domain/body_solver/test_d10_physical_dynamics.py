@@ -20,8 +20,8 @@ from app.domain.body_solver import (
     BodySolverError,
     BodySolverFailureCode,
     dynamic_center_of_mass,
-    validate_balance,
     v2_baseline_body_solver_policy,
+    validate_balance,
 )
 from app.domain.body_solver.dynamics import advance_joint_dofs, body_velocity_from_dofs
 from tests.domain.body_solver.d10_fixtures import (
