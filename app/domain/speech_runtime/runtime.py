@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
+
+from app.domain.contracts.common import require_aware, utc_instant
 
 from .contracts import (
     AudioReadinessState,
@@ -18,12 +21,29 @@ from .contracts import (
     SpeechReadinessState,
     VerifierReadinessState,
 )
+from .policy import SpeechRuntimeOperationalPolicy
+
+AbsoluteClock = Callable[[], datetime]
+
+
+def _system_utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class SpeechRuntime:
     """候補局所の短い状態遷移だけを所有し、Role/Provider awaitを直列化しない。"""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        policy: SpeechRuntimeOperationalPolicy,
+        clock: AbsoluteClock = _system_utc_now,
+    ) -> None:
+        if not isinstance(policy, SpeechRuntimeOperationalPolicy):
+            raise ValueError("Speech Runtime operational policy が必要です")
+        if not callable(clock):
+            raise ValueError("absolute clock が不正です")
+        self._policy = policy
+        self._clock = clock
         self._candidates: dict[str, PreparedSpeechCandidate] = {}
         self._presentations: dict[str, str] = {}
         self._commands: dict[str, SpeechPresentationCommand] = {}
@@ -31,10 +51,34 @@ class SpeechRuntime:
         self._generations: dict[str, int] = {}
         self._lock = asyncio.Lock()
 
+    @property
+    def operational_policy(self) -> SpeechRuntimeOperationalPolicy:
+        return self._policy
+
+    async def update_operational_policy(self, policy: SpeechRuntimeOperationalPolicy) -> None:
+        """current policy generationだけを更新し、既存candidateへ付け替えない。"""
+        if not isinstance(policy, SpeechRuntimeOperationalPolicy):
+            raise ValueError("Speech Runtime operational policy が必要です")
+        async with self._lock:
+            self._policy = policy
+
+    async def operational_failure(self, candidate_id: str) -> str | None:
+        async with self._lock:
+            candidate = self._candidates.get(candidate_id)
+            if candidate is None:
+                raise ValueError("candidateが存在しません")
+            if not self._policy_matches(candidate):
+                return "runtime_policy_stale"
+            if self._is_expired(candidate, self._now()):
+                return "candidate_expired"
+            return None
+
     async def register(self, candidate: PreparedSpeechCandidate) -> None:
         async with self._lock:
             if candidate.candidate_id in self._candidates:
                 raise ValueError("candidateは一意です")
+            if not self._policy_matches(candidate):
+                raise ValueError("candidate runtime policy generation がcurrentではありません")
             self._candidates[candidate.candidate_id] = candidate
             self._generations[candidate.candidate_id] = 1
 
@@ -56,14 +100,16 @@ class SpeechRuntime:
     async def supersede_generation(
         self, candidate_id: str, expected_generation: int
     ) -> int | None:
-        """repair/rebind前に古いperformance/audio結果をcandidate局所で無効化する。"""
+        """repair前に古いperformance/audio結果をcandidate局所で無効化する。"""
         async with self._lock:
             if self._generations.get(candidate_id) != expected_generation:
                 return None
             candidate = self._active(candidate_id)
+            now = self._now()
+            if not self._policy_matches(candidate) or self._is_expired(candidate, now):
+                return None
             self._generations[candidate_id] += 1
             generation = self._generations[candidate_id]
-            # 旧世代のartifact/acceptance/performanceはrepairへ継承しない。
             self._candidates[candidate_id] = replace(
                 candidate,
                 utterance_id=None,
@@ -79,7 +125,8 @@ class SpeechRuntime:
                 ),
                 lifecycle=CandidateLifecycle.PREPARING,
                 repair_count=candidate.repair_count + 1,
-                updated_at=datetime.now(timezone.utc),
+                prepared_at=None,
+                updated_at=now,
             )
             return generation
 
@@ -93,6 +140,9 @@ class SpeechRuntime:
             if self._generations.get(candidate_id) != expected_generation:
                 return None
             candidate = self._active(candidate_id)
+            now = self._now()
+            if not self._policy_matches(candidate) or self._is_expired(candidate, now):
+                return None
             if candidate.utterance_id is None or candidate.semantic_acceptance_id is None:
                 raise ValueError("valid Character/semantic acceptance が必要です")
             if candidate.prepared_audio_ref is not None:
@@ -113,7 +163,8 @@ class SpeechRuntime:
                     audio=AudioReadinessState.NOT_REQUESTED,
                 ),
                 lifecycle=CandidateLifecycle.PREPARING,
-                updated_at=datetime.now(timezone.utc),
+                prepared_at=None,
+                updated_at=now,
             )
             return generation
 
@@ -134,11 +185,26 @@ class SpeechRuntime:
         prepared_audio_ref: str | None = None,
         clear_prepared_audio: bool = False,
     ) -> PreparedSpeechCandidate | None:
-        """全Role完了が共有する世代fence付きcommit境界。"""
+        """全Role完了が共有する世代/policy fence付きcommit境界。"""
         async with self._lock:
             if self._generations.get(candidate_id) != generation:
                 return None
             candidate = self._active(candidate_id)
+            now = self._now()
+            operationally_current = self._policy_matches(candidate) and not self._is_expired(
+                candidate, now
+            )
+            if not operationally_current and not clear_prepared_audio:
+                return None
+            if not operationally_current and clear_prepared_audio:
+                updated = replace(
+                    candidate,
+                    prepared_audio_ref=None,
+                    readiness=readiness,
+                    updated_at=now,
+                )
+                self._candidates[candidate_id] = updated
+                return updated
             verifier_ok = (
                 candidate.semantic_requirement
                 is SemanticVerificationRequirement.NOT_REQUIRED_BY_CLOSED_POLICY
@@ -161,6 +227,9 @@ class SpeechRuntime:
                 and verifier_ok
             ):
                 lifecycle = CandidateLifecycle.PREPARED
+            prepared_at = candidate.prepared_at
+            if lifecycle is CandidateLifecycle.PREPARED and candidate.lifecycle is not CandidateLifecycle.PREPARED:
+                prepared_at = now
             updated = replace(
                 candidate,
                 utterance_id=utterance_id if utterance_id is not None else candidate.utterance_id,
@@ -183,7 +252,8 @@ class SpeechRuntime:
                 ),
                 readiness=readiness,
                 lifecycle=lifecycle,
-                updated_at=datetime.now(timezone.utc),
+                prepared_at=prepared_at,
+                updated_at=now,
             )
             self._candidates[candidate_id] = updated
             return updated
@@ -193,8 +263,8 @@ class SpeechRuntime:
     ) -> PreparedSpeechCandidate:
         generation = self.generation(candidate_id)
         updated = await self.commit_generation_result(candidate_id, generation, readiness=readiness)
-        if updated is None:  # pragma: no cover - 同一event loop内では発生しない防御。
-            raise ValueError("candidate generation が更新されました")
+        if updated is None:
+            raise ValueError("candidate generation/policy/expiry が更新されました")
         return updated
 
     async def cancel(
@@ -220,7 +290,7 @@ class SpeechRuntime:
             candidate = self._active(candidate_id)
             if candidate.prepared_audio_ref is not None:
                 raise ValueError("prepared audioのterminal遷移にはdiscardが必要です")
-            updated = replace(candidate, lifecycle=lifecycle, updated_at=datetime.now(timezone.utc))
+            updated = replace(candidate, lifecycle=lifecycle, updated_at=self._now())
             self._candidates[candidate_id] = updated
             return updated
 
@@ -231,12 +301,16 @@ class SpeechRuntime:
             if self._generations.get(candidate_id) != generation:
                 return None
             candidate = self._active(candidate_id)
+            if not self._policy_matches(candidate) or self._is_expired(candidate, self._now()):
+                return None
             if candidate.lifecycle is not CandidateLifecycle.PREPARED:
                 raise ValueError("PREPARED candidateだけをqueueへ入れられます")
+            if candidate.prepared_at is None:
+                raise ValueError("PREPARED candidateにはprepared_atが必要です")
             updated = replace(
                 candidate,
                 lifecycle=CandidateLifecycle.QUEUED,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=self._now(),
             )
             self._candidates[candidate_id] = updated
             return updated
@@ -250,12 +324,14 @@ class SpeechRuntime:
             candidate = self._candidates.get(candidate_id)
             if candidate is None:
                 raise ValueError("candidateが存在しません")
+            if not self._policy_matches(candidate) or self._is_expired(candidate, self._now()):
+                return None
             if candidate.lifecycle is not CandidateLifecycle.QUEUED:
                 return None
             updated = replace(
                 candidate,
                 lifecycle=CandidateLifecycle.REVALIDATING,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=self._now(),
             )
             self._candidates[candidate_id] = updated
             return updated
@@ -273,6 +349,11 @@ class SpeechRuntime:
             candidate = self._active(candidate_id)
             if candidate.lifecycle is not CandidateLifecycle.REVALIDATING:
                 raise ValueError("revalidation中のcandidateが必要です")
+            if passed and (
+                not self._policy_matches(candidate) or self._is_expired(candidate, self._now())
+            ):
+                passed = False
+                failure = CandidateLifecycle.STALE
             if passed:
                 lifecycle = CandidateLifecycle.READY_TO_PRESENT
             else:
@@ -289,7 +370,7 @@ class SpeechRuntime:
             updated = replace(
                 candidate,
                 lifecycle=lifecycle,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=self._now(),
             )
             self._candidates[candidate_id] = updated
             return updated
@@ -299,6 +380,8 @@ class SpeechRuntime:
     ) -> SpeechPresentationCommand:
         async with self._lock:
             candidate = self._active(candidate_id)
+            if not self._policy_matches(candidate) or self._is_expired(candidate, self._now()):
+                raise ValueError("Speech Runtime operational revalidationに失敗しました")
             if (
                 candidate.lifecycle is not CandidateLifecycle.READY_TO_PRESENT
                 or presentation_id in self._presentations
@@ -333,7 +416,6 @@ class SpeechRuntime:
                 )
                 or not state.character_compatible
                 or not state.expiry_valid
-                or (candidate.expires_at is not None and candidate.expires_at <= state.observed_at)
                 or not state.capability.output_available
             ):
                 raise ValueError("live revalidationに失敗しました")
@@ -429,7 +511,7 @@ class SpeechRuntime:
             updated = replace(
                 candidate,
                 lifecycle=lifecycle,
-                updated_at=report.completed_at or report.started_at or datetime.now(timezone.utc),
+                updated_at=report.completed_at or report.started_at or self._now(),
             )
             self._candidates[candidate.candidate_id] = updated
             self._reports[report.presentation_id] = (*previous, report)
@@ -450,7 +532,7 @@ class SpeechRuntime:
             updated = replace(
                 candidate,
                 lifecycle=CandidateLifecycle.FAILED,
-                updated_at=datetime.now(timezone.utc),
+                updated_at=self._now(),
             )
             self._candidates[candidate_id] = updated
             return updated
@@ -475,7 +557,7 @@ class SpeechRuntime:
                     self._candidates[candidate_id] = replace(
                         candidate,
                         lifecycle=CandidateLifecycle.CANCELLED,
-                        updated_at=datetime.now(timezone.utc),
+                        updated_at=self._now(),
                     )
                     closed.append(candidate_id)
             return tuple(closed)
@@ -497,6 +579,25 @@ class SpeechRuntime:
                 for candidate_id, candidate in self._candidates.items()
                 if candidate.lifecycle not in terminal
             )
+
+    def _now(self) -> datetime:
+        value = self._clock()
+        require_aware(value, "Speech Runtime absolute clock")
+        return utc_instant(value)
+
+    def _policy_matches(self, candidate: PreparedSpeechCandidate) -> bool:
+        return self._policy.same_generation(
+            candidate.runtime_policy_id,
+            candidate.runtime_policy_revision,
+        )
+
+    def _is_expired(self, candidate: PreparedSpeechCandidate, now: datetime) -> bool:
+        created_at = utc_instant(candidate.created_at)
+        age_seconds = (now - created_at).total_seconds()
+        if age_seconds < 0:
+            raise ValueError("Speech Runtime absolute clock がcandidate created_atより前です")
+        rule = self._policy.expiry_rule_for(candidate.priority)
+        return age_seconds > rule.max_candidate_age_seconds
 
     def _active(self, candidate_id: str) -> PreparedSpeechCandidate:
         candidate = self._candidates.get(candidate_id)
