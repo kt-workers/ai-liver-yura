@@ -8,7 +8,7 @@ from app.domain.brain_operational_bounds import (
     V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
     BrainOperationalBoundsPolicy,
 )
-from app.domain.contracts.common import JsonValue
+from app.domain.contracts.common import JsonValue, thaw_json
 from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
 from app.domain.semantic_verification import (
     BLIND_ROLE_ID,
@@ -31,7 +31,6 @@ from app.domain.semantic_verification import (
     SemanticVerificationBoundsError,
     SemanticVerificationBoundsFailureCode,
     SemanticVerificationContextSnapshot,
-    SemanticVerificationPolicy,
     SemanticVerifier,
     SpeechActBudgetObservation,
     UtteranceEvidenceRef,
@@ -49,7 +48,6 @@ from tests.domain.semantic_verification.test_semantic_verification import (
     _BlockingSequencePort,
     _LiveState,
     _SequencePort,
-    _eligible,
     _snapshot,
     verification_policy,
 )
@@ -414,7 +412,7 @@ class OversizedBlindPort(_SequencePort):
         result = super()._result_for(request)
         if request.role_id != BLIND_ROLE_ID or result.output is None:
             return result
-        value = cast(dict[str, object], result.output.value)
+        value = cast(dict[str, object], thaw_json(result.output.value))
         raw_units = cast(list[dict[str, object]], value["units"])
         first = raw_units[0]
         value["units"] = [
@@ -454,7 +452,7 @@ class OversizedRelationPort(_SequencePort):
         result = super()._result_for(request)
         if request.role_id != RELATION_ROLE_ID or result.output is None:
             return result
-        value = cast(dict[str, object], result.output.value)
+        value = cast(dict[str, object], thaw_json(result.output.value))
         raw = cast(list[dict[str, object]], value["proposition_observations"])
         template = raw[-1]
         value["proposition_observations"] = [
