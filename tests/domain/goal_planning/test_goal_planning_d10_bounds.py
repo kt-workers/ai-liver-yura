@@ -32,9 +32,9 @@ from app.domain.goal_planning import (
 )
 from app.domain.goals import InterruptionPolicy
 from tests.domain.goal_planning.test_goal_planning import (
+    NOW,
     DelayedPort,
     FakeLiveState,
-    NOW,
     candidate,
     candidate_json,
     context,
@@ -276,10 +276,7 @@ def test_retry_limit_rejects_bool() -> None:
 def test_parser_rejects_oversized_candidate_without_first_n_acceptance() -> None:
     value = candidate_json()
     source_step = cast(list[dict[str, object]], value["steps"])[0]
-    value["steps"] = [
-        {**source_step, "step_id": f"step-{index}"}
-        for index in range(65)
-    ]
+    value["steps"] = [{**source_step, "step_id": f"step-{index}"} for index in range(65)]
     value["checkpoint_step_ids"] = []
     with pytest.raises(GoalPlanningBoundsError) as error:
         parse_candidate(
