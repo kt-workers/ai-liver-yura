@@ -196,3 +196,16 @@ productionの`revision_1()`固定値は削除し、必要な値はtest fixture�
 - timeout / cancellation / shutdown pending task 0
 - foreground requiredがbackground speculativeにstarveされない
 - 既存pronunciation/timing/artifact discard回帰
+
+## 8. 最終検証
+
+Exact HEAD `15421c634dd68b704a07615c6a51b14d5896d617` / CI #691で次を確認した。
+
+- Ruff: PASS
+- strict Mypy: 324 source files PASS
+- full pytest: 1355 passed
+- compileall: PASS
+- diff-check: PASS
+- base freshness: PASS
+- D10 canonical diff review: PASS / blocking finding 0
+- unresolved review thread: 0
