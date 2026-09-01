@@ -38,6 +38,8 @@ from app.domain.body_motion_planning import (
 )
 from app.domain.body_motion_planning.contracts import _PLAN_PROOF
 from app.domain.body_solver import (
+    BodySolverError,
+    BodySolverFailureCode,
     BodySolveTaskKind,
     compile_body_motion_plan,
     v2_baseline_body_solver_policy,
@@ -194,7 +196,7 @@ def test_compiler_resolves_canonical_chain_and_rebases_to_latest_state() -> None
 
 
 def test_compiler_rejects_model_mismatch() -> None:
-    with pytest.raises(ValueError, match="身体モデル"):
+    with pytest.raises(BodySolverError) as error:
         compile_body_motion_plan(
             _plan("other.v1"),
             _model(),
@@ -203,10 +205,11 @@ def test_compiler_rejects_model_mismatch() -> None:
             trajectory_id="trajectory:1",
             duration_s=2,
         )
+    assert error.value.code is BodySolverFailureCode.MODEL_MISMATCH
 
 
 def test_compiler_rejects_body_state_older_than_plan() -> None:
-    with pytest.raises(ValueError, match="古く"):
+    with pytest.raises(BodySolverError) as error:
         compile_body_motion_plan(
             _plan(),
             _model(),
@@ -215,3 +218,4 @@ def test_compiler_rejects_body_state_older_than_plan() -> None:
             trajectory_id="trajectory:1",
             duration_s=2,
         )
+    assert error.value.code is BodySolverFailureCode.STALE_HARD_DEPENDENCY
