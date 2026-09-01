@@ -1,5 +1,7 @@
 import asyncio
+from collections.abc import Mapping
 from dataclasses import replace
+from typing import cast
 
 import pytest
 
@@ -13,12 +15,12 @@ from app.domain.character.contracts import (
     RuntimeCharacterFacet,
 )
 from app.domain.character_language import (
+    CharacterLanguageAuthority,
     CharacterLanguageBoundsError,
     CharacterLanguageBoundsFailureCode,
     CharacterLanguageCommitState,
     CharacterLanguageContextSnapshot,
     CharacterLanguageRealizer,
-    CharacterUtteranceCandidate,
     CharacterUtteranceSegment,
     LinguisticBoundary,
     LinguisticEmphasis,
@@ -115,8 +117,7 @@ def test_confirmed_profile_128_129_boundary_never_first_n_projects(count: int) -
 
 def test_build_request_binds_policy_generation_and_rejects_profile_overflow() -> None:
     request = build_request(context(), created_at=NOW, policy=policy())
-    payload = request.input.value
-    assert isinstance(payload, dict)
+    payload = cast(Mapping[str, object], request.input.value)
     assert payload["bounds_policy_id"] == V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_id
     assert (
         payload["bounds_policy_revision"]
@@ -214,12 +215,12 @@ def test_provider_65_segments_are_not_first_n_accepted() -> None:
     with pytest.raises(CharacterLanguageBoundsError) as error:
         parse_candidate(payload, created_at=NOW)
     assert error.value.code is CharacterLanguageBoundsFailureCode.OUTPUT_TOO_LARGE
-    assert len(payload["segments"]) == 65
+    assert len(cast(list[object], payload["segments"])) == 65
 
 
 class MutableBoundsPolicyState:
     def __init__(self) -> None:
-        self.current = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
+        self.current: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 
     async def current_policy(
         self, snapshot: CharacterLanguageContextSnapshot
@@ -228,15 +229,20 @@ class MutableBoundsPolicyState:
 
 
 class DelayedPort:
-    def __init__(self, invoked: asyncio.Event, release: asyncio.Event) -> None:
+    def __init__(
+        self,
+        invoked: asyncio.Event,
+        release: asyncio.Event,
+        snapshot: CharacterLanguageContextSnapshot,
+    ) -> None:
         self._invoked = invoked
         self._release = release
+        self._snapshot = snapshot
 
     async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
         self._invoked.set()
         await self._release.wait()
-        snapshot = context()
-        return result_for(request, candidate_payload(candidate(snapshot)))
+        return result_for(request, candidate_payload(candidate(self._snapshot)))
 
 
 class LiveState:
@@ -253,11 +259,9 @@ async def test_late_result_rejects_changed_policy_generation() -> None:
     bounds_state = MutableBoundsPolicyState()
     snapshot = context()
     realizer = CharacterLanguageRealizer(
-        DelayedPort(invoked, release),
+        DelayedPort(invoked, release, snapshot),
         LiveState(),
-        __import__(
-            "app.domain.character_language", fromlist=["CharacterLanguageAuthority"]
-        ).CharacterLanguageAuthority(),
+        CharacterLanguageAuthority(),
         policy(),
         bounds_state,
     )
