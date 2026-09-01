@@ -210,7 +210,7 @@ def trajectory_for(
         fingerprint,
         solver_policy_revision,
         start_body_state_revision,
-        ("arm", "root"),
-        ("chain:arm",),
+        task.joint_ids,
+        task.chain_ids,
         (BodyTrajectoryPhase("phase:main", 0.0, duration_s, (task,), balance_mode),),
     )
