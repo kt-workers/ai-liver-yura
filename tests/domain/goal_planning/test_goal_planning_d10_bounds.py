@@ -4,15 +4,24 @@ from typing import cast
 
 import pytest
 
-from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
-from app.domain.contracts import CapabilityAvailability, CapabilityDescriptor, ExecutionStatus
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
+from app.domain.contracts import (
+    CapabilityAvailability,
+    CapabilityDescriptor,
+    CapabilityRequirement,
+    ExecutionStatus,
+)
 from app.domain.goal_planning import (
     ActivityContextRef,
     ActivityPlanStep,
     GoalPlanner,
     GoalPlanningAuthority,
     GoalPlanningBoundsError,
-    GoalPlanningPolicy,
+    GoalPlanningCandidate,
+    GoalPlanningContextSnapshot,
     PlanningBlocker,
     PlanningBlockerKind,
     PlanningBoundsFailureCode,
@@ -34,7 +43,7 @@ from tests.domain.goal_planning.test_goal_planning import (
 )
 
 
-def canonical_context(*, deterministic: bool = False):  # type: ignore[no-untyped-def]
+def canonical_context(*, deterministic: bool = False) -> GoalPlanningContextSnapshot:
     item = context(deterministic=deterministic)
     return replace(
         item,
@@ -46,7 +55,7 @@ def canonical_context(*, deterministic: bool = False):  # type: ignore[no-untype
     )
 
 
-def planning_policy(**changes: int):  # type: ignore[no-untyped-def]
+def planning_policy(**changes: int) -> BrainOperationalBoundsPolicy:
     return replace(
         V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
         planning=replace(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.planning, **changes),
@@ -152,7 +161,7 @@ def test_build_request_rejects_unbounded_context() -> None:
     assert error.value.code is PlanningBoundsFailureCode.CONTEXT_TOO_LARGE
 
 
-def plan_with_steps(count: int):  # type: ignore[no-untyped-def]
+def plan_with_steps(count: int) -> GoalPlanningCandidate:
     steps = tuple(replace(step(), step_id=f"step-{index}") for index in range(count))
     return replace(candidate(), steps=steps, checkpoint_step_ids=())
 
@@ -255,7 +264,7 @@ def test_retry_limit_rejects_bool() -> None:
             "target-1",
             None,
             (),
-            (),
+            (CapabilityRequirement("research", "collect"),),
             (),
             (),
             InterruptionPolicy.RESUMABLE,
@@ -283,9 +292,11 @@ def test_parser_rejects_oversized_candidate_without_first_n_acceptance() -> None
 
 class MutableBoundsPolicyState:
     def __init__(self) -> None:
-        self.current = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
+        self.current: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 
-    async def current_policy(self, snapshot):  # type: ignore[no-untyped-def]
+    async def current_policy(
+        self, snapshot: GoalPlanningContextSnapshot
+    ) -> BrainOperationalBoundsPolicy:
         return self.current
 
 
