@@ -195,6 +195,7 @@ def trajectory_for(
     trajectory_id: str = "trajectory:d10",
     plan_id: str = "plan:d10",
     solver_policy_revision: int = 1,
+    start_body_state_revision: int = 0,
     duration_s: float = 0.5,
     balance_mode: BodyBalanceMode = BodyBalanceMode.STABLE_SUPPORT_REQUIRED,
 ) -> ExecutableBodyTrajectory:
@@ -208,7 +209,7 @@ def trajectory_for(
         model.body_model_revision,
         fingerprint,
         solver_policy_revision,
-        0,
+        start_body_state_revision,
         ("arm", "root"),
         ("chain:arm",),
         (BodyTrajectoryPhase("phase:main", 0.0, duration_s, (task,), balance_mode),),
