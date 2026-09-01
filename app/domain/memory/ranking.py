@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from json import dumps
 from math import isfinite
 from typing import Protocol
 
@@ -12,6 +13,18 @@ from app.domain.memory.contracts import (
 )
 
 CANONICAL_MEMORY_TOKEN_ESTIMATOR_ID = "memory.utf8_bytes_div3.v1"
+
+
+def estimate_memory_token_units(payload: object) -> int:
+    """D10 canonical UTF-8 bytes / 3 estimator。"""
+    raw = dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return max(1, (len(raw) + 2) // 3)
 
 
 class MemoryRankingSignal(str, Enum):
