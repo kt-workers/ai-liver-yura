@@ -161,10 +161,19 @@ class ReflectionCoordinator:
             events = [
                 ReflectionEventKind.TRIGGERED,
                 ReflectionEventKind.CONTEXT_CAPTURED,
-                ReflectionEventKind.PROPOSAL_STARTED,
             ]
             if key in self._coalesced_keys:
                 events.append(ReflectionEventKind.COALESCED)
+            if not self._policy_matches_context(context):
+                return self._single_failure_result(
+                    context,
+                    key,
+                    events,
+                    ReflectionCandidateStatus.REJECTED_STALE,
+                    proposal_count=0,
+                    proposal_latency=0.0,
+                )
+            events.append(ReflectionEventKind.PROPOSAL_STARTED)
             proposal_started = perf_counter()
             try:
                 proposals = await self._proposal_port.propose(context)
@@ -200,11 +209,15 @@ class ReflectionCoordinator:
                     proposal_count=len(proposals),
                     proposal_latency=perf_counter() - proposal_started,
                 )
-            live_context = self._validated_live_context(context)
-            if live_context is None:
-                results = [self._stale_result(proposal) for proposal in proposals]
+            live_context, live_failure = self._validated_live_context(context)
+            if live_failure is not None:
+                results = [
+                    self._candidate_failure_result(proposal, live_failure)
+                    for proposal in proposals
+                ]
                 support_latency = 0.0
             else:
+                assert live_context is not None
                 results, support_latency = await self._validate_all(
                     live_context,
                     proposals,
@@ -309,12 +322,14 @@ class ReflectionCoordinator:
                 if not self._policy_matches_context(context):
                     results.append(self._stale_result(proposal))
                     continue
-                live_context = self._validated_live_context(context)
-                results.append(
-                    self._stale_result(proposal)
-                    if live_context is None
-                    else self._authority.accept(live_context, proposal, None)
-                )
+                live_context, live_failure = self._validated_live_context(context)
+                if live_failure is not None:
+                    results.append(
+                        self._candidate_failure_result(proposal, live_failure)
+                    )
+                else:
+                    assert live_context is not None
+                    results.append(self._authority.accept(live_context, proposal, None))
             else:
                 support_latency += perf_counter() - started
                 if ReflectionEventKind.SUPPORT_COMPLETED not in events:
@@ -327,28 +342,36 @@ class ReflectionCoordinator:
                 except ReflectionOperationalError:
                     results.append(self._policy_result(proposal))
                     continue
-                live_context = self._validated_live_context(context)
-                results.append(
-                    self._stale_result(proposal)
-                    if live_context is None
-                    else self._authority.accept(live_context, proposal, support)
-                )
+                live_context, live_failure = self._validated_live_context(context)
+                if live_failure is not None:
+                    results.append(
+                        self._candidate_failure_result(proposal, live_failure)
+                    )
+                else:
+                    assert live_context is not None
+                    results.append(self._authority.accept(live_context, proposal, support))
         return results, support_latency
 
     def _validated_live_context(
         self,
         captured_context: ReflectionContextSnapshot,
-    ) -> ReflectionContextSnapshot | None:
+    ) -> tuple[
+        ReflectionContextSnapshot | None,
+        ReflectionCandidateStatus | None,
+    ]:
         live_context = self._live_context(captured_context)
         if live_context is None:
-            return None
+            return None, ReflectionCandidateStatus.REJECTED_STALE
         try:
             validate_reflection_context_bounds(live_context, self._operational_policy)
         except ReflectionOperationalError as error:
-            if error.code == ReflectionOperationalFailureCode.POLICY_STALE:
-                return None
-            raise
-        return live_context
+            status = (
+                ReflectionCandidateStatus.REJECTED_STALE
+                if error.code is ReflectionOperationalFailureCode.POLICY_STALE
+                else ReflectionCandidateStatus.REJECTED_POLICY
+            )
+            return None, status
+        return live_context, None
 
     def _policy_matches_context(self, context: ReflectionContextSnapshot) -> bool:
         return self._operational_policy.same_generation(
@@ -390,25 +413,38 @@ class ReflectionCoordinator:
         )
 
     @staticmethod
-    def _source_refs(context: ReflectionContextSnapshot) -> tuple[str, ...]:
-        return tuple(sorted(source.source_ref for source in context.primary_sources))
-
-    @staticmethod
-    def _stale_result(proposal: MemoryCandidateProposal) -> ReflectionCandidateResult:
+    def _candidate_failure_result(
+        proposal: MemoryCandidateProposal,
+        status: ReflectionCandidateStatus,
+    ) -> ReflectionCandidateResult:
+        if status not in {
+            ReflectionCandidateStatus.REJECTED_STALE,
+            ReflectionCandidateStatus.REJECTED_POLICY,
+        }:
+            raise ValueError("Reflection operational failure statusが不正です")
         return ReflectionCandidateResult(
             proposal.proposal_id,
-            ReflectionCandidateStatus.REJECTED_STALE,
+            status,
             None,
             proposal.source_refs,
         )
 
     @staticmethod
+    def _source_refs(context: ReflectionContextSnapshot) -> tuple[str, ...]:
+        return tuple(sorted(source.source_ref for source in context.primary_sources))
+
+    @staticmethod
+    def _stale_result(proposal: MemoryCandidateProposal) -> ReflectionCandidateResult:
+        return ReflectionCoordinator._candidate_failure_result(
+            proposal,
+            ReflectionCandidateStatus.REJECTED_STALE,
+        )
+
+    @staticmethod
     def _policy_result(proposal: MemoryCandidateProposal) -> ReflectionCandidateResult:
-        return ReflectionCandidateResult(
-            proposal.proposal_id,
+        return ReflectionCoordinator._candidate_failure_result(
+            proposal,
             ReflectionCandidateStatus.REJECTED_POLICY,
-            None,
-            proposal.source_refs,
         )
 
     def _append_coalesced_event(self, events: list[ReflectionEventKind], key: str) -> None:
