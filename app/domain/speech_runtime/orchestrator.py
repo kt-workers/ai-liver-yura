@@ -8,7 +8,7 @@ from app.domain.llm import LLMPriority
 
 from .admission import PreparationWork, SpeechPreparationAdmission
 from .contracts import TTSPreparationMode
-from .policy import SpeechRuntimeOperationalPolicy, V2_SPEECH_RUNTIME_OPERATIONAL_POLICY
+from .policy import V2_SPEECH_RUNTIME_OPERATIONAL_POLICY, SpeechRuntimeOperationalPolicy
 from .tasks import CandidateTaskKey, CandidateTaskRegistry
 
 RoleWork = Callable[[], Coroutine[Any, Any, object]]
