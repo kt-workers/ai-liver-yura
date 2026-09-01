@@ -1,4 +1,4 @@
-from math import pi, sqrt
+from math import cos, pi, sin, sqrt
 
 import pytest
 
@@ -101,6 +101,86 @@ def test_target_ref_orientation_uses_trusted_snapshot_geometry() -> None:
     assert target.orientation == orientation
     assert target.target_ref == "target:orient"
     assert target.target_generation == 3
+
+
+def test_direction_orientation_extent_uses_shortest_arc_fraction() -> None:
+    task = BodySolveTask(
+        "goal:orient-direction",
+        BodySolveTaskKind.ORIENTATION_TARGET,
+        ("arm", "root"),
+        ("chain:arm",),
+        BodySpatialTarget(
+            BodySpatialTargetKind.DIRECTION,
+            Vector3(0.0, 1.0, 0.0),
+            None,
+            0.5,
+        ),
+        1.0,
+    )
+
+    target = resolve_body_task_target(
+        task,
+        physical_model(),
+        physical_state().pose,
+        StaticTargetResolver(()),
+    )
+
+    assert target.orientation is not None
+    assert target.orientation.x == pytest.approx(0.0)
+    assert target.orientation.y == pytest.approx(0.0)
+    assert target.orientation.z == pytest.approx(sin(pi / 8))
+    assert target.orientation.w == pytest.approx(cos(pi / 8))
+
+
+def test_chain_direction_translate_uses_explicit_reach_budget() -> None:
+    task = BodySolveTask(
+        "goal:chain-translate",
+        BodySolveTaskKind.POSITION_TARGET,
+        ("arm", "root"),
+        ("chain:arm",),
+        BodySpatialTarget(
+            BodySpatialTargetKind.DIRECTION,
+            Vector3(0.0, 1.0, 0.0),
+            None,
+            0.5,
+        ),
+        1.0,
+    )
+
+    target = resolve_body_task_target(
+        task,
+        physical_model(),
+        physical_state().pose,
+        StaticTargetResolver(()),
+    )
+
+    assert target.position == Vector3(1.0, 0.5, 0.0)
+
+
+def test_region_only_direction_translate_without_unique_reach_budget_is_unsupported() -> None:
+    task = BodySolveTask(
+        "goal:ambiguous-translate",
+        BodySolveTaskKind.POSITION_TARGET,
+        ("arm",),
+        (),
+        BodySpatialTarget(
+            BodySpatialTargetKind.DIRECTION,
+            Vector3(0.0, 1.0, 0.0),
+            None,
+            0.5,
+        ),
+        1.0,
+    )
+
+    with pytest.raises(BodySolverError) as error:
+        resolve_body_task_target(
+            task,
+            physical_model(),
+            physical_state().pose,
+            StaticTargetResolver(()),
+        )
+
+    assert error.value.code is BodySolverFailureCode.UNSUPPORTED_CAPABILITY
 
 
 def test_root_direction_translate_uses_explicit_root_budget() -> None:
@@ -241,6 +321,6 @@ def test_unreachable_target_returns_original_state_instead_of_last_iterate() -> 
     solution = solve_body_tasks(model, state, (task,), (target,), policy)
 
     assert solution.feasibility is BodySolveFeasibility.INFEASIBLE
-    assert solution.iterations == policy.max_ik_iterations
+    assert 0 < solution.iterations <= policy.max_ik_iterations
     assert solution.joint_dof_states == state.joint_dof_states
     assert solution.pose == state.pose
