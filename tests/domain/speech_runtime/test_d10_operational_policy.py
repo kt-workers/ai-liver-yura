@@ -13,16 +13,13 @@ from app.domain.speech_runtime.admission import (
 from app.domain.speech_runtime.contracts import TTSPreparationMode
 from app.domain.speech_runtime.discard import PreparedAudioDiscarder
 from app.domain.speech_runtime.orchestrator import SpeechPreparationOrchestrator
-from app.domain.speech_runtime.policy import (
-    V2_SPEECH_RUNTIME_OPERATIONAL_POLICY,
-    SpeechRuntimeOperationalPolicy,
-)
+from app.domain.speech_runtime.policy import V2_SPEECH_RUNTIME_OPERATIONAL_POLICY
 from app.domain.speech_runtime.queue import PreparedSpeechQueue
 from app.domain.speech_runtime.repair import SemanticRepairEvidence, SpeechSemanticRepairExecutor
 from app.domain.speech_runtime.runtime import SpeechRuntime
 from app.domain.speech_runtime.tasks import CandidateTaskRegistry
 from tests.domain.speech_runtime.test_queue import _prepared
-from tests.domain.speech_runtime.test_repair import _FakeOwner, _candidate
+from tests.domain.speech_runtime.test_repair import _candidate, _FakeOwner
 
 
 class MutableMonotonicClock:
