@@ -358,14 +358,14 @@ async def test_policy_change_during_role_a_await_stops_before_role_b_and_accepta
             created_at=NOW,
         )
     )
-    await port.blind_started.wait()
+    await asyncio.wait_for(port.blind_started.wait(), timeout=5)
     bounds_state.current = replace(
         V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
         policy_revision=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_revision + 1,
     )
     port.blind_release.set()
     with pytest.raises(SemanticVerificationBoundsError) as error:
-        await task
+        await asyncio.wait_for(task, timeout=5)
     assert error.value.code is SemanticVerificationBoundsFailureCode.POLICY_STALE
     assert len(port.requests) == 1
     assert not port.relation_started.is_set()
@@ -393,16 +393,16 @@ async def test_policy_change_during_role_b_await_stops_before_acceptance() -> No
             created_at=NOW,
         )
     )
-    await port.blind_started.wait()
+    await asyncio.wait_for(port.blind_started.wait(), timeout=5)
     port.blind_release.set()
-    await port.relation_started.wait()
+    await asyncio.wait_for(port.relation_started.wait(), timeout=5)
     bounds_state.current = replace(
         V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
         policy_revision=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_revision + 1,
     )
     port.relation_release.set()
     with pytest.raises(SemanticVerificationBoundsError) as error:
-        await task
+        await asyncio.wait_for(task, timeout=5)
     assert error.value.code is SemanticVerificationBoundsFailureCode.POLICY_STALE
     assert len(port.requests) == 2
 
