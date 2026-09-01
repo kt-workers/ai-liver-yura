@@ -15,6 +15,7 @@ from app.domain.body_realtime.contracts import (
 )
 from app.domain.body_solver import (
     BodyContinuousController,
+    BodyControllerTickResult,
     BodyMotionExecutionStatus,
     BodySolverError,
     BodySolverFailureCode,
@@ -99,7 +100,7 @@ def _tick(
     monotonic_s: float,
     supports: tuple[str, ...] = SUPPORT_CONTACT_IDS,
     overlay: RealtimeOverlayBundle | None = None,
-):  # type: ignore[no-untyped-def]
+) -> BodyControllerTickResult:
     return controller.tick(
         observed_at=NOW + timedelta(milliseconds=16 * index),
         monotonic_now_s=monotonic_s,
