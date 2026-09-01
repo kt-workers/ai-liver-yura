@@ -6,6 +6,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol, TypeVar, cast
 
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
 from app.domain.contracts.common import JsonValue, freeze_json, require_aware, utc_instant
 from app.domain.llm import (
     LLMActivationPolicy,
@@ -22,6 +26,12 @@ from app.domain.llm import (
 from app.usecases.ports.llm import LLMRolePort
 
 from .authority import CharacterLanguageAuthority
+from .bounds import (
+    CharacterLanguageBoundsPolicyPort,
+    assert_character_language_policy_generation,
+    validate_character_language_context_bounds,
+    validate_character_language_output_bounds,
+)
 from .contracts import (
     CharacterLanguageCommitState,
     CharacterLanguageContextSnapshot,
@@ -41,10 +51,13 @@ OUTPUT_SCHEMA = "character.language.candidate.v1"
 @dataclass(frozen=True, slots=True)
 class CharacterLanguagePolicy:
     execution: LLMExecutionPolicy
+    bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 
     def __post_init__(self) -> None:
         if not isinstance(self.execution, LLMExecutionPolicy):
             raise ValueError("execution は LLMExecutionPolicy でなければなりません")
+        if not isinstance(self.bounds_policy, BrainOperationalBoundsPolicy):
+            raise ValueError("bounds_policyはBrainOperationalBoundsPolicyでなければなりません")
 
 
 class CharacterLanguageLiveStatePort(Protocol):
@@ -66,6 +79,16 @@ def descriptor(policy: CharacterLanguagePolicy) -> LLMRoleDescriptor:
     )
 
 
+def _request_payload(
+    snapshot: CharacterLanguageContextSnapshot,
+    bounds_policy: BrainOperationalBoundsPolicy,
+) -> dict[str, object]:
+    payload = snapshot.to_dict()
+    payload["bounds_policy_id"] = bounds_policy.policy_id
+    payload["bounds_policy_revision"] = bounds_policy.policy_revision
+    return payload
+
+
 def build_request(
     snapshot: CharacterLanguageContextSnapshot,
     *,
@@ -74,13 +97,17 @@ def build_request(
 ) -> LLMRoleRequest:
     if not isinstance(snapshot, CharacterLanguageContextSnapshot):
         raise ValueError("snapshot は CharacterLanguageContextSnapshot でなければなりません")
+    validate_character_language_context_bounds(snapshot, policy.bounds_policy)
     require_aware(created_at, "created_at")
     if utc_instant(created_at) < utc_instant(snapshot.captured_at):
         raise ValueError("request作成時刻はsnapshotより前にできません")
     return LLMRoleRequest(
         snapshot.request_id,
         ROLE_ID,
-        StructuredPayload(INPUT_SCHEMA, cast(JsonValue, snapshot.to_dict())),
+        StructuredPayload(
+            INPUT_SCHEMA,
+            cast(JsonValue, _request_payload(snapshot, policy.bounds_policy)),
+        ),
         snapshot.source_event_ids,
         snapshot.revisions,
         (),
@@ -96,7 +123,12 @@ def build_request(
 E = TypeVar("E", bound=Enum)
 
 
-def parse_candidate(value: object, *, created_at: datetime) -> CharacterUtteranceCandidate:
+def parse_candidate(
+    value: object,
+    *,
+    created_at: datetime,
+    bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+) -> CharacterUtteranceCandidate:
     item = _mapping(value, "Character Language candidate")
     required = {
         "candidate_id",
@@ -120,7 +152,7 @@ def parse_candidate(value: object, *, created_at: datetime) -> CharacterUtteranc
         raise ValueError("revision fieldがschemaと一致しません")
     from app.domain.contracts import RevisionVector
 
-    return CharacterUtteranceCandidate(
+    candidate = CharacterUtteranceCandidate(
         _string(item["candidate_id"], "candidate_id"),
         _string(item["request_id"], "request_id"),
         _string(item["semantic_plan_id"], "semantic_plan_id"),
@@ -140,6 +172,8 @@ def parse_candidate(value: object, *, created_at: datetime) -> CharacterUtteranc
         _revision(item["new_direction_budget_used"], "new_direction_budget_used"),
         created_at,
     )
+    validate_character_language_output_bounds(candidate, bounds_policy)
+    return candidate
 
 
 def commit_result(
@@ -152,25 +186,31 @@ def commit_result(
     utterance_id: str,
     policy: CharacterLanguagePolicy,
 ) -> CharacterUtterance:
+    validate_character_language_context_bounds(snapshot, policy.bounds_policy)
     failure = validate_role_exchange(descriptor(policy), request, result)
     if failure is not None:
         raise ValueError(failure.code.value)
     if result.status is not LLMRoleStatus.SUCCEEDED or result.output is None:
         raise ValueError("Character Language resultはcommitできません")
-    if request.input.value != freeze_json(snapshot.to_dict()):
-        raise ValueError("request inputがsnapshotと一致しません")
+    if request.input.value != freeze_json(_request_payload(snapshot, policy.bounds_policy)):
+        raise ValueError("request inputがsnapshotと容量Policyに一致しません")
     if (
         request.source_event_ids != snapshot.source_event_ids
         or request.revisions != snapshot.revisions
     ):
         raise ValueError("request provenanceがsnapshotと一致しません")
-    candidate = parse_candidate(result.output.value, created_at=result.completed_at)
+    candidate = parse_candidate(
+        result.output.value,
+        created_at=result.completed_at,
+        bounds_policy=policy.bounds_policy,
+    )
     return authority.commit(
         candidate,
         snapshot,
         current=current,
         utterance_id=utterance_id,
         committed_at=result.completed_at,
+        bounds_policy=policy.bounds_policy,
     )
 
 
@@ -181,11 +221,21 @@ class CharacterLanguageRealizer:
         live_state: CharacterLanguageLiveStatePort,
         authority: CharacterLanguageAuthority,
         policy: CharacterLanguagePolicy,
+        bounds_policy_state: CharacterLanguageBoundsPolicyPort | None = None,
     ) -> None:
         self._port = port
         self._live_state = live_state
         self._authority = authority
         self._policy = policy
+        self._bounds_policy_state = bounds_policy_state
+
+    async def _validate_current_policy(
+        self, snapshot: CharacterLanguageContextSnapshot
+    ) -> None:
+        if self._bounds_policy_state is None:
+            return
+        current = await self._bounds_policy_state.current_policy(snapshot)
+        assert_character_language_policy_generation(self._policy.bounds_policy, current)
 
     async def realize(
         self,
@@ -194,6 +244,7 @@ class CharacterLanguageRealizer:
         utterance_id: str,
         created_at: datetime,
     ) -> CharacterUtterance:
+        validate_character_language_context_bounds(snapshot, self._policy.bounds_policy)
         request = build_request(snapshot, created_at=created_at, policy=self._policy)
         result = await self._port.invoke(request)
         failure = validate_role_exchange(descriptor(self._policy), request, result)
@@ -201,8 +252,13 @@ class CharacterLanguageRealizer:
             raise ValueError(failure.code.value)
         if result.status is not LLMRoleStatus.SUCCEEDED or result.output is None:
             raise ValueError("Character Language resultはcommitできません")
-        parse_candidate(result.output.value, created_at=result.completed_at)
+        parse_candidate(
+            result.output.value,
+            created_at=result.completed_at,
+            bounds_policy=self._policy.bounds_policy,
+        )
         current = await self._live_state.current_state(snapshot)
+        await self._validate_current_policy(snapshot)
         return commit_result(
             request,
             result,
