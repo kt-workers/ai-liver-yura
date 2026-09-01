@@ -5,7 +5,12 @@ from datetime import datetime
 from enum import Enum
 
 from app.domain.character_language import CharacterUtterance
-from app.domain.contracts.common import require_aware, require_identifier, require_revision
+from app.domain.contracts.common import (
+    require_aware,
+    require_identifier,
+    require_revision,
+    utc_instant,
+)
 from app.domain.speech_performance import SpeechPerformancePlan, validate_plan_segments
 
 
@@ -133,12 +138,23 @@ class TTSSynthesisRequest:
     pronunciation_overrides: tuple[PronunciationOverrideView, ...]
     provider_config_revision: int
     pronunciation_config_revision: int
+    mapping_id: str
+    mapping_revision: int
+    retry_policy_id: str
+    retry_policy_revision: int
     priority: TTSSynthesisPriority
     created_at: datetime
     trace_id: str
+    deadline_at: datetime | None = None
 
     def __post_init__(self) -> None:
-        for name in ("request_id", "candidate_id", "trace_id"):
+        for name in (
+            "request_id",
+            "candidate_id",
+            "mapping_id",
+            "retry_policy_id",
+            "trace_id",
+        ):
             require_identifier(getattr(self, name), name)
         if not isinstance(self.utterance, CharacterUtterance) or not isinstance(
             self.performance_plan, SpeechPerformancePlan
@@ -150,7 +166,13 @@ class TTSSynthesisRequest:
             raise ValueError("binding/capability が不正です")
         require_revision(self.provider_config_revision, "provider_config_revision")
         require_revision(self.pronunciation_config_revision, "pronunciation_config_revision")
+        require_revision(self.mapping_revision, "mapping_revision")
+        require_revision(self.retry_policy_revision, "retry_policy_revision")
         require_aware(self.created_at, "created_at")
+        if self.deadline_at is not None:
+            require_aware(self.deadline_at, "deadline_at")
+            if utc_instant(self.deadline_at) <= utc_instant(self.created_at):
+                raise ValueError("deadline_atはcreated_atより後でなければなりません")
         if self.performance_plan.utterance_id != self.utterance.utterance_id:
             raise ValueError("performance planのutteranceが一致しません")
         validate_plan_segments(self.utterance, self.performance_plan)
@@ -196,6 +218,10 @@ class PreparedAudioArtifact:
     provider_revision: int
     provider_config_revision: int
     pronunciation_config_revision: int
+    mapping_id: str
+    mapping_revision: int
+    retry_policy_id: str
+    retry_policy_revision: int
     audio_ref: str
     audio_format: str
     content_digest: str
@@ -210,6 +236,8 @@ class PreparedAudioArtifact:
             "utterance_id",
             "performance_plan_id",
             "voice_binding_id",
+            "mapping_id",
+            "retry_policy_id",
             "audio_ref",
             "audio_format",
             "content_digest",
@@ -219,6 +247,8 @@ class PreparedAudioArtifact:
         require_revision(self.provider_revision, "provider_revision")
         require_revision(self.provider_config_revision, "provider_config_revision")
         require_revision(self.pronunciation_config_revision, "pronunciation_config_revision")
+        require_revision(self.mapping_revision, "mapping_revision")
+        require_revision(self.retry_policy_revision, "retry_policy_revision")
         require_aware(self.created_at, "created_at")
         if self.duration_ms is not None and (
             type(self.duration_ms) is not int or self.duration_ms < 1
