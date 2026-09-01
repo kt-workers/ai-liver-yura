@@ -99,7 +99,9 @@ def test_context_fact_truth_and_constraint_pool_boundaries() -> None:
             V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
         )
 
-    pool = tuple(f"constraint-{index}" for index in range(128))
+    pool = ("relationship-soft", "discourse-answer") + tuple(
+        f"constraint-{index}" for index in range(126)
+    )
     pool_limit = replace(context(deterministic=False), available_constraint_refs=pool)
     validate_speech_semantic_context_bounds(pool_limit, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY)
     with pytest.raises(SpeechSemanticBoundsError):
