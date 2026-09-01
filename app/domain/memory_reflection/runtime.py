@@ -104,6 +104,13 @@ class ReflectionCoordinator:
         if not isinstance(policy, ReflectionOperationalPolicy):
             raise ValueError("Reflection operational policy が必要です")
         async with self._concurrency_condition:
+            current = self._operational_policy
+            if policy.same_generation(current.policy_id, current.policy_revision):
+                if policy != current:
+                    raise ValueError(
+                        "同一Reflection operational policy generationの内容は変更できません"
+                    )
+                return
             self._operational_policy = policy
             self._concurrency_condition.notify_all()
 
