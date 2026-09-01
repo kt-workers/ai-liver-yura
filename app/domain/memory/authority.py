@@ -11,7 +11,6 @@ from app.domain.memory.contracts import (
     MemoryDegradationReason,
     MemoryDisposition,
     MemoryEvidenceItem,
-    MemoryFreshnessState,
     MemoryLifecycle,
     MemoryProvenance,
     MemoryRecord,
