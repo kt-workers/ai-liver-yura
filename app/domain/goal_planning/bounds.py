@@ -103,7 +103,10 @@ def build_bounded_goal_planning_context(
     if len(activities) > bounds.max_activity_context_refs:
         raise GoalPlanningBoundsError(
             PlanningBoundsFailureCode.CONTEXT_TOO_LARGE,
-            f"activity_context_refs count={len(activities)} limit={bounds.max_activity_context_refs}",
+            (
+                f"activity_context_refs count={len(activities)} "
+                f"limit={bounds.max_activity_context_refs}"
+            ),
         )
 
     capability_values = snapshot.capabilities
