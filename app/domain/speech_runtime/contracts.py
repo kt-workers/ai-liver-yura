@@ -375,6 +375,13 @@ class PreparedSpeechCandidate:
     semantic_verification_policy_revision: int | None = None
     semantic_verification_policy: SemanticVerificationRequirementPolicy | None = None
     semantic_verification_policy_context: SemanticVerificationPolicyContext | None = None
+    runtime_policy_id: str | None = None
+    runtime_policy_revision: int | None = None
+    created_mono_ms: int | None = None
+    prepared_mono_ms: int | None = None
+    revalidation_started_mono_ms: int | None = None
+    prepared_ttl_ms: int | None = None
+    revalidation_max_age_ms: int | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -490,6 +497,63 @@ class PreparedSpeechCandidate:
             "character_definition_revision",
             optional=True,
         )
+        operational_values = (
+            self.runtime_policy_id,
+            self.runtime_policy_revision,
+            self.created_mono_ms,
+            self.prepared_mono_ms,
+            self.prepared_ttl_ms,
+            self.revalidation_max_age_ms,
+        )
+        if any(value is not None for value in operational_values):
+            if any(value is None for value in operational_values):
+                raise ValueError("runtime operational snapshotは一括指定が必要です")
+            assert self.runtime_policy_id is not None
+            require_identifier(self.runtime_policy_id, "runtime_policy_id")
+            require_revision(self.runtime_policy_revision, "runtime_policy_revision")
+            for name in (
+                "created_mono_ms",
+                "prepared_mono_ms",
+                "prepared_ttl_ms",
+                "revalidation_max_age_ms",
+            ):
+                value = getattr(self, name)
+                if type(value) is not int or value < 0:
+                    raise ValueError(f"{name} が不正です")
+            assert self.created_mono_ms is not None
+            assert self.prepared_mono_ms is not None
+            assert self.prepared_ttl_ms is not None
+            assert self.revalidation_max_age_ms is not None
+            if self.prepared_mono_ms < self.created_mono_ms:
+                raise ValueError("prepared_mono_ms は created_mono_ms より前にできません")
+            if self.prepared_ttl_ms <= self.revalidation_max_age_ms:
+                raise ValueError("prepared_ttl_ms は revalidation_max_age_ms より大きい必要があります")
+        if self.revalidation_started_mono_ms is not None:
+            if not self.has_operational_snapshot:
+                raise ValueError("revalidation monotonic時刻にはruntime policy snapshotが必要です")
+            if type(self.revalidation_started_mono_ms) is not int or self.revalidation_started_mono_ms < 0:
+                raise ValueError("revalidation_started_mono_ms が不正です")
+
+    @property
+    def has_operational_snapshot(self) -> bool:
+        return self.runtime_policy_id is not None
+
+    def is_expired_mono(self, now_mono_ms: int) -> bool:
+        if type(now_mono_ms) is not int or now_mono_ms < 0:
+            raise ValueError("now_mono_ms が不正です")
+        if not self.has_operational_snapshot:
+            return False
+        assert self.prepared_mono_ms is not None
+        assert self.prepared_ttl_ms is not None
+        return now_mono_ms - self.prepared_mono_ms >= self.prepared_ttl_ms
+
+    def revalidation_is_too_old(self, now_mono_ms: int) -> bool:
+        if type(now_mono_ms) is not int or now_mono_ms < 0:
+            raise ValueError("now_mono_ms が不正です")
+        if self.revalidation_started_mono_ms is None:
+            return False
+        assert self.revalidation_max_age_ms is not None
+        return now_mono_ms - self.revalidation_started_mono_ms > self.revalidation_max_age_ms
 
 
 @dataclass(frozen=True, slots=True)
