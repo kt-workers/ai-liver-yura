@@ -228,7 +228,10 @@ class SpeechRuntime:
             ):
                 lifecycle = CandidateLifecycle.PREPARED
             prepared_at = candidate.prepared_at
-            if lifecycle is CandidateLifecycle.PREPARED and candidate.lifecycle is not CandidateLifecycle.PREPARED:
+            if (
+                lifecycle is CandidateLifecycle.PREPARED
+                and candidate.lifecycle is not CandidateLifecycle.PREPARED
+            ):
                 prepared_at = now
             updated = replace(
                 candidate,
