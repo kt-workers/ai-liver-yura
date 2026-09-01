@@ -3,9 +3,14 @@ from __future__ import annotations
 from datetime import datetime
 from threading import Lock
 
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
 from app.domain.contracts.common import require_aware, require_identifier, utc_instant
 from app.domain.goals import GoalStatus
 
+from .bounds import validate_plan_bounds, validate_planning_context_bounds
 from .contracts import (
     _PLAN_PROOF,
     ActivityPlan,
@@ -31,6 +36,7 @@ class GoalPlanningAuthority:
         *,
         plan_id: str,
         committed_at: datetime,
+        bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
     ) -> ActivityPlan:
         if not isinstance(candidate, GoalPlanningCandidate):
             raise ValueError("candidate must be GoalPlanningCandidate")
@@ -38,6 +44,8 @@ class GoalPlanningAuthority:
             raise ValueError("snapshot must be GoalPlanningContextSnapshot")
         if not isinstance(current, GoalPlanningCommitState):
             raise ValueError("current must be GoalPlanningCommitState")
+        validate_planning_context_bounds(snapshot, bounds_policy)
+        validate_plan_bounds(candidate, bounds_policy)
         require_identifier(plan_id, "plan_id")
         require_aware(committed_at, "committed_at")
         if candidate.goal_id != snapshot.goal.goal_id:
@@ -57,6 +65,7 @@ class GoalPlanningAuthority:
         _validate_refs(candidate, snapshot)
         directive = snapshot.deterministic_directive
         if directive is not None:
+            validate_plan_bounds(directive, bounds_policy)
             if (
                 candidate.outcome is not directive.outcome
                 or candidate.steps != directive.steps
