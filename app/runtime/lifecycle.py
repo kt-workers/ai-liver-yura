@@ -149,6 +149,7 @@ class RuntimeLifecycle:
         self._clock = clock
         self._shutdown_policy = shutdown_policy
         self._dependencies: dict[str, _Dependency] = {}
+        self._retired_retry_tasks: set[asyncio.Task[None]] = set()
         self._stopping = False
         self._stop_lock = asyncio.Lock()
         self._shutdown_failures: tuple[RuntimeShutdownFailure, ...] = ()
@@ -197,11 +198,16 @@ class RuntimeLifecycle:
             if current != policy:
                 raise ValueError("同一retry policy generationの内容を変更できません")
             return self.snapshot(dependency_id)
-        if policy.policy_id == current.policy_id and policy.policy_revision <= current.policy_revision:
+        if (
+            policy.policy_id == current.policy_id
+            and policy.policy_revision <= current.policy_revision
+        ):
             raise ValueError("retry policy revisionを巻き戻せません")
         task = dependency.retry_task
         if task is not None and not task.done():
             task.cancel()
+            self._retired_retry_tasks.add(task)
+            task.add_done_callback(self._retired_retry_tasks.discard)
         dependency.retry_policy = policy
         dependency.retry_attempts = 0
         dependency.retry_task = None
@@ -341,8 +347,8 @@ class RuntimeLifecycle:
                 failure = await dependency.reconnect()
             except asyncio.CancelledError:
                 raise
-            except Exception as error:
-                failure = DependencyFailure(type(error).__name__, False)
+            except Exception:
+                failure = DependencyFailure("unclassified_reconnect_failure", False)
             if self._stopping or not self._policy_is_current(dependency, cycle_policy):
                 return
             if failure is None:
@@ -382,11 +388,12 @@ class RuntimeLifecycle:
         return dependency.retry_policy == cycle_policy
 
     async def _await_retries(self) -> None:
-        tasks = tuple(
+        tasks = {
             dependency.retry_task
             for dependency in self._dependencies.values()
             if dependency.retry_task is not None and not dependency.retry_task.done()
-        )
+        }
+        tasks.update(task for task in self._retired_retry_tasks if not task.done())
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
