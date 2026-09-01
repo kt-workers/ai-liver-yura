@@ -128,6 +128,62 @@ class BodyContinuousController:
     def execution_report(self) -> BodyMotionExecutionReport:
         return self._tracker.current
 
+    def interrupt(self, observed_at: datetime) -> BodyMotionExecutionReport:
+        """actual motionだけをINTERRUPTEDへ終端し、追加frameを禁止する。"""
+
+        require_aware(observed_at, "observed_at")
+        current = self._tracker.current
+        return self._tracker.interrupt(
+            observed_at,
+            achieved_target_refs=current.achieved_target_refs,
+            residuals=current.residuals,
+        )
+
+    def supersede_trajectory(
+        self,
+        trajectory: ExecutableBodyTrajectory,
+        *,
+        observed_at: datetime,
+        started_monotonic_s: float,
+    ) -> BodyMotionExecutionReport:
+        """dynamic stateを保持したままactual trajectoryを新trajectoryへ切り替える。"""
+
+        require_aware(observed_at, "observed_at")
+        if not isinstance(trajectory, ExecutableBodyTrajectory):
+            raise ValueError("trajectory が不正です")
+        if (
+            type(started_monotonic_s) not in (int, float)
+            or not isfinite(started_monotonic_s)
+        ):
+            raise ValueError("started_monotonic_s が不正です")
+        if trajectory.trajectory_id == self._trajectory.trajectory_id:
+            raise BodySolverError(BodySolverFailureCode.INVALID_PLAN)
+        self._validate_trajectory_generation(self._model, self._policy, trajectory)
+        current_state = self._authority.current
+        current_state.validate_physical_for(self._model)
+        if trajectory.start_body_state_revision > current_state.revision:
+            raise BodySolverError(BodySolverFailureCode.STALE_HARD_DEPENDENCY)
+        activation = float(started_monotonic_s)
+        if self._last_monotonic_s is None or activation < self._last_monotonic_s:
+            raise BodySolverError(BodySolverFailureCode.STALE_HARD_DEPENDENCY)
+
+        current_report = self._tracker.current
+        old_report = self._tracker.supersede(
+            observed_at,
+            achieved_target_refs=current_report.achieved_target_refs,
+            residuals=current_report.residuals,
+        )
+        self._trajectory = trajectory
+        self._started_monotonic_s = activation
+        self._phase_id = None
+        self._phase_targets = None
+        self._phase_root_base_velocity = current_state.velocity.root_world_velocity.linear
+        self._tracker = BodyMotionExecutionTracker(
+            trajectory.plan_id,
+            trajectory.trajectory_id,
+        )
+        return old_report
+
     def _phase_for(self, elapsed: float) -> BodyTrajectoryPhase:
         for phase in self._trajectory.phases:
             if elapsed < phase.end_offset_s:
@@ -141,7 +197,6 @@ class BodyContinuousController:
         if value < self._started_monotonic_s:
             raise BodySolverError(BodySolverFailureCode.STALE_HARD_DEPENDENCY)
         previous = self._last_monotonic_s
-        self._last_monotonic_s = value
         if previous is None:
             return self._policy.target_control_interval_seconds
         dt = value - previous
@@ -345,7 +400,11 @@ class BodyContinuousController:
         require_aware(observed_at, "observed_at")
         require_identifier(frame_id, "frame_id")
         require_identifier(trace_id, "trace_id")
-        if self._tracker.current.status is BodyMotionExecutionStatus.COMPLETED:
+        if self._tracker.current.status not in {
+            BodyMotionExecutionStatus.PLANNED,
+            BodyMotionExecutionStatus.STARTED,
+            BodyMotionExecutionStatus.OBSERVABLE,
+        }:
             raise BodySolverError(BodySolverFailureCode.INVALID_PLAN)
 
         current = self._authority.current
@@ -366,7 +425,7 @@ class BodyContinuousController:
             phase.tasks,
             targets,
         )
-        root_transform, root_velocity, self._root_dynamics = advance_root(
+        root_transform, root_velocity, next_root_dynamics = advance_root(
             self._model,
             current,
             phase.balance_mode,
@@ -416,6 +475,8 @@ class BodyContinuousController:
             trace_id=trace_id,
             joint_dof_states=next_dofs,
         )
+        self._last_monotonic_s = float(monotonic_now_s)
+        self._root_dynamics = next_root_dynamics
 
         joint_actual = (
             evaluate_body_task_residuals(
