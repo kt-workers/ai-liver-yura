@@ -192,7 +192,7 @@ class RankedMemoryEvidenceView(MemoryEvidenceView):
     diagnostics: tuple[MemoryRetrievalDiagnostic, ...] = ()
 
     def __post_init__(self) -> None:
-        super().__post_init__()
+        MemoryEvidenceView.__post_init__(self)
         require_identifier(self.ranking_policy_id, "memory ranking_policy_id")
         require_revision(self.ranking_policy_revision, "memory ranking_policy_revision")
         require_identifier(self.token_estimator_id, "memory token_estimator_id")
