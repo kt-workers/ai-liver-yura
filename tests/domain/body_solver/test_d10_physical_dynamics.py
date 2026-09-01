@@ -23,7 +23,12 @@ from app.domain.body_solver import (
     v2_baseline_body_solver_policy,
     validate_balance,
 )
-from app.domain.body_solver.dynamics import advance_joint_dofs, body_velocity_from_dofs
+from app.domain.body_solver.dynamics import (
+    RootDynamicsState,
+    advance_joint_dofs,
+    advance_root,
+    body_velocity_from_dofs,
+)
 from tests.domain.body_solver.d10_fixtures import (
     NOW,
     SUPPORT_CONTACT_IDS,
@@ -162,6 +167,8 @@ def test_joint_tick_bounds_velocity_acceleration_and_jerk_across_frames() -> Non
     definition = next(item for item in model.joints if item.joint_id == "arm")
     dynamic = definition.dynamic_limits[0]
     previous_acceleration = 0.0
+    fingerprint = model.body_model_fingerprint
+    assert fingerprint is not None
 
     for revision in range(1, 7):
         next_dofs = advance_joint_dofs(model, state, target_states, dt)
@@ -195,7 +202,65 @@ def test_joint_tick_bounds_velocity_acceleration_and_jerk_across_frames() -> Non
             next_pose,
             next_velocity,
             body_model_revision=model.body_model_revision,
-            body_model_fingerprint=model.body_model_fingerprint,
+            body_model_fingerprint=fingerprint,
             joint_dof_states=next_dofs,
         )
         previous_acceleration = coordinate.acceleration_radians_per_second2
+
+
+def test_root_tick_bounds_velocity_acceleration_and_jerk_across_frames() -> None:
+    model = physical_model()
+    state = physical_state()
+    limits = model.root_dynamic_limit
+    assert limits is not None
+    fingerprint = model.body_model_fingerprint
+    assert fingerprint is not None
+    dt = 1.0 / 60.0
+    dynamics = RootDynamicsState(Vector3(0.0, 0.0, 0.0), Vector3(0.0, 0.0, 0.0))
+    previous_acceleration = Vector3(0.0, 0.0, 0.0)
+
+    for revision in range(1, 7):
+        root_transform, root_velocity, next_dynamics = advance_root(
+            model,
+            state,
+            BodyBalanceMode.TEMPORARY_FLIGHT_ALLOWED,
+            Vector3(10.0, 0.0, 0.0),
+            None,
+            None,
+            state.velocity.root_world_velocity.linear,
+            dynamics,
+            dt,
+        )
+        acceleration = next_dynamics.linear_acceleration
+        jerk = Vector3(
+            (acceleration.x - previous_acceleration.x) / dt,
+            (acceleration.y - previous_acceleration.y) / dt,
+            (acceleration.z - previous_acceleration.z) / dt,
+        )
+        assert root_velocity.linear.magnitude <= limits.max_linear_velocity_mps + 1e-12
+        assert acceleration.magnitude <= limits.max_linear_acceleration_mps2 + 1e-12
+        assert jerk.magnitude <= limits.max_linear_jerk_mps3 + 1e-12
+
+        next_pose = project_body_pose_from_dof(
+            model,
+            root_transform,
+            state.joint_dof_states,
+        )
+        next_velocity = body_velocity_from_dofs(
+            model,
+            state.joint_dof_states,
+            root_velocity,
+            state.velocity,
+        )
+        state = BodyState(
+            model.body_model_id,
+            revision,
+            NOW + timedelta(seconds=revision * dt),
+            next_pose,
+            next_velocity,
+            body_model_revision=model.body_model_revision,
+            body_model_fingerprint=fingerprint,
+            joint_dof_states=state.joint_dof_states,
+        )
+        dynamics = next_dynamics
+        previous_acceleration = acceleration
