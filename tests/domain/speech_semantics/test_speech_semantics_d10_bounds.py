@@ -79,9 +79,11 @@ def test_context_fact_truth_and_constraint_pool_boundaries() -> None:
         )
     assert fact_error.value.code is SpeechSemanticBoundsFailureCode.CONTEXT_TOO_LARGE
 
-    constraints = tuple(
+    constraints = (
+        SpeechTruthConstraint("truth-match", "fact-execution", SpeechTruthRule.REQUIRE_MATCH),
+    ) + tuple(
         SpeechTruthConstraint(f"truth-{index}", "fact-execution", SpeechTruthRule.REQUIRE_MATCH)
-        for index in range(128)
+        for index in range(127)
     )
     truth_limit = replace(context(deterministic=False), truth_constraints=constraints)
     validate_speech_semantic_context_bounds(truth_limit, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY)
