@@ -76,17 +76,18 @@ def _quaternion_distance(left: Quaternion, right: Quaternion) -> float:
     return 2.0 * acos(max(-1.0, min(1.0, dot)))
 
 
-def _residuals(
+def evaluate_body_task_residuals(
     model: CanonicalBodyModel,
     pose: BodyPose,
     tasks: tuple[BodySolveTask, ...],
-    targets: dict[str, ResolvedBodyTaskTarget],
+    targets: tuple[ResolvedBodyTaskTarget, ...],
 ) -> tuple[BodyTaskResidual, ...]:
+    target_by_goal = {item.goal_id: item for item in targets}
+    if set(target_by_goal) != {item.goal_id for item in tasks}:
+        raise BodySolverError(BodySolverFailureCode.INFEASIBLE_TARGET)
     result: list[BodyTaskResidual] = []
     for task in tasks:
-        target = targets.get(task.goal_id)
-        if target is None:
-            raise BodySolverError(BodySolverFailureCode.INFEASIBLE_TARGET)
+        target = target_by_goal[task.goal_id]
         if task.kind is BodySolveTaskKind.ROOT_IMPULSE_TARGET:
             result.append(BodyTaskResidual(task.goal_id, None, None))
             continue
@@ -241,7 +242,7 @@ def solve_body_tasks(
         raise BodySolverError(BodySolverFailureCode.UNSUPPORTED_CAPABILITY)
 
     pose = project_body_pose_from_dof(model, state.pose.root_world_transform, current)
-    residuals = _residuals(model, pose, tasks, target_by_goal)
+    residuals = evaluate_body_task_residuals(model, pose, tasks, targets)
     if _within_tolerance(residuals, model, policy):
         return BodyIKSolution(
             BodySolveFeasibility.FEASIBLE,
@@ -256,7 +257,12 @@ def solve_body_tasks(
         iterations = iteration + 1
         step = policy.max_per_iteration_dof_step_radians * (0.5 ** (iteration // 8))
         improved = False
-        baseline_residuals = _residuals(model, pose, tasks, target_by_goal)
+        baseline_residuals = evaluate_body_task_residuals(
+            model,
+            pose,
+            tasks,
+            targets,
+        )
         baseline_objective = _objective(
             baseline_residuals,
             current,
@@ -293,7 +299,12 @@ def solve_body_tasks(
                     candidate_states,
                 )
                 candidate_objective = _objective(
-                    _residuals(model, candidate_pose, tasks, target_by_goal),
+                    evaluate_body_task_residuals(
+                        model,
+                        candidate_pose,
+                        tasks,
+                        targets,
+                    ),
                     candidate_states,
                     model,
                     policy,
@@ -308,7 +319,7 @@ def solve_body_tasks(
                 baseline_objective = best_objective
                 state_coordinates = _state_map(current)
                 improved = True
-        residuals = _residuals(model, pose, tasks, target_by_goal)
+        residuals = evaluate_body_task_residuals(model, pose, tasks, targets)
         if _within_tolerance(residuals, model, policy):
             return BodyIKSolution(
                 BodySolveFeasibility.FEASIBLE,
@@ -320,7 +331,7 @@ def solve_body_tasks(
         if not improved:
             break
 
-    residuals = _residuals(model, pose, tasks, target_by_goal)
+    residuals = evaluate_body_task_residuals(model, pose, tasks, targets)
     return BodyIKSolution(
         BodySolveFeasibility.INFEASIBLE,
         tuple(state.joint_dof_states),
