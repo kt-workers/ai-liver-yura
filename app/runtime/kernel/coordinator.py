@@ -238,9 +238,10 @@ class RuntimeCoordinator:
             for lane in self._lanes.values():
                 lane.wake.set()
 
-            if not await self._settle_running_tasks(
+            settled_cleanly = await self._settle_running_tasks(
                 self._shutdown_policy.in_flight_settle_grace_seconds
-            ):
+            )
+            if not settled_cleanly:
                 failures.append(
                     RuntimeShutdownFailure(
                         RuntimeShutdownStage.IN_FLIGHT_SETTLE,
@@ -279,7 +280,7 @@ class RuntimeCoordinator:
                     )
                 )
             self._shutdown_failures = self._deduplicate_failures(tuple(failures))
-            if pending_owned or not joined_cleanly:
+            if pending_owned or not settled_cleanly or not joined_cleanly:
                 error = RuntimeShutdownError(self._shutdown_failures)
                 self._shutdown_terminal_error = error
                 raise error
