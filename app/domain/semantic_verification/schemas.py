@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from enum import Enum
 
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
+
 from .contracts import (
     BlindInteractionAct,
     BlindSemanticUnitKind,
@@ -19,14 +24,21 @@ def _enum_values(enum_type: type[Enum]) -> list[str]:
     return [str(item.value) for item in enum_type]
 
 
-def _evidence_schema() -> dict[str, object]:
+def _evidence_schema(
+    bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+) -> dict[str, object]:
+    bounds = bounds_policy.semantic_verification
     return {
         "type": "object",
         "additionalProperties": False,
         "required": ["segment_id", "quote", "occurrence_index"],
         "properties": {
             "segment_id": {"type": "string", "minLength": 1},
-            "quote": {"type": "string", "minLength": 1, "maxLength": 1000},
+            "quote": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": bounds.max_quote_codepoints,
+            },
             "occurrence_index": {"type": "integer", "minimum": 0},
         },
     }
@@ -36,6 +48,7 @@ def _accounting_variant(
     relation: BlindUnitAccountingRelation,
     *,
     supported_by_plan: bool,
+    bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
 ) -> dict[str, object]:
     proposition_ids: dict[str, object] = {
         "type": "array",
@@ -55,13 +68,16 @@ def _accounting_variant(
             "evidence_refs": {
                 "type": "array",
                 "maxItems": 8,
-                "items": _evidence_schema(),
+                "items": _evidence_schema(bounds_policy),
             },
         },
     }
 
 
-def blind_output_schema() -> dict[str, object]:
+def blind_output_schema(
+    bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+) -> dict[str, object]:
+    bounds = bounds_policy.semantic_verification
     return {
         "type": "object",
         "additionalProperties": False,
@@ -72,7 +88,7 @@ def blind_output_schema() -> dict[str, object]:
             "utterance_id": {"type": "string", "minLength": 1},
             "units": {
                 "type": "array",
-                "maxItems": 64,
+                "maxItems": bounds.max_blind_units,
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
@@ -90,7 +106,8 @@ def blind_output_schema() -> dict[str, object]:
                         },
                         "interaction_acts": {
                             "type": "array",
-                            "maxItems": 2,
+                            "maxItems": bounds.max_interaction_acts_per_unit,
+                            "uniqueItems": True,
                             "items": {
                                 "type": "string",
                                 "enum": _enum_values(BlindInteractionAct),
@@ -99,8 +116,8 @@ def blind_output_schema() -> dict[str, object]:
                         "evidence_refs": {
                             "type": "array",
                             "minItems": 1,
-                            "maxItems": 8,
-                            "items": _evidence_schema(),
+                            "maxItems": bounds.max_evidence_refs_per_unit,
+                            "items": _evidence_schema(bounds_policy),
                         },
                     },
                 },
@@ -109,7 +126,10 @@ def blind_output_schema() -> dict[str, object]:
     }
 
 
-def relation_output_schema() -> dict[str, object]:
+def relation_output_schema(
+    bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+) -> dict[str, object]:
+    bounds = bounds_policy.semantic_verification
     proposition_observation: dict[str, object] = {
         "type": "object",
         "additionalProperties": False,
@@ -145,11 +165,11 @@ def relation_output_schema() -> dict[str, object]:
             "evidence_refs": {
                 "type": "array",
                 "maxItems": 8,
-                "items": _evidence_schema(),
+                "items": _evidence_schema(bounds_policy),
             },
             "supporting_blind_unit_ids": {
                 "type": "array",
-                "maxItems": 16,
+                "maxItems": bounds.max_supporting_units_per_proposition,
                 "items": {"type": "string", "minLength": 1},
             },
         },
@@ -159,18 +179,22 @@ def relation_output_schema() -> dict[str, object]:
             _accounting_variant(
                 BlindUnitAccountingRelation.SUPPORTED_BY_PLAN,
                 supported_by_plan=True,
+                bounds_policy=bounds_policy,
             ),
             _accounting_variant(
                 BlindUnitAccountingRelation.UNSUPPORTED_EXTRA,
                 supported_by_plan=False,
+                bounds_policy=bounds_policy,
             ),
             _accounting_variant(
                 BlindUnitAccountingRelation.PERMITTED_NON_MATERIAL_STYLE,
                 supported_by_plan=False,
+                bounds_policy=bounds_policy,
             ),
             _accounting_variant(
                 BlindUnitAccountingRelation.AMBIGUOUS,
                 supported_by_plan=False,
+                bounds_policy=bounds_policy,
             ),
         ]
     }
@@ -196,12 +220,12 @@ def relation_output_schema() -> dict[str, object]:
             "blind_observation_id": {"type": "string", "minLength": 1},
             "proposition_observations": {
                 "type": "array",
-                "maxItems": 64,
+                "maxItems": bounds.max_proposition_relations,
                 "items": proposition_observation,
             },
             "blind_unit_accounting": {
                 "type": "array",
-                "maxItems": 64,
+                "maxItems": bounds.max_accounting_entries,
                 "items": accounting,
             },
             "budget_observation": {
