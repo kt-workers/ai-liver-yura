@@ -236,6 +236,11 @@ class MemoryStoreAuthority:
                 item[0].memory_id,
             )
         )
+        if filtered and not ranked and any(
+            item.code is MemoryRetrievalDiagnosticCode.UNRANKABLE_ZERO_DENOMINATOR
+            for item in diagnostics
+        ):
+            reasons = (*reasons, MemoryDegradationReason.RANKING_UNAVAILABLE)
 
         envelope_tokens = self._estimate_tokens(
             {
