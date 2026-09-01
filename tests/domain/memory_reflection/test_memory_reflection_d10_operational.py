@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from typing import Callable, cast
+from typing import cast
 
 import pytest
 
