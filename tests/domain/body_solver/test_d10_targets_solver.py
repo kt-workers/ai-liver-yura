@@ -2,7 +2,7 @@ from math import pi, sqrt
 
 import pytest
 
-from app.domain.body import Quaternion
+from app.domain.body import Quaternion, Vector3
 from app.domain.body_motion_planning import BodySpatialTarget, BodySpatialTargetKind
 from app.domain.body_solver import (
     BodySolveFeasibility,
@@ -11,6 +11,7 @@ from app.domain.body_solver import (
     BodySolveTask,
     BodySolveTaskKind,
     BodySpatialTargetSnapshot,
+    end_effector_world_frame,
     resolve_body_task_target,
     solve_body_tasks,
     v2_baseline_body_solver_policy,
@@ -54,6 +55,17 @@ def test_target_ref_position_extent_uses_metric_interpolation(
     assert target.target_generation == 1
 
 
+def test_end_effector_world_frame_uses_explicit_local_offset() -> None:
+    frame = end_effector_world_frame(
+        physical_model(),
+        physical_state().pose,
+        "effector:hand",
+    )
+
+    assert frame.position == Vector3(1.0, 0.0, 0.0)
+    assert frame.forward_axis == Vector3(1.0, 0.0, 0.0)
+
+
 def test_target_ref_orientation_uses_trusted_snapshot_geometry() -> None:
     model = physical_model()
     state = physical_state()
@@ -89,6 +101,56 @@ def test_target_ref_orientation_uses_trusted_snapshot_geometry() -> None:
     assert target.orientation == orientation
     assert target.target_ref == "target:orient"
     assert target.target_generation == 3
+
+
+def test_root_direction_translate_uses_explicit_root_budget() -> None:
+    task = BodySolveTask(
+        "goal:root-translate",
+        BodySolveTaskKind.POSITION_TARGET,
+        ("root",),
+        (),
+        BodySpatialTarget(
+            BodySpatialTargetKind.DIRECTION,
+            Vector3(1.0, 0.0, 0.0),
+            None,
+            0.5,
+        ),
+        1.0,
+    )
+
+    target = resolve_body_task_target(
+        task,
+        physical_model(),
+        physical_state().pose,
+        StaticTargetResolver(()),
+    )
+
+    assert target.position == Vector3(0.25, 0.0, 0.0)
+
+
+def test_root_direction_impulse_uses_explicit_velocity_budget() -> None:
+    task = BodySolveTask(
+        "goal:root-impulse",
+        BodySolveTaskKind.ROOT_IMPULSE_TARGET,
+        ("root",),
+        (),
+        BodySpatialTarget(
+            BodySpatialTargetKind.DIRECTION,
+            Vector3(0.0, 1.0, 0.0),
+            None,
+            0.5,
+        ),
+        1.0,
+    )
+
+    target = resolve_body_task_target(
+        task,
+        physical_model(),
+        physical_state().pose,
+        StaticTargetResolver(()),
+    )
+
+    assert target.root_delta_velocity == Vector3(0.0, 0.5, 0.0)
 
 
 def test_target_ref_unavailable_fails_closed() -> None:
@@ -127,6 +189,13 @@ def test_contact_requires_full_extent() -> None:
         )
 
     assert error.value.code is BodySolverFailureCode.CONTACT_INFEASIBLE
+
+
+def test_tracking_same_generation_remains_valid() -> None:
+    previous = position_snapshot(0.2, generation=1)
+    current = position_snapshot(0.3, generation=1)
+
+    validate_tracking_update(previous, current)
 
 
 def test_tracking_generation_change_is_typed_failure() -> None:
