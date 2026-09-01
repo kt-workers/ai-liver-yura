@@ -50,6 +50,7 @@ DependencyFailure
 - Exception message substringからretry可否を決めない。
 - raw exception本文、credential、Prompt、SDK responseをfingerprintへ入れない。
 - diagnostic fingerprintは`dependency_id + failure_code`からLifecycleが作る。
+- reconnect callbackがtyped failureを返さず予期しない例外を送出した場合、Lifecycleは例外classをprovider分類として採用せず、固定されたsanitizedな非retryable failureへ閉じる。
 
 ## 4. Retry cycle generation
 
@@ -57,7 +58,7 @@ Dependencyごとにcurrent retry policy generationを保持する。
 
 - `schedule_reconnect()`開始時のPolicy snapshotをそのcycleへbindする。
 - sleep中 / reconnect await中にPolicy generationが変わった旧cycle resultをcurrent dependency stateへcommitしない。
-- Policy更新時にactive old cycleはcancel/supersedeできる。
+- Policy更新時にactive old cycleはcancel/supersedeし、取消完了までretired taskとして追跡する。
 - 同一`policy_id/revision`で内容だけ変更することを禁止する。
 - 同一generation同値再設定はidempotent。
 - shutdown開始後は新規retryを開始しない。
@@ -70,7 +71,7 @@ Dependencyごとにcurrent retry policy generationを保持する。
 - fingerprintごとに前回emit時刻を保持する。
 - interval未満はsuppress、等値以降はemit可能。
 - failure state/snapshot更新自体はrate limitしない。
-- suppressed countはbounded counterとして保持してよい。
+- suppressed countは補助観測値であり、availability/failure Authorityにはしない。
 
 ## 6. RuntimeShutdownPolicy
 
@@ -96,11 +97,14 @@ RuntimeShutdownPolicy
 2. queued/future work cancel
 3. running workへcancelを伝播
 4. `in_flight_settle_grace_seconds`内でsettle
-5. final persistence hookをPersistenceがopenな間に`final_persistence_grace_seconds`内で実行
-6. close hooksをreverse orderで実行
-7. 各close hookは`resource_close_grace_seconds`でboundし、1件のtimeout/failureでも後続hookを必ず試す
-8. runtime-owned worker taskを`owned_task_join_grace_seconds`内でjoin
-9. pending owned workが0のときだけSTOPPEDへ遷移
+5. high-frequency/event producer stop hookを停止し、新しいframe/event/comment等を発生させない
+6. final persistence hookをPersistenceがopenな間に`final_persistence_grace_seconds`内で実行
+7. close hooksをreverse orderで実行
+8. producer stop / 各close hookはresource停止操作として`resource_close_grace_seconds`でboundし、1件のtimeout/failureでも後続hookを必ず試す
+9. runtime-owned worker taskを`owned_task_join_grace_seconds`内でjoin
+10. pending owned workが0で、かつowned task join graceを超過していないときだけSTOPPEDへ遷移
+
+producer stop hookはPersistence flushより前に実行する。これによりfinal snapshot capture中に新しいframe/eventが流入し続ける状態を作らない。
 
 final persistence hookはowner-declared restart-safe stateを外から注入する。#350がEmotion/Attention/Speech/Activityをgeneric snapshotしない。
 
@@ -115,10 +119,11 @@ RuntimeShutdownFailure
 ```
 
 - raw exception本文を保存しない。
+- producer stop failure/timeoutでもfinal persistenceとresource closeを続行する。
 - final persistence failure/timeoutでもresource closeを続行する。
 - resource close failure/timeoutでも後続closeを続行する。
 - owned task join timeout / pending owned workが残る場合、STOPPED成功を捏造しない。
-- `stop()`二重要求は同じshutdown generationへ収束する。
+- terminal shutdown failure後の`stop()`二重要求は同じshutdown generationの同じfailureへ収束し、producer/persistence/close hookを再実行しない。
 
 ## 9. RuntimeLifecycle dependency close
 
@@ -128,6 +133,7 @@ RuntimeShutdownFailure
 - 各dependency closeを`resource_close_grace_seconds`でboundする。
 - 1 dependency closeのtimeout/failureでも後続dependencyをcloseする。
 - retry taskはshutdown開始時にcancelし、new retryを開始しない。
+- policy切替でretireしたretry taskも取消完了まで追跡し、shutdown時に未回収taskを残さない。
 - stop/closeはidempotent。
 
 ## 10. Compatibility
@@ -157,11 +163,15 @@ RuntimeShutdownFailure
 - diagnostic interval `<` suppress / `==` emit
 - same generation content mutation reject
 - policy revision変更中のold sleep / reconnect result非commit
+- policy revision変更でcancelしたold taskをshutdownが回収する
 - shutdown開始後retry開始なし
 - shutdown policy strict numeric
+- producer stopはfinal persistenceより前
+- producer stop failure後もpersistence/close継続
 - final persistenceはresource close前
 - final persistence timeout/failure後もclose継続
 - resource close timeout/failure後も後続close実行
 - owned task join grace超過でSTOPPEDを捏造しない
-- double stop idempotent
+- terminal failure後のdouble stopでhook再実行なし
+- successful double stop idempotent
 - policy missing時hidden defaultなし
