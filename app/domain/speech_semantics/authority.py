@@ -3,6 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from threading import Lock
 
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
 from app.domain.contracts import ExecutionStatus, RevisionVector
 from app.domain.contracts.common import (
     freeze_json,
@@ -12,6 +16,10 @@ from app.domain.contracts.common import (
 )
 from app.domain.executive import SpeechIntentPayload
 
+from .bounds import (
+    validate_speech_semantic_context_bounds,
+    validate_speech_semantic_output_bounds,
+)
 from .contracts import (
     _PLAN_PROOF,
     SelfDisclosurePolicy,
@@ -47,6 +55,7 @@ class SpeechSemanticAuthority:
         current_revisions: RevisionVector,
         plan_id: str,
         committed_at: datetime,
+        bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
     ) -> SpeechSemanticPlan:
         if not isinstance(candidate, SpeechSemanticCandidate):
             raise ValueError("candidate must be SpeechSemanticCandidate")
@@ -54,6 +63,8 @@ class SpeechSemanticAuthority:
             raise ValueError("snapshot must be SpeechSemanticContextSnapshot")
         if not isinstance(current_revisions, RevisionVector):
             raise ValueError("current_revisions must be RevisionVector")
+        validate_speech_semantic_context_bounds(snapshot, bounds_policy)
+        validate_speech_semantic_output_bounds(candidate, bounds_policy)
         require_identifier(plan_id, "plan_id")
         require_aware(committed_at, "committed_at")
         self._validate_identity(candidate, snapshot, current_revisions)
