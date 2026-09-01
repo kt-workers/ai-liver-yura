@@ -1,4 +1,12 @@
 from .authority import SemanticVerificationAuthority
+from .bounds import (
+    SemanticVerificationBoundsError,
+    SemanticVerificationBoundsFailureCode,
+    SemanticVerificationBoundsPolicyPort,
+    assert_semantic_verification_policy_generation,
+    validate_blind_candidate_bounds,
+    validate_relation_candidate_bounds,
+)
 from .canonical_relation import (
     SemanticVerifier,
     relation_instructions,
@@ -79,6 +87,9 @@ __all__ = [
     "SemanticRejectionCategory",
     "SemanticRelationObservation",
     "SemanticVerificationAuthority",
+    "SemanticVerificationBoundsError",
+    "SemanticVerificationBoundsFailureCode",
+    "SemanticVerificationBoundsPolicyPort",
     "SemanticVerificationContextSnapshot",
     "SemanticVerificationEligibilityView",
     "SemanticVerificationError",
@@ -90,6 +101,7 @@ __all__ = [
     "SelfDisclosureRelation",
     "SpeechActBudgetObservation",
     "UtteranceEvidenceRef",
+    "assert_semantic_verification_policy_generation",
     "blind_descriptor",
     "blind_instructions",
     "blind_output_schema",
@@ -100,4 +112,6 @@ __all__ = [
     "relation_descriptor",
     "relation_instructions",
     "relation_output_schema",
+    "validate_blind_candidate_bounds",
+    "validate_relation_candidate_bounds",
 ]
