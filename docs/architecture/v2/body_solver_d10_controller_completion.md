@@ -113,6 +113,17 @@ D10 Section 9をexactに使用する。
 
 root target resolutionはpositionとorientationを同一の一時変数へ格納しない。positionは`Vector3`、orientationは`Quaternion`として別々のtyped localへ保持し、静的型境界と数値意味を混同しない。
 
+### 5.1 BodySolveTask binding
+
+`BodySolveTask.joint_ids`は少なくとも1件のcanonical joint IDを持つ。一方、`chain_ids`は**0件以上**とする。
+
+- chain/end-effectorへ一意に束縛されたtaskは`chain_ids`を保持する。
+- root translation / orientation / impulseはroot jointへ束縛し、`chain_ids=()`を許可する。
+- region/joint selectorからcompileされたが一意なchainを持たないtaskも`chain_ids=()`を許可する。そのtaskがchain geometryを必要とする処理へ到達した場合は、距離やend-effectorを推測せず`UNSUPPORTED_CAPABILITY`へ閉じる。
+- `chain_ids`が空であること自体をschema invalidとはしない。可否はtask kindと必要geometryの組合せで判定する。
+
+これによりroot budget ruleと「regionだけでreach budgetを発明しない」ruleを同一typed task契約で表現できる。
+
 ## 6. Deterministic scalar IK
 
 Canonical solver pathはrandomnessを使わない。
@@ -239,6 +250,8 @@ Stage 5 — execution/frame integration + D10 tests
 - target snapshot position/orientation / unavailable
 - extent 0 / 0.5 / 1
 - CONTACT extent != 1 reject
+- root / region-only taskが`chain_ids=()`で型として表現可能
+- chain geometry必須処理でchain未束縛ならUNSUPPORTED
 - scalar hard limit exact boundary
 - bounded/adaptive IK iteration / repeated determinism / unreachable typed failure
 - fixed-step grid間targetもtolerance内へ収束
