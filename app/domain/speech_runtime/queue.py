@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from .contracts import CandidateLifecycle, PreparedSpeechCandidate
 from .discard import PreparedAudioDiscarder, PreparedAudioDiscardReason
+from .policy import SpeechRuntimeOperationalPolicy, V2_SPEECH_RUNTIME_OPERATIONAL_POLICY
 from .runtime import SpeechRuntime
 
 
@@ -25,17 +26,36 @@ class PreparedSpeechQueueEntry:
 class PreparedSpeechQueue:
     """候補を増殖させない、候補局所のbounded priority queue。"""
 
-    def __init__(self, max_size: int, max_consecutive_foreground: int = 3) -> None:
-        if type(max_size) is not int or max_size < 1:
-            raise ValueError("max_size が不正です")
-        if type(max_consecutive_foreground) is not int or max_consecutive_foreground < 1:
-            raise ValueError("max_consecutive_foreground が不正です")
-        self._max_size = max_size
-        self._max_consecutive_foreground = max_consecutive_foreground
+    def __init__(
+        self,
+        max_size: int | SpeechRuntimeOperationalPolicy = V2_SPEECH_RUNTIME_OPERATIONAL_POLICY,
+        max_consecutive_foreground: int | None = None,
+    ) -> None:
+        if isinstance(max_size, SpeechRuntimeOperationalPolicy):
+            if max_consecutive_foreground is not None:
+                raise ValueError("Policy指定時に個別queue値を上書きできません")
+            policy = max_size
+            resolved_size = policy.queue_max_candidates
+            resolved_foreground = policy.queue_max_consecutive_foreground
+        else:
+            if type(max_size) is not int or max_size < 1:
+                raise ValueError("max_size が不正です")
+            resolved_size = max_size
+            resolved_foreground = 3 if max_consecutive_foreground is None else max_consecutive_foreground
+            if type(resolved_foreground) is not int or resolved_foreground < 1:
+                raise ValueError("max_consecutive_foreground が不正です")
+            policy = None
+        self._policy = policy
+        self._max_size = resolved_size
+        self._max_consecutive_foreground = resolved_foreground
         self._consecutive_foreground = 0
         self._foreground: deque[PreparedSpeechQueueEntry] = deque()
         self._background: deque[PreparedSpeechQueueEntry] = deque()
         self._next_sequence = 1
+
+    @property
+    def policy(self) -> SpeechRuntimeOperationalPolicy | None:
+        return self._policy
 
     def __len__(self) -> int:
         return len(self._foreground) + len(self._background)
@@ -126,7 +146,6 @@ class PreparedSpeechQueueCoordinator:
             candidate_id, generation, foreground=foreground
         )
         if not accepted:
-            # queueへ入らないcandidateをactiveのまま放置しない。
             await self._terminate(candidate_id, CandidateLifecycle.SUPERSEDED)
             return False
         if suppressed is not None:
