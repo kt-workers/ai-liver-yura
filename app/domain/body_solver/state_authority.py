@@ -3,7 +3,13 @@ from __future__ import annotations
 from datetime import datetime
 from threading import Lock
 
-from app.domain.body import BodyPose, BodyState, BodyVelocity, CanonicalBodyModel
+from app.domain.body import (
+    BodyPose,
+    BodyState,
+    BodyVelocity,
+    CanonicalBodyModel,
+    JointDofState,
+)
 from app.domain.contracts.common import require_aware, require_revision, utc_instant
 
 from .contracts import BodyFrameChannelValue, BodyPoseFrame, BodySolverFailureCode
@@ -29,7 +35,10 @@ class BodyStateAuthority:
             raise ValueError("model が不正です")
         if not isinstance(initial_state, BodyState):
             raise ValueError("initial_state が不正です")
-        initial_state.validate_for(model)
+        if model.physical_control_contract_complete:
+            initial_state.validate_physical_for(model)
+        else:
+            initial_state.validate_for(model)
         if type(history_limit) is not int or history_limit < 0:
             raise ValueError("history_limit は0以上の整数でなければなりません")
         self._model = model
@@ -56,6 +65,7 @@ class BodyStateAuthority:
         applied_overlay_refs: tuple[str, ...],
         degraded_overlay_refs: tuple[str, ...],
         trace_id: str,
+        joint_dof_states: tuple[JointDofState, ...] | None = None,
     ) -> BodyPoseFrame:
         """solverのhard validationを通過したframeだけをrevision付きでcommitする。"""
 
@@ -67,6 +77,12 @@ class BodyStateAuthority:
             raise ValueError("pose / velocity が不正です")
         pose.validate_for(self._model)
         velocity.validate_for(self._model)
+        if joint_dof_states is not None and any(
+            not isinstance(item, JointDofState) for item in joint_dof_states
+        ):
+            raise ValueError("joint_dof_states が不正です")
+        if self._model.physical_control_contract_complete and joint_dof_states is None:
+            raise BodyStateCommitError(BodySolverFailureCode.INVALID_DOF_STATE)
 
         with self._lock:
             current = self._current
@@ -88,8 +104,26 @@ class BodyStateAuthority:
                 pose=pose,
                 velocity=velocity,
                 history=history,
+                body_model_revision=(
+                    self._model.body_model_revision
+                    if self._model.physical_control_contract_complete
+                    else current.body_model_revision
+                ),
+                body_model_fingerprint=(
+                    self._model.body_model_fingerprint
+                    if self._model.physical_control_contract_complete
+                    else current.body_model_fingerprint
+                ),
+                joint_dof_states=(
+                    joint_dof_states
+                    if joint_dof_states is not None
+                    else current.joint_dof_states
+                ),
             )
-            next_state.validate_for(self._model)
+            if self._model.physical_control_contract_complete:
+                next_state.validate_physical_for(self._model)
+            else:
+                next_state.validate_for(self._model)
             frame = BodyPoseFrame(
                 frame_id=frame_id,
                 body_model_id=self._model.body_model_id,
