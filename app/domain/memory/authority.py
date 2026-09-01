@@ -1,23 +1,37 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
 from hashlib import sha256
 from json import dumps
 
+from app.domain.contracts.common import utc_instant
 from app.domain.memory.contracts import (
     MemoryContent,
     MemoryDegradationReason,
     MemoryDisposition,
     MemoryEvidenceItem,
-    MemoryEvidenceView,
     MemoryFreshnessState,
     MemoryLifecycle,
+    MemoryProvenance,
     MemoryRecord,
     MemoryRelation,
     MemoryRelationKind,
     MemoryRetrievalQuery,
     MemoryWriteRequest,
     MemoryWriteResult,
+)
+from app.domain.memory.ranking import (
+    MemoryRankingMissingBehavior,
+    MemoryRankingPolarity,
+    MemoryRankingSignal,
+    MemoryRetrievalDiagnostic,
+    MemoryRetrievalDiagnosticCode,
+    MemoryRetrievalError,
+    MemoryRetrievalFailureCode,
+    MemoryRetrievalRankingPolicy,
+    MemorySemanticRelevance,
+    RankedMemoryEvidenceView,
 )
 from app.domain.memory.repository import MemoryRepositoryPort, MemorySemanticIndexPort
 
@@ -29,9 +43,21 @@ class MemoryStoreAuthority:
         self,
         repository: MemoryRepositoryPort,
         semantic_index: MemorySemanticIndexPort | None = None,
+        *,
+        ranking_policy: MemoryRetrievalRankingPolicy | None = None,
     ) -> None:
         self._repository = repository
         self._semantic_index = semantic_index
+        self._ranking_policy = ranking_policy
+
+    @property
+    def retrieval_ranking_policy(self) -> MemoryRetrievalRankingPolicy | None:
+        return self._ranking_policy
+
+    def update_retrieval_ranking_policy(self, policy: MemoryRetrievalRankingPolicy) -> None:
+        if not isinstance(policy, MemoryRetrievalRankingPolicy):
+            raise ValueError("Memory retrieval ranking policy が必要です")
+        self._ranking_policy = policy
 
     def write(self, request: MemoryWriteRequest) -> MemoryWriteResult:
         try:
@@ -151,18 +177,20 @@ class MemoryStoreAuthority:
         )
         return self._indexed(disposition, record, relation)
 
-    def retrieve(self, query: MemoryRetrievalQuery) -> MemoryEvidenceView:
+    def retrieve(self, query: MemoryRetrievalQuery) -> RankedMemoryEvidenceView:
+        policy = self._require_ranking_policy()
         try:
             snapshot = self._repository.snapshot()
         except RuntimeError:
-            return MemoryEvidenceView(
-                query.query_id,
-                query.created_at,
+            return self._view(
+                query,
+                policy,
                 (),
                 False,
-                True,
                 (MemoryDegradationReason.REPOSITORY_UNAVAILABLE,),
+                (),
             )
+
         conflicting: dict[str, tuple[str, ...]] = {}
         for relation in snapshot.relations:
             if relation.kind is MemoryRelationKind.CONTRADICTS:
@@ -172,24 +200,70 @@ class MemoryStoreAuthority:
                 conflicting[relation.right_memory_id] = conflicting.get(
                     relation.right_memory_id, ()
                 ) + (relation.left_memory_id,)
-        related_ids, reasons = self._semantic_related_ids(query)
+
+        semantic_scores, reasons = self._semantic_scores(query)
+        self._assert_policy_current(policy)
         filtered = [
             record
             for record in snapshot.records
             if self._matches(record, query, conflicting)
         ]
-        ranked = sorted(
-            filtered,
-            key=lambda record: (-self._score(record, related_ids), record.memory_id),
+        ranked: list[tuple[MemoryRecord, float, datetime]] = []
+        diagnostics: list[MemoryRetrievalDiagnostic] = []
+        for record in filtered:
+            rank = self._rank_record(record, query, policy, semantic_scores)
+            if rank is None:
+                diagnostics.append(
+                    MemoryRetrievalDiagnostic(
+                        MemoryRetrievalDiagnosticCode.INVALID_RECORD_TIME,
+                        record.memory_id,
+                    )
+                )
+                continue
+            score, reference_time = rank
+            if score is None:
+                diagnostics.append(
+                    MemoryRetrievalDiagnostic(
+                        MemoryRetrievalDiagnosticCode.UNRANKABLE_ZERO_DENOMINATOR,
+                        record.memory_id,
+                    )
+                )
+                continue
+            ranked.append((record, score, reference_time))
+        ranked.sort(
+            key=lambda item: (
+                -item[1],
+                -utc_instant(item[2]).timestamp(),
+                item[0].memory_id,
+            )
+        )
+
+        envelope_tokens = self._estimate_tokens(
+            {
+                "query_id": query.query_id,
+                "generated_at": query.created_at.isoformat(),
+                "ranking_policy_id": policy.policy_id,
+                "ranking_policy_revision": policy.policy_revision,
+                "token_estimator_id": policy.token_estimator_id,
+                "token_estimator_revision": policy.token_estimator_revision,
+                "degradation_reasons": [reason.value for reason in reasons],
+                "diagnostics": [
+                    {"code": item.code.value, "memory_id": item.memory_id}
+                    for item in diagnostics
+                ],
+            }
         )
         items: list[MemoryEvidenceItem] = []
-        tokens = 0
+        tokens = envelope_tokens
         truncated = False
-        for record in ranked:
-            estimate = self._estimate_tokens(record.content)
-            if len(items) >= query.max_items or tokens + estimate > query.max_estimated_tokens:
+        for record, score, _ in ranked:
+            if len(items) >= query.max_items:
                 truncated = True
-                continue
+                break
+            estimate = self._estimate_tokens(self._evidence_payload(record, conflicting, score))
+            if tokens + estimate > query.max_estimated_tokens:
+                truncated = True
+                break
             items.append(
                 MemoryEvidenceItem(
                     record.memory_id,
@@ -201,17 +275,18 @@ class MemoryStoreAuthority:
                     record.lifecycle,
                     conflicting.get(record.memory_id, ()),
                     estimate,
-                    self._score(record, related_ids),
+                    score,
                 )
             )
             tokens += estimate
-        return MemoryEvidenceView(
-            query.query_id,
-            query.created_at,
+        self._assert_policy_current(policy)
+        return self._view(
+            query,
+            policy,
             tuple(items),
             truncated,
-            bool(reasons),
             reasons,
+            tuple(diagnostics),
         )
 
     def _indexed(
@@ -242,8 +317,6 @@ class MemoryStoreAuthority:
 
     @staticmethod
     def _provenance_identity(provenance: object) -> tuple[object, ...]:
-        from app.domain.memory.contracts import MemoryProvenance
-
         if not isinstance(provenance, MemoryProvenance):
             raise ValueError("provenance が不正です")
         return (
@@ -253,20 +326,33 @@ class MemoryStoreAuthority:
             provenance.source_memory_candidate_id,
         )
 
-    def _semantic_related_ids(
+    def _semantic_scores(
         self, query: MemoryRetrievalQuery
-    ) -> tuple[frozenset[str], tuple[MemoryDegradationReason, ...]]:
+    ) -> tuple[dict[str, float], tuple[MemoryDegradationReason, ...]]:
         if query.semantic_query is None:
-            return frozenset(), ()
+            return {}, ()
         if self._semantic_index is None:
-            return frozenset(), (MemoryDegradationReason.SEMANTIC_INDEX_UNAVAILABLE,)
+            return {}, (MemoryDegradationReason.SEMANTIC_INDEX_UNAVAILABLE,)
         try:
-            related_ids = self._semantic_index.related_ids(
-                query.semantic_query, limit=query.max_items
+            related = tuple(
+                self._semantic_index.related_scores(
+                    query.semantic_query,
+                    limit=query.max_items,
+                )
             )
-            return frozenset(related_ids), ()
         except RuntimeError:
-            return frozenset(), (MemoryDegradationReason.SEMANTIC_INDEX_UNAVAILABLE,)
+            return {}, (MemoryDegradationReason.SEMANTIC_INDEX_UNAVAILABLE,)
+        if any(not isinstance(item, MemorySemanticRelevance) for item in related):
+            raise MemoryRetrievalError(
+                MemoryRetrievalFailureCode.INVALID_SEMANTIC_SCORE,
+                "semantic indexがtyped normalized relevanceを返しませんでした",
+            )
+        if len({item.memory_id for item in related}) != len(related):
+            raise MemoryRetrievalError(
+                MemoryRetrievalFailureCode.INVALID_SEMANTIC_SCORE,
+                "semantic relevance memory_idが重複しています",
+            )
+        return {item.memory_id: item.score for item in related}, ()
 
     @staticmethod
     def _matches(
@@ -294,18 +380,172 @@ class MemoryStoreAuthority:
             return False
         return query.include_conflicted or record.memory_id not in conflicts
 
-    @staticmethod
-    def _score(record: MemoryRecord, related_ids: frozenset[str] = frozenset()) -> float:
-        freshness = {
-            MemoryFreshnessState.FRESH: 0.2,
-            MemoryFreshnessState.STALE: 0.1,
-            MemoryFreshnessState.HISTORICAL: 0.0,
-        }[record.temporal.freshness]
-        lifecycle = 0.1 if record.lifecycle is MemoryLifecycle.ACTIVE else 0.0
-        semantic_relevance = 0.3 if record.memory_id in related_ids else 0.0
-        return record.confidence.value + freshness + lifecycle + semantic_relevance
+    def _rank_record(
+        self,
+        record: MemoryRecord,
+        query: MemoryRetrievalQuery,
+        policy: MemoryRetrievalRankingPolicy,
+        semantic_scores: dict[str, float],
+    ) -> tuple[float | None, datetime] | None:
+        reference_time = self._reference_time(record)
+        age_seconds = (
+            utc_instant(query.created_at) - utc_instant(reference_time)
+        ).total_seconds()
+        if age_seconds < 0:
+            return None
+        numerator = 0.0
+        denominator = 0.0
+        for rule in policy.signal_rules:
+            if rule.weight == 0:
+                continue
+            value = self._signal_value(
+                rule.signal,
+                record,
+                age_seconds,
+                policy,
+                semantic_scores,
+            )
+            if value is None:
+                if rule.missing_behavior is MemoryRankingMissingBehavior.ZERO:
+                    denominator += rule.weight
+                    continue
+                if rule.missing_behavior is MemoryRankingMissingBehavior.EXCLUDE:
+                    continue
+                raise MemoryRetrievalError(
+                    MemoryRetrievalFailureCode.REQUIRED_SIGNAL_MISSING,
+                    f"{record.memory_id}: {rule.signal.value}",
+                )
+            signed = (
+                value
+                if rule.polarity is MemoryRankingPolarity.POSITIVE
+                else 1.0 - value
+            )
+            numerator += rule.weight * signed
+            denominator += rule.weight
+        if denominator == 0:
+            return None, reference_time
+        score = numerator / denominator
+        if not 0 <= score <= 1:
+            raise MemoryRetrievalError(
+                MemoryRetrievalFailureCode.INVALID_SEMANTIC_SCORE,
+                f"ranking score out of range: {record.memory_id}",
+            )
+        return score, reference_time
 
     @staticmethod
-    def _estimate_tokens(content: MemoryContent) -> int:
-        raw = dumps(content.to_dict(), ensure_ascii=False, sort_keys=True, default=str)
-        return max(1, (len(raw) + 3) // 4)
+    def _signal_value(
+        signal: MemoryRankingSignal,
+        record: MemoryRecord,
+        age_seconds: float,
+        policy: MemoryRetrievalRankingPolicy,
+        semantic_scores: dict[str, float],
+    ) -> float | None:
+        if signal is MemoryRankingSignal.SEMANTIC_RELEVANCE:
+            return semantic_scores.get(record.memory_id)
+        if signal is MemoryRankingSignal.RECENCY:
+            return 2 ** (-age_seconds / policy.recency_half_life_seconds)
+        if signal is MemoryRankingSignal.CONFIDENCE:
+            return record.confidence.value
+        if signal is MemoryRankingSignal.FRESHNESS:
+            return policy.freshness_score(record.temporal.freshness)
+        return None
+
+    @staticmethod
+    def _reference_time(record: MemoryRecord) -> datetime:
+        if record.temporal.observed_at is not None:
+            return record.temporal.observed_at
+        if record.provenance:
+            return max(item.recorded_at for item in record.provenance)
+        return record.created_at
+
+    @staticmethod
+    def _estimate_tokens(payload: object) -> int:
+        raw = dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        return max(1, (len(raw) + 2) // 3)
+
+    @staticmethod
+    def _evidence_payload(
+        record: MemoryRecord,
+        conflicts: dict[str, tuple[str, ...]],
+        score: float,
+    ) -> dict[str, object]:
+        return {
+            "memory_id": record.memory_id,
+            "kind": record.kind.value,
+            "content": record.content.to_dict(),
+            "provenance": [item.to_dict() for item in record.provenance],
+            "confidence": {
+                "value": record.confidence.value,
+                "basis": record.confidence.basis,
+            },
+            "temporal": {
+                "freshness": record.temporal.freshness.value,
+                "valid_from": (
+                    None
+                    if record.temporal.valid_from is None
+                    else record.temporal.valid_from.isoformat()
+                ),
+                "valid_until": (
+                    None
+                    if record.temporal.valid_until is None
+                    else record.temporal.valid_until.isoformat()
+                ),
+                "observed_at": (
+                    None
+                    if record.temporal.observed_at is None
+                    else record.temporal.observed_at.isoformat()
+                ),
+            },
+            "lifecycle": record.lifecycle.value,
+            "contradiction_refs": list(conflicts.get(record.memory_id, ())),
+            "score": score,
+        }
+
+    def _require_ranking_policy(self) -> MemoryRetrievalRankingPolicy:
+        policy = self._ranking_policy
+        if policy is None:
+            raise MemoryRetrievalError(
+                MemoryRetrievalFailureCode.POLICY_MISSING,
+                "Memory retrieval ranking policyが設定されていません",
+            )
+        return policy
+
+    def _assert_policy_current(self, expected: MemoryRetrievalRankingPolicy) -> None:
+        current = self._ranking_policy
+        if current is None or not current.same_generation(
+            expected.policy_id,
+            expected.policy_revision,
+        ):
+            raise MemoryRetrievalError(
+                MemoryRetrievalFailureCode.POLICY_STALE,
+                "retrieval中にMemory ranking policy generationが変更されました",
+            )
+
+    @staticmethod
+    def _view(
+        query: MemoryRetrievalQuery,
+        policy: MemoryRetrievalRankingPolicy,
+        items: tuple[MemoryEvidenceItem, ...],
+        truncated: bool,
+        reasons: tuple[MemoryDegradationReason, ...],
+        diagnostics: tuple[MemoryRetrievalDiagnostic, ...],
+    ) -> RankedMemoryEvidenceView:
+        return RankedMemoryEvidenceView(
+            query_id=query.query_id,
+            generated_at=query.created_at,
+            items=items,
+            truncated=truncated,
+            degraded=bool(reasons),
+            degradation_reasons=reasons,
+            ranking_policy_id=policy.policy_id,
+            ranking_policy_revision=policy.policy_revision,
+            token_estimator_id=policy.token_estimator_id,
+            token_estimator_revision=policy.token_estimator_revision,
+            diagnostics=diagnostics,
+        )
