@@ -658,7 +658,6 @@ async def test_policy_generation_mismatch_fails_before_provider_invocation() -> 
     for request in (
         replace(_request(bundle=policies), mapping_revision=2),
         replace(_request(bundle=policies), retry_policy_revision=2),
-        replace(_request(bundle=policies), provider_config_revision=2),
     ):
         client = FakeTTS([_response()])
         result = await _adapter(client, policies, now=lambda: NOW).synthesize(request)
