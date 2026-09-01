@@ -1,6 +1,6 @@
+import asyncio
 from dataclasses import replace
 
-import asyncio
 import pytest
 
 from app.domain.body_motion_planning import (
@@ -9,13 +9,17 @@ from app.domain.body_motion_planning import (
 )
 from app.domain.body_solver import BodyStateAuthority
 from tests.domain.body_integration.test_runtime import (
+    _at,
     _ControlledPlanner,
     _LivePlanningState,
-    _at,
     _runtime,
     _submission,
 )
-from tests.domain.body_solver.d10_fixtures import SUPPORT_CONTACT_IDS, physical_model, physical_state
+from tests.domain.body_solver.d10_fixtures import (
+    SUPPORT_CONTACT_IDS,
+    physical_model,
+    physical_state,
+)
 
 
 @pytest.mark.asyncio
