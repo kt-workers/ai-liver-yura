@@ -116,7 +116,11 @@ class BodyIntegrationRuntime:
     def pending_task_count(self) -> int:
         planning = int(self._planning_task is not None and not self._planning_task.done())
         retired = sum(not task.done() for _, task in self._retired_tasks)
-        realtime = 0 if self._realtime_runtime is None else self._realtime_runtime.pending_task_count
+        realtime = (
+            0
+            if self._realtime_runtime is None
+            else self._realtime_runtime.pending_task_count
+        )
         return planning + retired + realtime
 
     @property
@@ -173,10 +177,11 @@ class BodyIntegrationRuntime:
 
         current_task = self._planning_task
         current_submission = self._planning_submission
-        if current_task is not None and not current_task.done():
+        if current_task is not None:
             if not supersede_allowed:
-                raise RuntimeError("pending planningをsupersedeできません")
-            current_task.cancel()
+                raise RuntimeError("current planningをsupersedeできません")
+            if not current_task.done():
+                current_task.cancel()
             self._retired_tasks.append((self._planning_generation, current_task))
             if current_submission is not None:
                 self._terminalize_planning_session(
