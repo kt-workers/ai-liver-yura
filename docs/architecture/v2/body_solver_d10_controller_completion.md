@@ -111,6 +111,8 @@ D10 Section 9をexactに使用する。
 - root translate/impulse: `RootDynamicLimit`の明示budget
 - regionだけでreach budgetを一意に決められないtranslateはUNSUPPORTED
 
+root target resolutionはpositionとorientationを同一の一時変数へ格納しない。positionは`Vector3`、orientationは`Quaternion`として別々のtyped localへ保持し、静的型境界と数値意味を混同しない。
+
 ## 6. Deterministic scalar IK
 
 Canonical solver pathはrandomnessを使わない。
