@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -109,6 +110,48 @@ def _tick(
         frame_id=f"frame:{index}",
         trace_id=f"trace:{index}",
     )
+
+
+def test_controller_rejects_trajectory_model_revision_mismatch() -> None:
+    resolver = CountingTargetResolver((position_snapshot(0.5),))
+    trajectory = trajectory_for(reach_task())
+
+    with pytest.raises(BodySolverError) as error:
+        _controller(
+            resolver,
+            trajectory=replace(
+                trajectory,
+                body_model_revision=trajectory.body_model_revision + 1,
+            ),
+        )
+
+    assert error.value.code is BodySolverFailureCode.MODEL_REVISION_MISMATCH
+
+
+def test_controller_rejects_trajectory_model_fingerprint_mismatch() -> None:
+    resolver = CountingTargetResolver((position_snapshot(0.5),))
+    trajectory = trajectory_for(reach_task())
+
+    with pytest.raises(BodySolverError) as error:
+        _controller(
+            resolver,
+            trajectory=replace(
+                trajectory,
+                body_model_fingerprint="fingerprint:other",
+            ),
+        )
+
+    assert error.value.code is BodySolverFailureCode.MODEL_FINGERPRINT_MISMATCH
+
+
+def test_controller_rejects_solver_policy_revision_mismatch() -> None:
+    resolver = CountingTargetResolver((position_snapshot(0.5),))
+    trajectory = trajectory_for(reach_task(), solver_policy_revision=2)
+
+    with pytest.raises(BodySolverError) as error:
+        _controller(resolver, trajectory=trajectory)
+
+    assert error.value.code is BodySolverFailureCode.INVALID_SOLVER_POLICY
 
 
 def test_plan_stays_planned_until_validated_frame_is_committed() -> None:
