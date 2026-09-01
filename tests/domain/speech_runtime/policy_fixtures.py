@@ -6,6 +6,7 @@ from app.domain.speech_runtime.policy import (
     SpeechQueueOverflowPolicy,
     SpeechRuntimeOperationalPolicy,
 )
+from app.domain.speech_runtime.runtime import SpeechRuntime
 
 
 def runtime_policy(
@@ -38,3 +39,12 @@ def runtime_policy(
         speculative_tts_limit=speculative_tts_limit,
         queue_overflow_policy=overflow_policy,
     )
+
+
+class TestSpeechRuntime(SpeechRuntime):
+    """既存unit testへ明示test policyを注入するtest-only runtime。"""
+
+    __test__ = False
+
+    def __init__(self) -> None:
+        super().__init__(runtime_policy())
