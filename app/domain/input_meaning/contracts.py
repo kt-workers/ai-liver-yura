@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
+from math import isfinite
+from types import MappingProxyType
 
 from app.domain.contracts.common import require_identifier, require_revision
 
@@ -52,6 +54,11 @@ class TemporalRelation(str, Enum):
 class MeaningResolution(str, Enum):
     RESOLVED = "resolved"
     CLARIFICATION_REQUIRED = "clarification_required"
+
+
+_REQUIRED_RESOLUTION_FIELDS = frozenset(
+    {"target_ref", "entities", "references", "information"}
+)
 
 
 class ReferenceContextKind(str, Enum):
@@ -148,6 +155,71 @@ class MeaningReference:
 
 
 @dataclass(frozen=True, slots=True)
+class InputMeaningAcceptancePolicy:
+    """意味候補を採用又は確認要求へ閉じる世代付き方針。"""
+
+    policy_id: str
+    policy_revision: int
+    clarification_confidence_threshold: float
+    required_resolution_fields_by_intent: Mapping[PrimaryIntent, tuple[str, ...]]
+
+    def __post_init__(self) -> None:
+        require_identifier(self.policy_id, "policy_id")
+        require_revision(self.policy_revision, "policy_revision")
+        if (
+            type(self.clarification_confidence_threshold) not in (int, float)
+            or not isfinite(self.clarification_confidence_threshold)
+            or not 0 <= self.clarification_confidence_threshold <= 1
+        ):
+            raise ValueError("確認要求のconfidence閾値は有限な[0, 1]でなければなりません")
+        mapping = dict(self.required_resolution_fields_by_intent)
+        if set(mapping) != set(PrimaryIntent):
+            raise ValueError("必須解決項目は全primary intentを覆わなければなりません")
+        normalized: dict[PrimaryIntent, tuple[str, ...]] = {}
+        for intent, fields in mapping.items():
+            values = tuple(fields)
+            if (
+                any(field not in _REQUIRED_RESOLUTION_FIELDS for field in values)
+                or len(values) != len(set(values))
+            ):
+                raise ValueError("必須解決項目が不正です")
+            normalized[intent] = values
+        object.__setattr__(
+            self,
+            "clarification_confidence_threshold",
+            float(self.clarification_confidence_threshold),
+        )
+        object.__setattr__(
+            self, "required_resolution_fields_by_intent", MappingProxyType(normalized)
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "policy_id": self.policy_id,
+            "policy_revision": self.policy_revision,
+            "clarification_confidence_threshold": self.clarification_confidence_threshold,
+            "required_resolution_fields_by_intent": {
+                intent.value: list(fields)
+                for intent, fields in self.required_resolution_fields_by_intent.items()
+            },
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class InputMeaningFreshnessStamp:
+    """commit直前に取得するsource contextと採用方針の世代。"""
+
+    source_context_revision: int
+    acceptance_policy_id: str
+    acceptance_policy_revision: int
+
+    def __post_init__(self) -> None:
+        require_revision(self.source_context_revision, "source_context_revision")
+        require_identifier(self.acceptance_policy_id, "acceptance_policy_id")
+        require_revision(self.acceptance_policy_revision, "acceptance_policy_revision")
+
+
+@dataclass(frozen=True, slots=True)
 class StructuredInputMeaning:
     source_event_id: str
     source_context_revision: int
@@ -164,10 +236,14 @@ class StructuredInputMeaning:
     confidence: float
     unresolved_fields: tuple[str, ...]
     resolution: MeaningResolution
+    acceptance_policy_id: str
+    acceptance_policy_revision: int
 
     def __post_init__(self) -> None:
         require_identifier(self.source_event_id, "source_event_id")
         require_revision(self.source_context_revision, "source_context_revision")
+        require_identifier(self.acceptance_policy_id, "acceptance_policy_id")
+        require_revision(self.acceptance_policy_revision, "acceptance_policy_revision")
         if self.target_ref is not None:
             require_identifier(self.target_ref, "target_ref")
         if type(self.confidence) not in (int, float) or not 0 <= self.confidence <= 1:
@@ -206,11 +282,17 @@ class StructuredInputMeaning:
             "confidence": self.confidence,
             "unresolved_fields": list(self.unresolved_fields),
             "resolution": self.resolution.value,
+            "acceptance_policy_id": self.acceptance_policy_id,
+            "acceptance_policy_revision": self.acceptance_policy_revision,
         }
 
 
 def meaning_from_json(
-    value: object, *, source_event_id: str, source_context_revision: int, minimum_confidence: float
+    value: object,
+    *,
+    source_event_id: str,
+    source_context_revision: int,
+    acceptance_policy: InputMeaningAcceptancePolicy,
 ) -> StructuredInputMeaning:
     if not isinstance(value, Mapping):
         raise ValueError("meaning output must be an object")
@@ -243,22 +325,23 @@ def meaning_from_json(
     target = value["target_ref"]
     if target is not None and not isinstance(target, str):
         raise ValueError("target_ref must be a string or null")
-    if confidence < minimum_confidence and "confidence" not in unresolved:
+    if (
+        confidence < acceptance_policy.clarification_confidence_threshold
+        and "confidence" not in unresolved
+    ):
         unresolved.append("confidence")
-    target_required = value["primary_intent"] in {
-        PrimaryIntent.REQUEST_ACTION.value,
-        PrimaryIntent.START_ACTIVITY.value,
-        PrimaryIntent.STOP_ACTIVITY.value,
-    }
-    if target_required and target is None and "target_ref" not in unresolved:
-        unresolved.append("target_ref")
     if any(item.resolved_ref is None for item in references) and "references" not in unresolved:
         unresolved.append("references")
+    primary_intent = PrimaryIntent(value["primary_intent"])
+    for field in acceptance_policy.required_resolution_fields_by_intent[primary_intent]:
+        if _resolution_value_is_missing(field, target, entities, references, information):
+            if field not in unresolved:
+                unresolved.append(field)
     return StructuredInputMeaning(
         source_event_id,
         source_context_revision,
         SpeechAct(value["speech_act"]),
-        PrimaryIntent(value["primary_intent"]),
+        primary_intent,
         ExpectedResponse(value["expected_response"]),
         target,
         entities,
@@ -270,7 +353,27 @@ def meaning_from_json(
         confidence,
         tuple(unresolved),
         MeaningResolution.CLARIFICATION_REQUIRED if unresolved else MeaningResolution.RESOLVED,
+        acceptance_policy.policy_id,
+        acceptance_policy.policy_revision,
     )
+
+
+def _resolution_value_is_missing(
+    field: str,
+    target_ref: object,
+    entities: tuple[MeaningEntity, ...],
+    references: tuple[MeaningReference, ...],
+    information: tuple[str, ...],
+) -> bool:
+    if field == "target_ref":
+        return target_ref is None
+    if field == "entities":
+        return not entities
+    if field == "references":
+        return not references or any(item.resolved_ref is None for item in references)
+    if field == "information":
+        return not information
+    raise AssertionError("到達不能な必須解決項目です")
 
 
 def _strings(value: object, name: str) -> tuple[str, ...]:

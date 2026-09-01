@@ -1,5 +1,7 @@
 from .contracts import (
     ExpectedResponse,
+    InputMeaningAcceptancePolicy,
+    InputMeaningFreshnessStamp,
     MeaningEntity,
     MeaningReference,
     MeaningResolution,
@@ -28,6 +30,8 @@ __all__ = [
     "ExpectedResponse",
     "INPUT_SCHEMA",
     "InputMeaningInterpreter",
+    "InputMeaningAcceptancePolicy",
+    "InputMeaningFreshnessStamp",
     "InputMeaningLiveContextPort",
     "InputMeaningPolicy",
     "MeaningEntity",

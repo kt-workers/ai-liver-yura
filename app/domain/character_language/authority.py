@@ -3,8 +3,16 @@ from __future__ import annotations
 from datetime import datetime
 from threading import Lock
 
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
 from app.domain.contracts.common import require_aware, require_identifier
 
+from .bounds import (
+    validate_character_language_context_bounds,
+    validate_character_language_output_bounds,
+)
 from .contracts import (
     _UTTERANCE_PROOF,
     CharacterLanguageCommitState,
@@ -34,6 +42,7 @@ class CharacterLanguageAuthority:
         current: CharacterLanguageCommitState,
         utterance_id: str,
         committed_at: datetime,
+        bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
     ) -> CharacterUtterance:
         if not isinstance(candidate, CharacterUtteranceCandidate):
             raise ValueError("candidate は CharacterUtteranceCandidate でなければなりません")
@@ -41,6 +50,8 @@ class CharacterLanguageAuthority:
             raise ValueError("snapshot は CharacterLanguageContextSnapshot でなければなりません")
         if not isinstance(current, CharacterLanguageCommitState):
             raise ValueError("current は CharacterLanguageCommitState でなければなりません")
+        validate_character_language_context_bounds(snapshot, bounds_policy)
+        validate_character_language_output_bounds(candidate, bounds_policy)
         require_identifier(utterance_id, "utterance_id")
         require_aware(committed_at, "committed_at")
         validate_candidate_structure(candidate, snapshot)

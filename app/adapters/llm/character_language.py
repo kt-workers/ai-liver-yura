@@ -60,7 +60,12 @@ def character_language_openai_role_config(
 
     reasoning = _reasoning_mapping(reasoning_by_effort)
     policies = {
-        model_class: OpenAIResponsesModelPolicy(model, reasoning)
+        model_class: OpenAIResponsesModelPolicy(
+            f"character_language.openai.{model_class.value}",
+            1,
+            model,
+            reasoning,
+        )
         for model_class, model in models.items()
     }
     return OpenAIResponsesRoleConfig(

@@ -11,6 +11,10 @@ from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
 from app.usecases.ports.llm import LLMRolePort
 
 from .authority import SemanticVerificationAuthority
+from .bounds import (
+    SemanticVerificationBoundsError,
+    SemanticVerificationBoundsPolicyPort,
+)
 from .canonical_speech_act import augment_relation_instructions
 from .contracts import (
     BlindUnitAccountingRelation,
@@ -253,12 +257,14 @@ class SemanticVerifier(_LegacySemanticVerifier):
         live_state: SemanticVerificationLiveStatePort,
         authority: SemanticVerificationAuthority,
         policy: SemanticVerificationPolicy,
+        bounds_policy_state: SemanticVerificationBoundsPolicyPort | None = None,
     ) -> None:
         super().__init__(
             _CanonicalRelationOutputPort(port),
             live_state,
             authority,
             policy,
+            bounds_policy_state,
         )
 
     async def verify(
@@ -280,6 +286,8 @@ class SemanticVerifier(_LegacySemanticVerifier):
                 acceptance_id=acceptance_id,
                 created_at=created_at,
             )
+        except SemanticVerificationBoundsError:
+            raise
         except SemanticVerificationError:
             raise
         except ValueError as error:

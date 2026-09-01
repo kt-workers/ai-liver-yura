@@ -1,10 +1,19 @@
+from __future__ import annotations
+
+import json
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import cast
 
 import pytest
 
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
 from app.domain.contracts import CapabilityAvailability, RevisionVector
+from app.domain.contracts.common import JsonValue
 from app.domain.input_gateway import (
     ContactPercept,
     ContactTargetKind,
@@ -26,8 +35,21 @@ from app.domain.input_gateway import (
 NOW = datetime(2026, 8, 19, tzinfo=timezone.utc)
 
 
-def normalizer() -> InputNormalizer:
-    return InputNormalizer(InputAdmissionLedger(), InputSessionRegistry())
+def normalizer(
+    policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+) -> InputNormalizer:
+    return InputNormalizer(
+        InputAdmissionLedger(),
+        InputSessionRegistry(),
+        bounds_policy=policy,
+    )
+
+
+def policy_with_input(**changes: int) -> BrainOperationalBoundsPolicy:
+    return replace(
+        V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+        input=replace(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.input, **changes),
+    )
 
 
 def source(
@@ -44,6 +66,7 @@ def observation(
     input_source: InputSourceState | None = None,
     modality: InputModality = InputModality.TEXT,
     session: InputSessionSample | None = None,
+    payload: JsonValue | None = None,
 ) -> InputObservation:
     return InputObservation(
         observation_id,
@@ -53,7 +76,7 @@ def observation(
         NOW,
         "trace-1",
         RevisionVector(3, goal_revision=2),
-        {"text": "こんにちは"},
+        cast(JsonValue, {"text": "こんにちは"}) if payload is None else payload,
         correlation_id="conversation-1",
         session=session,
     )
@@ -225,8 +248,8 @@ def test_lifecycle_contract_cannot_bypass_source_gate_or_mutate_session() -> Non
 def test_shared_ledger_prevents_duplicate_across_normalizer_instances() -> None:
     ledger = InputAdmissionLedger()
     sessions = InputSessionRegistry()
-    first = InputNormalizer(ledger, sessions)
-    second = InputNormalizer(ledger, sessions)
+    first = InputNormalizer(ledger, sessions, bounds_policy=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY)
+    second = InputNormalizer(ledger, sessions, bounds_policy=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY)
     assert first.normalize(observation("process-unique")).event is not None
     duplicate = second.normalize(observation("process-unique"))
     assert duplicate.status is InputAdmissionStatus.DUPLICATE
@@ -235,8 +258,8 @@ def test_shared_ledger_prevents_duplicate_across_normalizer_instances() -> None:
 def test_shared_session_registry_preserves_lifecycle_across_normalizer_instances() -> None:
     ledger = InputAdmissionLedger()
     sessions = InputSessionRegistry()
-    first = InputNormalizer(ledger, sessions)
-    second = InputNormalizer(ledger, sessions)
+    first = InputNormalizer(ledger, sessions, bounds_policy=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY)
+    second = InputNormalizer(ledger, sessions, bounds_policy=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY)
     start = observation(
         "shared-start",
         session=InputSessionSample("shared-session", InputSessionPhase.START, 0),
@@ -247,3 +270,78 @@ def test_shared_session_registry_preserves_lifecycle_across_normalizer_instances
     )
     assert first.normalize(start).event is not None
     assert second.normalize(update).event is not None
+
+
+@pytest.mark.parametrize(
+    ("length", "expected_reason"),
+    [
+        (4, None),
+        (5, None),
+        (6, InputRejectionReason.INPUT_TEXT_TOO_LARGE),
+    ],
+)
+def test_text_codepoint_bound_is_exact(
+    length: int, expected_reason: InputRejectionReason | None
+) -> None:
+    gateway = normalizer(
+        policy_with_input(max_text_codepoints=5, max_payload_json_bytes=1024)
+    )
+    result = gateway.normalize(
+        observation(f"text-{length}", payload=cast(JsonValue, {"text": "あ" * length}))
+    )
+    assert result.reason is expected_reason
+    if expected_reason is None:
+        assert result.event is not None
+
+
+def test_payload_bound_uses_canonical_utf8_bytes_without_truncation() -> None:
+    payload: JsonValue = {"text": "あ"}
+    exact_size = len(
+        json.dumps(
+            {"text": "あ"},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+    accepted = normalizer(
+        policy_with_input(max_text_codepoints=100, max_payload_json_bytes=exact_size)
+    ).normalize(observation("payload-equal", payload=payload))
+    rejected = normalizer(
+        policy_with_input(max_text_codepoints=100, max_payload_json_bytes=exact_size)
+    ).normalize(
+        observation("payload-over", payload=cast(JsonValue, {"text": "ああ"}))
+    )
+    assert accepted.event is not None
+    assert rejected.reason is InputRejectionReason.INPUT_PAYLOAD_TOO_LARGE
+
+
+def test_session_metadata_bound_rejects_without_mutating_session() -> None:
+    sample = InputSessionSample("gesture-long", InputSessionPhase.START, 0)
+    exact_size = len(
+        json.dumps(
+            sample.to_dict(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+    policy = policy_with_input(max_session_metadata_json_bytes=exact_size - 1)
+    result = normalizer(policy).normalize(observation("session-too-large", session=sample))
+    assert result.reason is InputRejectionReason.INPUT_SESSION_METADATA_TOO_LARGE
+
+
+def test_active_session_limit_backpressures_new_start_and_keeps_existing_session() -> None:
+    gateway = normalizer(policy_with_input(max_active_sessions_per_source=1))
+    first = InputSessionSample("session-1", InputSessionPhase.START, 0)
+    second = InputSessionSample("session-2", InputSessionPhase.START, 0)
+    assert gateway.normalize(observation("first-start", session=first)).event is not None
+    blocked = gateway.normalize(observation("second-start", session=second))
+    assert blocked.reason is InputRejectionReason.ACTIVE_SESSION_LIMIT_REACHED
+    update = gateway.normalize(
+        observation(
+            "first-update",
+            session=InputSessionSample("session-1", InputSessionPhase.UPDATE, 1),
+        )
+    )
+    assert update.event is not None

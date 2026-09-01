@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.domain.memory.contracts import MemoryRecord, MemoryRelation
+from app.domain.memory.ranking import MemorySemanticRelevance
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,4 +125,6 @@ class MemorySemanticIndexPort(Protocol):
 
     def upsert(self, record: MemoryRecord) -> None: ...
 
-    def related_ids(self, query: str, *, limit: int) -> Iterable[str]: ...
+    def related_scores(
+        self, query: str, *, limit: int
+    ) -> Iterable[MemorySemanticRelevance]: ...

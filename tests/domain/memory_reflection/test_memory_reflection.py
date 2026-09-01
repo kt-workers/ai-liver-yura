@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -21,18 +22,27 @@ from app.domain.memory_reflection import (
     ReflectionCandidateStatus,
     ReflectionContextSnapshot,
     ReflectionCoordinator,
+    ReflectionOperationalPolicy,
+    ReflectionProposalPort,
     ReflectionRelationHint,
     ReflectionSourceEvidence,
     ReflectionSourceKind,
     ReflectionSupportObservation,
+    ReflectionSupportPort,
     ReflectionSupportRelation,
     ReflectionTrigger,
     ReflectionTriggerKind,
+    reflection_source_order_key,
 )
 from app.domain.memory_reflection.contracts import (
     ReflectionEventKind,
     ReflectionPersistenceHint,
     ReflectionRelatedMemory,
+)
+from tests.domain.memory_reflection.policy_fixtures import (
+    TEST_REFLECTION_POLICY_ID,
+    TEST_REFLECTION_POLICY_REVISION,
+    reflection_operational_policy,
 )
 
 NOW = datetime(2026, 8, 25, tzinfo=timezone.utc)
@@ -59,10 +69,11 @@ def source(
 
 
 def context(*sources: ReflectionSourceEvidence) -> ReflectionContextSnapshot:
+    ordered_sources = tuple(sorted(sources, key=reflection_source_order_key))
     trigger = ReflectionTrigger(
         "trigger-1",
         ReflectionTriggerKind.EPISODE_COMPLETED,
-        tuple(item.source_ref for item in sources),
+        tuple(item.source_ref for item in ordered_sources),
         4,
         10,
         True,
@@ -71,12 +82,14 @@ def context(*sources: ReflectionSourceEvidence) -> ReflectionContextSnapshot:
     return ReflectionContextSnapshot(
         "reflection-1",
         trigger,
-        sources,
+        ordered_sources,
         (ReflectionRelatedMemory("memory-1", 2),),
         4,
         8,
         NOW,
         "trace-1",
+        TEST_REFLECTION_POLICY_ID,
+        TEST_REFLECTION_POLICY_REVISION,
     )
 
 
@@ -120,6 +133,29 @@ def support(
 
 def authority() -> ReflectionCandidateAuthority:
     return ReflectionCandidateAuthority(ReflectionAcceptancePolicy("reflection-v1", 1))
+
+
+def coordinator(
+    proposal_port: ReflectionProposalPort,
+    support_port: ReflectionSupportPort,
+    *,
+    policy: ReflectionOperationalPolicy | None = None,
+    max_pending_tasks: int = 64,
+    lane_max_concurrency: int | None = None,
+    live_context: Callable[
+        [ReflectionContextSnapshot], ReflectionContextSnapshot | None
+    ]
+    | None = None,
+) -> ReflectionCoordinator:
+    return ReflectionCoordinator(
+        proposal_port,
+        support_port,
+        authority(),
+        operational_policy=policy or reflection_operational_policy(),
+        max_pending_tasks=max_pending_tasks,
+        lane_max_concurrency=lane_max_concurrency,
+        live_context=live_context,
+    )
 
 
 def test_prepared_or_planned_source_cannot_claim_actual_speech_or_execution() -> None:
@@ -206,9 +242,7 @@ def test_retracted_source_and_related_memory_revision_drift_are_stale() -> None:
         proposal("fact-2", relation_hints=(hint,)),
         support("fact-2"),
     )
-    assert drifted_result.status is (
-        ReflectionCandidateStatus.REJECTED_STALE
-    )
+    assert drifted_result.status is ReflectionCandidateStatus.REJECTED_STALE
 
 
 def test_accepted_relation_hint_is_preserved_without_direct_memory_mutation() -> None:
@@ -241,6 +275,8 @@ def test_unrelated_current_context_drift_does_not_reject_historical_evidence() -
         snapshot.memory_store_revision,
         NOW + timedelta(seconds=1),
         snapshot.trace_id,
+        snapshot.operational_policy_id,
+        snapshot.operational_policy_revision,
     )
 
     result = authority().accept(
@@ -248,12 +284,10 @@ def test_unrelated_current_context_drift_does_not_reject_historical_evidence() -
         proposal("fact-1"),
         support("fact-1"),
     )
-    assert result.status is (
-        ReflectionCandidateStatus.ACCEPTED_FOR_STORE_SUBMISSION
-    )
+    assert result.status is ReflectionCandidateStatus.ACCEPTED_FOR_STORE_SUBMISSION
 
 
-def test_unknown_source_and_unbounded_context_are_rejected() -> None:
+def test_unknown_source_and_structurally_unbounded_payload_are_rejected() -> None:
     snapshot = context(source("fact-1", ReflectionSourceKind.PRESENTATION_FACT))
     with pytest.raises(ValueError):
         ReflectionSourceEvidence(
@@ -269,19 +303,6 @@ def test_unknown_source_and_unbounded_context_are_rejected() -> None:
     assert authority().accept(snapshot, proposal("unknown"), support("unknown")).status is (
         ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE
     )
-    with pytest.raises(ValueError):
-        ReflectionContextSnapshot(
-            snapshot.reflection_id,
-            snapshot.trigger,
-            snapshot.primary_sources,
-            snapshot.related_memory_view,
-            snapshot.source_context_revision,
-            snapshot.memory_store_revision,
-            snapshot.captured_at,
-            snapshot.trace_id,
-            max_estimated_tokens=4,
-            estimated_tokens=5,
-        )
     nested: object = "too-deep"
     for _ in range(14):
         nested = [nested]
@@ -376,12 +397,12 @@ class FakeSupportPort:
 def test_zero_candidate_is_a_valid_background_result() -> None:
     async def run() -> None:
         snapshot = context(source("fact-1", ReflectionSourceKind.PRESENTATION_FACT))
-        coordinator = ReflectionCoordinator(FakeProposalPort(()), FakeSupportPort(), authority())
+        runtime = coordinator(FakeProposalPort(()), FakeSupportPort())
 
-        result = await coordinator.submit(snapshot)
+        result = await runtime.submit(snapshot)
 
         assert result.results == ()
-        assert coordinator.pending_task_count == 0
+        assert runtime.pending_task_count == 0
 
     asyncio.run(run())
 
@@ -391,14 +412,14 @@ def test_slow_reflection_does_not_block_foreground_and_burst_coalesces() -> None
         snapshot = context(source("fact-1", ReflectionSourceKind.PRESENTATION_FACT))
         gate = asyncio.Event()
         provider = FakeProposalPort((proposal("fact-1"),), gate)
-        coordinator = ReflectionCoordinator(provider, FakeSupportPort(), authority())
-        first = coordinator.submit(snapshot)
-        second = coordinator.submit(snapshot)
+        runtime = coordinator(provider, FakeSupportPort())
+        first = runtime.submit(snapshot)
+        second = runtime.submit(snapshot)
         foreground = asyncio.create_task(asyncio.sleep(0))
 
         await foreground
         assert first is second
-        assert coordinator.pending_task_count == 1
+        assert runtime.pending_task_count == 1
         gate.set()
         result = await first
         assert result.results[0].status is ReflectionCandidateStatus.ACCEPTED_FOR_STORE_SUBMISSION
@@ -411,7 +432,7 @@ def test_slow_reflection_does_not_block_foreground_and_burst_coalesces() -> None
         assert result.telemetry.proposal_latency_ms >= 0
         assert result.telemetry.support_latency_ms >= 0
         assert provider.calls == 1
-        assert coordinator.pending_task_count == 0
+        assert runtime.pending_task_count == 0
 
     asyncio.run(run())
 
@@ -424,10 +445,10 @@ def test_different_immutable_context_generations_do_not_coalesce() -> None:
         )
         gate = asyncio.Event()
         provider = FakeProposalPort((proposal("fact-1"),), gate)
-        coordinator = ReflectionCoordinator(provider, FakeSupportPort(), authority())
+        runtime = coordinator(provider, FakeSupportPort())
 
-        first = coordinator.submit(first_context)
-        second = coordinator.submit(second_context)
+        first = runtime.submit(first_context)
+        second = runtime.submit(second_context)
         await asyncio.sleep(0)
 
         assert first is not second
@@ -444,14 +465,13 @@ def test_live_retracted_source_after_provider_await_is_rejected_as_stale() -> No
         retracted = context(
             source("fact-1", ReflectionSourceKind.PRESENTATION_FACT, retracted=True)
         )
-        coordinator = ReflectionCoordinator(
+        runtime = coordinator(
             FakeProposalPort((proposal("fact-1"),)),
             FakeSupportPort(),
-            authority(),
             live_context=lambda _: retracted,
         )
 
-        result = await coordinator.submit(captured)
+        result = await runtime.submit(captured)
 
         assert result.results[0].status is ReflectionCandidateStatus.REJECTED_STALE
 
@@ -465,11 +485,9 @@ def test_maximum_proposals_have_bounded_aggregate_telemetry() -> None:
             replace(proposal("fact-1"), proposal_id=f"proposal-{index}")
             for index in range(32)
         )
-        coordinator = ReflectionCoordinator(
-            FakeProposalPort(proposals), FakeSupportPort(), authority()
-        )
+        runtime = coordinator(FakeProposalPort(proposals), FakeSupportPort())
 
-        result = await coordinator.submit(snapshot)
+        result = await runtime.submit(snapshot)
 
         assert result.telemetry is not None
         assert result.telemetry.proposal_count == 32
@@ -481,16 +499,15 @@ def test_maximum_proposals_have_bounded_aggregate_telemetry() -> None:
 def test_cancelled_background_reflection_leaves_no_pending_task() -> None:
     async def run() -> None:
         snapshot = context(source("fact-1", ReflectionSourceKind.PRESENTATION_FACT))
-        coordinator = ReflectionCoordinator(
+        runtime = coordinator(
             FakeProposalPort((proposal("fact-1"),), asyncio.Event()),
             FakeSupportPort(),
-            authority(),
         )
-        coordinator.submit(snapshot)
+        runtime.submit(snapshot)
         await asyncio.sleep(0)
-        await coordinator.cancel(snapshot)
+        await runtime.cancel(snapshot)
 
-        assert coordinator.pending_task_count == 0
+        assert runtime.pending_task_count == 0
 
     asyncio.run(run())
 
@@ -501,16 +518,15 @@ def test_background_queue_pressure_is_typed_and_does_not_start_another_provider_
         second_snapshot = context(source("fact-2", ReflectionSourceKind.PRESENTATION_FACT))
         gate = asyncio.Event()
         provider = FakeProposalPort((proposal("fact-1"),), gate)
-        coordinator = ReflectionCoordinator(
+        runtime = coordinator(
             provider,
             FakeSupportPort(),
-            authority(),
             max_pending_tasks=1,
         )
 
-        first = coordinator.submit(first_snapshot)
+        first = runtime.submit(first_snapshot)
         await asyncio.sleep(0)
-        deferred = await coordinator.submit(second_snapshot)
+        deferred = await runtime.submit(second_snapshot)
 
         assert deferred.results[0].status is ReflectionCandidateStatus.DEFERRED_QUEUE_PRESSURE
         assert deferred.telemetry is not None
@@ -531,13 +547,9 @@ def test_provider_unavailable_creates_typed_failure_without_candidate() -> None:
 
     async def run() -> None:
         snapshot = context(source("fact-1", ReflectionSourceKind.PRESENTATION_FACT))
-        coordinator = ReflectionCoordinator(
-            UnavailableProposalPort(),
-            FakeSupportPort(),
-            authority(),
-        )
+        runtime = coordinator(UnavailableProposalPort(), FakeSupportPort())
 
-        result = await coordinator.submit(snapshot)
+        result = await runtime.submit(snapshot)
 
         assert result.results[0].status is ReflectionCandidateStatus.REFLECTION_PROVIDER_UNAVAILABLE
         assert result.results[0].candidate is None
@@ -620,6 +632,8 @@ def test_context_rejects_duplicate_primary_source_reference() -> None:
             base.memory_store_revision,
             base.captured_at,
             base.trace_id,
+            base.operational_policy_id,
+            base.operational_policy_revision,
         )
 
 
@@ -638,9 +652,9 @@ def test_trigger_generation_fields_prevent_coalescing() -> None:
         second = replace(first, trigger=second_trigger)
         gate = asyncio.Event()
         provider = FakeProposalPort((proposal("fact-1"),), gate)
-        coordinator = ReflectionCoordinator(provider, FakeSupportPort(), authority())
-        left = coordinator.submit(first)
-        right = coordinator.submit(second)
+        runtime = coordinator(provider, FakeSupportPort())
+        left = runtime.submit(first)
+        right = runtime.submit(second)
         await asyncio.sleep(0)
         assert left is not right
         gate.set()
@@ -672,12 +686,14 @@ def test_live_context_disappearance_after_support_and_late_coalescing_are_record
             reads += 1
             return snapshot if reads == 1 else None
 
-        coordinator = ReflectionCoordinator(
-            FakeProposalPort((proposal("fact-1"),)), support_port, authority(), live_context=live
+        runtime = coordinator(
+            FakeProposalPort((proposal("fact-1"),)),
+            support_port,
+            live_context=live,
         )
-        first = coordinator.submit(snapshot)
+        first = runtime.submit(snapshot)
         await support_port.started.wait()
-        assert coordinator.submit(snapshot) is first
+        assert runtime.submit(snapshot) is first
         support_port.release.set()
         result = await first
         assert result.results[0].status is ReflectionCandidateStatus.REJECTED_STALE

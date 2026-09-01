@@ -80,12 +80,18 @@ CREATE payloadはStateの正規fieldを欠落なく運ぶ。Goalはkind、target
 
 ## 6. Bounded view
 
-`GoalContextView`はglobal revisionと次のbounded tupleを返す。
+`GoalContextView`はglobal `goal_revision`、`policy_id`、`policy_revision`と次のbounded tupleを返す。生成時は共有`BrainOperationalBoundsPolicy.goal_context`だけを上限Authorityとし、Module固有の件数既定値を持たない。
 
 - priority順のactive Goal
 - relevant suspended Goal
 - due/active Commitment
 - recently changed Goal/Commitment
+
+active/suspended Goalは`priority desc → updated_at desc → goal_id asc`で選ぶ。due/active Commitmentはtrusted ownerがtypedなdue順序を提供した場合にその順を先行し、残りのactive Commitmentだけを`priority desc → updated_at desc → commitment_id asc`で選ぶ。Store/Viewはfree-text due conditionを解釈しない。
+
+recently changedはGoal/Commitmentを統合して`updated_at desc → Goal → Commitmentのtype canonical enum order → id asc`で一度だけ選び、既存のtyped sectionへ分割する。各section内の重複は拒否するが、section間で同じStateが現れることは許可する。
+
+既存canonical StateのGoal refsまたはCommitment refsの総数がpolicy上限を超えるとき、viewは参照を切り詰めず`GOAL_CONTEXT_ITEM_TOO_LARGE`としてfail-closedする。view生成はStore stateをmutationしない。
 
 件数上限を必須とし、全履歴をExecutive Promptへ投入しない。Planner requestはgoal IDとstate revisionとglobal goal revisionを保持し、commit前にcurrent revisionを再検証する。
 

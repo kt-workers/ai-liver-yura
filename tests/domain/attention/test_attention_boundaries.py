@@ -15,6 +15,7 @@ from app.domain.appraisal import AppraisalCandidate, AppraisalPath
 from app.domain.attention import (
     AttentionCoordinator,
     AttentionPriority,
+    AttentionSchedulingPolicy,
     AttentionTurnStore,
     ExecutiveTriggerEligibility,
     SpeechCandidateSchedulingFact,
@@ -58,6 +59,10 @@ from app.usecases.attention import (
 )
 
 NOW = datetime(2026, 8, 16, tzinfo=timezone.utc)
+
+
+def attention_store() -> AttentionTurnStore:
+    return AttentionTurnStore(AttentionSchedulingPolicy.production())
 
 
 def accepted_user_admission() -> InputAdmission:
@@ -185,7 +190,7 @@ def test_activity_projector_rejects_intent_and_accepts_actual_execution_fact() -
 
 
 def test_user_projector_and_coordinator_enqueue_without_executive_completion() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     enqueued: list[ExecutiveTriggerEligibility] = []
     trigger = AttentionCoordinator(store, store, enqueued.append).handle(
         UserInteractionAttentionProjector().project(accepted_user_admission()), 3, NOW
@@ -195,7 +200,7 @@ def test_user_projector_and_coordinator_enqueue_without_executive_completion() -
 
 
 def test_speech_boundary_emits_directives_without_mutating_view() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(UserInteractionAttentionProjector().project(accepted_user_admission()))
     trigger = store.claim_next(3, NOW)
     assert trigger is not None

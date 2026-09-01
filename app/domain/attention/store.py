@@ -26,8 +26,10 @@ from .contracts import (
 class AttentionTurnStore:
     """#333が所有する短時間・同期的なAttention scheduling state。"""
 
-    def __init__(self, policy: AttentionSchedulingPolicy | None = None) -> None:
-        self._policy = policy or AttentionSchedulingPolicy.production()
+    def __init__(self, policy: AttentionSchedulingPolicy) -> None:
+        if not isinstance(policy, AttentionSchedulingPolicy):
+            raise ValueError("Attention scheduling policy が必要です")
+        self._policy = policy
         self._state = AttentionFocusState(
             0,
             0,
@@ -61,6 +63,71 @@ class AttentionTurnStore:
     def focus_view(self) -> AttentionFocusView:
         with self._lock:
             return AttentionFocusView.from_state(self._state)
+
+    def update_policy(
+        self,
+        policy: AttentionSchedulingPolicy,
+        occurred_at: datetime,
+    ) -> AttentionFocusState:
+        if not isinstance(policy, AttentionSchedulingPolicy):
+            raise ValueError("Attention scheduling policy が必要です")
+        if occurred_at.tzinfo is None or occurred_at.utcoffset() is None:
+            raise ValueError("occurred_atはtimezone-awareでなければなりません")
+        with self._lock:
+            state = self._state
+            if occurred_at < state.updated_at:
+                raise ValueError("policy切替時刻を巻き戻せません")
+            same_generation = (
+                policy.policy_id == self._policy.policy_id
+                and policy.policy_revision == self._policy.policy_revision
+            )
+            if same_generation:
+                if policy != self._policy:
+                    raise ValueError("同一policy generationの内容を変更できません")
+                return state
+            if (
+                policy.policy_id == self._policy.policy_id
+                and policy.policy_revision <= self._policy.policy_revision
+            ):
+                raise ValueError("同一policyのrevisionを巻き戻せません")
+            self._validate_policy_compatibility(state, policy)
+            next_state = replace(
+                state,
+                revision=state.revision + 1,
+                policy_id=policy.policy_id,
+                policy_revision=policy.policy_revision,
+                last_selected_source_ref=None,
+                same_source_burst=0,
+                last_selected_priority=None,
+                priority_burst=0,
+                cooldowns=(),
+                updated_at=occurred_at,
+            )
+            self._policy = policy
+            self._state = next_state
+            return self._state
+
+    @staticmethod
+    def _validate_policy_compatibility(
+        state: AttentionFocusState,
+        policy: AttentionSchedulingPolicy,
+    ) -> None:
+        if len(state.sources) > policy.attention_budget:
+            raise ValueError("current source数が新しいattention budgetを超えています")
+        counts: dict[AttentionSourceKind, int] = {}
+        for source in state.sources:
+            counts[source.kind] = counts.get(source.kind, 0) + 1
+            rule = policy.priority_rule_for(source.kind)
+            if not rule.default_priority <= source.effective_priority <= rule.maximum_priority:
+                raise ValueError("current source priorityが新しいpolicy許可範囲外です")
+            if (
+                source.effective_priority is AttentionPriority.DIRECT_USER
+                and source.kind is not AttentionSourceKind.USER_INTERACTION
+            ):
+                raise ValueError("DIRECT_USER sourceのkindが不正です")
+        for kind, count in counts.items():
+            if count > policy.budget_for(kind):
+                raise ValueError("current source kind数が新しいpolicy上限を超えています")
 
     def offer(self, signal: AttentionIngressSignal) -> AttentionFocusState:
         if not isinstance(signal, AttentionIngressSignal) or signal.operation not in {
@@ -551,9 +618,7 @@ class AttentionTurnStore:
             if item.source_ref in protected_refs and self._active(item, now)
         ]
         protected_priority = max(protected_priorities, default=None)
-        minimum = self._policy.interruption_minimum_for(
-            protected_priority
-        )
+        minimum = self._policy.interruption_minimum_for(protected_priority)
         protected_user = self._protected_direct_user(state, now)
         if protected_user:
             minimum = AttentionPriority.DIRECT_USER

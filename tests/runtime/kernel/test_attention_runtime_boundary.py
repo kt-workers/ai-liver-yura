@@ -6,6 +6,7 @@ from app.domain.attention import (
     AttentionIngressOperation,
     AttentionIngressSignal,
     AttentionPriority,
+    AttentionSchedulingPolicy,
     AttentionSourceKind,
     AttentionTurnStore,
     ExecutiveTriggerEligibility,
@@ -66,7 +67,7 @@ def test_slow_preparation_and_presentation_do_not_block_attention_claim() -> Non
         gate = asyncio.Event()
         executive_triggers: list[str] = []
         runtime = RuntimeCoordinator(FakeRuntimeClock(NOW))
-        store = AttentionTurnStore()
+        store = AttentionTurnStore(AttentionSchedulingPolicy.production())
 
         def enqueue(trigger: ExecutiveTriggerEligibility) -> None:
             runtime.submit(_work(f"executive-{len(executive_triggers)}", "executive", trigger))

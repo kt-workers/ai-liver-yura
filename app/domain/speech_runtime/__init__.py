@@ -5,16 +5,26 @@ from .contracts import (
     SpeechPreparationRequest,
     SpeechReadinessState,
 )
+from .policy import (
+    SpeechCandidatePriority,
+    SpeechExpiryRule,
+    SpeechQueueOverflowPolicy,
+    SpeechRuntimeOperationalPolicy,
+)
 from .runtime import SpeechRuntime
 from .tasks import CandidateTaskKey, CandidateTaskRegistry
 
 __all__ = [
     "CandidateLifecycle",
-    "SemanticVerificationRequirement",
-    "SpeechComponentReadiness",
-    "SpeechPreparationRequest",
-    "SpeechReadinessState",
-    "SpeechRuntime",
     "CandidateTaskKey",
     "CandidateTaskRegistry",
+    "SemanticVerificationRequirement",
+    "SpeechCandidatePriority",
+    "SpeechComponentReadiness",
+    "SpeechExpiryRule",
+    "SpeechPreparationRequest",
+    "SpeechQueueOverflowPolicy",
+    "SpeechReadinessState",
+    "SpeechRuntime",
+    "SpeechRuntimeOperationalPolicy",
 ]

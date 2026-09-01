@@ -5,7 +5,9 @@ from datetime import datetime
 from enum import Enum
 
 from app.domain.contracts.common import require_aware, require_identifier, require_revision
-from app.domain.llm import LLMInterruptibility, LLMPriority
+from app.domain.llm import LLMInterruptibility
+
+from .policy import SpeechCandidatePriority
 
 
 class SpeechReadinessState(str, Enum):
@@ -115,10 +117,12 @@ class SpeechPreparationRequest:
     source_context_revision: int
     goal_revision: int | None
     attention_revision: int | None
-    priority: LLMPriority
+    priority: SpeechCandidatePriority
     interruptibility: LLMInterruptibility
     required_preconditions: tuple[str, ...]
     expiry_policy_ref: str
+    runtime_policy_id: str
+    runtime_policy_revision: int
     semantic_verification_policy_ref: str
     semantic_verification_policy_revision: int
     semantic_verification_policy: SemanticVerificationRequirementPolicy
@@ -135,6 +139,7 @@ class SpeechPreparationRequest:
             "source_decision_id",
             "speech_intent_ref",
             "expiry_policy_ref",
+            "runtime_policy_id",
             "semantic_verification_policy_ref",
             "presentation_policy_ref",
             "trace_id",
@@ -149,12 +154,13 @@ class SpeechPreparationRequest:
         require_revision(self.source_context_revision, "source_context_revision")
         require_revision(self.goal_revision, "goal_revision", optional=True)
         require_revision(self.attention_revision, "attention_revision", optional=True)
+        require_revision(self.runtime_policy_revision, "runtime_policy_revision")
         require_revision(
             self.semantic_verification_policy_revision,
             "semantic_verification_policy_revision",
             optional=False,
         )
-        if not isinstance(self.priority, LLMPriority) or not isinstance(
+        if not isinstance(self.priority, SpeechCandidatePriority) or not isinstance(
             self.interruptibility, LLMInterruptibility
         ):
             raise ValueError("priority/interruptibility が不正です")
@@ -350,9 +356,11 @@ class PreparedSpeechCandidate:
     source_context_revision: int
     goal_revision: int | None
     attention_revision: int | None
-    priority: LLMPriority
+    priority: SpeechCandidatePriority
     interruptibility: LLMInterruptibility
     expiry_policy_ref: str
+    runtime_policy_id: str
+    runtime_policy_revision: int
     required_preconditions: tuple[str, ...]
     semantic_requirement: SemanticVerificationRequirement
     semantic_acceptance_id: str | None
@@ -365,6 +373,7 @@ class PreparedSpeechCandidate:
     expression_revision: int | None = None
     performance_generation: int = 1
     repair_count: int = 0
+    prepared_at: datetime | None = None
     turn_id: str | None = None
     focus_revision: int | None = None
     semantic_skip_proof: SemanticVerificationSkipProof | None = None
@@ -383,6 +392,7 @@ class PreparedSpeechCandidate:
             "source_decision_id",
             "speech_plan_id",
             "expiry_policy_ref",
+            "runtime_policy_id",
         ):
             require_identifier(getattr(self, name), name)
         events = tuple(self.source_event_ids)
@@ -391,6 +401,9 @@ class PreparedSpeechCandidate:
         object.__setattr__(self, "source_event_ids", events)
         for name in ("source_context_revision", "goal_revision", "attention_revision"):
             require_revision(getattr(self, name), name, optional=name != "source_context_revision")
+        require_revision(self.runtime_policy_revision, "runtime_policy_revision")
+        if not isinstance(self.priority, SpeechCandidatePriority):
+            raise ValueError("priority が不正です")
         if not isinstance(self.readiness, SpeechComponentReadiness) or not isinstance(
             self.lifecycle, CandidateLifecycle
         ):
@@ -401,10 +414,12 @@ class PreparedSpeechCandidate:
         object.__setattr__(self, "presentation_modes", modes)
         require_aware(self.created_at, "created_at")
         require_aware(self.updated_at, "updated_at")
+        if self.prepared_at is not None:
+            require_aware(self.prepared_at, "prepared_at")
         require_revision(self.expression_revision, "expression_revision", optional=True)
         if type(self.performance_generation) is not int or self.performance_generation < 1:
             raise ValueError("performance_generation が不正です")
-        if type(self.repair_count) is not int or not 0 <= self.repair_count <= 1:
+        if type(self.repair_count) is not int or self.repair_count < 0:
             raise ValueError("repair_count が不正です")
         if self.turn_id is not None:
             require_identifier(self.turn_id, "turn_id")

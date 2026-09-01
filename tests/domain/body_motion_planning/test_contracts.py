@@ -73,6 +73,7 @@ from app.domain.contracts.execution import ExecutionResult
 from app.domain.executive import (
     BodyIntentPayload,
     CommittedExecutiveDecision,
+    ExecutiveBoundsProvenance,
     ExecutiveDecisionCandidate,
     ExecutiveIntent,
     ExecutiveIntentKind,
@@ -81,7 +82,6 @@ from app.domain.executive import (
     ExecutivePriority,
 )
 from app.domain.llm import (
-    LLMExecutionPolicy,
     LLMModelClass,
     LLMReasoningEffort,
     LLMRoleRequest,
@@ -90,6 +90,7 @@ from app.domain.llm import (
     LLMTokenUsage,
     StructuredPayload,
 )
+from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 17, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(7, 5, 3)
@@ -422,7 +423,7 @@ def test_request_contains_expression_context_but_no_raw_input_field() -> None:
         trace_id="trace:1",
         created_at=NOW,
         policy=BodyMotionPlanningPolicy(
-            LLMExecutionPolicy(LLMModelClass.BALANCED, LLMReasoningEffort.MEDIUM, 10, 1, 100)
+            make_execution_policy(LLMModelClass.BALANCED, LLMReasoningEffort.MEDIUM, 10, 1, 100)
         ),
     )
     payload = request.input.to_dict()["value"]
@@ -693,7 +694,9 @@ def _decision_and_command() -> tuple[CommittedExecutiveDecision, ExecutiveIntent
         ("reason:1",),
         NOW,
     )
-    decision = CommittedExecutiveDecision("decision:1", candidate, (), NOW)
+    decision = CommittedExecutiveDecision(
+        "decision:1", candidate, (), NOW, ExecutiveBoundsProvenance("test-bounds", 1)
+    )
     command = SystemCommand(
         "command:1",
         "decision:1",
@@ -728,7 +731,7 @@ def test_executive_binding_copies_only_trusted_command_metadata() -> None:
 
 def _policy() -> BodyMotionPlanningPolicy:
     return BodyMotionPlanningPolicy(
-        LLMExecutionPolicy(LLMModelClass.BALANCED, LLMReasoningEffort.MEDIUM, 10, 1, 100)
+        make_execution_policy(LLMModelClass.BALANCED, LLMReasoningEffort.MEDIUM, 10, 1, 100)
     )
 
 

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.domain.llm import LLMInterruptibility, LLMPriority
+from app.domain.llm import LLMInterruptibility
 from app.domain.speech_runtime.contracts import (
     AudioReadinessState,
     CandidateLifecycle,
@@ -22,12 +22,15 @@ from app.domain.speech_runtime.discard import (
     PreparedAudioDiscardPort,
     PreparedAudioDiscardRequest,
 )
+from app.domain.speech_runtime.policy import SpeechCandidatePriority
 from app.domain.speech_runtime.repair import (
     SemanticRepairEvidence,
     SpeechSemanticRepairExecutor,
 )
-from app.domain.speech_runtime.runtime import SpeechRuntime
 from app.domain.speech_runtime.tasks import CandidateTaskKey, CandidateTaskRegistry
+from tests.domain.speech_runtime.policy_fixtures import TestSpeechRuntime, runtime_policy
+
+_TEST_POLICY = runtime_policy()
 
 
 class _FakeOwner(PreparedAudioDiscardPort):
@@ -43,7 +46,7 @@ class _FakeOwner(PreparedAudioDiscardPort):
         self.refs.discard(request.audio_ref)
 
 
-class _PostDiscardSupersedeRaceRuntime(SpeechRuntime):
+class _PostDiscardSupersedeRaceRuntime(TestSpeechRuntime):
     """G1 repairのsupersede mutation直前に別owner結果でG2を確立する。"""
 
     def __init__(self) -> None:
@@ -83,9 +86,11 @@ def _candidate(candidate_id: str = "candidate") -> PreparedSpeechCandidate:
         source_context_revision=1,
         goal_revision=1,
         attention_revision=1,
-        priority=LLMPriority.FOREGROUND,
+        priority=SpeechCandidatePriority.FOREGROUND,
         interruptibility=LLMInterruptibility.INTERRUPTIBLE,
         expiry_policy_ref="expiry",
+        runtime_policy_id=_TEST_POLICY.policy_id,
+        runtime_policy_revision=_TEST_POLICY.policy_revision,
         required_preconditions=(),
         semantic_requirement=SemanticVerificationRequirement.REQUIRED,
         semantic_acceptance_id=None,
@@ -122,7 +127,9 @@ async def _repair(_: object) -> None:
     return None
 
 
-def _executor(runtime: SpeechRuntime, tasks: CandidateTaskRegistry) -> SpeechSemanticRepairExecutor:
+def _executor(
+    runtime: TestSpeechRuntime, tasks: CandidateTaskRegistry
+) -> SpeechSemanticRepairExecutor:
     return SpeechSemanticRepairExecutor(
         runtime, tasks, PreparedAudioDiscarder(runtime, _FakeOwner())
     )
@@ -130,7 +137,7 @@ def _executor(runtime: SpeechRuntime, tasks: CandidateTaskRegistry) -> SpeechSem
 
 @pytest.mark.asyncio
 async def test_first_reject_repairs_once_with_empty_priors_and_same_plan() -> None:
-    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    runtime, tasks = TestSpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate())
     executor = _executor(runtime, tasks)
     received: list[SemanticRepairAttempt] = []
@@ -158,7 +165,7 @@ async def test_first_reject_repairs_once_with_empty_priors_and_same_plan() -> No
 
 @pytest.mark.asyncio
 async def test_second_reject_is_final_and_never_calls_third_character() -> None:
-    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    runtime, tasks = TestSpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate())
     executor = _executor(runtime, tasks)
     calls = 0
@@ -205,7 +212,7 @@ async def test_second_reject_is_final_and_never_calls_third_character() -> None:
 async def test_verifier_failure_or_stale_plan_never_repairs(
     failed: bool, stale: bool, expected: str
 ) -> None:
-    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    runtime, tasks = TestSpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate())
     calls = 0
 
@@ -230,7 +237,7 @@ async def test_verifier_failure_or_stale_plan_never_repairs(
 
 @pytest.mark.asyncio
 async def test_old_generation_performance_tts_and_verifier_cannot_overwrite_g2() -> None:
-    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    runtime, tasks = TestSpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate())
     executor = _executor(runtime, tasks)
     evidence = SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",))
@@ -247,7 +254,10 @@ async def test_old_generation_performance_tts_and_verifier_cannot_overwrite_g2()
     await runtime.commit_generation_result(
         "candidate",
         2,
-        readiness=_ready(verifier=VerifierReadinessState.ACCEPTED, audio=AudioReadinessState.READY),
+        readiness=_ready(
+            verifier=VerifierReadinessState.ACCEPTED,
+            audio=AudioReadinessState.READY,
+        ),
         utterance_id="utterance-g2",
         performance_plan_id="performance-g2",
         semantic_acceptance_id="acceptance-g2",
@@ -256,7 +266,10 @@ async def test_old_generation_performance_tts_and_verifier_cannot_overwrite_g2()
     late = await runtime.commit_generation_result(
         "candidate",
         1,
-        readiness=_ready(verifier=VerifierReadinessState.ACCEPTED, audio=AudioReadinessState.READY),
+        readiness=_ready(
+            verifier=VerifierReadinessState.ACCEPTED,
+            audio=AudioReadinessState.READY,
+        ),
         performance_plan_id="performance-g1",
         semantic_acceptance_id="acceptance-g1",
         prepared_audio_ref="audio-g1",
@@ -271,7 +284,7 @@ async def test_old_generation_performance_tts_and_verifier_cannot_overwrite_g2()
 
 @pytest.mark.asyncio
 async def test_speculative_g1_artifact_is_discarded_before_repair_g2() -> None:
-    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    runtime, tasks = TestSpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate())
     await runtime.commit_generation_result(
         "candidate",
@@ -298,7 +311,7 @@ async def test_speculative_g1_artifact_is_discarded_before_repair_g2() -> None:
 
 @pytest.mark.asyncio
 async def test_late_g1_verifier_result_does_not_restore_presentation_eligibility() -> None:
-    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    runtime, tasks = TestSpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate())
     executor = _executor(runtime, tasks)
     evidence = SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",))
@@ -341,7 +354,9 @@ async def test_stale_g1_repair_cannot_supersede_or_cancel_generation_two() -> No
 
     task_g2 = tasks.start(CandidateTaskKey("candidate", 2, "performance"), g2_work())
     runtime.inject_race = True
-    result = await _executor(runtime, tasks).handle_verifier_result(
+    result = await SpeechSemanticRepairExecutor(
+        runtime, tasks, PreparedAudioDiscarder(runtime, _FakeOwner())
+    ).handle_verifier_result(
         candidate_id="candidate",
         generation=1,
         semantic_accepted=False,
@@ -364,7 +379,7 @@ async def test_stale_g1_repair_cannot_supersede_or_cancel_generation_two() -> No
 
 @pytest.mark.asyncio
 async def test_repair_cancels_only_old_generation_and_other_candidate_continues() -> None:
-    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    runtime, tasks = TestSpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate("candidate-a"))
     await runtime.register(_candidate("candidate-b"))
     entered_a, entered_b, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
@@ -396,7 +411,7 @@ async def test_repair_cancels_only_old_generation_and_other_candidate_continues(
 
 @pytest.mark.asyncio
 async def test_only_accepted_utterance_enters_prior_pool() -> None:
-    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    runtime, tasks = TestSpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate())
     executor = _executor(runtime, tasks)
     await executor.handle_verifier_result(
@@ -428,7 +443,7 @@ async def test_only_accepted_utterance_enters_prior_pool() -> None:
 
 @pytest.mark.asyncio
 async def test_repair_discards_actual_g1_resource_before_starting_g2() -> None:
-    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    runtime, tasks = TestSpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate())
     await runtime.commit_generation_result(
         "candidate",
@@ -438,7 +453,9 @@ async def test_repair_discards_actual_g1_resource_before_starting_g2() -> None:
         prepared_audio_ref="audio-g1",
     )
     owner = _FakeOwner("audio-g1")
-    executor = SpeechSemanticRepairExecutor(runtime, tasks, PreparedAudioDiscarder(runtime, owner))
+    executor = SpeechSemanticRepairExecutor(
+        runtime, tasks, PreparedAudioDiscarder(runtime, owner)
+    )
     attempts: list[SemanticRepairAttempt] = []
 
     async def repair(attempt: SemanticRepairAttempt) -> None:
@@ -465,10 +482,12 @@ async def test_repair_discards_actual_g1_resource_before_starting_g2() -> None:
 
 @pytest.mark.asyncio
 async def test_second_reject_discards_actual_g2_resource_without_third_generation() -> None:
-    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    runtime, tasks = TestSpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_candidate())
     owner = _FakeOwner("audio-g2")
-    executor = SpeechSemanticRepairExecutor(runtime, tasks, PreparedAudioDiscarder(runtime, owner))
+    executor = SpeechSemanticRepairExecutor(
+        runtime, tasks, PreparedAudioDiscarder(runtime, owner)
+    )
     evidence = SemanticRepairEvidence(("meaning_mismatch",), ("evidence-1",))
     await executor.handle_verifier_result(
         candidate_id="candidate",

@@ -1,4 +1,12 @@
 from .authority import CharacterLanguageAuthority
+from .bounds import (
+    CharacterLanguageBoundsError,
+    CharacterLanguageBoundsFailureCode,
+    CharacterLanguageBoundsPolicyPort,
+    assert_character_language_policy_generation,
+    validate_character_language_context_bounds,
+    validate_character_language_output_bounds,
+)
 from .contracts import (
     CharacterLanguageCommitState,
     CharacterLanguageConstraintKind,
@@ -34,6 +42,9 @@ from .variation_builder import prior_realization_from_utterance
 __all__ = [
     "MAX_PRIOR_REALIZATIONS",
     "CharacterLanguageAuthority",
+    "CharacterLanguageBoundsError",
+    "CharacterLanguageBoundsFailureCode",
+    "CharacterLanguageBoundsPolicyPort",
     "CharacterLanguageCommitState",
     "CharacterLanguageConstraintKind",
     "CharacterLanguageConstraintView",
@@ -51,6 +62,7 @@ __all__ = [
     "LinguisticBoundary",
     "LinguisticEmphasis",
     "LinguisticHesitation",
+    "assert_character_language_policy_generation",
     "build_request",
     "character_language_instructions",
     "character_language_output_schema",
@@ -59,4 +71,6 @@ __all__ = [
     "parse_candidate",
     "prior_realization_from_utterance",
     "validate_candidate_structure",
+    "validate_character_language_context_bounds",
+    "validate_character_language_output_bounds",
 ]
