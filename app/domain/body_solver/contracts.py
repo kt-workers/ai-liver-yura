@@ -331,8 +331,13 @@ class BodyMotionExecutionReport:
             raise ValueError("actual motion statusにはstarted_atが必要です")
         if self.status is BodyMotionExecutionStatus.OBSERVABLE and self.observable_at is None:
             raise ValueError("OBSERVABLEにはobservable_atが必要です")
-        if self.status is BodyMotionExecutionStatus.COMPLETED and self.completed_at is None:
-            raise ValueError("COMPLETEDにはcompleted_atが必要です")
+        terminal_statuses = {
+            BodyMotionExecutionStatus.COMPLETED,
+            BodyMotionExecutionStatus.INTERRUPTED,
+            BodyMotionExecutionStatus.SUPERSEDED,
+        }
+        if self.status in terminal_statuses and self.completed_at is None:
+            raise ValueError("terminal actual statusにはcompleted_atが必要です")
         failure_statuses = {
             BodyMotionExecutionStatus.INFEASIBLE,
             BodyMotionExecutionStatus.UNSUPPORTED,
