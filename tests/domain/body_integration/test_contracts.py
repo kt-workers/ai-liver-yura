@@ -11,7 +11,12 @@ from app.domain.body_integration import (
 NOW = datetime(2026, 8, 30, tzinfo=timezone.utc)
 
 
-def _trace(*, motion_plan_id: str | None = None) -> BodyIntegrationTrace:
+def _trace(
+    *,
+    motion_plan_id: str | None = None,
+    goal_revision: int | None = 4,
+    attention_revision: int | None = 5,
+) -> BodyIntegrationTrace:
     return BodyIntegrationTrace(
         "trace:body:1",
         "decision:1",
@@ -20,8 +25,8 @@ def _trace(*, motion_plan_id: str | None = None) -> BodyIntegrationTrace:
         motion_plan_id,
         "body.v1",
         3,
-        4,
-        5,
+        goal_revision,
+        attention_revision,
         6,
         7,
         NOW,
@@ -34,6 +39,13 @@ def test_trace_keeps_the_committed_body_lineage_and_start_revisions() -> None:
     assert trace.decision_id == "decision:1"
     assert trace.motion_plan_id == "plan:1"
     assert trace.body_state_revision_start == 6
+
+
+def test_trace_keeps_missing_optional_revision_provenance_without_inventing_values() -> None:
+    trace = _trace(goal_revision=None, attention_revision=None)
+
+    assert trace.goal_revision is None
+    assert trace.attention_revision is None
 
 
 def test_realtime_only_trace_does_not_invent_a_motion_plan() -> None:
