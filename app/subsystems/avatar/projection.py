@@ -74,8 +74,8 @@ def project_body_pose_frame(
     degraded: set[str] = set()
 
     for joint_id in model.joint_ids:
-        mapping = joint_bindings.get(joint_id)
-        if mapping is None:
+        joint_mapping = joint_bindings.get(joint_id)
+        if joint_mapping is None:
             degraded.add(f"joint:{joint_id}:unmapped")
             continue
         transform = (
@@ -86,7 +86,7 @@ def project_body_pose_frame(
         projection = _project_joint(
             joint_id,
             transform,
-            mapping,
+            joint_mapping,
             binding,
             degraded,
         )
@@ -99,8 +99,8 @@ def project_body_pose_frame(
     supported_channels = set(binding.capability_view.supported_channels)
     for channel_value in frame.channel_values:
         channel = channel_value.channel
-        mapping = channel_bindings.get(channel)
-        if mapping is None or channel not in supported_channels:
+        channel_mapping = channel_bindings.get(channel)
+        if channel_mapping is None or channel not in supported_channels:
             degraded.add(f"channel:{channel.value}:unmapped")
             continue
         if channel in _FACE_CHANNELS and not binding.capability_view.supports_face_channels:
@@ -109,8 +109,8 @@ def project_body_pose_frame(
         channel_projections.append(
             AvatarChannelProjection(
                 channel,
-                mapping.renderer_target_ref,
-                _project_channel_value(channel_value.value, mapping),
+                channel_mapping.renderer_target_ref,
+                _project_channel_value(channel_value.value, channel_mapping),
             )
         )
 
