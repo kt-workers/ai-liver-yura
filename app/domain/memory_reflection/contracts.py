@@ -27,6 +27,7 @@ from app.domain.memory.contracts import (
     MemoryTemporalState,
     ValidatedMemoryCandidate,
 )
+from app.domain.memory.ranking import estimate_memory_token_units
 
 
 class ReflectionSourceKind(str, Enum):
@@ -101,16 +102,29 @@ class ReflectionPersistenceHint(str, Enum):
 T = TypeVar("T")
 
 
-def _owned(values: object, typ: type[T], name: str, *, maximum: int = 128) -> tuple[T, ...]:
+def _owned(
+    values: object,
+    typ: type[T],
+    name: str,
+    *,
+    maximum: int | None = None,
+) -> tuple[T, ...]:
     if not isinstance(values, (tuple, list)):
         raise ValueError(f"{name}は配列である必要があります")
     result = tuple(values)
-    if len(result) > maximum or any(not isinstance(value, typ) for value in result):
+    if maximum is not None and len(result) > maximum:
+        raise ValueError(f"{name}が不正です")
+    if any(not isinstance(value, typ) for value in result):
         raise ValueError(f"{name}が不正です")
     return cast(tuple[T, ...], result)
 
 
-def _identifiers(values: object, name: str, *, maximum: int = 128) -> tuple[str, ...]:
+def _identifiers(
+    values: object,
+    name: str,
+    *,
+    maximum: int | None = None,
+) -> tuple[str, ...]:
     result = _owned(values, str, name, maximum=maximum)
     if len(set(result)) != len(result) or any(not value.strip() for value in result):
         raise ValueError(f"{name}が不正です")
@@ -175,6 +189,8 @@ class ReflectionSourceEvidence:
     provenance_refs: tuple[str, ...]
     confidence: float | None = None
     retracted: bool = False
+    source_excerpt: str | None = None
+    source_excerpt_truncated: bool = False
 
     def __post_init__(self) -> None:
         require_identifier(self.source_ref, "source_ref")
@@ -197,6 +213,12 @@ class ReflectionSourceEvidence:
             object.__setattr__(self, "confidence", _unit(self.confidence, "confidence"))
         if type(self.retracted) is not bool:
             raise ValueError("retractedが不正です")
+        if self.source_excerpt is not None and not isinstance(self.source_excerpt, str):
+            raise ValueError("source_excerptが不正です")
+        if type(self.source_excerpt_truncated) is not bool:
+            raise ValueError("source_excerpt_truncatedが不正です")
+        if self.source_excerpt is None and self.source_excerpt_truncated:
+            raise ValueError("excerpt無しでtruncatedにできません")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -209,6 +231,8 @@ class ReflectionSourceEvidence:
             "provenance_refs": list(self.provenance_refs),
             "confidence": self.confidence,
             "retracted": self.retracted,
+            "source_excerpt": self.source_excerpt,
+            "source_excerpt_truncated": self.source_excerpt_truncated,
         }
 
 
@@ -258,9 +282,10 @@ class ReflectionContextSnapshot:
     memory_store_revision: int | None
     captured_at: datetime
     trace_id: str
+    operational_policy_id: str
+    operational_policy_revision: int
     character_self_model_view: JsonValue | None = None
     value_disposition_view: JsonValue | None = None
-    max_estimated_tokens: int = 4_096
     estimated_tokens: int = 0
 
     def __post_init__(self) -> None:
@@ -271,7 +296,6 @@ class ReflectionContextSnapshot:
             self.primary_sources,
             ReflectionSourceEvidence,
             "primary_sources",
-            maximum=32,
         )
         if not sources:
             raise ValueError("primary_sourcesは空にできません")
@@ -284,7 +308,6 @@ class ReflectionContextSnapshot:
             self.related_memory_view,
             ReflectionRelatedMemory,
             "related_memory_view",
-            maximum=64,
         )
         if len({memory.memory_id for memory in memories}) != len(memories):
             raise ValueError("related_memory_viewが重複しています")
@@ -293,22 +316,21 @@ class ReflectionContextSnapshot:
         require_revision(self.memory_store_revision, "memory_store_revision", optional=True)
         require_aware(self.captured_at, "captured_at")
         require_identifier(self.trace_id, "trace_id")
+        require_identifier(self.operational_policy_id, "operational_policy_id")
+        require_revision(self.operational_policy_revision, "operational_policy_revision")
         for name in ("character_self_model_view", "value_disposition_view"):
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, _bounded_payload(value, name, maximum_bytes=4_096))
-        if (
-            type(self.max_estimated_tokens) is not int
-            or not 1 <= self.max_estimated_tokens <= 16_384
-        ):
-            raise ValueError("max_estimated_tokensが不正です")
-        if (
-            type(self.estimated_tokens) is not int
-            or not 0 <= self.estimated_tokens <= self.max_estimated_tokens
-        ):
+        if type(self.estimated_tokens) is not int or self.estimated_tokens < 0:
             raise ValueError("estimated_tokensが不正です")
+        object.__setattr__(
+            self,
+            "estimated_tokens",
+            estimate_memory_token_units(self._budget_payload()),
+        )
 
-    def to_dict(self) -> dict[str, object]:
+    def _budget_payload(self) -> dict[str, object]:
         return {
             "reflection_id": self.reflection_id,
             "trigger": {
@@ -329,15 +351,18 @@ class ReflectionContextSnapshot:
             "memory_store_revision": self.memory_store_revision,
             "captured_at": self.captured_at.isoformat(),
             "trace_id": self.trace_id,
+            "operational_policy_id": self.operational_policy_id,
+            "operational_policy_revision": self.operational_policy_revision,
             "character_self_model_view": None
             if self.character_self_model_view is None
             else thaw_json(self.character_self_model_view),
             "value_disposition_view": None
             if self.value_disposition_view is None
             else thaw_json(self.value_disposition_view),
-            "max_estimated_tokens": self.max_estimated_tokens,
-            "estimated_tokens": self.estimated_tokens,
         }
+
+    def to_dict(self) -> dict[str, object]:
+        return {**self._budget_payload(), "estimated_tokens": self.estimated_tokens}
 
 
 @dataclass(frozen=True, slots=True)
@@ -550,7 +575,7 @@ class ReflectionRunResult:
         object.__setattr__(
             self,
             "results",
-            _owned(self.results, ReflectionCandidateResult, "results", maximum=32),
+            _owned(self.results, ReflectionCandidateResult, "results"),
         )
         object.__setattr__(
             self,
