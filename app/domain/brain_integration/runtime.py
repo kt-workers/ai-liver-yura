@@ -28,6 +28,7 @@ from app.runtime.kernel import (
     WorkOutcome,
     WorkPriority,
 )
+from app.runtime.shutdown import RuntimeShutdownPolicy
 
 from .contracts import (
     BrainIntegrationLane,
@@ -125,6 +126,7 @@ class BrainIntegrationRuntimePolicy:
     policy_revision: int
     scheduler_policy: RuntimeSchedulerPolicy
     lane_policies: tuple[RuntimeLanePolicy, ...]
+    shutdown_policy: RuntimeShutdownPolicy | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.policy_id, "policy_id")
@@ -147,6 +149,8 @@ class BrainIntegrationRuntimePolicy:
             by_lane[lane] = lane_policy
         if set(by_lane) != set(BrainIntegrationLane):
             raise ValueError("Brain lane policy coverage が不完全です")
+        if not isinstance(self.shutdown_policy, RuntimeShutdownPolicy):
+            raise ValueError("Runtime shutdown policy が必要です")
         object.__setattr__(self, "lane_policies", lanes)
 
 
@@ -225,7 +229,10 @@ class BrainIntegrationRuntime:
     ) -> None:
         self._clock = clock
         self._policy = policy
-        self._runtime = RuntimeCoordinator(clock, policy.scheduler_policy)
+        shutdown_policy = policy.shutdown_policy
+        if shutdown_policy is None:
+            raise ValueError("Runtime shutdown policy が必要です")
+        self._runtime = RuntimeCoordinator(clock, policy.scheduler_policy, shutdown_policy)
         self._ports: dict[BrainIntegrationModule, BrainModulePort] = {}
         self._tracked: dict[str, _TrackedWork] = {}
         self._traces: dict[str, _TraceState] = {}
