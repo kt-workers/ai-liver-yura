@@ -8,6 +8,7 @@ from app.domain.llm import LLMPriority
 
 from .admission import PreparationWork, SpeechPreparationAdmission
 from .contracts import TTSPreparationMode
+from .policy import SpeechRuntimeOperationalPolicy, V2_SPEECH_RUNTIME_OPERATIONAL_POLICY
 from .tasks import CandidateTaskKey, CandidateTaskRegistry
 
 RoleWork = Callable[[], Coroutine[Any, Any, object]]
@@ -16,10 +17,19 @@ RoleWork = Callable[[], Coroutine[Any, Any, object]]
 class SpeechPreparationOrchestrator:
     """Character完了後のRole fan-outをcandidate/generation fence付きで開始する。"""
 
-    def __init__(self, tasks: CandidateTaskRegistry, admission: SpeechPreparationAdmission) -> None:
+    def __init__(
+        self,
+        tasks: CandidateTaskRegistry,
+        admission: SpeechPreparationAdmission,
+        policy: SpeechRuntimeOperationalPolicy = V2_SPEECH_RUNTIME_OPERATIONAL_POLICY,
+    ) -> None:
+        if not isinstance(policy, SpeechRuntimeOperationalPolicy):
+            raise ValueError("policy が不正です")
         self._tasks = tasks
         self._admission = admission
+        self._policy = policy
         self._leases: dict[tuple[str, int], tuple[LLMPriority, asyncio.Event]] = {}
+        self._active_tts: dict[tuple[str, int], int] = {}
 
     def start_preparation(
         self,
@@ -78,7 +88,23 @@ class SpeechPreparationOrchestrator:
             return None
         if mode is TTSPreparationMode.AFTER_SEMANTIC_ACCEPTANCE and not verifier_accepted:
             return None
-        return self._tasks.start(CandidateTaskKey(candidate_id, generation, "tts"), tts())
+        key = (candidate_id, generation)
+        active = self._active_tts.get(key, 0)
+        if active >= self._policy.speculative_tts_parallelism_per_candidate:
+            return None
+        self._active_tts[key] = active + 1
+
+        async def run_tts() -> object:
+            try:
+                return await tts()
+            finally:
+                remaining = self._active_tts.get(key, 1) - 1
+                if remaining:
+                    self._active_tts[key] = remaining
+                else:
+                    self._active_tts.pop(key, None)
+
+        return self._tasks.start(CandidateTaskKey(candidate_id, generation, "tts"), run_tts())
 
     def complete_preparation(self, candidate_id: str, generation: int) -> None:
         """candidateがterminal又はqueueへ移った後にlifecycle leaseを返す。"""
