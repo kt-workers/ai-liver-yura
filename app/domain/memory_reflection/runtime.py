@@ -20,6 +20,14 @@ from .contracts import (
     ReflectionRunTelemetry,
     ReflectionSupportObservation,
 )
+from .operational import (
+    ReflectionOperationalError,
+    ReflectionOperationalFailureCode,
+    ReflectionOperationalPolicy,
+    validate_reflection_context_bounds,
+    validate_reflection_proposals_bounds,
+    validate_reflection_support_bounds,
+)
 
 
 class ReflectionProposalPort(Protocol):
@@ -50,24 +58,57 @@ class ReflectionCoordinator:
         support_port: ReflectionSupportPort,
         authority: ReflectionCandidateAuthority,
         *,
-        max_concurrency: int = 2,
-        max_pending_tasks: int = 64,
+        operational_policy: ReflectionOperationalPolicy,
+        max_pending_tasks: int,
+        lane_max_concurrency: int | None = None,
         live_context: LiveReflectionContextReader | None = None,
     ) -> None:
-        if type(max_concurrency) is not int or not 1 <= max_concurrency <= 16:
-            raise ValueError("max_concurrencyが不正です")
-        if type(max_pending_tasks) is not int or not 1 <= max_pending_tasks <= 256:
+        if not isinstance(operational_policy, ReflectionOperationalPolicy):
+            raise ValueError("Reflection operational policy が必要です")
+        if type(max_pending_tasks) is not int or max_pending_tasks < 1:
             raise ValueError("max_pending_tasksが不正です")
+        if lane_max_concurrency is not None and (
+            type(lane_max_concurrency) is not int or lane_max_concurrency < 1
+        ):
+            raise ValueError("lane_max_concurrencyが不正です")
         self._proposal_port = proposal_port
         self._support_port = support_port
         self._authority = authority
-        self._semaphore = asyncio.Semaphore(max_concurrency)
+        self._operational_policy = operational_policy
         self._max_pending_tasks = max_pending_tasks
+        self._lane_max_concurrency = lane_max_concurrency
         self._live_context = live_context or (lambda context: context)
         self._tasks: dict[str, asyncio.Task[ReflectionRunResult]] = {}
         self._coalesced_keys: set[str] = set()
+        self._active_reflections = 0
+        self._concurrency_condition = asyncio.Condition()
+
+    @property
+    def operational_policy(self) -> ReflectionOperationalPolicy:
+        return self._operational_policy
+
+    @property
+    def effective_max_concurrency(self) -> int:
+        if self._lane_max_concurrency is None:
+            return self._operational_policy.max_concurrent_reflections
+        return min(
+            self._operational_policy.max_concurrent_reflections,
+            self._lane_max_concurrency,
+        )
+
+    @property
+    def active_reflection_count(self) -> int:
+        return self._active_reflections
+
+    async def update_operational_policy(self, policy: ReflectionOperationalPolicy) -> None:
+        if not isinstance(policy, ReflectionOperationalPolicy):
+            raise ValueError("Reflection operational policy が必要です")
+        async with self._concurrency_condition:
+            self._operational_policy = policy
+            self._concurrency_condition.notify_all()
 
     def submit(self, context: ReflectionContextSnapshot) -> asyncio.Task[ReflectionRunResult]:
+        validate_reflection_context_bounds(context, self._operational_policy)
         key = self._context_key(context)
         existing = self._tasks.get(key)
         if existing is not None and not existing.done():
@@ -113,87 +154,107 @@ class ReflectionCoordinator:
         context: ReflectionContextSnapshot,
         key: str,
     ) -> ReflectionRunResult:
+        acquired = False
         try:
-            async with self._semaphore:
-                events = [
-                    ReflectionEventKind.TRIGGERED,
-                    ReflectionEventKind.CONTEXT_CAPTURED,
-                    ReflectionEventKind.PROPOSAL_STARTED,
-                ]
-                if key in self._coalesced_keys:
-                    events.append(ReflectionEventKind.COALESCED)
-                proposal_started = perf_counter()
-                try:
-                    proposals = await self._proposal_port.propose(context)
-                except RuntimeError:
-                    events.append(ReflectionEventKind.PROPOSAL_FAILED)
-                    self._append_coalesced_event(events, key)
-                    return ReflectionRunResult(
-                        context.reflection_id,
-                        (
-                            ReflectionCandidateResult(
-                                context.reflection_id,
-                                ReflectionCandidateStatus.REFLECTION_PROVIDER_UNAVAILABLE,
-                                None,
-                                (),
-                            ),
-                        ),
-                        self._source_refs(context) if key in self._coalesced_keys else (),
-                        telemetry=self._telemetry(
-                            context,
-                            events,
-                            0,
-                            (),
-                            perf_counter() - proposal_started,
-                            0.0,
-                        ),
-                    )
-                events.append(ReflectionEventKind.PROPOSAL_COMPLETED)
-                live_context = self._live_context(context)
-                if live_context is None:
-                    results = [
-                        ReflectionCandidateResult(
-                            proposal.proposal_id,
-                            ReflectionCandidateStatus.REJECTED_STALE,
-                            None,
-                            proposal.source_refs,
-                        )
-                        for proposal in proposals
-                    ]
-                    support_latency = 0.0
-                else:
-                    results, support_latency = await self._validate_all(
-                        live_context, proposals, events
-                    )
+            await self._acquire_concurrency_slot()
+            acquired = True
+            events = [
+                ReflectionEventKind.TRIGGERED,
+                ReflectionEventKind.CONTEXT_CAPTURED,
+                ReflectionEventKind.PROPOSAL_STARTED,
+            ]
+            if key in self._coalesced_keys:
+                events.append(ReflectionEventKind.COALESCED)
+            proposal_started = perf_counter()
+            try:
+                proposals = await self._proposal_port.propose(context)
+            except RuntimeError:
+                events.append(ReflectionEventKind.PROPOSAL_FAILED)
                 self._append_coalesced_event(events, key)
-                if any(
-                    result.status is ReflectionCandidateStatus.ACCEPTED_FOR_STORE_SUBMISSION
-                    for result in results
-                ):
-                    events.append(ReflectionEventKind.CANDIDATE_ACCEPTED)
-                if any(
-                    result.status is not ReflectionCandidateStatus.ACCEPTED_FOR_STORE_SUBMISSION
-                    for result in results
-                ):
-                    events.append(ReflectionEventKind.CANDIDATE_REJECTED)
-                return ReflectionRunResult(
-                    context.reflection_id,
-                    tuple(results),
-                    self._source_refs(context) if key in self._coalesced_keys else (),
-                    telemetry=self._telemetry(
-                        context,
-                        events,
-                        len(proposals),
-                        tuple(results),
-                        perf_counter() - proposal_started - support_latency,
-                        support_latency,
-                    ),
+                return self._single_failure_result(
+                    context,
+                    key,
+                    events,
+                    ReflectionCandidateStatus.REFLECTION_PROVIDER_UNAVAILABLE,
+                    proposal_count=0,
+                    proposal_latency=perf_counter() - proposal_started,
                 )
+            events.append(ReflectionEventKind.PROPOSAL_COMPLETED)
+            if not self._policy_matches_context(context):
+                return self._single_failure_result(
+                    context,
+                    key,
+                    events,
+                    ReflectionCandidateStatus.REJECTED_STALE,
+                    proposal_count=len(proposals),
+                    proposal_latency=perf_counter() - proposal_started,
+                )
+            try:
+                validate_reflection_proposals_bounds(proposals, self._operational_policy)
+            except ReflectionOperationalError:
+                return self._single_failure_result(
+                    context,
+                    key,
+                    events,
+                    ReflectionCandidateStatus.REJECTED_POLICY,
+                    proposal_count=len(proposals),
+                    proposal_latency=perf_counter() - proposal_started,
+                )
+            live_context = self._validated_live_context(context)
+            if live_context is None:
+                results = [self._stale_result(proposal) for proposal in proposals]
+                support_latency = 0.0
+            else:
+                results, support_latency = await self._validate_all(
+                    live_context,
+                    proposals,
+                    events,
+                )
+            self._append_coalesced_event(events, key)
+            if any(
+                result.status is ReflectionCandidateStatus.ACCEPTED_FOR_STORE_SUBMISSION
+                for result in results
+            ):
+                events.append(ReflectionEventKind.CANDIDATE_ACCEPTED)
+            if any(
+                result.status is not ReflectionCandidateStatus.ACCEPTED_FOR_STORE_SUBMISSION
+                for result in results
+            ):
+                events.append(ReflectionEventKind.CANDIDATE_REJECTED)
+            return ReflectionRunResult(
+                context.reflection_id,
+                tuple(results),
+                self._source_refs(context) if key in self._coalesced_keys else (),
+                telemetry=self._telemetry(
+                    context,
+                    events,
+                    len(proposals),
+                    tuple(results),
+                    perf_counter() - proposal_started - support_latency,
+                    support_latency,
+                ),
+            )
         finally:
+            if acquired:
+                await self._release_concurrency_slot()
             current = self._tasks.get(key)
             if current is asyncio.current_task():
                 self._tasks.pop(key, None)
                 self._coalesced_keys.discard(key)
+
+    async def _acquire_concurrency_slot(self) -> None:
+        async with self._concurrency_condition:
+            await self._concurrency_condition.wait_for(
+                lambda: self._active_reflections < self.effective_max_concurrency
+            )
+            self._active_reflections += 1
+
+    async def _release_concurrency_slot(self) -> None:
+        async with self._concurrency_condition:
+            if self._active_reflections < 1:
+                raise ValueError("Reflection concurrency leaseが存在しません")
+            self._active_reflections -= 1
+            self._concurrency_condition.notify_all()
 
     async def _deferred_result(
         self, context: ReflectionContextSnapshot
@@ -232,7 +293,12 @@ class ReflectionCoordinator:
     ) -> tuple[list[ReflectionCandidateResult], float]:
         results: list[ReflectionCandidateResult] = []
         support_latency = 0.0
-        for proposal in proposals:
+        for index, proposal in enumerate(proposals):
+            if not self._policy_matches_context(context):
+                results.extend(self._stale_result(item) for item in proposals[index:])
+                break
+            if ReflectionEventKind.SUPPORT_STARTED not in events:
+                events.append(ReflectionEventKind.SUPPORT_STARTED)
             started = perf_counter()
             try:
                 support = await self._support_port.observe(context, proposal)
@@ -240,7 +306,10 @@ class ReflectionCoordinator:
                 support_latency += perf_counter() - started
                 if ReflectionEventKind.SUPPORT_FAILED not in events:
                     events.append(ReflectionEventKind.SUPPORT_FAILED)
-                live_context = self._live_context(context)
+                if not self._policy_matches_context(context):
+                    results.append(self._stale_result(proposal))
+                    continue
+                live_context = self._validated_live_context(context)
                 results.append(
                     self._stale_result(proposal)
                     if live_context is None
@@ -250,13 +319,75 @@ class ReflectionCoordinator:
                 support_latency += perf_counter() - started
                 if ReflectionEventKind.SUPPORT_COMPLETED not in events:
                     events.append(ReflectionEventKind.SUPPORT_COMPLETED)
-                live_context = self._live_context(context)
+                if not self._policy_matches_context(context):
+                    results.append(self._stale_result(proposal))
+                    continue
+                try:
+                    validate_reflection_support_bounds(support, self._operational_policy)
+                except ReflectionOperationalError:
+                    results.append(self._policy_result(proposal))
+                    continue
+                live_context = self._validated_live_context(context)
                 results.append(
                     self._stale_result(proposal)
                     if live_context is None
                     else self._authority.accept(live_context, proposal, support)
                 )
         return results, support_latency
+
+    def _validated_live_context(
+        self,
+        captured_context: ReflectionContextSnapshot,
+    ) -> ReflectionContextSnapshot | None:
+        live_context = self._live_context(captured_context)
+        if live_context is None:
+            return None
+        try:
+            validate_reflection_context_bounds(live_context, self._operational_policy)
+        except ReflectionOperationalError as error:
+            if error.code == ReflectionOperationalFailureCode.POLICY_STALE:
+                return None
+            raise
+        return live_context
+
+    def _policy_matches_context(self, context: ReflectionContextSnapshot) -> bool:
+        return self._operational_policy.same_generation(
+            context.operational_policy_id,
+            context.operational_policy_revision,
+        )
+
+    def _single_failure_result(
+        self,
+        context: ReflectionContextSnapshot,
+        key: str,
+        events: list[ReflectionEventKind],
+        status: ReflectionCandidateStatus,
+        *,
+        proposal_count: int,
+        proposal_latency: float,
+    ) -> ReflectionRunResult:
+        if ReflectionEventKind.CANDIDATE_REJECTED not in events:
+            events.append(ReflectionEventKind.CANDIDATE_REJECTED)
+        self._append_coalesced_event(events, key)
+        result = ReflectionCandidateResult(
+            context.reflection_id,
+            status,
+            None,
+            (),
+        )
+        return ReflectionRunResult(
+            context.reflection_id,
+            (result,),
+            self._source_refs(context) if key in self._coalesced_keys else (),
+            telemetry=self._telemetry(
+                context,
+                events,
+                proposal_count,
+                (result,),
+                proposal_latency,
+                0.0,
+            ),
+        )
 
     @staticmethod
     def _source_refs(context: ReflectionContextSnapshot) -> tuple[str, ...]:
@@ -267,6 +398,15 @@ class ReflectionCoordinator:
         return ReflectionCandidateResult(
             proposal.proposal_id,
             ReflectionCandidateStatus.REJECTED_STALE,
+            None,
+            proposal.source_refs,
+        )
+
+    @staticmethod
+    def _policy_result(proposal: MemoryCandidateProposal) -> ReflectionCandidateResult:
+        return ReflectionCandidateResult(
+            proposal.proposal_id,
+            ReflectionCandidateStatus.REJECTED_POLICY,
             None,
             proposal.source_refs,
         )
