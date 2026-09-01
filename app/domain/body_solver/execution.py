@@ -33,7 +33,7 @@ def _require_forward_time(candidate: datetime, anchor: datetime) -> None:
 
 
 class BodyMotionExecutionTracker:
-    """physical evidenceだけでPLANNEDからCOMPLETEDまでを昇格させる。"""
+    """physical evidenceだけでPLANNEDからactual/terminalへ状態遷移させる。"""
 
     def __init__(self, plan_id: str, trajectory_id: str) -> None:
         require_identifier(plan_id, "plan_id")
@@ -95,13 +95,20 @@ class BodyMotionExecutionTracker:
             )
             return self._current
 
-    def complete(
+    def _terminate(
         self,
         observed_at: datetime,
+        status: BodyMotionExecutionStatus,
         *,
         achieved_target_refs: tuple[str, ...] = (),
         residuals: tuple[BodyMotionResidual, ...] = (),
     ) -> BodyMotionExecutionReport:
+        if status not in {
+            BodyMotionExecutionStatus.COMPLETED,
+            BodyMotionExecutionStatus.INTERRUPTED,
+            BodyMotionExecutionStatus.SUPERSEDED,
+        }:
+            raise ValueError("terminal status が不正です")
         with self._lock:
             current = self._current
             if current.status not in {
@@ -117,7 +124,7 @@ class BodyMotionExecutionTracker:
             self._current = BodyMotionExecutionReport(
                 plan_id=current.plan_id,
                 trajectory_id=current.trajectory_id,
-                status=BodyMotionExecutionStatus.COMPLETED,
+                status=status,
                 started_at=current.started_at,
                 observable_at=current.observable_at,
                 completed_at=observed_at,
@@ -125,3 +132,45 @@ class BodyMotionExecutionTracker:
                 residuals=residuals,
             )
             return self._current
+
+    def complete(
+        self,
+        observed_at: datetime,
+        *,
+        achieved_target_refs: tuple[str, ...] = (),
+        residuals: tuple[BodyMotionResidual, ...] = (),
+    ) -> BodyMotionExecutionReport:
+        return self._terminate(
+            observed_at,
+            BodyMotionExecutionStatus.COMPLETED,
+            achieved_target_refs=achieved_target_refs,
+            residuals=residuals,
+        )
+
+    def interrupt(
+        self,
+        observed_at: datetime,
+        *,
+        achieved_target_refs: tuple[str, ...] = (),
+        residuals: tuple[BodyMotionResidual, ...] = (),
+    ) -> BodyMotionExecutionReport:
+        return self._terminate(
+            observed_at,
+            BodyMotionExecutionStatus.INTERRUPTED,
+            achieved_target_refs=achieved_target_refs,
+            residuals=residuals,
+        )
+
+    def supersede(
+        self,
+        observed_at: datetime,
+        *,
+        achieved_target_refs: tuple[str, ...] = (),
+        residuals: tuple[BodyMotionResidual, ...] = (),
+    ) -> BodyMotionExecutionReport:
+        return self._terminate(
+            observed_at,
+            BodyMotionExecutionStatus.SUPERSEDED,
+            achieved_target_refs=achieved_target_refs,
+            residuals=residuals,
+        )

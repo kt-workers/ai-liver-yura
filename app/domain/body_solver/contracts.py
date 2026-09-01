@@ -38,6 +38,8 @@ class BodyMotionExecutionStatus(str, Enum):
 class BodySolverFailureCode(str, Enum):
     INVALID_PLAN = "invalid_plan"
     MODEL_MISMATCH = "model_mismatch"
+    MODEL_REVISION_MISMATCH = "model_revision_mismatch"
+    MODEL_FINGERPRINT_MISMATCH = "model_fingerprint_mismatch"
     UNKNOWN_BODY_REFERENCE = "unknown_body_reference"
     UNSUPPORTED_CAPABILITY = "unsupported_capability"
     INFEASIBLE_TARGET = "infeasible_target"
@@ -46,7 +48,22 @@ class BodySolverFailureCode(str, Enum):
     CONTACT_INFEASIBLE = "contact_infeasible"
     NUMERICAL_FAILURE = "numerical_failure"
     STALE_HARD_DEPENDENCY = "stale_hard_dependency"
+    INVALID_DOF_STATE = "invalid_dof_state"
+    INVALID_SOLVER_POLICY = "invalid_solver_policy"
+    TARGET_GEOMETRY_UNAVAILABLE = "target_geometry_unavailable"
+    TARGET_GENERATION_CHANGED = "target_generation_changed"
+    INSUFFICIENT_SUPPORT_GEOMETRY = "insufficient_support_geometry"
+    DYNAMIC_LIMIT_CONFLICT = "dynamic_limit_conflict"
     CANCELLED = "cancelled"
+
+
+class BodySolverError(ValueError):
+    def __init__(self, code: BodySolverFailureCode, detail: str | None = None) -> None:
+        if not isinstance(code, BodySolverFailureCode):
+            raise ValueError("BodySolverFailureCodeが必要です")
+        self.code = code
+        self.detail = detail
+        super().__init__(code.value if detail is None else f"{code.value}: {detail}")
 
 
 def _duration(value: float, name: str) -> float:
@@ -91,7 +108,11 @@ class BodySolveTask:
         if not isinstance(self.kind, BodySolveTaskKind):
             raise ValueError("kind が不正です")
         object.__setattr__(self, "joint_ids", _identifiers(self.joint_ids, "joint_ids"))
-        object.__setattr__(self, "chain_ids", _identifiers(self.chain_ids, "chain_ids"))
+        object.__setattr__(
+            self,
+            "chain_ids",
+            _identifiers(self.chain_ids, "chain_ids", non_empty=False),
+        )
         if self.spatial_target is not None and not isinstance(
             self.spatial_target, BodySpatialTarget
         ):
@@ -132,14 +153,19 @@ class ExecutableBodyTrajectory:
     trajectory_id: str
     plan_id: str
     body_model_id: str
+    body_model_revision: int
+    body_model_fingerprint: str
+    solver_policy_revision: int
     start_body_state_revision: int
     involved_joint_ids: tuple[str, ...]
     involved_chain_ids: tuple[str, ...]
     phases: tuple[BodyTrajectoryPhase, ...]
 
     def __post_init__(self) -> None:
-        for name in ("trajectory_id", "plan_id", "body_model_id"):
+        for name in ("trajectory_id", "plan_id", "body_model_id", "body_model_fingerprint"):
             require_identifier(getattr(self, name), name)
+        require_revision(self.body_model_revision, "body_model_revision")
+        require_revision(self.solver_policy_revision, "solver_policy_revision")
         require_revision(self.start_body_state_revision, "start_body_state_revision")
         object.__setattr__(
             self,
@@ -309,8 +335,13 @@ class BodyMotionExecutionReport:
             raise ValueError("actual motion statusにはstarted_atが必要です")
         if self.status is BodyMotionExecutionStatus.OBSERVABLE and self.observable_at is None:
             raise ValueError("OBSERVABLEにはobservable_atが必要です")
-        if self.status is BodyMotionExecutionStatus.COMPLETED and self.completed_at is None:
-            raise ValueError("COMPLETEDにはcompleted_atが必要です")
+        terminal_statuses = {
+            BodyMotionExecutionStatus.COMPLETED,
+            BodyMotionExecutionStatus.INTERRUPTED,
+            BodyMotionExecutionStatus.SUPERSEDED,
+        }
+        if self.status in terminal_statuses and self.completed_at is None:
+            raise ValueError("terminal actual statusにはcompleted_atが必要です")
         failure_statuses = {
             BodyMotionExecutionStatus.INFEASIBLE,
             BodyMotionExecutionStatus.UNSUPPORTED,
