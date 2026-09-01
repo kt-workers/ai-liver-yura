@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from .contracts import CandidateLifecycle, PreparedSpeechCandidate
 from .discard import PreparedAudioDiscarder, PreparedAudioDiscardReason
-from .policy import SpeechRuntimeOperationalPolicy, V2_SPEECH_RUNTIME_OPERATIONAL_POLICY
+from .policy import V2_SPEECH_RUNTIME_OPERATIONAL_POLICY, SpeechRuntimeOperationalPolicy
 from .runtime import SpeechRuntime
 
 
@@ -41,7 +41,9 @@ class PreparedSpeechQueue:
             if type(max_size) is not int or max_size < 1:
                 raise ValueError("max_size が不正です")
             resolved_size = max_size
-            resolved_foreground = 3 if max_consecutive_foreground is None else max_consecutive_foreground
+            resolved_foreground = (
+                3 if max_consecutive_foreground is None else max_consecutive_foreground
+            )
             if type(resolved_foreground) is not int or resolved_foreground < 1:
                 raise ValueError("max_consecutive_foreground が不正です")
             policy = None
