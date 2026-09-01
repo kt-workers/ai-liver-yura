@@ -15,6 +15,7 @@ from app.domain.body_solver import (
     BodyContinuousController,
     BodyControllerTickResult,
     BodyMotionExecutionStatus,
+    BodySolverError,
     BodySolverPolicy,
     BodyStateAuthority,
     LatestBodyFrameBuffer,
@@ -388,19 +389,30 @@ class BodyIntegrationRuntime:
             self._clear_current_planning()
             return
 
-        trajectory = compile_body_motion_plan(
-            plan,
-            self._model,
-            self._authority.current,
-            self._solver_policy,
-            trajectory_id=submission.trajectory_id,
-            duration_s=submission.trajectory_duration_s,
-        )
-        old_report = self._controller.supersede_trajectory(
-            trajectory,
-            observed_at=observed_at,
-            started_monotonic_s=monotonic_now_s,
-        )
+        try:
+            trajectory = compile_body_motion_plan(
+                plan,
+                self._model,
+                self._authority.current,
+                self._solver_policy,
+                trajectory_id=submission.trajectory_id,
+                duration_s=submission.trajectory_duration_s,
+            )
+            old_report = self._controller.supersede_trajectory(
+                trajectory,
+                observed_at=observed_at,
+                started_monotonic_s=monotonic_now_s,
+            )
+        except BodySolverError as error:
+            self._terminalize_planning_session(
+                submission.session_id,
+                BodyExecutionSessionStatus.REJECTED,
+                observed_at,
+                f"trajectory_admission_rejected:{error.code.value}",
+            )
+            self._clear_current_planning()
+            return
+
         active = self.active_session
         if active is not None and old_report.status is BodyMotionExecutionStatus.SUPERSEDED:
             self._sessions[active.session_id] = replace(
