@@ -171,7 +171,7 @@ per tick:
 11. `BodyStateAuthority`へatomic commit
 12. `BodyPoseFrame`とexecution evidenceを生成
 
-solver/tick失敗時は未検証candidateをcommitしない。
+solver/tick失敗時は未検証candidateをcommitしない。さらにcontrol tickの`last_monotonic`とroot acceleration stateもcandidateとして扱い、validated frame commit成功後だけ進める。失敗tickの時間・加速度を次tickへ持ち越してはならない。
 
 ## 10. Execution lifecycle / supersede
 
@@ -246,7 +246,7 @@ Stage 5 — execution/frame integration + D10 tests
 - current pose start / no Home reset
 - overlay後もscalar hard limit unchanged
 - accepted Planだけではactual completionにならない
-- failed tick does not commit BodyState
+- failed tick does not commit BodyState or internal control time/dynamics
 - interruption / supersedeはactual start後だけterminal化し、terminal timestamp / residualを保持する
 - supersede後もposition / velocity / acceleration continuityをprevious committed stateから維持する
 - terminal old trajectoryから追加frameをcommitしない
