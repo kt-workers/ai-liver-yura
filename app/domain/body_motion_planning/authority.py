@@ -42,18 +42,24 @@ class BodyMotionPlanAuthority:
         self._validate_current(snapshot, current)
         if utc_instant(candidate.created_at) < utc_instant(snapshot.captured_at):
             raise ValueError("candidate はsnapshotより古くできません")
+        body_model_fingerprint = snapshot.body_model.body_model_fingerprint
+        if body_model_fingerprint is None:
+            raise ValueError("body model fingerprint がありません")
         with self._lock:
             if plan_id in self._plans or candidate.source_intent_id in self._intent_ids:
                 raise ValueError("plan は既にcommit済みです")
             plan = BodyMotionPlan(
-                plan_id,
-                candidate,
-                snapshot.intent.motion_goal_ref,
-                snapshot.intent.priority,
-                snapshot.intent.interruptibility,
-                snapshot.intent.preconditions,
-                snapshot.intent.required_capabilities,
-                committed_at,
+                plan_id=plan_id,
+                candidate=candidate,
+                motion_goal_ref=snapshot.intent.motion_goal_ref,
+                priority=snapshot.intent.priority,
+                interruptibility=snapshot.intent.interruptibility,
+                preconditions=snapshot.intent.preconditions,
+                required_capabilities=snapshot.intent.required_capabilities,
+                body_model_id=snapshot.body_model.body_model_id,
+                body_model_revision=snapshot.body_model.body_model_revision,
+                body_model_fingerprint=body_model_fingerprint,
+                committed_at=committed_at,
                 _proof=_PLAN_PROOF,
             )
             self._plans[plan_id] = plan
