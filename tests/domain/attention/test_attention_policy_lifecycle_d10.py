@@ -189,7 +189,11 @@ def test_source_kind_budget_shrink_rejects_atomically() -> None:
     store.offer(signal("first"))
     store.offer(signal("second", seconds=2))
     before = store.snapshot()
-    too_small = with_kind_budget(replace(current, policy_revision=2), AttentionSourceKind.APPRAISAL, 1)
+    too_small = with_kind_budget(
+        replace(current, policy_revision=2),
+        AttentionSourceKind.APPRAISAL,
+        1,
+    )
 
     with pytest.raises(ValueError, match="source kind"):
         store.update_policy(too_small, NOW + timedelta(seconds=3))
