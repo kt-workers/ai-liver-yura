@@ -18,6 +18,18 @@ from .contracts import (
     ReflectionTrigger,
     ReflectionTriggerKind,
 )
+from .operational import (
+    ReflectionOperationalError,
+    ReflectionOperationalFailureCode,
+    ReflectionOperationalPolicy,
+    ReflectionOperationalPolicyPort,
+    bound_source_excerpt,
+    estimate_reflection_context_tokens,
+    reflection_source_order_key,
+    validate_reflection_context_bounds,
+    validate_reflection_proposals_bounds,
+    validate_reflection_support_bounds,
+)
 from .runtime import ReflectionCoordinator, ReflectionProposalPort, ReflectionSupportPort
 
 __all__ = [
@@ -29,6 +41,10 @@ __all__ = [
     "ReflectionContextSnapshot",
     "ReflectionCoordinator",
     "ReflectionEventKind",
+    "ReflectionOperationalError",
+    "ReflectionOperationalFailureCode",
+    "ReflectionOperationalPolicy",
+    "ReflectionOperationalPolicyPort",
     "ReflectionProposalPort",
     "ReflectionRelationHint",
     "ReflectionRunResult",
@@ -40,4 +56,10 @@ __all__ = [
     "ReflectionSupportRelation",
     "ReflectionTrigger",
     "ReflectionTriggerKind",
+    "bound_source_excerpt",
+    "estimate_reflection_context_tokens",
+    "reflection_source_order_key",
+    "validate_reflection_context_bounds",
+    "validate_reflection_proposals_bounds",
+    "validate_reflection_support_bounds",
 ]
