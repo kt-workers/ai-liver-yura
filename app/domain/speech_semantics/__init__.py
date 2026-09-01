@@ -1,4 +1,13 @@
 from .authority import SpeechSemanticAuthority
+from .bounds import (
+    SpeechSemanticBoundsError,
+    SpeechSemanticBoundsFailureCode,
+    SpeechSemanticBoundsPolicyPort,
+    assert_speech_semantic_policy_generation,
+    build_bounded_speech_semantic_context,
+    validate_speech_semantic_context_bounds,
+    validate_speech_semantic_output_bounds,
+)
 from .contracts import (
     DeterministicSpeechDirective,
     SelfDisclosurePolicy,
@@ -35,6 +44,9 @@ __all__ = [
     "SpeechProposition",
     "SpeechPropositionDisposition",
     "SpeechSemanticAuthority",
+    "SpeechSemanticBoundsError",
+    "SpeechSemanticBoundsFailureCode",
+    "SpeechSemanticBoundsPolicyPort",
     "SpeechSemanticCandidate",
     "SpeechSemanticContextSnapshot",
     "SpeechSemanticFact",
@@ -45,9 +57,13 @@ __all__ = [
     "SpeechSemanticsPolicy",
     "SpeechTruthConstraint",
     "SpeechTruthRule",
+    "assert_speech_semantic_policy_generation",
+    "build_bounded_speech_semantic_context",
     "build_request",
     "candidate_from_directive",
     "commit_result",
     "descriptor",
     "parse_candidate",
+    "validate_speech_semantic_context_bounds",
+    "validate_speech_semantic_output_bounds",
 ]

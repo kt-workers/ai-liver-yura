@@ -55,7 +55,7 @@ public callerはcommitted Planをstatus値だけで直接製造できない。LL
 
 ### 4.1 Communicative material content
 
-What-to-sayは事実命題だけではない。次のような**発話行為そのものの意味**も、変更・欠落すると伝達意味が変わる場合は`SpeechSemanticPlan`へpropositionとして明示する。
+What-to-sayは事実命題だけではない。次のような発話行為そのものの意味も、変更・欠落すると伝達意味が変わる場合は`SpeechSemanticPlan`へpropositionとして明示する。
 
 - greeting
 - acknowledgement
@@ -71,23 +71,6 @@ What-to-sayは事実命題だけではない。次のような**発話行為そ�
 
 Executive / trusted upstreamが確定したcommunicative semantic goalを、bounded `SpeechSemanticFact`としてsnapshotへ供給する。既存`SpeechSemanticFactKind.DISCOURSE`を使用できる。
 
-illustrative example:
-
-```text
-SpeechSemanticFact
-- fact_id = discourse-goal-1
-- kind = DISCOURSE
-- subject_ref = current_interaction
-- predicate = communicative_act
-- value = {kind: gratitude, target_ref: ...}
-```
-
-上記のpredicate/value文字列はtrigger仕様ではない。必要なdomain表現をtrusted upstreamがtyped/bounded factとして確定し、#362はそのFactを通常の`SpeechProposition`へgroundする。
-
-`SpeechIntentPayload.semantic_goal_ref`がcommunicative act Factを指す場合、そのFactとsemantic facetが一致するnon-`FORBIDDEN` propositionをPlanへ必ず保持する。Character #330はその意味を自然な文面へ実現するだけで、挨拶・謝意・謝罪・依頼等の有無を独自に発明・削除しない。
-
-これにより#363は、actual utterance内で独立観測したcommunicative material contentをPlan propositionへaccountできる。正常な挨拶等を「Plan外の追加」と誤判定しない一方、Planにないcommunicative actをCharacterが勝手に追加した場合は検証対象にできる。
-
 ## 5. Commit gate
 
 Authorityは次をfail-closedで検証する。
@@ -98,12 +81,14 @@ Authorityは次をfail-closedで検証する。
 4. proposition evidence refsがbounded fact IDsの部分集合。
 5. intentのsemantic goal / target / constraint refsがsnapshotへground済み。
 6. candidate truth constraint refsがExecutive / upstreamのauthoritative集合と完全一致。
-7. Executiveが要求するsemantic goal / target / evidenceは、`FORBIDDEN`以外で元Factのsubject / predicate / value / claim kind / execution status / polarity / certainty / degreeが全一致するpropositionによって実現する。**communicative actを表すDISCOURSE Factも同じGateを通し、特別扱いで省略しない。** 参照IDだけ、またはFORBIDDEN指定だけでは充足しない。
-8. Executiveのforbidden claimは、`FORBIDDEN`かつ元Factの全semantic facetが一致するpropositionとして保持する。別の禁止内容へ差し替えない。
-9. execution truth制約の対象factとproposition claim kind / status / polarity / certainty / degreeをclosedに照合する。unknown保持はpolarityとcertaintyをともに`UNKNOWN`にする。
+7. Executiveが要求するsemantic goal / target / evidenceは、`FORBIDDEN`以外で元Factのsemantic facetが一致するpropositionによって実現する。
+8. Executiveのforbidden claimは、`FORBIDDEN`かつ元Factのsemantic facetが一致するpropositionとして保持する。
+9. execution truth制約をclosedに照合する。
 10. question / new-direction budgetがauthoritative上限以下。
 11. forbidden propositionをrequired / optionalとして扱わないtyped schema。
 12. 同じplan ID・同じintentの二重commit拒否。
+13. D10 `SpeechSemanticBounds` のCandidate上限を満たす。
+14. request generationにbindされた`BrainOperationalBoundsPolicy`世代がcommit時にもcurrentである。
 
 LLM candidate自身がtruth constraintやbudgetを空にして安全条件を省略することはできない。Authorityはsnapshotのauthoritative要件を正本にする。
 
@@ -127,13 +112,61 @@ schema不正、stale、unbounded ref、truth矛盾、budget超過はPlanをcommi
 
 #330は`SpeechSemanticPlan`だけを入力Authorityとして使い、raw Executive contextやraw internal stateを再解釈しない。#363はPlanのproposition IDとactual Character textの意味関係を独立観測する。Character `realization_refs`はalignment hintでありsemantic proofではない。
 
-## 9. 検証
+## 9. D10共有容量方針
+
+Speech Semanticsの技術上限は`BrainOperationalBoundsPolicy.speech_semantics`だけを正本とし、Module固有のmagic numberやsilent clampを持たない。
+
+初期V2上限:
+
+```text
+max_facts = 128
+max_truth_constraints = 128
+max_relationship_constraints = 64
+max_discourse_constraints = 64
+max_propositions = 64
+max_evidence_refs_per_proposition = 16
+max_constraint_refs_per_plan = 128
+max_question_budget = 16
+max_new_direction_budget = 16
+max_fact_payload_json_bytes = 16384
+```
+
+### 9.1 Snapshot構築
+
+- Executiveの`semantic_goal_ref`、`target_ref`、`evidence_refs`、`forbidden_claim_refs`、truth constraintが参照するFactはrequired集合として先に保持する。
+- required Factを128件へ収められない場合、必要Factを切らず`SPEECH_SEMANTIC_CONTEXT_TOO_LARGE`。
+- optional Factは`fact kind → fact_id`のstable orderで空き容量に選択する。
+- authoritative truth constraintが128件を超える場合はfirst-Nせず`SPEECH_SEMANTIC_CONTEXT_TOO_LARGE`。
+- relationship / discourse constraintはCandidate / Directiveのtyped sectionで各64件上限を持つ。入力側の互換`available_constraint_refs` poolは両section合計の技術上限128を超えない。
+- Executiveが要求したconstraint refは容量都合で落とさない。
+- 各Factの`value`はcanonical JSON UTF-8で16384 bytes以下。超過Factがrequiredならfail-closedし、valueをsubstringや部分objectへ縮めない。
+
+### 9.2 Candidate / Directive
+
+simple deterministic pathとcomplex LLM pathは同じ上限を通す。
+
+- propositions: 64
+- evidence refs / proposition: 16
+- relationship refs: 64
+- discourse refs: 64
+- truth + relationship + discourse refs合計: 128
+- question budget: 0..16
+- new-direction budget: 0..16
+
+authoritative upstream budgetが技術上限16を超える場合は16へclampせずrequestを拒否する。Candidateが上限を超える場合もfirst-NやREQUIRED/FORBIDDEN proposition削除でsuccessにしない。
+
+### 9.3 policy generation freshness
+
+`SpeechSemanticsPolicy`は使用する`BrainOperationalBoundsPolicy`を保持する。request生成時のpolicy generationをProvider await後にcurrent policy generationと照合し、異なる場合は古いresultを新方針へ付け替えずstale rejectする。
+
+Executive decisionに同じ共有policyのprovenanceが存在する場合はgeneration一致を検証する。互換fixture等で別provenanceを使う場合でも、production current-policy Portによるfreshness検証を省略しない。
+
+## 10. 検証
 
 - direct answer / self-disclosure / unknown
 - positive / negative / certainty / degree
 - required / optional / forbidden
-- communicative material content: greeting / acknowledgement / gratitude / apology / request等
-- communicative semantic goalがnon-FORBIDDEN propositionへ必ずgroundされる
+- communicative material content
 - question / new-direction budget
 - execution truth一致・完了捏造拒否
 - snapshot外fact / constraint / target拒否
@@ -142,5 +175,10 @@ schema不正、stale、unbounded ref、truth矛盾、budget超過はPlanをcommi
 - source / goal / attentionの各stale reject
 - slow complex Role中にunrelated simple pathが完了
 - same intent / plan競合commitは高々1件成功
-- final utterance / Character style / TTS / Body / Execution Authority非混入
-- finite natural-language phrase/keyword/regexをcommunicative act Authorityにしない
+- Fact 128/129、truth constraint 128/129、constraint pool 128/129境界
+- Fact payload 16384/16385 byte境界
+- proposition 64/65、evidence 16/17境界
+- relationship / discourse 64/65、total constraint 128/129境界
+- question / new-direction budget 16/17境界
+- oversized Provider resultをfirst-N acceptしない
+- policy revision変更中のlate LLM resultをreject
