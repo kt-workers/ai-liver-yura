@@ -106,6 +106,8 @@ TTSProviderOperationalPolicy
 
 production hidden defaultを持たない。
 
+既存`TTSSynthesisRequest.provider_config_revision`は、音声へ影響するProvider設定の既存identityであり、`TTSProviderOperationalPolicy.policy_revision`とは別Authorityである。両revisionの数値一致を要求しない。`provider_config_revision`は従来どおりartifact/cache identityへ保持し、運用Policy generationはimmutableなAdapter instanceへbindする。
+
 ### 2.4 DependencyRetryPolicy
 
 retry/backoffは#358独自の`max_attempts`や固定sleepを持たず、#350の`DependencyRetryPolicy`を必須注入する。
@@ -142,13 +144,15 @@ Artifactを新しいmapping/retry generationへ付け替えない。
 
 cache identityには音声内容へ影響するmapping identity/revisionを含める。retry policyは音声内容を変えないためcache keyの音声identityには含めないが、artifact provenanceには必ず保持する。
 
+既存`provider_config_revision`と`pronunciation_config_revision`も音声内容に影響する既存identityとして保持する。これらをTTS運用Policyのrevisionへ読み替えない。
+
 ## 4. Freshness / deadline
 
 Adapter instanceはconstructorで受け取ったpolicy generationに固定する。policy更新は同じinstanceをmutationせず、新しいAdapter generationを構成する。
 
 したがってold async resultはold Adapter generationのprovenanceを保持し、新revisionへrebindingされない。
 
-Provider call開始前にrequestとAdapter policy generationのexact一致を確認する。
+Provider call開始前にrequestのmapping/retry provenanceとAdapter policy generationのexact一致、およびProvider identity/revision互換を確認する。独立Authorityである`provider_config_revision`とoperational policy revisionの数値一致は要求しない。
 
 retry sleep後は:
 
@@ -185,6 +189,7 @@ productionの`revision_1()`固定値は削除し、必要な値はtest fixture�
 - exact dimension lookup、unsupportedはtyped degradation
 - mapping revision変更でcache identityが変化
 - request/artifactへmapping/retry provenance保持
+- `provider_config_revision`とoperational policy revisionの独立性
 - retry 0 / 1 / Nと#350 exact backoff
 - non-retryableでretryなし
 - retry sleep後deadline失効ならProvider未呼出
