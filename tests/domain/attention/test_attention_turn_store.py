@@ -7,6 +7,7 @@ from app.domain.attention import (
     AttentionIngressOperation,
     AttentionIngressSignal,
     AttentionPriority,
+    AttentionSchedulingPolicy,
     AttentionSourceKind,
     AttentionTransition,
     AttentionTransitionOperation,
@@ -14,6 +15,10 @@ from app.domain.attention import (
 )
 
 NOW = datetime(2026, 8, 16, tzinfo=timezone.utc)
+
+
+def attention_store() -> AttentionTurnStore:
+    return AttentionTurnStore(AttentionSchedulingPolicy.production())
 
 
 def signal(
@@ -71,14 +76,14 @@ def transition(
 
 
 def test_policy_is_immutable_and_covers_all_source_kinds() -> None:
-    policy = AttentionTurnStore().policy
+    policy = attention_store().policy
     assert policy.attention_budget == 8
     assert policy.max_same_source_burst == 2
     assert {kind for kind, _ in policy.source_kind_budgets} == set(AttentionSourceKind)
 
 
 def test_offer_refresh_resolve_and_monotonic_source_context_revision() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     state = store.offer(signal("appraisal", revision=3))
     refreshed = store.offer(
         signal("appraisal", revision=4, seconds=2, operation=AttentionIngressOperation.REFRESH)
@@ -100,7 +105,7 @@ def test_offer_refresh_resolve_and_monotonic_source_context_revision() -> None:
 
 
 def test_versioned_stable_source_requires_open_refresh_and_close_cas() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(
         signal(
             "goal",
@@ -162,7 +167,7 @@ def test_versioned_stable_source_requires_open_refresh_and_close_cas() -> None:
 def test_versioned_close_before_open_is_rejected_without_mutation(
     kind: AttentionSourceKind,
 ) -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     before = store.snapshot()
     close = signal(
         "stable-source",
@@ -175,15 +180,13 @@ def test_versioned_close_before_open_is_rejected_without_mutation(
     with pytest.raises(ValueError, match="resolve対象"):
         store.resolve(close)
     assert store.snapshot() == before
-    store.offer(
-        signal("stable-source", kind, revision=1, source_revision=1)
-    )
+    store.offer(signal("stable-source", kind, revision=1, source_revision=1))
     closed = store.resolve(close)
     assert closed.sources == ()
 
 
 def test_duplicate_versioned_lifecycle_fact_is_no_commit() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(signal("goal", AttentionSourceKind.GOAL, source_revision=1))
     refresh = signal(
         "goal",
@@ -201,7 +204,7 @@ def test_duplicate_versioned_lifecycle_fact_is_no_commit() -> None:
 
 
 def test_policy_rejects_direct_user_spoofing_and_out_of_range_priority() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     with pytest.raises(ValueError, match="priority"):
         store.offer(
             signal("stream", AttentionSourceKind.STREAMING, priority=AttentionPriority.DIRECT_USER)
@@ -222,7 +225,7 @@ def test_policy_rejects_direct_user_spoofing_and_out_of_range_priority() -> None
 
 
 def test_budget_and_focus_provenance_are_bounded() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(signal("appraisal-1"))
     store.offer(signal("appraisal-2", seconds=2))
     assert store.offer(signal("appraisal-3", seconds=3)) is store.snapshot()
@@ -245,7 +248,7 @@ def test_budget_and_focus_provenance_are_bounded() -> None:
 
 
 def test_transition_rejects_stale_context_and_unknown_foreground_source() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
     with pytest.raises(ValueError, match="stale"):
         store.apply(1, (transition(AttentionTransitionOperation.RELEASE_FOREGROUND, 0, 0),))
@@ -265,7 +268,7 @@ def test_transition_rejects_stale_context_and_unknown_foreground_source() -> Non
 
 
 def test_peek_is_read_only_but_claim_records_bounded_same_source_fairness() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(signal("a", seconds=1))
     store.offer(signal("b", seconds=2))
     before = store.snapshot()
@@ -280,7 +283,7 @@ def test_peek_is_read_only_but_claim_records_bounded_same_source_fairness() -> N
 
 
 def test_direct_user_turn_protects_against_background_interruption() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
     store.offer(signal("reflection", AttentionSourceKind.REFLECTION, seconds=2))
     store.apply(
@@ -295,7 +298,7 @@ def test_direct_user_turn_protects_against_background_interruption() -> None:
 
 
 def test_direct_user_foreground_blocks_lower_priority_interrupt_claims() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
     store.offer(signal("normal", AttentionSourceKind.APPRAISAL, seconds=2))
     store.offer(
@@ -341,7 +344,7 @@ def test_claim_relation_separates_continuation_from_challenger_interrupt(
     priority: AttentionPriority,
     source_revision: int | None,
 ) -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(
         signal(
             "focus",
@@ -371,7 +374,7 @@ def test_claim_relation_separates_continuation_from_challenger_interrupt(
 
 
 def test_direct_user_obligation_without_foreground_only_claims_direct_users() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(signal("user-a", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
     store.offer(
         signal("user-b", AttentionSourceKind.USER_INTERACTION, seconds=2, trusted_direct_user=True)
@@ -403,7 +406,7 @@ def test_direct_user_obligation_without_foreground_only_claims_direct_users() ->
 
 
 def test_direct_user_obligation_blocks_lower_foreground_continuation() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
     store.offer(
         signal(
@@ -435,7 +438,7 @@ def test_direct_user_obligation_blocks_lower_foreground_continuation() -> None:
 
 
 def test_active_non_direct_turn_is_included_in_challenger_threshold() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(
         signal(
             "turn",
@@ -455,7 +458,7 @@ def test_active_non_direct_turn_is_included_in_challenger_threshold() -> None:
 
 
 def test_expired_direct_user_no_longer_protects_claims() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(
         signal(
             "user",
@@ -476,7 +479,7 @@ def test_expired_direct_user_no_longer_protects_claims() -> None:
 
 
 def test_obligation_release_restores_normal_fairness() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
     store.offer(signal("normal", seconds=2))
     store.apply(
@@ -501,7 +504,7 @@ def test_obligation_release_restores_normal_fairness() -> None:
 
 
 def test_transition_rejects_authoritative_context_advanced_after_creation() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
     old = transition(
         AttentionTransitionOperation.ACQUIRE_FOREGROUND,
@@ -519,7 +522,7 @@ def test_transition_rejects_authoritative_context_advanced_after_creation() -> N
 
 
 def test_expiry_and_resolve_clear_invalid_references() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(
         signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True, expires_in=1)
     )
@@ -543,7 +546,7 @@ def test_expiry_and_resolve_clear_invalid_references() -> None:
 
 
 def test_transition_batch_is_atomic_and_duplicate_transition_is_rejected() -> None:
-    store = AttentionTurnStore()
+    store = attention_store()
     store.offer(signal("user", AttentionSourceKind.USER_INTERACTION, trusted_direct_user=True))
     first = transition(
         AttentionTransitionOperation.ACQUIRE_FOREGROUND,
