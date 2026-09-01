@@ -16,10 +16,10 @@ from app.domain.body import (
 )
 
 from .contracts import (
-    BodySolveTask,
-    BodySolveTaskKind,
     BodySolverError,
     BodySolverFailureCode,
+    BodySolveTask,
+    BodySolveTaskKind,
 )
 from .physical import end_effector_world_frame
 from .policy import BodySolverPolicy
@@ -36,6 +36,7 @@ class BodyTaskResidual:
     goal_id: str
     position_error_m: float | None
     orientation_error_radians: float | None
+    linear_velocity_error_mps: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,9 +102,7 @@ def evaluate_body_task_residuals(
             position_error = sqrt(dx * dx + dy * dy + dz * dz)
         if target.orientation is not None:
             orientation_error = _quaternion_distance(frame.orientation, target.orientation)
-        result.append(
-            BodyTaskResidual(task.goal_id, position_error, orientation_error)
-        )
+        result.append(BodyTaskResidual(task.goal_id, position_error, orientation_error))
     return tuple(result)
 
 
