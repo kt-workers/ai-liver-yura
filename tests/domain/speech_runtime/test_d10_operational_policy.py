@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from typing import cast
 
 import pytest
 
@@ -43,8 +44,31 @@ class MutableMonotonicClock:
     ],
 )
 def test_policy_rejects_bool_as_int(field_name: str) -> None:
+    bad_int = cast(int, True)
     with pytest.raises(ValueError):
-        replace(V2_SPEECH_RUNTIME_OPERATIONAL_POLICY, **{field_name: True})
+        if field_name == "queue_max_candidates":
+            replace(V2_SPEECH_RUNTIME_OPERATIONAL_POLICY, queue_max_candidates=bad_int)
+        elif field_name == "queue_max_consecutive_foreground":
+            replace(
+                V2_SPEECH_RUNTIME_OPERATIONAL_POLICY,
+                queue_max_consecutive_foreground=bad_int,
+            )
+        elif field_name == "prepared_candidate_ttl_ms":
+            replace(V2_SPEECH_RUNTIME_OPERATIONAL_POLICY, prepared_candidate_ttl_ms=bad_int)
+        elif field_name == "revalidation_max_age_ms":
+            replace(V2_SPEECH_RUNTIME_OPERATIONAL_POLICY, revalidation_max_age_ms=bad_int)
+        elif field_name == "repair_max_generation_attempts":
+            replace(
+                V2_SPEECH_RUNTIME_OPERATIONAL_POLICY,
+                repair_max_generation_attempts=bad_int,
+            )
+        elif field_name == "repair_evidence_max_refs":
+            replace(V2_SPEECH_RUNTIME_OPERATIONAL_POLICY, repair_evidence_max_refs=bad_int)
+        else:
+            replace(
+                V2_SPEECH_RUNTIME_OPERATIONAL_POLICY,
+                speculative_tts_parallelism_per_candidate=bad_int,
+            )
 
 
 def test_default_policy_matches_d10_contract() -> None:
