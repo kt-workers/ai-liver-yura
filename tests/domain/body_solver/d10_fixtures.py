@@ -192,6 +192,8 @@ def reach_task(
 def trajectory_for(
     task: BodySolveTask,
     *,
+    trajectory_id: str = "trajectory:d10",
+    plan_id: str = "plan:d10",
     solver_policy_revision: int = 1,
     duration_s: float = 0.5,
     balance_mode: BodyBalanceMode = BodyBalanceMode.STABLE_SUPPORT_REQUIRED,
@@ -200,8 +202,8 @@ def trajectory_for(
     fingerprint = model.body_model_fingerprint
     assert fingerprint is not None
     return ExecutableBodyTrajectory(
-        "trajectory:d10",
-        "plan:d10",
+        trajectory_id,
+        plan_id,
         model.body_model_id,
         model.body_model_revision,
         fingerprint,
