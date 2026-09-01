@@ -7,10 +7,10 @@ from app.domain.body import BodyPose, CanonicalBodyModel, Quaternion, Vector3
 from app.domain.body_motion_planning import BodySpatialTargetKind
 
 from .contracts import (
-    BodySolveTask,
-    BodySolveTaskKind,
     BodySolverError,
     BodySolverFailureCode,
+    BodySolveTask,
+    BodySolveTaskKind,
 )
 from .physical import end_effector_world_frame
 from .spatial import BodySpatialTargetResolverPort, BodySpatialTargetSnapshot
