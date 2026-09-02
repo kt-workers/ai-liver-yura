@@ -141,6 +141,7 @@ function update(snapshot) {
   $("connection").textContent = snapshot.fatal_error ? "Runtime FAIL" : "接続中";
   $("connection").className = snapshot.fatal_error ? "badge fail" : "badge";
   const avatar = snapshot.avatar || {};
+  const realtime = snapshot.realtime || {};
   text("avatarStatus", avatar.status || "未投影");
   text("bodyRevision", snapshot.body_state_revision);
   text("frameCount", snapshot.frame_count);
@@ -150,9 +151,12 @@ function update(snapshot) {
   text("plannerStatus", snapshot.planner?.status || "—");
   text("plannerLatency", snapshot.planner?.last_latency_ms == null ? "—" : `${snapshot.planner.last_latency_ms.toFixed(1)} ms`);
   text("pendingTasks", snapshot.pending_task_count);
+  text("realtimeStatus", realtime.runtime || "—");
+  text("realtimeLateTicks", realtime.late_tick_count ?? "—");
   text("projectionStatus", avatar.status || "—");
   text("droppedFrames", avatar.dropped_or_coalesced_frames ?? "—");
   $("channels").textContent = pretty(snapshot.frame?.channels || {});
+  $("realtimeLayers").textContent = pretty(realtime.layer_statuses || {});
   $("plannerResult").textContent = pretty(snapshot.planner?.last_plan || {});
   $("diagnostics").textContent = pretty({
     fatal_error: snapshot.fatal_error,
@@ -160,6 +164,10 @@ function update(snapshot) {
     planner_error: snapshot.planner?.last_error,
     avatar_diagnostics: avatar.diagnostics || [],
     avatar_degraded_items: avatar.degraded_items || [],
+    realtime_overlay_bundle_id: realtime.overlay_bundle_id,
+    realtime_based_on_body_state_revision: realtime.based_on_body_state_revision,
+    realtime_speech_sample_active: realtime.speech_sample_active,
+    browser_direct_channel_overlay: realtime.browser_direct_channel_overlay,
   });
   $("rendererAvailable").checked = Boolean(snapshot.renderer_available);
   const llm = snapshot.live_llm || {};
@@ -185,19 +193,17 @@ $("submitMotion").addEventListener("click", () => command({
   target_angle: Number($("targetAngle").value),
 }).catch(console.error));
 
-function sendChannels() {
+function sendGazeTarget() {
   $("gazeXValue").value = Number($("gazeX").value).toFixed(2);
   $("gazeYValue").value = Number($("gazeY").value).toFixed(2);
-  $("mouthValue").value = Number($("mouth").value).toFixed(2);
   command({
     action: "channels",
     gaze_x: Number($("gazeX").value),
     gaze_y: Number($("gazeY").value),
-    mouth_openness: Number($("mouth").value),
   }).catch(console.error);
 }
-for (const id of ["gazeX", "gazeY", "mouth"]) $(id).addEventListener("input", sendChannels);
-$("blink").addEventListener("click", () => command({action:"blink"}).catch(console.error));
+for (const id of ["gazeX", "gazeY"]) $(id).addEventListener("input", sendGazeTarget);
+$("speechSample").addEventListener("click", () => command({action:"speech"}).catch(console.error));
 $("rendererAvailable").addEventListener("change", () => command({
   action: "renderer",
   available: $("rendererAvailable").checked,
