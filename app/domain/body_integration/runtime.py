@@ -234,6 +234,7 @@ class BodyIntegrationRuntime:
         if report_before.status in {
             BodyMotionExecutionStatus.STARTED,
             BodyMotionExecutionStatus.OBSERVABLE,
+            BodyMotionExecutionStatus.COMPLETED,
         }:
             self._consume_planning_result(observed_at, monotonic_now_s)
 
@@ -398,7 +399,7 @@ class BodyIntegrationRuntime:
                 trajectory_id=submission.trajectory_id,
                 duration_s=submission.trajectory_duration_s,
             )
-            old_report = self._controller.supersede_trajectory(
+            old_report = self._controller.activate_trajectory(
                 trajectory,
                 observed_at=observed_at,
                 started_monotonic_s=monotonic_now_s,
