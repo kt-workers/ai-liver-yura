@@ -682,10 +682,8 @@ class VerificationEngine:
         action = command.get("action")
         if action == "submit_motion":
             mode = str(command.get("mode", "deterministic"))
-            delay = float(command.get("delay_seconds", 0.0))
-            angle = float(command.get("target_angle", 0.35))
-            if not -0.75 <= angle <= 0.75:
-                raise ValueError("target_angleはD10検証範囲[-0.75, 0.75]に限定します")
+            delay = _bounded_float(command.get("delay_seconds", 0.0), 0.0, 30.0)
+            angle = _bounded_float(command.get("target_angle", 0.35), -0.75, 0.75)
             self._submit_motion(mode=mode, delay_seconds=delay, target_angle=angle)
             return
         if action == "renderer":
@@ -845,7 +843,11 @@ class VerificationEngine:
                 self._mouth_openness,
             ),
             (RealtimeLayer.SPEECH_ARTICULATION, RealtimeChannel.MOUTH_ROUNDNESS, 0.0),
-            (RealtimeLayer.SPEECH_ARTICULATION, RealtimeChannel.JAW_OPENNESS, self._mouth_openness * 0.7),
+            (
+                RealtimeLayer.SPEECH_ARTICULATION,
+                RealtimeChannel.JAW_OPENNESS,
+                self._mouth_openness * 0.7,
+            ),
             (RealtimeLayer.SPEECH_ARTICULATION, RealtimeChannel.LIP_CLOSURE, 0.0),
             (RealtimeLayer.SUBTLE_MOTION, RealtimeChannel.SUBTLE_SWAY, subtle_sway),
         )
@@ -967,6 +969,8 @@ class VerificationEngine:
 
 
 def _bounded_float(value: object, lower: float, upper: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("数値が不正です")
     number = float(value)
     if not math.isfinite(number) or not lower <= number <= upper:
         raise ValueError("数値が許容範囲外です")
