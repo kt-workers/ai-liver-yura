@@ -1,202 +1,223 @@
-# #341 / #346 Body・Avatar Human Verification Surface
+# #341 / #346 V2 Body → Avatar Human Verification
 
-## 1. 位置付け
+Status: Verification-only / NEVER MERGE
+Related Issues: #341, #346, #545, #546
+Verification PR: #544
+Verification branch: `test/341-346-avatar-stick-verification`
+Current trunk: `rebuild/v2-foundation@680d45abf93f2edd37ff28dfcd71319d0f1f9cd6`
+Fixed production source heads:
+- #341: `a1c8f19d6e848886a58d64ded1fde59a692251e1`
+- #346: `412c48227c2c8b9390f3c862a3452f0999cfb508`
+- #546 production fix: merged by PR #548 as `680d45abf93f2edd37ff28dfcd71319d0f1f9cd6`
 
-この文書は Issue #341 Body Integration と Issue #346 Avatar Presentation の人間による実動作確認に使う、`test/341-346-avatar-stick-verification` 専用surfaceを定義する。
+## 1. Purpose
 
-このsurfaceは製品機能ではなく検証器であり、`rebuild/v2-foundation` へマージしない。検証専用PR #544も **NEVER MERGE** とする。
+このsurfaceは #341 Body Integration と #346 Avatar Presentation を、実際に人間がBrowser上で観測するための一時的なverification harnessである。
 
-固定したproduction成果:
+前回Human Verificationでは、D10右腕のvalid target `-0.65 rad` 追従中にproduction #339 dynamicsがovershootし、`BodySolverError: dynamic_limit_conflict` でBody runtimeが停止した。#546でproduction dynamicsをtarget-aware brakingへ修正し、#341 planner-delay testも通常control cadenceで再検証した。
 
-- #341 source HEAD: `9e6de3b6950b19248b279da3d5f7499185685909`
-- #346 source HEAD: `920bb3275d6a92a57d87a02b2fdefcdca99a6bbe`
-- #341 production PR: #541
-- #346 production PR: #542
+Human Verification再実施前のmachine evidence:
+- #341 V2 Deterministic CI #791 / run `33695917538`: SUCCESS / 1413 passed
+- #346 V2 Deterministic CI #788 / run `33695461810`: SUCCESS / 1417 passed
+- #544 final compositionは本書更新後のexact-head CIを別途PASSさせる。
 
-Human Verification依頼時にはverification branchのexact HEADを別途固定する。
+このsurfaceはproductionのAuthorityを置換しない。Browser操作は検証入力を作るだけで、BodyState / joint pose / renderer parameterを直接書き換えない。
 
-## 2. Browser surface方針
-
-既存の `gui/yura-body-pose-lab` が採用していた Python HTTP server + SSE + HTML/CSS/JavaScript + Canvas の構成をhistorical referenceとして再利用する。
-
-旧 `gui/yura-avatar-runtime-lab` の `AvatarPerformancePlan / Track` はV2 #346のCanonical `BodyPoseFrame` projection契約と異なるため使用しない。
-
-旧Labの旧Pose schemaや旧semantic runtimeを移植せず、V2 production contractだけを検証する。
-
-## 3. Authority境界
-
-検証surfaceが確認する経路:
+## 2. 正規検証経路
 
 ```text
-検証入力
-  ├─ Executive相当のbounded BODY intent
-  ├─ Focus相当のBodyGazeTargetView
-  └─ trusted STARTED speech + SpeechTimingTrack sample
-        ↓
-#338 BodyMotionPlanner / DeterministicBodyMotionPlanner
-        ↓
-#340 BodyRealtimeEngine
-        ↓
-#340 BodyRealtimeRuntime
-        ↓ RealtimeOverlayBundle
-#341 BodyIntegrationRuntime
-        ↓
-#339 BodyContinuousController / BodyStateAuthority
-        ↓
-BodyPoseFrame
-        ↓
-#346 AvatarPresentationRuntime
-        ↓
-#346 StickAvatarRenderer
-        ↓
-Browser Canvas
+bounded BODY intent
+→ #338 BodyMotionPlanner / DeterministicBodyMotionPlanner
+
+BodyGazeTargetView
++ BodyExpressionContext
++ trusted STARTED Speech Presentation / SpeechTimingTrack sample
+→ #340 BodyRealtimeEngine
+→ #340 BodyRealtimeRuntime
+→ RealtimeOverlayBundle
+
+BodyMotionPlan + RealtimeOverlayBundle
+→ #341 BodyIntegrationRuntime
+→ #339 BodyContinuousController / BodyStateAuthority
+→ BodyPoseFrame
+→ #346 AvatarPresentationRuntime
+→ #346 StickAvatarRenderer
+→ Browser HTML/JavaScript Canvas
 ```
 
-検証UIは禁止:
+Browserは`ChannelOverlay` / `RealtimeOverlayBundle`を直接生成しない。Blink / breath / subtle motion / speech articulationのCanonical channel生成は#340を通る。
 
-- `BodyState` / `BodyPose` の直接書き換え
-- Canonical `RealtimeOverlayBundle` / `ChannelOverlay` の直接生成
-- blink / breath / subtle sway / mouth channel値の直接指定
-- renderer座標からCanonical Bodyへ意味を逆流させること
-- fixed gesture名やrenderer parameterをBody intentの意味Authorityとして扱うこと
-- raw speech text / phonemeからAvatar口形を直接決めること
-- planner完了をphysical/realtime frame loopの進行条件にすること
+## 3. 起動
 
-Browserが指定できるgaze値は#333 Attentionそのものではなく、#340へ渡すbounded `BodyGazeTargetView` の検証入力である。Browserは最終 `RealtimeChannel` 値を指定しない。
+repository rootで:
 
-## 4. #340 realtime入力の扱い
+```bash
+python -m gui.v2_body_avatar_verification.server
+```
 
-### Gaze
+Browser:
 
-BrowserのGaze X/Yをbounded `BodyGazeTargetView`へ変換し、#340がlow-passとone-frame displacement boundを適用してCanonical `GAZE_X / GAZE_Y` channelを生成する。
+```text
+http://127.0.0.1:8769
+```
 
-### Blink
+依存環境をPipenvから実行する場合:
 
-Browserからblink commandを作らない。#340 `BodyRealtimeEngine` のseed付きstate machineが自律生成する。
+```bash
+pipenv sync --dev
+pipenv run python -m gui.v2_body_avatar_verification.server
+```
 
-### Breath / subtle motion
+## 4. 決定論Plannerでの必須確認
 
-検証用 `BodyExpressionContext` をread-only入力として#340へ渡す。breath phase/amplitudeとsubtle swayは#340が生成し、Browserはchannel値を直接指定しない。
+### 4.1 Continuous runtime
 
-### Speech articulation
+何も操作しない状態でも:
+- `Body revision` が増え続ける
+- `Frame count` が増え続ける
+- #340 realtimeが`BodyRealtimeRuntime` / `BodyRealtimeEngine`である
+- Blink / breath / subtle motionが自律的に継続する
 
-検証surfaceはraw textから口形を作らない。typed `SpeechPresentationReport(status=STARTED)` + `PreparedAudioArtifact` + `SpeechTimingTrack` の検証sampleを#340 `RealtimeSpeechView`へ渡し、#340のcanonical articulation mappingを通す。
+### 4.2 Deliberate motion / no Home reset
 
-このsampleは **#340→#339→#346のmouth path確認用** であり、#348/#358の実TTS再生・実provider timingをHuman Verificationしたことにはしない。実音声同期の最終確認はactual Speech Presentation/TTS pathで別途必要である。
+右腕targetを `+0.35`, `-0.35`, `+0.65`, `-0.65` 等へ変更してMotionをsubmitする。
 
-## 5. D10で確認できる範囲
+確認:
+- current poseから連続的に移動する
+- valid comfortable targetでhard limit方向へ暴走しない
+- `dynamic_limit_conflict`でruntimeが停止しない
+- motion終了後に初期/Home poseへ瞬間resetしない
+- completed後もbaseline/realtime frameが継続する
 
-現行D10 Canonical Body Modelは最小物理モデルである。
+### 4.3 Planner latency 5秒 / 20秒
 
-- `root`
-- 右腕 `arm` のZ軸1自由度
-- `chain:arm`
-- `effector:hand`
-- 3点support contact
+Planner delayを5秒・20秒へ設定し、Motionをsubmitする。
 
-今回確認できる主対象:
+確認:
+- plannerがpending中でもphysical/realtimeが通常cadenceで進む
+- Body revision / Frame countが継続する
+- gaze / blink / breath / subtle motionが止まらない
+- planner結果ready後にnew planへactivateする
 
-- 右腕の到達方向
-- deliberate motionの連続性
-- motion完了後のbaseline continuation / no Home reset
-- planner待機中の#340 realtime継続
-- #340 gaze / blink / breath / subtle / speech articulation projection
-- #346 renderer disconnect/reconnectとlatest-frame policy
+このacceptanceはphysical tick自体を5秒/20秒止める試験ではない。machine testでもCanonical `target_control_interval_seconds` の反復tickで検証する。
 
-今回だけでは完了扱いにしない:
+### 4.4 Gaze
 
-- 両腕協調
-- 膝 / 腰 / 足首 / root / 腕を使うジャンプ
-- neck / head / torsoを含む全身注意協調
-- 3D full-body model固有のdepth挙動
-- actual TTS音声と実SpeechTimingTrackの同期品質
+Gaze target X/Yを変更する。
 
-2D Stick/D10制約を理由にCanonical 3D acceptanceを弱めない。
+確認:
+- Browser slider値がfinal channelへ瞬間直写しされない
+- #340 bounded smoothingを通って追従する
+- Body motion/planner pendingと独立して更新する
 
-## 6. 検証モード
+### 4.5 Trusted speech timing sample
 
-### 6.1 決定論Motion Planner
+`Trusted speech timing sample` を実行する。
 
-`DeterministicBodyMotionPlanner` を使い、#341/#339/#340/#346接続を確認する。
+確認:
+- typed STARTED Speech Presentation + SpeechTimingTrackが#340へ渡る
+- `speech_articulation` layerがactiveになる
+- mouth channelがBodyPoseFrame → #346へ投影される
+- sample終了後はsourceなしへ戻る
 
-### 6.2 実Body Motion LLM
+これはactual TTS音声との同期品質試験ではない。
 
-既存production `BodyMotionPlanner` と `OpenAIResponsesAdapter.from_environment()` を使う。
+### 4.6 Renderer disconnect / reconnect
 
-ローカル環境変数:
+`Stick renderer接続`をOFFにする。
 
-- `OPENAI_API_KEY`: 必須
-- `YURA_VERIFY_OPENAI_MODEL`: 必須。modelをhard-codeしない
+確認:
+- Avatar outputはunavailableになる
+- Core Body revisionは継続して増える
 
-Provider candidateはproduction `parse_candidate()` と `BodyMotionPlanAuthority.commit()` を通し、不正selector / target / model / revisionはfail-closedとする。
+ONへ戻す。
 
-## 7. Browser表示
+確認:
+- 古いframe backlogを順番に再生しない
+- latest frameへ復帰する
+- Body Stateをrenderer側から書き換えない
 
-最低限表示する:
+### 4.7 Planning supersede
 
-- D10 Stick Canvas
-- BodyState revision / frame count
-- active plan / execution session
-- planner status / latency
-- #340 realtime runtime status / late tick count
-- latest `RealtimeOverlayBundle` layer statuses
-- final `BodyPoseFrame` Canonical channels
-- #346 Avatar projection status
-- dropped/coalesced frame数
-- renderer availability
-- sanitized diagnostics
+Planner delayを5秒または20秒にし、Motionをsubmitする。planning中に別targetで再submitする。
 
-Stickは#346 `AvatarProjectionCommand`だけを読み取り、Canonical stateを書き換えない。
+確認:
+- old planningがsupersedeされる
+- stale old resultが後からControllerへ入らない
+- Home resetを挟まない
+- current physical/realtimeは継続する
 
-## 8. Browser操作
+## 5. Fatal observability
 
-- 右下〜右上のD10 target angleを選んでMotion submit
-- planner mode: deterministic / real LLM
-- planner delay: 0 / 5 / 20秒
-- Gaze X/Y targetを変更
-- trusted speech timing sampleを開始
-- renderer接続 OFF / ON
-- planning中に別Motionをsubmitしてsupersede
+Body runtimeがfatalになった場合、単なる画面フリーズとして扱わない。
 
-Blink / breath / subtle / final mouth opennessを直接操作するUIは置かない。
+期待:
+- Browser上部に `Body Runtime Fatal` bannerが表示される
+- terminalへ `BODY RUNTIME FATAL: <type>: <message>` が出る
+- `/api/snapshot` は最後のframe/revision/session/planner/realtime evidenceと `fatal_error` を保持する
+- Browser reload/SSE切断だけの `ConnectionResetError` は不要なstack traceを出さない
+- 未知のserver例外は握り潰さない
 
-## 9. PASS候補
+fatalが出た場合はHuman Verification FAILとして、操作手順とsnapshotを保存する。
 
-D10範囲で最低限:
+## 6. 実Body Motion LLM
 
-1. deliberate motion中にBody revision/frameが連続更新される。
-2. 5秒/20秒planning待ち中も#340 realtime layerとBody frameが停止しない。
-3. motion完了後Home角へ強制resetせずcurrent poseからbaselineへ連続合流する。
-4. Gaze target変更が#340を通って滑らかなCanonical gaze channelになる。
-5. blink / breath / subtleがBrowser直指定なしで#340から生成される。
-6. trusted speech timing sampleが#340を通ってmouth channelになり#346へ投影される。
-7. renderer OFF中もCore Body revisionが進み、ON復帰時に過去全frameをreplayせずlatestへ復帰する。
-8. new motion / supersede時にHome resetを挟まない。
-9. real LLM modeではproduction BodyMotionPlanner candidateがAuthority gateを通って実行され、LLM待ち中もrealtimeが継続する。
-10. UIがBodyState/Pose/ChannelOverlayを直接生成・変更していない。
+実Provider確認時だけ:
 
-## 10. FAIL例
+```bash
+OPENAI_API_KEY='...' \
+YURA_VERIFY_OPENAI_MODEL='<model>' \
+python -m gui.v2_body_avatar_verification.server
+```
 
-- planner待ちでBody revisionまたは#340 layerが停止する
-- motion完了直後に腕がHomeへ瞬間移動する
-- Browser slider値がそのままfinal RealtimeChannel値になる
-- Browserがblink/breath/mouth `ChannelOverlay`を直接生成する
-- renderer切断がCore Body loopを止める
-- reconnectで古いframe列を順番にreplayする
-- raw textだけでmouthが直接動く
-- LLM candidateがAuthority gateを迂回する
-- `BodyPoseFrame`を通さずrenderer motionを生成する
+BrowserでPlanner modeを `実Body Motion LLM` にする。
 
-## 11. Human Verification記録
+確認:
+- Provider待機中も#340 / #339 realtimeは停止しない
+- raw Provider出力をそのままposeへ適用しない
+- #338 BodyMotionPlanner / Authority gateを通ったaccepted Planだけが#341へ入る
+- Plan ready後にだけactual executionへ進む
 
-残す情報:
+API keyはBrowser snapshot/GitHubへ保存しない。
 
-- verification branch / exact HEAD
-- #341 / #346 source HEAD
-- mode（deterministic / real LLM）
-- `YURA_VERIFY_OPENAI_MODEL`（API keyは記録しない）
-- 実行日時
-- 各checkpoint PASS / FAIL
-- FAIL時の操作順・画面症状・diagnostic
+## 7. D10 limitation
 
-Human Verification PASS前にPR #541 / #542をmergeしない。PR #544は結果に関係なくtrunkへmergeしない。
+現行D10 modelは `root + 右腕1自由度` のminimum physical modelである。
+
+今回のStick verificationだけでは以下を完了扱いにしない:
+- bilateral/full-body coordination
+- jumpのhip/knee/ankle/root/arms coordination
+- neck/head/torso coordination
+- 3D full-body depth / self-occlusion
+- actual #348/#358 TTS音声 + provider SpeechTimingTrackの同期品質
+
+2D Stick/D10制約を理由にCanonical full-body/3D acceptanceを弱めない。
+
+## 8. PASS / FAIL response
+
+Human Verification完了後は:
+
+```text
+Human Verification: PASS
+実Body Motion LLM: PASS / 未実施 / FAIL
+
+気になった点:
+- なし
+```
+
+異常がある場合:
+
+```text
+Human Verification: FAIL
+
+操作:
+- ...
+
+観測:
+- ...
+
+fatal_error / snapshot:
+- ...
+```
+
+Human Verification PASS前にPR #541 / #542をmergeしない。PR #544はPASS/FAILに関係なくtrunkへmergeしない。
