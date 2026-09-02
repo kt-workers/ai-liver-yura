@@ -11,7 +11,7 @@
     <div>
       <p class="eyebrow">PR #544 / verification-only / NEVER MERGE</p>
       <h1>ゆら V2 Body / Avatar Human Verification</h1>
-      <p class="subtitle">#341 Body Integration → #346 Avatar Presentation → Browser Canvas</p>
+      <p class="subtitle">#340 Realtime → #341 Body Integration → #346 Avatar Presentation → Browser Canvas</p>
     </div>
     <div id="connection" class="badge warn">接続待ち</div>
   </header>
@@ -66,16 +66,16 @@
 
       <div class="separator"></div>
 
-      <label>Gaze X <output id="gazeXValue">0.00</output>
+      <h3>#340 Realtime inputs</h3>
+      <label>Gaze target X <output id="gazeXValue">0.00</output>
         <input id="gazeX" type="range" min="-1" max="1" value="0" step="0.05">
       </label>
-      <label>Gaze Y <output id="gazeYValue">0.00</output>
+      <label>Gaze target Y <output id="gazeYValue">0.00</output>
         <input id="gazeY" type="range" min="-1" max="1" value="0" step="0.05">
       </label>
-      <label>Mouth openness <output id="mouthValue">0.00</output>
-        <input id="mouth" type="range" min="0" max="1" value="0" step="0.05">
-      </label>
-      <button id="blink">Blink</button>
+      <button id="speechSample">Trusted speech timing sample</button>
+      <p class="help">GazeはBodyGazeTargetViewとして#340へ渡します。Blink / breath / subtle / final mouth channelは#340が生成し、Browserから直接指定しません。</p>
+      <p class="help">Speech sampleはSTARTED Presentation + typed SpeechTimingTrackによる#340 mouth path確認用で、実TTS音声同期の確認ではありません。</p>
 
       <div class="separator"></div>
 
@@ -99,14 +99,18 @@
         <div><span>Planner</span><strong id="plannerStatus">—</strong></div>
         <div><span>Planner latency</span><strong id="plannerLatency">—</strong></div>
         <div><span>Pending tasks</span><strong id="pendingTasks">—</strong></div>
+        <div><span>#340 realtime</span><strong id="realtimeStatus">—</strong></div>
+        <div><span>#340 late ticks</span><strong id="realtimeLateTicks">—</strong></div>
         <div><span>Avatar projection</span><strong id="projectionStatus">—</strong></div>
         <div><span>Dropped/coalesced</span><strong id="droppedFrames">—</strong></div>
       </div>
     </section>
 
     <section class="card diagnostics-card">
-      <h2>Realtime channels</h2>
+      <h2>Final BodyPoseFrame channels</h2>
       <pre id="channels">{}</pre>
+      <h2>#340 layer statuses</h2>
+      <pre id="realtimeLayers">{}</pre>
       <h2>Planner result</h2>
       <pre id="plannerResult">{}</pre>
       <h2>Diagnostics</h2>
