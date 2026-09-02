@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ゆら V2 Body / Avatar 検証</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">PR #544 / verification-only / NEVER MERGE</p>
+      <h1>ゆら V2 Body / Avatar Human Verification</h1>
+      <p class="subtitle">#341 Body Integration → #346 Avatar Presentation → Browser Canvas</p>
+    </div>
+    <div id="connection" class="badge warn">接続待ち</div>
+  </header>
+
+  <main class="layout">
+    <section class="card preview-card">
+      <div class="card-title-row">
+        <div>
+          <h2>D10 Stick Preview</h2>
+          <p>物理制御対象は root + 右腕1自由度。頭・胴・脚は表示用scaffoldです。</p>
+        </div>
+        <div id="avatarStatus" class="badge">—</div>
+      </div>
+      <canvas id="stickCanvas" width="760" height="620"></canvas>
+      <div class="legend">
+        <span><i class="dot physical"></i>Canonical右腕</span>
+        <span><i class="dot target"></i>検証target</span>
+        <span><i class="dot scaffold"></i>表示用scaffold</span>
+      </div>
+    </section>
+
+    <section class="card controls-card">
+      <h2>検証操作</h2>
+
+      <label>Planner mode
+        <select id="mode">
+          <option value="deterministic">決定論</option>
+          <option value="live_llm">実Body Motion LLM</option>
+        </select>
+      </label>
+
+      <label>Planner delay
+        <select id="delay">
+          <option value="0">0秒</option>
+          <option value="5">5秒</option>
+          <option value="20">20秒</option>
+        </select>
+      </label>
+
+      <label>右腕 target angle
+        <select id="targetAngle">
+          <option value="-0.65">右下 -0.65 rad</option>
+          <option value="-0.35">右下寄り -0.35 rad</option>
+          <option value="0" selected>右 0.00 rad</option>
+          <option value="0.35">右上寄り +0.35 rad</option>
+          <option value="0.65">右上 +0.65 rad</option>
+        </select>
+      </label>
+
+      <button id="submitMotion" class="primary">Motionをsubmit</button>
+      <p class="help">planning中に別targetをsubmitすると旧planningをsupersedeします。</p>
+
+      <div class="separator"></div>
+
+      <label>Gaze X <output id="gazeXValue">0.00</output>
+        <input id="gazeX" type="range" min="-1" max="1" value="0" step="0.05">
+      </label>
+      <label>Gaze Y <output id="gazeYValue">0.00</output>
+        <input id="gazeY" type="range" min="-1" max="1" value="0" step="0.05">
+      </label>
+      <label>Mouth openness <output id="mouthValue">0.00</output>
+        <input id="mouth" type="range" min="0" max="1" value="0" step="0.05">
+      </label>
+      <button id="blink">Blink</button>
+
+      <div class="separator"></div>
+
+      <label class="toggle-row">
+        <input id="rendererAvailable" type="checkbox" checked>
+        <span>Stick renderer接続</span>
+      </label>
+      <p class="help">OFF中もBody revisionが進むこと、ON復帰でlatest frameへ戻ることを確認します。</p>
+
+      <div id="liveLlmState" class="notice"></div>
+    </section>
+
+    <section class="card metrics-card">
+      <h2>Runtime状態</h2>
+      <div class="metric-grid">
+        <div><span>Body revision</span><strong id="bodyRevision">—</strong></div>
+        <div><span>Frame count</span><strong id="frameCount">—</strong></div>
+        <div><span>Controller</span><strong id="controllerStatus">—</strong></div>
+        <div><span>Session</span><strong id="sessionStatus">—</strong></div>
+        <div><span>Active plan</span><strong id="activePlan">—</strong></div>
+        <div><span>Planner</span><strong id="plannerStatus">—</strong></div>
+        <div><span>Planner latency</span><strong id="plannerLatency">—</strong></div>
+        <div><span>Pending tasks</span><strong id="pendingTasks">—</strong></div>
+        <div><span>Avatar projection</span><strong id="projectionStatus">—</strong></div>
+        <div><span>Dropped/coalesced</span><strong id="droppedFrames">—</strong></div>
+      </div>
+    </section>
+
+    <section class="card diagnostics-card">
+      <h2>Realtime channels</h2>
+      <pre id="channels">{}</pre>
+      <h2>Planner result</h2>
+      <pre id="plannerResult">{}</pre>
+      <h2>Diagnostics</h2>
+      <pre id="diagnostics">[]</pre>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
