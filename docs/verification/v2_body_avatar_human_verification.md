@@ -28,7 +28,8 @@
   → BodyContinuousController / BodyStateAuthority
   → BodyPoseFrame
   → AvatarPresentationRuntime
-  → Stick可視化
+  → StickAvatarRenderer
+  → Browser Canvas可視化
 ```
 
 検証UIは次を禁止する。
@@ -39,7 +40,7 @@
 - raw speech text / phonemeからAvatar口形を直接決めること
 - planner完了を物理frame loopの進行条件にすること
 
-Stick可視化は `AvatarProjectionCommand` を読み取って描画するだけで、意味判断を行わない。
+Browser Canvasは `StickAvatarRenderer` が適用した `AvatarProjectionCommand` を読み取って描画するだけで、意味判断を行わない。
 
 ## 3. D10で確認できる範囲
 
@@ -114,11 +115,26 @@ Role ID / 入出力schema ID / authority gateはproduction `app.domain.body_moti
 
 Providerへのinstructionは、入力payloadに存在するID / revision / constraint / capability / targetだけを使用し、Canonical joint angleやrenderer parameterを生成しないよう要求する。
 
-## 6. 表示surface
+## 6. Browser表示surface
 
-PyQt6の検証画面に最低限次を表示する。
+検証画面は **HTML / CSS / JavaScript + Browser Canvas** で構成する。PyQt6等の別GUI frameworkは追加しない。
 
-- Stick canvas
+historical referenceとして、旧 `feature/body-pose-lab-causal-integration` の `gui/yura-body-pose-lab` を参照する。この旧Labは次の構成を既に持つため、今回も同じ方向を踏襲する。
+
+- Python HTTP server
+- Browser static files
+- SSE frame stream
+- Canvas 2D Stick renderer
+- metrics / payload表示
+- Renderでも起動可能なHTTP構成
+
+ただし旧LabのPose schemaや旧Controllerをそのまま復活させない。V2検証surfaceの入力正本は #346 `AvatarProjectionCommand` であり、旧Labから再利用するのはブラウザ表示・SSE・Canvas描画というPresentation上の考え方だけとする。
+
+旧 `gui/yura-avatar-runtime-lab` は `AvatarPerformancePlan` / Trackを直接解釈して毎frame motionを合成する旧契約であり、#346の「Canonical `BodyPoseFrame` → exact binding → renderer projection」と競合するため今回の正規surfaceには使用しない。
+
+画面には最低限次を表示する。
+
+- Stick Canvas
 - current Body State revision
 - active plan / trajectory
 - execution session status
@@ -129,14 +145,16 @@ PyQt6の検証画面に最低限次を表示する。
 - renderer available / unavailable
 - sanitized diagnostics
 
-Stick canvasはD10 modelを次のように表示する。
+Stick CanvasはD10 modelを次のように表示する。
 
 - `root`: 身体中心
 - `arm`: rootから伸びる右腕segment
 - end effector: 右手先
 - target: 現在選択した到達目標
 
-描画位置はpresentation commandの結果から計算し、Canonical stateを書き換えない。
+画面上の頭・胴・脚など、D10で物理制御されていない補助線は表示上のscaffoldに限定し、Canonical full-body motionの証拠として扱わない。右腕の物理角度とCanonical realtime channelだけを検証対象として明示する。
+
+描画値は `StickAvatarRenderer.latest_command` のprojection結果から計算し、Canonical stateを書き換えない。
 
 ## 7. 操作
 
@@ -163,7 +181,7 @@ Stick canvasはD10 modelを次のように表示する。
 5. rendererを切断してもCore Body revisionは進み、復帰時に過去全frameをreplayせずlatest frameへ復帰する。
 6. new motion / supersede時に表示が不連続なHome resetを挟まない。
 7. 実LLMモードでproduction `BodyMotionPlanner` のcandidateがAuthority gateを通って実行され、LLM待ち中もrealtimeが継続する。
-8. UIが直接Body StateやPoseを変更していない。
+8. Browser UIが直接Body StateやPoseを変更していない。
 
 ## 9. FAIL例
 
@@ -175,7 +193,7 @@ Stick canvasはD10 modelを次のように表示する。
 - reconnectで古いframe列を順番にreplayする
 - raw text入力だけでmouthが直接動く
 - LLM candidateが不正なのにAuthority gateを迂回して実行される
-- `BodyPoseFrame`を通さずUIが直接renderer motionを生成する
+- `BodyPoseFrame` / `AvatarPresentationRuntime`を通さずBrowser UIが直接renderer motionを生成する
 
 ## 10. 記録
 
