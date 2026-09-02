@@ -4,15 +4,30 @@ import asyncio
 
 import pytest
 
-from app.domain.body_integration import BodyExecutionSessionStatus
+from app.domain.body import AnatomicalRegion, AnatomicalSide
+from app.domain.body_integration import (
+    BodyExecutionSessionStatus,
+    BodyPlanningSubmission,
+)
 from app.domain.body_motion_planning import (
+    BodyBalanceMode,
+    BodyMotionEffect,
+    BodyMotionGoal,
+    BodyMotionPhase,
     BodyMotionPlanAuthority,
+    BodyMotionPlanningContextSnapshot,
+    BodyMotionSelector,
+    BodySpatialTarget,
+    BodySpatialTargetKind,
     DeterministicBodyMotionPlanner,
+    DeterministicBodyPlanningDirective,
 )
 from app.domain.body_solver import BodyMotionExecutionStatus, BodyStateAuthority
 from tests.domain.body_integration.test_runtime import (
     _at,
     _ControlledPlanner,
+    _expression,
+    _intent,
     _LivePlanningState,
     _overlay,
     _runtime,
@@ -23,6 +38,68 @@ from tests.domain.body_solver.d10_fixtures import (
     physical_model,
     physical_state,
 )
+
+
+def _zero_extent_submission(
+    authority: BodyStateAuthority,
+    *,
+    index: int,
+    target_ref: str,
+) -> BodyPlanningSubmission:
+    goal_id = f"goal:{index}"
+    goal = BodyMotionGoal(
+        goal_id,
+        BodyMotionEffect.TRANSLATE,
+        BodyMotionSelector(
+            AnatomicalRegion.ARM,
+            AnatomicalSide.RIGHT,
+            ("chain:arm",),
+            ("arm",),
+        ),
+        BodySpatialTarget(
+            BodySpatialTargetKind.TARGET_REF,
+            None,
+            target_ref,
+            0.0,
+        ),
+        1.0,
+        (),
+    )
+    directive = DeterministicBodyPlanningDirective(
+        (goal,),
+        (
+            BodyMotionPhase(
+                f"phase:{goal_id}",
+                (goal_id,),
+                1.0,
+                BodyBalanceMode.STABLE_SUPPORT_REQUIRED,
+            ),
+        ),
+        (),
+        (),
+    )
+    snapshot = BodyMotionPlanningContextSnapshot(
+        f"request:{index}",
+        _intent(index=index, target_ref=target_ref),
+        physical_model(),
+        authority.current,
+        _expression(revision=index),
+        (),
+        (),
+        _at(float(index)),
+        f"trace:{index}",
+        directive,
+    )
+    return BodyPlanningSubmission(
+        f"session:{index}",
+        f"command:{index}",
+        snapshot,
+        f"candidate:{index}",
+        f"plan:{index}",
+        f"trajectory:{index}",
+        0.01,
+        _at(float(index)),
+    )
 
 
 @pytest.mark.asyncio
@@ -47,7 +124,7 @@ async def test_completed_session_keeps_baseline_then_activates_next_plan_on_same
     controller_identity = id(runtime.controller)
 
     runtime.submit_planning(
-        _submission(authority, index=1, target_ref="target:new"),
+        _zero_extent_submission(authority, index=1, target_ref="target:new"),
         supersede_allowed=True,
     )
     await asyncio.sleep(0)
@@ -66,7 +143,7 @@ async def test_completed_session_keeps_baseline_then_activates_next_plan_on_same
     assert first_session.status is BodyExecutionSessionStatus.PLAN_READY
 
     monotonic = 0.1
-    for index in range(1, 241):
+    for index in range(1, 61):
         monotonic += 1.0 / 60.0
         runtime.tick_physical(
             observed_at=_at(monotonic),
@@ -80,7 +157,7 @@ async def test_completed_session_keeps_baseline_then_activates_next_plan_on_same
         if first_session.status is BodyExecutionSessionStatus.COMPLETED:
             break
     else:
-        pytest.fail("first Body session did not complete within bounded ticks")
+        pytest.fail("zero-extent Body session did not complete within bounded ticks")
 
     assert runtime.controller.execution_report.status is BodyMotionExecutionStatus.COMPLETED
     first_completed = runtime.session("session:1")
