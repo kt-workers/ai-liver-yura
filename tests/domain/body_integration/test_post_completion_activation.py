@@ -4,26 +4,30 @@ import asyncio
 
 import pytest
 
+from app.domain.body_integration import BodyExecutionSessionStatus
 from app.domain.body_motion_planning import (
     BodyMotionPlanAuthority,
     DeterministicBodyMotionPlanner,
 )
-from app.domain.body_solver import BodyMotionExecutionStatus
+from app.domain.body_solver import BodyMotionExecutionStatus, BodyStateAuthority
 from tests.domain.body_integration.test_runtime import (
+    _at,
     _ControlledPlanner,
     _LivePlanningState,
-    _at,
     _overlay,
     _runtime,
     _submission,
 )
-from tests.domain.body_solver.d10_fixtures import SUPPORT_CONTACT_IDS, physical_model, physical_state
-from app.domain.body_solver import BodyStateAuthority
-from app.domain.body_integration import BodyExecutionSessionStatus
+from tests.domain.body_solver.d10_fixtures import (
+    SUPPORT_CONTACT_IDS,
+    physical_model,
+    physical_state,
+)
 
 
 @pytest.mark.asyncio
-async def test_completed_session_keeps_baseline_then_activates_next_plan_on_same_controller() -> None:
+async def test_completed_session_keeps_baseline_then_activates_next_plan_on_same_controller(
+) -> None:
     first_gate = asyncio.Event()
     second_gate = asyncio.Event()
     first_gate.set()
