@@ -14,6 +14,7 @@ from app.domain.body_realtime import (
 )
 from app.domain.body_solver import (
     BodyContinuousController,
+    BodyControllerTickResult,
     BodyMotionExecutionStatus,
     BodySolverError,
     BodySolverFailureCode,
@@ -99,7 +100,7 @@ def _tick(
     monotonic_s: float,
     supports: tuple[str, ...] = SUPPORT_CONTACT_IDS,
     overlay: RealtimeOverlayBundle | None = None,
-):
+) -> BodyControllerTickResult:
     return controller.tick(
         observed_at=NOW + timedelta(milliseconds=20 * index),
         monotonic_now_s=monotonic_s,
@@ -110,9 +111,7 @@ def _tick(
     )
 
 
-def _complete(
-    controller: BodyContinuousController,
-) -> None:
+def _complete(controller: BodyContinuousController) -> None:
     first = _tick(controller, index=1, monotonic_s=100.0)
     assert first.execution_report.status is BodyMotionExecutionStatus.OBSERVABLE
     completed = _tick(controller, index=2, monotonic_s=100.02)
@@ -124,7 +123,7 @@ def test_completed_motion_continues_baseline_with_realtime_overlay() -> None:
     _complete(controller)
     completed_report = controller.execution_report
     completed_state = authority.current
-    completed_angle = completed_state.joint_dof_states[0].coordinates[0].position_radians
+    completed_coordinate = completed_state.joint_dof_states[0].coordinates[0]
 
     baseline = _tick(
         controller,
@@ -145,9 +144,11 @@ def test_completed_motion_continues_baseline_with_realtime_overlay() -> None:
     assert baseline.frame.channel_values[0].value == pytest.approx(0.4)
     assert baseline.frame.applied_overlay_refs == ("overlay:gaze",)
     assert baseline.frame.degraded_overlay_refs == ()
-    baseline_angle = authority.current.joint_dof_states[0].coordinates[0].position_radians
-    assert baseline_angle == pytest.approx(completed_angle)
-    assert baseline_angle > 0.39
+    baseline_coordinate = authority.current.joint_dof_states[0].coordinates[0]
+    assert baseline_coordinate.position_radians == pytest.approx(
+        completed_coordinate.position_radians
+    )
+    assert baseline_coordinate.position_radians > 0.39
 
 
 def test_completed_baseline_stale_overlay_is_degraded() -> None:
