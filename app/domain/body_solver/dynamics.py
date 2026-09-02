@@ -142,6 +142,26 @@ def _advance_vector_velocity(
     return next_velocity, next_acceleration
 
 
+def _desired_joint_acceleration(
+    current: JointDofCoordinate,
+    target_position: float,
+    dynamic: JointDynamicLimit,
+) -> float:
+    """Canonical dynamic limitsからcritical-damping型のtarget追従加速度を求める。"""
+
+    max_velocity = dynamic.max_velocity_radians_per_second
+    max_acceleration = dynamic.max_acceleration_radians_per_second2
+    if max_velocity <= 0 or max_acceleration <= 0:
+        raise BodySolverError(BodySolverFailureCode.DYNAMIC_LIMIT_CONFLICT)
+    natural_frequency = max_acceleration / max_velocity
+    position_error = target_position - current.position_radians
+    desired_acceleration = (
+        natural_frequency * natural_frequency * position_error
+        - 2.0 * natural_frequency * current.velocity_radians_per_second
+    )
+    return _clamp_scalar(desired_acceleration, max_acceleration)
+
+
 def _advance_coordinate(
     current: JointDofCoordinate,
     target_position: float,
@@ -150,14 +170,7 @@ def _advance_coordinate(
     hard_max: float,
     dt: float,
 ) -> JointDofCoordinate:
-    desired_velocity = _clamp_scalar(
-        (target_position - current.position_radians) / dt,
-        dynamic.max_velocity_radians_per_second,
-    )
-    desired_acceleration = _clamp_scalar(
-        (desired_velocity - current.velocity_radians_per_second) / dt,
-        dynamic.max_acceleration_radians_per_second2,
-    )
+    desired_acceleration = _desired_joint_acceleration(current, target_position, dynamic)
     acceleration_delta = _clamp_scalar(
         desired_acceleration - current.acceleration_radians_per_second2,
         dynamic.max_jerk_radians_per_second3 * dt,
