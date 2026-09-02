@@ -35,7 +35,7 @@ class VerificationHTTPServer(ThreadingHTTPServer):
 
     def handle_error(
         self,
-        request: socket.socket,
+        request: socket.socket | tuple[bytes, socket.socket],
         client_address: tuple[str, int],
     ) -> None:
         error = sys.exc_info()[1]
