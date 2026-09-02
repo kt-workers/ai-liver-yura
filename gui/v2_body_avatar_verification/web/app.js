@@ -138,8 +138,11 @@ function pretty(value) { return JSON.stringify(value ?? null, null, 2); }
 
 function update(snapshot) {
   latest = snapshot;
-  $("connection").textContent = snapshot.fatal_error ? "Runtime FAIL" : "接続中";
-  $("connection").className = snapshot.fatal_error ? "badge fail" : "badge";
+  const fatal = Boolean(snapshot.fatal_error);
+  $("connection").textContent = fatal ? "Runtime FAIL" : "接続中";
+  $("connection").className = fatal ? "badge fail" : "badge";
+  $("fatalBanner").hidden = !fatal;
+  $("fatalMessage").textContent = fatal ? snapshot.fatal_error : "—";
   const avatar = snapshot.avatar || {};
   const realtime = snapshot.realtime || {};
   text("avatarStatus", avatar.status || "未投影");
@@ -211,6 +214,16 @@ $("rendererAvailable").addEventListener("change", () => command({
 
 const source = new EventSource("/api/events");
 source.addEventListener("snapshot", (event) => update(JSON.parse(event.data)));
-source.onopen = () => { $("connection").textContent = "接続中"; $("connection").className = "badge"; };
-source.onerror = () => { $("connection").textContent = "再接続中"; $("connection").className = "badge warn"; };
+source.onopen = () => {
+  if (!latest?.fatal_error) {
+    $("connection").textContent = "接続中";
+    $("connection").className = "badge";
+  }
+};
+source.onerror = () => {
+  if (!latest?.fatal_error) {
+    $("connection").textContent = "再接続中";
+    $("connection").className = "badge warn";
+  }
+};
 window.addEventListener("resize", draw);
