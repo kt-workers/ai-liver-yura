@@ -335,10 +335,11 @@ async def test_planner_delay_does_not_stop_current_physical_frames(
     )
     await asyncio.sleep(0)
 
-    for index, monotonic in enumerate(
-        (0.1, planner_delay_seconds / 2, planner_delay_seconds),
-        start=1,
-    ):
+    control_interval = v2_baseline_body_solver_policy().target_control_interval_seconds
+    pending_tick_count = round(planner_delay_seconds / control_interval)
+    assert pending_tick_count > 0
+    for index in range(1, pending_tick_count + 1):
+        monotonic = index * control_interval
         result = runtime.tick_physical(
             observed_at=_at(monotonic),
             monotonic_now_s=monotonic,
@@ -351,14 +352,15 @@ async def test_planner_delay_does_not_stop_current_physical_frames(
     pending = runtime.session("session:1")
     assert pending is not None
     assert pending.status is BodyExecutionSessionStatus.PLANNING
-    assert authority.current.revision == 3
+    assert authority.current.revision == pending_tick_count
 
     gate.set()
     await asyncio.sleep(0)
     await asyncio.sleep(0)
+    activation_time = planner_delay_seconds + control_interval
     activated = runtime.tick_physical(
-        observed_at=_at(planner_delay_seconds + 0.1),
-        monotonic_now_s=planner_delay_seconds + 0.1,
+        observed_at=_at(activation_time),
+        monotonic_now_s=activation_time,
         active_support_contact_ids=SUPPORT_CONTACT_IDS,
         frame_id="frame:new",
         trace_id="trace:new",
@@ -372,7 +374,7 @@ async def test_planner_delay_does_not_stop_current_physical_frames(
     assert session.started_at is not None
     take = frame_buffer.take_latest()
     assert take.frame == activated.frame
-    assert take.coalesced_frames >= 3
+    assert take.coalesced_frames >= pending_tick_count
 
 
 @pytest.mark.asyncio
