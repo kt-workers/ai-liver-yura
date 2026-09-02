@@ -13,6 +13,7 @@ from app.domain.body import (
     Vector3,
     project_body_pose_from_dof,
 )
+from app.domain.body_motion_planning import BodyBalanceMode
 from app.domain.body_realtime.contracts import RealtimeOverlayBundle
 from app.domain.contracts.common import require_aware, require_identifier
 
@@ -52,6 +53,8 @@ from .solver import (
 from .spatial import BodySpatialTargetResolverPort
 from .state_authority import BodyStateAuthority
 from .targets import ResolvedBodyTaskTarget, resolve_body_task_target
+
+_BASELINE_PHASE_ID = "baseline:continuation"
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,7 +132,7 @@ class BodyContinuousController:
         return self._tracker.current
 
     def interrupt(self, observed_at: datetime) -> BodyMotionExecutionReport:
-        """actual motionだけをINTERRUPTEDへ終端し、追加frameを禁止する。"""
+        """actual motionをINTERRUPTEDへ終端し、従来どおり追加frameを禁止する。"""
 
         require_aware(observed_at, "observed_at")
         current = self._tracker.current
@@ -146,9 +149,60 @@ class BodyContinuousController:
         observed_at: datetime,
         started_monotonic_s: float,
     ) -> BodyMotionExecutionReport:
-        """dynamic stateを保持したままactual trajectoryを新trajectoryへ切り替える。"""
+        """actual motionだけをSUPERSEDEDへ終端し、same Controllerで切り替える。"""
+
+        if self._tracker.current.status not in {
+            BodyMotionExecutionStatus.STARTED,
+            BodyMotionExecutionStatus.OBSERVABLE,
+        }:
+            raise BodySolverError(BodySolverFailureCode.INVALID_PLAN)
+        return self.activate_trajectory(
+            trajectory,
+            observed_at=observed_at,
+            started_monotonic_s=started_monotonic_s,
+        )
+
+    def activate_trajectory(
+        self,
+        trajectory: ExecutableBodyTrajectory,
+        *,
+        observed_at: datetime,
+        started_monotonic_s: float,
+    ) -> BodyMotionExecutionReport:
+        """active又はCOMPLETED後baselineからnew trajectoryをsame Controllerへactivateする。"""
 
         require_aware(observed_at, "observed_at")
+        current_report = self._tracker.current
+        if current_report.status not in {
+            BodyMotionExecutionStatus.STARTED,
+            BodyMotionExecutionStatus.OBSERVABLE,
+            BodyMotionExecutionStatus.COMPLETED,
+        }:
+            raise BodySolverError(BodySolverFailureCode.INVALID_PLAN)
+        current_state, activation = self._prepare_activation(
+            trajectory,
+            started_monotonic_s=started_monotonic_s,
+        )
+        if current_report.status in {
+            BodyMotionExecutionStatus.STARTED,
+            BodyMotionExecutionStatus.OBSERVABLE,
+        }:
+            old_report = self._tracker.supersede(
+                observed_at,
+                achieved_target_refs=current_report.achieved_target_refs,
+                residuals=current_report.residuals,
+            )
+        else:
+            old_report = current_report
+        self._install_trajectory(trajectory, current_state, activation)
+        return old_report
+
+    def _prepare_activation(
+        self,
+        trajectory: ExecutableBodyTrajectory,
+        *,
+        started_monotonic_s: float,
+    ) -> tuple[BodyState, float]:
         if not isinstance(trajectory, ExecutableBodyTrajectory):
             raise ValueError("trajectory が不正です")
         if (
@@ -166,13 +220,14 @@ class BodyContinuousController:
         activation = float(started_monotonic_s)
         if self._last_monotonic_s is None or activation < self._last_monotonic_s:
             raise BodySolverError(BodySolverFailureCode.STALE_HARD_DEPENDENCY)
+        return current_state, activation
 
-        current_report = self._tracker.current
-        old_report = self._tracker.supersede(
-            observed_at,
-            achieved_target_refs=current_report.achieved_target_refs,
-            residuals=current_report.residuals,
-        )
+    def _install_trajectory(
+        self,
+        trajectory: ExecutableBodyTrajectory,
+        current_state: BodyState,
+        activation: float,
+    ) -> None:
         self._trajectory = trajectory
         self._started_monotonic_s = activation
         self._phase_id = None
@@ -182,7 +237,6 @@ class BodyContinuousController:
             trajectory.plan_id,
             trajectory.trajectory_id,
         )
-        return old_report
 
     def _phase_for(self, elapsed: float) -> BodyTrajectoryPhase:
         for phase in self._trajectory.phases:
@@ -400,7 +454,17 @@ class BodyContinuousController:
         require_aware(observed_at, "observed_at")
         require_identifier(frame_id, "frame_id")
         require_identifier(trace_id, "trace_id")
-        if self._tracker.current.status not in {
+        status = self._tracker.current.status
+        if status is BodyMotionExecutionStatus.COMPLETED:
+            return self._tick_completed_baseline(
+                observed_at=observed_at,
+                monotonic_now_s=monotonic_now_s,
+                active_support_contact_ids=active_support_contact_ids,
+                overlay_bundle=overlay_bundle,
+                frame_id=frame_id,
+                trace_id=trace_id,
+            )
+        if status not in {
             BodyMotionExecutionStatus.PLANNED,
             BodyMotionExecutionStatus.STARTED,
             BodyMotionExecutionStatus.OBSERVABLE,
@@ -518,4 +582,81 @@ class BodyContinuousController:
             phase.phase_id,
             0 if solution is None else solution.iterations,
             actual_residuals,
+        )
+
+    def _tick_completed_baseline(
+        self,
+        *,
+        observed_at: datetime,
+        monotonic_now_s: float,
+        active_support_contact_ids: tuple[str, ...],
+        overlay_bundle: RealtimeOverlayBundle | None,
+        frame_id: str,
+        trace_id: str,
+    ) -> BodyControllerTickResult:
+        current = self._authority.current
+        current.validate_physical_for(self._model)
+        dt = self._tick_dt(monotonic_now_s)
+        next_dofs = advance_joint_dofs(
+            self._model,
+            current,
+            current.joint_dof_states,
+            dt,
+        )
+        root_transform, root_velocity, next_root_dynamics = advance_root(
+            self._model,
+            current,
+            BodyBalanceMode.STABLE_SUPPORT_REQUIRED,
+            None,
+            None,
+            None,
+            current.velocity.root_world_velocity.linear,
+            self._root_dynamics,
+            dt,
+        )
+        next_pose = project_body_pose_from_dof(
+            self._model,
+            root_transform,
+            next_dofs,
+        )
+        next_velocity = body_velocity_from_dofs(
+            self._model,
+            next_dofs,
+            root_velocity,
+            current.velocity,
+        )
+        channel_values, applied, degraded = select_overlay_channels(
+            overlay_bundle,
+            current.revision,
+        )
+        balance = validate_balance(
+            self._model,
+            next_pose,
+            BodyBalanceMode.STABLE_SUPPORT_REQUIRED,
+            active_support_contact_ids,
+            self._policy,
+        )
+        frame = self._authority.commit_validated_frame(
+            expected_revision=current.revision,
+            frame_id=frame_id,
+            observed_at=observed_at,
+            pose=next_pose,
+            velocity=next_velocity,
+            active_plan_id=None,
+            active_trajectory_id=None,
+            channel_values=channel_values,
+            applied_overlay_refs=applied,
+            degraded_overlay_refs=degraded,
+            trace_id=trace_id,
+            joint_dof_states=next_dofs,
+        )
+        self._last_monotonic_s = float(monotonic_now_s)
+        self._root_dynamics = next_root_dynamics
+        return BodyControllerTickResult(
+            frame,
+            balance,
+            self._tracker.current,
+            _BASELINE_PHASE_ID,
+            0,
+            (),
         )
