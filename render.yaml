@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: yura-v2-body-avatar-verification
+    runtime: python
+    plan: free
+    region: singapore
+    branch: test/341-346-avatar-stick-verification
+    buildCommand: >-
+      python -m pip install pipenv==2026.8.0 &&
+      python -m pipenv install --system --deploy
+    startCommand: python -m gui.v2_body_avatar_verification.server
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: YURA_V2_BODY_AVATAR_VERIFY_HOST
+        value: 0.0.0.0
+      - key: YURA_V2_BODY_AVATAR_VERIFY_TICK_HZ
+        value: "30"
