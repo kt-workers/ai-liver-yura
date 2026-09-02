@@ -27,12 +27,12 @@ Status: implementation binding
 
 ## 2. Authority分離
 
-`COMPLETED` / `INTERRUPTED`の`BodyMotionExecutionReport`はterminal evidenceとして不変にする。
+`COMPLETED`の`BodyMotionExecutionReport`はterminal evidenceとして不変にする。
 
 baseline continuationはterminal trajectoryを再開することではない。
 
 ```text
-terminal execution report (immutable evidence)
+COMPLETED execution report (immutable evidence)
          +
 current committed BodyState / velocity / acceleration
          +
@@ -45,6 +45,8 @@ next BodyState / BodyPoseFrame
 
 baseline frameにはactive plan / active trajectoryを設定しない。
 
+`INTERRUPTED`は従来契約どおり明示interrupt後の追加frameを禁止する。今回の修正scopeへ混ぜない。
+
 ## 3. Baseline tick admission
 
 通常`tick()`のactive trajectory pathは従来どおり:
@@ -55,16 +57,13 @@ PLANNED | STARTED | OBSERVABLE
 
 を処理する。
 
-trackerが次のterminal statusの場合だけbaseline continuation pathへ入る。
+trackerが`COMPLETED`の場合だけbaseline continuation pathへ入る。
 
-```text
-COMPLETED
-INTERRUPTED
-```
+`INTERRUPTED`は従来どおりrejectする。
 
 `SUPERSEDED`は`supersede_trajectory()`が同Controller内で即座にnew trackerへ置換するためbaseline対象ではない。
 
-`FAILED` / `INFEASIBLE` / `UNSUPPORTED`等を暗黙baseline成功へ読み替えない。
+その他terminal failureを暗黙baseline成功へ読み替えない。
 
 ## 4. Baseline physical target
 
@@ -110,12 +109,12 @@ baseline tick:
 - `BodyStateAuthority`だけがrevisionを進める。
 - `BodyPoseFrame.active_plan_id = None`
 - `BodyPoseFrame.active_trajectory_id = None`
-- old terminal `BodyMotionExecutionReport`は内容・timestamp・residualを変更しない。
+- old `COMPLETED` reportは内容・timestamp・residualを変更しない。
 - baseline frame生成をold motionのPROGRESSED/COMPLETED再発火として扱わない。
 
 `BodyControllerTickResult.execution_report`はread-only terminal snapshotを返してよい。これは新しいexecution eventではなく、Controller current report snapshotである。
 
-## 7. New trajectory activation after terminal
+## 7. New trajectory activation after completion
 
 baseline continuation中にnew accepted trajectoryが届いた場合、同じ`BodyContinuousController` instanceでactivateする。
 
@@ -132,9 +131,9 @@ activate_trajectory(
 status別:
 
 - current `STARTED | OBSERVABLE`: old trackerを`SUPERSEDED`へ終端してnew trackerへ切替。
-- current `COMPLETED | INTERRUPTED`: old terminal reportはそのまま保持したsnapshotとして返し、new trackerへ切替。old statusを書き換えない。
+- current `COMPLETED`: old terminal reportはそのまま保持したsnapshotとして返し、new trackerへ切替。old statusを書き換えない。
 - current `PLANNED`: actual未開始trajectoryを暗黙supersedeしない。従来どおりreject。
-- その他terminal failure: reject。
+- `INTERRUPTED`その他terminal failure: reject。
 
 従来`supersede_trajectory()`は互換APIとして`STARTED | OBSERVABLE`だけを許可し、内部共通activation helperを使用する。
 
@@ -188,7 +187,7 @@ new trajectory activationもmodel/policy/start revision/monotonic validationをo
 8. baseline balance failureはBodyState/internal control timeを進めない。
 9. COMPLETED後のnew trajectoryをsame Controllerへactivateできる。
 10. COMPLETED old reportをSUPERSEDEDへ書き換えない。
-11. INTERRUPTED後もbaseline continuation可能。
+11. existing INTERRUPTED frame-block semanticsは維持する。
 12. STARTED/OBSERVABLEからのexisting supersede semanticsは維持する。
 13. PLANNEDから`activate_trajectory`はactual supersedeを発明せずrejectする。
 
