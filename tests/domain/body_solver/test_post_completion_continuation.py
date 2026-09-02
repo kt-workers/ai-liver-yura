@@ -27,6 +27,7 @@ from app.domain.body_solver import (
     BodySolverError,
     BodySolverFailureCode,
     BodyStateAuthority,
+    ExecutableBodyTrajectory,
     v2_baseline_body_solver_policy,
 )
 from tests.domain.body_solver.d10_fixtures import (
@@ -81,7 +82,7 @@ def _resolver() -> StaticTargetResolver:
     )
 
 
-def _old_trajectory():
+def _old_trajectory() -> ExecutableBodyTrajectory:
     return trajectory_for(
         reach_task(extent=0.0, target_ref="target:old"),
         trajectory_id="trajectory:old",
