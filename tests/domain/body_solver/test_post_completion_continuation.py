@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 
 import pytest
 
+from app.domain.body import (
+    BodyVelocity,
+    CanonicalBodyModel,
+    JointVelocity,
+    Vector3,
+    project_body_pose_from_dof,
+)
 from app.domain.body_realtime import (
     ChannelOverlay,
     RealtimeChannel,
@@ -64,33 +72,91 @@ def _overlay(revision: int) -> RealtimeOverlayBundle:
     )
 
 
+def _resolver() -> StaticTargetResolver:
+    return StaticTargetResolver(
+        (
+            position_snapshot(0.8, target_ref="target:old"),
+            position_snapshot(-0.8, target_ref="target:new"),
+        )
+    )
+
+
+def _old_trajectory():
+    return trajectory_for(
+        reach_task(extent=0.0, target_ref="target:old"),
+        trajectory_id="trajectory:old",
+        plan_id="plan:old",
+        duration_s=0.01,
+    )
+
+
 def _controller(
     *,
     initial_angle: float = 0.0,
 ) -> tuple[BodyStateAuthority, StaticTargetResolver, BodyContinuousController]:
     model = physical_model()
     authority = BodyStateAuthority(model, physical_state(angle=initial_angle))
-    resolver = StaticTargetResolver(
-        (
-            position_snapshot(0.8, target_ref="target:old"),
-            position_snapshot(-0.8, target_ref="target:new"),
-        )
-    )
-    trajectory = trajectory_for(
-        reach_task(extent=0.0, target_ref="target:old"),
-        trajectory_id="trajectory:old",
-        plan_id="plan:old",
-        duration_s=0.01,
-    )
+    resolver = _resolver()
     controller = BodyContinuousController(
         model,
         v2_baseline_body_solver_policy(),
-        trajectory,
+        _old_trajectory(),
         authority,
         resolver,
         started_monotonic_s=100.0,
     )
     return authority, resolver, controller
+
+
+def _moving_controller() -> tuple[
+    CanonicalBodyModel,
+    BodyStateAuthority,
+    StaticTargetResolver,
+    BodyContinuousController,
+]:
+    model = physical_model()
+    base = physical_state(angle=0.4)
+    coordinate = base.joint_dof_states[0].coordinates[0]
+    moving_coordinate = replace(
+        coordinate,
+        velocity_radians_per_second=0.03,
+        acceleration_radians_per_second2=0.0,
+    )
+    moving_dof = replace(
+        base.joint_dof_states[0],
+        coordinates=(moving_coordinate,),
+    )
+    moving_pose = project_body_pose_from_dof(
+        model,
+        base.pose.root_world_transform,
+        (moving_dof,),
+    )
+    moving_velocity = BodyVelocity(
+        JointVelocity(Vector3(0.03, 0, 0), Vector3(0, 0, 0)),
+        (
+            (
+                "arm",
+                JointVelocity(Vector3(0, 0, 0), Vector3(0, 0, 0.03)),
+            ),
+        ),
+    )
+    moving_state = replace(
+        base,
+        pose=moving_pose,
+        velocity=moving_velocity,
+        joint_dof_states=(moving_dof,),
+    )
+    authority = BodyStateAuthority(model, moving_state)
+    resolver = _resolver()
+    controller = BodyContinuousController(
+        model,
+        v2_baseline_body_solver_policy(),
+        _old_trajectory(),
+        authority,
+        resolver,
+        started_monotonic_s=100.0,
+    )
+    return model, authority, resolver, controller
 
 
 def _tick(
@@ -149,6 +215,51 @@ def test_completed_motion_continues_baseline_with_realtime_overlay() -> None:
         completed_coordinate.position_radians
     )
     assert baseline_coordinate.position_radians > 0.39
+
+
+def test_completed_baseline_settles_dynamic_state_within_bounds() -> None:
+    model, authority, _, controller = _moving_controller()
+    _complete(controller)
+    before = authority.current
+    before_coordinate = before.joint_dof_states[0].coordinates[0]
+    before_root = before.velocity.root_world_velocity.linear
+    dt = 0.02
+
+    _tick(controller, index=3, monotonic_s=100.04)
+
+    after = authority.current
+    after_coordinate = after.joint_dof_states[0].coordinates[0]
+    after_root = after.velocity.root_world_velocity.linear
+    arm = next(joint for joint in model.joints if joint.joint_id == "arm")
+    dynamic = arm.dynamic_limits[0]
+    root_dynamic = model.root_dynamic_limit
+    assert root_dynamic is not None
+
+    assert abs(after_coordinate.velocity_radians_per_second) < abs(
+        before_coordinate.velocity_radians_per_second
+    )
+    assert abs(
+        after_coordinate.position_radians - before_coordinate.position_radians
+    ) <= dynamic.max_velocity_radians_per_second * dt + 1e-12
+    assert abs(
+        after_coordinate.velocity_radians_per_second
+        - before_coordinate.velocity_radians_per_second
+    ) <= dynamic.max_acceleration_radians_per_second2 * dt + 1e-12
+    assert abs(
+        after_coordinate.acceleration_radians_per_second2
+        - before_coordinate.acceleration_radians_per_second2
+    ) <= dynamic.max_jerk_radians_per_second3 * dt + 1e-12
+    root_velocity_delta = Vector3(
+        after_root.x - before_root.x,
+        after_root.y - before_root.y,
+        after_root.z - before_root.z,
+    )
+    assert after_root.magnitude < before_root.magnitude
+    assert (
+        root_velocity_delta.magnitude
+        <= root_dynamic.max_linear_acceleration_mps2 * dt + 1e-12
+    )
+    assert after_root.magnitude <= root_dynamic.max_linear_velocity_mps
 
 
 def test_completed_baseline_stale_overlay_is_degraded() -> None:
