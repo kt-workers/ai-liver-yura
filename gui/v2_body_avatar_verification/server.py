@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import sys
 import time
 from http import HTTPStatus
@@ -32,7 +33,11 @@ class VerificationHTTPServer(ThreadingHTTPServer):
         super().__init__(address, VerificationRequestHandler)
         self.engine = engine
 
-    def handle_error(self, request: object, client_address: object) -> None:
+    def handle_error(
+        self,
+        request: socket.socket,
+        client_address: tuple[str, int],
+    ) -> None:
         error = sys.exc_info()[1]
         if isinstance(error, ConnectionResetError):
             return
