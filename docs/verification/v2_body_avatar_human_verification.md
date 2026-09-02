@@ -49,6 +49,8 @@ Browserは`ChannelOverlay` / `RealtimeOverlayBundle`を直接生成しない。B
 
 ## 3. 起動
 
+### 3.1 ローカル
+
 repository rootで:
 
 ```bash
@@ -67,6 +69,37 @@ http://127.0.0.1:8769
 pipenv sync --dev
 pipenv run python -m gui.v2_body_avatar_verification.server
 ```
+
+### 3.2 Render
+
+repo rootの`render.yaml`をBlueprintとして使い、Blueprint source branchも:
+
+```text
+test/341-346-avatar-stick-verification
+```
+
+を選択する。
+
+Serviceは同branchを直接deployし、`/health`をhealth checkに使用する。Render側ではBlueprintが`YURA_V2_BODY_AVATAR_VERIFY_HOST=0.0.0.0`を設定し、portはRender提供の`PORT`を既存serverが読む。
+
+Deploy完了後はRenderが発行した:
+
+```text
+https://<service>.onrender.com/
+```
+
+をBrowserで開く。
+
+ローカルとRenderで別HTML/別runtimeを使わず、同じ`gui/v2_body_avatar_verification/server.py`と`web/`を確認する。
+
+実Body Motion LLMをRender上でも確認する場合のみ、Render DashboardのEnvironmentへ:
+
+```text
+OPENAI_API_KEY
+YURA_VERIFY_OPENAI_MODEL
+```
+
+を追加する。secretを`render.yaml`へ書かない。
 
 ## 4. 決定論Plannerでの必須確認
 
@@ -153,7 +186,7 @@ Body runtimeがfatalになった場合、単なる画面フリーズとして扱
 
 期待:
 - Browser上部に `Body Runtime Fatal` bannerが表示される
-- terminalへ `BODY RUNTIME FATAL: <type>: <message>` が出る
+- terminal / Render logsへ `BODY RUNTIME FATAL: <type>: <message>` が出る
 - `/api/snapshot` は最後のframe/revision/session/planner/realtime evidenceと `fatal_error` を保持する
 - Browser reload/SSE切断だけの `ConnectionResetError` は不要なstack traceを出さない
 - 未知のserver例外は握り潰さない
@@ -162,13 +195,15 @@ fatalが出た場合はHuman Verification FAILとして、操作手順とsnapsho
 
 ## 6. 実Body Motion LLM
 
-実Provider確認時だけ:
+ローカルで実Provider確認時だけ:
 
 ```bash
 OPENAI_API_KEY='...' \
 YURA_VERIFY_OPENAI_MODEL='<model>' \
 python -m gui.v2_body_avatar_verification.server
 ```
+
+Renderでは前述のEnvironmentへ同じ2変数を設定する。
 
 BrowserでPlanner modeを `実Body Motion LLM` にする。
 
@@ -200,6 +235,7 @@ Human Verification完了後は:
 ```text
 Human Verification: PASS
 実Body Motion LLM: PASS / 未実施 / FAIL
+確認環境: Local / Render / 両方
 
 気になった点:
 - なし
@@ -209,6 +245,7 @@ Human Verification: PASS
 
 ```text
 Human Verification: FAIL
+確認環境: Local / Render
 
 操作:
 - ...
