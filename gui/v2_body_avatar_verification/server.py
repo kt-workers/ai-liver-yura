@@ -12,9 +12,9 @@ from urllib.parse import urlparse
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from gui.v2_body_avatar_verification.runtime import VerificationEngine
+    from gui.v2_body_avatar_verification.realtime_runtime import VerificationEngine
 else:
-    from .runtime import VerificationEngine
+    from .realtime_runtime import VerificationEngine
 
 MAX_JSON_BYTES: Final = 64 * 1024
 WEB_ROOT: Final = Path(__file__).with_name("web")
@@ -50,6 +50,7 @@ class VerificationRequestHandler(BaseHTTPRequestHandler):
                     "service": "v2-body-avatar-verification",
                     "verification_only": True,
                     "never_merge": True,
+                    "body_realtime_runtime": True,
                 },
             )
             return
@@ -154,7 +155,7 @@ def main() -> None:
     engine.start()
     server = VerificationHTTPServer((host, port), engine)
     print(f"#341/#346 Browser Verification: http://{host}:{port}")
-    print("verification-only / PR #544 NEVER MERGE")
+    print("#340 BodyRealtimeRuntime connected / verification-only / PR #544 NEVER MERGE")
     try:
         server.serve_forever(poll_interval=0.25)
     except KeyboardInterrupt:
