@@ -32,6 +32,12 @@ class VerificationHTTPServer(ThreadingHTTPServer):
         super().__init__(address, VerificationRequestHandler)
         self.engine = engine
 
+    def handle_error(self, request: object, client_address: object) -> None:
+        error = sys.exc_info()[1]
+        if isinstance(error, ConnectionResetError):
+            return
+        super().handle_error(request, client_address)
+
 
 class VerificationRequestHandler(BaseHTTPRequestHandler):
     server_version = "YuraV2BodyAvatarVerification/1"
