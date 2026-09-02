@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -264,6 +265,15 @@ class VerificationEngine(_BaseVerificationEngine):
                 controls.pop("mouth_openness", None)
                 snapshot["controls"] = controls
             self._snapshot = snapshot
+
+    def _publish_fatal(self, error: BaseException) -> None:
+        summary = f"{type(error).__name__}: {error}"
+        print(
+            f"[v2-body-avatar-verification] BODY RUNTIME FATAL: {summary}",
+            file=sys.stderr,
+            flush=True,
+        )
+        super()._publish_fatal(error)
 
 
 def _realtime_expression(revision: int, at: datetime) -> BodyExpressionContext:
