@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import socket
 import time
 from collections.abc import Callable
 from typing import cast
 
+import pytest
 from jsonschema.validators import validator_for
 
 from gui.v2_body_avatar_verification import VerificationEngine
 from gui.v2_body_avatar_verification.realtime_runtime import (
     body_motion_candidate_output_schema,
 )
+from gui.v2_body_avatar_verification.server import VerificationHTTPServer
 
 
 def _object_dict(value: object) -> dict[str, object] | None:
@@ -48,6 +51,43 @@ def test_live_llm_output_schema_is_a_valid_strict_json_schema() -> None:
     validator = validator_for(schema)
     validator.check_schema(schema)
     assert schema["additionalProperties"] is False
+
+
+def test_runtime_fatal_is_exposed_to_snapshot_and_terminal(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    engine = VerificationEngine()
+
+    engine._publish_fatal(RuntimeError("verification-boom"))
+
+    snapshot = engine.snapshot()
+    assert snapshot["ready"] is False
+    assert snapshot["fatal_error"] == "RuntimeError: verification-boom"
+    captured = capsys.readouterr()
+    assert "BODY RUNTIME FATAL: RuntimeError: verification-boom" in captured.err
+
+
+def test_http_server_suppresses_connection_reset_traceback_only(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    engine = VerificationEngine()
+    server = VerificationHTTPServer(("127.0.0.1", 0), engine)
+    request = socket.socket()
+    try:
+        try:
+            raise ConnectionResetError(54, "Connection reset by peer")
+        except ConnectionResetError:
+            server.handle_error(request, ("127.0.0.1", 9999))
+        assert capsys.readouterr().err == ""
+
+        try:
+            raise RuntimeError("unknown-http-failure")
+        except RuntimeError:
+            server.handle_error(request, ("127.0.0.1", 9999))
+        assert "RuntimeError: unknown-http-failure" in capsys.readouterr().err
+    finally:
+        request.close()
+        server.server_close()
 
 
 def test_browser_surface_uses_340_realtime_runtime_without_direct_channel_overlay() -> None:
