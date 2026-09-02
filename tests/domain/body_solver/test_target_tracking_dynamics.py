@@ -5,7 +5,13 @@ from datetime import timedelta
 
 import pytest
 
-from app.domain.body import Axis, JointDofCoordinate, JointDofState, project_body_pose_from_dof
+from app.domain.body import (
+    Axis,
+    BodyState,
+    JointDofCoordinate,
+    JointDofState,
+    project_body_pose_from_dof,
+)
 from app.domain.body_solver.dynamics import advance_joint_dofs, body_velocity_from_dofs
 from tests.domain.body_solver.d10_fixtures import physical_model, physical_state
 
@@ -24,7 +30,7 @@ def _state_with_joint_dynamics(
     angle: float,
     velocity: float,
     acceleration: float,
-):
+) -> BodyState:
     model = physical_model()
     base = physical_state(angle=angle)
     dofs = (
@@ -43,7 +49,7 @@ def _state_with_joint_dynamics(
     return replace(base, pose=pose, velocity=body_velocity, joint_dof_states=dofs)
 
 
-def _step(state, target_angle: float, *, dt: float, revision: int):
+def _step(state: BodyState, target_angle: float, *, dt: float, revision: int) -> BodyState:
     model = physical_model()
     dofs = advance_joint_dofs(model, state, _target_state(target_angle), dt)
     pose = project_body_pose_from_dof(model, state.pose.root_world_transform, dofs)
@@ -63,34 +69,38 @@ def _step(state, target_angle: float, *, dt: float, revision: int):
     )
 
 
-def _coordinate(state) -> JointDofCoordinate:
+def _coordinate(state: BodyState) -> JointDofCoordinate:
     return state.joint_dof_states[0].coordinates[0]
 
 
-def _assert_dynamic_step(previous: JointDofCoordinate, current: JointDofCoordinate, dt: float) -> None:
+def _assert_dynamic_step(
+    previous: JointDofCoordinate,
+    current: JointDofCoordinate,
+    dt: float,
+) -> None:
     dynamic = physical_model().joints[1].dynamic_limits[0]
     jerk = (
         current.acceleration_radians_per_second2
         - previous.acceleration_radians_per_second2
     ) / dt
-    assert abs(current.velocity_radians_per_second) <= pytest.approx(
-        dynamic.max_velocity_radians_per_second,
-        abs=1e-12,
+    assert (
+        abs(current.velocity_radians_per_second)
+        <= dynamic.max_velocity_radians_per_second + 1e-12
     )
-    assert abs(current.acceleration_radians_per_second2) <= pytest.approx(
-        dynamic.max_acceleration_radians_per_second2,
-        abs=1e-12,
+    assert (
+        abs(current.acceleration_radians_per_second2)
+        <= dynamic.max_acceleration_radians_per_second2 + 1e-12
     )
-    assert abs(jerk) <= pytest.approx(dynamic.max_jerk_radians_per_second3, abs=1e-10)
+    assert abs(jerk) <= dynamic.max_jerk_radians_per_second3 + 1e-10
 
 
 def _run_target(
-    state,
+    state: BodyState,
     target_angle: float,
     *,
     dt: float = 1.0 / 30.0,
     steps: int = 360,
-):
+) -> tuple[BodyState, list[float]]:
     positions: list[float] = []
     revision = state.revision
     for _ in range(steps):
