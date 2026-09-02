@@ -4,7 +4,7 @@ Issue #341 / #346 のHuman Verification専用Browser surfaceです。
 
 このディレクトリは `test/341-346-avatar-stick-verification` とPR #544だけで使用し、`rebuild/v2-foundation`へはマージしません。
 
-## 起動
+## ローカル起動
 
 ```bash
 python -m gui.v2_body_avatar_verification.server
@@ -16,7 +16,51 @@ python -m gui.v2_body_avatar_verification.server
 http://127.0.0.1:8769
 ```
 
-## 実Body Motion LLMを使う場合
+Pipenvを使う場合:
+
+```bash
+pipenv sync --dev
+pipenv run python -m gui.v2_body_avatar_verification.server
+```
+
+## Render
+
+repo rootの `render.yaml` をBlueprintとして使用します。
+
+Blueprintはverification-only branch:
+
+```text
+test/341-346-avatar-stick-verification
+```
+
+を直接deployし、以下を固定します。
+
+- Python native runtime
+- Singapore region
+- Free plan
+- `/health` health check
+- CI checks pass後のみauto deploy
+- `YURA_V2_BODY_AVATAR_VERIFY_HOST=0.0.0.0`
+- Render提供の`PORT`をserverが使用
+
+Render上でも同じentry pointです。
+
+```bash
+python -m gui.v2_body_avatar_verification.server
+```
+
+Deploy完了後はRenderが発行する `https://<service>.onrender.com/` をBrowserで開きます。
+
+実Body Motion LLMまでRenderで確認する場合のみ、Render DashboardのEnvironmentへ次を追加します。
+
+```text
+OPENAI_API_KEY
+YURA_VERIFY_OPENAI_MODEL
+```
+
+API keyは `render.yaml` / GitHub / Browser snapshotへ記録しません。
+
+## 実Body Motion LLMをローカルで使う場合
 
 ```bash
 OPENAI_API_KEY=... \
