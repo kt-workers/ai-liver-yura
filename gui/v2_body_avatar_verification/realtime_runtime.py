@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -41,6 +40,7 @@ from app.domain.speech_runtime.contracts import (
 )
 from app.subsystems.avatar import AvatarPresentationRuntime, StickAvatarRenderer
 from tests.domain.body_solver.d10_fixtures import (
+    SUPPORT_CONTACT_IDS,
     StaticTargetResolver,
     physical_model,
     physical_state,
@@ -83,11 +83,11 @@ class VerificationEngine(_BaseVerificationEngine):
             (position_snapshot(0.35, target_ref="target:verification:initial"),)
         )
         initial = trajectory_for(
-            reach_task(target_ref="target:verification:initial"),
+            reach_task(extent=0.0, target_ref="target:verification:initial"),
             plan_id="plan:verification:initial",
             trajectory_id="trajectory:verification:initial",
             solver_policy_revision=policy.policy_revision,
-            duration_s=120.0,
+            duration_s=0.01,
         )
         controller = BodyContinuousController(
             model,
@@ -127,6 +127,32 @@ class VerificationEngine(_BaseVerificationEngine):
         runtime.attach_realtime_runtime(realtime)
         runtime.start()
         self._publish_snapshot(now, 0.0)
+
+    def _tick(self, now: datetime, monotonic_now: float) -> None:
+        runtime = self._runtime
+        avatar_runtime = self._avatar_runtime
+        renderer = self._renderer
+        if runtime is None or avatar_runtime is None or renderer is None:
+            raise RuntimeError("verification runtimeが未初期化です")
+        self._frame_count += 1
+        result = runtime.tick_physical(
+            observed_at=now,
+            monotonic_now_s=monotonic_now,
+            active_support_contact_ids=SUPPORT_CONTACT_IDS,
+            frame_id=f"frame:verification:{self._frame_count}",
+            trace_id="trace:verification:runtime",
+        )
+        avatar_runtime.submit_frame(result.frame)
+        report = avatar_runtime.present_latest(started_at=now)
+        if report is not None:
+            self._last_avatar_report = {
+                "status": report.status.value,
+                "frame_id": report.frame_id,
+                "dropped_or_coalesced_frames": report.dropped_or_coalesced_frames,
+                "degraded_items": list(report.degraded_items),
+                "diagnostics": list(report.sanitized_diagnostics),
+            }
+        self._publish_snapshot(now, monotonic_now, result.frame)
 
     def _apply_command(self, command: dict[str, object]) -> None:
         action = command.get("action")
