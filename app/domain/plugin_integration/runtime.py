@@ -12,6 +12,7 @@ from app.domain.activity_execution import (
     ExecutionAdapterReport,
     ExecutionCancellationSignal,
     ExecutionDispatchRequest,
+    ExecutionEffectUncertainty,
     ExecutionPreflightPort,
     ExecutionPreflightSnapshot,
 )
@@ -211,7 +212,13 @@ class PluginActivityExecutionPort:
                     await adapter_binding.adapter.execute(request, cancellation)
                 )
             except asyncio.CancelledError:
-                raise
+                return (
+                    self._cancelled(
+                        request,
+                        "plugin_adapter_cancelled_after_invoke",
+                        ExecutionEffectUncertainty.POSSIBLY_APPLIED,
+                    ),
+                )
             except Exception:
                 self._publish_failure_diagnostic(
                     final_view.plugin_id,
@@ -220,7 +227,13 @@ class PluginActivityExecutionPort:
                     request,
                     "plugin_adapter_failure",
                 )
-                return (self._failure(request, "plugin_adapter_failure"),)
+                return (
+                    self._failure(
+                        request,
+                        "plugin_adapter_failure",
+                        ExecutionEffectUncertainty.UNKNOWN,
+                    ),
+                )
             finally:
                 await self._inflight_finished(final_view.plugin_id)
 
@@ -322,6 +335,7 @@ class PluginActivityExecutionPort:
         self,
         request: ExecutionDispatchRequest,
         code: str,
+        effect_uncertainty: ExecutionEffectUncertainty = ExecutionEffectUncertainty.NONE,
     ) -> ExecutionAdapterReport:
         return ExecutionAdapterReport(
             request.invocation.command.command_id,
@@ -330,12 +344,14 @@ class PluginActivityExecutionPort:
             ExecutionStatus.FAILED,
             self._clock.now(),
             {"code": code},
+            effect_uncertainty=effect_uncertainty,
         )
 
     def _cancelled(
         self,
         request: ExecutionDispatchRequest,
         code: str,
+        effect_uncertainty: ExecutionEffectUncertainty = ExecutionEffectUncertainty.NONE,
     ) -> ExecutionAdapterReport:
         return ExecutionAdapterReport(
             request.invocation.command.command_id,
@@ -344,6 +360,7 @@ class PluginActivityExecutionPort:
             ExecutionStatus.CANCELLED,
             self._clock.now(),
             {"code": code},
+            effect_uncertainty=effect_uncertainty,
         )
 
     def _publish_failure_diagnostic(
