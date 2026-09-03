@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 
 import pytest
@@ -29,6 +29,7 @@ from app.domain.contracts import (
 )
 from app.domain.plugin_integration import (
     PluginActivityExecutionPort,
+    PluginCapabilityAdapter,
     PluginCapabilityAdapterBinding,
     PluginCapabilityPreflightPort,
     PluginIntegrationOperationalPolicy,
@@ -67,7 +68,7 @@ class BasePreflight:
     def __init__(
         self,
         capabilities: tuple[CapabilityDescriptor, ...] = (),
-        before_read: object | None = None,
+        before_read: Callable[[int], None] | None = None,
     ) -> None:
         self._capabilities = capabilities
         self._before_read = before_read
@@ -76,7 +77,7 @@ class BasePreflight:
     async def current_for(self, invocation: ActivityInvocation) -> ExecutionPreflightSnapshot:
         del invocation
         self.calls += 1
-        if callable(self._before_read):
+        if self._before_read is not None:
             self._before_read(self.calls)
         return ExecutionPreflightSnapshot(REVISIONS, self._capabilities, (), NOW)
 
@@ -324,21 +325,20 @@ def invocation(
 
 def coordinator(
     registry: PluginRegistryAuthority,
-    adapter: object,
+    adapter: PluginCapabilityAdapter,
     *,
     base_capabilities: tuple[CapabilityDescriptor, ...] = (),
-    before_read: object | None = None,
+    before_read: Callable[[int], None] | None = None,
     policy: PluginIntegrationOperationalPolicy | None = None,
 ) -> tuple[ActivityExecutionCoordinator, NativePort, PluginActivityExecutionPort]:
     base = BasePreflight(base_capabilities, before_read)
     preflight = PluginCapabilityPreflightPort(base, registry)
     native = NativePort()
-    plugin_adapter = adapter
     binding = PluginCapabilityAdapterBinding(
         "plugin-a",
         0,
         "plugin.search",
-        plugin_adapter,  # type: ignore[arg-type]
+        adapter,
     )
     integration = PluginActivityExecutionPort(
         native,
@@ -431,7 +431,7 @@ async def test_ambiguous_timeout_does_not_fabricate_actual_effect() -> None:
     result = await runtime.execute(invocation("plugin-timeout"))
     assert result.result.status is ExecutionStatus.TIMED_OUT
     assert result.result.effect_refs == ()
-    assert result.result.details["code"] == "plugin_effect_outcome_unknown"
+    assert result.result.details == {"code": "plugin_effect_outcome_unknown"}
 
 
 @pytest.mark.asyncio
@@ -539,3 +539,37 @@ async def test_stop_fence_closes_new_availability_and_waits_for_inflight() -> No
     after = registry.snapshot(NOW)
     assert after.plugins[0].lifecycle_state is PluginLifecycleState.STOPPED
     assert lifecycle_adapter.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_waiting_execution_revalidates_after_stop_fence() -> None:
+    registry = available_registry()
+    slow = SlowPluginAdapter()
+    policy = PluginIntegrationOperationalPolicy(
+        max_in_flight_per_plugin=1,
+        max_in_flight_per_capability=1,
+    )
+    runtime, _, integration = coordinator(registry, slow, policy=policy)
+    lifecycle_adapter = LifecycleAdapter()
+    lifecycle = PluginLifecycleCoordinator(
+        registry,
+        integration,
+        (PluginLifecycleAdapterBinding("plugin-a", 0, lifecycle_adapter),),
+        policy,
+        Clock(),
+    )
+
+    first = asyncio.create_task(runtime.execute(invocation("plugin-first")))
+    await slow.entered.wait()
+    second = asyncio.create_task(runtime.execute(invocation("plugin-second")))
+    await asyncio.sleep(0)
+    stop_task = asyncio.create_task(lifecycle.stop("plugin-a"))
+    await asyncio.sleep(0)
+
+    slow.release.set()
+    first_result = await first
+    second_result = await second
+    assert first_result.result.status is ExecutionStatus.COMPLETED
+    assert second_result.result.status is ExecutionStatus.FAILED
+    assert slow.calls == 1
+    assert await stop_task is True

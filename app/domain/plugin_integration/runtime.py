@@ -8,6 +8,7 @@ from datetime import datetime
 from app.domain.activity_execution import (
     ActivityExecutionPort,
     ActivityInvocation,
+    CapabilityBinding,
     ExecutionAdapterReport,
     ExecutionCancellationSignal,
     ExecutionDispatchRequest,
@@ -15,7 +16,12 @@ from app.domain.activity_execution import (
     ExecutionPreflightSnapshot,
 )
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus
-from app.domain.plugin_registry import PluginLifecycleState, PluginRegistryAuthority
+from app.domain.plugin_registry import (
+    PluginLifecycleState,
+    PluginRegistryAuthority,
+    PluginRegistrySnapshot,
+)
+from app.domain.plugin_registry.contracts import RegisteredCapabilityView
 
 from .contracts import (
     PluginCapabilityAdapterBinding,
@@ -153,43 +159,16 @@ class PluginActivityExecutionPort:
             return (self._failure(request, "plugin_capability_binding_ambiguous"),)
 
         selected = plugin_bindings[0]
-        current_view = next(
-            (
-                item
-                for item in current.capabilities
-                if item.declaration.capability_id == selected.capability_id
-            ),
-            None,
-        )
-        if current_view is None:
-            return (self._failure(request, "plugin_capability_unavailable"),)
-        if current_view.capability_revision != selected.descriptor_revision:
-            return (self._failure(request, "plugin_capability_revision_changed"),)
-        if current_view.effective_availability not in {
-            CapabilityAvailability.AVAILABLE,
-            CapabilityAvailability.DEGRADED,
-        }:
-            return (self._failure(request, "plugin_capability_unavailable"),)
-        if not any(
-            item.operation_id == selected.requirement.operation
-            for item in current_view.permitted_operations
-        ):
-            return (self._failure(request, "plugin_operation_not_permitted"),)
-        if cancellation.cancelled:
-            return (self._cancelled(request, "plugin_cancelled_before_invoke"),)
-
-        adapter_binding = next(
-            (
-                item
-                for item in self._adapter_bindings
-                if item.plugin_id == current_view.plugin_id
-                and item.plugin_generation == current_view.plugin_generation
-                and item.capability_id == current_view.declaration.capability_id
-            ),
-            None,
-        )
+        current_view = self._find_current_view(current, selected)
+        failure = self._validate_current_view(current_view, selected)
+        if failure is not None:
+            return (self._failure(request, failure),)
+        assert current_view is not None
+        adapter_binding = self._find_adapter_binding(current_view)
         if adapter_binding is None:
             return (self._failure(request, "plugin_adapter_binding_missing"),)
+        if cancellation.cancelled:
+            return (self._cancelled(request, "plugin_cancelled_before_invoke"),)
 
         plugin_semaphore = self._plugin_semaphores.setdefault(
             current_view.plugin_id,
@@ -200,14 +179,26 @@ class PluginActivityExecutionPort:
             asyncio.Semaphore(self._policy.max_in_flight_per_capability),
         )
         async with plugin_semaphore, capability_semaphore:
-            await self._inflight_started(current_view.plugin_id)
+            final_snapshot = self._registry.snapshot(self._clock.now())
+            final_view = self._find_current_view(final_snapshot, selected)
+            failure = self._validate_current_view(final_view, selected)
+            if failure is not None:
+                return (self._failure(request, failure),)
+            assert final_view is not None
+            final_adapter_binding = self._find_adapter_binding(final_view)
+            if final_adapter_binding is not adapter_binding:
+                return (self._failure(request, "plugin_adapter_binding_changed"),)
+            if cancellation.cancelled:
+                return (self._cancelled(request, "plugin_cancelled_before_invoke"),)
+
+            await self._inflight_started(final_view.plugin_id)
             self._trace.publish(
                 PluginIntegrationTraceEvent(
                     "plugin_execution_started",
                     self._clock.now(),
-                    current_view.plugin_id,
-                    current_view.plugin_generation,
-                    current_view.declaration.capability_id,
+                    final_view.plugin_id,
+                    final_view.plugin_generation,
+                    final_view.declaration.capability_id,
                     request.invocation.command.command_id,
                     {
                         "descriptor_revision": selected.descriptor_revision,
@@ -216,30 +207,30 @@ class PluginActivityExecutionPort:
                 )
             )
             try:
-                if cancellation.cancelled:
-                    return (self._cancelled(request, "plugin_cancelled_before_invoke"),)
-                reports = tuple(await adapter_binding.adapter.execute(request, cancellation))
+                reports = tuple(
+                    await adapter_binding.adapter.execute(request, cancellation)
+                )
             except asyncio.CancelledError:
                 raise
             except Exception:
                 self._publish_failure_diagnostic(
-                    current_view.plugin_id,
-                    current_view.plugin_generation,
-                    current_view.declaration.capability_id,
+                    final_view.plugin_id,
+                    final_view.plugin_generation,
+                    final_view.declaration.capability_id,
                     request,
                     "plugin_adapter_failure",
                 )
                 return (self._failure(request, "plugin_adapter_failure"),)
             finally:
-                await self._inflight_finished(current_view.plugin_id)
+                await self._inflight_finished(final_view.plugin_id)
 
         self._trace.publish(
             PluginIntegrationTraceEvent(
                 "plugin_execution_completed",
                 self._clock.now(),
-                current_view.plugin_id,
-                current_view.plugin_generation,
-                current_view.declaration.capability_id,
+                final_view.plugin_id,
+                final_view.plugin_generation,
+                final_view.declaration.capability_id,
                 request.invocation.command.command_id,
                 {"report_count": len(reports)},
             )
@@ -274,6 +265,58 @@ class PluginActivityExecutionPort:
             state.count -= 1
             if state.count == 0:
                 state.idle.set()
+
+    @staticmethod
+    def _find_current_view(
+        snapshot: PluginRegistrySnapshot,
+        selected: CapabilityBinding,
+    ) -> RegisteredCapabilityView | None:
+        return next(
+            (
+                item
+                for item in snapshot.capabilities
+                if item.declaration.capability_id == selected.capability_id
+            ),
+            None,
+        )
+
+    @staticmethod
+    def _validate_current_view(
+        current_view: RegisteredCapabilityView | None,
+        selected: CapabilityBinding,
+    ) -> str | None:
+        if current_view is None:
+            return "plugin_capability_unavailable"
+        if current_view.capability_revision != selected.descriptor_revision:
+            return "plugin_capability_revision_changed"
+        available = current_view.effective_availability is CapabilityAvailability.AVAILABLE
+        degraded_allowed = (
+            current_view.effective_availability is CapabilityAvailability.DEGRADED
+            and selected.requirement.allow_degraded
+        )
+        if not (available or degraded_allowed):
+            return "plugin_capability_unavailable"
+        if not any(
+            item.operation_id == selected.requirement.operation
+            for item in current_view.permitted_operations
+        ):
+            return "plugin_operation_not_permitted"
+        return None
+
+    def _find_adapter_binding(
+        self,
+        current_view: RegisteredCapabilityView,
+    ) -> PluginCapabilityAdapterBinding | None:
+        return next(
+            (
+                item
+                for item in self._adapter_bindings
+                if item.plugin_id == current_view.plugin_id
+                and item.plugin_generation == current_view.plugin_generation
+                and item.capability_id == current_view.declaration.capability_id
+            ),
+            None,
+        )
 
     def _failure(
         self,
