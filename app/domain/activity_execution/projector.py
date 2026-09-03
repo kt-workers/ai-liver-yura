@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.domain.contracts import EventEnvelope
+from app.domain.contracts.common import JsonValue
 
 from .contracts import ActivityExecutionRecord, ExecutionEffectUncertainty
 
@@ -12,7 +13,7 @@ def to_execution_event(
         raise ValueError("record must be ActivityExecutionRecord")
     invocation = record.invocation
     result = record.result
-    payload: dict[str, object] = {
+    payload: dict[str, JsonValue] = {
         "command_id": result.command_id,
         "invocation_id": invocation.invocation_id,
         "decision_id": invocation.command.decision_id,
