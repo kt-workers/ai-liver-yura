@@ -27,6 +27,7 @@ def to_execution_event(
             "operation_ref": invocation.operation_ref,
             "status": result.status.value,
             "effect_refs": result.effect_refs,
+            "effect_uncertainty": record.effect_uncertainty.value,
             "details": result.details,
             "cancellation_reason": record.cancellation_reason,
             "cancellation_requested_at": None
