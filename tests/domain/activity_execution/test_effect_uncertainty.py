@@ -119,7 +119,10 @@ def test_ambiguous_timeout_records_typed_uncertainty_without_fake_effect_ref() -
     assert committed.result.status is ExecutionStatus.TIMED_OUT
     assert committed.result.effect_refs == ()
     assert committed.record.effect_uncertainty is ExecutionEffectUncertainty.POSSIBLY_APPLIED
-    assert committed.lifecycle_facts[-1].effect_uncertainty is ExecutionEffectUncertainty.POSSIBLY_APPLIED
+    assert (
+        committed.lifecycle_facts[-1].effect_uncertainty
+        is ExecutionEffectUncertainty.POSSIBLY_APPLIED
+    )
 
 
 def test_confirmed_effect_is_preserved_when_additional_uncertainty_remains() -> None:
