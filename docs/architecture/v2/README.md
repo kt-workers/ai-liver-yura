@@ -44,6 +44,7 @@
 - `goal_commitment_state_contracts.md` — 永続Goal・Commitment状態と原子的ライフサイクルreducer
 - `goal_planning_contracts.md` — #361 active Goalから依存グラフ型ActivityPlanへの計画Authority契約
 - `activity_execution_contracts.md` — Activity受付、Capability事前確認、実行事実の正本
+- `execution_effect_uncertainty_contracts.md` — #329/#344 確認済みeffectと未確認effect可能性を分離する補足正本
 - `attention_turn_contracts.md` — #333 Focus / Turn / response obligation、bounded source scheduling、fairness契約
 - `attention_source_owner_lifecycle_contracts.md` — #333 source owner/lifecycle、refresh/resolve/expiry境界
 - `attention_turn_contracts_amendment_2026-08-16.md` — #333 live freshness・claim等の補足正本
