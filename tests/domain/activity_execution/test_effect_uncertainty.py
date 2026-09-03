@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import cast
 
 import pytest
 
@@ -171,4 +172,5 @@ def test_execution_event_projects_effect_uncertainty() -> None:
         event_id="event-1",
         trace_id="trace-1",
     )
-    assert event.to_dict()["payload"]["effect_uncertainty"] == "unknown"
+    payload = cast(dict[str, object], event.to_dict()["payload"])
+    assert payload["effect_uncertainty"] == "unknown"
