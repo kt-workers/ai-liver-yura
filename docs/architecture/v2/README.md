@@ -7,8 +7,9 @@
 - `design_completion_matrix.md` — #445 全V2詳細設計の完了状態とD10後の製造起点統合Gate
 - `design_cross_audit_report.md` — D8 正本性・依存関係・真実境界・revision・並行性・作業系列の横断監査
 - `design_implementation_decidability_audit.md` — #445 D10 実装決定可能性・計画Coverage・Post-D10監査順序の正本
-- `production_sequence_authority.md` — Project #6の旧metadataから分離したcurrent V2製造順Authority
-- `project_sync_manifest.md` — 初期V2工程を作成した履歴資料。current Project日程Authorityではない
+- `production_plan_current.md` — #550 Post-D10 GitHub live監査後のcurrent production execution plan
+- `production_sequence_authority.md` — D10で保存したoriginal sequence baseline。Post-D10 current execution順の単独Authorityではない
+- `project_sync_manifest.md` — 初期V2工程・Project #6同期を記録した履歴資料。current Project/日程Authorityではない
 - `project_sync_runbook.md` — live ID取得、dry-run、Project field、正式Parent/Sub-issue同期手順
 - `legacy_migration_matrix.md` — V1要件・failure knowledgeのV2移行表
 
@@ -107,8 +108,8 @@
 
 ## 現在状態
 
-D1〜D9は2026-08-23にPASS。D10は2026-08-31に実装決定可能性・データ十分性・計画Coverageの再監査を完了し**PASS**。
+D1〜D9は2026-08-23にPASS。D10は2026-08-31に実装決定可能性・データ十分性・計画Coverageの再監査を完了しPASSし、PR #502で`rebuild/v2-foundation`へ統合済み。
 
-次はD10 architectureを`rebuild/v2-foundation`へ統合し、Open/Closed全V2 Issue・PR・branchを元工程の先頭から監査する。merged完了lineageは維持し、未マージ完了lineageはcurrent canonicalへ照合してmerge、未マージ途中lineageは完成させてmergeする。historical / validation-only / superseded lineageはproductionへmergeせず、有効知見がcurrent canonicalへ回収済みかだけを確認する。
+#549でV1 blocking contamination 0を確認した後、#550でD10が要求したOpen/Closed全V2 Issue・PR・branch・Human VerificationのPost-D10 state reconciliationを実施した。current execution順は`production_plan_current.md`を参照する。
 
-この収束後の`rebuild/v2-foundation`単一HEADを製造起点とする。
+`project_sync_manifest.md`のProject #6情報は履歴資料でありcurrent Authorityではない。current Project日程AuthorityはProject #7 `プロジェクトゆらv2`。Project #6は変更しない。

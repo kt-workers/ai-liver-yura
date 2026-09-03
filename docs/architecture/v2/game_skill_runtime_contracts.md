@@ -2,8 +2,8 @@
 
 Owner Issue: #365
 Parent: #345
-Upstream: #328 / #366 / #333 / #361 / #329 / #344
-Related: #347 / #352 / #360 / #445
+Upstream: #328 / #366 / #333 / #361 / #329
+Related: #344 / #347 / #352 / #360 / #445
 Status: Canonical Supplement / Design Completion Gate
 
 ## 1. Purpose
@@ -334,6 +334,8 @@ Game session external capability may be discovered through generic Capability me
 
 #344 Plugin architecture may expose lightweight game operations/capability discovery.
 
+#344は#365 Game Skill Runtimeそのもののdirect dependencyではない。Plugin 0件でもGame Skill contractは成立する。
+
 #365 owns dedicated realtime session processing where needed.
 
 Provider/SDK specifics remain Game Subsystem adapters.
@@ -458,4 +460,4 @@ Real game/device operation remains Human/Integration Verification.
 
 ## 22. #445 Gate
 
-Game Skill implementation remains frozen until #445 D1-D9 and final user confirmation PASS.
+#445 Design Completion Gate / D10は完了済み。Game Skill implementationの設計freezeは解除されている。現在の残Gateは#365自身の実ゲーム/実操作Human Verificationである。
