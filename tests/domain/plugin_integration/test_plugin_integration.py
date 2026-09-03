@@ -14,6 +14,7 @@ from app.domain.activity_execution import (
     ExecutionDispatchRequest,
     ExecutionEffectEvidence,
     ExecutionEffectKind,
+    ExecutionEffectUncertainty,
     ExecutionPreflightSnapshot,
 )
 from app.domain.contracts import (
@@ -161,6 +162,7 @@ class AmbiguousTimeoutAdapter:
                 ExecutionStatus.TIMED_OUT,
                 NOW,
                 {"code": "plugin_effect_outcome_unknown"},
+                effect_uncertainty=ExecutionEffectUncertainty.POSSIBLY_APPLIED,
             ),
         )
 
@@ -190,6 +192,31 @@ class SlowPluginAdapter:
                 {"code": "slow_plugin_completed"},
             ),
         )
+
+
+class CancelledAfterInvokeAdapter:
+    def __init__(self) -> None:
+        self.entered = asyncio.Event()
+
+    async def execute(
+        self,
+        request: ExecutionDispatchRequest,
+        cancellation: ExecutionCancellationSignal,
+    ) -> Sequence[ExecutionAdapterReport]:
+        del request, cancellation
+        self.entered.set()
+        await asyncio.Event().wait()
+        return ()
+
+
+class FailingAfterInvokeAdapter:
+    async def execute(
+        self,
+        request: ExecutionDispatchRequest,
+        cancellation: ExecutionCancellationSignal,
+    ) -> Sequence[ExecutionAdapterReport]:
+        del request, cancellation
+        raise RuntimeError("provider outcome is not known")
 
 
 class CountingPluginAdapter:
@@ -431,7 +458,33 @@ async def test_ambiguous_timeout_does_not_fabricate_actual_effect() -> None:
     result = await runtime.execute(invocation("plugin-timeout"))
     assert result.result.status is ExecutionStatus.TIMED_OUT
     assert result.result.effect_refs == ()
+    assert result.effect_uncertainty is ExecutionEffectUncertainty.POSSIBLY_APPLIED
     assert result.result.details == {"code": "plugin_effect_outcome_unknown"}
+
+
+@pytest.mark.asyncio
+async def test_cancel_after_invoke_preserves_possible_effect_truth() -> None:
+    registry = available_registry()
+    adapter = CancelledAfterInvokeAdapter()
+    runtime, _, _ = coordinator(registry, adapter)
+    task = asyncio.create_task(runtime.execute(invocation("plugin-cancel-after-invoke")))
+    await adapter.entered.wait()
+    await runtime.cancel("plugin-cancel-after-invoke", "user_cancelled")
+    result = await task
+    assert result.result.status is ExecutionStatus.CANCELLED
+    assert result.result.effect_refs == ()
+    assert result.effect_uncertainty is ExecutionEffectUncertainty.POSSIBLY_APPLIED
+
+
+@pytest.mark.asyncio
+async def test_adapter_failure_after_invoke_keeps_unknown_effect_truth() -> None:
+    registry = available_registry()
+    runtime, _, _ = coordinator(registry, FailingAfterInvokeAdapter())
+    result = await runtime.execute(invocation("plugin-failure-after-invoke"))
+    assert result.result.status is ExecutionStatus.FAILED
+    assert result.result.effect_refs == ()
+    assert result.effect_uncertainty is ExecutionEffectUncertainty.UNKNOWN
+    assert result.result.details == {"code": "plugin_adapter_failure"}
 
 
 @pytest.mark.asyncio
@@ -529,7 +582,10 @@ async def test_stop_fence_closes_new_availability_and_waits_for_inflight() -> No
     await asyncio.sleep(0)
     during_stop = registry.snapshot(NOW)
     assert during_stop.plugins[0].lifecycle_state is PluginLifecycleState.STOPPING
-    assert during_stop.foundation_capabilities == ()
+    capabilities = during_stop.foundation_capabilities
+    assert len(capabilities) == 1
+    assert capabilities[0].capability_id == "plugin.search"
+    assert capabilities[0].availability is CapabilityAvailability.UNAVAILABLE
     assert stop_task.done() is False
 
     slow.release.set()
@@ -571,5 +627,31 @@ async def test_waiting_execution_revalidates_after_stop_fence() -> None:
     second_result = await second
     assert first_result.result.status is ExecutionStatus.COMPLETED
     assert second_result.result.status is ExecutionStatus.FAILED
+    assert second_result.effect_uncertainty is ExecutionEffectUncertainty.NONE
     assert slow.calls == 1
     assert await stop_task is True
+
+
+@pytest.mark.asyncio
+async def test_waiting_execution_revalidates_after_permission_revocation() -> None:
+    registry = available_registry()
+    slow = SlowPluginAdapter()
+    policy = PluginIntegrationOperationalPolicy(
+        max_in_flight_per_plugin=1,
+        max_in_flight_per_capability=1,
+    )
+    runtime, _, _ = coordinator(registry, slow, policy=policy)
+
+    first = asyncio.create_task(runtime.execute(invocation("plugin-permission-first")))
+    await slow.entered.wait()
+    second = asyncio.create_task(runtime.execute(invocation("plugin-permission-second")))
+    await asyncio.sleep(0)
+    registry.adopt_permission_grants(PluginPermissionGrantSnapshot(1, (), NOW))
+
+    slow.release.set()
+    first_result = await first
+    second_result = await second
+    assert first_result.result.status is ExecutionStatus.COMPLETED
+    assert second_result.result.status is ExecutionStatus.FAILED
+    assert second_result.effect_uncertainty is ExecutionEffectUncertainty.NONE
+    assert slow.calls == 1
