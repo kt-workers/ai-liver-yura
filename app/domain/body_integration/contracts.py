@@ -44,8 +44,8 @@ class BodyIntegrationTrace:
     motion_plan_id: str | None
     body_model_id: str
     source_context_revision: int
-    goal_revision: int
-    attention_revision: int
+    goal_revision: int | None
+    attention_revision: int | None
     body_state_revision_start: int
     expression_revision_start: int
     created_at: datetime
@@ -61,14 +61,11 @@ class BodyIntegrationTrace:
             require_identifier(getattr(self, name), name)
         if self.motion_plan_id is not None:
             require_identifier(self.motion_plan_id, "motion_plan_id")
-        for name in (
-            "source_context_revision",
-            "goal_revision",
-            "attention_revision",
-            "body_state_revision_start",
-            "expression_revision_start",
-        ):
-            require_revision(getattr(self, name), name)
+        require_revision(self.source_context_revision, "source_context_revision")
+        require_revision(self.goal_revision, "goal_revision", optional=True)
+        require_revision(self.attention_revision, "attention_revision", optional=True)
+        require_revision(self.body_state_revision_start, "body_state_revision_start")
+        require_revision(self.expression_revision_start, "expression_revision_start")
         require_aware(self.created_at, "created_at")
 
 
