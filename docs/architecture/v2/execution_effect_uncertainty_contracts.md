@@ -73,8 +73,9 @@ Rules:
 - defaultは`NONE`。
 - `UNKNOWN` / `POSSIBLY_APPLIED`は`FAILED / CANCELLED / TIMED_OUT` reportでだけ許可する。
 - uncertaintyだけではnew `effect_ref`を作らない。
-- 同じreportに確認済みeffect evidenceとunconfirmed uncertaintyが共存してよい。これは「確認済みeffectはあるが、追加effectについて未確定性が残る」場合を表す。
 - `COMPLETED / OBSERVABLE / APPLIED` reportがunconfirmed uncertaintyを主張してはならない。
+- terminal failure reportは既存#329規則どおり新しいeffect evidenceを導入しない。
+- 確認済みeffectと追加のunconfirmed uncertaintyが同じ実行で存在する場合、`OBSERVABLE/APPLIED` reportで確認済みeffectを先に確定し、その後`FAILED/CANCELLED/TIMED_OUT` reportでuncertaintyを記録する。1つのterminal reportへ新規confirmed effectとuncertaintyを混載しない。
 
 ## 5. timeout / cancellation
 
@@ -93,7 +94,7 @@ Provider call開始後のtimeout/cancel/transport failure等でoutcome不明の�
 
 ```text
 status = FAILED | CANCELLED | TIMED_OUT
-effect_refs = confirmed refs only
+effect_refs = existing confirmed refs only
 effect_uncertainty = UNKNOWN | POSSIBLY_APPLIED
 ```
 
