@@ -315,12 +315,16 @@ class ActivityExecutionRecord:
             raise ValueError("record_revision must be a non-negative int")
         if not isinstance(self.effect_uncertainty, ExecutionEffectUncertainty):
             raise ValueError("effect_uncertainty must be ExecutionEffectUncertainty")
-        if self.effect_uncertainty is not ExecutionEffectUncertainty.NONE and self.result.status not in {
+        uncertain_terminal = {
             ExecutionStatus.FAILED,
             ExecutionStatus.CANCELLED,
             ExecutionStatus.TIMED_OUT,
             ExecutionStatus.SUPERSEDED,
-        }:
+        }
+        if (
+            self.effect_uncertainty is not ExecutionEffectUncertainty.NONE
+            and self.result.status not in uncertain_terminal
+        ):
             raise ValueError("effect uncertainty requires a terminal ambiguous execution status")
 
     @property
@@ -374,7 +378,10 @@ class ActivityExecutionLifecycleFact:
             ExecutionStatus.TIMED_OUT,
             ExecutionStatus.SUPERSEDED,
         }
-        if self.operation is SourceLifecycleOperation.OPEN and self.status is not ExecutionStatus.REQUESTED:
+        if (
+            self.operation is SourceLifecycleOperation.OPEN
+            and self.status is not ExecutionStatus.REQUESTED
+        ):
             raise ValueError("Activity openはREQUESTEDだけに許可されます")
         refreshable = {
             ExecutionStatus.ACCEPTED,
@@ -394,12 +401,16 @@ class ActivityExecutionLifecycleFact:
         object.__setattr__(self, "effect_refs", refs)
         if not isinstance(self.effect_uncertainty, ExecutionEffectUncertainty):
             raise ValueError("effect_uncertaintyが不正です")
-        if self.effect_uncertainty is not ExecutionEffectUncertainty.NONE and self.status not in {
+        uncertain_statuses = {
             ExecutionStatus.FAILED,
             ExecutionStatus.CANCELLED,
             ExecutionStatus.TIMED_OUT,
             ExecutionStatus.SUPERSEDED,
-        }:
+        }
+        if (
+            self.effect_uncertainty is not ExecutionEffectUncertainty.NONE
+            and self.status not in uncertain_statuses
+        ):
             raise ValueError("effect uncertaintyとstatusが一致しません")
 
 
