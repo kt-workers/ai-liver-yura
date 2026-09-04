@@ -97,7 +97,7 @@ def effect() -> ExecutionEffectEvidence:
 
 
 def test_uncertainty_is_closed_and_restricted_to_terminal_failure_reports() -> None:
-    with pytest.raises(ValueError, match="終端report"):
+    with pytest.raises(ValueError, match="終端報告"):
         ExecutionAdapterReport(
             "command-1",
             "invocation-1",
@@ -279,3 +279,42 @@ async def test_coordinator_keeps_none_when_cancelled_before_adapter_start() -> N
     assert record.result.status is ExecutionStatus.CANCELLED
     assert record.effect_uncertainty is ExecutionEffectUncertainty.NONE
     assert not port.called
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reports",
+    [
+        (),
+        ("not-a-report",),
+        (
+            ExecutionAdapterReport(
+                "command-1",
+                "other-invocation",
+                DISPATCH_ID,
+                ExecutionStatus.COMPLETED,
+                NOW + timedelta(seconds=2),
+                {},
+            ),
+        ),
+    ],
+)
+async def test_coordinator_keeps_unknown_for_adapter_report_contract_failure(
+    reports: object,
+) -> None:
+    class Port:
+        async def execute(
+            self,
+            request: ExecutionDispatchRequest,
+            cancellation: ExecutionCancellationSignal,
+        ) -> Sequence[ExecutionAdapterReport]:
+            return cast(Sequence[ExecutionAdapterReport], reports)
+
+    record = await ActivityExecutionCoordinator(
+        StablePreflight(), Port(), ActivityExecutionAuthority(), Clock()
+    ).execute(invocation())
+
+    assert record.result.status is ExecutionStatus.FAILED
+    assert record.result.to_dict()["details"] == {"code": "adapter_contract_failure"}
+    assert record.result.effect_refs == ()
+    assert record.effect_uncertainty is ExecutionEffectUncertainty.UNKNOWN

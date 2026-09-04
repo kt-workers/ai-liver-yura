@@ -262,7 +262,7 @@ class ExecutionAdapterReport:
             ExecutionStatus.TIMED_OUT,
         }:
             raise ValueError(
-                "effect_uncertaintyは失敗・取消・timeoutの終端reportでのみ"
+                "effect_uncertaintyは失敗・取消・タイムアウト時の終端報告でのみ"
                 "指定できます"
             )
 
@@ -334,7 +334,7 @@ class ActivityExecutionRecord:
         ):
             raise ValueError(
                 "effect_uncertaintyを保持できるのは未確定性を伴う"
-                "終端statusだけです"
+                "終端状態だけです"
             )
 
     @property

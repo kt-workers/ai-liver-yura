@@ -143,15 +143,38 @@ class ActivityExecutionCoordinator:
                         effect_uncertainty=ExecutionEffectUncertainty.UNKNOWN,
                     )
                 ).record
+
+            def close_adapter_contract_failure() -> ActivityExecutionRecord:
+                if record.terminal:
+                    return record
+                occurred_at = self._clock.now()
+                if occurred_at < record.result.occurred_at:
+                    occurred_at = record.result.occurred_at
+                return self._authority.apply_report(
+                    ExecutionAdapterReport(
+                        command_id=command_id,
+                        invocation_id=invocation.invocation_id,
+                        dispatch_id=dispatch_id,
+                        status=ExecutionStatus.FAILED,
+                        occurred_at=occurred_at,
+                        details={"code": "adapter_contract_failure"},
+                        effect_uncertainty=(
+                            ExecutionEffectUncertainty.UNKNOWN
+                            if adapter_started
+                            else ExecutionEffectUncertainty.NONE
+                        ),
+                    )
+                ).record
+
             if not reports:
-                return self._authority.fail_adapter_contract(command_id, self._clock.now()).record
+                return close_adapter_contract_failure()
             try:
                 for report in reports:
                     if not isinstance(report, ExecutionAdapterReport):
                         raise ValueError("adapter returned an invalid report")
                     record = self._authority.apply_report(report).record
             except (TypeError, ValueError):
-                return self._authority.fail_adapter_contract(command_id, self._clock.now()).record
+                return close_adapter_contract_failure()
             return record
         except asyncio.CancelledError:
             record = self._authority.request_cancellation(
