@@ -365,18 +365,21 @@ class BrainIntegrationRuntime:
 
         synthetic_task = asyncio.create_task(self._synthetic_outcomes.get())
         runtime_task = asyncio.create_task(self._runtime.next_outcome())
-        done, pending = await asyncio.wait(
-            {synthetic_task, runtime_task},
-            return_when=asyncio.FIRST_COMPLETED,
-        )
+        tasks = (synthetic_task, runtime_task)
+        try:
+            done, _ = await asyncio.wait(
+                tasks,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            # この呼出しが生成した待機は、取消・例外時も必ず回収する。
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
         if synthetic_task in done and runtime_task in done:
             self._ready_outcomes.append(self._map_runtime_outcome(runtime_task.result()))
             return synthetic_task.result()
-        for task in pending:
-            task.cancel()
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
-
         if synthetic_task in done:
             return synthetic_task.result()
         return self._map_runtime_outcome(runtime_task.result())
