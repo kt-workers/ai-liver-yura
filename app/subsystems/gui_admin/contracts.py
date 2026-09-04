@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -45,6 +46,13 @@ class AdminCommandStatus(str, Enum):
     TIMED_OUT = "timed_out"
     UNAVAILABLE = "unavailable"
     FAILED = "failed"
+
+
+class GuiAdminAccessLevel(str, Enum):
+    PUBLIC_VISUALIZATION = "public_visualization"
+    OPERATOR_READ = "operator_read"
+    OPERATOR_MUTATION = "operator_mutation"
+    DEVELOPMENT_VALIDATION = "development_validation"
 
 
 def _positive_int(value: object, name: str) -> int:
@@ -114,6 +122,103 @@ class GuiAdminOperationalPolicy:
             "command_timeout_seconds",
             _positive_finite(self.command_timeout_seconds, "command_timeout_seconds"),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class GuiAdminEditableConfigurationField:
+    field_id: str
+    value_type: str
+    editable: bool
+    is_secret: bool
+
+    def __post_init__(self) -> None:
+        require_identifier(self.field_id, "field_id")
+        require_identifier(self.value_type, "value_type")
+        if type(self.editable) is not bool or type(self.is_secret) is not bool:
+            raise ValueError("設定fieldのmetadataが不正です")
+
+
+@dataclass(frozen=True, slots=True)
+class GuiAdminSecretFieldStatus:
+    field_id: str
+    configured: bool
+
+    def __post_init__(self) -> None:
+        require_identifier(self.field_id, "field_id")
+        if type(self.configured) is not bool:
+            raise ValueError("secret configured状態が不正です")
+
+
+@dataclass(frozen=True, slots=True)
+class GuiAdminConfigurationReadModel:
+    config_owner: str
+    schema_version: int
+    config_revision: int
+    editable_fields: tuple[GuiAdminEditableConfigurationField, ...]
+    effective_values: JsonValue
+    provenance: JsonValue
+    secret_fields: tuple[GuiAdminSecretFieldStatus, ...] = ()
+
+    def __post_init__(self) -> None:
+        require_identifier(self.config_owner, "config_owner")
+        require_revision(self.schema_version, "schema_version")
+        require_revision(self.config_revision, "config_revision")
+        fields = tuple(self.editable_fields)
+        if len({field.field_id for field in fields}) != len(fields):
+            raise ValueError("editable_fieldsのfield_idは一意でなければなりません")
+        secret_fields = tuple(self.secret_fields)
+        if len({field.field_id for field in secret_fields}) != len(secret_fields):
+            raise ValueError("secret_fieldsのfield_idは一意でなければなりません")
+        secret_ids = {field.field_id for field in secret_fields}
+        declared_secret_ids = {field.field_id for field in fields if field.is_secret}
+        if secret_ids != declared_secret_ids:
+            raise ValueError("secret_fieldsはsecret metadataと一致しなければなりません")
+        values = freeze_json(self.effective_values)
+        if not isinstance(values, Mapping):
+            raise ValueError("effective_valuesはownerが投影したobjectでなければなりません")
+        if secret_ids & set(values):
+            raise ValueError("secretの現在値をeffective_valuesへ含めてはいけません")
+        object.__setattr__(self, "editable_fields", fields)
+        object.__setattr__(self, "secret_fields", secret_fields)
+        object.__setattr__(self, "effective_values", values)
+        object.__setattr__(self, "provenance", freeze_json(self.provenance))
+
+
+@dataclass(frozen=True, slots=True)
+class GuiAdminAccessContext:
+    level: GuiAdminAccessLevel
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.level, GuiAdminAccessLevel):
+            raise ValueError("access levelが不正です")
+
+    @property
+    def may_read(self) -> bool:
+        return True
+
+    @property
+    def may_mutate(self) -> bool:
+        return self.level is GuiAdminAccessLevel.OPERATOR_MUTATION
+
+
+@dataclass(frozen=True, slots=True)
+class GuiAdminConfigurationMutationRequest:
+    config_owner: str
+    schema_version: int
+    expected_config_revision: int
+    access: GuiAdminAccessContext
+    field_values: JsonValue
+
+    def __post_init__(self) -> None:
+        require_identifier(self.config_owner, "config_owner")
+        require_revision(self.schema_version, "schema_version")
+        require_revision(self.expected_config_revision, "expected_config_revision")
+        if not self.access.may_mutate:
+            raise ValueError("設定変更にはoperator mutation権限が必要です")
+        values = freeze_json(self.field_values)
+        if not isinstance(values, Mapping):
+            raise ValueError("field_valuesは型付きfield objectでなければなりません")
+        object.__setattr__(self, "field_values", values)
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,8 +332,14 @@ __all__ = [
     "AdminCommandResult",
     "AdminCommandStatus",
     "AdminReadModelEnvelope",
+    "GuiAdminAccessContext",
+    "GuiAdminAccessLevel",
     "GuiAdminAvailability",
+    "GuiAdminConfigurationMutationRequest",
+    "GuiAdminConfigurationReadModel",
+    "GuiAdminEditableConfigurationField",
     "GuiAdminOperationalPolicy",
     "GuiAdminReadModelKind",
+    "GuiAdminSecretFieldStatus",
     "json_payload_size_bytes",
 ]
