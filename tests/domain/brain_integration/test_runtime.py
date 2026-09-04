@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import pytest
 
@@ -31,6 +33,71 @@ from app.runtime.shutdown import RuntimeShutdownPolicy
 
 NOW = datetime(2026, 8, 31, tzinfo=timezone.utc)
 TEST_SHUTDOWN_POLICY = RuntimeShutdownPolicy("test.brain.shutdown", 1, 1.0, 1.0, 1.0, 1.0)
+
+
+@pytest.mark.parametrize("exit_path", ["cancel", "exception", "normal"])
+def test_next_outcome_reaps_owned_waits(
+    monkeypatch: pytest.MonkeyPatch, exit_path: str
+) -> None:
+    """呼出側の終了経路によらず、生成した待機だけを回収する。"""
+
+    async def scenario() -> None:
+        original_wait = asyncio.wait
+        for _ in range(5):
+            baseline = asyncio.all_tasks()
+            runtime = BrainIntegrationRuntime(FakeRuntimeClock(NOW), policy())
+            runtime.register_module(BrainIntegrationModule.INPUT_MEANING, FakePort("meaning"))
+            await runtime.start()
+            entered = asyncio.Event()
+            owned: list[asyncio.Task[Any]] = []
+
+            async def observed_wait(
+                tasks: Iterable[asyncio.Task[Any]], *, return_when: str,
+                owned: list[asyncio.Task[Any]] = owned,
+                entered: asyncio.Event = entered,
+            ) -> tuple[set[asyncio.Task[Any]], set[asyncio.Task[Any]]]:
+                owned.extend(tasks)
+                entered.set()
+                if exit_path == "exception":
+                    raise RuntimeError("待機失敗の再現")
+                return await original_wait(owned, return_when=return_when)
+
+            with monkeypatch.context() as patch:
+                patch.setattr(asyncio, "wait", observed_wait)
+                caller = asyncio.create_task(runtime.next_outcome())
+                await entered.wait()
+                if exit_path == "cancel":
+                    caller.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await caller
+                elif exit_path == "exception":
+                    with pytest.raises(RuntimeError, match="待機失敗の再現"):
+                        await caller
+                else:
+                    assert runtime.submit(work(
+                        "normal", BrainIntegrationModule.INPUT_MEANING,
+                        BrainIntegrationLane.FOREGROUND_INTERACTION,
+                    )).accepted
+                    outcome = await caller
+                    assert outcome.status is BrainWorkStatus.COMPLETED
+                    assert outcome.result == "meaning"
+
+            try:
+                assert len(owned) == 2
+                assert all(task.done() for task in owned)
+                if exit_path != "normal":
+                    assert all(task.cancelled() for task in owned)
+                await runtime.stop()
+                assert not (asyncio.all_tasks() - baseline)
+            finally:
+                # 旧実装での失敗確認でも試験自身が待機を残さない。
+                for task in owned:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*owned, return_exceptions=True)
+                await runtime.stop()
+
+    asyncio.run(scenario())
 
 
 @dataclass
