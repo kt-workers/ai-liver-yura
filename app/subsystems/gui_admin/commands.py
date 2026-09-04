@@ -124,7 +124,10 @@ class GuiAdminCommandDispatcher:
                     owner_revision_after=revision_after,
                 )
 
-            if not isinstance(result, AdminCommandResult) or result.command_id != request.command_id:
+            if (
+                not isinstance(result, AdminCommandResult)
+                or result.command_id != request.command_id
+            ):
                 revision_after = self._safe_revision(owner, revision_before)
                 return self._terminal_failure(
                     request.command_id,

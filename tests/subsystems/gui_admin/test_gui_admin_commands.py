@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 
+from app.domain.contracts.common import JsonValue
 from app.subsystems.gui_admin import (
     AdminCommandRequest,
     AdminCommandResult,
@@ -19,7 +20,7 @@ def request(
     command_id: str = "command:1",
     owner: str = "owner:config",
     expected_revision: int | None = 3,
-    payload: object = None,
+    payload: JsonValue = None,
 ) -> AdminCommandRequest:
     return AdminCommandRequest(
         command_id=command_id,
