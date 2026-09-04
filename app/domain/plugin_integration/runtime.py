@@ -180,62 +180,63 @@ class PluginActivityExecutionPort:
             asyncio.Semaphore(self._policy.max_in_flight_per_capability),
         )
         async with plugin_semaphore, capability_semaphore:
-            final_snapshot = self._registry.snapshot(self._clock.now())
-            final_view = self._find_current_view(final_snapshot, selected)
-            failure = self._validate_current_view(final_view, selected)
-            if failure is not None:
-                return (self._failure(request, failure),)
-            assert final_view is not None
-            final_adapter_binding = self._find_adapter_binding(final_view)
-            if final_adapter_binding is not adapter_binding:
-                return (self._failure(request, "plugin_adapter_binding_changed"),)
-            if cancellation.cancelled:
-                return (self._cancelled(request, "plugin_cancelled_before_invoke"),)
-
-            await self._inflight_started(final_view.plugin_id)
-            self._trace.publish(
-                PluginIntegrationTraceEvent(
-                    "plugin_execution_started",
-                    self._clock.now(),
-                    final_view.plugin_id,
-                    final_view.plugin_generation,
-                    final_view.declaration.capability_id,
-                    request.invocation.command.command_id,
-                    {
-                        "descriptor_revision": selected.descriptor_revision,
-                        "operation_id": selected.requirement.operation,
-                    },
-                )
-            )
+            await self._inflight_started(current_view.plugin_id)
             try:
-                reports = tuple(
-                    await adapter_binding.adapter.execute(request, cancellation)
+                final_snapshot = self._registry.snapshot(self._clock.now())
+                final_view = self._find_current_view(final_snapshot, selected)
+                failure = self._validate_current_view(final_view, selected)
+                if failure is not None:
+                    return (self._failure(request, failure),)
+                assert final_view is not None
+                final_adapter_binding = self._find_adapter_binding(final_view)
+                if final_adapter_binding is not adapter_binding:
+                    return (self._failure(request, "plugin_adapter_binding_changed"),)
+                if cancellation.cancelled:
+                    return (self._cancelled(request, "plugin_cancelled_before_invoke"),)
+
+                self._trace.publish(
+                    PluginIntegrationTraceEvent(
+                        "plugin_execution_started",
+                        self._clock.now(),
+                        final_view.plugin_id,
+                        final_view.plugin_generation,
+                        final_view.declaration.capability_id,
+                        request.invocation.command.command_id,
+                        {
+                            "descriptor_revision": selected.descriptor_revision,
+                            "operation_id": selected.requirement.operation,
+                        },
+                    )
                 )
-            except asyncio.CancelledError:
-                return (
-                    self._cancelled(
-                        request,
-                        "plugin_adapter_cancelled_after_invoke",
-                        ExecutionEffectUncertainty.POSSIBLY_APPLIED,
-                    ),
-                )
-            except Exception:
-                self._publish_failure_diagnostic(
-                    final_view.plugin_id,
-                    final_view.plugin_generation,
-                    final_view.declaration.capability_id,
-                    request,
-                    "plugin_adapter_failure",
-                )
-                return (
-                    self._failure(
+                try:
+                    reports = tuple(
+                        await adapter_binding.adapter.execute(request, cancellation)
+                    )
+                except asyncio.CancelledError:
+                    return (
+                        self._cancelled(
+                            request,
+                            "plugin_adapter_cancelled_after_invoke",
+                            ExecutionEffectUncertainty.POSSIBLY_APPLIED,
+                        ),
+                    )
+                except Exception:
+                    self._publish_failure_diagnostic(
+                        final_view.plugin_id,
+                        final_view.plugin_generation,
+                        final_view.declaration.capability_id,
                         request,
                         "plugin_adapter_failure",
-                        ExecutionEffectUncertainty.UNKNOWN,
-                    ),
-                )
+                    )
+                    return (
+                        self._failure(
+                            request,
+                            "plugin_adapter_failure",
+                            ExecutionEffectUncertainty.UNKNOWN,
+                        ),
+                    )
             finally:
-                await self._inflight_finished(final_view.plugin_id)
+                await self._inflight_finished(current_view.plugin_id)
 
         self._trace.publish(
             PluginIntegrationTraceEvent(

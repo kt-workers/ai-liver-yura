@@ -253,7 +253,7 @@ class LifecycleAdapter:
 
     async def stop(self, plugin_id: str, plugin_generation: int) -> None:
         assert plugin_id == "plugin-a"
-        assert plugin_generation == 0
+        assert plugin_generation in {0, 1}
         self.calls += 1
 
 
@@ -357,13 +357,14 @@ def coordinator(
     base_capabilities: tuple[CapabilityDescriptor, ...] = (),
     before_read: Callable[[int], None] | None = None,
     policy: PluginIntegrationOperationalPolicy | None = None,
+    generation: int = 0,
 ) -> tuple[ActivityExecutionCoordinator, NativePort, PluginActivityExecutionPort]:
     base = BasePreflight(base_capabilities, before_read)
     preflight = PluginCapabilityPreflightPort(base, registry)
     native = NativePort()
     binding = PluginCapabilityAdapterBinding(
         "plugin-a",
-        0,
+        generation,
         "plugin.search",
         adapter,
     )
@@ -655,3 +656,99 @@ async def test_waiting_execution_revalidates_after_permission_revocation() -> No
     assert second_result.result.status is ExecutionStatus.FAILED
     assert second_result.effect_uncertainty is ExecutionEffectUncertainty.NONE
     assert slow.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_stop_between_inflight_registration_and_final_use_waits_for_execution() -> None:
+    registry = available_registry()
+    slow = SlowPluginAdapter()
+    runtime, _, integration = coordinator(registry, slow)
+    lifecycle_adapter = LifecycleAdapter()
+    lifecycle = PluginLifecycleCoordinator(
+        registry,
+        integration,
+        (PluginLifecycleAdapterBinding("plugin-a", 0, lifecycle_adapter),),
+        PluginIntegrationOperationalPolicy(),
+        Clock(),
+    )
+
+    original_snapshot = registry.snapshot
+    final_use_seen = asyncio.Event()
+    release_final_use = asyncio.Event()
+    snapshot_calls = 0
+
+    def snapshot(captured_at: datetime | None = None):
+        nonlocal snapshot_calls
+        snapshot_calls += 1
+        value = original_snapshot(captured_at)
+        if snapshot_calls >= 3 and not final_use_seen.is_set():
+            final_use_seen.set()
+        return value
+
+    registry.snapshot = snapshot  # type: ignore[method-assign]
+
+    async def pause_after_inflight_started(plugin_id: str) -> None:
+        await PluginActivityExecutionPort._inflight_started(integration, plugin_id)
+        final_use_seen.set()
+        await release_final_use.wait()
+
+    integration._inflight_started = pause_after_inflight_started  # type: ignore[method-assign]
+
+    execution = asyncio.create_task(runtime.execute(invocation("plugin-stop-gap")))
+    await final_use_seen.wait()
+    stop_task = asyncio.create_task(lifecycle.stop("plugin-a"))
+    await asyncio.sleep(0)
+    assert stop_task.done() is False
+
+    release_final_use.set()
+    result = await execution
+    assert result.result.status is ExecutionStatus.FAILED
+    assert result.effect_uncertainty is ExecutionEffectUncertainty.NONE
+    assert slow.calls == 0
+    assert await stop_task is True
+
+
+@pytest.mark.asyncio
+async def test_unregister_readd_rejects_old_generation_binding_and_uses_new_generation() -> None:
+    registry = available_registry()
+    old_adapter = AppliedPluginAdapter()
+    old_runtime, _, _ = coordinator(registry, old_adapter, generation=0)
+    old_result = await old_runtime.execute(invocation("plugin-generation-old"))
+    assert old_result.result.status is ExecutionStatus.COMPLETED
+    assert old_result.result.effect_refs == ("effect-plugin-generation-old",)
+
+    registry.begin_stop("plugin-a", NOW)
+    registry.mark_stopped("plugin-a", NOW)
+    registry.unregister("plugin-a", NOW)
+    registry.register_manifest(plugin_manifest(), NOW)
+    registry.adopt_permission_grants(
+        PluginPermissionGrantSnapshot(
+            1,
+            (PluginPermissionGrant("plugin-a", permission()),),
+            NOW,
+        )
+    )
+    registry.apply_health_observation(
+        PluginHealthObservation(
+            "plugin-a",
+            1,
+            0,
+            PluginHealthState.HEALTHY,
+            (PluginCapabilityHealth("plugin.search", PluginHealthState.HEALTHY),),
+            NOW,
+        )
+    )
+
+    stale_runtime, _, _ = coordinator(registry, old_adapter, generation=0)
+    stale = await stale_runtime.execute(invocation("plugin-generation-stale"))
+    assert stale.result.status is ExecutionStatus.FAILED
+    assert stale.result.effect_refs == ()
+    assert old_adapter.calls == 1
+
+    new_adapter = AppliedPluginAdapter()
+    new_runtime, _, _ = coordinator(registry, new_adapter, generation=1)
+    current = await new_runtime.execute(invocation("plugin-generation-new"))
+    assert current.result.status is ExecutionStatus.COMPLETED
+    assert current.result.effect_refs == ("effect-plugin-generation-new",)
+    assert new_adapter.calls == 1
+    assert old_result.result.effect_refs == ("effect-plugin-generation-old",)
