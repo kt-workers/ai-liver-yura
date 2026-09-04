@@ -1,4 +1,4 @@
-# V2 実行effect未確定性契約
+# V2 実行作用（effect）の未確定性契約
 
 Owner: #329
 Consumer: #344
@@ -7,15 +7,15 @@ Status: Post-D10 Canonical Correction — 2026-09-04
 
 ## 1. 目的
 
-#344 Plugin Integrationの実装前照合で、after-effect timeout/cancel時の「外部effectが起きた可能性はあるが、確認済みeffect evidenceはない」という状態について、#344が参照するclosed semanticsと#329 current contractの間に不整合が見つかった。
+#344のプラグイン統合（Plugin Integration）の実装前照合で、外部作用の発生後にタイムアウトまたは取消となった場合の「外部作用が起きた可能性はあるが、確認済みの作用証拠（effect evidence）はない」という状態について、#344が前提とする閉じた意味集合と#329の現行契約が一致していないことが判明した。
 
-本書は、確認済みActual Effectと未確認のeffect可能性を分離し、Intent/Plan/timeoutだけからeffect successを捏造せずにActual Execution Factへ保持する契約を追加する。
+本書は、確認済みの実際の作用（Actual Effect）と未確認の作用可能性を分離し、意図（Intent）・計画（Plan）・タイムアウトだけから作用成功を捏造せず、実行実績事実（Actual Execution Fact）へ保持する契約を追加する。
 
-本書は#329/#344の該当effect truth境界に対して優先する補足正本であり、既存`activity_execution_contracts.md`、`foundation_contracts.md`、`plugin_integration_contracts.md`の他のAuthority/lifecycle規則は維持する。
+本書は#329 / #344の該当する作用事実境界に対して優先する補足正本であり、既存`activity_execution_contracts.md`、`foundation_contracts.md`、`plugin_integration_contracts.md`の他の判断権限（Authority）・ライフサイクル（lifecycle）規則は維持する。
 
-## 2. 確認済みeffectと未確認可能性を分離する
+## 2. 確認済み作用と未確認可能性を分離する
 
-確認済みeffectは既存契約を維持する。
+確認済み作用は既存契約を維持する。
 
 ```text
 ExecutionEffectEvidence
@@ -27,12 +27,12 @@ ExecutionEffectEvidence
 - payload
 
 ExecutionResult.effect_refs
-= #329 Authorityが検証済みevidenceからだけ導出するmonotonic参照
+= #329の判断権限（Authority）が検証済み証拠（evidence）からだけ導出する単調増加（monotonic）参照
 ```
 
-一方、effectが起きた可能性だけでは`ExecutionEffectEvidence`も`effect_ref`も生成しない。
+一方、作用が起きた可能性だけでは`ExecutionEffectEvidence`も`effect_ref`も生成しない。
 
-未確認可能性は#329 owned closed state `ExecutionEffectUncertainty`で表す。
+未確認可能性は#329が所有する閉じた状態集合（closed state）`ExecutionEffectUncertainty`で表す。
 
 ```text
 NONE
@@ -42,15 +42,15 @@ POSSIBLY_APPLIED
 
 意味:
 
-- `NONE`: unresolvedなeffect不確定性を主張しない。これ単独では「外部effectが絶対に起きていない」という証明にはしない。
-- `UNKNOWN`: Provider/Adapter結果だけでは、外部effectが発生したか判定できない。
-- `POSSIBLY_APPLIED`: effect-capableな外部境界を越え、effectが適用された可能性があるが、確認済みevidenceはない。
+- `NONE`: 未解決の作用不確定性を主張しない。これ単独では「外部作用が絶対に起きていない」という証明にはしない。
+- `UNKNOWN`: Provider / Adapterの結果だけでは、外部作用が発生したか判定できない。
+- `POSSIBLY_APPLIED`: 作用を起こし得る外部境界を越え、作用が適用された可能性があるが、確認済み証拠（evidence）はない。
 
-`UNKNOWN` / `POSSIBLY_APPLIED`は成功factではなく、未確定性factである。
+`UNKNOWN` / `POSSIBLY_APPLIED`は成功事実ではなく、未確定性の事実である。
 
-## 3. #329 Actual Fact aggregation
+## 3. #329 実行実績事実の集約
 
-#329のcurrent `ActivityExecutionRecord`をActual Execution Fact aggregateとし、次を同時に保持する。
+#329の現行`ActivityExecutionRecord`を実行実績事実（Actual Execution Fact）の集約（aggregate）とし、次を同時に保持する。
 
 ```text
 ActivityExecutionRecord
@@ -60,37 +60,37 @@ ActivityExecutionRecord
 - effect_uncertainty: ExecutionEffectUncertainty
 ```
 
-Authorityは分離しない。`ActivityExecutionAuthority`だけがAdapter reportを検証し、confirmed effect refsとeffect uncertaintyをrecordへ確定する。
+判断権限（Authority）は分離しない。`ActivityExecutionAuthority`だけがアダプター報告（Adapter report）を検証し、確認済み`effect_refs`と`effect_uncertainty`をrecordへ確定する。
 
-Plugin/Provider/Subsystemは`ActivityExecutionRecord`や`ExecutionResult`を直接構築・変更しない。
+Plugin / Provider / Subsystemは`ActivityExecutionRecord`や`ExecutionResult`を直接構築・変更しない。
 
-## 4. Adapter report
+## 4. アダプター報告
 
-`ExecutionAdapterReport`は既存identity/status/effectsに加えて`effect_uncertainty`を返せる。
+`ExecutionAdapterReport`は既存の識別情報（identity）・状態（status）・作用証拠（effects）に加えて`effect_uncertainty`を返せる。
 
-Rules:
+規則:
 
-- defaultは`NONE`。
-- `UNKNOWN` / `POSSIBLY_APPLIED`は`FAILED / CANCELLED / TIMED_OUT` reportでだけ許可する。
-- uncertaintyだけではnew `effect_ref`を作らない。
-- `COMPLETED / OBSERVABLE / APPLIED` reportがunconfirmed uncertaintyを主張してはならない。
-- terminal failure reportは既存#329規則どおり新しいeffect evidenceを導入しない。
-- 確認済みeffectと追加のunconfirmed uncertaintyが同じ実行で存在する場合、`OBSERVABLE/APPLIED` reportで確認済みeffectを先に確定し、その後`FAILED/CANCELLED/TIMED_OUT` reportでuncertaintyを記録する。1つのterminal reportへ新規confirmed effectとuncertaintyを混載しない。
+- 既定値は`NONE`。
+- `UNKNOWN` / `POSSIBLY_APPLIED`は`FAILED / CANCELLED / TIMED_OUT`の終端失敗報告でだけ許可する。
+- 未確定性（uncertainty）だけでは新しい`effect_ref`を作らない。
+- `COMPLETED / OBSERVABLE / APPLIED`の報告が未確認の`effect_uncertainty`を主張してはならない。
+- 終端失敗報告は既存#329規則どおり新しい作用証拠（effect evidence）を導入しない。
+- 確認済み作用と追加の未確認`effect_uncertainty`が同じ実行に存在する場合、`OBSERVABLE / APPLIED`の報告で確認済み作用を先に確定し、その後`FAILED / CANCELLED / TIMED_OUT`の報告で未確定性を記録する。1つの終端報告へ新しい確認済み作用（confirmed effect）と未確定性を混載しない。
 
-## 5. timeout / cancellation
+## 5. タイムアウト / 取消
 
-### effect開始前と確定できる場合
+### 作用開始前と確定できる場合
 
-preflight reject、permission revoke、stale descriptor、deadline before invoke、cancel before invoke等で外部effect開始前と確定できる場合:
+事前確認（preflight）での拒否、権限（permission）取消、古いdescriptor、呼出し（invoke）前の期限到来（deadline）、呼出し前の取消（cancel）等で外部作用開始前と確定できる場合:
 
 ```text
 effect_refs = existing confirmed refs only
 effect_uncertainty = NONE
 ```
 
-### effect発生可能性が残る場合
+### 作用発生可能性が残る場合
 
-Provider call開始後のtimeout/cancel/transport failure等でoutcome不明の場合:
+Provider呼出し開始後のタイムアウト・取消・通信失敗（transport failure）等で結果が不明な場合:
 
 ```text
 status = FAILED | CANCELLED | TIMED_OUT
@@ -98,33 +98,33 @@ effect_refs = existing confirmed refs only
 effect_uncertainty = UNKNOWN | POSSIBLY_APPLIED
 ```
 
-`not applied`やsuccessを捏造しない。自動retryで二重effectを起こさない。
+「適用されていない」ことや成功（success）を捏造しない。自動再試行（retry）で二重作用を起こさない。
 
-## 6. 確認済みeffectの保持
+## 6. 確認済み作用の保持
 
-report確定前にeffectが確認できた場合は、既存#329契約どおり`OBSERVABLE/APPLIED` evidenceを先にrecordし、その後terminalへ閉じても`effect_refs`を保持する。
+報告（report）の確定前に作用を確認できた場合は、既存#329契約どおり`OBSERVABLE / APPLIED`の証拠（evidence）を先にrecordし、その後終端（terminal）へ閉じても`effect_refs`を保持する。
 
-terminal resultに`effect_uncertainty`が存在しても、既存のconfirmed `effect_refs`を削除・downgradeしない。
+終端結果（terminal result）に`effect_uncertainty`が存在しても、既存の確認済み`effect_refs`を削除・格下げ（downgrade）しない。
 
-## 7. terminal後の外界確認
+## 7. 終端後の外界確認
 
-current V2の`ExecutionResult` terminal lifecycleは再openしない。
+現行V2の`ExecutionResult`は、終端後のライフサイクル（terminal lifecycle）を再開（reopen）しない。
 
-`ActivityExecutionPort.execute()`がreturnして#329がterminal factを確定した**後**に新しい外界確認が到着した場合、その確認を旧Executionへ直接後付けする暗黙経路は作らない。
+`ActivityExecutionPort.execute()`が返却（return）し、#329が終端事実（terminal fact）を確定した**後**に新しい外界確認が到着した場合、その確認を旧Executionへ直接後付けする暗黙経路は作らない。
 
-必要な場合は、explicit readback/reconciliation Activityを新しいcommand/invocationとして#329経路で実行し、original `command_id / dispatch_id / plugin_id / plugin_generation`をtyped provenanceとして参照する。
+必要な場合は、明示的な再読取・整合（readback / reconciliation）Activityを新しいcommand / invocationとして#329経路で実行し、元の`command_id / dispatch_id / plugin_id / plugin_generation`を型付き由来情報（typed provenance）として参照する。
 
 これにより:
 
-- terminal lifecycleを隠れて再openしない。
-- old plugin generationのlate signalをnew generation executionへ混ぜない。
-- readbackそのものもActual Execution Fact Authorityを通る。
+- 終端ライフサイクル（terminal lifecycle）を隠れて再開（reopen）しない。
+- 旧plugin世代（old plugin generation）の遅延signalを新世代の実行へ混ぜない。
+- 再読取（readback）そのものも実行実績事実の判断権限（Actual Execution Fact Authority）を通る。
 
-#344はpost-terminal callbackから#329 private stateを直接mutationしてはならない。
+#344は終端後callback（post-terminal callback）から#329のprivate stateを直接変更（mutation）してはならない。
 
-## 8. Plugin Integrationへの適用
+## 8. プラグイン統合への適用
 
-#344のafter-effect ambiguous caseは次へ置換する。
+#344で外部作用発生後の結果が不明な場合は、次の二層表現へ置換する。
 
 ```text
 confirmed OBSERVABLE/APPLIED
@@ -134,27 +134,30 @@ unconfirmed outcome
 → ExecutionEffectUncertainty.UNKNOWN / POSSIBLY_APPLIED
 ```
 
-旧`plugin_integration_contracts.md` §6の「`UNKNOWN / POSSIBLY_APPLIED / APPLIED`等を#329 closed effect semanticsへ投影する」という記述は、本書の二層表現で具体化する。
+旧`plugin_integration_contracts.md` §6の「`UNKNOWN / POSSIBLY_APPLIED / APPLIED`等を#329の閉じた作用意味集合（closed effect semantics）へ投影する」という記述は、本書の二層表現で具体化する。
 
 ## 9. 必須回帰
 
 Foundation / #329:
-- REQUESTED/ACCEPTED/STARTED/COMPLETEDでunconfirmed uncertaintyを捏造しない。
-- TIMED_OUT + POSSIBLY_APPLIED + effect_refsなしをtypedに保持できる。
-- confirmed effect_refsを保持したままterminal uncertaintyを持てる。
-- invalid status + uncertaintyをfail-closedする。
-- Event projectionへeffect uncertaintyを含める。
+- REQUESTED / ACCEPTED / STARTED / COMPLETEDで未確認の`effect_uncertainty`を捏造しない。
+- TIMED_OUT + POSSIBLY_APPLIED + effect_refsなしを型付きで保持できる。
+- 確認済み`effect_refs`を保持したまま終端時の未確定性を持てる。
+- 不正な状態（invalid status）と未確定性の組合せを安全側で拒否（fail-closed）する。
+- Eventへの投影（projection）へ作用の未確定性を含める。
+- Adapter開始後の取消（cancel）・例外（exception）で未確定性を失わない。
+- Adapter開始後の空・不正・識別子不一致の報告契約違反でも`UNKNOWN`を保持する。
+- Adapter開始前の取消（cancel）では`NONE`を維持する。
 
 #344:
-- cancel/timeout before invokeは`NONE`。
-- after-effect timeoutは`POSSIBLY_APPLIED`、fake effect_refなし。
-- permission revoke / STOPPING final-use fenceでinvoke前に閉じる場合は`NONE`。
-- retryによる二重effectを作らない。
+- 呼出し（invoke）前の取消・タイムアウトは`NONE`。
+- 外部作用発生後のタイムアウトは`POSSIBLY_APPLIED`とし、偽の`effect_ref`を作らない。
+- 権限取消（permission revoke）または`STOPPING`の最終使用境界（final-use fence）で呼出し前に閉じる場合は`NONE`。
+- 再試行（retry）による二重作用を作らない。
 
 ## 10. 完了条件
 
-- #329 canonicalとproduction typeが同じclosed stateを持つ。
-- #344が存在しない#329 semanticsを参照しない。
-- confirmed effectとunconfirmed possibilityを混同しない。
-- Plugin専用のparallel Actual Fact Authorityを作らない。
-- post-terminal confirmationを旧Executionへ暗黙mutationしない。
+- #329の正本（canonical）とproduction typeが同じ閉じた状態集合（closed state）を持つ。
+- #344が存在しない#329の意味規則（semantics）を参照しない。
+- 確認済み作用（confirmed effect）と未確認可能性（unconfirmed possibility）を混同しない。
+- Plugin専用の並行する実績事実判断権限（parallel Actual Fact Authority）を作らない。
+- 終端後確認（post-terminal confirmation）を旧Executionへ暗黙に変更（mutation）しない。
