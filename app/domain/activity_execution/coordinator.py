@@ -15,6 +15,7 @@ from .contracts import (
     ActivityInvocation,
     ExecutionAdapterReport,
     ExecutionDispatchRequest,
+    ExecutionEffectUncertainty,
     ExecutionPreflightSnapshot,
 )
 
@@ -76,6 +77,7 @@ class ActivityExecutionCoordinator:
         async with self._signal_lock:
             self._signals[command_id] = signal
         adapter_task: asyncio.Task[Sequence[ExecutionAdapterReport]] | None = None
+        adapter_started = False
         try:
             current = await self._preflight.current_for(invocation)
             accepted_result = record.result
@@ -87,8 +89,14 @@ class ActivityExecutionCoordinator:
             request = ExecutionDispatchRequest(
                 dispatch_id, invocation, accepted_result, record.bindings
             )
+
+            async def invoke_adapter() -> Sequence[ExecutionAdapterReport]:
+                nonlocal adapter_started
+                adapter_started = True
+                return await self._port.execute(request, signal)
+
             try:
-                adapter_task = asyncio.create_task(self._port.execute(request, signal))
+                adapter_task = asyncio.create_task(invoke_adapter())
                 async with self._signal_lock:
                     self._adapter_tasks[command_id] = adapter_task
                     cancel_immediately = signal.cancelled and signal.hard_interrupt_allowed
@@ -111,6 +119,11 @@ class ActivityExecutionCoordinator:
                             status=ExecutionStatus.CANCELLED,
                             occurred_at=self._clock.now(),
                             details={"code": "adapter_cancelled"},
+                            effect_uncertainty=(
+                                ExecutionEffectUncertainty.POSSIBLY_APPLIED
+                                if adapter_started
+                                else ExecutionEffectUncertainty.NONE
+                            ),
                         )
                     ).record
                 self._authority.request_cancellation(
@@ -127,6 +140,7 @@ class ActivityExecutionCoordinator:
                         status=ExecutionStatus.FAILED,
                         occurred_at=self._clock.now(),
                         details={"code": "adapter_failure"},
+                        effect_uncertainty=ExecutionEffectUncertainty.UNKNOWN,
                     )
                 ).record
             if not reports:
@@ -158,6 +172,11 @@ class ActivityExecutionCoordinator:
                     status=ExecutionStatus.CANCELLED,
                     occurred_at=self._clock.now(),
                     details={"code": "execution_task_cancelled"},
+                    effect_uncertainty=(
+                        ExecutionEffectUncertainty.POSSIBLY_APPLIED
+                        if adapter_started
+                        else ExecutionEffectUncertainty.NONE
+                    ),
                 )
             ).record
         finally:

@@ -253,13 +253,18 @@ class ExecutionAdapterReport:
             raise ValueError("observable report cannot introduce applied effect")
         object.__setattr__(self, "effects", effects)
         if not isinstance(self.effect_uncertainty, ExecutionEffectUncertainty):
-            raise ValueError("effect_uncertainty must be ExecutionEffectUncertainty")
+            raise ValueError(
+                "effect_uncertaintyにはExecutionEffectUncertaintyを指定してください"
+            )
         if self.effect_uncertainty is not ExecutionEffectUncertainty.NONE and self.status not in {
             ExecutionStatus.FAILED,
             ExecutionStatus.CANCELLED,
             ExecutionStatus.TIMED_OUT,
         }:
-            raise ValueError("effect uncertainty is allowed only on terminal failure reports")
+            raise ValueError(
+                "effect_uncertaintyは失敗・取消・timeoutの終端reportでのみ"
+                "指定できます"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -314,7 +319,9 @@ class ActivityExecutionRecord:
         if type(self.record_revision) is not int or self.record_revision < 0:
             raise ValueError("record_revision must be a non-negative int")
         if not isinstance(self.effect_uncertainty, ExecutionEffectUncertainty):
-            raise ValueError("effect_uncertainty must be ExecutionEffectUncertainty")
+            raise ValueError(
+                "effect_uncertaintyにはExecutionEffectUncertaintyを指定してください"
+            )
         uncertain_terminal = {
             ExecutionStatus.FAILED,
             ExecutionStatus.CANCELLED,
@@ -325,7 +332,10 @@ class ActivityExecutionRecord:
             self.effect_uncertainty is not ExecutionEffectUncertainty.NONE
             and self.result.status not in uncertain_terminal
         ):
-            raise ValueError("effect uncertainty requires a terminal ambiguous execution status")
+            raise ValueError(
+                "effect_uncertaintyを保持できるのは未確定性を伴う"
+                "終端statusだけです"
+            )
 
     @property
     def terminal(self) -> bool:
@@ -411,7 +421,7 @@ class ActivityExecutionLifecycleFact:
             self.effect_uncertainty is not ExecutionEffectUncertainty.NONE
             and self.status not in uncertain_statuses
         ):
-            raise ValueError("effect uncertaintyとstatusが一致しません")
+            raise ValueError("effect_uncertaintyとstatusが一致しません")
 
 
 @dataclass(frozen=True, slots=True)
