@@ -1,3 +1,4 @@
+from .commands import AdminCommandOwnerPort, GuiAdminCommandDispatcher
 from .contracts import (
     AdminCommandRequest,
     AdminCommandResult,
@@ -14,11 +15,13 @@ from .read_models import (
 )
 
 __all__ = [
+    "AdminCommandOwnerPort",
     "AdminCommandRequest",
     "AdminCommandResult",
     "AdminCommandStatus",
     "AdminReadModelEnvelope",
     "GuiAdminAvailability",
+    "GuiAdminCommandDispatcher",
     "GuiAdminOperationalPolicy",
     "GuiAdminReadModelBroker",
     "GuiAdminReadModelKind",

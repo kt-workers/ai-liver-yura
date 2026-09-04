@@ -196,6 +196,22 @@ class AdminCommandResult:
             raise ValueError("status が不正です")
         require_revision(self.owner_revision_before, "owner_revision_before", optional=True)
         require_revision(self.owner_revision_after, "owner_revision_after", optional=True)
+        if (
+            self.owner_revision_before is not None
+            and self.owner_revision_after is not None
+            and self.owner_revision_after < self.owner_revision_before
+        ):
+            raise ValueError("owner revisionは単調増加でなければなりません")
+        if self.status is AdminCommandStatus.APPLIED:
+            if self.applied_at is None:
+                raise ValueError("APPLIEDにはapplied_atが必要です")
+            if self.failure_code is not None:
+                raise ValueError("APPLIEDにfailure_codeは指定できません")
+        else:
+            if self.applied_at is not None:
+                raise ValueError("未確認結果にapplied_atは指定できません")
+            if self.failure_code is None:
+                raise ValueError("APPLIED以外にはfailure_codeが必要です")
         if self.applied_at is not None:
             require_aware(self.applied_at, "applied_at")
         if self.failure_code is not None:
