@@ -672,20 +672,8 @@ async def test_stop_between_inflight_registration_and_final_use_waits_for_execut
         Clock(),
     )
 
-    original_snapshot = registry.snapshot
     final_use_seen = asyncio.Event()
     release_final_use = asyncio.Event()
-    snapshot_calls = 0
-
-    def snapshot(captured_at: datetime | None = None):
-        nonlocal snapshot_calls
-        snapshot_calls += 1
-        value = original_snapshot(captured_at)
-        if snapshot_calls >= 3 and not final_use_seen.is_set():
-            final_use_seen.set()
-        return value
-
-    registry.snapshot = snapshot  # type: ignore[method-assign]
 
     async def pause_after_inflight_started(plugin_id: str) -> None:
         await PluginActivityExecutionPort._inflight_started(integration, plugin_id)
