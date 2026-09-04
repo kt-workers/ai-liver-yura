@@ -186,7 +186,11 @@ class ActivityExecutionAuthority:
                     details={"code": "deadline_elapsed"},
                     effect_refs=effect_refs,
                 )
-                updated = replace(record, result=result)
+                updated = replace(
+                    record,
+                    result=result,
+                    effect_uncertainty=report.effect_uncertainty,
+                )
                 updated = replace(updated, record_revision=record.record_revision + 1)
                 return ActivityExecutionCommitResult(updated, (self._commit(record, updated),))
             updated = replace(
@@ -197,6 +201,7 @@ class ActivityExecutionAuthority:
                     details=report.details,
                     effect_refs=effect_refs,
                 ),
+                effect_uncertainty=report.effect_uncertainty,
             )
             updated = replace(updated, record_revision=record.record_revision + 1)
             return ActivityExecutionCommitResult(updated, (self._commit(record, updated),))
@@ -299,6 +304,7 @@ class ActivityExecutionAuthority:
             after.result.status,
             after.result.occurred_at,
             after.result.effect_refs,
+            after.effect_uncertainty,
         )
 
     def _require_record(self, command_id: str) -> ActivityExecutionRecord:
