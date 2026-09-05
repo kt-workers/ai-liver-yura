@@ -498,7 +498,7 @@ AdminReadModelEnvelope
 
 ### 19.4 HTTP経路と画面
 
-公開経路は次だけとする。HEADを許可する場合は、GETと同じ公開境界を適用する。
+公開経路は次だけとし、5経路すべてでGETとHEADを明示的に許可する。
 
 ```text
 GET /
@@ -506,9 +506,21 @@ GET /assets/app.js
 GET /assets/app.css
 GET /api/v1/configuration/minimum-brain
 GET /healthz
+
+HEAD /
+HEAD /assets/app.js
+HEAD /assets/app.css
+HEAD /api/v1/configuration/minimum-brain
+HEAD /healthz
 ```
 
-既知経路の未対応メソッドは405、不明経路は404とする。POST / PUT / PATCH / DELETE、汎用コマンド、汎用状態変更、任意所有者の問合せ経路を設けない。Stage A APIは要求本文を受理しない。
+既知経路の未対応メソッドは405、不明経路は404とする。POST / PUT / PATCH / DELETE、汎用コマンド、汎用状態変更、任意所有者の問合せ経路を設けない。Stage AはGET/HEADの要求本文を受理しない。
+
+HEADはGETと同じ経路・アクセス・安全境界を通り、GETと整合する状態コード・ヘッダー情報を返すが、応答本文を送らない。管理操作へ到達しない。HEAD対応を実装者の任意選択にしない。
+
+`max_request_body_bytes = 0`を第1版の固定契約とし、正の`Content-Length`、または`Transfer-Encoding`が存在する要求は413と安全な`GUI_REQUEST_BODY_NOT_ALLOWED`で拒否する。投影処理や所有者を呼び出さず、本文を読み込んで捨ててから成功させない。隠れた本文蓄積を行わず、要求・本文の生データを応答へ転記しない。
+
+各接続は1応答に限定する。成功・失敗を問わず応答完了後に接続を閉じ、アイドル状態のHTTP持続接続を保持しない。aiohttpの接続を明示的に閉じる方針（force-close相当）を使い、既定の持続接続待機時間へ依存しない。Stage A第1版では持続接続無効を正本とし、将来の有効化には通信方針の版更新を必要とする。
 
 `/healthz`はGUI通信処理自身の生存確認だけであり、Core全体の正常性を宣言しない。既存`GuiAdminCommandDispatcher`は保持するが、このHTTP通信処理から到達不能にする。状態変更APIは0経路とする。
 
@@ -563,6 +575,7 @@ GUI_UNSAFE_BIND_CONFIGURATION
 GUI_BIND_FAILED
 GUI_REQUEST_LIMIT_REACHED
 GUI_REQUEST_TIMED_OUT
+GUI_REQUEST_BODY_NOT_ALLOWED
 GUI_INTERNAL_TRANSPORT_FAILURE
 ```
 
@@ -616,6 +629,23 @@ Stage Aのための新たな所有者コード変更は不要とする。別所�
 - JSONと失敗応答に秘密・生例外・パスを含めない。外部CDNなし、同一オリジン通信、適切なCSP・no-store・nosniffを確認する。
 - 待受ポートの確保失敗でGUIは型付き`UNAVAILABLE`となる。Coreに依存しない試験で、GUI失敗が注入元の状態を変更しないことを確認する。
 - PyQtの互換層・ダミーimport・デスクトップ代替経路を作らず、承認済みの依存変更を正規のlock更新とCIで確認する。
+
+### 19.10.1 HTTP解析と接続境界の追加必須試験
+
+ヘッダー件数の正本は数値契約第4.1節の`max_header_count = 64`とする。単一ヘッダーの長さや総バイト数とは別の上限であり、後続実装はaiohttpサーバへ`max_headers=64`を明示的に渡す。
+
+1. 他の構文・長さ条件も満たす64ヘッダーの要求を、件数上限だけを理由に拒否しない。
+2. 65件目のヘッダーをHTTP解析・受付境界で拒否する。
+3. `max_header_count`にbool・0・負数を受理しない。
+4. `Content-Length: 1`の要求を413で拒否する。
+5. chunkedを含む`Transfer-Encoding`付き要求を413で拒否する。
+6. 本文拒否の失敗コードは`GUI_REQUEST_BODY_NOT_ALLOWED`とする。HEADの失敗でも応答本文を送らない。
+7. 本文拒否時の投影処理・所有者の呼出しは0回。本文読込や生データ転記をしない。
+8. 5つのGET経路すべてでHEADを許可する。
+9. HEADは応答本文なしで、GETと整合する状態コード・ヘッダー情報を返す。
+10. POST/PUT/PATCH/DELETEは引き続き405とする。
+11. 応答完了後の接続を再利用せず、成功応答後も持続接続を残さない。
+12. aiohttpの持続接続と`max_headers`の既定値へ暗黙に依存しないことを確認する。
 
 ### 19.11 人間による確認の境界
 

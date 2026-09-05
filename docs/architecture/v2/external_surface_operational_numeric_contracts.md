@@ -114,6 +114,8 @@ GuiAdminHttpTransportPolicy
 - shutdown_grace_seconds: finite number > 0
 - max_request_line_bytes: int >= 1
 - max_header_field_bytes: int >= 1
+- max_header_count: int >= 1
+- max_request_body_bytes: int = 0（Stage A第1版の固定値）
 ```
 
 初期値:
@@ -126,6 +128,9 @@ request_timeout_seconds = 5.0
 shutdown_grace_seconds = 2.0
 max_request_line_bytes = 4096
 max_header_field_bytes = 8192
+max_header_count = 64
+max_request_body_bytes = 0
+persistent_keepalive = disabled（第1版の固定契約）
 ```
 
 - 個数・版・バイト数には具体的な整数を要求し、boolを数値として受理しない。秒数は正の有限数とし、NaNと無限大を拒否する。
@@ -133,8 +138,11 @@ max_header_field_bytes = 8192
 - 同時要求数はGUI HTTP全体で16件まで。超過は503と安全な`GUI_REQUEST_LIMIT_REACHED`で拒否し、隠れた待機キューを作らない。終了・失敗・取消時に枠を解放する。
 - HTTP要求処理は5.0秒以内に収束させ、時間切れは安全な`GUI_REQUEST_TIMED_OUT`とする。HTTP失敗をドメイン上の事実へ変換しない。
 - 応答本文として直列化する表示モデルは、ラッパーを含めて`GuiAdminOperationalPolicy.max_read_model_payload_bytes`以下とし、途中切断・切詰めを成功扱いしない。
-- Stage A APIは要求本文を受理しない。要求行4096バイト、単一ヘッダー項目8192バイトの上限を適用する。これらの上限を接続全体やヘッダー総量の上限と混同しない。
-- 接続を応答後に長期維持しない。WebSocket/SSE/自動ポーリングは使用せず、初回と明示再取得のHTTP/JSONだけとする。
+- 要求行4096バイト、単一ヘッダー項目8192バイトとは独立に、ヘッダー件数を64件以下へ制限する。同一オリジンのGETに余裕を持たせつつ、信頼できないHTTPメタデータの件数を制限するための値である。ヘッダー件数を総バイト数の上限と混同しない。
+- 後続実装はaiohttpサーバへ`max_headers=64`を明示的に渡し、65件目をHTTP解析・受付境界で拒否する。フレームワークの既定値を正本としない。`max_header_count`は具体的な正の整数であり、bool・0・負数を拒否する。
+- `max_request_body_bytes`は第1版では具体的な整数0だけを許可し、boolや他の値を拒否する。GET/HEADとも、正の`Content-Length`または`Transfer-Encoding`ヘッダーの存在を検出したら413と`GUI_REQUEST_BODY_NOT_ALLOWED`で拒否する。本文を読み捨てて成功させず、投影処理・所有者を呼び出さず、隠れた本文蓄積や生要求の応答への転記を行わない。
+- 第1版では持続接続を無効とする。各接続は1応答だけを担当し、成功・失敗とも応答完了後に閉じる。接続を明示的に閉じる方針（force-close相当）を適用し、aiohttp既定の持続接続待機時間に依存しない。`persistent_keepalive`のboolフィールドや曖昧な`keepalive_timeout_seconds`を追加する必要はない。将来持続接続を採用する際は通信方針の版を進める。
+- WebSocket/SSE/応答待ちを長時間維持するポーリング/自動ポーリングは使用せず、初回と明示再取得のHTTP/JSONだけとする。
 - 停止時は新規受付を止め、実行中要求を収束または取り消し、待受・接続・所有タスクを2.0秒以内に回収する。所有未完了タスク0を確認し、上限超過を停止成功として扱わない。
 - 公開範囲、認証を設けない理由、待受失敗時の型付き状態、#351/#360の責務と必須試験は`gui_admin_contracts.md`第19節を正本とする。待受は127.0.0.1、初期ポート8765、アクセス区分はPUBLIC_VISUALIZATIONのみ。
 
