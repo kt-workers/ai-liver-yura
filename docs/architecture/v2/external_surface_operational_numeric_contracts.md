@@ -54,7 +54,7 @@ Rules:
 - lifecycle timeoutで外部effect発生可能性が残る場合、`not applied`を捏造しない。
 - retry/backoffは`runtime_operational_numeric_contracts.md`を共有し、Plugin固有の無期限retryを持たない。
 
-## 4. GUI/Admin運用Policy — #351
+## 4. GUI/Adminの運用方針 — #351（第2版）
 
 ```text
 GuiAdminOperationalPolicy
@@ -65,29 +65,89 @@ GuiAdminOperationalPolicy
 - per_client_update_capacity: int >= 1
 - max_history_page_items: int >= 1
 - max_active_subscriptions_per_client: int >= 1
+- max_in_flight_commands: int >= 1
 - command_timeout_seconds: finite float > 0
 ```
 
-初期V2値:
+現在のV2値:
 
 ```text
 policy_id = v2.gui-admin.default
-policy_revision = 1
+policy_revision = 2
 max_read_model_payload_bytes = 262144
 max_command_payload_bytes = 65536
 per_client_update_capacity = 32
 max_history_page_items = 200
 max_active_subscriptions_per_client = 64
+max_in_flight_commands = 16
 command_timeout_seconds = 30.0
 ```
 
-Rules:
+第1版には`max_in_flight_commands`がなく、他の数値は上記と同じだった。第1版を再定義せず、全所有者を合計した管理コマンドの受付上限、重複適用防止の判断責任、暗黙の方針補完の禁止を実装上明確にするため、第2版へ進める。
+
+第2版の規則:
+
+- 方針は構成・接続処理が不変のスナップショットとして必須注入する。構成要素内部で未指定を既定値へ置き換えない。欠落・不正時は構成失敗または型付きの利用不能状態とする。
+- `max_in_flight_commands`は汎用配送処理が担当する全所有者合計の上限。要求の基本検証後、実行中の同一IDを先に判定し、次に容量を確認してから所有者の解決・版照合・実行へ進む。
+- 実行中の同一IDは`DUPLICATE / COMMAND_ALREADY_IN_FLIGHT`、容量超過は`REJECTED / ADMIN_COMMAND_CONCURRENCY_LIMIT_REACHED`を返す。どちらも所有者呼出しは0回。容量超過の`applied_at`は`None`とし、隠れた待機キュー、黙示的な破棄、適用成功の捏造を禁止する。
+- 汎用層は実行中IDだけを保持し、終了時に除去する。識別子保持数は`max_in_flight_commands`以下。終了結果のキャッシュや永久の処理済みID集合を設けない。
+- 終了後の同一IDは現在の検証と受付制限を通して所有者へ再委譲する。意味上の重複適用防止、保持期間・件数・削除、永続化・再起動、要求の同一性判定、再送・再取得は所有者固有の契約と版管理された方針が所有する。本方針に一律の終了ID保持設定を追加しない。
+- 各インスタンスは構築時の`policy_id / policy_revision`に固定する。実行途中で版を変えず、新インスタンス・新世代から新方針を使う。購読・更新・結果の検証証拠でも同一の方針由来情報を維持する。
+- 意味と必須試験の詳細は`gui_admin_contracts.md`第5.1〜5.4節および第17.1節を正本とする。
 
 - state snapshot更新は同一`model_kind + source_owner`でlatest-state coalescing可能。
 - event/historyはsnapshot coalescingで失わない。別bounded history/query surfaceを使う。
 - Read Model/Commandがbyte上限を超える場合、途中JSONやtextを切って成功扱いしない。
 - command timeout後もownerがeffectを適用した可能性がある場合、refresh/readbackで事実を確認する。
 - slow/disconnected clientはowner publicationをawaitさせない。
+
+### 4.1 Stage AのHTTP通信方針 — #351（第1版）
+
+`GuiAdminHttpTransportPolicy`は管理コマンドや表示量の方針と分離し、HTTP要求の受付・解析・停止の上限を所有する。第4節の`GuiAdminOperationalPolicy`第2版は維持する。
+
+```text
+GuiAdminHttpTransportPolicy
+- policy_id
+- policy_revision
+- max_concurrent_requests: int >= 1
+- request_timeout_seconds: finite number > 0
+- shutdown_grace_seconds: finite number > 0
+- max_request_line_bytes: int >= 1
+- max_header_field_bytes: int >= 1
+- max_header_count: int >= 1
+- max_request_body_bytes: int = 0（Stage A第1版の固定値）
+```
+
+初期値:
+
+```text
+policy_id = v2.gui-admin-http.local-readonly
+policy_revision = 1
+max_concurrent_requests = 16
+request_timeout_seconds = 5.0
+shutdown_grace_seconds = 2.0
+max_request_line_bytes = 4096
+max_header_field_bytes = 8192
+max_header_count = 64
+max_request_body_bytes = 0
+persistent_keepalive = disabled（第1版の固定契約）
+```
+
+- 個数・版・バイト数には具体的な整数を要求し、boolを数値として受理しない。秒数は正の有限数とし、NaNと無限大を拒否する。
+- 方針は必須注入とし、欠落・不正を内部の暗黙の既定値で補わない。構築時の識別子・版へ固定し、実行途中で別世代へ付け替えない。
+- 同時要求数はGUI HTTP全体で16件まで。超過は503と安全な`GUI_REQUEST_LIMIT_REACHED`で拒否し、隠れた待機キューを作らない。終了・失敗・取消時に枠を解放する。
+- HTTP要求処理は5.0秒以内に収束させ、時間切れは503と安全な`GUI_REQUEST_TIMED_OUT`とする。HTTP失敗をドメイン上の事実へ変換しない。
+- 応答本文として直列化する表示モデルは、ラッパーを含めて`GuiAdminOperationalPolicy.max_read_model_payload_bytes`以下とし、途中切断・切詰めを成功扱いしない。
+- 要求行4096バイト、単一ヘッダー項目8192バイトとは独立に、ヘッダー件数を64件以下へ制限する。同一オリジンのGETに余裕を持たせつつ、信頼できないHTTPメタデータの件数を制限するための値である。ヘッダー件数を総バイト数の上限と混同しない。
+- 後続実装はaiohttpサーバへ`max_headers=64`を明示的に渡し、65件目をHTTP解析・受付境界で拒否する。フレームワークの既定値を正本としない。`max_header_count`は具体的な正の整数であり、bool・0・負数を拒否する。
+- `max_request_body_bytes`は第1版では具体的な整数0だけを許可し、boolや他の値を拒否する。GET/HEADとも、正の`Content-Length`または`Transfer-Encoding`ヘッダーの存在を検出したら413と`GUI_REQUEST_BODY_NOT_ALLOWED`で拒否する。本文を読み捨てて成功させず、投影処理・所有者を呼び出さず、隠れた本文蓄積や生要求の応答への転記を行わない。
+- 第1版では持続接続を無効とする。各接続は1応答だけを担当し、成功・失敗とも応答完了後に閉じる。接続を明示的に閉じる方針（force-close相当）を適用し、aiohttp既定の持続接続待機時間に依存しない。`persistent_keepalive`のboolフィールドや曖昧な`keepalive_timeout_seconds`を追加する必要はない。将来持続接続を採用する際は通信方針の版を進める。
+- WebSocket/SSE/応答待ちを長時間維持するポーリング/自動ポーリングは使用せず、初回と明示再取得のHTTP/JSONだけとする。
+- 停止時は新規受付を止め、実行中要求を収束または取り消し、待受・接続・所有タスクを2.0秒以内に回収する。所有未完了タスク0を確認し、上限超過を停止成功として扱わない。
+- 要求行・単一ヘッダー項目・件数の上限超過と不正なHTTP構文は、アプリケーション到達前にHTTP 400で拒否し接続を閉じる。投影処理・所有者の呼出しと成功した表示モデル応答は0件。生要求を転記せず、解析段階の応答をアプリケーションの失敗DTOへ偽装しない。
+- 5経路はクエリ引数を使用せず、空でないクエリ文字列を400 / `GUI_QUERY_NOT_ALLOWED`で拒否する。投影処理・所有者を呼ばない。
+- 成功応答のJSON構造・直列化・Content-Type・状態コード、アプリケーション失敗のJSONと状態コード対応、HEAD、安全ヘッダーの送信形式は`gui_admin_contracts.md`第19.4.1〜19.4.4節を正本とする。生存確認は204・本文なし。安全ヘッダーは成功・失敗双方に適用し、解析段階の失敗と区別する。数値上限と持続接続無効の判断は変更しない。
+- 公開範囲、認証を設けない理由、待受失敗時の型付き状態、#351/#360の責務と必須試験は`gui_admin_contracts.md`第19節を正本とする。待受は127.0.0.1、初期ポート8765、アクセス区分はPUBLIC_VISUALIZATIONのみ。
 
 ## 5. Validation Lab運用Policy — #352
 
@@ -278,7 +338,7 @@ metric boundが未定義の指標を「速そうだからPASS」にしない。�
 
 - GUI client session、Lab run、Tooling analysis、Persistence worker、Plugin integration generation、System Verification runは開始時Policy identity/revisionをbindする。
 - Policy revision変更中のin-flight operationをnew revisionへ付け替えない。
-- new operation/runからcurrent Policyを使う。
+- new operation/runからcurrent Policyを使う。GUI/Adminでは第4節に従い、新インスタンス・新世代から新方針を使用する。
 - old generation resultはowner-specific freshness gateへ従う。
 
 ## 11. D10 required tests
