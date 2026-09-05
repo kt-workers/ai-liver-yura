@@ -101,6 +101,43 @@ command_timeout_seconds = 30.0
 - command timeout後もownerがeffectを適用した可能性がある場合、refresh/readbackで事実を確認する。
 - slow/disconnected clientはowner publicationをawaitさせない。
 
+### 4.1 Stage AのHTTP通信方針 — #351（第1版）
+
+`GuiAdminHttpTransportPolicy`は管理コマンドや表示量の方針と分離し、HTTP要求の受付・解析・停止の上限を所有する。第4節の`GuiAdminOperationalPolicy`第2版は維持する。
+
+```text
+GuiAdminHttpTransportPolicy
+- policy_id
+- policy_revision
+- max_concurrent_requests: int >= 1
+- request_timeout_seconds: finite number > 0
+- shutdown_grace_seconds: finite number > 0
+- max_request_line_bytes: int >= 1
+- max_header_field_bytes: int >= 1
+```
+
+初期値:
+
+```text
+policy_id = v2.gui-admin-http.local-readonly
+policy_revision = 1
+max_concurrent_requests = 16
+request_timeout_seconds = 5.0
+shutdown_grace_seconds = 2.0
+max_request_line_bytes = 4096
+max_header_field_bytes = 8192
+```
+
+- 個数・版・バイト数には具体的な整数を要求し、boolを数値として受理しない。秒数は正の有限数とし、NaNと無限大を拒否する。
+- 方針は必須注入とし、欠落・不正を内部の暗黙の既定値で補わない。構築時の識別子・版へ固定し、実行途中で別世代へ付け替えない。
+- 同時要求数はGUI HTTP全体で16件まで。超過は503と安全な`GUI_REQUEST_LIMIT_REACHED`で拒否し、隠れた待機キューを作らない。終了・失敗・取消時に枠を解放する。
+- HTTP要求処理は5.0秒以内に収束させ、時間切れは安全な`GUI_REQUEST_TIMED_OUT`とする。HTTP失敗をドメイン上の事実へ変換しない。
+- 応答本文として直列化する表示モデルは、ラッパーを含めて`GuiAdminOperationalPolicy.max_read_model_payload_bytes`以下とし、途中切断・切詰めを成功扱いしない。
+- Stage A APIは要求本文を受理しない。要求行4096バイト、単一ヘッダー項目8192バイトの上限を適用する。これらの上限を接続全体やヘッダー総量の上限と混同しない。
+- 接続を応答後に長期維持しない。WebSocket/SSE/自動ポーリングは使用せず、初回と明示再取得のHTTP/JSONだけとする。
+- 停止時は新規受付を止め、実行中要求を収束または取り消し、待受・接続・所有タスクを2.0秒以内に回収する。所有未完了タスク0を確認し、上限超過を停止成功として扱わない。
+- 公開範囲、認証を設けない理由、待受失敗時の型付き状態、#351/#360の責務と必須試験は`gui_admin_contracts.md`第19節を正本とする。待受は127.0.0.1、初期ポート8765、アクセス区分はPUBLIC_VISUALIZATIONのみ。
+
 ## 5. Validation Lab運用Policy — #352
 
 ```text

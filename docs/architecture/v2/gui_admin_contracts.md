@@ -434,3 +434,191 @@ Browser usability/visual correctness remains Human Verification after contract t
 ## 18. #445 Gate
 
 GUI/Admin production implementation remains frozen until #445 D1-D9 and final user confirmation PASS.
+
+---
+
+## 19. Stage A：ローカル読取専用の本番GUI
+
+### 19.1 目的と技術選択
+
+#351の最初の段階を`Stage A — Local Read-only Production GUI`とする。実際の本番用通信処理を1本成立させ、不変の型付き表示モデルをブラウザへ表示する。秘密・私的状態・状態変更権限は公開しない。GUIの失敗でCoreを停止させず、後続の所有者結合の足場を作る。この段階の完了を#351全体の完了としない。
+
+Stage Aはブラウザ画面とし、サーバは**aiohttpによるHTTP/JSONスナップショット通信**、画面は**素のHTML / CSS / JavaScript**を採用する。現在の本番実行基盤であるasyncioに接続し、同じ実行基盤内でサーバの起動停止を所有するための選択である。別のASGIサーバプロセスを要求しない。将来の通信拡張の可能性は、Stage Aでその機能を実装する許可を意味しない。
+
+- Stage AではWebSocket、SSE、長期購読通信、自動ポーリングを使用しない。
+- 初回表示とユーザーの明示的な「再取得」操作だけで、同一オリジンのAPIをGETする。
+- 外部CDNを使用しない。Node/npm/Vite/Vue/React等のビルド工程を導入しない。
+- **PyQt / QtのデスクトップGUIはStage A以降の本番GUI構成から除外する。** 代替候補として残さず、互換層やデスクトップへの代替経路を作らない。
+
+現在の`Pipfile`にある`pyqt6`は、本方針の本番GUIでは使用しない。今回の設計改訂では`Pipfile`と`Pipfile.lock`を変更しない。ChatGPTの設計レビューPASS後のコード実装工程で、未使用の本番依存としてPyQt6を削除し、aiohttpを本番依存へ追加し、`Pipfile.lock`を正規の依存解決手順で更新する。互換用の補助コードやダミーimportを追加しない。`pyinstaller`等の別依存は、この決定だけで削除せず、個別に未使用かを確認して判断する。
+
+### 19.2 必須の表示対象と情報源
+
+Stage Aで必須の種類は`CONFIGURATION_SUMMARY`の1種類だけとする。情報源は、実際の本番構成へ読み込まれ、#360の構成処理から注入された**同一の不変な`MinimumBrainProductionConfig`インスタンス**である。
+
+GUIはYAMLのパス探索・再読込、環境からの再構築、Brain内部の探索を行わない。別プロセスで読み直した値を、現在稼働中の設定と表示してはならない。
+
+ブラウザへ出せる最小Brain設定情報は次の4項目だけとする。
+
+```text
+schema_id
+config_id
+config_revision
+brain_module_registrations
+```
+
+`character_definition_path`、資格情報、`OPENAI_API_KEY`、提供サービス固有設定、生の指示文、再試行処理の内部設定、ファイルシステムのパス、私的文脈、ドメインの生オブジェクトを含めない。項目追加は別途、安全な投影のレビューを必要とする。
+
+### 19.3 設定の純粋な投影
+
+#351が所有する`MinimumBrainConfigurationReadModelProjector`は、注入された設定から`GuiAdminConfigurationReadModel`と必要な`AdminReadModelEnvelope`を構築する純粋な投影アダプタとする。
+
+```text
+GuiAdminConfigurationReadModel
+  config_owner = yura.minimum-brain.production
+  schema_version = 1
+  config_revision = 注入された設定のconfig_revision
+  editable_fields = ()
+  secret_fields = ()
+  effective_values = 上記4項目だけ
+  provenance = 設定のconfig_idとconfig_revisionだけ
+
+AdminReadModelEnvelope
+  model_kind = CONFIGURATION_SUMMARY
+  schema_version = 1
+  source_owner = yura.minimum-brain.production
+  source_revision = 注入された設定のconfig_revision
+  availability = AVAILABLE
+  degraded_reasons = ()
+```
+
+登録モジュールは既存の識別値として投影し、内部の実装参照を出さない。ラッパーに含む構造識別子・版・生成時刻・利用状態も型付きのメタデータに限定し、追加の秘密情報を由来情報へ混入させない。設定変更要求を生成しない。
+
+`generated_at`には構成処理から注入された`SystemRuntimeClock`相当の安全な時計を使用する。同じ不変設定世代について作成済みの表示モデルと生成時刻を再利用し、GETのたびに同一`source_revision`の内容を変えて公開しない。偽の状態版を生成しない。`AVAILABLE`はこの設定投影を利用できる意味であり、全体Coreや全モジュールの稼働正常を表さない。
+
+### 19.4 HTTP経路と画面
+
+公開経路は次だけとする。HEADを許可する場合は、GETと同じ公開境界を適用する。
+
+```text
+GET /
+GET /assets/app.js
+GET /assets/app.css
+GET /api/v1/configuration/minimum-brain
+GET /healthz
+```
+
+既知経路の未対応メソッドは405、不明経路は404とする。POST / PUT / PATCH / DELETE、汎用コマンド、汎用状態変更、任意所有者の問合せ経路を設けない。Stage A APIは要求本文を受理しない。
+
+`/healthz`はGUI通信処理自身の生存確認だけであり、Core全体の正常性を宣言しない。既存`GuiAdminCommandDispatcher`は保持するが、このHTTP通信処理から到達不能にする。状態変更APIは0経路とする。
+
+画面は「ゆら GUI/Admin」「最小Brainの設定」と、構造識別子、設定ID、版、登録済みBrainモジュール、「再取得」操作で構成する。状態変更ボタンと秘密入力欄を設けない。
+
+### 19.5 公開範囲とアクセス分類
+
+公開方式は`LOCAL_READ_ONLY`とし、設定値は`deployment_mode = local_read_only`とする。待受ホストは**`127.0.0.1`だけ**を許可する。`0.0.0.0`、公開IP、LAN IP、Renderの公開インターフェースを含む、それ以外のホストで起動しない。Stage Aを遠隔・公開配置へ使用しない。
+
+使用できるアクセス分類は`PUBLIC_VISUALIZATION`だけであり、設定値は`public_visualization`とする。表示内容そのものを未認証でも公開可能な部分集合に限定するための区分である。要求の`actor_context`、ヘッダー、クエリ、Cookieから`OPERATOR_READ`、`OPERATOR_MUTATION`、`DEVELOPMENT_VALIDATION`を生成しない。
+
+ループバック制限は本人認証ではない。Stage Aでは特権APIを公開しないため認証アダプタを実装しない。Basic Auth、Bearer token、セッション/Cookie認証、遠隔リバースプロキシ認証はいずれも未採用とする。
+
+管理者向け読取・変更を追加する前に別の設計改訂を必須とする。その際に本人性の証明、資格情報の供給・更新・失効、TLS境界、信頼済みアクセス区分への変換、CSRFと再送の意味を正本化する。
+
+### 19.6 通信方針と配置設定
+
+HTTP固有の上限は、既存の`GuiAdminOperationalPolicy`と分離した`GuiAdminHttpTransportPolicy`へ置く。数値・検証規則は`external_surface_operational_numeric_contracts.md`第4.1節を正本とする。両方の方針を必須注入し、欠落や不正を暗黙の既定値で補わない。
+
+#351の構成・設定層は、次の版管理された静的設定を所有する。環境固有の待受設定をDomain DTOへ入れない。
+
+```text
+将来のファイル: resources/config/v2/gui_admin.yaml
+schema_id = yura.gui-admin.production-config.v1
+config_id = yura.gui-admin.production
+config_revision = 1
+
+deployment_mode = local_read_only
+bind_host = 127.0.0.1
+port = 8765
+access_level = public_visualization
+
+gui_operational_policy = 第4節のGuiAdminOperationalPolicy第2版
+gui_http_transport_policy = 第4.1節のGuiAdminHttpTransportPolicy第1版
+```
+
+秘密項目は0件とする。この設計工程では設定ファイル実体を作らない。不正なホスト・特権アクセス分類・方針が入っている場合はGUIの構成を安全側へ失敗させるが、Coreの起動は継続可能とする。
+
+### 19.7 GUI自身の起動停止と失敗
+
+#351の`GuiAdminSubsystem`は少なくとも`start()`、`stop()`、型付きの`availability`を所有する。
+
+起動は設定・方針の検証、安全な投影の構築、ローカルHTTP待受開始の順とし、成功後に`AVAILABLE`を公開する。構成・待受に失敗した場合は待受を稼働状態に残さず、途中で確保した資源を閉じて型付き`UNAVAILABLE`とする。GUI起動失敗をCore失敗へ変換しない。
+
+停止は新規HTTP受付停止、有界な実行中要求の収束または取消、待受と接続のclose、所有タスクの回収の順とする。停止後のGUI所有未完了タスクは0件、繰り返し停止は安全とし、停止上限は2.0秒とする。上限超過や回収失敗を正常停止として報告しない。HTTP失敗からドメイン上の事実を生成しない。
+
+Stage Aで用いる安全な失敗コードは次を基本とする。
+
+```text
+GUI_CONFIG_INVALID
+GUI_UNSAFE_BIND_CONFIGURATION
+GUI_BIND_FAILED
+GUI_REQUEST_LIMIT_REACHED
+GUI_REQUEST_TIMED_OUT
+GUI_INTERNAL_TRANSPORT_FAILURE
+```
+
+例外の生文字列、パス、ソケット詳細、資格情報をブラウザへ返さない。提供サービス診断の分類を新設しない。`PROVIDER_DIAGNOSTIC_SUMMARY`はStage Aへ載せず、後続で#437の安全な診断DTOを再利用する。
+
+### 19.8 #351と#360の構成責務
+
+| 所有者 | 責務 |
+| --- | --- |
+| #351 | 投影アダプタ、表示モデル契約、HTTP通信アダプタ、静的画面、GUI設定schema/loader、GUI自身の起動停止、安全な型付き利用状態 |
+| #360 | 本番構成の起動点への登録、稼働中の同一設定インスタンスと時計の注入、GUIを任意で配置する判断、SystemCompositionSnapshotのsubsystem binding、起動・縮退の伝播、全体停止順の検証 |
+
+#351は`app/bootstrap.py`の構成権限を持たず、Stage Aのコード工程で同ファイルを変更しない。本番へのGUI接続は既存#360のS7で行う。GUI独自のCoordinatorや、既存の起動点を置き換える別系統の起動処理を作らない。
+
+#360へ引き渡す全体停止順は次のとおりとする。
+
+1. GUIの外部要求の新規受付を停止する。
+2. 実行中GUI要求を上限内で収束または取り消す。
+3. GUIの待受・接続・タスクを閉じる。
+4. Brain/Coreの作業を停止する。
+5. RuntimeLifecycleと資源を閉じる。
+
+GUI停止に失敗しても、Brain/CoreとLifecycleの停止・資源解放を必ず試みる。この順序の実際の制御と検証は#360が所有する。
+
+### 19.9 後続の表示と所有者契約
+
+`SYSTEM_HEALTH`、`RUNTIME_LIFECYCLE`、`INTERNAL_STATE_SUMMARY`、`GOAL_COMMITMENT_SUMMARY`、`ATTENTION_FOCUS_SUMMARY`、`ACTIVITY_SUMMARY`、`SPEECH_RUNTIME_SUMMARY`、`BODY_SUMMARY`、`PLUGIN_CAPABILITY_SUMMARY`、`SUBSYSTEM_HEALTH_SUMMARY`、`PROVIDER_DIAGNOSTIC_SUMMARY`はStage A必須ではない。不要と決定したのではなく、所有者の公開面・版・利用状態・構成接続が整ったものをStage B以降へ追加する。
+
+管理操作を公開しないため、次の既存の契約不足はStage Aを妨げない。GUIで所有者の意味や内部状態を補作せず、必要な段階で担当を確認する。
+
+| 後続契約 | 所有者 |
+| --- | --- |
+| System/Runtimeの公開更新世代 | #322 / #334 / #350 / #360 |
+| 全体状態の集約 | #360 |
+| Runtimeの管理操作 | #350と#360の構成処理 |
+| Plugin管理操作 | #343 / #344 |
+| 検証開始 | #352 |
+| 提供サービス診断の集約 | #437 / #356 / #360 |
+| 設定変更 | 各設定所有者 |
+
+Stage Aのための新たな所有者コード変更は不要とする。別所有者の作業が必要になった時点で、open/closedの既存Issueを重複検索してから分離する。今回は所有者Issueを作らない。通信設計は#351を継続し、本番統合は#360が所有するため重複Issueを作成しない。
+
+### 19.10 後続コード工程の機械検証
+
+- 投影は注入された同一設定・版に基づき、許可された4項目だけを含む。不変性、パス・秘密・提供サービス設定の非公開、ファイル再読込なしを確認する。
+- GETで画面と安全な型付き設定を取得でき、初回と明示再取得だけが通信する。`/healthz`はCoreの正常性を宣言しない。
+- POST/PUT/PATCH/DELETEを拒否し、不明経路は404、管理コマンド経路は存在しない。
+- `127.0.0.1`と`PUBLIC_VISUALIZATION`だけを受理し、それ以外の待受・権限を拒否する。要求由来の権限昇格がない。
+- 16件の同時要求を受け付け、17件目は503で有界に失敗する。隠れた待機キューなし、時間切れ上限、終了後の枠解放、要求本文拒否、要求行・ヘッダー上限を確認する。
+- 停止後の新規受付なし、GUI所有未完了タスク0、繰り返し停止、2秒の停止上限を確認する。
+- JSONと失敗応答に秘密・生例外・パスを含めない。外部CDNなし、同一オリジン通信、適切なCSP・no-store・nosniffを確認する。
+- 待受ポートの確保失敗でGUIは型付き`UNAVAILABLE`となる。Coreに依存しない試験で、GUI失敗が注入元の状態を変更しないことを確認する。
+- PyQtの互換層・ダミーimport・デスクトップ代替経路を作らず、承認済みの依存変更を正規のlock更新とCIで確認する。
+
+### 19.11 人間による確認の境界
+
+#351のローカルブラウザ確認では、実際のGUI通信処理を通した表示、ラベルの読みやすさ、明示再取得、許可項目、操作ボタンの不在、ローカル限定動作、配置・操作性を検証する。確認用構成である場合は明示し、別途読み込んだ設定を稼働中Coreの設定だと表示しない。
+
+この確認は、稼働中Coreとの本番接続、SystemCompositionSnapshotの由来情報、Runtime healthの事実、所有者の管理操作、遠隔認証、#360 S7の成功を証明しない。それらは後続のシステム結合検証が所有する。静的な模擬画面だけを本番通信の確認証拠へ昇格させない。
