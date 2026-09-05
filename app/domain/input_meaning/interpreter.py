@@ -10,6 +10,7 @@ from app.domain.input_gateway import InputModality, NormalizedInputEvent
 from app.domain.llm import (
     LLMActivationPolicy,
     LLMExecutionPolicy,
+    LLMFailureCode,
     LLMFailurePolicy,
     LLMInterruptibility,
     LLMPriority,
@@ -25,7 +26,9 @@ from app.usecases.ports.llm import LLMRolePort
 
 from .contracts import (
     InputMeaningAcceptancePolicy,
+    InputMeaningBoundaryFailure,
     InputMeaningFreshnessStamp,
+    InputMeaningInterpretationResult,
     ReferenceContext,
     StructuredInputMeaning,
     meaning_from_json,
@@ -124,6 +127,14 @@ def build_request(
     )
 
 
+class _CommitRejected(ValueError):
+    """純粋な採用検証の拒否理由を、文字列解析せず公開境界へ渡す。"""
+
+    def __init__(self, code: LLMFailureCode, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 def commit_result(
     request: LLMRoleRequest,
     result: LLMRoleResult,
@@ -136,31 +147,38 @@ def commit_result(
         raise ValueError("freshness_stamp は InputMeaningFreshnessStamp でなければなりません")
     failure = validate_role_exchange(descriptor(policy), request, result)
     if failure is not None:
-        raise ValueError(failure.code.value)
+        raise _CommitRejected(failure.code, failure.code.value)
     if result.status is not LLMRoleStatus.SUCCEEDED or result.output is None:
-        raise ValueError("input meaning result is not committable")
+        raise _CommitRejected(LLMFailureCode.POLICY_VIOLATION, "非成功の入力意味は採用できません")
     if request.revisions.source_context_revision != freshness_stamp.source_context_revision:
-        raise ValueError("input meaning result is stale")
+        raise _CommitRejected(LLMFailureCode.STALE, "入力意味の結果が古くなっています")
     if (
         freshness_stamp.acceptance_policy_id != policy.acceptance.policy_id
         or freshness_stamp.acceptance_policy_revision != policy.acceptance.policy_revision
     ):
-        raise ValueError("Input Meaningの採用方針が古くなっています")
+        raise _CommitRejected(LLMFailureCode.STALE, "入力意味の採用方針が古くなっています")
     request_value = request.input.value
     if not isinstance(request_value, Mapping):
-        raise ValueError("input meaning request payload is invalid")
+        raise _CommitRejected(LLMFailureCode.POLICY_VIOLATION, "入力意味の要求構造が不正です")
     encoded_context = request_value.get("reference_context")
     if encoded_context != freeze_json(reference_context.to_dict()):
-        raise ValueError("reference context does not match request snapshot")
+        raise _CommitRejected(
+            LLMFailureCode.POLICY_VIOLATION, "参照文脈が要求時の固定内容と一致しません"
+        )
     encoded_acceptance = request_value.get("acceptance_policy")
     if encoded_acceptance != freeze_json(policy.acceptance.to_dict()):
-        raise ValueError("採用方針がrequest snapshotと一致しません")
-    meaning = meaning_from_json(
-        result.output.value,
-        source_event_id=request.source_event_ids[0],
-        source_context_revision=request.revisions.source_context_revision,
-        acceptance_policy=policy.acceptance,
-    )
+        raise _CommitRejected(
+            LLMFailureCode.POLICY_VIOLATION, "採用方針が要求時の固定内容と一致しません"
+        )
+    try:
+        meaning = meaning_from_json(
+            result.output.value,
+            source_event_id=request.source_event_ids[0],
+            source_context_revision=request.revisions.source_context_revision,
+            acceptance_policy=policy.acceptance,
+        )
+    except (ValueError, TypeError, KeyError) as error:
+        raise _CommitRejected(LLMFailureCode.SCHEMA_INVALID, str(error)) from error
     allowed_refs = {
         value
         for item in reference_context.entries
@@ -170,7 +188,10 @@ def commit_result(
         item.resolved_ref is not None and item.resolved_ref not in allowed_refs
         for item in meaning.references
     ):
-        raise ValueError("resolved reference is outside bounded reference context")
+        raise _CommitRejected(
+            LLMFailureCode.POLICY_VIOLATION,
+            "解決した参照が参照文脈の範囲外です",
+        )
     return meaning
 
 
@@ -193,7 +214,7 @@ class InputMeaningInterpreter:
         request_id: str,
         trace_id: str,
         created_at: datetime,
-    ) -> StructuredInputMeaning:
+    ) -> InputMeaningInterpretationResult:
         request = build_request(
             event,
             context,
@@ -203,11 +224,53 @@ class InputMeaningInterpreter:
             policy=self._policy,
         )
         result = await self._port.invoke(request)
-        freshness_stamp = await self._live_context.current_freshness_stamp()
-        return commit_result(
-            request,
-            result,
-            reference_context=context,
-            freshness_stamp=freshness_stamp,
-            policy=self._policy,
+
+        def reject(
+            code: LLMFailureCode, message: str, status: LLMRoleStatus | None
+        ) -> InputMeaningInterpretationResult:
+            return InputMeaningInterpretationResult(
+                request.request_id,
+                request.trace_id,
+                request.source_event_ids[0],
+                request.revisions.source_context_revision,
+                status,
+                boundary_failure=InputMeaningBoundaryFailure(code, message),
+            )
+
+        exchange_failure = validate_role_exchange(descriptor(self._policy), request, result)
+        if exchange_failure is not None:
+            return reject(exchange_failure.code, "応答の識別または交換契約が不正です", None)
+        if result.status is not LLMRoleStatus.SUCCEEDED:
+            return InputMeaningInterpretationResult(
+                request.request_id,
+                request.trace_id,
+                request.source_event_ids[0],
+                request.revisions.source_context_revision,
+                result.status,
+                role_failure=result.failure,
+            )
+        try:
+            freshness_stamp = await self._live_context.current_freshness_stamp()
+        except Exception:
+            # 外部取消はBaseExceptionであり、この運用上の取得失敗には含めない。
+            return reject(LLMFailureCode.REJECTED, "現在世代を取得できません", result.status)
+        if not isinstance(freshness_stamp, InputMeaningFreshnessStamp):
+            return reject(LLMFailureCode.REJECTED, "現在世代を確定できません", result.status)
+        try:
+            meaning = commit_result(
+                request,
+                result,
+                reference_context=context,
+                freshness_stamp=freshness_stamp,
+                policy=self._policy,
+            )
+        except _CommitRejected as error:
+            return reject(error.code, "入力意味の採用条件を満たしていません", result.status)
+        return InputMeaningInterpretationResult(
+            request.request_id,
+            request.trace_id,
+            request.source_event_ids[0],
+            request.revisions.source_context_revision,
+            result.status,
+            meaning=meaning,
         )
