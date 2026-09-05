@@ -129,6 +129,20 @@ Core FoundationはJSON object key、finite number、不変snapshotを保証す�
 - request identity、role identity、schema identity、revision、authority/preconditionをowning Moduleがcommit前に再検証する
 - token usageとattempt countは具体的なnon-negative intでありboolを拒否
 
+### 7.1 所有ドメインの公開失敗契約 — #564
+
+`LLMRolePort → LLMRoleResult → 所有ドメインによる採用確定`という責務境界を維持する。
+所有ドメインの本番公開境界は、検証済みの非成功結果を汎用例外へ変換して型付きの失敗情報を失ってはならない。
+一方、`LLMRoleResult`そのものを責務固有の公開データ型の代わりに露出しない。
+各所有者は必要に応じて責務固有の結果型を定義し、想定される運用上の失敗を保持する。
+失敗分類は既存の`LLMFailureCode`を使い、所有者ごとの分類列挙型を再発明しない。
+提供サービスのSDKオブジェクトや生の例外は公開しない。
+
+サービス不在、サービスエラー、時間切れ、役割単位の取消、古い結果、置換済み、拒否は、型付きの運用結果として保持できる。
+これらとプログラムの誤用は分離する。不正なドメインオブジェクトの入力、要求構築の事前条件違反を無理に運用結果へ変換しない。
+Pythonコルーチン自体への外部取消は`CancelledError`として伝播し、役割単位の`CANCELLED`結果とは区別する。
+本節は共有原則を定める。入力意味解析の具体的な公開型と判定順序は`input_meaning_contracts.md`を正本とし、他の所有者の具体的な実装APIを本変更で規定しない。
+
 ## 8. Port
 
 ```python
