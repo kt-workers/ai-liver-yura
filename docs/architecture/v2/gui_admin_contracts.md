@@ -526,6 +526,104 @@ HEADはGETと同じ経路・アクセス・安全境界を通り、GETと整合�
 
 画面は「ゆら GUI/Admin」「最小Brainの設定」と、構造識別子、設定ID、版、登録済みBrainモジュール、「再取得」操作で構成する。状態変更ボタンと秘密入力欄を設けない。
 
+### 19.4.1 成功応答の送信形式
+
+各経路の成功時の状態コードとContent-Typeを次に固定する。対応するHEADはGETと同じ状態コード・ヘッダー情報を返し、応答本文を送らない。
+
+| 経路 | 状態コード | Content-Type |
+| --- | --- | --- |
+| `GET /` | 200 | `text/html; charset=utf-8` |
+| `GET /assets/app.js` | 200 | `text/javascript; charset=utf-8` |
+| `GET /assets/app.css` | 200 | `text/css; charset=utf-8` |
+| `GET /api/v1/configuration/minimum-brain` | 200 | `application/json; charset=utf-8` |
+| `GET /healthz` | 204 | 本文を持たない |
+
+`GET /healthz`と`HEAD /healthz`はともに204で本文なし。GUI通信処理自身の生存確認だけを意味し、Core・Brain・提供サービスの正常性を表さない。
+
+設定取得応答のキー集合と入れ子構造は次のJSONに固定する。値は例示であり、固定の試験データを返す契約ではない。第19.3節に従い、注入された実際の`MinimumBrainProductionConfig`と時計から生成する。
+
+```json
+{
+  "model_kind": "configuration_summary",
+  "schema_version": 1,
+  "source_owner": "yura.minimum-brain.production",
+  "source_revision": 1,
+  "generated_at": "2026-09-05T12:00:00Z",
+  "availability": "available",
+  "degraded_reasons": [],
+  "payload": {
+    "config_owner": "yura.minimum-brain.production",
+    "schema_version": 1,
+    "config_revision": 1,
+    "editable_fields": [],
+    "effective_values": {
+      "schema_id": "yura.minimum-brain.production-config.v1",
+      "config_id": "yura.minimum-brain.production",
+      "config_revision": 1,
+      "brain_module_registrations": [
+        "input_meaning"
+      ]
+    },
+    "provenance": {
+      "config_id": "yura.minimum-brain.production",
+      "config_revision": 1
+    },
+    "secret_fields": []
+  }
+}
+```
+
+- 列挙値は`.value`、tupleはJSON配列、不変の`JsonValue`は再帰的に通常のJSON互換値へ変換して直列化する。既存の型付き設定表示モデルをJSON互換のpayloadへ投影してからラッパーへ格納し、生のドメインオブジェクトを直接直列化しない。
+- `generated_at`はUTCのRFC3339文字列で、末尾を`Z`表記とする。同じ設定世代では既存の表示モデルと生成時刻を保持する。
+- 上記以外のキーを追加しない。キャラクターのパス、提供サービス設定、再試行内部設定、秘密値を混入させない。
+
+### 19.4.2 アプリケーションの失敗応答
+
+アプリケーション層が生成する失敗応答のContent-Typeは`application/json; charset=utf-8`とし、JSONのキー集合と構造は次だけとする。`code`の値だけを下表の失敗に対応させる。`message`、生例外、パス、要求内容を追加しない。
+
+```json
+{"error":{"code":"GUI_REQUEST_BODY_NOT_ALLOWED"}}
+```
+
+| 状態コード | 失敗コード | 条件 |
+| --- | --- | --- |
+| 400 | `GUI_QUERY_NOT_ALLOWED` | 空でないクエリ文字列 |
+| 404 | `GUI_ROUTE_NOT_FOUND` | 不明経路 |
+| 405 | `GUI_METHOD_NOT_ALLOWED` | 既知経路の未対応メソッド |
+| 413 | `GUI_REQUEST_BODY_NOT_ALLOWED` | 禁止された要求本文 |
+| 503 | `GUI_REQUEST_LIMIT_REACHED` | 同時要求数の上限超過 |
+| 503 | `GUI_REQUEST_TIMED_OUT` | 要求処理の時間切れ |
+| 500 | `GUI_INTERNAL_TRANSPORT_FAILURE` | 通信処理内部の失敗 |
+
+405では`Allow: GET, HEAD`を返す。HEADに対する失敗も状態コード・ヘッダー・失敗コードの意味はGETと同じだが、応答本文を送らない。
+
+Stage Aの5経路はクエリ引数を使用しない。空でないクエリ文字列は400 / `GUI_QUERY_NOT_ALLOWED`で拒否し、投影処理・所有者の呼出しを0回とする。キャッシュ回避等を理由に黙って無視しない。
+
+### 19.4.3 HTTP解析段階の拒否
+
+要求行上限超過、単一ヘッダー項目上限超過、ヘッダー件数64超過、不正なHTTP構文は、アプリケーションの処理へ到達する前のHTTP解析段階で拒否する。
+
+- HTTP 400を返して接続を閉じる。
+- アプリケーションの投影処理・所有者の呼出しは0回、成功した表示モデル応答も0件とする。
+- この応答を`AdminReadModelEnvelope`やアプリケーションの失敗DTOに偽装しない。
+- 要求やヘッダーの生の値を応答へ転記しない。フレームワーク既定の例外説明を安全性確認なしに公開しない。
+
+第19.4.2節の本文・クエリ拒否と、この解析段階の拒否を区別する。
+
+### 19.4.4 安全ヘッダーと画面描画
+
+アプリケーションが生成する全応答へ、成功・失敗、GET・HEADを問わず次のヘッダーを付ける。CSPは改行を含まない1つのヘッダー値として送信する。
+
+```text
+Cache-Control: no-store
+X-Content-Type-Options: nosniff
+Referrer-Policy: no-referrer
+Cross-Origin-Resource-Policy: same-origin
+Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+```
+
+`Access-Control-Allow-Origin`は設定しない。画面は外部CDN、HTML内へ直接埋め込むJavaScriptやCSSを使わない。動的な値は`textContent`相当で文字列として描画し、`innerHTML`、`eval`、スクリプトの動的生成を禁止する。
+
 ### 19.5 公開範囲とアクセス分類
 
 公開方式は`LOCAL_READ_ONLY`とし、設定値は`deployment_mode = local_read_only`とする。待受ホストは**`127.0.0.1`だけ**を許可する。`0.0.0.0`、公開IP、LAN IP、Renderの公開インターフェースを含む、それ以外のホストで起動しない。Stage Aを遠隔・公開配置へ使用しない。
@@ -576,6 +674,9 @@ GUI_BIND_FAILED
 GUI_REQUEST_LIMIT_REACHED
 GUI_REQUEST_TIMED_OUT
 GUI_REQUEST_BODY_NOT_ALLOWED
+GUI_QUERY_NOT_ALLOWED
+GUI_ROUTE_NOT_FOUND
+GUI_METHOD_NOT_ALLOWED
 GUI_INTERNAL_TRANSPORT_FAILURE
 ```
 
@@ -646,6 +747,18 @@ Stage Aのための新たな所有者コード変更は不要とする。別所�
 10. POST/PUT/PATCH/DELETEは引き続き405とする。
 11. 応答完了後の接続を再利用せず、成功応答後も持続接続を残さない。
 12. aiohttpの持続接続と`max_headers`の既定値へ暗黙に依存しないことを確認する。
+
+### 19.10.2 HTTP送信形式の追加必須試験
+
+- 設定JSONのキー集合と入れ子構造が第19.4.1節と完全一致し、注入された設定値に基づくこと。
+- 列挙値、tuple、不変のJSON値、日時の直列化と、UTC・RFC3339・末尾Zの生成時刻を確認する。同じ設定世代の生成時刻を保持する。
+- `/healthz`は204・本文なしで、各経路のContent-Typeが指定値と一致すること。
+- アプリケーションの失敗JSONが`error.code`だけで、全失敗の状態コード対応と405の`Allow: GET, HEAD`が一致すること。
+- 要求行・ヘッダー項目・件数の上限超過と不正構文は解析段階で400となり、投影処理・所有者へ到達せず、成功した表示モデルや生要求を返さず接続を閉じること。
+- 空でないクエリ文字列を400 / `GUI_QUERY_NOT_ALLOWED`で拒否し、投影処理・所有者を呼ばないこと。
+- 成功・失敗の安全ヘッダーが第19.4.4節と完全一致し、CSPが1つの改行なしの値で、`Access-Control-Allow-Origin`がないこと。
+- HTML内へのスクリプト・CSSの直接埋込みや外部CDNがなく、動的な値を安全な文字列描画で表示すること。
+- 全5経路のHEAD成功・アプリケーション失敗とも応答本文0バイトで、GETと整合する状態コード・ヘッダー情報を持つこと。
 
 ### 19.11 人間による確認の境界
 
