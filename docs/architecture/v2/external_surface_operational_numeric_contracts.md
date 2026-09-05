@@ -54,7 +54,7 @@ Rules:
 - lifecycle timeoutで外部effect発生可能性が残る場合、`not applied`を捏造しない。
 - retry/backoffは`runtime_operational_numeric_contracts.md`を共有し、Plugin固有の無期限retryを持たない。
 
-## 4. GUI/Admin運用Policy — #351
+## 4. GUI/Adminの運用方針 — #351（第2版）
 
 ```text
 GuiAdminOperationalPolicy
@@ -65,23 +65,35 @@ GuiAdminOperationalPolicy
 - per_client_update_capacity: int >= 1
 - max_history_page_items: int >= 1
 - max_active_subscriptions_per_client: int >= 1
+- max_in_flight_commands: int >= 1
 - command_timeout_seconds: finite float > 0
 ```
 
-初期V2値:
+現在のV2値:
 
 ```text
 policy_id = v2.gui-admin.default
-policy_revision = 1
+policy_revision = 2
 max_read_model_payload_bytes = 262144
 max_command_payload_bytes = 65536
 per_client_update_capacity = 32
 max_history_page_items = 200
 max_active_subscriptions_per_client = 64
+max_in_flight_commands = 16
 command_timeout_seconds = 30.0
 ```
 
-Rules:
+第1版には`max_in_flight_commands`がなく、他の数値は上記と同じだった。第1版を再定義せず、全所有者を合計した管理コマンドの受付上限、重複適用防止の判断責任、暗黙の方針補完の禁止を実装上明確にするため、第2版へ進める。
+
+第2版の規則:
+
+- 方針は構成・接続処理が不変のスナップショットとして必須注入する。構成要素内部で未指定を既定値へ置き換えない。欠落・不正時は構成失敗または型付きの利用不能状態とする。
+- `max_in_flight_commands`は汎用配送処理が担当する全所有者合計の上限。要求の基本検証後、実行中の同一IDを先に判定し、次に容量を確認してから所有者の解決・版照合・実行へ進む。
+- 実行中の同一IDは`DUPLICATE / COMMAND_ALREADY_IN_FLIGHT`、容量超過は`REJECTED / ADMIN_COMMAND_CONCURRENCY_LIMIT_REACHED`を返す。どちらも所有者呼出しは0回。容量超過の`applied_at`は`None`とし、隠れた待機キュー、黙示的な破棄、適用成功の捏造を禁止する。
+- 汎用層は実行中IDだけを保持し、終了時に除去する。識別子保持数は`max_in_flight_commands`以下。終了結果のキャッシュや永久の処理済みID集合を設けない。
+- 終了後の同一IDは現在の検証と受付制限を通して所有者へ再委譲する。意味上の重複適用防止、保持期間・件数・削除、永続化・再起動、要求の同一性判定、再送・再取得は所有者固有の契約と版管理された方針が所有する。本方針に一律の終了ID保持設定を追加しない。
+- 各インスタンスは構築時の`policy_id / policy_revision`に固定する。実行途中で版を変えず、新インスタンス・新世代から新方針を使う。購読・更新・結果の検証証拠でも同一の方針由来情報を維持する。
+- 意味と必須試験の詳細は`gui_admin_contracts.md`第5.1〜5.4節および第17.1節を正本とする。
 
 - state snapshot更新は同一`model_kind + source_owner`でlatest-state coalescing可能。
 - event/historyはsnapshot coalescingで失わない。別bounded history/query surfaceを使う。
@@ -278,7 +290,7 @@ metric boundが未定義の指標を「速そうだからPASS」にしない。�
 
 - GUI client session、Lab run、Tooling analysis、Persistence worker、Plugin integration generation、System Verification runは開始時Policy identity/revisionをbindする。
 - Policy revision変更中のin-flight operationをnew revisionへ付け替えない。
-- new operation/runからcurrent Policyを使う。
+- new operation/runからcurrent Policyを使う。GUI/Adminでは第4節に従い、新インスタンス・新世代から新方針を使用する。
 - old generation resultはowner-specific freshness gateへ従う。
 
 ## 11. D10 required tests
