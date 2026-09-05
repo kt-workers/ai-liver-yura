@@ -1,6 +1,6 @@
 import asyncio
 import json
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
 
@@ -23,7 +23,9 @@ from app.domain.input_meaning import (
     OUTPUT_SCHEMA,
     ExpectedResponse,
     InputMeaningAcceptancePolicy,
+    InputMeaningBoundaryFailure,
     InputMeaningFreshnessStamp,
+    InputMeaningInterpretationResult,
     InputMeaningInterpreter,
     InputMeaningLiveContextPort,
     InputMeaningPolicy,
@@ -36,8 +38,10 @@ from app.domain.input_meaning import (
     commit_result,
 )
 from app.domain.llm import (
+    LLMFailureCode,
     LLMModelClass,
     LLMReasoningEffort,
+    LLMRoleFailure,
     LLMRoleRequest,
     LLMRoleResult,
     LLMRoleStatus,
@@ -228,9 +232,7 @@ def test_acceptance_policy_controls_threshold_required_resolution_and_provenance
 
 
 def test_acceptance_policy_requires_closed_full_intent_mapping() -> None:
-    full_mapping: dict[PrimaryIntent, tuple[str, ...]] = {
-        intent: () for intent in PrimaryIntent
-    }
+    full_mapping: dict[PrimaryIntent, tuple[str, ...]] = {intent: () for intent in PrimaryIntent}
     with pytest.raises(ValueError, match="全primary intent"):
         InputMeaningAcceptancePolicy("policy", 1, 0.7, {})
     full_mapping[PrimaryIntent.REQUEST_ACTION] = ("unknown",)
@@ -292,7 +294,7 @@ def test_non_language_stale_and_extra_output_fields_are_rejected() -> None:
     request = build_request(
         event(), context(), request_id="r1", trace_id="t1", created_at=NOW, policy=policy()
     )
-    with pytest.raises(ValueError, match="stale"):
+    with pytest.raises(ValueError, match="古くなっています"):
         commit_result(
             request,
             result(request),
@@ -316,7 +318,7 @@ def test_reference_outside_bounded_context_is_rejected() -> None:
     request = build_request(
         event(), context(), request_id="r1", trace_id="t1", created_at=NOW, policy=policy()
     )
-    with pytest.raises(ValueError, match="outside bounded"):
+    with pytest.raises(ValueError, match="範囲外"):
         commit_result(
             request,
             result(request, output(reference="made-up:999")),
@@ -408,8 +410,10 @@ def test_interpret_rejects_result_when_live_context_advances_during_provider_wai
         await provider.started.wait()
         live_context.revision = 5
         provider.release.set()
-        with pytest.raises(ValueError, match="stale"):
-            await task
+        outcome = await task
+        assert outcome.boundary_failure is not None
+        assert outcome.boundary_failure.code is LLMFailureCode.STALE
+        assert outcome.meaning is None
 
     asyncio.run(scenario())
 
@@ -423,12 +427,14 @@ def test_interpret_rejects_result_when_live_acceptance_policy_advances() -> None
         async def current_freshness_stamp(self) -> InputMeaningFreshnessStamp:
             return InputMeaningFreshnessStamp(4, "yura.input-meaning.acceptance", 2)
 
-    with pytest.raises(ValueError, match="採用方針が古く"):
-        asyncio.run(
-            InputMeaningInterpreter(ImmediatePort(), LiveContext(), policy()).interpret(
-                event(), context(), request_id="r1", trace_id="t1", created_at=NOW
-            )
+    outcome = asyncio.run(
+        InputMeaningInterpreter(ImmediatePort(), LiveContext(), policy()).interpret(
+            event(), context(), request_id="r1", trace_id="t1", created_at=NOW
         )
+    )
+    assert outcome.boundary_failure is not None
+    assert outcome.boundary_failure.code is LLMFailureCode.STALE
+    assert outcome.meaning is None
 
 
 def test_interpret_preserves_request_revision_after_post_await_live_read() -> None:
@@ -445,7 +451,8 @@ def test_interpret_preserves_request_revision_after_post_await_live_read() -> No
             event(), context(), request_id="r1", trace_id="t1", created_at=NOW
         )
     )
-    assert meaning.source_context_revision == 4
+    assert meaning.meaning is not None
+    assert meaning.meaning.source_context_revision == 4
 
 
 def test_interpret_fails_closed_when_live_context_read_fails() -> None:
@@ -457,12 +464,15 @@ def test_interpret_fails_closed_when_live_context_read_fails() -> None:
         async def current_freshness_stamp(self) -> InputMeaningFreshnessStamp:
             raise RuntimeError("live context unavailable")
 
-    with pytest.raises(RuntimeError, match="live context unavailable"):
-        asyncio.run(
-            InputMeaningInterpreter(ImmediatePort(), FailingLiveContext(), policy()).interpret(
-                event(), context(), request_id="r1", trace_id="t1", created_at=NOW
-            )
+    outcome = asyncio.run(
+        InputMeaningInterpreter(ImmediatePort(), FailingLiveContext(), policy()).interpret(
+            event(), context(), request_id="r1", trace_id="t1", created_at=NOW
         )
+    )
+    assert outcome.boundary_failure is not None
+    assert outcome.boundary_failure.code is LLMFailureCode.REJECTED
+    assert "live context unavailable" not in outcome.boundary_failure.message
+    assert outcome.meaning is None
 
 
 def test_live_context_port_is_read_only_protocol() -> None:
@@ -478,7 +488,7 @@ def test_old_result_cannot_be_reused_with_new_reference_context() -> None:
     request = build_request(
         event(), context(), request_id="r1", trace_id="t1", created_at=NOW, policy=policy()
     )
-    with pytest.raises(ValueError, match="reference context does not match request snapshot"):
+    with pytest.raises(ValueError, match="要求時の固定内容と一致しません"):
         commit_result(
             request,
             result(request),
@@ -486,3 +496,261 @@ def test_old_result_cannot_be_reused_with_new_reference_context() -> None:
             freshness_stamp=freshness_stamp(),
             policy=policy(),
         )
+
+
+ROLE_FAILURES = [
+    (LLMRoleStatus.FAILED, LLMFailureCode.PROVIDER_UNAVAILABLE),
+    (LLMRoleStatus.FAILED, LLMFailureCode.PROVIDER_ERROR),
+    (LLMRoleStatus.FAILED, LLMFailureCode.SCHEMA_INVALID),
+    (LLMRoleStatus.FAILED, LLMFailureCode.POLICY_VIOLATION),
+    (LLMRoleStatus.TIMED_OUT, LLMFailureCode.TIMEOUT),
+    (LLMRoleStatus.CANCELLED, LLMFailureCode.CANCELLED),
+    (LLMRoleStatus.STALE, LLMFailureCode.STALE),
+    (LLMRoleStatus.SUPERSEDED, LLMFailureCode.SUPERSEDED),
+    (LLMRoleStatus.REJECTED, LLMFailureCode.REJECTED),
+]
+
+
+class RecordingLiveContext:
+    def __init__(self, stamp: InputMeaningFreshnessStamp | None = None) -> None:
+        self.calls = 0
+        self.stamp = freshness_stamp() if stamp is None else stamp
+
+    async def current_freshness_stamp(self) -> InputMeaningFreshnessStamp:
+        self.calls += 1
+        return self.stamp
+
+
+@pytest.mark.parametrize(("status", "code"), ROLE_FAILURES)
+@pytest.mark.parametrize("retryable", [False, True])
+def test_interpret_preserves_role_failure_without_live_read(
+    status: LLMRoleStatus, code: LLMFailureCode, retryable: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failure = LLMRoleFailure(code, "提供サービスから通知された失敗", retryable)
+    live = RecordingLiveContext(freshness_stamp(5))
+
+    class Port:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            return replace(result(request), status=status, output=None, failure=failure)
+
+    def forbidden_commit(*args: object, **kwargs: object) -> None:
+        pytest.fail("非成功で意味の採用処理を呼んではなりません")
+
+    monkeypatch.setattr("app.domain.input_meaning.interpreter.commit_result", forbidden_commit)
+    outcome = asyncio.run(
+        InputMeaningInterpreter(Port(), live, policy()).interpret(
+            event(), context(), request_id="r1", trace_id="t1", created_at=NOW
+        )
+    )
+    assert outcome.role_status is status
+    assert outcome.role_failure is failure
+    assert outcome.meaning is None
+    assert outcome.boundary_failure is None
+    assert live.calls == 0
+    encoded = json.loads(json.dumps(outcome.to_dict(), allow_nan=False))
+    assert encoded["role_failure"] == failure.to_dict()
+    assert encoded["source_context_revision"] == 4
+    with pytest.raises(FrozenInstanceError):
+        cast(Any, outcome).role_status = LLMRoleStatus.SUCCEEDED
+
+
+@pytest.mark.parametrize(
+    "field", ["request_id", "role_id", "trace_id", "revisions", "completed_at"]
+)
+@pytest.mark.parametrize("failed", [False, True])
+def test_exchange_rejection_precedes_failure_and_live_read(field: str, failed: bool) -> None:
+    live = RecordingLiveContext()
+
+    class Port:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            response = result(request)
+            if failed:
+                response = replace(
+                    response,
+                    status=LLMRoleStatus.FAILED,
+                    output=None,
+                    failure=LLMRoleFailure(LLMFailureCode.PROVIDER_UNAVAILABLE, "利用できません"),
+                )
+            changes: dict[str, Any] = {field: "別の識別子"}
+            if field == "revisions":
+                changes[field] = RevisionVector(9)
+            if field == "completed_at":
+                changes[field] = NOW - timedelta(seconds=1)
+                changes["started_at"] = NOW - timedelta(seconds=2)
+            return replace(response, **changes)
+
+    outcome = asyncio.run(
+        InputMeaningInterpreter(Port(), live, policy()).interpret(
+            event(), context(), request_id="r1", trace_id="t1", created_at=NOW
+        )
+    )
+    assert outcome.role_status is None
+    assert outcome.role_failure is None
+    assert outcome.meaning is None
+    assert outcome.boundary_failure is not None
+    assert outcome.boundary_failure.code is LLMFailureCode.POLICY_VIOLATION
+    assert not outcome.boundary_failure.retryable
+    assert (outcome.request_id, outcome.trace_id, outcome.source_context_revision) == (
+        "r1",
+        "t1",
+        4,
+    )
+    assert live.calls == 0
+
+
+@pytest.mark.parametrize("case", ["schema_id", "fields", "enum", "reference"])
+def test_success_candidate_rejection_is_typed(case: str) -> None:
+    live = RecordingLiveContext()
+
+    class Port:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            candidate = output()
+            if case == "fields":
+                candidate.pop("speech_act")
+            elif case == "enum":
+                candidate["speech_act"] = {"不正": "値"}
+            elif case == "reference":
+                candidate = output(reference="範囲外")
+            response = result(request, candidate)
+            if case == "schema_id":
+                return replace(response, output=StructuredPayload("別の構造", candidate))
+            return response
+
+    outcome = asyncio.run(
+        InputMeaningInterpreter(Port(), live, policy()).interpret(
+            event(), context(), request_id="r1", trace_id="t1", created_at=NOW
+        )
+    )
+    assert outcome.meaning is None
+    assert outcome.role_failure is None
+    assert outcome.boundary_failure is not None
+    expected = (
+        LLMFailureCode.POLICY_VIOLATION if case == "reference" else LLMFailureCode.SCHEMA_INVALID
+    )
+    assert outcome.boundary_failure.code is expected
+    assert not outcome.boundary_failure.retryable
+    assert live.calls == (0 if case == "schema_id" else 1)
+    assert outcome.role_status is (None if case == "schema_id" else LLMRoleStatus.SUCCEEDED)
+
+
+@pytest.mark.parametrize("modality", [InputModality.TEXT, InputModality.SPEECH])
+@pytest.mark.parametrize("confidence", [0.6, 0.7, 0.9])
+def test_public_success_matches_pure_commit_and_reads_live_once(
+    modality: InputModality, confidence: float
+) -> None:
+    live = RecordingLiveContext()
+    request = build_request(
+        event(modality=modality),
+        context(),
+        request_id="r1",
+        trace_id="t1",
+        created_at=NOW,
+        policy=policy(),
+    )
+    response = result(request, output(confidence=confidence))
+
+    class Port:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            return response
+
+    outcome = asyncio.run(
+        InputMeaningInterpreter(Port(), live, policy()).interpret(
+            event(modality=modality), context(), request_id="r1", trace_id="t1", created_at=NOW
+        )
+    )
+    assert outcome.meaning == commit_result(
+        request,
+        response,
+        reference_context=context(),
+        freshness_stamp=freshness_stamp(),
+        policy=policy(),
+    )
+    assert outcome.role_status is LLMRoleStatus.SUCCEEDED
+    assert outcome.role_failure is None
+    assert outcome.boundary_failure is None
+    assert live.calls == 1
+    json.dumps(outcome.to_dict(), allow_nan=False)
+
+
+@pytest.mark.parametrize("phase", ["provider", "live"])
+def test_external_cancellation_propagates(phase: str) -> None:
+    async def scenario() -> None:
+        started = asyncio.Event()
+        reaped = asyncio.Event()
+
+        async def wait_for_cancellation() -> None:
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                reaped.set()
+
+        class Port:
+            async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+                if phase == "provider":
+                    await wait_for_cancellation()
+                return result(request)
+
+        class Live:
+            async def current_freshness_stamp(self) -> InputMeaningFreshnessStamp:
+                await wait_for_cancellation()
+                return freshness_stamp()
+
+        task = asyncio.create_task(
+            InputMeaningInterpreter(Port(), Live(), policy()).interpret(
+                event(), context(), request_id="r1", trace_id="t1", created_at=NOW
+            )
+        )
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert task.cancelled() and reaped.is_set()
+
+    asyncio.run(scenario())
+
+
+def test_public_result_rejects_invalid_variants_and_preserves_json() -> None:
+    failure = LLMRoleFailure(LLMFailureCode.PROVIDER_ERROR, "処理できません", True)
+    valid = InputMeaningInterpretationResult(
+        "r", "t", "e", 0, LLMRoleStatus.FAILED, role_failure=failure
+    )
+    boundary = InputMeaningBoundaryFailure(LLMFailureCode.REJECTED, "現在世代を取得できません")
+    invalid: list[dict[str, Any]] = [
+        {"role_failure": None},
+        {"boundary_failure": boundary},
+        {"role_status": None},
+        {"role_status": LLMRoleStatus.SUCCEEDED},
+        {"role_status": LLMRoleStatus.TIMED_OUT},
+        {"source_context_revision": True},
+        {"request_id": ""},
+        {"role_failure": "失敗"},
+        {"role_failure": replace(failure, retryable=cast(bool, 1))},
+    ]
+    for changes in invalid:
+        with pytest.raises(ValueError):
+            replace(valid, **changes)
+    rejected = replace(valid, role_failure=None, role_status=None, boundary_failure=boundary)
+    assert (
+        json.loads(json.dumps(rejected.to_dict(), allow_nan=False))["boundary_failure"]
+        == boundary.to_dict()
+    )
+    with pytest.raises(FrozenInstanceError):
+        cast(Any, boundary).retryable = True
+    with pytest.raises(ValueError):
+        InputMeaningBoundaryFailure(LLMFailureCode.STALE, "古い結果", cast(bool, 1))
+
+
+def test_invalid_request_remains_programming_error() -> None:
+    class Port:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            pytest.fail("不正な要求を提供サービスへ送ってはなりません")
+
+    live = RecordingLiveContext()
+    with pytest.raises(ValueError):
+        asyncio.run(
+            InputMeaningInterpreter(Port(), live, policy()).interpret(
+                event(), context(5), request_id="r1", trace_id="t1", created_at=NOW
+            )
+        )
+    assert live.calls == 0
