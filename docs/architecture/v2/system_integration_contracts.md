@@ -142,6 +142,12 @@ Verify:
 - user input not unconditional command
 - internal trigger without user input
 
+### #561 早期起動の境界
+
+#561の早期起動に必要な登録集合と版付き初期データは、[最小Brainの本番初期構成](minimum_brain_production_configuration.md)を参照する。
+
+#561の必須Brainモジュール登録は`INPUT_MEANING`のみであり、上記S2の全検証対象を起動時に必須登録することを意味しない。4レーンの定義要件は維持する。提供サービス未構成時の型付き利用不可、プロセス継続、取消・停止後の所有タスク回収までを早期に証明し、通常会話の成功や#360のS2最終検証は後続工程で確認する。
+
 ### S3 Full Speech
 
 Add:
