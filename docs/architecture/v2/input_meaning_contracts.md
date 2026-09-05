@@ -13,9 +13,46 @@ Input MeaningはText/STTの自然言語を`StructuredInputMeaning`へ変換す�
 
 入力は#349の`NormalizedInputEvent`とbounded `ReferenceContext`。Text/Speech以外、lifecycle、空の`text`、schema不一致をfail-closedで拒否する。TextとSTT transcriptは同じRoleとschemaを使う。
 
-出力はimmutableな`StructuredInputMeaning`であり、speech act、primary intent、expected response、target、entities、references、provided information、negation、hypothetical、temporal relation、confidence、unresolved fieldsを持つ。confirmation、Activity start/stop、internal-state questionはprimary intentのtyped値として表す。
+成功時に確定する意味は不変の`StructuredInputMeaning`であり、speech act、primary intent、expected response、target、entities、references、provided information、negation、hypothetical、temporal relation、confidence、unresolved fieldsを持つ。confirmation、Activity start/stop、internal-state questionはprimary intentのtyped値として表す。
 
 D10以降、commit済み`StructuredInputMeaning`はacceptanceに使用した`acceptance_policy_id / acceptance_policy_revision`もprovenanceとして保持する。policy revisionは意味内容を生成するLLM Authorityではなく、候補を採用・clarificationへ閉じるdeterministic commit policyの世代である。
+
+### 2.1 本番公開結果 — #564
+
+`InputMeaningInterpreter.interpret()`は`InputMeaningInterpretationResult`を返す。
+結果は次の不変データであり、`to_dict()`で厳格なJSONへ直列化できる。
+識別情報は信頼できる要求から取得し、不正な応答の識別情報で上書きしない。
+
+```text
+InputMeaningInterpretationResult
+- request_id: str
+- trace_id: str
+- source_event_id: str
+- source_context_revision: int
+- role_status: LLMRoleStatus | None
+- meaning: StructuredInputMeaning | None
+- role_failure: LLMRoleFailure | None
+- boundary_failure: InputMeaningBoundaryFailure | None
+
+InputMeaningBoundaryFailure
+- code: LLMFailureCode
+- message: str
+- retryable: bool
+```
+
+`meaning / role_failure / boundary_failure`は必ず1つだけ存在する。
+
+- 成功: `role_status = SUCCEEDED`で`meaning`だけを持つ。意味の出典は結果の入力イベント・世代と一致する。
+- 検証済みの役割の非成功: 非成功の`role_status`と、受信した正確な`LLMRoleFailure`だけを持つ。`code / message / retryable`を失わず、状態との対応も既存のLLM契約に従う。
+- 所有境界の拒否: `boundary_failure`だけを持つ。受信結果を信頼できない検証失敗では`role_status = None`とする。検証済みの成功候補を採用段階で拒否した場合は`SUCCEEDED`を保持する。
+
+利用側は3つの型付き項目を判定し、例外文字列を解析しない。生の`LLMRoleResult`や提供サービスの例外を公開しない。
+不正な入力オブジェクト・`build_request()`の事前条件違反はプログラムの誤用として例外を維持する。
+Pythonコルーチンの外部取消は`CancelledError`として伝播する。
+
+`commit_result()`は本番の公開実行口ではなく、副作用のない検証・採用補助関数である。
+成功時に`StructuredInputMeaning`を返し、決定論的な不正入力に`ValueError`を送出する性質を維持してよい。
+公開実行口はその想定される採用拒否を型付き境界失敗として表現し、汎用例外へ情報を落とさない。
 
 ## 3. ReferenceContext
 
@@ -63,7 +100,7 @@ current context revisionとrequest revisionが異なるresult、非success、sch
 
 LLM request開始時にfreezeした`NormalizedInputEvent` / `ReferenceContext` / `request.revisions.source_context_revision`は、Providerへ渡す入力世代の正本である。acceptanceに使用する`InputMeaningAcceptancePolicy.policy_revision`もrequest generationへbindする。一方、LLM完了後のcommit freshnessを判断する「current source context / policy」は開始時snapshotではなく、commit直前に取得したauthoritative live revisionを正本とする。
 
-production `InputMeaningInterpreter`は、LLM完了後に`InputMeaningLiveContextPort`（名称は実装上同等のtyped read Portでもよい）からimmutableなlive commit stateを取得する。最低限、そのstateは次を持つ。
+本番の`InputMeaningInterpreter`は、応答の交換契約を検証して成功候補が存在する場合だけ、LLM完了後に`InputMeaningLiveContextPort`（名称は実装上同等のtyped read Portでもよい）からimmutableなlive commit stateを取得する。最低限、そのstateは次を持つ。
 
 ```text
 InputMeaningFreshnessStamp
@@ -75,14 +112,36 @@ InputMeaningFreshnessStamp
 正規順序は次とする。
 
 ```text
-freeze request input at source revision N + policy revision P
-→ invoke Input Meaning Role
-→ await provider result
-→ read authoritative live source revision + acceptance policy revision
-→ validate exchange / request snapshot / live revisions
-→ apply the same versioned acceptance policy
-→ construct StructuredInputMeaning only if live source == N and live policy == P
+入力世代N・採用方針世代Pを固定して要求を構築
+→ LLMRolePort.invoke()
+→ 応答の識別・交換契約を検証
+  → 不正: boundary_failureを返す（現在世代は読まない）
+  → 正当な非成功: 正確なrole_failureを返す（現在世代は読まない）
+  → 正当なSUCCEEDED:
+    → 正本から現在の入力世代・採用方針世代を1回取得
+    → 現在世代の一致を検証
+    → 要求の固定内容・候補・採用方針を検証
+    → 世代N・Pが一致する場合だけ意味を確定して返す
 ```
+
+非成功の応答も識別検証を先に行う。要求・役割・追跡・世代の不一致があれば、その応答中のサービス不在等の失敗は信頼しない。
+`validate_role_exchange()`が返す`SCHEMA_INVALID / POLICY_VIOLATION`等の既存コードを境界失敗へ保持する。
+正当な非成功には採用候補がないため、現在世代を取得しない。待機中に入力世代が進んでも、正当な`PROVIDER_UNAVAILABLE`はそのまま返す。
+これによりサービス失敗と現在世代取得失敗の優先順位競合を作らない。
+
+成功候補の採用拒否は次の既存コードへ対応付ける。
+
+| 拒否理由 | code |
+| --- | --- |
+| 現在の入力世代または採用方針世代の不一致 | STALE |
+| 候補・出力の構造不正 | SCHEMA_INVALID |
+| 要求の固定内容・識別・採用方針契約違反 | POLICY_VIOLATION |
+| 正本から現在世代を取得不能 | REJECTED |
+
+境界失敗の説明文は生の例外を含めず、`retryable=False`とする。
+古い要求を自動再試行しない。必要なら上流が新しい世代で新要求を作る。
+サービス不在への偽装、意味や確認要求の捏造、失敗の成功への書換えは禁止する。
+現在世代取得中も`CancelledError`は伝播し、取得不能の結果へ変換しない。
 
 禁止する。
 

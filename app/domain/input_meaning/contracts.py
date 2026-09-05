@@ -6,7 +6,9 @@ from enum import Enum
 from math import isfinite
 from types import MappingProxyType
 
-from app.domain.contracts.common import require_identifier, require_revision
+from app.domain.contracts.common import freeze_json, require_identifier, require_revision
+from app.domain.llm import LLMFailureCode, LLMRoleFailure, LLMRoleStatus
+from app.domain.llm.contracts import _STATUS_FAILURE
 
 
 class SpeechAct(str, Enum):
@@ -404,3 +406,87 @@ def _reference(value: object) -> MeaningReference:
     if not isinstance(value, Mapping) or set(value) != {"mention_id", "resolved_ref"}:
         raise ValueError("reference fields do not match schema")
     return MeaningReference(value["mention_id"], value["resolved_ref"])
+
+
+@dataclass(frozen=True, slots=True)
+class InputMeaningBoundaryFailure:
+    """入力意味解析の所有境界で判定した、公開可能な採用拒否。"""
+
+    code: LLMFailureCode
+    message: str
+    retryable: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.code, LLMFailureCode) or type(self.retryable) is not bool:
+            raise ValueError("境界失敗のコードまたは再試行指定が不正です")
+        require_identifier(self.message, "message")
+
+    def to_dict(self) -> dict[str, object]:
+        return {"code": self.code.value, "message": self.message, "retryable": self.retryable}
+
+
+@dataclass(frozen=True, slots=True)
+class InputMeaningInterpretationResult:
+    """意味・検証済みの役割失敗・境界失敗のいずれか1つを保持する公開結果。"""
+
+    request_id: str
+    trace_id: str
+    source_event_id: str
+    source_context_revision: int
+    role_status: LLMRoleStatus | None
+    meaning: StructuredInputMeaning | None = None
+    role_failure: LLMRoleFailure | None = None
+    boundary_failure: InputMeaningBoundaryFailure | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("request_id", "trace_id", "source_event_id"):
+            require_identifier(getattr(self, name), name)
+        require_revision(self.source_context_revision, "source_context_revision")
+        if self.role_status is not None and not isinstance(self.role_status, LLMRoleStatus):
+            raise ValueError("役割の状態が不正です")
+        if (
+            sum(x is not None for x in (self.meaning, self.role_failure, self.boundary_failure))
+            != 1
+        ):
+            raise ValueError("公開結果は意味または失敗のいずれか1つを必要とします")
+        if self.meaning is not None:
+            if not isinstance(self.meaning, StructuredInputMeaning):
+                raise ValueError("意味の型が不正です")
+            if self.role_status is not LLMRoleStatus.SUCCEEDED:
+                raise ValueError("意味を持つ結果には成功状態が必要です")
+            if (self.meaning.source_event_id, self.meaning.source_context_revision) != (
+                self.source_event_id,
+                self.source_context_revision,
+            ):
+                raise ValueError("意味の出典が公開結果と一致しません")
+        if self.role_failure is not None:
+            if not isinstance(self.role_failure, LLMRoleFailure):
+                raise ValueError("役割失敗の型が不正です")
+            # 状態と失敗の対応はLLM所有者の既存分類を再利用する。
+            if (
+                self.role_status not in _STATUS_FAILURE
+                or not isinstance(self.role_failure.code, LLMFailureCode)
+                or self.role_failure.code not in _STATUS_FAILURE[self.role_status]
+                or type(self.role_failure.retryable) is not bool
+            ):
+                raise ValueError("役割状態と失敗が対応していません")
+        if self.boundary_failure is not None:
+            if not isinstance(self.boundary_failure, InputMeaningBoundaryFailure):
+                raise ValueError("境界失敗の型が不正です")
+            if self.role_status not in (None, LLMRoleStatus.SUCCEEDED):
+                raise ValueError("境界拒否には未確定または成功候補の状態が必要です")
+        freeze_json(self.to_dict())
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "request_id": self.request_id,
+            "trace_id": self.trace_id,
+            "source_event_id": self.source_event_id,
+            "source_context_revision": self.source_context_revision,
+            "role_status": None if self.role_status is None else self.role_status.value,
+            "meaning": None if self.meaning is None else self.meaning.to_dict(),
+            "role_failure": None if self.role_failure is None else self.role_failure.to_dict(),
+            "boundary_failure": None
+            if self.boundary_failure is None
+            else self.boundary_failure.to_dict(),
+        }

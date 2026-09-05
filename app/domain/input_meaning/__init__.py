@@ -1,7 +1,9 @@
 from .contracts import (
     ExpectedResponse,
     InputMeaningAcceptancePolicy,
+    InputMeaningBoundaryFailure,
     InputMeaningFreshnessStamp,
+    InputMeaningInterpretationResult,
     MeaningEntity,
     MeaningReference,
     MeaningResolution,
@@ -31,6 +33,8 @@ __all__ = [
     "INPUT_SCHEMA",
     "InputMeaningInterpreter",
     "InputMeaningAcceptancePolicy",
+    "InputMeaningBoundaryFailure",
+    "InputMeaningInterpretationResult",
     "InputMeaningFreshnessStamp",
     "InputMeaningLiveContextPort",
     "InputMeaningPolicy",
