@@ -220,6 +220,102 @@ InputMeaningLiveContextPortと#326の採用契約を変更しない。
 
 本番会話の成功に必要な入力文脈の状態の結合は#360のS2有効化時に再監査する。その時点でdescriptor・要求・採用直前の現在状態を同じ方針の不変設定に結び付け、既存snapshot_consistency_contracts.mdの読取手順を利用する。汎用の再試行・読取アルゴリズムを本書で再定義しない。
 
+### 11.1 Brain登録用の接続アダプター
+
+概念名 `InputMeaningBrainModulePort` は、#334のBrainModulePortと#326のInputMeaningInterpreterを接続するアプリケーション・構成層のアダプターである。新しいドメインの正本ではなく、意味解析、受理方針、現在世代に基づく採用、提供サービスの失敗分類を再実装しない。
+
+```text
+BrainIntegrationWork
+  ↓
+InputMeaningBrainWorkPayload
+  ↓
+InputMeaningInterpreter.interpret()
+  ↓
+InputMeaningInterpretationResult
+  ↓
+BrainIntegrationWorkOutcome.result
+```
+
+上図の最初の接続で、運ぶ入力の構造と識別子の自己整合を確認する。InputMeaningInterpreterはBrainModulePortと直接互換ではないため、構成処理はこのアダプターを `INPUT_MEANING` として登録する。Input Gatewayを新たな起動必須モジュールへ追加せず、既存の型付き入力を運ぶ境界だけを定める。
+
+### 11.2 運搬する入力と識別子の整合
+
+概念型 `InputMeaningBrainWorkPayload` は、BrainIntegrationWork.payloadに載せる不変な構成層の入力である。意味のドメインDTOを追加するものではない。
+
+|項目|型・制約|
+|---|---|
+|event|既存NormalizedInputEvent|
+|reference_context|既存ReferenceContext|
+|request_id|空でない要求識別子|
+
+trace_idとcreated_atはpayloadへ重複保存せず、それぞれwork.envelope.trace_idとwork.envelope.created_atを使う。アダプターは型とrequest_idに加え、次の全条件を検証する。
+
+```text
+work.module == INPUT_MEANING
+work.lane == FOREGROUND_INTERACTION
+work.envelope.source_event_ids == (payload.event.envelope.event_id,)
+work.envelope.source_context_revision
+    == payload.event.envelope.revisions.source_context_revision
+    == payload.reference_context.source_context_revision
+work.envelope.trace_id == payload.event.envelope.trace_id
+```
+
+これらは運搬中の不変な入力同士の整合であり、現在の入力文脈世代を証明する条件ではない。不正な型や不一致を補正・再解釈しない。構成・プログラム上の誤りとしてValueErrorで拒否し、意味や提供サービス失敗を捏造しない。Runtimeの検査・実行経路内でこの誤りが発生した場合は、既存の例外隔離によりFAILEDとなる。例外本文や入力の生データを公開結果へ持ち込まない。
+
+### 11.3 executeの委譲
+
+`execute(work, cancellation)`は第11.2節の整合を確認し、次の呼出しをawaitする。
+
+```python
+await interpreter.interpret(
+    payload.event,
+    payload.reference_context,
+    request_id=payload.request_id,
+    trace_id=work.envelope.trace_id,
+    created_at=work.envelope.created_at,
+)
+```
+
+戻り値のInputMeaningInterpretationResultをそのまま返す。生のLLMRoleResultをBrainの公開結果にせず、所有者が返した型付き非成功をPython例外へ変換しない。
+
+アダプターが正常に所有者の結果を返した場合、取消・期限切れ等の既存Runtime条件がなければBrainIntegrationWorkOutcome.statusはCOMPLETEDとなる。その内側の役割結果がFAILEDであることとは別の状態である。
+
+### 11.4 is_freshと意味採用の順序
+
+このアダプターの `is_fresh(work)` は、第11.2節の固定済み入力・世代・識別子の自己整合だけを確認する。有効な不変入力ならTrueを返す。不正な構成入力は第11.2節の誤りとして拒否し、現在世代を読んだ結果のSTALEと取り違えない。提供サービスが未構成であることや、その結果が非成功であることをFalseの理由にしない。
+
+`InputMeaningLiveContextPort.current_freshness_stamp()`をここから呼ばない。Runtimeの実行前後の検査が、#326の意味採用の検査を先取りしてはならない。
+
+- 有効な提供サービスの非成功結果: 現在世代を読まず、型付きの役割失敗を返す。
+- 提供サービスの成功結果: InputMeaningInterpreter内部の既存のawait後の検査で現在世代を読み、採用を判断する。
+
+したがって、このBrainModulePort.is_freshは意味採用の現在世代の正本ではない。Runtimeの前後検査を通しても、入力意味解析の意味採用条件を通過したことにはならない。未構成経路の現在世代の読取は0回を維持する。
+
+### 11.5 現在世代を取得できない接続
+
+早期起動では権威ある入力文脈の状態所有者をまだ本番結合しない。InputMeaningInterpreterのconstructorが要求する接続には、概念名 `UnavailableInputMeaningLiveContextPort` を明示的に渡す。
+
+これは読取専用であり、current_freshness_stamp()が呼ばれた場合は、現在の権威ある世代を提供できないことを明示的な取得失敗として通知する。既存Interpreterが扱うException系の取得失敗を使い、新しいLLMFailureCodeやドメイン失敗enumを追加しない。偽のInputMeaningFreshnessStampは返さない。
+
+固定のsource_context_revision=0、方針版1だけの捏造、要求時の版、最後に観測した版を現在版として返すことは禁止する。第5節の実際の不変設定を方針の参照元とすることと、入力文脈の現在世代を取得できることは別である。
+
+非成功結果ではこの読取メソッドは呼ばれず、型付きの役割失敗が保持される。成功結果では既存Interpreterが読取を試み、取得失敗をboundary_failure.code=REJECTEDへ閉じ、meaning=Noneとする。生の内部例外は公開結果へ出さない。
+
+### 11.6 取消と公開結果
+
+InputMeaningBrainModulePortはPythonのCancelledErrorを捕捉して通常結果へ変換しない。#322が割込み可能な処理を取り消した場合はタスク取消を伝播し、既存RuntimeのCANCELLEDへ閉じる。取消用トークンとタスクの所有・回収は既存Runtime契約に従う。提供サービス呼出しの取消をPROVIDER_UNAVAILABLE、REJECTED、成功へ読み替えない。
+
+|条件|BrainIntegrationWorkOutcome.status|resultの意味|
+|---|---|---|
+|有効な要求、提供サービス未構成|COMPLETED|InputMeaningInterpretationResult。role_status=FAILED、role_failure.code=PROVIDER_UNAVAILABLE、meaning=None。現在世代読取0回|
+|提供サービス成功、現在世代の接続が利用不可|COMPLETED|InputMeaningInterpretationResult。boundary_failure.code=REJECTED、meaning=None。提供サービスのrole_status=SUCCEEDEDは保持|
+|Runtimeによる取消|CANCELLED|通常の意味結果を捏造しない。既存Runtimeの結果保持契約を変更しない|
+|不正な構成入力・不変条件違反|既存Runtime経路ではFAILED|第11.2節の構成誤り。意味・型付き提供サービス失敗を捏造しない|
+
+上表のCOMPLETEDは、取消・期限切れなど別のRuntime終了条件がない場合の正常な委譲結果を示す。外側の処理終了状態と内側の役割・意味採用の状態を混同しない。
+
+第10節の構成済み提供サービス境界は維持する。認証情報があるのに入力意味解析用の設定が欠落・不整合なら、構築失敗を起動設定失敗として伝播する。未構成接続への代替で隠さず、本WorkでOpenAI固有設定を補作しない。
+
 ## 12. 後続段階へ残す構成
 
 第2節で必須から外したModuleの具体的な調整値を版1へ含めない。特に次は、そのモジュールを本番で有効化する段階で既存所有者に従って確定する。
@@ -242,6 +338,8 @@ InputMeaningLiveContextPortと#326の採用契約を変更しない。
 |G5|PRODUCTION_CONFIGURATION_GAP|#561必須値を解消。第7〜9節。LLM依存再試行は有効化しない|
 |G6|後続Moduleの有効化時の構成課題|第12節へ保留し、#561を阻害しない|
 
+設計HEAD `d9660901e9dfb0b82176ed1169730a06b93e05cb` のレビューはREQUEST_CHANGESで、入力意味解析をBrainへ登録する接続契約の不足が阻害指摘となった。第11.1〜11.6節で運搬入力、委譲、検査順序、取得不能の接続、公開結果を明示し、このCONTRACT_GAPを設計上解消する。
+
 本書の範囲で残存DESIGN_BUG・CONTRACT_GAPはないという設計案である。実装・検証の完了宣言ではなく、この新設計HEADのレビュー判定を別途受ける。
 
 ## 14. 後続実装工程で必要な検証
@@ -257,5 +355,18 @@ InputMeaningLiveContextPortと#326の採用契約を変更しない。
 - `python -m app`の子プロセス試験で継続とCtrl+C相当の停止を検証する。
 - 取消と停止後に所有タスクを回収し、未完了タスクが0。猶予超過時は失敗を隠さない。
 - 構成済み接続の不正設定を未構成として隠さず、秘密情報をログ・設定・確認記録へ出さない。
+
+### Brain接続に追加する検証
+
+1. InputMeaningBrainModulePortはINPUT_MEANING / FOREGROUND_INTERACTIONの組だけを受理する。
+2. event・reference_context・workの入力文脈版の不一致を拒否する。
+3. event識別子・trace識別子の不一致、不正なpayload型・空request_idを拒否する。
+4. 提供サービス未構成でBrain処理はCOMPLETED、所有者の結果はFAILED / PROVIDER_UNAVAILABLE、meaningなし、現在世代読取0回となる。
+5. 成功結果を返す試験用提供サービスとUnavailableInputMeaningLiveContextPortを結合すると、Brain処理はCOMPLETED、boundary_failureはREJECTED、meaningなしとなり、偽の版を返さない。
+6. 外部CancelledErrorを握り潰さず、Runtimeによる取消はCANCELLEDとなる。
+7. 生のLLMRoleResultをBrainの公開resultへ返さない。
+8. 実際のRuntimeの実行前後のis_fresh検査が現在世代を先読みしない。
+9. 提供サービス未構成をBrainのFAILED / STALEへ誤変換しない。
+10. 入力文脈の状態所有者が未接続でも、提供サービスなしの早期起動が成立する。Input Gatewayを起動必須集合へ追加しない。
 
 この工程では上記試験・コード・設定実体を作らず、設計文書だけを変更する。
