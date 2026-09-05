@@ -27,9 +27,11 @@ class GuiAdminCommandDispatcher:
     def __init__(
         self,
         owners: Mapping[str, AdminCommandOwnerPort],
-        policy: GuiAdminOperationalPolicy | None = None,
+        policy: GuiAdminOperationalPolicy,
     ) -> None:
-        self._policy = policy or GuiAdminOperationalPolicy()
+        if not isinstance(policy, GuiAdminOperationalPolicy):
+            raise ValueError("GUI/Adminの運用方針が必要です")
+        self._policy = policy
         normalized: dict[str, AdminCommandOwnerPort] = {}
         for owner_id, owner in owners.items():
             require_identifier(owner_id, "owner_id")
@@ -39,7 +41,6 @@ class GuiAdminCommandDispatcher:
                 raise ValueError("owner_idは一意でなければなりません")
             normalized[owner_id] = owner
         self._owners = normalized
-        self._terminal_command_ids: set[str] = set()
         self._in_flight_command_ids: set[str] = set()
 
     @property
@@ -56,8 +57,6 @@ class GuiAdminCommandDispatcher:
                 "COMMAND_PAYLOAD_LIMIT_EXCEEDED",
                 "Admin Command payloadが運用上限を超えています",
             )
-        if request.command_id in self._terminal_command_ids:
-            return self._duplicate(request.command_id)
         if request.command_id in self._in_flight_command_ids:
             return AdminCommandResult(
                 command_id=request.command_id,
@@ -66,38 +65,50 @@ class GuiAdminCommandDispatcher:
                 sanitized_message="同じAdmin Commandが実行中です",
             )
 
-        owner = self._owners.get(request.target_owner)
-        if owner is None:
+        if len(self._in_flight_command_ids) >= self._policy.max_in_flight_commands:
             return self._terminal_failure(
                 request.command_id,
-                AdminCommandStatus.UNAVAILABLE,
-                "ADMIN_OWNER_UNAVAILABLE",
-                "対象ownerのAdmin Command境界を利用できません",
+                AdminCommandStatus.REJECTED,
+                "ADMIN_COMMAND_CONCURRENCY_LIMIT_REACHED",
+                "管理コマンドの同時実行数が上限に達しています",
             )
 
-        try:
-            revision_before = owner.current_revision()
-            self._require_revision_value(revision_before)
-        except Exception:
-            return self._terminal_failure(
-                request.command_id,
-                AdminCommandStatus.UNAVAILABLE,
-                "ADMIN_OWNER_REVISION_UNAVAILABLE",
-                "対象ownerのrevisionを取得できません",
-            )
-
-        if request.expected_revision is not None and request.expected_revision != revision_before:
-            return self._terminal_failure(
-                request.command_id,
-                AdminCommandStatus.STALE_ADMIN_VIEW,
-                "STALE_ADMIN_VIEW",
-                "画面のrevisionが最新状態と一致しません",
-                owner_revision_before=revision_before,
-                owner_revision_after=revision_before,
-            )
-
+        # 重複・容量の確認から登録まで待機せず、同一イベントループ内で枠を確保する。
         self._in_flight_command_ids.add(request.command_id)
         try:
+            owner = self._owners.get(request.target_owner)
+            if owner is None:
+                return self._terminal_failure(
+                    request.command_id,
+                    AdminCommandStatus.UNAVAILABLE,
+                    "ADMIN_OWNER_UNAVAILABLE",
+                    "対象ownerのAdmin Command境界を利用できません",
+                )
+
+            try:
+                revision_before = owner.current_revision()
+                self._require_revision_value(revision_before)
+            except Exception:
+                return self._terminal_failure(
+                    request.command_id,
+                    AdminCommandStatus.UNAVAILABLE,
+                    "ADMIN_OWNER_REVISION_UNAVAILABLE",
+                    "対象ownerのrevisionを取得できません",
+                )
+
+            if (
+                request.expected_revision is not None
+                and request.expected_revision != revision_before
+            ):
+                return self._terminal_failure(
+                    request.command_id,
+                    AdminCommandStatus.STALE_ADMIN_VIEW,
+                    "STALE_ADMIN_VIEW",
+                    "画面のrevisionが最新状態と一致しません",
+                    owner_revision_before=revision_before,
+                    owner_revision_after=revision_before,
+                )
+
             try:
                 result = await asyncio.wait_for(
                     owner.execute_admin_command(request),
@@ -137,18 +148,9 @@ class GuiAdminCommandDispatcher:
                     owner_revision_before=revision_before,
                     owner_revision_after=revision_after,
                 )
-            self._terminal_command_ids.add(request.command_id)
             return result
         finally:
             self._in_flight_command_ids.discard(request.command_id)
-
-    def _duplicate(self, command_id: str) -> AdminCommandResult:
-        return AdminCommandResult(
-            command_id=command_id,
-            status=AdminCommandStatus.DUPLICATE,
-            failure_code="DUPLICATE_ADMIN_COMMAND",
-            sanitized_message="同じAdmin Commandは再実行しません",
-        )
 
     def _terminal_failure(
         self,
@@ -160,7 +162,6 @@ class GuiAdminCommandDispatcher:
         owner_revision_before: int | None = None,
         owner_revision_after: int | None = None,
     ) -> AdminCommandResult:
-        self._terminal_command_ids.add(command_id)
         return AdminCommandResult(
             command_id=command_id,
             status=status,

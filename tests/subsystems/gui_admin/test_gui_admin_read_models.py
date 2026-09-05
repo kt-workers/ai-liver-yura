@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import inspect
 from datetime import datetime, timezone
+from typing import cast
 
 import pytest
 
@@ -36,6 +38,9 @@ def model(
 
 def test_operational_policy_matches_canonical_defaults_and_rejects_invalid_values() -> None:
     policy = GuiAdminOperationalPolicy()
+    assert policy.policy_id == "v2.gui-admin.default"
+    assert policy.policy_revision == 2
+    assert policy.max_in_flight_commands == 16
     assert policy.max_read_model_payload_bytes == 262144
     assert policy.max_command_payload_bytes == 65536
     assert policy.per_client_update_capacity == 32
@@ -69,7 +74,7 @@ def test_read_model_freezes_payload_and_enforces_availability_reason_contract() 
 
 
 def test_publish_is_monotonic_and_same_revision_is_idempotent_only_for_same_value() -> None:
-    broker = GuiAdminReadModelBroker()
+    broker = GuiAdminReadModelBroker(GuiAdminOperationalPolicy())
     first = model(revision=1)
     broker.publish(first)
     broker.publish(first)
@@ -83,16 +88,14 @@ def test_publish_is_monotonic_and_same_revision_is_idempotent_only_for_same_valu
 
 
 def test_payload_limit_rejects_whole_read_model_without_truncation() -> None:
-    broker = GuiAdminReadModelBroker(
-        GuiAdminOperationalPolicy(max_read_model_payload_bytes=8)
-    )
+    broker = GuiAdminReadModelBroker(GuiAdminOperationalPolicy(max_read_model_payload_bytes=8))
     with pytest.raises(ValueError):
         broker.publish(model(payload={"message": "too long"}))
     assert broker.latest(GuiAdminReadModelKind.SYSTEM_HEALTH, "runtime") is None
 
 
 def test_subscription_coalesces_same_state_identity_to_latest_revision() -> None:
-    broker = GuiAdminReadModelBroker()
+    broker = GuiAdminReadModelBroker(GuiAdminOperationalPolicy())
     broker.subscribe(
         client_id="client:1",
         subscription_id="sub:1",
@@ -180,3 +183,32 @@ def test_admin_command_request_freezes_payload_and_tracks_expected_revision() ->
     assert thaw_json(request.payload) == {"enabled": True}
     assert request.expected_revision == 7
     assert request.payload_size_bytes > 0
+
+
+@pytest.mark.parametrize("limit", [0, -1, True, False])
+def test_command_capacity_requires_positive_concrete_int(limit: int) -> None:
+    with pytest.raises(ValueError):
+        GuiAdminOperationalPolicy(max_in_flight_commands=limit)
+
+
+def test_broker_requires_policy_and_preserves_generation_evidence() -> None:
+    assert (
+        inspect.signature(GuiAdminReadModelBroker).parameters["policy"].default
+        is inspect.Parameter.empty
+    )
+    with pytest.raises(ValueError):
+        GuiAdminReadModelBroker(cast(GuiAdminOperationalPolicy, None))
+    policy = GuiAdminOperationalPolicy()
+    broker = GuiAdminReadModelBroker(policy)
+    assert broker.policy is policy
+    subscription = broker.subscribe(
+        client_id="client:policy",
+        subscription_id="sub:policy",
+        model_kind=GuiAdminReadModelKind.SYSTEM_HEALTH,
+        source_owner="runtime",
+    )
+    broker.publish(model())
+    batch = broker.poll("client:policy")
+    for evidence in (subscription, batch):
+        assert evidence.policy_id == policy.policy_id == "v2.gui-admin.default"
+        assert evidence.policy_revision == policy.policy_revision == 2

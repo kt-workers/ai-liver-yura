@@ -98,12 +98,13 @@ def json_payload_size_bytes(value: JsonValue) -> int:
 @dataclass(frozen=True, slots=True)
 class GuiAdminOperationalPolicy:
     policy_id: str = "v2.gui-admin.default"
-    policy_revision: int = 1
+    policy_revision: int = 2
     max_read_model_payload_bytes: int = 262144
     max_command_payload_bytes: int = 65536
     per_client_update_capacity: int = 32
     max_history_page_items: int = 200
     max_active_subscriptions_per_client: int = 64
+    max_in_flight_commands: int = 16
     command_timeout_seconds: float = 30.0
 
     def __post_init__(self) -> None:
@@ -115,6 +116,7 @@ class GuiAdminOperationalPolicy:
             "per_client_update_capacity",
             "max_history_page_items",
             "max_active_subscriptions_per_client",
+            "max_in_flight_commands",
         ):
             object.__setattr__(self, name, _positive_int(getattr(self, name), name))
         object.__setattr__(

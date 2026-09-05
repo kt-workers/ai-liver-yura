@@ -39,8 +39,10 @@ class _ClientState:
 
 
 class GuiAdminReadModelBroker:
-    def __init__(self, policy: GuiAdminOperationalPolicy | None = None) -> None:
-        self._policy = policy or GuiAdminOperationalPolicy()
+    def __init__(self, policy: GuiAdminOperationalPolicy) -> None:
+        if not isinstance(policy, GuiAdminOperationalPolicy):
+            raise ValueError("GUI/Adminの運用方針が必要です")
+        self._policy = policy
         self._latest: dict[ReadModelKey, AdminReadModelEnvelope] = {}
         self._clients: dict[str, _ClientState] = {}
 
