@@ -1,6 +1,6 @@
 # V2 現行製造計画
 
-状態: #550 Generation 2 / Post-D10 state reconciliation
+状態: #550 改訂3 / 本体と任意GUIの完成条件の分離（2026-09-06）
 
 製造起点: `rebuild/v2-foundation@e054f21595c78052c6a791e6af7758ad51e1fd7c`
 
@@ -64,7 +64,8 @@ Foundation、Brain、Speech、Memory、Body基盤、Infrastructure、Streaming�
    - #427 Semantic Verification Labや#434旧diagnostic lineageを重複実装しない。
 
 4. **#360 System Integration**
-   - #344 / #351 / #352 / #365等のdirect dependency completion後に実施する。
+   - 各段階に必要な本体成果と検証証拠が揃い次第実施する。#351の完了は本体統合・本体完成の前提ではない。
+   - GUI接続の検証だけは#351の公開面・構成・品質条件を前提とし、任意機能側の結果へ分ける。#352や#365の証拠待ちも、その証拠が必要な段階へ限定する。必要な能力・品質の最終確認は省略しない。
    - Root #317 completionへ接続する最終production integration lane。
 
 ### Human Verification lane
@@ -92,25 +93,15 @@ current `rebuild/v2-foundation` はbranch protection / required status checksが
 
 ## 5. Next action
 
-本計画PR #556をcurrent canonical / live stateと整合させてmergeする。
+PR #556による旧計画の確定と、その後の#344・#561等の成果は履歴として保持する。以下を現行の製造判断とする。
 
-その後:
+1. 本体の各Work・統合段階は、その責務に必要な成果・公開契約・証拠を現在状態から照合して再開する。#351を一律に待たない。
+2. #351は任意GUIの既存系統で継続する。未完了やレビュー待ちを本体製造の停止理由にしない。
+3. #352は必要な本番経路の検証基盤を整備する。実ゲーム・音声・画面などの証拠は対象別に判定し、実施していないものを完了扱いにしない。
+4. #360はGUIなしの本体統合と任意GUI接続を区別する。Root #317とMission #450の本体完成監査はGUI全完成を要求しない。
+5. 任意GUIの品質確認と未完了項目は#351・#345に残し、本体完了時に削除・完了扱いにしない。
 
-```text
-#550 plan merge
-→ Project #7 schedule refresh (#425)
-→ #344 fresh Resume Gate
-→ #344 implementation
-→ #509 Merge Gate completion before product merge
-→ #344 completion
-→ #351
-→ #365 Human Verification / #434 Human Verificationをdependencyに応じて並行実施
-→ #352
-→ #360
-→ Root #317 completion audit
-```
-
-これは固定serial runtimeを意味しない。製造管理上のdependency順である。
+依存は「本体の製造・稼働に必要」「任意機能の接続に必要」「特定の検証証拠に必要」の三種類へ分類する。#351は二番目に属する。実機を要するゲーム・音声等の品質確認は三番目の前提として保持する。これは本体が持つべき能力を削る分類ではない。
 
 ## 6. Resume rule
 

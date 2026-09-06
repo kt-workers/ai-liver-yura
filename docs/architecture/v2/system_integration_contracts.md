@@ -2,7 +2,8 @@
 
 Owner Issue: #360
 Root: #317
-Depends on: #334 / #341 / #344 / #350 / #356 / #345 and subordinate completed Work
+本体・能力別の結合前提: #334 / #341 / #344 / #350 / #346 / #347 / #352 / #358 / #359 / #365（実施する段階に必要な成果と証拠を照合）
+任意GUI接続の前提: #351。親#345 / #356は構成責務の参照であり一律の完了待ちにしない。
 Related: #347 / #352 / #365 / #396 / #434 / #445
 Status: Canonical Supplement / Design Completion Gate
 
@@ -175,7 +176,9 @@ Use #344.
 
 ### S7 GUI / Validation Labs
 
-Observe/control only through public contracts.
+本体の統合証拠に必要な検証基盤と、任意GUIの接続検証を分ける。#351の完成はS1〜S6、S8〜S9および本体の最終統合の一律前提ではない。GUI接続の観測・操作は公開契約だけを使い、接続したGUIに対する画面品質・失敗分離・停止・交換・併用の検証は別の結果として保持する。未接続GUIの検証をPASSにしない。
+
+本体側ではGUIなしの設定読込・起動・処理継続・正常停止を確認する。ファイル直接編集の反映時点は設定所有者の正本に従う。外部利用者を接続する場合は、GUI単独停止と全体停止を区別し、初期化失敗・遅延・切断で本体の独立処理を止めないこと、別の最小利用者や複数利用者でも同じ公開契約と判断・状態更新の所有権を維持することを確認する。
 
 ### S8 Streaming / Game
 
@@ -581,6 +584,8 @@ Minimum:
 ---
 
 ## 24. Human Verification matrix
+
+GUIの操作性は任意GUI側の確認であり、本体完成条件には含めない。可聴音声、身体、実ゲーム、配信等で必要な証拠は維持する。GUIの不在と、これらの証拠が未取得であることを混同しない。
 
 Machine contract tests precede Human Verification.
 
