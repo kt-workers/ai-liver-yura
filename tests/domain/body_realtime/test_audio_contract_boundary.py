@@ -11,7 +11,7 @@ import pytest
 @pytest.mark.parametrize(
     "module", ["app.domain.body_realtime", "app.domain.contracts.speech_audio"]
 )
-def test_public_audio_and_body_import_without_loading_tts_adapter(module):
+def test_public_audio_and_body_import_without_loading_tts_adapter(module: str) -> None:
     script = """
 import importlib
 import importlib.abc
@@ -36,7 +36,7 @@ assert not any(
     assert result.returncode == 0, result.stderr
 
 
-def test_existing_adapter_exports_are_the_exact_public_types():
+def test_existing_adapter_exports_are_the_exact_public_types() -> None:
     from app.adapters.tts import contracts as adapter
     from app.domain.contracts import speech_audio as public
 
@@ -51,12 +51,14 @@ def test_existing_adapter_exports_are_the_exact_public_types():
         assert getattr(adapter, name) is getattr(public, name)
 
 
-def test_core_has_no_static_adapter_import_even_in_type_annotations():
+def test_core_has_no_static_adapter_import_even_in_type_annotations() -> None:
     root = Path(__file__).resolve().parents[3] / "app"
     violations = []
     for directory in ("domain", "usecases", "runtime"):
         for path in (root / directory).rglob("*.py"):
             for node in ast.walk(ast.parse(path.read_text())):
+                if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                    continue
                 names = []
                 if isinstance(node, ast.ImportFrom):
                     names = [node.module or ""]
