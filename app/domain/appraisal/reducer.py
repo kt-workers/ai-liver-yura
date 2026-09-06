@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from math import isfinite
 from threading import Lock
@@ -8,6 +9,7 @@ from app.domain.contracts.common import require_aware, require_revision, utc_ins
 
 from .contracts import (
     AppraisalCandidate,
+    AppraisalFactsSnapshot,
     AppraisalPath,
     DecayDiagnostic,
     DecayDiagnosticCode,
@@ -20,6 +22,15 @@ from .contracts import (
     LifecycleAppraisalInput,
     StateDeltaProposal,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class AppraisalStateCommit:
+    """同じ評価の確定で生成した状態と評価事実、および元候補を保持する。"""
+
+    candidate: AppraisalCandidate
+    internal_state: InternalStateSnapshot
+    appraisal_facts: AppraisalFactsSnapshot
 
 
 class InternalStateReducer:
@@ -41,82 +52,123 @@ class InternalStateReducer:
         committed_at: datetime,
         current_decay_policy: DecayPolicy | None = None,
     ) -> InternalStateSnapshot:
+        with self._lock:
+            state = self._prepare_state(
+                candidate, current_source_context_revision, committed_at, current_decay_policy
+            )
+            self._current = state
+            return state
+
+    def commit_with_facts(
+        self,
+        candidate: AppraisalCandidate,
+        *,
+        current_source_context_revision: int,
+        committed_at: datetime,
+        facts_revision: int,
+        current_decay_policy: DecayPolicy | None = None,
+    ) -> AppraisalStateCommit:
+        """両方の検査が成功した場合だけ、更新後状態と対応する評価事実を確定する。"""
+        with self._lock:
+            state = self._prepare_state(
+                candidate, current_source_context_revision, committed_at, current_decay_policy
+            )
+            facts = AppraisalFactsSnapshot(
+                facts_revision,
+                state.source_context_revision,
+                state.revision,
+                candidate.source_event_ids,
+                candidate.dimensions,
+                candidate.salience,
+                candidate.relevance,
+                candidate.evidence_refs,
+                committed_at,
+            )
+            result = AppraisalStateCommit(candidate, state, facts)
+            self._current = state
+            return result
+
+    def _prepare_state(
+        self,
+        candidate: AppraisalCandidate,
+        current_source_context_revision: int,
+        committed_at: datetime,
+        current_decay_policy: DecayPolicy | None,
+    ) -> InternalStateSnapshot:
         if not isinstance(candidate, AppraisalCandidate):
             raise ValueError("candidate must be AppraisalCandidate")
         require_revision(current_source_context_revision, "current_source_context_revision")
         require_aware(committed_at, "committed_at")
-        with self._lock:
-            snapshot = self._current
-            if candidate.base_state_revision != snapshot.revision:
-                raise ValueError("appraisal candidate is stale for current state")
-            if candidate.source_context_revision != current_source_context_revision:
-                raise ValueError("appraisal candidate is stale for source context")
-            if utc_instant(committed_at) < utc_instant(snapshot.updated_at):
-                raise ValueError("commit timestamp cannot predate current state")
-            if utc_instant(candidate.created_at) < utc_instant(snapshot.updated_at):
-                raise ValueError("candidate timestamp cannot predate current state")
-            if utc_instant(committed_at) < utc_instant(candidate.created_at):
-                raise ValueError("commit timestamp cannot predate candidate")
-            if not candidate.proposals:
-                raise ValueError("state commit requires at least one delta proposal")
-            allowed_causes = {*candidate.source_event_ids, *candidate.evidence_refs}
-            if any(
-                not set(proposal.cause_refs) <= allowed_causes for proposal in candidate.proposals
-            ):
-                raise ValueError("state delta cause is outside candidate evidence")
-            by_ref = {item.ref: item for item in snapshot.facets}
-            if candidate.path in (AppraisalPath.DECAY, AppraisalPath.LIFECYCLE):
-                if current_decay_policy is None:
-                    raise ValueError("減衰方針を取得できません")
-                for proposal in candidate.proposals:
-                    provenance = proposal.decay_provenance
-                    if provenance is None:
-                        raise ValueError("減衰候補にprovenanceがありません")
-                    if (
-                        provenance.decay_policy_id != current_decay_policy.policy_id
-                        or provenance.decay_policy_revision
-                        != current_decay_policy.policy_revision
-                    ):
-                        raise ValueError("減衰方針が古くなっています")
-                    if (
-                        provenance.base_state_revision != snapshot.revision
-                        or provenance.source_context_revision != current_source_context_revision
-                    ):
-                        raise ValueError("減衰候補が古くなっています")
-                    if proposal.facet_ref not in by_ref:
-                        raise ValueError("減衰対象facetがcurrent stateにありません")
+        snapshot = self._current
+        if candidate.base_state_revision != snapshot.revision:
+            raise ValueError("appraisal candidate is stale for current state")
+        if candidate.source_context_revision != current_source_context_revision:
+            raise ValueError("appraisal candidate is stale for source context")
+        if utc_instant(committed_at) < utc_instant(snapshot.updated_at):
+            raise ValueError("commit timestamp cannot predate current state")
+        if utc_instant(candidate.created_at) < utc_instant(snapshot.updated_at):
+            raise ValueError("candidate timestamp cannot predate current state")
+        if utc_instant(committed_at) < utc_instant(candidate.created_at):
+            raise ValueError("commit timestamp cannot predate candidate")
+        if not candidate.proposals:
+            raise ValueError("state commit requires at least one delta proposal")
+        allowed_causes = {*candidate.source_event_ids, *candidate.evidence_refs}
+        if any(
+            not set(proposal.cause_refs) <= allowed_causes for proposal in candidate.proposals
+        ):
+            raise ValueError("state delta cause is outside candidate evidence")
+        by_ref = {item.ref: item for item in snapshot.facets}
+        if candidate.path in (AppraisalPath.DECAY, AppraisalPath.LIFECYCLE):
+            if current_decay_policy is None:
+                raise ValueError("減衰方針を取得できません")
             for proposal in candidate.proposals:
-                previous = by_ref.get(proposal.facet_ref)
-                old_value = 0.0 if previous is None else previous.current
-                current = old_value + proposal.delta
-                if not -1.0 <= current <= 1.0:
-                    raise ValueError("state delta result is outside allowed range")
-                by_ref[proposal.facet_ref] = InternalStateFacet(
-                    proposal.facet_ref,
-                    current,
-                    old_value,
-                    proposal.delta,
-                    proposal.confidence,
-                    proposal.cause_refs,
-                    committed_at,
-                )
-            next_snapshot = InternalStateSnapshot(
-                snapshot.revision + 1,
-                current_source_context_revision,
-                tuple(
-                    sorted(
-                        by_ref.values(),
-                        key=lambda item: (
-                            item.ref.kind.value,
-                            item.ref.state_key,
-                            item.ref.target_ref or "",
-                        ),
-                    )
-                ),
+                provenance = proposal.decay_provenance
+                if provenance is None:
+                    raise ValueError("減衰候補にprovenanceがありません")
+                if (
+                    provenance.decay_policy_id != current_decay_policy.policy_id
+                    or provenance.decay_policy_revision
+                    != current_decay_policy.policy_revision
+                ):
+                    raise ValueError("減衰方針が古くなっています")
+                if (
+                    provenance.base_state_revision != snapshot.revision
+                    or provenance.source_context_revision != current_source_context_revision
+                ):
+                    raise ValueError("減衰候補が古くなっています")
+                if proposal.facet_ref not in by_ref:
+                    raise ValueError("減衰対象facetがcurrent stateにありません")
+        for proposal in candidate.proposals:
+            previous = by_ref.get(proposal.facet_ref)
+            old_value = 0.0 if previous is None else previous.current
+            current = old_value + proposal.delta
+            if not -1.0 <= current <= 1.0:
+                raise ValueError("state delta result is outside allowed range")
+            by_ref[proposal.facet_ref] = InternalStateFacet(
+                proposal.facet_ref,
+                current,
+                old_value,
+                proposal.delta,
+                proposal.confidence,
+                proposal.cause_refs,
                 committed_at,
             )
-            self._current = next_snapshot
-            return next_snapshot
+        next_snapshot = InternalStateSnapshot(
+            snapshot.revision + 1,
+            current_source_context_revision,
+            tuple(
+                sorted(
+                    by_ref.values(),
+                    key=lambda item: (
+                        item.ref.kind.value,
+                        item.ref.state_key,
+                        item.ref.target_ref or "",
+                    ),
+                )
+            ),
+            committed_at,
+        )
+        return next_snapshot
 
 
 def decay_candidate(

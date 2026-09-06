@@ -54,18 +54,30 @@ class SpeechPreparationOrchestrator:
         release = asyncio.Event()
         self._leases[key] = (priority, release)
 
+        released = False
+
+        def release_lease() -> None:
+            nonlocal released
+            if not released:
+                released = True
+                self._leases.pop(key, None)
+                self._admission.release(priority)
+
         async def hold_lease() -> object:
             try:
                 await release.wait()
             finally:
-                self._leases.pop(key, None)
-                self._admission.release(priority)
+                release_lease()
             return object()
 
         async def run_character() -> object:
             return await character()
 
-        self._tasks.start(CandidateTaskKey(candidate_id, generation, "admission"), hold_lease())
+        lease_task = self._tasks.start(
+            CandidateTaskKey(candidate_id, generation, "admission"), hold_lease()
+        )
+        # 開始前の取消では本体のfinallyを通らないため、完了通知からも一度だけ返す。
+        lease_task.add_done_callback(lambda _: release_lease())
         return self._tasks.start(
             CandidateTaskKey(candidate_id, generation, "character"),
             run_character(),
@@ -103,25 +115,35 @@ class SpeechPreparationOrchestrator:
         if mode is TTSPreparationMode.AFTER_SEMANTIC_ACCEPTANCE and not verifier_accepted:
             return None
         speculative = (
-            mode is TTSPreparationMode.SPECULATIVE_AFTER_PERFORMANCE
-            and not verifier_accepted
+            mode is TTSPreparationMode.SPECULATIVE_AFTER_PERFORMANCE and not verifier_accepted
         )
         if speculative and self._active_speculative_tts >= self._policy.speculative_tts_limit:
             return None
-        if speculative:
-            self._active_speculative_tts += 1
+        released = False
+
+        def release_slot() -> None:
+            nonlocal released
+            if speculative and not released:
+                released = True
+                self._active_speculative_tts -= 1
 
         async def run_tts() -> object:
             try:
                 return await tts()
             finally:
-                if speculative:
-                    self._active_speculative_tts -= 1
+                release_slot()
 
-        return self._tasks.start(
-            CandidateTaskKey(candidate_id, generation, "tts"),
-            run_tts(),
-        )
+        work = run_tts()
+        try:
+            task = self._tasks.start(CandidateTaskKey(candidate_id, generation, "tts"), work)
+        except BaseException:
+            # 登録できなかった処理は枠へ計上せず、未開始の実行資源を閉じる。
+            work.close()
+            raise
+        if speculative:
+            self._active_speculative_tts += 1
+        task.add_done_callback(lambda _: release_slot())
+        return task
 
     def complete_preparation(self, candidate_id: str, generation: int) -> None:
         """candidateがterminal又はqueueへ移った後にlifecycle leaseを返す。"""

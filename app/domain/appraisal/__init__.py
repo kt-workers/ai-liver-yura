@@ -33,9 +33,15 @@ from .deep import (
     descriptor,
 )
 from .fast import DeterministicAppraisalRule, appraise_event
-from .reducer import InternalStateReducer, decay_candidate, lifecycle_candidate
+from .reducer import (
+    AppraisalStateCommit,
+    InternalStateReducer,
+    decay_candidate,
+    lifecycle_candidate,
+)
 
 __all__ = [
+    "AppraisalStateCommit",
     "AppraisalCandidate",
     "AppraisalFactsSnapshot",
     "AppraisalDimension",
