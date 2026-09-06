@@ -589,3 +589,13 @@ Do not log full audio/raw responses or unnecessary utterance bodies merely for m
 - #445 Design Completion Gate PASS
 
 Until #445 PASS, no TTS production implementation is started from this design.
+
+## 公開音声契約の依存方向（#580）
+
+本体が受け取る`PreparedAudioArtifact`、`SpeechTimingKind`、`SpeechTimingSourceKind`、`SpeechTimingQuality`、`SpeechTimingUnit`、`SpeechTimingTrack`の定義は`app/domain/contracts/speech_audio.py`に置く。これらは合成済み音声と観測された時刻を表す不変の公開データであり、TTS提供先の実装を初期化する責務を持たない。
+
+Bodyはこの公開契約を直接利用する。TTSアダプターも同じ型を生成・利用し、従来の`app.adapters.tts.contracts`からは同一の型を再公開する。型の複製や別型への変換、Body用の意味判断を追加しない。フィールド・列挙値・検証規則と、音声成果・提示報告・時刻の識別子や版の照合は維持する。
+
+本体が公開型をimportしただけで`app.adapters.tts`のパッケージ初期化や具体的な提供先の実装が読み込まれてはならない。型注釈と推移的なパッケージ初期化も対象とし、隔離したPythonプロセスでTTSアダプターのimportを禁止してBodyを読み込む回帰試験を行う。既存のTTS出力とBodyの隣接試験も維持する。
+
+本修正はパッケージ構成・提供先選択・音声生成・身体運動・口形の意味を変更しない。Pipfile/Pipfile.lockは変更しない。
