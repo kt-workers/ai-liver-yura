@@ -1,8 +1,10 @@
 # V2 現行製造計画
 
-状態: #550 改訂3 / 本体と任意GUIの完成条件の分離（2026-09-06）
+状態: #550 改訂4 / 本体と任意GUIの完成条件の分離、および履歴と現在状態の識別（2026-09-07）
 
-製造起点: `rebuild/v2-foundation@e054f21595c78052c6a791e6af7758ad51e1fd7c`
+初回計画確定時の製造起点（履歴）: `rebuild/v2-foundation@e054f21595c78052c6a791e6af7758ad51e1fd7c`
+
+このSHAを現在の本流として固定しない。再開時にはGitHub上の本流・Issue・PR・最新Checkpointを取得する。第2・3節はPR #556で計画を確定した時点の成果と工程の記録、第4節は当時の管理課題と参照先である。現在の製造判断には第5・6節を適用する。
 
 ## 1. Authority
 
@@ -19,7 +21,7 @@
 
 current Project日程AuthorityはProject #7 `プロジェクトゆらv2`。Project #6は変更しない。
 
-## 2. Post-D10 state reconciliation result
+## 2. 初回計画確定時の成果照合（履歴）
 
 Issue stateそのものを完了証拠にせず、Issue完了条件、canonical、current trunk、関連PR、merge ancestry、CI、必要なHuman Verificationを再照合した。
 
@@ -45,7 +47,7 @@ Foundation、Brain、Speech、Memory、Body基盤、Infrastructure、Streaming�
 - #365 Game Skill Runtime: production implementationはcurrent trunkへmerge済み。再実装しない。ただしcanonicalが要求する実ゲーム/実操作Human Verificationは未完了なのでIssue completionは未達。
 - #365はD8でPlugin Integration #344をdirect dependencyから外している。Game Skill RuntimeそのものはPlugin 0件でも成立する。
 
-## 3. Current production / verification graph
+## 3. 初回計画確定時の製造・検証の順序（履歴）
 
 ### Production implementation lane
 
@@ -75,13 +77,13 @@ Foundation、Brain、Speech、Memory、Body基盤、Infrastructure、Streaming�
 
 Human Verification待ちを理由に、依存しないproduction lane全体を停止しない。
 
-## 4. Management gates
+## 4. 管理課題の由来と現在状態の参照先
 
 ### #509 Merge Gate
 
-#509は未完了。
+PR #556での計画確定時には、ブランチ保護と必須検査の強制が未設定だった。その後、#509の最終完了記録で設定・再取得を含む合格が記録された。過去の未設定状態を現在の停止理由として使わない。
 
-current `rebuild/v2-foundation` はbranch protection / required status checksが強制されていないため、#509 Acceptanceを満たしていない。これは#344の設計・実装着手そのものとは分離できるが、**#344を含む次のproduct PRをproduction trunkへmergeする前に解消する**。
+各PRの取り込み時は現在の保護設定・必須検査・本流との整合を再取得して検証する。#509の過去の合格だけで現在の検査を省略しない。
 
 ### #425 Project #7 schedule
 

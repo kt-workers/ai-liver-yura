@@ -1,21 +1,21 @@
-# V2 Production Sequence Authority
+# ゆらV2のD10時点の元工程記録
 
 Owner: #445
 Root: #317
 Current Project: GitHub Project #7 `プロジェクトゆらv2`
 Historical source: `project_sync_manifest.md` 2026-08-13 synchronized manifest
-Status: Current manufacturing-order authority / D10 reconciliation
+位置づけ: D10時点の元工程を保持する履歴資料。現在の製造順の正本は[現行製造計画](production_plan_current.md)とGitHub上の現在の依存関係である。
 
 ## 1. 目的
 
-V2の**製造順**と、過去のProject番号・Status・Start/Target dateを分離する。
+過去の工程と分類方法を保存し、現在の製造判断と区別する。以下の工程表やD10再開手順だけを理由に、現在の作業順を決定したり、完了済みの設計確認・日程刷新を繰り返したりしない。
 
 `project_sync_manifest.md`は2026-08-13時点のProject #6同期履歴として保持する。そこに記録された`工程`は元製造順の証拠だが、Project番号、Status、Start date、Target dateは現在値ではない。
 
 D10以降:
 
 - 現在のProject管理先はProject #7。
-- 製造順は本書の`工程` + current dependency graphをAuthorityとする。
+- 本書の`工程`は当時の記録として扱う。現在の製造順は現行製造計画とGitHub上の依存関係・成果・未完了要件から決める。
 - Start date / Target dateは製造順・依存関係・current state監査後にProject #7へ再計画する。
 - Issue本文やhistorical manifestの日付から製造順を逆算しない。
 - Project #6を更新しない。
