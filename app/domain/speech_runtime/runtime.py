@@ -378,6 +378,28 @@ class SpeechRuntime:
             self._candidates[candidate_id] = updated
             return updated
 
+    async def revalidate_current(
+        self,
+        candidate_id: str,
+        expected_generation: int,
+        state: SpeechPresentationCommitState,
+    ) -> PreparedSpeechCandidate | None:
+        """最新状態を照合し、同じ世代の候補だけを提示可能へ進める。"""
+        async with self._lock:
+            if self._generations.get(candidate_id) != expected_generation:
+                return None
+            candidate = self._active(candidate_id)
+            if candidate.lifecycle is not CandidateLifecycle.REVALIDATING:
+                raise ValueError("再照合中の候補が必要です")
+            self._validated_presentation_modes(candidate, state)
+            updated = replace(
+                candidate,
+                lifecycle=CandidateLifecycle.READY_TO_PRESENT,
+                updated_at=state.observed_at,
+            )
+            self._candidates[candidate_id] = updated
+            return updated
+
     async def commit(
         self, candidate_id: str, state: SpeechPresentationCommitState, presentation_id: str
     ) -> SpeechPresentationCommand:
@@ -390,77 +412,8 @@ class SpeechRuntime:
                 or presentation_id in self._presentations
             ):
                 raise ValueError("Presentation commitが不正です")
-            if (
-                candidate.source_context_revision != state.source_context_revision
-                or candidate.goal_revision != state.goal_revision
-                or candidate.attention_revision != state.attention_revision
-                or (candidate.turn_id is not None and candidate.turn_id != state.turn_id)
-                or (
-                    candidate.focus_revision is not None
-                    and candidate.focus_revision != state.focus_revision
-                )
-                or (
-                    state.semantic_acceptance_id is not None
-                    and candidate.semantic_acceptance_id != state.semantic_acceptance_id
-                )
-                or (
-                    state.performance_plan_id is not None
-                    and candidate.performance_plan_id != state.performance_plan_id
-                )
-                or (
-                    state.prepared_audio_ref is not None
-                    and candidate.prepared_audio_ref != state.prepared_audio_ref
-                )
-                or (candidate.response_obligation_id != state.response_obligation_id)
-                or (
-                    candidate.character_definition_revision is not None
-                    and candidate.character_definition_revision
-                    != state.character_definition_revision
-                )
-                or not state.character_compatible
-                or not state.expiry_valid
-                or not state.capability.output_available
-            ):
-                raise ValueError("live revalidationに失敗しました")
-            if candidate.semantic_requirement is SemanticVerificationRequirement.REQUIRED and (
-                candidate.semantic_acceptance_id is None
-                or state.semantic_acceptance_id is None
-                or candidate.semantic_acceptance_id != state.semantic_acceptance_id
-            ):
-                raise ValueError("SemanticAcceptanceが必要です")
-            if candidate.performance_plan_id is None or (
-                state.performance_plan_id is None
-                or candidate.performance_plan_id != state.performance_plan_id
-            ):
-                raise ValueError("current PerformancePlanが必要です")
-            if (
-                candidate.expression_revision is not None
-                and candidate.expression_revision != state.expression_revision
-            ):
-                raise ValueError("expression driftにはperformance rebindが必要です")
-            if (
-                not set(candidate.required_preconditions) <= set(state.satisfied_preconditions)
-                or candidate.utterance_id is None
-            ):
-                raise ValueError("Presentation preconditionが不正です")
-            if (
-                candidate.prepared_audio_ref
-                and state.capability.audio_available
-                and SpeechPresentationMode.AUDIO_WITH_TEXT in candidate.presentation_modes
-            ):
-                if (
-                    state.prepared_audio_ref is None
-                    or state.prepared_audio_ref != candidate.prepared_audio_ref
-                ):
-                    raise ValueError("current prepared audioが必要です")
-                modes = (SpeechPresentationMode.AUDIO_WITH_TEXT,)
-            elif (
-                state.capability.text_available
-                and SpeechPresentationMode.TEXT_ONLY in candidate.presentation_modes
-            ):
-                modes = (SpeechPresentationMode.TEXT_ONLY,)
-            else:
-                raise ValueError("Presentation modeが利用不能です")
+            modes = self._validated_presentation_modes(candidate, state)
+            assert candidate.utterance_id is not None
             self._presentations[presentation_id] = candidate_id
             command = SpeechPresentationCommand(
                 presentation_id,
@@ -617,3 +570,83 @@ class SpeechRuntime:
         }:
             raise ValueError("terminal candidateは再活性化できません")
         return candidate
+
+    def _validated_presentation_modes(
+        self,
+        candidate: PreparedSpeechCandidate,
+        state: SpeechPresentationCommitState,
+    ) -> tuple[SpeechPresentationMode, ...]:
+        """再照合と提示確定で、同じ現在状態の照合を使用する。"""
+        if not self._policy_matches(candidate) or self._is_expired(candidate, self._now()):
+            raise ValueError("発話実行基盤の運用方針または有効期限が一致しません")
+        if (
+            candidate.source_context_revision != state.source_context_revision
+            or candidate.goal_revision != state.goal_revision
+            or candidate.attention_revision != state.attention_revision
+            or (candidate.turn_id is not None and candidate.turn_id != state.turn_id)
+            or (
+                candidate.focus_revision is not None
+                and candidate.focus_revision != state.focus_revision
+            )
+            or (
+                state.semantic_acceptance_id is not None
+                and candidate.semantic_acceptance_id != state.semantic_acceptance_id
+            )
+            or (
+                state.performance_plan_id is not None
+                and candidate.performance_plan_id != state.performance_plan_id
+            )
+            or (
+                state.prepared_audio_ref is not None
+                and candidate.prepared_audio_ref != state.prepared_audio_ref
+            )
+            or (candidate.response_obligation_id != state.response_obligation_id)
+            or (
+                candidate.character_definition_revision is not None
+                and candidate.character_definition_revision != state.character_definition_revision
+            )
+            or not state.character_compatible
+            or not state.expiry_valid
+            or not state.capability.output_available
+        ):
+            raise ValueError("live revalidationに失敗しました")
+        if candidate.semantic_requirement is SemanticVerificationRequirement.REQUIRED and (
+            candidate.semantic_acceptance_id is None
+            or state.semantic_acceptance_id is None
+            or candidate.semantic_acceptance_id != state.semantic_acceptance_id
+        ):
+            raise ValueError("SemanticAcceptanceが必要です")
+        if candidate.performance_plan_id is None or (
+            state.performance_plan_id is None
+            or candidate.performance_plan_id != state.performance_plan_id
+        ):
+            raise ValueError("current PerformancePlanが必要です")
+        if (
+            candidate.expression_revision is not None
+            and candidate.expression_revision != state.expression_revision
+        ):
+            raise ValueError("expression driftにはperformance rebindが必要です")
+        if (
+            not set(candidate.required_preconditions) <= set(state.satisfied_preconditions)
+            or candidate.utterance_id is None
+        ):
+            raise ValueError("Presentation preconditionが不正です")
+        if (
+            candidate.prepared_audio_ref
+            and state.capability.audio_available
+            and SpeechPresentationMode.AUDIO_WITH_TEXT in candidate.presentation_modes
+        ):
+            if (
+                state.prepared_audio_ref is None
+                or state.prepared_audio_ref != candidate.prepared_audio_ref
+            ):
+                raise ValueError("current prepared audioが必要です")
+            modes = (SpeechPresentationMode.AUDIO_WITH_TEXT,)
+        elif (
+            state.capability.text_available
+            and SpeechPresentationMode.TEXT_ONLY in candidate.presentation_modes
+        ):
+            modes = (SpeechPresentationMode.TEXT_ONLY,)
+        else:
+            raise ValueError("Presentation modeが利用不能です")
+        return modes

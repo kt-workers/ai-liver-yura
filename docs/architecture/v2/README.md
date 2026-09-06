@@ -7,10 +7,10 @@
 - `design_completion_matrix.md` — #445 全V2詳細設計の完了状態とD10後の製造起点統合Gate
 - `design_cross_audit_report.md` — D8 正本性・依存関係・真実境界・revision・並行性・作業系列の横断監査
 - `design_implementation_decidability_audit.md` — #445 D10 実装決定可能性・計画Coverage・Post-D10監査順序の正本
-- `production_plan_current.md` — #550 Post-D10 GitHub live監査後のcurrent production execution plan
-- `production_sequence_authority.md` — D10で保存したoriginal sequence baseline。Post-D10 current execution順の単独Authorityではない
-- `project_sync_manifest.md` — 初期V2工程・Project #6同期を記録した履歴資料。current Project/日程Authorityではない
-- `project_sync_runbook.md` — live ID取得、dry-run、Project field、正式Parent/Sub-issue同期手順
+- `production_plan_current.md` — #550の現行製造計画。初回確定時の履歴と現在の再開判断を区別する
+- `production_sequence_authority.md` — D10時点の元工程と分類方法を保存した履歴資料。現在の製造順を直接決定しない
+- `project_sync_manifest.md` — 初期V2工程・Project #6同期の履歴。現在のProject・状態・日程の正本ではない
+- `project_sync_runbook.md` — Project #7の現在値取得・限定変更・再取得の手順と、初期Project #6同期の履歴
 - `legacy_migration_matrix.md` — V1要件・failure knowledgeのV2移行表
 
 ## Brain / Foundation / Character

@@ -1,4 +1,10 @@
-# AI Liver ゆら V2 GitHub Projects Sync Manifest
+# ゆらV2の初期Project同期記録
+
+この文書は、2026-08-13にProject #6へ同期した内容を保存する履歴資料である。以下の状態、分類、工程、日付、設計確認待ちの条件を、現在のV2へ適用しない。
+
+現在の管理先は`ktan514 / Project #7`「プロジェクトゆらv2」。製造判断は[現行製造計画](production_plan_current.md)、作業再開はIssue #450の最新Checkpointと対象Issueの開始前確認に従う。日程と項目の状態はProject #7から取得する。旧Projectやこの表の値を現在のProjectへコピーしない。
+
+## 2026-08-13の同期記録（履歴）
 
 Status: Synchronized / #319 PASS / 2026-08-13
 Project: `ktan514 / 6`
