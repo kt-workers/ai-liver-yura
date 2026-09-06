@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
+import subprocess
 import sys
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
+import yaml
 
 from app import bootstrap
 from app.adapters.character.yaml_loader import load_character_definition_yaml
@@ -505,5 +507,199 @@ def test_running_generation_does_not_reload_changed_file(
                 build_minimum_core(path)
         finally:
             await app.stop()
+
+    asyncio.run(scenario())
+
+
+def test_minimum_core_runs_with_optional_surface_imports_forbidden() -> None:
+    """パッケージを除去せず、画面や検証基盤への推移的な読込を検出する。"""
+    script = r"""
+import importlib.abc
+import runpy
+import sys
+
+forbidden = (
+    "app.subsystems", "tools.validation_lab", "PyQt6", "PySide6",
+    "aiohttp.web", "aiohttp.web_runner", "app.adapters.avatar", "app.adapters.tts",
+)
+class Boundary(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if any(fullname == name or fullname.startswith(name + ".") for name in forbidden):
+            raise AssertionError("最小本体が任意の外部実装を読み込みました: " + fullname)
+sys.meta_path.insert(0, Boundary())
+import pytest
+namespace = runpy.run_path("tests/system_integration/test_early_boot.py")
+with pytest.MonkeyPatch.context() as patch:
+    namespace["test_production_binding_through_brain_preserves_unavailable"](patch)
+    namespace["test_canonical_composition_repeated_start_stop_has_no_pending_tasks"](patch)
+assert not any(
+    module == name or module.startswith(name + ".")
+    for module in sys.modules for name in forbidden
+)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script], cwd=ROOT, capture_output=True, text=True, timeout=15
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "" and result.stderr == ""
+
+
+def test_file_edit_takes_effect_only_in_next_core_configuration(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """有効な設定編集を次の構成で読み、稼働中の方針を変更しない。"""
+    no_provider(monkeypatch)
+    path = tmp_path / "minimum_brain.yaml"
+    original = (ROOT / "resources/config/v2/minimum_brain.yaml").read_bytes()
+    path.write_bytes(original)
+
+    async def scenario() -> None:
+        baseline = asyncio.all_tasks()
+        first = build_minimum_core(path)
+        await first.start()
+        try:
+            edited = yaml.safe_load(original)
+            edited["config_revision"] = 2
+            edited["scheduler"]["policy_revision"] = 2
+            edited["scheduler"]["max_priority_burst"] = 9
+            path.write_text(yaml.safe_dump(edited, allow_unicode=True))
+            assert first.config.config_revision == 1
+            assert first.config.scheduler_policy.policy_revision == 1
+            assert first.config.scheduler_policy.max_priority_burst == 8
+            assert first.brain.submit(work()).accepted
+            outcome = await asyncio.wait_for(first.brain.next_outcome(), 2)
+            assert outcome.status is BrainWorkStatus.COMPLETED
+        finally:
+            await first.stop()
+        second = build_minimum_core(path)
+        assert second.config.config_revision == 2
+        assert second.config.scheduler_policy.policy_revision == 2
+        assert second.config.scheduler_policy.max_priority_burst == 9
+        await second.start()
+        try:
+            assert second.brain.submit(work()).accepted
+            outcome = await asyncio.wait_for(second.brain.next_outcome(), 2)
+            assert outcome.status is BrainWorkStatus.COMPLETED
+        finally:
+            await second.stop()
+        assert not (asyncio.all_tasks() - baseline)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("failure", ["initialization", "disconnect", "delay", "stop"])
+def test_external_test_client_lifecycle_does_not_stop_core(
+    monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """最小利用者の失敗・停止と本体停止を分ける。実GUI通信の試験ではない。"""
+    no_provider(monkeypatch)
+
+    async def scenario() -> None:
+        baseline = asyncio.all_tasks()
+        app = build_minimum_core()
+        config = app.config
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def external_client() -> None:
+            if failure == "initialization":
+                raise RuntimeError("試験用利用者の初期化失敗")
+            assert app.brain.submit(replace(work(), work_id="external-1")).accepted
+            entered.set()
+            if failure == "disconnect":
+                raise ConnectionError("試験用利用者の切断")
+            await release.wait()
+
+        await app.start()
+        client = asyncio.create_task(external_client())
+        try:
+            if failure == "initialization":
+                with pytest.raises(RuntimeError, match="初期化失敗"):
+                    await client
+            else:
+                await asyncio.wait_for(entered.wait(), 2)
+                if failure == "disconnect":
+                    with pytest.raises(ConnectionError, match="切断"):
+                        await client
+                elif failure == "stop":
+                    client.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await client
+                else:
+                    assert not client.done()
+            assert app.brain.submit(replace(work(), work_id="independent-1")).accepted
+            expected = {"independent-1"}
+            if failure != "initialization":
+                expected.add("external-1")
+            observed = set()
+            for _ in expected:
+                outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+                assert outcome.status is BrainWorkStatus.COMPLETED
+                assert isinstance(outcome.result, InputMeaningInterpretationResult)
+                assert outcome.result.role_failure is not None
+                assert outcome.result.role_failure.code is LLMFailureCode.PROVIDER_UNAVAILABLE
+                observed.add(outcome.work_id)
+            assert observed == expected
+            assert app.config is config
+            if failure == "delay":
+                assert not client.done()
+        finally:
+            release.set()
+            if not client.done():
+                client.cancel()
+            await asyncio.gather(client, return_exceptions=True)
+            await app.stop()
+        assert not (asyncio.all_tasks() - baseline)
+
+    asyncio.run(scenario())
+
+
+def test_replacement_and_concurrent_clients_use_the_same_public_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """別の最小利用者と併用しても、受付・実行・結果は本体の所有者に委ねる。"""
+    no_provider(monkeypatch)
+
+    async def scenario() -> None:
+        baseline = asyncio.all_tasks()
+        app = build_minimum_core()
+        config = app.config
+
+        async def submit_batch(client_id: str) -> None:
+            for number in range(3):
+                value = work()
+                request_id = f"{client_id}-{number}"
+                payload = cast(InputMeaningBrainWorkPayload, value.payload)
+                value = replace(
+                    value,
+                    work_id=request_id,
+                    payload=replace(payload, request_id=request_id),
+                )
+                assert app.brain.submit(value).accepted
+                await asyncio.sleep(0)
+
+        await app.start()
+        try:
+            # 先行利用者を終了し、別の利用者へ交換した後で二者を併用する。
+            await submit_batch("first")
+            await asyncio.gather(submit_batch("replacement"), submit_batch("additional"))
+            expected = {
+                f"{name}-{n}" for name in ("first", "replacement", "additional") for n in range(3)
+            }
+            observed = set()
+            for _ in expected:
+                outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+                assert outcome.status is BrainWorkStatus.COMPLETED
+                assert isinstance(outcome.result, InputMeaningInterpretationResult)
+                assert outcome.result.request_id == outcome.work_id
+                assert outcome.result.meaning is None
+                assert outcome.result.role_failure is not None
+                assert outcome.result.role_failure.code is LLMFailureCode.PROVIDER_UNAVAILABLE
+                observed.add(outcome.work_id)
+            assert observed == expected
+            assert app.config is config
+        finally:
+            await app.stop()
+        assert not (asyncio.all_tasks() - baseline)
 
     asyncio.run(scenario())
