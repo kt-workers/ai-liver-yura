@@ -102,35 +102,37 @@ class ActivityExecutionCoordinator:
                     cancel_immediately = signal.cancelled and signal.hard_interrupt_allowed
                 if cancel_immediately:
                     adapter_task.cancel()
-                if invocation.interruptibility is ActivityInterruptibility.INTERRUPTIBLE:
-                    reports = tuple(await adapter_task)
-                else:
-                    reports = tuple(await asyncio.shield(adapter_task))
-            except asyncio.CancelledError:
-                if invocation.interruptibility is ActivityInterruptibility.INTERRUPTIBLE:
-                    self._authority.request_cancellation(
-                        command_id, "execution_task_cancelled", self._clock.now()
-                    )
-                    return self._authority.apply_report(
-                        ExecutionAdapterReport(
-                            command_id=command_id,
-                            invocation_id=invocation.invocation_id,
-                            dispatch_id=dispatch_id,
-                            status=ExecutionStatus.CANCELLED,
-                            occurred_at=self._clock.now(),
-                            details={"code": "adapter_cancelled"},
-                            effect_uncertainty=(
-                                ExecutionEffectUncertainty.POSSIBLY_APPLIED
-                                if adapter_started
-                                else ExecutionEffectUncertainty.NONE
-                            ),
+                while True:
+                    try:
+                        reports = tuple(await asyncio.shield(adapter_task))
+                        break
+                    except asyncio.CancelledError:
+                        self._authority.request_cancellation(
+                            command_id, "execution_task_cancelled", self._clock.now()
                         )
-                    ).record
-                self._authority.request_cancellation(
-                    command_id, "execution_task_cancelled", self._clock.now()
-                )
-                assert adapter_task is not None
-                reports = tuple(await asyncio.shield(adapter_task))
+                        previously_cancelled = signal.cancelled
+                        signal.cancelled = True
+                        if adapter_task.done():
+                            if not adapter_task.cancelled():
+                                reports = tuple(adapter_task.result())
+                                break
+                            return self._authority.apply_report(
+                                ExecutionAdapterReport(
+                                    command_id=command_id,
+                                    invocation_id=invocation.invocation_id,
+                                    dispatch_id=dispatch_id,
+                                    status=ExecutionStatus.CANCELLED,
+                                    occurred_at=self._clock.now(),
+                                    details={"code": "adapter_cancelled"},
+                                    effect_uncertainty=(
+                                        ExecutionEffectUncertainty.POSSIBLY_APPLIED
+                                        if adapter_started
+                                        else ExecutionEffectUncertainty.NONE
+                                    ),
+                                )
+                            ).record
+                        if signal.hard_interrupt_allowed and not previously_cancelled:
+                            adapter_task.cancel()
             except Exception:
                 return self._authority.apply_report(
                     ExecutionAdapterReport(
@@ -216,8 +218,13 @@ class ActivityExecutionCoordinator:
         async with self._signal_lock:
             signal = self._signals.get(command_id)
             if signal is not None:
+                previously_cancelled = signal.cancelled
                 signal.cancelled = True
                 adapter_task = self._adapter_tasks.get(command_id)
-                if signal.hard_interrupt_allowed and adapter_task is not None:
+                if (
+                    signal.hard_interrupt_allowed
+                    and not previously_cancelled
+                    and adapter_task is not None
+                ):
                     adapter_task.cancel()
         return record
