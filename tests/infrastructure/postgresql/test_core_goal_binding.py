@@ -13,8 +13,9 @@ from app.composition.goal_persistence import CoreGoalPersistenceBinding
 from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentStore
 from app.infrastructure.persistence import DurabilityStatus, PersistenceFailureCode
-from app.infrastructure.persistence.postgresql_connection import PostgresEndpoint
+from app.infrastructure.persistence.postgresql_connection import PostgresDatabase, PostgresEndpoint
 from tests.domain.goals.test_goal_commitment_store import decision, goal_transition
+from tests.infrastructure.postgresql.test_memory import POLICY
 from tests.infrastructure.postgresql.test_runtime import runtime
 
 
@@ -147,3 +148,89 @@ def test_missing_event_loop_rejects_before_goal_change(endpoint: PostgresEndpoin
         assert binding.snapshot().revision == 0
     finally:
         asyncio.run(persistence.close())
+
+
+def test_failed_restore_cannot_replace_saved_goals_after_reconnect(
+    endpoint: PostgresEndpoint,
+) -> None:
+    async def run() -> None:
+        seed = runtime(endpoint)
+        try:
+            assert await seed.start() is None
+            original = await CoreGoalPersistenceBinding.restore(seed, runtime_epoch="seed")
+            saved = original.apply(
+                decision(
+                    "save-A",
+                    0,
+                    goals=(goal_transition(GoalTransitionOperation.CREATE, 0, goal_id="goal-A"),),
+                )
+            )
+            assert (await saved.durability).status is DurabilityStatus.DURABLE
+        finally:
+            await seed.close()
+        interrupted = runtime(endpoint)
+        blocker = PostgresDatabase.connect(endpoint, POLICY)
+        try:
+            assert await interrupted.start() is None
+            with blocker.transaction() as connection:
+                connection.execute(
+                    "LOCK TABLE yura_v2.lifecycle_snapshots IN ACCESS EXCLUSIVE MODE"
+                )
+                provisional = await CoreGoalPersistenceBinding.restore(
+                    interrupted,
+                    runtime_epoch="failed-restore",
+                )
+                assert provisional.restore_failure is PersistenceFailureCode.TIMEOUT
+                assert provisional.snapshot().revision == 0
+                first = provisional.apply(
+                    decision(
+                        "create-B",
+                        0,
+                        goals=(
+                            goal_transition(GoalTransitionOperation.CREATE, 0, goal_id="goal-B"),
+                        ),
+                    )
+                )
+            assert await interrupted.start() is None
+            second = provisional.apply(
+                decision(
+                    "change-B",
+                    1,
+                    goals=(
+                        goal_transition(GoalTransitionOperation.REPRIORITIZE, 1, goal_id="goal-B"),
+                    ),
+                )
+            )
+            assert second.committed.snapshot.revision == 2
+            assert [goal.goal_id for goal in provisional.snapshot().goals] == ["goal-B"]
+            first_receipt, second_receipt = await asyncio.gather(
+                first.durability, second.durability
+            )
+            assert second_receipt.status is DurabilityStatus.FAILED
+            assert first_receipt.failure_code is PersistenceFailureCode.TIMEOUT
+            assert second_receipt.failure_code is PersistenceFailureCode.TIMEOUT
+        finally:
+            blocker.close()
+            await interrupted.close()
+        restarted = runtime(endpoint)
+        try:
+            assert await restarted.start() is None
+            restored = await CoreGoalPersistenceBinding.restore(
+                restarted, runtime_epoch="restarted"
+            )
+            assert restored.restore_failure is None
+            assert restored.snapshot() == saved.committed.snapshot
+            followup = restored.apply(
+                decision(
+                    "change-A",
+                    1,
+                    goals=(
+                        goal_transition(GoalTransitionOperation.REPRIORITIZE, 1, goal_id="goal-A"),
+                    ),
+                )
+            )
+            assert (await followup.durability).status is DurabilityStatus.DURABLE
+        finally:
+            await restarted.close()
+
+    asyncio.run(run())

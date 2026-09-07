@@ -74,6 +74,11 @@ class CoreGoalPersistenceBinding:
         committed = self._store.apply(decision)
         request_id = f"{self._runtime_epoch}:goals:{committed.snapshot.revision}"
         try:
+            if self._restore_failure is not None:
+                raise PersistenceError(
+                    self._restore_failure,
+                    "復元失敗が未解決のため、既存の目標保存状態を置き換えません",
+                )
             durability = self._persistence.persist_goals(
                 committed.snapshot,
                 request_id=request_id,
