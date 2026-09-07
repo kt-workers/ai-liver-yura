@@ -87,9 +87,12 @@ class ActivityInvocation:
     arguments: JsonValue
     interruptibility: ActivityInterruptibility
     requested_at: datetime
+    target_ref: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.invocation_id, "invocation_id")
+        if self.target_ref is not None:
+            require_identifier(self.target_ref, "target_ref")
         if not isinstance(self.command, SystemCommand):
             raise ValueError("command must be SystemCommand")
         if not isinstance(self.command.intent_ref, IntentRef):
@@ -124,6 +127,7 @@ class ActivityInvocation:
     def to_dict(self) -> dict[str, object]:
         return {
             "invocation_id": self.invocation_id,
+            "target_ref": self.target_ref,
             "command": self.command.to_dict(),
             "operation_ref": self.operation_ref,
             "arguments": thaw_json(self.arguments),

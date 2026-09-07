@@ -17,6 +17,8 @@ _KINDS = {
     ExecutiveIntentKind.BODY: IntentKind.BODY,
     ExecutiveIntentKind.ACTIVITY: IntentKind.ACTIVITY,
     ExecutiveIntentKind.ATTENTION: IntentKind.ATTENTION,
+    ExecutiveIntentKind.PLAN_EXECUTION: IntentKind.ACTIVITY,
+    ExecutiveIntentKind.PLAN_PROGRESS: IntentKind.ACTIVITY,
 }
 
 
@@ -54,6 +56,10 @@ def to_system_command(
     *,
     command_id: str,
 ) -> SystemCommand:
+    if intent.kind is ExecutiveIntentKind.PLAN_PROGRESS:
+        raise ValueError("計画の完了評価は活動命令へ直接変換できません")
+    if intent.kind is ExecutiveIntentKind.PLAN_EXECUTION:
+        raise ValueError("計画承認意図は承認範囲内の手順へ展開してから命令を発行します")
     if intent not in decision.candidate.intents:
         raise ValueError("intent does not belong to decision")
     revisions = RevisionVector(
