@@ -40,6 +40,14 @@ class CoreAttentionDispatch:
         return value
 
 
+@dataclass(frozen=True, slots=True)
+class CoreAttentionCurrentState:
+    reference: CoreInputReferenceSnapshot
+    internal_state: InternalStateSnapshot
+    appraisal: AppraisalStateCommit | None
+    attention: AttentionFocusState
+
+
 class CoreAttentionBinding:
     """選択や割込みの判断を既存所有者へ委ね、現在読取だけを接続する。"""
 
@@ -105,3 +113,22 @@ class CoreAttentionBinding:
             and self._appraisal.current_state() == dispatch.current_state
             and self._appraisal.current_commit() == dispatch.current_appraisal
         )
+
+    def read_current(self, dispatch: CoreAttentionDispatch) -> CoreAttentionCurrentState:
+        """搬送結果を再検査し、確定用には実際に再取得した所有者の値を返す。"""
+        if not self.is_current(dispatch):
+            raise ValueError("注意の搬送結果が現在の状態と一致しません")
+        current = CoreAttentionCurrentState(
+            self._appraisal.current_reference(),
+            self._appraisal.current_state(),
+            self._appraisal.current_commit(),
+            self._attention.snapshot(),
+        )
+        if (
+            current.reference != dispatch.reference
+            or current.internal_state != dispatch.current_state
+            or current.appraisal != dispatch.current_appraisal
+            or current.attention.revision != dispatch.trigger.attention_revision
+        ):
+            raise ValueError("現在状態の読取中に所有者の値が変更されました")
+        return current
