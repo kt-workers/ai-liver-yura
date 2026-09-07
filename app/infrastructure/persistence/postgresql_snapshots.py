@@ -19,7 +19,7 @@ from .postgresql_connection import PostgresDatabase
 
 
 class PostgresLifecycleSnapshotRepository:
-    """保存済みの最大版を取引で保護する。候補を所有者へ直接適用しない。"""
+    """保存済みの最大リビジョンを取引で保護する。候補を所有者へ直接適用しない。"""
 
     storage_version = 1
 
@@ -46,7 +46,7 @@ class PostgresLifecycleSnapshotRepository:
                     if row[0] != str(self.storage_version):
                         raise PersistenceError(
                             PersistenceFailureCode.INCOMPATIBLE_STORAGE_VERSION,
-                            "状態保存の構造版に対応していません",
+                            "状態保存の構造のバージョンに対応していません",
                         )
                     return
                 c.execute(
@@ -99,7 +99,7 @@ class PostgresLifecycleSnapshotRepository:
             ).fetchone()
             if row is None or type(row[0]) is not int:
                 raise PersistenceError(
-                    PersistenceFailureCode.CORRUPT_RECORD, "状態保存の最大版が不正です"
+                    PersistenceFailureCode.CORRUPT_RECORD, "状態保存の最大リビジョンが不正です"
                 )
             latest = row[0]
             if inserted is None:
@@ -117,7 +117,7 @@ class PostgresLifecycleSnapshotRepository:
                 ):
                     raise PersistenceError(
                         PersistenceFailureCode.PERSISTENCE_CONFLICT,
-                        "状態保存の期待版が一致しません",
+                        "状態保存の期待するリビジョンが一致しません",
                     )
             elif expected_revision is not None:
                 raise PersistenceError(
@@ -182,7 +182,7 @@ class PostgresLifecycleSnapshotRepository:
                 raise PersistenceError(
                     PersistenceFailureCode.CORRUPT_RECORD, "保存状態がありません"
                 )
-        # 不採用にしても最大版を戻さず、遅れて到着した古い保存を拒否する。
+        # 不採用にしても最大リビジョンを戻さず、遅れて到着した古い保存を拒否する。
 
     def _decode(self, row: tuple[object, ...]) -> RehydrationCandidate:
         try:

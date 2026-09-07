@@ -57,7 +57,7 @@ async def deliberate_after_appraisal(
     settings: AppraisalExecutiveSettings,
     bindings: AppraisalExecutiveBindings,
 ) -> JsonValue:
-    # 周辺の事実・能力・版・由来はひな形から変更しない。不一致は公開型が拒否する。
+    # 周辺の事実・能力・リビジョン・由来はひな形から変更しない。不一致は公開型が拒否する。
     snapshot = replace(
         settings.context_template,
         meaning=meaning,

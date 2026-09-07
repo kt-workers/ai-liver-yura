@@ -67,7 +67,7 @@ D. Runtime closed acceptance policy
    SemanticAcceptance
 ```
 
-A→Bはsemantic safety上のdata dependencyであるため、初期版では無理に並列化しない。
+A→Bはsemantic safety上のdata dependencyであるため、初期バージョンでは無理に並列化しない。
 ただしA/B await中もcurrent playback、Body realtime、unrelated input/Activity、#331 Speech Performance、policy許可されたspeculative TTS preparationは停止させない。
 
 ## 4. Role A — Plan-blind Inventory

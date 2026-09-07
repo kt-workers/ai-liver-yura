@@ -108,7 +108,7 @@ jobs:
           ref: ${{ needs.resolve-pr-identity.outputs.head_sha }}
           fetch-depth: 0
 
-      - name: 現在の本流の版と包含を確認
+      - name: 現在の本流のリビジョンと包含を確認
         env:
           BASE_REF: ${{ needs.resolve-pr-identity.outputs.base_ref }}
           LIVE_BASE_SHA: ${{ needs.resolve-pr-identity.outputs.live_base_sha }}
@@ -166,7 +166,7 @@ jobs:
           HEAD_SHA: ${{ needs.resolve-pr-identity.outputs.head_sha }}
         run: git diff --check "$LIVE_BASE_SHA...$HEAD_SHA"
 
-      - name: 実行中に本流の版が変わっていないことを確認
+      - name: 実行中に本流のリビジョンが変わっていないことを確認
         env:
           BASE_REF: ${{ needs.resolve-pr-identity.outputs.base_ref }}
           LIVE_BASE_SHA: ${{ needs.resolve-pr-identity.outputs.live_base_sha }}

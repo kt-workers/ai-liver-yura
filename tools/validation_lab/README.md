@@ -12,7 +12,7 @@ python -m tools.validation_lab --output /tmp/yura-game-validation --repeat 3
 
 既存ゲーム実行基盤に模擬の戦術判断と操作先を接続し、別の処理が待機している間に操作が3回適用されることを検証します。実ゲームや資格情報は使用しません。出力先には既存のresult.jsonとresult.mdがない場所を指定してください。
 
-JSONとMarkdownは同じ実行結果の投影です。各反復の操作・適用報告、単調時計で測った処理区間、製品のcommit SHA、検証範囲、入力の版を保持します。製品ソースに未記録の変更がある場合は起動を拒否します。
+JSONとMarkdownは同じ実行結果の投影です。各反復の操作・適用報告、単調時計で測った処理区間、製品のcommit SHA、検証範囲、入力のリビジョンを保持します。製品ソースに未記録の変更がある場合は起動を拒否します。
 
 ## 現在利用できる範囲
 
@@ -156,7 +156,7 @@ SpeechPreparationSettings.audioにGeneratedAudioSettings、SpeechAdjacentBinding
 
 ParallelCaseに各対象のLabRunSpecとValidationFixtureをParallelInputとして並べ、parallel_targetへ登録済み対象を渡すと、各検証を同時に実行します。親の範囲はSYSTEM_SLICEで、子のISOLATION・ADJACENTなどの範囲、出典、入出力、時系列、判定をそのまま保持します。親の機械判定はNOT_RUNで、子の成功から品質合格を推定しません。
 
-max_tasksとmax_intervalsは子の数で分割します。発話とゲームの結合試験では親を8処理・64区間とし、各子へ4処理・32区間を割り当てています。親の取消では子の検証を回収します。同じ製品版の対象だけを登録でき、並行対象の再帰登録は拒否します。
+max_tasksとmax_intervalsは子の数で分割します。発話とゲームの結合試験では親を8処理・64区間とし、各子へ4処理・32区間を割り当てています。親の取消では子の検証を回収します。同じ製品のリビジョンの対象だけを登録でき、並行対象の再帰登録は拒否します。
 
 模擬音声合成を待つ実際の発話経路と、本番ゲーム実行基盤の操作3回が実測で重なることを確認する試験があります。これは長時間の安定性、実ゲーム操作、音声品質の証明ではありません。
 
@@ -197,7 +197,7 @@ python -m tools.validation_lab.blind_review result-a.json result-b.json \
 
 ### 速い状況評価から状態更新への接続
 
-`FastAppraisalCase`に出来事・初期状態・定型評価規則・現在文脈の版・生成時刻・確定時刻を明示し、`fast_appraisal_target`へ登録する。本番`appraise_event`で作成した候補をそのまま本番`InternalStateReducer.commit`へ渡し、前後の状態と根拠を記録する。該当する規則がなく候補が返らなければ、状態更新は呼び出さない。候補の鮮度・時刻・値の範囲の判定は状態更新側が行う。
+`FastAppraisalCase`に出来事・初期状態・定型評価規則・現在文脈のリビジョン・生成時刻・確定時刻を明示し、`fast_appraisal_target`へ登録する。本番`appraise_event`で作成した候補をそのまま本番`InternalStateReducer.commit`へ渡し、前後の状態と根拠を記録する。該当する規則がなく候補が返らなければ、状態更新は呼び出さない。候補の鮮度・時刻・値の範囲の判定は状態更新側が行う。
 
 各反復で独立した初期状態から開始し、共有の本番状態は更新しない。検証範囲はADJACENT、機械判定はNOT_RUNである。速い経路の公開入口は出来事を受け取り、意味解析結果は受け取らない。意味解析結果から深い状況評価への接続は次節の入口を使う。その後の注意・実行判断への接続は別途製造する。
 
@@ -211,7 +211,7 @@ python -m tools.validation_lab.blind_review result-a.json result-b.json \
 
 BodyExecutionLabCaseとbody_execution_targetは、本番の身体計画・採用・物理制御・姿勢公開を接続します。BodyRealtimeLabSettingsを指定すると、本番の実時間層も独立して動作します。計画の遅延指定はbody.execution.planning、LLMの指定はbody.planning.llmです。
 
-visualize=Trueを指定した場合、各反復のtyped_outputs.visualization_htmlへ、単独のブラウザーで開けるHTMLを返します。文字列をUTF-8のファイルへ保存して開くと、観測間隔に沿った再生と位置変更ができます。身体モデル、姿勢識別子、状態版、観測時刻を表示します。親子関節の座標と末端位置は既存の本番計算から求め、三方向へ平行投影します。表情などの値と合成情報の採用参照も確認できます。
+visualize=Trueを指定した場合、各反復のtyped_outputs.visualization_htmlへ、単独のブラウザーで開けるHTMLを返します。文字列をUTF-8のファイルへ保存して開くと、観測間隔に沿った再生と位置変更ができます。身体モデル、姿勢識別子、状態のリビジョン、観測時刻を表示します。親子関節の座標と末端位置は既存の本番計算から求め、三方向へ平行投影します。表情などの値と合成情報の採用参照も確認できます。
 
 表示は記録済み姿勢の切替えだけを行います。全時点で共通縮尺を使用し、モデルにない関節や動作を補いません。表示する姿勢数はmax_intervals、書出し容量はmax_export_bytesの上限に従い、超過時には切り捨てず失敗します。可視化は検証側の任意出力であり、GUIや本体の稼働条件ではありません。既存の棒人間用接続の命令保持結果やこの記録表示を、実機への適用・人間による品質確認の合格と同一視しません。
 
@@ -223,7 +223,7 @@ BodyExecutionLabCase.avatarへBodyAvatarLabSettingsを指定すると、本番Av
 
 ### 目標・約束の確定から注意への隣接検証
 
-GoalCommitmentLabCase.attentionへGoalAttentionLabSettingsを指定すると、goal_commitment_targetの検証範囲はADJACENTになります。注意の割当方針と、各更新を注意へ引き渡す時点の全体文脈の版を明示します。目標・約束自身の版で全体文脈の版を代用しません。同じ対象登録へ単独検証の条件を混在させることはできません。
+GoalCommitmentLabCase.attentionへGoalAttentionLabSettingsを指定すると、goal_commitment_targetの検証範囲はADJACENTになります。注意の割当方針と、各更新を注意へ引き渡す時点の全体文脈のリビジョンを明示します。目標・約束自身のリビジョンで全体文脈のリビジョンを代用しません。同じ対象登録へ単独検証の条件を混在させることはできません。
 
 本番GoalCommitmentStoreの確定結果に含まれる事実を、本番の目標・約束用の変換処理からAttentionCoordinatorへ渡します。更新が拒否された場合は後続の注意処理を呼びません。事実・入力信号・起動可否・注意の状態・引き渡された判断開始情報を記録します。各反復の状態は独立しています。後続の実行判断や運用中の全体文脈取得はこの隣接検証だけで完成としません。
 
@@ -235,7 +235,7 @@ ActivityLabCaseに発行済みActivityInvocation、各事前確認へ順番に�
 
 ### 活動結果から定型評価への接続
 
-ActivityLabCase.appraisalへEventAppraisalSettingsを指定するとADJACENTで実行できます。評価規則・初期状態・現在文脈版・候補作成時刻・更新時刻を入力に明示し、本番の出来事投影、appraise_event、InternalStateReducerへ順に渡します。単独の出来事評価と同じ接続処理を使用します。規則が一致しなければ状態を更新しません。
+ActivityLabCase.appraisalへEventAppraisalSettingsを指定するとADJACENTで実行できます。評価規則・初期状態・現在文脈のリビジョン・候補作成時刻・更新時刻を入力に明示し、本番の出来事投影、appraise_event、InternalStateReducerへ順に渡します。単独の出来事評価と同じ接続処理を使用します。規則が一致しなければ状態を更新しません。
 
 後続の評価・状態更新で本番処理が失敗した場合、検証結果はPRODUCT_FAILEDとなりますが、すでに確定した活動のrecordとeventは保持します。appraisal_failure_stageへ失敗段階を記録し、活動の完了や効果参照を消しません。
 
@@ -269,7 +269,7 @@ streaming_targetのmoderatorに本番の審査接続契約を渡せる。streami
 
 各観測区間で更新前後の公開状態、保持された観測、投入件数、締切超過数、未完了処理数、単調時計の観測時刻を記録する。終了時には終了前後の状態、所要時間、取消で不確かになった操作報告、最終未完了処理数を記録する。途中で専用処理が終了した場合は`PRODUCT_FAILED`とし、監視が完了したことだけで正常進行と扱わない。
 
-条件の不一致や記録区間の上限超過は開始前に拒否する。入力の版不適合は本番の検査結果を保持し、検証側で版を付け替えない。観測列の入力時刻と、実測した観測・終了時刻は区別する。
+条件の不一致や記録区間の上限超過は開始前に拒否する。入力のリビジョンの不適合は本番の検査結果を保持し、検証側でリビジョンを付け替えない。観測列の入力時刻と、実測した観測・終了時刻は区別する。
 
 模擬音声合成を実時間で20秒待たせ、1秒ごとの全20区間でゲーム状態の更新を確認した。合成のタイムアウトはこの試験の型付き条件で25秒とし、本番の既定値は変更しない。
 
@@ -285,18 +285,18 @@ streaming_targetのmoderatorに本番の審査接続契約を渡せる。streami
 
 ## 状態と評価事実から実行判断への接続
 
-`MeaningAppraisalSettings.executive` に `AppraisalExecutiveSettings` を指定し、`MeaningAppraisalBindings.executive` へ本番のLLM・現在状態の接続を渡す。`AppraisalStateCommitSettings.facts_revision` を明示し、採用済みPR #587の `InternalStateReducer.commit_with_facts` が返す更新後状態と評価事実を、そのまま `ExecutiveDeliberator.deliberate` へ渡す。元候補の基底版を書き換えない。
+`MeaningAppraisalSettings.executive` に `AppraisalExecutiveSettings` を指定し、`MeaningAppraisalBindings.executive` へ本番のLLM・現在状態の接続を渡す。`AppraisalStateCommitSettings.facts_revision` を明示し、採用済みPR #587の `InternalStateReducer.commit_with_facts` が返す更新後状態と評価事実を、そのまま `ExecutiveDeliberator.deliberate` へ渡す。元候補の基底のリビジョンを書き換えない。
 
-`context_template` は、出典・文脈版・目標版・注意版・能力・事前条件など周辺の公開型入力を固定する検証用ひな形である。実行時には意味・内部状態・評価事実だけを実際の前段結果へ置き換え、取得時刻を明示された判断時刻とする。出典や版が前段と合わなければ本番の公開型が拒否する。実行判断の採用は本番の所有者が行い、現在状態と評価事実の双方の版を再検査する。
+`context_template` は、出典・文脈のリビジョン・目標のリビジョン・注意のリビジョン・能力・事前条件など周辺の公開型入力を固定する検証用ひな形である。実行時には意味・内部状態・評価事実だけを実際の前段結果へ置き換え、取得時刻を明示された判断時刻とする。出典やリビジョンが前段と合わなければ本番の公開型が拒否する。実行判断の採用は本番の所有者が行い、現在状態と評価事実の双方のリビジョンを再検査する。
 
 意味解析や状態確定が失敗した場合、実行判断を呼ばない。任意の注意接続は実行判断のLLM待機より前に実施する。`executive.llm` で待機・失敗を注入でき、時系列には状態確定と実行判断を別段階として記録する。出力は前後状態、元候補、確定した評価事実、実際の判断入力と確定判断を保持する。範囲は `ADJACENT`、機械判定は `NOT_RUN` であり、実LLMの品質や本体全体の結合を代替しない。
 
 
 ## 振り返り候補と既存記憶の関係指定
 
-`ReflectionMemorySettings.initial_writes` へ公開型の初期書込み要求を渡すと、反復ごとに独立したメモリ内保存先を本番の `MemoryStoreAuthority.write` で準備する。`write_bindings` は提案識別子ごとに対象記憶・期待版・関係種別を明示する。採用された候補を変更せず、その条件を既存の `MemoryWriteRequest` に渡す。新規保存の既存経路も保持する。
+`ReflectionMemorySettings.initial_writes` へ公開型の初期書込み要求を渡すと、反復ごとに独立したメモリ内保存先を本番の `MemoryStoreAuthority.write` で準備する。`write_bindings` は提案識別子ごとに対象記憶・期待するリビジョン・関係種別を明示する。採用された候補を変更せず、その条件を既存の `MemoryWriteRequest` に渡す。新規保存の既存経路も保持する。
 
-記憶の更新・拒否・置き換え・矛盾関係の確定は本番の記憶所有者が行う。古い期待版では新規記録も関係も追加しない。振り返り側が不採用にした候補には関係指定を適用しない。重複指定や対応する提案結果がない指定を、暗黙の選択・通常の新規保存へ変換しない。初期書込み結果、採用候補、実際の書込み要求と結果、保存先の記録・関係、検索結果を証拠へ保持する。
+記憶の更新・拒否・置き換え・矛盾関係の確定は本番の記憶所有者が行う。期待するリビジョンが古い場合は新規記録も関係も追加しない。振り返り側が不採用にした候補には関係指定を適用しない。重複指定や対応する提案結果がない指定を、暗黙の選択・通常の新規保存へ変換しない。初期書込み結果、採用候補、実際の書込み要求と結果、保存先の記録・関係、検索結果を証拠へ保持する。
 
 これは明示した検証入力で本番の書込み判断を通す隣接検証であり、振り返りの関係提案から実運用の書込み条件を自動決定する意味判断ではない。候補や関係提案の内容から検証側が対象を推測しない。メモリ内での成功をPostgreSQLへの永続化・再起動後の保持と扱わない。
 
