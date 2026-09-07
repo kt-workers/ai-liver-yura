@@ -71,6 +71,8 @@ def validate_planning_context_bounds(
     if not isinstance(snapshot, GoalPlanningContextSnapshot):
         raise ValueError("snapshotはGoalPlanningContextSnapshotでなければなりません")
     bounds = _require_policy(bounds_policy).planning
+    if snapshot.previous_plan is not None:
+        validate_plan_bounds(snapshot.previous_plan.candidate, bounds_policy)
     checks = (
         ("capability_descriptors", len(snapshot.capabilities), bounds.max_capability_descriptors),
         ("planning_blockers", len(snapshot.planning_blockers), bounds.max_planning_blockers),

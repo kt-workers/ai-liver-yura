@@ -23,7 +23,7 @@
 
 |必須のシステム構成|構成内容|
 |---|---|
-|静的な本番設定|検証済みの不変な設定と構成版|
+|静的な本番設定|検証済みの不変な設定と構成のリビジョン|
 |人物定義|既存YAMLを読み、既存の型と投影を使用|
 |実行基盤|Runtime Kernelと4レーンの明示的な方針|
 |開始・終了管理|RuntimeLifecycleと終了方針|
@@ -82,7 +82,7 @@ Composition Root
 
 上図の読込処理は厳密な型検証を意味する。YAMLの辞書をドメインへ直接渡さず、不変な構成設定から既存の型付きの方針を構築する。
 
-|設定の項目|版1の内容・構造|
+|設定の項目|リビジョン1の内容・構造|
 |---|---|
 |schema_id|`yura.minimum-brain.production-config.v1`|
 |config_id|`yura.minimum-brain.production`|
@@ -91,7 +91,7 @@ Composition Root
 |brain_module_registrations|`INPUT_MEANING`に対応する既存列挙値だけを含む配列|
 |input_meaning|第6・7節のacceptanceとexecution|
 |scheduler|第8節のscheduler方針|
-|integration|第8節の方針識別・版とlane_policies|
+|integration|第8節の方針識別・リビジョンとlane_policies|
 |shutdown|第9節の終了方針|
 
 `input_meaning`は `acceptance` と `execution` の2項目を持つ。`integration`は `policy_id`、`policy_revision`、`lane_policies` を持ち、lane_policiesは各既存RuntimeLanePolicyのfieldを持つ4要素の配列とする。schedulerとshutdownは、それぞれの既存型のfieldに対応する。型構築時には同じshutdown方針を結合方針・実行基盤・開始終了管理へ注入する。
@@ -110,15 +110,15 @@ Composition Root
 
 #561では実行中の設定再読込（hot reload）を実装しない。YAMLを書き換えても進行中のプロセスの方針は変えず、新しいプロセス・runtime_epochで変更を読み込む。
 
-config_revision、入力意味解析の実行方針版・受理方針版、実行基盤の方針版を途中で暗黙変更しない。設定内容の変更はconfig_revisionを進め、変更された方針もそのpolicy_revisionを進める。将来の動的再構成は、別の版付き契約で切替境界と進行中要求の扱いを定める。
+config_revision、入力意味解析の実行方針のリビジョン・受理方針のリビジョン、実行基盤の方針のリビジョンを途中で暗黙変更しない。設定内容の変更はconfig_revisionを進め、変更された方針もそのpolicy_revisionを進める。将来の動的再構成は、別のリビジョン付き契約で切替境界と進行中要求の扱いを定める。
 
-SystemCompositionSnapshotには読み込んだ構成版とruntime_epoch、人物定義版、実際の登録を記録する。この記録をドメイン状態の所有者に置き換えない。
+SystemCompositionSnapshotには読み込んだ構成のリビジョンとruntime_epoch、人物定義のリビジョン、実際の登録を記録する。この記録をドメイン状態の所有者に置き換えない。
 
 ## 6. 入力意味解析の受理方針
 
 既存の `InputMeaningAcceptancePolicy` を使用する。
 
-|field|版1の値|
+|field|リビジョン1の値|
 |---|---|
 |policy_id|`yura.input-meaning.acceptance`|
 |policy_revision|`1`|
@@ -137,13 +137,13 @@ SystemCompositionSnapshotには読み込んだ構成版とruntime_epoch、人物
 |SOCIAL|空集合|
 |OTHER|空集合|
 
-情報の提供は提供情報、行為の要求・開始・停止は対象、肯定・否定は参照先を要求する。一般的な問いかけや社交表現へ不要な対象必須化を追加しない。未解決参照の拒否は既存#326を維持する。閾値は初期調整値であり、変更時は方針版を進める。
+情報の提供は提供情報、行為の要求・開始・停止は対象、肯定・否定は参照先を要求する。一般的な問いかけや社交表現へ不要な対象必須化を追加しない。未解決参照の拒否は既存#326を維持する。閾値は初期調整値であり、変更時は方針のリビジョンを進める。
 
-これらは版付き本番データであり、InputMeaningInterpreter内部の暗黙定数にしない。#326は完了状態を維持し、descriptorや意味解析を構成層へ複製しない。
+これらはリビジョン付き本番データであり、InputMeaningInterpreter内部の暗黙定数にしない。#326は完了状態を維持し、descriptorや意味解析を構成層へ複製しない。
 
 ## 7. 入力意味解析の実行方針と登録
 
-|LLMExecutionPolicyのfield|版1の値|
+|LLMExecutionPolicyのfield|リビジョン1の値|
 |---|---|
 |policy_id|`yura.input-meaning.execution`|
 |policy_revision|`1`|
@@ -157,7 +157,7 @@ SystemCompositionSnapshotには読み込んだ構成版とruntime_epoch、人物
 |retry_policy.backoff_multiplier|`1.0`|
 |retry_policy.max_backoff_seconds|`1.0`|
 
-LLMRequestRetryPolicyは型として必須である。総試行数1のため再試行せず、この3値は版1では待機時間として使用されない。将来max_attemptsを1より大きくする場合は実行方針版を進め、再試行時刻も同時に再設計する。これは本番初期値の決定であり、#323のドメイン契約変更ではない。
+LLMRequestRetryPolicyは型として必須である。総試行数1のため再試行せず、この3値はリビジョン1では待機時間として使用されない。将来max_attemptsを1より大きくする場合は実行方針のリビジョンを進め、再試行時刻も同時に再設計する。これは本番初期値の決定であり、#323のドメイン契約変更ではない。
 
 `app/domain/input_meaning/interpreter.py`の既存定義を取得する。
 
@@ -186,7 +186,7 @@ REJECT_NEWを初期値とし、#334が所有者のpayloadの意味を解釈し�
 
 ## 9. 終了方針と依存サービス
 
-|RuntimeShutdownPolicyのfield|版1の値|
+|RuntimeShutdownPolicyのfield|リビジョン1の値|
 |---|---|
 |policy_id|`yura.minimum-brain.shutdown`|
 |policy_revision|`1`|
@@ -195,9 +195,9 @@ REJECT_NEWを初期値とし、#334が所有者のpayloadの意味を解釈し�
 |resource_close_grace_seconds|`2.0`|
 |owned_task_join_grace_seconds|`2.0`|
 
-#561ではPersistence再水和と最終保存を有効化しないため、最終保存猶予を0.0とする。後続段階で永続化を有効化する際は方針版を再評価する。停止順序、猶予超過時の型付き失敗、タスクの取消後の回収は既存の実行基盤・開始終了管理の契約を維持する。時間超過を停止成功として隠さない。
+#561ではPersistence再水和と最終保存を有効化しないため、最終保存猶予を0.0とする。後続段階で永続化を有効化する際は方針のリビジョンを再評価する。停止順序、猶予超過時の型付き失敗、タスクの取消後の回収は既存の実行基盤・開始終了管理の契約を維持する。時間超過を停止成功として隠さない。
 
-版1では外部LLM提供サービスをRuntimeLifecycleの再試行対象の依存サービスとして必須登録しない。そのためLLM用DependencyRetryPolicyの初期値を新設しない。接続回復と再試行による復旧は#350/#360の後続段階で扱う。
+リビジョン1では外部LLM提供サービスをRuntimeLifecycleの再試行対象の依存サービスとして必須登録しない。そのためLLM用DependencyRetryPolicyの初期値を新設しない。接続回復と再試行による復旧は#350/#360の後続段階で扱う。
 
 ## 10. 提供サービスの構成境界
 
@@ -216,7 +216,7 @@ InputMeaningLiveContextPortと#326の採用契約を変更しない。
 
 将来成功結果が到着しても、権威ある現在の入力文脈世代と方針世代を取得できない限り意味を採用しない。接続側は取得不能を既存の読取失敗として明示し、InputMeaningInterpreterの既存経路でboundary_failure.code=REJECTEDへ閉じる。これは提供サービスの成功statusを捏造して上書きすることではない。外部CancelledErrorの伝播も維持する。
 
-版1の受理方針の参照元は、第5節のruntime_epochへ結び付いた実際の不変設定である。現在の入力文脈世代の所有者が未結合なら、方針版だけ分かっていても有効なInputMeaningFreshnessStampを返せない。常にsource_context_revision=0を返す、要求開始時の版を現在版として返す、単に固定値1を返して方針の参照を省略する、といった偽の正本を作らない。
+リビジョン1の受理方針の参照元は、第5節のruntime_epochへ結び付いた実際の不変設定である。現在の入力文脈世代の所有者が未結合なら、方針のリビジョンだけ分かっていても有効なInputMeaningFreshnessStampを返せない。常にsource_context_revision=0を返す、要求開始時のリビジョンを現在のリビジョンとして返す、単に固定値1を返して方針の参照を省略する、といった偽の正本を作らない。
 
 本番会話の成功に必要な入力文脈の状態の結合は#360のS2有効化時に再監査する。その時点でdescriptor・要求・採用直前の現在状態を同じ方針の不変設定に結び付け、既存snapshot_consistency_contracts.mdの読取手順を利用する。汎用の再試行・読取アルゴリズムを本書で再定義しない。
 
@@ -291,15 +291,15 @@ await interpreter.interpret(
 
 したがって、このBrainModulePort.is_freshは意味採用の現在世代の正本ではない。Runtimeの前後検査を通しても、入力意味解析の意味採用条件を通過したことにはならない。未構成経路の現在世代の読取は0回を維持する。
 
-### 11.5 現在世代を取得できない接続
+### 11.5 現在世代の参照文脈接続
 
-早期起動では権威ある入力文脈の状態所有者をまだ本番結合しない。InputMeaningInterpreterのconstructorが要求する接続には、概念名 `UnavailableInputMeaningLiveContextPort` を明示的に渡す。
+現在の最小起動は`CoreInputReferenceContextBinding`を使用する。詳細は`brain_integration_contracts.md`第23節を正とする。実際の目標所有者と活動実行所有者を構成し、目標の有界な参照と明示された活動記録から文脈を投影する。空の初期状態も実在する所有者の状態であり、要求側が指定した版を現在版として返さない。
 
-これは読取専用であり、current_freshness_stamp()が呼ばれた場合は、現在の権威ある世代を提供できないことを明示的な取得失敗として通知する。既存Interpreterが扱うException系の取得失敗を使い、新しいLLMFailureCodeやドメイン失敗enumを追加しない。偽のInputMeaningFreshnessStampは返さない。
+投影版は元の所有者の版と内容を再取得した結果に対応する。採用方針は第5節の当該起動世代の不変設定を正本とし、入力意味所有者と同じ設定を参照する。方針版や文脈版の固定値を偽の正本として使わない。
 
-固定のsource_context_revision=0、方針版1だけの捏造、要求時の版、最後に観測した版を現在版として返すことは禁止する。第5節の実際の不変設定を方針の参照元とすることと、入力文脈の現在世代を取得できることは別である。
+非成功結果では現在世代を読まず、型付きの役割失敗を保持する。成功結果ではLLM応答後に既存Interpreterが現在世代を取得する。元の状態が変わればSTALE、取得不能ならREJECTEDに閉じ、古い意味を採用しない。生の内部例外は公開結果へ出さない。
 
-非成功結果ではこの読取メソッドは呼ばれず、型付きの役割失敗が保持される。成功結果では既存Interpreterが読取を試み、取得失敗をboundary_failure.code=REJECTEDへ閉じ、meaning=Noneとする。生の内部例外は公開結果へ出さない。
+初期設計で使用した`UnavailableInputMeaningLiveContextPort`は、接続不在の失敗境界を確認するための既存公開型として保持する。現在の最小起動の既定接続には使わない。最近の発話・判断・記憶根拠の参照と通常認知全体の結合は別途追跡する。
 
 ### 11.6 取消と公開結果
 
@@ -318,7 +318,7 @@ InputMeaningBrainModulePortはPythonのCancelledErrorを捕捉して通常結果
 
 ## 12. 後続段階へ残す構成
 
-第2節で必須から外したModuleの具体的な調整値を版1へ含めない。特に次は、そのモジュールを本番で有効化する段階で既存所有者に従って確定する。
+第2節で必須から外したModuleの具体的な調整値をリビジョン1へ含めない。特に次は、そのモジュールを本番で有効化する段階で既存所有者に従って確定する。
 
 - #327のDecayPolicyと初期InternalStateSnapshot。
 - #332のMemoryRetrievalRankingPolicy。
@@ -350,7 +350,7 @@ InputMeaningBrainModulePortはPythonのCancelledErrorを捕捉して通常結果
 - 人物定義の既存loader・投影と、所有者のdescriptor・schemaを再利用する。
 - descriptorと要求の方針が同じ不変設定に対応する。実行中のファイル変更で世代が変わらない。
 - 未構成の生成関数経由の有効な入力意味解析要求がPROVIDER_UNAVAILABLEを返し、現在世代の読取回数は0。プロセスは継続する。
-- 成功結果で権威ある入力文脈世代を取得できなければREJECTEDとして意味採用0。偽の版を返さず、外部取消は伝播する。
+- 成功結果で権威ある入力文脈世代を取得できなければREJECTEDとして意味採用0。偽のリビジョンを返さず、外部取消は伝播する。
 - 総試行1回で要求単位の再試行待機がない。LLM依存の復旧再試行も開始しない。
 - `python -m app`の子プロセス試験で継続とCtrl+C相当の停止を検証する。
 - 取消と停止後に所有タスクを回収し、未完了タスクが0。猶予超過時は失敗を隠さない。
@@ -359,14 +359,19 @@ InputMeaningBrainModulePortはPythonのCancelledErrorを捕捉して通常結果
 ### Brain接続に追加する検証
 
 1. InputMeaningBrainModulePortはINPUT_MEANING / FOREGROUND_INTERACTIONの組だけを受理する。
-2. event・reference_context・workの入力文脈版の不一致を拒否する。
+2. event・reference_context・workの入力文脈のリビジョンの不一致を拒否する。
 3. event識別子・trace識別子の不一致、不正なpayload型・空request_idを拒否する。
 4. 提供サービス未構成でBrain処理はCOMPLETED、所有者の結果はFAILED / PROVIDER_UNAVAILABLE、meaningなし、現在世代読取0回となる。
-5. 成功結果を返す試験用提供サービスとUnavailableInputMeaningLiveContextPortを結合すると、Brain処理はCOMPLETED、boundary_failureはREJECTED、meaningなしとなり、偽の版を返さない。
+5. 成功結果を返す試験用提供サービスとUnavailableInputMeaningLiveContextPortを結合すると、Brain処理はCOMPLETED、boundary_failureはREJECTED、meaningなしとなり、偽のリビジョンを返さない。
 6. 外部CancelledErrorを握り潰さず、Runtimeによる取消はCANCELLEDとなる。
 7. 生のLLMRoleResultをBrainの公開resultへ返さない。
 8. 実際のRuntimeの実行前後のis_fresh検査が現在世代を先読みしない。
 9. 提供サービス未構成をBrainのFAILED / STALEへ誤変換しない。
-10. 入力文脈の状態所有者が未接続でも、提供サービスなしの早期起動が成立する。Input Gatewayを起動必須集合へ追加しない。
+10. 目標・活動の参照文脈を供給しても、提供サービスなしの起動と型付き失敗の保持が成立する。入力の取得サービスを起動必須集合へ追加しない。
+11. 現在文脈を使う最小起動で意味採用が成立し、LLM待機中の目標変更や活動結果更新を採用直前に検出する。元の版と投影版を区別し、取得不整合・同版異内容・上限超過は拒否する。
 
-この工程では上記試験・コード・設定実体を作らず、設計文書だけを変更する。
+初期設計の工程では設計文書のみを変更した。その後の実装・試験の採用状況は製造計画とIssue #334の現在記録を参照する。
+
+## 永続化を使う構成入口
+
+保存なしの`build_minimum_core`とは別に、`build_persistent_core`へ既存の保存実行基盤と再接続方針を明示して渡す。復元した目標入口は入力参照と共有し、記憶操作も同じ保存実行基盤へ接続する。設定ファイルは既存形式で読み、最終保存・資源終了の猶予が正でなければ拒否する。既定の保存なし方針を自動変更しない。永続化設定の来歴と猶予は配備側で明示する。起動失敗・取消時の回収と停止順序は保存契約第31節に従う。

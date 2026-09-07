@@ -124,7 +124,7 @@ Authorityは次をatomicに検証・commitする。
 4. required CapabilityのID/revision/availability/operationをcurrent snapshotで再検証
 5. `impossible`が参照したPlanningBlockerをcurrent live stateで再検証
 6. DAG、参照、completion、checkpoint、retry/interruption schema検証
-7. 同一`goal_id + goal_revision`の二重plan commit拒否
+7. 初回計画の二重確定拒否。再計画では§12の明示的な置換対象と現在計画の一致を検査する
 
 不一致は実行可能Planへ弱めずstale/replan_requiredとしてfail-closedにする。Authorityのlock区間にLLM awaitや外部callbackを含めない。
 
@@ -222,3 +222,22 @@ LLM候補とtrusted deterministic directiveは同じ技術上限を通す。
 - policy provenanceのrequestへの固定
 - policy revision変更後のlate LLM result reject
 - oversized Candidateをfirst-N acceptしない
+
+
+## 計画から活動への公開接続（#334）
+
+確定計画の採用は実行承認を意味しない。計画全体への明示的承認と手順進行は`plan_execution_approval_contracts.md`に従い、#361の計画と#328の判断と#329の実行事実を分ける。
+
+## 12. 置換対象を明示した再計画
+
+初回の計画確定と、既存計画の置換を区別する。活動失敗などを受けた再計画で、目標を別の内容に変えたり、再計画を通すためだけに目標のリビジョンを進めたりしない。
+
+`GoalPlanningContextSnapshot.previous_plan`に置換する確定計画を保持し、判断中に取得した`GoalPlanningCommitState.previous_plan`と一致させる。再計画対象は同じ目標の計画に限る。旧計画全体を計画入力へ含め、既存の計画容量検査も通す。旧計画はさらに前の計画の識別子だけを持ち、履歴全体を再帰的に判断入力へ含めない。置換対象は信頼済み入力側が明示し、LLMが候補へ任意の置換対象を追加することはない。
+
+`GoalPlanningAuthority`は目標ごとの現在計画を保持し、確定の排他区間で置換対象が現在計画と一致することを再検査する。同じ旧計画から競合する再計画が到着しても、確定できるのは1件だけとする。別の計画へ置換済み、未登録、別目標、古いリビジョン・能力・方針、不正な候補の場合、旧計画も現在計画への参照も更新しない。
+
+初回確定では既存計画がないことを検査する。既存計画がある場合は、目標全体のリビジョンが進んだだけで暗黙に置換せず、置換対象を明示する。成功した新計画には`supersedes_plan_id`を記録する。`snapshot(plan_id)`は旧計画を含む確定内容を返し、`current_plan(goal_id)`は現在採用する1件だけを返す。
+
+再計画も既存の単純経路・LLM経路と同じ確定検査を通る。正常な置換でも新しい計画の実行は未承認であり、旧計画の実行承認を引き継がない。進行所有者は現在計画との一致を確認してから承認登録・命令発行を行う。実行中の旧活動の取消・照合・回収は活動所有者と進行所有者の接続で扱い、計画所有者が完了事実や取消結果を生成しない。
+
+本節の検証では、目標のリビジョンを変えない計画置換、競合候補の排他、旧計画の保持、古い置換対象の拒否、LLM待機中の現在計画変更による拒否、失敗時の状態非更新を確認する。本体の再計画要求からこの入口への接続は後続の結合検証に残る。
