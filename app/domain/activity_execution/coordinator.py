@@ -64,6 +64,11 @@ class ActivityExecutionCoordinator:
         self._adapter_tasks: dict[str, asyncio.Task[Sequence[ExecutionAdapterReport]]] = {}
         self._signal_lock = asyncio.Lock()
 
+    @property
+    def authority(self) -> ActivityExecutionAuthority:
+        """結合側が実行事実の所有者の一致を確認するために公開する。"""
+        return self._authority
+
     async def execute(self, invocation: ActivityInvocation) -> ActivityExecutionRecord:
         initial = await self._preflight.current_for(invocation)
         record = self._authority.admit(invocation, initial).record
