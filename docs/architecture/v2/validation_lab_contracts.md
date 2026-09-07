@@ -453,23 +453,21 @@ Fake game environment is allowed if it exercises production Game Skill runtime i
 
 ---
 
-## 21. Lab lifecycle
+## 21. 検証実行の開始・終了と結果保持
 
-Lab startup failure does not affect Core production runtime.
+検証基盤の起動失敗は本体の本番実行を停止させない。各検証実行は、生成した子タスクと資源の取消・回収を所有する。
 
-Each run owns/cancels all spawned tasks.
+取消・終了時は、新しい段階の受付を止め、取消可能な模擬提供先・実提供先の処理を取り消し、終了状態を回収する。終了後の所有する未完了タスクは0とし、反復実行で接続資源を残さない。
 
-Run cancel/shutdown:
-- stop new stage admission
-- cancel interruptible fake/provider work
-- collect terminal statuses
-- pending task 0
+`ValidationRunner.run()`の呼出し側タスクが取り消された場合も、内部実行の終了結果を捨てない。内部実行へ取消を通知して回収し、返された`ValidationRunResult`を実行識別子で保持してから、呼出し側へ`CancelledError`を伝播する。結果と実測時系列は`result()`／`take_result()`から取得できる。終了処理中に呼出し側が再度取り消されても、内部実行の回収・結果保持を中断しない。
 
-Repeated runs do not leak provider clients/tasks.
+既に内部実行が完了していた場合は、その実際の終了結果を保持し、取消結果へ付け替えない。内部実行自体が結果を返さずに取り消された場合や例外終了した場合は、結果を捏造しない。保持件数の上限と取得済み結果の回収規則を維持する。
 
 ---
 
-## 22. Required framework tests
+## 22. 検証基盤の必須試験
+
+検証基盤の試験ディレクトリはPythonのパッケージとして明示し、PostgreSQLなど隣接領域の同名試験ファイルと同時に収集できるようにする。リポジトリ全体の試験実行で収集の衝突がないことを確認する。
 
 - production provenance captured
 - Isolation cannot claim Integrated
