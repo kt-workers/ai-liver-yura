@@ -13,6 +13,7 @@ from app.domain.attention import (
 )
 from app.domain.contracts import SourceLifecycleOperation
 from app.domain.contracts.common import require_revision
+from app.domain.contracts.streaming import StreamingCommentSignal
 from app.domain.goals import CommitmentLifecycleProjectionFact, GoalLifecycleProjectionFact
 from app.domain.input_gateway import InputAdmission, InputAdmissionStatus, InputModality
 
@@ -134,6 +135,27 @@ class CommitmentAttentionProjector:
             fact.occurred_at,
             fact.source_revision,
             fact.expected_source_revision,
+        )
+
+
+class StreamingAttentionProjector:
+    """取り出し済みの集約信号を、一回限りの注意源へ変換する。"""
+
+    def project(
+        self, envelope: AttentionProjectionEnvelope[StreamingCommentSignal]
+    ) -> AttentionIngressSignal:
+        if not isinstance(envelope, AttentionProjectionEnvelope) or not isinstance(
+            envelope.owner_fact, StreamingCommentSignal
+        ):
+            raise ValueError("集約済み配信信号と現在の文脈版が必要です")
+        fact = envelope.owner_fact
+        return AttentionIngressSignal(
+            f"attention-signal-{fact.signal_id}",
+            AttentionIngressOperation.OFFER,
+            fact.signal_id,
+            AttentionSourceKind.STREAMING,
+            envelope.source_context_revision,
+            fact.generated_at,
         )
 
 

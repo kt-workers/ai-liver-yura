@@ -10,6 +10,7 @@ from app.domain.contracts.common import (
     require_identifier,
     require_revision,
 )
+from app.domain.contracts.streaming import StreamingCommentSignal as StreamingCommentSignal
 
 
 class StreamingOperation(str, Enum):
@@ -262,19 +263,3 @@ class StreamingCommentEvent:
         require_aware(self.observed_at, "observed_at")
         if not isinstance(self.moderation_state, StreamingCommentModerationState):
             raise ValueError("comment moderation state が不正です")
-
-
-@dataclass(frozen=True, slots=True)
-class StreamingCommentSignal:
-    signal_id: str
-    source_channel_ref: str
-    representative_event_id: str
-    count: int
-    generated_at: datetime
-
-    def __post_init__(self) -> None:
-        for name in ("signal_id", "source_channel_ref", "representative_event_id"):
-            require_identifier(getattr(self, name), name)
-        if type(self.count) is not int or self.count < 1:
-            raise ValueError("comment signal count が不正です")
-        require_aware(self.generated_at, "generated_at")
