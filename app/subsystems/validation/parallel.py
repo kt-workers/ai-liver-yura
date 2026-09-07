@@ -70,7 +70,7 @@ def parallel_target(
         target.module == "parallel" or target.provenance.git_head != provenance.git_head
         for target in targets
     ):
-        raise ValueError("並行検証の再帰接続や異なる製品版の混在はできません")
+        raise ValueError("並行検証の再帰接続や製品の異なるリビジョンの混在はできません")
 
     async def run(context: RunContext, fixture: ValidationFixture) -> TargetObservation:
         case = registered.get(fixture.scenario_id)

@@ -315,7 +315,7 @@ class ValidationRunner:
                 or spec.fixture_revision != fixture.fixture_revision
             ):
                 status = RunStatus.BLOCKED_UPSTREAM
-                blockers = ("対象・検証範囲・方針・入力の版が一致しません",)
+                blockers = ("対象・検証範囲・方針・入力のリビジョンが一致しません",)
             else:
                 await asyncio.wait_for(execute_all(), timeout=self._policy.timeout_seconds)
         except asyncio.TimeoutError:
