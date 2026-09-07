@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Protocol, TypeVar, cast
 
@@ -30,6 +30,7 @@ from app.domain.llm import (
     StructuredPayload,
     validate_role_exchange,
 )
+from app.domain.plan_execution.progress_contracts import PlanStepCompletionClaim
 from app.usecases.ports.llm import LLMRolePort
 
 from .authority import ExecutiveDecisionAuthority
@@ -55,6 +56,8 @@ from .contracts import (
     GoalTransitionOperation,
     GoalTransitionPayload,
     IntentPayload,
+    PlanExecutionIntentPayload,
+    PlanProgressIntentPayload,
     SpeechIntentPayload,
 )
 
@@ -71,6 +74,15 @@ class ExecutivePolicy:
     def __post_init__(self) -> None:
         if not isinstance(self.bounds, BrainOperationalBoundsPolicy):
             raise ValueError("容量方針はBrainOperationalBoundsPolicyでなければなりません")
+
+
+class ExecutiveClock(Protocol):
+    def now(self) -> datetime: ...
+
+
+class _SystemExecutiveClock:
+    def now(self) -> datetime:
+        return datetime.now(timezone.utc)
 
 
 class ExecutiveLiveStatePort(Protocol):
@@ -181,6 +193,7 @@ def commit_result(
     authority: ExecutiveDecisionAuthority,
     decision_id: str,
     policy: ExecutivePolicy,
+    committed_at: datetime,
 ) -> CommittedExecutiveDecision:
     failure = validate_role_exchange(descriptor(policy), request, result)
     if failure is not None:
@@ -196,7 +209,7 @@ def commit_result(
         snapshot,
         current=current,
         decision_id=decision_id,
-        committed_at=result.completed_at,
+        committed_at=committed_at,
     )
 
 
@@ -207,11 +220,14 @@ class ExecutiveDeliberator:
         live_state: ExecutiveLiveStatePort,
         policy: ExecutivePolicy,
         authority: ExecutiveDecisionAuthority,
+        *,
+        clock: ExecutiveClock | None = None,
     ) -> None:
         self._port = port
         self._live_state = live_state
         self._policy = policy
         self._authority = authority
+        self._clock = clock if clock is not None else _SystemExecutiveClock()
 
     async def deliberate(
         self,
@@ -246,6 +262,7 @@ class ExecutiveDeliberator:
             authority=self._authority,
             decision_id=decision_id,
             policy=self._policy,
+            committed_at=self._clock.now(),
         )
 
 
@@ -256,14 +273,21 @@ def _validate_snapshot_bounds(
         raise ValueError("Executive容量方針がsnapshotと一致しません")
     bounds = policy.executive
     _at_most(len(snapshot.source_event_ids), bounds.max_source_event_refs, "source event")
-    _at_most(len(snapshot.facts), bounds.max_fact_refs, "fact")
+    _at_most(
+        len(snapshot.facts) + len(snapshot.plan_scopes) + len(snapshot.plan_progress_contexts),
+        bounds.max_fact_refs,
+        "fact",
+    )
     _at_most(len(snapshot.capabilities), bounds.max_capability_descriptors, "capability")
     _at_most(len(snapshot.preconditions), bounds.max_precondition_facts, "precondition")
     for fact in snapshot.facts:
         payload_bytes = len(
             json.dumps(
-                thaw_json(fact.payload), ensure_ascii=False, sort_keys=True,
-                separators=(",", ":"), allow_nan=False,
+                thaw_json(fact.payload),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
             ).encode("utf-8")
         )
         _at_most(payload_bytes, bounds.max_fact_payload_json_bytes, "fact payload")
@@ -419,6 +443,22 @@ def _optional_string(value: object, name: str) -> str | None:
 
 
 def _intent_payload(kind: ExecutiveIntentKind, value: object) -> IntentPayload:
+    if kind is ExecutiveIntentKind.PLAN_PROGRESS:
+        item = _object(value, "計画進行の完了評価", {"context_ref", "claims"})
+        claims = []
+        for entry in _array(item["claims"], "claims"):
+            claim = _object(entry, "手順の完了評価", {"step_id", "condition_refs", "evidence_refs"})
+            claims.append(
+                PlanStepCompletionClaim(
+                    _string(claim["step_id"], "step_id"),
+                    _strings(claim["condition_refs"], "condition_refs"),
+                    _strings(claim["evidence_refs"], "evidence_refs"),
+                )
+            )
+        return PlanProgressIntentPayload(_string(item["context_ref"], "context_ref"), tuple(claims))
+    if kind is ExecutiveIntentKind.PLAN_EXECUTION:
+        item = _object(value, "plan execution payload", {"scope_ref"})
+        return PlanExecutionIntentPayload(_string(item["scope_ref"], "scope_ref"))
     if kind is ExecutiveIntentKind.SPEECH:
         item = _object(
             value, "speech payload", {"semantic_goal_ref", "target_ref", "constraint_refs"}

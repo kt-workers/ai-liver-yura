@@ -158,6 +158,7 @@ def test_executive_request_and_commit_keep_both_freshness_checks(changed: str | 
             current=current,
             authority=ExecutiveDecisionAuthority(),
             decision_id="decision-pair",
+            committed_at=COMMITTED_AT + timedelta(seconds=2),
             policy=policy,
         )
 

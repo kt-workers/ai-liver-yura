@@ -7,7 +7,7 @@ Status: Canonical Supplement / implementation-decidability correction
 
 ## 1. 目的
 
-Plugin Integration、GUI/Admin、Validation Lab、Development Tooling、Persistence、System Integrationで使う`bounded`、`timeout`、`queue`、`payload size`、`verification SLO`を、実装者の隠れ定数へ委ねず、版管理されたPolicyとして固定する。
+Plugin Integration、GUI/Admin、Validation Lab、Development Tooling、Persistence、System Integrationで使う`bounded`、`timeout`、`queue`、`payload size`、`verification SLO`を、実装者の隠れ定数へ委ねず、リビジョン管理されたPolicyとして固定する。
 
 本書は各Domain/Subsystemの意味Authorityを変更しない。数値は初期V2の運用基準であり、Human Verificationや実環境計測で変更する場合はPolicy revisionを進める。
 
@@ -260,7 +260,7 @@ trace各配列が上限へ達し必要証拠を完全記録できない場合、
 
 実LLM/TTS/Streaming/Game/GUI等のlive Verificationでは、環境差のあるProvider latency値を本書の初期決定論的値から推測しない。
 
-各live runは開始前に版管理された`LiveVerificationSLOProfile`を必須とする。
+各live runは開始前にリビジョン管理された`LiveVerificationSLOProfile`を必須とする。
 
 ```text
 LiveVerificationSLOProfile
