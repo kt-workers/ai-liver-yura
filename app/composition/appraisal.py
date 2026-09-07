@@ -11,13 +11,16 @@ from app.composition.input_reference_context import (
     CoreInputReferenceSnapshot,
 )
 from app.domain.appraisal import (
+    AppraisalCandidate,
     AppraisalStateCommit,
     DeepAppraisalContext,
     DeepAppraisalFreshnessStamp,
     DeepAppraisalInterpreter,
     DeepAppraisalPolicy,
+    DeterministicAppraisalRule,
     InternalStateReducer,
     InternalStateSnapshot,
+    appraise_event,
 )
 from app.domain.brain_integration import BrainIntegrationModule, BrainIntegrationWork
 from app.domain.contracts import EventEnvelope
@@ -102,6 +105,14 @@ class CoreAppraisalBinding:
     def is_current_context(self, revision: int) -> bool:
         return self._current().reference.context.source_context_revision == revision
 
+    def current_state(self) -> InternalStateSnapshot:
+        """評価結果の有無によらず、既存所有者の現在状態を取得する。"""
+        return self._current().state
+
+    def current_reference(self) -> CoreInputReferenceSnapshot:
+        """評価と同じ所有者から現在の入力参照を取得する。"""
+        return self._current().reference
+
     def latest_commit(self) -> AppraisalStateCommit | None:
         """最後の成功結果を履歴として返し、現在性は主張しない。"""
         return self._latest
@@ -166,6 +177,32 @@ class CoreAppraisalBinding:
             raise
         if cancellation.cancelled:
             raise asyncio.CancelledError
+        return self._commit(candidate)
+
+    def appraise_fast(
+        self,
+        event: EventEnvelope,
+        rules: tuple[DeterministicAppraisalRule, ...],
+        *,
+        candidate_id: str,
+    ) -> AppraisalStateCommit | None:
+        """既存の型付き規則で評価し、規則なしでは状態を更新しない。"""
+        current = self._current()
+        if (
+            event.revisions.source_context_revision
+            != current.reference.context.source_context_revision
+        ):
+            raise ValueError("評価入力の文脈が現在の参照文脈と一致しません")
+        candidate = appraise_event(
+            event,
+            current.state,
+            rules,
+            candidate_id=candidate_id,
+            created_at=self._clock.now(),
+        )
+        return None if candidate is None else self._commit(candidate)
+
+    def _commit(self, candidate: AppraisalCandidate) -> AppraisalStateCommit:
         current = self._current()
         revision = 1 if self._latest is None else self._latest.appraisal_facts.revision + 1
         committed = self._state.commit_with_facts(
