@@ -8,7 +8,13 @@ from typing import Protocol
 
 from app.composition.attention import CoreAttentionBinding, CoreAttentionDispatch
 from app.domain.attention import AttentionSource, AttentionSourceKind
+from app.domain.brain_integration import (
+    BrainIntegrationModule,
+    BrainIntegrationWork,
+    BrainWorkEnvelope,
+)
 from app.domain.contracts import CapabilityDescriptor, CapabilityRequirement, RevisionVector
+from app.domain.contracts.common import require_identifier
 from app.domain.executive import (
     AuthoritativeIntentRequirements,
     CommittedExecutiveDecision,
@@ -104,6 +110,10 @@ class CoreExecutiveBinding:
         """確定済み判断を保持し、現在も実行可能であるとは主張しない。"""
         return self._latest
 
+    def is_current(self, dispatch: CoreAttentionDispatch) -> bool:
+        """実行基盤の開始前検査にも同じ所有者の現在値を使う。"""
+        return self._attention.is_current(dispatch)
+
     async def deliberate(
         self,
         dispatch: CoreAttentionDispatch,
@@ -112,8 +122,13 @@ class CoreExecutiveBinding:
         trace_id: str,
         decision_id: str,
         cancellation: CancellationToken,
+        envelope: BrainWorkEnvelope | None = None,
     ) -> CommittedExecutiveDecision:
-        operation = _ExecutiveOperation(self, dispatch, cancellation)
+        if envelope is not None:
+            _validate_envelope(dispatch, envelope)
+            if envelope.trace_id != trace_id:
+                raise ValueError("判断処理の追跡識別子が一致しません")
+        operation = _ExecutiveOperation(self, dispatch, cancellation, envelope)
         task = asyncio.create_task(operation.run(request_id, trace_id, decision_id))
         try:
             return await asyncio.shield(task)
@@ -138,7 +153,9 @@ class _ExecutiveOperation:
         binding: CoreExecutiveBinding,
         dispatch: CoreAttentionDispatch,
         cancellation: CancellationToken,
+        envelope: BrainWorkEnvelope | None,
     ) -> None:
+        self.envelope = envelope
         self.binding = binding
         self.dispatch = dispatch
         self.cancellation = cancellation
@@ -174,6 +191,10 @@ class _ExecutiveOperation:
             != expected
         ):
             raise ValueError("判断根拠の元イベントが注意の選択元と一致しません")
+        if self.envelope is not None and set(self.envelope.source_event_ids) != {
+            item.event_id for item in value.source_events if item.is_trigger_lineage
+        }:
+            raise ValueError("判断処理の元イベントが供給元の根拠と一致しません")
         return value
 
     async def run(
@@ -261,4 +282,64 @@ class _ExecutiveOperation:
             ExecutiveBoundsProvenance.from_policy(self.binding._policy.bounds),
             current.plan_scopes,
             current.plan_progress_contexts,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutiveBrainWorkPayload:
+    dispatch: CoreAttentionDispatch
+    request_id: str
+    decision_id: str
+
+
+def _validate_envelope(
+    dispatch: CoreAttentionDispatch, envelope: BrainWorkEnvelope
+) -> None:
+    if not isinstance(dispatch, CoreAttentionDispatch) or not isinstance(
+        envelope, BrainWorkEnvelope
+    ):
+        raise ValueError("判断処理には型付きの注意搬送と相関情報が必要です")
+    if (
+        envelope.trigger_id != dispatch.trigger.trigger_id
+        or envelope.source_context_revision
+        != dispatch.reference.context.source_context_revision
+        or envelope.goal_revision != dispatch.reference.goals.goal_revision
+        or envelope.attention_revision != dispatch.trigger.attention_revision
+    ):
+        raise ValueError("判断処理の契機・文脈・目標・注意が搬送と一致しません")
+
+
+class ExecutiveBrainModulePort:
+    """既存本体実行の有界な受付と取消・停止へ判断を登録する。"""
+
+    def __init__(self, binding: CoreExecutiveBinding) -> None:
+        self._binding = binding
+
+    @staticmethod
+    def _validate(work: BrainIntegrationWork) -> ExecutiveBrainWorkPayload:
+        payload = work.payload
+        if work.module is not BrainIntegrationModule.EXECUTIVE or not isinstance(
+            payload, ExecutiveBrainWorkPayload
+        ):
+            raise ValueError("判断処理の構成入力が不正です")
+        require_identifier(payload.request_id, "request_id")
+        require_identifier(payload.decision_id, "decision_id")
+        _validate_envelope(payload.dispatch, work.envelope)
+        return payload
+
+    def is_fresh(self, work: BrainIntegrationWork) -> bool:
+        payload = self._validate(work)
+        return self._binding.is_current(payload.dispatch)
+
+    async def execute(
+        self, work: BrainIntegrationWork, cancellation: CancellationToken
+    ) -> CommittedExecutiveDecision:
+        payload = self._validate(work)
+        return await self._binding.deliberate(
+            payload.dispatch,
+            request_id=payload.request_id,
+            trace_id=work.envelope.trace_id,
+            decision_id=payload.decision_id,
+            cancellation=cancellation,
+            envelope=work.envelope,
         )
