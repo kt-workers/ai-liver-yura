@@ -229,6 +229,7 @@ class GoalPlanningContextSnapshot:
     captured_at: datetime
     deterministic_directive: DeterministicPlanningDirective | None = None
     planning_blockers: tuple[PlanningBlocker, ...] = ()
+    previous_plan: ActivityPlan | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.revisions, RevisionVector):
@@ -239,6 +240,11 @@ class GoalPlanningContextSnapshot:
             raise ValueError("goal_context must be GoalContextView")
         if not isinstance(self.goal, GoalState):
             raise ValueError("goal must be GoalState")
+        if self.previous_plan is not None:
+            if not isinstance(self.previous_plan, ActivityPlan):
+                raise ValueError("置換対象には所有者が確定した計画が必要です")
+            if self.previous_plan.candidate.goal_id != self.goal.goal_id:
+                raise ValueError("別の目標の計画を置換対象にできません")
         if self.goal.status is not GoalStatus.ACTIVE:
             raise ValueError("planning requires an active goal")
         if self.goal_context.goal_revision != self.revisions.goal_revision:
@@ -336,6 +342,7 @@ class GoalPlanningContextSnapshot:
             "planning_blockers": [item.to_dict() for item in self.planning_blockers],
             "activities": [item.to_dict() for item in self.activities],
             "captured_at": timestamp_to_json(self.captured_at),
+            "previous_plan": None if self.previous_plan is None else self.previous_plan.to_dict(),
             "deterministic_directive": None
             if self.deterministic_directive is None
             else self.deterministic_directive.to_dict(),
@@ -390,12 +397,18 @@ class GoalPlanningCommitState:
     goal: GoalState
     capabilities: tuple[CapabilityDescriptor, ...]
     planning_blockers: tuple[PlanningBlocker, ...] = ()
+    previous_plan: ActivityPlan | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.revisions, RevisionVector):
             raise ValueError("revisions must be RevisionVector")
         if not isinstance(self.goal, GoalState):
             raise ValueError("goal must be GoalState")
+        if self.previous_plan is not None:
+            if not isinstance(self.previous_plan, ActivityPlan):
+                raise ValueError("置換対象には所有者が確定した計画が必要です")
+            if self.previous_plan.candidate.goal_id != self.goal.goal_id:
+                raise ValueError("別の目標の計画を置換対象にできません")
         capabilities = _owned(self.capabilities, CapabilityDescriptor, "capabilities")
         if len({item.capability_id for item in capabilities}) != len(capabilities):
             raise ValueError("capability ids must be unique")
@@ -412,11 +425,16 @@ class ActivityPlan:
     candidate: GoalPlanningCandidate
     committed_at: datetime
     _proof: InitVar[object | None] = None
+    supersedes_plan_id: str | None = None
 
     def __post_init__(self, _proof: object | None) -> None:
         if _proof is not _PLAN_PROOF:
             raise ValueError("ActivityPlan must be created by GoalPlanningAuthority")
         require_identifier(self.plan_id, "plan_id")
+        if self.supersedes_plan_id is not None:
+            require_identifier(self.supersedes_plan_id, "supersedes_plan_id")
+            if self.supersedes_plan_id == self.plan_id:
+                raise ValueError("計画は自分自身を置換できません")
         if not isinstance(self.candidate, GoalPlanningCandidate):
             raise ValueError("candidate must be GoalPlanningCandidate")
         require_aware(self.committed_at, "committed_at")
@@ -426,6 +444,7 @@ class ActivityPlan:
     def to_dict(self) -> dict[str, object]:
         return {
             "plan_id": self.plan_id,
+            "supersedes_plan_id": self.supersedes_plan_id,
             "candidate": self.candidate.to_dict(),
             "committed_at": timestamp_to_json(self.committed_at),
         }
