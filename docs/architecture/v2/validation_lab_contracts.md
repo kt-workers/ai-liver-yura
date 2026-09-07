@@ -465,7 +465,9 @@ Fake game environment is allowed if it exercises production Game Skill runtime i
 
 ---
 
-## 22. Required framework tests
+## 22. 検証基盤の必須試験
+
+検証基盤の試験ディレクトリはPythonのパッケージとして明示し、PostgreSQLなど隣接領域の同名試験ファイルと同時に収集できるようにする。リポジトリ全体の試験実行で収集の衝突がないことを確認する。
 
 - production provenance captured
 - Isolation cannot claim Integrated
