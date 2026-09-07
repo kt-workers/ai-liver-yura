@@ -116,3 +116,8 @@ report identity不一致、時刻逆行、非法edge、Capability binding・desc
 - same command競合admissionは高々1件成功
 - multi-Activity並行実行中にslow taskがunrelated taskをblockしない
 - Goal Storeを直接mutationせず、Execution FactからExecutiveへ戻す
+
+
+## 計画から活動への公開接続（#334）
+
+計画に由来する命令も既存の事前確認と実行事実の境界を通る。計画全体への承認範囲は`plan_execution_approval_contracts.md`で定義し、未提供能力・失敗・未確認効果を成功へ変更しない。

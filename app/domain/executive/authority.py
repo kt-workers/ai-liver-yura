@@ -4,12 +4,17 @@ from threading import Lock
 
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json
+from app.domain.plan_execution.contracts import (
+    _AUTHORIZATION_PROOF,
+    PlanExecutionAuthorization,
+)
 
 from .contracts import (
     CommittedExecutiveDecision,
     ExecutiveCommitState,
     ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
+    PlanExecutionIntentPayload,
 )
 
 
@@ -47,12 +52,26 @@ class ExecutiveDecisionAuthority:
                 for item in current.preconditions
                 if item.precondition_id in required_precondition_ids
             )
+            scopes = {item.scope_id: item for item in snapshot.plan_scopes}
+            authorizations = tuple(
+                PlanExecutionAuthorization(
+                    f"{decision_id}:{intent.intent_id}",
+                    decision_id,
+                    intent.intent_id,
+                    scopes[intent.payload.scope_ref],
+                    committed_at,
+                    _proof=_AUTHORIZATION_PROOF,
+                )
+                for intent in candidate.intents
+                if isinstance(intent.payload, PlanExecutionIntentPayload)
+            )
             decision = CommittedExecutiveDecision(
                 decision_id,
                 candidate,
                 validated_preconditions,
                 committed_at,
                 snapshot.bounds_provenance,
+                authorizations,
             )
             self._committed_triggers.add(snapshot.trigger_id)
             return decision
@@ -100,8 +119,57 @@ class ExecutiveDecisionAuthority:
         commitment_fact_ids = {
             item.fact_id for item in snapshot.facts if item.kind.value == "commitment"
         }
+        original_evidence_ids = set(evidence_ids)
+        evidence_ids.update(item.scope_id for item in snapshot.plan_scopes)
         references = list(candidate.rationale_refs)
         for intent in candidate.intents:
+            if isinstance(intent.payload, PlanExecutionIntentPayload):
+                captured_scopes = {item.scope_id: item for item in snapshot.plan_scopes}
+                live_scopes = {item.scope_id: item for item in current.plan_scopes}
+                scope = captured_scopes.get(intent.payload.scope_ref)
+                if scope is None or live_scopes.get(intent.payload.scope_ref) != scope:
+                    raise ValueError("計画承認対象が存在しないか、判断中に変更されています")
+                revisions = RevisionVector(
+                    snapshot.source_context_revision,
+                    snapshot.goal_revision,
+                    snapshot.attention_revision,
+                )
+                if scope.plan.candidate.revisions != revisions:
+                    raise ValueError("計画承認対象の依存版が現在の判断と一致しません")
+                needed = {
+                    requirement
+                    for step in scope.plan.candidate.steps
+                    for requirement in step.required_capabilities
+                }
+                if not needed <= set(intent.required_capabilities):
+                    raise ValueError("計画全体に必要な能力を承認意図から省略できません")
+                conditions = {
+                    condition.precondition_id: condition
+                    for binding in scope.bindings
+                    for condition in binding.preconditions
+                }
+                requested = {
+                    requirement.precondition_id: requirement.expected
+                    for requirement in intent.preconditions
+                }
+                if any(
+                    key not in requested or freeze_json(requested[key]) != condition.expected
+                    for key, condition in conditions.items()
+                ):
+                    raise ValueError("計画全体に必要な事前条件を承認意図から省略できません")
+                facts = {fact.precondition_id: fact for fact in snapshot.preconditions}
+                if any(
+                    key not in facts
+                    or facts[key].predicate != condition.predicate
+                    or facts[key].subject_ref != condition.subject_ref
+                    for key, condition in conditions.items()
+                ):
+                    raise ValueError("計画の事前条件が判断の根拠と一致しません")
+                if any(
+                    set(binding.argument_fact_refs) - original_evidence_ids
+                    for binding in scope.bindings
+                ):
+                    raise ValueError("操作引数の由来参照が判断の根拠にありません")
             authoritative = requirements[intent.intent_id]
             if not all(item in intent.required_capabilities for item in authoritative.capabilities):
                 raise ValueError("authoritative capability requirement is missing")
