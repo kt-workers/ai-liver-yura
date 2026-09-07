@@ -112,3 +112,5 @@ logical role IDは`executive_deliberation`、input schemaは`executive.context.v
 ## 計画から活動への公開接続（#334）
 
 計画全体への明示的承認は`plan_execution_approval_contracts.md`の承認対象と型付き意図を使う。#328以外の計画・結合・検証の所有者が承認を代行しない。承認範囲内の手順進行には、各手順のLLM再判断を一律に要求しない。
+
+計画承認の確定時刻はLLM応答完了時刻から独立させる。現在状態取得の待機後に信頼できる時計を読み、確定処理へ明示的に渡す。期限を超えた承認は判断ごと非確定とする。詳細は[計画実行承認契約](plan_execution_approval_contracts.md)第9節に従う。

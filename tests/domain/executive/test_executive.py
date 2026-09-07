@@ -787,6 +787,7 @@ def test_role_commit_revalidates_exact_snapshot_and_exchange() -> None:
         authority=ExecutiveDecisionAuthority(),
         decision_id="decision-1",
         policy=policy(),
+        committed_at=NOW + timedelta(seconds=2),
     )
     assert committed.candidate.outcome is ExecutiveOutcome.RESPOND
     with pytest.raises(ValueError, match="snapshot"):
@@ -801,6 +802,7 @@ def test_role_commit_revalidates_exact_snapshot_and_exchange() -> None:
             authority=ExecutiveDecisionAuthority(),
             decision_id="decision-2",
             policy=policy(),
+            committed_at=NOW + timedelta(seconds=2),
         )
 
 
@@ -985,6 +987,7 @@ def test_provider_output_bounds_are_rejected_without_first_n_acceptance() -> Non
             authority=ExecutiveDecisionAuthority(),
             decision_id="oversized",
             policy=policy(),
+            committed_at=NOW + timedelta(seconds=2),
         )
 
 

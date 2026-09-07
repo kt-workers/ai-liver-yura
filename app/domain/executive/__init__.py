@@ -31,6 +31,7 @@ from .contracts import (
     build_executive_context_snapshot,
 )
 from .deliberator import (
+    ExecutiveClock,
     ExecutiveDeliberator,
     ExecutiveLiveStatePort,
     ExecutivePolicy,
@@ -56,6 +57,7 @@ __all__ = [
     "ExecutiveBoundsProvenance",
     "ExecutiveDecisionAuthority",
     "ExecutiveDecisionCandidate",
+    "ExecutiveClock",
     "ExecutiveDeliberator",
     "ExecutiveFactKind",
     "ExecutiveFactRef",

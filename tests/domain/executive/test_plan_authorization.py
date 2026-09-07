@@ -1,18 +1,22 @@
 """計画所有者から判断所有者への承認と、確定失敗時の非更新を確認する。"""
 
+import asyncio
 from dataclasses import replace
 from datetime import timedelta
+from typing import cast
 
 import pytest
 
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import CapabilityAvailability, PreconditionRef
+from app.domain.contracts.common import JsonValue
 from app.domain.executive import (
     AuthoritativeIntentRequirements,
     ExecutiveCommitState,
     ExecutiveContextSnapshot,
     ExecutiveDecisionAuthority,
     ExecutiveDecisionCandidate,
+    ExecutiveDeliberator,
     ExecutiveIntent,
     ExecutiveIntentKind,
     ExecutiveOutcome,
@@ -23,17 +27,21 @@ from app.domain.executive import (
     to_system_command,
 )
 from app.domain.goal_planning import GoalPlanningAuthority
+from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
 from app.domain.plan_execution.contracts import (
     PlanExecutionAuthorization,
     PlanExecutionPolicy,
     PlanExecutionScope,
     PlanStepExecutionBinding,
 )
+from app.runtime.kernel.clock import FakeRuntimeClock
 from tests.domain.executive.test_executive import (
     REVISIONS,
     candidate,
     live_state,
+    policy,
     snapshot,
+    success,
 )
 from tests.domain.goal_planning.test_goal_planning import (
     NOW,
@@ -236,15 +244,79 @@ def test_scope_cannot_expand_operation_or_arguments_and_authorization_cannot_be_
 def test_scope_bounds_include_payload_and_existing_facts() -> None:
     value = scope()
     with pytest.raises(ValueError, match="対象全体の容量"):
-        replace(value, bounds_policy=replace(
-            value.bounds_policy,
-            executive=replace(value.bounds_policy.executive, max_fact_payload_json_bytes=10),
-        ))
+        replace(
+            value,
+            bounds_policy=replace(
+                value.bounds_policy,
+                executive=replace(value.bounds_policy.executive, max_fact_payload_json_bytes=10),
+            ),
+        )
     with pytest.raises(ValueError, match="識別子が重複"):
         replace(snapshot(), plan_scopes=(replace(value, scope_id="goal-1"),))
-    bounded = replace(value, bounds_policy=replace(
-        value.bounds_policy,
-        executive=replace(value.bounds_policy.executive, max_fact_refs=1),
-    ))
+    bounded = replace(
+        value,
+        bounds_policy=replace(
+            value.bounds_policy,
+            executive=replace(value.bounds_policy.executive, max_fact_refs=1),
+        ),
+    )
     with pytest.raises(ValueError, match="合計件数"):
         replace(snapshot(), plan_scopes=(bounded,))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("elapsed", [2, 61])
+async def test_authorization_uses_clock_after_live_state_wait(elapsed: int) -> None:
+    proposed, captured, current = inputs()
+    loading = asyncio.Event()
+    release = asyncio.Event()
+    clock = FakeRuntimeClock(NOW)
+    authority = ExecutiveDecisionAuthority()
+    raw = proposed.to_dict()
+    raw.pop("created_at")
+
+    class Port:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            return replace(
+                success(request),
+                completed_at=NOW + timedelta(seconds=1),
+                started_at=NOW,
+                output=StructuredPayload("executive.candidate.v1", cast(JsonValue, raw)),
+            )
+
+    class LiveState:
+        async def current_for_commit(
+            self,
+            context: ExecutiveContextSnapshot,
+            candidate: ExecutiveDecisionCandidate,
+        ) -> ExecutiveCommitState:
+            loading.set()
+            await release.wait()
+            return current
+
+    deliberator = ExecutiveDeliberator(Port(), LiveState(), policy(), authority, clock=clock)
+    task = asyncio.create_task(
+        deliberator.deliberate(
+            captured,
+            request_id="request-plan",
+            trace_id="trace-plan",
+            decision_id="decision-plan",
+            created_at=NOW,
+        )
+    )
+    try:
+        await asyncio.wait_for(loading.wait(), 1)
+        clock.advance(elapsed)
+        release.set()
+        if elapsed == 61:
+            with pytest.raises(ValueError, match="有効な期間"):
+                await task
+            assert not authority.has_committed(captured.trigger_id)
+        else:
+            decision = await task
+            assert decision.candidate.created_at == NOW + timedelta(seconds=1)
+            assert decision.committed_at == clock.now()
+            assert decision.plan_authorizations[0].committed_at == clock.now()
+    finally:
+        release.set()
+        await asyncio.gather(task, return_exceptions=True)
