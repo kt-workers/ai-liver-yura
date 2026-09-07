@@ -107,3 +107,8 @@ logical role IDは`executive_deliberation`、input schemaは`executive.context.v
 - AdjacentでInput Meaning/Appraisal/Foundation投影を検証する
 - ConcurrencyでLLM実行中の各revision・capability・precondition変更、slow background中のforeground完了、同一trigger競合を検証する
 - Live LLM品質はtyped contract完成後のVerificationで扱う
+
+
+## 計画から活動への公開接続（#334）
+
+計画全体への明示的承認は`plan_execution_approval_contracts.md`の承認対象と型付き意図を使う。#328以外の計画・結合・検証の所有者が承認を代行しない。承認範囲内の手順進行には、各手順のLLM再判断を一律に要求しない。
