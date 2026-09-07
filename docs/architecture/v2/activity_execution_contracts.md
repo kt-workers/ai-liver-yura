@@ -121,3 +121,5 @@ report identity不一致、時刻逆行、非法edge、Capability binding・desc
 ## 計画から活動への公開接続（#334）
 
 計画に由来する命令も既存の事前確認と実行事実の境界を通る。計画全体への承認範囲は`plan_execution_approval_contracts.md`で定義し、未提供能力・失敗・未確認効果を成功へ変更しない。
+
+計画由来の活動要求は`ActivityInvocation.target_ref`に承認済みの対象参照を保持する。操作引数とは独立に不変の要求内容として直列化し、提供先へ伝達する。既存の対象を持たない単独活動では未指定を許す。
