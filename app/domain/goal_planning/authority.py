@@ -25,7 +25,7 @@ from .contracts import (
 class GoalPlanningAuthority:
     def __init__(self) -> None:
         self._plans: dict[str, ActivityPlan] = {}
-        self._goal_revisions: set[tuple[str, int]] = set()
+        self._current_plans: dict[str, str] = {}
         self._lock = Lock()
 
     def commit(
@@ -80,20 +80,43 @@ class GoalPlanningAuthority:
             raise ValueError("no-plan outcome requires trusted deterministic directive")
         self._validate_current_capabilities(candidate, snapshot, current)
         self._validate_current_blockers(candidate, snapshot, current)
-        key = (candidate.goal_id, snapshot.goal_context.goal_revision)
+        previous = snapshot.previous_plan
+        if current.previous_plan != previous:
+            raise ValueError("再計画の置換対象が判断中に変更されています")
+        if previous is not None and utc_instant(snapshot.captured_at) < utc_instant(
+            previous.committed_at
+        ):
+            raise ValueError("置換対象の確定より前の文脈で再計画できません")
         with self._lock:
             if plan_id in self._plans:
                 raise ValueError("plan id is already committed")
-            if key in self._goal_revisions:
-                raise ValueError("goal revision already has a committed plan")
-            plan = ActivityPlan(plan_id, candidate, committed_at, _proof=_PLAN_PROOF)
+            current_id = self._current_plans.get(candidate.goal_id)
+            if previous is None:
+                if current_id is not None:
+                    raise ValueError("既存計画の置換対象を明示する必要があります")
+            elif current_id != previous.plan_id or self._plans.get(previous.plan_id) != previous:
+                raise ValueError("置換対象が現在の登録済み計画と一致しません")
+            plan = ActivityPlan(
+                plan_id,
+                candidate,
+                committed_at,
+                _proof=_PLAN_PROOF,
+                supersedes_plan_id=None if previous is None else previous.plan_id,
+            )
             self._plans[plan_id] = plan
-            self._goal_revisions.add(key)
+            self._current_plans[candidate.goal_id] = plan_id
             return plan
 
     def snapshot(self, plan_id: str) -> ActivityPlan | None:
         with self._lock:
             return self._plans.get(plan_id)
+
+    def current_plan(self, goal_id: str) -> ActivityPlan | None:
+        """目標の現在計画を返し、過去の確定計画と区別する。"""
+        require_identifier(goal_id, "goal_id")
+        with self._lock:
+            plan_id = self._current_plans.get(goal_id)
+            return None if plan_id is None else self._plans[plan_id]
 
     @staticmethod
     def _validate_current_capabilities(
