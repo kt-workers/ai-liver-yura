@@ -222,3 +222,8 @@ LLM候補とtrusted deterministic directiveは同じ技術上限を通す。
 - policy provenanceのrequestへの固定
 - policy revision変更後のlate LLM result reject
 - oversized Candidateをfirst-N acceptしない
+
+
+## 計画から活動への公開接続（#334）
+
+確定計画の採用は実行承認を意味しない。計画全体への明示的承認と手順進行は`plan_execution_approval_contracts.md`に従い、#361の計画と#328の判断と#329の実行事実を分ける。

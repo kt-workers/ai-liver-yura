@@ -493,3 +493,8 @@ If one Work's semantic/authority behavior is wrong, defect returns to that Work 
 ## 22. #445 Gate
 
 Brain Integration implementation remains frozen until #445 D1-D9 and final user confirmation PASS.
+
+
+## 計画から活動への公開接続（#334）
+
+本体の計画全体への承認・手順進行・命令発行は`plan_execution_approval_contracts.md`を正本とする。#334はこの公開境界を接続し、独自の判断正本を作らない。
