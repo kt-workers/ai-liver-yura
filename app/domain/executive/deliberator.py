@@ -30,6 +30,7 @@ from app.domain.llm import (
     StructuredPayload,
     validate_role_exchange,
 )
+from app.domain.plan_execution.progress_contracts import PlanStepCompletionClaim
 from app.usecases.ports.llm import LLMRolePort
 
 from .authority import ExecutiveDecisionAuthority
@@ -56,6 +57,7 @@ from .contracts import (
     GoalTransitionPayload,
     IntentPayload,
     PlanExecutionIntentPayload,
+    PlanProgressIntentPayload,
     SpeechIntentPayload,
 )
 
@@ -271,7 +273,11 @@ def _validate_snapshot_bounds(
         raise ValueError("Executive容量方針がsnapshotと一致しません")
     bounds = policy.executive
     _at_most(len(snapshot.source_event_ids), bounds.max_source_event_refs, "source event")
-    _at_most(len(snapshot.facts) + len(snapshot.plan_scopes), bounds.max_fact_refs, "fact")
+    _at_most(
+        len(snapshot.facts) + len(snapshot.plan_scopes) + len(snapshot.plan_progress_contexts),
+        bounds.max_fact_refs,
+        "fact",
+    )
     _at_most(len(snapshot.capabilities), bounds.max_capability_descriptors, "capability")
     _at_most(len(snapshot.preconditions), bounds.max_precondition_facts, "precondition")
     for fact in snapshot.facts:
@@ -437,6 +443,19 @@ def _optional_string(value: object, name: str) -> str | None:
 
 
 def _intent_payload(kind: ExecutiveIntentKind, value: object) -> IntentPayload:
+    if kind is ExecutiveIntentKind.PLAN_PROGRESS:
+        item = _object(value, "計画進行の完了評価", {"context_ref", "claims"})
+        claims = []
+        for entry in _array(item["claims"], "claims"):
+            claim = _object(entry, "手順の完了評価", {"step_id", "condition_refs", "evidence_refs"})
+            claims.append(
+                PlanStepCompletionClaim(
+                    _string(claim["step_id"], "step_id"),
+                    _strings(claim["condition_refs"], "condition_refs"),
+                    _strings(claim["evidence_refs"], "evidence_refs"),
+                )
+            )
+        return PlanProgressIntentPayload(_string(item["context_ref"], "context_ref"), tuple(claims))
     if kind is ExecutiveIntentKind.PLAN_EXECUTION:
         item = _object(value, "plan execution payload", {"scope_ref"})
         return PlanExecutionIntentPayload(_string(item["scope_ref"], "scope_ref"))
