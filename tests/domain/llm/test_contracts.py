@@ -14,6 +14,7 @@ from app.domain.llm import (
     LLMModelClass,
     LLMPriority,
     LLMReasoningEffort,
+    LLMRequestRetryPolicy,
     LLMRoleDescriptor,
     LLMRoleFailure,
     LLMRoleRequest,
@@ -29,14 +30,21 @@ NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(3, goal_revision=4, attention_revision=5)
 
 
+def retry_policy() -> LLMRequestRetryPolicy:
+    return LLMRequestRetryPolicy(0.25, 2.0, 2.0)
+
+
 def policy() -> LLMExecutionPolicy:
     return LLMExecutionPolicy(
+        "test.llm.execution",
+        1,
         LLMModelClass.BALANCED,
         LLMReasoningEffort.MEDIUM,
         timeout_seconds=10,
         max_attempts=2,
         max_output_tokens=500,
-        temperature=0.4,
+        retry_policy=retry_policy(),
+        temperature_normalized=0.4,
     )
 
 
@@ -92,7 +100,7 @@ def failure(code: LLMFailureCode) -> LLMRoleFailure:
 
 
 def test_descriptor_is_variable_logical_role_contract() -> None:
-    descriptor = LLMRoleDescriptor(
+    value = LLMRoleDescriptor(
         "speech-semantics",
         "Speech Intentで何を伝えるかを計画する",
         "speech-intent.v1",
@@ -102,8 +110,8 @@ def test_descriptor_is_variable_logical_role_contract() -> None:
         LLMFailurePolicy.DETERMINISTIC_FALLBACK,
         policy(),
     )
-    assert descriptor.to_dict()["role_id"] == "speech-semantics"
-    json.dumps(descriptor.to_dict(), allow_nan=False)
+    assert value.to_dict()["role_id"] == "speech-semantics"
+    json.dumps(value.to_dict(), allow_nan=False)
 
 
 def test_exchange_validator_accepts_matching_role_schema_revision_and_trace() -> None:
@@ -324,27 +332,70 @@ def test_request_rejects_non_future_deadline(deadline: datetime) -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     [
+        ("policy_id", ""),
+        ("policy_revision", True),
+        ("policy_revision", -1),
         ("timeout_seconds", True),
         ("timeout_seconds", float("inf")),
         ("max_attempts", True),
         ("max_attempts", 0),
         ("max_output_tokens", 1.5),
-        ("temperature", float("nan")),
-        ("temperature", 2.1),
+        ("temperature_normalized", float("nan")),
+        ("temperature_normalized", 1.1),
     ],
 )
-def test_execution_policy_rejects_invalid_numeric_value(field: str, value: object) -> None:
+def test_execution_policy_rejects_invalid_numeric_or_identity_value(
+    field: str, value: object
+) -> None:
     values: dict[str, object] = {
+        "policy_id": "test.execution",
+        "policy_revision": 1,
         "model_class": LLMModelClass.FAST,
         "reasoning_effort": LLMReasoningEffort.LOW,
         "timeout_seconds": 1,
         "max_attempts": 1,
         "max_output_tokens": 100,
-        "temperature": None,
+        "retry_policy": retry_policy(),
+        "temperature_normalized": None,
     }
     values[field] = value
     with pytest.raises(ValueError):
         LLMExecutionPolicy(**values)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("values"),
+    [
+        (True, 2.0, 2.0),
+        (0.0, 2.0, 2.0),
+        (0.1, True, 2.0),
+        (0.1, 0.9, 2.0),
+        (0.5, 2.0, 0.4),
+        (0.1, 2.0, float("inf")),
+    ],
+)
+def test_retry_policy_rejects_invalid_values(values: tuple[object, object, object]) -> None:
+    with pytest.raises(ValueError):
+        LLMRequestRetryPolicy(*values)  # type: ignore[arg-type]
+
+
+def test_retry_delay_is_deterministic_exponential_and_capped() -> None:
+    retry = LLMRequestRetryPolicy(0.25, 2.0, 0.75)
+    assert retry.delay_seconds(1) == 0.25
+    assert retry.delay_seconds(2) == 0.5
+    assert retry.delay_seconds(3) == 0.75
+    assert retry.delay_seconds(10) == 0.75
+    for invalid in (True, 0, -1):
+        with pytest.raises(ValueError):
+            retry.delay_seconds(invalid)
+
+
+def test_execution_policy_serializes_generation_and_normalized_temperature() -> None:
+    data = policy().to_dict()
+    assert data["policy_id"] == "test.llm.execution"
+    assert data["policy_revision"] == 1
+    assert data["temperature_normalized"] == 0.4
+    assert data["retry_policy"] == retry_policy().to_dict()
 
 
 def test_succeeded_result_requires_started_output_and_no_failure() -> None:

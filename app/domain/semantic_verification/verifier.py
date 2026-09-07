@@ -6,6 +6,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol, TypeVar, cast
 
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
 from app.domain.contracts.common import (
     JsonValue,
     require_aware,
@@ -27,6 +31,12 @@ from app.domain.llm import (
 from app.usecases.ports.llm import LLMRolePort
 
 from .authority import SemanticVerificationAuthority
+from .bounds import (
+    SemanticVerificationBoundsPolicyPort,
+    assert_semantic_verification_policy_generation,
+    validate_blind_candidate_bounds,
+    validate_relation_candidate_bounds,
+)
 from .contracts import (
     BlindInteractionAct,
     BlindSemanticUnit,
@@ -66,12 +76,15 @@ RELATION_OUTPUT_SCHEMA = "semantic.verification.relation.candidate.v1"
 class SemanticVerificationPolicy:
     blind_execution: LLMExecutionPolicy
     relation_execution: LLMExecutionPolicy
+    bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 
     def __post_init__(self) -> None:
         if not isinstance(self.blind_execution, LLMExecutionPolicy):
             raise ValueError("blind_execution が不正です")
         if not isinstance(self.relation_execution, LLMExecutionPolicy):
             raise ValueError("relation_execution が不正です")
+        if not isinstance(self.bounds_policy, BrainOperationalBoundsPolicy):
+            raise ValueError("bounds_policyはBrainOperationalBoundsPolicyでなければなりません")
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +147,8 @@ def build_blind_request(
             "utterance_id": snapshot.utterance.utterance_id,
             "segments": _utterance_segments(snapshot),
             "captured_at": timestamp_to_json(snapshot.captured_at),
+            "bounds_policy_id": policy.bounds_policy.policy_id,
+            "bounds_policy_revision": policy.bounds_policy.policy_revision,
         },
     )
     return LLMRoleRequest(
@@ -176,6 +191,8 @@ def build_relation_request(
                 "segments": _utterance_segments(snapshot),
             },
             "blind_observation": blind.to_dict(),
+            "bounds_policy_id": policy.bounds_policy.policy_id,
+            "bounds_policy_revision": policy.bounds_policy.policy_revision,
         },
     )
     return LLMRoleRequest(
@@ -198,24 +215,28 @@ def parse_blind_candidate(
     value: object,
     *,
     observed_at: datetime,
+    bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
 ) -> BlindUtteranceObservationCandidate:
     item = _mapping(value, "blind candidate")
     required = {"candidate_id", "request_id", "utterance_id", "units"}
     if set(item) != required:
         raise ValueError("blind candidate fieldがschemaと一致しません")
-    return BlindUtteranceObservationCandidate(
+    candidate = BlindUtteranceObservationCandidate(
         _string(item["candidate_id"], "candidate_id"),
         _string(item["request_id"], "request_id"),
         _string(item["utterance_id"], "utterance_id"),
         tuple(_blind_unit(part) for part in _array(item["units"], "units")),
         observed_at,
     )
+    validate_blind_candidate_bounds(candidate, bounds_policy)
+    return candidate
 
 
 def parse_relation_candidate(
     value: object,
     *,
     observed_at: datetime,
+    bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
 ) -> PlanRelationObservationCandidate:
     item = _mapping(value, "relation candidate")
     required = {
@@ -234,7 +255,7 @@ def parse_relation_candidate(
     budget = _mapping(item["budget_observation"], "budget_observation")
     if set(budget) != {"directed_question_count", "new_direction_count"}:
         raise ValueError("budget fieldがschemaと一致しません")
-    return PlanRelationObservationCandidate(
+    candidate = PlanRelationObservationCandidate(
         _string(item["candidate_id"], "candidate_id"),
         _string(item["request_id"], "request_id"),
         _string(item["semantic_plan_id"], "semantic_plan_id"),
@@ -265,6 +286,8 @@ def parse_relation_candidate(
         ),
         observed_at,
     )
+    validate_relation_candidate_bounds(candidate, bounds_policy)
+    return candidate
 
 
 class SemanticVerifier:
@@ -274,11 +297,21 @@ class SemanticVerifier:
         live_state: SemanticVerificationLiveStatePort,
         authority: SemanticVerificationAuthority,
         policy: SemanticVerificationPolicy,
+        bounds_policy_state: SemanticVerificationBoundsPolicyPort | None = None,
     ) -> None:
         self._port = port
         self._live_state = live_state
         self._authority = authority
         self._policy = policy
+        self._bounds_policy_state = bounds_policy_state
+
+    async def _validate_current_policy(
+        self, snapshot: SemanticVerificationContextSnapshot
+    ) -> None:
+        if self._bounds_policy_state is None:
+            return
+        current = await self._bounds_policy_state.current_policy(snapshot)
+        assert_semantic_verification_policy_generation(self._policy.bounds_policy, current)
 
     async def verify(
         self,
@@ -298,6 +331,7 @@ class SemanticVerifier:
             policy=self._policy,
         )
         blind_result = await self._port.invoke(blind_request)
+        await self._validate_current_policy(snapshot)
         _ensure_success(
             blind_descriptor(self._policy),
             blind_request,
@@ -312,6 +346,7 @@ class SemanticVerifier:
         blind_candidate = parse_blind_candidate(
             blind_result.output.value,
             observed_at=blind_result.completed_at,
+            bounds_policy=self._policy.bounds_policy,
         )
         _ensure_eligible(snapshot, await self._live_state.current_state(snapshot))
         blind = self._authority.commit_blind(
@@ -319,8 +354,10 @@ class SemanticVerifier:
             snapshot,
             observation_id=blind_observation_id,
             committed_at=blind_result.completed_at,
+            bounds_policy=self._policy.bounds_policy,
         )
 
+        await self._validate_current_policy(snapshot)
         relation_request = build_relation_request(
             snapshot,
             blind,
@@ -328,6 +365,7 @@ class SemanticVerifier:
             policy=self._policy,
         )
         relation_result = await self._port.invoke(relation_request)
+        await self._validate_current_policy(snapshot)
         _ensure_success(
             relation_descriptor(self._policy),
             relation_request,
@@ -342,6 +380,7 @@ class SemanticVerifier:
         relation_candidate = parse_relation_candidate(
             relation_result.output.value,
             observed_at=relation_result.completed_at,
+            bounds_policy=self._policy.bounds_policy,
         )
         _ensure_eligible(snapshot, await self._live_state.current_state(snapshot))
         relation = self._authority.commit_relation(
@@ -350,6 +389,7 @@ class SemanticVerifier:
             blind,
             observation_id=relation_observation_id,
             committed_at=relation_result.completed_at,
+            bounds_policy=self._policy.bounds_policy,
         )
         semantic_observation, acceptance = self._authority.reconcile(
             snapshot,

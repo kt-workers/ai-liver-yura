@@ -164,3 +164,61 @@ Activity failureはGoalを直接変更せず、Execution ResultからAppraisal/E
 - same-goal競合では1件だけcommitする
 - slow planningがunrelated simple planningをblockしない
 - Provider SDK、raw user text、Execution/Goal mutationを境界へ混入させない
+
+## 11. D10共有容量方針
+
+Goal Planningの容量上限は `BrainOperationalBoundsPolicy.planning` を唯一の正本とし、Module固有のmagic numberを持たない。SnapshotとCandidateは使用した `policy_id / policy_revision` を保持し、非同期LLM request中に別世代へ差し替えない。
+
+初期V2上限:
+
+```text
+max_capability_descriptors = 128
+max_planning_blockers = 64
+max_activity_context_refs = 128
+max_plan_steps = 64
+max_dependencies_per_step = 16
+max_precondition_refs_per_step = 32
+max_completion_refs_per_step = 32
+max_plan_completion_refs = 64
+max_checkpoint_refs = 64
+```
+
+### 11.1 Snapshot構築
+
+- `CapabilityDescriptor` はtrusted planning requirementを満たすDescriptorを必須集合として先に保持し、残りをstable orderで容量内へ選択する。
+- required Capability集合が128件を超える、またはtrusted planning requirementを容量内で満たせない場合は必要項目を落とさず `PLANNING_CONTEXT_TOO_LARGE` とする。
+- trusted `PlanningBlocker` が64件を超える場合はfirst-Nで黙って切らず `PLANNING_CONTEXT_TOO_LARGE` とする。
+- current `ActivityContextRef` が128件を超える場合、resumeやnonterminal重複判定に必要な項目を黙って落とさず `PLANNING_CONTEXT_TOO_LARGE` とする。
+- Snapshot生成後のcollectionは上限以下で、同一section内の識別子重複を許可しない。
+
+### 11.2 Candidate / deterministic directive
+
+LLM候補とtrusted deterministic directiveは同じ技術上限を通す。
+
+- plan step: 64
+- dependency refs / step: 16
+- precondition refs / step: 32
+- completion refs / step: 32
+- plan completion refs: 64
+- checkpoint refs: 64
+
+上限超過をfirst-Nへ切ってcommitしない。候補が上限を超えた場合は `PLAN_TOO_LARGE` としてcommit不可とする。
+
+64 stepを超える構造が本当に必要なGoalは、Plannerが任意に意味を縮めて別Goal相当へ変更しない。上流Executiveへ再計画要求を返せる `REPLAN_REQUIRED / PLAN_TOO_LARGE` evidenceへ閉じる。
+
+### 11.3 retryと方針世代
+
+`retry_limit` は各stepのtyped fieldまたはtrusted planning policyが明示する非負整数であり、boolを整数として受理しない。generic runtime backoffは別契約であり、Goal Planningが暗黙のretry回数を生成しない。
+
+`GoalPlanningContextSnapshot`、`GoalPlanningCandidate`、`GoalPlanningCommitState` は同一 `policy_id / policy_revision` にbindされる。commit直前にcurrent policy世代が変わっていれば古いCandidateを新世代へ付け替えずstaleとして拒否する。
+
+### 11.4 D10追加Acceptance
+
+- PlanningBoundsの各count境界 below / equal / above
+- required Capability / blocker / activity context overflowでsilent truncationなし
+- 64/65 step境界
+- dependency 16/17、precondition 32/33、step completion 32/33、plan completion 64/65、checkpoint 64/65境界
+- `retry_limit` のbool拒否
+- policy provenanceのrequestへの固定
+- policy revision変更後のlate LLM result reject
+- oversized Candidateをfirst-N acceptしない

@@ -5,7 +5,30 @@ from datetime import datetime
 from enum import Enum
 
 from app.domain.character_language import CharacterUtterance
-from app.domain.contracts.common import require_aware, require_identifier, require_revision
+from app.domain.contracts.common import (
+    require_aware,
+    require_identifier,
+    require_revision,
+    utc_instant,
+)
+from app.domain.contracts.speech_audio import (
+    PreparedAudioArtifact as PreparedAudioArtifact,
+)
+from app.domain.contracts.speech_audio import (
+    SpeechTimingKind as SpeechTimingKind,
+)
+from app.domain.contracts.speech_audio import (
+    SpeechTimingQuality as SpeechTimingQuality,
+)
+from app.domain.contracts.speech_audio import (
+    SpeechTimingSourceKind as SpeechTimingSourceKind,
+)
+from app.domain.contracts.speech_audio import (
+    SpeechTimingTrack as SpeechTimingTrack,
+)
+from app.domain.contracts.speech_audio import (
+    SpeechTimingUnit as SpeechTimingUnit,
+)
 from app.domain.speech_performance import SpeechPerformancePlan, validate_plan_segments
 
 
@@ -37,21 +60,6 @@ class TTSDegradationReason(str, Enum):
 class TTSSynthesisPriority(str, Enum):
     FOREGROUND = "foreground"
     SPECULATIVE = "speculative"
-
-
-class SpeechTimingKind(str, Enum):
-    PHONEME = "phoneme"
-    MORA = "mora"
-    VISEME = "viseme"
-    WORD_BOUNDARY = "word_boundary"
-
-
-class SpeechTimingSourceKind(str, Enum):
-    PROVIDER_OBSERVED = "provider_observed"
-
-
-class SpeechTimingQuality(str, Enum):
-    TRUSTWORTHY = "trustworthy"
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,12 +141,23 @@ class TTSSynthesisRequest:
     pronunciation_overrides: tuple[PronunciationOverrideView, ...]
     provider_config_revision: int
     pronunciation_config_revision: int
+    mapping_id: str
+    mapping_revision: int
+    retry_policy_id: str
+    retry_policy_revision: int
     priority: TTSSynthesisPriority
     created_at: datetime
     trace_id: str
+    deadline_at: datetime | None = None
 
     def __post_init__(self) -> None:
-        for name in ("request_id", "candidate_id", "trace_id"):
+        for name in (
+            "request_id",
+            "candidate_id",
+            "mapping_id",
+            "retry_policy_id",
+            "trace_id",
+        ):
             require_identifier(getattr(self, name), name)
         if not isinstance(self.utterance, CharacterUtterance) or not isinstance(
             self.performance_plan, SpeechPerformancePlan
@@ -150,7 +169,13 @@ class TTSSynthesisRequest:
             raise ValueError("binding/capability が不正です")
         require_revision(self.provider_config_revision, "provider_config_revision")
         require_revision(self.pronunciation_config_revision, "pronunciation_config_revision")
+        require_revision(self.mapping_revision, "mapping_revision")
+        require_revision(self.retry_policy_revision, "retry_policy_revision")
         require_aware(self.created_at, "created_at")
+        if self.deadline_at is not None:
+            require_aware(self.deadline_at, "deadline_at")
+            if utc_instant(self.deadline_at) <= utc_instant(self.created_at):
+                raise ValueError("deadline_atはcreated_atより後でなければなりません")
         if self.performance_plan.utterance_id != self.utterance.utterance_id:
             raise ValueError("performance planのutteranceが一致しません")
         validate_plan_segments(self.utterance, self.performance_plan)
@@ -182,102 +207,6 @@ class TTSSynthesisRequest:
         if not isinstance(self.priority, TTSSynthesisPriority):
             raise ValueError("priority が不正です")
         object.__setattr__(self, "pronunciation_overrides", overrides)
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedAudioArtifact:
-    audio_artifact_id: str
-    request_id: str
-    candidate_id: str
-    utterance_id: str
-    performance_plan_id: str
-    voice_binding_id: str
-    voice_binding_revision: int
-    provider_revision: int
-    provider_config_revision: int
-    pronunciation_config_revision: int
-    audio_ref: str
-    audio_format: str
-    content_digest: str
-    created_at: datetime
-    duration_ms: int | None = None
-
-    def __post_init__(self) -> None:
-        for name in (
-            "audio_artifact_id",
-            "request_id",
-            "candidate_id",
-            "utterance_id",
-            "performance_plan_id",
-            "voice_binding_id",
-            "audio_ref",
-            "audio_format",
-            "content_digest",
-        ):
-            require_identifier(getattr(self, name), name)
-        require_revision(self.voice_binding_revision, "voice_binding_revision")
-        require_revision(self.provider_revision, "provider_revision")
-        require_revision(self.provider_config_revision, "provider_config_revision")
-        require_revision(self.pronunciation_config_revision, "pronunciation_config_revision")
-        require_aware(self.created_at, "created_at")
-        if self.duration_ms is not None and (
-            type(self.duration_ms) is not int or self.duration_ms < 1
-        ):
-            raise ValueError("duration_ms が不正です")
-
-
-@dataclass(frozen=True, slots=True)
-class SpeechTimingUnit:
-    unit_id: str
-    segment_id: str
-    kind: SpeechTimingKind
-    symbol: str
-    start_ms: int
-    end_ms: int
-
-    def __post_init__(self) -> None:
-        for name in ("unit_id", "segment_id", "symbol"):
-            require_identifier(getattr(self, name), name)
-        if (
-            not isinstance(self.kind, SpeechTimingKind)
-            or type(self.start_ms) is not int
-            or type(self.end_ms) is not int
-            or self.start_ms < 0
-            or self.end_ms <= self.start_ms
-        ):
-            raise ValueError("timing unit が不正です")
-
-
-@dataclass(frozen=True, slots=True)
-class SpeechTimingTrack:
-    timing_track_id: str
-    audio_artifact_id: str
-    units: tuple[SpeechTimingUnit, ...]
-    created_at: datetime
-    audio_duration_ms: int | None = None
-    source_kind: SpeechTimingSourceKind = SpeechTimingSourceKind.PROVIDER_OBSERVED
-    quality: SpeechTimingQuality = SpeechTimingQuality.TRUSTWORTHY
-
-    def __post_init__(self) -> None:
-        require_identifier(self.timing_track_id, "timing_track_id")
-        require_identifier(self.audio_artifact_id, "audio_artifact_id")
-        if not isinstance(self.source_kind, SpeechTimingSourceKind) or not isinstance(
-            self.quality, SpeechTimingQuality
-        ):
-            raise ValueError("timing source/quality が不正です")
-        units = tuple(self.units)
-        if any(not isinstance(unit, SpeechTimingUnit) for unit in units):
-            raise ValueError("timing units が不正です")
-        if any(left.end_ms > right.start_ms for left, right in zip(units, units[1:], strict=False)):
-            raise ValueError("timingは単調でなければなりません")
-        if self.audio_duration_ms is not None and (
-            type(self.audio_duration_ms) is not int
-            or self.audio_duration_ms < 1
-            or any(unit.end_ms > self.audio_duration_ms for unit in units)
-        ):
-            raise ValueError("timingがaudio durationの範囲外です")
-        object.__setattr__(self, "units", units)
-        require_aware(self.created_at, "created_at")
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,1 +1,1 @@
-"""Repository tooling packages kept outside the AI Liver product runtime."""
+"""開発支援専用の読み取りツール群。"""

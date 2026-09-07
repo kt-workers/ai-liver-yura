@@ -6,6 +6,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol, TypeVar, cast
 
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
 from app.domain.contracts import ExecutionStatus, RevisionVector
 from app.domain.contracts.common import JsonValue, freeze_json, require_aware, utc_instant
 from app.domain.llm import (
@@ -25,6 +29,12 @@ from app.domain.llm import (
 from app.usecases.ports.llm import LLMRolePort
 
 from .authority import SpeechSemanticAuthority
+from .bounds import (
+    SpeechSemanticBoundsPolicyPort,
+    assert_speech_semantic_policy_generation,
+    validate_speech_semantic_context_bounds,
+    validate_speech_semantic_output_bounds,
+)
 from .contracts import (
     DeterministicSpeechDirective,
     SelfDisclosurePolicy,
@@ -46,10 +56,13 @@ OUTPUT_SCHEMA = "yura.speech-semantics.candidate.v1"
 @dataclass(frozen=True, slots=True)
 class SpeechSemanticsPolicy:
     execution: LLMExecutionPolicy
+    bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 
     def __post_init__(self) -> None:
         if not isinstance(self.execution, LLMExecutionPolicy):
             raise ValueError("execution must be LLMExecutionPolicy")
+        if not isinstance(self.bounds_policy, BrainOperationalBoundsPolicy):
+            raise ValueError("bounds_policyはBrainOperationalBoundsPolicyでなければなりません")
 
 
 class SpeechSemanticsLiveStatePort(Protocol):
@@ -81,6 +94,7 @@ def build_request(
 ) -> LLMRoleRequest:
     if not isinstance(snapshot, SpeechSemanticContextSnapshot):
         raise ValueError("snapshot must be SpeechSemanticContextSnapshot")
+    validate_speech_semantic_context_bounds(snapshot, policy.bounds_policy)
     require_aware(created_at, "created_at")
     if utc_instant(created_at) < utc_instant(snapshot.captured_at):
         raise ValueError("request creation cannot predate speech semantic snapshot")
@@ -106,9 +120,12 @@ def candidate_from_directive(
     *,
     candidate_id: str,
     created_at: datetime,
+    bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
 ) -> SpeechSemanticCandidate:
     if snapshot.deterministic_directive != directive:
         raise ValueError("directive does not match speech semantic snapshot")
+    validate_speech_semantic_context_bounds(snapshot, bounds_policy)
+    validate_speech_semantic_output_bounds(directive, bounds_policy)
     return SpeechSemanticCandidate(
         candidate_id,
         snapshot.decision.decision_id,
@@ -129,7 +146,12 @@ def candidate_from_directive(
 E = TypeVar("E", bound=Enum)
 
 
-def parse_candidate(value: object, *, created_at: datetime) -> SpeechSemanticCandidate:
+def parse_candidate(
+    value: object,
+    *,
+    created_at: datetime,
+    bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+) -> SpeechSemanticCandidate:
     if not isinstance(value, Mapping):
         raise ValueError("speech semantic candidate must be an object")
     required = {
@@ -155,7 +177,7 @@ def parse_candidate(value: object, *, created_at: datetime) -> SpeechSemanticCan
         "attention_revision",
     }:
         raise ValueError("speech semantic revision fields do not match schema")
-    return SpeechSemanticCandidate(
+    candidate = SpeechSemanticCandidate(
         _string(value["candidate_id"], "candidate_id"),
         _string(value["decision_id"], "decision_id"),
         _string(value["intent_id"], "intent_id"),
@@ -174,6 +196,8 @@ def parse_candidate(value: object, *, created_at: datetime) -> SpeechSemanticCan
         _strings(value["discourse_constraint_refs"], "discourse_constraint_refs"),
         created_at,
     )
+    validate_speech_semantic_output_bounds(candidate, bounds_policy)
+    return candidate
 
 
 def commit_result(
@@ -186,6 +210,7 @@ def commit_result(
     plan_id: str,
     policy: SpeechSemanticsPolicy,
 ) -> SpeechSemanticPlan:
+    validate_speech_semantic_context_bounds(snapshot, policy.bounds_policy)
     failure = validate_role_exchange(descriptor(policy), request, result)
     if failure is not None:
         raise ValueError(failure.code.value)
@@ -197,13 +222,18 @@ def commit_result(
         raise ValueError("request source events do not match speech semantic snapshot")
     if request.revisions != snapshot.revisions:
         raise ValueError("request revisions do not match speech semantic snapshot")
-    candidate = parse_candidate(result.output.value, created_at=result.completed_at)
+    candidate = parse_candidate(
+        result.output.value,
+        created_at=result.completed_at,
+        bounds_policy=policy.bounds_policy,
+    )
     return authority.commit(
         candidate,
         snapshot,
         current_revisions=current_revisions,
         plan_id=plan_id,
         committed_at=result.completed_at,
+        bounds_policy=policy.bounds_policy,
     )
 
 
@@ -214,11 +244,19 @@ class SpeechSemanticsPlanner:
         live_state: SpeechSemanticsLiveStatePort,
         authority: SpeechSemanticAuthority,
         policy: SpeechSemanticsPolicy,
+        bounds_policy_state: SpeechSemanticBoundsPolicyPort | None = None,
     ) -> None:
         self._port = port
         self._live_state = live_state
         self._authority = authority
         self._policy = policy
+        self._bounds_policy_state = bounds_policy_state
+
+    async def _validate_current_policy(self, snapshot: SpeechSemanticContextSnapshot) -> None:
+        if self._bounds_policy_state is None:
+            return
+        current = await self._bounds_policy_state.current_policy(snapshot)
+        assert_speech_semantic_policy_generation(self._policy.bounds_policy, current)
 
     async def plan(
         self,
@@ -230,6 +268,7 @@ class SpeechSemanticsPlanner:
         plan_id: str,
         created_at: datetime,
     ) -> SpeechSemanticPlan:
+        validate_speech_semantic_context_bounds(snapshot, self._policy.bounds_policy)
         directive = snapshot.deterministic_directive
         if directive is not None:
             candidate = candidate_from_directive(
@@ -237,14 +276,17 @@ class SpeechSemanticsPlanner:
                 directive,
                 candidate_id=candidate_id,
                 created_at=created_at,
+                bounds_policy=self._policy.bounds_policy,
             )
             current = await self._live_state.current_revisions(snapshot)
+            await self._validate_current_policy(snapshot)
             return self._authority.commit(
                 candidate,
                 snapshot,
                 current_revisions=current,
                 plan_id=plan_id,
                 committed_at=created_at,
+                bounds_policy=self._policy.bounds_policy,
             )
         request = build_request(
             snapshot,
@@ -259,8 +301,13 @@ class SpeechSemanticsPlanner:
             raise ValueError(failure.code.value)
         if result.status is not LLMRoleStatus.SUCCEEDED or result.output is None:
             raise ValueError("speech semantic result is not committable")
-        parse_candidate(result.output.value, created_at=result.completed_at)
+        parse_candidate(
+            result.output.value,
+            created_at=result.completed_at,
+            bounds_policy=self._policy.bounds_policy,
+        )
         current = await self._live_state.current_revisions(snapshot)
+        await self._validate_current_policy(snapshot)
         return commit_result(
             request,
             result,

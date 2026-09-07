@@ -36,7 +36,6 @@ from app.domain.input_meaning import (
     TemporalRelation,
 )
 from app.domain.llm import (
-    LLMExecutionPolicy,
     LLMModelClass,
     LLMReasoningEffort,
     LLMRoleRequest,
@@ -45,6 +44,7 @@ from app.domain.llm import (
     LLMTokenUsage,
     StructuredPayload,
 )
+from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 24, tzinfo=timezone.utc)
 JOY = FacetRef(StateFacetKind.EMOTION, "joy")
@@ -79,6 +79,8 @@ def meaning() -> StructuredInputMeaning:
         0.9,
         (),
         MeaningResolution.RESOLVED,
+        "yura.input-meaning.acceptance",
+        1,
     )
 
 
@@ -89,7 +91,7 @@ def state(value: float = 0.2, revision: int = 3) -> InternalStateSnapshot:
 
 def policy() -> DeepAppraisalPolicy:
     return DeepAppraisalPolicy(
-        LLMExecutionPolicy(
+        make_execution_policy(
             LLMModelClass.BALANCED,
             LLMReasoningEffort.MEDIUM,
             10,

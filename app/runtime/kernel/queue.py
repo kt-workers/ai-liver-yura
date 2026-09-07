@@ -22,7 +22,7 @@ class BoundedWorkQueue(Generic[T]):
         capacity: int,
         policy: QueuePolicy,
         *,
-        max_priority_burst: int = 8,
+        max_priority_burst: int,
         coalescer: Coalescer[T] | None = None,
     ) -> None:
         if type(capacity) is not int or capacity < 1:

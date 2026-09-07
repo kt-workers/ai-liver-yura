@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.domain.llm import LLMInterruptibility, LLMPriority
+from app.domain.llm import LLMInterruptibility
 from app.domain.speech_runtime.contracts import (
     AudioReadinessState,
     CandidateLifecycle,
@@ -23,7 +23,11 @@ from app.domain.speech_runtime.discard import (
     PreparedAudioDiscardRequest,
 )
 from app.domain.speech_runtime.lifecycle import SpeechCandidateLifecycleExecutor
+from app.domain.speech_runtime.policy import SpeechCandidatePriority
 from app.domain.speech_runtime.runtime import SpeechRuntime
+from tests.domain.speech_runtime.policy_fixtures import runtime_policy
+
+_TEST_POLICY = runtime_policy()
 
 
 class _FakeResourceOwner(PreparedAudioDiscardPort):
@@ -80,9 +84,11 @@ def _candidate() -> PreparedSpeechCandidate:
         source_context_revision=1,
         goal_revision=1,
         attention_revision=1,
-        priority=LLMPriority.FOREGROUND,
+        priority=SpeechCandidatePriority.FOREGROUND,
         interruptibility=LLMInterruptibility.INTERRUPTIBLE,
         expiry_policy_ref="expiry",
+        runtime_policy_id=_TEST_POLICY.policy_id,
+        runtime_policy_revision=_TEST_POLICY.policy_revision,
         required_preconditions=(),
         semantic_requirement=SemanticVerificationRequirement.REQUIRED,
         semantic_acceptance_id="acceptance",
@@ -98,15 +104,20 @@ def _candidate() -> PreparedSpeechCandidate:
         lifecycle=CandidateLifecycle.PREPARED,
         created_at=now,
         updated_at=now,
+        prepared_at=now,
         expression_revision=1,
     )
+
+
+def _runtime() -> SpeechRuntime:
+    return SpeechRuntime(_TEST_POLICY)
 
 
 @pytest.mark.asyncio
 async def test_expression_only_rebind_preserves_utterance_semantics_and_rejects_old_results() -> (
     None
 ):
-    runtime = SpeechRuntime()
+    runtime = _runtime()
     await runtime.register(_candidate())
     owner = _FakeResourceOwner()
     generation = await SpeechCandidateLifecycleExecutor(
@@ -149,7 +160,7 @@ async def test_expression_only_rebind_preserves_utterance_semantics_and_rejects_
 async def test_discard_port_invalidates_actual_audio_before_terminal_transition(
     operation: CandidateLifecycle,
 ) -> None:
-    runtime = SpeechRuntime()
+    runtime = _runtime()
     await runtime.register(_candidate())
     owner = _FakeResourceOwner()
     executor = SpeechCandidateLifecycleExecutor(runtime, PreparedAudioDiscarder(runtime, owner))
@@ -161,7 +172,7 @@ async def test_discard_port_invalidates_actual_audio_before_terminal_transition(
 
 @pytest.mark.asyncio
 async def test_expression_rebind_discards_old_resource_and_preserves_semantics() -> None:
-    runtime = SpeechRuntime()
+    runtime = _runtime()
     await runtime.register(_candidate())
     owner = _FakeResourceOwner()
     executor = SpeechCandidateLifecycleExecutor(runtime, PreparedAudioDiscarder(runtime, owner))
@@ -177,7 +188,7 @@ async def test_expression_rebind_discards_old_resource_and_preserves_semantics()
 
 @pytest.mark.asyncio
 async def test_discard_wait_race_never_restores_or_discards_g2_audio() -> None:
-    runtime = SpeechRuntime()
+    runtime = _runtime()
     await runtime.register(_candidate())
     owner = _BlockingOwner()
     discarder = PreparedAudioDiscarder(runtime, owner)
@@ -225,7 +236,7 @@ async def test_discard_wait_race_never_restores_or_discards_g2_audio() -> None:
 
 @pytest.mark.asyncio
 async def test_stale_expression_rebind_cannot_mutate_generation_two_after_discard() -> None:
-    runtime = SpeechRuntime()
+    runtime = _runtime()
     await runtime.register(_candidate())
     owner = _BlockingOwner()
     executor = SpeechCandidateLifecycleExecutor(runtime, PreparedAudioDiscarder(runtime, owner))
@@ -242,7 +253,7 @@ async def test_stale_expression_rebind_cannot_mutate_generation_two_after_discar
 
 @pytest.mark.asyncio
 async def test_stale_terminate_cannot_cancel_generation_two_after_discard() -> None:
-    runtime = SpeechRuntime()
+    runtime = _runtime()
     await runtime.register(_candidate())
     owner = _BlockingOwner()
     executor = SpeechCandidateLifecycleExecutor(runtime, PreparedAudioDiscarder(runtime, owner))

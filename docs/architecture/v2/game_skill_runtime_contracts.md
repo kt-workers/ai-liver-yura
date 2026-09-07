@@ -2,8 +2,8 @@
 
 Owner Issue: #365
 Parent: #345
-Upstream: #328 / #366 / #333 / #361 / #329 / #344
-Related: #347 / #352 / #360 / #445
+Upstream: #328 / #366 / #333 / #361 / #329
+Related: #344 / #347 / #352 / #360 / #445
 Status: Canonical Supplement / Design Completion Gate
 
 ## 1. Purpose
@@ -212,6 +212,15 @@ Actual game Activity/Skill execution evidence can be aggregated and returned to 
 
 Timeout/cancel after an external input may have been applied must preserve ambiguous/applied effect state.
 
+`select()` のawait完了後からcontroller適用直前まで、およびcontroller応答後には、live sessionの
+`ACTIVE` lifecycle、strategy revision、game state revisionを再照合する。pause、end、cancel、
+strategy更新でselection世代が変わったactionを新たに適用してはならない。
+
+controllerがすでに `APPLIED` と確認したactionは、strategy/lifecycleがそのawait中に変化していても、
+確認済み `game_state_revision_after` をlive stateへ単調に反映する。一方、selection世代が古くなった
+reportは `STALE` として返す。`STALE` のeffect truthは `APPLIED` または `AMBIGUOUS` に限定し、
+元の `NOT_APPLIED` / `FAILED` をcontract不正な組合せのまま置換しない。
+
 ---
 
 ## 10. Salient event projection
@@ -324,6 +333,8 @@ Long-running tactical AI result uses state/strategy revision; stale result disca
 Game session external capability may be discovered through generic Capability mechanisms, but the persistent realtime Skill Runtime is not reduced to a single Plugin invoke call.
 
 #344 Plugin architecture may expose lightweight game operations/capability discovery.
+
+#344は#365 Game Skill Runtimeそのもののdirect dependencyではない。Plugin 0件でもGame Skill contractは成立する。
 
 #365 owns dedicated realtime session processing where needed.
 
@@ -449,4 +460,4 @@ Real game/device operation remains Human/Integration Verification.
 
 ## 22. #445 Gate
 
-Game Skill implementation remains frozen until #445 D1-D9 and final user confirmation PASS.
+#445 Design Completion Gate / D10は完了済み。Game Skill implementationの設計freezeは解除されている。現在の残Gateは#365自身の実ゲーム/実操作Human Verificationである。

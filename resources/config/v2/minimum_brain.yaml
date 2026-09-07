@@ -1,0 +1,74 @@
+schema_id: yura.minimum-brain.production-config.v1
+config_id: yura.minimum-brain.production
+config_revision: 1
+character_definition_path: resources/character_definitions/v2/yura.yaml
+brain_module_registrations:
+  - input_meaning
+input_meaning:
+  acceptance:
+    policy_id: yura.input-meaning.acceptance
+    policy_revision: 1
+    clarification_confidence_threshold: 0.70
+    required_resolution_fields_by_intent:
+      provide_information: [information]
+      request_information: []
+      request_action: [target_ref]
+      confirm: [references]
+      deny: [references]
+      start_activity: [target_ref]
+      stop_activity: [target_ref]
+      ask_internal_state: [target_ref]
+      social: []
+      other: []
+  execution:
+    policy_id: yura.input-meaning.execution
+    policy_revision: 1
+    model_class: balanced
+    reasoning_effort: medium
+    timeout_seconds: 10.0
+    max_attempts: 1
+    max_output_tokens: 800
+    temperature_normalized: null
+    retry_policy:
+      initial_backoff_seconds: 1.0
+      backoff_multiplier: 1.0
+      max_backoff_seconds: 1.0
+scheduler:
+  policy_id: yura.minimum-brain.scheduler
+  policy_revision: 1
+  max_priority_burst: 8
+integration:
+  policy_id: yura.minimum-brain.integration
+  policy_revision: 1
+  lane_policies:
+    - lane_id: foreground_interaction
+      queue_capacity: 64
+      queue_policy: reject_new
+      max_in_flight: 4
+      cancellation_grace_seconds: 0.5
+      error_isolation: isolate
+    - lane_id: cognitive_normal
+      queue_capacity: 64
+      queue_policy: reject_new
+      max_in_flight: 4
+      cancellation_grace_seconds: 0.5
+      error_isolation: isolate
+    - lane_id: speech_preparation
+      queue_capacity: 32
+      queue_policy: reject_new
+      max_in_flight: 2
+      cancellation_grace_seconds: 0.5
+      error_isolation: isolate
+    - lane_id: background_reflection
+      queue_capacity: 16
+      queue_policy: reject_new
+      max_in_flight: 1
+      cancellation_grace_seconds: 0.5
+      error_isolation: isolate
+shutdown:
+  policy_id: yura.minimum-brain.shutdown
+  policy_revision: 1
+  in_flight_settle_grace_seconds: 2.0
+  final_persistence_grace_seconds: 0.0
+  resource_close_grace_seconds: 2.0
+  owned_task_join_grace_seconds: 2.0

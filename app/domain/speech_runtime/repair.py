@@ -12,6 +12,7 @@ from .contracts import (
     VerifierReadinessState,
 )
 from .discard import PreparedAudioDiscarder, PreparedAudioDiscardReason
+from .policy import SpeechRuntimeOperationalPolicy
 from .runtime import SpeechRuntime
 from .tasks import CandidateTaskRegistry
 
@@ -37,17 +38,26 @@ CharacterRepairWork = Callable[[SemanticRepairAttempt], Awaitable[None]]
 
 
 class SpeechSemanticRepairExecutor:
-    """#363結果から最大一回だけ同一semantic planのCharacter repairを起動する。"""
+    """#363結果からpolicy上限内で同一semantic planのCharacter repairを起動する。"""
 
     def __init__(
         self,
         runtime: SpeechRuntime,
         tasks: CandidateTaskRegistry,
         discarder: PreparedAudioDiscarder,
+        policy: SpeechRuntimeOperationalPolicy | None = None,
     ) -> None:
+        resolved_policy = runtime.operational_policy if policy is None else policy
+        if not isinstance(resolved_policy, SpeechRuntimeOperationalPolicy):
+            raise ValueError("Speech Runtime operational policy が必要です")
+        if not runtime.operational_policy.same_generation(
+            resolved_policy.policy_id, resolved_policy.policy_revision
+        ):
+            raise ValueError("runtimeとrepairのoperational policy generationが一致しません")
         self._runtime = runtime
         self._tasks = tasks
         self._discarder = discarder
+        self._policy = resolved_policy
         self._accepted_priors: list[str] = []
 
     @property
@@ -66,16 +76,19 @@ class SpeechSemanticRepairExecutor:
         evidence: SemanticRepairEvidence | None,
         repair_character: CharacterRepairWork,
     ) -> SemanticRepairDisposition | None:
-        """旧世代の遅延結果は何もcommitせずNoneで終了する。"""
+        """旧世代/旧policyの遅延結果は何もcommitせず終了する。"""
         if not await self._runtime.is_current_generation(candidate_id, generation):
             return None
+        if await self._runtime.operational_failure(candidate_id) is not None:
+            return None
+        candidate = await self._runtime.candidate(candidate_id)
         disposition = semantic_repair_disposition(
             semantic_accepted=semantic_accepted,
             verifier_execution_failed=verifier_execution_failed,
             speech_plan_stale=speech_plan_stale,
-            character_generation_count=generation,
+            repair_count=candidate.repair_count,
+            maximum_attempts=self._policy.max_regeneration_attempts,
         )
-        candidate = await self._runtime.candidate(candidate_id)
         if disposition is SemanticRepairDisposition.ACCEPTED:
             if semantic_acceptance_id is None:
                 raise ValueError("accepted verifier resultにはacceptance idが必要です")
@@ -97,18 +110,19 @@ class SpeechSemanticRepairExecutor:
         if disposition is SemanticRepairDisposition.REPAIR_ONCE:
             if evidence is None or candidate.utterance_id is None:
                 raise ValueError("repairにはtyped evidenceとutteranceが必要です")
+            attempt_number = candidate.repair_count + 1
             await self._discarder.discard_current(
-                candidate_id, generation, PreparedAudioDiscardReason.CHARACTER_REPAIRED
+                candidate_id,
+                generation,
+                PreparedAudioDiscardReason.CHARACTER_REPAIRED,
             )
-            next_generation = await self._runtime.supersede_generation(
-                candidate_id, generation
-            )
+            next_generation = await self._runtime.supersede_generation(candidate_id, generation)
             if next_generation is None:
                 return None
             await self._tasks.cancel_candidate(candidate_id, before_generation=next_generation)
             attempt = SemanticRepairAttempt(
-                attempt=1,
-                maximum_attempts=1,
+                attempt=attempt_number,
+                maximum_attempts=self._policy.max_regeneration_attempts,
                 speech_plan_id=candidate.speech_plan_id,
                 utterance_id=candidate.utterance_id,
                 rejection_categories=evidence.rejection_categories,
@@ -119,7 +133,9 @@ class SpeechSemanticRepairExecutor:
             return disposition
         if disposition is SemanticRepairDisposition.REJECTED_FINAL:
             await self._discarder.discard_current(
-                candidate_id, generation, PreparedAudioDiscardReason.SEMANTIC_REJECTED
+                candidate_id,
+                generation,
+                PreparedAudioDiscardReason.SEMANTIC_REJECTED,
             )
             if not await self._runtime.is_current_generation(candidate_id, generation):
                 return None
@@ -148,7 +164,9 @@ class SpeechSemanticRepairExecutor:
         await self._discarder.discard_current(candidate_id, generation, discard_reason)
         if (
             await self._runtime.cancel(
-                candidate_id, terminal, expected_generation=generation
+                candidate_id,
+                terminal,
+                expected_generation=generation,
             )
             is None
         ):
@@ -161,17 +179,20 @@ def semantic_repair_disposition(
     semantic_accepted: bool | None,
     verifier_execution_failed: bool,
     speech_plan_stale: bool,
-    character_generation_count: int,
+    repair_count: int,
+    maximum_attempts: int,
 ) -> SemanticRepairDisposition:
-    """#363のclosed結果だけで最大一回のCharacter repairを許可する。"""
-    if type(character_generation_count) is not int or character_generation_count < 1:
-        raise ValueError("character_generation_count が不正です")
+    """#363のclosed結果だけでbounded Character repairを許可する。"""
+    if type(repair_count) is not int or repair_count < 0:
+        raise ValueError("repair_count が不正です")
+    if type(maximum_attempts) is not int or maximum_attempts < 0:
+        raise ValueError("maximum_attempts が不正です")
     if speech_plan_stale:
         return SemanticRepairDisposition.REPLAN_REQUIRED
     if verifier_execution_failed or semantic_accepted is None:
         return SemanticRepairDisposition.VERIFIER_FAILED
     if semantic_accepted:
         return SemanticRepairDisposition.ACCEPTED
-    if character_generation_count == 1:
+    if repair_count < maximum_attempts:
         return SemanticRepairDisposition.REPAIR_ONCE
     return SemanticRepairDisposition.REJECTED_FINAL

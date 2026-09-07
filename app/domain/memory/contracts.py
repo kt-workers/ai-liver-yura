@@ -67,6 +67,7 @@ class MemoryDegradationReason(str, Enum):
     REPOSITORY_UNAVAILABLE = "repository_unavailable"
     SEMANTIC_INDEX_UNAVAILABLE = "semantic_index_unavailable"
     SEMANTIC_INDEX_UPDATE_FAILED = "semantic_index_update_failed"
+    RANKING_UNAVAILABLE = "ranking_unavailable"
 
 
 T = TypeVar("T")

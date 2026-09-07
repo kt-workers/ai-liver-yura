@@ -341,10 +341,11 @@ Brain minimum text cognition must support:
 Memory persistence unavailable:
 - #332/#359 expose degradation; current interaction can continue if safe.
 
-LLM provider unavailable:
-- affected Role returns typed failure.
-- Integration does not fabricate successful semantic output.
-- unaffected deterministic/current lanes continue.
+LLM提供サービスが利用できない場合:
+- 影響を受ける役割は型付き失敗を返す。
+- 入力意味解析の本番境界では`InputMeaningInterpretationResult`を受け取り、`meaning / role_failure / boundary_failure`を型で判定する（#564）。
+- 統合側は架空の`StructuredInputMeaning`や確認要求を生成せず、例外文字列を解析せず、サービス失敗を成功へ書き換えない。
+- 影響を受けない処理経路は継続できる。失敗の分類と採用判断は各所有者の契約に従う。
 
 ---
 

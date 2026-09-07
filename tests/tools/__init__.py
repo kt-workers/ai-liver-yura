@@ -1,1 +1,1 @@
-"""Tests for repository tooling outside the product package."""
+"""開発支援ツールの検証。"""

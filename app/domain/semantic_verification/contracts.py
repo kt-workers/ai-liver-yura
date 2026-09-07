@@ -166,8 +166,6 @@ class UtteranceEvidenceRef:
         require_identifier(self.segment_id, "segment_id")
         require_identifier(self.quote, "quote")
         _non_negative_int(self.occurrence_index, "occurrence_index")
-        if len(self.quote) > 1000:
-            raise ValueError("quote が長すぎます")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -220,8 +218,6 @@ class BlindUtteranceObservationCandidate:
         units = _owned(self.units, BlindSemanticUnit, "units")
         if len({item.unit_id for item in units}) != len(units):
             raise ValueError("unit_id は一意でなければなりません")
-        if len(units) > 64:
-            raise ValueError("blind unit数が上限を超えています")
         object.__setattr__(self, "units", units)
         require_aware(self.observed_at, "observed_at")
 

@@ -7,6 +7,7 @@ import pytest
 from app.domain.contracts import RevisionVector
 from app.domain.executive import (
     CommittedExecutiveDecision,
+    ExecutiveBoundsProvenance,
     ExecutiveDecisionCandidate,
     ExecutiveIntent,
     ExecutiveIntentKind,
@@ -73,7 +74,9 @@ def _decision(act: str = "gratitude") -> CommittedExecutiveDecision:
         (fact_id,),
         NOW,
     )
-    return CommittedExecutiveDecision("decision-1", candidate, (), NOW)
+    return CommittedExecutiveDecision(
+        "decision-1", candidate, (), NOW, ExecutiveBoundsProvenance("test-bounds", 1)
+    )
 
 
 def _facts(act: str = "gratitude") -> tuple[SpeechSemanticFact, SpeechSemanticFact]:

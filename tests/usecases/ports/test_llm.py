@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 
 from app.domain.contracts import RevisionVector
 from app.domain.llm import (
-    LLMExecutionPolicy,
     LLMFailureCode,
     LLMInterruptibility,
     LLMModelClass,
@@ -19,6 +18,7 @@ from app.domain.llm import (
     StructuredPayload,
 )
 from app.usecases.ports import LLMRolePort
+from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 
@@ -34,7 +34,7 @@ def make_request(request_id: str, role_id: str) -> LLMRoleRequest:
         LLMPriority.NORMAL,
         LLMInterruptibility.INTERRUPTIBLE,
         LLMStalePolicy.REJECT,
-        LLMExecutionPolicy(
+        make_execution_policy(
             LLMModelClass.FAST, LLMReasoningEffort.LOW, 5, 1, 100
         ),
         NOW,

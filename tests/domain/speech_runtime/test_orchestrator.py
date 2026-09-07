@@ -4,14 +4,26 @@ import asyncio
 
 import pytest
 
-from app.domain.llm import LLMPriority
-from app.domain.speech_runtime.admission import (
-    SpeechPreparationAdmission,
-    SpeechPreparationAdmissionPolicy,
-)
+from app.domain.speech_runtime.admission import SpeechPreparationAdmission
 from app.domain.speech_runtime.contracts import TTSPreparationMode
 from app.domain.speech_runtime.orchestrator import SpeechPreparationOrchestrator
+from app.domain.speech_runtime.policy import SpeechCandidatePriority
 from app.domain.speech_runtime.tasks import CandidateTaskRegistry
+from tests.domain.speech_runtime.policy_fixtures import runtime_policy
+
+
+def _orchestrator(
+    tasks: CandidateTaskRegistry,
+    *,
+    max_in_flight: int = 4,
+    max_background: int = 2,
+) -> tuple[SpeechPreparationOrchestrator, SpeechPreparationAdmission]:
+    policy = runtime_policy(
+        max_in_flight=max_in_flight,
+        max_background_in_flight=max_background,
+    )
+    admission = SpeechPreparationAdmission(policy)
+    return SpeechPreparationOrchestrator(tasks, admission, policy), admission
 
 
 @pytest.mark.asyncio
@@ -30,14 +42,13 @@ async def test_character_fan_out_does_not_wait_for_blocked_verifier() -> None:
         return object()
 
     tasks = CandidateTaskRegistry()
-    orchestrator = SpeechPreparationOrchestrator(
-        tasks, SpeechPreparationAdmission(SpeechPreparationAdmissionPolicy(2, 2, 4))
-    )
+    orchestrator, _ = _orchestrator(tasks)
+
     async def character() -> object:
         return object()
 
     character_task = orchestrator.start_preparation(
-        "candidate", 1, LLMPriority.FOREGROUND, character
+        "candidate", 1, SpeechCandidatePriority.FOREGROUND, character
     )
     assert character_task is not None
     await character_task
@@ -63,14 +74,13 @@ async def test_speculative_tts_starts_without_verifier_acceptance() -> None:
         return object()
 
     tasks = CandidateTaskRegistry()
-    orchestrator = SpeechPreparationOrchestrator(
-        tasks, SpeechPreparationAdmission(SpeechPreparationAdmissionPolicy(2, 2, 4))
-    )
+    orchestrator, _ = _orchestrator(tasks)
+
     async def character() -> object:
         return object()
 
     character_task = orchestrator.start_preparation(
-        "candidate", 1, LLMPriority.FOREGROUND, character
+        "candidate", 1, SpeechCandidatePriority.FOREGROUND, character
     )
     assert character_task is not None
     await character_task
@@ -87,9 +97,8 @@ async def test_speculative_tts_starts_without_verifier_acceptance() -> None:
 @pytest.mark.asyncio
 async def test_authoritative_preparation_entry_bounds_background_burst_and_reserves_foreground(
 ) -> None:
-    admission = SpeechPreparationAdmission(SpeechPreparationAdmissionPolicy(1, 1, 2))
     tasks = CandidateTaskRegistry()
-    orchestrator = SpeechPreparationOrchestrator(tasks, admission)
+    orchestrator, admission = _orchestrator(tasks, max_in_flight=2, max_background=1)
     background_started = asyncio.Event()
     foreground_started = asyncio.Event()
     release = asyncio.Event()
@@ -105,7 +114,9 @@ async def test_authoritative_preparation_entry_bounds_background_burst_and_reser
         return object()
 
     background_tasks = [
-        orchestrator.start_preparation(f"background-{index}", 1, LLMPriority.BACKGROUND, background)
+        orchestrator.start_preparation(
+            f"background-{index}", 1, SpeechCandidatePriority.BACKGROUND, background
+        )
         for index in range(100)
     ]
     await background_started.wait()
@@ -114,7 +125,7 @@ async def test_authoritative_preparation_entry_bounds_background_burst_and_reser
     assert sum(task is None for task in background_tasks) >= 99
 
     foreground_task = orchestrator.start_preparation(
-        "foreground", 1, LLMPriority.FOREGROUND, foreground
+        "foreground", 1, SpeechCandidatePriority.FOREGROUND, foreground
     )
     await foreground_started.wait()
     assert admission.active_count == 2
@@ -129,9 +140,8 @@ async def test_authoritative_preparation_entry_bounds_background_burst_and_reser
 
 @pytest.mark.asyncio
 async def test_registered_preparation_is_shutdown_visible_and_releases_admission_lease() -> None:
-    admission = SpeechPreparationAdmission(SpeechPreparationAdmissionPolicy(1, 1, 2))
     tasks = CandidateTaskRegistry()
-    orchestrator = SpeechPreparationOrchestrator(tasks, admission)
+    orchestrator, admission = _orchestrator(tasks, max_in_flight=2, max_background=1)
     entered = asyncio.Event()
 
     async def blocked() -> object:
@@ -139,7 +149,9 @@ async def test_registered_preparation_is_shutdown_visible_and_releases_admission
         await asyncio.Event().wait()
         return object()
 
-    task = orchestrator.start_preparation("candidate", 1, LLMPriority.BACKGROUND, blocked)
+    task = orchestrator.start_preparation(
+        "candidate", 1, SpeechCandidatePriority.BACKGROUND, blocked
+    )
     assert task is not None
     await entered.wait()
     assert admission.active_count == 1
@@ -150,9 +162,8 @@ async def test_registered_preparation_is_shutdown_visible_and_releases_admission
 
 @pytest.mark.asyncio
 async def test_background_burst_cannot_fan_out_after_fast_character_completion() -> None:
-    admission = SpeechPreparationAdmission(SpeechPreparationAdmissionPolicy(1, 1, 2))
     tasks = CandidateTaskRegistry()
-    orchestrator = SpeechPreparationOrchestrator(tasks, admission)
+    orchestrator, admission = _orchestrator(tasks, max_in_flight=2, max_background=1)
     release = asyncio.Event()
 
     async def character() -> object:
@@ -163,7 +174,9 @@ async def test_background_burst_cannot_fan_out_after_fast_character_completion()
         return object()
 
     character_tasks = [
-        orchestrator.start_preparation(f"background-{index}", 1, LLMPriority.BACKGROUND, character)
+        orchestrator.start_preparation(
+            f"background-{index}", 1, SpeechCandidatePriority.BACKGROUND, character
+        )
         for index in range(100)
     ]
     admitted = [task for task in character_tasks if task is not None]
@@ -172,7 +185,7 @@ async def test_background_burst_cannot_fan_out_after_fast_character_completion()
     verifier, performance = orchestrator.fan_out_after_character(
         "background-0", 1, blocked, blocked
     )
-    assert tasks.pending_task_count == 3  # admission lease + verifier + performance
+    assert tasks.pending_task_count == 3
     for index in range(1, 100):
         with pytest.raises(ValueError, match="admitted"):
             orchestrator.fan_out_after_character(f"background-{index}", 1, blocked, blocked)
@@ -185,9 +198,8 @@ async def test_background_burst_cannot_fan_out_after_fast_character_completion()
 
 @pytest.mark.asyncio
 async def test_admission_lease_cannot_release_while_downstream_roles_are_pending() -> None:
-    admission = SpeechPreparationAdmission(SpeechPreparationAdmissionPolicy(1, 1, 2))
     tasks = CandidateTaskRegistry()
-    orchestrator = SpeechPreparationOrchestrator(tasks, admission)
+    orchestrator, admission = _orchestrator(tasks, max_in_flight=2, max_background=1)
     release = asyncio.Event()
 
     async def character() -> object:
@@ -197,18 +209,27 @@ async def test_admission_lease_cannot_release_while_downstream_roles_are_pending
         await release.wait()
         return object()
 
-    first = orchestrator.start_preparation("first", 1, LLMPriority.BACKGROUND, character)
+    first = orchestrator.start_preparation(
+        "first", 1, SpeechCandidatePriority.BACKGROUND, character
+    )
     assert first is not None
     await first
     verifier, performance = orchestrator.fan_out_after_character("first", 1, blocked, blocked)
     with pytest.raises(ValueError, match="未完了Role"):
         orchestrator.complete_preparation("first", 1)
-    assert orchestrator.start_preparation("second", 1, LLMPriority.BACKGROUND, character) is None
+    assert (
+        orchestrator.start_preparation(
+            "second", 1, SpeechCandidatePriority.BACKGROUND, character
+        )
+        is None
+    )
     release.set()
     await asyncio.gather(verifier, performance)
     orchestrator.complete_preparation("first", 1)
     await asyncio.sleep(0)
-    second = orchestrator.start_preparation("second", 1, LLMPriority.BACKGROUND, character)
+    second = orchestrator.start_preparation(
+        "second", 1, SpeechCandidatePriority.BACKGROUND, character
+    )
     assert second is not None
     await second
     orchestrator.complete_preparation("second", 1)

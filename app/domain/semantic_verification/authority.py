@@ -4,9 +4,14 @@ from collections.abc import Iterable
 from datetime import datetime
 from threading import Lock
 
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
 from app.domain.character_language import CharacterUtterance
 from app.domain.speech_semantics import SpeechPropositionDisposition
 
+from .bounds import validate_blind_candidate_bounds, validate_relation_candidate_bounds
 from .contracts import (
     _ACCEPTANCE_PROOF,
     _BLIND_PROOF,
@@ -79,7 +84,9 @@ class SemanticVerificationAuthority:
         *,
         observation_id: str,
         committed_at: datetime,
+        bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
     ) -> BlindUtteranceObservation:
+        validate_blind_candidate_bounds(candidate, bounds_policy)
         if candidate.request_id != snapshot.blind_request_id:
             raise ValueError("blind request identityが一致しません")
         if candidate.utterance_id != snapshot.utterance.utterance_id:
@@ -107,7 +114,9 @@ class SemanticVerificationAuthority:
         *,
         observation_id: str,
         committed_at: datetime,
+        bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
     ) -> PlanRelationObservation:
+        validate_relation_candidate_bounds(candidate, bounds_policy)
         if candidate.request_id != snapshot.relation_request_id:
             raise ValueError("relation request identityが一致しません")
         if candidate.semantic_plan_id != snapshot.semantic_plan.plan_id:

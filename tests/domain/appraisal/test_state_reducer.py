@@ -9,7 +9,10 @@ from app.domain.appraisal import (
     AppraisalCandidate,
     AppraisalFactsSnapshot,
     AppraisalPath,
+    DecayDiagnosticCode,
+    DecayFacetRule,
     DecayPolicy,
+    DecayTargetScope,
     FacetRef,
     InternalStateFacet,
     InternalStateReducer,
@@ -57,6 +60,30 @@ def candidate(
 
 def proposal(ref: FacetRef = JOY, delta: float = 0.2) -> StateDeltaProposal:
     return StateDeltaProposal(ref, delta, 0.9, ("event:1",))
+
+
+def decay_policy(*rules: DecayFacetRule, revision: int = 1) -> DecayPolicy:
+    return DecayPolicy("yura.appraisal.decay", revision, rules)
+
+
+def rule(
+    rule_id: str,
+    state_key: str | None,
+    *,
+    baseline: float = 0.0,
+    half_life_seconds: float = 10.0,
+    minimum_elapsed_seconds: float = 0.0,
+    scope: DecayTargetScope = DecayTargetScope.GLOBAL,
+) -> DecayFacetRule:
+    return DecayFacetRule(
+        rule_id,
+        StateFacetKind.EMOTION,
+        state_key,
+        scope,
+        baseline,
+        half_life_seconds,
+        minimum_elapsed_seconds,
+    )
 
 
 def test_reducer_is_only_immutable_state_transition_authority() -> None:
@@ -237,15 +264,14 @@ def test_candidate_cannot_predate_current_state() -> None:
 
 def test_decay_is_deterministic_from_elapsed_time_and_half_life() -> None:
     state = snapshot(facet(value=0.8))
-    policy = (DecayPolicy(JOY, 0.0, 10.0),)
+    policy = decay_policy(rule("joy", "joy"))
     first = decay_candidate(
         state,
         policy,
         candidate_id="decay:1",
         source_event_id="timer:1",
         source_context_revision=7,
-        elapsed_seconds=10.0,
-        created_at=NOW + timedelta(seconds=10),
+        evaluated_at=NOW + timedelta(seconds=10),
     )
     second = decay_candidate(
         state,
@@ -253,26 +279,56 @@ def test_decay_is_deterministic_from_elapsed_time_and_half_life() -> None:
         candidate_id="decay:2",
         source_event_id="timer:1",
         source_context_revision=7,
-        elapsed_seconds=10.0,
-        created_at=NOW + timedelta(seconds=10),
+        evaluated_at=NOW + timedelta(seconds=10),
     )
     assert first.proposals[0].delta == pytest.approx(-0.4)
     assert first.proposals[0].delta == second.proposals[0].delta
+    assert first.proposals[0].decay_provenance is not None
+    assert first.proposals[0].decay_provenance.elapsed_seconds == 10.0
 
 
-def test_resume_uses_previous_state_and_downtime_without_fixed_preset() -> None:
+def test_decay_two_half_lives_and_both_sides_converge_monotonically_to_baseline() -> None:
+    policy = decay_policy(rule("joy", "joy", half_life_seconds=10))
+    for value in (0.8, -0.8):
+        state = snapshot(facet(value=value))
+        one_half_life = decay_candidate(
+            state,
+            policy,
+            candidate_id="decay:one",
+            source_event_id="timer:1",
+            source_context_revision=7,
+            evaluated_at=NOW + timedelta(seconds=10),
+        )
+        two_half_lives = decay_candidate(
+            state,
+            policy,
+            candidate_id="decay:two",
+            source_event_id="timer:1",
+            source_context_revision=7,
+            evaluated_at=NOW + timedelta(seconds=20),
+        )
+        after_one = value + one_half_life.proposals[0].delta
+        after_two = value + two_half_lives.proposals[0].delta
+        assert after_two == pytest.approx(value / 4)
+        assert abs(after_two) < abs(after_one) < abs(value)
+
+
+def test_resume_uses_absolute_elapsed_not_lifecycle_downtime_without_fixed_preset() -> None:
     state = snapshot(facet(value=0.8), facet(FEAR, 0.6))
     lifecycle = LifecycleAppraisalInput(
         "lifecycle:resume",
         LifecycleKind.RESUME,
         8,
         NOW + timedelta(hours=1),
-        3600,
+        7,
     )
     result = lifecycle_candidate(
         state,
         lifecycle,
-        (DecayPolicy(JOY, 0.0, 3600), DecayPolicy(FEAR, 0.1, 1800)),
+        decay_policy(
+            rule("joy", "joy", half_life_seconds=3600),
+            rule("fear", "fear", baseline=0.1, half_life_seconds=1800),
+        ),
         candidate_id="resume:1",
     )
     assert result.path is AppraisalPath.LIFECYCLE
@@ -281,3 +337,189 @@ def test_resume_uses_previous_state_and_downtime_without_fixed_preset() -> None:
     assert all(
         item.facet_ref.state_key not in {"neutral", "awakening"} for item in result.proposals
     )
+    assert all(
+        item.decay_provenance is not None and item.decay_provenance.elapsed_seconds == 3600
+        for item in result.proposals
+    )
+
+
+def test_decay_rule_selection_missing_rule_and_policy_unavailable_fail_closed() -> None:
+    state = snapshot(facet(JOY, 0.8), facet(FEAR, -0.8))
+    selected = decay_candidate(
+        state,
+        decay_policy(rule("emotion-default", None, half_life_seconds=10)),
+        candidate_id="decay:rule",
+        source_event_id="timer:1",
+        source_context_revision=7,
+        evaluated_at=NOW + timedelta(seconds=10),
+    )
+    assert len(selected.proposals) == 2
+    assert all(item.decay_provenance is not None for item in selected.proposals)
+    assert all(
+        item.decay_provenance.decay_rule_id == "emotion-default"
+        for item in selected.proposals
+        if item.decay_provenance
+    )
+
+    missing = decay_candidate(
+        state,
+        decay_policy(rule("joy", "joy", minimum_elapsed_seconds=20)),
+        candidate_id="decay:missing",
+        source_event_id="timer:1",
+        source_context_revision=7,
+        evaluated_at=NOW + timedelta(seconds=10),
+    )
+    assert missing.proposals == ()
+    assert missing.diagnostics[0].code is DecayDiagnosticCode.POLICY_RULE_MISSING
+    assert missing.diagnostics[0].facet_ref == FEAR
+
+    unavailable = decay_candidate(
+        snapshot(facet(value=0.8)),
+        None,
+        candidate_id="decay:unavailable",
+        source_event_id="timer:1",
+        source_context_revision=7,
+        evaluated_at=NOW + timedelta(seconds=10),
+    )
+    assert unavailable.proposals == ()
+    assert unavailable.diagnostics[0].code is DecayDiagnosticCode.POLICY_UNAVAILABLE
+    with pytest.raises(ValueError, match="重複"):
+        decay_policy(rule("one", "joy"), rule("two", "joy"))
+
+
+def test_exact_rule_precedence_and_scope_separation_are_fail_closed() -> None:
+    exact = decay_candidate(
+        snapshot(facet(JOY, 0.8)),
+        decay_policy(
+            rule("emotion-default", None, half_life_seconds=20),
+            rule("joy-exact", "joy", half_life_seconds=10),
+        ),
+        candidate_id="decay:precedence",
+        source_event_id="timer:1",
+        source_context_revision=7,
+        evaluated_at=NOW + timedelta(seconds=10),
+    )
+    assert exact.proposals[0].decay_provenance is not None
+    assert exact.proposals[0].decay_provenance.decay_rule_id == "joy-exact"
+
+    targeted_joy = FacetRef(StateFacetKind.EMOTION, "joy", "person:1")
+    targeted_with_global_only = decay_candidate(
+        snapshot(facet(targeted_joy, 0.8)),
+        decay_policy(rule("joy-global", "joy")),
+        candidate_id="decay:global-only",
+        source_event_id="timer:1",
+        source_context_revision=7,
+        evaluated_at=NOW + timedelta(seconds=10),
+    )
+    global_with_targeted_only = decay_candidate(
+        snapshot(facet(JOY, 0.8)),
+        decay_policy(
+            DecayFacetRule(
+                "joy-targeted",
+                StateFacetKind.EMOTION,
+                "joy",
+                DecayTargetScope.TARGETED,
+                0.0,
+                10.0,
+                0.0,
+            )
+        ),
+        candidate_id="decay:targeted-only",
+        source_event_id="timer:1",
+        source_context_revision=7,
+        evaluated_at=NOW + timedelta(seconds=10),
+    )
+    for candidate in (targeted_with_global_only, global_with_targeted_only):
+        assert candidate.proposals == ()
+        assert candidate.diagnostics[0].code is DecayDiagnosticCode.POLICY_RULE_MISSING
+
+
+def test_reducer_rejects_old_decay_policy_without_rebinding_provenance() -> None:
+    current_policy = decay_policy(rule("joy", "joy"), revision=2)
+    old_candidate = decay_candidate(
+        snapshot(facet(value=0.8)),
+        decay_policy(rule("joy", "joy"), revision=1),
+        candidate_id="decay:old",
+        source_event_id="timer:1",
+        source_context_revision=7,
+        evaluated_at=NOW + timedelta(seconds=10),
+    )
+    with pytest.raises(ValueError, match="方針が古く"):
+        InternalStateReducer(snapshot(facet(value=0.8))).commit(
+            old_candidate,
+            current_source_context_revision=7,
+            committed_at=NOW + timedelta(seconds=11),
+            current_decay_policy=current_policy,
+        )
+
+
+def test_reducer_rejects_stale_decay_state_and_source_revisions() -> None:
+    policy = decay_policy(rule("joy", "joy"))
+    original = snapshot(facet(value=0.8))
+    stale = decay_candidate(
+        original,
+        policy,
+        candidate_id="decay:stale",
+        source_event_id="timer:1",
+        source_context_revision=7,
+        evaluated_at=NOW + timedelta(seconds=10),
+    )
+    newer_state = InternalStateSnapshot(4, 7, original.facets, NOW)
+    with pytest.raises(ValueError, match="stale for current state"):
+        InternalStateReducer(newer_state).commit(
+            stale,
+            current_source_context_revision=7,
+            committed_at=NOW + timedelta(seconds=11),
+            current_decay_policy=policy,
+        )
+    with pytest.raises(ValueError, match="stale for source context"):
+        InternalStateReducer(original).commit(
+            stale,
+            current_source_context_revision=8,
+            committed_at=NOW + timedelta(seconds=11),
+            current_decay_policy=policy,
+        )
+
+
+def test_targeted_rule_numeric_rejection_and_noop_are_explicit() -> None:
+    targeted_rule = DecayFacetRule(
+        "interest-targeted",
+        StateFacetKind.INTEREST,
+        "curiosity",
+        DecayTargetScope.TARGETED,
+        0.0,
+        10.0,
+        0.0,
+    )
+    targeted = decay_candidate(
+        snapshot(facet(INTEREST, 0.8)),
+        decay_policy(targeted_rule),
+        candidate_id="decay:targeted",
+        source_event_id="timer:1",
+        source_context_revision=7,
+        evaluated_at=NOW + timedelta(seconds=10),
+    )
+    assert targeted.proposals[0].facet_ref == INTEREST
+    assert targeted.proposals[0].delta == pytest.approx(-0.4)
+
+    noop = decay_candidate(
+        snapshot(facet(value=0.0)),
+        decay_policy(rule("joy", "joy")),
+        candidate_id="decay:noop",
+        source_event_id="timer:1",
+        source_context_revision=7,
+        evaluated_at=NOW + timedelta(seconds=10),
+    )
+    assert noop.proposals == ()
+    with pytest.raises(ValueError, match="half_life"):
+        rule("bad", "joy", half_life_seconds=cast(Any, True))
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_decay_rule_rejects_non_finite_values_for_every_numeric_field(bad: float) -> None:
+    with pytest.raises(ValueError):
+        rule("bad-baseline", "joy", baseline=bad)
+    with pytest.raises(ValueError):
+        rule("bad-half-life", "joy", half_life_seconds=bad)
+    with pytest.raises(ValueError):
+        rule("bad-minimum", "joy", minimum_elapsed_seconds=bad)

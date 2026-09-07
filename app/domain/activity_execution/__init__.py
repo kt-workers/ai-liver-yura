@@ -10,6 +10,7 @@ from .contracts import (
     ExecutionDispatchRequest,
     ExecutionEffectEvidence,
     ExecutionEffectKind,
+    ExecutionEffectUncertainty,
     ExecutionPreconditionState,
     ExecutionPreflightSnapshot,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "ExecutionDispatchRequest",
     "ExecutionEffectEvidence",
     "ExecutionEffectKind",
+    "ExecutionEffectUncertainty",
     "ExecutionPreconditionState",
     "ExecutionPreflightPort",
     "ExecutionPreflightSnapshot",

@@ -8,6 +8,7 @@ from .contracts import (
     CommitmentTransitionOperation,
     CommitmentTransitionPayload,
     CommittedExecutiveDecision,
+    ExecutiveBoundsProvenance,
     ExecutiveCommitState,
     ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
@@ -20,11 +21,13 @@ from .contracts import (
     ExecutiveOutcome,
     ExecutivePreconditionRequirement,
     ExecutivePriority,
+    ExecutiveSourceEvent,
     GoalTransitionIntent,
     GoalTransitionOperation,
     GoalTransitionPayload,
     PreconditionFact,
     SpeechIntentPayload,
+    build_executive_context_snapshot,
 )
 from .deliberator import (
     ExecutiveDeliberator,
@@ -34,6 +37,7 @@ from .deliberator import (
     commit_result,
     descriptor,
     parse_candidate,
+    validate_candidate_bounds,
 )
 from .projector import authority_ref, to_foundation_decision, to_system_command
 
@@ -48,6 +52,7 @@ __all__ = [
     "CommittedExecutiveDecision",
     "ExecutiveCommitState",
     "ExecutiveContextSnapshot",
+    "ExecutiveBoundsProvenance",
     "ExecutiveDecisionAuthority",
     "ExecutiveDecisionCandidate",
     "ExecutiveDeliberator",
@@ -62,16 +67,19 @@ __all__ = [
     "ExecutivePolicy",
     "ExecutivePreconditionRequirement",
     "ExecutivePriority",
+    "ExecutiveSourceEvent",
     "GoalTransitionIntent",
     "GoalTransitionOperation",
     "GoalTransitionPayload",
     "PreconditionFact",
     "SpeechIntentPayload",
+    "build_executive_context_snapshot",
     "authority_ref",
     "build_request",
     "commit_result",
     "descriptor",
     "parse_candidate",
+    "validate_candidate_bounds",
     "to_foundation_decision",
     "to_system_command",
 ]

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from app.domain.llm import LLMInterruptibility, LLMPriority
+from app.domain.llm import LLMInterruptibility
 from app.domain.speech_runtime.contracts import (
     AudioReadinessState,
     CandidateLifecycle,
@@ -20,10 +20,13 @@ from app.domain.speech_runtime.observation import (
     execution_observation_from_report,
     timing_publication_eligible,
 )
+from app.domain.speech_runtime.policy import SpeechCandidatePriority
+from tests.domain.speech_runtime.policy_fixtures import runtime_policy
 
 
 def _candidate(lifecycle: CandidateLifecycle) -> PreparedSpeechCandidate:
     now = datetime.now(timezone.utc)
+    policy = runtime_policy()
     return PreparedSpeechCandidate(
         candidate_id="candidate",
         preparation_id="preparation",
@@ -35,9 +38,11 @@ def _candidate(lifecycle: CandidateLifecycle) -> PreparedSpeechCandidate:
         source_context_revision=1,
         goal_revision=None,
         attention_revision=None,
-        priority=LLMPriority.FOREGROUND,
+        priority=SpeechCandidatePriority.FOREGROUND,
         interruptibility=LLMInterruptibility.INTERRUPTIBLE,
         expiry_policy_ref="expiry",
+        runtime_policy_id=policy.policy_id,
+        runtime_policy_revision=policy.policy_revision,
         required_preconditions=(),
         semantic_requirement=SemanticVerificationRequirement.REQUIRED,
         semantic_acceptance_id="acceptance",
@@ -53,6 +58,7 @@ def _candidate(lifecycle: CandidateLifecycle) -> PreparedSpeechCandidate:
         lifecycle=lifecycle,
         created_at=now,
         updated_at=now,
+        prepared_at=now,
     )
 
 

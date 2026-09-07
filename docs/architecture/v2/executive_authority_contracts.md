@@ -39,6 +39,16 @@ Executiveが所有しないもの:
 
 参照可能なevidenceはsnapshot内のsource event、fact、capability、precondition IDに限定する。候補が未知の参照を返した場合はfail-closedで拒否する。
 
+### 3.1 共有容量方針の世代
+
+Executiveは独自の容量方針を持たず、`BrainOperationalBoundsPolicy.executive`を必須注入する。snapshot、Provider request、commit済みdecisionには同じ`policy_id / policy_revision`を保持する。
+
+snapshotは型付きselection boundaryで構築する。source eventはtrigger lineageを必ず先に全件保持し、残余だけを`occurred_at desc → event_id asc`で選ぶ。Goal/Commitmentは#366の`GoalContextView`、Memoryは#332のranking resultをそのまま受け取り、Executiveは再順位付けしない。Capabilityはtrusted ownerが渡す`CapabilityRequirement`とdescriptorの`capability_type / operations`が構造的に対応するものをavailabilityに関係なく先に保持し、残余だけを`capability_type → capability_id → revision desc`で選ぶ。availabilityと`allow_degraded`による実行可能性はselectionではなくcommit gateが再検証する。Preconditionはtrusted ownerの`ExecutivePreconditionRequirement`が参照するものを先に保持し、未参照factを必須evidenceの代用にしない。
+
+必須source lineage、fact、capability、preconditionが上限内に収まらない場合は`EXECUTIVE_CONTEXT_TOO_LARGE`として拒否し、first-N、slice、silent truncateを行わない。Provider candidateのintent、Goal transition、Commitment transition、それぞれが所有する参照が上限を超える場合も切り詰めず拒否する。fact payload量はcanonical JSON UTF-8 bytesで測り、診断にはraw payloadを含めない。
+
+Provider await後、commit直前のcurrent policy世代がsnapshot世代と異なる場合、結果はstaleとして拒否する。次requestはcurrent policyによるsnapshotを新規構築する。
+
 ## 4. 出力契約
 
 `ExecutiveDecisionCandidate` はLLMまたは決定論的policyが生成する未確定候補である。

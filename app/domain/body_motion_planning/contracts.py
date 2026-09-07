@@ -462,6 +462,9 @@ class BodyMotionPlan:
     interruptibility: ExecutiveInterruptibility
     preconditions: tuple[PreconditionRef, ...]
     required_capabilities: tuple[CapabilityRequirement, ...]
+    body_model_id: str
+    body_model_revision: int
+    body_model_fingerprint: str
     committed_at: datetime
     _proof: InitVar[object | None] = None
 
@@ -484,6 +487,11 @@ class BodyMotionPlan:
             "required_capabilities",
             _owned(self.required_capabilities, CapabilityRequirement, "required_capabilities"),
         )
+        require_identifier(self.body_model_id, "body_model_id")
+        require_revision(self.body_model_revision, "body_model_revision")
+        require_identifier(self.body_model_fingerprint, "body_model_fingerprint")
+        if self.candidate.body_model_id != self.body_model_id:
+            raise ValueError("Planのbody_model_idがcandidateと一致しません")
         require_aware(self.committed_at, "committed_at")
 
 

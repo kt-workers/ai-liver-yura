@@ -39,7 +39,6 @@ from app.domain.goals import (
     InterruptionPolicy,
 )
 from app.domain.llm import (
-    LLMExecutionPolicy,
     LLMModelClass,
     LLMReasoningEffort,
     LLMRoleRequest,
@@ -48,6 +47,7 @@ from app.domain.llm import (
     LLMTokenUsage,
     StructuredPayload,
 )
+from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(9, 4, 2)
@@ -113,7 +113,7 @@ def directive() -> DeterministicPlanningDirective:
 
 def context(*, deterministic: bool = True) -> GoalPlanningContextSnapshot:
     item = goal()
-    view = GoalContextView(4, (item,), (), (), (item,), ())
+    view = GoalContextView(4, "test.goal-context", 1, (item,), (), (), (item,), ())
     return GoalPlanningContextSnapshot(
         REVISIONS,
         view,
@@ -156,7 +156,7 @@ def current(**changes: object) -> GoalPlanningCommitState:
 
 def policy() -> GoalPlanningPolicy:
     return GoalPlanningPolicy(
-        LLMExecutionPolicy(LLMModelClass.BALANCED, LLMReasoningEffort.MEDIUM, 10, 1, 1200)
+        make_execution_policy(LLMModelClass.BALANCED, LLMReasoningEffort.MEDIUM, 10, 1, 1200)
     )
 
 

@@ -6,6 +6,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.domain.contracts.common import utc_instant
+from app.runtime.shutdown import (
+    RuntimeShutdownError,
+    RuntimeShutdownFailure,
+    RuntimeShutdownPolicy,
+    RuntimeShutdownStage,
+)
 
 from .cancellation import CancellationRegistry, CancellationToken
 from .clock import RuntimeClock
@@ -16,9 +22,10 @@ from .contracts import (
     LaneErrorPolicy,
     QueueAdmission,
     QueueAdmissionStatus,
-    QueuePolicy,
     RuntimeDiagnosticsSnapshot,
     RuntimeHealth,
+    RuntimeLanePolicy,
+    RuntimeSchedulerPolicy,
     RuntimeWorkItem,
     WorkDisposition,
     WorkOutcome,
@@ -27,28 +34,7 @@ from .queue import BoundedWorkQueue, Coalescer
 
 WorkHandler = Callable[[RuntimeWorkItem[Any], CancellationToken], Awaitable[Any]]
 StaleValidator = Callable[[RuntimeWorkItem[Any]], bool]
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeLanePolicy:
-    lane_id: str
-    capacity: int
-    queue_policy: QueuePolicy
-    max_in_flight: int = 1
-    max_priority_burst: int = 8
-    cancellation_grace_seconds: float = 1.0
-    error_policy: LaneErrorPolicy = LaneErrorPolicy.ISOLATE
-
-    def __post_init__(self) -> None:
-        if not self.lane_id.strip():
-            raise ValueError("lane_id must be non-empty")
-        if type(self.max_in_flight) is not int or self.max_in_flight < 1:
-            raise ValueError("max_in_flight must be a positive int")
-        if (
-            type(self.cancellation_grace_seconds) not in (int, float)
-            or self.cancellation_grace_seconds < 0
-        ):
-            raise ValueError("cancellation_grace_seconds must be non-negative")
+ShutdownHook = Callable[[], Awaitable[None]]
 
 
 @dataclass(slots=True)
@@ -68,8 +54,17 @@ class _Lane:
 
 
 class RuntimeCoordinator:
-    def __init__(self, clock: RuntimeClock) -> None:
+    def __init__(
+        self,
+        clock: RuntimeClock,
+        scheduler_policy: RuntimeSchedulerPolicy,
+        shutdown_policy: RuntimeShutdownPolicy,
+    ) -> None:
+        if not isinstance(shutdown_policy, RuntimeShutdownPolicy):
+            raise ValueError("Runtime shutdown policy が必要です")
         self._clock = clock
+        self._scheduler_policy = scheduler_policy
+        self._shutdown_policy = shutdown_policy
         self._state = CoordinatorState.CREATED
         self._lanes: dict[str, _Lane] = {}
         self._tasks: set[asyncio.Task[None]] = set()
@@ -77,14 +72,30 @@ class RuntimeCoordinator:
         self._running_items: dict[str, RuntimeWorkItem[Any]] = {}
         self._cancellations = CancellationRegistry()
         self._outcomes: asyncio.Queue[WorkOutcome[Any]] = asyncio.Queue()
-        self._close_hooks: list[Callable[[], Awaitable[None]]] = []
+        self._producer_stop_hooks: list[ShutdownHook] = []
+        self._final_persistence_hooks: list[ShutdownHook] = []
+        self._close_hooks: list[ShutdownHook] = []
         self._stop_lock = asyncio.Lock()
         self._shutdown_control_open = False
         self._shutdown_task: asyncio.Task[None] | None = None
+        self._shutdown_failures: tuple[RuntimeShutdownFailure, ...] = ()
+        self._shutdown_terminal_error: RuntimeShutdownError | None = None
 
     @property
     def state(self) -> CoordinatorState:
         return self._state
+
+    @property
+    def scheduler_policy(self) -> RuntimeSchedulerPolicy:
+        return self._scheduler_policy
+
+    @property
+    def shutdown_policy(self) -> RuntimeShutdownPolicy:
+        return self._shutdown_policy
+
+    @property
+    def shutdown_failures(self) -> tuple[RuntimeShutdownFailure, ...]:
+        return self._shutdown_failures
 
     def register_lane(
         self,
@@ -95,15 +106,15 @@ class RuntimeCoordinator:
         coalescer: Coalescer[Any] | None = None,
     ) -> None:
         if self._state is not CoordinatorState.CREATED:
-            raise RuntimeError("lanes can only be registered before start")
+            raise RuntimeError("laneはstart前にだけ登録できます")
         if policy.lane_id in self._lanes:
-            raise ValueError(f"duplicate lane: {policy.lane_id}")
+            raise ValueError(f"lane_idが重複しています: {policy.lane_id}")
         self._lanes[policy.lane_id] = _Lane(
             policy,
             BoundedWorkQueue(
-                policy.capacity,
+                policy.queue_capacity,
                 policy.queue_policy,
-                max_priority_burst=policy.max_priority_burst,
+                max_priority_burst=self._scheduler_policy.max_priority_burst,
                 coalescer=coalescer,
             ),
             handler,
@@ -111,14 +122,24 @@ class RuntimeCoordinator:
             asyncio.Event(),
         )
 
-    def register_close_hook(self, hook: Callable[[], Awaitable[None]]) -> None:
+    def register_producer_stop_hook(self, hook: ShutdownHook) -> None:
         if self._state is not CoordinatorState.CREATED:
-            raise RuntimeError("close hooks can only be registered before start")
+            raise RuntimeError("producer stop hookはstart前にだけ登録できます")
+        self._producer_stop_hooks.append(hook)
+
+    def register_final_persistence_hook(self, hook: ShutdownHook) -> None:
+        if self._state is not CoordinatorState.CREATED:
+            raise RuntimeError("final persistence hookはstart前にだけ登録できます")
+        self._final_persistence_hooks.append(hook)
+
+    def register_close_hook(self, hook: ShutdownHook) -> None:
+        if self._state is not CoordinatorState.CREATED:
+            raise RuntimeError("close hookはstart前にだけ登録できます")
         self._close_hooks.append(hook)
 
     async def start(self) -> None:
         if self._state is not CoordinatorState.CREATED:
-            raise RuntimeError("coordinator can only be started once")
+            raise RuntimeError("coordinatorは1回だけstartできます")
         self._state = CoordinatorState.RUNNING
         for lane in self._lanes.values():
             task = asyncio.create_task(
@@ -150,7 +171,7 @@ class RuntimeCoordinator:
         if admission.accepted:
             assert admission.admitted_work_id is not None
             if admission.admitted_work_id != item.work_id:
-                raise RuntimeError("queue admitted an unexpected work identity")
+                raise RuntimeError("queueが予期しないwork identityをadmitしました")
             for displaced in admission.displaced_work_ids:
                 if displaced != admission.admitted_work_id:
                     self._cancellations.complete(displaced)
@@ -166,9 +187,7 @@ class RuntimeCoordinator:
             if removed is not None:
                 token = self._cancellations.token_for(work_id)
                 if token is not None:
-                    token.cancel(
-                        self._cancellation_record(work_id, reason)
-                    )
+                    token.cancel(self._cancellation_record(work_id, reason))
                 self._cancellations.complete(work_id)
                 lane.cancelled += 1
                 self._outcomes.put_nowait(
@@ -202,10 +221,9 @@ class RuntimeCoordinator:
         async with self._stop_lock:
             if self._state is CoordinatorState.STOPPED:
                 return
-            if self._state is CoordinatorState.CREATED:
-                await self._close_resources()
-                self._state = CoordinatorState.STOPPED
-                return
+            if self._shutdown_terminal_error is not None:
+                raise self._shutdown_terminal_error
+            failures: list[RuntimeShutdownFailure] = list(self._shutdown_failures)
             self._state = CoordinatorState.STOPPING
             self._shutdown_control_open = True
             for lane in self._lanes.values():
@@ -215,28 +233,57 @@ class RuntimeCoordinator:
                 lane.wake.set()
             for work_id in tuple(self._running_tasks):
                 self.cancel(work_id, "coordinator shutdown")
-            # Let callers that observed STOPPING submit shutdown controls, then
-            # atomically close admission before workers are allowed to drain.
             await asyncio.sleep(0)
             self._shutdown_control_open = False
             for lane in self._lanes.values():
                 lane.wake.set()
-            max_grace = max(
-                (lane.policy.cancellation_grace_seconds for lane in self._lanes.values()),
-                default=0.0,
+
+            settled_cleanly = await self._settle_running_tasks(
+                self._shutdown_policy.in_flight_settle_grace_seconds
             )
-            await self._await_running_with_grace(max_grace)
+            if not settled_cleanly:
+                failures.append(
+                    RuntimeShutdownFailure(
+                        RuntimeShutdownStage.IN_FLIGHT_SETTLE,
+                        "TimeoutError",
+                    )
+                )
             for lane in self._lanes.values():
                 lane.wake.set()
-            await asyncio.gather(*tuple(self._tasks), return_exceptions=True)
-            await self._close_resources()
-            if (
-                self._running_tasks
-                or self._tasks
+
+            failures.extend(await self._stop_producers())
+            failures.extend(await self._run_final_persistence_hooks())
+            failures.extend(await self._close_resources())
+
+            joined_cleanly = await self._join_owned_tasks(
+                self._shutdown_policy.owned_task_join_grace_seconds
+            )
+            if not joined_cleanly:
+                failures.append(
+                    RuntimeShutdownFailure(
+                        RuntimeShutdownStage.OWNED_TASK_JOIN,
+                        "TimeoutError",
+                    )
+                )
+
+            pending_owned = (
+                bool(self._running_tasks)
+                or bool(self._tasks)
                 or any(len(lane.queue) or lane.in_flight for lane in self._lanes.values())
-                or self._cancellations.active_work_ids()
-            ):
-                raise RuntimeError("runtime shutdown left pending owned work")
+                or bool(self._cancellations.active_work_ids())
+            )
+            if pending_owned:
+                failures.append(
+                    RuntimeShutdownFailure(
+                        RuntimeShutdownStage.PENDING_OWNED_WORK,
+                        "PendingOwnedWork",
+                    )
+                )
+            self._shutdown_failures = self._deduplicate_failures(tuple(failures))
+            if pending_owned or not settled_cleanly or not joined_cleanly:
+                error = RuntimeShutdownError(self._shutdown_failures)
+                self._shutdown_terminal_error = error
+                raise error
             self._state = CoordinatorState.STOPPED
 
     def request_stop(self) -> asyncio.Task[None]:
@@ -253,21 +300,92 @@ class RuntimeCoordinator:
         elif self._state is not CoordinatorState.STOPPED:
             await self.stop()
 
-    async def _await_running_with_grace(self, grace: float) -> None:
+    async def _settle_running_tasks(self, grace: float) -> bool:
         tasks = tuple(self._running_tasks.values())
         if not tasks:
-            return
+            return True
         _, pending = await asyncio.wait(tasks, timeout=grace)
+        if not pending:
+            return True
         for task in pending:
             task.cancel()
-        if pending:
-            _, still_pending = await asyncio.wait(pending, timeout=max(grace, 0.05))
-            if still_pending:
-                raise RuntimeError("runtime tasks ignored cancellation grace")
+        await asyncio.sleep(0)
+        return False
 
-    async def _close_resources(self) -> None:
-        for hook in reversed(self._close_hooks):
-            await hook()
+    async def _stop_producers(self) -> tuple[RuntimeShutdownFailure, ...]:
+        return await self._run_phase_hooks(
+            tuple(self._producer_stop_hooks),
+            self._shutdown_policy.resource_close_grace_seconds,
+            RuntimeShutdownStage.PRODUCER_STOP,
+            reverse=True,
+            phase_bounded=False,
+        )
+
+    async def _run_final_persistence_hooks(self) -> tuple[RuntimeShutdownFailure, ...]:
+        return await self._run_phase_hooks(
+            tuple(self._final_persistence_hooks),
+            self._shutdown_policy.final_persistence_grace_seconds,
+            RuntimeShutdownStage.FINAL_PERSISTENCE,
+            reverse=False,
+            phase_bounded=True,
+        )
+
+    async def _close_resources(self) -> tuple[RuntimeShutdownFailure, ...]:
+        return await self._run_phase_hooks(
+            tuple(self._close_hooks),
+            self._shutdown_policy.resource_close_grace_seconds,
+            RuntimeShutdownStage.RESOURCE_CLOSE,
+            reverse=True,
+            phase_bounded=False,
+        )
+
+    @staticmethod
+    async def _run_phase_hooks(
+        hooks: tuple[ShutdownHook, ...],
+        grace_seconds: float,
+        stage: RuntimeShutdownStage,
+        *,
+        reverse: bool,
+        phase_bounded: bool,
+    ) -> tuple[RuntimeShutdownFailure, ...]:
+        ordered = tuple(reversed(hooks)) if reverse else hooks
+        failures: list[RuntimeShutdownFailure] = []
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + grace_seconds
+        for hook in ordered:
+            timeout = grace_seconds
+            if phase_bounded:
+                timeout = max(0.0, deadline - loop.time())
+            try:
+                await asyncio.wait_for(hook(), timeout=timeout)
+            except Exception as error:
+                failures.append(RuntimeShutdownFailure(stage, type(error).__name__))
+        return tuple(failures)
+
+    async def _join_owned_tasks(self, grace: float) -> bool:
+        tasks = tuple(self._tasks)
+        if not tasks:
+            return True
+        _, pending = await asyncio.wait(tasks, timeout=grace)
+        if not pending:
+            return True
+        for task in pending:
+            task.cancel()
+        await asyncio.sleep(0)
+        return False
+
+    @staticmethod
+    def _deduplicate_failures(
+        failures: tuple[RuntimeShutdownFailure, ...],
+    ) -> tuple[RuntimeShutdownFailure, ...]:
+        seen: set[tuple[RuntimeShutdownStage, str]] = set()
+        result: list[RuntimeShutdownFailure] = []
+        for failure in failures:
+            key = (failure.stage, failure.error_class)
+            if key not in seen:
+                seen.add(key)
+                result.append(failure)
+        return tuple(result)
 
     def diagnostics(self) -> RuntimeDiagnosticsSnapshot:
         now = self._clock.now()
@@ -360,7 +478,10 @@ class RuntimeCoordinator:
         error: str | None = None
         try:
             now = self._clock.now()
-            if item.deadline_at is not None and utc_instant(now) >= utc_instant(item.deadline_at):
+            if (
+                item.deadline_at is not None
+                and utc_instant(now) >= utc_instant(item.deadline_at)
+            ):
                 disposition = WorkDisposition.TIMED_OUT
             elif not lane.stale_validator(item):
                 disposition = WorkDisposition.STALE
@@ -370,8 +491,10 @@ class RuntimeCoordinator:
                     disposition = WorkDisposition.CANCELLED
                 elif not lane.stale_validator(item):
                     disposition = WorkDisposition.STALE
-                elif item.deadline_at is not None and utc_instant(self._clock.now()) >= utc_instant(
-                    item.deadline_at
+                elif (
+                    item.deadline_at is not None
+                    and utc_instant(self._clock.now())
+                    >= utc_instant(item.deadline_at)
                 ):
                     disposition = WorkDisposition.TIMED_OUT
         except asyncio.CancelledError:
@@ -380,7 +503,7 @@ class RuntimeCoordinator:
             disposition = WorkDisposition.FAILED
             error = type(exc).__name__
             lane.last_error = error
-            if lane.policy.error_policy is LaneErrorPolicy.FAIL_FAST:
+            if lane.policy.error_isolation is LaneErrorPolicy.FAIL_FAST_CONTROLLED:
                 self.request_stop()
         finally:
             lane.in_flight -= 1

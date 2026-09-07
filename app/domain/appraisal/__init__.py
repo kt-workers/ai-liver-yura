@@ -4,7 +4,12 @@ from .contracts import (
     AppraisalDimensionKind,
     AppraisalFactsSnapshot,
     AppraisalPath,
+    DecayDiagnostic,
+    DecayDiagnosticCode,
+    DecayFacetRule,
     DecayPolicy,
+    DecayProposalProvenance,
+    DecayTargetScope,
     FacetRef,
     InternalStateFacet,
     InternalStateSnapshot,
@@ -28,9 +33,15 @@ from .deep import (
     descriptor,
 )
 from .fast import DeterministicAppraisalRule, appraise_event
-from .reducer import InternalStateReducer, decay_candidate, lifecycle_candidate
+from .reducer import (
+    AppraisalStateCommit,
+    InternalStateReducer,
+    decay_candidate,
+    lifecycle_candidate,
+)
 
 __all__ = [
+    "AppraisalStateCommit",
     "AppraisalCandidate",
     "AppraisalFactsSnapshot",
     "AppraisalDimension",
@@ -41,7 +52,12 @@ __all__ = [
     "DeepAppraisalInterpreter",
     "DeepAppraisalLiveStatePort",
     "DeepAppraisalPolicy",
+    "DecayDiagnostic",
+    "DecayDiagnosticCode",
+    "DecayFacetRule",
     "DecayPolicy",
+    "DecayProposalProvenance",
+    "DecayTargetScope",
     "FacetRef",
     "INPUT_SCHEMA",
     "InternalStateFacet",

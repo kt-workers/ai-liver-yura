@@ -3,8 +3,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
+from math import isfinite
+from types import MappingProxyType
 
-from app.domain.contracts.common import require_identifier, require_revision
+from app.domain.contracts.common import freeze_json, require_identifier, require_revision
+from app.domain.llm import LLMFailureCode, LLMRoleFailure, LLMRoleStatus
+from app.domain.llm.contracts import _STATUS_FAILURE
 
 
 class SpeechAct(str, Enum):
@@ -52,6 +56,11 @@ class TemporalRelation(str, Enum):
 class MeaningResolution(str, Enum):
     RESOLVED = "resolved"
     CLARIFICATION_REQUIRED = "clarification_required"
+
+
+_REQUIRED_RESOLUTION_FIELDS = frozenset(
+    {"target_ref", "entities", "references", "information"}
+)
 
 
 class ReferenceContextKind(str, Enum):
@@ -148,6 +157,71 @@ class MeaningReference:
 
 
 @dataclass(frozen=True, slots=True)
+class InputMeaningAcceptancePolicy:
+    """意味候補を採用又は確認要求へ閉じる世代付き方針。"""
+
+    policy_id: str
+    policy_revision: int
+    clarification_confidence_threshold: float
+    required_resolution_fields_by_intent: Mapping[PrimaryIntent, tuple[str, ...]]
+
+    def __post_init__(self) -> None:
+        require_identifier(self.policy_id, "policy_id")
+        require_revision(self.policy_revision, "policy_revision")
+        if (
+            type(self.clarification_confidence_threshold) not in (int, float)
+            or not isfinite(self.clarification_confidence_threshold)
+            or not 0 <= self.clarification_confidence_threshold <= 1
+        ):
+            raise ValueError("確認要求のconfidence閾値は有限な[0, 1]でなければなりません")
+        mapping = dict(self.required_resolution_fields_by_intent)
+        if set(mapping) != set(PrimaryIntent):
+            raise ValueError("必須解決項目は全primary intentを覆わなければなりません")
+        normalized: dict[PrimaryIntent, tuple[str, ...]] = {}
+        for intent, fields in mapping.items():
+            values = tuple(fields)
+            if (
+                any(field not in _REQUIRED_RESOLUTION_FIELDS for field in values)
+                or len(values) != len(set(values))
+            ):
+                raise ValueError("必須解決項目が不正です")
+            normalized[intent] = values
+        object.__setattr__(
+            self,
+            "clarification_confidence_threshold",
+            float(self.clarification_confidence_threshold),
+        )
+        object.__setattr__(
+            self, "required_resolution_fields_by_intent", MappingProxyType(normalized)
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "policy_id": self.policy_id,
+            "policy_revision": self.policy_revision,
+            "clarification_confidence_threshold": self.clarification_confidence_threshold,
+            "required_resolution_fields_by_intent": {
+                intent.value: list(fields)
+                for intent, fields in self.required_resolution_fields_by_intent.items()
+            },
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class InputMeaningFreshnessStamp:
+    """commit直前に取得するsource contextと採用方針の世代。"""
+
+    source_context_revision: int
+    acceptance_policy_id: str
+    acceptance_policy_revision: int
+
+    def __post_init__(self) -> None:
+        require_revision(self.source_context_revision, "source_context_revision")
+        require_identifier(self.acceptance_policy_id, "acceptance_policy_id")
+        require_revision(self.acceptance_policy_revision, "acceptance_policy_revision")
+
+
+@dataclass(frozen=True, slots=True)
 class StructuredInputMeaning:
     source_event_id: str
     source_context_revision: int
@@ -164,10 +238,14 @@ class StructuredInputMeaning:
     confidence: float
     unresolved_fields: tuple[str, ...]
     resolution: MeaningResolution
+    acceptance_policy_id: str
+    acceptance_policy_revision: int
 
     def __post_init__(self) -> None:
         require_identifier(self.source_event_id, "source_event_id")
         require_revision(self.source_context_revision, "source_context_revision")
+        require_identifier(self.acceptance_policy_id, "acceptance_policy_id")
+        require_revision(self.acceptance_policy_revision, "acceptance_policy_revision")
         if self.target_ref is not None:
             require_identifier(self.target_ref, "target_ref")
         if type(self.confidence) not in (int, float) or not 0 <= self.confidence <= 1:
@@ -206,11 +284,17 @@ class StructuredInputMeaning:
             "confidence": self.confidence,
             "unresolved_fields": list(self.unresolved_fields),
             "resolution": self.resolution.value,
+            "acceptance_policy_id": self.acceptance_policy_id,
+            "acceptance_policy_revision": self.acceptance_policy_revision,
         }
 
 
 def meaning_from_json(
-    value: object, *, source_event_id: str, source_context_revision: int, minimum_confidence: float
+    value: object,
+    *,
+    source_event_id: str,
+    source_context_revision: int,
+    acceptance_policy: InputMeaningAcceptancePolicy,
 ) -> StructuredInputMeaning:
     if not isinstance(value, Mapping):
         raise ValueError("meaning output must be an object")
@@ -243,22 +327,23 @@ def meaning_from_json(
     target = value["target_ref"]
     if target is not None and not isinstance(target, str):
         raise ValueError("target_ref must be a string or null")
-    if confidence < minimum_confidence and "confidence" not in unresolved:
+    if (
+        confidence < acceptance_policy.clarification_confidence_threshold
+        and "confidence" not in unresolved
+    ):
         unresolved.append("confidence")
-    target_required = value["primary_intent"] in {
-        PrimaryIntent.REQUEST_ACTION.value,
-        PrimaryIntent.START_ACTIVITY.value,
-        PrimaryIntent.STOP_ACTIVITY.value,
-    }
-    if target_required and target is None and "target_ref" not in unresolved:
-        unresolved.append("target_ref")
     if any(item.resolved_ref is None for item in references) and "references" not in unresolved:
         unresolved.append("references")
+    primary_intent = PrimaryIntent(value["primary_intent"])
+    for field in acceptance_policy.required_resolution_fields_by_intent[primary_intent]:
+        if _resolution_value_is_missing(field, target, entities, references, information):
+            if field not in unresolved:
+                unresolved.append(field)
     return StructuredInputMeaning(
         source_event_id,
         source_context_revision,
         SpeechAct(value["speech_act"]),
-        PrimaryIntent(value["primary_intent"]),
+        primary_intent,
         ExpectedResponse(value["expected_response"]),
         target,
         entities,
@@ -270,7 +355,27 @@ def meaning_from_json(
         confidence,
         tuple(unresolved),
         MeaningResolution.CLARIFICATION_REQUIRED if unresolved else MeaningResolution.RESOLVED,
+        acceptance_policy.policy_id,
+        acceptance_policy.policy_revision,
     )
+
+
+def _resolution_value_is_missing(
+    field: str,
+    target_ref: object,
+    entities: tuple[MeaningEntity, ...],
+    references: tuple[MeaningReference, ...],
+    information: tuple[str, ...],
+) -> bool:
+    if field == "target_ref":
+        return target_ref is None
+    if field == "entities":
+        return not entities
+    if field == "references":
+        return not references or any(item.resolved_ref is None for item in references)
+    if field == "information":
+        return not information
+    raise AssertionError("到達不能な必須解決項目です")
 
 
 def _strings(value: object, name: str) -> tuple[str, ...]:
@@ -301,3 +406,87 @@ def _reference(value: object) -> MeaningReference:
     if not isinstance(value, Mapping) or set(value) != {"mention_id", "resolved_ref"}:
         raise ValueError("reference fields do not match schema")
     return MeaningReference(value["mention_id"], value["resolved_ref"])
+
+
+@dataclass(frozen=True, slots=True)
+class InputMeaningBoundaryFailure:
+    """入力意味解析の所有境界で判定した、公開可能な採用拒否。"""
+
+    code: LLMFailureCode
+    message: str
+    retryable: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.code, LLMFailureCode) or type(self.retryable) is not bool:
+            raise ValueError("境界失敗のコードまたは再試行指定が不正です")
+        require_identifier(self.message, "message")
+
+    def to_dict(self) -> dict[str, object]:
+        return {"code": self.code.value, "message": self.message, "retryable": self.retryable}
+
+
+@dataclass(frozen=True, slots=True)
+class InputMeaningInterpretationResult:
+    """意味・検証済みの役割失敗・境界失敗のいずれか1つを保持する公開結果。"""
+
+    request_id: str
+    trace_id: str
+    source_event_id: str
+    source_context_revision: int
+    role_status: LLMRoleStatus | None
+    meaning: StructuredInputMeaning | None = None
+    role_failure: LLMRoleFailure | None = None
+    boundary_failure: InputMeaningBoundaryFailure | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("request_id", "trace_id", "source_event_id"):
+            require_identifier(getattr(self, name), name)
+        require_revision(self.source_context_revision, "source_context_revision")
+        if self.role_status is not None and not isinstance(self.role_status, LLMRoleStatus):
+            raise ValueError("役割の状態が不正です")
+        if (
+            sum(x is not None for x in (self.meaning, self.role_failure, self.boundary_failure))
+            != 1
+        ):
+            raise ValueError("公開結果は意味または失敗のいずれか1つを必要とします")
+        if self.meaning is not None:
+            if not isinstance(self.meaning, StructuredInputMeaning):
+                raise ValueError("意味の型が不正です")
+            if self.role_status is not LLMRoleStatus.SUCCEEDED:
+                raise ValueError("意味を持つ結果には成功状態が必要です")
+            if (self.meaning.source_event_id, self.meaning.source_context_revision) != (
+                self.source_event_id,
+                self.source_context_revision,
+            ):
+                raise ValueError("意味の出典が公開結果と一致しません")
+        if self.role_failure is not None:
+            if not isinstance(self.role_failure, LLMRoleFailure):
+                raise ValueError("役割失敗の型が不正です")
+            # 状態と失敗の対応はLLM所有者の既存分類を再利用する。
+            if (
+                self.role_status not in _STATUS_FAILURE
+                or not isinstance(self.role_failure.code, LLMFailureCode)
+                or self.role_failure.code not in _STATUS_FAILURE[self.role_status]
+                or type(self.role_failure.retryable) is not bool
+            ):
+                raise ValueError("役割状態と失敗が対応していません")
+        if self.boundary_failure is not None:
+            if not isinstance(self.boundary_failure, InputMeaningBoundaryFailure):
+                raise ValueError("境界失敗の型が不正です")
+            if self.role_status not in (None, LLMRoleStatus.SUCCEEDED):
+                raise ValueError("境界拒否には未確定または成功候補の状態が必要です")
+        freeze_json(self.to_dict())
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "request_id": self.request_id,
+            "trace_id": self.trace_id,
+            "source_event_id": self.source_event_id,
+            "source_context_revision": self.source_context_revision,
+            "role_status": None if self.role_status is None else self.role_status.value,
+            "meaning": None if self.meaning is None else self.meaning.to_dict(),
+            "role_failure": None if self.role_failure is None else self.role_failure.to_dict(),
+            "boundary_failure": None
+            if self.boundary_failure is None
+            else self.boundary_failure.to_dict(),
+        }

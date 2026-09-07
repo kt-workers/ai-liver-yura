@@ -41,6 +41,12 @@ class ExecutionEffectKind(str, Enum):
     APPLIED = "applied"
 
 
+class ExecutionEffectUncertainty(str, Enum):
+    NONE = "none"
+    UNKNOWN = "unknown"
+    POSSIBLY_APPLIED = "possibly_applied"
+
+
 _EXECUTABLE_INTENT_KINDS = frozenset(
     {
         IntentKind.SPEECH,
@@ -211,6 +217,7 @@ class ExecutionAdapterReport:
     occurred_at: datetime
     details: JsonValue
     effects: tuple[ExecutionEffectEvidence, ...] = ()
+    effect_uncertainty: ExecutionEffectUncertainty = ExecutionEffectUncertainty.NONE
 
     def __post_init__(self) -> None:
         require_identifier(self.command_id, "command_id")
@@ -245,6 +252,19 @@ class ExecutionAdapterReport:
         ):
             raise ValueError("observable report cannot introduce applied effect")
         object.__setattr__(self, "effects", effects)
+        if not isinstance(self.effect_uncertainty, ExecutionEffectUncertainty):
+            raise ValueError(
+                "effect_uncertaintyにはExecutionEffectUncertaintyを指定してください"
+            )
+        if self.effect_uncertainty is not ExecutionEffectUncertainty.NONE and self.status not in {
+            ExecutionStatus.FAILED,
+            ExecutionStatus.CANCELLED,
+            ExecutionStatus.TIMED_OUT,
+        }:
+            raise ValueError(
+                "effect_uncertaintyは失敗・取消・タイムアウト時の終端報告でのみ"
+                "指定できます"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,6 +296,7 @@ class ActivityExecutionRecord:
     cancellation_reason: str | None = None
     cancellation_requested_at: datetime | None = None
     record_revision: int = 0
+    effect_uncertainty: ExecutionEffectUncertainty = ExecutionEffectUncertainty.NONE
 
     def __post_init__(self) -> None:
         if not isinstance(self.invocation, ActivityInvocation):
@@ -297,6 +318,24 @@ class ActivityExecutionRecord:
             require_aware(self.cancellation_requested_at, "cancellation_requested_at")
         if type(self.record_revision) is not int or self.record_revision < 0:
             raise ValueError("record_revision must be a non-negative int")
+        if not isinstance(self.effect_uncertainty, ExecutionEffectUncertainty):
+            raise ValueError(
+                "effect_uncertaintyにはExecutionEffectUncertaintyを指定してください"
+            )
+        uncertain_terminal = {
+            ExecutionStatus.FAILED,
+            ExecutionStatus.CANCELLED,
+            ExecutionStatus.TIMED_OUT,
+            ExecutionStatus.SUPERSEDED,
+        }
+        if (
+            self.effect_uncertainty is not ExecutionEffectUncertainty.NONE
+            and self.result.status not in uncertain_terminal
+        ):
+            raise ValueError(
+                "effect_uncertaintyを保持できるのは未確定性を伴う"
+                "終端状態だけです"
+            )
 
     @property
     def terminal(self) -> bool:
@@ -321,6 +360,7 @@ class ActivityExecutionLifecycleFact:
     status: ExecutionStatus
     occurred_at: datetime
     effect_refs: tuple[str, ...]
+    effect_uncertainty: ExecutionEffectUncertainty = ExecutionEffectUncertainty.NONE
 
     def __post_init__(self) -> None:
         for name in ("fact_id", "command_id"):
@@ -360,10 +400,7 @@ class ActivityExecutionLifecycleFact:
             ExecutionStatus.OBSERVABLE,
             ExecutionStatus.APPLIED,
         }
-        if (
-            self.operation is SourceLifecycleOperation.REFRESH
-            and self.status not in refreshable
-        ):
+        if self.operation is SourceLifecycleOperation.REFRESH and self.status not in refreshable:
             raise ValueError("Activity refreshに許可されないstatusです")
         if self.operation is SourceLifecycleOperation.CLOSE and self.status not in terminal:
             raise ValueError("terminal Activityだけをcloseできます")
@@ -372,6 +409,19 @@ class ActivityExecutionLifecycleFact:
         if any(not isinstance(item, str) or not item.strip() for item in refs):
             raise ValueError("effect_refsが不正です")
         object.__setattr__(self, "effect_refs", refs)
+        if not isinstance(self.effect_uncertainty, ExecutionEffectUncertainty):
+            raise ValueError("effect_uncertaintyが不正です")
+        uncertain_statuses = {
+            ExecutionStatus.FAILED,
+            ExecutionStatus.CANCELLED,
+            ExecutionStatus.TIMED_OUT,
+            ExecutionStatus.SUPERSEDED,
+        }
+        if (
+            self.effect_uncertainty is not ExecutionEffectUncertainty.NONE
+            and self.status not in uncertain_statuses
+        ):
+            raise ValueError("effect_uncertaintyとstatusが一致しません")
 
 
 @dataclass(frozen=True, slots=True)

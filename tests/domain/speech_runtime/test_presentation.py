@@ -7,11 +7,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.domain.llm import LLMInterruptibility, LLMPriority
-from app.domain.speech_runtime.admission import (
-    SpeechPreparationAdmission,
-    SpeechPreparationAdmissionPolicy,
-)
+from app.domain.llm import LLMInterruptibility
+from app.domain.speech_runtime.admission import SpeechPreparationAdmission
 from app.domain.speech_runtime.contracts import (
     AudioReadinessState,
     CandidateLifecycle,
@@ -33,9 +30,12 @@ from app.domain.speech_runtime.observation import (
     timing_publication_eligible,
 )
 from app.domain.speech_runtime.orchestrator import SpeechPreparationOrchestrator
+from app.domain.speech_runtime.policy import SpeechCandidatePriority
 from app.domain.speech_runtime.presentation import SpeechPresentationExecutor
-from app.domain.speech_runtime.runtime import SpeechRuntime
 from app.domain.speech_runtime.tasks import CandidateTaskRegistry
+from tests.domain.speech_runtime.policy_fixtures import TestSpeechRuntime, runtime_policy
+
+_TEST_POLICY = runtime_policy()
 
 
 def _ready_candidate() -> PreparedSpeechCandidate:
@@ -51,9 +51,11 @@ def _ready_candidate() -> PreparedSpeechCandidate:
         source_context_revision=1,
         goal_revision=1,
         attention_revision=1,
-        priority=LLMPriority.FOREGROUND,
+        priority=SpeechCandidatePriority.FOREGROUND,
         interruptibility=LLMInterruptibility.INTERRUPTIBLE,
         expiry_policy_ref="expiry",
+        runtime_policy_id=_TEST_POLICY.policy_id,
+        runtime_policy_revision=_TEST_POLICY.policy_revision,
         required_preconditions=("allowed",),
         semantic_requirement=SemanticVerificationRequirement.REQUIRED,
         semantic_acceptance_id="acceptance",
@@ -69,6 +71,7 @@ def _ready_candidate() -> PreparedSpeechCandidate:
         lifecycle=CandidateLifecycle.READY_TO_PRESENT,
         created_at=now,
         updated_at=now,
+        prepared_at=now,
     )
 
 
@@ -90,7 +93,7 @@ def _state() -> SpeechPresentationCommitState:
 
 @pytest.mark.asyncio
 async def test_presentation_adapter_runs_after_commit_without_blocking_next_preparation() -> None:
-    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    runtime, tasks = TestSpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_ready_candidate())
     started, release, next_preparation = asyncio.Event(), asyncio.Event(), asyncio.Event()
 
@@ -142,7 +145,7 @@ async def test_presentation_adapter_runs_after_commit_without_blocking_next_prep
 
 @pytest.mark.asyncio
 async def test_report_identity_mismatch_is_rejected() -> None:
-    runtime = SpeechRuntime()
+    runtime = TestSpeechRuntime()
     await runtime.register(_ready_candidate())
     await runtime.commit("candidate", _state(), "presentation")
     now = datetime.now(timezone.utc)
@@ -173,7 +176,7 @@ async def test_report_identity_mismatch_is_rejected() -> None:
 async def test_terminal_presentation_reports_are_truthful(
     status: SpeechPresentationReportStatus, started: bool, expected: CandidateLifecycle
 ) -> None:
-    runtime = SpeechRuntime()
+    runtime = TestSpeechRuntime()
     await runtime.register(_ready_candidate())
     await runtime.commit("candidate", _state(), "presentation")
     now = datetime.now(timezone.utc)
@@ -207,7 +210,7 @@ async def test_terminal_presentation_reports_are_truthful(
 
 @pytest.mark.asyncio
 async def test_started_then_completed_and_contradictory_late_report_is_rejected() -> None:
-    runtime = SpeechRuntime()
+    runtime = TestSpeechRuntime()
     await runtime.register(_ready_candidate())
     await runtime.commit("candidate", _state(), "presentation")
     now = datetime.now(timezone.utc)
@@ -240,7 +243,7 @@ async def test_started_then_completed_and_contradictory_late_report_is_rejected(
 
 @pytest.mark.asyncio
 async def test_playback_wait_does_not_block_next_candidate_preparation_or_heartbeat() -> None:
-    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    runtime, tasks = TestSpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_ready_candidate())
     playback_started, release_playback = asyncio.Event(), asyncio.Event()
     verifier_done, performance_done, heartbeat = asyncio.Event(), asyncio.Event(), asyncio.Event()
@@ -287,21 +290,21 @@ async def test_playback_wait_does_not_block_next_candidate_preparation_or_heartb
     async def unrelated() -> None:
         heartbeat.set()
 
+    policy = runtime_policy(max_in_flight=4, max_background_in_flight=2)
     orchestrator = SpeechPreparationOrchestrator(
-        tasks, SpeechPreparationAdmission(SpeechPreparationAdmissionPolicy(2, 2, 4))
+        tasks,
+        SpeechPreparationAdmission(policy),
     )
 
     async def character() -> object:
         return object()
 
     character_task = orchestrator.start_preparation(
-        "candidate-b", 1, LLMPriority.FOREGROUND, character
+        "candidate-b", 1, SpeechCandidatePriority.FOREGROUND, character
     )
     assert character_task is not None
     await character_task
-    orchestrator.fan_out_after_character(
-        "candidate-b", 1, verifier, performance
-    )
+    orchestrator.fan_out_after_character("candidate-b", 1, verifier, performance)
     await unrelated()
     await verifier_done.wait()
     await performance_done.wait()
@@ -327,7 +330,7 @@ async def test_playback_wait_does_not_block_next_candidate_preparation_or_heartb
 async def test_commit_rejects_stale_or_identity_mismatched_live_state(
     state: SpeechPresentationCommitState,
 ) -> None:
-    runtime = SpeechRuntime()
+    runtime = TestSpeechRuntime()
     await runtime.register(_ready_candidate())
     with pytest.raises(ValueError, match="revalidation"):
         await runtime.commit("candidate", state, "presentation")
@@ -335,11 +338,11 @@ async def test_commit_rejects_stale_or_identity_mismatched_live_state(
 
 @pytest.mark.asyncio
 async def test_commit_rejects_turn_focus_and_audio_identity_mismatch() -> None:
-    runtime = SpeechRuntime()
+    runtime = TestSpeechRuntime()
     await runtime.register(replace(_ready_candidate(), turn_id="expected-turn", focus_revision=1))
     with pytest.raises(ValueError, match="revalidation"):
         await runtime.commit("candidate", replace(_state(), turn_id="other-turn"), "presentation")
-    runtime = SpeechRuntime()
+    runtime = TestSpeechRuntime()
     await runtime.register(
         replace(
             _ready_candidate(),
@@ -363,7 +366,7 @@ async def test_commit_rejects_turn_focus_and_audio_identity_mismatch() -> None:
 
 @pytest.mark.asyncio
 async def test_tts_degradation_can_truthfully_fall_back_to_text_only() -> None:
-    runtime = SpeechRuntime()
+    runtime = TestSpeechRuntime()
     await runtime.register(_ready_candidate())
     command = await runtime.commit("candidate", _state(), "presentation")
     assert command.modes == (SpeechPresentationMode.TEXT_ONLY,)
@@ -372,7 +375,7 @@ async def test_tts_degradation_can_truthfully_fall_back_to_text_only() -> None:
 
 @pytest.mark.asyncio
 async def test_audio_required_policy_fails_closed_when_audio_is_unavailable() -> None:
-    runtime = SpeechRuntime()
+    runtime = TestSpeechRuntime()
     await runtime.register(
         replace(
             _ready_candidate(),
@@ -402,7 +405,7 @@ async def test_audio_required_policy_fails_closed_when_audio_is_unavailable() ->
 async def test_executor_stream_accepts_started_before_terminal_and_preserves_effect(
     terminal: SpeechPresentationReportStatus, expected: CandidateLifecycle
 ) -> None:
-    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    runtime, tasks = TestSpeechRuntime(), CandidateTaskRegistry()
     candidate = replace(
         _ready_candidate(),
         prepared_audio_ref="audio",
@@ -464,7 +467,7 @@ async def test_executor_stream_accepts_started_before_terminal_and_preserves_eff
 
 @pytest.mark.asyncio
 async def test_started_only_stream_fails_closed_instead_of_stranding_presentation() -> None:
-    runtime, tasks = SpeechRuntime(), CandidateTaskRegistry()
+    runtime, tasks = TestSpeechRuntime(), CandidateTaskRegistry()
     await runtime.register(_ready_candidate())
 
     async def adapter(_: SpeechPresentationCommand) -> AsyncIterator[SpeechPresentationReport]:
@@ -490,7 +493,7 @@ async def test_started_only_stream_fails_closed_instead_of_stranding_presentatio
 
 @pytest.mark.asyncio
 async def test_verifier_rejection_never_allows_speculative_artifact_presentation() -> None:
-    runtime = SpeechRuntime()
+    runtime = TestSpeechRuntime()
     await runtime.register(
         replace(
             _ready_candidate(),

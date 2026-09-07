@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Protocol, TypeVar, cast
 
+from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy, ExecutiveBounds
 from app.domain.contracts import CapabilityRequirement, RevisionVector
-from app.domain.contracts.common import JsonValue, freeze_json, require_aware, utc_instant
+from app.domain.contracts.common import (
+    JsonValue,
+    freeze_json,
+    require_aware,
+    thaw_json,
+    utc_instant,
+)
 from app.domain.llm import (
     LLMActivationPolicy,
     LLMExecutionPolicy,
@@ -33,6 +41,7 @@ from .contracts import (
     CommitmentTransitionOperation,
     CommitmentTransitionPayload,
     CommittedExecutiveDecision,
+    ExecutiveBoundsProvenance,
     ExecutiveCommitState,
     ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
@@ -57,6 +66,11 @@ OUTPUT_SCHEMA = "executive.candidate.v1"
 @dataclass(frozen=True, slots=True)
 class ExecutivePolicy:
     execution: LLMExecutionPolicy
+    bounds: BrainOperationalBoundsPolicy
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.bounds, BrainOperationalBoundsPolicy):
+            raise ValueError("容量方針はBrainOperationalBoundsPolicyでなければなりません")
 
 
 class ExecutiveLiveStatePort(Protocol):
@@ -89,6 +103,7 @@ def build_request(
     require_aware(created_at, "created_at")
     if utc_instant(created_at) < utc_instant(snapshot.captured_at):
         raise ValueError("request creation cannot predate context snapshot")
+    _validate_snapshot_bounds(snapshot, policy.bounds)
     value = cast(JsonValue, snapshot.to_dict())
     return LLMRoleRequest(
         request_id,
@@ -130,7 +145,7 @@ def parse_candidate(
     }
     if set(value) != required:
         raise ValueError("executive candidate fields do not match schema")
-    return ExecutiveDecisionCandidate(
+    candidate = ExecutiveDecisionCandidate(
         _string(value["candidate_id"], "candidate_id"),
         _string(value["trigger_id"], "trigger_id"),
         _strings(value["source_event_ids"], "source_event_ids"),
@@ -154,6 +169,7 @@ def parse_candidate(
         _strings(value["rationale_refs"], "rationale_refs"),
         created_at,
     )
+    return candidate
 
 
 def commit_result(
@@ -174,6 +190,7 @@ def commit_result(
     if request.input.value != freeze_json(snapshot.to_dict()):
         raise ValueError("executive context does not match request snapshot")
     candidate = parse_candidate(result.output.value, snapshot, created_at=result.completed_at)
+    validate_candidate_bounds(candidate, policy.bounds.executive)
     return authority.commit(
         candidate,
         snapshot,
@@ -219,6 +236,7 @@ class ExecutiveDeliberator:
         if result.status is not LLMRoleStatus.SUCCEEDED or result.output is None:
             raise ValueError("executive result is not committable")
         candidate = parse_candidate(result.output.value, snapshot, created_at=result.completed_at)
+        validate_candidate_bounds(candidate, self._policy.bounds.executive)
         current = await self._live_state.current_for_commit(snapshot, candidate)
         return commit_result(
             request,
@@ -229,6 +247,82 @@ class ExecutiveDeliberator:
             decision_id=decision_id,
             policy=self._policy,
         )
+
+
+def _validate_snapshot_bounds(
+    snapshot: ExecutiveContextSnapshot, policy: BrainOperationalBoundsPolicy
+) -> None:
+    if snapshot.bounds_provenance != ExecutiveBoundsProvenance.from_policy(policy):
+        raise ValueError("Executive容量方針がsnapshotと一致しません")
+    bounds = policy.executive
+    _at_most(len(snapshot.source_event_ids), bounds.max_source_event_refs, "source event")
+    _at_most(len(snapshot.facts), bounds.max_fact_refs, "fact")
+    _at_most(len(snapshot.capabilities), bounds.max_capability_descriptors, "capability")
+    _at_most(len(snapshot.preconditions), bounds.max_precondition_facts, "precondition")
+    for fact in snapshot.facts:
+        payload_bytes = len(
+            json.dumps(
+                thaw_json(fact.payload), ensure_ascii=False, sort_keys=True,
+                separators=(",", ":"), allow_nan=False,
+            ).encode("utf-8")
+        )
+        _at_most(payload_bytes, bounds.max_fact_payload_json_bytes, "fact payload")
+
+
+def validate_candidate_bounds(
+    candidate: ExecutiveDecisionCandidate, bounds: ExecutiveBounds
+) -> None:
+    _at_most(len(candidate.intents), bounds.max_candidate_intents, "candidate intent")
+    _at_most(len(candidate.goal_transition_intents), bounds.max_goal_transitions, "goal transition")
+    _at_most(
+        len(candidate.commitment_transition_intents),
+        bounds.max_commitment_transitions,
+        "commitment transition",
+    )
+    for intent in candidate.intents:
+        references = (
+            set(intent.evidence_refs)
+            | set(intent.forbidden_claim_refs)
+            | set(intent.payload.reference_ids())
+            | {item.precondition_id for item in intent.preconditions}
+        )
+        _at_most(len(references), bounds.max_refs_per_intent, "intent reference")
+    for transition in candidate.goal_transition_intents:
+        _at_most(
+            len(
+                set(transition.reason_refs)
+                | set(transition.payload.bounded_reference_ids())
+                | {
+                    item
+                    for item in (transition.goal_ref, transition.goal_spec_ref)
+                    if item is not None
+                }
+            ),
+            bounds.max_refs_per_intent,
+            "goal transition reference",
+        )
+    for commitment_transition in candidate.commitment_transition_intents:
+        _at_most(
+            len(
+                set(commitment_transition.reason_refs)
+                | set(commitment_transition.payload.bounded_reference_ids())
+                | {
+                    item
+                    for item in (
+                        commitment_transition.commitment_ref,
+                        commitment_transition.commitment_spec_ref,
+                    )
+                    if item is not None
+                }
+            ),
+            bounds.max_refs_per_intent,
+            "commitment transition reference",
+        )
+
+
+def _at_most(value: int, maximum: int, name: str) -> None:
+    if value > maximum:
+        raise ValueError(f"EXECUTIVE_CONTEXT_TOO_LARGE: {name} が上限を超えています")
 
 
 def _array(value: object, name: str) -> tuple[object, ...]:

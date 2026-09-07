@@ -7,6 +7,7 @@ from enum import Enum
 from typing import TypeVar, cast
 
 from app.domain.appraisal import AppraisalFactsSnapshot, InternalStateSnapshot
+from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
 from app.domain.contracts import CapabilityDescriptor, CapabilityRequirement, RevisionVector
 from app.domain.contracts.common import (
     JsonValue,
@@ -189,6 +190,35 @@ class ExecutiveFreshnessStamp:
 
 
 @dataclass(frozen=True, slots=True)
+class ExecutiveBoundsProvenance:
+    policy_id: str
+    policy_revision: int
+
+    @classmethod
+    def from_policy(cls, policy: BrainOperationalBoundsPolicy) -> ExecutiveBoundsProvenance:
+        if not isinstance(policy, BrainOperationalBoundsPolicy):
+            raise ValueError("容量方針はBrainOperationalBoundsPolicyでなければなりません")
+        return cls(policy.policy_id, policy.policy_revision)
+
+    def __post_init__(self) -> None:
+        require_identifier(self.policy_id, "policy_id")
+        require_revision(self.policy_revision, "policy_revision")
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutiveSourceEvent:
+    event_id: str
+    occurred_at: datetime
+    is_trigger_lineage: bool
+
+    def __post_init__(self) -> None:
+        require_identifier(self.event_id, "event_id")
+        require_aware(self.occurred_at, "occurred_at")
+        if not isinstance(self.is_trigger_lineage, bool):
+            raise ValueError("is_trigger_lineageはboolでなければなりません")
+
+
+@dataclass(frozen=True, slots=True)
 class AuthoritativeIntentRequirements:
     intent_id: str
     capabilities: tuple[CapabilityRequirement, ...] = ()
@@ -217,10 +247,13 @@ class ExecutiveCommitState:
     capabilities: tuple[CapabilityDescriptor, ...]
     preconditions: tuple[PreconditionFact, ...]
     requirements: tuple[AuthoritativeIntentRequirements, ...]
+    bounds_provenance: ExecutiveBoundsProvenance
 
     def __post_init__(self) -> None:
         if not isinstance(self.freshness, ExecutiveFreshnessStamp):
             raise ValueError("freshness must be ExecutiveFreshnessStamp")
+        if not isinstance(self.bounds_provenance, ExecutiveBoundsProvenance):
+            raise ValueError("容量方針の由来はExecutiveBoundsProvenanceでなければなりません")
         for name, item_type in (
             ("capabilities", CapabilityDescriptor),
             ("preconditions", PreconditionFact),
@@ -251,6 +284,7 @@ class ExecutiveContextSnapshot:
     preconditions: tuple[PreconditionFact, ...]
     captured_at: datetime
     appraisal_facts: AppraisalFactsSnapshot
+    bounds_provenance: ExecutiveBoundsProvenance
 
     def __post_init__(self) -> None:
         require_identifier(self.trigger_id, "trigger_id")
@@ -274,6 +308,8 @@ class ExecutiveContextSnapshot:
             raise ValueError("internal state context revision must match snapshot")
         if not isinstance(self.appraisal_facts, AppraisalFactsSnapshot):
             raise ValueError("appraisal_facts must be AppraisalFactsSnapshot")
+        if not isinstance(self.bounds_provenance, ExecutiveBoundsProvenance):
+            raise ValueError("容量方針の由来はExecutiveBoundsProvenanceでなければなりません")
         if self.appraisal_facts.source_context_revision != self.source_context_revision:
             raise ValueError("appraisal facts context revision must match snapshot")
         if self.appraisal_facts.internal_state_revision != self.internal_state.revision:
@@ -309,7 +345,118 @@ class ExecutiveContextSnapshot:
             "preconditions": [item.to_dict() for item in self.preconditions],
             "captured_at": timestamp_to_json(self.captured_at),
             "appraisal_facts": self.appraisal_facts.to_dict(),
+            "bounds_policy_id": self.bounds_provenance.policy_id,
+            "bounds_policy_revision": self.bounds_provenance.policy_revision,
         }
+
+
+def build_executive_context_snapshot(
+    *,
+    trigger_id: str,
+    source_events: tuple[ExecutiveSourceEvent, ...],
+    source_context_revision: int,
+    goal_revision: int,
+    attention_revision: int,
+    meaning: StructuredInputMeaning | None,
+    internal_state: InternalStateSnapshot,
+    facts: tuple[ExecutiveFactRef, ...],
+    required_fact_ids: tuple[str, ...],
+    capabilities: tuple[CapabilityDescriptor, ...],
+    required_capabilities: tuple[CapabilityRequirement, ...],
+    preconditions: tuple[PreconditionFact, ...],
+    required_preconditions: tuple[ExecutivePreconditionRequirement, ...],
+    captured_at: datetime,
+    appraisal_facts: AppraisalFactsSnapshot,
+    bounds_policy: BrainOperationalBoundsPolicy,
+) -> ExecutiveContextSnapshot:
+    """信頼済みowner入力から、共有容量方針に従うExecutive snapshotを構築する。"""
+    if not isinstance(bounds_policy, BrainOperationalBoundsPolicy):
+        raise ValueError("容量方針はBrainOperationalBoundsPolicyでなければなりません")
+    bounds = bounds_policy.executive
+    source_values = _owned(source_events, ExecutiveSourceEvent, "source_events")
+    if len({item.event_id for item in source_values}) != len(source_values):
+        raise ValueError("source event idsは一意でなければなりません")
+    lineage = tuple(item for item in source_values if item.is_trigger_lineage)
+    if len(lineage) > bounds.max_source_event_refs:
+        raise ValueError("EXECUTIVE_CONTEXT_TOO_LARGE: trigger lineageが上限を超えています")
+    remaining = sorted(
+        (item for item in source_values if not item.is_trigger_lineage),
+        key=lambda item: (-utc_instant(item.occurred_at).timestamp(), item.event_id),
+    )
+    selected_events = lineage + tuple(remaining[: bounds.max_source_event_refs - len(lineage)])
+
+    fact_values = _owned(facts, ExecutiveFactRef, "facts")
+    required_fact_values = _ids(required_fact_ids, "required_fact_ids")
+    fact_ids = {item.fact_id for item in fact_values}
+    if set(required_fact_values) - fact_ids or len(fact_values) > bounds.max_fact_refs:
+        raise ValueError("EXECUTIVE_CONTEXT_TOO_LARGE: 必須factを容量内へ収容できません")
+
+    capability_values = _owned(capabilities, CapabilityDescriptor, "capabilities")
+    requirement_values = _owned(
+        required_capabilities, CapabilityRequirement, "required_capabilities"
+    )
+    required_capability_ids = {
+        item.capability_id
+        for item in capability_values
+        if any(_is_requirement_relevant(item, requirement) for requirement in requirement_values)
+    }
+    required_capability_values = tuple(
+        item for item in capability_values if item.capability_id in required_capability_ids
+    )
+    if len(required_capability_values) > bounds.max_capability_descriptors:
+        raise ValueError("EXECUTIVE_CONTEXT_TOO_LARGE: 必須capabilityを容量内へ収容できません")
+    remaining_capabilities = sorted(
+        (item for item in capability_values if item.capability_id not in required_capability_ids),
+        key=lambda item: (item.capability_type, item.capability_id, -item.revision),
+    )
+    selected_capabilities = required_capability_values + tuple(
+        remaining_capabilities[
+            : bounds.max_capability_descriptors - len(required_capability_values)
+        ]
+    )
+
+    precondition_values = _owned(preconditions, PreconditionFact, "preconditions")
+    precondition_requirements = _owned(
+        required_preconditions, ExecutivePreconditionRequirement, "required_preconditions"
+    )
+    required_precondition_ids = {item.precondition_id for item in precondition_requirements}
+    available_precondition_ids = {item.precondition_id for item in precondition_values}
+    if required_precondition_ids - available_precondition_ids:
+        raise ValueError("EXECUTIVE_CONTEXT_TOO_LARGE: 必須preconditionがありません")
+    required_precondition_values = tuple(
+        item for item in precondition_values if item.precondition_id in required_precondition_ids
+    )
+    if len(required_precondition_values) > bounds.max_precondition_facts:
+        raise ValueError("EXECUTIVE_CONTEXT_TOO_LARGE: 必須preconditionを容量内へ収容できません")
+    selected_preconditions = required_precondition_values + tuple(
+        item
+        for item in precondition_values
+        if item.precondition_id not in required_precondition_ids
+    )[: bounds.max_precondition_facts - len(required_precondition_values)]
+    return ExecutiveContextSnapshot(
+        trigger_id,
+        tuple(item.event_id for item in selected_events),
+        source_context_revision,
+        goal_revision,
+        attention_revision,
+        meaning,
+        internal_state,
+        fact_values,
+        selected_capabilities,
+        selected_preconditions,
+        captured_at,
+        appraisal_facts,
+        ExecutiveBoundsProvenance.from_policy(bounds_policy),
+    )
+
+
+def _is_requirement_relevant(
+    descriptor: CapabilityDescriptor, requirement: CapabilityRequirement
+) -> bool:
+    return (
+        descriptor.capability_type == requirement.capability_type
+        and requirement.operation in descriptor.operations
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -891,11 +1038,14 @@ class CommittedExecutiveDecision:
     candidate: ExecutiveDecisionCandidate
     validated_preconditions: tuple[PreconditionFact, ...]
     committed_at: datetime
+    bounds_provenance: ExecutiveBoundsProvenance
 
     def __post_init__(self) -> None:
         require_identifier(self.decision_id, "decision_id")
         if not isinstance(self.candidate, ExecutiveDecisionCandidate):
             raise ValueError("candidate must be ExecutiveDecisionCandidate")
+        if not isinstance(self.bounds_provenance, ExecutiveBoundsProvenance):
+            raise ValueError("容量方針の由来はExecutiveBoundsProvenanceでなければなりません")
         object.__setattr__(
             self,
             "validated_preconditions",
@@ -915,4 +1065,6 @@ class CommittedExecutiveDecision:
             "candidate": self.candidate.to_dict(),
             "validated_preconditions": [item.to_dict() for item in self.validated_preconditions],
             "committed_at": timestamp_to_json(self.committed_at),
+            "bounds_policy_id": self.bounds_provenance.policy_id,
+            "bounds_policy_revision": self.bounds_provenance.policy_revision,
         }

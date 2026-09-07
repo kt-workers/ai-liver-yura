@@ -3,10 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, IntEnum
+from math import isfinite
 from typing import Generic, TypeVar
 
 from app.domain.contracts import RevisionVector
-from app.domain.contracts.common import require_aware, require_identifier, utc_instant
+from app.domain.contracts.common import (
+    require_aware,
+    require_identifier,
+    require_revision,
+    utc_instant,
+)
 
 T = TypeVar("T")
 
@@ -60,7 +66,49 @@ class RuntimeHealth(str, Enum):
 
 class LaneErrorPolicy(str, Enum):
     ISOLATE = "isolate"
-    FAIL_FAST = "fail_fast"
+    FAIL_FAST_CONTROLLED = "fail_fast_controlled"
+    FAIL_FAST = "fail_fast_controlled"
+
+
+def _require_positive_int(value: int, name: str) -> None:
+    if type(value) is not int or value < 1:
+        raise ValueError(f"{name} must be a positive int")
+
+
+def _require_non_negative_finite(value: float, name: str) -> None:
+    if type(value) not in (int, float) or not isfinite(value) or value < 0:
+        raise ValueError(f"{name} must be a finite non-negative number")
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeSchedulerPolicy:
+    policy_id: str
+    policy_revision: int
+    max_priority_burst: int
+
+    def __post_init__(self) -> None:
+        require_identifier(self.policy_id, "policy_id")
+        require_revision(self.policy_revision, "policy_revision")
+        _require_positive_int(self.max_priority_burst, "max_priority_burst")
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeLanePolicy:
+    lane_id: str
+    queue_capacity: int
+    queue_policy: QueuePolicy
+    max_in_flight: int
+    cancellation_grace_seconds: float
+    error_isolation: LaneErrorPolicy
+
+    def __post_init__(self) -> None:
+        require_identifier(self.lane_id, "lane_id")
+        _require_positive_int(self.queue_capacity, "queue_capacity")
+        _require_positive_int(self.max_in_flight, "max_in_flight")
+        _require_non_negative_finite(
+            self.cancellation_grace_seconds,
+            "cancellation_grace_seconds",
+        )
 
 
 @dataclass(frozen=True, slots=True)

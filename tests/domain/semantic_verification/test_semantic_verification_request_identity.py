@@ -7,7 +7,6 @@ from typing import cast
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import JsonValue
 from app.domain.llm import (
-    LLMExecutionPolicy,
     LLMInterruptibility,
     LLMModelClass,
     LLMPriority,
@@ -22,13 +21,14 @@ from app.domain.semantic_verification import (
     build_relation_request,
     relation_instructions,
 )
+from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 18, 0, 0, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(1, 1, 1)
 
 
 def _policy() -> SemanticVerificationPolicy:
-    execution = LLMExecutionPolicy(
+    execution = make_execution_policy(
         LLMModelClass.BALANCED,
         LLMReasoningEffort.MEDIUM,
         20,

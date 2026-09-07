@@ -1,6 +1,4 @@
-def main() -> None:
-    print("AI Liver runtime starting...")
-
+from app.bootstrap import main
 
 if __name__ == "__main__":
     main()

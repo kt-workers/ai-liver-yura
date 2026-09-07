@@ -34,6 +34,7 @@ from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import (
     CommittedExecutiveDecision,
+    ExecutiveBoundsProvenance,
     ExecutiveDecisionCandidate,
     ExecutiveIntent,
     ExecutiveIntentKind,
@@ -43,7 +44,6 @@ from app.domain.executive import (
     SpeechIntentPayload,
 )
 from app.domain.llm import (
-    LLMExecutionPolicy,
     LLMFailureCode,
     LLMInterruptibility,
     LLMModelClass,
@@ -69,6 +69,7 @@ from app.domain.speech_semantics import (
     SpeechSemanticFactKind,
     SpeechSemanticPlan,
 )
+from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 17, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(11, 7, 4)
@@ -76,7 +77,7 @@ REVISIONS = RevisionVector(11, 7, 4)
 
 def policy() -> CharacterLanguagePolicy:
     return CharacterLanguagePolicy(
-        LLMExecutionPolicy(
+        make_execution_policy(
             LLMModelClass.BALANCED,
             LLMReasoningEffort.MEDIUM,
             10,
@@ -118,7 +119,9 @@ def decision() -> CommittedExecutiveDecision:
         ("fact-goal",),
         NOW,
     )
-    return CommittedExecutiveDecision("decision-1", candidate, (), NOW)
+    return CommittedExecutiveDecision(
+        "decision-1", candidate, (), NOW, ExecutiveBoundsProvenance("test-bounds", 1)
+    )
 
 
 def semantic_plan() -> SpeechSemanticPlan:

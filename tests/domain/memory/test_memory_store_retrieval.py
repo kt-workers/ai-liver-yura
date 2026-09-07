@@ -19,6 +19,7 @@ from app.domain.memory import (
     MemoryRelation,
     MemoryRelationKind,
     MemoryRetrievalQuery,
+    MemorySemanticRelevance,
     MemorySourceKind,
     MemoryStoreAuthority,
     MemoryTemporalState,
@@ -26,6 +27,7 @@ from app.domain.memory import (
     ValidatedMemoryCandidate,
 )
 from app.domain.memory.repository import MemoryRepositorySnapshot
+from tests.domain.memory.policy_fixtures import retrieval_policy
 
 NOW = datetime(2026, 8, 26, tzinfo=timezone.utc)
 
@@ -54,7 +56,7 @@ def candidate(
 
 def authority() -> tuple[MemoryStoreAuthority, InMemoryMemoryRepository]:
     repository = InMemoryMemoryRepository()
-    return MemoryStoreAuthority(repository), repository
+    return MemoryStoreAuthority(repository, ranking_policy=retrieval_policy()), repository
 
 
 def query(
@@ -116,7 +118,10 @@ def test_exact_duplicate_noops_and_new_provenance_merges_without_losing_history(
     assert duplicate.disposition is MemoryDisposition.NOOP_DUPLICATE
     assert merged.disposition is MemoryDisposition.MERGE_PROVENANCE
     assert len(repository.list_records()) == 1
-    assert {item.source_fact_refs[0] for item in merged.record.provenance} == {"fact:1", "fact:2"}  # type: ignore[union-attr]
+    assert {item.source_fact_refs[0] for item in merged.record.provenance} == {  # type: ignore[union-attr]
+        "fact:1",
+        "fact:2",
+    }
 
 
 def test_same_immutable_provenance_with_later_observation_and_recording_is_noop() -> None:
@@ -279,7 +284,9 @@ class BrokenIndex:
     def upsert(self, record: object) -> None:
         raise RuntimeError("unavailable")
 
-    def related_ids(self, query: str, *, limit: int) -> tuple[str, ...]:
+    def related_scores(
+        self, query: str, *, limit: int
+    ) -> tuple[MemorySemanticRelevance, ...]:
         raise RuntimeError("unavailable")
 
 
@@ -294,7 +301,11 @@ def test_index_failure_keeps_canonical_record() -> None:
 
 def test_semantic_index_failure_keeps_filtered_retrieval_and_reports_degradation() -> None:
     repository = InMemoryMemoryRepository()
-    store = MemoryStoreAuthority(repository, BrokenIndex())
+    store = MemoryStoreAuthority(
+        repository,
+        BrokenIndex(),
+        ranking_policy=retrieval_policy(),
+    )
     store.write(MemoryWriteRequest(candidate("candidate:a", value="a")))
     store.write(MemoryWriteRequest(candidate("candidate:b", value="b", source="fact:2")))
     view = store.retrieve(query(semantic_query="好きなゲーム", subject_refs=("user:1",)))
@@ -308,13 +319,19 @@ def test_semantic_index_is_ranking_signal_not_memory_identity_authority() -> Non
         def upsert(self, record: object) -> None:
             pass
 
-        def related_ids(self, query: str, *, limit: int) -> tuple[str, ...]:
+        def related_scores(
+            self, query: str, *, limit: int
+        ) -> tuple[MemorySemanticRelevance, ...]:
             assert query == "関連"
             assert limit == 8
-            return ("candidate:b",)
+            return (MemorySemanticRelevance("candidate:b", 1.0),)
 
     repository = InMemoryMemoryRepository()
-    store = MemoryStoreAuthority(repository, Index())
+    store = MemoryStoreAuthority(
+        repository,
+        Index(),
+        ranking_policy=retrieval_policy(),
+    )
     store.write(MemoryWriteRequest(candidate("candidate:a", value="a")))
     store.write(
         MemoryWriteRequest(
@@ -372,7 +389,7 @@ def test_retrieval_reads_one_coherent_repository_snapshot() -> None:
             )
 
     repository = SnapshotOnlyRepository()
-    store = MemoryStoreAuthority(repository)
+    store = MemoryStoreAuthority(repository, ranking_policy=retrieval_policy())
     store.write(MemoryWriteRequest(candidate()))
     view = store.retrieve(query())
     assert [item.memory_id for item in view.items] == ["candidate:1"]
