@@ -82,7 +82,9 @@ Portは次の`ExecutionAdapterReport`を返す。
 
 report identity不一致、時刻逆行、非法edge、Capability binding・descriptor revision・operationと一致しないeffect証拠はAuthorityが拒否する。空report、runtime型不正、非法report系列もCoordinatorが例外を外へ漏らさず、既発effectを保持したtyped `FAILED`へ閉じる。例外本文・credential・payloadをActual Factやdiagnosticsへコピーせず、closed failure codeへ変換する。
 
-## 7. Cancellationと並行性
+## 7. 取消と並行性
+
+提供先の処理開始後は、呼出し側が繰り返し取り消されても、所有する提供先タスクの終了と実際の結果の回収を完了する。取消要求は提供先へ通知し、強制取消可能な処理への`Task.cancel()`は高々1回として終了処理中の再取消を防ぐ。強制取消不可の処理は終了まで保持し、返された確定効果を取消結果へ付け替えない。呼出し側の取消を受けた`execute()`は既存契約どおり型付き実行記録を返す。
 
 - 各invocationは独立taskとして実行し、Core global lockや単一Activity queueを持たない。
 - Authority lockは短い同期state transitionだけを保護し、await、Provider callback、Repository I/Oを含めない。
