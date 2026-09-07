@@ -8,6 +8,10 @@ from app.domain.plan_execution.contracts import (
     _AUTHORIZATION_PROOF,
     PlanExecutionAuthorization,
 )
+from app.domain.plan_execution.progress_contracts import (
+    _ASSESSMENT_PROOF,
+    PlanProgressAssessment,
+)
 
 from .contracts import (
     CommittedExecutiveDecision,
@@ -15,6 +19,7 @@ from .contracts import (
     ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
     PlanExecutionIntentPayload,
+    PlanProgressIntentPayload,
 )
 
 
@@ -65,6 +70,19 @@ class ExecutiveDecisionAuthority:
                 for intent in candidate.intents
                 if isinstance(intent.payload, PlanExecutionIntentPayload)
             )
+            contexts = {item.context_id: item for item in snapshot.plan_progress_contexts}
+            assessments = tuple(
+                PlanProgressAssessment(
+                    decision_id,
+                    intent.intent_id,
+                    contexts[intent.payload.context_ref],
+                    intent.payload.claims,
+                    committed_at,
+                    _proof=_ASSESSMENT_PROOF,
+                )
+                for intent in candidate.intents
+                if isinstance(intent.payload, PlanProgressIntentPayload)
+            )
             decision = CommittedExecutiveDecision(
                 decision_id,
                 candidate,
@@ -72,6 +90,7 @@ class ExecutiveDecisionAuthority:
                 committed_at,
                 snapshot.bounds_provenance,
                 authorizations,
+                assessments,
             )
             self._committed_triggers.add(snapshot.trigger_id)
             return decision
@@ -121,6 +140,7 @@ class ExecutiveDecisionAuthority:
         }
         original_evidence_ids = set(evidence_ids)
         evidence_ids.update(item.scope_id for item in snapshot.plan_scopes)
+        evidence_ids.update(item.context_id for item in snapshot.plan_progress_contexts)
         references = list(candidate.rationale_refs)
         for intent in candidate.intents:
             if isinstance(intent.payload, PlanExecutionIntentPayload):
@@ -170,6 +190,21 @@ class ExecutiveDecisionAuthority:
                     for binding in scope.bindings
                 ):
                     raise ValueError("操作引数の由来参照が判断の根拠にありません")
+            if isinstance(intent.payload, PlanProgressIntentPayload):
+                contexts = {item.context_id: item for item in snapshot.plan_progress_contexts}
+                live_contexts = {item.context_id: item for item in current.plan_progress_contexts}
+                context = contexts.get(intent.payload.context_ref)
+                if context is None or live_contexts.get(intent.payload.context_ref) != context:
+                    raise ValueError("計画の実行観測が存在しないか、判断中に変更されています")
+                records = {item.step_id: item.record for item in context.observations}
+                for claim in intent.payload.claims:
+                    record = records.get(claim.step_id)
+                    if record is None:
+                        raise ValueError("未実行の手順を完了評価できません")
+                    grounds = original_evidence_ids | {record.result.command_id}
+                    grounds.update(record.result.effect_refs)
+                    if set(claim.evidence_refs) - grounds:
+                        raise ValueError("手順の完了評価に未知の根拠が含まれています")
             authoritative = requirements[intent.intent_id]
             if not all(item in intent.required_capabilities for item in authoritative.capabilities):
                 raise ValueError("authoritative capability requirement is missing")
@@ -177,7 +212,10 @@ class ExecutiveDecisionAuthority:
                 raise ValueError("authoritative precondition requirement is missing")
             references.extend(intent.evidence_refs)
             references.extend(intent.forbidden_claim_refs)
-            references.extend(intent.payload.reference_ids())
+            if isinstance(intent.payload, PlanProgressIntentPayload):
+                references.append(intent.payload.context_ref)
+            else:
+                references.extend(intent.payload.reference_ids())
             unknown_preconditions = {item.precondition_id for item in intent.preconditions} - {
                 item.precondition_id for item in snapshot.preconditions
             }
