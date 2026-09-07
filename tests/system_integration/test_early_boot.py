@@ -26,6 +26,7 @@ from app.bootstrap import (
     UnavailableInputMeaningLiveContextPort,
     build_minimum_core,
 )
+from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.config.minimum_brain import load_minimum_brain_config
 from app.domain.brain_integration import (
     BrainIntegrationLane,
@@ -145,14 +146,14 @@ def test_production_binding_through_brain_preserves_unavailable(
 ) -> None:
     no_provider(monkeypatch)
     reads = 0
-    original = UnavailableInputMeaningLiveContextPort.current_freshness_stamp
+    original = CoreInputReferenceContextBinding.current_freshness_stamp
 
-    async def observed(self: UnavailableInputMeaningLiveContextPort) -> InputMeaningFreshnessStamp:
+    async def observed(self: CoreInputReferenceContextBinding) -> InputMeaningFreshnessStamp:
         nonlocal reads
         reads += 1
         return await original(self)
 
-    monkeypatch.setattr(UnavailableInputMeaningLiveContextPort, "current_freshness_stamp", observed)
+    monkeypatch.setattr(CoreInputReferenceContextBinding, "current_freshness_stamp", observed)
 
     async def scenario() -> None:
         baseline = asyncio.all_tasks()

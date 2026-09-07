@@ -52,6 +52,8 @@ def appraise_event(
     candidate_id: str,
     created_at: datetime,
 ) -> AppraisalCandidate | None:
+    if event.revisions.source_context_revision < snapshot.source_context_revision:
+        raise ValueError("状態の由来より古い文脈では評価を開始できません")
     matches = [item for item in tuple(rules) if item.event_type == event.event_type]
     if len(matches) > 1:
         raise ValueError("deterministic appraisal event_type rules must be unique")
