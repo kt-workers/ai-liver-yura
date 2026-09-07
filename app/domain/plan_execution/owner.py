@@ -73,7 +73,7 @@ class PlanExecutionCurrentState:
 
     def __post_init__(self) -> None:
         if not isinstance(self.revisions, RevisionVector):
-            raise ValueError("計画進行には現在の依存版が必要です")
+            raise ValueError("計画進行には依存先の現在のリビジョンが必要です")
         object.__setattr__(self, "argument_facts", _facts(self.argument_facts))
 
 

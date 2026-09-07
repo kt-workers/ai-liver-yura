@@ -96,7 +96,7 @@ class GoalCommitmentLabCase:
             if not isinstance(self.attention, GoalAttentionLabSettings):
                 raise ValueError("注意への接続設定が不正です")
             if len(self.attention.source_context_revisions) != len(self.decisions):
-                raise ValueError("各更新の注意への引渡し時点の文脈版が必要です")
+                raise ValueError("各更新の注意への引渡し時点の文脈のリビジョンが必要です")
 
     def typed_inputs(self) -> JsonValue:
         return _project(

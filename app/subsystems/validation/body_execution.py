@@ -227,7 +227,7 @@ def body_execution_target(
         case = registered.get(fixture.scenario_id)
         if case is None or case.fixture != fixture or case.typed_inputs() != fixture.typed_inputs:
             return TargetObservation(RunStatus.BLOCKED_UPSTREAM, Gate.NOT_RUN, None)
-        # 各反復で本番所有者を新設し、入力の識別子と版をそのまま渡す。
+        # 各反復で本番所有者を新設し、入力の識別子とリビジョンをそのまま渡す。
         authority = BodyStateAuthority(case.model, case.initial_state)
         controller = BodyContinuousController(
             case.model,

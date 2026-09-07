@@ -32,7 +32,7 @@ def render_body_pose_sequence(
             frame.body_state_revision <= previous.body_state_revision
             or frame.observed_at < previous.observed_at
         ):
-            raise ValueError("姿勢の版と観測時刻は記録順で渡してください")
+            raise ValueError("姿勢のリビジョンと観測時刻は記録順で渡してください")
         worlds.append(
             {
                 joint_id: transform.position
@@ -84,7 +84,7 @@ line.axis{stroke:#61738f;stroke-width:1}pre{white-space:pre-wrap}button{cursor:p
         offset = (frame.observed_at - frames[0].observed_at).total_seconds() * 1000
         block = [f'<section class="pose" data-offset="{offset:.6f}"{" hidden" if index else ""}>']
         block.append(
-            f"<p>姿勢 {escape(frame.frame_id)} / 状態版 {frame.body_state_revision} / "
+            f"<p>姿勢 {escape(frame.frame_id)} / 状態のリビジョン {frame.body_state_revision} / "
             f"観測 {escape(frame.observed_at.isoformat())}</p>"
         )
         block.append('<svg viewBox="0 0 960 320" role="img" aria-label="身体の三面図">')

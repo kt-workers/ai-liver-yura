@@ -1,4 +1,4 @@
-"""本番PostgreSQLで記憶・版・関係を同じ取引として保存する。"""
+"""本番PostgreSQLで記憶・リビジョン・関係を同じ取引として保存する。"""
 
 from collections.abc import Callable
 from hashlib import sha256
@@ -37,7 +37,7 @@ class PostgresMemoryRepository:
                     if row[0] != str(self.storage_schema_version):
                         raise PersistenceError(
                             PersistenceFailureCode.INCOMPATIBLE_STORAGE_VERSION,
-                            "記憶保存の構造版に対応していません",
+                            "記憶保存の構造のバージョンに対応していません",
                         )
                     return
                 c.execute(
@@ -165,7 +165,7 @@ class PostgresMemoryRepository:
             _insert_record(c, record)
             if target_update is not None:
                 _update_record(c, target_update)
-            # 外部キー違反を含む失敗は、上記の記録・版変更とともに取り消される。
+            # 外部キー違反を含む失敗は、上記の記録・リビジョンの変更とともに取り消される。
             _insert_relation(c, relation)
             return True
 
@@ -185,7 +185,9 @@ def _revision(c: PostgresConnection, memory_id: str) -> int | None:
     if row is None:
         return None
     if type(row[0]) is not int:
-        raise PersistenceError(PersistenceFailureCode.CORRUPT_RECORD, "記憶の保存版が不正です")
+        raise PersistenceError(
+            PersistenceFailureCode.CORRUPT_RECORD, "記憶の保存リビジョンが不正です"
+        )
     return row[0]
 
 
@@ -237,7 +239,8 @@ def _decode_record(row: tuple[object, ...]) -> MemoryRecord:
     record = decode_memory_record(_checked_payload(row[2], row[3]))
     if row[:2] != (record.memory_id, record.revision):
         raise PersistenceError(
-            PersistenceFailureCode.INTEGRITY_FAILED, "記憶の保存識別子または版が一致しません"
+            PersistenceFailureCode.INTEGRITY_FAILED,
+            "記憶の保存識別子またはリビジョンが一致しません",
         )
     return record
 

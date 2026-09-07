@@ -1,4 +1,4 @@
-"""前段の実結果だけを実行判断へ渡し、失敗・古い版では先へ進めないことを確認する。"""
+"""前段の実結果だけを実行判断へ渡し、失敗・古いリビジョンでは先へ進めないことを確認する。"""
 
 from dataclasses import replace
 from datetime import timedelta

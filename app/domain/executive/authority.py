@@ -155,7 +155,7 @@ class ExecutiveDecisionAuthority:
                     snapshot.attention_revision,
                 )
                 if scope.plan.candidate.revisions != revisions:
-                    raise ValueError("計画承認対象の依存版が現在の判断と一致しません")
+                    raise ValueError("計画承認対象の依存先のリビジョンが現在の判断と一致しません")
                 needed = {
                     requirement
                     for step in scope.plan.candidate.steps

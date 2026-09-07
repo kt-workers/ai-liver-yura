@@ -1,4 +1,4 @@
-"""本番のゲーム進行・版更新・観測容量・終了回収を検証する。"""
+"""本番のゲーム進行・リビジョンの更新・観測容量・終了回収を検証する。"""
 
 import asyncio
 from dataclasses import replace
