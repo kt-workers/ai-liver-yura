@@ -104,6 +104,8 @@ class InternalStateReducer:
             raise ValueError("appraisal candidate is stale for current state")
         if candidate.source_context_revision != current_source_context_revision:
             raise ValueError("appraisal candidate is stale for source context")
+        if candidate.source_context_revision < snapshot.source_context_revision:
+            raise ValueError("状態の由来より古い文脈への更新はできません")
         if utc_instant(committed_at) < utc_instant(snapshot.updated_at):
             raise ValueError("commit timestamp cannot predate current state")
         if utc_instant(candidate.created_at) < utc_instant(snapshot.updated_at):
