@@ -4,6 +4,7 @@ from .projectors import (
     AttentionProjectionEnvelope,
     CommitmentAttentionProjector,
     GoalAttentionProjector,
+    StreamingAttentionProjector,
     UserInteractionAttentionProjector,
 )
 
@@ -14,4 +15,5 @@ __all__ = [
     "CommitmentAttentionProjector",
     "GoalAttentionProjector",
     "UserInteractionAttentionProjector",
+    "StreamingAttentionProjector",
 ]

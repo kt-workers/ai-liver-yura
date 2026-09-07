@@ -516,3 +516,7 @@ No secret/raw provider SDK object in trace.
 This detailed design reconciles #347 with completed #394/#396.
 
 Implementation remains frozen until #445 D1-D9 and final user confirmation PASS.
+
+## 22. 活動実行との具体的な対応
+
+#329の受付・開始直前検査後の実行要求と、配信の操作・報告・効果状態の対応は、[活動実行から配信操作への接続](streaming_activity_execution_binding.md)を参照する。接続は配信側が所有し、活動の実行結果を直接確定しない。

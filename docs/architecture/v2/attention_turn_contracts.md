@@ -136,6 +136,8 @@ Domain Storeは短い同期mutationだけを行い、Port callback、LLM、Repos
 
 ### 4.2 Projector ownership
 
+集約済み配信信号の具体的な接続は[配信信号から注意への変換](streaming_attention_binding.md)を参照する。
+
 Source Module自身に#333 importを要求しない。typed source factから`AttentionIngressSignal`への変換は#333側Application/Usecase layerのstateless projectorが所有する。
 
 ```text
