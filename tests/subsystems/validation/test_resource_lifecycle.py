@@ -90,3 +90,58 @@ async def test_cleanup_failure_does_not_skip_other_resources_or_expose_details(
     assert order == ["last", "broken", "first"]
     assert "非公開の" not in result.export_json(policy.max_export_bytes)
     assert runner.pending_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("repeat_cancel", [False, True])
+async def test_caller_cancellation_retains_terminal_result_and_timeline(
+    repeat_cancel: bool,
+) -> None:
+    started, cleaning, release_cleanup = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    child_closed = asyncio.Event()
+    order: list[str] = []
+
+    async def child() -> None:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            child_closed.set()
+
+    async def cleanup() -> None:
+        assert child_closed.is_set()
+        cleaning.set()
+        await release_cleanup.wait()
+        order.append("closed")
+
+    async def run(context: RunContext, fixture: ValidationFixture) -> TargetObservation:
+        context.add_cleanup("connection", cleanup)
+        context.spawn("owned", child)
+        await started.wait()
+        await asyncio.Event().wait()
+        return TargetObservation(RunStatus.COMPLETED, Gate.PASS, None)
+
+    runner = ValidationRunner((replace(target(), run=run),), POLICY)
+    caller = asyncio.create_task(runner.run(spec(), FIXTURE))
+    await asyncio.wait_for(started.wait(), 0.5)
+    caller.cancel()
+    await asyncio.wait_for(cleaning.wait(), 0.5)
+    if repeat_cancel:
+        caller.cancel()
+        await asyncio.sleep(0)
+    release_cleanup.set()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(caller, 0.5)
+    result = runner.result(spec().run_id)
+    assert result.status is RunStatus.CANCELLED
+    assert result.machine_gate is Gate.NOT_RUN
+    assert order == ["closed"] and child_closed.is_set()
+    assert runner.pending_count == 0
+    intervals = {interval.stage: interval for interval in result.timeline}
+    assert {"target", "owned"} <= intervals.keys()
+    assert all(interval.status is RunStatus.CANCELLED for interval in intervals.values())
+    assert '"timeline"' in result.export_json(POLICY.max_export_bytes)
+    assert runner.take_result(spec().run_id) is result
+    with pytest.raises(KeyError):
+        runner.result(spec().run_id)
+    await runner.close()

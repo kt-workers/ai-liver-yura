@@ -238,7 +238,15 @@ class ValidationRunner:
             result = await asyncio.shield(task)
         except asyncio.CancelledError:
             task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+            settled = asyncio.gather(task, return_exceptions=True)
+            while not settled.done():
+                try:
+                    await asyncio.shield(settled)
+                except asyncio.CancelledError:
+                    # 呼出し側の再取消でも、内部の終了処理と結果回収を完遂する。
+                    continue
+            if not task.cancelled() and task.exception() is None:
+                self._results[spec.run_id] = task.result()
             raise
         else:
             self._results[spec.run_id] = result
