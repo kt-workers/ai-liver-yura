@@ -1,0 +1,250 @@
+"""計画所有者から判断所有者への承認と、確定失敗時の非更新を確認する。"""
+
+from dataclasses import replace
+from datetime import timedelta
+
+import pytest
+
+from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
+from app.domain.contracts import CapabilityAvailability, PreconditionRef
+from app.domain.executive import (
+    AuthoritativeIntentRequirements,
+    ExecutiveCommitState,
+    ExecutiveContextSnapshot,
+    ExecutiveDecisionAuthority,
+    ExecutiveDecisionCandidate,
+    ExecutiveIntent,
+    ExecutiveIntentKind,
+    ExecutiveOutcome,
+    ExecutivePreconditionRequirement,
+    PlanExecutionIntentPayload,
+    PreconditionFact,
+    parse_candidate,
+    to_system_command,
+)
+from app.domain.goal_planning import GoalPlanningAuthority
+from app.domain.plan_execution.contracts import (
+    PlanExecutionAuthorization,
+    PlanExecutionPolicy,
+    PlanExecutionScope,
+    PlanStepExecutionBinding,
+)
+from tests.domain.executive.test_executive import (
+    REVISIONS,
+    candidate,
+    live_state,
+    snapshot,
+)
+from tests.domain.goal_planning.test_goal_planning import (
+    NOW,
+    capability,
+)
+from tests.domain.goal_planning.test_goal_planning import (
+    candidate as plan_candidate,
+)
+from tests.domain.goal_planning.test_goal_planning import (
+    context as plan_context,
+)
+from tests.domain.goal_planning.test_goal_planning import (
+    current as plan_current,
+)
+
+
+def scope() -> PlanExecutionScope:
+    context = plan_context()
+    assert REVISIONS.goal_revision is not None
+    context = replace(
+        context,
+        revisions=REVISIONS,
+        goal_context=replace(context.goal_context, goal_revision=REVISIONS.goal_revision),
+    )
+    plan = GoalPlanningAuthority().commit(
+        replace(plan_candidate(), revisions=REVISIONS),
+        context,
+        replace(plan_current(), revisions=REVISIONS),
+        plan_id="plan-1",
+        committed_at=NOW,
+    )
+    return PlanExecutionScope(
+        "scope-1",
+        plan,
+        (
+            PlanStepExecutionBinding(
+                "step-1",
+                "collect",
+                "target-1",
+                {"query": "資料"},
+                ("goal-1",),
+                (PreconditionRef("pre-ready", "equals", "target-1", True),),
+            ),
+        ),
+        NOW,
+        NOW + timedelta(minutes=1),
+        PlanExecutionPolicy("plan-execution", 1, 2, 2, 4, 256),
+        V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    )
+
+
+def inputs() -> tuple[ExecutiveDecisionCandidate, ExecutiveContextSnapshot, ExecutiveCommitState]:
+    value = scope()
+    intent = ExecutiveIntent(
+        "intent-plan",
+        ExecutiveIntentKind.PLAN_EXECUTION,
+        "承認した範囲の計画を進める",
+        PlanExecutionIntentPayload(value.scope_id),
+        ("goal-1",),
+        value.plan.candidate.steps[0].required_capabilities,
+        (ExecutivePreconditionRequirement("pre-ready", True),),
+    )
+    captured = replace(
+        snapshot(),
+        plan_scopes=(value,),
+        capabilities=(capability(),),
+        preconditions=(PreconditionFact("pre-ready", "target-1", "equals", True),),
+        captured_at=NOW,
+    )
+    proposed = replace(candidate(), intents=(intent,), outcome=ExecutiveOutcome.ACT, created_at=NOW)
+    current = replace(
+        live_state(),
+        plan_scopes=(value,),
+        capabilities=captured.capabilities,
+        preconditions=captured.preconditions,
+        requirements=(
+            AuthoritativeIntentRequirements(
+                intent.intent_id,
+                intent.required_capabilities,
+                intent.preconditions,
+            ),
+        ),
+    )
+    return proposed, captured, current
+
+
+def test_owner_issues_whole_plan_authorization_and_preserves_serialized_scope() -> None:
+    proposed, captured, current = inputs()
+    raw = proposed.to_dict()
+    raw.pop("created_at")
+    assert parse_candidate(raw, captured, created_at=NOW) == proposed
+    decision = ExecutiveDecisionAuthority().commit(
+        proposed,
+        captured,
+        current=current,
+        decision_id="decision-plan",
+        committed_at=NOW,
+    )
+    (authorization,) = decision.plan_authorizations
+    assert authorization.scope == captured.plan_scopes[0]
+    assert authorization.decision_id == decision.decision_id
+    assert authorization.intent_id == proposed.intents[0].intent_id
+    assert decision.to_dict()["plan_authorizations"] == [authorization.to_dict()]
+    with pytest.raises(ValueError, match="手順へ展開"):
+        to_system_command(decision, proposed.intents[0], command_id="command-1")
+    with pytest.raises(ValueError, match="意図が対応"):
+        replace(decision, plan_authorizations=())
+    with pytest.raises(ValueError, match="対象・時刻・方針"):
+        replace(decision, committed_at=NOW + timedelta(seconds=1))
+    with pytest.raises(ValueError, match="所有者だけ"):
+        replace(authorization, authorization_id="forged")
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "missing",
+        "changed",
+        "capability",
+        "condition",
+        "expired",
+        "unknown_origin",
+        "omitted_requirement",
+    ],
+)
+def test_failed_authorization_leaves_trigger_available(fault: str) -> None:
+    proposed, captured, current = inputs()
+    timestamp = NOW
+    if fault == "missing":
+        current = replace(current, plan_scopes=())
+    elif fault == "changed":
+        current = replace(
+            current,
+            plan_scopes=(
+                replace(
+                    current.plan_scopes[0],
+                    deadline_at=NOW + timedelta(seconds=30),
+                ),
+            ),
+        )
+    elif fault == "capability":
+        current = replace(
+            current,
+            capabilities=(
+                replace(
+                    capability(),
+                    availability=CapabilityAvailability.UNAVAILABLE,
+                ),
+            ),
+        )
+    elif fault == "condition":
+        current = replace(current, preconditions=(replace(current.preconditions[0], actual=False),))
+    elif fault == "expired":
+        timestamp = captured.plan_scopes[0].deadline_at
+    elif fault == "unknown_origin":
+        original = captured.plan_scopes[0]
+        invalid = replace(
+            original,
+            bindings=(
+                replace(
+                    original.bindings[0],
+                    argument_fact_refs=("unregistered",),
+                ),
+            ),
+        )
+        captured = replace(captured, plan_scopes=(invalid,))
+        current = replace(current, plan_scopes=(invalid,))
+    else:
+        proposed = replace(
+            proposed,
+            intents=(
+                replace(
+                    proposed.intents[0],
+                    required_capabilities=(),
+                ),
+            ),
+        )
+    authority = ExecutiveDecisionAuthority()
+    with pytest.raises(ValueError):
+        authority.commit(
+            proposed, captured, current=current, decision_id="decision-plan", committed_at=timestamp
+        )
+    assert not authority.has_committed(captured.trigger_id)
+    proposed, captured, current = inputs()
+    assert authority.commit(
+        proposed, captured, current=current, decision_id="decision-plan", committed_at=NOW
+    ).plan_authorizations
+
+
+def test_scope_cannot_expand_operation_or_arguments_and_authorization_cannot_be_forged() -> None:
+    value = scope()
+    with pytest.raises(ValueError, match="操作または対象"):
+        replace(value, bindings=(replace(value.bindings[0], operation_ref="other"),))
+    with pytest.raises(ValueError, match="容量"):
+        replace(value, bindings=(replace(value.bindings[0], arguments={"query": "x" * 300}),))
+    with pytest.raises(ValueError, match="所有者だけ"):
+        PlanExecutionAuthorization("forged", "decision", "intent", value, NOW)
+
+
+def test_scope_bounds_include_payload_and_existing_facts() -> None:
+    value = scope()
+    with pytest.raises(ValueError, match="対象全体の容量"):
+        replace(value, bounds_policy=replace(
+            value.bounds_policy,
+            executive=replace(value.bounds_policy.executive, max_fact_payload_json_bytes=10),
+        ))
+    with pytest.raises(ValueError, match="識別子が重複"):
+        replace(snapshot(), plan_scopes=(replace(value, scope_id="goal-1"),))
+    bounded = replace(value, bounds_policy=replace(
+        value.bounds_policy,
+        executive=replace(value.bounds_policy.executive, max_fact_refs=1),
+    ))
+    with pytest.raises(ValueError, match="合計件数"):
+        replace(snapshot(), plan_scopes=(bounded,))

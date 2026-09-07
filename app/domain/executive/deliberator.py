@@ -55,6 +55,7 @@ from .contracts import (
     GoalTransitionOperation,
     GoalTransitionPayload,
     IntentPayload,
+    PlanExecutionIntentPayload,
     SpeechIntentPayload,
 )
 
@@ -256,14 +257,17 @@ def _validate_snapshot_bounds(
         raise ValueError("Executive容量方針がsnapshotと一致しません")
     bounds = policy.executive
     _at_most(len(snapshot.source_event_ids), bounds.max_source_event_refs, "source event")
-    _at_most(len(snapshot.facts), bounds.max_fact_refs, "fact")
+    _at_most(len(snapshot.facts) + len(snapshot.plan_scopes), bounds.max_fact_refs, "fact")
     _at_most(len(snapshot.capabilities), bounds.max_capability_descriptors, "capability")
     _at_most(len(snapshot.preconditions), bounds.max_precondition_facts, "precondition")
     for fact in snapshot.facts:
         payload_bytes = len(
             json.dumps(
-                thaw_json(fact.payload), ensure_ascii=False, sort_keys=True,
-                separators=(",", ":"), allow_nan=False,
+                thaw_json(fact.payload),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
             ).encode("utf-8")
         )
         _at_most(payload_bytes, bounds.max_fact_payload_json_bytes, "fact payload")
@@ -419,6 +423,9 @@ def _optional_string(value: object, name: str) -> str | None:
 
 
 def _intent_payload(kind: ExecutiveIntentKind, value: object) -> IntentPayload:
+    if kind is ExecutiveIntentKind.PLAN_EXECUTION:
+        item = _object(value, "plan execution payload", {"scope_ref"})
+        return PlanExecutionIntentPayload(_string(item["scope_ref"], "scope_ref"))
     if kind is ExecutiveIntentKind.SPEECH:
         item = _object(
             value, "speech payload", {"semantic_goal_ref", "target_ref", "constraint_refs"}

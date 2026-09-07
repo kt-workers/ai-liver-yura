@@ -475,7 +475,7 @@ def test_outcome_requires_semantically_matching_intent_kind() -> None:
     )
     with pytest.raises(ValueError, match="speech"):
         replace(candidate(), intents=(body,))
-    with pytest.raises(ValueError, match="activity or body"):
+    with pytest.raises(ValueError, match="活動・身体・計画実行"):
         replace(candidate(), outcome=ExecutiveOutcome.ACT)
 
 

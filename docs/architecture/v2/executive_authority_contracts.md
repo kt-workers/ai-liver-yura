@@ -62,7 +62,7 @@ Provider await後、commit直前のcurrent policy世代がsnapshot世代と異�
 - evidence refs、required capability、precondition ID、forbidden claim refs
 - 候補が読んだ3 revision
 
-`ExecutiveIntent` はspeech/body/activity/attentionの高レベル要求だけを持つ。payloadは汎用JSONではなく、`SpeechIntentPayload` / `BodyIntentPayload` / `ActivityIntentPayload` / `AttentionIntentPayload` の個別immutable DTOとする。semantic/motion goal、target、constraintはnon-empty string参照、constraint群はunique tupleとして検証し、commit時にbounded snapshotへgroundする。最終台詞、step列、TTS値、joint角、frame action、実行済みfactを格納しない。
+`ExecutiveIntent`は発話・身体・活動・注意の高水準要求と、確定計画全体への明示的な実行承認を持つ。payloadは汎用JSONではなく、`SpeechIntentPayload` / `BodyIntentPayload` / `ActivityIntentPayload` / `AttentionIntentPayload` / `PlanExecutionIntentPayload`の個別の不変な型とする。semantic/motion goal、target、constraintはnon-empty string参照、constraint群はunique tupleとして検証し、commit時にbounded snapshotへgroundする。最終台詞、step列、TTS値、joint角、frame action、実行済みfactを格納しない。
 
 Goal transitionはcreate / activate / reprioritize / suspend / resume / complete / abandon / supersede、Commitment transitionはcreate / activate / suspend / resume / release / fulfill / violateを表す。`GoalTransitionPayload`はoperationに応じてsemantic goal、priority、superseding goalだけを、`CommitmentTransitionPayload`はcreate時のsemantic commitmentだけを許可する。いずれもexpected goal revisionを持ち、対象・spec・payload参照はbounded Goal/Commitment factにgroundする。#366が後続で再検証・適用するintentである。
 

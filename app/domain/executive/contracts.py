@@ -20,6 +20,7 @@ from app.domain.contracts.common import (
     utc_instant,
 )
 from app.domain.input_meaning import StructuredInputMeaning
+from app.domain.plan_execution.contracts import PlanExecutionAuthorization, PlanExecutionScope
 
 
 class ExecutiveOutcome(str, Enum):
@@ -46,6 +47,7 @@ class ExecutiveInterruptibility(str, Enum):
 
 
 class ExecutiveFactKind(str, Enum):
+    PLAN = "plan"
     GOAL = "goal"
     COMMITMENT = "commitment"
     MEMORY_EVIDENCE = "memory_evidence"
@@ -61,6 +63,7 @@ class ExecutiveFactKind(str, Enum):
 
 
 class ExecutiveIntentKind(str, Enum):
+    PLAN_EXECUTION = "plan_execution"
     SPEECH = "speech"
     BODY = "body"
     ACTIVITY = "activity"
@@ -248,8 +251,12 @@ class ExecutiveCommitState:
     preconditions: tuple[PreconditionFact, ...]
     requirements: tuple[AuthoritativeIntentRequirements, ...]
     bounds_provenance: ExecutiveBoundsProvenance
+    plan_scopes: tuple[PlanExecutionScope, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "plan_scopes", _validate_plan_scopes(self.plan_scopes, self.bounds_provenance)
+        )
         if not isinstance(self.freshness, ExecutiveFreshnessStamp):
             raise ValueError("freshness must be ExecutiveFreshnessStamp")
         if not isinstance(self.bounds_provenance, ExecutiveBoundsProvenance):
@@ -285,8 +292,12 @@ class ExecutiveContextSnapshot:
     captured_at: datetime
     appraisal_facts: AppraisalFactsSnapshot
     bounds_provenance: ExecutiveBoundsProvenance
+    plan_scopes: tuple[PlanExecutionScope, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "plan_scopes", _validate_plan_scopes(self.plan_scopes, self.bounds_provenance)
+        )
         require_identifier(self.trigger_id, "trigger_id")
         object.__setattr__(
             self,
@@ -329,10 +340,23 @@ class ExecutiveContextSnapshot:
             identifiers = [getattr(item, attribute) for item in values]
             if len(identifiers) != len(set(identifiers)):
                 raise ValueError(f"{name} ids must be unique")
+        existing_ids = set(self.source_event_ids)
+        existing_ids.update(item.fact_id for item in self.facts)
+        existing_ids.update(item.capability_id for item in self.capabilities)
+        existing_ids.update(item.precondition_id for item in self.preconditions)
+        if existing_ids & {item.scope_id for item in self.plan_scopes}:
+            raise ValueError("計画承認対象と既存の根拠の識別子が重複しています")
+        for scope in self.plan_scopes:
+            if (
+                len(self.facts) + len(self.plan_scopes)
+                > scope.bounds_policy.executive.max_fact_refs
+            ):
+                raise ValueError("計画承認対象と判断事実の合計件数が上限を超えています")
         require_aware(self.captured_at, "captured_at")
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "plan_scopes": [item.to_dict() for item in self.plan_scopes],
             "trigger_id": self.trigger_id,
             "source_event_ids": list(self.source_event_ids),
             "source_context_revision": self.source_context_revision,
@@ -368,6 +392,7 @@ def build_executive_context_snapshot(
     captured_at: datetime,
     appraisal_facts: AppraisalFactsSnapshot,
     bounds_policy: BrainOperationalBoundsPolicy,
+    plan_scopes: tuple[PlanExecutionScope, ...] = (),
 ) -> ExecutiveContextSnapshot:
     """信頼済みowner入力から、共有容量方針に従うExecutive snapshotを構築する。"""
     if not isinstance(bounds_policy, BrainOperationalBoundsPolicy):
@@ -428,11 +453,14 @@ def build_executive_context_snapshot(
     )
     if len(required_precondition_values) > bounds.max_precondition_facts:
         raise ValueError("EXECUTIVE_CONTEXT_TOO_LARGE: 必須preconditionを容量内へ収容できません")
-    selected_preconditions = required_precondition_values + tuple(
-        item
-        for item in precondition_values
-        if item.precondition_id not in required_precondition_ids
-    )[: bounds.max_precondition_facts - len(required_precondition_values)]
+    selected_preconditions = (
+        required_precondition_values
+        + tuple(
+            item
+            for item in precondition_values
+            if item.precondition_id not in required_precondition_ids
+        )[: bounds.max_precondition_facts - len(required_precondition_values)]
+    )
     return ExecutiveContextSnapshot(
         trigger_id,
         tuple(item.event_id for item in selected_events),
@@ -447,6 +475,7 @@ def build_executive_context_snapshot(
         captured_at,
         appraisal_facts,
         ExecutiveBoundsProvenance.from_policy(bounds_policy),
+        plan_scopes,
     )
 
 
@@ -537,6 +566,20 @@ class ActivityIntentPayload:
 
 
 @dataclass(frozen=True, slots=True)
+class PlanExecutionIntentPayload:
+    scope_ref: str
+
+    def __post_init__(self) -> None:
+        require_identifier(self.scope_ref, "scope_ref")
+
+    def reference_ids(self) -> tuple[str, ...]:
+        return (self.scope_ref,)
+
+    def to_dict(self) -> dict[str, object]:
+        return {"scope_ref": self.scope_ref}
+
+
+@dataclass(frozen=True, slots=True)
 class AttentionIntentPayload:
     target_ref: str
     mode: str
@@ -559,7 +602,11 @@ class AttentionIntentPayload:
 
 
 IntentPayload = (
-    SpeechIntentPayload | BodyIntentPayload | ActivityIntentPayload | AttentionIntentPayload
+    SpeechIntentPayload
+    | BodyIntentPayload
+    | ActivityIntentPayload
+    | AttentionIntentPayload
+    | PlanExecutionIntentPayload
 )
 
 
@@ -584,6 +631,7 @@ class ExecutiveIntent:
             ExecutiveIntentKind.BODY: BodyIntentPayload,
             ExecutiveIntentKind.ACTIVITY: ActivityIntentPayload,
             ExecutiveIntentKind.ATTENTION: AttentionIntentPayload,
+            ExecutiveIntentKind.PLAN_EXECUTION: PlanExecutionIntentPayload,
         }[self.kind]
         if not isinstance(self.payload, expected_payload):
             raise ValueError("intent payload type does not match intent kind")
@@ -1003,9 +1051,13 @@ class ExecutiveDecisionCandidate:
         ):
             raise ValueError("respond outcome requires speech intent")
         if self.outcome is ExecutiveOutcome.ACT and not intent_kinds.intersection(
-            {ExecutiveIntentKind.ACTIVITY, ExecutiveIntentKind.BODY}
+            {
+                ExecutiveIntentKind.ACTIVITY,
+                ExecutiveIntentKind.BODY,
+                ExecutiveIntentKind.PLAN_EXECUTION,
+            }
         ):
-            raise ValueError("act outcome requires activity or body intent")
+            raise ValueError("活動する判断には活動・身体・計画実行のいずれかの意図が必要です")
         object.__setattr__(
             self, "rationale_refs", _ids(self.rationale_refs, "rationale_refs", non_empty=True)
         )
@@ -1039,8 +1091,17 @@ class CommittedExecutiveDecision:
     validated_preconditions: tuple[PreconditionFact, ...]
     committed_at: datetime
     bounds_provenance: ExecutiveBoundsProvenance
+    plan_authorizations: tuple[PlanExecutionAuthorization, ...] = ()
 
     def __post_init__(self) -> None:
+        authorizations = _owned(
+            self.plan_authorizations, PlanExecutionAuthorization, "plan_authorizations"
+        )
+        if any(item.decision_id != self.decision_id for item in authorizations):
+            raise ValueError("計画承認の判断識別子が一致しません")
+        if len({item.intent_id for item in authorizations}) != len(authorizations):
+            raise ValueError("同じ計画承認意図を重複して確定できません")
+        object.__setattr__(self, "plan_authorizations", authorizations)
         require_identifier(self.decision_id, "decision_id")
         if not isinstance(self.candidate, ExecutiveDecisionCandidate):
             raise ValueError("candidate must be ExecutiveDecisionCandidate")
@@ -1055,12 +1116,28 @@ class CommittedExecutiveDecision:
                 "validated_preconditions",
             ),
         )
+        expected_scopes = {
+            intent.intent_id: intent.payload.scope_ref
+            for intent in self.candidate.intents
+            if isinstance(intent.payload, PlanExecutionIntentPayload)
+        }
+        if {item.intent_id for item in authorizations} != set(expected_scopes):
+            raise ValueError("計画承認と確定判断の意図が対応していません")
+        if any(
+            item.scope.scope_id != expected_scopes[item.intent_id]
+            or item.committed_at != self.committed_at
+            or ExecutiveBoundsProvenance.from_policy(item.scope.bounds_policy)
+            != self.bounds_provenance
+            for item in authorizations
+        ):
+            raise ValueError("計画承認の対象・時刻・方針が確定判断と一致しません")
         require_aware(self.committed_at, "committed_at")
         if utc_instant(self.committed_at) < utc_instant(self.candidate.created_at):
             raise ValueError("committed_at cannot predate candidate")
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "plan_authorizations": [item.to_dict() for item in self.plan_authorizations],
             "decision_id": self.decision_id,
             "candidate": self.candidate.to_dict(),
             "validated_preconditions": [item.to_dict() for item in self.validated_preconditions],
@@ -1068,3 +1145,19 @@ class CommittedExecutiveDecision:
             "bounds_policy_id": self.bounds_provenance.policy_id,
             "bounds_policy_revision": self.bounds_provenance.policy_revision,
         }
+
+
+def _validate_plan_scopes(
+    values: tuple[PlanExecutionScope, ...], provenance: ExecutiveBoundsProvenance
+) -> tuple[PlanExecutionScope, ...]:
+    scopes = _owned(values, PlanExecutionScope, "plan_scopes")
+    if len({item.scope_id for item in scopes}) != len(scopes):
+        raise ValueError("計画承認対象の識別子は重複できません")
+    for scope in scopes:
+        if ExecutiveBoundsProvenance.from_policy(scope.bounds_policy) != provenance:
+            raise ValueError("計画承認対象と判断の容量方針世代が一致しません")
+        if len(scopes) > min(
+            scope.bounds_policy.executive.max_fact_refs, scope.policy.max_active_plans
+        ):
+            raise ValueError("計画承認対象の保持件数が上限を超えています")
+    return scopes
