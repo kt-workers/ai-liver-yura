@@ -8,6 +8,7 @@ from dataclasses import InitVar, dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from app.domain.activity_execution.contracts import ActivityInterruptibility, ActivityInvocation
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
 from app.domain.contracts import PreconditionRef
 from app.domain.contracts.common import (
@@ -58,8 +59,13 @@ class PlanStepExecutionBinding:
     arguments: JsonValue
     argument_fact_refs: tuple[str, ...]
     preconditions: tuple[PreconditionRef, ...]
+    resumed_invocation: ActivityInvocation | None = None
 
     def __post_init__(self) -> None:
+        if self.resumed_invocation is not None and not isinstance(
+            self.resumed_invocation, ActivityInvocation
+        ):
+            raise ValueError("再開対象には型付きの既存要求が必要です")
         require_identifier(self.step_id, "step_id")
         require_identifier(self.operation_ref, "operation_ref")
         if self.target_ref is not None:
@@ -90,6 +96,9 @@ class PlanStepExecutionBinding:
             "arguments": thaw_json(self.arguments),
             "argument_fact_refs": list(self.argument_fact_refs),
             "preconditions": [item.to_dict() for item in self.preconditions],
+            "resumed_invocation": (
+                self.resumed_invocation.to_dict() if self.resumed_invocation is not None else None
+            ),
         }
 
 
@@ -131,6 +140,13 @@ class PlanExecutionScope:
         steps = {step.step_id: step for step in candidate.steps}
         if len(ids) != len(set(ids)) or set(ids) != set(steps):
             raise ValueError("確定計画の全手順に重複のない束縛が必要です")
+        resumed_ids = [
+            b.resumed_invocation.command.command_id
+            for b in bindings
+            if b.resumed_invocation is not None
+        ]
+        if len(resumed_ids) != len(set(resumed_ids)):
+            raise ValueError("同じ既存実行を複数手順へ関連付けることはできません")
         conditions: dict[str, PreconditionRef] = {}
         for binding in bindings:
             for condition in binding.preconditions:
@@ -138,6 +154,25 @@ class PlanExecutionScope:
                 if previous != condition:
                     raise ValueError("同一の事前条件参照に異なる内容を束縛できません")
             step = steps[binding.step_id]
+            resumed = binding.resumed_invocation
+            if (resumed is None) != (step.resume_activity_id is None):
+                raise ValueError("再開参照と既存要求の指定が一致しません")
+            if resumed is not None and (
+                resumed.command.command_id != step.resume_activity_id
+                or resumed.operation_ref != binding.operation_ref
+                or resumed.target_ref != binding.target_ref
+                or resumed.arguments != binding.arguments
+                or resumed.command.required_capabilities != step.required_capabilities
+                or resumed.command.preconditions != binding.preconditions
+                or resumed.interruptibility
+                != {
+                    "interruptible": ActivityInterruptibility.INTERRUPTIBLE,
+                    "resumable": ActivityInterruptibility.SOFT_CANCEL_ONLY,
+                    "protected": ActivityInterruptibility.NON_INTERRUPTIBLE,
+                }[step.interruption_policy.value]
+                or utc_instant(resumed.command.issued_at) > utc_instant(self.captured_at)
+            ):
+                raise ValueError("再開対象の要求を変更したり、未来の要求を参照したりできません")
             if binding.operation_ref != step.operation_ref or binding.target_ref != step.target_ref:
                 raise ValueError("手順の操作または対象を変更できません")
             if {item.precondition_id for item in binding.preconditions} != set(

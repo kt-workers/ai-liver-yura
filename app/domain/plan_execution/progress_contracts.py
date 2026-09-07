@@ -85,7 +85,10 @@ class PlanProgressContext:
             step = steps[item.step_id]
             binding = bindings[item.step_id]
             invocation = item.record.invocation
-            if (
+            resumed = binding.resumed_invocation
+            if resumed is not None and (item.attempt != 1 or invocation != resumed):
+                raise ValueError("再開した既存要求と観測が一致しません")
+            if resumed is None and (
                 item.attempt > step.retry_limit + 1
                 or invocation.command.decision_id != self.authorization.decision_id
                 or invocation.command.intent_ref
@@ -101,7 +104,10 @@ class PlanProgressContext:
                     invocation.command.deadline_at is not None
                     and utc_instant(invocation.command.deadline_at) > utc_instant(scope.deadline_at)
                 )
-                or invocation.operation_ref != binding.operation_ref
+            ):
+                raise ValueError("新規実行の権限または期限が承認済みの手順と一致しません")
+            if (
+                invocation.operation_ref != binding.operation_ref
                 or invocation.target_ref != binding.target_ref
                 or invocation.arguments != binding.arguments
                 or invocation.command.required_capabilities != step.required_capabilities

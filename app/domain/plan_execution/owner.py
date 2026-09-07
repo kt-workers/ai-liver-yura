@@ -219,6 +219,24 @@ class PlanExecutionOwner:
                 self._policy,
                 self._bounds,
             )
+            for binding in scope.bindings:
+                resumed = binding.resumed_invocation
+                if resumed is None:
+                    continue
+                record = self._activity.snapshot(resumed.command.command_id)
+                known = any(
+                    p.goal.goal_id == goal.goal_id
+                    and any(resumed in values for values in p.attempts.values())
+                    for p in self._plans.values()
+                )
+                if (
+                    not known
+                    or record is None
+                    or record.terminal
+                    or record.invocation != resumed
+                    or utc_instant(record.result.occurred_at) > utc_instant(captured_at)
+                ):
+                    raise ValueError("同じ目標の所有済み非終端実行だけを再開対象にできます")
             self._plans[scope.scope_id] = _RegisteredPlan(scope, goal, facts)
             return scope
 
@@ -310,17 +328,18 @@ class PlanExecutionOwner:
                         continue
                     if not self._retryable(item, step.step_id):
                         continue
-                if available <= 0:
-                    break
+                binding = bindings[step.step_id]
                 if retained >= self._policy.max_retained_records:
                     return PlanExecutionBatch(tuple(values), self._progress(item, capacity=True))
-                if step.resume_activity_id is not None:
-                    item.blocked = (
-                        PlanExecutionStatus.RESUME_REQUIRED,
-                        "existing_activity_requires_resume",
-                    )
+                if binding.resumed_invocation is not None:
+                    item.attempts[step.step_id] = [binding.resumed_invocation]
+                    retained += 1
+                    self._progress(item)
+                    if item.blocked is not None:
+                        break
+                    continue
+                if available <= 0:
                     break
-                binding = bindings[step.step_id]
                 number = len(attempts) + 1
                 command_id = f"{scope_id}:{step.step_id}:{number}"
                 interruption = {
@@ -442,14 +461,21 @@ class PlanExecutionOwner:
         )
 
     def _inflight_count(self) -> int:
-        return sum(
-            self._pending(invocation)
-            for p in self._plans.values()
-            for values in p.attempts.values()
-            for invocation in values
+        return len(
+            {
+                invocation.command.command_id
+                for p in self._plans.values()
+                for values in p.attempts.values()
+                for invocation in values
+                if self._pending(invocation)
+            }
         )
 
     def _retryable(self, item: _RegisteredPlan, step_id: str) -> bool:
+        if any(
+            b.step_id == step_id and b.resumed_invocation is not None for b in item.scope.bindings
+        ):
+            return False
         attempts = item.attempts[step_id]
         record = self._activity.snapshot(attempts[-1].command.command_id)
         step = next(step for step in item.scope.plan.candidate.steps if step.step_id == step_id)
