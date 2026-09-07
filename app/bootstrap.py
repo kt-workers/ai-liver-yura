@@ -10,14 +10,18 @@ from pathlib import Path
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.production import create_openai_port_from_environment
+from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.config.minimum_brain import MinimumBrainProductionConfig, load_minimum_brain_config
+from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
     BrainIntegrationRuntime,
     BrainIntegrationWork,
 )
+from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.character.contracts import CharacterDefinitionDocument
+from app.domain.goals import GoalCommitmentStore
 from app.domain.input_gateway import NormalizedInputEvent
 from app.domain.input_meaning import (
     InputMeaningFreshnessStamp,
@@ -107,6 +111,9 @@ class MinimumCoreApplication:
     interpreter: InputMeaningInterpreter
     bridge: InputMeaningBrainModulePort
     llm: LLMRolePort
+    goals: GoalCommitmentStore
+    activities: ActivityExecutionAuthority
+    input_context: CoreInputReferenceContextBinding
 
     async def start(self) -> None:
         await self.brain.start()
@@ -130,9 +137,14 @@ def build_minimum_core(config_path: Path | None = None) -> MinimumCoreApplicatio
         (root / config.character_definition_path).read_bytes()
     )
     llm = create_openai_port_from_environment((descriptor(config.input_meaning_policy),))
+    goals = GoalCommitmentStore()
+    activities = ActivityExecutionAuthority()
+    input_context = CoreInputReferenceContextBinding(
+        goals, activities, config.input_meaning_policy, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
+    )
     interpreter = InputMeaningInterpreter(
         llm,
-        UnavailableInputMeaningLiveContextPort(),
+        input_context,
         config.input_meaning_policy,
     )
     bridge = InputMeaningBrainModulePort(interpreter)
@@ -140,7 +152,18 @@ def build_minimum_core(config_path: Path | None = None) -> MinimumCoreApplicatio
     lifecycle = RuntimeLifecycle(clock, config.shutdown_policy)
     brain = BrainIntegrationRuntime(clock, config.integration_policy)
     brain.register_module(BrainIntegrationModule.INPUT_MEANING, bridge)
-    return MinimumCoreApplication(config, character, lifecycle, brain, interpreter, bridge, llm)
+    return MinimumCoreApplication(
+        config,
+        character,
+        lifecycle,
+        brain,
+        interpreter,
+        bridge,
+        llm,
+        goals,
+        activities,
+        input_context,
+    )
 
 
 async def run_minimum_core() -> None:
