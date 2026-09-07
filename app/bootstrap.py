@@ -7,9 +7,11 @@ import signal
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TypeVar
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.production import create_openai_port_from_environment
+from app.composition.accepted_input import CoreAcceptedInputStore
 from app.composition.goal_persistence import CoreGoalPersistenceBinding
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
@@ -52,8 +54,11 @@ class InputMeaningBrainWorkPayload:
 class InputMeaningBrainModulePort:
     """固定入力の自己整合を検査し、意味の採用は既存所有者へ委譲する。"""
 
-    def __init__(self, interpreter: InputMeaningInterpreter) -> None:
+    def __init__(
+        self, interpreter: InputMeaningInterpreter, inputs: CoreAcceptedInputStore | None = None
+    ) -> None:
         self._interpreter = interpreter
+        self.inputs = inputs
 
     @staticmethod
     def _validate(work: BrainIntegrationWork) -> InputMeaningBrainWorkPayload:
@@ -89,13 +94,32 @@ class InputMeaningBrainModulePort:
         cancellation: CancellationToken,
     ) -> InputMeaningInterpretationResult:
         payload = self._validate(work)
-        return await self._interpreter.interpret(
-            payload.event,
-            payload.reference_context,
-            request_id=payload.request_id,
-            trace_id=work.envelope.trace_id,
-            created_at=work.envelope.created_at,
+        if cancellation.cancelled:
+            raise asyncio.CancelledError
+        task = asyncio.create_task(
+            self._interpreter.interpret(
+                payload.event,
+                payload.reference_context,
+                request_id=payload.request_id,
+                trace_id=work.envelope.trace_id,
+                created_at=work.envelope.created_at,
+            )
         )
+        try:
+            result = await asyncio.shield(task)
+        except asyncio.CancelledError:
+            task.cancel()
+            try:
+                await _reap_cleanup(task)
+            except (asyncio.CancelledError, Exception):
+                pass
+            raise
+
+        if cancellation.cancelled:
+            raise asyncio.CancelledError
+        if self.inputs is not None and result.meaning is not None:
+            self.inputs.retain(payload.event, result)
+        return result
 
 
 class UnavailableInputMeaningLiveContextPort:
@@ -157,7 +181,10 @@ class MinimumCoreApplication:
                 await self.lifecycle.close()
 
 
-async def _reap_cleanup(task: asyncio.Task[None]) -> None:
+_CleanupResult = TypeVar("_CleanupResult")
+
+
+async def _reap_cleanup(task: asyncio.Task[_CleanupResult]) -> None:
     """呼出し側の再取消でも所有する終了処理を最後まで回収する。"""
     cancelled = False
     while not task.done():
@@ -212,7 +239,10 @@ def _compose_core(
         input_context,
         config.input_meaning_policy,
     )
-    bridge = InputMeaningBrainModulePort(interpreter)
+    bridge = InputMeaningBrainModulePort(
+        interpreter,
+        CoreAcceptedInputStore(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.executive.max_source_event_refs),
+    )
     clock = SystemRuntimeClock()
     lifecycle = lifecycle or RuntimeLifecycle(clock, config.shutdown_policy)
     brain = BrainIntegrationRuntime(clock, config.integration_policy)
