@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
-from threading import Lock
 
 from app.domain.contracts import SourceLifecycleOperation
 from app.domain.contracts.common import utc_instant
+from app.domain.contracts.finalization import (
+    AuthorityFinalizationParticipant,
+    AuthorityReadPublication,
+    authority_mutation,
+)
 from app.domain.executive import (
     CommitmentTransitionOperation,
     CommittedExecutiveDecision,
@@ -93,12 +97,19 @@ class GoalCommitmentStore:
         )
         self._decision_ids: set[str] = set()
         self._intent_ids: set[str] = set()
-        self._lock = Lock()
+        self._participant = AuthorityFinalizationParticipant(self, "GoalCommitmentStore", 40)
+        self._lock = self._participant
+
+    @property
+    def finalization_participant(self) -> AuthorityFinalizationParticipant:
+        """元所有者の読取と更新に共通する同期境界を公開する。"""
+        return self._participant
 
     def snapshot(self) -> GoalCommitmentSnapshot:
         with self._lock:
             return self._snapshot
 
+    @authority_mutation
     def apply(self, decision: CommittedExecutiveDecision) -> GoalCommitmentCommitResult:
         if not isinstance(decision, CommittedExecutiveDecision):
             raise ValueError("decision must be CommittedExecutiveDecision")
@@ -366,3 +377,7 @@ class GoalCommitmentStore:
             updated_at=occurred_at,
             revision=revision,
         )
+
+    def snapshot_publication(self) -> AuthorityReadPublication[GoalCommitmentSnapshot]:
+        with self._participant:
+            return AuthorityReadPublication(self.snapshot(), (self._participant.token(),))

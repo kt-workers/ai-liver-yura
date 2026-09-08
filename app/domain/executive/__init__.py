@@ -1,4 +1,4 @@
-from .authority import ExecutiveDecisionAuthority
+from .authority import ExecutiveDecisionAuthority, ExecutiveFinalizationInput
 from .contracts import (
     ActivityIntentPayload,
     AttentionIntentPayload,
@@ -57,6 +57,7 @@ __all__ = [
     "ExecutiveContextSnapshot",
     "ExecutiveBoundsProvenance",
     "ExecutiveDecisionAuthority",
+    "ExecutiveFinalizationInput",
     "ExecutiveDecisionCandidate",
     "ExecutiveClock",
     "ExecutiveDeliberator",

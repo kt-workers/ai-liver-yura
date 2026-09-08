@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
-from threading import Lock
 from typing import Any
+
+from app.domain.contracts.finalization import (
+    AuthorityFinalizationParticipant,
+    AuthorityReadPublication,
+    authority_mutation,
+)
 
 from .contracts import (
     AttentionClaimRelation,
@@ -50,11 +55,18 @@ class AttentionTurnStore:
             datetime.min.replace(tzinfo=timezone.utc),
         )
         self._transition_ids: set[str] = set()
-        self._lock = Lock()
+        self._participant = AuthorityFinalizationParticipant(self, "AttentionTurnStore", 60)
+        self._lock = self._participant
+
+    @property
+    def finalization_participant(self) -> AuthorityFinalizationParticipant:
+        """元所有者の読取と更新に共通する同期境界を公開する。"""
+        return self._participant
 
     @property
     def policy(self) -> AttentionSchedulingPolicy:
-        return self._policy
+        with self._lock:
+            return self._policy
 
     def snapshot(self) -> AttentionFocusState:
         with self._lock:
@@ -64,6 +76,7 @@ class AttentionTurnStore:
         with self._lock:
             return AttentionFocusView.from_state(self._state)
 
+    @authority_mutation
     def update_policy(
         self,
         policy: AttentionSchedulingPolicy,
@@ -129,6 +142,7 @@ class AttentionTurnStore:
             if count > policy.budget_for(kind):
                 raise ValueError("current source kind数が新しいpolicy上限を超えています")
 
+    @authority_mutation
     def offer(self, signal: AttentionIngressSignal) -> AttentionFocusState:
         if not isinstance(signal, AttentionIngressSignal) or signal.operation not in {
             AttentionIngressOperation.OFFER,
@@ -187,6 +201,7 @@ class AttentionTurnStore:
             )
             return self._state
 
+    @authority_mutation
     def resolve(self, signal: AttentionIngressSignal) -> AttentionFocusState:
         if (
             not isinstance(signal, AttentionIngressSignal)
@@ -252,6 +267,7 @@ class AttentionTurnStore:
             )
             return self._state
 
+    @authority_mutation
     def expire(self, source_context_revision: int, now: datetime) -> AttentionFocusState:
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("nowはtimezone-awareでなければなりません")
@@ -291,6 +307,7 @@ class AttentionTurnStore:
             )
             return self._state
 
+    @authority_mutation
     def apply(
         self, source_context_revision: int, transitions: tuple[AttentionTransition, ...]
     ) -> AttentionFocusState:
@@ -342,6 +359,7 @@ class AttentionTurnStore:
                 for source in sources
             )
 
+    @authority_mutation
     def claim_next(
         self, current_goal_revision: int, now: datetime
     ) -> ExecutiveTriggerEligibility | None:
@@ -687,3 +705,7 @@ class AttentionTurnStore:
         if op is AttentionTransitionOperation.SET_RESPONSE_OBLIGATION:
             return replace(state, response_obligation=transition.value)
         return replace(state, response_obligation=None)
+
+    def snapshot_publication(self) -> AuthorityReadPublication[AttentionFocusState]:
+        with self._participant:
+            return AuthorityReadPublication(self.snapshot(), (self._participant.token(),))
