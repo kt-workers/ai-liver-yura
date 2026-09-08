@@ -12,6 +12,7 @@ from app.domain.executive import (
     ExecutiveLiveStatePort,
     ExecutivePolicy,
 )
+from app.domain.executive.requirements import ExecutiveRequirementsOwner
 from app.domain.input_meaning import StructuredInputMeaning
 from app.usecases.ports.llm import LLMRolePort
 
@@ -37,17 +38,20 @@ class AppraisalExecutiveSettings:
         aware(self.created_at)
 
     def typed_inputs(self) -> JsonValue:
-        return _project({
-            "context_template": self.context_template,
-            "policy": self.policy,
-            "created_at": self.created_at,
-        })
+        return _project(
+            {
+                "context_template": self.context_template.to_dict(),
+                "policy": self.policy,
+                "created_at": self.created_at,
+            }
+        )
 
 
 @dataclass(frozen=True)
 class AppraisalExecutiveBindings:
     port: LLMRolePort | LabLLMPortFactory
     live_state: ExecutiveLiveStatePort
+    requirements_owner: ExecutiveRequirementsOwner | None = None
 
 
 async def deliberate_after_appraisal(
@@ -73,7 +77,7 @@ async def deliberate_after_appraisal(
         ),
         bindings.live_state,
         settings.policy,
-        ExecutiveDecisionAuthority(),
+        ExecutiveDecisionAuthority(bindings.requirements_owner),
     )
     prefix = f"{context.run_id}:{context.iteration}:executive"
     decision = await context.invoke_product(
@@ -86,4 +90,4 @@ async def deliberate_after_appraisal(
             created_at=settings.created_at,
         ),
     )
-    return _project({"snapshot": snapshot, "decision": decision})
+    return _project({"snapshot": snapshot.to_dict(), "decision": decision.to_dict()})

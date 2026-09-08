@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from datetime import datetime
 from enum import Enum
 from typing import NoReturn, TypeAlias
 
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
 from app.domain.contracts import CapabilityRequirement
-from app.domain.contracts.common import JsonValue, require_identifier, require_revision
-from app.domain.contracts.finalization import AuthorityFinalizationParticipant, authority_mutation
+from app.domain.contracts.common import JsonValue, freeze_json, require_identifier, require_revision
+from app.domain.contracts.finalization import (
+    AuthorityFinalizationParticipant,
+    AuthorityGenerationToken,
+    authority_mutation,
+)
 from app.domain.plan_execution.contracts import PlanExecutionScope
 from app.domain.plan_execution.progress_contracts import PlanProgressContext
 
@@ -23,6 +29,7 @@ from .contracts import (
     ExecutiveIntent,
     ExecutiveIntentKind,
     ExecutivePreconditionRequirement,
+    IntentPayload,
     PlanExecutionIntentPayload,
     PlanProgressIntentPayload,
 )
@@ -131,6 +138,10 @@ def _requirements_key(
     capabilities: tuple[CapabilityRequirement, ...],
     preconditions: tuple[ExecutivePreconditionRequirement, ...],
 ) -> object:
+    if any(not isinstance(x, CapabilityRequirement) for x in capabilities) or any(
+        not isinstance(x, ExecutivePreconditionRequirement) for x in preconditions
+    ):
+        reject(RequirementsFailureCode.INVALID_PROJECTION)
     cap_keys = [(x.capability_type, x.operation) for x in capabilities]
     ids = [x.precondition_id for x in preconditions]
     if len(set(cap_keys)) != len(cap_keys) or len(set(ids)) != len(ids):
@@ -225,7 +236,7 @@ class UpstreamRequirementRecord:
     revision: int
     reference: str
     intent_kind: ExecutiveIntentKind
-    payload: object
+    payload: IntentPayload
     capabilities: tuple[CapabilityRequirement, ...]
     preconditions: tuple[ExecutivePreconditionRequirement, ...]
 
@@ -233,12 +244,9 @@ class UpstreamRequirementRecord:
         for name in ("owner_id", "contract_id", "record_id", "reference"):
             require_identifier(getattr(self, name), name)
         require_revision(self.revision, "revision")
-        # 意図の既存型検査を再利用し、自由な辞書や可変内容を出典にしない。
-        from typing import get_args
-
-        from .contracts import IntentPayload
-
-        if not isinstance(self.payload, get_args(IntentPayload)):
+        try:
+            ExecutiveIntent("upstream-type-check", self.intent_kind, "上流の型照合", self.payload)
+        except ValueError:
             reject(RequirementsFailureCode.INVALID_PROJECTION)
         object.__setattr__(self, "capabilities", tuple(self.capabilities))
         object.__setattr__(self, "preconditions", tuple(self.preconditions))
@@ -255,10 +263,14 @@ class RequirementSourcePublication:
     source_id: str
     revision: int
     value: SourceValue
+    tokens: tuple[AuthorityGenerationToken, ...]
 
     def __post_init__(self) -> None:
         require_identifier(self.source_id, "source_id")
         require_revision(self.revision, "revision")
+        object.__setattr__(self, "tokens", tuple(self.tokens))
+        if not self.tokens or any(not isinstance(t, AuthorityGenerationToken) for t in self.tokens):
+            reject(RequirementsFailureCode.SOURCE_UNAVAILABLE)
         if not isinstance(
             self.value, (UpstreamRequirementRecord, PlanExecutionScope, PlanProgressContext)
         ):
@@ -271,6 +283,14 @@ class RequirementsGeneration:
     policy: ExecutiveIntentRequirementsPolicy
     sources: tuple[RequirementSourcePublication, ...]
     serial: int
+    token: AuthorityGenerationToken
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "policy": project(self.policy),
+            "sources": project(self.sources),
+            "serial": self.serial,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,6 +308,9 @@ class DerivedIntentRequirements:
     requirements: AuthoritativeIntentRequirements
     provenance: RequirementProvenance
 
+    def to_dict(self) -> dict[str, object]:
+        return {"requirements": project(self.requirements), "provenance": project(self.provenance)}
+
 
 @dataclass(frozen=True, slots=True)
 class RequirementsDerivationResult:
@@ -303,6 +326,7 @@ class ExecutiveRequirementsOwner:
         self._participant = AuthorityFinalizationParticipant(self, "ExecutiveRequirementsOwner", 80)
         self._lock = self._participant
         self._generation: RequirementsGeneration | None = None
+        self._rule_history: dict[str, ExecutiveIntentRequirementRule] = {}
 
     @property
     def finalization_participant(self) -> AuthorityFinalizationParticipant:
@@ -328,6 +352,12 @@ class ExecutiveRequirementsOwner:
         for rule in policy.rules:
             if len(rule.capabilities) + len(rule.preconditions) > self._bounds.max_refs_per_intent:
                 reject(RequirementsFailureCode.INVALID_PROJECTION)
+        for value in (*policy.rules, *sources):
+            if (
+                len(json.dumps(project(value), ensure_ascii=False, allow_nan=False).encode("utf-8"))
+                > self._bounds.max_fact_payload_json_bytes
+            ):
+                reject(RequirementsFailureCode.INVALID_PROJECTION)
         with self._lock:
             previous = self._generation
             if previous is not None:
@@ -336,16 +366,25 @@ class ExecutiveRequirementsOwner:
                     or policy.revision < previous.policy.revision
                 ):
                     reject(RequirementsFailureCode.STALE_POLICY)
-                if policy.revision == previous.policy.revision and policy != previous.policy:
+                if policy.revision == previous.policy.revision and not _same_public_value(
+                    policy, previous.policy
+                ):
                     reject(RequirementsFailureCode.STALE_POLICY)
-                old_rules = {r.rule_id: r for r in previous.policy.rules}
+                old_rules = self._rule_history
+                if (
+                    len(old_rules.keys() | {r.rule_id for r in policy.rules})
+                    > self._bounds.max_fact_refs
+                ):
+                    reject(RequirementsFailureCode.INVALID_PROJECTION)
                 for rule in policy.rules:
                     old = old_rules.get(rule.rule_id)
                     if old is not None and (
                         rule.revision < old.revision
                         or (
                             rule.revision == old.revision
-                            and replace(rule, policy_revision=old.policy_revision) != old
+                            and not _same_public_value(
+                                replace(rule, policy_revision=old.policy_revision), old
+                            )
                         )
                     ):
                         reject(RequirementsFailureCode.STALE_POLICY)
@@ -358,14 +397,21 @@ class ExecutiveRequirementsOwner:
                     ):
                         reject(RequirementsFailureCode.STALE_SOURCE)
                 if (
-                    policy == previous.policy
+                    _same_public_value(policy, previous.policy)
                     and all(a is b for a, b in zip(sources, previous.sources, strict=False))
                     and len(sources) == len(previous.sources)
                 ):
-                    return previous
+                    generation = replace(previous, token=self._participant.token())
+                    self._generation = generation
+                    return generation
             generation = RequirementsGeneration(
-                self, policy, sources, 0 if previous is None else previous.serial + 1
+                self,
+                policy,
+                sources,
+                0 if previous is None else previous.serial + 1,
+                self._participant.token(),
             )
+            self._rule_history.update((r.rule_id, r) for r in policy.rules)
             self._generation = generation
             return generation
 
@@ -379,8 +425,12 @@ class ExecutiveRequirementsOwner:
         current = self._generation
         if current is None:
             reject(RequirementsFailureCode.POLICY_UNREGISTERED)
-        elif generation.owner is not self or current is not generation:
-            if current.policy != generation.policy:
+        elif (
+            generation.owner is not self
+            or current is not generation
+            or generation.token != self._participant.token()
+        ):
+            if not _same_public_value(current.policy, generation.policy):
                 reject(RequirementsFailureCode.STALE_POLICY)
             reject(RequirementsFailureCode.STALE_SOURCE)
 
@@ -450,7 +500,10 @@ class ExecutiveRequirementsOwner:
                     raise RequirementsRejected(RequirementsFailureCode.SCOPE_UNAVAILABLE)
                 scope = found[0].value
                 assert isinstance(scope, PlanExecutionScope)
-                if not any(s is scope for s in snapshot.plan_scopes):
+                if not any(
+                    typed_json(freeze_json(s.to_dict())) == typed_json(freeze_json(scope.to_dict()))
+                    for s in snapshot.plan_scopes
+                ):
                     raise RequirementsRejected(RequirementsFailureCode.STALE_SCOPE)
                 capabilities, conditions = _project_plan(scope)
                 sources = (found[0],)
@@ -483,7 +536,13 @@ class ExecutiveRequirementsOwner:
                 ]
                 if len(found_context) != 1:
                     raise RequirementsRejected(RequirementsFailureCode.CONTEXT_UNAVAILABLE)
-                if not any(c is found_context[0].value for c in snapshot.plan_progress_contexts):
+                context_value = found_context[0].value
+                assert isinstance(context_value, PlanProgressContext)
+                if not any(
+                    typed_json(freeze_json(c.to_dict()))
+                    == typed_json(freeze_json(context_value.to_dict()))
+                    for c in snapshot.plan_progress_contexts
+                ):
                     reject(RequirementsFailureCode.STALE_CONTEXT)
                 sources += (found_context[0],)
             if len(capabilities) + len(conditions) > self._bounds.max_refs_per_intent:
@@ -513,9 +572,33 @@ class ExecutiveRequirementsOwner:
         """呼出し元がfinal_guardを保持する。外部処理を含まない有界の照合。"""
         generation = snapshot.requirements_generation
         assert generation is not None
+        self._check(generation)
+        return self.validate_captured(snapshot, candidate, current)
+
+    def validate_captured(
+        self,
+        snapshot: ExecutiveContextSnapshot,
+        candidate: ExecutiveDecisionCandidate,
+        current: ExecutiveCommitState,
+    ) -> tuple[DerivedIntentRequirements, ...]:
+        """不変な要求・候補の整合だけを照合し、現在性はFence内で検査する。"""
+        generation = snapshot.requirements_generation
+        if generation is None or generation.owner is not self:
+            reject(RequirementsFailureCode.INVALID_PROJECTION)
         expected = self._derive(generation, candidate, snapshot)
         if len(current.requirement_derivations) != len(expected):
             reject(RequirementsFailureCode.INVALID_PROJECTION)
+        if len(current.requirements) != len(expected):
+            reject(RequirementsFailureCode.INVALID_PROJECTION)
+        live_requirements = {item.intent_id: item for item in current.requirements}
+        for value in expected:
+            live = live_requirements.get(value.requirements.intent_id)
+            if live is None or _requirements_key(
+                live.capabilities, live.preconditions
+            ) != _requirements_key(
+                value.requirements.capabilities, value.requirements.preconditions
+            ):
+                reject(RequirementsFailureCode.INVALID_PROJECTION)
         for intent, value, supplied in zip(
             candidate.intents, expected, current.requirement_derivations, strict=True
         ):
@@ -573,3 +656,36 @@ def _project_plan(
                 condition.precondition_id, condition.expected
             )
     return tuple(capabilities.values()), tuple(conditions.values())
+
+
+def project(value: object) -> object:
+    """登録済み不変契約の由来を公開値へ投影し、所有者やLockを含めない。"""
+    from dataclasses import fields, is_dataclass
+
+    if isinstance(value, AuthorityGenerationToken):
+        return {
+            "owner_identity": value.owner_identity,
+            "owner_instance_key": value.owner_instance_key,
+            "participant_identity": value.participant_identity,
+            "generation": value.generation,
+        }
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {str(k): project(v) for k, v in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [project(v) for v in value]
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    if isinstance(value, (PlanExecutionScope, PlanProgressContext)):
+        return value.to_dict()
+    if is_dataclass(value) and not isinstance(value, type):
+        return {f.name: project(getattr(value, f.name)) for f in fields(value)}
+    raise ValueError("公開できない要件の由来です")
+
+
+def _same_public_value(left: object, right: object) -> bool:
+    """公開契約の比較でもJSONの型を維持する。"""
+    return typed_json(freeze_json(project(left))) == typed_json(freeze_json(project(right)))

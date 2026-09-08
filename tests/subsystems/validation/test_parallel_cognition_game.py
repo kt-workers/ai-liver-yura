@@ -36,6 +36,7 @@ from app.subsystems.validation.speech_generation import speech_generation_target
 from tests.domain.character_language import test_character_language as character
 from tests.domain.executive import test_executive as executive
 from tests.domain.speech_semantics import test_speech_semantics as semantics
+from tests.helpers.executive_requirements import SPEECH_OWNER
 from tests.subsystems.game_skill import test_runtime as game_product
 from tests.subsystems.validation.json_values import array_at, integer_at, value_at
 from tests.subsystems.validation.test_game_monitor import case as monitor_case
@@ -73,7 +74,14 @@ async def test_game_progresses_while_both_cognitive_owners_await(
         fixture=replace(FIXTURE, typed_inputs=evaluation.typed_inputs(executive.policy())),
     )
     deliberation = executive_target(
-        (evaluation,), ExecutivePort(), ExecutiveLive(), executive.policy(), PROVENANCE, "1", ()
+        (evaluation,),
+        ExecutivePort(),
+        ExecutiveLive(),
+        executive.policy(),
+        PROVENANCE,
+        "1",
+        (),
+        requirements_owner=SPEECH_OWNER,
     )
     speech, unused, _, _ = setup()
     await unused.close()

@@ -12,7 +12,8 @@ from app.domain.activity_execution import (
     ExecutionDispatchRequest,
 )
 from app.domain.contracts import ExecutionStatus
-from app.domain.executive import ExecutiveDecisionAuthority, PlanExecutionIntentPayload
+from app.domain.executive import PlanExecutionIntentPayload
+from app.domain.executive.requirements import RequirementSourcePublication
 from app.domain.goal_planning import ActivityContextRef
 from app.domain.plan_execution.owner import PlanExecutionOwner, PlanExecutionStatus
 from tests.domain.executive.test_plan_authorization import inputs
@@ -24,6 +25,7 @@ from tests.domain.plan_execution.test_progression import (
     runner,
     setup,
 )
+from tests.helpers.executive_requirements import capture_plans, make_authority
 
 
 def replacement(
@@ -72,8 +74,17 @@ def replacement(
         proposed,
         intents=(replace(proposed.intents[0], payload=PlanExecutionIntentPayload(scope.scope_id)),),
     )
+    publication = owner.scope_publication(scope.scope_id)
+    snapshot = capture_plans(
+        replace(snapshot, plan_scopes=(scope,)),
+        (RequirementSourcePublication("scope", 1, publication.value, publication.tokens),),
+    )
+    assert snapshot.requirements_generation is not None
+    live = snapshot.requirements_generation.owner.prepare(
+        snapshot, proposed, replace(live, plan_scopes=(scope,))
+    )
     authorization = (
-        ExecutiveDecisionAuthority()
+        make_authority(snapshot)
         .commit(
             proposed,
             replace(snapshot, plan_scopes=(scope,)),

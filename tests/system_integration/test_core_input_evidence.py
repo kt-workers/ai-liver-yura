@@ -18,7 +18,6 @@ from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json
 from app.domain.executive import (
     AuthoritativeIntentRequirements,
-    ExecutiveDecisionAuthority,
     ExecutiveDecisionCandidate,
     GoalTransitionOperation,
     PreconditionFact,
@@ -31,6 +30,7 @@ from tests.domain.executive.test_executive import policy as executive_policy
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.domain.input_meaning.test_input_meaning import event, policy
 from tests.domain.plugin_registry.test_plugin_registry import grants, manifest
+from tests.helpers.executive_requirements import make_authority
 from tests.system_integration.test_core_appraisal import Setup, setup
 from tests.system_integration.test_core_attention import connect
 from tests.system_integration.test_core_executive import Port
@@ -222,7 +222,7 @@ class PassivePort(Port):
 @pytest.mark.asyncio
 async def test_actual_input_to_attention_to_decision_with_no_capabilities() -> None:
     value = await wired()
-    authority = ExecutiveDecisionAuthority()
+    authority = make_authority()
     binding = CoreExecutiveBinding(
         value.attention,
         value.reader,
@@ -341,7 +341,7 @@ async def test_missing_authoritative_requirements_after_response_prevents_commit
     value = await wired()
     port = PassivePort()
     port.release.clear()
-    authority = ExecutiveDecisionAuthority()
+    authority = make_authority()
     binding = CoreExecutiveBinding(
         value.attention, value.reader, port, executive_policy(), authority, value.core.clock
     )

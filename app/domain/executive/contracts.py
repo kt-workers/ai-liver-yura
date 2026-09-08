@@ -390,6 +390,11 @@ class ExecutiveContextSnapshot:
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "requirements_generation": (
+                None
+                if self.requirements_generation is None
+                else self.requirements_generation.to_dict()
+            ),
             "plan_scopes": [item.to_dict() for item in self.plan_scopes],
             "plan_progress_contexts": [item.to_dict() for item in self.plan_progress_contexts],
             "trigger_id": self.trigger_id,
@@ -1231,6 +1236,7 @@ class CommittedExecutiveDecision:
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "requirement_derivations": [item.to_dict() for item in self.requirement_derivations],
             "plan_authorizations": [item.to_dict() for item in self.plan_authorizations],
             "plan_progress_assessments": [
                 item.to_dict() for item in self.plan_progress_assessments

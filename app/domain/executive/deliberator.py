@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Protocol, TypeVar, cast
@@ -265,8 +265,6 @@ class ExecutiveDeliberator:
         if derived.failure is not None:
             raise RequirementsRejected(derived.failure.code)
         current = await self._live_state.current_for_commit(snapshot, candidate)
-        from dataclasses import replace
-
         current = replace(current, requirement_derivations=derived.values)
         return commit_result(
             request,

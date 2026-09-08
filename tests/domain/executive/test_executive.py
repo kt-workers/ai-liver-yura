@@ -18,6 +18,7 @@ from app.domain.contracts import (
     RevisionVector,
 )
 from app.domain.contracts.common import JsonValue
+from app.domain.contracts.finalization import FinalizationError
 from app.domain.executive import (
     AuthoritativeIntentRequirements,
     BodyIntentPayload,
@@ -27,7 +28,6 @@ from app.domain.executive import (
     ExecutiveBoundsProvenance,
     ExecutiveCommitState,
     ExecutiveContextSnapshot,
-    ExecutiveDecisionAuthority,
     ExecutiveDecisionCandidate,
     ExecutiveDeliberator,
     ExecutiveFactKind,
@@ -63,6 +63,7 @@ from app.domain.llm import (
     LLMTokenUsage,
     StructuredPayload,
 )
+from tests.helpers.executive_requirements import SPEECH_OWNER, make_authority
 from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 14, tzinfo=timezone.utc)
@@ -93,6 +94,9 @@ def live_state(
         if requirements is None
         else requirements,
         ExecutiveBoundsProvenance.from_policy(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY),
+        requirement_derivations=()
+        if requirements == ()
+        else SPEECH_OWNER.derive(context, candidate()).values,
     )
 
 
@@ -110,58 +114,60 @@ def policy() -> ExecutivePolicy:
 
 
 def snapshot(trigger_id: str = "trigger-1") -> ExecutiveContextSnapshot:
-    return ExecutiveContextSnapshot(
-        trigger_id,
-        (f"event-{trigger_id}",),
-        7,
-        5,
-        3,
-        None,
-        InternalStateSnapshot(2, 7, (), NOW),
-        (
-            ExecutiveFactRef("fact-desire", ExecutiveFactKind.GOAL, 5, {"strength": 0.8}),
-            ExecutiveFactRef("goal-1", ExecutiveFactKind.GOAL, 5, {"active": True}),
-            ExecutiveFactRef("goal-spec", ExecutiveFactKind.GOAL, 5, {"proposed": True}),
-            ExecutiveFactRef("answer-user", ExecutiveFactKind.GOAL, 5, {"semantic": True}),
-            ExecutiveFactRef("semantic-goal", ExecutiveFactKind.GOAL, 5, {"semantic": True}),
-            ExecutiveFactRef("commitment-1", ExecutiveFactKind.COMMITMENT, 5, {"active": True}),
-            ExecutiveFactRef(
-                "commitment-spec",
-                ExecutiveFactKind.COMMITMENT,
-                5,
-                {"proposed": True},
-            ),
-            ExecutiveFactRef(
-                "unsupported-claim",
-                ExecutiveFactKind.MEMORY_EVIDENCE,
-                1,
-                {"forbidden": True},
-            ),
-        ),
-        (
-            CapabilityDescriptor(
-                "cap-speech",
-                "speech",
-                ("prepare",),
-                CapabilityAvailability.AVAILABLE,
-                2,
-                {},
-            ),
-        ),
-        (PreconditionFact("pre-turn", "turn", "equals", "available"),),
-        NOW,
-        AppraisalFactsSnapshot(
-            1,
-            7,
-            2,
+    return SPEECH_OWNER.capture(
+        ExecutiveContextSnapshot(
+            trigger_id,
             (f"event-{trigger_id}",),
-            (),
-            0.5,
-            0.5,
-            (),
+            7,
+            5,
+            3,
+            None,
+            InternalStateSnapshot(2, 7, (), NOW),
+            (
+                ExecutiveFactRef("fact-desire", ExecutiveFactKind.GOAL, 5, {"strength": 0.8}),
+                ExecutiveFactRef("goal-1", ExecutiveFactKind.GOAL, 5, {"active": True}),
+                ExecutiveFactRef("goal-spec", ExecutiveFactKind.GOAL, 5, {"proposed": True}),
+                ExecutiveFactRef("answer-user", ExecutiveFactKind.GOAL, 5, {"semantic": True}),
+                ExecutiveFactRef("semantic-goal", ExecutiveFactKind.GOAL, 5, {"semantic": True}),
+                ExecutiveFactRef("commitment-1", ExecutiveFactKind.COMMITMENT, 5, {"active": True}),
+                ExecutiveFactRef(
+                    "commitment-spec",
+                    ExecutiveFactKind.COMMITMENT,
+                    5,
+                    {"proposed": True},
+                ),
+                ExecutiveFactRef(
+                    "unsupported-claim",
+                    ExecutiveFactKind.MEMORY_EVIDENCE,
+                    1,
+                    {"forbidden": True},
+                ),
+            ),
+            (
+                CapabilityDescriptor(
+                    "cap-speech",
+                    "speech",
+                    ("prepare",),
+                    CapabilityAvailability.AVAILABLE,
+                    2,
+                    {},
+                ),
+            ),
+            (PreconditionFact("pre-turn", "turn", "equals", "available"),),
             NOW,
-        ),
-        ExecutiveBoundsProvenance.from_policy(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY),
+            AppraisalFactsSnapshot(
+                1,
+                7,
+                2,
+                (f"event-{trigger_id}",),
+                (),
+                0.5,
+                0.5,
+                (),
+                NOW,
+            ),
+            ExecutiveBoundsProvenance.from_policy(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY),
+        )
     )
 
 
@@ -310,9 +316,9 @@ def test_snapshot_count_boundaries() -> None:
 
 def test_fact_payload_canonical_utf8_byte_boundaries() -> None:
     overhead = len(
-        json.dumps(
-            {"text": ""}, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        ).encode("utf-8")
+        json.dumps({"text": ""}, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
     )
     equal_payload = {"text": "a" * (16384 - overhead)}
     context = replace(
@@ -371,9 +377,7 @@ def test_snapshot_builder_prioritizes_required_capability_regardless_of_availabi
             CapabilityDescriptor(
                 "cap-z", "z", ("prepare",), CapabilityAvailability.AVAILABLE, 1, {}
             ),
-            CapabilityDescriptor(
-                "cap-speech", "speech", ("prepare",), availability, 2, {}
-            ),
+            CapabilityDescriptor("cap-speech", "speech", ("prepare",), availability, 2, {}),
             CapabilityDescriptor(
                 "cap-a", "a", ("prepare",), CapabilityAvailability.AVAILABLE, 1, {}
             ),
@@ -572,7 +576,7 @@ def test_non_create_commitment_transition_rejects_zero_payload(field: str) -> No
 
 
 def test_authority_commits_grounded_candidate_and_projects_foundation_contracts() -> None:
-    authority = ExecutiveDecisionAuthority()
+    authority = make_authority()
     committed = authority.commit(
         candidate(),
         snapshot(),
@@ -590,7 +594,7 @@ def test_authority_commits_grounded_candidate_and_projects_foundation_contracts(
 
 
 def test_stale_context_goal_or_attention_revision_is_rejected() -> None:
-    authority = ExecutiveDecisionAuthority()
+    authority = make_authority()
     for revisions in (RevisionVector(8, 5, 3), RevisionVector(7, 6, 3), RevisionVector(7, 5, 4)):
         with pytest.raises(ValueError, match="stale"):
             authority.commit(
@@ -605,11 +609,11 @@ def test_stale_context_goal_or_attention_revision_is_rejected() -> None:
 def test_unknown_evidence_and_missing_capability_fail_closed() -> None:
     unknown = replace(candidate(), rationale_refs=("invented",))
     with pytest.raises(ValueError, match="bounded"):
-        ExecutiveDecisionAuthority().commit(
+        make_authority().commit(
             unknown, snapshot(), current=live_state(), decision_id="d1", committed_at=NOW
         )
     with pytest.raises(ValueError, match="capability"):
-        ExecutiveDecisionAuthority().commit(
+        make_authority().commit(
             candidate(),
             snapshot(),
             current=live_state(capabilities=()),
@@ -624,8 +628,8 @@ def test_precondition_expectation_is_revalidated_at_commit() -> None:
         preconditions=(ExecutivePreconditionRequirement("pre-turn", "busy"),),
     )
     proposed = replace(candidate(), intents=(intent,))
-    with pytest.raises(ValueError, match="precondition"):
-        ExecutiveDecisionAuthority().commit(
+    with pytest.raises(ValueError, match="candidate_mismatch"):
+        make_authority().commit(
             proposed,
             snapshot(),
             current=live_state(),
@@ -637,7 +641,7 @@ def test_precondition_expectation_is_revalidated_at_commit() -> None:
 def test_precondition_identity_cannot_be_replaced_at_commit() -> None:
     changed_identity = PreconditionFact("pre-turn", "different-subject", "not_equals", "available")
     with pytest.raises(ValueError, match="precondition"):
-        ExecutiveDecisionAuthority().commit(
+        make_authority().commit(
             candidate(),
             snapshot(),
             current=live_state(preconditions=(changed_identity,)),
@@ -663,7 +667,7 @@ def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
         goal_transition_intents=(unknown_goal,),
     )
     with pytest.raises(ValueError, match="goal transition"):
-        ExecutiveDecisionAuthority().commit(
+        make_authority().commit(
             proposed,
             snapshot(),
             current=live_state(requirements=()),
@@ -674,7 +678,7 @@ def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
         speech_intent(), payload=SpeechIntentPayload("unknown-semantic-goal")
     )
     with pytest.raises(ValueError, match="bounded"):
-        ExecutiveDecisionAuthority().commit(
+        make_authority().commit(
             replace(candidate(), intents=(ungrounded_payload,)),
             snapshot(),
             current=live_state(),
@@ -683,7 +687,7 @@ def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
         )
     ungrounded_claim = replace(speech_intent(), forbidden_claim_refs=("unknown-claim",))
     with pytest.raises(ValueError, match="bounded"):
-        ExecutiveDecisionAuthority().commit(
+        make_authority().commit(
             replace(candidate(), intents=(ungrounded_claim,)),
             snapshot(),
             current=live_state(),
@@ -732,7 +736,7 @@ def test_transition_payload_rejects_bounded_reference_of_wrong_kind(kind: str) -
             commitment_transition_intents=(commitment_transition,),
         )
     with pytest.raises(ValueError, match="fact kind"):
-        ExecutiveDecisionAuthority().commit(
+        make_authority().commit(
             proposed,
             snapshot(),
             current=live_state(requirements=()),
@@ -742,7 +746,7 @@ def test_transition_payload_rejects_bounded_reference_of_wrong_kind(kind: str) -
 
 
 def test_competing_decisions_for_same_trigger_commit_only_once_atomically() -> None:
-    authority = ExecutiveDecisionAuthority()
+    authority = make_authority()
 
     def attempt(index: int) -> str:
         try:
@@ -754,7 +758,7 @@ def test_competing_decisions_for_same_trigger_commit_only_once_atomically() -> N
                 committed_at=NOW,
             )
             return "committed"
-        except ValueError:
+        except FinalizationError:
             return "rejected"
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -784,7 +788,7 @@ def test_role_commit_revalidates_exact_snapshot_and_exchange() -> None:
         success(request),
         snapshot=context,
         current=live_state(),
-        authority=ExecutiveDecisionAuthority(),
+        authority=make_authority(),
         decision_id="decision-1",
         policy=policy(),
         committed_at=NOW + timedelta(seconds=2),
@@ -799,7 +803,7 @@ def test_role_commit_revalidates_exact_snapshot_and_exchange() -> None:
                 facts=context.facts + (ExecutiveFactRef("late", ExecutiveFactKind.TIME, 1, {}),),
             ),
             current=live_state(),
-            authority=ExecutiveDecisionAuthority(),
+            authority=make_authority(),
             decision_id="decision-2",
             policy=policy(),
             committed_at=NOW + timedelta(seconds=2),
@@ -842,7 +846,7 @@ async def test_deliberator_reloads_live_state_after_llm_and_rejects_changes(
             return self.state
 
     live = LiveState()
-    deliberator = ExecutiveDeliberator(Port(), live, policy(), ExecutiveDecisionAuthority())
+    deliberator = ExecutiveDeliberator(Port(), live, policy(), make_authority())
     pending = asyncio.create_task(
         deliberator.deliberate(
             snapshot(),
@@ -885,9 +889,7 @@ async def test_deliberator_reloads_live_state_after_llm_and_rejects_changes(
     else:
         live.state = replace(
             live_state(),
-            bounds_provenance=ExecutiveBoundsProvenance(
-                "v2.brain-operational-bounds.default", 2
-            ),
+            bounds_provenance=ExecutiveBoundsProvenance("v2.brain-operational-bounds.default", 2),
         )
     release.set()
     with pytest.raises(ValueError, match="stale|capability|precondition|bounds"):
@@ -901,8 +903,8 @@ def test_candidate_cannot_omit_authoritative_requirements(omitted: str) -> None:
         intent = replace(intent, required_capabilities=())
     else:
         intent = replace(intent, preconditions=())
-    with pytest.raises(ValueError, match=f"authoritative {omitted}"):
-        ExecutiveDecisionAuthority().commit(
+    with pytest.raises(ValueError, match="candidate_mismatch"):
+        make_authority().commit(
             replace(candidate(), intents=(intent,)),
             snapshot(),
             current=live_state(),
@@ -938,7 +940,7 @@ async def test_slow_background_role_does_not_block_foreground_decision() -> None
                 )
             )
 
-    deliberator = ExecutiveDeliberator(Port(), LiveState(), policy(), ExecutiveDecisionAuthority())
+    deliberator = ExecutiveDeliberator(Port(), LiveState(), policy(), make_authority())
     background = asyncio.create_task(
         deliberator.deliberate(
             snapshot("background"),
@@ -971,9 +973,7 @@ def test_provider_output_bounds_are_rejected_without_first_n_acceptance() -> Non
     )
     raw = candidate_json()
     intents = cast(list[dict[str, object]], raw["intents"])
-    raw["intents"] = [
-        {**intents[0], "intent_id": f"intent-{index}"} for index in range(17)
-    ]
+    raw["intents"] = [{**intents[0], "intent_id": f"intent-{index}"} for index in range(17)]
     result = replace(
         success(request),
         output=StructuredPayload("executive.candidate.v1", cast(JsonValue, raw)),
@@ -984,7 +984,7 @@ def test_provider_output_bounds_are_rejected_without_first_n_acceptance() -> Non
             result,
             snapshot=context,
             current=live_state(),
-            authority=ExecutiveDecisionAuthority(),
+            authority=make_authority(),
             decision_id="oversized",
             policy=policy(),
             committed_at=NOW + timedelta(seconds=2),
@@ -993,9 +993,7 @@ def test_provider_output_bounds_are_rejected_without_first_n_acceptance() -> Non
 
 def test_provider_candidate_count_and_reference_boundaries() -> None:
     bounds = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.executive
-    intents = tuple(
-        replace(speech_intent(), intent_id=f"intent-{index}") for index in range(16)
-    )
+    intents = tuple(replace(speech_intent(), intent_id=f"intent-{index}") for index in range(16))
     validate_candidate_bounds(replace(candidate(), intents=intents), bounds)
     with pytest.raises(ValueError, match="EXECUTIVE_CONTEXT_TOO_LARGE"):
         validate_candidate_bounds(
@@ -1080,7 +1078,7 @@ def test_provider_candidate_count_and_reference_boundaries() -> None:
 
 
 def test_committed_decision_keeps_bounds_policy_provenance() -> None:
-    committed = ExecutiveDecisionAuthority().commit(
+    committed = make_authority().commit(
         candidate(), snapshot(), current=live_state(), decision_id="provenance", committed_at=NOW
     )
     assert committed.bounds_provenance == ExecutiveBoundsProvenance.from_policy(

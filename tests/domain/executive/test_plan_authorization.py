@@ -10,11 +10,11 @@ import pytest
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import CapabilityAvailability, PreconditionRef
 from app.domain.contracts.common import JsonValue
+from app.domain.contracts.finalization import FinalizationError
 from app.domain.executive import (
     AuthoritativeIntentRequirements,
     ExecutiveCommitState,
     ExecutiveContextSnapshot,
-    ExecutiveDecisionAuthority,
     ExecutiveDecisionCandidate,
     ExecutiveDeliberator,
     ExecutiveIntent,
@@ -56,6 +56,7 @@ from tests.domain.goal_planning.test_goal_planning import (
 from tests.domain.goal_planning.test_goal_planning import (
     current as plan_current,
 )
+from tests.helpers.executive_requirements import capture_plans, make_authority
 
 
 def scope() -> PlanExecutionScope:
@@ -125,6 +126,9 @@ def inputs() -> tuple[ExecutiveDecisionCandidate, ExecutiveContextSnapshot, Exec
             ),
         ),
     )
+    captured = capture_plans(captured)
+    assert captured.requirements_generation is not None
+    current = captured.requirements_generation.owner.prepare(captured, proposed, current)
     return proposed, captured, current
 
 
@@ -133,7 +137,7 @@ def test_owner_issues_whole_plan_authorization_and_preserves_serialized_scope() 
     raw = proposed.to_dict()
     raw.pop("created_at")
     assert parse_candidate(raw, captured, created_at=NOW) == proposed
-    decision = ExecutiveDecisionAuthority().commit(
+    decision = make_authority(captured).commit(
         proposed,
         captured,
         current=current,
@@ -169,6 +173,7 @@ def test_owner_issues_whole_plan_authorization_and_preserves_serialized_scope() 
 )
 def test_failed_authorization_leaves_trigger_available(fault: str) -> None:
     proposed, captured, current = inputs()
+    valid_inputs = proposed, captured, current
     timestamp = NOW
     if fault == "missing":
         current = replace(current, plan_scopes=())
@@ -219,13 +224,13 @@ def test_failed_authorization_leaves_trigger_available(fault: str) -> None:
                 ),
             ),
         )
-    authority = ExecutiveDecisionAuthority()
-    with pytest.raises(ValueError):
+    authority = make_authority(captured)
+    with pytest.raises((ValueError, FinalizationError)):
         authority.commit(
             proposed, captured, current=current, decision_id="decision-plan", committed_at=timestamp
         )
     assert not authority.has_committed(captured.trigger_id)
-    proposed, captured, current = inputs()
+    proposed, captured, current = valid_inputs
     assert authority.commit(
         proposed, captured, current=current, decision_id="decision-plan", committed_at=NOW
     ).plan_authorizations
@@ -271,7 +276,7 @@ async def test_authorization_uses_clock_after_live_state_wait(elapsed: int) -> N
     loading = asyncio.Event()
     release = asyncio.Event()
     clock = FakeRuntimeClock(NOW)
-    authority = ExecutiveDecisionAuthority()
+    authority = make_authority(captured)
     raw = proposed.to_dict()
     raw.pop("created_at")
 
@@ -309,7 +314,7 @@ async def test_authorization_uses_clock_after_live_state_wait(elapsed: int) -> N
         clock.advance(elapsed)
         release.set()
         if elapsed == 61:
-            with pytest.raises(ValueError, match="有効な期間"):
+            with pytest.raises(FinalizationError, match="TARGET_REJECTED"):
                 await task
             assert not authority.has_committed(captured.trigger_id)
         else:

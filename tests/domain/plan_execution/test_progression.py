@@ -21,13 +21,13 @@ from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLI
 from app.domain.contracts import ExecutionStatus, PreconditionRef
 from app.domain.executive import (
     AuthoritativeIntentRequirements,
-    ExecutiveDecisionAuthority,
     ExecutiveIntent,
     ExecutiveIntentKind,
     ExecutiveOutcome,
     PlanExecutionIntentPayload,
     PlanProgressIntentPayload,
 )
+from app.domain.executive.requirements import RequirementSourcePublication
 from app.domain.goal_planning import GoalPlanningAuthority, PlanFailurePolicy
 from app.domain.goals import GoalCommitmentSnapshot, GoalCommitmentStore, InterruptionPolicy
 from app.domain.plan_execution.contracts import PlanExecutionPolicy, PlanStepExecutionBinding
@@ -46,6 +46,7 @@ from tests.domain.goal_planning.test_goal_planning import NOW, capability
 from tests.domain.goal_planning.test_goal_planning import candidate as plan_candidate
 from tests.domain.goal_planning.test_goal_planning import context as plan_context
 from tests.domain.goal_planning.test_goal_planning import current as plan_current
+from tests.helpers.executive_requirements import capture_plans, make_authority
 
 
 @dataclass
@@ -90,7 +91,14 @@ class Setup:
             plan_progress_contexts=(context,),
             requirements=(AuthoritativeIntentRequirements(intent.intent_id, (), ()),),
         )
-        decision = ExecutiveDecisionAuthority().commit(
+        publication = self.owner.observation_publication(self.scope_id)
+        captured = capture_plans(
+            captured,
+            (RequirementSourcePublication("progress", 1, publication.value, publication.tokens),),
+        )
+        assert captured.requirements_generation is not None
+        current = captured.requirements_generation.owner.prepare(captured, proposed, current)
+        decision = make_authority(captured).commit(
             proposed,
             captured,
             current=current,
@@ -167,8 +175,14 @@ def setup(
     )
     context = replace(context, plan_scopes=(scope,))
     current = replace(current, plan_scopes=(scope,))
+    publication = owner.scope_publication(scope.scope_id)
+    context = capture_plans(
+        context, (RequirementSourcePublication("scope", 1, publication.value, publication.tokens),)
+    )
+    assert context.requirements_generation is not None
+    current = context.requirements_generation.owner.prepare(context, decision, current)
     authorization = (
-        ExecutiveDecisionAuthority()
+        make_authority(context)
         .commit(
             decision,
             context,
