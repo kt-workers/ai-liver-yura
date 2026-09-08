@@ -1,11 +1,19 @@
 """描画先の遅延と失敗を本番の姿勢投影経路へ通す。"""
 
 from dataclasses import replace
+from datetime import datetime
+from threading import Event
 from threading import enumerate as threads
 
 import pytest
 
-from app.subsystems.avatar import AvatarRendererStatus
+from app.domain.body_solver import BodyPoseFrame
+from app.subsystems.avatar import (
+    AvatarProjectionCommand,
+    AvatarRendererResult,
+    AvatarRendererStatus,
+)
+from app.subsystems.validation import body_avatar
 from app.subsystems.validation.body_avatar import BodyAvatarLabSettings
 from app.subsystems.validation.body_execution import BodyRealtimeLabSettings
 from app.subsystems.validation.contracts import LabMode, RunStatus
@@ -44,7 +52,39 @@ async def test_renderer_outcomes_do_not_stop_physical_updates(
 
 
 @pytest.mark.asyncio
-async def test_slow_renderer_overlaps_body_ticks_and_coalesces_old_frames() -> None:
+async def test_slow_renderer_overlaps_body_ticks_and_coalesces_old_frames(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    entered, release, next_render = Event(), Event(), Event()
+    present = body_avatar._InterruptibleRenderer.present
+    submit = body_avatar.BodyAvatarLabSession.submit
+    submitted = 0
+
+    def synchronized_present(
+        self: body_avatar._InterruptibleRenderer,
+        command: AvatarProjectionCommand,
+        *,
+        started_at: datetime,
+    ) -> AvatarRendererResult:
+        if self.calls == 0:
+            entered.set()
+            assert release.wait(5), "複数フレームの投入が完了しませんでした"
+        else:
+            next_render.set()
+        return present(self, command, started_at=started_at)
+
+    def synchronized_submit(self: body_avatar.BodyAvatarLabSession, frame: BodyPoseFrame) -> None:
+        nonlocal submitted
+        submit(self, frame)
+        submitted += 1
+        if submitted == 1:
+            assert entered.wait(5), "描画処理が開始されませんでした"
+        elif submitted == 4:
+            release.set()
+            assert next_render.wait(5), "集約済みフレームの描画が開始されませんでした"
+
+    monkeypatch.setattr(body_avatar._InterruptibleRenderer, "present", synchronized_present)
+    monkeypatch.setattr(body_avatar.BodyAvatarLabSession, "submit", synchronized_submit)
     case, _ = setup()
     case = replace(
         case,
