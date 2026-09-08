@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 
+from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import (
     CapabilityAvailability,
     CapabilityDescriptor,
@@ -113,7 +114,16 @@ def directive() -> DeterministicPlanningDirective:
 
 def context(*, deterministic: bool = True) -> GoalPlanningContextSnapshot:
     item = goal()
-    view = GoalContextView(4, "test.goal-context", 1, (item,), (), (), (item,), ())
+    view = GoalContextView(
+        4,
+        V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_id,
+        V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_revision,
+        (item,),
+        (),
+        (),
+        (item,),
+        (),
+    )
     return GoalPlanningContextSnapshot(
         REVISIONS,
         view,

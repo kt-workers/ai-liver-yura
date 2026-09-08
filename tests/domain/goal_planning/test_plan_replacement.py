@@ -62,7 +62,9 @@ def test_explicit_replacement_keeps_goal_revision_and_previous_plan() -> None:
         replace(after, supersedes_plan_id="other")
 
 
-@pytest.mark.parametrize("fault", ["implicit", "missing", "unregistered", "capability", "future"])
+@pytest.mark.parametrize(
+    "fault", ["implicit", "missing", "unregistered", "capability", "future", "policy"]
+)
 def test_failed_replacement_preserves_current_plan(fault: str) -> None:
     owner, previous = seeded(delay=1 if fault == "future" else 0)
     captured = replace(context(), previous_plan=previous)
@@ -80,6 +82,13 @@ def test_failed_replacement_preserves_current_plan(fault: str) -> None:
             committed_at=NOW,
         )
         captured, live = replace(captured, previous_plan=other), replace(live, previous_plan=other)
+    elif fault == "policy":
+        captured = replace(
+            captured,
+            goal_context=replace(
+                captured.goal_context, policy_revision=captured.goal_context.policy_revision + 1
+            ),
+        )
     elif fault == "capability":
         live = replace(
             live,

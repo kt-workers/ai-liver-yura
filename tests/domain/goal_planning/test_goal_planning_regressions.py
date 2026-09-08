@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import (
     CapabilityAvailability,
     CapabilityDescriptor,
@@ -105,7 +106,16 @@ def context(
     blockers: tuple[PlanningBlocker, ...] = (),
 ) -> GoalPlanningContextSnapshot:
     item = goal()
-    view = GoalContextView(4, "test.goal-context", 1, (item,), (), (), (item,), ())
+    view = GoalContextView(
+        4,
+        V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_id,
+        V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_revision,
+        (item,),
+        (),
+        (),
+        (item,),
+        (),
+    )
     bounded_capabilities = capabilities or (research_capability("collect"),)
     planning_requirements = requirements or (CapabilityRequirement("research", "collect"),)
     return GoalPlanningContextSnapshot(
