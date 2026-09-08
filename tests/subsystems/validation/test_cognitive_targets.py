@@ -24,6 +24,7 @@ from app.subsystems.validation.executive import ExecutiveLabCase, executive_targ
 from app.subsystems.validation.runtime import ValidationRunner
 from tests.domain.appraisal import test_appraisal_paths as appraisal
 from tests.domain.executive import test_executive as executive
+from tests.helpers.executive_requirements import SPEECH_OWNER
 from tests.subsystems.validation.test_runtime import FIXTURE, POLICY, PROVENANCE, spec
 
 
@@ -80,6 +81,7 @@ def setup(
             PROVENANCE,
             "1",
             (),
+            requirements_owner=SPEECH_OWNER,
         )
         return executive_item.fixture, ValidationRunner((target,), POLICY), calls
     return item.fixture, ValidationRunner((target,), POLICY), calls

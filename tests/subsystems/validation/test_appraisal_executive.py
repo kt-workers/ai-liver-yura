@@ -21,6 +21,7 @@ from app.subsystems.validation.contracts import Gate, RunStatus
 from app.subsystems.validation.meaning_appraisal import AppraisalStateCommitSettings
 from tests.domain.executive import test_executive as executive
 from tests.domain.input_meaning import test_input_meaning as meaning
+from tests.helpers.executive_requirements import SPEECH_OWNER
 from tests.subsystems.validation.test_meaning_appraisal import object_value, request, setup
 
 
@@ -50,7 +51,7 @@ def bindings(stale: str | None = None) -> tuple[AppraisalExecutiveBindings, list
                 appraisal_facts_revision=10 if stale == "facts" else 9,
             )
 
-    return AppraisalExecutiveBindings(Port(), Live()), calls
+    return AppraisalExecutiveBindings(Port(), Live(), SPEECH_OWNER), calls
 
 
 def settings() -> AppraisalExecutiveSettings:

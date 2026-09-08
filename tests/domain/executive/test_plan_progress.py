@@ -1,5 +1,6 @@
 """実行の確定事実に基づく完了評価と、誤った評価の非確定を確認する。"""
 
+from collections.abc import Iterator
 from dataclasses import replace
 from datetime import timedelta
 
@@ -14,11 +15,11 @@ from app.domain.activity_execution import (
     ExecutionPreflightSnapshot,
 )
 from app.domain.contracts import AuthorityRef, ExecutionStatus, IntentKind, IntentRef, SystemCommand
+from app.domain.contracts.finalization import FinalizationError
 from app.domain.executive import (
     AuthoritativeIntentRequirements,
     ExecutiveCommitState,
     ExecutiveContextSnapshot,
-    ExecutiveDecisionAuthority,
     ExecutiveDecisionCandidate,
     ExecutiveIntent,
     ExecutiveIntentKind,
@@ -35,23 +36,31 @@ from app.domain.plan_execution.progress_contracts import (
 from tests.domain.executive.test_executive import REVISIONS
 from tests.domain.executive.test_plan_authorization import inputs
 from tests.domain.goal_planning.test_goal_planning import NOW
+from tests.helpers.executive_requirements import capture_plans, fence_clock, make_authority
+
+
+@pytest.fixture(autouse=True)
+def audited_progress_clock() -> Iterator[None]:
+    with fence_clock(lambda: NOW + timedelta(seconds=2)):
+        yield
 
 
 def progress_inputs(
     status: ExecutionStatus = ExecutionStatus.COMPLETED,
 ) -> tuple[ExecutiveDecisionCandidate, ExecutiveContextSnapshot, ExecutiveCommitState]:
     proposed, captured, current = inputs()
-    approved = (
-        ExecutiveDecisionAuthority()
-        .commit(
-            proposed,
-            captured,
-            current=current,
-            decision_id="decision-plan",
-            committed_at=NOW,
+    with fence_clock(lambda: NOW):
+        approved = (
+            make_authority(captured)
+            .commit(
+                proposed,
+                captured,
+                current=current,
+                decision_id="decision-plan",
+                committed_at=NOW,
+            )
+            .plan_authorizations[0]
         )
-        .plan_authorizations[0]
-    )
     binding = approved.scope.bindings[0]
     invocation = ActivityInvocation(
         "invocation-1",
@@ -121,6 +130,9 @@ def progress_inputs(
         plan_progress_contexts=(context,),
         requirements=(AuthoritativeIntentRequirements(intent.intent_id, (), ()),),
     )
+    captured = capture_plans(captured)
+    assert captured.requirements_generation is not None
+    current = captured.requirements_generation.owner.prepare(captured, proposed, current)
     return proposed, captured, current
 
 
@@ -129,12 +141,18 @@ def test_progress_assessment_uses_actual_execution_without_new_execution_authori
     raw = proposed.to_dict()
     raw.pop("created_at")
     assert parse_candidate(raw, captured, created_at=proposed.created_at) == proposed
-    decision = ExecutiveDecisionAuthority().commit(
+    assessment_time = NOW + timedelta(seconds=2)
+    decision = make_authority(captured).commit(
         proposed,
         captured,
         current=current,
         decision_id="decision-progress",
         committed_at=proposed.created_at,
+    )
+    assert (
+        decision.committed_at
+        == assessment_time
+        == decision.plan_progress_assessments[0].committed_at
     )
     assert not decision.plan_authorizations
     (assessment,) = decision.plan_progress_assessments
@@ -192,8 +210,8 @@ def test_invalid_assessment_never_consumes_decision_trigger(fault: str) -> None:
             ),
         )
     timestamp = NOW if fault == "time" else proposed.created_at
-    owner = ExecutiveDecisionAuthority()
-    with pytest.raises(ValueError):
+    owner = make_authority(captured)
+    with fence_clock(lambda: timestamp), pytest.raises((ValueError, FinalizationError)):
         owner.commit(
             proposed,
             captured,
@@ -203,6 +221,13 @@ def test_invalid_assessment_never_consumes_decision_trigger(fault: str) -> None:
         )
     assert not owner.has_committed(captured.trigger_id)
     proposed, captured, current = progress_inputs()
+    assert owner.requirements_owner is not None and captured.requirements_generation is not None
+    generation = captured.requirements_generation
+    owner.requirements_owner.publish(
+        generation.policy, tuple(replace(source, revision=2) for source in generation.sources)
+    )
+    captured = owner.requirements_owner.capture(captured)
+    current = owner.requirements_owner.prepare(captured, proposed, current)
     assert owner.commit(
         proposed,
         captured,

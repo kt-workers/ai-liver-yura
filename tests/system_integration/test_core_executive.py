@@ -11,6 +11,7 @@ from app.composition.executive import CoreExecutiveBinding, CoreExecutiveEvidenc
 from app.domain.attention import AttentionSource
 from app.domain.contracts import CapabilityAvailability
 from app.domain.contracts.common import JsonValue
+from app.domain.contracts.finalization import FinalizationError
 from app.domain.executive import (
     AuthoritativeIntentRequirements,
     ExecutiveDecisionAuthority,
@@ -26,6 +27,7 @@ from tests.domain.executive.test_executive import (
     snapshot,
     success,
 )
+from tests.helpers.executive_requirements import SPEECH_OWNER, make_authority
 from tests.system_integration.test_core_appraisal import setup
 from tests.system_integration.test_core_attention import connect, offer_user, rules
 
@@ -94,7 +96,7 @@ def wired(port: Port | None = None) -> Any:
     assert dispatch is not None
     reader = Reader(dispatch.selected_source)
     llm = Port() if port is None else port
-    authority = ExecutiveDecisionAuthority()
+    authority = make_authority()
     binding = CoreExecutiveBinding(attention, reader, llm, policy(), authority, core.clock)
     return SimpleNamespace(
         core=core,
@@ -129,7 +131,7 @@ async def test_current_sources_reach_decision_and_duplicate_trigger_is_rejected(
     assert context["internal_state"]["revision"] == value.core.owner.snapshot().revision
     assert context["goal_revision"] == value.core.goals.snapshot().revision
     assert context["attention_revision"] == value.attention_owner.snapshot().revision
-    with pytest.raises(ValueError, match="already committed"):
+    with pytest.raises(FinalizationError, match="TARGET_ALREADY_FINALIZED"):
         await deliberate(value, "duplicate")
     assert value.binding.latest_decision() is result
 
@@ -298,7 +300,7 @@ async def test_cancellation_after_commit_preserves_committed_decision() -> None:
             asyncio.get_running_loop().call_soon(cancel_caller)
             return committed
 
-    authority = AfterCommitAuthority()
+    authority = AfterCommitAuthority(SPEECH_OWNER)
     value.binding = CoreExecutiveBinding(
         value.attention,
         value.reader,

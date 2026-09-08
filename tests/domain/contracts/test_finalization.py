@@ -16,7 +16,6 @@ from app.domain.contracts.finalization import (
     FinalizationError,
     FinalizationFailure,
 )
-from app.domain.executive import ExecutiveDecisionAuthority
 from app.domain.executive.authority import ExecutiveFinalizationInput
 from tests.domain.executive.test_executive import candidate, live_state, snapshot
 from tests.domain.goal_planning.test_goal_planning import NOW
@@ -25,6 +24,7 @@ from tests.domain.goal_planning.test_goal_planning import context as plan_contex
 from tests.domain.goal_planning.test_goal_planning import current as plan_current
 from tests.domain.goal_planning.test_plan_replacement import seeded
 from tests.domain.plan_execution.test_progression import setup
+from tests.helpers.executive_requirements import SPEECH_OWNER, make_authority
 
 
 class Target:
@@ -378,9 +378,9 @@ def test_nested_fence_is_rejected_without_affecting_outer_commit() -> None:
 
 
 def test_real_executive_target_uses_fence_clock_and_existing_duplicate_semantics() -> None:
-    source, target = Target(rank=10), ExecutiveDecisionAuthority()
+    source, target = Target(rank=10), make_authority()
     request = AuthorityFinalizationRequest(
-        (source.participant.token(),),
+        (source.participant.token(), SPEECH_OWNER.finalization_participant.token()),
         target.finalization_participant,
         target.finalization_operation,
         ExecutiveFinalizationInput(candidate(), snapshot(), live_state(), "fenced-decision"),
@@ -644,6 +644,9 @@ def test_distinct_owner_cannot_register_existing_order_key() -> None:
     owner = Owner()
     with pytest.raises(FinalizationError) as caught:
         AuthorityFinalizationParticipant(
-            owner, "different_owner", 10, owner_instance_key=source.participant.order_key[1],
+            owner,
+            "different_owner",
+            10,
+            owner_instance_key=source.participant.order_key[1],
         )
     assert caught.value.failure is FinalizationFailure.INVALID_PARTICIPANT

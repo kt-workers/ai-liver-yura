@@ -12,6 +12,7 @@ from app.domain.executive import (
     ExecutivePolicy,
 )
 from app.domain.executive.deliberator import build_request
+from app.domain.executive.requirements import ExecutiveRequirementsOwner
 from app.usecases.ports.llm import LLMRolePort
 
 from .contracts import (
@@ -50,6 +51,8 @@ def executive_target(
     provenance: ProductionTargetProvenance,
     contract_revision: str,
     provider_policy_refs: tuple[str, ...],
+    *,
+    requirements_owner: ExecutiveRequirementsOwner | None = None,
 ) -> LabTarget:
     registered = {case.fixture.scenario_id: case for case in cases}
     if len(registered) != len(cases):
@@ -77,7 +80,7 @@ def executive_target(
             ),
             live_state,
             policy,
-            ExecutiveDecisionAuthority(),
+            ExecutiveDecisionAuthority(requirements_owner),
         )
         result = await context.invoke_product(
             "executive.deliberate",

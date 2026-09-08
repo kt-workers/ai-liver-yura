@@ -6,8 +6,10 @@ from datetime import datetime
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import (
+    AuthorityFinalizationFence,
     AuthorityFinalizationOperation,
     AuthorityFinalizationParticipant,
+    AuthorityFinalizationRequest,
     FinalizationError,
     FinalizationFailure,
     authority_mutation,
@@ -29,6 +31,7 @@ from .contracts import (
     PlanExecutionIntentPayload,
     PlanProgressIntentPayload,
 )
+from .requirements import ExecutiveRequirementsOwner, RequirementsFailureCode, RequirementsRejected
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,14 +47,20 @@ class ExecutiveFinalizationInput:
 class ExecutiveDecisionAuthority:
     """同一triggerの意思決定を高々1件だけ確定する同期commit authority。"""
 
-    def __init__(self) -> None:
+    def __init__(self, requirements_owner: ExecutiveRequirementsOwner | None = None) -> None:
+        self.requirements_owner = requirements_owner
         self._committed_triggers: set[str] = set()
         self._participant = AuthorityFinalizationParticipant(self, "ExecutiveDecisionAuthority", 70)
         self._lock = self._participant
+        dependencies = (
+            () if requirements_owner is None else (requirements_owner.finalization_participant,)
+        )
+        self._participant.configure_dependencies(dependencies)
         self._finalization_operation = self._participant.register_operation(
             self,
             "executive_commit",
             self._finalize_commit,
+            dependencies=dependencies,
         )
 
     @property
@@ -59,8 +68,49 @@ class ExecutiveDecisionAuthority:
         """元所有者の読取と更新に共通する同期境界を公開する。"""
         return self._participant
 
-    @authority_mutation
     def commit(
+        self,
+        candidate: ExecutiveDecisionCandidate,
+        snapshot: ExecutiveContextSnapshot,
+        *,
+        current: ExecutiveCommitState,
+        decision_id: str,
+        committed_at: object = None,
+    ) -> CommittedExecutiveDecision:
+        """時刻引数は互換入力。最終確定時刻にはFenceの時計だけを使う。"""
+        if committed_at is not None and not isinstance(committed_at, datetime):
+            raise ValueError("確定時刻はdatetimeで指定してください")
+        generation = snapshot.requirements_generation
+        if self.requirements_owner is None or generation is None:
+            raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
+        if generation.owner is not self.requirements_owner:
+            raise RequirementsRejected(RequirementsFailureCode.INVALID_PROJECTION)
+        derivations = generation.owner.validate_captured(snapshot, candidate, current)
+        self._validate(candidate, snapshot, current)
+        tokens = (
+            generation.token,
+            *(
+                t
+                for value in derivations
+                for source in value.provenance.sources
+                for t in source.tokens
+            ),
+        )
+        result = AuthorityFinalizationFence().finalize(
+            AuthorityFinalizationRequest(
+                tokens,
+                self._participant,
+                self._finalization_operation,
+                ExecutiveFinalizationInput(candidate, snapshot, current, decision_id),
+            )
+        )
+        if result.failure is not None:
+            raise FinalizationError(result.failure)
+        assert result.value is not None
+        return result.value
+
+    @authority_mutation
+    def _commit(
         self,
         candidate: ExecutiveDecisionCandidate,
         snapshot: ExecutiveContextSnapshot,
@@ -73,9 +123,23 @@ class ExecutiveDecisionAuthority:
 
         if not isinstance(committed_at, datetime):
             raise ValueError("committed_at must be datetime")
-        with self._lock:
+        generation = snapshot.requirements_generation
+        if generation is None:
+            raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
+        owner = generation.owner
+        if self.requirements_owner is None:
+            raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
+        if self.requirements_owner is not owner:
+            raise RequirementsRejected(RequirementsFailureCode.INVALID_PROJECTION)
+        with self._lock, owner.final_guard(generation):
             if snapshot.trigger_id in self._committed_triggers:
                 raise ValueError("executive trigger is already committed")
+            derivations = owner.validate_final(snapshot, candidate, current)
+            for value in derivations:
+                for source in value.provenance.sources:
+                    for token in source.tokens:
+                        if token._participant.token() != token:
+                            raise RequirementsRejected(RequirementsFailureCode.STALE_SOURCE)
             self._validate(candidate, snapshot, current)
             required_precondition_ids = {
                 requirement.precondition_id
@@ -121,6 +185,7 @@ class ExecutiveDecisionAuthority:
                 snapshot.bounds_provenance,
                 authorizations,
                 assessments,
+                derivations,
             )
             self._committed_triggers.add(snapshot.trigger_id)
             return decision
@@ -332,7 +397,7 @@ class ExecutiveDecisionAuthority:
         if self.has_committed(value.snapshot.trigger_id):
             raise FinalizationError(FinalizationFailure.TARGET_ALREADY_FINALIZED)
         try:
-            return self.commit(
+            return self._commit(
                 value.candidate,
                 value.snapshot,
                 current=value.current,

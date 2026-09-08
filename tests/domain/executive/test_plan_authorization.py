@@ -1,6 +1,7 @@
 """計画所有者から判断所有者への承認と、確定失敗時の非更新を確認する。"""
 
 import asyncio
+from collections.abc import Iterator
 from dataclasses import replace
 from datetime import timedelta
 from typing import cast
@@ -10,11 +11,11 @@ import pytest
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import CapabilityAvailability, PreconditionRef
 from app.domain.contracts.common import JsonValue
+from app.domain.contracts.finalization import FinalizationError
 from app.domain.executive import (
     AuthoritativeIntentRequirements,
     ExecutiveCommitState,
     ExecutiveContextSnapshot,
-    ExecutiveDecisionAuthority,
     ExecutiveDecisionCandidate,
     ExecutiveDeliberator,
     ExecutiveIntent,
@@ -56,6 +57,14 @@ from tests.domain.goal_planning.test_goal_planning import (
 from tests.domain.goal_planning.test_goal_planning import (
     current as plan_current,
 )
+from tests.helpers.executive_requirements import capture_plans, fence_clock, make_authority
+
+
+@pytest.fixture(autouse=True)
+def audited_clock() -> Iterator[FakeRuntimeClock]:
+    clock = FakeRuntimeClock(NOW)
+    with fence_clock(clock.now):
+        yield clock
 
 
 def scope() -> PlanExecutionScope:
@@ -125,6 +134,9 @@ def inputs() -> tuple[ExecutiveDecisionCandidate, ExecutiveContextSnapshot, Exec
             ),
         ),
     )
+    captured = capture_plans(captured)
+    assert captured.requirements_generation is not None
+    current = captured.requirements_generation.owner.prepare(captured, proposed, current)
     return proposed, captured, current
 
 
@@ -133,7 +145,7 @@ def test_owner_issues_whole_plan_authorization_and_preserves_serialized_scope() 
     raw = proposed.to_dict()
     raw.pop("created_at")
     assert parse_candidate(raw, captured, created_at=NOW) == proposed
-    decision = ExecutiveDecisionAuthority().commit(
+    decision = make_authority(captured).commit(
         proposed,
         captured,
         current=current,
@@ -169,6 +181,7 @@ def test_owner_issues_whole_plan_authorization_and_preserves_serialized_scope() 
 )
 def test_failed_authorization_leaves_trigger_available(fault: str) -> None:
     proposed, captured, current = inputs()
+    valid_inputs = proposed, captured, current
     timestamp = NOW
     if fault == "missing":
         current = replace(current, plan_scopes=())
@@ -219,13 +232,13 @@ def test_failed_authorization_leaves_trigger_available(fault: str) -> None:
                 ),
             ),
         )
-    authority = ExecutiveDecisionAuthority()
-    with pytest.raises(ValueError):
+    authority = make_authority(captured)
+    with fence_clock(lambda: timestamp), pytest.raises((ValueError, FinalizationError)):
         authority.commit(
             proposed, captured, current=current, decision_id="decision-plan", committed_at=timestamp
         )
     assert not authority.has_committed(captured.trigger_id)
-    proposed, captured, current = inputs()
+    proposed, captured, current = valid_inputs
     assert authority.commit(
         proposed, captured, current=current, decision_id="decision-plan", committed_at=NOW
     ).plan_authorizations
@@ -266,12 +279,15 @@ def test_scope_bounds_include_payload_and_existing_facts() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("elapsed", [2, 61])
-async def test_authorization_uses_clock_after_live_state_wait(elapsed: int) -> None:
+async def test_authorization_uses_clock_after_live_state_wait(
+    elapsed: int,
+    audited_clock: FakeRuntimeClock,
+) -> None:
     proposed, captured, current = inputs()
     loading = asyncio.Event()
     release = asyncio.Event()
-    clock = FakeRuntimeClock(NOW)
-    authority = ExecutiveDecisionAuthority()
+    clock = audited_clock
+    authority = make_authority(captured)
     raw = proposed.to_dict()
     raw.pop("created_at")
 
@@ -294,7 +310,13 @@ async def test_authorization_uses_clock_after_live_state_wait(elapsed: int) -> N
             await release.wait()
             return current
 
-    deliberator = ExecutiveDeliberator(Port(), LiveState(), policy(), authority, clock=clock)
+    deliberator = ExecutiveDeliberator(
+        Port(),
+        LiveState(),
+        policy(),
+        authority,
+        clock=FakeRuntimeClock(NOW - timedelta(days=1)),
+    )
     task = asyncio.create_task(
         deliberator.deliberate(
             captured,
@@ -309,7 +331,7 @@ async def test_authorization_uses_clock_after_live_state_wait(elapsed: int) -> N
         clock.advance(elapsed)
         release.set()
         if elapsed == 61:
-            with pytest.raises(ValueError, match="有効な期間"):
+            with pytest.raises(FinalizationError, match="TARGET_REJECTED"):
                 await task
             assert not authority.has_committed(captured.trigger_id)
         else:

@@ -9,13 +9,13 @@ import pytest
 from app.domain.appraisal import AppraisalCandidate, AppraisalStateCommit, InternalStateReducer
 from app.domain.executive import (
     CommittedExecutiveDecision,
-    ExecutiveDecisionAuthority,
     ExecutiveOutcome,
     build_request,
     commit_result,
 )
 from tests.domain.appraisal.test_state_reducer import NOW, candidate, facet, proposal, snapshot
 from tests.domain.executive import test_executive as executive
+from tests.helpers.executive_requirements import make_authority
 
 COMMITTED_AT = NOW + timedelta(seconds=2)
 
@@ -156,7 +156,7 @@ def test_executive_request_and_commit_keep_both_freshness_checks(changed: str | 
             response,
             snapshot=context,
             current=current,
-            authority=ExecutiveDecisionAuthority(),
+            authority=make_authority(),
             decision_id="decision-pair",
             committed_at=COMMITTED_AT + timedelta(seconds=2),
             policy=policy,
