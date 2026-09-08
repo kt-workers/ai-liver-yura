@@ -7,8 +7,14 @@ import pytest
 
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityRequirement
-from app.domain.contracts.finalization import AuthorityFinalizationParticipant, FinalizationError
+from app.domain.contracts.finalization import (
+    AuthorityFinalizationParticipant,
+    FinalizationError,
+    FinalizationFailure,
+)
 from app.domain.executive import (
+    ExecutiveCommitState,
+    ExecutiveContextSnapshot,
     ExecutiveDecisionAuthority,
     ExecutiveIntentKind,
     ExecutiveIntentRequirementRule,
@@ -414,3 +420,236 @@ def test_same_rule_revision_distinguishes_boolean_and_number() -> None:
     with pytest.raises(RequirementsRejected) as failure:
         requirements.publish(ExecutiveIntentRequirementsPolicy("requirements", 2, (changed,)))
     assert failure.value.failure.code is RequirementsFailureCode.STALE_POLICY
+
+
+def upstream_inputs(
+    used_count: int = 1,
+) -> tuple[
+    ExecutiveRequirementsOwner,
+    ExecutiveContextSnapshot,
+    ExecutiveCommitState,
+    tuple[Source, ...],
+    tuple[Source, ...],
+]:
+    used = tuple(Source() for _ in range(used_count))
+    unused = tuple(Source() for _ in range(20))
+    record = UpstreamRequirementRecord(
+        "source",
+        "typed",
+        "record",
+        1,
+        "answer-user",
+        ExecutiveIntentKind.SPEECH,
+        SpeechIntentPayload("answer-user"),
+        rule().capabilities,
+        rule().preconditions,
+    )
+    selected = replace(
+        rule(),
+        mode=RequirementMode.UPSTREAM,
+        capabilities=(),
+        preconditions=(),
+        source=RequirementSourceSpec("source", "typed", "semantic_goal_ref"),
+    )
+    requirements = ExecutiveRequirementsOwner(BOUNDS)
+    requirements.publish(
+        ExecutiveIntentRequirementsPolicy("requirements", 1, (selected,)),
+        (
+            RequirementSourcePublication(
+                "used", 1, record, tuple(x.participant.token() for x in used)
+            ),
+            RequirementSourcePublication(
+                "unused",
+                1,
+                replace(record, reference="unused"),
+                tuple(x.participant.token() for x in unused),
+            ),
+        ),
+    )
+    captured = requirements.capture(snapshot())
+    current = requirements.prepare(captured, candidate(), live_state())
+    return requirements, captured, current, used, unused
+
+
+@pytest.mark.parametrize("used_source", [True, False])
+@pytest.mark.parametrize("change", ["updated", "busy"])
+def test_fence_checks_only_sources_used_by_verified_derivation(
+    used_source: bool,
+    change: str,
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from contextlib import nullcontext
+
+    requirements, captured, current, used, unused = upstream_inputs()
+    selected = used[0] if used_source else unused[0]
+    if change == "updated":
+        with selected.participant.mutation():
+            pass
+    authority = ExecutiveDecisionAuthority(requirements)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with selected.participant if change == "busy" else nullcontext():
+            pending = pool.submit(
+                authority.commit,
+                candidate(),
+                captured,
+                current=current,
+                decision_id="selected-source",
+                committed_at=NOW,
+            )
+            if used_source:
+                with pytest.raises(FinalizationError) as failure:
+                    pending.result(timeout=1)
+                assert failure.value.failure is (
+                    FinalizationFailure.GENERATION_MISMATCH
+                    if change == "updated"
+                    else FinalizationFailure.PARTICIPANT_BUSY
+                )
+            else:
+                assert pending.result(timeout=1).decision_id == "selected-source"
+    assert authority.has_committed(captured.trigger_id) is not used_source
+
+
+@pytest.mark.parametrize("source_count", [14, 15])
+def test_fence_keeps_foundation_participant_limit(source_count: int) -> None:
+    requirements, captured, current, _, _ = upstream_inputs(source_count)
+    authority = ExecutiveDecisionAuthority(requirements)
+    if source_count == 14:
+        result = authority.commit(candidate(), captured, current=current, decision_id="limit")
+        assert result.decision_id == "limit"
+        assert result.plan_authorizations == ()
+        assert result.plan_progress_assessments == ()
+    else:
+        with pytest.raises(FinalizationError) as failure:
+            authority.commit(candidate(), captured, current=current, decision_id="limit")
+        assert failure.value.failure is FinalizationFailure.INVALID_LOCK_CONFIGURATION
+        assert not authority.has_committed(captured.trigger_id)
+
+
+@pytest.mark.parametrize("publication", ["success", "noop", "rejected"])
+def test_fresh_capture_recovers_current_value_after_publication(publication: str) -> None:
+    requirements, old, _, _, _ = upstream_inputs()
+    generation = old.requirements_generation
+    assert generation is not None
+    policy = generation.policy
+    if publication == "success":
+        policy = replace(
+            policy, revision=2, rules=tuple(replace(r, policy_revision=2) for r in policy.rules)
+        )
+    if publication == "rejected":
+        with pytest.raises(RequirementsRejected):
+            requirements.publish(replace(policy, rules=()), generation.sources)
+    else:
+        requirements.publish(policy, generation.sources)
+    assert requirements.derive(old, candidate()).failure is not None
+    fresh = requirements.capture(snapshot())
+    fresh_generation = fresh.requirements_generation
+    assert fresh_generation is not None
+    assert fresh_generation.policy == policy
+    assert fresh_generation.sources == generation.sources
+    assert fresh_generation.token != generation.token
+    assert requirements.derive(old, candidate()).failure is not None
+    current = requirements.prepare(fresh, candidate(), live_state())
+    assert (
+        ExecutiveDecisionAuthority(requirements)
+        .commit(
+            candidate(),
+            fresh,
+            current=current,
+            decision_id="fresh",
+        )
+        .decision_id
+        == "fresh"
+    )
+
+
+@pytest.mark.parametrize("caller_days", [-10, 10])
+def test_pre_fence_timestamp_cannot_override_final_time(caller_days: int) -> None:
+    from datetime import timedelta
+
+    from tests.helpers.executive_requirements import fence_clock
+
+    requirements = owner()
+    captured = requirements.capture(snapshot())
+    current = requirements.prepare(captured, candidate(), live_state())
+    final_time = NOW + timedelta(seconds=10)
+    with fence_clock(lambda: final_time):
+        decision = ExecutiveDecisionAuthority(requirements).commit(
+            candidate(),
+            captured,
+            current=current,
+            decision_id="fence-time",
+            committed_at=NOW + timedelta(days=caller_days),
+        )
+    assert decision.committed_at == final_time
+
+
+@pytest.mark.parametrize("kind", ["scope", "context"])
+@pytest.mark.parametrize("used_source", [True, False])
+@pytest.mark.parametrize("change", ["updated", "busy"])
+def test_plan_sources_use_only_verified_scope_or_context(
+    kind: str,
+    used_source: bool,
+    change: str,
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from contextlib import nullcontext
+
+    from tests.domain.executive.test_plan_authorization import inputs
+    from tests.domain.executive.test_plan_progress import progress_inputs
+    from tests.helpers.executive_requirements import fence_clock
+
+    proposed, captured, current = inputs() if kind == "scope" else progress_inputs()
+    generation = captured.requirements_generation
+    assert generation is not None
+    unused = Source()
+    extra = RequirementSourcePublication(
+        "unrelated",
+        1,
+        UpstreamRequirementRecord(
+            "source",
+            "unused",
+            "unrelated",
+            1,
+            "unrelated",
+            ExecutiveIntentKind.SPEECH,
+            SpeechIntentPayload("unrelated"),
+            (),
+            (),
+        ),
+        (unused.participant.token(),),
+    )
+    requirements = generation.owner
+    requirements.publish(generation.policy, (*generation.sources, extra))
+    captured = requirements.capture(captured)
+    current = requirements.prepare(captured, proposed, current)
+    participant = (
+        generation.sources[0].tokens[0]._participant if used_source else unused.participant
+    )
+    if change == "updated":
+        with participant.mutation():
+            pass
+    authority = ExecutiveDecisionAuthority(requirements)
+    with fence_clock(lambda: proposed.created_at), ThreadPoolExecutor(max_workers=1) as pool:
+        with participant if change == "busy" else nullcontext():
+            result = pool.submit(
+                authority.commit, proposed, captured, current=current, decision_id="plan"
+            )
+            if used_source:
+                with pytest.raises(FinalizationError) as failure:
+                    result.result(timeout=1)
+                assert failure.value.failure is (
+                    FinalizationFailure.GENERATION_MISMATCH
+                    if change == "updated"
+                    else FinalizationFailure.PARTICIPANT_BUSY
+                )
+            else:
+                decision = result.result(timeout=1)
+                if kind == "scope":
+                    assert len(decision.plan_authorizations) == 1
+                    assert decision.plan_authorizations[0].committed_at == decision.committed_at
+                else:
+                    assert len(decision.plan_progress_assessments) == 1
+                    assert (
+                        decision.plan_progress_assessments[0].committed_at == decision.committed_at
+                    )
+    assert authority.has_committed(captured.trigger_id) is not used_source

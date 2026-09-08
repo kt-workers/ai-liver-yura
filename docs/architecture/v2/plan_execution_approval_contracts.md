@@ -89,9 +89,9 @@
 
 ## 9. 応答完了時刻と承認確定時刻
 
-LLMの応答完了時刻は候補が生成された時刻であり、承認の確定時刻ではない。`ExecutiveDeliberator`は`current_for_commit()`の待機が終わった後に、構成側から与えられた信頼できる時計を読み、その現在時刻を`commit_result()`と実行判断所有者へ渡す。既定の本番時計はUTCの現在時刻を返す。LLMの出力や検証対象の応答時刻を時計の代替にしない。
+LLMの応答完了時刻は候補が生成された時刻であり、承認の確定時刻ではない。`ExecutiveDeliberator`は`current_for_commit()`の待機後に候補と現在状態を確定処理へ渡す。最終確定時刻は、共通`AuthorityFinalizationFence`が全参加者を取得し、世代token・取消を検査した後にUTC時計から取得して登録operationへ渡す時刻だけを正本とする。LLM出力、応答完了時刻、callerがFence前に取得した任意の時刻は代用できない。
 
-`commit_result()`には確定時刻を明示的に渡す。候補の生成時刻は引き続き応答完了時刻とするが、承認の有効期限と確定判断の時刻には現在状態取得後の時刻を用いる。状態取得中に期限を過ぎた場合は承認を発行せず、判断の確定済み記録も進めない。応答完了より前へ戻った確定時刻も拒否する。
+`CommittedExecutiveDecision`、`PlanExecutionAuthorization`、`PlanProgressAssessment`は同じFence時刻を保持し、期限の検査にもこの時刻を使う。`commit_result()`および`commit()`の互換時刻引数は最終確定時刻を上書きしない。状態取得中またはFence到達までに期限を過ぎた場合、過去のcaller時刻で救済せず、承認も判断も確定しない。応答完了より前へ戻った確定時刻も拒否する。
 
 ## 10. 手順進行と完了条件の所有者
 

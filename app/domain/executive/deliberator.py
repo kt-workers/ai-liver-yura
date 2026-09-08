@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import Protocol, TypeVar, cast
 
@@ -77,12 +77,9 @@ class ExecutivePolicy:
 
 
 class ExecutiveClock(Protocol):
+    """既存の構成引数との型互換を保つ。最終確定の時計ではない。"""
+
     def now(self) -> datetime: ...
-
-
-class _SystemExecutiveClock:
-    def now(self) -> datetime:
-        return datetime.now(timezone.utc)
 
 
 class ExecutiveLiveStatePort(Protocol):
@@ -193,7 +190,7 @@ def commit_result(
     authority: ExecutiveDecisionAuthority,
     decision_id: str,
     policy: ExecutivePolicy,
-    committed_at: datetime,
+    committed_at: datetime | None = None,
 ) -> CommittedExecutiveDecision:
     failure = validate_role_exchange(descriptor(policy), request, result)
     if failure is not None:
@@ -223,11 +220,11 @@ class ExecutiveDeliberator:
         *,
         clock: ExecutiveClock | None = None,
     ) -> None:
+        """clockは互換引数として受け付けるが、確定時刻には使用しない。"""
         self._port = port
         self._live_state = live_state
         self._policy = policy
         self._authority = authority
-        self._clock = clock if clock is not None else _SystemExecutiveClock()
 
     async def deliberate(
         self,
@@ -274,7 +271,6 @@ class ExecutiveDeliberator:
             authority=self._authority,
             decision_id=decision_id,
             policy=self._policy,
-            committed_at=self._clock.now(),
         )
 
 

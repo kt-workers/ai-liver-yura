@@ -42,7 +42,6 @@ class ExecutiveFinalizationInput:
     snapshot: ExecutiveContextSnapshot
     current: ExecutiveCommitState
     decision_id: str
-    committed_at: datetime | None = None
 
 
 class ExecutiveDecisionAuthority:
@@ -76,24 +75,33 @@ class ExecutiveDecisionAuthority:
         *,
         current: ExecutiveCommitState,
         decision_id: str,
-        committed_at: object,
+        committed_at: object = None,
     ) -> CommittedExecutiveDecision:
-        if not isinstance(committed_at, datetime):
+        """時刻引数は互換入力。最終確定時刻にはFenceの時計だけを使う。"""
+        if committed_at is not None and not isinstance(committed_at, datetime):
             raise ValueError("確定時刻はdatetimeで指定してください")
         generation = snapshot.requirements_generation
         if self.requirements_owner is None or generation is None:
             raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
         if generation.owner is not self.requirements_owner:
             raise RequirementsRejected(RequirementsFailureCode.INVALID_PROJECTION)
-        generation.owner.validate_captured(snapshot, candidate, current)
+        derivations = generation.owner.validate_captured(snapshot, candidate, current)
         self._validate(candidate, snapshot, current)
-        tokens = (generation.token, *(t for source in generation.sources for t in source.tokens))
-        result = AuthorityFinalizationFence(max_participants=len(tokens) + 1).finalize(
+        tokens = (
+            generation.token,
+            *(
+                t
+                for value in derivations
+                for source in value.provenance.sources
+                for t in source.tokens
+            ),
+        )
+        result = AuthorityFinalizationFence().finalize(
             AuthorityFinalizationRequest(
                 tokens,
                 self._participant,
                 self._finalization_operation,
-                ExecutiveFinalizationInput(candidate, snapshot, current, decision_id, committed_at),
+                ExecutiveFinalizationInput(candidate, snapshot, current, decision_id),
             )
         )
         if result.failure is not None:
@@ -123,14 +131,15 @@ class ExecutiveDecisionAuthority:
             raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
         if self.requirements_owner is not owner:
             raise RequirementsRejected(RequirementsFailureCode.INVALID_PROJECTION)
-        for source in generation.sources:
-            for token in source.tokens:
-                if token._participant.token() != token:
-                    raise RequirementsRejected(RequirementsFailureCode.STALE_SOURCE)
         with self._lock, owner.final_guard(generation):
             if snapshot.trigger_id in self._committed_triggers:
                 raise ValueError("executive trigger is already committed")
             derivations = owner.validate_final(snapshot, candidate, current)
+            for value in derivations:
+                for source in value.provenance.sources:
+                    for token in source.tokens:
+                        if token._participant.token() != token:
+                            raise RequirementsRejected(RequirementsFailureCode.STALE_SOURCE)
             self._validate(candidate, snapshot, current)
             required_precondition_ids = {
                 requirement.precondition_id
@@ -393,7 +402,7 @@ class ExecutiveDecisionAuthority:
                 value.snapshot,
                 current=value.current,
                 decision_id=value.decision_id,
-                committed_at=value.committed_at or committed_at,
+                committed_at=committed_at,
             )
         except ValueError:
             raise FinalizationError(FinalizationFailure.TARGET_REJECTED) from None

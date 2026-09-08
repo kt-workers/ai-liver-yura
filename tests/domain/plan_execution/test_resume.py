@@ -25,7 +25,7 @@ from tests.domain.plan_execution.test_progression import (
     runner,
     setup,
 )
-from tests.helpers.executive_requirements import capture_plans, make_authority
+from tests.helpers.executive_requirements import capture_plans, fence_clock, make_authority
 
 
 def replacement(
@@ -83,17 +83,18 @@ def replacement(
     live = snapshot.requirements_generation.owner.prepare(
         snapshot, proposed, replace(live, plan_scopes=(scope,))
     )
-    authorization = (
-        make_authority(snapshot)
-        .commit(
-            proposed,
-            replace(snapshot, plan_scopes=(scope,)),
-            current=replace(live, plan_scopes=(scope,)),
-            decision_id="replacement-approval",
-            committed_at=value.clock.now(),
+    with fence_clock(value.clock.now):
+        authorization = (
+            make_authority(snapshot)
+            .commit(
+                proposed,
+                replace(snapshot, plan_scopes=(scope,)),
+                current=replace(live, plan_scopes=(scope,)),
+                decision_id="replacement-approval",
+                committed_at=value.clock.now(),
+            )
+            .plan_authorizations[0]
         )
-        .plan_authorizations[0]
-    )
     owner.activate(authorization, value.clock.now())
     return scope.scope_id
 

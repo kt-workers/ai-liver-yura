@@ -419,6 +419,9 @@ class ExecutiveRequirementsOwner:
         with self._lock:
             if self._generation is None:
                 raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
+            token = self._participant.token()
+            if self._generation.token != token:
+                self._generation = replace(self._generation, token=token)
             return replace(snapshot, requirements_generation=self._generation)
 
     def _check(self, generation: RequirementsGeneration) -> None:

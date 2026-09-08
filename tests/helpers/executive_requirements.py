@@ -1,6 +1,10 @@
 """試験の信頼済み構成へ明示的な必須要件方針を登録する。"""
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import replace
+from datetime import datetime, tzinfo
+from unittest.mock import patch
 
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import CapabilityRequirement
@@ -94,3 +98,16 @@ def capture_plans(
     )
     owner.publish(ExecutiveIntentRequirementsPolicy("test-plan-requirements", 1, rules), sources)
     return owner.capture(replace(context, requirements_generation=None))
+
+
+@contextmanager
+def fence_clock(now: Callable[[], datetime]) -> Iterator[None]:
+    """試験用の監査時刻を共通Fenceの時計境界だけへ供給する。"""
+
+    class ClockDatetime:
+        @classmethod
+        def now(cls, tz: tzinfo | None = None) -> datetime:
+            return now()
+
+    with patch("app.domain.contracts.finalization.datetime", ClockDatetime):
+        yield

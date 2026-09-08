@@ -46,7 +46,7 @@ from tests.domain.goal_planning.test_goal_planning import NOW, capability
 from tests.domain.goal_planning.test_goal_planning import candidate as plan_candidate
 from tests.domain.goal_planning.test_goal_planning import context as plan_context
 from tests.domain.goal_planning.test_goal_planning import current as plan_current
-from tests.helpers.executive_requirements import capture_plans, make_authority
+from tests.helpers.executive_requirements import capture_plans, fence_clock, make_authority
 
 
 @dataclass
@@ -98,13 +98,14 @@ class Setup:
         )
         assert captured.requirements_generation is not None
         current = captured.requirements_generation.owner.prepare(captured, proposed, current)
-        decision = make_authority(captured).commit(
-            proposed,
-            captured,
-            current=current,
-            decision_id="assess-" + context.context_id,
-            committed_at=self.clock.now(),
-        )
+        with fence_clock(self.clock.now):
+            decision = make_authority(captured).commit(
+                proposed,
+                captured,
+                current=current,
+                decision_id="assess-" + context.context_id,
+                committed_at=self.clock.now(),
+            )
         self.owner.apply_assessment(decision.plan_progress_assessments[0])
 
 
@@ -181,17 +182,18 @@ def setup(
     )
     assert context.requirements_generation is not None
     current = context.requirements_generation.owner.prepare(context, decision, current)
-    authorization = (
-        make_authority(context)
-        .commit(
-            decision,
-            context,
-            current=current,
-            decision_id="decision-plan",
-            committed_at=NOW,
+    with fence_clock(lambda: NOW):
+        authorization = (
+            make_authority(context)
+            .commit(
+                decision,
+                context,
+                current=current,
+                decision_id="decision-plan",
+                committed_at=NOW,
+            )
+            .plan_authorizations[0]
         )
-        .plan_authorizations[0]
-    )
     owner.activate(authorization, NOW)
     return Setup(
         owner,
