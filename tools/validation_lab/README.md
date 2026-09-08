@@ -331,3 +331,22 @@ streaming_targetのmoderatorに本番の審査接続契約を渡せる。streami
 
 
 同じ共有実行基盤で、先の提示中に次の発話の意味生成・人物表現・意味検証・候補確定・待ち行列投入が完了することを確認した。次生成の実測区間が先の提示待機区間内に収まること、提示順を保って次候補を提示できること、取消時に待ち行列と処理を回収することを試験している。任意の割込み方針や実際の可聴音声の品質をこの試験で合格にはしない。
+
+
+## 永続化・再起動・停止（#619）
+
+`app.subsystems.validation.persistence`の`PersistenceLabSettings`、`PersistenceLabCase`、`persistence_target`を信頼済み起動コードから使います。`case.typed_inputs(settings)`をfixtureへ設定し、取得した製品provenanceと対象契約リビジョンを登録して、共通Runnerを`target_module="persistence"`、`mode=LabMode.INTEGRATED`で呼び出します。実行結果は既存の`export_json`／Markdown書出しから取得できます。具体的な組立て例は`tests/infrastructure/postgresql/test_validation_lab.py`の`make_case`と`make_target`です。
+
+専用のPostgreSQL 17環境と、DB作成・削除を許可した検証用管理接続が必要です。各反復で新規DBを生成し、そのDBだけへ接続拒否・テーブルロックを注入して最後に削除します。既存の運用DBを検証用に使わないでください。接続設定は起動側のメモリと子への専用pipeに限定し、fixtureやexportへ含めません。子は親と同じPython・リポジトリを使い、環境変数を継承しません。
+
+対応シナリオは`PersistenceScenario`の6種類です。再接続シナリオでは依存再試行を有効にし、最終保存猶予シナリオではDBの待機時間より短い本番shutdown方針を明示してください。run全体の時間制限・観測区間数・終了処理登録数・出力上限には、選んだ反復数と本番方針を収容する値を設定します。
+
+実DBの必須試験は、隔離環境を指定して実行します。
+
+```sh
+YURA_REQUIRE_POSTGRES=1 YURA_TEST_POSTGRES_SOCKET=/tmp/yura-test-postgresql \
+  YURA_TEST_POSTGRES_PORT=58445 python -m pytest -q \
+  tests/infrastructure/postgresql/test_validation_lab.py
+```
+
+障害シナリオが予定どおり動作しても、製品が返した失敗・拒否・取消を成功へ変更しません。`PRODUCT_FAILED`／`CANCELLED`と型付き出力を確認してください。機械判定は`NOT_RUN`です。このINTEGRATED接続は永続化と起動停止の証拠であり、会話全体や実外部サービスの完成証拠ではありません。

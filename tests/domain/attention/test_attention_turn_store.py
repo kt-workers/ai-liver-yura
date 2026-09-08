@@ -567,3 +567,116 @@ def test_transition_batch_is_atomic_and_duplicate_transition_is_rejected() -> No
     store.apply(1, (first,))
     with pytest.raises(ValueError, match="適用済み"):
         store.apply(1, (first,))
+
+
+def test_all_direct_users_progress_within_a_bounded_claim_round() -> None:
+    store = attention_store()
+    for index in range(4):
+        store.offer(
+            signal(
+                f"user-{index}",
+                AttentionSourceKind.USER_INTERACTION,
+                seconds=index + 1,
+                trusted_direct_user=True,
+            )
+        )
+    store.apply(
+        1, (transition(AttentionTransitionOperation.SET_RESPONSE_OBLIGATION, 4, 1, value="user-0"),)
+    )
+    for round_index in range(3):
+        claimed = [store.claim_next(0, NOW + timedelta(seconds=40 + round_index)) for _ in range(8)]
+        assert {item.source_ref for item in claimed if item is not None} == {
+            "user-0",
+            "user-1",
+            "user-2",
+            "user-3",
+        }
+
+
+def test_three_priority_levels_all_progress_without_a_protected_turn() -> None:
+    store = attention_store()
+    for index in range(2):
+        store.offer(
+            signal(f"high-{index}", seconds=index + 1, priority=AttentionPriority.FOREGROUND)
+        )
+    store.offer(signal("normal", AttentionSourceKind.GAME, seconds=3))
+    store.offer(signal("background", AttentionSourceKind.REFLECTION, seconds=4))
+    for round_index in range(3):
+        claimed = [
+            store.claim_next(0, NOW + timedelta(seconds=40 + round_index)) for _ in range(10)
+        ]
+        assert {item.source_ref for item in claimed if item is not None} == {
+            "high-0",
+            "high-1",
+            "normal",
+            "background",
+        }
+
+
+def test_stronger_source_can_evict_a_source_with_cooldown_history() -> None:
+    store = attention_store()
+    store.offer(signal("oldest"))
+    store.offer(signal("second", seconds=2))
+    store.claim_next(0, NOW + timedelta(seconds=3))
+    store.claim_next(0, NOW + timedelta(seconds=4))
+    state = store.offer(signal("stronger", seconds=5, priority=AttentionPriority.FOREGROUND))
+    assert {item.source_ref for item in state.sources} == {"second", "stronger"}
+    assert all(item.source_ref != "oldest" for item in state.cooldowns)
+
+
+def test_selection_history_survives_refresh_and_is_bounded_by_live_sources() -> None:
+    from dataclasses import replace
+
+    store = attention_store()
+    store.offer(signal("a"))
+    store.offer(signal("b", seconds=2, expires_in=10))
+    for _ in range(4):
+        store.claim_next(0, NOW + timedelta(seconds=3))
+    before = store.snapshot()
+    assert set(dict(before.last_selected_epochs)) == {"a", "b"}
+    store.peek_eligibility(0, NOW + timedelta(seconds=4))
+    assert store.snapshot() == before
+    refreshed = store.offer(signal("a", seconds=5, operation=AttentionIngressOperation.REFRESH))
+    assert refreshed.last_selected_epochs == before.last_selected_epochs
+    expired = store.expire(1, NOW + timedelta(seconds=12))
+    assert set(dict(expired.last_selected_epochs)) == {"a"}
+    updated = store.update_policy(
+        replace(store.policy, policy_revision=2), NOW + timedelta(seconds=13)
+    )
+    assert updated.last_selected_epochs == ()
+    store.claim_next(0, NOW + timedelta(seconds=14))
+    resolved = store.resolve(signal("a", seconds=15, operation=AttentionIngressOperation.RESOLVE))
+    assert resolved.last_selected_epochs == ()
+    assert resolved.to_dict()["last_selected_epochs"] == []
+
+
+def test_concurrent_claims_publish_unique_epochs_and_preserve_all_sources() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    store = attention_store()
+    for index in range(4):
+        store.offer(
+            signal(
+                f"user-{index}",
+                AttentionSourceKind.USER_INTERACTION,
+                seconds=index + 1,
+                trusted_direct_user=True,
+            )
+        )
+    barrier = Barrier(8)
+
+    def claim(index: int) -> str:
+        barrier.wait(timeout=5)
+        result = store.claim_next(0, NOW + timedelta(seconds=10))
+        assert result is not None
+        return result.trigger_id
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        identifiers = list(executor.map(claim, range(8)))
+    assert len(set(identifiers)) == 8
+    state = store.snapshot()
+    assert state.selection_epoch == 8
+    assert state.revision == 12
+    assert set(dict(state.last_selected_epochs)) == {"user-0", "user-1", "user-2", "user-3"}
+    assert len(state.last_selected_epochs) <= len(state.sources) <= store.policy.attention_budget

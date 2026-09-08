@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
-from threading import Lock
 from typing import Any
+
+from app.domain.contracts.finalization import (
+    AuthorityFinalizationParticipant,
+    AuthorityReadPublication,
+    authority_mutation,
+)
 
 from .contracts import (
     AttentionClaimRelation,
@@ -50,11 +55,18 @@ class AttentionTurnStore:
             datetime.min.replace(tzinfo=timezone.utc),
         )
         self._transition_ids: set[str] = set()
-        self._lock = Lock()
+        self._participant = AuthorityFinalizationParticipant(self, "AttentionTurnStore", 60)
+        self._lock = self._participant
+
+    @property
+    def finalization_participant(self) -> AuthorityFinalizationParticipant:
+        """元所有者の読取と更新に共通する同期境界を公開する。"""
+        return self._participant
 
     @property
     def policy(self) -> AttentionSchedulingPolicy:
-        return self._policy
+        with self._lock:
+            return self._policy
 
     def snapshot(self) -> AttentionFocusState:
         with self._lock:
@@ -64,6 +76,7 @@ class AttentionTurnStore:
         with self._lock:
             return AttentionFocusView.from_state(self._state)
 
+    @authority_mutation
     def update_policy(
         self,
         policy: AttentionSchedulingPolicy,
@@ -101,6 +114,7 @@ class AttentionTurnStore:
                 last_selected_priority=None,
                 priority_burst=0,
                 cooldowns=(),
+                last_selected_epochs=(),
                 updated_at=occurred_at,
             )
             self._policy = policy
@@ -129,6 +143,7 @@ class AttentionTurnStore:
             if count > policy.budget_for(kind):
                 raise ValueError("current source kind数が新しいpolicy上限を超えています")
 
+    @authority_mutation
     def offer(self, signal: AttentionIngressSignal) -> AttentionFocusState:
         if not isinstance(signal, AttentionIngressSignal) or signal.operation not in {
             AttentionIngressOperation.OFFER,
@@ -187,6 +202,7 @@ class AttentionTurnStore:
             )
             return self._state
 
+    @authority_mutation
     def resolve(self, signal: AttentionIngressSignal) -> AttentionFocusState:
         if (
             not isinstance(signal, AttentionIngressSignal)
@@ -252,6 +268,7 @@ class AttentionTurnStore:
             )
             return self._state
 
+    @authority_mutation
     def expire(self, source_context_revision: int, now: datetime) -> AttentionFocusState:
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("nowはtimezone-awareでなければなりません")
@@ -291,6 +308,7 @@ class AttentionTurnStore:
             )
             return self._state
 
+    @authority_mutation
     def apply(
         self, source_context_revision: int, transitions: tuple[AttentionTransition, ...]
     ) -> AttentionFocusState:
@@ -342,6 +360,7 @@ class AttentionTurnStore:
                 for source in sources
             )
 
+    @authority_mutation
     def claim_next(
         self, current_goal_revision: int, now: datetime
     ) -> ExecutiveTriggerEligibility | None:
@@ -352,6 +371,8 @@ class AttentionTurnStore:
                 return None
             selected = ordered[0]
             next_epoch = state.selection_epoch + 1
+            history = dict(state.last_selected_epochs)
+            history[selected.source_ref] = next_epoch
             same_burst = (
                 state.same_source_burst + 1
                 if state.last_selected_source_ref == selected.source_ref
@@ -374,6 +395,7 @@ class AttentionTurnStore:
                 state.source_context_revision,
                 now,
                 selection_epoch=next_epoch,
+                last_selected_epochs=tuple(history.items()),
                 last_selected_source_ref=selected.source_ref,
                 same_source_burst=same_burst,
                 last_selected_priority=selected.effective_priority,
@@ -488,7 +510,7 @@ class AttentionTurnStore:
         candidates = self._apply_priority_fairness(state, candidates)
         return sorted(
             candidates,
-            key=lambda source: (-source.effective_priority, source.occurred_at, source.source_ref),
+            key=lambda source: self._fairness_order(state, source),
         )
 
     def _ordered_claimable(
@@ -514,7 +536,22 @@ class AttentionTurnStore:
         candidates = self._apply_priority_fairness(state, candidates)
         return sorted(
             candidates,
-            key=lambda source: (-source.effective_priority, source.occurred_at, source.source_ref),
+            key=lambda source: self._fairness_order(state, source),
+        )
+
+    def _fairness_order(
+        self, state: AttentionFocusState, source: AttentionSource
+    ) -> tuple[int, bool, int, datetime, str]:
+        continuing = (
+            state.last_selected_source_ref == source.source_ref
+            and state.same_source_burst < self._policy.max_same_source_burst
+        )
+        return (
+            -source.effective_priority,
+            not continuing,
+            dict(state.last_selected_epochs).get(source.source_ref, 0),
+            source.occurred_at,
+            source.source_ref,
         )
 
     def _apply_priority_fairness(
@@ -532,8 +569,18 @@ class AttentionTurnStore:
         ]
         if not lower:
             return candidates
-        highest_lower = max(source.effective_priority for source in lower)
-        return [source for source in lower if source.effective_priority is highest_lower]
+        history = dict(state.last_selected_epochs)
+        return [
+            min(
+                lower,
+                key=lambda source: (
+                    history.get(source.source_ref, 0),
+                    -source.effective_priority,
+                    source.occurred_at,
+                    source.source_ref,
+                ),
+            )
+        ]
 
     @staticmethod
     def _active(source: AttentionSource, now: datetime) -> bool:
@@ -640,6 +687,16 @@ class AttentionTurnStore:
         updated_at: datetime,
         **changes: Any,
     ) -> AttentionFocusState:
+        if "sources" in changes:
+            refs = {source.source_ref for source in changes["sources"]}
+            changes["last_selected_epochs"] = tuple(
+                (ref, epoch) for ref, epoch in state.last_selected_epochs if ref in refs
+            )
+            changes["cooldowns"] = tuple(
+                item
+                for item in changes.get("cooldowns", state.cooldowns)
+                if item.source_ref in refs
+            )
         return replace(
             state,
             revision=state.revision + 1,
@@ -687,3 +744,7 @@ class AttentionTurnStore:
         if op is AttentionTransitionOperation.SET_RESPONSE_OBLIGATION:
             return replace(state, response_obligation=transition.value)
         return replace(state, response_obligation=None)
+
+    def snapshot_publication(self) -> AuthorityReadPublication[AttentionFocusState]:
+        with self._participant:
+            return AuthorityReadPublication(self.snapshot(), (self._participant.token(),))

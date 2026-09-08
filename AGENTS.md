@@ -1,3 +1,79 @@
+## 実装優先・親Issue単位Gate
+
+2026-09-08の最新ユーザーAuthorityとして、製造方式をimplementation-firstへ変更する。運用の管理Authorityは#550、現在作業の記録は#450、索引は#207とする。過去の工程指示と競合する場合は本節を優先する。製品の責務・公開契約・最終受入条件の意味は変更しない。
+
+ここで「親Issue」は、設計・実装・テスト等の内部作業を束ね、production plan上で1タスクとして数えるIssueを指す。Projectの分類値`Parent`と同義ではない。正式Gateはこの製造Issue単位とし、内部の設計、型追加、実装、test追加、docs更新、bug fix、checkpointごとに増やさない。本体残件23 Issueなら各正式Gateは原則最大23 Issue分とする。
+
+### 工程と実装中の疑義
+
+原則は `Design completed → Implementation → Test / Verification → Fix → Acceptance` とする。設計採用済みのIssueは実装を完走する。canonicalの不自然さ、contract不足の疑い、concurrency懸念、Owner境界の疑い、設計バグ候補は記録し、実装完了後のTest工程で実証・修正する。`DESIGN_BUG` / `CONTRACT_GAP`候補の発見だけでSTOPし、別Design Issue・Design PR・review・mergeを経て実装へ戻る通常運用は禁止する。
+
+実装中の例外的STOPは次に限定する。
+
+- current canonicalではコードとして一切実装不能。
+- ユーザーの仕様選択なしには挙動を一意に決められない。
+- competing active lineageが存在する。
+- branch・base・HEADが不整合。
+- destructive Git操作が不可避。
+- secret漏洩リスクがある。
+- scope外の破壊的変更が不可避。
+
+「より良い設計がありそう」「テストで失敗しそう」「別の構造の方が綺麗」はSTOP理由にしない。
+
+### 段階的品質向上
+
+製造時に最初から100点の完成度を要求しない。原則は `Design completed → Implementation（70〜80点を目標に主要経路を完成）→ Test / Verification → 不足の実証 → Fix / Hardening → 90〜100点へ向上 → Final Gate` とする。点数は段階的な完成度の目安であり、試験結果や受入条件の達成率を表すものではない。
+
+実装フェーズでは採用済み設計に従い、主要な正常経路・責務・production wiringをまず完成させる。次の理由だけで実装を止めず、懸念を破棄せずTest finding候補として記録する。
+
+- edge caseがまだ完全網羅されていない。
+- より綺麗な抽象化が考えられる。
+- defensive validationをさらに追加できる。
+- concurrency上の追加検証余地がある。
+- 将来のtestで問題になる可能性がある。
+- canonicalをさらに精密化できる。
+- 実装をもっと一般化できる。
+
+Test工程では正常系に加え、edge case、failure path、concurrency / race、cancellation、stale / supersede、integration boundary、restart / shutdown、contract mismatch、design bugを実際の試験結果で確認し、必要な修正を行う。設計バグも実装不能でない限り実装途中でDesign工程へ戻さず、Test工程で再現・実証してからcanonicalとcodeを同じ修正工程で直す。前述の例外的STOP条件は維持する。
+
+70〜80点を目標とする段階でも、次を意図的に残してはならない。これらは完成度とは別の最低限の安全・事実性条件とする。
+
+- 明白なデータ破壊。
+- secret漏洩。
+- 取り返しのつかない誤った外部effect。
+- dummy / noop / fake successによる完成偽装。
+- scope外Ownerへの責務移転。
+- 未実装を成功として返すfallback。
+- destructive Git操作による進行。
+
+Implementation completionは「全て完璧」ではなく、設計された責務の主要経路がproduction codeとして一通り成立した状態とする。Test completionは実装後の検証で発見した穴を修正し、対象Issueの受入条件を満たした状態とする。Final acceptanceは、本節で定義した親Issue単位の最終pytest / Ruff / strict Mypy / compileall / diff-check、正式CI、独立レビューを通した状態とする。段階途中の完成を最終受入やIssue全体の完成へ読み替えない。
+
+### 全面品質検査・CI・独立レビュー
+
+正式なfull pytest、Ruff、strict Mypy、compileall、`git diff --check`は、製造Issueの実装完了後のTest工程で原則1回とする。設計途中、内部の子作業、各commit、各小変更の定例検査にしない。実装中は具体的な故障原因を切り分ける最小診断を許容するが、全面検査の反復を通常の実装ループにしない。
+
+Test Gateで見つかったfunctional / integration / concurrency failureをdesign bug・code bug・contract bugへ分類し、同じIssueのTest/Fix工程でまとめて修正する。必要なcanonicalとcodeの修正はTest工程で確認された不具合修正として扱い、Design工程への手戻りにしない。修正結果の確認は必要な範囲で行い、未解決の失敗をPASS扱いにしない。
+
+正式CIは `implementation complete → local Test Gate → fixes complete → final candidate HEAD → CI × 1` を基本とし、製造Issueの最終候補HEADに原則1回だけ要求する。実装途中、設計だけのHEAD、各小修正HEADへの定例要求と、同じ内容・目的での不要な再実行は禁止する。branch protection等による自動検査は技術的制約として受け入れ、追加の工程Gateへ数えない。CI failureは同じIssueのTest/Fix findingであり、Design工程へ戻さない。採用時は現在の必須検査と実際のHEADを照合する。
+
+独立レビューは製造Issueにつき原則1回、実装完了・Test/Fix完了・CI候補準備済みの最終段階で依頼する。設計だけ、実装途中、test前の依頼、Design reviewとCode reviewの二重Gate、同じ内容の繰返し依頼は禁止する。findingは同じIssueのFix工程で修正し、HEAD更新だけを理由に追加の独立review cycleを自動要求しない。ユーザーが明示的に再レビューを要求した場合は別とする。修正前のreviewを新HEADへの承認と偽らず、findingへの対応と検証証拠を記録する。
+
+### 作業系統とIssue分割
+
+原則は `1 Issue → 1 active implementation lineage → 必要なcanonical調整 → implementation → tests → 1 final PR` とする。同じ製造Issueの設計と実装を別PRへ分け、設計だけのCI・review・merge・fresh Resume Gateを挟む通常運用は禁止する。既に#630/#632で分離済みの歴史・採用成果は保持し、履歴を書き換えない。
+
+新Issueへ分離するのは、Test工程で確認した問題が別責務・別Ownerであり、独立して完成可能かつ現Issueから独立して延期可能な場合だけとする。「設計に穴があった」だけでIssueを増やさない。既存作業系統の確認・回収義務は維持する。
+
+### Resume GateとCheckpoint
+
+Resume GateはIssue開始、チャット切替後の再開、blocker解消後、外部要因でbranch・PR・HEADが変わった場合に行う。active lineage・base・scopeが変わらない同じIssue内では、Design採用・Implementation・Testへの各工程遷移ごとに繰り返さない。
+
+CheckpointはIssue開始、真のblocker発生、implementation complete / Test工程入り、final PR、merge / completion、チャット切替等の重要な状態遷移に限定する。各commit、各test実行、各小修正、各CI stepの定例記録は禁止する。
+
+### #632と#630への適用
+
+#632の設計はPR #633で本流採用済み。次は#632 implementationから実装完了、Test、fixes、最終品質検査、最終CI、独立レビュー、merge / completionへ進む。実装中の設計疑義は原則Test工程のfindingとして保持し、Design工程へ戻さない。#630は#632完成後に再開し、同じ方式を適用する。
+
 ## Repository文章言語ルール
 
 このリポジトリで人間が読むために書く文章は、日本語を唯一の基本言語とする。
@@ -118,7 +194,7 @@ Codexへ作業を依頼する場合も、この確認を省略してはならな
 
 1. GitHub live状態を再確認する
 2. Missionの最新Checkpointを確認する
-3. current WorkのResume Gateを再確認する
+3. 本書で定める実施条件に該当する場合にcurrent WorkのResume Gateを確認する
 4. blockerが解消したことを確認する
 5. Mission stateをACTIVEへ戻す
 6. 元のcurrent Workを再開する
@@ -176,7 +252,7 @@ Checkpointには最低限、次を記録する。
 - 個別工程完了
 - Work Issue単体の実装完了
 
-修正可能である限りfix / test / review loopを継続する。
+修正可能である限り同じIssueのTest/Fixを継続する。独立レビューの追加は本書の原則1回の規則に従う。
 
 ### 外部canonical review待ち
 
@@ -185,12 +261,12 @@ Checkpointには最低限、次を記録する。
 
 current Workだけを `REVIEW_PENDING` として記録し、Mission stateは `ACTIVE` を維持する。
 
-同一exact HEADについては次を厳守する。
+製造Issue単位の最終レビューについて次を厳守する。
 
 - independent canonical reviewの依頼・要求は1回だけ行う
 - review到着確認のためにsleep / retry / pollingを繰り返さない
 - 同じHEADへ重複review依頼を投稿しない
-- 新しいHEADが作られた場合だけ、新HEADに対するreview依頼を新規に行える
+- HEADが更新されても追加レビューを自動要求しない。再レビューはユーザーが明示要求した場合だけ行う
 
 review待ち中に、そのWorkへ依存しないdependency-ready Workが存在する場合は、
 GitHub live dependency graphを確認し、fresh Resume Gateを通してそちらを進める。
@@ -206,7 +282,7 @@ pending reviewを再確認してよいのは、原則として次の場合だけ
 - dependency判断上、そのreview結果が必要になった
 - ユーザーが明示的に状態確認を依頼した
 
-reviewがHOLDの場合は通常のfix / test / new-head review loopへ戻る。
+reviewがHOLDの場合は同じIssueのFixと必要な検証へ戻り、追加の独立レビューを自動要求しない。
 blocking 0の場合はReady / merge / trunk verification / Work Completionへ進む。
 
 reviewerは、同一exact HEADについて確認可能なblocking findingを可能な限り一度のreviewへまとめ、

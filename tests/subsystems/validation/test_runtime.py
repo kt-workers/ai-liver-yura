@@ -260,7 +260,8 @@ async def test_unverified_iteration_is_not_upgraded_by_later_pass() -> None:
     assert result.machine_gate is Gate.NOT_RUN
 
 
-def test_provenance_rejects_dirty_production_sources(tmp_path: object) -> None:
+@pytest.mark.parametrize("detached", [False, True])
+def test_provenance_rejects_dirty_production_sources(tmp_path: object, detached: bool) -> None:
     from pathlib import Path
     from subprocess import run
 
@@ -283,8 +284,11 @@ def test_provenance_rejects_dirty_production_sources(tmp_path: object) -> None:
         "-m",
         "検証用の製品",
     )
+    if detached:
+        git("checkout", "--detach", "HEAD")
     provenance = capture_production_provenance(repository, ("product.py",), ("contract",), ())
     assert len(provenance.git_head) == 40
+    assert provenance.branch == ("HEAD" if detached else "test")
     (repository / "product.py").write_text("value = 2\n")
     with pytest.raises(ValueError, match="未記録"):
         capture_production_provenance(repository, ("product.py",), ("contract",), ())

@@ -182,6 +182,8 @@ class ActivityExecutionCoordinator:
                     record = self._authority.apply_report(report).record
             except (TypeError, ValueError):
                 return close_adapter_contract_failure()
+            if not record.terminal:
+                return close_adapter_contract_failure()
             return record
         except asyncio.CancelledError:
             record = self._authority.request_cancellation(

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime
-from threading import Lock
 
 from app.domain.contracts import (
     ExecutionResult,
@@ -15,6 +14,11 @@ from app.domain.contracts.common import (
     require_aware,
     require_identifier,
     utc_instant,
+)
+from app.domain.contracts.finalization import (
+    AuthorityFinalizationParticipant,
+    AuthorityReadPublication,
+    authority_mutation,
 )
 
 from .contracts import (
@@ -42,8 +46,15 @@ class ActivityExecutionAuthority:
         self._allowed_authorities = frozenset(allowed_authorities)
         self._records: dict[str, ActivityExecutionRecord] = {}
         self._invocation_ids: set[str] = set()
-        self._lock = Lock()
+        self._participant = AuthorityFinalizationParticipant(self, "ActivityExecutionAuthority", 50)
+        self._lock = self._participant
 
+    @property
+    def finalization_participant(self) -> AuthorityFinalizationParticipant:
+        """元所有者の読取と更新に共通する同期境界を公開する。"""
+        return self._participant
+
+    @authority_mutation
     def admit(
         self, invocation: ActivityInvocation, current: ExecutionPreflightSnapshot
     ) -> ActivityExecutionCommitResult:
@@ -96,6 +107,7 @@ class ActivityExecutionAuthority:
             self._invocation_ids.add(invocation.invocation_id)
             return ActivityExecutionCommitResult(record, lifecycle_facts)
 
+    @authority_mutation
     def start(
         self,
         command_id: str,
@@ -127,6 +139,7 @@ class ActivityExecutionAuthority:
             updated = replace(updated, record_revision=record.record_revision + 1)
             return ActivityExecutionCommitResult(updated, (self._commit(record, updated),))
 
+    @authority_mutation
     def apply_report(self, report: ExecutionAdapterReport) -> ActivityExecutionCommitResult:
         if not isinstance(report, ExecutionAdapterReport):
             raise ValueError("report must be ExecutionAdapterReport")
@@ -206,6 +219,7 @@ class ActivityExecutionAuthority:
             updated = replace(updated, record_revision=record.record_revision + 1)
             return ActivityExecutionCommitResult(updated, (self._commit(record, updated),))
 
+    @authority_mutation
     def fail_adapter_contract(
         self, command_id: str, occurred_at: datetime
     ) -> ActivityExecutionCommitResult:
@@ -230,6 +244,7 @@ class ActivityExecutionAuthority:
             updated = replace(updated, record_revision=record.record_revision + 1)
             return ActivityExecutionCommitResult(updated, (self._commit(record, updated),))
 
+    @authority_mutation
     def request_cancellation(
         self, command_id: str, reason: str, requested_at: datetime
     ) -> ActivityExecutionCommitResult:
@@ -264,6 +279,7 @@ class ActivityExecutionAuthority:
             updated = replace(updated, record_revision=record.record_revision + 1)
             return ActivityExecutionCommitResult(updated, (self._commit(record, updated),))
 
+    @authority_mutation
     def supersede(self, command_id: str, occurred_at: datetime) -> ActivityExecutionCommitResult:
         with self._lock:
             record = self._require_record(command_id)
@@ -371,6 +387,12 @@ class ActivityExecutionAuthority:
             ):
                 return ExecutionStatus.REJECTED, "precondition_failed"
         return None
+
+    def snapshot_publication(
+        self, command_id: str
+    ) -> AuthorityReadPublication[ActivityExecutionRecord | None]:
+        with self._participant:
+            return AuthorityReadPublication(self.snapshot(command_id), (self._participant.token(),))
 
 
 def _revisions_match(expected: RevisionVector, current: RevisionVector) -> bool:

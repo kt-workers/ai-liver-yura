@@ -488,3 +488,27 @@ Fake game environment is allowed if it exercises production Game Skill runtime i
 ## 23. #445 Gate
 
 Validation Lab implementation/extensions remain frozen until #445 D1-D9 and final user confirmation PASS.
+
+
+## 24. 永続化・別プロセス再起動・停止の検証（#619）
+
+`persistence_target`は共通`ValidationRunner`へ登録するINTEGRATED接続とする。既存の`build_persistent_core`、`CoreGoalPersistenceBinding`、本番Memory接続、`PostgresPersistenceRuntime`を使用し、保存形式・復元可能なOwner・復元失敗後の書込保護を追加・変更しない。
+
+信頼済みの起動コードが`PersistenceLabSettings`と`PersistenceLabCase`を登録する。外部入力から関数・コマンド・接続先を解決しない。設定には本番起動構成、接続上限、Memory順位付け方針、保存再試行・依存再接続方針と受付上限を明示する。Goalへの確定済み判断、Memory書込・検索要求、シナリオをfixtureの型付き入力と照合する。構成の識別子・リビジョン・検証済み公開設定のdigestを保持し、記録した条件と異なれば実行を拒否する。
+
+各反復は新規生成した専用DBだけを所有する。管理接続先の既存DBやテーブルへ障害を注入しない。接続拒否は専用DBの新規接続設定、復元失敗・最終保存猶予は既知の製品テーブルへの別接続のロックで実現する。Ownerの返却値を差し替えて障害を作らない。開始済みのDB操作と子プロセス生成は取消・再取消でも完了を回収し、登録失敗時にも生成済み資源を閉じる。終了時は本番停止、子プロセス・ロックの回収、専用DB削除を行う。
+
+| シナリオ | 保持する証拠 |
+| --- | --- |
+| `restart` | Goalのdurability receiptとMemory保存結果、親の停止、別PIDの本番入口でのGoal・入力文脈・Memory復元、子の停止 |
+| `database_unavailable` | 保存後のDB接続拒否、復元失敗保護、停止後の別プロセス復元 |
+| `reconnect` | 依存再接続方針による復旧、同一Goal Owner、復元失敗後のGoal書込拒否とMemory結果、別プロセス復元 |
+| `restore_failure` | 実DBのロックによる復元失敗、接続復旧後も維持されるGoal書込保護、別プロセス復元 |
+| `final_save_timeout` | 未完了の実Memory書込、設定した最終保存猶予の失敗段階、停止後の資源回収 |
+| `stop_cancelled` | 未完了の実Memory書込、本番停止への取消・再取消、取消の結果と資源回収 |
+
+公開設定は対象登録時にimmutableな値へ固定し、run開始時にはfixtureとも照合する。各本番起動の直前と起動完了後、子プロセス生成直前、最終証拠確定直前に現在の設定を固定値と照合する。子へのpacketにはlive再読込値ではなく固定値を渡し、子もその値に対して起動前の設定を再照合する。途中変更・読取不能を検出した場合は証拠を確定せず、生成済み資源を回収する。親の設定不一致は`BLOCKED_UPSTREAM`、子の起動拒否で正常な通信結果が得られない場合は`HARNESS_FAILED`とし、COMPLETEDへ変換しない。
+
+親と子はrun ID・反復番号・製品HEAD・branchを照合する。正式CIのdetached HEADではbranchを`HEAD`と明示し、架空のbranch名を補わず実SHAで照合する。親は実行前後、子は復元前に製品ソースの来歴を再取得し、子は起動構成も再照合する。子への接続設定は専用pipeだけで渡し、環境変数を継承しない。認証情報・接続先・設定パス・提供元の生例外を結果やstderrへ出さない。公開結果は既存の有限なJSON/Markdown書出しを使い、入力・出力・実測区間を同じrunへ対応付ける。
+
+意図した障害でも、型付き失敗・利用不可・Ownerの拒否は`PRODUCT_FAILED`、取消は`CANCELLED`として保持する。Harnessの構成・投影・子プロセス通信の失敗は`HARNESS_FAILED`と区別する。手順完走を製品の成功へ読み替えず、機械判定は`NOT_RUN`を維持する。INTEGRATEDの主張は本番永続化・起動停止経路に限り、実LLM・音声・外部サービス・人間による会話品質や#586の性能受入へ拡張しない。

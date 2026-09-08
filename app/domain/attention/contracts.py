@@ -377,6 +377,7 @@ class AttentionFocusState:
     priority_burst: int
     cooldowns: tuple[AttentionCooldown, ...]
     updated_at: datetime
+    last_selected_epochs: tuple[tuple[str, int], ...] = ()
 
     def __post_init__(self) -> None:
         require_revision(self.revision, "revision")
@@ -423,6 +424,16 @@ class AttentionFocusState:
         ):
             raise ValueError("cooldownsが不正です")
         require_aware(self.updated_at, "updated_at")
+        history = tuple(self.last_selected_epochs)
+        source_refs = {source.source_ref for source in sources}
+        for ref, epoch in history:
+            require_identifier(ref, "source_ref")
+            _positive(epoch, "last_selected_epoch")
+            if ref not in source_refs or epoch > self.selection_epoch:
+                raise ValueError("選択履歴は現在のsourceと確定済みepochに限定します")
+        if len({ref for ref, _ in history}) != len(history):
+            raise ValueError("選択履歴のsourceが重複しています")
+        object.__setattr__(self, "last_selected_epochs", tuple(sorted(history)))
         object.__setattr__(self, "secondary_monitor_refs", monitors)
         object.__setattr__(
             self, "sources", tuple(sorted(sources, key=lambda item: item.source_ref))
@@ -444,6 +455,10 @@ class AttentionFocusState:
             "response_obligation": self.response_obligation,
             "sources": [source.to_dict() for source in self.sources],
             "selection_epoch": self.selection_epoch,
+            "last_selected_epochs": [
+                {"source_ref": ref, "selection_epoch": epoch}
+                for ref, epoch in self.last_selected_epochs
+            ],
             "last_selected_source_ref": self.last_selected_source_ref,
             "same_source_burst": self.same_source_burst,
             "last_selected_priority": None

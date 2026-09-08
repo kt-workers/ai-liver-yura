@@ -288,3 +288,34 @@ Issue #321 Unit Gate requires:
 - async work timing preserves required completion ordering
 - capability availability/operation matching
 - no concrete Provider/SDK imports in `app/domain/contracts/`
+
+## 15. 所有者の世代と最終確定の共通契約（#632）
+
+本節は#321・#322の完了済み成果を再定義せず、後発Work #632として追加する設計である。具体的な並行動作・取得順序・所有者への適用条件の正本は[並行動作設計第20節](concurrency_architecture.md#20-所有者の世代更新と最終確定を直列化する632)とする。本節の型と機構は`app/domain/contracts/finalization.py`へ実装し、設計採用だけを製品完成と扱わない。
+
+| 公開契約 | 所有する情報と動作 |
+| --- | --- |
+| `AuthorityGenerationToken` | 正規所有者の識別子、起動インスタンスの識別子、参加者の識別子、不変な世代番号。正規の参加者が発行したことを検査できる起動中の参照を持つ |
+| `AuthorityFinalizationParticipant` | 既存所有者の状態更新と同じ同期境界、現在の世代、利用可能状態、固定した取得順序キーを所有する。読取値とトークンを同一区間で返し、更新・失効を同一区間で公開する |
+| `AuthorityReadPublication[T]` | 所有者が返した不変な読取値と、その値の取得時に保護した全参加者のトークン群。複合値の由来を単一の独自リビジョンへ置き換えない |
+| `AuthorityFinalizationRequest` | 出典の期待トークン群、確定先の参加者、登録済みの同期確定操作を識別する参照、確定先が検査する入力。参加者の集合を取得前に固定する |
+| `AuthorityFinalizationFence` | 固定順序で必要な参加者を取得し、全期待世代を検査して、確定先の短い同期操作を一度だけ実行する。逆順に解放し、確定結果を返す |
+| `FinalizationFailure` | 不一致、利用不能、未対応、不正な参加者、取得設定不正、競合中、取消、確定済み、確定拒否、予期しない確定障害を区別する型付き失敗 |
+
+世代トークンは`AuthorityRef`や承認を代用しない。所有者を名乗る文字列、任意の整数、別プロセスから復元したトークンだけで正規出典へ昇格できない。登録された参加者との対応と発行インスタンスを検査し、再登録・再起動後の同じ番号を別世代として扱う。トークンの直列化は診断用であり、永続化したトークンを実行権限として復元しない。
+
+当初の粒度は一つの所有者インスタンスにつき一参加者とする。リソース別ロックを新設しない。必要な計画・命令の識別子は所有者の読取値に残し、その所有者の世代と組にする。`RevisionVector`、計画や実行記録の既存リビジョン、必須要件の方針リビジョンとは別の機械的な世代であり、いずれの意味も置き換えない。
+
+Foundationは具体的なExecutive・Goal Planning・Plan Execution・Activity Executionの型をimportせず、能力・必要条件・計画の意味を判断しない。参加者と型付き結果を提供し、各所有者がそれに依存する。確定操作の入力・出力の意味、権限、合法な状態遷移、重複判定は従来の確定先所有者が保持する。
+
+### 15.1. #632の実装入口と検証境界
+
+`AuthorityFinalizationParticipant`自身を各所有者の同期境界として使用する。`authority_mutation`は更新可能メソッド全体の入口で失効し、ロック取得前だった入力検査の失敗も保守的失効に含める。元の製品リビジョン・記録・意味判断は変更しない。通常読取は世代を進めない。
+
+`current_plan_publication`、`snapshot_publication`、計画進行の`scope_publication / observation_publication`は値と全出典トークンを同一区間で返す。計画進行の出典は進行・現在計画・目標・活動の四参加者であり、一部を省略した確定要求は拒否する。既存の汎用`GoalSnapshotPort`は通常経路で保持するが、監査済み`GoalCommitmentStore`以外からの最終確定参加は`PARTICIPANT_UNSUPPORTED`とする。
+
+実行判断所有者は`ExecutiveFinalizationInput`と`finalization_operation`を提供する。構成時に登録した所有者の同期メソッド参照だけをFenceから呼ぶ。#630の意図別要件・方針・由来をこの入口で生成しない。確定時刻は全取得・世代検査後の共通UTC時計を用いる。
+
+取得後の未宣言読取や出典書込みは`INVALID_LOCK_CONFIGURATION`で拒否する。確定操作へ入った後に発見した取得設定違反は、状態未更新と決めつけず対象を利用不能・失効へ移す。その他の予期しない確定例外は`TARGET_COMMIT_FAULT`とし、どちらも公開済み状態を巻き戻さない。
+
+責務内の試験は`tests/domain/contracts/test_finalization.py`で管理する。設計時の競合再現記録と、実装後のTest/Fix・CI・独立レビューの証拠を区別し、後者の現在値は#632の最終Checkpointで照合する。
