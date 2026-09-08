@@ -1,6 +1,9 @@
 """保存済み状態を本体の参照入口へ接続し、起動と停止の資源を回収する。"""
 
 import asyncio
+import json
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -323,4 +326,139 @@ async def test_missing_database_keeps_core_running_with_typed_failure(
     finally:
         await app.stop()
     assert storage.availability is PersistenceAvailability.CLOSED
+    assert not (asyncio.all_tasks() - baseline)
+
+
+@pytest.mark.asyncio
+async def test_boot_recovers_goal_and_memory_after_other_process_exits_without_shutdown(
+    endpoint: PostgresEndpoint,
+    boot_config: Path,
+) -> None:
+    baseline = asyncio.all_tasks()
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "tests.infrastructure.postgresql.goal_binding_process",
+        endpoint.host,
+        str(endpoint.port),
+        endpoint.database,
+        endpoint.user,
+        str(boot_config),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env={"PATH": os.defpath, "PYTHONPATH": os.pathsep.join(sys.path)},
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), 15)
+        assert process.returncode == 0, stderr.decode()
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+    storage = runtime(endpoint)
+    app = await build_persistent_core(
+        boot_config,
+        persistence=storage,
+        retry_policy=retry_policy("db", retry_enabled=False),
+        runtime_epoch="parent-after-exit",
+        max_pending_memory=2,
+    )
+    try:
+        await app.start()
+        assert isinstance(app.goals, CoreGoalPersistenceBinding)
+        assert app.goals.restore_failure is None
+        assert app.goals.snapshot().to_dict() == json.loads(stdout)
+        assert app.input_context.snapshot().goals.goal_revision == 1
+        assert len(app.input_context.snapshot().context.entries) == 1
+        assert app.memory is not None
+        retrieved = await app.memory.submit_retrieval(memory.query()).wait()
+        assert retrieved.failure_code is None and retrieved.value is not None
+        assert len(retrieved.value.items) == 1
+    finally:
+        await app.stop()
+    assert storage.availability is PersistenceAvailability.CLOSED
+    assert storage.pending_task_count == 0
+    assert not (asyncio.all_tasks() - baseline)
+
+
+@pytest.mark.asyncio
+async def test_boot_database_reconnect_recovers_memory_without_replacing_goal_owner(
+    endpoint: PostgresEndpoint,
+    boot_config: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import re
+    from dataclasses import replace
+
+    from app.runtime.lifecycle import DependencyFailure, DependencyState
+
+    baseline = asyncio.all_tasks()
+    assert re.fullmatch(r"yura_test_[0-9a-f]{32}", endpoint.database)
+    admin = PostgresDatabase.connect(replace(endpoint, database="postgres"), POLICY)
+    storage = runtime(endpoint)
+    entered, release, recovered = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    start = PostgresPersistenceRuntime.start
+    starts = 0
+
+    async def observed_start(self: PostgresPersistenceRuntime) -> DependencyFailure | None:
+        nonlocal starts
+        starts += 1
+        if starts > 1:
+            entered.set()
+            await release.wait()
+        failure = await start(self)
+        if failure is None:
+            recovered.set()
+        return failure
+
+    monkeypatch.setattr(PostgresPersistenceRuntime, "start", observed_start)
+    app = None
+    try:
+        with admin.transaction() as connection:
+            connection.execute(f'ALTER DATABASE "{endpoint.database}" ALLOW_CONNECTIONS false')
+        app = await build_persistent_core(
+            boot_config,
+            persistence=storage,
+            retry_policy=retry_policy("db", initial_backoff_seconds=0.001),
+            runtime_epoch="reconnect",
+            max_pending_memory=2,
+        )
+        assert isinstance(app.goals, CoreGoalPersistenceBinding)
+        owner = app.goals
+        assert owner.restore_failure is PersistenceFailureCode.UNAVAILABLE
+        assert app.lifecycle.snapshot("db").state is DependencyState.DEGRADED
+        await app.start()
+        await asyncio.wait_for(entered.wait(), 5)
+        with admin.transaction() as connection:
+            connection.execute(f'ALTER DATABASE "{endpoint.database}" ALLOW_CONNECTIONS true')
+        release.set()
+        await asyncio.wait_for(recovered.wait(), 5)
+        assert starts == 2
+        assert app.lifecycle.snapshot("db").state is DependencyState.AVAILABLE
+        assert storage.availability.value == PersistenceAvailability.AVAILABLE.value
+        assert app.goals is owner
+        assert owner.restore_failure is PersistenceFailureCode.UNAVAILABLE
+        assert app.memory is not None
+        written = await app.memory.submit_write(MemoryWriteRequest(memory.candidate())).wait()
+        assert written.failure_code is None and written.value is not None
+        retrieved = await app.memory.submit_retrieval(memory.query()).wait()
+        assert retrieved.value is not None and len(retrieved.value.items) == 1
+        changed = owner.apply(
+            decision("temporary", 0, goals=(goal_transition(GoalTransitionOperation.CREATE, 0),))
+        )
+        assert (await changed.durability).failure_code is PersistenceFailureCode.UNAVAILABLE
+        assert app.input_context.snapshot().goals.goal_revision == 1
+    finally:
+        release.set()
+        try:
+            with admin.transaction() as connection:
+                connection.execute(f'ALTER DATABASE "{endpoint.database}" ALLOW_CONNECTIONS true')
+        finally:
+            admin.close()
+            if app is not None:
+                await app.stop()
+            else:
+                await storage.close()
+    assert storage.availability is PersistenceAvailability.CLOSED
+    assert storage.pending_task_count == 0
     assert not (asyncio.all_tasks() - baseline)
