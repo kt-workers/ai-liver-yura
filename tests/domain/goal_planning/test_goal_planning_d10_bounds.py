@@ -324,3 +324,96 @@ async def test_late_llm_result_is_rejected_after_policy_revision_change() -> Non
     with pytest.raises(GoalPlanningBoundsError) as error:
         await task
     assert error.value.code is PlanningBoundsFailureCode.POLICY_STALE
+
+
+@pytest.mark.parametrize("field", ["policy_id", "policy_revision"])
+@pytest.mark.parametrize("boundary", ["request", "directive", "commit"])
+def test_public_boundaries_reject_snapshot_from_different_policy(field: str, boundary: str) -> None:
+    from app.domain.goal_planning import candidate_from_directive
+    from tests.domain.goal_planning.test_goal_planning import current
+
+    snapshot = canonical_context(deterministic=True)
+    snapshot = replace(
+        snapshot,
+        goal_context=replace(
+            snapshot.goal_context,
+            policy_id="other-policy" if field == "policy_id" else snapshot.goal_context.policy_id,
+            policy_revision=(
+                2 if field == "policy_revision" else snapshot.goal_context.policy_revision
+            ),
+        ),
+    )
+    owner = GoalPlanningAuthority()
+    with pytest.raises(GoalPlanningBoundsError) as error:
+        if boundary == "request":
+            build_request(
+                snapshot, request_id="request", trace_id="trace", created_at=NOW, policy=policy()
+            )
+        elif boundary == "directive":
+            assert snapshot.deterministic_directive is not None
+            candidate_from_directive(
+                snapshot,
+                snapshot.deterministic_directive,
+                candidate_id="candidate",
+                created_at=NOW,
+            )
+        else:
+            owner.commit(candidate(), snapshot, current(), plan_id="plan", committed_at=NOW)
+    assert error.value.code is PlanningBoundsFailureCode.POLICY_STALE
+    assert owner.current_plan(snapshot.goal.goal_id) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("deterministic", [False, True])
+async def test_planner_rejects_policy_mismatch_before_external_calls(deterministic: bool) -> None:
+    from app.domain.goal_planning import GoalPlanningCommitState
+    from app.domain.llm import LLMRoleRequest, LLMRoleResult
+
+    snapshot = canonical_context(deterministic=deterministic)
+    snapshot = replace(
+        snapshot,
+        goal_context=replace(snapshot.goal_context, policy_revision=2),
+    )
+
+    class UnusedPort:
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            raise AssertionError("異なる容量方針の入力でLLMを呼び出してはいけません")
+
+        async def current_state(
+            self, snapshot: GoalPlanningContextSnapshot
+        ) -> GoalPlanningCommitState:
+            raise AssertionError("異なる容量方針の入力で現在状態を取得してはいけません")
+
+    unused = UnusedPort()
+    owner = GoalPlanningAuthority()
+    planner = GoalPlanner(unused, unused, owner, policy())
+    with pytest.raises(GoalPlanningBoundsError) as error:
+        await planner.plan(
+            snapshot,
+            request_id="request",
+            trace_id="trace",
+            candidate_id="candidate",
+            plan_id="plan",
+            created_at=NOW,
+        )
+    assert error.value.code is PlanningBoundsFailureCode.POLICY_STALE
+    assert owner.current_plan(snapshot.goal.goal_id) is None
+
+
+def test_matching_new_policy_can_commit_without_rewriting_snapshot() -> None:
+    from tests.domain.goal_planning.test_goal_planning import current
+
+    snapshot = canonical_context(deterministic=True)
+    updated_policy = replace(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY, policy_revision=2)
+    snapshot = replace(snapshot, goal_context=replace(snapshot.goal_context, policy_revision=2))
+    owner = GoalPlanningAuthority()
+    plan = owner.commit(
+        candidate(),
+        snapshot,
+        current(),
+        plan_id="plan",
+        committed_at=NOW,
+        bounds_policy=updated_policy,
+    )
+    assert owner.current_plan(snapshot.goal.goal_id) == plan
+    assert snapshot.goal_context.policy_revision == updated_policy.policy_revision
