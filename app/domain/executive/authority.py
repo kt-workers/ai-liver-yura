@@ -21,12 +21,14 @@ from .contracts import (
     PlanExecutionIntentPayload,
     PlanProgressIntentPayload,
 )
+from .requirements import ExecutiveRequirementsOwner, RequirementsFailureCode, RequirementsRejected
 
 
 class ExecutiveDecisionAuthority:
     """同一triggerの意思決定を高々1件だけ確定する同期commit authority。"""
 
-    def __init__(self) -> None:
+    def __init__(self, requirements_owner: ExecutiveRequirementsOwner | None = None) -> None:
+        self.requirements_owner = requirements_owner
         self._committed_triggers: set[str] = set()
         self._lock = Lock()
 
@@ -43,9 +45,16 @@ class ExecutiveDecisionAuthority:
 
         if not isinstance(committed_at, datetime):
             raise ValueError("committed_at must be datetime")
-        with self._lock:
+        generation = snapshot.requirements_generation
+        if generation is None:
+            raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
+        owner = generation.owner
+        if self.requirements_owner is not None and self.requirements_owner is not owner:
+            raise RequirementsRejected(RequirementsFailureCode.INVALID_PROJECTION)
+        with owner.final_guard(generation), self._lock:
             if snapshot.trigger_id in self._committed_triggers:
                 raise ValueError("executive trigger is already committed")
+            derivations = owner.validate_final(snapshot, candidate, current)
             self._validate(candidate, snapshot, current)
             required_precondition_ids = {
                 requirement.precondition_id
@@ -91,6 +100,7 @@ class ExecutiveDecisionAuthority:
                 snapshot.bounds_provenance,
                 authorizations,
                 assessments,
+                derivations,
             )
             self._committed_triggers.add(snapshot.trigger_id)
             return decision

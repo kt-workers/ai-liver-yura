@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from app.domain.appraisal import AppraisalFactsSnapshot, InternalStateSnapshot
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
@@ -26,6 +26,9 @@ from app.domain.plan_execution.progress_contracts import (
     PlanProgressContext,
     PlanStepCompletionClaim,
 )
+
+if TYPE_CHECKING:
+    from .requirements import DerivedIntentRequirements, RequirementsGeneration
 
 
 class ExecutiveOutcome(str, Enum):
@@ -260,6 +263,8 @@ class ExecutiveCommitState:
     plan_scopes: tuple[PlanExecutionScope, ...] = ()
     plan_progress_contexts: tuple[PlanProgressContext, ...] = ()
 
+    requirement_derivations: tuple[DerivedIntentRequirements, ...] = ()
+
     def __post_init__(self) -> None:
         object.__setattr__(
             self, "plan_scopes", _validate_plan_scopes(self.plan_scopes, self.bounds_provenance)
@@ -306,6 +311,8 @@ class ExecutiveContextSnapshot:
     bounds_provenance: ExecutiveBoundsProvenance
     plan_scopes: tuple[PlanExecutionScope, ...] = ()
     plan_progress_contexts: tuple[PlanProgressContext, ...] = ()
+
+    requirements_generation: RequirementsGeneration | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -1151,6 +1158,8 @@ class CommittedExecutiveDecision:
     bounds_provenance: ExecutiveBoundsProvenance
     plan_authorizations: tuple[PlanExecutionAuthorization, ...] = ()
     plan_progress_assessments: tuple[PlanProgressAssessment, ...] = ()
+
+    requirement_derivations: tuple[DerivedIntentRequirements, ...] = ()
 
     def __post_init__(self) -> None:
         authorizations = _owned(

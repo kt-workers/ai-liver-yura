@@ -238,6 +238,12 @@ class ExecutiveDeliberator:
         decision_id: str,
         created_at: datetime,
     ) -> CommittedExecutiveDecision:
+        if self._authority.requirements_owner is not None:
+            snapshot = self._authority.requirements_owner.capture(snapshot)
+        from .requirements import RequirementsFailureCode, RequirementsRejected
+
+        if snapshot.requirements_generation is None:
+            raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
         request = build_request(
             snapshot,
             request_id=request_id,
@@ -253,7 +259,15 @@ class ExecutiveDeliberator:
             raise ValueError("executive result is not committable")
         candidate = parse_candidate(result.output.value, snapshot, created_at=result.completed_at)
         validate_candidate_bounds(candidate, self._policy.bounds.executive)
+        generation = snapshot.requirements_generation
+        assert generation is not None
+        derived = generation.owner.derive(snapshot, candidate)
+        if derived.failure is not None:
+            raise RequirementsRejected(derived.failure.code)
         current = await self._live_state.current_for_commit(snapshot, candidate)
+        from dataclasses import replace
+
+        current = replace(current, requirement_derivations=derived.values)
         return commit_result(
             request,
             result,
