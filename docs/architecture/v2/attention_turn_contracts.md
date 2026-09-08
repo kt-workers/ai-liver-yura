@@ -220,10 +220,11 @@ AttentionFocusState
 - last_selected_priority?
 - priority_burst
 - cooldowns[]
+- last_selected_epochs[]
 - updated_at
 ```
 
-`cooldowns`はcurrent bounded source集合に対する`source_ref / eligible_after_epoch`だけを持ち、source resolve時に除去する。履歴全件を保持しない。
+`cooldowns`はcurrent bounded source集合に対する`source_ref / eligible_after_epoch`だけを持つ。`last_selected_epochs`は現在のsourceごとに最後にclaimしたepochを1件だけ保持する。未選択はepoch 0として比較する。refreshでは履歴を保ち、resolve・expiry・budget evictionでは両者から消えたsourceを同じatomic更新で除去する。方針切替時は両者をclearする。履歴全件を保持せず、保持数は現在のsource数以下とする。
 
 `AttentionFocusView`はExecutive/Body向けbounded read modelであり、fairness内部カウンタを必要以上に露出しない。最低限Focus、monitor、Turn、obligation、policy revision、attention revisionを公開する。
 
@@ -306,9 +307,9 @@ read-only sortだけではfairnessを成立させられないため、diagnostic
 通常時:
 
 1. effective priority順。
-2. 同priority内はoldest eligible sourceを優先。
+2. 同priority内では、直前のsourceが連続claim上限未満なら継続できる。それ以外は最後のclaim epochが最も古いsourceを優先し、同値ならoccurred_at、source_refの順で選ぶ。初回は未選択の最古sourceから開始する。
 3. 同一sourceが`max_same_source_burst=2`回連続claimされたら、そのsourceを`cooldown_claims=1` claim分だけsoft cooldownする。
-4. highest priorityが`max_priority_burst=4`回連続claimされたら、待機中の次に低いpriorityから最古sourceを1件claimする。
+4. 同priorityが`max_priority_burst=4`回連続claimされたら、それより低く現在claim可能なsource全体から、最後のclaim epochが最も古いものを1件claimする。同値ならpriority降順、occurred_at、source_refの順とする。直下のpriorityだけへ譲ると3段階以上で最下位が飢餓になるため、低priority全体を候補に含める。
 5. cooldown対象しかeligible sourceが存在しない場合はdeadlockを避けるためsoft cooldownを無視できる。
 
 ### 8.4 direct user protection
@@ -503,3 +504,22 @@ Speech A playback completeをAttention/Executive/Speech B preparation開始条�
 - Streaming/Game burstでAttention budgetを超えずExecutive/Body/Gameがstarveしない
 - lock区間にawait / callback / I/Oなし
 - Core global lock / single blocking cognitive loopなし
+
+## 14. 本体Ownerの受入対応とTest/Fix
+
+#333の本体責務は注意・会話順序・応答義務・適格性・割込み・公平性・入力上限である。注意から判断への本番接続は#611、判断から発話および提示結果の返却は#613、配信・ゲームの実環境接続は#627・#626で受け入れる。後続接続の未完を理由に採用済みOwnerを再実装しない。
+
+| 責務・境界 | 採用成果 | 現在の検証先 |
+|---|---|---|
+| Focus・Turn・応答義務・現在性・atomicな遷移 | #412 | `tests/domain/attention/test_attention_turn_store.py` |
+| 明示的な方針注入、世代切替、互換性拒否 | #532 | `tests/domain/attention/test_attention_policy_lifecycle_d10.py` |
+| 信頼済み入力、評価、Goal、活動の事実の投影と発話への指示 | #412 | `tests/domain/attention/test_attention_boundaries.py` |
+| 配信の集約済み信号とboundedな受付 | #585 | `tests/domain/attention/test_streaming_projector.py` |
+| 評価から注意、選択元と現在の根拠の分離 | #605・#606 | `tests/system_integration/test_core_attention.py` |
+| 判断の受付・停止と入力根拠供給 | #607・#609 | `tests/system_integration/test_core_input_evidence.py`等の採用済み隣接試験。横断完成は#611で扱う |
+| 遅い準備・提示中にも注意からenqueueが進む境界 | #412 | `tests/runtime/kernel/test_attention_runtime_boundary.py` |
+| 元Ownerの同期境界と公開世代 | #632 | `tests/domain/contracts/test_finalization.py` |
+
+Test工程で、4件のDIRECT_USERの後方2件が選ばれないこと、3段階priorityの最下位が選ばれないことを実Ownerで再現した。第8.3節のoldest固定順と直下priorityのみへの譲渡では飢餓防止を満たせない設計不足として、上限付きの最終選択epochを使う規則へ同じFix工程で修正した。direct userの応答義務と割込みthresholdを先に満たす候補だけで公平性を適用する境界は維持する。
+
+また、cooldown中のsourceを強いsourceでevictすると、消えたsourceのcooldownが残って新stateの検査に失敗するコード不具合を再現し、evictionと履歴回収を同じ更新へ修正した。回帰試験では複数周の選択、3段階priority、eviction、refresh・expiry・resolve・方針切替による履歴保持と回収、8 threadの同時claimの一意性を確認する。新しい意味解釈や他Ownerの取消・実行責務は追加しない。
