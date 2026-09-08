@@ -210,7 +210,7 @@ LLM候補とtrusted deterministic directiveは同じ技術上限を通す。
 
 `retry_limit` は各stepのtyped fieldまたはtrusted planning policyが明示する非負整数であり、boolを整数として受理しない。generic runtime backoffは別契約であり、Goal Planningが暗黙のretry回数を生成しない。
 
-`GoalPlanningContextSnapshot`、`GoalPlanningCandidate`、`GoalPlanningCommitState` は同一 `policy_id / policy_revision` にbindされる。commit直前にcurrent policy世代が変わっていれば古いCandidateを新世代へ付け替えずstaleとして拒否する。
+`GoalPlanningContextSnapshot`、`GoalPlanningCandidate`、`GoalPlanningCommitState` は同一 `policy_id / policy_revision` にbindされる。commit直前にcurrent policy世代が変わっていれば古いCandidateを新世代へ付け替えずstaleとして拒否する。 Snapshotに保持された方針のidentity・リビジョンは、要求構築・候補生成・所有者の確定で実際に使用する容量方針とも照合する。current policyの取得口を省略した場合でも、この入力照合を省略せず、異なる方針の上限を適用する前に`POLICY_STALE`で拒否する。
 
 ### 11.4 D10追加Acceptance
 
