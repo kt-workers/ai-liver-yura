@@ -24,6 +24,34 @@
 
 「より良い設計がありそう」「テストで失敗しそう」「別の構造の方が綺麗」はSTOP理由にしない。
 
+### 段階的品質向上
+
+製造時に最初から100点の完成度を要求しない。原則は `Design completed → Implementation（70〜80点を目標に主要経路を完成）→ Test / Verification → 不足の実証 → Fix / Hardening → 90〜100点へ向上 → Final Gate` とする。点数は段階的な完成度の目安であり、試験結果や受入条件の達成率を表すものではない。
+
+実装フェーズでは採用済み設計に従い、主要な正常経路・責務・production wiringをまず完成させる。次の理由だけで実装を止めず、懸念を破棄せずTest finding候補として記録する。
+
+- edge caseがまだ完全網羅されていない。
+- より綺麗な抽象化が考えられる。
+- defensive validationをさらに追加できる。
+- concurrency上の追加検証余地がある。
+- 将来のtestで問題になる可能性がある。
+- canonicalをさらに精密化できる。
+- 実装をもっと一般化できる。
+
+Test工程では正常系に加え、edge case、failure path、concurrency / race、cancellation、stale / supersede、integration boundary、restart / shutdown、contract mismatch、design bugを実際の試験結果で確認し、必要な修正を行う。設計バグも実装不能でない限り実装途中でDesign工程へ戻さず、Test工程で再現・実証してからcanonicalとcodeを同じ修正工程で直す。前述の例外的STOP条件は維持する。
+
+70〜80点を目標とする段階でも、次を意図的に残してはならない。これらは完成度とは別の最低限の安全・事実性条件とする。
+
+- 明白なデータ破壊。
+- secret漏洩。
+- 取り返しのつかない誤った外部effect。
+- dummy / noop / fake successによる完成偽装。
+- scope外Ownerへの責務移転。
+- 未実装を成功として返すfallback。
+- destructive Git操作による進行。
+
+Implementation completionは「全て完璧」ではなく、設計された責務の主要経路がproduction codeとして一通り成立した状態とする。Test completionは実装後の検証で発見した穴を修正し、対象Issueの受入条件を満たした状態とする。Final acceptanceは、本節で定義した親Issue単位の最終pytest / Ruff / strict Mypy / compileall / diff-check、正式CI、独立レビューを通した状態とする。段階途中の完成を最終受入やIssue全体の完成へ読み替えない。
+
 ### 全面品質検査・CI・独立レビュー
 
 正式なfull pytest、Ruff、strict Mypy、compileall、`git diff --check`は、製造Issueの実装完了後のTest工程で原則1回とする。設計途中、内部の子作業、各commit、各小変更の定例検査にしない。実装中は具体的な故障原因を切り分ける最小診断を許容するが、全面検査の反復を通常の実装ループにしない。
