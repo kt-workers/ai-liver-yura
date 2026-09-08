@@ -5,14 +5,20 @@ import json
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 import pytest_asyncio
 import yaml
 
+from app.bootstrap import MinimumCoreApplication
+from app.domain.contracts.common import JsonValue
 from app.domain.executive import GoalTransitionOperation
 from app.domain.memory import MemoryWriteRequest
-from app.infrastructure.persistence import SnapshotPersistenceRetryPolicy
+from app.infrastructure.persistence import (
+    PostgresPersistenceRuntime,
+    SnapshotPersistenceRetryPolicy,
+)
 from app.infrastructure.persistence.postgresql_connection import PostgresDatabase, PostgresEndpoint
 from app.subsystems.validation import persistence as lab
 from app.subsystems.validation.contracts import LabMode, LabPolicy, RunStatus
@@ -281,3 +287,75 @@ async def test_repeated_cancellation_during_child_start_reaps_process_and_databa
         release.set()
         await runner.close()
     assert not (asyncio.all_tasks() - baseline)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "boundary", ["seed_stop", "database_created", "child_started", "child_finished"]
+)
+async def test_config_change_after_seed_rejects_original_fixture(
+    endpoint: PostgresEndpoint,
+    boot_config: Path,
+    allocated_databases: list[lab._Database],
+    monkeypatch: pytest.MonkeyPatch,
+    boundary: str,
+) -> None:
+    settings, case = make_case(endpoint, boot_config, PersistenceScenario.RESTART)
+    target = make_target(settings, case)
+    original = lab._stop
+    changed = False
+
+    def mutate() -> None:
+        nonlocal changed
+        if not changed:
+            config = yaml.safe_load(boot_config.read_text())
+            config["config_revision"] += 1
+            boot_config.write_text(yaml.safe_dump(config))
+            changed = True
+
+    async def stop(app: MinimumCoreApplication, storage: PostgresPersistenceRuntime) -> JsonValue:
+        result = await original(app, storage)
+        mutate()
+        return result
+
+    original_create = lab._Database.create
+
+    async def create(database: lab._Database) -> None:
+        await original_create(database)
+        mutate()
+
+    original_process = asyncio.create_subprocess_exec
+
+    async def process(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
+        result = await original_process(*args, **kwargs)
+        mutate()
+        return result
+
+    original_restore = lab._restore_process
+
+    async def restore(*args: Any, **kwargs: Any) -> JsonValue:
+        result = await original_restore(*args, **kwargs)
+        mutate()
+        return result
+
+    if boundary == "seed_stop":
+        monkeypatch.setattr(lab, "_stop", stop)
+    elif boundary == "database_created":
+        monkeypatch.setattr(lab._Database, "create", create)
+    elif boundary == "child_started":
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", process)
+    else:
+        monkeypatch.setattr(lab, "_restore_process", restore)
+    runner = ValidationRunner((target,), LAB_POLICY)
+    try:
+        result = await runner.run(
+            replace(spec(), target_module="persistence", mode=LabMode.INTEGRATED), case.fixture
+        )
+        assert changed
+        expected = (
+            RunStatus.HARNESS_FAILED if boundary == "child_started" else RunStatus.BLOCKED_UPSTREAM
+        )
+        assert result.status is expected
+        assert all(item.typed_outputs is None for item in result.stage_results)
+    finally:
+        await runner.close()

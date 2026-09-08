@@ -507,6 +507,8 @@ Validation Lab implementation/extensions remain frozen until #445 D1-D9 and fina
 | `final_save_timeout` | 未完了の実Memory書込、設定した最終保存猶予の失敗段階、停止後の資源回収 |
 | `stop_cancelled` | 未完了の実Memory書込、本番停止への取消・再取消、取消の結果と資源回収 |
 
+公開設定は対象登録時にimmutableな値へ固定し、run開始時にはfixtureとも照合する。各本番起動の直前と起動完了後、子プロセス生成直前、最終証拠確定直前に現在の設定を固定値と照合する。子へのpacketにはlive再読込値ではなく固定値を渡し、子もその値に対して起動前の設定を再照合する。途中変更・読取不能を検出した場合は証拠を確定せず、生成済み資源を回収する。親の設定不一致は`BLOCKED_UPSTREAM`、子の起動拒否で正常な通信結果が得られない場合は`HARNESS_FAILED`とし、COMPLETEDへ変換しない。
+
 親と子はrun ID・反復番号・製品HEAD・branchを照合する。正式CIのdetached HEADではbranchを`HEAD`と明示し、架空のbranch名を補わず実SHAで照合する。親は実行前後、子は復元前に製品ソースの来歴を再取得し、子は起動構成も再照合する。子への接続設定は専用pipeだけで渡し、環境変数を継承しない。認証情報・接続先・設定パス・提供元の生例外を結果やstderrへ出さない。公開結果は既存の有限なJSON/Markdown書出しを使い、入力・出力・実測区間を同じrunへ対応付ける。
 
 意図した障害でも、型付き失敗・利用不可・Ownerの拒否は`PRODUCT_FAILED`、取消は`CANCELLED`として保持する。Harnessの構成・投影・子プロセス通信の失敗は`HARNESS_FAILED`と区別する。手順完走を製品の成功へ読み替えず、機械判定は`NOT_RUN`を維持する。INTEGRATEDの主張は本番永続化・起動停止経路に限り、実LLM・音声・外部サービス・人間による会話品質や#586の性能受入へ拡張しない。

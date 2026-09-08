@@ -258,11 +258,26 @@ class _TableLock:
             await _settle(self.task)
 
 
+class _SettingsChanged(ValueError):
+    """fixtureに固定した公開設定が現在の起動構成と一致しない。"""
+
+
+def _check_settings(settings: PersistenceLabSettings, expected: JsonValue) -> None:
+    try:
+        current = settings.public_settings()
+    except (OSError, ValueError):
+        raise _SettingsChanged("記録した起動設定を確認できません") from None
+    if current != expected:
+        raise _SettingsChanged("記録した起動設定が実行中に変更されました")
+
+
 async def _boot(
     settings: PersistenceLabSettings,
     endpoint: PostgresEndpoint,
     epoch: str,
+    expected_settings: JsonValue,
 ) -> tuple[MinimumCoreApplication, PostgresPersistenceRuntime]:
+    _check_settings(settings, expected_settings)
     storage = settings.runtime(endpoint)
     app = await build_persistent_core(
         settings.config_path,
@@ -273,6 +288,7 @@ async def _boot(
     )
     try:
         await app.start()
+        _check_settings(settings, expected_settings)
     except BaseException:
         await _settle(app.stop())
         raise
@@ -419,9 +435,10 @@ async def _restore_process(
     endpoint: PostgresEndpoint,
     query: MemoryRetrievalQuery,
     provenance: ProductionTargetProvenance,
+    expected_settings: JsonValue,
 ) -> JsonValue:
     packet = {
-        "settings": thaw_json(settings.public_settings()),
+        "settings": thaw_json(expected_settings),
         "endpoint": asdict(endpoint),
         "config_path": str(settings.config_path.resolve()),
         "query": thaw_json(_project(query)),
@@ -434,6 +451,7 @@ async def _restore_process(
 
     async def open_process() -> None:
         nonlocal process
+        _check_settings(settings, expected_settings)
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-m",
@@ -477,11 +495,13 @@ def persistence_target(
     provenance: ProductionTargetProvenance,
     contract_revision: str,
 ) -> LabTarget:
+    expected_settings = freeze_json(settings.public_settings())
     registered = {case.fixture.scenario_id: case for case in cases}
     if len(registered) != len(cases):
         raise ValueError("永続化シナリオが重複しています")
 
-    async def run(context: RunContext, fixture: ValidationFixture) -> TargetObservation:
+    async def execute(context: RunContext, fixture: ValidationFixture) -> TargetObservation:
+        _check_settings(settings, expected_settings)
         case = registered.get(fixture.scenario_id)
         if (
             case is None
@@ -496,13 +516,21 @@ def persistence_target(
             and not settings.retry_policy.retry_enabled
         ):
             return TargetObservation(RunStatus.BLOCKED_UPSTREAM, Gate.NOT_RUN, None)
+
+        async def boot(epoch: str) -> tuple[MinimumCoreApplication, PostgresPersistenceRuntime]:
+            _check_settings(settings, expected_settings)
+            return await context.invoke_product(
+                "persistence.product_boot",
+                lambda: _boot(settings, database.endpoint, epoch, expected_settings),
+            )
+
         database = _Database(settings)
         context.add_cleanup("persistence.database", database.close)
         await context.stage("persistence.database.create", database.create)
         outputs: dict[str, JsonValue] = {"scenario": case.scenario.value, "parent_pid": os.getpid()}
-        first, storage = await context.invoke_product(
+        first, storage = await context.stage(
             "persistence.boot",
-            lambda: _boot(settings, database.endpoint, context.run_id + "-seed"),
+            lambda: boot(context.run_id + "-seed"),
         )
         await _register_application(context, "persistence.seed.close", first, storage)
         outputs["seed"] = await context.stage(
@@ -515,7 +543,7 @@ def persistence_target(
             outputs["restart"] = await context.stage(
                 "persistence.process.restore",
                 lambda: _restore_process(
-                    context, settings, database.endpoint, case.query, provenance
+                    context, settings, database.endpoint, case.query, provenance, expected_settings
                 ),
             )
         elif case.scenario in {
@@ -523,9 +551,9 @@ def persistence_target(
             PersistenceScenario.RECONNECT,
         }:
             await database.allow_connections(False)
-            second, recovered = await context.invoke_product(
+            second, recovered = await context.stage(
                 "persistence.failed_boot",
-                lambda: _boot(settings, database.endpoint, context.run_id + "-failed"),
+                lambda: boot(context.run_id + "-failed"),
             )
             await _register_application(context, "persistence.recovered.close", second, recovered)
             outputs["failed_boot"] = freeze_json(_state(second, recovered))
@@ -551,16 +579,16 @@ def persistence_target(
             outputs["restart"] = await context.stage(
                 "persistence.process.restore",
                 lambda: _restore_process(
-                    context, settings, database.endpoint, case.query, provenance
+                    context, settings, database.endpoint, case.query, provenance, expected_settings
                 ),
             )
         elif case.scenario is PersistenceScenario.RESTORE_FAILURE:
             lock = _TableLock(database.endpoint, settings.connection_policy, "lifecycle_snapshots")
             context.add_cleanup("persistence.restore_lock", lock.close)
             await context.stage("persistence.restore_lock.acquire", lock.start)
-            second, recovered = await context.invoke_product(
+            second, recovered = await context.stage(
                 "persistence.failed_restore",
-                lambda: _boot(settings, database.endpoint, context.run_id + "-failed"),
+                lambda: boot(context.run_id + "-failed"),
             )
             await _register_application(context, "persistence.recovered.close", second, recovered)
             outputs["failed_boot"] = freeze_json(_state(second, recovered))
@@ -575,16 +603,16 @@ def persistence_target(
             outputs["restart"] = await context.stage(
                 "persistence.process.restore",
                 lambda: _restore_process(
-                    context, settings, database.endpoint, case.query, provenance
+                    context, settings, database.endpoint, case.query, provenance, expected_settings
                 ),
             )
         elif case.scenario in {
             PersistenceScenario.FINAL_SAVE_TIMEOUT,
             PersistenceScenario.STOP_CANCELLED,
         }:
-            second, recovered = await context.invoke_product(
+            second, recovered = await context.stage(
                 "persistence.stop_boot",
-                lambda: _boot(settings, database.endpoint, context.run_id + "-stop"),
+                lambda: boot(context.run_id + "-stop"),
             )
             await _register_application(context, "persistence.recovered.close", second, recovered)
             lock = _TableLock(database.endpoint, settings.connection_policy, "memory_records")
@@ -629,8 +657,15 @@ def persistence_target(
         if not _current_provenance(settings, provenance):
             return TargetObservation(RunStatus.BLOCKED_UPSTREAM, Gate.NOT_RUN, None)
         await database.close()
+        _check_settings(settings, expected_settings)
         outputs["database_reclaimed"] = not database.created
         return TargetObservation(_reported_status(outputs), Gate.NOT_RUN, freeze_json(outputs))
+
+    async def run(context: RunContext, fixture: ValidationFixture) -> TargetObservation:
+        try:
+            return await execute(context, fixture)
+        except _SettingsChanged:
+            return TargetObservation(RunStatus.BLOCKED_UPSTREAM, Gate.NOT_RUN, None)
 
     return LabTarget(
         "persistence", contract_revision, frozenset({LabMode.INTEGRATED}), (), provenance, run

@@ -86,7 +86,9 @@ async def restore(packet: dict[str, Any]) -> dict[str, object]:
     )
     if provenance.git_head != expected["git_head"] or provenance.branch != expected["branch"]:
         raise ValueError("親と子の製品ソースが一致しません")
-    app, storage = await _boot(settings, settings.admin_endpoint, packet["run_id"] + "-child")
+    app, storage = await _boot(
+        settings, settings.admin_endpoint, packet["run_id"] + "-child", freeze_json(raw)
+    )
     try:
         if app.memory is None:
             raise ValueError("本番の記憶接続がありません")
