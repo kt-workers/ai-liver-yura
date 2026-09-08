@@ -114,6 +114,7 @@ class AttentionTurnStore:
                 last_selected_priority=None,
                 priority_burst=0,
                 cooldowns=(),
+                last_selected_epochs=(),
                 updated_at=occurred_at,
             )
             self._policy = policy
@@ -370,6 +371,8 @@ class AttentionTurnStore:
                 return None
             selected = ordered[0]
             next_epoch = state.selection_epoch + 1
+            history = dict(state.last_selected_epochs)
+            history[selected.source_ref] = next_epoch
             same_burst = (
                 state.same_source_burst + 1
                 if state.last_selected_source_ref == selected.source_ref
@@ -392,6 +395,7 @@ class AttentionTurnStore:
                 state.source_context_revision,
                 now,
                 selection_epoch=next_epoch,
+                last_selected_epochs=tuple(history.items()),
                 last_selected_source_ref=selected.source_ref,
                 same_source_burst=same_burst,
                 last_selected_priority=selected.effective_priority,
@@ -506,7 +510,7 @@ class AttentionTurnStore:
         candidates = self._apply_priority_fairness(state, candidates)
         return sorted(
             candidates,
-            key=lambda source: (-source.effective_priority, source.occurred_at, source.source_ref),
+            key=lambda source: self._fairness_order(state, source),
         )
 
     def _ordered_claimable(
@@ -532,7 +536,22 @@ class AttentionTurnStore:
         candidates = self._apply_priority_fairness(state, candidates)
         return sorted(
             candidates,
-            key=lambda source: (-source.effective_priority, source.occurred_at, source.source_ref),
+            key=lambda source: self._fairness_order(state, source),
+        )
+
+    def _fairness_order(
+        self, state: AttentionFocusState, source: AttentionSource
+    ) -> tuple[int, bool, int, datetime, str]:
+        continuing = (
+            state.last_selected_source_ref == source.source_ref
+            and state.same_source_burst < self._policy.max_same_source_burst
+        )
+        return (
+            -source.effective_priority,
+            not continuing,
+            dict(state.last_selected_epochs).get(source.source_ref, 0),
+            source.occurred_at,
+            source.source_ref,
         )
 
     def _apply_priority_fairness(
@@ -550,8 +569,18 @@ class AttentionTurnStore:
         ]
         if not lower:
             return candidates
-        highest_lower = max(source.effective_priority for source in lower)
-        return [source for source in lower if source.effective_priority is highest_lower]
+        history = dict(state.last_selected_epochs)
+        return [
+            min(
+                lower,
+                key=lambda source: (
+                    history.get(source.source_ref, 0),
+                    -source.effective_priority,
+                    source.occurred_at,
+                    source.source_ref,
+                ),
+            )
+        ]
 
     @staticmethod
     def _active(source: AttentionSource, now: datetime) -> bool:
@@ -658,6 +687,16 @@ class AttentionTurnStore:
         updated_at: datetime,
         **changes: Any,
     ) -> AttentionFocusState:
+        if "sources" in changes:
+            refs = {source.source_ref for source in changes["sources"]}
+            changes["last_selected_epochs"] = tuple(
+                (ref, epoch) for ref, epoch in state.last_selected_epochs if ref in refs
+            )
+            changes["cooldowns"] = tuple(
+                item
+                for item in changes.get("cooldowns", state.cooldowns)
+                if item.source_ref in refs
+            )
         return replace(
             state,
             revision=state.revision + 1,
