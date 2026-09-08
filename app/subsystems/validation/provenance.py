@@ -35,7 +35,7 @@ def capture_production_provenance(
         return result.stdout.strip()
 
     head = git("rev-parse", "HEAD")
-    branch = git("symbolic-ref", "--short", "HEAD")
+    branch = git("rev-parse", "--abbrev-ref", "HEAD")
     for path in source_paths:
         if not git("ls-tree", "--name-only", "HEAD", "--", path):
             raise ValueError("製品ソースがcommitに存在しません")
