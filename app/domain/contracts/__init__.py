@@ -12,6 +12,17 @@ from .common import (
     SourceLifecycleOperation,
 )
 from .execution import AsyncWorkResult, AsyncWorkStatus, ExecutionResult, ExecutionStatus
+from .finalization import (
+    AuthorityFinalizationFence,
+    AuthorityFinalizationOperation,
+    AuthorityFinalizationParticipant,
+    AuthorityFinalizationRequest,
+    AuthorityFinalizationResult,
+    AuthorityGenerationToken,
+    AuthorityReadPublication,
+    FinalizationError,
+    FinalizationFailure,
+)
 from .messaging import EventEnvelope, ExecutiveDecision, SystemCommand
 from .snapshots import (
     DEFAULT_SNAPSHOT_STABILIZATION_POLICY,
@@ -26,6 +37,15 @@ from .snapshots import (
 )
 
 __all__ = [
+    "AuthorityFinalizationFence",
+    "AuthorityFinalizationOperation",
+    "AuthorityFinalizationParticipant",
+    "AuthorityFinalizationRequest",
+    "AuthorityFinalizationResult",
+    "AuthorityGenerationToken",
+    "AuthorityReadPublication",
+    "FinalizationError",
+    "FinalizationFailure",
     "AsyncWorkResult",
     "AsyncWorkStatus",
     "AuthorityRef",

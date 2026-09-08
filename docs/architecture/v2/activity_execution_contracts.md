@@ -80,7 +80,7 @@ Portは次の`ExecutionAdapterReport`を返す。
 - strict details
 - typed effect evidence
 
-report identity不一致、時刻逆行、非法edge、Capability binding・descriptor revision・operationと一致しないeffect証拠はAuthorityが拒否する。空report、runtime型不正、非法report系列もCoordinatorが例外を外へ漏らさず、既発effectを保持したtyped `FAILED`へ閉じる。例外本文・credential・payloadをActual Factやdiagnosticsへコピーせず、closed failure codeへ変換する。
+report identity不一致、時刻逆行、非法edge、Capability binding・descriptor revision・operationと一致しないeffect証拠はAuthorityが拒否する。空report、runtime型不正、非法report系列もCoordinatorが例外を外へ漏らさず、既発effectを保持したtyped `FAILED`へ閉じる。提供先の返却後に報告系列が`OBSERVABLE / APPLIED`等の非終端で終わっている場合も報告契約違反として閉じ、確認済みeffectを保持し、未確定性を`UNKNOWN`として記録する。提供先が終了した実行を非終端のまま残さない。例外本文・credential・payloadをActual Factやdiagnosticsへコピーせず、closed failure codeへ変換する。
 
 ## 7. 取消と並行性
 
