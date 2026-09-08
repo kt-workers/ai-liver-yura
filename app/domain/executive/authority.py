@@ -1,9 +1,17 @@
 from __future__ import annotations
 
-from threading import Lock
+from dataclasses import dataclass
+from datetime import datetime
 
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json
+from app.domain.contracts.finalization import (
+    AuthorityFinalizationOperation,
+    AuthorityFinalizationParticipant,
+    FinalizationError,
+    FinalizationFailure,
+    authority_mutation,
+)
 from app.domain.plan_execution.contracts import (
     _AUTHORIZATION_PROOF,
     PlanExecutionAuthorization,
@@ -23,13 +31,35 @@ from .contracts import (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class ExecutiveFinalizationInput:
+    """共通Fenceへ渡す既存判断確定の入力。要件の意味導出は行わない。"""
+
+    candidate: ExecutiveDecisionCandidate
+    snapshot: ExecutiveContextSnapshot
+    current: ExecutiveCommitState
+    decision_id: str
+
+
 class ExecutiveDecisionAuthority:
     """同一triggerの意思決定を高々1件だけ確定する同期commit authority。"""
 
     def __init__(self) -> None:
         self._committed_triggers: set[str] = set()
-        self._lock = Lock()
+        self._participant = AuthorityFinalizationParticipant(self, "ExecutiveDecisionAuthority", 70)
+        self._lock = self._participant
+        self._finalization_operation = self._participant.register_operation(
+            self,
+            "executive_commit",
+            self._finalize_commit,
+        )
 
+    @property
+    def finalization_participant(self) -> AuthorityFinalizationParticipant:
+        """元所有者の読取と更新に共通する同期境界を公開する。"""
+        return self._participant
+
+    @authority_mutation
     def commit(
         self,
         candidate: ExecutiveDecisionCandidate,
@@ -285,3 +315,29 @@ class ExecutiveDecisionAuthority:
     def has_committed(self, trigger_id: str) -> bool:
         with self._lock:
             return trigger_id in self._committed_triggers
+
+    @property
+    def finalization_operation(
+        self,
+    ) -> AuthorityFinalizationOperation[ExecutiveFinalizationInput, CommittedExecutiveDecision]:
+        return self._finalization_operation
+
+    def _finalize_commit(
+        self,
+        value: ExecutiveFinalizationInput,
+        committed_at: datetime,
+    ) -> CommittedExecutiveDecision:
+        if not isinstance(value, ExecutiveFinalizationInput):
+            raise FinalizationError(FinalizationFailure.TARGET_REJECTED)
+        if self.has_committed(value.snapshot.trigger_id):
+            raise FinalizationError(FinalizationFailure.TARGET_ALREADY_FINALIZED)
+        try:
+            return self.commit(
+                value.candidate,
+                value.snapshot,
+                current=value.current,
+                decision_id=value.decision_id,
+                committed_at=committed_at,
+            )
+        except ValueError:
+            raise FinalizationError(FinalizationFailure.TARGET_REJECTED) from None

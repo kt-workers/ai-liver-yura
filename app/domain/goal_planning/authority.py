@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
-from threading import Lock
 
 from app.domain.brain_operational_bounds import (
     V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
     BrainOperationalBoundsPolicy,
 )
 from app.domain.contracts.common import require_aware, require_identifier, utc_instant
+from app.domain.contracts.finalization import (
+    AuthorityFinalizationParticipant,
+    AuthorityReadPublication,
+    authority_mutation,
+)
 from app.domain.goals import GoalStatus
 
 from .bounds import validate_plan_bounds, validate_planning_context_bounds
@@ -26,8 +30,15 @@ class GoalPlanningAuthority:
     def __init__(self) -> None:
         self._plans: dict[str, ActivityPlan] = {}
         self._current_plans: dict[str, str] = {}
-        self._lock = Lock()
+        self._participant = AuthorityFinalizationParticipant(self, "GoalPlanningAuthority", 30)
+        self._lock = self._participant
 
+    @property
+    def finalization_participant(self) -> AuthorityFinalizationParticipant:
+        """元所有者の読取と更新に共通する同期境界を公開する。"""
+        return self._participant
+
+    @authority_mutation
     def commit(
         self,
         candidate: GoalPlanningCandidate,
@@ -159,3 +170,11 @@ class GoalPlanningAuthority:
         for blocker_id in candidate.impossibility_blocker_ids:
             if blocker_id not in initial or live.get(blocker_id) != initial[blocker_id]:
                 raise ValueError("planning blocker changed while planning")
+
+    def current_plan_publication(
+        self, goal_id: str
+    ) -> AuthorityReadPublication[ActivityPlan | None]:
+        with self._participant:
+            return AuthorityReadPublication(
+                self.current_plan(goal_id), (self._participant.token(),)
+            )

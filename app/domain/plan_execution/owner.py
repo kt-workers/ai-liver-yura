@@ -6,7 +6,6 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from threading import Lock
 from typing import Protocol
 from uuid import uuid4
 
@@ -34,8 +33,22 @@ from app.domain.contracts.common import (
     thaw_json,
     utc_instant,
 )
+from app.domain.contracts.finalization import (
+    AuthorityFinalizationParticipant,
+    AuthorityReadPublication,
+    FinalizationError,
+    FinalizationFailure,
+    authority_mutation,
+    authority_read_set,
+)
 from app.domain.goal_planning import ActivityPlan, GoalPlanningAuthority, PlanFailurePolicy
-from app.domain.goals import GoalCommitmentSnapshot, GoalState, GoalStatus, InterruptionPolicy
+from app.domain.goals import (
+    GoalCommitmentSnapshot,
+    GoalCommitmentStore,
+    GoalState,
+    GoalStatus,
+    InterruptionPolicy,
+)
 
 from .contracts import (
     PlanExecutionAuthorization,
@@ -157,12 +170,32 @@ class PlanExecutionOwner:
         self._plans: dict[str, _RegisteredPlan] = {}
         self._finished_without_record: set[str] = set()
         self._dispatching: set[str] = set()
-        self._lock = Lock()
+        self._participant = AuthorityFinalizationParticipant(
+            self,
+            "PlanExecutionOwner",
+            20,
+            supports_finalization=isinstance(goals, GoalCommitmentStore),
+        )
+        self._lock = self._participant
+        if isinstance(goals, GoalCommitmentStore):
+            self._participant.configure_dependencies(
+                (
+                    planning.finalization_participant,
+                    goals.finalization_participant,
+                    activity.finalization_participant,
+                )
+            )
+
+    @property
+    def finalization_participant(self) -> AuthorityFinalizationParticipant:
+        """元所有者の読取と更新に共通する同期境界を公開する。"""
+        return self._participant
 
     @property
     def activity_authority(self) -> ActivityExecutionAuthority:
         return self._activity
 
+    @authority_mutation
     def prepare_scope(
         self,
         plan: ActivityPlan,
@@ -240,6 +273,7 @@ class PlanExecutionOwner:
             self._plans[scope.scope_id] = _RegisteredPlan(scope, goal, facts)
             return scope
 
+    @authority_mutation
     def activate(self, authorization: PlanExecutionAuthorization, now: datetime) -> None:
         require_aware(now, "now")
         if not isinstance(authorization, PlanExecutionAuthorization):
@@ -263,6 +297,7 @@ class PlanExecutionOwner:
             item.authorization = authorization
             item.last_confirmed_at = now
 
+    @authority_mutation
     def reserve_ready(
         self,
         scope_id: str,
@@ -379,6 +414,7 @@ class PlanExecutionOwner:
         with self._lock:
             return self._observation(self._require(scope_id))
 
+    @authority_mutation
     def apply_assessment(self, assessment: PlanProgressAssessment) -> PlanExecutionProgress:
         if not isinstance(assessment, PlanProgressAssessment):
             raise ValueError("判断所有者の確定した完了評価が必要です")
@@ -393,16 +429,19 @@ class PlanExecutionOwner:
                 item.last_confirmed_at = assessment.committed_at
             return self._progress(item)
 
+    @authority_mutation
     def progress(self, scope_id: str) -> PlanExecutionProgress:
         with self._lock:
             return self._progress(self._require(scope_id))
 
+    @authority_mutation
     def stop(self, scope_id: str) -> PlanExecutionProgress:
         with self._lock:
             item = self._require(scope_id)
             item.stopped = True
             return self._progress(item)
 
+    @authority_mutation
     def retire(self, scope_id: str) -> None:
         with self._lock:
             item = self._require(scope_id)
@@ -424,6 +463,7 @@ class PlanExecutionOwner:
             )
             del self._plans[scope_id]
 
+    @authority_mutation
     def _finish_dispatch(self, invocation: ActivityInvocation) -> None:
         """所有接続処理が呼出しを回収した後、未受付の予約を終える。"""
         with self._lock:
@@ -548,3 +588,22 @@ class PlanExecutionOwner:
         return PlanExecutionProgress(
             item.scope.scope_id, status, tuple(sorted(item.completed)), commands, reason
         )
+
+    def scope_publication(self, scope_id: str) -> AuthorityReadPublication[PlanExecutionScope]:
+        with authority_read_set(self._publication_participants()) as participants:
+            item = self._require(scope_id)
+            if item.stopped or not self._valid_target(item):
+                raise FinalizationError(FinalizationFailure.TARGET_REJECTED)
+            return AuthorityReadPublication(item.scope, tuple(p.token() for p in participants))
+
+    def observation_publication(
+        self, scope_id: str
+    ) -> AuthorityReadPublication[PlanProgressContext]:
+        with authority_read_set(self._publication_participants()) as participants:
+            value = self._observation(self._require(scope_id))
+            return AuthorityReadPublication(value, tuple(p.token() for p in participants))
+
+    def _publication_participants(self) -> tuple[AuthorityFinalizationParticipant, ...]:
+        if not isinstance(self._goals, GoalCommitmentStore):
+            raise FinalizationError(FinalizationFailure.PARTICIPANT_UNSUPPORTED)
+        return (self._participant, *self._participant.dependencies)
