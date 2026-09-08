@@ -887,3 +887,55 @@ async def test_malformed_adapter_output_becomes_typed_failure(reports: object) -
     ).execute(invocation())
     assert record.result.status is ExecutionStatus.FAILED
     assert record.result.to_dict()["details"] == {"code": "adapter_contract_failure"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "kind"),
+    [
+        (ExecutionStatus.OBSERVABLE, ExecutionEffectKind.OBSERVABLE),
+        (ExecutionStatus.APPLIED, ExecutionEffectKind.APPLIED),
+    ],
+)
+@pytest.mark.parametrize("report_seconds", [2, 10])
+async def test_provider_return_without_terminal_report_keeps_effect_and_closes_failure(
+    status: ExecutionStatus,
+    kind: ExecutionEffectKind,
+    report_seconds: int,
+) -> None:
+    from app.domain.activity_execution import ExecutionEffectUncertainty
+
+    class Preflight:
+        async def current_for(self, item: ActivityInvocation) -> ExecutionPreflightSnapshot:
+            return preflight()
+
+    class Port:
+        async def execute(
+            self,
+            request: ExecutionDispatchRequest,
+            cancellation: ExecutionCancellationSignal,
+        ) -> Sequence[ExecutionAdapterReport]:
+            return (
+                ExecutionAdapterReport(
+                    request.invocation.command.command_id,
+                    request.invocation.invocation_id,
+                    request.dispatch_id,
+                    status,
+                    NOW + timedelta(seconds=report_seconds),
+                    {},
+                    (effect(kind=kind),),
+                ),
+            )
+
+    authority = ActivityExecutionAuthority()
+    coordinator = ActivityExecutionCoordinator(Preflight(), Port(), authority, Clock())
+    record = await coordinator.execute(invocation())
+    assert record.terminal
+    assert record.result.status is ExecutionStatus.FAILED
+    assert record.result.effect_refs == ("effect-1",)
+    assert record.effect_uncertainty is ExecutionEffectUncertainty.UNKNOWN
+    assert record.result.occurred_at >= NOW + timedelta(seconds=report_seconds)
+    assert record.result.to_dict()["details"] == {"code": "adapter_contract_failure"}
+    assert authority.snapshot("command-1") == record
+    assert coordinator._adapter_tasks == {}
+    assert coordinator._signals == {}
