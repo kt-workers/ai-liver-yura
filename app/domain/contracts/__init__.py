@@ -24,6 +24,16 @@ from .finalization import (
     FinalizationFailure,
 )
 from .messaging import EventEnvelope, ExecutiveDecision, SystemCommand
+from .preconditions import (
+    PreconditionFailure,
+    PreconditionObservation,
+    PreconditionReadError,
+    PreconditionSourceBinding,
+    PreconditionSourceReader,
+    PreconditionSourceRef,
+    PreconditionSourceRegistration,
+    PreconditionSourceRouter,
+)
 from .snapshots import (
     DEFAULT_SNAPSHOT_STABILIZATION_POLICY,
     SnapshotGenerationSample,
@@ -37,6 +47,14 @@ from .snapshots import (
 )
 
 __all__ = [
+    "PreconditionFailure",
+    "PreconditionObservation",
+    "PreconditionReadError",
+    "PreconditionSourceBinding",
+    "PreconditionSourceReader",
+    "PreconditionSourceRef",
+    "PreconditionSourceRegistration",
+    "PreconditionSourceRouter",
     "AuthorityFinalizationFence",
     "AuthorityFinalizationOperation",
     "AuthorityFinalizationParticipant",
