@@ -319,3 +319,24 @@ Foundationは具体的なExecutive・Goal Planning・Plan Execution・Activity E
 取得後の未宣言読取や出典書込みは`INVALID_LOCK_CONFIGURATION`で拒否する。確定操作へ入った後に発見した取得設定違反は、状態未更新と決めつけず対象を利用不能・失効へ移す。その他の予期しない確定例外は`TARGET_COMMIT_FAULT`とし、どちらも公開済み状態を巻き戻さない。
 
 責務内の試験は`tests/domain/contracts/test_finalization.py`で管理する。設計時の競合再現記録と、実装後のTest/Fix・CI・独立レビューの証拠を区別し、後者の現在値は#632の最終Checkpointで照合する。
+
+## 条件の実測source bindingと公開境界（#644）
+
+`app/domain/contracts/preconditions.py`は、条件と正規所有者の明示的な接続形式を提供する。Foundationはidentity・routing・publication形式だけを所有し、predicateを評価しない。条件の意味、current state、actualの導出は各Domain Ownerに残す。`precondition_id`から所有者を推測せず、predicate文字列を任意処理として実行しない。
+
+- `PreconditionSourceRef(owner_id, contract_id)`は実測公開元を識別する。
+- `PreconditionSourceBinding(precondition_id, subject_ref, predicate, source)`は条件のidentityとsourceを固定する。問い合わせにexpectedを持たせず、既存`PreconditionRef`の期待値と分離する。
+- `PreconditionObservation(binding, actual)`は同じidentity・sourceと実測値を保持する。actualは厳密なJSONで、不正型・非有限数・非文字列キーを拒否し、配列・mappingを深く不変化する。JSON深さは32を上限とする。
+- `PreconditionSourceReader.read_current(binding)`は`AuthorityReadPublication[PreconditionObservation]`を返す。所有者は実測値と全出典tokenを同じ同期読取で生成する。Foundationが状態から実測値を代作することはない。
+
+`PreconditionSourceRegistration`はsource、信頼済みreader、正規の`AuthorityFinalizationParticipant`を構成時に固定する。`PreconditionSourceRouter`は登録済みの完全一致するowner/contractだけへ配送する。重複登録、所有者identity不一致、未登録source、不正な公開、条件ID・対象・述語・sourceの戻り値不一致、token欠落を拒否する。既定の登録上限は128、公開JSONのUTF-8上限は65,536 bytesで、構成時に正の整数として明示変更できる。容量超過を切り詰めない。
+
+返されたtoken集合は、登録済みparticipantとその宣言済み依存の閉包に完全一致しなければならない。16を超える参加者は拒否する。公開取得後、既存`authority_read_set`の順序で同期取得し、同じFoundationの#632検査で世代・instance・seal・利用可能性を照合する。世代不一致は`STALE_PUBLICATION`、読取不能は`SOURCE_UNAVAILABLE`等の`PreconditionReadError`へ閉じる。供給元の例外本文を外へ搬送しない。
+
+この読取成功は最終確定を意味しない。呼出し側は実際に使用した公開のtokenを保持し、最終確定時に既存`AuthorityFinalizationFence`へ渡す。読取後の更新を新しいtokenで救済してはならない。Routerはtokenを発行し直さず、返された公開をそのまま保持する。新しい世代機構・Fence・意味Authorityは追加しない。
+
+Routerの登録はimmutableで、同じsource名でも別Owner instanceへ自動追従しない。restart後のOwnerには新しい信頼済み構成が必要であり、旧instanceの公開は新しい構成の登録participantと一致しない。旧Ownerを停止する側は既存契約でparticipantをretireし、旧経路も利用不能にする。旧tokenや期待値を現在のactualとして代用しない。
+
+非同期読取はRouterが子taskを所有し、取消時に取消を伝え、再取消中も完了まで回収する。readerが取消を捕捉して値を返してもRouterは取消を成功へ変換しない。所有者側も自分が生成した子taskや資源を回収する。await中はparticipantを取得しない。
+
+#610のExecutive供給と#329の実行前再検証は、この共通公開から各境界の型へ機械投影できる。具体的なDomain条件・Owner実装・両経路のwiringは本Workで追加していない。試験用の明示的Ownerで境界を検証することと、製品のpredicateを新設することを区別する。`GoalFacts`の移植、expectedからactualへのコピー、未登録時の空factによる成功は行わない。
