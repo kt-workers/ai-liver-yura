@@ -10,7 +10,7 @@ import pytest
 
 from app import bootstrap
 from app.bootstrap import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload
-from app.composition.accepted_input import CoreAcceptedInputStore
+from app.composition.accepted_input import CoreAcceptedInput, CoreAcceptedInputStore
 from app.composition.executive import CoreExecutiveBinding
 from app.composition.executive_input_evidence import CoreExecutiveInputEvidenceReader
 from app.domain.attention import AttentionSource, AttentionSourceKind
@@ -195,7 +195,9 @@ async def test_bounded_retention_preserves_order_and_rejects_replacement() -> No
     store.retain(value.observed, value.result)
     with pytest.raises(ValueError, match="変更できません"):
         store.retain(value.observed, replace(value.result, request_id="different"))
-    assert store.read("event:1", value.result.source_context_revision).result is value.result
+    retained = store.read("event:1", value.result.source_context_revision)
+    assert isinstance(retained, CoreAcceptedInput)
+    assert retained.result is value.result
     other = replace(value.observed, envelope=replace(value.observed.envelope, event_id="other"))
     assert value.result.meaning is not None
     result = replace(
@@ -206,7 +208,9 @@ async def test_bounded_retention_preserves_order_and_rejects_replacement() -> No
     store.retain(other, result)
     with pytest.raises(ValueError, match="保持されていません"):
         store.read("event:1", value.result.source_context_revision)
-    assert store.read("other", result.source_context_revision).result is result
+    retained = store.read("other", result.source_context_revision)
+    assert isinstance(retained, CoreAcceptedInput)
+    assert retained.result is result
 
 
 class PassivePort(Port):
@@ -279,7 +283,9 @@ async def test_minimum_boot_retains_real_success(monkeypatch: pytest.MonkeyPatch
         result = await app.bridge.execute(source, CancellationToken())
         assert result.meaning is not None
         assert app.bridge.inputs is not None
-        assert app.bridge.inputs.read("event-1", context.source_context_revision).result is result
+        retained = app.bridge.inputs.read("event-1", context.source_context_revision)
+        assert isinstance(retained, CoreAcceptedInput)
+        assert retained.result is result
     finally:
         await app.stop()
 

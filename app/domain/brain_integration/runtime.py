@@ -508,14 +508,15 @@ class BrainIntegrationRuntime:
     def _ensure_trace(self, work: BrainIntegrationWork) -> None:
         trace_id = work.envelope.trace_id
         state = self._traces.get(trace_id)
+        root_trigger_id = work.envelope.root_trigger_id or work.envelope.trigger_id
         if state is None:
             state = _TraceState(
-                work.envelope.trigger_id,
+                root_trigger_id,
                 work.envelope.source_event_ids,
             )
             self._traces[trace_id] = state
         else:
-            if state.root_trigger_id != work.envelope.trigger_id:
+            if state.root_trigger_id != root_trigger_id:
                 raise ValueError("同一trace_idでroot triggerを変更できません")
             if state.terminal_outcome is not None:
                 raise ValueError("終了済みtraceへworkを追加できません")

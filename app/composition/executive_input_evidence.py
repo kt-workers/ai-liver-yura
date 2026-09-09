@@ -139,7 +139,7 @@ class CoreExecutiveInputEvidenceReader:
                 )
                 for item in inputs
             ),
-            meaning=inputs[0].result.meaning if len(inputs) == 1 else None,
+            meaning=inputs[0].meaning if len(inputs) == 1 else None,
             facts=tuple(facts.values()),
             capabilities=capabilities.value,
             capability_tokens=capabilities.tokens,
