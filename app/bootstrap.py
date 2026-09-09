@@ -12,11 +12,14 @@ from typing import TypeVar
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.production import create_openai_port_from_environment
 from app.composition.accepted_input import CoreAcceptedInputStore
+from app.composition.cognition import CoreCognitionDelivery
+from app.composition.cognition_configuration import CoreCognitionConfiguration
 from app.composition.goal_persistence import CoreGoalPersistenceBinding
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
 from app.config.minimum_brain import MinimumBrainProductionConfig, load_minimum_brain_config
 from app.domain.activity_execution import ActivityExecutionAuthority
+from app.domain.appraisal import descriptor as appraisal_descriptor
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
@@ -26,8 +29,9 @@ from app.domain.brain_integration import (
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.character.contracts import CharacterDefinitionDocument
 from app.domain.contracts.common import require_identifier
+from app.domain.executive.deliberator import descriptor as executive_descriptor
 from app.domain.goals import GoalCommitmentStore
-from app.domain.input_gateway import NormalizedInputEvent
+from app.domain.input_gateway import InputAdmission, NormalizedInputEvent
 from app.domain.input_meaning import (
     InputMeaningFreshnessStamp,
     InputMeaningInterpretationResult,
@@ -35,6 +39,7 @@ from app.domain.input_meaning import (
     ReferenceContext,
 )
 from app.domain.input_meaning.interpreter import descriptor
+from app.domain.llm import LLMRoleDescriptor
 from app.infrastructure.persistence import PostgresPersistenceRuntime
 from app.runtime.kernel import CancellationToken, SystemRuntimeClock
 from app.runtime.lifecycle import DependencyRetryPolicy, RuntimeLifecycle
@@ -49,6 +54,7 @@ class InputMeaningBrainWorkPayload:
     event: NormalizedInputEvent
     reference_context: ReferenceContext
     request_id: str
+    admission: InputAdmission | None = None
 
 
 class InputMeaningBrainModulePort:
@@ -144,6 +150,7 @@ class MinimumCoreApplication:
     activities: ActivityExecutionAuthority
     input_context: CoreInputReferenceContextBinding
     memory: CoreMemoryPersistenceBinding | None = None
+    cognition: CoreCognitionDelivery | None = None
     _stop_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False, compare=False
     )
@@ -201,14 +208,17 @@ async def _reap_cleanup(task: asyncio.Task[_CleanupResult]) -> None:
     task.result()
 
 
-def build_minimum_core(config_path: Path | None = None) -> MinimumCoreApplication:
+def build_minimum_core(
+    config_path: Path | None = None, *, cognition: CoreCognitionConfiguration | None = None
+) -> MinimumCoreApplication:
     """本番設定を読み、提供サービスの構成不備は既存契約のまま伝える。"""
-    config, character, llm = _load_core(config_path)
-    return _compose_core(config, character, llm, GoalCommitmentStore())
+    config, character, llm = _load_core(config_path, cognition)
+    return _compose_core(config, character, llm, GoalCommitmentStore(), cognition=cognition)
 
 
 def _load_core(
     config_path: Path | None,
+    cognition: CoreCognitionConfiguration | None = None,
 ) -> tuple[MinimumBrainProductionConfig, CharacterDefinitionDocument, LLMRolePort]:
     root = Path(__file__).resolve().parent.parent
     path = (
@@ -218,7 +228,13 @@ def _load_core(
     character = load_character_definition_yaml(
         (root / config.character_definition_path).read_bytes()
     )
-    llm = create_openai_port_from_environment((descriptor(config.input_meaning_policy),))
+    roles: tuple[LLMRoleDescriptor, ...] = (descriptor(config.input_meaning_policy),)
+    if cognition is not None:
+        roles += (
+            appraisal_descriptor(cognition.appraisal_policy),
+            executive_descriptor(cognition.executive_policy),
+        )
+    llm = create_openai_port_from_environment(roles)
     return config, character, llm
 
 
@@ -229,6 +245,7 @@ def _compose_core(
     goals: GoalCommitmentStore | CoreGoalPersistenceBinding,
     memory: CoreMemoryPersistenceBinding | None = None,
     lifecycle: RuntimeLifecycle | None = None,
+    cognition: CoreCognitionConfiguration | None = None,
 ) -> MinimumCoreApplication:
     activities = ActivityExecutionAuthority()
     input_context = CoreInputReferenceContextBinding(
@@ -246,7 +263,13 @@ def _compose_core(
     clock = SystemRuntimeClock()
     lifecycle = lifecycle or RuntimeLifecycle(clock, config.shutdown_policy)
     brain = BrainIntegrationRuntime(clock, config.integration_policy)
-    brain.register_module(BrainIntegrationModule.INPUT_MEANING, bridge)
+    delivery = None
+    if cognition is None:
+        brain.register_module(BrainIntegrationModule.INPUT_MEANING, bridge)
+    else:
+        assert bridge.inputs is not None
+        delivery = cognition.compose(brain, input_context, bridge.inputs, llm, clock)
+        delivery.register(bridge)
     return MinimumCoreApplication(
         config,
         character,
@@ -259,6 +282,7 @@ def _compose_core(
         activities,
         input_context,
         memory,
+        delivery,
     )
 
 
@@ -269,6 +293,7 @@ async def build_persistent_core(
     retry_policy: DependencyRetryPolicy,
     runtime_epoch: str,
     max_pending_memory: int,
+    cognition: CoreCognitionConfiguration | None = None,
 ) -> MinimumCoreApplication:
     """明示された保存実行基盤を所有し、復元した目標を本体へ接続する。"""
     if not isinstance(persistence, PostgresPersistenceRuntime):
@@ -280,7 +305,7 @@ async def build_persistent_core(
         require_identifier(runtime_epoch, "runtime_epoch")
         if not isinstance(retry_policy, DependencyRetryPolicy):
             raise ValueError("保存接続には型付きの再接続方針が必要です")
-        config, character, llm = _load_core(config_path)
+        config, character, llm = _load_core(config_path, cognition)
         shutdown = config.shutdown_policy
         if (
             shutdown.final_persistence_grace_seconds <= 0
@@ -292,7 +317,7 @@ async def build_persistent_core(
         persistence.attach(lifecycle, retry_policy)
         await persistence.start()
         goals = await CoreGoalPersistenceBinding.restore(persistence, runtime_epoch=runtime_epoch)
-        app = _compose_core(config, character, llm, goals, memory, lifecycle)
+        app = _compose_core(config, character, llm, goals, memory, lifecycle, cognition)
         return app
     except BaseException:
 
