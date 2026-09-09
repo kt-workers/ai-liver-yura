@@ -97,3 +97,12 @@ Shutdownはresource dependencyを守る。特にPersistenceを利用するfinal 
 - late resultの非commitとalready-applied effect evidence保持
 - close hook一部失敗でも他resource close実行
 - pending task 0後のみevent loop close
+
+
+## 7. 実行taskの開始前取消（#646）
+
+RuntimeCoordinatorが実行taskを生成した後、そのcoroutineの最初の命令より前に取消される場合も、Runtime自身が終了処理を所有する。coroutine内のfinallyだけに回収を依存させない。
+
+実行taskの終了callbackは、taskが取消済みであり、同じ実体が実行管理記録にまだ登録されている場合に限り、laneのin-flight件数、実行task・入力の管理記録、取消tokenを一度だけ回収する。handlerは呼ばず、CANCELLED結果を一度だけ公開し、laneを起こす。通常完了や実行開始後の取消でfinallyが回収済みなら、callbackは再回収・結果の重複公開を行わない。
+
+この契約は通常のcancel、再取消、shutdownからの取消に共通する。stopの成功条件は既存どおり所有task、待ち行列、in-flight、取消tokenの残存がないことであり、回収不能を成功へ読み替えない。認知・活動等の利用側へtask管理責務を移さない。
