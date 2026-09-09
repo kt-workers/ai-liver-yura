@@ -7,24 +7,37 @@ from app.composition.appraisal import CoreAppraisalBinding
 from app.composition.executive import CoreExecutiveEvidence
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.contracts.common import freeze_json
+from app.domain.contracts.finalization import AuthorityReadPublication
 from app.domain.executive import (
     AuthoritativeIntentRequirements,
+    ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
     ExecutiveFactKind,
     ExecutiveFactRef,
     ExecutiveSourceEvent,
     PreconditionFact,
 )
+from app.domain.plan_execution.contracts import PlanExecutionScope
+from app.domain.plan_execution.progress_contracts import PlanProgressContext
 from app.domain.plugin_registry.authority import PluginRegistryAuthority
 
 
-class CoreExecutiveRequirementsReader(Protocol):
+class CoreExecutivePlanEvidenceReader(Protocol):
+    def plans_for(
+        self,
+        source: AttentionSource,
+    ) -> tuple[tuple[PlanExecutionScope, ...], tuple[PlanProgressContext, ...]]: ...
+
+
+class CoreExecutiveRequirementsPort(Protocol):
     """自己申告に依存しない上流方針と実前提条件を必須とする。"""
 
-    async def preconditions_for(self, source: AttentionSource) -> tuple[PreconditionFact, ...]: ...
+    async def preconditions_for(
+        self, source: AttentionSource
+    ) -> tuple[AuthorityReadPublication[PreconditionFact], ...]: ...
 
     async def requirements_for(
-        self, candidate: ExecutiveDecisionCandidate
+        self, snapshot: ExecutiveContextSnapshot, candidate: ExecutiveDecisionCandidate
     ) -> tuple[AuthoritativeIntentRequirements, ...]: ...
 
 
@@ -34,20 +47,27 @@ class CoreExecutiveInputEvidenceReader:
         inputs: CoreAcceptedInputStore,
         appraisal: CoreAppraisalBinding,
         registry: PluginRegistryAuthority,
-        requirements: CoreExecutiveRequirementsReader,
+        requirements: CoreExecutiveRequirementsPort,
+        *,
+        plans: CoreExecutivePlanEvidenceReader | None = None,
     ) -> None:
         self._inputs = inputs
         self._appraisal = appraisal
         self._registry = registry
         self._requirements = requirements
+        self._plans = plans
 
     async def requirements_for(
-        self, candidate: ExecutiveDecisionCandidate
+        self, snapshot: ExecutiveContextSnapshot, candidate: ExecutiveDecisionCandidate
     ) -> tuple[AuthoritativeIntentRequirements, ...]:
-        return await self._requirements.requirements_for(candidate)
+        return await self._requirements.requirements_for(snapshot, candidate)
 
     async def read(self, source: AttentionSource) -> CoreExecutiveEvidence:
-        preconditions = await self._requirements.preconditions_for(source)
+        precondition_publications = await self._requirements.preconditions_for(source)
+        preconditions = tuple(item.value for item in precondition_publications)
+        plan_scopes, plan_contexts = (
+            ((), ()) if self._plans is None else self._plans.plans_for(source)
+        )
         reference = self._appraisal.current_reference()
         revision = reference.context.source_context_revision
         if source.source_context_revision != revision:
@@ -110,6 +130,7 @@ class CoreExecutiveInputEvidenceReader:
                     ),
                 )
             )
+        capabilities = self._registry.capability_publication()
         return CoreExecutiveEvidence(
             source=source,
             source_events=tuple(
@@ -120,6 +141,12 @@ class CoreExecutiveInputEvidenceReader:
             ),
             meaning=inputs[0].result.meaning if len(inputs) == 1 else None,
             facts=tuple(facts.values()),
-            capabilities=self._registry.capability_descriptors(),
+            capabilities=capabilities.value,
+            capability_tokens=capabilities.tokens,
+            precondition_tokens=tuple(
+                (item.value.precondition_id, item.tokens) for item in precondition_publications
+            ),
             preconditions=preconditions,
+            plan_scopes=plan_scopes,
+            plan_progress_contexts=plan_contexts,
         )

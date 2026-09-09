@@ -89,6 +89,7 @@ class ExecutiveDecisionAuthority:
         self._validate(candidate, snapshot, current)
         tokens = (
             generation.token,
+            *current.evidence_tokens,
             *(
                 t
                 for value in derivations
@@ -140,6 +141,9 @@ class ExecutiveDecisionAuthority:
                     for token in source.tokens:
                         if token._participant.token() != token:
                             raise RequirementsRejected(RequirementsFailureCode.STALE_SOURCE)
+            for token in current.evidence_tokens:
+                if token._participant.token() != token:
+                    raise RequirementsRejected(RequirementsFailureCode.STALE_SOURCE)
             self._validate(candidate, snapshot, current)
             required_precondition_ids = {
                 requirement.precondition_id
@@ -186,6 +190,7 @@ class ExecutiveDecisionAuthority:
                 authorizations,
                 assessments,
                 derivations,
+                current.evidence_tokens,
             )
             self._committed_triggers.add(snapshot.trigger_id)
             return decision

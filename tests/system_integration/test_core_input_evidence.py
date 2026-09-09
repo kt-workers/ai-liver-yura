@@ -16,8 +16,10 @@ from app.composition.executive_input_evidence import CoreExecutiveInputEvidenceR
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json
+from app.domain.contracts.finalization import AuthorityReadPublication
 from app.domain.executive import (
     AuthoritativeIntentRequirements,
+    ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
     GoalTransitionOperation,
     PreconditionFact,
@@ -42,13 +44,15 @@ class Requirements:
         self.fail = False
         self.calls = 0
 
-    async def preconditions_for(self, source: AttentionSource) -> tuple[PreconditionFact, ...]:
+    async def preconditions_for(
+        self, source: AttentionSource
+    ) -> tuple[AuthorityReadPublication[PreconditionFact], ...]:
         if self.fail:
             raise ValueError("前提条件の供給元が未登録です")
         return ()
 
     async def requirements_for(
-        self, candidate: ExecutiveDecisionCandidate
+        self, snapshot: ExecutiveContextSnapshot, candidate: ExecutiveDecisionCandidate
     ) -> tuple[AuthoritativeIntentRequirements, ...]:
         self.calls += 1
         if self.fail:
