@@ -589,7 +589,7 @@ binding 0件は「現在登録された実測factが0件」を意味する。正
 `build_core_executive_input_evidence()`は同じ登録済みReaderを入力根拠・現在要件・計画根拠へ接続する本番構成入口である。規則、実測事実の供給元、計画参照の意味を既定値で補作しない。注意からの自動搬送・全役割の起動登録・判断後の分岐は#611以降の責務に残す。
 
 
-## 25. 通常認知の起動登録と配送（#611）
+## 29. 通常認知の起動登録と配送（#611）
 
 `CoreCognitionConfiguration`は、既存の評価方針・判断方針・Internal State所有者・Attention所有者・ExecutiveRequirementsOwner・PluginRegistryAuthority・実測Routerとbinding・定型評価規則を明示して受け取る。`build_minimum_core(cognition=...)`と`build_persistent_core(cognition=...)`は同じ所有者を各接続へ渡し、INPUT_MEANING・APPRAISAL・EXECUTIVEを既存Brain Runtimeへ登録する。要件方針未登録やOwner欠落は構成失敗とし、実測publicationの取得不能は既存の失敗境界へ伝播する。試験用事実や空の成功を既定値として生成しない。
 
@@ -597,16 +597,31 @@ binding 0件は「現在登録された実測factが0件」を意味する。正
 
 評価は登録済みの既存定型規則で成立する場合に深いLLM評価を省略する。評価確定後は既存Attentionへのofferとclaim、既存Executiveへの配送を行う。入力・評価sourceのofferがOwnerの公開状態へ反映されなければ受付拒否としてFAILEDに閉じ、後続を生成しない。Runtimeの受付拒否も成功判断に変換しない。claim対象なしは新しい判断を生成しない。評価や意味の採用済み事実そのものを、後続の拒否によって取り消したことにはしない。
 
-### 25.1 由来と現在根拠
+### 29.1 由来と現在根拠
 
 traceの開始契機`root_trigger_id`と処理ごとの`trigger_id`を分離する。通常認知のrootは元イベントIDに固定し、Attentionが発行した判断契機へ付け替えない。Runtimeは同じtraceのroot変更を拒否する。判断処理のtriggerはAttentionの選択結果を使い、source event・traceは選択されたsourceの保持済み入力から取得する。選択USER sourceと最新Appraisalの原因イベントが異なる場合も、それぞれの由来を維持する。選択sourceの現在根拠が取得不能なら拒否する。
 
 文脈・Goal・Attentionリビジョンと、評価・Internal State・実測publicationのOwner固有世代は既存接続で検査する。複数の評価が同じ採用前リビジョンを読んでも、先行確定後の古い結果を新しい現在値として共有しない。判断の候補検査・最終Fenceは#610の既存接続へ委譲する。
 
-### 25.2 並行処理と取消
+### 29.2 並行処理と取消
 
 配送は独自のtask・global lockを所有せず、外部意味解析をFOREGROUND_INTERACTION、評価と判断をCOGNITIVE_NORMALへ投入する。遅い評価の待機中も別入力のforeground処理を進められる。全入力に深い評価を強制する直列実行器は作らない。
 
 `cancel_trace()`は対象traceの処理IDだけを既存Runtimeのcancelまたはsupersedeへ渡す。同じtraceの入力sourceと現在評価sourceは、既存Attentionのexpected source revision付きresolveで撤回し、別入力の評価を契機に取り消したsourceを再選択させない。無関係なtraceの処理・sourceは取り消さない。開始前取消・実行中取消・停止時のtask/token回収は採用済み#646を含むKernelに委譲する。終端traceの有界診断履歴と実行中の所有taskを区別する。
 
 この段階は通常認知の構成入口と配送を所有する。具体predicateの意味、Goal選択、Activity実行、Speech生成、Memory保存は各既存Ownerと後続結合の責務である。提供サービスを置換した結合試験を実LLM・Human Verificationの成功へ拡大しない。
+
+
+### 29.3 終端結果と早期sourceの寿命
+
+BrainIntegrationRuntimeがKernelの`next_outcome()`を唯一消費するoutcome pumpを1本所有する。Kernel起動後にpumpを開始し、start完了後にsubmitを受け付ける。Kernelの終端結果とsyntheticな受付拒否・置換結果を共通のBrain終端公開経路へ集約する。同一workのtracked状態を一度だけ終端にし、module terminal observerを一度だけ同期通知してから、不変なBrainIntegrationWorkOutcomeをpublic queueへ公開する。外部`next_outcome()`はこのqueueだけを読む。外部consumerの有無・取消はpumpと回収処理へ影響しない。
+
+observerはstart前にmoduleごとに登録し、元のBrainIntegrationWorkと不変の結果を受け取る。await・I/O・task生成・Domainの意味判断・終了状態の書換えを禁止する。observer例外は最初の失敗を保持して新規submitを拒否し、stopでも通知失敗を報告する。元の終端結果は変更せず公開し、他の受付済み処理の終端通知・回収を継続する。通知失敗を通常の成功へ隠さない。
+
+stopは新規受付を閉じ、Kernel stopの後、受付済みwork全件の終端公開を待ち、pumpをcancel/joinする。再stop・stop呼出側の取消でも同じ所有終了処理を回収する。Kernelのtask/token所有権をBrain側へ移さない。CognitionとAttentionはconsumer taskを作らない。
+
+#611はINPUT_MEANINGのterminal observerを登録する。Gateway ACCEPTEDのTEXT・SPEECH・AUDIO・POINTER・TOUCHを既存projectorでMeaning完了前にAttentionへofferし、その後Runtimeへ渡す。同期submit例外・受付拒否はsubmit_input自身が撤回する。終端がCOMPLETEDで採用meaningを持つ場合だけUSER sourceを保持し、それ以外のFAILED・CANCELLED・TIMED_OUT・STALE・SUPERSEDED・REJECTED、およびCOMPLETEDでmeaningなしの場合は正規resolveで撤回する。cleanupは現在のAttention source/context/revisionを読み、source不在はno-opとする。別traceのsourceや正常Meaningのsourceは撤回しない。
+
+早期sourceは内容の意味を公開しない。意味未確定のsourceがclaimされても、採用済み入力根拠がない判断配送は既存読取境界で拒否する。raw textや仮のStructuredInputMeaningを判断へ代用しない。正常判断完了だけを理由にUSER sourceをresolveせず、Turn・応答義務・後続Speechの寿命は既存Ownerへ残す。
+
+新current Appraisal確定時には古いAPPRAISAL sourceだけを既存のexpected revision付きresolveで撤回してから新sourceをofferする。古い候補をcurrent根拠として再claimせず、正常な連続認知でAPPRAISAL budgetを蓄積消費しない。

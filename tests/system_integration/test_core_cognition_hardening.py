@@ -152,12 +152,10 @@ async def test_attention_capacity_rejection_does_not_start_appraisal(
     owner.offer(UserInteractionAttentionProjector().project(occupied))
     await app.start()
     try:
-        accepted = app.cognition.submit_input(admission(app))
-        assert accepted.accepted
-        outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
-        assert outcome.status is BrainWorkStatus.FAILED
-        assert outcome.module is BrainIntegrationModule.INPUT_MEANING
-        assert [r.role_id for r in port.requests] == ["input_meaning"]
+        with pytest.raises(ValueError, match="注意所有者"):
+            app.cognition.submit_input(admission(app))
+        assert not port.requests
+        assert [s.source_ref for s in owner.snapshot().sources] == ["occupied"]
     finally:
         await app.stop()
 

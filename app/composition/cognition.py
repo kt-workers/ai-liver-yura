@@ -23,6 +23,7 @@ from app.domain.appraisal import AppraisalStateCommit, DeterministicAppraisalRul
 from app.domain.attention import (
     AttentionIngressOperation,
     AttentionIngressSignal,
+    AttentionSource,
     AttentionSourceKind,
     AttentionTurnStore,
 )
@@ -34,7 +35,9 @@ from app.domain.brain_integration import (
     BrainWorkAdmission,
     BrainWorkEnvelope,
     BrainWorkPriority,
+    BrainWorkStatus,
 )
+from app.domain.brain_integration.runtime import BrainIntegrationWorkOutcome
 from app.domain.input_gateway import InputAdmission, InputAdmissionStatus, InputModality
 from app.domain.input_meaning import InputMeaningInterpretationResult
 from app.runtime.kernel import CancellationToken, RuntimeClock
@@ -115,9 +118,13 @@ class CoreCognitionDelivery:
         self._clock = clock
         self._inputs, self._attention_owner = inputs, attention_owner
         self._fast_rules = tuple(fast_rules)
+        self._pending_users: dict[str, AttentionSource] = {}
         self.latest_delivery: CognitionDelivery | None = None
 
     def register(self, input_port: _Module) -> None:
+        self.brain.register_terminal_observer(
+            BrainIntegrationModule.INPUT_MEANING, self._input_terminal
+        )
         self.brain.register_module(
             BrainIntegrationModule.INPUT_MEANING,
             _ForwardingModule(input_port, self._input_completed),
@@ -153,20 +160,6 @@ class CoreCognitionDelivery:
             or admission.event != payload.event
         ):
             raise ValueError("通常認知には一致するGateway採用根拠が必要です")
-        if payload.event.modality in (
-            InputModality.TEXT,
-            InputModality.SPEECH,
-            InputModality.AUDIO,
-            InputModality.POINTER,
-            InputModality.TOUCH,
-        ):
-            signal = UserInteractionAttentionProjector().project(admission)
-            published = self._attention_owner.offer(signal)
-            if not any(
-                source.source_ref == signal.source_ref and source.kind is signal.source_kind
-                for source in published.sources
-            ):
-                raise ValueError("注意所有者が入力sourceを受付しませんでした")
         child = BrainIntegrationWork(
             uuid4().hex,
             BrainIntegrationModule.APPRAISAL,
@@ -177,12 +170,63 @@ class CoreCognitionDelivery:
         )
         self._submit(work, child)
 
+    def _resolve_source(self, source: AttentionSource) -> None:
+        state = self._attention_owner.snapshot()
+        current = next(
+            (
+                s
+                for s in state.sources
+                if s.source_ref == source.source_ref and s.kind is source.kind
+            ),
+            None,
+        )
+        if current is None:
+            return
+        self._attention_owner.resolve(
+            AttentionIngressSignal(
+                uuid4().hex,
+                AttentionIngressOperation.RESOLVE,
+                current.source_ref,
+                current.kind,
+                state.source_context_revision,
+                self._clock.now(),
+                expected_source_revision=current.source_revision,
+            )
+        )
+
+    def _input_terminal(
+        self, work: BrainIntegrationWork, outcome: BrainIntegrationWorkOutcome
+    ) -> None:
+        result = outcome.result
+        successful = (
+            outcome.status is BrainWorkStatus.COMPLETED
+            and isinstance(result, InputMeaningInterpretationResult)
+            and result.meaning is not None
+        )
+        for event_id in work.envelope.source_event_ids:
+            source = self._pending_users.pop(event_id, None)
+            if source is not None and not successful:
+                self._resolve_source(source)
+
+    def _input_finished(self, work: BrainIntegrationWork) -> None:
+        """Runtime所有前の同期失敗を冪等に撤回する。"""
+        for event_id in work.envelope.source_event_ids:
+            source = self._pending_users.pop(event_id, None)
+            if source is not None:
+                self._resolve_source(source)
+
     def _appraisal_completed(self, work: BrainIntegrationWork, result: object) -> None:
         if (
             not isinstance(result, AppraisalStateCommit)
             or self.appraisal.current_commit() != result
         ):
             raise ValueError("現在の採用済み評価と配送対象が一致しません")
+        for source in self._attention_owner.snapshot().sources:
+            if (
+                source.kind is AttentionSourceKind.APPRAISAL
+                and source.source_ref != result.candidate.candidate_id
+            ):
+                self._resolve_source(source)
         published = self.attention.offer_appraisal()
         if not any(
             source.source_ref == result.candidate.candidate_id
@@ -282,11 +326,36 @@ class CoreCognitionDelivery:
             event.envelope.occurred_at,
             root_trigger_id=event.envelope.event_id,
         )
-        return self.brain.submit(
-            BrainIntegrationWork(
-                uuid4().hex, module, lane, envelope, payload, deadline_at=deadline_at
-            )
+        work = BrainIntegrationWork(
+            uuid4().hex, module, lane, envelope, payload, deadline_at=deadline_at
         )
+        if envelope.priority is BrainWorkPriority.DIRECT_USER:
+            if any(
+                s.source_ref == event.envelope.event_id
+                for s in self._attention_owner.snapshot().sources
+            ):
+                raise ValueError("同じ入力sourceは既に登録されています")
+            signal = UserInteractionAttentionProjector().project(admission)
+            published = self._attention_owner.offer(signal)
+            source = next(
+                (
+                    s
+                    for s in published.sources
+                    if s.source_ref == signal.source_ref and s.kind is signal.source_kind
+                ),
+                None,
+            )
+            if source is None:
+                raise ValueError("注意所有者が入力sourceを受付しませんでした")
+            self._pending_users[source.source_ref] = source
+        try:
+            accepted = self.brain.submit(work)
+        except BaseException:
+            self._input_finished(work)
+            raise
+        if not accepted.accepted:
+            self._input_finished(work)
+        return accepted
 
     def cancel_trace(self, trace_id: str, reason: str, *, supersede: bool = False) -> int:
         """同じ追跡の未完処理を既存Runtimeへ取消依頼する。独自taskは増やさない。"""
@@ -294,6 +363,8 @@ class CoreCognitionDelivery:
         trace = self.brain.trace(trace_id)
         count = sum(operation(interval.work_id, reason) for interval in trace.intervals)
         event_ids = set(trace.source_event_ids)
+        for event_id in event_ids:
+            self._pending_users.pop(event_id, None)
         current_appraisal = self.appraisal.current_commit()
         state = self._attention_owner.snapshot()
         for source in state.sources:

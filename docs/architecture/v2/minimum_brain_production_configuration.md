@@ -379,6 +379,6 @@ InputMeaningBrainModulePortはPythonのCancelledErrorを捕捉して通常結果
 
 ## 通常認知を明示する追加構成（#611）
 
-`build_minimum_core`および`build_persistent_core`の任意引数`cognition`へ`CoreCognitionConfiguration`を渡す場合は、既存の入力意味・評価・判断のdescriptorとModuleを登録する。方針・現在状態のOwner・実測source binding・定型規則は配備側が型付き構成として明示する。構成・Ownerの欠落を仮の現在事実や成功へ補完しない。具体的な配送・由来・取消契約は`brain_integration_contracts.md`第25節に従う。
+`build_minimum_core`および`build_persistent_core`の任意引数`cognition`へ`CoreCognitionConfiguration`を渡す場合は、既存の入力意味・評価・判断のdescriptorとModuleを登録する。方針・現在状態のOwner・実測source binding・定型規則は配備側が型付き構成として明示する。構成・Ownerの欠落を仮の現在事実や成功へ補完しない。具体的な配送・由来・取消契約は`brain_integration_contracts.md`第29節に従う。
 
 `cognition`を指定しない既存最小起動とCLIはINPUT_MEANINGのみを登録する。minimum YAMLへ全Roleを必須追加せず、任意提供サービス・Subsystemの不在を起動不能へ変更しない。提供サービス未構成では既存のPROVIDER_UNAVAILABLEを保持し、通常認知でも後続評価・判断を生成しない。構成済み提供サービスの設定不備は従来どおり起動設定失敗とする。
