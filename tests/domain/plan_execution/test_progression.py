@@ -165,7 +165,7 @@ def setup(
         )
         for step in proposed.steps
     )
-    facts = (PlanArgumentFact("goal-1", 1, {"query": "資料"}),)
+    facts = (PlanArgumentFact("goal-1", 1, "資料"),)
     scope = owner.prepare_scope(
         plan, bindings, facts, captured_at=NOW, deadline_at=NOW + timedelta(minutes=1)
     )

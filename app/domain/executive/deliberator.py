@@ -280,9 +280,19 @@ def _validate_snapshot_bounds(
     if snapshot.bounds_provenance != ExecutiveBoundsProvenance.from_policy(policy):
         raise ValueError("Executive容量方針がsnapshotと一致しません")
     bounds = policy.executive
+    from app.domain.activity_binding.validation import validate_publications
+
+    validate_publications(
+        snapshot.activity_bindings,
+        max_count=bounds.max_fact_refs,
+        max_bytes=bounds.max_fact_payload_json_bytes,
+    )
     _at_most(len(snapshot.source_event_ids), bounds.max_source_event_refs, "source event")
     _at_most(
-        len(snapshot.facts) + len(snapshot.plan_scopes) + len(snapshot.plan_progress_contexts),
+        len(snapshot.facts)
+        + len(snapshot.plan_scopes)
+        + len(snapshot.plan_progress_contexts)
+        + len(snapshot.activity_bindings),
         bounds.max_fact_refs,
         "fact",
     )
@@ -485,12 +495,15 @@ def _intent_payload(kind: ExecutiveIntentKind, value: object) -> IntentPayload:
         )
     if kind is ExecutiveIntentKind.ACTIVITY:
         item = _object(
-            value, "activity payload", {"activity_type", "target_ref", "constraint_refs"}
+            value,
+            "activity payload",
+            {"activity_type", "target_ref", "constraint_refs", "binding_ref"},
         )
         return ActivityIntentPayload(
             _string(item["activity_type"], "activity_type"),
             _optional_string(item["target_ref"], "target_ref"),
             _strings(item["constraint_refs"], "constraint_refs"),
+            _optional_string(item["binding_ref"], "binding_ref"),
         )
     item = _object(value, "attention payload", {"target_ref", "mode", "constraint_refs"})
     return AttentionIntentPayload(

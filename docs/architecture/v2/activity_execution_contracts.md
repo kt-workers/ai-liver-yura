@@ -123,3 +123,13 @@ report identity不一致、時刻逆行、非法edge、Capability binding・desc
 計画に由来する命令も既存の事前確認と実行事実の境界を通る。計画全体への承認範囲は`plan_execution_approval_contracts.md`で定義し、未提供能力・失敗・未確認効果を成功へ変更しない。
 
 計画由来の活動要求は`ActivityInvocation.target_ref`に承認済みの対象参照を保持する。操作引数とは独立に不変の要求内容として直列化し、提供先へ伝達する。既存の対象を持たない単独活動では未指定を許す。
+
+## #649 活動bindingの上流境界
+
+`ActivityBindingAuthority`は意識的な活動選択や実行事実を所有しない。信頼済み構成が操作・対象・Capability・引数名と事実参照の対応を明示する。`direct_invocation()`は確定判断の検証済みbindingを読取り、既存`to_system_command()`経由の命令とともに`ActivityInvocation`へ機械投影する。#329のpreflight、取消、効果・実行事実の意味は維持する。#612の実行・還流配線は別途未実装。
+
+`BindingInputPublicationOwner`は実値Ownerに付属する単一公開枠であり、意味変換を行わない。公開はowner identity・fact identity・schema identity・strict revisionを固定し、同一revisionの内容変更を拒否する。値はstrict JSONで不変化する。`ArgumentSourceRelation`は引数名からexact事実参照への対応であり、値の変換・切出し・既定値を持たない。
+
+bindingは一identity一Owner・一公開値とし、履歴を蓄積しない。保持出典・引数数には既存Executive `max_refs_per_intent`、publication件数には`max_fact_refs`、引数と全公開payloadには`max_fact_payload_json_bytes`を適用する。別bindingの更新は独立participantを使い、未宣言の依存を全域失効させない。closeはparticipantを失効させ、旧instanceのtokenを再利用しない。
+
+失敗・同値更新も既存participantの世代を失効させる。binding更新が拒否された場合、旧captureはstaleのままとし、出典tokenが変化していなければ現在のbinding tokenを再取得できる。出典変更を新しいbinding tokenだけで救済しない。再開の機械投影には既存Activity Ownerを明示し、非終端の元要求を取得する。操作・対象・引数・権限の照合は既存PlanExecutionScope / Ownerの検査を維持する。

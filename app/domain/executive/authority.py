@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.domain.activity_binding import ActivityExecutionBindingPublication
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import (
@@ -10,6 +11,7 @@ from app.domain.contracts.finalization import (
     AuthorityFinalizationOperation,
     AuthorityFinalizationParticipant,
     AuthorityFinalizationRequest,
+    AuthorityGenerationToken,
     FinalizationError,
     FinalizationFailure,
     authority_mutation,
@@ -24,6 +26,7 @@ from app.domain.plan_execution.progress_contracts import (
 )
 
 from .contracts import (
+    ActivityIntentPayload,
     CommittedExecutiveDecision,
     ExecutiveCommitState,
     ExecutiveContextSnapshot,
@@ -89,6 +92,8 @@ class ExecutiveDecisionAuthority:
         self._validate(candidate, snapshot, current)
         tokens = (
             generation.token,
+            *self._plan_binding_tokens(candidate, snapshot),
+            *(t for p in self._activity_bindings(candidate, snapshot, current) for t in p.tokens),
             *current.evidence_tokens,
             *(
                 t
@@ -191,9 +196,50 @@ class ExecutiveDecisionAuthority:
                 assessments,
                 derivations,
                 current.evidence_tokens,
+                self._activity_bindings(candidate, snapshot, current),
             )
             self._committed_triggers.add(snapshot.trigger_id)
             return decision
+
+    @staticmethod
+    def _plan_binding_tokens(
+        candidate: ExecutiveDecisionCandidate, snapshot: ExecutiveContextSnapshot
+    ) -> tuple[AuthorityGenerationToken, ...]:
+        refs = {
+            i.payload.scope_ref
+            for i in candidate.intents
+            if isinstance(i.payload, PlanExecutionIntentPayload)
+        }
+        return tuple(
+            t
+            for scope in snapshot.plan_scopes
+            if scope.scope_id in refs
+            for publication in scope.plan.activity_bindings
+            for t in publication.tokens
+        )
+
+    @staticmethod
+    def _activity_bindings(
+        candidate: ExecutiveDecisionCandidate,
+        snapshot: ExecutiveContextSnapshot,
+        current: ExecutiveCommitState,
+    ) -> tuple[ActivityExecutionBindingPublication, ...]:
+        from app.domain.activity_binding.validation import selected_bindings
+
+        requests = tuple(
+            (
+                i.payload.binding_ref,
+                i.payload.activity_type,
+                i.payload.target_ref,
+                None,
+                i.required_capabilities,
+            )
+            for i in candidate.intents
+            if isinstance(i.payload, ActivityIntentPayload)
+        )
+        return selected_bindings(
+            requests, snapshot.activity_bindings, current.activity_bindings, current.capabilities
+        )
 
     @staticmethod
     def _validate(
@@ -201,6 +247,7 @@ class ExecutiveDecisionAuthority:
         snapshot: ExecutiveContextSnapshot,
         current: ExecutiveCommitState,
     ) -> None:
+        ExecutiveDecisionAuthority._activity_bindings(candidate, snapshot, current)
         expected = (
             snapshot.source_context_revision,
             snapshot.goal_revision,
@@ -249,6 +296,8 @@ class ExecutiveDecisionAuthority:
                 scope = captured_scopes.get(intent.payload.scope_ref)
                 if scope is None or live_scopes.get(intent.payload.scope_ref) != scope:
                     raise ValueError("計画承認対象が存在しないか、判断中に変更されています")
+                for publication in scope.plan.activity_bindings:
+                    publication.require_current()
                 revisions = RevisionVector(
                     snapshot.source_context_revision,
                     snapshot.goal_revision,

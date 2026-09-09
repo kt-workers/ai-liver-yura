@@ -1015,3 +1015,9 @@ Persistenceが必要になった場合も、rehydrationはtrusted validation bou
 - ChatGPT Design Reviewでblocking finding 0。
 
 以後 Design → Code を維持する。
+
+## #649 入力契約との読取照合
+
+Plugin Registryの`project_capability()`が公開するoperation_id / input_schema_ref / capability revision / plugin generationをそのまま使い、#649はoperation・schema参照を完全一致で照合する。permission・availability・health・lifecycleはRegistryの既存正本へ残す。
+
+#649 `OperationInputContract`は信頼済みschema登録者が供給するprovider非依存の入力公開契約であり、schema_ref・revision・必須引数名とJSON型を明示する。現在の共通形式は全項目必須・追加項目なしとし、対応できない入力形式を推測して受理しない。schema参照名から形を推論しない。明示した必須引数集合が空で、現在operationのschema参照と世代を検証できる場合だけ空objectを許す。Registry manifestは引数の実値を決めず、実値Ownerも入力形式を変更しない。

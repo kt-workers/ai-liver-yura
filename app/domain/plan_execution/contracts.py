@@ -184,6 +184,20 @@ class PlanExecutionScope:
             size = len(json.dumps(thaw_json(binding.arguments), ensure_ascii=False).encode("utf-8"))
             if size > self.policy.max_arguments_bytes:
                 raise ValueError("操作引数の容量が上限を超えています")
+            publications = [
+                p for p in self.plan.activity_bindings if p.value.binding_id == step.binding_ref
+            ]
+            if len(publications) != 1:
+                raise ValueError("手順の正規引数bindingがありません")
+            publication = publications[0]
+            value = publication.value
+            from app.domain.activity_binding.contracts import canonical
+
+            if canonical(value.arguments) != canonical(binding.arguments) or set(
+                binding.argument_fact_refs
+            ) != {f.reference_id for f in value.sources}:
+                raise ValueError("確定Planの引数bindingと実行束縛が一致しません")
+
         object.__setattr__(self, "bindings", bindings)
         payload_bytes = len(
             json.dumps(

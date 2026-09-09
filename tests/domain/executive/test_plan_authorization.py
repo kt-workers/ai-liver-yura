@@ -210,18 +210,9 @@ def test_failed_authorization_leaves_trigger_available(fault: str) -> None:
     elif fault == "expired":
         timestamp = captured.plan_scopes[0].deadline_at
     elif fault == "unknown_origin":
-        original = captured.plan_scopes[0]
-        invalid = replace(
-            original,
-            bindings=(
-                replace(
-                    original.bindings[0],
-                    argument_fact_refs=("unregistered",),
-                ),
-            ),
+        captured = replace(
+            captured, facts=tuple(f for f in captured.facts if f.fact_id != "goal-1")
         )
-        captured = replace(captured, plan_scopes=(invalid,))
-        current = replace(current, plan_scopes=(invalid,))
     else:
         proposed = replace(
             proposed,

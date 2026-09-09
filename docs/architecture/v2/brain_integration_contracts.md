@@ -625,3 +625,9 @@ stopは新規受付を閉じ、Kernel stopの後、受付済みwork全件の終�
 早期sourceは内容の意味を公開しない。意味未確定のsourceがclaimされても、採用済み入力根拠がない判断配送は既存読取境界で拒否する。raw textや仮のStructuredInputMeaningを判断へ代用しない。正常判断完了だけを理由にUSER sourceをresolveせず、Turn・応答義務・後続Speechの寿命は既存Ownerへ残す。
 
 新current Appraisal確定時には古いAPPRAISAL sourceだけを既存のexpected revision付きresolveで撤回してから新sourceをofferする。古い候補をcurrent根拠として再claimせず、正常な連続認知でAPPRAISAL budgetを蓄積消費しない。
+
+## 30. 操作引数の共通binding Ownerと利用側（#649 / #612）
+
+#649はoperation・target・argumentsを型付き事実と現在の入力契約へ束縛するOwner Work。#612はそのimmutable publicationを取得し、identity・由来・世代を保持する利用側である。#612がpublication生成、operation選択、raw text / purpose / constraint_refsの引数化、欠損の空値補完を行う経路は設けない。
+
+Executiveの選択、Plannerの手順意味、Registryの入力宣言と利用可否、Requirementsの能力・条件、Activityの実行事実の所有権を維持する。#649の公開API完成を#612のproduction wiring完成へ拡大しない。

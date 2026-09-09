@@ -48,6 +48,7 @@ from app.domain.llm import (
     LLMTokenUsage,
     StructuredPayload,
 )
+from tests.helpers.activity_binding import planning_binding
 from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
@@ -75,13 +76,12 @@ def goal() -> GoalState:
 
 
 def capability(*, revision: int = 1, degraded: bool = False) -> CapabilityDescriptor:
-    return CapabilityDescriptor(
-        "cap-research",
-        "research",
-        ("collect",),
-        CapabilityAvailability.DEGRADED if degraded else CapabilityAvailability.AVAILABLE,
-        revision,
-        {},
+    return replace(
+        planning_binding().descriptor,
+        revision=revision,
+        availability=CapabilityAvailability.DEGRADED
+        if degraded
+        else CapabilityAvailability.AVAILABLE,
     )
 
 
@@ -99,6 +99,7 @@ def step(*, dependency_step_ids: tuple[str, ...] = ()) -> ActivityPlanStep:
         InterruptionPolicy.RESUMABLE,
         1,
         True,
+        planning_binding().value.binding_id,
     )
 
 
@@ -134,6 +135,7 @@ def context(*, deterministic: bool = True) -> GoalPlanningContextSnapshot:
         (),
         NOW,
         directive() if deterministic else None,
+        activity_bindings=(planning_binding(),),
     )
 
 
@@ -159,6 +161,7 @@ def current(**changes: object) -> GoalPlanningCommitState:
         "revisions": REVISIONS,
         "goal": goal(),
         "capabilities": (capability(),),
+        "activity_bindings": (planning_binding(),),
         **changes,
     }
     return GoalPlanningCommitState(**values)  # type: ignore[arg-type]
@@ -500,7 +503,12 @@ class FakeLiveState:
 
     async def current_state(self, snapshot: GoalPlanningContextSnapshot) -> GoalPlanningCommitState:
         self.calls += 1
-        return GoalPlanningCommitState(snapshot.revisions, snapshot.goal, snapshot.capabilities)
+        return GoalPlanningCommitState(
+            snapshot.revisions,
+            snapshot.goal,
+            snapshot.capabilities,
+            activity_bindings=snapshot.activity_bindings,
+        )
 
 
 class FailingPort:

@@ -5,6 +5,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol, TypeVar, cast
 
+from app.domain.activity_binding import ActivityExecutionBindingPublication
 from app.domain.contracts import (
     CapabilityDescriptor,
     CapabilityRequirement,
@@ -152,8 +153,11 @@ class ActivityPlanStep:
     interruption_policy: InterruptionPolicy
     retry_limit: int
     replan_on_failure: bool
+    binding_ref: str | None = None
 
     def __post_init__(self) -> None:
+        if self.binding_ref is not None:
+            require_identifier(self.binding_ref, "binding_ref")
         for name in ("step_id", "activity_type", "operation_ref"):
             require_identifier(getattr(self, name), name)
         if self.target_ref is not None:
@@ -186,6 +190,7 @@ class ActivityPlanStep:
     def to_dict(self) -> dict[str, object]:
         return {
             "step_id": self.step_id,
+            "binding_ref": self.binding_ref,
             "activity_type": self.activity_type,
             "operation_ref": self.operation_ref,
             "target_ref": self.target_ref,
@@ -231,7 +236,16 @@ class GoalPlanningContextSnapshot:
     planning_blockers: tuple[PlanningBlocker, ...] = ()
     previous_plan: ActivityPlan | None = None
 
+    activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
+
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "activity_bindings",
+            _owned(
+                self.activity_bindings, ActivityExecutionBindingPublication, "activity_bindings"
+            ),
+        )
         if not isinstance(self.revisions, RevisionVector):
             raise ValueError("revisions must be RevisionVector")
         if self.revisions.goal_revision is None:
@@ -342,6 +356,7 @@ class GoalPlanningContextSnapshot:
             "planning_blockers": [item.to_dict() for item in self.planning_blockers],
             "activities": [item.to_dict() for item in self.activities],
             "captured_at": timestamp_to_json(self.captured_at),
+            "activity_bindings": [p.to_dict() for p in self.activity_bindings],
             "previous_plan": None if self.previous_plan is None else self.previous_plan.to_dict(),
             "deterministic_directive": None
             if self.deterministic_directive is None
@@ -399,7 +414,16 @@ class GoalPlanningCommitState:
     planning_blockers: tuple[PlanningBlocker, ...] = ()
     previous_plan: ActivityPlan | None = None
 
+    activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
+
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "activity_bindings",
+            _owned(
+                self.activity_bindings, ActivityExecutionBindingPublication, "activity_bindings"
+            ),
+        )
         if not isinstance(self.revisions, RevisionVector):
             raise ValueError("revisions must be RevisionVector")
         if not isinstance(self.goal, GoalState):
@@ -427,7 +451,16 @@ class ActivityPlan:
     _proof: InitVar[object | None] = None
     supersedes_plan_id: str | None = None
 
+    activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
+
     def __post_init__(self, _proof: object | None) -> None:
+        object.__setattr__(
+            self,
+            "activity_bindings",
+            _owned(
+                self.activity_bindings, ActivityExecutionBindingPublication, "activity_bindings"
+            ),
+        )
         if _proof is not _PLAN_PROOF:
             raise ValueError("ActivityPlan must be created by GoalPlanningAuthority")
         require_identifier(self.plan_id, "plan_id")
@@ -443,6 +476,7 @@ class ActivityPlan:
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "activity_bindings": [p.to_dict() for p in self.activity_bindings],
             "plan_id": self.plan_id,
             "supersedes_plan_id": self.supersedes_plan_id,
             "candidate": self.candidate.to_dict(),
