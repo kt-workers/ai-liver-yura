@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
-from threading import RLock
 
 from app.domain.contracts import CapabilityAvailability, CapabilityDescriptor
 from app.domain.contracts.common import require_aware, require_revision, utc_instant
+from app.domain.contracts.finalization import (
+    AuthorityFinalizationParticipant,
+    AuthorityReadPublication,
+    authority_mutation,
+)
 
 from .contracts import (
     PluginCapabilityDeclaration,
@@ -48,7 +52,8 @@ class PluginRegistryAuthority:
         self._observations: dict[str, PluginHealthObservation] = {}
         self._grants: PluginPermissionGrantSnapshot | None = None
         self._revision = 0
-        self._lock = RLock()
+        self._participant = AuthorityFinalizationParticipant(self, "PluginRegistryAuthority", 5)
+        self._lock = self._participant
 
     def snapshot(self, captured_at: datetime | None = None) -> PluginRegistrySnapshot:
         when = captured_at or datetime.now(timezone.utc)
@@ -73,6 +78,18 @@ class PluginRegistryAuthority:
     def capability_descriptors(self) -> tuple[CapabilityDescriptor, ...]:
         return self.snapshot().foundation_capabilities
 
+    @property
+    def finalization_participant(self) -> AuthorityFinalizationParticipant:
+        """能力の実状態更新と最終確定に共通する同期境界。"""
+        return self._participant
+
+    def capability_publication(self) -> AuthorityReadPublication[tuple[CapabilityDescriptor, ...]]:
+        with self._participant:
+            return AuthorityReadPublication(
+                self.capability_descriptors(), (self._participant.token(),)
+            )
+
+    @authority_mutation
     def discover(
         self,
         manifest: PluginManifest,
@@ -87,6 +104,7 @@ class PluginRegistryAuthority:
             expected_registry_revision=expected_registry_revision,
         )
 
+    @authority_mutation
     def validate(
         self,
         plugin_id: str,
@@ -102,6 +120,7 @@ class PluginRegistryAuthority:
             expected_registry_revision=expected_registry_revision,
         )
 
+    @authority_mutation
     def register(
         self,
         plugin_id: str,
@@ -117,6 +136,7 @@ class PluginRegistryAuthority:
             expected_registry_revision=expected_registry_revision,
         )
 
+    @authority_mutation
     def register_manifest(
         self,
         manifest: PluginManifest,
@@ -131,6 +151,7 @@ class PluginRegistryAuthority:
             expected_registry_revision=expected_registry_revision,
         )
 
+    @authority_mutation
     def adopt_permission_grants(
         self,
         snapshot: PluginPermissionGrantSnapshot,
@@ -155,6 +176,7 @@ class PluginRegistryAuthority:
             self._advance_revision_if_visible_changed_locked(before)
             return self.snapshot(snapshot.captured_at)
 
+    @authority_mutation
     def apply_health_observation(
         self, observation: PluginHealthObservation
     ) -> PluginRegistrySnapshot:
@@ -192,6 +214,7 @@ class PluginRegistryAuthority:
             self._advance_revision_if_visible_changed_locked(before)
             return self.snapshot(observation.observed_at)
 
+    @authority_mutation
     def begin_stop(
         self,
         plugin_id: str,
@@ -212,6 +235,7 @@ class PluginRegistryAuthority:
             expected_registry_revision=expected_registry_revision,
         )
 
+    @authority_mutation
     def mark_stopped(
         self,
         plugin_id: str,
@@ -227,6 +251,7 @@ class PluginRegistryAuthority:
             expected_registry_revision=expected_registry_revision,
         )
 
+    @authority_mutation
     def unregister(
         self,
         plugin_id: str,

@@ -14,6 +14,7 @@ from app.domain.contracts.common import JsonValue
 from app.domain.contracts.finalization import FinalizationError
 from app.domain.executive import (
     AuthoritativeIntentRequirements,
+    ExecutiveContextSnapshot,
     ExecutiveDecisionAuthority,
     ExecutiveDecisionCandidate,
     ExecutiveSourceEvent,
@@ -52,6 +53,7 @@ class Reader:
 
     async def requirements_for(
         self,
+        snapshot: ExecutiveContextSnapshot,
         candidate: ExecutiveDecisionCandidate,
     ) -> tuple[AuthoritativeIntentRequirements, ...]:
         return self.requirements
@@ -189,7 +191,7 @@ async def test_requirement_read_failure_is_not_replaced_with_empty_requirements(
 
     class FailedReader(Reader):
         async def requirements_for(
-            self, candidate: ExecutiveDecisionCandidate
+            self, snapshot: ExecutiveContextSnapshot, candidate: ExecutiveDecisionCandidate
         ) -> tuple[AuthoritativeIntentRequirements, ...]:
             raise RuntimeError("必須要件を取得できません")
 
@@ -240,7 +242,7 @@ async def test_change_during_requirements_read_is_rechecked() -> None:
 
     class UpdatingReader(Reader):
         async def requirements_for(
-            self, candidate: ExecutiveDecisionCandidate
+            self, snapshot: ExecutiveContextSnapshot, candidate: ExecutiveDecisionCandidate
         ) -> tuple[AuthoritativeIntentRequirements, ...]:
             offer_user(value.attention_owner, value.core)
             return self.requirements

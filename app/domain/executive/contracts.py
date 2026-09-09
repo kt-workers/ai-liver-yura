@@ -19,6 +19,7 @@ from app.domain.contracts.common import (
     timestamp_to_json,
     utc_instant,
 )
+from app.domain.contracts.finalization import AuthorityGenerationToken
 from app.domain.input_meaning import StructuredInputMeaning
 from app.domain.plan_execution.contracts import PlanExecutionAuthorization, PlanExecutionScope
 from app.domain.plan_execution.progress_contracts import (
@@ -264,8 +265,14 @@ class ExecutiveCommitState:
     plan_progress_contexts: tuple[PlanProgressContext, ...] = ()
 
     requirement_derivations: tuple[DerivedIntentRequirements, ...] = ()
+    evidence_tokens: tuple[AuthorityGenerationToken, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "evidence_tokens",
+            _owned(self.evidence_tokens, AuthorityGenerationToken, "evidence_tokens"),
+        )
         object.__setattr__(
             self, "plan_scopes", _validate_plan_scopes(self.plan_scopes, self.bounds_provenance)
         )
@@ -1165,8 +1172,14 @@ class CommittedExecutiveDecision:
     plan_progress_assessments: tuple[PlanProgressAssessment, ...] = ()
 
     requirement_derivations: tuple[DerivedIntentRequirements, ...] = ()
+    evidence_tokens: tuple[AuthorityGenerationToken, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "evidence_tokens",
+            _owned(self.evidence_tokens, AuthorityGenerationToken, "evidence_tokens"),
+        )
         authorizations = _owned(
             self.plan_authorizations, PlanExecutionAuthorization, "plan_authorizations"
         )
@@ -1235,7 +1248,10 @@ class CommittedExecutiveDecision:
             raise ValueError("committed_at cannot predate candidate")
 
     def to_dict(self) -> dict[str, object]:
+        from .requirements import project
+
         return {
+            "evidence_tokens": project(self.evidence_tokens),
             "requirement_derivations": [item.to_dict() for item in self.requirement_derivations],
             "plan_authorizations": [item.to_dict() for item in self.plan_authorizations],
             "plan_progress_assessments": [

@@ -15,6 +15,7 @@ from app.domain.brain_integration import (
 )
 from app.domain.contracts import CapabilityDescriptor, CapabilityRequirement, RevisionVector
 from app.domain.contracts.common import require_identifier
+from app.domain.contracts.finalization import AuthorityGenerationToken
 from app.domain.executive import (
     AuthoritativeIntentRequirements,
     CommittedExecutiveDecision,
@@ -52,6 +53,8 @@ class CoreExecutiveEvidence:
     required_preconditions: tuple[ExecutivePreconditionRequirement, ...] = ()
     plan_scopes: tuple[PlanExecutionScope, ...] = ()
     plan_progress_contexts: tuple[PlanProgressContext, ...] = ()
+    capability_tokens: tuple[AuthorityGenerationToken, ...] = ()
+    precondition_tokens: tuple[tuple[str, tuple[AuthorityGenerationToken, ...]], ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.source, AttentionSource):
@@ -66,6 +69,8 @@ class CoreExecutiveEvidence:
             "required_preconditions",
             "plan_scopes",
             "plan_progress_contexts",
+            "capability_tokens",
+            "precondition_tokens",
         ):
             value = getattr(self, name)
             if not isinstance(value, (list, tuple)):
@@ -80,6 +85,7 @@ class CoreExecutiveEvidenceReader(Protocol):
 
     async def requirements_for(
         self,
+        snapshot: ExecutiveContextSnapshot,
         candidate: ExecutiveDecisionCandidate,
     ) -> tuple[AuthoritativeIntentRequirements, ...]: ...
 
@@ -249,7 +255,7 @@ class _ExecutiveOperation:
         candidate: ExecutiveDecisionCandidate,
     ) -> ExecutiveCommitState:
         self.check_current()
-        requirements = await self.binding._evidence.requirements_for(candidate)
+        requirements = await self.binding._evidence.requirements_for(snapshot, candidate)
         current = await self.read()
         assert self.evidence is not None
         # 使用能力・前提条件の変化は既存の候補別検査へ渡す。その他の根拠は固定する。
@@ -258,6 +264,8 @@ class _ExecutiveOperation:
                 current,
                 capabilities=self.evidence.capabilities,
                 preconditions=self.evidence.preconditions,
+                capability_tokens=self.evidence.capability_tokens,
+                precondition_tokens=self.evidence.precondition_tokens,
             )
             != self.evidence
         ):
@@ -266,6 +274,16 @@ class _ExecutiveOperation:
         owners = self.binding._attention.read_current(self.dispatch)
         appraisal = owners.appraisal
         assert appraisal is not None
+        used_conditions = {r.precondition_id for item in requirements for r in item.preconditions}
+        evidence_tokens = (
+            *(current.capability_tokens if any(item.capabilities for item in requirements) else ()),
+            *(
+                token
+                for ref, tokens in current.precondition_tokens
+                if ref in used_conditions
+                for token in tokens
+            ),
+        )
         return ExecutiveCommitState(
             ExecutiveFreshnessStamp(
                 RevisionVector(
@@ -282,6 +300,7 @@ class _ExecutiveOperation:
             ExecutiveBoundsProvenance.from_policy(self.binding._policy.bounds),
             current.plan_scopes,
             current.plan_progress_contexts,
+            evidence_tokens=evidence_tokens,
         )
 
 
@@ -292,17 +311,14 @@ class ExecutiveBrainWorkPayload:
     decision_id: str
 
 
-def _validate_envelope(
-    dispatch: CoreAttentionDispatch, envelope: BrainWorkEnvelope
-) -> None:
+def _validate_envelope(dispatch: CoreAttentionDispatch, envelope: BrainWorkEnvelope) -> None:
     if not isinstance(dispatch, CoreAttentionDispatch) or not isinstance(
         envelope, BrainWorkEnvelope
     ):
         raise ValueError("判断処理には型付きの注意搬送と相関情報が必要です")
     if (
         envelope.trigger_id != dispatch.trigger.trigger_id
-        or envelope.source_context_revision
-        != dispatch.reference.context.source_context_revision
+        or envelope.source_context_revision != dispatch.reference.context.source_context_revision
         or envelope.goal_revision != dispatch.reference.goals.goal_revision
         or envelope.attention_revision != dispatch.trigger.attention_revision
     ):
