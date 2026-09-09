@@ -452,7 +452,7 @@ class RuntimeCoordinator:
                 lane.in_flight += 1
                 self._running_tasks[item.work_id] = task
                 self._running_items[item.work_id] = item
-                task.add_done_callback(self._wake_lane(lane))
+                task.add_done_callback(self._work_done(lane, item))
             lane.wake.clear()
             if (
                 self._state is CoordinatorState.STOPPING
@@ -463,12 +463,26 @@ class RuntimeCoordinator:
                 return
             await lane.wake.wait()
 
-    @staticmethod
-    def _wake_lane(lane: _Lane) -> Callable[[asyncio.Task[None]], None]:
-        def wake(_task: asyncio.Task[None]) -> None:
+    def _work_done(
+        self, lane: _Lane, item: RuntimeWorkItem[Any]
+    ) -> Callable[[asyncio.Task[None]], None]:
+        def done(task: asyncio.Task[None]) -> None:
+            # 開始前に取消されたcoroutineでは_executeのfinallyが実行されない。
+            # 実行済みtaskはfinallyで登録を消しているため、二重に回収しない。
+            if task.cancelled() and self._running_tasks.get(item.work_id) is task:
+                lane.in_flight -= 1
+                self._running_tasks.pop(item.work_id)
+                self._running_items.pop(item.work_id, None)
+                self._cancellations.complete(item.work_id)
+                lane.cancelled += 1
+                self._outcomes.put_nowait(
+                    WorkOutcome(
+                        item.work_id, item.lane_id, WorkDisposition.CANCELLED, self._clock.now()
+                    )
+                )
             lane.wake.set()
 
-        return wake
+        return done
 
     async def _execute(
         self, lane: _Lane, item: RuntimeWorkItem[Any], token: CancellationToken
