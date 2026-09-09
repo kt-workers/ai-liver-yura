@@ -13,6 +13,7 @@ from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
 from app.domain.contracts.common import freeze_json, require_identifier
 from app.domain.contracts.finalization import AuthorityGenerationToken, AuthorityReadPublication
+from app.domain.contracts.preconditions import PreconditionSourceBinding, PreconditionSourceRouter
 from app.domain.executive import (
     AuthoritativeIntentRequirements,
     ExecutiveContextSnapshot,
@@ -35,6 +36,49 @@ class CoreExecutivePreconditionReader(Protocol):
     async def preconditions_for(
         self, source: AttentionSource
     ) -> tuple[AuthorityReadPublication[PreconditionFact], ...]: ...
+
+
+class CorePreconditionSourceReader:
+    """明示された実測公開を、意味と出典tokenを変えず判断根拠へ投影する。"""
+
+    def __init__(
+        self,
+        router: PreconditionSourceRouter,
+        bindings: tuple[PreconditionSourceBinding, ...],
+        bounds: BrainOperationalBoundsPolicy,
+    ) -> None:
+        if not isinstance(router, PreconditionSourceRouter):
+            raise RequirementsRejected(RequirementsFailureCode.SOURCE_UNAVAILABLE)
+        if len(bindings) > bounds.executive.max_precondition_facts:
+            raise RequirementsRejected(RequirementsFailureCode.INVALID_PROJECTION)
+        values = tuple(bindings)
+        if any(not isinstance(value, PreconditionSourceBinding) for value in values) or len(
+            {value.precondition_id for value in values}
+        ) != len(values):
+            raise RequirementsRejected(RequirementsFailureCode.INVALID_PROJECTION)
+        self._router = router
+        self._bindings = values
+
+    async def preconditions_for(
+        self, source: AttentionSource
+    ) -> tuple[AuthorityReadPublication[PreconditionFact], ...]:
+        # Attentionの文字列から実測の意味やbindingを選ばず、構成済み集合を読む。
+        facts: list[AuthorityReadPublication[PreconditionFact]] = []
+        for binding in self._bindings:
+            publication = await self._router.read_current(binding)
+            observation = publication.value
+            facts.append(
+                AuthorityReadPublication(
+                    PreconditionFact(
+                        observation.binding.precondition_id,
+                        observation.binding.subject_ref,
+                        observation.binding.predicate,
+                        observation.actual,
+                    ),
+                    publication.tokens,
+                )
+            )
+        return tuple(facts)
 
 
 @dataclass(frozen=True, slots=True)
