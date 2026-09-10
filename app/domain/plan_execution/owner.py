@@ -195,8 +195,27 @@ class PlanExecutionOwner:
     def activity_authority(self) -> ActivityExecutionAuthority:
         return self._activity
 
-    @authority_mutation
     def prepare_scope(
+        self,
+        plan: ActivityPlan,
+        bindings: tuple[PlanStepExecutionBinding, ...],
+        argument_facts: tuple[PlanArgumentFact, ...],
+        *,
+        captured_at: datetime,
+        deadline_at: datetime,
+    ) -> PlanExecutionScope:
+        participants = (
+            self._participant,
+            *(t._participant for p in plan.activity_bindings for t in p.tokens),
+        )
+        with authority_read_set(participants), self._participant.mutation():
+            for publication in plan.activity_bindings:
+                publication.require_current()
+            return self._prepare_scope(
+                plan, bindings, argument_facts, captured_at=captured_at, deadline_at=deadline_at
+            )
+
+    def _prepare_scope(
         self,
         plan: ActivityPlan,
         bindings: tuple[PlanStepExecutionBinding, ...],
@@ -242,6 +261,20 @@ class PlanExecutionOwner:
             refs = {ref for binding in bindings for ref in binding.argument_fact_refs}
             if refs != {item.reference_id for item in facts}:
                 raise ValueError("引数の必要な由来と登録事実が一致しません")
+            expected_facts = {
+                f.reference_id: (f.revision, f.value)
+                for p in plan.activity_bindings
+                for f in p.value.sources
+            }
+            from app.domain.activity_binding.contracts import canonical
+
+            if any(
+                f.reference_id not in expected_facts
+                or f.revision != expected_facts[f.reference_id][0]
+                or canonical(f.value) != canonical(expected_facts[f.reference_id][1])
+                for f in facts
+            ):
+                raise ValueError("登録事実の実値と確定Planの引数由来が一致しません")
             self._sequence += 1
             scope = PlanExecutionScope(
                 f"plan-scope-{self._epoch}-{self._sequence}",
@@ -297,8 +330,22 @@ class PlanExecutionOwner:
             item.authorization = authorization
             item.last_confirmed_at = now
 
-    @authority_mutation
     def reserve_ready(
+        self, scope_id: str, current: PlanExecutionCurrentState, now: datetime
+    ) -> PlanExecutionBatch:
+        with self._lock:
+            publications = self._require(scope_id).scope.plan.activity_bindings
+        with (
+            authority_read_set(
+                (self._participant, *(t._participant for p in publications for t in p.tokens))
+            ),
+            self._participant.mutation(),
+        ):
+            for publication in publications:
+                publication.require_current()
+            return self._reserve_ready(scope_id, current, now)
+
+    def _reserve_ready(
         self,
         scope_id: str,
         current: PlanExecutionCurrentState,

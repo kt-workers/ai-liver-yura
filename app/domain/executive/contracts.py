@@ -6,6 +6,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, TypeVar, cast
 
+from app.domain.activity_binding import ActivityExecutionBindingPublication
 from app.domain.appraisal import AppraisalFactsSnapshot, InternalStateSnapshot
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
 from app.domain.contracts import CapabilityDescriptor, CapabilityRequirement, RevisionVector
@@ -266,8 +267,16 @@ class ExecutiveCommitState:
 
     requirement_derivations: tuple[DerivedIntentRequirements, ...] = ()
     evidence_tokens: tuple[AuthorityGenerationToken, ...] = ()
+    activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "activity_bindings",
+            _owned(
+                self.activity_bindings, ActivityExecutionBindingPublication, "activity_bindings"
+            ),
+        )
         object.__setattr__(
             self,
             "evidence_tokens",
@@ -320,8 +329,16 @@ class ExecutiveContextSnapshot:
     plan_progress_contexts: tuple[PlanProgressContext, ...] = ()
 
     requirements_generation: RequirementsGeneration | None = None
+    activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "activity_bindings",
+            _owned(
+                self.activity_bindings, ActivityExecutionBindingPublication, "activity_bindings"
+            ),
+        )
         object.__setattr__(
             self, "plan_scopes", _validate_plan_scopes(self.plan_scopes, self.bounds_provenance)
         )
@@ -402,6 +419,7 @@ class ExecutiveContextSnapshot:
                 if self.requirements_generation is None
                 else self.requirements_generation.to_dict()
             ),
+            "activity_bindings": [p.to_dict() for p in self.activity_bindings],
             "plan_scopes": [item.to_dict() for item in self.plan_scopes],
             "plan_progress_contexts": [item.to_dict() for item in self.plan_progress_contexts],
             "trigger_id": self.trigger_id,
@@ -441,6 +459,7 @@ def build_executive_context_snapshot(
     bounds_policy: BrainOperationalBoundsPolicy,
     plan_scopes: tuple[PlanExecutionScope, ...] = (),
     plan_progress_contexts: tuple[PlanProgressContext, ...] = (),
+    activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = (),
 ) -> ExecutiveContextSnapshot:
     """信頼済みowner入力から、共有容量方針に従うExecutive snapshotを構築する。"""
     if not isinstance(bounds_policy, BrainOperationalBoundsPolicy):
@@ -525,6 +544,7 @@ def build_executive_context_snapshot(
         ExecutiveBoundsProvenance.from_policy(bounds_policy),
         plan_scopes,
         plan_progress_contexts,
+        activity_bindings=activity_bindings,
     )
 
 
@@ -596,9 +616,12 @@ class ActivityIntentPayload:
     activity_type: str
     target_ref: str | None = None
     constraint_refs: tuple[str, ...] = ()
+    binding_ref: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.activity_type, "activity_type")
+        if self.binding_ref is not None:
+            require_identifier(self.binding_ref, "binding_ref")
         if self.target_ref is not None:
             require_identifier(self.target_ref, "target_ref")
         object.__setattr__(self, "constraint_refs", _ids(self.constraint_refs, "constraint_refs"))
@@ -609,6 +632,7 @@ class ActivityIntentPayload:
     def to_dict(self) -> dict[str, object]:
         return {
             "activity_type": self.activity_type,
+            "binding_ref": self.binding_ref,
             "target_ref": self.target_ref,
             "constraint_refs": list(self.constraint_refs),
         }
@@ -1173,8 +1197,16 @@ class CommittedExecutiveDecision:
 
     requirement_derivations: tuple[DerivedIntentRequirements, ...] = ()
     evidence_tokens: tuple[AuthorityGenerationToken, ...] = ()
+    activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "activity_bindings",
+            _owned(
+                self.activity_bindings, ActivityExecutionBindingPublication, "activity_bindings"
+            ),
+        )
         object.__setattr__(
             self,
             "evidence_tokens",
@@ -1251,6 +1283,7 @@ class CommittedExecutiveDecision:
         from .requirements import project
 
         return {
+            "activity_bindings": [p.to_dict() for p in self.activity_bindings],
             "evidence_tokens": project(self.evidence_tokens),
             "requirement_derivations": [item.to_dict() for item in self.requirement_derivations],
             "plan_authorizations": [item.to_dict() for item in self.plan_authorizations],

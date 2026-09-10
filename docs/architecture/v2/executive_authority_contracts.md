@@ -224,3 +224,13 @@ LLM開始前に実行判断所有者から導出方針の不変な世代を取�
 Foundationが呼ぶのは既存の実行判断所有者の短い同期確定操作だけである。第7節が禁止する外部コールバック・await・I/Oを確定区間へ追加しない。候補の意味・完全一致・権限・期限・重複・承認生成と判断の同時確定は本所有者の責務を維持する。共通基盤はこれらを代行しない。
 
 参加者不在、世代不一致、取得集合不正、競合中の場合は型付き失敗として返し、旧候補を新世代へ付け替えない。確定後の取消では成功結果と出典証拠を保持する。#632は共通同期契約と必要な機械的参加を所有し、#630は必須要件の意味とその利用を所有する。両Workの実装・採用は設計レビューとは別工程であり、現在の#630はBlockedを維持する。
+
+## 11. 活動bindingの正規参照（#649）
+
+Direct ACTIVITYは`ActivityIntentPayload.binding_ref`で、snapshotに提示された`ActivityExecutionBindingPublication`を明示選択する。未登録・省略・種類・対象・正本能力operationの不一致を拒否する。候補の引数自己申告は受け付けない。
+
+正本requirements集合に、binding descriptorが満たす同じactivity_type / operationのprimary requirementが少なくとも1件必要である。network/access等の追加authoritative requirementを許容し、bindingと同一operationを要求しない。追加要件の存在・revision・availabilityは既存Executive検査、実行時の個別解決は#329へ残す。#649は補助能力のproviderを選ばない。Plannerのstep要件の意味は変更しない。
+
+`ExecutiveRequirementsOwner`による完全一致照合を維持し、選択binding・schema・実値Owner・provider非依存のoperation Ownerと、Requirements・利用したprovenance・evidence・確定先の実際のtokenをFenceへ含める。fact参照数とdistinct participant総数は独立した制約である。同じ正規Ownerの複数factは同じtokenを使用できるが、独立Ownerは統合しない。総数16以下は通常検査を経て確定可能、17以上は既存#632の`INVALID_LOCK_CONFIGURATION`で非確定とする。source数だけの固定上限へ読み替えない。
+
+確定判断は検証済みpublicationを保持し、#612が操作を再選択しない。bindingが0件でも活動以外の判断を妨げない。

@@ -72,6 +72,13 @@ def validate_planning_context_bounds(
         raise ValueError("snapshotはGoalPlanningContextSnapshotでなければなりません")
     assert_planning_policy_generation(snapshot, bounds_policy)
     bounds = bounds_policy.planning
+    from app.domain.activity_binding.validation import validate_publications
+
+    validate_publications(
+        snapshot.activity_bindings,
+        max_count=bounds_policy.executive.max_fact_refs,
+        max_bytes=bounds_policy.executive.max_fact_payload_json_bytes,
+    )
     if snapshot.previous_plan is not None:
         validate_plan_bounds(snapshot.previous_plan.candidate, bounds_policy)
     checks = (

@@ -11,6 +11,7 @@ from app.domain.contracts.finalization import (
     AuthorityFinalizationParticipant,
     AuthorityReadPublication,
     authority_mutation,
+    authority_read_set,
 )
 from app.domain.goals import GoalStatus
 
@@ -38,8 +39,35 @@ class GoalPlanningAuthority:
         """元所有者の読取と更新に共通する同期境界を公開する。"""
         return self._participant
 
-    @authority_mutation
     def commit(
+        self,
+        candidate: GoalPlanningCandidate,
+        snapshot: GoalPlanningContextSnapshot,
+        current: GoalPlanningCommitState,
+        *,
+        plan_id: str,
+        committed_at: datetime,
+        bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    ) -> ActivityPlan:
+        selected = tuple(
+            p
+            for p in snapshot.activity_bindings
+            if p.value.binding_id in {step.binding_ref for step in candidate.steps}
+        )
+        with authority_read_set(
+            (self._participant, *(t._participant for p in selected for t in p.tokens))
+        ):
+            return self._commit_bound(
+                candidate,
+                snapshot,
+                current,
+                plan_id=plan_id,
+                committed_at=committed_at,
+                bounds_policy=bounds_policy,
+            )
+
+    @authority_mutation
+    def _commit_bound(
         self,
         candidate: GoalPlanningCandidate,
         snapshot: GoalPlanningContextSnapshot,
@@ -91,6 +119,21 @@ class GoalPlanningAuthority:
             raise ValueError("no-plan outcome requires trusted deterministic directive")
         self._validate_current_capabilities(candidate, snapshot, current)
         self._validate_current_blockers(candidate, snapshot, current)
+        from app.domain.activity_binding.validation import selected_bindings
+
+        requests = tuple(
+            (
+                step.binding_ref,
+                step.activity_type,
+                step.target_ref,
+                step.operation_ref,
+                step.required_capabilities,
+            )
+            for step in candidate.steps
+        )
+        selected_bindings(
+            requests, snapshot.activity_bindings, current.activity_bindings, current.capabilities
+        )
         previous = snapshot.previous_plan
         if current.previous_plan != previous:
             raise ValueError("再計画の置換対象が判断中に変更されています")
@@ -113,6 +156,11 @@ class GoalPlanningAuthority:
                 committed_at,
                 _proof=_PLAN_PROOF,
                 supersedes_plan_id=None if previous is None else previous.plan_id,
+                activity_bindings=tuple(
+                    p
+                    for p in snapshot.activity_bindings
+                    if p.value.binding_id in {step.binding_ref for step in candidate.steps}
+                ),
             )
             self._plans[plan_id] = plan
             self._current_plans[candidate.goal_id] = plan_id

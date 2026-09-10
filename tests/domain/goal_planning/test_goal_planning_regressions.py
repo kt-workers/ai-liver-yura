@@ -5,7 +5,6 @@ import pytest
 
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import (
-    CapabilityAvailability,
     CapabilityDescriptor,
     CapabilityRequirement,
     ExecutionStatus,
@@ -30,6 +29,7 @@ from app.domain.goals import (
     GoalStatus,
     InterruptionPolicy,
 )
+from tests.helpers.activity_binding import planning_binding
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(9, 4, 2)
@@ -60,14 +60,7 @@ def capability(
     capability_type: str,
     operations: tuple[str, ...],
 ) -> CapabilityDescriptor:
-    return CapabilityDescriptor(
-        capability_id,
-        capability_type,
-        operations,
-        CapabilityAvailability.AVAILABLE,
-        1,
-        {},
-    )
+    return planning_binding(operations[0], capability_type, capability_id, operations).descriptor
 
 
 def research_capability(*operations: str) -> CapabilityDescriptor:
@@ -95,6 +88,7 @@ def step(
         InterruptionPolicy.RESUMABLE,
         0,
         replan_on_failure,
+        "binding-research-" + operation,
     )
 
 
@@ -129,6 +123,11 @@ def context(
         NOW,
         None,
         blockers,
+        activity_bindings=tuple(
+            planning_binding(op, c.capability_type, c.capability_id, c.operations)
+            for c in bounded_capabilities
+            for op in c.operations
+        ),
     )
 
 
@@ -159,7 +158,17 @@ def current(
     capabilities: tuple[CapabilityDescriptor, ...],
     blockers: tuple[PlanningBlocker, ...] = (),
 ) -> GoalPlanningCommitState:
-    return GoalPlanningCommitState(REVISIONS, goal(), capabilities, blockers)
+    return GoalPlanningCommitState(
+        REVISIONS,
+        goal(),
+        capabilities,
+        blockers,
+        activity_bindings=tuple(
+            planning_binding(op, c.capability_type, c.capability_id, c.operations)
+            for c in capabilities
+            for op in c.operations
+        ),
+    )
 
 
 def test_activity_context_identity_is_inferred_only_when_unambiguous() -> None:
