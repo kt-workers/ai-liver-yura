@@ -512,3 +512,95 @@ Validation Lab implementation/extensions remain frozen until #445 D1-D9 and fina
 親と子はrun ID・反復番号・製品HEAD・branchを照合する。正式CIのdetached HEADではbranchを`HEAD`と明示し、架空のbranch名を補わず実SHAで照合する。親は実行前後、子は復元前に製品ソースの来歴を再取得し、子は起動構成も再照合する。子への接続設定は専用pipeだけで渡し、環境変数を継承しない。認証情報・接続先・設定パス・提供元の生例外を結果やstderrへ出さない。公開結果は既存の有限なJSON/Markdown書出しを使い、入力・出力・実測区間を同じrunへ対応付ける。
 
 意図した障害でも、型付き失敗・利用不可・Ownerの拒否は`PRODUCT_FAILED`、取消は`CANCELLED`として保持する。Harnessの構成・投影・子プロセス通信の失敗は`HARNESS_FAILED`と区別する。手順完走を製品の成功へ読み替えず、機械判定は`NOT_RUN`を維持する。INTEGRATEDの主張は本番永続化・起動停止経路に限り、実LLM・音声・外部サービス・人間による会話品質や#586の性能受入へ拡張しない。
+
+## 25. 通常認知の本番経路を実行・観測する接続（#616）
+
+本節は#616で実装前に確定した設計を同期する。#616は、#611で完成した通常認知production pathを、#590の共通Validation Harnessから実行・観測する接続を所有する。Meaningの意味判断、Appraisalの評価意味、Attention scheduling、Executive decision、production routing、Goal semantics、currentness判定、production scheduler、production shutdownの意味は既存Ownerへ委譲する。Lab側に第二のCognition pipelineやshadow decision implementationを作らない。#611のproduction契約と#590のRuntime契約は変更しない。
+
+### 25.1. 対象登録・入力・証拠の範囲
+
+`normal_cognition_target`は共通`ValidationRunner`へ登録する`LabMode.INTEGRATED`のtargetとする。`SYSTEM_SLICE`ではなく、#616の証拠を後続#620等のSystem evidenceへ昇格させない。出典は共通`ProductionTargetProvenance`で保持し、§5の出典条件を維持する。
+
+信頼済み起動コードが`NormalCognitionApplicationFactory`というcallableを明示登録し、各iterationごとにfreshな`MinimumCoreApplication`を供給する。fixtureや外部データからPython module、function、command、任意codeを解決しない。返却されたapplicationにproduction cognition接続がない場合は、成功へ補正せず`BLOCKED_UPSTREAM`とし、生成済みapplicationを停止する。
+
+`NormalCognitionLabCase`は正規`InputAdmission`を保持する。共通Runnerと登録済みcaseは、scenario、fixture、typed_inputs、fixture revision、target contract revision、mode、provider policy refsを実行前に照合する。不一致ではproduction applicationを起動しない。ACCEPTEDでない入力を成功入力へ書き換えず、raw textからLab側で`StructuredInputMeaning`を生成しない。
+
+### 25.2. 公開入口と実際のchainの観測
+
+adapterは実production applicationの公開入口を使用する。
+
+```text
+app.start()
+→ app.cognition.submit_input(InputAdmission)
+→ app.brain.next_outcome()
+→ app.brain.trace(trace_id)
+→ app.stop()
+```
+
+`CoreCognitionDelivery.submit_input()`を飛ばしてBrain workを直接生成しない。Input Meaning / Appraisal / Executive OwnerをLabから直接順に呼び、統合済みと主張しない。
+
+外部入力では実production経路が結果として`INPUT_MEANING → APPRAISAL → EXECUTIVE`へ進み、適格な内部入力では#611の規則によって`APPRAISAL → EXECUTIVE`へ進むことを観測する。Lab実装に「externalなら3段」「internalなら2段」というproduction代替のrouting tableを持たせず、公開trace上の未観測workを追う。後段workがない型付き非成功では待機を続けない。有限な観測上限と既存`LabPolicy`のtimeout・max_tasks・max_intervals・repeat_count・結果保持上限を維持する。
+
+### 25.3. 成功条件と型付き失敗
+
+COMPLETEDとするのは、productionのEXECUTIVE workが正常終端し、公開結果が正規`CommittedExecutiveDecision`であり、次のclosed structural invariantsを満たす場合だけとする。
+
+- outcomeとtraceのidentityが一致する。
+- root triggerとsource eventが正規入力に一致する。
+- 観測work集合とtrace intervalのwork集合が一致する。
+- 全必要workが正規COMPLETEDである。
+- 最終production resultが正規の確定結果型である。
+
+Machine Gateで自然言語内容の良し悪しを判定しない。後段成功や欠落した結果を補作しない。
+
+`BrainWorkStatus`のexact値を観測証拠に保持し、上位Validation分類だけを次のように写す。
+
+| Brainの状態 | 上位分類 |
+| --- | --- |
+| `COMPLETED` | 上記成功条件を満たす場合だけ`RunStatus.COMPLETED` |
+| `CANCELLED` | `RunStatus.CANCELLED` |
+| `TIMED_OUT` | `RunStatus.TIMED_OUT` |
+| `FAILED / STALE / SUPERSEDED / REJECTED`等の製品側非成功 | `RunStatus.PRODUCT_FAILED` |
+
+Input MeaningのBrain workがCOMPLETEDでも、`InputMeaningInterpretationResult`にrole failure / boundary failureがあれば、既存Input Meaning Validationの`input_meaning_run_status`を再利用する。roleのTIMED_OUT / CANCELLEDは対応するRunStatus、その他のrole failureはPROVIDER_FAILED、boundary failureはBLOCKED_UPSTREAMとする。その場合、後段を待って成功を捏造しない。上位分類によって元のBrainWorkStatusや型付き結果を失わせず、STALEとSUPERSEDEDなどの意味を混同しない。
+
+### 25.4. 公開証拠・currentness・安全な書出し
+
+受付の`BrainWorkAdmission`、各`BrainIntegrationWorkOutcome`の公開projection、`BrainIntegrationTrace`をtyped outputに保持する。証拠にはwork_id、trace_id、root_trigger_id、source_event_ids、module、lane、exact BrainWorkStatus、completed_at、source_context_revision / goal_revision / attention_revision等の公開revision、Appraisalの公開commit結果、Executiveの公開確定結果を含める。実行されなかった後段の結果を生成しない。Domain resultを別のsemanticへ再解釈しない。
+
+stale/currentness検証では、Goal/source context等を既存production Ownerの正規APIから更新し、production自身が古いAppraisal/Decision等を拒否した事実を観測する。Labで候補revisionを書き換えてstaleを作らず、currentness判定を複製しない。
+
+既存safe projectionと有限なexportを維持する。Authorization、API key、secret、raw provider SDK object、raw exception body、raw promptをexportへ入れない。production例外をLabが生文字列として保存しない。
+
+### 25.5. iterationの所有・取消・回収
+
+各iterationはfreshなMinimumCoreApplication、Brain Runtime、Cognition owner/stateを使用し、前iterationのcurrent State / Attention / Runtimeを次iterationへ共有しない。
+
+run全体のRunContextには終了処理を無制限に積み上げない。run単位のcleanup ownerが現在iterationのapplicationだけを保持し、iteration終了時に停止して参照を解放する。終了済みiterationのcleanup登録がmax_tasks容量を消費し続ける構造にしない。
+
+normal completion、product failure、ValidationRunner.cancel()、timeout、ValidationRunner.close()、caller cancellation、repeated caller cancellationのすべてで#616所有applicationを回収する。app.stop()の完遂は既存RunContext / ValidationRunnerの取消・回収契約へ委譲する。foreign taskをcancelせず、終了後に#616所有の未回収task/resourceを残さない。production shutdownの意味を変更しない。
+
+### 25.6. 注入機能の境界
+
+一般Harnessのdelay/failure injection機能と、個別targetの登録済みstageを区別する。現在のnormal_cognition_targetは固有のinjection stageを登録しておらず、任意の`LabRunSpec.delay_injections / failure_injections`を直接受理する接続ではない。未登録stageは共通Runnerで拒否する。
+
+#616のfailure / stale / cancel検証は、production Ownerの正規currentness、production cancellation、trusted fake provider / test setupを用いる。試験内で既存factoryをmonkeypatchすることを、adapter実装のglobal monkeypatch依存や新しいproduction injection seamへ置き換えない。「汎用delay/failure injection対応済み」とは主張しない。
+
+### 25.7. #616の受入条件
+
+1. external ACCEPTED inputを実production cognition入口へ渡せる。
+2. internal ACCEPTED inputも同じproduction入口へ渡せる。
+3. Meaning / Appraisal / Attention / ExecutiveをLabで補作しない。
+4. production traceから実際のchainを観測する。
+5. source / trace / revisionを保持する。
+6. 型付きproduct failureを成功へ変更しない。
+7. actual current Owner更新によるstale rejectionを観測できる。
+8. cancel / timeout / close / caller cancellationで資源を回収する。
+9. repeated cancellationでもcleanupを完遂する。
+10. repeat iterationごとにfresh applicationを使用する。
+11. 終了済みiterationのcleanupがcapacityを消費し続けない。
+12. fixture / spec / 登録済み出典条件が不一致ならproductionを起動しない。
+13. secret / raw exceptionをexportしない。
+14. evidence modeはINTEGRATEDのみとする。
+15. SYSTEM_SLICEをclaimしない。
+16. #590 / #611の既存契約を変更しない。
