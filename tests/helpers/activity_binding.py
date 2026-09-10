@@ -9,10 +9,12 @@ from app.domain.activity_binding import (
     ActivityExecutionBindingPublication,
     ArgumentKind,
     ArgumentSourceFact,
+    ArgumentSourceOwner,
     ArgumentSourceRelation,
     BindingInputPublicationOwner,
     OperationInputContract,
 )
+from app.domain.plugin_registry.activity_binding import PluginActivityOperationAdapter
 from app.domain.plugin_registry.authority import PluginRegistryAuthority
 from app.domain.plugin_registry.contracts import (
     PluginCancellationSupport,
@@ -74,11 +76,14 @@ def planning_binding(
     schema = BindingInputPublicationOwner(
         "test-schema", OperationInputContract("test-input", 1, (("query", ArgumentKind.STRING),))
     )
-    source = BindingInputPublicationOwner(
-        "test-source", ArgumentSourceFact("goal-1", "test-source", 1, "test-input", "資料")
+    source = ArgumentSourceOwner(
+        "test-source", (ArgumentSourceFact("goal-1", "test-source", 1, "test-input", "資料"),)
     )
     owner = ActivityBindingAuthority(
-        "binding-" + activity_type + "-" + operation, registry, schema, (source,)
+        "binding-" + activity_type + "-" + operation,
+        PluginActivityOperationAdapter(registry),
+        schema,
+        (source,),
     )
     return owner.publish(
         revision=1,

@@ -12,6 +12,7 @@ from app.domain.activity_binding import (
     ActivityExecutionBindingPublication,
     ArgumentKind,
     ArgumentSourceFact,
+    ArgumentSourceOwner,
     ArgumentSourceRelation,
     BindingInputPublicationOwner,
     OperationInputContract,
@@ -32,24 +33,27 @@ from app.domain.executive import (
     ExecutiveDecisionCandidate,
 )
 from app.domain.executive.authority import ExecutiveFinalizationInput
+from app.domain.plugin_registry.activity_binding import PluginActivityOperationAdapter
 from tests.domain.plugin_registry.test_plugin_registry_adjacent import available_registry
 
 
 def fixture() -> tuple[
     ActivityBindingAuthority,
-    BindingInputPublicationOwner[OperationInputContract],
-    BindingInputPublicationOwner[ArgumentSourceFact],
+    BindingInputPublicationOwner,
+    ArgumentSourceOwner,
 ]:
     registry = available_registry()
     schema = BindingInputPublicationOwner(
         "schema-owner",
         OperationInputContract("plugin.run.input.v1", 1, (("query", ArgumentKind.STRING),)),
     )
-    source = BindingInputPublicationOwner(
+    source = ArgumentSourceOwner(
         "source-owner",
-        ArgumentSourceFact("fact-1", "source-owner", 1, "plugin.run.input.v1", "typed-value"),
+        (ArgumentSourceFact("fact-1", "source-owner", 1, "plugin.run.input.v1", "typed-value"),),
     )
-    owner = ActivityBindingAuthority("binding-1", registry, schema, (source,))
+    owner = ActivityBindingAuthority(
+        "binding-1", PluginActivityOperationAdapter(registry), schema, (source,)
+    )
     return owner, schema, source
 
 
@@ -74,7 +78,7 @@ def test_typed_binding_publication_and_exact_selection() -> None:
         (("binding-1", "activity", "target", None, requirements),),
         (pub,),
         (pub,),
-        owner.registry.capability_descriptors(),
+        (pub.descriptor,),
     ) == (pub,)
     with pytest.raises(ValueError):
         replace(pub, value=replace(pub.value, operation_ref="other"))
@@ -113,14 +117,14 @@ def test_exact_identity_and_requirements_rejection(field: str, value: str | None
             ),
             (pub,),
             (pub,),
-            owner.registry.capability_descriptors(),
+            (pub.descriptor,),
         )
 
 
 def test_source_change_and_schema_change_fail_closed() -> None:
     owner, schema, source = fixture()
     pub = publish(owner)
-    source.publish(replace(source.capture().value, revision=2, value="changed"))
+    source.publish((replace(source.capture().value[0], revision=2, value="changed"),))
     with pytest.raises(FinalizationError):
         pub.require_current()
     with pytest.raises(FinalizationError):
@@ -137,7 +141,7 @@ def test_empty_arguments_only_explicit_no_argument_contract() -> None:
     schema = BindingInputPublicationOwner(
         "schema", OperationInputContract("plugin.run.input.v1", 1, ())
     )
-    owner = ActivityBindingAuthority("empty", registry, schema, ())
+    owner = ActivityBindingAuthority("empty", PluginActivityOperationAdapter(registry), schema, ())
     pub = owner.publish(
         revision=1,
         activity_type="activity",
@@ -163,8 +167,8 @@ def test_empty_arguments_only_explicit_no_argument_contract() -> None:
 
 def direct_fixture() -> tuple[
     ActivityBindingAuthority,
-    BindingInputPublicationOwner[OperationInputContract],
-    BindingInputPublicationOwner[ArgumentSourceFact],
+    BindingInputPublicationOwner,
+    ArgumentSourceOwner,
     ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
     ExecutiveCommitState,
@@ -274,7 +278,7 @@ def test_direct_source_update_blocks_commit() -> None:
     from tests.helpers.executive_requirements import make_authority
 
     _, _, source, captured, proposed, current = direct_fixture()
-    source.publish(replace(source.capture().value, revision=2, value="changed"))
+    source.publish((replace(source.capture().value[0], revision=2, value="changed"),))
     authority = make_authority(captured)
     with pytest.raises(FinalizationError):
         authority.commit(proposed, captured, current=current, decision_id="stale")
@@ -320,12 +324,12 @@ def test_rejected_binding_publish_keeps_value_and_refreshes_own_token() -> None:
 def test_source_failed_noop_and_restart_tokens_fail_closed(update: str) -> None:
     owner, _, source = fixture()
     old = publish(owner)
-    fact = source.capture().value
+    fact = source.capture().value[0]
     if update == "same_revision":
         with pytest.raises(ValueError):
-            source.publish(replace(fact, value="different"))
+            source.publish((replace(fact, value="different"),))
     elif update == "noop":
-        source.publish(fact)
+        source.publish((fact,))
     else:
         source.close()
     with pytest.raises(FinalizationError):
@@ -335,7 +339,7 @@ def test_source_failed_noop_and_restart_tokens_fail_closed(update: str) -> None:
 def test_unrelated_binding_update_does_not_invalidate_selected_publication() -> None:
     owner, _, _ = fixture()
     old = publish(owner)
-    other = ActivityBindingAuthority("other", owner.registry, owner.schema, owner.sources)
+    other = ActivityBindingAuthority("other", owner.operation_owner, owner.schema, owner.sources)
     publish(other)
     publish(other)
     old.require_current()
@@ -353,7 +357,7 @@ def test_strict_json_types_and_mutable_alias() -> None:
     assert fact.value["values"] == (1, True)
     assert not ArgumentKind.INTEGER.accepts(True)
     with pytest.raises(ValueError):
-        replace(source.capture().value, revision=True)
+        replace(source.capture().value[0], revision=True)
     with pytest.raises(ValueError):
         replace(pub.value, arguments={"query": "self-reported"})
     with pytest.raises(ValueError):
@@ -378,7 +382,7 @@ def test_final_fence_rejects_source_change_after_initial_validation(
         *,
         cancellation: Event | None = None,
     ) -> AuthorityFinalizationResult[CommittedExecutiveDecision]:
-        source.publish(replace(source.capture().value, revision=2, value="changed"))
+        source.publish((replace(source.capture().value[0], revision=2, value="changed"),))
         return original(self, request, cancellation=cancellation)
 
     monkeypatch.setattr(AuthorityFinalizationFence, "finalize", change_then_finalize)
@@ -421,7 +425,7 @@ def test_plan_stale_binding_rejects_before_publication() -> None:
         ),
     )
     live = replace(current(), capabilities=(pub.descriptor,), activity_bindings=(pub,))
-    source.publish(replace(source.capture().value, revision=2, value="changed"))
+    source.publish((replace(source.capture().value[0], revision=2, value="changed"),))
     planning = GoalPlanningAuthority()
     with pytest.raises(FinalizationError):
         planning.commit(value, snap, live, plan_id="stale", committed_at=NOW)
@@ -453,7 +457,7 @@ def test_schema_mismatch_and_unknown_binding_fail_closed() -> None:
     unknown = BindingInputPublicationOwner(
         "schema", OperationInputContract("unknown-schema", 1, ())
     )
-    empty = ActivityBindingAuthority("unknown", owner.registry, unknown, ())
+    empty = ActivityBindingAuthority("unknown", owner.operation_owner, unknown, ())
     with pytest.raises(ValueError, match="入力契約"):
         empty.publish(
             revision=1,
@@ -497,7 +501,7 @@ def test_direct_uses_explicit_binding_without_selecting_sibling() -> None:
     from tests.helpers.executive_requirements import fence_clock, make_authority
 
     owner, _, _, captured, proposed, current = direct_fixture()
-    other = ActivityBindingAuthority("other", owner.registry, owner.schema, owner.sources)
+    other = ActivityBindingAuthority("other", owner.operation_owner, owner.schema, owner.sources)
     sibling = publish(other)
     captured = replace(captured, activity_bindings=(*captured.activity_bindings, sibling))
     current = replace(current, activity_bindings=(*current.activity_bindings, sibling))
@@ -530,7 +534,7 @@ def test_retired_binding_cannot_be_used_after_owner_restart() -> None:
     owner, schema, source = fixture()
     old = publish(owner)
     owner.close()
-    replacement = ActivityBindingAuthority("binding-1", owner.registry, schema, (source,))
+    replacement = ActivityBindingAuthority("binding-1", owner.operation_owner, schema, (source,))
     new = publish(replacement)
     new.require_current()
     with pytest.raises(FinalizationError):

@@ -52,8 +52,10 @@ def selected_bindings(
         if (
             len(matching) != 1
             or not requirements
-            or any(
-                r.capability_type != activity_type or r.operation != value.operation_ref
+            or not any(
+                r.capability_type == activity_type
+                and r.operation == value.operation_ref
+                and pub.descriptor.satisfies(r)
                 for r in requirements
             )
         ):

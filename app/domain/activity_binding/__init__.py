@@ -3,6 +3,7 @@
 from .authority import (
     ActivityBindingAuthority,
     ActivityExecutionBindingPublication,
+    ArgumentSourceOwner,
     BindingInputPublicationOwner,
 )
 from .contracts import (
@@ -12,9 +13,16 @@ from .contracts import (
     ArgumentSourceRelation,
     OperationInputContract,
 )
+from .ports import (
+    ActivityOperation,
+    ActivityOperationPublicationPort,
+    ArgumentSourceOwnerPort,
+    InputSchemaOwnerPort,
+)
 
 __all__ = [
     "ActivityBindingAuthority",
+    "ArgumentSourceOwner",
     "ActivityExecutionBinding",
     "ActivityExecutionBindingPublication",
     "BindingInputPublicationOwner",
@@ -22,4 +30,8 @@ __all__ = [
     "ArgumentSourceFact",
     "ArgumentSourceRelation",
     "OperationInputContract",
+    "ActivityOperation",
+    "ActivityOperationPublicationPort",
+    "ArgumentSourceOwnerPort",
+    "InputSchemaOwnerPort",
 ]
