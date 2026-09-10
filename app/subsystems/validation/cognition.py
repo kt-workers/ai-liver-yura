@@ -81,10 +81,16 @@ def normal_cognition_target(
     provenance: ProductionTargetProvenance,
     contract_revision: str,
     provider_policy_refs: tuple[str, ...],
+    *,
+    provenance_source: Callable[[], ProductionTargetProvenance],
 ) -> LabTarget:
     """trusted起動側が供給するfresh applicationをiteration単位で所有する。"""
     registered = {case.fixture.scenario_id: case for case in cases}
-    if len(registered) != len(cases) or not callable(application_factory):
+    if (
+        len(registered) != len(cases)
+        or not callable(application_factory)
+        or not callable(provenance_source)
+    ):
         raise ValueError("通常認知の検証条件または起動factoryが不正です")
 
     ownership: WeakKeyDictionary[RunContext, _IterationApplication] = WeakKeyDictionary()
@@ -98,6 +104,12 @@ def normal_cognition_target(
             or case.admission.status is not InputAdmissionStatus.ACCEPTED
             or case.admission.event is None
         ):
+            return TargetObservation(RunStatus.BLOCKED_UPSTREAM, Gate.NOT_RUN, None)
+        # trusted起動側の現在値を毎iterationで取得し、登録時の全fieldと照合する。
+        actual_provenance = provenance_source()
+        if not isinstance(actual_provenance, ProductionTargetProvenance):
+            raise ValueError("現在の製品来歴の公開型が不正です")
+        if actual_provenance != provenance:
             return TargetObservation(RunStatus.BLOCKED_UPSTREAM, Gate.NOT_RUN, None)
         owner = ownership.get(context)
         if owner is None:

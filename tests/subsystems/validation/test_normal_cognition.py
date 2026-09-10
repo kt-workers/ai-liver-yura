@@ -1,6 +1,7 @@
 """本番compositionを使い、通常認知adapterの証拠と資源回収を確認する。"""
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import replace
 from typing import Any, cast
 
@@ -10,7 +11,7 @@ from app.bootstrap import MinimumCoreApplication
 from app.domain.executive import GoalTransitionOperation
 from app.subsystems.validation.body import _project
 from app.subsystems.validation.cognition import NormalCognitionLabCase, normal_cognition_target
-from app.subsystems.validation.contracts import Gate, LabMode, RunStatus
+from app.subsystems.validation.contracts import Gate, LabMode, ProductionTargetProvenance, RunStatus
 from app.subsystems.validation.runtime import ValidationRunner
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.subsystems.validation.test_runtime import FIXTURE, POLICY, PROVENANCE, spec
@@ -23,7 +24,13 @@ async def wait_for_ports(ports: list[Any]) -> None:
         await asyncio.sleep(0)
 
 
-def setup(monkeypatch: pytest.MonkeyPatch, *, internal: bool = False, slow: bool = False) -> Any:
+def setup(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    internal: bool = False,
+    slow: bool = False,
+    provenance_source: Callable[[], ProductionTargetProvenance] = lambda: PROVENANCE,
+) -> Any:
     app, port = application(monkeypatch)
     event = admission(app, internal=internal)
     fixture = replace(FIXTURE, typed_inputs=_project(event))
@@ -39,7 +46,12 @@ def setup(monkeypatch: pytest.MonkeyPatch, *, internal: bool = False, slow: bool
         return cast(MinimumCoreApplication, current)
 
     target = normal_cognition_target(
-        (NormalCognitionLabCase(fixture, event),), factory, PROVENANCE, "1", ()
+        (NormalCognitionLabCase(fixture, event),),
+        factory,
+        PROVENANCE,
+        "1",
+        (),
+        provenance_source=provenance_source,
     )
     policy = replace(POLICY, timeout_seconds=3, max_intervals=100)
     runner = ValidationRunner((target,), policy)
@@ -232,7 +244,12 @@ async def test_missing_cognition_is_blocked_and_stopped(monkeypatch: pytest.Monk
     event = admission(app)
     fixture = replace(fixture, typed_inputs=_project(event))
     target = normal_cognition_target(
-        (NormalCognitionLabCase(fixture, event),), lambda: no_cognition, PROVENANCE, "1", ()
+        (NormalCognitionLabCase(fixture, event),),
+        lambda: no_cognition,
+        PROVENANCE,
+        "1",
+        (),
+        provenance_source=lambda: PROVENANCE,
     )
     runner = ValidationRunner((target,), POLICY)
     result = await runner.run(request, fixture)
@@ -249,3 +266,79 @@ async def test_sequential_iterations_release_cleanup_capacity(
     result = await runner.run(replace(request, repeat_count=3), fixture)
     assert result.status is RunStatus.COMPLETED
     assert len(apps) == 3 and runner.pending_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("git_head", "b" * 40),
+        ("branch", "other"),
+        ("module_contract_ids", ("other-contract",)),
+        ("role_schema_ids", ("other-schema",)),
+        ("provider_config_revision", "2"),
+        ("runtime_policy_revision", "2"),
+        ("character_definition_revision", "2"),
+    ],
+)
+async def test_provenance_mismatch_never_creates_or_starts_production(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: Any,
+) -> None:
+    current = replace(PROVENANCE, **{field: value})
+    starts = 0
+
+    async def forbidden_start(app: MinimumCoreApplication) -> None:
+        nonlocal starts
+        starts += 1
+        raise AssertionError("不一致の来歴で本番を起動してはいけません")
+
+    monkeypatch.setattr(MinimumCoreApplication, "start", forbidden_start)
+    runner, request, fixture, apps, ports, _ = setup(
+        monkeypatch,
+        provenance_source=lambda: current,
+    )
+    result = await runner.run(request, fixture)
+    assert result.status is RunStatus.BLOCKED_UPSTREAM
+    assert result.machine_gate is Gate.NOT_RUN
+    assert result.stage_results[0].typed_outputs is None
+    assert result.target_provenance == PROVENANCE
+    assert apps == [] and ports == [] and starts == 0
+    assert runner.pending_count == 0
+
+
+@pytest.mark.asyncio
+async def test_provenance_source_failure_is_safe_harness_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail() -> ProductionTargetProvenance:
+        raise RuntimeError("private-repository-path / Authorization: private-value")
+
+    runner, request, fixture, apps, _, _ = setup(monkeypatch, provenance_source=fail)
+    result = await runner.run(request, fixture)
+    assert result.status is RunStatus.HARNESS_FAILED
+    assert result.machine_gate is Gate.NOT_RUN
+    assert apps == [] and runner.pending_count == 0
+    exported = result.export_json(1_000_000)
+    assert "private-repository-path" not in exported
+    assert "private-value" not in exported
+
+
+@pytest.mark.asyncio
+async def test_provenance_is_read_again_before_each_iteration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def current() -> ProductionTargetProvenance:
+        nonlocal calls
+        calls += 1
+        return PROVENANCE if calls == 1 else replace(PROVENANCE, git_head="b" * 40)
+
+    runner, request, fixture, apps, _, _ = setup(monkeypatch, provenance_source=current)
+    result = await runner.run(replace(request, repeat_count=2), fixture)
+    assert result.status is RunStatus.BLOCKED_UPSTREAM
+    assert result.stage_results[0].status is RunStatus.COMPLETED
+    assert result.stage_results[1].machine_gate is Gate.NOT_RUN
+    assert len(apps) == 1 and calls == 2 and runner.pending_count == 0
