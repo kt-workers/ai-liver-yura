@@ -8,6 +8,7 @@ from datetime import datetime
 from app.domain.contracts.common import freeze_json
 from app.domain.input_gateway import NormalizedInputEvent
 from app.domain.input_meaning import (
+    InputMeaningInterpretationResult,
     InputMeaningInterpreter,
     InputMeaningLiveContextPort,
     InputMeaningPolicy,
@@ -105,14 +106,7 @@ def input_meaning_target(
             trace_id=trace_id,
             created_at=case.created_at,
         )
-        status = RunStatus.COMPLETED
-        if result.role_failure is not None:
-            status = {
-                LLMRoleStatus.TIMED_OUT: RunStatus.TIMED_OUT,
-                LLMRoleStatus.CANCELLED: RunStatus.CANCELLED,
-            }.get(result.role_status or LLMRoleStatus.FAILED, RunStatus.PROVIDER_FAILED)
-        elif result.boundary_failure is not None:
-            status = RunStatus.BLOCKED_UPSTREAM
+        status = input_meaning_run_status(result)
         if case.appraisal is not None and appraisal_bindings is not None:
             appraisal = None
             if result.meaning is not None:
@@ -141,3 +135,16 @@ def input_meaning_target(
         frozenset(stages),
         frozenset(stages),
     )
+
+
+def input_meaning_run_status(result: InputMeaningInterpretationResult) -> RunStatus:
+    """入力意味の公開された型付き失敗を、既存Lab分類へ写す。"""
+    status = RunStatus.COMPLETED
+    if result.role_failure is not None:
+        status = {
+            LLMRoleStatus.TIMED_OUT: RunStatus.TIMED_OUT,
+            LLMRoleStatus.CANCELLED: RunStatus.CANCELLED,
+        }.get(result.role_status or LLMRoleStatus.FAILED, RunStatus.PROVIDER_FAILED)
+    elif result.boundary_failure is not None:
+        status = RunStatus.BLOCKED_UPSTREAM
+    return status
