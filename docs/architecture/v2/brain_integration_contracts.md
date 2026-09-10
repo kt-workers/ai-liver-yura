@@ -633,3 +633,16 @@ stopは新規受付を閉じ、Kernel stopの後、受付済みwork全件の終�
 Executiveの選択、Plannerの手順意味、Registryの入力宣言と利用可否、Requirementsの能力・条件、Activityの実行事実の所有権を維持する。#649の公開API完成を#612のproduction wiring完成へ拡大しない。
 
 操作供給は`ActivityOperationPublicationPort`、実値供給は`ArgumentSourceOwnerPort`、schema供給は`InputSchemaOwnerPort`で明示する。各publicationは元Owner自身の同期participant/tokenを保持する。同一実値Ownerのboundedな複数factを許すが、独立Ownerのコピー集約はしない。fact/ref数、JSON容量、#632の最終確定participant総数は独立に検査する。binding publication自身も既存Fenceで確定し、後続判断・承認は追加provenance/evidenceを含む実際の集合で16以下を要求する。17以上の正規拒否はCONTRACT_GAPではなくcapacity rejectionである。
+
+
+### 30.1. 確定Capability identityの搬送（#651 / #612）
+
+#612で、#649が確定した`capability-a`とは別の同要件Capabilityが#329で再選択されるCONTRACT_GAPを実証した。#651は公開実行要求にexact primaryを保持する契約修正を所有し、#612の選択ロジックで回避しない。本節は契約修正の設計であり、#651の製品実装および#612の還流配線の完成を主張しない。
+
+Directでは、#649の確定publicationから`direct_invocation()`が#329所有の`ActivityInvocation.primary_binding`へ、既存`CapabilityBinding`としてprimary要件・Capability ID・descriptor revisionを運ぶ。Planでは、`plan_execution_inputs()` → `PlanStepExecutionBinding.primary_binding` → `PlanExecutionScope`の照合 → `PlanExecutionOwner`の開始予約 → `ActivityInvocation.primary_binding`と、同じidentityを運ぶ。
+
+primaryはbindingのactivity type / operationに一致する正本要件がexactly oneの場合だけ成立する。0件・複数候補を#612へ持ち越さない。詳細は[活動実行契約第4.1節](activity_execution_contracts.md#41-確定primary-capabilityの保持651)と[Plan契約第16節](plan_execution_approval_contracts.md#16-手順のexact-primary-capabilityを実行要求へ保持する651)を正とする。
+
+#612はCapability再選択、current capability集合の恣意的filter、fallback、Provider選択、requirement意味生成を行わない。#329はexact primaryの現在性を指定ID・revision・要件・operationで照合し、auxiliaryは既存の個別解決を維持する。#649経由ではprimary必須とし、未指定を許す既存generic invocationの互換境界を欠落救済に使わない。resumeも元要求のexact primaryとの一致を必要とし、同等Capabilityへ付け替えない。
+
+#630の正本要件導出、#649の操作・引数binding、#361の計画意味、#343のRegistry / Provider契約、Goal / Executiveの意味Authority、#632のFence、effect uncertaintyは変更しない。#612は実際の#329終端recordを還流する責務を維持し、確定binding・Intent・Planを実行済みeffectへ昇格させない。

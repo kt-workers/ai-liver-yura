@@ -27,6 +27,7 @@ Goal/Commitment transitionとAttention intentはActivity dispatch対象ではな
 - strict JSON objectのbounded `arguments`
 - `interruptibility`: interruptible / soft_cancel_only / non_interruptible
 - `requested_at`
+- `primary_binding: CapabilityBinding | None`（#651で追加する契約。詳細は第4.1節）
 
 raw user text、Provider SDK object、具体Plugin API、Body joint、TTS engine値を入れない。`command_id`と`invocation_id`はprocess内で一意とし、同一commandの再admissionを拒否する。
 
@@ -43,12 +44,43 @@ admissionでは次をfail-closedで検証する。
 
 1. command authority、intent kind、identity、deadline。
 2. commandが保持する全present revisionとcurrent revisionの一致。
-3. required capabilityごとにcurrent available、または明示許可されたdegraded descriptorが存在する。
+3. required capabilityごとにcurrent available、または明示許可されたdegraded descriptorが存在する。exact primary指定時は第4.1節の固定identityだけを照合し、残る要件だけを従来どおり解決する。
 4. selected capability ID・descriptor revision・requirementをimmutable `CapabilityBinding`へ固定する。
 5. precondition ID・subject・predicateがcurrent stateと一致し、current actualがexpectedと一致する。
 6. command / invocationの重複がない。
 
 dispatch直前にもcurrent preflightを再取得し、revision、Capability bindingのID/revision/availability、Precondition identity/actualを再検証する。開始時snapshotをそのままcurrentとして再利用しない。Capability不足は`UNSUPPORTED`、Authority/precondition/revision/deadline違反は`REJECTED`、開始前staleは`SUPERSEDED`または`TIMED_OUT`としてtypedに閉じる。
+
+### 4.1. 確定primary Capabilityの保持（#651）
+
+本節は#651の契約修正であり、製品実装・試験は後続の同じlineageで行う。#649が確定したCapabilityを#329が別Capabilityへ再選択できる公開要求の欠落を解消する。#329・#649の既存採用成果を取り消すものではない。
+
+`CapabilityRequirement`は「何の能力が必要か」、既存の`CapabilityBinding`は「使用するCapability ID・descriptor revision」を表す。新しい並行型を作らず、#329の`ActivityInvocation.primary_binding`に既存の不変`CapabilityBinding(requirement, capability_id, descriptor_revision)`を保持する。Foundationの`CapabilityRequirement`へ具体identityを追加しない。Provider SDK・Plugin Registry固有型を要求へ入れない。
+
+#649 `direct_invocation()`は、確定判断の正本要件集合から`requirement.capability_type == binding.activity_type`かつ`requirement.operation == binding.operation_ref`を満たすprimaryをexactly oneで取得する。0件・2件以上は投影を拒否し、先頭を選ばない。#630の同一`(capability_type, operation)`重複禁止を維持し、`allow_degraded`を含む元の要件を変更せず、#649の`capability_id / capability_revision`と組にして`primary_binding`へ投影する。
+
+要求自体も、primaryの要件が`command.required_capabilities`に一意に存在し、同じtype / operationの別要件がなく、primaryのoperationが`invocation.operation_ref`と一致することを検査する。不整合は不正なtyped要求として構築・投影時に拒否し、実行しない。#649由来のDirect投影およびPlanのscope gateではprimary欠落を拒否する。#649を通らない既存generic要求に限り`primary_binding=None`を許し、その場合の既存選択規則を維持する。exact指定の拒否後にNoneへ落とす互換処理は禁止する。
+
+#### 初回admission
+
+primaryのcurrent descriptorは指定IDだけで取得し、次の順序で照合する。下表はprimary単体の失敗分類である。
+
+| 現在値と確定identityの関係 | 終端status / details.code |
+| --- | --- |
+| exact IDが存在しない | `UNSUPPORTED / capability_unavailable` |
+| exact IDは存在するがdescriptor revisionが異なる | `SUPERSEDED / capability_changed` |
+| ID・revisionは一致するがtype・operation・availability・degraded許可を含む`descriptor.satisfies(primary.requirement)`が偽 | `UNSUPPORTED / capability_unavailable` |
+| ID・revision・要件がすべて一致 | 確定済みprimaryをそのままbinding集合へ保持し、残る受付検査へ進む |
+
+最後から2行目は、初回受付で要件を満たす能力を利用できないという既存の`capability_unavailable`分類に従う。同IDのrevision不一致を、候補検索の不成立へ読み替えない。別の利用可能Capabilityがあってもfallbackしない。例えば`capability-a@3`を確定し、currentに`capability-0@8`と`capability-a@3`が存在する場合もprimaryは必ず`capability-a@3`である。
+
+primaryの照合後、auxiliaryには既存のcurrent deterministic selectionを適用する。各`command.required_capabilities`へ1つずつbindingを対応させ、要件の削除・primaryの全要件への強制を行わない。auxiliary不足は既存`UNSUPPORTED / capability_unavailable`とし、primaryの成功だけで受付を成功にしない。primaryの失敗がある場合は上表で閉じ、それ以外のauthority・重複・期限・revision・precondition検査とauxiliaryに関する既存の拒否規則は維持する。
+
+#### 開始直前の再検査と事実の保持
+
+second preflightではadmissionで固定したprimary・auxiliaryのbinding集合を再選択せず検証する。currentの同じID・descriptor revision・要件充足を照合し、primaryのoperationと要求のoperationの一致も維持する。固定済みIDの消失、revision変更、availability / degraded許可 / type / operationの不一致は既存`SUPERSEDED / capability_changed`として拒否する。期限・文脈・前提条件など他の失敗分類は従来どおりであり、Capabilityの変更で救済しない。
+
+primaryは要求の不変内容として直列化し、`ExecutionDispatchRequest`・`ActivityExecutionRecord`にも同じ要求とbindingを保持する。実行時のbinding集合でprimaryに対応する要素は要求のexact bindingと一致しなければならない。拒否された要求を実行済みと扱わず、拒否前にProviderを呼ばない。effect evidenceのCapability ID・descriptor revision・operation照合、取消、終端lifecycle、effect uncertaintyの意味は変更しない。
 
 ## 5. LifecycleとActual Fact
 
