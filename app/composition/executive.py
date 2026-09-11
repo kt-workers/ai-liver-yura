@@ -7,6 +7,7 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 
 from app.composition.attention import CoreAttentionBinding, CoreAttentionDispatch
+from app.domain.activity_binding import ActivityExecutionBindingPublication
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.brain_integration import (
     BrainIntegrationModule,
@@ -53,6 +54,7 @@ class CoreExecutiveEvidence:
     required_preconditions: tuple[ExecutivePreconditionRequirement, ...] = ()
     plan_scopes: tuple[PlanExecutionScope, ...] = ()
     plan_progress_contexts: tuple[PlanProgressContext, ...] = ()
+    activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
     capability_tokens: tuple[AuthorityGenerationToken, ...] = ()
     precondition_tokens: tuple[tuple[str, tuple[AuthorityGenerationToken, ...]], ...] = ()
 
@@ -70,6 +72,7 @@ class CoreExecutiveEvidence:
             "plan_scopes",
             "plan_progress_contexts",
             "capability_tokens",
+            "activity_bindings",
             "precondition_tokens",
         ):
             value = getattr(self, name)
@@ -229,6 +232,7 @@ class _ExecutiveOperation:
             captured_at=self.binding._clock.now(),
             appraisal_facts=current.appraisal_facts,
             bounds_policy=policy.bounds,
+            activity_bindings=evidence.activity_bindings,
             plan_scopes=evidence.plan_scopes,
             plan_progress_contexts=evidence.plan_progress_contexts,
         )
@@ -301,6 +305,7 @@ class _ExecutiveOperation:
             current.plan_scopes,
             current.plan_progress_contexts,
             evidence_tokens=evidence_tokens,
+            activity_bindings=current.activity_bindings,
         )
 
 
