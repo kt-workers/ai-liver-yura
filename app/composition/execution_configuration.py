@@ -3,7 +3,7 @@
 from dataclasses import dataclass, replace
 
 from app.composition.cognition import CoreCognitionDelivery
-from app.composition.execution import CoreExecutionDelivery
+from app.composition.execution import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
 from app.composition.executive import CoreExecutiveEvidence, CoreExecutiveEvidenceReader
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.domain.activity_binding import ActivityBindingAuthority
@@ -91,6 +91,27 @@ class _ExecutionEvidence:
             ),
         )
 
+    def reclaim_sources(self) -> None:
+        """消費済み配送根拠をRequirementsの入力集合からも回収する。"""
+        active = {
+            *(
+                f"execution:PlanExecutionScope:{scope}"
+                for scope in self.execution._plan_events.values()
+            ),
+            *(
+                f"execution:PlanProgressContext:{scope}"
+                for scope in self.execution._scope_events.values()
+            ),
+        }
+        generation = self.requirements.current_generation()
+        sources = tuple(
+            source
+            for source in generation.sources
+            if not source.source_id.startswith("execution:") or source.source_id in active
+        )
+        if sources != generation.sources:
+            self.requirements.publish(generation.policy, sources)
+
     async def requirements_for(
         self, snapshot: ExecutiveContextSnapshot, candidate: ExecutiveDecisionCandidate
     ) -> tuple[AuthoritativeIntentRequirements, ...]:
@@ -107,6 +128,7 @@ class CoreExecutionConfiguration:
     normalizer: InputNormalizer
     feedback_source: InputSourceState
     bindings: tuple[ActivityBindingAuthority, ...]
+    retention_policy: ExecutionFeedbackRetentionPolicy
 
     def compose(
         self,
@@ -134,12 +156,14 @@ class CoreExecutionConfiguration:
             self.feedback_source,
             lambda admission, root: delivery.submit_input(admission, root_trigger_id=root),
             clock,
-            max_deliveries=self.plan_policy.max_retained_records,
+            retention_policy=self.retention_policy,
         )
         execution.register()
         delivery.execution = execution
         delivery._decision_delivery = execution.accept_decision
-        delivery._executive._evidence = _ExecutionEvidence(
+        evidence = _ExecutionEvidence(
             delivery._executive._evidence, self.bindings, execution, requirements
         )
+        delivery._executive._evidence = evidence
+        execution._sources_consumed = evidence.reclaim_sources
         return execution

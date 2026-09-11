@@ -646,3 +646,35 @@ primaryはbindingのactivity type / operationに一致する正本要件がexact
 #612はCapability再選択、current capability集合の恣意的filter、fallback、Provider選択、requirement意味生成を行わない。#329はexact primaryの現在性を指定ID・revision・要件・operationで照合し、auxiliaryは既存の個別解決を維持する。#649経由ではprimary必須とし、未指定を許す既存generic invocationの互換境界を欠落救済に使わない。resumeも元要求のexact primaryとの一致を必要とし、同等Capabilityへ付け替えない。
 
 #630の正本要件導出、#649の操作・引数binding、#361の計画意味、#343のRegistry / Provider契約、Goal / Executiveの意味Authority、#632のFence、effect uncertaintyは変更しない。#612は実際の#329終端recordを還流する責務を維持し、確定binding・Intent・Planを実行済みeffectへ昇格させない。
+
+## 31. 実行事実の参照保持と配送寿命（#612）
+
+### 31.1. 実行事実の正本と現在参照の分離
+
+#329 `ActivityExecutionAuthority`の`ActivityExecutionRecord`、effect evidence、uncertaintyをActual Execution Fact Authorityとする。#612がcurrent cognitionへ見せるrecent referenceは投影であり、参照を外しても実行していなかったことにはしない。#329 record、effect、uncertainty、historical evidence、Memoryの事実を削除しない。Memoryを実行事実の正本へ変更しない。
+
+compositionの`ExecutionFeedbackRetentionPolicy`に`policy_id`、`policy_revision`、`max_recent_actual_fact_refs`を明示する。空ID、不正な型、正でないリビジョン・上限を拒否する。`CoreExecutionConfiguration`から配送へ渡し、`PlanExecutionPolicy.max_retained_records`を流用しない。
+
+recent順は終端Actual Factをfeedbackとして正常採用した順のFIFOとする。現在のActivity参照の順序を保ち、同一command IDを重複させず新規Factを末尾へ追加する。configured上限を超える場合は最古のActivity参照から外す。意味・重要度・LLM判断による選別は行わない。
+
+Activity参照のeffective上限は、configured上限と`ReferenceContext.max_entries`から現在の非Activity参照数を差し引いた利用可能slot数の小さい方とする。Goal / Commitment等をActivity保持のために削除しない。slotが0でも現在の実行結果はfeedback eventの型付きpayloadで次の認知へ渡し、Factを成功へ変換したり削除したりしない。
+
+### 31.2. 配送情報の回収と重複防止
+
+active delivery情報は実行中の重複防止・内容照合だけに使用する。Brain Runtimeがqueue、admission、concurrency、backpressureを所有する。ACTIVITY_EXECUTIONの全終端経路（実行開始前のSTALE / REJECTED等を含む）で配送情報を回収し、正常運転の累積回数を容量上限にしない。
+
+回収後のDirect再提示はdeterministic command identityで#329の既存recordを照合する。decision、intent、SystemCommand、operation、arguments、target、interruptibility、primary binding等の確定要求が同じならno-op、同identityで異なる要求ならfail-closedとする。再生成時の`requested_at`差だけで別要求にしない。既存の終端・非終端recordを新しいProvider呼出しへ置換しない。
+
+Planは既存Ownerのauthorization、progress、recordを利用し、同一scopeへactivate済みの同一authorizationを再起動しない。同じassessmentを再提示してprogressが変わらない場合は配送を生成しない。retire済みscopeの再提示を新規scopeへ復元・再実行しない。重複抑止のためのprocess lifetimeの無制限setを追加しない。
+
+plan-ready、activity-result、plan-progressのsource eventとscopeのcorrelationはExecutive判断中の繰返しreadでは保持する。`CommittedExecutiveDecision.candidate.source_event_ids`を`accept_decision`で正常消費した後に回収する。同一active scopeで既に還流済みの終端recordは、後続advanceのobservationから再還流しない。重複情報はactive scopeの試行数の範囲に限定し、retire時に回収する。
+
+Plan登録のretireは既存Owner契約に従う。COMPLETED / STOPPEDかつpending dispatchなしで、終端plan-progress evidenceが認知、Executive、Committed Executive decisionへ正常消費された後だけ`PlanExecutionOwner.retire(scope_id)`を呼ぶ。progress signature、feedback済みcommand情報、scopeのcorrelationも回収する。#329 recordは残す。REPLAN_REQUIRED / RECONCILIATION_REQUIRED / RESUME_REQUIRED / FAILED等を回収目的でSTOPPEDへ変換しない。
+
+Plan取消でOwnerがSTOPPEDになった場合も、そのprogress evidenceを型付き内部入力として次の認知へ渡す。取消中の実行Factは保持し、STOPPED evidenceの正常消費後に同じretire条件を適用する。
+
+### 31.3. Directの現在性と実行lane
+
+Directのpayloadは`intent.payload.binding_ref`でexactly oneに解決した`ActivityExecutionBindingPublication`を保持する。`direct_invocation()`と同じpublicationだけをfreshness dependencyとして`require_current()`で照合する。同じdecision内の無関係な兄弟binding変更で失効させない。Planの現在性は既存Plan Owner / publication gateに従う。
+
+Activity Execution Brain workはtrusted parent workのlaneとenvelope priorityを継承する。BACKGROUND_REFLECTIONに固定しない。新しいlane、scheduler policy、Domain Authorityは追加せず、Reflectionの意味契約を変更しない。本節は#612の利用・保持・配送契約であり、#329 / #649 / #651のOwner semanticsを変更しない。
