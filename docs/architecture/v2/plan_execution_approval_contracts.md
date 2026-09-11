@@ -58,7 +58,7 @@
 実装時に次の公開型を追加する。通常の単純活動は既存の`ActivityIntentPayload`を使い、計画全体への承認と混同しない。
 
 - `PlanExecutionScope`: #361の確定`ActivityPlan`、手順ごとの操作引数・事前条件の束縛、対象目標と各依存先のリビジョン、期限、方針世代を固定した承認対象。計画そのものの変更権限を持たない。
-- `PlanStepExecutionBinding`: `step_id`、`operation_ref`、対象参照、固定した引数、引数の由来参照、解決済み事前条件。手順の操作・対象・事前条件参照と一致を検査する。引数の値を自由文から作る責務を結合処理へ置かない。
+- `PlanStepExecutionBinding`: `step_id`、`operation_ref`、対象参照、固定した引数、引数の由来参照、解決済み事前条件、`primary_binding`（第16節）。手順の操作・対象・事前条件参照と一致を検査する。引数の値を自由文から作る責務を結合処理へ置かない。
 - `PlanExecutionIntentPayload`: 実行判断が選択する承認対象の参照。`ExecutiveIntentKind`に計画実行承認を追加し、対応する計画事実を`ExecutiveFactKind`で区別する。既存の活動意図から暗黙に昇格しない。
 - `PlanExecutionAuthorization`: #328の確定判断と承認対象を照合して発行する承認。承認対象の内容・判断・意図の対応、必要な現在のリビジョン、現在の能力・事前条件を発行時に再検査する。期限と再試行範囲を広げない。
 - `PlanExecutionProgress`: 登録した承認範囲の識別子、進行状態、評価済み手順と発行命令の識別子、終了・再判断要求の根拠。計画と承認の実体、各手順の試行回数と確定記録は同じ登録の`PlanProgressContext`から取得し、#329の実行事実を所有し直さない。
@@ -180,3 +180,30 @@ LLMの応答完了時刻は候補が生成された時刻であり、承認の�
 Plan実行承認の最終Fenceにも、選択scopeのPlanに保持したbinding・schema・実値出典Owner・provider非依存operation Ownerの全tokenを渡す。確定直前の出典変更は承認を拒否し、次の実行予約へ先送りしない。scope登録と手順開始予約でも同じ出典を同期読取集合で照合する。共通16参加者上限は拡大しない。
 
 最終集合にはRequirements Owner、利用したRequirements provenance、evidence、Plan/scope関連Owner、各選択bindingとその実値・schema・operation Owner、確定先を含める。共通Ownerの同一tokenは既存Fenceが重複正規化する。fact/reference件数とdistinct participant総数は別であり、独立した17以上のparticipantは`INVALID_LOCK_CONFIGURATION`として非確定にする。これをbinding/source数だけの固定上限や成功へ読み替えない。
+
+## 16. 手順のexact primary Capabilityを実行要求へ保持する（#651）
+
+本節は#651で実装する契約修正であり、設計記述の追加だけでPlan実行の完成とはしない。#649の既存`ActivityExecutionBinding.capability_id / capability_revision`をそのまま使い、そのOwner・操作選択・引数由来を再設計しない。
+
+`PlanStepExecutionBinding.primary_binding`に#329の既存`CapabilityBinding`を保持する。#649由来の確定Planでは必須とし、欠落をgeneric要求へ変換しない。`plan_execution_inputs()`は各stepの`required_capabilities`から、対応publicationの`activity_type / operation_ref`とtype / operationが一致するprimary要件をexactly oneで取得し、元の要件・`capability_id`・`capability_revision`を機械投影する。0件・2件以上は拒否する。`allow_degraded`も元の要件から保持し、#612が選択・推測しない。
+
+`PlanExecutionScope`はstepの`binding_ref`から確定`ActivityPlan.activity_bindings`のpublicationを一意に解決する。既存のoperation・target・arguments・provenance検査に加え、次を検査する。
+
+- primary要件はstepの正本要件集合に一意に存在し、publicationのactivity type・operationと一致する。
+- primaryの`capability_id`はpublicationの`capability_id`と一致する。
+- primaryの`descriptor_revision`はpublicationの`capability_revision`と一致する。
+- primary要件のoperationはstep・step binding・publicationのoperationと一致する。
+
+ID・revision・要件の改ざん、欠落、曖昧性をscope gateで拒否する。これらの構造不正を、実行時に別Capabilityを探す理由へ読み替えない。#361の既存`required_capabilities` invariantを緩めず、許される追加要件の意味を変更しない。
+
+`PlanExecutionOwner`は開始予約で作る`ActivityInvocation.primary_binding`へ、承認scopeに固定したstepの値をそのまま渡す。再試行でも同じexact identityを保持し、現在利用不能だからという理由で同等Capabilityへ付け替えない。全てのrequired capabilityは命令へ残し、auxiliaryの個別解決は#329へ委譲する。初回admission・second preflightの失敗分類は[活動実行契約第4.1節](activity_execution_contracts.md#41-確定primary-capabilityの保持651)に統一する。Plan側でUNSUPPORTED・SUPERSEDEDを成功へ変更せず、既存の進行・再計画・照合要求へ返す。
+
+### 16.1. 既存実行の再開
+
+第13節の既存非終端要求との照合に、`resumed_invocation.primary_binding == step_binding.primary_binding`を追加する。primary要件（degraded許可を含む）、Capability ID、descriptor revisionの全てが一致することを要求する。旧要求にexact primaryがない場合も不一致として拒否し、現在の要件からidentityを補って旧要求を変更しない。
+
+同じ要件を満たす別Capabilityや異なるrevisionへの付替え、新規invocationへの置換は認めない。再開は元の実行の観測継続であり、再admission・新しいProvider呼出しではない。記録された元要求・dispatch binding・確定効果を維持し、既存の同一目標・所有済み実行・引数・権限・期限の検査、取消所有、再試行禁止は第13節どおりとする。
+
+### 16.2. 実装後の受入確認
+
+DirectとPlanの双方で、同要件の複数Capabilityが存在しても確定先を保持すること、exact不在・revision変更・利用不可でfallbackしないこと、primaryとauxiliaryを別々に検証することを確認する。PlanではID・revision・primary改ざんと曖昧なprimaryを拒否し、resume時も元要求と一致させる。#649を使わないgeneric ActivityInvocationの互換性、dispatch / record / effect evidenceの整合も確認する。正式Gate・CI・独立実装レビューは同じ#651の実装・Test/Fix完了後に行う。

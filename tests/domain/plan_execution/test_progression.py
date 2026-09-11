@@ -11,6 +11,7 @@ from app.domain.activity_execution import (
     ActivityExecutionCoordinator,
     ActivityExecutionRecord,
     ActivityInvocation,
+    CapabilityBinding,
     ExecutionAdapterReport,
     ExecutionCancellationSignal,
     ExecutionDispatchRequest,
@@ -112,6 +113,7 @@ class Setup:
 def setup(
     *,
     retry: bool = False,
+    auxiliary: bool = False,
     parallel: bool = False,
     capacity: int = 4,
     interruption: InterruptionPolicy = InterruptionPolicy.RESUMABLE,
@@ -119,6 +121,11 @@ def setup(
     planning = GoalPlanningAuthority()
     captured = plan_context()
     original = plan_candidate()
+    live = plan_current()
+    if auxiliary:
+        from tests.domain.goal_planning.test_goal_planning import _auxiliary_inputs, _network
+
+        original, captured, live = _auxiliary_inputs((_network(),), (_network("network-b"),))
     first = replace(
         original.steps[0], replan_on_failure=not retry, interruption_policy=interruption
     )
@@ -138,7 +145,7 @@ def setup(
     plan = planning.commit(
         proposed,
         captured,
-        replace(plan_current(), revisions=REVISIONS),
+        replace(live, revisions=REVISIONS),
         plan_id="plan",
         committed_at=NOW,
     )
@@ -162,6 +169,11 @@ def setup(
             {"query": "資料"},
             ("goal-1",),
             (PreconditionRef("pre-ready", "equals", "target-1", True),),
+            primary_binding=CapabilityBinding(
+                step.required_capabilities[0],
+                plan.activity_bindings[0].value.capability_id,
+                plan.activity_bindings[0].value.capability_revision,
+            ),
         )
         for step in proposed.steps
     )
@@ -172,8 +184,19 @@ def setup(
     decision, context, current = inputs()
     decision = replace(
         decision,
-        intents=(replace(decision.intents[0], payload=PlanExecutionIntentPayload(scope.scope_id)),),
+        intents=(
+            replace(
+                decision.intents[0],
+                payload=PlanExecutionIntentPayload(scope.scope_id),
+                required_capabilities=proposed.steps[0].required_capabilities,
+            ),
+        ),
     )
+    if auxiliary:
+        from tests.domain.goal_planning.test_goal_planning import _network
+
+        context = replace(context, capabilities=(*context.capabilities, _network()))
+        current = replace(current, capabilities=(*current.capabilities, _network()))
     context = replace(context, plan_scopes=(scope,))
     current = replace(current, plan_scopes=(scope,))
     publication = owner.scope_publication(scope.scope_id)
@@ -288,6 +311,11 @@ async def test_retry_is_bounded_and_keeps_each_attempt() -> None:
     assert len(provider.calls) == 2
     assert len(result.command_ids) == 2
     assert provider.calls[0].command.command_id != provider.calls[1].command.command_id
+    expected = (
+        value.owner.observation(value.scope_id).authorization.scope.bindings[0].primary_binding
+    )
+    assert expected is not None
+    assert all(c.primary_binding == expected for c in provider.calls)
 
 
 @pytest.mark.asyncio
@@ -563,3 +591,45 @@ async def test_repeated_authorization_does_not_restart_and_retired_authorization
     value.owner.retire(value.scope_id)
     with pytest.raises(ValueError, match="登録されていません"):
         value.owner.activate(authorization, value.clock.now())
+
+
+@pytest.mark.parametrize("case", ["missing", "id", "revision", "requirement"])
+def test_scope_rejects_primary_tampering(case: str) -> None:
+    value = setup()
+    scope = value.owner.observation(value.scope_id).authorization.scope
+    binding = scope.bindings[0]
+    primary = binding.primary_binding
+    assert primary is not None
+    if case == "missing":
+        changed = None
+    elif case == "id":
+        changed = replace(primary, capability_id="other")
+    elif case == "revision":
+        changed = replace(primary, descriptor_revision=primary.descriptor_revision + 1)
+    else:
+        changed = replace(primary, requirement=replace(primary.requirement, allow_degraded=True))
+    with pytest.raises(ValueError, match="primary"):
+        replace(scope, bindings=(replace(binding, primary_binding=changed), *scope.bindings[1:]))
+
+
+@pytest.mark.asyncio
+async def test_auxiliary_plan_reaches_exact_execution_with_separate_descriptor() -> None:
+    from tests.domain.goal_planning.test_goal_planning import _network
+
+    value = setup(auxiliary=True)
+    scope = value.owner.observation(value.scope_id).authorization.scope
+    assert scope.bindings[0].primary_binding is not None
+    requests = value.owner.reserve_ready(
+        value.scope_id, value.current, value.clock.now()
+    ).invocations
+    assert len(requests) == 1
+    invocation = requests[0]
+    assert invocation.primary_binding == scope.bindings[0].primary_binding
+    assert len(invocation.command.required_capabilities) == 2
+    current = await Preflight(value).current_for(invocation)
+    admitted = value.activity.admit(
+        invocation, replace(current, capabilities=(capability(), _network("network-c")))
+    )
+    assert admitted.result.status is ExecutionStatus.ACCEPTED
+    assert admitted.bindings[0] == invocation.primary_binding
+    assert admitted.bindings[1].capability_id == "network-c"

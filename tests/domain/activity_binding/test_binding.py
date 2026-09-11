@@ -268,6 +268,23 @@ def test_direct_committed_binding_and_projection() -> None:
         invocation_id="invocation",
         requested_at=NOW,
     )
+    from app.domain.activity_execution import ActivityExecutionAuthority, ExecutionPreflightSnapshot
+    from app.domain.contracts import ExecutionStatus
+
+    assert invocation.primary_binding is not None
+    assert invocation.primary_binding.capability_id == "capability-a"
+    descriptor = committed.activity_bindings[0].descriptor
+    admitted = ActivityExecutionAuthority().admit(
+        invocation,
+        ExecutionPreflightSnapshot(
+            invocation.command.revisions,
+            (replace(descriptor, capability_id="capability-0"), descriptor),
+            (),
+            NOW,
+        ),
+    )
+    assert admitted.result.status is ExecutionStatus.ACCEPTED
+    assert admitted.bindings == (invocation.primary_binding,)
     assert invocation.arguments == {"query": "typed-value"}
     assert invocation.operation_ref == "run"
     assert invocation.command.decision_id == committed.decision_id
@@ -296,6 +313,15 @@ def test_plan_commit_and_mechanical_projection() -> None:
     bindings, facts = plan_execution_inputs(
         plan, owner, (PreconditionRef("pre-ready", "equals", "target-1", True),)
     )
+    assert bindings[0].primary_binding is not None
+    assert (
+        bindings[0].primary_binding.capability_id == plan.activity_bindings[0].value.capability_id
+    )
+    assert (
+        bindings[0].primary_binding.descriptor_revision
+        == plan.activity_bindings[0].value.capability_revision
+    )
+    assert bindings[0].to_dict()["primary_binding"] == bindings[0].primary_binding.to_dict()
     assert bindings[0].arguments == {"query": "資料"}
     assert facts[0].reference_id == "goal-1"
     assert facts[0].value == "資料"
@@ -596,3 +622,33 @@ def test_plan_authorization_fences_argument_source(monkeypatch: pytest.MonkeyPat
     with fence_clock(lambda: NOW), pytest.raises(FinalizationError):
         authority.commit(proposed, captured, current=live, decision_id="stale-plan")
     assert not authority.has_committed(captured.trigger_id)
+
+
+@pytest.mark.parametrize("ambiguous", [False, True])
+def test_direct_projection_rejects_missing_or_ambiguous_primary(
+    monkeypatch: pytest.MonkeyPatch, ambiguous: bool
+) -> None:
+    from app.domain.activity_binding import projector
+    from tests.domain.executive.test_executive import NOW
+    from tests.helpers.executive_requirements import fence_clock, make_authority
+
+    _, _, _, captured, proposed, current = direct_fixture()
+    with fence_clock(lambda: NOW):
+        decision = make_authority(captured).commit(
+            proposed, captured, current=current, decision_id="primary-gate"
+        )
+    from app.domain.executive.projector import to_system_command
+
+    command = to_system_command(decision, proposed.intents[0], command_id="cmd")
+    requirement = command.required_capabilities[0]
+    invalid = replace(
+        command,
+        required_capabilities=(
+            (requirement, replace(requirement, allow_degraded=True)) if ambiguous else ()
+        ),
+    )
+    monkeypatch.setattr(projector, "to_system_command", lambda *a, **k: invalid)
+    with pytest.raises(ValueError, match="primary"):
+        projector.direct_invocation(
+            decision, proposed.intents[0], command_id="cmd", invocation_id="inv", requested_at=NOW
+        )

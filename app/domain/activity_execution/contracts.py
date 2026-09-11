@@ -88,6 +88,7 @@ class ActivityInvocation:
     interruptibility: ActivityInterruptibility
     requested_at: datetime
     target_ref: str | None = None
+    primary_binding: CapabilityBinding | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.invocation_id, "invocation_id")
@@ -113,6 +114,23 @@ class ActivityInvocation:
             raise ValueError("command precondition ids must be unique")
         if len(set(requirements)) != len(requirements):
             raise ValueError("command capability requirements must be unique")
+        if self.primary_binding is not None:
+            primary = self.primary_binding
+            if not isinstance(primary, CapabilityBinding):
+                raise ValueError("primary_bindingにはCapabilityBindingが必要です")
+            matches = tuple(
+                r
+                for r in requirements
+                if (r.capability_type, r.operation)
+                == (primary.requirement.capability_type, primary.requirement.operation)
+            )
+            if (
+                matches != (primary.requirement,)
+                or primary.requirement.operation != self.operation_ref
+            ):
+                raise ValueError(
+                    "primary要件は正本集合に一意に存在し、操作と一致する必要があります"
+                )
         require_identifier(self.operation_ref, "operation_ref")
         arguments = freeze_json(self.arguments)
         if not isinstance(arguments, Mapping):
@@ -126,6 +144,7 @@ class ActivityInvocation:
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "primary_binding": self.primary_binding.to_dict() if self.primary_binding else None,
             "invocation_id": self.invocation_id,
             "target_ref": self.target_ref,
             "command": self.command.to_dict(),
@@ -187,6 +206,13 @@ class CapabilityBinding:
         require_identifier(self.capability_id, "capability_id")
         if type(self.descriptor_revision) is not int or self.descriptor_revision < 0:
             raise ValueError("descriptor_revision must be a non-negative int")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "requirement": self.requirement.to_dict(),
+            "capability_id": self.capability_id,
+            "descriptor_revision": self.descriptor_revision,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,17 +283,14 @@ class ExecutionAdapterReport:
             raise ValueError("observable report cannot introduce applied effect")
         object.__setattr__(self, "effects", effects)
         if not isinstance(self.effect_uncertainty, ExecutionEffectUncertainty):
-            raise ValueError(
-                "effect_uncertaintyにはExecutionEffectUncertaintyを指定してください"
-            )
+            raise ValueError("effect_uncertaintyにはExecutionEffectUncertaintyを指定してください")
         if self.effect_uncertainty is not ExecutionEffectUncertainty.NONE and self.status not in {
             ExecutionStatus.FAILED,
             ExecutionStatus.CANCELLED,
             ExecutionStatus.TIMED_OUT,
         }:
             raise ValueError(
-                "effect_uncertaintyは失敗・取消・タイムアウト時の終端報告でのみ"
-                "指定できます"
+                "effect_uncertaintyは失敗・取消・タイムアウト時の終端報告でのみ指定できます"
             )
 
 
@@ -289,6 +312,9 @@ class ExecutionDispatchRequest:
         if self.accepted_result.status is not ExecutionStatus.ACCEPTED:
             raise ValueError("dispatch requires accepted execution result")
         object.__setattr__(self, "bindings", _owned(self.bindings, CapabilityBinding, "bindings"))
+        primary = self.invocation.primary_binding
+        if primary is not None and self.bindings.count(primary) != 1:
+            raise ValueError("bindingsは要求のexact primaryを一件だけ保持する必要があります")
 
 
 @dataclass(frozen=True, slots=True)
@@ -306,6 +332,9 @@ class ActivityExecutionRecord:
         if not isinstance(self.invocation, ActivityInvocation):
             raise ValueError("invocation must be ActivityInvocation")
         object.__setattr__(self, "bindings", _owned(self.bindings, CapabilityBinding, "bindings"))
+        primary = self.invocation.primary_binding
+        if primary is not None and self.bindings.count(primary) != 1:
+            raise ValueError("bindingsは要求のexact primaryを一件だけ保持する必要があります")
         if not isinstance(self.result, ExecutionResult):
             raise ValueError("result must be ExecutionResult")
         if self.result.command_id != self.invocation.command.command_id:
@@ -323,9 +352,7 @@ class ActivityExecutionRecord:
         if type(self.record_revision) is not int or self.record_revision < 0:
             raise ValueError("record_revision must be a non-negative int")
         if not isinstance(self.effect_uncertainty, ExecutionEffectUncertainty):
-            raise ValueError(
-                "effect_uncertaintyにはExecutionEffectUncertaintyを指定してください"
-            )
+            raise ValueError("effect_uncertaintyにはExecutionEffectUncertaintyを指定してください")
         uncertain_terminal = {
             ExecutionStatus.FAILED,
             ExecutionStatus.CANCELLED,
@@ -336,10 +363,7 @@ class ActivityExecutionRecord:
             self.effect_uncertainty is not ExecutionEffectUncertainty.NONE
             and self.result.status not in uncertain_terminal
         ):
-            raise ValueError(
-                "effect_uncertaintyを保持できるのは未確定性を伴う"
-                "終端状態だけです"
-            )
+            raise ValueError("effect_uncertaintyを保持できるのは未確定性を伴う終端状態だけです")
 
     @property
     def terminal(self) -> bool:
