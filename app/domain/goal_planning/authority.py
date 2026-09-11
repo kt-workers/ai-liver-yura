@@ -23,6 +23,7 @@ from .contracts import (
     GoalPlanningCommitState,
     GoalPlanningContextSnapshot,
     GoalPlanningOutcome,
+    _primary_requirement,
     _validate_refs,
 )
 
@@ -183,26 +184,15 @@ class GoalPlanningAuthority:
         snapshot: GoalPlanningContextSnapshot,
         current: GoalPlanningCommitState,
     ) -> None:
-        initial = {item.capability_id: item for item in snapshot.capabilities}
-        live = {item.capability_id: item for item in current.capabilities}
         for step in candidate.steps:
-            matching = [
-                item
-                for item in snapshot.capabilities
-                if item.capability_type == step.activity_type
-                and step.operation_ref in item.operations
-                and all(item.satisfies(requirement) for requirement in step.required_capabilities)
-            ]
-            if not matching or not any(
-                descriptor.capability_id in live
-                and live[descriptor.capability_id] == initial[descriptor.capability_id]
-                and all(
-                    live[descriptor.capability_id].satisfies(requirement)
-                    for requirement in step.required_capabilities
-                )
-                for descriptor in matching
-            ):
-                raise ValueError("required capability changed while planning")
+            _primary_requirement(step)
+            # 補助能力の実行先を選択せず、各読取時点で要件の充足を確認する。
+            # primaryのexact identityは後続のselected_bindingsで照合する。
+            for requirement in step.required_capabilities:
+                if not any(
+                    item.satisfies(requirement) for item in snapshot.capabilities
+                ) or not any(item.satisfies(requirement) for item in current.capabilities):
+                    raise ValueError("計画に必要な能力要件が読取時点で満たされていません")
         for requirement in candidate.unmet_capabilities:
             if any(item.satisfies(requirement) for item in current.capabilities):
                 raise ValueError("unmet capability became available while planning")

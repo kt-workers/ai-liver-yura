@@ -584,8 +584,21 @@ def _activity_matches_step(
         descriptor is not None
         and descriptor.capability_type == step.activity_type
         and step.operation_ref in descriptor.operations
-        and all(descriptor.satisfies(requirement) for requirement in step.required_capabilities)
+        and descriptor.satisfies(_primary_requirement(step))
     )
+
+
+def _primary_requirement(step: ActivityPlanStep) -> CapabilityRequirement:
+    """操作の主体を表す要件を一意に検査し、Providerは選択しない。"""
+    values = tuple(
+        requirement
+        for requirement in step.required_capabilities
+        if requirement.capability_type == step.activity_type
+        and requirement.operation == step.operation_ref
+    )
+    if len(values) != 1:
+        raise ValueError("手順のprimary能力要件は一意でなければなりません")
+    return values[0]
 
 
 def _validate_refs(value: _PlanShape, snapshot: GoalPlanningContextSnapshot) -> None:
@@ -603,13 +616,12 @@ def _validate_refs(value: _PlanShape, snapshot: GoalPlanningContextSnapshot) -> 
         raise ValueError("plan completion is outside target goal")
     descriptors = {item.capability_id: item for item in snapshot.capabilities}
     for step in steps:
-        if not any(
-            descriptor.capability_type == step.activity_type
-            and step.operation_ref in descriptor.operations
-            and all(descriptor.satisfies(requirement) for requirement in step.required_capabilities)
-            for descriptor in snapshot.capabilities
+        _primary_requirement(step)
+        if any(
+            not any(descriptor.satisfies(requirement) for descriptor in snapshot.capabilities)
+            for requirement in step.required_capabilities
         ):
-            raise ValueError("step capability is unavailable in snapshot")
+            raise ValueError("手順の必要能力がsnapshotで利用できません（unavailable）")
         active_matches = [
             activity
             for activity in snapshot.activities
