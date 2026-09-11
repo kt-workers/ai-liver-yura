@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
 from app.composition.accepted_input import CoreAcceptedInputStore
@@ -42,6 +42,9 @@ from app.domain.input_gateway import InputAdmission, InputAdmissionStatus, Input
 from app.domain.input_meaning import InputMeaningInterpretationResult
 from app.runtime.kernel import CancellationToken, RuntimeClock
 from app.usecases.attention import UserInteractionAttentionProjector
+
+if TYPE_CHECKING:
+    from app.composition.execution import CoreExecutionDelivery
 
 
 class _Module(Protocol):
@@ -120,6 +123,8 @@ class CoreCognitionDelivery:
         self._fast_rules = tuple(fast_rules)
         self._pending_users: dict[str, AttentionSource] = {}
         self.latest_delivery: CognitionDelivery | None = None
+        self.execution: CoreExecutionDelivery | None = None
+        self._decision_delivery: Callable[[BrainIntegrationWork, object], None] | None = None
 
     def register(self, input_port: _Module) -> None:
         self.brain.register_terminal_observer(
@@ -136,8 +141,13 @@ class CoreCognitionDelivery:
             ),
         )
         self.brain.register_module(
-            BrainIntegrationModule.EXECUTIVE, ExecutiveBrainModulePort(self._executive)
+            BrainIntegrationModule.EXECUTIVE,
+            _ForwardingModule(ExecutiveBrainModulePort(self._executive), self._executive_completed),
         )
+
+    def _executive_completed(self, work: BrainIntegrationWork, result: object) -> None:
+        if self._decision_delivery is not None:
+            self._decision_delivery(work, result)
 
     def _submit(self, parent: BrainIntegrationWork, child: BrainIntegrationWork) -> None:
         admission = self.brain.submit(child)
@@ -247,10 +257,15 @@ class CoreCognitionDelivery:
         selected_input = self._inputs.read(
             event_ids[0], dispatch.reference.context.source_context_revision
         )
+        selected_trace = self.brain.trace(selected_input.event.envelope.trace_id)
         envelope = replace(
             work.envelope,
             trace_id=selected_input.event.envelope.trace_id,
-            root_trigger_id=selected_input.event.envelope.event_id,
+            root_trigger_id=(
+                selected_trace.root_trigger_id
+                if selected_trace is not None
+                else selected_input.event.envelope.event_id
+            ),
             source_event_ids=event_ids,
             priority=BrainWorkPriority(dispatch.selected_source.effective_priority),
             trigger_id=dispatch.trigger.trigger_id,
@@ -269,7 +284,11 @@ class CoreCognitionDelivery:
         self._submit(work, child)
 
     def submit_input(
-        self, admission: InputAdmission, *, deadline_at: datetime | None = None
+        self,
+        admission: InputAdmission,
+        *,
+        deadline_at: datetime | None = None,
+        root_trigger_id: str | None = None,
     ) -> BrainWorkAdmission:
         """正規Gatewayの採用イベントを、現在文脈と既存の有界受付へ渡す。"""
         from app.bootstrap import InputMeaningBrainWorkPayload
@@ -324,7 +343,7 @@ class CoreCognitionDelivery:
             )
             else BrainWorkPriority.NORMAL,
             event.envelope.occurred_at,
-            root_trigger_id=event.envelope.event_id,
+            root_trigger_id=root_trigger_id or event.envelope.event_id,
         )
         work = BrainIntegrationWork(
             uuid4().hex, module, lane, envelope, payload, deadline_at=deadline_at

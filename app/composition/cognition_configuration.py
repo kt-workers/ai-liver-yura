@@ -6,6 +6,7 @@ from app.composition.accepted_input import CoreAcceptedInputStore
 from app.composition.appraisal import CoreAppraisalBinding
 from app.composition.attention import CoreAttentionBinding
 from app.composition.cognition import CoreCognitionDelivery
+from app.composition.execution_configuration import CoreExecutionConfiguration
 from app.composition.executive import CoreExecutiveBinding
 from app.composition.executive_requirements import (
     CoreExecutiveRequirementsReader,
@@ -44,6 +45,7 @@ class CoreCognitionConfiguration:
     precondition_router: PreconditionSourceRouter
     precondition_bindings: tuple[PreconditionSourceBinding, ...]
     fast_rules: tuple[DeterministicAppraisalRule, ...]
+    execution: CoreExecutionConfiguration | None = None
 
     def __post_init__(self) -> None:
         registrations = (
@@ -94,6 +96,12 @@ class CoreCognitionConfiguration:
             ExecutiveDecisionAuthority(self.requirements),
             clock,
         )
-        return CoreCognitionDelivery(
+        delivery = CoreCognitionDelivery(
             brain, appraisal, attention, executive, self.fast_rules, inputs, self.attention, clock
         )
+
+        if self.execution is not None:
+            self.execution.compose(
+                delivery, reference, clock, self.executive_policy.bounds, self.requirements
+            )
+        return delivery
