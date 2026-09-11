@@ -84,15 +84,32 @@ class ActivityExecutionAuthority:
                 raise ValueError("command is already admitted")
             if invocation.invocation_id in self._invocation_ids:
                 raise ValueError("invocation is already admitted")
-            bindings = self._select_bindings(command.required_capabilities, current)
+            primary = invocation.primary_binding
+            primary_failure = None
+            if primary is not None:
+                descriptor = next(
+                    (c for c in current.capabilities if c.capability_id == primary.capability_id),
+                    None,
+                )
+                if descriptor is None:
+                    primary_failure = (ExecutionStatus.UNSUPPORTED, "capability_unavailable")
+                elif descriptor.revision != primary.descriptor_revision:
+                    primary_failure = (ExecutionStatus.SUPERSEDED, "capability_changed")
+                elif not descriptor.satisfies(primary.requirement):
+                    primary_failure = (ExecutionStatus.UNSUPPORTED, "capability_unavailable")
+            bindings = self._select_bindings(command.required_capabilities, current, primary)
             failure = self._preflight_failure(invocation, current, bindings, admitted_at)
-            if bindings is None:
+            if primary_failure is not None:
+                status, code = primary_failure
+                result = requested.transition_to(status, admitted_at, details={"code": code})
+                bindings_tuple: tuple[CapabilityBinding, ...] = (primary,) if primary else ()
+            elif bindings is None:
                 result = requested.transition_to(
                     ExecutionStatus.UNSUPPORTED,
                     admitted_at,
                     details={"code": "capability_unavailable"},
                 )
-                bindings_tuple: tuple[CapabilityBinding, ...] = ()
+                bindings_tuple = (primary,) if primary else ()
             elif failure is not None:
                 status, code = failure
                 result = requested.transition_to(status, admitted_at, details={"code": code})
@@ -331,13 +348,18 @@ class ActivityExecutionAuthority:
 
     @staticmethod
     def _select_bindings(
-        requirements: tuple[object, ...], current: ExecutionPreflightSnapshot
+        requirements: tuple[object, ...],
+        current: ExecutionPreflightSnapshot,
+        primary: CapabilityBinding | None = None,
     ) -> tuple[CapabilityBinding, ...] | None:
         from app.domain.contracts import CapabilityRequirement
 
         bindings: list[CapabilityBinding] = []
         for requirement in requirements:
             assert isinstance(requirement, CapabilityRequirement)
+            if primary is not None and requirement == primary.requirement:
+                bindings.append(primary)
+                continue
             candidates = sorted(
                 (item for item in current.capabilities if item.satisfies(requirement)),
                 key=lambda item: item.capability_id,

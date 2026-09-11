@@ -449,6 +449,7 @@ class PlanExecutionOwner:
                     interruption,
                     now,
                     binding.target_ref,
+                    binding.primary_binding,
                 )
                 item.attempts.setdefault(step.step_id, []).append(invocation)
                 self._dispatching.add(command_id)

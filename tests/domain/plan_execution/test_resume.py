@@ -268,3 +268,39 @@ async def test_failed_existing_activity_is_not_reissued_as_a_new_attempt() -> No
     finally:
         provider.release.set()
         await asyncio.gather(original, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["missing", "id", "revision", "requirement"])
+async def test_resume_rejects_changed_exact_primary(case: str) -> None:
+    value = setup()
+    provider = WaitingProvider(value)
+    execution = runner(value, provider)
+    original = asyncio.create_task(execution.advance(value.scope_id))
+    try:
+        await asyncio.wait_for(provider.started.wait(), 1)
+        resumed_scope_id = replacement(value, provider.calls[0].command.command_id)
+        scope = value.owner.observation(resumed_scope_id).authorization.scope
+        binding = scope.bindings[0]
+        resumed = binding.resumed_invocation
+        assert resumed is not None and resumed.primary_binding is not None
+        primary = resumed.primary_binding
+        if case == "missing":
+            altered = replace(resumed, primary_binding=None)
+        elif case == "id":
+            altered = replace(resumed, primary_binding=replace(primary, capability_id="other"))
+        elif case == "revision":
+            altered = replace(resumed, primary_binding=replace(primary, descriptor_revision=2))
+        else:
+            requirement = replace(primary.requirement, allow_degraded=True)
+            altered = replace(
+                resumed,
+                command=replace(resumed.command, required_capabilities=(requirement,)),
+                primary_binding=replace(primary, requirement=requirement),
+            )
+        with pytest.raises(ValueError, match="再開"):
+            replace(scope, bindings=(replace(binding, resumed_invocation=altered),))
+        assert len(provider.calls) == 1
+    finally:
+        provider.release.set()
+        await asyncio.gather(original, return_exceptions=True)

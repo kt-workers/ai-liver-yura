@@ -8,7 +8,11 @@ from dataclasses import InitVar, dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from app.domain.activity_execution.contracts import ActivityInterruptibility, ActivityInvocation
+from app.domain.activity_execution.contracts import (
+    ActivityInterruptibility,
+    ActivityInvocation,
+    CapabilityBinding,
+)
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
 from app.domain.contracts import PreconditionRef
 from app.domain.contracts.common import (
@@ -60,8 +64,13 @@ class PlanStepExecutionBinding:
     argument_fact_refs: tuple[str, ...]
     preconditions: tuple[PreconditionRef, ...]
     resumed_invocation: ActivityInvocation | None = None
+    primary_binding: CapabilityBinding | None = None
 
     def __post_init__(self) -> None:
+        if self.primary_binding is not None and not isinstance(
+            self.primary_binding, CapabilityBinding
+        ):
+            raise ValueError("primary_bindingにはCapabilityBindingが必要です")
         if self.resumed_invocation is not None and not isinstance(
             self.resumed_invocation, ActivityInvocation
         ):
@@ -90,6 +99,7 @@ class PlanStepExecutionBinding:
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "primary_binding": self.primary_binding.to_dict() if self.primary_binding else None,
             "step_id": self.step_id,
             "operation_ref": self.operation_ref,
             "target_ref": self.target_ref,
@@ -158,7 +168,8 @@ class PlanExecutionScope:
             if (resumed is None) != (step.resume_activity_id is None):
                 raise ValueError("再開参照と既存要求の指定が一致しません")
             if resumed is not None and (
-                resumed.command.command_id != step.resume_activity_id
+                resumed.primary_binding != binding.primary_binding
+                or resumed.command.command_id != step.resume_activity_id
                 or resumed.operation_ref != binding.operation_ref
                 or resumed.target_ref != binding.target_ref
                 or resumed.arguments != binding.arguments
@@ -191,6 +202,19 @@ class PlanExecutionScope:
                 raise ValueError("手順の正規引数bindingがありません")
             publication = publications[0]
             value = publication.value
+            matches = tuple(
+                r
+                for r in step.required_capabilities
+                if r.capability_type == value.activity_type and r.operation == value.operation_ref
+            )
+            if (
+                len(matches) != 1
+                or binding.primary_binding is None
+                or binding.primary_binding
+                != CapabilityBinding(matches[0], value.capability_id, value.capability_revision)
+                or value.operation_ref != step.operation_ref
+            ):
+                raise ValueError("手順のexact primaryが確定publicationと一致しません")
             from app.domain.activity_binding.contracts import canonical
 
             if canonical(value.arguments) != canonical(binding.arguments) or set(

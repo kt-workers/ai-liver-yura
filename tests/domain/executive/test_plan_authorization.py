@@ -8,6 +8,7 @@ from typing import cast
 
 import pytest
 
+from app.domain.activity_execution import CapabilityBinding
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import CapabilityAvailability, PreconditionRef
 from app.domain.contracts.common import JsonValue
@@ -93,6 +94,11 @@ def scope() -> PlanExecutionScope:
                 {"query": "資料"},
                 ("goal-1",),
                 (PreconditionRef("pre-ready", "equals", "target-1", True),),
+                primary_binding=CapabilityBinding(
+                    plan.candidate.steps[0].required_capabilities[0],
+                    plan.activity_bindings[0].value.capability_id,
+                    plan.activity_bindings[0].value.capability_revision,
+                ),
             ),
         ),
         NOW,

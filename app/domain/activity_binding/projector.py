@@ -6,8 +6,9 @@ from app.domain.activity_execution import (
     ActivityExecutionAuthority,
     ActivityInterruptibility,
     ActivityInvocation,
+    CapabilityBinding,
 )
-from app.domain.contracts import PreconditionRef
+from app.domain.contracts import CapabilityRequirement, PreconditionRef
 from app.domain.contracts.finalization import authority_read_set
 from app.domain.executive.contracts import (
     ActivityIntentPayload,
@@ -40,14 +41,23 @@ def direct_invocation(
     pub = publications[0]
     pub.require_current()
     value = pub.value
+    command = to_system_command(decision, intent, command_id=command_id)
+    primary = _primary_binding(
+        command.required_capabilities,
+        value.activity_type,
+        value.operation_ref,
+        value.capability_id,
+        value.capability_revision,
+    )
     return ActivityInvocation(
         invocation_id,
-        to_system_command(decision, intent, command_id=command_id),
+        command,
         value.operation_ref,
         value.arguments,
         ActivityInterruptibility(decision.candidate.interruptibility.value),
         requested_at,
         value.target_ref,
+        primary,
     )
 
 
@@ -98,6 +108,13 @@ def plan_execution_inputs(
                     tuple(f.reference_id for f in value.sources),
                     tuple(conditions[c] for c in step.precondition_ids),
                     resumed,
+                    _primary_binding(
+                        step.required_capabilities,
+                        value.activity_type,
+                        value.operation_ref,
+                        value.capability_id,
+                        value.capability_revision,
+                    ),
                 )
             )
             for source in value.sources:
@@ -106,3 +123,20 @@ def plan_execution_inputs(
                     raise ValueError("手順間で同じ由来の内容が異なります")
                 facts[source.reference_id] = fact
         return tuple(bindings), tuple(facts.values())
+
+
+def _primary_binding(
+    requirements: tuple[CapabilityRequirement, ...],
+    activity_type: str,
+    operation_ref: str,
+    capability_id: str,
+    revision: int,
+) -> CapabilityBinding:
+    matches = tuple(
+        r
+        for r in requirements
+        if r.capability_type == activity_type and r.operation == operation_ref
+    )
+    if len(matches) != 1:
+        raise ValueError("確定bindingに対応するprimary要件は一件だけ必要です")
+    return CapabilityBinding(matches[0], capability_id, revision)
