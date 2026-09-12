@@ -479,6 +479,22 @@ class SpeechRuntime:
         async with self._lock:
             return self._reports.get(presentation_id, ())
 
+    async def presentation_snapshot(
+        self, presentation_id: str
+    ) -> tuple[
+        SpeechPresentationCommand, PreparedSpeechCandidate, tuple[SpeechPresentationReport, ...]
+    ]:
+        """確定command・現在candidate・受理済みreportを同じOwner読取で返す。"""
+        async with self._lock:
+            command = self._commands.get(presentation_id)
+            if command is None:
+                raise ValueError("確定済みPresentationが存在しません")
+            return (
+                command,
+                self._candidates[command.candidate_id],
+                self._reports.get(presentation_id, ()),
+            )
+
     async def fail_presentation_stream(self, candidate_id: str) -> PreparedSpeechCandidate:
         """STARTED後にterminal reportを失ったAdapter streamをfail-closedで閉じる。"""
         async with self._lock:

@@ -400,44 +400,31 @@ No long TTS/playback await occurs inside the commit lock.
 
 ---
 
-## 15. Presentation report / Actual Fact boundary
+## 15. Presentation reportとActual Factの境界（#657）
 
-Presentation Adapter returns trusted typed operational reports.
+#348はSpeechPresentationReportを提示lifecycleへ受理する。システム全体のActual Execution Factの正規化は引き続き#329だけが所有する。
 
-```text
-SpeechPresentationReport
-- presentation_id
-- candidate_id
-- status
-- output_modes[]
-- started_at?
-- completed_at?
-- audio_ref?
-- timing_ref?
-- failure_code?
-- interruption_reason?
-```
+`app/composition/execution_observation.py`の`project_speech_execution_observation()`を再利用する。入力はSpeechRuntime、確定SpeechPresentationCommand、受理済みSpeechPresentationReport、exact ExecutionObservationProvenance。`presentation_snapshot()`が既存Owner lock内でcommand・current candidate・受理済みreport系列を同時に読む。未検証report、command差替え、candidate/asset/source decision/event/revisionの不一致は拒否する。読取口は既存Ownerの意味・lifecycleを変更しない。
 
-Status examples:
-- STARTED
-- COMPLETED
-- INTERRUPTED
-- FAILED_BEFORE_START
-- FAILED_AFTER_START
+source contractはcomposition側の`speech-presentation-report@1`で固定する。登録済みsource ruleはOBSERVABLE / COMPLETED / CANCELLED / FAILEDと、text-presentation / audio-presentation-startedのOBSERVABLE effectだけを許可し、終端前の確認済みeffectを必須にする。#329 CoreへSpeech型を持ち込まない。
 
-#348 uses reports for speech lifecycle/queue coordination.
+| 受理済みSpeech status | 汎用観測への投影 |
+| --- | --- |
+| FAILED_BEFORE_START | None。観測・Actual Fact・effectなし |
+| STARTED | 外部提示開始確認としてOBSERVABLE。modeに対応する確認済みeffectを導入 |
+| COMPLETED | 先行OBSERVABLEからCOMPLETEDへ進め、effect refs保持 |
+| INTERRUPTED | 先行OBSERVABLEからCANCELLEDへ進め、partial effect保持。details.codeはinterrupted |
+| FAILED_AFTER_START | 先行OBSERVABLEからFAILEDへ進め、partial effect保持 |
 
-System-wide Actual Execution Fact normalization remains #329 responsibility.
+終端の受理前にSTARTEDの観測を#329へ受理させる。終端報告だけから新しいeffectを作らない。TEXT_ONLYはtext effectだけ、AUDIO_WITH_TEXTはtextとaudio開始の別effectを持つ。それ以外のmode構成はこのリビジョンのprojectorでは拒否する。
 
-```text
-SpeechPresentationReport
-→ #329 trusted execution observation boundary
-→ generic Actual Execution Fact
-```
+effect identityはpresentation identityとtext/audio種別の固定JSON配列符号化から決定する。payloadはpresentation_id / candidate_id / utterance_idと音声時のaudio_refだけを保持し、発話全文やProvider objectはコピーしない。
 
-A PREPARED/QUEUED candidate is never “actually spoken”.
+時刻はcommand.committed_at、受理済みSTARTED.started_at、terminal report.completed_atを使う。終端時刻がない場合は対象が最新受理reportであることを確認し、Ownerのcandidate.updated_atを使う。必要なOwner時刻が得られない場合、開始時刻の不一致や時刻逆行は拒否し、projectorの現在時刻で補わない。
 
-A FAILED_AFTER_START report must preserve that partial external effect occurred.
+source decision / source event IDs / source_context_revision / goal_revision / attention_revisionはcandidateとexact照合する。trace IDはintegration envelopeに存在する場合だけ保持し、推測生成しない。自由文failure_code/interruption_reasonやraw exceptionは転記せず、report status由来の固定details.codeを使う。
+
+#613はこのprojectorを呼ぶ。free-form mappingを独自実装しない。PREPARED / QUEUEDを発話済みにせず、外部作用後にcurrent stateが変わっても受理済みpartial effectを消さない。
 
 ---
 

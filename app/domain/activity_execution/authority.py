@@ -31,6 +31,14 @@ from .contracts import (
     ExecutionEffectKind,
     ExecutionPreflightSnapshot,
 )
+from .observation import (
+    ExecutionObservationIngressPolicy,
+    ExecutionObservationSourceBinding,
+    ObservedExecutionFactRecord,
+    TrustedExecutionObservation,
+    accept_observation,
+    same_observation,
+)
 
 
 class ActivityExecutionAuthority:
@@ -42,7 +50,18 @@ class ActivityExecutionAuthority:
             ("executive", "conscious_goal_action"),
             ("system", "runtime_control"),
         ),
+        *,
+        observation_policy: ExecutionObservationIngressPolicy | None = None,
     ) -> None:
+        if observation_policy is not None and not isinstance(
+            observation_policy, ExecutionObservationIngressPolicy
+        ):
+            raise ValueError("観測受理policyが不正です")
+        self._observation_policy = observation_policy
+        self._observed_records: dict[tuple[str, str], ObservedExecutionFactRecord] = {}
+        self._observations: dict[
+            tuple[ExecutionObservationSourceBinding, str], TrustedExecutionObservation
+        ] = {}
         self._allowed_authorities = frozenset(allowed_authorities)
         self._records: dict[str, ActivityExecutionRecord] = {}
         self._invocation_ids: set[str] = set()
@@ -314,6 +333,69 @@ class ActivityExecutionAuthority:
     def snapshot(self, command_id: str) -> ActivityExecutionRecord | None:
         with self._lock:
             return self._records.get(command_id)
+
+    @authority_mutation
+    def ingest_observation(
+        self,
+        observation: TrustedExecutionObservation,
+        *,
+        policy_id: str,
+        policy_revision: int,
+    ) -> ObservedExecutionFactRecord:
+        """登録済みsourceの観測だけを、既存の所有者同期境界で受理する。"""
+        policy = self._observation_policy
+        if (
+            policy is None
+            or policy.policy_id != policy_id
+            or type(policy_revision) is not int
+            or policy.policy_revision != policy_revision
+        ):
+            raise ValueError("観測受理policyの世代が一致しません")
+        if not isinstance(observation, TrustedExecutionObservation):
+            raise ValueError("型付き実行観測が必要です")
+        rule = next((r for r in policy.source_rules if r.source == observation.source), None)
+        if rule is None or observation.status not in rule.allowed_statuses:
+            raise ValueError("未登録sourceまたは許可されないstatusです")
+        if any(
+            e.effect_type not in rule.allowed_effect_types
+            or e.kind not in rule.allowed_effect_kinds
+            for e in observation.effects
+        ):
+            raise ValueError("source ruleに許可されないeffectです")
+        key = (observation.source.source_contract_id, observation.execution_id)
+        identity = (observation.source, observation.observation_id)
+        previous = self._observations.get(identity)
+        if previous is not None:
+            if not same_observation(previous, observation):
+                raise ValueError("同一observation identityの内容が矛盾しています")
+            return self._observed_records[key]
+        before = self._observed_records.get(key)
+        if (
+            rule.terminal_requires_prior_effect
+            and observation.status
+            in {
+                ExecutionStatus.COMPLETED,
+                ExecutionStatus.FAILED,
+                ExecutionStatus.CANCELLED,
+                ExecutionStatus.TIMED_OUT,
+            }
+            and (before is None or not before.result.effect_refs)
+        ):
+            raise ValueError("このsourceの終端には先行する確認済みeffectが必要です")
+        record = accept_observation(observation, before)
+        self._observed_records[key] = record
+        self._observations[identity] = observation
+        return record
+
+    def observed_snapshot(
+        self, source_contract_id: str, execution_id: str
+    ) -> AuthorityReadPublication[ObservedExecutionFactRecord | None]:
+        """観測Factと同じ所有者の世代をまとめて公開する。"""
+        with self._participant:
+            return AuthorityReadPublication(
+                self._observed_records.get((source_contract_id, execution_id)),
+                (self._participant.token(),),
+            )
 
     def _commit(
         self, before: ActivityExecutionRecord | None, after: ActivityExecutionRecord
