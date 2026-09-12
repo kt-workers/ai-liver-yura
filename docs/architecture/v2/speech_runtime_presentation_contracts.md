@@ -400,31 +400,40 @@ No long TTS/playback await occurs inside the commit lock.
 
 ---
 
-## 15. Presentation reportとActual Factの境界（#657）
+## 15. Presentation snapshotとActual Factの境界（#657）
 
-#348はSpeechPresentationReportを提示lifecycleへ受理する。システム全体のActual Execution Factの正規化は引き続き#329だけが所有する。
+#348がPresentationのlifecycleを確定し、システム全体のActual Execution Factの正規化は引き続き#329だけが所有する。#657は#348が現在確定している状態を読み、独自の失敗・取消・timeout判定を行わない。
 
-`app/composition/execution_observation.py`の`project_speech_execution_observation()`を再利用する。入力はSpeechRuntime、確定SpeechPresentationCommand、受理済みSpeechPresentationReport、exact ExecutionObservationProvenance。`presentation_snapshot()`が既存Owner lock内でcommand・current candidate・受理済みreport系列を同時に読む。未検証report、command差替え、candidate/asset/source decision/event/revisionの不一致は拒否する。読取口は既存Ownerの意味・lifecycleを変更しない。
+正規入力は`project_speech_execution_observation(runtime, presentation_id, provenance)`とする。`SpeechRuntime.presentation_snapshot(presentation_id)`が既存Owner lock内で返す確定command・current candidate・受理済みreport historyを一つのconsistent snapshotとして解釈する。callerからcommand/reportを別々に受け取る入口は作らない。report有無で別Authority経路を設けない。
 
-source contractはcomposition側の`speech-presentation-report@1`で固定する。登録済みsource ruleはOBSERVABLE / COMPLETED / CANCELLED / FAILEDと、text-presentation / audio-presentation-startedのOBSERVABLE effectだけを許可し、終端前の確認済みeffectを必須にする。#329 CoreへSpeech型を持ち込まない。
+current lifecycleは#348 Owner fact、report historyはeffect・時刻・終端理由の証拠である。commandのpresentation_idと要求ID、candidate/utterance、reportのpresentation/candidate/mode/audio identityを照合する。current candidateのaudio参照も照合し、OwnerがFAILED/CANCELLEDを確定し、audio readinessがDISCARDEDかつ参照がNoneのときだけ、回収済み資源を開始時のcommand/report証拠へ付け替えずに扱う。discard後も開始時の確認済みeffectを失わない。別assetへの変更は拒否する。
 
-| 受理済みSpeech status | 汎用観測への投影 |
-| --- | --- |
-| FAILED_BEFORE_START | None。観測・Actual Fact・effectなし |
-| STARTED | 外部提示開始確認としてOBSERVABLE。modeに対応する確認済みeffectを導入 |
-| COMPLETED | 先行OBSERVABLEからCOMPLETEDへ進め、effect refs保持 |
-| INTERRUPTED | 先行OBSERVABLEからCANCELLEDへ進め、partial effect保持。details.codeはinterrupted |
-| FAILED_AFTER_START | 先行OBSERVABLEからFAILEDへ進め、partial effect保持 |
+source contractはcomposition側の`speech-presentation-report@1`を使う。登録済みsource ruleはOBSERVABLE / COMPLETED / CANCELLED / FAILEDと、text-presentation / audio-presentation-startedのOBSERVABLE effectだけを許可し、終端前の確認済みeffectを必須にする。#329 CoreへSpeech型を持ち込まない。
 
-終端の受理前にSTARTEDの観測を#329へ受理させる。終端報告だけから新しいeffectを作らない。TEXT_ONLYはtext effectだけ、AUDIO_WITH_TEXTはtextとaudio開始の別effectを持つ。それ以外のmode構成はこのリビジョンのprojectorでは拒否する。
+許可するreport historyは、空系列、FAILED_BEFORE_START一件、STARTED一件、STARTEDの後にCOMPLETED / FAILED_AFTER_START / INTERRUPTEDのいずれか一件だけである。これ以外の並びや件数は拒否する。
 
-effect identityはpresentation identityとtext/audio種別の固定JSON配列符号化から決定する。payloadはpresentation_id / candidate_id / utterance_idと音声時のaudio_refだけを保持し、発話全文やProvider objectはコピーしない。
+| 受理済みreport history | current candidate.lifecycle | 汎用観測への投影 |
+| --- | --- | --- |
+| 空系列 | commit済み、外部提示開始の証拠なし | None。Actual Fact・effectなし |
+| FAILED_BEFORE_START | FAILED | None。Actual Fact・effectなし |
+| STARTED | PRESENTING | OBSERVABLE。modeに対応する確認済みeffectを導入 |
+| STARTED → COMPLETED | COMPLETED | COMPLETED。先行effect refs保持 |
+| STARTED → INTERRUPTED | INTERRUPTED | CANCELLED。partial effect保持、details.codeはinterrupted |
+| STARTED → FAILED_AFTER_START | FAILED | FAILED。partial effect保持 |
+| STARTEDのみ、終端reportなし | FAILED | FAILED。details.codeはpresentation_owner_failed_after_start |
+| STARTEDのみ、終端reportなし | CANCELLED | CANCELLED。details.codeはpresentation_owner_cancelled_after_start |
 
-時刻はcommand.committed_at、受理済みSTARTED.started_at、terminal report.completed_atを使う。終端時刻がない場合は対象が最新受理reportであることを確認し、Ownerのcandidate.updated_atを使う。必要なOwner時刻が得られない場合、開始時刻の不一致や時刻逆行は拒否し、projectorの現在時刻で補わない。
+終端reportがある場合はcurrent lifecycleとの一致を必須にし、不一致をreportだけで救済しない。STARTEDのみの場合も上表以外のcurrent lifecycleを推測変換しない。終端report欠落時のFAILEDは既存`SpeechPresentationExecutor` → `fail_presentation_stream()`等で#348が確定した状態であり、projectorが新たに失敗を決める意味ではない。CANCELLEDも#348の公開取消経路が明示確定した場合だけ投影する。fake FAILED_AFTER_START等のreportを生成しない。
 
-source decision / source event IDs / source_context_revision / goal_revision / attention_revisionはcandidateとexact照合する。trace IDはintegration envelopeに存在する場合だけ保持し、推測生成しない。自由文failure_code/interruption_reasonやraw exceptionは転記せず、report status由来の固定details.codeを使う。
+STARTED/PRESENTINGのsnapshotを#329へ受理させてから、終端snapshotを受理させる。終端snapshotは新effectやuncertaintyを導入せず、#329に既存の確認済みeffectを保持する。TEXT_ONLYはtext effectだけ、AUDIO_WITH_TEXTはtextとaudio開始の別effectを持つ。それ以外のmode構成は拒否する。
 
-#613はこのprojectorを呼ぶ。free-form mappingを独自実装しない。PREPARED / QUEUEDを発話済みにせず、外部作用後にcurrent stateが変わっても受理済みpartial effectを消さない。
+effect identityはpresentation identityとtext/audio種別の固定JSON配列符号化から決定する。payloadはpresentation_id / candidate_id / utterance_idと音声時のaudio_refだけを保持し、発話全文やProvider objectはコピーしない。観測identityはpresentation identityと閉じたstatus分類codeから決定し、同一snapshotの再投影は同じidentity/contentとなる。
+
+時刻はcommand.committed_at、受理済みSTARTED.started_at、受理済みterminal.completed_atを使う。終端reportのcompleted_atがない場合と、STARTEDのみでOwnerがFAILED/CANCELLEDを確定済みの場合はcandidate.updated_atを使う。candidate.updated_at ≥ STARTED.started_atを必須とし、committed_atから開始・観測時刻までの逆行も拒否する。必要なOwner時刻が得られない場合にprojectorの現在時刻で補わない。
+
+source decision / source event IDs / source_context_revision / goal_revision / attention_revisionはcandidateとexact照合する。trace IDはintegration envelopeに存在する場合だけ保持し、推測生成しない。自由文failure_code/interruption_reasonやraw exceptionは転記せず、上表の固定details.codeを使う。
+
+Presentation terminal-report timeoutは#348 lifecycle Ownerの後続findingとして保持する。#657にはsleep / wait_for / deadline timer / timeout秒数を追加せず、timeoutやplayback failureを判定せず、Speech lifecycleを更新しない。#613はこのprojectorを再利用し、mappingを独自解釈しない。
 
 ---
 
