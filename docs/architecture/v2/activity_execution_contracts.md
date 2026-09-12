@@ -96,7 +96,7 @@ REQUESTED
 
 terminalは`REJECTED / UNSUPPORTED / FAILED / CANCELLED / TIMED_OUT / SUPERSEDED`である。Adapter reportは`STARTED`以後の候補milestone、時刻、strict details、typed effect evidenceを返すだけで、Authorityがcurrent snapshotから合法なedgeを適用する。
 
-`effect_refs`は実際に観測・適用されたeffectだけを表し、Foundationのmonotonic規則を継承する。Intent、accepted、planned、startedはeffectを主張しない。Adapterはraw `effect_refs`を指定せず、dispatch identity、選択済みCapability ID/revision、operation、effect種別を持つtyped `ExecutionEffectEvidence`を返す。Authorityはrecordへ固定したdispatch、Capability binding、operationとの一致を検証した証拠からだけ`effect_refs`を導出する。Capability bindingがない実行はeffect evidenceを受理しない。
+`effect_refs`は実際に観測・適用されたeffectだけを表し、Foundationのmonotonic規則を継承する。Intent、accepted、planned、startedはeffectを主張しない。Adapterはraw `effect_refs`を指定せず、dispatch identity、選択済みCapability ID/revision、operation、effect種別を持つtyped `ExecutionEffectEvidence`を返す。Authorityはrecordへ固定したdispatch、Capability binding、operationとの一致を検証した証拠からだけ`effect_refs`を導出する。このActivity経路ではCapability bindingがない実行はeffect evidenceを受理しない。第10節の独立した観測経路へ架空のbindingを要求しない。
 
 report確定時にもdeadlineを再検証する。期限後の成功reportは`COMPLETED`にせず`TIMED_OUT`へ閉じる。期限後に新しい外部effectが判明した場合は、currentが`STARTED`か既存`OBSERVABLE` / `APPLIED`かを問わず、検証済み証拠をFoundationの新規effect必須milestone遷移として先に記録し、同じ時刻の`TIMED_OUT`へ遷移してeffect refsを保持する。外部effect後にcontext/goalがstaleになってもeffect refsを消さず、`APPLIED → SUPERSEDED/FAILED/CANCELLED/TIMED_OUT`等の事実系列として保持する。
 
@@ -171,3 +171,41 @@ bindingは一identity一Owner・一公開値とし、履歴を蓄積しない。
 `ActivityBindingAuthority.publish()`も既存`AuthorityFinalizationFence`の登録済み同期操作で確定する。operation/schema/source Ownerから同時読取した値と正規token、および確定先の期待tokenを渡す。使用するfactを持つ各Ownerのtokenを省略せず、複数factでも同じOwnerのtokenは重複正規化できる。総participantが17以上なら`INVALID_LOCK_CONFIGURATION`でpublicationを更新しない。sourceをコピーして集約する別participant、内部の未宣言lock取得、上限拡大、nested Fenceを設けない。
 
 失敗・no-opを含むpublish進入で旧binding tokenを失効させる。失敗時は旧publicationの値・元source tokenを保持し、新sourceへ付け替えない。fresh captureによる自分のtoken再取得は、保持した元sourceが現在も有効な場合だけ許す。binding単独の確定が16以内でも、後続Executive / Plan Authorizationのevidence等を加えた総数が17以上なら、その後続確定は正規の容量拒否になる。
+
+
+## 10. trusted実行観測の正規受理境界（#657）
+
+2026-09-12ユーザー承認。Actual Execution Fact Authorityは既存`ActivityExecutionAuthority`（#329）だけである。第二Authorityや新しいstatus machineを作らず、次の二入口を区別する。
+
+- 既存Activity: SystemCommand → ActivityInvocation → Capability binding / preflight → ExecutionAdapterReport → ActivityExecutionRecord。
+- 観測: trusted subsystem observation → generic ingress → ObservedExecutionFactRecord。同じ#329が受理・正規化するが、ActivityInvocation・SystemCommand・CapabilityBindingを生成しない。
+
+`app/domain/activity_execution/observation.py`の不変型を使う。
+
+- `ExecutionObservationSourceBinding`: source_contract_id / source_contract_revision。source固有Python型は持たない。
+- `ExecutionObservationSourceRule`: source binding、allowed_statuses、allowed_effect_types、allowed_effect_kinds、terminal_requires_prior_effect。登録sourceごとの閉じた制約である。
+- `ExecutionObservationIngressPolicy`: policy_id / policy_revision / source_rules。信頼済み構成がAuthority生成時に固定し、未設定時は観測を全拒否する。呼出しごとのpolicy identity/revisionを照合し、旧世代や未登録sourceを拒否する。callerのtrusted booleanや報告内容からpolicyを生成しない。
+- `ExecutionObservationProvenance`: source_decision_id、source_event_ids、RevisionVector、存在する場合だけtrace_id。
+- `ObservedExecutionEffectEvidence`: effect_id / effect_type / subject_ref / 既存ExecutionEffectKind / 不変JSON payload。Capability-bound ExecutionEffectEvidenceとは別型であり、capability_id / descriptor_revision / operation_refを要求しない。
+- `TrustedExecutionObservation`: observation_id / execution_id / source / subject_ref / 既存ExecutionStatus / committed_at / started_at? / occurred_at / provenance / details / effects / 既存ExecutionEffectUncertainty。由来のrevision・event・traceを失わない。
+- `ObservedExecutionFactRecord`: execution/source/subject、Foundation ExecutionResult、確認済みeffect evidence、uncertainty、provenance、record_revision、latest_observation_id、開始時刻。
+
+`ingest_observation()`は全検査と遷移が成功してからrecordと観測identityを確定する。`observed_snapshot()`は不変recordと既存participantの世代を返す。trustedは公開型の名前だけでは成立せず、信頼済みcompositionからの呼出しと登録済みsource policyの検査を前提とする。未検証の外部入力へingressを直接公開しない。
+
+### lifecycle・識別子・時刻
+
+`ExecutionResult.command_id`はここではcommand発行権限を表さず、observed executionのlifecycle identityとして使う。source contract ID / revision / execution_idのJSON配列を固定形式で符号化し、同じ観測実行には常に同じ値を割り当てる。区切り文字を含む入力も区別する。SystemCommand自体は作らない。
+
+Authority内部でREQUESTED → ACCEPTED → STARTED（開始時刻がある場合）をFoundationのvalidated transitionで構成し、報告statusへ進める。この補助系列はFoundation invariantのための内部構成であり、SubsystemからREQUESTED / ACCEPTEDが実際に報告された外部Factとは扱わない。未開始の失敗はACCEPTEDから終端へ進め、effectも未確認effectも追加しない。
+
+全時刻はawareで、UTCの絶対時刻でcommitted_at ≤ started_at ≤ occurred_atを存在する範囲で検査する。同一実行の確定・開始時刻は途中で変更しない。更新は既存Foundationの遷移・時刻単調性に従い、OBSERVABLE/APPLIEDの同status更新には新effectが必要である。
+
+### 冪等性・矛盾・並行性
+
+observation identityはsource bindingとの組で一意とし、完全同一contentの再受理は現在recordを返すno-opである。record_revisionやeffectを増やさず、外部actionも起こさない。古いSTARTEDの再配送が終端後に届いても現在終端を保持する。同一identityのcontent相違は拒否する。
+
+同一source contract ID / execution_idの記録について、source revision、subject、provenance、時刻が途中で矛盾したら拒否する。同一effect IDの内容変更も拒否する。別observationで終端を再openしない。失敗した受理は既存record・確認済みeffectを変更しない。
+
+既存`AuthorityFinalizationParticipant`の短い同期更新境界だけを使う。同一観測の競合受理は一件だけcommitし、同値はno-op、矛盾は拒否する。失敗・同値操作でも既存規約に従って機械的世代は失効し、製品record_revisionとは区別する。Speech await / Provider I/Oはlock外で行う。新しいschedulerやshadow lockは作らない。
+
+Activityのadmit/start/apply_report/request_cancellation/supersede、serialization、exact primary、dispatch、#612還流を変更しない。Speech enum/typeはCore packageにimportせず、第15節のSpeech契約とcomposition projectorで閉じた投影を行う。

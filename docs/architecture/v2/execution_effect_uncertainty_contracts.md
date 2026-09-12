@@ -161,3 +161,12 @@ Foundation / #329:
 - 確認済み作用（confirmed effect）と未確認可能性（unconfirmed possibility）を混同しない。
 - Plugin専用の並行する実績事実判断権限（parallel Actual Fact Authority）を作らない。
 - 終端後確認（post-terminal confirmation）を旧Executionへ暗黙に変更（mutation）しない。
+
+
+## 11. trusted観測経路への適用（#657）
+
+Activity Adapter経路とtrusted observation経路は既存ExecutionEffectKind / ExecutionEffectUncertaintyとFoundation ExecutionResultの意味を共有する。ActivityExecutionRecordに加え、同じ#329 AuthorityがObservedExecutionFactRecordを所有する。第二Authorityや別uncertainty enumは作らない。
+
+確認済みeffectだけをeffect_refsへ導入する。Intent / Prepared / Queued / capability declarationはeffectではない。FAILED / CANCELLED / TIMED_OUT観測へ新しい確認済みeffectを同時に載せない。先行OBSERVABLE / APPLIEDで確定したpartial effectを終端後も保持する。UNKNOWN / POSSIBLY_APPLIEDは失敗終端にだけ保持し、成功や新しいeffect refを捏造しない。確認済みeffectと後続のuncertaintyは共存できる。
+
+観測受理は外部actionを実行しない。同一観測の再配送でも外部effectを増やさない。終端の矛盾報告は拒否し、既存の確認済みeffectを削除しない。Speech source ruleは終端の前に提示STARTEDから投影した確認済みeffectを必須とする。
