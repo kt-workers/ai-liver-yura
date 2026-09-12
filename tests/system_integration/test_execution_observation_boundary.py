@@ -26,6 +26,7 @@ from app.domain.speech_runtime.contracts import (
 from app.domain.speech_runtime.presentation import SpeechPresentationExecutor
 from app.domain.speech_runtime.runtime import SpeechRuntime
 from app.domain.speech_runtime.tasks import CandidateTaskKey, CandidateTaskRegistry
+from app.subsystems.validation.presentation_session import LocalPresentationBoundary
 from tests.domain.speech_runtime.policy_fixtures import runtime_policy
 from tests.domain.speech_runtime.test_presentation import _ready_candidate, _state
 
@@ -279,7 +280,7 @@ async def test_started_only_executor_failure_closes_actual_fact() -> None:
         candidate_id="candidate",
         state=replace(_state(), observed_at=NOW),
         presentation_id="presentation",
-        adapter=adapter,
+        adapter=LocalPresentationBoundary(adapter),
     )
     assert tasks.task is not None
     owner = ActivityExecutionAuthority(observation_policy=SPEECH_OBSERVATION_POLICY)
