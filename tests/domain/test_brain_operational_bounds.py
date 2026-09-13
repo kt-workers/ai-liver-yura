@@ -56,7 +56,7 @@ def test_shared_policy_rejects_cross_owner_capacity_mismatch() -> None:
 def test_v2_baseline_policy_has_canonical_identity_and_input_values() -> None:
     policy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
     assert policy.policy_id == "v2.brain-operational-bounds.default"
-    assert policy.policy_revision == 1
+    assert policy.policy_revision == 2
     assert policy.input.max_text_codepoints == 32768
     assert policy.input.max_payload_json_bytes == 262144
     assert policy.input.max_session_metadata_json_bytes == 32768

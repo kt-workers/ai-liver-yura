@@ -62,7 +62,7 @@ from .contracts import (
 )
 
 ROLE_ID = "executive_deliberation"
-INPUT_SCHEMA = "executive.context.v1"
+INPUT_SCHEMA = "executive.context.v2"
 OUTPUT_SCHEMA = "executive.candidate.v1"
 
 
@@ -114,6 +114,14 @@ def build_request(
         raise ValueError("request creation cannot predate context snapshot")
     _validate_snapshot_bounds(snapshot, policy.bounds)
     value = cast(JsonValue, snapshot.to_dict())
+    from app.domain.speech_semantics_vocabulary import canonical_size
+
+    if canonical_size(value) > policy.bounds.executive.max_context_json_bytes:
+        from .speech_references import ExecutiveContextError, ExecutiveContextFailureCode
+
+        raise ExecutiveContextError(ExecutiveContextFailureCode.EXECUTIVE_CONTEXT_TOO_LARGE)
+    if snapshot.communicative_goal_catalog is not None:
+        snapshot.communicative_goal_catalog.validate_bounds(policy.bounds)
     return LLMRoleRequest(
         request_id,
         ROLE_ID,

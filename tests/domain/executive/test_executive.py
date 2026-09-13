@@ -65,6 +65,7 @@ from app.domain.llm import (
 )
 from tests.helpers.executive_requirements import SPEECH_OWNER, make_authority
 from tests.helpers.llm import make_execution_policy
+from tests.helpers.speech_bindings import bind_test_sources
 
 NOW = datetime(2026, 8, 14, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(7, 5, 3)
@@ -94,6 +95,7 @@ def live_state(
         if requirements is None
         else requirements,
         ExecutiveBoundsProvenance.from_policy(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY),
+        speech_source_bindings=context.speech_source_bindings,
         requirement_derivations=()
         if requirements == ()
         else SPEECH_OWNER.derive(context, candidate()).values,
@@ -115,58 +117,64 @@ def policy() -> ExecutivePolicy:
 
 def snapshot(trigger_id: str = "trigger-1") -> ExecutiveContextSnapshot:
     return SPEECH_OWNER.capture(
-        ExecutiveContextSnapshot(
-            trigger_id,
-            (f"event-{trigger_id}",),
-            7,
-            5,
-            3,
-            None,
-            InternalStateSnapshot(2, 7, (), NOW),
-            (
-                ExecutiveFactRef("fact-desire", ExecutiveFactKind.GOAL, 5, {"strength": 0.8}),
-                ExecutiveFactRef("goal-1", ExecutiveFactKind.GOAL, 5, {"active": True}),
-                ExecutiveFactRef("goal-spec", ExecutiveFactKind.GOAL, 5, {"proposed": True}),
-                ExecutiveFactRef("answer-user", ExecutiveFactKind.GOAL, 5, {"semantic": True}),
-                ExecutiveFactRef("semantic-goal", ExecutiveFactKind.GOAL, 5, {"semantic": True}),
-                ExecutiveFactRef("commitment-1", ExecutiveFactKind.COMMITMENT, 5, {"active": True}),
-                ExecutiveFactRef(
-                    "commitment-spec",
-                    ExecutiveFactKind.COMMITMENT,
-                    5,
-                    {"proposed": True},
-                ),
-                ExecutiveFactRef(
-                    "unsupported-claim",
-                    ExecutiveFactKind.MEMORY_EVIDENCE,
-                    1,
-                    {"forbidden": True},
-                ),
-            ),
-            (
-                CapabilityDescriptor(
-                    "cap-speech",
-                    "speech",
-                    ("prepare",),
-                    CapabilityAvailability.AVAILABLE,
-                    2,
-                    {},
-                ),
-            ),
-            (PreconditionFact("pre-turn", "turn", "equals", "available"),),
-            NOW,
-            AppraisalFactsSnapshot(
-                1,
-                7,
-                2,
+        bind_test_sources(
+            ExecutiveContextSnapshot(
+                trigger_id,
                 (f"event-{trigger_id}",),
-                (),
-                0.5,
-                0.5,
-                (),
+                7,
+                5,
+                3,
+                None,
+                InternalStateSnapshot(2, 7, (), NOW),
+                (
+                    ExecutiveFactRef("fact-desire", ExecutiveFactKind.GOAL, 5, {"strength": 0.8}),
+                    ExecutiveFactRef("goal-1", ExecutiveFactKind.GOAL, 5, {"active": True}),
+                    ExecutiveFactRef("goal-spec", ExecutiveFactKind.GOAL, 5, {"proposed": True}),
+                    ExecutiveFactRef("answer-user", ExecutiveFactKind.GOAL, 5, {"semantic": True}),
+                    ExecutiveFactRef(
+                        "semantic-goal", ExecutiveFactKind.GOAL, 5, {"semantic": True}
+                    ),
+                    ExecutiveFactRef(
+                        "commitment-1", ExecutiveFactKind.COMMITMENT, 5, {"active": True}
+                    ),
+                    ExecutiveFactRef(
+                        "commitment-spec",
+                        ExecutiveFactKind.COMMITMENT,
+                        5,
+                        {"proposed": True},
+                    ),
+                    ExecutiveFactRef(
+                        "unsupported-claim",
+                        ExecutiveFactKind.MEMORY_EVIDENCE,
+                        1,
+                        {"forbidden": True},
+                    ),
+                ),
+                (
+                    CapabilityDescriptor(
+                        "cap-speech",
+                        "speech",
+                        ("prepare",),
+                        CapabilityAvailability.AVAILABLE,
+                        2,
+                        {},
+                    ),
+                ),
+                (PreconditionFact("pre-turn", "turn", "equals", "available"),),
                 NOW,
-            ),
-            ExecutiveBoundsProvenance.from_policy(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY),
+                AppraisalFactsSnapshot(
+                    1,
+                    7,
+                    2,
+                    (f"event-{trigger_id}",),
+                    (),
+                    0.5,
+                    0.5,
+                    (),
+                    NOW,
+                ),
+                ExecutiveBoundsProvenance.from_policy(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY),
+            )
         )
     )
 
@@ -677,7 +685,7 @@ def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
     ungrounded_payload = replace(
         speech_intent(), payload=SpeechIntentPayload("unknown-semantic-goal")
     )
-    with pytest.raises(ValueError, match="bounded"):
+    with pytest.raises(ValueError, match="SOURCE_NOT_FOUND"):
         make_authority().commit(
             replace(candidate(), intents=(ungrounded_payload,)),
             snapshot(),
@@ -686,7 +694,7 @@ def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
             committed_at=NOW,
         )
     ungrounded_claim = replace(speech_intent(), forbidden_claim_refs=("unknown-claim",))
-    with pytest.raises(ValueError, match="bounded"):
+    with pytest.raises(ValueError, match="SOURCE_NOT_FOUND"):
         make_authority().commit(
             replace(candidate(), intents=(ungrounded_claim,)),
             snapshot(),
@@ -889,7 +897,10 @@ async def test_deliberator_reloads_live_state_after_llm_and_rejects_changes(
     else:
         live.state = replace(
             live_state(),
-            bounds_provenance=ExecutiveBoundsProvenance("v2.brain-operational-bounds.default", 2),
+            bounds_provenance=ExecutiveBoundsProvenance(
+                "v2.brain-operational-bounds.default",
+                V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_revision + 1,
+            ),
         )
     release.set()
     with pytest.raises(ValueError, match="stale|capability|precondition|bounds"):

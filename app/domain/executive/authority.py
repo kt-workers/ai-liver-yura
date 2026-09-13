@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.domain.activity_binding import ActivityExecutionBindingPublication
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import (
@@ -33,8 +37,10 @@ from .contracts import (
     ExecutiveDecisionCandidate,
     PlanExecutionIntentPayload,
     PlanProgressIntentPayload,
+    SpeechIntentPayload,
 )
 from .requirements import ExecutiveRequirementsOwner, RequirementsFailureCode, RequirementsRejected
+from .speech_references import resolve_speech_references, speech_source_tokens
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,8 +56,14 @@ class ExecutiveFinalizationInput:
 class ExecutiveDecisionAuthority:
     """同一triggerの意思決定を高々1件だけ確定する同期commit authority。"""
 
-    def __init__(self, requirements_owner: ExecutiveRequirementsOwner | None = None) -> None:
+    def __init__(
+        self,
+        requirements_owner: ExecutiveRequirementsOwner | None = None,
+        *,
+        bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    ) -> None:
         self.requirements_owner = requirements_owner
+        self._bounds_policy = bounds_policy
         self._committed_triggers: set[str] = set()
         self._participant = AuthorityFinalizationParticipant(self, "ExecutiveDecisionAuthority", 70)
         self._lock = self._participant
@@ -90,7 +102,11 @@ class ExecutiveDecisionAuthority:
             raise RequirementsRejected(RequirementsFailureCode.INVALID_PROJECTION)
         derivations = generation.owner.validate_captured(snapshot, candidate, current)
         self._validate(candidate, snapshot, current)
+        if snapshot.communicative_goal_catalog is not None:
+            snapshot.communicative_goal_catalog.validate_bounds(self._bounds_policy)
+        resolutions = resolve_speech_references(candidate, snapshot, current)
         tokens = (
+            *speech_source_tokens(resolutions, current),
             generation.token,
             *self._plan_binding_tokens(candidate, snapshot),
             *(t for p in self._activity_bindings(candidate, snapshot, current) for t in p.tokens),
@@ -197,6 +213,9 @@ class ExecutiveDecisionAuthority:
                 derivations,
                 current.evidence_tokens,
                 self._activity_bindings(candidate, snapshot, current),
+                speech_reference_resolutions=resolve_speech_references(
+                    candidate, snapshot, current
+                ),
             )
             self._committed_triggers.add(snapshot.trigger_id)
             return decision
@@ -359,12 +378,13 @@ class ExecutiveDecisionAuthority:
                 raise ValueError("authoritative capability requirement is missing")
             if not all(item in intent.preconditions for item in authoritative.preconditions):
                 raise ValueError("authoritative precondition requirement is missing")
-            references.extend(intent.evidence_refs)
-            references.extend(intent.forbidden_claim_refs)
-            if isinstance(intent.payload, PlanProgressIntentPayload):
-                references.append(intent.payload.context_ref)
-            else:
-                references.extend(intent.payload.reference_ids())
+            if not isinstance(intent.payload, SpeechIntentPayload):
+                references.extend(intent.evidence_refs)
+                references.extend(intent.forbidden_claim_refs)
+                if isinstance(intent.payload, PlanProgressIntentPayload):
+                    references.append(intent.payload.context_ref)
+                else:
+                    references.extend(intent.payload.reference_ids())
             unknown_preconditions = {item.precondition_id for item in intent.preconditions} - {
                 item.precondition_id for item in snapshot.preconditions
             }

@@ -28,6 +28,15 @@ from app.domain.plan_execution.progress_contracts import (
     PlanProgressContext,
     PlanStepCompletionClaim,
 )
+from app.domain.speech_semantics_vocabulary import CommunicativeGoalCatalogView
+
+from .speech_references import (
+    ExecutiveFactKind as ExecutiveFactKind,
+)
+from .speech_references import (
+    ExecutiveSpeechReferenceResolution,
+    ExecutiveSpeechSourceBinding,
+)
 
 if TYPE_CHECKING:
     from .requirements import DerivedIntentRequirements, RequirementsGeneration
@@ -54,22 +63,6 @@ class ExecutiveInterruptibility(str, Enum):
     INTERRUPTIBLE = "interruptible"
     SOFT_CANCEL_ONLY = "soft_cancel_only"
     NON_INTERRUPTIBLE = "non_interruptible"
-
-
-class ExecutiveFactKind(str, Enum):
-    PLAN = "plan"
-    GOAL = "goal"
-    COMMITMENT = "commitment"
-    MEMORY_EVIDENCE = "memory_evidence"
-    RELATIONSHIP = "relationship"
-    ACTIVITY = "activity"
-    EXECUTION = "execution"
-    TURN = "turn"
-    ATTENTION = "attention"
-    SPEECH = "speech"
-    BODY = "body"
-    TIME = "time"
-    ENVIRONMENT = "environment"
 
 
 class ExecutiveIntentKind(str, Enum):
@@ -269,7 +262,26 @@ class ExecutiveCommitState:
     evidence_tokens: tuple[AuthorityGenerationToken, ...] = ()
     activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
 
+    communicative_goal_catalog: CommunicativeGoalCatalogView | None = None
+    speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...] = ()
+
     def __post_init__(self) -> None:
+        if self.communicative_goal_catalog is not None and not isinstance(
+            self.communicative_goal_catalog, CommunicativeGoalCatalogView
+        ):
+            raise ValueError("発話行為catalogの型が不正です")
+        object.__setattr__(
+            self,
+            "speech_source_bindings",
+            _owned(
+                self.speech_source_bindings, ExecutiveSpeechSourceBinding, "speech_source_bindings"
+            ),
+        )
+        if len({x.selected_ref for x in self.speech_source_bindings}) != len(
+            self.speech_source_bindings
+        ):
+            raise ValueError("Speech source bindingの参照が重複しています")
+
         object.__setattr__(
             self,
             "activity_bindings",
@@ -331,7 +343,26 @@ class ExecutiveContextSnapshot:
     requirements_generation: RequirementsGeneration | None = None
     activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
 
+    communicative_goal_catalog: CommunicativeGoalCatalogView | None = None
+    speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...] = ()
+
     def __post_init__(self) -> None:
+        if self.communicative_goal_catalog is not None and not isinstance(
+            self.communicative_goal_catalog, CommunicativeGoalCatalogView
+        ):
+            raise ValueError("発話行為catalogの型が不正です")
+        object.__setattr__(
+            self,
+            "speech_source_bindings",
+            _owned(
+                self.speech_source_bindings, ExecutiveSpeechSourceBinding, "speech_source_bindings"
+            ),
+        )
+        if len({x.selected_ref for x in self.speech_source_bindings}) != len(
+            self.speech_source_bindings
+        ):
+            raise ValueError("Speech source bindingの参照が重複しています")
+
         object.__setattr__(
             self,
             "activity_bindings",
@@ -414,6 +445,10 @@ class ExecutiveContextSnapshot:
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "communicative_goal_catalog": None
+            if self.communicative_goal_catalog is None
+            else self.communicative_goal_catalog.to_dict(),
+            "speech_source_bindings": [x.to_dict() for x in self.speech_source_bindings],
             "requirements_generation": (
                 None
                 if self.requirements_generation is None
@@ -460,6 +495,8 @@ def build_executive_context_snapshot(
     plan_scopes: tuple[PlanExecutionScope, ...] = (),
     plan_progress_contexts: tuple[PlanProgressContext, ...] = (),
     activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = (),
+    communicative_goal_catalog: CommunicativeGoalCatalogView | None = None,
+    speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...] = (),
 ) -> ExecutiveContextSnapshot:
     """信頼済みowner入力から、共有容量方針に従うExecutive snapshotを構築する。"""
     if not isinstance(bounds_policy, BrainOperationalBoundsPolicy):
@@ -545,6 +582,8 @@ def build_executive_context_snapshot(
         plan_scopes,
         plan_progress_contexts,
         activity_bindings=activity_bindings,
+        communicative_goal_catalog=communicative_goal_catalog,
+        speech_source_bindings=speech_source_bindings,
     )
 
 
@@ -1199,7 +1238,19 @@ class CommittedExecutiveDecision:
     evidence_tokens: tuple[AuthorityGenerationToken, ...] = ()
     activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
 
+    speech_reference_resolutions: tuple[ExecutiveSpeechReferenceResolution, ...] = ()
+
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "speech_reference_resolutions",
+            _owned(
+                self.speech_reference_resolutions,
+                ExecutiveSpeechReferenceResolution,
+                "speech_reference_resolutions",
+            ),
+        )
+
         object.__setattr__(
             self,
             "activity_bindings",
@@ -1283,6 +1334,9 @@ class CommittedExecutiveDecision:
         from .requirements import project
 
         return {
+            "speech_reference_resolutions": [
+                x.to_dict() for x in self.speech_reference_resolutions
+            ],
             "activity_bindings": [p.to_dict() for p in self.activity_bindings],
             "evidence_tokens": project(self.evidence_tokens),
             "requirement_derivations": [item.to_dict() for item in self.requirement_derivations],

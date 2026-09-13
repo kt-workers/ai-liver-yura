@@ -32,6 +32,7 @@ from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
 from tests.domain.executive.test_executive import policy
 from tests.system_integration.test_core_executive_requirements import (
     GoalPort,
+    GoalSpeechFixture,
     deliberate,
     production,
 )
@@ -153,7 +154,11 @@ async def connected(required: bool, measured: bool) -> Any:
     )
     value.requirements = CoreExecutiveRequirementsReader(value.owner, value.adapter, BOUNDS)
     value.reader = build_core_executive_input_evidence(
-        value.inputs, value.core.connection, value.registry, value.requirements
+        value.inputs,
+        value.core.connection,
+        value.registry,
+        value.requirements,
+        speech=GoalSpeechFixture(value.core.goals),
     )
     value.port = ConditionPort(conditions)
     value.binding = CoreExecutiveBinding(

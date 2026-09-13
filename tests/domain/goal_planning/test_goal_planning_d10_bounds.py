@@ -179,9 +179,7 @@ def test_plan_step_64_65_boundary(count: int) -> None:
 
 @pytest.mark.parametrize("dependency_count", [16, 17])
 def test_dependency_16_17_boundary(dependency_count: int) -> None:
-    leaves = tuple(
-        replace(step(), step_id=f"leaf-{index}") for index in range(dependency_count)
-    )
+    leaves = tuple(replace(step(), step_id=f"leaf-{index}") for index in range(dependency_count))
     final = replace(
         step(),
         step_id="final",
@@ -339,7 +337,9 @@ def test_public_boundaries_reject_snapshot_from_different_policy(field: str, bou
             snapshot.goal_context,
             policy_id="other-policy" if field == "policy_id" else snapshot.goal_context.policy_id,
             policy_revision=(
-                2 if field == "policy_revision" else snapshot.goal_context.policy_revision
+                V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_revision + 1
+                if field == "policy_revision"
+                else snapshot.goal_context.policy_revision
             ),
         ),
     )
@@ -372,7 +372,10 @@ async def test_planner_rejects_policy_mismatch_before_external_calls(determinist
     snapshot = canonical_context(deterministic=deterministic)
     snapshot = replace(
         snapshot,
-        goal_context=replace(snapshot.goal_context, policy_revision=2),
+        goal_context=replace(
+            snapshot.goal_context,
+            policy_revision=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_revision + 1,
+        ),
     )
 
     class UnusedPort:
@@ -404,8 +407,17 @@ def test_matching_new_policy_can_commit_without_rewriting_snapshot() -> None:
     from tests.domain.goal_planning.test_goal_planning import current
 
     snapshot = canonical_context(deterministic=True)
-    updated_policy = replace(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY, policy_revision=2)
-    snapshot = replace(snapshot, goal_context=replace(snapshot.goal_context, policy_revision=2))
+    updated_policy = replace(
+        V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+        policy_revision=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_revision + 1,
+    )
+    snapshot = replace(
+        snapshot,
+        goal_context=replace(
+            snapshot.goal_context,
+            policy_revision=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_revision + 1,
+        ),
+    )
     owner = GoalPlanningAuthority()
     plan = owner.commit(
         candidate(),

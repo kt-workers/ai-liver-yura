@@ -17,9 +17,11 @@ from app.domain.executive import (
     ExecutiveSourceEvent,
     PreconditionFact,
 )
+from app.domain.executive.speech_references import ExecutiveSpeechSourceBinding
 from app.domain.plan_execution.contracts import PlanExecutionScope
 from app.domain.plan_execution.progress_contracts import PlanProgressContext
 from app.domain.plugin_registry.authority import PluginRegistryAuthority
+from app.domain.speech_semantics_vocabulary import CommunicativeGoalCatalogView
 
 
 class CoreExecutivePlanEvidenceReader(Protocol):
@@ -41,6 +43,14 @@ class CoreExecutiveRequirementsPort(Protocol):
     ) -> tuple[AuthoritativeIntentRequirements, ...]: ...
 
 
+class CoreExecutiveSpeechEvidenceReader(Protocol):
+    """起動時に明示登録された語彙と元Owner参照だけを供給する。"""
+
+    def capture_speech_sources(
+        self, facts: tuple[ExecutiveFactRef, ...]
+    ) -> tuple[CommunicativeGoalCatalogView | None, tuple[ExecutiveSpeechSourceBinding, ...]]: ...
+
+
 class CoreExecutiveInputEvidenceReader:
     def __init__(
         self,
@@ -50,12 +60,14 @@ class CoreExecutiveInputEvidenceReader:
         requirements: CoreExecutiveRequirementsPort,
         *,
         plans: CoreExecutivePlanEvidenceReader | None = None,
+        speech: CoreExecutiveSpeechEvidenceReader | None = None,
     ) -> None:
         self._inputs = inputs
         self._appraisal = appraisal
         self._registry = registry
         self._requirements = requirements
         self._plans = plans
+        self._speech = speech
 
     async def requirements_for(
         self, snapshot: ExecutiveContextSnapshot, candidate: ExecutiveDecisionCandidate
@@ -130,6 +142,11 @@ class CoreExecutiveInputEvidenceReader:
                     ),
                 )
             )
+        catalog, speech_bindings = (
+            (None, ())
+            if self._speech is None
+            else self._speech.capture_speech_sources(tuple(facts.values()))
+        )
         capabilities = self._registry.capability_publication()
         return CoreExecutiveEvidence(
             source=source,
@@ -141,6 +158,8 @@ class CoreExecutiveInputEvidenceReader:
             ),
             meaning=inputs[0].meaning if len(inputs) == 1 else None,
             facts=tuple(facts.values()),
+            communicative_goal_catalog=catalog,
+            speech_source_bindings=speech_bindings,
             capabilities=capabilities.value,
             capability_tokens=capabilities.tokens,
             precondition_tokens=tuple(
