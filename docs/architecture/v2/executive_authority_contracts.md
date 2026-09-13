@@ -64,7 +64,7 @@ Provider await後、commit直前のcurrent policy世代がsnapshot世代と異�
 
 `ExecutiveIntent`は発話・身体・活動・注意の高水準要求、確定計画全体への明示的な実行承認、計画の完了評価を持つ。内容は汎用JSONではなく、`SpeechIntentPayload` / `BodyIntentPayload` / `ActivityIntentPayload` / `AttentionIntentPayload` / `PlanExecutionIntentPayload` / `PlanProgressIntentPayload`の個別の不変な型とする。意味目標・動作目標・対象・制約は空でない文字列の参照とし、制約群の重複を拒否する。確定時に上限付きの判断入力の根拠と照合する。最終台詞、計画手順列、音声合成の値、関節角、フレーム単位の操作、実行済みの事実を格納しない。
 
-Goal transitionはcreate / activate / reprioritize / suspend / resume / complete / abandon / supersede、Commitment transitionはcreate / activate / suspend / resume / release / fulfill / violateを表す。`GoalTransitionPayload`はoperationに応じてsemantic goal、priority、superseding goalだけを、`CommitmentTransitionPayload`はcreate時のsemantic commitmentだけを許可する。いずれもexpected goal revisionを持ち、対象・spec・payload参照はbounded Goal/Commitment factにgroundする。#366が後続で再検証・適用するintentである。
+Goal transitionはcreate / activate / reprioritize / suspend / resume / complete / abandon / supersede、Commitment transitionはcreate / activate / suspend / resume / release / fulfill / violateを表す。`GoalTransitionPayload`はoperationに応じてsemantic goal、priority、superseding goalだけを、`CommitmentTransitionPayload`はcreate時のsemantic commitmentだけを許可する。いずれもexpected goal revisionを持つ。CREATEのstate IDとsemantic refは新規identityであり、既存Factを要求しない。non-CREATEの対象と、既存Stateを指すpayload参照はboundedな同kind Factにgroundする。#366が後続で再検証・適用するintentである。
 
 ## 5. Commit Gate
 
@@ -94,7 +94,7 @@ LLM完了後、`ExecutiveLiveStatePort`はcommit直前のcurrent stateをimmutab
 
 ## 7. LLM Roleと並行性
 
-logical role IDは`executive_deliberation`、input schemaは`executive.context.v1`、output schemaは`executive.candidate.v1`とする。Provider固有型はdomainへ入れない。
+logical role IDは`executive_deliberation`、input schemaは`executive.context.v2`、output schemaは`executive.candidate.v2`とする。Provider固有型はdomainへ入れない。
 
 各requestは独立invokeされ、Executive全体を覆うglobal async lockや単一queueを持たない。background roleが遅延してもforeground requestはinvoke・live state取得・commit可能である。`ExecutiveDeliberator`はLLM開始前のcurrent値を引数として受け取らず、`await`完了後に`ExecutiveLiveStatePort`を呼ぶ。atomic lockは短い同期commitだけを保護し、awaitや外部callbackを含めない。
 
@@ -255,7 +255,7 @@ Executiveはtarget / evidence / forbidden claim / constraint参照も選択す�
 
 `ExecutiveContextSnapshot.communicative_goal_catalog`に#362のimmutable `CommunicativeGoalCatalogView | None`を保持する。generic Factへcatalogを格納しない。非提供は明示nullであり、non-Speechと元typed Factを意味目標にするSpeechは許可するが、definition選択には提供を必須とする。
 
-inputのserialized shapeを変更するため`executive.context.v2`を採用する。candidateは参照選択の既存shapeを維持し`executive.candidate.v1`のままとする。v1 inputへfieldを追加する互換運用は禁止する。
+inputのserialized shapeを変更するため`executive.context.v2`を採用する。candidateは#663のCREATE semantic specを加えた`executive.candidate.v2`とする。Speech参照選択のshapeは維持する。v1 inputへfieldを追加する互換運用は禁止する。
 
 `ExecutiveLiveStatePort`がcommit直前に再取得したcurrent公開を`ExecutiveCommitState.communicative_goal_catalog`へ格納する。使用するdefinitionのID / revision / 内容、MeaningPolicy generation、共有bounds generationを要求開始値と照合し、正規同期境界で確定する。
 
@@ -270,4 +270,17 @@ catalog専用容量は共有policyの`communicative_catalog`（64件 / definitio
 
 元Ownerの解決根拠は`ExecutiveContextSnapshot.speech_source_bindings`、commit直前の再取得値は`ExecutiveCommitState.speech_source_bindings`に置く。両方とも`tuple[ExecutiveSpeechSourceBinding, ...]`で、元Owner / public contract kind / identity / revisionと、Factの場合のfact ID / kind / revisionを持つ。Factは開始snapshotのExecutiveFactRefと一致を必要とし、専用制約は明示登録されたOwnerのtyped公開と照合する。全source fieldの現在性を正規commit境界で検証する。
 
-設計中のinput v2はcatalogとこのtyped binding集合をserializeする。candidate v1は参照を選択するだけで、resolutionを生成しない。COMMUNICATIVE_ACT_DEFINITIONはSEMANTIC_GOALだけ、TYPED_CONSTRAINTはCONSTRAINTだけに許可する。catalog / Fact / constraintのID衝突は拒否する。後続へは同じCommittedExecutiveDecisionだけを渡し、元snapshotへの後日アクセスや別publicationを前提にしない。
+設計中のinput v2はcatalogとこのtyped binding集合をserializeする。candidate v2のSpeech意図は参照を選択するだけで、resolutionを生成しない。COMMUNICATIVE_ACT_DEFINITIONはSEMANTIC_GOALだけ、TYPED_CONSTRAINTはCONSTRAINTだけに許可する。catalog / Fact / constraintのID衝突は拒否する。後続へは同じCommittedExecutiveDecisionだけを渡し、元snapshotへの後日アクセスや別publicationを前提にしない。
+
+## Goal / Commitment CREATEの意味内容（#663）
+
+CREATEは[Goal / Commitment意味内容契約](goal_commitment_semantic_contracts.md)のtyped specを必須とし、Executiveが選択・確定して#366へ渡す。candidateはexecutive.candidate.v2、inputはexecutive.context.v2を用いる。non-CREATEはspecを持たず、既存内容を変更しない。
+
+
+## #663 CREATE identityと搬送互換性
+
+CREATEのgoal_spec_ref / semantic_goal_ref、commitment_spec_ref / semantic_commitment_refは新しく導入するidentityであり、既存GOAL / COMMITMENT Factへのmembershipを要求しない。対応するspec.semantic_refとの一致は必須。新state IDはcurrent同kind Stateと重複できず、Executiveのbounded同kind Factとの照合に加え、#366 Storeでも最終duplicate検査を行う。
+
+CREATEでもreason_refs、REFERENCE subject_ref、Goalのtarget_ref / commitment_refs / precondition_ids / completion_condition_refs、Commitmentのcounterparty_ref / related_goal_refs / due_condition_refs / release_condition_refsは既存typed/bounded規則に従う。non-CREATEのgoal_ref / commitment_refおよびSUPERSEDEのsuperseding_goal_refは既存の同kind State Factを必須とする。
+
+既存BrainOperationalBoundsPolicy.executive.max_fact_payload_json_bytes（16384）を意味上限の新設ではなくExecutiveへのtransport compatibility boundとして適用する。candidate境界でCREATE spec単体のcanonical JSON UTF-8 bytesを検査する。#366 Storeには既存shared boundsを注入し、batchのlocal copy構築後、snapshotの更新前に完全なGoalState.to_dict() / CommitmentState.to_dict()の同byte数を検査する。超過はbatch全体非適用、State revision不変とし、切捨てやcommit後の保存失敗への転嫁を禁止する。復元時にも同じ上限を検査する。合法Stateの保存不可時には既存のin-memory継続契約を維持する。新D10 field / 数値 / generationは追加しない。

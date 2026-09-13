@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import datetime, timezone
 
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
 from app.domain.contracts import SourceLifecycleOperation
-from app.domain.contracts.common import utc_instant
+from app.domain.contracts.common import canonical_json_bytes, utc_instant
 from app.domain.contracts.finalization import (
     AuthorityFinalizationParticipant,
     AuthorityReadPublication,
@@ -28,6 +33,7 @@ from .contracts import (
     GoalStatus,
     InterruptionPolicy,
 )
+from .semantic_views import GoalCommitmentSemanticView
 
 _GOAL_STATUS_BY_OPERATION = {
     GoalTransitionOperation.ACTIVATE: GoalStatus.ACTIVE,
@@ -86,7 +92,15 @@ _COMMITMENT_SOURCES = {
 class GoalCommitmentStore:
     """current Goal/Commitmentの単一同期State Authority。"""
 
-    def __init__(self, initial: GoalCommitmentSnapshot | None = None) -> None:
+    def __init__(
+        self,
+        initial: GoalCommitmentSnapshot | None = None,
+        *,
+        bounds: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    ) -> None:
+        if not isinstance(bounds, BrainOperationalBoundsPolicy):
+            raise ValueError("既存のBrainOperationalBoundsPolicyを指定してください")
+        self._bounds = bounds
         if initial is not None and not isinstance(initial, GoalCommitmentSnapshot):
             raise ValueError("initial must be GoalCommitmentSnapshot")
         initial_time = datetime.min.replace(tzinfo=timezone.utc)
@@ -95,6 +109,7 @@ class GoalCommitmentStore:
             {item.goal_id: item for item in self._snapshot.goals},
             {item.commitment_id: item for item in self._snapshot.commitments},
         )
+        self._validate_transport(self._snapshot.goals + self._snapshot.commitments)
         self._decision_ids: set[str] = set()
         self._intent_ids: set[str] = set()
         self._participant = AuthorityFinalizationParticipant(self, "GoalCommitmentStore", 40)
@@ -152,6 +167,7 @@ class GoalCommitmentStore:
                     next_revision,
                 )
             self._validate_references(goals, commitments)
+            self._validate_transport(tuple(goals.values()) + tuple(commitments.values()))
             snapshot = GoalCommitmentSnapshot(
                 next_revision,
                 tuple(sorted(goals.values(), key=lambda item: item.goal_id)),
@@ -163,6 +179,14 @@ class GoalCommitmentStore:
             self._decision_ids.add(decision.decision_id)
             self._intent_ids.update(intent_ids)
             return GoalCommitmentCommitResult(snapshot, lifecycle_facts)
+
+    def _validate_transport(self, states: tuple[GoalState | CommitmentState, ...]) -> None:
+        for state in states:
+            if (
+                canonical_json_bytes(state.to_dict())
+                > self._bounds.executive.max_fact_payload_json_bytes
+            ):
+                raise ValueError("Goal/Commitmentのtransport上限を超えています")
 
     @staticmethod
     def _facts(
@@ -229,6 +253,18 @@ class GoalCommitmentStore:
     def _validate_references(
         goals: dict[str, GoalState], commitments: dict[str, CommitmentState]
     ) -> None:
+        specs = [g.semantic_goal_spec for g in goals.values()] + [
+            c.semantic_commitment_spec for c in commitments.values()
+        ]
+        registered: dict[tuple[str, int], str] = {}
+        for spec in specs:
+            key = (spec.semantic_ref, spec.semantic_revision)
+            content = json.dumps(
+                spec.to_dict(), sort_keys=True, ensure_ascii=False, allow_nan=False
+            )
+            if key in registered and registered[key] != content:
+                raise ValueError("同じsemantic identityの内容を変更できません")
+            registered[key] = content
         commitment_ids = set(commitments)
         if any(set(goal.commitment_refs) - commitment_ids for goal in goals.values()):
             raise ValueError("goal commitment reference does not exist")
@@ -256,6 +292,7 @@ class GoalCommitmentStore:
             payload = transition.payload
             assert payload.semantic_goal_ref is not None and payload.priority is not None
             assert payload.goal_kind is not None and payload.interruption_policy is not None
+            assert payload.semantic_goal_spec is not None
             goals[goal_id] = GoalState(
                 goal_id,
                 GoalKind(payload.goal_kind),
@@ -272,6 +309,7 @@ class GoalCommitmentStore:
                 occurred_at,
                 occurred_at,
                 revision,
+                payload.semantic_goal_spec,
             )
             return
         goal_id = transition.goal_ref
@@ -347,6 +385,7 @@ class GoalCommitmentStore:
                 for item in commitments.values()
             ):
                 raise ValueError("duplicate active commitment specification")
+            assert transition.payload.semantic_commitment_spec is not None
             commitments[commitment_id] = CommitmentState(
                 commitment_id,
                 semantic_ref,
@@ -362,6 +401,8 @@ class GoalCommitmentStore:
                 occurred_at,
                 occurred_at,
                 revision,
+                transition.payload.semantic_commitment_spec,
+                transition.reason_refs,
             )
             return
         commitment_id = transition.commitment_ref
@@ -381,3 +422,31 @@ class GoalCommitmentStore:
     def snapshot_publication(self) -> AuthorityReadPublication[GoalCommitmentSnapshot]:
         with self._participant:
             return AuthorityReadPublication(self.snapshot(), (self._participant.token(),))
+
+    def goal_semantic_publication(
+        self, goal_id: str
+    ) -> AuthorityReadPublication[GoalCommitmentSemanticView] | None:
+        with self._participant:
+            state = next((s for s in self._snapshot.goals if s.goal_id == goal_id), None)
+            return (
+                None
+                if state is None
+                else AuthorityReadPublication(
+                    GoalCommitmentSemanticView(state), (self._participant.token(),)
+                )
+            )
+
+    def commitment_semantic_publication(
+        self, commitment_id: str
+    ) -> AuthorityReadPublication[GoalCommitmentSemanticView] | None:
+        with self._participant:
+            state = next(
+                (s for s in self._snapshot.commitments if s.commitment_id == commitment_id), None
+            )
+            return (
+                None
+                if state is None
+                else AuthorityReadPublication(
+                    GoalCommitmentSemanticView(state), (self._participant.token(),)
+                )
+            )

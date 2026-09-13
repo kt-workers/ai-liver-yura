@@ -15,6 +15,7 @@ from app.domain.goals import GoalCommitmentStore
 from app.infrastructure.persistence import DurabilityStatus, PersistenceFailureCode
 from app.infrastructure.persistence.postgresql_connection import PostgresDatabase, PostgresEndpoint
 from tests.domain.goals.test_goal_commitment_store import decision, goal_transition
+from tests.helpers.goal_semantics import semantic_spec
 from tests.infrastructure.postgresql.test_memory import POLICY
 from tests.infrastructure.postgresql.test_runtime import runtime
 
@@ -114,7 +115,7 @@ def test_snapshot_format_failure_preserves_committed_state(endpoint: PostgresEnd
                 transition,
                 payload=replace(
                     transition.payload,
-                    semantic_goal_ref="x" * 8193,
+                    target_ref="x" * 8193,
                 ),
             )
             result = binding.apply(decision("large", 0, goals=(transition,)))
@@ -232,5 +233,33 @@ def test_failed_restore_cannot_replace_saved_goals_after_reconnect(
             assert (await followup.durability).status is DurabilityStatus.DURABLE
         finally:
             await restarted.close()
+
+    asyncio.run(run())
+
+
+def test_oversize_semantic_ref_rejects_core_commit(endpoint: PostgresEndpoint) -> None:
+    async def run() -> None:
+        persistence = runtime(endpoint)
+        try:
+            assert await persistence.start() is None
+            binding = await CoreGoalPersistenceBinding.restore(
+                persistence, runtime_epoch="oversize"
+            )
+            t = goal_transition(GoalTransitionOperation.CREATE, 0)
+            t = replace(
+                t,
+                payload=replace(
+                    t.payload,
+                    semantic_goal_ref="x" * 8193,
+                    semantic_goal_spec=semantic_spec("x" * 8193),
+                ),
+            )
+            before = binding.snapshot()
+            with pytest.raises(ValueError, match="transport"):
+                binding.apply(decision("oversize", 0, goals=(t,)))
+            assert binding.snapshot() == before
+            assert (await persistence.restore_goals()).value is None
+        finally:
+            await persistence.close()
 
     asyncio.run(run())

@@ -49,6 +49,7 @@ from app.domain.llm import (
     StructuredPayload,
 )
 from tests.helpers.activity_binding import planning_binding
+from tests.helpers.goal_semantics import semantic_spec
 from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
@@ -72,6 +73,7 @@ def goal() -> GoalState:
         NOW,
         NOW,
         3,
+        semantic_goal_spec=semantic_spec("semantic-goal-1"),
     )
 
 

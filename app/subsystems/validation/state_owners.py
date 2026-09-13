@@ -16,6 +16,7 @@ from app.domain.attention import (
 )
 from app.domain.contracts.common import JsonValue, freeze_json, require_revision
 from app.domain.executive import CommittedExecutiveDecision
+from app.domain.goal_commitment_semantics import GoalCommitmentSemanticSpec
 from app.domain.goals import (
     GoalCommitmentCommitResult,
     GoalCommitmentSnapshot,
@@ -37,6 +38,8 @@ from .runtime import LabTarget, RunContext
 
 
 def _encode(value: object) -> object:
+    if type(value) is GoalCommitmentSemanticSpec:
+        return value.to_dict()
     if isinstance(value, datetime):
         return value.isoformat()
     if isinstance(value, Enum):

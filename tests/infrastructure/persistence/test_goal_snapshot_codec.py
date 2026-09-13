@@ -94,3 +94,24 @@ def test_failed_integrity_candidate_is_never_rehydrated() -> None:
             replace(candidate(), integrity_status=IntegrityStatus.INTEGRITY_FAILED)
         )
     assert error.value.code is PersistenceFailureCode.INTEGRITY_FAILED
+
+
+def test_semantic_material_round_trip_and_old_format_rejection() -> None:
+    original = candidate()
+    restored = decode_goal_snapshot(original)
+    owner = GoalCommitmentStore(restored)
+    goal = owner.goal_semantic_publication("goal-1")
+    commitment = owner.commitment_semantic_publication("commitment-1")
+    assert goal is not None and commitment is not None
+    assert goal.value.semantic_spec == restored.goals[0].semantic_goal_spec
+    assert commitment.value.semantic_spec == restored.commitments[0].semantic_commitment_spec
+    assert commitment.value.reason_refs == ("reason-commitment-1",)
+    with pytest.raises(PersistenceError) as error:
+        decode_goal_snapshot(
+            replace(
+                original,
+                snapshot_schema_id="goals.commitment.snapshot.v1",
+                snapshot_schema_version=1,
+            )
+        )
+    assert error.value.code is PersistenceFailureCode.INCOMPATIBLE_PAYLOAD_VERSION

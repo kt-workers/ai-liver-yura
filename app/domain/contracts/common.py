@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -152,3 +153,16 @@ class IntentRef:
 
     def to_dict(self) -> dict[str, str]:
         return {"kind": self.kind.value, "intent_id": self.intent_id}
+
+
+def canonical_json_bytes(value: object) -> int:
+    """strict JSONの正規形をUTF-8で搬送するbyte数を返す。"""
+    return len(
+        json.dumps(
+            thaw_json(freeze_json(value)),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    )

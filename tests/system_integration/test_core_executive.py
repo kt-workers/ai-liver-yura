@@ -84,7 +84,7 @@ class Port:
             success(request),
             started_at=request.created_at,
             completed_at=request.created_at,
-            output=StructuredPayload("executive.candidate.v1", cast(JsonValue, output)),
+            output=StructuredPayload("executive.candidate.v2", cast(JsonValue, output)),
         )
 
 

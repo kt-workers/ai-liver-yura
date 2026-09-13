@@ -58,6 +58,7 @@ from tests.domain.executive.test_executive import NOW, candidate, live_state, sn
 from tests.domain.speech_semantics.policy_fixture import explicit_meaning_policy
 from tests.domain.speech_semantics.test_speech_semantics import candidate as semantic_candidate
 from tests.domain.speech_semantics.test_speech_semantics import context, policy
+from tests.helpers.goal_semantics import semantic_spec
 from tests.helpers.speech_bindings import OWNER
 
 
@@ -199,6 +200,7 @@ def inputs() -> tuple[
         NOW,
         NOW,
         5,
+        semantic_goal_spec=semantic_spec("semantic"),
     )
     constraint = SpeechSemanticConstraintSource(
         "test-constraint",
@@ -417,7 +419,7 @@ def test_executive_schema_versions_and_context_byte_bound() -> None:
     from tests.domain.executive.test_executive import policy as executive_policy
 
     assert INPUT_SCHEMA == "executive.context.v2"
-    assert OUTPUT_SCHEMA == "executive.candidate.v1"
+    assert OUTPUT_SCHEMA == "executive.candidate.v2"
     limits = replace(BOUNDS, executive=replace(BOUNDS.executive, max_context_json_bytes=10))
     with pytest.raises(ExecutiveContextError):
         build_request(
