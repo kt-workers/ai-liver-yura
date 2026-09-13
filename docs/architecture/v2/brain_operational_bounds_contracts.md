@@ -258,3 +258,39 @@ Diagnosticsへraw oversized payload/textをコピーしない。size/countとsaf
 - Provider oversized outputをfirst-N acceptしない
 - policy revision中のlate LLM result stale
 - oversized raw contentがdiagnosticへ漏れない
+
+
+## 15. Communicative catalogの専用容量（#661）
+
+本節は#661のDesign-only追加契約であり、既存policy revision 1の実装済みfieldを変更済みとは扱わない。実装時の初期拡張generationを`policy_id=v2.brain-operational-bounds.default / policy_revision=2`とし、既存数値は保持して以下を追加する。同一generationでfield集合や上限を変更しない。
+
+```text
+BrainOperationalBoundsPolicy
+- communicative_catalog: CommunicativeCatalogBounds
+
+CommunicativeCatalogBounds
+- max_definitions: 64
+- max_definition_json_bytes: 4096
+- max_catalog_json_bytes: 524288
+
+ExecutiveBounds（既存fieldに追加）
+- max_context_json_bytes: 8388608
+```
+
+64定義を各4 KiBで表現できる有限の語彙枠とし、view全体には512 KiBを確保する。Executive全体は8 MiBに制限する。これは技術容量の初期値であり、実際に許可するactや意味内容の選択ではない。意味内容は#362 MeaningPolicyが所有する。将来容量を変更する場合は共有boundsの新generationを採用する。
+
+3つのcatalog上限は独立にすべて検査する。definition件数は0..64、上限field自身はboolを除く正のintとする。空catalogは明示提供された利用可能定義0件を意味し、policy欠落の救済ではない。
+
+definitionのbytesは6 field（definition_id / definition_revision / act_kind / semantic_shape / target_requirement / evidence_requirement）を含む完全なserialized objectで測る。viewのbytesはpolicy_id / policy_revision / definitions / bounds_policy_id / bounds_policy_revisionと配列括弧・区切り等を含む完全なobjectで測る。いずれも§2のcanonical JSON UTF-8（sorted keys、compact separators、NaN/Infinity禁止）に従う。Unicode escapeへ変換して文字数とbytesを混同しない。
+
+`max_context_json_bytes`は`executive.context.v2`の完全なserialized snapshotを測る。catalog、Fact payloadに加え、ID・全metadata・他sectionも含む。LLMの既存transport envelopeの上限は別途維持する。requestのinput全体を「各Factだけboundedだからbounded」とみなさない。
+
+実Factとcatalogは別枠であり、Factは既存256件×payload 16384 bytes、catalogは最大524288 bytesである。両枠のpayload最大の合計は4194304 + 524288 = 4718592 bytes（4.5 MiB）。残りのmetadataと他sectionも含めたsnapshot全体を8388608 bytes以下に検査するため、両枠を同時に最大使用しても**受理されるinputは常に8 MiB以下**である。個別上限内でも全体が超える組合せは拒否する。全sectionの個別最大を同時に必ず受理する保証ではない。
+
+source producer、Executive snapshot構築、LLM request生成、Builder利用で上限を検証する。catalog全体やdefinitionが超過した場合、silent truncation / first-N / definition drop / JSON部分切出しは禁止。#362構築では`SpeechSemanticContextError(CONTEXT_TOO_LARGE)`、Executiveでは`ExecutiveContextError(EXECUTIVE_CONTEXT_TOO_LARGE)`へ閉じる。count / measured bytes / configured limitと安全な識別子だけを診断する。
+
+#362 producerと#328 consumerは同じ共有policy実体または同一ID / revision・同一内容の不変値を参照する。viewにもbounds ID / revisionを保持し、MeaningPolicy generationとは別に照合する。producer / consumer間の不一致は構築拒否、要求後の変更はそれぞれの既存stale / CONTEXT_STALE境界で非確定とする。開始値をcurrentとして再利用せず、commit直前にも元Ownerのcurrent bounds generationと照合する。
+
+実装工程では64/65件、4096/4097 bytes、524288/524289 bytes、8388608/8388609 bytes、bool拒否、Unicode bytes、両枠同時最大、個別内・全体超過、producer/consumer世代不一致、await中bounds更新を検証する。
+
+Executive側の上記errorは#661で設計するtyped境界であり、現行コードに存在するという意味ではない。現行の文字列付きValueErrorを解析して分類せず、構築・request境界の容量判定から直接`ExecutiveContextFailureCode.EXECUTIVE_CONTEXT_TOO_LARGE`を持つ`ExecutiveContextError`へ閉じる。分類名は既存canonicalの容量拒否理由を維持する。

@@ -215,7 +215,7 @@ Executiveはcommitted Speech intentと`semantic_goal_ref`、`target_ref`、`cons
 
 定義群は`CommunicativeGoalCatalog`として#362のMeaningPolicyに所属する。catalog generationはMeaningPolicyの`policy_id / revision`を正本とし、別の可変世代を重複管理しない。definition IDはcatalog内で一意、同一ID・revisionで内容を変更しない。定義の追加・変更・削除はMeaningPolicy revisionを進める。candidate / LLM / #613が稼働中に定義や規則を登録・変更してはならない。
 
-Executiveへは`CommunicativeGoalCatalogView`をboundedなread-only vocabularyとして供給する。viewはcatalog generation、definition ref・revision、選択に必要なtyped shape / target / evidence要件を保持する。全公開定義数をExecutiveの`max_fact_refs`以下とし、超過したcatalogは構築拒否する。黙ってfirst-N選択しない。catalogは実Fact枠と区別するが、要求全体の既存JSON容量上限も維持する。
+Executiveへは`CommunicativeGoalCatalogView`をboundedなread-only vocabularyとして供給する。viewはcatalog generation、definition ref・revision、選択に必要なtyped shape / target / evidence要件を保持する。catalogは実Factと別枠とし、`BrainOperationalBoundsPolicy.communicative_catalog`の専用上限（64 definitions、definitionごと4096 bytes、view全体524288 bytes）で検査する。`max_fact_refs`を流用しない。Executive snapshot全体にも`executive.max_context_json_bytes=8388608`を適用する。計測・同時最大時の扱いはD10正本§15に従い、超過をfirst-Nやdefinition削除で救済しない。
 
 Executiveはviewにある参照のうち今回採用するactを選択する。#362は今回のact選択、Goal選択、Action選択を行わない。Executiveは定義そのものを生成・変更しない。未知ref、catalog外ref、definition revision不一致、開始時とcurrentのcatalog generation不一致はExecutive commit時に非確定とする。read-only vocabularyの公開はExecutiveのGoal/Action Authorityを奪わない。
 
@@ -294,3 +294,62 @@ production構築境界に`SpeechSemanticContextFailureCode`と`SpeechSemanticCon
 失敗は安全な識別子と分類で返し、raw source / Provider例外文字列をAuthorityや診断へ流さない。Python外部取消は成功や空snapshotへ変えない。
 
 実装工程ではunit / adjacent試験で、元Owner読取→Builder→simple/complex Planner→Authorityのproduction入口を検証する。catalog内外・ID衝突・definition更新・evidence不足・元Owner不一致・各世代のawait中変更・commit直前変更・source不在・未対応projection・truth未登録・policy未供給・budget超過・required容量超過を含める。#430のcommunicative material content保持と実Execution Factの完了捏造拒否を隣接検証する。tests/Lab fixtureは入力例でありproduction Authorityにはしない。
+
+
+### 11.9 ExecutiveへのDTO配置とschema（#662 Design finding対応）
+
+以下のfield配置を唯一のproduction transportとする。parallelなpublication方式を追加しない。型定義の所有者はcatalog / definitionが#362、選択結果のresolutionが#328である。
+
+```text
+CommunicativeGoalCatalogView（#362のimmutable read model）
+- policy_id: str                 # MeaningPolicy識別子
+- policy_revision: int           # MeaningPolicyリビジョン
+- definitions: tuple[CommunicativeActDefinition, ...]
+- bounds_policy_id: str
+- bounds_policy_revision: int
+
+ExecutiveContextSnapshot
+- communicative_goal_catalog: CommunicativeGoalCatalogView | None
+
+ExecutiveCommitState
+- communicative_goal_catalog: CommunicativeGoalCatalogView | None
+
+CommittedExecutiveDecision
+- speech_goal_resolutions: tuple[ExecutiveSpeechGoalResolution, ...]
+```
+
+catalogは`ExecutiveFactRef`へ偽装しない。input field自体は必須とし、非提供は明示的なNone（JSON null）で表す。catalog非提供でもnon-Speech decision、および元typed Factをsemantic goalとするSpeech decisionは許可する。definition由来のSpeechはcatalog提供を必須とする。catalog不在を空catalogや既定定義へ置換しない。提供されたcatalogはSpeechを選ぶか否かにかかわらず構築時の型・容量検査を通す。
+
+LLM input schemaは`executive.context.v2`へ更新する。v2は従来snapshotのserialized fieldsに`communicative_goal_catalog`を追加し、catalogには上記5 fieldを過不足なくserializeする。definitionは第11.2節の6 fieldをserializeする。v1のfield setを暗黙拡張しない。v1は旧形式の識別子として保持するが、新production catalog入力をv1として送信しない。移行後のproduction Executiveはv2を使い、nullの場合もv2とする。
+
+LLM出力の候補は参照を選択するだけで、resolution / policy generation / definitionを自己申告しない。candidateのserialized field shapeは変更せず、`executive.candidate.v1`を維持する。決定時にAuthorityがsnapshotとcurrent stateからresolutionを導出する。
+
+`ExecutiveLiveStatePort`がcommit直前に#362のcurrent catalog公開を再取得し、`ExecutiveCommitState.communicative_goal_catalog`へ格納する。開始時catalogをcurrentへコピーしない。definition由来のSpeechを含む場合、開始・current・選択definitionのID / revision / 内容とMeaningPolicy generation、およびproducer / consumerのbounds generationを一致検査する。取得後からcommitまでのOwner token / 正規同期境界を第11.6節に従って保持する。currentの欠落・変更は非確定。catalogを使用しないdecisionは未使用catalogの更新だけで失効させないが、Executive自身のbounds freshnessは従来どおり検査する。
+
+`ExecutiveSpeechGoalResolution`は次の共通fieldと排他的なtyped variantを持つ。意味上の別名DTOは設けない。
+
+```text
+共通:
+- intent_id
+- resolution_kind: UPSTREAM_FACT | COMMUNICATIVE_ACT_DEFINITION
+- selected_ref
+UPSTREAM_FACT variantのみ:
+- fact_id
+- fact_kind: ExecutiveFactKind
+- fact_revision
+COMMUNICATIVE_ACT_DEFINITION variantのみ:
+- definition_id
+- definition_revision
+- meaning_policy_id
+- meaning_policy_revision
+```
+
+`selected_ref`はintentのsemantic_goal_refと一致し、variantのfact_idまたはdefinition_idとも一致する。他variantのfieldは持たず、ID衝突、重複intent、非Speechのresolution、Speechに対する欠落を拒否する。tupleはcandidate内のSpeech intent順でexactly oneずつ保持する。non-Speech decisionでは空tupleとする。Authorityの検証済みcommitだけがこのfieldを確定する。
+
+#362 Context Builderは`CommittedExecutiveDecision`と対象intent IDを受け取り、その`speech_goal_resolutions`の該当項目を必ず使う。元Fact variantならcaptured kind / revisionでSourcePortへ委譲し、definition variantなら同じMeaningPolicy generation / definition revisionをresolveする。target / evidence等は第11.3節の確定済み参照記録で元Ownerを解決する。decision IDとsemantic_goal_refの文字列だけから種類や世代を再推測する互換fallbackは禁止する。
+
+### 11.10 catalog容量と共有policy
+
+技術上限の唯一の正本は[brain_operational_bounds_contracts.md 第15節](brain_operational_bounds_contracts.md#15-communicative-catalogの専用容量661)とする。#362 producerと#328 consumerは同一の`BrainOperationalBoundsPolicy`のID / revisionを明示注入する。viewのbounds provenance、Executive snapshot / current stateのbounds provenance、Builderのcurrent boundsは一致を必要とする。MeaningPolicy generationだけが一致していてもboundsが古ければ採用しない。
+
+catalogはそのgenerationで有限の閉じた集合であり、将来のact追加は明示的な新MeaningPolicy generationと、型/schemaが変わる場合のschema generation更新で行う。自然言語phrase辞書へ戻さない。overflowはproducerの`SpeechSemanticContextError(CONTEXT_TOO_LARGE)`またはconsumerの既存`EXECUTIVE_CONTEXT_TOO_LARGE`として拒否し、raw値を診断へコピーしない。

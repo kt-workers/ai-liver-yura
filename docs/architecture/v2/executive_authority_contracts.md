@@ -249,3 +249,16 @@ Speechの`semantic_goal_ref`は元typed Factまたはcatalog definitionを参照
 Speech参照の解決記録は既存commitで検証して確定結果に束縛する。元Factは元snapshotのID・kind・revision、catalogはdefinition ID・revision・MeaningPolicy generationを保持する。後続がdecision IDと文字列だけから元参照の種類・世代を補作する契約にはしない。catalog更新中の古い選択を新しい定義へ付け替えず非確定とする。current確認から確定までの既存同期・Fence境界を保持する。
 
 Executiveはtarget / evidence / forbidden claim / constraint参照も選択するが、元Fact値、SpeechSemanticFactのfacet、truth rule、self-disclosure、semantic budgetは決定しない。gratitudeの定義は#362、実際に助けられたという事実は元Owner、今回どのactと根拠を使うかはExecutiveという分離を維持する。既存の能力・事前条件・Goal/Action承認の責務をcatalogへ移さない。
+
+
+### catalog transportの固定配置とD10（#662 Design finding対応）
+
+`ExecutiveContextSnapshot.communicative_goal_catalog`に#362のimmutable `CommunicativeGoalCatalogView | None`を保持する。generic Factへcatalogを格納しない。非提供は明示nullであり、non-Speechと元typed Factを意味目標にするSpeechは許可するが、definition選択には提供を必須とする。
+
+inputのserialized shapeを変更するため`executive.context.v2`を採用する。candidateは参照選択の既存shapeを維持し`executive.candidate.v1`のままとする。v1 inputへfieldを追加する互換運用は禁止する。
+
+`ExecutiveLiveStatePort`がcommit直前に再取得したcurrent公開を`ExecutiveCommitState.communicative_goal_catalog`へ格納する。使用するdefinitionのID / revision / 内容、MeaningPolicy generation、共有bounds generationを要求開始値と照合し、正規同期境界で確定する。
+
+確定先は`CommittedExecutiveDecision.speech_goal_resolutions: tuple[ExecutiveSpeechGoalResolution, ...]`に固定する。独立publicationを別途発行しない。Speech intentごとの共通fieldと排他的variant、current取得、non-Speech時の扱いはSpeech正本§11.9を正とする。LLM candidateがresolutionを供給することは禁止する。
+
+catalog専用容量は共有policyの`communicative_catalog`（64件 / definition 4096 bytes / view 524288 bytes）、snapshot全体は`executive.max_context_json_bytes`（8388608 bytes）とする。実Fact枠を流用せず、D10正本§15の全体計測も行う。超過はD10第15節で定義する`ExecutiveContextError(EXECUTIVE_CONTEXT_TOO_LARGE)`へ収束させ、definitionを落とさない。

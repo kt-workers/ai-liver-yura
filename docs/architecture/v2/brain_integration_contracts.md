@@ -700,3 +700,12 @@ CommittedExecutiveDecisionと確定済みSpeech参照解決記録
 catalog・元Owner source・projection・MeaningPolicy・boundsの必要な世代を要求から最終確定まで保持する。source不在、未対応、参照衝突、policy欠落、staleはOwnerのtyped failureとして配送を終了し、空snapshot / 架空のdirective / 成功Planを生成しない。Builder取得中・LLM待機中も無関係なInput / Speech / Activityを全体lockで止めない。
 
 本節は設計契約であり#613のproduction配線完成を意味しない。#613の途中成果と既存#657 / #659の提示事実・実行回収の責務は保持し、#661の実装・採用後に同じ#613 lineageで接続する。
+
+
+### 32.1 catalog transportと容量の接続
+
+#613を含むcompositionはcatalogを`ExecutiveContextSnapshot.communicative_goal_catalog`へ接続し、current取得は`ExecutiveCommitState.communicative_goal_catalog`へ接続する。LLM inputは`executive.context.v2`、candidateは`executive.candidate.v1`を使用する。generic ExecutiveFactRefへのcatalog偽装は行わない。
+
+#362 Builderへ渡す確定結果は`CommittedExecutiveDecision.speech_goal_resolutions`を保持する。Builderはintent IDに一致するtyped resolutionから元Factまたはdefinitionを解決し、#613が文字列だけからkind / revision / policyを補作しない。
+
+#362と#328へ同じ共有bounds generationを明示注入する。catalog専用の64件・definition 4096 bytes・view 524288 bytesとExecutive snapshot全体8388608 bytesはD10正本§15に従う。MeaningPolicy一致だけで古いtechnical generationを受理せず、producer / consumer双方の型付き失敗を成功へ変更しない。
