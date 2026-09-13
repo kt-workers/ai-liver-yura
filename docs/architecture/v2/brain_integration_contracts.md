@@ -706,6 +706,13 @@ catalog・元Owner source・projection・MeaningPolicy・boundsの必要な世�
 
 #613を含むcompositionはcatalogを`ExecutiveContextSnapshot.communicative_goal_catalog`へ接続し、current取得は`ExecutiveCommitState.communicative_goal_catalog`へ接続する。LLM inputは`executive.context.v2`、candidateは`executive.candidate.v1`を使用する。generic ExecutiveFactRefへのcatalog偽装は行わない。
 
-#362 Builderへ渡す確定結果は`CommittedExecutiveDecision.speech_goal_resolutions`を保持する。Builderはintent IDに一致するtyped resolutionから元Factまたはdefinitionを解決し、#613が文字列だけからkind / revision / policyを補作しない。
+#362 Builderへ渡す確定結果は`CommittedExecutiveDecision.speech_reference_resolutions`を保持する。Builderはintent IDに一致するtyped resolutionから元Factまたはdefinitionを解決し、#613が文字列だけからkind / revision / policyを補作しない。
 
 #362と#328へ同じ共有bounds generationを明示注入する。catalog専用の64件・definition 4096 bytes・view 524288 bytesとExecutive snapshot全体8388608 bytesはD10正本§15に従う。MeaningPolicy一致だけで古いtechnical generationを受理せず、producer / consumer双方の型付き失敗を成功へ変更しない。
+
+
+### 32.2 全required sourceの搬送
+
+Builderへの唯一の参照解決経路は`CommittedExecutiveDecision → intent ID → speech_reference_resolutions → SourcePort`とする。semantic goal / target / evidence / forbidden claim / constraintそれぞれのrequiredキーをexactly one照合する。専用constraintも元Owner / contract kind / identity / revisionを確定結果から運ぶ。
+
+compositionはExecutive開始snapshotとcurrent stateの`speech_source_bindings`へ元Ownerのtyped bindingを接続するだけで、resolutionを決定・補作しない。#362 Builderは元Executive snapshotを必要とせず、確定revisionとcurrent Owner公開を照合する。欠落・不一致・staleをlatest値、ID prefix、Owner総当たり、generic payloadで救済しない。communicative definitionはsemantic goal以外へ使わない。

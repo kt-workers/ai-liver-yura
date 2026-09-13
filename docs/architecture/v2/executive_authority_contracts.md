@@ -259,6 +259,15 @@ inputのserialized shapeを変更するため`executive.context.v2`を採用す�
 
 `ExecutiveLiveStatePort`がcommit直前に再取得したcurrent公開を`ExecutiveCommitState.communicative_goal_catalog`へ格納する。使用するdefinitionのID / revision / 内容、MeaningPolicy generation、共有bounds generationを要求開始値と照合し、正規同期境界で確定する。
 
-確定先は`CommittedExecutiveDecision.speech_goal_resolutions: tuple[ExecutiveSpeechGoalResolution, ...]`に固定する。独立publicationを別途発行しない。Speech intentごとの共通fieldと排他的variant、current取得、non-Speech時の扱いはSpeech正本§11.9を正とする。LLM candidateがresolutionを供給することは禁止する。
+確定先は`CommittedExecutiveDecision.speech_reference_resolutions: tuple[ExecutiveSpeechReferenceResolution, ...]`に固定する。独立publicationを別途発行しない。Speech intentごとの共通fieldと排他的variant、current取得、non-Speech時の扱いはSpeech正本§11.9を正とする。LLM candidateがresolutionを供給することは禁止する。
 
 catalog専用容量は共有policyの`communicative_catalog`（64件 / definition 4096 bytes / view 524288 bytes）、snapshot全体は`executive.max_context_json_bytes`（8388608 bytes）とする。実Fact枠を流用せず、D10正本§15の全体計測も行う。超過はD10第15節で定義する`ExecutiveContextError(EXECUTIVE_CONTEXT_TOO_LARGE)`へ収束させ、definitionを落とさない。
+
+
+### 全Speech required参照の確定搬送（#662追加finding対応）
+
+確定結果の`speech_reference_resolutions`へsemantic goal / target / evidence / forbidden claim / constraintを統合する。semantic goal専用fieldは設けない。主正本はSpeech §11.9の`ExecutiveSpeechReferenceResolution`であり、`(intent_id, role, selected_ref)`ごとにexactly oneを保持する。欠落・余剰・重複・非Speech記録は非確定とする。
+
+元Ownerの解決根拠は`ExecutiveContextSnapshot.speech_source_bindings`、commit直前の再取得値は`ExecutiveCommitState.speech_source_bindings`に置く。両方とも`tuple[ExecutiveSpeechSourceBinding, ...]`で、元Owner / public contract kind / identity / revisionと、Factの場合のfact ID / kind / revisionを持つ。Factは開始snapshotのExecutiveFactRefと一致を必要とし、専用制約は明示登録されたOwnerのtyped公開と照合する。全source fieldの現在性を正規commit境界で検証する。
+
+設計中のinput v2はcatalogとこのtyped binding集合をserializeする。candidate v1は参照を選択するだけで、resolutionを生成しない。COMMUNICATIVE_ACT_DEFINITIONはSEMANTIC_GOALだけ、TYPED_CONSTRAINTはCONSTRAINTだけに許可する。catalog / Fact / constraintのID衝突は拒否する。後続へは同じCommittedExecutiveDecisionだけを渡し、元snapshotへの後日アクセスや別publicationを前提にしない。

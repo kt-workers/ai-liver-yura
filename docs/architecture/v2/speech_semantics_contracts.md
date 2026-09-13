@@ -192,7 +192,7 @@ Executive decisionに同じ共有policyのprovenanceが存在する場合はgene
 
 Executiveはcommitted Speech intentと`semantic_goal_ref`、`target_ref`、`constraint_refs`、`evidence_refs`、`forbidden_claim_refs`を選択する。`ExecutiveFactRef`はExecutiveのbounded read modelであり、`payload`はsnapshotの搬送用である。下流のsemantic projection契約ではない。Speech側がpayloadからsubject / predicate / polarity / certainty / degree / truth ruleを読み取ったり推測したりしてはならない。
 
-現実の事実は元Ownerのpublic typed valueから解決する。`SpeechSemanticContextSourcePort.resolve(ref)`は`fact_id / ExecutiveFactKind / expected revision`で明示登録されたOwnerへ委譲する。IDのprefix、payload内容、自然言語によるroutingは禁止する。参照IDの別名対応が必要なら起動時の明示bindingに保持し、IDを解析して生成しない。
+現実の事実は元Ownerのpublic typed valueから解決する。`SpeechSemanticContextSourcePort.resolve(resolution)`は第11.9節の確定済みtyped resolutionを受け、凍結した`source_owner / source_contract_kind / source_identity / source_revision`と、Factの場合の`fact_id / ExecutiveFactKind / fact_revision`で明示登録されたOwnerへ委譲する。IDのprefix、payload内容、自然言語によるroutingは禁止する。参照IDの別名対応が必要なら起動時の明示bindingに保持し、IDを解析して生成しない。
 
 | Executiveの種類 | 元Ownerと公開値 | 識別と現在性 |
 |---|---|---|
@@ -310,33 +310,45 @@ CommunicativeGoalCatalogView（#362のimmutable read model）
 
 ExecutiveContextSnapshot
 - communicative_goal_catalog: CommunicativeGoalCatalogView | None
+- speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...]
 
 ExecutiveCommitState
 - communicative_goal_catalog: CommunicativeGoalCatalogView | None
+- speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...]
 
 CommittedExecutiveDecision
-- speech_goal_resolutions: tuple[ExecutiveSpeechGoalResolution, ...]
+- speech_reference_resolutions: tuple[ExecutiveSpeechReferenceResolution, ...]
 ```
 
 catalogは`ExecutiveFactRef`へ偽装しない。input field自体は必須とし、非提供は明示的なNone（JSON null）で表す。catalog非提供でもnon-Speech decision、および元typed Factをsemantic goalとするSpeech decisionは許可する。definition由来のSpeechはcatalog提供を必須とする。catalog不在を空catalogや既定定義へ置換しない。提供されたcatalogはSpeechを選ぶか否かにかかわらず構築時の型・容量検査を通す。
 
-LLM input schemaは`executive.context.v2`へ更新する。v2は従来snapshotのserialized fieldsに`communicative_goal_catalog`を追加し、catalogには上記5 fieldを過不足なくserializeする。definitionは第11.2節の6 fieldをserializeする。v1のfield setを暗黙拡張しない。v1は旧形式の識別子として保持するが、新production catalog入力をv1として送信しない。移行後のproduction Executiveはv2を使い、nullの場合もv2とする。
+LLM input schemaは`executive.context.v2`へ更新する。v2は従来snapshotのserialized fieldsに`communicative_goal_catalog`と`speech_source_bindings`を追加し、catalogには上記5 fieldを過不足なくserializeする。definitionは第11.2節の6 fieldをserializeする。v1のfield setを暗黙拡張しない。v1は旧形式の識別子として保持するが、新production catalog入力をv1として送信しない。移行後のproduction Executiveはv2を使い、nullの場合もv2とする。
 
 LLM出力の候補は参照を選択するだけで、resolution / policy generation / definitionを自己申告しない。candidateのserialized field shapeは変更せず、`executive.candidate.v1`を維持する。決定時にAuthorityがsnapshotとcurrent stateからresolutionを導出する。
 
 `ExecutiveLiveStatePort`がcommit直前に#362のcurrent catalog公開を再取得し、`ExecutiveCommitState.communicative_goal_catalog`へ格納する。開始時catalogをcurrentへコピーしない。definition由来のSpeechを含む場合、開始・current・選択definitionのID / revision / 内容とMeaningPolicy generation、およびproducer / consumerのbounds generationを一致検査する。取得後からcommitまでのOwner token / 正規同期境界を第11.6節に従って保持する。currentの欠落・変更は非確定。catalogを使用しないdecisionは未使用catalogの更新だけで失効させないが、Executive自身のbounds freshnessは従来どおり検査する。
 
-`ExecutiveSpeechGoalResolution`は次の共通fieldと排他的なtyped variantを持つ。意味上の別名DTOは設けない。
+`ExecutiveSpeechReferenceResolution`を全required参照の唯一の確定記録とする。semantic goal専用fieldを一般化して統合し、`speech_goal_resolutions`は設けない。独立publication・並行する同格の記録は発行しない。
 
 ```text
 共通:
 - intent_id
-- resolution_kind: UPSTREAM_FACT | COMMUNICATIVE_ACT_DEFINITION
+- role: SEMANTIC_GOAL | TARGET | EVIDENCE | FORBIDDEN_CLAIM | CONSTRAINT
 - selected_ref
+- resolution_kind: UPSTREAM_FACT | TYPED_CONSTRAINT | COMMUNICATIVE_ACT_DEFINITION
 UPSTREAM_FACT variantのみ:
 - fact_id
 - fact_kind: ExecutiveFactKind
 - fact_revision
+- source_owner
+- source_contract_kind
+- source_identity
+- source_revision
+TYPED_CONSTRAINT variantのみ:
+- source_owner
+- source_contract_kind
+- source_identity
+- source_revision
 COMMUNICATIVE_ACT_DEFINITION variantのみ:
 - definition_id
 - definition_revision
@@ -344,9 +356,33 @@ COMMUNICATIVE_ACT_DEFINITION variantのみ:
 - meaning_policy_revision
 ```
 
-`selected_ref`はintentのsemantic_goal_refと一致し、variantのfact_idまたはdefinition_idとも一致する。他variantのfieldは持たず、ID衝突、重複intent、非Speechのresolution、Speechに対する欠落を拒否する。tupleはcandidate内のSpeech intent順でexactly oneずつ保持する。non-Speech decisionでは空tupleとする。Authorityの検証済みcommitだけがこのfieldを確定する。
+`source_contract_kind`は明示登録されたpublic契約型を識別する型付き識別子で、payload解析やPython型名の動的推測で生成しない。`source_owner`は登録された元Owner identityであり、現在存在するOwnerへの総当たり検索を許可しない。`source_identity`は元公開値のID、`source_revision`はその値のOwner revisionである。Fact variantの`fact_id == selected_ref`、`fact_revision == source_revision`を必要とし、別名source IDは確定bindingからそのまま保持する。
 
-#362 Context Builderは`CommittedExecutiveDecision`と対象intent IDを受け取り、その`speech_goal_resolutions`の該当項目を必ず使う。元Fact variantならcaptured kind / revisionでSourcePortへ委譲し、definition variantなら同じMeaningPolicy generation / definition revisionをresolveする。target / evidence等は第11.3節の確定済み参照記録で元Ownerを解決する。decision IDとsemantic_goal_refの文字列だけから種類や世代を再推測する互換fallbackは禁止する。
+許容roleはUPSTREAM_FACTが全5種、TYPED_CONSTRAINTがCONSTRAINTのみ、COMMUNICATIVE_ACT_DEFINITIONがSEMANTIC_GOALのみとする。definitionの`selected_ref == definition_id`を必要とする。別typed sourceを無制限に受けるgeneric variantは作らず、ここで登録できないpublic sourceはunsupportedとして拒否する。各variantは他variantのfieldを持たない。
+
+Executiveへ元Ownerのbindingを供給する場所は`ExecutiveContextSnapshot.speech_source_bindings`、再取得するcurrent値は`ExecutiveCommitState.speech_source_bindings`とする。`ExecutiveSpeechSourceBinding`は`selected_ref`、`resolution_kind`（UPSTREAM_FACTまたはTYPED_CONSTRAINT）、上記variantと同じ全source fieldを持つimmutable typed read modelである。元typed公開からbindingを取得する登録済みreaderが供給し、LLMは生成しない。source集合が不要なら明示空tupleとする。これらも設計中の`executive.context.v2`へserializeし、v1に追加しない。candidate v1は変更しない。
+
+Fact bindingは同じ開始snapshot内のExecutiveFactRefのID / kind / revisionと照合し、専用constraint bindingは元Ownerの登録済みpublic制約公開と照合する。payloadをOwner/typeの正本にしない。専用constraint IDは同じ型付きbindingで開始時の参照可能集合へ加え、文字列があるだけの制約を採用しない。Fact / constraint / catalog集合間のselected_ref衝突、同一bindingの重複、Owner登録不一致は拒否する。
+
+commit直前にはlive readerが使用するsourceのcurrent公開とbindingを再取得する。開始時bindingの全fieldとcurrentを照合し、Owner / contract / identity / revisionのどれかが変われば非確定とする。revisionをcurrent値で補完しない。catalogと同様、取得から確定まで第11.6節の正規同期境界を保持する。
+
+各Speech intentから次のrequired集合を作る。
+
+| role | 必要な参照 |
+|---|---|
+| SEMANTIC_GOAL | payload.semantic_goal_refの1件 |
+| TARGET | payload.target_refがある場合の1件 |
+| EVIDENCE | intent.evidence_refsの全件 |
+| FORBIDDEN_CLAIM | intent.forbidden_claim_refsの全件 |
+| CONSTRAINT | payload.constraint_refsの全件 |
+
+キー`(intent_id, role, selected_ref)`ごとにexactly oneを確定し、欠落・余剰・同じキーの重複・非Speech intentの記録を拒否する。同じrefを別roleで使う場合はroleごとに1件保持し、source内容が一致しなければ拒否する。tuple順はcandidate内のintent順、上表のrole順、各元参照配列の順とする。non-Speech decisionのtupleは空。Authorityが開始値とcurrent値の一致を検証して初めて生成し、LLMの申告resolutionを受理しない。
+
+参照数は既存Executiveのintent / ref上限内で検査し、確定記録はrequired集合の件数から増やさない。source binding集合も既存のbounded Fact / 制約参照だけから構成し、完全inputは既定の8 MiB上限に含める。容量のため記録を落とさない。D10の数値は変更しない。
+
+#362 Context Builderは`CommittedExecutiveDecision`と対象intent IDを受け取り、`speech_reference_resolutions`から全requiredキーを照合する。元Fact・専用constraintは確定resolutionをSourcePortへそのまま渡し、definitionは記録されたMeaningPolicy generation / definition revisionをresolveする。元ExecutiveContextSnapshotを後で取り出せるという仮定や、別のref解決publicationに依存しない。
+
+SourcePortの返却公開は記録のOwner / contract / identity / revisionと一致しなければならない。missing resolutionは`SOURCE_NOT_FOUND`、role / variant違反・重複・参照集合不一致は`SOURCE_IDENTITY_MISMATCH`、元公開不在は`SOURCE_NOT_FOUND`、source revision不一致は`SOURCE_REVISION_MISMATCH`として非構築に閉じる。policy generation変更は既存のstale分類へ閉じる。current Owner総当たり、ref prefix、ExecutiveFactRef.payload、latest revisionによる欠落救済、old resolutionの新revisionへの付替えは禁止する。
 
 ### 11.10 catalog容量と共有policy
 
