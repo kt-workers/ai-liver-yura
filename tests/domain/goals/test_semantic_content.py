@@ -95,6 +95,7 @@ def test_create_and_later_publication_without_original_snapshot(kind: str) -> No
         ("polarity", "affirm"),
         ("polarity", None),
         ("degree", True),
+        ("degree", 10**400),
         ("degree", -0.1),
         ("degree", 1.1),
         ("degree", float("nan")),

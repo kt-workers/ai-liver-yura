@@ -57,8 +57,8 @@ class GoalCommitmentSemanticSpec:
             raise ValueError("polarityの型が不正です")
         if self.degree is not None and (
             type(self.degree) not in (int, float)
-            or not isfinite(self.degree)
             or not 0 <= self.degree <= 1
+            or not isfinite(self.degree)
         ):
             raise ValueError("degreeは有限の0から1またはNoneでなければなりません")
         object.__setattr__(self, "value", freeze_json(self.value))
