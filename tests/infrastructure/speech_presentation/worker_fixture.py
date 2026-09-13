@@ -3,6 +3,8 @@
 import asyncio
 import os
 import signal
+import subprocess
+import sys
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -38,7 +40,27 @@ def build(kind: str, config: dict[str, Any]) -> PresentationAdapter:
                 report, status=Status.FAILED_BEFORE_START, started_at=None, completed_at=now
             )
             return
-        if kind in ("hang", "ignore_terminate", "hang_before"):
+        if kind in ("helper", "helper_ignore", "helper_exit"):
+            helper = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    "import os,signal,sys,time; "
+                    "signal.signal(signal.SIGTERM, signal.SIG_IGN) "
+                    "if sys.argv[2]=='ignore' else None; "
+                    "open(sys.argv[1], 'w').write(str(os.getpid())); time.sleep(60)",
+                    config["pid_file"] + ".helper",
+                    "ignore" if kind == "helper_ignore" else "normal",
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            while not os.path.exists(config["pid_file"] + ".helper"):
+                if helper.poll() is not None:
+                    raise RuntimeError("試験helperが起動前に終了しました")
+                await asyncio.sleep(0.001)
+        if kind in ("hang", "ignore_terminate", "hang_before", "helper", "helper_ignore"):
             if kind == "ignore_terminate":
                 signal.signal(signal.SIGTERM, signal.SIG_IGN)
             if kind != "hang_before":

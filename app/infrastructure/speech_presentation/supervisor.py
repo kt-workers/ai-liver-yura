@@ -18,6 +18,7 @@ from app.domain.speech_runtime.execution import PresentationExecutionFailureCode
 from app.domain.speech_runtime.policy import SpeechPresentationTimeoutPolicy
 
 from .codec import MAX_MESSAGE_BYTES, command_payload, encode, parse_report
+from .containment import ProcessContainment, create_containment
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,7 @@ class PresentationWorkerSession:
     _process: asyncio.subprocess.Process | None = None
     _started: bool = False
     _closing: asyncio.Task[None] | None = None
+    _containment: ProcessContainment | None = None
 
     async def _launch(self) -> None:
         registration = self.supervisor.registration
@@ -102,6 +104,7 @@ class PresentationWorkerSession:
                 for key in ("PATH", "SYSTEMROOT", "WINDIR", "TMPDIR", "TEMP", "TMP", "LANG")
                 if key in os.environ
             }
+            self._containment = create_containment()
             birth = asyncio.create_task(
                 asyncio.create_subprocess_exec(
                     self.supervisor.executable,
@@ -112,6 +115,7 @@ class PresentationWorkerSession:
                     stderr=asyncio.subprocess.DEVNULL,
                     env=environment,
                     limit=MAX_MESSAGE_BYTES,
+                    start_new_session=os.name == "posix",
                 )
             )
             cancelled = False
@@ -122,6 +126,8 @@ class PresentationWorkerSession:
                 except asyncio.CancelledError:
                     cancelled = True
             self.diagnostics.pid = self._process.pid
+            # command受信までworkerはAdapterを起動しない。割当失敗時に送信しない。
+            self._containment.attach(self._process.pid)
             if cancelled:
                 raise asyncio.CancelledError
             assert self._process.stdin is not None
@@ -174,49 +180,60 @@ class PresentationWorkerSession:
 
     async def _cleanup(self) -> None:
         process = self._process
-        if process is not None:
-            if process.stdin is not None:
-                process.stdin.close()
+        drain: asyncio.Task[None] | None = None
+        try:
+            if process is not None:
+                if process.stdin is not None:
+                    process.stdin.close()
 
-            async def drain_output() -> None:
-                if process.stdout is not None:
-                    while await process.stdout.read(8192):
-                        pass
+                async def drain_output() -> None:
+                    if process.stdout is not None:
+                        while await process.stdout.read(8192):
+                            pass
 
-            drain = asyncio.create_task(drain_output())
+                drain = asyncio.create_task(drain_output())
 
-            async def exited(seconds: float) -> bool:
-                try:
-                    await asyncio.wait_for(process.wait(), seconds)
-                    return True
-                except asyncio.TimeoutError:
-                    return False
+                async def exited(seconds: float) -> bool:
+                    async def all_exited() -> None:
+                        await process.wait()
+                        # worker終了だけでは、残ったSDK/helperの回収完了にならない。
+                        while self._containment is not None and self._containment.active():
+                            await asyncio.sleep(0.005)
 
-            if not await exited(self.policy.worker_grace_seconds):
-                self.diagnostics.terminated = True
-                try:
-                    process.terminate()
-                except ProcessLookupError:
-                    pass
-                if not await exited(self.policy.worker_terminate_seconds):
-                    self.diagnostics.killed = True
                     try:
-                        process.kill()
-                    except ProcessLookupError:
+                        await asyncio.wait_for(all_exited(), seconds)
+                        return True
+                    except asyncio.TimeoutError:
+                        return False
+
+                if not await exited(self.policy.worker_grace_seconds):
+                    self.diagnostics.terminated = True
+                    assert self._containment is not None
+                    self._containment.terminate(process, force=False)
+                    if not await exited(self.policy.worker_terminate_seconds):
+                        self.diagnostics.killed = True
+                        self._containment.terminate(process, force=True)
+                        if not await exited(self.policy.worker_kill_seconds):
+                            raise PresentationExecutionError(Code.CLEANUP_FAILED)
+                self.diagnostics.returncode = process.returncode
+                if process.stdin is not None:
+                    try:
+                        await asyncio.wait_for(
+                            process.stdin.wait_closed(), self.policy.worker_kill_seconds
+                        )
+                    except (BrokenPipeError, ConnectionResetError):
                         pass
-                    if not await exited(self.policy.worker_kill_seconds):
-                        drain.cancel()
-                        await asyncio.gather(drain, return_exceptions=True)
-                        self.diagnostics.failure = Code.CLEANUP_FAILED
-                        raise PresentationExecutionError(Code.CLEANUP_FAILED)
-            self.diagnostics.returncode = process.returncode
-            if process.stdin is not None:
-                try:
-                    await asyncio.wait_for(
-                        process.stdin.wait_closed(), self.policy.worker_kill_seconds
-                    )
-                except (BrokenPipeError, ConnectionResetError):
-                    pass
-            await asyncio.wait_for(drain, self.policy.worker_kill_seconds)
+                await asyncio.wait_for(drain, self.policy.worker_kill_seconds)
+            if self._containment is not None:
+                self._containment.close()
+        except Exception:
+            # pipe、drain、OS回収、handle閉鎖の全phaseを同じ公開失敗へ収束する。
+            self.diagnostics.failure = Code.CLEANUP_FAILED
+            raise PresentationExecutionError(Code.CLEANUP_FAILED) from None
+        finally:
+            if drain is not None:
+                if not drain.done():
+                    drain.cancel()
+                await asyncio.gather(drain, return_exceptions=True)
         self.diagnostics.closed = True
         self.supervisor._sessions.discard(self)

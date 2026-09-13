@@ -309,3 +309,55 @@ async def test_cancel_during_spawn_reaps(monkeypatch: pytest.MonkeyPatch) -> Non
     await asyncio.gather(read, return_exceptions=True)
     await session.close()
     assert session.diagnostics.closed and worker.active_execution_count == 0
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX実processの生存確認")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("shutdown", [False, True])
+@pytest.mark.parametrize("kind", ["helper", "helper_ignore", "helper_exit"])
+async def test_descendant_reaped_on_timeout_and_shutdown(
+    tmp_path: Path, shutdown: bool, kind: str
+) -> None:
+    import signal
+
+    runtime = SpeechRuntime(replace(runtime_policy(), presentation_timeout=policy()))
+    tasks = CandidateTaskRegistry()
+    pid_file = tmp_path / "pid"
+    helper_file = tmp_path / "pid.helper"
+    worker = boundary(kind, pid_file)
+    await runtime.register(_ready_candidate())
+    await SpeechPresentationExecutor(runtime, tasks).commit_and_present(
+        candidate_id="candidate", state=_state(), presentation_id="presentation", adapter=worker
+    )
+
+    async def started() -> None:
+        while not await runtime.presentation_reports("presentation"):
+            await asyncio.sleep(0.001)
+
+    try:
+        await asyncio.wait_for(started(), 3)
+        helper_pid = int(helper_file.read_text())
+        os.kill(helper_pid, 0)
+        if shutdown:
+            await tasks.shutdown()
+        else:
+
+            async def finished() -> None:
+                while tasks.pending_task_count:
+                    await asyncio.sleep(0.001)
+
+            await asyncio.wait_for(finished(), 4)
+        with pytest.raises(ProcessLookupError):
+            os.kill(int(pid_file.read_text()), 0)
+        with pytest.raises(ProcessLookupError):
+            os.kill(helper_pid, 0)
+        assert worker.active_execution_count == 0
+        assert tasks.pending_task_count == 0
+    finally:
+        await tasks.shutdown()
+        # 修正前の再現試験でも、漏れたhelperを試験側で必ず終了させる。
+        if helper_file.exists():
+            try:
+                os.kill(int(helper_file.read_text()), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
