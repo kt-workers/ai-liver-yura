@@ -58,9 +58,9 @@ jobs:
           pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
           head_sha="$(jq -r '.head.sha' <<<"$pr")"
           base_ref="$(jq -r '.base.ref' <<<"$pr")"
-          # #663の明示stackだけを追加し、それ以外のbaseは拒否する。
+          # #664の明示stackだけを追加し、それ以外のbaseは拒否する。
           if [ "$base_ref" = "feature/661-speech-semantics-production-context" ]; then
-            test "$(jq -r '.head.ref' <<<"$pr")" = "feature/663-goal-commitment-semantic-content"
+            test "$(jq -r '.head.ref' <<<"$pr")" = "feature/664-memory-semantic-assertion"
           else
             test "$base_ref" = "rebuild/v2-foundation"
           fi

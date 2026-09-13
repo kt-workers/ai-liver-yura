@@ -698,3 +698,6 @@ Design Gate PASS when implementation preserves all of the following:
 - Memory work does not globally block unrelated runtime lanes
 
 This document is the detailed canonical supplement for Issue #332.
+## Memoryの明示semantic assertion（#664）
+
+[Memory意味assertion公開契約](memory_semantic_assertion_contracts.md)を正本とする。candidate/recordのoptionalな明示facets、semantics込みのexact duplicate identity、EvidenceItemの元revisionと容量計上、順序を保持するfail-closed projection、current record/relationのexact read、旧保存形式のNone復元を同じ#332 Owner内で提供する。Speech投影と#364の意味判断は本Ownerから変更しない。

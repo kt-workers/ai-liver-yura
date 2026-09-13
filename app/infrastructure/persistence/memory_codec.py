@@ -10,6 +10,7 @@ from typing import cast
 
 from app.domain.contracts.common import freeze_json
 from app.domain.memory.contracts import (
+    MemoryAssertionSemantics,
     MemoryConfidence,
     MemoryContent,
     MemoryFreshnessState,
@@ -31,6 +32,9 @@ def encode_memory_record(record: MemoryRecord) -> str:
         {
             "memory_id": record.memory_id,
             "revision": record.revision,
+            "assertion_semantics": None
+            if record.assertion_semantics is None
+            else record.assertion_semantics.to_dict(),
             "kind": record.kind.value,
             "content": record.content.to_dict(),
             "provenance": [item.to_dict() for item in record.provenance],
@@ -69,6 +73,9 @@ def decode_memory_record(raw: str) -> MemoryRecord:
             MemoryLifecycle(_text(value, "lifecycle")),
             _instant(value, "created_at"),
             _instant(value, "updated_at"),
+            None
+            if value.get("assertion_semantics") is None
+            else MemoryAssertionSemantics.from_dict(value["assertion_semantics"]),
         )
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         raise PersistenceError(

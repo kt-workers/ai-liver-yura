@@ -10,6 +10,7 @@ from app.domain.goals.contracts import GoalCommitmentSnapshot
 from app.domain.memory import MemoryStoreAuthority, MemoryWriteRequest, MemoryWriteResult
 from app.domain.memory.contracts import MemoryRetrievalQuery
 from app.domain.memory.ranking import MemoryRetrievalRankingPolicy, RankedMemoryEvidenceView
+from app.domain.memory.semantic_assertions import MemorySemanticAssertionEntry
 from app.runtime.lifecycle import DependencyFailure, DependencyRetryPolicy, RuntimeLifecycle
 
 from .contracts import (
@@ -150,6 +151,14 @@ class PostgresPersistenceRuntime:
         if owner is None:
             return PersistenceOperationResult(None, self._unavailable_code())
         return await self._run(lambda: owner.retrieve(query))
+
+    async def read_memory_semantic_assertion(
+        self, memory_id: str, expected_revision: int | None = None
+    ) -> PersistenceOperationResult[MemorySemanticAssertionEntry]:
+        owner = self._memory
+        if owner is None:
+            return PersistenceOperationResult(None, self._unavailable_code())
+        return await self._run(lambda: owner.read_semantic_assertion(memory_id, expected_revision))
 
     async def restore_goals(self) -> PersistenceOperationResult[GoalCommitmentSnapshot]:
         repository = self._snapshots

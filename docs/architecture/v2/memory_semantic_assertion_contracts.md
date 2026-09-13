@@ -1,0 +1,29 @@
+# Memoryの意味assertion公開契約
+
+Owner: #332 / Work: #664。Memory Store / Retrievalだけが公開元となる。#362のSpeechSemanticFact投影は#661に残し、#364の意味判断を変更しない。
+
+## 明示された意味と保存
+
+MemoryAssertionSemanticsはpolarity（AFFIRM / NEGATE）、certainty（CERTAIN / LIKELY / UNCERTAIN）、temporal_meaning（CURRENT / HISTORICAL / TIME_BOUNDED）のtypedな不変値を持つ。ValidatedMemoryCandidateとMemoryRecordにoptional assertion_semanticsを追加する。未指定のNoneは意味未解決であり、保存・検索はできるがassertionへ昇格しない。predicate/value/qualifier文字列、MemoryKind、confidence数値から意味を推測しない。既存のactual speech / executed activity根拠検査を維持する。
+
+exact duplicate identityはkind + content + assertion_semantics。polarity / certainty / temporal meaningが違うものやNoneと明示値は別identityとする。MERGE_PROVENANCEは全てexact一致した場合だけ。codecはJSON payloadへfieldを保存し、旧保存recordでfieldが欠ける場合のみNoneとして復元できる。明示された不正型・未知値は拒否する。既存レコードの書換え・削除、DB schema migrationは行わない。
+
+## Retrieval evidenceと容量
+
+MemoryEvidenceItemへ必須memory_revisionとoptional assertion_semanticsを追加し、元MemoryRecordのexact値を搬送する。既存token estimatorのpayloadへ両fieldを含め、既存max_items / max_estimated_tokensに収める。超過itemは従来のbounded retrieval規則に従いtruncatedを立て、fieldを切り捨てない。新しい容量値を導入しない。既存rankingとscoreの意味は変更しない。
+
+## Assertionと利用不能理由
+
+MemorySemanticAssertionはmemory_id / memory_revision / memory_kind、元contentのsubject_ref / predicate / value / temporal_scope_ref / qualifiers、明示polarity / certainty / temporal_meaning、provenance / confidence / temporal / lifecycle / contradiction_refsをexactに公開する。subject_refをmemory_idやmagic IDで補わない。confidenceはmetadataでありcertaintyの正本ではない。
+
+MemorySemanticAssertionEntryはID・取得revisionと、assertionまたはtyped unavailable reasonのいずれか一方を持つ。reasonはSEMANTICS_UNRESOLVED、SUBJECT_UNRESOLVED、STALE、CONFLICTED、INACTIVE_LIFECYCLE、PROVENANCE_UNAVAILABLE、DEGRADED_VIEW、TEMPORAL_INCONSISTENCY、REVISION_STALE、SOURCE_NOT_FOUND、REPOSITORY_UNAVAILABLE。複数の不適格条件がある場合は意味未解決、subject未解決、inactive、stale、conflicted、provenanceなし、時間意味矛盾の順に決定的に返す。どの条件も成功へfallbackしない。
+
+assertableには明示semantics、subject、ACTIVE lifecycle、非STALE、contradictionなし、根拠を持つprovenanceが必要。WORKINGも例外にしない。HISTORICAL freshnessとCURRENT meaningの組合せはTEMPORAL_INCONSISTENCY。それ以外の明示HISTORICAL / TIME_BOUNDEDはその時間意味を保持し、CURRENTへ変更しない。現在性はOwnerのtyped temporal metadataをそのまま利用し、consumerが壁時計・文字列から再判定しない。
+
+## 公開viewとexact read
+
+project_memory_semantic_assertions(RankedMemoryEvidenceView)はpure projector。MemorySemanticAssertionViewは元view（ranking policy、token estimator、diagnostics、generated_at、truncatedを含む）と同じ順序のentryを保持し、再sort・再rankしない。degradedな元viewは全entryをDEGRADED_VIEWにし、空でもview全体のunavailable reasonを保持する。truncatedだけでは失敗にしない。
+
+MemoryStoreAuthority.read_semantic_assertion(memory_id, expected_revision=None)は毎回repositoryの一貫したsnapshotからexact recordとcurrent relation集合を取得する。repository取得失敗はREPOSITORY_UNAVAILABLE、不在はSOURCE_NOT_FOUND、期待revision不一致はREVISION_STALE。旧revisionをcurrentへ付け替えない。次に前節のeligibilityを適用する。CONTRADICTSの両端を常に検査し、record revisionが変わらなくても新relationを反映する。fake revision、矛盾の勝者選択、旧retrieval viewによる代用は禁止する。
+
+exact read結果は読取snapshot時点の結果であり、将来の変更を予約・防止するtokenではない。後続#661は選択済みID/revisionをこのcurrent readで再照合し、Speech側の最終確定契約との接続を所有する。Persistence runtimeとCoreMemoryPersistenceBindingも既存受付・終了・取消・typed失敗境界を通してこのOwner readを公開する。

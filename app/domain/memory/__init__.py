@@ -1,5 +1,9 @@
 from app.domain.memory.authority import MemoryStoreAuthority
 from app.domain.memory.contracts import (
+    MemoryAssertionCertainty,
+    MemoryAssertionPolarity,
+    MemoryAssertionSemantics,
+    MemoryAssertionTemporalMeaning,
     MemoryConfidence,
     MemoryContent,
     MemoryDegradationReason,
@@ -43,8 +47,24 @@ from app.domain.memory.repository import (
     MemoryRepositorySnapshot,
     MemorySemanticIndexPort,
 )
+from app.domain.memory.semantic_assertions import (
+    MemorySemanticAssertion,
+    MemorySemanticAssertionEntry,
+    MemorySemanticAssertionUnavailableReason,
+    MemorySemanticAssertionView,
+    project_memory_semantic_assertions,
+)
 
 __all__ = [
+    "MemoryAssertionPolarity",
+    "MemoryAssertionCertainty",
+    "MemoryAssertionTemporalMeaning",
+    "MemoryAssertionSemantics",
+    "MemorySemanticAssertion",
+    "MemorySemanticAssertionEntry",
+    "MemorySemanticAssertionView",
+    "MemorySemanticAssertionUnavailableReason",
+    "project_memory_semantic_assertions",
     "CANONICAL_MEMORY_TOKEN_ESTIMATOR_ID",
     "InMemoryMemoryRepository",
     "MemoryConfidence",
