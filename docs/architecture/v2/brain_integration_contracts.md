@@ -678,3 +678,25 @@ Plan取消でOwnerがSTOPPEDになった場合も、そのprogress evidenceを�
 Directのpayloadは`intent.payload.binding_ref`でexactly oneに解決した`ActivityExecutionBindingPublication`を保持する。`direct_invocation()`と同じpublicationだけをfreshness dependencyとして`require_current()`で照合する。同じdecision内の無関係な兄弟binding変更で失効させない。Planの現在性は既存Plan Owner / publication gateに従う。
 
 Activity Execution Brain workはtrusted parent workのlaneとenvelope priorityを継承する。BACKGROUND_REFLECTIONに固定しない。新しいlane、scheduler policy、Domain Authorityは追加せず、Reflectionの意味契約を変更しない。本節は#612の利用・保持・配送契約であり、#329 / #649 / #651のOwner semanticsを変更しない。
+
+
+## 32. Speech production contextの利用境界（#661 / #613）
+
+正規供給は[speech_semantics_contracts.md 第11節](speech_semantics_contracts.md#11-production入力の供給契約661)に従う。#613は次の公開境界をcompositionへ接続する。
+
+```text
+#362のbounded typed catalog view → Executive context
+CommittedExecutiveDecisionと確定済みSpeech参照解決記録
+→ #362 SpeechSemanticContextBuilder / SpeechSemanticContextSourcePort
+→ SpeechSemanticContextSnapshot
+→ 既存SpeechSemanticsPlanner / SpeechSemanticAuthority
+→ 既存Character / Verifier / Performance / Speech Runtime
+```
+
+#362は発話行為のversioned immutableな意味定義、元typed値からのFact投影、truth rule、MeaningPolicy、context generationを所有する。Executiveはcatalogの今回のactとtarget / evidence等の参照を選択する。元Factの実値は各元Ownerが所有する。catalogの意味定義を外部の出来事の証拠へ昇格させない。
+
+#613はOwner adapterと明示policyを接続するだけで、ExecutiveFactRef.payload解釈、Fact projection、truth rule selection、self-disclosure / budget決定、certainty / polarity推定を行わない。definition / Factの区別はtyped解決記録を搬送し、ID文字列解析や独自catalogで代用しない。fixtureの値や固定のFACT_GROUNDED / 1 / 1をproduction defaultへ昇格させない。
+
+catalog・元Owner source・projection・MeaningPolicy・boundsの必要な世代を要求から最終確定まで保持する。source不在、未対応、参照衝突、policy欠落、staleはOwnerのtyped failureとして配送を終了し、空snapshot / 架空のdirective / 成功Planを生成しない。Builder取得中・LLM待機中も無関係なInput / Speech / Activityを全体lockで止めない。
+
+本節は設計契約であり#613のproduction配線完成を意味しない。#613の途中成果と既存#657 / #659の提示事実・実行回収の責務は保持し、#661の実装・採用後に同じ#613 lineageで接続する。

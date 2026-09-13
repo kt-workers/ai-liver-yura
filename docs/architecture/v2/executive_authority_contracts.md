@@ -234,3 +234,18 @@ Direct ACTIVITYは`ActivityIntentPayload.binding_ref`で、snapshotに提示さ�
 `ExecutiveRequirementsOwner`による完全一致照合を維持し、選択binding・schema・実値Owner・provider非依存のoperation Ownerと、Requirements・利用したprovenance・evidence・確定先の実際のtokenをFenceへ含める。fact参照数とdistinct participant総数は独立した制約である。同じ正規Ownerの複数factは同じtokenを使用できるが、独立Ownerは統合しない。総数16以下は通常検査を経て確定可能、17以上は既存#632の`INVALID_LOCK_CONFIGURATION`で非確定とする。source数だけの固定上限へ読み替えない。
 
 確定判断は検証済みpublicationを保持し、#612が操作を再選択しない。bindingが0件でも活動以外の判断を妨げない。
+
+
+## Speech用の参照選択と意味定義catalog（#661）
+
+Speech Semanticsのproduction入力供給は[speech_semantics_contracts.md 第11節](speech_semantics_contracts.md#11-production入力の供給契約661)を主正本とする。
+
+`ExecutiveFactRef`はExecutiveのbounded context/read modelである。payloadはsnapshot transportであって、下流のsemantic Authorityではない。下流Ownerはfact ID / kind / expected revisionと元Ownerのpublic typed valueを解決し、payloadから発話のsubject / predicate / polarity / certainty / degree / truth ruleを推測しない。
+
+#362がversioned immutableな`CommunicativeActDefinition`群を定義し、bounded `CommunicativeGoalCatalogView`としてExecutive contextへ公開する。これはread-only vocabularyであり、今回の発話行為・Goal・Actionを選ぶAuthorityはExecutiveに留まる。Executiveは定義の意味を生成・変更せず、#362は今回のactを選択しない。
+
+Speechの`semantic_goal_ref`は元typed Factまたはcatalog definitionを参照する。exact membershipから`UPSTREAM_FACT / COMMUNICATIVE_ACT_DEFINITION`を識別し、両集合へのID衝突・unknown・catalog外refは拒否する。自由文字列を生成しただけでは参照を採用しない。ID prefixの解析で種類を推測しない。catalogのdefinition revision / policy generationを要求へfreezeし、commit直前のcurrent値と照合する。
+
+Speech参照の解決記録は既存commitで検証して確定結果に束縛する。元Factは元snapshotのID・kind・revision、catalogはdefinition ID・revision・MeaningPolicy generationを保持する。後続がdecision IDと文字列だけから元参照の種類・世代を補作する契約にはしない。catalog更新中の古い選択を新しい定義へ付け替えず非確定とする。current確認から確定までの既存同期・Fence境界を保持する。
+
+Executiveはtarget / evidence / forbidden claim / constraint参照も選択するが、元Fact値、SpeechSemanticFactのfacet、truth rule、self-disclosure、semantic budgetは決定しない。gratitudeの定義は#362、実際に助けられたという事実は元Owner、今回どのactと根拠を使うかはExecutiveという分離を維持する。既存の能力・事前条件・Goal/Action承認の責務をcatalogへ移さない。
