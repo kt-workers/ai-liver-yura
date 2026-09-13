@@ -308,7 +308,14 @@ async def test_plan_production_configuration_and_feedback(
         ExecutionFeedbackRetentionPolicy("test-feedback", 1, 2),
     )
     build = bootstrap.build_minimum_core
-    monkeypatch.setattr(bootstrap, "GoalCommitmentStore", lambda: value.goals)
+    from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
+    from app.domain.goals import GoalCommitmentStore
+
+    def captured_goals(*, bounds: BrainOperationalBoundsPolicy) -> GoalCommitmentStore:
+        assert bounds is BOUNDS
+        return value.goals
+
+    monkeypatch.setattr(bootstrap, "GoalCommitmentStore", captured_goals)
     monkeypatch.setattr(bootstrap, "ActivityExecutionAuthority", lambda: value.activity)
     monkeypatch.setattr(bootstrap, "SystemRuntimeClock", lambda: value.clock)
     monkeypatch.setattr(
