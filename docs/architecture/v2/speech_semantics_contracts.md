@@ -251,6 +251,64 @@ rule selectionの各rowはexact facet条件とruleを持つ。0件・複数一�
 
 `BrainOperationalBoundsPolicy`は技術的絶対上限だけを所有する。意味方針のbudgetは非負整数であり、技術上限（現在は各16）を超えた場合は起動・構築を拒否する。clampしない。candidate / directiveのbudgetとself-disclosureは、snapshotへ束縛した意味方針と既存Authorityの許容関係を検査する。
 
+#### 11.5.1 production MeaningPolicy V1
+
+ユーザー採用済みのV1は次の固定値とする。上記のfixture除外は維持し、独立した製品方針として`FORBIDDEN / 1 / 1`を採用する。
+
+```text
+policy_id = yura.speech-semantics.meaning
+revision = 1
+self_disclosure_policy = FORBIDDEN
+max_question_budget = 1
+max_new_direction_budget = 1
+```
+
+両budgetは使用義務ではなく上限であり、通常応答ではともに0を選択できる。質問なしで自然に応答できる場合は質問せず、現在の会話へ返答できる場合は新方向を開かない。REQUESTと質問を同一視しない。QUESTION / NEW_DIRECTIONをCommunicativeActKindへ追加せず、共感・感想・通常回答を有限catalogへ無理に分類しない。
+
+V1ではmaterial self-disclosureを禁止し、ゆら自身の経験・過去・嗜好・状態・能力・欲求等を発話内容として開示しない。内部状態を判断・表現生成へ使用することは妨げないが、その内容をmaterial self-disclosureとして発話へ出してはならない。既存Verifierの意味によるself-disclosure検証を維持する。
+
+V1 catalogは現在の9種類を各1 definitionとして登録し、全definitionのrevisionを1とする。
+
+| definition_id | act_kind | evidence source_contracts | minimum_count |
+|---|---|---|---:|
+| `yura.communicative.greeting` | GREETING | `()` | 0 |
+| `yura.communicative.acknowledgement` | ACKNOWLEDGEMENT | `()` | 0 |
+| `yura.communicative.gratitude` | GRATITUDE | GOAL / COMMITMENT / EXECUTION / MEMORY / ATTENTION | 1 |
+| `yura.communicative.apology` | APOLOGY | `()` | 0 |
+| `yura.communicative.request` | REQUEST | `()` | 0 |
+| `yura.communicative.commitment` | COMMITMENT | COMMITMENTのみ | 1 |
+| `yura.communicative.consent` | CONSENT | `()` | 0 |
+| `yura.communicative.refusal` | REFUSAL | `()` | 0 |
+| `yura.communicative.farewell` | FAREWELL | `()` | 0 |
+
+全definitionのsemantic shapeとtarget要件を次で固定する。
+
+```text
+subject_ref = current-interaction
+predicate = communicative-act
+value = {"kind": <act_kind.value>}
+polarity = AFFIRM
+certainty = CERTAIN
+degree = None
+claim_kind = GENERAL
+subject_binding = LITERAL
+evidence_index = None
+target_requirement.mode = NONE
+target_requirement.source_contracts = ()
+```
+
+このCERTAINは選択された発話行為を実際に行うことの確実性であり、外部事実の真実性を生成しない。GRATITUDEには理由となる元Ownerのtyped evidenceが最低1件必要で、感謝行為だけから「ユーザーが助けた」等を生成しない。COMMITMENTには元OwnerのCommitmentState evidenceが最低1件必要で、行為定義だけから新しい約束を生成しない。APOLOGY行為自体は根拠なしでも選択できるが、失敗等の理由を発話するなら別のgrounded propositionを必要とする。REQUESTの具体的内容も別propositionへ保持する。CONSENT / REFUSALはExecutiveの行為選択を表し、別の外部事実を自動生成しない。
+
+catalogは欠落すると発話意図が変わるcommunicative actを保持する集合であり、発話の全種類一覧でも文章テンプレートでもない。GRATITUDEから固定文を要求せず、Character LanguageがSemantic PlanとCharacter Profile等から表現する。V1はすべてcurrent-interactionへの行為とし、definition自身はtarget_refを要求しない。`user`等の文字列をtarget Authorityへ代用しない。第三者・特定entity・別会話相手への行為はMeaningPolicy revisionを上げてtyped target契約を追加する。
+
+#### 11.5.2 production供給と注入
+
+`app/composition/speech_semantics_policy.py`のV1 factoryが上記のMeaningPolicyとcatalogを構築し、`SpeechSemanticProductionPolicies.meaning`を経由して既存`SpeechSemanticPolicyOwner`へ供給する。製品値は#362所有のversioned immutable policyであり、operatorのruntime tuning値や`minimum_brain.yaml`のAuthorityにはしない。test helperのimport、暗黙default、未供給から空catalogへの置換は禁止する。
+
+public injection boundaryは同じOwnerの`publication()`をContext Builderの`current_policies`へ、`catalog_view()`をExecutive speech evidenceのread-only vocabularyへ接続する。元Factのbinding reader、Fact / Truth投影規則、必要なdirective policyは明示注入を維持する。V1供給境界では未供給をSEMANTIC_POLICY_UNAVAILABLE、異なるpolicy / revision / catalog内容をSEMANTIC_POLICY_STALEとして拒否する。新しいAuthorityや並行するcatalog公開は作らない。
+
+#661は製品方針・catalog・factory・Owner供給・public injection boundaryまでを所有する。Executiveは定義を変更せず、Character Languageもcatalogを書き換えない。#613はこの公開境界を使用してExecutive → Speech Semantics → Character → Runtimeの全経路を接続し、policy値を再定義しない。D10上限値は変更しない。
+
 ### 11.6 provenanceとgeneration
 
 元typed値をFact自身へ埋め込んで型を重複させず、snapshotにFact IDとexactly one対応するimmutable `SpeechSemanticFactProvenance`を並置する。provenanceはsource Owner / contract / ID / revision、projection policy ID / revisionを保持する。communicative definition由来はdefinition ref / revision / MeaningPolicy generationとtarget・evidence参照を追加する。現実のevidenceはそれぞれ別の元Owner bindingへ追跡する。provenance欠落、余剰、重複、不一致は拒否する。JSON payloadだけを由来としない。
