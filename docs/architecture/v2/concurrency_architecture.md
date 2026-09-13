@@ -594,3 +594,19 @@ V2 System Verificationで最低限証明する。
 7. 遅いLLMの間に前景の判断が進み、無関係な参加者への処理・Body・発話が待たされない。Fenceの競合を長時間の非同期待機へ変換しない。
 
 本節は設計案と現行競合の再現記録であり、Fence実装・修正後試験の成功証拠ではない。#632の設計・実装・具体所有者への機械的参加の採用が終わるまで、#630はBlockedを維持する。#630の未コミット試作を本設計へ移送せず、#361・#329・#610の製品実装には着手しない。
+
+
+## Speech Presentation局所watchdog（#659）
+
+START_WAIT/TERMINAL_WAITのwatchdogはcandidate/generationとPresentation laneに局所化する。
+Owner lockでは短い期限・report・lifecycle判定だけを行い、Adapter I/O、deadline await、cancel/reap/closeをlock内に置かない。
+期限待ちをCore global waitへ昇格させず、Speech Bのpreparationや認知を停止しない。
+timeout/cancel/shutdownの局所cleanupもunrelated workへ取消を伝播させない。
+reportとtimeoutのexact-boundary規則、固定policy generation、task回収は`speech_runtime_presentation_contracts.md`を正本とする。
+
+
+### #659の別プロセス境界
+
+Presentation AdapterのSDK・外部I/Oは1 Presentationごとのworkerへ隔離する。親Runtimeがdeadlineとterminal claimを所有し、Domain外Supervisorがserializable IPCとbounded grace/terminate/kill/reapを所有する。
+親Task取消時も対象workerの回収とpipe closeを完了してから戻る。子の非協調状態をCoreのasyncio取消協調へ依存させず、同一process fallbackを設けない。
+canonicalの詳細は`speech_runtime_presentation_contracts.md`を正とし、Speech Bの準備や認知をglobalに待たせない。

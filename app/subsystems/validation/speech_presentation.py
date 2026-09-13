@@ -21,6 +21,7 @@ from app.domain.speech_runtime.policy import SpeechRuntimeOperationalPolicy
 from app.domain.speech_runtime.presentation import PresentationAdapter, SpeechPresentationExecutor
 from app.domain.speech_runtime.runtime import SpeechRuntime
 from app.domain.speech_runtime.tasks import CandidateTaskKey, CandidateTaskRegistry
+from app.subsystems.validation.presentation_session import LocalPresentationBoundary
 
 from .body import _project
 from .contracts import (
@@ -137,8 +138,8 @@ async def execute_presentation(
             async for report in stream:
                 if len(accepted_reports) >= context.policy.max_intervals:
                     raise ValueError("提示結果の記録容量を超えました")
-                yield report
                 accepted_reports.append(report)
+                yield report
         finally:
             close = getattr(stream, "aclose", None)
             if close is not None:
@@ -150,7 +151,7 @@ async def execute_presentation(
             candidate_id=candidate.candidate_id,
             state=state,
             presentation_id=presentation_id,
-            adapter=observed_adapter,
+            adapter=LocalPresentationBoundary(observed_adapter),
         ),
     )
 

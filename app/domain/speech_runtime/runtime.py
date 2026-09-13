@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import replace
-from datetime import datetime, timezone
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 
 from app.domain.contracts.common import require_aware, utc_instant
 
@@ -11,6 +11,7 @@ from .contracts import (
     AudioReadinessState,
     CandidateLifecycle,
     PreparedSpeechCandidate,
+    PresentationTimeoutPhase,
     SemanticVerificationRequirement,
     SpeechComponentReadiness,
     SpeechPresentationCommand,
@@ -18,16 +19,30 @@ from .contracts import (
     SpeechPresentationMode,
     SpeechPresentationReport,
     SpeechPresentationReportStatus,
+    SpeechPresentationTimeoutRecord,
     SpeechReadinessState,
     VerifierReadinessState,
 )
-from .policy import SpeechRuntimeOperationalPolicy
+from .policy import SpeechPresentationTimeoutPolicy, SpeechRuntimeOperationalPolicy
 
 AbsoluteClock = Callable[[], datetime]
 
 
 def _system_utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@dataclass(frozen=True, slots=True)
+class _PresentationDeadline:
+    presentation_id: str
+    candidate_id: str
+    generation: int
+    policy_id: str
+    policy_revision: int
+    policy: SpeechPresentationTimeoutPolicy
+    audio_duration_ms: int | None
+    phase: PresentationTimeoutPhase
+    deadline: datetime
 
 
 class SpeechRuntime:
@@ -49,6 +64,8 @@ class SpeechRuntime:
         self._commands: dict[str, SpeechPresentationCommand] = {}
         self._reports: dict[str, tuple[SpeechPresentationReport, ...]] = {}
         self._generations: dict[str, int] = {}
+        self._deadlines: dict[str, _PresentationDeadline] = {}
+        self._timeouts: dict[str, SpeechPresentationTimeoutRecord] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -97,9 +114,7 @@ class SpeechRuntime:
         async with self._lock:
             return self._generations.get(candidate_id) == generation
 
-    async def supersede_generation(
-        self, candidate_id: str, expected_generation: int
-    ) -> int | None:
+    async def supersede_generation(self, candidate_id: str, expected_generation: int) -> int | None:
         """repair前に古いperformance/audio結果をcandidate局所で無効化する。"""
         async with self._lock:
             if self._generations.get(candidate_id) != expected_generation:
@@ -423,6 +438,18 @@ class SpeechRuntime:
                 modes,
                 state.observed_at,
             )
+            timeout = self._policy.presentation_timeout
+            self._deadlines[presentation_id] = _PresentationDeadline(
+                presentation_id,
+                candidate_id,
+                self._generations[candidate_id],
+                self._policy.policy_id,
+                self._policy.policy_revision,
+                timeout,
+                state.prepared_audio_duration_ms,
+                PresentationTimeoutPhase.START_WAIT,
+                self._now() + timedelta(seconds=timeout.start_report_timeout_seconds),
+            )
             self._commands[presentation_id] = command
             self._candidates[candidate_id] = replace(
                 candidate, lifecycle=CandidateLifecycle.PRESENTING, updated_at=state.observed_at
@@ -437,6 +464,10 @@ class SpeechRuntime:
             command = self._commands[report.presentation_id]
             if report.output_modes != command.modes or report.audio_ref != command.audio_ref:
                 raise ValueError("Presentation reportのasset identityが不正です")
+            now = self._now()
+            deadline = self._deadlines[report.presentation_id]
+            if self._expire_presentation(deadline, now):
+                return self._candidates[report.candidate_id]
             previous = self._reports.get(report.presentation_id, ())
             if not previous:
                 if report.status not in {
@@ -471,7 +502,94 @@ class SpeechRuntime:
             )
             self._candidates[candidate.candidate_id] = updated
             self._reports[report.presentation_id] = (*previous, report)
+            if report.status is SpeechPresentationReportStatus.STARTED:
+                seconds = deadline.policy.text_terminal_timeout_seconds
+                if SpeechPresentationMode.AUDIO_WITH_TEXT in command.modes:
+                    seconds = (
+                        deadline.audio_duration_ms / 1000
+                        + deadline.policy.audio_terminal_grace_seconds
+                        if deadline.audio_duration_ms is not None
+                        else deadline.policy.audio_terminal_fallback_timeout_seconds
+                    )
+                self._deadlines[report.presentation_id] = replace(
+                    deadline,
+                    phase=PresentationTimeoutPhase.TERMINAL_WAIT,
+                    deadline=now + timedelta(seconds=seconds),
+                )
             return updated
+
+    async def presentation_timeout_policy(
+        self, presentation_id: str
+    ) -> SpeechPresentationTimeoutPolicy:
+        async with self._lock:
+            return self._deadlines[presentation_id].policy
+
+    async def presentation_wait_seconds(
+        self, presentation_id: str, candidate_id: str, generation: int
+    ) -> float | None:
+        """Owner境界で期限を解決し、局所watchdogの残り待機秒数を返す。"""
+        async with self._lock:
+            deadline = self._deadlines[presentation_id]
+            if deadline.candidate_id != candidate_id or deadline.generation != generation:
+                raise ValueError("Presentation watchdogのidentity/generationが不正です")
+            now = self._now()
+            self._expire_presentation(deadline, now)
+            if self._candidates[candidate_id].lifecycle is not CandidateLifecycle.PRESENTING:
+                return None
+            return (deadline.deadline - now).total_seconds()
+
+    async def expire_presentation_if_due(
+        self, presentation_id: str, candidate_id: str, generation: int
+    ) -> PreparedSpeechCandidate:
+        """同じOwner期限解決を公開し、確定済みterminalを上書きしない。"""
+        async with self._lock:
+            deadline = self._deadlines[presentation_id]
+            if deadline.candidate_id != candidate_id or deadline.generation != generation:
+                raise ValueError("Presentation watchdogのidentity/generationが不正です")
+            self._expire_presentation(deadline, self._now())
+            return self._candidates[candidate_id]
+
+    async def presentation_timeout_record(
+        self, presentation_id: str
+    ) -> SpeechPresentationTimeoutRecord | None:
+        async with self._lock:
+            return self._timeouts.get(presentation_id)
+
+    def _expire_presentation(self, deadline: _PresentationDeadline, now: datetime) -> bool:
+        """呼出元がOwner lockを保持し、report受理と同じ境界でexact期限を判定する。"""
+        candidate = self._candidates[deadline.candidate_id]
+        if candidate.lifecycle is not CandidateLifecycle.PRESENTING:
+            return False
+        if (
+            self._presentations.get(deadline.presentation_id) != deadline.candidate_id
+            or self._generations[deadline.candidate_id] != deadline.generation
+            or candidate.runtime_policy_id != deadline.policy_id
+            or candidate.runtime_policy_revision != deadline.policy_revision
+        ):
+            raise ValueError("Presentationの固定generationが一致しません")
+        reports = self._reports.get(deadline.presentation_id, ())
+        if (deadline.phase is PresentationTimeoutPhase.START_WAIT and reports) or (
+            deadline.phase is PresentationTimeoutPhase.TERMINAL_WAIT
+            and (
+                len(reports) != 1 or reports[0].status is not SpeechPresentationReportStatus.STARTED
+            )
+        ):
+            raise ValueError("Presentation phaseと受理済みreportが一致しません")
+        if now < deadline.deadline:
+            return False
+        self._candidates[deadline.candidate_id] = replace(
+            candidate, lifecycle=CandidateLifecycle.FAILED, updated_at=now
+        )
+        self._timeouts[deadline.presentation_id] = SpeechPresentationTimeoutRecord(
+            deadline.presentation_id,
+            deadline.candidate_id,
+            deadline.phase,
+            deadline.deadline,
+            now,
+            deadline.policy_id,
+            deadline.policy_revision,
+        )
+        return True
 
     async def presentation_reports(
         self, presentation_id: str

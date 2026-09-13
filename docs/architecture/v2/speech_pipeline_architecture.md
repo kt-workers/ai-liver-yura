@@ -427,3 +427,18 @@ Adjacent:
 - [x] Goal revision / Attention revisionをpre-presentation revalidationへ接続
 
 残るのは実装後Unit/Integration/Live Verificationと#317全体Design Gate確認である。
+
+
+## Presentation待機の有限化（#659）
+
+Presentation Adapterの開始報告・終端報告待機は#348 Speech Runtimeの二段階watchdogでboundedにする。
+詳細は`speech_runtime_presentation_contracts.md`のPresentation局所watchdogを正本とする。
+Presentation Aの待機中もSpeech Bのpreparationとunrelated cognitionは進行できる。
+timeoutはSpeech Runtimeの運用lifecycle責務であり、#586の性能計測・調整とは区別する。
+
+
+### #659の別プロセス境界
+
+Presentation AdapterのSDK・外部I/Oは1 Presentationごとのworkerへ隔離する。親Runtimeがdeadlineとterminal claimを所有し、Domain外Supervisorがserializable IPCとbounded grace/terminate/kill/reapを所有する。
+親Task取消時も対象workerの回収とpipe closeを完了してから戻る。子の非協調状態をCoreのasyncio取消協調へ依存させず、同一process fallbackを設けない。
+canonicalの詳細は`speech_runtime_presentation_contracts.md`を正とし、Speech Bの準備や認知をglobalに待たせない。
