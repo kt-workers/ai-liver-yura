@@ -525,6 +525,7 @@ class SpeechPresentationCommitState:
     character_definition_revision: int | None = None
     character_compatible: bool = True
     expiry_valid: bool = True
+    prepared_audio_duration_ms: int | None = None
 
     def __post_init__(self) -> None:
         require_revision(self.source_context_revision, "source_context_revision")
@@ -552,6 +553,12 @@ class SpeechPresentationCommitState:
             value = getattr(self, name)
             if value is not None:
                 require_identifier(value, name)
+        if self.prepared_audio_duration_ms is not None and (
+            self.prepared_audio_ref is None
+            or type(self.prepared_audio_duration_ms) is not int
+            or self.prepared_audio_duration_ms <= 0
+        ):
+            raise ValueError("duration_ms は同じaudio_refに結び付く正の整数が必要です")
         require_aware(self.observed_at, "observed_at")
 
 
@@ -608,3 +615,30 @@ class SpeechPresentationReport:
             and self.started_at is None
         ):
             raise ValueError("started後のreportにはstarted_atが必要です")
+
+
+class PresentationTimeoutPhase(str, Enum):
+    START_WAIT = "start_wait"
+    TERMINAL_WAIT = "terminal_wait"
+
+
+@dataclass(frozen=True, slots=True)
+class SpeechPresentationTimeoutRecord:
+    """Ownerの期限診断。Adapter reportやActual Execution Factではない。"""
+
+    presentation_id: str
+    candidate_id: str
+    phase: PresentationTimeoutPhase
+    deadline: datetime
+    detected_at: datetime
+    policy_id: str
+    policy_revision: int
+
+    def __post_init__(self) -> None:
+        for name in ("presentation_id", "candidate_id", "policy_id"):
+            require_identifier(getattr(self, name), name)
+        require_revision(self.policy_revision, "policy_revision")
+        require_aware(self.deadline, "deadline")
+        require_aware(self.detected_at, "detected_at")
+        if not isinstance(self.phase, PresentationTimeoutPhase) or self.detected_at < self.deadline:
+            raise ValueError("timeout phaseまたは検出時刻が不正です")

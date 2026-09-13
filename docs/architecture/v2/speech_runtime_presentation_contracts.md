@@ -433,7 +433,7 @@ effect identityはpresentation identityとtext/audio種別の固定JSON配列符
 
 source decision / source event IDs / source_context_revision / goal_revision / attention_revisionはcandidateとexact照合する。trace IDはintegration envelopeに存在する場合だけ保持し、推測生成しない。自由文failure_code/interruption_reasonやraw exceptionは転記せず、上表の固定details.codeを使う。
 
-Presentation terminal-report timeoutは#348 lifecycle Ownerの後続findingとして保持する。#657にはsleep / wait_for / deadline timer / timeout秒数を追加せず、timeoutやplayback failureを判定せず、Speech lifecycleを更新しない。#613はこのprojectorを再利用し、mappingを独自解釈しない。
+Presentation terminal-report timeoutは#659で本節の二段階watchdogとして#348 lifecycle Ownerが所有する。#657にはsleep / wait_for / deadline timer / timeout秒数を追加せず、timeoutやplayback failureを判定せず、Speech lifecycleを更新しない。#613はこのprojectorを再利用し、mappingを独自解釈しない。
 
 ---
 
@@ -609,3 +609,70 @@ Metrics:
 - #445 Design Completion Gate PASS
 
 #348 detailed design completion alone does not lift the global Implementation Freeze.
+
+
+## Presentation局所の二段階watchdog（#659）
+
+ユーザー承認: APPROVED 2026-09-12。timeoutとlifecycleのAuthorityは#348 Speech Runtimeのみとする。
+Presentation commitから完了までの単一期限にはせず、`START_WAIT → STARTED受理 → TERMINAL_WAIT → terminal`で閉じる。
+
+`SpeechRuntimeOperationalPolicy.presentation_timeout`は不変の`SpeechPresentationTimeoutPolicy`であり、既存の`policy_id / policy_revision`のgenerationに含む。
+承認されたproduction初期値は次のとおり。各値はboolを除くint/float、有限、正数を必須とする。
+
+| フィールド | 秒 |
+| --- | ---: |
+| start_report_timeout_seconds | 5.0 |
+| text_terminal_timeout_seconds | 5.0 |
+| audio_terminal_grace_seconds | 5.0 |
+| audio_terminal_fallback_timeout_seconds | 60.0 |
+
+commit成功時のOwner clockをSTART_WAITの起点とし、policy identity/revision・全timeout値・candidate generation・音声durationをPresentation局所に固定する。
+current policyを更新してもactive Presentationの期限は伸縮しない。後続Presentationは新generationを使用する。
+`SpeechPresentationCommitState.observed_at`、commandの`committed_at`、Adapter timestampはwatchdogの時計Authorityにしない。
+
+START_WAITではSTARTEDまたはFAILED_BEFORE_STARTだけを最初のreportとして受理する。
+有効first reportが期限までに受理されなければ、OwnerがFAILEDへ閉じ、START_WAIT診断を記録する。
+report historyは空のまま。#657 projectorはNoneであり、#329のActual Execution Factや外部effectを捏造しない。
+FAILED_BEFORE_STARTを期限前に受理した場合は通常terminalでありtimeout診断を作らない。
+
+STARTEDを正式受理したOwner時刻からTERMINAL_WAITを開始する。reportのstarted_atはevidenceとして保持するが、deadlineの起点にはしない。
+TEXT_ONLYは受理時刻+5秒。AUDIO_WITH_TEXTは信頼された実音声durationがあれば受理時刻+duration_ms/1000+5秒grace、なければ受理時刻+60秒とする。
+既存#358の`PreparedAudioArtifact.duration_ms`は正のint（bool禁止）のmillisecondsであり、その意味を変更しない。
+既存`CandidateArtifactStore.current_artifact(candidate_id)`にはtyped artifactがあるが、現行Presentation compositionにはduration transportがない。
+`SpeechPresentationCommitState.prepared_audio_duration_ms`をoptional metadata境界として設け、同じstateの`prepared_audio_ref`およびcurrent candidateのaudio_refとのexact bindingを必須とする。
+trusted metadata供給側は既存artifactを使い、参照文字列・file size・textからdurationを推測しない。TEXT_ONLYではaudio durationを期限Authorityにしない。
+#358 Providerの意味や#613 integration wiringはこのWorkでは変更しない。
+
+report受理と期限解決は同じOwner lock内で行う。`owner_now < deadline`なら通常受理、`owner_now >= deadline`ならtimeoutを優先する。
+report timestampが過去でもOwnerへの到着を遡らせない。確定済みterminalはtimeoutで上書きしない。
+TERMINAL_WAIT timeoutではFAILEDへ閉じ、受理済みSTARTEDだけを保持する。fake STARTED/COMPLETED/FAILED_AFTER_START、追加effect、推測uncertaintyは生成しない。
+#657の既存snapshot projectorがSTARTED-onlyとOwner FAILEDをgeneric FAILEDへ投影し、#329が先行OBSERVABLEで受理したtext/audio partial effectを保持する。
+新しいCandidateLifecycle、Foundation ExecutionStatus、第二のPresentation/Actual Fact Authorityは作らない。
+
+Ownerの`presentation_wait_seconds`と`expire_presentation_if_due`はPresentation/candidate identity、candidate generation、固定policy generation、current lifecycle、受理済みreports、Owner時刻、期限を同じatomic境界で照合する。
+`SpeechPresentationTimeoutRecord`は不変の診断で、Presentation/candidate identity、START_WAIT/TERMINAL_WAIT、awareなdeadline/detected_at、固定policy identity/revisionを持つ。detected_atはdeadline以後。timeout以外では生成せず、Actual Factとは区別する。
+
+Executorはcandidate局所の実行Sessionから次reportを待ち、Ownerの期限を同じatomic境界で解決する。OS process/PID/signalはDomain契約へ出さない。
+
+### 別プロセス実行境界（ユーザー承認、#659 Test/Fix）
+
+親のSpeech Runtimeがlifecycle/deadline/terminal claimのAuthorityを保持する。Domainは`SpeechPresentationExecutionBoundary`と`SpeechPresentationExecutionSession`のPortのみを所有し、Sessionのclose完了は外部実行と通信資源の回収済みを意味する。
+InfrastructureのSupervisorが1 Presentationごとに明示worker moduleを`sys.executable -m`で起動する。poolは導入しない。具体Adapterの生成・SDK・device/surface I/Oは子だけで実行する。
+既存production Presentation登録はまだないため、信頼された構成側がadapter kind・import可能なfactoryのmodule/name・JSON configurationを明示登録する。任意callable/objectのpicklingは使用しない。登録をユーザー入力やreportから選ばず、#613のproduction wiringと#358のTTS生成は先取りしない。
+
+親子間はversion 1のJSONL envelopeとし、schema、version、kind、utterance_id、correlation_id、payloadを必須とする。correlation_idはpresentation_idにexact bindし、command/reportのcandidate・asset identityはOwnerでも再照合する。
+codecはDomain DTO外に置く。messageは64KiBを上限とし、重複key・未知field・不正数値・不正identityを拒否する。stdoutはprotocol専用とし、Adapter/SDKのstdoutをfd単位でstderrへ隔離する。現SupervisorはstderrをDEVNULLへ破棄し、raw外部出力・外部例外をAuthorityや診断の説明へ採用しない。必要な診断はtyped code等の安全な診断経路だけで扱う。
+spawn成功をSTARTEDへ昇格しない。Adapterが実際に返すreportだけをOwnerへ渡す。起動不能・不正protocol時の同一process fallbackは禁止する。
+
+正常terminal後も子の終了とpipe回収を待つ。timeout/取消/shutdownでは、入力EOFによる停止要求 → bounded grace → terminate → bounded wait → kill → bounded reapを実施する。
+回収対象はworkerの直接PIDだけでなく、Adapter/SDKが通常生成するdescendant process全体を含む。POSIXでは`start_new_session=True`で専用session/process groupを作り、group全体へSIGTERM、必要ならSIGKILLを送り、workerのwaitとgroup消滅を確認する。workerが先に正常終了していてもgroup内のhelperを残さない。
+Windowsでは専用の非継承・無名Job Objectを作成し、`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`を設定する。breakawayを許可しない。workerはcommand受信までAdapterをimport/生成せず、親はJob割当成功後だけcommandを送る。割当失敗時は実行を拒否し、command未送信のbootstrap workerを回収する。通常のexecution回収は`TerminateJobObject`でdescendantを含めて終了させ、workerのwaitとJobの`ActiveProcesses == 0`を確認した後にhandleを閉じる。Windowsのterminate/kill段階はいずれもJob全体の強制終了であり、direct `Process.kill()`を同等保証と扱わない。Job割当がOS/既存Jobの制約で拒否される環境ではSPAWN_FAILEDとし、同一processへfallbackしない。
+Presentation Adapter/SDKが起動するprocessはexecution containmentから離脱してはならない。POSIXのsetsid/setpgidによる離脱、Windowsのbreakaway、外部常駐サービスへの独立process起動委譲等を禁止する。意図的に離脱するprocessの回収は保証対象外であり、このAdapter契約を満たさない実装は登録対象にしない。OS APIはInfrastructureだけが所有する。
+cleanup秒数は固定policy generation内の`worker_grace_seconds=0.2`、`worker_terminate_seconds=1.0`、`worker_kill_seconds=1.0`へ集約する。これは実装時に設定したcleanupの初期値であり、承認済みPresentation deadline 5/5/5/60秒を変更しない。
+親側取消・再取消でもcleanupはshieldして完了まで回収する。timeoutのOwner claimを先に確定し、後着reportは上書きしない。呼出元へのterminal待機復帰はcleanup後とし、対象の生存子PID・tracked task・open IPC・子所有Adapter I/Oを残さない。
+OSがkill後も回収完了を返さない場合に加え、stdin閉鎖待機・stdout drain・containment照会/終了・handle閉鎖の失敗は、`diagnostics.failure = CLEANUP_FAILED`と`PresentationExecutionError(CLEANUP_FAILED)`へ収束する。raw TimeoutErrorを公開契約へ出さない。drain taskは失敗時もcancelしてjoinする。`diagnostics.closed`をTrueにせず、SessionをSupervisor追跡から削除せず、成功postconditionを主張しない。
+POSIXの実process試験とWindows Job API境界のunit testは証拠を区別する。Windows実機で未実行の場合、その実機回収・OS互換性は検証済みと記録しない。
+
+失敗はtyped codeでspawn、encode、protocol/identity、STARTED前後の異常終了、Adapter failure、terminal欠落、timeout、shutdownを区別する。terminate/kill実行はSupervisor診断として保持する。raw stderrやfree-form例外をAuthorityにしない。
+実際に取消拒否・terminate無視する子をtimeout/shutdownからkill/reapし、通常・失敗・race・反復実行・unrelated進行と#657/#329 partial effect保持を検証する。
+既存の同一process Adapter検証は明示的な検証専用Sessionでのみ実施し、production Supervisorからfallbackしない。

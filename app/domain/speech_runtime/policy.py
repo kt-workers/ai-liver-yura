@@ -53,6 +53,34 @@ class SpeechExpiryRule:
 
 
 @dataclass(frozen=True, slots=True)
+class SpeechPresentationTimeoutPolicy:
+    """2026-09-12承認値を持つPresentation局所の二段階期限方針。"""
+
+    start_report_timeout_seconds: float = 5.0
+    text_terminal_timeout_seconds: float = 5.0
+    audio_terminal_grace_seconds: float = 5.0
+    audio_terminal_fallback_timeout_seconds: float = 60.0
+    worker_grace_seconds: float = 0.2
+    worker_terminate_seconds: float = 1.0
+    worker_kill_seconds: float = 1.0
+
+    def __post_init__(self) -> None:
+        for name in (
+            "start_report_timeout_seconds",
+            "text_terminal_timeout_seconds",
+            "audio_terminal_grace_seconds",
+            "audio_terminal_fallback_timeout_seconds",
+            "worker_grace_seconds",
+            "worker_terminate_seconds",
+            "worker_kill_seconds",
+        ):
+            value = getattr(self, name)
+            if type(value) not in (int, float) or not isfinite(value) or value <= 0:
+                raise ValueError(f"{name} は有限の正数でなければなりません")
+            object.__setattr__(self, name, float(value))
+
+
+@dataclass(frozen=True, slots=True)
 class SpeechRuntimeOperationalPolicy:
     policy_id: str
     policy_revision: int
@@ -63,8 +91,11 @@ class SpeechRuntimeOperationalPolicy:
     expiry_rules: tuple[SpeechExpiryRule, ...]
     speculative_tts_limit: int
     queue_overflow_policy: SpeechQueueOverflowPolicy
+    presentation_timeout: SpeechPresentationTimeoutPolicy = SpeechPresentationTimeoutPolicy()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.presentation_timeout, SpeechPresentationTimeoutPolicy):
+            raise ValueError("Presentation timeout policy が必要です")
         require_identifier(self.policy_id, "policy_id")
         require_revision(self.policy_revision, "policy_revision")
         self._require_int_at_least(self.prepared_queue_capacity, 1, "prepared_queue_capacity")
