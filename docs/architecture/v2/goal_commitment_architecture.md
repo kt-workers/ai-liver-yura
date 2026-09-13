@@ -424,3 +424,7 @@ V2:
 - [x] Project sync manifest/runbook hierarchy includes #366
 
 残るのは#317全体Design Gate確認と実装後Verificationである。
+
+## CREATE意味内容の公開（#663）
+
+CREATE時のtyped semantic material保存とturn跨ぎの公開は[Goal / Commitment意味内容契約](goal_commitment_semantic_contracts.md)を正本とする。Lifecycleと内容のAuthorityを混同せず、opaque refから発話内容を推測しない。

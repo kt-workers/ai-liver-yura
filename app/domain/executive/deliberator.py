@@ -16,6 +16,7 @@ from app.domain.contracts.common import (
     thaw_json,
     utc_instant,
 )
+from app.domain.goal_commitment_semantics import GoalCommitmentSemanticSpec
 from app.domain.llm import (
     LLMActivationPolicy,
     LLMExecutionPolicy,
@@ -63,7 +64,14 @@ from .contracts import (
 
 ROLE_ID = "executive_deliberation"
 INPUT_SCHEMA = "executive.context.v2"
-OUTPUT_SCHEMA = "executive.candidate.v1"
+OUTPUT_SCHEMA = "executive.candidate.v2"
+CANDIDATE_INSTRUCTIONS = (
+    "bounded contextから意識的なGoal・Action候補をexecutive.candidate.v2として選ぶ。"
+    "CREATEはsemantic_ref / semantic_revision=1 / subject_kind / subject_ref / predicate / "
+    "value / polarity / degreeを持つsemantic specが必須。SELFはsubject_ref=null、"
+    "REFERENCEはbounded context内のID。non-CREATEのspecはnull。"
+    "意味内容をraw user textやfree-form rationaleから復元しない。"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +99,7 @@ class ExecutiveLiveStatePort(Protocol):
 def descriptor(policy: ExecutivePolicy) -> LLMRoleDescriptor:
     return LLMRoleDescriptor(
         ROLE_ID,
-        "bounded contextから意識的なGoal・Action候補を選ぶ",
+        CANDIDATE_INSTRUCTIONS,
         INPUT_SCHEMA,
         OUTPUT_SCHEMA,
         "executive_candidate_only",
@@ -601,6 +609,7 @@ def _goal_payload(value: object) -> GoalTransitionPayload:
         "goal transition payload",
         {
             "semantic_goal_ref",
+            "semantic_goal_spec",
             "priority",
             "superseding_goal_ref",
             "goal_kind",
@@ -624,6 +633,9 @@ def _goal_payload(value: object) -> GoalTransitionPayload:
         _strings(item["precondition_ids"], "precondition_ids"),
         _strings(item["completion_condition_refs"], "completion_condition_refs"),
         _optional_string(item["interruption_policy"], "interruption_policy"),
+        None
+        if item["semantic_goal_spec"] is None
+        else GoalCommitmentSemanticSpec.from_dict(item["semantic_goal_spec"]),
     )
 
 
@@ -633,6 +645,7 @@ def _commitment_payload(value: object) -> CommitmentTransitionPayload:
         "commitment transition payload",
         {
             "semantic_commitment_ref",
+            "semantic_commitment_spec",
             "counterparty_ref",
             "related_goal_refs",
             "strength",
@@ -654,4 +667,7 @@ def _commitment_payload(value: object) -> CommitmentTransitionPayload:
         priority,
         _strings(item["due_condition_refs"], "due_condition_refs"),
         _strings(item["release_condition_refs"], "release_condition_refs"),
+        None
+        if item["semantic_commitment_spec"] is None
+        else GoalCommitmentSemanticSpec.from_dict(item["semantic_commitment_spec"]),
     )

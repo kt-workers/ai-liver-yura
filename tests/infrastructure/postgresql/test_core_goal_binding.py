@@ -15,6 +15,7 @@ from app.domain.goals import GoalCommitmentStore
 from app.infrastructure.persistence import DurabilityStatus, PersistenceFailureCode
 from app.infrastructure.persistence.postgresql_connection import PostgresDatabase, PostgresEndpoint
 from tests.domain.goals.test_goal_commitment_store import decision, goal_transition
+from tests.helpers.goal_semantics import semantic_spec
 from tests.infrastructure.postgresql.test_memory import POLICY
 from tests.infrastructure.postgresql.test_runtime import runtime
 
@@ -115,6 +116,7 @@ def test_snapshot_format_failure_preserves_committed_state(endpoint: PostgresEnd
                 payload=replace(
                     transition.payload,
                     semantic_goal_ref="x" * 8193,
+                    semantic_goal_spec=semantic_spec("x" * 8193),
                 ),
             )
             result = binding.apply(decision("large", 0, goals=(transition,)))

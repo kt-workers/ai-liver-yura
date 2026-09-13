@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -28,6 +29,7 @@ from .contracts import (
     GoalStatus,
     InterruptionPolicy,
 )
+from .semantic_views import GoalCommitmentSemanticView
 
 _GOAL_STATUS_BY_OPERATION = {
     GoalTransitionOperation.ACTIVATE: GoalStatus.ACTIVE,
@@ -229,6 +231,18 @@ class GoalCommitmentStore:
     def _validate_references(
         goals: dict[str, GoalState], commitments: dict[str, CommitmentState]
     ) -> None:
+        specs = [g.semantic_goal_spec for g in goals.values()] + [
+            c.semantic_commitment_spec for c in commitments.values()
+        ]
+        registered: dict[tuple[str, int], str] = {}
+        for spec in specs:
+            key = (spec.semantic_ref, spec.semantic_revision)
+            content = json.dumps(
+                spec.to_dict(), sort_keys=True, ensure_ascii=False, allow_nan=False
+            )
+            if key in registered and registered[key] != content:
+                raise ValueError("同じsemantic identityの内容を変更できません")
+            registered[key] = content
         commitment_ids = set(commitments)
         if any(set(goal.commitment_refs) - commitment_ids for goal in goals.values()):
             raise ValueError("goal commitment reference does not exist")
@@ -256,6 +270,7 @@ class GoalCommitmentStore:
             payload = transition.payload
             assert payload.semantic_goal_ref is not None and payload.priority is not None
             assert payload.goal_kind is not None and payload.interruption_policy is not None
+            assert payload.semantic_goal_spec is not None
             goals[goal_id] = GoalState(
                 goal_id,
                 GoalKind(payload.goal_kind),
@@ -272,6 +287,7 @@ class GoalCommitmentStore:
                 occurred_at,
                 occurred_at,
                 revision,
+                payload.semantic_goal_spec,
             )
             return
         goal_id = transition.goal_ref
@@ -347,6 +363,7 @@ class GoalCommitmentStore:
                 for item in commitments.values()
             ):
                 raise ValueError("duplicate active commitment specification")
+            assert transition.payload.semantic_commitment_spec is not None
             commitments[commitment_id] = CommitmentState(
                 commitment_id,
                 semantic_ref,
@@ -362,6 +379,8 @@ class GoalCommitmentStore:
                 occurred_at,
                 occurred_at,
                 revision,
+                transition.payload.semantic_commitment_spec,
+                transition.reason_refs,
             )
             return
         commitment_id = transition.commitment_ref
@@ -381,3 +400,31 @@ class GoalCommitmentStore:
     def snapshot_publication(self) -> AuthorityReadPublication[GoalCommitmentSnapshot]:
         with self._participant:
             return AuthorityReadPublication(self.snapshot(), (self._participant.token(),))
+
+    def goal_semantic_publication(
+        self, goal_id: str
+    ) -> AuthorityReadPublication[GoalCommitmentSemanticView] | None:
+        with self._participant:
+            state = next((s for s in self._snapshot.goals if s.goal_id == goal_id), None)
+            return (
+                None
+                if state is None
+                else AuthorityReadPublication(
+                    GoalCommitmentSemanticView(state), (self._participant.token(),)
+                )
+            )
+
+    def commitment_semantic_publication(
+        self, commitment_id: str
+    ) -> AuthorityReadPublication[GoalCommitmentSemanticView] | None:
+        with self._participant:
+            state = next(
+                (s for s in self._snapshot.commitments if s.commitment_id == commitment_id), None
+            )
+            return (
+                None
+                if state is None
+                else AuthorityReadPublication(
+                    GoalCommitmentSemanticView(state), (self._participant.token(),)
+                )
+            )

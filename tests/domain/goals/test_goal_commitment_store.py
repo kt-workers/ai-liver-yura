@@ -41,6 +41,7 @@ from app.domain.goals import (
     autonomy_triggers,
     build_goal_context_view,
 )
+from tests.helpers.goal_semantics import semantic_spec
 
 NOW = datetime(2026, 8, 14, tzinfo=timezone.utc)
 
@@ -99,6 +100,7 @@ def goal_transition(
                 precondition_ids=(f"pre-{goal_id}",),
                 completion_condition_refs=(f"complete-{goal_id}",),
                 interruption_policy="protected",
+                semantic_goal_spec=semantic_spec(f"semantic-{goal_id}"),
             ),
             (f"reason-{goal_id}",),
         )
@@ -147,6 +149,9 @@ def commitment_transition(
             release_condition_refs=(f"release-{commitment_id}",)
             if operation is CommitmentTransitionOperation.CREATE
             else (),
+            semantic_commitment_spec=semantic_spec(f"semantic-{commitment_id}")
+            if operation is CommitmentTransitionOperation.CREATE
+            else None,
         ),
         (f"reason-{commitment_id}",),
     )
@@ -397,6 +402,7 @@ def test_duplicate_active_commitment_semantic_spec_with_different_id_is_rejected
         payload=replace(
             second.payload,
             semantic_commitment_ref=first.payload.semantic_commitment_ref,
+            semantic_commitment_spec=first.payload.semantic_commitment_spec,
             counterparty_ref=first.payload.counterparty_ref,
             due_condition_refs=first.payload.due_condition_refs,
             release_condition_refs=first.payload.release_condition_refs,
@@ -431,6 +437,7 @@ def test_duplicate_commitment_spec_is_order_independent() -> None:
         payload=replace(
             second.payload,
             semantic_commitment_ref=first.payload.semantic_commitment_ref,
+            semantic_commitment_spec=first.payload.semantic_commitment_spec,
             counterparty_ref=first.payload.counterparty_ref,
             related_goal_refs=("goal-b", "goal-a"),
             due_condition_refs=("due-b", "due-a"),
@@ -564,6 +571,7 @@ def _goal(
         NOW,
         updated_at,
         1,
+        semantic_goal_spec=semantic_spec(f"semantic-{goal_id}"),
     )
 
 
@@ -590,6 +598,7 @@ def _commitment(
         NOW,
         updated_at,
         1,
+        semantic_commitment_spec=semantic_spec(f"semantic-{commitment_id}"),
     )
 
 

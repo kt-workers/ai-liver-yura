@@ -64,6 +64,7 @@ from app.domain.llm import (
     StructuredPayload,
 )
 from tests.helpers.executive_requirements import SPEECH_OWNER, make_authority
+from tests.helpers.goal_semantics import semantic_spec
 from tests.helpers.llm import make_execution_policy
 from tests.helpers.speech_bindings import bind_test_sources
 
@@ -228,7 +229,7 @@ def success(request: LLMRoleRequest, trigger_id: str = "trigger-1") -> LLMRoleRe
         LLMModelClass.BALANCED,
         1,
         LLMTokenUsage(100, 50),
-        StructuredPayload("executive.candidate.v1", cast(JsonValue, candidate_json(trigger_id))),
+        StructuredPayload("executive.candidate.v2", cast(JsonValue, candidate_json(trigger_id))),
         started_at=NOW,
     )
 
@@ -523,6 +524,7 @@ def test_goal_transition_operations_are_typed_and_do_not_mutate_store(
             50,
             goal_kind="general",
             interruption_policy="resumable",
+            semantic_goal_spec=semantic_spec("semantic-goal"),
         )
         if operation is GoalTransitionOperation.CREATE
         else GoalTransitionPayload(
@@ -556,7 +558,12 @@ def test_commitment_transition_operations_are_typed(
         operation,
         **kwargs,
         expected_goal_revision=5,
-        payload=CommitmentTransitionPayload("commitment-spec", strength=50, priority=50)
+        payload=CommitmentTransitionPayload(
+            "commitment-spec",
+            strength=50,
+            priority=50,
+            semantic_commitment_spec=semantic_spec("commitment-spec"),
+        )
         if operation is CommitmentTransitionOperation.CREATE
         else CommitmentTransitionPayload(),
         reason_refs=("fact-desire",),
@@ -718,6 +725,7 @@ def test_transition_payload_rejects_bounded_reference_of_wrong_kind(kind: str) -
                 50,
                 goal_kind="general",
                 interruption_policy="resumable",
+                semantic_goal_spec=semantic_spec("cap-speech"),
             ),
             ("fact-desire",),
         )
@@ -734,7 +742,12 @@ def test_transition_payload_rejects_bounded_reference_of_wrong_kind(kind: str) -
             None,
             "commitment-spec",
             5,
-            CommitmentTransitionPayload("cap-speech", strength=50, priority=50),
+            CommitmentTransitionPayload(
+                "cap-speech",
+                strength=50,
+                priority=50,
+                semantic_commitment_spec=semantic_spec("cap-speech"),
+            ),
             ("fact-desire",),
         )
         proposed = replace(
@@ -987,7 +1000,7 @@ def test_provider_output_bounds_are_rejected_without_first_n_acceptance() -> Non
     raw["intents"] = [{**intents[0], "intent_id": f"intent-{index}"} for index in range(17)]
     result = replace(
         success(request),
-        output=StructuredPayload("executive.candidate.v1", cast(JsonValue, raw)),
+        output=StructuredPayload("executive.candidate.v2", cast(JsonValue, raw)),
     )
     with pytest.raises(ValueError, match="EXECUTIVE_CONTEXT_TOO_LARGE"):
         commit_result(

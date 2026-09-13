@@ -42,6 +42,7 @@ from app.domain.speech_semantics_vocabulary import (
 from tests.domain.executive.test_executive import NOW, candidate, live_state, snapshot
 from tests.domain.speech_semantics.test_production_context import inputs, policies
 from tests.helpers.executive_requirements import fence_clock, make_authority
+from tests.helpers.goal_semantics import semantic_spec
 
 EXPECTED_IDS = {
     CommunicativeActKind.GREETING: "yura.communicative.greeting",
@@ -370,6 +371,7 @@ def test_commitment_uses_native_commitment_state_evidence() -> None:
         NOW,
         NOW,
         5,
+        semantic_commitment_spec=semantic_spec("test-promised-action"),
     )
 
     def read(identity: str) -> AuthorityReadPublication[SourceValue] | None:

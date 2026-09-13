@@ -21,6 +21,7 @@ from app.domain.contracts.common import (
     utc_instant,
 )
 from app.domain.contracts.finalization import AuthorityGenerationToken
+from app.domain.goal_commitment_semantics import GoalCommitmentSemanticSpec, require_semantic_spec
 from app.domain.input_meaning import StructuredInputMeaning
 from app.domain.plan_execution.contracts import PlanExecutionAuthorization, PlanExecutionScope
 from app.domain.plan_execution.progress_contracts import (
@@ -819,6 +820,8 @@ class GoalTransitionPayload:
     completion_condition_refs: tuple[str, ...] = ()
     interruption_policy: str | None = None
 
+    semantic_goal_spec: GoalCommitmentSemanticSpec | None = None
+
     def __post_init__(self) -> None:
         for name in (
             "semantic_goal_ref",
@@ -870,7 +873,10 @@ class GoalTransitionPayload:
         )
 
     def validate_for(self, operation: GoalTransitionOperation) -> None:
+        if operation is not GoalTransitionOperation.CREATE and self.semantic_goal_spec is not None:
+            raise ValueError("non-CREATEにsemantic specを渡せません")
         if operation is GoalTransitionOperation.CREATE:
+            require_semantic_spec(self.semantic_goal_spec, self.semantic_goal_ref)
             if (
                 self.semantic_goal_ref is None
                 or self.priority is None
@@ -930,6 +936,8 @@ class GoalTransitionPayload:
 
     def bounded_reference_ids(self) -> tuple[str, ...]:
         return (
+            () if self.semantic_goal_spec is None else self.semantic_goal_spec.reference_ids()
+        ) + (
             (() if self.target_ref is None else (self.target_ref,))
             + self.precondition_ids
             + self.completion_condition_refs
@@ -938,6 +946,9 @@ class GoalTransitionPayload:
     def to_dict(self) -> dict[str, object]:
         return {
             "semantic_goal_ref": self.semantic_goal_ref,
+            "semantic_goal_spec": None
+            if self.semantic_goal_spec is None
+            else self.semantic_goal_spec.to_dict(),
             "priority": self.priority,
             "superseding_goal_ref": self.superseding_goal_ref,
             "goal_kind": self.goal_kind,
@@ -1002,6 +1013,8 @@ class CommitmentTransitionPayload:
     due_condition_refs: tuple[str, ...] = ()
     release_condition_refs: tuple[str, ...] = ()
 
+    semantic_commitment_spec: GoalCommitmentSemanticSpec | None = None
+
     def __post_init__(self) -> None:
         if self.semantic_commitment_ref is not None:
             require_identifier(self.semantic_commitment_ref, "semantic_commitment_ref")
@@ -1019,7 +1032,13 @@ class CommitmentTransitionPayload:
                 raise ValueError(f"{name} must be an int between 0 and 100")
 
     def validate_for(self, operation: CommitmentTransitionOperation) -> None:
+        if (
+            operation is not CommitmentTransitionOperation.CREATE
+            and self.semantic_commitment_spec is not None
+        ):
+            raise ValueError("non-CREATEにsemantic specを渡せません")
         if operation is CommitmentTransitionOperation.CREATE:
+            require_semantic_spec(self.semantic_commitment_spec, self.semantic_commitment_ref)
             if (
                 self.semantic_commitment_ref is None
                 or self.strength is None
@@ -1054,6 +1073,10 @@ class CommitmentTransitionPayload:
 
     def bounded_reference_ids(self) -> tuple[str, ...]:
         return (
+            ()
+            if self.semantic_commitment_spec is None
+            else self.semantic_commitment_spec.reference_ids()
+        ) + (
             (() if self.counterparty_ref is None else (self.counterparty_ref,))
             + self.due_condition_refs
             + self.release_condition_refs
@@ -1062,6 +1085,9 @@ class CommitmentTransitionPayload:
     def to_dict(self) -> dict[str, object]:
         return {
             "semantic_commitment_ref": self.semantic_commitment_ref,
+            "semantic_commitment_spec": None
+            if self.semantic_commitment_spec is None
+            else self.semantic_commitment_spec.to_dict(),
             "counterparty_ref": self.counterparty_ref,
             "related_goal_refs": list(self.related_goal_refs),
             "strength": self.strength,

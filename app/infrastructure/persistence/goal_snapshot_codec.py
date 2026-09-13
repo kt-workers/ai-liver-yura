@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from datetime import datetime
 
 from app.domain.contracts.common import JsonValue, freeze_json
+from app.domain.goal_commitment_semantics import GoalCommitmentSemanticSpec
 from app.domain.goals.contracts import (
     CommitmentState,
     CommitmentStatus,
@@ -25,8 +26,8 @@ from .contracts import (
 
 OWNER_ID = "goals"
 SNAPSHOT_KIND = "goal_commitment"
-SCHEMA_ID = "goals.commitment.snapshot.v1"
-SCHEMA_VERSION = 1
+SCHEMA_ID = "goals.commitment.snapshot.v2"
+SCHEMA_VERSION = 2
 
 
 def encode_goal_snapshot(
@@ -89,7 +90,8 @@ def _goal(value: JsonValue) -> GoalState:
         value,
         "goal_id kind semantic_goal_ref target_ref created_from_decision_id "
         "status priority motivation_refs commitment_refs precondition_ids "
-        "completion_condition_refs interruption_policy created_at updated_at revision",
+        "completion_condition_refs interruption_policy created_at updated_at revision "
+        "semantic_goal_spec",
     )
     return GoalState(
         _text(data["goal_id"]),
@@ -107,6 +109,7 @@ def _goal(value: JsonValue) -> GoalState:
         _time(data["created_at"]),
         _time(data["updated_at"]),
         _integer(data["revision"]),
+        GoalCommitmentSemanticSpec.from_dict(data["semantic_goal_spec"]),
     )
 
 
@@ -115,7 +118,8 @@ def _commitment(value: JsonValue) -> CommitmentState:
         value,
         "commitment_id semantic_commitment_ref counterparty_ref "
         "source_event_ids source_decision_id related_goal_refs status strength "
-        "priority due_condition_refs release_condition_refs created_at updated_at revision",
+        "priority due_condition_refs release_condition_refs created_at updated_at revision "
+        "semantic_commitment_spec reason_refs",
     )
     return CommitmentState(
         _text(data["commitment_id"]),
@@ -132,6 +136,8 @@ def _commitment(value: JsonValue) -> CommitmentState:
         _time(data["created_at"]),
         _time(data["updated_at"]),
         _integer(data["revision"]),
+        GoalCommitmentSemanticSpec.from_dict(data["semantic_commitment_spec"]),
+        _ids(data["reason_refs"]),
     )
 
 
