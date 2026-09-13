@@ -213,7 +213,13 @@ def build_minimum_core(
 ) -> MinimumCoreApplication:
     """本番設定を読み、提供サービスの構成不備は既存契約のまま伝える。"""
     config, character, llm = _load_core(config_path, cognition)
-    return _compose_core(config, character, llm, GoalCommitmentStore(), cognition=cognition)
+    return _compose_core(
+        config,
+        character,
+        llm,
+        GoalCommitmentStore(bounds=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY),
+        cognition=cognition,
+    )
 
 
 def _load_core(

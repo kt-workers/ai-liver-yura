@@ -234,11 +234,24 @@ def test_lifecycle_exact_content_and_concurrent_stale_fence(kind: str) -> None:
 @pytest.mark.parametrize("kind", ["goal", "commitment"])
 @pytest.mark.parametrize("unknown", [False, True])
 def test_real_executive_create_to_store_publication(kind: str, unknown: bool) -> None:
+    from app.domain.executive import ExecutiveFactKind, ExecutiveFactRef
     from tests.domain.executive.test_executive import NOW as EXEC_NOW
     from tests.domain.executive.test_executive import candidate, live_state, snapshot
     from tests.helpers.executive_requirements import fence_clock, make_authority
 
     context = snapshot()
+    context = replace(
+        context,
+        facts=tuple(
+            f
+            for f in context.facts
+            if f.kind not in (ExecutiveFactKind.GOAL, ExecutiveFactKind.COMMITMENT)
+        )
+        + (ExecutiveFactRef("fact-desire", ExecutiveFactKind.MEMORY_EVIDENCE, 1, {}),),
+    )
+    assert not any(
+        f.kind in (ExecutiveFactKind.GOAL, ExecutiveFactKind.COMMITMENT) for f in context.facts
+    )
     reference = "unknown-ref" if unknown else "fact-desire"
     store = GoalCommitmentStore(GoalCommitmentSnapshot(5, (), (), EXEC_NOW))
     proposed = replace(candidate(), outcome=ExecutiveOutcome.CONTINUE_ACTIVITY, intents=())
@@ -347,3 +360,78 @@ def test_json_boolean_and_number_are_distinct_semantic_content() -> None:
     with pytest.raises(ValueError, match="semantic identity"):
         store.apply(decision("second", 1, goals=(second,)))
     assert store.snapshot() == before
+
+
+@pytest.mark.parametrize("kind", ["goal", "commitment"])
+def test_oversize_semantic_content_rejected_before_store_mutation(kind: str) -> None:
+    store = GoalCommitmentStore()
+    spec = replace(semantic_spec("large"), value="あ" * 16384)
+    if kind == "goal":
+        t = goal_transition(G.CREATE, 0)
+        t = replace(
+            t, payload=replace(t.payload, semantic_goal_ref="large", semantic_goal_spec=spec)
+        )
+        proposed = decision("large", 0, goals=(t,))
+    else:
+        c = commitment_transition(C.CREATE, 0)
+        c = replace(
+            c,
+            payload=replace(
+                c.payload, semantic_commitment_ref="large", semantic_commitment_spec=spec
+            ),
+        )
+        proposed = decision("large", 0, commitments=(c,))
+    before = store.snapshot()
+    with pytest.raises(ValueError, match="transport"):
+        store.apply(proposed)
+    assert store.snapshot() == before
+
+
+@pytest.mark.parametrize("kind", ["goal", "commitment"])
+def test_create_duplicate_current_state_identity_is_rejected(kind: str) -> None:
+    from tests.domain.executive.test_executive import candidate, live_state, snapshot
+    from tests.helpers.executive_requirements import make_authority
+
+    if kind == "goal":
+        t = goal_transition(G.CREATE, 5, goal_id="goal-1")
+        t = replace(
+            t,
+            payload=GoalTransitionPayload(
+                "new-semantic",
+                50,
+                goal_kind="general",
+                interruption_policy="resumable",
+                semantic_goal_spec=semantic_spec("new-semantic"),
+            ),
+            reason_refs=("fact-desire",),
+        )
+        proposed = replace(
+            candidate(),
+            outcome=ExecutiveOutcome.CONTINUE_ACTIVITY,
+            intents=(),
+            goal_transition_intents=(t,),
+        )
+    else:
+        c = commitment_transition(C.CREATE, 5, commitment_id="commitment-1")
+        c = replace(
+            c,
+            payload=CommitmentTransitionPayload(
+                "new-semantic",
+                strength=50,
+                priority=50,
+                semantic_commitment_spec=semantic_spec("new-semantic"),
+            ),
+            reason_refs=("fact-desire",),
+        )
+        proposed = replace(
+            candidate(),
+            outcome=ExecutiveOutcome.CONTINUE_ACTIVITY,
+            intents=(),
+            commitment_transition_intents=(c,),
+        )
+    authority = make_authority()
+    with pytest.raises(ValueError, match="重複"):
+        authority.commit(
+            proposed, snapshot(), current=live_state(requirements=()), decision_id="duplicate"
+        )
+    assert not authority.has_committed(proposed.trigger_id)

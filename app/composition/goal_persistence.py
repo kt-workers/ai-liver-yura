@@ -5,6 +5,10 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
 from app.domain.contracts.common import require_identifier
 from app.domain.executive import CommittedExecutiveDecision
 from app.domain.goals import GoalCommitmentSnapshot, GoalCommitmentStore
@@ -54,10 +58,11 @@ class CoreGoalPersistenceBinding:
         persistence: PostgresPersistenceRuntime,
         *,
         runtime_epoch: str,
+        bounds: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
     ) -> CoreGoalPersistenceBinding:
         require_identifier(runtime_epoch, "runtime_epoch")
         restored = await persistence.restore_goals()
-        store = GoalCommitmentStore(restored.value)
+        store = GoalCommitmentStore(restored.value, bounds=bounds)
         return cls(
             store, persistence, runtime_epoch=runtime_epoch, restore_failure=restored.failure_code
         )

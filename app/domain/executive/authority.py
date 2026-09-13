@@ -31,10 +31,12 @@ from app.domain.plan_execution.progress_contracts import (
 
 from .contracts import (
     ActivityIntentPayload,
+    CommitmentTransitionOperation,
     CommittedExecutiveDecision,
     ExecutiveCommitState,
     ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
+    GoalTransitionOperation,
     PlanExecutionIntentPayload,
     PlanProgressIntentPayload,
     SpeechIntentPayload,
@@ -95,6 +97,9 @@ class ExecutiveDecisionAuthority:
         """時刻引数は互換入力。最終確定時刻にはFenceの時計だけを使う。"""
         if committed_at is not None and not isinstance(committed_at, datetime):
             raise ValueError("確定時刻はdatetimeで指定してください")
+        from .deliberator import validate_candidate_bounds
+
+        validate_candidate_bounds(candidate, self._bounds_policy.executive)
         generation = snapshot.requirements_generation
         if self.requirements_owner is None or generation is None:
             raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
@@ -145,6 +150,9 @@ class ExecutiveDecisionAuthority:
 
         if not isinstance(committed_at, datetime):
             raise ValueError("committed_at must be datetime")
+        from .deliberator import validate_candidate_bounds
+
+        validate_candidate_bounds(candidate, self._bounds_policy.executive)
         generation = snapshot.requirements_generation
         if generation is None:
             raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
@@ -414,7 +422,10 @@ class ExecutiveDecisionAuthority:
                 raise ValueError("goal commitment ref has an invalid fact kind")
             references.extend(transition.payload.bounded_reference_ids())
             target = transition.goal_ref or transition.goal_spec_ref
-            if target not in goal_fact_ids:
+            if transition.operation is GoalTransitionOperation.CREATE:
+                if target in goal_fact_ids:
+                    raise ValueError("CREATEのGoal identityは既存Stateと重複できません")
+            elif target not in goal_fact_ids:
                 raise ValueError("goal transition reference is outside bounded context")
         for commitment_transition in candidate.commitment_transition_intents:
             if commitment_transition.expected_goal_revision != snapshot.goal_revision:
@@ -431,7 +442,10 @@ class ExecutiveDecisionAuthority:
             target = (
                 commitment_transition.commitment_ref or commitment_transition.commitment_spec_ref
             )
-            if target not in commitment_fact_ids:
+            if commitment_transition.operation is CommitmentTransitionOperation.CREATE:
+                if target in commitment_fact_ids:
+                    raise ValueError("CREATEのCommitment identityは既存Stateと重複できません")
+            elif target not in commitment_fact_ids:
                 raise ValueError("commitment transition reference is outside bounded context")
         if set(references) - evidence_ids:
             raise ValueError("candidate reference is outside bounded context")

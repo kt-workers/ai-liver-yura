@@ -925,11 +925,7 @@ class GoalTransitionPayload:
         )
 
     def goal_fact_reference_ids(self) -> tuple[str, ...]:
-        return tuple(
-            value
-            for value in (self.semantic_goal_ref, self.superseding_goal_ref)
-            if value is not None
-        )
+        return tuple(value for value in (self.superseding_goal_ref,) if value is not None)
 
     def commitment_fact_reference_ids(self) -> tuple[str, ...]:
         return self.commitment_refs
@@ -1066,7 +1062,7 @@ class CommitmentTransitionPayload:
         )
 
     def commitment_fact_reference_ids(self) -> tuple[str, ...]:
-        return () if self.semantic_commitment_ref is None else (self.semantic_commitment_ref,)
+        return ()
 
     def goal_fact_reference_ids(self) -> tuple[str, ...]:
         return self.related_goal_refs

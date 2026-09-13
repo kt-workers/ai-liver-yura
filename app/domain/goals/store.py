@@ -4,8 +4,12 @@ import json
 from dataclasses import replace
 from datetime import datetime, timezone
 
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
 from app.domain.contracts import SourceLifecycleOperation
-from app.domain.contracts.common import utc_instant
+from app.domain.contracts.common import canonical_json_bytes, utc_instant
 from app.domain.contracts.finalization import (
     AuthorityFinalizationParticipant,
     AuthorityReadPublication,
@@ -88,7 +92,15 @@ _COMMITMENT_SOURCES = {
 class GoalCommitmentStore:
     """current Goal/Commitmentの単一同期State Authority。"""
 
-    def __init__(self, initial: GoalCommitmentSnapshot | None = None) -> None:
+    def __init__(
+        self,
+        initial: GoalCommitmentSnapshot | None = None,
+        *,
+        bounds: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    ) -> None:
+        if not isinstance(bounds, BrainOperationalBoundsPolicy):
+            raise ValueError("既存のBrainOperationalBoundsPolicyを指定してください")
+        self._bounds = bounds
         if initial is not None and not isinstance(initial, GoalCommitmentSnapshot):
             raise ValueError("initial must be GoalCommitmentSnapshot")
         initial_time = datetime.min.replace(tzinfo=timezone.utc)
@@ -97,6 +109,7 @@ class GoalCommitmentStore:
             {item.goal_id: item for item in self._snapshot.goals},
             {item.commitment_id: item for item in self._snapshot.commitments},
         )
+        self._validate_transport(self._snapshot.goals + self._snapshot.commitments)
         self._decision_ids: set[str] = set()
         self._intent_ids: set[str] = set()
         self._participant = AuthorityFinalizationParticipant(self, "GoalCommitmentStore", 40)
@@ -154,6 +167,7 @@ class GoalCommitmentStore:
                     next_revision,
                 )
             self._validate_references(goals, commitments)
+            self._validate_transport(tuple(goals.values()) + tuple(commitments.values()))
             snapshot = GoalCommitmentSnapshot(
                 next_revision,
                 tuple(sorted(goals.values(), key=lambda item: item.goal_id)),
@@ -165,6 +179,14 @@ class GoalCommitmentStore:
             self._decision_ids.add(decision.decision_id)
             self._intent_ids.update(intent_ids)
             return GoalCommitmentCommitResult(snapshot, lifecycle_facts)
+
+    def _validate_transport(self, states: tuple[GoalState | CommitmentState, ...]) -> None:
+        for state in states:
+            if (
+                canonical_json_bytes(state.to_dict())
+                > self._bounds.executive.max_fact_payload_json_bytes
+            ):
+                raise ValueError("Goal/Commitmentのtransport上限を超えています")
 
     @staticmethod
     def _facts(

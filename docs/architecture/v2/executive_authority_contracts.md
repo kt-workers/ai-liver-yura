@@ -64,7 +64,7 @@ Provider await後、commit直前のcurrent policy世代がsnapshot世代と異�
 
 `ExecutiveIntent`は発話・身体・活動・注意の高水準要求、確定計画全体への明示的な実行承認、計画の完了評価を持つ。内容は汎用JSONではなく、`SpeechIntentPayload` / `BodyIntentPayload` / `ActivityIntentPayload` / `AttentionIntentPayload` / `PlanExecutionIntentPayload` / `PlanProgressIntentPayload`の個別の不変な型とする。意味目標・動作目標・対象・制約は空でない文字列の参照とし、制約群の重複を拒否する。確定時に上限付きの判断入力の根拠と照合する。最終台詞、計画手順列、音声合成の値、関節角、フレーム単位の操作、実行済みの事実を格納しない。
 
-Goal transitionはcreate / activate / reprioritize / suspend / resume / complete / abandon / supersede、Commitment transitionはcreate / activate / suspend / resume / release / fulfill / violateを表す。`GoalTransitionPayload`はoperationに応じてsemantic goal、priority、superseding goalだけを、`CommitmentTransitionPayload`はcreate時のsemantic commitmentだけを許可する。いずれもexpected goal revisionを持ち、対象・spec・payload参照はbounded Goal/Commitment factにgroundする。#366が後続で再検証・適用するintentである。
+Goal transitionはcreate / activate / reprioritize / suspend / resume / complete / abandon / supersede、Commitment transitionはcreate / activate / suspend / resume / release / fulfill / violateを表す。`GoalTransitionPayload`はoperationに応じてsemantic goal、priority、superseding goalだけを、`CommitmentTransitionPayload`はcreate時のsemantic commitmentだけを許可する。いずれもexpected goal revisionを持つ。CREATEのstate IDとsemantic refは新規identityであり、既存Factを要求しない。non-CREATEの対象と、既存Stateを指すpayload参照はboundedな同kind Factにgroundする。#366が後続で再検証・適用するintentである。
 
 ## 5. Commit Gate
 
@@ -275,3 +275,12 @@ catalog専用容量は共有policyの`communicative_catalog`（64件 / definitio
 ## Goal / Commitment CREATEの意味内容（#663）
 
 CREATEは[Goal / Commitment意味内容契約](goal_commitment_semantic_contracts.md)のtyped specを必須とし、Executiveが選択・確定して#366へ渡す。candidateはexecutive.candidate.v2、inputはexecutive.context.v2を用いる。non-CREATEはspecを持たず、既存内容を変更しない。
+
+
+## #663 CREATE identityと搬送互換性
+
+CREATEのgoal_spec_ref / semantic_goal_ref、commitment_spec_ref / semantic_commitment_refは新しく導入するidentityであり、既存GOAL / COMMITMENT Factへのmembershipを要求しない。対応するspec.semantic_refとの一致は必須。新state IDはcurrent同kind Stateと重複できず、Executiveのbounded同kind Factとの照合に加え、#366 Storeでも最終duplicate検査を行う。
+
+CREATEでもreason_refs、REFERENCE subject_ref、Goalのtarget_ref / commitment_refs / precondition_ids / completion_condition_refs、Commitmentのcounterparty_ref / related_goal_refs / due_condition_refs / release_condition_refsは既存typed/bounded規則に従う。non-CREATEのgoal_ref / commitment_refおよびSUPERSEDEのsuperseding_goal_refは既存の同kind State Factを必須とする。
+
+既存BrainOperationalBoundsPolicy.executive.max_fact_payload_json_bytes（16384）を意味上限の新設ではなくExecutiveへのtransport compatibility boundとして適用する。candidate境界でCREATE spec単体のcanonical JSON UTF-8 bytesを検査する。#366 Storeには既存shared boundsを注入し、batchのlocal copy構築後、snapshotの更新前に完全なGoalState.to_dict() / CommitmentState.to_dict()の同byte数を検査する。超過はbatch全体非適用、State revision不変とし、切捨てやcommit後の保存失敗への転嫁を禁止する。復元時にも同じ上限を検査する。合法Stateの保存不可時には既存のin-memory継続契約を維持する。新D10 field / 数値 / generationは追加しない。

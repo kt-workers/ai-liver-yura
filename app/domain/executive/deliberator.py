@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime
@@ -11,9 +10,9 @@ from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy, Ex
 from app.domain.contracts import CapabilityRequirement, RevisionVector
 from app.domain.contracts.common import (
     JsonValue,
+    canonical_json_bytes,
     freeze_json,
     require_aware,
-    thaw_json,
     utc_instant,
 )
 from app.domain.goal_commitment_semantics import GoalCommitmentSemanticSpec
@@ -70,6 +69,8 @@ CANDIDATE_INSTRUCTIONS = (
     "CREATEはsemantic_ref / semantic_revision=1 / subject_kind / subject_ref / predicate / "
     "value / polarity / degreeを持つsemantic specが必須。SELFはsubject_ref=null、"
     "REFERENCEはbounded context内のID。non-CREATEのspecはnull。"
+    "CREATEのstate IDとsemantic refは新規identityであり既存同kind Factを要求しない。"
+    "既存StateとのID重複は禁止。reasonや対象参照はbounded context内で選ぶ。"
     "意味内容をraw user textやfree-form rationaleから復元しない。"
 )
 
@@ -315,15 +316,7 @@ def _validate_snapshot_bounds(
     _at_most(len(snapshot.capabilities), bounds.max_capability_descriptors, "capability")
     _at_most(len(snapshot.preconditions), bounds.max_precondition_facts, "precondition")
     for fact in snapshot.facts:
-        payload_bytes = len(
-            json.dumps(
-                thaw_json(fact.payload),
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-                allow_nan=False,
-            ).encode("utf-8")
-        )
+        payload_bytes = canonical_json_bytes(fact.payload)
         _at_most(payload_bytes, bounds.max_fact_payload_json_bytes, "fact payload")
 
 
@@ -337,6 +330,16 @@ def validate_candidate_bounds(
         bounds.max_commitment_transitions,
         "commitment transition",
     )
+    specs = [t.payload.semantic_goal_spec for t in candidate.goal_transition_intents] + [
+        t.payload.semantic_commitment_spec for t in candidate.commitment_transition_intents
+    ]
+    for spec in specs:
+        if spec is not None:
+            _at_most(
+                canonical_json_bytes(spec.to_dict()),
+                bounds.max_fact_payload_json_bytes,
+                "semantic spec transport",
+            )
     for intent in candidate.intents:
         references = (
             set(intent.evidence_refs)
