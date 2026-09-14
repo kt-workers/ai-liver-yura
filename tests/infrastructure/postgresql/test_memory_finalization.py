@@ -1,5 +1,6 @@
 """PostgreSQLの待機中も局所Memory tokenと非待機Fenceを維持する。"""
 
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from threading import Event
@@ -15,7 +16,10 @@ from app.domain.memory import (
     MemoryWriteRequest,
 )
 from app.infrastructure.persistence import PostgresEndpoint
-from app.infrastructure.persistence.postgresql_connection import PostgresDatabase
+from app.infrastructure.persistence.postgresql_connection import (
+    PostgresConnection,
+    PostgresDatabase,
+)
 from app.infrastructure.persistence.postgresql_memory import PostgresMemoryRepository
 from tests.domain.memory.test_finalization_publication import finalize, seed
 from tests.domain.memory.test_memory_store_retrieval import NOW, candidate
@@ -51,9 +55,17 @@ def test_same_storage_connections_share_relation_guard(endpoint: PostgresEndpoin
 
 
 def test_slow_postgres_write_is_busy_only_for_its_memory(endpoint: PostgresEndpoint) -> None:
+    entered = Event()
+
+    class ObservedRepository(PostgresMemoryRepository):
+        def _write(self, action: Callable[[PostgresConnection], bool]) -> bool:
+            # 保存入口が取得するguardだけを観測し、試験側では追加取得しない。
+            entered.set()
+            return super()._write(action)
+
     database = PostgresDatabase.connect(endpoint, POLICY)
     try:
-        repo = PostgresMemoryRepository(database)
+        repo = ObservedRepository(database)
         repo.migrate()
         store = MemoryStoreAuthority(repo)
         seed(store, "A")
@@ -62,12 +74,10 @@ def test_slow_postgres_write_is_busy_only_for_its_memory(endpoint: PostgresEndpo
         c = store.read_semantic_assertion_publication("C")
         record = repo.get("A")
         assert record is not None
-        entered = Event()
+        entered.clear()
 
         def update() -> bool:
-            with repo.semantic_guards.mutation({"A"}):
-                entered.set()
-                return repo.save_record(replace(record, revision=1), expected_revision=0)
+            return repo.save_record(replace(record, revision=1), expected_revision=0)
 
         with ThreadPoolExecutor(max_workers=1) as pool:
             with database.transaction() as connection:
