@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import cast
 
@@ -33,6 +33,7 @@ from app.domain.llm import (
     validate_role_exchange,
 )
 from app.domain.memory.contracts import (
+    MemoryAssertionSemantics,
     MemoryContent,
     MemoryFreshnessState,
     MemoryKind,
@@ -58,13 +59,15 @@ from .operational import (
     validate_reflection_proposals_bounds,
     validate_reflection_support_bounds,
 )
-from .schemas import proposal_output_schema, support_output_schema
+from .schemas import proposal_output_schema, proposal_output_schema_v2, support_output_schema
 
 PROPOSAL_ROLE_ID = "memory_reflection"
 PROPOSAL_INPUT_SCHEMA = "memory.reflection.context.v1"
-PROPOSAL_OUTPUT_SCHEMA = "memory.reflection.candidates.v1"
+PROPOSAL_OUTPUT_SCHEMA_V1 = "memory.reflection.candidates.v1"
+PROPOSAL_OUTPUT_SCHEMA = "memory.reflection.candidates.v2"
 SUPPORT_ROLE_ID = "memory_reflection_support"
-SUPPORT_INPUT_SCHEMA = "memory.reflection.support.v1"
+SUPPORT_INPUT_SCHEMA_V1 = "memory.reflection.support.v1"
+SUPPORT_INPUT_SCHEMA = "memory.reflection.support.v2"
 SUPPORT_OUTPUT_SCHEMA = "memory.reflection.support.observation.v1"
 
 
@@ -151,6 +154,8 @@ def _decode_value(text: str) -> JsonValue:
 
 
 def proposal_to_wire(proposal: MemoryCandidateProposal) -> dict[str, object]:
+    if proposal.assertion_semantics is not None:
+        raise ValueError("V1 wireに明示semanticsを落として搬送できません")
     if proposal.deterministic_capture:
         raise ValueError("trusted deterministic captureはopen-ended V1の対象外です")
     content, temporal = proposal.content, proposal.temporal
@@ -280,13 +285,31 @@ def _validate_provenance(
         raise ReflectionLLMError(LLMFailureCode.POLICY_VIOLATION)
 
 
-def parse_proposals(
-    value: object, context: ReflectionContextSnapshot, policy: ReflectionOperationalPolicy
+def _parse_proposals(
+    value: object,
+    context: ReflectionContextSnapshot,
+    policy: ReflectionOperationalPolicy,
+    *,
+    v2: bool,
 ) -> tuple[MemoryCandidateProposal, ...]:
     try:
         validate_reflection_context_bounds(context, policy)
-        item = _validated_wire(value, proposal_output_schema())
+        item = _validated_wire(
+            value, proposal_output_schema_v2() if v2 else proposal_output_schema()
+        )
         proposals = tuple(_parse_proposal(_object(p)) for p in _array(item["proposals"]))
+        if v2:
+            proposals = tuple(
+                replace(
+                    proposal,
+                    assertion_semantics=(
+                        None
+                        if _object(raw)["assertion_semantics"] is None
+                        else MemoryAssertionSemantics.from_dict(_object(raw)["assertion_semantics"])
+                    ),
+                )
+                for proposal, raw in zip(proposals, _array(item["proposals"]), strict=True)
+            )
         validate_reflection_proposals_bounds(proposals, policy)
         for proposal in proposals:
             _validate_provenance(context, proposal)
@@ -390,7 +413,7 @@ def build_support_request(
     return _request(
         context,
         support_descriptor(policy),
-        {"context": context.to_dict(), "proposal": proposal_to_wire(proposal)},
+        {"context": context.to_dict(), "proposal": proposal_to_wire_v2(proposal)},
         f"{context.reflection_id}:support:{proposal.proposal_id}",
         created_at,
     )
@@ -425,7 +448,7 @@ class LLMReflectionProposalPort:
         except (ValueError, RecursionError) as error:
             raise ReflectionLLMError(LLMFailureCode.POLICY_VIOLATION) from error
         value = await _invoke(self._port, request, proposal_descriptor(self._policy))
-        return parse_proposals(value, context, self._policy.operational)
+        return parse_proposals_v2(value, context, self._policy.operational)
 
 
 class LLMReflectionSupportPort:
@@ -447,3 +470,30 @@ class LLMReflectionSupportPort:
             raise ReflectionLLMError(LLMFailureCode.POLICY_VIOLATION) from error
         value = await _invoke(self._port, request, support_descriptor(self._policy))
         return parse_support(value, context, proposal, self._policy.operational)
+
+
+proposal_to_wire_v1 = proposal_to_wire
+
+
+def proposal_to_wire_v2(proposal: MemoryCandidateProposal) -> dict[str, object]:
+    wire = proposal_to_wire_v1(replace(proposal, assertion_semantics=None))
+    wire["assertion_semantics"] = (
+        None if proposal.assertion_semantics is None else proposal.assertion_semantics.to_dict()
+    )
+    return wire
+
+
+def parse_proposals_v1(
+    value: object, context: ReflectionContextSnapshot, policy: ReflectionOperationalPolicy
+) -> tuple[MemoryCandidateProposal, ...]:
+    return _parse_proposals(value, context, policy, v2=False)
+
+
+def parse_proposals_v2(
+    value: object, context: ReflectionContextSnapshot, policy: ReflectionOperationalPolicy
+) -> tuple[MemoryCandidateProposal, ...]:
+    return _parse_proposals(value, context, policy, v2=True)
+
+
+# 既存呼出しのV1 wire互換性を保持する。
+parse_proposals = parse_proposals_v1

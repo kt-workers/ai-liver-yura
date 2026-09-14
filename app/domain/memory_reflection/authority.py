@@ -77,6 +77,8 @@ class ReflectionCandidateAuthority:
         self, context: ReflectionContextSnapshot, proposal: MemoryCandidateProposal
     ) -> ReflectionCandidateResult:
         """trusted callerだけがclosed policyを満たしたexact captureへ使う入口。"""
+        if proposal.assertion_semantics is not None:
+            return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_POLICY)
         return self._accept_deterministic(context, proposal)
 
     def _accept_deterministic(

@@ -706,3 +706,31 @@ proposal/supportのformat nameはmemory_reflection_candidates_v1 / memory_reflec
 instructionsはfrozen contextだけを根拠に、zero candidate、source/related IDの限定、hintの非Authority性、actual speech/execution guard、deterministic自己宣言禁止、assertion_semantics禁止、schema外説明禁止を明記する。supportはexact proposal全体を評価し、書換えやStore判断をしない。
 
 #668は登録可能な境界までを所有する。bootstrapの必須登録、READY条件、具体runtime/model/policy値、scheduler/trigger/system wiringは変更しない。#667は後続generationで意味facets追加を所有する。
+
+## 26. Reflection assertion semantics供給V2（#667）
+
+意味の正本はmemory_semantic_assertion_contracts.md（#664）とする。MemoryCandidateProposalの既存default field末尾へassertion_semantics: MemoryAssertionSemantics | Noneを追加する。Noneはevidenceから発話可能な意味を確定していない正常値であり、候補生成・保存を妨げない。意味enum、Store identity、eligibilityを再定義しない。
+
+### Generationと互換性
+
+§25のV1 wire/schema/parserを凍結する。V1にassertion_semantics fieldを足さず、入力された場合はunknown fieldとして拒否する。既存のproposal_output_schema / proposal_to_wire / parse_proposalsはV1互換入口として保持し、明示的な_v1名も公開する。V1 serializerへnon-null semantics付きDomain proposalを渡すことは拒否し、情報を黙って落とさない。
+
+current productionは同じRole ID memory_reflectionでcontext.v1 → candidates.v2へ進む。V2はV1の全fieldに必須assertion_semanticsを加える。値はnull、またはpolarity（affirm/negate）、certainty（certain/likely/uncertain）、temporal_meaning（current/historical/time_bounded）のexact closed object。3 fieldすべて必須、unknown field禁止。V2 schema/parser/serializerは明示的な_v2入口とし、V1とschema IDを共有しない。
+
+support Role ID memory_reflection_supportは維持し、inputをsupport.v2へ更新する。contextはexact context.v1、proposalはparse済みDomainからcanonical V2でserializeした全体。outputはsupport.observation.v1のまま。Provider proposal formatはmemory_reflection_candidates_v2、support output formatはmemory_reflection_support_observation_v1。model/reasoning注入、clock/operational policy注入を維持し、System登録は行わない。
+
+### 意味生成とsupport
+
+V2 proposal instructionsはfrozen evidenceが3 facetすべてを安全に支える場合だけnon-nullを許可する。confidence threshold、predicate名、MemoryKind、value_jsonの型、keyword/regex/substringからfacetを決めない。confidence hintとassertion certaintyは別Authority。安全に決定できなければnullとする。LLMはStore dispositionを決めない。
+
+support instructionsはcontentとassertion_semanticsを含むexact proposal全体を評価する。explicit semanticsがsupportされなければSUPPORTEDを返さず、既存PARTIALLY_SUPPORTED / UNSUPPORTED / AMBIGUOUS / CONTRADICTEDを意味に従って返す。supportはproposalを書き換えず、semanticsをNoneへdowngradeしてacceptしない。generator rationaleをproofにしない。support outputへ意味fieldを追加しない。
+
+candidate_from_accepted_proposalはproposal.assertion_semanticsをValidatedMemoryCandidateへexact copyする。confidence、content、freshnessから補完しない。Noneもexactに搬送し、保存後のSEMANTICS_UNRESOLVEDは#664の既存契約に従う。
+
+### Trusted deterministic境界
+
+既存upstream typed contractに同じ意味が明示される場合だけ将来のexact mappingを許可できる。現在のReflectionSourceEvidenceにはそのmappingが存在しないため、trusted deterministic経路はNoneだけを許可する。non-null付きのtrusted deterministic入力はREJECTED_POLICYとし、暗黙downgradeやgeneric semantic_payload解析で救済しない。Noneの既存closed captureは維持する。source kind、raw text、confidence、MemoryKindからfacetを作らず、mapping不在をblockerにしない。
+
+### 保持する公開境界
+
+ReflectionRoleFailureInfo / ReflectionRoleStage、LLMFailureCode、Owner最終statusとの二軸化、proposal/support await後policy確認、live source/relation確認、generic fallbackを保持する。actual speech / executed activity guard、D10容量と数値、Store/意味Owner、#360 composition、#661 Speech投影、#613を変更しない。

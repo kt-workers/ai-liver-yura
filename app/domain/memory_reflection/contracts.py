@@ -19,6 +19,7 @@ from app.domain.contracts.common import (
 )
 from app.domain.llm import LLMFailureCode
 from app.domain.memory.contracts import (
+    MemoryAssertionSemantics,
     MemoryConfidence,
     MemoryContent,
     MemoryKind,
@@ -430,6 +431,7 @@ class MemoryCandidateProposal:
     relation_hints: tuple[ReflectionRelationHint, ...] = ()
     rationale_evidence_refs: tuple[str, ...] = ()
     deterministic_capture: bool = False
+    assertion_semantics: MemoryAssertionSemantics | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.proposal_id, "proposal_id")
@@ -461,6 +463,10 @@ class MemoryCandidateProposal:
             "rationale_evidence_refs",
             _identifiers(self.rationale_evidence_refs, "rationale_evidence_refs"),
         )
+        if self.assertion_semantics is not None and not isinstance(
+            self.assertion_semantics, MemoryAssertionSemantics
+        ):
+            raise ValueError("assertion_semanticsは明示された型かNoneが必要です")
         if type(self.deterministic_capture) is not bool:
             raise ValueError("deterministic_captureが不正です")
 
@@ -706,4 +712,5 @@ def candidate_from_accepted_proposal(
         context.source_context_revision,
         primary.source_kind is ReflectionSourceKind.PRESENTATION_FACT,
         primary.source_kind is ReflectionSourceKind.EXECUTION_FACT,
+        assertion_semantics=proposal.assertion_semantics,
     )

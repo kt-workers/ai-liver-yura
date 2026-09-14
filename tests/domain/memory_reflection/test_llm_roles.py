@@ -51,6 +51,7 @@ from app.domain.memory_reflection.llm_roles import (
     parse_support,
     proposal_descriptor,
     proposal_to_wire,
+    proposal_to_wire_v2,
     support_descriptor,
 )
 from tests.domain.llm.test_contracts import policy as execution
@@ -101,7 +102,9 @@ class RolePort:
         output = (
             self.output
             if self.output is not None
-            else ({"proposals": [proposal_to_wire(candidate())]} if is_proposal else support_wire())
+            else (
+                {"proposals": [proposal_to_wire_v2(candidate())]} if is_proposal else support_wire()
+            )
         )
         result = LLMRoleResult(
             request.request_id,
@@ -134,7 +137,7 @@ def test_descriptor_and_request_exact_mapping(interruptible: bool) -> None:
     assert support.request_id == f"{c.reflection_id}:support:{p.proposal_id}"
     assert support.input.schema_id == SUPPORT_INPUT_SCHEMA
     assert support.input.value == freeze_json(
-        {"context": c.to_dict(), "proposal": proposal_to_wire(p)}
+        {"context": c.to_dict(), "proposal": proposal_to_wire_v2(p)}
     )
     for r, d, e in [
         (request, proposal_descriptor(policy), policy.proposal_execution),
@@ -181,7 +184,7 @@ def test_lossless_json_and_temporal_round_trip(value: Any) -> None:
     assert build_support_request(
         snapshot(), p, created_at=NOW, policy=role_policy()
     ).input.value == freeze_json(
-        {"context": snapshot().to_dict(), "proposal": proposal_to_wire(result[0])}
+        {"context": snapshot().to_dict(), "proposal": proposal_to_wire_v2(result[0])}
     )
 
 
@@ -332,7 +335,7 @@ async def test_ports_use_injected_clock_and_zero_candidates() -> None:
     )
     assert result2.proposal_id == p.proposal_id
     assert port.requests[1].input.value == freeze_json(
-        {"context": snapshot().to_dict(), "proposal": proposal_to_wire(p)}
+        {"context": snapshot().to_dict(), "proposal": proposal_to_wire_v2(p)}
     )
 
 
@@ -403,7 +406,7 @@ async def test_existing_actual_fact_guards(
 ) -> None:
     c = context(source("s", kind))
     p = replace(candidate(), content=replace(candidate().content, predicate=predicate))
-    proposal_port = RolePort({"proposals": [proposal_to_wire(p)]})
+    proposal_port = RolePort({"proposals": [proposal_to_wire_v2(p)]})
     owner = ReflectionCoordinator(
         LLMReflectionProposalPort(proposal_port, role_policy(), now=lambda: NOW),
         LLMReflectionSupportPort(RolePort(), role_policy(), now=lambda: NOW),
