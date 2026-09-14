@@ -1,4 +1,4 @@
-"""Reflection専用V1 wireと、既存LLMRolePortへのproduction接続。"""
+"""Reflectionの世代別wireと、既存LLMRolePortへのproduction接続。"""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from app.domain.contracts.common import (
     thaw_json,
     utc_instant,
 )
+from app.domain.contracts.semantic_subject import SemanticSubjectIdentity, SemanticSubjectKind
 from app.domain.llm import (
     LLMActivationPolicy,
     LLMExecutionPolicy,
@@ -50,6 +51,8 @@ from .contracts import (
     ReflectionRoleFailure,
     ReflectionSupportObservation,
     ReflectionSupportRelation,
+    context_to_wire_v2,
+    subject_identity_is_grounded,
 )
 from .operational import (
     ReflectionOperationalError,
@@ -59,15 +62,24 @@ from .operational import (
     validate_reflection_proposals_bounds,
     validate_reflection_support_bounds,
 )
-from .schemas import proposal_output_schema, proposal_output_schema_v2, support_output_schema
+from .schemas import (
+    proposal_output_schema,
+    proposal_output_schema_v2,
+    proposal_output_schema_v3,
+    support_output_schema,
+)
 
 PROPOSAL_ROLE_ID = "memory_reflection"
-PROPOSAL_INPUT_SCHEMA = "memory.reflection.context.v1"
+PROPOSAL_INPUT_SCHEMA_V1 = "memory.reflection.context.v1"
+PROPOSAL_INPUT_SCHEMA_V2 = "memory.reflection.context.v2"
+PROPOSAL_INPUT_SCHEMA = PROPOSAL_INPUT_SCHEMA_V2
 PROPOSAL_OUTPUT_SCHEMA_V1 = "memory.reflection.candidates.v1"
-PROPOSAL_OUTPUT_SCHEMA = "memory.reflection.candidates.v2"
+PROPOSAL_OUTPUT_SCHEMA_V2 = "memory.reflection.candidates.v2"
+PROPOSAL_OUTPUT_SCHEMA = "memory.reflection.candidates.v3"
 SUPPORT_ROLE_ID = "memory_reflection_support"
 SUPPORT_INPUT_SCHEMA_V1 = "memory.reflection.support.v1"
-SUPPORT_INPUT_SCHEMA = "memory.reflection.support.v2"
+SUPPORT_INPUT_SCHEMA_V2 = "memory.reflection.support.v2"
+SUPPORT_INPUT_SCHEMA = "memory.reflection.support.v3"
 SUPPORT_OUTPUT_SCHEMA = "memory.reflection.support.observation.v1"
 
 
@@ -154,6 +166,8 @@ def _decode_value(text: str) -> JsonValue:
 
 
 def proposal_to_wire(proposal: MemoryCandidateProposal) -> dict[str, object]:
+    if proposal.subject_identity is not None:
+        raise ValueError("旧wireに明示subject_identityを落として搬送できません")
     if proposal.assertion_semantics is not None:
         raise ValueError("V1 wireに明示semanticsを落として搬送できません")
     if proposal.deterministic_capture:
@@ -272,7 +286,8 @@ def _validate_provenance(
     sources = {s.source_ref for s in context.primary_sources}
     memories = {m.memory_id: m.revision for m in context.related_memory_view}
     if (
-        not set(proposal.source_refs).issubset(sources)
+        not subject_identity_is_grounded(context, proposal.subject_identity, proposal.source_refs)
+        or not set(proposal.source_refs).issubset(sources)
         or not set(proposal.rationale_evidence_refs).issubset(sources)
         or not set(proposal.suggested_related_memory_ids).issubset(memories)
         or any(
@@ -290,15 +305,18 @@ def _parse_proposals(
     context: ReflectionContextSnapshot,
     policy: ReflectionOperationalPolicy,
     *,
-    v2: bool,
+    version: int,
 ) -> tuple[MemoryCandidateProposal, ...]:
     try:
-        validate_reflection_context_bounds(context, policy)
-        item = _validated_wire(
-            value, proposal_output_schema_v2() if v2 else proposal_output_schema()
-        )
+        validate_reflection_context_bounds(context, policy, context_v2=version == 3)
+        schema = {
+            1: proposal_output_schema,
+            2: proposal_output_schema_v2,
+            3: proposal_output_schema_v3,
+        }[version]
+        item = _validated_wire(value, schema())
         proposals = tuple(_parse_proposal(_object(p)) for p in _array(item["proposals"]))
-        if v2:
+        if version >= 2:
             proposals = tuple(
                 replace(
                     proposal,
@@ -306,6 +324,21 @@ def _parse_proposals(
                         None
                         if _object(raw)["assertion_semantics"] is None
                         else MemoryAssertionSemantics.from_dict(_object(raw)["assertion_semantics"])
+                    ),
+                )
+                for proposal, raw in zip(proposals, _array(item["proposals"]), strict=True)
+            )
+        if version == 3:
+            proposals = tuple(
+                replace(
+                    proposal,
+                    subject_identity=(
+                        None
+                        if _object(raw)["subject_identity"] is None
+                        else SemanticSubjectIdentity(
+                            SemanticSubjectKind(_object(_object(raw)["subject_identity"])["kind"]),
+                            cast(str, _object(_object(raw)["subject_identity"])["subject_ref"]),
+                        )
                     ),
                 )
                 for proposal, raw in zip(proposals, _array(item["proposals"]), strict=True)
@@ -325,9 +358,11 @@ def parse_support(
     context: ReflectionContextSnapshot,
     proposal: MemoryCandidateProposal,
     policy: ReflectionOperationalPolicy,
+    *,
+    context_v2: bool = False,
 ) -> ReflectionSupportObservation:
     try:
-        validate_reflection_context_bounds(context, policy)
+        validate_reflection_context_bounds(context, policy, context_v2=context_v2)
         _validate_provenance(context, proposal)
         item = _validated_wire(value, support_output_schema())
         result = ReflectionSupportObservation(
@@ -341,7 +376,13 @@ def parse_support(
         validate_reflection_support_bounds(result, policy)
         sources = {s.source_ref for s in context.primary_sources}
         if (
-            result.proposal_id != proposal.proposal_id
+            (
+                result.support_relation is ReflectionSupportRelation.SUPPORTED
+                and not subject_identity_is_grounded(
+                    context, proposal.subject_identity, result.evidence_refs
+                )
+            )
+            or result.proposal_id != proposal.proposal_id
             or not set(
                 (
                     *result.evidence_refs,
@@ -390,11 +431,11 @@ def _request(
 def build_proposal_request(
     context: ReflectionContextSnapshot, *, created_at: datetime, policy: ReflectionLLMRolePolicy
 ) -> LLMRoleRequest:
-    validate_reflection_context_bounds(context, policy.operational)
+    validate_reflection_context_bounds(context, policy.operational, context_v2=True)
     return _request(
         context,
         proposal_descriptor(policy),
-        context.to_dict(),
+        context_to_wire_v2(context),
         f"{context.reflection_id}:proposal",
         created_at,
     )
@@ -407,13 +448,13 @@ def build_support_request(
     created_at: datetime,
     policy: ReflectionLLMRolePolicy,
 ) -> LLMRoleRequest:
-    validate_reflection_context_bounds(context, policy.operational)
+    validate_reflection_context_bounds(context, policy.operational, context_v2=True)
     validate_reflection_proposals_bounds((proposal,), policy.operational)
     _validate_provenance(context, proposal)
     return _request(
         context,
         support_descriptor(policy),
-        {"context": context.to_dict(), "proposal": proposal_to_wire_v2(proposal)},
+        {"context": context_to_wire_v2(context), "proposal": proposal_to_wire_v3(proposal)},
         f"{context.reflection_id}:support:{proposal.proposal_id}",
         created_at,
     )
@@ -448,7 +489,7 @@ class LLMReflectionProposalPort:
         except (ValueError, RecursionError) as error:
             raise ReflectionLLMError(LLMFailureCode.POLICY_VIOLATION) from error
         value = await _invoke(self._port, request, proposal_descriptor(self._policy))
-        return parse_proposals_v2(value, context, self._policy.operational)
+        return parse_proposals_v3(value, context, self._policy.operational)
 
 
 class LLMReflectionSupportPort:
@@ -469,7 +510,7 @@ class LLMReflectionSupportPort:
         except (ValueError, RecursionError) as error:
             raise ReflectionLLMError(LLMFailureCode.POLICY_VIOLATION) from error
         value = await _invoke(self._port, request, support_descriptor(self._policy))
-        return parse_support(value, context, proposal, self._policy.operational)
+        return parse_support(value, context, proposal, self._policy.operational, context_v2=True)
 
 
 proposal_to_wire_v1 = proposal_to_wire
@@ -486,14 +527,98 @@ def proposal_to_wire_v2(proposal: MemoryCandidateProposal) -> dict[str, object]:
 def parse_proposals_v1(
     value: object, context: ReflectionContextSnapshot, policy: ReflectionOperationalPolicy
 ) -> tuple[MemoryCandidateProposal, ...]:
-    return _parse_proposals(value, context, policy, v2=False)
+    return _parse_proposals(value, context, policy, version=1)
 
 
 def parse_proposals_v2(
     value: object, context: ReflectionContextSnapshot, policy: ReflectionOperationalPolicy
 ) -> tuple[MemoryCandidateProposal, ...]:
-    return _parse_proposals(value, context, policy, v2=True)
+    return _parse_proposals(value, context, policy, version=2)
 
 
 # 既存呼出しのV1 wire互換性を保持する。
 parse_proposals = parse_proposals_v1
+
+
+def proposal_to_wire_v3(proposal: MemoryCandidateProposal) -> dict[str, object]:
+    wire = proposal_to_wire_v2(replace(proposal, subject_identity=None))
+    identity = proposal.subject_identity
+    wire["subject_identity"] = (
+        None
+        if identity is None
+        else {
+            "kind": identity.kind.value,
+            "subject_ref": identity.subject_ref,
+        }
+    )
+    return wire
+
+
+def parse_proposals_v3(
+    value: object, context: ReflectionContextSnapshot, policy: ReflectionOperationalPolicy
+) -> tuple[MemoryCandidateProposal, ...]:
+    return _parse_proposals(value, context, policy, version=3)
+
+
+def build_proposal_request_v1(
+    context: ReflectionContextSnapshot, *, created_at: datetime, policy: ReflectionLLMRolePolicy
+) -> LLMRoleRequest:
+    """凍結したV1 inputを互換呼出しへ明示提供する。"""
+    validate_reflection_context_bounds(context, policy.operational)
+    descriptor = replace(
+        proposal_descriptor(policy),
+        input_schema_id=PROPOSAL_INPUT_SCHEMA_V1,
+        output_schema_id=PROPOSAL_OUTPUT_SCHEMA_V1,
+    )
+    return _request(
+        context, descriptor, context.to_dict(), f"{context.reflection_id}:proposal", created_at
+    )
+
+
+def _build_legacy_support_request(
+    context: ReflectionContextSnapshot,
+    proposal: MemoryCandidateProposal,
+    *,
+    created_at: datetime,
+    policy: ReflectionLLMRolePolicy,
+    v2: bool,
+) -> LLMRoleRequest:
+    validate_reflection_context_bounds(context, policy.operational)
+    validate_reflection_proposals_bounds((proposal,), policy.operational)
+    _validate_provenance(context, proposal)
+    descriptor = replace(
+        support_descriptor(policy),
+        input_schema_id=(SUPPORT_INPUT_SCHEMA_V2 if v2 else SUPPORT_INPUT_SCHEMA_V1),
+    )
+    wire = proposal_to_wire_v2(proposal) if v2 else proposal_to_wire_v1(proposal)
+    return _request(
+        context,
+        descriptor,
+        {"context": context.to_dict(), "proposal": wire},
+        f"{context.reflection_id}:support:{proposal.proposal_id}",
+        created_at,
+    )
+
+
+def build_support_request_v1(
+    context: ReflectionContextSnapshot,
+    proposal: MemoryCandidateProposal,
+    *,
+    created_at: datetime,
+    policy: ReflectionLLMRolePolicy,
+) -> LLMRoleRequest:
+    return _build_legacy_support_request(
+        context, proposal, created_at=created_at, policy=policy, v2=False
+    )
+
+
+def build_support_request_v2(
+    context: ReflectionContextSnapshot,
+    proposal: MemoryCandidateProposal,
+    *,
+    created_at: datetime,
+    policy: ReflectionLLMRolePolicy,
+) -> LLMRoleRequest:
+    return _build_legacy_support_request(
+        context, proposal, created_at=created_at, policy=policy, v2=True
+    )

@@ -734,3 +734,46 @@ candidate_from_accepted_proposalはproposal.assertion_semanticsをValidatedMemor
 ### 保持する公開境界
 
 ReflectionRoleFailureInfo / ReflectionRoleStage、LLMFailureCode、Owner最終statusとの二軸化、proposal/support await後policy確認、live source/relation確認、generic fallbackを保持する。actual speech / executed activity guard、D10容量と数値、Store/意味Owner、#360 composition、#661 Speech投影、#613を変更しない。
+
+## 27. Typed subject identity供給V3（#673）
+
+主体型の正本は[共有主体契約](semantic_subject_identity_contracts.md)（#671）、保存と公開は[Memory保存契約](memory_store_retrieval_contracts.md)と[Memory意味assertion契約](memory_semantic_assertion_contracts.md)（#672）とする。§25・§26は旧generationの凍結契約として保持し、current productionは以下へ進む。
+
+| 境界 | 凍結するgeneration | current production |
+| --- | --- | --- |
+| Proposal input | context.v1 | memory.reflection.context.v2 |
+| Proposal output | candidates.v1 / candidates.v2 | memory.reflection.candidates.v3 |
+| Support input | support.v1 / support.v2 | memory.reflection.support.v3 |
+| Support output | support.observation.v1 | memory.reflection.support.observation.v1（形状不変） |
+
+### Sourceと候補の型付き主体
+
+ReflectionSourceEvidenceとMemoryCandidateProposalへ末尾defaultのsubject_identity: SemanticSubjectIdentity | Noneを追加する。non-nullは#671共有型だけを許可する。候補ではcontent.subject_refがnon-nullかつidentity.subject_refとexact一致することを必須とする。Noneは安全に主体を公開できない正常な未解決値である。
+
+source preparationは上流Ownerのpublic typed identityをexact copyできる場合だけ設定する。例えば#672のMemoryEvidence / MemorySemanticAssertionから搬送できるが、各Ownerの契約・System compositionを本Workで新設しない。Reflectionはsource Ownerのidentity意味を所有しない。
+
+semantic_payload、source_excerpt、raw prose、display name、first-person、「私」「自分」「ゆら」、keyword、regex、substring、ID prefix、character_id比較、predicate、MemoryKind、confidenceからkind/refを作らない。raw subject_refが存在するだけでは解決済みとしない。意味facetsと主体identityは独立に未解決を許容する。
+
+### 明示serializerとD10
+
+ReflectionSourceEvidence.to_dict() / ReflectionContextSnapshot.to_dict()はcontext.v1互換のまま固定する。DTOがidentityを持っていてもV1 wireへfieldを追加しない。source_to_wire_v2 / context_to_wire_v2でだけprimary_sourcesの各要素へ必須nullable subject_identityを追加する。値はnullまたはexactな{kind: SELF | REFERENCE, subject_ref: 空でない識別子}であり、追加memberを許可しない。
+
+V1 estimateは従来のV1 budget payload（自己参照するestimated_tokensを除く）で固定する。V2 estimateはidentity metadataとestimated_tokens fieldを含む実際のcontext.v2 wire全体で計上する。wireのestimated_tokensはV1互換DTOの値として保持し、V2の上限検査は別の明示estimatorの戻り値を使用する。current proposal/support requestは送信前にV2 estimateをmax_context_estimated_tokensと照合し、超過は既存CONTEXT_TOO_LARGE → POLICY_VIOLATIONへ収束する。D10数値・generation/order/evidence上限は変更しない。
+
+### Proposal / Support V3
+
+candidates.v3はV2全fieldに必須nullable subject_identityを追加するstrict objectである。nonnull objectはkindとsubject_refだけを必須とする。V1/V2 schema・parser・serializerを明示入口で凍結し、旧schemaへのidentity追加は拒否する。旧serializerへnonnull identityを渡す場合も拒否し、黙って情報を落とさない。current Portはparse_proposals_v3 / proposal_to_wire_v3を使用する。
+
+proposal_instructions_v3はV2のassertion semantics規則をすべて維持し、proposal.source_refs内のfrozen typed sourceとexact一致するidentityだけを許可する。決定不能ならnullとする。parse境界は根拠不在をPOLICY_VIOLATION、ReflectionCandidateAuthorityも同じ不変条件をREJECTED_INVALID_PROVENANCEとして強制し、非LLM入力でも迂回させない。
+
+support.v3はcontext.v2とcandidate.v3のexact組である。supportはcontent / assertion_semantics / subject_identity全体を検証する。SUPPORTEDかつ候補identityがnonnullなら、support.evidence_refs内のfrozen sourceにexact同じidentityが最低1件必要となる。parseとAuthorityの双方で拒否を強制する。SELFとREFERENCEを交換せず、unsupported identityをnullへ書き換えてacceptしない。他のsupport relationとobservation.v1の形状は不変とする。
+
+Role IDはmemory_reflection / memory_reflection_supportを維持する。Provider proposal formatはmemory_reflection_candidates_v3、schemaとinstructionsも明示V3を使用する。support formatはmemory_reflection_support_observation_v1のままでinstructionsだけV3へ進む。model/reasoningの明示注入と#323 exchange検証を維持する。
+
+### Accepted transportと回帰境界
+
+candidate_from_accepted_proposalはsubject_identityとassertion_semanticsをValidatedMemoryCandidateへexact copyする。Storeで補完・再解釈しない。trusted deterministic captureもproposal.source_refs内のexact typed sourceを要求し、identity不在ならNoneを保持する。#667のdeterministic assertion_semanticsは引き続きNoneだけを許可する。
+
+#668のRole failure cause / Owner disposition分離、exact LLMFailureCode、proposal/support await後のpolicy freshness、live source/relation再検証、generic fallback、CancelledError伝播は変更しない。actual speech / executed activity guardも維持する。
+
+V1 context、V1/V2 proposal・supportの互換性、V2容量超過、型・provenance拒否、推論禁止、SELF/REFERENCEのexact搬送を検証する。実PostgreSQLではV3のproposal → support → accepted → Store → semantic assertion publicationのidentity・semantics・非空tokenを確認し、V2のidentity=None / SUBJECT_UNRESOLVED / tokens=()回帰も保持する。

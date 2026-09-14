@@ -20,6 +20,8 @@ from .contracts import (
     ReflectionSupportRelation,
     ReflectionTrigger,
     ReflectionTriggerKind,
+    context_to_wire_v2,
+    source_to_wire_v2,
 )
 from .llm_roles import (
     LLMReflectionProposalPort,
@@ -34,6 +36,8 @@ from .operational import (
     ReflectionOperationalPolicyPort,
     bound_source_excerpt,
     estimate_reflection_context_tokens,
+    estimate_reflection_context_tokens_v1,
+    estimate_reflection_context_tokens_v2,
     reflection_source_order_key,
     validate_reflection_context_bounds,
     validate_reflection_proposals_bounds,
@@ -42,6 +46,10 @@ from .operational import (
 from .runtime import ReflectionCoordinator, ReflectionProposalPort, ReflectionSupportPort
 
 __all__ = [
+    "context_to_wire_v2",
+    "source_to_wire_v2",
+    "estimate_reflection_context_tokens_v1",
+    "estimate_reflection_context_tokens_v2",
     "ReflectionRoleFailure",
     "ReflectionRoleFailureInfo",
     "ReflectionRoleStage",

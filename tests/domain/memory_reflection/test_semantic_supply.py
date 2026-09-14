@@ -13,21 +13,28 @@ from app.domain.memory.contracts import (
     MemoryAssertionSemantics,
     MemoryAssertionTemporalMeaning,
 )
-from app.domain.memory_reflection import ReflectionCandidateStatus, ReflectionCoordinator
+from app.domain.memory_reflection import (
+    ReflectionCandidateStatus,
+    ReflectionCoordinator,
+    context_to_wire_v2,
+)
 from app.domain.memory_reflection.llm_roles import (
     PROPOSAL_OUTPUT_SCHEMA,
     PROPOSAL_OUTPUT_SCHEMA_V1,
+    PROPOSAL_OUTPUT_SCHEMA_V2,
     SUPPORT_INPUT_SCHEMA,
     SUPPORT_INPUT_SCHEMA_V1,
+    SUPPORT_INPUT_SCHEMA_V2,
     SUPPORT_OUTPUT_SCHEMA,
     LLMReflectionProposalPort,
     LLMReflectionSupportPort,
     ReflectionLLMError,
-    build_support_request,
+    build_support_request_v2,
     parse_proposals_v1,
     parse_proposals_v2,
     proposal_to_wire_v1,
     proposal_to_wire_v2,
+    proposal_to_wire_v3,
 )
 from app.domain.memory_reflection.schemas import (
     proposal_output_schema_v1,
@@ -67,16 +74,18 @@ def test_v2_all_facets_round_trip(semantics: MemoryAssertionSemantics | None) ->
     parsed = parse_proposals_v2({"proposals": [wire]}, snapshot(), role_policy().operational)
     assert parsed == (p,)
     assert proposal_to_wire_v2(parsed[0]) == wire
-    request = build_support_request(snapshot(), parsed[0], created_at=NOW, policy=role_policy())
+    request = build_support_request_v2(snapshot(), parsed[0], created_at=NOW, policy=role_policy())
     assert request.input.schema_id == "memory.reflection.support.v2"
     assert request.input.value == freeze_json({"context": snapshot().to_dict(), "proposal": wire})
 
 
 def test_v1_is_frozen_and_generations_are_distinct() -> None:
     assert PROPOSAL_OUTPUT_SCHEMA_V1 == "memory.reflection.candidates.v1"
-    assert PROPOSAL_OUTPUT_SCHEMA == "memory.reflection.candidates.v2"
+    assert PROPOSAL_OUTPUT_SCHEMA_V2 == "memory.reflection.candidates.v2"
+    assert PROPOSAL_OUTPUT_SCHEMA == "memory.reflection.candidates.v3"
     assert SUPPORT_INPUT_SCHEMA_V1 == "memory.reflection.support.v1"
-    assert SUPPORT_INPUT_SCHEMA == "memory.reflection.support.v2"
+    assert SUPPORT_INPUT_SCHEMA_V2 == "memory.reflection.support.v2"
+    assert SUPPORT_INPUT_SCHEMA == "memory.reflection.support.v3"
     assert SUPPORT_OUTPUT_SCHEMA == "memory.reflection.support.observation.v1"
     wire = proposal_to_wire_v1(candidate())
     assert "assertion_semantics" not in wire
@@ -134,7 +143,7 @@ async def test_confidence_never_changes_assertion_certainty(
     policy = role_policy()
     owner = ReflectionCoordinator(
         LLMReflectionProposalPort(
-            RolePort({"proposals": [proposal_to_wire_v2(p)]}), policy, now=lambda: NOW
+            RolePort({"proposals": [proposal_to_wire_v3(p)]}), policy, now=lambda: NOW
         ),
         LLMReflectionSupportPort(RolePort(support), policy, now=lambda: NOW),
         authority(),
@@ -164,7 +173,7 @@ async def test_unsupported_facets_are_not_downgraded_and_accepted(relation: str)
     policy = role_policy()
     owner = ReflectionCoordinator(
         LLMReflectionProposalPort(
-            RolePort({"proposals": [proposal_to_wire_v2(p)]}), policy, now=lambda: NOW
+            RolePort({"proposals": [proposal_to_wire_v3(p)]}), policy, now=lambda: NOW
         ),
         LLMReflectionSupportPort(support_role, policy, now=lambda: NOW),
         authority(),
@@ -177,8 +186,8 @@ async def test_unsupported_facets_are_not_downgraded_and_accepted(relation: str)
         assert p.assertion_semantics is SEMANTICS
         assert support_role.requests[0].input.value == freeze_json(
             {
-                "context": snapshot().to_dict(),
-                "proposal": proposal_to_wire_v2(p),
+                "context": context_to_wire_v2(snapshot()),
+                "proposal": proposal_to_wire_v3(p),
             }
         )
     finally:

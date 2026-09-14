@@ -12,15 +12,15 @@ from app.domain.memory_reflection.llm_roles import (
     SUPPORT_ROLE_ID,
 )
 from app.domain.memory_reflection.schemas import (
-    proposal_instructions_v2,
-    proposal_output_schema_v2,
-    support_instructions_v2,
+    proposal_instructions_v3,
+    proposal_output_schema_v3,
+    support_instructions_v3,
     support_output_schema,
 )
 
 from .openai_responses import OpenAIResponsesModelPolicy, OpenAIResponsesRoleConfig
 
-PROPOSAL_FORMAT_NAME = "memory_reflection_candidates_v2"
+PROPOSAL_FORMAT_NAME = "memory_reflection_candidates_v3"
 SUPPORT_FORMAT_NAME = "memory_reflection_support_observation_v1"
 
 
@@ -76,8 +76,8 @@ def reflection_proposal_openai_role_config(
         PROPOSAL_INPUT_SCHEMA,
         PROPOSAL_OUTPUT_SCHEMA,
         PROPOSAL_FORMAT_NAME,
-        proposal_output_schema_v2(),
-        proposal_instructions_v2(),
+        proposal_output_schema_v3(),
+        proposal_instructions_v3(),
         model_by_class,
         reasoning_by_effort,
     )
@@ -94,7 +94,7 @@ def reflection_support_openai_role_config(
         SUPPORT_OUTPUT_SCHEMA,
         SUPPORT_FORMAT_NAME,
         support_output_schema(),
-        support_instructions_v2(),
+        support_instructions_v3(),
         model_by_class,
         reasoning_by_effort,
     )
