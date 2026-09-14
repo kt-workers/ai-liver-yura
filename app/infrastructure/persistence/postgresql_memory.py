@@ -5,6 +5,7 @@ from hashlib import sha256
 
 from app.domain.contracts.common import require_revision
 from app.domain.memory.contracts import MemoryRecord, MemoryRelation
+from app.domain.memory.finalization import memory_mutation, shared_memory_registry
 from app.domain.memory.repository import MemoryRepositorySnapshot
 
 from .contracts import PersistenceError, PersistenceFailureCode
@@ -19,6 +20,7 @@ class PostgresMemoryRepository:
     storage_schema_version = 1
 
     def __init__(self, database: PostgresDatabase) -> None:
+        self.semantic_guards = shared_memory_registry(database.memory_namespace)
         self._database = database
 
     def migrate(self) -> None:
@@ -112,6 +114,7 @@ class PostgresMemoryRepository:
                 return False
             raise
 
+    @memory_mutation
     def save_record(self, record: MemoryRecord, *, expected_revision: int | None) -> bool:
         if expected_revision is not None:
             require_revision(expected_revision, "expected_revision")
@@ -130,6 +133,7 @@ class PostgresMemoryRepository:
 
         return self._write(write)
 
+    @memory_mutation
     def save_relation(self, relation: MemoryRelation) -> bool:
         def write(c: PostgresConnection) -> bool:
             _insert_relation(c, relation)
@@ -137,6 +141,7 @@ class PostgresMemoryRepository:
 
         return self._write(write)
 
+    @memory_mutation
     def commit_related(
         self,
         record: MemoryRecord,

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.domain.memory.contracts import MemoryRecord, MemoryRelation
+from app.domain.memory.finalization import MemoryFinalizationRegistry, memory_mutation
 from app.domain.memory.ranking import MemorySemanticRelevance
 
 
@@ -45,6 +46,7 @@ class InMemoryMemoryRepository:
     """単体検証用の同期・局所的なMemory repository実装。"""
 
     def __init__(self) -> None:
+        self.semantic_guards = MemoryFinalizationRegistry()
         self._records: dict[str, MemoryRecord] = {}
         self._relations: dict[str, MemoryRelation] = {}
         self.available = True
@@ -69,6 +71,7 @@ class InMemoryMemoryRepository:
             raise RuntimeError("repository unavailable")
         return MemoryRepositorySnapshot(self.list_records(), self.list_relations())
 
+    @memory_mutation
     def save_record(self, record: MemoryRecord, *, expected_revision: int | None) -> bool:
         if not self.available:
             raise RuntimeError("repository unavailable")
@@ -81,6 +84,7 @@ class InMemoryMemoryRepository:
         self._records[record.memory_id] = record
         return True
 
+    @memory_mutation
     def save_relation(self, relation: MemoryRelation) -> bool:
         if not self.available:
             raise RuntimeError("repository unavailable")
@@ -89,6 +93,7 @@ class InMemoryMemoryRepository:
         self._relations[relation.relation_id] = relation
         return True
 
+    @memory_mutation
     def commit_related(
         self,
         record: MemoryRecord,

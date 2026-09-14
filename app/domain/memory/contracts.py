@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -35,6 +36,64 @@ class MemoryFreshnessState(str, Enum):
     FRESH = "fresh"
     STALE = "stale"
     HISTORICAL = "historical"
+
+
+class MemoryAssertionPolarity(str, Enum):
+    AFFIRM = "affirm"
+    NEGATE = "negate"
+
+
+class MemoryAssertionCertainty(str, Enum):
+    CERTAIN = "certain"
+    LIKELY = "likely"
+    UNCERTAIN = "uncertain"
+
+
+class MemoryAssertionTemporalMeaning(str, Enum):
+    CURRENT = "current"
+    HISTORICAL = "historical"
+    TIME_BOUNDED = "time_bounded"
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryAssertionSemantics:
+    polarity: MemoryAssertionPolarity
+    certainty: MemoryAssertionCertainty
+    temporal_meaning: MemoryAssertionTemporalMeaning
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.polarity, MemoryAssertionPolarity)
+            or not isinstance(self.certainty, MemoryAssertionCertainty)
+            or not isinstance(self.temporal_meaning, MemoryAssertionTemporalMeaning)
+        ):
+            raise ValueError("Memory assertionの明示された意味型が不正です")
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "polarity": self.polarity.value,
+            "certainty": self.certainty.value,
+            "temporal_meaning": self.temporal_meaning.value,
+        }
+
+    @classmethod
+    def from_dict(cls, value: object) -> MemoryAssertionSemantics:
+        if not isinstance(value, Mapping) or set(value) != {
+            "polarity",
+            "certainty",
+            "temporal_meaning",
+        }:
+            raise ValueError("Memory assertionの意味fieldが不正です")
+        return cls(
+            MemoryAssertionPolarity(value["polarity"]),
+            MemoryAssertionCertainty(value["certainty"]),
+            MemoryAssertionTemporalMeaning(value["temporal_meaning"]),
+        )
+
+
+def _validate_assertion_semantics(value: MemoryAssertionSemantics | None) -> None:
+    if value is not None and not isinstance(value, MemoryAssertionSemantics):
+        raise ValueError("assertion_semanticsは明示された型かNoneが必要です")
 
 
 class MemoryRelationKind(str, Enum):
@@ -211,8 +270,10 @@ class ValidatedMemoryCandidate:
     source_context_revision: int | None = None
     claims_actual_speech: bool = False
     claims_executed_activity: bool = False
+    assertion_semantics: MemoryAssertionSemantics | None = None
 
     def __post_init__(self) -> None:
+        _validate_assertion_semantics(self.assertion_semantics)
         require_identifier(self.candidate_id, "candidate_id")
         if not isinstance(self.memory_kind, MemoryKind) or not isinstance(
             self.content, MemoryContent
@@ -270,8 +331,10 @@ class MemoryRecord:
     lifecycle: MemoryLifecycle
     created_at: datetime
     updated_at: datetime
+    assertion_semantics: MemoryAssertionSemantics | None = None
 
     def __post_init__(self) -> None:
+        _validate_assertion_semantics(self.assertion_semantics)
         require_identifier(self.memory_id, "memory_id")
         require_revision(self.revision, "revision")
         if not isinstance(self.kind, MemoryKind) or not isinstance(self.content, MemoryContent):
@@ -421,8 +484,12 @@ class MemoryEvidenceItem:
     contradiction_refs: tuple[str, ...]
     estimated_tokens: int
     score: float
+    memory_revision: int
+    assertion_semantics: MemoryAssertionSemantics | None = None
 
     def __post_init__(self) -> None:
+        require_revision(self.memory_revision, "memory_revision")
+        _validate_assertion_semantics(self.assertion_semantics)
         require_identifier(self.memory_id, "memory_id")
         if (
             not isinstance(self.kind, MemoryKind)
