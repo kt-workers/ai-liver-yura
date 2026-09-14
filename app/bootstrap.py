@@ -29,6 +29,7 @@ from app.domain.brain_integration import (
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.character.contracts import CharacterDefinitionDocument
 from app.domain.contracts.common import require_identifier
+from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
 from app.domain.executive.deliberator import descriptor as executive_descriptor
 from app.domain.goals import GoalCommitmentStore
 from app.domain.input_gateway import InputAdmission, NormalizedInputEvent
@@ -139,6 +140,7 @@ class UnavailableInputMeaningLiveContextPort:
 class MinimumCoreApplication:
     """同一の不変設定に結び付いた最小Coreの構成。"""
 
+    runtime_subject_identity: RuntimeSubjectIdentity = field(init=False)
     config: MinimumBrainProductionConfig
     character_definition: CharacterDefinitionDocument
     lifecycle: RuntimeLifecycle
@@ -154,6 +156,19 @@ class MinimumCoreApplication:
     _stop_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False, compare=False
     )
+
+    def __post_init__(self) -> None:
+        document = self.character_definition
+        object.__setattr__(
+            self,
+            "runtime_subject_identity",
+            RuntimeSubjectIdentity(
+                self_subject_ref=document.character_id,
+                character_id=document.character_id,
+                character_schema_version=document.schema_version,
+                character_definition_revision=document.definition_revision,
+            ),
+        )
 
     async def start(self) -> None:
         await self.brain.start()

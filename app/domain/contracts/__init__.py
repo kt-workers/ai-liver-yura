@@ -34,6 +34,7 @@ from .preconditions import (
     PreconditionSourceRegistration,
     PreconditionSourceRouter,
 )
+from .semantic_subject import RuntimeSubjectIdentity, SemanticSubjectIdentity, SemanticSubjectKind
 from .snapshots import (
     DEFAULT_SNAPSHOT_STABILIZATION_POLICY,
     SnapshotGenerationSample,
@@ -47,6 +48,9 @@ from .snapshots import (
 )
 
 __all__ = [
+    "RuntimeSubjectIdentity",
+    "SemanticSubjectIdentity",
+    "SemanticSubjectKind",
     "PreconditionFailure",
     "PreconditionObservation",
     "PreconditionReadError",
