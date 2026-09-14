@@ -338,3 +338,87 @@ def test_other_support_relations_preserve_typed_proposal(
     assert result.status is status and result.candidate is None
     assert p.subject_identity == c.primary_sources[0].subject_identity
     assert p.assertion_semantics == SEMANTICS
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("same", [True, False])
+@pytest.mark.parametrize("first_kind", [None, SemanticSubjectKind.REFERENCE])
+async def test_v2_identity_generation_coalescing(
+    same: bool,
+    first_kind: SemanticSubjectKind | None,
+) -> None:
+    import asyncio
+
+    from tests.domain.memory_reflection.test_memory_reflection import (
+        FakeProposalPort,
+        FakeSupportPort,
+        coordinator,
+    )
+
+    second_context, _ = typed_pair(SemanticSubjectKind.SELF)
+    identity = None if first_kind is None else SemanticSubjectIdentity(first_kind, "yura")
+    first_context = (
+        second_context
+        if same
+        else replace(
+            second_context,
+            primary_sources=(
+                replace(second_context.primary_sources[0], subject_identity=identity),
+            ),
+        )
+    )
+    assert first_context.to_dict() == second_context.to_dict()
+    assert (context_to_wire_v2(first_context) == context_to_wire_v2(second_context)) is same
+    gate = asyncio.Event()
+    provider = FakeProposalPort((), gate)
+    runtime = coordinator(provider, FakeSupportPort())
+    try:
+        first = runtime.submit(first_context)
+        second = runtime.submit(replace(second_context))
+        await asyncio.sleep(0)
+        assert (first is second) is same
+        assert provider.calls == (1 if same else 2)
+        gate.set()
+        await asyncio.gather(first, second)
+        assert runtime.pending_task_count == 0
+    finally:
+        await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("first_kind", [None, SemanticSubjectKind.REFERENCE])
+async def test_cross_identity_cancel_isolation(first_kind: SemanticSubjectKind | None) -> None:
+    import asyncio
+
+    from tests.domain.memory_reflection.test_memory_reflection import (
+        FakeProposalPort,
+        FakeSupportPort,
+        coordinator,
+    )
+
+    second_context, _ = typed_pair(SemanticSubjectKind.SELF)
+    identity = None if first_kind is None else SemanticSubjectIdentity(first_kind, "yura")
+    first_context = replace(
+        second_context,
+        primary_sources=(replace(second_context.primary_sources[0], subject_identity=identity),),
+    )
+    assert first_context.to_dict() == second_context.to_dict()
+    gate = asyncio.Event()
+    provider = FakeProposalPort((), gate)
+    runtime = coordinator(provider, FakeSupportPort())
+    try:
+        second = runtime.submit(second_context)
+        await asyncio.sleep(0)
+        await runtime.cancel(first_context)
+        assert not second.done()
+        first = runtime.submit(first_context)
+        await asyncio.sleep(0)
+        assert provider.calls == 2
+        await runtime.cancel(first_context)
+        assert first.cancelled()
+        assert not second.done()
+        gate.set()
+        await second
+        assert runtime.pending_task_count == 0
+    finally:
+        await runtime.shutdown()
