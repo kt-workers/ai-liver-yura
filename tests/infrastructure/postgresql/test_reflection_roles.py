@@ -1,4 +1,4 @@
-"""Reflection production Portで受理したV1候補を実PostgreSQLへ保存する。"""
+"""Reflection production候補の意味を実PostgreSQL保存・公開まで検証する。"""
 
 import pytest
 
@@ -17,7 +17,7 @@ from tests.infrastructure.postgresql.test_memory import POLICY
 
 
 @pytest.mark.asyncio
-async def test_accepted_v1_candidate_round_trips_without_v2_facets(
+async def test_accepted_current_candidate_round_trips_without_semantics(
     endpoint: PostgresEndpoint,
 ) -> None:
     port, policy, context = RolePort(), role_policy(), snapshot()
@@ -44,5 +44,64 @@ async def test_accepted_v1_candidate_round_trips_without_v2_facets(
             publication.value.unavailable_reason
             is MemorySemanticAssertionUnavailableReason.SEMANTICS_UNRESOLVED
         )
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+async def test_v2_semantics_reach_store_and_publication_with_distinct_polarity(
+    endpoint: PostgresEndpoint,
+) -> None:
+    from dataclasses import replace
+
+    from app.domain.memory.contracts import MemoryAssertionPolarity
+    from app.domain.memory_reflection.llm_roles import proposal_to_wire_v2
+    from tests.domain.memory_reflection.test_llm_roles import candidate
+    from tests.domain.memory_reflection.test_semantic_supply import SEMANTICS
+
+    db = PostgresDatabase.connect(endpoint, POLICY)
+    try:
+        repo = PostgresMemoryRepository(db)
+        repo.migrate()
+        store = MemoryStoreAuthority(repo)
+        ids: list[str] = []
+        for polarity in MemoryAssertionPolarity:
+            semantics = replace(SEMANTICS, polarity=polarity)
+            p = replace(
+                candidate(), proposal_id=f"p-{polarity.value}", assertion_semantics=semantics
+            )
+            policy = role_policy()
+            port = RolePort({"proposals": [proposal_to_wire_v2(p)]})
+            parsed = (
+                await LLMReflectionProposalPort(port, policy, now=lambda: NOW).propose(snapshot())
+            )[0]
+            from tests.domain.memory_reflection.test_llm_roles import support_wire
+
+            wire = support_wire()
+            wire["proposal_id"] = p.proposal_id
+            support = await LLMReflectionSupportPort(
+                RolePort(wire), policy, now=lambda: NOW
+            ).observe(snapshot(), parsed)
+            accepted = authority().accept(snapshot(), parsed, support)
+            assert accepted.candidate is not None
+            assert accepted.candidate.assertion_semantics == semantics
+            result = store.write(MemoryWriteRequest(accepted.candidate))
+            assert result.record is not None
+            ids.append(result.record.memory_id)
+            record = repo.get(result.record.memory_id)
+            assert record is not None and record.assertion_semantics == semantics
+            assert record.content == p.content
+            publication = store.read_semantic_assertion_publication(
+                record.memory_id, record.revision
+            )
+            assert publication.tokens
+            assertion = publication.value.assertion
+            assert assertion is not None
+            assert (assertion.polarity, assertion.certainty, assertion.temporal_meaning) == (
+                semantics.polarity,
+                semantics.certainty,
+                semantics.temporal_meaning,
+            )
+        assert ids[0] != ids[1]
     finally:
         db.close()

@@ -1,8 +1,16 @@
 """Reflection V1の唯一の出力schemaと、所有境界を守るinstructions。"""
 
 from enum import Enum
+from typing import cast
 
-from app.domain.memory.contracts import MemoryFreshnessState, MemoryKind, MemoryRelationKind
+from app.domain.memory.contracts import (
+    MemoryAssertionCertainty,
+    MemoryAssertionPolarity,
+    MemoryAssertionTemporalMeaning,
+    MemoryFreshnessState,
+    MemoryKind,
+    MemoryRelationKind,
+)
 
 from .contracts import ReflectionPersistenceHint, ReflectionSupportRelation
 
@@ -108,4 +116,49 @@ def support_instructions() -> str:
         "evidence_refsはproposal.source_refsの範囲内とする。"
         "proposal_idをexact保持し、既存closed support relationとevidenceを返す。"
         "assertion_semanticsやschema外の説明を出力しない。"
+    )
+
+
+# V1互換入口は固定し、current generationのschemaは明示名で選ぶ。
+proposal_output_schema_v1 = proposal_output_schema
+
+
+def proposal_output_schema_v2() -> dict[str, object]:
+    schema = proposal_output_schema_v1()
+    root = cast(dict[str, object], schema["properties"])
+    array = cast(dict[str, object], root["proposals"])
+    item = cast(dict[str, object], array["items"])
+    properties = cast(dict[str, object], item["properties"])
+    properties["assertion_semantics"] = {
+        "anyOf": [
+            {"type": "null"},
+            _object(
+                {
+                    "polarity": _enum(MemoryAssertionPolarity),
+                    "certainty": _enum(MemoryAssertionCertainty),
+                    "temporal_meaning": _enum(MemoryAssertionTemporalMeaning),
+                }
+            ),
+        ]
+    }
+    item["required"] = list(properties)
+    return schema
+
+
+def proposal_instructions_v2() -> str:
+    return proposal_instructions().replace(
+        "assertion_semanticsを出力しない。",
+        "assertion_semanticsはfrozen evidenceがpolarity/certainty/temporal_meaningの全facetを"
+        "安全に支える場合だけ明示し、不明ならnullとする。confidence_hintのthreshold、"
+        "predicate名、MemoryKind、value_jsonの型、keyword/regex/substringからfacetを推測しない。"
+        "confidenceとassertion certaintyは別Authorityである。",
+    )
+
+
+def support_instructions_v2() -> str:
+    return support_instructions() + (
+        "入力のcontentとassertion_semanticsを含むexact proposal全体を検証する。"
+        "explicit semanticsがevidenceにsupportされない場合はSUPPORTEDにしない。"
+        "意味に応じPARTIALLY_SUPPORTED/UNSUPPORTED/AMBIGUOUS/CONTRADICTEDを使用する。"
+        "unsupported semanticsをNoneへ書き換えてacceptしない。output shapeはv1を維持する。"
     )
