@@ -5,11 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from hashlib import sha256
 from time import perf_counter
 from typing import Protocol
-
-from app.domain.llm import LLMFailureCode
 
 from .authority import ReflectionCandidateAuthority
 from .contracts import (
@@ -19,6 +18,8 @@ from .contracts import (
     ReflectionContextSnapshot,
     ReflectionEventKind,
     ReflectionRoleFailure,
+    ReflectionRoleFailureInfo,
+    ReflectionRoleStage,
     ReflectionRunResult,
     ReflectionRunTelemetry,
     ReflectionSupportObservation,
@@ -193,10 +194,14 @@ class ReflectionCoordinator:
                     context,
                     key,
                     events,
-                    ReflectionCandidateStatus.REFLECTION_ROLE_FAILED,
+                    ReflectionCandidateStatus.REFLECTION_ROLE_FAILED
+                    if self._policy_matches_context(context)
+                    else ReflectionCandidateStatus.REJECTED_STALE,
                     proposal_count=0,
                     proposal_latency=perf_counter() - proposal_started,
-                    role_failure_code=error.code,
+                    role_failure=ReflectionRoleFailureInfo(
+                        ReflectionRoleStage.PROPOSAL, error.code
+                    ),
                 )
             except RuntimeError:
                 events.append(ReflectionEventKind.PROPOSAL_FAILED)
@@ -205,7 +210,9 @@ class ReflectionCoordinator:
                     context,
                     key,
                     events,
-                    ReflectionCandidateStatus.REFLECTION_PROVIDER_UNAVAILABLE,
+                    ReflectionCandidateStatus.REFLECTION_PROVIDER_UNAVAILABLE
+                    if self._policy_matches_context(context)
+                    else ReflectionCandidateStatus.REJECTED_STALE,
                     proposal_count=0,
                     proposal_latency=perf_counter() - proposal_started,
                 )
@@ -340,15 +347,23 @@ class ReflectionCoordinator:
                 support_latency += perf_counter() - started
                 if ReflectionEventKind.SUPPORT_FAILED not in events:
                     events.append(ReflectionEventKind.SUPPORT_FAILED)
-                results.append(
-                    ReflectionCandidateResult(
-                        proposal.proposal_id,
-                        ReflectionCandidateStatus.SUPPORT_ROLE_FAILED,
-                        None,
-                        proposal.source_refs,
-                        role_failure_code=error.code,
-                    )
-                )
+                cause = ReflectionRoleFailureInfo(ReflectionRoleStage.SUPPORT, error.code)
+                if not self._policy_matches_context(context):
+                    result = self._stale_result(proposal)
+                else:
+                    live_context, live_failure = self._validated_live_context(context)
+                    if live_failure is not None:
+                        result = self._candidate_failure_result(proposal, live_failure)
+                    else:
+                        assert live_context is not None
+                        result = self._authority.accept(live_context, proposal, None)
+                        if result.status is ReflectionCandidateStatus.SUPPORT_PROVIDER_UNAVAILABLE:
+                            result = replace(
+                                result,
+                                status=ReflectionCandidateStatus.SUPPORT_ROLE_FAILED,
+                                role_failure=cause,
+                            )
+                results.append(replace(result, role_failure=cause))
             except RuntimeError:
                 support_latency += perf_counter() - started
                 if ReflectionEventKind.SUPPORT_FAILED not in events:
@@ -422,7 +437,7 @@ class ReflectionCoordinator:
         *,
         proposal_count: int,
         proposal_latency: float,
-        role_failure_code: LLMFailureCode | None = None,
+        role_failure: ReflectionRoleFailureInfo | None = None,
     ) -> ReflectionRunResult:
         if ReflectionEventKind.CANDIDATE_REJECTED not in events:
             events.append(ReflectionEventKind.CANDIDATE_REJECTED)
@@ -432,7 +447,7 @@ class ReflectionCoordinator:
             status,
             None,
             (),
-            role_failure_code=role_failure_code,
+            role_failure=role_failure,
         )
         return ReflectionRunResult(
             context.reflection_id,

@@ -5,7 +5,14 @@ from dataclasses import replace
 import pytest
 
 from app.domain.llm import LLMFailureCode, LLMRoleFailure, LLMRoleStatus
-from app.domain.memory_reflection import ReflectionCandidateResult, ReflectionCandidateStatus
+from app.domain.memory.contracts import MemoryRelationKind
+from app.domain.memory_reflection import (
+    ReflectionCandidateResult,
+    ReflectionCandidateStatus,
+    ReflectionRelationHint,
+    ReflectionRoleFailureInfo,
+    ReflectionRoleStage,
+)
 from app.domain.memory_reflection.contracts import (
     MemoryCandidateProposal,
     ReflectionContextSnapshot,
@@ -70,7 +77,7 @@ async def test_production_failure_survives_coordinator(stage: str, code: LLMFail
     try:
         result = (await owner.submit(snapshot())).results[0]
         assert result.candidate is None
-        assert result.role_failure_code is code
+        assert result.role_failure == ReflectionRoleFailureInfo(ReflectionRoleStage(stage), code)
         assert result.status is (
             ReflectionCandidateStatus.REFLECTION_ROLE_FAILED
             if stage == "proposal"
@@ -107,7 +114,7 @@ async def test_unknown_runtime_error_keeps_legacy_fallback(stage: str) -> None:
     )
     try:
         result = (await owner.submit(snapshot())).results[0]
-        assert result.candidate is None and result.role_failure_code is None
+        assert result.candidate is None and result.role_failure is None
         assert result.status is (
             ReflectionCandidateStatus.REFLECTION_PROVIDER_UNAVAILABLE
             if stage == "proposal"
@@ -161,10 +168,12 @@ def test_public_result_requires_code_only_for_role_failure() -> None:
     with pytest.raises(ValueError):
         ReflectionCandidateResult(
             "p",
-            ReflectionCandidateStatus.REJECTED_POLICY,
+            ReflectionCandidateStatus.SUPPORT_ROLE_FAILED,
             None,
             (),
-            role_failure_code=LLMFailureCode.STALE,
+            role_failure=ReflectionRoleFailureInfo(
+                ReflectionRoleStage.PROPOSAL, LLMFailureCode.STALE
+            ),
         )
 
 
@@ -190,7 +199,9 @@ async def test_parser_failure_is_public_schema_invalid(stage: str) -> None:
     try:
         result = (await owner.submit(snapshot())).results[0]
         assert result.candidate is None
-        assert result.role_failure_code is LLMFailureCode.SCHEMA_INVALID
+        assert result.role_failure == ReflectionRoleFailureInfo(
+            ReflectionRoleStage(stage), LLMFailureCode.SCHEMA_INVALID
+        )
     finally:
         await owner.shutdown()
 
@@ -208,6 +219,119 @@ async def test_accepted_candidate_has_no_role_failure() -> None:
     try:
         result = (await owner.submit(snapshot())).results[0]
         assert result.candidate is not None
-        assert result.role_failure_code is None
+        assert result.role_failure is None
     finally:
+        await owner.shutdown()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "stage,change,generic",
+    [
+        ("proposal", "policy", False),
+        ("proposal", "policy", True),
+        ("support", "policy", False),
+        ("support", "policy", True),
+        ("support", "retracted", False),
+        ("support", "missing", False),
+        ("support", "relation", False),
+        ("support", "bounds", False),
+    ],
+)
+async def test_failure_await_revalidates_owner_disposition(
+    stage: str, change: str, generic: bool
+) -> None:
+    import asyncio
+
+    from app.domain.llm import LLMRoleRequest, LLMRoleResult
+
+    entered, release = asyncio.Event(), asyncio.Event()
+    code = (
+        LLMFailureCode.SCHEMA_INVALID
+        if stage == "support" and change == "policy"
+        else LLMFailureCode.PROVIDER_UNAVAILABLE
+    )
+
+    class PausedRole(RolePort):
+        async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+            entered.set()
+            await release.wait()
+            if generic:
+                raise RuntimeError("未知のPort失敗")
+            self.change = {
+                "status": LLMRoleStatus.FAILED,
+                "output": None,
+                "failure": LLMRoleFailure(code, "故障注入"),
+            }
+            return await super().invoke(request)
+
+    policy = role_policy()
+    current: ReflectionContextSnapshot | None = snapshot()
+    p = candidate()
+    if change == "relation":
+        p = replace(
+            p,
+            suggested_related_memory_ids=("memory-1",),
+            relation_hints=(
+                ReflectionRelationHint("memory-1", 2, MemoryRelationKind.CONTRADICTS, ("s",), 0.8),
+            ),
+        )
+    normal_proposal = RolePort({"proposals": [proposal_to_wire(p)]})
+    owner = ReflectionCoordinator(
+        LLMReflectionProposalPort(
+            PausedRole() if stage == "proposal" else normal_proposal, policy, now=lambda: NOW
+        ),
+        LLMReflectionSupportPort(
+            PausedRole() if stage == "support" else RolePort(), policy, now=lambda: NOW
+        ),
+        authority(),
+        operational_policy=policy.operational,
+        max_pending_tasks=2,
+        live_context=lambda _: current,
+    )
+    try:
+        task = owner.submit(snapshot())
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        if change == "policy":
+            await owner.update_operational_policy(replace(policy.operational, policy_revision=2))
+        elif change == "retracted":
+            current = replace(
+                snapshot(),
+                primary_sources=tuple(
+                    replace(s, retracted=True) for s in snapshot().primary_sources
+                ),
+            )
+        elif change == "missing":
+            current = None
+        elif change == "relation":
+            current = replace(
+                snapshot(),
+                related_memory_view=tuple(
+                    replace(m, revision=m.revision + 1) for m in snapshot().related_memory_view
+                ),
+            )
+        else:
+            current = replace(
+                snapshot(),
+                primary_sources=tuple(
+                    replace(
+                        s,
+                        source_excerpt="x" * (policy.operational.max_source_excerpt_codepoints + 1),
+                    )
+                    for s in snapshot().primary_sources
+                ),
+            )
+        release.set()
+        result = (await task).results[0]
+        assert result.status is (
+            ReflectionCandidateStatus.REJECTED_POLICY
+            if change == "bounds"
+            else ReflectionCandidateStatus.REJECTED_STALE
+        )
+        assert result.candidate is None
+        assert result.role_failure == (
+            None if generic else ReflectionRoleFailureInfo(ReflectionRoleStage(stage), code)
+        )
+    finally:
+        release.set()
         await owner.shutdown()
