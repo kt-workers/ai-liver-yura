@@ -18,6 +18,12 @@ from .contracts import (
     ReflectionTrigger,
     ReflectionTriggerKind,
 )
+from .llm_roles import (
+    LLMReflectionProposalPort,
+    LLMReflectionSupportPort,
+    ReflectionLLMError,
+    ReflectionLLMRolePolicy,
+)
 from .operational import (
     ReflectionOperationalError,
     ReflectionOperationalFailureCode,
@@ -33,6 +39,10 @@ from .operational import (
 from .runtime import ReflectionCoordinator, ReflectionProposalPort, ReflectionSupportPort
 
 __all__ = [
+    "LLMReflectionProposalPort",
+    "LLMReflectionSupportPort",
+    "ReflectionLLMError",
+    "ReflectionLLMRolePolicy",
     "MemoryCandidateProposal",
     "ReflectionAcceptancePolicy",
     "ReflectionCandidateAuthority",
