@@ -49,7 +49,7 @@ async def test_accepted_current_candidate_round_trips_without_semantics(
 
 
 @pytest.mark.asyncio
-async def test_v2_semantics_reach_store_and_publication_with_distinct_polarity(
+async def test_v2_semantics_reach_store_but_subject_remains_unresolved(
     endpoint: PostgresEndpoint,
 ) -> None:
     from dataclasses import replace
@@ -94,13 +94,13 @@ async def test_v2_semantics_reach_store_and_publication_with_distinct_polarity(
             publication = store.read_semantic_assertion_publication(
                 record.memory_id, record.revision
             )
-            assert publication.tokens
-            assertion = publication.value.assertion
-            assert assertion is not None
-            assert (assertion.polarity, assertion.certainty, assertion.temporal_meaning) == (
-                semantics.polarity,
-                semantics.certainty,
-                semantics.temporal_meaning,
+            assert record.subject_identity is None
+            assert accepted.candidate.subject_identity is None
+            assert publication.tokens == ()
+            assert publication.value.assertion is None
+            assert (
+                publication.value.unavailable_reason
+                is MemorySemanticAssertionUnavailableReason.SUBJECT_UNRESOLVED
             )
         assert ids[0] != ids[1]
     finally:

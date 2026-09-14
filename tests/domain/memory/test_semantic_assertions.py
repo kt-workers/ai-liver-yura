@@ -5,6 +5,7 @@ from dataclasses import replace
 
 import pytest
 
+from app.domain.contracts import SemanticSubjectIdentity, SemanticSubjectKind
 from app.domain.memory import (
     MemoryAssertionCertainty as C,
 )
@@ -46,6 +47,7 @@ def test_explicit_meaning_roundtrip_and_publication(polarity: P, confidence: flo
     semantics = replace(SEMANTICS, polarity=polarity)
     source = replace(
         candidate(),
+        subject_identity=SemanticSubjectIdentity(SemanticSubjectKind.REFERENCE, "user:1"),
         assertion_semantics=semantics,
         confidence=MemoryConfidence(confidence, "source"),
     )
@@ -85,11 +87,23 @@ def test_explicit_meaning_roundtrip_and_publication(polarity: P, confidence: flo
 )
 def test_semantics_is_part_of_exact_duplicate_identity(other: S | None) -> None:
     store, repository = authority()
-    first = replace(candidate(), assertion_semantics=SEMANTICS)
+    first = replace(
+        candidate(),
+        subject_identity=SemanticSubjectIdentity(SemanticSubjectKind.REFERENCE, "user:1"),
+        assertion_semantics=SEMANTICS,
+    )
     assert store.write(MemoryWriteRequest(first)).disposition is MemoryDisposition.STORE_NEW
-    second = replace(candidate("second", source="fact:2"), assertion_semantics=other)
+    second = replace(
+        candidate("second", source="fact:2"),
+        subject_identity=SemanticSubjectIdentity(SemanticSubjectKind.REFERENCE, "user:1"),
+        assertion_semantics=other,
+    )
     assert store.write(MemoryWriteRequest(second)).disposition is MemoryDisposition.STORE_NEW
-    third = replace(candidate("third", source="fact:3"), assertion_semantics=SEMANTICS)
+    third = replace(
+        candidate("third", source="fact:3"),
+        subject_identity=SemanticSubjectIdentity(SemanticSubjectKind.REFERENCE, "user:1"),
+        assertion_semantics=SEMANTICS,
+    )
     merged = store.write(MemoryWriteRequest(third))
     assert merged.disposition is MemoryDisposition.MERGE_PROVENANCE
     assert merged.record is not None and merged.record.assertion_semantics == SEMANTICS
@@ -110,11 +124,19 @@ def test_semantics_is_part_of_exact_duplicate_identity(other: S | None) -> None:
 )
 def test_unavailable_preserves_reason_without_fallback(case: str, reason: R) -> None:
     store, repository = authority()
-    c = replace(candidate(kind=MemoryKind.WORKING), assertion_semantics=SEMANTICS)
+    c = replace(
+        candidate(kind=MemoryKind.WORKING),
+        subject_identity=SemanticSubjectIdentity(SemanticSubjectKind.REFERENCE, "user:1"),
+        assertion_semantics=SEMANTICS,
+    )
     if case == "semantics":
-        c = replace(c, assertion_semantics=None)
+        c = replace(
+            c,
+            subject_identity=SemanticSubjectIdentity(SemanticSubjectKind.REFERENCE, "user:1"),
+            assertion_semantics=None,
+        )
     if case == "subject":
-        c = replace(c, content=replace(c.content, subject_ref=None))
+        c = replace(c, content=replace(c.content, subject_ref=None), subject_identity=None)
     if case == "stale":
         c = replace(c, temporal=replace(c.temporal, freshness=MemoryFreshnessState.STALE))
     if case == "historical_current":
@@ -141,6 +163,7 @@ def test_historical_meaning_is_preserved(temporal: T) -> None:
     store, _ = authority()
     c = replace(
         candidate(freshness=MemoryFreshnessState.HISTORICAL),
+        subject_identity=SemanticSubjectIdentity(SemanticSubjectKind.REFERENCE, "user:1"),
         assertion_semantics=replace(SEMANTICS, temporal_meaning=temporal),
     )
     store.write(MemoryWriteRequest(c))
@@ -150,11 +173,19 @@ def test_historical_meaning_is_preserved(temporal: T) -> None:
 
 def test_current_relation_is_checked_even_when_record_revision_matches() -> None:
     store, repository = authority()
-    c = replace(candidate(), assertion_semantics=SEMANTICS)
+    c = replace(
+        candidate(),
+        subject_identity=SemanticSubjectIdentity(SemanticSubjectKind.REFERENCE, "user:1"),
+        assertion_semantics=SEMANTICS,
+    )
     store.write(MemoryWriteRequest(c))
     previous = store.retrieve(query())
     assert project_memory_semantic_assertions(previous).entries[0].assertion is not None
-    other = replace(candidate("other", value="different"), assertion_semantics=SEMANTICS)
+    other = replace(
+        candidate("other", value="different"),
+        subject_identity=SemanticSubjectIdentity(SemanticSubjectKind.REFERENCE, "user:1"),
+        assertion_semantics=SEMANTICS,
+    )
     store.write(MemoryWriteRequest(other, 0, c.candidate_id, MemoryRelationKind.CONTRADICTS))
     current = repository.get(c.candidate_id)
     assert current is not None and current.revision == previous.items[0].memory_revision
@@ -168,7 +199,11 @@ def test_current_relation_is_checked_even_when_record_revision_matches() -> None
 
 def test_exact_read_stale_missing_and_repository_unavailable() -> None:
     store, repository = authority()
-    c = replace(candidate(), assertion_semantics=SEMANTICS)
+    c = replace(
+        candidate(),
+        subject_identity=SemanticSubjectIdentity(SemanticSubjectKind.REFERENCE, "user:1"),
+        assertion_semantics=SEMANTICS,
+    )
     store.write(MemoryWriteRequest(c))
     evidence = store.retrieve(query())
     store.write(
@@ -192,7 +227,15 @@ def test_ranking_truncation_and_degraded_whole_view() -> None:
     store, _ = authority()
     for i in range(3):
         store.write(
-            MemoryWriteRequest(replace(candidate(str(i), value=i), assertion_semantics=SEMANTICS))
+            MemoryWriteRequest(
+                replace(
+                    candidate(str(i), value=i),
+                    subject_identity=SemanticSubjectIdentity(
+                        SemanticSubjectKind.REFERENCE, "user:1"
+                    ),
+                    assertion_semantics=SEMANTICS,
+                )
+            )
         )
     source = store.retrieve(query(max_items=2, max_estimated_tokens=4096))
     view = project_memory_semantic_assertions(source)
@@ -211,7 +254,15 @@ def test_ranking_truncation_and_degraded_whole_view() -> None:
 
 def test_token_budget_counts_revision_and_semantics() -> None:
     store, _ = authority()
-    result = store.write(MemoryWriteRequest(replace(candidate(), assertion_semantics=SEMANTICS)))
+    result = store.write(
+        MemoryWriteRequest(
+            replace(
+                candidate(),
+                subject_identity=SemanticSubjectIdentity(SemanticSubjectKind.REFERENCE, "user:1"),
+                assertion_semantics=SEMANTICS,
+            )
+        )
+    )
     assert result.record is not None
     payload = store._evidence_payload(result.record, {}, 0.5)
     assert payload["memory_revision"] == 0 and payload["assertion_semantics"] == SEMANTICS.to_dict()
@@ -247,6 +298,10 @@ def test_old_record_without_facets_is_not_promoted() -> None:
 @pytest.mark.parametrize("field", ["claims_actual_speech", "claims_executed_activity"])
 def test_explicit_facets_do_not_bypass_actual_evidence_guard(field: str) -> None:
     with pytest.raises(ValueError):
-        replace(candidate(), assertion_semantics=SEMANTICS,
-                claims_actual_speech=field == "claims_actual_speech",
-                claims_executed_activity=field == "claims_executed_activity")
+        replace(
+            candidate(),
+            subject_identity=SemanticSubjectIdentity(SemanticSubjectKind.REFERENCE, "user:1"),
+            assertion_semantics=SEMANTICS,
+            claims_actual_speech=field == "claims_actual_speech",
+            claims_executed_activity=field == "claims_executed_activity",
+        )

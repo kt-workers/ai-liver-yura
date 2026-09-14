@@ -15,6 +15,7 @@ from app.domain.contracts.common import (
     require_revision,
     thaw_json,
 )
+from app.domain.contracts.semantic_subject import SemanticSubjectIdentity
 
 
 class MemoryKind(str, Enum):
@@ -256,6 +257,28 @@ class MemoryTemporalState:
             raise ValueError("temporal range が不正です")
 
 
+def validate_subject_identity(
+    content: MemoryContent, identity: SemanticSubjectIdentity | None
+) -> None:
+    """主体metadataの構造的一致だけを検証し、未解決値を補完しない。"""
+    if identity is None:
+        return
+    if (
+        not isinstance(identity, SemanticSubjectIdentity)
+        or not isinstance(content, MemoryContent)
+        or content.subject_ref is None
+        or identity.subject_ref != content.subject_ref
+    ):
+        raise ValueError("主体identityの型またはcontentとの参照一致が不正です")
+
+
+def subject_identity_payload(identity: SemanticSubjectIdentity | None) -> dict[str, object] | None:
+    """重複判定・容量計上・保存へ同じ明示metadataを渡す。"""
+    if identity is None:
+        return None
+    return {"kind": identity.kind.value, "subject_ref": identity.subject_ref}
+
+
 @dataclass(frozen=True, slots=True)
 class ValidatedMemoryCandidate:
     candidate_id: str
@@ -271,9 +294,11 @@ class ValidatedMemoryCandidate:
     claims_actual_speech: bool = False
     claims_executed_activity: bool = False
     assertion_semantics: MemoryAssertionSemantics | None = None
+    subject_identity: SemanticSubjectIdentity | None = None
 
     def __post_init__(self) -> None:
         _validate_assertion_semantics(self.assertion_semantics)
+        validate_subject_identity(self.content, self.subject_identity)
         require_identifier(self.candidate_id, "candidate_id")
         if not isinstance(self.memory_kind, MemoryKind) or not isinstance(
             self.content, MemoryContent
@@ -332,9 +357,11 @@ class MemoryRecord:
     created_at: datetime
     updated_at: datetime
     assertion_semantics: MemoryAssertionSemantics | None = None
+    subject_identity: SemanticSubjectIdentity | None = None
 
     def __post_init__(self) -> None:
         _validate_assertion_semantics(self.assertion_semantics)
+        validate_subject_identity(self.content, self.subject_identity)
         require_identifier(self.memory_id, "memory_id")
         require_revision(self.revision, "revision")
         if not isinstance(self.kind, MemoryKind) or not isinstance(self.content, MemoryContent):
@@ -486,10 +513,12 @@ class MemoryEvidenceItem:
     score: float
     memory_revision: int
     assertion_semantics: MemoryAssertionSemantics | None = None
+    subject_identity: SemanticSubjectIdentity | None = None
 
     def __post_init__(self) -> None:
         require_revision(self.memory_revision, "memory_revision")
         _validate_assertion_semantics(self.assertion_semantics)
+        validate_subject_identity(self.content, self.subject_identity)
         require_identifier(self.memory_id, "memory_id")
         if (
             not isinstance(self.kind, MemoryKind)

@@ -7,6 +7,7 @@ from json import dumps
 
 from app.domain.contracts.common import require_identifier, require_revision, utc_instant
 from app.domain.contracts.finalization import AuthorityReadPublication
+from app.domain.contracts.semantic_subject import SemanticSubjectIdentity
 from app.domain.memory.contracts import (
     MemoryAssertionSemantics,
     MemoryContent,
@@ -21,6 +22,7 @@ from app.domain.memory.contracts import (
     MemoryRetrievalQuery,
     MemoryWriteRequest,
     MemoryWriteResult,
+    subject_identity_payload,
 )
 from app.domain.memory.finalization import MemoryFinalizationRegistry
 from app.domain.memory.ranking import (
@@ -82,9 +84,14 @@ class MemoryStoreAuthority:
             (
                 record
                 for record in records
-                if self._identity(record.kind, record.content, record.assertion_semantics)
+                if self._identity(
+                    record.kind, record.content, record.assertion_semantics, record.subject_identity
+                )
                 == self._identity(
-                    candidate.memory_kind, candidate.content, candidate.assertion_semantics
+                    candidate.memory_kind,
+                    candidate.content,
+                    candidate.assertion_semantics,
+                    candidate.subject_identity,
                 )
             ),
             None,
@@ -130,6 +137,7 @@ class MemoryStoreAuthority:
             candidate.created_at,
             candidate.created_at,
             assertion_semantics=candidate.assertion_semantics,
+            subject_identity=candidate.subject_identity,
         )
         if not self._repository.save_record(record, expected_revision=None):
             return MemoryWriteResult(MemoryDisposition.REJECT, None, None)
@@ -153,6 +161,7 @@ class MemoryStoreAuthority:
             candidate.created_at,
             candidate.created_at,
             assertion_semantics=candidate.assertion_semantics,
+            subject_identity=candidate.subject_identity,
         )
         relation = MemoryRelation(
             f"relation:{target.memory_id}:{record.memory_id}:{relation_kind.value}",
@@ -355,6 +364,7 @@ class MemoryStoreAuthority:
                     score,
                     record.revision,
                     record.assertion_semantics,
+                    record.subject_identity,
                 )
             )
             tokens += estimate
@@ -386,13 +396,17 @@ class MemoryStoreAuthority:
 
     @staticmethod
     def _identity(
-        kind: object, content: MemoryContent, semantics: MemoryAssertionSemantics | None
+        kind: object,
+        content: MemoryContent,
+        semantics: MemoryAssertionSemantics | None,
+        subject_identity: SemanticSubjectIdentity | None,
     ) -> str:
         payload = dumps(
             {
                 "kind": getattr(kind, "value", kind),
                 **content.to_dict(),
                 "assertion_semantics": None if semantics is None else semantics.to_dict(),
+                "subject_identity": subject_identity_payload(subject_identity),
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -557,6 +571,7 @@ class MemoryStoreAuthority:
         return {
             "memory_id": record.memory_id,
             "memory_revision": record.revision,
+            "subject_identity": subject_identity_payload(record.subject_identity),
             "assertion_semantics": None
             if record.assertion_semantics is None
             else record.assertion_semantics.to_dict(),

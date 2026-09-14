@@ -5,6 +5,7 @@ from dataclasses import replace
 import pytest
 
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
+from app.domain.contracts import SemanticSubjectIdentity, SemanticSubjectKind
 from app.domain.memory import (
     MemoryAssertionPolarity as P,
 )
@@ -24,10 +25,17 @@ from tests.infrastructure.postgresql.test_runtime import runtime
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("polarity", list(P))
-async def test_roundtrip_and_current_exact_read(endpoint: PostgresEndpoint, polarity: P) -> None:
+@pytest.mark.parametrize("subject_kind", list(SemanticSubjectKind))
+async def test_roundtrip_and_current_exact_read(
+    endpoint: PostgresEndpoint, polarity: P, subject_kind: SemanticSubjectKind
+) -> None:
     first = runtime(endpoint)
     binding = CoreMemoryPersistenceBinding(first, max_pending=2)
-    source = replace(candidate(), assertion_semantics=replace(SEMANTICS, polarity=polarity))
+    source = replace(
+        candidate(),
+        subject_identity=SemanticSubjectIdentity(subject_kind, "user:1"),
+        assertion_semantics=replace(SEMANTICS, polarity=polarity),
+    )
     try:
         assert await first.start() is None
         written = await binding.submit_write(MemoryWriteRequest(source)).wait()
@@ -44,8 +52,10 @@ async def test_roundtrip_and_current_exact_read(endpoint: PostgresEndpoint, pola
         evidence = retrieved.value.items[0]
         assert evidence.memory_revision == written.value.record.revision
         assert evidence.assertion_semantics == source.assertion_semantics
+        assert evidence.subject_identity == source.subject_identity
         projected = project_memory_semantic_assertions(retrieved.value)
         assert projected.entries[0].assertion is not None
+        assert projected.entries[0].assertion.subject_identity == source.subject_identity
         exact = await reader.submit_semantic_assertion_read(
             source.candidate_id, evidence.memory_revision
         ).wait()
