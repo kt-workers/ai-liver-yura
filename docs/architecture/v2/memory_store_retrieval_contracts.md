@@ -703,3 +703,13 @@ This document is the detailed canonical supplement for Issue #332.
 [Memory意味assertion公開契約](memory_semantic_assertion_contracts.md)を正本とする。candidate/recordのoptionalな明示facets、semantics込みのexact duplicate identity、EvidenceItemの元revisionと容量計上、順序を保持するfail-closed projection、current record/relationのexact read、旧保存形式のNone復元を同じ#332 Owner内で提供する。Speech投影と#364の意味判断は本Ownerから変更しない。
 
 #664のfinalizable publicationはMemory ID単位のRepository同期境界とgenerationを使用する。current record/relationを同じ境界で読み、全mutationで局所tokenを失効させる。独立Memory更新と非待機Fence、登録writer/storage境界の詳細は上記正本に従う。
+
+## #672：主体identityの保存・公開
+
+[Memory意味assertion公開契約](memory_semantic_assertion_contracts.md)の#672節を本契約のtyped主体metadata正本とする。
+ValidatedMemoryCandidate / MemoryRecord / MemoryEvidenceItemへ末尾optional subject_identityを保持し、MemorySemanticAssertionでは解決済み値だけを公開する。
+MemoryContentとto_dictは変更しない。非null identityは共有型であり、content.subject_refとexact一致を必須とする。
+重複判定へsubject_identityを含め、Noneとtyped値を別identityとして保存する。通常write・related write・Evidence・assertionへexact搬送し、provenance mergeで書き換えない。
+旧payloadの欠落fieldはNoneとして読み、silent migration・backfillを行わない。physical DB schemaとstorage_schema_versionは保持する。
+raw refの検索filterとrankingは不変、容量にはtyped metadataを含める。Runtime Character照合やraw refからのkind生成はMemory Ownerの責務にしない。
+Reflection v2のwireを保持し、typed subject未供給の記録は保存可能だがassertionにはSUBJECT_UNRESOLVEDとなる。production供給は#673へ残す。

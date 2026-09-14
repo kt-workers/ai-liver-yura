@@ -9,6 +9,7 @@ from math import isfinite
 from typing import cast
 
 from app.domain.contracts.common import freeze_json
+from app.domain.contracts.semantic_subject import SemanticSubjectIdentity, SemanticSubjectKind
 from app.domain.memory.contracts import (
     MemoryAssertionSemantics,
     MemoryConfidence,
@@ -20,6 +21,7 @@ from app.domain.memory.contracts import (
     MemoryRecord,
     MemorySourceKind,
     MemoryTemporalState,
+    subject_identity_payload,
 )
 
 from .contracts import PersistenceError, PersistenceFailureCode
@@ -32,6 +34,7 @@ def encode_memory_record(record: MemoryRecord) -> str:
         {
             "memory_id": record.memory_id,
             "revision": record.revision,
+            "subject_identity": subject_identity_payload(record.subject_identity),
             "assertion_semantics": None
             if record.assertion_semantics is None
             else record.assertion_semantics.to_dict(),
@@ -76,12 +79,24 @@ def decode_memory_record(raw: str) -> MemoryRecord:
             None
             if value.get("assertion_semantics") is None
             else MemoryAssertionSemantics.from_dict(value["assertion_semantics"]),
+            _subject_identity(value.get("subject_identity")),
         )
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
         raise PersistenceError(
             PersistenceFailureCode.CORRUPT_RECORD,
             "Memory recordが不正です",
         ) from error
+
+
+def _subject_identity(value: object) -> SemanticSubjectIdentity | None:
+    if value is None:
+        return None
+    data = _mapping(value)
+    if set(data) != {"kind", "subject_ref"}:
+        raise ValueError("主体identityの保存fieldが不正です")
+    return SemanticSubjectIdentity(
+        SemanticSubjectKind(_text(data, "kind")), _text(data, "subject_ref")
+    )
 
 
 def _temporal_to_json(temporal: MemoryTemporalState) -> dict[str, object]:

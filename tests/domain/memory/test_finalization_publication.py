@@ -5,6 +5,7 @@ from dataclasses import replace
 from datetime import datetime
 from threading import Event
 
+from app.domain.contracts import SemanticSubjectIdentity, SemanticSubjectKind
 from app.domain.contracts.finalization import (
     AuthorityFinalizationFence,
     AuthorityFinalizationParticipant,
@@ -51,7 +52,11 @@ def finalize(
 def seed(store: MemoryStoreAuthority, memory_id: str) -> None:
     result = store.write(
         MemoryWriteRequest(
-            replace(candidate(memory_id, value=memory_id), assertion_semantics=SEMANTICS)
+            replace(
+                candidate(memory_id, value=memory_id),
+                subject_identity=SemanticSubjectIdentity(SemanticSubjectKind.REFERENCE, "user:1"),
+                assertion_semantics=SEMANTICS,
+            )
         )
     )
     assert result.record is not None

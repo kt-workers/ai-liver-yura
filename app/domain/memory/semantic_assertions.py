@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from app.domain.contracts.common import JsonValue, require_identifier, require_revision
+from app.domain.contracts.semantic_subject import SemanticSubjectIdentity
 from app.domain.memory.contracts import (
     MemoryAssertionCertainty,
     MemoryAssertionPolarity,
@@ -18,6 +19,7 @@ from app.domain.memory.contracts import (
     MemoryProvenance,
     MemoryRecord,
     MemoryTemporalState,
+    validate_subject_identity,
 )
 from app.domain.memory.ranking import RankedMemoryEvidenceView
 
@@ -47,10 +49,11 @@ def _unavailable(
     lifecycle: MemoryLifecycle,
     provenance: tuple[MemoryProvenance, ...],
     conflicts: tuple[str, ...],
+    subject_identity: SemanticSubjectIdentity | None,
 ) -> R | None:
     if semantics is None:
         return R.SEMANTICS_UNRESOLVED
-    if content.subject_ref is None:
+    if content.subject_ref is None or subject_identity is None:
         return R.SUBJECT_UNRESOLVED
     if lifecycle is not MemoryLifecycle.ACTIVE:
         return R.INACTIVE_LIFECYCLE
@@ -80,6 +83,7 @@ class MemorySemanticAssertion:
     temporal: MemoryTemporalState
     lifecycle: MemoryLifecycle
     contradiction_refs: tuple[str, ...]
+    subject_identity: SemanticSubjectIdentity
 
     def __post_init__(self) -> None:
         require_identifier(self.memory_id, "memory_id")
@@ -93,6 +97,7 @@ class MemorySemanticAssertion:
             or not isinstance(self.lifecycle, MemoryLifecycle)
         ):
             raise ValueError("Memory assertionの型が不正です")
+        validate_subject_identity(self.content, self.subject_identity)
         provenance = tuple(self.provenance)
         if any(not isinstance(p, MemoryProvenance) for p in provenance):
             raise ValueError("Memory assertionのprovenanceが不正です")
@@ -105,6 +110,7 @@ class MemorySemanticAssertion:
                 self.lifecycle,
                 provenance,
                 conflicts,
+                self.subject_identity,
             )
             is not None
         ):
@@ -213,10 +219,12 @@ def semantic_assertion_entry(
         source.lifecycle,
         source.provenance,
         conflicts,
+        source.subject_identity,
     )
     if reason is not None:
         return MemorySemanticAssertionEntry(source.memory_id, revision, unavailable_reason=reason)
     assert source.assertion_semantics is not None
+    assert source.subject_identity is not None
     return MemorySemanticAssertionEntry(
         source.memory_id,
         revision,
@@ -231,6 +239,7 @@ def semantic_assertion_entry(
             source.temporal,
             source.lifecycle,
             conflicts,
+            source.subject_identity,
         ),
     )
 

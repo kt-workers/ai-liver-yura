@@ -8,6 +8,7 @@ from threading import Event
 import pytest
 
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
+from app.domain.contracts import SemanticSubjectIdentity, SemanticSubjectKind
 from app.domain.contracts.finalization import FinalizationFailure
 from app.domain.memory import (
     MemoryRelation,
@@ -106,14 +107,28 @@ async def test_runtime_publication_uses_existing_async_boundary(endpoint: Postgr
         assert absent.value is None and absent.failure_code is not None
         assert await persistence.start() is None
         await binding.submit_write(
-            MemoryWriteRequest(replace(candidate("A"), assertion_semantics=SEMANTICS))
+            MemoryWriteRequest(
+                replace(
+                    candidate("A"),
+                    subject_identity=SemanticSubjectIdentity(
+                        SemanticSubjectKind.REFERENCE, "user:1"
+                    ),
+                    assertion_semantics=SEMANTICS,
+                )
+            )
         ).wait()
         result = await binding.submit_semantic_assertion_publication("A", 0).wait()
         assert result.value is not None and result.value.tokens
         assert finalize(result.value) is None
         await binding.submit_write(
             MemoryWriteRequest(
-                replace(candidate("other", source="new"), assertion_semantics=SEMANTICS)
+                replace(
+                    candidate("other", source="new"),
+                    subject_identity=SemanticSubjectIdentity(
+                        SemanticSubjectKind.REFERENCE, "user:1"
+                    ),
+                    assertion_semantics=SEMANTICS,
+                )
             )
         ).wait()
         assert finalize(result.value) is FinalizationFailure.GENERATION_MISMATCH

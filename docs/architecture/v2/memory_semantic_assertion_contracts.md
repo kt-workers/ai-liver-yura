@@ -6,7 +6,7 @@ Owner: #332 / Work: #664。Memory Store / Retrievalだけが公開元となる�
 
 MemoryAssertionSemanticsはpolarity（AFFIRM / NEGATE）、certainty（CERTAIN / LIKELY / UNCERTAIN）、temporal_meaning（CURRENT / HISTORICAL / TIME_BOUNDED）のtypedな不変値を持つ。ValidatedMemoryCandidateとMemoryRecordにoptional assertion_semanticsを追加する。未指定のNoneは意味未解決であり、保存・検索はできるがassertionへ昇格しない。predicate/value/qualifier文字列、MemoryKind、confidence数値から意味を推測しない。既存のactual speech / executed activity根拠検査を維持する。
 
-exact duplicate identityはkind + content + assertion_semantics。polarity / certainty / temporal meaningが違うものやNoneと明示値は別identityとする。MERGE_PROVENANCEは全てexact一致した場合だけ。codecはJSON payloadへfieldを保存し、旧保存recordでfieldが欠ける場合のみNoneとして復元できる。明示された不正型・未知値は拒否する。既存レコードの書換え・削除、DB schema migrationは行わない。
+exact duplicate identityはkind + content + assertion_semantics + subject_identity。polarity / certainty / temporal meaningが違うものやNoneと明示値は別identityとする。MERGE_PROVENANCEは全てexact一致した場合だけ。codecはJSON payloadへfieldを保存し、旧保存recordでfieldが欠ける場合のみNoneとして復元できる。明示された不正型・未知値は拒否する。既存レコードの書換え・削除、DB schema migrationは行わない。
 
 ## Retrieval evidenceと容量
 
@@ -18,7 +18,7 @@ MemorySemanticAssertionはmemory_id / memory_revision / memory_kind、元content
 
 MemorySemanticAssertionEntryはID・取得revisionと、assertionまたはtyped unavailable reasonのいずれか一方を持つ。reasonはSEMANTICS_UNRESOLVED、SUBJECT_UNRESOLVED、STALE、CONFLICTED、INACTIVE_LIFECYCLE、PROVENANCE_UNAVAILABLE、DEGRADED_VIEW、TEMPORAL_INCONSISTENCY、REVISION_STALE、SOURCE_NOT_FOUND、REPOSITORY_UNAVAILABLE、FINALIZATION_UNSUPPORTED。複数の不適格条件がある場合は意味未解決、subject未解決、inactive、stale、conflicted、provenanceなし、時間意味矛盾の順に決定的に返す。どの条件も成功へfallbackしない。
 
-assertableには明示semantics、subject、ACTIVE lifecycle、非STALE、contradictionなし、根拠を持つprovenanceが必要。WORKINGも例外にしない。HISTORICAL freshnessとCURRENT meaningの組合せはTEMPORAL_INCONSISTENCY。それ以外の明示HISTORICAL / TIME_BOUNDEDはその時間意味を保持し、CURRENTへ変更しない。現在性はOwnerのtyped temporal metadataをそのまま利用し、consumerが壁時計・文字列から再判定しない。
+assertableには明示semantics、解決済みtyped subject、ACTIVE lifecycle、非STALE、contradictionなし、根拠を持つprovenanceが必要。WORKINGも例外にしない。HISTORICAL freshnessとCURRENT meaningの組合せはTEMPORAL_INCONSISTENCY。それ以外の明示HISTORICAL / TIME_BOUNDEDはその時間意味を保持し、CURRENTへ変更しない。現在性はOwnerのtyped temporal metadataをそのまま利用し、consumerが壁時計・文字列から再判定しない。
 
 ## 公開viewとexact read
 
@@ -37,3 +37,34 @@ record保存はそのID、relation保存は両端、related transactionは新rec
 DB I/Oは既存executorで行う。FenceはI/Oを呼ばず、既存の非待機取得で競合をPARTICIPANT_BUSYとして拒否する。Aのslow I/O中にもCのmutationとBのFenceは独立に進める。登録mapのlockは参加者の検索・生成だけに使用し、I/O中は保持しない。
 
 同一Core processの同一storage namespaceに接続するRepositoryは同期registryを共有する。PostgreSQLはendpointのhost/port/database、SQLiteは正規化したpath、in-memoryはRepository instanceで識別する。DBの別名経由、別process、直接SQLなどこの登録mutation境界を迂回するwriterと共有するstorageは、このin-process Fence互換publicationのproduction適用対象外とする。#661は当該Owner境界を満たすbindingだけを登録し、外部writerの更新までin-process tokenで保護できると主張しない。意味Authorityを別に作らず、既存Repositoryの保存境界を局所的に拡張する。
+
+## #672：typed subject metadataの所有と互換性
+
+#671の[共有主体identity契約](semantic_subject_identity_contracts.md)を利用し、共有型自体は変更しない。
+`subject_identity: SemanticSubjectIdentity | None`をCandidate / Record / Evidenceの末尾default Noneとして追加する。
+MemoryContentのshapeとto_dictは不変。identityはassertion_semanticsと並列のmetadataである。
+Noneは正規のunresolvedで、raw content.subject_refがあっても推測で補わない。
+non-nullなら共有型であり、content.subject_refがnon-nullかつidentity.subject_refとexact一致することを要求する。不一致・不正型はValueError。
+identityからraw refを補完せず、raw ref、Character、MemoryKind、predicate/value、confidenceからkindを生成しない。
+Memory StoreはRuntimeSubjectIdentityを受け取らず、producerによるRuntimeとの検証を前提としてexplicit identityをexact保存する。
+
+write / _write_relatedでCandidate→Record、retrievalでRecord→Evidence、assertableならEvidence/Record→MemorySemanticAssertionへexact搬送する。
+Assertionのsubject_identityは必須の共有型であり、subject_identity.subject_ref == subject_ref == content.subject_refを保持する。
+既存subject_ref propertyはexact refの互換公開であり、kindのAuthorityはsubject_identity.kindだけである。
+
+exact duplicate identityはkind + exact content + assertion_semantics + subject_identity。Noneとtyped値、異なるtyped値は別identityとする。
+MERGE_PROVENANCEではidentityを変えない。旧recordの自動移行・similarity統合は禁止する。
+Evidenceのtoken-estimation payloadへidentity全体を含め、上限時にそのfieldだけを落とさない。ranking・score・subject_refsのexact filteringは不変。
+
+eligibilityは1. semantics None→SEMANTICS_UNRESOLVED、2. raw subject_ref Noneまたはidentity None→SUBJECT_UNRESOLVED、
+3. inactive、4. stale、5. contradiction、6. provenanceなし、7. temporal inconsistencyの既存順を保持する。新reasonを作らない。
+polarity/certainty/temporal_meaning、actual根拠検査、ID token・rank55・既存publication/finalization境界は変更しない。
+
+保存payloadのtop-levelにsubject_identityをnullまたは{kind, subject_ref}として保存する。kindは#671 enumのexact value。
+旧payloadでfield欠落ならNoneとして読み、書き戻し・silent backfillをしない。新fieldの不正型、未知kind、member欠落・追加、不正ref・contentとの不一致はCORRUPT_RECORDで拒否する。
+payload TEXT内の互換拡張であり、physical PostgreSQL schema migrationとstorage_schema_version変更は行わない。
+
+Reflection productionのcandidates.v2 / support.v2はfreezeし、MemoryContent.to_dictを介したwire変更も禁止する。
+#667のv2 candidateはidentity=Noneで保存可能、semanticsが明示されてもpublicationはSUBJECT_UNRESOLVED、tokens=()となる。
+これは#673のv3供給待ちの正規境界。#672ではdirect typed Candidateによるpositive publicationを維持・検証する。
+#673はproposal/support/accepted candidateのtyped identity供給、#661は後続Speech投影を所有する。
