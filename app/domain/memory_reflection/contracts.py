@@ -17,6 +17,7 @@ from app.domain.contracts.common import (
     require_revision,
     thaw_json,
 )
+from app.domain.llm import LLMFailureCode
 from app.domain.memory.contracts import (
     MemoryConfidence,
     MemoryContent,
@@ -28,6 +29,16 @@ from app.domain.memory.contracts import (
     ValidatedMemoryCandidate,
 )
 from app.domain.memory.ranking import estimate_memory_token_units
+
+
+class ReflectionRoleFailure(RuntimeError):
+    """production Roleの既知failureを公開resultまで保持する共通境界。"""
+
+    def __init__(self, code: LLMFailureCode) -> None:
+        if not isinstance(code, LLMFailureCode):
+            raise ValueError("LLMFailureCodeが必要です")
+        self.code = code
+        super().__init__(f"Reflection Roleを利用できません: {code.value}")
 
 
 class ReflectionSourceKind(str, Enum):
@@ -72,6 +83,8 @@ class ReflectionCandidateStatus(str, Enum):
     REJECTED_STALE = "rejected_stale"
     REJECTED_POLICY = "rejected_policy"
     DEFERRED_QUEUE_PRESSURE = "deferred_queue_pressure"
+    REFLECTION_ROLE_FAILED = "reflection_role_failed"
+    SUPPORT_ROLE_FAILED = "support_role_failed"
     REFLECTION_PROVIDER_UNAVAILABLE = "reflection_provider_unavailable"
     SUPPORT_PROVIDER_UNAVAILABLE = "support_provider_unavailable"
     STORE_UNAVAILABLE = "store_unavailable"
@@ -494,7 +507,18 @@ class ReflectionCandidateResult:
     diagnostic_refs: tuple[str, ...]
     relation_hints: tuple[ReflectionRelationHint, ...] = ()
 
+    role_failure_code: LLMFailureCode | None = None
+
     def __post_init__(self) -> None:
+        role_failed = self.status in {
+            ReflectionCandidateStatus.REFLECTION_ROLE_FAILED,
+            ReflectionCandidateStatus.SUPPORT_ROLE_FAILED,
+        }
+        if role_failed != (self.role_failure_code is not None) or (
+            self.role_failure_code is not None
+            and not isinstance(self.role_failure_code, LLMFailureCode)
+        ):
+            raise ValueError("Role failure statusとcodeの対応が不正です")
         require_identifier(self.proposal_id, "proposal_id")
         if not isinstance(self.status, ReflectionCandidateStatus):
             raise ValueError("statusが不正です")

@@ -46,10 +46,13 @@ from .contracts import (
     ReflectionContextSnapshot,
     ReflectionPersistenceHint,
     ReflectionRelationHint,
+    ReflectionRoleFailure,
     ReflectionSupportObservation,
     ReflectionSupportRelation,
 )
 from .operational import (
+    ReflectionOperationalError,
+    ReflectionOperationalFailureCode,
     ReflectionOperationalPolicy,
     validate_reflection_context_bounds,
     validate_reflection_proposals_bounds,
@@ -80,12 +83,16 @@ class ReflectionLLMRolePolicy:
             raise ValueError("Reflectionのexecution/operational policyを明示してください")
 
 
-class ReflectionLLMError(RuntimeError):
-    """既存LLM failure codeを保持し、Coordinatorの失敗境界へ渡す。"""
+class ReflectionLLMError(ReflectionRoleFailure):
+    """production Portの失敗を共通typed境界へ渡す。"""
 
-    def __init__(self, code: LLMFailureCode) -> None:
-        self.code = code
-        super().__init__(f"Reflection Roleを利用できません: {code.value}")
+
+def _operational_failure(error: ReflectionOperationalError) -> ReflectionLLMError:
+    return ReflectionLLMError(
+        LLMFailureCode.STALE
+        if error.code is ReflectionOperationalFailureCode.POLICY_STALE
+        else LLMFailureCode.POLICY_VIOLATION
+    )
 
 
 def proposal_descriptor(policy: ReflectionLLMRolePolicy) -> LLMRoleDescriptor:
@@ -284,6 +291,8 @@ def parse_proposals(
         for proposal in proposals:
             _validate_provenance(context, proposal)
         return proposals
+    except ReflectionOperationalError as error:
+        raise _operational_failure(error) from None
     except (ValueError, ValidationError, RecursionError):
         raise ReflectionLLMError(LLMFailureCode.SCHEMA_INVALID) from None
 
@@ -321,6 +330,8 @@ def parse_support(
         ):
             raise ReflectionLLMError(LLMFailureCode.POLICY_VIOLATION)
         return result
+    except ReflectionOperationalError as error:
+        raise _operational_failure(error) from None
     except (ValueError, ValidationError, RecursionError):
         raise ReflectionLLMError(LLMFailureCode.SCHEMA_INVALID) from None
 
@@ -409,6 +420,8 @@ class LLMReflectionProposalPort:
     ) -> tuple[MemoryCandidateProposal, ...]:
         try:
             request = build_proposal_request(context, created_at=self._now(), policy=self._policy)
+        except ReflectionOperationalError as error:
+            raise _operational_failure(error) from None
         except (ValueError, RecursionError) as error:
             raise ReflectionLLMError(LLMFailureCode.POLICY_VIOLATION) from error
         value = await _invoke(self._port, request, proposal_descriptor(self._policy))
@@ -428,6 +441,8 @@ class LLMReflectionSupportPort:
             request = build_support_request(
                 context, proposal, created_at=self._now(), policy=self._policy
             )
+        except ReflectionOperationalError as error:
+            raise _operational_failure(error) from None
         except (ValueError, RecursionError) as error:
             raise ReflectionLLMError(LLMFailureCode.POLICY_VIOLATION) from error
         value = await _invoke(self._port, request, support_descriptor(self._policy))

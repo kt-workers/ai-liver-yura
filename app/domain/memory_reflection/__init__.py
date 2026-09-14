@@ -9,6 +9,7 @@ from .contracts import (
     ReflectionContextSnapshot,
     ReflectionEventKind,
     ReflectionRelationHint,
+    ReflectionRoleFailure,
     ReflectionRunResult,
     ReflectionRunTelemetry,
     ReflectionSourceEvidence,
@@ -39,6 +40,7 @@ from .operational import (
 from .runtime import ReflectionCoordinator, ReflectionProposalPort, ReflectionSupportPort
 
 __all__ = [
+    "ReflectionRoleFailure",
     "LLMReflectionProposalPort",
     "LLMReflectionSupportPort",
     "ReflectionLLMError",
