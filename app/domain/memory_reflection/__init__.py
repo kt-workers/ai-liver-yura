@@ -9,6 +9,9 @@ from .contracts import (
     ReflectionContextSnapshot,
     ReflectionEventKind,
     ReflectionRelationHint,
+    ReflectionRoleFailure,
+    ReflectionRoleFailureInfo,
+    ReflectionRoleStage,
     ReflectionRunResult,
     ReflectionRunTelemetry,
     ReflectionSourceEvidence,
@@ -17,6 +20,12 @@ from .contracts import (
     ReflectionSupportRelation,
     ReflectionTrigger,
     ReflectionTriggerKind,
+)
+from .llm_roles import (
+    LLMReflectionProposalPort,
+    LLMReflectionSupportPort,
+    ReflectionLLMError,
+    ReflectionLLMRolePolicy,
 )
 from .operational import (
     ReflectionOperationalError,
@@ -33,6 +42,13 @@ from .operational import (
 from .runtime import ReflectionCoordinator, ReflectionProposalPort, ReflectionSupportPort
 
 __all__ = [
+    "ReflectionRoleFailure",
+    "ReflectionRoleFailureInfo",
+    "ReflectionRoleStage",
+    "LLMReflectionProposalPort",
+    "LLMReflectionSupportPort",
+    "ReflectionLLMError",
+    "ReflectionLLMRolePolicy",
     "MemoryCandidateProposal",
     "ReflectionAcceptancePolicy",
     "ReflectionCandidateAuthority",

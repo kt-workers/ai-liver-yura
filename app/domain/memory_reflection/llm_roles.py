@@ -1,0 +1,449 @@
+"""Reflection専用V1 wireと、既存LLMRolePortへのproduction接続。"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from datetime import datetime
+from typing import cast
+
+from jsonschema import ValidationError, validate
+
+from app.domain.contracts.common import (
+    JsonValue,
+    RevisionVector,
+    freeze_json,
+    require_aware,
+    thaw_json,
+    utc_instant,
+)
+from app.domain.llm import (
+    LLMActivationPolicy,
+    LLMExecutionPolicy,
+    LLMFailureCode,
+    LLMFailurePolicy,
+    LLMInterruptibility,
+    LLMPriority,
+    LLMRoleDescriptor,
+    LLMRoleRequest,
+    LLMRoleStatus,
+    LLMStalePolicy,
+    StructuredPayload,
+    validate_role_exchange,
+)
+from app.domain.memory.contracts import (
+    MemoryContent,
+    MemoryFreshnessState,
+    MemoryKind,
+    MemoryRelationKind,
+    MemoryTemporalState,
+)
+from app.usecases.ports.llm import LLMRolePort
+
+from .contracts import (
+    MemoryCandidateProposal,
+    ReflectionContextSnapshot,
+    ReflectionPersistenceHint,
+    ReflectionRelationHint,
+    ReflectionRoleFailure,
+    ReflectionSupportObservation,
+    ReflectionSupportRelation,
+)
+from .operational import (
+    ReflectionOperationalError,
+    ReflectionOperationalFailureCode,
+    ReflectionOperationalPolicy,
+    validate_reflection_context_bounds,
+    validate_reflection_proposals_bounds,
+    validate_reflection_support_bounds,
+)
+from .schemas import proposal_output_schema, support_output_schema
+
+PROPOSAL_ROLE_ID = "memory_reflection"
+PROPOSAL_INPUT_SCHEMA = "memory.reflection.context.v1"
+PROPOSAL_OUTPUT_SCHEMA = "memory.reflection.candidates.v1"
+SUPPORT_ROLE_ID = "memory_reflection_support"
+SUPPORT_INPUT_SCHEMA = "memory.reflection.support.v1"
+SUPPORT_OUTPUT_SCHEMA = "memory.reflection.support.observation.v1"
+
+
+@dataclass(frozen=True, slots=True)
+class ReflectionLLMRolePolicy:
+    proposal_execution: LLMExecutionPolicy
+    support_execution: LLMExecutionPolicy
+    operational: ReflectionOperationalPolicy
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.proposal_execution, LLMExecutionPolicy)
+            or not isinstance(self.support_execution, LLMExecutionPolicy)
+            or not isinstance(self.operational, ReflectionOperationalPolicy)
+        ):
+            raise ValueError("Reflectionのexecution/operational policyを明示してください")
+
+
+class ReflectionLLMError(ReflectionRoleFailure):
+    """production Portの失敗を共通typed境界へ渡す。"""
+
+
+def _operational_failure(error: ReflectionOperationalError) -> ReflectionLLMError:
+    return ReflectionLLMError(
+        LLMFailureCode.STALE
+        if error.code is ReflectionOperationalFailureCode.POLICY_STALE
+        else LLMFailureCode.POLICY_VIOLATION
+    )
+
+
+def proposal_descriptor(policy: ReflectionLLMRolePolicy) -> LLMRoleDescriptor:
+    return LLMRoleDescriptor(
+        PROPOSAL_ROLE_ID,
+        "frozen根拠からMemory候補だけを提案する",
+        PROPOSAL_INPUT_SCHEMA,
+        PROPOSAL_OUTPUT_SCHEMA,
+        "memory_candidate_proposal_only",
+        LLMActivationPolicy.BACKGROUND,
+        LLMFailurePolicy.FAIL_CLOSED,
+        policy.proposal_execution,
+    )
+
+
+def support_descriptor(policy: ReflectionLLMRolePolicy) -> LLMRoleDescriptor:
+    return LLMRoleDescriptor(
+        SUPPORT_ROLE_ID,
+        "frozen根拠に対するMemory候補のsupportだけを観測する",
+        SUPPORT_INPUT_SCHEMA,
+        SUPPORT_OUTPUT_SCHEMA,
+        "memory_reflection_support_observation_only",
+        LLMActivationPolicy.BACKGROUND,
+        LLMFailurePolicy.FAIL_CLOSED,
+        policy.support_execution,
+    )
+
+
+def _canonical_json(value: JsonValue) -> str:
+    text = json.dumps(
+        thaw_json(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
+    text.encode("utf-8")
+    return text
+
+
+def _pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("value_jsonのobject keyが重複しています")
+        result[key] = value
+    return result
+
+
+def _invalid_constant(value: str) -> object:
+    raise ValueError("value_jsonに非有限値は使えません")
+
+
+def _decode_value(text: str) -> JsonValue:
+    decoded = freeze_json(
+        json.loads(text, object_pairs_hook=_pairs, parse_constant=_invalid_constant)
+    )
+    _canonical_json(decoded)
+    return decoded
+
+
+def proposal_to_wire(proposal: MemoryCandidateProposal) -> dict[str, object]:
+    if proposal.deterministic_capture:
+        raise ValueError("trusted deterministic captureはopen-ended V1の対象外です")
+    content, temporal = proposal.content, proposal.temporal
+    return {
+        "proposal_id": proposal.proposal_id,
+        "proposed_kind": proposal.proposed_kind.value,
+        "content": {
+            "predicate": content.predicate,
+            "value_json": _canonical_json(content.value),
+            "subject_ref": content.subject_ref,
+            "temporal_scope_ref": content.temporal_scope_ref,
+            "qualifiers": list(content.qualifiers),
+        },
+        "source_refs": list(proposal.source_refs),
+        "confidence_hint": proposal.confidence_hint,
+        "importance_hint": proposal.importance_hint,
+        "persistence_hint": proposal.persistence_hint.value,
+        "novelty_hint": proposal.novelty_hint,
+        "temporal": {
+            "freshness": temporal.freshness.value,
+            "valid_from": None if temporal.valid_from is None else temporal.valid_from.isoformat(),
+            "valid_until": None
+            if temporal.valid_until is None
+            else temporal.valid_until.isoformat(),
+            "observed_at": None
+            if temporal.observed_at is None
+            else temporal.observed_at.isoformat(),
+        },
+        "suggested_related_memory_ids": list(proposal.suggested_related_memory_ids),
+        "relation_hints": [
+            {
+                "related_memory_id": h.related_memory_id,
+                "related_memory_revision": h.related_memory_revision,
+                "relation_kind": h.relation_kind.value,
+                "evidence_refs": list(h.evidence_refs),
+                "confidence": h.confidence,
+            }
+            for h in proposal.relation_hints
+        ],
+        "rationale_evidence_refs": list(proposal.rationale_evidence_refs),
+    }
+
+
+def _object(value: object) -> Mapping[str, object]:
+    return cast(Mapping[str, object], value)
+
+
+def _array(value: object) -> tuple[object, ...]:
+    return tuple(cast(list[object], value))
+
+
+def _refs(value: object) -> tuple[str, ...]:
+    return tuple(cast(list[str], value))
+
+
+def _timestamp(value: object) -> datetime | None:
+    if value is None:
+        return None
+    result = datetime.fromisoformat(cast(str, value).replace("Z", "+00:00"))
+    require_aware(result, "timestamp")
+    return result
+
+
+def _validated_wire(value: object, schema: dict[str, object]) -> Mapping[str, object]:
+    normalized = thaw_json(freeze_json(value))
+    validate(normalized, schema)
+    return _object(normalized)
+
+
+def _parse_proposal(item: Mapping[str, object]) -> MemoryCandidateProposal:
+    content = _object(item["content"])
+    temporal = _object(item["temporal"])
+    hints = tuple(_object(h) for h in _array(item["relation_hints"]))
+    return MemoryCandidateProposal(
+        cast(str, item["proposal_id"]),
+        MemoryKind(item["proposed_kind"]),
+        MemoryContent(
+            cast(str, content["predicate"]),
+            _decode_value(cast(str, content["value_json"])),
+            cast(str | None, content["subject_ref"]),
+            cast(str | None, content["temporal_scope_ref"]),
+            _refs(content["qualifiers"]),
+        ),
+        _refs(item["source_refs"]),
+        cast(float, item["confidence_hint"]),
+        cast(float, item["importance_hint"]),
+        ReflectionPersistenceHint(item["persistence_hint"]),
+        cast(float, item["novelty_hint"]),
+        MemoryTemporalState(
+            MemoryFreshnessState(temporal["freshness"]),
+            _timestamp(temporal["valid_from"]),
+            _timestamp(temporal["valid_until"]),
+            _timestamp(temporal["observed_at"]),
+        ),
+        _refs(item["suggested_related_memory_ids"]),
+        tuple(
+            ReflectionRelationHint(
+                cast(str, h["related_memory_id"]),
+                cast(int, h["related_memory_revision"]),
+                MemoryRelationKind(h["relation_kind"]),
+                _refs(h["evidence_refs"]),
+                cast(float, h["confidence"]),
+            )
+            for h in hints
+        ),
+        _refs(item["rationale_evidence_refs"]),
+        deterministic_capture=False,
+    )
+
+
+def _validate_provenance(
+    context: ReflectionContextSnapshot, proposal: MemoryCandidateProposal
+) -> None:
+    sources = {s.source_ref for s in context.primary_sources}
+    memories = {m.memory_id: m.revision for m in context.related_memory_view}
+    if (
+        not set(proposal.source_refs).issubset(sources)
+        or not set(proposal.rationale_evidence_refs).issubset(sources)
+        or not set(proposal.suggested_related_memory_ids).issubset(memories)
+        or any(
+            memories.get(h.related_memory_id) != h.related_memory_revision
+            or h.related_memory_id not in proposal.suggested_related_memory_ids
+            or not set(h.evidence_refs).issubset(sources)
+            for h in proposal.relation_hints
+        )
+    ):
+        raise ReflectionLLMError(LLMFailureCode.POLICY_VIOLATION)
+
+
+def parse_proposals(
+    value: object, context: ReflectionContextSnapshot, policy: ReflectionOperationalPolicy
+) -> tuple[MemoryCandidateProposal, ...]:
+    try:
+        validate_reflection_context_bounds(context, policy)
+        item = _validated_wire(value, proposal_output_schema())
+        proposals = tuple(_parse_proposal(_object(p)) for p in _array(item["proposals"]))
+        validate_reflection_proposals_bounds(proposals, policy)
+        for proposal in proposals:
+            _validate_provenance(context, proposal)
+        return proposals
+    except ReflectionOperationalError as error:
+        raise _operational_failure(error) from None
+    except (ValueError, ValidationError, RecursionError):
+        raise ReflectionLLMError(LLMFailureCode.SCHEMA_INVALID) from None
+
+
+def parse_support(
+    value: object,
+    context: ReflectionContextSnapshot,
+    proposal: MemoryCandidateProposal,
+    policy: ReflectionOperationalPolicy,
+) -> ReflectionSupportObservation:
+    try:
+        validate_reflection_context_bounds(context, policy)
+        _validate_provenance(context, proposal)
+        item = _validated_wire(value, support_output_schema())
+        result = ReflectionSupportObservation(
+            cast(str, item["proposal_id"]),
+            ReflectionSupportRelation(item["support_relation"]),
+            _refs(item["evidence_refs"]),
+            _refs(item["unsupported_content_refs"]),
+            _refs(item["contradiction_refs"]),
+            cast(float, item["confidence"]),
+        )
+        validate_reflection_support_bounds(result, policy)
+        sources = {s.source_ref for s in context.primary_sources}
+        if (
+            result.proposal_id != proposal.proposal_id
+            or not set(
+                (
+                    *result.evidence_refs,
+                    *result.unsupported_content_refs,
+                    *result.contradiction_refs,
+                )
+            ).issubset(sources)
+            or not set(result.evidence_refs).issubset(proposal.source_refs)
+        ):
+            raise ReflectionLLMError(LLMFailureCode.POLICY_VIOLATION)
+        return result
+    except ReflectionOperationalError as error:
+        raise _operational_failure(error) from None
+    except (ValueError, ValidationError, RecursionError):
+        raise ReflectionLLMError(LLMFailureCode.SCHEMA_INVALID) from None
+
+
+def _request(
+    context: ReflectionContextSnapshot,
+    descriptor: LLMRoleDescriptor,
+    payload: dict[str, object],
+    request_id: str,
+    created_at: datetime,
+) -> LLMRoleRequest:
+    require_aware(created_at, "created_at")
+    if utc_instant(created_at) < utc_instant(context.captured_at):
+        raise ValueError("request時刻はcontextの取得より前にできません")
+    return LLMRoleRequest(
+        request_id,
+        descriptor.role_id,
+        StructuredPayload(descriptor.input_schema_id, freeze_json(payload)),
+        (),
+        RevisionVector(context.source_context_revision),
+        (),
+        LLMPriority.BACKGROUND,
+        LLMInterruptibility.INTERRUPTIBLE
+        if context.trigger.interruptible
+        else LLMInterruptibility.NON_INTERRUPTIBLE,
+        LLMStalePolicy.REVALIDATE,
+        descriptor.default_execution_policy,
+        created_at,
+        context.trace_id,
+    )
+
+
+def build_proposal_request(
+    context: ReflectionContextSnapshot, *, created_at: datetime, policy: ReflectionLLMRolePolicy
+) -> LLMRoleRequest:
+    validate_reflection_context_bounds(context, policy.operational)
+    return _request(
+        context,
+        proposal_descriptor(policy),
+        context.to_dict(),
+        f"{context.reflection_id}:proposal",
+        created_at,
+    )
+
+
+def build_support_request(
+    context: ReflectionContextSnapshot,
+    proposal: MemoryCandidateProposal,
+    *,
+    created_at: datetime,
+    policy: ReflectionLLMRolePolicy,
+) -> LLMRoleRequest:
+    validate_reflection_context_bounds(context, policy.operational)
+    validate_reflection_proposals_bounds((proposal,), policy.operational)
+    _validate_provenance(context, proposal)
+    return _request(
+        context,
+        support_descriptor(policy),
+        {"context": context.to_dict(), "proposal": proposal_to_wire(proposal)},
+        f"{context.reflection_id}:support:{proposal.proposal_id}",
+        created_at,
+    )
+
+
+async def _invoke(
+    port: LLMRolePort, request: LLMRoleRequest, descriptor: LLMRoleDescriptor
+) -> JsonValue:
+    result = await port.invoke(request)
+    failure = validate_role_exchange(descriptor, request, result)
+    if failure is not None:
+        raise ReflectionLLMError(failure.code)
+    if result.status is not LLMRoleStatus.SUCCEEDED or result.output is None:
+        assert result.failure is not None
+        raise ReflectionLLMError(result.failure.code)
+    return result.output.value
+
+
+class LLMReflectionProposalPort:
+    def __init__(
+        self, port: LLMRolePort, policy: ReflectionLLMRolePolicy, *, now: Callable[[], datetime]
+    ) -> None:
+        self._port, self._policy, self._now = port, policy, now
+
+    async def propose(
+        self, context: ReflectionContextSnapshot
+    ) -> tuple[MemoryCandidateProposal, ...]:
+        try:
+            request = build_proposal_request(context, created_at=self._now(), policy=self._policy)
+        except ReflectionOperationalError as error:
+            raise _operational_failure(error) from None
+        except (ValueError, RecursionError) as error:
+            raise ReflectionLLMError(LLMFailureCode.POLICY_VIOLATION) from error
+        value = await _invoke(self._port, request, proposal_descriptor(self._policy))
+        return parse_proposals(value, context, self._policy.operational)
+
+
+class LLMReflectionSupportPort:
+    def __init__(
+        self, port: LLMRolePort, policy: ReflectionLLMRolePolicy, *, now: Callable[[], datetime]
+    ) -> None:
+        self._port, self._policy, self._now = port, policy, now
+
+    async def observe(
+        self, context: ReflectionContextSnapshot, proposal: MemoryCandidateProposal
+    ) -> ReflectionSupportObservation:
+        try:
+            request = build_support_request(
+                context, proposal, created_at=self._now(), policy=self._policy
+            )
+        except ReflectionOperationalError as error:
+            raise _operational_failure(error) from None
+        except (ValueError, RecursionError) as error:
+            raise ReflectionLLMError(LLMFailureCode.POLICY_VIOLATION) from error
+        value = await _invoke(self._port, request, support_descriptor(self._policy))
+        return parse_support(value, context, proposal, self._policy.operational)

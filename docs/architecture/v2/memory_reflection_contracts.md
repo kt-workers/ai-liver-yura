@@ -258,10 +258,11 @@ MemoryCandidateProposal
 - importance_hint
 - persistence_hint
 - novelty_hint
-- temporal_scope?
+- temporal: MemoryTemporalState
 - suggested_related_memory_ids[]
 - relation_hints[]
 - rationale_evidence_refs[]
+- deterministic_capture（trusted local pathの識別。V1 wireには含めない）
 ```
 
 Hints are bounded normalized data, not final Store decisions.
@@ -425,7 +426,7 @@ ValidatedMemoryCandidate
 - provenance
 - confidence
 - importance_hint?
-- temporal_scope?
+- temporal: MemoryTemporalState
 - suggested_related_memory_ids[]
 - suggested_relation_hints[]
 - source_context_revision?
@@ -644,3 +645,64 @@ Do not log full raw source bodies by default.
 - #445 Design Completion Gate PASS
 
 #364 detailed design completion alone does not lift the global Implementation Freeze.
+
+
+## 25. Reflection production Role/schema V1（#668）
+
+#364のproposal/support Protocolを#323 LLMRolePortと#357汎用Providerへ接続する最初のproduction generationを定義する。既存production v1の改変ではなく、canonicalで宣言済みだったv1を初めて実体化する。#667のassertion_semantics / polarity / certainty / temporal_meaningを本V1へ追加しない。
+
+### 正本と配置
+
+app/domain/memory_reflection/llm_roles.pyがIDs、明示policy、descriptor、request builder、唯一のwire serializer/parser、LLMReflectionProposalPort / LLMReflectionSupportPortを所有する。schemas.pyが両outputのstrict JSON Schemaと日本語instructionsを所有し、parserも同じschemaで構造検査する。app/adapters/llm/memory_reflection.pyはReflection専用OpenAIResponsesRoleConfig factoryだけを所有する。独自transportを作らず、generic adapter、#332 Store、#360 compositionの意味を変更しない。
+
+### Domain DTOとwire
+
+Domainはcurrent MemoryCandidateProposalとMemoryContent.value: JsonValueを維持する。proposal inputのrootはReflectionContextSnapshot.to_dict()のexact bounded snapshotであり、schemaはmemory.reflection.context.v1。追加のprompt-only fact、raw provider object、無制限会話やfixture metadataは入れない。
+
+proposal output（memory.reflection.candidates.v1）のrootは必須proposals配列だけを持つobject。空配列は正常。各要素は以下の必須fieldだけを持つ。nullableもfield自体は必須とする。
+
+- proposal_id、proposed_kind、content、source_refs、confidence_hint、importance_hint、persistence_hint、novelty_hint、temporal、suggested_related_memory_ids、relation_hints、rationale_evidence_refs。
+- content: predicate、value_json、subject_ref（nullable）、temporal_scope_ref（nullable）、qualifiers。
+- temporal: freshness、valid_from（nullable）、valid_until（nullable）、observed_at（nullable）。aware ISO timestampだけを許可し、暗黙timezoneを付けない。
+- relation_hintsの各要素: related_memory_id、related_memory_revision、relation_kind、evidence_refs、confidence。
+
+enumのwire値はcurrent Domain enumのvalue（小文字）とexact一致させる。normalized hintは既存DTOの有限[0,1]だけを許可し、Store判断にしない。unknown/missing field、未知enum、不正refを拒否する。
+
+value_jsonはwire-onlyのcanonical JSON string。Domain valueをthawし、ensure_ascii=False、sort_keys=True、compact separators、allow_nan=Falseでserializeする。UTF-8で表現可能なJSONを使用し、Domainをscalar/string/固定objectへ狭めない。parserはstrict JSON decodeとJsonValue検査を行い、NaN/Infinity、duplicate object key、不正JSONを拒否する。表記差はsemantic identityにせず、supportへはparse済みDomain値を同じserializerでcanonical化して渡す。
+
+LLM outputはdeterministic_capture fieldを持てず、parse済みproposalは常にFalse。trusted deterministic captureは既存local closed pathだけが所有する。Trueなproposalはこのopen-ended V1 serializerへ渡せず、flagを黙って落とさない。
+
+### Support wire
+
+input（memory.reflection.support.v1）はcontextとproposalだけを持つobject。contextは上記exact snapshot、proposalはstrict parse済みMemoryCandidateProposalのcanonical V1 serializationとする。generator生JSONやfree-form rationaleを別のproofとして足さない。
+
+output（memory.reflection.support.observation.v1）はproposal_id、support_relation、evidence_refs、unsupported_content_refs、contradiction_refs、confidenceだけを持つ。current ReflectionSupportObservationへstrict parseし、proposal_idは対象proposalにexact一致必須。SUPPORTED / PARTIALLY_SUPPORTED / UNSUPPORTED / CONTRADICTED / AMBIGUOUSの既存valueとevidence不変条件を維持する。Store disposition、rewrite、final truth、assertion_semanticsは出力しない。
+
+source_refsとrationale/evidence/contradiction等の参照はfrozen primary_sourcesに限定する。support evidence_refsはproposal.source_refsの部分集合とする。suggested related IDsはrelated_memory_view内、relation hintは同viewのexact revisionとsuggested IDに一致することを検査する。意味推測やrevision補完は行わない。actual_speech / executed_activityの採用可否とawait後のcurrent source/relation確認は既存ReflectionCandidateAuthority / Coordinatorが所有し、既存guardを維持する。
+
+### Descriptorとrequest
+
+ReflectionLLMRolePolicyはproposal_execution / support_execution: LLMExecutionPolicyと既存ReflectionOperationalPolicyをすべて明示注入する。具体timeout、retry、model等のdefaultを新設しない。
+
+| Role | output | authority_scope |
+|---|---|---|
+| memory_reflection | memory.reflection.candidates.v1 | memory_candidate_proposal_only |
+| memory_reflection_support | memory.reflection.support.observation.v1 | memory_reflection_support_observation_only |
+
+両descriptorはBACKGROUND / FAIL_CLOSED。request_idは<reflection_id>:proposal、または<reflection_id>:support:<proposal_id>。trace_id=context.trace_id、RevisionVectorはcontext.source_context_revisionとgoal/attention=None。source_event_ids=()とし、Memory/FactをEvent IDへ偽装しない。source identityの正本はcontext.primary_sources。
+
+priority=BACKGROUND、trigger.interruptibleのTrue/FalseをINTERRUPTIBLE/NON_INTERRUPTIBLEへexact対応させる。stale policy=REVALIDATE。created_atはconstructorへ明示注入したnow()のaware datetimeで、captured_atより前を拒否する。最終Systemでclockを選ぶ責務は#360に残す。
+
+### 拒否と容量
+
+Portはtyped request→LLMRolePort.invoke→validate_role_exchange→strict parseの順を守る。non-success、ID/schema/trace/revision不一致、stale/cancelled/rejected resultは候補へ変換しない。共通contractのReflectionRoleFailureは既存LLMFailureCodeを保持し、productionのReflectionLLMErrorが継承する。Coordinatorは共通typed failureをRuntimeErrorより先に識別し、具体Portへ逆依存しない。ReflectionCandidateResult.statusはOwnerの最終disposition、role_failure: ReflectionRoleFailureInfo | Noneは実Roleのtyped原因とする。immutableなInfoはstage: ReflectionRoleStage（PROPOSAL / SUPPORT）とcode: LLMFailureCodeを保持する。旧role_failure_code単独fieldはこのInfoへ統合する。current時はREFLECTION_ROLE_FAILED / SUPPORT_ROLE_FAILEDと対応stageが必須。stale/policy/provenance拒否では原因を保持でき、acceptedには原因を付けられない。proposal/supportのtyped failure後もcurrent operational policy generationを確認し、変更時はREJECTED_STALEを優先する。supportではさらにlive contextを再取得し、既存Authorityのsource/relation確認による拒否を優先する。どの拒否でも実Role原因を失わず、generic RuntimeErrorでは原因を捏造しない。proposalのgeneric RuntimeErrorもawait後policy確認を行う。memory_reflection_d10_operational_binding.md §9/§10の既存意味・数値は変更しない。SCHEMA_INVALID / PROVIDER_UNAVAILABLE / PROVIDER_ERROR / TIMEOUT / CANCELLED / STALE / SUPERSEDED / REJECTED / POLICY_VIOLATIONをcollapseせず、候補を生成しない。parse不正はSCHEMA_INVALID、provenance不正はPOLICY_VIOLATION。未知のgeneric RuntimeErrorだけは既存provider-unavailable fallbackを維持し、LLM codeを捏造しない。SDK/HTTP detailやLLMRoleResultを公開しない。Role内のReflectionOperationalErrorはPOLICY_STALEをSTALE、それ以外の既存D10容量・順序違反をPOLICY_VIOLATIONへ対応させ、SCHEMA_INVALIDへ潰さない。D10 canonicalと数値は変更しない。外からのCancelledErrorはそのまま伝播する。
+
+既存D10のcontext generation/order/token、proposal count/重複ID、relation hint/evidence、support evidence上限を両Portと既存Coordinatorで検査する。overflowをfirst-Nへ切り詰めない。policy更新とcurrent source/relationの最終確認は既存Coordinatorの責務を維持する。
+
+### Providerと構成
+
+proposal/supportのformat nameはmemory_reflection_candidates_v1 / memory_reflection_support_observation_v1とし、Domain schema IDとは分離する。各factoryへmodel_by_classとreasoning_by_effortを明示注入し、既存OpenAIResponsesModelPolicyへ渡す。Character Languageと同じtext Role用のmodel classを利用し、不正mappingを拒否する。
+
+instructionsはfrozen contextだけを根拠に、zero candidate、source/related IDの限定、hintの非Authority性、actual speech/execution guard、deterministic自己宣言禁止、assertion_semantics禁止、schema外説明禁止を明記する。supportはexact proposal全体を評価し、書換えやStore判断をしない。
+
+#668は登録可能な境界までを所有する。bootstrapの必須登録、READY条件、具体runtime/model/policy値、scheduler/trigger/system wiringは変更しない。#667は後続generationで意味facets追加を所有する。

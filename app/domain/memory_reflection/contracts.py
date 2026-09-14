@@ -17,6 +17,7 @@ from app.domain.contracts.common import (
     require_revision,
     thaw_json,
 )
+from app.domain.llm import LLMFailureCode
 from app.domain.memory.contracts import (
     MemoryConfidence,
     MemoryContent,
@@ -28,6 +29,33 @@ from app.domain.memory.contracts import (
     ValidatedMemoryCandidate,
 )
 from app.domain.memory.ranking import estimate_memory_token_units
+
+
+class ReflectionRoleStage(str, Enum):
+    PROPOSAL = "proposal"
+    SUPPORT = "support"
+
+
+@dataclass(frozen=True, slots=True)
+class ReflectionRoleFailureInfo:
+    stage: ReflectionRoleStage
+    code: LLMFailureCode
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.stage, ReflectionRoleStage) or not isinstance(
+            self.code, LLMFailureCode
+        ):
+            raise ValueError("Role failureのstage/codeが不正です")
+
+
+class ReflectionRoleFailure(RuntimeError):
+    """production Roleの既知failureを公開resultまで保持する共通境界。"""
+
+    def __init__(self, code: LLMFailureCode) -> None:
+        if not isinstance(code, LLMFailureCode):
+            raise ValueError("LLMFailureCodeが必要です")
+        self.code = code
+        super().__init__(f"Reflection Roleを利用できません: {code.value}")
 
 
 class ReflectionSourceKind(str, Enum):
@@ -72,6 +100,8 @@ class ReflectionCandidateStatus(str, Enum):
     REJECTED_STALE = "rejected_stale"
     REJECTED_POLICY = "rejected_policy"
     DEFERRED_QUEUE_PRESSURE = "deferred_queue_pressure"
+    REFLECTION_ROLE_FAILED = "reflection_role_failed"
+    SUPPORT_ROLE_FAILED = "support_role_failed"
     REFLECTION_PROVIDER_UNAVAILABLE = "reflection_provider_unavailable"
     SUPPORT_PROVIDER_UNAVAILABLE = "support_provider_unavailable"
     STORE_UNAVAILABLE = "store_unavailable"
@@ -494,7 +524,28 @@ class ReflectionCandidateResult:
     diagnostic_refs: tuple[str, ...]
     relation_hints: tuple[ReflectionRelationHint, ...] = ()
 
+    role_failure: ReflectionRoleFailureInfo | None = None
+
     def __post_init__(self) -> None:
+        required_stage = {
+            ReflectionCandidateStatus.REFLECTION_ROLE_FAILED: ReflectionRoleStage.PROPOSAL,
+            ReflectionCandidateStatus.SUPPORT_ROLE_FAILED: ReflectionRoleStage.SUPPORT,
+        }.get(self.status)
+        if self.role_failure is not None:
+            if not isinstance(self.role_failure, ReflectionRoleFailureInfo):
+                raise ValueError("role_failureが不正です")
+            if self.status not in {
+                ReflectionCandidateStatus.REFLECTION_ROLE_FAILED,
+                ReflectionCandidateStatus.SUPPORT_ROLE_FAILED,
+                ReflectionCandidateStatus.REJECTED_STALE,
+                ReflectionCandidateStatus.REJECTED_POLICY,
+                ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE,
+            }:
+                raise ValueError("このstatusにRole failureは付与できません")
+        if required_stage is not None and (
+            self.role_failure is None or self.role_failure.stage is not required_stage
+        ):
+            raise ValueError("Role failure statusとstageの対応が不正です")
         require_identifier(self.proposal_id, "proposal_id")
         if not isinstance(self.status, ReflectionCandidateStatus):
             raise ValueError("statusが不正です")
