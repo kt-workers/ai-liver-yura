@@ -34,6 +34,7 @@ class MemorySemanticAssertionUnavailableReason(str, Enum):
     REVISION_STALE = "revision_stale"
     SOURCE_NOT_FOUND = "source_not_found"
     REPOSITORY_UNAVAILABLE = "repository_unavailable"
+    FINALIZATION_UNSUPPORTED = "finalization_unsupported"
 
 
 R = MemorySemanticAssertionUnavailableReason

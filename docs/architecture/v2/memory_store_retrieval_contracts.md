@@ -701,3 +701,5 @@ This document is the detailed canonical supplement for Issue #332.
 ## Memoryの明示semantic assertion（#664）
 
 [Memory意味assertion公開契約](memory_semantic_assertion_contracts.md)を正本とする。candidate/recordのoptionalな明示facets、semantics込みのexact duplicate identity、EvidenceItemの元revisionと容量計上、順序を保持するfail-closed projection、current record/relationのexact read、旧保存形式のNone復元を同じ#332 Owner内で提供する。Speech投影と#364の意味判断は本Ownerから変更しない。
+
+#664のfinalizable publicationはMemory ID単位のRepository同期境界とgenerationを使用する。current record/relationを同じ境界で読み、全mutationで局所tokenを失効させる。独立Memory更新と非待機Fence、登録writer/storage境界の詳細は上記正本に従う。

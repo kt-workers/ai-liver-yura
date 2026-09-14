@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Callable, Coroutine
 from typing import Any, Generic, TypeVar, cast
 
+from app.domain.contracts.finalization import AuthorityReadPublication
 from app.domain.memory import MemoryRelationKind, MemoryWriteRequest, MemoryWriteResult
 from app.domain.memory.contracts import MemoryRetrievalQuery
 from app.domain.memory.ranking import RankedMemoryEvidenceView
@@ -99,6 +100,15 @@ class CoreMemoryPersistenceBinding:
     ) -> CoreMemoryOperation[MemorySemanticAssertionEntry]:
         return self._submit(
             lambda: self._persistence.read_memory_semantic_assertion(memory_id, expected_revision)
+        )
+
+    def submit_semantic_assertion_publication(
+        self, memory_id: str, expected_revision: int | None = None
+    ) -> CoreMemoryOperation[AuthorityReadPublication[MemorySemanticAssertionEntry]]:
+        return self._submit(
+            lambda: self._persistence.read_memory_semantic_assertion_publication(
+                memory_id, expected_revision
+            )
         )
 
     def _submit(

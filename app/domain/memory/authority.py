@@ -6,6 +6,7 @@ from hashlib import sha256
 from json import dumps
 
 from app.domain.contracts.common import require_identifier, require_revision, utc_instant
+from app.domain.contracts.finalization import AuthorityReadPublication
 from app.domain.memory.contracts import (
     MemoryAssertionSemantics,
     MemoryContent,
@@ -21,6 +22,7 @@ from app.domain.memory.contracts import (
     MemoryWriteRequest,
     MemoryWriteResult,
 )
+from app.domain.memory.finalization import MemoryFinalizationRegistry
 from app.domain.memory.ranking import (
     MemoryRankingMissingBehavior,
     MemoryRankingPolarity,
@@ -223,6 +225,28 @@ class MemoryStoreAuthority:
             )
         )
         return semantic_assertion_entry(record, conflicts)
+
+    def read_semantic_assertion_publication(
+        self, memory_id: str, expected_revision: int | None = None
+    ) -> AuthorityReadPublication[MemorySemanticAssertionEntry]:
+        require_identifier(memory_id, "memory_id")
+        require_revision(expected_revision, "expected_revision", optional=True)
+        registry = getattr(self._repository, "semantic_guards", None)
+        if not isinstance(registry, MemoryFinalizationRegistry):
+            return AuthorityReadPublication(
+                MemorySemanticAssertionEntry(
+                    memory_id,
+                    None,
+                    unavailable_reason=MemorySemanticAssertionUnavailableReason.FINALIZATION_UNSUPPORTED,
+                ),
+                (),
+            )
+        participant = registry.participant(memory_id)
+        with participant:
+            entry = self.read_semantic_assertion(memory_id, expected_revision)
+            return AuthorityReadPublication(
+                entry, () if entry.assertion is None else (participant.token(),)
+            )
 
     def retrieve(self, query: MemoryRetrievalQuery) -> RankedMemoryEvidenceView:
         policy = self._require_ranking_policy()
