@@ -11,7 +11,6 @@ from app.domain.activity_execution.contracts import (
     ActivityExecutionRecord,
     ExecutionEffectUncertainty,
 )
-from app.domain.attention.contracts import AttentionFocusView
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
 from app.domain.contracts import ExecutionStatus, RevisionVector
 from app.domain.contracts.common import require_identifier, require_revision
@@ -21,6 +20,7 @@ from app.domain.contracts.finalization import (
     AuthorityReadPublication,
     authority_mutation,
 )
+from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
 from app.domain.executive.contracts import CommittedExecutiveDecision
 from app.domain.executive.speech_references import (
     ExecutiveSpeechReferenceResolution,
@@ -29,8 +29,8 @@ from app.domain.executive.speech_references import (
     ExecutiveSpeechSourceBinding,
     validate_resolution_keys,
 )
-from app.domain.goals.contracts import CommitmentState, GoalState
-from app.domain.memory.contracts import MemoryRecord
+from app.domain.goals.semantic_views import GoalCommitmentSemanticView
+from app.domain.memory.semantic_assertions import MemorySemanticAssertionEntry
 from app.domain.speech_semantics_vocabulary import (
     CommunicativeGoalCatalogView,
     CommunicativeSubjectBinding,
@@ -69,11 +69,9 @@ class SpeechSemanticConstraintSource:
 
 
 SourceValue: TypeAlias = (
-    GoalState
-    | CommitmentState
+    GoalCommitmentSemanticView
+    | MemorySemanticAssertionEntry
     | ActivityExecutionRecord
-    | MemoryRecord
-    | AttentionFocusView
     | SpeechSemanticConstraintSource
 )
 C = SpeechSemanticContextFailureCode
@@ -101,11 +99,10 @@ class SpeechSemanticSourceBinding:
 
 
 _TYPES: dict[SpeechSourceContractKind, type[SourceValue]] = {
-    SpeechSourceContractKind.GOAL: GoalState,
-    SpeechSourceContractKind.COMMITMENT: CommitmentState,
+    SpeechSourceContractKind.GOAL: GoalCommitmentSemanticView,
+    SpeechSourceContractKind.COMMITMENT: GoalCommitmentSemanticView,
     SpeechSourceContractKind.EXECUTION: ActivityExecutionRecord,
-    SpeechSourceContractKind.MEMORY: MemoryRecord,
-    SpeechSourceContractKind.ATTENTION: AttentionFocusView,
+    SpeechSourceContractKind.MEMORY: MemorySemanticAssertionEntry,
     SpeechSourceContractKind.TRUTH_CONSTRAINT: SpeechSemanticConstraintSource,
 }
 
@@ -133,7 +130,7 @@ class SpeechSemanticContextSourcePort:
         if publication is None:
             raise SpeechSemanticContextError(C.SOURCE_NOT_FOUND)
         value = publication.value
-        if type(value) is not _TYPES[source.source_contract_kind]:
+        if type(value) is not _TYPES.get(source.source_contract_kind):
             raise SpeechSemanticContextError(C.SOURCE_KIND_MISMATCH)
         identity, revision = _source_identity(value, source)
         if identity != source.source_identity:
@@ -153,16 +150,13 @@ class SpeechSemanticContextSourcePort:
 
 
 def _source_identity(value: SourceValue, source: ExecutiveSpeechSourceBinding) -> tuple[str, int]:
-    if isinstance(value, GoalState):
-        return value.goal_id, value.revision
-    if isinstance(value, CommitmentState):
-        return value.commitment_id, value.revision
     if isinstance(value, ActivityExecutionRecord):
         return value.invocation.command.command_id, value.record_revision
-    if isinstance(value, MemoryRecord):
-        return value.memory_id, value.revision
-    if isinstance(value, AttentionFocusView):
-        return source.source_identity, value.revision
+    if isinstance(value, GoalCommitmentSemanticView):
+        return value.state_id, value.state_revision
+    if isinstance(value, MemorySemanticAssertionEntry):
+        assert value.memory_revision is not None
+        return value.memory_id, value.memory_revision
     return value.source_id, value.revision
 
 
@@ -184,6 +178,7 @@ class SpeechSemanticFactProjectionPolicy:
     policy_id: str
     revision: int
     rules: tuple[SpeechSemanticFactProjectionRule, ...]
+    runtime_subject_identity: RuntimeSubjectIdentity | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.policy_id, "policy_id")
@@ -223,6 +218,7 @@ class SpeechSemanticFactProjector:
             if (
                 fact.claim_kind is not SemanticClaimKind.EXECUTION_STATUS
                 or fact.execution_status is not binding.value.result.status
+                or fact.value != binding.value.result.status.value
             ):
                 raise SpeechSemanticContextError(C.UNSUPPORTED_PROJECTION)
         return fact
@@ -359,6 +355,7 @@ class SpeechSemanticContextGeneration:
     directive_policy: SpeechDeterministicDirectivePolicy | None = None
 
     def to_dict(self) -> dict[str, object]:
+        identity = self.projection_policy.runtime_subject_identity
         return {
             "decision_id": self.decision_id,
             "intent_id": self.intent_id,
@@ -375,6 +372,14 @@ class SpeechSemanticContextGeneration:
             else {
                 "policy_id": self.directive_policy.policy_id,
                 "revision": self.directive_policy.revision,
+            },
+            "runtime_subject_identity": None
+            if identity is None
+            else {
+                "self_subject_ref": identity.self_subject_ref,
+                "character_id": identity.character_id,
+                "character_schema_version": identity.character_schema_version,
+                "character_definition_revision": identity.character_definition_revision,
             },
             "sources": [x.resolution.to_dict() for x in self.sources],
         }
@@ -426,6 +431,35 @@ class SpeechSemanticContextGeneration:
             ):
                 raise SpeechSemanticContextError(C.SOURCE_IDENTITY_MISMATCH)
 
+        selected = tuple(
+            r
+            for r in snapshot.decision.speech_reference_resolutions
+            if r.intent_id == self.intent_id
+        )
+        validate_resolution_keys(
+            snapshot.decision.candidate, snapshot.decision.speech_reference_resolutions
+        )
+        if tuple(r for r in selected if r.source is not None) != tuple(
+            b.resolution for b in self.sources
+        ):
+            raise SpeechSemanticContextError(C.SOURCE_IDENTITY_MISMATCH)
+        expected, provenance, constraints = _project_material(
+            selected,
+            self.sources,
+            SpeechSemanticProductionPolicies(
+                self.meaning_policy,
+                self.projection_policy,
+                self.truth_policy,
+                self.bounds,
+                self.directive_policy,
+            ),
+            self.meaning_policy,
+        )
+        if tuple(expected.values()) != snapshot.facts or tuple(provenance.values()) != entries:
+            raise SpeechSemanticContextError(C.SOURCE_IDENTITY_MISMATCH)
+        if constraints != snapshot.truth_constraints:
+            raise SpeechSemanticContextError(C.TRUTH_RULE_UNRESOLVED)
+
     @property
     def tokens(self) -> tuple[AuthorityGenerationToken, ...]:
         return self.policy_tokens + tuple(t for s in self.sources for t in s.tokens)
@@ -445,6 +479,145 @@ class SpeechSemanticProductionPolicies:
     truth: SpeechTruthConstraintProjectionPolicy
     bounds: BrainOperationalBoundsPolicy
     directive: SpeechDeterministicDirectivePolicy | None = None
+
+
+def _project_material(
+    selected: tuple[ExecutiveSpeechReferenceResolution, ...],
+    source_bindings: tuple[SpeechSemanticSourceBinding, ...],
+    policies: SpeechSemanticProductionPolicies,
+    meaning: SpeechSemanticMeaningPolicy,
+) -> tuple[
+    dict[str, SpeechSemanticFact],
+    dict[str, SpeechSemanticFactProvenance],
+    tuple[SpeechTruthConstraint, ...],
+]:
+    projector = SpeechSemanticFactProjector(policies.projection)
+    explicit_constraints: list[SpeechTruthConstraint] = []
+    facts: dict[str, SpeechSemanticFact] = {}
+    provenance: dict[str, SpeechSemanticFactProvenance] = {}
+    for binding in source_bindings:
+        if isinstance(binding.value, SpeechSemanticConstraintSource):
+            constraint = binding.value.constraint
+            if (
+                binding.resolution.role is not ExecutiveSpeechReferenceRole.CONSTRAINT
+                or constraint.constraint_id != binding.resolution.selected_ref
+            ):
+                raise SpeechSemanticContextError(C.SOURCE_IDENTITY_MISMATCH)
+            explicit_constraints.append(constraint)
+            continue
+        fact = projector.project(binding)
+        if fact.fact_id in facts and facts[fact.fact_id] != fact:
+            raise SpeechSemanticContextError(C.SOURCE_IDENTITY_MISMATCH)
+        facts[fact.fact_id] = fact
+        if binding.resolution.role is ExecutiveSpeechReferenceRole.CONSTRAINT:
+            rule = policies.truth.project(fact).rule
+            explicit_constraints.append(
+                SpeechTruthConstraint(binding.resolution.selected_ref, fact.fact_id, rule)
+            )
+        source = binding.resolution.source
+        assert source is not None
+        provenance[fact.fact_id] = SpeechSemanticFactProvenance(
+            fact.fact_id,
+            source.source_owner,
+            source.source_contract_kind.value,
+            source.source_identity,
+            source.source_revision,
+            policies.projection.policy_id,
+            policies.projection.revision,
+        )
+    for resolution in selected:
+        if (
+            resolution.resolution_kind
+            is not ExecutiveSpeechResolutionKind.COMMUNICATIVE_ACT_DEFINITION
+        ):
+            continue
+        if (resolution.meaning_policy_id, resolution.meaning_policy_revision) != (
+            meaning.policy_id,
+            meaning.revision,
+        ):
+            raise SpeechSemanticContextError(C.SEMANTIC_POLICY_STALE)
+        definitions = [
+            d
+            for d in meaning.communicative_goal_catalog.definitions
+            if d.definition_id == resolution.definition_id
+            and d.definition_revision == resolution.definition_revision
+        ]
+        if len(definitions) != 1:
+            raise SpeechSemanticContextError(C.SOURCE_REVISION_MISMATCH)
+        definition = definitions[0]
+        targets = [
+            r.selected_ref for r in selected if r.role is ExecutiveSpeechReferenceRole.TARGET
+        ]
+        eligible = [
+            s
+            for s in source_bindings
+            if s.resolution.role is ExecutiveSpeechReferenceRole.EVIDENCE
+            and s.resolution.source is not None
+            and s.resolution.source.source_contract_kind
+            in definition.evidence_requirement.source_contracts
+        ]
+        evidence = tuple(b.resolution.selected_ref for b in eligible)
+        if len(eligible) < definition.evidence_requirement.minimum_count or (
+            definition.target_requirement.mode is CommunicativeTargetMode.REQUIRED
+            and len(targets) != 1
+        ):
+            raise SpeechSemanticContextError(C.SOURCE_NOT_FOUND)
+        for target in (
+            b for b in source_bindings if b.resolution.role is ExecutiveSpeechReferenceRole.TARGET
+        ):
+            assert target.resolution.source is not None
+            if (
+                target.resolution.source.source_contract_kind
+                not in definition.target_requirement.source_contracts
+            ):
+                raise SpeechSemanticContextError(C.SOURCE_KIND_MISMATCH)
+        shape = definition.semantic_shape
+        subject = shape.subject_ref
+        if shape.subject_binding is CommunicativeSubjectBinding.TARGET:
+            if len(targets) != 1:
+                raise SpeechSemanticContextError(C.SOURCE_NOT_FOUND)
+            subject = targets[0]
+        elif shape.subject_binding is CommunicativeSubjectBinding.EVIDENCE:
+            if shape.evidence_index is None or shape.evidence_index >= len(evidence):
+                raise SpeechSemanticContextError(C.SOURCE_NOT_FOUND)
+            subject = evidence[shape.evidence_index]
+        fact = SpeechSemanticFact(
+            resolution.selected_ref,
+            SpeechSemanticFactKind.DISCOURSE,
+            subject,
+            shape.predicate,
+            shape.value,
+            claim_kind=shape.claim_kind,
+            polarity=shape.polarity,
+            certainty=shape.certainty,
+            degree=shape.degree,
+            evidence_refs=evidence,
+        )
+        facts[fact.fact_id] = fact
+        provenance[fact.fact_id] = SpeechSemanticFactProvenance(
+            fact.fact_id,
+            "SpeechSemantics",
+            "communicative_definition",
+            definition.definition_id,
+            definition.definition_revision,
+            policies.projection.policy_id,
+            policies.projection.revision,
+            definition.definition_id,
+            meaning.policy_id,
+            meaning.revision,
+            targets[0] if targets else None,
+            evidence,
+        )
+    constrained = {x.fact_ref for x in explicit_constraints}
+    if not constrained <= set(facts):
+        raise SpeechSemanticContextError(C.SOURCE_NOT_FOUND)
+    for constraint in explicit_constraints:
+        if policies.truth.project(facts[constraint.fact_ref]).rule is not constraint.rule:
+            raise SpeechSemanticContextError(C.TRUTH_RULE_UNRESOLVED)
+    constraints = tuple(explicit_constraints) + tuple(
+        policies.truth.project(f) for f in facts.values() if f.fact_id not in constrained
+    )
+    return facts, provenance, constraints
 
 
 class SpeechSemanticContextBuilder:
@@ -469,135 +642,8 @@ class SpeechSemanticContextBuilder:
         if not selected:
             raise SpeechSemanticContextError(C.SOURCE_NOT_FOUND)
         source_bindings = tuple(self._sources.resolve(r) for r in selected if r.source is not None)
-        projector = SpeechSemanticFactProjector(policies.projection)
-        explicit_constraints: list[SpeechTruthConstraint] = []
-        facts: dict[str, SpeechSemanticFact] = {}
-        provenance: dict[str, SpeechSemanticFactProvenance] = {}
-        for binding in source_bindings:
-            if isinstance(binding.value, SpeechSemanticConstraintSource):
-                constraint = binding.value.constraint
-                if (
-                    binding.resolution.role is not ExecutiveSpeechReferenceRole.CONSTRAINT
-                    or constraint.constraint_id != binding.resolution.selected_ref
-                ):
-                    raise SpeechSemanticContextError(C.SOURCE_IDENTITY_MISMATCH)
-                explicit_constraints.append(constraint)
-                continue
-            fact = projector.project(binding)
-            if fact.fact_id in facts and facts[fact.fact_id] != fact:
-                raise SpeechSemanticContextError(C.SOURCE_IDENTITY_MISMATCH)
-            facts[fact.fact_id] = fact
-            if binding.resolution.role is ExecutiveSpeechReferenceRole.CONSTRAINT:
-                rule = policies.truth.project(fact).rule
-                explicit_constraints.append(
-                    SpeechTruthConstraint(binding.resolution.selected_ref, fact.fact_id, rule)
-                )
-            source = binding.resolution.source
-            assert source is not None
-            provenance[fact.fact_id] = SpeechSemanticFactProvenance(
-                fact.fact_id,
-                source.source_owner,
-                source.source_contract_kind.value,
-                source.source_identity,
-                source.source_revision,
-                policies.projection.policy_id,
-                policies.projection.revision,
-            )
-        for resolution in selected:
-            if (
-                resolution.resolution_kind
-                is not ExecutiveSpeechResolutionKind.COMMUNICATIVE_ACT_DEFINITION
-            ):
-                continue
-            if (resolution.meaning_policy_id, resolution.meaning_policy_revision) != (
-                meaning.policy_id,
-                meaning.revision,
-            ):
-                raise SpeechSemanticContextError(C.SEMANTIC_POLICY_STALE)
-            definitions = [
-                d
-                for d in meaning.communicative_goal_catalog.definitions
-                if d.definition_id == resolution.definition_id
-                and d.definition_revision == resolution.definition_revision
-            ]
-            if len(definitions) != 1:
-                raise SpeechSemanticContextError(C.SOURCE_REVISION_MISMATCH)
-            definition = definitions[0]
-            targets = [
-                r.selected_ref for r in selected if r.role is ExecutiveSpeechReferenceRole.TARGET
-            ]
-            evidence = tuple(
-                r.selected_ref for r in selected if r.role is ExecutiveSpeechReferenceRole.EVIDENCE
-            )
-            eligible = [
-                s
-                for s in source_bindings
-                if s.resolution.role is ExecutiveSpeechReferenceRole.EVIDENCE
-                and s.resolution.source is not None
-                and s.resolution.source.source_contract_kind
-                in definition.evidence_requirement.source_contracts
-            ]
-            if len(eligible) < definition.evidence_requirement.minimum_count or (
-                definition.target_requirement.mode is CommunicativeTargetMode.REQUIRED
-                and len(targets) != 1
-            ):
-                raise SpeechSemanticContextError(C.SOURCE_NOT_FOUND)
-            for target in (
-                b
-                for b in source_bindings
-                if b.resolution.role is ExecutiveSpeechReferenceRole.TARGET
-            ):
-                assert target.resolution.source is not None
-                if (
-                    target.resolution.source.source_contract_kind
-                    not in definition.target_requirement.source_contracts
-                ):
-                    raise SpeechSemanticContextError(C.SOURCE_KIND_MISMATCH)
-            shape = definition.semantic_shape
-            subject = shape.subject_ref
-            if shape.subject_binding is CommunicativeSubjectBinding.TARGET:
-                if len(targets) != 1:
-                    raise SpeechSemanticContextError(C.SOURCE_NOT_FOUND)
-                subject = targets[0]
-            elif shape.subject_binding is CommunicativeSubjectBinding.EVIDENCE:
-                if shape.evidence_index is None or shape.evidence_index >= len(evidence):
-                    raise SpeechSemanticContextError(C.SOURCE_NOT_FOUND)
-                subject = evidence[shape.evidence_index]
-            fact = SpeechSemanticFact(
-                resolution.selected_ref,
-                SpeechSemanticFactKind.DISCOURSE,
-                subject,
-                shape.predicate,
-                shape.value,
-                claim_kind=shape.claim_kind,
-                polarity=shape.polarity,
-                certainty=shape.certainty,
-                degree=shape.degree,
-                evidence_refs=evidence,
-            )
-            facts[fact.fact_id] = fact
-            provenance[fact.fact_id] = SpeechSemanticFactProvenance(
-                fact.fact_id,
-                "SpeechSemantics",
-                "communicative_definition",
-                definition.definition_id,
-                definition.definition_revision,
-                policies.projection.policy_id,
-                policies.projection.revision,
-                definition.definition_id,
-                meaning.policy_id,
-                meaning.revision,
-                targets[0] if targets else None,
-                evidence,
-            )
-        constrained = {x.fact_ref for x in explicit_constraints}
-        if not constrained <= set(facts):
-            raise SpeechSemanticContextError(C.SOURCE_NOT_FOUND)
-        for constraint in explicit_constraints:
-            if policies.truth.project(facts[constraint.fact_ref]).rule is not constraint.rule:
-                raise SpeechSemanticContextError(C.TRUTH_RULE_UNRESOLVED)
-        constraints = tuple(explicit_constraints) + tuple(
-            policies.truth.project(f) for f in facts.values() if f.fact_id not in constrained
+        facts, provenance, constraints = _project_material(
+            selected, source_bindings, policies, meaning
         )
         candidate = decision.candidate
         revisions = RevisionVector(

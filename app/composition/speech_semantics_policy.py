@@ -1,19 +1,21 @@
 """#362のユーザー採用済みMeaningPolicy V1と既存Ownerへの注入境界。"""
 
-from collections.abc import Callable
 from dataclasses import dataclass
 
+from app.composition.speech_semantics_sources import (
+    ProductionSpeechSources,
+    build_projection_v1,
+    build_truth_v1,
+)
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
+from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
 from app.domain.executive.contracts import ExecutiveFactRef
 from app.domain.executive.speech_references import ExecutiveSpeechSourceBinding
 from app.domain.speech_semantics.production import (
     SpeechDeterministicDirectivePolicy,
     SpeechSemanticContextBuilder,
-    SpeechSemanticContextSourcePort,
-    SpeechSemanticFactProjectionPolicy,
     SpeechSemanticPolicyOwner,
     SpeechSemanticProductionPolicies,
-    SpeechTruthConstraintProjectionPolicy,
 )
 from app.domain.speech_semantics_vocabulary import (
     CommunicativeActDefinition,
@@ -36,17 +38,10 @@ from app.domain.speech_semantics_vocabulary import (
 )
 
 _MEANING_ID = "yura.speech-semantics.meaning"
-_GRATITUDE_SOURCES = (
-    SpeechSourceContractKind.GOAL,
-    SpeechSourceContractKind.COMMITMENT,
-    SpeechSourceContractKind.EXECUTION,
-    SpeechSourceContractKind.MEMORY,
-    SpeechSourceContractKind.ATTENTION,
-)
 _DEFINITIONS = (
     ("yura.communicative.greeting", CommunicativeActKind.GREETING, (), 0),
     ("yura.communicative.acknowledgement", CommunicativeActKind.ACKNOWLEDGEMENT, (), 0),
-    ("yura.communicative.gratitude", CommunicativeActKind.GRATITUDE, _GRATITUDE_SOURCES, 1),
+    ("yura.communicative.gratitude", CommunicativeActKind.GRATITUDE, (), 0),
     ("yura.communicative.apology", CommunicativeActKind.APOLOGY, (), 0),
     ("yura.communicative.request", CommunicativeActKind.REQUEST, (), 0),
     (
@@ -92,7 +87,7 @@ def build_speech_semantics_meaning_policy_v1(
     meaning = SpeechSemanticMeaningPolicy(
         _MEANING_ID,
         1,
-        SelfDisclosurePolicy.FORBIDDEN,
+        SelfDisclosurePolicy.FACT_GROUNDED,
         1,
         1,
         CommunicativeGoalCatalogView(
@@ -109,8 +104,7 @@ def build_speech_semantics_meaning_policy_v1(
 
 def build_speech_semantics_policy_owner_v1(
     *,
-    projection: SpeechSemanticFactProjectionPolicy,
-    truth: SpeechTruthConstraintProjectionPolicy,
+    runtime_subject_identity: RuntimeSubjectIdentity,
     bounds_policy: BrainOperationalBoundsPolicy,
     directive: SpeechDeterministicDirectivePolicy | None = None,
 ) -> SpeechSemanticPolicyOwner:
@@ -118,17 +112,12 @@ def build_speech_semantics_policy_owner_v1(
     return SpeechSemanticPolicyOwner(
         SpeechSemanticProductionPolicies(
             build_speech_semantics_meaning_policy_v1(bounds_policy=bounds_policy),
-            projection,
-            truth,
+            build_projection_v1(runtime_subject_identity),
+            build_truth_v1(),
             bounds_policy,
             directive,
         )
     )
-
-
-SpeechSourceBindingReader = Callable[
-    [tuple[ExecutiveFactRef, ...]], tuple[ExecutiveSpeechSourceBinding, ...]
-]
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,13 +125,13 @@ class ExecutiveSpeechPolicyEvidence:
     """元Fact bindingと、同じ意味Ownerのread-only catalogを合流する。"""
 
     owner: SpeechSemanticPolicyOwner
-    read_source_bindings: SpeechSourceBindingReader
+    sources: ProductionSpeechSources
 
     def capture_speech_sources(
         self,
         facts: tuple[ExecutiveFactRef, ...],
     ) -> tuple[CommunicativeGoalCatalogView | None, tuple[ExecutiveSpeechSourceBinding, ...]]:
-        bindings = self.read_source_bindings(facts)
+        bindings = self.sources.capture(facts)
         return self.owner.catalog_view(), bindings
 
 
@@ -158,16 +147,26 @@ class SpeechSemanticPolicyBinding:
 def bind_speech_semantics_policy_v1(
     owner: SpeechSemanticPolicyOwner,
     *,
-    sources: SpeechSemanticContextSourcePort,
-    read_source_bindings: SpeechSourceBindingReader,
+    sources: ProductionSpeechSources,
 ) -> SpeechSemanticPolicyBinding:
     """V1の実値を照合し、BuilderとExecutiveを同じOwnerへ接続する。"""
+    if type(sources) is not ProductionSpeechSources:
+        raise SpeechSemanticContextError(
+            SpeechSemanticContextFailureCode.UNSUPPORTED_SOURCE_CONTRACT
+        )
     policies = owner.publication().value
     meaning = require_meaning_policy(policies.meaning, policies.bounds)
     if meaning != build_speech_semantics_meaning_policy_v1(bounds_policy=policies.bounds):
         raise SpeechSemanticContextError(SpeechSemanticContextFailureCode.SEMANTIC_POLICY_STALE)
+    identity = policies.projection.runtime_subject_identity
+    if (
+        identity is None
+        or policies.projection != build_projection_v1(identity)
+        or policies.truth != build_truth_v1()
+    ):
+        raise SpeechSemanticContextError(SpeechSemanticContextFailureCode.PROJECTION_POLICY_STALE)
     return SpeechSemanticPolicyBinding(
         owner,
         SpeechSemanticContextBuilder(sources, owner.publication),
-        ExecutiveSpeechPolicyEvidence(owner, read_source_bindings),
+        ExecutiveSpeechPolicyEvidence(owner, sources),
     )

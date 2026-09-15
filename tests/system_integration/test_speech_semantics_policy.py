@@ -40,9 +40,8 @@ from app.domain.speech_semantics_vocabulary import (
     SpeechSourceContractKind as Contract,
 )
 from tests.domain.executive.test_executive import NOW, candidate, live_state, snapshot
-from tests.domain.speech_semantics.test_production_context import inputs, policies
 from tests.helpers.executive_requirements import fence_clock, make_authority
-from tests.helpers.goal_semantics import semantic_spec
+from tests.helpers.speech_production import IDENTITY, production_sources
 
 EXPECTED_IDS = {
     CommunicativeActKind.GREETING: "yura.communicative.greeting",
@@ -58,14 +57,10 @@ EXPECTED_IDS = {
 
 
 def binding() -> SpeechSemanticPolicyBinding:
-    test_policies = policies()
-    _, _, port = inputs()
     owner = build_speech_semantics_policy_owner_v1(
-        projection=test_policies.projection, truth=test_policies.truth, bounds_policy=BOUNDS
+        runtime_subject_identity=IDENTITY, bounds_policy=BOUNDS
     )
-    return bind_speech_semantics_policy_v1(
-        owner, sources=port, read_source_bindings=lambda facts: snapshot().speech_source_bindings
-    )
+    return bind_speech_semantics_policy_v1(owner, sources=production_sources())
 
 
 def committed(
@@ -132,7 +127,7 @@ def test_exact_production_v1_values_and_immutable_catalog() -> None:
     value = build_speech_semantics_meaning_policy_v1(bounds_policy=BOUNDS)
     assert value.policy_id == "yura.speech-semantics.meaning"
     assert value.revision == 1
-    assert value.self_disclosure_policy is SelfDisclosurePolicy.FORBIDDEN
+    assert value.self_disclosure_policy is SelfDisclosurePolicy.FACT_GROUNDED
     assert value.max_question_budget == value.max_new_direction_budget == 1
     catalog = value.communicative_goal_catalog
     assert (catalog.policy_id, catalog.policy_revision) == (value.policy_id, 1)
@@ -158,14 +153,8 @@ def test_exact_production_v1_values_and_immutable_catalog() -> None:
         assert definition.target_requirement.source_contracts == ()
         required = definition.evidence_requirement
         if definition.act_kind is CommunicativeActKind.GRATITUDE:
-            assert required.minimum_count == 1
-            assert set(required.source_contracts) == {
-                Contract.GOAL,
-                Contract.COMMITMENT,
-                Contract.EXECUTION,
-                Contract.MEMORY,
-                Contract.ATTENTION,
-            }
+            assert required.minimum_count == 0
+            assert required.source_contracts == ()
         elif definition.act_kind is CommunicativeActKind.COMMITMENT:
             assert required.minimum_count == 1
             assert required.source_contracts == (Contract.COMMITMENT,)
@@ -235,9 +224,13 @@ def test_evidence_requirements_reject_missing_or_wrong_typed_evidence(
 ) -> None:
     value = binding()
     decision = committed(value, EXPECTED_IDS[kind], evidence)
-    with pytest.raises(SpeechSemanticContextError) as error:
-        value.context_builder.build(decision, "intent-speech", captured_at=NOW)
-    assert error.value.code is C.SOURCE_NOT_FOUND
+    if kind is CommunicativeActKind.GRATITUDE:
+        built = value.context_builder.build(decision, "intent-speech", captured_at=NOW)
+        assert built.facts[0].evidence_refs == ()
+    else:
+        with pytest.raises(SpeechSemanticContextError) as error:
+            value.context_builder.build(decision, "intent-speech", captured_at=NOW)
+        assert error.value.code is C.SOURCE_NOT_FOUND
 
 
 def test_gratitude_preserves_authoritative_evidence_separately() -> None:
@@ -246,9 +239,9 @@ def test_gratitude_preserves_authoritative_evidence_separately() -> None:
     built = value.context_builder.build(decision, "intent-speech", captured_at=NOW)
     assert len(built.facts) == 2
     act = next(f for f in built.facts if f.kind is SpeechSemanticFactKind.DISCOURSE)
-    assert act.value == {"kind": "gratitude"} and act.evidence_refs == ("goal-1",)
+    assert act.value == {"kind": "gratitude"} and act.evidence_refs == ()
     evidence = next(p for p in built.fact_provenance if p.fact_id == "goal-1")
-    assert evidence.source_owner == "test-speech-source"
+    assert evidence.source_owner == "GoalCommitmentStore"
 
 
 @pytest.mark.parametrize("fault", ["missing", "policy_id", "revision", "fixture"])
@@ -283,13 +276,11 @@ def test_injection_rejects_missing_wrong_or_fixture_policy(fault: str) -> None:
     else:
         value = replace(
             value,
-            meaning=replace(meaning, self_disclosure_policy=SelfDisclosurePolicy.FACT_GROUNDED),
+            meaning=replace(meaning, self_disclosure_policy=SelfDisclosurePolicy.FORBIDDEN),
         )
-    _, _, sources = inputs()
+    sources = production_sources()
     with pytest.raises(SpeechSemanticContextError) as error:
-        bind_speech_semantics_policy_v1(
-            SpeechSemanticPolicyOwner(value), sources=sources, read_source_bindings=lambda facts: ()
-        )
+        bind_speech_semantics_policy_v1(SpeechSemanticPolicyOwner(value), sources=sources)
     assert error.value.code is (
         C.SEMANTIC_POLICY_UNAVAILABLE if fault == "missing" else C.SEMANTIC_POLICY_STALE
     )
@@ -344,73 +335,7 @@ def test_production_factory_does_not_import_test_policy() -> None:
 
 
 def test_commitment_uses_native_commitment_state_evidence() -> None:
-    from app.domain.contracts.finalization import AuthorityReadPublication
-    from app.domain.executive.speech_references import ExecutiveSpeechReferenceResolution
-    from app.domain.goals import CommitmentState, CommitmentStatus
-    from app.domain.speech_semantics import SpeechSemanticFact
-    from app.domain.speech_semantics.production import (
-        SourceValue,
-        SpeechSemanticContextSourcePort,
-        SpeechSemanticFactProjectionRule,
-        SpeechSemanticSourceRegistration,
-    )
-    from tests.helpers.speech_bindings import OWNER
-
-    state = CommitmentState(
-        "commitment-1",
-        "test-promised-action",
-        None,
-        ("event-1",),
-        "source-decision",
-        (),
-        CommitmentStatus.ACTIVE,
-        50,
-        50,
-        (),
-        (),
-        NOW,
-        NOW,
-        5,
-        semantic_commitment_spec=semantic_spec("test-promised-action"),
-    )
-
-    def read(identity: str) -> AuthorityReadPublication[SourceValue] | None:
-        return (
-            AuthorityReadPublication(state, (OWNER.participant.token(),))
-            if identity == state.commitment_id
-            else None
-        )
-
-    def project(
-        source: SourceValue, resolution: ExecutiveSpeechReferenceResolution
-    ) -> SpeechSemanticFact:
-        assert isinstance(source, CommitmentState)
-        return SpeechSemanticFact(
-            resolution.selected_ref,
-            SpeechSemanticFactKind.GENERAL,
-            source.commitment_id,
-            "test-commitment-status",
-            source.status.value,
-        )
-
-    test_policies = policies()
-    projection = replace(
-        test_policies.projection,
-        rules=(
-            SpeechSemanticFactProjectionRule(
-                Contract.COMMITMENT, project, lambda value: isinstance(value, CommitmentState)
-            ),
-        ),
-    )
-    owner = build_speech_semantics_policy_owner_v1(
-        projection=projection, truth=test_policies.truth, bounds_policy=BOUNDS
-    )
-    port = SpeechSemanticContextSourcePort(
-        (SpeechSemanticSourceRegistration("test-speech-source", Contract.COMMITMENT, read),)
-    )
-    value = bind_speech_semantics_policy_v1(
-        owner, sources=port, read_source_bindings=lambda facts: snapshot().speech_source_bindings
-    )
+    value = binding()
     decision = committed(value, "yura.communicative.commitment", ("commitment-1",))
     built = value.context_builder.build(decision, "intent-speech", captured_at=NOW)
     assert len(built.facts) == 2
@@ -433,13 +358,11 @@ def test_later_missing_policy_never_becomes_implicit_default() -> None:
     assert error.value.code is C.SEMANTIC_POLICY_UNAVAILABLE
 
 
-def test_v1_forbids_candidate_self_disclosure_even_when_grounded() -> None:
+def test_v1_rejects_ungrounded_self_disclosure() -> None:
     value = binding()
     decision = committed(value, "yura.communicative.greeting")
     built = value.context_builder.build(decision, "intent-speech", captured_at=NOW)
-    proposed = replace(
-        speech_candidate(built, 0, 0), self_disclosure=SelfDisclosurePolicy.FACT_GROUNDED
-    )
+    proposed = replace(speech_candidate(built, 0, 0), self_disclosure=SelfDisclosurePolicy.ALLOWED)
     with pytest.raises(ValueError):
         SpeechSemanticAuthority().commit(
             proposed,

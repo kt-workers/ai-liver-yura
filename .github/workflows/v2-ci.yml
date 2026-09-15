@@ -14,7 +14,6 @@ on:
   pull_request:
     branches:
       - rebuild/v2-foundation
-      - feature/661-speech-semantics-production-context
     types:
       - opened
       - reopened
@@ -58,12 +57,7 @@ jobs:
           pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
           head_sha="$(jq -r '.head.sha' <<<"$pr")"
           base_ref="$(jq -r '.base.ref' <<<"$pr")"
-          # #673の明示stackだけを追加し、それ以外のbaseは拒否する。
-          if [ "$base_ref" = "feature/661-speech-semantics-production-context" ]; then
-            test "$(jq -r '.head.ref' <<<"$pr")" = "feature/673-memory-reflection-subject-identity"
-          else
-            test "$base_ref" = "rebuild/v2-foundation"
-          fi
+          test "$base_ref" = "rebuild/v2-foundation"
           test "$head_sha" != "null"
           live_base_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$base_ref" --jq '.object.sha')"
           test -n "$live_base_sha"

@@ -22,6 +22,7 @@ from app.domain.executive.speech_references import (
 from app.domain.executive.speech_references import ExecutiveSpeechReferenceRole as Role
 from app.domain.executive.speech_references import ExecutiveSpeechResolutionKind as Kind
 from app.domain.goals import GoalKind, GoalState, GoalStatus, InterruptionPolicy
+from app.domain.goals.semantic_views import GoalCommitmentSemanticView
 from app.domain.speech_semantics.contracts import SpeechSemanticFact, SpeechTruthConstraint
 from app.domain.speech_semantics.production import (
     SourceValue,
@@ -86,20 +87,20 @@ def definition() -> CommunicativeActDefinition:
 def project_goal(
     value: SourceValue, resolution: ExecutiveSpeechReferenceResolution
 ) -> SpeechSemanticFact:
-    assert isinstance(value, GoalState)
+    assert isinstance(value, GoalCommitmentSemanticView)
     return SpeechSemanticFact(
         resolution.selected_ref,
         SpeechSemanticFactKind.GENERAL,
-        value.goal_id,
+        value.state_id,
         "test-goal-status",
-        value.status.value,
+        value.lifecycle_status.value,
         polarity=SemanticPolarity.AFFIRM,
         certainty=SemanticCertainty.CERTAIN,
     )
 
 
 def matches_goal(value: SourceValue) -> bool:
-    return isinstance(value, GoalState)
+    return isinstance(value, GoalCommitmentSemanticView)
 
 
 def policies() -> SpeechSemanticProductionPolicies:
@@ -207,7 +208,10 @@ def inputs() -> tuple[
         1,
         SpeechTruthConstraint("test-constraint", "goal-1", SpeechTruthRule.REQUIRE_MATCH),
     )
-    values: dict[str, SourceValue] = {"goal-1": goal, "test-constraint": constraint}
+    values: dict[str, SourceValue] = {
+        "goal-1": GoalCommitmentSemanticView(goal),
+        "test-constraint": constraint,
+    }
 
     def read(identity: str) -> AuthorityReadPublication[SourceValue] | None:
         value = values.get(identity)
