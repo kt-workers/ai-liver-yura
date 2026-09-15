@@ -34,9 +34,11 @@ from app.domain.executive import (
     PreconditionFact,
     build_executive_context_snapshot,
 )
+from app.domain.executive.speech_references import ExecutiveSpeechSourceBinding
 from app.domain.input_meaning import StructuredInputMeaning
 from app.domain.plan_execution.contracts import PlanExecutionScope
 from app.domain.plan_execution.progress_contracts import PlanProgressContext
+from app.domain.speech_semantics_vocabulary import CommunicativeGoalCatalogView
 from app.runtime.kernel import CancellationToken, RuntimeClock
 from app.usecases.ports.llm import LLMRolePort
 
@@ -55,6 +57,8 @@ class CoreExecutiveEvidence:
     plan_scopes: tuple[PlanExecutionScope, ...] = ()
     plan_progress_contexts: tuple[PlanProgressContext, ...] = ()
     activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
+    communicative_goal_catalog: CommunicativeGoalCatalogView | None = None
+    speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...] = ()
     capability_tokens: tuple[AuthorityGenerationToken, ...] = ()
     precondition_tokens: tuple[tuple[str, tuple[AuthorityGenerationToken, ...]], ...] = ()
 
@@ -73,6 +77,7 @@ class CoreExecutiveEvidence:
             "plan_progress_contexts",
             "capability_tokens",
             "activity_bindings",
+            "speech_source_bindings",
             "precondition_tokens",
         ):
             value = getattr(self, name)
@@ -233,6 +238,8 @@ class _ExecutiveOperation:
             appraisal_facts=current.appraisal_facts,
             bounds_policy=policy.bounds,
             activity_bindings=evidence.activity_bindings,
+            communicative_goal_catalog=evidence.communicative_goal_catalog,
+            speech_source_bindings=evidence.speech_source_bindings,
             plan_scopes=evidence.plan_scopes,
             plan_progress_contexts=evidence.plan_progress_contexts,
         )
@@ -262,7 +269,7 @@ class _ExecutiveOperation:
         requirements = await self.binding._evidence.requirements_for(snapshot, candidate)
         current = await self.read()
         assert self.evidence is not None
-        # 使用能力・前提条件の変化は既存の候補別検査へ渡す。その他の根拠は固定する。
+        # 能力・前提条件・Speech参照の変化は候補別の既存commit検査へ渡す。
         if (
             replace(
                 current,
@@ -270,6 +277,8 @@ class _ExecutiveOperation:
                 preconditions=self.evidence.preconditions,
                 capability_tokens=self.evidence.capability_tokens,
                 precondition_tokens=self.evidence.precondition_tokens,
+                communicative_goal_catalog=self.evidence.communicative_goal_catalog,
+                speech_source_bindings=self.evidence.speech_source_bindings,
             )
             != self.evidence
         ):
@@ -306,6 +315,8 @@ class _ExecutiveOperation:
             current.plan_progress_contexts,
             evidence_tokens=evidence_tokens,
             activity_bindings=current.activity_bindings,
+            communicative_goal_catalog=current.communicative_goal_catalog,
+            speech_source_bindings=current.speech_source_bindings,
         )
 
 

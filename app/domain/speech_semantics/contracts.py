@@ -3,9 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
 from datetime import datetime
-from enum import Enum
 from math import isfinite
-from typing import TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from app.domain.contracts import ExecutionStatus, RevisionVector
 from app.domain.contracts.common import (
@@ -23,51 +22,31 @@ from app.domain.executive import (
     ExecutiveIntentKind,
     SpeechIntentPayload,
 )
+from app.domain.speech_semantics_vocabulary import (
+    SelfDisclosurePolicy as SelfDisclosurePolicy,
+)
+from app.domain.speech_semantics_vocabulary import (
+    SemanticCertainty as SemanticCertainty,
+)
+from app.domain.speech_semantics_vocabulary import (
+    SemanticClaimKind as SemanticClaimKind,
+)
+from app.domain.speech_semantics_vocabulary import (
+    SemanticPolarity as SemanticPolarity,
+)
+from app.domain.speech_semantics_vocabulary import (
+    SpeechPropositionDisposition as SpeechPropositionDisposition,
+)
+from app.domain.speech_semantics_vocabulary import (
+    SpeechSemanticFactKind as SpeechSemanticFactKind,
+)
+from app.domain.speech_semantics_vocabulary import SpeechSemanticMeaningPolicy
+from app.domain.speech_semantics_vocabulary import (
+    SpeechTruthRule as SpeechTruthRule,
+)
 
-
-class SpeechSemanticFactKind(str, Enum):
-    GENERAL = "general"
-    EXECUTION = "execution"
-    RELATIONSHIP = "relationship"
-    DISCOURSE = "discourse"
-    SELF = "self"
-
-
-class SemanticClaimKind(str, Enum):
-    GENERAL = "general"
-    EXECUTION_STATUS = "execution_status"
-
-
-class SpeechPropositionDisposition(str, Enum):
-    REQUIRED = "required"
-    OPTIONAL = "optional"
-    FORBIDDEN = "forbidden"
-
-
-class SemanticPolarity(str, Enum):
-    AFFIRM = "affirm"
-    NEGATE = "negate"
-    UNKNOWN = "unknown"
-
-
-class SemanticCertainty(str, Enum):
-    CERTAIN = "certain"
-    LIKELY = "likely"
-    UNCERTAIN = "uncertain"
-    UNKNOWN = "unknown"
-
-
-class SelfDisclosurePolicy(str, Enum):
-    FORBIDDEN = "forbidden"
-    FACT_GROUNDED = "fact_grounded"
-    ALLOWED = "allowed"
-
-
-class SpeechTruthRule(str, Enum):
-    REQUIRE_MATCH = "require_match"
-    PRESERVE_UNKNOWN = "preserve_unknown"
-    FORBID_COMPLETION_CLAIM = "forbid_completion_claim"
-
+if TYPE_CHECKING:
+    from .production import SpeechSemanticContextGeneration, SpeechSemanticFactProvenance
 
 T = TypeVar("T")
 _PLAN_PROOF = object()
@@ -285,6 +264,10 @@ class SpeechSemanticContextSnapshot:
     captured_at: datetime
     deterministic_directive: DeterministicSpeechDirective | None = None
 
+    meaning_policy: SpeechSemanticMeaningPolicy | None = None
+    fact_provenance: tuple[SpeechSemanticFactProvenance, ...] = ()
+    generation: SpeechSemanticContextGeneration | None = None
+
     def __post_init__(self) -> None:
         if not isinstance(self.decision, CommittedExecutiveDecision):
             raise ValueError("decision must be CommittedExecutiveDecision")
@@ -328,6 +311,8 @@ class SpeechSemanticContextSnapshot:
         allowed_constraints = set(available) | constraint_ids
         if any(item not in allowed_constraints for item in payload.constraint_refs):
             raise ValueError("speech intent constraint is outside snapshot")
+        if self.generation is not None:
+            self.generation.validate_snapshot(self)
         if self.deterministic_directive is not None:
             if not isinstance(self.deterministic_directive, DeterministicSpeechDirective):
                 raise ValueError("deterministic_directive has an invalid type")
@@ -389,6 +374,14 @@ class SpeechSemanticContextSnapshot:
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "meaning_policy": None
+            if self.meaning_policy is None
+            else {
+                "policy_id": self.meaning_policy.policy_id,
+                "revision": self.meaning_policy.revision,
+            },
+            "generation": None if self.generation is None else self.generation.to_dict(),
+            "fact_provenance": [item.to_dict() for item in self.fact_provenance],
             "decision_id": self.decision.decision_id,
             "intent": self.intent.to_dict(),
             "source_event_ids": list(self.source_event_ids),

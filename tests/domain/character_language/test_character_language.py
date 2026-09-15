@@ -69,6 +69,8 @@ from app.domain.speech_semantics import (
     SpeechSemanticFactKind,
     SpeechSemanticPlan,
 )
+from tests.domain.speech_semantics.policy_fixture import explicit_meaning_policy
+from tests.helpers.executive_requirements import fence_clock
 from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 17, tzinfo=timezone.utc)
@@ -156,6 +158,9 @@ def semantic_plan() -> SpeechSemanticPlan:
         1,
         1,
         NOW,
+        meaning_policy=explicit_meaning_policy(
+            disclosure=SelfDisclosurePolicy.FORBIDDEN, questions=1, directions=1
+        ),
     )
     proposition = SpeechProposition(
         "proposition-required",
@@ -202,13 +207,14 @@ def semantic_plan() -> SpeechSemanticPlan:
         ("discourse-answer",),
         NOW,
     )
-    return SpeechSemanticAuthority().commit(
-        candidate,
-        context,
-        current_revisions=REVISIONS,
-        plan_id="semantic-plan-1",
-        committed_at=NOW,
-    )
+    with fence_clock(lambda: NOW):
+        return SpeechSemanticAuthority().commit(
+            candidate,
+            context,
+            current_revisions=REVISIONS,
+            plan_id="semantic-plan-1",
+            committed_at=NOW,
+        )
 
 
 def profile(*, revision: int = 3) -> CharacterLanguageProfile:

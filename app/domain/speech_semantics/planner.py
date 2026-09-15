@@ -26,6 +26,12 @@ from app.domain.llm import (
     StructuredPayload,
     validate_role_exchange,
 )
+from app.domain.speech_semantics_vocabulary import (
+    SpeechSemanticContextError,
+    SpeechSemanticContextFailureCode,
+    SpeechSemanticMeaningPolicy,
+    require_meaning_policy,
+)
 from app.usecases.ports.llm import LLMRolePort
 
 from .authority import SpeechSemanticAuthority
@@ -49,7 +55,7 @@ from .contracts import (
 )
 
 ROLE_ID = "speech_semantics"
-INPUT_SCHEMA = "yura.speech-semantics.context.v1"
+INPUT_SCHEMA = "yura.speech-semantics.context.v2"
 OUTPUT_SCHEMA = "yura.speech-semantics.candidate.v1"
 
 
@@ -57,6 +63,7 @@ OUTPUT_SCHEMA = "yura.speech-semantics.candidate.v1"
 class SpeechSemanticsPolicy:
     execution: LLMExecutionPolicy
     bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
+    meaning_policy: SpeechSemanticMeaningPolicy | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.execution, LLMExecutionPolicy):
@@ -94,6 +101,7 @@ def build_request(
 ) -> LLMRoleRequest:
     if not isinstance(snapshot, SpeechSemanticContextSnapshot):
         raise ValueError("snapshot must be SpeechSemanticContextSnapshot")
+    _validate_meaning(snapshot, policy)
     validate_speech_semantic_context_bounds(snapshot, policy.bounds_policy)
     require_aware(created_at, "created_at")
     if utc_instant(created_at) < utc_instant(snapshot.captured_at):
@@ -210,6 +218,7 @@ def commit_result(
     plan_id: str,
     policy: SpeechSemanticsPolicy,
 ) -> SpeechSemanticPlan:
+    _validate_meaning(snapshot, policy)
     validate_speech_semantic_context_bounds(snapshot, policy.bounds_policy)
     failure = validate_role_exchange(descriptor(policy), request, result)
     if failure is not None:
@@ -268,6 +277,7 @@ class SpeechSemanticsPlanner:
         plan_id: str,
         created_at: datetime,
     ) -> SpeechSemanticPlan:
+        _validate_meaning(snapshot, self._policy)
         validate_speech_semantic_context_bounds(snapshot, self._policy.bounds_policy)
         directive = snapshot.deterministic_directive
         if directive is not None:
@@ -395,3 +405,22 @@ def _proposition(value: object) -> SpeechProposition:
         _enum(SemanticClaimKind, item["claim_kind"], "claim_kind"),
         execution_status,
     )
+
+
+def _validate_meaning(
+    snapshot: SpeechSemanticContextSnapshot, policy: SpeechSemanticsPolicy
+) -> None:
+    meaning = require_meaning_policy(policy.meaning_policy, policy.bounds_policy)
+    validate_speech_semantic_context_bounds(snapshot, policy.bounds_policy)
+    if snapshot.meaning_policy != meaning or (
+        snapshot.self_disclosure_policy,
+        snapshot.max_question_budget,
+        snapshot.max_new_direction_budget,
+    ) != (
+        meaning.self_disclosure_policy,
+        meaning.max_question_budget,
+        meaning.max_new_direction_budget,
+    ):
+        raise SpeechSemanticContextError(SpeechSemanticContextFailureCode.SEMANTIC_POLICY_STALE)
+    if snapshot.generation is not None:
+        snapshot.generation.require_current()

@@ -509,11 +509,12 @@ def test_fence_checks_only_sources_used_by_verified_derivation(
     assert authority.has_committed(captured.trigger_id) is not used_source
 
 
-@pytest.mark.parametrize("source_count", [14, 15])
+@pytest.mark.parametrize("source_count", [13, 14])
 def test_fence_keeps_foundation_participant_limit(source_count: int) -> None:
     requirements, captured, current, _, _ = upstream_inputs(source_count)
     authority = ExecutiveDecisionAuthority(requirements)
-    if source_count == 14:
+    # Executive、要件Owner、Speech source Ownerもparticipant容量へ含める。
+    if source_count == 13:
         result = authority.commit(candidate(), captured, current=current, decision_id="limit")
         assert result.decision_id == "limit"
         assert result.plan_authorizations == ()

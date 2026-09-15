@@ -64,7 +64,7 @@ Provider await後、commit直前のcurrent policy世代がsnapshot世代と異�
 
 `ExecutiveIntent`は発話・身体・活動・注意の高水準要求、確定計画全体への明示的な実行承認、計画の完了評価を持つ。内容は汎用JSONではなく、`SpeechIntentPayload` / `BodyIntentPayload` / `ActivityIntentPayload` / `AttentionIntentPayload` / `PlanExecutionIntentPayload` / `PlanProgressIntentPayload`の個別の不変な型とする。意味目標・動作目標・対象・制約は空でない文字列の参照とし、制約群の重複を拒否する。確定時に上限付きの判断入力の根拠と照合する。最終台詞、計画手順列、音声合成の値、関節角、フレーム単位の操作、実行済みの事実を格納しない。
 
-Goal transitionはcreate / activate / reprioritize / suspend / resume / complete / abandon / supersede、Commitment transitionはcreate / activate / suspend / resume / release / fulfill / violateを表す。`GoalTransitionPayload`はoperationに応じてsemantic goal、priority、superseding goalだけを、`CommitmentTransitionPayload`はcreate時のsemantic commitmentだけを許可する。いずれもexpected goal revisionを持ち、対象・spec・payload参照はbounded Goal/Commitment factにgroundする。#366が後続で再検証・適用するintentである。
+Goal transitionはcreate / activate / reprioritize / suspend / resume / complete / abandon / supersede、Commitment transitionはcreate / activate / suspend / resume / release / fulfill / violateを表す。`GoalTransitionPayload`はoperationに応じてsemantic goal、priority、superseding goalだけを、`CommitmentTransitionPayload`はcreate時のsemantic commitmentだけを許可する。いずれもexpected goal revisionを持つ。CREATEのstate IDとsemantic refは新規identityであり、既存Factを要求しない。non-CREATEの対象と、既存Stateを指すpayload参照はboundedな同kind Factにgroundする。#366が後続で再検証・適用するintentである。
 
 ## 5. Commit Gate
 
@@ -94,7 +94,7 @@ LLM完了後、`ExecutiveLiveStatePort`はcommit直前のcurrent stateをimmutab
 
 ## 7. LLM Roleと並行性
 
-logical role IDは`executive_deliberation`、input schemaは`executive.context.v1`、output schemaは`executive.candidate.v1`とする。Provider固有型はdomainへ入れない。
+logical role IDは`executive_deliberation`、input schemaは`executive.context.v2`、output schemaは`executive.candidate.v2`とする。Provider固有型はdomainへ入れない。
 
 各requestは独立invokeされ、Executive全体を覆うglobal async lockや単一queueを持たない。background roleが遅延してもforeground requestはinvoke・live state取得・commit可能である。`ExecutiveDeliberator`はLLM開始前のcurrent値を引数として受け取らず、`await`完了後に`ExecutiveLiveStatePort`を呼ぶ。atomic lockは短い同期commitだけを保護し、awaitや外部callbackを含めない。
 
@@ -234,3 +234,62 @@ Direct ACTIVITYは`ActivityIntentPayload.binding_ref`で、snapshotに提示さ�
 `ExecutiveRequirementsOwner`による完全一致照合を維持し、選択binding・schema・実値Owner・provider非依存のoperation Ownerと、Requirements・利用したprovenance・evidence・確定先の実際のtokenをFenceへ含める。fact参照数とdistinct participant総数は独立した制約である。同じ正規Ownerの複数factは同じtokenを使用できるが、独立Ownerは統合しない。総数16以下は通常検査を経て確定可能、17以上は既存#632の`INVALID_LOCK_CONFIGURATION`で非確定とする。source数だけの固定上限へ読み替えない。
 
 確定判断は検証済みpublicationを保持し、#612が操作を再選択しない。bindingが0件でも活動以外の判断を妨げない。
+
+
+## Speech用の参照選択と意味定義catalog（#661）
+
+Speech Semanticsのproduction入力供給は[speech_semantics_contracts.md 第11節](speech_semantics_contracts.md#11-production入力の供給契約661)を主正本とする。
+
+`ExecutiveFactRef`はExecutiveのbounded context/read modelである。payloadはsnapshot transportであって、下流のsemantic Authorityではない。下流Ownerはfact ID / kind / expected revisionと元Ownerのpublic typed valueを解決し、payloadから発話のsubject / predicate / polarity / certainty / degree / truth ruleを推測しない。
+
+#362がversioned immutableな`CommunicativeActDefinition`群を定義し、bounded `CommunicativeGoalCatalogView`としてExecutive contextへ公開する。これはread-only vocabularyであり、今回の発話行為・Goal・Actionを選ぶAuthorityはExecutiveに留まる。Executiveは定義の意味を生成・変更せず、#362は今回のactを選択しない。
+
+Speechの`semantic_goal_ref`は元typed Factまたはcatalog definitionを参照する。exact membershipから`UPSTREAM_FACT / COMMUNICATIVE_ACT_DEFINITION`を識別し、両集合へのID衝突・unknown・catalog外refは拒否する。自由文字列を生成しただけでは参照を採用しない。ID prefixの解析で種類を推測しない。catalogのdefinition revision / policy generationを要求へfreezeし、commit直前のcurrent値と照合する。
+
+Speech参照の解決記録は既存commitで検証して確定結果に束縛する。元Factは元snapshotのID・kind・revision、catalogはdefinition ID・revision・MeaningPolicy generationを保持する。後続がdecision IDと文字列だけから元参照の種類・世代を補作する契約にはしない。catalog更新中の古い選択を新しい定義へ付け替えず非確定とする。current確認から確定までの既存同期・Fence境界を保持する。
+
+Executiveはtarget / evidence / forbidden claim / constraint参照も選択するが、元Fact値、SpeechSemanticFactのfacet、truth rule、self-disclosure、semantic budgetは決定しない。gratitudeの定義は#362、実際に助けられたという事実は元Owner、今回どのactと根拠を使うかはExecutiveという分離を維持する。既存の能力・事前条件・Goal/Action承認の責務をcatalogへ移さない。
+
+
+### catalog transportの固定配置とD10（#662 Design finding対応）
+
+`ExecutiveContextSnapshot.communicative_goal_catalog`に#362のimmutable `CommunicativeGoalCatalogView | None`を保持する。generic Factへcatalogを格納しない。非提供は明示nullであり、non-Speechと元typed Factを意味目標にするSpeechは許可するが、definition選択には提供を必須とする。
+
+inputのserialized shapeを変更するため`executive.context.v2`を採用する。candidateは#663のCREATE semantic specを加えた`executive.candidate.v2`とする。Speech参照選択のshapeは維持する。v1 inputへfieldを追加する互換運用は禁止する。
+
+`ExecutiveLiveStatePort`がcommit直前に再取得したcurrent公開を`ExecutiveCommitState.communicative_goal_catalog`へ格納する。使用するdefinitionのID / revision / 内容、MeaningPolicy generation、共有bounds generationを要求開始値と照合し、正規同期境界で確定する。
+
+確定先は`CommittedExecutiveDecision.speech_reference_resolutions: tuple[ExecutiveSpeechReferenceResolution, ...]`に固定する。独立publicationを別途発行しない。Speech intentごとの共通fieldと排他的variant、current取得、non-Speech時の扱いはSpeech正本§11.9を正とする。LLM candidateがresolutionを供給することは禁止する。
+
+catalog専用容量は共有policyの`communicative_catalog`（64件 / definition 4096 bytes / view 524288 bytes）、snapshot全体は`executive.max_context_json_bytes`（8388608 bytes）とする。実Fact枠を流用せず、D10正本§15の全体計測も行う。超過はD10第15節で定義する`ExecutiveContextError(EXECUTIVE_CONTEXT_TOO_LARGE)`へ収束させ、definitionを落とさない。
+
+
+### 全Speech required参照の確定搬送（#662追加finding対応）
+
+確定結果の`speech_reference_resolutions`へsemantic goal / target / evidence / forbidden claim / constraintを統合する。semantic goal専用fieldは設けない。主正本はSpeech §11.9の`ExecutiveSpeechReferenceResolution`であり、`(intent_id, role, selected_ref)`ごとにexactly oneを保持する。欠落・余剰・重複・非Speech記録は非確定とする。
+
+元Ownerの解決根拠は`ExecutiveContextSnapshot.speech_source_bindings`、commit直前の再取得値は`ExecutiveCommitState.speech_source_bindings`に置く。両方とも`tuple[ExecutiveSpeechSourceBinding, ...]`で、元Owner / public contract kind / identity / revisionと、Factの場合のfact ID / kind / revisionを持つ。Factは開始snapshotのExecutiveFactRefと一致を必要とし、専用制約は明示登録されたOwnerのtyped公開と照合する。全source fieldの現在性を正規commit境界で検証する。
+
+設計中のinput v2はcatalogとこのtyped binding集合をserializeする。candidate v2のSpeech意図は参照を選択するだけで、resolutionを生成しない。COMMUNICATIVE_ACT_DEFINITIONはSEMANTIC_GOALだけ、TYPED_CONSTRAINTはCONSTRAINTだけに許可する。catalog / Fact / constraintのID衝突は拒否する。後続へは同じCommittedExecutiveDecisionだけを渡し、元snapshotへの後日アクセスや別publicationを前提にしない。
+
+## Goal / Commitment CREATEの意味内容（#663）
+
+CREATEは[Goal / Commitment意味内容契約](goal_commitment_semantic_contracts.md)のtyped specを必須とし、Executiveが選択・確定して#366へ渡す。candidateはexecutive.candidate.v2、inputはexecutive.context.v2を用いる。non-CREATEはspecを持たず、既存内容を変更しない。
+
+
+## #663 CREATE identityと搬送互換性
+
+CREATEのgoal_spec_ref / semantic_goal_ref、commitment_spec_ref / semantic_commitment_refは新しく導入するidentityであり、既存GOAL / COMMITMENT Factへのmembershipを要求しない。対応するspec.semantic_refとの一致は必須。新state IDはcurrent同kind Stateと重複できず、Executiveのbounded同kind Factとの照合に加え、#366 Storeでも最終duplicate検査を行う。
+
+CREATEでもreason_refs、REFERENCE subject_ref、Goalのtarget_ref / commitment_refs / precondition_ids / completion_condition_refs、Commitmentのcounterparty_ref / related_goal_refs / due_condition_refs / release_condition_refsは既存typed/bounded規則に従う。non-CREATEのgoal_ref / commitment_refおよびSUPERSEDEのsuperseding_goal_refは既存の同kind State Factを必須とする。
+
+既存BrainOperationalBoundsPolicy.executive.max_fact_payload_json_bytes（16384）を意味上限の新設ではなくExecutiveへのtransport compatibility boundとして適用する。candidate境界でCREATE spec単体のcanonical JSON UTF-8 bytesを検査する。#366 Storeには既存shared boundsを注入し、batchのlocal copy構築後、snapshotの更新前に完全なGoalState.to_dict() / CommitmentState.to_dict()の同byte数を検査する。超過はbatch全体非適用、State revision不変とし、切捨てやcommit後の保存失敗への転嫁を禁止する。復元時にも同じ上限を検査する。合法Stateの保存不可時には既存のin-memory継続契約を維持する。新D10 field / 数値 / generationは追加しない。
+
+
+### #661：production Speech source captureの採用済みOwner整合
+
+speech_semantics_contracts.md §11.11–11.14を#362投影の正本とする。ExecutiveSpeechSourceBindingはtransportであり、任意DTO注入を元Owner publicationの代わりにしない。開始snapshot/current commitは実GoalCommitmentStore.goal_semantic_publication / commitment_semantic_publication、MemoryStoreAuthority.read_semantic_assertion_publication、ActivityExecutionAuthority.snapshot_publicationから、同時取得したtyped値とOwner tokenでexact bindingを構成する。current commitで再取得・token照合し、元Owner participantを既存最終fenceへ渡す。staleをlatest revisionへ付替えない。
+
+Executiveは参照選択とtyped resolutionの確定を維持し、Goal/Commitment modalityやMemory時間意味のSpeech投影は所有しない。ATTENTIONはExecutive context/selection用途を維持するが、V1 Speech material sourceとして登録しない。external TYPED_CONSTRAINTもV1登録しない。Fact/catalog/constraint ID collision検査と全required refのexactly one解決は維持する。
+
+MeaningPolicy V1の採用値はFACT_GROUNDED / 1 / 1。GRATITUDEのevidence要件はsources=() / minimum_count=0、COMMITMENTは(COMMITMENT,) / 1。これはcatalog vocabularyの供給でありExecutiveのact選択を#362へ移さない。本reconciliationはdesign-only、capture reader等のproduction修正はpendingである。

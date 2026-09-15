@@ -89,6 +89,8 @@ from app.domain.speech_semantics import (
     SpeechSemanticFactKind,
     SpeechSemanticPlan,
 )
+from tests.domain.speech_semantics.policy_fixture import explicit_meaning_policy
+from tests.helpers.executive_requirements import fence_clock
 from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 17, 12, 0, tzinfo=timezone.utc)
@@ -173,6 +175,9 @@ def _semantic_plan() -> SpeechSemanticPlan:
         0,
         0,
         NOW,
+        meaning_policy=explicit_meaning_policy(
+            disclosure=SelfDisclosurePolicy.FACT_GROUNDED, questions=0, directions=0
+        ),
     )
     required = SpeechProposition(
         "prop-required",
@@ -210,13 +215,14 @@ def _semantic_plan() -> SpeechSemanticPlan:
         (),
         NOW,
     )
-    return SpeechSemanticAuthority().commit(
-        candidate,
-        context,
-        current_revisions=REVISIONS,
-        plan_id="plan-1",
-        committed_at=NOW,
-    )
+    with fence_clock(lambda: NOW):
+        return SpeechSemanticAuthority().commit(
+            candidate,
+            context,
+            current_revisions=REVISIONS,
+            plan_id="plan-1",
+            committed_at=NOW,
+        )
 
 
 def _utterance(
@@ -442,9 +448,7 @@ def test_material_content_can_also_be_directed_question() -> None:
     blind = authority.commit_blind(
         _blind_candidate(
             snapshot,
-            units=(
-                _unit(acts=(BlindInteractionAct.DIRECTED_QUESTION,)),
-            ),
+            units=(_unit(acts=(BlindInteractionAct.DIRECTED_QUESTION,)),),
         ),
         snapshot,
         observation_id="blind-observation",
@@ -470,10 +474,7 @@ def test_material_content_can_also_be_directed_question() -> None:
         committed_at=NOW + timedelta(seconds=3),
     )
     assert acceptance.state is SemanticAcceptanceState.REJECTED
-    assert (
-        SemanticRejectionCategory.QUESTION_BUDGET_EXCEEDED
-        in acceptance.rejection_categories
-    )
+    assert SemanticRejectionCategory.QUESTION_BUDGET_EXCEEDED in acceptance.rejection_categories
 
 
 def test_material_content_cannot_be_downgraded_to_style() -> None:
@@ -542,9 +543,7 @@ def test_evidence_must_exist_in_actual_utterance() -> None:
     snapshot = _snapshot()
     candidate = _blind_candidate(
         snapshot,
-        units=(
-            _unit(quote="存在しない引用"),
-        ),
+        units=(_unit(quote="存在しない引用"),),
     )
     with pytest.raises(ValueError, match="ground"):
         SemanticVerificationAuthority().commit_blind(
@@ -605,10 +604,7 @@ def test_unsupported_extra_material_content_is_rejected() -> None:
         committed_at=NOW + timedelta(seconds=3),
     )
     assert acceptance.state is SemanticAcceptanceState.REJECTED
-    assert (
-        SemanticRejectionCategory.UNSUPPORTED_EXTRA_CLAIM
-        in acceptance.rejection_categories
-    )
+    assert SemanticRejectionCategory.UNSUPPORTED_EXTRA_CLAIM in acceptance.rejection_categories
 
 
 class _SequencePort:

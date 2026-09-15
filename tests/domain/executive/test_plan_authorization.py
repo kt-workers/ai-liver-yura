@@ -294,7 +294,7 @@ async def test_authorization_uses_clock_after_live_state_wait(
                 success(request),
                 completed_at=NOW + timedelta(seconds=1),
                 started_at=NOW,
-                output=StructuredPayload("executive.candidate.v1", cast(JsonValue, raw)),
+                output=StructuredPayload("executive.candidate.v2", cast(JsonValue, raw)),
             )
 
     class LiveState:

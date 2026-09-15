@@ -21,12 +21,22 @@ from app.domain.contracts.common import (
     utc_instant,
 )
 from app.domain.contracts.finalization import AuthorityGenerationToken
+from app.domain.goal_commitment_semantics import GoalCommitmentSemanticSpec, require_semantic_spec
 from app.domain.input_meaning import StructuredInputMeaning
 from app.domain.plan_execution.contracts import PlanExecutionAuthorization, PlanExecutionScope
 from app.domain.plan_execution.progress_contracts import (
     PlanProgressAssessment,
     PlanProgressContext,
     PlanStepCompletionClaim,
+)
+from app.domain.speech_semantics_vocabulary import CommunicativeGoalCatalogView
+
+from .speech_references import (
+    ExecutiveFactKind as ExecutiveFactKind,
+)
+from .speech_references import (
+    ExecutiveSpeechReferenceResolution,
+    ExecutiveSpeechSourceBinding,
 )
 
 if TYPE_CHECKING:
@@ -54,22 +64,6 @@ class ExecutiveInterruptibility(str, Enum):
     INTERRUPTIBLE = "interruptible"
     SOFT_CANCEL_ONLY = "soft_cancel_only"
     NON_INTERRUPTIBLE = "non_interruptible"
-
-
-class ExecutiveFactKind(str, Enum):
-    PLAN = "plan"
-    GOAL = "goal"
-    COMMITMENT = "commitment"
-    MEMORY_EVIDENCE = "memory_evidence"
-    RELATIONSHIP = "relationship"
-    ACTIVITY = "activity"
-    EXECUTION = "execution"
-    TURN = "turn"
-    ATTENTION = "attention"
-    SPEECH = "speech"
-    BODY = "body"
-    TIME = "time"
-    ENVIRONMENT = "environment"
 
 
 class ExecutiveIntentKind(str, Enum):
@@ -269,7 +263,26 @@ class ExecutiveCommitState:
     evidence_tokens: tuple[AuthorityGenerationToken, ...] = ()
     activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
 
+    communicative_goal_catalog: CommunicativeGoalCatalogView | None = None
+    speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...] = ()
+
     def __post_init__(self) -> None:
+        if self.communicative_goal_catalog is not None and not isinstance(
+            self.communicative_goal_catalog, CommunicativeGoalCatalogView
+        ):
+            raise ValueError("発話行為catalogの型が不正です")
+        object.__setattr__(
+            self,
+            "speech_source_bindings",
+            _owned(
+                self.speech_source_bindings, ExecutiveSpeechSourceBinding, "speech_source_bindings"
+            ),
+        )
+        if len({x.selected_ref for x in self.speech_source_bindings}) != len(
+            self.speech_source_bindings
+        ):
+            raise ValueError("Speech source bindingの参照が重複しています")
+
         object.__setattr__(
             self,
             "activity_bindings",
@@ -331,7 +344,26 @@ class ExecutiveContextSnapshot:
     requirements_generation: RequirementsGeneration | None = None
     activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
 
+    communicative_goal_catalog: CommunicativeGoalCatalogView | None = None
+    speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...] = ()
+
     def __post_init__(self) -> None:
+        if self.communicative_goal_catalog is not None and not isinstance(
+            self.communicative_goal_catalog, CommunicativeGoalCatalogView
+        ):
+            raise ValueError("発話行為catalogの型が不正です")
+        object.__setattr__(
+            self,
+            "speech_source_bindings",
+            _owned(
+                self.speech_source_bindings, ExecutiveSpeechSourceBinding, "speech_source_bindings"
+            ),
+        )
+        if len({x.selected_ref for x in self.speech_source_bindings}) != len(
+            self.speech_source_bindings
+        ):
+            raise ValueError("Speech source bindingの参照が重複しています")
+
         object.__setattr__(
             self,
             "activity_bindings",
@@ -439,6 +471,17 @@ class ExecutiveContextSnapshot:
         }
 
 
+def executive_context_to_wire_v2(snapshot: ExecutiveContextSnapshot) -> dict[str, object]:
+    """凍結したv1 wireを保持し、current v2の追加fieldを明示する。"""
+    return {
+        **snapshot.to_dict(),
+        "communicative_goal_catalog": None
+        if snapshot.communicative_goal_catalog is None
+        else snapshot.communicative_goal_catalog.to_dict(),
+        "speech_source_bindings": [x.to_dict() for x in snapshot.speech_source_bindings],
+    }
+
+
 def build_executive_context_snapshot(
     *,
     trigger_id: str,
@@ -460,6 +503,8 @@ def build_executive_context_snapshot(
     plan_scopes: tuple[PlanExecutionScope, ...] = (),
     plan_progress_contexts: tuple[PlanProgressContext, ...] = (),
     activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = (),
+    communicative_goal_catalog: CommunicativeGoalCatalogView | None = None,
+    speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...] = (),
 ) -> ExecutiveContextSnapshot:
     """信頼済みowner入力から、共有容量方針に従うExecutive snapshotを構築する。"""
     if not isinstance(bounds_policy, BrainOperationalBoundsPolicy):
@@ -545,6 +590,8 @@ def build_executive_context_snapshot(
         plan_scopes,
         plan_progress_contexts,
         activity_bindings=activity_bindings,
+        communicative_goal_catalog=communicative_goal_catalog,
+        speech_source_bindings=speech_source_bindings,
     )
 
 
@@ -780,6 +827,8 @@ class GoalTransitionPayload:
     completion_condition_refs: tuple[str, ...] = ()
     interruption_policy: str | None = None
 
+    semantic_goal_spec: GoalCommitmentSemanticSpec | None = None
+
     def __post_init__(self) -> None:
         for name in (
             "semantic_goal_ref",
@@ -831,7 +880,10 @@ class GoalTransitionPayload:
         )
 
     def validate_for(self, operation: GoalTransitionOperation) -> None:
+        if operation is not GoalTransitionOperation.CREATE and self.semantic_goal_spec is not None:
+            raise ValueError("non-CREATEにsemantic specを渡せません")
         if operation is GoalTransitionOperation.CREATE:
+            require_semantic_spec(self.semantic_goal_spec, self.semantic_goal_ref)
             if (
                 self.semantic_goal_ref is None
                 or self.priority is None
@@ -880,17 +932,15 @@ class GoalTransitionPayload:
         )
 
     def goal_fact_reference_ids(self) -> tuple[str, ...]:
-        return tuple(
-            value
-            for value in (self.semantic_goal_ref, self.superseding_goal_ref)
-            if value is not None
-        )
+        return tuple(value for value in (self.superseding_goal_ref,) if value is not None)
 
     def commitment_fact_reference_ids(self) -> tuple[str, ...]:
         return self.commitment_refs
 
     def bounded_reference_ids(self) -> tuple[str, ...]:
         return (
+            () if self.semantic_goal_spec is None else self.semantic_goal_spec.reference_ids()
+        ) + (
             (() if self.target_ref is None else (self.target_ref,))
             + self.precondition_ids
             + self.completion_condition_refs
@@ -899,6 +949,9 @@ class GoalTransitionPayload:
     def to_dict(self) -> dict[str, object]:
         return {
             "semantic_goal_ref": self.semantic_goal_ref,
+            "semantic_goal_spec": None
+            if self.semantic_goal_spec is None
+            else self.semantic_goal_spec.to_dict(),
             "priority": self.priority,
             "superseding_goal_ref": self.superseding_goal_ref,
             "goal_kind": self.goal_kind,
@@ -963,6 +1016,8 @@ class CommitmentTransitionPayload:
     due_condition_refs: tuple[str, ...] = ()
     release_condition_refs: tuple[str, ...] = ()
 
+    semantic_commitment_spec: GoalCommitmentSemanticSpec | None = None
+
     def __post_init__(self) -> None:
         if self.semantic_commitment_ref is not None:
             require_identifier(self.semantic_commitment_ref, "semantic_commitment_ref")
@@ -980,7 +1035,13 @@ class CommitmentTransitionPayload:
                 raise ValueError(f"{name} must be an int between 0 and 100")
 
     def validate_for(self, operation: CommitmentTransitionOperation) -> None:
+        if (
+            operation is not CommitmentTransitionOperation.CREATE
+            and self.semantic_commitment_spec is not None
+        ):
+            raise ValueError("non-CREATEにsemantic specを渡せません")
         if operation is CommitmentTransitionOperation.CREATE:
+            require_semantic_spec(self.semantic_commitment_spec, self.semantic_commitment_ref)
             if (
                 self.semantic_commitment_ref is None
                 or self.strength is None
@@ -1008,13 +1069,17 @@ class CommitmentTransitionPayload:
         )
 
     def commitment_fact_reference_ids(self) -> tuple[str, ...]:
-        return () if self.semantic_commitment_ref is None else (self.semantic_commitment_ref,)
+        return ()
 
     def goal_fact_reference_ids(self) -> tuple[str, ...]:
         return self.related_goal_refs
 
     def bounded_reference_ids(self) -> tuple[str, ...]:
         return (
+            ()
+            if self.semantic_commitment_spec is None
+            else self.semantic_commitment_spec.reference_ids()
+        ) + (
             (() if self.counterparty_ref is None else (self.counterparty_ref,))
             + self.due_condition_refs
             + self.release_condition_refs
@@ -1023,6 +1088,9 @@ class CommitmentTransitionPayload:
     def to_dict(self) -> dict[str, object]:
         return {
             "semantic_commitment_ref": self.semantic_commitment_ref,
+            "semantic_commitment_spec": None
+            if self.semantic_commitment_spec is None
+            else self.semantic_commitment_spec.to_dict(),
             "counterparty_ref": self.counterparty_ref,
             "related_goal_refs": list(self.related_goal_refs),
             "strength": self.strength,
@@ -1199,7 +1267,19 @@ class CommittedExecutiveDecision:
     evidence_tokens: tuple[AuthorityGenerationToken, ...] = ()
     activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
 
+    speech_reference_resolutions: tuple[ExecutiveSpeechReferenceResolution, ...] = ()
+
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "speech_reference_resolutions",
+            _owned(
+                self.speech_reference_resolutions,
+                ExecutiveSpeechReferenceResolution,
+                "speech_reference_resolutions",
+            ),
+        )
+
         object.__setattr__(
             self,
             "activity_bindings",
@@ -1283,6 +1363,9 @@ class CommittedExecutiveDecision:
         from .requirements import project
 
         return {
+            "speech_reference_resolutions": [
+                x.to_dict() for x in self.speech_reference_resolutions
+            ],
             "activity_bindings": [p.to_dict() for p in self.activity_bindings],
             "evidence_tokens": project(self.evidence_tokens),
             "requirement_derivations": [item.to_dict() for item in self.requirement_derivations],

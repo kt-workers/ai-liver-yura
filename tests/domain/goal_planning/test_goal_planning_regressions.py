@@ -30,6 +30,7 @@ from app.domain.goals import (
     InterruptionPolicy,
 )
 from tests.helpers.activity_binding import planning_binding
+from tests.helpers.goal_semantics import semantic_spec
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(9, 4, 2)
@@ -52,6 +53,7 @@ def goal() -> GoalState:
         NOW,
         NOW,
         3,
+        semantic_goal_spec=semantic_spec("semantic-goal-1"),
     )
 
 

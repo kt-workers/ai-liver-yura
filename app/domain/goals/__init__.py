@@ -1,3 +1,11 @@
+from app.domain.goal_commitment_semantics import (
+    GoalCommitmentSemanticCertainty,
+    GoalCommitmentSemanticModality,
+    GoalCommitmentSemanticPolarity,
+    GoalCommitmentSemanticSpec,
+    GoalCommitmentSemanticSubjectKind,
+)
+
 from .contracts import (
     AutonomyTrigger,
     AutonomyTriggerKind,
@@ -17,10 +25,17 @@ from .contracts import (
     GoalStatus,
     InterruptionPolicy,
 )
+from .semantic_views import GoalCommitmentSemanticView
 from .store import GoalCommitmentStore
 from .views import autonomy_triggers, build_goal_context_view
 
 __all__ = [
+    "GoalCommitmentSemanticSpec",
+    "GoalCommitmentSemanticSubjectKind",
+    "GoalCommitmentSemanticPolarity",
+    "GoalCommitmentSemanticModality",
+    "GoalCommitmentSemanticCertainty",
+    "GoalCommitmentSemanticView",
     "AutonomyTrigger",
     "AutonomyTriggerKind",
     "DueCommitmentOrder",

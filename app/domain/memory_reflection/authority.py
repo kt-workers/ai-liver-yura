@@ -18,6 +18,7 @@ from .contracts import (
     ReflectionSupportObservation,
     ReflectionSupportRelation,
     candidate_from_accepted_proposal,
+    subject_identity_is_grounded,
 )
 
 
@@ -48,6 +49,10 @@ class ReflectionCandidateAuthority:
             return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_STALE)
         if not self._relation_hints_current(context, proposal):
             return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_STALE)
+        if not subject_identity_is_grounded(
+            context, proposal.subject_identity, proposal.source_refs
+        ):
+            return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE)
         if not self._source_claim_is_allowed(proposal, source_map):
             return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE)
         if support is None:
@@ -60,6 +65,13 @@ class ReflectionCandidateAuthority:
         if not set(support_refs).issubset(source_map):
             return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE)
         if not set(support.evidence_refs).issubset(proposal.source_refs):
+            return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE)
+        if (
+            support.support_relation is ReflectionSupportRelation.SUPPORTED
+            and not subject_identity_is_grounded(
+                context, proposal.subject_identity, support.evidence_refs
+            )
+        ):
             return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE)
         status = self._support_status(proposal, support)
         if status is not ReflectionCandidateStatus.ACCEPTED_FOR_STORE_SUBMISSION:
@@ -77,6 +89,8 @@ class ReflectionCandidateAuthority:
         self, context: ReflectionContextSnapshot, proposal: MemoryCandidateProposal
     ) -> ReflectionCandidateResult:
         """trusted callerだけがclosed policyを満たしたexact captureへ使う入口。"""
+        if proposal.assertion_semantics is not None:
+            return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_POLICY)
         return self._accept_deterministic(context, proposal)
 
     def _accept_deterministic(
@@ -91,6 +105,10 @@ class ReflectionCandidateAuthority:
             if source.source_ref in proposal.source_refs
         ) or not self._relation_hints_current(context, proposal):
             return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_STALE)
+        if not subject_identity_is_grounded(
+            context, proposal.subject_identity, proposal.source_refs
+        ):
+            return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE)
         if not self._source_claim_is_allowed(proposal, source_map):
             return self._rejected(proposal, ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE)
         if proposal.proposed_kind is not MemoryKind.WORKING and not any(

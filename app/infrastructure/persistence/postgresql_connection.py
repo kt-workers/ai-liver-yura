@@ -119,6 +119,7 @@ class PostgresDatabase:
     """上限付き接続群を所有する。同期入口は実行ループの外から使用する。"""
 
     def __init__(self, pool: PostgresPool, policy: PostgresConnectionPolicy) -> None:
+        self.memory_namespace: tuple[object, ...] = ("postgres-instance", id(self))
         self._pool = pool
         self.policy = policy
         self._closed = False
@@ -153,7 +154,9 @@ class PostgresDatabase:
             )
         except Exception as error:
             raise normalize_postgres_error(error) from None
-        return cls(cast(PostgresPool, pool), policy)
+        database = cls(cast(PostgresPool, pool), policy)
+        database.memory_namespace = ("postgres", endpoint.host, endpoint.port, endpoint.database)
+        return database
 
     def transaction(self) -> AbstractContextManager[PostgresConnection]:
         if self._closed:

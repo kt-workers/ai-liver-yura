@@ -43,6 +43,7 @@ class Reader:
             values.facts,
             values.capabilities,
             values.preconditions,
+            speech_source_bindings=values.speech_source_bindings,
         )
         self.requirements = live_state().requirements
         self.reads = 0
@@ -83,7 +84,7 @@ class Port:
             success(request),
             started_at=request.created_at,
             completed_at=request.created_at,
-            output=StructuredPayload("executive.candidate.v1", cast(JsonValue, output)),
+            output=StructuredPayload("executive.candidate.v2", cast(JsonValue, output)),
         )
 
 
@@ -315,3 +316,21 @@ async def test_cancellation_after_commit_preserves_committed_decision() -> None:
         await deliberate(value)
     assert authority.has_committed(value.dispatch.trigger.trigger_id)
     assert value.binding.latest_decision() is not None
+
+
+@pytest.mark.asyncio
+async def test_unused_catalog_change_does_not_cancel_upstream_fact_speech() -> None:
+    from tests.domain.speech_semantics.policy_fixture import explicit_meaning_policy
+
+    port = Port()
+    port.release.clear()
+    value = wired(port)
+    pending = asyncio.create_task(deliberate(value))
+    await port.started.wait()
+    value.reader.value = replace(
+        value.reader.value,
+        communicative_goal_catalog=explicit_meaning_policy().communicative_goal_catalog,
+    )
+    port.release.set()
+    result = await pending
+    assert result.decision_id

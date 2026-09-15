@@ -2,7 +2,7 @@
 
 ## 1. 目的
 
-この文書はIssue #362の実装正本である。Executiveが確定したSpeech intentから「何を伝えるか」を`SpeechSemanticPlan`として確定し、#330 Character Languageへ渡す。最終台詞、語尾、口調、TTS値、Body動作は生成しない。
+この文書はIssue #362の実装正本であり、#661のproduction供給契約の設計を含む。Executiveが確定したSpeech intentから「何を伝えるか」を`SpeechSemanticPlan`として確定し、#330 Character Languageへ渡す。最終台詞、語尾、口調、TTS値、Body動作は生成しない。
 
 責務分離はLLM呼出回数を増やすためのものではない。simple pathは信頼済みtyped directiveから決定論的に構成し、complex pathだけがFoundation LLM Roleを使う。両経路は同じcommit gateを通る。
 
@@ -69,7 +69,7 @@ What-to-sayは事実命題だけではない。次のような発話行為その
 
 これらを自然言語フレーズの固定辞書で判定しない。
 
-Executive / trusted upstreamが確定したcommunicative semantic goalを、bounded `SpeechSemanticFact`としてsnapshotへ供給する。既存`SpeechSemanticFactKind.DISCOURSE`を使用できる。
+communicative semantic goalの意味定義は#362の不変なcatalogが所有し、Executiveが今回の定義参照を選択する。元Ownerのtyped evidenceと共に#362がbounded `SpeechSemanticFact`へ投影し、既存`SpeechSemanticFactKind.DISCOURSE`を使用する。production供給は第11節に従う。
 
 ## 5. Commit gate
 
@@ -80,7 +80,7 @@ Authorityは次をfail-closedで検証する。
 3. requestにfreezeしたsnapshotとcommit対象snapshotの一致。
 4. proposition evidence refsがbounded fact IDsの部分集合。
 5. intentのsemantic goal / target / constraint refsがsnapshotへground済み。
-6. candidate truth constraint refsがExecutive / upstreamのauthoritative集合と完全一致。
+6. candidate truth constraint refsが#362の正規投影でsnapshotへ束縛したauthoritative集合と完全一致。
 7. Executiveが要求するsemantic goal / target / evidenceは、`FORBIDDEN`以外で元Factのsemantic facetが一致するpropositionによって実現する。
 8. Executiveのforbidden claimは、`FORBIDDEN`かつ元Factのsemantic facetが一致するpropositionとして保持する。
 9. execution truth制約をclosedに照合する。
@@ -89,6 +89,7 @@ Authorityは次をfail-closedで検証する。
 12. 同じplan ID・同じintentの二重commit拒否。
 13. D10 `SpeechSemanticBounds` のCandidate上限を満たす。
 14. request generationにbindされた`BrainOperationalBoundsPolicy`世代がcommit時にもcurrentである。
+15. productionでは第11節のsource / projection / meaning / catalog / directive generationと参照解決記録がcommit時にもcurrentである。
 
 LLM candidate自身がtruth constraintやbudgetを空にして安全条件を省略することはできない。Authorityはsnapshotのauthoritative要件を正本にする。
 
@@ -182,3 +183,373 @@ Executive decisionに同じ共有policyのprovenanceが存在する場合はgene
 - question / new-direction budget 16/17境界
 - oversized Provider resultをfirst-N acceptしない
 - policy revision変更中のlate LLM resultをreject
+
+## 11. production入力の供給契約（#661）
+
+本節は#362 / #430の採用済み意味責務をproductionへ接続する設計である。実装完了を意味しない。#613は以下の公開入口を利用するだけとし、意味判断を再実装しない。
+
+### 11.1 参照選択と元実値の所有者
+
+Executiveはcommitted Speech intentと`semantic_goal_ref`、`target_ref`、`constraint_refs`、`evidence_refs`、`forbidden_claim_refs`を選択する。`ExecutiveFactRef`はExecutiveのbounded read modelであり、`payload`はsnapshotの搬送用である。下流のsemantic projection契約ではない。Speech側がpayloadからsubject / predicate / polarity / certainty / degree / truth ruleを読み取ったり推測したりしてはならない。
+
+現実の事実は元Ownerのpublic typed valueから解決する。`SpeechSemanticContextSourcePort.resolve(resolution)`は第11.9節の確定済みtyped resolutionを受け、凍結した`source_owner / source_contract_kind / source_identity / source_revision`と、Factの場合の`fact_id / ExecutiveFactKind / fact_revision`で明示登録されたOwnerへ委譲する。IDのprefix、payload内容、自然言語によるroutingは禁止する。参照IDの別名対応が必要なら起動時の明示bindingに保持し、IDを解析して生成しない。
+
+| Executiveの種類 | 元Ownerのproduction公開API / 値 | 識別と現在性 |
+|---|---|---|
+| `GOAL` | #366 `GoalCommitmentStore.goal_semantic_publication(goal_id)` / `AuthorityReadPublication[GoalCommitmentSemanticView]` | `state_id / state_revision`、Owner token。raw GoalStateを直接投影しない |
+| `COMMITMENT` | #366 `GoalCommitmentStore.commitment_semantic_publication(commitment_id)` / 同上 | `state_id / state_revision`、Owner token。raw CommitmentStateを直接投影しない |
+| `EXECUTION`、既存productionの`ACTIVITY` | #329 `ActivityExecutionAuthority.snapshot_publication(command_id)` / `AuthorityReadPublication[ActivityExecutionRecord | None]` | `invocation.command.command_id / record_revision`、Owner token |
+| `MEMORY_EVIDENCE` | #332 `MemoryStoreAuthority.read_semantic_assertion_publication(memory_id, expected_revision)` / `AuthorityReadPublication[MemorySemanticAssertionEntry]` | assertion非None、tokens非空、`memory_id / memory_revision`。raw MemoryRecordを投影しない |
+| `ATTENTION` | V1 Speech material sourceとして未対応 | Executive selection/context用途は保持する |
+| external `TYPED_CONSTRAINT` | V1 production登録は未対応 | 別Constraint Authorityを新設しない |
+| `TURN`、`RELATIONSHIP`、その他 | V1登録なし | `UNSUPPORTED_SOURCE_CONTRACT`。generic fallbackなし |
+
+この表は同名kindならすべて意味投影可能という保証ではない。各source contractについて11.4の対応規則が必要である。Goalの寿命を発話行為へ、Memoryの記述を現在の実行完了へ読み替えない。第二Fact Storeは作らず、取得値は要求に束縛されたimmutable snapshotとしてだけ保持する。
+
+`SpeechSemanticSourceBinding`は`executive_fact_id / executive_fact_kind / source_owner / source_contract / source_id / source_revision / typed source value`を持つ。型の識別はpublic contract型の明示登録で行い、generic dictや任意属性探索を使わない。bindingの返却時にOwner・kind・fact ID・元ID・expected revision・型を照合する。元Owner adapterは取得と同一性検証だけを行い、発話上の意味を決めない。
+
+### 11.2 発話行為の定義と選択
+
+`CommunicativeActDefinition`は#362が所有するversioned immutableな意味定義であり、現実の事実ではない。最低限`definition_id / definition_revision / act_kind / semantic_shape / target_requirement / evidence_requirement`を持つ。`act_kind`は型付きの閉じた識別集合とする。greeting / acknowledgement / gratitude / apology / request等の既存§4.1のmaterial contentを表現する。新しい種類は明示した定義・schema更新として追加し、unknownを既知の行為へ丸めない。
+
+`semantic_shape`は必要なpropositionのtyped slot、claim kind、polarity / certainty / degreeの規則、target / evidenceとの束縛規則を持つ。自然言語phraseやkeyword / regexを規則にしない。target requirementは不要・必須の区別と許容するtyped source契約を持つ。evidence requirementは必要なtyped evidence slotと許容するsource/projection種別を持つ。slot数と参照数はD10の既存上限内に収める。0件要件は定義が明示した場合だけ有効で、未登録の救済ではない。
+
+定義群は`CommunicativeGoalCatalog`として#362のMeaningPolicyに所属する。catalog generationはMeaningPolicyの`policy_id / revision`を正本とし、別の可変世代を重複管理しない。definition IDはcatalog内で一意、同一ID・revisionで内容を変更しない。定義の追加・変更・削除はMeaningPolicy revisionを進める。candidate / LLM / #613が稼働中に定義や規則を登録・変更してはならない。
+
+Executiveへは`CommunicativeGoalCatalogView`をboundedなread-only vocabularyとして供給する。viewはcatalog generation、definition ref・revision、選択に必要なtyped shape / target / evidence要件を保持する。catalogは実Factと別枠とし、`BrainOperationalBoundsPolicy.communicative_catalog`の専用上限（64 definitions、definitionごと4096 bytes、view全体524288 bytes）で検査する。`max_fact_refs`を流用しない。Executive snapshot全体にも`executive.max_context_json_bytes=8388608`を適用する。計測・同時最大時の扱いはD10正本§15に従い、超過をfirst-Nやdefinition削除で救済しない。
+
+Executiveはviewにある参照のうち今回採用するactを選択する。#362は今回のact選択、Goal選択、Action選択を行わない。Executiveは定義そのものを生成・変更しない。未知ref、catalog外ref、definition revision不一致、開始時とcurrentのcatalog generation不一致はExecutive commit時に非確定とする。read-only vocabularyの公開はExecutiveのGoal/Action Authorityを奪わない。
+
+### 11.3 semantic goal参照の識別と搬送
+
+意味目標の参照は`UPSTREAM_FACT`と`COMMUNICATIVE_ACT_DEFINITION`のtyped解決結果を持つ。既存`semantic_goal_ref`というID fieldは保持し、そのIDをbounded Fact集合とcatalog集合へexact membership照合する。いずれかexactly oneでなければ拒否する。両集合への衝突は拒否し、prefixで種類を推測しない。
+
+Executiveの確定結果には、選択したSpeech参照の不変な解決記録を束縛する。元snapshotの`ExecutiveFactRef`のID・kind・expected revision、およびcatalog参照のdefinition ID・revision・policy generationを保持する。元Fact payloadを追加Authorityとして複製しない。現行のdecision IDと参照文字列だけからkind/revisionを再推測しない。元snapshotとの照合とcatalog current検査はExecutiveの既存commit境界で行う。
+
+target / evidence / forbidden claimは元typed Factを解決する。constraint参照は、登録済みのtyped制約bindingから元Owner・種類・revisionを解決する。現行Executiveが許容するsource event / capability / precondition等のIDであっても、Speech側に対応するpublic source contractがなければ拒否する。参照文字列の存在だけをSpeech Fact / 制約の存在へ昇格させない。
+
+#362 Context Builderは同じgenerationのdefinitionをresolveし、選択されたactを`SpeechSemanticFact(kind=DISCOURSE)`へ投影する。FactのIDは選択されたsemantic goal refを保持し、definitionのsemantic shapeへtargetとauthoritative evidenceを束縛する。definition revision、policy generation、selected definition ref、target ref、使用したevidence refsを由来へ保持する。
+
+例えばgratitudeの意味定義は#362、ユーザーが助けたという現実の事実は元Owner、今回gratitudeを選ぶ判断と参照選択はExecutiveに属する。定義だけから「助けた」という事実を作らず、必要evidenceがなければ構築を拒否する。上流Factを指すsemantic goalは元typed値の投影であり、catalog definitionへ付け替えない。
+
+### 11.4 Fact投影とtruth rule
+
+`SpeechSemanticFactProjector`とversioned immutableな`SpeechSemanticFactProjectionPolicy`は#362内に置く。規則はsource contractの正確な型とtyped facetに対して明示登録する。各規則は出力するkind / subject / predicate / valueの構造、claim kind / execution status / polarity / certainty / degree、evidence参照の搬送を一意に定義する。登録済み規則が0件・複数一致なら`UNSUPPORTED_PROJECTION`。汎用JSONの意味分類、predicate解析、未知値へのAFFIRM/CERTAIN補完は禁止する。public型内部にJSONがあっても、未宣言fieldの意味を再解釈しない。
+
+Executionの対応規則は#329 `ActivityExecutionRecord.result.status`を`SemanticClaimKind.EXECUTION_STATUS / execution_status`へ保持する。subjectはcommand ID、predicateは規則が定義する状態属性とし、statusという観測済み属性と外部effectの成否を混同しない。`effect_uncertainty`のある失敗・取消・timeoutを「何も起きなかった」というNEGATEへ変換しない。意味規則がそのuncertaintyを表現できなければ拒否する。#613はcompletion claim可否を判断しない。
+
+`SpeechTruthConstraintProjectionPolicy`はFactProjectionPolicyに束縛した不変な規則集合とし、そのgenerationで追跡する。入力は`SpeechSemanticFactKind / SemanticClaimKind / ExecutionStatus / SemanticPolarity / SemanticCertainty`等のtyped facetだけとする。サポートするfacetの組合せごとに次の意味を明示登録する。
+
+- `REQUIRE_MATCH`は既知の元Factとの完全facet一致を要求する規則である。規則未登録のfallbackにはしない。
+- `PRESERVE_UNKNOWN`はpolarityとcertaintyの双方がUNKNOWNであるFactにのみ適用し、未知を保持する。片方だけUNKNOWNの値を勝手に両方UNKNOWNへ変えない。
+- `FORBID_COMPLETION_CLAIM`は非COMPLETEDのtyped execution statusから完了主張を禁止する。COMPLETEDに対してこの規則を選択しない。実行Factを根拠とするpropositionの元facet一致検査は既存Authorityが別途保持する。
+
+rule selectionの各rowはexact facet条件とruleを持つ。0件・複数一致、ruleの前提とFactの不整合は`TRUTH_RULE_UNRESOLVED`。predicate / payload keyword / regex / 自然言語解釈を使わない。登録された規則集合が既存truth ruleの意味を変えることはできない。constraint IDとfact refの対応を不変に保持する。Executiveが選択したconstraint IDを独自IDへ付け替えず、未解決なら拒否する。
+
+### 11.5 意味方針と技術上限
+
+`SpeechSemanticMeaningPolicy`は`policy_id / revision / self_disclosure_policy / max_question_budget / max_new_direction_budget / communicative_goal_catalog`を保持する#362所有のimmutable方針である。productionの`SpeechSemanticsPolicy`へ明示注入を必須とする。実値は採用された意味方針から供給し、本設計はfixtureのFACT_GROUNDED / 1 / 1をproduction値として採用しない。方針未供給は`SEMANTIC_POLICY_UNAVAILABLE`。
+
+`BrainOperationalBoundsPolicy`は技術的絶対上限だけを所有する。意味方針のbudgetは非負整数であり、技術上限（現在は各16）を超えた場合は起動・構築を拒否する。clampしない。candidate / directiveのbudgetとself-disclosureは、snapshotへ束縛した意味方針と既存Authorityの許容関係を検査する。
+
+#### 11.5.1 production MeaningPolicy V1
+
+ユーザー採用済みのV1は次の固定値とする。上記のfixture除外は維持し、独立したユーザー採用の製品方針として`FACT_GROUNDED / 1 / 1`を採用する。旧FORBIDDEN記述を訂正し、fixtureからの推定で採用した値とは区別する。
+
+```text
+policy_id = yura.speech-semantics.meaning
+revision = 1
+self_disclosure_policy = FACT_GROUNDED
+max_question_budget = 1
+max_new_direction_budget = 1
+```
+
+両budgetは使用義務ではなく上限であり、通常応答ではともに0を選択できる。質問なしで自然に応答できる場合は質問せず、現在の会話へ返答できる場合は新方向を開かない。REQUESTと質問を同一視しない。QUESTION / NEW_DIRECTIONをCommunicativeActKindへ追加せず、共感・感想・通常回答を有限catalogへ無理に分類しない。
+
+FACT_GROUNDEDは元Ownerのtyped publicationにgroundされたゆら自身の状態、Goal、Commitment、Memory assertion、その他明示SELF Factの開示を許可する。これは全sourceをV1対応にする意味ではなく、第11.11節の登録済みsourceだけを使用する。架空の人間経験、未grounded自己情報、Character Profileだけに基づく事実、raw prose・alias・first-personから生成したSELF Factを禁止する。Runtime SELFのAuthorityは#671 RuntimeSubjectIdentityのみであり、"yura"との文字列比較やProfileの再解釈を行わない。既存Verifierの意味によるself-disclosure検証を維持する。
+
+V1 catalogは現在の9種類を各1 definitionとして登録し、全definitionのrevisionを1とする。
+
+| definition_id | act_kind | evidence source_contracts | minimum_count |
+|---|---|---|---:|
+| `yura.communicative.greeting` | GREETING | `()` | 0 |
+| `yura.communicative.acknowledgement` | ACKNOWLEDGEMENT | `()` | 0 |
+| `yura.communicative.gratitude` | GRATITUDE | `()` | 0 |
+| `yura.communicative.apology` | APOLOGY | `()` | 0 |
+| `yura.communicative.request` | REQUEST | `()` | 0 |
+| `yura.communicative.commitment` | COMMITMENT | COMMITMENTのみ | 1 |
+| `yura.communicative.consent` | CONSENT | `()` | 0 |
+| `yura.communicative.refusal` | REFUSAL | `()` | 0 |
+| `yura.communicative.farewell` | FAREWELL | `()` | 0 |
+
+全definitionのsemantic shapeとtarget要件を次で固定する。
+
+```text
+subject_ref = current-interaction
+predicate = communicative-act
+value = {"kind": <act_kind.value>}
+polarity = AFFIRM
+certainty = CERTAIN
+degree = None
+claim_kind = GENERAL
+subject_binding = LITERAL
+evidence_index = None
+target_requirement.mode = NONE
+target_requirement.source_contracts = ()
+```
+
+このCERTAINは選択された発話行為を実際に行うことの確実性であり、外部事実の真実性を生成しない。GRATITUDE行為自体はsources=() / minimum_count=0であり、act evidence_refsも()とする。「Xしてくれてありがとう」のXを述べる場合だけ、別のgrounded propositionを必要とする。感謝行為だけから「ユーザーが助けた」等を生成しない。COMMITMENTには元OwnerのCommitment semantic publication由来のeligible evidenceが最低1件必要で、行為定義だけから新しい約束を生成しない。APOLOGY行為自体は根拠なしでも選択できるが、失敗等の理由を発話するなら別のgrounded propositionを必要とする。REQUESTの具体的内容も別propositionへ保持する。CONSENT / REFUSALはExecutiveの行為選択を表し、別の外部事実を自動生成しない。
+
+catalogは欠落すると発話意図が変わるcommunicative actを保持する集合であり、発話の全種類一覧でも文章テンプレートでもない。GRATITUDEから固定文を要求せず、Character LanguageがSemantic PlanとCharacter Profile等から表現する。V1はすべてcurrent-interactionへの行為とし、definition自身はtarget_refを要求しない。`user`等の文字列をtarget Authorityへ代用しない。第三者・特定entity・別会話相手への行為はMeaningPolicy revisionを上げてtyped target契約を追加する。
+
+#### 11.5.2 production供給と注入
+
+`app/composition/speech_semantics_policy.py`のV1 factoryが上記のMeaningPolicyとcatalogを構築し、`SpeechSemanticProductionPolicies.meaning`を経由して既存`SpeechSemanticPolicyOwner`へ供給する。製品値は#362所有のversioned immutable policyであり、operatorのruntime tuning値や`minimum_brain.yaml`のAuthorityにはしない。test helperのimport、暗黙default、未供給から空catalogへの置換は禁止する。
+
+public injection boundaryは同じOwnerの`publication()`をContext Builderの`current_policies`へ、`catalog_view()`をExecutive speech evidenceのread-only vocabularyへ接続する。元Factのbinding reader、Fact / Truth投影規則、必要なdirective policyは明示注入を維持する。V1供給境界では未供給をSEMANTIC_POLICY_UNAVAILABLE、異なるpolicy / revision / catalog内容をSEMANTIC_POLICY_STALEとして拒否する。新しいAuthorityや並行するcatalog公開は作らない。
+
+#661は製品方針・catalog・factory・Owner供給・public injection boundaryまでを所有する。Executiveは定義を変更せず、Character Languageもcatalogを書き換えない。#613はこの公開境界を使用してExecutive → Speech Semantics → Character → Runtimeの全経路を接続し、policy値を再定義しない。D10上限値は変更しない。
+
+### 11.6 provenanceとgeneration
+
+元typed値をFact自身へ埋め込んで型を重複させず、snapshotにFact IDとexactly one対応するimmutable `SpeechSemanticFactProvenance`を並置する。provenanceはsource Owner / contract / ID / revision、projection policy ID / revisionを保持する。communicative definition由来はdefinition ref / revision / MeaningPolicy generationとtarget・evidence参照を追加する。現実のevidenceはそれぞれ別の元Owner bindingへ追跡する。provenance欠落、余剰、重複、不一致は拒否する。JSON payloadだけを由来としない。
+
+`SpeechSemanticContextGeneration`はdecision identity、intent identity、`RevisionVector`、選択済みsource bindingと各source revision、Fact/Truth projection generation、MeaningPolicy/catalog generation、bounds generation、使用するdirective policy generationを束縛する。ポリシーgenerationはIDとrevisionの組であり、同じ組で内容を変更しない。
+
+構築開始・構築完了・simple/LLM準備開始・commit直前に使用した元Ownerのcurrent revisionと各policy generationを照合する。読み取り中に不一致なら`CONTEXT_STALE`で返し、無期限の再試行をしない。LLM await後に要求時の値をcurrentとして再利用しない。ひとつでも変化すれば古い結果を新世代へ付け替えず拒否する。無関係なOwner更新による全体取消は行わない。
+
+最終照合からPlan確定までにはawait / 外部I/Oを入れず、既存Ownerの正規同期境界を用いる。使用するOwner publication/tokenがある場合は既存#632のFenceへ接続し、shadow lockや別Authorityを作らない。元Ownerのcurrent確認を直列化できないbindingはproduction登録を拒否し、取得済みrevisionの比較だけをatomicな最終検査と称さない。既存のparticipant数・順位・容量制約を維持する。
+
+### 11.7 Builderとdeterministic directive
+
+`SpeechSemanticContextBuilder`は#362内で次を行う。
+
+1. `CommittedExecutiveDecision`から対象Speech intentと11.3の確定済み参照解決記録を取得する。
+2. semantic goal / target / evidence / forbidden claim / constraintのrequired参照を収集する。
+3. 元Ownerのtyped sourceと、選択されたcatalog definitionを同一generationでresolveする。
+4. identity / revision / provenanceを照合し、#362の登録済みFact・Truth規則で投影する。
+5. 明示注入のMeaningPolicyを束縛し、技術上限と現在性を検査してsnapshotを返す。
+
+required参照を容量都合で落とさない。optional Factは既存D10のkind→fact IDのstable selectionに従う。選択したsourceがunsupportedなら黙って捨てない。失敗時は部分snapshotを成功結果として返さない。
+
+`DeterministicSpeechDirective`を生成できるのは#362だけである。typed Speech intent、projected facts、truth constraints、MeaningPolicy、versioned immutableなdirective policyのみを入力にする。規則はpropositionと各参照・budgetを一意に構成し、同じAuthority gateを通す。規則が存在しなければ`deterministic_directive=None`としてcomplex pathへ進める。存在する規則の不正を「規則なし」に変換しない。keyword / regex / raw Executive payloadからsimple pathを選択しない。
+
+### 11.8 型付き失敗と検証
+
+production構築境界に`SpeechSemanticContextFailureCode`と`SpeechSemanticContextError`を定義する。既存の`SpeechSemanticBoundsError`による容量失敗はこの境界で`CONTEXT_TOO_LARGE`へ型で対応付け、例外文字列で分類しない。LLM役割失敗の契約を複製しない。
+
+| 分類 | 条件 |
+|---|---|
+| `SOURCE_NOT_FOUND` | 必須source / definitionが見つからない |
+| `SOURCE_UNAVAILABLE` | 元Ownerがrepository等の取得不能を型付きで公開した。#661内で追加する失敗分類で、不在へ偽装しない |
+| `SOURCE_OWNER_MISMATCH` / `SOURCE_KIND_MISMATCH` / `SOURCE_IDENTITY_MISMATCH` | 元Owner・kind・fact ID・source ID不一致、ID衝突 |
+| `SOURCE_REVISION_MISMATCH` | expected source / definition revision不一致 |
+| `UNSUPPORTED_SOURCE_CONTRACT` / `UNSUPPORTED_PROJECTION` | public型・current取得境界・投影規則が未対応 |
+| `TRUTH_RULE_UNRESOLVED` | truth ruleが一意に決まらない、適用条件不一致 |
+| `SEMANTIC_POLICY_UNAVAILABLE` | 明示意味方針がない |
+| `SEMANTIC_POLICY_STALE` / `PROJECTION_POLICY_STALE` | 意味/catalog・投影方針の世代変更 |
+| `CONTEXT_STALE` | decision / RevisionVector / source / bounds / directive generationの現在性不一致 |
+| `CONTEXT_TOO_LARGE` | required集合、payload、catalog、budget等が既存技術上限を超過 |
+
+失敗は安全な識別子と分類で返し、raw source / Provider例外文字列をAuthorityや診断へ流さない。Python外部取消は成功や空snapshotへ変えない。
+
+実装工程ではunit / adjacent試験で、元Owner読取→Builder→simple/complex Planner→Authorityのproduction入口を検証する。catalog内外・ID衝突・definition更新・evidence不足・元Owner不一致・各世代のawait中変更・commit直前変更・source不在・未対応projection・truth未登録・policy未供給・budget超過・required容量超過を含める。#430のcommunicative material content保持と実Execution Factの完了捏造拒否を隣接検証する。tests/Lab fixtureは入力例でありproduction Authorityにはしない。
+
+
+### 11.9 ExecutiveへのDTO配置とschema（#662 Design finding対応）
+
+以下のfield配置を唯一のproduction transportとする。parallelなpublication方式を追加しない。型定義の所有者はcatalog / definitionが#362、選択結果のresolutionが#328である。
+
+```text
+CommunicativeGoalCatalogView（#362のimmutable read model）
+- policy_id: str                 # MeaningPolicy識別子
+- policy_revision: int           # MeaningPolicyリビジョン
+- definitions: tuple[CommunicativeActDefinition, ...]
+- bounds_policy_id: str
+- bounds_policy_revision: int
+
+ExecutiveContextSnapshot
+- communicative_goal_catalog: CommunicativeGoalCatalogView | None
+- speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...]
+
+ExecutiveCommitState
+- communicative_goal_catalog: CommunicativeGoalCatalogView | None
+- speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...]
+
+CommittedExecutiveDecision
+- speech_reference_resolutions: tuple[ExecutiveSpeechReferenceResolution, ...]
+```
+
+catalogは`ExecutiveFactRef`へ偽装しない。input field自体は必須とし、非提供は明示的なNone（JSON null）で表す。catalog非提供でもnon-Speech decision、および元typed Factをsemantic goalとするSpeech decisionは許可する。definition由来のSpeechはcatalog提供を必須とする。catalog不在を空catalogや既定定義へ置換しない。提供されたcatalogはSpeechを選ぶか否かにかかわらず構築時の型・容量検査を通す。
+
+LLM input schemaは`executive.context.v2`へ更新する。v2は従来snapshotのserialized fieldsに`communicative_goal_catalog`と`speech_source_bindings`を追加し、catalogには上記5 fieldを過不足なくserializeする。definitionは第11.2節の6 fieldをserializeする。v1のfield setを暗黙拡張しない。v1は旧形式の識別子として保持するが、新production catalog入力をv1として送信しない。移行後のproduction Executiveはv2を使い、nullの場合もv2とする。
+
+LLM出力の候補は参照を選択するだけで、resolution / policy generation / definitionを自己申告しない。Speech intent自体の参照選択shapeは#661で新たに変更しない。ただしcandidate全体は#663採用済みのGoal/Commitment semantic CREATE specを含む`executive.candidate.v2`を使用する。決定時にAuthorityがsnapshotとcurrent stateからresolutionを導出する。
+
+`ExecutiveLiveStatePort`がcommit直前に#362のcurrent catalog公開を再取得し、`ExecutiveCommitState.communicative_goal_catalog`へ格納する。開始時catalogをcurrentへコピーしない。definition由来のSpeechを含む場合、開始・current・選択definitionのID / revision / 内容とMeaningPolicy generation、およびproducer / consumerのbounds generationを一致検査する。取得後からcommitまでのOwner token / 正規同期境界を第11.6節に従って保持する。currentの欠落・変更は非確定。catalogを使用しないdecisionは未使用catalogの更新だけで失効させないが、Executive自身のbounds freshnessは従来どおり検査する。
+
+`ExecutiveSpeechReferenceResolution`を全required参照の唯一の確定記録とする。semantic goal専用fieldを一般化して統合し、`speech_goal_resolutions`は設けない。独立publication・並行する同格の記録は発行しない。
+
+```text
+共通:
+- intent_id
+- role: SEMANTIC_GOAL | TARGET | EVIDENCE | FORBIDDEN_CLAIM | CONSTRAINT
+- selected_ref
+- resolution_kind: UPSTREAM_FACT | TYPED_CONSTRAINT | COMMUNICATIVE_ACT_DEFINITION
+UPSTREAM_FACT variantのみ:
+- fact_id
+- fact_kind: ExecutiveFactKind
+- fact_revision
+- source_owner
+- source_contract_kind
+- source_identity
+- source_revision
+TYPED_CONSTRAINT variantのみ:
+- source_owner
+- source_contract_kind
+- source_identity
+- source_revision
+COMMUNICATIVE_ACT_DEFINITION variantのみ:
+- definition_id
+- definition_revision
+- meaning_policy_id
+- meaning_policy_revision
+```
+
+`source_contract_kind`は明示登録されたpublic契約型を識別する型付き識別子で、payload解析やPython型名の動的推測で生成しない。`source_owner`は登録された元Owner identityであり、現在存在するOwnerへの総当たり検索を許可しない。`source_identity`は元公開値のID、`source_revision`はその値のOwner revisionである。Fact variantの`fact_id == selected_ref`、`fact_revision == source_revision`を必要とし、別名source IDは確定bindingからそのまま保持する。
+
+許容roleはUPSTREAM_FACTが全5種、TYPED_CONSTRAINTがCONSTRAINTのみ、COMMUNICATIVE_ACT_DEFINITIONがSEMANTIC_GOALのみとする。definitionの`selected_ref == definition_id`を必要とする。別typed sourceを無制限に受けるgeneric variantは作らず、ここで登録できないpublic sourceはunsupportedとして拒否する。各variantは他variantのfieldを持たない。
+
+Executiveへ元Ownerのbindingを供給する場所は`ExecutiveContextSnapshot.speech_source_bindings`、再取得するcurrent値は`ExecutiveCommitState.speech_source_bindings`とする。`ExecutiveSpeechSourceBinding`は`selected_ref`、`resolution_kind`（UPSTREAM_FACTまたはTYPED_CONSTRAINT）、上記variantと同じ全source fieldを持つimmutable typed read modelである。元typed公開からbindingを取得する登録済みreaderが供給し、LLMは生成しない。source集合が不要なら明示空tupleとする。これらもcurrent `executive.context.v2`へserializeし、`executive.context.v1`には追加しない。candidate全体は#663採用済み`executive.candidate.v2`を使用し、Speech intentの参照選択field shapeは#661では変更しない。
+
+Fact bindingは同じ開始snapshot内のExecutiveFactRefのID / kind / revisionと照合し、専用constraint bindingは元Ownerの登録済みpublic制約公開と照合する。payloadをOwner/typeの正本にしない。専用constraint IDは同じ型付きbindingで開始時の参照可能集合へ加え、文字列があるだけの制約を採用しない。Fact / constraint / catalog集合間のselected_ref衝突、同一bindingの重複、Owner登録不一致は拒否する。
+
+commit直前にはlive readerが使用するsourceのcurrent公開とbindingを再取得する。開始時bindingの全fieldとcurrentを照合し、Owner / contract / identity / revisionのどれかが変われば非確定とする。revisionをcurrent値で補完しない。catalogと同様、取得から確定まで第11.6節の正規同期境界を保持する。
+
+各Speech intentから次のrequired集合を作る。
+
+| role | 必要な参照 |
+|---|---|
+| SEMANTIC_GOAL | payload.semantic_goal_refの1件 |
+| TARGET | payload.target_refがある場合の1件 |
+| EVIDENCE | intent.evidence_refsの全件 |
+| FORBIDDEN_CLAIM | intent.forbidden_claim_refsの全件 |
+| CONSTRAINT | payload.constraint_refsの全件 |
+
+キー`(intent_id, role, selected_ref)`ごとにexactly oneを確定し、欠落・余剰・同じキーの重複・非Speech intentの記録を拒否する。同じrefを別roleで使う場合はroleごとに1件保持し、source内容が一致しなければ拒否する。tuple順はcandidate内のintent順、上表のrole順、各元参照配列の順とする。non-Speech decisionのtupleは空。Authorityが開始値とcurrent値の一致を検証して初めて生成し、LLMの申告resolutionを受理しない。
+
+参照数は既存Executiveのintent / ref上限内で検査し、確定記録はrequired集合の件数から増やさない。source binding集合も既存のbounded Fact / 制約参照だけから構成し、完全inputは既定の8 MiB上限に含める。容量のため記録を落とさない。D10の数値は変更しない。
+
+#362 Context Builderは`CommittedExecutiveDecision`と対象intent IDを受け取り、`speech_reference_resolutions`から全requiredキーを照合する。元Fact・専用constraintは確定resolutionをSourcePortへそのまま渡し、definitionは記録されたMeaningPolicy generation / definition revisionをresolveする。元ExecutiveContextSnapshotを後で取り出せるという仮定や、別のref解決publicationに依存しない。
+
+SourcePortの返却公開は記録のOwner / contract / identity / revisionと一致しなければならない。missing resolutionは`SOURCE_NOT_FOUND`、role / variant違反・重複・参照集合不一致は`SOURCE_IDENTITY_MISMATCH`、元公開不在は`SOURCE_NOT_FOUND`、source revision不一致は`SOURCE_REVISION_MISMATCH`として非構築に閉じる。policy generation変更は既存のstale分類へ閉じる。current Owner総当たり、ref prefix、ExecutiveFactRef.payload、latest revisionによる欠落救済、old resolutionの新revisionへの付替えは禁止する。
+
+### 11.10 catalog容量と共有policy
+
+技術上限の唯一の正本は[brain_operational_bounds_contracts.md 第15節](brain_operational_bounds_contracts.md#15-communicative-catalogの専用容量661)とする。#362 producerと#328 consumerは同一の`BrainOperationalBoundsPolicy`のID / revisionを明示注入する。viewのbounds provenance、Executive snapshot / current stateのbounds provenance、Builderのcurrent boundsは一致を必要とする。MeaningPolicy generationだけが一致していてもboundsが古ければ採用しない。
+
+catalogはそのgenerationで有限の閉じた集合であり、将来のact追加は明示的な新MeaningPolicy generationと、型/schemaが変わる場合のschema generation更新で行う。自然言語phrase辞書へ戻さない。overflowはproducerの`SpeechSemanticContextError(CONTEXT_TOO_LARGE)`またはconsumerの既存`EXECUTIVE_CONTEXT_TOO_LARGE`として拒否し、raw値を診断へコピーしない。
+
+
+### 11.11 採用済みOwnerに対するV1 exact projection matrix
+
+本節は#663/#664/#671/#672/#673採用後のdesign reconciliationである。production実装は別途この同じ#661 lineageで修正する。Imported Authorityはgoal_commitment_semantic_contracts.md、memory_semantic_assertion_contracts.md、memory_store_retrieval_contracts.md、semantic_subject_identity_contracts.md、memory_reflection_contracts.mdとし、本節はそれらを変更しない。
+
+以下の2表はsource contractをキーに結合する一つのmatrixである。`fact_id`はcommitted resolutionの明示fact_idとのexact bindingとし、source IDのprefix解析で生成しない。Owner publicationのtokenとimmutable値を同時に凍結する。`source revision`とsemantic revisionを混同せず、後者もpublication/provenance内へexact保持する。
+
+| source contract | Owner public API | publication value type | source identity | source revision | subject mapping | finalization token |
+|---|---|---|---|---|---|---|
+| GOAL | GoalCommitmentStore.goal_semantic_publication(goal_id) | GoalCommitmentSemanticView（modality GOAL） | view.state_id | view.state_revision | 下記G mapping | 同publication.tokens、非空必須 |
+| COMMITMENT | GoalCommitmentStore.commitment_semantic_publication(commitment_id) | GoalCommitmentSemanticView（modality COMMITMENT） | view.state_id | view.state_revision | G mapping | 同publication.tokens、非空必須 |
+| MEMORY | MemoryStoreAuthority.read_semantic_assertion_publication(memory_id, expected_revision) | MemorySemanticAssertionEntry.assertion: MemorySemanticAssertion | assertion.memory_id | assertion.memory_revision | 下記M mapping | 同publication.tokens、非空必須 |
+| EXECUTION | ActivityExecutionAuthority.snapshot_publication(command_id) | ActivityExecutionRecord（publication.value、Noneは不在） | invocation.command.command_id | record_revision | command_idをexact使用、SELF分類しない | 同publication.tokens、非空必須 |
+| ATTENTION | Speech V1登録なし | なし | なし | なし | なし | なし |
+| external TYPED_CONSTRAINT | Speech V1登録なし | なし | なし | なし | なし | なし |
+
+| source contract | SpeechSemanticFact.kind | predicate | value | claim_kind | execution_status | polarity | certainty | degree | evidence_refs | truth rule | unavailable mapping |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| GOAL | G mappingのSELFまたはGENERAL | goal-commitment-state | 下記G envelope、modality=goal | GENERAL | None | AFFIRM | view.certaintyのCERTAINをexact対応 | None | () | REQUIRE_MATCH | publication None→SOURCE_NOT_FOUND、revision不一致→SOURCE_REVISION_MISMATCH、型/modality不一致→SOURCE_KIND_MISMATCH、tokenなし→UNSUPPORTED_SOURCE_CONTRACT |
+| COMMITMENT | G mappingのSELFまたはGENERAL | goal-commitment-state | G envelope、modality=commitment | GENERAL | None | AFFIRM | view.certaintyのCERTAINをexact対応 | None | () | REQUIRE_MATCH | GOALと同じ個別条件 |
+| MEMORY | M mappingのSELFまたはGENERAL | assertion.predicate | 下記M envelope | GENERAL | None | assertion.polarityのAFFIRM/NEGATEを同名へexact対応 | assertion.certaintyのCERTAIN/LIKELY/UNCERTAINを同名へexact対応 | None | () | REQUIRE_MATCH | 第11.13節の全reason対応 |
+| EXECUTION | EXECUTION | execution-status | result.status.value | EXECUTION_STATUS | result.status | AFFIRM | CERTAIN | None | () | 下記status別row | publication.value None→SOURCE_NOT_FOUND、revision不一致→SOURCE_REVISION_MISMATCH、tokenなし→UNSUPPORTED_SOURCE_CONTRACT、既知recordの投影不能→UNSUPPORTED_PROJECTION |
+| ATTENTION | 投影なし | なし | なし | なし | なし | なし | なし | なし | なし | なし | UNSUPPORTED_SOURCE_CONTRACT |
+| external TYPED_CONSTRAINT | 投影なし | なし | なし | なし | なし | なし | なし | なし | なし | なし | UNSUPPORTED_SOURCE_CONTRACT |
+
+source-derived Factのevidence_refs=()は、根拠がないという意味ではない。元Owner publicationと全provenanceをsnapshotへ保持し、Fact IDの由来としてwhole-value再投影検証する。Ownerのreason_refs / motivation_refs / source_event_ids / Memory provenanceはpublication内の元値として保持し、他のSpeech Fact IDへ偽装してevidence_refsへ流し込まない。各Propositionのevidence_fact_refsは投影されたFact IDを参照する。上表以外の型・facetは未登録として拒否し、未知をAFFIRM/CERTAINへ補わない。
+
+G mapping: `view.semantic_spec.subject_kind=SELF`かつsubject_ref=Noneなら、注入されたRuntimeSubjectIdentity.self_subject()を使用し、Fact.subject_ref=self_subject_ref、kind=SELF。REFERENCEはspec.subject_refをreference_subject(ref)で検証してexact保持し、kind=GENERAL。SELF reserved refへのREFERENCE衝突はSOURCE_IDENTITY_MISMATCH。raw文字列の分類は禁止する。
+
+M mapping: assertion.subject_identityをexact使用し、RuntimeSubjectIdentity.validate(identity)を必須とする。SELF→SELF、REFERENCE→GENERAL、subject_refはidentity.subject_ref。MemoryContent.subject_refからkindを作らない。型付きidentity不一致はSOURCE_IDENTITY_MISMATCHとし、別kindやNoneへ変更しない。
+
+Executionのvalueは必ずexecution_status.valueと等しい。これはcommandのstatusについての事実だけであり、effect_uncertaintyを外部effectの成功/失敗へ変換しない。status COMPLETEDはREQUIRE_MATCH。REQUESTED / ACCEPTED / PLANNED / STARTED / OBSERVABLE / APPLIED / REJECTED / UNSUPPORTED / FAILED / CANCELLED / TIMED_OUT / SUPERSEDEDの各rowはFORBID_COMPLETION_CLAIM。PRESERVE_UNKNOWNを使用しない。
+
+### 11.12 Modalityと時間意味のclosed value表現
+
+G envelopeは次のexact field集合を持ち、全field必須、追加member禁止。元specのvalueだけは既存strict JsonValueをそのまま含む。enum値は元Owner enum.valueのexact値とし、文字列を解釈して生成しない。
+
+```text
+{
+  modality: view.modality.value,
+  lifecycle_status: view.lifecycle_status.value,
+  semantic_predicate: view.semantic_spec.predicate,
+  semantic_value: view.semantic_spec.value,
+  semantic_polarity: view.semantic_spec.polarity.value,
+  semantic_degree: view.semantic_spec.degree
+}
+```
+
+predicate=goal-commitment-stateの意味は「主体について、このmodality/lifecycleでこの内容のStateが公開されている」である。Factの外側AFFIRM/CERTAIN/degree=NoneはこのOwner State事実についてのfacetであり、世界でsemantic_valueが実現したという主張ではない。内容側のNEGATEやdegreeはsemantic_polarity / semantic_degreeにexact保存し、外側のState存在否定と混同しない。GoalとCommitmentを同一modalityへ変換せず、達成済み・取消等のlifecycleも削除しない。semantic_ref / semantic_revision、state_id / state_revision、source_decision_id等は凍結publication/provenanceへ保持する。
+
+M envelopeのexact必須field集合は次とし、追加member禁止。predicateはassertion.predicate、外側polarity/certaintyはassertionのtyped意味そのものを保持する。
+
+```text
+{
+  semantic_value: assertion.value,
+  temporal_meaning: assertion.temporal_meaning.value,
+  temporal_scope_ref: assertion.temporal_scope_ref,
+  qualifiers: assertion.qualifiersを順序保持したJSON配列
+}
+```
+
+CURRENT / HISTORICAL / TIME_BOUNDEDをexact保持する。nullable scopeもnullのまま保持し、期間を推定・補作しない。HISTORICALをCURRENTへ、TIME_BOUNDEDを無限定現在へ昇格させない。original semantic_valueと時間metadataを別fieldにし、元value内の任意keyを時間やmodalityとして探索しない。
+
+これらは#362が元typed publicationから構成する閉じたmaterial meaningであり、新しいcross-owner DTO fieldではない。SpeechPropositionはFactのpredicate/value全体をexact保持する。envelopeからsemantic_valueだけを抜き出すcandidateは既存_semantic_matchのwhole JSON equalityを満たさず拒否される。任意dictからenvelopeを推定する登録は行わない。D10のFact 16384 bytes等はenvelope全体に適用し、超過はCONTEXT_TOO_LARGE、部分削除・clampなし。
+
+既存#330/#363での保持を次の根拠で確認した。
+
+- speech_semantics/contracts.pyのSpeechSemanticFact / SpeechPropositionはstrict JsonValueをdeep freezeし、to_dictでnested値全体を搬送する。top-level degreeの二重表現は禁止されたまま。上記envelopeはそのfieldを追加しない。
+- speech_semantics/authority.pyの_semantic_matchはpredicate/value全体と全専用facetの一致を要求する。planner.pyもproposition.valueをstrict JSONとして保持する。
+- character_language_contracts.md §2.1はproposition subject / predicate / valueの変更を禁止する。CharacterLanguageContextSnapshot.to_dictはsemantic_plan.to_dict()全体を供給する。modality/lifecycle/時間情報は省略可能なstyleではなく、valueのmaterial内容に含まれる。
+- semantic_verification/verifier.pyのbuild_relation_requestはsemantic_plan.to_dict()全体を供給する。既存relation instructionsは各Plan proposition全体についてENTAILED / MISSING / CONTRADICTED / AMBIGUOUSを観測し、material unitのstyle降格を禁止する。Goalを実現済み事実へ、過去を現在へ変更した発話はwhole propositionをentailedしたものと扱えない。
+
+この確認は既存のmaterial value搬送・意味照合契約との適合確認であり、実LLMの無誤判定や実装試験PASSを主張しない。#330/#363のschema変更・専用modality enum追加を前提としない。後続#661 Testではmodality脱落、lifecycle変更、semantic_polarity変更、historical/current変更、scope/qualifier欠落を明示した反例を既存境界で確認する。
+
+### 11.13 Memory失敗とtruthの完全な対応
+
+| Memory unavailable reason | SpeechSemanticContextFailureCode |
+|---|---|
+| SOURCE_NOT_FOUND | SOURCE_NOT_FOUND |
+| REVISION_STALE | SOURCE_REVISION_MISMATCH |
+| FINALIZATION_UNSUPPORTED | UNSUPPORTED_SOURCE_CONTRACT |
+| REPOSITORY_UNAVAILABLE | SOURCE_UNAVAILABLE（#661内で追加設計） |
+| SEMANTICS_UNRESOLVED / SUBJECT_UNRESOLVED / STALE / CONFLICTED / INACTIVE_LIFECYCLE / PROVENANCE_UNAVAILABLE / DEGRADED_VIEW / TEMPORAL_INCONSISTENCY | UNSUPPORTED_PROJECTION |
+
+assertion!=Noneかつtokens非空だけが成功である。既知failure reasonを先に対応させ、repository取得不能をtoken不足やsource不在へ変換しない。成功を名乗る値のtoken欠落はUNSUPPORTED_SOURCE_CONTRACT。未定義reasonはUNSUPPORTED_PROJECTIONとして拒否し、未知の成功へ救済しない。SourcePortのOwner/identity/kind/revision不一致は第11.8節の各型付き失敗を維持する。
+
+Truthはprojected FactとSpeechTruthConstraintProjectionPolicyからだけ生成する。GOAL/COMMITMENTは外側GENERAL・AFFIRM・CERTAIN・execution_status=NoneのSELF/GENERAL row、MEMORYはGENERAL・AFFIRM/NEGATE × CERTAIN/LIKELY/UNCERTAIN・execution_status=NoneのSELF/GENERAL rowを、それぞれREQUIRE_MATCHへ明示登録する。G/M envelope全体も既存Fact一致検査の対象であり、modality・時間意味を捨てたpropositionを通さない。communicative definition由来のDISCOURSE・GENERAL・AFFIRM・CERTAIN・NoneもREQUIRE_MATCHの独立rowとする。Executionは第11.11節の全status rowを使用する。
+
+PRESERVE_UNKNOWNはpolarity==UNKNOWNかつcertainty==UNKNOWNという明示rowにのみ許可する。今回のG/M/Execution/act rowはいずれもそこへdowngradeしない。0件/複数一致はTRUTH_RULE_UNRESOLVEDで、generic fallbackはない。external TYPED_CONSTRAINTはV1登録しない。ExecutiveのCONSTRAINT roleを廃止する意味ではなく、既存の明示Fact resolutionからtruthを生成する場合だけを許す。
+
+### 11.14 Finding 2–4とproduction captureの整合
+
+Finding 2: actのevidence_refsにはdefinition.evidence_requirementのsource_contractsへ該当するeligible selected evidenceだけを、Executiveの選択順で束縛する。minimum_countを満たさなければ拒否。minimum_countまで切り詰める規則ではなく、eligibleな選択根拠を順序保持する。残りのEVIDENCEは独立grounded Factとしてsnapshotへ保持する。GRATITUDEはsource_contracts=()なのでeligible=() / act evidence_refs=()。COMMITMENTはCOMMITMENT publication由来だけを束縛し、全EVIDENCE一括bindingをしない。
+
+Finding 3: provenanceのmetadata一致だけでは成功としない。凍結したOwner publication + exact projection policyからexpected SpeechSemanticFactを再投影し、fact_id / kind / subject_ref / predicate / value / claim_kind / execution_status / polarity / certainty / degree / evidence_refsのwhole-value equalityを要求する。communicative Factもexact definition・target・eligible selected evidence・MeaningPolicy generationから再構成してwhole equalityを要求する。metadataだけ一致してsemantic fieldが改変されたsnapshotはSOURCE_IDENTITY_MISMATCHとして拒否する。TruthConstraintもcurrent Fact + exact truth policyから再投影してwhole equalityを要求し、相違はTRUTH_RULE_UNRESOLVED。Fact不在・余剰・重複も受理しない。
+
+Finding 4: ExecutiveSpeechSourceBindingはtransport DTOでありAuthorityではない。production captureは第11.11節の実Owner APIを呼び、戻り値と同publication.tokensからsource owner / contract / identity / revision / Owner generationを構成する。明示registrationはOwner/APIとsource IDを結ぶ設定であり、渡されたbinding DTOの内容を自己証明に使わない。開始snapshotとExecutive current commitの双方で実Owner publicationを再取得し、exact binding / token一致を確認する。Ownerの同期participant/tokenを既存finalization fenceへ渡し、captureのコピー専用Ownerを作らない。複数Ownerは既存順序で読み、最終fenceで全current性を検査し、更新との隙間をsnapshotコピーだけで埋めない。
+
+Speech Builderもcommitted speech_reference_resolutionsから実Ownerのcurrent publicationを読む。確定revision不一致・token失効は既存stale境界へ閉じ、latest revisionへ付替えない。元Executive snapshotが後で存在する前提を置かない。captured Fact ID / communicative definition ID / typed constraint IDの衝突検査を維持し、複数集合に属するIDをprefixで分類しない。外部constraint未対応でもそのIDをFactやcatalogへ読み替えない。
+
+RuntimeSubjectIdentityは#671のapplication lifetimeに固定された値をproduction projection構築時へ明示注入する。minimum applicationが保持するruntime_subject_identityを同じcomposition境界から渡し、#661 consumerはCharacter Profileやcharacter_idを再読取しない。G/M subject検証とSELF/REFERENCE投影にだけ使用し、What-to-say Fact Authorityにしない。runtime identityもcontext generationへ束縛し、別application由来の値への差替えはCONTEXT_STALEとして拒否する。
+
+本節のreconciliationは設計のみ。MeaningPolicy値、source reader/projector、eligible evidence、whole Fact検証、capture readerの現production Pythonとの差分はimplementation pendingである。#613はBlockedを維持し、同じ#661の設計レビュー・後続実装採用前に再開しない。

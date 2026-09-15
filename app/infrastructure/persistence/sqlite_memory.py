@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 from threading import RLock
 from typing import Literal
 
 from app.domain.memory.contracts import (
     MemoryRecord,
     MemoryRelation,
+)
+from app.domain.memory.finalization import (
+    MemoryFinalizationRegistry,
+    memory_mutation,
+    shared_memory_registry,
 )
 from app.domain.memory.repository import MemoryRepositorySnapshot
 
@@ -24,6 +30,11 @@ class SqliteMemoryRepository:
     storage_schema_version = 1
 
     def __init__(self, database_path: str) -> None:
+        self.semantic_guards = (
+            MemoryFinalizationRegistry()
+            if database_path == ":memory:"
+            else shared_memory_registry(("sqlite", str(Path(database_path).resolve())))
+        )
         self._lock = RLock()
         try:
             self._connection = sqlite3.connect(database_path, check_same_thread=False)
@@ -80,6 +91,7 @@ class SqliteMemoryRepository:
             )
             return MemoryRepositorySnapshot(records, relations)
 
+    @memory_mutation
     def save_record(self, record: MemoryRecord, *, expected_revision: int | None) -> bool:
         with self._transaction() as cursor:
             previous = self._revision(cursor, record.memory_id)
@@ -99,6 +111,7 @@ class SqliteMemoryRepository:
             )
             return True
 
+    @memory_mutation
     def save_relation(self, relation: MemoryRelation) -> bool:
         with self._transaction() as cursor:
             exists = self._relation_exists(cursor, relation.relation_id)
@@ -107,6 +120,7 @@ class SqliteMemoryRepository:
             self._insert_relation(cursor, relation)
             return True
 
+    @memory_mutation
     def commit_related(
         self,
         record: MemoryRecord,

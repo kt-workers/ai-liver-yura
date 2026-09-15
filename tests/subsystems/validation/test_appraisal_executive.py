@@ -36,7 +36,7 @@ def bindings(stale: str | None = None) -> tuple[AppraisalExecutiveBindings, list
             payload["source_event_ids"] = [meaning.event().envelope.event_id]
             return replace(
                 executive.success(item),
-                output=StructuredPayload("executive.candidate.v1", freeze_json(payload)),
+                output=StructuredPayload("executive.candidate.v2", freeze_json(payload)),
                 started_at=meaning.NOW + timedelta(seconds=4),
                 completed_at=meaning.NOW + timedelta(seconds=5),
             )

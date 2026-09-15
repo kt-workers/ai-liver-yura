@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.domain.activity_binding import ActivityExecutionBindingPublication
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import (
@@ -27,14 +31,18 @@ from app.domain.plan_execution.progress_contracts import (
 
 from .contracts import (
     ActivityIntentPayload,
+    CommitmentTransitionOperation,
     CommittedExecutiveDecision,
     ExecutiveCommitState,
     ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
+    GoalTransitionOperation,
     PlanExecutionIntentPayload,
     PlanProgressIntentPayload,
+    SpeechIntentPayload,
 )
 from .requirements import ExecutiveRequirementsOwner, RequirementsFailureCode, RequirementsRejected
+from .speech_references import resolve_speech_references, speech_source_tokens
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,8 +58,14 @@ class ExecutiveFinalizationInput:
 class ExecutiveDecisionAuthority:
     """同一triggerの意思決定を高々1件だけ確定する同期commit authority。"""
 
-    def __init__(self, requirements_owner: ExecutiveRequirementsOwner | None = None) -> None:
+    def __init__(
+        self,
+        requirements_owner: ExecutiveRequirementsOwner | None = None,
+        *,
+        bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    ) -> None:
         self.requirements_owner = requirements_owner
+        self._bounds_policy = bounds_policy
         self._committed_triggers: set[str] = set()
         self._participant = AuthorityFinalizationParticipant(self, "ExecutiveDecisionAuthority", 70)
         self._lock = self._participant
@@ -83,6 +97,9 @@ class ExecutiveDecisionAuthority:
         """時刻引数は互換入力。最終確定時刻にはFenceの時計だけを使う。"""
         if committed_at is not None and not isinstance(committed_at, datetime):
             raise ValueError("確定時刻はdatetimeで指定してください")
+        from .deliberator import validate_candidate_bounds
+
+        validate_candidate_bounds(candidate, self._bounds_policy.executive)
         generation = snapshot.requirements_generation
         if self.requirements_owner is None or generation is None:
             raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
@@ -90,7 +107,11 @@ class ExecutiveDecisionAuthority:
             raise RequirementsRejected(RequirementsFailureCode.INVALID_PROJECTION)
         derivations = generation.owner.validate_captured(snapshot, candidate, current)
         self._validate(candidate, snapshot, current)
+        if snapshot.communicative_goal_catalog is not None:
+            snapshot.communicative_goal_catalog.validate_bounds(self._bounds_policy)
+        resolutions = resolve_speech_references(candidate, snapshot, current)
         tokens = (
+            *speech_source_tokens(resolutions, current),
             generation.token,
             *self._plan_binding_tokens(candidate, snapshot),
             *(t for p in self._activity_bindings(candidate, snapshot, current) for t in p.tokens),
@@ -129,6 +150,9 @@ class ExecutiveDecisionAuthority:
 
         if not isinstance(committed_at, datetime):
             raise ValueError("committed_at must be datetime")
+        from .deliberator import validate_candidate_bounds
+
+        validate_candidate_bounds(candidate, self._bounds_policy.executive)
         generation = snapshot.requirements_generation
         if generation is None:
             raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
@@ -197,6 +221,9 @@ class ExecutiveDecisionAuthority:
                 derivations,
                 current.evidence_tokens,
                 self._activity_bindings(candidate, snapshot, current),
+                speech_reference_resolutions=resolve_speech_references(
+                    candidate, snapshot, current
+                ),
             )
             self._committed_triggers.add(snapshot.trigger_id)
             return decision
@@ -359,12 +386,13 @@ class ExecutiveDecisionAuthority:
                 raise ValueError("authoritative capability requirement is missing")
             if not all(item in intent.preconditions for item in authoritative.preconditions):
                 raise ValueError("authoritative precondition requirement is missing")
-            references.extend(intent.evidence_refs)
-            references.extend(intent.forbidden_claim_refs)
-            if isinstance(intent.payload, PlanProgressIntentPayload):
-                references.append(intent.payload.context_ref)
-            else:
-                references.extend(intent.payload.reference_ids())
+            if not isinstance(intent.payload, SpeechIntentPayload):
+                references.extend(intent.evidence_refs)
+                references.extend(intent.forbidden_claim_refs)
+                if isinstance(intent.payload, PlanProgressIntentPayload):
+                    references.append(intent.payload.context_ref)
+                else:
+                    references.extend(intent.payload.reference_ids())
             unknown_preconditions = {item.precondition_id for item in intent.preconditions} - {
                 item.precondition_id for item in snapshot.preconditions
             }
@@ -394,7 +422,10 @@ class ExecutiveDecisionAuthority:
                 raise ValueError("goal commitment ref has an invalid fact kind")
             references.extend(transition.payload.bounded_reference_ids())
             target = transition.goal_ref or transition.goal_spec_ref
-            if target not in goal_fact_ids:
+            if transition.operation is GoalTransitionOperation.CREATE:
+                if target in goal_fact_ids:
+                    raise ValueError("CREATEのGoal identityは既存Stateと重複できません")
+            elif target not in goal_fact_ids:
                 raise ValueError("goal transition reference is outside bounded context")
         for commitment_transition in candidate.commitment_transition_intents:
             if commitment_transition.expected_goal_revision != snapshot.goal_revision:
@@ -411,7 +442,10 @@ class ExecutiveDecisionAuthority:
             target = (
                 commitment_transition.commitment_ref or commitment_transition.commitment_spec_ref
             )
-            if target not in commitment_fact_ids:
+            if commitment_transition.operation is CommitmentTransitionOperation.CREATE:
+                if target in commitment_fact_ids:
+                    raise ValueError("CREATEのCommitment identityは既存Stateと重複できません")
+            elif target not in commitment_fact_ids:
                 raise ValueError("commitment transition reference is outside bounded context")
         if set(references) - evidence_ids:
             raise ValueError("candidate reference is outside bounded context")

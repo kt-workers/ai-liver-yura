@@ -6,9 +6,11 @@ import asyncio
 from collections.abc import Callable, Coroutine
 from typing import Any, Generic, TypeVar, cast
 
+from app.domain.contracts.finalization import AuthorityReadPublication
 from app.domain.memory import MemoryRelationKind, MemoryWriteRequest, MemoryWriteResult
 from app.domain.memory.contracts import MemoryRetrievalQuery
 from app.domain.memory.ranking import RankedMemoryEvidenceView
+from app.domain.memory.semantic_assertions import MemorySemanticAssertionEntry
 from app.domain.memory_reflection import ReflectionCandidateResult
 from app.infrastructure.persistence import (
     PersistenceError,
@@ -92,6 +94,22 @@ class CoreMemoryPersistenceBinding:
         if not isinstance(query, MemoryRetrievalQuery):
             raise ValueError("記憶検索には型付き要求が必要です")
         return self._submit(lambda: self._persistence.retrieve_memory(query))
+
+    def submit_semantic_assertion_read(
+        self, memory_id: str, expected_revision: int | None = None
+    ) -> CoreMemoryOperation[MemorySemanticAssertionEntry]:
+        return self._submit(
+            lambda: self._persistence.read_memory_semantic_assertion(memory_id, expected_revision)
+        )
+
+    def submit_semantic_assertion_publication(
+        self, memory_id: str, expected_revision: int | None = None
+    ) -> CoreMemoryOperation[AuthorityReadPublication[MemorySemanticAssertionEntry]]:
+        return self._submit(
+            lambda: self._persistence.read_memory_semantic_assertion_publication(
+                memory_id, expected_revision
+            )
+        )
 
     def _submit(
         self, action: Callable[[], Coroutine[Any, Any, PersistenceOperationResult[T]]]

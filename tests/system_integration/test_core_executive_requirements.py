@@ -20,6 +20,8 @@ from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import AuthorityReadPublication, FinalizationError
 from app.domain.executive import (
     ExecutiveDecisionAuthority,
+    ExecutiveFactKind,
+    ExecutiveFactRef,
     ExecutiveIntent,
     ExecutiveIntentKind,
     ExecutiveIntentRequirementRule,
@@ -34,7 +36,16 @@ from app.domain.executive import (
     RequirementsRejected,
     SpeechIntentPayload,
 )
+from app.domain.executive.speech_references import (
+    ExecutiveSpeechResolutionKind,
+    ExecutiveSpeechSourceBinding,
+)
+from app.domain.goals import GoalCommitmentStore
 from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
+from app.domain.speech_semantics_vocabulary import (
+    CommunicativeGoalCatalogView,
+    SpeechSourceContractKind,
+)
 from app.runtime.kernel import CancellationToken
 from tests.domain.executive.test_executive import candidate, policy, snapshot
 from tests.domain.plan_execution.test_progression import setup as plan_setup
@@ -118,6 +129,35 @@ class GoalPort(Port):
         )
 
 
+class GoalSpeechFixture:
+    """試験の実Goal Owner公開を明示注入する。製品意味方針は供給しない。"""
+
+    def __init__(self, goals: GoalCommitmentStore) -> None:
+        self.goals = goals
+
+    def capture_speech_sources(
+        self, facts: tuple[ExecutiveFactRef, ...]
+    ) -> tuple[CommunicativeGoalCatalogView | None, tuple[ExecutiveSpeechSourceBinding, ...]]:
+        publication = self.goals.snapshot_publication()
+        goals = {g.goal_id: g for g in publication.value.goals}
+        return None, tuple(
+            ExecutiveSpeechSourceBinding(
+                f.fact_id,
+                ExecutiveSpeechResolutionKind.UPSTREAM_FACT,
+                publication.tokens[0].owner_identity,
+                SpeechSourceContractKind.GOAL,
+                goals[f.fact_id].goal_id,
+                goals[f.fact_id].revision,
+                f.fact_id,
+                f.kind,
+                f.revision,
+                publication.tokens,
+            )
+            for f in facts
+            if f.kind is ExecutiveFactKind.GOAL and f.fact_id in goals
+        )
+
+
 async def production() -> Any:
     value = await wired(with_goal=True)
     value.owner = registered_owner()
@@ -129,6 +169,7 @@ async def production() -> Any:
         value.core.connection,
         value.registry,
         value.requirements,
+        speech=GoalSpeechFixture(value.core.goals),
     )
     value.authority = ExecutiveDecisionAuthority(value.owner)
     value.port = GoalPort()
@@ -365,6 +406,7 @@ async def test_only_used_fact_owner_is_fenced_after_current_read(used: bool) -> 
         value.core.connection,
         value.registry,
         value.requirements,
+        speech=GoalSpeechFixture(value.core.goals),
     )
 
     class UpdatingAuthority(ExecutiveDecisionAuthority):

@@ -678,3 +678,52 @@ Plan取消でOwnerがSTOPPEDになった場合も、そのprogress evidenceを�
 Directのpayloadは`intent.payload.binding_ref`でexactly oneに解決した`ActivityExecutionBindingPublication`を保持する。`direct_invocation()`と同じpublicationだけをfreshness dependencyとして`require_current()`で照合する。同じdecision内の無関係な兄弟binding変更で失効させない。Planの現在性は既存Plan Owner / publication gateに従う。
 
 Activity Execution Brain workはtrusted parent workのlaneとenvelope priorityを継承する。BACKGROUND_REFLECTIONに固定しない。新しいlane、scheduler policy、Domain Authorityは追加せず、Reflectionの意味契約を変更しない。本節は#612の利用・保持・配送契約であり、#329 / #649 / #651のOwner semanticsを変更しない。
+
+
+## 32. Speech production contextの利用境界（#661 / #613）
+
+正規供給は[speech_semantics_contracts.md 第11節](speech_semantics_contracts.md#11-production入力の供給契約661)に従う。#613は次の公開境界をcompositionへ接続する。
+
+```text
+#362のbounded typed catalog view → Executive context
+CommittedExecutiveDecisionと確定済みSpeech参照解決記録
+→ #362 SpeechSemanticContextBuilder / SpeechSemanticContextSourcePort
+→ SpeechSemanticContextSnapshot
+→ 既存SpeechSemanticsPlanner / SpeechSemanticAuthority
+→ 既存Character / Verifier / Performance / Speech Runtime
+```
+
+#362は発話行為のversioned immutableな意味定義、元typed値からのFact投影、truth rule、MeaningPolicy、context generationを所有する。Executiveはcatalogの今回のactとtarget / evidence等の参照を選択する。元Factの実値は各元Ownerが所有する。catalogの意味定義を外部の出来事の証拠へ昇格させない。
+
+#613はOwner adapterと明示policyを接続するだけで、ExecutiveFactRef.payload解釈、Fact projection、truth rule selection、self-disclosure / budget決定、certainty / polarity推定を行わない。definition / Factの区別はtyped解決記録を搬送し、ID文字列解析や独自catalogで代用しない。fixtureからproduction値を推定しない。MeaningPolicy V1のユーザー採用値FACT_GROUNDED / 1 / 1は#362の明示policy factoryから供給する。
+
+catalog・元Owner source・projection・MeaningPolicy・boundsの必要な世代を要求から最終確定まで保持する。source不在、未対応、参照衝突、policy欠落、staleはOwnerのtyped failureとして配送を終了し、空snapshot / 架空のdirective / 成功Planを生成しない。Builder取得中・LLM待機中も無関係なInput / Speech / Activityを全体lockで止めない。
+
+本節は設計契約であり#613のproduction配線完成を意味しない。#613の途中成果と既存#657 / #659の提示事実・実行回収の責務は保持し、#661の実装・採用後に同じ#613 lineageで接続する。
+
+
+### 32.1 catalog transportと容量の接続
+
+#613を含むcompositionはcatalogを`ExecutiveContextSnapshot.communicative_goal_catalog`へ接続し、current取得は`ExecutiveCommitState.communicative_goal_catalog`へ接続する。LLM inputは`executive.context.v2`、candidateは#663採用済みの`executive.candidate.v2`を使用する。generic ExecutiveFactRefへのcatalog偽装は行わない。
+
+#362 Builderへ渡す確定結果は`CommittedExecutiveDecision.speech_reference_resolutions`を保持する。Builderはintent IDに一致するtyped resolutionから元Factまたはdefinitionを解決し、#613が文字列だけからkind / revision / policyを補作しない。
+
+#362と#328へ同じ共有bounds generationを明示注入する。catalog専用の64件・definition 4096 bytes・view 524288 bytesとExecutive snapshot全体8388608 bytesはD10正本§15に従う。MeaningPolicy一致だけで古いtechnical generationを受理せず、producer / consumer双方の型付き失敗を成功へ変更しない。
+
+
+### 32.2 全required sourceの搬送
+
+Builderへの唯一の参照解決経路は`CommittedExecutiveDecision → intent ID → speech_reference_resolutions → SourcePort`とする。semantic goal / target / evidence / forbidden claim / constraintそれぞれのrequiredキーをexactly one照合する。専用constraintも元Owner / contract kind / identity / revisionを確定結果から運ぶ。
+
+compositionはExecutive開始snapshotとcurrent stateの`speech_source_bindings`へ元Ownerのtyped bindingを接続するだけで、resolutionを決定・補作しない。#362 Builderは元Executive snapshotを必要とせず、確定revisionとcurrent Owner公開を照合する。欠落・不一致・staleをlatest値、ID prefix、Owner総当たり、generic payloadで救済しない。communicative definitionはsemantic goal以外へ使わない。
+
+
+### 32.3 #661 design reconciliation後のproduction接続境界
+
+#663/#664/#667/#671/#672/#673は採用済み。主体identityの依存gapは解消したが、#661のproduction reconciliationと#613の配線完成を意味しない。#362のsource matrix・closed G/M envelope・Memory失敗対応・truth rowはspeech_semantics_contracts.md §11.11–11.14を唯一の投影契約とする。
+
+compositionはGoal/Commitment semantic publication、Memory semantic assertion publication、Execution publicationの実Owner readerを注入する。raw State/MemoryRecordや任意ExecutiveSpeechSourceBindingだけでcaptureを成立させない。開始とcurrent commitの双方でOwner値/tokenを取得し、既存Fenceへ元Owner participantを渡す。#613はmodality/lifecycle/時間意味のenvelope生成、whole Fact再投影、truth判断を再実装しない。
+
+#671 applicationのimmutable runtime_subject_identityを#661 projectionへ明示注入する。Profile再読取・"yura"比較・raw refからのSELF分類を行わない。FACT_GROUNDEDは元typed SELF Factだけを根拠にし、人物表現を自己事実へ昇格しない。GRATITUDEはevidence不要で、理由を述べる場合だけ別のgrounded propositionを使う。
+
+ATTENTIONとexternal TYPED_CONSTRAINTはV1 Speech sourceとして未対応。Executiveの既存selection/context用途は保持する。Finding 2–4はcanonicalで整合し、production修正はpending。今回はPython・workflow・resourcesを変更せず、#613はBlockedのまま保持する。

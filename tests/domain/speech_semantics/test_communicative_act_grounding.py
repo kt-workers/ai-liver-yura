@@ -28,6 +28,7 @@ from app.domain.speech_semantics import (
     SpeechSemanticFact,
     SpeechSemanticFactKind,
 )
+from tests.domain.speech_semantics.policy_fixture import explicit_meaning_policy
 
 NOW = datetime(2026, 8, 17, 13, 0, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(20, 7, 3)
@@ -112,6 +113,9 @@ def _context(act: str = "gratitude") -> SpeechSemanticContextSnapshot:
         0,
         0,
         NOW,
+        meaning_policy=explicit_meaning_policy(
+            disclosure=SelfDisclosurePolicy.FACT_GROUNDED, questions=0, directions=0
+        ),
     )
 
 

@@ -64,7 +64,9 @@ from app.domain.llm import (
     StructuredPayload,
 )
 from tests.helpers.executive_requirements import SPEECH_OWNER, make_authority
+from tests.helpers.goal_semantics import semantic_spec
 from tests.helpers.llm import make_execution_policy
+from tests.helpers.speech_bindings import bind_test_sources
 
 NOW = datetime(2026, 8, 14, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(7, 5, 3)
@@ -94,6 +96,7 @@ def live_state(
         if requirements is None
         else requirements,
         ExecutiveBoundsProvenance.from_policy(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY),
+        speech_source_bindings=context.speech_source_bindings,
         requirement_derivations=()
         if requirements == ()
         else SPEECH_OWNER.derive(context, candidate()).values,
@@ -115,58 +118,64 @@ def policy() -> ExecutivePolicy:
 
 def snapshot(trigger_id: str = "trigger-1") -> ExecutiveContextSnapshot:
     return SPEECH_OWNER.capture(
-        ExecutiveContextSnapshot(
-            trigger_id,
-            (f"event-{trigger_id}",),
-            7,
-            5,
-            3,
-            None,
-            InternalStateSnapshot(2, 7, (), NOW),
-            (
-                ExecutiveFactRef("fact-desire", ExecutiveFactKind.GOAL, 5, {"strength": 0.8}),
-                ExecutiveFactRef("goal-1", ExecutiveFactKind.GOAL, 5, {"active": True}),
-                ExecutiveFactRef("goal-spec", ExecutiveFactKind.GOAL, 5, {"proposed": True}),
-                ExecutiveFactRef("answer-user", ExecutiveFactKind.GOAL, 5, {"semantic": True}),
-                ExecutiveFactRef("semantic-goal", ExecutiveFactKind.GOAL, 5, {"semantic": True}),
-                ExecutiveFactRef("commitment-1", ExecutiveFactKind.COMMITMENT, 5, {"active": True}),
-                ExecutiveFactRef(
-                    "commitment-spec",
-                    ExecutiveFactKind.COMMITMENT,
-                    5,
-                    {"proposed": True},
-                ),
-                ExecutiveFactRef(
-                    "unsupported-claim",
-                    ExecutiveFactKind.MEMORY_EVIDENCE,
-                    1,
-                    {"forbidden": True},
-                ),
-            ),
-            (
-                CapabilityDescriptor(
-                    "cap-speech",
-                    "speech",
-                    ("prepare",),
-                    CapabilityAvailability.AVAILABLE,
-                    2,
-                    {},
-                ),
-            ),
-            (PreconditionFact("pre-turn", "turn", "equals", "available"),),
-            NOW,
-            AppraisalFactsSnapshot(
-                1,
-                7,
-                2,
+        bind_test_sources(
+            ExecutiveContextSnapshot(
+                trigger_id,
                 (f"event-{trigger_id}",),
-                (),
-                0.5,
-                0.5,
-                (),
+                7,
+                5,
+                3,
+                None,
+                InternalStateSnapshot(2, 7, (), NOW),
+                (
+                    ExecutiveFactRef("fact-desire", ExecutiveFactKind.GOAL, 5, {"strength": 0.8}),
+                    ExecutiveFactRef("goal-1", ExecutiveFactKind.GOAL, 5, {"active": True}),
+                    ExecutiveFactRef("goal-spec", ExecutiveFactKind.GOAL, 5, {"proposed": True}),
+                    ExecutiveFactRef("answer-user", ExecutiveFactKind.GOAL, 5, {"semantic": True}),
+                    ExecutiveFactRef(
+                        "semantic-goal", ExecutiveFactKind.GOAL, 5, {"semantic": True}
+                    ),
+                    ExecutiveFactRef(
+                        "commitment-1", ExecutiveFactKind.COMMITMENT, 5, {"active": True}
+                    ),
+                    ExecutiveFactRef(
+                        "commitment-spec",
+                        ExecutiveFactKind.COMMITMENT,
+                        5,
+                        {"proposed": True},
+                    ),
+                    ExecutiveFactRef(
+                        "unsupported-claim",
+                        ExecutiveFactKind.MEMORY_EVIDENCE,
+                        1,
+                        {"forbidden": True},
+                    ),
+                ),
+                (
+                    CapabilityDescriptor(
+                        "cap-speech",
+                        "speech",
+                        ("prepare",),
+                        CapabilityAvailability.AVAILABLE,
+                        2,
+                        {},
+                    ),
+                ),
+                (PreconditionFact("pre-turn", "turn", "equals", "available"),),
                 NOW,
-            ),
-            ExecutiveBoundsProvenance.from_policy(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY),
+                AppraisalFactsSnapshot(
+                    1,
+                    7,
+                    2,
+                    (f"event-{trigger_id}",),
+                    (),
+                    0.5,
+                    0.5,
+                    (),
+                    NOW,
+                ),
+                ExecutiveBoundsProvenance.from_policy(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY),
+            )
         )
     )
 
@@ -220,7 +229,7 @@ def success(request: LLMRoleRequest, trigger_id: str = "trigger-1") -> LLMRoleRe
         LLMModelClass.BALANCED,
         1,
         LLMTokenUsage(100, 50),
-        StructuredPayload("executive.candidate.v1", cast(JsonValue, candidate_json(trigger_id))),
+        StructuredPayload("executive.candidate.v2", cast(JsonValue, candidate_json(trigger_id))),
         started_at=NOW,
     )
 
@@ -515,6 +524,7 @@ def test_goal_transition_operations_are_typed_and_do_not_mutate_store(
             50,
             goal_kind="general",
             interruption_policy="resumable",
+            semantic_goal_spec=semantic_spec("semantic-goal"),
         )
         if operation is GoalTransitionOperation.CREATE
         else GoalTransitionPayload(
@@ -548,7 +558,12 @@ def test_commitment_transition_operations_are_typed(
         operation,
         **kwargs,
         expected_goal_revision=5,
-        payload=CommitmentTransitionPayload("commitment-spec", strength=50, priority=50)
+        payload=CommitmentTransitionPayload(
+            "commitment-spec",
+            strength=50,
+            priority=50,
+            semantic_commitment_spec=semantic_spec("commitment-spec"),
+        )
         if operation is CommitmentTransitionOperation.CREATE
         else CommitmentTransitionPayload(),
         reason_refs=("fact-desire",),
@@ -677,7 +692,7 @@ def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
     ungrounded_payload = replace(
         speech_intent(), payload=SpeechIntentPayload("unknown-semantic-goal")
     )
-    with pytest.raises(ValueError, match="bounded"):
+    with pytest.raises(ValueError, match="SOURCE_NOT_FOUND"):
         make_authority().commit(
             replace(candidate(), intents=(ungrounded_payload,)),
             snapshot(),
@@ -686,7 +701,7 @@ def test_transition_and_forbidden_claim_refs_must_be_grounded() -> None:
             committed_at=NOW,
         )
     ungrounded_claim = replace(speech_intent(), forbidden_claim_refs=("unknown-claim",))
-    with pytest.raises(ValueError, match="bounded"):
+    with pytest.raises(ValueError, match="SOURCE_NOT_FOUND"):
         make_authority().commit(
             replace(candidate(), intents=(ungrounded_claim,)),
             snapshot(),
@@ -703,13 +718,15 @@ def test_transition_payload_rejects_bounded_reference_of_wrong_kind(kind: str) -
             "goal-create",
             GoalTransitionOperation.CREATE,
             None,
-            "goal-spec",
+            "new-goal",
             5,
             GoalTransitionPayload(
                 "cap-speech",
                 50,
                 goal_kind="general",
+                commitment_refs=("cap-speech",),
                 interruption_policy="resumable",
+                semantic_goal_spec=semantic_spec("cap-speech"),
             ),
             ("fact-desire",),
         )
@@ -724,9 +741,15 @@ def test_transition_payload_rejects_bounded_reference_of_wrong_kind(kind: str) -
             "commitment-create",
             CommitmentTransitionOperation.CREATE,
             None,
-            "commitment-spec",
+            "new-commitment",
             5,
-            CommitmentTransitionPayload("cap-speech", strength=50, priority=50),
+            CommitmentTransitionPayload(
+                "cap-speech",
+                strength=50,
+                related_goal_refs=("cap-speech",),
+                priority=50,
+                semantic_commitment_spec=semantic_spec("cap-speech"),
+            ),
             ("fact-desire",),
         )
         proposed = replace(
@@ -889,7 +912,10 @@ async def test_deliberator_reloads_live_state_after_llm_and_rejects_changes(
     else:
         live.state = replace(
             live_state(),
-            bounds_provenance=ExecutiveBoundsProvenance("v2.brain-operational-bounds.default", 2),
+            bounds_provenance=ExecutiveBoundsProvenance(
+                "v2.brain-operational-bounds.default",
+                V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_revision + 1,
+            ),
         )
     release.set()
     with pytest.raises(ValueError, match="stale|capability|precondition|bounds"):
@@ -976,7 +1002,7 @@ def test_provider_output_bounds_are_rejected_without_first_n_acceptance() -> Non
     raw["intents"] = [{**intents[0], "intent_id": f"intent-{index}"} for index in range(17)]
     result = replace(
         success(request),
-        output=StructuredPayload("executive.candidate.v1", cast(JsonValue, raw)),
+        output=StructuredPayload("executive.candidate.v2", cast(JsonValue, raw)),
     )
     with pytest.raises(ValueError, match="EXECUTIVE_CONTEXT_TOO_LARGE"):
         commit_result(
@@ -1084,3 +1110,147 @@ def test_committed_decision_keeps_bounds_policy_provenance() -> None:
     assert committed.bounds_provenance == ExecutiveBoundsProvenance.from_policy(
         V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
     )
+
+
+# trunk 16930e327860eac4f5f00f61b463cd882d519c51 のv1 wire fieldを固定する。
+_V1_CONTEXT_FIELDS = {
+    "requirements_generation",
+    "activity_bindings",
+    "plan_scopes",
+    "plan_progress_contexts",
+    "trigger_id",
+    "source_event_ids",
+    "source_context_revision",
+    "goal_revision",
+    "attention_revision",
+    "meaning",
+    "internal_state",
+    "facts",
+    "capabilities",
+    "preconditions",
+    "captured_at",
+    "appraisal_facts",
+    "bounds_policy_id",
+    "bounds_policy_revision",
+}
+
+
+def _wire_context() -> ExecutiveContextSnapshot:
+    from app.composition.speech_semantics_policy import build_speech_semantics_meaning_policy_v1
+
+    catalog = build_speech_semantics_meaning_policy_v1(
+        bounds_policy=policy().bounds
+    ).communicative_goal_catalog
+    return SPEECH_OWNER.capture(replace(snapshot(), communicative_goal_catalog=catalog))
+
+
+def test_context_v1_wire_is_frozen_to_trunk() -> None:
+    context = _wire_context()
+    assert context.communicative_goal_catalog is not None and context.speech_source_bindings
+    assert set(context.to_dict()) == _V1_CONTEXT_FIELDS
+    assert "communicative_goal_catalog" not in context.to_dict()
+    assert "speech_source_bindings" not in context.to_dict()
+
+
+def test_context_v2_explicit_extension_and_request() -> None:
+    from app.domain.contracts.common import freeze_json
+    from app.domain.executive.contracts import executive_context_to_wire_v2
+    from app.domain.executive.deliberator import INPUT_SCHEMA, OUTPUT_SCHEMA
+
+    context = _wire_context()
+    legacy = context.to_dict()
+    wire = executive_context_to_wire_v2(context)
+    assert set(wire) == _V1_CONTEXT_FIELDS | {
+        "communicative_goal_catalog",
+        "speech_source_bindings",
+    }
+    assert {k: wire[k] for k in legacy} == legacy
+    assert context.communicative_goal_catalog is not None
+    assert wire["communicative_goal_catalog"] == context.communicative_goal_catalog.to_dict()
+    assert wire["speech_source_bindings"] == [b.to_dict() for b in context.speech_source_bindings]
+    request = build_request(
+        context, request_id="wire-v2", trace_id="wire-v2", created_at=NOW, policy=policy()
+    )
+    assert INPUT_SCHEMA == request.input.schema_id == "executive.context.v2"
+    assert OUTPUT_SCHEMA == "executive.candidate.v2"
+    assert request.input.value == freeze_json(wire)
+    assert legacy != wire
+
+
+@pytest.mark.parametrize("fault", [None, "catalog", "binding", "v1"])
+def test_context_v2_commit_uses_same_wire(fault: str | None) -> None:
+    from app.domain.executive.contracts import executive_context_to_wire_v2
+
+    context = _wire_context()
+    request = build_request(
+        context, request_id="wire-commit", trace_id="wire-commit", created_at=NOW, policy=policy()
+    )
+    wire = executive_context_to_wire_v2(context)
+    if fault == "catalog":
+        wire["communicative_goal_catalog"] = None
+    elif fault == "binding":
+        wire["speech_source_bindings"] = []
+    elif fault == "v1":
+        wire = context.to_dict()
+    request = replace(
+        request, input=StructuredPayload("executive.context.v2", cast(JsonValue, wire))
+    )
+    current = replace(live_state(), communicative_goal_catalog=context.communicative_goal_catalog)
+    if fault is None:
+        result = commit_result(
+            request,
+            success(request),
+            snapshot=context,
+            current=current,
+            authority=make_authority(context),
+            decision_id="wire-v2-accepted",
+            policy=policy(),
+            committed_at=NOW + timedelta(seconds=2),
+        )
+        assert result.candidate.outcome is ExecutiveOutcome.RESPOND
+    else:
+        with pytest.raises(ValueError, match="snapshot"):
+            commit_result(
+                request,
+                success(request),
+                snapshot=context,
+                current=current,
+                authority=make_authority(context),
+                decision_id="wire-rejected",
+                policy=policy(),
+                committed_at=NOW + timedelta(seconds=2),
+            )
+
+
+@pytest.mark.parametrize("delta", [0, -1])
+def test_context_d10_measures_complete_v2_wire(delta: int) -> None:
+    from app.domain.executive.contracts import executive_context_to_wire_v2
+    from app.domain.executive.speech_references import (
+        ExecutiveContextError,
+        ExecutiveContextFailureCode,
+    )
+    from app.domain.speech_semantics_vocabulary import canonical_size
+
+    context = _wire_context()
+    size = canonical_size(cast(JsonValue, executive_context_to_wire_v2(context)))
+    old_size = canonical_size(cast(JsonValue, context.to_dict()))
+    assert old_size < size - 1
+    assert policy().bounds.executive.max_context_json_bytes == 8388608
+    bounded = replace(
+        policy(),
+        bounds=replace(
+            policy().bounds,
+            executive=replace(policy().bounds.executive, max_context_json_bytes=size + delta),
+        ),
+    )
+    if delta == 0:
+        request = build_request(
+            context, request_id="at-limit", trace_id="limit", created_at=NOW, policy=bounded
+        )
+        assert canonical_size(request.input.value) == size
+    else:
+        with pytest.raises(ExecutiveContextError) as e:
+            build_request(
+                context, request_id="above-limit", trace_id="limit", created_at=NOW, policy=bounded
+            )
+        assert e.value.code is ExecutiveContextFailureCode.EXECUTIVE_CONTEXT_TOO_LARGE

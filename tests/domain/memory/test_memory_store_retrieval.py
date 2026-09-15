@@ -284,9 +284,7 @@ class BrokenIndex:
     def upsert(self, record: object) -> None:
         raise RuntimeError("unavailable")
 
-    def related_scores(
-        self, query: str, *, limit: int
-    ) -> tuple[MemorySemanticRelevance, ...]:
+    def related_scores(self, query: str, *, limit: int) -> tuple[MemorySemanticRelevance, ...]:
         raise RuntimeError("unavailable")
 
 
@@ -308,7 +306,9 @@ def test_semantic_index_failure_keeps_filtered_retrieval_and_reports_degradation
     )
     store.write(MemoryWriteRequest(candidate("candidate:a", value="a")))
     store.write(MemoryWriteRequest(candidate("candidate:b", value="b", source="fact:2")))
-    view = store.retrieve(query(semantic_query="好きなゲーム", subject_refs=("user:1",)))
+    view = store.retrieve(
+        query(semantic_query="好きなゲーム", subject_refs=("user:1",), max_estimated_tokens=1024)
+    )
     assert {item.memory_id for item in view.items} == {"candidate:a", "candidate:b"}
     assert view.degraded
     assert view.degradation_reasons == (MemoryDegradationReason.SEMANTIC_INDEX_UNAVAILABLE,)
@@ -319,9 +319,7 @@ def test_semantic_index_is_ranking_signal_not_memory_identity_authority() -> Non
         def upsert(self, record: object) -> None:
             pass
 
-        def related_scores(
-            self, query: str, *, limit: int
-        ) -> tuple[MemorySemanticRelevance, ...]:
+        def related_scores(self, query: str, *, limit: int) -> tuple[MemorySemanticRelevance, ...]:
             assert query == "関連"
             assert limit == 8
             return (MemorySemanticRelevance("candidate:b", 1.0),)
@@ -343,7 +341,7 @@ def test_semantic_index_is_ranking_signal_not_memory_identity_authority() -> Non
             )
         )
     )
-    view = store.retrieve(query(semantic_query="関連"))
+    view = store.retrieve(query(semantic_query="関連", max_estimated_tokens=1024))
     assert [item.memory_id for item in view.items] == ["candidate:b", "candidate:a"]
     assert len(repository.list_records()) == 2
 
