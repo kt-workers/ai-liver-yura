@@ -720,7 +720,7 @@ compositionはExecutive開始snapshotとcurrent stateの`speech_source_bindings`
 
 ### 32.3 #661 design reconciliation後のproduction接続境界
 
-#663/#664/#667/#671/#672/#673は採用済み。主体identityの依存gapは解消したが、#661のproduction reconciliationと#613の配線完成を意味しない。#362のsource matrix・closed G/M envelope・Memory失敗対応・truth rowはspeech_semantics_contracts.md §11.10–11.13を唯一の投影契約とする。
+#663/#664/#667/#671/#672/#673は採用済み。主体identityの依存gapは解消したが、#661のproduction reconciliationと#613の配線完成を意味しない。#362のsource matrix・closed G/M envelope・Memory失敗対応・truth rowはspeech_semantics_contracts.md §11.11–11.14を唯一の投影契約とする。
 
 compositionはGoal/Commitment semantic publication、Memory semantic assertion publication、Execution publicationの実Owner readerを注入する。raw State/MemoryRecordや任意ExecutiveSpeechSourceBindingだけでcaptureを成立させない。開始とcurrent commitの双方でOwner値/tokenを取得し、既存Fenceへ元Owner participantを渡す。#613はmodality/lifecycle/時間意味のenvelope生成、whole Fact再投影、truth判断を再実装しない。
 
