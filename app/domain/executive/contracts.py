@@ -446,10 +446,6 @@ class ExecutiveContextSnapshot:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "communicative_goal_catalog": None
-            if self.communicative_goal_catalog is None
-            else self.communicative_goal_catalog.to_dict(),
-            "speech_source_bindings": [x.to_dict() for x in self.speech_source_bindings],
             "requirements_generation": (
                 None
                 if self.requirements_generation is None
@@ -473,6 +469,17 @@ class ExecutiveContextSnapshot:
             "bounds_policy_id": self.bounds_provenance.policy_id,
             "bounds_policy_revision": self.bounds_provenance.policy_revision,
         }
+
+
+def executive_context_to_wire_v2(snapshot: ExecutiveContextSnapshot) -> dict[str, object]:
+    """凍結したv1 wireを保持し、current v2の追加fieldを明示する。"""
+    return {
+        **snapshot.to_dict(),
+        "communicative_goal_catalog": None
+        if snapshot.communicative_goal_catalog is None
+        else snapshot.communicative_goal_catalog.to_dict(),
+        "speech_source_bindings": [x.to_dict() for x in snapshot.speech_source_bindings],
+    }
 
 
 def build_executive_context_snapshot(

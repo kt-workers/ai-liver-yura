@@ -1110,3 +1110,147 @@ def test_committed_decision_keeps_bounds_policy_provenance() -> None:
     assert committed.bounds_provenance == ExecutiveBoundsProvenance.from_policy(
         V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
     )
+
+
+# trunk 16930e327860eac4f5f00f61b463cd882d519c51 のv1 wire fieldを固定する。
+_V1_CONTEXT_FIELDS = {
+    "requirements_generation",
+    "activity_bindings",
+    "plan_scopes",
+    "plan_progress_contexts",
+    "trigger_id",
+    "source_event_ids",
+    "source_context_revision",
+    "goal_revision",
+    "attention_revision",
+    "meaning",
+    "internal_state",
+    "facts",
+    "capabilities",
+    "preconditions",
+    "captured_at",
+    "appraisal_facts",
+    "bounds_policy_id",
+    "bounds_policy_revision",
+}
+
+
+def _wire_context() -> ExecutiveContextSnapshot:
+    from app.composition.speech_semantics_policy import build_speech_semantics_meaning_policy_v1
+
+    catalog = build_speech_semantics_meaning_policy_v1(
+        bounds_policy=policy().bounds
+    ).communicative_goal_catalog
+    return SPEECH_OWNER.capture(replace(snapshot(), communicative_goal_catalog=catalog))
+
+
+def test_context_v1_wire_is_frozen_to_trunk() -> None:
+    context = _wire_context()
+    assert context.communicative_goal_catalog is not None and context.speech_source_bindings
+    assert set(context.to_dict()) == _V1_CONTEXT_FIELDS
+    assert "communicative_goal_catalog" not in context.to_dict()
+    assert "speech_source_bindings" not in context.to_dict()
+
+
+def test_context_v2_explicit_extension_and_request() -> None:
+    from app.domain.contracts.common import freeze_json
+    from app.domain.executive.contracts import executive_context_to_wire_v2
+    from app.domain.executive.deliberator import INPUT_SCHEMA, OUTPUT_SCHEMA
+
+    context = _wire_context()
+    legacy = context.to_dict()
+    wire = executive_context_to_wire_v2(context)
+    assert set(wire) == _V1_CONTEXT_FIELDS | {
+        "communicative_goal_catalog",
+        "speech_source_bindings",
+    }
+    assert {k: wire[k] for k in legacy} == legacy
+    assert context.communicative_goal_catalog is not None
+    assert wire["communicative_goal_catalog"] == context.communicative_goal_catalog.to_dict()
+    assert wire["speech_source_bindings"] == [b.to_dict() for b in context.speech_source_bindings]
+    request = build_request(
+        context, request_id="wire-v2", trace_id="wire-v2", created_at=NOW, policy=policy()
+    )
+    assert INPUT_SCHEMA == request.input.schema_id == "executive.context.v2"
+    assert OUTPUT_SCHEMA == "executive.candidate.v2"
+    assert request.input.value == freeze_json(wire)
+    assert legacy != wire
+
+
+@pytest.mark.parametrize("fault", [None, "catalog", "binding", "v1"])
+def test_context_v2_commit_uses_same_wire(fault: str | None) -> None:
+    from app.domain.executive.contracts import executive_context_to_wire_v2
+
+    context = _wire_context()
+    request = build_request(
+        context, request_id="wire-commit", trace_id="wire-commit", created_at=NOW, policy=policy()
+    )
+    wire = executive_context_to_wire_v2(context)
+    if fault == "catalog":
+        wire["communicative_goal_catalog"] = None
+    elif fault == "binding":
+        wire["speech_source_bindings"] = []
+    elif fault == "v1":
+        wire = context.to_dict()
+    request = replace(
+        request, input=StructuredPayload("executive.context.v2", cast(JsonValue, wire))
+    )
+    current = replace(live_state(), communicative_goal_catalog=context.communicative_goal_catalog)
+    if fault is None:
+        result = commit_result(
+            request,
+            success(request),
+            snapshot=context,
+            current=current,
+            authority=make_authority(context),
+            decision_id="wire-v2-accepted",
+            policy=policy(),
+            committed_at=NOW + timedelta(seconds=2),
+        )
+        assert result.candidate.outcome is ExecutiveOutcome.RESPOND
+    else:
+        with pytest.raises(ValueError, match="snapshot"):
+            commit_result(
+                request,
+                success(request),
+                snapshot=context,
+                current=current,
+                authority=make_authority(context),
+                decision_id="wire-rejected",
+                policy=policy(),
+                committed_at=NOW + timedelta(seconds=2),
+            )
+
+
+@pytest.mark.parametrize("delta", [0, -1])
+def test_context_d10_measures_complete_v2_wire(delta: int) -> None:
+    from app.domain.executive.contracts import executive_context_to_wire_v2
+    from app.domain.executive.speech_references import (
+        ExecutiveContextError,
+        ExecutiveContextFailureCode,
+    )
+    from app.domain.speech_semantics_vocabulary import canonical_size
+
+    context = _wire_context()
+    size = canonical_size(cast(JsonValue, executive_context_to_wire_v2(context)))
+    old_size = canonical_size(cast(JsonValue, context.to_dict()))
+    assert old_size < size - 1
+    assert policy().bounds.executive.max_context_json_bytes == 8388608
+    bounded = replace(
+        policy(),
+        bounds=replace(
+            policy().bounds,
+            executive=replace(policy().bounds.executive, max_context_json_bytes=size + delta),
+        ),
+    )
+    if delta == 0:
+        request = build_request(
+            context, request_id="at-limit", trace_id="limit", created_at=NOW, policy=bounded
+        )
+        assert canonical_size(request.input.value) == size
+    else:
+        with pytest.raises(ExecutiveContextError) as e:
+            build_request(
+                context, request_id="above-limit", trace_id="limit", created_at=NOW, policy=bounded
+            )
+        assert e.value.code is ExecutiveContextFailureCode.EXECUTIVE_CONTEXT_TOO_LARGE

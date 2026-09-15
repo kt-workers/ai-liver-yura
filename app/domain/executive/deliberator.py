@@ -59,6 +59,7 @@ from .contracts import (
     PlanExecutionIntentPayload,
     PlanProgressIntentPayload,
     SpeechIntentPayload,
+    executive_context_to_wire_v2,
 )
 
 ROLE_ID = "executive_deliberation"
@@ -122,7 +123,7 @@ def build_request(
     if utc_instant(created_at) < utc_instant(snapshot.captured_at):
         raise ValueError("request creation cannot predate context snapshot")
     _validate_snapshot_bounds(snapshot, policy.bounds)
-    value = cast(JsonValue, snapshot.to_dict())
+    value = cast(JsonValue, executive_context_to_wire_v2(snapshot))
     from app.domain.speech_semantics_vocabulary import canonical_size
 
     if canonical_size(value) > policy.bounds.executive.max_context_json_bytes:
@@ -214,7 +215,7 @@ def commit_result(
         raise ValueError(failure.code.value)
     if result.status is not LLMRoleStatus.SUCCEEDED or result.output is None:
         raise ValueError("executive result is not committable")
-    if request.input.value != freeze_json(snapshot.to_dict()):
+    if request.input.value != freeze_json(executive_context_to_wire_v2(snapshot)):
         raise ValueError("executive context does not match request snapshot")
     candidate = parse_candidate(result.output.value, snapshot, created_at=result.completed_at)
     validate_candidate_bounds(candidate, policy.bounds.executive)
