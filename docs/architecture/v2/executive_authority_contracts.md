@@ -284,3 +284,12 @@ CREATEのgoal_spec_ref / semantic_goal_ref、commitment_spec_ref / semantic_comm
 CREATEでもreason_refs、REFERENCE subject_ref、Goalのtarget_ref / commitment_refs / precondition_ids / completion_condition_refs、Commitmentのcounterparty_ref / related_goal_refs / due_condition_refs / release_condition_refsは既存typed/bounded規則に従う。non-CREATEのgoal_ref / commitment_refおよびSUPERSEDEのsuperseding_goal_refは既存の同kind State Factを必須とする。
 
 既存BrainOperationalBoundsPolicy.executive.max_fact_payload_json_bytes（16384）を意味上限の新設ではなくExecutiveへのtransport compatibility boundとして適用する。candidate境界でCREATE spec単体のcanonical JSON UTF-8 bytesを検査する。#366 Storeには既存shared boundsを注入し、batchのlocal copy構築後、snapshotの更新前に完全なGoalState.to_dict() / CommitmentState.to_dict()の同byte数を検査する。超過はbatch全体非適用、State revision不変とし、切捨てやcommit後の保存失敗への転嫁を禁止する。復元時にも同じ上限を検査する。合法Stateの保存不可時には既存のin-memory継続契約を維持する。新D10 field / 数値 / generationは追加しない。
+
+
+### #661：production Speech source captureの採用済みOwner整合
+
+speech_semantics_contracts.md §11.10–11.13を#362投影の正本とする。ExecutiveSpeechSourceBindingはtransportであり、任意DTO注入を元Owner publicationの代わりにしない。開始snapshot/current commitは実GoalCommitmentStore.goal_semantic_publication / commitment_semantic_publication、MemoryStoreAuthority.read_semantic_assertion_publication、ActivityExecutionAuthority.snapshot_publicationから、同時取得したtyped値とOwner tokenでexact bindingを構成する。current commitで再取得・token照合し、元Owner participantを既存最終fenceへ渡す。staleをlatest revisionへ付替えない。
+
+Executiveは参照選択とtyped resolutionの確定を維持し、Goal/Commitment modalityやMemory時間意味のSpeech投影は所有しない。ATTENTIONはExecutive context/selection用途を維持するが、V1 Speech material sourceとして登録しない。external TYPED_CONSTRAINTもV1登録しない。Fact/catalog/constraint ID collision検査と全required refのexactly one解決は維持する。
+
+MeaningPolicy V1の採用値はFACT_GROUNDED / 1 / 1。GRATITUDEのevidence要件はsources=() / minimum_count=0、COMMITMENTは(COMMITMENT,) / 1。これはcatalog vocabularyの供給でありExecutiveのact選択を#362へ移さない。本reconciliationはdesign-only、capture reader等のproduction修正はpendingである。
