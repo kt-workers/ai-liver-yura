@@ -25,7 +25,7 @@ from app.domain.memory_reflection.llm_roles import (
     parse_proposals,
     parse_support,
     proposal_to_wire,
-    proposal_to_wire_v2,
+    proposal_to_wire_v3,
 )
 from app.domain.memory_reflection.runtime import ReflectionCoordinator
 from tests.domain.memory_reflection.test_llm_roles import (
@@ -277,7 +277,7 @@ async def test_failure_await_revalidates_owner_disposition(
                 ReflectionRelationHint("memory-1", 2, MemoryRelationKind.CONTRADICTS, ("s",), 0.8),
             ),
         )
-    normal_proposal = RolePort({"proposals": [proposal_to_wire_v2(p)]})
+    normal_proposal = RolePort({"proposals": [proposal_to_wire_v3(p)]})
     owner = ReflectionCoordinator(
         LLMReflectionProposalPort(
             PausedRole() if stage == "proposal" else normal_proposal, policy, now=lambda: NOW

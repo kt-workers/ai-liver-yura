@@ -17,6 +17,7 @@ from app.domain.contracts.common import (
     require_revision,
     thaw_json,
 )
+from app.domain.contracts.semantic_subject import SemanticSubjectIdentity
 from app.domain.llm import LLMFailureCode
 from app.domain.memory.contracts import (
     MemoryAssertionSemantics,
@@ -222,8 +223,14 @@ class ReflectionSourceEvidence:
     retracted: bool = False
     source_excerpt: str | None = None
     source_excerpt_truncated: bool = False
+    subject_identity: SemanticSubjectIdentity | None = None
 
     def __post_init__(self) -> None:
+        if (
+            self.subject_identity is not None
+            and type(self.subject_identity) is not SemanticSubjectIdentity
+        ):
+            raise ValueError("subject_identityには共有型かNoneが必要です")
         require_identifier(self.source_ref, "source_ref")
         if not isinstance(self.source_kind, ReflectionSourceKind):
             raise ValueError("source_kindが不正です")
@@ -432,6 +439,7 @@ class MemoryCandidateProposal:
     rationale_evidence_refs: tuple[str, ...] = ()
     deterministic_capture: bool = False
     assertion_semantics: MemoryAssertionSemantics | None = None
+    subject_identity: SemanticSubjectIdentity | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.proposal_id, "proposal_id")
@@ -467,6 +475,11 @@ class MemoryCandidateProposal:
             self.assertion_semantics, MemoryAssertionSemantics
         ):
             raise ValueError("assertion_semanticsは明示された型かNoneが必要です")
+        if self.subject_identity is not None:
+            if type(self.subject_identity) is not SemanticSubjectIdentity:
+                raise ValueError("subject_identityには共有型かNoneが必要です")
+            if self.content.subject_ref != self.subject_identity.subject_ref:
+                raise ValueError("contentとsubject_identityの主体が一致しません")
         if type(self.deterministic_capture) is not bool:
             raise ValueError("deterministic_captureが不正です")
 
@@ -713,4 +726,38 @@ def candidate_from_accepted_proposal(
         primary.source_kind is ReflectionSourceKind.PRESENTATION_FACT,
         primary.source_kind is ReflectionSourceKind.EXECUTION_FACT,
         assertion_semantics=proposal.assertion_semantics,
+        subject_identity=proposal.subject_identity,
+    )
+
+
+def source_to_wire_v2(source: ReflectionSourceEvidence) -> dict[str, object]:
+    """V1の形状を保持しながら、明示された主体だけをV2へ搬送する。"""
+    identity = source.subject_identity
+    return {
+        **source.to_dict(),
+        "subject_identity": None
+        if identity is None
+        else {
+            "kind": identity.kind.value,
+            "subject_ref": identity.subject_ref,
+        },
+    }
+
+
+def context_to_wire_v2(context: ReflectionContextSnapshot) -> dict[str, object]:
+    return {
+        **context.to_dict(),
+        "primary_sources": [source_to_wire_v2(source) for source in context.primary_sources],
+    }
+
+
+def subject_identity_is_grounded(
+    context: ReflectionContextSnapshot,
+    identity: SemanticSubjectIdentity | None,
+    evidence_refs: tuple[str, ...],
+) -> bool:
+    """指定されたfrozen根拠内の型付きidentityだけを照合する。"""
+    return identity is None or any(
+        source.source_ref in evidence_refs and source.subject_identity == identity
+        for source in context.primary_sources
     )

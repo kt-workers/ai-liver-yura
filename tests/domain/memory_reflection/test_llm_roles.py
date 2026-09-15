@@ -33,6 +33,7 @@ from app.domain.memory_reflection import (
 from app.domain.memory_reflection.contracts import (
     MemoryCandidateProposal,
     ReflectionContextSnapshot,
+    context_to_wire_v2,
 )
 from app.domain.memory_reflection.llm_roles import (
     PROPOSAL_INPUT_SCHEMA,
@@ -51,7 +52,7 @@ from app.domain.memory_reflection.llm_roles import (
     parse_support,
     proposal_descriptor,
     proposal_to_wire,
-    proposal_to_wire_v2,
+    proposal_to_wire_v3,
     support_descriptor,
 )
 from tests.domain.llm.test_contracts import policy as execution
@@ -103,7 +104,7 @@ class RolePort:
             self.output
             if self.output is not None
             else (
-                {"proposals": [proposal_to_wire_v2(candidate())]} if is_proposal else support_wire()
+                {"proposals": [proposal_to_wire_v3(candidate())]} if is_proposal else support_wire()
             )
         )
         result = LLMRoleResult(
@@ -133,11 +134,11 @@ def test_descriptor_and_request_exact_mapping(interruptible: bool) -> None:
     support = build_support_request(c, p, created_at=NOW, policy=policy)
     assert request.request_id == f"{c.reflection_id}:proposal"
     assert request.input.schema_id == PROPOSAL_INPUT_SCHEMA
-    assert request.input.value == freeze_json(c.to_dict())
+    assert request.input.value == freeze_json(context_to_wire_v2(c))
     assert support.request_id == f"{c.reflection_id}:support:{p.proposal_id}"
     assert support.input.schema_id == SUPPORT_INPUT_SCHEMA
     assert support.input.value == freeze_json(
-        {"context": c.to_dict(), "proposal": proposal_to_wire_v2(p)}
+        {"context": context_to_wire_v2(c), "proposal": proposal_to_wire_v3(p)}
     )
     for r, d, e in [
         (request, proposal_descriptor(policy), policy.proposal_execution),
@@ -184,7 +185,7 @@ def test_lossless_json_and_temporal_round_trip(value: Any) -> None:
     assert build_support_request(
         snapshot(), p, created_at=NOW, policy=role_policy()
     ).input.value == freeze_json(
-        {"context": snapshot().to_dict(), "proposal": proposal_to_wire_v2(result[0])}
+        {"context": context_to_wire_v2(snapshot()), "proposal": proposal_to_wire_v3(result[0])}
     )
 
 
@@ -335,7 +336,7 @@ async def test_ports_use_injected_clock_and_zero_candidates() -> None:
     )
     assert result2.proposal_id == p.proposal_id
     assert port.requests[1].input.value == freeze_json(
-        {"context": snapshot().to_dict(), "proposal": proposal_to_wire_v2(p)}
+        {"context": context_to_wire_v2(snapshot()), "proposal": proposal_to_wire_v3(p)}
     )
 
 
@@ -406,7 +407,7 @@ async def test_existing_actual_fact_guards(
 ) -> None:
     c = context(source("s", kind))
     p = replace(candidate(), content=replace(candidate().content, predicate=predicate))
-    proposal_port = RolePort({"proposals": [proposal_to_wire_v2(p)]})
+    proposal_port = RolePort({"proposals": [proposal_to_wire_v3(p)]})
     owner = ReflectionCoordinator(
         LLMReflectionProposalPort(proposal_port, role_policy(), now=lambda: NOW),
         LLMReflectionSupportPort(RolePort(), role_policy(), now=lambda: NOW),

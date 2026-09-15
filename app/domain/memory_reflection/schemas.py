@@ -3,6 +3,7 @@
 from enum import Enum
 from typing import cast
 
+from app.domain.contracts.semantic_subject import SemanticSubjectKind
 from app.domain.memory.contracts import (
     MemoryAssertionCertainty,
     MemoryAssertionPolarity,
@@ -161,4 +162,43 @@ def support_instructions_v2() -> str:
         "explicit semanticsがevidenceにsupportされない場合はSUPPORTEDにしない。"
         "意味に応じPARTIALLY_SUPPORTED/UNSUPPORTED/AMBIGUOUS/CONTRADICTEDを使用する。"
         "unsupported semanticsをNoneへ書き換えてacceptしない。output shapeはv1を維持する。"
+    )
+
+
+def proposal_output_schema_v3() -> dict[str, object]:
+    schema = proposal_output_schema_v2()
+    root = cast(dict[str, object], schema["properties"])
+    array = cast(dict[str, object], root["proposals"])
+    item = cast(dict[str, object], array["items"])
+    properties = cast(dict[str, object], item["properties"])
+    properties["subject_identity"] = {
+        "anyOf": [
+            {"type": "null"},
+            _object(
+                {
+                    "kind": _enum(SemanticSubjectKind),
+                    "subject_ref": {"type": "string", "minLength": 1},
+                }
+            ),
+        ]
+    }
+    item["required"] = list(properties)
+    return schema
+
+
+def proposal_instructions_v3() -> str:
+    return proposal_instructions_v2() + (
+        "subject_identityはproposal.source_refs内のfrozen primary_sourcesに明示された"
+        "型付きidentityとexact一致する場合だけnon-nullとし、不明ならnullとする。"
+        "raw subject_ref、semantic_payload、source_excerpt、raw prose、display name、"
+        "first-person、『私』『自分』『ゆら』、keyword/regex/substring、ID prefix、"
+        "character_id比較、confidence、predicate、MemoryKindからkind/refを推測しない。"
+    )
+
+
+def support_instructions_v3() -> str:
+    return support_instructions_v2() + (
+        "subject_identityも含めたproposal全体を検証する。nonnull identityでSUPPORTEDを"
+        "返すにはevidence_refs内のfrozen sourceにexact同じtyped identityが必要である。"
+        "SELF/REFERENCEを交換せず、unsupported identityをnullへ書き換えてacceptしない。"
     )

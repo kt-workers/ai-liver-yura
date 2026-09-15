@@ -55,7 +55,11 @@ async def test_v2_semantics_reach_store_but_subject_remains_unresolved(
     from dataclasses import replace
 
     from app.domain.memory.contracts import MemoryAssertionPolarity
-    from app.domain.memory_reflection.llm_roles import proposal_to_wire_v2
+    from app.domain.memory_reflection.llm_roles import (
+        parse_proposals_v2,
+        parse_support,
+        proposal_to_wire_v2,
+    )
     from tests.domain.memory_reflection.test_llm_roles import candidate
     from tests.domain.memory_reflection.test_semantic_supply import SEMANTICS
 
@@ -71,17 +75,14 @@ async def test_v2_semantics_reach_store_but_subject_remains_unresolved(
                 candidate(), proposal_id=f"p-{polarity.value}", assertion_semantics=semantics
             )
             policy = role_policy()
-            port = RolePort({"proposals": [proposal_to_wire_v2(p)]})
-            parsed = (
-                await LLMReflectionProposalPort(port, policy, now=lambda: NOW).propose(snapshot())
+            parsed = parse_proposals_v2(
+                {"proposals": [proposal_to_wire_v2(p)]}, snapshot(), policy.operational
             )[0]
             from tests.domain.memory_reflection.test_llm_roles import support_wire
 
             wire = support_wire()
             wire["proposal_id"] = p.proposal_id
-            support = await LLMReflectionSupportPort(
-                RolePort(wire), policy, now=lambda: NOW
-            ).observe(snapshot(), parsed)
+            support = parse_support(wire, snapshot(), parsed, policy.operational)
             accepted = authority().accept(snapshot(), parsed, support)
             assert accepted.candidate is not None
             assert accepted.candidate.assertion_semantics == semantics
@@ -103,5 +104,52 @@ async def test_v2_semantics_reach_store_but_subject_remains_unresolved(
                 is MemorySemanticAssertionUnavailableReason.SUBJECT_UNRESOLVED
             )
         assert ids[0] != ids[1]
+    finally:
+        db.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["SELF", "REFERENCE"])
+async def test_v3_typed_subject_reaches_postgres_publication(
+    endpoint: PostgresEndpoint, kind: str
+) -> None:
+    from app.domain.contracts.semantic_subject import SemanticSubjectKind
+    from app.domain.memory_reflection.llm_roles import proposal_to_wire_v3
+    from tests.domain.memory_reflection.test_subject_supply import typed_pair
+
+    context, proposed = typed_pair(SemanticSubjectKind(kind))
+    role = RolePort({"proposals": [proposal_to_wire_v3(proposed)]})
+    parsed = (
+        await LLMReflectionProposalPort(role, role_policy(), now=lambda: NOW).propose(context)
+    )[0]
+    support = await LLMReflectionSupportPort(RolePort(), role_policy(), now=lambda: NOW).observe(
+        context, parsed
+    )
+    accepted = authority().accept(context, parsed, support)
+    assert accepted.candidate is not None
+    db = PostgresDatabase.connect(endpoint, POLICY)
+    try:
+        repo = PostgresMemoryRepository(db)
+        repo.migrate()
+        store = MemoryStoreAuthority(repo)
+        result = store.write(MemoryWriteRequest(accepted.candidate))
+        assert result.record is not None
+        stored = repo.get(result.record.memory_id)
+        assert stored is not None
+        publication = store.read_semantic_assertion_publication(stored.memory_id, stored.revision)
+        assert (
+            stored.subject_identity
+            == accepted.candidate.subject_identity
+            == proposed.subject_identity
+        )
+        assert (
+            stored.assertion_semantics
+            == accepted.candidate.assertion_semantics
+            == proposed.assertion_semantics
+        )
+        assert publication.value.assertion is not None
+        assert publication.value.assertion.subject_identity == proposed.subject_identity
+        assert publication.value.assertion.assertion_semantics == proposed.assertion_semantics
+        assert publication.tokens
     finally:
         db.close()

@@ -23,6 +23,7 @@ from .contracts import (
     ReflectionRunResult,
     ReflectionRunTelemetry,
     ReflectionSupportObservation,
+    context_to_wire_v2,
 )
 from .operational import (
     ReflectionOperationalError,
@@ -505,7 +506,7 @@ class ReflectionCoordinator:
     @staticmethod
     def _context_key(context: ReflectionContextSnapshot) -> str:
         encoded = json.dumps(
-            context.to_dict(), ensure_ascii=True, sort_keys=True, separators=(",", ":")
+            context_to_wire_v2(context), ensure_ascii=True, sort_keys=True, separators=(",", ":")
         )
         return sha256(encoded.encode()).hexdigest()
 

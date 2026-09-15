@@ -24,11 +24,11 @@ from app.domain.memory_reflection.llm_roles import (
     SUPPORT_ROLE_ID,
     build_proposal_request,
     build_support_request,
-    parse_proposals_v2,
+    parse_proposals_v3,
     parse_support,
-    proposal_to_wire_v2,
+    proposal_to_wire_v3,
 )
-from app.domain.memory_reflection.schemas import proposal_output_schema_v2, support_output_schema
+from app.domain.memory_reflection.schemas import proposal_output_schema_v3, support_output_schema
 from tests.adapters.llm.test_openai_responses import FakeClient, FakeResponse
 from tests.domain.memory_reflection.test_llm_roles import (
     candidate,
@@ -55,7 +55,7 @@ async def test_both_roles_share_generic_adapter_with_exact_configs() -> None:
         SUPPORT_INPUT_SCHEMA,
         SUPPORT_OUTPUT_SCHEMA,
     )
-    assert p.output_json_schema == proposal_output_schema_v2()
+    assert p.output_json_schema == proposal_output_schema_v3()
     assert s.output_json_schema == support_output_schema()
     assert p.provider_output_format_name == PROPOSAL_FORMAT_NAME
     assert s.provider_output_format_name == SUPPORT_FORMAT_NAME != PROPOSAL_FORMAT_NAME
@@ -67,7 +67,7 @@ async def test_both_roles_share_generic_adapter_with_exact_configs() -> None:
         support_execution=replace(policy.support_execution, temperature_normalized=None),
     )
     client = FakeClient(
-        FakeResponse(json.dumps({"proposals": [proposal_to_wire_v2(candidate())]})),
+        FakeResponse(json.dumps({"proposals": [proposal_to_wire_v3(candidate())]})),
         FakeResponse(json.dumps(support_wire())),
     )
     adapter = OpenAIResponsesAdapter(client, (p, s), now=lambda: NOW)
@@ -79,7 +79,7 @@ async def test_both_roles_share_generic_adapter_with_exact_configs() -> None:
     )
     assert first.status is second.status is LLMRoleStatus.SUCCEEDED
     assert first.output is not None and second.output is not None
-    assert parse_proposals_v2(first.output.value, snapshot(), policy.operational) == (candidate(),)
+    assert parse_proposals_v3(first.output.value, snapshot(), policy.operational) == (candidate(),)
     assert (
         parse_support(second.output.value, snapshot(), candidate(), policy.operational).proposal_id
         == candidate().proposal_id
