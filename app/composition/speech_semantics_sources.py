@@ -1,7 +1,9 @@
 """採用済みOwner publicationをSpeech V1の参照と意味へ接続する。"""
 
 from dataclasses import dataclass
+from types import MappingProxyType
 
+from app.composition.memory_persistence import CoreMemoryPersistenceBinding
 from app.domain.activity_execution.authority import ActivityExecutionAuthority
 from app.domain.activity_execution.contracts import ActivityExecutionRecord
 from app.domain.contracts import ExecutionStatus
@@ -21,7 +23,6 @@ from app.domain.goal_commitment_semantics import (
 )
 from app.domain.goals.semantic_views import GoalCommitmentSemanticView
 from app.domain.goals.store import GoalCommitmentStore
-from app.domain.memory.authority import MemoryStoreAuthority
 from app.domain.memory.semantic_assertions import MemorySemanticAssertionEntry
 from app.domain.memory.semantic_assertions import MemorySemanticAssertionUnavailableReason as R
 from app.domain.speech_semantics.contracts import SpeechSemanticFact
@@ -58,86 +59,105 @@ from app.domain.speech_semantics_vocabulary import (
 from app.domain.speech_semantics_vocabulary import (
     SpeechTruthRule as T,
 )
+from app.infrastructure.persistence import PersistenceError
 
 
 @dataclass(frozen=True, slots=True)
 class SpeechOwnerSourceRegistration:
-    """参照IDと実Owner APIの明示的な対応。値を自己申告させない。"""
+    """application lifetimeの型付きroute。具体的IDや値を登録しない。"""
 
-    fact_id: str
     fact_kind: ExecutiveFactKind
-    source_identity: str
     source_contract: K
 
 
+_CONTRACTS = {
+    ExecutiveFactKind.GOAL: K.GOAL,
+    ExecutiveFactKind.COMMITMENT: K.COMMITMENT,
+    ExecutiveFactKind.ACTIVITY: K.EXECUTION,
+    ExecutiveFactKind.EXECUTION: K.EXECUTION,
+    ExecutiveFactKind.MEMORY_EVIDENCE: K.MEMORY,
+}
+_OWNERS = {
+    K.GOAL: "GoalCommitmentStore",
+    K.COMMITMENT: "GoalCommitmentStore",
+    K.MEMORY: "MemoryStoreAuthority",
+    K.EXECUTION: "ActivityExecutionAuthority",
+}
+V1_SPEECH_SOURCE_ROUTES = tuple(
+    SpeechOwnerSourceRegistration(kind, contract) for kind, contract in _CONTRACTS.items()
+)
+
+
 class ProductionSpeechSources(SpeechSemanticContextSourcePort):
-    """開始/current/Builderで同じ実Ownerの公開を取得する。"""
+    """boundedなFact選択からだけ実Ownerを取得し、IDのregistryを持たない。"""
 
     def __init__(
         self,
         *,
         goals: GoalCommitmentStore,
-        memory: MemoryStoreAuthority,
+        memory: CoreMemoryPersistenceBinding,
         execution: ActivityExecutionAuthority,
-        registrations: tuple[SpeechOwnerSourceRegistration, ...],
+        registrations: tuple[SpeechOwnerSourceRegistration, ...] = V1_SPEECH_SOURCE_ROUTES,
     ) -> None:
         super().__init__(())
         if (
             not isinstance(goals, GoalCommitmentStore)
-            or not isinstance(memory, MemoryStoreAuthority)
+            or not isinstance(memory, CoreMemoryPersistenceBinding)
             or not isinstance(execution, ActivityExecutionAuthority)
         ):
-            raise ValueError("実Ownerの注入が必要です")
+            raise ValueError("実OwnerとMemoryのpublic非同期境界の注入が必要です")
         self._goals, self._memory, self._execution = goals, memory, execution
-        self._entries = {r.fact_id: r for r in registrations}
-        if len(self._entries) != len(registrations):
-            raise SpeechSemanticContextError(C.SOURCE_IDENTITY_MISMATCH)
+        routes: dict[ExecutiveFactKind, K] = {}
         for r in registrations:
-            if r.source_contract not in (K.GOAL, K.COMMITMENT, K.MEMORY, K.EXECUTION):
+            if _CONTRACTS.get(r.fact_kind) is not r.source_contract:
                 raise SpeechSemanticContextError(C.UNSUPPORTED_SOURCE_CONTRACT)
-            # 既存typed DTOのkind対応検査を使い、payloadを参照しない。
-            self._binding(r, 0, ())
+            if r.fact_kind in routes:
+                raise SpeechSemanticContextError(C.SOURCE_IDENTITY_MISMATCH)
+            routes[r.fact_kind] = r.source_contract
+        self._routes = MappingProxyType(routes)
 
     @staticmethod
     def _binding(
-        r: SpeechOwnerSourceRegistration,
-        revision: int,
+        fact: ExecutiveFactRef,
+        contract: K,
         tokens: tuple[AuthorityGenerationToken, ...],
     ) -> ExecutiveSpeechSourceBinding:
-        owner = {
-            K.GOAL: "GoalCommitmentStore",
-            K.COMMITMENT: "GoalCommitmentStore",
-            K.MEMORY: "MemoryStoreAuthority",
-            K.EXECUTION: "ActivityExecutionAuthority",
-        }[r.source_contract]
         return ExecutiveSpeechSourceBinding(
-            r.fact_id,
+            fact.fact_id,
             ExecutiveSpeechResolutionKind.UPSTREAM_FACT,
-            owner,
-            r.source_contract,
-            r.source_identity,
-            revision,
-            r.fact_id,
-            r.fact_kind,
-            revision,
+            _OWNERS[contract],
+            contract,
+            fact.fact_id,
+            fact.revision,
+            fact.fact_id,
+            fact.kind,
+            fact.revision,
             tokens,
         )
 
-    def _read(
-        self, r: SpeechOwnerSourceRegistration, revision: int
+    async def _read(
+        self, contract: K, identity: str, revision: int
     ) -> AuthorityReadPublication[SourceValue]:
         publication: AuthorityReadPublication[SourceValue] | None
-        if r.source_contract is K.GOAL:
-            p = self._goals.goal_semantic_publication(r.source_identity)
+        if contract is K.GOAL:
+            p = self._goals.goal_semantic_publication(identity)
             publication = None if p is None else AuthorityReadPublication(p.value, p.tokens)
-        elif r.source_contract is K.COMMITMENT:
-            p = self._goals.commitment_semantic_publication(r.source_identity)
+        elif contract is K.COMMITMENT:
+            p = self._goals.commitment_semantic_publication(identity)
             publication = None if p is None else AuthorityReadPublication(p.value, p.tokens)
-        elif r.source_contract is K.MEMORY:
-            m = self._memory.read_semantic_assertion_publication(r.source_identity, revision)
+        elif contract is K.MEMORY:
+            try:
+                result = await self._memory.read_semantic_assertion_publication(identity, revision)
+            except PersistenceError as exc:
+                raise SpeechSemanticContextError(C.SOURCE_UNAVAILABLE) from exc
+            if result.failure_code is not None:
+                raise SpeechSemanticContextError(C.SOURCE_UNAVAILABLE)
+            m = result.value
+            if m is None:
+                raise SpeechSemanticContextError(C.SOURCE_UNAVAILABLE)
             publication = AuthorityReadPublication(m.value, m.tokens)
         else:
-            e = self._execution.snapshot_publication(r.source_identity)
+            e = self._execution.snapshot_publication(identity)
             publication = None if e.value is None else AuthorityReadPublication(e.value, e.tokens)
         if publication is None:
             raise SpeechSemanticContextError(C.SOURCE_NOT_FOUND)
@@ -153,27 +173,33 @@ class ProductionSpeechSources(SpeechSemanticContextSourcePort):
                 raise SpeechSemanticContextError(code)
             if value.assertion is None:
                 raise SpeechSemanticContextError(C.UNSUPPORTED_PROJECTION)
-            identity, actual_revision = value.assertion.memory_id, value.assertion.memory_revision
+            actual_identity, actual_revision = (
+                value.assertion.memory_id,
+                value.assertion.memory_revision,
+            )
         elif isinstance(value, GoalCommitmentSemanticView):
             expected = (
                 GoalCommitmentSemanticModality.GOAL
-                if r.source_contract is K.GOAL
+                if contract is K.GOAL
                 else GoalCommitmentSemanticModality.COMMITMENT
             )
             if value.modality is not expected:
                 raise SpeechSemanticContextError(C.SOURCE_KIND_MISMATCH)
-            identity, actual_revision = value.state_id, value.state_revision
+            actual_identity, actual_revision = value.state_id, value.state_revision
         elif isinstance(value, ActivityExecutionRecord):
-            identity, actual_revision = value.invocation.command.command_id, value.record_revision
+            actual_identity, actual_revision = (
+                value.invocation.command.command_id,
+                value.record_revision,
+            )
         else:
             raise SpeechSemanticContextError(C.SOURCE_KIND_MISMATCH)
-        if identity != r.source_identity:
+        if actual_identity != identity:
             raise SpeechSemanticContextError(C.SOURCE_IDENTITY_MISMATCH)
         if actual_revision != revision:
             raise SpeechSemanticContextError(C.SOURCE_REVISION_MISMATCH)
         if not publication.tokens:
             raise SpeechSemanticContextError(C.UNSUPPORTED_SOURCE_CONTRACT)
-        expected_owner = self._binding(r, revision, publication.tokens).source_owner
+        expected_owner = _OWNERS[contract]
         for t in publication.tokens:
             if t.owner_identity != expected_owner:
                 raise SpeechSemanticContextError(C.SOURCE_OWNER_MISMATCH)
@@ -181,7 +207,7 @@ class ProductionSpeechSources(SpeechSemanticContextSourcePort):
                 raise SpeechSemanticContextError(C.CONTEXT_STALE)
         return publication
 
-    def capture(
+    async def capture(
         self, facts: tuple[ExecutiveFactRef, ...]
     ) -> tuple[ExecutiveSpeechSourceBinding, ...]:
         result = []
@@ -190,24 +216,36 @@ class ProductionSpeechSources(SpeechSemanticContextSourcePort):
             if fact.fact_id in seen:
                 raise SpeechSemanticContextError(C.SOURCE_IDENTITY_MISMATCH)
             seen.add(fact.fact_id)
-            r = self._entries.get(fact.fact_id)
-            if r is None:
+            contract = self._routes.get(fact.kind)
+            if contract is None:
                 continue
-            if r.fact_kind is not fact.kind:
-                raise SpeechSemanticContextError(C.SOURCE_KIND_MISMATCH)
-            p = self._read(r, fact.revision)
-            result.append(self._binding(r, fact.revision, p.tokens))
+            p = await self._read(contract, fact.fact_id, fact.revision)
+            result.append(self._binding(fact, contract, p.tokens))
+        # 後続Memoryのawait中に先行Ownerが変わった場合も拒否する。
+        for binding in result:
+            for token in binding.source_tokens:
+                if token._participant.token() != token:
+                    raise SpeechSemanticContextError(C.CONTEXT_STALE)
         return tuple(result)
 
-    def resolve(
+    async def acquire(
         self, resolution: ExecutiveSpeechReferenceResolution
     ) -> SpeechSemanticSourceBinding:
-        r = self._entries.get(resolution.selected_ref)
         source = resolution.source
-        if r is None or source is None:
+        if source is None or source.fact_kind is None:
             raise SpeechSemanticContextError(C.UNSUPPORTED_SOURCE_CONTRACT)
-        publication = self._read(r, source.source_revision)
-        expected = self._binding(r, source.source_revision, publication.tokens)
+        contract = self._routes.get(source.fact_kind)
+        if contract is None or source.source_contract_kind is not contract:
+            raise SpeechSemanticContextError(C.UNSUPPORTED_SOURCE_CONTRACT)
+        if source.source_owner != _OWNERS[contract]:
+            raise SpeechSemanticContextError(C.SOURCE_OWNER_MISMATCH)
+        if source.source_identity != resolution.selected_ref:
+            raise SpeechSemanticContextError(C.SOURCE_IDENTITY_MISMATCH)
+        publication = await self._read(contract, source.source_identity, source.source_revision)
+        fact = ExecutiveFactRef(
+            resolution.selected_ref, source.fact_kind, source.source_revision, {}
+        )
+        expected = self._binding(fact, contract, publication.tokens)
         if source != expected:
             raise SpeechSemanticContextError(C.CONTEXT_STALE)
         return SpeechSemanticSourceBinding(resolution, publication.value, publication.tokens)

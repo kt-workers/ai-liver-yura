@@ -127,11 +127,16 @@ class ExecutiveSpeechPolicyEvidence:
     owner: SpeechSemanticPolicyOwner
     sources: ProductionSpeechSources
 
-    def capture_speech_sources(
+    async def capture_speech_sources(
         self,
         facts: tuple[ExecutiveFactRef, ...],
     ) -> tuple[CommunicativeGoalCatalogView | None, tuple[ExecutiveSpeechSourceBinding, ...]]:
-        bindings = self.sources.capture(facts)
+        policies = self.owner.publication()
+        if len(facts) > policies.value.bounds.executive.max_fact_refs:
+            raise SpeechSemanticContextError(SpeechSemanticContextFailureCode.CONTEXT_TOO_LARGE)
+        bindings = await self.sources.capture(facts)
+        if self.owner.publication() != policies:
+            raise SpeechSemanticContextError(SpeechSemanticContextFailureCode.CONTEXT_STALE)
         return self.owner.catalog_view(), bindings
 
 
