@@ -20,6 +20,7 @@ from app.domain.executive.speech_references import ExecutiveSpeechReferenceRole
 from app.domain.goals import GoalCommitmentStore
 from app.domain.memory import MemoryWriteRequest
 from app.domain.memory.semantic_assertions import MemorySemanticAssertionEntry
+from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
 from app.domain.speech_semantics_vocabulary import SpeechSemanticContextError
 from app.domain.speech_semantics_vocabulary import SpeechSemanticContextFailureCode as C
 from app.infrastructure.persistence import PersistenceFailureCode, PersistenceOperationResult
@@ -40,6 +41,27 @@ from tests.helpers.speech_production import (
     production_sources,
 )
 from tests.system_integration.test_speech_semantics_policy import binding, committed
+
+
+def update_capacity(owner: SpeechSemanticPolicyOwner, count: int) -> None:
+    current = owner.publication().value
+    bounds = replace(
+        current.bounds,
+        policy_revision=current.bounds.policy_revision + 1,
+        executive=replace(current.bounds.executive, max_fact_refs=count),
+    )
+    assert current.meaning is not None
+    # 意味値を保ち、catalogの容量provenanceも同じ新世代へ進める。
+    meaning = replace(
+        current.meaning,
+        revision=current.meaning.revision + 1,
+        communicative_goal_catalog=replace(
+            current.meaning.communicative_goal_catalog,
+            policy_revision=current.meaning.revision + 1,
+            bounds_policy_revision=bounds.policy_revision,
+        ),
+    )
+    owner.update(replace(current, bounds=bounds, meaning=meaning))
 
 
 @pytest.mark.asyncio
@@ -164,7 +186,7 @@ def memory_fact(p: ProductionSpeechSources) -> ExecutiveFactRef:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("change", ["none", "goal", "policy"])
+@pytest.mark.parametrize("change", ["none", "goal", "policy", "bounds"])
 async def test_memory_wait_allows_other_work_and_checks_earlier_generations(change: str) -> None:
     p = production_sources()
     fact = memory_fact(p)
@@ -189,6 +211,8 @@ async def test_memory_wait_allows_other_work_and_checks_earlier_generations(chan
                 pass
         elif change == "policy":
             owner.update(owner.publication().value)
+        elif change == "bounds":
+            update_capacity(owner, BOUNDS.executive.max_fact_refs + 1)
         memory.release.set()
         if change == "none":
             _, bindings = await task
@@ -201,6 +225,33 @@ async def test_memory_wait_allows_other_work_and_checks_earlier_generations(chan
     finally:
         memory.release.set()
         await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_current_policy_alone_controls_capacity_after_update() -> None:
+    p = production_sources()
+    old = p._goals.snapshot()
+    count = BOUNDS.executive.max_fact_refs + 1
+    goals = tuple(replace(old.goals[0], goal_id=f"dynamic-{i}") for i in range(count))
+    sources = ProductionSpeechSources(
+        goals=GoalCommitmentStore(replace(old, goals=goals)),
+        memory=p._memory,
+        execution=p._execution,
+    )
+    owner = binding().owner
+    evidence = bind_speech_semantics_policy_v1(owner, sources=sources).executive_evidence
+    facts = tuple(ExecutiveFactRef(g.goal_id, F.GOAL, g.revision, {}) for g in goals)
+    with pytest.raises(SpeechSemanticContextError) as error:
+        await evidence.capture_speech_sources(facts)
+    assert error.value.code is C.CONTEXT_TOO_LARGE
+    update_capacity(owner, count)
+    # 同じsourceを再構築せず、旧上限を超える合法Factをすべて取得できる。
+    _, captured = await evidence.capture_speech_sources(facts)
+    assert tuple(b.fact_id for b in captured) == tuple(g.goal_id for g in goals)
+    update_capacity(owner, BOUNDS.executive.max_fact_refs)
+    with pytest.raises(SpeechSemanticContextError) as error:
+        await evidence.capture_speech_sources(facts)
+    assert error.value.code is C.CONTEXT_TOO_LARGE
 
 
 @pytest.mark.asyncio

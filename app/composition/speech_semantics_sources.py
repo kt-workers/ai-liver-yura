@@ -6,10 +6,6 @@ from types import MappingProxyType
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
 from app.domain.activity_execution.authority import ActivityExecutionAuthority
 from app.domain.activity_execution.contracts import ActivityExecutionRecord
-from app.domain.brain_operational_bounds import (
-    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
-    BrainOperationalBoundsPolicy,
-)
 from app.domain.contracts import ExecutionStatus
 from app.domain.contracts.common import JsonValue
 from app.domain.contracts.finalization import AuthorityGenerationToken, AuthorityReadPublication
@@ -102,7 +98,6 @@ class ProductionSpeechSources(SpeechSemanticContextSourcePort):
         memory: CoreMemoryPersistenceBinding,
         execution: ActivityExecutionAuthority,
         registrations: tuple[SpeechOwnerSourceRegistration, ...] = V1_SPEECH_SOURCE_ROUTES,
-        bounds: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
     ) -> None:
         super().__init__(())
         if (
@@ -120,7 +115,6 @@ class ProductionSpeechSources(SpeechSemanticContextSourcePort):
                 raise SpeechSemanticContextError(C.SOURCE_IDENTITY_MISMATCH)
             routes[r.fact_kind] = r.source_contract
         self._routes = MappingProxyType(routes)
-        self._bounds = bounds
 
     @staticmethod
     def _binding(
@@ -216,8 +210,6 @@ class ProductionSpeechSources(SpeechSemanticContextSourcePort):
     async def capture(
         self, facts: tuple[ExecutiveFactRef, ...]
     ) -> tuple[ExecutiveSpeechSourceBinding, ...]:
-        if len(facts) > self._bounds.executive.max_fact_refs:
-            raise SpeechSemanticContextError(C.CONTEXT_TOO_LARGE)
         result = []
         seen: set[str] = set()
         for fact in facts:
