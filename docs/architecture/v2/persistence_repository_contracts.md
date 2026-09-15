@@ -707,3 +707,10 @@ PostgreSQL の初期保存構造は `yura_v2` 名前空間に作成する。記�
 再接続の試験では、DBによる接続拒否・再許可を実際に行い、再試行の進行だけをEventで同期する。模擬の成功を保存結果に使用しない。別プロセス試験へ渡すのは隔離DBの接続情報と試験設定であり、実環境の秘密情報を引き継がない。
 
 この対応表は永続化境界の受入範囲を示す。通常認知への記憶還流は#614、再利用可能な検証入口は#619、システム全体の受入れは#622・#625に残る。各HEADの品質検査・CI・独立レビュー・採用状態はPRとMission Checkpointで別途確認する。
+
+
+## Speech source取得と既存operation回収の接続（#677）
+
+CoreMemoryPersistenceBinding.read_semantic_assertion_publicationは、既存submit_semantic_assertion_publication(...).wait()へ委譲する非同期public入口とする。同じPostgresPersistenceRuntimeの実Memory Ownerを利用し、private _memoryの取得や別MemoryStoreAuthorityの生成を必要としない。新しいexecutorやDB poolを作らず、既存の上限・失敗・取消後回収・shutdown契約を保つ。
+
+Speech source取得は選択済みMemory IDと期待するリビジョンだけを渡す。persistence failureを空の正常publicationへ置換しない。I/Oは既存executorで実行し、待機中にDomain/global cognition lockを保持しない。source ID registryやin-flight Speechを永続化対象へ追加しない。

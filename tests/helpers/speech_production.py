@@ -1,12 +1,12 @@
 """Speech production試験で実Ownerを明示構築する。"""
 
+from app.composition.memory_persistence import CoreMemoryPersistenceBinding
 from app.composition.speech_semantics_sources import (
     ProductionSpeechSources,
-    SpeechOwnerSourceRegistration,
 )
 from app.domain.activity_execution.authority import ActivityExecutionAuthority
+from app.domain.contracts.finalization import AuthorityReadPublication
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
-from app.domain.executive.contracts import ExecutiveFactKind
 from app.domain.goals import (
     CommitmentState,
     CommitmentStatus,
@@ -17,7 +17,9 @@ from app.domain.goals import (
     InterruptionPolicy,
 )
 from app.domain.goals.store import GoalCommitmentStore
-from app.domain.speech_semantics_vocabulary import SpeechSourceContractKind as K
+from app.domain.memory import MemoryStoreAuthority
+from app.domain.memory.semantic_assertions import MemorySemanticAssertionEntry
+from app.infrastructure.persistence import PersistenceOperationResult
 from tests.domain.executive.test_executive import NOW
 from tests.domain.memory.test_memory_store_retrieval import authority
 from tests.helpers.goal_semantics import semantic_spec
@@ -65,12 +67,26 @@ def production_sources() -> ProductionSpeechSources:
     memory, _ = authority()
     return ProductionSpeechSources(
         goals=goals,
-        memory=memory,
+        memory=InMemorySpeechMemory(memory),
         execution=ActivityExecutionAuthority(),
-        registrations=(
-            SpeechOwnerSourceRegistration("goal-1", ExecutiveFactKind.GOAL, "goal-1", K.GOAL),
-            SpeechOwnerSourceRegistration(
-                "commitment-1", ExecutiveFactKind.COMMITMENT, "commitment-1", K.COMMITMENT
-            ),
-        ),
     )
+
+
+class InMemorySpeechMemory(CoreMemoryPersistenceBinding):
+    """unit試験でだけMemory public非同期境界をメモリ内Ownerへ接続する。"""
+
+    def __init__(self, owner: MemoryStoreAuthority) -> None:
+        self.owner = owner
+
+    async def read_semantic_assertion_publication(
+        self, memory_id: str, expected_revision: int | None = None
+    ) -> PersistenceOperationResult[AuthorityReadPublication[MemorySemanticAssertionEntry]]:
+        return PersistenceOperationResult(
+            self.owner.read_semantic_assertion_publication(memory_id, expected_revision)
+        )
+
+
+def memory_owner(sources: ProductionSpeechSources) -> MemoryStoreAuthority:
+    memory = sources._memory
+    assert isinstance(memory, InMemorySpeechMemory)
+    return memory.owner

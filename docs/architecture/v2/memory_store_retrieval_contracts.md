@@ -713,3 +713,8 @@ MemoryContentとto_dictは変更しない。非null identityは共有型であ�
 旧payloadの欠落fieldはNoneとして読み、silent migration・backfillを行わない。physical DB schemaとstorage_schema_versionは保持する。
 raw refの検索filterとrankingは不変、容量にはtyped metadataを含める。Runtime Character照合やraw refからのkind生成はMemory Ownerの責務にしない。
 Reflection v2のwireを保持し、typed subject未供給の記録は保存可能だがassertionにはSUBJECT_UNRESOLVEDとなる。production供給は#673へ残す。
+
+
+## Speech sourceからのpublic取得（#677）
+
+Speechへ公開する範囲は既存bounded retrieval等によってExecutive contextへ採用されたMEMORY_EVIDENCEに限定する。source route登録を理由にDB全件を公開せず、ランキング・意味・lifecycleのAuthorityを変更しない。採用済みID/revisionのsemantic assertion publicationはCoreMemoryPersistenceBindingの非同期public境界から取得し、Memoryのassertionと元Owner tokenをexact保持する。具体的IDの追加/撤回registryは持たず、supersedeや消失は元Ownerの現在公開で検出する。Speech側の取得・失敗規則はspeech_semantics_contracts.md §11.15に従う。

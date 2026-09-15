@@ -135,7 +135,7 @@ class GoalSpeechFixture:
     def __init__(self, goals: GoalCommitmentStore) -> None:
         self.goals = goals
 
-    def capture_speech_sources(
+    async def capture_speech_sources(
         self, facts: tuple[ExecutiveFactRef, ...]
     ) -> tuple[CommunicativeGoalCatalogView | None, tuple[ExecutiveSpeechSourceBinding, ...]]:
         publication = self.goals.snapshot_publication()

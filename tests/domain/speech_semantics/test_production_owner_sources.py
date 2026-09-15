@@ -48,14 +48,19 @@ from app.domain.speech_semantics_vocabulary import SpeechTruthRule as T
 from tests.domain.activity_execution.test_activity_execution import started
 from tests.domain.executive.test_executive import NOW, snapshot
 from tests.domain.memory.test_memory_store_retrieval import authority, candidate
-from tests.helpers.speech_production import IDENTITY, production_sources
+from tests.helpers.speech_production import (
+    IDENTITY,
+    InMemorySpeechMemory,
+    memory_owner,
+    production_sources,
+)
 from tests.system_integration.test_speech_semantics_policy import binding, committed
 
 
-def resolution(
+async def resolution(
     sources: ProductionSpeechSources, fact: ExecutiveFactRef
 ) -> ExecutiveSpeechReferenceResolution:
-    source = sources.capture((fact,))[0]
+    source = (await sources.capture((fact,)))[0]
     return ExecutiveSpeechReferenceResolution(
         "intent-speech", Role.EVIDENCE, fact.fact_id, Kind.UPSTREAM_FACT, source
     )
@@ -67,7 +72,8 @@ def resolution(
 @pytest.mark.parametrize(
     "subject", [GoalCommitmentSemanticSubjectKind.SELF, GoalCommitmentSemanticSubjectKind.REFERENCE]
 )
-def test_goal_commitment_exact_envelope(
+@pytest.mark.asyncio
+async def test_goal_commitment_exact_envelope(
     kind: K, status: GoalStatus | CommitmentStatus, subject: GoalCommitmentSemanticSubjectKind
 ) -> None:
     sources = production_sources()
@@ -102,9 +108,9 @@ def test_goal_commitment_exact_envelope(
         )
         fact = ExecutiveFactRef("commitment-1", ExecutiveFactKind.COMMITMENT, 5, {})
     sources._goals = GoalCommitmentStore(new)
-    r = resolution(sources, fact)
+    r = await resolution(sources, fact)
     projected = SpeechSemanticFactProjector(build_projection_v1(IDENTITY)).project(
-        sources.resolve(r)
+        await sources.acquire(r)
     )
     assert projected.kind is (
         F.SELF if subject is GoalCommitmentSemanticSubjectKind.SELF else F.GENERAL
@@ -127,7 +133,8 @@ def test_goal_commitment_exact_envelope(
 @pytest.mark.parametrize("temporal", list(MemoryAssertionTemporalMeaning))
 @pytest.mark.parametrize("subject_kind", list(SemanticSubjectKind))
 @pytest.mark.parametrize("certainty", list(MemoryAssertionCertainty))
-def test_memory_exact_temporal_and_typed_subject(
+@pytest.mark.asyncio
+async def test_memory_exact_temporal_and_typed_subject(
     temporal: MemoryAssertionTemporalMeaning,
     subject_kind: SemanticSubjectKind,
     certainty: MemoryAssertionCertainty,
@@ -158,20 +165,15 @@ def test_memory_exact_temporal_and_typed_subject(
     p = production_sources()
     sources = ProductionSpeechSources(
         goals=p._goals,
-        memory=memory,
+        memory=InMemorySpeechMemory(memory),
         execution=ActivityExecutionAuthority(),
-        registrations=(
-            SpeechOwnerSourceRegistration(
-                record.memory_id, ExecutiveFactKind.MEMORY_EVIDENCE, record.memory_id, K.MEMORY
-            ),
-        ),
     )
-    r = resolution(
+    r = await resolution(
         sources,
         ExecutiveFactRef(record.memory_id, ExecutiveFactKind.MEMORY_EVIDENCE, record.revision, {}),
     )
     projected = SpeechSemanticFactProjector(build_projection_v1(IDENTITY)).project(
-        sources.resolve(r)
+        await sources.acquire(r)
     )
     assert projected.kind is (F.SELF if subject_kind is SemanticSubjectKind.SELF else F.GENERAL)
     assert projected.value == {
@@ -185,18 +187,16 @@ def test_memory_exact_temporal_and_typed_subject(
 
 
 @pytest.mark.parametrize("reason", list(R))
-def test_all_memory_failure_mapping(reason: R, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_all_memory_failure_mapping(reason: R, monkeypatch: pytest.MonkeyPatch) -> None:
     p = production_sources()
     sources = ProductionSpeechSources(
         goals=p._goals,
         memory=p._memory,
         execution=p._execution,
-        registrations=(
-            SpeechOwnerSourceRegistration("m", ExecutiveFactKind.MEMORY_EVIDENCE, "m", K.MEMORY),
-        ),
     )
     monkeypatch.setattr(
-        p._memory,
+        memory_owner(p),
         "read_semantic_assertion_publication",
         lambda identity, revision: AuthorityReadPublication(
             MemorySemanticAssertionEntry("m", None, unavailable_reason=reason), ()
@@ -209,12 +209,13 @@ def test_all_memory_failure_mapping(reason: R, monkeypatch: pytest.MonkeyPatch) 
         R.REPOSITORY_UNAVAILABLE: C.SOURCE_UNAVAILABLE,
     }.get(reason, C.UNSUPPORTED_PROJECTION)
     with pytest.raises(SpeechSemanticContextError) as exc:
-        sources.capture((ExecutiveFactRef("m", ExecutiveFactKind.MEMORY_EVIDENCE, 1, {}),))
+        (await sources.capture((ExecutiveFactRef("m", ExecutiveFactKind.MEMORY_EVIDENCE, 1, {}),)))
     assert exc.value.code is expected
 
 
 @pytest.mark.parametrize("status", list(ExecutionStatus))
-def test_execution_all_status_exact(status: ExecutionStatus) -> None:
+@pytest.mark.asyncio
+async def test_execution_all_status_exact(status: ExecutionStatus) -> None:
     owner, record = started()
     result = ExecutionResult(
         record.result.command_id,
@@ -241,13 +242,8 @@ def test_execution_all_status_exact(status: ExecutionStatus) -> None:
         goals=p._goals,
         memory=p._memory,
         execution=owner,
-        registrations=(
-            SpeechOwnerSourceRegistration(
-                "command-1", ExecutiveFactKind.ACTIVITY, "command-1", K.EXECUTION
-            ),
-        ),
     )
-    r = resolution(
+    r = await resolution(
         sources,
         ExecutiveFactRef("command-1", ExecutiveFactKind.ACTIVITY, record.record_revision, {}),
     )
@@ -274,12 +270,13 @@ def test_execution_all_status_exact(status: ExecutionStatus) -> None:
         "evidence_refs",
     ],
 )
-def test_whole_fact_tamper_rejected(field: str) -> None:
+@pytest.mark.asyncio
+async def test_whole_fact_tamper_rejected(field: str) -> None:
     from app.domain.speech_semantics_vocabulary import SemanticCertainty, SemanticPolarity
 
     b = binding()
-    d = committed(b, "yura.communicative.gratitude", ("goal-1",))
-    ctx = b.context_builder.build(d, "intent-speech", captured_at=NOW)
+    d = await committed(b, "yura.communicative.gratitude", ("goal-1",))
+    ctx = await b.context_builder.build_async(d, "intent-speech", captured_at=NOW)
     f = ctx.facts[0]
     changes: dict[str, Any] = {
         "subject_ref": "tamper",
@@ -296,10 +293,11 @@ def test_whole_fact_tamper_rejected(field: str) -> None:
         replace(ctx, facts=(replace(f, **{field: changes[field]}), *ctx.facts[1:]))
 
 
-def test_act_and_truth_tamper_rejected() -> None:
+@pytest.mark.asyncio
+async def test_act_and_truth_tamper_rejected() -> None:
     b = binding()
-    d = committed(b, "yura.communicative.gratitude", ("goal-1",))
-    ctx = b.context_builder.build(d, "intent-speech", captured_at=NOW)
+    d = await committed(b, "yura.communicative.gratitude", ("goal-1",))
+    ctx = await b.context_builder.build_async(d, "intent-speech", captured_at=NOW)
     with pytest.raises(SpeechSemanticContextError):
         replace(ctx, facts=(*ctx.facts[:-1], replace(ctx.facts[-1], value={"kind": "apology"})))
     with pytest.raises(SpeechSemanticContextError):
@@ -312,19 +310,20 @@ def test_act_and_truth_tamper_rejected() -> None:
         )
 
 
-def test_actual_capture_rejects_stale_and_dto_self_proof() -> None:
+@pytest.mark.asyncio
+async def test_actual_capture_rejects_stale_and_dto_self_proof() -> None:
     p = production_sources()
-    facts = snapshot().facts
-    first = p.capture(facts)
-    assert first == p.capture(facts)
+    facts = tuple(f for f in snapshot().facts if f.fact_id in ("goal-1", "commitment-1"))
+    first = await p.capture(facts)
+    assert first == (await p.capture(facts))
     r = ExecutiveSpeechReferenceResolution(
         "intent-speech", Role.EVIDENCE, first[0].selected_ref, Kind.UPSTREAM_FACT, first[0]
     )
-    assert p.resolve(r).tokens == first[0].source_tokens
+    assert (await p.acquire(r)).tokens == first[0].source_tokens
     with p._goals.finalization_participant.mutation():
         pass
     with pytest.raises(SpeechSemanticContextError):
-        p.resolve(r)
+        (await p.acquire(r))
     with pytest.raises(SpeechSemanticContextError):
         bind_speech_semantics_policy_v1(
             binding().owner, sources=cast(ProductionSpeechSources, object())
@@ -339,17 +338,16 @@ def test_unsupported_registration(kind: K) -> None:
             goals=p._goals,
             memory=p._memory,
             execution=p._execution,
-            registrations=(
-                SpeechOwnerSourceRegistration("x", ExecutiveFactKind.ATTENTION, "x", kind),
-            ),
+            registrations=(SpeechOwnerSourceRegistration(ExecutiveFactKind.ATTENTION, kind),),
         )
     assert e.value.code is C.UNSUPPORTED_SOURCE_CONTRACT
 
 
-def test_runtime_identity_replacement_invalidates_generation() -> None:
+@pytest.mark.asyncio
+async def test_runtime_identity_replacement_invalidates_generation() -> None:
     b = binding()
-    d = committed(b, "yura.communicative.gratitude", ("goal-1",))
-    ctx = b.context_builder.build(d, "intent-speech", captured_at=NOW)
+    d = await committed(b, "yura.communicative.gratitude", ("goal-1",))
+    ctx = await b.context_builder.build_async(d, "intent-speech", captured_at=NOW)
     policies = b.owner.publication().value
     other = RuntimeSubjectIdentity("alternate", "alternate", 1, 1)
     b.owner.update(
@@ -368,7 +366,8 @@ def test_runtime_identity_replacement_invalidates_generation() -> None:
 @pytest.mark.parametrize(
     "fault", ["missing_token", "raw_state", "wrong_identity", "wrong_revision"]
 )
-def test_owner_publication_faults(fault: str, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_owner_publication_faults(fault: str, monkeypatch: pytest.MonkeyPatch) -> None:
     p = production_sources()
     native = p._goals.goal_semantic_publication("goal-1")
     assert native is not None
@@ -393,7 +392,7 @@ def test_owner_publication_faults(fault: str, monkeypatch: pytest.MonkeyPatch) -
         expected = C.SOURCE_REVISION_MISMATCH
     monkeypatch.setattr(p._goals, "goal_semantic_publication", lambda identity: publication)
     with pytest.raises(SpeechSemanticContextError) as e:
-        p.capture((ExecutiveFactRef("goal-1", ExecutiveFactKind.GOAL, 5, {}),))
+        (await p.capture((ExecutiveFactRef("goal-1", ExecutiveFactKind.GOAL, 5, {}),)))
     assert e.value.code is expected
 
 
@@ -401,14 +400,15 @@ def test_owner_publication_faults(fault: str, monkeypatch: pytest.MonkeyPatch) -
     "field",
     ["modality", "lifecycle_status", "semantic_polarity", "semantic_value", "semantic_degree"],
 )
-def test_closed_goal_envelope_cannot_be_dropped_or_changed(field: str) -> None:
+@pytest.mark.asyncio
+async def test_closed_goal_envelope_cannot_be_dropped_or_changed(field: str) -> None:
     from app.domain.contracts.common import thaw_json
     from app.domain.speech_semantics import SpeechSemanticAuthority
     from tests.system_integration.test_speech_semantics_policy import speech_candidate
 
     b = binding()
-    d = committed(b, "yura.communicative.gratitude", ("goal-1",))
-    ctx = b.context_builder.build(d, "intent-speech", captured_at=NOW)
+    d = await committed(b, "yura.communicative.gratitude", ("goal-1",))
+    ctx = await b.context_builder.build_async(d, "intent-speech", captured_at=NOW)
     proposed = speech_candidate(ctx, 0, 0)
     payload = cast(dict[str, JsonValue], thaw_json(proposed.propositions[0].value))
     payload.pop(field)
@@ -427,7 +427,8 @@ def test_closed_goal_envelope_cannot_be_dropped_or_changed(field: str) -> None:
 
 
 @pytest.mark.parametrize("ref", ["yura", "alias", "first_person", "Profile", "self:runtime-test"])
-def test_reference_strings_do_not_become_self(ref: str) -> None:
+@pytest.mark.asyncio
+async def test_reference_strings_do_not_become_self(ref: str) -> None:
     p = production_sources()
     old = p._goals.snapshot()
     g = old.goals[0]
@@ -437,12 +438,13 @@ def test_reference_strings_do_not_become_self(ref: str) -> None:
         subject_ref=ref,
     )
     p._goals = GoalCommitmentStore(replace(old, goals=(replace(g, semantic_goal_spec=spec),)))
-    r = resolution(p, ExecutiveFactRef("goal-1", ExecutiveFactKind.GOAL, 5, {}))
-    fact = SpeechSemanticFactProjector(build_projection_v1(IDENTITY)).project(p.resolve(r))
+    r = await resolution(p, ExecutiveFactRef("goal-1", ExecutiveFactKind.GOAL, 5, {}))
+    fact = SpeechSemanticFactProjector(build_projection_v1(IDENTITY)).project(await p.acquire(r))
     assert fact.kind is F.GENERAL and fact.subject_ref == ref
 
 
-def test_reference_to_reserved_self_is_rejected() -> None:
+@pytest.mark.asyncio
+async def test_reference_to_reserved_self_is_rejected() -> None:
     p = production_sources()
     old = p._goals.snapshot()
     g = old.goals[0]
@@ -452,16 +454,17 @@ def test_reference_to_reserved_self_is_rejected() -> None:
         subject_ref=IDENTITY.self_subject_ref,
     )
     p._goals = GoalCommitmentStore(replace(old, goals=(replace(g, semantic_goal_spec=spec),)))
-    r = resolution(p, ExecutiveFactRef("goal-1", ExecutiveFactKind.GOAL, 5, {}))
+    r = await resolution(p, ExecutiveFactRef("goal-1", ExecutiveFactKind.GOAL, 5, {}))
     with pytest.raises(SpeechSemanticContextError) as e:
-        SpeechSemanticFactProjector(build_projection_v1(IDENTITY)).project(p.resolve(r))
+        SpeechSemanticFactProjector(build_projection_v1(IDENTITY)).project(await p.acquire(r))
     assert e.value.code is C.SOURCE_IDENTITY_MISMATCH
 
 
-def test_commitment_filters_other_evidence() -> None:
+@pytest.mark.asyncio
+async def test_commitment_filters_other_evidence() -> None:
     b = binding()
-    d = committed(b, "yura.communicative.commitment", ("goal-1", "commitment-1"))
-    ctx = b.context_builder.build(d, "intent-speech", captured_at=NOW)
+    d = await committed(b, "yura.communicative.commitment", ("goal-1", "commitment-1"))
+    ctx = await b.context_builder.build_async(d, "intent-speech", captured_at=NOW)
     act = next(f for f in ctx.facts if f.kind is F.DISCOURSE)
     assert act.evidence_refs == ("commitment-1",)
     assert {f.fact_id for f in ctx.facts} == {
@@ -482,7 +485,8 @@ def test_commitment_filters_other_evidence() -> None:
         "other_runtime",
     ],
 )
-def test_memory_material_and_identity_failure_paths(
+@pytest.mark.asyncio
+async def test_memory_material_and_identity_failure_paths(
     fault: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.composition.speech_semantics_policy import build_speech_semantics_policy_owner_v1
@@ -504,31 +508,26 @@ def test_memory_material_and_identity_failure_paths(
             MemoryAssertionTemporalMeaning.HISTORICAL,
         ),
     )
-    record = p._memory.write(MemoryWriteRequest(c)).record
+    record = memory_owner(p).write(MemoryWriteRequest(c)).record
     assert record is not None
     sources = ProductionSpeechSources(
         goals=p._goals,
         memory=p._memory,
         execution=p._execution,
-        registrations=(
-            SpeechOwnerSourceRegistration(
-                record.memory_id, ExecutiveFactKind.MEMORY_EVIDENCE, record.memory_id, K.MEMORY
-            ),
-        ),
     )
-    r = resolution(
+    r = await resolution(
         sources,
         ExecutiveFactRef(record.memory_id, ExecutiveFactKind.MEMORY_EVIDENCE, record.revision, {}),
     )
     if fault == "missing_token":
-        pub = p._memory.read_semantic_assertion_publication(record.memory_id, record.revision)
+        pub = memory_owner(p).read_semantic_assertion_publication(record.memory_id, record.revision)
         monkeypatch.setattr(
-            p._memory,
+            memory_owner(p),
             "read_semantic_assertion_publication",
             lambda identity, revision: replace(pub, tokens=()),
         )
         with pytest.raises(SpeechSemanticContextError) as e:
-            sources.resolve(r)
+            (await sources.acquire(r))
         assert e.value.code is C.UNSUPPORTED_SOURCE_CONTRACT
         return
     identity = (
@@ -542,7 +541,7 @@ def test_memory_material_and_identity_failure_paths(
         ),
         sources=sources,
     )
-    d = committed(binding(), "yura.communicative.greeting")
+    d = await committed(binding(), "yura.communicative.greeting")
     intent = replace(d.candidate.intents[0], payload=SpeechIntentPayload(record.memory_id))
     d = replace(
         d,
@@ -551,10 +550,10 @@ def test_memory_material_and_identity_failure_paths(
     )
     if fault == "other_runtime":
         with pytest.raises(SpeechSemanticContextError) as e:
-            b.context_builder.build(d, "intent-speech", captured_at=NOW)
+            (await b.context_builder.build_async(d, "intent-speech", captured_at=NOW))
         assert e.value.code is C.SOURCE_IDENTITY_MISMATCH
         return
-    ctx = b.context_builder.build(d, "intent-speech", captured_at=NOW)
+    ctx = await b.context_builder.build_async(d, "intent-speech", captured_at=NOW)
     proposed = speech_candidate(ctx, 0, 0)
     value = cast(dict[str, JsonValue], thaw_json(ctx.facts[0].value))
     if fault == "historical_current":
@@ -578,7 +577,8 @@ def test_memory_material_and_identity_failure_paths(
         )
 
 
-def test_all_eligible_evidence_preserves_selected_order() -> None:
+@pytest.mark.asyncio
+async def test_all_eligible_evidence_preserves_selected_order() -> None:
     p = production_sources()
     old = p._goals.snapshot()
     c2 = replace(old.commitments[0], commitment_id="commitment-2")
@@ -587,36 +587,34 @@ def test_all_eligible_evidence_preserves_selected_order() -> None:
         goals=goals,
         memory=p._memory,
         execution=p._execution,
-        registrations=(
-            *p._entries.values(),
-            SpeechOwnerSourceRegistration(
-                "commitment-2", ExecutiveFactKind.COMMITMENT, "commitment-2", K.COMMITMENT
-            ),
-        ),
     )
     base = binding()
     b = bind_speech_semantics_policy_v1(base.owner, sources=sources)
-    d = committed(base, "yura.communicative.commitment", ("goal-1", "commitment-1"))
+    d = await committed(base, "yura.communicative.commitment", ("goal-1", "commitment-1"))
     selected = ("commitment-2", "goal-1", "commitment-1")
     intent = replace(d.candidate.intents[0], evidence_refs=selected)
     rs = tuple(
-        resolution(
-            sources,
-            ExecutiveFactRef(
-                ref,
-                ExecutiveFactKind.GOAL if ref == "goal-1" else ExecutiveFactKind.COMMITMENT,
-                5,
-                {},
-            ),
-        )
-        for ref in selected
+        [
+            (
+                await resolution(
+                    sources,
+                    ExecutiveFactRef(
+                        ref,
+                        ExecutiveFactKind.GOAL if ref == "goal-1" else ExecutiveFactKind.COMMITMENT,
+                        5,
+                        {},
+                    ),
+                )
+            )
+            for ref in selected
+        ]
     )
     d = replace(
         d,
         candidate=replace(d.candidate, intents=(intent,)),
         speech_reference_resolutions=(d.speech_reference_resolutions[0], *rs),
     )
-    ctx = b.context_builder.build(d, "intent-speech", captured_at=NOW)
+    ctx = await b.context_builder.build_async(d, "intent-speech", captured_at=NOW)
     act = next(f for f in ctx.facts if f.kind is F.DISCOURSE)
     assert act.evidence_refs == ("commitment-2", "commitment-1")
     assert len(ctx.facts) == 4

@@ -44,9 +44,9 @@ class CoreExecutiveRequirementsPort(Protocol):
 
 
 class CoreExecutiveSpeechEvidenceReader(Protocol):
-    """起動時に明示登録された語彙と元Owner参照だけを供給する。"""
+    """起動時のOwner routeからsnapshot単位の検証済み参照を供給する。"""
 
-    def capture_speech_sources(
+    async def capture_speech_sources(
         self, facts: tuple[ExecutiveFactRef, ...]
     ) -> tuple[CommunicativeGoalCatalogView | None, tuple[ExecutiveSpeechSourceBinding, ...]]: ...
 
@@ -145,7 +145,7 @@ class CoreExecutiveInputEvidenceReader:
         catalog, speech_bindings = (
             (None, ())
             if self._speech is None
-            else self._speech.capture_speech_sources(tuple(facts.values()))
+            else await self._speech.capture_speech_sources(tuple(facts.values()))
         )
         capabilities = self._registry.capability_publication()
         return CoreExecutiveEvidence(

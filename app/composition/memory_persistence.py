@@ -111,6 +111,12 @@ class CoreMemoryPersistenceBinding:
             )
         )
 
+    async def read_semantic_assertion_publication(
+        self, memory_id: str, expected_revision: int | None = None
+    ) -> PersistenceOperationResult[AuthorityReadPublication[MemorySemanticAssertionEntry]]:
+        """同じ保存Ownerの公開を待ち、取消時も投入済み操作を回収する。"""
+        return await self.submit_semantic_assertion_publication(memory_id, expected_revision).wait()
+
     def _submit(
         self, action: Callable[[], Coroutine[Any, Any, PersistenceOperationResult[T]]]
     ) -> CoreMemoryOperation[T]:

@@ -293,3 +293,8 @@ speech_semantics_contracts.md §11.11–11.14を#362投影の正本とする。E
 Executiveは参照選択とtyped resolutionの確定を維持し、Goal/Commitment modalityやMemory時間意味のSpeech投影は所有しない。ATTENTIONはExecutive context/selection用途を維持するが、V1 Speech material sourceとして登録しない。external TYPED_CONSTRAINTもV1登録しない。Fact/catalog/constraint ID collision検査と全required refのexactly one解決は維持する。
 
 MeaningPolicy V1の採用値はFACT_GROUNDED / 1 / 1。GRATITUDEのevidence要件はsources=() / minimum_count=0、COMMITMENTは(COMMITMENT,) / 1。これはcatalog vocabularyの供給でありExecutiveのact選択を#362へ移さない。本reconciliationはdesign-only、capture reader等のproduction修正はpendingである。
+
+
+## Speech sourceの非同期captureと寿命（#677）
+
+起動時に登録するのはOwner/contract routeであり、具体的source IDではない。既存のExecutive bounded contextへ採用したtyped Factだけを非同期captureへ渡し、実Owner publicationから検証したbindingをspeech_source_bindingsへ保持する。現在の参照選択Authority、bounded selection、D10、candidate schema、commitのexact照合は変更しない。開始時とcurrent commit直前のreaderが同じpublic acquisitionをawaitし、確定resolutionには元Owner identity/revision/tokenを固定する。Memory待機を囲む全体lockや同期DB呼出しを加えない。詳細はspeech_semantics_contracts.md §11.15を正とする。

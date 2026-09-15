@@ -117,6 +117,12 @@ class SpeechSemanticContextSourcePort:
         if len(self._registrations) != len(registrations):
             raise ValueError("source登録が重複しています")
 
+    async def acquire(
+        self, resolution: ExecutiveSpeechReferenceResolution
+    ) -> SpeechSemanticSourceBinding:
+        """非同期取得入口。同期の非I/O sourceは既存resolveへ委譲する。"""
+        return self.resolve(resolution)
+
     def resolve(
         self, resolution: ExecutiveSpeechReferenceResolution
     ) -> SpeechSemanticSourceBinding:
@@ -634,7 +640,7 @@ class SpeechSemanticContextBuilder:
     ) -> SpeechSemanticContextSnapshot:
         publication = self._current_policies()
         policies = publication.value
-        meaning = require_meaning_policy(policies.meaning, policies.bounds)
+        require_meaning_policy(policies.meaning, policies.bounds)
         validate_resolution_keys(decision.candidate, decision.speech_reference_resolutions)
         selected = tuple(
             r for r in decision.speech_reference_resolutions if r.intent_id == intent_id
@@ -642,6 +648,37 @@ class SpeechSemanticContextBuilder:
         if not selected:
             raise SpeechSemanticContextError(C.SOURCE_NOT_FOUND)
         source_bindings = tuple(self._sources.resolve(r) for r in selected if r.source is not None)
+        return self._build(decision, intent_id, captured_at, publication, selected, source_bindings)
+
+    async def build_async(
+        self, decision: CommittedExecutiveDecision, intent_id: str, *, captured_at: datetime
+    ) -> SpeechSemanticContextSnapshot:
+        """committed resolutionを使って全Ownerを再取得し、取得後に同じ純粋buildへ渡す。"""
+        publication = self._current_policies()
+        require_meaning_policy(publication.value.meaning, publication.value.bounds)
+        validate_resolution_keys(decision.candidate, decision.speech_reference_resolutions)
+        selected = tuple(
+            r for r in decision.speech_reference_resolutions if r.intent_id == intent_id
+        )
+        if not selected:
+            raise SpeechSemanticContextError(C.SOURCE_NOT_FOUND)
+        bindings = []
+        for resolution in selected:
+            if resolution.source is not None:
+                bindings.append(await self._sources.acquire(resolution))
+        return self._build(decision, intent_id, captured_at, publication, selected, tuple(bindings))
+
+    def _build(
+        self,
+        decision: CommittedExecutiveDecision,
+        intent_id: str,
+        captured_at: datetime,
+        publication: AuthorityReadPublication[SpeechSemanticProductionPolicies],
+        selected: tuple[ExecutiveSpeechReferenceResolution, ...],
+        source_bindings: tuple[SpeechSemanticSourceBinding, ...],
+    ) -> SpeechSemanticContextSnapshot:
+        policies = publication.value
+        meaning = require_meaning_policy(policies.meaning, policies.bounds)
         facts, provenance, constraints = _project_material(
             selected, source_bindings, policies, meaning
         )

@@ -192,7 +192,7 @@ Executive decisionに同じ共有policyのprovenanceが存在する場合はgene
 
 Executiveはcommitted Speech intentと`semantic_goal_ref`、`target_ref`、`constraint_refs`、`evidence_refs`、`forbidden_claim_refs`を選択する。`ExecutiveFactRef`はExecutiveのbounded read modelであり、`payload`はsnapshotの搬送用である。下流のsemantic projection契約ではない。Speech側がpayloadからsubject / predicate / polarity / certainty / degree / truth ruleを読み取ったり推測したりしてはならない。
 
-現実の事実は元Ownerのpublic typed valueから解決する。`SpeechSemanticContextSourcePort.resolve(resolution)`は第11.9節の確定済みtyped resolutionを受け、凍結した`source_owner / source_contract_kind / source_identity / source_revision`と、Factの場合の`fact_id / ExecutiveFactKind / fact_revision`で明示登録されたOwnerへ委譲する。IDのprefix、payload内容、自然言語によるroutingは禁止する。参照IDの別名対応が必要なら起動時の明示bindingに保持し、IDを解析して生成しない。
+現実の事実は元Ownerのpublic typed valueから解決する。`SpeechSemanticContextSourcePort.resolve(resolution)`は第11.9節の確定済みtyped resolutionを受け、凍結した`source_owner / source_contract_kind / source_identity / source_revision`と、Factの場合の`fact_id / ExecutiveFactKind / fact_revision`で明示登録されたOwnerへ委譲する。IDのprefix、payload内容、自然言語によるroutingは禁止する。application lifetimeにはOwner/contract routeだけを固定し、具体的IDは第11.15節に従いExecutive bounded contextのtyped Factから取得する。IDの別名推定は行わない。
 
 | Executiveの種類 | 元Ownerのproduction公開API / 値 | 識別と現在性 |
 |---|---|---|
@@ -553,3 +553,22 @@ Speech Builderもcommitted speech_reference_resolutionsから実Ownerのcurrent 
 RuntimeSubjectIdentityは#671のapplication lifetimeに固定された値をproduction projection構築時へ明示注入する。minimum applicationが保持するruntime_subject_identityを同じcomposition境界から渡し、#661 consumerはCharacter Profileやcharacter_idを再読取しない。G/M subject検証とSELF/REFERENCE投影にだけ使用し、What-to-say Fact Authorityにしない。runtime identityもcontext generationへ束縛し、別application由来の値への差替えはCONTEXT_STALEとして拒否する。
 
 本節のreconciliationは設計のみ。MeaningPolicy値、source reader/projector、eligible evidence、whole Fact検証、capture readerの現production Pythonとの差分はimplementation pendingである。#613はBlockedを維持し、同じ#661の設計レビュー・後続実装採用前に再開しない。
+
+
+### 11.15 snapshot単位のsource binding lifecycle（#677）
+
+application lifetimeの登録はOwner/contract routeであり、具体的なFact ID一覧ではない。`SpeechOwnerSourceRegistration`は`ExecutiveFactKind / SpeechSourceContractKind`だけを保持する。V1のclosed対応はGOAL→GOAL、COMMITMENT→COMMITMENT、ACTIVITYおよびEXECUTION→EXECUTION、MEMORY_EVIDENCE→MEMORYとする。GOAL/COMMITMENTは注入された同じGoalCommitmentStore、EXECUTIONは同じActivityExecutionAuthority、MEMORYは同じproduction CoreMemoryPersistenceBindingのpublic非同期publicationへ委譲する。ATTENTIONとexternal TYPED_CONSTRAINTはV1未対応を維持する。
+
+具体的source identityは既存のbounded context選択で採用されたExecutiveFactRef.fact_idをexact使用する。kindはclosed routeを選ぶだけで、payload、ID prefix、自然言語、Python型総当たりでOwner・意味・別名を推測しない。fact_idは選択されたGoal ID / Commitment ID / command ID / Memory IDそのものであり、別のsourceへ付け替えない。Owner全件を列挙せず、captureへ渡されたFactだけを取得する。未対応kindはsource集合へ加えず、required resolutionではUNSUPPORTED_SOURCE_CONTRACTとして拒否する。
+
+`ProductionSpeechSources.capture`は非同期で実Owner publicationを取得し、値のidentity/revision/typeと同じpublicationの非空tokenを検証してExecutiveSpeechSourceBindingを生成する。DTOはAuthorityではない。開始時とExecutive current commit時に同じ取得を行い、途中のMemory await中に先行Ownerのtokenが失効した場合も結果全体を拒否する。Owner tokenは既存finalization Fenceへ搬送し、shadow lockや新しい可変登録世代を作らない。
+
+in-flightの参照選択はCommittedExecutiveDecision.speech_reference_resolutionsとAuthorityGenerationTokenで保持する。`SpeechSemanticContextBuilder.build_async`はその確定resolutionだけからsourceを再取得する。同期・非I/Oの既存Domain source用buildは保持するが、productionはbuild_asyncを使う。取得完了後は同じ純粋な投影・whole-value検査・世代確認へ合流する。Memory I/O中にDomain/global cognition lockを保持しない。
+
+source消失はSOURCE_NOT_FOUND、revision変更はSOURCE_REVISION_MISMATCH、token失効はCONTEXT_STALE、未対応routeはUNSUPPORTED_SOURCE_CONTRACTへ閉じる。Memory persistence失敗または成功publication欠落はSOURCE_UNAVAILABLEとし、assertionのunavailable reasonは第11.13節の対応を保持する。latest revision、別source、空Factで救済しない。
+
+per-ID mutable registry、登録追加/撤回API、registry永続化は設けない。新規sourceは次のbounded Executive contextへ採用された時点から利用候補となる。Goal完了、Activity更新、Memory supersede等の寿命は元Ownerのavailability/revision/tokenで検出する。restart時はOwner routeだけを再構築し、復元済みOwnerから新しいsnapshot bindingを作る。in-flight SpeechをID登録状態として復元しない。
+
+Memoryの採用範囲は既存bounded retrieval等が選択したMEMORY_EVIDENCEだけである。private PostgresPersistenceRuntime._memoryへ依存せず、production用の別MemoryStoreAuthorityを生成しない。取消時は既存CoreMemoryOperation.waitの回収契約を利用して投入済みoperationを回収後に取消を伝播する。#677はMemoryのランキングや通常認知の全配線を所有しない。
+
+MeaningPolicy V1、FACT_GROUNDED / 1 / 1、act定義、Fact投影、truth、polarity/certainty、RuntimeSubjectIdentity、Executiveの選択Authorityと他の意味Ownerは変更しない。#661のcompleted履歴を保持する。#613の全production配線完成とは区別する。

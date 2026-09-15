@@ -63,11 +63,15 @@ def binding() -> SpeechSemanticPolicyBinding:
     return bind_speech_semantics_policy_v1(owner, sources=production_sources())
 
 
-def committed(
+async def committed(
     value: SpeechSemanticPolicyBinding, ref: str, evidence: tuple[str, ...] = ()
 ) -> CommittedExecutiveDecision:
     captured = snapshot()
-    catalog, sources = value.executive_evidence.capture_speech_sources(captured.facts)
+    captured = replace(
+        captured,
+        facts=tuple(f for f in captured.facts if f.fact_id in ("goal-1", "commitment-1")),
+    )
+    catalog, sources = await value.executive_evidence.capture_speech_sources(captured.facts)
     captured = replace(captured, communicative_goal_catalog=catalog, speech_source_bindings=sources)
     proposed = candidate()
     intent = replace(
@@ -76,7 +80,7 @@ def committed(
         evidence_refs=evidence,
         forbidden_claim_refs=(),
     )
-    proposed = replace(proposed, intents=(intent,))
+    proposed = replace(proposed, intents=(intent,), rationale_refs=("goal-1",))
     current = replace(
         live_state(),
         communicative_goal_catalog=value.owner.catalog_view(),
@@ -163,10 +167,13 @@ def test_exact_production_v1_values_and_immutable_catalog() -> None:
 
 
 @pytest.mark.parametrize("question,direction", [(0, 0), (1, 0), (0, 1), (1, 1), (2, 0), (0, 2)])
-def test_v1_budgets_are_ceilings_through_public_authority(question: int, direction: int) -> None:
+@pytest.mark.asyncio
+async def test_v1_budgets_are_ceilings_through_public_authority(
+    question: int, direction: int
+) -> None:
     value = binding()
-    decision = committed(value, "yura.communicative.greeting")
-    context = value.context_builder.build(decision, "intent-speech", captured_at=NOW)
+    decision = await committed(value, "yura.communicative.greeting")
+    context = await value.context_builder.build_async(decision, "intent-speech", captured_at=NOW)
     proposed = speech_candidate(context, question, direction)
     authority = SpeechSemanticAuthority()
     if max(question, direction) > 1:
@@ -201,10 +208,11 @@ def test_v1_budgets_are_ceilings_through_public_authority(question: int, directi
         if k not in {CommunicativeActKind.GRATITUDE, CommunicativeActKind.COMMITMENT}
     ],
 )
-def test_seven_acts_construct_without_external_fact_claim(kind: CommunicativeActKind) -> None:
+@pytest.mark.asyncio
+async def test_seven_acts_construct_without_external_fact_claim(kind: CommunicativeActKind) -> None:
     value = binding()
-    decision = committed(value, EXPECTED_IDS[kind])
-    built = value.context_builder.build(decision, "intent-speech", captured_at=NOW)
+    decision = await committed(value, EXPECTED_IDS[kind])
+    built = await value.context_builder.build_async(decision, "intent-speech", captured_at=NOW)
     assert len(built.facts) == 1
     assert built.facts[0].kind is SpeechSemanticFactKind.DISCOURSE
     assert built.facts[0].value == {"kind": kind.value}
@@ -219,24 +227,26 @@ def test_seven_acts_construct_without_external_fact_claim(kind: CommunicativeAct
         (CommunicativeActKind.COMMITMENT, ("goal-1",)),
     ],
 )
-def test_evidence_requirements_reject_missing_or_wrong_typed_evidence(
+@pytest.mark.asyncio
+async def test_evidence_requirements_reject_missing_or_wrong_typed_evidence(
     kind: CommunicativeActKind, evidence: tuple[str, ...]
 ) -> None:
     value = binding()
-    decision = committed(value, EXPECTED_IDS[kind], evidence)
+    decision = await committed(value, EXPECTED_IDS[kind], evidence)
     if kind is CommunicativeActKind.GRATITUDE:
-        built = value.context_builder.build(decision, "intent-speech", captured_at=NOW)
+        built = await value.context_builder.build_async(decision, "intent-speech", captured_at=NOW)
         assert built.facts[0].evidence_refs == ()
     else:
         with pytest.raises(SpeechSemanticContextError) as error:
-            value.context_builder.build(decision, "intent-speech", captured_at=NOW)
+            (await value.context_builder.build_async(decision, "intent-speech", captured_at=NOW))
         assert error.value.code is C.SOURCE_NOT_FOUND
 
 
-def test_gratitude_preserves_authoritative_evidence_separately() -> None:
+@pytest.mark.asyncio
+async def test_gratitude_preserves_authoritative_evidence_separately() -> None:
     value = binding()
-    decision = committed(value, "yura.communicative.gratitude", ("goal-1",))
-    built = value.context_builder.build(decision, "intent-speech", captured_at=NOW)
+    decision = await committed(value, "yura.communicative.gratitude", ("goal-1",))
+    built = await value.context_builder.build_async(decision, "intent-speech", captured_at=NOW)
     assert len(built.facts) == 2
     act = next(f for f in built.facts if f.kind is SpeechSemanticFactKind.DISCOURSE)
     assert act.value == {"kind": "gratitude"} and act.evidence_refs == ()
@@ -286,16 +296,18 @@ def test_injection_rejects_missing_wrong_or_fixture_policy(fault: str) -> None:
     )
 
 
-def test_unknown_definition_is_not_inferred_or_replaced() -> None:
+@pytest.mark.asyncio
+async def test_unknown_definition_is_not_inferred_or_replaced() -> None:
     with pytest.raises(SpeechSemanticContextError) as error:
-        committed(binding(), "yura.communicative.unknown")
+        (await committed(binding(), "yura.communicative.unknown"))
     assert error.value.code is C.SOURCE_NOT_FOUND
 
 
-def test_same_owner_supplies_current_catalog_and_builder_rejects_stale() -> None:
+@pytest.mark.asyncio
+async def test_same_owner_supplies_current_catalog_and_builder_rejects_stale() -> None:
     value = binding()
-    decision = committed(value, "yura.communicative.greeting")
-    built = value.context_builder.build(decision, "intent-speech", captured_at=NOW)
+    decision = await committed(value, "yura.communicative.greeting")
+    built = await value.context_builder.build_async(decision, "intent-speech", captured_at=NOW)
     before = value.owner.publication().value
     assert before.meaning is not None
     after = replace(
@@ -309,11 +321,11 @@ def test_same_owner_supplies_current_catalog_and_builder_rejects_stale() -> None
         ),
     )
     value.owner.update(after)
-    catalog, _ = value.executive_evidence.capture_speech_sources(())
+    catalog, _ = await value.executive_evidence.capture_speech_sources(())
     assert catalog == value.owner.catalog_view() and catalog is not None
     assert catalog.policy_revision == 2
     with pytest.raises(SpeechSemanticContextError) as error:
-        value.context_builder.build(decision, "intent-speech", captured_at=NOW)
+        (await value.context_builder.build_async(decision, "intent-speech", captured_at=NOW))
     assert error.value.code is C.SEMANTIC_POLICY_STALE
     assert built.generation is not None
     with pytest.raises(SpeechSemanticContextError):
@@ -334,10 +346,11 @@ def test_production_factory_does_not_import_test_policy() -> None:
     assert all(module != "tests" and not module.startswith("tests.") for module in modules)
 
 
-def test_commitment_uses_native_commitment_state_evidence() -> None:
+@pytest.mark.asyncio
+async def test_commitment_uses_native_commitment_state_evidence() -> None:
     value = binding()
-    decision = committed(value, "yura.communicative.commitment", ("commitment-1",))
-    built = value.context_builder.build(decision, "intent-speech", captured_at=NOW)
+    decision = await committed(value, "yura.communicative.commitment", ("commitment-1",))
+    built = await value.context_builder.build_async(decision, "intent-speech", captured_at=NOW)
     assert len(built.facts) == 2
     act = next(f for f in built.facts if f.kind is SpeechSemanticFactKind.DISCOURSE)
     assert act.value == {"kind": "commitment"}
@@ -348,20 +361,22 @@ def test_commitment_uses_native_commitment_state_evidence() -> None:
     )
 
 
-def test_later_missing_policy_never_becomes_implicit_default() -> None:
+@pytest.mark.asyncio
+async def test_later_missing_policy_never_becomes_implicit_default() -> None:
     value = binding()
-    decision = committed(value, "yura.communicative.greeting")
+    decision = await committed(value, "yura.communicative.greeting")
     value.owner.update(replace(value.owner.publication().value, meaning=None))
-    assert value.executive_evidence.capture_speech_sources(())[0] is None
+    assert (await value.executive_evidence.capture_speech_sources(()))[0] is None
     with pytest.raises(SpeechSemanticContextError) as error:
-        value.context_builder.build(decision, "intent-speech", captured_at=NOW)
+        (await value.context_builder.build_async(decision, "intent-speech", captured_at=NOW))
     assert error.value.code is C.SEMANTIC_POLICY_UNAVAILABLE
 
 
-def test_v1_rejects_ungrounded_self_disclosure() -> None:
+@pytest.mark.asyncio
+async def test_v1_rejects_ungrounded_self_disclosure() -> None:
     value = binding()
-    decision = committed(value, "yura.communicative.greeting")
-    built = value.context_builder.build(decision, "intent-speech", captured_at=NOW)
+    decision = await committed(value, "yura.communicative.greeting")
+    built = await value.context_builder.build_async(decision, "intent-speech", captured_at=NOW)
     proposed = replace(speech_candidate(built, 0, 0), self_disclosure=SelfDisclosurePolicy.ALLOWED)
     with pytest.raises(ValueError):
         SpeechSemanticAuthority().commit(
