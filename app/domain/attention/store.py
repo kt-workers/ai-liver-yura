@@ -5,8 +5,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.domain.contracts.finalization import (
+    AuthorityFinalizationOperation,
     AuthorityFinalizationParticipant,
     AuthorityReadPublication,
+    FinalizationError,
+    FinalizationFailure,
     authority_mutation,
 )
 
@@ -19,6 +22,7 @@ from .contracts import (
     AttentionIngressSignal,
     AttentionInterruptionDecision,
     AttentionPriority,
+    AttentionResponseSettlement,
     AttentionSchedulingPolicy,
     AttentionSource,
     AttentionSourceKind,
@@ -57,11 +61,87 @@ class AttentionTurnStore:
         self._transition_ids: set[str] = set()
         self._participant = AuthorityFinalizationParticipant(self, "AttentionTurnStore", 60)
         self._lock = self._participant
+        self._response_settlements: dict[str, tuple[object, ...]] = {}
+        self._response_settlement_operation = self._participant.register_operation(
+            self, "settle_response", self.settle_response
+        )
 
     @property
     def finalization_participant(self) -> AuthorityFinalizationParticipant:
         """元所有者の読取と更新に共通する同期境界を公開する。"""
         return self._participant
+
+    @property
+    def response_settlement_operation(
+        self,
+    ) -> AuthorityFinalizationOperation[AttentionResponseSettlement, AttentionFocusState]:
+        """既存Fenceで実行する、登録済みの応答settlement操作。"""
+        return self._response_settlement_operation
+
+    @authority_mutation
+    def settle_response(
+        self, settlement: AttentionResponseSettlement, finalized_at: datetime
+    ) -> AttentionFocusState:
+        """current User sourceを一意に選び、Turnと応答義務を原子的に回収する。"""
+        if not isinstance(settlement, AttentionResponseSettlement) or (
+            not isinstance(finalized_at, datetime)
+            or finalized_at.tzinfo is None
+            or finalized_at.utcoffset() is None
+        ):
+            raise FinalizationError(FinalizationFailure.TARGET_REJECTED)
+        with self._lock:
+            state = self._state
+            accepted = self._response_settlements.get(settlement.settlement_id)
+            if accepted is not None:
+                if accepted != settlement.immutable_evidence:
+                    raise FinalizationError(FinalizationFailure.TARGET_REJECTED)
+                return state
+            if (
+                settlement.expected_attention_revision != state.revision
+                or settlement.expected_source_context_revision != state.source_context_revision
+            ):
+                raise FinalizationError(FinalizationFailure.TARGET_REJECTED)
+            candidates = {
+                source.source_ref
+                for source in state.sources
+                if source.kind is AttentionSourceKind.USER_INTERACTION
+                and source.source_ref in settlement.source_event_ids
+                and source.source_ref in (state.current_turn_owner, state.response_obligation)
+            }
+            if len(candidates) != 1:
+                raise FinalizationError(FinalizationFailure.TARGET_REJECTED)
+            target = next(iter(candidates))
+            foreground_cleared = state.foreground_focus_ref == target
+            next_state = self._replace(
+                state,
+                state.source_context_revision,
+                max(state.updated_at, settlement.completed_at, finalized_at),
+                sources=tuple(s for s in state.sources if s.source_ref != target),
+                foreground_focus_ref=None if foreground_cleared else state.foreground_focus_ref,
+                active_focus_intent_ref=(
+                    None if foreground_cleared else state.active_focus_intent_ref
+                ),
+                secondary_monitor_refs=tuple(
+                    ref for ref in state.secondary_monitor_refs if ref != target
+                ),
+                current_turn_owner=(
+                    None if state.current_turn_owner == target else state.current_turn_owner
+                ),
+                response_obligation=(
+                    None if state.response_obligation == target else state.response_obligation
+                ),
+                last_selected_source_ref=(
+                    None
+                    if state.last_selected_source_ref == target
+                    else state.last_selected_source_ref
+                ),
+                same_source_burst=(
+                    0 if state.last_selected_source_ref == target else state.same_source_burst
+                ),
+            )
+            self._response_settlements[settlement.settlement_id] = settlement.immutable_evidence
+            self._state = next_state
+            return next_state
 
     @property
     def policy(self) -> AttentionSchedulingPolicy:

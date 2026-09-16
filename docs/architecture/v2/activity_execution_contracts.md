@@ -209,3 +209,8 @@ observation identityはsource bindingとの組で一意とし、完全同一cont
 既存`AuthorityFinalizationParticipant`の短い同期更新境界だけを使う。同一観測の競合受理は一件だけcommitし、同値はno-op、矛盾は拒否する。失敗・同値操作でも既存規約に従って機械的世代は失効し、製品record_revisionとは区別する。Speech await / Provider I/Oはlock外で行う。新しいschedulerやshadow lockは作らない。
 
 Activityのadmit/start/apply_report/request_cancellation/supersede、serialization、exact primary、dispatch、#612還流を変更しない。Speech enum/typeはCore packageにimportせず、第15節のSpeech契約とcomposition projectorで閉じた投影を行う。
+
+
+## Speech応答settlementへの接続（#679）
+
+ObservedExecutionFactRecordとobserved_snapshotの意味・保存・token契約は変更しない。#333 Usecaseはconfigured source binding、expected decision、current publication全体を照合し、元tokenを捨てずにAttentionのsnapshot tokenと同じFinalization Fenceへ渡す。COMPLETEDだけを応答settlement候補とし、#333のみを更新する。ActivityInvocation/ActivityExecutionLifecycleFactを生成せず、既存#612還流も流用しない。詳細はattention_turn_contracts.mdの「Speech応答settlement（#679）」を正とする。
