@@ -14,6 +14,7 @@ from app.composition.executive_requirements import (
     build_core_executive_input_evidence,
 )
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
+from app.composition.speech_configuration import CoreSpeechConfiguration
 from app.domain.appraisal import (
     DeepAppraisalPolicy,
     DeterministicAppraisalRule,
@@ -46,6 +47,7 @@ class CoreCognitionConfiguration:
     precondition_bindings: tuple[PreconditionSourceBinding, ...]
     fast_rules: tuple[DeterministicAppraisalRule, ...]
     execution: CoreExecutionConfiguration | None = None
+    speech: CoreSpeechConfiguration | None = None
 
     def __post_init__(self) -> None:
         registrations = (
@@ -86,7 +88,11 @@ class CoreCognitionConfiguration:
             self.requirements, preconditions, self.executive_policy.bounds
         )
         evidence = build_core_executive_input_evidence(
-            inputs, appraisal, self.registry, requirements
+            inputs,
+            appraisal,
+            self.registry,
+            requirements,
+            speech=None if self.speech is None else self.speech.evidence,
         )
         executive = CoreExecutiveBinding(
             attention,
@@ -104,4 +110,6 @@ class CoreCognitionConfiguration:
             self.execution.compose(
                 delivery, reference, clock, self.executive_policy.bounds, self.requirements
             )
+        if self.speech is not None:
+            self.speech.compose(delivery, reference)
         return delivery

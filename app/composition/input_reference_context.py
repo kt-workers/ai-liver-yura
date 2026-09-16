@@ -8,6 +8,7 @@ from threading import Lock
 from typing import Protocol
 
 from app.domain.activity_execution import ActivityExecutionAuthority, ActivityExecutionRecord
+from app.domain.activity_execution.observation import ObservedExecutionFactRecord
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
 from app.domain.contracts.common import require_identifier
 from app.domain.contracts.snapshots import (
@@ -45,6 +46,7 @@ class _SourceSnapshot:
     goals: GoalContextView
     activities: tuple[ActivityExecutionRecord, ...]
     generations: tuple[SnapshotGenerationSample, ...]
+    presentation: ObservedExecutionFactRecord | None = None
 
 
 def _sample(owner: str, revision: int, value: object) -> SnapshotGenerationSample:
@@ -81,6 +83,7 @@ class CoreInputReferenceContextBinding:
         self._max_entries = max_entries
         self._stabilization = stabilization
         self._command_ids: tuple[str, ...] = ()
+        self._presentation: tuple[str, str] | None = None
         self._sources: _SourceSnapshot | None = None
         self._published: CoreInputReferenceSnapshot | None = None
         self._lock = Lock()
@@ -98,6 +101,18 @@ class CoreInputReferenceContextBinding:
             if any(self._activities.snapshot(value) is None for value in values):
                 raise ValueError("所有者に存在しない活動は参照できません")
             self._command_ids = values
+
+    def set_presentation_reference(self, record: ObservedExecutionFactRecord) -> None:
+        """現在の実Factを一件だけ参照し、通知失敗を理由に巻き戻さない。"""
+        if not isinstance(record, ObservedExecutionFactRecord):
+            raise ValueError("Presentation参照には型付き観測Factが必要です")
+        with self._lock:
+            publication = self._activities.observed_snapshot(
+                record.source.source_contract_id, record.execution_id
+            )
+            if publication.value != record:
+                raise ValueError("Presentation参照がcurrentではありません")
+            self._presentation = (record.source.source_contract_id, record.execution_id)
 
     def snapshot(self) -> CoreInputReferenceSnapshot:
         with self._lock:
@@ -138,7 +153,18 @@ class CoreInputReferenceContextBinding:
             _sample("activity:" + record.result.command_id, record.record_revision, record)
             for record in records
         )
-        return _SourceSnapshot(goals, tuple(records), generations)
+        presentation = None
+        if self._presentation is not None:
+            presentation = self._activities.observed_snapshot(*self._presentation).value
+            if presentation is not None:
+                generations += (
+                    _sample(
+                        "presentation:" + presentation.result.command_id,
+                        presentation.record_revision,
+                        presentation,
+                    ),
+                )
+        return _SourceSnapshot(goals, tuple(records), generations, presentation)
 
     def _read_cycle(self) -> SnapshotReadCycle[_SourceSnapshot]:
         before, after = self._read_sources(), self._read_sources()
@@ -195,4 +221,14 @@ class CoreInputReferenceContextBinding:
             )
             for item in sources.activities
         )
+        if sources.presentation is not None:
+            record = sources.presentation
+            values.append(
+                ReferenceContextEntry(
+                    "presentation:" + record.result.command_id,
+                    ReferenceContextKind.PRESENTATION_FACT,
+                    record.subject_ref,
+                    revision,
+                )
+            )
         return tuple(values)

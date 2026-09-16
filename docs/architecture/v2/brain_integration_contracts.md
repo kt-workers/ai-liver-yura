@@ -734,3 +734,22 @@ ATTENTIONとexternal TYPED_CONSTRAINTはV1 Speech sourceとして未対応。Exe
 application lifetimeのOwner/contract routeとsnapshot単位の具体的source bindingを分離する。CoreExecutiveSpeechEvidenceReader.capture_speech_sourcesは非同期境界とし、開始/currentのCoreExecutiveInputEvidenceReader.readからawaitする。実Owner値とtokenの検証後のbindingだけを返し、policyがawait中に更新された場合も拒否する。具体的IDの登録・削除や復元をcompositionの新Authorityにしない。
 
 MemoryはCoreMemoryPersistenceBinding.read_semantic_assertion_publicationを経由して同じ永続化Ownerから取得する。Builderはbuild_asyncでcommitted resolutionを再取得し、既存の世代検査・投影へ合流する。#677はこのpublic境界を所有し、通常認知のMemory evidence採用と発話全経路は#613等の結合責務として保持する。詳細と失敗対応はspeech_semantics_contracts.md §11.15に従う。
+
+## Speechの本番接続と内部通知（#613）
+
+`CoreCognitionConfiguration.speech`へ明示登録した`CoreSpeechConfiguration`は、確定したExecutive判断のSpeech intentを既存Brain Runtimeの`SPEECH_PREPARATION` laneへ配送する。Activity配送との接続は同じ確定判断から分岐し、Presentation完了を次の認知・Activity・Speech preparationの開始条件にしない。構成関数は既存Owner、current context reader、process Supervisor、音声資源のdiscarder、終了処理を明示的に接続する。未登録のSpeechを成功扱いする代替実装は設けない。
+
+`#677 → #362 → #330 → #363 / #331 → #348 / #659 → #657 → #329`の公開APIを接続する。各Ownerの意味判断、currentness、提示lifecycle、観測mappingはCompositionで再実装しない。元の`CommittedExecutiveDecision`と`BrainIntegrationWork`から保持したdecision、source event、trace、root、およびpresentation identityを還流先へ渡し、受理済みrecordのprovenanceと照合する。期待するdecisionを配送recordからコピーして自己照合しない。
+
+内部通知は`SUBSYSTEM` / `presentation_fact`の`InputObservation`として既存InputNormalizerへ渡し、採用結果を`CoreCognitionDelivery.submit_input()`へ配送する。既存のAppraisal入口へ入り、Input Meaningへ再投入しない。payloadはFact identity、execution、typed subject、status、record revision、effect参照、uncertainty、元decisionとsource eventだけとし、発話全文、音声、Provider object、自由文例外を含めない。
+
+### Gateway受付とBrain受付の区別
+
+- 通知identityはsource contractとそのrevision、execution ID、record revision、latest observation IDから決定論的に作る。Fact、observation、normalized event、Brain workのidentityを同一視しない。
+- 同じobservation identityについてnormalizeは高々一回。REJECTED / DUPLICATEと理由を終端結果として保持する。SOURCE_UNAVAILABLE後の回復も同じidentityの再受付理由にしない。
+- ACCEPTED後の同期submit失敗だけは保存したexact `InputAdmission`を再利用できる。その前にcurrent referenceのsource context revisionと採用eventのrevisionを照合する。
+- 不一致は`STALE`として閉じる。eventのrevision、payload、identityを書き換えず、同じFactを新しい通知へ自動再投影しない。
+- Brain受付がacceptedになれば`SUBMITTED`。後続workの失敗・取消・staleを理由に再submitしない。
+- 配送状態は一つのPresentationのcurrent/直近recordに限定する。新しいDomain Authorityや全履歴ledgerを作らない。InputNormalizerには既存のprocess共有InputAdmissionLedgerを構成元から渡す。
+
+Input Gateway §7の意味は変更しない。`CoreSpeechFeedback`のgeneric downstream再配送と、Gatewayでの同一identity再normalize禁止を分けて扱う。
