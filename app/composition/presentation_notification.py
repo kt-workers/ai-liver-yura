@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from uuid import NAMESPACE_URL, uuid5
 
 from app.composition.execution_observation import SPEECH_OBSERVATION_SOURCE
-from app.composition.input_reference_context import CoreInputReferenceContextBinding
+from app.composition.input_reference_context import (
+    CoreInputReferenceContextBinding,
+    PresentationReferenceCapacityError,
+    PresentationReferenceStaleError,
+)
+from app.composition.speech_feedback import SpeechFactDeliveryDisposition as Delivery
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.activity_execution.observation import (
     ExecutionObservationProvenance,
@@ -24,6 +29,7 @@ from app.domain.contracts.finalization import (
     FinalizationError,
     FinalizationFailure,
 )
+from app.domain.contracts.snapshots import SnapshotIncoherentError
 from app.domain.input_gateway import (
     InputAdmission,
     InputAdmissionStatus,
@@ -78,8 +84,9 @@ class CorePresentationNotification:
     admission: InputAdmission | None = None
     _key: str | None = None
     _revision: int = -1
+    last_error: Exception | None = field(default=None, init=False, repr=False)
 
-    def deliver(self, record: ObservedExecutionFactRecord) -> None:
+    def deliver(self, record: ObservedExecutionFactRecord) -> Delivery:
         if (
             record.source != SPEECH_OBSERVATION_SOURCE
             or record.provenance != self.provenance
@@ -91,10 +98,10 @@ class CorePresentationNotification:
         )
         if publication.value != record:
             # 古い通知のupgradeはせず、terminal recordの別配送へ任せる。
-            return
+            return Delivery.TERMINAL
         key = presentation_notification_identity(record)
         if record.record_revision < self._revision:
-            return
+            return Delivery.TERMINAL
         if key != self._key:
             self._key, self._revision = key, record.record_revision
             self.state, self.admission = PresentationNotificationState.NEW, None
@@ -103,23 +110,39 @@ class CorePresentationNotification:
             PresentationNotificationState.TERMINAL_REJECTED,
             PresentationNotificationState.STALE,
         ):
-            return
+            return Delivery.TERMINAL
         if record.result.status is ExecutionStatus.COMPLETED:
             coordinator = AttentionResponseSettlementCoordinator(
                 self.authority, self.attention, SPEECH_OBSERVATION_SOURCE
             )
             # prepareでの相関/型拒否と、Ownerのtarget拒否を区別する。
-            request = coordinator.prepare(
-                publication,
-                expected_decision_id=self.provenance.source_decision_id,
-                attention=self.attention.snapshot_publication(),
-            )
-            assert request is not None
-            result = AuthorityFinalizationFence().finalize(request)
-            if result.failure not in (None, FinalizationFailure.TARGET_REJECTED):
-                raise FinalizationError(result.failure)
-        self.reference.set_presentation_reference(record)
-        current = self.reference.snapshot()
+            try:
+                request = coordinator.prepare(
+                    publication,
+                    expected_decision_id=self.provenance.source_decision_id,
+                    attention=self.attention.snapshot_publication(),
+                )
+                assert request is not None
+                result = AuthorityFinalizationFence().finalize(request)
+                if result.failure not in (None, FinalizationFailure.TARGET_REJECTED):
+                    raise FinalizationError(result.failure)
+            except FinalizationError as error:
+                if error.failure not in (
+                    FinalizationFailure.GENERATION_MISMATCH,
+                    FinalizationFailure.PARTICIPANT_BUSY,
+                ):
+                    raise
+                self.last_error = error
+                return Delivery.RETRY
+        try:
+            current = self.reference.set_presentation_reference(record)
+        except (
+            PresentationReferenceCapacityError,
+            PresentationReferenceStaleError,
+            SnapshotIncoherentError,
+        ) as error:
+            self.last_error = error
+            return Delivery.RETRY
         if self.admission is None:
             # 呼出し中の例外も再normalizeしない。正規rejectのreasonはadmissionに残す。
             self.state = PresentationNotificationState.TERMINAL_REJECTED
@@ -150,7 +173,7 @@ class CorePresentationNotification:
             )
             self.admission = self.normalizer.normalize(observation)
             if self.admission.status is not InputAdmissionStatus.ACCEPTED:
-                return
+                return Delivery.TERMINAL
             self.state = PresentationNotificationState.ADMITTED
         assert self.admission.event is not None
         if (
@@ -158,7 +181,14 @@ class CorePresentationNotification:
             != current.context.source_context_revision
         ):
             self.state = PresentationNotificationState.STALE
-            return
-        if not self.submit_input(self.admission, self.root_trigger_id).accepted:
-            raise ValueError("Presentation通知の認知受付が失敗しました")
+            return Delivery.TERMINAL
+        try:
+            if not self.submit_input(self.admission, self.root_trigger_id).accepted:
+                self.last_error = ValueError("Presentation通知の認知受付が失敗しました")
+                return Delivery.RETRY
+        except Exception as error:
+            # exact Admissionを保ち、同期受付失敗をPresentationへ逆流させない。
+            self.last_error = error
+            return Delivery.RETRY
         self.state = PresentationNotificationState.SUBMITTED
+        return Delivery.DELIVERED

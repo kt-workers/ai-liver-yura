@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from threading import Lock
 from typing import Protocol
@@ -27,6 +27,14 @@ from app.domain.input_meaning import (
     ReferenceContextEntry,
     ReferenceContextKind,
 )
+
+
+class PresentationReferenceCapacityError(ValueError):
+    """Goal/Commitmentを保持するとPresentation用slotがない。"""
+
+
+class PresentationReferenceStaleError(ValueError):
+    """登録しようとしたPresentation Factがcurrentではない。"""
 
 
 class CoreGoalSnapshotReader(Protocol):
@@ -102,7 +110,9 @@ class CoreInputReferenceContextBinding:
                 raise ValueError("所有者に存在しない活動は参照できません")
             self._command_ids = values
 
-    def set_presentation_reference(self, record: ObservedExecutionFactRecord) -> None:
+    def set_presentation_reference(
+        self, record: ObservedExecutionFactRecord
+    ) -> CoreInputReferenceSnapshot:
         """現在の実Factを一件だけ参照し、通知失敗を理由に巻き戻さない。"""
         if not isinstance(record, ObservedExecutionFactRecord):
             raise ValueError("Presentation参照には型付き観測Factが必要です")
@@ -111,37 +121,63 @@ class CoreInputReferenceContextBinding:
                 record.source.source_contract_id, record.execution_id
             )
             if publication.value != record:
-                raise ValueError("Presentation参照がcurrentではありません")
-            self._presentation = (record.source.source_contract_id, record.execution_id)
+                raise PresentationReferenceStaleError("Presentation参照がcurrentではありません")
+            pointer = (record.source.source_contract_id, record.execution_id)
+            sources = stabilize_snapshot(self._stabilization, lambda: self._read_cycle(pointer))
+            if sources.presentation != record:
+                raise PresentationReferenceStaleError("登録中にPresentation参照が更新されました")
+            self._validate_history(sources)
+            non_activity = sum(
+                e.kind is not ReferenceContextKind.ACTUAL_EXECUTION_FACT
+                for e in self._entries(sources, 1)
+            )
+            slots = self._max_entries - non_activity
+            if slots < 0:
+                raise PresentationReferenceCapacityError("Presentation参照の容量がありません")
+            retained = sources.activities[-slots:] if slots else ()
+            removed = {
+                "activity:" + r.result.command_id for r in sources.activities if r not in retained
+            }
+            staged = replace(
+                sources,
+                activities=retained,
+                generations=tuple(g for g in sources.generations if g.owner_id not in removed),
+            )
+            # 検査・DTO構築が成功するまでpointer、Activity集合、公開snapshotを変更しない。
+            result = self._publish(staged)
+            self._presentation = pointer
+            self._command_ids = tuple(r.result.command_id for r in retained)
+            return result
 
     def snapshot(self) -> CoreInputReferenceSnapshot:
         with self._lock:
             sources = stabilize_snapshot(self._stabilization, self._read_cycle)
-            self._validate_history(sources)
-            if sources == self._sources:
-                assert self._published is not None
-                return self._published
-            revision = (
-                1
-                if self._published is None
-                else self._published.context.source_context_revision + 1
-            )
-            entries = self._entries(sources, revision)
-            context = ReferenceContext(revision, entries, self._max_entries)
-            policy = self._meaning_policy.acceptance
-            result = CoreInputReferenceSnapshot(
-                context,
-                sources.goals,
-                sources.activities,
-                InputMeaningFreshnessStamp(revision, policy.policy_id, policy.policy_revision),
-            )
-            self._sources, self._published = sources, result
-            return result
+            return self._publish(sources)
+
+    def _publish(self, sources: _SourceSnapshot) -> CoreInputReferenceSnapshot:
+        self._validate_history(sources)
+        if sources == self._sources:
+            assert self._published is not None
+            return self._published
+        revision = (
+            1 if self._published is None else self._published.context.source_context_revision + 1
+        )
+        entries = self._entries(sources, revision)
+        context = ReferenceContext(revision, entries, self._max_entries)
+        policy = self._meaning_policy.acceptance
+        result = CoreInputReferenceSnapshot(
+            context,
+            sources.goals,
+            sources.activities,
+            InputMeaningFreshnessStamp(revision, policy.policy_id, policy.policy_revision),
+        )
+        self._sources, self._published = sources, result
+        return result
 
     async def current_freshness_stamp(self) -> InputMeaningFreshnessStamp:
         return self.snapshot().freshness
 
-    def _read_sources(self) -> _SourceSnapshot:
+    def _read_sources(self, pointer: tuple[str, str] | None = None) -> _SourceSnapshot:
         goals = build_goal_context_view(self._goals.snapshot(), bounds_policy=self._bounds)
         records: list[ActivityExecutionRecord] = []
         for command_id in self._command_ids:
@@ -154,8 +190,9 @@ class CoreInputReferenceContextBinding:
             for record in records
         )
         presentation = None
-        if self._presentation is not None:
-            presentation = self._activities.observed_snapshot(*self._presentation).value
+        selected = self._presentation if pointer is None else pointer
+        if selected is not None:
+            presentation = self._activities.observed_snapshot(*selected).value
             if presentation is not None:
                 generations += (
                     _sample(
@@ -166,8 +203,10 @@ class CoreInputReferenceContextBinding:
                 )
         return _SourceSnapshot(goals, tuple(records), generations, presentation)
 
-    def _read_cycle(self) -> SnapshotReadCycle[_SourceSnapshot]:
-        before, after = self._read_sources(), self._read_sources()
+    def _read_cycle(
+        self, pointer: tuple[str, str] | None = None
+    ) -> SnapshotReadCycle[_SourceSnapshot]:
+        before, after = self._read_sources(pointer), self._read_sources(pointer)
         return SnapshotReadCycle(
             before,
             before.generations,

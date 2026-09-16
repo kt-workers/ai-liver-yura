@@ -13,6 +13,7 @@ from app.composition.execution_observation import (
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.presentation_notification import CorePresentationNotification
 from app.composition.presentation_notification import PresentationNotificationState as S
+from app.composition.speech_feedback import SpeechFactDeliveryDisposition as Delivery
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus
@@ -157,8 +158,9 @@ def test_cached_exact_admission_retry(monkeypatch: pytest.MonkeyPatch) -> None:
         return original(a, root)
 
     d.submit_input = fail_first
-    with pytest.raises(ValueError, match="同期受付失敗"):
-        d.deliver(r)
+    assert d.deliver(r) is Delivery.RETRY
+    assert isinstance(d.last_error, ValueError)
+    assert str(d.last_error) == "同期受付失敗"
     settled = d.attention.snapshot()
     d.deliver(r)
     d.deliver(r)
@@ -177,8 +179,8 @@ def test_stale_cached_admission_never_upgrades(monkeypatch: pytest.MonkeyPatch) 
         raise ValueError("同期失敗")
 
     d.submit_input = failure
-    with pytest.raises(ValueError):
-        d.deliver(r)
+    assert d.deliver(r) is Delivery.RETRY
+    assert isinstance(d.last_error, ValueError)
     admission = d.admission
     apply_goal(d.reference._goals, GoalTransitionOperation.CREATE, 0)
     d.deliver(r)
@@ -289,9 +291,9 @@ def test_finalization_race_returns_retry_without_normalizing(
         return request
 
     monkeypatch.setattr(AttentionResponseSettlementCoordinator, "prepare", prepare)
-    with pytest.raises(FinalizationError) as error:
-        d.deliver(r)
-    assert error.value.failure is FinalizationFailure.GENERATION_MISMATCH
+    assert d.deliver(r) is Delivery.RETRY
+    assert isinstance(d.last_error, FinalizationError)
+    assert d.last_error.failure is FinalizationFailure.GENERATION_MISMATCH
     assert d.attention.snapshot().current_turn_owner is not None
     assert n.calls == 0 and submitted == []
     monkeypatch.setattr(AttentionResponseSettlementCoordinator, "prepare", original)
@@ -305,3 +307,82 @@ def test_wrong_presentation_identity_is_rejected(monkeypatch: pytest.MonkeyPatch
     with pytest.raises(ValueError, match="相関"):
         d.deliver(r)
     assert n.calls == 0 and submitted == []
+
+
+class GoalSnapshotSource:
+    """正規Owner由来のsnapshotが縮小する場合も含めた読取fixture。"""
+
+    def __init__(self, count: int) -> None:
+        store = GoalCommitmentStore()
+        for i in range(count):
+            apply_goal(store, GoalTransitionOperation.CREATE, i, goal_id=f"goal-{i}")
+        self.value = store.snapshot()
+
+    def snapshot(self) -> Any:
+        return self.value
+
+
+def test_exact_capacity_failure_is_atomic_and_retry_does_not_consume_gateway(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.composition.input_reference_context import PresentationReferenceCapacityError
+
+    d, r, submitted, normalizer = notification(monkeypatch)
+    goals = GoalSnapshotSource(32)
+    d.reference = CoreInputReferenceContextBinding(goals, d.authority, policy(), BOUNDS)
+    before = d.reference.snapshot()
+    assert len(before.context.entries) == 32 and before.context.max_entries == 32
+    owner_before = d.authority.observed_snapshot(r.source.source_contract_id, r.execution_id)
+    with pytest.raises(PresentationReferenceCapacityError):
+        d.reference.set_presentation_reference(r)
+    assert d.reference._presentation is None
+    assert d.reference.snapshot() is before
+    assert d.deliver(r) is Delivery.RETRY
+    assert normalizer.calls == 0 and d.admission is None and submitted == []
+    assert d.reference.snapshot() is before
+    assert (
+        d.authority.observed_snapshot(r.source.source_contract_id, r.execution_id) == owner_before
+    )
+
+    # 読取元が次の正規revisionで縮小した場合、同じFact/identityで登録を再試行する。
+    goals.value = replace(goals.value, revision=33, goals=goals.value.goals[:-1])
+    assert d.deliver(r) is Delivery.DELIVERED
+    current = d.reference.snapshot()
+    assert len(current.context.entries) == 32
+    assert (
+        sum(e.kind is ReferenceContextKind.PRESENTATION_FACT for e in current.context.entries) == 1
+    )
+    assert normalizer.calls == len(submitted) == 1
+    assert d.deliver(r) is Delivery.TERMINAL
+    assert normalizer.calls == 1
+
+
+@pytest.mark.parametrize("activity_count", [1, 2])
+def test_presentation_evicts_only_oldest_activity_reference(
+    monkeypatch: pytest.MonkeyPatch, activity_count: int
+) -> None:
+    from tests.domain.activity_execution.test_activity_execution import NOW, invocation, preflight
+
+    d, r, _, _ = notification(monkeypatch)
+    goals = GoalSnapshotSource(32 - activity_count)
+    d.reference = CoreInputReferenceContextBinding(goals, d.authority, policy(), BOUNDS)
+    commands = tuple(f"activity-{i}" for i in range(activity_count))
+    for i, command_id in enumerate(commands):
+        d.authority.admit(invocation(command_id), preflight())
+        d.authority.start(command_id, preflight(), NOW + timedelta(seconds=1), f"dispatch-{i}")
+    d.reference.set_activity_references(commands)
+    before = d.reference.snapshot()
+    owner_records = tuple(d.authority.snapshot(k) for k in commands)
+    assert len(before.context.entries) == 32
+    d.reference.set_presentation_reference(r)
+    after = d.reference.snapshot()
+    assert after.goals == before.goals
+    assert len(after.context.entries) == 32
+    assert tuple(v.result.command_id for v in after.activities) == commands[1:]
+    assert tuple(d.authority.snapshot(k) for k in commands) == owner_records
+    assert sum(e.kind is ReferenceContextKind.PRESENTATION_FACT for e in after.context.entries) == 1
+    assert {
+        e.subject_ref
+        for e in after.context.entries
+        if e.kind is ReferenceContextKind.GOAL_COMMITMENT
+    } == {g.goal_id for g in goals.value.goals}
