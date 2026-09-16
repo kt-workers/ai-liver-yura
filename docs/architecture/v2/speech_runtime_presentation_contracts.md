@@ -676,3 +676,8 @@ POSIXの実process試験とWindows Job API境界のunit testは証拠を区別�
 失敗はtyped codeでspawn、encode、protocol/identity、STARTED前後の異常終了、Adapter failure、terminal欠落、timeout、shutdownを区別する。terminate/kill実行はSupervisor診断として保持する。raw stderrやfree-form例外をAuthorityにしない。
 実際に取消拒否・terminate無視する子をtimeout/shutdownからkill/reapし、通常・失敗・race・反復実行・unrelated進行と#657/#329 partial effect保持を検証する。
 既存の同一process Adapter検証は明示的な検証専用Sessionでのみ実施し、production Supervisorからfallbackしない。
+
+
+## Speech応答settlementへの接続（#679）
+
+#348/#657のmappingは変更しない。#329が受理したcurrent COMPLETED publicationだけを#333 response settlement evidenceに利用できる。開始・失敗・取消・timeoutのpartial effectは応答完了にしない。期待するsource bindingとdecisionをUsecaseで照合し、#329/#333 tokenを既存Fenceで同時検査する。詳細はattention_turn_contracts.mdの「Speech応答settlement（#679）」に従う。#613のPresentation Fact認知還流配線は後続Integrationに残す。
