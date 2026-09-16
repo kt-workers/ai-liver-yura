@@ -658,7 +658,7 @@ Executorはcandidate局所の実行Sessionから次reportを待ち、Ownerの期
 
 親のSpeech Runtimeがlifecycle/deadline/terminal claimのAuthorityを保持する。Domainは`SpeechPresentationExecutionBoundary`と`SpeechPresentationExecutionSession`のPortのみを所有し、Sessionのclose完了は外部実行と通信資源の回収済みを意味する。
 InfrastructureのSupervisorが1 Presentationごとに明示worker moduleを`sys.executable -m`で起動する。poolは導入しない。具体Adapterの生成・SDK・device/surface I/Oは子だけで実行する。
-既存production Presentation登録はまだないため、信頼された構成側がadapter kind・import可能なfactoryのmodule/name・JSON configurationを明示登録する。任意callable/objectのpicklingは使用しない。登録をユーザー入力やreportから選ばず、#613のproduction wiringと#358のTTS生成は先取りしない。
+#659採用時点ではproduction Presentation登録が未接続だったため、信頼された構成側がadapter kind・import可能なfactoryのmodule/name・JSON configurationを明示登録する。任意callable/objectのpicklingは使用しない。登録をユーザー入力やreportから選ばず、#613のproduction wiringと#358のTTS生成は先取りしない。
 
 親子間はversion 1のJSONL envelopeとし、schema、version、kind、utterance_id、correlation_id、payloadを必須とする。correlation_idはpresentation_idにexact bindし、command/reportのcandidate・asset identityはOwnerでも再照合する。
 codecはDomain DTO外に置く。messageは64KiBを上限とし、重複key・未知field・不正数値・不正identityを拒否する。stdoutはprotocol専用とし、Adapter/SDKのstdoutをfd単位でstderrへ隔離する。現SupervisorはstderrをDEVNULLへ破棄し、raw外部出力・外部例外をAuthorityや診断の説明へ採用しない。必要な診断はtyped code等の安全な診断経路だけで扱う。
@@ -680,4 +680,16 @@ POSIXの実process試験とWindows Job API境界のunit testは証拠を区別�
 
 ## Speech応答settlementへの接続（#679）
 
-#348/#657のmappingは変更しない。#329が受理したcurrent COMPLETED publicationだけを#333 response settlement evidenceに利用できる。開始・失敗・取消・timeoutのpartial effectは応答完了にしない。期待するsource bindingとdecisionをUsecaseで照合し、#329/#333 tokenを既存Fenceで同時検査する。詳細はattention_turn_contracts.mdの「Speech応答settlement（#679）」に従う。#613のPresentation Fact認知還流配線は後続Integrationに残す。
+#348/#657のmappingは変更しない。#329が受理したcurrent COMPLETED publicationだけを#333 response settlement evidenceに利用できる。開始・失敗・取消・timeoutのpartial effectは応答完了にしない。期待するsource bindingとdecisionをUsecaseで照合し、#329/#333 tokenを既存Fenceで同時検査する。詳細はattention_turn_contracts.mdの「Speech応答settlement（#679）」に従う。#613のPresentation Fact認知還流配線は次節に従う。
+
+## Presentation Factの参照と配送（#613）
+
+#613の`CoreSpeechFeedback`は#657 projectorと#329の`ingest_observation()`を利用し、受理済み`ObservedExecutionFactRecord`をrecord revision単位で配送する。下流失敗時は同じOwner recordを再配送できるが、production下流のGateway受付は一度限りとする。
+
+下流では#329 `observed_snapshot(source_contract_id, execution_id)`を再取得し、配送recordとの完全一致と、元の提示で保持したsource / decision / event / trace / presentation相関を確認する。古いOBSERVABLEがterminalへ進んでいれば古い通知は閉じ、terminalの別配送へ任せる。古いrecordを最新recordへ置き換えて配送しない。
+
+COMPLETEDだけを`AttentionResponseSettlementCoordinator`と既存Finalization Fenceへ渡す。source・decision・型の不整合はintegrity failureとする。GENERATION_MISMATCH / PARTICIPANT_BUSY等は旧snapshotで確定せず、呼出元の配送再試行へ返す。内部でbusy-loopしない。OwnerによるTARGET_REJECTEDは無関係なTurnを変更せず、Fact認知は継続する。TARGET_COMMIT_FAULT等を成功へ読み替えない。成功済みsettlementは通知失敗でも維持し、再試行は#679既存のidempotencyに従う。
+
+`CoreInputReferenceContextBinding`はcurrent Presentationのsource / executionへの参照を一件だけ保持し、読取時に#329のcurrent recordへ追従する。kindは`PRESENTATION_FACT`、identityは実Fact identity由来、subjectはrecordのtyped subjectとする。通常Activity、ACTUAL_EXECUTION_FACT、発話全文へ変換しない。過去提示の全履歴は蓄積しない。
+
+この参照は一時的な通知stagingではない。normalize拒否、同期submit失敗、settlement失敗だけを理由に削除・rollbackしない。通知側は終端拒否、accepted Admission、submitted、staleをcurrent/直近recordに限定して保持する。拒否後の同じidentityの再normalizeは禁止する。accepted Admissionの再試行前にはcurrent source context revisionを照合し、不一致のeventをupgradeしない。Input Gateway §7と#679のOwner契約は変更しない。

@@ -181,7 +181,11 @@ class MinimumCoreApplication:
 
     async def _stop(self) -> None:
         try:
-            await self.brain.stop()
+            try:
+                await self.brain.stop()
+            finally:
+                if self.cognition is not None and self.cognition.speech is not None:
+                    await self.cognition.speech.close()
         finally:
             try:
                 if self.memory is not None:
@@ -268,7 +272,13 @@ def _compose_core(
     lifecycle: RuntimeLifecycle | None = None,
     cognition: CoreCognitionConfiguration | None = None,
 ) -> MinimumCoreApplication:
-    activities = ActivityExecutionAuthority()
+    from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
+
+    activities = (
+        ActivityExecutionAuthority(observation_policy=SPEECH_OBSERVATION_POLICY)
+        if cognition is not None and cognition.speech is not None
+        else ActivityExecutionAuthority()
+    )
     input_context = CoreInputReferenceContextBinding(
         goals, activities, config.input_meaning_policy, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
     )
