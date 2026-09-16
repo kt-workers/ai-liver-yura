@@ -274,10 +274,10 @@ def _compose_core(
 ) -> MinimumCoreApplication:
     from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
 
-    activities = ActivityExecutionAuthority(
-        observation_policy=SPEECH_OBSERVATION_POLICY
+    activities = (
+        ActivityExecutionAuthority(observation_policy=SPEECH_OBSERVATION_POLICY)
         if cognition is not None and cognition.speech is not None
-        else None
+        else ActivityExecutionAuthority()
     )
     input_context = CoreInputReferenceContextBinding(
         goals, activities, config.input_meaning_policy, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
