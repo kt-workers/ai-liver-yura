@@ -45,6 +45,7 @@ from app.usecases.attention import UserInteractionAttentionProjector
 
 if TYPE_CHECKING:
     from app.composition.execution import CoreExecutionDelivery
+    from app.composition.speech_configuration import CoreSpeechDelivery
 
 
 class _Module(Protocol):
@@ -124,6 +125,7 @@ class CoreCognitionDelivery:
         self._pending_users: dict[str, AttentionSource] = {}
         self.latest_delivery: CognitionDelivery | None = None
         self.execution: CoreExecutionDelivery | None = None
+        self.speech: CoreSpeechDelivery | None = None
         self._decision_delivery: Callable[[BrainIntegrationWork, object], None] | None = None
 
     def register(self, input_port: _Module) -> None:
