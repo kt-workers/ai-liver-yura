@@ -360,3 +360,5 @@ YURA_REQUIRE_POSTGRES=1 YURA_TEST_POSTGRES_SOCKET=/tmp/yura-test-postgresql \
 結果の`evidence`には生成前の根拠・制約・人物・計画・検証・合成の履歴、`audio`には提示と同じ公開参照のWAV、`presentations`にはOwner受理済み開始・完了と観測Fact、`outcomes`と`trace`には本体処理を保持します。既存の結果書出し、review / blind_review、HumanEvaluationを使い、人間評価は未入力のまま保持します。
 
 この接続は具体的なTTSサービスやvoice、再生deviceを自動選択しません。試験用workerによる成功と実サービス・可聴提示の確認を区別し、未実測はNOT_RUNと記録してください。
+
+実音声を含む実動作の検証はHumanの責務です。ChatGPTとCodexは実動作の検証を実施せず、実装と自動試験の証拠を提供します。Humanの結果がない項目を確認済みへ変更しません。

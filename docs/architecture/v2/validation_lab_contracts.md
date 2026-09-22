@@ -634,3 +634,5 @@ Sessionとiteration内のTTS資源をrun単位の1つの終了管理から回収
 評価保存と匿名比較は既存HumanEvaluation / BlindComparisonとvalidation_labの表示・保存入口を再利用する。機械GateのPASSはHuman PASSではなく、初期評価はUNRATEDのままとする。匿名表示でモデル識別情報が残れば既存の拒否を維持し、出典付きの完全な証拠と匿名評価画面を混同しない。
 
 mock LLM・mock TTSのWAV・試験用process提示の自動試験は、実音声サービスや実際の可聴提示の証明ではない。実TTS / voice / 提示先の明示構成による実測が未実施ならNOT_RUNと記録し、#434の人間評価を代作しない。
+
+2026-09-22のユーザー指示により、実音声を含む実動作の検証はHumanの責務とする。ChatGPTとCodexは実動作の検証を実施しない。実装・自動試験・コードレビューの成果とHumanによる実動作の確認結果を別に記録する。
