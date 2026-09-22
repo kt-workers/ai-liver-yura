@@ -5,6 +5,7 @@ from typing import Protocol
 from app.composition.accepted_input import CoreAcceptedInputStore
 from app.composition.appraisal import CoreAppraisalBinding
 from app.composition.executive import CoreExecutiveEvidence
+from app.composition.memory_evidence import CoreMemoryEvidenceReader
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import AuthorityReadPublication
@@ -61,6 +62,7 @@ class CoreExecutiveInputEvidenceReader:
         *,
         plans: CoreExecutivePlanEvidenceReader | None = None,
         speech: CoreExecutiveSpeechEvidenceReader | None = None,
+        memory: CoreMemoryEvidenceReader | None = None,
     ) -> None:
         self._inputs = inputs
         self._appraisal = appraisal
@@ -68,6 +70,7 @@ class CoreExecutiveInputEvidenceReader:
         self._requirements = requirements
         self._plans = plans
         self._speech = speech
+        self._memory = memory
 
     async def requirements_for(
         self, snapshot: ExecutiveContextSnapshot, candidate: ExecutiveDecisionCandidate
@@ -142,6 +145,11 @@ class CoreExecutiveInputEvidenceReader:
                     ),
                 )
             )
+        memory_facts, memory_tokens = (
+            ((), ()) if self._memory is None else await self._memory.read(source)
+        )
+        for fact in memory_facts:
+            add(fact)
         catalog, speech_bindings = (
             (None, ())
             if self._speech is None
@@ -158,6 +166,7 @@ class CoreExecutiveInputEvidenceReader:
             ),
             meaning=inputs[0].meaning if len(inputs) == 1 else None,
             facts=tuple(facts.values()),
+            memory_tokens=memory_tokens,
             communicative_goal_catalog=catalog,
             speech_source_bindings=speech_bindings,
             capabilities=capabilities.value,

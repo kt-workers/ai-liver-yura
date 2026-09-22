@@ -61,6 +61,7 @@ class CoreExecutiveEvidence:
     speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...] = ()
     capability_tokens: tuple[AuthorityGenerationToken, ...] = ()
     precondition_tokens: tuple[tuple[str, tuple[AuthorityGenerationToken, ...]], ...] = ()
+    memory_tokens: tuple[AuthorityGenerationToken, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.source, AttentionSource):
@@ -76,6 +77,7 @@ class CoreExecutiveEvidence:
             "plan_scopes",
             "plan_progress_contexts",
             "capability_tokens",
+            "memory_tokens",
             "activity_bindings",
             "speech_source_bindings",
             "precondition_tokens",
@@ -289,6 +291,7 @@ class _ExecutiveOperation:
         assert appraisal is not None
         used_conditions = {r.precondition_id for item in requirements for r in item.preconditions}
         evidence_tokens = (
+            *current.memory_tokens,
             *(current.capability_tokens if any(item.capabilities for item in requirements) else ()),
             *(
                 token

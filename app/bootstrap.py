@@ -41,6 +41,7 @@ from app.domain.input_meaning import (
 )
 from app.domain.input_meaning.interpreter import descriptor
 from app.domain.llm import LLMRoleDescriptor
+from app.domain.memory_reflection.llm_roles import proposal_descriptor, support_descriptor
 from app.infrastructure.persistence import PostgresPersistenceRuntime
 from app.runtime.kernel import CancellationToken, SystemRuntimeClock
 from app.runtime.lifecycle import DependencyRetryPolicy, RuntimeLifecycle
@@ -188,23 +189,30 @@ class MinimumCoreApplication:
                     await self.cognition.speech.close()
         finally:
             try:
-                if self.memory is not None:
-                    try:
-                        await asyncio.wait_for(
-                            self.memory.close(),
-                            self.config.shutdown_policy.final_persistence_grace_seconds,
-                        )
-                    except asyncio.TimeoutError:
-                        raise RuntimeShutdownError(
-                            (
-                                RuntimeShutdownFailure(
-                                    RuntimeShutdownStage.FINAL_PERSISTENCE, "TimeoutError"
-                                ),
-                            )
-                        ) from None
+                if self.cognition is not None and self.cognition.reflection is not None:
+                    await self.cognition.reflection.close()
             finally:
-                # 前段が失敗してもDB・再接続処理を回収する。
-                await self.lifecycle.close()
+                await self._close_memory()
+
+    async def _close_memory(self) -> None:
+        try:
+            if self.memory is not None:
+                try:
+                    await asyncio.wait_for(
+                        self.memory.close(),
+                        self.config.shutdown_policy.final_persistence_grace_seconds,
+                    )
+                except asyncio.TimeoutError:
+                    raise RuntimeShutdownError(
+                        (
+                            RuntimeShutdownFailure(
+                                RuntimeShutdownStage.FINAL_PERSISTENCE, "TimeoutError"
+                            ),
+                        )
+                    ) from None
+        finally:
+            # 前段が失敗してもDB・再接続処理を回収する。
+            await self.lifecycle.close()
 
 
 _CleanupResult = TypeVar("_CleanupResult")
@@ -259,6 +267,11 @@ def _load_core(
             appraisal_descriptor(cognition.appraisal_policy),
             executive_descriptor(cognition.executive_policy),
         )
+        if cognition.reflection is not None:
+            roles += (
+                proposal_descriptor(cognition.reflection.roles),
+                support_descriptor(cognition.reflection.roles),
+            )
     llm = create_openai_port_from_environment(roles)
     return config, character, llm
 
@@ -299,7 +312,7 @@ def _compose_core(
         brain.register_module(BrainIntegrationModule.INPUT_MEANING, bridge)
     else:
         assert bridge.inputs is not None
-        delivery = cognition.compose(brain, input_context, bridge.inputs, llm, clock)
+        delivery = cognition.compose(brain, input_context, bridge.inputs, llm, clock, memory)
         delivery.register(bridge)
     return MinimumCoreApplication(
         config,
