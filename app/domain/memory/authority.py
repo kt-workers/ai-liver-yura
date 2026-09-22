@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+from contextlib import ExitStack
 from dataclasses import replace
 from datetime import datetime
 from hashlib import sha256
 from json import dumps
 
 from app.domain.contracts.common import require_identifier, require_revision, utc_instant
-from app.domain.contracts.finalization import AuthorityReadPublication
+from app.domain.contracts.finalization import (
+    AuthorityFinalizationParticipant,
+    AuthorityGenerationToken,
+    AuthorityReadPublication,
+    FinalizationError,
+    FinalizationFailure,
+)
 from app.domain.contracts.semantic_subject import SemanticSubjectIdentity
 from app.domain.memory.contracts import (
     MemoryAssertionSemantics,
@@ -37,7 +44,11 @@ from app.domain.memory.ranking import (
     MemorySemanticRelevance,
     RankedMemoryEvidenceView,
 )
-from app.domain.memory.repository import MemoryRepositoryPort, MemorySemanticIndexPort
+from app.domain.memory.repository import (
+    FinalizableMemorySemanticIndex,
+    MemoryRepositoryPort,
+    MemorySemanticIndexPort,
+)
 from app.domain.memory.semantic_assertions import (
     MemorySemanticAssertionEntry,
     MemorySemanticAssertionUnavailableReason,
@@ -58,6 +69,9 @@ class MemoryStoreAuthority:
         self._repository = repository
         self._semantic_index = semantic_index
         self._ranking_policy = ranking_policy
+        self._retrieval_policy_participant = AuthorityFinalizationParticipant(
+            self, "MemoryRetrievalPolicy", 57
+        )
 
     @property
     def retrieval_ranking_policy(self) -> MemoryRetrievalRankingPolicy | None:
@@ -66,7 +80,8 @@ class MemoryStoreAuthority:
     def update_retrieval_ranking_policy(self, policy: MemoryRetrievalRankingPolicy) -> None:
         if not isinstance(policy, MemoryRetrievalRankingPolicy):
             raise ValueError("Memory retrieval ranking policy が必要です")
-        self._ranking_policy = policy
+        with self._retrieval_policy_participant.mutation():
+            self._ranking_policy = policy
 
     def write(self, request: MemoryWriteRequest) -> MemoryWriteResult:
         try:
@@ -256,6 +271,30 @@ class MemoryStoreAuthority:
             return AuthorityReadPublication(
                 entry, () if entry.assertion is None else (participant.token(),)
             )
+
+    def read_retrieval_publication(
+        self, query: MemoryRetrievalQuery
+    ) -> AuthorityReadPublication[RankedMemoryEvidenceView]:
+        """検索集合と方針の現在性を、元Ownerのtokenとして公開する。"""
+        if not isinstance(query, MemoryRetrievalQuery):
+            raise ValueError("記憶検索には型付きqueryが必要です")
+        registry = getattr(self._repository, "semantic_guards", None)
+        if not isinstance(registry, MemoryFinalizationRegistry):
+            raise FinalizationError(FinalizationFailure.PARTICIPANT_UNSUPPORTED)
+        index = self._semantic_index if query.semantic_query is not None else None
+        if index is not None and not isinstance(index, FinalizableMemorySemanticIndex):
+            raise FinalizationError(FinalizationFailure.PARTICIPANT_UNSUPPORTED)
+        policy_token = self._retrieval_policy_participant.token()
+        participant = registry.retrieval_participant(query)
+        with ExitStack() as stack:
+            stack.enter_context(participant)
+            if isinstance(index, FinalizableMemorySemanticIndex):
+                stack.enter_context(index.finalization_participant)
+            view = self.retrieve(query)
+            tokens: tuple[AuthorityGenerationToken, ...] = (participant.token(), policy_token)
+            if isinstance(index, FinalizableMemorySemanticIndex):
+                tokens += (index.finalization_participant.token(),)
+            return AuthorityReadPublication(view, () if view.degraded else tokens)
 
     def retrieve(self, query: MemoryRetrievalQuery) -> RankedMemoryEvidenceView:
         policy = self._require_ranking_policy()

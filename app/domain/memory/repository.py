@@ -4,6 +4,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.domain.contracts.finalization import AuthorityFinalizationParticipant
 from app.domain.memory.contracts import MemoryRecord, MemoryRelation
 from app.domain.memory.finalization import MemoryFinalizationRegistry, memory_mutation
 from app.domain.memory.ranking import MemorySemanticRelevance
@@ -133,3 +134,21 @@ class MemorySemanticIndexPort(Protocol):
     def related_scores(
         self, query: str, *, limit: int
     ) -> Iterable[MemorySemanticRelevance]: ...
+
+
+class FinalizableMemorySemanticIndex:
+    """明示登録されたindex更新と検索の世代をMemory Domainの境界で保護する。"""
+
+    def __init__(self, index: MemorySemanticIndexPort) -> None:
+        self._index = index
+        self.finalization_participant = AuthorityFinalizationParticipant(
+            self, "MemorySemanticIndex", 58
+        )
+
+    def upsert(self, record: MemoryRecord) -> None:
+        with self.finalization_participant.mutation():
+            self._index.upsert(record)
+
+    def related_scores(self, query: str, *, limit: int) -> tuple[MemorySemanticRelevance, ...]:
+        with self.finalization_participant:
+            return tuple(self._index.related_scores(query, limit=limit))
