@@ -674,3 +674,13 @@ System Integration implementation and final Verification remain frozen until #44
 7. 状況に由来する文脈、人物・方針のリビジョンやモデルのバージョンの来歴を備える実発話について、#434の人間による自然さ・ゆららしさの確認。
 
 最小起動、単体合格、模擬提供先の成功を、上記全体の合格や後続の実サービス品質へ昇格しない。本体の先行完成と後続を含む全体完成を別に判定する。#586の性能試験・改善は本体実装完了後の別工程であり、今回は着手しない。
+
+## 30. #624 能力提供0件・模擬提供1件の自動結合検証
+
+`tests/system_integration/test_system_plugin.py`は既存の`build_minimum_core`と`CoreCognitionConfiguration` / `CoreExecutionConfiguration`を使用する。RegistryとPluginCapabilityPreflightPort / PluginActivityExecutionPortを同じ構成へ注入し、別の状態Ownerや特定サービスへの固定意思を作らない。模擬提供先だけを登録し、実サービスへ接続しない。
+
+能力提供0件では、空Registryのまま通常の内部入力からAppraisal・Executiveへ到達する。能力提供1件では、公開RegistryからActivityBindingへ投影した確定判断を配送し、実行要求・報告・Activityの現在の終端事実・入力文脈・後続認知を同じtraceで照合する。入口が確定判断であるため、先行する実LLMの能力選択をこの試験で実行したとは扱わない。
+
+正常終了、実行前の権限失効、効果未確定のtimeout、取消と再取消、効果報告後の権限失効を確認する。実行前に根拠が失効した場合はFinalizationErrorとして拒否され、提供先呼出し0件となる。実行後の権限失効は既存効果を消さず、Activityの終端事実はAppraisalの入力へ戻る。一方、失効したBindingを含む後続Executiveは既存Ownerの現在性検査で拒否される。これを後続判断の成功とは報告しない。
+
+試験は本番の構成処理・Owner・配送・起動停止を使用する自動結合検証であり、配備された製品の実動作やHumanの受入を代替しない。2026-09-22のユーザー指示に従い、実音声を含む実動作の検証はHumanが所有し、ChatGPT/Codexは実施しない。模擬提供先・模擬LLMの試験成功を実サービスや意味品質の成功へ昇格しない。
