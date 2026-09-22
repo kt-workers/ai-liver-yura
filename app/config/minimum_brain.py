@@ -174,7 +174,7 @@ def _build(value: object) -> MinimumBrainProductionConfig:
         or config_id != "yura.minimum-brain.production"
         or revision < 1
     ):
-        raise ValueError("設定の識別子または版が不正です")
+        raise ValueError("設定の識別子またはリビジョンが不正です")
     modules = tuple(
         BrainIntegrationModule(_text(item))
         for item in _sequence(data["brain_module_registrations"])

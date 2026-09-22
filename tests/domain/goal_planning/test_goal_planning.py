@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 
+from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import (
     CapabilityAvailability,
     CapabilityDescriptor,
@@ -47,6 +48,8 @@ from app.domain.llm import (
     LLMTokenUsage,
     StructuredPayload,
 )
+from tests.helpers.activity_binding import planning_binding
+from tests.helpers.goal_semantics import semantic_spec
 from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
@@ -70,17 +73,17 @@ def goal() -> GoalState:
         NOW,
         NOW,
         3,
+        semantic_goal_spec=semantic_spec("semantic-goal-1"),
     )
 
 
 def capability(*, revision: int = 1, degraded: bool = False) -> CapabilityDescriptor:
-    return CapabilityDescriptor(
-        "cap-research",
-        "research",
-        ("collect",),
-        CapabilityAvailability.DEGRADED if degraded else CapabilityAvailability.AVAILABLE,
-        revision,
-        {},
+    return replace(
+        planning_binding().descriptor,
+        revision=revision,
+        availability=CapabilityAvailability.DEGRADED
+        if degraded
+        else CapabilityAvailability.AVAILABLE,
     )
 
 
@@ -98,6 +101,7 @@ def step(*, dependency_step_ids: tuple[str, ...] = ()) -> ActivityPlanStep:
         InterruptionPolicy.RESUMABLE,
         1,
         True,
+        planning_binding().value.binding_id,
     )
 
 
@@ -113,7 +117,16 @@ def directive() -> DeterministicPlanningDirective:
 
 def context(*, deterministic: bool = True) -> GoalPlanningContextSnapshot:
     item = goal()
-    view = GoalContextView(4, "test.goal-context", 1, (item,), (), (), (item,), ())
+    view = GoalContextView(
+        4,
+        V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_id,
+        V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_revision,
+        (item,),
+        (),
+        (),
+        (item,),
+        (),
+    )
     return GoalPlanningContextSnapshot(
         REVISIONS,
         view,
@@ -124,6 +137,7 @@ def context(*, deterministic: bool = True) -> GoalPlanningContextSnapshot:
         (),
         NOW,
         directive() if deterministic else None,
+        activity_bindings=(planning_binding(),),
     )
 
 
@@ -149,6 +163,7 @@ def current(**changes: object) -> GoalPlanningCommitState:
         "revisions": REVISIONS,
         "goal": goal(),
         "capabilities": (capability(),),
+        "activity_bindings": (planning_binding(),),
         **changes,
     }
     return GoalPlanningCommitState(**values)  # type: ignore[arg-type]
@@ -389,7 +404,7 @@ def test_missing_degraded_unknown_and_stale_capability_fail_closed() -> None:
         )
     with pytest.raises(ValueError, match="unavailable"):
         replace(context(), capabilities=(capability(degraded=True),))
-    with pytest.raises(ValueError, match="changed"):
+    with pytest.raises(ValueError, match="正本能力要件と束縛"):
         owner.commit(
             candidate(),
             context(),
@@ -490,7 +505,12 @@ class FakeLiveState:
 
     async def current_state(self, snapshot: GoalPlanningContextSnapshot) -> GoalPlanningCommitState:
         self.calls += 1
-        return GoalPlanningCommitState(snapshot.revisions, snapshot.goal, snapshot.capabilities)
+        return GoalPlanningCommitState(
+            snapshot.revisions,
+            snapshot.goal,
+            snapshot.capabilities,
+            activity_bindings=snapshot.activity_bindings,
+        )
 
 
 class FailingPort:
@@ -584,3 +604,177 @@ async def test_cancelled_complex_planning_never_commits() -> None:
     with pytest.raises(asyncio.CancelledError):
         await task
     assert owner.snapshot("plan-cancel") is None
+
+
+def _auxiliary_inputs(
+    initial: tuple[CapabilityDescriptor, ...],
+    live: tuple[CapabilityDescriptor, ...],
+    *,
+    requirements: tuple[CapabilityRequirement, ...] | None = None,
+) -> tuple[GoalPlanningCandidate, GoalPlanningContextSnapshot, GoalPlanningCommitState]:
+    """公開Plan候補へ能力要件を明示し、既存bindingのprimaryを保持する。"""
+    requirements = (
+        requirements
+        if requirements is not None
+        else (
+            CapabilityRequirement("research", "collect"),
+            CapabilityRequirement("network", "access"),
+        )
+    )
+    item = replace(step(), required_capabilities=requirements)
+    proposed = replace(candidate(), steps=(item,))
+    captured = replace(
+        context(),
+        capabilities=(capability(), *initial),
+        deterministic_directive=replace(directive(), steps=(item,)),
+    )
+    return proposed, captured, current(capabilities=(capability(), *live))
+
+
+def _network(
+    identity: str = "network-a", *, degraded: bool = False, revision: int = 1
+) -> CapabilityDescriptor:
+    return CapabilityDescriptor(
+        identity,
+        "network",
+        ("access",),
+        CapabilityAvailability.DEGRADED if degraded else CapabilityAvailability.AVAILABLE,
+        revision,
+        {},
+    )
+
+
+@pytest.mark.parametrize("replacement", [False, True])
+def test_auxiliary_capabilities_are_satisfied_without_selecting_provider(replacement: bool) -> None:
+    initial = (_network(), _network("network-c"))
+    live = (_network("network-b", revision=2),) if replacement else initial
+    proposed, captured, live_state = _auxiliary_inputs(initial, live)
+    plan = GoalPlanningAuthority().commit(
+        proposed, captured, live_state, plan_id="auxiliary-plan", committed_at=NOW
+    )
+    assert plan.candidate.steps[0].required_capabilities == proposed.steps[0].required_capabilities
+    assert plan.activity_bindings == (planning_binding(),)
+    # Planの公開内容に補助Provider identityを保存しない。
+    import json
+
+    serialized = json.dumps(plan.to_dict(), ensure_ascii=False)
+    assert all(identity not in serialized for identity in ("network-a", "network-b", "network-c"))
+
+
+@pytest.mark.parametrize("missing", ["snapshot", "current"])
+def test_auxiliary_missing_in_either_read_rejects(missing: str) -> None:
+    owner = GoalPlanningAuthority()
+    with pytest.raises(ValueError):
+        proposed, captured, live = _auxiliary_inputs(
+            () if missing == "snapshot" else (_network(),),
+            () if missing == "current" else (_network(),),
+        )
+        owner.commit(proposed, captured, live, plan_id="missing-auxiliary", committed_at=NOW)
+    assert owner.current_plan("goal-1") is None
+
+
+@pytest.mark.parametrize("allowed", [False, True])
+def test_auxiliary_degraded_follows_requirement(allowed: bool) -> None:
+    def commit() -> ActivityPlan:
+        capabilities = (_network(degraded=True),)
+        proposed, captured, live = _auxiliary_inputs(
+            capabilities,
+            capabilities,
+            requirements=(
+                CapabilityRequirement("research", "collect"),
+                CapabilityRequirement("network", "access", allowed),
+            ),
+        )
+        return GoalPlanningAuthority().commit(
+            proposed, captured, live, plan_id="degraded-auxiliary", committed_at=NOW
+        )
+
+    if allowed:
+        assert commit()
+    else:
+        with pytest.raises(ValueError):
+            commit()
+
+
+@pytest.mark.parametrize("ambiguous", [False, True])
+def test_primary_requirement_must_be_exactly_one(ambiguous: bool) -> None:
+    requirements: tuple[CapabilityRequirement, ...] = (CapabilityRequirement("network", "access"),)
+    if ambiguous:
+        requirements = (
+            *requirements,
+            CapabilityRequirement("research", "collect", False),
+            CapabilityRequirement("research", "collect", True),
+        )
+    owner = GoalPlanningAuthority()
+    with pytest.raises(ValueError, match="primary"):
+        proposed, captured, live = _auxiliary_inputs(
+            (_network(),), (_network(),), requirements=requirements
+        )
+        owner.commit(proposed, captured, live, plan_id="invalid-primary", committed_at=NOW)
+    assert owner.current_plan("goal-1") is None
+
+
+@pytest.mark.parametrize("change", ["missing", "revision"])
+def test_alternative_primary_and_auxiliary_do_not_rescue_exact_binding(change: str) -> None:
+    proposed, captured, live = _auxiliary_inputs((_network(),), (_network("network-b"),))
+    alternative = replace(capability(), capability_id="other-primary")
+    primary = (
+        () if change == "missing" else (replace(capability(), revision=capability().revision + 1),)
+    )
+    live = replace(live, capabilities=(*primary, alternative, _network("network-b")))
+    # 要件単位の充足は成立するが、後続の既存exact binding gateで拒否される。
+    GoalPlanningAuthority._validate_current_capabilities(proposed, captured, live)
+    owner = GoalPlanningAuthority()
+    with pytest.raises(ValueError):
+        owner.commit(proposed, captured, live, plan_id="stale-primary", committed_at=NOW)
+    assert owner.current_plan("goal-1") is None
+
+
+def test_auxiliary_preserves_duplicate_and_resume_activity_identity() -> None:
+    proposed, captured, live = _auxiliary_inputs((_network(),), (_network("network-b"),))
+    activity = ActivityContextRef(
+        "activity-1",
+        "goal-1",
+        "collect",
+        ExecutionStatus.STARTED,
+        activity_type="research",
+        capability_id=capability().capability_id,
+    )
+    captured = replace(captured, deterministic_directive=None, activities=(activity,))
+    owner = GoalPlanningAuthority()
+    with pytest.raises(ValueError, match="explicit resume"):
+        owner.commit(proposed, captured, live, plan_id="duplicate-auxiliary", committed_at=NOW)
+    resumed = replace(proposed.steps[0], resume_activity_id="activity-1")
+    plan = owner.commit(
+        replace(proposed, steps=(resumed,)),
+        captured,
+        live,
+        plan_id="resumed-auxiliary",
+        committed_at=NOW,
+    )
+    assert plan.candidate.steps[0].resume_activity_id == activity.activity_id
+    assert plan.activity_bindings == (planning_binding(),)
+
+
+def test_llm_candidate_auxiliary_uses_same_public_commit_gates() -> None:
+    proposed, captured, live = _auxiliary_inputs((_network(),), (_network("network-b"),))
+    captured = replace(captured, deterministic_directive=None)
+    request = build_request(
+        captured,
+        request_id="auxiliary-request",
+        trace_id="auxiliary-trace",
+        created_at=NOW,
+        policy=policy(),
+    )
+    wire = proposed.to_dict()
+    wire.pop("created_at")
+    plan = commit_result(
+        request,
+        result_for(request, wire),
+        snapshot=captured,
+        current=live,
+        authority=GoalPlanningAuthority(),
+        plan_id="llm-auxiliary",
+        policy=policy(),
+    )
+    assert plan.candidate.steps[0].required_capabilities == proposed.steps[0].required_capabilities

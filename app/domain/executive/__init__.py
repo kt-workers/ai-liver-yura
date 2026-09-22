@@ -1,4 +1,4 @@
-from .authority import ExecutiveDecisionAuthority
+from .authority import ExecutiveDecisionAuthority, ExecutiveFinalizationInput
 from .contracts import (
     ActivityIntentPayload,
     AttentionIntentPayload,
@@ -25,11 +25,14 @@ from .contracts import (
     GoalTransitionIntent,
     GoalTransitionOperation,
     GoalTransitionPayload,
+    PlanExecutionIntentPayload,
+    PlanProgressIntentPayload,
     PreconditionFact,
     SpeechIntentPayload,
     build_executive_context_snapshot,
 )
 from .deliberator import (
+    ExecutiveClock,
     ExecutiveDeliberator,
     ExecutiveLiveStatePort,
     ExecutivePolicy,
@@ -54,7 +57,9 @@ __all__ = [
     "ExecutiveContextSnapshot",
     "ExecutiveBoundsProvenance",
     "ExecutiveDecisionAuthority",
+    "ExecutiveFinalizationInput",
     "ExecutiveDecisionCandidate",
+    "ExecutiveClock",
     "ExecutiveDeliberator",
     "ExecutiveFactKind",
     "ExecutiveFactRef",
@@ -71,6 +76,8 @@ __all__ = [
     "GoalTransitionIntent",
     "GoalTransitionOperation",
     "GoalTransitionPayload",
+    "PlanExecutionIntentPayload",
+    "PlanProgressIntentPayload",
     "PreconditionFact",
     "SpeechIntentPayload",
     "build_executive_context_snapshot",
@@ -82,4 +89,42 @@ __all__ = [
     "validate_candidate_bounds",
     "to_foundation_decision",
     "to_system_command",
+]
+
+from .requirements import (
+    DerivedIntentRequirements,
+    ExecutiveIntentRequirementRule,
+    ExecutiveIntentRequirementsPolicy,
+    ExecutiveRequirementsOwner,
+    RequirementMode,
+    RequirementProvenance,
+    RequirementsDerivationResult,
+    RequirementSelector,
+    RequirementSelectorField,
+    RequirementsFailure,
+    RequirementsFailureCode,
+    RequirementsGeneration,
+    RequirementSourcePublication,
+    RequirementSourceSpec,
+    RequirementsRejected,
+    UpstreamRequirementRecord,
+)
+
+__all__ += [
+    "DerivedIntentRequirements",
+    "ExecutiveIntentRequirementRule",
+    "ExecutiveIntentRequirementsPolicy",
+    "ExecutiveRequirementsOwner",
+    "RequirementMode",
+    "RequirementProvenance",
+    "RequirementSelector",
+    "RequirementSelectorField",
+    "RequirementSourcePublication",
+    "RequirementSourceSpec",
+    "RequirementsDerivationResult",
+    "RequirementsFailure",
+    "RequirementsFailureCode",
+    "RequirementsGeneration",
+    "RequirementsRejected",
+    "UpstreamRequirementRecord",
 ]

@@ -10,6 +10,10 @@ from .contracts import (
     PersistenceSnapshotEnvelope,
     RehydrationCandidate,
 )
+from .postgresql_connection import PostgresConnectionPolicy, PostgresDatabase, PostgresEndpoint
+from .postgresql_memory import PostgresMemoryRepository
+from .postgresql_snapshots import PostgresLifecycleSnapshotRepository
+from .runtime import PersistenceOperationResult, PostgresPersistenceRuntime
 from .snapshots import (
     InMemoryLifecycleSnapshotRepository,
     LifecycleSnapshotRepositoryPort,
@@ -33,6 +37,13 @@ __all__ = [
     "PersistenceFailureCode",
     "PersistenceSnapshotEnvelope",
     "RehydrationCandidate",
+    "PostgresConnectionPolicy",
+    "PostgresDatabase",
+    "PostgresEndpoint",
+    "PostgresMemoryRepository",
+    "PostgresLifecycleSnapshotRepository",
+    "PostgresPersistenceRuntime",
+    "PersistenceOperationResult",
     "SnapshotPersistenceRequest",
     "SnapshotPersistenceRetryPolicy",
     "SnapshotPersistenceWorker",

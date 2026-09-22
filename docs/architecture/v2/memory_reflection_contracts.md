@@ -258,10 +258,11 @@ MemoryCandidateProposal
 - importance_hint
 - persistence_hint
 - novelty_hint
-- temporal_scope?
+- temporal: MemoryTemporalState
 - suggested_related_memory_ids[]
 - relation_hints[]
 - rationale_evidence_refs[]
+- deterministic_capture（trusted local pathの識別。V1 wireには含めない）
 ```
 
 Hints are bounded normalized data, not final Store decisions.
@@ -425,7 +426,7 @@ ValidatedMemoryCandidate
 - provenance
 - confidence
 - importance_hint?
-- temporal_scope?
+- temporal: MemoryTemporalState
 - suggested_related_memory_ids[]
 - suggested_relation_hints[]
 - source_context_revision?
@@ -644,3 +645,135 @@ Do not log full raw source bodies by default.
 - #445 Design Completion Gate PASS
 
 #364 detailed design completion alone does not lift the global Implementation Freeze.
+
+
+## 25. Reflection production Role/schema V1（#668）
+
+#364のproposal/support Protocolを#323 LLMRolePortと#357汎用Providerへ接続する最初のproduction generationを定義する。既存production v1の改変ではなく、canonicalで宣言済みだったv1を初めて実体化する。#667のassertion_semantics / polarity / certainty / temporal_meaningを本V1へ追加しない。
+
+### 正本と配置
+
+app/domain/memory_reflection/llm_roles.pyがIDs、明示policy、descriptor、request builder、唯一のwire serializer/parser、LLMReflectionProposalPort / LLMReflectionSupportPortを所有する。schemas.pyが両outputのstrict JSON Schemaと日本語instructionsを所有し、parserも同じschemaで構造検査する。app/adapters/llm/memory_reflection.pyはReflection専用OpenAIResponsesRoleConfig factoryだけを所有する。独自transportを作らず、generic adapter、#332 Store、#360 compositionの意味を変更しない。
+
+### Domain DTOとwire
+
+Domainはcurrent MemoryCandidateProposalとMemoryContent.value: JsonValueを維持する。proposal inputのrootはReflectionContextSnapshot.to_dict()のexact bounded snapshotであり、schemaはmemory.reflection.context.v1。追加のprompt-only fact、raw provider object、無制限会話やfixture metadataは入れない。
+
+proposal output（memory.reflection.candidates.v1）のrootは必須proposals配列だけを持つobject。空配列は正常。各要素は以下の必須fieldだけを持つ。nullableもfield自体は必須とする。
+
+- proposal_id、proposed_kind、content、source_refs、confidence_hint、importance_hint、persistence_hint、novelty_hint、temporal、suggested_related_memory_ids、relation_hints、rationale_evidence_refs。
+- content: predicate、value_json、subject_ref（nullable）、temporal_scope_ref（nullable）、qualifiers。
+- temporal: freshness、valid_from（nullable）、valid_until（nullable）、observed_at（nullable）。aware ISO timestampだけを許可し、暗黙timezoneを付けない。
+- relation_hintsの各要素: related_memory_id、related_memory_revision、relation_kind、evidence_refs、confidence。
+
+enumのwire値はcurrent Domain enumのvalue（小文字）とexact一致させる。normalized hintは既存DTOの有限[0,1]だけを許可し、Store判断にしない。unknown/missing field、未知enum、不正refを拒否する。
+
+value_jsonはwire-onlyのcanonical JSON string。Domain valueをthawし、ensure_ascii=False、sort_keys=True、compact separators、allow_nan=Falseでserializeする。UTF-8で表現可能なJSONを使用し、Domainをscalar/string/固定objectへ狭めない。parserはstrict JSON decodeとJsonValue検査を行い、NaN/Infinity、duplicate object key、不正JSONを拒否する。表記差はsemantic identityにせず、supportへはparse済みDomain値を同じserializerでcanonical化して渡す。
+
+LLM outputはdeterministic_capture fieldを持てず、parse済みproposalは常にFalse。trusted deterministic captureは既存local closed pathだけが所有する。Trueなproposalはこのopen-ended V1 serializerへ渡せず、flagを黙って落とさない。
+
+### Support wire
+
+input（memory.reflection.support.v1）はcontextとproposalだけを持つobject。contextは上記exact snapshot、proposalはstrict parse済みMemoryCandidateProposalのcanonical V1 serializationとする。generator生JSONやfree-form rationaleを別のproofとして足さない。
+
+output（memory.reflection.support.observation.v1）はproposal_id、support_relation、evidence_refs、unsupported_content_refs、contradiction_refs、confidenceだけを持つ。current ReflectionSupportObservationへstrict parseし、proposal_idは対象proposalにexact一致必須。SUPPORTED / PARTIALLY_SUPPORTED / UNSUPPORTED / CONTRADICTED / AMBIGUOUSの既存valueとevidence不変条件を維持する。Store disposition、rewrite、final truth、assertion_semanticsは出力しない。
+
+source_refsとrationale/evidence/contradiction等の参照はfrozen primary_sourcesに限定する。support evidence_refsはproposal.source_refsの部分集合とする。suggested related IDsはrelated_memory_view内、relation hintは同viewのexact revisionとsuggested IDに一致することを検査する。意味推測やrevision補完は行わない。actual_speech / executed_activityの採用可否とawait後のcurrent source/relation確認は既存ReflectionCandidateAuthority / Coordinatorが所有し、既存guardを維持する。
+
+### Descriptorとrequest
+
+ReflectionLLMRolePolicyはproposal_execution / support_execution: LLMExecutionPolicyと既存ReflectionOperationalPolicyをすべて明示注入する。具体timeout、retry、model等のdefaultを新設しない。
+
+| Role | output | authority_scope |
+|---|---|---|
+| memory_reflection | memory.reflection.candidates.v1 | memory_candidate_proposal_only |
+| memory_reflection_support | memory.reflection.support.observation.v1 | memory_reflection_support_observation_only |
+
+両descriptorはBACKGROUND / FAIL_CLOSED。request_idは<reflection_id>:proposal、または<reflection_id>:support:<proposal_id>。trace_id=context.trace_id、RevisionVectorはcontext.source_context_revisionとgoal/attention=None。source_event_ids=()とし、Memory/FactをEvent IDへ偽装しない。source identityの正本はcontext.primary_sources。
+
+priority=BACKGROUND、trigger.interruptibleのTrue/FalseをINTERRUPTIBLE/NON_INTERRUPTIBLEへexact対応させる。stale policy=REVALIDATE。created_atはconstructorへ明示注入したnow()のaware datetimeで、captured_atより前を拒否する。最終Systemでclockを選ぶ責務は#360に残す。
+
+### 拒否と容量
+
+Portはtyped request→LLMRolePort.invoke→validate_role_exchange→strict parseの順を守る。non-success、ID/schema/trace/revision不一致、stale/cancelled/rejected resultは候補へ変換しない。共通contractのReflectionRoleFailureは既存LLMFailureCodeを保持し、productionのReflectionLLMErrorが継承する。Coordinatorは共通typed failureをRuntimeErrorより先に識別し、具体Portへ逆依存しない。ReflectionCandidateResult.statusはOwnerの最終disposition、role_failure: ReflectionRoleFailureInfo | Noneは実Roleのtyped原因とする。immutableなInfoはstage: ReflectionRoleStage（PROPOSAL / SUPPORT）とcode: LLMFailureCodeを保持する。旧role_failure_code単独fieldはこのInfoへ統合する。current時はREFLECTION_ROLE_FAILED / SUPPORT_ROLE_FAILEDと対応stageが必須。stale/policy/provenance拒否では原因を保持でき、acceptedには原因を付けられない。proposal/supportのtyped failure後もcurrent operational policy generationを確認し、変更時はREJECTED_STALEを優先する。supportではさらにlive contextを再取得し、既存Authorityのsource/relation確認による拒否を優先する。どの拒否でも実Role原因を失わず、generic RuntimeErrorでは原因を捏造しない。proposalのgeneric RuntimeErrorもawait後policy確認を行う。memory_reflection_d10_operational_binding.md §9/§10の既存意味・数値は変更しない。SCHEMA_INVALID / PROVIDER_UNAVAILABLE / PROVIDER_ERROR / TIMEOUT / CANCELLED / STALE / SUPERSEDED / REJECTED / POLICY_VIOLATIONをcollapseせず、候補を生成しない。parse不正はSCHEMA_INVALID、provenance不正はPOLICY_VIOLATION。未知のgeneric RuntimeErrorだけは既存provider-unavailable fallbackを維持し、LLM codeを捏造しない。SDK/HTTP detailやLLMRoleResultを公開しない。Role内のReflectionOperationalErrorはPOLICY_STALEをSTALE、それ以外の既存D10容量・順序違反をPOLICY_VIOLATIONへ対応させ、SCHEMA_INVALIDへ潰さない。D10 canonicalと数値は変更しない。外からのCancelledErrorはそのまま伝播する。
+
+既存D10のcontext generation/order/token、proposal count/重複ID、relation hint/evidence、support evidence上限を両Portと既存Coordinatorで検査する。overflowをfirst-Nへ切り詰めない。policy更新とcurrent source/relationの最終確認は既存Coordinatorの責務を維持する。
+
+### Providerと構成
+
+proposal/supportのformat nameはmemory_reflection_candidates_v1 / memory_reflection_support_observation_v1とし、Domain schema IDとは分離する。各factoryへmodel_by_classとreasoning_by_effortを明示注入し、既存OpenAIResponsesModelPolicyへ渡す。Character Languageと同じtext Role用のmodel classを利用し、不正mappingを拒否する。
+
+instructionsはfrozen contextだけを根拠に、zero candidate、source/related IDの限定、hintの非Authority性、actual speech/execution guard、deterministic自己宣言禁止、assertion_semantics禁止、schema外説明禁止を明記する。supportはexact proposal全体を評価し、書換えやStore判断をしない。
+
+#668は登録可能な境界までを所有する。bootstrapの必須登録、READY条件、具体runtime/model/policy値、scheduler/trigger/system wiringは変更しない。#667は後続generationで意味facets追加を所有する。
+
+## 26. Reflection assertion semantics供給V2（#667）
+
+意味の正本はmemory_semantic_assertion_contracts.md（#664）とする。MemoryCandidateProposalの既存default field末尾へassertion_semantics: MemoryAssertionSemantics | Noneを追加する。Noneはevidenceから発話可能な意味を確定していない正常値であり、候補生成・保存を妨げない。意味enum、Store identity、eligibilityを再定義しない。
+
+### Generationと互換性
+
+§25のV1 wire/schema/parserを凍結する。V1にassertion_semantics fieldを足さず、入力された場合はunknown fieldとして拒否する。既存のproposal_output_schema / proposal_to_wire / parse_proposalsはV1互換入口として保持し、明示的な_v1名も公開する。V1 serializerへnon-null semantics付きDomain proposalを渡すことは拒否し、情報を黙って落とさない。
+
+current productionは同じRole ID memory_reflectionでcontext.v1 → candidates.v2へ進む。V2はV1の全fieldに必須assertion_semanticsを加える。値はnull、またはpolarity（affirm/negate）、certainty（certain/likely/uncertain）、temporal_meaning（current/historical/time_bounded）のexact closed object。3 fieldすべて必須、unknown field禁止。V2 schema/parser/serializerは明示的な_v2入口とし、V1とschema IDを共有しない。
+
+support Role ID memory_reflection_supportは維持し、inputをsupport.v2へ更新する。contextはexact context.v1、proposalはparse済みDomainからcanonical V2でserializeした全体。outputはsupport.observation.v1のまま。Provider proposal formatはmemory_reflection_candidates_v2、support output formatはmemory_reflection_support_observation_v1。model/reasoning注入、clock/operational policy注入を維持し、System登録は行わない。
+
+### 意味生成とsupport
+
+V2 proposal instructionsはfrozen evidenceが3 facetすべてを安全に支える場合だけnon-nullを許可する。confidence threshold、predicate名、MemoryKind、value_jsonの型、keyword/regex/substringからfacetを決めない。confidence hintとassertion certaintyは別Authority。安全に決定できなければnullとする。LLMはStore dispositionを決めない。
+
+support instructionsはcontentとassertion_semanticsを含むexact proposal全体を評価する。explicit semanticsがsupportされなければSUPPORTEDを返さず、既存PARTIALLY_SUPPORTED / UNSUPPORTED / AMBIGUOUS / CONTRADICTEDを意味に従って返す。supportはproposalを書き換えず、semanticsをNoneへdowngradeしてacceptしない。generator rationaleをproofにしない。support outputへ意味fieldを追加しない。
+
+candidate_from_accepted_proposalはproposal.assertion_semanticsをValidatedMemoryCandidateへexact copyする。confidence、content、freshnessから補完しない。Noneもexactに搬送し、保存後のSEMANTICS_UNRESOLVEDは#664の既存契約に従う。
+
+### Trusted deterministic境界
+
+既存upstream typed contractに同じ意味が明示される場合だけ将来のexact mappingを許可できる。現在のReflectionSourceEvidenceにはそのmappingが存在しないため、trusted deterministic経路はNoneだけを許可する。non-null付きのtrusted deterministic入力はREJECTED_POLICYとし、暗黙downgradeやgeneric semantic_payload解析で救済しない。Noneの既存closed captureは維持する。source kind、raw text、confidence、MemoryKindからfacetを作らず、mapping不在をblockerにしない。
+
+### 保持する公開境界
+
+ReflectionRoleFailureInfo / ReflectionRoleStage、LLMFailureCode、Owner最終statusとの二軸化、proposal/support await後policy確認、live source/relation確認、generic fallbackを保持する。actual speech / executed activity guard、D10容量と数値、Store/意味Owner、#360 composition、#661 Speech投影、#613を変更しない。
+
+## 27. Typed subject identity供給V3（#673）
+
+主体型の正本は[共有主体契約](semantic_subject_identity_contracts.md)（#671）、保存と公開は[Memory保存契約](memory_store_retrieval_contracts.md)と[Memory意味assertion契約](memory_semantic_assertion_contracts.md)（#672）とする。§25・§26は旧generationの凍結契約として保持し、current productionは以下へ進む。
+
+| 境界 | 凍結するgeneration | current production |
+| --- | --- | --- |
+| Proposal input | context.v1 | memory.reflection.context.v2 |
+| Proposal output | candidates.v1 / candidates.v2 | memory.reflection.candidates.v3 |
+| Support input | support.v1 / support.v2 | memory.reflection.support.v3 |
+| Support output | support.observation.v1 | memory.reflection.support.observation.v1（形状不変） |
+
+### Sourceと候補の型付き主体
+
+ReflectionSourceEvidenceとMemoryCandidateProposalへ末尾defaultのsubject_identity: SemanticSubjectIdentity | Noneを追加する。non-nullは#671共有型だけを許可する。候補ではcontent.subject_refがnon-nullかつidentity.subject_refとexact一致することを必須とする。Noneは安全に主体を公開できない正常な未解決値である。
+
+source preparationは上流Ownerのpublic typed identityをexact copyできる場合だけ設定する。例えば#672のMemoryEvidence / MemorySemanticAssertionから搬送できるが、各Ownerの契約・System compositionを本Workで新設しない。Reflectionはsource Ownerのidentity意味を所有しない。
+
+semantic_payload、source_excerpt、raw prose、display name、first-person、「私」「自分」「ゆら」、keyword、regex、substring、ID prefix、character_id比較、predicate、MemoryKind、confidenceからkind/refを作らない。raw subject_refが存在するだけでは解決済みとしない。意味facetsと主体identityは独立に未解決を許容する。
+
+### 明示serializerとD10
+
+ReflectionSourceEvidence.to_dict() / ReflectionContextSnapshot.to_dict()はcontext.v1互換のまま固定する。DTOがidentityを持っていてもV1 wireへfieldを追加しない。source_to_wire_v2 / context_to_wire_v2でだけprimary_sourcesの各要素へ必須nullable subject_identityを追加する。値はnullまたはexactな{kind: SELF | REFERENCE, subject_ref: 空でない識別子}であり、追加memberを許可しない。
+
+V1 estimateは従来のV1 budget payload（自己参照するestimated_tokensを除く）で固定する。V2 estimateはidentity metadataとestimated_tokens fieldを含む実際のcontext.v2 wire全体で計上する。wireのestimated_tokensはV1互換DTOの値として保持し、V2の上限検査は別の明示estimatorの戻り値を使用する。current proposal/support requestは送信前にV2 estimateをmax_context_estimated_tokensと照合し、超過は既存CONTEXT_TOO_LARGE → POLICY_VIOLATIONへ収束する。D10数値・generation/order/evidence上限は変更しない。
+
+### Proposal / Support V3
+
+candidates.v3はV2全fieldに必須nullable subject_identityを追加するstrict objectである。nonnull objectはkindとsubject_refだけを必須とする。V1/V2 schema・parser・serializerを明示入口で凍結し、旧schemaへのidentity追加は拒否する。旧serializerへnonnull identityを渡す場合も拒否し、黙って情報を落とさない。current Portはparse_proposals_v3 / proposal_to_wire_v3を使用する。
+
+proposal_instructions_v3はV2のassertion semantics規則をすべて維持し、proposal.source_refs内のfrozen typed sourceとexact一致するidentityだけを許可する。決定不能ならnullとする。parse境界は根拠不在をPOLICY_VIOLATION、ReflectionCandidateAuthorityも同じ不変条件をREJECTED_INVALID_PROVENANCEとして強制し、非LLM入力でも迂回させない。
+
+support.v3はcontext.v2とcandidate.v3のexact組である。supportはcontent / assertion_semantics / subject_identity全体を検証する。SUPPORTEDかつ候補identityがnonnullなら、support.evidence_refs内のfrozen sourceにexact同じidentityが最低1件必要となる。parseとAuthorityの双方で拒否を強制する。SELFとREFERENCEを交換せず、unsupported identityをnullへ書き換えてacceptしない。他のsupport relationとobservation.v1の形状は不変とする。
+
+Role IDはmemory_reflection / memory_reflection_supportを維持する。Provider proposal formatはmemory_reflection_candidates_v3、schemaとinstructionsも明示V3を使用する。support formatはmemory_reflection_support_observation_v1のままでinstructionsだけV3へ進む。model/reasoningの明示注入と#323 exchange検証を維持する。
+
+### Accepted transportと回帰境界
+
+candidate_from_accepted_proposalはsubject_identityとassertion_semanticsをValidatedMemoryCandidateへexact copyする。Storeで補完・再解釈しない。trusted deterministic captureもproposal.source_refs内のexact typed sourceを要求し、identity不在ならNoneを保持する。#667のdeterministic assertion_semanticsは引き続きNoneだけを許可する。
+
+#668のRole failure cause / Owner disposition分離、exact LLMFailureCode、proposal/support await後のpolicy freshness、live source/relation再検証、generic fallback、CancelledError伝播は変更しない。actual speech / executed activity guardも維持する。
+
+V1 context、V1/V2 proposal・supportの互換性、V2容量超過、型・provenance拒否、推論禁止、SELF/REFERENCEのexact搬送を検証する。実PostgreSQLではV3のproposal → support → accepted → Store → semantic assertion publicationのidentity・semantics・非空tokenを確認し、V2のidentity=None / SUBJECT_UNRESOLVED / tokens=()回帰も保持する。

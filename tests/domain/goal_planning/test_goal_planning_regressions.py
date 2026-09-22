@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import (
-    CapabilityAvailability,
     CapabilityDescriptor,
     CapabilityRequirement,
     ExecutionStatus,
@@ -29,6 +29,8 @@ from app.domain.goals import (
     GoalStatus,
     InterruptionPolicy,
 )
+from tests.helpers.activity_binding import planning_binding
+from tests.helpers.goal_semantics import semantic_spec
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 REVISIONS = RevisionVector(9, 4, 2)
@@ -51,6 +53,7 @@ def goal() -> GoalState:
         NOW,
         NOW,
         3,
+        semantic_goal_spec=semantic_spec("semantic-goal-1"),
     )
 
 
@@ -59,14 +62,7 @@ def capability(
     capability_type: str,
     operations: tuple[str, ...],
 ) -> CapabilityDescriptor:
-    return CapabilityDescriptor(
-        capability_id,
-        capability_type,
-        operations,
-        CapabilityAvailability.AVAILABLE,
-        1,
-        {},
-    )
+    return planning_binding(operations[0], capability_type, capability_id, operations).descriptor
 
 
 def research_capability(*operations: str) -> CapabilityDescriptor:
@@ -94,6 +90,7 @@ def step(
         InterruptionPolicy.RESUMABLE,
         0,
         replan_on_failure,
+        "binding-research-" + operation,
     )
 
 
@@ -105,7 +102,16 @@ def context(
     blockers: tuple[PlanningBlocker, ...] = (),
 ) -> GoalPlanningContextSnapshot:
     item = goal()
-    view = GoalContextView(4, "test.goal-context", 1, (item,), (), (), (item,), ())
+    view = GoalContextView(
+        4,
+        V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_id,
+        V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.policy_revision,
+        (item,),
+        (),
+        (),
+        (item,),
+        (),
+    )
     bounded_capabilities = capabilities or (research_capability("collect"),)
     planning_requirements = requirements or (CapabilityRequirement("research", "collect"),)
     return GoalPlanningContextSnapshot(
@@ -119,6 +125,11 @@ def context(
         NOW,
         None,
         blockers,
+        activity_bindings=tuple(
+            planning_binding(op, c.capability_type, c.capability_id, c.operations)
+            for c in bounded_capabilities
+            for op in c.operations
+        ),
     )
 
 
@@ -149,7 +160,17 @@ def current(
     capabilities: tuple[CapabilityDescriptor, ...],
     blockers: tuple[PlanningBlocker, ...] = (),
 ) -> GoalPlanningCommitState:
-    return GoalPlanningCommitState(REVISIONS, goal(), capabilities, blockers)
+    return GoalPlanningCommitState(
+        REVISIONS,
+        goal(),
+        capabilities,
+        blockers,
+        activity_bindings=tuple(
+            planning_binding(op, c.capability_type, c.capability_id, c.operations)
+            for c in capabilities
+            for op in c.operations
+        ),
+    )
 
 
 def test_activity_context_identity_is_inferred_only_when_unambiguous() -> None:

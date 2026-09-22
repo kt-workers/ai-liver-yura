@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from math import isfinite, pi, sin
 
-from app.adapters.tts.contracts import SpeechTimingKind, SpeechTimingUnit
 from app.domain.body import BodyState
 from app.domain.body_expression import BodyExpressionAxis, BodyExpressionContext
+from app.domain.contracts.speech_audio import SpeechTimingKind, SpeechTimingUnit
 
 from .contracts import (
     BlinkPhase,

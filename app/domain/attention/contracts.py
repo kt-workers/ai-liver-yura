@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, IntEnum
+from uuid import NAMESPACE_URL, uuid5
 
 from app.domain.contracts.common import (
     require_aware,
@@ -377,6 +379,7 @@ class AttentionFocusState:
     priority_burst: int
     cooldowns: tuple[AttentionCooldown, ...]
     updated_at: datetime
+    last_selected_epochs: tuple[tuple[str, int], ...] = ()
 
     def __post_init__(self) -> None:
         require_revision(self.revision, "revision")
@@ -423,6 +426,16 @@ class AttentionFocusState:
         ):
             raise ValueError("cooldownsが不正です")
         require_aware(self.updated_at, "updated_at")
+        history = tuple(self.last_selected_epochs)
+        source_refs = {source.source_ref for source in sources}
+        for ref, epoch in history:
+            require_identifier(ref, "source_ref")
+            _positive(epoch, "last_selected_epoch")
+            if ref not in source_refs or epoch > self.selection_epoch:
+                raise ValueError("選択履歴は現在のsourceと確定済みepochに限定します")
+        if len({ref for ref, _ in history}) != len(history):
+            raise ValueError("選択履歴のsourceが重複しています")
+        object.__setattr__(self, "last_selected_epochs", tuple(sorted(history)))
         object.__setattr__(self, "secondary_monitor_refs", monitors)
         object.__setattr__(
             self, "sources", tuple(sorted(sources, key=lambda item: item.source_ref))
@@ -444,6 +457,10 @@ class AttentionFocusState:
             "response_obligation": self.response_obligation,
             "sources": [source.to_dict() for source in self.sources],
             "selection_epoch": self.selection_epoch,
+            "last_selected_epochs": [
+                {"source_ref": ref, "selection_epoch": epoch}
+                for ref, epoch in self.last_selected_epochs
+            ],
             "last_selected_source_ref": self.last_selected_source_ref,
             "same_source_burst": self.same_source_burst,
             "last_selected_priority": None
@@ -671,3 +688,55 @@ class SpeechSchedulingDirective:
         require_revision(self.expected_speech_revision, "expected_speech_revision")
         require_revision(self.attention_revision, "attention_revision")
         require_aware(self.occurred_at, "occurred_at")
+
+
+@dataclass(frozen=True, slots=True)
+class AttentionResponseSettlement:
+    """観測完了の由来と適用先の期待リビジョンを分離したsettlement証拠。"""
+
+    observed_execution_id: str
+    observed_record_revision: int
+    latest_observation_id: str
+    source_decision_id: str
+    source_event_ids: tuple[str, ...]
+    expected_attention_revision: int
+    expected_source_context_revision: int
+    completed_at: datetime
+    settlement_id: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        for name in ("observed_execution_id", "latest_observation_id", "source_decision_id"):
+            require_identifier(getattr(self, name), name)
+        for name in (
+            "observed_record_revision",
+            "expected_attention_revision",
+            "expected_source_context_revision",
+        ):
+            require_revision(getattr(self, name), name)
+        if not isinstance(self.source_event_ids, tuple) or not self.source_event_ids:
+            raise ValueError("source_event_idsには空でないtupleが必要です")
+        for event_id in self.source_event_ids:
+            require_identifier(event_id, "source_event_ids")
+        if len(set(self.source_event_ids)) != len(self.source_event_ids):
+            raise ValueError("source_event_idsを重複させられません")
+        require_aware(self.completed_at, "completed_at")
+        identity = json.dumps(
+            (self.observed_execution_id, self.observed_record_revision, self.latest_observation_id),
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        object.__setattr__(
+            self, "settlement_id", str(uuid5(NAMESPACE_URL, "attention-settlement:" + identity))
+        )
+
+    @property
+    def immutable_evidence(self) -> tuple[object, ...]:
+        """retry時に再取得する期待リビジョンを除く、同一性の照合対象。"""
+        return (
+            self.observed_execution_id,
+            self.observed_record_revision,
+            self.latest_observation_id,
+            self.source_decision_id,
+            self.source_event_ids,
+            self.completed_at,
+        )

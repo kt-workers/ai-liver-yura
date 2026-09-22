@@ -14,6 +14,7 @@ from .contracts import (
     ReflectionSourceEvidence,
     ReflectionSourceKind,
     ReflectionSupportObservation,
+    context_to_wire_v2,
 )
 
 
@@ -122,9 +123,18 @@ def estimate_reflection_context_tokens(context: ReflectionContextSnapshot) -> in
     return estimate_memory_token_units(payload)
 
 
+estimate_reflection_context_tokens_v1 = estimate_reflection_context_tokens
+
+
+def estimate_reflection_context_tokens_v2(context: ReflectionContextSnapshot) -> int:
+    return estimate_memory_token_units(context_to_wire_v2(context))
+
+
 def validate_reflection_context_bounds(
     context: ReflectionContextSnapshot,
     policy: ReflectionOperationalPolicy,
+    *,
+    context_v2: bool = False,
 ) -> int:
     if not policy.same_generation(
         context.operational_policy_id,
@@ -164,7 +174,11 @@ def validate_reflection_context_bounds(
                 ReflectionOperationalFailureCode.CONTEXT_TOO_LARGE,
                 "source excerptがpolicy上限を超えています",
             )
-    estimated_tokens = estimate_reflection_context_tokens(context)
+    estimated_tokens = (
+        estimate_reflection_context_tokens_v2(context)
+        if context_v2
+        else estimate_reflection_context_tokens(context)
+    )
     if estimated_tokens > policy.max_context_estimated_tokens:
         raise ReflectionOperationalError(
             ReflectionOperationalFailureCode.CONTEXT_TOO_LARGE,

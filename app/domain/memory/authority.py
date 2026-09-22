@@ -5,8 +5,11 @@ from datetime import datetime
 from hashlib import sha256
 from json import dumps
 
-from app.domain.contracts.common import utc_instant
+from app.domain.contracts.common import require_identifier, require_revision, utc_instant
+from app.domain.contracts.finalization import AuthorityReadPublication
+from app.domain.contracts.semantic_subject import SemanticSubjectIdentity
 from app.domain.memory.contracts import (
+    MemoryAssertionSemantics,
     MemoryContent,
     MemoryDegradationReason,
     MemoryDisposition,
@@ -19,7 +22,9 @@ from app.domain.memory.contracts import (
     MemoryRetrievalQuery,
     MemoryWriteRequest,
     MemoryWriteResult,
+    subject_identity_payload,
 )
+from app.domain.memory.finalization import MemoryFinalizationRegistry
 from app.domain.memory.ranking import (
     MemoryRankingMissingBehavior,
     MemoryRankingPolarity,
@@ -33,6 +38,11 @@ from app.domain.memory.ranking import (
     RankedMemoryEvidenceView,
 )
 from app.domain.memory.repository import MemoryRepositoryPort, MemorySemanticIndexPort
+from app.domain.memory.semantic_assertions import (
+    MemorySemanticAssertionEntry,
+    MemorySemanticAssertionUnavailableReason,
+    semantic_assertion_entry,
+)
 
 
 class MemoryStoreAuthority:
@@ -74,8 +84,15 @@ class MemoryStoreAuthority:
             (
                 record
                 for record in records
-                if self._identity(record.kind, record.content)
-                == self._identity(candidate.memory_kind, candidate.content)
+                if self._identity(
+                    record.kind, record.content, record.assertion_semantics, record.subject_identity
+                )
+                == self._identity(
+                    candidate.memory_kind,
+                    candidate.content,
+                    candidate.assertion_semantics,
+                    candidate.subject_identity,
+                )
             ),
             None,
         )
@@ -119,6 +136,8 @@ class MemoryStoreAuthority:
             MemoryLifecycle.ACTIVE,
             candidate.created_at,
             candidate.created_at,
+            assertion_semantics=candidate.assertion_semantics,
+            subject_identity=candidate.subject_identity,
         )
         if not self._repository.save_record(record, expected_revision=None):
             return MemoryWriteResult(MemoryDisposition.REJECT, None, None)
@@ -141,6 +160,8 @@ class MemoryStoreAuthority:
             MemoryLifecycle.ACTIVE,
             candidate.created_at,
             candidate.created_at,
+            assertion_semantics=candidate.assertion_semantics,
+            subject_identity=candidate.subject_identity,
         )
         relation = MemoryRelation(
             f"relation:{target.memory_id}:{record.memory_id}:{relation_kind.value}",
@@ -176,6 +197,66 @@ class MemoryStoreAuthority:
         )
         return self._indexed(disposition, record, relation)
 
+    def read_semantic_assertion(
+        self, memory_id: str, expected_revision: int | None = None
+    ) -> MemorySemanticAssertionEntry:
+        require_identifier(memory_id, "memory_id")
+        require_revision(expected_revision, "expected_revision", optional=True)
+        try:
+            snapshot = self._repository.snapshot()
+        except RuntimeError:
+            return MemorySemanticAssertionEntry(
+                memory_id,
+                None,
+                unavailable_reason=MemorySemanticAssertionUnavailableReason.REPOSITORY_UNAVAILABLE,
+            )
+        record = next((r for r in snapshot.records if r.memory_id == memory_id), None)
+        if record is None:
+            return MemorySemanticAssertionEntry(
+                memory_id,
+                None,
+                unavailable_reason=MemorySemanticAssertionUnavailableReason.SOURCE_NOT_FOUND,
+            )
+        if expected_revision is not None and record.revision != expected_revision:
+            return MemorySemanticAssertionEntry(
+                memory_id,
+                record.revision,
+                unavailable_reason=MemorySemanticAssertionUnavailableReason.REVISION_STALE,
+            )
+        conflicts = tuple(
+            dict.fromkeys(
+                relation.right_memory_id
+                if relation.left_memory_id == memory_id
+                else relation.left_memory_id
+                for relation in snapshot.relations
+                if relation.kind is MemoryRelationKind.CONTRADICTS
+                and memory_id in (relation.left_memory_id, relation.right_memory_id)
+            )
+        )
+        return semantic_assertion_entry(record, conflicts)
+
+    def read_semantic_assertion_publication(
+        self, memory_id: str, expected_revision: int | None = None
+    ) -> AuthorityReadPublication[MemorySemanticAssertionEntry]:
+        require_identifier(memory_id, "memory_id")
+        require_revision(expected_revision, "expected_revision", optional=True)
+        registry = getattr(self._repository, "semantic_guards", None)
+        if not isinstance(registry, MemoryFinalizationRegistry):
+            return AuthorityReadPublication(
+                MemorySemanticAssertionEntry(
+                    memory_id,
+                    None,
+                    unavailable_reason=MemorySemanticAssertionUnavailableReason.FINALIZATION_UNSUPPORTED,
+                ),
+                (),
+            )
+        participant = registry.participant(memory_id)
+        with participant:
+            entry = self.read_semantic_assertion(memory_id, expected_revision)
+            return AuthorityReadPublication(
+                entry, () if entry.assertion is None else (participant.token(),)
+            )
+
     def retrieve(self, query: MemoryRetrievalQuery) -> RankedMemoryEvidenceView:
         policy = self._require_ranking_policy()
         try:
@@ -203,9 +284,7 @@ class MemoryStoreAuthority:
         semantic_scores, reasons = self._semantic_scores(query)
         self._assert_policy_current(policy)
         filtered = [
-            record
-            for record in snapshot.records
-            if self._matches(record, query, conflicting)
+            record for record in snapshot.records if self._matches(record, query, conflicting)
         ]
         ranked: list[tuple[MemoryRecord, float, datetime]] = []
         diagnostics: list[MemoryRetrievalDiagnostic] = []
@@ -236,9 +315,13 @@ class MemoryStoreAuthority:
                 item[0].memory_id,
             )
         )
-        if filtered and not ranked and any(
-            item.code is MemoryRetrievalDiagnosticCode.UNRANKABLE_ZERO_DENOMINATOR
-            for item in diagnostics
+        if (
+            filtered
+            and not ranked
+            and any(
+                item.code is MemoryRetrievalDiagnosticCode.UNRANKABLE_ZERO_DENOMINATOR
+                for item in diagnostics
+            )
         ):
             reasons = (*reasons, MemoryDegradationReason.RANKING_UNAVAILABLE)
 
@@ -252,8 +335,7 @@ class MemoryStoreAuthority:
                 "token_estimator_revision": policy.token_estimator_revision,
                 "degradation_reasons": [reason.value for reason in reasons],
                 "diagnostics": [
-                    {"code": item.code.value, "memory_id": item.memory_id}
-                    for item in diagnostics
+                    {"code": item.code.value, "memory_id": item.memory_id} for item in diagnostics
                 ],
             }
         )
@@ -280,6 +362,9 @@ class MemoryStoreAuthority:
                     conflicting.get(record.memory_id, ()),
                     estimate,
                     score,
+                    record.revision,
+                    record.assertion_semantics,
+                    record.subject_identity,
                 )
             )
             tokens += estimate
@@ -310,9 +395,19 @@ class MemoryStoreAuthority:
         return MemoryWriteResult(disposition, record, relation)
 
     @staticmethod
-    def _identity(kind: object, content: MemoryContent) -> str:
+    def _identity(
+        kind: object,
+        content: MemoryContent,
+        semantics: MemoryAssertionSemantics | None,
+        subject_identity: SemanticSubjectIdentity | None,
+    ) -> str:
         payload = dumps(
-            {"kind": getattr(kind, "value", kind), **content.to_dict()},
+            {
+                "kind": getattr(kind, "value", kind),
+                **content.to_dict(),
+                "assertion_semantics": None if semantics is None else semantics.to_dict(),
+                "subject_identity": subject_identity_payload(subject_identity),
+            },
             ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
@@ -392,9 +487,7 @@ class MemoryStoreAuthority:
         semantic_scores: dict[str, float],
     ) -> tuple[float | None, datetime] | None:
         reference_time = self._reference_time(record)
-        age_seconds = (
-            utc_instant(query.created_at) - utc_instant(reference_time)
-        ).total_seconds()
+        age_seconds = (utc_instant(query.created_at) - utc_instant(reference_time)).total_seconds()
         if age_seconds < 0:
             return None
         numerator = 0.0
@@ -419,11 +512,7 @@ class MemoryStoreAuthority:
                     MemoryRetrievalFailureCode.REQUIRED_SIGNAL_MISSING,
                     f"{record.memory_id}: {rule.signal.value}",
                 )
-            signed = (
-                value
-                if rule.polarity is MemoryRankingPolarity.POSITIVE
-                else 1.0 - value
-            )
+            signed = value if rule.polarity is MemoryRankingPolarity.POSITIVE else 1.0 - value
             numerator += rule.weight * signed
             denominator += rule.weight
         if denominator == 0:
@@ -481,6 +570,11 @@ class MemoryStoreAuthority:
     ) -> dict[str, object]:
         return {
             "memory_id": record.memory_id,
+            "memory_revision": record.revision,
+            "subject_identity": subject_identity_payload(record.subject_identity),
+            "assertion_semantics": None
+            if record.assertion_semantics is None
+            else record.assertion_semantics.to_dict(),
             "kind": record.kind.value,
             "content": record.content.to_dict(),
             "provenance": [item.to_dict() for item in record.provenance],

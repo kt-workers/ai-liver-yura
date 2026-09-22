@@ -288,3 +288,55 @@ Issue #321 Unit Gate requires:
 - async work timing preserves required completion ordering
 - capability availability/operation matching
 - no concrete Provider/SDK imports in `app/domain/contracts/`
+
+## 15. 所有者の世代と最終確定の共通契約（#632）
+
+本節は#321・#322の完了済み成果を再定義せず、後発Work #632として追加する設計である。具体的な並行動作・取得順序・所有者への適用条件の正本は[並行動作設計第20節](concurrency_architecture.md#20-所有者の世代更新と最終確定を直列化する632)とする。本節の型と機構は`app/domain/contracts/finalization.py`へ実装し、設計採用だけを製品完成と扱わない。
+
+| 公開契約 | 所有する情報と動作 |
+| --- | --- |
+| `AuthorityGenerationToken` | 正規所有者の識別子、起動インスタンスの識別子、参加者の識別子、不変な世代番号。正規の参加者が発行したことを検査できる起動中の参照を持つ |
+| `AuthorityFinalizationParticipant` | 既存所有者の状態更新と同じ同期境界、現在の世代、利用可能状態、固定した取得順序キーを所有する。読取値とトークンを同一区間で返し、更新・失効を同一区間で公開する |
+| `AuthorityReadPublication[T]` | 所有者が返した不変な読取値と、その値の取得時に保護した全参加者のトークン群。複合値の由来を単一の独自リビジョンへ置き換えない |
+| `AuthorityFinalizationRequest` | 出典の期待トークン群、確定先の参加者、登録済みの同期確定操作を識別する参照、確定先が検査する入力。参加者の集合を取得前に固定する |
+| `AuthorityFinalizationFence` | 固定順序で必要な参加者を取得し、全期待世代を検査して、確定先の短い同期操作を一度だけ実行する。逆順に解放し、確定結果を返す |
+| `FinalizationFailure` | 不一致、利用不能、未対応、不正な参加者、取得設定不正、競合中、取消、確定済み、確定拒否、予期しない確定障害を区別する型付き失敗 |
+
+世代トークンは`AuthorityRef`や承認を代用しない。所有者を名乗る文字列、任意の整数、別プロセスから復元したトークンだけで正規出典へ昇格できない。登録された参加者との対応と発行インスタンスを検査し、再登録・再起動後の同じ番号を別世代として扱う。トークンの直列化は診断用であり、永続化したトークンを実行権限として復元しない。
+
+当初の粒度は一つの所有者インスタンスにつき一参加者とする。リソース別ロックを新設しない。必要な計画・命令の識別子は所有者の読取値に残し、その所有者の世代と組にする。`RevisionVector`、計画や実行記録の既存リビジョン、必須要件の方針リビジョンとは別の機械的な世代であり、いずれの意味も置き換えない。
+
+Foundationは具体的なExecutive・Goal Planning・Plan Execution・Activity Executionの型をimportせず、能力・必要条件・計画の意味を判断しない。参加者と型付き結果を提供し、各所有者がそれに依存する。確定操作の入力・出力の意味、権限、合法な状態遷移、重複判定は従来の確定先所有者が保持する。
+
+### 15.1. #632の実装入口と検証境界
+
+`AuthorityFinalizationParticipant`自身を各所有者の同期境界として使用する。`authority_mutation`は更新可能メソッド全体の入口で失効し、ロック取得前だった入力検査の失敗も保守的失効に含める。元の製品リビジョン・記録・意味判断は変更しない。通常読取は世代を進めない。
+
+`current_plan_publication`、`snapshot_publication`、計画進行の`scope_publication / observation_publication`は値と全出典トークンを同一区間で返す。計画進行の出典は進行・現在計画・目標・活動の四参加者であり、一部を省略した確定要求は拒否する。既存の汎用`GoalSnapshotPort`は通常経路で保持するが、監査済み`GoalCommitmentStore`以外からの最終確定参加は`PARTICIPANT_UNSUPPORTED`とする。
+
+実行判断所有者は`ExecutiveFinalizationInput`と`finalization_operation`を提供する。構成時に登録した所有者の同期メソッド参照だけをFenceから呼ぶ。#630の意図別要件・方針・由来をこの入口で生成しない。確定時刻は全取得・世代検査後の共通UTC時計を用いる。
+
+取得後の未宣言読取や出典書込みは`INVALID_LOCK_CONFIGURATION`で拒否する。確定操作へ入った後に発見した取得設定違反は、状態未更新と決めつけず対象を利用不能・失効へ移す。その他の予期しない確定例外は`TARGET_COMMIT_FAULT`とし、どちらも公開済み状態を巻き戻さない。
+
+責務内の試験は`tests/domain/contracts/test_finalization.py`で管理する。設計時の競合再現記録と、実装後のTest/Fix・CI・独立レビューの証拠を区別し、後者の現在値は#632の最終Checkpointで照合する。
+
+## 条件の実測source bindingと公開境界（#644）
+
+`app/domain/contracts/preconditions.py`は、条件と正規所有者の明示的な接続形式を提供する。Foundationはidentity・routing・publication形式だけを所有し、predicateを評価しない。条件の意味、current state、actualの導出は各Domain Ownerに残す。`precondition_id`から所有者を推測せず、predicate文字列を任意処理として実行しない。
+
+- `PreconditionSourceRef(owner_id, contract_id)`は実測公開元を識別する。
+- `PreconditionSourceBinding(precondition_id, subject_ref, predicate, source)`は条件のidentityとsourceを固定する。問い合わせにexpectedを持たせず、既存`PreconditionRef`の期待値と分離する。
+- `PreconditionObservation(binding, actual)`は同じidentity・sourceと実測値を保持する。actualは厳密なJSONで、不正型・非有限数・非文字列キーを拒否し、配列・mappingを深く不変化する。JSON深さは32を上限とする。
+- `PreconditionSourceReader.read_current(binding)`は`AuthorityReadPublication[PreconditionObservation]`を返す。所有者は実測値と全出典tokenを同じ同期読取で生成する。Foundationが状態から実測値を代作することはない。
+
+`PreconditionSourceRegistration`はsource、信頼済みreader、正規の`AuthorityFinalizationParticipant`を構成時に固定する。`PreconditionSourceRouter`は登録済みの完全一致するowner/contractだけへ配送する。重複登録、所有者identity不一致、未登録source、不正な公開、条件ID・対象・述語・sourceの戻り値不一致、token欠落を拒否する。既定の登録上限は128、公開JSONのUTF-8上限は65,536 bytesで、構成時に正の整数として明示変更できる。容量超過を切り詰めない。
+
+返されたtoken集合は、登録済みparticipantとその宣言済み依存の閉包に完全一致しなければならない。16を超える参加者は拒否する。公開取得後、既存`authority_read_set`の順序で同期取得し、同じFoundationの#632検査で世代・instance・seal・利用可能性を照合する。世代不一致は`STALE_PUBLICATION`、読取不能は`SOURCE_UNAVAILABLE`等の`PreconditionReadError`へ閉じる。供給元の例外本文を外へ搬送しない。
+
+この読取成功は最終確定を意味しない。呼出し側は実際に使用した公開のtokenを保持し、最終確定時に既存`AuthorityFinalizationFence`へ渡す。読取後の更新を新しいtokenで救済してはならない。Routerはtokenを発行し直さず、返された公開をそのまま保持する。新しい世代機構・Fence・意味Authorityは追加しない。
+
+Routerの登録はimmutableで、同じsource名でも別Owner instanceへ自動追従しない。restart後のOwnerには新しい信頼済み構成が必要であり、旧instanceの公開は新しい構成の登録participantと一致しない。旧Ownerを停止する側は既存契約でparticipantをretireし、旧経路も利用不能にする。旧tokenや期待値を現在のactualとして代用しない。
+
+非同期読取はRouterが子taskを所有し、取消時に取消を伝え、再取消中も完了まで回収する。readerが取消を捕捉して値を返してもRouterは取消を成功へ変換しない。所有者側も自分が生成した子taskや資源を回収する。await中はparticipantを取得しない。
+
+#610のExecutive供給と#329の実行前再検証は、この共通公開から各境界の型へ機械投影できる。具体的なDomain条件・Owner実装・両経路のwiringは本Workで追加していない。試験用の明示的Ownerで境界を検証することと、製品のpredicateを新設することを区別する。`GoalFacts`の移植、expectedからactualへのコピー、未登録時の空factによる成功は行わない。

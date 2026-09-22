@@ -12,6 +12,7 @@ from app.domain.contracts.common import (
     timestamp_to_json,
     utc_instant,
 )
+from app.domain.goal_commitment_semantics import GoalCommitmentSemanticSpec, require_semantic_spec
 
 
 class GoalKind(str, Enum):
@@ -97,8 +98,10 @@ class GoalState:
     created_at: datetime
     updated_at: datetime
     revision: int
+    semantic_goal_spec: GoalCommitmentSemanticSpec
 
     def __post_init__(self) -> None:
+        require_semantic_spec(self.semantic_goal_spec, self.semantic_goal_ref)
         for name in ("goal_id", "semantic_goal_ref", "created_from_decision_id"):
             require_identifier(getattr(self, name), name)
         if not isinstance(self.kind, GoalKind) or not isinstance(self.status, GoalStatus):
@@ -135,6 +138,7 @@ class GoalState:
             "goal_id": self.goal_id,
             "kind": self.kind.value,
             "semantic_goal_ref": self.semantic_goal_ref,
+            "semantic_goal_spec": self.semantic_goal_spec.to_dict(),
             "target_ref": self.target_ref,
             "created_from_decision_id": self.created_from_decision_id,
             "status": self.status.value,
@@ -166,8 +170,12 @@ class CommitmentState:
     created_at: datetime
     updated_at: datetime
     revision: int
+    semantic_commitment_spec: GoalCommitmentSemanticSpec
+    reason_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        require_semantic_spec(self.semantic_commitment_spec, self.semantic_commitment_ref)
+        object.__setattr__(self, "reason_refs", _ids(self.reason_refs, "reason_refs"))
         for name in ("commitment_id", "semantic_commitment_ref", "source_decision_id"):
             require_identifier(getattr(self, name), name)
         if not isinstance(self.status, CommitmentStatus):
@@ -203,6 +211,8 @@ class CommitmentState:
         return {
             "commitment_id": self.commitment_id,
             "semantic_commitment_ref": self.semantic_commitment_ref,
+            "semantic_commitment_spec": self.semantic_commitment_spec.to_dict(),
+            "reason_refs": list(self.reason_refs),
             "counterparty_ref": self.counterparty_ref,
             "source_event_ids": list(self.source_event_ids),
             "source_decision_id": self.source_decision_id,

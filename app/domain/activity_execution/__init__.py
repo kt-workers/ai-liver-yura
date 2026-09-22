@@ -21,9 +21,25 @@ from .coordinator import (
     ExecutionClock,
     ExecutionPreflightPort,
 )
+from .observation import (
+    ExecutionObservationIngressPolicy,
+    ExecutionObservationProvenance,
+    ExecutionObservationSourceBinding,
+    ExecutionObservationSourceRule,
+    ObservedExecutionEffectEvidence,
+    ObservedExecutionFactRecord,
+    TrustedExecutionObservation,
+)
 from .projector import to_execution_event
 
 __all__ = [
+    "ExecutionObservationIngressPolicy",
+    "ExecutionObservationProvenance",
+    "ExecutionObservationSourceBinding",
+    "ExecutionObservationSourceRule",
+    "ObservedExecutionEffectEvidence",
+    "ObservedExecutionFactRecord",
+    "TrustedExecutionObservation",
     "ActivityExecutionAuthority",
     "ActivityExecutionCommitResult",
     "ActivityExecutionCoordinator",

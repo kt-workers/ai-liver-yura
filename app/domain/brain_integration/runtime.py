@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections import deque
+import inspect
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -236,8 +237,18 @@ class BrainIntegrationRuntime:
         self._ports: dict[BrainIntegrationModule, BrainModulePort] = {}
         self._tracked: dict[str, _TrackedWork] = {}
         self._traces: dict[str, _TraceState] = {}
-        self._synthetic_outcomes: asyncio.Queue[BrainIntegrationWorkOutcome] = asyncio.Queue()
-        self._ready_outcomes: deque[BrainIntegrationWorkOutcome] = deque()
+        self._outcomes: asyncio.Queue[BrainIntegrationWorkOutcome] = asyncio.Queue()
+        self._observers: dict[
+            BrainIntegrationModule,
+            Callable[[BrainIntegrationWork, BrainIntegrationWorkOutcome], None],
+        ] = {}
+        self._pending_runtime: set[str] = set()
+        self._drained = asyncio.Event()
+        self._drained.set()
+        self._pump_task: asyncio.Task[None] | None = None
+        self._stop_task: asyncio.Task[None] | None = None
+        self._observer_failed = False
+        self._stopping = False
         self._started = False
 
         for lane_policy in policy.lane_policies:
@@ -264,16 +275,74 @@ class BrainIntegrationRuntime:
             raise ValueError(f"Brain module は既に登録済みです: {module.value}")
         self._ports[module] = port
 
+    def register_terminal_observer(
+        self,
+        module: BrainIntegrationModule,
+        observer: Callable[[BrainIntegrationWork, BrainIntegrationWorkOutcome], None],
+    ) -> None:
+        """開始前に、意味判断を行わない同期の終端通知先を登録する。"""
+        if self._started or module in self._observers:
+            raise RuntimeError("終端observerは開始前にmoduleごとに一度だけ登録できます")
+        if (
+            not isinstance(module, BrainIntegrationModule)
+            or not callable(observer)
+            or inspect.iscoroutinefunction(observer)
+            or inspect.iscoroutinefunction(type(observer).__call__)
+        ):
+            raise ValueError("終端observerの登録が不正です")
+        self._observers[module] = observer
+
     async def start(self) -> None:
+        if self._started or self._stopping:
+            raise RuntimeError("Brain Runtimeは既に開始または停止しています")
         if not self._ports:
             raise RuntimeError("Brain module が1件も登録されていません")
         await self._runtime.start()
+        self._pump_task = asyncio.create_task(self._pump_outcomes())
         self._started = True
 
     async def stop(self) -> None:
-        await self._runtime.stop()
+        if self._stop_task is None:
+            self._stopping = True
+            self._stop_task = asyncio.create_task(self._stop())
+        cancelled = False
+        while not self._stop_task.done():
+            try:
+                await asyncio.shield(self._stop_task)
+            except asyncio.CancelledError:
+                cancelled = True
+            except Exception:
+                break
+        if cancelled:
+            if not self._stop_task.cancelled():
+                self._stop_task.exception()
+            raise asyncio.CancelledError
+        self._stop_task.result()
+
+    async def _stop(self) -> None:
+        try:
+            await self._runtime.stop()
+        finally:
+            try:
+                policy = self._policy.shutdown_policy
+                assert policy is not None
+                await asyncio.wait_for(self._drained.wait(), policy.owned_task_join_grace_seconds)
+            finally:
+                if self._pump_task is not None:
+                    self._pump_task.cancel()
+                    await asyncio.gather(self._pump_task, return_exceptions=True)
+        if self._observer_failed:
+            raise RuntimeError("Brain終端observerが失敗しました")
+
+    async def _pump_outcomes(self) -> None:
+        while True:
+            outcome = await self._runtime.next_outcome()
+            tracked = self._tracked[outcome.work_id]
+            self._publish_terminal(tracked, self._map_runtime_outcome(outcome))
 
     def submit(self, work: BrainIntegrationWork) -> BrainWorkAdmission:
+        if not self._started or self._stopping or self._observer_failed:
+            raise RuntimeError("Brain Runtimeは受付可能な状態ではありません")
         if work.work_id in self._tracked:
             return BrainWorkAdmission(BrainWorkAdmissionStatus.REJECTED, work.work_id)
         blocked_by = tuple(
@@ -328,6 +397,8 @@ class BrainIntegrationRuntime:
             )
             return BrainWorkAdmission(BrainWorkAdmissionStatus.REJECTED, work.work_id)
 
+        self._pending_runtime.add(work.work_id)
+        self._drained.clear()
         for displaced_work_id in admission.displaced_work_ids:
             displaced = self._tracked.get(displaced_work_id)
             if displaced is not None and displaced.status not in _TERMINAL_STATUSES:
@@ -356,33 +427,8 @@ class BrainIntegrationRuntime:
         return cancelled
 
     async def next_outcome(self) -> BrainIntegrationWorkOutcome:
-        if self._ready_outcomes:
-            return self._ready_outcomes.popleft()
-        try:
-            return self._synthetic_outcomes.get_nowait()
-        except asyncio.QueueEmpty:
-            pass
-
-        synthetic_task = asyncio.create_task(self._synthetic_outcomes.get())
-        runtime_task = asyncio.create_task(self._runtime.next_outcome())
-        tasks = (synthetic_task, runtime_task)
-        try:
-            done, _ = await asyncio.wait(
-                tasks,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-        finally:
-            # この呼出しが生成した待機は、取消・例外時も必ず回収する。
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-        if synthetic_task in done and runtime_task in done:
-            self._ready_outcomes.append(self._map_runtime_outcome(runtime_task.result()))
-            return synthetic_task.result()
-        if synthetic_task in done:
-            return synthetic_task.result()
-        return self._map_runtime_outcome(runtime_task.result())
+        """公開済みBrain結果だけを読み、Kernelのconsumerとは競合しない。"""
+        return await self._outcomes.get()
 
     def record_revision_event(self, trace_id: str, event: BrainRevisionEvent) -> None:
         state = self._trace_state(trace_id)
@@ -435,8 +481,7 @@ class BrainIntegrationRuntime:
         if state.terminal_outcome is not None:
             raise ValueError("trace は既に終了しています")
         if any(
-            self._tracked[work_id].status not in _TERMINAL_STATUSES
-            for work_id in state.work_ids
+            self._tracked[work_id].status not in _TERMINAL_STATUSES for work_id in state.work_ids
         ):
             raise ValueError("未終了workがあるtraceは終了できません")
         state.terminal_outcome = outcome
@@ -469,9 +514,6 @@ class BrainIntegrationRuntime:
         error = runtime_outcome.error
         tracked = self._tracked[work_id]
         status = tracked.terminal_override or _status_from_disposition(disposition)
-        tracked.status = status
-        tracked.completed_at = completed_at
-        tracked.terminal_override = None
         return BrainIntegrationWorkOutcome(
             work_id,
             tracked.work.envelope.trace_id,
@@ -491,9 +533,8 @@ class BrainIntegrationRuntime:
         *,
         error: str | None,
     ) -> None:
-        tracked.status = status
-        tracked.completed_at = completed_at
-        self._synthetic_outcomes.put_nowait(
+        self._publish_terminal(
+            tracked,
             BrainIntegrationWorkOutcome(
                 tracked.work.work_id,
                 tracked.work.envelope.trace_id,
@@ -502,20 +543,46 @@ class BrainIntegrationRuntime:
                 status,
                 completed_at,
                 error=error,
-            )
+            ),
         )
+
+    def _publish_terminal(
+        self,
+        tracked: _TrackedWork,
+        outcome: BrainIntegrationWorkOutcome,
+    ) -> None:
+        if tracked.status in _TERMINAL_STATUSES:
+            return
+        tracked.status = outcome.status
+        tracked.completed_at = outcome.completed_at
+        tracked.terminal_override = None
+        observer = self._observers.get(tracked.work.module)
+        try:
+            if observer is not None:
+                observer(tracked.work, outcome)
+        except Exception:
+            self._observer_failed = True
+        finally:
+            self._outcomes.put_nowait(outcome)
+            self._pending_runtime.discard(tracked.work.work_id)
+            if not self._pending_runtime:
+                self._drained.set()
 
     def _ensure_trace(self, work: BrainIntegrationWork) -> None:
         trace_id = work.envelope.trace_id
         state = self._traces.get(trace_id)
+        root_trigger_id = work.envelope.root_trigger_id or work.envelope.trigger_id
         if state is None:
             state = _TraceState(
-                work.envelope.trigger_id,
+                root_trigger_id,
                 work.envelope.source_event_ids,
             )
             self._traces[trace_id] = state
         else:
-            if state.root_trigger_id != work.envelope.trigger_id:
+            if (
+                work.envelope.root_trigger_id is not None
+                and state.root_trigger_id != work.envelope.root_trigger_id
+            ):
                 raise ValueError("同一trace_idでroot triggerを変更できません")
             if state.terminal_outcome is not None:
                 raise ValueError("終了済みtraceへworkを追加できません")

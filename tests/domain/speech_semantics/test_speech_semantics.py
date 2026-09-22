@@ -50,6 +50,7 @@ from app.domain.speech_semantics import (
     commit_result,
     parse_candidate,
 )
+from tests.domain.speech_semantics.policy_fixture import explicit_meaning_policy
 from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
@@ -64,7 +65,8 @@ def policy() -> SpeechSemanticsPolicy:
             10,
             1,
             1000,
-        )
+        ),
+        meaning_policy=explicit_meaning_policy(),
     )
 
 
@@ -218,6 +220,7 @@ def context(
         1,
         NOW,
         directive() if deterministic else None,
+        meaning_policy=explicit_meaning_policy(),
     )
 
 
@@ -412,6 +415,7 @@ def test_authoritative_budget_truth_and_forbidden_claims_cannot_be_omitted() -> 
     forbidden_context = replace(
         item,
         self_disclosure_policy=SelfDisclosurePolicy.FORBIDDEN,
+        meaning_policy=explicit_meaning_policy(disclosure=SelfDisclosurePolicy.FORBIDDEN),
         deterministic_directive=None,
     )
     with pytest.raises(ValueError, match="self disclosure"):

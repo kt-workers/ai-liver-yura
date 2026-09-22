@@ -17,7 +17,10 @@ from app.domain.contracts.common import (
     require_revision,
     thaw_json,
 )
+from app.domain.contracts.semantic_subject import SemanticSubjectIdentity
+from app.domain.llm import LLMFailureCode
 from app.domain.memory.contracts import (
+    MemoryAssertionSemantics,
     MemoryConfidence,
     MemoryContent,
     MemoryKind,
@@ -28,6 +31,33 @@ from app.domain.memory.contracts import (
     ValidatedMemoryCandidate,
 )
 from app.domain.memory.ranking import estimate_memory_token_units
+
+
+class ReflectionRoleStage(str, Enum):
+    PROPOSAL = "proposal"
+    SUPPORT = "support"
+
+
+@dataclass(frozen=True, slots=True)
+class ReflectionRoleFailureInfo:
+    stage: ReflectionRoleStage
+    code: LLMFailureCode
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.stage, ReflectionRoleStage) or not isinstance(
+            self.code, LLMFailureCode
+        ):
+            raise ValueError("Role failureのstage/codeが不正です")
+
+
+class ReflectionRoleFailure(RuntimeError):
+    """production Roleの既知failureを公開resultまで保持する共通境界。"""
+
+    def __init__(self, code: LLMFailureCode) -> None:
+        if not isinstance(code, LLMFailureCode):
+            raise ValueError("LLMFailureCodeが必要です")
+        self.code = code
+        super().__init__(f"Reflection Roleを利用できません: {code.value}")
 
 
 class ReflectionSourceKind(str, Enum):
@@ -72,6 +102,8 @@ class ReflectionCandidateStatus(str, Enum):
     REJECTED_STALE = "rejected_stale"
     REJECTED_POLICY = "rejected_policy"
     DEFERRED_QUEUE_PRESSURE = "deferred_queue_pressure"
+    REFLECTION_ROLE_FAILED = "reflection_role_failed"
+    SUPPORT_ROLE_FAILED = "support_role_failed"
     REFLECTION_PROVIDER_UNAVAILABLE = "reflection_provider_unavailable"
     SUPPORT_PROVIDER_UNAVAILABLE = "support_provider_unavailable"
     STORE_UNAVAILABLE = "store_unavailable"
@@ -191,8 +223,14 @@ class ReflectionSourceEvidence:
     retracted: bool = False
     source_excerpt: str | None = None
     source_excerpt_truncated: bool = False
+    subject_identity: SemanticSubjectIdentity | None = None
 
     def __post_init__(self) -> None:
+        if (
+            self.subject_identity is not None
+            and type(self.subject_identity) is not SemanticSubjectIdentity
+        ):
+            raise ValueError("subject_identityには共有型かNoneが必要です")
         require_identifier(self.source_ref, "source_ref")
         if not isinstance(self.source_kind, ReflectionSourceKind):
             raise ValueError("source_kindが不正です")
@@ -400,6 +438,8 @@ class MemoryCandidateProposal:
     relation_hints: tuple[ReflectionRelationHint, ...] = ()
     rationale_evidence_refs: tuple[str, ...] = ()
     deterministic_capture: bool = False
+    assertion_semantics: MemoryAssertionSemantics | None = None
+    subject_identity: SemanticSubjectIdentity | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.proposal_id, "proposal_id")
@@ -431,6 +471,15 @@ class MemoryCandidateProposal:
             "rationale_evidence_refs",
             _identifiers(self.rationale_evidence_refs, "rationale_evidence_refs"),
         )
+        if self.assertion_semantics is not None and not isinstance(
+            self.assertion_semantics, MemoryAssertionSemantics
+        ):
+            raise ValueError("assertion_semanticsは明示された型かNoneが必要です")
+        if self.subject_identity is not None:
+            if type(self.subject_identity) is not SemanticSubjectIdentity:
+                raise ValueError("subject_identityには共有型かNoneが必要です")
+            if self.content.subject_ref != self.subject_identity.subject_ref:
+                raise ValueError("contentとsubject_identityの主体が一致しません")
         if type(self.deterministic_capture) is not bool:
             raise ValueError("deterministic_captureが不正です")
 
@@ -494,7 +543,28 @@ class ReflectionCandidateResult:
     diagnostic_refs: tuple[str, ...]
     relation_hints: tuple[ReflectionRelationHint, ...] = ()
 
+    role_failure: ReflectionRoleFailureInfo | None = None
+
     def __post_init__(self) -> None:
+        required_stage = {
+            ReflectionCandidateStatus.REFLECTION_ROLE_FAILED: ReflectionRoleStage.PROPOSAL,
+            ReflectionCandidateStatus.SUPPORT_ROLE_FAILED: ReflectionRoleStage.SUPPORT,
+        }.get(self.status)
+        if self.role_failure is not None:
+            if not isinstance(self.role_failure, ReflectionRoleFailureInfo):
+                raise ValueError("role_failureが不正です")
+            if self.status not in {
+                ReflectionCandidateStatus.REFLECTION_ROLE_FAILED,
+                ReflectionCandidateStatus.SUPPORT_ROLE_FAILED,
+                ReflectionCandidateStatus.REJECTED_STALE,
+                ReflectionCandidateStatus.REJECTED_POLICY,
+                ReflectionCandidateStatus.REJECTED_INVALID_PROVENANCE,
+            }:
+                raise ValueError("このstatusにRole failureは付与できません")
+        if required_stage is not None and (
+            self.role_failure is None or self.role_failure.stage is not required_stage
+        ):
+            raise ValueError("Role failure statusとstageの対応が不正です")
         require_identifier(self.proposal_id, "proposal_id")
         if not isinstance(self.status, ReflectionCandidateStatus):
             raise ValueError("statusが不正です")
@@ -655,4 +725,39 @@ def candidate_from_accepted_proposal(
         context.source_context_revision,
         primary.source_kind is ReflectionSourceKind.PRESENTATION_FACT,
         primary.source_kind is ReflectionSourceKind.EXECUTION_FACT,
+        assertion_semantics=proposal.assertion_semantics,
+        subject_identity=proposal.subject_identity,
+    )
+
+
+def source_to_wire_v2(source: ReflectionSourceEvidence) -> dict[str, object]:
+    """V1の形状を保持しながら、明示された主体だけをV2へ搬送する。"""
+    identity = source.subject_identity
+    return {
+        **source.to_dict(),
+        "subject_identity": None
+        if identity is None
+        else {
+            "kind": identity.kind.value,
+            "subject_ref": identity.subject_ref,
+        },
+    }
+
+
+def context_to_wire_v2(context: ReflectionContextSnapshot) -> dict[str, object]:
+    return {
+        **context.to_dict(),
+        "primary_sources": [source_to_wire_v2(source) for source in context.primary_sources],
+    }
+
+
+def subject_identity_is_grounded(
+    context: ReflectionContextSnapshot,
+    identity: SemanticSubjectIdentity | None,
+    evidence_refs: tuple[str, ...],
+) -> bool:
+    """指定されたfrozen根拠内の型付きidentityだけを照合する。"""
+    return identity is None or any(
+        source.source_ref in evidence_refs and source.subject_identity == identity
+        for source in context.primary_sources
     )

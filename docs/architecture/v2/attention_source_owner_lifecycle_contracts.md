@@ -581,3 +581,8 @@ Event publish失敗時にowner stateを巻き戻してはならない。必要�
 - Ruff / strict Mypy / full pytest / compileall / diff-check PASS
 - exact-head CI PASS
 - ChatGPT exact-head再レビュー PASS
+
+
+## Speech応答settlementへの接続（#679）
+
+応答settlementは本書の通常Activity REQUESTED起点のOPEN/REFRESH/CLOSEとは別の#333 Owner操作である。User Interaction sourceの完了を#613のRESOLVE補作で扱わない。一意target選択、atomic removal、CAS、retry記録はattention_turn_contracts.mdの「Speech応答settlement（#679）」を正とする。Presentation専用source kindも追加しない。

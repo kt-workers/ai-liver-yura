@@ -1015,3 +1015,11 @@ Persistenceが必要になった場合も、rehydrationはtrusted validation bou
 - ChatGPT Design Reviewでblocking finding 0。
 
 以後 Design → Code を維持する。
+
+## #649 入力契約との読取照合
+
+`PluginActivityOperationAdapter`はRegistryの既存participantをそのまま公開し、`capability_publication()`のoperation_id / input_schema_ref / descriptor revision・generationを`AuthorityReadPublication[ActivityOperation]`へ投影する。Plugin固有のattributesの解釈はこのadapterに閉じ、Activity Binding Authorityから除去する。adapter自身の状態やshadow participantは作らない。permission・availability・health・lifecycleはRegistryの既存正本へ残す。
+
+#649 `OperationInputContract`は信頼済みschema登録者が供給するprovider非依存の入力公開契約であり、schema_ref・revision・必須引数名とJSON型を明示する。現在の共通形式は全項目必須・追加項目なしとし、対応できない入力形式を推測して受理しない。schema参照名から形を推論しない。明示した必須引数集合が空で、現在operationのschema参照と世代を検証できる場合だけ空objectを許す。Registry manifestは引数の実値を決めず、実値Ownerも入力形式を変更しない。
+
+Plugin Registryは`ActivityOperationPublicationPort`のproducerの一つである。非Pluginの正規Capability Ownerも自身の更新participantでdescriptor・operation・input schema identityを同時公開できる。Provider / Infrastructure Adapterを一律Pluginへ分類せず、Registryを全schemaや引数実値のAuthorityへ昇格させない。

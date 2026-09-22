@@ -7,12 +7,12 @@ from datetime import datetime
 from enum import Enum
 from math import isfinite
 
-from app.adapters.tts.contracts import (
+from app.domain.contracts.common import require_aware, require_identifier, require_revision
+from app.domain.contracts.speech_audio import (
     PreparedAudioArtifact,
     SpeechTimingKind,
     SpeechTimingTrack,
 )
-from app.domain.contracts.common import require_aware, require_identifier, require_revision
 from app.domain.speech_runtime.contracts import (
     SpeechPresentationMode,
     SpeechPresentationReport,

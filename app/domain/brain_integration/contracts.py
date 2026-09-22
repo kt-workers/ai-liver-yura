@@ -98,9 +98,12 @@ class BrainWorkEnvelope:
     attention_revision: int | None
     priority: BrainWorkPriority
     created_at: datetime
+    root_trigger_id: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.trace_id, "trace_id")
+        if self.root_trigger_id is not None:
+            require_identifier(self.root_trigger_id, "root_trigger_id")
         require_identifier(self.trigger_id, "trigger_id")
         object.__setattr__(
             self,

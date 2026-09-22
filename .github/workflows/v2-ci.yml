@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       pr_number:
-        description: Exact Pull Request number to validate
+        description: 検証対象のPR番号
         required: true
         type: string
       expected_head_sha:
-        description: Exact live PR head SHA expected for this dispatch
+        description: 今回の実行で期待する現在のPR先端SHA
         required: true
         type: string
   pull_request:
@@ -33,6 +33,7 @@ env:
   TZ: UTC
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   PIPENV_VERSION: "2026.8.0"
+  PIPENV_DONT_LOAD_ENV: "1"
 
 jobs:
   resolve-pr-identity:
@@ -79,15 +80,35 @@ jobs:
     needs: resolve-pr-identity
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.10
+        env:
+          POSTGRES_USER: yura_test
+          # このCI内で作成・削除する隔離DBだけの固定認証値。
+          POSTGRES_PASSWORD: isolated-test-no-auth
+          POSTGRES_DB: postgres
+        ports:
+          - 58439:5432
+        options: >-
+          --health-cmd "pg_isready -U yura_test -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      YURA_TEST_POSTGRES_HOST: "127.0.0.1"
+      YURA_TEST_POSTGRES_PORT: "58439"
+      YURA_TEST_POSTGRES_USER: yura_test
+      YURA_REQUIRE_POSTGRES: "1"
 
     steps:
-      - name: Checkout resolved exact PR head
+      - name: 照合済みのPR先端を取得
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve-pr-identity.outputs.head_sha }}
           fetch-depth: 0
 
-      - name: Verify live base generation and freshness
+      - name: 現在の本流のリビジョンと包含を確認
         env:
           BASE_REF: ${{ needs.resolve-pr-identity.outputs.base_ref }}
           LIVE_BASE_SHA: ${{ needs.resolve-pr-identity.outputs.live_base_sha }}
@@ -98,26 +119,26 @@ jobs:
           test "$fetched_base_sha" = "$LIVE_BASE_SHA"
           git merge-base --is-ancestor "$LIVE_BASE_SHA" "$EXPECTED_HEAD_SHA"
 
-      - name: Set up Python from repository contract
+      - name: リポジトリ指定のPythonを準備
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version-file: .python-version
           cache: pip
           cache-dependency-path: Pipfile.lock
 
-      - name: Verify dependency source invariant
+      - name: 依存管理の正本を確認
         run: |
           test -f Pipfile
           test -f Pipfile.lock
           test ! -e requirements.txt
           test ! -e requirements-dev.txt
 
-      - name: Install dependencies from Pipfile.lock
+      - name: Pipfile.lockから依存を導入
         run: |
           python -m pip install "pipenv==$PIPENV_VERSION"
           python -m pipenv install --system --deploy --dev
 
-      - name: Verify exact head identity
+      - name: 対象HEADの一致を確認
         env:
           EXPECTED_HEAD_SHA: ${{ needs.resolve-pr-identity.outputs.head_sha }}
         run: |
@@ -127,25 +148,25 @@ jobs:
           python -m pip --version
           python -m pip freeze
 
-      - name: Ruff
+      - name: Ruffによる静的検査
         run: python -m ruff check app tests
 
-      - name: Mypy strict
+      - name: Mypyによる厳格型検査
         run: python -m mypy --strict app tests
 
-      - name: Pytest full suite
+      - name: 実PostgreSQLを含む全試験
         run: python -m pytest -q
 
-      - name: Compile Python sources
+      - name: Pythonコードをコンパイル
         run: python -m compileall -q app tests
 
-      - name: Check diff whitespace against live base
+      - name: 現在の本流との差分の空白を検査
         env:
           LIVE_BASE_SHA: ${{ needs.resolve-pr-identity.outputs.live_base_sha }}
           HEAD_SHA: ${{ needs.resolve-pr-identity.outputs.head_sha }}
         run: git diff --check "$LIVE_BASE_SHA...$HEAD_SHA"
 
-      - name: Verify base generation remained stable
+      - name: 実行中に本流のリビジョンが変わっていないことを確認
         env:
           BASE_REF: ${{ needs.resolve-pr-identity.outputs.base_ref }}
           LIVE_BASE_SHA: ${{ needs.resolve-pr-identity.outputs.live_base_sha }}

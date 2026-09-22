@@ -313,6 +313,7 @@ def _step(value: object) -> ActivityPlanStep:
     item = _mapping(value, "step")
     required = {
         "step_id",
+        "binding_ref",
         "activity_type",
         "operation_ref",
         "target_ref",
@@ -353,6 +354,7 @@ def _step(value: object) -> ActivityPlanStep:
         _enum(InterruptionPolicy, item["interruption_policy"], "interruption_policy"),
         _revision(item["retry_limit"], "retry_limit"),
         replan,
+        None if item["binding_ref"] is None else _string(item["binding_ref"], "binding_ref"),
     )
 
 

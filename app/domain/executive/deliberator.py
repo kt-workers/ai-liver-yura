@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from enum import Enum
 from typing import Protocol, TypeVar, cast
@@ -11,11 +10,12 @@ from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy, Ex
 from app.domain.contracts import CapabilityRequirement, RevisionVector
 from app.domain.contracts.common import (
     JsonValue,
+    canonical_json_bytes,
     freeze_json,
     require_aware,
-    thaw_json,
     utc_instant,
 )
+from app.domain.goal_commitment_semantics import GoalCommitmentSemanticSpec
 from app.domain.llm import (
     LLMActivationPolicy,
     LLMExecutionPolicy,
@@ -30,6 +30,7 @@ from app.domain.llm import (
     StructuredPayload,
     validate_role_exchange,
 )
+from app.domain.plan_execution.progress_contracts import PlanStepCompletionClaim
 from app.usecases.ports.llm import LLMRolePort
 
 from .authority import ExecutiveDecisionAuthority
@@ -55,12 +56,24 @@ from .contracts import (
     GoalTransitionOperation,
     GoalTransitionPayload,
     IntentPayload,
+    PlanExecutionIntentPayload,
+    PlanProgressIntentPayload,
     SpeechIntentPayload,
+    executive_context_to_wire_v2,
 )
 
 ROLE_ID = "executive_deliberation"
-INPUT_SCHEMA = "executive.context.v1"
-OUTPUT_SCHEMA = "executive.candidate.v1"
+INPUT_SCHEMA = "executive.context.v2"
+OUTPUT_SCHEMA = "executive.candidate.v2"
+CANDIDATE_INSTRUCTIONS = (
+    "bounded contextから意識的なGoal・Action候補をexecutive.candidate.v2として選ぶ。"
+    "CREATEはsemantic_ref / semantic_revision=1 / subject_kind / subject_ref / predicate / "
+    "value / polarity / degreeを持つsemantic specが必須。SELFはsubject_ref=null、"
+    "REFERENCEはbounded context内のID。non-CREATEのspecはnull。"
+    "CREATEのstate IDとsemantic refは新規identityであり既存同kind Factを要求しない。"
+    "既存StateとのID重複は禁止。reasonや対象参照はbounded context内で選ぶ。"
+    "意味内容をraw user textやfree-form rationaleから復元しない。"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +86,12 @@ class ExecutivePolicy:
             raise ValueError("容量方針はBrainOperationalBoundsPolicyでなければなりません")
 
 
+class ExecutiveClock(Protocol):
+    """既存の構成引数との型互換を保つ。最終確定の時計ではない。"""
+
+    def now(self) -> datetime: ...
+
+
 class ExecutiveLiveStatePort(Protocol):
     async def current_for_commit(
         self, snapshot: ExecutiveContextSnapshot, candidate: ExecutiveDecisionCandidate
@@ -82,7 +101,7 @@ class ExecutiveLiveStatePort(Protocol):
 def descriptor(policy: ExecutivePolicy) -> LLMRoleDescriptor:
     return LLMRoleDescriptor(
         ROLE_ID,
-        "bounded contextから意識的なGoal・Action候補を選ぶ",
+        CANDIDATE_INSTRUCTIONS,
         INPUT_SCHEMA,
         OUTPUT_SCHEMA,
         "executive_candidate_only",
@@ -104,7 +123,15 @@ def build_request(
     if utc_instant(created_at) < utc_instant(snapshot.captured_at):
         raise ValueError("request creation cannot predate context snapshot")
     _validate_snapshot_bounds(snapshot, policy.bounds)
-    value = cast(JsonValue, snapshot.to_dict())
+    value = cast(JsonValue, executive_context_to_wire_v2(snapshot))
+    from app.domain.speech_semantics_vocabulary import canonical_size
+
+    if canonical_size(value) > policy.bounds.executive.max_context_json_bytes:
+        from .speech_references import ExecutiveContextError, ExecutiveContextFailureCode
+
+        raise ExecutiveContextError(ExecutiveContextFailureCode.EXECUTIVE_CONTEXT_TOO_LARGE)
+    if snapshot.communicative_goal_catalog is not None:
+        snapshot.communicative_goal_catalog.validate_bounds(policy.bounds)
     return LLMRoleRequest(
         request_id,
         ROLE_ID,
@@ -181,13 +208,14 @@ def commit_result(
     authority: ExecutiveDecisionAuthority,
     decision_id: str,
     policy: ExecutivePolicy,
+    committed_at: datetime | None = None,
 ) -> CommittedExecutiveDecision:
     failure = validate_role_exchange(descriptor(policy), request, result)
     if failure is not None:
         raise ValueError(failure.code.value)
     if result.status is not LLMRoleStatus.SUCCEEDED or result.output is None:
         raise ValueError("executive result is not committable")
-    if request.input.value != freeze_json(snapshot.to_dict()):
+    if request.input.value != freeze_json(executive_context_to_wire_v2(snapshot)):
         raise ValueError("executive context does not match request snapshot")
     candidate = parse_candidate(result.output.value, snapshot, created_at=result.completed_at)
     validate_candidate_bounds(candidate, policy.bounds.executive)
@@ -196,7 +224,7 @@ def commit_result(
         snapshot,
         current=current,
         decision_id=decision_id,
-        committed_at=result.completed_at,
+        committed_at=committed_at,
     )
 
 
@@ -207,7 +235,10 @@ class ExecutiveDeliberator:
         live_state: ExecutiveLiveStatePort,
         policy: ExecutivePolicy,
         authority: ExecutiveDecisionAuthority,
+        *,
+        clock: ExecutiveClock | None = None,
     ) -> None:
+        """clockは互換引数として受け付けるが、確定時刻には使用しない。"""
         self._port = port
         self._live_state = live_state
         self._policy = policy
@@ -222,6 +253,12 @@ class ExecutiveDeliberator:
         decision_id: str,
         created_at: datetime,
     ) -> CommittedExecutiveDecision:
+        if self._authority.requirements_owner is not None:
+            snapshot = self._authority.requirements_owner.capture(snapshot)
+        from .requirements import RequirementsFailureCode, RequirementsRejected
+
+        if snapshot.requirements_generation is None:
+            raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
         request = build_request(
             snapshot,
             request_id=request_id,
@@ -237,7 +274,13 @@ class ExecutiveDeliberator:
             raise ValueError("executive result is not committable")
         candidate = parse_candidate(result.output.value, snapshot, created_at=result.completed_at)
         validate_candidate_bounds(candidate, self._policy.bounds.executive)
+        generation = snapshot.requirements_generation
+        assert generation is not None
+        derived = generation.owner.derive(snapshot, candidate)
+        if derived.failure is not None:
+            raise RequirementsRejected(derived.failure.code)
         current = await self._live_state.current_for_commit(snapshot, candidate)
+        current = replace(current, requirement_derivations=derived.values)
         return commit_result(
             request,
             result,
@@ -255,17 +298,26 @@ def _validate_snapshot_bounds(
     if snapshot.bounds_provenance != ExecutiveBoundsProvenance.from_policy(policy):
         raise ValueError("Executive容量方針がsnapshotと一致しません")
     bounds = policy.executive
+    from app.domain.activity_binding.validation import validate_publications
+
+    validate_publications(
+        snapshot.activity_bindings,
+        max_count=bounds.max_fact_refs,
+        max_bytes=bounds.max_fact_payload_json_bytes,
+    )
     _at_most(len(snapshot.source_event_ids), bounds.max_source_event_refs, "source event")
-    _at_most(len(snapshot.facts), bounds.max_fact_refs, "fact")
+    _at_most(
+        len(snapshot.facts)
+        + len(snapshot.plan_scopes)
+        + len(snapshot.plan_progress_contexts)
+        + len(snapshot.activity_bindings),
+        bounds.max_fact_refs,
+        "fact",
+    )
     _at_most(len(snapshot.capabilities), bounds.max_capability_descriptors, "capability")
     _at_most(len(snapshot.preconditions), bounds.max_precondition_facts, "precondition")
     for fact in snapshot.facts:
-        payload_bytes = len(
-            json.dumps(
-                thaw_json(fact.payload), ensure_ascii=False, sort_keys=True,
-                separators=(",", ":"), allow_nan=False,
-            ).encode("utf-8")
-        )
+        payload_bytes = canonical_json_bytes(fact.payload)
         _at_most(payload_bytes, bounds.max_fact_payload_json_bytes, "fact payload")
 
 
@@ -279,6 +331,16 @@ def validate_candidate_bounds(
         bounds.max_commitment_transitions,
         "commitment transition",
     )
+    specs = [t.payload.semantic_goal_spec for t in candidate.goal_transition_intents] + [
+        t.payload.semantic_commitment_spec for t in candidate.commitment_transition_intents
+    ]
+    for spec in specs:
+        if spec is not None:
+            _at_most(
+                canonical_json_bytes(spec.to_dict()),
+                bounds.max_fact_payload_json_bytes,
+                "semantic spec transport",
+            )
     for intent in candidate.intents:
         references = (
             set(intent.evidence_refs)
@@ -419,6 +481,22 @@ def _optional_string(value: object, name: str) -> str | None:
 
 
 def _intent_payload(kind: ExecutiveIntentKind, value: object) -> IntentPayload:
+    if kind is ExecutiveIntentKind.PLAN_PROGRESS:
+        item = _object(value, "計画進行の完了評価", {"context_ref", "claims"})
+        claims = []
+        for entry in _array(item["claims"], "claims"):
+            claim = _object(entry, "手順の完了評価", {"step_id", "condition_refs", "evidence_refs"})
+            claims.append(
+                PlanStepCompletionClaim(
+                    _string(claim["step_id"], "step_id"),
+                    _strings(claim["condition_refs"], "condition_refs"),
+                    _strings(claim["evidence_refs"], "evidence_refs"),
+                )
+            )
+        return PlanProgressIntentPayload(_string(item["context_ref"], "context_ref"), tuple(claims))
+    if kind is ExecutiveIntentKind.PLAN_EXECUTION:
+        item = _object(value, "plan execution payload", {"scope_ref"})
+        return PlanExecutionIntentPayload(_string(item["scope_ref"], "scope_ref"))
     if kind is ExecutiveIntentKind.SPEECH:
         item = _object(
             value, "speech payload", {"semantic_goal_ref", "target_ref", "constraint_refs"}
@@ -437,12 +515,15 @@ def _intent_payload(kind: ExecutiveIntentKind, value: object) -> IntentPayload:
         )
     if kind is ExecutiveIntentKind.ACTIVITY:
         item = _object(
-            value, "activity payload", {"activity_type", "target_ref", "constraint_refs"}
+            value,
+            "activity payload",
+            {"activity_type", "target_ref", "constraint_refs", "binding_ref"},
         )
         return ActivityIntentPayload(
             _string(item["activity_type"], "activity_type"),
             _optional_string(item["target_ref"], "target_ref"),
             _strings(item["constraint_refs"], "constraint_refs"),
+            _optional_string(item["binding_ref"], "binding_ref"),
         )
     item = _object(value, "attention payload", {"target_ref", "mode", "constraint_refs"})
     return AttentionIntentPayload(
@@ -532,6 +613,7 @@ def _goal_payload(value: object) -> GoalTransitionPayload:
         "goal transition payload",
         {
             "semantic_goal_ref",
+            "semantic_goal_spec",
             "priority",
             "superseding_goal_ref",
             "goal_kind",
@@ -555,6 +637,9 @@ def _goal_payload(value: object) -> GoalTransitionPayload:
         _strings(item["precondition_ids"], "precondition_ids"),
         _strings(item["completion_condition_refs"], "completion_condition_refs"),
         _optional_string(item["interruption_policy"], "interruption_policy"),
+        None
+        if item["semantic_goal_spec"] is None
+        else GoalCommitmentSemanticSpec.from_dict(item["semantic_goal_spec"]),
     )
 
 
@@ -564,6 +649,7 @@ def _commitment_payload(value: object) -> CommitmentTransitionPayload:
         "commitment transition payload",
         {
             "semantic_commitment_ref",
+            "semantic_commitment_spec",
             "counterparty_ref",
             "related_goal_refs",
             "strength",
@@ -585,4 +671,7 @@ def _commitment_payload(value: object) -> CommitmentTransitionPayload:
         priority,
         _strings(item["due_condition_refs"], "due_condition_refs"),
         _strings(item["release_condition_refs"], "release_condition_refs"),
+        None
+        if item["semantic_commitment_spec"] is None
+        else GoalCommitmentSemanticSpec.from_dict(item["semantic_commitment_spec"]),
     )

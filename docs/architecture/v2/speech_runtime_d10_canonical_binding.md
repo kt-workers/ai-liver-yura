@@ -168,3 +168,9 @@ same-rejection early-stopは現行#348実装に存在せず、D10も「使う場
 - regeneration max 0/1/N
 - speculative limit 0/positive、global count release、accepted required synthesis非計上
 - existing Speech Runtime full regression
+
+## 最新状態の照合入口
+
+`SpeechRuntime.revalidate_current`は、呼出し側が取得した`SpeechPresentationCommitState`を、指定世代の再照合中候補へ適用する。運用方針・期限と、既存の提示確定時の文脈・目標・注意・応答義務・採用済み意味・表現計画・音声・出力能力の検査を共有する。成功した同じ世代の候補だけを`READY_TO_PRESENT`へ進める。世代が更新された結果は採用しない。
+
+この入口による成功は、後の提示を保証しない。`commit`は提示確定時の状態で同じ検査を再実行する。状態取得中の待機や外部提示は候補の状態更新用のロック内に持ち込まない。検証基盤はこの製品入口を使い、最新状態から独自の合否判定を組み立てない。失敗時の破棄・取消は既存の候補管理と音声破棄の入口が所有する。

@@ -109,8 +109,8 @@ def build_deep_request(
     created_at: datetime,
     policy: DeepAppraisalPolicy,
 ) -> LLMRoleRequest:
-    if event.revisions.source_context_revision != snapshot.source_context_revision:
-        raise ValueError("event and state context revisions must match")
+    if event.revisions.source_context_revision < snapshot.source_context_revision:
+        raise ValueError("状態の由来より古い文脈では評価を開始できません")
     if meaning is not None:
         if meaning.source_event_id != event.event_id:
             raise ValueError("meaning source event must match appraisal event")

@@ -4,8 +4,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
+from app.domain.activity_binding import ActivityExecutionBindingPublication
 from app.domain.appraisal import AppraisalFactsSnapshot, InternalStateSnapshot
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
 from app.domain.contracts import CapabilityDescriptor, CapabilityRequirement, RevisionVector
@@ -19,7 +20,27 @@ from app.domain.contracts.common import (
     timestamp_to_json,
     utc_instant,
 )
+from app.domain.contracts.finalization import AuthorityGenerationToken
+from app.domain.goal_commitment_semantics import GoalCommitmentSemanticSpec, require_semantic_spec
 from app.domain.input_meaning import StructuredInputMeaning
+from app.domain.plan_execution.contracts import PlanExecutionAuthorization, PlanExecutionScope
+from app.domain.plan_execution.progress_contracts import (
+    PlanProgressAssessment,
+    PlanProgressContext,
+    PlanStepCompletionClaim,
+)
+from app.domain.speech_semantics_vocabulary import CommunicativeGoalCatalogView
+
+from .speech_references import (
+    ExecutiveFactKind as ExecutiveFactKind,
+)
+from .speech_references import (
+    ExecutiveSpeechReferenceResolution,
+    ExecutiveSpeechSourceBinding,
+)
+
+if TYPE_CHECKING:
+    from .requirements import DerivedIntentRequirements, RequirementsGeneration
 
 
 class ExecutiveOutcome(str, Enum):
@@ -45,22 +66,9 @@ class ExecutiveInterruptibility(str, Enum):
     NON_INTERRUPTIBLE = "non_interruptible"
 
 
-class ExecutiveFactKind(str, Enum):
-    GOAL = "goal"
-    COMMITMENT = "commitment"
-    MEMORY_EVIDENCE = "memory_evidence"
-    RELATIONSHIP = "relationship"
-    ACTIVITY = "activity"
-    EXECUTION = "execution"
-    TURN = "turn"
-    ATTENTION = "attention"
-    SPEECH = "speech"
-    BODY = "body"
-    TIME = "time"
-    ENVIRONMENT = "environment"
-
-
 class ExecutiveIntentKind(str, Enum):
+    PLAN_EXECUTION = "plan_execution"
+    PLAN_PROGRESS = "plan_progress"
     SPEECH = "speech"
     BODY = "body"
     ACTIVITY = "activity"
@@ -248,8 +256,53 @@ class ExecutiveCommitState:
     preconditions: tuple[PreconditionFact, ...]
     requirements: tuple[AuthoritativeIntentRequirements, ...]
     bounds_provenance: ExecutiveBoundsProvenance
+    plan_scopes: tuple[PlanExecutionScope, ...] = ()
+    plan_progress_contexts: tuple[PlanProgressContext, ...] = ()
+
+    requirement_derivations: tuple[DerivedIntentRequirements, ...] = ()
+    evidence_tokens: tuple[AuthorityGenerationToken, ...] = ()
+    activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
+
+    communicative_goal_catalog: CommunicativeGoalCatalogView | None = None
+    speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...] = ()
 
     def __post_init__(self) -> None:
+        if self.communicative_goal_catalog is not None and not isinstance(
+            self.communicative_goal_catalog, CommunicativeGoalCatalogView
+        ):
+            raise ValueError("発話行為catalogの型が不正です")
+        object.__setattr__(
+            self,
+            "speech_source_bindings",
+            _owned(
+                self.speech_source_bindings, ExecutiveSpeechSourceBinding, "speech_source_bindings"
+            ),
+        )
+        if len({x.selected_ref for x in self.speech_source_bindings}) != len(
+            self.speech_source_bindings
+        ):
+            raise ValueError("Speech source bindingの参照が重複しています")
+
+        object.__setattr__(
+            self,
+            "activity_bindings",
+            _owned(
+                self.activity_bindings, ActivityExecutionBindingPublication, "activity_bindings"
+            ),
+        )
+        object.__setattr__(
+            self,
+            "evidence_tokens",
+            _owned(self.evidence_tokens, AuthorityGenerationToken, "evidence_tokens"),
+        )
+        object.__setattr__(
+            self, "plan_scopes", _validate_plan_scopes(self.plan_scopes, self.bounds_provenance)
+        )
+        object.__setattr__(
+            self,
+            "plan_progress_contexts",
+            _validate_progress_contexts(self.plan_progress_contexts, self.bounds_provenance),
+        )
         if not isinstance(self.freshness, ExecutiveFreshnessStamp):
             raise ValueError("freshness must be ExecutiveFreshnessStamp")
         if not isinstance(self.bounds_provenance, ExecutiveBoundsProvenance):
@@ -285,8 +338,47 @@ class ExecutiveContextSnapshot:
     captured_at: datetime
     appraisal_facts: AppraisalFactsSnapshot
     bounds_provenance: ExecutiveBoundsProvenance
+    plan_scopes: tuple[PlanExecutionScope, ...] = ()
+    plan_progress_contexts: tuple[PlanProgressContext, ...] = ()
+
+    requirements_generation: RequirementsGeneration | None = None
+    activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
+
+    communicative_goal_catalog: CommunicativeGoalCatalogView | None = None
+    speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...] = ()
 
     def __post_init__(self) -> None:
+        if self.communicative_goal_catalog is not None and not isinstance(
+            self.communicative_goal_catalog, CommunicativeGoalCatalogView
+        ):
+            raise ValueError("発話行為catalogの型が不正です")
+        object.__setattr__(
+            self,
+            "speech_source_bindings",
+            _owned(
+                self.speech_source_bindings, ExecutiveSpeechSourceBinding, "speech_source_bindings"
+            ),
+        )
+        if len({x.selected_ref for x in self.speech_source_bindings}) != len(
+            self.speech_source_bindings
+        ):
+            raise ValueError("Speech source bindingの参照が重複しています")
+
+        object.__setattr__(
+            self,
+            "activity_bindings",
+            _owned(
+                self.activity_bindings, ActivityExecutionBindingPublication, "activity_bindings"
+            ),
+        )
+        object.__setattr__(
+            self, "plan_scopes", _validate_plan_scopes(self.plan_scopes, self.bounds_provenance)
+        )
+        object.__setattr__(
+            self,
+            "plan_progress_contexts",
+            _validate_progress_contexts(self.plan_progress_contexts, self.bounds_provenance),
+        )
         require_identifier(self.trigger_id, "trigger_id")
         object.__setattr__(
             self,
@@ -329,10 +421,39 @@ class ExecutiveContextSnapshot:
             identifiers = [getattr(item, attribute) for item in values]
             if len(identifiers) != len(set(identifiers)):
                 raise ValueError(f"{name} ids must be unique")
+        existing_ids = set(self.source_event_ids)
+        existing_ids.update(item.fact_id for item in self.facts)
+        existing_ids.update(item.capability_id for item in self.capabilities)
+        existing_ids.update(item.precondition_id for item in self.preconditions)
+        if existing_ids & {item.scope_id for item in self.plan_scopes}:
+            raise ValueError("計画承認対象と既存の根拠の識別子が重複しています")
+        existing_ids.update(item.scope_id for item in self.plan_scopes)
+        if existing_ids & {item.context_id for item in self.plan_progress_contexts}:
+            raise ValueError("計画進行観測と既存の根拠の識別子が重複しています")
+        all_scopes = self.plan_scopes + tuple(
+            item.authorization.scope for item in self.plan_progress_contexts
+        )
+        for scope in all_scopes:
+            if len(self.facts) + len(all_scopes) > scope.bounds_policy.executive.max_fact_refs:
+                raise ValueError("計画承認対象と判断事実の合計件数が上限を超えています")
         require_aware(self.captured_at, "captured_at")
+        if any(
+            utc_instant(observation.record.result.occurred_at) > utc_instant(self.captured_at)
+            for context in self.plan_progress_contexts
+            for observation in context.observations
+        ):
+            raise ValueError("判断の取得時刻より未来の実行観測を提示できません")
 
     def to_dict(self) -> dict[str, object]:
         return {
+            "requirements_generation": (
+                None
+                if self.requirements_generation is None
+                else self.requirements_generation.to_dict()
+            ),
+            "activity_bindings": [p.to_dict() for p in self.activity_bindings],
+            "plan_scopes": [item.to_dict() for item in self.plan_scopes],
+            "plan_progress_contexts": [item.to_dict() for item in self.plan_progress_contexts],
             "trigger_id": self.trigger_id,
             "source_event_ids": list(self.source_event_ids),
             "source_context_revision": self.source_context_revision,
@@ -348,6 +469,17 @@ class ExecutiveContextSnapshot:
             "bounds_policy_id": self.bounds_provenance.policy_id,
             "bounds_policy_revision": self.bounds_provenance.policy_revision,
         }
+
+
+def executive_context_to_wire_v2(snapshot: ExecutiveContextSnapshot) -> dict[str, object]:
+    """凍結したv1 wireを保持し、current v2の追加fieldを明示する。"""
+    return {
+        **snapshot.to_dict(),
+        "communicative_goal_catalog": None
+        if snapshot.communicative_goal_catalog is None
+        else snapshot.communicative_goal_catalog.to_dict(),
+        "speech_source_bindings": [x.to_dict() for x in snapshot.speech_source_bindings],
+    }
 
 
 def build_executive_context_snapshot(
@@ -368,6 +500,11 @@ def build_executive_context_snapshot(
     captured_at: datetime,
     appraisal_facts: AppraisalFactsSnapshot,
     bounds_policy: BrainOperationalBoundsPolicy,
+    plan_scopes: tuple[PlanExecutionScope, ...] = (),
+    plan_progress_contexts: tuple[PlanProgressContext, ...] = (),
+    activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = (),
+    communicative_goal_catalog: CommunicativeGoalCatalogView | None = None,
+    speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...] = (),
 ) -> ExecutiveContextSnapshot:
     """信頼済みowner入力から、共有容量方針に従うExecutive snapshotを構築する。"""
     if not isinstance(bounds_policy, BrainOperationalBoundsPolicy):
@@ -428,11 +565,14 @@ def build_executive_context_snapshot(
     )
     if len(required_precondition_values) > bounds.max_precondition_facts:
         raise ValueError("EXECUTIVE_CONTEXT_TOO_LARGE: 必須preconditionを容量内へ収容できません")
-    selected_preconditions = required_precondition_values + tuple(
-        item
-        for item in precondition_values
-        if item.precondition_id not in required_precondition_ids
-    )[: bounds.max_precondition_facts - len(required_precondition_values)]
+    selected_preconditions = (
+        required_precondition_values
+        + tuple(
+            item
+            for item in precondition_values
+            if item.precondition_id not in required_precondition_ids
+        )[: bounds.max_precondition_facts - len(required_precondition_values)]
+    )
     return ExecutiveContextSnapshot(
         trigger_id,
         tuple(item.event_id for item in selected_events),
@@ -447,6 +587,11 @@ def build_executive_context_snapshot(
         captured_at,
         appraisal_facts,
         ExecutiveBoundsProvenance.from_policy(bounds_policy),
+        plan_scopes,
+        plan_progress_contexts,
+        activity_bindings=activity_bindings,
+        communicative_goal_catalog=communicative_goal_catalog,
+        speech_source_bindings=speech_source_bindings,
     )
 
 
@@ -518,9 +663,12 @@ class ActivityIntentPayload:
     activity_type: str
     target_ref: str | None = None
     constraint_refs: tuple[str, ...] = ()
+    binding_ref: str | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.activity_type, "activity_type")
+        if self.binding_ref is not None:
+            require_identifier(self.binding_ref, "binding_ref")
         if self.target_ref is not None:
             require_identifier(self.target_ref, "target_ref")
         object.__setattr__(self, "constraint_refs", _ids(self.constraint_refs, "constraint_refs"))
@@ -531,8 +679,49 @@ class ActivityIntentPayload:
     def to_dict(self) -> dict[str, object]:
         return {
             "activity_type": self.activity_type,
+            "binding_ref": self.binding_ref,
             "target_ref": self.target_ref,
             "constraint_refs": list(self.constraint_refs),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class PlanExecutionIntentPayload:
+    scope_ref: str
+
+    def __post_init__(self) -> None:
+        require_identifier(self.scope_ref, "scope_ref")
+
+    def reference_ids(self) -> tuple[str, ...]:
+        return (self.scope_ref,)
+
+    def to_dict(self) -> dict[str, object]:
+        return {"scope_ref": self.scope_ref}
+
+
+@dataclass(frozen=True, slots=True)
+class PlanProgressIntentPayload:
+    context_ref: str
+    claims: tuple[PlanStepCompletionClaim, ...]
+
+    def __post_init__(self) -> None:
+        require_identifier(self.context_ref, "context_ref")
+        claims = _owned(self.claims, PlanStepCompletionClaim, "claims")
+        if not claims or len({item.step_id for item in claims}) != len(claims):
+            raise ValueError("完了評価には重複のない手順が1件以上必要です")
+        object.__setattr__(self, "claims", claims)
+
+    def reference_ids(self) -> tuple[str, ...]:
+        return (self.context_ref,) + tuple(
+            ref
+            for claim in self.claims
+            for ref in (claim.step_id,) + claim.condition_refs + claim.evidence_refs
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "context_ref": self.context_ref,
+            "claims": [item.to_dict() for item in self.claims],
         }
 
 
@@ -559,7 +748,12 @@ class AttentionIntentPayload:
 
 
 IntentPayload = (
-    SpeechIntentPayload | BodyIntentPayload | ActivityIntentPayload | AttentionIntentPayload
+    SpeechIntentPayload
+    | BodyIntentPayload
+    | ActivityIntentPayload
+    | AttentionIntentPayload
+    | PlanExecutionIntentPayload
+    | PlanProgressIntentPayload
 )
 
 
@@ -584,6 +778,8 @@ class ExecutiveIntent:
             ExecutiveIntentKind.BODY: BodyIntentPayload,
             ExecutiveIntentKind.ACTIVITY: ActivityIntentPayload,
             ExecutiveIntentKind.ATTENTION: AttentionIntentPayload,
+            ExecutiveIntentKind.PLAN_EXECUTION: PlanExecutionIntentPayload,
+            ExecutiveIntentKind.PLAN_PROGRESS: PlanProgressIntentPayload,
         }[self.kind]
         if not isinstance(self.payload, expected_payload):
             raise ValueError("intent payload type does not match intent kind")
@@ -630,6 +826,8 @@ class GoalTransitionPayload:
     precondition_ids: tuple[str, ...] = ()
     completion_condition_refs: tuple[str, ...] = ()
     interruption_policy: str | None = None
+
+    semantic_goal_spec: GoalCommitmentSemanticSpec | None = None
 
     def __post_init__(self) -> None:
         for name in (
@@ -682,7 +880,10 @@ class GoalTransitionPayload:
         )
 
     def validate_for(self, operation: GoalTransitionOperation) -> None:
+        if operation is not GoalTransitionOperation.CREATE and self.semantic_goal_spec is not None:
+            raise ValueError("non-CREATEにsemantic specを渡せません")
         if operation is GoalTransitionOperation.CREATE:
+            require_semantic_spec(self.semantic_goal_spec, self.semantic_goal_ref)
             if (
                 self.semantic_goal_ref is None
                 or self.priority is None
@@ -731,17 +932,15 @@ class GoalTransitionPayload:
         )
 
     def goal_fact_reference_ids(self) -> tuple[str, ...]:
-        return tuple(
-            value
-            for value in (self.semantic_goal_ref, self.superseding_goal_ref)
-            if value is not None
-        )
+        return tuple(value for value in (self.superseding_goal_ref,) if value is not None)
 
     def commitment_fact_reference_ids(self) -> tuple[str, ...]:
         return self.commitment_refs
 
     def bounded_reference_ids(self) -> tuple[str, ...]:
         return (
+            () if self.semantic_goal_spec is None else self.semantic_goal_spec.reference_ids()
+        ) + (
             (() if self.target_ref is None else (self.target_ref,))
             + self.precondition_ids
             + self.completion_condition_refs
@@ -750,6 +949,9 @@ class GoalTransitionPayload:
     def to_dict(self) -> dict[str, object]:
         return {
             "semantic_goal_ref": self.semantic_goal_ref,
+            "semantic_goal_spec": None
+            if self.semantic_goal_spec is None
+            else self.semantic_goal_spec.to_dict(),
             "priority": self.priority,
             "superseding_goal_ref": self.superseding_goal_ref,
             "goal_kind": self.goal_kind,
@@ -814,6 +1016,8 @@ class CommitmentTransitionPayload:
     due_condition_refs: tuple[str, ...] = ()
     release_condition_refs: tuple[str, ...] = ()
 
+    semantic_commitment_spec: GoalCommitmentSemanticSpec | None = None
+
     def __post_init__(self) -> None:
         if self.semantic_commitment_ref is not None:
             require_identifier(self.semantic_commitment_ref, "semantic_commitment_ref")
@@ -831,7 +1035,13 @@ class CommitmentTransitionPayload:
                 raise ValueError(f"{name} must be an int between 0 and 100")
 
     def validate_for(self, operation: CommitmentTransitionOperation) -> None:
+        if (
+            operation is not CommitmentTransitionOperation.CREATE
+            and self.semantic_commitment_spec is not None
+        ):
+            raise ValueError("non-CREATEにsemantic specを渡せません")
         if operation is CommitmentTransitionOperation.CREATE:
+            require_semantic_spec(self.semantic_commitment_spec, self.semantic_commitment_ref)
             if (
                 self.semantic_commitment_ref is None
                 or self.strength is None
@@ -859,13 +1069,17 @@ class CommitmentTransitionPayload:
         )
 
     def commitment_fact_reference_ids(self) -> tuple[str, ...]:
-        return () if self.semantic_commitment_ref is None else (self.semantic_commitment_ref,)
+        return ()
 
     def goal_fact_reference_ids(self) -> tuple[str, ...]:
         return self.related_goal_refs
 
     def bounded_reference_ids(self) -> tuple[str, ...]:
         return (
+            ()
+            if self.semantic_commitment_spec is None
+            else self.semantic_commitment_spec.reference_ids()
+        ) + (
             (() if self.counterparty_ref is None else (self.counterparty_ref,))
             + self.due_condition_refs
             + self.release_condition_refs
@@ -874,6 +1088,9 @@ class CommitmentTransitionPayload:
     def to_dict(self) -> dict[str, object]:
         return {
             "semantic_commitment_ref": self.semantic_commitment_ref,
+            "semantic_commitment_spec": None
+            if self.semantic_commitment_spec is None
+            else self.semantic_commitment_spec.to_dict(),
             "counterparty_ref": self.counterparty_ref,
             "related_goal_refs": list(self.related_goal_refs),
             "strength": self.strength,
@@ -1003,9 +1220,13 @@ class ExecutiveDecisionCandidate:
         ):
             raise ValueError("respond outcome requires speech intent")
         if self.outcome is ExecutiveOutcome.ACT and not intent_kinds.intersection(
-            {ExecutiveIntentKind.ACTIVITY, ExecutiveIntentKind.BODY}
+            {
+                ExecutiveIntentKind.ACTIVITY,
+                ExecutiveIntentKind.BODY,
+                ExecutiveIntentKind.PLAN_EXECUTION,
+            }
         ):
-            raise ValueError("act outcome requires activity or body intent")
+            raise ValueError("活動する判断には活動・身体・計画実行のいずれかの意図が必要です")
         object.__setattr__(
             self, "rationale_refs", _ids(self.rationale_refs, "rationale_refs", non_empty=True)
         )
@@ -1039,8 +1260,46 @@ class CommittedExecutiveDecision:
     validated_preconditions: tuple[PreconditionFact, ...]
     committed_at: datetime
     bounds_provenance: ExecutiveBoundsProvenance
+    plan_authorizations: tuple[PlanExecutionAuthorization, ...] = ()
+    plan_progress_assessments: tuple[PlanProgressAssessment, ...] = ()
+
+    requirement_derivations: tuple[DerivedIntentRequirements, ...] = ()
+    evidence_tokens: tuple[AuthorityGenerationToken, ...] = ()
+    activity_bindings: tuple[ActivityExecutionBindingPublication, ...] = ()
+
+    speech_reference_resolutions: tuple[ExecutiveSpeechReferenceResolution, ...] = ()
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "speech_reference_resolutions",
+            _owned(
+                self.speech_reference_resolutions,
+                ExecutiveSpeechReferenceResolution,
+                "speech_reference_resolutions",
+            ),
+        )
+
+        object.__setattr__(
+            self,
+            "activity_bindings",
+            _owned(
+                self.activity_bindings, ActivityExecutionBindingPublication, "activity_bindings"
+            ),
+        )
+        object.__setattr__(
+            self,
+            "evidence_tokens",
+            _owned(self.evidence_tokens, AuthorityGenerationToken, "evidence_tokens"),
+        )
+        authorizations = _owned(
+            self.plan_authorizations, PlanExecutionAuthorization, "plan_authorizations"
+        )
+        if any(item.decision_id != self.decision_id for item in authorizations):
+            raise ValueError("計画承認の判断識別子が一致しません")
+        if len({item.intent_id for item in authorizations}) != len(authorizations):
+            raise ValueError("同じ計画承認意図を重複して確定できません")
+        object.__setattr__(self, "plan_authorizations", authorizations)
         require_identifier(self.decision_id, "decision_id")
         if not isinstance(self.candidate, ExecutiveDecisionCandidate):
             raise ValueError("candidate must be ExecutiveDecisionCandidate")
@@ -1055,12 +1314,65 @@ class CommittedExecutiveDecision:
                 "validated_preconditions",
             ),
         )
+        expected_scopes = {
+            intent.intent_id: intent.payload.scope_ref
+            for intent in self.candidate.intents
+            if isinstance(intent.payload, PlanExecutionIntentPayload)
+        }
+        if {item.intent_id for item in authorizations} != set(expected_scopes):
+            raise ValueError("計画承認と確定判断の意図が対応していません")
+        if any(
+            item.scope.scope_id != expected_scopes[item.intent_id]
+            or item.committed_at != self.committed_at
+            or ExecutiveBoundsProvenance.from_policy(item.scope.bounds_policy)
+            != self.bounds_provenance
+            for item in authorizations
+        ):
+            raise ValueError("計画承認の対象・時刻・方針が確定判断と一致しません")
+        assessments = _owned(
+            self.plan_progress_assessments, PlanProgressAssessment, "plan_progress_assessments"
+        )
+        expected_progress = {
+            intent.intent_id: intent.payload
+            for intent in self.candidate.intents
+            if isinstance(intent.payload, PlanProgressIntentPayload)
+        }
+        if len({item.intent_id for item in assessments}) != len(assessments) or {
+            item.intent_id for item in assessments
+        } != set(expected_progress):
+            raise ValueError("完了評価と確定判断の意図が対応していません")
+        for assessment in assessments:
+            payload = expected_progress[assessment.intent_id]
+            if (
+                assessment.decision_id != self.decision_id
+                or assessment.context.context_id != payload.context_ref
+                or assessment.claims != payload.claims
+                or assessment.committed_at != self.committed_at
+                or ExecutiveBoundsProvenance.from_policy(
+                    assessment.context.authorization.scope.bounds_policy
+                )
+                != self.bounds_provenance
+            ):
+                raise ValueError("完了評価の対象・内容・時刻・方針が確定判断と一致しません")
+        object.__setattr__(self, "plan_progress_assessments", assessments)
         require_aware(self.committed_at, "committed_at")
         if utc_instant(self.committed_at) < utc_instant(self.candidate.created_at):
             raise ValueError("committed_at cannot predate candidate")
 
     def to_dict(self) -> dict[str, object]:
+        from .requirements import project
+
         return {
+            "speech_reference_resolutions": [
+                x.to_dict() for x in self.speech_reference_resolutions
+            ],
+            "activity_bindings": [p.to_dict() for p in self.activity_bindings],
+            "evidence_tokens": project(self.evidence_tokens),
+            "requirement_derivations": [item.to_dict() for item in self.requirement_derivations],
+            "plan_authorizations": [item.to_dict() for item in self.plan_authorizations],
+            "plan_progress_assessments": [
+                item.to_dict() for item in self.plan_progress_assessments
+            ],
             "decision_id": self.decision_id,
             "candidate": self.candidate.to_dict(),
             "validated_preconditions": [item.to_dict() for item in self.validated_preconditions],
@@ -1068,3 +1380,29 @@ class CommittedExecutiveDecision:
             "bounds_policy_id": self.bounds_provenance.policy_id,
             "bounds_policy_revision": self.bounds_provenance.policy_revision,
         }
+
+
+def _validate_plan_scopes(
+    values: tuple[PlanExecutionScope, ...], provenance: ExecutiveBoundsProvenance
+) -> tuple[PlanExecutionScope, ...]:
+    scopes = _owned(values, PlanExecutionScope, "plan_scopes")
+    if len({item.scope_id for item in scopes}) != len(scopes):
+        raise ValueError("計画承認対象の識別子は重複できません")
+    for scope in scopes:
+        if ExecutiveBoundsProvenance.from_policy(scope.bounds_policy) != provenance:
+            raise ValueError("計画承認対象と判断の容量方針世代が一致しません")
+        if len(scopes) > min(
+            scope.bounds_policy.executive.max_fact_refs, scope.policy.max_active_plans
+        ):
+            raise ValueError("計画承認対象の保持件数が上限を超えています")
+    return scopes
+
+
+def _validate_progress_contexts(
+    values: tuple[PlanProgressContext, ...], provenance: ExecutiveBoundsProvenance
+) -> tuple[PlanProgressContext, ...]:
+    contexts = _owned(values, PlanProgressContext, "plan_progress_contexts")
+    if len({item.context_id for item in contexts}) != len(contexts):
+        raise ValueError("計画進行観測の識別子は重複できません")
+    _validate_plan_scopes(tuple(item.authorization.scope for item in contexts), provenance)
+    return contexts

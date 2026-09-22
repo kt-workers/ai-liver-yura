@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
@@ -887,3 +887,181 @@ async def test_malformed_adapter_output_becomes_typed_failure(reports: object) -
     ).execute(invocation())
     assert record.result.status is ExecutionStatus.FAILED
     assert record.result.to_dict()["details"] == {"code": "adapter_contract_failure"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "kind"),
+    [
+        (ExecutionStatus.OBSERVABLE, ExecutionEffectKind.OBSERVABLE),
+        (ExecutionStatus.APPLIED, ExecutionEffectKind.APPLIED),
+    ],
+)
+@pytest.mark.parametrize("report_seconds", [2, 10])
+async def test_provider_return_without_terminal_report_keeps_effect_and_closes_failure(
+    status: ExecutionStatus,
+    kind: ExecutionEffectKind,
+    report_seconds: int,
+) -> None:
+    from app.domain.activity_execution import ExecutionEffectUncertainty
+
+    class Preflight:
+        async def current_for(self, item: ActivityInvocation) -> ExecutionPreflightSnapshot:
+            return preflight()
+
+    class Port:
+        async def execute(
+            self,
+            request: ExecutionDispatchRequest,
+            cancellation: ExecutionCancellationSignal,
+        ) -> Sequence[ExecutionAdapterReport]:
+            return (
+                ExecutionAdapterReport(
+                    request.invocation.command.command_id,
+                    request.invocation.invocation_id,
+                    request.dispatch_id,
+                    status,
+                    NOW + timedelta(seconds=report_seconds),
+                    {},
+                    (effect(kind=kind),),
+                ),
+            )
+
+    authority = ActivityExecutionAuthority()
+    coordinator = ActivityExecutionCoordinator(Preflight(), Port(), authority, Clock())
+    record = await coordinator.execute(invocation())
+    assert record.terminal
+    assert record.result.status is ExecutionStatus.FAILED
+    assert record.result.effect_refs == ("effect-1",)
+    assert record.effect_uncertainty is ExecutionEffectUncertainty.UNKNOWN
+    assert record.result.occurred_at >= NOW + timedelta(seconds=report_seconds)
+    assert record.result.to_dict()["details"] == {"code": "adapter_contract_failure"}
+    assert authority.snapshot("command-1") == record
+    assert coordinator._adapter_tasks == {}
+    assert coordinator._signals == {}
+
+
+def exact_invocation(*, auxiliary: bool = False) -> ActivityInvocation:
+    from app.domain.activity_execution import CapabilityBinding
+
+    value = invocation()
+    requirements = value.command.required_capabilities
+    if auxiliary:
+        requirements += (CapabilityRequirement("network", "access"),)
+    return replace(
+        value,
+        operation_ref="run",
+        command=replace(value.command, required_capabilities=requirements),
+        primary_binding=CapabilityBinding(requirements[0], "capability-1", 2),
+    )
+
+
+@pytest.mark.parametrize(
+    "case", ["current", "missing", "revision", "unavailable", "operation", "type"]
+)
+def test_exact_primary_initial_admission_never_falls_back(case: str) -> None:
+    value = exact_invocation()
+    assert value.primary_binding is not None
+    exact = capability()
+    alternative = replace(exact, capability_id="capability-0")
+    if case == "revision":
+        exact = replace(exact, revision=3)
+    elif case == "unavailable":
+        exact = replace(exact, availability=CapabilityAvailability.UNAVAILABLE)
+    elif case == "operation":
+        exact = replace(exact, operations=("other",))
+    elif case == "type":
+        exact = replace(exact, capability_type="other")
+    capabilities = (alternative,) if case == "missing" else (alternative, exact)
+    owner = ActivityExecutionAuthority()
+    admitted = owner.admit(value, preflight(capabilities=capabilities))
+    expected = (
+        ExecutionStatus.ACCEPTED
+        if case == "current"
+        else (ExecutionStatus.SUPERSEDED if case == "revision" else ExecutionStatus.UNSUPPORTED)
+    )
+    assert admitted.result.status is expected
+    assert admitted.bindings == (value.primary_binding,)
+    assert admitted.invocation.to_dict()["primary_binding"] == value.primary_binding.to_dict()
+    if case != "current":
+        assert isinstance(admitted.result.details, Mapping)
+        assert admitted.result.details["code"] == (
+            "capability_changed" if case == "revision" else "capability_unavailable"
+        )
+    else:
+        dispatch = ExecutionDispatchRequest("dispatch", value, admitted.result, admitted.bindings)
+        assert dispatch.bindings == (value.primary_binding,)
+        with pytest.raises(ValueError):
+            replace(dispatch, bindings=())
+    with pytest.raises(ValueError):
+        replace(admitted.record, bindings=())
+    with pytest.raises(ValueError):
+        replace(admitted.record, bindings=(value.primary_binding, value.primary_binding))
+
+
+@pytest.mark.parametrize("available", [True, False])
+def test_exact_primary_and_auxiliary_are_resolved_independently(available: bool) -> None:
+    value = exact_invocation(auxiliary=True)
+    auxiliary = CapabilityDescriptor(
+        "network", "network", ("access",), CapabilityAvailability.AVAILABLE, 1, {}
+    )
+    caps = (capability(), auxiliary) if available else (capability(),)
+    admitted = ActivityExecutionAuthority().admit(value, preflight(capabilities=caps))
+    assert admitted.result.status is (
+        ExecutionStatus.ACCEPTED if available else ExecutionStatus.UNSUPPORTED
+    )
+    assert admitted.bindings.count(value.primary_binding) == 1
+    if available:
+        assert [b.capability_id for b in admitted.bindings] == ["capability-1", "network"]
+
+
+@pytest.mark.parametrize("case", ["missing", "revision", "unavailable", "operation"])
+def test_exact_primary_second_preflight_does_not_reselect(case: str) -> None:
+    value = exact_invocation()
+    owner = ActivityExecutionAuthority()
+    accepted = owner.admit(value, preflight())
+    exact = capability()
+    other = replace(exact, capability_id="capability-0")
+    if case == "revision":
+        exact = replace(exact, revision=3)
+    elif case == "unavailable":
+        exact = replace(exact, availability=CapabilityAvailability.UNAVAILABLE)
+    elif case == "operation":
+        exact = replace(exact, operations=("other",))
+    caps = (other,) if case == "missing" else (other, exact)
+    result = owner.start(value.command.command_id, preflight(capabilities=caps), NOW, "dispatch")
+    assert result.result.status is ExecutionStatus.SUPERSEDED
+    assert isinstance(result.result.details, Mapping)
+    assert result.result.details["code"] == "capability_changed"
+    assert result.bindings == accepted.bindings
+
+
+@pytest.mark.parametrize("case", ["missing", "ambiguous", "operation", "requirement"])
+def test_exact_invocation_rejects_invalid_primary(case: str) -> None:
+    value = exact_invocation()
+    assert value.primary_binding is not None
+    primary = value.primary_binding.requirement
+    if case == "operation":
+        with pytest.raises(ValueError):
+            replace(value, operation_ref="other")
+        return
+    requirements = (
+        ()
+        if case == "missing"
+        else (
+            (primary, replace(primary, allow_degraded=True))
+            if case == "ambiguous"
+            else (replace(primary, allow_degraded=True),)
+        )
+    )
+    with pytest.raises(ValueError):
+        replace(value, command=replace(value.command, required_capabilities=requirements))
+
+
+def test_generic_selection_remains_deterministic_with_multiple_candidates() -> None:
+    other = replace(capability(), capability_id="capability-0")
+    result = ActivityExecutionAuthority().admit(
+        invocation(), preflight(capabilities=(capability(), other))
+    )
+    assert result.result.status is ExecutionStatus.ACCEPTED
+    assert result.bindings[0].capability_id == "capability-0"

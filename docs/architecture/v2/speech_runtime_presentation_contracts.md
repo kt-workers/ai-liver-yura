@@ -400,44 +400,40 @@ No long TTS/playback await occurs inside the commit lock.
 
 ---
 
-## 15. Presentation report / Actual Fact boundary
+## 15. Presentation snapshotとActual Factの境界（#657）
 
-Presentation Adapter returns trusted typed operational reports.
+#348がPresentationのlifecycleを確定し、システム全体のActual Execution Factの正規化は引き続き#329だけが所有する。#657は#348が現在確定している状態を読み、独自の失敗・取消・timeout判定を行わない。
 
-```text
-SpeechPresentationReport
-- presentation_id
-- candidate_id
-- status
-- output_modes[]
-- started_at?
-- completed_at?
-- audio_ref?
-- timing_ref?
-- failure_code?
-- interruption_reason?
-```
+正規入力は`project_speech_execution_observation(runtime, presentation_id, provenance)`とする。`SpeechRuntime.presentation_snapshot(presentation_id)`が既存Owner lock内で返す確定command・current candidate・受理済みreport historyを一つのconsistent snapshotとして解釈する。callerからcommand/reportを別々に受け取る入口は作らない。report有無で別Authority経路を設けない。
 
-Status examples:
-- STARTED
-- COMPLETED
-- INTERRUPTED
-- FAILED_BEFORE_START
-- FAILED_AFTER_START
+current lifecycleは#348 Owner fact、report historyはeffect・時刻・終端理由の証拠である。commandのpresentation_idと要求ID、candidate/utterance、reportのpresentation/candidate/mode/audio identityを照合する。current candidateのaudio参照も照合し、OwnerがFAILED/CANCELLEDを確定し、audio readinessがDISCARDEDかつ参照がNoneのときだけ、回収済み資源を開始時のcommand/report証拠へ付け替えずに扱う。discard後も開始時の確認済みeffectを失わない。別assetへの変更は拒否する。
 
-#348 uses reports for speech lifecycle/queue coordination.
+source contractはcomposition側の`speech-presentation-report@1`を使う。登録済みsource ruleはOBSERVABLE / COMPLETED / CANCELLED / FAILEDと、text-presentation / audio-presentation-startedのOBSERVABLE effectだけを許可し、終端前の確認済みeffectを必須にする。#329 CoreへSpeech型を持ち込まない。
 
-System-wide Actual Execution Fact normalization remains #329 responsibility.
+許可するreport historyは、空系列、FAILED_BEFORE_START一件、STARTED一件、STARTEDの後にCOMPLETED / FAILED_AFTER_START / INTERRUPTEDのいずれか一件だけである。これ以外の並びや件数は拒否する。
 
-```text
-SpeechPresentationReport
-→ #329 trusted execution observation boundary
-→ generic Actual Execution Fact
-```
+| 受理済みreport history | current candidate.lifecycle | 汎用観測への投影 |
+| --- | --- | --- |
+| 空系列 | commit済み、外部提示開始の証拠なし | None。Actual Fact・effectなし |
+| FAILED_BEFORE_START | FAILED | None。Actual Fact・effectなし |
+| STARTED | PRESENTING | OBSERVABLE。modeに対応する確認済みeffectを導入 |
+| STARTED → COMPLETED | COMPLETED | COMPLETED。先行effect refs保持 |
+| STARTED → INTERRUPTED | INTERRUPTED | CANCELLED。partial effect保持、details.codeはinterrupted |
+| STARTED → FAILED_AFTER_START | FAILED | FAILED。partial effect保持 |
+| STARTEDのみ、終端reportなし | FAILED | FAILED。details.codeはpresentation_owner_failed_after_start |
+| STARTEDのみ、終端reportなし | CANCELLED | CANCELLED。details.codeはpresentation_owner_cancelled_after_start |
 
-A PREPARED/QUEUED candidate is never “actually spoken”.
+終端reportがある場合はcurrent lifecycleとの一致を必須にし、不一致をreportだけで救済しない。STARTEDのみの場合も上表以外のcurrent lifecycleを推測変換しない。終端report欠落時のFAILEDは既存`SpeechPresentationExecutor` → `fail_presentation_stream()`等で#348が確定した状態であり、projectorが新たに失敗を決める意味ではない。CANCELLEDも#348の公開取消経路が明示確定した場合だけ投影する。fake FAILED_AFTER_START等のreportを生成しない。
 
-A FAILED_AFTER_START report must preserve that partial external effect occurred.
+STARTED/PRESENTINGのsnapshotを#329へ受理させてから、終端snapshotを受理させる。終端snapshotは新effectやuncertaintyを導入せず、#329に既存の確認済みeffectを保持する。TEXT_ONLYはtext effectだけ、AUDIO_WITH_TEXTはtextとaudio開始の別effectを持つ。それ以外のmode構成は拒否する。
+
+effect identityはpresentation identityとtext/audio種別の固定JSON配列符号化から決定する。payloadはpresentation_id / candidate_id / utterance_idと音声時のaudio_refだけを保持し、発話全文やProvider objectはコピーしない。観測identityはpresentation identityと閉じたstatus分類codeから決定し、同一snapshotの再投影は同じidentity/contentとなる。
+
+時刻はcommand.committed_at、受理済みSTARTED.started_at、受理済みterminal.completed_atを使う。終端reportのcompleted_atがない場合と、STARTEDのみでOwnerがFAILED/CANCELLEDを確定済みの場合はcandidate.updated_atを使う。candidate.updated_at ≥ STARTED.started_atを必須とし、committed_atから開始・観測時刻までの逆行も拒否する。必要なOwner時刻が得られない場合にprojectorの現在時刻で補わない。
+
+source decision / source event IDs / source_context_revision / goal_revision / attention_revisionはcandidateとexact照合する。trace IDはintegration envelopeに存在する場合だけ保持し、推測生成しない。自由文failure_code/interruption_reasonやraw exceptionは転記せず、上表の固定details.codeを使う。
+
+Presentation terminal-report timeoutは#659で本節の二段階watchdogとして#348 lifecycle Ownerが所有する。#657にはsleep / wait_for / deadline timer / timeout秒数を追加せず、timeoutやplayback failureを判定せず、Speech lifecycleを更新しない。#613はこのprojectorを再利用し、mappingを独自解釈しない。
 
 ---
 
@@ -613,3 +609,87 @@ Metrics:
 - #445 Design Completion Gate PASS
 
 #348 detailed design completion alone does not lift the global Implementation Freeze.
+
+
+## Presentation局所の二段階watchdog（#659）
+
+ユーザー承認: APPROVED 2026-09-12。timeoutとlifecycleのAuthorityは#348 Speech Runtimeのみとする。
+Presentation commitから完了までの単一期限にはせず、`START_WAIT → STARTED受理 → TERMINAL_WAIT → terminal`で閉じる。
+
+`SpeechRuntimeOperationalPolicy.presentation_timeout`は不変の`SpeechPresentationTimeoutPolicy`であり、既存の`policy_id / policy_revision`のgenerationに含む。
+承認されたproduction初期値は次のとおり。各値はboolを除くint/float、有限、正数を必須とする。
+
+| フィールド | 秒 |
+| --- | ---: |
+| start_report_timeout_seconds | 5.0 |
+| text_terminal_timeout_seconds | 5.0 |
+| audio_terminal_grace_seconds | 5.0 |
+| audio_terminal_fallback_timeout_seconds | 60.0 |
+
+commit成功時のOwner clockをSTART_WAITの起点とし、policy identity/revision・全timeout値・candidate generation・音声durationをPresentation局所に固定する。
+current policyを更新してもactive Presentationの期限は伸縮しない。後続Presentationは新generationを使用する。
+`SpeechPresentationCommitState.observed_at`、commandの`committed_at`、Adapter timestampはwatchdogの時計Authorityにしない。
+
+START_WAITではSTARTEDまたはFAILED_BEFORE_STARTだけを最初のreportとして受理する。
+有効first reportが期限までに受理されなければ、OwnerがFAILEDへ閉じ、START_WAIT診断を記録する。
+report historyは空のまま。#657 projectorはNoneであり、#329のActual Execution Factや外部effectを捏造しない。
+FAILED_BEFORE_STARTを期限前に受理した場合は通常terminalでありtimeout診断を作らない。
+
+STARTEDを正式受理したOwner時刻からTERMINAL_WAITを開始する。reportのstarted_atはevidenceとして保持するが、deadlineの起点にはしない。
+TEXT_ONLYは受理時刻+5秒。AUDIO_WITH_TEXTは信頼された実音声durationがあれば受理時刻+duration_ms/1000+5秒grace、なければ受理時刻+60秒とする。
+既存#358の`PreparedAudioArtifact.duration_ms`は正のint（bool禁止）のmillisecondsであり、その意味を変更しない。
+既存`CandidateArtifactStore.current_artifact(candidate_id)`にはtyped artifactがあるが、現行Presentation compositionにはduration transportがない。
+`SpeechPresentationCommitState.prepared_audio_duration_ms`をoptional metadata境界として設け、同じstateの`prepared_audio_ref`およびcurrent candidateのaudio_refとのexact bindingを必須とする。
+trusted metadata供給側は既存artifactを使い、参照文字列・file size・textからdurationを推測しない。TEXT_ONLYではaudio durationを期限Authorityにしない。
+#358 Providerの意味や#613 integration wiringはこのWorkでは変更しない。
+
+report受理と期限解決は同じOwner lock内で行う。`owner_now < deadline`なら通常受理、`owner_now >= deadline`ならtimeoutを優先する。
+report timestampが過去でもOwnerへの到着を遡らせない。確定済みterminalはtimeoutで上書きしない。
+TERMINAL_WAIT timeoutではFAILEDへ閉じ、受理済みSTARTEDだけを保持する。fake STARTED/COMPLETED/FAILED_AFTER_START、追加effect、推測uncertaintyは生成しない。
+#657の既存snapshot projectorがSTARTED-onlyとOwner FAILEDをgeneric FAILEDへ投影し、#329が先行OBSERVABLEで受理したtext/audio partial effectを保持する。
+新しいCandidateLifecycle、Foundation ExecutionStatus、第二のPresentation/Actual Fact Authorityは作らない。
+
+Ownerの`presentation_wait_seconds`と`expire_presentation_if_due`はPresentation/candidate identity、candidate generation、固定policy generation、current lifecycle、受理済みreports、Owner時刻、期限を同じatomic境界で照合する。
+`SpeechPresentationTimeoutRecord`は不変の診断で、Presentation/candidate identity、START_WAIT/TERMINAL_WAIT、awareなdeadline/detected_at、固定policy identity/revisionを持つ。detected_atはdeadline以後。timeout以外では生成せず、Actual Factとは区別する。
+
+Executorはcandidate局所の実行Sessionから次reportを待ち、Ownerの期限を同じatomic境界で解決する。OS process/PID/signalはDomain契約へ出さない。
+
+### 別プロセス実行境界（ユーザー承認、#659 Test/Fix）
+
+親のSpeech Runtimeがlifecycle/deadline/terminal claimのAuthorityを保持する。Domainは`SpeechPresentationExecutionBoundary`と`SpeechPresentationExecutionSession`のPortのみを所有し、Sessionのclose完了は外部実行と通信資源の回収済みを意味する。
+InfrastructureのSupervisorが1 Presentationごとに明示worker moduleを`sys.executable -m`で起動する。poolは導入しない。具体Adapterの生成・SDK・device/surface I/Oは子だけで実行する。
+#659採用時点ではproduction Presentation登録が未接続だったため、信頼された構成側がadapter kind・import可能なfactoryのmodule/name・JSON configurationを明示登録する。任意callable/objectのpicklingは使用しない。登録をユーザー入力やreportから選ばず、#613のproduction wiringと#358のTTS生成は先取りしない。
+
+親子間はversion 1のJSONL envelopeとし、schema、version、kind、utterance_id、correlation_id、payloadを必須とする。correlation_idはpresentation_idにexact bindし、command/reportのcandidate・asset identityはOwnerでも再照合する。
+codecはDomain DTO外に置く。messageは64KiBを上限とし、重複key・未知field・不正数値・不正identityを拒否する。stdoutはprotocol専用とし、Adapter/SDKのstdoutをfd単位でstderrへ隔離する。現SupervisorはstderrをDEVNULLへ破棄し、raw外部出力・外部例外をAuthorityや診断の説明へ採用しない。必要な診断はtyped code等の安全な診断経路だけで扱う。
+spawn成功をSTARTEDへ昇格しない。Adapterが実際に返すreportだけをOwnerへ渡す。起動不能・不正protocol時の同一process fallbackは禁止する。
+
+正常terminal後も子の終了とpipe回収を待つ。timeout/取消/shutdownでは、入力EOFによる停止要求 → bounded grace → terminate → bounded wait → kill → bounded reapを実施する。
+回収対象はworkerの直接PIDだけでなく、Adapter/SDKが通常生成するdescendant process全体を含む。POSIXでは`start_new_session=True`で専用session/process groupを作り、group全体へSIGTERM、必要ならSIGKILLを送り、workerのwaitとgroup消滅を確認する。workerが先に正常終了していてもgroup内のhelperを残さない。
+Windowsでは専用の非継承・無名Job Objectを作成し、`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`を設定する。breakawayを許可しない。workerはcommand受信までAdapterをimport/生成せず、親はJob割当成功後だけcommandを送る。割当失敗時は実行を拒否し、command未送信のbootstrap workerを回収する。通常のexecution回収は`TerminateJobObject`でdescendantを含めて終了させ、workerのwaitとJobの`ActiveProcesses == 0`を確認した後にhandleを閉じる。Windowsのterminate/kill段階はいずれもJob全体の強制終了であり、direct `Process.kill()`を同等保証と扱わない。Job割当がOS/既存Jobの制約で拒否される環境ではSPAWN_FAILEDとし、同一processへfallbackしない。
+Presentation Adapter/SDKが起動するprocessはexecution containmentから離脱してはならない。POSIXのsetsid/setpgidによる離脱、Windowsのbreakaway、外部常駐サービスへの独立process起動委譲等を禁止する。意図的に離脱するprocessの回収は保証対象外であり、このAdapter契約を満たさない実装は登録対象にしない。OS APIはInfrastructureだけが所有する。
+cleanup秒数は固定policy generation内の`worker_grace_seconds=0.2`、`worker_terminate_seconds=1.0`、`worker_kill_seconds=1.0`へ集約する。これは実装時に設定したcleanupの初期値であり、承認済みPresentation deadline 5/5/5/60秒を変更しない。
+親側取消・再取消でもcleanupはshieldして完了まで回収する。timeoutのOwner claimを先に確定し、後着reportは上書きしない。呼出元へのterminal待機復帰はcleanup後とし、対象の生存子PID・tracked task・open IPC・子所有Adapter I/Oを残さない。
+OSがkill後も回収完了を返さない場合に加え、stdin閉鎖待機・stdout drain・containment照会/終了・handle閉鎖の失敗は、`diagnostics.failure = CLEANUP_FAILED`と`PresentationExecutionError(CLEANUP_FAILED)`へ収束する。raw TimeoutErrorを公開契約へ出さない。drain taskは失敗時もcancelしてjoinする。`diagnostics.closed`をTrueにせず、SessionをSupervisor追跡から削除せず、成功postconditionを主張しない。
+POSIXの実process試験とWindows Job API境界のunit testは証拠を区別する。Windows実機で未実行の場合、その実機回収・OS互換性は検証済みと記録しない。
+
+失敗はtyped codeでspawn、encode、protocol/identity、STARTED前後の異常終了、Adapter failure、terminal欠落、timeout、shutdownを区別する。terminate/kill実行はSupervisor診断として保持する。raw stderrやfree-form例外をAuthorityにしない。
+実際に取消拒否・terminate無視する子をtimeout/shutdownからkill/reapし、通常・失敗・race・反復実行・unrelated進行と#657/#329 partial effect保持を検証する。
+既存の同一process Adapter検証は明示的な検証専用Sessionでのみ実施し、production Supervisorからfallbackしない。
+
+
+## Speech応答settlementへの接続（#679）
+
+#348/#657のmappingは変更しない。#329が受理したcurrent COMPLETED publicationだけを#333 response settlement evidenceに利用できる。開始・失敗・取消・timeoutのpartial effectは応答完了にしない。期待するsource bindingとdecisionをUsecaseで照合し、#329/#333 tokenを既存Fenceで同時検査する。詳細はattention_turn_contracts.mdの「Speech応答settlement（#679）」に従う。#613のPresentation Fact認知還流配線は次節に従う。
+
+## Presentation Factの参照と配送（#613）
+
+#613の`CoreSpeechFeedback`は#657 projectorと#329の`ingest_observation()`を利用し、受理済み`ObservedExecutionFactRecord`をrecord revision単位で配送する。下流失敗時は同じOwner recordを再配送できるが、production下流のGateway受付は一度限りとする。
+
+下流では#329 `observed_snapshot(source_contract_id, execution_id)`を再取得し、配送recordとの完全一致と、元の提示で保持したsource / decision / event / trace / presentation相関を確認する。古いOBSERVABLEがterminalへ進んでいれば古い通知は閉じ、terminalの別配送へ任せる。古いrecordを最新recordへ置き換えて配送しない。
+
+COMPLETEDだけを`AttentionResponseSettlementCoordinator`と既存Finalization Fenceへ渡す。source・decision・型の不整合はintegrity failureとする。GENERATION_MISMATCH / PARTICIPANT_BUSY等は旧snapshotで確定せず、呼出元の配送再試行へ返す。内部でbusy-loopしない。OwnerによるTARGET_REJECTEDは無関係なTurnを変更せず、Fact認知は継続する。TARGET_COMMIT_FAULT等を成功へ読み替えない。成功済みsettlementは通知失敗でも維持し、再試行は#679既存のidempotencyに従う。
+
+`CoreInputReferenceContextBinding`はcurrent Presentationのsource / executionへの参照を一件だけ保持し、読取時に#329のcurrent recordへ追従する。kindは`PRESENTATION_FACT`、identityは実Fact identity由来、subjectはrecordのtyped subjectとする。通常Activity、ACTUAL_EXECUTION_FACT、発話全文へ変換しない。過去提示の全履歴は蓄積しない。
+
+この参照は一時的な通知stagingではない。normalize拒否、同期submit失敗、settlement失敗だけを理由に削除・rollbackしない。通知側は終端拒否、accepted Admission、submitted、staleをcurrent/直近recordに限定して保持する。拒否後の同じidentityの再normalizeは禁止する。accepted Admissionの再試行前にはcurrent source context revisionを照合し、不一致のeventをupgradeしない。Input Gateway §7と#679のOwner契約は変更しない。

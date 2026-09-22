@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from math import isfinite
 
@@ -40,9 +40,7 @@ class SnapshotPersistenceRetryPolicy:
     def delay_for(self, attempt: int) -> float:
         if type(attempt) is not int or attempt < 1:
             raise ValueError("attemptは1以上のintでなければなりません")
-        return float(
-            min(self.max_delay_seconds, self.base_delay_seconds * 2 ** (attempt - 1))
-        )
+        return float(min(self.max_delay_seconds, self.base_delay_seconds * 2 ** (attempt - 1)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +99,18 @@ class SnapshotPersistenceWorker:
                 previous = queue[index]
                 if not previous[0].latest_state_coalescible:
                     continue
+                if (
+                    previous[0].envelope.owner_state_revision
+                    > request.envelope.owner_state_revision
+                ):
+                    return self._immediate(
+                        request, DurabilityStatus.SUPERSEDED_BY_NEWER_SNAPSHOT, None
+                    )
+                if (
+                    previous[0].envelope.owner_state_revision
+                    == request.envelope.owner_state_revision
+                ):
+                    break
                 if not previous[1].done():
                     previous[1].set_result(
                         self._receipt(
@@ -110,11 +120,11 @@ class SnapshotPersistenceWorker:
                         )
                     )
                 del queue[index]
-                break
-            queue.append((request, future))
-            return future
+                queue.append((request, future))
+                return future
         if self._outstanding_request_count() >= self._max_pending:
-            self._queued.pop(key, None)
+            if not queue:
+                self._queued.pop(key, None)
             return self._immediate(
                 request,
                 DurabilityStatus.PENDING_RETRY,
@@ -158,7 +168,7 @@ class SnapshotPersistenceWorker:
             tuple[SnapshotPersistenceRequest, asyncio.Future[DurabilityReceipt]] | None
         ) = None
         try:
-            while queue := self._queued.get(key):
+            while not self._closed and (queue := self._queued.get(key)):
                 item = queue.popleft()
                 current_item = item
                 if not queue:
@@ -190,12 +200,24 @@ class SnapshotPersistenceWorker:
     async def _write(self, request: SnapshotPersistenceRequest) -> DurabilityReceipt:
         for attempt in range(1, self._retry_policy.max_attempts + 1):
             try:
-                return await asyncio.to_thread(
-                    self._repository.put_snapshot,
-                    request.envelope,
+                pending = asyncio.create_task(
+                    asyncio.to_thread(self._repository.put_snapshot, request.envelope),
+                    name=f"snapshot-write:{request.request_id}",
                 )
+                # 同期DB処理はタスク取消では停止しない。保存結果を回収してから終了する。
+                while not pending.done():
+                    try:
+                        await asyncio.shield(pending)
+                    except asyncio.CancelledError:
+                        if not self._closed:
+                            raise
+                return replace(pending.result(), persistence_request_id=request.request_id)
             except PersistenceError as error:
-                if not self._retryable(error.code) or attempt == self._retry_policy.max_attempts:
+                if (
+                    self._closed
+                    or not self._retryable(error.code)
+                    or attempt == self._retry_policy.max_attempts
+                ):
                     return self._receipt(request, DurabilityStatus.FAILED, error.code)
                 await asyncio.sleep(self._retry_policy.delay_for(attempt))
         return self._receipt(
@@ -216,7 +238,7 @@ class SnapshotPersistenceWorker:
         self,
         request: SnapshotPersistenceRequest,
         status: DurabilityStatus,
-        code: PersistenceFailureCode,
+        code: PersistenceFailureCode | None,
     ) -> asyncio.Task[DurabilityReceipt]:
         async def result() -> DurabilityReceipt:
             return self._receipt(request, status, code)

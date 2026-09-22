@@ -12,7 +12,29 @@ from .common import (
     SourceLifecycleOperation,
 )
 from .execution import AsyncWorkResult, AsyncWorkStatus, ExecutionResult, ExecutionStatus
+from .finalization import (
+    AuthorityFinalizationFence,
+    AuthorityFinalizationOperation,
+    AuthorityFinalizationParticipant,
+    AuthorityFinalizationRequest,
+    AuthorityFinalizationResult,
+    AuthorityGenerationToken,
+    AuthorityReadPublication,
+    FinalizationError,
+    FinalizationFailure,
+)
 from .messaging import EventEnvelope, ExecutiveDecision, SystemCommand
+from .preconditions import (
+    PreconditionFailure,
+    PreconditionObservation,
+    PreconditionReadError,
+    PreconditionSourceBinding,
+    PreconditionSourceReader,
+    PreconditionSourceRef,
+    PreconditionSourceRegistration,
+    PreconditionSourceRouter,
+)
+from .semantic_subject import RuntimeSubjectIdentity, SemanticSubjectIdentity, SemanticSubjectKind
 from .snapshots import (
     DEFAULT_SNAPSHOT_STABILIZATION_POLICY,
     SnapshotGenerationSample,
@@ -26,6 +48,26 @@ from .snapshots import (
 )
 
 __all__ = [
+    "RuntimeSubjectIdentity",
+    "SemanticSubjectIdentity",
+    "SemanticSubjectKind",
+    "PreconditionFailure",
+    "PreconditionObservation",
+    "PreconditionReadError",
+    "PreconditionSourceBinding",
+    "PreconditionSourceReader",
+    "PreconditionSourceRef",
+    "PreconditionSourceRegistration",
+    "PreconditionSourceRouter",
+    "AuthorityFinalizationFence",
+    "AuthorityFinalizationOperation",
+    "AuthorityFinalizationParticipant",
+    "AuthorityFinalizationRequest",
+    "AuthorityFinalizationResult",
+    "AuthorityGenerationToken",
+    "AuthorityReadPublication",
+    "FinalizationError",
+    "FinalizationFailure",
     "AsyncWorkResult",
     "AsyncWorkStatus",
     "AuthorityRef",

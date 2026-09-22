@@ -39,6 +39,7 @@ class ExecutiveBounds:
     max_commitment_transitions: int
     max_refs_per_intent: int
     max_fact_payload_json_bytes: int
+    max_context_json_bytes: int = 8388608
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -51,6 +52,7 @@ class ExecutiveBounds:
             "max_commitment_transitions",
             "max_refs_per_intent",
             "max_fact_payload_json_bytes",
+            "max_context_json_bytes",
         ):
             _positive_int(getattr(self, field_name), field_name)
 
@@ -179,9 +181,18 @@ class SemanticVerificationBounds:
         ):
             _positive_int(getattr(self, field_name), field_name)
         if self.max_accounting_entries < self.max_blind_units:
-            raise ValueError(
-                "max_accounting_entries は max_blind_units 以上でなければなりません"
-            )
+            raise ValueError("max_accounting_entries は max_blind_units 以上でなければなりません")
+
+
+@dataclass(frozen=True, slots=True)
+class CommunicativeCatalogBounds:
+    max_definitions: int = 64
+    max_definition_json_bytes: int = 4096
+    max_catalog_json_bytes: int = 524288
+
+    def __post_init__(self) -> None:
+        for name in ("max_definitions", "max_definition_json_bytes", "max_catalog_json_bytes"):
+            _positive_int(getattr(self, name), name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,11 +206,13 @@ class BrainOperationalBoundsPolicy:
     speech_semantics: SpeechSemanticBounds
     character_language: CharacterLanguageBounds
     semantic_verification: SemanticVerificationBounds
+    communicative_catalog: CommunicativeCatalogBounds = CommunicativeCatalogBounds()
 
     def __post_init__(self) -> None:
         require_identifier(self.policy_id, "policy_id")
         require_revision(self.policy_revision, "policy_revision")
         typed_sections = (
+            ("communicative_catalog", self.communicative_catalog, CommunicativeCatalogBounds),
             ("input", self.input, InputBounds),
             ("executive", self.executive, ExecutiveBounds),
             ("goal_context", self.goal_context, GoalContextBounds),
@@ -223,14 +236,12 @@ class BrainOperationalBoundsPolicy:
                 "Semantic VerificationはSpeech Semanticsの全propositionを収容できなければなりません"
             )
         if self.planning.max_capability_descriptors > self.executive.max_capability_descriptors:
-            raise ValueError(
-                "Planningのcapability上限はExecutiveの供給上限を超えられません"
-            )
+            raise ValueError("Planningのcapability上限はExecutiveの供給上限を超えられません")
 
 
 V2_BRAIN_OPERATIONAL_BOUNDS_POLICY = BrainOperationalBoundsPolicy(
     policy_id="v2.brain-operational-bounds.default",
-    policy_revision=1,
+    policy_revision=2,
     input=InputBounds(
         max_text_codepoints=32768,
         max_payload_json_bytes=262144,

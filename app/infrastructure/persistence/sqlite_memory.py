@@ -2,21 +2,26 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
-from datetime import datetime
+from pathlib import Path
 from threading import RLock
 from typing import Literal
 
 from app.domain.memory.contracts import (
     MemoryRecord,
     MemoryRelation,
-    MemoryRelationKind,
+)
+from app.domain.memory.finalization import (
+    MemoryFinalizationRegistry,
+    memory_mutation,
+    shared_memory_registry,
 )
 from app.domain.memory.repository import MemoryRepositorySnapshot
 
 from .contracts import PersistenceError, PersistenceFailureCode
 from .memory_codec import decode_memory_record, encode_memory_record
+from .relation_codec import decode_relation as _decode_relation
+from .relation_codec import encode_relation as _encode_relation
 
 
 class SqliteMemoryRepository:
@@ -25,6 +30,11 @@ class SqliteMemoryRepository:
     storage_schema_version = 1
 
     def __init__(self, database_path: str) -> None:
+        self.semantic_guards = (
+            MemoryFinalizationRegistry()
+            if database_path == ":memory:"
+            else shared_memory_registry(("sqlite", str(Path(database_path).resolve())))
+        )
         self._lock = RLock()
         try:
             self._connection = sqlite3.connect(database_path, check_same_thread=False)
@@ -81,6 +91,7 @@ class SqliteMemoryRepository:
             )
             return MemoryRepositorySnapshot(records, relations)
 
+    @memory_mutation
     def save_record(self, record: MemoryRecord, *, expected_revision: int | None) -> bool:
         with self._transaction() as cursor:
             previous = self._revision(cursor, record.memory_id)
@@ -100,6 +111,7 @@ class SqliteMemoryRepository:
             )
             return True
 
+    @memory_mutation
     def save_relation(self, relation: MemoryRelation) -> bool:
         with self._transaction() as cursor:
             exists = self._relation_exists(cursor, relation.relation_id)
@@ -108,6 +120,7 @@ class SqliteMemoryRepository:
             self._insert_relation(cursor, relation)
             return True
 
+    @memory_mutation
     def commit_related(
         self,
         record: MemoryRecord,
@@ -272,41 +285,3 @@ class _Transaction:
         finally:
             self._lock.release()
         return False
-
-
-def _encode_relation(relation: MemoryRelation) -> str:
-    return json.dumps(
-        {
-            "relation_id": relation.relation_id,
-            "left_memory_id": relation.left_memory_id,
-            "right_memory_id": relation.right_memory_id,
-            "kind": relation.kind.value,
-            "evidence_refs": list(relation.evidence_refs),
-            "created_at": relation.created_at.isoformat(),
-        },
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    )
-
-
-def _decode_relation(raw: str) -> MemoryRelation:
-    try:
-        value = json.loads(raw)
-        if not isinstance(value, dict):
-            raise ValueError
-        created_at = datetime.fromisoformat(value["created_at"])
-        return MemoryRelation(
-            value["relation_id"],
-            value["left_memory_id"],
-            value["right_memory_id"],
-            MemoryRelationKind(value["kind"]),
-            tuple(value["evidence_refs"]),
-            created_at,
-        )
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
-        raise PersistenceError(
-            PersistenceFailureCode.CORRUPT_RECORD,
-            "Memory relationが不正です",
-        ) from error

@@ -343,7 +343,7 @@ B後stale/superseded/cancelledならObservation/Acceptanceをcommitしない。
 
 ## 15. Concurrency
 
-A→Bは初期版ではquality優先のdata dependency。
+A→Bは初期バージョンではquality優先のdata dependency。
 
 ただしA/B await中にAuthority lockを保持しない。
 

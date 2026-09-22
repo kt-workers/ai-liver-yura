@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import replace
-from datetime import datetime, timezone
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta, timezone
 
 from app.domain.contracts.common import require_aware, utc_instant
 
@@ -11,6 +11,7 @@ from .contracts import (
     AudioReadinessState,
     CandidateLifecycle,
     PreparedSpeechCandidate,
+    PresentationTimeoutPhase,
     SemanticVerificationRequirement,
     SpeechComponentReadiness,
     SpeechPresentationCommand,
@@ -18,16 +19,30 @@ from .contracts import (
     SpeechPresentationMode,
     SpeechPresentationReport,
     SpeechPresentationReportStatus,
+    SpeechPresentationTimeoutRecord,
     SpeechReadinessState,
     VerifierReadinessState,
 )
-from .policy import SpeechRuntimeOperationalPolicy
+from .policy import SpeechPresentationTimeoutPolicy, SpeechRuntimeOperationalPolicy
 
 AbsoluteClock = Callable[[], datetime]
 
 
 def _system_utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@dataclass(frozen=True, slots=True)
+class _PresentationDeadline:
+    presentation_id: str
+    candidate_id: str
+    generation: int
+    policy_id: str
+    policy_revision: int
+    policy: SpeechPresentationTimeoutPolicy
+    audio_duration_ms: int | None
+    phase: PresentationTimeoutPhase
+    deadline: datetime
 
 
 class SpeechRuntime:
@@ -49,6 +64,8 @@ class SpeechRuntime:
         self._commands: dict[str, SpeechPresentationCommand] = {}
         self._reports: dict[str, tuple[SpeechPresentationReport, ...]] = {}
         self._generations: dict[str, int] = {}
+        self._deadlines: dict[str, _PresentationDeadline] = {}
+        self._timeouts: dict[str, SpeechPresentationTimeoutRecord] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -97,9 +114,7 @@ class SpeechRuntime:
         async with self._lock:
             return self._generations.get(candidate_id) == generation
 
-    async def supersede_generation(
-        self, candidate_id: str, expected_generation: int
-    ) -> int | None:
+    async def supersede_generation(self, candidate_id: str, expected_generation: int) -> int | None:
         """repair前に古いperformance/audio結果をcandidate局所で無効化する。"""
         async with self._lock:
             if self._generations.get(candidate_id) != expected_generation:
@@ -378,6 +393,28 @@ class SpeechRuntime:
             self._candidates[candidate_id] = updated
             return updated
 
+    async def revalidate_current(
+        self,
+        candidate_id: str,
+        expected_generation: int,
+        state: SpeechPresentationCommitState,
+    ) -> PreparedSpeechCandidate | None:
+        """最新状態を照合し、同じ世代の候補だけを提示可能へ進める。"""
+        async with self._lock:
+            if self._generations.get(candidate_id) != expected_generation:
+                return None
+            candidate = self._active(candidate_id)
+            if candidate.lifecycle is not CandidateLifecycle.REVALIDATING:
+                raise ValueError("再照合中の候補が必要です")
+            self._validated_presentation_modes(candidate, state)
+            updated = replace(
+                candidate,
+                lifecycle=CandidateLifecycle.READY_TO_PRESENT,
+                updated_at=state.observed_at,
+            )
+            self._candidates[candidate_id] = updated
+            return updated
+
     async def commit(
         self, candidate_id: str, state: SpeechPresentationCommitState, presentation_id: str
     ) -> SpeechPresentationCommand:
@@ -390,77 +427,8 @@ class SpeechRuntime:
                 or presentation_id in self._presentations
             ):
                 raise ValueError("Presentation commitが不正です")
-            if (
-                candidate.source_context_revision != state.source_context_revision
-                or candidate.goal_revision != state.goal_revision
-                or candidate.attention_revision != state.attention_revision
-                or (candidate.turn_id is not None and candidate.turn_id != state.turn_id)
-                or (
-                    candidate.focus_revision is not None
-                    and candidate.focus_revision != state.focus_revision
-                )
-                or (
-                    state.semantic_acceptance_id is not None
-                    and candidate.semantic_acceptance_id != state.semantic_acceptance_id
-                )
-                or (
-                    state.performance_plan_id is not None
-                    and candidate.performance_plan_id != state.performance_plan_id
-                )
-                or (
-                    state.prepared_audio_ref is not None
-                    and candidate.prepared_audio_ref != state.prepared_audio_ref
-                )
-                or (candidate.response_obligation_id != state.response_obligation_id)
-                or (
-                    candidate.character_definition_revision is not None
-                    and candidate.character_definition_revision
-                    != state.character_definition_revision
-                )
-                or not state.character_compatible
-                or not state.expiry_valid
-                or not state.capability.output_available
-            ):
-                raise ValueError("live revalidationに失敗しました")
-            if candidate.semantic_requirement is SemanticVerificationRequirement.REQUIRED and (
-                candidate.semantic_acceptance_id is None
-                or state.semantic_acceptance_id is None
-                or candidate.semantic_acceptance_id != state.semantic_acceptance_id
-            ):
-                raise ValueError("SemanticAcceptanceが必要です")
-            if candidate.performance_plan_id is None or (
-                state.performance_plan_id is None
-                or candidate.performance_plan_id != state.performance_plan_id
-            ):
-                raise ValueError("current PerformancePlanが必要です")
-            if (
-                candidate.expression_revision is not None
-                and candidate.expression_revision != state.expression_revision
-            ):
-                raise ValueError("expression driftにはperformance rebindが必要です")
-            if (
-                not set(candidate.required_preconditions) <= set(state.satisfied_preconditions)
-                or candidate.utterance_id is None
-            ):
-                raise ValueError("Presentation preconditionが不正です")
-            if (
-                candidate.prepared_audio_ref
-                and state.capability.audio_available
-                and SpeechPresentationMode.AUDIO_WITH_TEXT in candidate.presentation_modes
-            ):
-                if (
-                    state.prepared_audio_ref is None
-                    or state.prepared_audio_ref != candidate.prepared_audio_ref
-                ):
-                    raise ValueError("current prepared audioが必要です")
-                modes = (SpeechPresentationMode.AUDIO_WITH_TEXT,)
-            elif (
-                state.capability.text_available
-                and SpeechPresentationMode.TEXT_ONLY in candidate.presentation_modes
-            ):
-                modes = (SpeechPresentationMode.TEXT_ONLY,)
-            else:
-                raise ValueError("Presentation modeが利用不能です")
+            modes = self._validated_presentation_modes(candidate, state)
+            assert candidate.utterance_id is not None
             self._presentations[presentation_id] = candidate_id
             command = SpeechPresentationCommand(
                 presentation_id,
@@ -469,6 +437,18 @@ class SpeechRuntime:
                 candidate.prepared_audio_ref,
                 modes,
                 state.observed_at,
+            )
+            timeout = self._policy.presentation_timeout
+            self._deadlines[presentation_id] = _PresentationDeadline(
+                presentation_id,
+                candidate_id,
+                self._generations[candidate_id],
+                self._policy.policy_id,
+                self._policy.policy_revision,
+                timeout,
+                state.prepared_audio_duration_ms,
+                PresentationTimeoutPhase.START_WAIT,
+                self._now() + timedelta(seconds=timeout.start_report_timeout_seconds),
             )
             self._commands[presentation_id] = command
             self._candidates[candidate_id] = replace(
@@ -484,6 +464,10 @@ class SpeechRuntime:
             command = self._commands[report.presentation_id]
             if report.output_modes != command.modes or report.audio_ref != command.audio_ref:
                 raise ValueError("Presentation reportのasset identityが不正です")
+            now = self._now()
+            deadline = self._deadlines[report.presentation_id]
+            if self._expire_presentation(deadline, now):
+                return self._candidates[report.candidate_id]
             previous = self._reports.get(report.presentation_id, ())
             if not previous:
                 if report.status not in {
@@ -518,13 +502,116 @@ class SpeechRuntime:
             )
             self._candidates[candidate.candidate_id] = updated
             self._reports[report.presentation_id] = (*previous, report)
+            if report.status is SpeechPresentationReportStatus.STARTED:
+                seconds = deadline.policy.text_terminal_timeout_seconds
+                if SpeechPresentationMode.AUDIO_WITH_TEXT in command.modes:
+                    seconds = (
+                        deadline.audio_duration_ms / 1000
+                        + deadline.policy.audio_terminal_grace_seconds
+                        if deadline.audio_duration_ms is not None
+                        else deadline.policy.audio_terminal_fallback_timeout_seconds
+                    )
+                self._deadlines[report.presentation_id] = replace(
+                    deadline,
+                    phase=PresentationTimeoutPhase.TERMINAL_WAIT,
+                    deadline=now + timedelta(seconds=seconds),
+                )
             return updated
+
+    async def presentation_timeout_policy(
+        self, presentation_id: str
+    ) -> SpeechPresentationTimeoutPolicy:
+        async with self._lock:
+            return self._deadlines[presentation_id].policy
+
+    async def presentation_wait_seconds(
+        self, presentation_id: str, candidate_id: str, generation: int
+    ) -> float | None:
+        """Owner境界で期限を解決し、局所watchdogの残り待機秒数を返す。"""
+        async with self._lock:
+            deadline = self._deadlines[presentation_id]
+            if deadline.candidate_id != candidate_id or deadline.generation != generation:
+                raise ValueError("Presentation watchdogのidentity/generationが不正です")
+            now = self._now()
+            self._expire_presentation(deadline, now)
+            if self._candidates[candidate_id].lifecycle is not CandidateLifecycle.PRESENTING:
+                return None
+            return (deadline.deadline - now).total_seconds()
+
+    async def expire_presentation_if_due(
+        self, presentation_id: str, candidate_id: str, generation: int
+    ) -> PreparedSpeechCandidate:
+        """同じOwner期限解決を公開し、確定済みterminalを上書きしない。"""
+        async with self._lock:
+            deadline = self._deadlines[presentation_id]
+            if deadline.candidate_id != candidate_id or deadline.generation != generation:
+                raise ValueError("Presentation watchdogのidentity/generationが不正です")
+            self._expire_presentation(deadline, self._now())
+            return self._candidates[candidate_id]
+
+    async def presentation_timeout_record(
+        self, presentation_id: str
+    ) -> SpeechPresentationTimeoutRecord | None:
+        async with self._lock:
+            return self._timeouts.get(presentation_id)
+
+    def _expire_presentation(self, deadline: _PresentationDeadline, now: datetime) -> bool:
+        """呼出元がOwner lockを保持し、report受理と同じ境界でexact期限を判定する。"""
+        candidate = self._candidates[deadline.candidate_id]
+        if candidate.lifecycle is not CandidateLifecycle.PRESENTING:
+            return False
+        if (
+            self._presentations.get(deadline.presentation_id) != deadline.candidate_id
+            or self._generations[deadline.candidate_id] != deadline.generation
+            or candidate.runtime_policy_id != deadline.policy_id
+            or candidate.runtime_policy_revision != deadline.policy_revision
+        ):
+            raise ValueError("Presentationの固定generationが一致しません")
+        reports = self._reports.get(deadline.presentation_id, ())
+        if (deadline.phase is PresentationTimeoutPhase.START_WAIT and reports) or (
+            deadline.phase is PresentationTimeoutPhase.TERMINAL_WAIT
+            and (
+                len(reports) != 1 or reports[0].status is not SpeechPresentationReportStatus.STARTED
+            )
+        ):
+            raise ValueError("Presentation phaseと受理済みreportが一致しません")
+        if now < deadline.deadline:
+            return False
+        self._candidates[deadline.candidate_id] = replace(
+            candidate, lifecycle=CandidateLifecycle.FAILED, updated_at=now
+        )
+        self._timeouts[deadline.presentation_id] = SpeechPresentationTimeoutRecord(
+            deadline.presentation_id,
+            deadline.candidate_id,
+            deadline.phase,
+            deadline.deadline,
+            now,
+            deadline.policy_id,
+            deadline.policy_revision,
+        )
+        return True
 
     async def presentation_reports(
         self, presentation_id: str
     ) -> tuple[SpeechPresentationReport, ...]:
         async with self._lock:
             return self._reports.get(presentation_id, ())
+
+    async def presentation_snapshot(
+        self, presentation_id: str
+    ) -> tuple[
+        SpeechPresentationCommand, PreparedSpeechCandidate, tuple[SpeechPresentationReport, ...]
+    ]:
+        """確定command・現在candidate・受理済みreportを同じOwner読取で返す。"""
+        async with self._lock:
+            command = self._commands.get(presentation_id)
+            if command is None:
+                raise ValueError("確定済みPresentationが存在しません")
+            return (
+                command,
+                self._candidates[command.candidate_id],
+                self._reports.get(presentation_id, ()),
+            )
 
     async def fail_presentation_stream(self, candidate_id: str) -> PreparedSpeechCandidate:
         """STARTED後にterminal reportを失ったAdapter streamをfail-closedで閉じる。"""
@@ -617,3 +704,83 @@ class SpeechRuntime:
         }:
             raise ValueError("terminal candidateは再活性化できません")
         return candidate
+
+    def _validated_presentation_modes(
+        self,
+        candidate: PreparedSpeechCandidate,
+        state: SpeechPresentationCommitState,
+    ) -> tuple[SpeechPresentationMode, ...]:
+        """再照合と提示確定で、同じ現在状態の照合を使用する。"""
+        if not self._policy_matches(candidate) or self._is_expired(candidate, self._now()):
+            raise ValueError("発話実行基盤の運用方針または有効期限が一致しません")
+        if (
+            candidate.source_context_revision != state.source_context_revision
+            or candidate.goal_revision != state.goal_revision
+            or candidate.attention_revision != state.attention_revision
+            or (candidate.turn_id is not None and candidate.turn_id != state.turn_id)
+            or (
+                candidate.focus_revision is not None
+                and candidate.focus_revision != state.focus_revision
+            )
+            or (
+                state.semantic_acceptance_id is not None
+                and candidate.semantic_acceptance_id != state.semantic_acceptance_id
+            )
+            or (
+                state.performance_plan_id is not None
+                and candidate.performance_plan_id != state.performance_plan_id
+            )
+            or (
+                state.prepared_audio_ref is not None
+                and candidate.prepared_audio_ref != state.prepared_audio_ref
+            )
+            or (candidate.response_obligation_id != state.response_obligation_id)
+            or (
+                candidate.character_definition_revision is not None
+                and candidate.character_definition_revision != state.character_definition_revision
+            )
+            or not state.character_compatible
+            or not state.expiry_valid
+            or not state.capability.output_available
+        ):
+            raise ValueError("live revalidationに失敗しました")
+        if candidate.semantic_requirement is SemanticVerificationRequirement.REQUIRED and (
+            candidate.semantic_acceptance_id is None
+            or state.semantic_acceptance_id is None
+            or candidate.semantic_acceptance_id != state.semantic_acceptance_id
+        ):
+            raise ValueError("SemanticAcceptanceが必要です")
+        if candidate.performance_plan_id is None or (
+            state.performance_plan_id is None
+            or candidate.performance_plan_id != state.performance_plan_id
+        ):
+            raise ValueError("current PerformancePlanが必要です")
+        if (
+            candidate.expression_revision is not None
+            and candidate.expression_revision != state.expression_revision
+        ):
+            raise ValueError("expression driftにはperformance rebindが必要です")
+        if (
+            not set(candidate.required_preconditions) <= set(state.satisfied_preconditions)
+            or candidate.utterance_id is None
+        ):
+            raise ValueError("Presentation preconditionが不正です")
+        if (
+            candidate.prepared_audio_ref
+            and state.capability.audio_available
+            and SpeechPresentationMode.AUDIO_WITH_TEXT in candidate.presentation_modes
+        ):
+            if (
+                state.prepared_audio_ref is None
+                or state.prepared_audio_ref != candidate.prepared_audio_ref
+            ):
+                raise ValueError("current prepared audioが必要です")
+            modes = (SpeechPresentationMode.AUDIO_WITH_TEXT,)
+        elif (
+            state.capability.text_available
+            and SpeechPresentationMode.TEXT_ONLY in candidate.presentation_modes
+        ):
+            modes = (SpeechPresentationMode.TEXT_ONLY,)
+        else:
+            raise ValueError("Presentation modeが利用不能です")
+        return modes

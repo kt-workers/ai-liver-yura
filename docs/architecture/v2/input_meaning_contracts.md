@@ -199,3 +199,7 @@ post-await live readは当該requestのcommit gateだけに必要な短いread�
 - live revisionを取得できない場合は意味を補作せずfail-closedにする
 - stale reject時にold resultをnew revisionへ付け替えない
 - post-await live read導入後もslow Input Meaning中にunrelated workが進行できる
+
+## 本体からの現在文脈供給
+
+本体の目標・活動参照は`brain_integration_contracts.md`第23節の接続を使用する。入力意味所有者は参照投影を変更せず、LLM応答後に現在の投影版と当該起動世代の採用方針を再取得する。元の所有者の版と投影版は別々に保持する。実行結果の正常終了を目標完了や意味の採用へ自動昇格しない。

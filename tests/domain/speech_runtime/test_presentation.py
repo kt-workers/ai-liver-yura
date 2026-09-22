@@ -33,6 +33,7 @@ from app.domain.speech_runtime.orchestrator import SpeechPreparationOrchestrator
 from app.domain.speech_runtime.policy import SpeechCandidatePriority
 from app.domain.speech_runtime.presentation import SpeechPresentationExecutor
 from app.domain.speech_runtime.tasks import CandidateTaskRegistry
+from app.subsystems.validation.presentation_session import LocalPresentationBoundary
 from tests.domain.speech_runtime.policy_fixtures import TestSpeechRuntime, runtime_policy
 
 _TEST_POLICY = runtime_policy()
@@ -130,7 +131,7 @@ async def test_presentation_adapter_runs_after_commit_without_blocking_next_prep
         candidate_id="candidate",
         state=_state(),
         presentation_id="presentation",
-        adapter=adapter,
+        adapter=LocalPresentationBoundary(adapter),
     )
     await started.wait()
     next_preparation.set()
@@ -275,7 +276,10 @@ async def test_playback_wait_does_not_block_next_candidate_preparation_or_heartb
         )
 
     await SpeechPresentationExecutor(runtime, tasks).commit_and_present(
-        candidate_id="candidate", state=_state(), presentation_id="presentation", adapter=adapter
+        candidate_id="candidate",
+        state=_state(),
+        presentation_id="presentation",
+        adapter=LocalPresentationBoundary(adapter),
     )
     await playback_started.wait()
 
@@ -445,7 +449,10 @@ async def test_executor_stream_accepts_started_before_terminal_and_preserves_eff
         )
 
     await SpeechPresentationExecutor(runtime, tasks).commit_and_present(
-        candidate_id="candidate", state=state, presentation_id="presentation", adapter=adapter
+        candidate_id="candidate",
+        state=state,
+        presentation_id="presentation",
+        adapter=LocalPresentationBoundary(adapter),
     )
     await emitted.wait()
     await asyncio.sleep(0)
@@ -484,7 +491,10 @@ async def test_started_only_stream_fails_closed_instead_of_stranding_presentatio
         )
 
     await SpeechPresentationExecutor(runtime, tasks).commit_and_present(
-        candidate_id="candidate", state=_state(), presentation_id="presentation", adapter=adapter
+        candidate_id="candidate",
+        state=_state(),
+        presentation_id="presentation",
+        adapter=LocalPresentationBoundary(adapter),
     )
     while tasks.pending_task_count:
         await asyncio.sleep(0)

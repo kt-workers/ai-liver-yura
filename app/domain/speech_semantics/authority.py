@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
-from threading import Lock
 
 from app.domain.brain_operational_bounds import (
     V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
@@ -14,7 +14,19 @@ from app.domain.contracts.common import (
     require_identifier,
     utc_instant,
 )
+from app.domain.contracts.finalization import (
+    AuthorityFinalizationFence,
+    AuthorityFinalizationParticipant,
+    AuthorityFinalizationRequest,
+    FinalizationError,
+    authority_mutation,
+)
 from app.domain.executive import SpeechIntentPayload
+from app.domain.speech_semantics_vocabulary import (
+    SpeechSemanticContextError,
+    SpeechSemanticContextFailureCode,
+    require_meaning_policy,
+)
 
 from .bounds import (
     validate_speech_semantic_context_bounds,
@@ -39,13 +51,27 @@ from .contracts import (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _CommitInput:
+    candidate: SpeechSemanticCandidate
+    snapshot: SpeechSemanticContextSnapshot
+    current_revisions: RevisionVector
+    plan_id: str
+    bounds_policy: BrainOperationalBoundsPolicy
+
+
 class SpeechSemanticAuthority:
     """What-to-say candidateをbounded factへgroundして確定する。"""
 
     def __init__(self) -> None:
         self._plans: dict[str, SpeechSemanticPlan] = {}
         self._intent_ids: set[str] = set()
-        self._lock = Lock()
+        self._lock = AuthorityFinalizationParticipant(self, "SpeechSemanticAuthority", 80)
+        self._operation = self._lock.register_operation(self, "speech_commit", self._finalize)
+
+    @property
+    def finalization_participant(self) -> AuthorityFinalizationParticipant:
+        return self._lock
 
     def commit(
         self,
@@ -57,6 +83,95 @@ class SpeechSemanticAuthority:
         committed_at: datetime,
         bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
     ) -> SpeechSemanticPlan:
+        meaning = require_meaning_policy(snapshot.meaning_policy, bounds_policy)
+        if (
+            snapshot.self_disclosure_policy,
+            snapshot.max_question_budget,
+            snapshot.max_new_direction_budget,
+        ) != (
+            meaning.self_disclosure_policy,
+            meaning.max_question_budget,
+            meaning.max_new_direction_budget,
+        ):
+            raise SpeechSemanticContextError(SpeechSemanticContextFailureCode.SEMANTIC_POLICY_STALE)
+        generation = snapshot.generation
+        if generation is not None:
+            generation.require_current()
+            if generation.bounds != bounds_policy or generation.meaning_policy != meaning:
+                raise SpeechSemanticContextError(SpeechSemanticContextFailureCode.CONTEXT_STALE)
+        self._validate_candidate(
+            candidate,
+            snapshot,
+            current_revisions=current_revisions,
+            plan_id=plan_id,
+            committed_at=committed_at,
+            bounds_policy=bounds_policy,
+        )
+        with self._lock:
+            if plan_id in self._plans or candidate.intent_id in self._intent_ids:
+                raise ValueError("speech plan or intent is already committed")
+        result = AuthorityFinalizationFence().finalize(
+            AuthorityFinalizationRequest(
+                (self._lock.token(),) if generation is None else generation.tokens,
+                self._lock,
+                self._operation,
+                _CommitInput(candidate, snapshot, current_revisions, plan_id, bounds_policy),
+            )
+        )
+        if result.failure is not None:
+            raise FinalizationError(result.failure)
+        assert result.value is not None
+        return result.value
+
+    def _finalize(self, value: _CommitInput, at: datetime) -> SpeechSemanticPlan:
+        return self._commit(
+            value.candidate,
+            value.snapshot,
+            current_revisions=value.current_revisions,
+            plan_id=value.plan_id,
+            committed_at=at,
+            bounds_policy=value.bounds_policy,
+        )
+
+    @authority_mutation
+    def _commit(
+        self,
+        candidate: SpeechSemanticCandidate,
+        snapshot: SpeechSemanticContextSnapshot,
+        *,
+        current_revisions: RevisionVector,
+        plan_id: str,
+        committed_at: datetime,
+        bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    ) -> SpeechSemanticPlan:
+        self._validate_candidate(
+            candidate,
+            snapshot,
+            current_revisions=current_revisions,
+            plan_id=plan_id,
+            committed_at=committed_at,
+            bounds_policy=bounds_policy,
+        )
+        with self._lock:
+            if plan_id in self._plans:
+                raise ValueError("plan id is already committed")
+            if candidate.intent_id in self._intent_ids:
+                raise ValueError("speech intent is already committed")
+            plan = SpeechSemanticPlan(plan_id, candidate, committed_at, _proof=_PLAN_PROOF)
+            self._plans[plan_id] = plan
+            self._intent_ids.add(candidate.intent_id)
+            return plan
+
+    def _validate_candidate(
+        self,
+        candidate: SpeechSemanticCandidate,
+        snapshot: SpeechSemanticContextSnapshot,
+        *,
+        current_revisions: RevisionVector,
+        plan_id: str,
+        committed_at: datetime,
+        bounds_policy: BrainOperationalBoundsPolicy,
+    ) -> None:
         if not isinstance(candidate, SpeechSemanticCandidate):
             raise ValueError("candidate must be SpeechSemanticCandidate")
         if not isinstance(snapshot, SpeechSemanticContextSnapshot):
@@ -72,15 +187,6 @@ class SpeechSemanticAuthority:
         constraints = {item.constraint_id: item for item in snapshot.truth_constraints}
         self._validate_refs(candidate, snapshot, facts, constraints)
         self._validate_truth(candidate, facts, constraints)
-        with self._lock:
-            if plan_id in self._plans:
-                raise ValueError("plan id is already committed")
-            if candidate.intent_id in self._intent_ids:
-                raise ValueError("speech intent is already committed")
-            plan = SpeechSemanticPlan(plan_id, candidate, committed_at, _proof=_PLAN_PROOF)
-            self._plans[plan_id] = plan
-            self._intent_ids.add(candidate.intent_id)
-            return plan
 
     def snapshot(self, plan_id: str) -> SpeechSemanticPlan | None:
         with self._lock:

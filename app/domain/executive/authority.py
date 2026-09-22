@@ -1,26 +1,143 @@
 from __future__ import annotations
 
-from threading import Lock
+from dataclasses import dataclass
+from datetime import datetime
 
+from app.domain.activity_binding import ActivityExecutionBindingPublication
+from app.domain.brain_operational_bounds import (
+    V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    BrainOperationalBoundsPolicy,
+)
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json
+from app.domain.contracts.finalization import (
+    AuthorityFinalizationFence,
+    AuthorityFinalizationOperation,
+    AuthorityFinalizationParticipant,
+    AuthorityFinalizationRequest,
+    AuthorityGenerationToken,
+    FinalizationError,
+    FinalizationFailure,
+    authority_mutation,
+)
+from app.domain.plan_execution.contracts import (
+    _AUTHORIZATION_PROOF,
+    PlanExecutionAuthorization,
+)
+from app.domain.plan_execution.progress_contracts import (
+    _ASSESSMENT_PROOF,
+    PlanProgressAssessment,
+)
 
 from .contracts import (
+    ActivityIntentPayload,
+    CommitmentTransitionOperation,
     CommittedExecutiveDecision,
     ExecutiveCommitState,
     ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
+    GoalTransitionOperation,
+    PlanExecutionIntentPayload,
+    PlanProgressIntentPayload,
+    SpeechIntentPayload,
 )
+from .requirements import ExecutiveRequirementsOwner, RequirementsFailureCode, RequirementsRejected
+from .speech_references import resolve_speech_references, speech_source_tokens
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutiveFinalizationInput:
+    """共通Fenceへ渡す既存判断確定の入力。要件の意味導出は行わない。"""
+
+    candidate: ExecutiveDecisionCandidate
+    snapshot: ExecutiveContextSnapshot
+    current: ExecutiveCommitState
+    decision_id: str
 
 
 class ExecutiveDecisionAuthority:
     """同一triggerの意思決定を高々1件だけ確定する同期commit authority。"""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        requirements_owner: ExecutiveRequirementsOwner | None = None,
+        *,
+        bounds_policy: BrainOperationalBoundsPolicy = V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+    ) -> None:
+        self.requirements_owner = requirements_owner
+        self._bounds_policy = bounds_policy
         self._committed_triggers: set[str] = set()
-        self._lock = Lock()
+        self._participant = AuthorityFinalizationParticipant(self, "ExecutiveDecisionAuthority", 70)
+        self._lock = self._participant
+        dependencies = (
+            () if requirements_owner is None else (requirements_owner.finalization_participant,)
+        )
+        self._participant.configure_dependencies(dependencies)
+        self._finalization_operation = self._participant.register_operation(
+            self,
+            "executive_commit",
+            self._finalize_commit,
+            dependencies=dependencies,
+        )
+
+    @property
+    def finalization_participant(self) -> AuthorityFinalizationParticipant:
+        """元所有者の読取と更新に共通する同期境界を公開する。"""
+        return self._participant
 
     def commit(
+        self,
+        candidate: ExecutiveDecisionCandidate,
+        snapshot: ExecutiveContextSnapshot,
+        *,
+        current: ExecutiveCommitState,
+        decision_id: str,
+        committed_at: object = None,
+    ) -> CommittedExecutiveDecision:
+        """時刻引数は互換入力。最終確定時刻にはFenceの時計だけを使う。"""
+        if committed_at is not None and not isinstance(committed_at, datetime):
+            raise ValueError("確定時刻はdatetimeで指定してください")
+        from .deliberator import validate_candidate_bounds
+
+        validate_candidate_bounds(candidate, self._bounds_policy.executive)
+        generation = snapshot.requirements_generation
+        if self.requirements_owner is None or generation is None:
+            raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
+        if generation.owner is not self.requirements_owner:
+            raise RequirementsRejected(RequirementsFailureCode.INVALID_PROJECTION)
+        derivations = generation.owner.validate_captured(snapshot, candidate, current)
+        self._validate(candidate, snapshot, current)
+        if snapshot.communicative_goal_catalog is not None:
+            snapshot.communicative_goal_catalog.validate_bounds(self._bounds_policy)
+        resolutions = resolve_speech_references(candidate, snapshot, current)
+        tokens = (
+            *speech_source_tokens(resolutions, current),
+            generation.token,
+            *self._plan_binding_tokens(candidate, snapshot),
+            *(t for p in self._activity_bindings(candidate, snapshot, current) for t in p.tokens),
+            *current.evidence_tokens,
+            *(
+                t
+                for value in derivations
+                for source in value.provenance.sources
+                for t in source.tokens
+            ),
+        )
+        result = AuthorityFinalizationFence().finalize(
+            AuthorityFinalizationRequest(
+                tokens,
+                self._participant,
+                self._finalization_operation,
+                ExecutiveFinalizationInput(candidate, snapshot, current, decision_id),
+            )
+        )
+        if result.failure is not None:
+            raise FinalizationError(result.failure)
+        assert result.value is not None
+        return result.value
+
+    @authority_mutation
+    def _commit(
         self,
         candidate: ExecutiveDecisionCandidate,
         snapshot: ExecutiveContextSnapshot,
@@ -33,9 +150,29 @@ class ExecutiveDecisionAuthority:
 
         if not isinstance(committed_at, datetime):
             raise ValueError("committed_at must be datetime")
-        with self._lock:
+        from .deliberator import validate_candidate_bounds
+
+        validate_candidate_bounds(candidate, self._bounds_policy.executive)
+        generation = snapshot.requirements_generation
+        if generation is None:
+            raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
+        owner = generation.owner
+        if self.requirements_owner is None:
+            raise RequirementsRejected(RequirementsFailureCode.POLICY_UNREGISTERED)
+        if self.requirements_owner is not owner:
+            raise RequirementsRejected(RequirementsFailureCode.INVALID_PROJECTION)
+        with self._lock, owner.final_guard(generation):
             if snapshot.trigger_id in self._committed_triggers:
                 raise ValueError("executive trigger is already committed")
+            derivations = owner.validate_final(snapshot, candidate, current)
+            for value in derivations:
+                for source in value.provenance.sources:
+                    for token in source.tokens:
+                        if token._participant.token() != token:
+                            raise RequirementsRejected(RequirementsFailureCode.STALE_SOURCE)
+            for token in current.evidence_tokens:
+                if token._participant.token() != token:
+                    raise RequirementsRejected(RequirementsFailureCode.STALE_SOURCE)
             self._validate(candidate, snapshot, current)
             required_precondition_ids = {
                 requirement.precondition_id
@@ -47,15 +184,89 @@ class ExecutiveDecisionAuthority:
                 for item in current.preconditions
                 if item.precondition_id in required_precondition_ids
             )
+            scopes = {item.scope_id: item for item in snapshot.plan_scopes}
+            authorizations = tuple(
+                PlanExecutionAuthorization(
+                    f"{decision_id}:{intent.intent_id}",
+                    decision_id,
+                    intent.intent_id,
+                    scopes[intent.payload.scope_ref],
+                    committed_at,
+                    _proof=_AUTHORIZATION_PROOF,
+                )
+                for intent in candidate.intents
+                if isinstance(intent.payload, PlanExecutionIntentPayload)
+            )
+            contexts = {item.context_id: item for item in snapshot.plan_progress_contexts}
+            assessments = tuple(
+                PlanProgressAssessment(
+                    decision_id,
+                    intent.intent_id,
+                    contexts[intent.payload.context_ref],
+                    intent.payload.claims,
+                    committed_at,
+                    _proof=_ASSESSMENT_PROOF,
+                )
+                for intent in candidate.intents
+                if isinstance(intent.payload, PlanProgressIntentPayload)
+            )
             decision = CommittedExecutiveDecision(
                 decision_id,
                 candidate,
                 validated_preconditions,
                 committed_at,
                 snapshot.bounds_provenance,
+                authorizations,
+                assessments,
+                derivations,
+                current.evidence_tokens,
+                self._activity_bindings(candidate, snapshot, current),
+                speech_reference_resolutions=resolve_speech_references(
+                    candidate, snapshot, current
+                ),
             )
             self._committed_triggers.add(snapshot.trigger_id)
             return decision
+
+    @staticmethod
+    def _plan_binding_tokens(
+        candidate: ExecutiveDecisionCandidate, snapshot: ExecutiveContextSnapshot
+    ) -> tuple[AuthorityGenerationToken, ...]:
+        refs = {
+            i.payload.scope_ref
+            for i in candidate.intents
+            if isinstance(i.payload, PlanExecutionIntentPayload)
+        }
+        return tuple(
+            t
+            for scope in snapshot.plan_scopes
+            if scope.scope_id in refs
+            for publication in scope.plan.activity_bindings
+            for t in publication.tokens
+        )
+
+    @staticmethod
+    def _activity_bindings(
+        candidate: ExecutiveDecisionCandidate,
+        snapshot: ExecutiveContextSnapshot,
+        current: ExecutiveCommitState,
+    ) -> tuple[ActivityExecutionBindingPublication, ...]:
+        from app.domain.activity_binding.validation import selected_bindings
+
+        requests = tuple(
+            (
+                i.payload.binding_ref,
+                i.payload.activity_type,
+                i.payload.target_ref,
+                None,
+                i.required_capabilities,
+            )
+            for i in candidate.intents
+            if isinstance(i.payload, ActivityIntentPayload)
+        )
+        return selected_bindings(
+            requests, snapshot.activity_bindings, current.activity_bindings, current.capabilities
+        )
 
     @staticmethod
     def _validate(
@@ -63,6 +274,7 @@ class ExecutiveDecisionAuthority:
         snapshot: ExecutiveContextSnapshot,
         current: ExecutiveCommitState,
     ) -> None:
+        ExecutiveDecisionAuthority._activity_bindings(candidate, snapshot, current)
         expected = (
             snapshot.source_context_revision,
             snapshot.goal_revision,
@@ -100,16 +312,87 @@ class ExecutiveDecisionAuthority:
         commitment_fact_ids = {
             item.fact_id for item in snapshot.facts if item.kind.value == "commitment"
         }
+        original_evidence_ids = set(evidence_ids)
+        evidence_ids.update(item.scope_id for item in snapshot.plan_scopes)
+        evidence_ids.update(item.context_id for item in snapshot.plan_progress_contexts)
         references = list(candidate.rationale_refs)
         for intent in candidate.intents:
+            if isinstance(intent.payload, PlanExecutionIntentPayload):
+                captured_scopes = {item.scope_id: item for item in snapshot.plan_scopes}
+                live_scopes = {item.scope_id: item for item in current.plan_scopes}
+                scope = captured_scopes.get(intent.payload.scope_ref)
+                if scope is None or live_scopes.get(intent.payload.scope_ref) != scope:
+                    raise ValueError("計画承認対象が存在しないか、判断中に変更されています")
+                for publication in scope.plan.activity_bindings:
+                    publication.require_current()
+                revisions = RevisionVector(
+                    snapshot.source_context_revision,
+                    snapshot.goal_revision,
+                    snapshot.attention_revision,
+                )
+                if scope.plan.candidate.revisions != revisions:
+                    raise ValueError("計画承認対象の依存先のリビジョンが現在の判断と一致しません")
+                needed = {
+                    requirement
+                    for step in scope.plan.candidate.steps
+                    for requirement in step.required_capabilities
+                }
+                if not needed <= set(intent.required_capabilities):
+                    raise ValueError("計画全体に必要な能力を承認意図から省略できません")
+                conditions = {
+                    condition.precondition_id: condition
+                    for binding in scope.bindings
+                    for condition in binding.preconditions
+                }
+                requested = {
+                    requirement.precondition_id: requirement.expected
+                    for requirement in intent.preconditions
+                }
+                if any(
+                    key not in requested or freeze_json(requested[key]) != condition.expected
+                    for key, condition in conditions.items()
+                ):
+                    raise ValueError("計画全体に必要な事前条件を承認意図から省略できません")
+                facts = {fact.precondition_id: fact for fact in snapshot.preconditions}
+                if any(
+                    key not in facts
+                    or facts[key].predicate != condition.predicate
+                    or facts[key].subject_ref != condition.subject_ref
+                    for key, condition in conditions.items()
+                ):
+                    raise ValueError("計画の事前条件が判断の根拠と一致しません")
+                if any(
+                    set(binding.argument_fact_refs) - original_evidence_ids
+                    for binding in scope.bindings
+                ):
+                    raise ValueError("操作引数の由来参照が判断の根拠にありません")
+            if isinstance(intent.payload, PlanProgressIntentPayload):
+                contexts = {item.context_id: item for item in snapshot.plan_progress_contexts}
+                live_contexts = {item.context_id: item for item in current.plan_progress_contexts}
+                context = contexts.get(intent.payload.context_ref)
+                if context is None or live_contexts.get(intent.payload.context_ref) != context:
+                    raise ValueError("計画の実行観測が存在しないか、判断中に変更されています")
+                records = {item.step_id: item.record for item in context.observations}
+                for claim in intent.payload.claims:
+                    record = records.get(claim.step_id)
+                    if record is None:
+                        raise ValueError("未実行の手順を完了評価できません")
+                    grounds = original_evidence_ids | {record.result.command_id}
+                    grounds.update(record.result.effect_refs)
+                    if set(claim.evidence_refs) - grounds:
+                        raise ValueError("手順の完了評価に未知の根拠が含まれています")
             authoritative = requirements[intent.intent_id]
             if not all(item in intent.required_capabilities for item in authoritative.capabilities):
                 raise ValueError("authoritative capability requirement is missing")
             if not all(item in intent.preconditions for item in authoritative.preconditions):
                 raise ValueError("authoritative precondition requirement is missing")
-            references.extend(intent.evidence_refs)
-            references.extend(intent.forbidden_claim_refs)
-            references.extend(intent.payload.reference_ids())
+            if not isinstance(intent.payload, SpeechIntentPayload):
+                references.extend(intent.evidence_refs)
+                references.extend(intent.forbidden_claim_refs)
+                if isinstance(intent.payload, PlanProgressIntentPayload):
+                    references.append(intent.payload.context_ref)
+                else:
+                    references.extend(intent.payload.reference_ids())
             unknown_preconditions = {item.precondition_id for item in intent.preconditions} - {
                 item.precondition_id for item in snapshot.preconditions
             }
@@ -139,7 +422,10 @@ class ExecutiveDecisionAuthority:
                 raise ValueError("goal commitment ref has an invalid fact kind")
             references.extend(transition.payload.bounded_reference_ids())
             target = transition.goal_ref or transition.goal_spec_ref
-            if target not in goal_fact_ids:
+            if transition.operation is GoalTransitionOperation.CREATE:
+                if target in goal_fact_ids:
+                    raise ValueError("CREATEのGoal identityは既存Stateと重複できません")
+            elif target not in goal_fact_ids:
                 raise ValueError("goal transition reference is outside bounded context")
         for commitment_transition in candidate.commitment_transition_intents:
             if commitment_transition.expected_goal_revision != snapshot.goal_revision:
@@ -156,7 +442,10 @@ class ExecutiveDecisionAuthority:
             target = (
                 commitment_transition.commitment_ref or commitment_transition.commitment_spec_ref
             )
-            if target not in commitment_fact_ids:
+            if commitment_transition.operation is CommitmentTransitionOperation.CREATE:
+                if target in commitment_fact_ids:
+                    raise ValueError("CREATEのCommitment identityは既存Stateと重複できません")
+            elif target not in commitment_fact_ids:
                 raise ValueError("commitment transition reference is outside bounded context")
         if set(references) - evidence_ids:
             raise ValueError("candidate reference is outside bounded context")
@@ -179,3 +468,29 @@ class ExecutiveDecisionAuthority:
     def has_committed(self, trigger_id: str) -> bool:
         with self._lock:
             return trigger_id in self._committed_triggers
+
+    @property
+    def finalization_operation(
+        self,
+    ) -> AuthorityFinalizationOperation[ExecutiveFinalizationInput, CommittedExecutiveDecision]:
+        return self._finalization_operation
+
+    def _finalize_commit(
+        self,
+        value: ExecutiveFinalizationInput,
+        committed_at: datetime,
+    ) -> CommittedExecutiveDecision:
+        if not isinstance(value, ExecutiveFinalizationInput):
+            raise FinalizationError(FinalizationFailure.TARGET_REJECTED)
+        if self.has_committed(value.snapshot.trigger_id):
+            raise FinalizationError(FinalizationFailure.TARGET_ALREADY_FINALIZED)
+        try:
+            return self._commit(
+                value.candidate,
+                value.snapshot,
+                current=value.current,
+                decision_id=value.decision_id,
+                committed_at=committed_at,
+            )
+        except ValueError:
+            raise FinalizationError(FinalizationFailure.TARGET_REJECTED) from None

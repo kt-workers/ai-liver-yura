@@ -1,24 +1,38 @@
-"""版付き設定と既存所有者を結合し、最小Coreを起動・停止する。"""
+"""リビジョン付き設定と既存所有者を結合し、最小Coreを起動・停止する。"""
 
 from __future__ import annotations
 
 import asyncio
 import signal
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TypeVar
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.production import create_openai_port_from_environment
+from app.composition.accepted_input import CoreAcceptedInputStore
+from app.composition.cognition import CoreCognitionDelivery
+from app.composition.cognition_configuration import CoreCognitionConfiguration
+from app.composition.goal_persistence import CoreGoalPersistenceBinding
+from app.composition.input_reference_context import CoreInputReferenceContextBinding
+from app.composition.memory_persistence import CoreMemoryPersistenceBinding
 from app.config.minimum_brain import MinimumBrainProductionConfig, load_minimum_brain_config
+from app.domain.activity_execution import ActivityExecutionAuthority
+from app.domain.appraisal import descriptor as appraisal_descriptor
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
     BrainIntegrationRuntime,
     BrainIntegrationWork,
 )
+from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.character.contracts import CharacterDefinitionDocument
-from app.domain.input_gateway import NormalizedInputEvent
+from app.domain.contracts.common import require_identifier
+from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
+from app.domain.executive.deliberator import descriptor as executive_descriptor
+from app.domain.goals import GoalCommitmentStore
+from app.domain.input_gateway import InputAdmission, NormalizedInputEvent
 from app.domain.input_meaning import (
     InputMeaningFreshnessStamp,
     InputMeaningInterpretationResult,
@@ -26,8 +40,11 @@ from app.domain.input_meaning import (
     ReferenceContext,
 )
 from app.domain.input_meaning.interpreter import descriptor
+from app.domain.llm import LLMRoleDescriptor
+from app.infrastructure.persistence import PostgresPersistenceRuntime
 from app.runtime.kernel import CancellationToken, SystemRuntimeClock
-from app.runtime.lifecycle import RuntimeLifecycle
+from app.runtime.lifecycle import DependencyRetryPolicy, RuntimeLifecycle
+from app.runtime.shutdown import RuntimeShutdownError, RuntimeShutdownFailure, RuntimeShutdownStage
 from app.usecases.ports.llm import LLMRolePort
 
 
@@ -38,13 +55,17 @@ class InputMeaningBrainWorkPayload:
     event: NormalizedInputEvent
     reference_context: ReferenceContext
     request_id: str
+    admission: InputAdmission | None = None
 
 
 class InputMeaningBrainModulePort:
     """固定入力の自己整合を検査し、意味の採用は既存所有者へ委譲する。"""
 
-    def __init__(self, interpreter: InputMeaningInterpreter) -> None:
+    def __init__(
+        self, interpreter: InputMeaningInterpreter, inputs: CoreAcceptedInputStore | None = None
+    ) -> None:
         self._interpreter = interpreter
+        self.inputs = inputs
 
     @staticmethod
     def _validate(work: BrainIntegrationWork) -> InputMeaningBrainWorkPayload:
@@ -80,13 +101,32 @@ class InputMeaningBrainModulePort:
         cancellation: CancellationToken,
     ) -> InputMeaningInterpretationResult:
         payload = self._validate(work)
-        return await self._interpreter.interpret(
-            payload.event,
-            payload.reference_context,
-            request_id=payload.request_id,
-            trace_id=work.envelope.trace_id,
-            created_at=work.envelope.created_at,
+        if cancellation.cancelled:
+            raise asyncio.CancelledError
+        task = asyncio.create_task(
+            self._interpreter.interpret(
+                payload.event,
+                payload.reference_context,
+                request_id=payload.request_id,
+                trace_id=work.envelope.trace_id,
+                created_at=work.envelope.created_at,
+            )
         )
+        try:
+            result = await asyncio.shield(task)
+        except asyncio.CancelledError:
+            task.cancel()
+            try:
+                await _reap_cleanup(task)
+            except (asyncio.CancelledError, Exception):
+                pass
+            raise
+
+        if cancellation.cancelled:
+            raise asyncio.CancelledError
+        if self.inputs is not None and result.meaning is not None:
+            self.inputs.retain(payload.event, result)
+        return result
 
 
 class UnavailableInputMeaningLiveContextPort:
@@ -100,6 +140,7 @@ class UnavailableInputMeaningLiveContextPort:
 class MinimumCoreApplication:
     """同一の不変設定に結び付いた最小Coreの構成。"""
 
+    runtime_subject_identity: RuntimeSubjectIdentity = field(init=False)
     config: MinimumBrainProductionConfig
     character_definition: CharacterDefinitionDocument
     lifecycle: RuntimeLifecycle
@@ -107,20 +148,103 @@ class MinimumCoreApplication:
     interpreter: InputMeaningInterpreter
     bridge: InputMeaningBrainModulePort
     llm: LLMRolePort
+    goals: GoalCommitmentStore | CoreGoalPersistenceBinding
+    activities: ActivityExecutionAuthority
+    input_context: CoreInputReferenceContextBinding
+    memory: CoreMemoryPersistenceBinding | None = None
+    cognition: CoreCognitionDelivery | None = None
+    _stop_task: asyncio.Task[None] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+
+    def __post_init__(self) -> None:
+        document = self.character_definition
+        object.__setattr__(
+            self,
+            "runtime_subject_identity",
+            RuntimeSubjectIdentity(
+                self_subject_ref=document.character_id,
+                character_id=document.character_id,
+                character_schema_version=document.schema_version,
+                character_definition_revision=document.definition_revision,
+            ),
+        )
 
     async def start(self) -> None:
         await self.brain.start()
 
     async def stop(self) -> None:
+        if self._stop_task is None:
+            object.__setattr__(self, "_stop_task", asyncio.create_task(self._stop()))
+        assert self._stop_task is not None
+        await _reap_cleanup(self._stop_task)
+
+    async def _stop(self) -> None:
         try:
-            await self.brain.stop()
+            try:
+                await self.brain.stop()
+            finally:
+                if self.cognition is not None and self.cognition.speech is not None:
+                    await self.cognition.speech.close()
         finally:
-            # 実行基盤の停止失敗でも後段を閉じ、例外は呼出元へ伝播する。
-            await self.lifecycle.close()
+            try:
+                if self.memory is not None:
+                    try:
+                        await asyncio.wait_for(
+                            self.memory.close(),
+                            self.config.shutdown_policy.final_persistence_grace_seconds,
+                        )
+                    except asyncio.TimeoutError:
+                        raise RuntimeShutdownError(
+                            (
+                                RuntimeShutdownFailure(
+                                    RuntimeShutdownStage.FINAL_PERSISTENCE, "TimeoutError"
+                                ),
+                            )
+                        ) from None
+            finally:
+                # 前段が失敗してもDB・再接続処理を回収する。
+                await self.lifecycle.close()
 
 
-def build_minimum_core(config_path: Path | None = None) -> MinimumCoreApplication:
+_CleanupResult = TypeVar("_CleanupResult")
+
+
+async def _reap_cleanup(task: asyncio.Task[_CleanupResult]) -> None:
+    """呼出し側の再取消でも所有する終了処理を最後まで回収する。"""
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+        except Exception:
+            break
+    if cancelled:
+        if not task.cancelled():
+            task.exception()
+        raise asyncio.CancelledError
+    task.result()
+
+
+def build_minimum_core(
+    config_path: Path | None = None, *, cognition: CoreCognitionConfiguration | None = None
+) -> MinimumCoreApplication:
     """本番設定を読み、提供サービスの構成不備は既存契約のまま伝える。"""
+    config, character, llm = _load_core(config_path, cognition)
+    return _compose_core(
+        config,
+        character,
+        llm,
+        GoalCommitmentStore(bounds=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY),
+        cognition=cognition,
+    )
+
+
+def _load_core(
+    config_path: Path | None,
+    cognition: CoreCognitionConfiguration | None = None,
+) -> tuple[MinimumBrainProductionConfig, CharacterDefinitionDocument, LLMRolePort]:
     root = Path(__file__).resolve().parent.parent
     path = (
         config_path if config_path is not None else root / "resources/config/v2/minimum_brain.yaml"
@@ -129,18 +253,122 @@ def build_minimum_core(config_path: Path | None = None) -> MinimumCoreApplicatio
     character = load_character_definition_yaml(
         (root / config.character_definition_path).read_bytes()
     )
-    llm = create_openai_port_from_environment((descriptor(config.input_meaning_policy),))
+    roles: tuple[LLMRoleDescriptor, ...] = (descriptor(config.input_meaning_policy),)
+    if cognition is not None:
+        roles += (
+            appraisal_descriptor(cognition.appraisal_policy),
+            executive_descriptor(cognition.executive_policy),
+        )
+    llm = create_openai_port_from_environment(roles)
+    return config, character, llm
+
+
+def _compose_core(
+    config: MinimumBrainProductionConfig,
+    character: CharacterDefinitionDocument,
+    llm: LLMRolePort,
+    goals: GoalCommitmentStore | CoreGoalPersistenceBinding,
+    memory: CoreMemoryPersistenceBinding | None = None,
+    lifecycle: RuntimeLifecycle | None = None,
+    cognition: CoreCognitionConfiguration | None = None,
+) -> MinimumCoreApplication:
+    from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
+
+    activities = (
+        ActivityExecutionAuthority(observation_policy=SPEECH_OBSERVATION_POLICY)
+        if cognition is not None and cognition.speech is not None
+        else ActivityExecutionAuthority()
+    )
+    input_context = CoreInputReferenceContextBinding(
+        goals, activities, config.input_meaning_policy, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
+    )
     interpreter = InputMeaningInterpreter(
         llm,
-        UnavailableInputMeaningLiveContextPort(),
+        input_context,
         config.input_meaning_policy,
     )
-    bridge = InputMeaningBrainModulePort(interpreter)
+    bridge = InputMeaningBrainModulePort(
+        interpreter,
+        CoreAcceptedInputStore(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.executive.max_source_event_refs),
+    )
     clock = SystemRuntimeClock()
-    lifecycle = RuntimeLifecycle(clock, config.shutdown_policy)
+    lifecycle = lifecycle or RuntimeLifecycle(clock, config.shutdown_policy)
     brain = BrainIntegrationRuntime(clock, config.integration_policy)
-    brain.register_module(BrainIntegrationModule.INPUT_MEANING, bridge)
-    return MinimumCoreApplication(config, character, lifecycle, brain, interpreter, bridge, llm)
+    delivery = None
+    if cognition is None:
+        brain.register_module(BrainIntegrationModule.INPUT_MEANING, bridge)
+    else:
+        assert bridge.inputs is not None
+        delivery = cognition.compose(brain, input_context, bridge.inputs, llm, clock)
+        delivery.register(bridge)
+    return MinimumCoreApplication(
+        config,
+        character,
+        lifecycle,
+        brain,
+        interpreter,
+        bridge,
+        llm,
+        goals,
+        activities,
+        input_context,
+        memory,
+        delivery,
+    )
+
+
+async def build_persistent_core(
+    config_path: Path,
+    *,
+    persistence: PostgresPersistenceRuntime,
+    retry_policy: DependencyRetryPolicy,
+    runtime_epoch: str,
+    max_pending_memory: int,
+    cognition: CoreCognitionConfiguration | None = None,
+) -> MinimumCoreApplication:
+    """明示された保存実行基盤を所有し、復元した目標を本体へ接続する。"""
+    if not isinstance(persistence, PostgresPersistenceRuntime):
+        raise ValueError("本体の保存構成にはPostgresPersistenceRuntimeが必要です")
+    app: MinimumCoreApplication | None = None
+    memory: CoreMemoryPersistenceBinding | None = None
+    lifecycle: RuntimeLifecycle | None = None
+    try:
+        require_identifier(runtime_epoch, "runtime_epoch")
+        if not isinstance(retry_policy, DependencyRetryPolicy):
+            raise ValueError("保存接続には型付きの再接続方針が必要です")
+        config, character, llm = _load_core(config_path, cognition)
+        shutdown = config.shutdown_policy
+        if (
+            shutdown.final_persistence_grace_seconds <= 0
+            or shutdown.resource_close_grace_seconds <= 0
+        ):
+            raise ValueError("保存を使う起動には正の最終保存・資源終了猶予が必要です")
+        memory = CoreMemoryPersistenceBinding(persistence, max_pending=max_pending_memory)
+        lifecycle = RuntimeLifecycle(SystemRuntimeClock(), config.shutdown_policy)
+        persistence.attach(lifecycle, retry_policy)
+        await persistence.start()
+        goals = await CoreGoalPersistenceBinding.restore(persistence, runtime_epoch=runtime_epoch)
+        app = _compose_core(config, character, llm, goals, memory, lifecycle, cognition)
+        return app
+    except BaseException:
+
+        async def cleanup() -> None:
+            try:
+                if app is not None:
+                    await app.stop()
+                else:
+                    try:
+                        if memory is not None:
+                            await memory.close()
+                    finally:
+                        if lifecycle is not None:
+                            await lifecycle.close()
+            finally:
+                # 登録前の失敗でも引き受けた実行群・DB資源を回収する。
+                await persistence.close()
+
+        await _reap_cleanup(asyncio.create_task(cleanup()))
+        raise
 
 
 async def run_minimum_core() -> None:

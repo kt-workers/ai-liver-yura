@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime
-from threading import Lock
 
 from app.domain.contracts import (
     ExecutionResult,
@@ -16,6 +15,11 @@ from app.domain.contracts.common import (
     require_identifier,
     utc_instant,
 )
+from app.domain.contracts.finalization import (
+    AuthorityFinalizationParticipant,
+    AuthorityReadPublication,
+    authority_mutation,
+)
 
 from .contracts import (
     ActivityExecutionCommitResult,
@@ -26,6 +30,14 @@ from .contracts import (
     ExecutionAdapterReport,
     ExecutionEffectKind,
     ExecutionPreflightSnapshot,
+)
+from .observation import (
+    ExecutionObservationIngressPolicy,
+    ExecutionObservationSourceBinding,
+    ObservedExecutionFactRecord,
+    TrustedExecutionObservation,
+    accept_observation,
+    same_observation,
 )
 
 
@@ -38,12 +50,30 @@ class ActivityExecutionAuthority:
             ("executive", "conscious_goal_action"),
             ("system", "runtime_control"),
         ),
+        *,
+        observation_policy: ExecutionObservationIngressPolicy | None = None,
     ) -> None:
+        if observation_policy is not None and not isinstance(
+            observation_policy, ExecutionObservationIngressPolicy
+        ):
+            raise ValueError("観測受理policyが不正です")
+        self._observation_policy = observation_policy
+        self._observed_records: dict[tuple[str, str], ObservedExecutionFactRecord] = {}
+        self._observations: dict[
+            tuple[ExecutionObservationSourceBinding, str], TrustedExecutionObservation
+        ] = {}
         self._allowed_authorities = frozenset(allowed_authorities)
         self._records: dict[str, ActivityExecutionRecord] = {}
         self._invocation_ids: set[str] = set()
-        self._lock = Lock()
+        self._participant = AuthorityFinalizationParticipant(self, "ActivityExecutionAuthority", 50)
+        self._lock = self._participant
 
+    @property
+    def finalization_participant(self) -> AuthorityFinalizationParticipant:
+        """元所有者の読取と更新に共通する同期境界を公開する。"""
+        return self._participant
+
+    @authority_mutation
     def admit(
         self, invocation: ActivityInvocation, current: ExecutionPreflightSnapshot
     ) -> ActivityExecutionCommitResult:
@@ -73,15 +103,32 @@ class ActivityExecutionAuthority:
                 raise ValueError("command is already admitted")
             if invocation.invocation_id in self._invocation_ids:
                 raise ValueError("invocation is already admitted")
-            bindings = self._select_bindings(command.required_capabilities, current)
+            primary = invocation.primary_binding
+            primary_failure = None
+            if primary is not None:
+                descriptor = next(
+                    (c for c in current.capabilities if c.capability_id == primary.capability_id),
+                    None,
+                )
+                if descriptor is None:
+                    primary_failure = (ExecutionStatus.UNSUPPORTED, "capability_unavailable")
+                elif descriptor.revision != primary.descriptor_revision:
+                    primary_failure = (ExecutionStatus.SUPERSEDED, "capability_changed")
+                elif not descriptor.satisfies(primary.requirement):
+                    primary_failure = (ExecutionStatus.UNSUPPORTED, "capability_unavailable")
+            bindings = self._select_bindings(command.required_capabilities, current, primary)
             failure = self._preflight_failure(invocation, current, bindings, admitted_at)
-            if bindings is None:
+            if primary_failure is not None:
+                status, code = primary_failure
+                result = requested.transition_to(status, admitted_at, details={"code": code})
+                bindings_tuple: tuple[CapabilityBinding, ...] = (primary,) if primary else ()
+            elif bindings is None:
                 result = requested.transition_to(
                     ExecutionStatus.UNSUPPORTED,
                     admitted_at,
                     details={"code": "capability_unavailable"},
                 )
-                bindings_tuple: tuple[CapabilityBinding, ...] = ()
+                bindings_tuple = (primary,) if primary else ()
             elif failure is not None:
                 status, code = failure
                 result = requested.transition_to(status, admitted_at, details={"code": code})
@@ -96,6 +143,7 @@ class ActivityExecutionAuthority:
             self._invocation_ids.add(invocation.invocation_id)
             return ActivityExecutionCommitResult(record, lifecycle_facts)
 
+    @authority_mutation
     def start(
         self,
         command_id: str,
@@ -127,6 +175,7 @@ class ActivityExecutionAuthority:
             updated = replace(updated, record_revision=record.record_revision + 1)
             return ActivityExecutionCommitResult(updated, (self._commit(record, updated),))
 
+    @authority_mutation
     def apply_report(self, report: ExecutionAdapterReport) -> ActivityExecutionCommitResult:
         if not isinstance(report, ExecutionAdapterReport):
             raise ValueError("report must be ExecutionAdapterReport")
@@ -206,6 +255,7 @@ class ActivityExecutionAuthority:
             updated = replace(updated, record_revision=record.record_revision + 1)
             return ActivityExecutionCommitResult(updated, (self._commit(record, updated),))
 
+    @authority_mutation
     def fail_adapter_contract(
         self, command_id: str, occurred_at: datetime
     ) -> ActivityExecutionCommitResult:
@@ -230,6 +280,7 @@ class ActivityExecutionAuthority:
             updated = replace(updated, record_revision=record.record_revision + 1)
             return ActivityExecutionCommitResult(updated, (self._commit(record, updated),))
 
+    @authority_mutation
     def request_cancellation(
         self, command_id: str, reason: str, requested_at: datetime
     ) -> ActivityExecutionCommitResult:
@@ -264,6 +315,7 @@ class ActivityExecutionAuthority:
             updated = replace(updated, record_revision=record.record_revision + 1)
             return ActivityExecutionCommitResult(updated, (self._commit(record, updated),))
 
+    @authority_mutation
     def supersede(self, command_id: str, occurred_at: datetime) -> ActivityExecutionCommitResult:
         with self._lock:
             record = self._require_record(command_id)
@@ -281,6 +333,69 @@ class ActivityExecutionAuthority:
     def snapshot(self, command_id: str) -> ActivityExecutionRecord | None:
         with self._lock:
             return self._records.get(command_id)
+
+    @authority_mutation
+    def ingest_observation(
+        self,
+        observation: TrustedExecutionObservation,
+        *,
+        policy_id: str,
+        policy_revision: int,
+    ) -> ObservedExecutionFactRecord:
+        """登録済みsourceの観測だけを、既存の所有者同期境界で受理する。"""
+        policy = self._observation_policy
+        if (
+            policy is None
+            or policy.policy_id != policy_id
+            or type(policy_revision) is not int
+            or policy.policy_revision != policy_revision
+        ):
+            raise ValueError("観測受理policyの世代が一致しません")
+        if not isinstance(observation, TrustedExecutionObservation):
+            raise ValueError("型付き実行観測が必要です")
+        rule = next((r for r in policy.source_rules if r.source == observation.source), None)
+        if rule is None or observation.status not in rule.allowed_statuses:
+            raise ValueError("未登録sourceまたは許可されないstatusです")
+        if any(
+            e.effect_type not in rule.allowed_effect_types
+            or e.kind not in rule.allowed_effect_kinds
+            for e in observation.effects
+        ):
+            raise ValueError("source ruleに許可されないeffectです")
+        key = (observation.source.source_contract_id, observation.execution_id)
+        identity = (observation.source, observation.observation_id)
+        previous = self._observations.get(identity)
+        if previous is not None:
+            if not same_observation(previous, observation):
+                raise ValueError("同一observation identityの内容が矛盾しています")
+            return self._observed_records[key]
+        before = self._observed_records.get(key)
+        if (
+            rule.terminal_requires_prior_effect
+            and observation.status
+            in {
+                ExecutionStatus.COMPLETED,
+                ExecutionStatus.FAILED,
+                ExecutionStatus.CANCELLED,
+                ExecutionStatus.TIMED_OUT,
+            }
+            and (before is None or not before.result.effect_refs)
+        ):
+            raise ValueError("このsourceの終端には先行する確認済みeffectが必要です")
+        record = accept_observation(observation, before)
+        self._observed_records[key] = record
+        self._observations[identity] = observation
+        return record
+
+    def observed_snapshot(
+        self, source_contract_id: str, execution_id: str
+    ) -> AuthorityReadPublication[ObservedExecutionFactRecord | None]:
+        """観測Factと同じ所有者の世代をまとめて公開する。"""
+        with self._participant:
+            return AuthorityReadPublication(
+                self._observed_records.get((source_contract_id, execution_id)),
+                (self._participant.token(),),
+            )
 
     def _commit(
         self, before: ActivityExecutionRecord | None, after: ActivityExecutionRecord
@@ -315,13 +430,18 @@ class ActivityExecutionAuthority:
 
     @staticmethod
     def _select_bindings(
-        requirements: tuple[object, ...], current: ExecutionPreflightSnapshot
+        requirements: tuple[object, ...],
+        current: ExecutionPreflightSnapshot,
+        primary: CapabilityBinding | None = None,
     ) -> tuple[CapabilityBinding, ...] | None:
         from app.domain.contracts import CapabilityRequirement
 
         bindings: list[CapabilityBinding] = []
         for requirement in requirements:
             assert isinstance(requirement, CapabilityRequirement)
+            if primary is not None and requirement == primary.requirement:
+                bindings.append(primary)
+                continue
             candidates = sorted(
                 (item for item in current.capabilities if item.satisfies(requirement)),
                 key=lambda item: item.capability_id,
@@ -371,6 +491,12 @@ class ActivityExecutionAuthority:
             ):
                 return ExecutionStatus.REJECTED, "precondition_failed"
         return None
+
+    def snapshot_publication(
+        self, command_id: str
+    ) -> AuthorityReadPublication[ActivityExecutionRecord | None]:
+        with self._participant:
+            return AuthorityReadPublication(self.snapshot(command_id), (self._participant.token(),))
 
 
 def _revisions_match(expected: RevisionVector, current: RevisionVector) -> bool:
