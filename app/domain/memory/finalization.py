@@ -7,7 +7,7 @@ from datetime import datetime
 from functools import wraps
 from threading import Lock
 from typing import Concatenate, ParamSpec, Protocol, TypeVar
-from weakref import WeakKeyDictionary
+from weakref import WeakKeyDictionary, WeakSet
 
 from app.domain.contracts.finalization import (
     AuthorityFinalizationParticipant,
@@ -68,14 +68,29 @@ class _RetrievalParticipant(AuthorityFinalizationParticipant):
         super().__init__(self, "MemoryRetrievalAuthority", 56)
 
 
+class MemoryIndexSynchronizationPort(Protocol):
+    """正本mutationと派生indexの同期metadataを接続する。"""
+
+    def begin_canonical_mutation(self, memory_ids: frozenset[str]) -> object: ...
+
+    def end_canonical_mutation(self, marker: object) -> None: ...
+
+
 class MemoryFinalizationRegistry:
     def __init__(self) -> None:
+        self._indexes: WeakSet[MemoryIndexSynchronizationPort] = WeakSet()
         self._cells: dict[str, _MemoryCell] = {}
         self._registry_lock = Lock()
         self._retrievals: WeakKeyDictionary[_RetrievalParticipant, MemoryRetrievalQuery] = (
             WeakKeyDictionary()
         )
         self._pending_retrieval_mutations: dict[object, tuple[_RetrievalScope, ...]] = {}
+
+    def register_index(self, index: MemoryIndexSynchronizationPort) -> None:
+        with self._registry_lock:
+            if self._pending_retrieval_mutations:
+                raise FinalizationError(FinalizationFailure.PARTICIPANT_BUSY)
+            self._indexes.add(index)
 
     def participant(self, memory_id: str) -> AuthorityFinalizationParticipant:
         with self._registry_lock:
@@ -106,6 +121,7 @@ class MemoryFinalizationRegistry:
         marker = object()
         with self._registry_lock:
             self._pending_retrieval_mutations[marker] = scopes
+            indexes = tuple(self._indexes)
             participants = sorted(
                 (
                     p
@@ -118,6 +134,10 @@ class MemoryFinalizationRegistry:
             with ExitStack() as stack:
                 for participant in participants:
                     stack.enter_context(participant.mutation())
+                ids = frozenset(record.memory_id for record in records)
+                for index in indexes:
+                    index_marker = index.begin_canonical_mutation(ids)
+                    stack.callback(index.end_canonical_mutation, index_marker)
                 yield
         finally:
             with self._registry_lock:

@@ -68,6 +68,8 @@ class MemoryStoreAuthority:
     ) -> None:
         self._repository = repository
         self._semantic_index = semantic_index
+        if isinstance(semantic_index, FinalizableMemorySemanticIndex):
+            semantic_index.bind(repository)
         self._ranking_policy = ranking_policy
         self._retrieval_policy_participant = AuthorityFinalizationParticipant(
             self, "MemoryRetrievalPolicy", 57
@@ -204,13 +206,13 @@ class MemoryStoreAuthority:
         ):
             return MemoryWriteResult(MemoryDisposition.REJECT, None, None)
         if superseded is not None:
-            return self._indexed(MemoryDisposition.SUPERSEDE, record, relation)
+            return self._indexed(MemoryDisposition.SUPERSEDE, record, relation, (superseded,))
         disposition = (
             MemoryDisposition.LINK_CONTRADICTION
             if relation_kind is MemoryRelationKind.CONTRADICTS
             else MemoryDisposition.STORE_NEW
         )
-        return self._indexed(disposition, record, relation)
+        return self._indexed(disposition, record, relation, (target,))
 
     def read_semantic_assertion(
         self, memory_id: str, expected_revision: int | None = None
@@ -288,12 +290,13 @@ class MemoryStoreAuthority:
         participant = registry.retrieval_participant(query)
         with ExitStack() as stack:
             stack.enter_context(participant)
-            if isinstance(index, FinalizableMemorySemanticIndex):
-                stack.enter_context(index.finalization_participant)
+            index_token = (
+                index.current_token() if isinstance(index, FinalizableMemorySemanticIndex) else None
+            )
             view = self.retrieve(query)
             tokens: tuple[AuthorityGenerationToken, ...] = (participant.token(), policy_token)
-            if isinstance(index, FinalizableMemorySemanticIndex):
-                tokens += (index.finalization_participant.token(),)
+            if index_token is not None:
+                tokens += (index_token,)
             return AuthorityReadPublication(view, () if view.degraded else tokens)
 
     def retrieve(self, query: MemoryRetrievalQuery) -> RankedMemoryEvidenceView:
@@ -418,11 +421,18 @@ class MemoryStoreAuthority:
         )
 
     def _indexed(
-        self, disposition: MemoryDisposition, record: MemoryRecord, relation: MemoryRelation | None
+        self,
+        disposition: MemoryDisposition,
+        record: MemoryRecord,
+        relation: MemoryRelation | None,
+        related_records: tuple[MemoryRecord, ...] = (),
     ) -> MemoryWriteResult:
         if self._semantic_index is None:
             return MemoryWriteResult(disposition, record, relation)
         try:
+            if isinstance(self._semantic_index, FinalizableMemorySemanticIndex):
+                for related in related_records:
+                    self._semantic_index.upsert(related)
             self._semantic_index.upsert(record)
         except RuntimeError:
             return MemoryWriteResult(

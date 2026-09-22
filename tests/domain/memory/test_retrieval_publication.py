@@ -16,6 +16,7 @@ from app.domain.contracts.finalization import (
 )
 from app.domain.memory import (
     MemoryLifecycle,
+    MemoryRecord,
     MemoryRelation,
     MemoryRelationKind,
     MemoryStoreAuthority,
@@ -213,6 +214,9 @@ def test_matching_mutation_is_busy_while_unrelated_retrieval_and_fence_continue(
 
 
 class Index:
+    def rebuild(self, records: tuple[MemoryRecord, ...]) -> None:
+        pass
+
     def upsert(self, record: object) -> None:
         pass
 
@@ -225,6 +229,7 @@ def test_index_generation_only_participates_in_semantic_queries() -> None:
     index = FinalizableMemorySemanticIndex(Index())
     store = MemoryStoreAuthority(repo, index, ranking_policy=retrieval_policy())
     save(store, "A")
+    index.rebuild()
     normal = store.read_retrieval_publication(query())
     semantic = store.read_retrieval_publication(query(semantic_query="topic"))
     assert len(semantic.tokens) == 3

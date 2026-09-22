@@ -169,3 +169,91 @@ async def test_cancelled_retrieval_waits_for_db_and_reclaims_resources(
         await binding.close()
         await persistence.close()
     assert persistence.pending_task_count == binding.pending_count == 0
+
+
+def test_semantic_index_observes_other_connection_before_commit(endpoint: PostgresEndpoint) -> None:
+    from app.domain.memory.repository import (
+        FinalizableMemorySemanticIndex,
+        MemorySemanticIndexState,
+    )
+    from tests.domain.memory.test_semantic_index_synchronization import Index, unavailable
+
+    entered = Event()
+
+    class ObservedRepository(PostgresMemoryRepository):
+        def _write(self, action: Callable[[PostgresConnection], bool]) -> bool:
+            entered.set()
+            return super()._write(action)
+
+    first = PostgresDatabase.connect(endpoint, POLICY)
+    second = PostgresDatabase.connect(endpoint, POLICY)
+    try:
+        repo = PostgresMemoryRepository(first)
+        repo.migrate()
+        other = ObservedRepository(second)
+        backend = Index()
+        index = FinalizableMemorySemanticIndex(backend)
+        store = MemoryStoreAuthority(repo, index, ranking_policy=retrieval_policy())
+        index.rebuild()
+        save(store, "A")
+        save(store, "C", "other")
+        old = store.read_retrieval_publication(query(semantic_query="topic"))
+        unrelated = store.read_retrieval_publication(query(subject_refs=("other",)))
+        record = repo.get("A")
+        assert record is not None
+        entered.clear()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with first.transaction() as connection:
+                connection.execute(
+                    "SELECT memory_id FROM yura_v2.memory_records WHERE memory_id='A' FOR UPDATE"
+                )
+                writing = pool.submit(
+                    other.save_record, replace(record, revision=1), expected_revision=0
+                )
+                assert entered.wait(5)
+                unavailable(store, FinalizationFailure.PARTICIPANT_BUSY)
+                assert index.synchronization_state == MemorySemanticIndexState.UPDATE_PENDING
+                assert finalized(unrelated) is None
+            assert writing.result(timeout=5)
+        # 別Repositoryはindex同期を実施していない。commit後も成功へ昇格させない。
+        unavailable(store, FinalizationFailure.PARTICIPANT_UNAVAILABLE)
+        assert finalized(old) is FinalizationFailure.GENERATION_MISMATCH
+        index.rebuild()
+        assert backend.records["A"] == repo.get("A")
+        assert finalized(store.read_retrieval_publication(query(semantic_query="topic"))) is None
+    finally:
+        second.close()
+        first.close()
+
+
+def test_semantic_upsert_failure_keeps_postgres_record_and_requires_rebuild(
+    endpoint: PostgresEndpoint,
+) -> None:
+    from app.domain.memory import MemoryDegradationReason
+    from app.domain.memory.repository import FinalizableMemorySemanticIndex
+    from tests.domain.memory.test_semantic_index_synchronization import Index, unavailable
+
+    database = PostgresDatabase.connect(endpoint, POLICY)
+    try:
+        repo = PostgresMemoryRepository(database)
+        repo.migrate()
+        backend = Index()
+        index = FinalizableMemorySemanticIndex(backend)
+        store = MemoryStoreAuthority(repo, index, ranking_policy=retrieval_policy())
+        index.rebuild()
+        save(store, "A")
+        backend.fail = True
+        written = store.write(MemoryWriteRequest(candidate("B", value="B")))
+        assert written.record == repo.get("B") and written.record is not None
+        assert written.degradation_reasons == (
+            MemoryDegradationReason.SEMANTIC_INDEX_UPDATE_FAILED,
+        )
+        assert backend.related_scores("topic", limit=8)
+        unavailable(store, FinalizationFailure.PARTICIPANT_UNAVAILABLE)
+        assert finalized(store.read_retrieval_publication(query())) is None
+        backend.fail = False
+        index.rebuild()
+        assert set(backend.records) == {"A", "B"}
+        assert finalized(store.read_retrieval_publication(query(semantic_query="topic"))) is None
+    finally:
+        database.close()
