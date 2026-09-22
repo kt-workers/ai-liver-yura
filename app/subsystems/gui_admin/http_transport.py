@@ -43,12 +43,10 @@ class _RequestProtocol(asyncio.Protocol):
             self.transport.abort()
             return
         if len(self.owner.connections) >= self.owner.policy.max_concurrent_requests:
-            self.transport.write(
+            self.owner.closing_connections.add(self)
+            self._reply(
                 _wire(failure_response(503, "GUI_REQUEST_LIMIT_REACHED", head=True))
             )
-            self.transport.close()
-            self.transport.abort()
-            self.finished = True
             return
         self.owner.connections.add(self)
         self.timer = asyncio.get_running_loop().call_later(
@@ -62,12 +60,13 @@ class _RequestProtocol(asyncio.Protocol):
             self._reply(
                 _wire(failure_response(503, "GUI_REQUEST_TIMED_OUT", head=self.head))
             )
-        self.transport.abort()
 
     def _reply(self, content: bytes) -> None:
         if self.finished or self.transport is None:
             return
         self.finished = True
+        if self.timer is not None:
+            self.timer.cancel()
         self.partial.clear()
         self.lines.clear()
         self.transport.write(content)
@@ -160,6 +159,7 @@ class _RequestProtocol(asyncio.Protocol):
         if self.timer is not None:
             self.timer.cancel()
         self.owner.connections.discard(self)
+        self.owner.closing_connections.discard(self)
         if not self.closed.done():
             self.closed.set_result(None)
 
@@ -174,6 +174,7 @@ class GuiAdminHttpTransport:
         self.policy = config.gui_http_transport_policy
         self.application = application
         self.connections: set[_RequestProtocol] = set()
+        self.closing_connections: set[_RequestProtocol] = set()
         self.closing = False
         self._server: asyncio.AbstractServer | None = None
 
@@ -203,7 +204,7 @@ class GuiAdminHttpTransport:
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
-        pending = tuple(self.connections)
+        pending = tuple(self.connections | self.closing_connections)
         for connection in pending:
             if connection.transport is not None:
                 connection.transport.abort()

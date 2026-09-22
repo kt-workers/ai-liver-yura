@@ -30,6 +30,7 @@ class Wire(asyncio.Transport):
 
     def close(self) -> None:
         self.closing = True
+        asyncio.get_running_loop().call_soon(self.protocol.connection_lost, None)
 
     def abort(self) -> None:
         self.aborted = True
@@ -151,7 +152,10 @@ async def test_overload_has_no_queue_and_releases_capacity_on_disconnect() -> No
     accepted = [connect(server) for _ in range(16)]
     rejected, wire = connect(server)
     assert wire.output.startswith(b"HTTP/1.1 503 ")
-    assert wire.aborted and rejected.closed.done()
+    assert wire.closing and not wire.aborted
+    assert not rejected.closed.done()
+    await asyncio.sleep(0)
+    assert rejected.closed.done()
     assert len(server.connections) == 16
     accepted[0][1].abort()
     _, replacement = connect(server)
@@ -228,7 +232,7 @@ async def test_transport_injected_into_subsystem_reaches_available_and_stops(
     protocol.data_received(b"GET /healthz HTTP/1.1\r\nHost: x\r\n\r\n")
     assert wire.output.startswith(b"HTTP/1.1 204 ")
     assert (await gui.stop()).completed
-    assert wire.aborted
+    assert wire.closing and protocol.closed.done()
     listener.close.assert_called_once()
 
 
@@ -246,3 +250,75 @@ async def test_application_failure_cannot_reflect_exception(method: bytes) -> No
     else:
         assert b"GUI_INTERNAL_TRANSPORT_FAILURE" in wire.output
     await server.stop()
+
+
+class BufferedWire(Wire):
+    """flush前のabortが送信データを破棄する通信先を模擬する。"""
+
+    def __init__(self, protocol: _RequestProtocol) -> None:
+        super().__init__(protocol)
+        self.buffer = bytearray()
+
+    def write(self, data: bytes | bytearray | memoryview[Any]) -> None:
+        self.buffer.extend(data)
+
+    def close(self) -> None:
+        self.closing = True
+
+    def flush(self) -> None:
+        assert self.closing
+        self.output.extend(self.buffer)
+        self.buffer.clear()
+        self.protocol.connection_lost(None)
+
+    def abort(self) -> None:
+        self.buffer.clear()
+        super().abort()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["overload", "timeout", "success"])
+async def test_response_survives_delayed_flush_and_reclaims_only_after_close(mode: str) -> None:
+    server = owner()
+    if mode == "overload":
+        for _ in range(16):
+            connect(server)
+    protocol = _RequestProtocol(server)
+    wire = BufferedWire(protocol)
+    protocol.connection_made(wire)
+    if mode == "timeout":
+        protocol.data_received(b"GET / HTTP/1.1\r\nHost:")
+        protocol._timeout()
+    elif mode == "success":
+        protocol.data_received(b"GET /healthz HTTP/1.1\r\nHost: x\r\n\r\n")
+    expected_status = b"204" if mode == "success" else b"503"
+    assert wire.buffer.startswith(b"HTTP/1.1 " + expected_status)
+    assert not wire.output and not wire.aborted and not protocol.closed.done()
+    assert protocol in (server.closing_connections if mode == "overload" else server.connections)
+    if protocol.timer is not None:
+        assert protocol.timer.cancelled()
+    # 応答開始後に遅延した期限通知が届いても、送信中バッファを破棄しない。
+    protocol._timeout()
+    assert wire.buffer and not wire.aborted
+    wire.flush()
+    assert wire.output.startswith(b"HTTP/1.1 " + expected_status)
+    if mode == "timeout":
+        assert b'"code":"GUI_REQUEST_TIMED_OUT"' in wire.output
+    assert protocol.closed.done()
+    assert protocol not in server.connections | server.closing_connections
+    await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_reaps_rejected_connection_with_unflushed_response() -> None:
+    server = owner()
+    for _ in range(16):
+        connect(server)
+    protocol = _RequestProtocol(server)
+    wire = BufferedWire(protocol)
+    protocol.connection_made(wire)
+    assert wire.buffer and not wire.aborted
+    await server.stop()
+    assert wire.aborted and not wire.buffer and not wire.output
+    assert protocol.closed.done()
+    assert not server.connections and not server.closing_connections
