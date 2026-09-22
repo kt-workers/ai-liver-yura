@@ -3,13 +3,14 @@
 import asyncio
 from dataclasses import replace
 from datetime import timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from app import bootstrap
 from app.composition.execution import ExecutionFeedbackRetentionPolicy
 from app.composition.execution_configuration import CoreExecutionConfiguration
+from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus, PreconditionRef
 from app.domain.executive import ExecutiveRequirementsOwner, PlanExecutionIntentPayload
 from app.domain.executive.requirements import RequirementSourcePublication
@@ -36,7 +37,6 @@ from tests.domain.plan_execution.test_progression import Preflight, Provider, Wa
 from tests.helpers.executive_requirements import capture_plans, fence_clock, make_authority
 from tests.subsystems.validation.test_runtime import FIXTURE, POLICY, PROVENANCE, spec
 from tests.system_integration.test_core_cognition import admission, application
-from tests.system_integration.test_core_execution import BOUNDS
 from tests.system_integration.test_early_boot import work
 
 
@@ -128,6 +128,7 @@ def plan_setup(monkeypatch: pytest.MonkeyPatch, *, mode: str = "normal") -> Any:
         replace(snapshot, plan_scopes=(scope,)),
         (RequirementSourcePublication("scope", 1, publication.value, publication.tokens),),
     )
+    assert snapshot.requirements_generation is not None
     current = snapshot.requirements_generation.owner.prepare(
         snapshot, proposed, replace(current, plan_scopes=(scope,))
     )
@@ -161,7 +162,7 @@ async def test_real_plan_facts_and_feedback(monkeypatch: pytest.MonkeyPatch, mod
     result = await runner.run(request, fixture)
     assert result.status is RunStatus.PRODUCT_FAILED, result
     assert result.machine_gate is Gate.FAIL
-    output = result.stage_results[0].typed_outputs
+    output = cast(Any, result.stage_results[0].typed_outputs)
     execution = next(x for x in output["outcomes"] if x["module"] == "activity_execution")
     expected = {
         "normal": "awaiting_assessment",
@@ -293,7 +294,7 @@ async def test_input_entry_keeps_adopted_plan_and_scope(monkeypatch: pytest.Monk
     )
     assert result.status is RunStatus.COMPLETED, result
     assert result.machine_gate is Gate.PASS
-    output = result.stage_results[0].typed_outputs
+    output = cast(Any, result.stage_results[0].typed_outputs)
     assert output["scope"]["plan"]["plan_id"] == "plan"
     assert output["execution_records"] == () and not provider.calls
     assert output["outcomes"][-1]["result"]["candidate"]["outcome"] == "wait"
@@ -323,7 +324,8 @@ async def test_completion_assessment_is_exported_separately(
             return result
         observation = observations[-1]
         claimed.add(observation["step_id"])
-        payload = dict(result.output.value)
+        assert result.output is not None
+        payload = dict(cast(dict[str, Any], result.output.value))
         payload.update(
             outcome="continue_activity",
             intents=[
