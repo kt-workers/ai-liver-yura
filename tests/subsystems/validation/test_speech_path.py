@@ -9,6 +9,8 @@ from typing import Any
 
 import pytest
 
+from app.domain.activity_execution.observation import ObservedExecutionFactRecord
+from app.domain.brain_integration import BrainIntegrationWork
 from app.subsystems.validation.contracts import Gate, LabMode, RunStatus
 from app.subsystems.validation.runtime import RunContext, ValidationRunner
 from app.subsystems.validation.speech_path import (
@@ -124,6 +126,13 @@ async def setup(
 @pytest.mark.asyncio
 async def test_context_to_accepted_process_presentation() -> None:
     runner, request, fixture, value, captured, *_ = await setup()
+    reflected: list[ObservedExecutionFactRecord] = []
+
+    def observe(work: BrainIntegrationWork, record: ObservedExecutionFactRecord) -> None:
+        assert work.envelope.trace_id == value.work.envelope.trace_id
+        reflected.append(record)
+
+    value.pipeline.reflection_observer = observe
     result = await runner.run(request, fixture)
     assert result.status is RunStatus.COMPLETED, result
     assert result.machine_gate is Gate.PASS
@@ -145,6 +154,8 @@ async def test_context_to_accepted_process_presentation() -> None:
     assert presentation["candidate"]["lifecycle"] == "completed"
     assert presentation["execution_fact"]["record_revision"] == 2
     assert presentation["delivery"] == "delivered"
+    assert [record.record_revision for record in reflected] == [1, 2]
+    assert not value.pipeline.evidence_failed
     assert not presentation["audio_available"]
     assert value.tasks.pending_task_count == value.supervisor.active_execution_count == 0
     assert result.export_json(4_000_000)
@@ -228,7 +239,9 @@ async def test_changed_owner_rejects_prepared_meaning() -> None:
 async def test_observation_failure_does_not_change_presentation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    runner, request, fixture, *_ = await setup()
+    runner, request, fixture, value, *_ = await setup()
+    reflected: list[ObservedExecutionFactRecord] = []
+    value.pipeline.reflection_observer = lambda work, record: reflected.append(record)
 
     def broken(self: SpeechPathEvidence, stage: str, value: object) -> None:
         raise ValueError("private-diagnostic-body")
@@ -241,6 +254,9 @@ async def test_observation_failure_does_not_change_presentation(
         == "completed"
     )
     assert "private-diagnostic-body" not in result.export_json(4_000_000)
+    assert value.pipeline.evidence_failed
+    assert [record.record_revision for record in reflected] == [1, 2]
+    assert result.stage_results[0].typed_outputs["presentations"][0]["delivery"] == "delivered"
 
 
 @pytest.mark.asyncio
