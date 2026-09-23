@@ -350,3 +350,15 @@ YURA_REQUIRE_POSTGRES=1 YURA_TEST_POSTGRES_SOCKET=/tmp/yura-test-postgresql \
 ```
 
 障害シナリオが予定どおり動作しても、製品が返した失敗・拒否・取消を成功へ変更しません。`PRODUCT_FAILED`／`CANCELLED`と型付き出力を確認してください。機械判定は`NOT_RUN`です。このINTEGRATED接続は永続化と起動停止の証拠であり、会話全体や実外部サービスの完成証拠ではありません。
+
+## 本体発話経路の証拠（#618）
+
+`app.subsystems.validation.speech_path`の`speech_path_target`へ、出典付きfixtureとtrustedなSession factoryを登録します。Sessionは本体の`CoreCognitionDelivery`、同じexecutorへ渡した`SpeechPathTasks`、実際の起動・終了処理を持ちます。pipelineの`evidence_sink`にはfactoryへ渡された`SpeechPathEvidence`を登録します。別の意味生成器や同一processの提示fallbackは使用しません。
+
+実TTSを検証する構成では`SpeechPathAudioOutput`をpipeline.readers.outputへ登録し、TTSの具体client、明示voice/mapping/retry設定、同じ資源storeと公開audio_refに対応するWAV読取を渡します。`SpeechPathLLMPort`は実LLM接続の外側で安全な方針・実行来歴を記録します。新規clientの終了はiterationのevidence.add_cleanupへ登録できます。音声を必須とするfixtureでtext-only結果を成功にはしません。
+
+結果の`evidence`には生成前の根拠・制約・人物・計画・検証・合成の履歴、`audio`には提示と同じ公開参照のWAV、`presentations`にはOwner受理済み開始・完了と観測Fact、`outcomes`と`trace`には本体処理を保持します。既存の結果書出し、review / blind_review、HumanEvaluationを使い、人間評価は未入力のまま保持します。
+
+この接続は具体的なTTSサービスやvoice、再生deviceを自動選択しません。試験用workerによる成功と実サービス・可聴提示の確認を区別し、未実測はNOT_RUNと記録してください。
+
+実音声を含む実動作の検証はHumanの責務です。ChatGPTとCodexは実動作の検証を実施せず、実装と自動試験の証拠を提供します。Humanの結果がない項目を確認済みへ変更しません。
