@@ -271,6 +271,7 @@ class _ExecutiveOperation:
         requirements = await self.binding._evidence.requirements_for(snapshot, candidate)
         current = await self.read()
         assert self.evidence is not None
+        # Memory tokenは同期証拠であり、読取ごとのidentityを根拠値と比較しない。
         # 能力・前提条件・Speech参照の変化は候補別の既存commit検査へ渡す。
         if (
             replace(
@@ -278,6 +279,7 @@ class _ExecutiveOperation:
                 capabilities=self.evidence.capabilities,
                 preconditions=self.evidence.preconditions,
                 capability_tokens=self.evidence.capability_tokens,
+                memory_tokens=self.evidence.memory_tokens,
                 precondition_tokens=self.evidence.precondition_tokens,
                 communicative_goal_catalog=self.evidence.communicative_goal_catalog,
                 speech_source_bindings=self.evidence.speech_source_bindings,
@@ -291,7 +293,7 @@ class _ExecutiveOperation:
         assert appraisal is not None
         used_conditions = {r.precondition_id for item in requirements for r in item.preconditions}
         evidence_tokens = (
-            *current.memory_tokens,
+            *self.evidence.memory_tokens,
             *(current.capability_tokens if any(item.capabilities for item in requirements) else ()),
             *(
                 token

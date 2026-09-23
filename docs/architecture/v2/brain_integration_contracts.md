@@ -778,6 +778,10 @@ Activityの終端記録と、#657を通して#329が受理したSpeech提示の�
 
 検索後に同じMemory Ownerからexact memory identity/revisionのsemantic assertion publicationを再取得する。解決済みassertionだけを`MEMORY_EVIDENCE`としてExecutiveへ渡し、内容・明示semantics・主体identity・由来・確信度・有効期間・lifecycleを保持する。未解決や古い記憶をassertionにせず、理由を`cognition.memory_evidence.latest_entries`へ保持する。検索の根拠は現在Emotion・Goal・Relationshipの復元命令ではない。
 
-Executiveの確定前に検索・現在公開を再取得し、根拠の変化を拒否する。Memory Ownerのgeneration tokenを既存finalization fenceへ搬送し、読取後の更新も最終確定で検出する。意味判断、検索順位、Goal選択、Memoryの保存責務は既存Ownerのままとする。
+検索は#686の`submit_retrieval_publication(query)`を使用し、検索集合・policy・必要なsemantic indexのOwner tokenを保持する。利用可能な各assertionの#664 exact-ID tokenも加え、一方で他方を代替しない。空検索やassertion利用不能でfactsが空でも、検索集合の現在性tokenを破棄しない。成功した現在公開にtokenがなければ拒否する。degradedと永続化失敗は既存どおり失敗として扱い、利用不能assertionをfactにしない。
+
+Executiveの確定前に検索・現在公開を再取得し、実際のfact値・revision等の根拠の変化を拒否する。検索集合participantは読取ごとに異なるため、`memory_tokens`のobject/token identity差だけを意味内容の変化として比較しない。他の根拠値の比較は維持する。
+
+最終`ExecutiveCommitState.evidence_tokens`へは、判断開始時の検索集合tokenとexact-ID tokenをそのまま搬送する。確定直前の再読取tokenだけへ置換しない。これにより、途中に変更して値が元へ戻った場合、初回が空集合だった場合、利用不能assertionの変化も初回から確定までのOwner世代で検出する。再読取後のraceも同じ既存Fenceで拒否する。consumerに世代を追加せず、全participantの上限16を維持し、超過時にtokenを落とさない。意味判断、検索順位、Goal選択、Memoryの保存責務は既存Ownerのままとする。
 
 本節の検証は実PostgreSQLの保存・検索、本番起動、通常判断、前景との並行動作、拒否、取消、stale、停止を含む。実LLMの品質や人間の発話品質の受入は別の未完条件として保持する。

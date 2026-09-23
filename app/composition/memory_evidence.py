@@ -46,17 +46,20 @@ class CoreMemoryEvidenceReader:
             or query.max_estimated_tokens > self.config.max_estimated_tokens
         ):
             raise ValueError("記憶検索条件が起動時の上限を超えています")
-        retrieved = await self.memory.submit_retrieval(query).wait()
+        retrieved = await self.memory.submit_retrieval_publication(query).wait()
         if retrieved.failure_code is not None:
             raise PersistenceError(retrieved.failure_code, "判断根拠の記憶検索に失敗しました")
         if retrieved.value is None:
             raise PersistenceError(PersistenceFailureCode.UNAVAILABLE, "記憶検索結果がありません")
-        view = retrieved.value
+        retrieval_publication = retrieved.value
+        view = retrieval_publication.value
         self.latest_view, self.latest_entries = view, ()
         if view.degraded:
             raise PersistenceError(PersistenceFailureCode.UNAVAILABLE, "記憶検索が機能低下中です")
+        if not retrieval_publication.tokens:
+            raise ValueError("記憶検索の現在公開にOwner tokenがありません")
         facts: list[ExecutiveFactRef] = []
-        tokens: list[AuthorityGenerationToken] = []
+        tokens: list[AuthorityGenerationToken] = list(retrieval_publication.tokens)
         for item in view.items:
             result = await self.memory.read_semantic_assertion_publication(
                 item.memory_id, item.memory_revision
