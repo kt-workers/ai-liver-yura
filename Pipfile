@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 pyqt6 = "*"
 python-dotenv = "*"
+h11 = "==0.16.0"
 pyyaml = "*"
 pydantic = "*"
 openai = "*"

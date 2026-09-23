@@ -7,7 +7,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from app.composition.presentation_notification import CorePresentationNotification
-from app.composition.speech_feedback import CoreSpeechFeedback, ObservedSpeechPresentationBoundary
+from app.composition.speech_feedback import (
+    CoreSpeechFeedback,
+    ObservedSpeechPresentationBoundary,
+    SpeechFactDeliveryDisposition,
+)
+from app.domain.activity_execution.observation import ObservedExecutionFactRecord
 from app.domain.brain_integration import BrainIntegrationWork
 from app.domain.character_language import (
     CharacterLanguageContextSnapshot,
@@ -85,6 +90,9 @@ class CoreSpeechPipeline:
     expiry_policy_ref: str
     admission: SpeechPreparationAdmission
     discarder: PreparedAudioDiscarder
+    reflection_observer: Callable[
+        [BrainIntegrationWork, ObservedExecutionFactRecord], None
+    ] | None = None
     evidence_sink: Callable[[str, object], None] | None = None
     evidence_failed: bool = field(default=False, init=False)
 
@@ -252,12 +260,17 @@ class CoreSpeechPipeline:
                 != (work.envelope.root_trigger_id or work.envelope.trigger_id)
             ):
                 raise ValueError("Presentation還流の元Brain相関が一致しません")
+            def deliver(record: ObservedExecutionFactRecord) -> SpeechFactDeliveryDisposition:
+                if self.reflection_observer is not None:
+                    self.reflection_observer(work, record)
+                return downstream.deliver(record)
+
             feedback = CoreSpeechFeedback(
                 self.runtime,
                 downstream.authority,
                 key + ":presentation",
                 downstream.provenance,
-                downstream.deliver,
+                deliver,
             )
             await self.executor.commit_and_present(
                 candidate_id=key,

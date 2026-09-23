@@ -153,6 +153,15 @@ class PostgresPersistenceRuntime:
             return PersistenceOperationResult(None, self._unavailable_code())
         return await self._run(lambda: owner.retrieve(query))
 
+    async def read_memory_retrieval_publication(
+        self, query: MemoryRetrievalQuery
+    ) -> PersistenceOperationResult[AuthorityReadPublication[RankedMemoryEvidenceView]]:
+        """既存executorの受付・取消後回収でMemory Ownerの検索公開を取得する。"""
+        owner = self._memory
+        if owner is None:
+            return PersistenceOperationResult(None, self._unavailable_code())
+        return await self._run(lambda: owner.read_retrieval_publication(query))
+
     async def read_memory_semantic_assertion(
         self, memory_id: str, expected_revision: int | None = None
     ) -> PersistenceOperationResult[MemorySemanticAssertionEntry]:

@@ -753,3 +753,35 @@ MemoryはCoreMemoryPersistenceBinding.read_semantic_assertion_publicationを経�
 - 配送状態は一つのPresentationのcurrent/直近recordに限定する。新しいDomain Authorityや全履歴ledgerを作らない。InputNormalizerには既存のprocess共有InputAdmissionLedgerを構成元から渡す。
 
 Input Gateway §7の意味は変更しない。`CoreSpeechFeedback`のgeneric downstream再配送と、Gatewayでの同一identity再normalize禁止を分けて扱う。
+
+## 35. 背景Reflection・永続Memory・判断根拠の接続（#614）
+
+`CoreCognitionConfiguration`はReflectionのRole実行方針・採用方針・受付上限と、Memory検索条件の供給元・検索上限を明示登録する。登録時は同じ`CoreMemoryPersistenceBinding`を必須とし、未登録の保存先を模擬Storeへ置換しない。起動は既存のcurrent production Reflection proposal/support descriptorを同じLLM Portへ登録する。既存の明示構成を省略する起動との互換性を維持する。
+
+### 根拠の配送
+
+Activityの終端記録と、#657を通して#329が受理したSpeech提示の終端記録を、同じActivity Ownerから照合して配送する。生成予定の発話や生のAdapter reportを提示済み事実へ変換しない。元の実行結果、状態、effect参照、未確定性、リビジョン、判断・観測の由来を保持する。元Ownerが公開しない主体identityや意味facetsを推測して補わない。内部contextのrevisionを古い実行結果へ付け替えない。
+
+`CoreReflectionDelivery`は既存Brain Runtimeの`BACKGROUND_REFLECTION` laneと`REFLECTION` moduleを使用する。前景のActivity/Speech配送は背景完了を待たない。準備・受付の失敗は`last_error`または`latest_admission`へ保持し、前景の実行事実を巻き戻さない。受付済みsource identity/revisionの重複は保持期間中に再投入しない。実行中の受付記録は`max_pending`、完了分を含む配送抑止記録はその2倍以内とし、古い完了分だけを除去する。恒久的な意味・記憶の正本や全履歴ledgerを構成側へ追加しない。
+
+各仕事は相関・根拠を不変の`ReflectionContextSnapshot`へ保持し、proposal/support後の現在性検査を既存Reflection Coordinatorへ委ねる。根拠更新はstale拒否とし、無関係なGoalや現在状態の更新を履歴の改変として扱わない。公開`submit`への根拠供給は信頼済みOwner接続だけに限定し、外部の自由文入力の入口にしない。
+
+### 採用・保存・取消
+
+保存するのは`ACCEPTED_FOR_STORE_SUBMISSION`だけである。拒否、利用不能、候補0件と採用候補を区別する。候補の関係hintを構成側で確定関係へ変換せず、既存Memory Storeの重複・保存判断へ委ねる。保存は同じ永続Memoryの公開操作を使い、失敗分類・保存のdispositionと由来を保持する。保存機構の失敗はBrain workでも失敗として返す。
+
+`CoreReflectionOperation`はReflection結果と投入済み保存操作を保持する。取消時も投入済み保存操作の回収を待ち、確定保存結果を呼出元が確認できる。取消済み処理から次の候補を保存しない。開始前取消・stale拒否でも受付枠を回収する。停止はBrain task、Speech資源、Reflection、Memory、保存機構の順に回収し、前段の失敗がDB終了を省略しない。
+
+### 検索から認知への還流
+
+判断根拠の読取は登録済み供給元の`MemoryRetrievalQuery`を使い、起動時の件数・token上限を検査して既存Ownerへ渡す。検索の順位・切詰め・機能低下・利用不能理由を読取結果へ保持する。検索失敗を空検索の成功へ置換しない。
+
+検索後に同じMemory Ownerからexact memory identity/revisionのsemantic assertion publicationを再取得する。解決済みassertionだけを`MEMORY_EVIDENCE`としてExecutiveへ渡し、内容・明示semantics・主体identity・由来・確信度・有効期間・lifecycleを保持する。未解決や古い記憶をassertionにせず、理由を`cognition.memory_evidence.latest_entries`へ保持する。検索の根拠は現在Emotion・Goal・Relationshipの復元命令ではない。
+
+検索は#686の`submit_retrieval_publication(query)`を使用し、検索集合・policy・必要なsemantic indexのOwner tokenを保持する。利用可能な各assertionの#664 exact-ID tokenも加え、一方で他方を代替しない。空検索やassertion利用不能でfactsが空でも、検索集合の現在性tokenを破棄しない。成功した現在公開にtokenがなければ拒否する。degradedと永続化失敗は既存どおり失敗として扱い、利用不能assertionをfactにしない。
+
+Executiveの確定前に検索・現在公開を再取得し、実際のfact値・revision等の根拠の変化を拒否する。検索集合participantは読取ごとに異なるため、`memory_tokens`のobject/token identity差だけを意味内容の変化として比較しない。他の根拠値の比較は維持する。
+
+最終`ExecutiveCommitState.evidence_tokens`へは、判断開始時の検索集合tokenとexact-ID tokenをそのまま搬送する。確定直前の再読取tokenだけへ置換しない。これにより、途中に変更して値が元へ戻った場合、初回が空集合だった場合、利用不能assertionの変化も初回から確定までのOwner世代で検出する。再読取後のraceも同じ既存Fenceで拒否する。consumerに世代を追加せず、全participantの上限16を維持し、超過時にtokenを落とさない。意味判断、検索順位、Goal選択、Memoryの保存責務は既存Ownerのままとする。
+
+本節の検証は実PostgreSQLの保存・検索、本番起動、通常判断、前景との並行動作、拒否、取消、stale、停止を含む。実LLMの品質や人間の発話品質の受入は別の未完条件として保持する。
