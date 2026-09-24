@@ -152,7 +152,7 @@ logical role IDは`executive_deliberation`、input schemaは`executive.context.v
 一つの規則は次のいずれか一つの方式を明示する。暗黙の方式や任意の実行式を許可しない。
 
 - **明示定数方式**：信頼済み規則に保存された`CapabilityRequirement`群と`ExecutivePreconditionRequirement`群をそのまま出力する。各能力の`capability_type / operation / allow_degraded`、各条件の`precondition_id / expected`は規則が所有する。この方式は両方の空の組も明示的に表せる。
-- **上流要件投影方式**：規則が指定する所有者・公開契約の型・参照項目で上流の型付き要件記録を一意に解決する。参照項目はその意図の型が公開する参照だけとし、`ACTIVITY`では`activity_type`を上流の登録キーにも使える。ただし#649のbindingを使用するproduction Direct ACTIVITYは第11.1節の`binding_ref`による正規source解決を必須とし、他の参照へのfallbackを行わない。上流記録が同じ種類・型付き内容の意図に対応することを検査し、そこで確定済みの能力と期待条件を値を変えずに投影する。記録が要件の一部しか所有しない場合は不完全な出典として拒否する。現在の実測値から期待値を生成しない。
+- **上流要件投影方式**：規則が指定する所有者・公開契約の型・参照項目で上流の型付き要件記録を一意に解決する。参照項目はその意図の型が公開する参照だけとし、`ACTIVITY`では`activity_type`を上流の登録キーにも使える。ただし#649のbindingを使用するproduction Direct ACTIVITYは第11.1節の`binding_ref`による正規source解決を必須とし、他の参照へのfallbackを行わない。generic上流記録は同じ種類・完全一致する型付き意図内容を検査し、Direct専用sourceは第11.1節のbinding対応fieldと独立したsemantic参照検証を通して、そこで確定済みの能力と期待条件を値を変えずに投影する。記録が要件の一部しか所有しない場合は不完全な出典として拒否する。現在の実測値から期待値を生成しない。
 - **計画承認範囲投影方式**：第9.5節の確定計画・承認範囲のみを使う。`PLAN_EXECUTION`はこの方式に限定する。
 
 最初の二方式を`SPEECH / BODY / ACTIVITY / ATTENTION`に使用できる。ただしproduction Direct ACTIVITYは第11.1節の上流要件投影に限定する。上流契約の型・参照項目がその意図に適合しない規則は登録時に拒否する。参照先が0件・複数件・未登録・取得失敗の場合、明示定数方式へ切り替えない。上流契約が保持する型付き要件以外から操作名・能力・期待条件を推測しない。
@@ -244,14 +244,20 @@ Direct ACTIVITYは`ActivityIntentPayload.binding_ref`で、snapshotに提示さ�
 
 `app/domain/executive/direct_activity_requirements.py`に`DirectActivityRequirementsOwner`を予定する。これは#328 / #630配下の要件内容の正規所有者であり、Goal / Action選択者ではない。1実体は1個のbinding identityに対する完全な要件宣言を所有する。別bindingの宣言を同じmutable集合へ押し込み、全件を同じtokenで失効させない。構成側はtrustedな型付き宣言と、登録済みの同じ`ActivityBindingAuthority`実体を明示注入する。candidate・Plugin manifest・availabilityから宣言を作らない。
 
-既存`UpstreamRequirementRecord`のfieldとpayload完全一致の意味は維持する。記録の`owner_id`は登録済み要件Ownerのidentity、`contract_id`は`executive.direct-activity-requirements.v1`、`reference`はbinding_id、`intent_kind`はACTIVITY、`payload`はbinding_refを持つ完全な`ActivityIntentPayload`とする。`record_id / revision`とcapabilities / preconditionsはtrustedな要件宣言が明示する。1個のbindingには1個の完全payloadだけを公開し、target / constraint_refsの別variantが必要なら別の正規binding identityへ明示登録する。同じbindingに複数variantを登録して後から先勝ちにしない。
+Direct専用の不変型`DirectActivityRequirementRecord`を定義する。fieldは`owner_id / contract_id / record_id / revision / binding_ref / binding_revision / activity_type / target_ref / capabilities / preconditions`とする。owner_idは登録済み要件Ownerのidentity、contract_idは`executive.direct-activity-requirements.v1`、binding_refは正規binding_id、binding_revisionは対応するbindingのrevisionである。target_refはbindingと同じnullable参照型、capabilities / preconditionsは既存の型付き不変tupleとする。識別子・revision・重複・容量は既存検証に従う。record_id / revisionと要件値はtrustedな宣言が明示し、binding側の情報も正規publicationへ照合する。ACTIVITY専用型であるため汎用intent_kind / payloadは持たない。
 
-既存record単体にはbindingのrevision・正規publicationとの関係がないため、薄い不変型`DirectActivityRequirementSource(record, binding_publication)`を追加する設計とする。既存`RequirementSourcePublication.value`の許可variantへこの型を追加し、外側の`source_id / revision / tokens`を再利用する。source_idはrecord_id、revisionはrecord.revisionと一致必須。UpstreamRequirementRecordの既存variant、PlanExecutionScope、PlanProgressContextを置換しない。外側publicationは正規Ownerからだけ取得でき、callerが任意DTOとtokenを組み合わせて発行できないproof境界を設ける。
+既存`UpstreamRequirementRecord.payload == intent.payload`の完全一致契約は、既存generic UPSTREAM経路で維持する。Direct専用recordへgeneric recordを変換・流用したり、generic側でconstraint_refsを無視したりしない。Directではbindingが所有するfieldのexact照合とExecutive semantic参照の検証を分離する。
+
+binding identityは#649のoperation・target・Capability identity・arguments・argument provenance側のidentityであり、Requirements semantic variantのidentityにしない。同じbindingでconstraint_refsだけが異なる候補を許し、その差だけで別binding_idを要求しない。target_refはsource・candidate・bindingのexact照合対象とするが、同一binding identityの新revisionでtargetを更新できる#649契約を維持する。target変更だけで新identityを強制しない。
+
+constraint_refsはcandidateのsemantic refsとして第4節のbounded context membership・参照妥当性・現在Executive検証に従う。Direct record/source identityや要件導出のselectorには含めず、sourceが生成・変更・削除しない。本Direct sourceの宣言要件はconstraint_refsに依存しない。第9.2節の規則選択にもconstraintによる要件切替は定義されておらず、今回その意味を発明しない。将来その切替が正本上必要になった場合は#328/#630所有のtyped variant/selectorを明示設計する必要があり、#649 binding_idへ符号化して代用してはならない。これは未定義のvariantを今回暗黙対応することを許す契約ではない。
+
+専用recordと正規publicationの対応を保持する薄い不変型`DirectActivityRequirementSource(record, binding_publication)`を追加し、recordはDirectActivityRequirementRecordに限定する。既存`RequirementSourcePublication.value`の許可variantへこの型を追加し、外側の`source_id / revision / tokens`を再利用する。source_idはrecord_id、revisionはrecord.revisionと一致必須。UpstreamRequirementRecordの既存variant、PlanExecutionScope、PlanProgressContextを置換しない。外側publicationは正規Ownerからだけ取得でき、callerが任意DTOとtokenを組み合わせて発行できないproof境界を設ける。
 
 Ownerの予定APIは`publish(record)`、`capture()`、`close()`とする。constructorでowner identity・binding Owner実体・共有boundsを必須にし、publishは次を検証してから記録を採用する。
 
-- recordのowner / contract / reference / ACTIVITY型と登録先binding identityが一致する。
-- 正規bindingをそのOwnerから取得し、payload.binding_ref、activity_type、target_refがbindingの値と一致する。constraint_refsはtrusted宣言の値を保持し、candidateに合わせて書き換えない。
+- recordのowner / contract / Direct専用型 / binding_refと登録先binding identityが一致する。
+- 正規bindingをそのOwnerから取得し、recordのbinding_ref / binding_revision / activity_type / target_refがbindingの値と一致する。constraint_refsはrecordに持たず、candidateに合わせた宣言変更を行わない。
 - 明示capabilitiesのうち、capability_type == binding.activity_typeかつoperation == binding.operation_refとなるprimaryがexactly 1件。
 - capabilitiesの同一type/operation重複、preconditionsの同一ID重複、型・容量不正を拒否する。allow_degradedを含め、全値を宣言から保持する。
 - sourceとbindingのidentity/revision・内容を固定する。同revisionでの内容変更やrevision退行を拒否し、binding更新時も要件Ownerによる新revisionの明示publishを必要とする。captureは旧宣言を新bindingへ自動upgradeしない。
@@ -268,9 +274,9 @@ allow_degradedと必須条件の期待値は要件Ownerのtrusted宣言が所有
 
 `ExecutiveRequirementsOwner`へ、binding_idから正規DirectActivityRequirementsOwner実体への不変route集合を構成時に登録する。routeの重複・owner identity衝突は拒否する。実行中のroute差替えは提供せず、新runtimeの構成で変更する。選択規則は第9.2節の種類／activity_typeによる単一規則選択を維持する。source解決はその後に行う別段階であり、rule selectorへbinding文字列解析を加えない。
 
-Direct ACTIVITYのUPSTREAMには、既存`RequirementSourceSpec`とは区別した不変な出典指定`DirectActivityRequirementSourceSpec(route_id, contract_id, reference_field)`を追加する。reference_fieldはbinding_ref、contract_idは上記固定契約に限定する。規則のsourceは既存指定またはこの指定のいずれか一つとし、新指定をACTIVITY以外へ使用しない。同じactivity_typeの複数bindingを扱う単一規則は登録済みroute_idを指定し、binding_refのexact lookupで実Ownerへ解決する。route集合は要件値・tokenのOwnerではない。既存RequirementSourceSpec.owner_idをroute identityへ読み替えず、UpstreamRequirementRecord.owner_idも実Ownerのidentityのまま照合する。由来にはroute_idと実Owner identityを区別して保持する。未知routeを新規生成しない。規則登録時にroute存在・contract・参照項目を検査する。
+Direct ACTIVITYのUPSTREAMには、既存`RequirementSourceSpec`とは区別した不変な出典指定`DirectActivityRequirementSourceSpec(route_id, contract_id, reference_field)`を追加する。reference_fieldはbinding_ref、contract_idは上記固定契約に限定する。規則のsourceは既存指定またはこの指定のいずれか一つとし、新指定をACTIVITY以外へ使用しない。同じactivity_typeの複数bindingを扱う単一規則は登録済みroute_idを指定し、binding_refのexact lookupで実Ownerへ解決する。route集合は要件値・tokenのOwnerではない。既存RequirementSourceSpec.owner_idをroute identityへ読み替えず、DirectActivityRequirementRecord.owner_idは実Ownerのidentityと照合する。generic UpstreamRequirementRecordの照合は変更しない。由来にはroute_idと実Owner identityを区別して保持する。未知routeを新規生成しない。規則登録時にroute存在・contract・参照項目を検査する。
 
-開始snapshotに採用するboundedな`activity_bindings`を先に確定する。同じbinding_idの重複は同値でも拒否する。提示する各bindingに対応する要件Ownerからpublicationを取得し、正規bindingの全内容・revision・tokenと完全一致を確認する。欠落・閉鎖・重複・不一致はrequest開始前に拒否し、bindingや要件を削って通さない。candidateが存在する前に完全なpayloadと要件をcaptureする。
+開始snapshotに採用するboundedな`activity_bindings`を先に確定する。同じbinding_idの重複は同値でも拒否する。提示する各bindingに対応する要件Ownerからpublicationを取得し、正規bindingの全内容・revision・tokenと完全一致を確認する。欠落・閉鎖・重複・不一致はrequest開始前に拒否し、bindingや要件を削って通さない。candidateが存在する前に専用recordの全field・正規binding・要件をcaptureする。まだ選択されていないcandidateのconstraint_refsを補作しない。
 
 request用`RequirementsGeneration`にcaptured source群を保持する。共有の`publish(policy, sources)`をrequestごとに呼んで更新してはならない。既存のpolicy世代を指す非公開`base_generation`を持つrequest captureを追加し、既存のpolicy / serial / tokenと非Direct出典を固定したままDirect出典を合成する。base_generationはrequest captureを指せず、登録済み共有世代だけを指す。公開JSONへこの内部参照を出さない。
 
@@ -280,7 +286,7 @@ request用`RequirementsGeneration`にcaptured source群を保持する。共有�
 
 Direct ACTIVITYではbinding_ref省略・null・集合外を拒否する。開始集合からbinding_idがexact一致する1件と、そのbinding用sourceを1件だけ解決する。候補返却後に見つかった新bindingやsourceを追加しない。重複・複数一致を先頭選択しない。
 
-導出時に、正規route / 実Owner / contract / record.reference / record.payload == intent.payload、activity_type / target、binding revision・operationとprimary exactly 1を再検査する。結果は既存`DerivedIntentRequirements`として、元capabilities / preconditionsを一切補完せず返す。第9.4節のcandidate不足・余剰・型違い・allow_degraded変更の完全一致拒否を維持する。
+導出時に、正規route / 実Owner / contract、record.binding_ref == intent.payload.binding_ref、record.activity_type == intent.payload.activity_type、record.target_ref == intent.payload.target_ref、record.binding_revision == selected binding.revision、bindingの全内容・operationとprimary exactly 1を再検査する。candidateのconstraint_refsは別途、既存Executiveのbounded参照・現在性検証を必須とし、専用recordに存在しないpayloadとの完全一致を課さない。結果は既存`DerivedIntentRequirements`として、元capabilities / preconditionsを一切補完せず返す。第9.4節のcandidate不足・余剰・型違い・allow_degraded変更の完全一致拒否を維持する。
 
 commit前には選択されたbindingとsourceだけを登録済み実Ownerから再取得する。開始時のidentity / revision / 完全な内容 / 正規tokenと一致を要求する。再取得値は比較用であり、旧captureを新値へ置換しない。使用するsourceとbindingの由来を`RequirementProvenance.sources`および既存の確定判断の要件由来へ残す。
 
@@ -294,9 +300,9 @@ commit前には選択されたbindingとsourceだけを登録済み実Ownerか�
 
 #### boundsと公開provenance
 
-全て注入した同じ`BrainOperationalBoundsPolicy.executive`で検査する。route数と提示binding数はそれぞれmax_fact_refs以下。request generationのrule数＋非Direct source数＋Direct source数は既存のmax_fact_refs枠に収める。要件のcapabilities＋preconditions、payload内の各参照集合はmax_refs_per_intentで制約する。source publication単体の全公開JSON（record・binding公開・安全な世代情報を含む）はmax_fact_payload_json_bytes以下、全requestはmax_context_json_bytes以下とする。既存binding自身の容量制約も維持する。超過を削除・切捨て・別枠への逃避で回避せず、既存容量失敗に閉じる。数値追加や上限拡張は行わない。
+全て注入した同じ`BrainOperationalBoundsPolicy.executive`で検査する。route数と提示binding数はそれぞれmax_fact_refs以下。request generationのrule数＋非Direct source数＋Direct source数は既存のmax_fact_refs枠に収める。要件のcapabilities＋preconditions、candidate payload内の各参照集合はmax_refs_per_intentで制約する。source publication単体の全公開JSON（record・binding公開・安全な世代情報を含む）はmax_fact_payload_json_bytes以下、全requestはmax_context_json_bytes以下とする。既存binding自身の容量制約も維持する。超過を削除・切捨て・別枠への逃避で回避せず、既存容量失敗に閉じる。数値追加や上限拡張は行わない。
 
-公開JSONは、policy ID/revision、rule ID/revision、source_id/revision、実source Owner/contract identity、route集合identity、recordの完全なpayloadと要件、binding_id/revision/activity_type/operation_refを追跡可能にする。binding_publicationの公開serializerを再利用し、実際の開始値を出す。内部Lock・participant object・raw token参照・base_generation・Owner実体を出さない。安全な世代識別値だけを既存方式でserializeする。
+公開JSONは、policy ID/revision、rule ID/revision、source_id/revision、実source Owner/contract identity、route集合identity、Direct recordの全fieldと要件（constraint_refsは含めない）、binding_id/revision/activity_type/operation_refを追跡可能にする。binding_publicationの公開serializerを再利用し、実際の開始値を出す。内部Lock・participant object・raw token参照・base_generation・Owner実体を出さない。安全な世代識別値だけを既存方式でserializeする。
 
 #### 失敗と設計受入表
 
@@ -305,13 +311,23 @@ commit前には選択されたbindingとsourceだけを登録済み実Ownerか�
 | 同じactivity_typeのA / B、異なるoperation | 両方を開始集合に保持し、binding_refに対応する1件だけから導出 |
 | binding_ref省略・unknown・重複binding | 非確定。型付き不正参照／publication失敗。first matchなし |
 | source 0件・複数件・Owner/contract不一致 | SOURCE_UNAVAILABLEまたはINVALID_PROJECTION。空要件で救済しない |
-| primary 0件・複数件、payload不一致 | INVALID_PROJECTION。publish時と導出時に拒否 |
+| primary 0件・複数件、Direct recordのbinding対応field不一致 | INVALID_PROJECTION。publish時と導出時に拒否 |
 | primary＋異なるauxiliary、明示preconditions | 全件を保持し、候補と完全一致検査 |
 | candidateの不足・余剰・期待値変更 | CANDIDATE_MISMATCH。保守的な追加でも拒否 |
 | policy変更 | STALE_POLICY。旧候補の救済なし |
 | 選択binding/source変更、current読取後の更新 | STALE_SOURCEまたは既存Fence失敗。旧tokenを差し替えない |
 | 未選択かつ独立source更新 | 選択sourceがcurrentなら、それだけを理由に拒否しない |
 | distinct participants超過／busy | 既存#632の型付き非確定。16上限維持 |
+
+#### Design finding修正の机上確認
+
+| ケース | 設計上の結果 |
+| --- | --- |
+| A: 同じbinding A（research / search / web）、候補のconstraint_refsがfact-aとfact-b | 同じcaptured sourceを解決する。各参照は既存Executiveで個別検証し、有効ならconstraint差だけで拒否・別binding化しない |
+| B: Aはresearch / search、Bはresearch / query_database | binding_refのexact一致でそれぞれ1件だけ解決し、activity_typeによる先勝ちなし |
+| C: 同じbindingのrevision更新（target更新を含む） | 旧source・旧candidateはstale。新bindingと明示的な新source revisionをcaptureした新requestが必要。自動upgradeなし |
+| D: sourceとcandidate constraintの関係 | sourceはconstraint_refsを保持・生成・変更せず、candidateも要件宣言のAuthorityにならない |
+| E: constraintsによる要件切替 | 現行規則にその意味はないため追加しない。必要性が別途確定した場合の設計責務は#328/#630のtyped selectorであり、binding identityへの転嫁は禁止 |
 
 具体型付きbinding参照失敗の識別子はCode工程で既存enumへ対応付けるが、上記の意味を成功へ変換しない。設計検証はこの表の全行を追跡し、Code工程で正常・失敗・競合・由来serializationを実証する。
 
