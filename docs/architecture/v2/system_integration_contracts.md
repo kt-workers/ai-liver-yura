@@ -684,3 +684,29 @@ System Integration implementation and final Verification remain frozen until #44
 正常終了、実行前の権限失効、効果未確定のtimeout、取消と再取消、効果報告後の権限失効を確認する。実行前に根拠が失効した場合はFinalizationErrorとして拒否され、提供先呼出し0件となる。実行後の権限失効は既存効果を消さず、Activityの終端事実はAppraisalの入力へ戻る。一方、失効したBindingを含む後続Executiveは既存Ownerの現在性検査で拒否される。これを後続判断の成功とは報告しない。
 
 試験は本番の構成処理・Owner・配送・起動停止を使用する自動結合検証であり、配備された製品の実動作やHumanの受入を代替しない。2026-09-22のユーザー指示に従い、実音声を含む実動作の検証はHumanが所有し、ChatGPT/Codexは実施しない。模擬提供先・模擬LLMの試験成功を実サービスや意味品質の成功へ昇格しない。
+
+## 31. 通常入力・内部契機から判断までのSystem Acceptance（#620）
+
+#620は採用済みproduction compositionとcurrent production configurationを使用し、#561・#569の起動構成、#611の通常認知、#615の非直列性、#616の検証入口をSystem段階で対応付ける。最小起動だけ、またはValidation Lab単独のPASSをSystem PASSとしない。同じ起動構成・実行世代について、登録role、policy、character definition、HEAD、入力と公開終端・traceを照合する。
+
+### 31.1. 受入対応
+
+| シナリオ | Systemから確認する既存Ownerの成果 |
+| --- | --- |
+| A 外部入力 | 正規Input AdmissionのUSER入力を採用済みMeaningからAppraisal・Attention・Executiveへ配送する。raw text再解釈・fallbackを作らず、Decisionと元イベントを対応付ける |
+| B 内部契機 | SUBSYSTEM / LIFECYCLE / TIMER等の内部契機は架空のInput Meaning成功を生成せず、内部入力からAppraisal・Attention・Executiveへ進む。USER由来と混同しない |
+| C 型付き失敗 | provider/moduleの利用不可・失敗を公開結果とtraceに保持し、不正な後続Executiveや成功fallbackを生成しない。無関係なtraceは継続する |
+| D 現在性 | 外部提供先を待機させた間に依存するrevisionを正規Ownerで更新し、旧結果の拒否とDecision・後続effect非生成を確認する。現在contextへの付替えは禁止する |
+| E 取消・置換 | 待機中trace Aだけを取消またはsupersedeし、System consumerが非成功終端を回収する。別trace Bの継続とsource非流用を確認する |
+| F 非直列性 | Aの遅い認知を解放する前にBのforeground受付・Meaningを進める。Event / Futureで同期し、global lockや性能SLO試験を追加しない |
+| G 停止 | 認知中のSystem stopで新規受付を閉じ、公開終端を回収し、対象Brainのowned task・queue・in-flightを0へ収束させる。反復stopと試験task回収を確認する |
+
+Meaning・Appraisal・Attention・Executiveのsource event / root_trigger / trigger / context・Goal・Attention revisionはそれぞれのOwnerが宣言した由来に対応付ける。一律に全revisionを等置しない。stale・superseded・cancelledは後続判断の成功根拠にしない。
+
+### 31.2. Validation証拠と責務境界
+
+#616のnormal_cognition_target / ValidationRunnerはINTEGRATEDの公開契約を維持する。対応できる通常認知の入力・出力・trace・provenanceは既存証拠形式を再利用し、System構成の観測と照合する。複数traceやSystem停止の証拠はSystem試験から既存production outputを観測する。SYSTEM_SLICEへ形式だけ付け替えず、ValidationにMeaning・Decisionを補作させない。
+
+新しいMeaning / Appraisal / Attention / Executive / Goal / Activity Owner、system-global lock、試験専用production semantic pathは追加しない。独立欠陥は§26で分類し、該当Ownerへ戻す。System配線・対象harnessの欠陥だけを#620で修正し、別Ownerの不具合を局所回避しない。
+
+提供先を置換した自動試験は実LLM・実音声・実サービス・Human Verificationではない。Human実動作はNOT_RUN / UNRATEDを維持する。#621〜#625、#434、#586、GUI・Game・Streamingの受入れへ拡大しない。
