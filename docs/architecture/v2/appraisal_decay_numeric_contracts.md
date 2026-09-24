@@ -147,3 +147,7 @@ Production Compositionは有効なpolicyを明示注入する。policy全体がm
 - stale state/source/policy revision reject
 - startup/resumeのabsolute elapsed計算
 - no wall-clock read inside pure Domain calculation
+
+## #690の本番構成参照
+
+Deep Appraisal実行方針、fresh-start初期化方式、Decay具体規則と構成世代の値の正本は[Appraisalの本番構成](appraisal_production_configuration.md)とする。既存の意味・Reducer Authority・式・現在性を変更せず、ここへ具体値を重複定義しない。同文書は設計レビュー待ちであり、resource・loader・factoryの実装や本番採用は未完了。
