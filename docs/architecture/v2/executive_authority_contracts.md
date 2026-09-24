@@ -219,7 +219,7 @@ LLM開始前に実行判断所有者から導出方針の不変な世代を取�
 
 ### 9.9. SPEECH / BODY / ATTENTIONの本番必須要件（#697）
 
-状態: #697のDesign候補。実装・試験・採用は未実施。本節は#328配下の要件意味を定め、第9.1–9.8節の#630導出機構を変更しない。対象はproduction revision 1の3kindだけであり、ACTIVITY（#695を含む）・PLAN_EXECUTION・PLAN_PROGRESSの方式・意味・出典は変更しない。
+本節は#697が定義する#328配下の要件意味を定め、第9.1–9.8節の#630導出機構を変更しない。対象はproduction revision 1の3kindだけであり、ACTIVITY（#695を含む）・PLAN_EXECUTION・PLAN_PROGRESSの方式・意味・出典は変更しない。
 
 #### 採用する意味と規則
 
@@ -281,7 +281,7 @@ ExecutiveのBODY intentは高レベルAction semanticsであり、BodyMotionPlan
 
 Designの照合項目は、3kindの方式・空値・selector・rule identityが一意、新Capability / Precondition identityなし、架空UPSTREAMなし、test fixtureからの意味採用なし、下流Authorityの重複なしである。#630機構・#610 reader・#692 wiring・#695は変更しない。実装工程では上表の正常・不一致・未登録・世代変更と下流拒否の分離を検証する。既存のgeneric empty成功試験を本番意味採用の証拠へ読み替えない。
 
-#691のBlocked解除は#697のDesign候補作成だけでは行わず、本Workの採用確認後に別途実施する。今回はDesignのみであり、Code / tests / resources / PRは開始しない。
+#691のproduction構成は、本節の意味契約の採用確認を前提とする。production YAML、DTO、strict loader、factory、production policy構築は#691が所有し、本節で定めた意味を変更せず構成へ反映する。工程状態・検証結果・レビュー状況はIssue / PR / Project / Checkpointで管理する。
 
 
 ## 10. 最終世代照合の共通基盤への接続（#632）
