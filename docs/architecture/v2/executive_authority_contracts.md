@@ -217,6 +217,73 @@ LLM開始前に実行判断所有者から導出方針の不変な世代を取�
 
 計画承認の確定時刻はLLM応答完了時刻から独立させる。現在状態取得後、共通Fenceが全参加者を取得しtokenを検査してからUTC時計を読む。その時刻だけを確定処理へ渡し、callerがFence前に取得した時刻を最終確定時刻として使わない。期限を超えた承認は判断ごと非確定とする。詳細は[計画実行承認契約](plan_execution_approval_contracts.md)第9節に従う。
 
+### 9.9. SPEECH / BODY / ATTENTIONの本番必須要件（#697）
+
+状態: #697のDesign候補。実装・試験・採用は未実施。本節は#328配下の要件意味を定め、第9.1–9.8節の#630導出機構を変更しない。対象はproduction revision 1の3kindだけであり、ACTIVITY（#695を含む）・PLAN_EXECUTION・PLAN_PROGRESSの方式・意味・出典は変更しない。
+
+#### 採用する意味と規則
+
+3kindは本番方針へ明示登録する。いずれも「Executive commit段階で独立したCapability / Precondition要件を追加しない」という意味の`RequirementMode.CONSTANT`を採用し、`capabilities=()`、`preconditions=()`、`source=None`とする。未登録・下流取得失敗を空へ変換する処理ではない。各kindの参照妥当性、現在性、取消、候補構造、既存commit条件はそのまま必須である。
+
+| kind | mode | capabilities | preconditions | 意味根拠とOwner境界 |
+| --- | --- | --- | --- | --- |
+| SPEECH | CONSTANT | 明示空tuple | 明示空tuple | 意識的な発話意図の成立と発話成功を分ける。#362が意味Plan、#330が言語実現、#348等が提示・音声化の適法性と実行可能性を検証する |
+| BODY | CONSTANT | 明示空tuple | 明示空tuple | 高レベル身体意図の成立とPlan構成・物理的実現・描画を分ける。#338のPlan検証、#339の物理制約、#340のRealtime、外側Avatarの責務を要件へ昇格しない |
+| ATTENTION | CONSTANT | 明示空tuple | 明示空tuple | 意識的Focus選択はExecutive、current Focus mutationの適法性は#333。source membershipとrevision検査を能力・前提条件へ二重化しない |
+
+規則の機械的な対応は次で固定する。全規則の`revision=1`、selectorは`RequirementSelectorField.KIND`（保存値`kind`）、selector.valueは`None`。種類全体へ一致し、個別semantic_goal_ref / motion_goal_ref / mode規則を併設して曖昧にしない。
+
+| intent_kind | rule_id | revision | selector |
+| --- | --- | --- | --- |
+| SPEECH | `executive.requirements.production.speech` | 1 | kind / None |
+| BODY | `executive.requirements.production.body` | 1 | kind / None |
+| ATTENTION | `executive.requirements.production.attention` | 1 | kind / None |
+
+これらはCapability type・operation・Precondition IDではなく、#630既存ruleの識別子である。所属policy_id / policy_revisionは#691が確定する本番`ExecutiveIntentRequirementsPolicy`の値を全ruleへ明示設定し、登録時に一致を検証する。#697で別policyやOwnerを作らない。#691は本表をそのまま不変DTO・production sourceへ変換し、意味の再選択をしない。
+
+#### 正本監査とSPEECHの根拠
+
+base `70a62c3cd9fcefc2eacabb966c07811464d7b574`の本書、[Speech Semantics契約](speech_semantics_contracts.md) §2・§5・§11、#362 / #661 / #330の責務を照合した。Speech intentが選択するsemantic goal / target / constraintsと、#362が確定するpropositions / truth constraints / semantic policy / communicative material content、#330の言語実現を区別する。これらの下流入力・意味検証は完全なtyped Requirementsを供給するUPSTREAM契約ではない。
+
+本番SpeechIntentのcommit前に独立して要求する具体Capability identity / operationやspeech-specific Preconditionは、監査対象正本には定義されていない。TTS / playback availabilityは提示の実行可能性であり、意識的発話意図の成立要件に追加しない。#362 / #330 / #348の検証をRequirementsへ移さない。
+
+[最小Brain本番構成](minimum_brain_production_configuration.md) §3の、実TTS・Avatarの存在を最小起動条件にしない境界とも整合する。ただし最小起動成功は本番会話・発話成功の証拠ではない。Speech未登録・失敗を成功へ変換せず、既存Speech sourceのExecutive段階での参照解決・currentness検証も免除しない。
+
+#### BODYの根拠とcopy契約
+
+[Body Motion Planning契約](body_motion_planning_contracts.md) §2.1–2.3・§14、[Body Architecture](body_architecture.md) §2、[Body Solver / Controller契約](body_solver_controller_contracts.md) §1–2と、#338 / #339 / #340 / #341の責務を照合した。具体的なBODY用CapabilityRequirement type / operationや、独立したExecutivePreconditionRequirementを必須とする定義は監査対象正本にない。新しい能力名や操作名は導入しない。
+
+ExecutiveのBODY intentは高レベルAction semanticsであり、BodyMotionPlanはExecution Factでも物理的実現の保証でもない。CanonicalBodyModel、BodyState、BodyExpressionContext、constraint resolution、IK/FK、trajectory、physical feasibility、renderer availabilityをExecutive Requirementsへ変換しない。必要な入力不在・矛盾・物理的不可能性は既存Ownerが拒否する。BodyがCoreであることと外側Avatarの有無も区別する。
+
+#338がvalidated Executive / SystemCommandから`required_capabilities / preconditions`をcopyする契約は、値と由来の保存を要求しており、non-emptyを要求していない。本節の正規ruleから導出・照合された空tupleもcopyする正規値とする。PlannerやLLMは要件を追加・削除できない。将来、別の採用済みpolicy revisionが非空を定めた場合も同じcopy・現在値再検査を維持し、#338が本節の空値へ上書きしてはならない。
+
+#### ATTENTIONの根拠
+
+[Attention / Turn契約](attention_turn_contracts.md) §7と[Brain Integration契約](brain_integration_contracts.md) §29の#333 / #611境界を照合した。Executiveのtyped AttentionIntentPayloadからAttentionTransitionへ投影し、#333がcurrent bounded source membership、expected attention revision、source context revision、重複transition、atomic mutationを検証する。Focus shiftに独立した外部CapabilityやPreconditionを要求する定義は監査対象正本にない。
+
+これらのOwner validationをCapabilityRequirementやrevisionを期待値とするPreconditionへ複製しない。Executiveで意図が確定しても、Attention適用までにsourceやrevisionが変われば#333の既存gateが拒否する。#611は配送を所有し、意図・要件・Focusの意味を再決定しない。
+
+#### 由来・世代・失敗と受入検証
+
+定数規則は上流publicationを使用しないため、導出用`provenance.sources`は空である。一方、所属policy ID / revision、rule ID / revision、selector、RequirementsGenerationのserialと正規Owner tokenは必須のまま保持する。意味根拠は本節へ対応付け、raw token・Lock・Owner objectを公開しない。#630の現在性・最終Fenceを空要件でも通す。SpeechやMemory等の既存evidence tokenを空の要件sourceと混同して省略しない。
+
+| 条件 | 受入結果 |
+| --- | --- |
+| 本表の登録済みruleが空を導出し、候補も空 | Requirements照合成功。他のExecutive / 下流gateは別途必須 |
+| ruleがない | `RULE_UNREGISTERED`で非確定。空fallbackなし |
+| policyがない | `POLICY_UNREGISTERED`で非確定 |
+| 一致ruleが複数 | `AMBIGUOUS_RULE`で非確定 |
+| canonicalが空、候補が非空 | `CANDIDATE_MISMATCH`で非確定。保守的な追加も受理しない |
+| canonicalが非空、候補が空 | `CANDIDATE_MISMATCH`で非確定。既存の他kind・後続revisionにも完全一致を維持 |
+| policy / sourceがstale、source不在 | 既存の型付き失敗を維持。空規則へ切替えない |
+| 下流が利用不能 | 自動的なRequirements不一致へ読み替えず、下流の型付き失敗として扱う。成功や実行Factを補作しない |
+| 下流状態がstale | 該当Ownerのcommit gateで拒否。Executive自身の既存currentnessも維持 |
+
+Designの照合項目は、3kindの方式・空値・selector・rule identityが一意、新Capability / Precondition identityなし、架空UPSTREAMなし、test fixtureからの意味採用なし、下流Authorityの重複なしである。#630機構・#610 reader・#692 wiring・#695は変更しない。実装工程では上表の正常・不一致・未登録・世代変更と下流拒否の分離を検証する。既存のgeneric empty成功試験を本番意味採用の証拠へ読み替えない。
+
+#691のBlocked解除は#697のDesign候補作成だけでは行わず、本Workの採用確認後に別途実施する。今回はDesignのみであり、Code / tests / resources / PRは開始しない。
+
+
 ## 10. 最終世代照合の共通基盤への接続（#632）
 
 第9.6節の世代公開と確定の直列化は、[並行動作設計第20節](concurrency_architecture.md#20-所有者の世代更新と最終確定を直列化する632)の共通参加者・Fenceを使用する。元所有者の更新ロックと同じ境界で取得した正規のトークンを使い、読取値のコピーを実行判断側で再公開して代用しない。方針・規則の世代、計画・進行・活動など利用した全出典と、確定先自身の参加者を取得前に確定する。

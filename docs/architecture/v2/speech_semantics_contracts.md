@@ -16,6 +16,8 @@
 
 Character Profile、raw Emotion / Desire / Drive、raw Execution payload、自然言語辞書、regexはWhat-to-say Authorityにならない。
 
+Executive production revision 1のSpeech要件の設計候補は[実行判断契約 §9.9](executive_authority_contracts.md#99-speech--body--attentionの本番必須要件697)を正とする。commit時の追加Requirementsなしは発話成功を保証しない。本書の意味検証、#330の言語実現、提示・TTS側の実行可能性をExecutiveのCapability / Preconditionへ二重登録しない。
+
 ## 3. 入力snapshot
 
 `SpeechSemanticContextSnapshot`は次をimmutableに保持する。
