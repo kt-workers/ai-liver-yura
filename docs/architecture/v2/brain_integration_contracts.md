@@ -589,6 +589,9 @@ binding 0件は「現在登録された実測factが0件」を意味する。正
 `build_core_executive_input_evidence()`は同じ登録済みReaderを入力根拠・現在要件・計画根拠へ接続する本番構成入口である。規則、実測事実の供給元、計画参照の意味を既定値で補作しない。注意からの自動搬送・全役割の起動登録・判断後の分岐は#611以降の責務に残す。
 
 
+### 28.2. Direct ACTIVITY要件sourceの読取接続（#695）
+[実行判断契約第11.1節](executive_authority_contracts.md#111-direct-activityの本番要件source695)をDirect ACTIVITYの本番要件sourceの設計候補正本とする。#610は登録済みOwnerへrequest開始前のbounded captureと選択sourceのcurrent読取を委譲し、request captureと共有policy世代の同一性をOwner公開APIで照合する。規則・能力・条件の期待値を読取側で生成しない。#611/#612の配送・#649のbinding意味を変更しない。Code・採用は未実施。
+
 ## 29. 通常認知の起動登録と配送（#611）
 
 `CoreCognitionConfiguration`は、既存の評価方針・判断方針・Internal State所有者・Attention所有者・ExecutiveRequirementsOwner・PluginRegistryAuthority・実測Routerとbinding・定型評価規則を明示して受け取る。`build_minimum_core(cognition=...)`と`build_persistent_core(cognition=...)`は同じ所有者を各接続へ渡し、INPUT_MEANING・APPRAISAL・EXECUTIVEを既存Brain Runtimeへ登録する。要件方針未登録やOwner欠落は構成失敗とし、実測publicationの取得不能は既存の失敗境界へ伝播する。試験用事実や空の成功を既定値として生成しない。
