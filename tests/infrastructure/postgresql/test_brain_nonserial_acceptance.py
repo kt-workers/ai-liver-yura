@@ -249,8 +249,8 @@ def complete_activity(app: Any, index: int) -> Any:
 @pytest.mark.parametrize("stop_pending", [False, True])
 async def test_real_activity_reflection_burst_keeps_foreground_and_bounded_cleanup(
     endpoint: PostgresEndpoint,
-    boot_config: Path,
-    monkeypatch: pytest.MonkeyPatch,  # noqa: F811
+    boot_config: Path,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
     stop_pending: bool,
 ) -> None:
     baseline = asyncio.all_tasks()
