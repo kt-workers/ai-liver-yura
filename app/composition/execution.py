@@ -117,6 +117,9 @@ class CoreExecutionDelivery:
         self._plan_events: dict[str, str] = {}
         self._progress_feedback: dict[str, tuple[object, ...]] = {}
         self._sources_consumed: Callable[[], None] | None = None
+        self.reflection_observer: Callable[
+            [BrainIntegrationWork, ActivityExecutionRecord], None
+        ] | None = None
 
     def register(self) -> None:
         self.brain.register_module(BrainIntegrationModule.ACTIVITY_EXECUTION, self)
@@ -363,6 +366,8 @@ class CoreExecutionDelivery:
         command_id = record.result.command_id
         if not record.terminal or self.activity.authority.snapshot(command_id) != record:
             raise ValueError("還流にはOwnerの現在の終端実行事実が必要です")
+        if self.reflection_observer is not None:
+            self.reflection_observer(work, record)
         if scope_id is not None and any(
             command_id in commands for commands in self._feedback.values()
         ):

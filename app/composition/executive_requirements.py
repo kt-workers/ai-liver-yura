@@ -12,6 +12,7 @@ from app.composition.executive_input_evidence import (
     CoreExecutiveInputEvidenceReader,
     CoreExecutiveSpeechEvidenceReader,
 )
+from app.composition.memory_evidence import CoreMemoryEvidenceReader
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
 from app.domain.contracts.common import freeze_json, require_identifier
@@ -242,8 +243,9 @@ def build_core_executive_input_evidence(
     requirements: CoreExecutiveRequirementsReader,
     *,
     speech: CoreExecutiveSpeechEvidenceReader | None = None,
+    memory: CoreMemoryEvidenceReader | None = None,
 ) -> CoreExecutiveInputEvidenceReader:
     """同じ登録済み読取を入力根拠・現在要件・計画根拠へ接続する。"""
     return CoreExecutiveInputEvidenceReader(
-        inputs, appraisal, registry, requirements, plans=requirements, speech=speech
+        inputs, appraisal, registry, requirements, plans=requirements, speech=speech, memory=memory
     )

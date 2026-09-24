@@ -68,3 +68,7 @@ Reflection productionのcandidates.v2 / support.v2はfreezeし、MemoryContent.t
 #667のv2 candidateはidentity=Noneで保存可能、semanticsが明示されてもpublicationはSUBJECT_UNRESOLVED、tokens=()となる。
 これは#673のv3供給待ちの正規境界。#672ではdirect typed Candidateによるpositive publicationを維持・検証する。
 #673はproposal/support/accepted candidateのtyped identity供給、#661は後続Speech投影を所有する。
+
+## 検索集合の現在性との接続（#686）
+
+ID別publicationは既存のrank 55・利用不能時tokens=()を維持する。検索集合の現在性はmemory_store_retrieval_contracts.md §25のOwner publicationが補完する。新しいmatching IDや、検索候補のunavailable / availableの変化を、選択済みIDのtokenだけで検出できると解釈しない。両publicationが必要なconsumerは両方のtokenを既存Fenceへ搬送し、16 participant上限を維持する。#672のtyped subject identityやassertion判定は変更しない。
