@@ -631,3 +631,35 @@ trusted factoryはRunContextを受け取り、iterationごとにfreshなMinimumC
 実行事実と計画進行が同時に還流すると、採用済みのAppraisal / Executiveの現在性検査により競合したworkがFAILED等で拒否される場合がある。その場合、後続に確定判断が存在してもrun全体をPRODUCT_FAILED / FAILとし、残りの実traceと実行事実も回収する。これは既存Ownerの拒否を検証する試験条件であり、Labでロック・再採用・revision補正を追加して成功へ変更しない。試験コードのPASSと、観測された製品runのFAILを区別する。
 
 型付き拒否、期限、取消、観測上限、提供先失敗を成功へ読み替えない。生の例外本文、secret、SDK objectは書き出さない。正常終端・失敗・Runner取消・呼出し側取消・timeout・closeの資源回収は、run単位で保持する現在iterationのapplicationを既存RunContextから停止する。終了処理をiteration数だけ累積登録しない。
+
+## 27. 本体発話経路と評価証拠（#618）
+
+`speech_path_target`はBrain-Dの確定判断配送を共通ValidationRunnerへ登録する。単独の生成・合成・提示Labを置き換えず、同じCoreSpeechDelivery / CoreSpeechPipelineと既存process Supervisorを通す。範囲はINTEGRATEDであり、先行するExecutive判断生成、SYSTEM_SLICE、人間の品質評価まで実行したとは主張しない。
+
+### 27.1. 明示構成と公開観測
+
+fixtureは公開work envelope、確定判断、音声必須条件を保持する。人間向けの状況説明は共通fixture.human_contextへ出典付きで登録する。現在のProductionTargetProvenanceと登録内容を毎iterationで照合し、不一致ではfactoryを起動しない。trusted factoryはfreshなSpeechPathSessionを返し、同じCognition接続、起動・終了処理、SpeechPathTasksを明示する。入力JSONから関数・worker・音声ファイルの任意pathを解決しない。
+
+CoreSpeechPipelineの任意の同期evidence_sinkは、実際に取得・採用した公開値を呼出し順に観測する。意味文脈、採用Plan、Character文脈、採用Utterance、Performance文脈とPlan、Verifier文脈と採用結果、準備済み候補、提示前の現在状態を保持する。根拠や制約を生成後に補作しない。callbackでI/O・await・task生成・Owner更新を行わない。観測失敗はevidence_failedへ保持し、製品の判断・提示結果を変更しない。Labはこの失敗をHARNESS_FAILEDへ分類する。
+
+SpeechPathEvidenceは公開型を列挙して有限な件数で投影する。generationの内部Ownerやproofは公開serializerを通し、raw LLM応答・prompt・SDK object・例外本文は保存しない。SpeechPathLLMPortは同じLLM接続を呼び、Role要求の実行方針と結果のmodel_class・Mapping来歴・安全な失敗codeを保持する。具体model/providerの識別はtrusted起動側のProductionTargetProvenanceおよび既存の安全なProvider診断と対応付ける。来歴が供給されない値を推測しない。
+
+### 27.2. 同じ音声と提示の証拠
+
+SpeechPathAudioOutputを本体のoutput読取へ登録する場合、実際のUtteranceとPerformancePlanから既存TTSProviderAdapterへ要求する。candidate / request identityを書き換えない。音声設定・voice binding・mapping / retry方針、要求、型付き合成結果を残す。合成失敗をtext提示へfallbackしない。
+
+trusted資源読取は合成結果と同じ公開audio_refを解決する。WAVのframeと形式を検査し、空・欠損・容量超過を拒否する。保存する音声はbase64、独立したSHA-256、sample rate / channel / frame数と公開audio_refであり、生の保存path・認証情報を公開しない。合成元のcontent_digestを別algorithmのhashへ読み替えない。音声の合計容量をLabPolicy.max_export_bytesの半分以下に制限し、最終JSONの容量検査も維持する。資源解放後も同じ音声を人間が評価できる。
+
+提示の検証ではSpeechPathTasksを既存executorへ渡して所有taskの終端を待ち、同じSpeechRuntimeのpresentation_snapshotから確定command・現在candidate・受理済みreportsを取得する。生のAdapter reportを受理済みとして代用しない。Activity Ownerの観測Factと配送結果も保持する。
+
+音声必須条件では、受理済みSTARTEDとCOMPLETED、候補COMPLETED、Factの配送成功、対応する保存音声をすべて要求する。text-onlyを音声成功にしない。加えて対象traceの必要workを全件観測し、非成功があればrun全体のFAILを保持する。提示成功の後に認知が現在性拒否された場合も、提示事実を失わせず、認知の拒否を隠さない。
+
+### 27.3. 回収と人間評価
+
+Sessionとiteration内のTTS資源をrun単位の1つの終了管理から回収する。終了済みiterationのcleanup登録を蓄積しない。SpeechPathTasksは保持上限を明示し、Runtimeの意味・取消規約を変更しない。遅延注入はspeech_path.llm / tts.provider / speech_path.audio_evidence、閉じた失敗注入はspeech_path.llmへ限定する。取消・期限・stale・未受理候補・合成失敗・提示失敗を成功へ変更しない。
+
+評価保存と匿名比較は既存HumanEvaluation / BlindComparisonとvalidation_labの表示・保存入口を再利用する。機械GateのPASSはHuman PASSではなく、初期評価はUNRATEDのままとする。匿名表示でモデル識別情報が残れば既存の拒否を維持し、出典付きの完全な証拠と匿名評価画面を混同しない。
+
+mock LLM・mock TTSのWAV・試験用process提示の自動試験は、実音声サービスや実際の可聴提示の証明ではない。実TTS / voice / 提示先の明示構成による実測が未実施ならNOT_RUNと記録し、#434の人間評価を代作しない。
+
+2026-09-22のユーザー指示により、実音声を含む実動作の検証はHumanの責務とする。ChatGPTとCodexは実動作の検証を実施しない。実装・自動試験・コードレビューの成果とHumanによる実動作の確認結果を別に記録する。

@@ -64,6 +64,11 @@ def _sample(owner: str, revision: int, value: object) -> SnapshotGenerationSampl
 class CoreInputReferenceContextBinding:
     """参照の投影世代だけを管理し、元の認知状態や判断は変更しない。"""
 
+    @property
+    def activities(self) -> ActivityExecutionAuthority:
+        """同じ実行事実Ownerを他の本体接続へ渡す。"""
+        return self._activities
+
     def __init__(
         self,
         goals: CoreGoalSnapshotReader,

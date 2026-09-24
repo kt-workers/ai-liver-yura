@@ -95,6 +95,19 @@ class CoreMemoryPersistenceBinding:
             raise ValueError("記憶検索には型付き要求が必要です")
         return self._submit(lambda: self._persistence.retrieve_memory(query))
 
+    def submit_retrieval_publication(
+        self, query: MemoryRetrievalQuery
+    ) -> CoreMemoryOperation[AuthorityReadPublication[RankedMemoryEvidenceView]]:
+        """検索集合の現在公開を同じ保存Ownerへ配送する。"""
+        if not isinstance(query, MemoryRetrievalQuery):
+            raise ValueError("記憶検索には型付き要求が必要です")
+        return self._submit(lambda: self._persistence.read_memory_retrieval_publication(query))
+
+    async def read_retrieval_publication(
+        self, query: MemoryRetrievalQuery
+    ) -> PersistenceOperationResult[AuthorityReadPublication[RankedMemoryEvidenceView]]:
+        return await self.submit_retrieval_publication(query).wait()
+
     def submit_semantic_assertion_read(
         self, memory_id: str, expected_revision: int | None = None
     ) -> CoreMemoryOperation[MemorySemanticAssertionEntry]:

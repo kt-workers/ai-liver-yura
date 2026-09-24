@@ -61,6 +61,7 @@ class CoreExecutiveEvidence:
     speech_source_bindings: tuple[ExecutiveSpeechSourceBinding, ...] = ()
     capability_tokens: tuple[AuthorityGenerationToken, ...] = ()
     precondition_tokens: tuple[tuple[str, tuple[AuthorityGenerationToken, ...]], ...] = ()
+    memory_tokens: tuple[AuthorityGenerationToken, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.source, AttentionSource):
@@ -76,6 +77,7 @@ class CoreExecutiveEvidence:
             "plan_scopes",
             "plan_progress_contexts",
             "capability_tokens",
+            "memory_tokens",
             "activity_bindings",
             "speech_source_bindings",
             "precondition_tokens",
@@ -269,6 +271,7 @@ class _ExecutiveOperation:
         requirements = await self.binding._evidence.requirements_for(snapshot, candidate)
         current = await self.read()
         assert self.evidence is not None
+        # Memory tokenは同期証拠であり、読取ごとのidentityを根拠値と比較しない。
         # 能力・前提条件・Speech参照の変化は候補別の既存commit検査へ渡す。
         if (
             replace(
@@ -276,6 +279,7 @@ class _ExecutiveOperation:
                 capabilities=self.evidence.capabilities,
                 preconditions=self.evidence.preconditions,
                 capability_tokens=self.evidence.capability_tokens,
+                memory_tokens=self.evidence.memory_tokens,
                 precondition_tokens=self.evidence.precondition_tokens,
                 communicative_goal_catalog=self.evidence.communicative_goal_catalog,
                 speech_source_bindings=self.evidence.speech_source_bindings,
@@ -289,6 +293,7 @@ class _ExecutiveOperation:
         assert appraisal is not None
         used_conditions = {r.precondition_id for item in requirements for r in item.preconditions}
         evidence_tokens = (
+            *self.evidence.memory_tokens,
             *(current.capability_tokens if any(item.capabilities for item in requirements) else ()),
             *(
                 token

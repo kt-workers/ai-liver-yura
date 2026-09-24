@@ -99,6 +99,11 @@ class CoreSpeechConfiguration:
         self, cognition: CoreCognitionDelivery, reference: CoreInputReferenceContextBinding
     ) -> CoreSpeechDelivery:
         pipeline, shutdown = self.build(cognition, reference)
+        if cognition.reflection is not None:
+            reflection = cognition.reflection
+            pipeline.reflection_observer = lambda work, record: reflection.observe_presentation(
+                work.envelope, record
+            )
         delivery = CoreSpeechDelivery(cognition, pipeline, shutdown)
         cognition.brain.register_module(BrainIntegrationModule.SPEECH_SEMANTICS, delivery)
         previous = cognition._decision_delivery

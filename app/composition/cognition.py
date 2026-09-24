@@ -45,6 +45,8 @@ from app.usecases.attention import UserInteractionAttentionProjector
 
 if TYPE_CHECKING:
     from app.composition.execution import CoreExecutionDelivery
+    from app.composition.memory_evidence import CoreMemoryEvidenceReader
+    from app.composition.reflection import CoreReflectionDelivery
     from app.composition.speech_configuration import CoreSpeechDelivery
 
 
@@ -126,6 +128,8 @@ class CoreCognitionDelivery:
         self.latest_delivery: CognitionDelivery | None = None
         self.execution: CoreExecutionDelivery | None = None
         self.speech: CoreSpeechDelivery | None = None
+        self.reflection: CoreReflectionDelivery | None = None
+        self.memory_evidence: CoreMemoryEvidenceReader | None = None
         self._decision_delivery: Callable[[BrainIntegrationWork, object], None] | None = None
 
     def register(self, input_port: _Module) -> None:

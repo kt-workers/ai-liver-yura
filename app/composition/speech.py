@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from app.composition.presentation_notification import CorePresentationNotification
-from app.composition.speech_feedback import CoreSpeechFeedback, ObservedSpeechPresentationBoundary
+from app.composition.speech_feedback import (
+    CoreSpeechFeedback,
+    ObservedSpeechPresentationBoundary,
+    SpeechFactDeliveryDisposition,
+)
+from app.domain.activity_execution.observation import ObservedExecutionFactRecord
 from app.domain.brain_integration import BrainIntegrationWork
 from app.domain.character_language import (
     CharacterLanguageContextSnapshot,
@@ -85,6 +90,19 @@ class CoreSpeechPipeline:
     expiry_policy_ref: str
     admission: SpeechPreparationAdmission
     discarder: PreparedAudioDiscarder
+    reflection_observer: Callable[
+        [BrainIntegrationWork, ObservedExecutionFactRecord], None
+    ] | None = None
+    evidence_sink: Callable[[str, object], None] | None = None
+    evidence_failed: bool = field(default=False, init=False)
+
+    def _observe(self, stage: str, value: object) -> None:
+        """任意の同期観測は意味判断・I/Oを行わず、失敗しても製品結果を変更しない。"""
+        if self.evidence_sink is not None and not self.evidence_failed:
+            try:
+                self.evidence_sink(stage, value)
+            except Exception:
+                self.evidence_failed = True
 
     async def execute(
         self,
@@ -127,6 +145,7 @@ class CoreSpeechPipeline:
 
         check_cancel()
         snapshot = await self.context.build_async(decision, intent_id, captured_at=self.clock())
+        self._observe("semantic_context", snapshot)
         plan = await self.semantics.plan(
             snapshot,
             request_id=key + ":meaning-request",
@@ -135,20 +154,25 @@ class CoreSpeechPipeline:
             plan_id=key + ":plan",
             created_at=self.clock(),
         )
+        self._observe("semantic_plan", plan)
         check_cancel()
         character_context = await self.readers.character(plan, work.envelope.trace_id)
         if character_context.semantic_plan != plan:
             raise ValueError("Character文脈のPlanが一致しません")
+        self._observe("character_context", character_context)
         utterance = await self.character.realize(
             character_context, utterance_id=key + ":utterance", created_at=self.clock()
         )
+        self._observe("utterance", utterance)
         check_cancel()
         performance_context = self.readers.performance(utterance, work.envelope.trace_id)
         if performance_context.utterance != utterance:
             raise ValueError("Performance文脈のUtteranceが一致しません")
+        self._observe("performance_context", performance_context)
         performance = self.performance.plan_snapshot(
             performance_context, key + ":performance", self.clock()
         )
+        self._observe("performance_plan", performance)
         verification_context = await self.readers.verification(
             plan, utterance, work.envelope.trace_id
         )
@@ -157,6 +181,7 @@ class CoreSpeechPipeline:
             or verification_context.utterance != utterance
         ):
             raise ValueError("Verifier文脈のPlan/Utteranceが一致しません")
+        self._observe("verification_context", verification_context)
         verified = await self.verifier.verify(
             verification_context,
             blind_observation_id=key + ":blind",
@@ -165,6 +190,7 @@ class CoreSpeechPipeline:
             acceptance_id=key + ":acceptance",
             created_at=self.clock(),
         )
+        self._observe("verification", verified)
         if verified.acceptance.state is not SemanticAcceptanceState.ACCEPTED:
             raise ValueError("Verifierが発話を受理しませんでした")
         check_cancel()
@@ -217,8 +243,10 @@ class CoreSpeechPipeline:
             character_definition_revision=utterance.candidate.character_definition_revision,
         )
         await self.runtime.register(candidate)
+        self._observe("prepared_candidate", candidate)
         try:
             current = await self.readers.presentation(candidate)
+            self._observe("presentation_context", current)
             check_cancel()
             if snapshot.generation is not None:
                 snapshot.generation.require_current()
@@ -232,12 +260,17 @@ class CoreSpeechPipeline:
                 != (work.envelope.root_trigger_id or work.envelope.trigger_id)
             ):
                 raise ValueError("Presentation還流の元Brain相関が一致しません")
+            def deliver(record: ObservedExecutionFactRecord) -> SpeechFactDeliveryDisposition:
+                if self.reflection_observer is not None:
+                    self.reflection_observer(work, record)
+                return downstream.deliver(record)
+
             feedback = CoreSpeechFeedback(
                 self.runtime,
                 downstream.authority,
                 key + ":presentation",
                 downstream.provenance,
-                downstream.deliver,
+                deliver,
             )
             await self.executor.commit_and_present(
                 candidate_id=key,
