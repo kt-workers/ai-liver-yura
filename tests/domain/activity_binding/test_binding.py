@@ -173,45 +173,22 @@ def direct_fixture() -> tuple[
     ExecutiveDecisionCandidate,
     ExecutiveCommitState,
 ]:
-    from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
     from app.domain.executive import (
         ActivityIntentPayload,
         ExecutiveFactKind,
         ExecutiveFactRef,
         ExecutiveIntent,
         ExecutiveIntentKind,
-        ExecutiveIntentRequirementRule,
-        ExecutiveIntentRequirementsPolicy,
         ExecutiveOutcome,
-        ExecutiveRequirementsOwner,
-        RequirementMode,
-        RequirementSelector,
     )
     from tests.domain.executive.test_executive import candidate, live_state, snapshot
 
     owner, schema, source = fixture()
     pub = publish(owner)
     requirement = CapabilityRequirement("activity", "run")
-    rules = ExecutiveRequirementsOwner(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY)
-    rules.publish(
-        ExecutiveIntentRequirementsPolicy(
-            "binding-policy",
-            1,
-            (
-                ExecutiveIntentRequirementRule(
-                    "activity",
-                    1,
-                    "binding-policy",
-                    1,
-                    ExecutiveIntentKind.ACTIVITY,
-                    RequirementSelector(),
-                    RequirementMode.CONSTANT,
-                    (requirement,),
-                    (),
-                ),
-            ),
-        )
-    )
+    from tests.helpers.direct_activity_requirements import requirements_owner, source_owner
+
+    rules = requirements_owner(source_owner(owner, (requirement,)))
     initial = snapshot()
     captured = rules.capture(
         replace(

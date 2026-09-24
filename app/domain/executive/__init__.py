@@ -42,6 +42,12 @@ from .deliberator import (
     parse_candidate,
     validate_candidate_bounds,
 )
+from .direct_activity_requirements import (
+    DirectActivityRequirementRecord,
+    DirectActivityRequirementSource,
+    DirectActivityRequirementSourceSpec,
+    DirectActivityRequirementsOwner,
+)
 from .projector import authority_ref, to_foundation_decision, to_system_command
 
 __all__ = [
@@ -127,4 +133,11 @@ __all__ += [
     "RequirementsGeneration",
     "RequirementsRejected",
     "UpstreamRequirementRecord",
+]
+
+__all__ += [
+    "DirectActivityRequirementRecord",
+    "DirectActivityRequirementSource",
+    "DirectActivityRequirementSourceSpec",
+    "DirectActivityRequirementsOwner",
 ]

@@ -184,9 +184,16 @@ class _ExecutiveOperation:
         if not self.binding._attention.is_current(self.dispatch):
             raise ValueError("注意の搬送結果が現在の状態と一致しません")
 
-    async def read(self) -> CoreExecutiveEvidence:
+    async def read(
+        self, candidate: ExecutiveDecisionCandidate | None = None
+    ) -> CoreExecutiveEvidence:
         self.check_current()
-        value = await self.binding._evidence.read(self.dispatch.selected_source)
+        selected_reader = getattr(self.binding._evidence, "read_for_candidate", None)
+        value = (
+            await selected_reader(self.dispatch.selected_source, candidate)
+            if candidate is not None and selected_reader is not None
+            else await self.binding._evidence.read(self.dispatch.selected_source)
+        )
         self.check_current()
         if (
             not isinstance(value, CoreExecutiveEvidence)
@@ -269,13 +276,14 @@ class _ExecutiveOperation:
     ) -> ExecutiveCommitState:
         self.check_current()
         requirements = await self.binding._evidence.requirements_for(snapshot, candidate)
-        current = await self.read()
+        current = await self.read(candidate)
         assert self.evidence is not None
         # Memory tokenは同期証拠であり、読取ごとのidentityを根拠値と比較しない。
         # 能力・前提条件・Speech参照の変化は候補別の既存commit検査へ渡す。
         if (
             replace(
                 current,
+                activity_bindings=self.evidence.activity_bindings,
                 capabilities=self.evidence.capabilities,
                 preconditions=self.evidence.preconditions,
                 capability_tokens=self.evidence.capability_tokens,

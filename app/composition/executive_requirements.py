@@ -221,8 +221,7 @@ class CoreExecutiveRequirementsReader:
             )
             if len(expected) != 1 or expected[0].tokens != publication.tokens:
                 raise RequirementsRejected(RequirementsFailureCode.STALE_SOURCE)
-        if self.owner.current_generation() is not generation:
-            raise RequirementsRejected(RequirementsFailureCode.STALE_POLICY)
+        self.owner.check_generation(generation)
         return tuple(p.value for p in scopes), tuple(p.value for p in contexts)
 
     @staticmethod

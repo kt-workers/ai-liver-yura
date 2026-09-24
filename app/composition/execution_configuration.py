@@ -13,6 +13,7 @@ from app.domain.attention import AttentionSource
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
 from app.domain.contracts.finalization import AuthorityReadPublication
 from app.domain.executive import (
+    ActivityIntentPayload,
     AuthoritativeIntentRequirements,
     ExecutiveContextSnapshot,
     ExecutiveDecisionCandidate,
@@ -41,6 +42,21 @@ class _ExecutionEvidence:
         self.execution, self.requirements = execution, requirements
 
     async def read(self, source: AttentionSource) -> CoreExecutiveEvidence:
+        return await self._read(source, None)
+
+    async def read_for_candidate(
+        self, source: AttentionSource, candidate: ExecutiveDecisionCandidate
+    ) -> CoreExecutiveEvidence:
+        selected = {
+            i.payload.binding_ref
+            for i in candidate.intents
+            if isinstance(i.payload, ActivityIntentPayload)
+        }
+        return await self._read(source, selected)
+
+    async def _read(
+        self, source: AttentionSource, selected: set[str | None] | None
+    ) -> CoreExecutiveEvidence:
         value = await self.base.read(source)
         scopes = tuple(
             dict.fromkeys(
@@ -82,7 +98,11 @@ class _ExecutionEvidence:
             self.requirements.publish(generation.policy, tuple(sources.values()))
         return replace(
             value,
-            activity_bindings=tuple(owner.capture() for owner in self.bindings),
+            activity_bindings=tuple(
+                owner.capture()
+                for owner in self.bindings
+                if selected is None or owner.binding_id in selected
+            ),
             plan_scopes=tuple(
                 p.value for p in publications if isinstance(p.value, PlanExecutionScope)
             ),
@@ -138,6 +158,7 @@ class CoreExecutionConfiguration:
         bounds: BrainOperationalBoundsPolicy,
         requirements: ExecutiveRequirementsOwner,
     ) -> CoreExecutionDelivery:
+        requirements.require_binding_owners(self.bindings)
         activity = ActivityExecutionCoordinator(
             self.preflight, self.adapter, reference._activities, clock
         )
