@@ -1,6 +1,6 @@
 # Appraisalの本番構成（#690）
 
-状態: 設計候補。ChatGPTの設計レビュー待ち。実装・本流採用・Human検証は未実施。
+状態: 設計finding修正候補。ChatGPTのfinding確認待ち。実装・本流採用・Human検証は未実施。
 Owner: #327の構成Work #690。利用側: #692 / #611。
 
 ## 1. 正本と監査結果
@@ -16,7 +16,7 @@ Owner: #327の構成Work #690。利用側: #692 / #611。
 | DecayPolicy / DecayFacetRule | 既存の明示規則・exact選択・missing diagnosticを使う。値の供給だけを追加する |
 | app/config/minimum_brain.py / gui_admin.py | 専用YAML→厳密loader→不変構成の既存patternを採用する。minimum YAMLに別Roleを必須追加しない |
 | CoreCognitionConfiguration | 外部注入境界は既存。#690はAppraisal部分を供給し、Executive / Attentionや配備全体を生成しない |
-| Provider mapping | #357の既存Role mappingを利用。モデル名・認証・SDK設定を本書のデータへ混入しない |
+| Provider mapping | #692 / #360のSystem・deployment構成から外部注入する。#357はgeneric型・検証・Adapterを所有し、Appraisal固有登録は#690が所有する |
 
 V1のbranch・実装は参照・移植しない。testsのhelperを構成Authorityにしない。
 
@@ -40,7 +40,92 @@ V1のbranch・実装は参照・移植しない。testsのhelperを構成Authori
 
 上限は成功保証・性能SLOではない。長すぎる候補、提供先制約、不正mapping、時間切れは既存の型付き失敗へ閉じる。成功fallback・silent clamp・別モデルへの暗黙切替を設けない。descriptorとrequestは同じ不変policy実体を使用する。実行中に新policyへ付け替えない。遅いDeep評価は既存の認知laneだけで待ち、foregroundや別traceのglobal前提にしない。
 
-値は有限性・bool拒否・総attempt定義・retry式・Provider output上限の全既存検査を通す。具体Provider/modelとのmappingは#357が所有し、未対応ならその既存拒否を伝播する。
+値は有限性・bool拒否・総attempt定義・retry式・Provider output上限の全既存検査を通す。具体Provider/model・reasoning mappingとそのrevision/sourceは#692 / #360が供給し、#357の既存検証・拒否を利用する。Appraisalの論理policy値を配備都合で暗黙変更しない。
+
+### 2.1. Appraisal固有のProvider Role契約
+
+#690 / #327はlogical Role、production instructions、strict output schema、provider format name、Role config helperと論理実行Policyを所有する。#357 / #567にRole固有設定の補作を委ねない。
+
+| 要素 | 契約 |
+| --- | --- |
+| role_id | subjective_appraisal |
+| input_schema_id | yura.subjective-appraisal.request.v1 |
+| output_schema_id | yura.subjective-appraisal.candidate.v1 |
+| activation / failure_policy | OPTIONAL / SKIP_OPTIONAL |
+| provider_output_format_name | subjective_appraisal_candidate_v1 |
+| allowed model classes | FAST / BALANCED / DEEP_REASONING。MULTIMODALの暗黙変換は禁止 |
+| 初期要求 | §2のBALANCED / MEDIUM。許可class集合は全classの登録を要求するものではない |
+
+format nameはDomain schema IDと分離し、既存Adapterのsafe-name・Role間非重複検査を通す。schema・instructionsは`app/domain/appraisal/schemas.py`の`appraisal_output_schema()` / `appraisal_instructions()`に配置する設計とする。DomainはProvider非依存のdict / strを返し、OpenAI型をimportしない。
+
+`app/adapters/llm/appraisal.py::appraisal_openai_role_config(model_policies: Mapping[LLMModelClass, OpenAIResponsesModelPolicy]) -> OpenAIResponsesRoleConfig`を予定する。Character Language / Reflectionの「Adapter側helperがDomainのschemaとinstructionsを利用する」依存方向を踏襲する。mapping identity/revision・output上限を失わないよう既存の不変ModelPolicyを明示注入し、helper内で具体モデル名やmapping revisionを新規生成しない。helperは許可classとRole固有identityを検査し、固定したschema・instructions・SKIP_OPTIONALを結び付ける。空mappingは拒否する。
+
+### 2.2. strict output schemaと意味検証
+
+次のJSON Schemaを出力shapeの正本とし、既存Adapterが`strict: true`で送る。全objectの全fieldをrequiredとし、未知fieldを禁止する。nullable参照もfield自体は省略できない。
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["candidate_id", "dimensions", "proposals", "salience", "relevance", "evidence_refs"],
+  "properties": {
+    "candidate_id": {"type": "string"},
+    "dimensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "value", "target_ref"],
+        "properties": {
+          "kind": {"type": "string", "enum": ["pleasantness", "novelty", "goal_congruence", "controllability", "certainty", "social_meaning"]},
+          "value": {"type": "number", "minimum": -1, "maximum": 1},
+          "target_ref": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "proposals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["facet_kind", "state_key", "target_ref", "delta", "confidence", "cause_refs"],
+        "properties": {
+          "facet_kind": {"type": "string", "enum": ["emotion", "desire", "drive", "motivation", "value", "interest", "relationship", "energy", "arousal"]},
+          "state_key": {"type": "string"},
+          "target_ref": {"type": ["string", "null"]},
+          "delta": {"type": "number", "minimum": -1, "maximum": 1},
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+          "cause_refs": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "salience": {"type": "number", "minimum": 0, "maximum": 1},
+    "relevance": {"type": "number", "minimum": 0, "maximum": 1},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}}
+  }
+}
+```
+
+これは`deep.py::_candidate_from_json()` / `_dimension()` / `_proposal()`のclosed shapeに対応する。JSON arrayは既存LLM DTOの凍結処理を通してparserが要求するtupleになる。識別子、参照の非空・重複、causeの必須性、delta非ゼロ、Interest / Relationshipのtarget必須、bounded input内参照、候補の現在性等の意味検証は既存Domain型・parser・commit経路に残す。Provider schema成功だけではこれらの成功や状態commitを意味しない。source event・context/state revision・時刻・pathを出力fieldへ追加せず、既存の信頼された呼出文脈から付与する。
+
+production instructionsの内容は次を満たす日本語の固定指示とする。
+
+> 入力されたcurrent event、structured meaning、boundedなInternal Stateとcontextだけを評価してください。出力は指定schemaに一致するAppraisalCandidateの候補だけとし、schema外の説明文を返さないでください。current Internal Stateを直接変更せず、Goal・Attention・Actionを選択しないでください。状態facetの絶対値ではなくtyped delta proposalを返してください。evidence_refs・cause_refs・target_refにはbounded inputに存在する参照だけを使用し、参照や因果を捏造しないでください。変化のないfacetにdelta=0のproposalを作らず、Interest・Relationshipには対象参照を付けてください。これらは状態commitの指示ではありません。
+
+instructionsは#327の候補生成責務だけを表す。Providerからの出力を信頼せず、既存Reducerと現在性検証を維持する。
+
+### 2.3. System・deploymentのmapping供給境界
+
+ユーザーが確定した分担に従い、#692 / #360がconcrete model mapping、reasoning mapping、mapping revision/source、Roleごとのmapping供給API、runtime provider registration、`SystemCompositionSnapshot.provider_bindings`を所有する。#620はこれらを実際に使用したSystem Acceptanceを所有する。#690 YAMLにはconcrete model・Provider reasoning文字列・認証・deployment設定を追加しない。
+
+#692のRole別供給APIは、`subjective_appraisal`について`Mapping[LLMModelClass, OpenAIResponsesModelPolicy]`を返し、同じ構成snapshotにmappingのsourceとidentity/revisionを対応付ける契約とする。#692は自ら所有するdeployment sourceからこのAPIで取得したmappingを、§2.1のhelperへそのまま渡す。APIの配置・名前・保存形式・具体モデル選定は#692の設計責務であり、現時点で既存実装済みとは扱わない。#690ではこの型付き消費境界だけを固定し、別の供給registryを作らない。
+
+ModelPolicyの`model`がmodel classからProvider model stringへの対応、`reasoning_by_effort`が論理enumからProvider reasoning stringへの対応を保持する。`mapping_id / mapping_revision / provider_max_output_tokens / temperature_mapping`も同じ不変実体から使用する。#692はsourceの来歴を保持し、System snapshotへ公開する情報は秘密値・private pathを含めない。DomainへProvider固有値を移さない。
+
+missing mappingやBALANCED / MEDIUM未対応を他class・effortへfallbackしない。genericなModelPolicy値検証とrequest時のmapping解決・output上限検証は既存#357へ委ね、helperへ複製しない。既知Provider output上限が1536未満なら既存Adapterが呼出前にPOLICY_VIOLATIONへ閉じることを受入条件とする。値のclamp・§2のpolicy改変は禁止する。構造不正は構成エラー、requestに未対応の組合せは既存型付き失敗として保持し、成功とは扱わない。
+
+API key未構成では既存`create_openai_port_from_environment()`の`UnavailableLLMRolePort`を使用できる。構成済みでは#692が全登録Roleに一致する明示`role_configs`を渡し、その中のAppraisal設定を本helperで構築する。identity不一致・設定不備・mapping不正をUnavailableへfallbackしない。#690のhelperは環境変数を読まず、runtime登録・秘密管理はSystem / deploymentと既存Adapterに残す。
 
 ## 3. fresh-startと継続主体の境界
 
@@ -105,6 +190,8 @@ half-life / baseline / 最小経過時間はHuman校正可能なversioned data�
 | loader | app/config/appraisal.py の load_appraisal_config(source: str \| bytes) |
 | 不変構成DTO | AppraisalProductionConfig |
 | fresh factory / binding | app/composition/appraisal_configuration.py |
+| Provider非依存schema / instructions | app/domain/appraisal/schemas.py |
+| Appraisal Provider Role登録helper | app/adapters/llm/appraisal.py |
 | schema_id | yura.appraisal.production-config.v1 |
 | config_id / config_revision | yura.appraisal.production / 1 |
 
@@ -139,4 +226,6 @@ stateの以後のrevision・current valueはReducerのsnapshotから読み、初
 
 後続Code工程では、正規YAML→loader→型付きpolicy→既存descriptor / requestへの同一値伝播、fresh空state、文脈revision独立性、runtime provenance、重複・不正値・missing拒否、全facet familyの規則選択・missing診断、half-life・現在性拒否を試験する。resumeをfreshへfallbackしないこと、既存Appraisal・Decay・通常認知への隣接整合、tests import不在とtest.llm.execution不在も確認する。
 
-今回の変更は設計文書だけである。resource・loader・factory・testは未作成。設計値はレビュー対象の初期運用案であり、既存実測・人格品質の承認済み値ではない。Human VerificationはNOT_RUN / UNRATED。ChatGPTがこの設計HEADをレビューしてから、同じ#690 branchで実装を開始する。
+Code工程ではさらにRole/schema identity、strict schemaとparserのshape一致、format nameの安全性とRole間非重複、SKIP_OPTIONAL、外部注入mappingのidentity/revision保持、BALANCED / MEDIUM、未対応mappingと上限1536未満の呼出前拒否を確認する。認証未構成時のUnavailable、構成済みかつ正しいRole configでのAdapter構築、構成済みかつ不正configのfail-closedを外部I/Oなしで試験する。#692の供給API・runtime登録・provider_bindingsの実装完成や#620のSystem受入完了とは区別する。
+
+今回の変更は設計文書だけである。resource・loader・factory・testは未作成。設計値はレビュー対象の初期運用案であり、既存実測・人格品質の承認済み値ではない。Human VerificationはNOT_RUN / UNRATED。ChatGPTがこの設計HEADのfinding解消を確認し、実装指示を出してから同じ#690 branchで実装を開始する。追加の独立review cycleは要求しない。
