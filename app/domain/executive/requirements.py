@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import InitVar, dataclass, field, replace
 from datetime import datetime
 from enum import Enum
+from types import MappingProxyType
 from typing import NoReturn, TypeAlias
 
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
@@ -22,6 +23,7 @@ from app.domain.plan_execution.contracts import PlanExecutionScope
 from app.domain.plan_execution.progress_contracts import PlanProgressContext
 
 from .contracts import (
+    ActivityIntentPayload,
     AuthoritativeIntentRequirements,
     ExecutiveCommitState,
     ExecutiveContextSnapshot,
@@ -32,6 +34,11 @@ from .contracts import (
     IntentPayload,
     PlanExecutionIntentPayload,
     PlanProgressIntentPayload,
+)
+from .direct_activity_requirements import (
+    DirectActivityRequirementSource,
+    DirectActivityRequirementSourceSpec,
+    DirectActivityRequirementsOwner,
 )
 
 
@@ -165,7 +172,7 @@ class ExecutiveIntentRequirementRule:
     mode: RequirementMode
     capabilities: tuple[CapabilityRequirement, ...] = ()
     preconditions: tuple[ExecutivePreconditionRequirement, ...] = ()
-    source: RequirementSourceSpec | None = None
+    source: RequirementSourceSpec | DirectActivityRequirementSourceSpec | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.rule_id, "rule_id")
@@ -194,7 +201,10 @@ class ExecutiveIntentRequirementRule:
             reject(RequirementsFailureCode.INVALID_PROJECTION)
         _requirements_key(self.capabilities, self.preconditions)
         if self.mode is RequirementMode.UPSTREAM:
-            if not isinstance(self.source, RequirementSourceSpec) or (
+            if isinstance(self.source, DirectActivityRequirementSourceSpec):
+                if self.intent_kind is not ExecutiveIntentKind.ACTIVITY:
+                    reject(RequirementsFailureCode.UNSUPPORTED_INTENT)
+            elif not isinstance(self.source, RequirementSourceSpec) or (
                 self.source.reference_field not in _SOURCE_FIELDS.get(self.intent_kind, ())
             ):
                 reject(RequirementsFailureCode.UNSUPPORTED_INTENT)
@@ -253,7 +263,13 @@ class UpstreamRequirementRecord:
         _requirements_key(self.capabilities, self.preconditions)
 
 
-SourceValue: TypeAlias = UpstreamRequirementRecord | PlanExecutionScope | PlanProgressContext
+SourceValue: TypeAlias = (
+    UpstreamRequirementRecord
+    | PlanExecutionScope
+    | PlanProgressContext
+    | DirectActivityRequirementSource
+)
+_CAPTURE_PROOF = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -272,7 +288,20 @@ class RequirementSourcePublication:
         if not self.tokens or any(not isinstance(t, AuthorityGenerationToken) for t in self.tokens):
             reject(RequirementsFailureCode.SOURCE_UNAVAILABLE)
         if not isinstance(
-            self.value, (UpstreamRequirementRecord, PlanExecutionScope, PlanProgressContext)
+            self.value,
+            (
+                UpstreamRequirementRecord,
+                PlanExecutionScope,
+                PlanProgressContext,
+                DirectActivityRequirementSource,
+            ),
+        ):
+            reject(RequirementsFailureCode.INVALID_PROJECTION)
+
+        if isinstance(self.value, DirectActivityRequirementSource) and (
+            self.source_id != self.value.record.record_id
+            or self.revision != self.value.record.revision
+            or self.tokens != self.value.tokens
         ):
             reject(RequirementsFailureCode.INVALID_PROJECTION)
 
@@ -284,6 +313,17 @@ class RequirementsGeneration:
     sources: tuple[RequirementSourcePublication, ...]
     serial: int
     token: AuthorityGenerationToken
+    base_generation: RequirementsGeneration | None = field(default=None, repr=False)
+    _issued: RequirementsGeneration | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
+    _proof: InitVar[object | None] = None
+
+    def __post_init__(self, _proof: object | None) -> None:
+        if self.base_generation is not None:
+            if _proof is not _CAPTURE_PROOF or self.base_generation.base_generation is not None:
+                reject(RequirementsFailureCode.INVALID_PROJECTION)
+            object.__setattr__(self, "_issued", self)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -301,6 +341,7 @@ class RequirementProvenance:
     rule_revision: int
     selector: RequirementSelector
     sources: tuple[RequirementSourcePublication, ...]
+    route_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,8 +362,30 @@ class RequirementsDerivationResult:
 class ExecutiveRequirementsOwner:
     """要件の公開と判断確定で共有する短い同期境界を所有する。"""
 
-    def __init__(self, bounds: BrainOperationalBoundsPolicy) -> None:
+    def __init__(
+        self,
+        bounds: BrainOperationalBoundsPolicy,
+        *,
+        direct_routes: Mapping[str, Mapping[str, DirectActivityRequirementsOwner]] | None = None,
+    ) -> None:
         self._bounds = bounds.executive
+        routes = {key: dict(value) for key, value in (direct_routes or {}).items()}
+        owners = [owner for route in routes.values() for owner in route.values()]
+        if max(len(routes), len(owners)) > self._bounds.max_fact_refs or (
+            len({owner.owner_id for owner in owners}) != len(owners)
+        ):
+            reject(RequirementsFailureCode.INVALID_PROJECTION)
+        for route_id, route in routes.items():
+            require_identifier(route_id, "route_id")
+            for binding_id, owner in route.items():
+                if (
+                    not isinstance(owner, DirectActivityRequirementsOwner)
+                    or binding_id != owner.binding.binding_id
+                ):
+                    reject(RequirementsFailureCode.INVALID_PROJECTION)
+        if len({o.binding.binding_id for o in owners}) != len(owners):
+            reject(RequirementsFailureCode.INVALID_PROJECTION)
+        self._direct_routes = MappingProxyType({k: MappingProxyType(v) for k, v in routes.items()})
         self._participant = AuthorityFinalizationParticipant(self, "ExecutiveRequirementsOwner", 80)
         self._lock = self._participant
         self._generation: RequirementsGeneration | None = None
@@ -349,7 +412,14 @@ class ExecutiveRequirementsOwner:
             {s.source_id for s in sources}
         ) != len(sources):
             reject(RequirementsFailureCode.INVALID_PROJECTION)
+        if any(isinstance(source.value, DirectActivityRequirementSource) for source in sources):
+            reject(RequirementsFailureCode.INVALID_PROJECTION)
         for rule in policy.rules:
+            if (
+                isinstance(rule.source, DirectActivityRequirementSourceSpec)
+                and rule.source.route_id not in self._direct_routes
+            ):
+                reject(RequirementsFailureCode.SOURCE_UNAVAILABLE)
             if len(rule.capabilities) + len(rule.preconditions) > self._bounds.max_refs_per_intent:
                 reject(RequirementsFailureCode.INVALID_PROJECTION)
         for value in (*policy.rules, *sources):
@@ -426,7 +496,67 @@ class ExecutiveRequirementsOwner:
             return self._generation
 
     def capture(self, snapshot: ExecutiveContextSnapshot) -> ExecutiveContextSnapshot:
-        return replace(snapshot, requirements_generation=self.current_generation())
+        base = self.current_generation()
+        bindings = snapshot.activity_bindings
+        if len(bindings) > self._bounds.max_fact_refs or len(
+            {b.value.binding_id for b in bindings}
+        ) != len(bindings):
+            reject(RequirementsFailureCode.INVALID_PROJECTION)
+        sources = list(base.sources)
+        for binding in bindings:
+            owners = [
+                route[binding.value.binding_id]
+                for route in self._direct_routes.values()
+                if binding.value.binding_id in route
+            ]
+            if len(owners) != 1:
+                reject(RequirementsFailureCode.SOURCE_UNAVAILABLE)
+            source = owners[0].capture()
+            assert isinstance(source.value, DirectActivityRequirementSource)
+            if source.value.binding_publication != binding:
+                reject(RequirementsFailureCode.STALE_SOURCE)
+            sources.append(source)
+        if len(base.policy.rules) + len(sources) > self._bounds.max_fact_refs or len(
+            {s.source_id for s in sources}
+        ) != len(sources):
+            reject(RequirementsFailureCode.INVALID_PROJECTION)
+        if not bindings:
+            return replace(snapshot, requirements_generation=base)
+        generation = RequirementsGeneration(
+            self, base.policy, tuple(sources), base.serial, base.token, base, _proof=_CAPTURE_PROOF
+        )
+        self.check_generation(generation)
+        return replace(snapshot, requirements_generation=generation)
+
+    def check_generation(self, generation: RequirementsGeneration) -> None:
+        """共有世代と正規request captureの現在性を検査する。"""
+        with self._lock:
+            self._check(generation)
+
+    def require_binding_owners(self, bindings: tuple[object, ...]) -> None:
+        """構成に使うbindingが登録済みの同じ実Ownerか照合する。"""
+        configured = {
+            id(o.binding) for route in self._direct_routes.values() for o in route.values()
+        }
+        if any(id(binding) not in configured for binding in bindings):
+            reject(RequirementsFailureCode.SOURCE_UNAVAILABLE)
+
+    def refresh_selected(self, values: tuple[DerivedIntentRequirements, ...]) -> None:
+        """選択された出典だけを実Ownerから読み直し、旧値と照合する。"""
+        for value in values:
+            for source in value.provenance.sources:
+                if not isinstance(source.value, DirectActivityRequirementSource):
+                    continue
+                route: Mapping[str, DirectActivityRequirementsOwner] = self._direct_routes.get(
+                    value.provenance.route_id or "", {}
+                )
+                owner = route.get(source.value.record.binding_ref)
+                if owner is None:
+                    reject(RequirementsFailureCode.SOURCE_UNAVAILABLE)
+                live = owner.capture()
+                binding = owner.binding.capture()
+                if live != source or binding != source.value.binding_publication:
+                    reject(RequirementsFailureCode.STALE_SOURCE)
 
     def _check(self, generation: RequirementsGeneration) -> None:
         current = self._generation
@@ -434,7 +564,15 @@ class ExecutiveRequirementsOwner:
             reject(RequirementsFailureCode.POLICY_UNREGISTERED)
         elif (
             generation.owner is not self
-            or current is not generation
+            or (
+                current is not generation
+                and (
+                    generation.base_generation is not current
+                    or generation._issued is not generation
+                    or generation.policy is not current.policy
+                    or generation.serial != current.serial
+                )
+            )
             or generation.token != self._participant.token()
         ):
             if not _same_public_value(current.policy, generation.policy):
@@ -457,7 +595,9 @@ class ExecutiveRequirementsOwner:
             )
         try:
             with self.final_guard(generation):
-                return RequirementsDerivationResult(self._derive(generation, candidate, snapshot))
+                values = self._derive(generation, candidate, snapshot)
+            self.refresh_selected(values)
+            return RequirementsDerivationResult(values)
         except RequirementsRejected as exc:
             return RequirementsDerivationResult(failure=exc.failure)
 
@@ -494,6 +634,12 @@ class ExecutiveRequirementsOwner:
                     else RequirementsFailureCode.AMBIGUOUS_RULE
                 )
             rule = rules[0]
+            if (
+                isinstance(intent.payload, ActivityIntentPayload)
+                and intent.payload.binding_ref is not None
+                and not isinstance(rule.source, DirectActivityRequirementSourceSpec)
+            ):
+                reject(RequirementsFailureCode.INVALID_PROJECTION)
             sources: tuple[RequirementSourcePublication, ...] = ()
             capabilities, conditions = rule.capabilities, rule.preconditions
             if isinstance(intent.payload, PlanExecutionIntentPayload):
@@ -514,8 +660,58 @@ class ExecutiveRequirementsOwner:
                     raise RequirementsRejected(RequirementsFailureCode.STALE_SCOPE)
                 capabilities, conditions = _project_plan(scope)
                 sources = (found[0],)
+            elif isinstance(rule.source, DirectActivityRequirementSourceSpec):
+                if not isinstance(intent.payload, ActivityIntentPayload):
+                    reject(RequirementsFailureCode.INVALID_PROJECTION)
+                binding_ref = intent.payload.binding_ref
+                route: Mapping[str, DirectActivityRequirementsOwner] = self._direct_routes.get(
+                    rule.source.route_id, {}
+                )
+                owner = route.get(binding_ref or "")
+                bindings = [
+                    b for b in snapshot.activity_bindings if b.value.binding_id == binding_ref
+                ]
+                found = [
+                    source
+                    for source in generation.sources
+                    if isinstance(source.value, DirectActivityRequirementSource)
+                    and source.value.record.binding_ref == binding_ref
+                ]
+                if owner is None or len(bindings) != 1 or len(found) != 1:
+                    reject(RequirementsFailureCode.SOURCE_UNAVAILABLE)
+                direct = found[0].value
+                assert isinstance(direct, DirectActivityRequirementSource)
+                record = direct.record
+                binding = bindings[0]
+                if (
+                    record.owner_id != owner.owner_id
+                    or record.contract_id != rule.source.contract_id
+                    or direct.binding_publication != binding
+                    or (
+                        record.binding_ref,
+                        record.binding_revision,
+                        record.activity_type,
+                        record.target_ref,
+                    )
+                    != (
+                        binding.value.binding_id,
+                        binding.value.revision,
+                        intent.payload.activity_type,
+                        intent.payload.target_ref,
+                    )
+                    or sum(
+                        c.capability_type == binding.value.activity_type
+                        and c.operation == binding.value.operation_ref
+                        for c in record.capabilities
+                    )
+                    != 1
+                    or direct.tokens[0]._participant is not owner.finalization_participant
+                ):
+                    reject(RequirementsFailureCode.INVALID_PROJECTION)
+                capabilities, conditions = record.capabilities, record.preconditions
+                sources = (found[0],)
             elif rule.mode is RequirementMode.UPSTREAM:
-                assert rule.source is not None
+                assert isinstance(rule.source, RequirementSourceSpec)
                 reference = getattr(intent.payload, rule.source.reference_field, None)
                 refs = reference if isinstance(reference, tuple) else (reference,)
                 found = [
@@ -528,11 +724,11 @@ class ExecutiveRequirementsOwner:
                 ]
                 if len(found) != 1:
                     raise RequirementsRejected(RequirementsFailureCode.SOURCE_UNAVAILABLE)
-                record = found[0].value
-                assert isinstance(record, UpstreamRequirementRecord)
-                if record.intent_kind is not intent.kind or record.payload != intent.payload:
+                upstream = found[0].value
+                assert isinstance(upstream, UpstreamRequirementRecord)
+                if upstream.intent_kind is not intent.kind or upstream.payload != intent.payload:
                     reject(RequirementsFailureCode.INVALID_PROJECTION)
-                capabilities, conditions = record.capabilities, record.preconditions
+                capabilities, conditions = upstream.capabilities, upstream.preconditions
                 sources = (found[0],)
             if isinstance(intent.payload, PlanProgressIntentPayload):
                 found_context = [
@@ -565,6 +761,9 @@ class ExecutiveRequirementsOwner:
                         rule.revision,
                         rule.selector,
                         sources,
+                        rule.source.route_id
+                        if isinstance(rule.source, DirectActivityRequirementSourceSpec)
+                        else None,
                     ),
                 )
             )
@@ -590,6 +789,12 @@ class ExecutiveRequirementsOwner:
     ) -> tuple[DerivedIntentRequirements, ...]:
         """不変な要求・候補の整合だけを照合し、現在性はFence内で検査する。"""
         generation = snapshot.requirements_generation
+        if (
+            generation is not None
+            and generation.base_generation is not None
+            and generation._issued is not generation
+        ):
+            reject(RequirementsFailureCode.INVALID_PROJECTION)
         if generation is None or generation.owner is not self:
             reject(RequirementsFailureCode.INVALID_PROJECTION)
         expected = self._derive(generation, candidate, snapshot)
@@ -686,10 +891,26 @@ def project(value: object) -> object:
         return [project(v) for v in value]
     if value is None or isinstance(value, (str, bool, int, float)):
         return value
-    if isinstance(value, (PlanExecutionScope, PlanProgressContext)):
+    if isinstance(
+        value,
+        (
+            PlanExecutionScope,
+            PlanProgressContext,
+            DirectActivityRequirementSource,
+            RequirementsGeneration,
+        ),
+    ):
         return value.to_dict()
     if is_dataclass(value) and not isinstance(value, type):
-        return {f.name: project(getattr(value, f.name)) for f in fields(value)}
+        return {
+            f.name: project(getattr(value, f.name))
+            for f in fields(value)
+            if not (
+                isinstance(value, RequirementProvenance)
+                and f.name == "route_id"
+                and value.route_id is None
+            )
+        }
     raise ValueError("公開できない要件の由来です")
 
 

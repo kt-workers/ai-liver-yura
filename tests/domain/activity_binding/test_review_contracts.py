@@ -225,19 +225,13 @@ def test_capacity_rejection_leaves_binding_unpublished(monkeypatch: pytest.Monke
 def test_nonplugin_direct_with_authoritative_auxiliary(
     monkeypatch: pytest.MonkeyPatch, fault: str, count: int
 ) -> None:
-    from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
     from app.domain.executive import (
         ActivityIntentPayload,
         ExecutiveFactKind,
         ExecutiveFactRef,
         ExecutiveIntent,
         ExecutiveIntentKind,
-        ExecutiveIntentRequirementRule,
-        ExecutiveIntentRequirementsPolicy,
         ExecutiveOutcome,
-        ExecutiveRequirementsOwner,
-        RequirementMode,
-        RequirementSelector,
     )
     from app.domain.plugin_registry.authority import PluginRegistryAuthority
     from tests.domain.executive.test_executive import NOW, candidate, live_state, snapshot
@@ -255,26 +249,9 @@ def test_nonplugin_direct_with_authoritative_auxiliary(
         CapabilityRequirement("activity", "run"),
         CapabilityRequirement("network", "access"),
     )
-    rules = ExecutiveRequirementsOwner(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY)
-    rules.publish(
-        ExecutiveIntentRequirementsPolicy(
-            "policy",
-            1,
-            (
-                ExecutiveIntentRequirementRule(
-                    "rule",
-                    1,
-                    "policy",
-                    1,
-                    ExecutiveIntentKind.ACTIVITY,
-                    RequirementSelector(),
-                    RequirementMode.CONSTANT,
-                    requirements,
-                    (),
-                ),
-            ),
-        )
-    )
+    from tests.helpers.direct_activity_requirements import requirements_owner, source_owner
+
+    rules = requirements_owner(source_owner(owner, requirements))
     initial = snapshot()
     snap = rules.capture(
         replace(
