@@ -605,6 +605,33 @@ normal completion、product failure、ValidationRunner.cancel()、timeout、Vali
 15. SYSTEM_SLICEをclaimしない。
 16. #590 / #611の既存契約を変更しない。
 
+## 26. 計画・活動・実行事実の結合検証（#617）
+
+`plan_activity_target`は#612の本体公開入口を共通ValidationRunnerへ登録する。検証範囲は`INTEGRATED`のみであり、自然言語品質・実サービス・SYSTEM_SLICEの合格へ拡大しない。既存の単独Goal Planning / Activity Labと通常認知Labは保持する。
+
+### 26.1. 入力と所有境界
+
+登録済みの型付きfixtureは次の二つの入口を区別する。
+
+- `PlanActivityLabCase`: Gatewayの採用入力を`cognition.submit_input`へ渡す。計画を指定した場合は、同じapplicationのGoalPlanningAuthorityからcurrent planを取得し、Goal ID・plan IDを照合する。既存`prepare_plan`で前提条件と期限を検査し、正規入力eventへ承認範囲を結び付ける。Labは計画を採用・承認しない。
+- `CommittedActivityLabCase`: trusted起動構成が同じ製品Ownerで確定した判断を、`CoreExecutionDelivery.accept_decision`へ渡す。fixtureには公開envelopeと確定判断の公開projectionを保持し、先行するLLM判断を今回のLabで実行したとは主張しない。
+
+Goal選択、引数binding、scope承認、step選択、再試行、命令生成、完了条件の意味判断は製品Ownerに残す。活動のCOMPLETEDだけで手順完了を補作しない。確定した`plan_progress_assessments`と`PlanExecutionProgress`を別々に書き出し、評価待ち・失敗・再計画・照合要求をそのまま保持する。未登録・異なる計画を代替成果へ置き換えない。
+
+### 26.2. 観測と注入
+
+trusted factoryはRunContextを受け取り、iterationごとにfreshなMinimumCoreApplicationを返す。提供先を`ObservedActivityPort`で包む構成では、共通Runnerに登録した`plan_activity.provider`で遅延と閉じた失敗を注入できる。失敗注入は実adapterを呼ばず、正規reportのFAILED / TIMED_OUT / CANCELLEDと注入種別を返す。外部effectを観測していないため不確実性をUNKNOWNに保持し、成功や安全な自動再試行を捏造しない。能力利用不能と有界再試行の試験は、既存Preflight / mock adapterから型付き結果を供給する。
+
+登録fixture・typed inputs・現在のProductionTargetProvenanceをiterationごとに照合する。開始後は実際のBrain traceの未観測workを有限なLabPolicyの範囲で追い、固定段数や独自の計画進行器を設けない。各workの公開結果、exact status、lane、時刻、traceとrevisionを保持する。PlanExecutionProgressに含まれるcommand IDから実Activity Ownerの記録を取得し、再試行の各命令の証拠を保持する。承認scopeは公開serializerを使い、内部Owner objectや非公開tokenをJSON化しない。
+
+### 26.3. Gateと非成功
+
+必要なtraceがすべて観測され、全workが正規COMPLETEDで、少なくとも後続の確定Executive判断がある場合だけ機械的な結合GateをPASSとする。これは計画全手順の完了や人間の品質評価ではない。WAIT、評価待ち、活動の型付き失敗等は各公開結果を併読する。
+
+実行事実と計画進行が同時に還流すると、採用済みのAppraisal / Executiveの現在性検査により競合したworkがFAILED等で拒否される場合がある。その場合、後続に確定判断が存在してもrun全体をPRODUCT_FAILED / FAILとし、残りの実traceと実行事実も回収する。これは既存Ownerの拒否を検証する試験条件であり、Labでロック・再採用・revision補正を追加して成功へ変更しない。試験コードのPASSと、観測された製品runのFAILを区別する。
+
+型付き拒否、期限、取消、観測上限、提供先失敗を成功へ読み替えない。生の例外本文、secret、SDK objectは書き出さない。正常終端・失敗・Runner取消・呼出し側取消・timeout・closeの資源回収は、run単位で保持する現在iterationのapplicationを既存RunContextから停止する。終了処理をiteration数だけ累積登録しない。
+
 ## 27. 本体発話経路と評価証拠（#618）
 
 `speech_path_target`はBrain-Dの確定判断配送を共通ValidationRunnerへ登録する。単独の生成・合成・提示Labを置き換えず、同じCoreSpeechDelivery / CoreSpeechPipelineと既存process Supervisorを通す。範囲はINTEGRATEDであり、先行するExecutive判断生成、SYSTEM_SLICE、人間の品質評価まで実行したとは主張しない。
