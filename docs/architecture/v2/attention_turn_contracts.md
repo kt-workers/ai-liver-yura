@@ -278,6 +278,8 @@ set_response_obligation / clear_response_obligation
 
 `attention_revision`が進んでも`source_context_revision`を巻き戻してはならない。
 
+Executive production revision 1のAttention要件は[実行判断契約 §9.9](executive_authority_contracts.md#99-speech--body--attentionの本番必須要件697)を正とする。commit時の追加Requirementsなしでも、本節のsource membership・revision・重複・atomic mutation検証は必須である。それらをCapability / Preconditionへ二重化せず、Focus適用の適法性は本Ownerが検証する。
+
 ## 8. Eligibility / claim / fairness
 
 read-only sortだけではfairnessを成立させられないため、diagnostic evaluationと実際のExecutive dispatch claimを分離する。
