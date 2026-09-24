@@ -214,10 +214,10 @@ class CoreReflectionDelivery:
         try:
             admission = self.brain.submit(work)
         except BaseException:
-            del self._pending[identity]
+            self._pending.pop(identity, None)
             raise
         if not admission.accepted:
-            del self._pending[identity]
+            self._pending.pop(identity, None)
         else:
             self._admissions[key] = admission
             # 完了済みの古い配送記録だけを有界に保持する。

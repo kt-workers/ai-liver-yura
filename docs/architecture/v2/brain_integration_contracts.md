@@ -785,3 +785,33 @@ Executiveの確定前に検索・現在公開を再取得し、実際のfact値�
 最終`ExecutiveCommitState.evidence_tokens`へは、判断開始時の検索集合tokenとexact-ID tokenをそのまま搬送する。確定直前の再読取tokenだけへ置換しない。これにより、途中に変更して値が元へ戻った場合、初回が空集合だった場合、利用不能assertionの変化も初回から確定までのOwner世代で検出する。再読取後のraceも同じ既存Fenceで拒否する。consumerに世代を追加せず、全participantの上限16を維持し、超過時にtokenを落とさない。意味判断、検索順位、Goal選択、Memoryの保存責務は既存Ownerのままとする。
 
 本節の検証は実PostgreSQLの保存・検索、本番起動、通常判断、前景との並行動作、拒否、取消、stale、停止を含む。実LLMの品質や人間の発話品質の受入は別の未完条件として保持する。
+
+## 36. 本体認知の非直列結合と最終受入れ（#615）
+
+#615はBrain-A〜Eの採用済みproduction構成を用いるIntegration検証であり、新しいDomain動作・意味Owner・schedulerを作らない。既存のFOREGROUND_INTERACTION / COGNITIVE_NORMAL / BACKGROUND_REFLECTIONと既存Ownerの公開入口を使用する。§20の区間・由来・現在性の証拠と、concurrency_architecture.mdの受付・取消・停止・最終Fence契約を対応させる。単独Owner試験の成功だけを本体結合の成功とはしない。
+
+### 36.1. 受入シナリオと決定論的な同期
+
+| シナリオ | 制御する外部境界 | 必須の結合証拠 |
+| --- | --- | --- |
+| A: 遅いAppraisal | trace AのLLM提供先をEventで待機 | Aの解放前にtrace Bの入力受付・Meaningが完了し、Bの評価が開始できる。遅い役割の完了を別traceの受付・意味解析・判断開始のglobal前提にしない |
+| B: 遅いReflection | 実Activity / Presentation Factから起動した背景提供先を待機 | 別traceのforeground cognitionがReflection解放前に進行する。Reflection根拠と前景のsourceを混同しない |
+| C: trace単位の取消 | 並行する提供先の開始点を確認してAだけ取消 | Aの未確定処理は非commitで回収し、Bのsource・処理を取消さず正常終端する |
+| D: 置換・古い結果 | 旧評価の待機中に置換または正規Ownerのrevision更新 | 旧結果は既存のSUPERSEDED / STALE / FAILED等の終端で拒否し、新contextへ付け替えない。旧根拠から後続判断・Speech・Activity・Memory effectを生成しない |
+| E: 背景集中・上限 | 背景処理の実行中とqueueを有界に占有 | background完了前にforegroundを進める。上限超過の正規拒否と終端証拠を保持し、dropやfake successにしない |
+| F: 停止・回収 | 提供先の取消cleanupをEventで待機 | 新規受付を閉じ、stop呼出側が取消されても所有cleanupを完遂。Brain task/token・outcome pump・Reflection・永続化のpendingを残さず、各workの終端は一度だけ公開 |
+| G: 由来・現在性 | 複数traceの要求・結果・Owner snapshotを照合 | root_trigger_id / trigger_id / source event / context・Goal・Attention revisionを元Ownerへ対応付け、別traceのcurrent factを古いtraceへ代入しない |
+
+待機点はEvent / Future等で同期する。timeoutは試験の停止上限であり、sleepの経過をrace成立や公平性の証明に使わない。公平性の検証は有界な背景集中下の前景進行を対象にし、任意負荷下の性能保証や#586の性能改善へ拡張しない。
+
+### 36.2. Owner境界と非成功
+
+Attention/source/currentnessは§29・§31・§35の公開契約をそのまま使用する。無関係なtraceをglobal cancelせず、古いsource・取消・置換・容量拒否を成功へ読み替えない。共有状態の正規更新により並行候補が拒否される場合、全trace成功を強制せず、そのOwnerの拒否と由来を証拠にする。Integration global lock、別の意味Owner、test専用production hookは追加しない。
+
+不具合は§21のCONTRACT_MISMATCH / MODULE_DEFECT / INTEGRATION_WIRING_DEFECT / PROVIDER_DEFECT / TEST_HARNESS_DEFECTへ分類する。#615の配線・試験の不具合だけを同じ系統で修正し、別Ownerの意味・契約の不具合は当該Ownerを特定して停止する。利用側の再試行・値補完・世代付替えで隠さない。
+
+証拠にはexact HEAD、登録policy、実際の受付・提供先開始・解放・終端とtrace相関を残す。mock提供先の成功は実LLM・実音声・実サービス・Human受入ではない。実動作の検証はHumanの責務であり、未実施はNOT_RUN / UNRATEDのまま保持する。
+
+### 36.3. Test/Fixで確認した配線不具合
+
+背景queue拒否時、Runtimeはsubmit内で同期terminal通知を行い、Reflection配送のobserverが受付記録を回収する。submit復帰後の拒否処理や例外処理も同じ記録を回収するため、Compositionの回収は冪等にし、元の型付き拒否・例外をKeyErrorで置換しない。これはINTEGRATION_WIRING_DEFECTの修正であり、Runtimeの容量・終端規約、Reflectionの意味判断・保存方針は変更しない。
