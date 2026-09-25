@@ -19,6 +19,7 @@ from app.composition.goal_persistence import CoreGoalPersistenceBinding
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
 from app.composition.s2_provider import S2ProviderConfigurationSource, S2ProviderLeaseFactory
+from app.composition.speech_production_configuration import SpeechProductionInputs
 from app.composition.system_cognition_configuration import (
     ROOT,
     S2_RESOURCE,
@@ -446,6 +447,7 @@ async def build_s2_production_core(
     fast_rules: tuple[DeterministicAppraisalRule, ...],
     provider_source: S2ProviderConfigurationSource | None,
     provider_factory: S2ProviderLeaseFactory | None = None,
+    speech: SpeechProductionInputs | None = None,
     config_ref: str = S2_RESOURCE,
     resource_root: Path = ROOT,
     artifact_head: Callable[[], str] = current_artifact_head,
@@ -465,6 +467,7 @@ async def build_s2_production_core(
         fast_rules=fast_rules,
         provider_source=provider_source,
         provider_factory=provider_factory or create_s2_provider_lease,
+        speech=speech,
         config_ref=config_ref,
         resource_root=resource_root,
         artifact_head=artifact_head,
