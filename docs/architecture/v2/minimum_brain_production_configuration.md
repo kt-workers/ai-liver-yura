@@ -390,3 +390,7 @@ Executive実行方針とRequirementsの初期値・供給境界は[Executiveの�
 `build_minimum_core`および`build_persistent_core`の任意引数`cognition`へ`CoreCognitionConfiguration`を渡す場合は、既存の入力意味・評価・判断のdescriptorとModuleを登録する。方針・現在状態のOwner・実測source binding・定型規則は配備側が型付き構成として明示する。構成・Ownerの欠落を仮の現在事実や成功へ補完しない。具体的な配送・由来・取消契約は`brain_integration_contracts.md`第29節に従う。
 
 `cognition`を指定しない既存最小起動とCLIはINPUT_MEANINGのみを登録する。minimum YAMLへ全Roleを必須追加せず、任意提供サービス・Subsystemの不在を起動不能へ変更しない。提供サービス未構成では既存のPROVIDER_UNAVAILABLEを保持し、通常認知でも後続評価・判断を生成しない。構成済み提供サービスの設定不備は従来どおり起動設定失敗とする。
+
+## 明示S2 activationへの接続（#692）
+
+S2を要求したcallerだけが[SystemのS2本番認知構成](system_production_cognition_configuration.md)の入口を使用する。本書のminimum YAML・INPUT_MEANING-only既定起動にS2設定を必須追加せず、S2構成不正をminimum成功で隠さない。
