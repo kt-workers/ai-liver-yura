@@ -286,6 +286,71 @@ If verifier rejects, candidate becomes stale, or performance is replanned:
 
 Prepared audio is not proof of speech.
 
+### 9.1 Compositionにおける準備音声の所有権（#701）
+
+本節は#348の候補局所準備・世代fence・非提示・資源回収を、`CoreSpeechPipeline`の出力境界へ具体化する。#358の合成・Provider・voice選択の意味や、#331 / #363の意味Authorityを変更しない。
+
+世代Authorityと資源identityは分離する。
+
+- `generation`はSpeech Runtime / compositionが採用とcurrentnessを判定するために保持する。`generation()`、`is_current_generation()`、`commit_generation_result(..., generation, ...)`、`supersede_generation()`、`cancel(..., expected_generation=...)`の既存公開契約を使用する。
+- `PreparedAudioDiscardPort`は特定artifactの回収先であり、Speechの世代を判定しない。`PreparedAudioDiscardRequest`のfieldは`candidate_id / utterance_id / performance_plan_id / audio_ref / reason`を維持し、generation / revisionを追加しない。
+- 旧結果を現在世代へ付け替えない。世代を既存ID文字列に埋めて新しい識別規則を作ることもしない。
+
+#### 準備結果と明示注入
+
+compositionは未採用の音声を、不変の準備記録（`PendingPreparedAudio`相当）として保持する。記録は少なくとも`candidate_id / generation / utterance_id / performance_plan_id / audio_ref`を持つ。generationは採用判定用、残り4項目は元のartifactを特定する回収用であり、用途を混在させない。必要な準備identity・policy/config revisionも開始時の相関として保持し、current candidateから旧結果の値を再構築しない。
+
+準備開始時に捕捉した候補・世代と、outputが実際に使用したutterance / performanceを対応付ける。出力境界は成功結果の返却時に、この相関と生成した音声参照を一体として引き渡す。返却後にcurrent generationを読み、結果の元世代として採番し直してはならない。提示modeと音声参照の組も検査し、不正なmodeであっても受領済み音声の回収責務は消えない。
+
+output producerと同じ資源Ownerへ結び付いた`PreparedAudioDiscardPort`をcompositionへ明示注入する。暗黙のglobal参照、`PreparedAudioDiscarder._port`等のprivateアクセス、Validation用資源表のproduction fallbackは禁止する。準備記録にProvider SDK object、raw audio、credentialを入れない。voice binding等の資源由来は既存Ownerの契約を維持する。
+
+#### 所有権の3段階
+
+| 段階 | 所有者 | 回収責務と移管条件 |
+| --- | --- | --- |
+| producer-owned | output / TTS producer | 成功結果を返す前のprovider/synthesis task、部分生成資源、取消・失敗時の未引渡し資源を回収する。 |
+| composition-owned | CoreSpeechPipeline composition | 成功結果としてprepared audio identityが引き渡された時点から、同じ世代でRuntimeへの音声採用が成功するまでを所有する。 |
+| runtime-owned | 既存Speech Runtime lifecycle | 世代fence付きの音声commit成功後を所有し、既存discard / lifecycle / shutdown / Presentation cleanupで回収する。 |
+
+Task作成、candidate object作成、音声参照の閲覧だけではRuntimeへの移管にならない。準備用candidateをRuntimeへ登録しただけでも、音声が未採用なら音声の所有権は移らない。
+
+producerは返却前の取消・失敗で自身の未引渡し資源を回収し、取消を通常成功へ変換しない。compositionは未受領の音声参照を推測して破棄しない。output task完了と呼出元取消が競合した場合は、taskの終了を回収して正常返却済み結果の有無を確認する。正常返却済み音声があれば、親のawaitが取消になっていてもcomposition-ownedとして取り残さない。
+
+#### Runtime採用の確定点
+
+1. 元の準備記録を保持して取消、Verifierの採否、stale / supersedeを確認する。required Verifierが未受理の音声から外部提示へ進めない。
+2. 元のgenerationについてcurrentnessを確認する。事前確認だけを採用成功とは扱わない。
+3. 同じgenerationと元identityで`commit_generation_result()`を実行し、既存Runtimeの世代・policy・expiry fenceへ委譲する。
+4. 成功した返却candidateが対象のutterance / performance / audioを受理したことを確認して、runtime-ownedへ移す。返却後の所有権記録は新たなawaitを挟まず更新する。
+
+`None`返却、または採用前にcurrentnessを失い音声が受理されなかった場合はcomposition-ownedのままである。登録・採用拒否や例外時に成功を仮定しない。新generationへの再commitや、破棄目的の一時登録を行わない。
+
+成功した音声commit後の世代更新・取消はruntime-ownedの経路で扱う。後からcurrentnessを失ったことを理由に、成立済みの移管を巻き戻してcompositionから二重破棄してはならない。
+
+#### 採用前の直接破棄と取消競合
+
+composition-ownedの音声は、返却直後の取消、stale、supersede、Verifier rejection、mode不正、世代fence拒否、Runtime登録・採用失敗、repair開始、移管前例外で直接破棄する。
+
+保持した元の`candidate_id / utterance_id / performance_plan_id / audio_ref`と既存の破棄理由から`PreparedAudioDiscardRequest`を構築し、明示注入した`PreparedAudioDiscardPort.discard(...)`へ渡す。generationは要求へ渡さず、current candidateの値で要求を作り直さない。未採用音声に`discard_current()`を使用しない。
+
+- output返却前の取消: producer taskを取り消して終了・cleanupを回収する。未引渡し音声はproducerが所有する。
+- output正常返却と同時、または返却後・採用前の取消: compositionが元identityで直接破棄し、Runtimeへ採用せず取消を伝播する。
+- Runtime採用成功後の取消: 既存`discard_current()`、candidate lifecycle、`SpeechRuntimeShutdown`へ委譲する。
+
+回収完了を記録し、同じ所有権から直接破棄とRuntime破棄を二重発行しない。音声を持たないTEXT_ONLY結果から音声資源やTTS成功を捏造しない。
+
+#### Rejection・repair・回収失敗
+
+Verifier REJECTED時は所有段階に対応した破棄を行い、外部提示を行わない。repair可能性と上限は既存`SpeechSemanticRepairExecutor`および[Character Languageのsemantic repair契約](character_language_semantic_repair_contracts.md)へ従う。旧artifactの回収を完了してから、新世代のutterance / performance / audioを準備する。旧audio_refを新候補へ再利用せず、What-to-say AuthorityやVerifierの意味を変更しない。
+
+discard失敗を無視せず、回収済みや通常成功と扱わない。元の取消・拒否・失敗理由を保持し、独立した残りのowned task/resourceのcleanupは継続する。回収未完了のownershipを保持し、raw Provider例外を公開しない。既存の回収失敗集約・型付き失敗境界へ対応付け、composition独自のDomain失敗Authorityを作らない。
+
+#### 検証条件
+
+output返却前取消、返却と取消の競合、返却後・採用前取消、世代変更、登録・commit拒否、音声準備後のVerifier rejection / stale / supersedeを検証する。未採用音声のdirect discardには元identityだけが渡り、`discard_current()`やcurrent stateの改変を使用しないことを確認する。
+
+Runtime採用成功後の直接破棄禁止、二重破棄禁止、repair前の旧資源回収、discard失敗時の残存cleanup、shutdown後pending task 0を確認する。slow Verifierとsafe TTS準備の重なり、ACCEPTED前Presentation 0、無関係なtraceの進行を維持する。これらの自動検証をHuman Verificationの代替にしない。
+
 ---
 
 ## 10. Presentation capability / degradation

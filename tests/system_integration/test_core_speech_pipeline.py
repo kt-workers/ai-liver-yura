@@ -387,6 +387,8 @@ async def test_full_owner_pipeline_and_presentation_feedback(slow_stage: str | N
         "expiry",
         SpeechPreparationAdmission(runtime.operational_policy),
         discarder,
+        NoAudio(),
+        (SpeechPresentationMode.TEXT_ONLY,),
     )
     work = BrainIntegrationWork(
         "work",
