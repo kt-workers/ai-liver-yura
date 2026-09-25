@@ -574,3 +574,33 @@ per-ID mutable registry、登録追加/撤回API、registry永続化は設けな
 Memoryの採用範囲は既存bounded retrieval等が選択したMEMORY_EVIDENCEだけである。private PostgresPersistenceRuntime._memoryへ依存せず、production用の別MemoryStoreAuthorityを生成しない。取消時は既存CoreMemoryOperation.waitの回収契約を利用して投入済みoperationを回収後に取消を伝播する。#677はMemoryのランキングや通常認知の全配線を所有しない。
 
 MeaningPolicy V1、FACT_GROUNDED / 1 / 1、act定義、Fact投影、truth、polarity/certainty、RuntimeSubjectIdentity、Executiveの選択Authorityと他の意味Ownerは変更しない。#661のcompleted履歴を保持する。#613の全production配線完成とは区別する。
+
+## 12. 本番Provider Role登録（#706）
+
+### 12.1. 意味Ownerと登録の対応
+
+Speech Semanticsが`app/domain/speech_semantics/schemas.py`の本番instructionsと出力schemaを所有する。instructionsは第3〜7節のWhat-to-sayと元Factのtyped facetだけを扱い、Character表現、TTS、Performance、Presentation、具体model、credential、固定台詞を決定しない。人間向けProfileからinstructionsを上書きしない。
+
+論理Roleは既存`speech_semantics`、入力は既存`yura.speech-semantics.context.v2`、Domain candidateは既存`yura.speech-semantics.candidate.v1`を維持する。Provider format nameは明示定数`speech_semantics_candidate_wire_v1`、Provider wire schema identityは`yura.speech-semantics.provider-candidate.v1`、登録リビジョンは1とする。Domain schema IDを文字置換してformat名を生成しない。
+
+### 12.2. strict schemaと可逆搬送
+
+第11節の元Owner由来JSONは任意のmember名・入れ子・配列・scalarを保持する。Providerのstrict object制約のために許可キーを有限の業務語彙へ狭めない。Domain parserを変更せず、Provider wireの各propositionの`value`だけを次の可逆表現にする。
+
+- null / boolean / number / stringはそのまま。
+- 配列は要素を同じ規則で再帰変換する。
+- objectは`{members: [{key: <元key>, value: <変換済み元value>}, ...]}`とする。`members`と各entryはclosed objectで全field必須。重複keyは拒否し、後勝ちで失わない。
+
+`members`は搬送構造であり意味fieldではない。元objectに`members`というkeyがあってもさらにentryとして包み、衝突や意味推論を起こさない。復元前のpayloadをDomain candidateのschema identityで公開しない。その他candidate fieldは現parserのexact field集合・enumを使用する。構造検査だけで意味受理とはせず、復元後に既存`parse_candidate`とD10 boundsを通す。truth、budget、現在性、generation、最終commitは既存Ownerに残す。
+
+### 12.3. Adapter境界
+
+`app/adapters/llm/speech_semantics.py`のhelperは外部注入`OpenAIResponsesModelPolicy`のidentity/revisionと具体値を保持し、Roleのinstructions/schema/formatだけを登録する。論理modelは既存Roleが利用できるFAST / BALANCED / DEEP_REASONINGを許す。model/reasoning/secret/timeout/retryの新しい既定値は作らない。
+
+汎用Adapterはwire schemaを検証してwire identity付き結果を返す。専用`SpeechSemanticsProviderPort`が元requestとwire descriptorでtransportを検査し、成功結果だけを復元・既存parser検証後にDomain OUTPUT_SCHEMAへ変換する。request/result identity、時刻、revision、trace、attempt、usage、execution provenanceを維持する。失敗・取消・timeout・staleは復元や成功化をせずそのまま返す。復元不正は秘密や出力原文を含まないSCHEMA_INVALIDへ閉じる。別Roleはそのまま委譲する。
+
+この専用portを通さずwire helper単独の結果をSpeechSemanticsPlannerへ渡してはならない。登録時に使用するProvider descriptorはwire output identityと対応させ、Domain向けdescriptorは既存のまま使用する。#357のAPI・schema検査・retry・credential処理を変更しない。#705はこの登録契約と専用portを設定解決後の共有Providerへ組み込み、意味instructionsを作り直さない。
+
+### 12.4. 検証
+
+schemaの全objectがclosedで全field必須、再帰JSONの可逆性、重複key拒否、空/未知field/enum不正、semantic facetと実行状態整合、transport不一致、失敗・取消・他Role保全、外部mapping保全、既存parser/Authority回帰を検証する。実Provider接続成功は決定論的試験から主張しない。
