@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import signal
 import sys
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeVar
@@ -17,8 +18,19 @@ from app.composition.cognition_configuration import CoreCognitionConfiguration
 from app.composition.goal_persistence import CoreGoalPersistenceBinding
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
+from app.composition.s2_provider import S2ProviderConfigurationSource, S2ProviderLeaseFactory
+from app.composition.system_cognition_configuration import (
+    ROOT,
+    S2_RESOURCE,
+    S2ProductionApplication,
+    S2RunIdentity,
+    compose_s2_production_core,
+    current_artifact_head,
+)
 from app.config.minimum_brain import MinimumBrainProductionConfig, load_minimum_brain_config
+from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.activity_execution import ActivityExecutionAuthority
+from app.domain.appraisal import DeterministicAppraisalRule
 from app.domain.appraisal import descriptor as appraisal_descriptor
 from app.domain.brain_integration import (
     BrainIntegrationLane,
@@ -29,6 +41,7 @@ from app.domain.brain_integration import (
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.character.contracts import CharacterDefinitionDocument
 from app.domain.contracts.common import require_identifier
+from app.domain.contracts.preconditions import PreconditionSourceBinding, PreconditionSourceRouter
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
 from app.domain.executive.deliberator import descriptor as executive_descriptor
 from app.domain.goals import GoalCommitmentStore
@@ -42,8 +55,9 @@ from app.domain.input_meaning import (
 from app.domain.input_meaning.interpreter import descriptor
 from app.domain.llm import LLMRoleDescriptor
 from app.domain.memory_reflection.llm_roles import proposal_descriptor, support_descriptor
+from app.domain.plugin_registry import PluginRegistryAuthority
 from app.infrastructure.persistence import PostgresPersistenceRuntime
-from app.runtime.kernel import CancellationToken, SystemRuntimeClock
+from app.runtime.kernel import CancellationToken, RuntimeClock, SystemRuntimeClock
 from app.runtime.lifecycle import DependencyRetryPolicy, RuntimeLifecycle
 from app.runtime.shutdown import RuntimeShutdownError, RuntimeShutdownFailure, RuntimeShutdownStage
 from app.usecases.ports.llm import LLMRolePort
@@ -284,15 +298,19 @@ def _compose_core(
     memory: CoreMemoryPersistenceBinding | None = None,
     lifecycle: RuntimeLifecycle | None = None,
     cognition: CoreCognitionConfiguration | None = None,
+    *,
+    prepared_activities: ActivityExecutionAuthority | None = None,
+    prepared_context: CoreInputReferenceContextBinding | None = None,
+    prepared_clock: RuntimeClock | None = None,
 ) -> MinimumCoreApplication:
     from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
 
-    activities = (
+    activities = prepared_activities or (
         ActivityExecutionAuthority(observation_policy=SPEECH_OBSERVATION_POLICY)
         if cognition is not None and cognition.speech is not None
         else ActivityExecutionAuthority()
     )
-    input_context = CoreInputReferenceContextBinding(
+    input_context = prepared_context or CoreInputReferenceContextBinding(
         goals, activities, config.input_meaning_policy, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
     )
     interpreter = InputMeaningInterpreter(
@@ -304,7 +322,7 @@ def _compose_core(
         interpreter,
         CoreAcceptedInputStore(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.executive.max_source_event_refs),
     )
-    clock = SystemRuntimeClock()
+    clock = prepared_clock or SystemRuntimeClock()
     lifecycle = lifecycle or RuntimeLifecycle(clock, config.shutdown_policy)
     brain = BrainIntegrationRuntime(clock, config.integration_policy)
     delivery = None
@@ -413,3 +431,41 @@ def main() -> None:
     except (OSError, ValueError, RuntimeError):
         print("最小Coreの起動または停止に失敗しました。", file=sys.stderr)
         raise SystemExit(1) from None
+
+
+async def build_s2_production_core(
+    *,
+    run_identity: S2RunIdentity,
+    activation_id: str,
+    fresh_start: bool,
+    clock: RuntimeClock,
+    registry: PluginRegistryAuthority,
+    precondition_router: PreconditionSourceRouter,
+    precondition_bindings: tuple[PreconditionSourceBinding, ...],
+    activity_bindings: Mapping[str, ActivityBindingAuthority],
+    fast_rules: tuple[DeterministicAppraisalRule, ...],
+    provider_source: S2ProviderConfigurationSource | None,
+    provider_factory: S2ProviderLeaseFactory | None = None,
+    config_ref: str = S2_RESOURCE,
+    resource_root: Path = ROOT,
+    artifact_head: Callable[[], str] = current_artifact_head,
+) -> S2ProductionApplication:
+    """明示的なS2要求だけを構築し、minimum既定起動へfallbackしない。"""
+    from app.adapters.llm.s2_production import create_s2_provider_lease
+
+    return await compose_s2_production_core(
+        run_identity=run_identity,
+        activation_id=activation_id,
+        fresh_start=fresh_start,
+        clock=clock,
+        registry=registry,
+        precondition_router=precondition_router,
+        precondition_bindings=precondition_bindings,
+        activity_bindings=activity_bindings,
+        fast_rules=fast_rules,
+        provider_source=provider_source,
+        provider_factory=provider_factory or create_s2_provider_lease,
+        config_ref=config_ref,
+        resource_root=resource_root,
+        artifact_head=artifact_head,
+    )
