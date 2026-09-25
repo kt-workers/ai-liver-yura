@@ -1,0 +1,72 @@
+# 提供先を含まない初期運用Profile。変更は新runで反映する。
+schema: yura.speech-profile.v1
+executions:
+  speech_semantics:
+    model_class: balanced
+    reasoning: medium
+    timeout_seconds: 30.0
+    attempts: 1
+    output_tokens: 4096
+    temperature: null
+    retry:
+      initial_seconds: 0.5
+      multiplier: 2.0
+      max_seconds: 2.0
+  character_language:
+    model_class: balanced
+    reasoning: medium
+    timeout_seconds: 30.0
+    attempts: 1
+    output_tokens: 4096
+    temperature: null
+    retry:
+      initial_seconds: 0.5
+      multiplier: 2.0
+      max_seconds: 2.0
+  semantic_verification_blind_inventory:
+    model_class: balanced
+    reasoning: medium
+    timeout_seconds: 30.0
+    attempts: 1
+    output_tokens: 4096
+    temperature: null
+    retry:
+      initial_seconds: 0.5
+      multiplier: 2.0
+      max_seconds: 2.0
+  semantic_verification_plan_relation:
+    model_class: balanced
+    reasoning: medium
+    timeout_seconds: 30.0
+    attempts: 1
+    output_tokens: 4096
+    temperature: null
+    retry:
+      initial_seconds: 0.5
+      multiplier: 2.0
+      max_seconds: 2.0
+runtime:
+  queue_capacity: 4
+  in_flight: 2
+  background_in_flight: 1
+  regeneration_attempts: 1
+  expiry_seconds:
+    background: 10.0
+    normal: 30.0
+    foreground: 30.0
+    direct_user: 60.0
+  speculative_limit: 1
+  overflow: reject_new
+  presentation_timeout:
+    start_report_timeout_seconds: 5.0
+    text_terminal_timeout_seconds: 5.0
+    audio_terminal_grace_seconds: 5.0
+    audio_terminal_fallback_timeout_seconds: 60.0
+    worker_grace_seconds: 0.2
+    worker_terminate_seconds: 1.0
+    worker_kill_seconds: 1.0
+output_modes:
+- text_only
+tts_mode: after_semantic_acceptance
+priority: foreground
+performance: yura_revision_1

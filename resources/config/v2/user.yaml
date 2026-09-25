@@ -1,0 +1,3 @@
+# Speechを有効にする場合は、登録済み接続先のdeployment Profileを明示する。
+schema: yura.user.v1
+speech: null

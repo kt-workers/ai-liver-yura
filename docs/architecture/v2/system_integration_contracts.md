@@ -720,3 +720,7 @@ Meaning・Appraisal・Attention・Executiveのsource event / root_trigger / trig
 Speechを指定したS2起動は、[SystemのS2本番認知構成](system_production_cognition_configuration.md) §9のSystem-owned factoryから既存CoreSpeechConfigurationを生成する。Executive Speech evidence、登録pipeline、SystemCompositionSnapshotは同じbinding / generationを参照する。Speech未指定時の既存S2とminimum起動を維持する。
 
 構築時点のsafe provenanceと、#621が実行後に照合するtrace・candidate generation・提示Factを分離する。factoryは既存Ownerとdeploymentの明示入力を束ね、具体voice/providerやSpeech意味を作らない。資源のCoreへの移管、borrowed依存の保全、部分構築失敗の回収は同§9を正とし、System側でSpeech shutdownを二重実行しない。
+
+## 設定ファイルからの本番Speech供給（#705）
+
+Speech有効時は[三層の本番設定](configuration_architecture.md)から解決したpublicationをS2の同一runへ注入する。外部I/Oの試験置換とOwner policyの試験fixture置換を区別し、System acceptanceは前者だけを許す。設定の未構成・不正・staleを発話成功とせず、Human Verificationは人間による確認までNOT_RUN / UNRATEDを維持する。
