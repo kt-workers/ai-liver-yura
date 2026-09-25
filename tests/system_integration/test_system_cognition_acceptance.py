@@ -466,9 +466,11 @@ async def test_system_consumer_observes_nonserial_rejection_and_cleanup(
                 for gate in release.values():
                     gate.set()
             else:
+                # 停止で参照Ownerも退役するため、受付拒否の入力は停止前に正規生成する。
+                late = run.input("late")
                 await run.stop()
                 with pytest.raises(RuntimeError, match="受付"):
-                    run.app.cognition.submit_input(run.input("late"))
+                    run.app.cognition.submit_input(late)
             terminal = [await run.outcome() for _ in range(2)]
             assert {o.trace_id for o in terminal} == {"A", "B"}
             assert all(
