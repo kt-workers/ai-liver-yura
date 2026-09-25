@@ -469,8 +469,10 @@ async def test_system_consumer_observes_nonserial_rejection_and_cleanup(
                 # 停止で参照Ownerも退役するため、受付拒否の入力は停止前に正規生成する。
                 late = run.input("late")
                 await run.stop()
-                with pytest.raises(RuntimeError, match="受付"):
+                with pytest.raises(FinalizationError) as rejected:
                     run.app.cognition.submit_input(late)
+                assert rejected.value.failure is FinalizationFailure.PARTICIPANT_UNAVAILABLE
+                assert_reaped(run.app)
             terminal = [await run.outcome() for _ in range(2)]
             assert {o.trace_id for o in terminal} == {"A", "B"}
             assert all(
