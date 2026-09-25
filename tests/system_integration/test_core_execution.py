@@ -754,7 +754,7 @@ async def test_exact_sibling_freshness_and_parent_lane(
     from tests.domain.plugin_registry.test_plugin_registry_adjacent import available_registry
 
     app, delivery, calls = execution_fixture(monkeypatch)
-    _, _, source_a, captured, proposed, current = direct_fixture()
+    owner_a, _, source_a, captured, proposed, current = direct_fixture()
     _, schema_b, source_b = fixture()
     owner_b = ActivityBindingAuthority(
         "binding-b", PluginActivityOperationAdapter(available_registry()), schema_b, (source_b,)
@@ -769,7 +769,12 @@ async def test_exact_sibling_freshness_and_parent_lane(
     )
     bindings = (*captured.activity_bindings, pub_b)
     assert captured.requirements_generation is not None
-    rules = captured.requirements_generation.owner
+    from tests.helpers.direct_activity_requirements import requirements_owner, source_owner
+
+    rules = requirements_owner(
+        source_owner(owner_a, proposed.intents[0].required_capabilities),
+        source_owner(owner_b, proposed.intents[0].required_capabilities),
+    )
     captured = rules.capture(
         replace(captured, requirements_generation=None, activity_bindings=bindings)
     )

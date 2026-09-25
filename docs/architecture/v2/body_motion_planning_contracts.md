@@ -93,6 +93,8 @@ committed Planでは:
 
 Authorityがcopyする。
 
+Executive production revision 1のSPEECH / BODY / ATTENTION要件は[実行判断契約 §9.9](executive_authority_contracts.md#99-speech--body--attentionの本番必須要件697)を正とする。BODYの正規ruleが導出・照合した空tupleもcopy対象であり、このcopy契約自体はnon-emptyを要求しない。Model・constraint・currentness・物理的実現可能性の既存検証は免除しない。
+
 ### 2.3 Body Model / Body State
 
 #336 `CanonicalBodyModel` がskeleton / region / side / chain / end-effector / DOF / limitsのAuthorityである。

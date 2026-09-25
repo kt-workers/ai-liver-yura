@@ -1,0 +1,51 @@
+schema_id: yura.appraisal.production-config.v1
+config_id: yura.appraisal.production
+config_revision: 1
+execution:
+  policy_id: yura.appraisal.execution
+  policy_revision: 1
+  model_class: balanced
+  reasoning_effort: medium
+  timeout_seconds: 15.0
+  max_attempts: 1
+  max_output_tokens: 1536
+  temperature_normalized: null
+  retry_policy:
+    initial_backoff_seconds: 0.25
+    backoff_multiplier: 2.0
+    max_backoff_seconds: 1.0
+initial_state:
+  mode: fresh_empty
+  state_revision: 0
+decay:
+  policy_id: yura.appraisal.decay
+  policy_revision: 1
+  rules:
+    - rule_id: emotion.global
+      facet_kind: emotion
+      state_key: null
+      target_scope: global
+      neutral_baseline: 0.0
+      half_life_seconds: 300.0
+      minimum_elapsed_seconds: 1.0
+    - rule_id: emotion.targeted
+      facet_kind: emotion
+      state_key: null
+      target_scope: targeted
+      neutral_baseline: 0.0
+      half_life_seconds: 300.0
+      minimum_elapsed_seconds: 1.0
+    - rule_id: arousal.global
+      facet_kind: arousal
+      state_key: null
+      target_scope: global
+      neutral_baseline: 0.0
+      half_life_seconds: 120.0
+      minimum_elapsed_seconds: 1.0
+    - rule_id: arousal.targeted
+      facet_kind: arousal
+      state_key: null
+      target_scope: targeted
+      neutral_baseline: 0.0
+      half_life_seconds: 120.0
+      minimum_elapsed_seconds: 1.0

@@ -710,3 +710,7 @@ Meaning・Appraisal・Attention・Executiveのsource event / root_trigger / trig
 新しいMeaning / Appraisal / Attention / Executive / Goal / Activity Owner、system-global lock、試験専用production semantic pathは追加しない。独立欠陥は§26で分類し、該当Ownerへ戻す。System配線・対象harnessの欠陥だけを#620で修正し、別Ownerの不具合を局所回避しない。
 
 提供先を置換した自動試験は実LLM・実音声・実サービス・Human Verificationではない。Human実動作はNOT_RUN / UNRATEDを維持する。#621〜#625、#434、#586、GUI・Game・Streamingの受入れへ拡大しない。
+
+## S2本番認知構成の具体契約（#692）
+
+明示activation、deployment参照、SystemCompositionSnapshotのtyped化、構築・終了所有は[SystemのS2本番認知構成](system_production_cognition_configuration.md)を正とする。本書第4節の由来をDomain Stateへ置き換えず、minimum起動とS2の分離を維持する。

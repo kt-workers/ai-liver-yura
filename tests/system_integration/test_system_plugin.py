@@ -148,7 +148,14 @@ async def test_plugin_fact_crosses_production_composition_and_returns_to_cogniti
     build = bootstrap.build_minimum_core
 
     def composed(*args: Any, **kwargs: Any) -> bootstrap.MinimumCoreApplication:
-        kwargs["cognition"] = replace(kwargs["cognition"], registry=registry, execution=config)
+        from tests.helpers.direct_activity_requirements import requirements_owner, source_owner
+
+        requirements = requirements_owner(
+            source_owner(binding, proposed.intents[0].required_capabilities)
+        )
+        kwargs["cognition"] = replace(
+            kwargs["cognition"], registry=registry, execution=config, requirements=requirements
+        )
         return build(*args, **kwargs)
 
     monkeypatch.setattr(bootstrap, "build_minimum_core", composed)

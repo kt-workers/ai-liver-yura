@@ -31,7 +31,7 @@ from tests.domain.plugin_registry.test_plugin_registry_adjacent import available
 from tests.helpers.executive_requirements import PlanSources, fence_clock, make_authority
 
 
-def publication(count: int, identity: str, target: str) -> ActivityExecutionBindingPublication:
+def binding_owner(count: int, identity: str, target: str) -> ActivityBindingAuthority:
     schema_ref = "plugin.run.input.v1"
     schema = BindingInputPublicationOwner(
         identity + "-schema",
@@ -53,7 +53,7 @@ def publication(count: int, identity: str, target: str) -> ActivityExecutionBind
     owner = ActivityBindingAuthority(
         identity, PluginActivityOperationAdapter(available_registry()), schema, sources
     )
-    return owner.publish(
+    owner.publish(
         revision=1,
         activity_type="activity",
         operation_ref="run",
@@ -63,6 +63,12 @@ def publication(count: int, identity: str, target: str) -> ActivityExecutionBind
             ArgumentSourceRelation(f"arg-{i}", f"{identity}-fact-{i}") for i in range(count)
         ),
     )
+
+    return owner
+
+
+def publication(count: int, identity: str, target: str) -> ActivityExecutionBindingPublication:
+    return binding_owner(count, identity, target).capture()
 
 
 @pytest.mark.parametrize("total", [15, 16, 17])
@@ -80,9 +86,18 @@ def test_actual_finalization_capacity(
     evidence = PlanSources()
     if path != "two_step_plan":
         _, _, _, captured, proposed, live = direct_fixture()
-        count = total - 5 - (path == "direct_evidence")
-        pub = publication(count, "binding-1", "target")
-        captured = replace(captured, capabilities=(pub.descriptor,), activity_bindings=(pub,))
+        # binding・Registry・schema・Direct source・Requirements・Executiveの6実Owner。
+        count = total - 6 - (path == "direct_evidence")
+        binding = binding_owner(count, "binding-1", "target")
+        pub = binding.capture()
+        from tests.helpers.direct_activity_requirements import requirements_owner, source_owner
+
+        requirements = requirements_owner(
+            source_owner(binding, (CapabilityRequirement("activity", "run"),))
+        )
+        captured = requirements.capture(
+            replace(captured, capabilities=(pub.descriptor,), activity_bindings=(pub,))
+        )
         live = replace(live, capabilities=(pub.descriptor,), activity_bindings=(pub,))
     else:
         from tests.domain.goal_planning.test_goal_planning import NOW
