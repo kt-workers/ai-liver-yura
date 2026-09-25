@@ -31,6 +31,11 @@ from app.composition.s2_provider import (
     S2ProviderLeaseFactory,
     resolve_provider_configuration,
 )
+from app.composition.speech_production_configuration import (
+    SpeechComponentProvenance,
+    SpeechProductionInputs,
+    create_production_speech_configuration,
+)
 from app.config.appraisal import load_appraisal_config
 from app.config.cognition_s2 import ConfigurationReference, S2ProductionConfig, load_s2_config
 from app.config.executive import load_executive_config
@@ -88,6 +93,7 @@ class ComponentBindings:
     executive: ExecutiveConfigurationProvenance
     attention_policy_id: str
     attention_policy_revision: int
+    speech: SpeechComponentProvenance | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,11 +246,13 @@ async def compose_s2_production_core(
     fast_rules: tuple[DeterministicAppraisalRule, ...],
     provider_source: S2ProviderConfigurationSource | None,
     provider_factory: S2ProviderLeaseFactory,
+    speech: SpeechProductionInputs | None = None,
     config_ref: str = S2_RESOURCE,
     resource_root: Path = ROOT,
     artifact_head: Callable[[], str] = current_artifact_head,
 ) -> S2ProductionApplication:
     from app.bootstrap import _compose_core, _reap_cleanup
+    from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
 
     owned = _OwnedResources()
     stage = S2FailureCode.INVALID_SYSTEM_CONFIG
@@ -278,7 +286,10 @@ async def compose_s2_production_core(
         stage = S2FailureCode.INITIALIZATION_FAILED
         goals = GoalCommitmentStore(bounds=BOUNDS)
         owned.add_sync(goals.finalization_participant.retire)
-        activities = ActivityExecutionAuthority()
+        activities = (
+            ActivityExecutionAuthority(observation_policy=SPEECH_OBSERVATION_POLICY)
+            if speech is not None else ActivityExecutionAuthority()
+        )
         owned.add_sync(activities.finalization_participant.retire)
         reference = CoreInputReferenceContextBinding(
             goals, activities, minimum.input_meaning_policy, BOUNDS
@@ -344,6 +355,15 @@ async def compose_s2_production_core(
         ):
             raise S2ConfigurationError(S2FailureCode.PROVIDER_MAPPING_FAILED)
         stage = S2FailureCode.COGNITION_COMPOSITION_FAILED
+        speech_binding = None
+        if speech is not None:
+            speech_binding = await create_production_speech_configuration(
+                speech, goals=goals, reference=reference, clock=clock,
+                character_id=character.character_id,
+                character_revision=character.definition_revision,
+                runtime_epoch=run_identity.runtime_epoch, system_run_id=run_identity.system_run_id,
+            )
+            owned.actions.append(speech_binding.close)
         cognition = CoreCognitionConfiguration(
             appraisal.appraisal_policy,
             executive.executive_policy,
@@ -354,6 +374,7 @@ async def compose_s2_production_core(
             precondition_router,
             precondition_bindings,
             fast_rules,
+            speech=None if speech_binding is None else speech_binding.configuration,
         )
         core = _compose_core(
             minimum,
@@ -370,6 +391,9 @@ async def compose_s2_production_core(
         owned.actions.remove(lifecycle.close)
         owned.actions.append(core.stop)
         stage = S2FailureCode.INITIALIZATION_FAILED
+        if speech_binding is not None:
+            speech_binding.transfer_to_core(core)
+            speech_binding.validate_current()
         if (
             reference.snapshot().context.source_context_revision != source_revision
             or executive.requirements_owner.current_generation() != executive.initial_generation
@@ -390,6 +414,7 @@ async def compose_s2_production_core(
             executive.provenance,
             attention_policy,
             lease.bindings,
+            None if speech_binding is None else speech_binding.provenance,
         )
         return S2ProductionApplication(core, snapshot, cognition, appraisal, executive, owned)
     except BaseException as error:
@@ -419,6 +444,7 @@ def _snapshot(
     executive: ExecutiveConfigurationProvenance,
     attention: AttentionSchedulingPolicy,
     providers: tuple[ProviderBindingSnapshot, ...],
+    speech: SpeechComponentProvenance | None = None,
 ) -> SystemCompositionSnapshot:
     return SystemCompositionSnapshot(
         config.composition_id,
@@ -440,6 +466,7 @@ def _snapshot(
                 executive,
                 attention.policy_id,
                 attention.policy_revision,
+                speech,
             ),
         ),
         providers,

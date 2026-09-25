@@ -141,3 +141,101 @@ S2 config欠落はS2を要求した起動だけの失敗である。minimum CLI�
 返却wrapperのread-only composition_snapshotから、稼働したS2 config、Owner構成、mapping、人物、exact HEAD、runtime/system run identityを一括取得できるようにする。#620はこれを実際に起動した同一System runの観測に束縛する。正常LLM応答・発話・実環境成功をsnapshotの存在だけで主張しない。
 
 実装時は正規factory利用、identity/revision不一致、missing/malformed、未構成と構成不正の区別、Early Boot不変、source更新、部分構築回収、借用Owner保全、取消・繰返し停止・非直列foregroundを検証する。#620の8ケースやPR #689を先行変更せず、#692の採用後に同じ#620系統で受入れを再開する。
+
+## 9. Speech本番構成の明示接続（#702）
+
+### 9.1. 構成Authorityと公開入口
+
+#702 / #360は、既存Speech Ownerの本番policy・公開binding・pipelineを束ねるSystem composition factoryを所有する。#613の配送・Fact還流、#701の非直列準備、#348のgeneration / 提示 / 資源回収、#358のTTS契約を変更しない。factoryはDomainの新しい意味Ownerではなく、試験fixtureを本番値の正本にしない。
+
+`app/composition/speech_production_configuration.py`に`create_production_speech_configuration(...)`を配置する。型付き入力`SpeechProductionInputs`から`SpeechProductionBinding`を生成する。返却bindingは既存`CoreSpeechConfiguration`、凍結した構成由来、構築資源の回収責務を保持する。新しいSpeech意味DTOは作らない。
+
+`build_s2_production_core(...)`と`compose_s2_production_core(...)`は`SpeechProductionInputs | None`の任意引数`speech`を受ける。未指定のdefaultは`None`。指定時はSystem factoryを一度呼び、その返却`configuration`を`CoreCognitionConfiguration.speech`へ設定する。自由な`build` callableだけを本番構成証拠として受理する経路は設けない。既存CoreSpeechConfigurationの汎用注入APIは保持する。
+
+factoryへの入力は呼出元が明示供給する。不足をfixture、別voice、既定Provider、空の成功bindingで補わない。Systemは秘密値・環境変数を探索しない。
+
+### 9.2. 入力の供給元
+
+| 入力 | Authorityと照合 |
+| --- | --- |
+| 構成identity | deploymentが発行する`source_id`、`config_id` / `config_revision`、`binding_id` / `binding_revision`、`binding_generation`を明示要求する。同じidentity/revisionで内容を変更しない |
+| Speech意味 | `SpeechSemanticPolicyOwner`と`ProductionSpeechSources`を既存`bind_speech_semantics_policy_v1`で束ねる。同じ返却bindingのcontext builderとExecutive evidenceを使用し、MeaningPolicy V1を複製しない |
+| source接続 | 同じS2のFoundation / reference / Activity Ownerを受ける型付きsource構成境界。外部Memory等は既存production publication / 公開bindingを明示供給する。構成側がFact、token、主体identityを補作しない |
+| Character | #330の既存policy、CharacterLanguageAuthority、live-state/bounds reader、LLMRolePort。人物文書のidentity/revisionを同じS2の文書と照合する |
+| Verifier | #363の既存policy、LLMRolePort、current context reader。必須検証をTTS成功で代替しない |
+| Performance | #331の既存projection policyとcurrent context reader。投影規則や表現意味をSystemへ複製しない |
+| Runtime | #348のpolicy、admission priority、expiry policy参照、許可output mode、TTS preparation modeを明示要求。Runtime / queue / admissionは同じoperational policyを使用する |
+| TTS / output | deploymentが束ねた既存output preparation portとPreparedAudioDiscardPortの対、公開binding identity/revision、availability。正常返却前はproducerが回収責務を持ち、正常返却後は#701の所有権契約に従う |
+| Presentation | 既存process Supervisorを構成する型付き提供境界、公開binding identity/revision、availability、既存current revalidation reader。TTS資源と同じ提示契約に対応することを供給側が保証する |
+| 通知 | 同じS2 cognition / reference / Activityを使い、#613の既存通知・提示Fact配送を構成する。別Activity Ownerを生成しない |
+
+Owner policyは実際に既存Owner constructorへ渡す不変値を保持し、その値からpolicy identity/revisionを投影する。完成Ownerのprivate属性を辿ってpolicyを推測せず、別に渡したラベルだけで証拠を作らない。公開policyにないrevisionをSystemが捏造しない。policyにidentityがない部分は、供給元のimmutable binding revisionと使用する既存policy型・公開値の対応を構成側で固定する。
+
+Speech用LLMのRole登録と実portは供給元bindingで明示する。既存S2の3Role manifestへ未登録Roleを黙って追加しない。Roleのinstructions / policy / schemaは既存Owner、具体model/reasoning mappingはdeploymentのAuthorityを維持する。Speech component内のprovider参照は実際に使用するRole登録の公開identity/revisionへ結び付ける。
+
+具体voice/provider/speaker/style/credentialは本書で決定しない。deploymentが供給する型付きbindingを既存Ownerが検査する。構成不正と未構成を区別し、音声出力を要求するのにbindingがない場合は構築拒否。明示したunavailable bindingは既存typed unavailableを返し、正常音声や別voiceへ変換しない。TEXT_ONLYは既存policyで明示許可された場合だけ使用でき、TTS不在を理由にSystemが切り替えない。
+
+### 9.3. identity・revision・generation
+
+構成identityは本書の`identity()`相当の公開識別子制約、revisionとbinding_generationはboolでない1以上の整数とする。固定の本番IDや環境固有値を同梱値として発明しない。deploymentのsourceは同一bindingの内容を凍結し、変更時にrevisionとbinding_generationを進め、新しいSystem runで再構築する。本境界でhot replacementは行わない。
+
+`binding_generation`はSystem構成の供給世代であり、SpeechRuntimeのcandidate generationやOwnerのpolicy generationではない。Ownerのpolicy identity/revision、publicationのcurrentnessは元Ownerの公開APIで別途照合する。raw generation tokenをsnapshotへ入れない。candidate未生成時に架空のcandidate generationを発行しない。
+
+入力取得時、Coreへの登録時、snapshot発行直前に、同じsource/bindingのidentity/revision/generationと元Ownerのcurrent publicationを照合する。差異があれば新しい値への付替えをせず構築を拒否する。起動後のcandidate currentnessと最終Fenceは既存Runtime / 各Ownerの責務のまま残す。
+
+### 9.4. 実構築順と同一性
+
+1. 既存S2設定・人物・Foundation / referenceを準備する。Speech指定時のActivityは既存`SPEECH_OBSERVATION_POLICY`を使用して生成し、同じActivityをreferenceとCoreへ渡す。Speech未指定時の既存Activity構成を変更しない。
+2. 既存の順序でAppraisal、Executive / Requirements、Attention、cognition用Providerを構築する。
+3. Speech inputsを検証し、同じreferenceからsource bindingを得る。System factoryは同じSpeech semantic bindingからExecutive evidenceとcontext builderを取得する。入力identityを凍結し、資源生成を回収台帳へ即時登録する。
+4. Speech用Runtime、queue、task registry、discarder、admission、Presentation executor / Supervisorと#701のCoreSpeechPipelineを既存constructorから構成する。cognition確定後に必要なreader/notificationの接続は、返すCoreSpeechConfiguration.buildの一度限りの同期結合で行う。非同期lease取得はその前段で完了させ、同期callback内で非同期cleanupが必要な外部資源を新規取得しない。
+5. `CoreCognitionConfiguration.speech`へ同じconfigurationを注入して既存`_compose_core`を呼ぶ。既存`CoreCognitionConfiguration.compose()`が先にExecutiveへ`self.speech.evidence`を渡し、その後一度だけ`self.speech.compose(delivery, reference)`を呼ぶ順序を維持する。Systemから二重composeしない。
+6. 登録pipelineのcontextが同じsemantic bindingを使い、Executive evidenceもそのbindingを参照することをfactoryが保持した実参照で検証する。pipeline/runtime/queue/discarder/output producerの資源接続は同じ構成ハンドルから行い、異なるresource Ownerのport対を混ぜない。
+7. Core返却と最終identity/currentness検査の成功後にだけSystemCompositionSnapshotを作る。startは既存どおり返却後。登録前snapshotへのSpeech証拠の後付けは禁止する。
+
+buildの二回呼出し、別cognition/reference/runへのbinding再利用は拒否する。既存generic CoreSpeechConfigurationの意味を変更せず、本番factoryの一度限りの構成ハンドルで制御する。
+
+### 9.5. 所有権・終了・部分構築失敗
+
+| 対象 | 所有と回収 |
+| --- | --- |
+| 注入されたpolicy/source設定、共有Owner、外部client、共有LLM/TTS port | borrowed。Systemがcloseしない |
+| factoryが生成するpipeline、Runtime、queue、task registry、executor | owned。Coreへの移管前はSpeechProductionBindingの回収台帳が保持 |
+| factoryが取得するPresentation/TTS lease wrapper | owned wrapperだけreleaseする。lease内部の共有clientは供給元の所有契約に従い閉じない |
+| candidate準備音声 | #701のproducer/composition/Runtime所有のまま。System台帳で個々のaudioを再回収しない |
+
+稼働中Runtimeや完成pipelineをborrowedとして注入し、Core停止で共有Runtimeを閉じる構成は受理しない。共有してよいのは上表の明示borrowed依存だけとする。leaseはpublic releaseとowned/borrowedの宣言を持ち、close属性の有無から所有を推測しない。
+
+Core返却前はfactory台帳が失敗時の回収を所有する。pipeline生成後はpipeline.close、その後SpeechRuntimeShutdown.closeを必ず試みる回収操作を登録し、最後にowned leaseを逆順releaseする。先のcleanup失敗でも残りを実行し、元の取消/失敗を成功へ読み替えない。
+
+`_compose_core`が正常返却し、Coreに同じSpeech deliveryが登録されていると確認した時点で、pipeline / Runtime回収責務をCoreへ一度だけ移管する。以後は`MinimumCoreApplication.stop()` → `CoreSpeechDelivery.close()` → #701 pipeline.close → 既存SpeechRuntimeShutdownが回収する。S2台帳から同じpipeline/shutdownを再呼出ししない。
+
+移管後もlease releaseはSpeechProductionBindingが保持する。S2台帳はCore.stopを最初に実行し、その後Speechのowned lease、既存cognition Provider / Attention / Executive等を生成順の逆順で回収する。Core.stop失敗時もleaseと残る資源の回収を続ける。Foundationの既存移管は保持する。
+
+同期compose中の例外でも、既に生成したSpeech資源のハンドルを失わず外側の非同期S2 cleanupへ返す。部分登録からSystem runやsnapshotを公開しない。非同期providerが正常返却する前の取消・失敗ではproviderが未引渡し資源を回収し、Systemは返却済みleaseだけを台帳へ登録する。
+
+S2の既存共有stop taskを使い、繰返しstop / cancel下でも一度だけ回収する。borrowed Ownerへの終了伝播、raw例外・秘密値の公開、pending taskを残した成功応答は禁止する。
+
+### 9.6. safe System provenance
+
+既存`ComponentBindings`に任意の`SpeechComponentProvenance | None`を追加し、`SystemCompositionSnapshot.component_bindings`の既存tuple内へ格納する。Speechなしは`None`。別System snapshotや架空のsubsystem登録は作らない。
+
+Speech provenanceはfrozenな構成専用値とし、次を実際の入力・構築bindingから投影する。
+
+- source_id、config_id / config_revision、binding_id / binding_revision / binding_generation。
+- semantic policyの公開identity/revision、Character / Verifier / Performanceで実使用したpolicy参照と供給元binding revision。
+- Runtime operational policyのidentity/revision、許可output modeとTTS preparation mode。
+- TTS / Presentation bindingの公開identity/revisionとavailability。Speech LLMの登録Roleとdeployment bindingの安全な参照。
+- 同じSystem run / runtime epoch / character identity/revisionとの対応。git_headは外側System snapshotの検証済み値を使用し、独自再発行しない。
+
+raw token、Owner instance、SDK object、credential、内部/絶対path、raw audio、具体voice/provider設定の生値を含めない。自由文の供給元説明をそのまま証拠へ反射しない。公開参照と実際の入力の対応をfactoryで検証し、identityの自己申告だけをもって成功としない。
+
+snapshotは構築時点の証拠である。#621は返却applicationの既存Core.cognition.speechの公開pipeline/runtime境界から実trace・candidate generation・結果を照合できる。初期snapshotへ後刻のcandidate stateを埋めず、準備済み音声を提示済みFactへ変換しない。
+
+### 9.7. 失敗と互換・受入れ
+
+入力の欠落・型/identity/revision不正・矛盾したavailabilityは既存`INVALID_SYSTEM_CONFIG`、Speech構成/登録不成立は`COGNITION_COMPOSITION_FAILED`、構築中currentness喪失・資源回収不成立は`INITIALIZATION_FAILED`へ分類する。Systemの既存安全な例外を使用し、Domain/TTS/Presentationの失敗Authorityを追加しない。運転中のtyped unavailable / rejection / cancellationは元Ownerの意味を維持する。
+
+SpeechなしのS2構築は従来と同じOwner/Role集合・lifecycleで成立する。minimum CLI / INPUT_MEANING-only起動にSpeech設定探索や必須依存を追加しない。Speechあり構築の失敗後に自動的にSpeechなしへfallbackしない。
+
+factoryのfixture非依存、同じbindingとgeneration、snapshot実値一致、所有資源だけのclose、構築段階ごとの逆順cleanup、再停止・取消、stale拒否、#701の準備並行動作、#613のFact還流、#692/#620のSpeechなし構成を検証する。#621のSystem Speech acceptanceやHumanの実音声確認を本構成の成功だけで完了扱いしない。
