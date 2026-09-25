@@ -463,3 +463,7 @@ MeaningPolicy V1の採用値はFACT_GROUNDED / 1 / 1。GRATITUDEのevidence要�
 ## Speech sourceの非同期captureと寿命（#677）
 
 起動時に登録するのはOwner/contract routeであり、具体的source IDではない。既存のExecutive bounded contextへ採用したtyped Factだけを非同期captureへ渡し、実Owner publicationから検証したbindingをspeech_source_bindingsへ保持する。現在の参照選択Authority、bounded selection、D10、candidate schema、commitのexact照合は変更しない。開始時とcurrent commit直前のreaderが同じpublic acquisitionをawaitし、確定resolutionには元Owner identity/revision/tokenを固定する。Memory待機を囲む全体lockや同期DB呼出しを加えない。詳細はspeech_semantics_contracts.md §11.15を正とする。
+
+## 本番構成の供給境界（#691）
+
+実行方針・Requirements規則の初期採用値、厳密loader、不変DTO、factory、由来は[Executiveの本番構成](executive_production_configuration.md)を正とする。本書の意味・世代・最終Fenceと§9.9 / §11.1を維持し、具体的なProvider mappingとS2登録は#692 / #360が所有する。

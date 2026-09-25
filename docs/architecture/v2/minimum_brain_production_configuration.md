@@ -331,6 +331,10 @@ InputMeaningBrainModulePortはPythonのCancelledErrorを捕捉して通常結果
 
 上記留保のうちDeep Appraisal実行方針・fresh-start Internal State・Decay具体規則の設計値と供給境界は[Appraisalの本番構成](appraisal_production_configuration.md)を唯一の正本とする。設計レビュー待ちであり実装・採用済みとは扱わない。初期化とresume / rehydrationを区別し、試験値の本番転用禁止を維持する。Executive / Requirementsの構成は#691、Owner構成のS2接続は#692に残し、minimum YAMLと既存INPUT_MEANING-only起動は変更しない。
 
+### #691によるExecutive側の具体化
+
+Executive実行方針とRequirementsの初期値・供給境界は[Executiveの本番構成](executive_production_configuration.md)を正とする。minimum YAMLへ値を複製せず、INPUT_MEANING-only起動を変更しない。S2でのOwner接続・Provider mapping・登録は#692 / #360が所有する。
+
 ## 13. 監査不足の最終分類
 
 |不足|分類|本設計での扱い|
