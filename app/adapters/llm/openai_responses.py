@@ -15,6 +15,7 @@ from jsonschema import ValidationError, validate
 from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 from app.domain.llm import (
+    LLMExecutionPolicy,
     LLMExecutionProvenance,
     LLMFailureCode,
     LLMFailurePolicy,
@@ -111,6 +112,20 @@ class OpenAIResponsesModelPolicy:
             or self.provider_max_output_tokens < 1
         ):
             raise ValueError("Provider max output tokensが不正です")
+
+
+def model_policy_failure(
+    execution: LLMExecutionPolicy, provider_policy: OpenAIResponsesModelPolicy
+) -> str | None:
+    """起動時と要求時で同じProvider数値対応を検査する。"""
+    if execution.temperature_normalized is not None and provider_policy.temperature_mapping is None:
+        return "RoleのProvider temperature mappingが未登録です"
+    if (
+        provider_policy.provider_max_output_tokens is not None
+        and execution.max_output_tokens > provider_policy.provider_max_output_tokens
+    ):
+        return "RoleのProvider max output token上限を超えています"
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -562,18 +577,7 @@ class OpenAIResponsesAdapter:
     def _mapping_failure(
         request: LLMRoleRequest, provider_policy: OpenAIResponsesModelPolicy
     ) -> str | None:
-        if (
-            request.execution_policy.temperature_normalized is not None
-            and provider_policy.temperature_mapping is None
-        ):
-            return "RoleのProvider temperature mappingが未登録です"
-        if (
-            provider_policy.provider_max_output_tokens is not None
-            and request.execution_policy.max_output_tokens
-            > provider_policy.provider_max_output_tokens
-        ):
-            return "RoleのProvider max output token上限を超えています"
-        return None
+        return model_policy_failure(request.execution_policy, provider_policy)
 
     def _remaining_timeout(self, request: LLMRoleRequest) -> float:
         timeout = request.execution_policy.timeout_seconds

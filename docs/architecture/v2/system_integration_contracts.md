@@ -684,3 +684,7 @@ System Integration implementation and final Verification remain frozen until #44
 正常終了、実行前の権限失効、効果未確定のtimeout、取消と再取消、効果報告後の権限失効を確認する。実行前に根拠が失効した場合はFinalizationErrorとして拒否され、提供先呼出し0件となる。実行後の権限失効は既存効果を消さず、Activityの終端事実はAppraisalの入力へ戻る。一方、失効したBindingを含む後続Executiveは既存Ownerの現在性検査で拒否される。これを後続判断の成功とは報告しない。
 
 試験は本番の構成処理・Owner・配送・起動停止を使用する自動結合検証であり、配備された製品の実動作やHumanの受入を代替しない。2026-09-22のユーザー指示に従い、実音声を含む実動作の検証はHumanが所有し、ChatGPT/Codexは実施しない。模擬提供先・模擬LLMの試験成功を実サービスや意味品質の成功へ昇格しない。
+
+## S2本番認知構成の具体契約（#692）
+
+明示activation、deployment参照、SystemCompositionSnapshotのtyped化、構築・終了所有は[SystemのS2本番認知構成](system_production_cognition_configuration.md)を正とする。本書第4節の由来をDomain Stateへ置き換えず、minimum起動とS2の分離を維持する。
