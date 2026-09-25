@@ -478,3 +478,21 @@ async def test_lease_publication_mismatch_releases_before_reject(monkeypatch: An
     with pytest.raises(S2ConfigurationError):
         await bootstrap.build_s2_production_core(**parameters(), speech=d.inputs())
     assert d.events == ["acquire", "release"]
+
+
+@pytest.mark.asyncio
+async def test_same_policy_values_with_new_owner_generation_during_acquire_rejected(
+    monkeypatch: Any,
+) -> None:
+    d = Deployment()
+    original = d.acquire
+
+    async def acquire(*args: Any) -> speech.SpeechProductionPorts:
+        ports = await original(*args)
+        d.owner.update(d.owner.publication().value)
+        return ports
+
+    monkeypatch.setattr(d, "acquire", acquire)
+    with pytest.raises(S2ConfigurationError, match="INITIALIZATION_FAILED"):
+        await bootstrap.build_s2_production_core(**parameters(), speech=d.inputs())
+    assert d.events == ["acquire", "release"]

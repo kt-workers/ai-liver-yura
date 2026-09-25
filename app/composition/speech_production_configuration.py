@@ -444,11 +444,14 @@ async def create_production_speech_configuration(
     identity(system_run_id)
     if inputs.current_publication() != p:
         raise S2ConfigurationError(S2FailureCode.INITIALIZATION_FAILED)
+    semantic_publication = inputs.semantic_owner.publication()
     ports = await inputs.acquire(p, p.roles())
     if not isinstance(ports, SpeechProductionPorts):
         raise S2ConfigurationError(S2FailureCode.INVALID_SYSTEM_CONFIG)
     binding: SpeechProductionBinding | None = None
     try:
+        if inputs.semantic_owner.publication() != semantic_publication:
+            raise S2ConfigurationError(S2FailureCode.INITIALIZATION_FAILED)
         if (
             ports.publication != p
             or ports.roles != p.roles()
