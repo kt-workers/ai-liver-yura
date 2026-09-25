@@ -239,3 +239,7 @@ snapshotは構築時点の証拠である。#621は返却applicationの既存Cor
 SpeechなしのS2構築は従来と同じOwner/Role集合・lifecycleで成立する。minimum CLI / INPUT_MEANING-only起動にSpeech設定探索や必須依存を追加しない。Speechあり構築の失敗後に自動的にSpeechなしへfallbackしない。
 
 factoryのfixture非依存、同じbindingとgeneration、snapshot実値一致、所有資源だけのclose、構築段階ごとの逆順cleanup、再停止・取消、stale拒否、#701の準備並行動作、#613のFact還流、#692/#620のSpeechなし構成を検証する。#621のSystem Speech acceptanceやHumanの実音声確認を本構成の成功だけで完了扱いしない。
+
+## 10. 三層設定からのSpeech供給（#705）
+
+主設定とProfileから第9節の入力を作る供給Authorityは[三層の本番設定](configuration_architecture.md)とする。`create_speech_deployment()`は設定を既存Owner DTOへ変換し、同じrunに固定した`SpeechProductionInputs`を供給する。具体Provider/voiceの補完、試験policyへの置換、run中のhot replacementはしない。第9節のfactoryと所有権移管は再実装せず、既存の`build_s2_production_core(speech=...)`へ渡す。
