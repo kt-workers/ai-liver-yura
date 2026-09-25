@@ -58,6 +58,18 @@ async def test_real_factories_identity_snapshot_and_restart() -> None:
     assert app.core.input_context._goals is app.core.goals
     assert app.core.input_context.activities is app.core.activities
     snapshot = app.composition_snapshot
+    assert app.appraisal.reducer is app.cognition.state
+    assert app.appraisal.appraisal_policy is app.cognition.appraisal_policy
+    assert (
+        app.appraisal.decay_policy.policy_id
+        == snapshot.component_bindings[0].appraisal.decay_policy_id
+    )
+    assert (
+        app.appraisal.decay_policy.policy_revision
+        == snapshot.component_bindings[0].appraisal.decay_policy_revision
+    )
+    assert app.executive.requirements_owner is app.cognition.requirements
+    assert app.executive.initial_generation is app.cognition.requirements.current_generation()
     assert snapshot.git_head == HEAD
     assert snapshot.runtime_epoch == "epoch"
     assert snapshot.system_run_id == "run"

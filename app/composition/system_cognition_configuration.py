@@ -14,11 +14,13 @@ from typing import TYPE_CHECKING
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.composition.appraisal_configuration import (
     AppraisalInitializationProvenance,
+    AppraisalProductionBinding,
     build_appraisal_configuration,
 )
 from app.composition.cognition_configuration import CoreCognitionConfiguration
 from app.composition.executive_configuration import (
     ExecutiveConfigurationProvenance,
+    ExecutiveProductionBinding,
     create_executive_configuration,
 )
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
@@ -146,6 +148,8 @@ class S2ProductionApplication:
     core: MinimumCoreApplication
     composition_snapshot: SystemCompositionSnapshot
     cognition: CoreCognitionConfiguration
+    appraisal: AppraisalProductionBinding
+    executive: ExecutiveProductionBinding
     _owned: _OwnedResources = field(repr=False)
     _stop_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _start_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
@@ -387,7 +391,7 @@ async def compose_s2_production_core(
             attention_policy,
             lease.bindings,
         )
-        return S2ProductionApplication(core, snapshot, cognition, owned)
+        return S2ProductionApplication(core, snapshot, cognition, appraisal, executive, owned)
     except BaseException as error:
         try:
             await _reap_cleanup(asyncio.create_task(owned.close()))
