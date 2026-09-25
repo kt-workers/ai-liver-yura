@@ -1,0 +1,99 @@
+# Executive本番構成。採用値の正本はexecutive_production_configuration.md。
+schema_id: yura.executive.production-config.v1
+config_id: yura.executive.production
+config_revision: 1
+execution:
+  policy_id: yura.executive.execution
+  policy_revision: 1
+  model_class: balanced
+  reasoning_effort: medium
+  timeout_seconds: 20.0
+  max_attempts: 1
+  max_output_tokens: 4096
+  temperature_normalized: null
+  retry_policy:
+    initial_backoff_seconds: 1.0
+    backoff_multiplier: 2.0
+    max_backoff_seconds: 4.0
+requirements:
+  policy_id: yura.executive.requirements
+  revision: 1
+  rules:
+  - rule_id: executive.requirements.production.speech
+    revision: 1
+    policy_id: yura.executive.requirements
+    policy_revision: 1
+    intent_kind: speech
+    selector:
+      field: kind
+      value: null
+    mode: constant
+    capabilities: []
+    preconditions: []
+    source: null
+  - rule_id: executive.requirements.production.body
+    revision: 1
+    policy_id: yura.executive.requirements
+    policy_revision: 1
+    intent_kind: body
+    selector:
+      field: kind
+      value: null
+    mode: constant
+    capabilities: []
+    preconditions: []
+    source: null
+  - rule_id: executive.requirements.production.attention
+    revision: 1
+    policy_id: yura.executive.requirements
+    policy_revision: 1
+    intent_kind: attention
+    selector:
+      field: kind
+      value: null
+    mode: constant
+    capabilities: []
+    preconditions: []
+    source: null
+  - rule_id: executive.requirements.production.activity
+    revision: 1
+    policy_id: yura.executive.requirements
+    policy_revision: 1
+    intent_kind: activity
+    selector:
+      field: kind
+      value: null
+    mode: upstream
+    capabilities: []
+    preconditions: []
+    source:
+      route_id: executive.requirements.production.direct
+      contract_id: executive.direct-activity-requirements.v1
+      reference_field: binding_ref
+  - rule_id: executive.requirements.production.plan_execution
+    revision: 1
+    policy_id: yura.executive.requirements
+    policy_revision: 1
+    intent_kind: plan_execution
+    selector:
+      field: kind
+      value: null
+    mode: plan_scope
+    capabilities: []
+    preconditions: []
+    source: null
+  - rule_id: executive.requirements.production.plan_progress
+    revision: 1
+    policy_id: yura.executive.requirements
+    policy_revision: 1
+    intent_kind: plan_progress
+    selector:
+      field: kind
+      value: null
+    mode: constant
+    capabilities: []
+    preconditions: []
+    source: null
+direct_activity:
+  route_id: executive.requirements.production.direct
+  records: []
