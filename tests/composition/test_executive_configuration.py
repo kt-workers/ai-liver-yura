@@ -68,6 +68,20 @@ def test_empty_catalog_and_real_generation_with_safe_provenance() -> None:
     assert provenance["execution_policy_id"] == "yura.executive.execution"
     assert provenance["requirements_policy_id"] == "yura.executive.requirements"
     assert provenance["initial_generation_serial"] == 0
+    token = bound.initial_generation.token
+    assert dict(bound.provenance.initial_generation_identity) == {
+        "owner_identity": token.owner_identity,
+        "owner_instance_key": token.owner_instance_key,
+        "participant_identity": token.participant_identity,
+        "generation": token.generation,
+    }
+    second = composition.create_executive_configuration(config, bounds=BOUNDS, activity_bindings={})
+    assert second.initial_generation.serial == bound.initial_generation.serial
+    assert (
+        second.provenance.initial_generation_identity
+        != bound.provenance.initial_generation_identity
+    )
+    second.close()
     assert provenance["rule_revisions"] == tuple((r.rule_id, 1) for r in config.requirements.rules)
     assert provenance["bounds_policy_id"] == BOUNDS.policy_id
     serialized = json.dumps(provenance)

@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import cast
 
 from app.config.executive import (
     CONFIG_SOURCE,
@@ -17,6 +18,7 @@ from app.domain.executive import (
     RequirementsGeneration,
 )
 from app.domain.executive.deliberator import ExecutivePolicy
+from app.domain.executive.requirements import project
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +36,7 @@ class ExecutiveConfigurationProvenance:
     bounds_policy_id: str
     bounds_policy_revision: int
     initial_generation_serial: int
+    initial_generation_identity: tuple[tuple[str, str | int], ...]
 
     def to_dict(self) -> dict[str, object]:
         """初期構築時の安全な由来だけを公開する。"""
@@ -123,6 +126,7 @@ def create_executive_configuration(
             bounds.policy_id,
             bounds.policy_revision,
             generation.serial,
+            tuple(cast(dict[str, str | int], project(generation.token)).items()),
         )
         return ExecutiveProductionBinding(
             config, policy, requirements_owner, tuple(direct_owners), generation, provenance
