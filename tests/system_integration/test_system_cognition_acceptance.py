@@ -61,9 +61,7 @@ class SystemRun:
         leases: list[S2ProviderLease] = []
         releases: list[str] = []
 
-        async def factory(
-            roles: Any, configs: Any, bindings: Any, mode: str
-        ) -> S2ProviderLease:
+        async def factory(roles: Any, configs: Any, bindings: Any, mode: str) -> S2ProviderLease:
             registered_roles.extend(roles)
             # 採用済み未設定manifestを保持し、外部I/Oだけを置換する。
             assert not configs and mode == "unconfigured"
@@ -148,6 +146,17 @@ class SystemRun:
         assert (component.attention_policy_id, component.attention_policy_revision) == (
             config.attention_policy.policy_id,
             config.attention_policy.policy_revision,
+        )
+        attention = self.registration.attention.snapshot()
+        assert (attention.policy_id, attention.policy_revision) == (
+            component.attention_policy_id,
+            component.attention_policy_revision,
+        )
+        requirements = s2.executive.initial_generation.policy
+        assert requirements == s2.executive.config.requirements
+        assert (requirements.policy_id, requirements.revision) == (
+            component.executive.requirements_policy_id,
+            component.executive.requirements_policy_revision,
         )
         assert component.executive.source_config_ref == config.executive_config.resource_ref
         assert component.appraisal.source_config_ref == config.appraisal_config.resource_ref
@@ -480,7 +489,13 @@ async def test_system_consumer_observes_nonserial_rejection_and_cleanup(
                 is (BrainWorkStatus.FAILED if operation == "stale" else BrainWorkStatus.CANCELLED)
                 for o in terminal
             )
-            assert run.app.cognition.appraisal.current_commit() is None
+            assert run.app.cognition.appraisal.latest_commit() is None
+            if operation == "stop":
+                with pytest.raises(FinalizationError) as retired:
+                    run.app.cognition.appraisal.current_commit()
+                assert retired.value.failure is FinalizationFailure.PARTICIPANT_UNAVAILABLE
+            else:
+                assert run.app.cognition.appraisal.current_commit() is None
         evidence = run.evidence("A", "B")
         for index, key in enumerate(entered):
             trace = evidence["traces"][index]
