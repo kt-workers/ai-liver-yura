@@ -41,6 +41,7 @@ class CoreSpeechDelivery:
     async def close(self) -> None:
         # Session回収前に既存Ownerを取消へ進め、close時にterminal Factを投影する。
         try:
+            await self.pipeline.close()
             for candidate_id in await self.pipeline.runtime.active_candidate_ids():
                 await self.pipeline.discarder.discard_current(
                     candidate_id,

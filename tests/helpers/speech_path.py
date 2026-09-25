@@ -401,6 +401,8 @@ async def build_speech_path(slow_stage: str | None = None, *, pending_turn: bool
         "expiry",
         SpeechPreparationAdmission(runtime.operational_policy),
         discarder,
+        NoAudio(),
+        (SpeechPresentationMode.TEXT_ONLY,),
     )
     work = BrainIntegrationWork(
         "work",

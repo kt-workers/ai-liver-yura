@@ -100,6 +100,11 @@ async def setup(
             )
             discarder = PreparedAudioDiscarder(value.pipeline.runtime, resources)
             value.pipeline.discarder = discarder
+            value.pipeline.discard_port = resources
+            from app.composition.speech_preparation import PendingSpeechAudioOwner
+            value.pipeline._audio = PendingSpeechAudioOwner(resources)
+            from app.domain.speech_runtime.contracts import SpeechPresentationMode
+            value.pipeline.output_modes = (SpeechPresentationMode.AUDIO_WITH_TEXT,)
             value.cognition.speech.shutdown = SpeechRuntimeShutdown(
                 value.pipeline.runtime,
                 value.tasks,
@@ -137,7 +142,8 @@ async def test_context_to_accepted_process_presentation() -> None:
     assert result.status is RunStatus.COMPLETED, result
     assert result.machine_gate is Gate.PASS
     output = result.stage_results[0].typed_outputs
-    assert [r["stage"] for r in output["evidence"] if not r["stage"].startswith("llm_")] == [
+    stages = [r["stage"] for r in output["evidence"] if not r["stage"].startswith("llm_")]
+    assert sorted(stages) == sorted([
         "semantic_context",
         "semantic_plan",
         "character_context",
@@ -148,7 +154,17 @@ async def test_context_to_accepted_process_presentation() -> None:
         "verification",
         "prepared_candidate",
         "presentation_context",
-    ]
+    ])
+    # 独立Role間の直列順を要求せず、全証拠と各依存辺を厳密に確認する。
+    for chain in (
+        ("semantic_context", "semantic_plan", "character_context", "utterance"),
+        ("utterance", "performance_context", "performance_plan", "prepared_candidate"),
+        ("utterance", "verification_context", "verification", "prepared_candidate"),
+        ("prepared_candidate", "presentation_context"),
+    ):
+        assert all(
+            stages.index(a) < stages.index(b) for a, b in zip(chain, chain[1:], strict=False)
+        )
     presentation = output["presentations"][0]
     assert [r["status"] for r in presentation["reports"]] == ["started", "completed"]
     assert presentation["candidate"]["lifecycle"] == "completed"
