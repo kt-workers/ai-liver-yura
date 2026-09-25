@@ -220,6 +220,15 @@ async def test_failed_adoption_discards_original_audio(failure: str) -> None:
             old.performance_plan_id,
             old.audio_ref,
         )
+    if failure in ("supersede", "stale", "verifier"):
+        assert (
+            v.discards[0].reason.value
+            == {
+                "supersede": "candidate_superseded",
+                "stale": "candidate_stale",
+                "verifier": "verifier_failed",
+            }[failure]
+        )
     if failure == "supersede":
         assert (await v.pipeline.runtime.candidate(v.key)).lifecycle.value == "preparing"
     await cleanup(v)

@@ -125,6 +125,9 @@ class CoreSpeechPipeline:
     _closed: bool = field(default=False, init=False)
     _cleanup_failed: bool = field(default=False, init=False)
     _generations: dict[str, int] = field(default_factory=dict, init=False)
+    _discard_reasons: dict[str, PreparedAudioDiscardReason] = field(
+        default_factory=dict, init=False
+    )
 
     def __post_init__(self) -> None:
         if not self.output_modes or any(
@@ -340,7 +343,7 @@ class CoreSpeechPipeline:
             return feedback
         except BaseException as error:
             if not isinstance(error, asyncio.CancelledError):
-                reason = PreparedAudioDiscardReason.VERIFIER_FAILED
+                reason = self._discard_reasons.get(key, reason)
                 terminal = CandidateLifecycle.FAILED
             raise
         finally:
@@ -350,9 +353,15 @@ class CoreSpeechPipeline:
                 direct_failed = False
                 # repair前世代を含め、受領した元identityだけを回収する。
                 current_generation = self._generations.get(key, generation)
+                cleanup_reason = reason
+                if registered:
+                    if not await self.runtime.is_current_generation(key, current_generation):
+                        cleanup_reason = PreparedAudioDiscardReason.CANDIDATE_SUPERSEDED
+                    elif await self.runtime.operational_failure(key) is not None:
+                        cleanup_reason = PreparedAudioDiscardReason.CANDIDATE_STALE
                 for old in range(1, current_generation + 1):
                     try:
-                        await self._audio.discard(key, old, reason)
+                        await self._audio.discard(key, old, cleanup_reason)
                     except SpeechPreparationCleanupError:
                         direct_failed = True
                 if (
@@ -363,7 +372,9 @@ class CoreSpeechPipeline:
                     current = await self.runtime.candidate(key)
                     if current.lifecycle is not CandidateLifecycle.PRESENTING:
                         try:
-                            await self.discarder.discard_current(key, current_generation, reason)
+                            await self.discarder.discard_current(
+                                key, current_generation, cleanup_reason
+                            )
                         except BaseException:
                             direct_failed = True
                         else:
@@ -374,9 +385,10 @@ class CoreSpeechPipeline:
                                 key, final_state, expected_generation=current_generation
                             )
                 self._generations.pop(key, None)
+                self._discard_reasons.pop(key, None)
                 if direct_failed:
                     self._cleanup_failed = True
-                    raise SpeechPreparationCleanupError(reason.value)
+                    raise SpeechPreparationCleanupError(cleanup_reason.value)
 
             await finish_cleanup(asyncio.create_task(cleanup()))
 
@@ -402,14 +414,18 @@ class CoreSpeechPipeline:
                 if context.semantic_plan != plan or context.utterance != utterance:
                     raise ValueError("Verifier文脈のPlan/Utteranceが一致しません")
                 self._observe("verification_context", context)
-                value = await self.verifier.verify(
-                    context,
-                    blind_observation_id=key + ":blind" + suffix,
-                    relation_observation_id=key + ":relation" + suffix,
-                    semantic_observation_id=key + ":semantic-observation" + suffix,
-                    acceptance_id=key + ":acceptance" + suffix,
-                    created_at=self.clock(),
-                )
+                try:
+                    value = await self.verifier.verify(
+                        context,
+                        blind_observation_id=key + ":blind" + suffix,
+                        relation_observation_id=key + ":relation" + suffix,
+                        semantic_observation_id=key + ":semantic-observation" + suffix,
+                        acceptance_id=key + ":acceptance" + suffix,
+                        created_at=self.clock(),
+                    )
+                except Exception:
+                    self._discard_reasons[key] = PreparedAudioDiscardReason.VERIFIER_FAILED
+                    raise
                 self._observe("verification", value)
                 return value
 
