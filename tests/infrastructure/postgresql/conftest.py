@@ -25,6 +25,17 @@ def resolve_test_password(environ: Mapping[str, str]) -> str:
     return password
 
 
+def subprocess_test_environment(
+    environ: Mapping[str, str], *, path: str, pythonpath: str
+) -> dict[str, str]:
+    """縮小した子process環境へ試験用passwordだけを明示継承する。"""
+    child_environ = {"PATH": path, "PYTHONPATH": pythonpath}
+    password = environ.get(_TEST_PASSWORD_ENV)
+    if password is not None:
+        child_environ[_TEST_PASSWORD_ENV] = password
+    return child_environ
+
+
 def temporary_database_name() -> str:
     """本番databaseと衝突しない試験専用database名を返す。"""
     return "yura_test_" + uuid4().hex

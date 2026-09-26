@@ -14,6 +14,7 @@ from app.infrastructure.persistence import DurabilityStatus
 from app.infrastructure.persistence.postgresql_connection import PostgresEndpoint
 from tests.domain.goals.test_goal_commitment_store import decision, goal_transition
 from tests.domain.memory import test_memory_store_retrieval as memory
+from tests.infrastructure.postgresql.conftest import resolve_test_password
 from tests.infrastructure.postgresql.test_runtime import runtime
 from tests.runtime.test_lifecycle import retry_policy
 
@@ -24,7 +25,7 @@ async def main() -> None:
         int(sys.argv[2]),
         sys.argv[3],
         sys.argv[4],
-        "isolated-test-no-auth",
+        resolve_test_password(os.environ),
         "disable",
     )
     persistence = runtime(endpoint)

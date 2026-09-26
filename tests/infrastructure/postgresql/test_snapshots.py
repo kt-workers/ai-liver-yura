@@ -151,9 +151,10 @@ from app.infrastructure.persistence.postgresql_connection import (
 )
 from app.infrastructure.persistence.postgresql_snapshots import PostgresLifecycleSnapshotRepository
 from tests.infrastructure.persistence.test_lifecycle_snapshots import envelope
+from tests.infrastructure.postgresql.conftest import resolve_test_password
 database = PostgresDatabase.connect(
     PostgresEndpoint(sys.argv[1], int(sys.argv[3]), sys.argv[2], sys.argv[4],
-                     "isolated-test-no-auth", "disable"),
+                     resolve_test_password(os.environ), "disable"),
     PostgresConnectionPolicy(1, 1, 1, 2, 1000, 1, 3000),
 )
 repository = PostgresLifecycleSnapshotRepository(database)

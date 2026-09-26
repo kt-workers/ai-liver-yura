@@ -31,6 +31,27 @@ def test_empty_explicit_password_fails_without_echoing_it() -> None:
     assert str(caught.value) == "YURA_TEST_POSTGRES_PASSWORDは空にできません"
 
 
+def test_reduced_subprocess_environment_inherits_only_explicit_password() -> None:
+    child = conftest.subprocess_test_environment(
+        {
+            "YURA_TEST_POSTGRES_PASSWORD": "fixture-only-credential",
+            "UNRELATED_CREDENTIAL": "must-not-propagate",
+        },
+        path="/usr/bin",
+        pythonpath="test-path",
+    )
+    assert child == {
+        "PATH": "/usr/bin",
+        "PYTHONPATH": "test-path",
+        "YURA_TEST_POSTGRES_PASSWORD": "fixture-only-credential",
+    }
+
+
+def test_reduced_subprocess_environment_keeps_ci_fallback_unset() -> None:
+    child = conftest.subprocess_test_environment({}, path="/usr/bin", pythonpath="test-path")
+    assert child == {"PATH": "/usr/bin", "PYTHONPATH": "test-path"}
+
+
 def test_temporary_database_name_is_never_a_production_database_name() -> None:
     first = conftest.temporary_database_name()
     second = conftest.temporary_database_name()
