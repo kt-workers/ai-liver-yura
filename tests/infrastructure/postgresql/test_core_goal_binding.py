@@ -16,6 +16,7 @@ from app.infrastructure.persistence import DurabilityStatus, PersistenceFailureC
 from app.infrastructure.persistence.postgresql_connection import PostgresDatabase, PostgresEndpoint
 from tests.domain.goals.test_goal_commitment_store import decision, goal_transition
 from tests.helpers.goal_semantics import semantic_spec
+from tests.infrastructure.postgresql.conftest import subprocess_test_environment
 from tests.infrastructure.postgresql.test_memory import POLICY
 from tests.infrastructure.postgresql.test_runtime import runtime
 
@@ -54,7 +55,11 @@ def test_goal_binding_persists_each_commit_and_restores_owner(endpoint: Postgres
             text=True,
             capture_output=True,
             timeout=15,
-            env={"PATH": os.defpath, "PYTHONPATH": os.pathsep.join(sys.path)},
+            env=subprocess_test_environment(
+                os.environ,
+                path=os.defpath,
+                pythonpath=os.pathsep.join(sys.path),
+            ),
         )
         assert json.loads(child.stdout) == result.committed.snapshot.to_dict()
         second = runtime(endpoint)

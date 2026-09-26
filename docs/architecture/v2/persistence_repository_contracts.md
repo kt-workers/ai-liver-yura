@@ -645,6 +645,10 @@ PostgreSQL の初期保存構造は `yura_v2` 名前空間に作成する。記�
 
 `tests/infrastructure/postgresql/` は、明示された隔離ソケットまたは隔離CIの接続先へ接続し、試験ごとに固有名の空DBを作成・回収する。CIは `YURA_REQUIRE_POSTGRES=1` で実行し、接続先未指定やドライバー不足を試験失敗とする。任意のローカル実行で未指定時に省略された結果は、実DB試験の成功ではない。通常の単体試験だけでなく、実DBの取引取消、リビジョンの同時競合、再接続、別プロセスの異常終了後の再読取り、破損、派生索引失敗、所有者型での復元、取消と終了、任意依存機能の障害分離を確認する。
 
+fixtureの接続先・user・passwordは呼出側が環境から明示供給する。fixture自身は`.env`やproduction credentialを探索しない。`YURA_TEST_POSTGRES_PASSWORD`が未指定の場合だけ、CIが作成する隔離service用の固定test credentialを使用する。明示値、接続先、DSNをfixtureの例外・repr・pytest diagnosticへ含めない。
+
+実DB試験がsubprocess（inline `python -c`を含む）を使用する場合は、必要な`YURA_TEST_POSTGRES_*`接続情報だけを明示的に子processへ継承する。credentialをargvとして渡さず、診断、assertion、stdout、stderr、logへ含めない。親processの全environmentは継承せず、password未指定時は既存CI隔離credential経路を子processでも維持する。試験対象はproduction DBではなく、必ず回収する一時`yura_test_*` databaseとする。
+
 現在の最小起動構成は入力意味解析だけを登録する段階であり、この接続口を本体の全活動経路へ配線済みとは扱わない。構成側の接続先・秘密情報・終了方針の供給と本体全活動経路への配線は、構成・結合側の工程で完了を確認する。製品依存は `Pipfile` と `Pipfile.lock` に psycopg 3.3.5（binary追加機能）と psycopg-pool 3.3.1 を記録する。CIは PostgreSQL 17.10 の隔離サービスを起動し、同じ依存の固定記録から全試験を実行する。CI成功、独立レビューと本流採用の結果は、対象HEADの証拠で別途確認する。
 
 
