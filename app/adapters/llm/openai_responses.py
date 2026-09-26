@@ -217,9 +217,9 @@ class OpenAIResponsesAdapter:
     def from_environment(
         cls, role_configs: tuple[OpenAIResponsesRoleConfig, ...]
     ) -> OpenAIResponsesAdapter:
-        api_key = os.environ.get("OPENAI_API_KEY")
+        api_key = os.environ.get("YURA_OPENAI_API_KEY")
         if not api_key:
-            raise ValueError("OPENAI_API_KEYが設定されていません")
+            raise ValueError("YURA_OPENAI_API_KEYが設定されていません")
         try:
             from openai import AsyncOpenAI
         except ImportError as error:

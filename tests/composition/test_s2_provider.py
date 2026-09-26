@@ -127,7 +127,8 @@ def test_publication_does_not_share_mutable_schema() -> None:
 
 @pytest.mark.asyncio
 async def test_unconfigured_uses_real_port_without_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "開発ツール用の非秘密文字列")
 
     def forbidden(*args: Any, **kwargs: Any) -> Any:
         pytest.fail("未構成なのにSDKを生成しました")
@@ -157,9 +158,9 @@ async def test_credential_manifest_mismatch(
     monkeypatch: pytest.MonkeyPatch, configured: bool
 ) -> None:
     if configured:
-        monkeypatch.setenv("OPENAI_API_KEY", "isolated-test-value")
+        monkeypatch.setenv("YURA_OPENAI_API_KEY", "isolated-test-value")
     else:
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
     with pytest.raises(S2ConfigurationError, match="PROVIDER_MAPPING_FAILED"):
         await create_s2_provider_lease(
             roles(), (), (), "unconfigured" if configured else "configured"
@@ -168,7 +169,7 @@ async def test_credential_manifest_mismatch(
 
 @pytest.mark.asyncio
 async def test_configured_lease_closes_owned_client_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("OPENAI_API_KEY", "isolated-test-value")
+    monkeypatch.setenv("YURA_OPENAI_API_KEY", "isolated-test-value")
 
     class Client:
         calls = 0
@@ -178,7 +179,13 @@ async def test_configured_lease_closes_owned_client_once(monkeypatch: pytest.Mon
             self.calls += 1
 
     client = Client()
-    monkeypatch.setattr("openai.AsyncOpenAI", lambda: client)
+    constructions: list[dict[str, Any]] = []
+
+    def build_client(**kwargs: Any) -> Client:
+        constructions.append(kwargs)
+        return client
+
+    monkeypatch.setattr("openai.AsyncOpenAI", build_client)
     configs, bindings = resolve_provider_configuration(
         load_provider_deployment(yaml.safe_dump(configured_data())), roles(), Source()
     )
@@ -186,3 +193,4 @@ async def test_configured_lease_closes_owned_client_once(monkeypatch: pytest.Mon
     await lease.release()
     await lease.release()
     assert client.calls == 1
+    assert constructions == [{"api_key": "isolated-test-value"}]

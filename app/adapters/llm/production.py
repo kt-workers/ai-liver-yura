@@ -62,7 +62,7 @@ def create_openai_port_from_environment(
 ) -> LLMRolePort:
     """未構成なら中立な接続を返し、構成済みの失敗は既存契約のまま伝える。"""
     unavailable = UnavailableLLMRolePort(roles)
-    if not os.environ.get("OPENAI_API_KEY"):
+    if not os.environ.get("YURA_OPENAI_API_KEY"):
         return unavailable
     if role_configs is None:
         raise ValueError("構成済み提供サービスの役割設定が必要です")

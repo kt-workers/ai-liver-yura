@@ -467,7 +467,7 @@ config_revision
 brain_module_registrations
 ```
 
-`character_definition_path`、資格情報、`OPENAI_API_KEY`、提供サービス固有設定、生の指示文、再試行処理の内部設定、ファイルシステムのパス、私的文脈、ドメインの生オブジェクトを含めない。項目追加は別途、安全な投影のレビューを必要とする。
+`character_definition_path`、資格情報、`YURA_OPENAI_API_KEY`、提供サービス固有設定、生の指示文、再試行処理の内部設定、ファイルシステムのパス、私的文脈、ドメインの生オブジェクトを含めない。項目追加は別途、安全な投影のレビューを必要とする。
 
 ### 19.3 設定の純粋な投影
 

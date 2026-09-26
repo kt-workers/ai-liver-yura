@@ -367,7 +367,11 @@ def test_canonical_composition_repeated_start_stop_has_no_pending_tasks(
 
 def test_configured_provider_missing_config_is_not_hidden(monkeypatch: pytest.MonkeyPatch) -> None:
     sentinel = "試験用の非秘密識別文字列"
-    monkeypatch.setattr(production, "os", SimpleNamespace(environ={"OPENAI_API_KEY": sentinel}))
+    monkeypatch.setattr(
+        production,
+        "os",
+        SimpleNamespace(environ={"YURA_OPENAI_API_KEY": sentinel}),
+    )
     with pytest.raises(ValueError, match="役割設定") as caught:
         build_minimum_core()
     assert sentinel not in str(caught.value)
@@ -425,7 +429,7 @@ def test_run_loop_cancellation_cleans_signals_and_owned_tasks(
 def test_entrypoint_subprocess_graceful_shutdown(stop_signal: signal.Signals) -> None:
     async def scenario() -> None:
         env = dict(os.environ)
-        env.pop("OPENAI_API_KEY", None)
+        env.pop("YURA_OPENAI_API_KEY", None)
         env["PYTHONASYNCIODEBUG"] = "1"
         child = await asyncio.create_subprocess_exec(
             sys.executable,
