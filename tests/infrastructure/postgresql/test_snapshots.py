@@ -1,5 +1,6 @@
 """実DBの状態保存を、競合・破損・異常終了を含めて確認する。"""
 
+import os
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -16,6 +17,7 @@ from app.infrastructure.persistence import (
 from app.infrastructure.persistence.postgresql_connection import PostgresDatabase, PostgresEndpoint
 from app.infrastructure.persistence.postgresql_snapshots import PostgresLifecycleSnapshotRepository
 from tests.infrastructure.persistence.test_lifecycle_snapshots import envelope
+from tests.infrastructure.postgresql.conftest import subprocess_test_environment
 from tests.infrastructure.postgresql.test_memory import POLICY
 
 
@@ -142,7 +144,9 @@ def test_unsupported_schema_and_malformed_json_fail_without_reset(
 
 def test_committed_state_survives_process_exit_without_shutdown(
     endpoint: PostgresEndpoint,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("YURA_TEST_POSTGRES_UNRELATED_SENTINEL", "parent-only")
     script = """
 import os
 import sys
@@ -152,6 +156,8 @@ from app.infrastructure.persistence.postgresql_connection import (
 from app.infrastructure.persistence.postgresql_snapshots import PostgresLifecycleSnapshotRepository
 from tests.infrastructure.persistence.test_lifecycle_snapshots import envelope
 from tests.infrastructure.postgresql.conftest import resolve_test_password
+if "YURA_TEST_POSTGRES_UNRELATED_SENTINEL" in os.environ:
+    os._exit(28)
 database = PostgresDatabase.connect(
     PostgresEndpoint(sys.argv[1], int(sys.argv[3]), sys.argv[2], sys.argv[4],
                      resolve_test_password(os.environ), "disable"),
@@ -168,6 +174,11 @@ os._exit(29)
         capture_output=True,
         timeout=10,
         check=False,
+        env=subprocess_test_environment(
+            os.environ,
+            path=os.defpath,
+            pythonpath=os.pathsep.join(sys.path),
+        ),
     )
     assert child.returncode == 29
     database = PostgresDatabase.connect(endpoint, POLICY)
