@@ -24,6 +24,7 @@ from app.infrastructure.persistence import (
 from app.infrastructure.persistence.postgresql_connection import PostgresDatabase, PostgresEndpoint
 from tests.domain.goals.test_goal_commitment_store import decision, goal_transition
 from tests.domain.memory import test_memory_store_retrieval as memory
+from tests.infrastructure.postgresql.conftest import subprocess_test_environment
 from tests.infrastructure.postgresql.test_memory import POLICY
 from tests.infrastructure.postgresql.test_runtime import runtime
 from tests.runtime.test_lifecycle import retry_policy
@@ -346,7 +347,11 @@ async def test_boot_recovers_goal_and_memory_after_other_process_exits_without_s
         str(boot_config),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env={"PATH": os.defpath, "PYTHONPATH": os.pathsep.join(sys.path)},
+        env=subprocess_test_environment(
+            os.environ,
+            path=os.defpath,
+            pythonpath=os.pathsep.join(sys.path),
+        ),
     )
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), 15)
