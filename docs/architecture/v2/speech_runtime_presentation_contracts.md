@@ -743,6 +743,33 @@ POSIXの実process試験とWindows Job API境界のunit testは証拠を区別�
 既存の同一process Adapter検証は明示的な検証専用Sessionでのみ実施し、production Supervisorからfallbackしない。
 
 
+## 本番Presentation登録の解決（#711）
+
+本番Compositionは`PresentationWorkerBinding`の`binding_id`、`binding_revision`、availabilityだけを
+`PresentationWorkerRegistry`へ渡す。registryは構成rootがコードで作った
+`PresentationProductionRegistration`の完全一致だけを解決し、登録に固定された
+`PresentationWorkerRegistration`から`SpeechPresentationWorkerSupervisor`を生成する。
+binding、user configuration、report、外部入力からmodule path、factory name、callable、shell command、
+executable pathを選択または実行してはならない。validation/test registrationをfallbackにも使用しない。
+
+registrationのworker factoryとJSON configurationはtrusted構成rootの所有であり、binding identityと
+revisionはその登録世代を指す。unknown、不一致、unavailable、またはSupervisor identity不一致は
+fail-closedで`PresentationProductionConfigurationError`となる。具体playback backendの選択はこの
+registryの責務ではない。backendを必要とする登録は、別途trusted構成rootが明示的に供給する。
+
+`acquire()`でSupervisorを取得した時点から、正常なlease返却まではregistryがownershipを持つ。
+lease返却後は`PresentationWorkerLease`がSupervisorと全Sessionのownershipを持つ。lease返却前の
+validationまたはconstruction failureでは、取得済みSupervisorを必ずshutdownする。caller cancellation
+でもshutdownをshieldしてsettleし、回収完了後に取消を伝播する。cleanup failureを通常の構成失敗や
+成功として隠さず、`PresentationProductionCleanupError`へ収束する。
+
+leaseの`close()`はSupervisorをshutdownし、open Sessionをすべて回収する。repeated close/releaseは
+同じcleanup taskへ合流し、二重releaseを起こさない。shutdown開始後の新規openは拒否する。
+既存#348/#659のSTARTED、COMPLETED、FAILED、INTERRUPTED、process containment、report transport、
+timeout、Actual Factの意味は変更しない。Supervisor生成またはspawn成功をSTARTEDへ昇格せず、
+prepared audioをspoken factへ昇格しない。raw provider exception、credential、endpoint、SDK出力は
+この公開境界へ出さない。
+
 ## Speech応答settlementへの接続（#679）
 
 #348/#657のmappingは変更しない。#329が受理したcurrent COMPLETED publicationだけを#333 response settlement evidenceに利用できる。開始・失敗・取消・timeoutのpartial effectは応答完了にしない。期待するsource bindingとdecisionをUsecaseで照合し、#329/#333 tokenを既存Fenceで同時検査する。詳細はattention_turn_contracts.mdの「Speech応答settlement（#679）」に従う。#613のPresentation Fact認知還流配線は次節に従う。

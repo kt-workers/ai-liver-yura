@@ -58,6 +58,7 @@ class SpeechPresentationWorkerSupervisor:
         self.registration = registration
         self.executable = executable
         self._sessions: set[PresentationWorkerSession] = set()
+        self._shutdown: asyncio.Task[None] | None = None
 
     @property
     def active_execution_count(self) -> int:
@@ -66,9 +67,37 @@ class SpeechPresentationWorkerSupervisor:
     def open(
         self, command: SpeechPresentationCommand, policy: SpeechPresentationTimeoutPolicy
     ) -> PresentationWorkerSession:
+        if self._shutdown is not None:
+            raise PresentationExecutionError(Code.CLEANUP_FAILED)
         session = PresentationWorkerSession(self, command, policy)
         self._sessions.add(session)
         return session
+
+    async def shutdown(self) -> None:
+        """すべての借用中Sessionを回収し、以後のopenを拒否する。"""
+        if self._shutdown is None:
+            self._shutdown = asyncio.create_task(self._shutdown_sessions())
+        cancelled = False
+        while True:
+            try:
+                await asyncio.shield(self._shutdown)
+                break
+            except asyncio.CancelledError:
+                if self._shutdown.cancelled():
+                    raise PresentationExecutionError(Code.CLEANUP_FAILED) from None
+                cancelled = True
+        if cancelled:
+            raise asyncio.CancelledError
+
+    async def _shutdown_sessions(self) -> None:
+        sessions = tuple(self._sessions)
+        if not sessions:
+            return
+        results = await asyncio.gather(
+            *(session.close() for session in sessions), return_exceptions=True
+        )
+        if any(isinstance(result, BaseException) for result in results):
+            raise PresentationExecutionError(Code.CLEANUP_FAILED)
 
 
 @dataclass(eq=False)
