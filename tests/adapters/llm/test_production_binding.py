@@ -43,7 +43,14 @@ def role() -> LLMRoleDescriptor:
 
 def environment(monkeypatch: pytest.MonkeyPatch, configured: bool) -> None:
     # 実環境の資格情報を読み書きせず、接続選択だけを再現する。
-    stub = SimpleNamespace(environ={"OPENAI_API_KEY": "試験用の非秘密文字列"} if configured else {})
+    stub = SimpleNamespace(
+        environ={
+            "OPENAI_API_KEY": "開発ツール用の非秘密文字列",
+            "YURA_OPENAI_API_KEY": "試験用の非秘密文字列",
+        }
+        if configured
+        else {}
+    )
     monkeypatch.setattr(production, "os", stub)
     monkeypatch.setattr(openai_responses, "os", stub)
 
@@ -113,6 +120,7 @@ def test_configured_factory_uses_existing_adapter(monkeypatch: pytest.MonkeyPatc
     port = create_openai_port_from_environment((role(),), role_configs=(make_config(),))
     assert isinstance(port, OpenAIResponsesAdapter)
     assert len(constructions) == 1
+    assert constructions == [{"api_key": "試験用の非秘密文字列"}]
     outcome = asyncio.run(port.invoke(make_request()))
     assert outcome.status is LLMRoleStatus.SUCCEEDED
     assert len(client.calls) == 1
@@ -152,6 +160,16 @@ def test_existing_required_factory_still_rejects_missing_credential(
     environment(monkeypatch, False)
     with pytest.raises(ValueError):
         OpenAIResponsesAdapter.from_environment((make_config(),))
+
+
+def test_standard_openai_credential_is_not_used_by_yura(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub = SimpleNamespace(environ={"OPENAI_API_KEY": "開発ツール用の非秘密文字列"})
+    monkeypatch.setattr(production, "os", stub)
+    monkeypatch.setattr(openai_responses, "os", stub)
+    assert isinstance(create_openai_port_from_environment((role(),)), UnavailableLLMRolePort)
+    with pytest.raises(ValueError, match="YURA_OPENAI_API_KEY") as caught:
+        OpenAIResponsesAdapter.from_environment((make_config(),))
+    assert "開発ツール用の非秘密文字列" not in str(caught.value)
 
 
 def test_request_domain_invariants_are_not_redefined() -> None:

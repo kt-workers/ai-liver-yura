@@ -112,9 +112,9 @@ def test_generic_adapter_uses_production_policy(case: str) -> None:
 
 def test_unavailable_and_configured_registration(monkeypatch: pytest.MonkeyPatch) -> None:
     roles = (descriptor(load_appraisal_config(SOURCE).appraisal_policy),)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
     assert isinstance(create_openai_port_from_environment(roles), UnavailableLLMRolePort)
-    monkeypatch.setenv("OPENAI_API_KEY", "test-placeholder")
+    monkeypatch.setenv("YURA_OPENAI_API_KEY", "test-placeholder")
     with pytest.raises(ValueError):
         create_openai_port_from_environment(roles)
     role = appraisal_openai_role_config({LLMModelClass.BALANCED: mapping()})

@@ -303,7 +303,7 @@ async def test_generation_change_before_publication_is_rejected(
 
 
 def test_early_boot_does_not_read_s2_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
 
     def forbidden(*args: Any, **kwargs: Any) -> Any:
         pytest.fail("minimum起動がS2構成を参照しました")
