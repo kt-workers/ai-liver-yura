@@ -19,6 +19,14 @@ from .policy import (
     TTSUnitParameterMappingRule,
     validate_tts_policy_bundle,
 )
+from .production import (
+    ProductionPreparedAudioResources,
+    TTSProductionCleanupError,
+    TTSProductionConfigurationError,
+    TTSProviderLease,
+    TTSProviderRegistration,
+    TTSProviderRegistry,
+)
 from .provider import (
     CandidateArtifactStore,
     InMemoryPreparedAudioResourceStore,
@@ -34,6 +42,7 @@ __all__ = [
     "InMemoryPreparedAudioResourceStore",
     "PreparedAudioArtifact",
     "PreparedAudioResourceStore",
+    "ProductionPreparedAudioResources",
     "PronunciationOverrideView",
     "ProviderPitchAnchor",
     "ProviderSegmentParameters",
@@ -46,8 +55,13 @@ __all__ = [
     "TTSParameterMappingRule",
     "TTSPerformanceMappingPolicy",
     "TTSProviderAdapter",
+    "TTSProviderLease",
     "TTSProviderOperationalPolicy",
+    "TTSProviderRegistration",
+    "TTSProviderRegistry",
     "TTSProviderResponse",
+    "TTSProductionCleanupError",
+    "TTSProductionConfigurationError",
     "TTSSynthesisPriority",
     "TTSSynthesisRequest",
     "TTSSynthesisResult",
