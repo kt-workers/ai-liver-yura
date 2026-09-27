@@ -765,6 +765,12 @@ validationまたはconstruction failureでは、取得済みSupervisorを必ずs
 
 leaseの`close()`はSupervisorをshutdownし、open Sessionをすべて回収する。repeated close/releaseは
 同じcleanup taskへ合流し、二重releaseを起こさない。shutdown開始後の新規openは拒否する。
+Sessionのlaunchとcleanupは同じlifecycle同期境界で直列化する。closeが先にその境界を取得した
+Sessionは新しいworkerをspawnしない。spawnがすでにin-flightなら、cleanupは`process is None`だけで
+完了せず、birthの成功または失敗をsettleする。成功したworkerはcontainmentへattachしてから必ず
+terminate/reap、pipe cleanup、containment closeまで回収する。containment close後のlate attachは
+禁止する。shutdown完了後にworker、descendant、pipe、containmentが新たに出現してはならない。
+caller cancellationでもこのsettlementを中断せず、repeated close/shutdownは同じcleanupへ合流する。
 既存#348/#659のSTARTED、COMPLETED、FAILED、INTERRUPTED、process containment、report transport、
 timeout、Actual Factの意味は変更しない。Supervisor生成またはspawn成功をSTARTEDへ昇格せず、
 prepared audioをspoken factへ昇格しない。raw provider exception、credential、endpoint、SDK出力は
