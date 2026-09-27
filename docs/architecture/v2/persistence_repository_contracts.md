@@ -649,6 +649,18 @@ fixtureの接続先・user・passwordは呼出側が環境から明示供給す�
 
 実DB試験がsubprocess（inline `python -c`を含む）を使用する場合は、必要な`YURA_TEST_POSTGRES_*`接続情報だけを明示的に子processへ継承する。credentialをargvとして渡さず、診断、assertion、stdout、stderr、logへ含めない。親processの全environmentは継承せず、password未指定時は既存CI隔離credential経路を子processでも維持する。試験対象はproduction DBではなく、必ず回収する一時`yura_test_*` databaseとする。
 
+### 28.4 production PostgreSQL のdeployment Authority
+
+production PostgreSQL のdeployment Authorityはrepository rootの`compose.yaml`とする。`compose.yaml`はPostgreSQL 17以上とpgvectorを明示し、`127.0.0.1:5432`への公開、healthcheck、および新しいproduction volumeを定義する。production credentialのsourceは人間が管理するrepository rootの`.env`であり、`.env`はGit管理しない。Codexおよびautomationは`.env`を作成・変更・整形・削除せず、credential、DSN、展開済みCompose設定をlog、Issue、PR、例外、診断へ出力しない。
+
+このproduction環境はempty/new DBから開始する。legacy PostgreSQL 16のdata、credential、container、volume、backupをmigration source、restore source、mount sourceとして使用しない。legacy assetが存在しても自動探索、削除、rename、変更を行わない。旧data preservationは新しいproduction環境の受入条件ではない。
+
+current V2の正本Memory/Snapshot PostgreSQL schemaはvector型を使用せず、production deployment時にvector extensionを有効化することを必須としない。#714はpgvector extension packageを利用可能にするPostgreSQL imageをdeploymentする責務だけを持ち、`CREATE EXTENSION vector`を実行しない。
+
+将来、`MemorySemanticIndexPort`の具体的なvector-backed Infrastructure providerを採用する場合、その#359配下のstorage migrationが`CREATE EXTENSION IF NOT EXISTS vector`とprovider固有のvector schema/indexの唯一のownerとなる。Compose、bootstrap、#714の運用手順からextensionを作成せず、将来のsemantic-index migrationとの二重所有を禁止する。
+
+production DB本体を試験DBとして使用しない。#713のfixtureは同じserver上に一時`yura_test_*` DBを作成して検証し、終了時に回収する。
+
 現在の最小起動構成は入力意味解析だけを登録する段階であり、この接続口を本体の全活動経路へ配線済みとは扱わない。構成側の接続先・秘密情報・終了方針の供給と本体全活動経路への配線は、構成・結合側の工程で完了を確認する。製品依存は `Pipfile` と `Pipfile.lock` に psycopg 3.3.5（binary追加機能）と psycopg-pool 3.3.1 を記録する。CIは PostgreSQL 17.10 の隔離サービスを起動し、同じ依存の固定記録から全試験を実行する。CI成功、独立レビューと本流採用の結果は、対象HEADの証拠で別途確認する。
 
 
