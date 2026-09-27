@@ -511,6 +511,12 @@ Required metrics/events:
 
 Do not log full audio/raw responses or unnecessary utterance bodies merely for metrics.
 
+## 20.1 本番提供元登録とartifact回収
+
+#710は、具体providerを設定や推測で選ばない。本番構成rootがtrusted codeとして、`binding_id / binding_revision / provider_id / provider_revision`が一致する`TTSProviderRegistration`を明示登録する。registryは要求された`TTSVoiceBinding`と`TTSCapabilityView`が登録と完全一致するときだけclient leaseを返し、未登録・世代不一致・無効bindingを別providerや別voiceへfallbackしない。
+
+leaseはclientと同じOwnerの`ProductionPreparedAudioResources`を返す。これは公開`audio_ref`だけをDomainへ渡し、providerの生resource handleを内部に保持する。`PreparedAudioDiscardPort.discard(...)`とlease終了は同じhandleをidempotentに一度だけ回収する。shutdown時は未返却artifactも回収し、その後clientをreleaseする。生handle、credential、endpoint、provider例外本文は公開DTO、診断、Snapshotへ出さない。
+
 ---
 
 ## 21. Required tests
