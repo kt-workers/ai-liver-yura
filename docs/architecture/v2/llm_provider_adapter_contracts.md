@@ -40,6 +40,8 @@ Parent: `docs/architecture/v2/llm_role_contracts.md`
 
 - 資格情報は環境からInfrastructureの接続生成境界へ渡し、構成処理には`LLMRolePort`を返す。資格情報を公開・ログ出力しない。
 - 実サービス必須の`OpenAIResponsesAdapter.from_environment()`は、資格情報なしで構築に失敗する既存契約を維持する。
+- production OpenAI credentialの名称は`YURA_OPENAI_API_KEY`だけとする。`OPENAI_API_KEY`へのfallbackは持たず、旧名称だけが設定された場合は実サービス必須の構築をfail-closedにする。両方が存在する場合も`YURA_OPENAI_API_KEY`だけを使用する。
+- Adapterはprocess environmentから資格情報を取得するInfrastructure境界であり、`.env`等のsecret fileを探索・読込みしない。資格情報の値を例外、結果、log、診断へ公開しない。
 - 本番の任意接続では、資格情報なしを第7節の有効な利用不可接続として表現し、最小Coreの構成失敗にしない。対応しないモデル対応付け・構造登録不在等の契約違反は引き続き拒否する。
 - 実Provider smokeはsecretをCIへ渡さず、ローカルHuman/Provider Verificationでのみ行う。
 
