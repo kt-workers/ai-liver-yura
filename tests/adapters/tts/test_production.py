@@ -12,7 +12,11 @@ from app.adapters.tts.production import (
     TTSProviderRegistration,
     TTSProviderRegistry,
 )
-from app.adapters.tts.provider import ProviderSynthesisInput, TTSProviderClient, TTSProviderResponse
+from app.adapters.tts.provider import (
+    ProviderSynthesisInput,
+    TTSProviderClient,
+    TTSProviderResponse,
+)
 from app.domain.speech_runtime.discard import (
     PreparedAudioDiscardReason,
     PreparedAudioDiscardRequest,
@@ -72,7 +76,7 @@ async def test_exact_binding_acquires_client_and_discards_same_artifact_once() -
     client = FakeTTSClient()
     discarded: list[str] = []
     released: list[TTSProviderClient] = []
-    lease = TTSProviderRegistry((registration(client, discarded, released),)).acquire(
+    lease = await TTSProviderRegistry((registration(client, discarded, released),)).acquire(
         binding(), capability()
     )
 
@@ -89,19 +93,21 @@ async def test_exact_binding_acquires_client_and_discards_same_artifact_once() -
     assert lease.client is client
     assert lease.resources.resolve(audio_ref) is None
     assert discarded == ["private_handle"]
+    assert released == []
     await lease.close()
     await lease.close()
     assert released == [client]
 
 
-def test_missing_or_mismatched_binding_fails_without_provider_fallback() -> None:
+@pytest.mark.asyncio
+async def test_missing_or_mismatched_binding_fails_without_provider_fallback() -> None:
     client = FakeTTSClient()
     registry = TTSProviderRegistry((registration(client, [], []),))
 
     with pytest.raises(TTSProductionConfigurationError, match="登録と一致"):
-        registry.acquire(binding(provider_id="other"), capability(provider_id="other"))
+        await registry.acquire(binding(provider_id="other"), capability(provider_id="other"))
     with pytest.raises(TTSProductionConfigurationError, match="登録と一致"):
-        registry.acquire(binding(), capability(revision=2))
+        await registry.acquire(binding(), capability(revision=2))
 
 
 @pytest.mark.asyncio
@@ -109,7 +115,7 @@ async def test_close_recovers_undiscarded_artifacts_and_client() -> None:
     client = FakeTTSClient()
     discarded: list[str] = []
     released: list[TTSProviderClient] = []
-    lease = TTSProviderRegistry((registration(client, discarded, released),)).acquire(
+    lease = await TTSProviderRegistry((registration(client, discarded, released),)).acquire(
         binding(), capability()
     )
     first = lease.resources.store("artifact_one", "request_one", "private_one")
@@ -140,7 +146,7 @@ async def test_cancelled_close_waits_for_resource_and_client_recovery() -> None:
         released.append(value)
 
     item = TTSProviderRegistration("yura_tts", 1, "provider", 7, lambda: client, discard, release)
-    lease = TTSProviderRegistry((item,)).acquire(binding(), capability())
+    lease = await TTSProviderRegistry((item,)).acquire(binding(), capability())
     lease.resources.store("artifact", "request", "private_handle")
     closing = asyncio.create_task(lease.close())
     await entered.wait()
@@ -180,7 +186,7 @@ async def test_registered_lease_integrates_with_adapter_and_discards_raw_artifac
         discard,
         release,
     )
-    lease = TTSProviderRegistry((item,)).acquire(voice, request.capability)
+    lease = await TTSProviderRegistry((item,)).acquire(voice, request.capability)
     adapter = TTSProviderAdapter(
         lease.client,
         policies.mapping,
@@ -208,11 +214,17 @@ async def test_registered_lease_integrates_with_adapter_and_discards_raw_artifac
     assert released == [client]
 
 
-def test_duplicate_registration_and_invalid_client_are_rejected() -> None:
+@pytest.mark.asyncio
+async def test_invalid_client_is_released_exactly_once_before_acquisition_failure() -> None:
     client = FakeTTSClient()
     item = registration(client, [], [])
     with pytest.raises(TTSProductionConfigurationError, match="重複"):
         TTSProviderRegistry((item, item))
+
+    released: list[TTSProviderClient] = []
+
+    async def release(value: TTSProviderClient) -> None:
+        released.append(value)
 
     invalid = TTSProviderRegistration(
         "yura_tts",
@@ -221,7 +233,42 @@ def test_duplicate_registration_and_invalid_client_are_rejected() -> None:
         7,
         lambda: cast(TTSProviderClient, object()),
         item.discard_raw_resource,
-        item.release_client,
+        release,
     )
     with pytest.raises(TTSProductionConfigurationError, match="clientが不正"):
-        TTSProviderRegistry((invalid,)).acquire(binding(), capability())
+        await TTSProviderRegistry((invalid,)).acquire(binding(), capability())
+    assert len(released) == 1
+
+
+@pytest.mark.asyncio
+async def test_cancelled_acquisition_waits_for_invalid_client_release() -> None:
+    entered = asyncio.Event()
+    finish = asyncio.Event()
+    released: list[TTSProviderClient] = []
+
+    async def discard(raw_resource_ref: str) -> None:
+        raise AssertionError(raw_resource_ref)
+
+    async def release(value: TTSProviderClient) -> None:
+        entered.set()
+        await finish.wait()
+        released.append(value)
+
+    item = TTSProviderRegistration(
+        "yura_tts",
+        1,
+        "provider",
+        7,
+        lambda: cast(TTSProviderClient, object()),
+        discard,
+        release,
+    )
+    acquiring = asyncio.create_task(TTSProviderRegistry((item,)).acquire(binding(), capability()))
+    await entered.wait()
+    acquiring.cancel()
+    await asyncio.sleep(0)
+    assert not acquiring.done()
+    finish.set()
+    with pytest.raises(asyncio.CancelledError):
+        await acquiring
+    assert len(released) == 1

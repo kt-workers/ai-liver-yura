@@ -180,7 +180,9 @@ class TTSProviderRegistry:
             raise TTSProductionConfigurationError("TTS binding登録が重複しています")
         self._registrations = indexed
 
-    def acquire(self, binding: TTSVoiceBinding, capability: TTSCapabilityView) -> TTSProviderLease:
+    async def acquire(
+        self, binding: TTSVoiceBinding, capability: TTSCapabilityView
+    ) -> TTSProviderLease:
         if not isinstance(binding, TTSVoiceBinding) or not isinstance(
             capability, TTSCapabilityView
         ):
@@ -199,10 +201,33 @@ class TTSProviderRegistry:
             client = registration.create_client()
         except Exception:
             raise TTSProductionConfigurationError("TTS clientを取得できません") from None
-        if not callable(getattr(client, "synthesize", None)):
-            raise TTSProductionConfigurationError("TTS clientが不正です")
-        return TTSProviderLease(
-            client,
-            ProductionPreparedAudioResources(registration.discard_raw_resource),
-            registration.release_client,
-        )
+        try:
+            if not callable(getattr(client, "synthesize", None)):
+                raise TTSProductionConfigurationError("TTS clientが不正です")
+            return TTSProviderLease(
+                client,
+                ProductionPreparedAudioResources(registration.discard_raw_resource),
+                registration.release_client,
+            )
+        except BaseException:
+            await self._release_failed_acquisition(registration, client)
+            raise
+
+    @staticmethod
+    async def _release_failed_acquisition(
+        registration: TTSProviderRegistration, client: TTSProviderClient
+    ) -> None:
+        """lease返却前のclientを、呼出側の取消より先に必ず回収する。"""
+
+        async def release() -> None:
+            await registration.release_client(client)
+
+        task = asyncio.create_task(release())
+        try:
+            await ProductionPreparedAudioResources._settle(task)
+        except asyncio.CancelledError:
+            if task.cancelled():
+                raise TTSProductionCleanupError("取得中のTTS提供元を回収できません") from None
+            raise
+        except Exception:
+            raise TTSProductionCleanupError("取得中のTTS提供元を回収できません") from None

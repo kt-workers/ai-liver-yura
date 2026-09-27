@@ -517,6 +517,8 @@ Do not log full audio/raw responses or unnecessary utterance bodies merely for m
 
 leaseはclientと同じOwnerの`ProductionPreparedAudioResources`を返す。これは公開`audio_ref`だけをDomainへ渡し、providerの生resource handleを内部に保持する。`PreparedAudioDiscardPort.discard(...)`とlease終了は同じhandleをidempotentに一度だけ回収する。shutdown時は未返却artifactも回収し、その後clientをreleaseする。生handle、credential、endpoint、provider例外本文は公開DTO、診断、Snapshotへ出さない。
 
+`create_client()`がclientを返した時点から、leaseの正常返却まではregistryがclient ownershipを持つ。binding検証、client検証、resource Owner構築のいずれかが失敗した場合、registryは返却済みclientを必ず一度だけreleaseする。callerが取消してもcleanupを完了させてから取消を伝播し、cleanup failureを成功または通常の構成不一致として隠さない。
+
 ---
 
 ## 21. Required tests
