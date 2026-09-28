@@ -58,6 +58,7 @@ class SpeechPresentationWorkerSupervisor:
         self.registration = registration
         self.executable = executable
         self._sessions: set[PresentationWorkerSession] = set()
+        self._shutdown: asyncio.Task[None] | None = None
 
     @property
     def active_execution_count(self) -> int:
@@ -66,9 +67,37 @@ class SpeechPresentationWorkerSupervisor:
     def open(
         self, command: SpeechPresentationCommand, policy: SpeechPresentationTimeoutPolicy
     ) -> PresentationWorkerSession:
+        if self._shutdown is not None:
+            raise PresentationExecutionError(Code.CLEANUP_FAILED)
         session = PresentationWorkerSession(self, command, policy)
         self._sessions.add(session)
         return session
+
+    async def shutdown(self) -> None:
+        """すべての借用中Sessionを回収し、以後のopenを拒否する。"""
+        if self._shutdown is None:
+            self._shutdown = asyncio.create_task(self._shutdown_sessions())
+        cancelled = False
+        while True:
+            try:
+                await asyncio.shield(self._shutdown)
+                break
+            except asyncio.CancelledError:
+                if self._shutdown.cancelled():
+                    raise PresentationExecutionError(Code.CLEANUP_FAILED) from None
+                cancelled = True
+        if cancelled:
+            raise asyncio.CancelledError
+
+    async def _shutdown_sessions(self) -> None:
+        sessions = tuple(self._sessions)
+        if not sessions:
+            return
+        results = await asyncio.gather(
+            *(session.close() for session in sessions), return_exceptions=True
+        )
+        if any(isinstance(result, BaseException) for result in results):
+            raise PresentationExecutionError(Code.CLEANUP_FAILED)
 
 
 @dataclass(eq=False)
@@ -80,65 +109,73 @@ class PresentationWorkerSession:
         default_factory=PresentationWorkerDiagnostics
     )
     _process: asyncio.subprocess.Process | None = None
+    _birth: asyncio.Task[asyncio.subprocess.Process] | None = None
     _started: bool = False
     _closing: asyncio.Task[None] | None = None
+    _closing_requested: bool = False
     _containment: ProcessContainment | None = None
+    _lifecycle_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def _launch(self) -> None:
-        registration = self.supervisor.registration
-        try:
-            data = encode(
-                "command",
-                self.command,
-                dict(
-                    command=command_payload(self.command),
-                    adapter_kind=registration.adapter_kind,
-                    factory_module=registration.factory_module,
-                    factory_name=registration.factory_name,
-                    configuration=thaw_json(registration.configuration),
-                ),
-            )
-            # 実環境のcredentialやPython起動hookを子へ引き継がない。
-            environment = {
-                key: os.environ[key]
-                for key in ("PATH", "SYSTEMROOT", "WINDIR", "TMPDIR", "TEMP", "TMP", "LANG")
-                if key in os.environ
-            }
-            self._containment = create_containment()
-            birth = asyncio.create_task(
-                asyncio.create_subprocess_exec(
-                    self.supervisor.executable,
-                    "-m",
-                    "app.infrastructure.speech_presentation.worker",
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.DEVNULL,
-                    env=environment,
-                    limit=MAX_MESSAGE_BYTES,
-                    start_new_session=os.name == "posix",
+        async with self._lifecycle_lock:
+            if self._closing_requested or self.diagnostics.closed:
+                raise PresentationExecutionError(Code.CLEANUP_FAILED)
+            registration = self.supervisor.registration
+            try:
+                data = encode(
+                    "command",
+                    self.command,
+                    dict(
+                        command=command_payload(self.command),
+                        adapter_kind=registration.adapter_kind,
+                        factory_module=registration.factory_module,
+                        factory_name=registration.factory_name,
+                        configuration=thaw_json(registration.configuration),
+                    ),
                 )
-            )
-            cancelled = False
-            while True:
-                try:
-                    self._process = await asyncio.shield(birth)
-                    break
-                except asyncio.CancelledError:
-                    cancelled = True
-            self.diagnostics.pid = self._process.pid
-            # command受信までworkerはAdapterを起動しない。割当失敗時に送信しない。
-            self._containment.attach(self._process.pid)
-            if cancelled:
-                raise asyncio.CancelledError
-            assert self._process.stdin is not None
-            self._process.stdin.write(data)
-            await self._process.stdin.drain()
-        except PresentationExecutionError as exc:
-            self.diagnostics.failure = exc.code
-            raise
-        except OSError:
-            self.diagnostics.failure = Code.SPAWN_FAILED
-            raise PresentationExecutionError(Code.SPAWN_FAILED) from None
+                # 実環境のcredentialやPython起動hookを子へ引き継がない。
+                environment = {
+                    key: os.environ[key]
+                    for key in ("PATH", "SYSTEMROOT", "WINDIR", "TMPDIR", "TEMP", "TMP", "LANG")
+                    if key in os.environ
+                }
+                self._containment = create_containment()
+                self._birth = asyncio.create_task(
+                    asyncio.create_subprocess_exec(
+                        self.supervisor.executable,
+                        "-m",
+                        "app.infrastructure.speech_presentation.worker",
+                        stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.DEVNULL,
+                        env=environment,
+                        limit=MAX_MESSAGE_BYTES,
+                        start_new_session=os.name == "posix",
+                    )
+                )
+                cancelled = False
+                while True:
+                    try:
+                        self._process = await asyncio.shield(self._birth)
+                        break
+                    except asyncio.CancelledError:
+                        cancelled = True
+                self.diagnostics.pid = self._process.pid
+                # command受信までworkerはAdapterを起動しない。割当失敗時に送信しない。
+                self._containment.attach(self._process.pid)
+                if cancelled:
+                    raise asyncio.CancelledError
+                if self._closing_requested:
+                    raise PresentationExecutionError(Code.CLEANUP_FAILED)
+                assert self._process.stdin is not None
+                self._process.stdin.write(data)
+                await self._process.stdin.drain()
+            except PresentationExecutionError as exc:
+                self.diagnostics.failure = exc.code
+                raise
+            except OSError:
+                self.diagnostics.failure = Code.SPAWN_FAILED
+                raise PresentationExecutionError(Code.SPAWN_FAILED) from None
 
     async def receive(self) -> SpeechPresentationReport:
         try:
@@ -167,6 +204,7 @@ class PresentationWorkerSession:
 
     async def close(self) -> None:
         if self._closing is None:
+            self._closing_requested = True
             self._closing = asyncio.create_task(self._cleanup())
         cancelled = False
         while True:
@@ -179,61 +217,62 @@ class PresentationWorkerSession:
             raise asyncio.CancelledError
 
     async def _cleanup(self) -> None:
-        process = self._process
-        drain: asyncio.Task[None] | None = None
-        try:
-            if process is not None:
-                if process.stdin is not None:
-                    process.stdin.close()
+        async with self._lifecycle_lock:
+            process = self._process
+            drain: asyncio.Task[None] | None = None
+            try:
+                if process is not None:
+                    if process.stdin is not None:
+                        process.stdin.close()
 
-                async def drain_output() -> None:
-                    if process.stdout is not None:
-                        while await process.stdout.read(8192):
+                    async def drain_output() -> None:
+                        if process.stdout is not None:
+                            while await process.stdout.read(8192):
+                                pass
+
+                    drain = asyncio.create_task(drain_output())
+
+                    async def exited(seconds: float) -> bool:
+                        async def all_exited() -> None:
+                            await process.wait()
+                            # worker終了だけでは、残ったSDK/helperの回収完了にならない。
+                            while self._containment is not None and self._containment.active():
+                                await asyncio.sleep(0.005)
+
+                        try:
+                            await asyncio.wait_for(all_exited(), seconds)
+                            return True
+                        except asyncio.TimeoutError:
+                            return False
+
+                    if not await exited(self.policy.worker_grace_seconds):
+                        self.diagnostics.terminated = True
+                        assert self._containment is not None
+                        self._containment.terminate(process, force=False)
+                        if not await exited(self.policy.worker_terminate_seconds):
+                            self.diagnostics.killed = True
+                            self._containment.terminate(process, force=True)
+                            if not await exited(self.policy.worker_kill_seconds):
+                                raise PresentationExecutionError(Code.CLEANUP_FAILED)
+                    self.diagnostics.returncode = process.returncode
+                    if process.stdin is not None:
+                        try:
+                            await asyncio.wait_for(
+                                process.stdin.wait_closed(), self.policy.worker_kill_seconds
+                            )
+                        except (BrokenPipeError, ConnectionResetError):
                             pass
-
-                drain = asyncio.create_task(drain_output())
-
-                async def exited(seconds: float) -> bool:
-                    async def all_exited() -> None:
-                        await process.wait()
-                        # worker終了だけでは、残ったSDK/helperの回収完了にならない。
-                        while self._containment is not None and self._containment.active():
-                            await asyncio.sleep(0.005)
-
-                    try:
-                        await asyncio.wait_for(all_exited(), seconds)
-                        return True
-                    except asyncio.TimeoutError:
-                        return False
-
-                if not await exited(self.policy.worker_grace_seconds):
-                    self.diagnostics.terminated = True
-                    assert self._containment is not None
-                    self._containment.terminate(process, force=False)
-                    if not await exited(self.policy.worker_terminate_seconds):
-                        self.diagnostics.killed = True
-                        self._containment.terminate(process, force=True)
-                        if not await exited(self.policy.worker_kill_seconds):
-                            raise PresentationExecutionError(Code.CLEANUP_FAILED)
-                self.diagnostics.returncode = process.returncode
-                if process.stdin is not None:
-                    try:
-                        await asyncio.wait_for(
-                            process.stdin.wait_closed(), self.policy.worker_kill_seconds
-                        )
-                    except (BrokenPipeError, ConnectionResetError):
-                        pass
-                await asyncio.wait_for(drain, self.policy.worker_kill_seconds)
-            if self._containment is not None:
-                self._containment.close()
-        except Exception:
-            # pipe、drain、OS回収、handle閉鎖の全phaseを同じ公開失敗へ収束する。
-            self.diagnostics.failure = Code.CLEANUP_FAILED
-            raise PresentationExecutionError(Code.CLEANUP_FAILED) from None
-        finally:
-            if drain is not None:
-                if not drain.done():
-                    drain.cancel()
-                await asyncio.gather(drain, return_exceptions=True)
-        self.diagnostics.closed = True
-        self.supervisor._sessions.discard(self)
+                    await asyncio.wait_for(drain, self.policy.worker_kill_seconds)
+                if self._containment is not None:
+                    self._containment.close()
+            except Exception:
+                # pipe、drain、OS回収、handle閉鎖の全phaseを同じ公開失敗へ収束する。
+                self.diagnostics.failure = Code.CLEANUP_FAILED
+                raise PresentationExecutionError(Code.CLEANUP_FAILED) from None
+            finally:
+                if drain is not None:
+                    if not drain.done():
+                        drain.cancel()
+                    await asyncio.gather(drain, return_exceptions=True)
+            self.diagnostics.closed = True
+            self.supervisor._sessions.discard(self)

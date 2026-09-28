@@ -186,6 +186,67 @@ async def test_session_repeated_cancellation_reaps() -> None:
 
 
 @pytest.mark.asyncio
+async def test_shutdown_settles_inflight_spawn_before_reaping_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.domain.speech_runtime.execution import PresentationExecutionError
+    from tests.domain.speech_runtime.test_presentation_timeout import committed
+
+    _, _, command, _ = await committed()
+    worker = boundary("hang")
+    session = worker.open(command, policy())
+    created, release = asyncio.Event(), asyncio.Event()
+    original = asyncio.create_subprocess_exec
+
+    async def spawn(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
+        process = await original(*args, **kwargs)
+        created.set()
+        await release.wait()
+        return process
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+    receiving = asyncio.create_task(session.receive())
+    await created.wait()
+    closing = asyncio.create_task(worker.shutdown())
+    await asyncio.sleep(0)
+    assert not closing.done()
+    release.set()
+    results = await asyncio.gather(receiving, closing, return_exceptions=True)
+
+    assert isinstance(results[0], PresentationExecutionError)
+    assert results[1] is None
+    assert session.diagnostics.closed and worker.active_execution_count == 0
+    assert session.diagnostics.pid is not None
+    if os.name == "posix":
+        with pytest.raises(ProcessLookupError):
+            os.kill(session.diagnostics.pid, 0)
+
+
+@pytest.mark.asyncio
+async def test_shutdown_before_receive_forbids_late_worker_spawn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.domain.speech_runtime.execution import PresentationExecutionError
+    from tests.domain.speech_runtime.test_presentation_timeout import committed
+
+    _, _, command, _ = await committed()
+    worker = boundary("normal")
+    session = worker.open(command, policy())
+    spawned = False
+
+    async def forbidden(*args: Any, **kwargs: Any) -> asyncio.subprocess.Process:
+        nonlocal spawned
+        spawned = True
+        raise AssertionError("shutdown後にworkerをspawnしてはいけません")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", forbidden)
+    await worker.shutdown()
+    with pytest.raises(PresentationExecutionError):
+        await session.receive()
+    assert not spawned and session.diagnostics.closed
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("audio", [False, True])
 async def test_timeout_preserves_fact_and_unrelated_progress(tmp_path: Path, audio: bool) -> None:
     from app.composition.execution_observation import (
