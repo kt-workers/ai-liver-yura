@@ -17,6 +17,7 @@ _ADMIN_CONNECTION_FAILURE = "隔離PostgreSQLへ接続できません"
 _DATABASE_PREPARATION_FAILURE = "隔離PostgreSQL試験DBを準備できません"
 _DATABASE_CLEANUP_FAILURE = "隔離PostgreSQL試験DBを回収できません"
 _CONNECTION_CLEANUP_FAILURE = "隔離PostgreSQL接続を回収できません"
+_CONNECTION_CONFIGURATION_FAILURE = "隔離PostgreSQL接続設定が不正です"
 
 _Result = TypeVar("_Result")
 
@@ -51,6 +52,14 @@ def resolve_test_password(environ: Mapping[str, str]) -> str:
     return password
 
 
+def resolve_test_port(environ: Mapping[str, str]) -> int:
+    """試験用portを固定診断の境界で整数化する。"""
+    raw_port = environ.get("YURA_TEST_POSTGRES_PORT", "58439")
+    return _run_fixture_operation(
+        lambda: int(raw_port), _CONNECTION_CONFIGURATION_FAILURE
+    )
+
+
 def subprocess_test_environment(
     environ: Mapping[str, str], *, path: str, pythonpath: str
 ) -> dict[str, str]:
@@ -77,7 +86,10 @@ def endpoint() -> Iterator[PostgresEndpoint]:
     psycopg: Any = import_module("psycopg")
     database = temporary_database_name()
     user = os.environ.get("YURA_TEST_POSTGRES_USER", getpass.getuser())
-    port = int(os.environ.get("YURA_TEST_POSTGRES_PORT", "58439"))
+    try:
+        port = resolve_test_port(os.environ)
+    except IsolatedPostgresFixtureFailure as error:
+        _fail_fixture_operation(error)
     password = resolve_test_password(os.environ)
     try:
         admin = _run_fixture_operation(

@@ -14,6 +14,7 @@ _SENTINELS = (
     "fixture-secret-sentinel",
     "fixture-host-sentinel",
     "fixture-user-sentinel",
+    "fixture-port-sentinel",
     "fixture-dsn-sentinel",
     "raw-driver-diagnostic-sentinel",
 )
@@ -37,6 +38,17 @@ def _assert_sanitized_failure(
         assert sentinel not in str(error)
         assert sentinel not in repr(error)
         assert sentinel not in rendered
+
+
+def _assert_sentinel_absent_from_exception_chain(error: BaseException) -> None:
+    current: BaseException | None = error
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        for sentinel in _SENTINELS:
+            assert sentinel not in str(current)
+            assert sentinel not in repr(current)
+        current = current.__cause__ or current.__context__
 
 
 class _FailingAdmin:
@@ -84,9 +96,9 @@ class _FakeAdmin:
         self.closed = True
 
 
-def _set_fixture_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+def _set_fixture_environment(monkeypatch: pytest.MonkeyPatch, *, port: str = "5432") -> None:
     monkeypatch.setenv("YURA_TEST_POSTGRES_HOST", "fixture-host-sentinel")
-    monkeypatch.setenv("YURA_TEST_POSTGRES_PORT", "5432")
+    monkeypatch.setenv("YURA_TEST_POSTGRES_PORT", port)
     monkeypatch.setenv("YURA_TEST_POSTGRES_USER", "fixture-user-sentinel")
     monkeypatch.setenv("YURA_TEST_POSTGRES_PASSWORD", "fixture-secret-sentinel")
     monkeypatch.delenv("YURA_TEST_POSTGRES_SOCKET", raising=False)
@@ -101,9 +113,8 @@ def _assert_public_fixture_failure(
     rendered = "".join(traceback.format_exception(type(error), error, error.__traceback__))
     assert str(error) == diagnostic
     assert error.__cause__ is None
+    _assert_sentinel_absent_from_exception_chain(error)
     for sentinel in _SENTINELS:
-        assert sentinel not in str(error)
-        assert sentinel not in repr(error)
         assert sentinel not in rendered
 
 
@@ -177,6 +188,14 @@ def test_fixture_admin_connection_failure_hides_raw_driver_diagnostic(
     monkeypatch.setattr(conftest, "import_module", lambda _: _FakePsycopg())
     generator = _endpoint_generator()
     _assert_public_fixture_failure("隔離PostgreSQLへ接続できません", generator)
+
+
+def test_fixture_port_failure_hides_raw_port_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_fixture_environment(monkeypatch, port="fixture-port-sentinel")
+    generator = _endpoint_generator()
+    _assert_public_fixture_failure("隔離PostgreSQL接続設定が不正です", generator)
 
 
 def test_database_create_failure_hides_raw_driver_diagnostic() -> None:
