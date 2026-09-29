@@ -647,6 +647,8 @@ PostgreSQL の初期保存構造は `yura_v2` 名前空間に作成する。記�
 
 fixtureの接続先・user・passwordは呼出側が環境から明示供給する。fixture自身は`.env`やproduction credentialを探索しない。`YURA_TEST_POSTGRES_PASSWORD`が未指定の場合だけ、CIが作成する隔離service用の固定test credentialを使用する。明示値、接続先、DSNをfixtureの例外・repr・pytest diagnosticへ含めない。
 
+fixtureが直接所有するadmin接続、試験用databaseの作成・回収、およびfixture所有接続の回収でdriver操作が失敗した場合、fixture境界で固定の非secret診断へ正規化する。raw driver exceptionの本文・`repr`、host・socket・port・user・password・DSNはpytest diagnosticへ含めず、例外のcause、context、tracebackからも到達可能にしない。runner側の正規表現による置換を主たる境界にしない。`yield`後のtest本体が起こした通常の失敗はfixture failureへ変換せず、そのまま報告する。正常時の`yura_test_*` databaseの作成・回収、CI隔離credentialのfallback、`.env`を探索しない責務は変更しない。
+
 実DB試験がsubprocess（inline `python -c`を含む）を使用する場合は、必要な`YURA_TEST_POSTGRES_*`接続情報だけを明示的に子processへ継承する。credentialをargvとして渡さず、診断、assertion、stdout、stderr、logへ含めない。親processの全environmentは継承せず、password未指定時は既存CI隔離credential経路を子processでも維持する。試験対象はproduction DBではなく、必ず回収する一時`yura_test_*` databaseとする。
 
 ### 28.4 production PostgreSQL のdeployment Authority
