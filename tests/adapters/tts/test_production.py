@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from typing import cast
 
 import pytest
 
-from app.adapters.tts.contracts import TTSCapabilityView, TTSVoiceBinding
+from app.adapters.tts.contracts import PronunciationOverrideView, TTSCapabilityView, TTSVoiceBinding
 from app.adapters.tts.d10_provider import TTSProviderAdapter
 from app.adapters.tts.production import (
     TTSProductionConfigurationError,
+    TTSProductionConnection,
     TTSProviderRegistration,
     TTSProviderRegistry,
 )
@@ -272,3 +274,60 @@ async def test_cancelled_acquisition_waits_for_invalid_client_release() -> None:
     with pytest.raises(asyncio.CancelledError):
         await acquiring
     assert len(released) == 1
+
+
+def test_production_connection_rejects_mismatched_generation_and_duplicate_overrides() -> None:
+    policies = _policy(max_attempts=1)
+    client = FakeTTSClient()
+    registry = TTSProviderRegistry((registration(client, [], []),))
+    request = _request(bundle=policies)
+    with pytest.raises(TTSProductionConfigurationError):
+        TTSProductionConnection(
+            registry, capability(provider_id="other"), policies.mapping, policies.operational,
+            policies.retry, (), 3, 9
+        )
+    override = PronunciationOverrideView("override", "表層", "ヨミ", "ja_JP", "owner", 1)
+    with pytest.raises(TTSProductionConfigurationError):
+        TTSProductionConnection(
+            registry, request.capability, policies.mapping, policies.operational, policies.retry,
+            (override, replace(override, override_id="other")), 3, 9
+        )
+
+
+@pytest.mark.asyncio
+async def test_production_connection_uses_provider_lease_resources_and_closes_once() -> None:
+    policies = _policy(max_attempts=1)
+    request = _request(bundle=policies)
+    client = FakeTTS([_response()])
+    discarded: list[str] = []
+    released: list[TTSProviderClient] = []
+    voice = request.voice_binding
+    item = TTSProviderRegistration(
+        voice.binding_id, voice.binding_revision, voice.provider_id,
+        request.capability.provider_revision, lambda: client,
+        lambda raw: _discard(discarded, raw), lambda value: _release(released, value),
+    )
+    connection = TTSProductionConnection(
+        TTSProviderRegistry((item,)), request.capability, policies.mapping, policies.operational,
+        policies.retry, request.pronunciation_overrides, 3, 9,
+    )
+    lease = await connection.acquire(voice)
+    result = await lease.adapter.synthesize(request)
+    assert result.artifact is not None
+    await lease.resources.discard(PreparedAudioDiscardRequest(
+        request.candidate_id, request.utterance.utterance_id,
+        request.performance_plan.performance_plan_id, result.artifact.audio_ref,
+        PreparedAudioDiscardReason.CANDIDATE_CANCELLED,
+    ))
+    await lease.close()
+    await lease.close()
+    assert discarded == [_response().raw_audio_ref]
+    assert released == [client]
+
+
+async def _discard(values: list[str], raw: str) -> None:
+    values.append(raw)
+
+
+async def _release(values: list[TTSProviderClient], client: TTSProviderClient) -> None:
+    values.append(client)
