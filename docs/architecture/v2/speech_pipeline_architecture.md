@@ -452,3 +452,28 @@ canonicalの詳細は`speech_runtime_presentation_contracts.md`を正とし、Sp
 外部提示は既存`SpeechPresentationWorkerSupervisor`へ限定する。`ObservedSpeechPresentationBoundary`はRuntimeが受理したSTARTED状態を先に#657/#329へ渡し、Session回収後の終端状態を還流する。準備済みcandidateやraw reportを直接Factへ変換しない。提示taskの追跡・process回収は#348/#659を利用し、別のSpeech task管理を作らない。終了時は音声を既存discarderへ返し、Runtimeの取消を確定してからSessionを回収する。
 
 COMPLETED Factでは#679のsettlementを先に試み、その後PRESENTATION_FACT参照と内部認知通知へ進む。OBSERVABLE、失敗、取消、timeout由来のpartial effectではsettlementしない。開始前失敗にはActual Factを作らない。Gateway通知はat-most-once、同期submitの再試行はcurrentなexact Admissionの再利用だけとする。通知失敗を理由にActual Fact参照や成功済みsettlementを巻き戻さない。詳細は`brain_integration_contracts.md`の「Speechの本番接続と内部通知（#613）」に従う。
+
+## 本番出力準備要求の由来（#721）
+
+`CoreSpeechContextReaders.output`は`CharacterUtterance`と`SpeechPerformancePlan`を直接受け取らず、
+不変の`SpeechOutputPreparationRequest`だけを受け取る。要求は、出力readerが現在candidate、世代、
+trace、期限、優先度を推測したり、hidden cacheから補ったりする余地をなくすための本番境界である。
+
+要求の各項目と正本は次のとおりとする。
+
+| 項目 | 正本 | 必須の照合 |
+| --- | --- | --- |
+| candidate identity | `SpeechRuntime.candidate(candidate_id)`が返す`PreparedSpeechCandidate.candidate_id` | runtimeのcurrent candidateと一致すること |
+| generation | 同じcandidateの`performance_generation`と`SpeechRuntime.generation(candidate_id)` | 両者が完全一致すること |
+| utterance | 当該generationで`CharacterLanguageRealizer`が返した`CharacterUtterance` | `utterance_id`とcandidateの値が一致すること |
+| performance | 同じutteranceから`SpeechPerformancePlanner`が返した`SpeechPerformancePlan` | `utterance_id`、`performance_plan_id`、source decision/eventがcandidateと一致すること |
+| trace/root provenance | 元の`BrainIntegrationWork.envelope`の`trace_id`、`root_trigger_id`、`trigger_id` | output側で新造・置換しないこと |
+| deadline | current candidateの`expires_at` | `None`なら出力準備を拒否し、時計から既定値を作らないこと |
+| priority | current candidateの`priority` | pipeline設定値やreader独自の優先度で上書きしないこと |
+| preparation disposition | 構成済み`CoreSpeechPipeline.tts_mode` | `TTSPreparationMode`以外へ変換せず、disabled/fallbackを作らないこと |
+| created_at | current candidateの`created_at` | fixture時刻やreader呼出時刻で置換しないこと |
+
+requestはruntimeが同じgenerationのcandidateを受理し、Character/Performanceとの整合を確認した後に
+一度だけ組み立てる。stale、generation mismatch、期限切れ、型不一致は出力readerを呼ばずに既存の
+candidate拒否・回収経路へ渡す。#720のTTS production connection、provider、voice、policyの選択と
+fallbackはこの要求にも#721にも持たせない。
