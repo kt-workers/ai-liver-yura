@@ -817,6 +817,13 @@ semantic repairで進むcandidate lifecycle generationと一致を要求しな�
 `BrainIntegrationWork.deadline_at`をそのまま搬送する。candidate expiryは既存Runtimeが所有し、
 connectionやreaderが期限を計算、統合、補完しない。
 
+`SpeechOutputPreparationRequest`はcurrent candidate generationのpre-adoption preparation provenance
+である。request構築は`commit_generation_result()`、partial Runtime commit、candidate mutationを伴わず、
+candidateの`utterance_id`または`performance_plan_id`が未採用の`None`でもそれだけで拒否しない。既に
+同generationの採用済みIDが存在する場合だけrequest artifactとの不一致をfail-closedとする。Verifier/output
+の必要条件を通過した`commit_generation_result()`が#701の唯一の正式artifact adoption pointであり、
+repairでは旧generationを既存経路で回収して新generation requestを再構築する。旧artifactを付け替えない。
+
 通知は#613どおり`SUBSYSTEM` / `presentation_fact`の`InputObservation`を同じprocess共有
 `InputNormalizer`へ一度だけ渡し、accepted結果だけを`CoreCognitionDelivery.submit_input()`へ渡す。
 Input Meaningへ再投入せず、同じFactを再normalizeせず、新しいnotification ledgerも作らない。raw

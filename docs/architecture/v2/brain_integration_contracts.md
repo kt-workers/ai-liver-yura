@@ -776,6 +776,13 @@ policyを選ばない。#709は将来、#720のTTS connectionとこのOwner conn
 親`BrainIntegrationWork.deadline_at`をそのまま保持する。candidate expiryは既存Runtime operational
 policyの責務であり、Compositionがdeadlineと統合、再計算、代替しない。
 
+requestはcurrent generationのpre-adoption preparation provenanceであり、Runtime artifact adoptionや
+semantic acceptanceを表さない。candidateの採用済みartifact IDが未設定でも、同generationのCharacterと
+Performance、decision/event/speech plan provenance、Runtime currentnessが整合すればoutput preparationを
+許可する。採用済みIDがある場合の矛盾だけをfail-closedとし、`commit_generation_result()`以前にpartial
+commitやcandidate mutationを行わない。#701の採用成功までoutput資源は既存のcomposition ownershipに残り、
+semantic repairでは旧generationを回収して新generationのrequestを作る。
+
 通知のGateway duplicate、STALE、ACCEPTED後のexact Admission再利用、Brain submit failure、
 PRESENTATION_FACT参照の保持は本節の既存#613規約に従う。接続失敗、Owner identity不一致、欠落、
 shutdown中の新規構築はfail-closedとし、fixture、空の成功、別Owner、raw diagnosticで代替しない。
