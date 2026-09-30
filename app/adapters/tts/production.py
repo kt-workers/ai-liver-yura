@@ -9,8 +9,15 @@ from dataclasses import dataclass
 
 from app.domain.contracts.common import require_identifier, require_revision
 from app.domain.speech_runtime.discard import PreparedAudioDiscardPort, PreparedAudioDiscardRequest
+from app.runtime.lifecycle import DependencyRetryPolicy
 
-from .contracts import TTSCapabilityView, TTSVoiceBinding
+from .contracts import PronunciationOverrideView, TTSCapabilityView, TTSVoiceBinding
+from .d10_provider import TTSProviderAdapter
+from .policy import (
+    TTSPerformanceMappingPolicy,
+    TTSProviderOperationalPolicy,
+    validate_tts_policy_bundle,
+)
 from .provider import PreparedAudioResourceStore, TTSProviderClient
 
 
@@ -20,6 +27,98 @@ class TTSProductionConfigurationError(ValueError):
 
 class TTSProductionCleanupError(RuntimeError):
     """非公開のprovider資源を回収できなかった。"""
+
+
+@dataclass(frozen=True, slots=True)
+class TTSProductionConnection:
+    """構成rootが同一provider世代として注入する本番TTS接続。"""
+
+    registry: TTSProviderRegistry
+    capability: TTSCapabilityView
+    mapping: TTSPerformanceMappingPolicy
+    operational: TTSProviderOperationalPolicy
+    retry: DependencyRetryPolicy
+    pronunciation_overrides: tuple[PronunciationOverrideView, ...]
+    pronunciation_config_revision: int
+    provider_config_revision: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.registry, TTSProviderRegistry):
+            raise TTSProductionConfigurationError("TTS registryが不正です")
+        try:
+            validate_tts_policy_bundle(self.mapping, self.operational, self.retry)
+            if not (
+                self.capability.provider_id
+                == self.mapping.provider_id
+                == self.operational.provider_id
+                == self.retry.dependency_id
+                and self.capability.provider_revision
+                == self.mapping.provider_revision
+                == self.operational.provider_revision
+            ):
+                raise ValueError
+            require_revision(self.pronunciation_config_revision, "pronunciation_config_revision")
+            require_revision(self.provider_config_revision, "provider_config_revision")
+        except (TypeError, ValueError):
+            raise TTSProductionConfigurationError("TTS production世代が一致しません") from None
+        overrides = tuple(self.pronunciation_overrides)
+        if any(not isinstance(item, PronunciationOverrideView) for item in overrides) or len(
+            {item.override_id for item in overrides}
+        ) != len(overrides) or len({item.surface for item in overrides}) != len(overrides):
+            raise TTSProductionConfigurationError("発音overrideが不正です")
+        object.__setattr__(self, "pronunciation_overrides", overrides)
+
+    async def acquire(self, voice: TTSVoiceBinding) -> TTSProductionLease:
+        if not isinstance(voice, TTSVoiceBinding) or (
+            voice.provider_id != self.capability.provider_id
+            or voice.binding_revision != self.capability.voice_binding_revision
+        ):
+            raise TTSProductionConfigurationError("TTS voice bindingが一致しません")
+        lease = await self.registry.acquire(voice, self.capability)
+        try:
+            adapter = TTSProviderAdapter(
+                lease.client,
+                self.mapping,
+                self.operational,
+                self.retry,
+                resource_store=lease.resources,
+            )
+            return TTSProductionLease(adapter, lease)
+        except BaseException:
+            await lease.close()
+            raise
+
+
+class TTSProductionLease:
+    """adapter停止後に#710 leaseを回収する本番所有handle。"""
+
+    def __init__(self, adapter: TTSProviderAdapter, provider_lease: TTSProviderLease) -> None:
+        self.adapter = adapter
+        self.resources = provider_lease.resources
+        self._provider_lease = provider_lease
+        self._close_task: asyncio.Task[None] | None = None
+
+    async def close(self) -> None:
+        if self._close_task is None:
+            self._close_task = asyncio.create_task(self._close())
+        await ProductionPreparedAudioResources._settle(self._close_task)
+
+    async def _close(self) -> None:
+        failed = False
+        try:
+            await self.adapter.shutdown()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            failed = True
+        try:
+            await self._provider_lease.close()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            failed = True
+        if failed:
+            raise TTSProductionCleanupError("TTS本番leaseを回収できません")
 
 
 @dataclass(frozen=True, slots=True)

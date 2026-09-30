@@ -34,8 +34,6 @@ PreparedAudioArtifact
 
 TTS synthesis successはPresentation successやActual Speech Factを意味しない。
 
----
-
 ## 2. Authority boundary
 
 #358 owns:
@@ -518,6 +516,14 @@ Do not log full audio/raw responses or unnecessary utterance bodies merely for m
 leaseはclientと同じOwnerの`ProductionPreparedAudioResources`を返す。これは公開`audio_ref`だけをDomainへ渡し、providerの生resource handleを内部に保持する。`PreparedAudioDiscardPort.discard(...)`とlease終了は同じhandleをidempotentに一度だけ回収する。shutdown時は未返却artifactも回収し、その後clientをreleaseする。生handle、credential、endpoint、provider例外本文は公開DTO、診断、Snapshotへ出さない。
 
 `create_client()`がclientを返した時点から、leaseの正常返却まではregistryがclient ownershipを持つ。binding検証、client検証、resource Owner構築のいずれかが失敗した場合、registryは返却済みclientを必ず一度だけreleaseする。callerが取消してもcleanupを完了させてから取消を伝播し、cleanup failureを成功または通常の構成不一致として隠さない。
+
+## 20.2 本番configuration connection（#720）
+
+trusted構成rootは、具体providerやvoiceを選択せず、同一provider generationの`TTSProductionConnection`を明示注入する。connectionは`TTSProviderRegistry`、`TTSCapabilityView`、mapping / operational / retry policy、発音override tuple、`pronunciation_config_revision`、`provider_config_revision`を不変に保持する。credential、endpoint、生provider設定、callback内部は公開しない。
+
+capability、mapping、operational、retryのprovider identityは一致し、capability、mapping、operationalのprovider revisionも一致する。既存`validate_tts_policy_bundle()`を再利用する。`provider_config_revision`とoperational policy revision、発音設定revisionと個別override revisionは別Authorityであり、一致を強制しない。override IDとsurfaceはtuple内で一意とする。
+
+`acquire(voice)`はvoiceのprovider identityとbinding revisionをcapabilityへ完全一致させ、既存registryの公開`acquire(voice, capability)`だけを使用する。不一致時にfallbackしない。返却leaseはregistry leaseのclientとresourcesからadapterを構築し、resource storeへ必ず同resourcesを渡す。closeはadapter shutdown後にregistry leaseを回収し、取消下でもcleanupをsettleする。adapterまたはprovider leaseの失敗を成功へ隠さず、繰返しcloseは同じcleanupへ合流する。
 
 ---
 
