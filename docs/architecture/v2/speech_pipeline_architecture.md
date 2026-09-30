@@ -461,19 +461,28 @@ trace、期限、優先度を推測したり、hidden cacheから補ったりす
 
 要求の各項目と正本は次のとおりとする。
 
-| 項目 | 正本 | 必須の照合 |
-| --- | --- | --- |
-| candidate identity | `SpeechRuntime.candidate(candidate_id)`が返す`PreparedSpeechCandidate.candidate_id` | runtimeのcurrent candidateと一致すること |
-| generation | 同じcandidateの`performance_generation`と`SpeechRuntime.generation(candidate_id)` | 両者が完全一致すること |
-| utterance | 当該generationで`CharacterLanguageRealizer`が返した`CharacterUtterance` | `utterance_id`とcandidateの値が一致すること |
-| performance | 同じutteranceから`SpeechPerformancePlanner`が返した`SpeechPerformancePlan` | `utterance_id`、`performance_plan_id`、source decision/eventがcandidateと一致すること |
-| trace/root provenance | 元の`BrainIntegrationWork.envelope`の`trace_id`、`root_trigger_id`、`trigger_id` | output側で新造・置換しないこと |
-| deadline | current candidateの`expires_at` | `None`なら出力準備を拒否し、時計から既定値を作らないこと |
-| priority | current candidateの`priority` | pipeline設定値やreader独自の優先度で上書きしないこと |
-| preparation disposition | 構成済み`CoreSpeechPipeline.tts_mode` | `TTSPreparationMode`以外へ変換せず、disabled/fallbackを作らないこと |
-| created_at | current candidateの`created_at` | fixture時刻やreader呼出時刻で置換しないこと |
+| 項目 | 型 | 正本 | 必須の照合 |
+| --- | --- | --- | --- |
+| candidate_id | `str` | `SpeechRuntime.candidate(candidate_id)`が返す`PreparedSpeechCandidate.candidate_id` | runtimeのcurrent candidateと一致すること |
+| candidate_generation | `int` | `SpeechRuntime.generation(candidate_id)` | `SpeechRuntime.is_current_generation(candidate_id, candidate_generation)`でcurrentnessを確認すること |
+| performance_generation | `int` | current candidateの`performance_generation` | candidate lifecycle generationとは別のPerformance再bind世代として保持し、数値一致を要求しないこと |
+| utterance | `CharacterUtterance` | 当該generationで`CharacterLanguageRealizer`が返した値 | `utterance_id`とcandidateの値が一致すること |
+| performance_plan | `SpeechPerformancePlan` | 同じutteranceから`SpeechPerformancePlanner`が返した値 | `utterance_id`、`performance_plan_id`、source decision/eventがcandidateと一致すること |
+| trace_id | `str` | 元の`BrainIntegrationWork.envelope.trace_id` | output側で新造・置換しないこと |
+| root_trigger_id | `str | None` | 元の`BrainIntegrationWork.envelope.root_trigger_id` | optional性を維持し、別identityを作らないこと |
+| trigger_id | `str` | 元の`BrainIntegrationWork.envelope.trigger_id` | output側で新造・置換しないこと |
+| deadline_at | `datetime | None` | 元の`BrainIntegrationWork.deadline_at` | `None`は明示的な期限なしとしてそのまま保持し、出力側で既定値を作らないこと |
+| priority | `SpeechCandidatePriority` | current candidateの`priority` | pipeline設定値やreader独自の優先度で上書きしないこと |
+| preparation_disposition | `TTSPreparationMode` | 構成済み`CoreSpeechPipeline.tts_mode` | disabled/fallbackを作らないこと |
+| created_at | `datetime` | current candidateの`created_at` | fixture時刻やreader呼出時刻で置換しないこと |
 
-requestはruntimeが同じgenerationのcandidateを受理し、Character/Performanceとの整合を確認した後に
-一度だけ組み立てる。stale、generation mismatch、期限切れ、型不一致は出力readerを呼ばずに既存の
-candidate拒否・回収経路へ渡す。#720のTTS production connection、provider、voice、policyの選択と
-fallbackはこの要求にも#721にも持たせない。
+`candidate_generation`はcandidate lifecycleのAuthorityであり、semantic repairの
+`SpeechRuntime.supersede_generation()`でも正規に進む。`performance_generation`はdynamic expressionの
+`rebind_performance_for_expression()`が所有する別世代であり、両者の値を同一視しない。
+
+requestはruntimeが同じcandidate generationを受理し、Character/Performanceとの整合を確認した後に
+一度だけ組み立てる。candidateのexpiryは既存`SpeechRuntime`のoperational policyとgeneration/expiry
+fenceが所有し、#721は`created_at`から再計算せず、`expires_at`を新しいdeadline Authorityにしない。
+stale、generation mismatch、runtime expiry、型不一致は出力readerを呼ばずに既存のcandidate拒否・回収
+経路へ渡す。#720のTTS production connection、provider、voice、policyの選択とfallbackはこの要求にも
+#721にも持たせない。

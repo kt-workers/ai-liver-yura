@@ -811,6 +811,12 @@ notification構築も同一connectionが行い、`BrainIntegrationWork`、確定
 から既存`ExecutionObservationProvenance`を組み立てる。fixture owner、要求ごとのStore、別々の
 normalizerやdeliveryを組み合わせてはならない。
 
+requestの`candidate_generation`は`SpeechRuntime.generation(candidate_id)`だけを正本とし、既存の
+current-generation fenceで照合する。`performance_generation`はPerformance再bindの別世代であり、
+semantic repairで進むcandidate lifecycle generationと一致を要求しない。`deadline_at`は親
+`BrainIntegrationWork.deadline_at`をそのまま搬送する。candidate expiryは既存Runtimeが所有し、
+connectionやreaderが期限を計算、統合、補完しない。
+
 通知は#613どおり`SUBSYSTEM` / `presentation_fact`の`InputObservation`を同じprocess共有
 `InputNormalizer`へ一度だけ渡し、accepted結果だけを`CoreCognitionDelivery.submit_input()`へ渡す。
 Input Meaningへ再投入せず、同じFactを再normalizeせず、新しいnotification ledgerも作らない。raw

@@ -771,6 +771,11 @@ deadline、priority、preparation disposition、created_atは`speech_pipeline_ar
 policyを選ばない。#709は将来、#720のTTS connectionとこのOwner connectionを同じproduction factory
 から消費するが、両者の所有権を混合しない。
 
+このrequestの`candidate_generation`は`SpeechRuntime`のcandidate lifecycle generation、
+`performance_generation`はPerformance再bind世代であり、数値の一致を意味しない。`deadline_at`は
+親`BrainIntegrationWork.deadline_at`をそのまま保持する。candidate expiryは既存Runtime operational
+policyの責務であり、Compositionがdeadlineと統合、再計算、代替しない。
+
 通知のGateway duplicate、STALE、ACCEPTED後のexact Admission再利用、Brain submit failure、
 PRESENTATION_FACT参照の保持は本節の既存#613規約に従う。接続失敗、Owner identity不一致、欠落、
 shutdown中の新規構築はfail-closedとし、fixture、空の成功、別Owner、raw diagnosticで代替しない。
