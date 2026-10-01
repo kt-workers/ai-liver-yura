@@ -6,6 +6,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING
 from uuid import NAMESPACE_URL, uuid5
 
 from app.composition.execution_observation import SPEECH_OBSERVATION_SOURCE
@@ -21,8 +22,8 @@ from app.domain.activity_execution.observation import (
     ObservedExecutionFactRecord,
 )
 from app.domain.attention import AttentionTurnStore
-from app.domain.brain_integration import BrainWorkAdmission
-from app.domain.contracts import ExecutionStatus, RevisionVector
+from app.domain.brain_integration import BrainIntegrationWork, BrainWorkAdmission
+from app.domain.contracts import CapabilityAvailability, ExecutionStatus, RevisionVector
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import (
     AuthorityFinalizationFence,
@@ -30,15 +31,21 @@ from app.domain.contracts.finalization import (
     FinalizationFailure,
 )
 from app.domain.contracts.snapshots import SnapshotIncoherentError
+from app.domain.executive import CommittedExecutiveDecision
 from app.domain.input_gateway import (
     InputAdmission,
     InputAdmissionStatus,
     InputModality,
     InputObservation,
+    InputPermission,
     InputSourceState,
 )
 from app.domain.input_gateway.normalizer import InputNormalizer
 from app.usecases.attention import AttentionResponseSettlementCoordinator
+
+if TYPE_CHECKING:
+    from app.composition.cognition import CoreCognitionDelivery
+    from app.composition.speech import CoreSpeechContextReaders
 
 
 class PresentationNotificationState(str, Enum):
@@ -47,6 +54,85 @@ class PresentationNotificationState(str, Enum):
     SUBMITTED = "submitted"
     TERMINAL_REJECTED = "terminal_rejected"
     STALE = "stale"
+
+
+@dataclass(frozen=True, slots=True)
+class CoreSpeechProductionOwnerConnection:
+    """同一S2 Ownerの既存instanceだけでPresentation通知を構成する。"""
+
+    authority: ActivityExecutionAuthority
+    attention: AttentionTurnStore
+    reference: CoreInputReferenceContextBinding
+    normalizer: InputNormalizer
+    cognition: CoreCognitionDelivery
+
+    def __post_init__(self) -> None:
+        from app.composition.cognition import CoreCognitionDelivery
+
+        if not isinstance(self.authority, ActivityExecutionAuthority) or not isinstance(
+            self.attention, AttentionTurnStore
+        ) or not isinstance(self.reference, CoreInputReferenceContextBinding) or not isinstance(
+            self.normalizer, InputNormalizer
+        ) or not isinstance(self.cognition, CoreCognitionDelivery) or (
+            self.reference.activities is not self.authority
+        ) or self.cognition.attention_owner is not self.attention:
+            raise ValueError("Speech本番Owner接続が不正です")
+
+    def readers(
+        self,
+        factory: Callable[
+            [CoreCognitionDelivery, CoreInputReferenceContextBinding], CoreSpeechContextReaders
+        ],
+    ) -> CoreSpeechContextReaders:
+        """同一Ownerを使うreader構築だけを既存provider接続へ委譲する。"""
+        from app.composition.speech import CoreSpeechContextReaders
+
+        readers = factory(self.cognition, self.reference)
+        if not isinstance(readers, CoreSpeechContextReaders):
+            raise ValueError("Speech本番reader接続が不正です")
+        return readers
+
+    def notification(
+        self,
+        work: BrainIntegrationWork,
+        decision: CommittedExecutiveDecision,
+        presentation_id: str,
+    ) -> CorePresentationNotification:
+        if not isinstance(work, BrainIntegrationWork) or not isinstance(
+            decision, CommittedExecutiveDecision
+        ):
+            raise ValueError("Speech本番通知の由来が不正です")
+        candidate = decision.candidate
+        if work.envelope.source_event_ids != candidate.source_event_ids:
+            raise ValueError("Speech本番通知の元eventが一致しません")
+        provenance = ExecutionObservationProvenance(
+            decision.decision_id,
+            candidate.source_event_ids,
+            RevisionVector(
+                candidate.source_context_revision,
+                candidate.goal_revision,
+                candidate.attention_revision,
+            ),
+            work.envelope.trace_id,
+        )
+        return CorePresentationNotification(
+            self.authority,
+            self.attention,
+            self.reference,
+            self.normalizer,
+            InputSourceState(
+                "speech",
+                "subsystem",
+                CapabilityAvailability.AVAILABLE,
+                InputPermission.NOT_REQUIRED,
+            ),
+            provenance,
+            work.envelope.root_trigger_id or work.envelope.trigger_id,
+            presentation_id,
+            lambda admission, root: self.cognition.submit_input(
+                admission, root_trigger_id=root
+            ),
+        )
 
 
 def presentation_notification_identity(record: ObservedExecutionFactRecord) -> str:

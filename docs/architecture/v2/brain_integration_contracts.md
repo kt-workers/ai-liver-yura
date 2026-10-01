@@ -757,6 +757,36 @@ MemoryはCoreMemoryPersistenceBinding.read_semantic_assertion_publicationを経�
 
 Input Gateway §7の意味は変更しない。`CoreSpeechFeedback`のgeneric downstream再配送と、Gatewayでの同一identity再normalize禁止を分けて扱う。
 
+### #721の本番所有接続
+
+`CoreSpeechProductionOwnerConnection`は#613の本番接続を完成するCompositionの不変入力である。
+`ActivityExecutionAuthority`、`AttentionTurnStore`、`CoreInputReferenceContextBinding`、process共有
+`InputNormalizer`、`CoreCognitionDelivery`は同じS2 production Ownerの既存instanceをそのまま受け取る。
+connectionはこれらの意味、generation、admission、settlementを再実装せず、readerとnotificationへ
+同じinstanceを渡すだけとする。
+
+`SpeechOutputPreparationRequest`のcandidate identity、generation、発話、Performance、trace/root、
+deadline、priority、preparation disposition、created_atは`speech_pipeline_architecture.md`の#721節を
+正本とする。Compositionは候補やtraceを新造せず、#720のTTS production connectionのprovider、voice、
+policyを選ばない。#709は将来、#720のTTS connectionとこのOwner connectionを同じproduction factory
+から消費するが、両者の所有権を混合しない。
+
+このrequestの`candidate_generation`は`SpeechRuntime`のcandidate lifecycle generation、
+`performance_generation`はPerformance再bind世代であり、数値の一致を意味しない。`deadline_at`は
+親`BrainIntegrationWork.deadline_at`をそのまま保持する。candidate expiryは既存Runtime operational
+policyの責務であり、Compositionがdeadlineと統合、再計算、代替しない。
+
+requestはcurrent generationのpre-adoption preparation provenanceであり、Runtime artifact adoptionや
+semantic acceptanceを表さない。candidateの採用済みartifact IDが未設定でも、同generationのCharacterと
+Performance、decision/event/speech plan provenance、Runtime currentnessが整合すればoutput preparationを
+許可する。採用済みIDがある場合の矛盾だけをfail-closedとし、`commit_generation_result()`以前にpartial
+commitやcandidate mutationを行わない。#701の採用成功までoutput資源は既存のcomposition ownershipに残り、
+semantic repairでは旧generationを回収して新generationのrequestを作る。
+
+通知のGateway duplicate、STALE、ACCEPTED後のexact Admission再利用、Brain submit failure、
+PRESENTATION_FACT参照の保持は本節の既存#613規約に従う。接続失敗、Owner identity不一致、欠落、
+shutdown中の新規構築はfail-closedとし、fixture、空の成功、別Owner、raw diagnosticで代替しない。
+
 ## 35. 背景Reflection・永続Memory・判断根拠の接続（#614）
 
 `CoreCognitionConfiguration`はReflectionのRole実行方針・採用方針・受付上限と、Memory検索条件の供給元・検索上限を明示登録する。登録時は同じ`CoreMemoryPersistenceBinding`を必須とし、未登録の保存先を模擬Storeへ置換しない。起動は既存のcurrent production Reflection proposal/support descriptorを同じLLM Portへ登録する。既存の明示構成を省略する起動との互換性を維持する。

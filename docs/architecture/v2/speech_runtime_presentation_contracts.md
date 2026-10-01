@@ -791,3 +791,45 @@ COMPLETEDだけを`AttentionResponseSettlementCoordinator`と既存Finalization 
 `CoreInputReferenceContextBinding`はcurrent Presentationのsource / executionへの参照を一件だけ保持し、読取時に#329のcurrent recordへ追従する。kindは`PRESENTATION_FACT`、identityは実Fact identity由来、subjectはrecordのtyped subjectとする。通常Activity、ACTUAL_EXECUTION_FACT、発話全文へ変換しない。過去提示の全履歴は蓄積しない。
 
 この参照は一時的な通知stagingではない。normalize拒否、同期submit失敗、settlement失敗だけを理由に削除・rollbackしない。通知側は終端拒否、accepted Admission、submitted、staleをcurrent/直近recordに限定して保持する。拒否後の同じidentityの再normalizeは禁止する。accepted Admissionの再試行前にはcurrent source context revisionを照合し、不一致のeventをupgradeしない。Input Gateway §7と#679のOwner契約は変更しない。
+
+## 本番Reader・通知の同一所有接続（#721）
+
+`CoreSpeechProductionOwnerConnection`は、同一S2 production Ownerが保持する既存instanceを不変に
+束ね、`CoreSpeechContextReaders`と`CorePresentationNotification`を構成する接続契約である。新しい
+Authority、Store、ledger、Clockは作らない。接続は少なくとも次の既存instanceを明示注入する。
+
+| 接続項目 | instanceの所有者 | 用途 |
+| --- | --- | --- |
+| execution authority | `ActivityExecutionAuthority` | #329のcurrent Presentation Fact読取とsettlement |
+| attention store | `AttentionTurnStore` | #679のresponse settlement |
+| reference binding | `CoreInputReferenceContextBinding` | current Presentation参照の更新とcurrentness照合 |
+| normalizer | process共有`InputNormalizer` | #613の`PRESENTATION_FACT`を一度だけadmit |
+| cognition delivery | `CoreCognitionDelivery` | accepted `InputAdmission`だけを`submit_input()`へ配送 |
+
+reader構築は同一connectionが行い、出力readerには`SpeechOutputPreparationRequest`だけを渡す。
+notification構築も同一connectionが行い、`BrainIntegrationWork`、確定decision、presentation identity
+から既存`ExecutionObservationProvenance`を組み立てる。fixture owner、要求ごとのStore、別々の
+normalizerやdeliveryを組み合わせてはならない。
+
+requestの`candidate_generation`は`SpeechRuntime.generation(candidate_id)`だけを正本とし、既存の
+current-generation fenceで照合する。`performance_generation`はPerformance再bindの別世代であり、
+semantic repairで進むcandidate lifecycle generationと一致を要求しない。`deadline_at`は親
+`BrainIntegrationWork.deadline_at`をそのまま搬送する。candidate expiryは既存Runtimeが所有し、
+connectionやreaderが期限を計算、統合、補完しない。
+
+`SpeechOutputPreparationRequest`はcurrent candidate generationのpre-adoption preparation provenance
+である。request構築は`commit_generation_result()`、partial Runtime commit、candidate mutationを伴わず、
+candidateの`utterance_id`または`performance_plan_id`が未採用の`None`でもそれだけで拒否しない。既に
+同generationの採用済みIDが存在する場合だけrequest artifactとの不一致をfail-closedとする。Verifier/output
+の必要条件を通過した`commit_generation_result()`が#701の唯一の正式artifact adoption pointであり、
+repairでは旧generationを既存経路で回収して新generation requestを再構築する。旧artifactを付け替えない。
+
+通知は#613どおり`SUBSYSTEM` / `presentation_fact`の`InputObservation`を同じprocess共有
+`InputNormalizer`へ一度だけ渡し、accepted結果だけを`CoreCognitionDelivery.submit_input()`へ渡す。
+Input Meaningへ再投入せず、同じFactを再normalizeせず、新しいnotification ledgerも作らない。raw
+provider exception、credential、endpoint、音声、発話全文をpayloadまたは公開失敗へ含めない。
+
+停止・取消では、新規reader/notification構築と新規配送を閉じた後、既存#348のPresentation session、
+#701のprepared audio、#613のaccepted Admissionを各Ownerの既存順序でsettleする。caller取消でも開始済み
+cleanupを中断せず、その完了後に取消を伝播する。失敗、stale、duplicate、cleanup failureを成功や通常の
+通知拒否へ変換しない。

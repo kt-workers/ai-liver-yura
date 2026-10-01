@@ -83,9 +83,57 @@ class CoreSpeechContextReaders:
     performance: Callable[[CharacterUtterance, str], SpeechPerformanceContextSnapshot]
     presentation: Callable[[PreparedSpeechCandidate], Awaitable[SpeechPresentationCommitState]]
     output: Callable[
-        [CharacterUtterance, SpeechPerformancePlan],
+        [SpeechOutputPreparationRequest],
         Awaitable[tuple[SpeechPresentationMode, str | None]],
     ]
+
+
+@dataclass(frozen=True, slots=True)
+class SpeechOutputPreparationRequest:
+    """current candidate generationに属する採用前の出力準備由来。"""
+
+    candidate_id: str
+    candidate_generation: int
+    performance_generation: int
+    utterance: CharacterUtterance
+    performance_plan: SpeechPerformancePlan
+    trace_id: str
+    root_trigger_id: str | None
+    trigger_id: str
+    deadline_at: datetime | None
+    priority: SpeechCandidatePriority
+    preparation_disposition: TTSPreparationMode
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.candidate_id, str)
+            or not self.candidate_id
+            or type(self.candidate_generation) is not int
+            or self.candidate_generation < 1
+            or type(self.performance_generation) is not int
+            or self.performance_generation < 1
+            or not isinstance(self.utterance, CharacterUtterance)
+            or not isinstance(self.performance_plan, SpeechPerformancePlan)
+            or not isinstance(self.priority, SpeechCandidatePriority)
+            or not isinstance(self.preparation_disposition, TTSPreparationMode)
+        ):
+            raise ValueError("Speech output準備要求が不正です")
+        for value in (self.trace_id, self.trigger_id):
+            if not isinstance(value, str) or not value:
+                raise ValueError("Speech output由来が不正です")
+        if self.root_trigger_id is not None and (
+            not isinstance(self.root_trigger_id, str) or not self.root_trigger_id
+        ):
+            raise ValueError("Speech output root由来が不正です")
+        if self.deadline_at is not None and (
+            self.deadline_at.tzinfo is None or self.deadline_at.utcoffset() is None
+        ):
+            raise ValueError("Speech output deadlineが不正です")
+        if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
+            raise ValueError("Speech output created_atが不正です")
+        if self.performance_plan.utterance_id != self.utterance.utterance_id:
+            raise ValueError("Speech outputのPerformance由来が一致しません")
 
 
 @dataclass
@@ -164,6 +212,52 @@ class CoreSpeechPipeline:
                 self.evidence_sink(stage, value)
             except Exception:
                 self.evidence_failed = True
+
+    async def _output_request(
+        self,
+        candidate_id: str,
+        generation: int,
+        utterance: CharacterUtterance,
+        performance: SpeechPerformancePlan,
+        work: BrainIntegrationWork,
+    ) -> SpeechOutputPreparationRequest:
+        candidate = await self.runtime.candidate(candidate_id)
+        if await self.runtime.operational_failure(candidate_id) is not None:
+            raise ValueError("Speech output準備のRuntime状態がcurrentではありません")
+        if (
+            candidate.candidate_id != candidate_id
+            or generation != self.runtime.generation(candidate_id)
+            or not await self.runtime.is_current_generation(candidate_id, generation)
+            or candidate.priority is not self.priority
+            or performance.utterance_id != utterance.utterance_id
+            or performance.source_decision_id != candidate.source_decision_id
+            or performance.source_event_ids != candidate.source_event_ids
+            or utterance.candidate.source_decision_id != candidate.source_decision_id
+            or utterance.candidate.source_event_ids != candidate.source_event_ids
+            or utterance.candidate.semantic_plan_id != candidate.speech_plan_id
+        ):
+            raise ValueError("Speech output準備の由来または世代が一致しません")
+        if (
+            candidate.utterance_id is not None and candidate.utterance_id != utterance.utterance_id
+        ) or (
+            candidate.performance_plan_id is not None
+            and candidate.performance_plan_id != performance.performance_plan_id
+        ):
+            raise ValueError("採用済みSpeech artifactのidentityが一致しません")
+        return SpeechOutputPreparationRequest(
+            candidate_id,
+            generation,
+            candidate.performance_generation,
+            utterance,
+            performance,
+            work.envelope.trace_id,
+            work.envelope.root_trigger_id,
+            work.envelope.trigger_id,
+            work.deadline_at,
+            candidate.priority,
+            self.tts_mode,
+            candidate.created_at,
+        )
 
     async def execute(
         self,
@@ -452,7 +546,8 @@ class CoreSpeechPipeline:
                 performance: SpeechPerformancePlan = performance,
                 generation: int = generation,
             ) -> object:
-                mode, audio_ref = await self.readers.output(utterance, performance)
+                request = await self._output_request(key, generation, utterance, performance, work)
+                mode, audio_ref = await self.readers.output(request)
                 # awaitへ戻らず受領を記録するため、親取消との競合でも元identityを失わない。
                 if audio_ref is not None:
                     self._audio.receive(

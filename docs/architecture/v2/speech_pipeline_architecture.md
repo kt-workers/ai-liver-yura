@@ -452,3 +452,50 @@ canonicalの詳細は`speech_runtime_presentation_contracts.md`を正とし、Sp
 外部提示は既存`SpeechPresentationWorkerSupervisor`へ限定する。`ObservedSpeechPresentationBoundary`はRuntimeが受理したSTARTED状態を先に#657/#329へ渡し、Session回収後の終端状態を還流する。準備済みcandidateやraw reportを直接Factへ変換しない。提示taskの追跡・process回収は#348/#659を利用し、別のSpeech task管理を作らない。終了時は音声を既存discarderへ返し、Runtimeの取消を確定してからSessionを回収する。
 
 COMPLETED Factでは#679のsettlementを先に試み、その後PRESENTATION_FACT参照と内部認知通知へ進む。OBSERVABLE、失敗、取消、timeout由来のpartial effectではsettlementしない。開始前失敗にはActual Factを作らない。Gateway通知はat-most-once、同期submitの再試行はcurrentなexact Admissionの再利用だけとする。通知失敗を理由にActual Fact参照や成功済みsettlementを巻き戻さない。詳細は`brain_integration_contracts.md`の「Speechの本番接続と内部通知（#613）」に従う。
+
+## 本番出力準備要求の由来（#721）
+
+`CoreSpeechContextReaders.output`は`CharacterUtterance`と`SpeechPerformancePlan`を直接受け取らず、
+不変の`SpeechOutputPreparationRequest`だけを受け取る。要求は、出力readerが現在candidate、世代、
+trace、期限、優先度を推測したり、hidden cacheから補ったりする余地をなくすための本番境界である。
+
+要求の各項目と正本は次のとおりとする。
+
+| 項目 | 型 | 正本 | 必須の照合 |
+| --- | --- | --- | --- |
+| candidate_id | `str` | `SpeechRuntime.candidate(candidate_id)`が返す`PreparedSpeechCandidate.candidate_id` | runtimeのcurrent candidateと一致すること |
+| candidate_generation | `int` | `SpeechRuntime.generation(candidate_id)` | `SpeechRuntime.is_current_generation(candidate_id, candidate_generation)`でcurrentnessを確認すること |
+| performance_generation | `int` | current candidateの`performance_generation` | candidate lifecycle generationとは別のPerformance再bind世代として保持し、数値一致を要求しないこと |
+| utterance | `CharacterUtterance` | 当該generationで`CharacterLanguageRealizer`が返した値 | requestと`performance_plan.utterance_id`が一致し、candidateに同generationの採用済み`utterance_id`があればそれとも一致すること |
+| performance_plan | `SpeechPerformancePlan` | 同じutteranceから`SpeechPerformancePlanner`が返した値 | utterance、`performance_plan_id`、source decision/eventがcandidate/workと一致し、candidateに同generationの採用済みIDがあれば矛盾しないこと |
+| trace_id | `str` | 元の`BrainIntegrationWork.envelope.trace_id` | output側で新造・置換しないこと |
+| root_trigger_id | `str | None` | 元の`BrainIntegrationWork.envelope.root_trigger_id` | optional性を維持し、別identityを作らないこと |
+| trigger_id | `str` | 元の`BrainIntegrationWork.envelope.trigger_id` | output側で新造・置換しないこと |
+| deadline_at | `datetime | None` | 元の`BrainIntegrationWork.deadline_at` | `None`は明示的な期限なしとしてそのまま保持し、出力側で既定値を作らないこと |
+| priority | `SpeechCandidatePriority` | current candidateの`priority` | pipeline設定値やreader独自の優先度で上書きしないこと |
+| preparation_disposition | `TTSPreparationMode` | 構成済み`CoreSpeechPipeline.tts_mode` | disabled/fallbackを作らないこと |
+| created_at | `datetime` | current candidateの`created_at` | fixture時刻やreader呼出時刻で置換しないこと |
+
+`candidate_generation`はcandidate lifecycleのAuthorityであり、semantic repairの
+`SpeechRuntime.supersede_generation()`でも正規に進む。`performance_generation`はdynamic expressionの
+`rebind_performance_for_expression()`が所有する別世代であり、両者の値を同一視しない。
+
+requestはcurrent candidate generationに属する**pre-adoption preparation provenance**であり、runtimeが
+artifactを正式採用済みであることを意味しない。Character/Performanceとの整合、runtime currentness、
+operational policy/expiryを確認した後に一度だけ組み立てるが、その構築のために
+`commit_generation_result()`、partial Runtime commit、candidate mutationを行わない。
+
+pre-adoptionでは`PreparedSpeechCandidate.utterance_id`と`performance_plan_id`が`None`でも拒否しない。
+semantic repair後にclearされた値も同様である。一方でcandidateに同generationの採用済みartifact IDが
+存在する場合はrequest artifactと完全一致しなければfail-closedとする。Verifier/outputの必要条件、
+current generation、policy、expiryを通過した`commit_generation_result()`だけが#701の正式artifact
+adoption pointである。output結果はその時点まで既存#701のcomposition-owned資源として保持し、semantic
+acceptance、Presentation可能、TTS成功、Actual Speech Factをrequest自体から導かない。
+
+Verifier rejectionでは旧generationのoutput/audioを既存#701経路で回収し、
+`supersede_generation()`後の新generationのCharacter、Performance、requestを新たに構築する。旧request
+またはartifactを新generationへ付け替えない。candidateのexpiryは既存`SpeechRuntime`のoperational
+policyとgeneration/expiry fenceが所有し、#721は`created_at`から再計算せず、`expires_at`を新しいdeadline
+Authorityにしない。stale、generation mismatch、runtime expiry、型不一致は出力readerを呼ばずに既存の
+candidate拒否・回収経路へ渡す。#720のTTS production connection、provider、voice、policyの選択とfallbackは
+この要求にも#721にも持たせない。
