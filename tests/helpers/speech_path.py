@@ -1,6 +1,7 @@
 """実発話Ownerとprocess Supervisorを使う検証fixtureを構成する。"""
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
@@ -72,7 +73,12 @@ def now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-async def build_speech_path(slow_stage: str | None = None, *, pending_turn: bool = False) -> Any:
+async def build_speech_path(
+    slow_stage: str | None = None,
+    *,
+    pending_turn: bool = False,
+    runtime_clock: Callable[[], datetime] = now,
+) -> Any:
     b = binding()
     d = await committed(b, "goal-1")
     intent = d.candidate.intents[0]
@@ -349,7 +355,8 @@ async def build_speech_path(slow_stage: str | None = None, *, pending_turn: bool
                 text_terminal_timeout_seconds=1,
                 audio_terminal_fallback_timeout_seconds=1,
             ),
-        )
+        ),
+        clock=runtime_clock,
     )
     tasks = SpeechPathTasks(4)
     from app.infrastructure.speech_presentation.supervisor import (
@@ -485,6 +492,8 @@ async def build_speech_path(slow_stage: str | None = None, *, pending_turn: bool
         release=release,
         goals=late_goals,
         attention=attention,
+        authority=owner,
+        reference=reference,
         contexts=contexts,
         port=port,
     )

@@ -2,13 +2,21 @@
 
 import asyncio
 from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
 
+from app.composition.presentation_notification import CoreSpeechProductionOwnerConnection
 from app.composition.speech_preparation import (
     PendingSpeechAudioOwner,
     SpeechPreparationCleanupError,
+)
+from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
+from app.domain.input_gateway.normalizer import (
+    InputAdmissionLedger,
+    InputNormalizer,
+    InputSessionRegistry,
 )
 from app.domain.speech_runtime.contracts import SpeechPresentationMode, TTSPreparationMode
 from app.domain.speech_runtime.discard import PreparedAudioDiscarder
@@ -16,8 +24,14 @@ from app.runtime.kernel import CancellationToken
 from tests.helpers.speech_path import build_speech_path
 
 
-async def setup() -> Any:
-    value = await build_speech_path()
+def normalizer() -> InputNormalizer:
+    return InputNormalizer(InputAdmissionLedger(), InputSessionRegistry(), bounds_policy=BOUNDS)
+
+
+async def setup(*, runtime_clock: Any = None) -> Any:
+    value = await build_speech_path(
+        **({} if runtime_clock is None else {"runtime_clock": runtime_clock})
+    )
     pipeline = value.pipeline
     value.discards = []
     value.presented = []
@@ -167,6 +181,123 @@ async def test_output_request_keeps_pre_adoption_provenance() -> None:
         await task
     finally:
         await cleanup(v)
+
+
+@pytest.mark.asyncio
+async def test_runtime_policy_stale_blocks_output_before_tts_preparation() -> None:
+    v = await setup()
+    v.pipeline.tts_mode = TTSPreparationMode.AFTER_SEMANTIC_ACCEPTANCE
+    task = v.run()
+    try:
+        await asyncio.wait_for(v.verify_started.wait(), 2)
+        await v.pipeline.runtime.update_operational_policy(
+            replace(v.pipeline.runtime.operational_policy, policy_revision=2)
+        )
+        v.release_verifier.set()
+        with pytest.raises(ValueError, match="Runtime状態"):
+            await task
+        assert v.output_requests == []
+        assert v.pipeline._audio.result(v.key, 1) is None
+    finally:
+        await cleanup(v)
+
+
+@pytest.mark.asyncio
+async def test_candidate_expiry_blocks_output_before_tts_preparation() -> None:
+    current = datetime.now(timezone.utc)
+    v = await setup(runtime_clock=lambda: current)
+    v.pipeline.tts_mode = TTSPreparationMode.AFTER_SEMANTIC_ACCEPTANCE
+    task = v.run()
+    try:
+        await asyncio.wait_for(v.verify_started.wait(), 2)
+        current += timedelta(days=1)
+        assert await v.pipeline.runtime.operational_failure(v.key) == "candidate_expired"
+        v.release_verifier.set()
+        with pytest.raises(ValueError, match="Runtime状態"):
+            await task
+        assert v.output_requests == []
+        assert v.pipeline._audio.result(v.key, 1) is None
+    finally:
+        await cleanup(v)
+
+
+@pytest.mark.asyncio
+async def test_owner_connection_binds_existing_owner_graph_and_provenance() -> None:
+    value = await build_speech_path()
+    try:
+        connection = CoreSpeechProductionOwnerConnection(
+            value.authority, value.attention, value.reference, normalizer(), value.cognition
+        )
+        assert connection.reference.activities is connection.authority
+        assert connection.cognition.attention_owner is connection.attention
+        first = connection.notification(value.work, value.decision, "presentation-a")
+        second = connection.notification(value.work, value.decision, "presentation-b")
+        assert first.normalizer is connection.normalizer is second.normalizer
+        assert first.presentation_id == "presentation-a"
+        assert first.provenance.source_decision_id == value.decision.decision_id
+        assert first.provenance.source_event_ids == value.decision.candidate.source_event_ids
+        assert first.provenance.trace_id == value.work.envelope.trace_id
+        assert first.root_trigger_id == value.work.envelope.root_trigger_id
+        seen: list[tuple[Any, Any]] = []
+
+        def readers(cognition: Any, reference: Any) -> Any:
+            seen.append((cognition, reference))
+            return value.pipeline.readers
+
+        assert connection.readers(readers) is value.pipeline.readers
+        assert seen == [(value.cognition, value.reference)]
+    finally:
+        await value.close()
+
+
+@pytest.mark.asyncio
+async def test_owner_connection_rejects_mixed_owner_graphs() -> None:
+    value = await build_speech_path()
+    other = await build_speech_path()
+    try:
+        with pytest.raises(ValueError, match="Owner接続"):
+            CoreSpeechProductionOwnerConnection(
+                other.authority,
+                value.attention,
+                value.reference,
+                normalizer(),
+                value.cognition,
+            )
+        with pytest.raises(ValueError, match="Owner接続"):
+            CoreSpeechProductionOwnerConnection(
+                value.authority,
+                other.attention,
+                value.reference,
+                normalizer(),
+                value.cognition,
+            )
+        with pytest.raises(ValueError, match="Owner接続"):
+            CoreSpeechProductionOwnerConnection(
+                value.authority, value.attention, value.reference, normalizer(), other.cognition
+            )
+    finally:
+        await value.close()
+        await other.close()
+
+
+@pytest.mark.asyncio
+async def test_owner_connection_rejects_work_event_mismatch() -> None:
+    value = await build_speech_path()
+    try:
+        connection = CoreSpeechProductionOwnerConnection(
+            value.authority, value.attention, value.reference, normalizer(), value.cognition
+        )
+        with pytest.raises(ValueError, match="元event"):
+            connection.notification(
+                replace(
+                    value.work,
+                    envelope=replace(value.work.envelope, source_event_ids=("other",)),
+                ),
+                value.decision,
+                "presentation",
+            )
+    finally:
+        await value.close()
 
 
 @pytest.mark.asyncio

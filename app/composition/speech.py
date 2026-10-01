@@ -222,6 +222,8 @@ class CoreSpeechPipeline:
         work: BrainIntegrationWork,
     ) -> SpeechOutputPreparationRequest:
         candidate = await self.runtime.candidate(candidate_id)
+        if await self.runtime.operational_failure(candidate_id) is not None:
+            raise ValueError("Speech output準備のRuntime状態がcurrentではありません")
         if (
             candidate.candidate_id != candidate_id
             or generation != self.runtime.generation(candidate_id)

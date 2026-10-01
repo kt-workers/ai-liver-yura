@@ -132,6 +132,11 @@ class CoreCognitionDelivery:
         self.memory_evidence: CoreMemoryEvidenceReader | None = None
         self._decision_delivery: Callable[[BrainIntegrationWork, object], None] | None = None
 
+    @property
+    def attention_owner(self) -> AttentionTurnStore:
+        """同じ本番構成に接続する既存のAttention Ownerを公開する。"""
+        return self._attention_owner
+
     def register(self, input_port: _Module) -> None:
         self.brain.register_terminal_observer(
             BrainIntegrationModule.INPUT_MEANING, self._input_terminal
