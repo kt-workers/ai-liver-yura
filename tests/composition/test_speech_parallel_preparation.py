@@ -29,6 +29,7 @@ async def setup() -> Any:
     value.producer_cleaned = asyncio.Event()
     value.token = CancellationToken()
     value.fail_discard = False
+    value.output_requests = []
 
     class Resources:
         async def discard(self, request: Any) -> None:
@@ -56,10 +57,14 @@ async def setup() -> Any:
 
     pipeline.verifier = Verifier()
 
-    async def output(utterance: Any, performance: Any) -> Any:
+    async def output(request: Any) -> Any:
+        value.output_requests.append(request)
         value.started.set()
         value.prepared.set()
-        return SpeechPresentationMode.AUDIO_WITH_TEXT, "audio:" + performance.performance_plan_id
+        return (
+            SpeechPresentationMode.AUDIO_WITH_TEXT,
+            "audio:" + request.performance_plan.performance_plan_id,
+        )
 
     original_state = pipeline.readers.presentation
 
@@ -136,11 +141,40 @@ async def test_safe_preparation_overlaps_verifier_and_only_acceptance_presents()
 
 
 @pytest.mark.asyncio
+async def test_output_request_keeps_pre_adoption_provenance() -> None:
+    v = await setup()
+    task = v.run()
+    try:
+        await asyncio.wait_for(v.prepared.wait(), 2)
+        assert len(v.output_requests) == 1
+        request = v.output_requests[0]
+        candidate = await v.pipeline.runtime.candidate(v.key)
+        assert request.candidate_id == v.key
+        assert request.candidate_generation == v.pipeline.runtime.generation(v.key)
+        assert request.performance_generation == candidate.performance_generation
+        assert request.utterance.utterance_id == request.performance_plan.utterance_id
+        assert request.trace_id == v.work.envelope.trace_id
+        assert request.root_trigger_id == v.work.envelope.root_trigger_id
+        assert request.trigger_id == v.work.envelope.trigger_id
+        assert request.deadline_at is v.work.deadline_at
+        assert request.priority is candidate.priority
+        assert request.created_at == candidate.created_at
+        if candidate.utterance_id is not None:
+            assert candidate.utterance_id == request.utterance.utterance_id
+        if candidate.performance_plan_id is not None:
+            assert candidate.performance_plan_id == request.performance_plan.performance_plan_id
+        v.release_verifier.set()
+        await task
+    finally:
+        await cleanup(v)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("timing", ["before", "returned", "race"])
 async def test_output_cancellation_ownership(timing: str) -> None:
     v = await setup()
 
-    async def output(utterance: Any, performance: Any) -> Any:
+    async def output(request: Any) -> Any:
         v.started.set()
         if timing in ("before", "race"):
             try:
@@ -176,7 +210,7 @@ async def test_failed_adoption_discards_original_audio(failure: str) -> None:
     v = await setup()
     if failure == "tts":
 
-        async def broken_output(u: Any, p: Any) -> Any:
+        async def broken_output(request: Any) -> Any:
             v.prepared.set()
             raise ValueError("TTSの型付き失敗")
 
@@ -261,7 +295,7 @@ async def test_shutdown_reclaims_parallel_preparation(stage: str) -> None:
     v = await setup()
     if stage == "output":
 
-        async def output(u: Any, p: Any) -> Any:
+        async def output(request: Any) -> Any:
             v.prepared.set()
             try:
                 await asyncio.Event().wait()
@@ -387,7 +421,7 @@ async def test_token_cancellation_at_transfer_boundary(when: str) -> None:
 
     if when == "return":
 
-        async def output(u: Any, p: Any) -> Any:
+        async def output(request: Any) -> Any:
             cancel()
             return SpeechPresentationMode.AUDIO_WITH_TEXT, "unaccepted-audio"
 
@@ -416,7 +450,7 @@ async def test_token_cancellation_at_transfer_boundary(when: str) -> None:
 async def test_invalid_mode_does_not_drop_received_audio() -> None:
     v = await setup()
 
-    async def output(u: Any, p: Any) -> Any:
+    async def output(request: Any) -> Any:
         return SpeechPresentationMode.TEXT_ONLY, "invalid-mode-audio"
 
     v.pipeline.readers = replace(v.pipeline.readers, output=output)

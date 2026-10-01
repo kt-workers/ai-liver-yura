@@ -18,6 +18,7 @@ from app.adapters.tts import PreparedAudioResourceStore, TTSProviderAdapter
 from app.adapters.tts.provider import ProviderSynthesisInput, TTSProviderClient, TTSProviderResponse
 from app.composition.cognition import CoreCognitionDelivery
 from app.composition.execution_observation import SPEECH_OBSERVATION_SOURCE
+from app.composition.speech import SpeechOutputPreparationRequest
 from app.composition.speech_feedback import CoreSpeechFeedback, SpeechFactDeliveryDisposition
 from app.domain.brain_integration import BrainIntegrationWork, BrainWorkStatus
 from app.domain.character_language import CharacterLanguageContextSnapshot, CharacterUtterance
@@ -200,8 +201,10 @@ class SpeechPathAudioOutput:
         evidence.add_cleanup(self._adapter.shutdown)
 
     async def __call__(
-        self, utterance: CharacterUtterance, performance: SpeechPerformancePlan
+        self, preparation: SpeechOutputPreparationRequest
     ) -> tuple[SpeechPresentationMode, str | None]:
+        utterance = preparation.utterance
+        performance = preparation.performance_plan
         candidate = utterance.candidate
         key = candidate.source_decision_id + ":" + candidate.source_intent_id
         request = self.settings.request(key, utterance, performance, self.clock())

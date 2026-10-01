@@ -6,6 +6,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING
 from uuid import NAMESPACE_URL, uuid5
 
 from app.composition.execution_observation import SPEECH_OBSERVATION_SOURCE
@@ -40,6 +41,9 @@ from app.domain.input_gateway import (
 from app.domain.input_gateway.normalizer import InputNormalizer
 from app.usecases.attention import AttentionResponseSettlementCoordinator
 
+if TYPE_CHECKING:
+    from app.composition.cognition import CoreCognitionDelivery
+
 
 class PresentationNotificationState(str, Enum):
     NEW = "new"
@@ -47,6 +51,46 @@ class PresentationNotificationState(str, Enum):
     SUBMITTED = "submitted"
     TERMINAL_REJECTED = "terminal_rejected"
     STALE = "stale"
+
+
+@dataclass(frozen=True, slots=True)
+class CoreSpeechProductionOwnerConnection:
+    """同一S2 Ownerの既存instanceだけでPresentation通知を構成する。"""
+
+    authority: ActivityExecutionAuthority
+    attention: AttentionTurnStore
+    reference: CoreInputReferenceContextBinding
+    normalizer: InputNormalizer
+    cognition: CoreCognitionDelivery
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.authority, ActivityExecutionAuthority) or not isinstance(
+            self.attention, AttentionTurnStore
+        ) or not isinstance(self.reference, CoreInputReferenceContextBinding) or not isinstance(
+            self.normalizer, InputNormalizer
+        ) or not callable(getattr(self.cognition, "submit_input", None)):
+            raise ValueError("Speech本番Owner接続が不正です")
+
+    def notification(
+        self,
+        source: InputSourceState,
+        provenance: ExecutionObservationProvenance,
+        root_trigger_id: str,
+        presentation_id: str,
+    ) -> CorePresentationNotification:
+        return CorePresentationNotification(
+            self.authority,
+            self.attention,
+            self.reference,
+            self.normalizer,
+            source,
+            provenance,
+            root_trigger_id,
+            presentation_id,
+            lambda admission, root: self.cognition.submit_input(
+                admission, root_trigger_id=root
+            ),
+        )
 
 
 def presentation_notification_identity(record: ObservedExecutionFactRecord) -> str:

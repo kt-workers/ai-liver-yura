@@ -336,7 +336,7 @@ async def build_speech_path(slow_stage: str | None = None, *, pending_turn: bool
     from app.domain.speech_runtime.admission import SpeechPreparationAdmission
     from app.domain.speech_runtime.contracts import SpeechPresentationMode
 
-    async def output(utterance: Any, performance: Any) -> Any:
+    async def output(request: Any) -> Any:
         return SpeechPresentationMode.TEXT_ONLY, None
 
     runtime = SpeechRuntime(
