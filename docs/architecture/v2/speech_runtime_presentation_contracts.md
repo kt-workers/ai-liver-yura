@@ -833,3 +833,9 @@ provider exception、credential、endpoint、音声、発話全文をpayloadま�
 #701のprepared audio、#613のaccepted Admissionを各Ownerの既存順序でsettleする。caller取消でも開始済み
 cleanupを中断せず、その完了後に取消を伝播する。失敗、stale、duplicate、cleanup failureを成功や通常の
 通知拒否へ変換しない。
+
+## Deployment factoryからの本番接続利用（#709）
+
+#709 factoryは、同一S2 Owner graphから既に構成済みの`CoreSpeechProductionOwnerConnection`だけを受け取り、そこからreadersとnotificationを作る。`ActivityExecutionAuthority`、`AttentionTurnStore`、`CoreInputReferenceContextBinding`、process共有`InputNormalizer`、`CoreCognitionDelivery`のidentityは#721のconstructor validationを通す。factoryが別Owner、request-local Store/Normalizer、hidden global、非同期lease取得を同期reader/notification constructionへ持ち込むことを禁止する。
+
+`PresentationWorkerRegistry`の取得にはrequestの`PresentationWorkerBinding`のbinding ID、binding revision、availabilityをそのまま用いる。trusted registrationとの完全一致だけを受け入れ、unknown、stale、unavailable、Supervisor identity不一致を別bindingへfallbackしない。返却前のleaseはfactory ownership、`SpeechProductionPorts`返却後のlease closeはports release ownershipであり、#711が定めるSupervisor shutdown、Session回収、取消settlement、繰返しcloseの意味を変更しない。

@@ -243,3 +243,20 @@ factoryのfixture非依存、同じbindingとgeneration、snapshot実値一致�
 ## 10. 三層設定からのSpeech供給（#705）
 
 主設定とProfileから第9節の入力を作る供給Authorityは[三層の本番設定](configuration_architecture.md)とする。`create_speech_deployment()`は設定を既存Owner DTOへ変換し、同じrunに固定した`SpeechProductionInputs`を供給する。具体Provider/voiceの補完、試験policyへの置換、run中のhot replacementはしない。第9節のfactoryと所有権移管は再実装せず、既存の`build_s2_production_core(speech=...)`へ渡す。
+
+## 11. Speech Deployment Ports factoryのSystem境界（#709）
+
+Systemは同じS2 runで検証済みのProvider lease、#720 TTS connection、#711 Presentation registry、#721 Owner connection、live-state sourceをtrusted構成rootからfactoryへ明示注入する。factoryが返す`SpeechProductionPorts`のfieldは次表の既存Ownerだけから供給する。
+
+| ports field | 供給元と所有 |
+| --- | --- |
+| publication / roles | 同一deploymentの検証済みpublication / descriptors、borrowed |
+| llm | `S2ProviderLease.port`、lease ownership宣言に従う |
+| semantic / character / verifier live | 同一S2の既存live-state source、borrowed |
+| discard | #720 production leaseが返すresources、TTS lease closeと同じOwner |
+| presentation | #711 `PresentationWorkerLease`のSupervisor、ports releaseまでowned |
+| readers / notification | #721同一Owner connection、borrowed instancesから構成 |
+| output | #721 provenanceを#720 synthesisへ接続する既存pipeline boundary、factoryはartifactを所有しない |
+| release | factoryが正常返却時に移管したowned leaseの逆順cleanup |
+
+factoryはpublication、roles、binding/generationを再照合し、partial acquisition、取消、construction validation failureでは返却済みowned leaseを逆順にsettleする。ports.releaseはidempotentに同じcleanupへ合流し、先行cleanup failureでも残るreleaseを続行する。返却後のpipeline/Runtime shutdownとartifact discardは既存#702/#701のOwnerへ残す。

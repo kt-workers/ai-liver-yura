@@ -172,3 +172,9 @@ LLMRoleRequest
 10. 本Workの実装後に#561で、提供サービスなしの最小Core起動と、LLM必須処理だけが型付き利用不可となる隣接・System検証を行う。本Workでは役割固有設定や起動実装を追加しない。
 
 ChatGPTによるDraft PRの読み取り専用設計レビューと、別途のCode Phase指示を受けるまで、本番コードへ進まない。
+
+## 7.6 Speech Deployment factoryへのlease引渡し（#709）
+
+Speech用の構成rootが#709 factoryへLLMを渡すときは、`LLMRolePort`だけではなく既存`S2ProviderLease`の公開`port`、検証済みbindings、availability、`release()`を同じleaseとして渡す。factoryは`SpeechDeploymentRequest.provider_roles`とRole configをbindingsに完全一致させる。clientのprivate属性、SDK close、credential有無から所有を推測してはならない。
+
+factoryが当該leaseを生成した場合は、返却前の失敗・取消でleaseをsettleしてreleaseし、正常な`SpeechProductionPorts`返却後はports releaseへownershipを移管する。借用leaseはfactoryもportsもreleaseしない。configured/unavailableの既存semantics、Role identity、モデル対応付け、typed failureをSpeech用に変換・fallbackしない。

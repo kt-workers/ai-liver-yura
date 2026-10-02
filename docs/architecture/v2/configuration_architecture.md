@@ -51,3 +51,15 @@ Runtimeはqueue 4、同時準備2、background 1、regeneration 1、speculative�
 LLMの初期対応形式は既存OpenAI Responses Role configであり、接続名はこの型を消費できる登録先を選択する。具体endpoint/modelは固定しない。temperatureを使用する場合、deploymentのRole行に`temperature_range: {minimum, maximum}`を明示する。未指定はnullであり、normalized temperatureが要求された場合は拒否する。`max_output_tokens`も具体提供先の制約が判明していれば明示し、超過を切り詰めない。
 
 主設定が有効な配置例では、`speech: {profile: conservative, deployment: <登録先の設定名>}`を使用する。deploymentは`schema / connection / llm / tts / presentation`を持つ。`llm`は`availability / roles`、Role行は`model / reasoning / max_output_tokens / temperature_range`。`tts`は`availability / provider / voice / locale`、`presentation`は`binding / availability`。availabilityはavailableまたはunavailable。未構成LLMのroles、未構成TTSのprovider/voice/localeはnullとする。deploymentの具体値は運用側が提供し、架空の動作する配置例を同梱しない。
+
+## 8. 本番Speech Deployment factoryの信頼済み依存（#709）
+
+`SpeechDeploymentRegistry`へ登録するfactoryは、構成値から生成するものではなく、trusted構成rootが明示注入した一組の`SpeechDeploymentFactoryDependencies`だけを消費する。依存集合は、#357の`S2ProviderLease`、#720の`TTSProductionConnection`、#711の`PresentationWorkerRegistry`、#721の`CoreSpeechProductionOwnerConnection`、同一S2のlive-state/readers source、およびprocess共有`InputNormalizer`である。configuration、Profile、deployment report、外部入力からPython module、import path、callable、任意factory、validation fixtureを選択してはならない。
+
+factoryはrequestの`publication`、`role_configs`、`provider_roles`、voice、Presentation bindingが同一deployment revisionに属することを取得前に照合する。registryのconnection nameはtrusted構成rootが事前登録したfactoryを選ぶ名前だけであり、名前からprovider、voice、backend、reader、Ownerを選び直さない。
+
+LLMは`S2ProviderLease.port`を借用し、leaseのbindingsがrequestのRole descriptorとRole configのmodel/reasoning publicationに完全一致するときだけ利用する。未構成LLMは既存`UnavailableLLMRolePort`のtyped unavailableをそのまま返し、構成不良をunavailableへ置換しない。factoryがこのleaseを新規取得した場合だけ、正常な`SpeechProductionPorts`返却後にrelease ownershipをportsへ移管する。外部から借用したleaseはfactoryもportsもreleaseしない。
+
+factoryは`TTSProductionConnection.acquire(request.voice)`と`PresentationWorkerRegistry.acquire(request.presentation)`だけを用いる。voice、capability/provider generation、Presentation binding ID/revision/availabilityが不一致、unknown、stale、unavailableなら別bindingへfallbackせず取得を拒否する。`AUDIO_WITH_TEXT`を含むpublicationだけがTTS leaseを取得する。`TEXT_ONLY`だけのpublicationはTTSを取得せず、text Presentationも必要なためPresentation leaseは常に取得する。`AUDIO_WITH_TEXT`要求中のTTS取得・合成失敗を`TEXT_ONLY`成功へdowngradeしてはならない。
+
+返却前の所有者はfactoryである。取得順はLLM lease、TTS lease、Presentation lease、#721 Owner/readers/notification validation、pipeline/ports constructionとし、失敗・取消では取得済みowned資源を逆順にsettleしてreleaseする。先のcleanup失敗でも残るcleanupを続け、cleanup failureをbinding mismatchや成功へ変換しない。正常返却時だけ、`SpeechProductionPorts.release`へ同じowned cleanupを一度だけ移管する。#702のS2 shutdown、#721 Owner graph、#701 artifact lifecycleをfactoryが再実装しない。
