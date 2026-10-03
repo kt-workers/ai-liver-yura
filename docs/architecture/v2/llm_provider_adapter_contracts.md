@@ -172,3 +172,11 @@ LLMRoleRequest
 10. 本Workの実装後に#561で、提供サービスなしの最小Core起動と、LLM必須処理だけが型付き利用不可となる隣接・System検証を行う。本Workでは役割固有設定や起動実装を追加しない。
 
 ChatGPTによるDraft PRの読み取り専用設計レビューと、別途のCode Phase指示を受けるまで、本番コードへ進まない。
+
+## 8. Speech Provider binding publication（#726）
+
+`ProviderDeploymentConfig`と`resolve_provider_configuration()`はcognition三Role専用の既存経路として保持する。Speech四Roleをmanifestへ追加せず、cognitionのbinding、config、snapshotをSpeechへ流用しない。
+
+Speech deploymentのresolved immutable publicationは、#705で確定したRoleごとのmodel / reasoning / output token / temperature mappingと、既存Speech Owner helperが返すdescriptor / `OpenAIResponsesRoleConfig`を照合して、`SpeechProviderBindingPublication`を生成する。このpublicationだけが各Roleの`ProviderBindingSnapshot`を構築できる。変換前後でRole ID、availability mode、deployment identity / revision、mapping reference、Role-config reference、mapping rows、input / output schema ID、Provider output format nameが完全一致しなければfail-closedとする。
+
+既存`S2ProviderLeaseFactory`は、Speech publicationが供給するexactな`roles`、`configs`、`bindings`、`mode`をそのまま受け取る。factoryは認知とSpeechのRole集合を混在させず、snapshotを補作せず、client ownership / release semanticsを変更しない。unconfigured Speech publicationはconfigやreferenceを捏造せず、既存の`UnavailableLLMRolePort`接続を選択できる。configured publicationの検証失敗、source更新、Role不一致はunconfiguredへのfallbackにしてはならない。
