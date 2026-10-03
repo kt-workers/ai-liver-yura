@@ -364,12 +364,9 @@ Possible capabilities may include:
 
 Provider/output availability is not decided by #348.
 
-Presentation policy determines allowed modes, e.g.:
-- AUDIO_WITH_TEXT preferred
-- TEXT_ONLY allowed during TTS degradation
-- FAIL_CLOSED if audio is mandatory for a specific use case
+Presentation policyのmode集合は順序をpriorityに使わない。`TEXT_ONLY`だけはTTSなしでtext effectだけを返す。`AUDIO_WITH_TEXT`だけはaudio必須であり、TTS取得・合成のfailureをtextへ置換しない。両modeを明示した場合だけ、未構成、availability unavailable、capability不一致の取得前拒否というtyped `TTS unavailable`で`TEXT_ONLY`へdegradeできる。provider呼出後のsynthesis failure、deadline、取消、cleanup failure、stale/generation mismatchはfail-closedとする。Presentation unavailableは全modeでfail-closedである。
 
-A degraded text-only presentation must be explicitly recorded and must not pretend audio playback occurred.
+degraded text-only presentationは明示記録し、audio playbackがあったふりをしない。
 
 ---
 
@@ -839,3 +836,5 @@ cleanupを中断せず、その完了後に取消を伝播する。失敗、stal
 #709 factoryは、同一S2 Owner graphから既に構成済みの`CoreSpeechProductionOwnerConnection`だけを受け取り、そこからreadersとnotificationを作る。`ActivityExecutionAuthority`、`AttentionTurnStore`、`CoreInputReferenceContextBinding`、process共有`InputNormalizer`、`CoreCognitionDelivery`のidentityは#721のconstructor validationを通す。factoryが別Owner、request-local Store/Normalizer、hidden global、非同期lease取得を同期reader/notification constructionへ持ち込むことを禁止する。
 
 `PresentationWorkerRegistry`の取得にはrequestの`PresentationWorkerBinding`のbinding ID、binding revision、availabilityをそのまま用いる。trusted registrationとの完全一致だけを受け入れ、unknown、stale、unavailable、Supervisor identity不一致を別bindingへfallbackしない。返却前のleaseはfactory ownership、`SpeechProductionPorts`返却後のlease closeはports release ownershipであり、#711が定めるSupervisor shutdown、Session回収、取消settlement、繰返しcloseの意味を変更しない。
+
+factoryが供給する`SpeechLiveStateSources`は、同一S2 Ownerから借用するsemantic / character / verifier live stateと、`CoreSpeechContextReaders`のcharacter、verification、performance、presentationを構築する既存Owner sourceである。outputはportsの独立fieldではなく、同じ#721 connectionから構築した`CoreSpeechContextReaders.output`だけが供給する。sourceはfixtureやrequest-local objectを生成せず、factoryは各readerのOwner/revisionを差し替えない。

@@ -246,17 +246,16 @@ factoryのfixture非依存、同じbindingとgeneration、snapshot実値一致�
 
 ## 11. Speech Deployment Ports factoryのSystem境界（#709）
 
-Systemは同じS2 runで検証済みのProvider lease、#720 TTS connection、#711 Presentation registry、#721 Owner connection、live-state sourceをtrusted構成rootからfactoryへ明示注入する。factoryが返す`SpeechProductionPorts`のfieldは次表の既存Ownerだけから供給する。
+Systemは同じS2 runで検証済みのProvider lease factory / binding publication、#720 TTS connection、#711 Presentation registry、#721 Owner connection、live-state sourceをtrusted構成rootからfactoryへ明示注入する。factoryが返す`SpeechProductionPorts`のfieldは次表の既存Ownerだけから供給する。
 
 | ports field | 供給元と所有 |
 | --- | --- |
 | publication / roles | 同一deploymentの検証済みpublication / descriptors、borrowed |
-| llm | `S2ProviderLease.port`、lease ownership宣言に従う |
-| semantic / character / verifier live | 同一S2の既存live-state source、borrowed |
+| llm | factoryが`S2ProviderLeaseFactory`から取得するSpeech専用lease、ports releaseまでowned |
+| semantic / character / verifier live | `SpeechLiveStateSources`の同一S2既存source、borrowed |
 | discard | #720 production leaseが返すresources、TTS lease closeと同じOwner |
 | presentation | #711 `PresentationWorkerLease`のSupervisor、ports releaseまでowned |
-| readers / notification | #721同一Owner connection、borrowed instancesから構成 |
-| output | #721 provenanceを#720 synthesisへ接続する既存pipeline boundary、factoryはartifactを所有しない |
+| readers / notification | #721同一Owner connectionと`SpeechLiveStateSources`から構成、borrowed instancesから構成 |
 | release | factoryが正常返却時に移管したowned leaseの逆順cleanup |
 
-factoryはpublication、roles、binding/generationを再照合し、partial acquisition、取消、construction validation failureでは返却済みowned leaseを逆順にsettleする。ports.releaseはidempotentに同じcleanupへ合流し、先行cleanup failureでも残るreleaseを続行する。返却後のpipeline/Runtime shutdownとartifact discardは既存#702/#701のOwnerへ残す。
+`SpeechProductionPorts`に独立したoutput fieldはない。outputはreaders factoryが返す`CoreSpeechContextReaders.output`であり、#721 provenanceを#720 synthesisへ接続する。factoryはartifactを所有しない。factoryはpublication、roles、binding/generationを再照合し、partial acquisition、取消、construction validation failureでは返却済みowned leaseを逆順にsettleする。ports.releaseはidempotentに同じcleanupへ合流し、先行cleanup failureでも残るreleaseを続行する。返却後のpipeline/Runtime shutdownとartifact discardは既存#702/#701のOwnerへ残す。

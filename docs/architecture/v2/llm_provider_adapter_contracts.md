@@ -175,6 +175,6 @@ ChatGPTによるDraft PRの読み取り専用設計レビューと、別途のCo
 
 ## 7.6 Speech Deployment factoryへのlease引渡し（#709）
 
-Speech用の構成rootが#709 factoryへLLMを渡すときは、`LLMRolePort`だけではなく既存`S2ProviderLease`の公開`port`、検証済みbindings、availability、`release()`を同じleaseとして渡す。factoryは`SpeechDeploymentRequest.provider_roles`とRole configをbindingsに完全一致させる。clientのprivate属性、SDK close、credential有無から所有を推測してはならない。
+Speech用の構成rootは完成済みleaseを#709 factoryへ渡さない。`S2ProviderLeaseFactory`、同一deployment revisionで`S2ProviderConfigurationSource`が発行した`ProviderBindingSnapshot`、availability modeをtyped dependencyとして渡す。factoryは`SpeechDeploymentRequest.provider_roles`とRole configをbindingsに完全一致させてSpeech専用`S2ProviderLease`を取得する。cognition用S2 leaseのRole集合を流用・捏造しない。clientのprivate属性、SDK close、credential有無から所有を推測してはならない。
 
-factoryが当該leaseを生成した場合は、返却前の失敗・取消でleaseをsettleしてreleaseし、正常な`SpeechProductionPorts`返却後はports releaseへownershipを移管する。借用leaseはfactoryもportsもreleaseしない。configured/unavailableの既存semantics、Role identity、モデル対応付け、typed failureをSpeech用に変換・fallbackしない。
+factoryが取得に成功したSpeech leaseは常にownedである。返却前の失敗・取消でfactoryがsettleしてreleaseし、正常な`SpeechProductionPorts`返却後はports releaseへownershipを移管する。borrowed Speech LLM leaseは本接続に存在しない。configured/unavailableの既存semantics、Role identity、モデル対応付け、typed failureをSpeech用に変換・fallbackしない。

@@ -538,16 +538,15 @@ capability、mapping、operational、retryのprovider identityは一致し、cap
 | mapping・retry policy ID / revision | 同connectionの検証済みmapping / retry policy |
 | synthesis priority | 下表のcandidate priorityとpreparation mode |
 
-readerはcandidate、Character artifact、Performance artifact、trace、deadline、generationを新造・置換しない。`request_id`だけはprovider callbackやfixture値を使わず、上表のfactory入力から決定論的に導く。capability、voice binding、utterance、performance plan、mapping/retry policyのidentity/revision検証後にだけprovider requestを生成する。
+readerはcandidate、Character artifact、Performance artifact、trace、deadline、generationを新造・置換しない。`request_id`だけはprovider callbackやfixture値を使わない。factoryはcandidate ID、candidate generation、performance generation、voice binding ID/revision、mapping ID/revisionをfield名付きcanonical JSON objectへ符号化し、そのUTF-8 bytesのSHA-256 hexを`tts-`接頭辞で表す。同じ入力は同じrequest_idとなり、列挙したgeneration / revisionのいずれかが変われば別identityとなる。delimiter連結、短縮digest、衝突時の採番を使わない。capability、voice binding、utterance、performance plan、mapping/retry policyのidentity/revision検証後にだけprovider requestを生成する。
 
 | `SpeechCandidatePriority` | `TTSPreparationMode` | `TTSSynthesisPriority` |
 | --- | --- | --- |
-| DIRECT_USER / FOREGROUND / NORMAL | AFTER_SEMANTIC_ACCEPTANCE | FOREGROUND |
-| BACKGROUND | AFTER_SEMANTIC_ACCEPTANCE | FOREGROUND |
+| 任意 | AFTER_SEMANTIC_ACCEPTANCE | FOREGROUND |
 | 任意 | SPECULATIVE_AFTER_PERFORMANCE | SPECULATIVE |
 | 任意 | DISABLED | 合成requestを作らない |
 
-`SPECULATIVE`は既存queue上でforegroundをstarveさせない。`DISABLED`は#709 factoryのTTS取得を正当化しない。priorityの別値、独自queue、暗黙のretry/fallbackをfactoryが追加してはならない。
+`TTSSynthesisPriority`はprovider scheduling priorityではなく、`FOREGROUND`がsemantic acceptance後に必須となった合成、`SPECULATIVE`がacceptance前の準備を表すdispositionである。DIRECT_USER / FOREGROUND / NORMAL / BACKGROUNDの実行順序とbackground上限は既存`SpeechCandidatePriority`、Runtime admission、bounded executorが保持し、#709 factoryやTTS providerへ再符号化しない。したがってBACKGROUNDをprovider foregroundへ昇格することはない。`DISABLED`は#709 factoryのTTS取得を正当化しない。priorityの別値、独自queue、暗黙のretry/fallbackをfactoryが追加してはならない。
 
 ---
 
