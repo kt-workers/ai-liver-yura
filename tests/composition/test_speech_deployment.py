@@ -15,6 +15,7 @@ from app.adapters.llm.production import UnavailableLLMRolePort
 from app.adapters.llm.speech_semantics import SpeechSemanticsProviderPort
 from app.composition.speech import CoreSpeechContextReaders
 from app.composition.speech_deployment import (
+    SPEECH_PROVIDER_ROLE_IDS,
     SpeechDeploymentRegistry,
     SpeechDeploymentRequest,
     create_speech_deployment,
@@ -184,6 +185,48 @@ def test_owner_registrations_and_explicit_voice_survive_configuration(tmp_path: 
         Draft202012Validator.check_schema(dict(config.output_json_schema))
         assert all(p.model == "external-test-model" for p in config.model_policies.values())
     assert "external-voice" not in repr(request)
+
+
+def test_configured_speech_provider_publication_has_exact_factory_inputs(tmp_path: Path) -> None:
+    root = configured_root(tmp_path, available=True)
+    source = create_speech_deployment(
+        root, **dependencies(), registry=SpeechDeploymentRegistry({"isolated": ExternalPorts()})
+    )
+    assert source is not None
+    bindings = source.request.provider_bindings
+    roles, configs, snapshots, mode = bindings.factory_inputs()
+    assert mode == "configured"
+    assert tuple(role.role_id for role in roles) == SPEECH_PROVIDER_ROLE_IDS
+    assert tuple(config.role_id for config in configs) == SPEECH_PROVIDER_ROLE_IDS
+    assert tuple(snapshot.role_id for snapshot in snapshots) == SPEECH_PROVIDER_ROLE_IDS
+    assert bindings.deployment_id == source.request.deployment.identity
+    assert bindings.deployment_revision == source.request.deployment.revision
+    for role, config, snapshot in zip(roles, configs, snapshots, strict=True):
+        assert snapshot.mapping_ref is not None and snapshot.role_config_ref is not None
+        assert snapshot.input_schema_id == role.input_schema_id == config.input_schema_id
+        assert snapshot.output_schema_id == role.output_schema_id == config.output_schema_id
+        assert snapshot.provider_output_format_name == config.provider_output_format_name
+        assert snapshot.mappings
+
+
+def test_unconfigured_speech_provider_publication_has_no_fabricated_mapping(tmp_path: Path) -> None:
+    source = create_speech_deployment(
+        configured_root(tmp_path),
+        **dependencies(),
+        registry=SpeechDeploymentRegistry({"isolated": ExternalPorts()}),
+    )
+    assert source is not None
+    roles, configs, snapshots, mode = source.request.provider_bindings.factory_inputs()
+    assert mode == "unconfigured"
+    assert tuple(role.role_id for role in roles) == SPEECH_PROVIDER_ROLE_IDS
+    assert configs == ()
+    assert all(
+        snapshot.mapping_ref is None
+        and snapshot.role_config_ref is None
+        and snapshot.mappings == ()
+        and snapshot.provider_output_format_name is None
+        for snapshot in snapshots
+    )
 
 
 @pytest.mark.asyncio
