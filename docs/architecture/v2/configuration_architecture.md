@@ -82,3 +82,18 @@ unconfiguredでは四Role descriptor集合とdeployment / binding identityを保
 `SpeechDeploymentRequest`は`SpeechProviderBindingPublication`を一つだけ保持し、#709はそこからexactなRole descriptors、configs、validated snapshots、availability modeを既存`S2ProviderLeaseFactory`へ渡す。factoryのclient ownership、cleanup、releaseの意味は変更しない。
 
 Code Phaseでは`app/config/layered.py`がresolved configurationに必要な不変情報を供給し、`app/composition/speech_deployment.py`がpublicationを構築してrequestへ接続する。既存共通型を意味変更なしで利用できる場合だけ`app/composition/s2_provider.py`を使用する。これらの実装は本節では行わない。
+
+### 8.4 本番Speech Deployment Ports Factory（#709）
+
+`SpeechDeploymentRegistry`へ登録する本番factoryは、`SpeechDeploymentRequest`と明示注入された既存Owner接続だけから`SpeechProductionPorts`を返す。設定値から任意のimport、callable、shell command、Provider、voice又はPresentation workerを解決しない。
+
+| 入力 | 正規供給元 | 検証と結合 | 所有権 |
+| --- | --- | --- | --- |
+| LLM四Role | requestの`SpeechProviderBindingPublication.factory_inputs()` | exact roles / configs / bindings / modeを既存`S2ProviderLeaseFactory`へそのまま渡す | factoryが返却前と返却後のlease releaseを所有 |
+| TTS | #720 `TTSProductionConnection`とrequestの`TTSVoiceBinding` | binding identity / revisionと同一connectionを既存`acquire()`で照合する | `TTSProductionLease`をfactoryがreleaseする |
+| Presentation | #711 `PresentationWorkerRegistry`とpublicationのPresentation binding | trusted registrationだけをexact identity / revisionで取得する | `PresentationWorkerLease`をfactoryがreleaseする |
+| reader / notification | #721 `CoreSpeechProductionOwnerConnection`を返す公開resolverと明示reader factory | lease取得後、同じS2 cognition / reference / Activity / Attention / Normalizer graphだけを受理する | borrowed Ownerをcloseしない |
+
+factoryは未構成LLMを既存typed unavailableとして通すが、configured publicationの不正、Role不一致、stale、binding mismatchをunconfigured又はTEXT_ONLYへ変換しない。TEXT_ONLYとAUDIO_WITH_TEXT、Runtime candidate priorityと`TTSSynthesisPriority`、request identityは各既存Ownerの公開契約に従い、factoryが再符号化又は推測しない。
+
+取得順はLLM lease、必要なTTS lease、Presentation lease、同期reader / notification接続とする。#702が同一S2 cognition / referenceを確定した後にだけresolverから#721 connectionを得る。いずれかの取得・検証・取消に失敗した場合、既取得のowned leaseを逆順にsettleしてから元の失敗又は取消を伝播する。cleanup failureを成功又は通常の構成成功へ変換しない。返却後のpipeline / Runtime所有権移管は#702の`SpeechProductionBinding`に委譲し、borrowed Ownerをfactoryが終了しない。

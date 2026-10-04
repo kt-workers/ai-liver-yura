@@ -303,6 +303,24 @@ class SpeechDeploymentRegistry:
             raise ConfigurationError(ConfigurationFailureCode.BINDING_MISMATCH) from None
 
 
+def production_speech_deployment_registry(
+    connections: Mapping[str, object],
+) -> SpeechDeploymentRegistry:
+    """起動rootがtrusted Owner bundleだけを接続名へ明示登録する。"""
+    from app.composition.speech_deployment_factory import (
+        ProductionSpeechDeploymentPortFactory,
+        SpeechDeploymentOwnerConnections,
+    )
+
+    factories: dict[str, SpeechDeploymentPortFactory] = {}
+    for name, connection in connections.items():
+        identity(name)
+        if not isinstance(connection, SpeechDeploymentOwnerConnections):
+            raise ConfigurationError(ConfigurationFailureCode.BINDING_MISMATCH)
+        factories[name] = ProductionSpeechDeploymentPortFactory(connection)
+    return SpeechDeploymentRegistry(factories)
+
+
 def _role_configs(
     config: UserConfiguration,
 ) -> tuple[OpenAIResponsesRoleConfig, ...]:
