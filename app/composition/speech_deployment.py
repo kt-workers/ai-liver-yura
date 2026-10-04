@@ -23,7 +23,7 @@ from app.adapters.llm.speech_semantics import (
 )
 from app.adapters.tts.contracts import TTSVoiceBinding
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
-from app.composition.s2_provider import ProviderBindingSnapshot
+from app.composition.s2_provider import ProviderBindingSnapshot, RoleConfigPublication
 from app.composition.speech_preparation import finish_cleanup
 from app.composition.speech_production_configuration import (
     SpeechBindingReference,
@@ -70,7 +70,73 @@ SPEECH_PROVIDER_ROLE_IDS = (
 )
 
 
-@dataclass(frozen=True, slots=True)
+def _source_reference(
+    deployment_id: str, binding_revision: int, role_id: str, kind: str
+) -> ProviderSourceReference:
+    return ProviderSourceReference(
+        "configuration.speech.provider",
+        f"{deployment_id}.{role_id}.{kind}",
+        binding_revision,
+    )
+
+
+def _mapping_rows(
+    config: OpenAIResponsesRoleConfig,
+) -> tuple[tuple[str, str, int, tuple[str, ...]], ...]:
+    return tuple(
+        sorted(
+            (
+                model_class.value,
+                policy.mapping_id,
+                policy.mapping_revision,
+                tuple(sorted(effort.value for effort in policy.reasoning_by_effort)),
+            )
+            for model_class, policy in config.model_policies.items()
+        )
+    )
+
+
+def _owner_config(
+    role_id: str, config: OpenAIResponsesRoleConfig
+) -> OpenAIResponsesRoleConfig | None:
+    if role_id == "speech_semantics":
+        return speech_semantics_openai_role_config(config.model_policies)
+    if role_id == "character_language":
+        if len(config.model_policies) != 1:
+            return None
+        model_class, policy = next(iter(config.model_policies.items()))
+        return replace(
+            character_language_openai_role_config(
+                {model_class: policy.model}, reasoning_by_effort=policy.reasoning_by_effort
+            ),
+            model_policies=config.model_policies,
+        )
+    if role_id == BLIND_ROLE_ID:
+        return OpenAIResponsesRoleConfig(
+            BLIND_ROLE_ID,
+            config.model_policies,
+            BLIND_INPUT_SCHEMA,
+            BLIND_OUTPUT_SCHEMA,
+            "semantic_verification_blind_v1",
+            blind_output_schema(),
+            blind_instructions(),
+            LLMFailurePolicy.FAIL_CLOSED,
+        )
+    if role_id == RELATION_ROLE_ID:
+        return OpenAIResponsesRoleConfig(
+            RELATION_ROLE_ID,
+            config.model_policies,
+            RELATION_INPUT_SCHEMA,
+            RELATION_OUTPUT_SCHEMA,
+            "semantic_verification_relation_v1",
+            relation_output_schema(),
+            relation_instructions(),
+            LLMFailurePolicy.FAIL_CLOSED,
+        )
+    return None
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class SpeechProviderBindingPublication:
     """Speech四Roleを同じ解決済み設定へ束縛する不変Provider入力。"""
 
@@ -80,38 +146,48 @@ class SpeechProviderBindingPublication:
     binding_revision: int
     availability_mode: str
     roles: tuple[LLMRoleDescriptor, ...]
-    configs: tuple[OpenAIResponsesRoleConfig, ...] = field(repr=False)
     bindings: tuple[ProviderBindingSnapshot, ...]
+    _config_publications: tuple[RoleConfigPublication, ...] = field(repr=False)
 
-    def __post_init__(self) -> None:
+    def __init__(
+        self,
+        deployment_id: str,
+        deployment_revision: int,
+        binding_id: str,
+        binding_revision: int,
+        availability_mode: str,
+        roles: tuple[LLMRoleDescriptor, ...],
+        configs: tuple[OpenAIResponsesRoleConfig, ...],
+        bindings: tuple[ProviderBindingSnapshot, ...],
+    ) -> None:
         try:
-            identity(self.deployment_id)
-            identity(self.binding_id)
+            identity(deployment_id)
+            identity(binding_id)
             if (
-                type(self.deployment_revision) is not int
-                or self.deployment_revision < 1
-                or type(self.binding_revision) is not int
-                or self.binding_revision < 1
-                or self.availability_mode not in ("configured", "unconfigured")
+                type(deployment_revision) is not int
+                or deployment_revision < 1
+                or type(binding_revision) is not int
+                or binding_revision < 1
+                or availability_mode not in ("configured", "unconfigured")
             ):
                 raise ValueError
-            roles = tuple(self.roles)
-            bindings = tuple(self.bindings)
-            configs = tuple(self.configs)
+            roles = tuple(roles)
+            bindings = tuple(bindings)
+            configs = tuple(configs)
             if tuple(role.role_id for role in roles) != SPEECH_PROVIDER_ROLE_IDS or tuple(
                 binding.role_id for binding in bindings
             ) != SPEECH_PROVIDER_ROLE_IDS:
                 raise ValueError
             if any(
-                binding.deployment_id != self.deployment_id
-                or binding.deployment_revision != self.deployment_revision
-                or binding.availability_mode != self.availability_mode
+                binding.deployment_id != deployment_id
+                or binding.deployment_revision != deployment_revision
+                or binding.availability_mode != availability_mode
                 or binding.input_schema_id != role.input_schema_id
                 or binding.output_schema_id != role.output_schema_id
                 for role, binding in zip(roles, bindings, strict=True)
             ):
                 raise ValueError
-            if self.availability_mode == "configured":
+            if availability_mode == "configured":
                 if tuple(config.role_id for config in configs) != SPEECH_PROVIDER_ROLE_IDS or any(
                     binding.mapping_ref is None
                     or binding.role_config_ref is None
@@ -123,13 +199,26 @@ class SpeechProviderBindingPublication:
                     for role, config, binding in zip(roles, configs, bindings, strict=True)
                 ):
                     raise ValueError
-                for role, config in zip(roles, configs, strict=True):
+                for role, config, binding in zip(roles, configs, bindings, strict=True):
                     policy = config.model_policies.get(role.default_execution_policy.model_class)
                     if (
                         policy is None
                         or role.default_execution_policy.reasoning_effort
                         not in policy.reasoning_by_effort
                         or model_policy_failure(role.default_execution_policy, policy) is not None
+                    ):
+                        raise ValueError
+                    if (
+                        binding.mappings != _mapping_rows(config)
+                        or binding.mapping_ref
+                        != _source_reference(
+                            deployment_id, binding_revision, role.role_id, "mapping"
+                        )
+                        or binding.role_config_ref
+                        != _source_reference(
+                            deployment_id, binding_revision, role.role_id, "role-config"
+                        )
+                        or _owner_config(role.role_id, config) != config
                     ):
                         raise ValueError
             elif configs or any(
@@ -142,9 +231,25 @@ class SpeechProviderBindingPublication:
                 raise ValueError
         except (AttributeError, TypeError, ValueError):
             raise ConfigurationError(ConfigurationFailureCode.BINDING_MISMATCH) from None
+        config_publications = tuple(
+            RoleConfigPublication(
+                _source_reference(deployment_id, binding_revision, config.role_id, "role-config"),
+                config,
+            )
+            for config in configs
+        )
+        object.__setattr__(self, "deployment_id", deployment_id)
+        object.__setattr__(self, "deployment_revision", deployment_revision)
+        object.__setattr__(self, "binding_id", binding_id)
+        object.__setattr__(self, "binding_revision", binding_revision)
+        object.__setattr__(self, "availability_mode", availability_mode)
         object.__setattr__(self, "roles", roles)
-        object.__setattr__(self, "configs", configs)
         object.__setattr__(self, "bindings", bindings)
+        object.__setattr__(self, "_config_publications", config_publications)
+
+    @property
+    def configs(self) -> tuple[OpenAIResponsesRoleConfig, ...]:
+        return tuple(publication.config for publication in self._config_publications)
 
     def factory_inputs(
         self,
@@ -286,25 +391,13 @@ def _provider_bindings(
                 "configured",
                 deployment.identity,
                 deployment.revision,
-                ProviderSourceReference(
-                    "configuration.speech.provider",
-                    f"{deployment.identity}.{role.role_id}.mapping",
-                    config.revision,
+                _source_reference(
+                    deployment.identity, publication.binding_revision, role.role_id, "mapping"
                 ),
-                ProviderSourceReference(
-                    "configuration.speech.provider",
-                    f"{deployment.identity}.{role.role_id}.role-config",
-                    config.revision,
+                _source_reference(
+                    deployment.identity, publication.binding_revision, role.role_id, "role-config"
                 ),
-                tuple(
-                    (
-                        model_class.value,
-                        policy.mapping_id,
-                        policy.mapping_revision,
-                        tuple(effort.value for effort in policy.reasoning_by_effort),
-                    )
-                    for model_class, policy in config_row.model_policies.items()
-                ),
+                _mapping_rows(config_row),
                 role.input_schema_id,
                 role.output_schema_id,
                 config_row.provider_output_format_name,

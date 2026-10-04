@@ -4,26 +4,29 @@ import asyncio
 import json
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from jsonschema import Draft202012Validator
 
 from app import bootstrap
 from app.adapters.character.yaml_loader import load_character_definition_yaml
+from app.adapters.llm.openai_responses import OpenAIResponsesAdapter
 from app.adapters.llm.production import UnavailableLLMRolePort
+from app.adapters.llm.s2_production import create_s2_provider_lease
 from app.adapters.llm.speech_semantics import SpeechSemanticsProviderPort
 from app.composition.speech import CoreSpeechContextReaders
 from app.composition.speech_deployment import (
     SPEECH_PROVIDER_ROLE_IDS,
     SpeechDeploymentRegistry,
     SpeechDeploymentRequest,
+    SpeechProviderBindingPublication,
     create_speech_deployment,
 )
 from app.composition.speech_production_configuration import SpeechProductionPorts
 from app.composition.speech_semantics_policy import build_speech_semantics_policy_owner_v1
 from app.composition.system_cognition_configuration import S2RunIdentity
-from app.config.layered import ConfigurationError
+from app.config.layered import ConfigurationError, ConfigurationFailureCode
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
 from app.domain.speech_semantics.schemas import (
@@ -227,6 +230,141 @@ def test_unconfigured_speech_provider_publication_has_no_fabricated_mapping(tmp_
         and snapshot.provider_output_format_name is None
         for snapshot in snapshots
     )
+
+
+def _rebuild_provider_publication(
+    publication: SpeechProviderBindingPublication,
+    *,
+    configs: tuple[Any, ...] | None = None,
+    snapshots: tuple[Any, ...] | None = None,
+) -> SpeechProviderBindingPublication:
+    roles, current_configs, current_snapshots, mode = publication.factory_inputs()
+    return SpeechProviderBindingPublication(
+        publication.deployment_id,
+        publication.deployment_revision,
+        publication.binding_id,
+        publication.binding_revision,
+        mode,
+        roles,
+        current_configs if configs is None else configs,
+        current_snapshots if snapshots is None else snapshots,
+    )
+
+
+def test_configured_speech_provider_publication_is_deeply_immutable(tmp_path: Path) -> None:
+    source = create_speech_deployment(
+        configured_root(tmp_path, available=True),
+        **dependencies(),
+        registry=SpeechDeploymentRegistry({"isolated": ExternalPorts()}),
+    )
+    assert source is not None
+    publication = source.request.provider_bindings
+    _, configs, _, _ = publication.factory_inputs()
+    schema = cast(dict[str, object], configs[0].output_json_schema)
+    schema["review_nested_mutation"] = {"items": [{"value": "changed"}]}
+    with pytest.raises(TypeError):
+        configs[0].model_policies[object()] = object()  # type: ignore[index]
+    _, reread_configs, _, _ = publication.factory_inputs()
+    assert "review_nested_mutation" not in reread_configs[0].output_json_schema
+    assert reread_configs[0].model_policies == configs[0].model_policies
+
+
+def test_configured_speech_provider_publication_rejects_snapshot_mismatches(
+    tmp_path: Path,
+) -> None:
+    source = create_speech_deployment(
+        configured_root(tmp_path, available=True),
+        **dependencies(),
+        registry=SpeechDeploymentRegistry({"isolated": ExternalPorts()}),
+    )
+    assert source is not None
+    publication = source.request.provider_bindings
+    _, configs, snapshots, _ = publication.factory_inputs()
+    first = snapshots[0]
+    assert first.mapping_ref is not None and first.role_config_ref is not None
+    model_class, mapping_id, mapping_revision, efforts = first.mappings[0]
+    changed_rows = (
+        (("wrong-model", mapping_id, mapping_revision, efforts), *first.mappings[1:]),
+        ((model_class, "wrong-mapping", mapping_revision, efforts), *first.mappings[1:]),
+        ((model_class, mapping_id, mapping_revision + 1, efforts), *first.mappings[1:]),
+        ((model_class, mapping_id, mapping_revision, ("wrong-effort",)), *first.mappings[1:]),
+    )
+    cases = (
+        *(replace(first, mappings=rows) for rows in changed_rows),
+        replace(first, mapping_ref=replace(first.mapping_ref, identity="wrong-mapping")),
+        replace(
+            first,
+            mapping_ref=replace(first.mapping_ref, revision=first.mapping_ref.revision + 1),
+        ),
+        replace(first, role_config_ref=replace(first.role_config_ref, identity="wrong-config")),
+        replace(
+            first,
+            role_config_ref=replace(
+                first.role_config_ref, revision=first.role_config_ref.revision + 1
+            ),
+        ),
+    )
+    for changed in cases:
+        with pytest.raises(ConfigurationError) as raised:
+            _rebuild_provider_publication(publication, snapshots=(changed, *snapshots[1:]))
+        assert raised.value.code is ConfigurationFailureCode.BINDING_MISMATCH
+    for changed_config in (
+        replace(configs[0], instructions="不正なinstructions"),
+        replace(configs[0], provider_output_format_name="wrong_format"),
+        replace(configs[0], output_json_schema={"type": "array"}),
+    ):
+        with pytest.raises(ConfigurationError) as raised:
+            _rebuild_provider_publication(
+                publication, configs=(changed_config, *configs[1:])
+            )
+        assert raised.value.code is ConfigurationFailureCode.BINDING_MISMATCH
+
+
+@pytest.mark.asyncio
+async def test_speech_provider_publication_factory_inputs_preserve_s2_boundaries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    unconfigured = create_speech_deployment(
+        configured_root(tmp_path),
+        **dependencies(),
+        registry=SpeechDeploymentRegistry({"isolated": ExternalPorts()}),
+    )
+    assert unconfigured is not None
+    monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
+    lease = await create_s2_provider_lease(*unconfigured.request.provider_bindings.factory_inputs())
+    assert isinstance(lease.port, UnavailableLLMRolePort)
+    assert lease.bindings == unconfigured.request.provider_bindings.bindings
+    await lease.release()
+
+    configured = create_speech_deployment(
+        configured_root(tmp_path / "configured", available=True),
+        **dependencies(),
+        registry=SpeechDeploymentRegistry({"isolated": ExternalPorts()}),
+    )
+    assert configured is not None
+    import openai
+
+    class FakeAsyncOpenAI:
+        instances: list["FakeAsyncOpenAI"] = []
+
+        def __init__(self, *, api_key: str) -> None:
+            self.responses = object()
+            self.closed = 0
+            self.instances.append(self)
+
+        async def close(self) -> None:
+            self.closed += 1
+
+    monkeypatch.setattr(openai, "AsyncOpenAI", FakeAsyncOpenAI)
+    monkeypatch.setenv("YURA_OPENAI_API_KEY", "test-only-key")
+    configured_lease = await create_s2_provider_lease(
+        *configured.request.provider_bindings.factory_inputs()
+    )
+    assert isinstance(configured_lease.port, OpenAIResponsesAdapter)
+    assert configured_lease.bindings == configured.request.provider_bindings.bindings
+    await configured_lease.release()
+    await configured_lease.release()
+    assert FakeAsyncOpenAI.instances[0].closed == 1
 
 
 @pytest.mark.asyncio
