@@ -51,3 +51,34 @@ Runtimeはqueue 4、同時準備2、background 1、regeneration 1、speculative�
 LLMの初期対応形式は既存OpenAI Responses Role configであり、接続名はこの型を消費できる登録先を選択する。具体endpoint/modelは固定しない。temperatureを使用する場合、deploymentのRole行に`temperature_range: {minimum, maximum}`を明示する。未指定はnullであり、normalized temperatureが要求された場合は拒否する。`max_output_tokens`も具体提供先の制約が判明していれば明示し、超過を切り詰めない。
 
 主設定が有効な配置例では、`speech: {profile: conservative, deployment: <登録先の設定名>}`を使用する。deploymentは`schema / connection / llm / tts / presentation`を持つ。`llm`は`availability / roles`、Role行は`model / reasoning / max_output_tokens / temperature_range`。`tts`は`availability / provider / voice / locale`、`presentation`は`binding / availability`。availabilityはavailableまたはunavailable。未構成LLMのroles、未構成TTSのprovider/voice/localeはnullとする。deploymentの具体値は運用側が提供し、架空の動作する配置例を同梱しない。
+
+## 8. Speech RoleのProvider binding publication（#726）
+
+Speech deploymentは、次の四Roleだけを一組とする不変の`SpeechProviderBindingPublication`を解決済み設定から一度だけ生成する。
+
+- `speech_semantics`
+- `character_language`
+- `semantic_verification_blind_inventory`
+- `semantic_verification_plan_relation`
+
+このpublicationは`deployment_id / deployment_revision`、resolved configurationの`binding_id / binding_revision`、availability mode、四Roleのexactな`LLMRoleDescriptor`、同順序の`OpenAIResponsesRoleConfig`、model mapping publication、Roleごとの`ProviderBindingSnapshot`を保持する。consumerはRole config、model mapping、source reference、snapshotを別々に再構築・推測しない。Role集合、順序、各Role IDの重複は生成時に照合し、差異はfail-closedとする。
+
+`ProviderBindingSnapshot`は既存`S2ProviderLeaseFactory`の入力型であり、#726はその意味を変えない。Speech publicationを構築する構成層だけが、検証済みRole descriptor、Role config、model mappingからsnapshotへ一度だけ変換する。#709等のconsumerがsnapshotを手作業で生成したり、cognition用`ProviderDeploymentConfig`やそのmanifestを流用したりしてはならない。
+
+### 8.1 source referenceとcurrentness
+
+`mapping_ref`と`role_config_ref`はUser Configurationの入力fieldではない。三層設定を解決した内部publicationが、deployment identity / revision、Role ID、mapping又はRole configの公開identity / revisionに決定論的に束縛した非秘密の`ProviderSourceReference`として発行する。source IDは固定の構成Authority識別子、reference identityは上記の公開識別子の組、reference revisionはresolved configurationのbinding revisionを使用する。credential、endpoint、private path、environment値、SDK objectを含めない。
+
+同じ`binding_id / binding_revision`のpublication内容は不変とする。構築中に主設定、Profile、deployment、Role Owner publicationのいずれかが変化した場合、生成済みのsource referenceやsnapshotを新値へ付け替えずstaleとして拒否する。変更は新しいSystem run / restartでのみ反映する。
+
+### 8.2 configured / unconfigured
+
+configuredでは、各RoleのsnapshotがRole ID、deployment identity / revision、mapping reference、Role-config reference、mapping identity / revision、reasoning mapping、input / output schema ID、Provider output format nameを同一publicationへ束縛する。instructions、schema、failure policyは既存Speech Role Owner helperとの完全一致を検証し、#726はコピー又は変更しない。具体model / reasoning mappingはSpeech deploymentだけが供給し、既存#357の検証を再利用する。
+
+unconfiguredでは四Role descriptor集合とdeployment / binding identityを保持し、configsとmapping / Role-config referenceを空として、各snapshotのavailability modeを`unconfigured`にする。架空のreference、mapping、Role configを生成しない。構成不良やcurrentness喪失をunconfiguredへ変換せず、既存の失敗を返す。正当なunconfigured publicationだけが既存`S2ProviderLeaseFactory`を経由して`UnavailableLLMRolePort`契約へ接続できる。
+
+### 8.3 consumer境界と後続実装
+
+`SpeechDeploymentRequest`は`SpeechProviderBindingPublication`を一つだけ保持し、#709はそこからexactなRole descriptors、configs、validated snapshots、availability modeを既存`S2ProviderLeaseFactory`へ渡す。factoryのclient ownership、cleanup、releaseの意味は変更しない。
+
+Code Phaseでは`app/config/layered.py`がresolved configurationに必要な不変情報を供給し、`app/composition/speech_deployment.py`がpublicationを構築してrequestへ接続する。既存共通型を意味変更なしで利用できる場合だけ`app/composition/s2_provider.py`を使用する。これらの実装は本節では行わない。
