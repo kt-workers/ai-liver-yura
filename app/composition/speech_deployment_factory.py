@@ -7,10 +7,12 @@ import hashlib
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from app.adapters.tts.contracts import TTSSynthesisPriority, TTSSynthesisRequest, TTSSynthesisStatus
 from app.adapters.tts.production import TTSProductionConnection, TTSProductionLease
+from app.composition.cognition import CoreCognitionDelivery
+from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.presentation_notification import (
     CorePresentationNotification,
     CoreSpeechProductionOwnerConnection,
@@ -21,6 +23,8 @@ from app.composition.speech_deployment import SpeechDeploymentRequest
 from app.composition.speech_preparation import finish_cleanup
 from app.composition.speech_production_configuration import SpeechProductionPorts
 from app.config.layered import ConfigurationError, ConfigurationFailureCode
+from app.domain.brain_integration import BrainIntegrationWork
+from app.domain.executive import CommittedExecutiveDecision
 from app.domain.speech_runtime.contracts import SpeechPresentationMode, TTSPreparationMode
 from app.domain.speech_runtime.discard import PreparedAudioDiscardPort, PreparedAudioDiscardRequest
 from app.infrastructure.speech_presentation.production import (
@@ -46,9 +50,111 @@ class _TextOnlyDiscardPort(PreparedAudioDiscardPort):
         raise SpeechDeploymentFactoryError("TEXT_ONLY構成に音声回収要求は使用できません")
 
 
+OwnerConnectionResolver = Callable[
+    [CoreCognitionDelivery, CoreInputReferenceContextBinding], CoreSpeechProductionOwnerConnection
+]
+ReaderFactory = Callable[
+    [CoreCognitionDelivery, CoreInputReferenceContextBinding], CoreSpeechContextReaders
+]
+
+
+class _ClosableLease(Protocol):
+    async def close(self) -> None: ...
+
+
+class _ReleasableLease(Protocol):
+    async def release(self) -> None: ...
+
+
+class _TTSRequestIdentity(Protocol):
+    @property
+    def candidate_id(self) -> str: ...
+
+    @property
+    def candidate_generation(self) -> int: ...
+
+    @property
+    def performance_generation(self) -> int: ...
+
+
+class _TTSMappingIdentity(Protocol):
+    @property
+    def mapping_id(self) -> str: ...
+
+    @property
+    def mapping_revision(self) -> int: ...
+
+
+class _TTSConnectionIdentity(Protocol):
+    @property
+    def mapping(self) -> _TTSMappingIdentity: ...
+
+
+class _BoundOwnerConnection:
+    """一つの#702構成ハンドルに同期結合した#721 Ownerを固定する。"""
+
+    def __init__(
+        self,
+        resolver: OwnerConnectionResolver,
+        reader_factory: ReaderFactory,
+        output: Callable[
+            [SpeechOutputPreparationRequest],
+            Awaitable[tuple[SpeechPresentationMode, str | None]],
+        ],
+    ) -> None:
+        self._resolver = resolver
+        self._reader_factory = reader_factory
+        self._output = output
+        self._connection: CoreSpeechProductionOwnerConnection | None = None
+        self._cognition: CoreCognitionDelivery | None = None
+        self._reference: CoreInputReferenceContextBinding | None = None
+
+    def readers(
+        self,
+        cognition: CoreCognitionDelivery,
+        reference: CoreInputReferenceContextBinding,
+    ) -> CoreSpeechContextReaders:
+        if self._connection is not None:
+            raise SpeechDeploymentFactoryError("Speech Owner接続は一度だけ構成できます")
+        connection = self._resolver(cognition, reference)
+        if (
+            not isinstance(connection, CoreSpeechProductionOwnerConnection)
+            or connection.cognition is not cognition
+            or connection.reference is not reference
+        ):
+            raise SpeechDeploymentFactoryError("Speech Owner graphが一致しません")
+        try:
+            readers = connection.readers(self._reader_factory)
+        except (TypeError, ValueError) as error:
+            raise SpeechDeploymentFactoryError("Speech本番reader接続が不正です") from error
+        self._connection = connection
+        self._cognition = cognition
+        self._reference = reference
+        return replace(readers, output=self._output)
+
+    def notification(
+        self,
+        cognition: CoreCognitionDelivery,
+        reference: CoreInputReferenceContextBinding,
+        work: BrainIntegrationWork,
+        decision: CommittedExecutiveDecision,
+        presentation_id: str,
+    ) -> CorePresentationNotification:
+        if (
+            self._connection is None
+            or cognition is not self._cognition
+            or reference is not self._reference
+        ):
+            raise SpeechDeploymentFactoryError("Speech Owner接続が未結合又は不一致です")
+        try:
+            return self._connection.notification(work, decision, presentation_id)
+        except (TypeError, ValueError) as error:
+            raise SpeechDeploymentFactoryError("Speech本番通知接続が不正です") from error
+
+
 def speech_tts_request_id(
-    request: SpeechOutputPreparationRequest,
-    connection: TTSProductionConnection,
+    request: _TTSRequestIdentity,
+    connection: _TTSConnectionIdentity,
     voice_binding_id: str,
     voice_binding_revision: int,
 ) -> str:
@@ -75,8 +181,8 @@ class SpeechDeploymentOwnerConnections:
     provider_factory: S2ProviderLeaseFactory
     tts: TTSProductionConnection
     presentation: PresentationWorkerRegistry
-    owner_connection: Callable[..., CoreSpeechProductionOwnerConnection]
-    reader_factory: Callable[..., CoreSpeechContextReaders]
+    owner_connection: OwnerConnectionResolver
+    reader_factory: ReaderFactory
     semantic_live: SpeechSemanticsLiveStatePort
     character_live: CharacterLanguageLiveStatePort
     verifier_live: SemanticVerificationLiveStatePort
@@ -106,12 +212,16 @@ class ProductionSpeechDeploymentPortFactory:
         tts: TTSProductionLease | None = None
         presentation: PresentationWorkerLease | None = None
         try:
-            roles, configs, bindings, mode = request.provider_bindings.factory_inputs()
-            if roles != request.provider_roles or tuple(role.role_id for role in roles) != tuple(
+            provider_roles, configs, bindings, mode = request.provider_bindings.factory_inputs()
+            if provider_roles != request.provider_roles or tuple(
+                role.role_id for role in provider_roles
+            ) != tuple(
                 role.role_id for role in request.publication.roles()
             ):
                 raise ConfigurationError(ConfigurationFailureCode.BINDING_MISMATCH)
-            provider = await self._connections.provider_factory(roles, configs, bindings, mode)
+            provider = await self._connections.provider_factory(
+                provider_roles, configs, bindings, mode
+            )
             if not isinstance(provider, S2ProviderLease) or provider.bindings != bindings:
                 raise ConfigurationError(ConfigurationFailureCode.BINDING_MISMATCH)
             audio_enabled = (
@@ -130,61 +240,27 @@ class ProductionSpeechDeploymentPortFactory:
                 )
             )
             output = self._output(request, tts)
+            owner_binding = _BoundOwnerConnection(
+                self._connections.owner_connection,
+                self._connections.reader_factory,
+                output,
+            )
             return SpeechProductionPorts(
                 request.publication,
-                roles,
+                request.publication.roles(),
                 provider.port,
                 self._connections.semantic_live,
                 self._connections.character_live,
                 self._connections.verifier_live,
                 tts.resources if tts is not None else _TextOnlyDiscardPort(),
                 presentation.supervisor,
-                lambda cognition, reference: self._readers(cognition, reference, output),
-                lambda cognition, reference, work, decision, presentation_id: self._notification(
-                    cognition, reference, work, decision, presentation_id
-                ),
+                owner_binding.readers,
+                owner_binding.notification,
                 self._release(provider, tts, presentation),
             )
         except BaseException:
             await self._cleanup(provider, tts, presentation)
             raise
-
-    def _readers(
-        self,
-        cognition: object,
-        reference: object,
-        output: Callable[
-            [SpeechOutputPreparationRequest],
-            Awaitable[tuple[SpeechPresentationMode, str | None]],
-        ],
-    ) -> CoreSpeechContextReaders:
-        connection = self._owner_connection(cognition, reference)
-        readers = connection.readers(self._connections.reader_factory)
-        return replace(readers, output=output)
-
-    def _notification(
-        self,
-        cognition: object,
-        reference: object,
-        work: object,
-        decision: object,
-        presentation_id: str,
-    ) -> CorePresentationNotification:
-        return self._owner_connection(cognition, reference).notification(
-            work, decision, presentation_id  # type: ignore[arg-type]
-        )
-
-    def _owner_connection(
-        self, cognition: object, reference: object
-    ) -> CoreSpeechProductionOwnerConnection:
-        connection = self._connections.owner_connection(cognition, reference)
-        if (
-            not isinstance(connection, CoreSpeechProductionOwnerConnection)
-            or connection.cognition is not cognition
-            or connection.reference is not reference
-        ):
-            raise SpeechDeploymentFactoryError("Speech Owner graphが一致しません")
-        return connection
 
     def _output(
         self, deployment: SpeechDeploymentRequest, lease: TTSProductionLease | None
@@ -244,38 +320,44 @@ class ProductionSpeechDeploymentPortFactory:
 
     @staticmethod
     async def _cleanup(
-        provider: S2ProviderLease | None,
-        tts: TTSProductionLease | None,
-        presentation: PresentationWorkerLease | None,
+        provider: _ReleasableLease | None,
+        tts: _ClosableLease | None,
+        presentation: _ClosableLease | None,
     ) -> None:
         async def cleanup() -> None:
-            failed = False
+            failure: BaseException | None = None
             for lease in (presentation, tts):
                 if lease is None:
                     continue
                 try:
                     await lease.close()
-                except asyncio.CancelledError:
-                    raise
+                except asyncio.CancelledError as error:
+                    if failure is None:
+                        failure = error
                 except Exception:
-                    failed = True
+                    if failure is None:
+                        failure = SpeechDeploymentFactoryError("Speech本番leaseを回収できません")
             if provider is not None:
                 try:
                     await provider.release()
-                except asyncio.CancelledError:
-                    raise
+                except asyncio.CancelledError as error:
+                    if failure is None:
+                        failure = error
                 except Exception:
-                    failed = True
-            if failed:
-                raise SpeechDeploymentFactoryError("Speech本番leaseを回収できません")
+                    if failure is None:
+                        failure = SpeechDeploymentFactoryError("Speech本番leaseを回収できません")
+            if failure is not None:
+                if isinstance(failure, asyncio.CancelledError):
+                    raise asyncio.CancelledError
+                raise failure
 
         await finish_cleanup(asyncio.create_task(cleanup()))
 
     @staticmethod
     def _release(
-        provider: S2ProviderLease,
-        tts: TTSProductionLease | None,
-        presentation: PresentationWorkerLease,
+        provider: _ReleasableLease,
+        tts: _ClosableLease | None,
+        presentation: _ClosableLease,
     ) -> Callable[[], Awaitable[None]]:
         released: asyncio.Task[None] | None = None
 

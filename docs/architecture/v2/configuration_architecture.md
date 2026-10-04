@@ -89,11 +89,12 @@ Code Phaseでは`app/config/layered.py`がresolved configurationに必要な不�
 
 | 入力 | 正規供給元 | 検証と結合 | 所有権 |
 | --- | --- | --- | --- |
-| LLM四Role | requestの`SpeechProviderBindingPublication.factory_inputs()` | exact roles / configs / bindings / modeを既存`S2ProviderLeaseFactory`へそのまま渡す | factoryが返却前と返却後のlease releaseを所有 |
+| Provider登録用LLM四Role | requestの`SpeechProviderBindingPublication.factory_inputs()` | Provider schemaのexact roles / configs / bindings / modeを既存`S2ProviderLeaseFactory`へそのまま渡す | factoryが返却前と返却後のlease releaseを所有 |
+| Domain用LLM四Role | `SpeechProductionPublication.roles()` | `SpeechProductionPorts.roles`と#702の完全比較にはDomain schemaのdescriptorだけを渡す。Provider登録用descriptorをこの境界へ公開しない | #706の既存#705経路で一度だけwire wrapperを適用する |
 | TTS | #720 `TTSProductionConnection`とrequestの`TTSVoiceBinding` | binding identity / revisionと同一connectionを既存`acquire()`で照合する | `TTSProductionLease`をfactoryがreleaseする |
 | Presentation | #711 `PresentationWorkerRegistry`とpublicationのPresentation binding | trusted registrationだけをexact identity / revisionで取得する | `PresentationWorkerLease`をfactoryがreleaseする |
 | reader / notification | #721 `CoreSpeechProductionOwnerConnection`を返す公開resolverと明示reader factory | lease取得後、同じS2 cognition / reference / Activity / Attention / Normalizer graphだけを受理する | borrowed Ownerをcloseしない |
 
 factoryは未構成LLMを既存typed unavailableとして通すが、configured publicationの不正、Role不一致、stale、binding mismatchをunconfigured又はTEXT_ONLYへ変換しない。TEXT_ONLYとAUDIO_WITH_TEXT、Runtime candidate priorityと`TTSSynthesisPriority`、request identityは各既存Ownerの公開契約に従い、factoryが再符号化又は推測しない。
 
-取得順はLLM lease、必要なTTS lease、Presentation lease、同期reader / notification接続とする。#702が同一S2 cognition / referenceを確定した後にだけresolverから#721 connectionを得る。いずれかの取得・検証・取消に失敗した場合、既取得のowned leaseを逆順にsettleしてから元の失敗又は取消を伝播する。cleanup failureを成功又は通常の構成成功へ変換しない。返却後のpipeline / Runtime所有権移管は#702の`SpeechProductionBinding`に委譲し、borrowed Ownerをfactoryが終了しない。
+取得はLLM lease、必要なTTS lease、Presentation leaseを非同期で完了して`SpeechProductionPorts`を返す第一段階と、#702が同一S2 cognition / referenceを確定して`CoreSpeechConfiguration.build`内でreader / notificationを同期結合する第二段階に分ける。第二段階のresolverは構成ハンドルごとに一度だけ#721 connectionを解決して固定し、readerと全notificationは固定済みconnectionだけを使う。未結合、二重結合、別cognition / reference / runへの再結合は拒否し、同期結合中に非同期資源を新規取得しない。いずれかの取得・検証・取消に失敗した場合、既取得のowned leaseを逆順に全て一度ずつsettleしてから元の失敗又は取消を伝播する。cleanup failureを成功又は通常の構成成功へ変換しない。返却後のpipeline / Runtime所有権移管は#702の`SpeechProductionBinding`に委譲し、borrowed Ownerをfactoryが終了しない。
