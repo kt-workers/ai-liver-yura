@@ -525,6 +525,29 @@ capability、mapping、operational、retryのprovider identityは一致し、cap
 
 `acquire(voice)`はvoiceのprovider identityとbinding revisionをcapabilityへ完全一致させ、既存registryの公開`acquire(voice, capability)`だけを使用する。不一致時にfallbackしない。返却leaseはregistry leaseのclientとresourcesからadapterを構築し、resource storeへ必ず同resourcesを渡す。closeはadapter shutdown後にregistry leaseを回収し、取消下でもcleanupをsettleする。adapterまたはprovider leaseの失敗を成功へ隠さず、繰返しcloseは同じcleanupへ合流する。
 
+## 20.3 Speech Deploymentによる合成要求の接続（#709）
+
+#709 factoryは#720 connectionのprovider、mapping、operational、retry、発音overrideを再選択・再定義しない。#721の`SpeechOutputPreparationRequest`から`TTSSynthesisRequest`へ渡すauthorityは次のとおりである。
+
+| synthesis field | 唯一の供給元 |
+| --- | --- |
+| request_id | factoryが、検証済みcandidate ID / candidate generation / performance generation / voice binding revision / mapping revisionから決定論的に一度だけ生成 |
+| candidate identity、utterance、performance plan、trace、deadline、created_at | #721 requestの同一generation provenance |
+| voice binding、capability、provider config revision | request deploymentと`TTSProductionConnection`の完全一致済み値 |
+| pronunciation overrides / revision | 同connectionの不変tuple / pronunciation config revision |
+| mapping・retry policy ID / revision | 同connectionの検証済みmapping / retry policy |
+| synthesis priority | 下表のcandidate priorityとpreparation mode |
+
+readerはcandidate、Character artifact、Performance artifact、trace、deadline、generationを新造・置換しない。`request_id`だけはprovider callbackやfixture値を使わない。factoryはcandidate ID、candidate generation、performance generation、voice binding ID/revision、mapping ID/revisionをfield名付きcanonical JSON objectへ符号化し、そのUTF-8 bytesのSHA-256 hexを`tts-`接頭辞で表す。同じ入力は同じrequest_idとなり、列挙したgeneration / revisionのいずれかが変われば別identityとなる。delimiter連結、短縮digest、衝突時の採番を使わない。capability、voice binding、utterance、performance plan、mapping/retry policyのidentity/revision検証後にだけprovider requestを生成する。
+
+| `SpeechCandidatePriority` | `TTSPreparationMode` | `TTSSynthesisPriority` |
+| --- | --- | --- |
+| 任意 | AFTER_SEMANTIC_ACCEPTANCE | FOREGROUND |
+| 任意 | SPECULATIVE_AFTER_PERFORMANCE | SPECULATIVE |
+| 任意 | DISABLED | 合成requestを作らない |
+
+`TTSSynthesisPriority`はprovider scheduling priorityではなく、`FOREGROUND`がsemantic acceptance後に必須となった合成、`SPECULATIVE`がacceptance前の準備を表すdispositionである。DIRECT_USER / FOREGROUND / NORMAL / BACKGROUNDの実行順序とbackground上限は既存`SpeechCandidatePriority`、Runtime admission、bounded executorが保持し、#709 factoryやTTS providerへ再符号化しない。したがってBACKGROUNDをprovider foregroundへ昇格することはない。`DISABLED`は#709 factoryのTTS取得を正当化しない。priorityの別値、独自queue、暗黙のretry/fallbackをfactoryが追加してはならない。
+
 ---
 
 ## 21. Required tests

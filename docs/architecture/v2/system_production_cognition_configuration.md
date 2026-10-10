@@ -175,6 +175,10 @@ Speech用LLMのRole登録と実portは供給元bindingで明示する。既存S2
 
 Speech用Provider入力は#726の`SpeechProviderBindingPublication`だけから得る。このpublicationはSpeech四Roleのexact descriptors、configs、validated `ProviderBindingSnapshot`、availability mode、deployment / binding identityとrevisionを同一snapshotとして保持する。factoryは受領した四集合の完全一致とcurrentnessを検証して既存`S2ProviderLeaseFactory`へ渡す。cognition用manifest、fixture、任意のsource reference、別deploymentのbindingを補作又は流用しない。
 
+`SpeechDeploymentPortFactory`の本番実装は、#720の`TTSProductionConnection`、#711のtrusted `PresentationWorkerRegistry`、#721の`CoreSpeechProductionOwnerConnection`を返す型付き公開resolver、既存`S2ProviderLeaseFactory`を明示入力として保持する。#726から得たProvider登録用Role/config/binding/modeは`S2ProviderLeaseFactory`だけへ渡し、返却する`SpeechProductionPorts.roles`には`SpeechProductionPublication.roles()`のDomain用Roleだけを渡す。LLM lease、TTS lease、Presentation leaseを取得してportsを返した後、#702が同一S2 cognition / referenceを確定した時だけ、構成ハンドル内でresolverを一度だけ同期的に解決する。固定済みconnectionはreaderと全notificationで再利用し、未結合、二重結合、別graphへの再結合を拒否する。factoryは具体provider、voice、reader、Normalizer、Activity、Attention、clock、trace又はgenerationを補作しない。
+
+返却前の任意の失敗又はcaller cancellationでは、既に取得したleaseを逆順に一度だけ回収する。子leaseの通常失敗又は取消があっても残りの回収を飛ばさず、全cleanup settlement後に元の失敗又は取消を伝播する。回収failureは固定の安全な診断として残すが、元の失敗又は取消を置換しない。返却後のlease releaseは`SpeechProductionBinding`が保持し、反復・並行releaseは同じ回収へ合流する。借用された#721 Owner graph、Provider factory、TTS connection、Presentation registryをcloseしない。
+
 configured時はRole config、model mapping、mapping / Role-config reference、schema、Provider output formatが同じSpeech publicationに属することを確認する。unconfigured時は既存typed unavailableを維持し、架空のconfig / mapping / referenceを生成しない。設定不良、Role不一致、stale、source更新をunconfigured又はSpeechなしへのfallbackに変換してはならない。取得中にpublicationのcurrentnessが失われた場合は、返却前のowned leaseを既存契約どおり回収して構築を拒否する。
 
 具体voice/provider/speaker/style/credentialは本書で決定しない。deploymentが供給する型付きbindingを既存Ownerが検査する。構成不正と未構成を区別し、音声出力を要求するのにbindingがない場合は構築拒否。明示したunavailable bindingは既存typed unavailableを返し、正常音声や別voiceへ変換しない。TEXT_ONLYは既存policyで明示許可された場合だけ使用でき、TTS不在を理由にSystemが切り替えない。
@@ -247,3 +251,19 @@ factoryのfixture非依存、同じbindingとgeneration、snapshot実値一致�
 ## 10. 三層設定からのSpeech供給（#705）
 
 主設定とProfileから第9節の入力を作る供給Authorityは[三層の本番設定](configuration_architecture.md)とする。`create_speech_deployment()`は設定を既存Owner DTOへ変換し、同じrunに固定した`SpeechProductionInputs`を供給する。具体Provider/voiceの補完、試験policyへの置換、run中のhot replacementはしない。第9節のfactoryと所有権移管は再実装せず、既存の`build_s2_production_core(speech=...)`へ渡す。
+
+## 11. Speech Deployment Ports factoryのSystem境界（#709）
+
+Systemは同じS2 runで検証済みのProvider lease factory / binding publication、#720 TTS connection、#711 Presentation registry、#721 Owner connection、`SpeechDeploymentOwnerConnections`をtrusted構成rootからfactoryへ明示注入する。factoryが返す`SpeechProductionPorts`のfieldは次表の既存Ownerだけから供給する。
+
+| ports field | 供給元と所有 |
+| --- | --- |
+| publication / roles | 同一deploymentの検証済みpublication / descriptors、borrowed |
+| llm | factoryが`S2ProviderLeaseFactory`から取得するSpeech専用lease、ports releaseまでowned |
+| semantic / character / verifier live | `SpeechDeploymentOwnerConnections`の同一S2既存source、borrowed |
+| discard | #720 production leaseが返すresources、TTS lease closeと同じOwner |
+| presentation | #711 `PresentationWorkerLease`のSupervisor、ports releaseまでowned |
+| readers / notification | #721同一Owner connectionと`SpeechDeploymentOwnerConnections`のresolver / reader factoryから構成、borrowed instancesから構成 |
+| release | factoryが正常返却時に移管したowned leaseの逆順cleanup |
+
+`SpeechProductionPorts`に独立したoutput fieldはない。outputはreaders factoryが返す`CoreSpeechContextReaders.output`であり、#721 provenanceを#720 synthesisへ接続する。factoryはartifactを所有しない。factoryはpublication、roles、binding/generationを再照合し、partial acquisition、取消、construction validation failureでは返却済みowned leaseを逆順にsettleする。ports.releaseはidempotentに同じcleanupへ合流し、先行cleanup failureでも残るreleaseを続行する。返却後のpipeline/Runtime shutdownとartifact discardは既存#702/#701のOwnerへ残す。
