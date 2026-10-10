@@ -34,13 +34,13 @@ from app.infrastructure.speech_presentation.production import (
     PresentationWorkerRegistry,
 )
 
-
-logger = logging.getLogger(__name__)
-
 if TYPE_CHECKING:
     from app.domain.character_language.realizer import CharacterLanguageLiveStatePort
     from app.domain.semantic_verification.verifier import SemanticVerificationLiveStatePort
     from app.domain.speech_semantics.planner import SpeechSemanticsLiveStatePort
+
+
+logger = logging.getLogger(__name__)
 
 
 class SpeechDeploymentFactoryError(RuntimeError):
