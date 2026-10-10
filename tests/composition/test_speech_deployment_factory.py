@@ -3,25 +3,45 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import Any
 
 import pytest
 
+from app import bootstrap
+from app.adapters.llm.s2_production import create_s2_provider_lease
+from app.adapters.tts.production import TTSProductionConnection, TTSProviderRegistry
+from app.adapters.tts.provider import TTSProviderClient
 from app.composition.cognition import CoreCognitionDelivery
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.presentation_notification import CoreSpeechProductionOwnerConnection
 from app.composition.speech import CoreSpeechContextReaders, SpeechOutputPreparationRequest
-from app.composition.speech_deployment import production_speech_deployment_registry
+from app.composition.speech_deployment import (
+    create_speech_deployment,
+    production_speech_deployment_registry,
+)
 from app.composition.speech_deployment_factory import (
     ProductionSpeechDeploymentPortFactory,
     SpeechDeploymentFactoryError,
+    SpeechDeploymentOwnerConnections,
     _BoundOwnerConnection,
     speech_tts_request_id,
 )
-from app.config.layered import ConfigurationError
+from app.config.layered import ConfigurationError, load_user_configuration
 from app.domain.speech_runtime.contracts import SpeechPresentationMode
+from app.infrastructure.speech_presentation.production import (
+    PresentationProductionRegistration,
+    PresentationWorkerRegistry,
+)
+from tests.adapters.tts.test_production import FakeTTSClient, capability, registration
+from tests.adapters.tts.test_provider import _policy
+from tests.composition.test_speech_deployment import dependencies
 from tests.composition.test_speech_parallel_preparation import normalizer
+from tests.composition.test_system_cognition_configuration import parameters
+from tests.config.test_layered import configured_root
 from tests.helpers.speech_path import build_speech_path
+from tests.infrastructure.speech_presentation.test_production import worker
 
 
 class _Lease:
@@ -248,3 +268,89 @@ async def test_returned_release_joins_repeated_calls_once() -> None:
     )
     await asyncio.gather(release(), release(), release())
     assert events == ["presentation.close", "tts.close", "provider.release"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("available", (False, True))
+async def test_registered_production_factory_reaches_s2_with_separate_role_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, available: bool
+) -> None:
+    """登録済みfactoryからS2まで、Provider用とDomain用のRoleを混同しない。"""
+    import openai
+
+    path = await build_speech_path()
+    root = configured_root(tmp_path, available=available)
+    configuration = load_user_configuration(root)
+    assert configuration.deployment is not None
+    calls: list[tuple[object, object, object, str]] = []
+    discarded: list[str] = []
+    released: list[TTSProviderClient] = []
+    policies = _policy()
+
+    async def provider(roles: Any, configs: Any, bindings: Any, mode: str) -> Any:
+        calls.append((roles, configs, bindings, mode))
+        return await create_s2_provider_lease(roles, configs, bindings, mode)
+
+    class FakeAsyncOpenAI:
+        async def close(self) -> None:
+            return None
+
+        def __init__(self, *, api_key: str) -> None:
+            self.responses = object()
+
+    if available:
+        monkeypatch.setattr(openai, "AsyncOpenAI", FakeAsyncOpenAI)
+        monkeypatch.setenv("YURA_OPENAI_API_KEY", "test-only-key")
+    else:
+        monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
+
+    try:
+        connection = SpeechDeploymentOwnerConnections(
+            provider,
+            TTSProductionConnection(
+                TTSProviderRegistry((registration(FakeTTSClient(), discarded, released),)),
+                replace(capability(provider_id="fake", revision=1), provider_revision=1),
+                policies.mapping,
+                policies.operational,
+                policies.retry,
+                (),
+                1,
+                1,
+            ),
+            PresentationWorkerRegistry(
+                (
+                    PresentationProductionRegistration(
+                        configuration.deployment.identity + ".presentation",
+                        configuration.deployment.revision,
+                        worker(),
+                    ),
+                )
+            ),
+            lambda cognition, reference: CoreSpeechProductionOwnerConnection(
+                reference.activities, cognition.attention_owner, reference, normalizer(), cognition
+            ),
+            lambda cognition, reference: path.pipeline.readers,
+            path.pipeline.semantics._live_state,
+            path.pipeline.character._live_state,
+            path.pipeline.verifier._live_state,
+        )
+        registry = production_speech_deployment_registry({"isolated": connection})
+        source = create_speech_deployment(
+            root, **dependencies(), registry=registry
+        )
+        assert source is not None
+        app = await bootstrap.build_s2_production_core(**parameters(), speech=source.inputs)
+        provider_roles, configs, bindings, mode = source.request.provider_bindings.factory_inputs()
+        assert calls == [(provider_roles, configs, bindings, mode)]
+        assert tuple(role.role_id for role in provider_roles) == tuple(
+            role.role_id for role in source.request.publication.roles()
+        )
+        assert app.core.cognition is not None and app.core.cognition.speech is not None
+        assert (
+            app.core.cognition.speech.pipeline.output_modes
+            == source.request.publication.output_modes
+        )
+        await asyncio.gather(app.stop(), app.stop())
+        assert discarded == [] and released == []
+    finally:
+        await path.close()
