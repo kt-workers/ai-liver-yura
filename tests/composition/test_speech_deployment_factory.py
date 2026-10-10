@@ -189,6 +189,8 @@ async def test_construction_failure_is_preserved_when_cleanup_also_fails(
             raise construction_failure
 
     class _Bindings:
+        roles: tuple[object, ...] = ()
+
         def factory_inputs(
             self,
         ) -> tuple[tuple[object, ...], tuple[object, ...], tuple[object, ...], str]:
