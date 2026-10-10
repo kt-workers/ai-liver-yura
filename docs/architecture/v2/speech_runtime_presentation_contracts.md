@@ -364,12 +364,9 @@ Possible capabilities may include:
 
 Provider/output availability is not decided by #348.
 
-Presentation policy determines allowed modes, e.g.:
-- AUDIO_WITH_TEXT preferred
-- TEXT_ONLY allowed during TTS degradation
-- FAIL_CLOSED if audio is mandatory for a specific use case
+Presentation policyのmode集合は順序をpriorityに使わない。`TEXT_ONLY`だけはTTSなしでtext effectだけを返す。`AUDIO_WITH_TEXT`を許可する構成は既存TTS leaseを取得し、取得・合成のfailureをfactoryがtextへ置換しない。provider呼出後のsynthesis failure、deadline、取消、cleanup failure、stale/generation mismatchはfail-closedとする。Presentation unavailableは全modeでfail-closedである。
 
-A degraded text-only presentation must be explicitly recorded and must not pretend audio playback occurred.
+degraded text-only presentationは明示記録し、audio playbackがあったふりをしない。
 
 ---
 
@@ -833,3 +830,11 @@ provider exception、credential、endpoint、音声、発話全文をpayloadま�
 #701のprepared audio、#613のaccepted Admissionを各Ownerの既存順序でsettleする。caller取消でも開始済み
 cleanupを中断せず、その完了後に取消を伝播する。失敗、stale、duplicate、cleanup failureを成功や通常の
 通知拒否へ変換しない。
+
+## Deployment factoryからの本番接続利用（#709）
+
+#709 factoryは、同一S2 Owner graphから既に構成済みの`CoreSpeechProductionOwnerConnection`だけを受け取り、そこからreadersとnotificationを作る。`ActivityExecutionAuthority`、`AttentionTurnStore`、`CoreInputReferenceContextBinding`、process共有`InputNormalizer`、`CoreCognitionDelivery`のidentityは#721のconstructor validationを通す。factoryが別Owner、request-local Store/Normalizer、hidden global、非同期lease取得を同期reader/notification constructionへ持ち込むことを禁止する。
+
+`PresentationWorkerRegistry`の取得にはrequestの`PresentationWorkerBinding`のbinding ID、binding revision、availabilityをそのまま用いる。trusted registrationとの完全一致だけを受け入れ、unknown、stale、unavailable、Supervisor identity不一致を別bindingへfallbackしない。返却前のleaseはfactory ownership、`SpeechProductionPorts`返却後のlease closeはports release ownershipであり、#711が定めるSupervisor shutdown、Session回収、取消settlement、繰返しcloseの意味を変更しない。
+
+factoryへ注入する`SpeechDeploymentOwnerConnections`は、同一S2 Ownerから借用するsemantic / character / verifier live stateと、`CoreSpeechContextReaders`を構築する既存Owner resolver / reader factoryを保持する。outputはportsの独立fieldではなく、同じ#721 connectionから構築した`CoreSpeechContextReaders.output`だけが供給する。factoryはfixtureやrequest-local objectを生成せず、各readerのOwner/revisionを差し替えない。
