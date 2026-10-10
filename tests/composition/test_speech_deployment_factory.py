@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -18,9 +20,11 @@ from app.composition.input_reference_context import CoreInputReferenceContextBin
 from app.composition.presentation_notification import CoreSpeechProductionOwnerConnection
 from app.composition.speech import CoreSpeechContextReaders, SpeechOutputPreparationRequest
 from app.composition.speech_deployment import (
+    SpeechDeploymentRequest,
     create_speech_deployment,
     production_speech_deployment_registry,
 )
+from app.composition.s2_provider import S2ProviderLease
 from app.composition.speech_deployment_factory import (
     ProductionSpeechDeploymentPortFactory,
     SpeechDeploymentFactoryError,
@@ -163,6 +167,61 @@ async def test_caller_cancellation_waits_for_all_cleanup() -> None:
     with pytest.raises(asyncio.CancelledError):
         await closing
     assert events == ["presentation.close", "tts.close", "provider.release"]
+
+
+@pytest.mark.asyncio
+async def test_construction_failure_is_preserved_when_cleanup_also_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    events: list[str] = []
+    construction_failure = RuntimeError("構築失敗")
+
+    async def release() -> None:
+        events.append("provider.release")
+        raise RuntimeError("非公開のprovider回収失敗")
+
+    async def provider(*_: object) -> S2ProviderLease:
+        port: Any = object()
+        return S2ProviderLease(port, (), "unconfigured", release)
+
+    class _Presentation:
+        async def acquire(self, _: object) -> None:
+            raise construction_failure
+
+    class _Bindings:
+        def factory_inputs(
+            self,
+        ) -> tuple[tuple[object, ...], tuple[object, ...], tuple[object, ...], str]:
+            return (), (), (), "unconfigured"
+
+    class _Publication:
+        output_modes = (SpeechPresentationMode.TEXT_ONLY,)
+        presentation = SimpleNamespace(
+            identity="presentation", revision=1, availability="available"
+        )
+
+        @staticmethod
+        def roles() -> tuple[object, ...]:
+            return ()
+
+    request = object.__new__(SpeechDeploymentRequest)
+    object.__setattr__(request, "publication", _Publication())
+    object.__setattr__(request, "provider_bindings", _Bindings())
+    object.__setattr__(request, "voice", None)
+    factory = object.__new__(ProductionSpeechDeploymentPortFactory)
+    object.__setattr__(
+        factory,
+        "_connections",
+        cast(Any, SimpleNamespace(provider_factory=provider, presentation=_Presentation())),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="app.composition.speech_deployment_factory"):
+        with pytest.raises(RuntimeError) as raised:
+            await factory(request)
+
+    assert raised.value is construction_failure
+    assert events == ["provider.release"]
+    assert caplog.messages == ["Speech本番構築失敗後のlease回収に失敗しました"]
 
 
 def test_tts_request_id_uses_exact_public_identity_material() -> None:

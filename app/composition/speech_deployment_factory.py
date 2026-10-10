@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Protocol
@@ -32,6 +33,9 @@ from app.infrastructure.speech_presentation.production import (
     PresentationWorkerLease,
     PresentationWorkerRegistry,
 )
+
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from app.domain.character_language.realizer import CharacterLanguageLiveStatePort
@@ -259,7 +263,11 @@ class ProductionSpeechDeploymentPortFactory:
                 self._release(provider, tts, presentation),
             )
         except BaseException:
-            await self._cleanup(provider, tts, presentation)
+            try:
+                await self._cleanup(provider, tts, presentation)
+            except BaseException:
+                # 回収失敗の詳細を公開せず、構築失敗を置換しない。
+                logger.warning("Speech本番構築失敗後のlease回収に失敗しました")
             raise
 
     def _output(
