@@ -1,8 +1,8 @@
-schema_id: yura.cognition.production.production-config.v1
-config_id: yura.cognition.production.production
+schema_id: yura.cognition.core-config.v1
+config_id: yura.cognition.core
 config_revision: 1
-activation_id: yura.cognition.production.explicit
-composition_id: yura.system.cognition.production
+activation_id: yura.cognition.core.explicit
+composition_id: yura.system.cognition.core
 composition_revision: 1
 minimum_config:
   resource_ref: resources/config/v2/minimum_brain.yaml
@@ -20,8 +20,8 @@ attention_policy:
   policy_id: attention-scheduling-production
   policy_revision: 1
 provider_deployment:
-  resource_ref: resources/config/v2/provider_deployment_production.yaml
-  deployment_id: yura.provider-deployment.production-cognition
+  resource_ref: resources/config/v2/provider_deployment_cognition.yaml
+  deployment_id: yura.provider-deployment.cognition
   deployment_revision: 1
 character_definition:
   resource_ref: resources/character_definitions/v2/yura.yaml

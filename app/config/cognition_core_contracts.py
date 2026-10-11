@@ -1,4 +1,4 @@
-"""production_cognition構成の安全な失敗と厳密な公開値検査を共有する。"""
+"""cognition_core構成の安全な失敗と厳密な公開値検査を共有する。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import yaml
 from yaml.nodes import MappingNode
 
 
-class ProductionCognitionFailureCode(str, Enum):
+class CognitionCoreFailureCode(str, Enum):
     MISSING_SYSTEM_CONFIG = "MISSING_SYSTEM_CONFIG"
     INVALID_SYSTEM_CONFIG = "INVALID_SYSTEM_CONFIG"
     APPRAISAL_CONFIGURATION_FAILED = "APPRAISAL_CONFIGURATION_FAILED"
@@ -21,16 +21,16 @@ class ProductionCognitionFailureCode(str, Enum):
     INITIALIZATION_FAILED = "INITIALIZATION_FAILED"
 
 
-class ProductionCognitionConfigurationError(ValueError):
+class CognitionCoreConfigurationError(ValueError):
     """入力値や内部例外を公開しないSystem構成失敗。"""
 
-    def __init__(self, code: ProductionCognitionFailureCode) -> None:
+    def __init__(self, code: CognitionCoreFailureCode) -> None:
         self.code = code
-        super().__init__(f"production_cognition構成を使用できません: {code.value}")
+        super().__init__(f"cognition_core構成を使用できません: {code.value}")
 
 
 def invalid() -> NoReturn:
-    raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INVALID_SYSTEM_CONFIG)
+    raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
 
 
 def identity(value: object) -> str:
@@ -65,7 +65,7 @@ def shape(value: object, fields: str) -> dict[str, object]:
 
 
 class _Loader(yaml.SafeLoader):
-    """重複keyを受理しないproduction_cognition用loader。"""
+    """重複keyを受理しないcognition_core用loader。"""
 
 
 def _mapping(loader: _Loader, node: MappingNode, deep: bool = False) -> dict[str, object]:
@@ -87,7 +87,7 @@ def parse(source: str | bytes) -> object:
         _acyclic(result, set())
         return result
     except (yaml.YAMLError, TypeError, ValueError, RecursionError, UnicodeError):
-        raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INVALID_SYSTEM_CONFIG) from None
+        raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG) from None
 
 
 def _acyclic(value: object, active: set[int]) -> None:

@@ -1,4 +1,4 @@
-"""既存Speech Ownerの明示構成をproduction_cognitionへ渡し、構築途中の資源も回収する。"""
+"""既存Speech Ownerの明示構成をcognition_coreへ渡し、構築途中の資源も回収する。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from app.composition.speech_configuration import CoreSpeechConfiguration
 from app.composition.speech_preparation import finish_cleanup
 from app.composition.speech_semantics_policy import bind_speech_semantics_policy_v1
 from app.composition.speech_semantics_sources import ProductionSpeechSources
-from app.config.production_cognition_contracts import ProductionCognitionConfigurationError, ProductionCognitionFailureCode, identity, revision
+from app.config.cognition_core_contracts import CognitionCoreConfigurationError, CognitionCoreFailureCode, identity, revision
 from app.domain.brain_integration import BrainIntegrationWork
 from app.domain.character_language import CharacterLanguageAuthority, CharacterLanguageRealizer
 from app.domain.character_language.realizer import (
@@ -76,7 +76,7 @@ class SpeechBindingReference:
         identity(self.identity)
         revision(self.revision)
         if self.availability not in ("available", "unavailable"):
-            raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INVALID_SYSTEM_CONFIG)
+            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +131,7 @@ class SpeechProductionPublication:
             (self.presentation, SpeechBindingReference),
         ):
             if not isinstance(instance, expected):
-                raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INVALID_SYSTEM_CONFIG)
+                raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
         if (
             type(self.output_modes) is not tuple
             or not self.output_modes
@@ -149,7 +149,7 @@ class SpeechProductionPublication:
                 TTSPreparationMode.AFTER_SEMANTIC_ACCEPTANCE,
             )
         ):
-            raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INVALID_SYSTEM_CONFIG)
+            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
 
         for policy in (
             self.semantics.execution,
@@ -264,7 +264,7 @@ class SpeechProductionBinding:
         )
         p = self._publication
         if p.semantics.meaning_policy != self._semantic_publication.value.meaning:
-            raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INVALID_SYSTEM_CONFIG)
+            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
         self.runtime = SpeechRuntime(p.runtime, clock.now)
         self._tasks = CandidateTaskRegistry()
         self._discarder = PreparedAudioDiscarder(self.runtime, ports.discard)
@@ -289,7 +289,7 @@ class SpeechProductionBinding:
             p.character_id,
             p.character_revision,
         ):
-            raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INVALID_SYSTEM_CONFIG)
+            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
         identity(meaning.policy_id)
         self.provenance = SpeechComponentProvenance(
             p.source_id,
@@ -330,7 +330,7 @@ class SpeechProductionBinding:
             or self._inputs.semantic_owner.publication() != self._semantic_publication
             or self.runtime.operational_policy != self._publication.runtime
         ):
-            raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INITIALIZATION_FAILED)
+            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INITIALIZATION_FAILED)
 
     def _build(
         self,
@@ -339,12 +339,12 @@ class SpeechProductionBinding:
     ) -> tuple[CoreSpeechPipeline, SpeechRuntimeShutdown]:
         self.validate_current()
         if self._built or reference is not self._reference:
-            raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.COGNITION_COMPOSITION_FAILED)
+            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.COGNITION_COMPOSITION_FAILED)
         self._built = True
         p, ports = self._publication, self._ports
         readers = ports.readers(cognition, reference)
         if not isinstance(readers, CoreSpeechContextReaders):
-            raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INVALID_SYSTEM_CONFIG)
+            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
         self.pipeline = CoreSpeechPipeline(
             self._semantic.context_builder,
             SpeechSemanticsPlanner(
@@ -387,7 +387,7 @@ class SpeechProductionBinding:
             or core.cognition.speech.shutdown is not self._shutdown
             or core.input_context is not self._reference
         ):
-            raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INITIALIZATION_FAILED)
+            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INITIALIZATION_FAILED)
         self._transferred = True
 
     async def close(self) -> None:
@@ -415,7 +415,7 @@ class SpeechProductionBinding:
         if cancelled:
             raise asyncio.CancelledError
         if failed:
-            raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INITIALIZATION_FAILED)
+            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INITIALIZATION_FAILED)
 
 
 async def create_production_speech_configuration(
@@ -431,7 +431,7 @@ async def create_production_speech_configuration(
 ) -> SpeechProductionBinding:
     """返却済みleaseを直ちに所有し、未構築・不一致を成功にしない。"""
     if not isinstance(inputs, SpeechProductionInputs):
-        raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INVALID_SYSTEM_CONFIG)
+        raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
     p = inputs.publication
     if (
         not isinstance(p, SpeechProductionPublication)
@@ -439,26 +439,26 @@ async def create_production_speech_configuration(
         or not isinstance(inputs.memory, CoreMemoryPersistenceBinding)
         or (p.character_id, p.character_revision) != (character_id, character_revision)
     ):
-        raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INVALID_SYSTEM_CONFIG)
+        raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
     identity(runtime_epoch)
     identity(system_run_id)
     if inputs.current_publication() != p:
-        raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INITIALIZATION_FAILED)
+        raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INITIALIZATION_FAILED)
     semantic_publication = inputs.semantic_owner.publication()
     ports = await inputs.acquire(p, p.roles())
     if not isinstance(ports, SpeechProductionPorts):
-        raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INVALID_SYSTEM_CONFIG)
+        raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
     binding: SpeechProductionBinding | None = None
     try:
         if inputs.semantic_owner.publication() != semantic_publication:
-            raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INITIALIZATION_FAILED)
+            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INITIALIZATION_FAILED)
         if (
             ports.publication != p
             or ports.roles != p.roles()
             or not isinstance(ports.presentation, SpeechPresentationWorkerSupervisor)
             or not callable(ports.discard.discard)
         ):
-            raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INVALID_SYSTEM_CONFIG)
+            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
         binding = SpeechProductionBinding(
             inputs, ports, goals, reference, clock, runtime_epoch, system_run_id
         )
@@ -477,7 +477,7 @@ async def create_production_speech_configuration(
         except BaseException:
             if isinstance(error, asyncio.CancelledError):
                 raise asyncio.CancelledError from None
-            raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.INITIALIZATION_FAILED) from None
-        if isinstance(error, (asyncio.CancelledError, ProductionCognitionConfigurationError)):
+            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INITIALIZATION_FAILED) from None
+        if isinstance(error, (asyncio.CancelledError, CognitionCoreConfigurationError)):
             raise
-        raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.COGNITION_COMPOSITION_FAILED) from None
+        raise CognitionCoreConfigurationError(CognitionCoreFailureCode.COGNITION_COMPOSITION_FAILED) from None

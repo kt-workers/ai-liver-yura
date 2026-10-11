@@ -136,7 +136,7 @@ Verify:
 - lifecycle
 - no pending task leaks
 
-### 本番認知Core Brain minimum
+### 認知Core Brain minimum
 
 Use #334 with fake providers/text presentation.
 
@@ -149,7 +149,7 @@ Verify:
 
 #561の早期起動に必要な登録集合とリビジョン付き初期データは、[最小Brainの本番初期構成](minimum_brain_production_configuration.md)を参照する。
 
-#561の必須Brainモジュール登録は`INPUT_MEANING`のみであり、上記本番認知Coreの全検証対象を起動時に必須登録することを意味しない。4レーンの定義要件は維持する。提供サービス未構成時の型付き利用不可、プロセス継続、取消・停止後の所有タスク回収までを早期に証明し、通常会話の成功や#360の本番認知Core最終検証は後続工程で確認する。
+#561の必須Brainモジュール登録は`INPUT_MEANING`のみであり、上記認知Coreの全検証対象を起動時に必須登録することを意味しない。4レーンの定義要件は維持する。提供サービス未構成時の型付き利用不可、プロセス継続、取消・停止後の所有タスク回収までを早期に証明し、通常会話の成功や#360の認知Core最終検証は後続工程で確認する。
 
 ### S3 Full Speech
 
@@ -711,22 +711,22 @@ Meaning・Appraisal・Attention・Executiveのsource event / root_trigger / trig
 
 提供先を置換した自動試験は実LLM・実音声・実サービス・Human Verificationではない。Human実動作はNOT_RUN / UNRATEDを維持する。#621〜#625、#434、#586、GUI・Game・Streamingの受入れへ拡大しない。
 
-## 本番認知Core構成の具体契約（#692）
+## 認知Core構成の具体契約（#692）
 
-明示activation、deployment参照、SystemCompositionSnapshotのtyped化、構築・終了所有は[Systemの本番認知構成](system_production_cognition_configuration.md)を正とする。本書第4節の由来をDomain Stateへ置き換えず、minimum起動と本番認知Coreの分離を維持する。
+明示activation、deployment参照、SystemCompositionSnapshotのtyped化、構築・終了所有は[Systemの本番認知構成](system_cognition_core_configuration.md)を正とする。本書第4節の由来をDomain Stateへ置き換えず、minimum起動と認知Coreの分離を維持する。
 
-## 本番認知Coreの明示CLI入口（#729）
+## 認知Coreの明示CLI入口（#729）
 
 `python -m app --production`は#692の本番認知構成へ、現在のclean checkoutに束縛した新しい実行識別子、明示activation、既存Runtime Ownerを渡す。引数なしの`python -m app`は#561の最小Coreのままとし、両者を自動選択又は相互fallbackしない。
 
-通常の本番認知CoreでProvider deploymentが`unconfigured`なら既存`UnavailableLLMRolePort`による型付き利用不可を保持する。この状態はLLM応答、実発話、外部Provider接続の成功ではない。Speechなしの本番認知CoreはSpeech用Ownerを要求しない。Speech有効時だけ#705/#709の設定・登録入口から得た`SpeechProductionInputs`を一度だけ渡し、登録又はavailabilityの不備は失敗として返す。
+通常の認知CoreでProvider deploymentが`unconfigured`なら既存`UnavailableLLMRolePort`による型付き利用不可を保持する。この状態はLLM応答、実発話、外部Provider接続の成功ではない。Speechなしの認知CoreはSpeech用Ownerを要求しない。Speech有効時だけ#705/#709の設定・登録入口から得た`SpeechProductionInputs`を一度だけ渡し、登録又はavailabilityの不備は失敗として返す。
 
-## 本番認知CoreへのSpeech本番構成接続（#702）
+## 認知CoreへのSpeech本番構成接続（#702）
 
-Speechを指定した本番認知Core起動は、[Systemの本番認知構成](system_production_cognition_configuration.md) §9のSystem-owned factoryから既存CoreSpeechConfigurationを生成する。Executive Speech evidence、登録pipeline、SystemCompositionSnapshotは同じbinding / generationを参照する。Speech未指定時の本番認知Coreとminimum起動を維持する。
+Speechを指定した認知Core起動は、[Systemの本番認知構成](system_cognition_core_configuration.md) §9のSystem-owned factoryから既存CoreSpeechConfigurationを生成する。Executive Speech evidence、登録pipeline、SystemCompositionSnapshotは同じbinding / generationを参照する。Speech未指定時の認知Coreとminimum起動を維持する。
 
 構築時点のsafe provenanceと、#621が実行後に照合するtrace・candidate generation・提示Factを分離する。factoryは既存Ownerとdeploymentの明示入力を束ね、具体voice/providerやSpeech意味を作らない。資源のCoreへの移管、borrowed依存の保全、部分構築失敗の回収は同§9を正とし、System側でSpeech shutdownを二重実行しない。
 
 ## 設定ファイルからの本番Speech供給（#705）
 
-Speech有効時は[三層の本番設定](configuration_architecture.md)から解決したpublicationを本番認知Coreの同一runへ注入する。外部I/Oの試験置換とOwner policyの試験fixture置換を区別し、System acceptanceは前者だけを許す。設定の未構成・不正・staleを発話成功とせず、Human Verificationは人間による確認までNOT_RUN / UNRATEDを維持する。
+Speech有効時は[三層の本番設定](configuration_architecture.md)から解決したpublicationを認知Coreの同一runへ注入する。外部I/Oの試験置換とOwner policyの試験fixture置換を区別し、System acceptanceは前者だけを許す。設定の未構成・不正・staleを発話成功とせず、Human Verificationは人間による確認までNOT_RUN / UNRATEDを維持する。

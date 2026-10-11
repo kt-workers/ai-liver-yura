@@ -240,7 +240,7 @@ async def test_plugin_fact_crosses_production_composition_and_returns_to_cogniti
 
 
 @pytest.mark.asyncio
-async def test_zero_plugin_keeps_production_cognition_available(
+async def test_zero_plugin_keeps_cognition_core_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     registry = PluginRegistryAuthority()

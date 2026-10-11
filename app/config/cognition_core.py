@@ -1,8 +1,8 @@
-"""Owner設定を複製せず、production_cognitionの明示参照を厳密に読み込む。"""
+"""Owner設定を複製せず、cognition_coreの明示参照を厳密に読み込む。"""
 
 from dataclasses import dataclass
 
-from app.config.production_cognition_contracts import identity, invalid, parse, resource, revision, shape
+from app.config.cognition_core_contracts import identity, invalid, parse, resource, revision, shape
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +52,7 @@ class CharacterDefinitionReference:
 
 
 @dataclass(frozen=True, slots=True)
-class ProductionCognitionConfig:
+class CognitionCoreConfig:
     schema_id: str
     config_id: str
     config_revision: int
@@ -68,10 +68,10 @@ class ProductionCognitionConfig:
 
     def __post_init__(self) -> None:
         if (
-            self.schema_id != "yura.cognition.production.production-config.v1"
-            or self.config_id != "yura.cognition.production.production"
-            or self.activation_id != "yura.cognition.production.explicit"
-            or self.composition_id != "yura.system.cognition.production"
+            self.schema_id != "yura.cognition.core-config.v1"
+            or self.config_id != "yura.cognition.core"
+            or self.activation_id != "yura.cognition.core.explicit"
+            or self.composition_id != "yura.system.cognition.core"
         ):
             invalid()
         revision(self.config_revision)
@@ -97,7 +97,7 @@ def _config_ref(value: object) -> ConfigurationReference:
     )
 
 
-def load_production_cognition_config(source: str | bytes) -> ProductionCognitionConfig:
+def load_cognition_core_config(source: str | bytes) -> CognitionCoreConfig:
     data = shape(
         parse(source),
         "schema_id config_id config_revision activation_id composition_id "
@@ -107,7 +107,7 @@ def load_production_cognition_config(source: str | bytes) -> ProductionCognition
     attention = shape(data["attention_policy"], "policy_id policy_revision")
     provider = shape(data["provider_deployment"], "resource_ref deployment_id deployment_revision")
     character = shape(data["character_definition"], "resource_ref character_id definition_revision")
-    return ProductionCognitionConfig(
+    return CognitionCoreConfig(
         identity(data["schema_id"]),
         identity(data["config_id"]),
         revision(data["config_revision"]),

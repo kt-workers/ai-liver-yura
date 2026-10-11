@@ -791,7 +791,7 @@ COMPLETEDだけを`AttentionResponseSettlementCoordinator`と既存Finalization 
 
 ## 本番Reader・通知の同一所有接続（#721）
 
-`CoreSpeechProductionOwnerConnection`は、同一本番認知Core production Ownerが保持する既存instanceを不変に
+`CoreSpeechProductionOwnerConnection`は、同一認知Core production Ownerが保持する既存instanceを不変に
 束ね、`CoreSpeechContextReaders`と`CorePresentationNotification`を構成する接続契約である。新しい
 Authority、Store、ledger、Clockは作らない。接続は少なくとも次の既存instanceを明示注入する。
 
@@ -833,8 +833,8 @@ cleanupを中断せず、その完了後に取消を伝播する。失敗、stal
 
 ## Deployment factoryからの本番接続利用（#709）
 
-#709 factoryは、同一本番認知Core Owner graphから既に構成済みの`CoreSpeechProductionOwnerConnection`だけを受け取り、そこからreadersとnotificationを作る。`ActivityExecutionAuthority`、`AttentionTurnStore`、`CoreInputReferenceContextBinding`、process共有`InputNormalizer`、`CoreCognitionDelivery`のidentityは#721のconstructor validationを通す。factoryが別Owner、request-local Store/Normalizer、hidden global、非同期lease取得を同期reader/notification constructionへ持ち込むことを禁止する。
+#709 factoryは、同一認知Core Owner graphから既に構成済みの`CoreSpeechProductionOwnerConnection`だけを受け取り、そこからreadersとnotificationを作る。`ActivityExecutionAuthority`、`AttentionTurnStore`、`CoreInputReferenceContextBinding`、process共有`InputNormalizer`、`CoreCognitionDelivery`のidentityは#721のconstructor validationを通す。factoryが別Owner、request-local Store/Normalizer、hidden global、非同期lease取得を同期reader/notification constructionへ持ち込むことを禁止する。
 
 `PresentationWorkerRegistry`の取得にはrequestの`PresentationWorkerBinding`のbinding ID、binding revision、availabilityをそのまま用いる。trusted registrationとの完全一致だけを受け入れ、unknown、stale、unavailable、Supervisor identity不一致を別bindingへfallbackしない。返却前のleaseはfactory ownership、`SpeechProductionPorts`返却後のlease closeはports release ownershipであり、#711が定めるSupervisor shutdown、Session回収、取消settlement、繰返しcloseの意味を変更しない。
 
-factoryへ注入する`SpeechDeploymentOwnerConnections`は、同一本番認知Core Ownerから借用するsemantic / character / verifier live stateと、`CoreSpeechContextReaders`を構築する既存Owner resolver / reader factoryを保持する。outputはportsの独立fieldではなく、同じ#721 connectionから構築した`CoreSpeechContextReaders.output`だけが供給する。factoryはfixtureやrequest-local objectを生成せず、各readerのOwner/revisionを差し替えない。
+factoryへ注入する`SpeechDeploymentOwnerConnections`は、同一認知Core Ownerから借用するsemantic / character / verifier live stateと、`CoreSpeechContextReaders`を構築する既存Owner resolver / reader factoryを保持する。outputはportsの独立fieldではなく、同じ#721 connectionから構築した`CoreSpeechContextReaders.output`だけが供給する。factoryはfixtureやrequest-local objectを生成せず、各readerのOwner/revisionを差し替えない。

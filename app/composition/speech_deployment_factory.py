@@ -18,7 +18,7 @@ from app.composition.presentation_notification import (
     CorePresentationNotification,
     CoreSpeechProductionOwnerConnection,
 )
-from app.composition.production_cognition_provider import ProductionCognitionProviderLease, ProductionCognitionProviderLeaseFactory
+from app.composition.cognition_core_provider import CognitionCoreProviderLease, CognitionCoreProviderLeaseFactory
 from app.composition.speech import CoreSpeechContextReaders, SpeechOutputPreparationRequest
 from app.composition.speech_deployment import SpeechDeploymentRequest
 from app.composition.speech_preparation import finish_cleanup
@@ -182,7 +182,7 @@ def speech_tts_request_id(
 class SpeechDeploymentOwnerConnections:
     """設定値ではなく起動rootだけが注入する既存Owner接続。"""
 
-    provider_factory: ProductionCognitionProviderLeaseFactory
+    provider_factory: CognitionCoreProviderLeaseFactory
     tts: TTSProductionConnection
     presentation: PresentationWorkerRegistry
     owner_connection: OwnerConnectionResolver
@@ -212,7 +212,7 @@ class ProductionSpeechDeploymentPortFactory:
     async def __call__(self, request: SpeechDeploymentRequest) -> SpeechProductionPorts:
         if not isinstance(request, SpeechDeploymentRequest):
             raise ConfigurationError(ConfigurationFailureCode.BINDING_MISMATCH)
-        provider: ProductionCognitionProviderLease | None = None
+        provider: CognitionCoreProviderLease | None = None
         tts: TTSProductionLease | None = None
         presentation: PresentationWorkerLease | None = None
         try:
@@ -226,7 +226,7 @@ class ProductionSpeechDeploymentPortFactory:
             provider = await self._connections.provider_factory(
                 provider_roles, configs, bindings, mode
             )
-            if not isinstance(provider, ProductionCognitionProviderLease) or provider.bindings != bindings:
+            if not isinstance(provider, CognitionCoreProviderLease) or provider.bindings != bindings:
                 raise ConfigurationError(ConfigurationFailureCode.BINDING_MISMATCH)
             audio_enabled = (
                 SpeechPresentationMode.AUDIO_WITH_TEXT in request.publication.output_modes

@@ -128,7 +128,7 @@ CheckpointはIssue開始、真のblocker発生、implementation complete / Test�
 | #619 | 永続化・別プロセス再起動・停止の本番検証入口を提供する | Work | #359 | Done | 14 |
 | #690 | Deep Appraisal・初期Internal State・Decayの本番構成正本を確立する | Work | 追加の未完依存なし | Ready | 14.25 |
 | #691 | Executive・Requirementsの本番方針と世代供給を確立する | Work | 追加の未完依存なし | Ready | 14.25 |
-| #692 | Owner構成を本番認知Coreの起動へ接続する | Work | #690, #691, #611, #333 | Blocked | 14.5 |
+| #692 | Owner構成を認知Coreの起動へ接続する | Work | #690, #691, #611, #333 | Blocked | 14.5 |
 | #620 | 通常入力・内部契機から判断までのシステム段階を検証する | Integration | #615, #616, #561, #569, #692 | Blocked | 15 |
 | #621 | 実発話・TTS・提示のシステム段階を検証する | Integration | #613, #618, #358 | Blocked | 16 |
 | #622 | 記憶・永続化・復元のシステム段階を検証する | Integration | #614, #359, #619 | Blocked | 17 |
@@ -147,7 +147,7 @@ CheckpointはIssue開始、真のblocker発生、implementation complete / Test�
 
 ```mermaid
 flowchart LR
-  A["#690 Appraisal構成"] --> C["#692 本番認知Core構成接続"]
+  A["#690 Appraisal構成"] --> C["#692 認知Core構成接続"]
   B["#691 Executive構成"] --> C
   D["#611 completed"] --> C
   E["#333 completed"] --> C

@@ -1,12 +1,12 @@
-"""本番production_cognition構成を配送へ接続し、取消・現在性・独立した前景進行を検証する。"""
+"""本番cognition_core構成を配送へ接続し、取消・現在性・独立した前景進行を検証する。"""
 
 import asyncio
 from typing import Any
 
 import pytest
 
-from app.bootstrap import build_production_cognition_core
-from app.composition.production_cognition_provider import ProductionCognitionProviderLease
+from app.bootstrap import build_cognition_core
+from app.composition.cognition_core_provider import CognitionCoreProviderLease
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.executive import GoalTransitionOperation
 from tests.composition.test_system_cognition_configuration import parameters
@@ -17,15 +17,15 @@ from tests.system_integration.test_core_cognition import Port, admission
 async def application() -> tuple[Any, Port]:
     port = Port()
 
-    async def provider(roles: Any, configs: Any, bindings: Any, mode: str) -> ProductionCognitionProviderLease:
+    async def provider(roles: Any, configs: Any, bindings: Any, mode: str) -> CognitionCoreProviderLease:
         async def close() -> None:
             pass
 
-        return ProductionCognitionProviderLease(port, bindings, mode, close)
+        return CognitionCoreProviderLease(port, bindings, mode, close)
 
     params = parameters()
     params["provider_factory"] = provider
-    return await build_production_cognition_core(**params), port
+    return await build_cognition_core(**params), port
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-"""設定のpublicationを生成し、既存Speech Ownerとproduction_cognitionの接続へ渡す。"""
+"""設定のpublicationを生成し、既存Speech Ownerとcognition_coreの接続へ渡す。"""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from app.adapters.llm.speech_semantics import (
 )
 from app.adapters.tts.contracts import TTSVoiceBinding
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
-from app.composition.production_cognition_provider import ProviderBindingSnapshot, RoleConfigPublication
+from app.composition.cognition_core_provider import ProviderBindingSnapshot, RoleConfigPublication
 from app.composition.speech_preparation import finish_cleanup
 from app.composition.speech_production_configuration import (
     SpeechBindingReference,
@@ -31,7 +31,7 @@ from app.composition.speech_production_configuration import (
     SpeechProductionPorts,
     SpeechProductionPublication,
 )
-from app.composition.system_cognition_configuration import ProductionCognitionRunIdentity
+from app.composition.system_cognition_configuration import CognitionCoreRunIdentity
 from app.config.layered import (
     ConfigurationError,
     ConfigurationFailureCode,
@@ -40,7 +40,7 @@ from app.config.layered import (
     load_user_configuration,
 )
 from app.config.provider_deployment import ProviderSourceReference
-from app.config.production_cognition_contracts import identity
+from app.config.cognition_core_contracts import identity
 from app.domain.character_language.realizer import CharacterLanguagePolicy
 from app.domain.llm import LLMFailurePolicy, LLMRoleDescriptor
 from app.domain.semantic_verification import (
@@ -441,7 +441,7 @@ class SpeechDeploymentSource:
         self,
         root: Path,
         config: UserConfiguration,
-        run: ProductionCognitionRunIdentity,
+        run: CognitionCoreRunIdentity,
         semantic_owner: SpeechSemanticPolicyOwner,
         memory: CoreMemoryPersistenceBinding,
         registry: SpeechDeploymentRegistry,
@@ -568,17 +568,17 @@ class SpeechDeploymentSource:
 def create_speech_deployment(
     root: Path,
     *,
-    run: ProductionCognitionRunIdentity,
+    run: CognitionCoreRunIdentity,
     semantic_owner: SpeechSemanticPolicyOwner,
     memory: CoreMemoryPersistenceBinding,
     registry: SpeechDeploymentRegistry,
 ) -> SpeechDeploymentSource | None:
-    """主設定が無効ならNone。有効時は既存production_cognitionへ渡す正式入力を作る。"""
+    """主設定が無効ならNone。有効時は既存cognition_coreへ渡す正式入力を作る。"""
     try:
         config = load_user_configuration(root)
         if config.speech is None:
             return None
-        if not isinstance(run, ProductionCognitionRunIdentity) or not isinstance(
+        if not isinstance(run, CognitionCoreRunIdentity) or not isinstance(
             memory, CoreMemoryPersistenceBinding
         ):
             raise ConfigurationError(ConfigurationFailureCode.BINDING_MISMATCH)

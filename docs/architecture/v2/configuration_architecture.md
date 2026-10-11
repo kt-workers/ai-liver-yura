@@ -24,15 +24,15 @@ schemaは形式のバージョンであり、内容revisionとは異なる。正
 
 解決済み構成は不変。publicationは一つのSystem runに束縛し、binding identityにrun identityを含める。新しい供給元のbinding generationは1から始まり、そのrun中には更新しない。candidate generation、Ownerのcurrentness token、lifecycleは設定から指定しない。元ファイルの内容が変わったら古い供給元はstaleとして拒否し、自動再解決・hot replacementしない。変更は新run / restartでのみ適用する。同名profileの内容変更はrevisionを変え、旧publicationへ付け替えない。他Ownerのreload契約には影響しない。
 
-## 4.1 本番認知Core起動時のSpeech選択
+## 4.1 認知Core起動時のSpeech選択
 
-#729の本番認知Core起動rootは、`resources/config/v2`を既存`load_user_configuration()`で一度のSystem runに固定して読む。`speech: null`なら`create_speech_deployment()`を呼ばず、TTS、Presentation、Speech用Provider、Memoryを要求しない。これはSpeechを`TEXT_ONLY`へ変換することではない。
+#729の認知Core起動rootは、`resources/config/v2`を既存`load_user_configuration()`で一度のSystem runに固定して読む。`speech: null`なら`create_speech_deployment()`を呼ばず、TTS、Presentation、Speech用Provider、Memoryを要求しない。これはSpeechを`TEXT_ONLY`へ変換することではない。
 
-Speech profileを指定した場合だけ、起動rootは同じ`ProductionCognitionRunIdentity`、既存`SpeechSemanticPolicyOwner`、既存Memory binding、`production_speech_deployment_registry()`から得たtrusted registryを`create_speech_deployment()`へ明示供給する。登録欠落、availability不整合、stale、binding mismatch、構成不正は既存の型付き構成失敗として停止し、別Provider、voice、Presentation、試験fixture、空の成功bindingを補作しない。
+Speech profileを指定した場合だけ、起動rootは同じ`CognitionCoreRunIdentity`、既存`SpeechSemanticPolicyOwner`、既存Memory binding、`production_speech_deployment_registry()`から得たtrusted registryを`create_speech_deployment()`へ明示供給する。登録欠落、availability不整合、stale、binding mismatch、構成不正は既存の型付き構成失敗として停止し、別Provider、voice、Presentation、試験fixture、空の成功bindingを補作しない。
 
 ## 5. 本番供給と所有境界
 
-`load_user_configuration()` → 不変のProfile解決結果 → `create_speech_deployment()` → `SpeechProductionInputs` → #702 factory → `build_production_cognition_core(speech=...)`を正式経路とする。
+`load_user_configuration()` → 不変のProfile解決結果 → `create_speech_deployment()` → `SpeechProductionInputs` → #702 factory → `build_cognition_core(speech=...)`を正式経路とする。
 
 供給関数は既存`SpeechSemanticPolicyOwner`、Memory binding、ロード済みCharacter identity/revision、run identity、信頼されたports取得境界を明示入力として受ける。これらのOwnerやlive readerを設定値や試験fixtureから捏造しない。取得境界には解決済みの具体deployment、production Role登録、publicationを渡すため、policyとProvider選択を試験fixtureへ置換する必要がない。
 
@@ -50,7 +50,7 @@ Runtimeはqueue 4、同時準備2、background 1、regeneration 1、speculative�
 
 ## 7. 公開APIの利用と登録契約
 
-起動側は既存Character documentから構築した`SpeechSemanticPolicyOwner`とMemory binding、`ProductionCognitionRunIdentity`を供給する。Character profileの選択元は既存本番認知Core設定の`character_definition.resource_ref`であり、本主設定に第二のCharacter identity/revisionを重複入力させない。#702が同じCharacterを照合する。
+起動側は既存Character documentから構築した`SpeechSemanticPolicyOwner`とMemory binding、`CognitionCoreRunIdentity`を供給する。Character profileの選択元は既存認知Core設定の`character_definition.resource_ref`であり、本主設定に第二のCharacter identity/revisionを重複入力させない。#702が同じCharacterを照合する。
 
 `SpeechDeploymentRegistry`は接続名から`SpeechDeploymentPortFactory`へ解決する。取得関数は`SpeechDeploymentRequest`の具体model、reasoning、voice、Presentation bindingをそのまま既存Adapter/Ownerへ渡し、同じpublication/rolesで`SpeechProductionPorts`を返す。別設定による取得は契約違反である。返却した借用LLM portには#706のwire復元を一度だけ適用する。secret取得、TTS client、Presentation worker、live readerの具体供給は既存の登録された接続境界に残す。この設定Workが別の提示・合成実装を生成しない。
 
@@ -69,7 +69,7 @@ Speech deploymentは、次の四Roleだけを一組とする不変の`SpeechProv
 
 このpublicationは`deployment_id / deployment_revision`、resolved configurationの`binding_id / binding_revision`、availability mode、四Roleのexactな`LLMRoleDescriptor`、同順序の`OpenAIResponsesRoleConfig`、model mapping publication、Roleごとの`ProviderBindingSnapshot`を保持する。consumerはRole config、model mapping、source reference、snapshotを別々に再構築・推測しない。Role集合、順序、各Role IDの重複は生成時に照合し、差異はfail-closedとする。
 
-`ProviderBindingSnapshot`は既存`ProductionCognitionProviderLeaseFactory`の入力型であり、#726はその意味を変えない。Speech publicationを構築する構成層だけが、検証済みRole descriptor、Role config、model mappingからsnapshotへ一度だけ変換する。#709等のconsumerがsnapshotを手作業で生成したり、cognition用`ProviderDeploymentConfig`やそのmanifestを流用したりしてはならない。
+`ProviderBindingSnapshot`は既存`CognitionCoreProviderLeaseFactory`の入力型であり、#726はその意味を変えない。Speech publicationを構築する構成層だけが、検証済みRole descriptor、Role config、model mappingからsnapshotへ一度だけ変換する。#709等のconsumerがsnapshotを手作業で生成したり、cognition用`ProviderDeploymentConfig`やそのmanifestを流用したりしてはならない。
 
 ### 8.1 source referenceとcurrentness
 
@@ -81,13 +81,13 @@ Speech deploymentは、次の四Roleだけを一組とする不変の`SpeechProv
 
 configuredでは、各RoleのsnapshotがRole ID、deployment identity / revision、mapping reference、Role-config reference、mapping identity / revision、reasoning mapping、input / output schema ID、Provider output format nameを同一publicationへ束縛する。instructions、schema、failure policyは既存Speech Role Owner helperとの完全一致を検証し、#726はコピー又は変更しない。具体model / reasoning mappingはSpeech deploymentだけが供給し、既存#357の検証を再利用する。
 
-unconfiguredでは四Role descriptor集合とdeployment / binding identityを保持し、configsとmapping / Role-config referenceを空として、各snapshotのavailability modeを`unconfigured`にする。架空のreference、mapping、Role configを生成しない。構成不良やcurrentness喪失をunconfiguredへ変換せず、既存の失敗を返す。正当なunconfigured publicationだけが既存`ProductionCognitionProviderLeaseFactory`を経由して`UnavailableLLMRolePort`契約へ接続できる。
+unconfiguredでは四Role descriptor集合とdeployment / binding identityを保持し、configsとmapping / Role-config referenceを空として、各snapshotのavailability modeを`unconfigured`にする。架空のreference、mapping、Role configを生成しない。構成不良やcurrentness喪失をunconfiguredへ変換せず、既存の失敗を返す。正当なunconfigured publicationだけが既存`CognitionCoreProviderLeaseFactory`を経由して`UnavailableLLMRolePort`契約へ接続できる。
 
 ### 8.3 consumer境界と後続実装
 
-`SpeechDeploymentRequest`は`SpeechProviderBindingPublication`を一つだけ保持し、#709はそこからexactなRole descriptors、configs、validated snapshots、availability modeを既存`ProductionCognitionProviderLeaseFactory`へ渡す。factoryのclient ownership、cleanup、releaseの意味は変更しない。
+`SpeechDeploymentRequest`は`SpeechProviderBindingPublication`を一つだけ保持し、#709はそこからexactなRole descriptors、configs、validated snapshots、availability modeを既存`CognitionCoreProviderLeaseFactory`へ渡す。factoryのclient ownership、cleanup、releaseの意味は変更しない。
 
-Code Phaseでは`app/config/layered.py`がresolved configurationに必要な不変情報を供給し、`app/composition/speech_deployment.py`がpublicationを構築してrequestへ接続する。既存共通型を意味変更なしで利用できる場合だけ`app/composition/production_cognition_provider.py`を使用する。これらの実装は本節では行わない。
+Code Phaseでは`app/config/layered.py`がresolved configurationに必要な不変情報を供給し、`app/composition/speech_deployment.py`がpublicationを構築してrequestへ接続する。既存共通型を意味変更なしで利用できる場合だけ`app/composition/cognition_core_provider.py`を使用する。これらの実装は本節では行わない。
 
 ### 8.4 本番Speech Deployment Ports Factory（#709）
 
@@ -95,14 +95,14 @@ Code Phaseでは`app/config/layered.py`がresolved configurationに必要な不�
 
 | 入力 | 正規供給元 | 検証と結合 | 所有権 |
 | --- | --- | --- | --- |
-| Provider登録用LLM四Role | requestの`SpeechProviderBindingPublication.factory_inputs()` | Provider schemaのexact roles / configs / bindings / modeを既存`ProductionCognitionProviderLeaseFactory`へそのまま渡す | factoryが返却前と返却後のlease releaseを所有 |
+| Provider登録用LLM四Role | requestの`SpeechProviderBindingPublication.factory_inputs()` | Provider schemaのexact roles / configs / bindings / modeを既存`CognitionCoreProviderLeaseFactory`へそのまま渡す | factoryが返却前と返却後のlease releaseを所有 |
 | Domain用LLM四Role | `SpeechProductionPublication.roles()` | `SpeechProductionPorts.roles`と#702の完全比較にはDomain schemaのdescriptorだけを渡す。Provider登録用descriptorをこの境界へ公開しない | #706の既存#705経路で一度だけwire wrapperを適用する |
 | TTS | #720 `TTSProductionConnection`とrequestの`TTSVoiceBinding` | binding identity / revisionと同一connectionを既存`acquire()`で照合する | `TTSProductionLease`をfactoryがreleaseする |
 | Presentation | #711 `PresentationWorkerRegistry`とpublicationのPresentation binding | trusted registrationだけをexact identity / revisionで取得する | `PresentationWorkerLease`をfactoryがreleaseする |
-| reader / notification | #721 `CoreSpeechProductionOwnerConnection`を返す公開resolverと明示reader factory | lease取得後、同じ本番認知Core cognition / reference / Activity / Attention / Normalizer graphだけを受理する | borrowed Ownerをcloseしない |
+| reader / notification | #721 `CoreSpeechProductionOwnerConnection`を返す公開resolverと明示reader factory | lease取得後、同じ認知Core cognition / reference / Activity / Attention / Normalizer graphだけを受理する | borrowed Ownerをcloseしない |
 
 factoryは未構成LLMを既存typed unavailableとして通すが、configured publicationの不正、Role不一致、stale、binding mismatchをunconfigured又はTEXT_ONLYへ変換しない。TEXT_ONLYとAUDIO_WITH_TEXT、Runtime candidate priorityと`TTSSynthesisPriority`、request identityは各既存Ownerの公開契約に従い、factoryが再符号化又は推測しない。
 
-取得はLLM lease、必要なTTS lease、Presentation leaseを非同期で完了して`SpeechProductionPorts`を返す第一段階と、#702が同一本番認知Core cognition / referenceを確定して`CoreSpeechConfiguration.build`内でreader / notificationを同期結合する第二段階に分ける。第二段階のresolverは構成ハンドルごとに一度だけ#721 connectionを解決して固定し、readerと全notificationは固定済みconnectionだけを使う。未結合、二重結合、別cognition / reference / runへの再結合は拒否し、同期結合中に非同期資源を新規取得しない。いずれかの取得・検証・取消に失敗した場合、既取得のowned leaseを逆順に全て一度ずつsettleしてから元の失敗又は取消を伝播する。cleanup failureは全回収試行後に固定の安全な診断として残すが、元の失敗又は取消を置換せず、成功又は通常の構成成功へ変換しない。返却後のpipeline / Runtime所有権移管は#702の`SpeechProductionBinding`に委譲し、borrowed Ownerをfactoryが終了しない。
+取得はLLM lease、必要なTTS lease、Presentation leaseを非同期で完了して`SpeechProductionPorts`を返す第一段階と、#702が同一認知Core cognition / referenceを確定して`CoreSpeechConfiguration.build`内でreader / notificationを同期結合する第二段階に分ける。第二段階のresolverは構成ハンドルごとに一度だけ#721 connectionを解決して固定し、readerと全notificationは固定済みconnectionだけを使う。未結合、二重結合、別cognition / reference / runへの再結合は拒否し、同期結合中に非同期資源を新規取得しない。いずれかの取得・検証・取消に失敗した場合、既取得のowned leaseを逆順に全て一度ずつsettleしてから元の失敗又は取消を伝播する。cleanup failureは全回収試行後に固定の安全な診断として残すが、元の失敗又は取消を置換せず、成功又は通常の構成成功へ変換しない。返却後のpipeline / Runtime所有権移管は#702の`SpeechProductionBinding`に委譲し、borrowed Ownerをfactoryが終了しない。
 
-この境界の結合回帰は、`production_speech_deployment_registry`から登録済みの本番factoryを解決し、`create_speech_deployment()`が返す未取得の`inputs`を一度だけ`build_production_cognition_core(speech=...)`へ渡して確認する。configured / unconfiguredの両方で、#726のProvider用Role/config/binding/modeは`ProductionCognitionProviderLeaseFactory`だけに渡り、`SpeechProductionPorts.roles`と#702の完全比較には`SpeechProductionPublication.roles()`のDomain用Roleだけが渡る。configuredのProvider wireは#706の既存経路で一度だけDomain portへ復元され、unconfiguredは既存のtyped unavailableを維持する。構築中に外部合成・提示を開始せず、返却済み資源は既存の停止・release経路で回収する。
+この境界の結合回帰は、`production_speech_deployment_registry`から登録済みの本番factoryを解決し、`create_speech_deployment()`が返す未取得の`inputs`を一度だけ`build_cognition_core(speech=...)`へ渡して確認する。configured / unconfiguredの両方で、#726のProvider用Role/config/binding/modeは`CognitionCoreProviderLeaseFactory`だけに渡り、`SpeechProductionPorts.roles`と#702の完全比較には`SpeechProductionPublication.roles()`のDomain用Roleだけが渡る。configuredのProvider wireは#706の既存経路で一度だけDomain portへ復元され、unconfiguredは既存のtyped unavailableを維持する。構築中に外部合成・提示を開始せず、返却済み資源は既存の停止・release経路で回収する。

@@ -8,9 +8,9 @@ import pytest
 import yaml
 
 from app.config.provider_deployment import ROLE_IDS, load_provider_deployment
-from app.config.production_cognition_contracts import ProductionCognitionConfigurationError
+from app.config.cognition_core_contracts import CognitionCoreConfigurationError
 
-SOURCE = Path("resources/config/v2/provider_deployment_production.yaml").read_text()
+SOURCE = Path("resources/config/v2/provider_deployment_cognition.yaml").read_text()
 REF = {"source_id": "deployment", "identity": "role-mapping", "revision": 1}
 
 
@@ -78,5 +78,5 @@ def test_manifest_rejects_inconsistent_or_unsafe_values(change: str) -> None:
         data["deployment_id"] = "/private/source"
     elif change == "secret-field":
         data["credential"] = "forbidden-test-value"
-    with pytest.raises(ProductionCognitionConfigurationError):
+    with pytest.raises(CognitionCoreConfigurationError):
         load_provider_deployment(yaml.safe_dump(data))

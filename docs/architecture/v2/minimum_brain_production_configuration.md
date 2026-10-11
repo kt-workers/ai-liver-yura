@@ -6,7 +6,7 @@
 
 ## 1. 責務と正本
 
-本書は早期起動（Early Boot）#561が消費する初期データと構成境界を定める。通常会話の成功や#360の本番認知Core最終結合検証の完了は表さない。意味処理、状態の採用条件、役割識別子、要求・結果の構造識別子は既存所有者の正本を使う。
+本書は早期起動（Early Boot）#561が消費する初期データと構成境界を定める。通常会話の成功や#360の認知Core最終結合検証の完了は表さない。意味処理、状態の採用条件、役割識別子、要求・結果の構造識別子は既存所有者の正本を使う。
 
 - [システム結合](system_integration_contracts.md): 段階的な結合と検証。
 - [Brain結合実装](brain_integration_implementation.md): 4レーン、モジュール登録、所有者への採用判定の委譲。
@@ -52,7 +52,7 @@ MEMORY
 REFLECTION
 ```
 
-本番認知Coreで検証する境界に含まれることは、#561の起動前の必須登録を意味しない。#334の4レーンをすべて定義する要件は維持するが、全BrainIntegrationModuleの登録を要求しない。未登録モジュールへの要求は既存#334の拒否契約を使い、代替の意味処理を生成しない。
+認知Coreで検証する境界に含まれることは、#561の起動前の必須登録を意味しない。#334の4レーンをすべて定義する要件は維持するが、全BrainIntegrationModuleの登録を要求しない。未登録モジュールへの要求は既存#334の拒否契約を使い、代替の意味処理を生成しない。
 
 ## 3. 起動時に証明する動作
 
@@ -218,7 +218,7 @@ InputMeaningLiveContextPortと#326の採用契約を変更しない。
 
 リビジョン1の受理方針の参照元は、第5節のruntime_epochへ結び付いた実際の不変設定である。現在の入力文脈世代の所有者が未結合なら、方針のリビジョンだけ分かっていても有効なInputMeaningFreshnessStampを返せない。常にsource_context_revision=0を返す、要求開始時のリビジョンを現在のリビジョンとして返す、単に固定値1を返して方針の参照を省略する、といった偽の正本を作らない。
 
-本番会話の成功に必要な入力文脈の状態の結合は#360の本番認知Core有効化時に再監査する。その時点でdescriptor・要求・採用直前の現在状態を同じ方針の不変設定に結び付け、既存snapshot_consistency_contracts.mdの読取手順を利用する。汎用の再試行・読取アルゴリズムを本書で再定義しない。
+本番会話の成功に必要な入力文脈の状態の結合は#360の認知Core有効化時に再監査する。その時点でdescriptor・要求・採用直前の現在状態を同じ方針の不変設定に結び付け、既存snapshot_consistency_contracts.mdの読取手順を利用する。汎用の再試行・読取アルゴリズムを本書で再定義しない。
 
 ### 11.1 Brain登録用の接続アダプター
 
@@ -325,15 +325,15 @@ InputMeaningBrainModulePortはPythonのCancelledErrorを捕捉して通常結果
 - #361の計画、#362の発話意味、#330の言語化、#363の意味検証の実行方針。
 - #328等の他の論理役割の実行方針と、#364の背景処理の方針。
 
-試験用データや過去の暗黙値を本番の初期値へコピーしない。この保留は#561の阻害要因ではなく、各後続段階の有効化条件である。通常会話や本番認知Core最終検証を完了扱いしない。
+試験用データや過去の暗黙値を本番の初期値へコピーしない。この保留は#561の阻害要因ではなく、各後続段階の有効化条件である。通常会話や認知Core最終検証を完了扱いしない。
 
 ### #690によるAppraisal側の具体化
 
-上記留保のうちDeep Appraisal実行方針・fresh-start Internal State・Decay具体規則の設計値と供給境界は[Appraisalの本番構成](appraisal_production_configuration.md)を唯一の正本とする。設計レビュー待ちであり実装・採用済みとは扱わない。初期化とresume / rehydrationを区別し、試験値の本番転用禁止を維持する。Executive / Requirementsの構成は#691、Owner構成の本番認知Core接続は#692に残し、minimum YAMLと既存INPUT_MEANING-only起動は変更しない。
+上記留保のうちDeep Appraisal実行方針・fresh-start Internal State・Decay具体規則の設計値と供給境界は[Appraisalの本番構成](appraisal_production_configuration.md)を唯一の正本とする。設計レビュー待ちであり実装・採用済みとは扱わない。初期化とresume / rehydrationを区別し、試験値の本番転用禁止を維持する。Executive / Requirementsの構成は#691、Owner構成の認知Core接続は#692に残し、minimum YAMLと既存INPUT_MEANING-only起動は変更しない。
 
 ### #691によるExecutive側の具体化
 
-Executive実行方針とRequirementsの初期値・供給境界は[Executiveの本番構成](executive_production_configuration.md)を正とする。minimum YAMLへ値を複製せず、INPUT_MEANING-only起動を変更しない。本番認知CoreでのOwner接続・Provider mapping・登録は#692 / #360が所有する。
+Executive実行方針とRequirementsの初期値・供給境界は[Executiveの本番構成](executive_production_configuration.md)を正とする。minimum YAMLへ値を複製せず、INPUT_MEANING-only起動を変更しない。認知CoreでのOwner接続・Provider mapping・登録は#692 / #360が所有する。
 
 ## 13. 監査不足の最終分類
 
@@ -342,7 +342,7 @@ Executive実行方針とRequirementsの初期値・供給境界は[Executiveの�
 |G1|CONTRACT_GAP|解消。第2節で起動必須集合を確定|
 |G2|PRODUCTION_CONFIGURATION_GAP|再分類して解消。第7節で再試行の構築値を明示|
 |G3|CONTRACT_GAP|解消。第4・5節で場所・形式・型付き境界・構成版を確定|
-|G4|SYSTEM_COMPOSITION_AUTHORITY_GAP|#561範囲で解消。実際の不変設定を方針の参照元とし、入力文脈世代の取得不能なら拒否。会話成功の接続は後続本番認知Coreへ限定|
+|G4|SYSTEM_COMPOSITION_AUTHORITY_GAP|#561範囲で解消。実際の不変設定を方針の参照元とし、入力文脈世代の取得不能なら拒否。会話成功の接続は後続認知Coreへ限定|
 |G5|PRODUCTION_CONFIGURATION_GAP|#561必須値を解消。第7〜9節。LLM依存再試行は有効化しない|
 |G6|後続Moduleの有効化時の構成課題|第12節へ保留し、#561を阻害しない|
 
@@ -391,6 +391,6 @@ Executive実行方針とRequirementsの初期値・供給境界は[Executiveの�
 
 `cognition`を指定しない既存最小起動とCLIはINPUT_MEANINGのみを登録する。minimum YAMLへ全Roleを必須追加せず、任意提供サービス・Subsystemの不在を起動不能へ変更しない。提供サービス未構成では既存のPROVIDER_UNAVAILABLEを保持し、通常認知でも後続評価・判断を生成しない。構成済み提供サービスの設定不備は従来どおり起動設定失敗とする。
 
-## 明示本番認知Core activationへの接続（#692）
+## 明示認知Core activationへの接続（#692）
 
-本番認知Coreを要求したcallerだけが[Systemの本番認知構成](system_production_cognition_configuration.md)の入口を使用する。本書のminimum YAML・INPUT_MEANING-only既定起動に本番認知Core設定を必須追加せず、本番認知Core構成不正をminimum成功で隠さない。
+認知Coreを要求したcallerだけが[Systemの本番認知構成](system_cognition_core_configuration.md)の入口を使用する。本書のminimum YAML・INPUT_MEANING-only既定起動に認知Core設定を必須追加せず、認知Core構成不正をminimum成功で隠さない。
