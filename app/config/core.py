@@ -137,13 +137,15 @@ def _execution(value: object) -> LLMExecutionPolicy:
     )
     temperature = data["temperature_normalized"]
     return LLMExecutionPolicy(
-        _text(data["policy_id"]), _integer(data["policy_revision"]),
-        LLMModelClass(_text(data["model_class"])),
-        LLMReasoningEffort(_text(data["reasoning_effort"])),
-        _number(data["timeout_seconds"]), _integer(data["max_attempts"]),
-        _integer(data["max_output_tokens"]),
-        None if temperature is None else _number(temperature),
-        LLMRequestRetryPolicy(
+        policy_id=_text(data["policy_id"]),
+        policy_revision=_integer(data["policy_revision"]),
+        model_class=LLMModelClass(_text(data["model_class"])),
+        reasoning_effort=LLMReasoningEffort(_text(data["reasoning_effort"])),
+        timeout_seconds=_number(data["timeout_seconds"]),
+        max_attempts=_integer(data["max_attempts"]),
+        max_output_tokens=_integer(data["max_output_tokens"]),
+        temperature_normalized=None if temperature is None else _number(temperature),
+        retry_policy=LLMRequestRetryPolicy(
             _number(retry["initial_backoff_seconds"]),
             _number(retry["backoff_multiplier"]),
             _number(retry["max_backoff_seconds"]),
