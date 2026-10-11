@@ -58,7 +58,7 @@ class PresentationNotificationState(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class CoreSpeechProductionOwnerConnection:
-    """同一S2 Ownerの既存instanceだけでPresentation通知を構成する。"""
+    """同一production_cognition Ownerの既存instanceだけでPresentation通知を構成する。"""
 
     authority: ActivityExecutionAuthority
     attention: AttentionTurnStore

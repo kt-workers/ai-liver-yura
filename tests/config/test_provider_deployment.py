@@ -8,9 +8,9 @@ import pytest
 import yaml
 
 from app.config.provider_deployment import ROLE_IDS, load_provider_deployment
-from app.config.s2_contracts import S2ConfigurationError
+from app.config.production_cognition_contracts import ProductionCognitionConfigurationError
 
-SOURCE = Path("resources/config/v2/provider_deployment_s2.yaml").read_text()
+SOURCE = Path("resources/config/v2/provider_deployment_production.yaml").read_text()
 REF = {"source_id": "deployment", "identity": "role-mapping", "revision": 1}
 
 
@@ -78,5 +78,5 @@ def test_manifest_rejects_inconsistent_or_unsafe_values(change: str) -> None:
         data["deployment_id"] = "/private/source"
     elif change == "secret-field":
         data["credential"] = "forbidden-test-value"
-    with pytest.raises(S2ConfigurationError):
+    with pytest.raises(ProductionCognitionConfigurationError):
         load_provider_deployment(yaml.safe_dump(data))

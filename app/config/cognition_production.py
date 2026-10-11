@@ -1,8 +1,8 @@
-"""Owner設定を複製せず、S2の明示参照を厳密に読み込む。"""
+"""Owner設定を複製せず、production_cognitionの明示参照を厳密に読み込む。"""
 
 from dataclasses import dataclass
 
-from app.config.s2_contracts import identity, invalid, parse, resource, revision, shape
+from app.config.production_cognition_contracts import identity, invalid, parse, resource, revision, shape
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +52,7 @@ class CharacterDefinitionReference:
 
 
 @dataclass(frozen=True, slots=True)
-class S2ProductionConfig:
+class ProductionCognitionConfig:
     schema_id: str
     config_id: str
     config_revision: int
@@ -68,10 +68,10 @@ class S2ProductionConfig:
 
     def __post_init__(self) -> None:
         if (
-            self.schema_id != "yura.cognition-s2.production-config.v1"
-            or self.config_id != "yura.cognition-s2.production"
-            or self.activation_id != "yura.cognition-s2.explicit"
-            or self.composition_id != "yura.system.cognition-s2"
+            self.schema_id != "yura.cognition.production.production-config.v1"
+            or self.config_id != "yura.cognition.production.production"
+            or self.activation_id != "yura.cognition.production.explicit"
+            or self.composition_id != "yura.system.cognition.production"
         ):
             invalid()
         revision(self.config_revision)
@@ -97,7 +97,7 @@ def _config_ref(value: object) -> ConfigurationReference:
     )
 
 
-def load_s2_config(source: str | bytes) -> S2ProductionConfig:
+def load_production_cognition_config(source: str | bytes) -> ProductionCognitionConfig:
     data = shape(
         parse(source),
         "schema_id config_id config_revision activation_id composition_id "
@@ -107,7 +107,7 @@ def load_s2_config(source: str | bytes) -> S2ProductionConfig:
     attention = shape(data["attention_policy"], "policy_id policy_revision")
     provider = shape(data["provider_deployment"], "resource_ref deployment_id deployment_revision")
     character = shape(data["character_definition"], "resource_ref character_id definition_revision")
-    return S2ProductionConfig(
+    return ProductionCognitionConfig(
         identity(data["schema_id"]),
         identity(data["config_id"]),
         revision(data["config_revision"]),

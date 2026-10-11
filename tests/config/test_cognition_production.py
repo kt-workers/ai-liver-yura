@@ -1,4 +1,4 @@
-"""S2正本の明示参照と不正なYAMLの拒否を検証する。"""
+"""production_cognition正本の明示参照と不正なYAMLの拒否を検証する。"""
 
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
@@ -7,15 +7,15 @@ from typing import Any
 import pytest
 import yaml
 
-from app.config.cognition_s2 import load_s2_config
-from app.config.s2_contracts import S2ConfigurationError
+from app.config.cognition_production import load_production_cognition_config
+from app.config.production_cognition_contracts import ProductionCognitionConfigurationError
 
-SOURCE = Path("resources/config/v2/cognition_s2.yaml").read_text()
+SOURCE = Path("resources/config/v2/cognition_production.yaml").read_text()
 
 
 def test_canonical_references_are_explicit_and_frozen() -> None:
-    config = load_s2_config(SOURCE)
-    assert config.config_id == "yura.cognition-s2.production"
+    config = load_production_cognition_config(SOURCE)
+    assert config.config_id == "yura.cognition.production.production"
     assert config.config_revision == config.composition_revision == 1
     for name in ("minimum", "appraisal", "executive"):
         ref = getattr(config, name + "_config")
@@ -26,7 +26,7 @@ def test_canonical_references_are_explicit_and_frozen() -> None:
     assert config.character_definition.character_id == "yura"
     with pytest.raises(FrozenInstanceError):
         config.config_id = "changed"  # type: ignore[misc]
-    with pytest.raises(S2ConfigurationError):
+    with pytest.raises(ProductionCognitionConfigurationError):
         replace(config, config_revision=True)
 
 
@@ -38,16 +38,16 @@ def test_closed_shape(field: str, operation: str) -> None:
         del data[field]
     else:
         data[field + "_unknown"] = data[field]
-    with pytest.raises(S2ConfigurationError):
-        load_s2_config(yaml.safe_dump(data))
+    with pytest.raises(ProductionCognitionConfigurationError):
+        load_production_cognition_config(yaml.safe_dump(data))
 
 
 @pytest.mark.parametrize("value", [True, False, 0, -1, 1.5, "1", None])
 def test_revision_rejects_invalid_values(value: Any) -> None:
     data = yaml.safe_load(SOURCE)
     data["config_revision"] = value
-    with pytest.raises(S2ConfigurationError):
-        load_s2_config(yaml.safe_dump(data))
+    with pytest.raises(ProductionCognitionConfigurationError):
+        load_production_cognition_config(yaml.safe_dump(data))
 
 
 @pytest.mark.parametrize(
@@ -67,8 +67,8 @@ def test_revision_rejects_invalid_values(value: Any) -> None:
 def test_unsafe_resource_reference(value: str) -> None:
     data = yaml.safe_load(SOURCE)
     data["appraisal_config"]["resource_ref"] = value
-    with pytest.raises(S2ConfigurationError) as caught:
-        load_s2_config(yaml.safe_dump(data))
+    with pytest.raises(ProductionCognitionConfigurationError) as caught:
+        load_production_cognition_config(yaml.safe_dump(data))
     assert value not in str(caught.value) or not value
 
 
@@ -84,6 +84,6 @@ def test_unsafe_resource_reference(value: str) -> None:
     ],
 )
 def test_malformed_duplicate_cycle_and_tag_are_safe(source: str) -> None:
-    with pytest.raises(S2ConfigurationError) as caught:
-        load_s2_config(source)
-    assert str(caught.value) == "S2構成を使用できません: INVALID_SYSTEM_CONFIG"
+    with pytest.raises(ProductionCognitionConfigurationError) as caught:
+        load_production_cognition_config(source)
+    assert str(caught.value) == "production_cognition構成を使用できません: INVALID_SYSTEM_CONFIG"

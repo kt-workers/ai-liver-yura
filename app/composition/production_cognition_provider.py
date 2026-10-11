@@ -18,7 +18,7 @@ from app.adapters.llm.openai_responses import (
     model_policy_failure,
 )
 from app.config.provider_deployment import ProviderDeploymentConfig, ProviderSourceReference
-from app.config.s2_contracts import S2ConfigurationError, S2FailureCode, identity
+from app.config.production_cognition_contracts import ProductionCognitionConfigurationError, ProductionCognitionFailureCode, identity
 from app.domain.llm import LLMModelClass, LLMRoleDescriptor
 from app.usecases.ports.llm import LLMRolePort
 
@@ -38,7 +38,7 @@ class ModelPoliciesPublication:
                 for k, v in policies.items()
             )
         ):
-            raise S2ConfigurationError(S2FailureCode.PROVIDER_MAPPING_FAILED)
+            raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.PROVIDER_MAPPING_FAILED)
         for value in policies.values():
             identity(value.mapping_id)
         object.__setattr__(self, "policies", MappingProxyType(policies))
@@ -56,7 +56,7 @@ class RoleConfigPublication:
         if not isinstance(reference, ProviderSourceReference) or not isinstance(
             config, OpenAIResponsesRoleConfig
         ):
-            raise S2ConfigurationError(S2FailureCode.PROVIDER_MAPPING_FAILED)
+            raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.PROVIDER_MAPPING_FAILED)
         schema = json.dumps(dict(config.output_json_schema), sort_keys=True, allow_nan=False)
         object.__setattr__(self, "reference", reference)
         object.__setattr__(self, "_schema", schema)
@@ -69,7 +69,7 @@ class RoleConfigPublication:
         return replace(self._config, output_json_schema=json.loads(self._schema))
 
 
-class S2ProviderConfigurationSource(Protocol):
+class ProductionCognitionProviderConfigurationSource(Protocol):
     def resolve_model_policies(
         self, role_id: str, mapping_ref: ProviderSourceReference
     ) -> ModelPoliciesPublication: ...
@@ -97,7 +97,7 @@ class ProviderBindingSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
-class S2ProviderLease:
+class ProductionCognitionProviderLease:
     port: LLMRolePort
     bindings: tuple[ProviderBindingSnapshot, ...]
     availability_mode: str
@@ -116,37 +116,37 @@ class S2ProviderLease:
         await self.release_owned()
 
 
-class S2ProviderLeaseFactory(Protocol):
+class ProductionCognitionProviderLeaseFactory(Protocol):
     async def __call__(
         self,
         roles: tuple[LLMRoleDescriptor, ...],
         configs: tuple[OpenAIResponsesRoleConfig, ...],
         bindings: tuple[ProviderBindingSnapshot, ...],
         mode: str,
-    ) -> S2ProviderLease: ...
+    ) -> ProductionCognitionProviderLease: ...
 
 
 def resolve_provider_configuration(
     manifest: ProviderDeploymentConfig,
     roles: tuple[LLMRoleDescriptor, ...],
-    source: S2ProviderConfigurationSource | None,
+    source: ProductionCognitionProviderConfigurationSource | None,
 ) -> tuple[tuple[OpenAIResponsesRoleConfig, ...], tuple[ProviderBindingSnapshot, ...]]:
     try:
         return _resolve(manifest, roles, source)
     except Exception:
-        raise S2ConfigurationError(S2FailureCode.PROVIDER_MAPPING_FAILED) from None
+        raise ProductionCognitionConfigurationError(ProductionCognitionFailureCode.PROVIDER_MAPPING_FAILED) from None
 
 
 def _resolve(
     manifest: ProviderDeploymentConfig,
     roles: tuple[LLMRoleDescriptor, ...],
-    source: S2ProviderConfigurationSource | None,
+    source: ProductionCognitionProviderConfigurationSource | None,
 ) -> tuple[tuple[OpenAIResponsesRoleConfig, ...], tuple[ProviderBindingSnapshot, ...]]:
     descriptors = {role.role_id: role for role in roles}
     if len(descriptors) != len(roles) or set(descriptors) != {
         binding.role_id for binding in manifest.role_bindings
     }:
-        raise ValueError("S2のRole登録が一致しません")
+        raise ValueError("production_cognitionのRole登録が一致しません")
     configs: list[OpenAIResponsesRoleConfig] = []
     snapshots: list[ProviderBindingSnapshot] = []
     captured: list[tuple[str, ModelPoliciesPublication, RoleConfigPublication]] = []

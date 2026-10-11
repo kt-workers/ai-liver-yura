@@ -5,7 +5,7 @@ Owner: #327の構成Work #690。利用側: #692 / #611。
 
 ## 1. 正本と監査結果
 
-本書をDeep Appraisal実行方針・fresh-start初期化方式・Decay具体規則・構成保存形式の唯一の値の正本とする。[Appraisal契約](appraisal_internal_state_contracts.md)の意味・Reducer Authority、[減衰数値契約](appraisal_decay_numeric_contracts.md)の式・選択・現在性、[LLM数値契約](llm_execution_numeric_contracts.md)の値域・Provider mappingを変更しない。[最小本体構成](minimum_brain_production_configuration.md)§12のAppraisal側留保を具体化する設計であり、Executive / Requirementsは#691、S2登録は#692に残す。
+本書をDeep Appraisal実行方針・fresh-start初期化方式・Decay具体規則・構成保存形式の唯一の値の正本とする。[Appraisal契約](appraisal_internal_state_contracts.md)の意味・Reducer Authority、[減衰数値契約](appraisal_decay_numeric_contracts.md)の式・選択・現在性、[LLM数値契約](llm_execution_numeric_contracts.md)の値域・Provider mappingを変更しない。[最小本体構成](minimum_brain_production_configuration.md)§12のAppraisal側留保を具体化する設計であり、Executive / Requirementsは#691、本番認知Core登録は#692に残す。
 
 | 監査対象 | 採用済み境界と本Workの対応 |
 | --- | --- |
@@ -141,7 +141,7 @@ fresh-startは、配備の正規起動判断が「復元対象となる以前の
 
 空は「全ての感情が0」でも「neutralな人物」でもなく、因果的に採用されたdynamic facetがまだない状態を表す。架空のcauseやconfidence、joy=0.2等を付与しない。Characterのstatic traitやMemoryの過去記述をfacetへ複写しない。実際のtyped eventの評価候補が既存Reducerを通って必要なfacetを生成する。既存Reducerの新facet処理を変更せず、欠落facetを観測済みの値として外部へ投影しない。
 
-state revision=0は新Reducerの初期世代であり、source context revision=0という主張ではない。構築時点の文脈が取得不能ならfactoryを呼ばずS2初期化を拒否する。起動受付前に同じ文脈Ownerとの整合を#692が確認し、別の文脈へ初期状態の由来を付け替えない。
+state revision=0は新Reducerの初期世代であり、source context revision=0という主張ではない。構築時点の文脈が取得不能ならfactoryを呼ばず本番認知Core初期化を拒否する。起動受付前に同じ文脈Ownerとの整合を#692が確認し、別の文脈へ初期状態の由来を付け替えない。
 
 ### 3.1. startup / resume
 
@@ -199,13 +199,13 @@ YAMLの最上位fieldは`schema_id, config_id, config_revision, execution, initi
 
 DTOはschema/config identityとrevision、DeepAppraisalPolicy、初期化方式と初期revision、DecayPolicyをimmutableに保持する。loaderはYAML重複key・未知field・欠落・未知enum・bool数値・非有限数・不正rule・不正schemaを拒否し、既存Domain型の検査も利用する。enumは既存`.value`、nullは明示null。初期schemaではmode=fresh_empty、state_revision=0だけを受け付け、任意snapshot入力は追加しない。
 
-loaderはテストhelper・環境秘密・外部サービスへアクセスしない。ファイル読込は構成側が行い、IO失敗と形式失敗は秘密値や生YAMLを含めない構成エラーとしてS2 activationへ返す。設定missing / invalidを埋めず、factoryを呼ばない。既存Early Bootや無関係laneの全停止へ拡大しない。
+loaderはテストhelper・環境秘密・外部サービスへアクセスしない。ファイル読込は構成側が行い、IO失敗と形式失敗は秘密値や生YAMLを含めない構成エラーとして本番認知Core activationへ返す。設定missing / invalidを埋めず、factoryを呼ばない。既存Early Bootや無関係laneの全停止へ拡大しない。
 
 factoryは検証済みDTO、fresh-startの明示指定、source_context_revision、initialized_at、呼出側のruntime_epoch識別子を必須で受ける。省略時の固定値・現在時刻・新epoch自動生成は設けない。新InternalStateSnapshotとInternalStateReducerを一度生成し、Appraisal policy・Decay policy・不変の初期化provenanceと共にbindingとして返す。factory内部で候補commitやLLM呼出しをしない。同じruntimeでの再生成は#692の起動所有権で防ぎ、config変更をreset入口にしない。
 
 #692は返された同じReducerとAppraisal policyをCoreCognitionConfigurationへ注入する。Attention / Executive / Requirementsを#690で構築しない。Decay利用側へ同じpolicyを明示渡し、所有者の既存proposal生成・commitを使用する。#690はtimer、独自task、global lock、Decay schedulerを追加しない。規則の供給を自動周期運転の完成へ読み替えない。
 
-policy全体を取得できない減衰要求では既存DECAY_POLICY_UNAVAILABLEとproposalなしを保持する。構成初期化失敗によるS2受付拒否と、稼働中の個別減衰要求のtyped degradationを区別する。
+policy全体を取得できない減衰要求では既存DECAY_POLICY_UNAVAILABLEとproposalなしを保持する。構成初期化失敗による本番認知Core受付拒否と、稼働中の個別減衰要求のtyped degradationを区別する。
 
 ## 6. 世代と公開provenance
 

@@ -383,27 +383,27 @@ Body Expression coordinatorはglobal generationと各native generationを二重�
 
 ```text
 R1 = read global source_context_revision
-S1 = read current InternalStateSnapshot
-A1 = read current AttentionFocusView
-C1 = read current CharacterBodyStyleProfile
-P1 = read current BodyExpressionProjectionPolicy
+state_before = read current InternalStateSnapshot
+attention_before = read current AttentionFocusView
+character_before = read current CharacterBodyStyleProfile
+policy_before = read current BodyExpressionProjectionPolicy
 
-S2 = read current InternalStateSnapshot
-A2 = read current AttentionFocusView
-C2 = read current CharacterBodyStyleProfile
-P2 = read current BodyExpressionProjectionPolicy
-R2 = read global source_context_revision
+state_after = read current InternalStateSnapshot
+attention_after = read current AttentionFocusView
+character_after = read current CharacterBodyStyleProfile
+policy_after = read current BodyExpressionProjectionPolicy
+revision_after = read global source_context_revision
 ```
 
 受理条件:
 
-- `R1 == R2`
-- `S1 == S2`かつ`S1.revision == S2.revision`
-- `A1 == A2`かつ`A1.revision == A2.revision`
-- `C1 == C2`かつcharacter/schema/definition revisionが一致
-- `P1 == P2`かつpolicy id/revisionが一致
-- `S1.source_context_revision <= R1`
-- `A1.source_context_revision <= R1`
+- `R1 == revision_after`
+- `state_before == state_after`かつ両者のrevisionが一致
+- `attention_before == attention_after`かつ両者のrevisionが一致
+- `character_before == character_after`かつcharacter/schema/definition revisionが一致
+- `policy_before == policy_after`かつpolicy id/revisionが一致
+- `state_before.source_context_revision <= R1`
+- `attention_before.source_context_revision <= R1`
 
 同一revisionで異なるimmutable payloadが返る場合はsource owner invariant violationとしてfail closedする。
 

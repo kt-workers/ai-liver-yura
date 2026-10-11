@@ -136,7 +136,7 @@ Verify:
 - lifecycle
 - no pending task leaks
 
-### S2 Brain minimum
+### 本番認知Core Brain minimum
 
 Use #334 with fake providers/text presentation.
 
@@ -149,7 +149,7 @@ Verify:
 
 #561の早期起動に必要な登録集合とリビジョン付き初期データは、[最小Brainの本番初期構成](minimum_brain_production_configuration.md)を参照する。
 
-#561の必須Brainモジュール登録は`INPUT_MEANING`のみであり、上記S2の全検証対象を起動時に必須登録することを意味しない。4レーンの定義要件は維持する。提供サービス未構成時の型付き利用不可、プロセス継続、取消・停止後の所有タスク回収までを早期に証明し、通常会話の成功や#360のS2最終検証は後続工程で確認する。
+#561の必須Brainモジュール登録は`INPUT_MEANING`のみであり、上記本番認知Coreの全検証対象を起動時に必須登録することを意味しない。4レーンの定義要件は維持する。提供サービス未構成時の型付き利用不可、プロセス継続、取消・停止後の所有タスク回収までを早期に証明し、通常会話の成功や#360の本番認知Core最終検証は後続工程で確認する。
 
 ### S3 Full Speech
 
@@ -729,4 +729,4 @@ Speechを指定した本番認知Core起動は、[Systemの本番認知構成](s
 
 ## 設定ファイルからの本番Speech供給（#705）
 
-Speech有効時は[三層の本番設定](configuration_architecture.md)から解決したpublicationをS2の同一runへ注入する。外部I/Oの試験置換とOwner policyの試験fixture置換を区別し、System acceptanceは前者だけを許す。設定の未構成・不正・staleを発話成功とせず、Human Verificationは人間による確認までNOT_RUN / UNRATEDを維持する。
+Speech有効時は[三層の本番設定](configuration_architecture.md)から解決したpublicationを本番認知Coreの同一runへ注入する。外部I/Oの試験置換とOwner policyの試験fixture置換を区別し、System acceptanceは前者だけを許す。設定の未構成・不正・staleを発話成功とせず、Human Verificationは人間による確認までNOT_RUN / UNRATEDを維持する。
