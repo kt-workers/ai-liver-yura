@@ -49,7 +49,10 @@ class ConsoleInputAdapter:
         loop = asyncio.get_running_loop()
         outcome_task = asyncio.create_task(self._observe_outcomes())
         self._register_reader(loop)
-        print("コンソール入力を受け付けます。EOF または SIGINT / SIGTERM で停止します。", flush=True)
+        print(
+            "コンソール入力を受け付けます。EOF または SIGINT / SIGTERM で停止します。",
+            flush=True,
+        )
         try:
             while not stop_requested.is_set():
                 line_task = asyncio.create_task(self._queue.get())
