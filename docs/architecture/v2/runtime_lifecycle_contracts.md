@@ -87,7 +87,7 @@ Shutdownはresource dependencyを守る。特にPersistenceを利用するfinal 
 
 ### 5.1 ゆら本体 CLIの開始と停止
 
-#729の`python -m app`は、ゆら本体の構築完了後に既存の起動処理を一度だけ呼ぶ。`SIGINT`と`SIGTERM`は停止要求へ統合し、`stop()`を必ず呼んで既存所有台帳に従う。開始失敗、取消、停止失敗でもminimum起動へfallbackせず、停止済みinstanceを再開始しない。
+#729の`python -m app`は、ゆら本体の構築完了後に既存の起動処理を一度だけ呼ぶ。`SIGINT`と`SIGTERM`は停止要求へ統合し、`stop()`を必ず呼んで既存所有台帳に従う。開始失敗、取消、停止失敗でも別構成起動へfallbackせず、停止済みinstanceを再開始しない。
 
 CLI自身は具体Provider、TTS、Presentation、Body、Persistenceをclose又は再実装しない。Coreの既存所有資源は逆順回収に委ね、起動rootが借用したOwnerを終了しない。表示する診断は安全な起動結果だけとし、credential、DSN、endpoint、provider例外原文を出力しない。
 

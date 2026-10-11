@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import pytest
 
-from app.bootstrap import MinimumCoreApplication
+from app.bootstrap import CoreRuntimeApplication
 from app.domain.executive import GoalTransitionOperation
 from app.subsystems.validation.body import _project
 from app.subsystems.validation.cognition import NormalCognitionLabCase, normal_cognition_target
@@ -34,16 +34,16 @@ def setup(
     app, port = application(monkeypatch)
     event = admission(app, internal=internal)
     fixture = replace(FIXTURE, typed_inputs=_project(event))
-    created: list[MinimumCoreApplication] = []
+    created: list[CoreRuntimeApplication] = []
     ports = []
 
-    def factory() -> MinimumCoreApplication:
+    def factory() -> CoreRuntimeApplication:
         current, provider = (app, port) if not created else application(monkeypatch)
         if slow:
             provider.release.clear()
         created.append(current)
         ports.append(provider)
-        return cast(MinimumCoreApplication, current)
+        return cast(CoreRuntimeApplication, current)
 
     target = normal_cognition_target(
         (NormalCognitionLabCase(fixture, event),),
@@ -213,15 +213,15 @@ async def test_typed_meaning_failure_does_not_wait_for_next_work(
 @pytest.mark.asyncio
 async def test_repeated_caller_cancel_waits_for_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
     runner, request, fixture, apps, ports, _ = setup(monkeypatch, internal=True, slow=True)
-    original = MinimumCoreApplication.stop
+    original = CoreRuntimeApplication.stop
     entered, release = asyncio.Event(), asyncio.Event()
 
-    async def stop(app: MinimumCoreApplication) -> None:
+    async def stop(app: CoreRuntimeApplication) -> None:
         entered.set()
         await release.wait()
         await original(app)
 
-    monkeypatch.setattr(MinimumCoreApplication, "stop", stop)
+    monkeypatch.setattr(CoreRuntimeApplication, "stop", stop)
     before = asyncio.all_tasks()
     task = asyncio.create_task(runner.run(request, fixture))
     await asyncio.wait_for(wait_for_ports(ports), 2)
@@ -289,12 +289,12 @@ async def test_provenance_mismatch_never_creates_or_starts_production(
     current = replace(PROVENANCE, **{field: value})
     starts = 0
 
-    async def forbidden_start(app: MinimumCoreApplication) -> None:
+    async def forbidden_start(app: CoreRuntimeApplication) -> None:
         nonlocal starts
         starts += 1
         raise AssertionError("不一致の来歴で本番を起動してはいけません")
 
-    monkeypatch.setattr(MinimumCoreApplication, "start", forbidden_start)
+    monkeypatch.setattr(CoreRuntimeApplication, "start", forbidden_start)
     runner, request, fixture, apps, ports, _ = setup(
         monkeypatch,
         provenance_source=lambda: current,

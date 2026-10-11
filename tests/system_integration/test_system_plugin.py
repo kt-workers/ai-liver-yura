@@ -145,9 +145,9 @@ async def test_plugin_fact_crosses_production_composition_and_returns_to_cogniti
         (binding,),
         ExecutionFeedbackRetentionPolicy("system-plugin", 1, 4),
     )
-    build = bootstrap.build_minimum_core
+    build = bootstrap.build_core_runtime
 
-    def composed(*args: Any, **kwargs: Any) -> bootstrap.MinimumCoreApplication:
+    def composed(*args: Any, **kwargs: Any) -> bootstrap.CoreRuntimeApplication:
         from tests.helpers.direct_activity_requirements import requirements_owner, source_owner
 
         requirements = requirements_owner(
@@ -158,7 +158,7 @@ async def test_plugin_fact_crosses_production_composition_and_returns_to_cogniti
         )
         return build(*args, **kwargs)
 
-    monkeypatch.setattr(bootstrap, "build_minimum_core", composed)
+    monkeypatch.setattr(bootstrap, "build_core_runtime", composed)
     app, llm = application(monkeypatch)
     delivery = app.cognition.execution
     assert isinstance(delivery, CoreExecutionDelivery)
@@ -244,13 +244,13 @@ async def test_zero_plugin_keeps_core_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     registry = PluginRegistryAuthority()
-    build = bootstrap.build_minimum_core
+    build = bootstrap.build_core_runtime
 
-    def composed(*args: Any, **kwargs: Any) -> bootstrap.MinimumCoreApplication:
+    def composed(*args: Any, **kwargs: Any) -> bootstrap.CoreRuntimeApplication:
         kwargs["cognition"] = replace(kwargs["cognition"], registry=registry)
         return build(*args, **kwargs)
 
-    monkeypatch.setattr(bootstrap, "build_minimum_core", composed)
+    monkeypatch.setattr(bootstrap, "build_core_runtime", composed)
     app, _ = application(monkeypatch)
     await app.start()
     try:

@@ -100,7 +100,7 @@ def application(monkeypatch: pytest.MonkeyPatch, *, fast: bool = False) -> tuple
         if fast
         else (),
     )
-    app = bootstrap.build_minimum_core(cognition=config)
+    app = bootstrap.build_core_runtime(cognition=config)
     assert set(descriptors) == {"input_meaning", "subjective_appraisal", "executive_deliberation"}
     return app, port
 

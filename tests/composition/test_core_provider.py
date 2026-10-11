@@ -17,7 +17,7 @@ from app.composition.core_provider import (
 )
 from app.config.appraisal import load_appraisal_config
 from app.config.executive import load_executive_config
-from app.config.minimum_brain import load_minimum_brain_config
+from app.config.core import load_core_config
 from app.config.provider_deployment import ProviderSourceReference, load_provider_deployment
 from app.config.core_contracts import CoreConfigurationError
 from app.domain.appraisal.deep import descriptor as appraisal_descriptor
@@ -31,7 +31,7 @@ from tests.config.test_provider_deployment import SOURCE, configured_data
 
 
 def roles() -> tuple[LLMRoleDescriptor, ...]:
-    minimum = load_minimum_brain_config(Path("config/minimum_brain.yaml").read_bytes())
+    minimum = load_core_config(Path("config/core.yaml").read_bytes())
     appraisal = load_appraisal_config(Path("config/appraisal.yaml").read_bytes())
     executive = load_executive_config(Path("config/executive.yaml").read_bytes())
     return (

@@ -264,7 +264,7 @@ async def test_minimum_boot_retains_real_success(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(
         bootstrap, "create_openai_port_from_environment", lambda *_a, **_k: SuccessfulPort()
     )
-    app = bootstrap.build_minimum_core()
+    app = bootstrap.build_core_runtime()
     source = work()
     context = app.input_context.snapshot().context
     payload = cast(InputMeaningBrainWorkPayload, source.payload)

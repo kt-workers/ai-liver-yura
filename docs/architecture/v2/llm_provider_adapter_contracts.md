@@ -42,7 +42,7 @@ Parent: `docs/architecture/v2/llm_role_contracts.md`
 - 実サービス必須の`OpenAIResponsesAdapter.from_environment()`は、資格情報なしで構築に失敗する既存契約を維持する。
 - production OpenAI credentialの名称は`YURA_OPENAI_API_KEY`だけとする。`OPENAI_API_KEY`へのfallbackは持たず、旧名称だけが設定された場合は実サービス必須の構築をfail-closedにする。両方が存在する場合も`YURA_OPENAI_API_KEY`だけを使用する。
 - Adapterはprocess environmentから資格情報を取得するInfrastructure境界であり、`.env`等のsecret fileを探索・読込みしない。資格情報の値を例外、結果、log、診断へ公開しない。
-- 本番の任意接続では、資格情報なしを第7節の有効な利用不可接続として表現し、最小Coreの構成失敗にしない。対応しないモデル対応付け・構造登録不在等の契約違反は引き続き拒否する。
+- 本番の任意接続では、資格情報なしを第7節の有効な利用不可接続として表現し、ゆら本体の構成失敗にしない。対応しないモデル対応付け・構造登録不在等の契約違反は引き続き拒否する。
 - deploymentが明示的に`unconfigured`なら、環境に資格情報が存在してもSDK clientを生成せず既存の型付き利用不可を返す。資格情報の存在だけでProviderを選択又は構成済みに昇格させない。
 - 実Provider smokeはsecretをCIへ渡さず、ローカルHuman/Provider Verificationでのみ行う。
 
@@ -57,7 +57,7 @@ Parent: `docs/architecture/v2/llm_role_contracts.md`
 
 ### 7.1 目的と接続の選択
 
-任意のLLM提供サービスが未構成であることは、最小Coreの構成失敗ではなく、有効な縮退接続である。
+任意のLLM提供サービスが未構成であることは、ゆら本体の構成失敗ではなく、有効な縮退接続である。
 Infrastructure側に、OpenAI環境から本番用の`LLMRolePort`を選択する専用生成関数を設ける。
 これは既存の`OpenAIResponsesAdapter.from_environment()`とは別の公開入口とする。
 
@@ -170,7 +170,7 @@ LLMRoleRequest
 7. 資格情報ありでは構成済み`OpenAIResponsesAdapter`経路を維持し、既存`from_environment()`の意味も維持する。
 8. 未構成PortのSDK・提供サービス呼出は0である。
 9. 資格情報・Prompt・生の例外を公開せず、架空の提供サービス実行来歴を作らない。
-10. 本Workの実装後に#561で、提供サービスなしの最小Core起動と、LLM必須処理だけが型付き利用不可となる隣接・System検証を行う。本Workでは役割固有設定や起動実装を追加しない。
+10. 本Workの実装後に#561で、提供サービスなしのゆら本体起動と、LLM必須処理だけが型付き利用不可となる隣接・System検証を行う。本Workでは役割固有設定や起動実装を追加しない。
 
 ChatGPTによるDraft PRの読み取り専用設計レビューと、別途のCode Phase指示を受けるまで、本番コードへ進まない。
 

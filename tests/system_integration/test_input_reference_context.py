@@ -176,7 +176,7 @@ async def test_minimum_boot_uses_real_current_context_and_commits_meaning(
         bootstrap, "create_openai_port_from_environment", lambda _: SuccessfulPort()
     )
     baseline = asyncio.all_tasks()
-    app = bootstrap.build_minimum_core()
+    app = bootstrap.build_core_runtime()
     snapshot = app.input_context.snapshot()
     value = work()
     payload = cast(InputMeaningBrainWorkPayload, value.payload)

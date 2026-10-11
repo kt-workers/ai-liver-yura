@@ -1,4 +1,4 @@
-"""リビジョン付き設定と既存所有者を結合し、最小Coreを起動・停止する。"""
+"""リビジョン付き設定と既存所有者を結合し、ゆら本体を起動・停止する。"""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ from app.composition.system_cognition_configuration import (
     current_artifact_head,
 )
 from app.config.layered import ConfigurationError, load_user_configuration
-from app.config.minimum_brain import MinimumBrainProductionConfig, load_minimum_brain_config
+from app.config.core import CoreConfig, load_core_config
 from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.appraisal import DeterministicAppraisalRule
@@ -160,11 +160,11 @@ class UnavailableInputMeaningLiveContextPort:
 
 
 @dataclass(frozen=True, slots=True)
-class MinimumCoreApplication:
-    """同一の不変設定に結び付いた最小Coreの構成。"""
+class CoreRuntimeApplication:
+    """同一の不変設定に結び付いた本体の実行構成。"""
 
     runtime_subject_identity: RuntimeSubjectIdentity = field(init=False)
-    config: MinimumBrainProductionConfig
+    config: CoreConfig
     character_definition: CharacterDefinitionDocument
     lifecycle: RuntimeLifecycle
     brain: BrainIntegrationRuntime
@@ -312,9 +312,9 @@ async def _reap_cleanup(task: asyncio.Task[_CleanupResult]) -> None:
     task.result()
 
 
-def build_minimum_core(
+def build_core_runtime(
     config_path: Path | None = None, *, cognition: CoreCognitionConfiguration | None = None
-) -> MinimumCoreApplication:
+) -> CoreRuntimeApplication:
     """本番設定を読み、提供サービスの構成不備は既存契約のまま伝える。"""
     config, character, llm = _load_core(config_path, cognition)
     return _compose_core(
@@ -329,14 +329,14 @@ def build_minimum_core(
 def _load_core(
     config_path: Path | None,
     cognition: CoreCognitionConfiguration | None = None,
-) -> tuple[MinimumBrainProductionConfig, CharacterDefinitionDocument, LLMRolePort]:
+) -> tuple[CoreConfig, CharacterDefinitionDocument, LLMRolePort]:
     root = Path(__file__).resolve().parent.parent
     path = (
-        config_path if config_path is not None else root / "config/minimum_brain.yaml"
+        config_path if config_path is not None else root / "config/core.yaml"
     )
-    config = load_minimum_brain_config(path.read_bytes())
+    config = load_core_config(path.read_bytes())
     character = load_character_definition_yaml(
-        (root / config.character_definition_path).read_bytes()
+        (root / config.character_definition.resource_ref).read_bytes()
     )
     roles: tuple[LLMRoleDescriptor, ...] = (descriptor(config.input_meaning_policy),)
     if cognition is not None:
@@ -354,7 +354,7 @@ def _load_core(
 
 
 def _compose_core(
-    config: MinimumBrainProductionConfig,
+    config: CoreConfig,
     character: CharacterDefinitionDocument,
     llm: LLMRolePort,
     goals: GoalCommitmentStore | CoreGoalPersistenceBinding,
@@ -365,7 +365,7 @@ def _compose_core(
     prepared_activities: ActivityExecutionAuthority | None = None,
     prepared_context: CoreInputReferenceContextBinding | None = None,
     prepared_clock: RuntimeClock | None = None,
-) -> MinimumCoreApplication:
+) -> CoreRuntimeApplication:
     from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
 
     activities = prepared_activities or (
@@ -397,7 +397,7 @@ def _compose_core(
             brain, input_context, bridge.inputs, llm, clock, memory, goals
         )
         delivery.register(bridge)
-    return MinimumCoreApplication(
+    return CoreRuntimeApplication(
         config,
         character,
         lifecycle,
@@ -421,11 +421,11 @@ async def build_persistent_core(
     runtime_epoch: str,
     max_pending_memory: int,
     cognition: CoreCognitionConfiguration | None = None,
-) -> MinimumCoreApplication:
+) -> CoreRuntimeApplication:
     """明示された保存実行基盤を所有し、復元した目標を本体へ接続する。"""
     if not isinstance(persistence, PostgresPersistenceRuntime):
         raise ValueError("本体の保存構成にはPostgresPersistenceRuntimeが必要です")
-    app: MinimumCoreApplication | None = None
+    app: CoreRuntimeApplication | None = None
     memory: CoreMemoryPersistenceBinding | None = None
     lifecycle: RuntimeLifecycle | None = None
     try:
@@ -467,9 +467,9 @@ async def build_persistent_core(
         raise
 
 
-async def run_minimum_core() -> None:
+async def run_core_runtime() -> None:
     """停止通知まで待機し、シグナル登録と所有タスクを確実に片付ける。"""
-    app = build_minimum_core()
+    app = build_core_runtime()
     loop = asyncio.get_running_loop()
     stop_requested = asyncio.Event()
     previous = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
@@ -479,7 +479,7 @@ async def run_minimum_core() -> None:
             loop.add_signal_handler(signum, stop_requested.set)
             registered.append(signum)
         await app.start()
-        print("最小Coreの起動が完了しました。", flush=True)
+        print("本体の実行構成が起動しました。", flush=True)
         await stop_requested.wait()
     finally:
         try:
@@ -602,7 +602,7 @@ async def build_core(
     resource_root: Path = ROOT,
     artifact_head: Callable[[], str] = current_artifact_head,
 ) -> CoreApplication:
-    """本体要求だけを構築し、minimum既定起動へfallbackしない。"""
+    """本体要求だけを構築し、別構成へfallbackしない。"""
     from app.adapters.llm.core import create_core_provider_lease
 
     return await compose_core(

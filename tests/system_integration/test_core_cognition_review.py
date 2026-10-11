@@ -195,10 +195,10 @@ async def test_real_runtime_admission_rejection_reclaims_only_new_source(
     from dataclasses import replace
 
     from app import bootstrap
-    from app.config.minimum_brain import MinimumBrainProductionConfig, load_minimum_brain_config
+    from app.config.core import CoreConfig, load_core_config
 
-    def small(data: bytes) -> MinimumBrainProductionConfig:
-        config = load_minimum_brain_config(data)
+    def small(data: bytes) -> CoreConfig:
+        config = load_core_config(data)
         return replace(
             config,
             integration_policy=replace(
@@ -209,7 +209,7 @@ async def test_real_runtime_admission_rejection_reclaims_only_new_source(
             ),
         )
 
-    monkeypatch.setattr(bootstrap, "load_minimum_brain_config", small)
+    monkeypatch.setattr(bootstrap, "load_core_config", small)
     app, _ = application(monkeypatch)
     await app.start()
     try:

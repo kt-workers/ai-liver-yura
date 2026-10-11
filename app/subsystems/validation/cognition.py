@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from weakref import WeakKeyDictionary
 
-from app.bootstrap import MinimumCoreApplication
+from app.bootstrap import CoreRuntimeApplication
 from app.domain.appraisal import AppraisalStateCommit
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.contracts.common import JsonValue
@@ -36,7 +36,7 @@ class NormalCognitionLabCase:
         return _project(self.admission)
 
 
-NormalCognitionApplicationFactory = Callable[[], MinimumCoreApplication]
+NormalCognitionApplicationFactory = Callable[[], CoreRuntimeApplication]
 
 
 def _result_projection(result: object) -> JsonValue:
@@ -67,7 +67,7 @@ def _status(status: BrainWorkStatus, result: object) -> RunStatus:
 class _IterationApplication:
     """runに登録する終了処理は1件とし、現在iterationの資源だけを保持する。"""
 
-    current: MinimumCoreApplication | None = None
+    current: CoreRuntimeApplication | None = None
 
     async def stop(self) -> None:
         if self.current is not None:
@@ -119,8 +119,8 @@ def normal_cognition_target(
         if owner.current is not None:
             raise ValueError("前iterationのアプリケーションが未停止です")
         app = application_factory()
-        if not isinstance(app, MinimumCoreApplication):
-            raise ValueError("factoryは正規MinimumCoreApplicationを返す必要があります")
+        if not isinstance(app, CoreRuntimeApplication):
+            raise ValueError("factoryは正規CoreRuntimeApplicationを返す必要があります")
         owner.current = app
         stop = owner.stop
         if app.cognition is None:

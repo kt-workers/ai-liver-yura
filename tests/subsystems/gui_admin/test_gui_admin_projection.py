@@ -10,19 +10,19 @@ from pathlib import Path
 import pytest
 
 from app.config.gui_admin import load_gui_admin_config
-from app.config.minimum_brain import load_minimum_brain_config
+from app.config.core import load_core_config
 from app.runtime.kernel.clock import FakeRuntimeClock
 from app.subsystems.gui_admin.configuration_projection import (
-    MinimumBrainConfigurationReadModelProjector,
+    CoreConfigurationReadModelProjector,
 )
 from app.subsystems.gui_admin.contracts import GuiAdminOperationalPolicy
 
 
 def test_projection_uses_injected_generation_and_excludes_private_configuration() -> None:
-    config = load_minimum_brain_config(Path("config/minimum_brain.yaml").read_text())
-    config = replace(config, config_revision=7, character_definition_path="private-not-for-browser")
+    config = load_core_config(Path("config/core.yaml").read_text())
+    config = replace(config, config_revision=7, character_definition.resource_ref="private-not-for-browser")
     clock = FakeRuntimeClock(datetime(2026, 9, 22, tzinfo=timezone.utc))
-    projector = MinimumBrainConfigurationReadModelProjector(
+    projector = CoreConfigurationReadModelProjector(
         config, clock, GuiAdminOperationalPolicy()
     )
     original = projector.json_bytes
@@ -52,13 +52,13 @@ def test_projection_uses_injected_generation_and_excludes_private_configuration(
     assert b"private-not-for-browser" not in original
     assert b"execution_policy" not in original
     with pytest.raises(ValueError, match="容量"):
-        MinimumBrainConfigurationReadModelProjector(
+        CoreConfigurationReadModelProjector(
             config,
             clock,
             GuiAdminOperationalPolicy(max_read_model_payload_bytes=len(original) - 1),
         )
     assert (
-        MinimumBrainConfigurationReadModelProjector(
+        CoreConfigurationReadModelProjector(
             config,
             FakeRuntimeClock(datetime(2026, 9, 22, tzinfo=timezone.utc)),
             GuiAdminOperationalPolicy(max_read_model_payload_bytes=len(original)),
@@ -100,9 +100,9 @@ def test_gui_configuration_has_explicit_independent_policies() -> None:
 def test_read_only_routes_preserve_head_and_safe_failure_contracts() -> None:
     from app.subsystems.gui_admin.http_application import SAFE_HEADERS, GuiHttpApplication
 
-    config = load_minimum_brain_config(Path("config/minimum_brain.yaml").read_text())
+    config = load_core_config(Path("config/core.yaml").read_text())
     app = GuiHttpApplication(
-        MinimumBrainConfigurationReadModelProjector(
+        CoreConfigurationReadModelProjector(
             config,
             FakeRuntimeClock(datetime(2026, 9, 22, tzinfo=timezone.utc)),
             GuiAdminOperationalPolicy(),
@@ -112,7 +112,7 @@ def test_read_only_routes_preserve_head_and_safe_failure_contracts() -> None:
         b"/",
         b"/assets/app.js",
         b"/assets/app.css",
-        b"/api/v1/configuration/minimum-brain",
+        b"/api/v1/configuration/core-runtime",
         b"/healthz",
     ):
         get = app.respond(b"GET", path, has_body=False)

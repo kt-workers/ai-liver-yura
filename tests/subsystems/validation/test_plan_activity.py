@@ -90,7 +90,7 @@ def plan_setup(monkeypatch: pytest.MonkeyPatch, *, mode: str = "normal") -> Any:
     monkeypatch.setattr(bootstrap, "GoalCommitmentStore", lambda **kw: value.goals)
     monkeypatch.setattr(bootstrap, "ActivityExecutionAuthority", lambda: value.activity)
     monkeypatch.setattr(bootstrap, "SystemRuntimeClock", lambda: value.clock)
-    build = bootstrap.build_minimum_core
+    build = bootstrap.build_core_runtime
 
     def configured(*args: Any, **kwargs: Any) -> Any:
         cognition = kwargs["cognition"]
@@ -106,7 +106,7 @@ def plan_setup(monkeypatch: pytest.MonkeyPatch, *, mode: str = "normal") -> Any:
             },
         )
 
-    monkeypatch.setattr(bootstrap, "build_minimum_core", configured)
+    monkeypatch.setattr(bootstrap, "build_core_runtime", configured)
     app, port = application(monkeypatch)
     if mode == "input":
         return app, provider, value

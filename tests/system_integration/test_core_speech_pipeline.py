@@ -267,7 +267,7 @@ async def test_full_owner_pipeline_and_presentation_feedback(slow_stage: str | N
 
     from app.composition.accepted_input import CoreAcceptedInputStore
     from app.composition.cognition_configuration import CoreCognitionConfiguration
-    from app.config.minimum_brain import load_minimum_brain_config
+    from app.config.core import load_core_config
     from app.domain.appraisal import InternalStateReducer
     from app.domain.brain_integration import BrainIntegrationRuntime
     from app.domain.contracts.preconditions import PreconditionSourceRouter
@@ -295,8 +295,8 @@ async def test_full_owner_pipeline_and_presentation_feedback(slow_stage: str | N
     cognitive_port = core.Port()
     brain = BrainIntegrationRuntime(
         SystemRuntimeClock(),
-        load_minimum_brain_config(
-            Path("config/minimum_brain.yaml").read_bytes()
+        load_core_config(
+            Path("config/core.yaml").read_bytes()
         ).integration_policy,
     )
 

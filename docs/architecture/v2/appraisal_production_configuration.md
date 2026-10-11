@@ -5,7 +5,7 @@ Owner: #327の構成Work #690。利用側: #692 / #611。
 
 ## 1. 正本と監査結果
 
-本書をDeep Appraisal実行方針・fresh-start初期化方式・Decay具体規則・構成保存形式の唯一の値の正本とする。[Appraisal契約](appraisal_internal_state_contracts.md)の意味・Reducer Authority、[減衰数値契約](appraisal_decay_numeric_contracts.md)の式・選択・現在性、[LLM数値契約](llm_execution_numeric_contracts.md)の値域・Provider mappingを変更しない。[最小本体構成](minimum_brain_production_configuration.md)§12のAppraisal側留保を具体化する設計であり、Executive / Requirementsは#691、ゆら本体登録は#692に残す。
+本書をDeep Appraisal実行方針・fresh-start初期化方式・Decay具体規則・構成保存形式の唯一の値の正本とする。[Appraisal契約](appraisal_internal_state_contracts.md)の意味・Reducer Authority、[減衰数値契約](appraisal_decay_numeric_contracts.md)の式・選択・現在性、[LLM数値契約](llm_execution_numeric_contracts.md)の値域・Provider mappingを変更しない。[本体Runtime構成](system_production_cognition_configuration.md)§12のAppraisal側留保を具体化する設計であり、Executive / Requirementsは#691、ゆら本体登録は#692に残す。
 
 | 監査対象 | 採用済み境界と本Workの対応 |
 | --- | --- |
@@ -14,7 +14,7 @@ Owner: #327の構成Work #690。利用側: #692 / #611。
 | DeepAppraisalPolicy | 既存LLMExecutionPolicyを包む型。production値の供給元が未登録だったため本書で確定する |
 | InternalStateSnapshot / Reducer | 空facet集合を許す。state revisionとsource context revisionは独立。Reducerだけが以後の状態をcommitする |
 | DecayPolicy / DecayFacetRule | 既存の明示規則・exact選択・missing diagnosticを使う。値の供給だけを追加する |
-| app/config/minimum_brain.py / gui_admin.py | 専用YAML→厳密loader→不変構成の既存patternを採用する。minimum YAMLに別Roleを必須追加しない |
+| app/config/core_runtime.py / gui_admin.py | 専用YAML→厳密loader→不変構成の既存patternを採用する。旧設定に別Roleを必須追加しない |
 | CoreCognitionConfiguration | 外部注入境界は既存。#690はAppraisal部分を供給し、Executive / Attentionや配備全体を生成しない |
 | Provider mapping | #692 / #360のSystem・deployment構成から外部注入する。#357はgeneric型・検証・Adapterを所有し、Appraisal固有登録は#690が所有する |
 
@@ -182,7 +182,7 @@ half-life / baseline / 最小経過時間はHuman校正可能なversioned data�
 
 ## 5. 保存形式・loader・factory
 
-既存minimum_brain / gui_adminの専用設定patternと比較し、独立YAMLを採用する。Early BootのINPUT_MEANING-only設定へ必須fieldを増やさない。
+既存core runtime / gui_adminの専用設定patternと比較し、独立YAMLを採用する。Early Bootの入力意味解析だけの設定へ必須fieldを増やさない。
 
 | 要素 | 正規配置・識別 |
 | --- | --- |

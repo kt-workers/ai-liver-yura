@@ -39,7 +39,6 @@ from app.composition.speech_production_configuration import (
 from app.config.appraisal import load_appraisal_config
 from app.config.core import ConfigurationReference, CoreConfig, load_core_config
 from app.config.executive import load_executive_config
-from app.config.minimum_brain import load_minimum_brain_config
 from app.config.provider_deployment import load_provider_deployment
 from app.config.core_contracts import (
     CoreConfigurationError,
@@ -63,7 +62,7 @@ from app.runtime.kernel import RuntimeClock
 from app.runtime.lifecycle import RuntimeLifecycle
 
 if TYPE_CHECKING:
-    from app.bootstrap import MinimumCoreApplication
+    from app.bootstrap import CoreRuntimeApplication
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE_RESOURCE = "config/core.yaml"
@@ -87,8 +86,8 @@ class CoreRunIdentity:
 
 @dataclass(frozen=True, slots=True)
 class ComponentBindings:
-    minimum_config_id: str
-    minimum_config_revision: int
+    core_config_id: str
+    core_config_revision: int
     appraisal: AppraisalInitializationProvenance
     executive: ExecutiveConfigurationProvenance
     attention_policy_id: str
@@ -151,7 +150,7 @@ class _OwnedResources:
 
 @dataclass(frozen=True, slots=True)
 class CoreApplication:
-    core: MinimumCoreApplication
+    core: CoreRuntimeApplication
     composition_snapshot: SystemCompositionSnapshot
     cognition: CoreCognitionConfiguration
     appraisal: AppraisalProductionBinding
@@ -262,13 +261,8 @@ async def compose_core(
         config = load_core_config(_read(resource_root, config_ref))
         if activation_id != config.activation_id or fresh_start is not True:
             raise CoreConfigurationError(CoreFailureCode.ACTIVATION_FAILED)
-        minimum = load_minimum_brain_config(
-            _read(resource_root, config.minimum_config.resource_ref)
-        )
-        _match(config.minimum_config, minimum.config_id, minimum.config_revision)
+        runtime = config
         character_ref = config.character_definition
-        if minimum.character_definition_path != character_ref.resource_ref:
-            raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
         character = load_character_definition_yaml(_read(resource_root, character_ref.resource_ref))
         if (character.character_id, character.definition_revision) != (
             character_ref.character_id,
@@ -292,10 +286,10 @@ async def compose_core(
         )
         owned.add_sync(activities.finalization_participant.retire)
         reference = CoreInputReferenceContextBinding(
-            goals, activities, minimum.input_meaning_policy, BOUNDS
+            goals, activities, runtime.input_meaning_policy, BOUNDS
         )
         source_revision = reference.snapshot().context.source_context_revision
-        lifecycle = RuntimeLifecycle(clock, minimum.shutdown_policy)
+        lifecycle = RuntimeLifecycle(clock, runtime.shutdown_policy)
         owned.actions.append(lifecycle.close)
         stage = CoreFailureCode.APPRAISAL_CONFIGURATION_FAILED
         appraisal_config = load_appraisal_config(
@@ -335,7 +329,7 @@ async def compose_core(
         owned.add_sync(attention.finalization_participant.retire)
         stage = CoreFailureCode.PROVIDER_MAPPING_FAILED
         roles = (
-            input_descriptor(minimum.input_meaning_policy),
+            input_descriptor(runtime.input_meaning_policy),
             appraisal_descriptor(appraisal.appraisal_policy),
             executive_descriptor(executive.executive_policy),
         )
@@ -378,7 +372,7 @@ async def compose_core(
             decay_policy=appraisal.decay_policy,
         )
         core = _compose_core(
-            minimum,
+            runtime,
             character,
             lease.port,
             goals,
@@ -409,8 +403,8 @@ async def compose_core(
             now,
             character.character_id,
             character.definition_revision,
-            minimum.config_id,
-            minimum.config_revision,
+            runtime.config_id,
+            runtime.config_revision,
             appraisal.provenance,
             executive.provenance,
             attention_policy,
@@ -439,8 +433,8 @@ def _snapshot(
     created_at: datetime,
     character_id: str,
     character_revision: int,
-    minimum_id: str,
-    minimum_revision: int,
+    core_config_id: str,
+    core_config_revision: int,
     appraisal: AppraisalInitializationProvenance,
     executive: ExecutiveConfigurationProvenance,
     attention: AttentionSchedulingPolicy,
@@ -461,8 +455,8 @@ def _snapshot(
         character_revision,
         (
             ComponentBindings(
-                minimum_id,
-                minimum_revision,
+                core_config_id,
+                core_config_revision,
                 appraisal,
                 executive,
                 attention.policy_id,

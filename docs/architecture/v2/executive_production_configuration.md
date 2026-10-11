@@ -4,7 +4,7 @@ Ownerは#328配下の構成Work #691。利用側は#692 / #360、System受入れ
 
 ## 1. 正本と依存方向
 
-本書をExecutive実行方針とRequirements本番構成の初期採用値・保存形式・構築境界の正本とする。[Executive契約](executive_authority_contracts.md) §9・§9.9・§11.1、[LLM数値契約](llm_execution_numeric_contracts.md)、[Role契約](llm_role_contracts.md)、[Provider契約](llm_provider_adapter_contracts.md)の意味・型・制約を変更しない。[最小本体構成](minimum_brain_production_configuration.md) §12のExecutive側留保を具体化する。
+本書をExecutive実行方針とRequirements本番構成の初期採用値・保存形式・構築境界の正本とする。[Executive契約](executive_authority_contracts.md) §9・§9.9・§11.1、[LLM数値契約](llm_execution_numeric_contracts.md)、[Role契約](llm_role_contracts.md)、[Provider契約](llm_provider_adapter_contracts.md)の意味・型・制約を変更しない。[本体Runtime構成](system_production_cognition_configuration.md) §12のExecutive側留保を具体化する。
 
 #328だけが意識的Goal / Actionを確定する。#630は要件導出・単一規則選択・候補完全一致・世代・最終Fence、#695はDirect source、#610は正規読取、#611は認知配送を所有する。構成層はこれらの公開APIを使用し、別の意味Ownerや全体lockを追加しない。
 
@@ -65,7 +65,7 @@ ACTIVITY sourceは`DirectActivityRequirementSourceSpec(route_id="executive.requi
 
 | 要素 | 配置・採用値 | 制約・理由 |
 | --- | --- | --- |
-| 本番データ | `config/executive.yaml` | minimum YAMLから分離しINPUT_MEANING-only起動を変えない |
+| 本番データ | `config/executive.yaml` | 旧設定から分離し入力意味解析だけの起動を変えない |
 | schema_id | `yura.executive.production-config.v1` | 既知形式のみ受理。形式変更は別schemaとして設計 |
 | config_id | `yura.executive.production` | 非空・固定の構成系列identity |
 | config_revision | `1` | 1以上の整数。内容変更時に増加 |

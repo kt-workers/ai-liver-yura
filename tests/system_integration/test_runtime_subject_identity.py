@@ -32,8 +32,8 @@ def test_production_identity_single_load(tmp_path: Path, alternate: bool, rename
                         facet["value"] = "別の表記"
     character_path = tmp_path / "unrelated-filename.yaml"
     character_path.write_text(yaml.safe_dump(document, allow_unicode=True))
-    config = yaml.safe_load((ROOT / "config/minimum_brain.yaml").read_text())
-    config["character_definition_path"] = str(character_path)
+    config = yaml.safe_load((ROOT / "config/core.yaml").read_text())
+    config["character_definition.resource_ref"] = str(character_path)
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(config))
     with (
@@ -46,7 +46,7 @@ def test_production_identity_single_load(tmp_path: Path, alternate: bool, rename
             wraps=load_character_definition_yaml,
         ) as load,
     ):
-        app = bootstrap.build_minimum_core(config_path)
+        app = bootstrap.build_core_runtime(config_path)
     assert load.call_count == 1
     identity = app.runtime_subject_identity
     loaded = app.character_definition
@@ -72,11 +72,11 @@ def test_missing_invalid_character_has_no_identity_fallback(tmp_path: Path, miss
     path = tmp_path / "character.yaml"
     if not missing:
         path.write_text("character_id: yura")
-    config = yaml.safe_load((ROOT / "config/minimum_brain.yaml").read_text())
-    config["character_definition_path"] = str(path)
+    config = yaml.safe_load((ROOT / "config/core.yaml").read_text())
+    config["character_definition.resource_ref"] = str(path)
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(config))
     with patch.object(bootstrap, "create_openai_port_from_environment") as provider:
         with pytest.raises((FileNotFoundError, ValueError)):
-            bootstrap.build_minimum_core(config_path)
+            bootstrap.build_core_runtime(config_path)
     provider.assert_not_called()

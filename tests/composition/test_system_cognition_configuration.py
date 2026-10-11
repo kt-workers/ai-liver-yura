@@ -142,7 +142,7 @@ def copy_resources(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "reference,field",
     [
-        ("minimum_config", "config_revision"),
+        ("runtime_config", "config_revision"),
         ("appraisal_config", "config_revision"),
         ("executive_config", "config_id"),
         ("attention_policy", "policy_revision"),
@@ -274,7 +274,7 @@ async def test_start_failure_uses_same_cleanup(
             await asyncio.Future()
         raise ValueError("private-detail")
 
-    monkeypatch.setattr(bootstrap.MinimumCoreApplication, "start", start)
+    monkeypatch.setattr(bootstrap.CoreRuntimeApplication, "start", start)
     task = asyncio.create_task(app.start())
     await entered.wait()
     if cancel:
@@ -309,7 +309,7 @@ def test_early_boot_does_not_read_core_config(monkeypatch: pytest.MonkeyPatch) -
         pytest.fail("minimum起動がcore構成を参照しました")
 
     monkeypatch.setattr(system, "load_core_config", forbidden)
-    core = bootstrap.build_minimum_core(cognition=None)
+    core = bootstrap.build_core_runtime(cognition=None)
     assert core.cognition is None
     assert core.config.brain_module_registrations == ("input_meaning",)
 
@@ -352,7 +352,7 @@ async def test_owned_cleanup_actual_order(monkeypatch: pytest.MonkeyPatch) -> No
 
     original_close = ExecutiveProductionBinding.close
     original_retire = AuthorityFinalizationParticipant.retire
-    original_stop = bootstrap.MinimumCoreApplication.stop
+    original_stop = bootstrap.CoreRuntimeApplication.stop
 
     def close(binding: ExecutiveProductionBinding) -> None:
         events.append("executive")
@@ -362,7 +362,7 @@ async def test_owned_cleanup_actual_order(monkeypatch: pytest.MonkeyPatch) -> No
         events.append("retire")
         original_retire(participant)
 
-    async def stop(core: bootstrap.MinimumCoreApplication) -> None:
+    async def stop(core: bootstrap.CoreRuntimeApplication) -> None:
         events.append("core")
         await original_stop(core)
 
@@ -374,7 +374,7 @@ async def test_owned_cleanup_actual_order(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setattr(ExecutiveProductionBinding, "close", close)
     monkeypatch.setattr(AuthorityFinalizationParticipant, "retire", retire)
-    monkeypatch.setattr(bootstrap.MinimumCoreApplication, "stop", stop)
+    monkeypatch.setattr(bootstrap.CoreRuntimeApplication, "stop", stop)
     params["provider_factory"] = provider
     app = await bootstrap.build_core(**params)
     await app.stop()

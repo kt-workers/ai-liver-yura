@@ -594,7 +594,7 @@ binding 0件は「現在登録された実測factが0件」を意味する。正
 
 ## 29. 通常認知の起動登録と配送（#611）
 
-`CoreCognitionConfiguration`は、既存の評価方針・判断方針・Internal State所有者・Attention所有者・ExecutiveRequirementsOwner・PluginRegistryAuthority・実測Routerとbinding・定型評価規則を明示して受け取る。`build_minimum_core(cognition=...)`と`build_persistent_core(cognition=...)`は同じ所有者を各接続へ渡し、INPUT_MEANING・APPRAISAL・EXECUTIVEを既存Brain Runtimeへ登録する。要件方針未登録やOwner欠落は構成失敗とし、実測publicationの取得不能は既存の失敗境界へ伝播する。試験用事実や空の成功を既定値として生成しない。
+`CoreCognitionConfiguration`は、既存の評価方針・判断方針・Internal State所有者・Attention所有者・ExecutiveRequirementsOwner・PluginRegistryAuthority・実測Routerとbinding・定型評価規則を明示して受け取る。`build_core_runtime(cognition=...)`と`build_persistent_core(cognition=...)`は同じ所有者を各接続へ渡し、INPUT_MEANING・APPRAISAL・EXECUTIVEを既存Brain Runtimeへ登録する。要件方針未登録やOwner欠落は構成失敗とし、実測publicationの取得不能は既存の失敗境界へ伝播する。試験用事実や空の成功を既定値として生成しない。
 
 `CoreCognitionDelivery.submit_input()`はGatewayのACCEPTED結果と現在文脈を検査する。外部入力は既存Input Meaningの採用結果だけを評価へ配送し、meaningのない型付き失敗では配送を終了する。raw textの再解釈・fallbackは持たない。ユーザー入力のAttention登録には既存UserInteractionAttentionProjectorを使用する。SUBSYSTEM・LIFECYCLE・TIMERの採用イベントは意味解析成功を生成せず、由来付きの内部入力として既存の有界保持へ格納し、直接APPRAISALへ渡す。
 

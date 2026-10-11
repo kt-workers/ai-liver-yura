@@ -306,7 +306,7 @@ catalogは欠落すると発話意図が変わるcommunicative actを保持す�
 
 #### 11.5.2 production供給と注入
 
-`app/composition/speech_semantics_policy.py`のV1 factoryが上記のMeaningPolicyとcatalogを構築し、`SpeechSemanticProductionPolicies.meaning`を経由して既存`SpeechSemanticPolicyOwner`へ供給する。製品値は#362所有のversioned immutable policyであり、operatorのruntime tuning値や`minimum_brain.yaml`のAuthorityにはしない。test helperのimport、暗黙default、未供給から空catalogへの置換は禁止する。
+`app/composition/speech_semantics_policy.py`のV1 factoryが上記のMeaningPolicyとcatalogを構築し、`SpeechSemanticProductionPolicies.meaning`を経由して既存`SpeechSemanticPolicyOwner`へ供給する。製品値は#362所有のversioned immutable policyであり、operatorのruntime tuning値や`core.yaml`のAuthorityにはしない。test helperのimport、暗黙default、未供給から空catalogへの置換は禁止する。
 
 public injection boundaryは同じOwnerの`publication()`をContext Builderの`current_policies`へ、`catalog_view()`をExecutive speech evidenceのread-only vocabularyへ接続する。元Factのbinding reader、Fact / Truth投影規則、必要なdirective policyは明示注入を維持する。V1供給境界では未供給をSEMANTIC_POLICY_UNAVAILABLE、異なるpolicy / revision / catalog内容をSEMANTIC_POLICY_STALEとして拒否する。新しいAuthorityや並行するcatalog公開は作らない。
 

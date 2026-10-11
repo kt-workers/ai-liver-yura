@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from weakref import WeakKeyDictionary
 
-from app.bootstrap import MinimumCoreApplication
+from app.bootstrap import CoreRuntimeApplication
 from app.domain.activity_execution import (
     ActivityExecutionPort,
     ActivityExecutionRecord,
@@ -126,7 +126,7 @@ class CommittedActivityLabCase:
 
 def plan_activity_target(
     cases: tuple[PlanActivityLabCase | CommittedActivityLabCase, ...],
-    application_factory: Callable[[RunContext], MinimumCoreApplication],
+    application_factory: Callable[[RunContext], CoreRuntimeApplication],
     provenance: ProductionTargetProvenance,
     contract_revision: str,
     provider_policy_refs: tuple[str, ...],
@@ -163,8 +163,8 @@ def plan_activity_target(
         if owner.current is not None:
             raise ValueError("前iterationのアプリケーションが未停止です")
         app = application_factory(context)
-        if not isinstance(app, MinimumCoreApplication):
-            raise ValueError("factoryは正規MinimumCoreApplicationを返す必要があります")
+        if not isinstance(app, CoreRuntimeApplication):
+            raise ValueError("factoryは正規CoreRuntimeApplicationを返す必要があります")
         owner.current = app
         if app.cognition is None or app.cognition.execution is None:
             await owner.stop()

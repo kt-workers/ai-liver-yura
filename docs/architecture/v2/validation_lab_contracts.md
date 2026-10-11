@@ -521,7 +521,7 @@ Validation Lab implementation/extensions remain frozen until #445 D1-D9 and fina
 
 `normal_cognition_target`は共通`ValidationRunner`へ登録する`LabMode.INTEGRATED`のtargetとする。`SYSTEM_SLICE`ではなく、#616の証拠を後続#620等のSystem evidenceへ昇格させない。出典は共通`ProductionTargetProvenance`で保持し、§5の出典条件を維持する。
 
-信頼済み起動コードが`NormalCognitionApplicationFactory`というcallableを明示登録し、各iterationごとにfreshな`MinimumCoreApplication`を供給する。fixtureや外部データからPython module、function、command、任意codeを解決しない。返却されたapplicationにproduction cognition接続がない場合は、成功へ補正せず`BLOCKED_UPSTREAM`とし、生成済みapplicationを停止する。
+信頼済み起動コードが`NormalCognitionApplicationFactory`というcallableを明示登録し、各iterationごとにfreshな`CoreRuntimeApplication`を供給する。fixtureや外部データからPython module、function、command、任意codeを解決しない。返却されたapplicationにproduction cognition接続がない場合は、成功へ補正せず`BLOCKED_UPSTREAM`とし、生成済みapplicationを停止する。
 
 `NormalCognitionLabCase`は正規`InputAdmission`を保持する。共通Runnerと登録済みcaseは、scenario、fixture、typed_inputs、fixture revision、target contract revision、mode、provider policy refsを実行前に照合する。不一致ではproduction applicationを起動しない。ACCEPTEDでない入力を成功入力へ書き換えず、raw textからLab側で`StructuredInputMeaning`を生成しない。
 
@@ -574,7 +574,7 @@ stale/currentness検証では、Goal/source context等を既存production Owner�
 
 ### 25.5. iterationの所有・取消・回収
 
-各iterationはfreshなMinimumCoreApplication、Brain Runtime、Cognition owner/stateを使用し、前iterationのcurrent State / Attention / Runtimeを次iterationへ共有しない。
+各iterationはfreshなCoreRuntimeApplication、Brain Runtime、Cognition owner/stateを使用し、前iterationのcurrent State / Attention / Runtimeを次iterationへ共有しない。
 
 run全体のRunContextには終了処理を無制限に積み上げない。run単位のcleanup ownerが現在iterationのapplicationだけを保持し、iteration終了時に停止して参照を解放する。終了済みiterationのcleanup登録がmax_tasks容量を消費し続ける構造にしない。
 
@@ -620,7 +620,7 @@ Goal選択、引数binding、scope承認、step選択、再試行、命令生成
 
 ### 26.2. 観測と注入
 
-trusted factoryはRunContextを受け取り、iterationごとにfreshなMinimumCoreApplicationを返す。提供先を`ObservedActivityPort`で包む構成では、共通Runnerに登録した`plan_activity.provider`で遅延と閉じた失敗を注入できる。失敗注入は実adapterを呼ばず、正規reportのFAILED / TIMED_OUT / CANCELLEDと注入種別を返す。外部effectを観測していないため不確実性をUNKNOWNに保持し、成功や安全な自動再試行を捏造しない。能力利用不能と有界再試行の試験は、既存Preflight / mock adapterから型付き結果を供給する。
+trusted factoryはRunContextを受け取り、iterationごとにfreshなCoreRuntimeApplicationを返す。提供先を`ObservedActivityPort`で包む構成では、共通Runnerに登録した`plan_activity.provider`で遅延と閉じた失敗を注入できる。失敗注入は実adapterを呼ばず、正規reportのFAILED / TIMED_OUT / CANCELLEDと注入種別を返す。外部effectを観測していないため不確実性をUNKNOWNに保持し、成功や安全な自動再試行を捏造しない。能力利用不能と有界再試行の試験は、既存Preflight / mock adapterから型付き結果を供給する。
 
 登録fixture・typed inputs・現在のProductionTargetProvenanceをiterationごとに照合する。開始後は実際のBrain traceの未観測workを有限なLabPolicyの範囲で追い、固定段数や独自の計画進行器を設けない。各workの公開結果、exact status、lane、時刻、traceとrevisionを保持する。PlanExecutionProgressに含まれるcommand IDから実Activity Ownerの記録を取得し、再試行の各命令の証拠を保持する。承認scopeは公開serializerを使い、内部Owner objectや非公開tokenをJSON化しない。
 

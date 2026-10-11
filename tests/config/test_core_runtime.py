@@ -7,22 +7,21 @@ from typing import Any, cast
 import pytest
 import yaml
 
-from app.config.minimum_brain import load_minimum_brain_config
-from app.domain.brain_integration import BrainIntegrationLane, BrainIntegrationModule
+from app.config.core import load_core_config
+from app.domain.brain_integration import BrainIntegrationLane
 from app.domain.input_meaning import PrimaryIntent
 from app.domain.llm import LLMModelClass, LLMReasoningEffort
 from app.runtime.kernel import LaneErrorPolicy, QueuePolicy
 
-RESOURCE = Path(__file__).resolve().parents[2] / "config/minimum_brain.yaml"
+RESOURCE = Path(__file__).resolve().parents[2] / "config/core.yaml"
 
 
 def test_canonical_resource_and_shared_policy_instances() -> None:
-    config = load_minimum_brain_config(RESOURCE.read_bytes())
-    assert config.schema_id == "yura.minimum-brain.production-config.v1"
-    assert config.config_id == "yura.minimum-brain.production"
+    config = load_core_config(RESOURCE.read_bytes())
+    assert config.schema_id == "yura.core-runtime.production-config.v1"
+    assert config.config_id == "yura.core-runtime.production"
     assert config.config_revision == 1
     assert config.character_definition_path == "config/character/yura.yaml"
-    assert config.brain_module_registrations == (BrainIntegrationModule.INPUT_MEANING,)
     acceptance = config.input_meaning_policy.acceptance
     assert (acceptance.policy_id, acceptance.policy_revision) == (
         "yura.input-meaning.acceptance",
@@ -62,9 +61,9 @@ def test_canonical_resource_and_shared_policy_instances() -> None:
         config.scheduler_policy.policy_id,
         config.scheduler_policy.policy_revision,
         config.scheduler_policy.max_priority_burst,
-    ) == ("yura.minimum-brain.scheduler", 1, 8)
+    ) == ("yura.core-runtime.scheduler", 1, 8)
     assert (config.integration_policy.policy_id, config.integration_policy.policy_revision) == (
-        "yura.minimum-brain.integration",
+        "yura.core-runtime.integration",
         1,
     )
     lanes = config.integration_policy.lane_policies
@@ -82,7 +81,7 @@ def test_canonical_resource_and_shared_policy_instances() -> None:
         for lane in lanes
     )
     stop = config.shutdown_policy
-    assert (stop.policy_id, stop.policy_revision) == ("yura.minimum-brain.shutdown", 1)
+    assert (stop.policy_id, stop.policy_revision) == ("yura.core-runtime.shutdown", 1)
     assert (
         stop.in_flight_settle_grace_seconds,
         stop.final_persistence_grace_seconds,
@@ -150,7 +149,7 @@ def test_invalid_values_are_not_coerced(path: tuple[str | int, ...], value: obje
         target = target[key]
     target[path[-1]] = value
     with pytest.raises(ValueError, match="本番設定"):
-        load_minimum_brain_config(yaml.safe_dump(data))
+        load_core_config(yaml.safe_dump(data))
 
 
 @pytest.mark.parametrize(
@@ -179,7 +178,7 @@ def test_exact_fields_at_every_level(path: tuple[str | int, ...], mutation: str)
     else:
         target["未定義の項目"] = "試験用"
     with pytest.raises(ValueError):
-        load_minimum_brain_config(yaml.safe_dump(data))
+        load_core_config(yaml.safe_dump(data))
 
 
 @pytest.mark.parametrize(
@@ -191,7 +190,7 @@ def test_exact_fields_at_every_level(path: tuple[str | int, ...], mutation: str)
 )
 def test_duplicate_top_level_keys(fragment: str) -> None:
     with pytest.raises(ValueError):
-        load_minimum_brain_config(RESOURCE.read_text() + fragment)
+        load_core_config(RESOURCE.read_text() + fragment)
 
 
 @pytest.mark.parametrize(
@@ -206,7 +205,7 @@ def test_duplicate_top_level_keys(fragment: str) -> None:
 def test_duplicate_nested_keys(line: str) -> None:
     source = RESOURCE.read_text().replace(line, line + "\n" + line, 1)
     with pytest.raises(ValueError):
-        load_minimum_brain_config(source)
+        load_core_config(source)
 
 
 @pytest.mark.parametrize("case", ["missing", "duplicate"])
@@ -218,11 +217,11 @@ def test_lane_coverage(case: str) -> None:
     else:
         lanes[-1] = lanes[0]
     with pytest.raises(ValueError):
-        load_minimum_brain_config(yaml.safe_dump(data))
+        load_core_config(yaml.safe_dump(data))
 
 
 @pytest.mark.parametrize("source", ["[", "", "[]", "1: invalid", "!!python/object:invalid {}"])
 def test_malformed_or_non_mapping_yaml(source: str) -> None:
     with pytest.raises(ValueError) as caught:
-        load_minimum_brain_config(source)
-    assert str(caught.value) == "最小Brainの本番設定を読み込めません"
+        load_core_config(source)
+    assert str(caught.value) == "本体Runtimeの本番設定を読み込めません"

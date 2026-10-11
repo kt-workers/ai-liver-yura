@@ -307,7 +307,7 @@ async def test_plan_production_configuration_and_feedback(
         (),
         ExecutionFeedbackRetentionPolicy("test-feedback", 1, 2),
     )
-    build = bootstrap.build_minimum_core
+    build = bootstrap.build_core_runtime
     from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
     from app.domain.goals import GoalCommitmentStore
 
@@ -320,7 +320,7 @@ async def test_plan_production_configuration_and_feedback(
     monkeypatch.setattr(bootstrap, "SystemRuntimeClock", lambda: value.clock)
     monkeypatch.setattr(
         bootstrap,
-        "build_minimum_core",
+        "build_core_runtime",
         lambda *a, **kw: build(
             *a, **{**kw, "cognition": replace(kw["cognition"], execution=config)}
         ),

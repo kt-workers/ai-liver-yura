@@ -8,7 +8,7 @@ import pytest
 
 from app import bootstrap
 from app.composition.cognition_configuration import CoreCognitionConfiguration
-from app.config.minimum_brain import load_minimum_brain_config
+from app.config.core import load_core_config
 from app.domain.appraisal import InternalStateReducer
 from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
@@ -100,7 +100,7 @@ async def test_cancelled_source_cannot_be_selected_by_unrelated_input(
 async def test_runtime_queue_rejects_without_executive_for_rejected_trace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    load = load_minimum_brain_config
+    load = load_core_config
 
     def small_queue(data: bytes) -> Any:
         config = load(data)
@@ -115,7 +115,7 @@ async def test_runtime_queue_rejects_without_executive_for_rejected_trace(
             ),
         )
 
-    monkeypatch.setattr(bootstrap, "load_minimum_brain_config", small_queue)
+    monkeypatch.setattr(bootstrap, "load_core_config", small_queue)
     app, port = application(monkeypatch)
     await app.start()
     try:
@@ -203,7 +203,7 @@ async def test_unavailable_provider_preserves_input_failure_without_downstream(
         "create_openai_port_from_environment",
         lambda roles: UnavailableLLMRolePort(roles),
     )
-    unavailable = bootstrap.build_minimum_core(cognition=configuration())
+    unavailable = bootstrap.build_core_runtime(cognition=configuration())
     assert unavailable.cognition is not None
     await unavailable.start()
     try:
@@ -259,7 +259,7 @@ async def test_missing_measured_publication_cannot_commit_decision(
             ),
         ),
     )
-    app = bootstrap.build_minimum_core(cognition=config)
+    app = bootstrap.build_core_runtime(cognition=config)
     assert app.cognition is not None
     await app.start()
     try:

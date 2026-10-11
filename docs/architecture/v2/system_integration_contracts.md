@@ -147,7 +147,7 @@ Verify:
 
 ### #561 早期起動の境界
 
-#561の早期起動に必要な登録集合とリビジョン付き初期データは、[最小Brainの本番初期構成](minimum_brain_production_configuration.md)を参照する。
+#561の早期起動に必要な登録集合とリビジョン付き初期データは、[本体Runtimeの本番初期構成](system_production_cognition_configuration.md)を参照する。
 
 #561の必須Brainモジュール登録は`INPUT_MEANING`のみであり、上記ゆら本体の全検証対象を起動時に必須登録することを意味しない。4レーンの定義要件は維持する。提供サービス未構成時の型付き利用不可、プロセス継続、取消・停止後の所有タスク回収までを早期に証明し、通常会話の成功や#360のゆら本体最終検証は後続工程で確認する。
 
@@ -677,7 +677,7 @@ System Integration implementation and final Verification remain frozen until #44
 
 ## 30. #624 能力提供0件・模擬提供1件の自動結合検証
 
-`tests/system_integration/test_system_plugin.py`は既存の`build_minimum_core`と`CoreCognitionConfiguration` / `CoreExecutionConfiguration`を使用する。RegistryとPluginCapabilityPreflightPort / PluginActivityExecutionPortを同じ構成へ注入し、別の状態Ownerや特定サービスへの固定意思を作らない。模擬提供先だけを登録し、実サービスへ接続しない。
+`tests/system_integration/test_system_plugin.py`は既存の`build_core_runtime`と`CoreCognitionConfiguration` / `CoreExecutionConfiguration`を使用する。RegistryとPluginCapabilityPreflightPort / PluginActivityExecutionPortを同じ構成へ注入し、別の状態Ownerや特定サービスへの固定意思を作らない。模擬提供先だけを登録し、実サービスへ接続しない。
 
 能力提供0件では、空Registryのまま通常の内部入力からAppraisal・Executiveへ到達する。能力提供1件では、公開RegistryからActivityBindingへ投影した確定判断を配送し、実行要求・報告・Activityの現在の終端事実・入力文脈・後続認知を同じtraceで照合する。入口が確定判断であるため、先行する実LLMの能力選択をこの試験で実行したとは扱わない。
 
@@ -713,17 +713,17 @@ Meaning・Appraisal・Attention・Executiveのsource event / root_trigger / trig
 
 ## ゆら本体構成の具体契約（#692）
 
-明示activation、deployment参照、SystemCompositionSnapshotのtyped化、構築・終了所有は[Systemのゆら本体構成](system_production_cognition_configuration.md)を正とする。本書第4節の由来をDomain Stateへ置き換えず、minimum起動とゆら本体の分離を維持する。
+明示activation、deployment参照、SystemCompositionSnapshotのtyped化、構築・終了所有は[Systemのゆら本体構成](system_production_cognition_configuration.md)を正とする。本書第4節の由来をDomain Stateへ置き換えず、別構成起動とゆら本体の分離を維持する。
 
 ## ゆら本体の明示CLI入口（#729）
 
-`python -m app`は#692の認知構成へ、現在のclean checkoutに束縛した新しい実行識別子、明示activation、既存Runtime Ownerを渡す。最小CoreをCLIから選択又はfallbackする経路は設けない。
+`python -m app`は#692の認知構成へ、現在のclean checkoutに束縛した新しい実行識別子、明示activation、既存Runtime Ownerを渡す。ゆら本体をCLIから選択又はfallbackする経路は設けない。
 
 通常のゆら本体でProvider deploymentが`unconfigured`なら既存`UnavailableLLMRolePort`による型付き利用不可を保持する。この状態はLLM応答、実発話、外部Provider接続の成功ではない。Speechなしのゆら本体はSpeech用Ownerを要求しない。Speech有効時だけ#705/#709の設定・登録入口から得た`SpeechProductionInputs`を一度だけ渡し、登録又はavailabilityの不備は失敗として返す。
 
 ## ゆら本体へのSpeech本番構成接続（#702）
 
-Speechを指定したゆら本体起動は、[Systemのゆら本体構成](system_production_cognition_configuration.md) §9のSystem-owned factoryから既存CoreSpeechConfigurationを生成する。Executive Speech evidence、登録pipeline、SystemCompositionSnapshotは同じbinding / generationを参照する。Speech未指定時のゆら本体とminimum起動を維持する。
+Speechを指定したゆら本体起動は、[Systemのゆら本体構成](system_production_cognition_configuration.md) §9のSystem-owned factoryから既存CoreSpeechConfigurationを生成する。Executive Speech evidence、登録pipeline、SystemCompositionSnapshotは同じbinding / generationを参照する。Speech未指定時のゆら本体と別構成起動を維持する。
 
 構築時点のsafe provenanceと、#621が実行後に照合するtrace・candidate generation・提示Factを分離する。factoryは既存Ownerとdeploymentの明示入力を束ね、具体voice/providerやSpeech意味を作らない。資源のCoreへの移管、borrowed依存の保全、部分構築失敗の回収は同§9を正とし、System側でSpeech shutdownを二重実行しない。
 

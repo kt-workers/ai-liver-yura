@@ -61,7 +61,7 @@ from app.runtime.kernel import RuntimeClock
 from app.usecases.ports.llm import LLMRolePort
 
 if TYPE_CHECKING:
-    from app.bootstrap import MinimumCoreApplication
+    from app.bootstrap import CoreRuntimeApplication
 
 
 @dataclass(frozen=True, slots=True)
@@ -376,7 +376,7 @@ class SpeechProductionBinding:
         self.validate_current()
         return self.pipeline, self._shutdown
 
-    def transfer_to_core(self, core: MinimumCoreApplication) -> None:
+    def transfer_to_core(self, core: CoreRuntimeApplication) -> None:
         if (
             self._closed
             or self._transferred

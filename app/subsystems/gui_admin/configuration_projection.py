@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import timezone
 
-from app.config.minimum_brain import MinimumBrainProductionConfig
+from app.config.core import CoreConfig
 from app.domain.contracts.common import thaw_json
 from app.runtime.kernel.clock import RuntimeClock
 
@@ -17,21 +17,21 @@ from .contracts import (
 )
 
 
-class MinimumBrainConfigurationReadModelProjector:
+class CoreConfigurationReadModelProjector:
     """同じ不変設定の表示と生成時刻を構築時に固定する。"""
 
     def __init__(
         self,
-        config: MinimumBrainProductionConfig,
+        config: CoreConfig,
         clock: RuntimeClock,
         policy: GuiAdminOperationalPolicy,
     ) -> None:
-        if not isinstance(config, MinimumBrainProductionConfig):
-            raise ValueError("注入された最小Brainの本番設定が必要です")
+        if not isinstance(config, CoreConfig):
+            raise ValueError("注入された本体Runtimeの本番設定が必要です")
         if not isinstance(policy, GuiAdminOperationalPolicy):
             raise ValueError("GUIの運用方針が必要です")
         self.model = GuiAdminConfigurationReadModel(
-            config_owner="yura.minimum-brain.production",
+            config_owner="yura.core-runtime.production",
             schema_version=1,
             config_revision=config.config_revision,
             editable_fields=(),
@@ -39,9 +39,7 @@ class MinimumBrainConfigurationReadModelProjector:
                 "schema_id": config.schema_id,
                 "config_id": config.config_id,
                 "config_revision": config.config_revision,
-                "brain_module_registrations": tuple(
-                    module.value for module in config.brain_module_registrations
-                ),
+                "input_meaning_policy_id": config.input_meaning_policy.execution.policy_id,
             },
             provenance={
                 "config_id": config.config_id,

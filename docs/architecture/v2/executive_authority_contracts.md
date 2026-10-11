@@ -247,7 +247,7 @@ base `70a62c3cd9fcefc2eacabb966c07811464d7b574`の本書、[Speech Semantics契�
 
 本番SpeechIntentのcommit前に独立して要求する具体Capability identity / operationやspeech-specific Preconditionは、監査対象正本には定義されていない。TTS / playback availabilityは提示の実行可能性であり、意識的発話意図の成立要件に追加しない。#362 / #330 / #348の検証をRequirementsへ移さない。
 
-[最小Brain本番構成](minimum_brain_production_configuration.md) §3の、実TTS・Avatarの存在を最小起動条件にしない境界とも整合する。ただし最小起動成功は本番会話・発話成功の証拠ではない。Speech未登録・失敗を成功へ変換せず、既存Speech sourceのExecutive段階での参照解決・currentness検証も免除しない。
+[本体Runtime本番構成](system_production_cognition_configuration.md) §3の、実TTS・Avatarの存在を最小起動条件にしない境界とも整合する。ただし起動成功は本番会話・発話成功の証拠ではない。Speech未登録・失敗を成功へ変換せず、既存Speech sourceのExecutive段階での参照解決・currentness検証も免除しない。
 
 #### BODYの根拠とcopy契約
 

@@ -24,10 +24,10 @@ from app.bootstrap import (
     InputMeaningBrainModulePort,
     InputMeaningBrainWorkPayload,
     UnavailableInputMeaningLiveContextPort,
-    build_minimum_core,
+    build_core_runtime,
 )
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
-from app.config.minimum_brain import load_minimum_brain_config
+from app.config.core import load_core_config
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
@@ -157,7 +157,7 @@ def test_production_binding_through_brain_preserves_unavailable(
 
     async def scenario() -> None:
         baseline = asyncio.all_tasks()
-        app = build_minimum_core()
+        app = build_core_runtime()
         assert isinstance(app.llm, UnavailableLLMRolePort)
         await app.start()
         try:
@@ -188,8 +188,8 @@ def test_production_binding_through_brain_preserves_unavailable(
 
 def test_success_with_unavailable_live_context_is_owner_rejection() -> None:
     async def scenario() -> None:
-        config = load_minimum_brain_config(
-            (ROOT / "config/minimum_brain.yaml").read_bytes()
+        config = load_core_config(
+            (ROOT / "config/core.yaml").read_bytes()
         )
         live = CountingUnavailableContext()
         bridge = InputMeaningBrainModulePort(
@@ -265,7 +265,7 @@ def test_invalid_composition_is_failed_not_stale(
     no_provider(monkeypatch)
 
     async def scenario() -> None:
-        app = build_minimum_core()
+        app = build_core_runtime()
         value = malformed(case)
         with pytest.raises(ValueError):
             app.bridge.is_fresh(value)
@@ -302,8 +302,8 @@ def test_runtime_cancellation_propagates_and_reaps() -> None:
                     raise
                 raise AssertionError("待機中の要求が通常完了してはなりません")
 
-        config = load_minimum_brain_config(
-            (ROOT / "config/minimum_brain.yaml").read_bytes()
+        config = load_core_config(
+            (ROOT / "config/core.yaml").read_bytes()
         )
         bridge = InputMeaningBrainModulePort(
             InputMeaningInterpreter(
@@ -337,9 +337,9 @@ def test_canonical_composition_repeated_start_stop_has_no_pending_tasks(
     async def scenario() -> None:
         for _ in range(3):
             baseline = asyncio.all_tasks()
-            app = build_minimum_core()
+            app = build_core_runtime()
             assert app.character_definition == load_character_definition_yaml(
-                (ROOT / app.config.character_definition_path).read_bytes(),
+                (ROOT / app.config.character_definition.resource_ref).read_bytes(),
             )
             assert app.character_definition.definition_revision >= 1
             assert app.lifecycle.shutdown_policy is app.config.shutdown_policy
@@ -373,7 +373,7 @@ def test_configured_provider_missing_config_is_not_hidden(monkeypatch: pytest.Mo
         SimpleNamespace(environ={"YURA_OPENAI_API_KEY": sentinel}),
     )
     with pytest.raises(ValueError, match="役割設定") as caught:
-        build_minimum_core()
+        build_core_runtime()
     assert sentinel not in str(caught.value)
 
 
@@ -391,7 +391,7 @@ def test_stop_failure_propagates_but_lifecycle_is_closed(monkeypatch: pytest.Mon
     monkeypatch.setattr(BrainIntegrationRuntime, "stop", failed_stop)
     monkeypatch.setattr(RuntimeLifecycle, "close", close)
     with pytest.raises(RuntimeError, match="停止失敗"):
-        asyncio.run(build_minimum_core().stop())
+        asyncio.run(build_core_runtime().stop())
     assert closed
 
 
@@ -399,19 +399,19 @@ def test_run_loop_cancellation_cleans_signals_and_owned_tasks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     no_provider(monkeypatch)
-    original_start = bootstrap.MinimumCoreApplication.start
+    original_start = bootstrap.CoreRuntimeApplication.start
 
     async def scenario() -> None:
         baseline = asyncio.all_tasks()
         started = asyncio.Event()
         previous = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
 
-        async def start(self: bootstrap.MinimumCoreApplication) -> None:
+        async def start(self: bootstrap.CoreRuntimeApplication) -> None:
             await original_start(self)
             started.set()
 
-        monkeypatch.setattr(bootstrap.MinimumCoreApplication, "start", start)
-        runner = asyncio.create_task(bootstrap.run_minimum_core())
+        monkeypatch.setattr(bootstrap.CoreRuntimeApplication, "start", start)
+        runner = asyncio.create_task(bootstrap.run_core_runtime())
         try:
             await asyncio.wait_for(started.wait(), 2)
             assert not runner.done()
@@ -483,7 +483,7 @@ def test_descriptor_and_interpreter_receive_the_same_policy(
 
     monkeypatch.setattr(bootstrap, "descriptor", descriptor)
     monkeypatch.setattr(bootstrap, "InputMeaningInterpreter", interpreter)
-    app = build_minimum_core()
+    app = build_core_runtime()
     assert len(observed) == 2
     assert all(policy is app.config.input_meaning_policy for policy in observed)
 
@@ -493,11 +493,11 @@ def test_running_generation_does_not_reload_changed_file(
     tmp_path: Path,
 ) -> None:
     no_provider(monkeypatch)
-    path = tmp_path / "minimum_brain.yaml"
-    path.write_bytes((ROOT / "config/minimum_brain.yaml").read_bytes())
+    path = tmp_path / "core.yaml"
+    path.write_bytes((ROOT / "config/core.yaml").read_bytes())
 
     async def scenario() -> None:
-        app = build_minimum_core(path)
+        app = build_core_runtime(path)
         config = app.config
         await app.start()
         try:
@@ -509,7 +509,7 @@ def test_running_generation_does_not_reload_changed_file(
                 await asyncio.wait_for(app.brain.next_outcome(), 2)
             ).status is BrainWorkStatus.COMPLETED
             with pytest.raises(ValueError):
-                build_minimum_core(path)
+                build_core_runtime(path)
         finally:
             await app.stop()
 
@@ -554,13 +554,13 @@ def test_file_edit_takes_effect_only_in_next_core_configuration(
 ) -> None:
     """有効な設定編集を次の構成で読み、稼働中の方針を変更しない。"""
     no_provider(monkeypatch)
-    path = tmp_path / "minimum_brain.yaml"
-    original = (ROOT / "config/minimum_brain.yaml").read_bytes()
+    path = tmp_path / "core.yaml"
+    original = (ROOT / "config/core.yaml").read_bytes()
     path.write_bytes(original)
 
     async def scenario() -> None:
         baseline = asyncio.all_tasks()
-        first = build_minimum_core(path)
+        first = build_core_runtime(path)
         await first.start()
         try:
             edited = yaml.safe_load(original)
@@ -576,7 +576,7 @@ def test_file_edit_takes_effect_only_in_next_core_configuration(
             assert outcome.status is BrainWorkStatus.COMPLETED
         finally:
             await first.stop()
-        second = build_minimum_core(path)
+        second = build_core_runtime(path)
         assert second.config.config_revision == 2
         assert second.config.scheduler_policy.policy_revision == 2
         assert second.config.scheduler_policy.max_priority_burst == 9
@@ -601,7 +601,7 @@ def test_external_test_client_lifecycle_does_not_stop_core(
 
     async def scenario() -> None:
         baseline = asyncio.all_tasks()
-        app = build_minimum_core()
+        app = build_core_runtime()
         config = app.config
         entered = asyncio.Event()
         release = asyncio.Event()
@@ -667,7 +667,7 @@ def test_replacement_and_concurrent_clients_use_the_same_public_owner(
 
     async def scenario() -> None:
         baseline = asyncio.all_tasks()
-        app = build_minimum_core()
+        app = build_core_runtime()
         config = app.config
 
         async def submit_batch(client_id: str) -> None:

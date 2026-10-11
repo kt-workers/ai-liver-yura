@@ -11,7 +11,7 @@ import pytest
 import pytest_asyncio
 import yaml
 
-from app.bootstrap import MinimumCoreApplication
+from app.bootstrap import CoreRuntimeApplication
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import GoalTransitionOperation
 from app.domain.memory import MemoryWriteRequest
@@ -313,7 +313,7 @@ async def test_config_change_after_seed_rejects_original_fixture(
             boot_config.write_text(yaml.safe_dump(config))
             changed = True
 
-    async def stop(app: MinimumCoreApplication, storage: PostgresPersistenceRuntime) -> JsonValue:
+    async def stop(app: CoreRuntimeApplication, storage: PostgresPersistenceRuntime) -> JsonValue:
         result = await original(app, storage)
         mutate()
         return result

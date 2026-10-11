@@ -16,9 +16,9 @@ from threading import Event
 from typing import Any, TypeVar
 from uuid import uuid4
 
-from app.bootstrap import MinimumCoreApplication, build_persistent_core
+from app.bootstrap import CoreRuntimeApplication, build_persistent_core
 from app.composition.goal_persistence import CoreGoalPersistenceBinding, GoalPersistenceCommitResult
-from app.config.minimum_brain import load_minimum_brain_config
+from app.config.core import load_core_config
 from app.domain.contracts.common import JsonValue, freeze_json, thaw_json
 from app.domain.executive import CommittedExecutiveDecision
 from app.domain.memory import MemoryRetrievalQuery, MemoryWriteRequest, MemoryWriteResult
@@ -107,7 +107,7 @@ class PersistenceLabSettings:
 
     def public_settings(self) -> JsonValue:
         config_bytes = self.config_path.read_bytes()
-        config = load_minimum_brain_config(config_bytes)
+        config = load_core_config(config_bytes)
         return freeze_json(
             {
                 "boot_config": {
@@ -276,7 +276,7 @@ async def _boot(
     endpoint: PostgresEndpoint,
     epoch: str,
     expected_settings: JsonValue,
-) -> tuple[MinimumCoreApplication, PostgresPersistenceRuntime]:
+) -> tuple[CoreRuntimeApplication, PostgresPersistenceRuntime]:
     _check_settings(settings, expected_settings)
     storage = settings.runtime(endpoint)
     app = await build_persistent_core(
@@ -296,7 +296,7 @@ async def _boot(
 
 
 def _state(
-    app: MinimumCoreApplication, storage: PostgresPersistenceRuntime
+    app: CoreRuntimeApplication, storage: PostgresPersistenceRuntime
 ) -> dict[str, JsonValue]:
     if not isinstance(app.goals, CoreGoalPersistenceBinding) or app.memory is None:
         raise ValueError("本番の永続化所有者が接続されていません")
@@ -311,7 +311,7 @@ def _state(
     }
 
 
-async def _stop(app: MinimumCoreApplication, storage: PostgresPersistenceRuntime) -> JsonValue:
+async def _stop(app: CoreRuntimeApplication, storage: PostgresPersistenceRuntime) -> JsonValue:
     failures: list[JsonValue] = []
     try:
         await app.stop()
@@ -324,7 +324,7 @@ async def _stop(app: MinimumCoreApplication, storage: PostgresPersistenceRuntime
 
 
 async def _close_application(
-    app: MinimumCoreApplication, storage: PostgresPersistenceRuntime
+    app: CoreRuntimeApplication, storage: PostgresPersistenceRuntime
 ) -> None:
     await _stop(app, storage)
     if storage.availability is not PersistenceAvailability.CLOSED or storage.pending_task_count:
@@ -334,7 +334,7 @@ async def _close_application(
 
 
 async def _register_application(
-    context: RunContext, name: str, app: MinimumCoreApplication, storage: PostgresPersistenceRuntime
+    context: RunContext, name: str, app: CoreRuntimeApplication, storage: PostgresPersistenceRuntime
 ) -> None:
     try:
         context.add_cleanup(name, lambda: _close_application(app, storage))
@@ -383,7 +383,7 @@ def _reported_status(outputs: Mapping[str, JsonValue]) -> RunStatus:
 
 
 async def _write(
-    context: RunContext, app: MinimumCoreApplication, case: PersistenceLabCase
+    context: RunContext, app: CoreRuntimeApplication, case: PersistenceLabCase
 ) -> JsonValue:
     if not isinstance(app.goals, CoreGoalPersistenceBinding) or app.memory is None:
         raise ValueError("本番の永続化所有者が接続されていません")
@@ -517,7 +517,7 @@ def persistence_target(
         ):
             return TargetObservation(RunStatus.BLOCKED_UPSTREAM, Gate.NOT_RUN, None)
 
-        async def boot(epoch: str) -> tuple[MinimumCoreApplication, PostgresPersistenceRuntime]:
+        async def boot(epoch: str) -> tuple[CoreRuntimeApplication, PostgresPersistenceRuntime]:
             _check_settings(settings, expected_settings)
             return await context.invoke_product(
                 "persistence.product_boot",

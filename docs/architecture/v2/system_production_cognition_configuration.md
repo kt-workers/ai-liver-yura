@@ -4,7 +4,7 @@ Ownerは#360配下の#692。System compositionの設定・起動・資源所有�
 
 ## 1. 正本と固定する境界
 
-[System契約](system_integration_contracts.md) §4のSystemCompositionSnapshotと§5のゆら本体を具体化する。[Brain結合](brain_integration_contracts.md)、[最小本体構成](minimum_brain_production_configuration.md)、[Appraisal構成](appraisal_production_configuration.md)、[Executive構成](executive_production_configuration.md)、[Provider契約](llm_provider_adapter_contracts.md)のOwner・意味・数値・失敗を変更しない。
+[System契約](system_integration_contracts.md) §4のSystemCompositionSnapshotと§5のゆら本体を具体化する。[Brain結合](brain_integration_contracts.md)、[本体Runtime構成](system_production_cognition_configuration.md)、[Appraisal構成](appraisal_production_configuration.md)、[Executive構成](executive_production_configuration.md)、[Provider契約](llm_provider_adapter_contracts.md)のOwner・意味・数値・失敗を変更しない。
 
 #690のAppraisal factory、#691のExecutive factory、#333のAttentionSchedulingPolicy.production()、#611のCoreCognitionConfiguration.compose()を使用する。#692はpolicy値やRequirements規則を作り直さない。#620が実際のSystem受入れを所有する。
 
@@ -18,14 +18,14 @@ Ownerは#360配下の#692。System compositionの設定・起動・資源所有�
 | config_id / config_revision | `yura.core` / `1` |
 | activation_id | `yura.core.explicit` |
 | composition_id / composition_revision | `yura.system.core` / `1` |
-| minimum_config | resource_ref=`config/minimum_brain.yaml`、config_id=`yura.minimum-brain.production`、config_revision=`1` |
+| input_meaning / scheduler / integration / shutdown | `config/core.yaml`内の本体Runtime方針 |
 | appraisal_config | resource_ref=`config/appraisal.yaml`、config_id=`yura.appraisal.production`、config_revision=`1` |
 | executive_config | resource_ref=`config/executive.yaml`、config_id=`yura.executive.production`、config_revision=`1` |
 | attention_policy | policy_id=`attention-scheduling-production`、policy_revision=`1` |
 | provider_deployment | resource_ref=`config/provider_deployment_core.yaml`、deployment_id=`yura.provider-deployment.core`、deployment_revision=`1` |
 | character_definition | resource_ref=`config/character/yura.yaml`、character_id=`yura`、definition_revision=`1` |
 
-この表が最上位fieldの全件で、参照objectも記載fieldだけを許可する。identityは非空、revisionはboolでない1以上の整数。attention値は実production()のidentity/revisionと一致を要求し、その予算表は複製しない。人物参照はminimum構成のcharacter_definition_pathと同じ文書を指し、実`CharacterDefinitionDocument.definition_revision`と照合する。人物内容をSystemが定義しない。
+この表が最上位fieldの全件で、参照objectも記載fieldだけを許可する。identityは非空、revisionはboolでない1以上の整数。attention値は実production()のidentity/revisionと一致を要求し、その予算表は複製しない。人物参照は実`CharacterDefinitionDocument.definition_revision`と照合する。人物内容をSystemが定義しない。
 
 resource_refはリポジトリ内の公開相対参照で、絶対path・上位脱出・外部URL・秘密参照を拒否する。解決後も許可root外を参照しない。Owner別loaderで読んだ実identity/revisionと完全一致しなければ拒否する。内部execution / Decay / Requirements値をゆら本体 YAMLへ複製しない。
 
@@ -53,7 +53,7 @@ mapping publicationの全要素について、Role、論理model class、reasoni
 
 manifestはAPI key・credential・SDK object・生環境値を含まない。credential確認とclient生成は既存Infrastructureの提供先構成境界に残す。Systemは認証値を取得・検査・公開しない。
 
-全Roleがunconfiguredなら、環境にcredentialが存在していてもmanifestの明示選択を優先し、SDK clientを生成せず既存UnavailableLLMRolePortへ同じdescriptor集合を渡す。資格情報の存在だけでProviderを選択又はconfiguredへ昇格させない。configured manifestなのにcredential未構成の場合はactivationを拒否する。混在modeはrevision 1では未対応として拒否する。minimum起動の既存未構成動作は変更しない。
+全Roleがunconfiguredなら、環境にcredentialが存在していてもmanifestの明示選択を優先し、SDK clientを生成せず既存UnavailableLLMRolePortへ同じdescriptor集合を渡す。資格情報の存在だけでProviderを選択又はconfiguredへ昇格させない。configured manifestなのにcredential未構成の場合はactivationを拒否する。混在modeはrevision 1では未対応として拒否する。別構成起動の既存未構成動作は変更しない。
 
 configured時のInfrastructure構築結果は`CoreProviderLease`としてSystemへ渡す。これは既存LLMRolePort、検証済みRole/mapping publication、非秘密なavailability、非同期release操作を束ねる構成契約である。既存Adapterの意味契約を置き換えない。Infrastructureが生成したclientを所有するleaseはそのclientの公開closeをreleaseに結び付け、外部注入clientを借用するleaseはそれをcloseしない。SystemはSDK型・private属性を辿って資源を破棄しない。既存のportだけを返すAPIにcloseがあると仮定せず、この所有契約を満たすInfrastructure composition入口で同じAdapterを構築する。
 
@@ -61,7 +61,7 @@ Systemが作ったlease / wrapperはowned、外部から既に完成したlease�
 
 ## 4. 明示起動と構築順
 
-入口は`app/bootstrap.py::build_core(...)`、実構成は`app/composition/system_cognition_configuration.py`へ配置する。返却型は`CoreApplication`とし、既存MinimumCoreApplicationを保持するSystem wrapperとする。`build_minimum_core(cognition=None)`とCLI既定のINPUT_MEANING-only経路は維持する。
+入口は`app/bootstrap.py::build_core(...)`、実構成は`app/composition/system_cognition_configuration.py`へ配置する。返却型は`CoreApplication`とし、既存`CoreRuntimeApplication`を保持するSystem wrapperとする。CLIはこの本体構成だけを使用する。
 
 入口はゆら本体 config参照、`CoreRunIdentity`、fresh-startの明示、既存RuntimeClock、deployment source / provider lease構築境界、借用するregistry / precondition router / bindings / Direct binding集合を必須の型付き引数で受ける。共有Ownerを作り直さない。fast appraisal rulesも正規Ownerが承認した明示tupleを受け、欠落を隠すdefaultにしない。任意のSpeech / Execution等の拡張は既存型をそのまま明示注入する。ゆら本体構築のために模擬Goal・scope・Memory・Factを生成しない。
 
@@ -106,7 +106,7 @@ System wrapperは生成した資源の所有台帳を持ち、成功時は同じ
 
 | 対象 | 所有・終了操作 |
 | --- | --- |
-| ゆら本体生成Foundation / MinimumCoreApplication | owned。既存Core.stop()で配送・タスク・lifecycleを回収 |
+| ゆら本体生成Foundation / CoreRuntimeApplication | owned。既存Core.stop()で配送・タスク・lifecycleを回収 |
 | AppraisalProductionBinding / InternalStateReducer | owned。非同期資源やclose APIはない。Coreの利用終了後に参照を解放し、架空のcloseを呼ばない |
 | ExecutiveProductionBinding | owned。#691のclose()のみ使用し、借用Direct bindingは破棄しない |
 | ゆら本体生成AttentionTurnStore | owned。利用終了後に公開finalization_participant.retire() |
@@ -134,7 +134,7 @@ wrapper.stop()は同じ終了taskを共有しidempotentとする。取消下で�
 
 実行開始後の既存Owner / Provider typed failureを構成成功に変換しない。CancelledErrorは取消として伝播し、cleanup後も成功や通常失敗へ潰さない。Appraisal / Executiveの正常なfactory結果をSystem独自の方針で再解釈しない。
 
-ゆら本体 config欠落はゆら本体を要求した起動だけの失敗である。minimum CLIがゆら本体ファイルを探索したり、自動的にゆら本体へ切り替わったりしない。ゆら本体失敗後に黙ってminimumとして成功を返さない。別途明示したminimum起動は従来どおり可能である。
+ゆら本体 config欠落はゆら本体を要求した起動だけの失敗である。別構成CLIがゆら本体ファイルを探索したり、自動的にゆら本体へ切り替わったりしない。ゆら本体失敗後に黙ってminimumとして成功を返さない。別途明示した別構成起動は従来どおり可能である。
 
 ## 8. #620への公開と受入境界
 
@@ -222,7 +222,7 @@ buildの二回呼出し、別cognition/reference/runへのbinding再利用は拒
 
 Core返却前はfactory台帳が失敗時の回収を所有する。pipeline生成後はpipeline.close、その後SpeechRuntimeShutdown.closeを必ず試みる回収操作を登録し、最後にowned leaseを逆順releaseする。先のcleanup失敗でも残りを実行し、元の取消/失敗を成功へ読み替えない。
 
-`_compose_core`が正常返却し、Coreに同じSpeech deliveryが登録されていると確認した時点で、pipeline / Runtime回収責務をCoreへ一度だけ移管する。以後は`MinimumCoreApplication.stop()` → `CoreSpeechDelivery.close()` → #701 pipeline.close → 既存SpeechRuntimeShutdownが回収する。ゆら本体台帳から同じpipeline/shutdownを再呼出ししない。
+`_compose_core`が正常返却し、Coreに同じSpeech deliveryが登録されていると確認した時点で、pipeline / Runtime回収責務をCoreへ一度だけ移管する。以後は`CoreRuntimeApplication.stop()` → `CoreSpeechDelivery.close()` → #701 pipeline.close → 既存SpeechRuntimeShutdownが回収する。ゆら本体台帳から同じpipeline/shutdownを再呼出ししない。
 
 移管後もlease releaseはSpeechProductionBindingが保持する。ゆら本体台帳はCore.stopを最初に実行し、その後Speechのowned lease、既存cognition Provider / Attention / Executive等を生成順の逆順で回収する。Core.stop失敗時もleaseと残る資源の回収を続ける。Foundationの既存移管は保持する。
 
@@ -250,7 +250,7 @@ snapshotは構築時点の証拠である。#621は返却applicationの既存Cor
 
 入力の欠落・型/identity/revision不正・矛盾したavailabilityは既存`INVALID_SYSTEM_CONFIG`、Speech構成/登録不成立は`COGNITION_COMPOSITION_FAILED`、構築中currentness喪失・資源回収不成立は`INITIALIZATION_FAILED`へ分類する。Systemの既存安全な例外を使用し、Domain/TTS/Presentationの失敗Authorityを追加しない。運転中のtyped unavailable / rejection / cancellationは元Ownerの意味を維持する。
 
-Speechなしのゆら本体構築は従来と同じOwner/Role集合・lifecycleで成立する。minimum CLI / INPUT_MEANING-only起動にSpeech設定探索や必須依存を追加しない。Speechあり構築の失敗後に自動的にSpeechなしへfallbackしない。
+Speechなしのゆら本体構築は従来と同じOwner/Role集合・lifecycleで成立する。別構成CLI / 入力意味解析だけの起動にSpeech設定探索や必須依存を追加しない。Speechあり構築の失敗後に自動的にSpeechなしへfallbackしない。
 
 factoryのfixture非依存、同じbindingとgeneration、snapshot実値一致、所有資源だけのclose、構築段階ごとの逆順cleanup、再停止・取消、stale拒否、#701の準備並行動作、#613のFact還流、#692/#620のSpeechなし構成を検証する。#621のSystem Speech acceptanceやHumanの実音声確認を本構成の成功だけで完了扱いしない。
 

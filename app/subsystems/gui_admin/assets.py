@@ -5,7 +5,7 @@ HTML = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ゆら GUI/Admin</title><link rel="stylesheet" href="/assets/app.css">
 <script src="/assets/app.js" defer></script></head>
-<body><main><h1>ゆら GUI/Admin</h1><h2>最小Brainの設定</h2>
+<body><main><h1>ゆら GUI/Admin</h1><h2>本体Runtimeの設定</h2>
 <p>注入された設定の公開項目を表示します。Core全体の正常性を示すものではありません。</p>
 <button id="refresh" type="button">再取得</button>
 <p id="status" role="status" aria-live="polite">未取得</p>
@@ -22,7 +22,7 @@ async function refresh() {
   refreshButton.disabled = true;
   statusNode.textContent = "取得中";
   try {
-    const response = await fetch("/api/v1/configuration/minimum-brain", {
+    const response = await fetch("/api/v1/configuration/core-runtime", {
       cache: "no-store", credentials: "omit", redirect: "error"
     });
     if (!response.ok) throw new Error("取得失敗");
