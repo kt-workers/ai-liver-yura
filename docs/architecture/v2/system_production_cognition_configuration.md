@@ -152,6 +152,12 @@ S2 config欠落はS2を要求した起動だけの失敗である。minimum CLI�
 
 `build_s2_production_core(...)`と`compose_s2_production_core(...)`は`SpeechProductionInputs | None`の任意引数`speech`を受ける。未指定のdefaultは`None`。指定時はSystem factoryを一度呼び、その返却`configuration`を`CoreCognitionConfiguration.speech`へ設定する。自由な`build` callableだけを本番構成証拠として受理する経路は設けない。既存CoreSpeechConfigurationの汎用注入APIは保持する。
 
+### 9.1.1 本番CLI起動root
+
+#729のCLI起動rootは、引数なしのminimum起動と別に`--s2-production`を受理する。S2設定のactivation ID、現在のclean checkout SHA、runごとのruntime epochとsystem run ID、既存Runtime Ownerを明示して`build_s2_production_core()`を呼ぶ。`PluginRegistryAuthority`、`PreconditionSourceRouter`、Activity binding、fast appraisal ruleは起動rootが新runへ生成又は明示注入する既存Ownerであり、試験fixture又は外部Providerの代替ではない。
+
+CLIは`user.yaml`の`speech: null`で`None`を渡す。この場合、Speech用semantic owner、Memory、TTS、Presentation登録を生成又は要求しない。Speech有効時は起動rootが既存`SpeechSemanticPolicyOwner`、Memory binding、trusted `SpeechDeploymentRegistry`を明示注入して`create_speech_deployment()`を呼ぶ。いずれかがない場合は構成を拒否し、Speechなし、別voice、`TEXT_ONLY`、模擬portへ変換しない。実Providerと実音声の接続は#621が所有する。
+
 factoryへの入力は呼出元が明示供給する。不足をfixture、別voice、既定Provider、空の成功bindingで補わない。Systemは秘密値・環境変数を探索しない。
 
 ### 9.2. 入力の供給元

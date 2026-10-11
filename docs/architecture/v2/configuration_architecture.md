@@ -24,6 +24,12 @@ schemaは形式のバージョンであり、内容revisionとは異なる。正
 
 解決済み構成は不変。publicationは一つのSystem runに束縛し、binding identityにrun identityを含める。新しい供給元のbinding generationは1から始まり、そのrun中には更新しない。candidate generation、Ownerのcurrentness token、lifecycleは設定から指定しない。元ファイルの内容が変わったら古い供給元はstaleとして拒否し、自動再解決・hot replacementしない。変更は新run / restartでのみ適用する。同名profileの内容変更はrevisionを変え、旧publicationへ付け替えない。他Ownerのreload契約には影響しない。
 
+## 4.1 本番S2起動時のSpeech選択
+
+#729の本番S2起動rootは、`resources/config/v2`を既存`load_user_configuration()`で一度のSystem runに固定して読む。`speech: null`なら`create_speech_deployment()`を呼ばず、TTS、Presentation、Speech用Provider、Memoryを要求しない。これはSpeechを`TEXT_ONLY`へ変換することではない。
+
+Speech profileを指定した場合だけ、起動rootは同じ`S2RunIdentity`、既存`SpeechSemanticPolicyOwner`、既存Memory binding、`production_speech_deployment_registry()`から得たtrusted registryを`create_speech_deployment()`へ明示供給する。登録欠落、availability不整合、stale、binding mismatch、構成不正は既存の型付き構成失敗として停止し、別Provider、voice、Presentation、試験fixture、空の成功bindingを補作しない。
+
 ## 5. 本番供給と所有境界
 
 `load_user_configuration()` → 不変のProfile解決結果 → `create_speech_deployment()` → `SpeechProductionInputs` → #702 factory → `build_s2_production_core(speech=...)`を正式経路とする。
