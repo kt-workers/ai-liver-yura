@@ -263,7 +263,11 @@ class S2ProductionRuntimeOwners:
             raise ValueError("S2起動には既存Runtime Ownerの明示入力が必要です")
         object.__setattr__(self, "precondition_bindings", tuple(self.precondition_bindings))
         object.__setattr__(self, "fast_rules", tuple(self.fast_rules))
-        object.__setattr__(self, "activity_bindings", MappingProxyType(dict(self.activity_bindings)))
+        object.__setattr__(
+            self,
+            "activity_bindings",
+            MappingProxyType(dict(self.activity_bindings)),
+        )
         if self.speech is not None and not isinstance(self.speech, S2ProductionSpeechOwners):
             raise ValueError("Speech起動には既存Speech Ownerの明示入力が必要です")
 
