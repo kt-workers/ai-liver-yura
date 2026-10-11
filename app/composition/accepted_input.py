@@ -9,6 +9,7 @@ from app.domain.input_gateway import (
     InputModality,
     NormalizedInputEvent,
 )
+from app.domain.attention import AttentionSource
 from app.domain.input_meaning import InputMeaningInterpretationResult, StructuredInputMeaning
 
 
@@ -55,6 +56,7 @@ class CoreAcceptedInputStore:
         self._entries: OrderedDict[str, CoreAcceptedInput | CoreAcceptedInternalInput] = (
             OrderedDict()
         )
+        self._internal_sources: dict[tuple[object, str], str] = {}
 
     def retain(self, event: NormalizedInputEvent, result: InputMeaningInterpretationResult) -> None:
         value = CoreAcceptedInput(event, result)
@@ -90,4 +92,23 @@ class CoreAcceptedInputStore:
             raise ValueError("採用済みの入力根拠が保持されていません")
         if value.event.envelope.revisions.source_context_revision != source_context_revision:
             raise ValueError("採用済みの入力根拠の文脈が一致しません")
+        return value
+
+    def register_internal_source(self, source: AttentionSource, event_id: str) -> None:
+        if not isinstance(source, AttentionSource):
+            raise ValueError("内部契機には型付き注意sourceが必要です")
+        value = self.read(event_id, source.source_context_revision)
+        if not isinstance(value, CoreAcceptedInternalInput):
+            raise ValueError("内部sourceは内部入力だけを参照できます")
+        self._internal_sources[(source.kind, source.source_ref)] = event_id
+
+    def read_for_source(
+        self, source: AttentionSource, source_context_revision: int
+    ) -> CoreAcceptedInternalInput:
+        event_id = self._internal_sources.get((source.kind, source.source_ref))
+        if event_id is None:
+            raise ValueError("選択された内部sourceの入力根拠がありません")
+        value = self.read(event_id, source_context_revision)
+        if not isinstance(value, CoreAcceptedInternalInput):
+            raise ValueError("選択された内部sourceの入力根拠が不正です")
         return value

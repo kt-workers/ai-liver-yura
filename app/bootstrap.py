@@ -195,6 +195,12 @@ class MinimumCoreApplication:
 
     async def start(self) -> None:
         await self.brain.start()
+        try:
+            if self.cognition is not None and self.cognition.autonomy is not None:
+                self.cognition.autonomy.start()
+        except BaseException:
+            await self.brain.stop()
+            raise
 
     async def stop(self) -> None:
         if self._stop_task is None:
@@ -387,7 +393,9 @@ def _compose_core(
         brain.register_module(BrainIntegrationModule.INPUT_MEANING, bridge)
     else:
         assert bridge.inputs is not None
-        delivery = cognition.compose(brain, input_context, bridge.inputs, llm, clock, memory)
+        delivery = cognition.compose(
+            brain, input_context, bridge.inputs, llm, clock, memory, goals
+        )
         delivery.register(bridge)
     return MinimumCoreApplication(
         config,
@@ -553,7 +561,7 @@ async def run_s2_production() -> None:
             loop.add_signal_handler(signum, stop_requested.set)
             registered.append(signum)
         await app.start()
-        print("本番S2の起動が完了しました。", flush=True)
+        print("本番認知Coreの起動が完了しました。", flush=True)
         await stop_requested.wait()
     finally:
         try:
@@ -566,14 +574,14 @@ async def run_s2_production() -> None:
 
 def main() -> None:
     arguments = tuple(sys.argv[1:])
-    if arguments not in ((), ("--s2-production",)):
-        print("使用方法: python -m app [--s2-production]", file=sys.stderr)
+    if arguments not in ((), ("--production",)):
+        print("使用方法: python -m app [--production]", file=sys.stderr)
         raise SystemExit(2)
     try:
         asyncio.run(run_s2_production() if arguments else run_minimum_core())
     except (OSError, ValueError, RuntimeError):
         message = (
-            "本番S2の構成、起動または停止に失敗しました。"
+            "本番認知Coreの構成、起動または停止に失敗しました。"
             if arguments
             else "最小Coreの起動または停止に失敗しました。"
         )

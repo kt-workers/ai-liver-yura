@@ -711,19 +711,19 @@ Meaning・Appraisal・Attention・Executiveのsource event / root_trigger / trig
 
 提供先を置換した自動試験は実LLM・実音声・実サービス・Human Verificationではない。Human実動作はNOT_RUN / UNRATEDを維持する。#621〜#625、#434、#586、GUI・Game・Streamingの受入れへ拡大しない。
 
-## S2本番認知構成の具体契約（#692）
+## 本番認知Core構成の具体契約（#692）
 
-明示activation、deployment参照、SystemCompositionSnapshotのtyped化、構築・終了所有は[SystemのS2本番認知構成](system_production_cognition_configuration.md)を正とする。本書第4節の由来をDomain Stateへ置き換えず、minimum起動とS2の分離を維持する。
+明示activation、deployment参照、SystemCompositionSnapshotのtyped化、構築・終了所有は[Systemの本番認知構成](system_production_cognition_configuration.md)を正とする。本書第4節の由来をDomain Stateへ置き換えず、minimum起動と本番認知Coreの分離を維持する。
 
-## 本番S2の明示CLI入口（#729）
+## 本番認知Coreの明示CLI入口（#729）
 
-`python -m app --s2-production`は#692の`build_s2_production_core()`へ、現在のclean checkoutに束縛した新しい`S2RunIdentity`、明示activation、既存Runtime Ownerを渡す。引数なしの`python -m app`は#561の最小Coreのままとし、両者を自動選択又は相互fallbackしない。
+`python -m app --production`は#692の本番認知構成へ、現在のclean checkoutに束縛した新しい実行識別子、明示activation、既存Runtime Ownerを渡す。引数なしの`python -m app`は#561の最小Coreのままとし、両者を自動選択又は相互fallbackしない。
 
-通常S2のProvider deploymentが`unconfigured`なら既存`UnavailableLLMRolePort`による型付き利用不可を保持する。この状態はLLM応答、実発話、外部Provider接続の成功ではない。SpeechなしのS2はSpeech用Ownerを要求しない。Speech有効時だけ#705/#709の設定・登録入口から得た`SpeechProductionInputs`を一度だけ渡し、登録又はavailabilityの不備は失敗として返す。
+通常の本番認知CoreでProvider deploymentが`unconfigured`なら既存`UnavailableLLMRolePort`による型付き利用不可を保持する。この状態はLLM応答、実発話、外部Provider接続の成功ではない。Speechなしの本番認知CoreはSpeech用Ownerを要求しない。Speech有効時だけ#705/#709の設定・登録入口から得た`SpeechProductionInputs`を一度だけ渡し、登録又はavailabilityの不備は失敗として返す。
 
-## S2へのSpeech本番構成接続（#702）
+## 本番認知CoreへのSpeech本番構成接続（#702）
 
-Speechを指定したS2起動は、[SystemのS2本番認知構成](system_production_cognition_configuration.md) §9のSystem-owned factoryから既存CoreSpeechConfigurationを生成する。Executive Speech evidence、登録pipeline、SystemCompositionSnapshotは同じbinding / generationを参照する。Speech未指定時の既存S2とminimum起動を維持する。
+Speechを指定した本番認知Core起動は、[Systemの本番認知構成](system_production_cognition_configuration.md) §9のSystem-owned factoryから既存CoreSpeechConfigurationを生成する。Executive Speech evidence、登録pipeline、SystemCompositionSnapshotは同じbinding / generationを参照する。Speech未指定時の本番認知Coreとminimum起動を維持する。
 
 構築時点のsafe provenanceと、#621が実行後に照合するtrace・candidate generation・提示Factを分離する。factoryは既存Ownerとdeploymentの明示入力を束ね、具体voice/providerやSpeech意味を作らない。資源のCoreへの移管、borrowed依存の保全、部分構築失敗の回収は同§9を正とし、System側でSpeech shutdownを二重実行しない。
 

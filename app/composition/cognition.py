@@ -44,6 +44,7 @@ from app.runtime.kernel import CancellationToken, RuntimeClock
 from app.usecases.attention import UserInteractionAttentionProjector
 
 if TYPE_CHECKING:
+    from app.composition.autonomous_core import CoreAutonomyDelivery
     from app.composition.execution import CoreExecutionDelivery
     from app.composition.memory_evidence import CoreMemoryEvidenceReader
     from app.composition.reflection import CoreReflectionDelivery
@@ -130,6 +131,7 @@ class CoreCognitionDelivery:
         self.speech: CoreSpeechDelivery | None = None
         self.reflection: CoreReflectionDelivery | None = None
         self.memory_evidence: CoreMemoryEvidenceReader | None = None
+        self.autonomy: CoreAutonomyDelivery | None = None
         self._decision_delivery: Callable[[BrainIntegrationWork, object], None] | None = None
 
     @property
@@ -264,10 +266,11 @@ class CoreCognitionDelivery:
         elif dispatch.selected_source.kind is AttentionSourceKind.USER_INTERACTION:
             event_ids = (dispatch.selected_source.source_ref,)
         else:
-            raise ValueError("選択元の現在根拠が登録されていません")
-        selected_input = self._inputs.read(
-            event_ids[0], dispatch.reference.context.source_context_revision
-        )
+            selected_input = self._inputs.read_for_source(
+                dispatch.selected_source, dispatch.reference.context.source_context_revision
+            )
+            event_ids = (selected_input.event.envelope.event_id,)
+        selected_input = self._inputs.read(event_ids[0], dispatch.reference.context.source_context_revision)
         selected_trace = self.brain.trace(selected_input.event.envelope.trace_id)
         envelope = replace(
             work.envelope,
@@ -386,6 +389,9 @@ class CoreCognitionDelivery:
         if not accepted.accepted:
             self._input_finished(work)
         return accepted
+
+    def register_internal_source(self, source: AttentionSource, event_id: str) -> None:
+        self._inputs.register_internal_source(source, event_id)
 
     def cancel_trace(self, trace_id: str, reason: str, *, supersede: bool = False) -> int:
         """同じ追跡の未完処理を既存Runtimeへ取消依頼する。独自taskは増やさない。"""

@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from app.composition.accepted_input import CoreAcceptedInputStore
+from app.composition.autonomous_core import CoreAutonomyDelivery, GoalOwner
 from app.composition.appraisal import CoreAppraisalBinding
 from app.composition.attention import CoreAttentionBinding
 from app.composition.cognition import CoreCognitionDelivery
@@ -86,6 +87,7 @@ class CoreCognitionConfiguration:
         llm: LLMRolePort,
         clock: RuntimeClock,
         memory: CoreMemoryPersistenceBinding | None = None,
+        goals: GoalOwner | None = None,
     ) -> CoreCognitionDelivery:
         """同じ所有者を評価・注意・候補検査・最終Fenceまで接続する。"""
         appraisal = CoreAppraisalBinding(reference, self.state, llm, self.appraisal_policy, clock)
@@ -138,4 +140,21 @@ class CoreCognitionConfiguration:
                 delivery.execution.reflection_observer = delivery.reflection.observe_activity
         if self.speech is not None:
             self.speech.compose(delivery, reference)
+        selected_goals = goals if goals is not None else getattr(reference, "_goals", None)
+        if selected_goals is None:
+            raise ValueError("本番認知には既存のGoal所有者が必要です")
+        autonomy = CoreAutonomyDelivery(selected_goals, delivery, reference, clock)
+        previous_delivery = delivery._decision_delivery
+
+        def deliver_decision(work: object, result: object) -> None:
+            from app.domain.brain_integration import BrainIntegrationWork
+
+            if not isinstance(work, BrainIntegrationWork):
+                raise ValueError("判断配送のworkが不正です")
+            autonomy.accept_decision(work, result)
+            if previous_delivery is not None:
+                previous_delivery(work, result)
+
+        delivery.autonomy = autonomy
+        delivery._decision_delivery = deliver_decision
         return delivery

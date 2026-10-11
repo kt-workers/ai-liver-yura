@@ -101,8 +101,14 @@ class CoreExecutiveInputEvidenceReader:
                 raise ValueError("選択された評価の確定根拠が現在と一致しません")
             event_ids = commit.candidate.source_event_ids
         else:
-            raise ValueError("選択元に対応する入力根拠の供給元が未登録です")
-        inputs = tuple(self._inputs.read(event_id, revision) for event_id in event_ids)
+            inputs = (self._inputs.read_for_source(source, revision),)
+            event_ids = ()
+        inputs = (
+            inputs
+            if source.kind is not AttentionSourceKind.USER_INTERACTION
+            and source.kind is not AttentionSourceKind.APPRAISAL
+            else tuple(self._inputs.read(event_id, revision) for event_id in event_ids)
+        )
         if not inputs:
             raise ValueError("判断の契機に対応する入力根拠がありません")
         facts: dict[str, ExecutiveFactRef] = {}
