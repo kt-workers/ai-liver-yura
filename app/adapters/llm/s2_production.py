@@ -23,10 +23,9 @@ async def create_s2_provider_lease(
 ) -> S2ProviderLease:
     """秘密はこの境界内に留め、未構成と構成不正を区別する。"""
     api_key = os.environ.get("YURA_OPENAI_API_KEY")
-    configured = bool(api_key)
-    if mode not in ("configured", "unconfigured") or configured != (mode == "configured"):
+    if mode not in ("configured", "unconfigured"):
         raise S2ConfigurationError(S2FailureCode.PROVIDER_MAPPING_FAILED)
-    if not api_key:
+    if mode == "unconfigured":
         if configs:
             raise S2ConfigurationError(S2FailureCode.PROVIDER_MAPPING_FAILED)
 
@@ -34,6 +33,8 @@ async def create_s2_provider_lease(
             return None
 
         return S2ProviderLease(UnavailableLLMRolePort(roles), bindings, mode, release)
+    if not api_key:
+        raise S2ConfigurationError(S2FailureCode.PROVIDER_MAPPING_FAILED)
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=api_key)
