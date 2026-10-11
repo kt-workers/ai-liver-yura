@@ -23,7 +23,6 @@ from app.composition.memory_persistence import CoreMemoryPersistenceBinding
 from app.composition.s2_provider import S2ProviderConfigurationSource, S2ProviderLeaseFactory
 from app.composition.speech_deployment import SpeechDeploymentRegistry, create_speech_deployment
 from app.composition.speech_production_configuration import SpeechProductionInputs
-from app.composition.speech_semantics_policy import SpeechSemanticPolicyOwner
 from app.composition.system_cognition_configuration import (
     ROOT,
     S2_RESOURCE,
@@ -62,6 +61,7 @@ from app.domain.input_meaning.interpreter import descriptor
 from app.domain.llm import LLMRoleDescriptor
 from app.domain.memory_reflection.llm_roles import proposal_descriptor, support_descriptor
 from app.domain.plugin_registry import PluginRegistryAuthority
+from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
 from app.infrastructure.persistence import PostgresPersistenceRuntime
 from app.runtime.kernel import CancellationToken, RuntimeClock, SystemRuntimeClock
 from app.runtime.lifecycle import DependencyRetryPolicy, RuntimeLifecycle
