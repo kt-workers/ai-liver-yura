@@ -721,6 +721,12 @@ Meaning・Appraisal・Attention・Executiveのsource event / root_trigger / trig
 
 通常S2のProvider deploymentが`unconfigured`なら既存`UnavailableLLMRolePort`による型付き利用不可を保持する。この状態はLLM応答、実発話、外部Provider接続の成功ではない。SpeechなしのS2はSpeech用Ownerを要求しない。Speech有効時だけ#705/#709の設定・登録入口から得た`SpeechProductionInputs`を一度だけ渡し、登録又はavailabilityの不備は失敗として返す。
 
+## 本番S2コンソール入力と公開観察（#731）
+
+`python -m app --s2-production --console`は、#729で起動済みの同じS2 applicationへ外側の標準入力Adapterを接続する。文章ごとにAdapterが現在の`CoreInputReferenceContextBinding.snapshot()`を再読取りし、その`source_context_revision`で`InputObservation`を作る。`InputNormalizer`が返したACCEPTEDだけを既存`CoreCognitionDelivery.submit_input()`へ渡し、固定revision、別のInput Meaning入口、Domain値、試験用Providerを作らない。
+
+Adapterは公開`BrainIntegrationRuntime.next_outcome()`の単一consumerとして、当該入力traceのterminal outcomeと`trace()`の読取モデルを対応付ける。表示はtrace ID、module、terminal status、公開failure code、既存Decision IDに限定する。個別moduleの完了、空のDecision ID、Speech未指定を認知全体・実発話・実Provider成功へ読み替えない。前のtraceの処理を待たず次の入力を受け付ける。EOF、SIGINT、SIGTERMは新規受付を閉じ、既存S2 stopによる所有task・資源回収へ委ねる。
+
 ## S2へのSpeech本番構成接続（#702）
 
 Speechを指定したS2起動は、[SystemのS2本番認知構成](system_production_cognition_configuration.md) §9のSystem-owned factoryから既存CoreSpeechConfigurationを生成する。Executive Speech evidence、登録pipeline、SystemCompositionSnapshotは同じbinding / generationを参照する。Speech未指定時の既存S2とminimum起動を維持する。

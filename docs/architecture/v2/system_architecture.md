@@ -39,6 +39,12 @@ GUIは本体の必須機能ではない。本体はGUIを構成・起動せず�
 
 `resources/config/v2/user.yaml`の`speech: null`はSpeech無効を表し、TTS又はPresentationの登録なしでS2を起動できる。Speech有効時は既存の三層設定、trusted registration、availabilityをすべて要求する。不正又は不足をSpeechなし又は`TEXT_ONLY`へ自動変換せず、`TEXT_ONLY`は既存policyが明示した場合だけ受理する。実音声・実提示の接続と受入は#621の責務であり、この入口はそれらを補作しない。
 
+### 本番S2のコンソール観察
+
+#731の`python -m app --s2-production --console`は、起動済みS2の外側に標準入力・標準出力Adapterを一つだけ接続する。各文章は現在の`CoreInputReferenceContextBinding.snapshot()`から得た`source_context_revision`、既存`InputNormalizer`、受理済み`InputAdmission`、`CoreCognitionDelivery.submit_input()`の順に通る。Adapterは意味、評価、判断、発話を補作せず、空入力・Gateway拒否・Brain受付拒否を区別する。
+
+結果表示は`BrainIntegrationRuntime.next_outcome()`を唯一のconsumerとして読み、当該コンソール入力のtraceだけについてmodule、terminal status、公開failure code、既存traceのDecision IDを表示する。Module一件のCOMPLETEDを認知全体・発話・実外部Providerの成功へ読み替えない。raw input本文、prompt、credential、provider response、SDK object、例外本文は表示しない。EOF、SIGINT、SIGTERMは入力受付を閉じ、既存S2の`stop()`へ委ねる。前のtraceの終端待機は次の標準入力の受付条件にしない。
+
 HTML・PyQt等のGUIは交換・併用可能とし、そのための本体コード・本体設定の変更は不要とする。外部側の配置・接続設定は外部機能または構成処理が所有する。GUIの未実装・初期化失敗・切断・遅延・単独停止・レビュー待ちは、本体の独立した処理と製造・統合・完成を停止させない。全体停止の要求とGUI単独停止を区別する。
 
 本体完成と、GUIを含む任意外部機能群の完成を別々に判定する。会話・身体・記憶・ゲーム・配信等について本体の完成条件が要求する能力・実行事実・品質証拠は削らない。特定の機能や実機が必要な証拠は、その検証だけの前提として管理する。GUIの作業・品質・人間による画面確認は任意外部機能側の未完了条件として保持する。

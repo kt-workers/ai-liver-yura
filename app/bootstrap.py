@@ -543,6 +543,15 @@ async def build_s2_production_application(
 
 async def run_s2_production() -> None:
     """明示指定された本番S2を開始し、停止通知まで所有資源を保持する。"""
+    await _run_s2_production(console=False)
+
+
+async def run_s2_production_console() -> None:
+    """明示指定された本番S2へ、外側のコンソールAdapterだけを接続する。"""
+    await _run_s2_production(console=True)
+
+
+async def _run_s2_production(*, console: bool) -> None:
     app = await build_s2_production_application()
     loop = asyncio.get_running_loop()
     stop_requested = asyncio.Event()
@@ -554,7 +563,20 @@ async def run_s2_production() -> None:
             registered.append(signum)
         await app.start()
         print("本番S2の起動が完了しました。", flush=True)
-        await stop_requested.wait()
+        if console:
+            if app.core.cognition is None:
+                raise RuntimeError("本番S2の通常認知が利用できません")
+            from app.adapters.console_input import ConsoleInputAdapter
+
+            await ConsoleInputAdapter(
+                delivery=app.core.cognition,
+                brain=app.core.brain,
+                bounds_policy=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
+                source_context_revision=lambda: app.core.input_context.snapshot()
+                .context.source_context_revision,
+            ).run(stop_requested)
+        else:
+            await stop_requested.wait()
     finally:
         try:
             await app.stop()
@@ -566,11 +588,17 @@ async def run_s2_production() -> None:
 
 def main() -> None:
     arguments = tuple(sys.argv[1:])
-    if arguments not in ((), ("--s2-production",)):
-        print("使用方法: python -m app [--s2-production]", file=sys.stderr)
+    if arguments not in ((), ("--s2-production",), ("--s2-production", "--console")):
+        print("使用方法: python -m app [--s2-production [--console]]", file=sys.stderr)
         raise SystemExit(2)
     try:
-        asyncio.run(run_s2_production() if arguments else run_minimum_core())
+        asyncio.run(
+            run_s2_production_console()
+            if arguments == ("--s2-production", "--console")
+            else run_s2_production()
+            if arguments
+            else run_minimum_core()
+        )
     except (OSError, ValueError, RuntimeError):
         message = (
             "本番S2の構成、起動または停止に失敗しました。"

@@ -91,6 +91,10 @@ Shutdownはresource dependencyを守る。特にPersistenceを利用するfinal 
 
 CLI自身は具体Provider、TTS、Presentation、Body、Persistenceをclose又は再実装しない。CoreとS2 wrapperが所有する資源は既存の逆順回収に委ね、起動rootが借用したOwnerを終了しない。表示する診断は安全な起動結果だけとし、credential、DSN、endpoint、provider例外原文を出力しない。
 
+### 5.2 本番S2コンソールAdapterの停止
+
+#731の`--console`は標準入力のreaderと公開Brain outcome consumerだけを所有する。EOF、SIGINT、SIGTERMのいずれでもreaderを解除し、consumerを停止してから既存`S2ProductionApplication.stop()`を呼ぶ。stdin待機をworker threadへ残さず、停止要求が入力待機で妨げられないようevent loopのreaderを使用する。AdapterはBrain、Provider、Speech、Presentation、Persistenceの停止順序や資源所有を変更しない。
+
 ## 6. 検証
 
 - provider未設定、reconnect、retry上限、diagnostic rate limit
