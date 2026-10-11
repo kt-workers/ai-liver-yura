@@ -53,7 +53,7 @@ mapping publicationの全要素について、Role、論理model class、reasoni
 
 manifestはAPI key・credential・SDK object・生環境値を含まない。credential確認とclient生成は既存Infrastructureの提供先構成境界に残す。Systemは認証値を取得・検査・公開しない。
 
-全Roleがunconfiguredで、Infrastructureが提供先未構成と判定した場合は既存UnavailableLLMRolePortへ同じdescriptor集合を渡す。credentialが構成済みなのにmanifestがunconfiguredの場合や、configured manifestなのにcredential未構成の場合はactivationを拒否する。混在modeはrevision 1では未対応として拒否する。minimum起動の既存未構成動作は変更しない。
+全Roleがunconfiguredなら、環境にcredentialが存在していてもmanifestの明示選択を優先し、SDK clientを生成せず既存UnavailableLLMRolePortへ同じdescriptor集合を渡す。資格情報の存在だけでProviderを選択又はconfiguredへ昇格させない。configured manifestなのにcredential未構成の場合はactivationを拒否する。混在modeはrevision 1では未対応として拒否する。minimum起動の既存未構成動作は変更しない。
 
 configured時のInfrastructure構築結果は`S2ProviderLease`としてSystemへ渡す。これは既存LLMRolePort、検証済みRole/mapping publication、非秘密なavailability、非同期release操作を束ねる構成契約である。既存Adapterの意味契約を置き換えない。Infrastructureが生成したclientを所有するleaseはそのclientの公開closeをreleaseに結び付け、外部注入clientを借用するleaseはそれをcloseしない。SystemはSDK型・private属性を辿って資源を破棄しない。既存のportだけを返すAPIにcloseがあると仮定せず、この所有契約を満たすInfrastructure composition入口で同じAdapterを構築する。
 
@@ -151,6 +151,12 @@ S2 config欠落はS2を要求した起動だけの失敗である。minimum CLI�
 `app/composition/speech_production_configuration.py`に`create_production_speech_configuration(...)`を配置する。型付き入力`SpeechProductionInputs`から`SpeechProductionBinding`を生成する。返却bindingは既存`CoreSpeechConfiguration`、凍結した構成由来、構築資源の回収責務を保持する。新しいSpeech意味DTOは作らない。
 
 `build_s2_production_core(...)`と`compose_s2_production_core(...)`は`SpeechProductionInputs | None`の任意引数`speech`を受ける。未指定のdefaultは`None`。指定時はSystem factoryを一度呼び、その返却`configuration`を`CoreCognitionConfiguration.speech`へ設定する。自由な`build` callableだけを本番構成証拠として受理する経路は設けない。既存CoreSpeechConfigurationの汎用注入APIは保持する。
+
+### 9.1.1 本番CLI起動root
+
+#729のCLI起動rootは、引数なしのminimum起動と別に`--s2-production`を受理する。S2設定のactivation ID、現在のclean checkout SHA、runごとのruntime epochとsystem run ID、既存Runtime Ownerを明示して`build_s2_production_core()`を呼ぶ。`PluginRegistryAuthority`、`PreconditionSourceRouter`、Activity binding、fast appraisal ruleは起動rootが新runへ生成又は明示注入する既存Ownerであり、試験fixture又は外部Providerの代替ではない。
+
+CLIは`user.yaml`の`speech: null`で`None`を渡す。この場合、Speech用semantic owner、Memory、TTS、Presentation登録を生成又は要求しない。Speech有効時は起動rootが既存`SpeechSemanticPolicyOwner`、Memory binding、trusted `SpeechDeploymentRegistry`を明示注入して`create_speech_deployment()`を呼ぶ。いずれかがない場合は構成を拒否し、Speechなし、別voice、`TEXT_ONLY`、模擬portへ変換しない。実Providerと実音声の接続は#621が所有する。
 
 factoryへの入力は呼出元が明示供給する。不足をfixture、別voice、既定Provider、空の成功bindingで補わない。Systemは秘密値・環境変数を探索しない。
 

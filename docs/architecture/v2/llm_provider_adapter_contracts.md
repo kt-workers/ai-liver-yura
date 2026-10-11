@@ -43,6 +43,7 @@ Parent: `docs/architecture/v2/llm_role_contracts.md`
 - production OpenAI credentialの名称は`YURA_OPENAI_API_KEY`だけとする。`OPENAI_API_KEY`へのfallbackは持たず、旧名称だけが設定された場合は実サービス必須の構築をfail-closedにする。両方が存在する場合も`YURA_OPENAI_API_KEY`だけを使用する。
 - Adapterはprocess environmentから資格情報を取得するInfrastructure境界であり、`.env`等のsecret fileを探索・読込みしない。資格情報の値を例外、結果、log、診断へ公開しない。
 - 本番の任意接続では、資格情報なしを第7節の有効な利用不可接続として表現し、最小Coreの構成失敗にしない。対応しないモデル対応付け・構造登録不在等の契約違反は引き続き拒否する。
+- deploymentが明示的に`unconfigured`なら、環境に資格情報が存在してもSDK clientを生成せず既存の型付き利用不可を返す。資格情報の存在だけでProviderを選択又は構成済みに昇格させない。
 - 実Provider smokeはsecretをCIへ渡さず、ローカルHuman/Provider Verificationでのみ行う。
 
 ## 6. 検証

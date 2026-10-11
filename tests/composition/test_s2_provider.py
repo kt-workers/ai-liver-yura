@@ -127,7 +127,7 @@ def test_publication_does_not_share_mutable_schema() -> None:
 
 @pytest.mark.asyncio
 async def test_unconfigured_uses_real_port_without_sdk(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("YURA_OPENAI_API_KEY", "試験専用の非秘密文字列")
     monkeypatch.setenv("OPENAI_API_KEY", "開発ツール用の非秘密文字列")
 
     def forbidden(*args: Any, **kwargs: Any) -> Any:
@@ -153,18 +153,10 @@ async def test_unconfigured_uses_real_port_without_sdk(monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("configured", [False, True])
-async def test_credential_manifest_mismatch(
-    monkeypatch: pytest.MonkeyPatch, configured: bool
-) -> None:
-    if configured:
-        monkeypatch.setenv("YURA_OPENAI_API_KEY", "isolated-test-value")
-    else:
-        monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
+async def test_configured_manifest_requires_credential(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
     with pytest.raises(S2ConfigurationError, match="PROVIDER_MAPPING_FAILED"):
-        await create_s2_provider_lease(
-            roles(), (), (), "unconfigured" if configured else "configured"
-        )
+        await create_s2_provider_lease(roles(), (), (), "configured")
 
 
 @pytest.mark.asyncio
