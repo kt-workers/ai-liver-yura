@@ -10,7 +10,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.production import create_openai_port_from_environment
@@ -21,7 +21,6 @@ from app.composition.goal_persistence import CoreGoalPersistenceBinding
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
 from app.composition.s2_provider import S2ProviderConfigurationSource, S2ProviderLeaseFactory
-from app.composition.speech_deployment import SpeechDeploymentRegistry, create_speech_deployment
 from app.composition.speech_production_configuration import SpeechProductionInputs
 from app.composition.system_cognition_configuration import (
     ROOT,
@@ -67,6 +66,9 @@ from app.runtime.kernel import CancellationToken, RuntimeClock, SystemRuntimeClo
 from app.runtime.lifecycle import DependencyRetryPolicy, RuntimeLifecycle
 from app.runtime.shutdown import RuntimeShutdownError, RuntimeShutdownFailure, RuntimeShutdownStage
 from app.usecases.ports.llm import LLMRolePort
+
+if TYPE_CHECKING:
+    from app.composition.speech_deployment import SpeechDeploymentRegistry
 
 
 @dataclass(frozen=True, slots=True)
@@ -501,6 +503,8 @@ def _load_s2_speech(
             return None
         if owners.speech is None:
             raise ValueError("Speech本番接続が登録されていません")
+        from app.composition.speech_deployment import create_speech_deployment
+
         source = create_speech_deployment(
             root,
             run=run,
