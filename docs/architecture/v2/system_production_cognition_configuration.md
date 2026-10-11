@@ -10,7 +10,7 @@ Ownerは#360配下の#692。System compositionの設定・起動・資源所有�
 
 ## 2. ゆら本体専用設定
 
-本番設定は`resources/config/v2/core.yaml`、loader / 不変DTOは`app/config/core.py`の`load_core_config(source: str | bytes)` / `CoreConfig`とする。設定の存在では起動しない。
+本番設定は`config/core.yaml`、loader / 不変DTOは`app/config/core.py`の`load_core_config(source: str | bytes)` / `CoreConfig`とする。設定の存在では起動しない。
 
 | field | 初期値・契約 |
 | --- | --- |
@@ -18,12 +18,12 @@ Ownerは#360配下の#692。System compositionの設定・起動・資源所有�
 | config_id / config_revision | `yura.core` / `1` |
 | activation_id | `yura.core.explicit` |
 | composition_id / composition_revision | `yura.system.core` / `1` |
-| minimum_config | resource_ref=`resources/config/v2/minimum_brain.yaml`、config_id=`yura.minimum-brain.production`、config_revision=`1` |
-| appraisal_config | resource_ref=`resources/config/v2/appraisal.yaml`、config_id=`yura.appraisal.production`、config_revision=`1` |
-| executive_config | resource_ref=`resources/config/v2/executive.yaml`、config_id=`yura.executive.production`、config_revision=`1` |
+| minimum_config | resource_ref=`config/minimum_brain.yaml`、config_id=`yura.minimum-brain.production`、config_revision=`1` |
+| appraisal_config | resource_ref=`config/appraisal.yaml`、config_id=`yura.appraisal.production`、config_revision=`1` |
+| executive_config | resource_ref=`config/executive.yaml`、config_id=`yura.executive.production`、config_revision=`1` |
 | attention_policy | policy_id=`attention-scheduling-production`、policy_revision=`1` |
-| provider_deployment | resource_ref=`resources/config/v2/provider_deployment_core.yaml`、deployment_id=`yura.provider-deployment.core`、deployment_revision=`1` |
-| character_definition | resource_ref=`resources/character_definitions/v2/yura.yaml`、character_id=`yura`、definition_revision=`1` |
+| provider_deployment | resource_ref=`config/provider_deployment_core.yaml`、deployment_id=`yura.provider-deployment.core`、deployment_revision=`1` |
+| character_definition | resource_ref=`config/character/yura.yaml`、character_id=`yura`、definition_revision=`1` |
 
 この表が最上位fieldの全件で、参照objectも記載fieldだけを許可する。identityは非空、revisionはboolでない1以上の整数。attention値は実production()のidentity/revisionと一致を要求し、その予算表は複製しない。人物参照はminimum構成のcharacter_definition_pathと同じ文書を指し、実`CharacterDefinitionDocument.definition_revision`と照合する。人物内容をSystemが定義しない。
 
@@ -33,7 +33,7 @@ resource_refはリポジトリ内の公開相対参照で、絶対path・上位�
 
 ## 3. Provider deployment sourceと供給API
 
-`resources/config/v2/provider_deployment_core.yaml`は秘密を含まないdeployment manifestとする。schema_id=`yura.provider-deployment.core.v1`、deployment_id / deployment_revisionは§2と一致し、`role_bindings`に登録Roleを一度ずつ保持する。manifest loaderと型は`app/config/provider_deployment.py`へ配置する。SystemがModelPolicyの計算・数値検証・retryを再実装しない。
+`config/provider_deployment_core.yaml`は秘密を含まないdeployment manifestとする。schema_id=`yura.provider-deployment.core.v1`、deployment_id / deployment_revisionは§2と一致し、`role_bindings`に登録Roleを一度ずつ保持する。manifest loaderと型は`app/config/provider_deployment.py`へ配置する。SystemがModelPolicyの計算・数値検証・retryを再実装しない。
 
 各bindingは`role_id, availability_mode, mapping_ref, role_config_ref`を持つ。参照は`source_id, identity, revision`の3fieldで、revisionは非負整数、identity/source_idは非空の公開識別子。source_idはprivate pathや環境変数の生値ではない。availability_modeは`unconfigured`または`configured`。
 

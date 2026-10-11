@@ -29,7 +29,7 @@ application構築時に同じdocumentから一度だけ`runtime_subject_identity
 
 第二のself設定、二重load、mutable global registry、singleton、hot-reload managerを追加しない。
 新しいapplicationを構成した場合のみ新documentのidentity/provenanceを持つ。
-既存default locator `resources/character_definitions/v2/yura.yaml`は保持するが、pathやfilenameはidentityのAuthorityではない。
+既存default locator `config/character/yura.yaml`は保持するが、pathやfilenameはidentityのAuthorityではない。
 現製品の結果は`yura`であっても、algorithmへその文字列をhard-codeしない。
 
 ## 検証と失敗

@@ -70,7 +70,7 @@ REFLECTION
 
 ## 4. 静的設定の保存・読込境界
 
-将来のデータ実体は `resources/config/v2/minimum_brain.yaml`、型付きの読込境界は `app/config/minimum_brain.py` とする。今回の設計工程では、いずれも作成しない。
+将来のデータ実体は `config/minimum_brain.yaml`、型付きの読込境界は `app/config/minimum_brain.py` とする。今回の設計工程では、いずれも作成しない。
 
 ```text
 YAML
@@ -87,7 +87,7 @@ Composition Root
 |schema_id|`yura.minimum-brain.production-config.v1`|
 |config_id|`yura.minimum-brain.production`|
 |config_revision|`1`|
-|character_definition_path|`resources/character_definitions/v2/yura.yaml`|
+|character_definition_path|`config/character/yura.yaml`|
 |brain_module_registrations|`INPUT_MEANING`に対応する既存列挙値だけを含む配列|
 |input_meaning|第6・7節のacceptanceとexecution|
 |scheduler|第8節のscheduler方針|

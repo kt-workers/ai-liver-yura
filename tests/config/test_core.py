@@ -10,7 +10,7 @@ import yaml
 from app.config.core import load_core_config
 from app.config.core_contracts import CoreConfigurationError
 
-SOURCE = Path("resources/config/v2/core.yaml").read_text()
+SOURCE = Path("config/core.yaml").read_text()
 
 
 def test_canonical_references_are_explicit_and_frozen() -> None:
@@ -20,7 +20,7 @@ def test_canonical_references_are_explicit_and_frozen() -> None:
     for name in ("minimum", "appraisal", "executive"):
         ref = getattr(config, name + "_config")
         file = "minimum_brain" if name == "minimum" else name
-        assert ref.resource_ref == f"resources/config/v2/{file}.yaml"
+        assert ref.resource_ref == f"config/{file}.yaml"
         assert ref.config_revision == 1
     assert config.attention_policy.policy_id == "attention-scheduling-production"
     assert config.character_definition.character_id == "yura"

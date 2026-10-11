@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.mark.parametrize("alternate", [False, True])
 @pytest.mark.parametrize("rename", [False, True])
 def test_production_identity_single_load(tmp_path: Path, alternate: bool, rename: bool) -> None:
-    document = yaml.safe_load((ROOT / "resources/character_definitions/v2/yura.yaml").read_text())
+    document = yaml.safe_load((ROOT / "config/character/yura.yaml").read_text())
     if alternate:
         document["character_id"] = "alternate-character"
         document["definition_revision"] += 1
@@ -32,7 +32,7 @@ def test_production_identity_single_load(tmp_path: Path, alternate: bool, rename
                         facet["value"] = "別の表記"
     character_path = tmp_path / "unrelated-filename.yaml"
     character_path.write_text(yaml.safe_dump(document, allow_unicode=True))
-    config = yaml.safe_load((ROOT / "resources/config/v2/minimum_brain.yaml").read_text())
+    config = yaml.safe_load((ROOT / "config/minimum_brain.yaml").read_text())
     config["character_definition_path"] = str(character_path)
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(config))
@@ -72,7 +72,7 @@ def test_missing_invalid_character_has_no_identity_fallback(tmp_path: Path, miss
     path = tmp_path / "character.yaml"
     if not missing:
         path.write_text("character_id: yura")
-    config = yaml.safe_load((ROOT / "resources/config/v2/minimum_brain.yaml").read_text())
+    config = yaml.safe_load((ROOT / "config/minimum_brain.yaml").read_text())
     config["character_definition_path"] = str(path)
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(config))

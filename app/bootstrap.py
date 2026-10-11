@@ -332,7 +332,7 @@ def _load_core(
 ) -> tuple[MinimumBrainProductionConfig, CharacterDefinitionDocument, LLMRolePort]:
     root = Path(__file__).resolve().parent.parent
     path = (
-        config_path if config_path is not None else root / "resources/config/v2/minimum_brain.yaml"
+        config_path if config_path is not None else root / "config/minimum_brain.yaml"
     )
     config = load_minimum_brain_config(path.read_bytes())
     character = load_character_definition_yaml(
@@ -504,7 +504,7 @@ def _load_core_speech(
     owners: CoreRuntimeOwners,
 ) -> SpeechProductionInputs | None:
     """三層設定のSpeech有効化だけを既存登録済みOwnerへ接続する。"""
-    root = ROOT / "resources/config/v2"
+    root = ROOT / "config"
     try:
         configuration = load_user_configuration(root)
         if configuration.speech is None:

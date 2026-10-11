@@ -641,7 +641,7 @@ HTTP固有の上限は、既存の`GuiAdminOperationalPolicy`と分離した`Gui
 #351の構成・設定層は、次の版管理された静的設定を所有する。環境固有の待受設定をDomain DTOへ入れない。
 
 ```text
-将来のファイル: resources/config/v2/gui_admin.yaml
+将来のファイル: config/gui_admin.yaml
 schema_id = yura.gui-admin.production-config.v1
 config_id = yura.gui-admin.production
 config_revision = 1

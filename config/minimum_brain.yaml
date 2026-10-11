@@ -1,7 +1,7 @@
 schema_id: yura.minimum-brain.production-config.v1
 config_id: yura.minimum-brain.production
 config_revision: 1
-character_definition_path: resources/character_definitions/v2/yura.yaml
+character_definition_path: config/character/yura.yaml
 brain_module_registrations:
   - input_meaning
 input_meaning:

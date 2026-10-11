@@ -34,7 +34,7 @@ from tests.system_integration.test_early_boot import no_provider
 @pytest.fixture
 def boot_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     no_provider(monkeypatch)
-    source = yaml.safe_load(Path("resources/config/v2/minimum_brain.yaml").read_text())
+    source = yaml.safe_load(Path("config/minimum_brain.yaml").read_text())
     source["config_revision"] = 2
     source["shutdown"]["policy_revision"] = 2
     source["shutdown"]["final_persistence_grace_seconds"] = 2.0
@@ -174,7 +174,7 @@ async def test_invalid_configuration_closes_transferred_runtime(
     storage = runtime(endpoint)
     with pytest.raises(ValueError, match="猶予"):
         await build_persistent_core(
-            Path("resources/config/v2/minimum_brain.yaml"),
+            Path("config/minimum_brain.yaml"),
             persistence=storage,
             retry_policy=retry_policy("db"),
             runtime_epoch="invalid",

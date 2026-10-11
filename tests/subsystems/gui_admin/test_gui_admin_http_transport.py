@@ -40,7 +40,7 @@ class Wire(asyncio.Transport):
 
 def owner() -> GuiAdminHttpTransport:
     config = load_gui_admin_config(
-        Path("resources/config/v2/gui_admin.yaml").read_text()
+        Path("config/gui_admin.yaml").read_text()
     )
     application = Mock()
     application.respond.return_value = GuiHttpResponse(
@@ -217,7 +217,7 @@ async def test_transport_injected_into_subsystem_reaches_available_and_stops(
     create = AsyncMock(return_value=listener)
     monkeypatch.setattr(asyncio.get_running_loop(), "create_server", create)
     brain = load_minimum_brain_config(
-        Path("resources/config/v2/minimum_brain.yaml").read_text()
+        Path("config/minimum_brain.yaml").read_text()
     )
     gui = GuiAdminSubsystem(
         owner().config,

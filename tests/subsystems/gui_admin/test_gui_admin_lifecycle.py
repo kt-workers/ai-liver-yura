@@ -41,7 +41,7 @@ class Transport:
 
 
 def subsystem(transport: Transport) -> GuiAdminSubsystem:
-    config = load_gui_admin_config(Path("resources/config/v2/gui_admin.yaml").read_text())
+    config = load_gui_admin_config(Path("config/gui_admin.yaml").read_text())
     config = replace(
         config,
         gui_http_transport_policy=replace(
@@ -49,7 +49,7 @@ def subsystem(transport: Transport) -> GuiAdminSubsystem:
             shutdown_grace_seconds=0.05,
         ),
     )
-    brain = load_minimum_brain_config(Path("resources/config/v2/minimum_brain.yaml").read_text())
+    brain = load_minimum_brain_config(Path("config/minimum_brain.yaml").read_text())
     return GuiAdminSubsystem(
         config,
         brain,

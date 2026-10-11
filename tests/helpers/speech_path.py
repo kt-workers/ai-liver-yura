@@ -299,7 +299,7 @@ async def build_speech_path(
     brain = BrainIntegrationRuntime(
         SystemRuntimeClock(),
         load_minimum_brain_config(
-            Path("resources/config/v2/minimum_brain.yaml").read_bytes()
+            Path("config/minimum_brain.yaml").read_bytes()
         ).integration_policy,
     )
 

@@ -31,9 +31,9 @@ from tests.config.test_provider_deployment import SOURCE, configured_data
 
 
 def roles() -> tuple[LLMRoleDescriptor, ...]:
-    minimum = load_minimum_brain_config(Path("resources/config/v2/minimum_brain.yaml").read_bytes())
-    appraisal = load_appraisal_config(Path("resources/config/v2/appraisal.yaml").read_bytes())
-    executive = load_executive_config(Path("resources/config/v2/executive.yaml").read_bytes())
+    minimum = load_minimum_brain_config(Path("config/minimum_brain.yaml").read_bytes())
+    appraisal = load_appraisal_config(Path("config/appraisal.yaml").read_bytes())
+    executive = load_executive_config(Path("config/executive.yaml").read_bytes())
     return (
         input_descriptor(minimum.input_meaning_policy),
         appraisal_descriptor(appraisal.appraisal_policy),

@@ -10,7 +10,7 @@ import yaml
 from app.config.provider_deployment import ROLE_IDS, load_provider_deployment
 from app.config.core_contracts import CoreConfigurationError
 
-SOURCE = Path("resources/config/v2/provider_deployment_core.yaml").read_text()
+SOURCE = Path("config/provider_deployment_core.yaml").read_text()
 REF = {"source_id": "deployment", "identity": "role-mapping", "revision": 1}
 
 

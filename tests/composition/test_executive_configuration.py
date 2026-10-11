@@ -64,7 +64,7 @@ def test_empty_catalog_and_real_generation_with_safe_provenance() -> None:
         bound.initial_generation.token == bound.requirements_owner.finalization_participant.token()
     )
     provenance = bound.provenance.to_dict()
-    assert provenance["source_config_ref"] == "resources/config/v2/executive.yaml"
+    assert provenance["source_config_ref"] == "config/executive.yaml"
     assert provenance["execution_policy_id"] == "yura.executive.execution"
     assert provenance["requirements_policy_id"] == "yura.executive.requirements"
     assert provenance["initial_generation_serial"] == 0

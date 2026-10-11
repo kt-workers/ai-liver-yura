@@ -37,7 +37,7 @@ GUIは本体の必須機能ではない。本体はGUIを構成・起動せず�
 
 `python -m app`はゆら本体を起動する唯一のCLI入口とする。最小Coreは内部構成要素であり、CLI起動の選択肢にしない。Provider未構成、又はゆら本体構成失敗をゆら本体の起動成功へ読み替えない。起動rootは既存の認知設定、Character、Runtime Ownerを使用し、具体LLM model、TTS Provider、voice、音声再生backendを標準値として選ばない。
 
-`resources/config/v2/user.yaml`の`speech: null`はSpeech無効を表し、TTS又はPresentationの登録なしでゆら本体を起動できる。Speech有効時は既存の三層設定、trusted registration、availabilityをすべて要求する。不正又は不足をSpeechなし又は`TEXT_ONLY`へ自動変換せず、`TEXT_ONLY`は既存policyが明示した場合だけ受理する。実音声・実提示の接続と受入は#621の責務であり、この入口はそれらを補作しない。
+`config/user.yaml`の`speech: null`はSpeech無効を表し、TTS又はPresentationの登録なしでゆら本体を起動できる。Speech有効時は既存の三層設定、trusted registration、availabilityをすべて要求する。不正又は不足をSpeechなし又は`TEXT_ONLY`へ自動変換せず、`TEXT_ONLY`は既存policyが明示した場合だけ受理する。実音声・実提示の接続と受入は#621の責務であり、この入口はそれらを補作しない。
 
 HTML・PyQt等のGUIは交換・併用可能とし、そのための本体コード・本体設定の変更は不要とする。外部側の配置・接続設定は外部機能または構成処理が所有する。GUIの未実装・初期化失敗・切断・遅延・単独停止・レビュー待ちは、本体の独立した処理と製造・統合・完成を停止させない。全体停止の要求とGUI単独停止を区別する。
 

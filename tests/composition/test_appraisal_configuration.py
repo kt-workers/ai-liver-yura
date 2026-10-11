@@ -59,7 +59,7 @@ def test_fresh_binding_preserves_owner_and_provenance() -> None:
         42,
         NOW,
         "runtime:42",
-        "resources/config/v2/appraisal.yaml",
+        "config/appraisal.yaml",
     )
     with pytest.raises(FrozenInstanceError):
         cast(Any, provenance).runtime_epoch = "changed"

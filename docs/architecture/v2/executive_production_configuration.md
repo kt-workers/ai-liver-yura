@@ -65,7 +65,7 @@ ACTIVITY sourceは`DirectActivityRequirementSourceSpec(route_id="executive.requi
 
 | 要素 | 配置・採用値 | 制約・理由 |
 | --- | --- | --- |
-| 本番データ | `resources/config/v2/executive.yaml` | minimum YAMLから分離しINPUT_MEANING-only起動を変えない |
+| 本番データ | `config/executive.yaml` | minimum YAMLから分離しINPUT_MEANING-only起動を変えない |
 | schema_id | `yura.executive.production-config.v1` | 既知形式のみ受理。形式変更は別schemaとして設計 |
 | config_id | `yura.executive.production` | 非空・固定の構成系列identity |
 | config_revision | `1` | 1以上の整数。内容変更時に増加 |

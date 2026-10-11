@@ -186,7 +186,7 @@ half-life / baseline / 最小経過時間はHuman校正可能なversioned data�
 
 | 要素 | 正規配置・識別 |
 | --- | --- |
-| 本番データ | resources/config/v2/appraisal.yaml |
+| 本番データ | config/appraisal.yaml |
 | loader | app/config/appraisal.py の load_appraisal_config(source: str \| bytes) |
 | 不変構成DTO | AppraisalProductionConfig |
 | fresh factory / binding | app/composition/appraisal_configuration.py |
@@ -216,7 +216,7 @@ policy全体を取得できない減衰要求では既存DECAY_POLICY_UNAVAILABL
 - decay policy_id / policy_revision
 - initialization_mode=fresh_empty、initial_state_revision=0
 - 初期化時のsource_context_revision / initialized_at / runtime_epoch
-- source_config_ref=resources/config/v2/appraisal.yaml（リポジトリ相対参照のみ）
+- source_config_ref=config/appraisal.yaml（リポジトリ相対参照のみ）
 
 stateの以後のrevision・current valueはReducerのsnapshotから読み、初期provenanceをcurrent状態として再利用しない。config_revision、state revision、source context revision、runtime_epochを等置しない。configの実行中差替えはこのリビジョンでは提供せず、再配備時に検証済み構成を新epochへ結び付ける。値変更はconfig revisionと該当policy revisionの双方を更新し、同identity / revisionで異なるデータを配備しない。
 

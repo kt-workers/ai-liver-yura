@@ -63,7 +63,7 @@ def build_appraisal_configuration(
         source_context_revision,
         initialized_at,
         runtime_epoch,
-        "resources/config/v2/appraisal.yaml",
+        "config/appraisal.yaml",
     )
     return AppraisalProductionBinding(
         InternalStateReducer(

@@ -385,9 +385,9 @@ async def test_owned_cleanup_actual_order(monkeypatch: pytest.MonkeyPatch) -> No
 @pytest.mark.asyncio
 async def test_symlink_resource_cannot_escape_root(tmp_path: Path) -> None:
     copy_resources(tmp_path)
-    source = tmp_path / "resources/config/v2/appraisal.yaml"
+    source = tmp_path / "config/appraisal.yaml"
     source.unlink()
-    source.symlink_to(Path("resources/config/v2/appraisal.yaml").resolve())
+    source.symlink_to(Path("config/appraisal.yaml").resolve())
     params = parameters()
     params["resource_root"] = tmp_path
     with pytest.raises(CoreConfigurationError, match="INVALID_SYSTEM_CONFIG"):

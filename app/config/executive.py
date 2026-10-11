@@ -31,7 +31,7 @@ from app.domain.llm import (
     LLMRequestRetryPolicy,
 )
 
-CONFIG_SOURCE = "resources/config/v2/executive.yaml"
+CONFIG_SOURCE = "config/executive.yaml"
 DIRECT_ROUTE = "executive.requirements.production.direct"
 
 

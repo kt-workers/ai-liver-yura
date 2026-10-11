@@ -110,7 +110,7 @@ class SystemRun:
         self.observed: list[Any] = []
         self.snapshot = core.composition_snapshot
         self.provenance = self.current_provenance()
-        config = load_core_config((ROOT / "resources/config/v2/core.yaml").read_bytes())
+        config = load_core_config((ROOT / "config/core.yaml").read_bytes())
         loaded = load_minimum_brain_config((ROOT / config.minimum_config.resource_ref).read_bytes())
         assert self.app.config == loaded
         snapshot = self.snapshot
@@ -211,7 +211,7 @@ class SystemRun:
         assert snapshot.git_head == current_artifact_head()
         provenance = capture_production_provenance(
             ROOT,
-            ("app", "resources/config/v2", self.app.config.character_definition_path),
+            ("app", "config", self.app.config.character_definition_path),
             (
                 "system_integration_contracts.md",
                 "brain_integration_contracts.md",

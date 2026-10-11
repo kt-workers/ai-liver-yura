@@ -13,7 +13,7 @@ from app.domain.input_meaning import PrimaryIntent
 from app.domain.llm import LLMModelClass, LLMReasoningEffort
 from app.runtime.kernel import LaneErrorPolicy, QueuePolicy
 
-RESOURCE = Path(__file__).resolve().parents[2] / "resources/config/v2/minimum_brain.yaml"
+RESOURCE = Path(__file__).resolve().parents[2] / "config/minimum_brain.yaml"
 
 
 def test_canonical_resource_and_shared_policy_instances() -> None:
@@ -21,7 +21,7 @@ def test_canonical_resource_and_shared_policy_instances() -> None:
     assert config.schema_id == "yura.minimum-brain.production-config.v1"
     assert config.config_id == "yura.minimum-brain.production"
     assert config.config_revision == 1
-    assert config.character_definition_path == "resources/character_definitions/v2/yura.yaml"
+    assert config.character_definition_path == "config/character/yura.yaml"
     assert config.brain_module_registrations == (BrainIntegrationModule.INPUT_MEANING,)
     acceptance = config.input_meaning_policy.acceptance
     assert (acceptance.policy_id, acceptance.policy_revision) == (

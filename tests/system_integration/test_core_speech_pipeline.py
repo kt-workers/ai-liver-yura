@@ -296,7 +296,7 @@ async def test_full_owner_pipeline_and_presentation_feedback(slow_stage: str | N
     brain = BrainIntegrationRuntime(
         SystemRuntimeClock(),
         load_minimum_brain_config(
-            Path("resources/config/v2/minimum_brain.yaml").read_bytes()
+            Path("config/minimum_brain.yaml").read_bytes()
         ).integration_policy,
     )
 

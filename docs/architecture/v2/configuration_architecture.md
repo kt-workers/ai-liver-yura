@@ -6,7 +6,7 @@
 
 ## 2. ファイルと優先順位
 
-`resources/config/v2/user.yaml`は`schema: yura.user.v1`と`speech`だけを持つ。`speech: null`は明示的な無効化であり、利用可能な発話成功を意味しない。有効時は`profile`と`deployment`の名前だけを指定する。同じ設定rootの`profiles/speech/<name>.yaml`と`profiles/deployment/<name>.yaml`へ解決する。名前はASCII英数字・アンダースコア・ハイフンに限定し、任意path、環境変数展開、任意module importを許可しない。
+`config/user.yaml`は`schema: yura.user.v1`と`speech`だけを持つ。`speech: null`は明示的な無効化であり、利用可能な発話成功を意味しない。有効時は`profile`と`deployment`の名前だけを指定する。同じ設定rootの`profiles/speech/<name>.yaml`と`profiles/deployment/<name>.yaml`へ解決する。名前はASCII英数字・アンダースコア・ハイフンに限定し、任意path、環境変数展開、任意module importを許可しない。
 
 優先順位は呼出側が明示した一つのrootと主設定だけである。隠れた環境上書き、複数ファイルの部分merge、別profileへのfallbackは行わない。secretは既存Adapterのenvironment / 登録済み接続境界が所有し、設定にはcredential値や任意のsecret参照名を持たせない。提供先は信頼されたdeployment registryへの選択名で指定する。registryは既存Ownerのclient / portを供給し、設定でPython moduleを選べない。
 
@@ -26,7 +26,7 @@ schemaは形式のバージョンであり、内容revisionとは異なる。正
 
 ## 4.1 ゆら本体起動時のSpeech選択
 
-#729のゆら本体起動rootは、`resources/config/v2`を既存`load_user_configuration()`で一度のSystem runに固定して読む。`speech: null`なら`create_speech_deployment()`を呼ばず、TTS、Presentation、Speech用Provider、Memoryを要求しない。これはSpeechを`TEXT_ONLY`へ変換することではない。
+#729のゆら本体起動rootは、`config`を既存`load_user_configuration()`で一度のSystem runに固定して読む。`speech: null`なら`create_speech_deployment()`を呼ばず、TTS、Presentation、Speech用Provider、Memoryを要求しない。これはSpeechを`TEXT_ONLY`へ変換することではない。
 
 Speech profileを指定した場合だけ、起動rootは同じ`CoreRunIdentity`、既存`SpeechSemanticPolicyOwner`、既存Memory binding、`production_speech_deployment_registry()`から得たtrusted registryを`create_speech_deployment()`へ明示供給する。登録欠落、availability不整合、stale、binding mismatch、構成不正は既存の型付き構成失敗として停止し、別Provider、voice、Presentation、試験fixture、空の成功bindingを補作しない。
 

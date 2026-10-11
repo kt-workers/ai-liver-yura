@@ -66,7 +66,7 @@ if TYPE_CHECKING:
     from app.bootstrap import MinimumCoreApplication
 
 ROOT = Path(__file__).resolve().parents[2]
-CORE_RESOURCE = "resources/config/v2/core.yaml"
+CORE_RESOURCE = "config/core.yaml"
 
 
 @dataclass(frozen=True, slots=True)

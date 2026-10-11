@@ -189,7 +189,7 @@ def test_production_binding_through_brain_preserves_unavailable(
 def test_success_with_unavailable_live_context_is_owner_rejection() -> None:
     async def scenario() -> None:
         config = load_minimum_brain_config(
-            (ROOT / "resources/config/v2/minimum_brain.yaml").read_bytes()
+            (ROOT / "config/minimum_brain.yaml").read_bytes()
         )
         live = CountingUnavailableContext()
         bridge = InputMeaningBrainModulePort(
@@ -303,7 +303,7 @@ def test_runtime_cancellation_propagates_and_reaps() -> None:
                 raise AssertionError("待機中の要求が通常完了してはなりません")
 
         config = load_minimum_brain_config(
-            (ROOT / "resources/config/v2/minimum_brain.yaml").read_bytes()
+            (ROOT / "config/minimum_brain.yaml").read_bytes()
         )
         bridge = InputMeaningBrainModulePort(
             InputMeaningInterpreter(
@@ -494,7 +494,7 @@ def test_running_generation_does_not_reload_changed_file(
 ) -> None:
     no_provider(monkeypatch)
     path = tmp_path / "minimum_brain.yaml"
-    path.write_bytes((ROOT / "resources/config/v2/minimum_brain.yaml").read_bytes())
+    path.write_bytes((ROOT / "config/minimum_brain.yaml").read_bytes())
 
     async def scenario() -> None:
         app = build_minimum_core(path)
@@ -555,7 +555,7 @@ def test_file_edit_takes_effect_only_in_next_core_configuration(
     """有効な設定編集を次の構成で読み、稼働中の方針を変更しない。"""
     no_provider(monkeypatch)
     path = tmp_path / "minimum_brain.yaml"
-    original = (ROOT / "resources/config/v2/minimum_brain.yaml").read_bytes()
+    original = (ROOT / "config/minimum_brain.yaml").read_bytes()
     path.write_bytes(original)
 
     async def scenario() -> None:

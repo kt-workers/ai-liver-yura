@@ -7,7 +7,7 @@ import yaml
 
 from app.config.appraisal import load_appraisal_config
 
-SOURCE = Path("resources/config/v2/appraisal.yaml").read_text()
+SOURCE = Path("config/appraisal.yaml").read_text()
 
 
 def test_production_values() -> None:

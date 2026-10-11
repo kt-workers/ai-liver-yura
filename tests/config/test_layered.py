@@ -10,7 +10,7 @@ import yaml
 
 from app.config.layered import ROLES, ConfigurationError, load_user_configuration
 
-PROFILE = Path("resources/config/v2/profiles/speech/conservative.yaml")
+PROFILE = Path("config/profiles/speech/conservative.yaml")
 
 
 def configured_root(root: Path, *, available: bool = False) -> Path:
@@ -62,7 +62,7 @@ def edit(path: Path, keys: tuple[str, ...], value: Any) -> None:
 
 
 def test_default_disabled_and_explicit_profile_is_immutable(tmp_path: Path) -> None:
-    default = load_user_configuration(Path("resources/config/v2"))
+    default = load_user_configuration(Path("config"))
     assert default.speech is None and default.deployment is None
     root = configured_root(tmp_path)
     config = load_user_configuration(root)

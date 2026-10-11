@@ -106,7 +106,7 @@ class ExternalPorts:
 
 def dependencies() -> dict[str, Any]:
     character = load_character_definition_yaml(
-        Path("resources/character_definitions/v2/yura.yaml").read_bytes()
+        Path("config/character/yura.yaml").read_bytes()
     )
     subject = RuntimeSubjectIdentity(
         character.character_id,
@@ -435,7 +435,7 @@ def test_missing_registration_and_mapping_limits_fail_closed(tmp_path: Path) -> 
 def test_disabled_speech_does_not_acquire_or_require_deployment() -> None:
     external = ExternalPorts()
     result = create_speech_deployment(
-        Path("resources/config/v2"),
+        Path("config"),
         **dependencies(),
         registry=SpeechDeploymentRegistry({"isolated": external}),
     )
