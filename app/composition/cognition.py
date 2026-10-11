@@ -353,9 +353,9 @@ class CoreCognitionDelivery:
                 change = event.lifecycle_change
                 kind = (
                     LifecycleKind.STARTUP
-                    if change is not None and change.reason == "runtime_started"
+                    if change is not None and change.reason_code == "runtime_started"
                     else LifecycleKind.RESUME
-                    if change is not None and change.reason == "runtime_resumed"
+                    if change is not None and change.reason_code == "runtime_resumed"
                     else None
                 )
                 if kind is not None:
