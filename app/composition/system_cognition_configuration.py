@@ -375,6 +375,7 @@ async def compose_core(
             precondition_bindings,
             fast_rules,
             speech=None if speech_binding is None else speech_binding.configuration,
+            decay_policy=appraisal.decay_policy,
         )
         core = _compose_core(
             minimum,

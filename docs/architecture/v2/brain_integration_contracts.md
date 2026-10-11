@@ -627,6 +627,8 @@ stopは新規受付を閉じ、Kernel stopの後、受付済みwork全件の終�
 
 本体は人間入力を前提としない。Runtimeの実際の開始は一度だけ型付きの内部lifecycle入力として配送できる。これは会話開始、固定発話、固定Goal、又は成功した判断を生成する命令ではない。
 
+起動・再開のlifecycle入力は、既存Appraisalの`LifecycleAppraisalInput`と構成済みのDecayPolicyを通して現在の内部状態へ適用する。ここでLLMを要求せず、固定した感情・Goal・発話を補作しない。後続のAttentionとExecutiveは、そのOwnerが公開する通常の受付・利用不可・失敗の契約に従う。
+
 起動時に既存Goal Ownerが保持する未終端Goal・Commitmentがあれば、既存のbounded trigger viewを一度だけ内部契機として配送する。これはAttention lifecycleのsourceをsnapshotから再構成するものではない。確定したExecutive判断がGoal又はCommitmentの遷移を含む場合、同じ既存Goal Ownerへ一度だけ適用する。Ownerが返した型付きlifecycle事実は、元のtrace・root trigger・現在の参照revisionを保った内部入力として次のAppraisalへ戻す。CompositionはGoalの内容、感情、優先度、完了、又は次の行動を生成しない。Ownerの適用失敗、入力拒否、又はBrain受付拒否は成功へ変換しない。
 
 この還流は、発話、外部Plugin、音声再生、人間からの入力が存在しなくても成立する。外部能力やProviderが未構成の場合、既存の型付き利用不可・失敗を保持し、架空のDecision・活動・発話を作らない。

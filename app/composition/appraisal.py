@@ -13,6 +13,7 @@ from app.composition.input_reference_context import (
 from app.domain.appraisal import (
     AppraisalCandidate,
     AppraisalStateCommit,
+    DecayPolicy,
     DeepAppraisalContext,
     DeepAppraisalFreshnessStamp,
     DeepAppraisalInterpreter,
@@ -20,7 +21,9 @@ from app.domain.appraisal import (
     DeterministicAppraisalRule,
     InternalStateReducer,
     InternalStateSnapshot,
+    LifecycleAppraisalInput,
     appraise_event,
+    lifecycle_candidate,
 )
 from app.domain.brain_integration import BrainIntegrationModule, BrainIntegrationWork
 from app.domain.contracts import EventEnvelope
@@ -62,6 +65,7 @@ class CoreAppraisalBinding:
         llm: LLMRolePort,
         policy: DeepAppraisalPolicy,
         clock: RuntimeClock,
+        decay_policy: DecayPolicy | None = None,
         *,
         stabilization: SnapshotStabilizationPolicy = DEFAULT_SNAPSHOT_STABILIZATION_POLICY,
     ) -> None:
@@ -76,6 +80,7 @@ class CoreAppraisalBinding:
         self._reference = reference
         self._state = state
         self._clock = clock
+        self._decay_policy = decay_policy
         self._stabilization = stabilization
         self._interpreter = DeepAppraisalInterpreter(llm, self, policy)
         self._latest: AppraisalStateCommit | None = None
@@ -202,6 +207,24 @@ class CoreAppraisalBinding:
         )
         return None if candidate is None else self._commit(candidate)
 
+    def appraise_lifecycle(
+        self, lifecycle: LifecycleAppraisalInput, *, candidate_id: str
+    ) -> AppraisalStateCommit:
+        """起動・再開の既存入力を、LLMを介在させず減衰Ownerへ渡す。"""
+        if self._decay_policy is None:
+            raise ValueError("本体lifecycleには既存の減衰方針が必要です")
+        current = self._current()
+        if lifecycle.source_context_revision != current.reference.context.source_context_revision:
+            raise ValueError("lifecycle入力の文脈が現在の参照文脈と一致しません")
+        return self._commit(
+            lifecycle_candidate(
+                current.state,
+                lifecycle,
+                self._decay_policy,
+                candidate_id=candidate_id,
+            )
+        )
+
     def _commit(self, candidate: AppraisalCandidate) -> AppraisalStateCommit:
         current = self._current()
         revision = 1 if self._latest is None else self._latest.appraisal_facts.revision + 1
@@ -220,6 +243,7 @@ class AppraisalBrainWorkPayload:
     event: EventEnvelope
     meaning: StructuredInputMeaning | None
     request_id: str
+    lifecycle: LifecycleAppraisalInput | None = None
 
 
 class AppraisalBrainModulePort:
@@ -238,6 +262,8 @@ class AppraisalBrainModulePort:
         require_identifier(payload.request_id, "request_id")
         if payload.meaning is not None and not isinstance(payload.meaning, StructuredInputMeaning):
             raise ValueError("評価へ渡す入力意味が不正です")
+        if payload.lifecycle is not None and not isinstance(payload.lifecycle, LifecycleAppraisalInput):
+            raise ValueError("評価へ渡すlifecycle入力が不正です")
         if (
             work.module is not BrainIntegrationModule.APPRAISAL
             or work.envelope.source_event_ids != (payload.event.event_id,)
@@ -258,6 +284,11 @@ class AppraisalBrainModulePort:
         cancellation: CancellationToken,
     ) -> AppraisalStateCommit:
         payload = self._validate(work)
+        if payload.lifecycle is not None:
+            return self._binding.appraise_lifecycle(
+                payload.lifecycle,
+                candidate_id=payload.request_id,
+            )
         return await self._binding.appraise(
             payload.event,
             payload.meaning,

@@ -23,6 +23,7 @@ from app.composition.memory_persistence import CoreMemoryPersistenceBinding
 from app.composition.reflection import CoreReflectionConfiguration, CoreReflectionDelivery
 from app.composition.speech_configuration import CoreSpeechConfiguration
 from app.domain.appraisal import (
+    DecayPolicy,
     DeepAppraisalPolicy,
     DeterministicAppraisalRule,
     InternalStateReducer,
@@ -57,6 +58,7 @@ class CoreCognitionConfiguration:
     speech: CoreSpeechConfiguration | None = None
     reflection: CoreReflectionConfiguration | None = None
     memory_evidence: CoreMemoryEvidenceConfiguration | None = None
+    decay_policy: DecayPolicy | None = None
 
     def __post_init__(self) -> None:
         registrations = (
@@ -90,7 +92,14 @@ class CoreCognitionConfiguration:
         goals: GoalOwner | None = None,
     ) -> CoreCognitionDelivery:
         """同じ所有者を評価・注意・候補検査・最終Fenceまで接続する。"""
-        appraisal = CoreAppraisalBinding(reference, self.state, llm, self.appraisal_policy, clock)
+        appraisal = CoreAppraisalBinding(
+            reference,
+            self.state,
+            llm,
+            self.appraisal_policy,
+            clock,
+            self.decay_policy,
+        )
         attention = CoreAttentionBinding(appraisal, self.attention, clock)
         preconditions = CorePreconditionSourceReader(
             self.precondition_router, self.precondition_bindings, self.executive_policy.bounds
@@ -120,7 +129,15 @@ class CoreCognitionConfiguration:
             clock,
         )
         delivery = CoreCognitionDelivery(
-            brain, appraisal, attention, executive, self.fast_rules, inputs, self.attention, clock
+            brain,
+            appraisal,
+            attention,
+            executive,
+            self.fast_rules,
+            inputs,
+            self.attention,
+            clock,
+            self.decay_policy,
         )
         delivery.memory_evidence = memory_reader
 

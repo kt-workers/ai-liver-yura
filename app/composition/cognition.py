@@ -19,7 +19,13 @@ from app.composition.executive import (
     ExecutiveBrainModulePort,
     ExecutiveBrainWorkPayload,
 )
-from app.domain.appraisal import AppraisalStateCommit, DeterministicAppraisalRule
+from app.domain.appraisal import (
+    AppraisalStateCommit,
+    DecayPolicy,
+    DeterministicAppraisalRule,
+    LifecycleAppraisalInput,
+    LifecycleKind,
+)
 from app.domain.attention import (
     AttentionIngressOperation,
     AttentionIngressSignal,
@@ -119,12 +125,14 @@ class CoreCognitionDelivery:
         inputs: CoreAcceptedInputStore,
         attention_owner: AttentionTurnStore,
         clock: RuntimeClock,
+        decay_policy: DecayPolicy | None = None,
     ) -> None:
         self.brain, self.appraisal, self.attention = brain, appraisal, attention
         self._executive = executive
         self._clock = clock
         self._inputs, self._attention_owner = inputs, attention_owner
         self._fast_rules = tuple(fast_rules)
+        self._decay_policy = decay_policy
         self._pending_users: dict[str, AttentionSource] = {}
         self.latest_delivery: CognitionDelivery | None = None
         self.execution: CoreExecutionDelivery | None = None
@@ -150,7 +158,11 @@ class CoreCognitionDelivery:
         self.brain.register_module(
             BrainIntegrationModule.APPRAISAL,
             _ForwardingModule(
-                _AppraisalModule(self.appraisal, self._fast_rules), self._appraisal_completed
+                _AppraisalModule(
+                    self.appraisal,
+                    self._fast_rules,
+                ),
+                self._appraisal_completed,
             ),
         )
         self.brain.register_module(
@@ -336,7 +348,25 @@ class CoreCognitionDelivery:
         payload: object
         if internal:
             self._inputs.retain_internal(admission)
-            payload = AppraisalBrainWorkPayload(event.envelope, None, uuid4().hex)
+            lifecycle = None
+            if event.modality is InputModality.LIFECYCLE:
+                change = event.lifecycle_change
+                kind = (
+                    LifecycleKind.STARTUP
+                    if change is not None and change.reason == "runtime_started"
+                    else LifecycleKind.RESUME
+                    if change is not None and change.reason == "runtime_resumed"
+                    else None
+                )
+                if kind is not None:
+                    lifecycle = LifecycleAppraisalInput(
+                        event.envelope.event_id,
+                        kind,
+                        event.envelope.revisions.source_context_revision,
+                        event.envelope.occurred_at,
+                        0.0,
+                    )
+            payload = AppraisalBrainWorkPayload(event.envelope, None, uuid4().hex, lifecycle)
         else:
             payload = InputMeaningBrainWorkPayload(event, reference.context, uuid4().hex, admission)
         envelope = BrainWorkEnvelope(

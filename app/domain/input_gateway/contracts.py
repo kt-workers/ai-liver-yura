@@ -246,6 +246,7 @@ class NormalizedInputEvent:
     session: InputSessionSample | None = None
     pointer: PointerSample | None = None
     contact: ContactPercept | None = None
+    lifecycle_change: InputSourceLifecycleChange | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -255,6 +256,9 @@ class NormalizedInputEvent:
             "session": None if self.session is None else self.session.to_dict(),
             "pointer": None if self.pointer is None else self.pointer.to_dict(),
             "contact": None if self.contact is None else self.contact.to_dict(),
+            "lifecycle_change": (
+                None if self.lifecycle_change is None else self.lifecycle_change.to_dict()
+            ),
         }
 
 
