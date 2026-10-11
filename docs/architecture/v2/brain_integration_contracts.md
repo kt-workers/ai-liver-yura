@@ -769,7 +769,7 @@ Input Gateway §7の意味は変更しない。`CoreSpeechFeedback`のgeneric do
 
 `CoreSpeechProductionOwnerConnection`は#613の本番接続を完成するCompositionの不変入力である。
 `ActivityExecutionAuthority`、`AttentionTurnStore`、`CoreInputReferenceContextBinding`、process共有
-`InputNormalizer`、`CoreCognitionDelivery`は同じ認知Core production Ownerの既存instanceをそのまま受け取る。
+`InputNormalizer`、`CoreCognitionDelivery`は同じゆら本体 production Ownerの既存instanceをそのまま受け取る。
 connectionはこれらの意味、generation、admission、settlementを再実装せず、readerとnotificationへ
 同じinstanceを渡すだけとする。
 

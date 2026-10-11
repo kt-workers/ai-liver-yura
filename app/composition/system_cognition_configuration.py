@@ -1,4 +1,4 @@
-"""既存Ownerの本番構成を明示cognition_core起動へ結合する。"""
+"""既存Ownerの本番構成を明示core起動へ結合する。"""
 
 from __future__ import annotations
 
@@ -24,11 +24,11 @@ from app.composition.executive_configuration import (
     create_executive_configuration,
 )
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
-from app.composition.cognition_core_provider import (
+from app.composition.core_provider import (
     ProviderBindingSnapshot,
-    CognitionCoreProviderConfigurationSource,
-    CognitionCoreProviderLease,
-    CognitionCoreProviderLeaseFactory,
+    CoreProviderConfigurationSource,
+    CoreProviderLease,
+    CoreProviderLeaseFactory,
     resolve_provider_configuration,
 )
 from app.composition.speech_production_configuration import (
@@ -37,13 +37,13 @@ from app.composition.speech_production_configuration import (
     create_production_speech_configuration,
 )
 from app.config.appraisal import load_appraisal_config
-from app.config.cognition_core import ConfigurationReference, CognitionCoreConfig, load_cognition_core_config
+from app.config.core import ConfigurationReference, CoreConfig, load_core_config
 from app.config.executive import load_executive_config
 from app.config.minimum_brain import load_minimum_brain_config
 from app.config.provider_deployment import load_provider_deployment
-from app.config.cognition_core_contracts import (
-    CognitionCoreConfigurationError,
-    CognitionCoreFailureCode,
+from app.config.core_contracts import (
+    CoreConfigurationError,
+    CoreFailureCode,
     identity,
     resource,
 )
@@ -66,11 +66,11 @@ if TYPE_CHECKING:
     from app.bootstrap import MinimumCoreApplication
 
 ROOT = Path(__file__).resolve().parents[2]
-COGNITION_CORE_RESOURCE = "resources/config/v2/cognition_core.yaml"
+CORE_RESOURCE = "resources/config/v2/core.yaml"
 
 
 @dataclass(frozen=True, slots=True)
-class CognitionCoreRunIdentity:
+class CoreRunIdentity:
     git_head: str
     runtime_epoch: str
     system_run_id: str
@@ -80,7 +80,7 @@ class CognitionCoreRunIdentity:
             not isinstance(self.git_head, str)
             or re.fullmatch(r"[0-9a-f]{40}", self.git_head) is None
         ):
-            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
+            raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
         identity(self.runtime_epoch)
         identity(self.system_run_id)
 
@@ -146,11 +146,11 @@ class _OwnedResources:
         if cancelled:
             raise asyncio.CancelledError
         if failed:
-            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INITIALIZATION_FAILED)
+            raise CoreConfigurationError(CoreFailureCode.INITIALIZATION_FAILED)
 
 
 @dataclass(frozen=True, slots=True)
-class CognitionCoreApplication:
+class CoreApplication:
     core: MinimumCoreApplication
     composition_snapshot: SystemCompositionSnapshot
     cognition: CoreCognitionConfiguration
@@ -162,7 +162,7 @@ class CognitionCoreApplication:
 
     async def start(self) -> None:
         if self._stop_task is not None:
-            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.ACTIVATION_FAILED)
+            raise CoreConfigurationError(CoreFailureCode.ACTIVATION_FAILED)
         if self._start_task is None:
             object.__setattr__(self, "_start_task", asyncio.create_task(self.core.start()))
         assert self._start_task is not None
@@ -181,7 +181,7 @@ class CognitionCoreApplication:
             finally:
                 if isinstance(error, asyncio.CancelledError):
                     raise asyncio.CancelledError from None
-                raise CognitionCoreConfigurationError(CognitionCoreFailureCode.ACTIVATION_FAILED) from None
+                raise CoreConfigurationError(CoreFailureCode.ACTIVATION_FAILED) from None
 
     async def stop(self) -> None:
         from app.bootstrap import _reap_cleanup
@@ -214,28 +214,28 @@ def current_artifact_head() -> str:
             raise ValueError
         return head.stdout.strip()
     except Exception:
-        raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG) from None
+        raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG) from None
 
 
 def _read(root: Path, ref: str) -> bytes:
     resource(ref)
     path = (root / ref).resolve()
     if not path.is_relative_to(root.resolve()):
-        raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
+        raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
     try:
         return path.read_bytes()
     except OSError:
-        raise CognitionCoreConfigurationError(CognitionCoreFailureCode.MISSING_SYSTEM_CONFIG) from None
+        raise CoreConfigurationError(CoreFailureCode.MISSING_SYSTEM_CONFIG) from None
 
 
 def _match(ref: ConfigurationReference, config_id: str, config_revision: int) -> None:
     if (ref.config_id, ref.config_revision) != (config_id, config_revision):
-        raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
+        raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
 
 
-async def compose_cognition_core(
+async def compose_core(
     *,
-    run_identity: CognitionCoreRunIdentity,
+    run_identity: CoreRunIdentity,
     activation_id: str,
     fresh_start: bool,
     clock: RuntimeClock,
@@ -244,37 +244,37 @@ async def compose_cognition_core(
     precondition_bindings: tuple[PreconditionSourceBinding, ...],
     activity_bindings: Mapping[str, ActivityBindingAuthority],
     fast_rules: tuple[DeterministicAppraisalRule, ...],
-    provider_source: CognitionCoreProviderConfigurationSource | None,
-    provider_factory: CognitionCoreProviderLeaseFactory,
+    provider_source: CoreProviderConfigurationSource | None,
+    provider_factory: CoreProviderLeaseFactory,
     speech: SpeechProductionInputs | None = None,
-    config_ref: str = COGNITION_CORE_RESOURCE,
+    config_ref: str = CORE_RESOURCE,
     resource_root: Path = ROOT,
     artifact_head: Callable[[], str] = current_artifact_head,
-) -> CognitionCoreApplication:
+) -> CoreApplication:
     from app.bootstrap import _compose_core, _reap_cleanup
     from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
 
     owned = _OwnedResources()
-    stage = CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG
+    stage = CoreFailureCode.INVALID_SYSTEM_CONFIG
     try:
-        if not isinstance(run_identity, CognitionCoreRunIdentity) or artifact_head() != run_identity.git_head:
-            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
-        config = load_cognition_core_config(_read(resource_root, config_ref))
+        if not isinstance(run_identity, CoreRunIdentity) or artifact_head() != run_identity.git_head:
+            raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
+        config = load_core_config(_read(resource_root, config_ref))
         if activation_id != config.activation_id or fresh_start is not True:
-            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.ACTIVATION_FAILED)
+            raise CoreConfigurationError(CoreFailureCode.ACTIVATION_FAILED)
         minimum = load_minimum_brain_config(
             _read(resource_root, config.minimum_config.resource_ref)
         )
         _match(config.minimum_config, minimum.config_id, minimum.config_revision)
         character_ref = config.character_definition
         if minimum.character_definition_path != character_ref.resource_ref:
-            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
+            raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
         character = load_character_definition_yaml(_read(resource_root, character_ref.resource_ref))
         if (character.character_id, character.definition_revision) != (
             character_ref.character_id,
             character_ref.definition_revision,
         ):
-            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
+            raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
         deployment = load_provider_deployment(
             _read(resource_root, config.provider_deployment.resource_ref)
         )
@@ -282,8 +282,8 @@ async def compose_cognition_core(
             config.provider_deployment.deployment_id,
             config.provider_deployment.deployment_revision,
         ):
-            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
-        stage = CognitionCoreFailureCode.INITIALIZATION_FAILED
+            raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
+        stage = CoreFailureCode.INITIALIZATION_FAILED
         goals = GoalCommitmentStore(bounds=BOUNDS)
         owned.add_sync(goals.finalization_participant.retire)
         activities = (
@@ -297,7 +297,7 @@ async def compose_cognition_core(
         source_revision = reference.snapshot().context.source_context_revision
         lifecycle = RuntimeLifecycle(clock, minimum.shutdown_policy)
         owned.actions.append(lifecycle.close)
-        stage = CognitionCoreFailureCode.APPRAISAL_CONFIGURATION_FAILED
+        stage = CoreFailureCode.APPRAISAL_CONFIGURATION_FAILED
         appraisal_config = load_appraisal_config(
             _read(resource_root, config.appraisal_config.resource_ref)
         )
@@ -313,7 +313,7 @@ async def compose_cognition_core(
             initialized_at=initialized_at.astimezone(timezone.utc),
             runtime_epoch=run_identity.runtime_epoch,
         )
-        stage = CognitionCoreFailureCode.EXECUTIVE_CONFIGURATION_FAILED
+        stage = CoreFailureCode.EXECUTIVE_CONFIGURATION_FAILED
         executive_config = load_executive_config(
             _read(resource_root, config.executive_config.resource_ref)
         )
@@ -324,16 +324,16 @@ async def compose_cognition_core(
             executive_config, bounds=BOUNDS, activity_bindings=activity_bindings
         )
         owned.add_sync(executive.close)
-        stage = CognitionCoreFailureCode.INITIALIZATION_FAILED
+        stage = CoreFailureCode.INITIALIZATION_FAILED
         attention_policy = AttentionSchedulingPolicy.production()
         if (attention_policy.policy_id, attention_policy.policy_revision) != (
             config.attention_policy.policy_id,
             config.attention_policy.policy_revision,
         ):
-            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INVALID_SYSTEM_CONFIG)
+            raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
         attention = AttentionTurnStore(attention_policy)
         owned.add_sync(attention.finalization_participant.retire)
-        stage = CognitionCoreFailureCode.PROVIDER_MAPPING_FAILED
+        stage = CoreFailureCode.PROVIDER_MAPPING_FAILED
         roles = (
             input_descriptor(minimum.input_meaning_policy),
             appraisal_descriptor(appraisal.appraisal_policy),
@@ -344,17 +344,17 @@ async def compose_cognition_core(
         )
         mode = deployment.role_bindings[0].availability_mode
         lease = await provider_factory(roles, provider_configs, bindings, mode)
-        if not isinstance(lease, CognitionCoreProviderLease):
-            raise CognitionCoreConfigurationError(stage)
+        if not isinstance(lease, CoreProviderLease):
+            raise CoreConfigurationError(stage)
         owned.actions.append(lease.release)
         if lease.bindings != bindings or lease.availability_mode != mode:
-            raise CognitionCoreConfigurationError(stage)
+            raise CoreConfigurationError(stage)
         if resolve_provider_configuration(deployment, roles, provider_source) != (
             provider_configs,
             bindings,
         ):
-            raise CognitionCoreConfigurationError(CognitionCoreFailureCode.PROVIDER_MAPPING_FAILED)
-        stage = CognitionCoreFailureCode.COGNITION_COMPOSITION_FAILED
+            raise CoreConfigurationError(CoreFailureCode.PROVIDER_MAPPING_FAILED)
+        stage = CoreFailureCode.COGNITION_COMPOSITION_FAILED
         speech_binding = None
         if speech is not None:
             speech_binding = await create_production_speech_configuration(
@@ -390,7 +390,7 @@ async def compose_cognition_core(
         # Foundationの終了をCoreへ移管して二重回収を防ぐ。
         owned.actions.remove(lifecycle.close)
         owned.actions.append(core.stop)
-        stage = CognitionCoreFailureCode.INITIALIZATION_FAILED
+        stage = CoreFailureCode.INITIALIZATION_FAILED
         if speech_binding is not None:
             speech_binding.transfer_to_core(core)
             speech_binding.validate_current()
@@ -399,7 +399,7 @@ async def compose_cognition_core(
             or executive.requirements_owner.current_generation() != executive.initial_generation
             or artifact_head() != run_identity.git_head
         ):
-            raise CognitionCoreConfigurationError(stage)
+            raise CoreConfigurationError(stage)
         now = clock.now()
         require_aware(now, "created_at")
         snapshot = _snapshot(
@@ -416,7 +416,7 @@ async def compose_cognition_core(
             lease.bindings,
             None if speech_binding is None else speech_binding.provenance,
         )
-        return CognitionCoreApplication(core, snapshot, cognition, appraisal, executive, owned)
+        return CoreApplication(core, snapshot, cognition, appraisal, executive, owned)
     except BaseException as error:
         try:
             await _reap_cleanup(asyncio.create_task(owned.close()))
@@ -424,17 +424,17 @@ async def compose_cognition_core(
             raise
         except Exception:
             if not isinstance(error, asyncio.CancelledError):
-                raise CognitionCoreConfigurationError(CognitionCoreFailureCode.INITIALIZATION_FAILED) from None
+                raise CoreConfigurationError(CoreFailureCode.INITIALIZATION_FAILED) from None
         if isinstance(error, asyncio.CancelledError):
             raise asyncio.CancelledError from None
-        if isinstance(error, CognitionCoreConfigurationError):
+        if isinstance(error, CoreConfigurationError):
             raise
-        raise CognitionCoreConfigurationError(stage) from None
+        raise CoreConfigurationError(stage) from None
 
 
 def _snapshot(
-    config: CognitionCoreConfig,
-    run: CognitionCoreRunIdentity,
+    config: CoreConfig,
+    run: CoreRunIdentity,
     created_at: datetime,
     character_id: str,
     character_revision: int,

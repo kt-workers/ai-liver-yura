@@ -1,8 +1,8 @@
-"""秘密を保持しないcognition_core deployment manifestを読み込む。"""
+"""秘密を保持しないcore deployment manifestを読み込む。"""
 
 from dataclasses import dataclass
 
-from app.config.cognition_core_contracts import identity, invalid, parse, revision, shape
+from app.config.core_contracts import identity, invalid, parse, revision, shape
 
 ROLE_IDS = frozenset(("input_meaning", "subjective_appraisal", "executive_deliberation"))
 
@@ -49,7 +49,7 @@ class ProviderDeploymentConfig:
     role_bindings: tuple[ProviderRoleBinding, ...]
 
     def __post_init__(self) -> None:
-        if self.schema_id != "yura.provider-deployment.cognition.v1":
+        if self.schema_id != "yura.provider-deployment.core.v1":
             invalid()
         identity(self.deployment_id)
         revision(self.deployment_revision)

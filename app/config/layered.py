@@ -13,7 +13,7 @@ from typing import NoReturn
 import yaml
 from yaml.tokens import AliasToken
 
-from app.config.cognition_core_contracts import parse, shape
+from app.config.core_contracts import parse, shape
 from app.domain.llm import (
     LLMExecutionPolicy,
     LLMModelClass,

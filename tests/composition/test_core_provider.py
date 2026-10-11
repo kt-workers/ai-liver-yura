@@ -9,8 +9,8 @@ import yaml
 
 from app.adapters.llm.appraisal import appraisal_openai_role_config
 from app.adapters.llm.openai_responses import OpenAIResponsesModelPolicy, OpenAIResponsesRoleConfig
-from app.adapters.llm.cognition_core import create_cognition_core_provider_lease
-from app.composition.cognition_core_provider import (
+from app.adapters.llm.core import create_core_provider_lease
+from app.composition.core_provider import (
     ModelPoliciesPublication,
     RoleConfigPublication,
     resolve_provider_configuration,
@@ -19,7 +19,7 @@ from app.config.appraisal import load_appraisal_config
 from app.config.executive import load_executive_config
 from app.config.minimum_brain import load_minimum_brain_config
 from app.config.provider_deployment import ProviderSourceReference, load_provider_deployment
-from app.config.cognition_core_contracts import CognitionCoreConfigurationError
+from app.config.core_contracts import CoreConfigurationError
 from app.domain.appraisal.deep import descriptor as appraisal_descriptor
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.executive.deliberator import ExecutivePolicy
@@ -110,7 +110,7 @@ def test_invalid_or_changing_publication_fails_closed(bad: str) -> None:
     source = Source()
     source.bad = bad
     manifest = load_provider_deployment(yaml.safe_dump(configured_data()))
-    with pytest.raises(CognitionCoreConfigurationError, match="PROVIDER_MAPPING_FAILED"):
+    with pytest.raises(CoreConfigurationError, match="PROVIDER_MAPPING_FAILED"):
         resolve_provider_configuration(manifest, roles(), None if bad == "missing" else source)
 
 
@@ -138,7 +138,7 @@ async def test_unconfigured_uses_real_port_without_sdk(monkeypatch: pytest.Monke
     configs, bindings = resolve_provider_configuration(
         load_provider_deployment(SOURCE), registered, None
     )
-    lease = await create_cognition_core_provider_lease(registered, configs, bindings, "unconfigured")
+    lease = await create_core_provider_lease(registered, configs, bindings, "unconfigured")
     for role in registered:
         request = replace(
             make_request(role.role_id, input_schema_id=role.input_schema_id),
@@ -155,8 +155,8 @@ async def test_unconfigured_uses_real_port_without_sdk(monkeypatch: pytest.Monke
 @pytest.mark.asyncio
 async def test_configured_manifest_requires_credential(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
-    with pytest.raises(CognitionCoreConfigurationError, match="PROVIDER_MAPPING_FAILED"):
-        await create_cognition_core_provider_lease(roles(), (), (), "configured")
+    with pytest.raises(CoreConfigurationError, match="PROVIDER_MAPPING_FAILED"):
+        await create_core_provider_lease(roles(), (), (), "configured")
 
 
 @pytest.mark.asyncio
@@ -181,7 +181,7 @@ async def test_configured_lease_closes_owned_client_once(monkeypatch: pytest.Mon
     configs, bindings = resolve_provider_configuration(
         load_provider_deployment(yaml.safe_dump(configured_data())), roles(), Source()
     )
-    lease = await create_cognition_core_provider_lease(roles(), configs, bindings, "configured")
+    lease = await create_core_provider_lease(roles(), configs, bindings, "configured")
     await lease.release()
     await lease.release()
     assert client.calls == 1

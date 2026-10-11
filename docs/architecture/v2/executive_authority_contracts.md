@@ -466,4 +466,4 @@ MeaningPolicy V1の採用値はFACT_GROUNDED / 1 / 1。GRATITUDEのevidence要�
 
 ## 本番構成の供給境界（#691）
 
-実行方針・Requirements規則の初期採用値、厳密loader、不変DTO、factory、由来は[Executiveの本番構成](executive_production_configuration.md)を正とする。本書の意味・世代・最終Fenceと§9.9 / §11.1を維持し、具体的なProvider mappingと認知Core登録は#692 / #360が所有する。
+実行方針・Requirements規則の初期採用値、厳密loader、不変DTO、factory、由来は[Executiveの本番構成](executive_production_configuration.md)を正とする。本書の意味・世代・最終Fenceと§9.9 / §11.1を維持し、具体的なProvider mappingとゆら本体登録は#692 / #360が所有する。

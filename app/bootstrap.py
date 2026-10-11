@@ -20,14 +20,14 @@ from app.composition.cognition_configuration import CoreCognitionConfiguration
 from app.composition.goal_persistence import CoreGoalPersistenceBinding
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
-from app.composition.cognition_core_provider import CognitionCoreProviderConfigurationSource, CognitionCoreProviderLeaseFactory
+from app.composition.core_provider import CoreProviderConfigurationSource, CoreProviderLeaseFactory
 from app.composition.speech_production_configuration import SpeechProductionInputs
 from app.composition.system_cognition_configuration import (
     ROOT,
-    COGNITION_CORE_RESOURCE,
-    CognitionCoreApplication,
-    CognitionCoreRunIdentity,
-    compose_cognition_core,
+    CORE_RESOURCE,
+    CoreApplication,
+    CoreRunIdentity,
+    compose_core,
     current_artifact_head,
 )
 from app.config.layered import ConfigurationError, load_user_configuration
@@ -244,7 +244,7 @@ class MinimumCoreApplication:
 
 
 @dataclass(frozen=True, slots=True)
-class CognitionCoreSpeechOwners:
+class CoreSpeechOwners:
     """Speech有効時だけ起動rootへ明示注入する既存の本番Owner集合。"""
 
     semantic_owner: SpeechSemanticPolicyOwner
@@ -253,22 +253,22 @@ class CognitionCoreSpeechOwners:
 
 
 @dataclass(frozen=True, slots=True)
-class CognitionCoreRuntimeOwners:
-    """cognition_core起動rootが生成又は借用する既存Runtime Ownerの入力。"""
+class CoreRuntimeOwners:
+    """本体起動rootが生成又は借用する既存Runtime Ownerの入力。"""
 
     registry: PluginRegistryAuthority
     precondition_router: PreconditionSourceRouter
     precondition_bindings: tuple[PreconditionSourceBinding, ...]
     activity_bindings: Mapping[str, ActivityBindingAuthority]
     fast_rules: tuple[DeterministicAppraisalRule, ...]
-    provider_source: CognitionCoreProviderConfigurationSource | None
-    speech: CognitionCoreSpeechOwners | None = None
+    provider_source: CoreProviderConfigurationSource | None
+    speech: CoreSpeechOwners | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.registry, PluginRegistryAuthority) or not isinstance(
             self.precondition_router, PreconditionSourceRouter
         ):
-            raise ValueError("cognition_core起動には既存Runtime Ownerの明示入力が必要です")
+            raise ValueError("本体起動には既存Runtime Ownerの明示入力が必要です")
         object.__setattr__(self, "precondition_bindings", tuple(self.precondition_bindings))
         object.__setattr__(self, "fast_rules", tuple(self.fast_rules))
         object.__setattr__(
@@ -276,13 +276,13 @@ class CognitionCoreRuntimeOwners:
             "activity_bindings",
             MappingProxyType(dict(self.activity_bindings)),
         )
-        if self.speech is not None and not isinstance(self.speech, CognitionCoreSpeechOwners):
+        if self.speech is not None and not isinstance(self.speech, CoreSpeechOwners):
             raise ValueError("Speech起動には既存Speech Ownerの明示入力が必要です")
 
 
-def default_cognition_core_runtime_owners() -> CognitionCoreRuntimeOwners:
+def default_core_runtime_owners() -> CoreRuntimeOwners:
     """外部能力を補作せず、空の既存Owner集合を新runへ供給する。"""
-    return CognitionCoreRuntimeOwners(
+    return CoreRuntimeOwners(
         registry=PluginRegistryAuthority(),
         precondition_router=PreconditionSourceRouter(()),
         precondition_bindings=(),
@@ -490,18 +490,18 @@ async def run_minimum_core() -> None:
                 signal.signal(signum, previous[signum])
 
 
-def _new_cognition_core_run_identity() -> CognitionCoreRunIdentity:
-    """cognition_coreの一回の明示起動へ、現在checkoutに束縛した新しい実行識別子を与える。"""
-    return CognitionCoreRunIdentity(
+def _new_core_run_identity() -> CoreRunIdentity:
+    """本体の一回の起動へ、現在checkoutに束縛した新しい実行識別子を与える。"""
+    return CoreRunIdentity(
         current_artifact_head(),
-        f"cognition_core-epoch-{uuid.uuid4().hex}",
-        f"cognition_core-run-{uuid.uuid4().hex}",
+        f"core-epoch-{uuid.uuid4().hex}",
+        f"core-run-{uuid.uuid4().hex}",
     )
 
 
-def _load_cognition_core_speech(
-    run: CognitionCoreRunIdentity,
-    owners: CognitionCoreRuntimeOwners,
+def _load_core_speech(
+    run: CoreRunIdentity,
+    owners: CoreRuntimeOwners,
 ) -> SpeechProductionInputs | None:
     """三層設定のSpeech有効化だけを既存登録済みOwnerへ接続する。"""
     root = ROOT / "resources/config/v2"
@@ -527,16 +527,16 @@ def _load_cognition_core_speech(
         raise ValueError("Speech本番設定または登録を使用できません") from None
 
 
-async def build_cognition_core_application(
-    owners: CognitionCoreRuntimeOwners | None = None,
-) -> CognitionCoreApplication:
-    """通常CLIが使用するcognition_coreの明示構成を、既存公開factoryだけで組み立てる。"""
-    runtime_owners = owners or default_cognition_core_runtime_owners()
-    run = _new_cognition_core_run_identity()
-    speech = _load_cognition_core_speech(run, runtime_owners)
-    return await build_cognition_core(
+async def build_core_application(
+    owners: CoreRuntimeOwners | None = None,
+) -> CoreApplication:
+    """通常CLIが使用する本体構成を、既存公開factoryだけで組み立てる。"""
+    runtime_owners = owners or default_core_runtime_owners()
+    run = _new_core_run_identity()
+    speech = _load_core_speech(run, runtime_owners)
+    return await build_core(
         run_identity=run,
-        activation_id="yura.cognition.core.explicit",
+        activation_id="yura.core.explicit",
         fresh_start=True,
         clock=SystemRuntimeClock(),
         registry=runtime_owners.registry,
@@ -549,9 +549,9 @@ async def build_cognition_core_application(
     )
 
 
-async def run_cognition_core() -> None:
-    """明示指定された本番cognition_coreを開始し、停止通知まで所有資源を保持する。"""
-    app = await build_cognition_core_application()
+async def run_core() -> None:
+    """本体を開始し、停止通知まで所有資源を保持する。"""
+    app = await build_core_application()
     loop = asyncio.get_running_loop()
     stop_requested = asyncio.Event()
     previous = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
@@ -561,7 +561,7 @@ async def run_cognition_core() -> None:
             loop.add_signal_handler(signum, stop_requested.set)
             registered.append(signum)
         await app.start()
-        print("認知Coreの起動が完了しました。", flush=True)
+        print("ゆら本体の起動が完了しました。", flush=True)
         await stop_requested.wait()
     finally:
         try:
@@ -574,24 +574,19 @@ async def run_cognition_core() -> None:
 
 def main() -> None:
     arguments = tuple(sys.argv[1:])
-    if arguments not in ((), ("--production",)):
-        print("使用方法: python -m app [--production]", file=sys.stderr)
+    if arguments:
+        print("使用方法: python -m app", file=sys.stderr)
         raise SystemExit(2)
     try:
-        asyncio.run(run_cognition_core() if arguments else run_minimum_core())
+        asyncio.run(run_core())
     except (OSError, ValueError, RuntimeError):
-        message = (
-            "認知Coreの構成、起動または停止に失敗しました。"
-            if arguments
-            else "最小Coreの起動または停止に失敗しました。"
-        )
-        print(message, file=sys.stderr)
+        print("ゆら本体の構成、起動または停止に失敗しました。", file=sys.stderr)
         raise SystemExit(1) from None
 
 
-async def build_cognition_core(
+async def build_core(
     *,
-    run_identity: CognitionCoreRunIdentity,
+    run_identity: CoreRunIdentity,
     activation_id: str,
     fresh_start: bool,
     clock: RuntimeClock,
@@ -600,17 +595,17 @@ async def build_cognition_core(
     precondition_bindings: tuple[PreconditionSourceBinding, ...],
     activity_bindings: Mapping[str, ActivityBindingAuthority],
     fast_rules: tuple[DeterministicAppraisalRule, ...],
-    provider_source: CognitionCoreProviderConfigurationSource | None,
-    provider_factory: CognitionCoreProviderLeaseFactory | None = None,
+    provider_source: CoreProviderConfigurationSource | None,
+    provider_factory: CoreProviderLeaseFactory | None = None,
     speech: SpeechProductionInputs | None = None,
-    config_ref: str = COGNITION_CORE_RESOURCE,
+    config_ref: str = CORE_RESOURCE,
     resource_root: Path = ROOT,
     artifact_head: Callable[[], str] = current_artifact_head,
-) -> CognitionCoreApplication:
-    """明示的なcognition_core要求だけを構築し、minimum既定起動へfallbackしない。"""
-    from app.adapters.llm.cognition_core import create_cognition_core_provider_lease
+) -> CoreApplication:
+    """本体要求だけを構築し、minimum既定起動へfallbackしない。"""
+    from app.adapters.llm.core import create_core_provider_lease
 
-    return await compose_cognition_core(
+    return await compose_core(
         run_identity=run_identity,
         activation_id=activation_id,
         fresh_start=fresh_start,
@@ -621,7 +616,7 @@ async def build_cognition_core(
         activity_bindings=activity_bindings,
         fast_rules=fast_rules,
         provider_source=provider_source,
-        provider_factory=provider_factory or create_cognition_core_provider_lease,
+        provider_factory=provider_factory or create_core_provider_lease,
         speech=speech,
         config_ref=config_ref,
         resource_root=resource_root,

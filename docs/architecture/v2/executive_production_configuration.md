@@ -112,4 +112,4 @@ rule ID重複、kind重複、selector重複、6規則の欠落、所属policy不
 
 6規則のexact構築と単一選択、3定数の明示emptyと未登録failureの区別、Directの実Owner / binding整合・request-local capture・未選択更新、計画source欠落、stale policy/source、candidate不足・余剰・型違い、最終Fenceを既存公開API経由で確認する。構築失敗時のcleanup、注入Ownerの非破壊、duplicate/ambiguous rule拒否も確認する。既存Executive / Brain integrationを維持する。
 
-#691は認知Core wiringやSystem acceptanceを完了扱いしない。実装後の品質検査・CI・独立レビューとHuman実動作検証の状態はCheckpointに分けて記録する。
+#691はゆら本体 wiringやSystem acceptanceを完了扱いしない。実装後の品質検査・CI・独立レビューとHuman実動作検証の状態はCheckpointに分けて記録する。

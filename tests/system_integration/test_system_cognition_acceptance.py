@@ -12,13 +12,13 @@ import pytest
 
 from app import bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
-from app.composition.cognition_core_provider import CognitionCoreProviderLease
+from app.composition.core_provider import CoreProviderLease
 from app.composition.system_cognition_configuration import (
-    CognitionCoreApplication,
-    CognitionCoreRunIdentity,
+    CoreApplication,
+    CoreRunIdentity,
     current_artifact_head,
 )
-from app.config.cognition_core import load_cognition_core_config
+from app.config.core import load_core_config
 from app.config.minimum_brain import load_minimum_brain_config
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
@@ -58,10 +58,10 @@ class SystemRun:
     async def create(cls) -> "SystemRun":
         provider = Port()
         registered_roles: list[LLMRoleDescriptor] = []
-        leases: list[CognitionCoreProviderLease] = []
+        leases: list[CoreProviderLease] = []
         releases: list[str] = []
 
-        async def factory(roles: Any, configs: Any, bindings: Any, mode: str) -> CognitionCoreProviderLease:
+        async def factory(roles: Any, configs: Any, bindings: Any, mode: str) -> CoreProviderLease:
             registered_roles.extend(roles)
             # 採用済み未設定manifestを保持し、外部I/Oだけを置換する。
             assert not configs and mode == "unconfigured"
@@ -69,14 +69,14 @@ class SystemRun:
             async def release() -> None:
                 releases.append("provider")
 
-            lease = CognitionCoreProviderLease(provider, bindings, mode, release)
+            lease = CoreProviderLease(provider, bindings, mode, release)
             leases.append(lease)
             return lease
 
-        identity = CognitionCoreRunIdentity(current_artifact_head(), str(uuid4()), str(uuid4()))
-        cognition_core = await bootstrap.build_cognition_core(
+        identity = CoreRunIdentity(current_artifact_head(), str(uuid4()), str(uuid4()))
+        core = await bootstrap.build_core(
             run_identity=identity,
-            activation_id="yura.cognition.core.explicit",
+            activation_id="yura.core.explicit",
             fresh_start=True,
             clock=SystemRuntimeClock(),
             registry=PluginRegistryAuthority(),
@@ -87,30 +87,30 @@ class SystemRun:
             provider_source=None,
             provider_factory=factory,
         )
-        return cls(cognition_core, provider, registered_roles, leases, releases, identity)
+        return cls(core, provider, registered_roles, leases, releases, identity)
 
     def __init__(
         self,
-        cognition_core: CognitionCoreApplication,
+        core: CoreApplication,
         provider: Port,
         roles: list[LLMRoleDescriptor],
-        leases: list[CognitionCoreProviderLease],
+        leases: list[CoreProviderLease],
         releases: list[str],
-        identity: CognitionCoreRunIdentity,
+        identity: CoreRunIdentity,
     ) -> None:
-        self.cognition_core = cognition_core
-        self.app: Any = cognition_core.core
+        self.core = core
+        self.app: Any = core.core
         self.provider = provider
         self.roles = roles
         self.leases = leases
         self.releases = releases
-        self.registration = cognition_core.cognition
+        self.registration = core.cognition
         self.normalizer = InputNormalizer(InputAdmissionLedger(), bounds_policy=BOUNDS)
         self.run_id = identity.system_run_id
         self.observed: list[Any] = []
-        self.snapshot = cognition_core.composition_snapshot
+        self.snapshot = core.composition_snapshot
         self.provenance = self.current_provenance()
-        config = load_cognition_core_config((ROOT / "resources/config/v2/cognition_core.yaml").read_bytes())
+        config = load_core_config((ROOT / "resources/config/v2/core.yaml").read_bytes())
         loaded = load_minimum_brain_config((ROOT / config.minimum_config.resource_ref).read_bytes())
         assert self.app.config == loaded
         snapshot = self.snapshot
@@ -137,8 +137,8 @@ class SystemRun:
             loaded.config_id,
             loaded.config_revision,
         )
-        assert component.appraisal == cognition_core.appraisal.provenance
-        assert component.executive == cognition_core.executive.provenance
+        assert component.appraisal == core.appraisal.provenance
+        assert component.executive == core.executive.provenance
         assert component.appraisal.runtime_epoch == identity.runtime_epoch
         assert component.appraisal.source_context_revision == (
             self.app.input_context.snapshot().context.source_context_revision
@@ -152,8 +152,8 @@ class SystemRun:
             component.attention_policy_id,
             component.attention_policy_revision,
         )
-        requirements = cognition_core.executive.initial_generation.policy
-        assert requirements == cognition_core.executive.config.requirements
+        requirements = core.executive.initial_generation.policy
+        assert requirements == core.executive.config.requirements
         assert (requirements.policy_id, requirements.revision) == (
             component.executive.requirements_policy_id,
             component.executive.requirements_policy_revision,
@@ -161,12 +161,12 @@ class SystemRun:
         assert component.executive.source_config_ref == config.executive_config.resource_ref
         assert component.appraisal.source_config_ref == config.appraisal_config.resource_ref
         assert snapshot.requirements_generation == component.executive.initial_generation_identity
-        assert self.registration.requirements is cognition_core.executive.requirements_owner
+        assert self.registration.requirements is core.executive.requirements_owner
         assert (
-            self.registration.requirements.current_generation() is cognition_core.executive.initial_generation
+            self.registration.requirements.current_generation() is core.executive.initial_generation
         )
         assert (
-            cognition_core.executive.initial_generation.serial == component.executive.initial_generation_serial
+            core.executive.initial_generation.serial == component.executive.initial_generation_serial
         )
         assert len(leases) == 1 and snapshot.provider_bindings == leases[0].bindings
         registered = {r.role_id: r for r in roles}
@@ -206,7 +206,7 @@ class SystemRun:
         )
 
     def current_provenance(self) -> Any:
-        snapshot = self.cognition_core.composition_snapshot
+        snapshot = self.core.composition_snapshot
         assert snapshot is self.snapshot
         assert snapshot.git_head == current_artifact_head()
         provenance = capture_production_provenance(
@@ -215,7 +215,7 @@ class SystemRun:
             (
                 "system_integration_contracts.md",
                 "brain_integration_contracts.md",
-                "system_cognition_core_configuration.md",
+                "system_production_cognition_configuration.md",
             ),
             tuple(r.output_schema_id for r in self.roles),
         )
@@ -280,8 +280,8 @@ class SystemRun:
         return json.loads(json.dumps(value, default=lambda v: dict(v)))
 
     async def stop(self) -> None:
-        await self.cognition_core.stop()
-        await self.cognition_core.stop()
+        await self.core.stop()
+        await self.core.stop()
         assert_reaped(self.app)
         assert self.releases == ["provider"]
         for owner in (
@@ -293,7 +293,7 @@ class SystemRun:
             with pytest.raises(FinalizationError) as failure:
                 owner.finalization_participant.token()
             assert failure.value.failure is FinalizationFailure.PARTICIPANT_UNAVAILABLE
-        assert self.cognition_core.composition_snapshot is self.snapshot
+        assert self.core.composition_snapshot is self.snapshot
 
 
 @pytest.mark.asyncio
@@ -390,7 +390,7 @@ async def test_typed_provider_failure_keeps_other_system_trace_available(
 
     monkeypatch.setattr(run.provider, "invoke", controlled)
     assert run.app.cognition is not None
-    await run.cognition_core.start()
+    await run.core.start()
     try:
         # Meaning失敗は外部入力、Appraisal失敗は内部契機として別境界を検証する。
         # 採用済みUSER sourceの寿命は後続Appraisalの失敗と同一ではない。
@@ -441,7 +441,7 @@ async def test_system_consumer_observes_nonserial_rejection_and_cleanup(
 
     monkeypatch.setattr(run.provider, "invoke", controlled)
     assert run.app.cognition is not None
-    await run.cognition_core.start()
+    await run.core.start()
     try:
         for key in entered:
             assert run.app.cognition.submit_input(run.input(key)).accepted

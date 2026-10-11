@@ -1,5 +1,5 @@
-schema_id: yura.provider-deployment.cognition.v1
-deployment_id: yura.provider-deployment.cognition
+schema_id: yura.provider-deployment.core.v1
+deployment_id: yura.provider-deployment.core
 deployment_revision: 1
 role_bindings:
   - role_id: input_meaning

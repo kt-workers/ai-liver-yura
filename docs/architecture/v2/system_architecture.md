@@ -33,11 +33,11 @@ GUIは本体の必須機能ではない。本体はGUIを構成・起動せず�
 
 本体は公開契約を所有し、外部機能はその契約を利用する。画面、HTTP、Qt、描画器、検証用実装などの具体実装への直接・推移的参照を本体へ持ち込まない。型注釈・パッケージ初期化もこの制約の対象とする。外部アダプターの選択と接続は構成処理が行う。構成処理による接続を、本体自身の具体実装依存と混同しない。
 
-### 認知Coreの明示起動
+### ゆら本体の起動
 
-通常の`python -m app`は#561の最小Core起動を維持する。認知Coreは`python -m app --production`だけで明示し、最小Coreの成功、Provider未構成、又は本番構成失敗を認知Coreの起動成功へ読み替えない。起動rootは既存の本番認知設定、Character、Runtime Ownerを使用し、具体LLM model、TTS Provider、voice、音声再生backendを標準値として選ばない。
+`python -m app`はゆら本体を起動する唯一のCLI入口とする。最小Coreは内部構成要素であり、CLI起動の選択肢にしない。Provider未構成、又はゆら本体構成失敗をゆら本体の起動成功へ読み替えない。起動rootは既存の認知設定、Character、Runtime Ownerを使用し、具体LLM model、TTS Provider、voice、音声再生backendを標準値として選ばない。
 
-`resources/config/v2/user.yaml`の`speech: null`はSpeech無効を表し、TTS又はPresentationの登録なしで認知Coreを起動できる。Speech有効時は既存の三層設定、trusted registration、availabilityをすべて要求する。不正又は不足をSpeechなし又は`TEXT_ONLY`へ自動変換せず、`TEXT_ONLY`は既存policyが明示した場合だけ受理する。実音声・実提示の接続と受入は#621の責務であり、この入口はそれらを補作しない。
+`resources/config/v2/user.yaml`の`speech: null`はSpeech無効を表し、TTS又はPresentationの登録なしでゆら本体を起動できる。Speech有効時は既存の三層設定、trusted registration、availabilityをすべて要求する。不正又は不足をSpeechなし又は`TEXT_ONLY`へ自動変換せず、`TEXT_ONLY`は既存policyが明示した場合だけ受理する。実音声・実提示の接続と受入は#621の責務であり、この入口はそれらを補作しない。
 
 HTML・PyQt等のGUIは交換・併用可能とし、そのための本体コード・本体設定の変更は不要とする。外部側の配置・接続設定は外部機能または構成処理が所有する。GUIの未実装・初期化失敗・切断・遅延・単独停止・レビュー待ちは、本体の独立した処理と製造・統合・完成を停止させない。全体停止の要求とGUI単独停止を区別する。
 

@@ -14,8 +14,8 @@ from app import bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.composition import system_cognition_configuration as system
 from app.composition.executive_configuration import create_executive_configuration
-from app.composition.cognition_core_provider import CognitionCoreProviderLease
-from app.config.cognition_core_contracts import CognitionCoreConfigurationError
+from app.composition.core_provider import CoreProviderLease
+from app.config.core_contracts import CoreConfigurationError
 from app.domain.attention import AttentionTurnStore
 from app.domain.contracts.finalization import FinalizationError
 from app.domain.contracts.preconditions import PreconditionSourceRouter
@@ -25,19 +25,19 @@ from app.runtime.kernel import SystemRuntimeClock
 HEAD = "a" * 40
 
 
-async def unavailable_lease(roles: Any, configs: Any, bindings: Any, mode: str) -> CognitionCoreProviderLease:
+async def unavailable_lease(roles: Any, configs: Any, bindings: Any, mode: str) -> CoreProviderLease:
     assert not configs
 
     async def release() -> None:
         return None
 
-    return CognitionCoreProviderLease(UnavailableLLMRolePort(roles), bindings, mode, release)
+    return CoreProviderLease(UnavailableLLMRolePort(roles), bindings, mode, release)
 
 
 def parameters() -> dict[str, Any]:
     return dict(
-        run_identity=system.CognitionCoreRunIdentity(HEAD, "epoch", "run"),
-        activation_id="yura.cognition.core.explicit",
+        run_identity=system.CoreRunIdentity(HEAD, "epoch", "run"),
+        activation_id="yura.core.explicit",
         fresh_start=True,
         clock=SystemRuntimeClock(),
         registry=PluginRegistryAuthority(),
@@ -54,7 +54,7 @@ def parameters() -> dict[str, Any]:
 @pytest.mark.asyncio
 async def test_real_factories_identity_snapshot_and_restart() -> None:
     params = parameters()
-    app = await bootstrap.build_cognition_core(**params)
+    app = await bootstrap.build_core(**params)
     assert app.core.input_context._goals is app.core.goals
     assert app.core.input_context.activities is app.core.activities
     snapshot = app.composition_snapshot
@@ -107,9 +107,9 @@ async def test_real_factories_identity_snapshot_and_restart() -> None:
     with pytest.raises(FinalizationError):
         app.cognition.requirements.current_generation()
     params["registry"].snapshot()
-    with pytest.raises(CognitionCoreConfigurationError, match="ACTIVATION_FAILED"):
+    with pytest.raises(CoreConfigurationError, match="ACTIVATION_FAILED"):
         await app.start()
-    second = await bootstrap.build_cognition_core(**parameters())
+    second = await bootstrap.build_core(**parameters())
     assert second.composition_snapshot.requirements_generation != snapshot.requirements_generation
     await second.stop()
 
@@ -128,8 +128,8 @@ async def test_real_factories_identity_snapshot_and_restart() -> None:
 async def test_activation_fails_without_minimum_fallback(field: str, value: Any, code: str) -> None:
     params = parameters()
     params[field] = value
-    with pytest.raises(CognitionCoreConfigurationError) as caught:
-        await bootstrap.build_cognition_core(**params)
+    with pytest.raises(CoreConfigurationError) as caught:
+        await bootstrap.build_core(**params)
     assert caught.value.code.value == code
 
 
@@ -152,14 +152,14 @@ def copy_resources(tmp_path: Path) -> None:
 )
 async def test_reference_mismatch(tmp_path: Path, reference: str, field: str) -> None:
     copy_resources(tmp_path)
-    path = tmp_path / system.COGNITION_CORE_RESOURCE
+    path = tmp_path / system.CORE_RESOURCE
     data = yaml.safe_load(path.read_text())
     data[reference][field] = "different" if field.endswith("id") else 2
     path.write_text(yaml.safe_dump(data))
     params = parameters()
     params["resource_root"] = tmp_path
-    with pytest.raises(CognitionCoreConfigurationError, match="INVALID_SYSTEM_CONFIG"):
-        await bootstrap.build_cognition_core(**params)
+    with pytest.raises(CoreConfigurationError, match="INVALID_SYSTEM_CONFIG"):
+        await bootstrap.build_core(**params)
 
 
 @pytest.mark.asyncio
@@ -186,14 +186,14 @@ async def test_failure_stages_reclaim_owners(monkeypatch: pytest.MonkeyPatch, st
         value = original_attention(*args, **kwargs)
         return value
 
-    async def provider(roles: Any, configs: Any, pubs: Any, mode: str) -> CognitionCoreProviderLease:
+    async def provider(roles: Any, configs: Any, pubs: Any, mode: str) -> CoreProviderLease:
         if stage == "provider":
             raise ValueError("private-internal-detail")
 
         async def close() -> None:
             events.append("provider")
 
-        return CognitionCoreProviderLease(UnavailableLLMRolePort(roles), pubs, mode, close)
+        return CoreProviderLease(UnavailableLLMRolePort(roles), pubs, mode, close)
 
     def fail(*args: Any, **kwargs: Any) -> Any:
         raise ValueError("private-internal-detail")
@@ -209,8 +209,8 @@ async def test_failure_stages_reclaim_owners(monkeypatch: pytest.MonkeyPatch, st
         monkeypatch.setattr(bootstrap, "_compose_core", fail)
     if stage == "snapshot":
         monkeypatch.setattr(system, "_snapshot", fail)
-    with pytest.raises(CognitionCoreConfigurationError) as caught:
-        await bootstrap.build_cognition_core(**params)
+    with pytest.raises(CoreConfigurationError) as caught:
+        await bootstrap.build_core(**params)
     assert "private-internal-detail" not in str(caught.value)
     for binding in bindings:
         with pytest.raises(FinalizationError):
@@ -231,7 +231,7 @@ async def test_reverse_cleanup_continues_after_failure() -> None:
                 raise ValueError("private-detail")
 
         ledger.actions.append(close)
-    with pytest.raises(CognitionCoreConfigurationError):
+    with pytest.raises(CoreConfigurationError):
         await ledger.close()
     assert events == [3, 2, 1, 0]
     await ledger.close()
@@ -240,7 +240,7 @@ async def test_reverse_cleanup_continues_after_failure() -> None:
 
 @pytest.mark.asyncio
 async def test_cancel_stop_waits_for_owned_cleanup() -> None:
-    app = await bootstrap.build_cognition_core(**parameters())
+    app = await bootstrap.build_core(**parameters())
     entered, finish = asyncio.Event(), asyncio.Event()
 
     async def slow() -> None:
@@ -265,7 +265,7 @@ async def test_cancel_stop_waits_for_owned_cleanup() -> None:
 async def test_start_failure_uses_same_cleanup(
     monkeypatch: pytest.MonkeyPatch, cancel: bool
 ) -> None:
-    app = await bootstrap.build_cognition_core(**parameters())
+    app = await bootstrap.build_core(**parameters())
     entered = asyncio.Event()
 
     async def start(self: Any) -> None:
@@ -279,7 +279,7 @@ async def test_start_failure_uses_same_cleanup(
     await entered.wait()
     if cancel:
         task.cancel()
-    with pytest.raises(asyncio.CancelledError if cancel else CognitionCoreConfigurationError):
+    with pytest.raises(asyncio.CancelledError if cancel else CoreConfigurationError):
         await task
     assert not app._owned.actions
     with pytest.raises(FinalizationError):
@@ -298,17 +298,17 @@ async def test_generation_change_before_publication_is_rejected(
         return core
 
     monkeypatch.setattr(bootstrap, "_compose_core", compose)
-    with pytest.raises(CognitionCoreConfigurationError, match="INITIALIZATION_FAILED"):
-        await bootstrap.build_cognition_core(**parameters())
+    with pytest.raises(CoreConfigurationError, match="INITIALIZATION_FAILED"):
+        await bootstrap.build_core(**parameters())
 
 
-def test_early_boot_does_not_read_cognition_core_config(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_early_boot_does_not_read_core_config(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
 
     def forbidden(*args: Any, **kwargs: Any) -> Any:
-        pytest.fail("minimum起動がcognition_core構成を参照しました")
+        pytest.fail("minimum起動がcore構成を参照しました")
 
-    monkeypatch.setattr(system, "load_cognition_core_config", forbidden)
+    monkeypatch.setattr(system, "load_core_config", forbidden)
     core = bootstrap.build_minimum_core(cognition=None)
     assert core.cognition is None
     assert core.config.brain_module_registrations == ("input_meaning",)
@@ -333,7 +333,7 @@ async def test_cancel_during_provider_construction_reclaims_previous_owners(
 
     monkeypatch.setattr(system, "create_executive_configuration", executive)
     params["provider_factory"] = blocked
-    task = asyncio.create_task(bootstrap.build_cognition_core(**params))
+    task = asyncio.create_task(bootstrap.build_core(**params))
     await entered.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -366,17 +366,17 @@ async def test_owned_cleanup_actual_order(monkeypatch: pytest.MonkeyPatch) -> No
         events.append("core")
         await original_stop(core)
 
-    async def provider(roles: Any, configs: Any, bindings: Any, mode: str) -> CognitionCoreProviderLease:
+    async def provider(roles: Any, configs: Any, bindings: Any, mode: str) -> CoreProviderLease:
         async def release() -> None:
             events.append("provider")
 
-        return CognitionCoreProviderLease(UnavailableLLMRolePort(roles), bindings, mode, release)
+        return CoreProviderLease(UnavailableLLMRolePort(roles), bindings, mode, release)
 
     monkeypatch.setattr(ExecutiveProductionBinding, "close", close)
     monkeypatch.setattr(AuthorityFinalizationParticipant, "retire", retire)
     monkeypatch.setattr(bootstrap.MinimumCoreApplication, "stop", stop)
     params["provider_factory"] = provider
-    app = await bootstrap.build_cognition_core(**params)
+    app = await bootstrap.build_core(**params)
     await app.stop()
     assert events[:4] == ["core", "provider", "retire", "executive"]
     assert events.count("provider") == events.count("executive") == events.count("core") == 1
@@ -390,5 +390,5 @@ async def test_symlink_resource_cannot_escape_root(tmp_path: Path) -> None:
     source.symlink_to(Path("resources/config/v2/appraisal.yaml").resolve())
     params = parameters()
     params["resource_root"] = tmp_path
-    with pytest.raises(CognitionCoreConfigurationError, match="INVALID_SYSTEM_CONFIG"):
-        await bootstrap.build_cognition_core(**params)
+    with pytest.raises(CoreConfigurationError, match="INVALID_SYSTEM_CONFIG"):
+        await bootstrap.build_core(**params)
