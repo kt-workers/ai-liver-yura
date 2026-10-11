@@ -114,8 +114,8 @@ class InternalStateReducer:
             raise ValueError("commit timestamp cannot predate candidate")
         if not candidate.proposals:
             if candidate.path is AppraisalPath.LIFECYCLE:
-                # fresh_emptyの起動評価は、状態を捏造せず評価事実だけを確定できる。
-                # 既存facetを持つ場合の減衰と、通常評価の状態差分必須契約は維持する。
+                # lifecycle評価は、差分がない場合も状態を捏造せず評価事実だけを確定できる。
+                # 通常評価の状態差分必須契約は維持する。
                 return snapshot
             raise ValueError("state commit requires at least one delta proposal")
         allowed_causes = {*candidate.source_event_ids, *candidate.evidence_refs}
