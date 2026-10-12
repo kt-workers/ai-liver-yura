@@ -1,10 +1,10 @@
-"""本体が所有者の内部事実から次の認知を開始する接続。"""
+"""所有者の内部事実から、次の認知を開始するユースケース。"""
 
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import CapabilityAvailability, RevisionVector
@@ -24,18 +24,26 @@ from app.domain.input_gateway import (
     InputSourceLifecycleChange,
     InputSourceState,
 )
-from app.runtime.kernel import RuntimeClock
-
-if TYPE_CHECKING:
-    from app.composition.cognition import CoreCognitionDelivery
-    from app.composition.input_reference_context import CoreInputReferenceContextBinding
-    from app.domain.brain_integration import BrainIntegrationWork
-
+from app.infrastructure.scheduling import RuntimeClock
 
 class GoalOwner(Protocol):
     def apply(self, decision: CommittedExecutiveDecision) -> object: ...
 
     def snapshot(self) -> GoalCommitmentSnapshot: ...
+
+
+class AutonomyCognitionPort(Protocol):
+    """自律入力を認知へ渡す最小の入口。"""
+
+    def submit_input(self, admission: object) -> object: ...
+
+    def register_internal_source(self, source: object, event_id: str) -> None: ...
+
+
+class AutonomyReferencePort(Protocol):
+    """自律入力の作成に必要な現在文脈だけを読む。"""
+
+    def snapshot(self) -> object: ...
 
 
 class CoreAutonomyDelivery:
@@ -44,8 +52,8 @@ class CoreAutonomyDelivery:
     def __init__(
         self,
         goals: GoalOwner,
-        cognition: CoreCognitionDelivery,
-        reference: CoreInputReferenceContextBinding,
+        cognition: AutonomyCognitionPort,
+        reference: AutonomyReferencePort,
         clock: RuntimeClock,
     ) -> None:
         if not hasattr(goals, "apply") or not hasattr(goals, "snapshot"):

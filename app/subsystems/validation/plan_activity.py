@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from weakref import WeakKeyDictionary
 
-from app.bootstrap import CoreRuntimeApplication
+from app.application import CoreComponents, stop_core
 from app.domain.activity_execution import (
     ActivityExecutionPort,
     ActivityExecutionRecord,
@@ -14,14 +14,15 @@ from app.domain.activity_execution import (
     ExecutionDispatchRequest,
     ExecutionEffectUncertainty,
 )
-from app.domain.brain_integration import BrainIntegrationWork, BrainWorkAdmission, BrainWorkStatus
+from app.domain.brain_integration import BrainWorkStatus
+from app.usecases.brain_integration_runtime import BrainIntegrationWork, BrainWorkAdmission
 from app.domain.contracts import ExecutionStatus, PreconditionRef
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import CommittedExecutiveDecision
 from app.domain.input_gateway import InputAdmission, InputAdmissionStatus
 from app.domain.plan_execution.contracts import PlanExecutionScope
 from app.domain.plan_execution.owner import PlanExecutionProgress
-from app.runtime.kernel import RuntimeClock
+from app.infrastructure.scheduling import RuntimeClock
 
 from .body import _project
 from .cognition import _IterationApplication, _result_projection, _status
@@ -126,7 +127,7 @@ class CommittedActivityLabCase:
 
 def plan_activity_target(
     cases: tuple[PlanActivityLabCase | CommittedActivityLabCase, ...],
-    application_factory: Callable[[RunContext], CoreRuntimeApplication],
+    application_factory: Callable[[RunContext], CoreComponents],
     provenance: ProductionTargetProvenance,
     contract_revision: str,
     provider_policy_refs: tuple[str, ...],
@@ -163,8 +164,8 @@ def plan_activity_target(
         if owner.current is not None:
             raise ValueError("前iterationのアプリケーションが未停止です")
         app = application_factory(context)
-        if not isinstance(app, CoreRuntimeApplication):
-            raise ValueError("factoryは正規CoreRuntimeApplicationを返す必要があります")
+        if not isinstance(app, CoreComponents):
+            raise ValueError("factoryは正規の構成済み要素を返す必要があります")
         owner.current = app
         if app.cognition is None or app.cognition.execution is None:
             await owner.stop()

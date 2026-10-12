@@ -1,4 +1,4 @@
-"""#334 Brain IntegrationのRuntime Kernel結合実装。"""
+"""Brain Integrationのアプリケーション実行サービス。"""
 
 from __future__ import annotations
 
@@ -11,13 +11,14 @@ from enum import Enum
 from typing import Protocol
 
 from app.domain.contracts import RevisionVector
+from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
 from app.domain.contracts.common import (
     require_aware,
     require_identifier,
     require_revision,
     utc_instant,
 )
-from app.runtime.kernel import (
+from app.infrastructure.scheduling import (
     CancellationToken,
     QueuePolicy,
     RuntimeClock,
@@ -29,9 +30,8 @@ from app.runtime.kernel import (
     WorkOutcome,
     WorkPriority,
 )
-from app.runtime.shutdown import RuntimeShutdownPolicy
 
-from .contracts import (
+from app.domain.brain_integration.contracts import (
     BrainIntegrationLane,
     BrainIntegrationModule,
     BrainIntegrationTerminalOutcome,
@@ -127,7 +127,7 @@ class BrainIntegrationRuntimePolicy:
     policy_revision: int
     scheduler_policy: RuntimeSchedulerPolicy
     lane_policies: tuple[RuntimeLanePolicy, ...]
-    shutdown_policy: RuntimeShutdownPolicy | None = None
+    shutdown_policy: ApplicationShutdownPolicy | None = None
 
     def __post_init__(self) -> None:
         require_identifier(self.policy_id, "policy_id")
@@ -150,8 +150,8 @@ class BrainIntegrationRuntimePolicy:
             by_lane[lane] = lane_policy
         if set(by_lane) != set(BrainIntegrationLane):
             raise ValueError("Brain lane policy coverage が不完全です")
-        if not isinstance(self.shutdown_policy, RuntimeShutdownPolicy):
-            raise ValueError("Runtime shutdown policy が必要です")
+        if not isinstance(self.shutdown_policy, ApplicationShutdownPolicy):
+            raise ValueError("アプリケーション停止規約が必要です")
         object.__setattr__(self, "lane_policies", lanes)
 
 

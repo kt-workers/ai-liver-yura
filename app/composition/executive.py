@@ -11,9 +11,9 @@ from app.domain.activity_binding import ActivityExecutionBindingPublication
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.brain_integration import (
     BrainIntegrationModule,
-    BrainIntegrationWork,
     BrainWorkEnvelope,
 )
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.domain.contracts import CapabilityDescriptor, CapabilityRequirement, RevisionVector
 from app.domain.contracts.common import require_identifier
 from app.domain.contracts.finalization import AuthorityGenerationToken
@@ -39,7 +39,7 @@ from app.domain.input_meaning import StructuredInputMeaning
 from app.domain.plan_execution.contracts import PlanExecutionScope
 from app.domain.plan_execution.progress_contracts import PlanProgressContext
 from app.domain.speech_semantics_vocabulary import CommunicativeGoalCatalogView
-from app.runtime.kernel import CancellationToken, RuntimeClock
+from app.infrastructure.scheduling import CancellationToken, RuntimeClock
 from app.usecases.ports.llm import LLMRolePort
 
 

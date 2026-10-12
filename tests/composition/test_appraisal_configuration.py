@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import pytest
 
-from app.composition.appraisal_configuration import build_appraisal_configuration
+from app.config.appraisal_assembly import build_appraisal_configuration
 from app.config.appraisal import load_appraisal_config
 from tests.config.test_appraisal import SOURCE
 

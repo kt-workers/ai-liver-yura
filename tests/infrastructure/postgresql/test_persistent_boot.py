@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from app.bootstrap import build_persistent_core
-from app.composition.goal_persistence import CoreGoalPersistenceBinding
+from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
 from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentSnapshot
 from app.domain.memory import MemoryWriteRequest

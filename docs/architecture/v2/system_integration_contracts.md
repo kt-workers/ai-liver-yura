@@ -717,9 +717,9 @@ Meaning・Appraisal・Attention・Executiveのsource event / root_trigger / trig
 
 ## ゆら本体の明示CLI入口（#729）
 
-`python -m app`は#692の認知構成へ、現在のclean checkoutに束縛した新しい実行識別子、明示activation、既存Runtime Ownerを渡す。ゆら本体をCLIから選択又はfallbackする経路は設けない。
+`python -m app`は#692の認知構成へ、新しい実行識別子、明示activation、既存Runtime Ownerを渡す。起動可否をGitのHEADや作業ツリー状態へ依存させない。ゆら本体をCLIから選択又はfallbackする経路は設けない。
 
-通常のゆら本体でProvider deploymentが`unconfigured`なら既存`UnavailableLLMRolePort`による型付き利用不可を保持する。この状態はLLM応答、実発話、外部Provider接続の成功ではない。Speechなしのゆら本体はSpeech用Ownerを要求しない。Speech有効時だけ#705/#709の設定・登録入口から得た`SpeechProductionInputs`を一度だけ渡し、登録又はavailabilityの不備は失敗として返す。
+通常のゆら本体は、必須の`llm_connections`集合からInput Meaning、Appraisal、Executiveが参照する接続を解決できる場合だけ起動する。接続設定、Adapter、資格情報、対応付けの不備を`UnavailableLLMRolePort`や別接続へ変換しない。この状態はLLM応答、実発話、外部Provider接続の成功ではない。Speechなしのゆら本体はSpeech用Ownerを要求しない。Speech有効時だけ#705/#709の設定・登録入口から得た`SpeechProductionInputs`を一度だけ渡し、登録又はavailabilityの不備は失敗として返す。
 
 ## ゆら本体へのSpeech本番構成接続（#702）
 

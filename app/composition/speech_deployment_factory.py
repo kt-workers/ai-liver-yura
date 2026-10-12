@@ -21,10 +21,10 @@ from app.composition.presentation_notification import (
 from app.composition.core_provider import CoreProviderLease, CoreProviderLeaseFactory
 from app.composition.speech import CoreSpeechContextReaders, SpeechOutputPreparationRequest
 from app.composition.speech_deployment import SpeechDeploymentRequest
-from app.composition.speech_preparation import finish_cleanup
+from app.usecases.speech_preparation import finish_cleanup
 from app.composition.speech_production_configuration import SpeechProductionPorts
 from app.config.layered import ConfigurationError, ConfigurationFailureCode
-from app.domain.brain_integration import BrainIntegrationWork
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.domain.executive import CommittedExecutiveDecision
 from app.domain.speech_runtime.contracts import SpeechPresentationMode, TTSPreparationMode
 from app.domain.speech_runtime.discard import PreparedAudioDiscardPort, PreparedAudioDiscardRequest

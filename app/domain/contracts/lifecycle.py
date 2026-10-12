@@ -7,7 +7,7 @@ from math import isfinite
 from app.domain.contracts.common import require_identifier, require_revision
 
 
-class RuntimeShutdownStage(str, Enum):
+class ApplicationShutdownStage(str, Enum):
     IN_FLIGHT_SETTLE = "in_flight_settle"
     PRODUCER_STOP = "producer_stop"
     FINAL_PERSISTENCE = "final_persistence"
@@ -17,18 +17,18 @@ class RuntimeShutdownStage(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
-class RuntimeShutdownFailure:
-    stage: RuntimeShutdownStage
+class ApplicationShutdownFailure:
+    stage: ApplicationShutdownStage
     error_class: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.stage, RuntimeShutdownStage):
+        if not isinstance(self.stage, ApplicationShutdownStage):
             raise ValueError("shutdown stageが不正です")
         require_identifier(self.error_class, "shutdown error_class")
 
 
 @dataclass(frozen=True, slots=True)
-class RuntimeShutdownPolicy:
+class ApplicationShutdownPolicy:
     policy_id: str
     policy_revision: int
     in_flight_settle_grace_seconds: float
@@ -50,11 +50,11 @@ class RuntimeShutdownPolicy:
                 raise ValueError(f"{name}はfiniteな0以上のnumberでなければなりません")
 
 
-class RuntimeShutdownError(RuntimeError):
-    def __init__(self, failures: tuple[RuntimeShutdownFailure, ...]) -> None:
+class ApplicationShutdownError(RuntimeError):
+    def __init__(self, failures: tuple[ApplicationShutdownFailure, ...]) -> None:
         if not failures:
             raise ValueError("shutdown failureは空にできません")
-        if any(not isinstance(item, RuntimeShutdownFailure) for item in failures):
+        if any(not isinstance(item, ApplicationShutdownFailure) for item in failures):
             raise ValueError("shutdown failureが不正です")
         self.failures = failures
-        super().__init__("Runtime shutdownを正常完了できませんでした")
+        super().__init__("アプリケーションの停止を正常完了できませんでした")

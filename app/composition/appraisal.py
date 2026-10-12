@@ -25,7 +25,8 @@ from app.domain.appraisal import (
     appraise_event,
     lifecycle_candidate,
 )
-from app.domain.brain_integration import BrainIntegrationModule, BrainIntegrationWork
+from app.domain.brain_integration import BrainIntegrationModule
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.domain.contracts import EventEnvelope
 from app.domain.contracts.common import require_identifier
 from app.domain.contracts.snapshots import (
@@ -36,7 +37,7 @@ from app.domain.contracts.snapshots import (
     stabilize_snapshot,
 )
 from app.domain.input_meaning import StructuredInputMeaning
-from app.runtime.kernel import CancellationToken, RuntimeClock
+from app.infrastructure.scheduling import CancellationToken, RuntimeClock
 from app.usecases.ports.llm import LLMRolePort
 
 

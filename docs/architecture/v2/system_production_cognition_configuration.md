@@ -22,7 +22,8 @@ Ownerは#360配下の#692。System compositionの設定・起動・資源所有�
 | appraisal_config | resource_ref=`config/appraisal.yaml`、config_id=`yura.appraisal.production`、config_revision=`1` |
 | executive_config | resource_ref=`config/executive.yaml`、config_id=`yura.executive.production`、config_revision=`1` |
 | attention_policy | policy_id=`attention-scheduling-production`、policy_revision=`1` |
-| provider_deployment | resource_ref=`config/provider_deployment_core.yaml`、deployment_id=`yura.provider-deployment.core`、deployment_revision=`1` |
+| llm_connections | resource_ref=`config/llm_connections.yaml`、config_id=`yura.llm-connections`、config_revision=`1` |
+| input_meaning_llm_connection_id | Input Meaningが参照する接続ID |
 | character_definition | resource_ref=`config/character/yura.yaml`、character_id=`yura`、definition_revision=`1` |
 
 この表が最上位fieldの全件で、参照objectも記載fieldだけを許可する。identityは非空、revisionはboolでない1以上の整数。attention値は実production()のidentity/revisionと一致を要求し、その予算表は複製しない。人物参照は実`CharacterDefinitionDocument.definition_revision`と照合する。人物内容をSystemが定義しない。
@@ -31,46 +32,26 @@ resource_refはリポジトリ内の公開相対参照で、絶対path・上位�
 
 設定内容の変更はconfig_revisionを進める。構成の契約・登録集合の変更はcomposition_revisionも進める。参照先の変更はそのOwnerの変更管理に従い、旧参照をlatestへ自動更新しない。重複key・未知/欠落field・不明schema・未知enum・非文字列key・循環alias・任意タグを拒否し、DTOはfrozen / tuple / 再帰的不変値とする。
 
-## 3. Provider deployment sourceと供給API
+## 3. LLM接続集合と内部Adapter
 
-`config/provider_deployment_core.yaml`は秘密を含まないdeployment manifestとする。schema_id=`yura.provider-deployment.core.v1`、deployment_id / deployment_revisionは§2と一致し、`role_bindings`に登録Roleを一度ずつ保持する。manifest loaderと型は`app/config/provider_deployment.py`へ配置する。SystemがModelPolicyの計算・数値検証・retryを再実装しない。
+`config/llm_connections.yaml`は秘密を含まない接続集合である。schema_idは`yura.llm-connections.v1`、各`llm_connections`要素は一意な`id`、内部Adapterを選ぶ`adapter`、接続固有の`settings`だけを持つ。接続が一件もない、IDが重複する、未知Adapter、settings不正、必要な資格情報の欠落は起動前に拒否する。未構成を`UnavailableLLMRolePort`や別接続へ変換しない。
 
-各bindingは`role_id, availability_mode, mapping_ref, role_config_ref`を持つ。参照は`source_id, identity, revision`の3fieldで、revisionは非負整数、identity/source_idは非空の公開識別子。source_idはprivate pathや環境変数の生値ではない。availability_modeは`unconfigured`または`configured`。
+AppraisalとExecutiveは各設定の`llm_connection_id`で、Input Meaningは本体設定の`input_meaning_llm_connection_id`で接続を選ぶ。これは各Ownerが使用する接続への参照であり、Role別の利用者設定ではない。Role、instructions、入出力schema、failure policyは既存Domain descriptorと内部Adapterだけが扱い、設定から変更できない。
 
-初期登録集合は`input_meaning`、`subjective_appraisal`、`executive_deliberation`の3Roleとし、実descriptorのrole_idと照合する。初期同梱manifestは全Roleをunconfigured、両refを明示nullとする。これは提供先未指定を正確に表す構成であり、mappingを選定済み・接続成功と主張しない。ゆら本体の構築成功と正常なLLM認知成功を区別する。
-
-configuredでは両refが必須。deployment側から明示注入される`CoreProviderConfigurationSource`の公開APIを次のとおり固定する。
-
-- `resolve_model_policies(role_id, mapping_ref)`は、参照と一致するsource identity/revision、および`Mapping[LLMModelClass, OpenAIResponsesModelPolicy]`を不変publicationとして返す。
-- `resolve_role_config(role_id, role_config_ref, model_policies)`は、参照と一致するsource identity/revisionと既存`OpenAIResponsesRoleConfig`を返す。Appraisalは#690のhelperを利用する。その他RoleもOwnerの既存instructions / input-output契約に一致する明示設定を供給し、System内で候補意味を補作しない。
-- sourceはSystem / deployment AuthorityでありDomain Ownerではない。publicationを一つの起動snapshotへfreezeし、同identity/revisionで内容を変えない。取得中のsource更新は拒否する。source実体は外部注入で借用し、Systemがcloseしない。
-
-mapping publicationの全要素について、Role、論理model class、reasoning effort、mapping_id / mapping_revision、具体model参照、format/config参照を対応付ける。論理要求は読み込んだOwnerのexecution policyから取得し、YAMLへ二重保存しない。具体model / reasoning文字列はdeployment sourceの値だけを使う。本書でモデル名を発明しない。Role configのmodel_policiesはそのpublicationと同一内容とし、別mappingに差し替えない。
-
-既存#357の型検証・model/effort対応・output上限・temperature mappingを使用する。入力schema、出力schema、instructions、failure_policyは登録descriptorのOwner契約と照合する。format nameは既存safe-name検証とRole間重複拒否を通す。構成済みなのにsource不在・未対応・不一致ならPROVIDER_MAPPING_FAILEDで起動前に拒否し、Unavailableや他モデルへfallbackしない。
-
-### 3.1. 認証と資源の境界
-
-manifestはAPI key・credential・SDK object・生環境値を含まない。credential確認とclient生成は既存Infrastructureの提供先構成境界に残す。Systemは認証値を取得・検査・公開しない。
-
-全Roleがunconfiguredなら、環境にcredentialが存在していてもmanifestの明示選択を優先し、SDK clientを生成せず既存UnavailableLLMRolePortへ同じdescriptor集合を渡す。資格情報の存在だけでProviderを選択又はconfiguredへ昇格させない。configured manifestなのにcredential未構成の場合はactivationを拒否する。混在modeはrevision 1では未対応として拒否する。別構成起動の既存未構成動作は変更しない。
-
-configured時のInfrastructure構築結果は`CoreProviderLease`としてSystemへ渡す。これは既存LLMRolePort、検証済みRole/mapping publication、非秘密なavailability、非同期release操作を束ねる構成契約である。既存Adapterの意味契約を置き換えない。Infrastructureが生成したclientを所有するleaseはそのclientの公開closeをreleaseに結び付け、外部注入clientを借用するleaseはそれをcloseしない。SystemはSDK型・private属性を辿って資源を破棄しない。既存のportだけを返すAPIにcloseがあると仮定せず、この所有契約を満たすInfrastructure composition入口で同じAdapterを構築する。
-
-Systemが作ったlease / wrapperはowned、外部から既に完成したleaseを借用する場合はborrowedと構築時に固定する。所有の有無を例外の種類やclose属性の有無から推測しない。test providerは外部I/O置換として注入する試験だけで使用し、本番fallbackに登録しない。
+構成層は接続IDごとにclientとclose操作を所有し、同じ接続を参照するOwnerへ共通`LLMRolePort`を渡す。起動失敗・取消・停止では生成済みclientを逆順に一度だけ回収する。snapshotへはRole IDと接続IDだけを記録し、credential、SDK object、endpoint、具体model、settingsを出さない。OpenAI接続は`YURA_OPENAI_API_KEY`だけを使用し、`OPENAI_API_KEY`へfallbackしない。
 
 ## 4. 明示起動と構築順
 
 入口は`app/bootstrap.py::build_core(...)`、実構成は`app/composition/system_cognition_configuration.py`へ配置する。返却型は`CoreApplication`とし、既存`CoreRuntimeApplication`を保持するSystem wrapperとする。CLIはこの本体構成だけを使用する。
 
-入口はゆら本体 config参照、`CoreRunIdentity`、fresh-startの明示、既存RuntimeClock、deployment source / provider lease構築境界、借用するregistry / precondition router / bindings / Direct binding集合を必須の型付き引数で受ける。共有Ownerを作り直さない。fast appraisal rulesも正規Ownerが承認した明示tupleを受け、欠落を隠すdefaultにしない。任意のSpeech / Execution等の拡張は既存型をそのまま明示注入する。ゆら本体構築のために模擬Goal・scope・Memory・Factを生成しない。
+入口はゆら本体 config参照、`CoreRunIdentity`、fresh-startの明示、既存RuntimeClock、内部固定のLLM接続Adapter集合、借用するregistry / precondition router / bindings / Direct binding集合を必須の型付き入力として受ける。共有Ownerを作り直さない。fast appraisal rulesも正規Ownerが承認した明示tupleを受け、欠落を隠すdefaultにしない。任意のSpeech / Execution等の拡張は既存型をそのまま明示注入する。ゆら本体構築のために模擬Goal・scope・Memory・Factを生成しない。
 
-1. ゆら本体 / minimum / deployment manifestを厳密loadし、人物文書を既存loaderで一度だけ取得する。期待する参照identity/revisionと実値を照合し、activation_idを明示要求したcallerか確認する。git/runtime/run identityを検証する。
+1. ゆら本体 / minimum / LLM接続集合を厳密loadし、人物文書を既存loaderで一度だけ取得する。期待する参照identity/revisionと実値を照合し、activation_idを明示要求したcallerか確認する。git/runtime/run identityを検証する。
 2. 既存bootstrapのFoundation生成・参照文脈生成を共有する準備段階を置く。同じGoal / Activity OwnerからCoreInputReferenceContextBindingを作り、その実snapshotのsource_context_revisionを取得する。この準備文脈を後続Coreへそのまま渡し、Core側で別Ownerを再生成しない。固定revision=0で代替しない。
 3. #690のloader / build_appraisal_configurationへ明示fresh-start、上記実revision、同じclockのaware UTC時刻、同じruntime_epochを渡す。以前の主体の復元が必要なら本fresh-start入口では拒否する。Reducer、execution、Decay policyとprovenanceをそのまま保持する。Decayの別timer・規則をSystemが生成しない。
 4. #691のread/load / create_executive_configurationへ同じboundsと正規Direct binding集合を渡す。実RequirementsOwner・initial generation・cleanupをそのまま利用する。
 5. AttentionSchedulingPolicy.production()を取得して参照identity/revisionを照合し、ゆら本体が所有するAttentionTurnStoreを構築する。
-6. minimumのInput Meaning、Appraisal、Executiveの同じpolicy実体からdescriptorを取得し、§3のmanifest/sourceを解決する。検証済み同一snapshotのprovider leaseを構築する。
+6. minimumのInput Meaning、Appraisal、Executiveの同じpolicy実体からdescriptorを取得し、§3の接続集合を解決する。各Ownerの接続IDが存在することを照合し、接続clientを構築する。
 7. CoreCognitionConfigurationへAppraisalのstate/policy、Executiveのpolicy/RequirementsOwner、Attention、借用registry/routerと明示bindingを設定する。既存compose / deliveryを再利用する。
 8. minimumの共通構成処理へ、上記認知構成・同じProvider port・同じ準備済みFoundation / reference / clockを明示注入する。_load_coreが再度Providerを暗黙構築しないよう、ゆら本体の明示引数付き経路と既存既定経路を分ける。minimumの公開既定動作は変えない。
 9. 全構成のidentity・generationを再照合後、§5のsnapshotを発行して返す。タスク受付開始は返却後の明示start()のみ。途中構築物・部分provenanceを成功として公開しない。
@@ -85,16 +66,15 @@ CoreInputReferenceContextBindingとAppraisal初期化のrevision照合を受付�
 | --- | --- |
 | composition_id / composition_revision | 検証済みゆら本体 config |
 | config_id / config_revision / activation_id | 同じゆら本体 config |
-| git_head | CoreRunIdentityの検証済みexact HEAD |
 | runtime_epoch / system_run_id | 同じCoreRunIdentity |
 | created_at | 構築完了時の既存RuntimeClock、aware UTC |
 | character_definition_revision / character_id | 実際にCoreへ渡す検証済み文書 |
 | component_bindings | minimum構成のidentity、#690 / #691の既存provenance、Attentionの実policy ID/revisionと登録identity |
-| provider_bindings | 実Role ID、mode、deployment/source/ref identity/revision、解決済みmapping ID/revision・論理class/effort、schema/format/config識別。unconfiguredは解決済みmappingなしを明示 |
+| llm_connection_bindings | 実Role IDと、対応する設定済み接続ID。接続設定・資格情報・SDK object・具体modelは含めない |
 | subsystem_bindings | 実際の明示登録だけ。未登録は空tupleで成功を補作しない |
 | requirements_generation | #691の実initial_generation.serialと既存serializerの安全な世代識別情報 |
 
-`CoreRunIdentity(git_head, runtime_epoch, system_run_id)`の発行AuthorityはSystem起動caller（#360）とする。git_headはcheckoutのGitで取得したexact commitまたは信頼済みbuild manifest由来の40桁hexを、稼働artifactの値と照合する。未知値・dirty artifactを本番exact HEAD証拠にしない。DomainでGitを実行せず、branch名だけで代替しない。
+`CoreRunIdentity(runtime_epoch, system_run_id)`の発行AuthorityはSystem起動caller（#360）とする。実行識別子は各起動を区別するための値であり、GitのHEAD、checkout状態、作業ツリー状態を起動条件または実行構成の証拠にしない。
 
 runtime_epochはそのプロセスのSystem lifecycleが発行する非空identityで、同じAppraisal・Core・永続結合へ使う。system_run_idはSystem起動試行の非空identityで、#620が起動を所有する場合は既存Validation runのrun_idとの対応を明示して渡す。Systemは実行中に再発行しない。新プロセス/新試行のidentityと同一runtimeでのresumeを混同しない。これらはSystem由来でありDomain revisionの代替ではない。
 
@@ -110,7 +90,7 @@ System wrapperは生成した資源の所有台帳を持ち、成功時は同じ
 | AppraisalProductionBinding / InternalStateReducer | owned。非同期資源やclose APIはない。Coreの利用終了後に参照を解放し、架空のcloseを呼ばない |
 | ExecutiveProductionBinding | owned。#691のclose()のみ使用し、借用Direct bindingは破棄しない |
 | ゆら本体生成AttentionTurnStore | owned。利用終了後に公開finalization_participant.retire() |
-| ゆら本体生成Provider lease / composition wrapper | owned。利用終了後にrelease。内部clientの所有はInfrastructureのlease契約に従う |
+| ゆら本体生成LLM connection registry / composition wrapper | owned。利用終了後に逆順close。内部clientは接続Adapterが所有する |
 | 注入registry/router/Direct Owner/Character source/shared infrastructure/external client | borrowed。台帳に終了操作を登録しない |
 
 partial construction failureは台帳を逆順にunwindする。正常終了も、最後に構築したCoreの受付・子タスクを既存stop()で回収した後、Provider lease、Attention、Executive、Appraisal、残るowned準備資源の順に解放する。Coreへ所有移管済みのFoundationは二重終了しない。cleanup途中の失敗でも残りのowned解放を続け、失敗分類を保持する。
@@ -154,7 +134,7 @@ wrapper.stop()は同じ終了taskを共有しidempotentとする。取消下で�
 
 ### 9.1.1 本番CLI起動root
 
-#729のCLI起動rootは`python -m app`だけを受理する。ゆら本体設定のactivation ID、現在のclean checkout SHA、runごとのruntime epochとsystem run ID、既存Runtime Ownerを明示して`build_core()`を呼ぶ。`PluginRegistryAuthority`、`PreconditionSourceRouter`、Activity binding、fast appraisal ruleは起動rootが新runへ生成又は明示注入する既存Ownerであり、試験fixture又は外部Providerの代替ではない。
+#729のCLI起動rootは`python -m app`だけを受理する。ゆら本体設定のactivation ID、runごとのruntime epochとsystem run ID、既存Runtime Ownerを明示して`build_core()`を呼ぶ。`PluginRegistryAuthority`、`PreconditionSourceRouter`、Activity binding、fast appraisal ruleは起動rootが新runへ生成又は明示注入する既存Ownerであり、試験fixture又は外部Providerの代替ではない。
 
 CLIは`user.yaml`の`speech: null`で`None`を渡す。この場合、Speech用semantic owner、Memory、TTS、Presentation登録を生成又は要求しない。Speech有効時は起動rootが既存`SpeechSemanticPolicyOwner`、Memory binding、trusted `SpeechDeploymentRegistry`を明示注入して`create_speech_deployment()`を呼ぶ。いずれかがない場合は構成を拒否し、Speechなし、別voice、`TEXT_ONLY`、模擬portへ変換しない。実Providerと実音声の接続は#621が所有する。
 
@@ -240,7 +220,7 @@ Speech provenanceはfrozenな構成専用値とし、次を実際の入力・構
 - semantic policyの公開identity/revision、Character / Verifier / Performanceで実使用したpolicy参照と供給元binding revision。
 - Runtime operational policyのidentity/revision、許可output modeとTTS preparation mode。
 - TTS / Presentation bindingの公開identity/revisionとavailability。Speech LLMの登録Roleとdeployment bindingの安全な参照。
-- 同じSystem run / runtime epoch / character identity/revisionとの対応。git_headは外側System snapshotの検証済み値を使用し、独自再発行しない。
+- 同じSystem run / runtime epoch / character identity/revisionとの対応。
 
 raw token、Owner instance、SDK object、credential、内部/絶対path、raw audio、具体voice/provider設定の生値を含めない。自由文の供給元説明をそのまま証拠へ反射しない。公開参照と実際の入力の対応をfactoryで検証し、identityの自己申告だけをもって成功としない。
 

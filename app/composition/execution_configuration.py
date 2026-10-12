@@ -27,7 +27,7 @@ from app.domain.plan_execution.contracts import PlanExecutionPolicy, PlanExecuti
 from app.domain.plan_execution.coordinator import PlanExecutionContextPort, PlanExecutionCoordinator
 from app.domain.plan_execution.owner import PlanExecutionOwner
 from app.domain.plan_execution.progress_contracts import PlanProgressContext
-from app.runtime.kernel import RuntimeClock
+from app.infrastructure.scheduling import RuntimeClock
 
 
 class _ExecutionEvidence:

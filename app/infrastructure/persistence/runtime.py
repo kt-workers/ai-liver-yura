@@ -12,7 +12,7 @@ from app.domain.memory import MemoryStoreAuthority, MemoryWriteRequest, MemoryWr
 from app.domain.memory.contracts import MemoryRetrievalQuery
 from app.domain.memory.ranking import MemoryRetrievalRankingPolicy, RankedMemoryEvidenceView
 from app.domain.memory.semantic_assertions import MemorySemanticAssertionEntry
-from app.runtime.lifecycle import DependencyFailure, DependencyRetryPolicy, RuntimeLifecycle
+from app.usecases.lifecycle import ApplicationLifecycle, DependencyFailure, DependencyRetryPolicy
 
 from .contracts import (
     DurabilityReceipt,
@@ -79,14 +79,14 @@ class PostgresPersistenceRuntime:
         self._snapshots: PostgresLifecycleSnapshotRepository | None = None
         self._worker: SnapshotPersistenceWorker | None = None
         self._pending: set[asyncio.Future[object]] = set()
-        self._lifecycle: RuntimeLifecycle | None = None
+        self._lifecycle: ApplicationLifecycle | None = None
         self._dependency_id: str | None = None
         self._closed = False
         self._close_task: asyncio.Task[None] | None = None
         self._start_lock = asyncio.Lock()
         self.availability = PersistenceAvailability.UNAVAILABLE
 
-    def attach(self, lifecycle: RuntimeLifecycle, retry_policy: DependencyRetryPolicy) -> None:
+    def attach(self, lifecycle: ApplicationLifecycle, retry_policy: DependencyRetryPolicy) -> None:
         if self._lifecycle is not None or self._closed:
             raise ValueError("永続化の起動停止接続は一度だけ登録できます")
         lifecycle.register_dependency(retry_policy, reconnect=self.start, close=self.close)

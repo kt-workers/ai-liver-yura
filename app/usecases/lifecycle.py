@@ -8,11 +8,11 @@ from enum import Enum
 from math import isfinite
 
 from app.domain.contracts.common import require_identifier, require_revision
-from app.runtime.kernel.clock import RuntimeClock
-from app.runtime.shutdown import (
-    RuntimeShutdownFailure,
-    RuntimeShutdownPolicy,
-    RuntimeShutdownStage,
+from app.domain.contracts import Clock
+from app.domain.contracts.lifecycle import (
+    ApplicationShutdownFailure,
+    ApplicationShutdownPolicy,
+    ApplicationShutdownStage,
 )
 
 
@@ -136,30 +136,30 @@ class _Dependency:
             self.diagnostic_suppressed = {}
 
 
-class RuntimeLifecycle:
+class ApplicationLifecycle:
     """Optional dependencyのdegraded operationとshutdownを所有する。"""
 
     def __init__(
         self,
-        clock: RuntimeClock,
-        shutdown_policy: RuntimeShutdownPolicy,
+        clock: Clock,
+        shutdown_policy: ApplicationShutdownPolicy,
     ) -> None:
-        if not isinstance(shutdown_policy, RuntimeShutdownPolicy):
-            raise ValueError("Runtime shutdown policy が必要です")
+        if not isinstance(shutdown_policy, ApplicationShutdownPolicy):
+            raise ValueError("アプリケーション停止規約が必要です")
         self._clock = clock
         self._shutdown_policy = shutdown_policy
         self._dependencies: dict[str, _Dependency] = {}
         self._retired_retry_tasks: set[asyncio.Task[None]] = set()
         self._stopping = False
         self._stop_lock = asyncio.Lock()
-        self._shutdown_failures: tuple[RuntimeShutdownFailure, ...] = ()
+        self._shutdown_failures: tuple[ApplicationShutdownFailure, ...] = ()
 
     @property
-    def shutdown_policy(self) -> RuntimeShutdownPolicy:
+    def shutdown_policy(self) -> ApplicationShutdownPolicy:
         return self._shutdown_policy
 
     @property
-    def shutdown_failures(self) -> tuple[RuntimeShutdownFailure, ...]:
+    def shutdown_failures(self) -> tuple[ApplicationShutdownFailure, ...]:
         return self._shutdown_failures
 
     def register_dependency(
@@ -295,7 +295,7 @@ class RuntimeLifecycle:
                 if task is not None and not task.done():
                     task.cancel()
             await self._await_retries()
-            failures: list[RuntimeShutdownFailure] = []
+            failures: list[ApplicationShutdownFailure] = []
             for dependency in reversed(tuple(self._dependencies.values())):
                 dependency.state = DependencyState.CLOSING
                 try:
@@ -307,8 +307,8 @@ class RuntimeLifecycle:
                     dependency.close_failed = True
                     dependency.last_failure_code = type(error).__name__
                     failures.append(
-                        RuntimeShutdownFailure(
-                            RuntimeShutdownStage.RESOURCE_CLOSE,
+                        ApplicationShutdownFailure(
+                            ApplicationShutdownStage.RESOURCE_CLOSE,
                             type(error).__name__,
                         )
                     )
@@ -319,9 +319,9 @@ class RuntimeLifecycle:
     async def close(self) -> None:
         await self.stop()
         if self._shutdown_failures:
-            from app.runtime.shutdown import RuntimeShutdownError
+            from app.domain.contracts.lifecycle import ApplicationShutdownError
 
-            raise RuntimeShutdownError(self._shutdown_failures)
+            raise ApplicationShutdownError(self._shutdown_failures)
 
     def snapshots(self) -> tuple[DependencySnapshot, ...]:
         return tuple(self.snapshot(dependency_id) for dependency_id in self._dependencies)

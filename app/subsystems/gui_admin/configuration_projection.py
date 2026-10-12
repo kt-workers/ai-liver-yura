@@ -7,7 +7,7 @@ from datetime import timezone
 
 from app.config.core import CoreConfig
 from app.domain.contracts.common import thaw_json
-from app.runtime.kernel.clock import RuntimeClock
+from app.infrastructure.scheduling import RuntimeClock
 
 from .contracts import (
     AdminReadModelEnvelope,

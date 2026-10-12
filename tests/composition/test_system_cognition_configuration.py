@@ -13,7 +13,7 @@ import yaml
 from app import bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.composition import system_cognition_configuration as system
-from app.composition.executive_configuration import create_executive_configuration
+from app.config.executive_assembly import create_executive_configuration
 from app.composition.core_provider import CoreProviderLease
 from app.config.core_contracts import CoreConfigurationError
 from app.domain.attention import AttentionTurnStore
@@ -21,9 +21,6 @@ from app.domain.contracts.finalization import FinalizationError
 from app.domain.contracts.preconditions import PreconditionSourceRouter
 from app.domain.plugin_registry import PluginRegistryAuthority
 from app.runtime.kernel import SystemRuntimeClock
-
-HEAD = "a" * 40
-
 
 async def unavailable_lease(roles: Any, configs: Any, bindings: Any, mode: str) -> CoreProviderLease:
     assert not configs
@@ -36,7 +33,7 @@ async def unavailable_lease(roles: Any, configs: Any, bindings: Any, mode: str) 
 
 def parameters() -> dict[str, Any]:
     return dict(
-        run_identity=system.CoreRunIdentity(HEAD, "epoch", "run"),
+        run_identity=system.CoreRunIdentity("epoch", "run"),
         activation_id="yura.core.explicit",
         fresh_start=True,
         clock=SystemRuntimeClock(),
@@ -47,7 +44,6 @@ def parameters() -> dict[str, Any]:
         fast_rules=(),
         provider_source=None,
         provider_factory=unavailable_lease,
-        artifact_head=lambda: HEAD,
     )
 
 
@@ -70,7 +66,6 @@ async def test_real_factories_identity_snapshot_and_restart() -> None:
     )
     assert app.executive.requirements_owner is app.cognition.requirements
     assert app.executive.initial_generation is app.cognition.requirements.current_generation()
-    assert snapshot.git_head == HEAD
     assert snapshot.runtime_epoch == "epoch"
     assert snapshot.system_run_id == "run"
     assert (
@@ -120,7 +115,6 @@ async def test_real_factories_identity_snapshot_and_restart() -> None:
     [
         ("activation_id", "wrong", "ACTIVATION_FAILED"),
         ("fresh_start", False, "ACTIVATION_FAILED"),
-        ("artifact_head", lambda: "b" * 40, "INVALID_SYSTEM_CONFIG"),
         ("config_ref", "resources/missing.yaml", "MISSING_SYSTEM_CONFIG"),
         ("config_ref", "../secret", "INVALID_SYSTEM_CONFIG"),
     ],
@@ -347,7 +341,7 @@ async def test_cancel_during_provider_construction_reclaims_previous_owners(
 async def test_owned_cleanup_actual_order(monkeypatch: pytest.MonkeyPatch) -> None:
     params = parameters()
     events: list[str] = []
-    from app.composition.executive_configuration import ExecutiveProductionBinding
+    from app.config.executive_assembly import ExecutiveProductionBinding
     from app.domain.contracts.finalization import AuthorityFinalizationParticipant
 
     original_close = ExecutiveProductionBinding.close

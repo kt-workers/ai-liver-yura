@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.composition.memory_evidence import (
+from app.usecases.memory_evidence import (
     CoreMemoryEvidenceConfiguration,
     CoreMemoryEvidenceReader,
 )

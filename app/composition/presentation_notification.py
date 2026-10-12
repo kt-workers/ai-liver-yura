@@ -22,7 +22,7 @@ from app.domain.activity_execution.observation import (
     ObservedExecutionFactRecord,
 )
 from app.domain.attention import AttentionTurnStore
-from app.domain.brain_integration import BrainIntegrationWork, BrainWorkAdmission
+from app.usecases.brain_integration_runtime import BrainIntegrationWork, BrainWorkAdmission
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus, RevisionVector
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import (

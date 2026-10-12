@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# スケジューラ実装の入出力型。
+
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, IntEnum

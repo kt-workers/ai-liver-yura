@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Protocol
 
-from app.composition.accepted_input import CoreAcceptedInputStore
+from app.usecases.accepted_inputs import CoreAcceptedInputStore
 from app.composition.appraisal import CoreAppraisalBinding
 from app.composition.executive_input_evidence import (
     CoreExecutiveInputEvidenceReader,
     CoreExecutiveSpeechEvidenceReader,
 )
-from app.composition.memory_evidence import CoreMemoryEvidenceReader
+from app.usecases.memory_evidence import CoreMemoryEvidenceReader
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
 from app.domain.contracts.common import freeze_json, require_identifier

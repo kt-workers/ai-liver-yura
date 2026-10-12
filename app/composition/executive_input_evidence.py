@@ -2,10 +2,10 @@
 
 from typing import Protocol
 
-from app.composition.accepted_input import CoreAcceptedInputStore
+from app.usecases.accepted_inputs import CoreAcceptedInputStore
 from app.composition.appraisal import CoreAppraisalBinding
 from app.composition.executive import CoreExecutiveEvidence
-from app.composition.memory_evidence import CoreMemoryEvidenceReader
+from app.usecases.memory_evidence import CoreMemoryEvidenceReader
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import AuthorityReadPublication

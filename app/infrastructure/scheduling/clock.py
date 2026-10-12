@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# 後方互換の時計実装。公開契約は app.domain.contracts.Clock を使う。
+
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone

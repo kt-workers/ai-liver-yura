@@ -20,7 +20,8 @@ from app.composition.cognition import CoreCognitionDelivery
 from app.composition.execution_observation import SPEECH_OBSERVATION_SOURCE
 from app.composition.speech import SpeechOutputPreparationRequest
 from app.composition.speech_feedback import CoreSpeechFeedback, SpeechFactDeliveryDisposition
-from app.domain.brain_integration import BrainIntegrationWork, BrainWorkStatus
+from app.domain.brain_integration import BrainWorkStatus
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.domain.character_language import CharacterLanguageContextSnapshot, CharacterUtterance
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import CommittedExecutiveDecision, ExecutiveIntentKind

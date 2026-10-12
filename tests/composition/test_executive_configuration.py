@@ -10,7 +10,7 @@ import pytest
 import yaml
 from openai import APIConnectionError
 
-import app.composition.executive_configuration as composition
+import app.config.executive_assembly as composition
 from app.adapters.llm.openai_responses import OpenAIResponsesAdapter, OpenAIResponsesModelPolicy
 from app.config.executive import (
     ExecutiveConfigurationError,

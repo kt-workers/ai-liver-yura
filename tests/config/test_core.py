@@ -17,11 +17,13 @@ def test_canonical_references_are_explicit_and_frozen() -> None:
     config = load_core_config(SOURCE)
     assert config.config_id == "yura.core"
     assert config.config_revision == config.composition_revision == 1
-    for name in ("core_runtime", "appraisal", "executive"):
+    for name in ("appraisal", "executive"):
         ref = getattr(config, name + "_config")
         assert ref.resource_ref == f"config/{name}.yaml"
         assert ref.config_revision == 1
     assert config.attention_policy.policy_id == "attention-scheduling-production"
+    assert config.llm_connections.config_id == "yura.llm-connections"
+    assert config.input_meaning_llm_connection_id == "yura.llm.default"
     assert config.character_definition.character_id == "yura"
     with pytest.raises(FrozenInstanceError):
         config.config_id = "changed"  # type: ignore[misc]

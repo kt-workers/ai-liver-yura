@@ -115,7 +115,7 @@ def dependencies() -> dict[str, Any]:
         character.definition_revision,
     )
     return dict(
-        run=CoreRunIdentity("a" * 40, "epoch", "run"),
+        run=CoreRunIdentity("epoch", "run"),
         semantic_owner=build_speech_semantics_policy_owner_v1(
             runtime_subject_identity=subject, bounds_policy=BOUNDS
         ),

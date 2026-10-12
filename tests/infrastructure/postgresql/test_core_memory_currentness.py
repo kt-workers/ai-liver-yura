@@ -10,7 +10,7 @@ import pytest
 
 from app.composition.executive import CoreExecutiveBinding, CoreExecutiveEvidence
 from app.composition.executive_input_evidence import CoreExecutiveInputEvidenceReader
-from app.composition.memory_evidence import (
+from app.usecases.memory_evidence import (
     CoreMemoryEvidenceConfiguration,
     CoreMemoryEvidenceReader,
 )

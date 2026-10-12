@@ -21,11 +21,13 @@ from app.domain.activity_execution import (
 from app.domain.activity_execution.projector import to_execution_event
 from app.domain.brain_integration import (
     BrainIntegrationModule,
+)
+from app.usecases.brain_integration_runtime import (
     BrainIntegrationRuntime,
     BrainIntegrationWork,
+    BrainIntegrationWorkOutcome,
     BrainWorkAdmission,
 )
-from app.domain.brain_integration.runtime import BrainIntegrationWorkOutcome
 from app.domain.contracts import PreconditionRef, RevisionVector
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import FinalizationError
@@ -49,7 +51,7 @@ from app.domain.plan_execution.owner import (
     PlanExecutionProgress,
     PlanExecutionStatus,
 )
-from app.runtime.kernel import CancellationToken, RuntimeClock
+from app.infrastructure.scheduling import CancellationToken, RuntimeClock
 
 
 @dataclass(frozen=True, slots=True)

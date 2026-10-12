@@ -1,6 +1,7 @@
 schema_id: yura.appraisal.production-config.v1
 config_id: yura.appraisal.production
 config_revision: 1
+llm_connection_id: yura.llm.default
 execution:
   policy_id: yura.appraisal.execution
   policy_revision: 1

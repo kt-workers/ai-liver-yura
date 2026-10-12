@@ -16,7 +16,6 @@ from app.composition.core_provider import CoreProviderLease
 from app.composition.system_cognition_configuration import (
     CoreApplication,
     CoreRunIdentity,
-    current_artifact_head,
 )
 from app.config.core import load_core_config
 from app.config.core import load_core_config
@@ -73,7 +72,7 @@ class SystemRun:
             leases.append(lease)
             return lease
 
-        identity = CoreRunIdentity(current_artifact_head(), str(uuid4()), str(uuid4()))
+        identity = CoreRunIdentity(str(uuid4()), str(uuid4()))
         core = await bootstrap.build_core(
             run_identity=identity,
             activation_id="yura.core.explicit",
@@ -123,8 +122,7 @@ class SystemRun:
             config.composition_revision,
         )
         assert snapshot.activation_id == config.activation_id
-        assert (snapshot.git_head, snapshot.runtime_epoch, snapshot.system_run_id) == (
-            current_artifact_head(),
+        assert (snapshot.runtime_epoch, snapshot.system_run_id) == (
             identity.runtime_epoch,
             self.run_id,
         )
@@ -208,7 +206,6 @@ class SystemRun:
     def current_provenance(self) -> Any:
         snapshot = self.core.composition_snapshot
         assert snapshot is self.snapshot
-        assert snapshot.git_head == current_artifact_head()
         provenance = capture_production_provenance(
             ROOT,
             ("app", "config", self.app.config.character_definition.resource_ref),
@@ -219,7 +216,6 @@ class SystemRun:
             ),
             tuple(r.output_schema_id for r in self.roles),
         )
-        assert provenance.git_head == snapshot.git_head
         # Labの既存INTEGRATED形式へ、同一runのSnapshot由来だけを投影する。
         providers = ",".join(
             f"{b.role_id}:{b.deployment_id}:{b.deployment_revision}:{b.availability_mode}"
@@ -356,10 +352,6 @@ async def test_system_configuration_and_lab_evidence_reach_owner_decision(
         assert evidence["traces"][0]["trace_id"] == value["trace"]["trace_id"]
         assert evidence["configuration"]["config_revision"] == run.app.config.config_revision
         assert result.target_provenance == run.provenance
-        assert (
-            evidence["composition_snapshot"]["git_head"]
-            == exported["target_provenance"]["git_head"]
-        )
         assert evidence["composition_snapshot"]["system_run_id"] == exported["run_spec"]["run_id"]
         registered = {r.role_id: r for r in run.roles}
         for request_used in run.provider.requests:

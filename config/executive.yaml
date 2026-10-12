@@ -2,6 +2,7 @@
 schema_id: yura.executive.production-config.v1
 config_id: yura.executive.production
 config_revision: 1
+llm_connection_id: yura.llm.default
 execution:
   policy_id: yura.executive.execution
   policy_revision: 1

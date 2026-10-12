@@ -1,3 +1,5 @@
+"""アプリケーションの作業スケジューラ実装。"""
+
 from .cancellation import CancellationRegistry, CancellationToken
 from .clock import FakeRuntimeClock, RuntimeClock, SystemRuntimeClock
 from .contracts import (

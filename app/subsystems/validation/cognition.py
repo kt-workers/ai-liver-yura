@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from weakref import WeakKeyDictionary
 
-from app.bootstrap import CoreRuntimeApplication
+from app.application import CoreComponents, stop_core
 from app.domain.appraisal import AppraisalStateCommit
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.contracts.common import JsonValue
@@ -36,7 +36,7 @@ class NormalCognitionLabCase:
         return _project(self.admission)
 
 
-NormalCognitionApplicationFactory = Callable[[], CoreRuntimeApplication]
+NormalCognitionApplicationFactory = Callable[[], CoreComponents]
 
 
 def _result_projection(result: object) -> JsonValue:
@@ -67,11 +67,11 @@ def _status(status: BrainWorkStatus, result: object) -> RunStatus:
 class _IterationApplication:
     """runに登録する終了処理は1件とし、現在iterationの資源だけを保持する。"""
 
-    current: CoreRuntimeApplication | None = None
+    current: CoreComponents | None = None
 
     async def stop(self) -> None:
         if self.current is not None:
-            await self.current.stop()
+            await stop_core(self.current)
             self.current = None
 
 
@@ -119,8 +119,8 @@ def normal_cognition_target(
         if owner.current is not None:
             raise ValueError("前iterationのアプリケーションが未停止です")
         app = application_factory()
-        if not isinstance(app, CoreRuntimeApplication):
-            raise ValueError("factoryは正規CoreRuntimeApplicationを返す必要があります")
+        if not isinstance(app, CoreComponents):
+            raise ValueError("factoryは正規の構成済み要素を返す必要があります")
         owner.current = app
         stop = owner.stop
         if app.cognition is None:
@@ -132,7 +132,7 @@ def normal_cognition_target(
             assert app.cognition is not None
             return app.cognition.submit_input(case.admission)
 
-        from app.domain.brain_integration import BrainWorkAdmission
+        from app.usecases.brain_integration_runtime import BrainWorkAdmission
 
         accepted = await context.invoke_product("cognition.submit_input", submit)
         assert isinstance(accepted, BrainWorkAdmission)

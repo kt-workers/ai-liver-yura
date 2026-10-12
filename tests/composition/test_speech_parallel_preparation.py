@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from app.composition.presentation_notification import CoreSpeechProductionOwnerConnection
-from app.composition.speech_preparation import (
+from app.usecases.speech_preparation import (
     PendingSpeechAudioOwner,
     SpeechPreparationCleanupError,
 )

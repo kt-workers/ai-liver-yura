@@ -17,7 +17,7 @@ from app.adapters.tts import (
 from app.adapters.tts.contracts import TTSFailureCode, TTSSynthesisStatus
 from app.adapters.tts.provider import ProviderSynthesisInput, TTSProviderClient, TTSProviderResponse
 from app.domain.contracts.common import JsonValue, freeze_json
-from app.runtime.lifecycle import DependencyRetryPolicy
+from app.usecases.lifecycle import DependencyRetryPolicy
 
 from .body import _encode as encode_domain
 from .contracts import (
@@ -39,7 +39,7 @@ def _encode(value: object) -> object:
         in {
             "app.adapters.tts.contracts",
             "app.adapters.tts.policy",
-            "app.runtime.lifecycle",
+            "app.usecases.lifecycle",
         }
     ):
         return {field.name: getattr(value, field.name) for field in fields(value)}

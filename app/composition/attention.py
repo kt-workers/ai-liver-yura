@@ -12,7 +12,7 @@ from app.domain.attention import (
     AttentionTurnStore,
     ExecutiveTriggerEligibility,
 )
-from app.runtime.kernel import RuntimeClock
+from app.infrastructure.scheduling import RuntimeClock
 from app.usecases.attention import AppraisalAttentionProjector
 
 

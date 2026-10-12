@@ -10,7 +10,7 @@ import pytest
 
 from app import bootstrap
 from app.bootstrap import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload
-from app.composition.accepted_input import CoreAcceptedInput, CoreAcceptedInputStore
+from app.usecases.accepted_inputs import CoreAcceptedInput, CoreAcceptedInputStore
 from app.composition.executive import CoreExecutiveBinding
 from app.composition.executive_input_evidence import CoreExecutiveInputEvidenceReader
 from app.domain.attention import AttentionSource, AttentionSourceKind

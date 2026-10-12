@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from math import isfinite
 
 from app.config.core_contracts import identity, invalid, parse, resource, revision, shape
-from app.domain.brain_integration import BrainIntegrationRuntimePolicy
+from app.usecases.brain_integration_runtime import BrainIntegrationRuntimePolicy
 from app.domain.input_meaning import InputMeaningAcceptancePolicy, InputMeaningPolicy, PrimaryIntent
 from app.domain.llm import (
     LLMExecutionPolicy,
@@ -12,8 +12,13 @@ from app.domain.llm import (
     LLMReasoningEffort,
     LLMRequestRetryPolicy,
 )
-from app.runtime.kernel import LaneErrorPolicy, QueuePolicy, RuntimeLanePolicy, RuntimeSchedulerPolicy
-from app.runtime.shutdown import RuntimeShutdownPolicy
+from app.infrastructure.scheduling import (
+    LaneErrorPolicy,
+    QueuePolicy,
+    RuntimeLanePolicy,
+    RuntimeSchedulerPolicy,
+)
+from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,15 +44,15 @@ class AttentionPolicyReference:
 
 
 @dataclass(frozen=True, slots=True)
-class ProviderDeploymentReference:
+class LLMConnectionsReference:
     resource_ref: str
-    deployment_id: str
-    deployment_revision: int
+    config_id: str
+    config_revision: int
 
     def __post_init__(self) -> None:
         resource(self.resource_ref)
-        identity(self.deployment_id)
-        revision(self.deployment_revision)
+        identity(self.config_id)
+        revision(self.config_revision)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,12 +78,13 @@ class CoreConfig:
     appraisal_config: ConfigurationReference
     executive_config: ConfigurationReference
     attention_policy: AttentionPolicyReference
-    provider_deployment: ProviderDeploymentReference
+    llm_connections: LLMConnectionsReference
     character_definition: CharacterDefinitionReference
+    input_meaning_llm_connection_id: str
     input_meaning_policy: InputMeaningPolicy
     scheduler_policy: RuntimeSchedulerPolicy
     integration_policy: BrainIntegrationRuntimePolicy
-    shutdown_policy: RuntimeShutdownPolicy
+    shutdown_policy: ApplicationShutdownPolicy
 
     def __post_init__(self) -> None:
         if (
@@ -96,10 +102,11 @@ class CoreConfig:
                 for ref in (self.appraisal_config, self.executive_config)
             )
             or not isinstance(self.attention_policy, AttentionPolicyReference)
-            or not isinstance(self.provider_deployment, ProviderDeploymentReference)
+            or not isinstance(self.llm_connections, LLMConnectionsReference)
             or not isinstance(self.character_definition, CharacterDefinitionReference)
         ):
             invalid()
+        identity(self.input_meaning_llm_connection_id)
 
 
 def _text(value: object) -> str:
@@ -180,7 +187,8 @@ def _meaning(value: object) -> InputMeaningPolicy:
 def _lane(value: object) -> RuntimeLanePolicy:
     data = shape(
         value,
-        "lane_id queue_capacity queue_policy max_in_flight cancellation_grace_seconds error_isolation",
+        "lane_id queue_capacity queue_policy max_in_flight cancellation_grace_seconds "
+        "error_isolation",
     )
     return RuntimeLanePolicy(
         _text(data["lane_id"]), _integer(data["queue_capacity"]),
@@ -204,19 +212,21 @@ def load_core_config(source: str | bytes) -> CoreConfig:
         parse(source),
         "schema_id config_id config_revision activation_id composition_id "
         "composition_revision appraisal_config executive_config attention_policy "
-        "provider_deployment character_definition input_meaning scheduler integration shutdown",
+        "llm_connections character_definition input_meaning_llm_connection_id input_meaning "
+        "scheduler integration shutdown",
     )
     attention = shape(data["attention_policy"], "policy_id policy_revision")
-    provider = shape(data["provider_deployment"], "resource_ref deployment_id deployment_revision")
+    connections = shape(data["llm_connections"], "resource_ref config_id config_revision")
     character = shape(data["character_definition"], "resource_ref character_id definition_revision")
     scheduler = shape(data["scheduler"], "policy_id policy_revision max_priority_burst")
     integration = shape(data["integration"], "policy_id policy_revision lane_policies")
     shutdown_data = shape(
         data["shutdown"],
         "policy_id policy_revision in_flight_settle_grace_seconds "
-        "final_persistence_grace_seconds resource_close_grace_seconds owned_task_join_grace_seconds",
+        "final_persistence_grace_seconds resource_close_grace_seconds "
+        "owned_task_join_grace_seconds",
     )
-    shutdown = RuntimeShutdownPolicy(
+    shutdown = ApplicationShutdownPolicy(
         _text(shutdown_data["policy_id"]), _integer(shutdown_data["policy_revision"]),
         _number(shutdown_data["in_flight_settle_grace_seconds"]),
         _number(shutdown_data["final_persistence_grace_seconds"]),
@@ -243,16 +253,17 @@ def load_core_config(source: str | bytes) -> CoreConfig:
         AttentionPolicyReference(
             identity(attention["policy_id"]), revision(attention["policy_revision"])
         ),
-        ProviderDeploymentReference(
-            resource(provider["resource_ref"]),
-            identity(provider["deployment_id"]),
-            revision(provider["deployment_revision"]),
+        LLMConnectionsReference(
+            resource(connections["resource_ref"]),
+            identity(connections["config_id"]),
+            revision(connections["config_revision"]),
         ),
         CharacterDefinitionReference(
             resource(character["resource_ref"]),
             identity(character["character_id"]),
             revision(character["definition_revision"]),
         ),
+        identity(data["input_meaning_llm_connection_id"]),
         _meaning(data["input_meaning"]),
         scheduler_policy,
         integration_policy,

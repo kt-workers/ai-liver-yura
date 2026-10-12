@@ -22,9 +22,9 @@ from app.adapters.llm.speech_semantics import (
     speech_semantics_provider_descriptor,
 )
 from app.adapters.tts.contracts import TTSVoiceBinding
-from app.composition.memory_persistence import CoreMemoryPersistenceBinding
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from app.composition.core_provider import ProviderBindingSnapshot, RoleConfigPublication
-from app.composition.speech_preparation import finish_cleanup
+from app.usecases.speech_preparation import finish_cleanup
 from app.composition.speech_production_configuration import (
     SpeechBindingReference,
     SpeechProductionInputs,

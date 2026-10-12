@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from app.composition.memory_persistence import CoreMemoryPersistenceBinding
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from app.domain.attention import AttentionSource
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import AuthorityGenerationToken

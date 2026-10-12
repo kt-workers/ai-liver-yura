@@ -42,7 +42,7 @@ async def create_core_provider_lease(
         port = OpenAIResponsesAdapter(cast(ResponsesClient, client.responses), configs)
         return CoreProviderLease(port, bindings, mode, client.close)
     except BaseException:
-        from app.bootstrap import _reap_cleanup
+        from app.application import _reap_cleanup
 
         await _reap_cleanup(asyncio.create_task(client.close()))
         raise

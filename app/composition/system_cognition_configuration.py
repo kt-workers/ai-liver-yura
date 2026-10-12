@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
-import subprocess
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -12,25 +10,23 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
-from app.composition.appraisal_configuration import (
+from app.config.appraisal_assembly import (
     AppraisalInitializationProvenance,
     AppraisalProductionBinding,
     build_appraisal_configuration,
 )
 from app.composition.cognition_configuration import CoreCognitionConfiguration
-from app.composition.executive_configuration import (
+from app.config.executive_assembly import (
     ExecutiveConfigurationProvenance,
     ExecutiveProductionBinding,
     create_executive_configuration,
 )
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
-from app.composition.core_provider import (
-    ProviderBindingSnapshot,
-    CoreProviderConfigurationSource,
-    CoreProviderLease,
-    CoreProviderLeaseFactory,
-    resolve_provider_configuration,
+from app.usecases.llm_connections import (
+    LLMConnectionAdapter,
+    route_llm_connections,
 )
+from app.infrastructure.llm.connection_registry_factory import create_llm_connection_registry
 from app.composition.speech_production_configuration import (
     SpeechComponentProvenance,
     SpeechProductionInputs,
@@ -38,14 +34,14 @@ from app.composition.speech_production_configuration import (
 )
 from app.config.appraisal import load_appraisal_config
 from app.config.core import ConfigurationReference, CoreConfig, load_core_config
-from app.config.executive import load_executive_config
-from app.config.provider_deployment import load_provider_deployment
 from app.config.core_contracts import (
     CoreConfigurationError,
     CoreFailureCode,
     identity,
     resource,
 )
+from app.config.executive import load_executive_config
+from app.config.llm_connections import load_llm_connections
 from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.appraisal import DeterministicAppraisalRule
@@ -58,11 +54,11 @@ from app.domain.executive.deliberator import descriptor as executive_descriptor
 from app.domain.goals import GoalCommitmentStore
 from app.domain.input_meaning.interpreter import descriptor as input_descriptor
 from app.domain.plugin_registry import PluginRegistryAuthority
-from app.runtime.kernel import RuntimeClock
-from app.runtime.lifecycle import RuntimeLifecycle
+from app.infrastructure.scheduling import RuntimeClock
+from app.usecases.lifecycle import ApplicationLifecycle
 
 if TYPE_CHECKING:
-    from app.bootstrap import CoreRuntimeApplication
+    from app.application import CoreComponents
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE_RESOURCE = "config/core.yaml"
@@ -70,16 +66,10 @@ CORE_RESOURCE = "config/core.yaml"
 
 @dataclass(frozen=True, slots=True)
 class CoreRunIdentity:
-    git_head: str
     runtime_epoch: str
     system_run_id: str
 
     def __post_init__(self) -> None:
-        if (
-            not isinstance(self.git_head, str)
-            or re.fullmatch(r"[0-9a-f]{40}", self.git_head) is None
-        ):
-            raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
         identity(self.runtime_epoch)
         identity(self.system_run_id)
 
@@ -102,20 +92,27 @@ class SubsystemBinding:
 
 
 @dataclass(frozen=True, slots=True)
+class LLMConnectionBinding:
+    """本体が採用した接続IDだけを、Roleの実行内容なしに記録する。"""
+
+    role_id: str
+    connection_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class SystemCompositionSnapshot:
     composition_id: str
     composition_revision: int
     config_id: str
     config_revision: int
     activation_id: str
-    git_head: str
     runtime_epoch: str
     system_run_id: str
     created_at: datetime
     character_id: str
     character_definition_revision: int
     component_bindings: tuple[ComponentBindings, ...]
-    provider_bindings: tuple[ProviderBindingSnapshot, ...]
+    llm_connection_bindings: tuple[LLMConnectionBinding, ...]
     subsystem_bindings: tuple[SubsystemBinding, ...]
     requirements_generation: tuple[tuple[str, str | int], ...]
 
@@ -150,7 +147,7 @@ class _OwnedResources:
 
 @dataclass(frozen=True, slots=True)
 class CoreApplication:
-    core: CoreRuntimeApplication
+    core: CoreComponents
     composition_snapshot: SystemCompositionSnapshot
     cognition: CoreCognitionConfiguration
     appraisal: AppraisalProductionBinding
@@ -163,13 +160,15 @@ class CoreApplication:
         if self._stop_task is not None:
             raise CoreConfigurationError(CoreFailureCode.ACTIVATION_FAILED)
         if self._start_task is None:
-            object.__setattr__(self, "_start_task", asyncio.create_task(self.core.start()))
+            from app.application import start_core
+
+            object.__setattr__(self, "_start_task", asyncio.create_task(start_core(self.core)))
         assert self._start_task is not None
         try:
             await asyncio.shield(self._start_task)
         except BaseException as error:
             self._start_task.cancel()
-            from app.bootstrap import _reap_cleanup
+            from app.application import _reap_cleanup
 
             try:
                 await _reap_cleanup(self._start_task)
@@ -183,7 +182,7 @@ class CoreApplication:
                 raise CoreConfigurationError(CoreFailureCode.ACTIVATION_FAILED) from None
 
     async def stop(self) -> None:
-        from app.bootstrap import _reap_cleanup
+        from app.application import _reap_cleanup
 
         if self._stop_task is None:
             object.__setattr__(self, "_stop_task", asyncio.create_task(self._close()))
@@ -197,23 +196,12 @@ class CoreApplication:
                 await self._start_task
             except (Exception, asyncio.CancelledError):
                 pass
-        await self._owned.close()
+        from app.application import stop_core
 
-
-def current_artifact_head() -> str:
-    """System起動側でcheckoutを照合し、dirty treeをexact HEAD証拠にしない。"""
-    try:
-        state = subprocess.run(
-            ["git", "status", "--porcelain"], cwd=ROOT, check=True, capture_output=True, text=True
-        )
-        head = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True, text=True
-        )
-        if state.stdout:
-            raise ValueError
-        return head.stdout.strip()
-    except Exception:
-        raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG) from None
+        try:
+            await stop_core(self.core)
+        finally:
+            await self._owned.close()
 
 
 def _read(root: Path, ref: str) -> bytes:
@@ -243,20 +231,18 @@ async def compose_core(
     precondition_bindings: tuple[PreconditionSourceBinding, ...],
     activity_bindings: Mapping[str, ActivityBindingAuthority],
     fast_rules: tuple[DeterministicAppraisalRule, ...],
-    provider_source: CoreProviderConfigurationSource | None,
-    provider_factory: CoreProviderLeaseFactory,
+    llm_adapters: tuple[LLMConnectionAdapter, ...],
     speech: SpeechProductionInputs | None = None,
     config_ref: str = CORE_RESOURCE,
     resource_root: Path = ROOT,
-    artifact_head: Callable[[], str] = current_artifact_head,
 ) -> CoreApplication:
-    from app.bootstrap import _compose_core, _reap_cleanup
+    from app.application import _compose_core, _reap_cleanup
     from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
 
     owned = _OwnedResources()
     stage = CoreFailureCode.INVALID_SYSTEM_CONFIG
     try:
-        if not isinstance(run_identity, CoreRunIdentity) or artifact_head() != run_identity.git_head:
+        if not isinstance(run_identity, CoreRunIdentity):
             raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
         config = load_core_config(_read(resource_root, config_ref))
         if activation_id != config.activation_id or fresh_start is not True:
@@ -269,12 +255,12 @@ async def compose_core(
             character_ref.definition_revision,
         ):
             raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
-        deployment = load_provider_deployment(
-            _read(resource_root, config.provider_deployment.resource_ref)
+        connections = load_llm_connections(
+            _read(resource_root, config.llm_connections.resource_ref)
         )
-        if (deployment.deployment_id, deployment.deployment_revision) != (
-            config.provider_deployment.deployment_id,
-            config.provider_deployment.deployment_revision,
+        if (connections.config_id, connections.config_revision) != (
+            config.llm_connections.config_id,
+            config.llm_connections.config_revision,
         ):
             raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG)
         stage = CoreFailureCode.INITIALIZATION_FAILED
@@ -289,7 +275,7 @@ async def compose_core(
             goals, activities, runtime.input_meaning_policy, BOUNDS
         )
         source_revision = reference.snapshot().context.source_context_revision
-        lifecycle = RuntimeLifecycle(clock, runtime.shutdown_policy)
+        lifecycle = ApplicationLifecycle(clock, runtime.shutdown_policy)
         owned.actions.append(lifecycle.close)
         stage = CoreFailureCode.APPRAISAL_CONFIGURATION_FAILED
         appraisal_config = load_appraisal_config(
@@ -333,21 +319,18 @@ async def compose_core(
             appraisal_descriptor(appraisal.appraisal_policy),
             executive_descriptor(executive.executive_policy),
         )
-        provider_configs, bindings = resolve_provider_configuration(
-            deployment, roles, provider_source
+        connections_registry = await create_llm_connection_registry(
+            connections, roles, llm_adapters
         )
-        mode = deployment.role_bindings[0].availability_mode
-        lease = await provider_factory(roles, provider_configs, bindings, mode)
-        if not isinstance(lease, CoreProviderLease):
-            raise CoreConfigurationError(stage)
-        owned.actions.append(lease.release)
-        if lease.bindings != bindings or lease.availability_mode != mode:
-            raise CoreConfigurationError(stage)
-        if resolve_provider_configuration(deployment, roles, provider_source) != (
-            provider_configs,
-            bindings,
-        ):
-            raise CoreConfigurationError(CoreFailureCode.PROVIDER_MAPPING_FAILED)
+        owned.actions.append(connections_registry.close)
+        llm = route_llm_connections(
+            connections_registry,
+            (
+                (roles[0], runtime.input_meaning_llm_connection_id),
+                (roles[1], appraisal_config.llm_connection_id),
+                (roles[2], executive_config.llm_connection_id),
+            ),
+        )
         stage = CoreFailureCode.COGNITION_COMPOSITION_FAILED
         speech_binding = None
         if speech is not None:
@@ -374,7 +357,7 @@ async def compose_core(
         core = _compose_core(
             runtime,
             character,
-            lease.port,
+            llm,
             goals,
             lifecycle=lifecycle,
             cognition=cognition,
@@ -392,7 +375,6 @@ async def compose_core(
         if (
             reference.snapshot().context.source_context_revision != source_revision
             or executive.requirements_owner.current_generation() != executive.initial_generation
-            or artifact_head() != run_identity.git_head
         ):
             raise CoreConfigurationError(stage)
         now = clock.now()
@@ -408,7 +390,14 @@ async def compose_core(
             appraisal.provenance,
             executive.provenance,
             attention_policy,
-            lease.bindings,
+            tuple(
+                LLMConnectionBinding(role.role_id, connection_id)
+                for role, connection_id in (
+                    (roles[0], runtime.input_meaning_llm_connection_id),
+                    (roles[1], appraisal_config.llm_connection_id),
+                    (roles[2], executive_config.llm_connection_id),
+                )
+            ),
             None if speech_binding is None else speech_binding.provenance,
         )
         return CoreApplication(core, snapshot, cognition, appraisal, executive, owned)
@@ -438,7 +427,7 @@ def _snapshot(
     appraisal: AppraisalInitializationProvenance,
     executive: ExecutiveConfigurationProvenance,
     attention: AttentionSchedulingPolicy,
-    providers: tuple[ProviderBindingSnapshot, ...],
+    llm_connections: tuple[LLMConnectionBinding, ...],
     speech: SpeechComponentProvenance | None = None,
 ) -> SystemCompositionSnapshot:
     return SystemCompositionSnapshot(
@@ -447,7 +436,6 @@ def _snapshot(
         config.config_id,
         config.config_revision,
         config.activation_id,
-        run.git_head,
         run.runtime_epoch,
         run.system_run_id,
         created_at.astimezone(timezone.utc),
@@ -464,7 +452,7 @@ def _snapshot(
                 speech,
             ),
         ),
-        providers,
+        llm_connections,
         (),
         executive.initial_generation_identity,
     )

@@ -101,7 +101,7 @@ async def setup(
             discarder = PreparedAudioDiscarder(value.pipeline.runtime, resources)
             value.pipeline.discarder = discarder
             value.pipeline.discard_port = resources
-            from app.composition.speech_preparation import PendingSpeechAudioOwner
+            from app.usecases.speech_preparation import PendingSpeechAudioOwner
             value.pipeline._audio = PendingSpeechAudioOwner(resources)
             from app.domain.speech_runtime.contracts import SpeechPresentationMode
             value.pipeline.output_modes = (SpeechPresentationMode.AUDIO_WITH_TEXT,)

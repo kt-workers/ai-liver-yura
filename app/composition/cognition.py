@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
-from app.composition.accepted_input import CoreAcceptedInputStore
+from app.usecases.accepted_inputs import CoreAcceptedInputStore
 from app.composition.appraisal import (
     AppraisalBrainModulePort,
     AppraisalBrainWorkPayload,
@@ -36,23 +36,25 @@ from app.domain.attention import (
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
-    BrainIntegrationRuntime,
-    BrainIntegrationWork,
-    BrainWorkAdmission,
     BrainWorkEnvelope,
     BrainWorkPriority,
     BrainWorkStatus,
 )
-from app.domain.brain_integration.runtime import BrainIntegrationWorkOutcome
+from app.usecases.brain_integration_runtime import (
+    BrainIntegrationRuntime,
+    BrainIntegrationWork,
+    BrainIntegrationWorkOutcome,
+    BrainWorkAdmission,
+)
 from app.domain.input_gateway import InputAdmission, InputAdmissionStatus, InputModality
 from app.domain.input_meaning import InputMeaningInterpretationResult
-from app.runtime.kernel import CancellationToken, RuntimeClock
+from app.infrastructure.scheduling import CancellationToken, RuntimeClock
 from app.usecases.attention import UserInteractionAttentionProjector
 
 if TYPE_CHECKING:
-    from app.composition.autonomous_core import CoreAutonomyDelivery
+    from app.usecases.autonomy import CoreAutonomyDelivery
     from app.composition.execution import CoreExecutionDelivery
-    from app.composition.memory_evidence import CoreMemoryEvidenceReader
+    from app.usecases.memory_evidence import CoreMemoryEvidenceReader
     from app.composition.reflection import CoreReflectionDelivery
     from app.composition.speech_configuration import CoreSpeechDelivery
 
@@ -181,7 +183,7 @@ class CoreCognitionDelivery:
             raise ValueError("通常認知の次処理を受付できませんでした")
 
     def _input_completed(self, work: BrainIntegrationWork, result: object) -> None:
-        from app.bootstrap import InputMeaningBrainWorkPayload
+        from app.application import InputMeaningBrainWorkPayload
 
         if not isinstance(result, InputMeaningInterpretationResult) or result.meaning is None:
             return
@@ -317,7 +319,7 @@ class CoreCognitionDelivery:
         root_trigger_id: str | None = None,
     ) -> BrainWorkAdmission:
         """正規Gatewayの採用イベントを、現在文脈と既存の有界受付へ渡す。"""
-        from app.bootstrap import InputMeaningBrainWorkPayload
+        from app.application import InputMeaningBrainWorkPayload
 
         if (
             not isinstance(admission, InputAdmission)

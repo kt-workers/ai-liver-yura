@@ -5,7 +5,7 @@ from enum import Enum
 from math import isfinite
 
 from app.domain.contracts.common import require_identifier, require_revision
-from app.runtime.lifecycle import DependencyRetryPolicy
+from app.usecases.lifecycle import DependencyRetryPolicy
 
 
 class TTSMappingMonotonicity(str, Enum):

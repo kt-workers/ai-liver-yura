@@ -61,6 +61,7 @@ class ExecutiveProductionConfig:
     schema_id: str
     config_id: str
     config_revision: int
+    llm_connection_id: str
     execution: LLMExecutionPolicy
     requirements: ExecutiveIntentRequirementsPolicy
     direct_route_id: str
@@ -83,6 +84,8 @@ class ExecutiveProductionConfig:
             self.config_id != "yura.executive.production"
             or type(self.config_revision) is not int
             or self.config_revision < 1
+            or not isinstance(self.llm_connection_id, str)
+            or not self.llm_connection_id.strip()
             or not isinstance(self.execution, LLMExecutionPolicy)
             or not isinstance(self.requirements, ExecutiveIntentRequirementsPolicy)
             or self.direct_route_id != DIRECT_ROUTE
@@ -295,7 +298,7 @@ def load_executive_config(source: str | bytes) -> ExecutiveProductionConfig:
         raw = yaml.load(source, Loader=_Loader)
         _acyclic(raw, set(), set())
         data = _mapping(
-            raw, "schema_id config_id config_revision execution requirements direct_activity"
+            raw, "schema_id config_id config_revision llm_connection_id execution requirements direct_activity"
         )
         execution = _mapping(
             data["execution"],
@@ -312,6 +315,7 @@ def load_executive_config(source: str | bytes) -> ExecutiveProductionConfig:
             _text(data["schema_id"]),
             _text(data["config_id"]),
             _integer(data["config_revision"]),
+            _text(data["llm_connection_id"]),
             LLMExecutionPolicy(
                 _text(execution["policy_id"]),
                 _integer(execution["policy_revision"]),

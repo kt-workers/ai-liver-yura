@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from app.composition.memory_persistence import CoreMemoryPersistenceBinding
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from app.domain.activity_execution.authority import ActivityExecutionAuthority
 from app.domain.activity_execution.contracts import ActivityExecutionRecord
 from app.domain.contracts import ExecutionStatus

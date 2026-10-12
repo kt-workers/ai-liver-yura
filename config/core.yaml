@@ -15,14 +15,15 @@ executive_config:
 attention_policy:
   policy_id: attention-scheduling-production
   policy_revision: 1
-provider_deployment:
-  resource_ref: config/provider_deployment_core.yaml
-  deployment_id: yura.provider-deployment.core
-  deployment_revision: 1
+llm_connections:
+  resource_ref: config/llm_connections.yaml
+  config_id: yura.llm-connections
+  config_revision: 1
 character_definition:
   resource_ref: config/character/yura.yaml
   character_id: yura
   definition_revision: 1
+input_meaning_llm_connection_id: yura.llm.default
 input_meaning:
   acceptance:
     policy_id: yura.input-meaning.acceptance

@@ -28,6 +28,7 @@ class AppraisalProductionConfig:
     schema_id: str
     config_id: str
     config_revision: int
+    llm_connection_id: str
     appraisal_policy: DeepAppraisalPolicy
     initialization_mode: str
     initial_state_revision: int
@@ -41,6 +42,7 @@ class AppraisalProductionConfig:
             or self.config_revision < 1
         ):
             raise ValueError("Appraisal構成の識別子またはリビジョンが不正です")
+        _text(self.llm_connection_id)
         if (
             self.initialization_mode != "fresh_empty"
             or type(self.initial_state_revision) is not int
@@ -126,7 +128,7 @@ def load_appraisal_config(source: str | bytes) -> AppraisalProductionConfig:
     try:
         data = _mapping(
             yaml.load(source, Loader=_Loader),
-            "schema_id config_id config_revision execution initial_state decay",
+            "schema_id config_id config_revision llm_connection_id execution initial_state decay",
         )
         execution = _mapping(
             data["execution"],
@@ -147,6 +149,7 @@ def load_appraisal_config(source: str | bytes) -> AppraisalProductionConfig:
             _text(data["schema_id"]),
             _text(data["config_id"]),
             _integer(data["config_revision"]),
+            _text(data["llm_connection_id"]),
             DeepAppraisalPolicy(
                 LLMExecutionPolicy(
                     _text(execution["policy_id"]),

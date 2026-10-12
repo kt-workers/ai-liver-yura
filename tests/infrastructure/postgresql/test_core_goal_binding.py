@@ -9,7 +9,7 @@ from dataclasses import replace
 
 import pytest
 
-from app.composition.goal_persistence import CoreGoalPersistenceBinding
+from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
 from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentStore
 from app.infrastructure.persistence import DurabilityStatus, PersistenceFailureCode

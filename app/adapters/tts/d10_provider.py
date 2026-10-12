@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from app.domain.contracts.common import utc_instant
 from app.domain.speech_performance import PerformanceAxis
-from app.runtime.lifecycle import DependencyRetryPolicy
+from app.usecases.lifecycle import DependencyRetryPolicy
 
 from .contracts import (
     PreparedAudioArtifact,

@@ -28,7 +28,7 @@ from app.infrastructure.persistence.postgresql_connection import (
     PostgresConnectionPolicy,
     PostgresEndpoint,
 )
-from app.runtime.lifecycle import DependencyRetryPolicy
+from app.usecases.lifecycle import DependencyRetryPolicy
 
 from .memory import _project
 from .persistence import PersistenceLabSettings, _boot, _state, _stop

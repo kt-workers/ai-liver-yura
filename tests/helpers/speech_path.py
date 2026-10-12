@@ -268,7 +268,7 @@ async def build_speech_path(
     )
     from pathlib import Path
 
-    from app.composition.accepted_input import CoreAcceptedInputStore
+    from app.usecases.accepted_inputs import CoreAcceptedInputStore
     from app.composition.cognition_configuration import CoreCognitionConfiguration
     from app.config.core import load_core_config
     from app.domain.appraisal import InternalStateReducer

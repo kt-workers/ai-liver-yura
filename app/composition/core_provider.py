@@ -105,7 +105,7 @@ class CoreProviderLease:
     _release_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
 
     async def release(self) -> None:
-        from app.bootstrap import _reap_cleanup
+        from app.application import _reap_cleanup
 
         if self._release_task is None:
             object.__setattr__(self, "_release_task", asyncio.create_task(self._release()))

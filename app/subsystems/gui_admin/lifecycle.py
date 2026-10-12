@@ -9,7 +9,7 @@ from typing import Protocol
 
 from app.config.gui_admin import GuiAdminProductionConfig
 from app.config.core import CoreConfig
-from app.runtime.kernel.clock import RuntimeClock
+from app.infrastructure.scheduling import RuntimeClock
 
 from .configuration_projection import CoreConfigurationReadModelProjector
 from .contracts import GuiAdminAvailability
