@@ -122,7 +122,10 @@ def _integer(value: object) -> int:
 
 
 def _number(value: object) -> float:
-    if type(value) not in (int, float) or not isfinite(value):
+    if type(value) not in (int, float):
+        invalid()
+    assert isinstance(value, (int, float))
+    if not isfinite(value):
         invalid()
     return float(value)
 

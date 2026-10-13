@@ -27,9 +27,11 @@ class OpenAIResponsesConnectionAdapter(LLMConnectionAdapter):
 
     async def connect(
         self,
-        connection: LLMConnectionConfig,
+        connection: object,
         descriptors: tuple[LLMRoleDescriptor, ...],
     ) -> tuple[LLMRolePort, Callable[[], Awaitable[None]]]:
+        if not isinstance(connection, LLMConnectionConfig):
+            raise ValueError("OpenAI接続の設定型が不正です")
         policies = _policies(connection.settings)
         configs = tuple(_role_config(descriptor, policies) for descriptor in descriptors)
         api_key = os.environ.get("YURA_OPENAI_API_KEY")

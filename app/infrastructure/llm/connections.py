@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from types import MappingProxyType
 
 from app.config.core_contracts import CoreConfigurationError, CoreFailureCode
@@ -18,21 +18,21 @@ class LLMConnectionRegistry:
 
     def __init__(
         self,
-        ports: MappingProxyType[str, LLMRolePort],
+        ports: Mapping[str, LLMRolePort],
         close_actions: tuple[Callable[[], Awaitable[None]], ...],
     ) -> None:
         self._ports: MappingProxyType[str, LLMRolePort]
         self._close_actions = tuple(close_actions)
         self._close_task: asyncio.Task[None] | None = None
-        ports = dict(ports)
-        if not ports or any(
+        port_values = dict(ports)
+        if not port_values or any(
             not isinstance(connection_id, str)
             or not connection_id.strip()
             or not callable(getattr(port, "invoke", None))
-            for connection_id, port in ports.items()
+            for connection_id, port in port_values.items()
         ):
             raise CoreConfigurationError(CoreFailureCode.PROVIDER_MAPPING_FAILED)
-        self._ports = MappingProxyType(ports)
+        self._ports = MappingProxyType(port_values)
 
     def port(self, connection_id: str) -> LLMRolePort:
         try:

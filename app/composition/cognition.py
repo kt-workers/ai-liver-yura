@@ -280,10 +280,10 @@ class CoreCognitionDelivery:
         elif dispatch.selected_source.kind is AttentionSourceKind.USER_INTERACTION:
             event_ids = (dispatch.selected_source.source_ref,)
         else:
-            selected_input = self._inputs.read_for_source(
+            source_input = self._inputs.read_for_source(
                 dispatch.selected_source, dispatch.reference.context.source_context_revision
             )
-            event_ids = (selected_input.event.envelope.event_id,)
+            event_ids = (source_input.event.envelope.event_id,)
         selected_input = self._inputs.read(
             event_ids[0], dispatch.reference.context.source_context_revision
         )

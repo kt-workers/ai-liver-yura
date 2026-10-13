@@ -186,7 +186,7 @@ class CoreAutonomyDelivery:
         raise ValueError("Goal所有者が型付きlifecycle事実を返しませんでした")
 
     def _submit_lifecycle_fact(self, work: BrainIntegrationWork, fact: object) -> None:
-        if not is_dataclass(fact):
+        if not is_dataclass(fact) or isinstance(fact, type):
             raise ValueError("Goal lifecycle事実の型が不正です")
         current = self._reference.snapshot()
         fact_id = getattr(fact, "fact_id", None)

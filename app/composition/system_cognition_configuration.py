@@ -249,7 +249,7 @@ async def compose_core(
     config_ref: str = CORE_RESOURCE,
     resource_root: Path = ROOT,
 ) -> CoreApplication:
-    from app.application import _compose_core, _reap_cleanup
+    from app.application import _compose_core, _reap_cleanup, stop_core
     from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
 
     owned = _OwnedResources()
@@ -378,9 +378,13 @@ async def compose_core(
             prepared_context=reference,
             prepared_clock=clock,
         )
-        # Foundationの終了をCoreへ移管して二重回収を防ぐ。
+        # 構築中の失敗にはCore全体の回収を登録し、正常返却時はアプリへ所有権を渡す。
         owned.actions.remove(lifecycle.close)
-        owned.actions.append(core.stop)
+
+        async def close_untransferred_core() -> None:
+            await stop_core(core)
+
+        owned.actions.append(close_untransferred_core)
         stage = CoreFailureCode.INITIALIZATION_FAILED
         if speech_binding is not None:
             speech_binding.transfer_to_core(core)
@@ -413,7 +417,9 @@ async def compose_core(
             ),
             None if speech_binding is None else speech_binding.provenance,
         )
-        return CoreApplication(core, snapshot, cognition, appraisal, executive, owned)
+        application = CoreApplication(core, snapshot, cognition, appraisal, executive, owned)
+        owned.actions.remove(close_untransferred_core)
+        return application
     except BaseException as error:
         try:
             await _reap_cleanup(asyncio.create_task(owned.close()))

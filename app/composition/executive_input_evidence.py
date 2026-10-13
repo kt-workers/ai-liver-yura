@@ -21,7 +21,11 @@ from app.domain.plan_execution.contracts import PlanExecutionScope
 from app.domain.plan_execution.progress_contracts import PlanProgressContext
 from app.domain.plugin_registry.authority import PluginRegistryAuthority
 from app.domain.speech_semantics_vocabulary import CommunicativeGoalCatalogView
-from app.usecases.accepted_inputs import CoreAcceptedInputStore
+from app.usecases.accepted_inputs import (
+    CoreAcceptedInput,
+    CoreAcceptedInputStore,
+    CoreAcceptedInternalInput,
+)
 from app.usecases.memory_evidence import CoreMemoryEvidenceReader
 
 
@@ -88,6 +92,7 @@ class CoreExecutiveInputEvidenceReader:
         if source.source_context_revision != revision:
             raise ValueError("選択された入力根拠の文脈が現在と一致しません")
         event_ids: tuple[str, ...]
+        inputs: tuple[CoreAcceptedInput | CoreAcceptedInternalInput, ...]
         if source.kind is AttentionSourceKind.USER_INTERACTION:
             event_ids = (source.source_ref,)
         elif source.kind is AttentionSourceKind.APPRAISAL:
