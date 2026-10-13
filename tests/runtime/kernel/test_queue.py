@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
+
+from app.domain.contracts import RevisionVector
 from app.infrastructure.scheduling import (
     BoundedWorkQueue,
     QueueAdmissionStatus,
@@ -8,8 +10,6 @@ from app.infrastructure.scheduling import (
     RuntimeWorkItem,
     WorkPriority,
 )
-
-from app.domain.contracts import RevisionVector
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 TEST_PRIORITY_BURST = 8

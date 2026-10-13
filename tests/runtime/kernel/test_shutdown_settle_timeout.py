@@ -2,6 +2,13 @@ import asyncio
 from datetime import datetime, timezone
 
 import pytest
+
+from app.domain.contracts import RevisionVector
+from app.domain.contracts.lifecycle import (
+    ApplicationShutdownError,
+    ApplicationShutdownPolicy,
+    ApplicationShutdownStage,
+)
 from app.infrastructure.scheduling import (
     FakeRuntimeClock,
     LaneErrorPolicy,
@@ -12,13 +19,6 @@ from app.infrastructure.scheduling import (
     RuntimeWorkItem,
     WorkPriority,
 )
-from app.domain.contracts.lifecycle import (
-    ApplicationShutdownError,
-    ApplicationShutdownPolicy,
-    ApplicationShutdownStage,
-)
-
-from app.domain.contracts import RevisionVector
 
 NOW = datetime(2026, 9, 1, tzinfo=timezone.utc)
 

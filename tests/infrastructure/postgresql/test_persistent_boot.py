@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 import yaml
-from app.application import build_persistent_core
 
+from app.application import build_persistent_core
 from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentSnapshot
 from app.domain.memory import MemoryWriteRequest
@@ -229,8 +229,8 @@ async def test_stop_reaps_memory_before_database_close(
     monkeypatch: pytest.MonkeyPatch,
     timeout: bool,
 ) -> None:
-    from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
     from app.domain.contracts.lifecycle import ApplicationShutdownError, ApplicationShutdownStage
+    from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 
     baseline = asyncio.all_tasks()
     if timeout:
@@ -294,10 +294,9 @@ async def test_missing_database_keeps_core_running_with_typed_failure(
 ) -> None:
     from dataclasses import replace
 
-    from app.usecases.lifecycle import DependencyState
-
     from app.domain.brain_integration import BrainWorkStatus
     from app.domain.input_meaning import InputMeaningInterpretationResult
+    from app.usecases.lifecycle import DependencyState
     from tests.system_integration.test_early_boot import work
 
     baseline = asyncio.all_tasks()

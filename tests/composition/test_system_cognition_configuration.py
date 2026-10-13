@@ -9,7 +9,6 @@ from typing import Any
 
 import pytest
 import yaml
-from app.infrastructure.scheduling import SystemRuntimeClock
 
 from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
@@ -21,6 +20,7 @@ from app.domain.attention import AttentionTurnStore
 from app.domain.contracts.finalization import FinalizationError
 from app.domain.contracts.preconditions import PreconditionSourceRouter
 from app.domain.plugin_registry import PluginRegistryAuthority
+from app.infrastructure.scheduling import SystemRuntimeClock
 
 
 async def unavailable_lease(

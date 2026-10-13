@@ -5,7 +5,6 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from app.infrastructure.scheduling.clock import SystemRuntimeClock
 
 from app import application as bootstrap
 from app.composition.execution import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
@@ -35,6 +34,7 @@ from app.domain.plugin_integration import (
     PluginIntegrationOperationalPolicy,
 )
 from app.domain.plugin_registry import PluginRegistryAuthority
+from app.infrastructure.scheduling.clock import SystemRuntimeClock
 from tests.domain.activity_binding import test_binding
 from tests.domain.executive.test_executive import NOW
 from tests.domain.plugin_registry.test_plugin_registry_adjacent import (

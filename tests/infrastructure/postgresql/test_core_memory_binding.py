@@ -3,7 +3,6 @@
 import asyncio
 
 import pytest
-from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 
 from app.domain.memory import MemoryDisposition, MemoryKind, MemoryWriteRequest, MemoryWriteResult
 from app.domain.memory_reflection import (
@@ -19,6 +18,7 @@ from app.infrastructure.persistence import (
     PostgresPersistenceRuntime,
     SnapshotPersistenceRetryPolicy,
 )
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from tests.domain.memory import test_memory_store_retrieval as memory
 from tests.domain.memory.policy_fixtures import retrieval_policy
 from tests.domain.memory_reflection import test_memory_reflection as reflection

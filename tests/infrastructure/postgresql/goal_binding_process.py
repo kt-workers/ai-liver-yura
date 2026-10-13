@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 from app.application import build_persistent_core
-
 from app.domain.executive import GoalTransitionOperation
 from app.domain.memory import MemoryWriteRequest
 from app.infrastructure.persistence import DurabilityStatus

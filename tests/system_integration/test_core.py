@@ -4,8 +4,8 @@ import asyncio
 from typing import Any
 
 import pytest
-from app.application import build_core
 
+from app.application import build_core
 from app.composition.core_provider import CoreProviderLease
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.executive import GoalTransitionOperation

@@ -6,15 +6,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
-from app.infrastructure.scheduling import (
-    CancellationToken,
-    FakeRuntimeClock,
-    LaneErrorPolicy,
-    QueuePolicy,
-    RuntimeLanePolicy,
-    RuntimeSchedulerPolicy,
-)
-from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
 
 from app.domain.brain_integration import (
     BrainIntegrationLane,
@@ -24,6 +15,15 @@ from app.domain.brain_integration import (
     BrainWorkEnvelope,
     BrainWorkPriority,
     BrainWorkStatus,
+)
+from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
+from app.infrastructure.scheduling import (
+    CancellationToken,
+    FakeRuntimeClock,
+    LaneErrorPolicy,
+    QueuePolicy,
+    RuntimeLanePolicy,
+    RuntimeSchedulerPolicy,
 )
 from app.usecases.brain_integration_runtime import (
     BrainIntegrationRuntime,

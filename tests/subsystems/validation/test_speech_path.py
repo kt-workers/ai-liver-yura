@@ -10,7 +10,6 @@ from typing import Any
 import pytest
 
 from app.domain.activity_execution.observation import ObservedExecutionFactRecord
-from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.subsystems.validation.contracts import Gate, LabMode, RunStatus
 from app.subsystems.validation.runtime import RunContext, ValidationRunner
 from app.subsystems.validation.speech_path import (
@@ -21,6 +20,7 @@ from app.subsystems.validation.speech_path import (
     SpeechPathSession,
     speech_path_target,
 )
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from tests.helpers.speech_path import build_speech_path
 from tests.subsystems.validation.test_runtime import FIXTURE, POLICY, PROVENANCE, spec
 

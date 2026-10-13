@@ -5,8 +5,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
-from app.infrastructure.scheduling import FakeRuntimeClock
 
 from app.composition.reflection import CoreReflectionConfiguration, CoreReflectionDelivery
 from app.domain.activity_execution import ActivityExecutionAuthority
@@ -15,12 +13,14 @@ from app.domain.brain_integration import (
     BrainIntegrationModule,
     BrainWorkStatus,
 )
-from app.usecases.brain_integration_runtime import BrainIntegrationRuntime
 from app.domain.contracts.semantic_subject import SemanticSubjectKind
 from app.domain.llm import LLMRoleRequest, LLMRoleResult
 from app.domain.memory_reflection import ReflectionAcceptancePolicy, ReflectionCandidateStatus
 from app.domain.memory_reflection.llm_roles import proposal_to_wire_v3
 from app.infrastructure.persistence import PostgresEndpoint
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
+from app.infrastructure.scheduling import FakeRuntimeClock
+from app.usecases.brain_integration_runtime import BrainIntegrationRuntime
 from app.usecases.memory_evidence import (
     CoreMemoryEvidenceConfiguration,
     CoreMemoryEvidenceReader,

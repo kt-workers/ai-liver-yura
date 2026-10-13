@@ -8,10 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-from app.infrastructure.scheduling.clock import FakeRuntimeClock
 
 from app.config.core import load_core_config
 from app.config.gui_admin import load_gui_admin_config
+from app.infrastructure.scheduling.clock import FakeRuntimeClock
 from app.subsystems.gui_admin.configuration_projection import (
     CoreConfigurationReadModelProjector,
 )

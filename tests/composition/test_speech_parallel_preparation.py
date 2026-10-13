@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
-from app.infrastructure.scheduling import CancellationToken
 
 from app.composition.presentation_notification import CoreSpeechProductionOwnerConnection
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
@@ -17,6 +16,7 @@ from app.domain.input_gateway.normalizer import (
 )
 from app.domain.speech_runtime.contracts import SpeechPresentationMode, TTSPreparationMode
 from app.domain.speech_runtime.discard import PreparedAudioDiscarder
+from app.infrastructure.scheduling import CancellationToken
 from app.usecases.speech_preparation import (
     PendingSpeechAudioOwner,
     SpeechPreparationCleanupError,
@@ -543,7 +543,6 @@ async def test_explicit_deferred_policy_does_not_speculate() -> None:
 @pytest.mark.parametrize("when", ["return", "accepted"])
 async def test_token_cancellation_at_transfer_boundary(when: str) -> None:
     from app.infrastructure.scheduling.contracts import CancellationRecord
-
     from tests.helpers.speech_path import now
 
     v = await setup()

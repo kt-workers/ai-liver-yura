@@ -19,7 +19,6 @@ from app.domain.brain_integration import (
     BrainWorkEnvelope,
     BrainWorkPriority,
 )
-from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.character_language import (
     CharacterLanguageAuthority,
@@ -44,6 +43,7 @@ from app.domain.speech_runtime.presentation import SpeechPresentationExecutor
 from app.domain.speech_runtime.runtime import SpeechRuntime
 from app.domain.speech_semantics import SpeechSemanticAuthority, SpeechSemanticsPlanner
 from app.subsystems.validation.speech_path import SpeechPathTasks
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from tests.domain.attention.test_attention_turn_store import signal, transition
 from tests.domain.character_language.test_character_language import candidate, current, profile
 from tests.domain.character_language.test_character_language import policy as character_policy
@@ -268,16 +268,15 @@ async def build_speech_path(
     )
     from pathlib import Path
 
-    from app.infrastructure.scheduling import SystemRuntimeClock
-
     from app.composition.cognition_configuration import CoreCognitionConfiguration
     from app.config.core import load_core_config
     from app.domain.appraisal import InternalStateReducer
-    from app.usecases.brain_integration_runtime import BrainIntegrationRuntime
     from app.domain.contracts.preconditions import PreconditionSourceRouter
     from app.domain.executive import ExecutiveIntentRequirementsPolicy, ExecutiveRequirementsOwner
     from app.domain.plugin_registry import PluginRegistryAuthority
+    from app.infrastructure.scheduling import SystemRuntimeClock
     from app.usecases.accepted_inputs import CoreAcceptedInputStore
+    from app.usecases.brain_integration_runtime import BrainIntegrationRuntime
     from tests.domain.appraisal.test_appraisal_paths import policy as appraisal_policy
     from tests.domain.appraisal.test_appraisal_paths import state
     from tests.domain.executive.test_executive import policy as executive_policy

@@ -3,8 +3,13 @@
 import asyncio
 
 import pytest
-from app.infrastructure.scheduling import FakeRuntimeClock, QueuePolicy, RuntimeHealth, WorkDisposition
 
+from app.infrastructure.scheduling import (
+    FakeRuntimeClock,
+    QueuePolicy,
+    RuntimeHealth,
+    WorkDisposition,
+)
 from tests.runtime.kernel.test_coordinator import (
     NOW,
     RuntimeCoordinator,

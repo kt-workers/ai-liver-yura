@@ -7,7 +7,6 @@ from datetime import timedelta
 from typing import cast
 
 import pytest
-from app.infrastructure.scheduling.clock import FakeRuntimeClock
 
 from app.domain.activity_execution import CapabilityBinding
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
@@ -37,6 +36,7 @@ from app.domain.plan_execution.contracts import (
     PlanExecutionScope,
     PlanStepExecutionBinding,
 )
+from app.infrastructure.scheduling.clock import FakeRuntimeClock
 from tests.domain.executive.test_executive import (
     REVISIONS,
     candidate,

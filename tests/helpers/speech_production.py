@@ -1,7 +1,5 @@
 """Speech production試験で実Ownerを明示構築する。"""
 
-from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
-
 from app.composition.speech_semantics_sources import (
     ProductionSpeechSources,
 )
@@ -21,6 +19,7 @@ from app.domain.goals.store import GoalCommitmentStore
 from app.domain.memory import MemoryStoreAuthority
 from app.domain.memory.semantic_assertions import MemorySemanticAssertionEntry
 from app.infrastructure.persistence import PersistenceOperationResult
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from tests.domain.executive.test_executive import NOW
 from tests.domain.memory.test_memory_store_retrieval import authority
 from tests.helpers.goal_semantics import semantic_spec

@@ -17,12 +17,12 @@ from app.domain.brain_integration import (
     BrainIntegrationModule,
     BrainWorkStatus,
 )
-from app.usecases.brain_integration_runtime import BrainWorkAdmissionStatus
 from app.domain.contracts import ExecutionStatus
 from app.domain.executive import GoalTransitionOperation
 from app.domain.llm import LLMRoleRequest, LLMRoleResult
 from app.domain.memory_reflection import ReflectionAcceptancePolicy
 from app.infrastructure.persistence import PostgresEndpoint
+from app.usecases.brain_integration_runtime import BrainWorkAdmissionStatus
 from tests.domain.activity_execution.test_activity_execution import NOW, invocation, preflight
 from tests.domain.brain_integration.test_runtime import envelope, work
 from tests.domain.goals.test_goal_commitment_store import apply_goal

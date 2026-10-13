@@ -5,8 +5,6 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from app.usecases.brain_integration_runtime import BrainIntegrationWorkOutcome
-from app.infrastructure.scheduling.clock import FakeRuntimeClock
 
 from app.composition.execution import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
 from app.domain.activity_execution import (
@@ -26,6 +24,8 @@ from app.domain.input_gateway.normalizer import InputAdmissionLedger, InputNorma
 from app.domain.plan_execution.contracts import PlanExecutionPolicy
 from app.domain.plan_execution.coordinator import PlanExecutionCoordinator
 from app.domain.plan_execution.owner import PlanExecutionCurrentState, PlanExecutionOwner
+from app.infrastructure.scheduling.clock import FakeRuntimeClock
+from app.usecases.brain_integration_runtime import BrainIntegrationWorkOutcome
 from tests.domain.activity_binding.test_binding import direct_fixture
 from tests.domain.executive.test_executive import NOW
 from tests.helpers.executive_requirements import fence_clock, make_authority

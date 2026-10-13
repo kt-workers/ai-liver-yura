@@ -5,7 +5,6 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from app.infrastructure.scheduling import CancellationToken
 
 from app.composition.executive import ExecutiveBrainModulePort, ExecutiveBrainWorkPayload
 from app.domain.brain_integration import (
@@ -15,6 +14,7 @@ from app.domain.brain_integration import (
     BrainWorkPriority,
     BrainWorkStatus,
 )
+from app.infrastructure.scheduling import CancellationToken
 from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from tests.domain.brain_integration.test_runtime import FakePort, policy
 from tests.system_integration.test_core_attention import offer_user

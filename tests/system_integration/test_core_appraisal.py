@@ -7,7 +7,6 @@ from datetime import timedelta
 from typing import Any, cast
 
 import pytest
-from app.infrastructure.scheduling import CancellationToken, FakeRuntimeClock
 
 from app.composition.appraisal import (
     AppraisalBrainModulePort,
@@ -22,13 +21,14 @@ from app.domain.brain_integration import (
     BrainWorkPriority,
     BrainWorkStatus,
 )
-from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from app.domain.contracts import EventEnvelope, RevisionVector
 from app.domain.contracts.common import freeze_json
 from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentStore
 from app.domain.input_meaning import StructuredInputMeaning
 from app.domain.llm import LLMRoleRequest, LLMRoleResult
+from app.infrastructure.scheduling import CancellationToken, FakeRuntimeClock
+from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from tests.domain.appraisal.test_appraisal_paths import NOW, event, meaning, policy, result, state
 from tests.domain.brain_integration.test_runtime import FakePort
 from tests.domain.brain_integration.test_runtime import policy as runtime_policy
