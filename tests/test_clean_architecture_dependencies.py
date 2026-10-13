@@ -32,7 +32,8 @@ def test_appraisal_and_input_meaning_domain_do_not_depend_on_outer_layers() -> N
                         and name != "app.domain"
                         and not name.startswith("app.domain.")
                     ):
-                        violations.append(f"{path.relative_to(_ROOT)}:{getattr(node, 'lineno', 0)}: {name}")
+                        location = getattr(node, "lineno", 0)
+                        violations.append(f"{path.relative_to(_ROOT)}:{location}: {name}")
     assert not violations, "Domainから外側への逆依存:\n" + "\n".join(violations)
 
 
