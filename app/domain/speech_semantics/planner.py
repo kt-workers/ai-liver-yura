@@ -32,7 +32,7 @@ from app.domain.speech_semantics_vocabulary import (
     SpeechSemanticMeaningPolicy,
     require_meaning_policy,
 )
-from app.usecases.ports.llm import LLMRolePort
+from app.domain.llm.ports import LLMRolePort
 
 from .authority import SpeechSemanticAuthority
 from .bounds import (

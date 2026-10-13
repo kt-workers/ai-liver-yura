@@ -1,9 +1,5 @@
-from __future__ import annotations
+"""既存利用者向けLLM Portの互換参照。定義はDomainが所有する。"""
 
-from typing import Protocol
+from app.domain.llm.ports import LLMRolePort
 
-from app.domain.llm import LLMRoleRequest, LLMRoleResult
-
-
-class LLMRolePort(Protocol):
-    async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult: ...
+__all__ = ["LLMRolePort"]
