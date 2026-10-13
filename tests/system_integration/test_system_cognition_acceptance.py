@@ -18,7 +18,6 @@ from app.composition.system_cognition_configuration import (
     CoreRunIdentity,
 )
 from app.config.core import load_core_config
-from app.config.core import load_core_config
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, RevisionVector
@@ -164,7 +163,8 @@ class SystemRun:
             self.registration.requirements.current_generation() is core.executive.initial_generation
         )
         assert (
-            core.executive.initial_generation.serial == component.executive.initial_generation_serial
+            core.executive.initial_generation.serial
+            == component.executive.initial_generation_serial
         )
         assert len(leases) == 1 and snapshot.provider_bindings == leases[0].bindings
         registered = {r.role_id: r for r in roles}

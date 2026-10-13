@@ -284,7 +284,9 @@ class CoreCognitionDelivery:
                 dispatch.selected_source, dispatch.reference.context.source_context_revision
             )
             event_ids = (selected_input.event.envelope.event_id,)
-        selected_input = self._inputs.read(event_ids[0], dispatch.reference.context.source_context_revision)
+        selected_input = self._inputs.read(
+            event_ids[0], dispatch.reference.context.source_context_revision
+        )
         selected_trace = self.brain.trace(selected_input.event.envelope.trace_id)
         envelope = replace(
             work.envelope,

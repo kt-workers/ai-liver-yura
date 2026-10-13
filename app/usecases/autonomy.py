@@ -96,10 +96,16 @@ class CoreAutonomyDelivery:
             InputAdmissionLedger(), bounds_policy=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
         )
         self._runtime_source = InputSourceState(
-            "core_runtime", "core_runtime", CapabilityAvailability.AVAILABLE, InputPermission.NOT_REQUIRED
+            "core_runtime",
+            "core_runtime",
+            CapabilityAvailability.AVAILABLE,
+            InputPermission.NOT_REQUIRED,
         )
         self._goal_source = InputSourceState(
-            "goal_commitment", "goal_commitment", CapabilityAvailability.AVAILABLE, InputPermission.NOT_REQUIRED
+            "goal_commitment",
+            "goal_commitment",
+            CapabilityAvailability.AVAILABLE,
+            InputPermission.NOT_REQUIRED,
         )
         self._started = False
 
@@ -117,10 +123,15 @@ class CoreAutonomyDelivery:
                 "source_state_changed",
                 self._clock.now(),
                 "core-runtime-started",
-                RevisionVector(current.context.source_context_revision, current.goals.goal_revision),
+                RevisionVector(
+                    current.context.source_context_revision,
+                    current.goals.goal_revision,
+                ),
                 {},
                 lifecycle_change=InputSourceLifecycleChange(
-                    CapabilityAvailability.UNAVAILABLE, InputPermission.NOT_REQUIRED, "runtime_started"
+                    CapabilityAvailability.UNAVAILABLE,
+                    InputPermission.NOT_REQUIRED,
+                    "runtime_started",
                 ),
             )
         )
@@ -141,7 +152,10 @@ class CoreAutonomyDelivery:
                 "goal_commitment_review",
                 self._clock.now(),
                 f"autonomy-start-{trigger_id}",
-                RevisionVector(current.context.source_context_revision, current.goals.goal_revision),
+                RevisionVector(
+                    current.context.source_context_revision,
+                    current.goals.goal_revision,
+                ),
                 freeze_json(payload),
             )
         )
@@ -192,7 +206,10 @@ class CoreAutonomyDelivery:
                 "goal_commitment_lifecycle",
                 self._clock.now(),
                 work.envelope.trace_id,
-                RevisionVector(current.context.source_context_revision, current.goals.goal_revision),
+                RevisionVector(
+                    current.context.source_context_revision,
+                    current.goals.goal_revision,
+                ),
                 freeze_json(payload),
                 correlation_id=work.envelope.trigger_id,
                 causation_event_id=work.envelope.source_event_ids[0],

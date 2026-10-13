@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from weakref import WeakKeyDictionary
 
-from app.application import CoreComponents, stop_core
+from app.application import CoreComponents
 from app.domain.activity_execution import (
     ActivityExecutionPort,
     ActivityExecutionRecord,

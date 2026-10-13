@@ -298,7 +298,9 @@ def load_executive_config(source: str | bytes) -> ExecutiveProductionConfig:
         raw = yaml.load(source, Loader=_Loader)
         _acyclic(raw, set(), set())
         data = _mapping(
-            raw, "schema_id config_id config_revision llm_connection_id execution requirements direct_activity"
+            raw,
+            "schema_id config_id config_revision llm_connection_id execution "
+            "requirements direct_activity",
         )
         execution = _mapping(
             data["execution"],

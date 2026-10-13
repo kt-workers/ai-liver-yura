@@ -20,7 +20,13 @@ from app.subsystems.gui_admin.contracts import GuiAdminOperationalPolicy
 
 def test_projection_uses_injected_generation_and_excludes_private_configuration() -> None:
     config = load_core_config(Path("config/core.yaml").read_text())
-    config = replace(config, config_revision=7, character_definition.resource_ref="private-not-for-browser")
+    config = replace(
+        config,
+        config_revision=7,
+        character_definition=replace(
+            config.character_definition, resource_ref="private-not-for-browser"
+        ),
+    )
     clock = FakeRuntimeClock(datetime(2026, 9, 22, tzinfo=timezone.utc))
     projector = CoreConfigurationReadModelProjector(
         config, clock, GuiAdminOperationalPolicy()

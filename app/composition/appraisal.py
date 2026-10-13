@@ -36,7 +36,7 @@ from app.domain.contracts.snapshots import (
 )
 from app.domain.input_meaning import StructuredInputMeaning
 from app.infrastructure.scheduling import CancellationToken, RuntimeClock
-from app.usecases.appraisal import DeepAppraisalInterpreter, DeepAppraisalLiveStatePort
+from app.usecases.appraisal import DeepAppraisalInterpreter
 from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.usecases.ports.llm import LLMRolePort
 
@@ -263,7 +263,9 @@ class AppraisalBrainModulePort:
         require_identifier(payload.request_id, "request_id")
         if payload.meaning is not None and not isinstance(payload.meaning, StructuredInputMeaning):
             raise ValueError("評価へ渡す入力意味が不正です")
-        if payload.lifecycle is not None and not isinstance(payload.lifecycle, LifecycleAppraisalInput):
+        if payload.lifecycle is not None and not isinstance(
+            payload.lifecycle, LifecycleAppraisalInput
+        ):
             raise ValueError("評価へ渡すlifecycle入力が不正です")
         if (
             work.module is not BrainIntegrationModule.APPRAISAL

@@ -331,7 +331,9 @@ async def test_speech_provider_publication_factory_inputs_preserve_core_boundari
     )
     assert unconfigured is not None
     monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
-    lease = await create_core_provider_lease(*unconfigured.request.provider_bindings.factory_inputs())
+    lease = await create_core_provider_lease(
+        *unconfigured.request.provider_bindings.factory_inputs()
+    )
     assert isinstance(lease.port, UnavailableLLMRolePort)
     assert lease.bindings == unconfigured.request.provider_bindings.bindings
     await lease.release()

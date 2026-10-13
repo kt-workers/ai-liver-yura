@@ -22,7 +22,9 @@ from app.domain.contracts.preconditions import PreconditionSourceRouter
 from app.domain.plugin_registry import PluginRegistryAuthority
 from app.runtime.kernel import SystemRuntimeClock
 
-async def unavailable_lease(roles: Any, configs: Any, bindings: Any, mode: str) -> CoreProviderLease:
+async def unavailable_lease(
+    roles: Any, configs: Any, bindings: Any, mode: str
+) -> CoreProviderLease:
     assert not configs
 
     async def release() -> None:

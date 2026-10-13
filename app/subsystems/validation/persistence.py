@@ -17,7 +17,10 @@ from typing import Any, TypeVar
 from uuid import uuid4
 
 from app.application import CoreComponents, build_persistent_core, stop_core
-from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding, GoalPersistenceCommitResult
+from app.infrastructure.persistence.goal_binding import (
+    CoreGoalPersistenceBinding,
+    GoalPersistenceCommitResult,
+)
 from app.config.core import load_core_config
 from app.domain.contracts.common import JsonValue, freeze_json, thaw_json
 from app.domain.executive import CommittedExecutiveDecision
