@@ -17,7 +17,7 @@ from app.infrastructure.persistence import (
 from app.infrastructure.persistence.postgresql_connection import PostgresDatabase, PostgresEndpoint
 from app.infrastructure.persistence.runtime import PostgresPersistenceRuntime
 from app.infrastructure.scheduling import SystemRuntimeClock
-from app.usecases.lifecycle import DependencyState, ApplicationLifecycle
+from app.usecases.lifecycle import ApplicationLifecycle, DependencyState
 from tests.domain.goals.test_goal_commitment_store import (
     commitment_transition,
     decision,

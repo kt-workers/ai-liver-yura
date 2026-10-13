@@ -21,10 +21,10 @@ from app.infrastructure.scheduling import (
     RuntimeLanePolicy as KernelRuntimeLanePolicy,
 )
 from app.usecases.lifecycle import (
+    ApplicationLifecycle,
     DependencyFailure,
     DependencyRetryPolicy,
     DependencyState,
-    ApplicationLifecycle,
 )
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)

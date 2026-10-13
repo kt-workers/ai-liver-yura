@@ -461,8 +461,8 @@ def test_descriptor_and_interpreter_receive_the_same_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from app.domain.input_meaning import InputMeaningPolicy
-from app.usecases.input_meaning import InputMeaningLiveContextPort
     from app.domain.llm import LLMRoleDescriptor
+    from app.usecases.input_meaning import InputMeaningLiveContextPort
     from app.usecases.ports.llm import LLMRolePort
 
     no_provider(monkeypatch)
