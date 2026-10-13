@@ -6,15 +6,22 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from typing import Protocol
 
+from app.domain.attention import AttentionSource, AttentionTurnStore
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import CapabilityAvailability, RevisionVector
 from app.domain.contracts.common import freeze_json
+from app.domain.contracts.time import Clock
 from app.domain.executive import CommittedExecutiveDecision
-from app.domain.goals import GoalCommitmentCommitResult, GoalCommitmentSnapshot, autonomy_triggers
-from app.domain.goals import CommitmentLifecycleProjectionFact, GoalLifecycleProjectionFact
-from app.usecases.attention import CommitmentAttentionProjector, GoalAttentionProjector
-from app.usecases.attention.projectors import AttentionProjectionEnvelope
+from app.domain.goals import (
+    CommitmentLifecycleProjectionFact,
+    GoalCommitmentCommitResult,
+    GoalCommitmentSnapshot,
+    GoalContextView,
+    GoalLifecycleProjectionFact,
+    autonomy_triggers,
+)
 from app.domain.input_gateway import (
+    InputAdmission,
     InputAdmissionLedger,
     InputAdmissionStatus,
     InputModality,
@@ -24,7 +31,11 @@ from app.domain.input_gateway import (
     InputSourceLifecycleChange,
     InputSourceState,
 )
-from app.infrastructure.scheduling import RuntimeClock
+from app.domain.input_meaning import ReferenceContext
+from app.usecases.attention import CommitmentAttentionProjector, GoalAttentionProjector
+from app.usecases.attention.projectors import AttentionProjectionEnvelope
+from app.usecases.brain_integration_runtime import BrainIntegrationWork, BrainWorkAdmission
+
 
 class GoalOwner(Protocol):
     def apply(self, decision: CommittedExecutiveDecision) -> object: ...
@@ -33,17 +44,36 @@ class GoalOwner(Protocol):
 
 
 class AutonomyCognitionPort(Protocol):
-    """自律入力を認知へ渡す最小の入口。"""
+    """自律入力の受付と、注意状態への公開入口を抽象化する。"""
 
-    def submit_input(self, admission: object) -> object: ...
+    @property
+    def attention_owner(self) -> AttentionTurnStore: ...
 
-    def register_internal_source(self, source: object, event_id: str) -> None: ...
+    def submit_input(
+        self,
+        admission: InputAdmission,
+        *,
+        deadline_at: datetime | None = None,
+        root_trigger_id: str | None = None,
+    ) -> BrainWorkAdmission: ...
+
+    def register_internal_source(self, source: AttentionSource, event_id: str) -> None: ...
+
+
+class AutonomyReferenceSnapshot(Protocol):
+    """現在文脈とGoal世代だけを公開する読み取りモデル。"""
+
+    @property
+    def context(self) -> ReferenceContext: ...
+
+    @property
+    def goals(self) -> GoalContextView: ...
 
 
 class AutonomyReferencePort(Protocol):
-    """自律入力の作成に必要な現在文脈だけを読む。"""
+    """自律入力を構成する際の現在状態を取得する。"""
 
-    def snapshot(self) -> object: ...
+    def snapshot(self) -> AutonomyReferenceSnapshot: ...
 
 
 class CoreAutonomyDelivery:
@@ -54,7 +84,7 @@ class CoreAutonomyDelivery:
         goals: GoalOwner,
         cognition: AutonomyCognitionPort,
         reference: AutonomyReferencePort,
-        clock: RuntimeClock,
+        clock: Clock,
     ) -> None:
         if not hasattr(goals, "apply") or not hasattr(goals, "snapshot"):
             raise ValueError("自律配送には既存のGoal所有者が必要です")
