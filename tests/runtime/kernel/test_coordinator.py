@@ -20,6 +20,7 @@ from app.runtime.kernel import (
 from app.runtime.shutdown import RuntimeShutdownPolicy
 
 from app.domain.contracts import RevisionVector
+
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 TEST_SCHEDULER_POLICY = RuntimeSchedulerPolicy("test.scheduler", 1, 8)
 TEST_SHUTDOWN_POLICY = RuntimeShutdownPolicy("test.shutdown", 1, 1.0, 1.0, 1.0, 1.0)

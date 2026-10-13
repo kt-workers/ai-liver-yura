@@ -295,6 +295,7 @@ async def test_missing_database_keeps_core_running_with_typed_failure(
     from dataclasses import replace
 
     from app.runtime.lifecycle import DependencyState
+
     from app.domain.brain_integration import BrainWorkStatus
     from app.domain.input_meaning import InputMeaningInterpretationResult
     from tests.system_integration.test_early_boot import work

@@ -269,6 +269,7 @@ async def build_speech_path(
     from pathlib import Path
 
     from app.runtime.kernel import SystemRuntimeClock
+
     from app.composition.cognition_configuration import CoreCognitionConfiguration
     from app.config.core import load_core_config
     from app.domain.appraisal import InternalStateReducer

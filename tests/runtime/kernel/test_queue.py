@@ -10,6 +10,7 @@ from app.runtime.kernel import (
 )
 
 from app.domain.contracts import RevisionVector
+
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 TEST_PRIORITY_BURST = 8
 

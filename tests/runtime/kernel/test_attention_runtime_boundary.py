@@ -29,6 +29,7 @@ from app.domain.attention import (
     ExecutiveTriggerEligibility,
 )
 from app.domain.contracts import RevisionVector
+
 NOW = datetime(2026, 8, 16, tzinfo=timezone.utc)
 TEST_SCHEDULER_POLICY = RuntimeSchedulerPolicy("test.scheduler", 1, 8)
 TEST_SHUTDOWN_POLICY = RuntimeShutdownPolicy("test.attention.shutdown", 1, 1.0, 1.0, 1.0, 1.0)

@@ -543,6 +543,7 @@ async def test_explicit_deferred_policy_does_not_speculate() -> None:
 @pytest.mark.parametrize("when", ["return", "accepted"])
 async def test_token_cancellation_at_transfer_boundary(when: str) -> None:
     from app.runtime.kernel.contracts import CancellationRecord
+
     from tests.helpers.speech_path import now
 
     v = await setup()

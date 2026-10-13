@@ -23,6 +23,7 @@ from app.bootstrap import (
 )
 from app.runtime.kernel import CancellationToken, SystemRuntimeClock
 from app.runtime.lifecycle import RuntimeLifecycle
+
 from app import bootstrap
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm import production

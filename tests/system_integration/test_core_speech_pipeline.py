@@ -266,6 +266,7 @@ async def test_full_owner_pipeline_and_presentation_feedback(slow_stage: str | N
     from pathlib import Path
 
     from app.runtime.kernel import SystemRuntimeClock
+
     from app.composition.cognition_configuration import CoreCognitionConfiguration
     from app.config.core import load_core_config
     from app.domain.appraisal import InternalStateReducer

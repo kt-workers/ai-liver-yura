@@ -22,6 +22,7 @@ from app.domain.contracts.finalization import FinalizationError
 from app.domain.contracts.preconditions import PreconditionSourceRouter
 from app.domain.plugin_registry import PluginRegistryAuthority
 
+
 async def unavailable_lease(
     roles: Any, configs: Any, bindings: Any, mode: str
 ) -> CoreProviderLease:

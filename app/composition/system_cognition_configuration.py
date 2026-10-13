@@ -55,7 +55,6 @@ from app.infrastructure.scheduling import RuntimeClock
 from app.usecases.lifecycle import ApplicationLifecycle
 from app.usecases.ports.llm import LLMConnectionAdapter
 
-
 if TYPE_CHECKING:
     from app.application import CoreComponents
 

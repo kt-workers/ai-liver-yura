@@ -70,7 +70,6 @@ from app.usecases.input_meaning import InputMeaningInterpreter
 from app.usecases.lifecycle import ApplicationLifecycle, DependencyRetryPolicy
 from app.usecases.ports.llm import LLMConnectionAdapter, LLMRolePort
 
-
 if TYPE_CHECKING:
     from app.composition.speech_deployment import SpeechDeploymentRegistry
 
