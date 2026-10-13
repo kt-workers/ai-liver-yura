@@ -25,9 +25,7 @@ from app.domain.llm import (
 
 from .contracts import (
     InputMeaningAcceptancePolicy,
-    InputMeaningBoundaryFailure,
     InputMeaningFreshnessStamp,
-    InputMeaningInterpretationResult,
     ReferenceContext,
     StructuredInputMeaning,
     meaning_from_json,

@@ -29,7 +29,6 @@ class InputMeaningLiveContextPort(Protocol):
     async def current_freshness_stamp(self) -> InputMeaningFreshnessStamp: ...
 
 
-
 class InputMeaningInterpreter:
     def __init__(
         self,

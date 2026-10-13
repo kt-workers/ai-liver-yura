@@ -10,29 +10,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
-from app.config.appraisal_assembly import (
-    AppraisalInitializationProvenance,
-    AppraisalProductionBinding,
-    build_appraisal_configuration,
-)
 from app.composition.cognition_configuration import CoreCognitionConfiguration
-from app.config.executive_assembly import (
-    ExecutiveConfigurationProvenance,
-    ExecutiveProductionBinding,
-    create_executive_configuration,
-)
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
-from app.usecases.llm_connections import (
-    LLMConnectionAdapter,
-    route_llm_connections,
-)
-from app.infrastructure.llm.connection_registry_factory import create_llm_connection_registry
 from app.composition.speech_production_configuration import (
     SpeechComponentProvenance,
     SpeechProductionInputs,
     create_production_speech_configuration,
 )
 from app.config.appraisal import load_appraisal_config
+from app.config.appraisal_assembly import (
+    AppraisalInitializationProvenance,
+    AppraisalProductionBinding,
+    build_appraisal_configuration,
+)
 from app.config.core import ConfigurationReference, CoreConfig, load_core_config
 from app.config.core_contracts import (
     CoreConfigurationError,
@@ -41,6 +31,11 @@ from app.config.core_contracts import (
     resource,
 )
 from app.config.executive import load_executive_config
+from app.config.executive_assembly import (
+    ExecutiveConfigurationProvenance,
+    ExecutiveProductionBinding,
+    create_executive_configuration,
+)
 from app.config.llm_connections import load_llm_connections
 from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.activity_execution import ActivityExecutionAuthority
@@ -54,8 +49,14 @@ from app.domain.executive.deliberator import descriptor as executive_descriptor
 from app.domain.goals import GoalCommitmentStore
 from app.domain.input_meaning.interpreter import descriptor as input_descriptor
 from app.domain.plugin_registry import PluginRegistryAuthority
+from app.infrastructure.llm.connection_registry_factory import create_llm_connection_registry
 from app.infrastructure.scheduling import RuntimeClock
 from app.usecases.lifecycle import ApplicationLifecycle
+from app.usecases.llm_connections import (
+    LLMConnectionAdapter,
+    route_llm_connections,
+)
+
 
 if TYPE_CHECKING:
     from app.application import CoreComponents

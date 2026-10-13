@@ -7,7 +7,6 @@ from datetime import datetime
 
 from app.domain.contracts.common import freeze_json
 from app.domain.input_gateway import NormalizedInputEvent
-from app.usecases.input_meaning import InputMeaningInterpreter, InputMeaningLiveContextPort
 from app.domain.input_meaning import (
     InputMeaningInterpretationResult,
     InputMeaningPolicy,
@@ -15,6 +14,7 @@ from app.domain.input_meaning import (
     build_request,
 )
 from app.domain.llm import LLMRoleStatus
+from app.usecases.input_meaning import InputMeaningInterpreter, InputMeaningLiveContextPort
 from app.usecases.ports.llm import LLMRolePort
 
 from .contracts import (

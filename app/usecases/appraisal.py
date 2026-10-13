@@ -24,7 +24,6 @@ class DeepAppraisalLiveStatePort(Protocol):
     async def freshness_stamp(self) -> DeepAppraisalFreshnessStamp: ...
 
 
-
 class DeepAppraisalInterpreter:
     def __init__(
         self,

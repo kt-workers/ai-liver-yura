@@ -19,7 +19,6 @@ from app.domain.input_gateway import (
     InputSourceState,
     NormalizedInputEvent,
 )
-from app.usecases.input_meaning import InputMeaningInterpreter, InputMeaningLiveContextPort
 from app.domain.input_meaning import (
     OUTPUT_SCHEMA,
     ExpectedResponse,
@@ -47,7 +46,9 @@ from app.domain.llm import (
     LLMTokenUsage,
     StructuredPayload,
 )
+from app.usecases.input_meaning import InputMeaningInterpreter, InputMeaningLiveContextPort
 from tests.helpers.llm import make_execution_policy
+
 
 NOW = datetime(2026, 8, 19, tzinfo=timezone.utc)
 

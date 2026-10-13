@@ -10,7 +10,6 @@ from app.composition.input_reference_context import (
     CoreInputReferenceContextBinding,
     CoreInputReferenceSnapshot,
 )
-from app.usecases.appraisal import DeepAppraisalInterpreter, DeepAppraisalLiveStatePort
 from app.domain.appraisal import (
     AppraisalCandidate,
     AppraisalStateCommit,
@@ -26,7 +25,6 @@ from app.domain.appraisal import (
     lifecycle_candidate,
 )
 from app.domain.brain_integration import BrainIntegrationModule
-from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.domain.contracts import EventEnvelope
 from app.domain.contracts.common import require_identifier
 from app.domain.contracts.snapshots import (
@@ -38,6 +36,8 @@ from app.domain.contracts.snapshots import (
 )
 from app.domain.input_meaning import StructuredInputMeaning
 from app.infrastructure.scheduling import CancellationToken, RuntimeClock
+from app.usecases.appraisal import DeepAppraisalInterpreter, DeepAppraisalLiveStatePort
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.usecases.ports.llm import LLMRolePort
 
 

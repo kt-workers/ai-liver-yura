@@ -15,13 +15,9 @@ from typing import TYPE_CHECKING, TypeVar
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.connections import production_llm_connection_adapters
 from app.adapters.llm.production import create_openai_port_from_environment
-from app.usecases.accepted_inputs import CoreAcceptedInputStore
 from app.composition.cognition import CoreCognitionDelivery
 from app.composition.cognition_configuration import CoreCognitionConfiguration
-from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
-from app.usecases.llm_connections import LLMConnectionAdapter
-from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from app.composition.speech_production_configuration import SpeechProductionInputs
 from app.composition.system_cognition_configuration import (
     CORE_RESOURCE,
@@ -41,16 +37,19 @@ from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
 )
-from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.character.contracts import CharacterDefinitionDocument
 from app.domain.contracts.common import require_identifier
+from app.domain.contracts.lifecycle import (
+    ApplicationShutdownError,
+    ApplicationShutdownFailure,
+    ApplicationShutdownStage,
+)
 from app.domain.contracts.preconditions import PreconditionSourceBinding, PreconditionSourceRouter
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
 from app.domain.executive.deliberator import descriptor as executive_descriptor
 from app.domain.goals import GoalCommitmentStore
 from app.domain.input_gateway import InputAdmission, NormalizedInputEvent
-from app.usecases.input_meaning import InputMeaningInterpreter
 from app.domain.input_meaning import (
     InputMeaningFreshnessStamp,
     InputMeaningInterpretationResult,
@@ -62,14 +61,16 @@ from app.domain.memory_reflection.llm_roles import proposal_descriptor, support_
 from app.domain.plugin_registry import PluginRegistryAuthority
 from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
 from app.infrastructure.persistence import PostgresPersistenceRuntime
+from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from app.infrastructure.scheduling import CancellationToken, RuntimeClock, SystemRuntimeClock
+from app.usecases.accepted_inputs import CoreAcceptedInputStore
+from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
+from app.usecases.input_meaning import InputMeaningInterpreter
 from app.usecases.lifecycle import ApplicationLifecycle, DependencyRetryPolicy
-from app.domain.contracts.lifecycle import (
-    ApplicationShutdownError,
-    ApplicationShutdownFailure,
-    ApplicationShutdownStage,
-)
+from app.usecases.llm_connections import LLMConnectionAdapter
 from app.usecases.ports.llm import LLMRolePort
+
 
 if TYPE_CHECKING:
     from app.composition.speech_deployment import SpeechDeploymentRegistry

@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from app.usecases.appraisal import DeepAppraisalInterpreter, DeepAppraisalLiveStatePort
 from app.domain.appraisal import (
     DeepAppraisalContext,
     DeepAppraisalPolicy,
@@ -13,6 +12,7 @@ from app.domain.appraisal import (
 from app.domain.contracts import EventEnvelope
 from app.domain.contracts.common import JsonValue, freeze_json
 from app.domain.input_meaning import StructuredInputMeaning
+from app.usecases.appraisal import DeepAppraisalInterpreter, DeepAppraisalLiveStatePort
 from app.usecases.ports.llm import LLMRolePort
 
 from .contracts import (

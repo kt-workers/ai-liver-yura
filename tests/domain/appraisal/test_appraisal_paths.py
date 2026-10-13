@@ -4,7 +4,6 @@ from typing import Any, cast
 
 import pytest
 
-from app.usecases.appraisal import DeepAppraisalInterpreter, DeepAppraisalLiveStatePort
 from app.domain.appraisal import (
     OUTPUT_SCHEMA,
     AppraisalDimension,
@@ -43,7 +42,9 @@ from app.domain.llm import (
     LLMTokenUsage,
     StructuredPayload,
 )
+from app.usecases.appraisal import DeepAppraisalInterpreter, DeepAppraisalLiveStatePort
 from tests.helpers.llm import make_execution_policy
+
 
 NOW = datetime(2026, 8, 24, tzinfo=timezone.utc)
 JOY = FacetRef(StateFacetKind.EMOTION, "joy")
