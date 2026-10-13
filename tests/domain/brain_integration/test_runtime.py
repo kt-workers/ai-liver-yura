@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
-from app.runtime.kernel import (
+from app.infrastructure.scheduling import (
     CancellationToken,
     FakeRuntimeClock,
     LaneErrorPolicy,
@@ -14,24 +14,26 @@ from app.runtime.kernel import (
     RuntimeLanePolicy,
     RuntimeSchedulerPolicy,
 )
-from app.runtime.shutdown import RuntimeShutdownPolicy
+from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
 
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
-    BrainIntegrationRuntime,
-    BrainIntegrationRuntimePolicy,
     BrainIntegrationTerminalOutcome,
-    BrainIntegrationWork,
     BrainRevisionEvent,
-    BrainWorkAdmissionStatus,
     BrainWorkEnvelope,
     BrainWorkPriority,
     BrainWorkStatus,
 )
+from app.usecases.brain_integration_runtime import (
+    BrainIntegrationRuntime,
+    BrainIntegrationRuntimePolicy,
+    BrainIntegrationWork,
+    BrainWorkAdmissionStatus,
+)
 
 NOW = datetime(2026, 8, 31, tzinfo=timezone.utc)
-TEST_SHUTDOWN_POLICY = RuntimeShutdownPolicy("test.brain.shutdown", 1, 1.0, 1.0, 1.0, 1.0)
+TEST_SHUTDOWN_POLICY = ApplicationShutdownPolicy("test.brain.shutdown", 1, 1.0, 1.0, 1.0, 1.0)
 
 
 @pytest.mark.parametrize("exit_path", ["cancel", "exception", "normal"])

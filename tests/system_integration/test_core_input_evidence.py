@@ -7,10 +7,10 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from app.bootstrap import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload
-from app.runtime.kernel import CancellationToken
+from app.application import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload
+from app.infrastructure.scheduling import CancellationToken
 
-from app import bootstrap
+from app import application as bootstrap
 from app.composition.executive import CoreExecutiveBinding
 from app.composition.executive_input_evidence import CoreExecutiveInputEvidenceReader
 from app.domain.attention import AttentionSource, AttentionSourceKind

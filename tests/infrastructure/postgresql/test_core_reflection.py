@@ -5,17 +5,17 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from app.composition.memory_persistence import CoreMemoryPersistenceBinding
-from app.runtime.kernel import FakeRuntimeClock
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
+from app.infrastructure.scheduling import FakeRuntimeClock
 
 from app.composition.reflection import CoreReflectionConfiguration, CoreReflectionDelivery
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
-    BrainIntegrationRuntime,
     BrainWorkStatus,
 )
+from app.usecases.brain_integration_runtime import BrainIntegrationRuntime
 from app.domain.contracts.semantic_subject import SemanticSubjectKind
 from app.domain.llm import LLMRoleRequest, LLMRoleResult
 from app.domain.memory_reflection import ReflectionAcceptancePolicy, ReflectionCandidateStatus
@@ -177,7 +177,7 @@ async def test_query_bound_is_checked_before_io(endpoint: PostgresEndpoint) -> N
 async def test_public_boot_registers_roles_and_feeds_memory_into_executive(
     endpoint: PostgresEndpoint, boot_config: Path, monkeypatch: pytest.MonkeyPatch,  # noqa: F811
 ) -> None:
-    from app import bootstrap
+    from app import application as bootstrap
     from app.composition.cognition_configuration import CoreCognitionConfiguration
     from app.domain.appraisal import InternalStateReducer
     from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore

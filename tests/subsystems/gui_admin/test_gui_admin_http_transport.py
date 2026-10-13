@@ -206,7 +206,7 @@ async def test_transport_injected_into_subsystem_reaches_available_and_stops(
 ) -> None:
     from datetime import datetime, timezone
 
-    from app.runtime.kernel.clock import FakeRuntimeClock
+    from app.infrastructure.scheduling.clock import FakeRuntimeClock
 
     from app.config.core import load_core_config
     from app.subsystems.gui_admin.contracts import GuiAdminAvailability

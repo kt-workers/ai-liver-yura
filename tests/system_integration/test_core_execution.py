@@ -5,8 +5,8 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from app.domain.brain_integration.runtime import BrainIntegrationWorkOutcome
-from app.runtime.kernel.clock import FakeRuntimeClock
+from app.usecases.brain_integration_runtime import BrainIntegrationWorkOutcome
+from app.infrastructure.scheduling.clock import FakeRuntimeClock
 
 from app.composition.execution import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
 from app.domain.activity_execution import (
@@ -239,7 +239,7 @@ async def test_plan_production_configuration_and_feedback(
 ) -> None:
     from datetime import timedelta
 
-    from app import bootstrap
+    from app import application as bootstrap
     from app.composition.execution_configuration import CoreExecutionConfiguration
     from app.domain.contracts import PreconditionRef
     from app.domain.executive import PlanExecutionIntentPayload

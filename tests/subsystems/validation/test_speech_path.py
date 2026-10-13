@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from app.domain.activity_execution.observation import ObservedExecutionFactRecord
-from app.domain.brain_integration import BrainIntegrationWork
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.subsystems.validation.contracts import Gate, LabMode, RunStatus
 from app.subsystems.validation.runtime import RunContext, ValidationRunner
 from app.subsystems.validation.speech_path import (

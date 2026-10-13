@@ -4,8 +4,8 @@ import asyncio
 from dataclasses import replace
 
 import pytest
-from app.runtime.kernel import SystemRuntimeClock
-from app.runtime.lifecycle import DependencyState, RuntimeLifecycle
+from app.infrastructure.scheduling import SystemRuntimeClock
+from app.usecases.lifecycle import DependencyState, ApplicationLifecycle
 
 from app.domain.executive import CommitmentTransitionOperation, GoalTransitionOperation
 from app.domain.goals import GoalCommitmentStore
@@ -187,7 +187,7 @@ def test_optional_db_failure_does_not_stop_other_runtime_dependencies(
     endpoint: PostgresEndpoint,
 ) -> None:
     async def run() -> None:
-        lifecycle = RuntimeLifecycle(SystemRuntimeClock(), shutdown_policy())
+        lifecycle = ApplicationLifecycle(SystemRuntimeClock(), shutdown_policy())
         closed: list[str] = []
 
         async def reconnect() -> None:

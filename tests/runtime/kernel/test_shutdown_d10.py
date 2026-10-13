@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import cast
 
 import pytest
-from app.runtime.kernel import (
+from app.infrastructure.scheduling import (
     FakeRuntimeClock,
     LaneErrorPolicy,
     QueuePolicy,
@@ -13,10 +13,10 @@ from app.runtime.kernel import (
     RuntimeWorkItem,
     WorkPriority,
 )
-from app.runtime.shutdown import (
-    RuntimeShutdownError,
-    RuntimeShutdownPolicy,
-    RuntimeShutdownStage,
+from app.domain.contracts.lifecycle import (
+    ApplicationShutdownError,
+    ApplicationShutdownPolicy,
+    ApplicationShutdownStage,
 )
 
 from app.domain.contracts import RevisionVector
@@ -31,8 +31,8 @@ def shutdown_policy(
     persistence: float = 1.0,
     resource: float = 1.0,
     owned_join: float = 1.0,
-) -> RuntimeShutdownPolicy:
-    return RuntimeShutdownPolicy(
+) -> ApplicationShutdownPolicy:
+    return ApplicationShutdownPolicy(
         "test.shutdown",
         1,
         in_flight,
@@ -42,7 +42,7 @@ def shutdown_policy(
     )
 
 
-def coordinator(policy: RuntimeShutdownPolicy | None = None) -> RuntimeCoordinator:
+def coordinator(policy: ApplicationShutdownPolicy | None = None) -> RuntimeCoordinator:
     return RuntimeCoordinator(
         FakeRuntimeClock(NOW),
         SCHEDULER_POLICY,
@@ -63,10 +63,10 @@ def lane_policy() -> RuntimeLanePolicy:
 
 def test_shutdown_policy_rejects_bool_nan_infinity_and_negative() -> None:
     with pytest.raises(ValueError):
-        RuntimeShutdownPolicy("shutdown", 1, cast(float, True), 1.0, 1.0, 1.0)
+        ApplicationShutdownPolicy("shutdown", 1, cast(float, True), 1.0, 1.0, 1.0)
     for invalid in (float("nan"), float("inf"), float("-inf"), -1.0):
         with pytest.raises(ValueError):
-            RuntimeShutdownPolicy("shutdown", 1, 1.0, invalid, 1.0, 1.0)
+            ApplicationShutdownPolicy("shutdown", 1, 1.0, invalid, 1.0, 1.0)
 
 
 def test_missing_shutdown_policy_has_no_hidden_default() -> None:
@@ -74,7 +74,7 @@ def test_missing_shutdown_policy_has_no_hidden_default() -> None:
         RuntimeCoordinator(
             FakeRuntimeClock(NOW),
             SCHEDULER_POLICY,
-            cast(RuntimeShutdownPolicy, None),
+            cast(ApplicationShutdownPolicy, None),
         )
 
 
@@ -127,7 +127,7 @@ def test_producer_stop_failure_does_not_skip_persistence_or_close() -> None:
 
         assert order == ["producer", "persistence", "close"]
         assert any(
-            failure.stage is RuntimeShutdownStage.PRODUCER_STOP
+            failure.stage is ApplicationShutdownStage.PRODUCER_STOP
             for failure in runtime.shutdown_failures
         )
 
@@ -154,7 +154,7 @@ def test_final_persistence_timeout_still_closes_resources() -> None:
 
         assert order == ["persistence", "close"]
         assert any(
-            failure.stage is RuntimeShutdownStage.FINAL_PERSISTENCE
+            failure.stage is ApplicationShutdownStage.FINAL_PERSISTENCE
             and failure.error_class == "TimeoutError"
             for failure in runtime.shutdown_failures
         )
@@ -182,7 +182,7 @@ def test_resource_close_timeout_does_not_skip_earlier_registered_resource() -> N
 
         assert order == ["second", "first"]
         assert any(
-            failure.stage is RuntimeShutdownStage.RESOURCE_CLOSE
+            failure.stage is ApplicationShutdownStage.RESOURCE_CLOSE
             and failure.error_class == "TimeoutError"
             for failure in runtime.shutdown_failures
         )
@@ -219,7 +219,7 @@ def test_late_non_interruptible_result_is_not_committed_as_completed() -> None:
         )
         await started.wait()
 
-        with pytest.raises(RuntimeShutdownError):
+        with pytest.raises(ApplicationShutdownError):
             await runtime.stop()
         assert runtime.state.value == "stopping"
 
@@ -258,11 +258,11 @@ def test_owned_task_join_timeout_never_reports_stopped_success() -> None:
         )
         await started.wait()
 
-        with pytest.raises(RuntimeShutdownError) as captured:
+        with pytest.raises(ApplicationShutdownError) as captured:
             await runtime.stop()
         assert runtime.state.value == "stopping"
         assert any(
-            failure.stage is RuntimeShutdownStage.OWNED_TASK_JOIN
+            failure.stage is ApplicationShutdownStage.OWNED_TASK_JOIN
             for failure in captured.value.failures
         )
         release.set()
@@ -312,10 +312,10 @@ def test_terminal_failure_double_stop_does_not_rerun_shutdown_hooks() -> None:
         )
         await started.wait()
 
-        with pytest.raises(RuntimeShutdownError):
+        with pytest.raises(ApplicationShutdownError):
             await runtime.stop()
         assert calls == ["producer", "persistence", "close"]
-        with pytest.raises(RuntimeShutdownError):
+        with pytest.raises(ApplicationShutdownError):
             await runtime.stop()
         assert calls == ["producer", "persistence", "close"]
 

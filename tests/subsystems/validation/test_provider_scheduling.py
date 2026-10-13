@@ -5,7 +5,7 @@ import json
 from dataclasses import replace
 
 import pytest
-from app.runtime.kernel import QueuePolicy, RuntimeWorkItem, WorkPriority
+from app.infrastructure.scheduling import QueuePolicy, RuntimeWorkItem, WorkPriority
 
 from app.domain.llm import (
     LLMFailureCode,

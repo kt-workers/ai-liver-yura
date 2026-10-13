@@ -7,8 +7,8 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from app.composition.memory_persistence import CoreMemoryPersistenceBinding
-from app.runtime.kernel import CancellationToken
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
+from app.infrastructure.scheduling import CancellationToken
 
 from app.composition.executive import CoreExecutiveBinding, CoreExecutiveEvidence
 from app.composition.executive_input_evidence import CoreExecutiveInputEvidenceReader

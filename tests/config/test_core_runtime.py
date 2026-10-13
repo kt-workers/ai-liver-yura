@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import pytest
 import yaml
-from app.runtime.kernel import LaneErrorPolicy, QueuePolicy
+from app.infrastructure.scheduling import LaneErrorPolicy, QueuePolicy
 
 from app.config.core import load_core_config
 from app.domain.brain_integration import BrainIntegrationLane

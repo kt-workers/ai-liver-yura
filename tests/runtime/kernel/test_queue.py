@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from app.runtime.kernel import (
+from app.infrastructure.scheduling import (
     BoundedWorkQueue,
     QueueAdmissionStatus,
     QueuePolicy,

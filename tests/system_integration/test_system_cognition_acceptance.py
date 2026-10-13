@@ -9,9 +9,9 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from app.runtime.kernel import SystemRuntimeClock
+from app.infrastructure.scheduling import SystemRuntimeClock
 
-from app import bootstrap
+from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.composition.core_provider import CoreProviderLease
 from app.composition.system_cognition_configuration import (

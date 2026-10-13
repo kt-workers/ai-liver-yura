@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
-from app.runtime.kernel import CancellationToken
+from app.infrastructure.scheduling import CancellationToken
 
 from app.composition.presentation_notification import CoreSpeechProductionOwnerConnection
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
@@ -542,7 +542,7 @@ async def test_explicit_deferred_policy_does_not_speculate() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("when", ["return", "accepted"])
 async def test_token_cancellation_at_transfer_boundary(when: str) -> None:
-    from app.runtime.kernel.contracts import CancellationRecord
+    from app.infrastructure.scheduling.contracts import CancellationRecord
 
     from tests.helpers.speech_path import now
 

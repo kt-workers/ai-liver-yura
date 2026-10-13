@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 import yaml
-from app.runtime.kernel import SystemRuntimeClock
+from app.infrastructure.scheduling import SystemRuntimeClock
 
-from app import bootstrap
+from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.composition import system_cognition_configuration as system
 from app.composition.core_provider import CoreProviderLease

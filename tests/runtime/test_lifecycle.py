@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import cast
 
 import pytest
-from app.runtime.kernel import (
+from app.infrastructure.scheduling import (
     FakeRuntimeClock,
     LaneErrorPolicy,
     QueuePolicy,
@@ -11,19 +11,19 @@ from app.runtime.kernel import (
     RuntimeWorkItem,
     WorkPriority,
 )
-from app.runtime.kernel import (
+from app.infrastructure.scheduling import (
     RuntimeCoordinator as KernelRuntimeCoordinator,
 )
-from app.runtime.kernel import (
+from app.infrastructure.scheduling import (
     RuntimeLanePolicy as KernelRuntimeLanePolicy,
 )
-from app.runtime.lifecycle import (
+from app.usecases.lifecycle import (
     DependencyFailure,
     DependencyRetryPolicy,
     DependencyState,
-    RuntimeLifecycle,
+    ApplicationLifecycle,
 )
-from app.runtime.shutdown import RuntimeShutdownError, RuntimeShutdownPolicy
+from app.domain.contracts.lifecycle import ApplicationShutdownError, ApplicationShutdownPolicy
 
 from app.domain.contracts import RevisionVector
 
@@ -34,8 +34,8 @@ TEST_SCHEDULER_POLICY = RuntimeSchedulerPolicy("test.scheduler", 1, 8)
 def shutdown_policy(
     *,
     resource_close_grace_seconds: float = 1.0,
-) -> RuntimeShutdownPolicy:
-    return RuntimeShutdownPolicy(
+) -> ApplicationShutdownPolicy:
+    return ApplicationShutdownPolicy(
         "test.shutdown",
         1,
         1.0,
@@ -143,7 +143,7 @@ def test_retry_delay_uses_initial_multiplier_and_cap_without_jitter() -> None:
 def test_max_retry_attempts_zero_and_non_retryable_failure_do_not_retry() -> None:
     async def scenario() -> None:
         clock = FakeRuntimeClock(NOW)
-        lifecycle = RuntimeLifecycle(clock, shutdown_policy())
+        lifecycle = ApplicationLifecycle(clock, shutdown_policy())
 
         async def reconnect() -> DependencyFailure | None:
             raise AssertionError("retryしてはいけません")
@@ -179,7 +179,7 @@ def test_max_retry_attempts_zero_and_non_retryable_failure_do_not_retry() -> Non
 def test_reconnect_is_bounded_and_does_not_stop_other_dependencies() -> None:
     async def scenario() -> None:
         clock = FakeRuntimeClock(NOW)
-        lifecycle = RuntimeLifecycle(clock, shutdown_policy())
+        lifecycle = ApplicationLifecycle(clock, shutdown_policy())
         attempts = 0
 
         async def reconnect_provider() -> DependencyFailure | None:
@@ -225,7 +225,7 @@ def test_reconnect_is_bounded_and_does_not_stop_other_dependencies() -> None:
 
 def test_failure_diagnostics_use_strict_interval_boundary() -> None:
     clock = FakeRuntimeClock(NOW)
-    lifecycle = RuntimeLifecycle(clock, shutdown_policy())
+    lifecycle = ApplicationLifecycle(clock, shutdown_policy())
 
     async def reconnect() -> DependencyFailure | None:
         return None
@@ -248,7 +248,7 @@ def test_failure_diagnostics_use_strict_interval_boundary() -> None:
 
 def test_same_generation_mutation_rejected_and_equal_update_is_idempotent() -> None:
     clock = FakeRuntimeClock(NOW)
-    lifecycle = RuntimeLifecycle(clock, shutdown_policy())
+    lifecycle = ApplicationLifecycle(clock, shutdown_policy())
 
     async def reconnect() -> DependencyFailure | None:
         return None
@@ -270,7 +270,7 @@ def test_same_generation_mutation_rejected_and_equal_update_is_idempotent() -> N
 def test_policy_revision_supersedes_old_retry_without_old_result_commit() -> None:
     async def scenario() -> None:
         clock = FakeRuntimeClock(NOW)
-        lifecycle = RuntimeLifecycle(clock, shutdown_policy())
+        lifecycle = ApplicationLifecycle(clock, shutdown_policy())
         started = asyncio.Event()
         release = asyncio.Event()
 
@@ -310,7 +310,7 @@ def test_policy_revision_supersedes_old_retry_without_old_result_commit() -> Non
 
 def test_untyped_reconnect_exception_is_fixed_non_retryable_failure() -> None:
     async def scenario() -> None:
-        lifecycle = RuntimeLifecycle(FakeRuntimeClock(NOW), shutdown_policy())
+        lifecycle = ApplicationLifecycle(FakeRuntimeClock(NOW), shutdown_policy())
 
         async def reconnect() -> DependencyFailure | None:
             raise RuntimeError("provider固有の秘密本文")
@@ -337,7 +337,7 @@ def test_untyped_reconnect_exception_is_fixed_non_retryable_failure() -> None:
 
 def test_shutdown_cancels_retry_and_closes_dependencies_in_reverse_order() -> None:
     async def scenario() -> None:
-        lifecycle = RuntimeLifecycle(FakeRuntimeClock(NOW), shutdown_policy())
+        lifecycle = ApplicationLifecycle(FakeRuntimeClock(NOW), shutdown_policy())
         closed: list[str] = []
         retry_gate = asyncio.Event()
 
@@ -372,7 +372,7 @@ def test_shutdown_cancels_retry_and_closes_dependencies_in_reverse_order() -> No
 
 def test_dependency_close_failure_does_not_skip_later_close() -> None:
     async def scenario() -> None:
-        lifecycle = RuntimeLifecycle(FakeRuntimeClock(NOW), shutdown_policy())
+        lifecycle = ApplicationLifecycle(FakeRuntimeClock(NOW), shutdown_policy())
         closed: list[str] = []
 
         async def reconnect() -> DependencyFailure | None:
@@ -395,7 +395,7 @@ def test_dependency_close_failure_does_not_skip_later_close() -> None:
         assert closed == ["second", "first"]
         assert all(snapshot.state is DependencyState.CLOSED for snapshot in snapshots)
         assert lifecycle.shutdown_failures
-        with pytest.raises(RuntimeShutdownError):
+        with pytest.raises(ApplicationShutdownError):
             await lifecycle.close()
         assert closed == ["second", "first"]
 
@@ -405,7 +405,7 @@ def test_dependency_close_failure_does_not_skip_later_close() -> None:
 def test_coordinator_shutdown_closes_lifecycle_dependencies() -> None:
     async def scenario() -> None:
         clock = FakeRuntimeClock(NOW)
-        lifecycle = RuntimeLifecycle(clock, shutdown_policy())
+        lifecycle = ApplicationLifecycle(clock, shutdown_policy())
         closed: list[str] = []
 
         async def reconnect() -> DependencyFailure | None:
@@ -444,4 +444,4 @@ def test_coordinator_shutdown_closes_lifecycle_dependencies() -> None:
 
 def test_missing_shutdown_policy_has_no_hidden_default() -> None:
     with pytest.raises(ValueError):
-        RuntimeLifecycle(FakeRuntimeClock(NOW), cast(RuntimeShutdownPolicy, None))
+        ApplicationLifecycle(FakeRuntimeClock(NOW), cast(ApplicationShutdownPolicy, None))

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 import pytest
-from app.runtime.lifecycle import DependencyRetryPolicy
+from app.usecases.lifecycle import DependencyRetryPolicy
 
 from app.adapters.tts import (
     TTSMappingDimension,

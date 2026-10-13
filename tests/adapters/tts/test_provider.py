@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from app.runtime.lifecycle import DependencyRetryPolicy
+from app.usecases.lifecycle import DependencyRetryPolicy
 
 from app.adapters.tts import (
     CandidateArtifactStore,

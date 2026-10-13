@@ -5,9 +5,9 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from app.runtime.kernel.clock import SystemRuntimeClock
+from app.infrastructure.scheduling.clock import SystemRuntimeClock
 
-from app import bootstrap
+from app import application as bootstrap
 from app.composition.execution import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
 from app.composition.execution_configuration import CoreExecutionConfiguration
 from app.domain.activity_execution import (

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from app.bootstrap import build_persistent_core
+from app.application import build_persistent_core
 
 from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentSnapshot
@@ -229,8 +229,8 @@ async def test_stop_reaps_memory_before_database_close(
     monkeypatch: pytest.MonkeyPatch,
     timeout: bool,
 ) -> None:
-    from app.composition.memory_persistence import CoreMemoryPersistenceBinding
-    from app.runtime.shutdown import RuntimeShutdownError, RuntimeShutdownStage
+    from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
+    from app.domain.contracts.lifecycle import ApplicationShutdownError, ApplicationShutdownStage
 
     baseline = asyncio.all_tasks()
     if timeout:
@@ -275,9 +275,9 @@ async def test_stop_reaps_memory_before_database_close(
     assert storage.availability.value == PersistenceAvailability.AVAILABLE.value
     release.set()
     if timeout:
-        with pytest.raises(RuntimeShutdownError) as caught:
+        with pytest.raises(ApplicationShutdownError) as caught:
             await task
-        assert caught.value.failures[0].stage is RuntimeShutdownStage.FINAL_PERSISTENCE
+        assert caught.value.failures[0].stage is ApplicationShutdownStage.FINAL_PERSISTENCE
     else:
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -294,7 +294,7 @@ async def test_missing_database_keeps_core_running_with_typed_failure(
 ) -> None:
     from dataclasses import replace
 
-    from app.runtime.lifecycle import DependencyState
+    from app.usecases.lifecycle import DependencyState
 
     from app.domain.brain_integration import BrainWorkStatus
     from app.domain.input_meaning import InputMeaningInterpretationResult
@@ -396,7 +396,7 @@ async def test_boot_database_reconnect_recovers_memory_without_replacing_goal_ow
     import re
     from dataclasses import replace
 
-    from app.runtime.lifecycle import DependencyFailure, DependencyState
+    from app.usecases.lifecycle import DependencyFailure, DependencyState
 
     baseline = asyncio.all_tasks()
     assert re.fullmatch(r"yura_test_[0-9a-f]{32}", endpoint.database)

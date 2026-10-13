@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 
-from app.runtime.kernel import (
+from app.infrastructure.scheduling import (
     FakeRuntimeClock,
     LaneErrorPolicy,
     QueuePolicy,
@@ -10,13 +10,13 @@ from app.runtime.kernel import (
     WorkDisposition,
     WorkPriority,
 )
-from app.runtime.kernel import (
+from app.infrastructure.scheduling import (
     RuntimeCoordinator as KernelRuntimeCoordinator,
 )
-from app.runtime.kernel import (
+from app.infrastructure.scheduling import (
     RuntimeLanePolicy as KernelRuntimeLanePolicy,
 )
-from app.runtime.shutdown import RuntimeShutdownPolicy
+from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
 
 from app.domain.attention import (
     AttentionCoordinator,
@@ -32,7 +32,7 @@ from app.domain.contracts import RevisionVector
 
 NOW = datetime(2026, 8, 16, tzinfo=timezone.utc)
 TEST_SCHEDULER_POLICY = RuntimeSchedulerPolicy("test.scheduler", 1, 8)
-TEST_SHUTDOWN_POLICY = RuntimeShutdownPolicy("test.attention.shutdown", 1, 1.0, 1.0, 1.0, 1.0)
+TEST_SHUTDOWN_POLICY = ApplicationShutdownPolicy("test.attention.shutdown", 1, 1.0, 1.0, 1.0, 1.0)
 
 
 def RuntimeCoordinator(clock: FakeRuntimeClock) -> KernelRuntimeCoordinator:

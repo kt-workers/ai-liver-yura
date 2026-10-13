@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from app import bootstrap
+from app import application as bootstrap
 from app.composition.cognition_configuration import CoreCognitionConfiguration
 from app.domain.appraisal import InternalStateReducer
 from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore
@@ -232,7 +232,7 @@ async def test_shutdown_reaps_pending_appraisal(monkeypatch: pytest.MonkeyPatch)
 async def test_next_queue_rejection_is_not_reported_as_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.domain.brain_integration import BrainWorkAdmission, BrainWorkAdmissionStatus
+    from app.usecases.brain_integration_runtime import BrainWorkAdmission, BrainWorkAdmissionStatus
 
     app, port = application(monkeypatch)
     await app.start()

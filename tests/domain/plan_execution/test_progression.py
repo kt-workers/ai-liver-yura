@@ -5,7 +5,7 @@ from dataclasses import dataclass, replace
 from datetime import timedelta
 
 import pytest
-from app.runtime.kernel.clock import FakeRuntimeClock
+from app.infrastructure.scheduling.clock import FakeRuntimeClock
 
 from app.domain.activity_execution import (
     ActivityExecutionAuthority,

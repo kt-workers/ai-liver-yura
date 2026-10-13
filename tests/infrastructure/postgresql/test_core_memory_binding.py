@@ -3,7 +3,7 @@
 import asyncio
 
 import pytest
-from app.composition.memory_persistence import CoreMemoryPersistenceBinding
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 
 from app.domain.memory import MemoryDisposition, MemoryKind, MemoryWriteRequest, MemoryWriteResult
 from app.domain.memory_reflection import (

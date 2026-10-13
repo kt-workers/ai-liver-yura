@@ -16,10 +16,10 @@ from app.domain.attention import AttentionTransitionOperation as Op
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
-    BrainIntegrationWork,
     BrainWorkEnvelope,
     BrainWorkPriority,
 )
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.character_language import (
     CharacterLanguageAuthority,
@@ -268,12 +268,12 @@ async def build_speech_path(
     )
     from pathlib import Path
 
-    from app.runtime.kernel import SystemRuntimeClock
+    from app.infrastructure.scheduling import SystemRuntimeClock
 
     from app.composition.cognition_configuration import CoreCognitionConfiguration
     from app.config.core import load_core_config
     from app.domain.appraisal import InternalStateReducer
-    from app.domain.brain_integration import BrainIntegrationRuntime
+    from app.usecases.brain_integration_runtime import BrainIntegrationRuntime
     from app.domain.contracts.preconditions import PreconditionSourceRouter
     from app.domain.executive import ExecutiveIntentRequirementsPolicy, ExecutiveRequirementsOwner
     from app.domain.plugin_registry import PluginRegistryAuthority

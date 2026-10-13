@@ -15,16 +15,16 @@ from typing import cast
 
 import pytest
 import yaml
-from app.bootstrap import (
+from app.application import (
     InputMeaningBrainModulePort,
     InputMeaningBrainWorkPayload,
     UnavailableInputMeaningLiveContextPort,
     build_core_runtime,
 )
-from app.runtime.kernel import CancellationToken, SystemRuntimeClock
-from app.runtime.lifecycle import RuntimeLifecycle
+from app.infrastructure.scheduling import CancellationToken, SystemRuntimeClock
+from app.usecases.lifecycle import ApplicationLifecycle
 
-from app import bootstrap
+from app import application as bootstrap
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm import production
 from app.adapters.llm.production import UnavailableLLMRolePort
@@ -33,12 +33,11 @@ from app.config.core import load_core_config
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
-    BrainIntegrationRuntime,
-    BrainIntegrationWork,
     BrainWorkEnvelope,
     BrainWorkPriority,
     BrainWorkStatus,
 )
+from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from app.domain.contracts import CapabilityAvailability, EventEnvelope, RevisionVector
 from app.domain.input_gateway import (
     InputModality,
@@ -384,12 +383,12 @@ def test_stop_failure_propagates_but_lifecycle_is_closed(monkeypatch: pytest.Mon
     async def failed_stop(self: BrainIntegrationRuntime) -> None:
         raise RuntimeError("試験用の停止失敗")
 
-    async def close(self: RuntimeLifecycle) -> None:
+    async def close(self: ApplicationLifecycle) -> None:
         nonlocal closed
         closed = True
 
     monkeypatch.setattr(BrainIntegrationRuntime, "stop", failed_stop)
-    monkeypatch.setattr(RuntimeLifecycle, "close", close)
+    monkeypatch.setattr(ApplicationLifecycle, "close", close)
     with pytest.raises(RuntimeError, match="停止失敗"):
         asyncio.run(build_core_runtime().stop())
     assert closed
@@ -461,7 +460,8 @@ def test_entrypoint_subprocess_graceful_shutdown(stop_signal: signal.Signals) ->
 def test_descriptor_and_interpreter_receive_the_same_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.domain.input_meaning import InputMeaningLiveContextPort, InputMeaningPolicy
+    from app.domain.input_meaning import InputMeaningPolicy
+from app.usecases.input_meaning import InputMeaningLiveContextPort
     from app.domain.llm import LLMRoleDescriptor
     from app.usecases.ports.llm import LLMRolePort
 

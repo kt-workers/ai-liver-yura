@@ -7,7 +7,7 @@ from datetime import timedelta
 from typing import Any, cast
 
 import pytest
-from app.runtime.kernel import CancellationToken, FakeRuntimeClock
+from app.infrastructure.scheduling import CancellationToken, FakeRuntimeClock
 
 from app.composition.appraisal import (
     AppraisalBrainModulePort,
@@ -18,12 +18,11 @@ from app.domain.appraisal import AppraisalStateCommit, InternalStateReducer
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
-    BrainIntegrationRuntime,
-    BrainIntegrationWork,
     BrainWorkEnvelope,
     BrainWorkPriority,
     BrainWorkStatus,
 )
+from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from app.domain.contracts import EventEnvelope, RevisionVector
 from app.domain.contracts.common import freeze_json
 from app.domain.executive import GoalTransitionOperation
@@ -311,7 +310,7 @@ async def test_live_reference_failure_after_response_does_not_commit() -> None:
 
 @pytest.mark.asyncio
 async def test_cancellation_token_prevents_commit_after_response() -> None:
-    from app.runtime.kernel.contracts import CancellationRecord
+    from app.infrastructure.scheduling.contracts import CancellationRecord
 
     value = setup(Port(waiting=True))
     token = CancellationToken()

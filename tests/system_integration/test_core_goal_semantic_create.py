@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 
 import pytest
-from app.runtime.kernel import CancellationToken
+from app.infrastructure.scheduling import CancellationToken
 
 from app.composition.executive import CoreExecutiveBinding
 from app.domain.contracts.common import freeze_json

@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 
 import pytest
-from app.runtime.kernel import (
+from app.infrastructure.scheduling import (
     LaneErrorPolicy,
     QueuePolicy,
     RuntimeLanePolicy,

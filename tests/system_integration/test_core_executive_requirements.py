@@ -6,7 +6,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from app.runtime.kernel import CancellationToken
+from app.infrastructure.scheduling import CancellationToken
 
 from app.composition.executive import CoreExecutiveBinding
 from app.composition.executive_requirements import (

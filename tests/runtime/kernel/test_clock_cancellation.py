@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timezone
 
-from app.runtime.kernel import CancellationRegistry, FakeRuntimeClock
+from app.infrastructure.scheduling import CancellationRegistry, FakeRuntimeClock
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 

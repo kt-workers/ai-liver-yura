@@ -9,15 +9,15 @@ from typing import Any
 import pytest
 import yaml
 
-from app import bootstrap
+from app import application as bootstrap
 from app.composition.reflection import CoreReflectionConfiguration
 from app.domain.activity_execution import ExecutionAdapterReport
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
-    BrainWorkAdmissionStatus,
     BrainWorkStatus,
 )
+from app.usecases.brain_integration_runtime import BrainWorkAdmissionStatus
 from app.domain.contracts import ExecutionStatus
 from app.domain.executive import GoalTransitionOperation
 from app.domain.llm import LLMRoleRequest, LLMRoleResult
