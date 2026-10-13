@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass
 
 import pytest
 
-from app.composition.llm_connections import create_llm_connection_registry
+from app.infrastructure.llm.connection_registry_factory import create_llm_connection_registry
+from app.infrastructure.llm.connections import LLMConnectionRegistry, LLMConnectionRouter
 from app.composition.system_cognition_configuration import CoreRunIdentity
 from app.config.core_contracts import CoreConfigurationError
 from app.config.llm_connections import LLMConnectionConfig, LLMConnectionsConfig
@@ -96,3 +97,8 @@ def test_run_identity_has_no_git_head() -> None:
 
     assert identity.runtime_epoch == "epoch"
     assert identity.system_run_id == "run"
+
+
+def test_runtime_connection_owners_are_not_data_classes() -> None:
+    assert not is_dataclass(LLMConnectionRegistry)
+    assert not is_dataclass(LLMConnectionRouter)

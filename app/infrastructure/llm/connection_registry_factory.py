@@ -9,7 +9,8 @@ from types import MappingProxyType
 from app.config.core_contracts import CoreConfigurationError, CoreFailureCode
 from app.config.llm_connections import LLMConnectionsConfig
 from app.domain.llm import LLMRoleDescriptor
-from app.usecases.llm_connections import LLMConnectionAdapter, LLMConnectionRegistry
+from app.infrastructure.llm.connections import LLMConnectionRegistry
+from app.usecases.ports.llm import LLMConnectionAdapter
 from app.usecases.ports.llm import LLMRolePort
 
 

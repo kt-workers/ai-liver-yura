@@ -1,40 +1,30 @@
-"""設定済みLLM接続を、認知用途を知らないアプリケーション境界で管理する。"""
+"""設定済みLLM接続の資源所有とRole配送をInfrastructureに閉じ込める。"""
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Protocol
 
 from app.config.core_contracts import CoreConfigurationError, CoreFailureCode
 from app.domain.llm import LLMRoleDescriptor, LLMRoleRequest, LLMRoleResult
 from app.usecases.ports.llm import LLMRolePort
 
 
-class LLMConnectionAdapter(Protocol):
-    """一種類の接続設定を共通LLM Portへ変換する内部Adapter。"""
-
-    adapter_id: str
-
-    async def connect(
-        self,
-        connection: object,
-        descriptors: tuple[LLMRoleDescriptor, ...],
-    ) -> tuple[LLMRolePort, Callable[[], Awaitable[None]]]: ...
-
-
-@dataclass(frozen=True, slots=True)
 class LLMConnectionRegistry:
-    """接続IDからPortを返す。認知側へAdapterを公開しない。"""
+    """外部Portと終了処理を所有する接続レジストリ。"""
 
-    _ports: MappingProxyType[str, LLMRolePort]
-    _close_actions: tuple[Callable[[], Awaitable[None]], ...] = field(repr=False)
-    _close_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
+    __slots__ = ("_ports", "_close_actions", "_close_task")
 
-    def __post_init__(self) -> None:
-        ports = dict(self._ports)
+    def __init__(
+        self,
+        ports: MappingProxyType[str, LLMRolePort],
+        close_actions: tuple[Callable[[], Awaitable[None]], ...],
+    ) -> None:
+        self._ports: MappingProxyType[str, LLMRolePort]
+        self._close_actions = tuple(close_actions)
+        self._close_task: asyncio.Task[None] | None = None
+        ports = dict(ports)
         if not ports or any(
             not isinstance(connection_id, str)
             or not connection_id.strip()
@@ -42,7 +32,7 @@ class LLMConnectionRegistry:
             for connection_id, port in ports.items()
         ):
             raise CoreConfigurationError(CoreFailureCode.PROVIDER_MAPPING_FAILED)
-        object.__setattr__(self, "_ports", MappingProxyType(ports))
+        self._ports = MappingProxyType(ports)
 
     def port(self, connection_id: str) -> LLMRolePort:
         try:
@@ -52,7 +42,7 @@ class LLMConnectionRegistry:
 
     async def close(self) -> None:
         if self._close_task is None:
-            object.__setattr__(self, "_close_task", asyncio.create_task(self._close()))
+            self._close_task = asyncio.create_task(self._close())
         assert self._close_task is not None
         await asyncio.shield(self._close_task)
 
@@ -72,11 +62,10 @@ class LLMConnectionRegistry:
             raise CoreConfigurationError(CoreFailureCode.PROVIDER_MAPPING_FAILED)
 
 
-@dataclass(frozen=True, slots=True)
 class LLMConnectionRouter:
-    """Roleの内部識別子を、構成済み接続へ閉じ込める共通Port。"""
+    """構成済みのRole接続を実行時の要求先へ配送するAdapter。"""
 
-    _ports_by_role: MappingProxyType[str, LLMRolePort]
+    __slots__ = ("_ports_by_role",)
 
     def __init__(self, ports_by_role: dict[str, LLMRolePort]) -> None:
         ports = dict(ports_by_role)
@@ -87,7 +76,7 @@ class LLMConnectionRouter:
             for role_id, port in ports.items()
         ):
             raise CoreConfigurationError(CoreFailureCode.PROVIDER_MAPPING_FAILED)
-        object.__setattr__(self, "_ports_by_role", MappingProxyType(ports))
+        self._ports_by_role: MappingProxyType[str, LLMRolePort] = MappingProxyType(ports)
 
     async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
         try:

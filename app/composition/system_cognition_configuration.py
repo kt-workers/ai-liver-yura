@@ -52,10 +52,8 @@ from app.domain.plugin_registry import PluginRegistryAuthority
 from app.infrastructure.llm.connection_registry_factory import create_llm_connection_registry
 from app.infrastructure.scheduling import RuntimeClock
 from app.usecases.lifecycle import ApplicationLifecycle
-from app.usecases.llm_connections import (
-    LLMConnectionAdapter,
-    route_llm_connections,
-)
+from app.infrastructure.llm.connections import route_llm_connections
+from app.usecases.ports.llm import LLMConnectionAdapter
 
 
 if TYPE_CHECKING:
