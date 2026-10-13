@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -145,16 +145,31 @@ class _OwnedResources:
             raise CoreConfigurationError(CoreFailureCode.INITIALIZATION_FAILED)
 
 
-@dataclass(frozen=True, slots=True)
 class CoreApplication:
-    core: CoreComponents
-    composition_snapshot: SystemCompositionSnapshot
-    cognition: CoreCognitionConfiguration
-    appraisal: AppraisalProductionBinding
-    executive: ExecutiveProductionBinding
-    _owned: _OwnedResources = field(repr=False)
-    _stop_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
-    _start_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
+    """所有資源の起動・停止を制御する実行オブジェクト。"""
+
+    __slots__ = (
+        "core", "composition_snapshot", "cognition", "appraisal", "executive",
+        "_owned", "_stop_task", "_start_task",
+    )
+
+    def __init__(
+        self,
+        core: CoreComponents,
+        composition_snapshot: SystemCompositionSnapshot,
+        cognition: CoreCognitionConfiguration,
+        appraisal: AppraisalProductionBinding,
+        executive: ExecutiveProductionBinding,
+        owned: _OwnedResources,
+    ) -> None:
+        self.core = core
+        self.composition_snapshot = composition_snapshot
+        self.cognition = cognition
+        self.appraisal = appraisal
+        self.executive = executive
+        self._owned = owned
+        self._stop_task: asyncio.Task[None] | None = None
+        self._start_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         if self._stop_task is not None:
@@ -162,7 +177,7 @@ class CoreApplication:
         if self._start_task is None:
             from app.application import start_core
 
-            object.__setattr__(self, "_start_task", asyncio.create_task(start_core(self.core)))
+            self._start_task = asyncio.create_task(start_core(self.core))
         assert self._start_task is not None
         try:
             await asyncio.shield(self._start_task)
@@ -185,7 +200,7 @@ class CoreApplication:
         from app.application import _reap_cleanup
 
         if self._stop_task is None:
-            object.__setattr__(self, "_stop_task", asyncio.create_task(self._close()))
+            self._stop_task = asyncio.create_task(self._close())
         assert self._stop_task is not None
         await _reap_cleanup(self._stop_task)
 

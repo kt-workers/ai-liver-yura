@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import is_dataclass
 from pathlib import Path
 
+from app.composition.system_cognition_configuration import CoreApplication
 from app.usecases.appraisal import DeepAppraisalInterpreter
 from app.usecases.input_meaning import InputMeaningInterpreter
 from app.usecases.ports.llm import LLMRolePort
@@ -38,3 +40,7 @@ def test_llm_interpreters_are_application_services() -> None:
     assert DeepAppraisalInterpreter.__module__ == "app.usecases.appraisal"
     assert InputMeaningInterpreter.__module__ == "app.usecases.input_meaning"
     assert LLMRolePort.__module__ == "app.usecases.ports.llm"
+
+
+def test_core_application_is_lifecycle_service_not_data_class() -> None:
+    assert not is_dataclass(CoreApplication)
