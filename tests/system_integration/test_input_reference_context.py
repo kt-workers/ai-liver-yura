@@ -15,8 +15,9 @@ from app.domain.contracts import RevisionVector
 from app.domain.contracts.snapshots import SnapshotIncoherentError, SnapshotInvariantError
 from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentSnapshot, GoalCommitmentStore
-from app.domain.input_meaning import InputMeaningInterpretationResult, InputMeaningInterpreter
+from app.domain.input_meaning import InputMeaningInterpretationResult
 from app.domain.llm import LLMFailureCode, LLMRoleRequest, LLMRoleResult
+from app.usecases.input_meaning import InputMeaningInterpreter
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.domain.input_meaning.test_input_meaning import NOW, event, policy
 from tests.domain.plan_execution.test_progression import WaitingProvider, runner, setup

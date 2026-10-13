@@ -24,10 +24,11 @@ from app.domain.executive import (
     GoalTransitionOperation,
     PreconditionFact,
 )
-from app.domain.input_meaning import InputMeaningFreshnessStamp, InputMeaningInterpreter
+from app.domain.input_meaning import InputMeaningFreshnessStamp
 from app.domain.llm import LLMRoleRequest, LLMRoleResult
 from app.domain.plugin_registry import PluginRegistryAuthority
 from app.runtime.kernel import CancellationToken
+from app.usecases.input_meaning import InputMeaningInterpreter
 from tests.domain.executive.test_executive import policy as executive_policy
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.domain.input_meaning.test_input_meaning import event, policy

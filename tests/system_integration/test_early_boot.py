@@ -48,7 +48,6 @@ from app.domain.input_meaning import (
     OUTPUT_SCHEMA,
     InputMeaningFreshnessStamp,
     InputMeaningInterpretationResult,
-    InputMeaningInterpreter,
     ReferenceContext,
 )
 from app.domain.llm import (
@@ -61,6 +60,7 @@ from app.domain.llm import (
 )
 from app.runtime.kernel import CancellationToken, SystemRuntimeClock
 from app.runtime.lifecycle import RuntimeLifecycle
+from app.usecases.input_meaning import InputMeaningInterpreter
 
 ROOT = Path(__file__).resolve().parents[2]
 NOW = datetime(2026, 9, 5, tzinfo=timezone.utc)
