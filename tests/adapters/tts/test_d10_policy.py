@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 import pytest
+from app.runtime.lifecycle import DependencyRetryPolicy
 
 from app.adapters.tts import (
     TTSMappingDimension,
@@ -13,7 +14,6 @@ from app.adapters.tts import (
     TTSUnitParameterMappingRule,
     validate_tts_policy_bundle,
 )
-from app.runtime.lifecycle import DependencyRetryPolicy
 
 
 def signed_rule(

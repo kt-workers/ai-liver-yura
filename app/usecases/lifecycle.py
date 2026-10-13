@@ -7,8 +7,8 @@ from datetime import datetime
 from enum import Enum
 from math import isfinite
 
-from app.domain.contracts.common import require_identifier, require_revision
 from app.domain.contracts import Clock
+from app.domain.contracts.common import require_identifier, require_revision
 from app.domain.contracts.lifecycle import (
     ApplicationShutdownFailure,
     ApplicationShutdownPolicy,

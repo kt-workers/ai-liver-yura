@@ -16,9 +16,9 @@ from app.adapters.llm.core import create_core_provider_lease
 from app.adapters.tts.production import TTSProductionConnection, TTSProviderRegistry
 from app.adapters.tts.provider import TTSProviderClient
 from app.composition.cognition import CoreCognitionDelivery
+from app.composition.core_provider import CoreProviderLease
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.presentation_notification import CoreSpeechProductionOwnerConnection
-from app.composition.core_provider import CoreProviderLease
 from app.composition.speech import CoreSpeechContextReaders, SpeechOutputPreparationRequest
 from app.composition.speech_deployment import (
     SpeechDeploymentRequest,

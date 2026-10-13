@@ -7,10 +7,10 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from app.bootstrap import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload
+from app.runtime.kernel import CancellationToken
 
 from app import bootstrap
-from app.bootstrap import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload
-from app.usecases.accepted_inputs import CoreAcceptedInput, CoreAcceptedInputStore
 from app.composition.executive import CoreExecutiveBinding
 from app.composition.executive_input_evidence import CoreExecutiveInputEvidenceReader
 from app.domain.attention import AttentionSource, AttentionSourceKind
@@ -27,7 +27,7 @@ from app.domain.executive import (
 from app.domain.input_meaning import InputMeaningFreshnessStamp
 from app.domain.llm import LLMRoleRequest, LLMRoleResult
 from app.domain.plugin_registry import PluginRegistryAuthority
-from app.runtime.kernel import CancellationToken
+from app.usecases.accepted_inputs import CoreAcceptedInput, CoreAcceptedInputStore
 from app.usecases.input_meaning import InputMeaningInterpreter
 from tests.domain.executive.test_executive import policy as executive_policy
 from tests.domain.goals.test_goal_commitment_store import apply_goal

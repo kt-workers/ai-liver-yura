@@ -3,8 +3,8 @@
 from dataclasses import replace
 
 import pytest
-
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
+
 from app.domain.contracts import SemanticSubjectIdentity, SemanticSubjectKind
 from app.domain.memory import (
     MemoryAssertionPolarity as P,

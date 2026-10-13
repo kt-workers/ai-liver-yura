@@ -140,17 +140,23 @@ def commit_result(
     if failure is not None:
         raise InputMeaningCommitRejected(failure.code, failure.code.value)
     if result.status is not LLMRoleStatus.SUCCEEDED or result.output is None:
-        raise InputMeaningCommitRejected(LLMFailureCode.POLICY_VIOLATION, "非成功の入力意味は採用できません")
+        raise InputMeaningCommitRejected(
+            LLMFailureCode.POLICY_VIOLATION, "非成功の入力意味は採用できません"
+        )
     if request.revisions.source_context_revision != freshness_stamp.source_context_revision:
         raise InputMeaningCommitRejected(LLMFailureCode.STALE, "入力意味の結果が古くなっています")
     if (
         freshness_stamp.acceptance_policy_id != policy.acceptance.policy_id
         or freshness_stamp.acceptance_policy_revision != policy.acceptance.policy_revision
     ):
-        raise InputMeaningCommitRejected(LLMFailureCode.STALE, "入力意味の採用方針が古くなっています")
+        raise InputMeaningCommitRejected(
+            LLMFailureCode.STALE, "入力意味の採用方針が古くなっています"
+        )
     request_value = request.input.value
     if not isinstance(request_value, Mapping):
-        raise InputMeaningCommitRejected(LLMFailureCode.POLICY_VIOLATION, "入力意味の要求構造が不正です")
+        raise InputMeaningCommitRejected(
+            LLMFailureCode.POLICY_VIOLATION, "入力意味の要求構造が不正です"
+        )
     encoded_context = request_value.get("reference_context")
     if encoded_context != freeze_json(reference_context.to_dict()):
         raise InputMeaningCommitRejected(

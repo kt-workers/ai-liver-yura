@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # 作業実行の具体的な調停器。
-
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass

@@ -4,6 +4,8 @@ import asyncio
 from dataclasses import replace
 
 import pytest
+from app.runtime.kernel import SystemRuntimeClock
+from app.runtime.lifecycle import DependencyState, RuntimeLifecycle
 
 from app.domain.executive import CommitmentTransitionOperation, GoalTransitionOperation
 from app.domain.goals import GoalCommitmentStore
@@ -16,8 +18,6 @@ from app.infrastructure.persistence import (
 )
 from app.infrastructure.persistence.postgresql_connection import PostgresDatabase, PostgresEndpoint
 from app.infrastructure.persistence.runtime import PostgresPersistenceRuntime
-from app.runtime.kernel import SystemRuntimeClock
-from app.runtime.lifecycle import DependencyState, RuntimeLifecycle
 from tests.domain.goals.test_goal_commitment_store import (
     commitment_transition,
     decision,

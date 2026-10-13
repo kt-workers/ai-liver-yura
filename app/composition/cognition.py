@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
-from app.usecases.accepted_inputs import CoreAcceptedInputStore
 from app.composition.appraisal import (
     AppraisalBrainModulePort,
     AppraisalBrainWorkPayload,
@@ -40,23 +39,24 @@ from app.domain.brain_integration import (
     BrainWorkPriority,
     BrainWorkStatus,
 )
+from app.domain.input_gateway import InputAdmission, InputAdmissionStatus, InputModality
+from app.domain.input_meaning import InputMeaningInterpretationResult
+from app.infrastructure.scheduling import CancellationToken, RuntimeClock
+from app.usecases.accepted_inputs import CoreAcceptedInputStore
+from app.usecases.attention import UserInteractionAttentionProjector
 from app.usecases.brain_integration_runtime import (
     BrainIntegrationRuntime,
     BrainIntegrationWork,
     BrainIntegrationWorkOutcome,
     BrainWorkAdmission,
 )
-from app.domain.input_gateway import InputAdmission, InputAdmissionStatus, InputModality
-from app.domain.input_meaning import InputMeaningInterpretationResult
-from app.infrastructure.scheduling import CancellationToken, RuntimeClock
-from app.usecases.attention import UserInteractionAttentionProjector
 
 if TYPE_CHECKING:
-    from app.usecases.autonomy import CoreAutonomyDelivery
     from app.composition.execution import CoreExecutionDelivery
-    from app.usecases.memory_evidence import CoreMemoryEvidenceReader
     from app.composition.reflection import CoreReflectionDelivery
     from app.composition.speech_configuration import CoreSpeechDelivery
+    from app.usecases.autonomy import CoreAutonomyDelivery
+    from app.usecases.memory_evidence import CoreMemoryEvidenceReader
 
 
 class _Module(Protocol):

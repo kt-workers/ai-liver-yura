@@ -13,11 +13,11 @@ from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
 )
-from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.domain.executive import CommittedExecutiveDecision, ExecutiveIntentKind
 from app.domain.speech_runtime.discard import PreparedAudioDiscardReason
 from app.domain.speech_runtime.shutdown import SpeechRuntimeShutdown
 from app.infrastructure.scheduling import CancellationToken
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
 
 if TYPE_CHECKING:
     from app.composition.cognition import CoreCognitionDelivery

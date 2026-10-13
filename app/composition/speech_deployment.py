@@ -22,9 +22,7 @@ from app.adapters.llm.speech_semantics import (
     speech_semantics_provider_descriptor,
 )
 from app.adapters.tts.contracts import TTSVoiceBinding
-from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from app.composition.core_provider import ProviderBindingSnapshot, RoleConfigPublication
-from app.usecases.speech_preparation import finish_cleanup
 from app.composition.speech_production_configuration import (
     SpeechBindingReference,
     SpeechProductionInputs,
@@ -32,6 +30,7 @@ from app.composition.speech_production_configuration import (
     SpeechProductionPublication,
 )
 from app.composition.system_cognition_configuration import CoreRunIdentity
+from app.config.core_contracts import identity
 from app.config.layered import (
     ConfigurationError,
     ConfigurationFailureCode,
@@ -40,7 +39,6 @@ from app.config.layered import (
     load_user_configuration,
 )
 from app.config.provider_deployment import ProviderSourceReference
-from app.config.core_contracts import identity
 from app.domain.character_language.realizer import CharacterLanguagePolicy
 from app.domain.llm import LLMFailurePolicy, LLMRoleDescriptor
 from app.domain.semantic_verification import (
@@ -61,6 +59,8 @@ from app.domain.semantic_verification.verifier import (
 from app.domain.speech_performance.policy import yura_revision_1_policy
 from app.domain.speech_semantics.planner import SpeechSemanticsPolicy
 from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
+from app.usecases.speech_preparation import finish_cleanup
 
 SPEECH_PROVIDER_ROLE_IDS = (
     "speech_semantics",

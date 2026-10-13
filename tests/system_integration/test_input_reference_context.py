@@ -5,9 +5,9 @@ from dataclasses import replace
 from typing import cast
 
 import pytest
+from app.bootstrap import InputMeaningBrainWorkPayload
 
 from app import bootstrap
-from app.bootstrap import InputMeaningBrainWorkPayload
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY

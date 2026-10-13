@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from app.runtime.kernel import SystemRuntimeClock
 
 from app import bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
@@ -35,7 +36,6 @@ from app.domain.input_gateway import (
 )
 from app.domain.llm import LLMFailureCode, LLMRoleDescriptor, LLMRoleRequest, LLMRoleResult
 from app.domain.plugin_registry import PluginRegistryAuthority
-from app.runtime.kernel import SystemRuntimeClock
 from app.subsystems.validation.body import _project
 from app.subsystems.validation.cognition import NormalCognitionLabCase, normal_cognition_target
 from app.subsystems.validation.contracts import Gate, LabMode, RunStatus

@@ -2,10 +2,8 @@
 
 from typing import Protocol
 
-from app.usecases.accepted_inputs import CoreAcceptedInputStore
 from app.composition.appraisal import CoreAppraisalBinding
 from app.composition.executive import CoreExecutiveEvidence
-from app.usecases.memory_evidence import CoreMemoryEvidenceReader
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import AuthorityReadPublication
@@ -23,6 +21,8 @@ from app.domain.plan_execution.contracts import PlanExecutionScope
 from app.domain.plan_execution.progress_contracts import PlanProgressContext
 from app.domain.plugin_registry.authority import PluginRegistryAuthority
 from app.domain.speech_semantics_vocabulary import CommunicativeGoalCatalogView
+from app.usecases.accepted_inputs import CoreAcceptedInputStore
+from app.usecases.memory_evidence import CoreMemoryEvidenceReader
 
 
 class CoreExecutivePlanEvidenceReader(Protocol):

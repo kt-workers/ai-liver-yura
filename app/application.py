@@ -68,8 +68,7 @@ from app.usecases.accepted_inputs import CoreAcceptedInputStore
 from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from app.usecases.input_meaning import InputMeaningInterpreter
 from app.usecases.lifecycle import ApplicationLifecycle, DependencyRetryPolicy
-from app.usecases.ports.llm import LLMConnectionAdapter
-from app.usecases.ports.llm import LLMRolePort
+from app.usecases.ports.llm import LLMConnectionAdapter, LLMRolePort
 
 
 if TYPE_CHECKING:

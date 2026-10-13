@@ -3,7 +3,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from app.domain.attention import AttentionSource
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import AuthorityGenerationToken
@@ -12,6 +11,7 @@ from app.domain.memory import MemoryRetrievalQuery
 from app.domain.memory.ranking import RankedMemoryEvidenceView
 from app.domain.memory.semantic_assertions import MemorySemanticAssertionEntry
 from app.infrastructure.persistence import PersistenceError, PersistenceFailureCode
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 
 
 @dataclass(frozen=True, slots=True)

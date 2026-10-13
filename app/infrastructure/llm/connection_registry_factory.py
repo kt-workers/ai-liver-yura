@@ -10,8 +10,7 @@ from app.config.core_contracts import CoreConfigurationError, CoreFailureCode
 from app.config.llm_connections import LLMConnectionsConfig
 from app.domain.llm import LLMRoleDescriptor
 from app.infrastructure.llm.connections import LLMConnectionRegistry
-from app.usecases.ports.llm import LLMConnectionAdapter
-from app.usecases.ports.llm import LLMRolePort
+from app.usecases.ports.llm import LLMConnectionAdapter, LLMRolePort
 
 
 async def create_llm_connection_registry(

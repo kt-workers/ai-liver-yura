@@ -11,9 +11,9 @@ from jsonschema import Draft202012Validator
 
 from app import bootstrap
 from app.adapters.character.yaml_loader import load_character_definition_yaml
+from app.adapters.llm.core import create_core_provider_lease
 from app.adapters.llm.openai_responses import OpenAIResponsesAdapter
 from app.adapters.llm.production import UnavailableLLMRolePort
-from app.adapters.llm.core import create_core_provider_lease
 from app.adapters.llm.speech_semantics import SpeechSemanticsProviderPort
 from app.composition.speech import CoreSpeechContextReaders
 from app.composition.speech_deployment import (

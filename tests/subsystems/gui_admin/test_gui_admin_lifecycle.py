@@ -6,10 +6,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-
-from app.config.gui_admin import load_gui_admin_config
-from app.config.core import load_core_config
 from app.runtime.kernel.clock import FakeRuntimeClock
+
+from app.config.core import load_core_config
+from app.config.gui_admin import load_gui_admin_config
 from app.subsystems.gui_admin.contracts import GuiAdminAvailability
 from app.subsystems.gui_admin.lifecycle import GuiAdminSubsystem
 

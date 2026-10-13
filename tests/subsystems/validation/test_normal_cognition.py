@@ -6,8 +6,8 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
-
 from app.bootstrap import CoreRuntimeApplication
+
 from app.domain.executive import GoalTransitionOperation
 from app.subsystems.validation.body import _project
 from app.subsystems.validation.cognition import NormalCognitionLabCase, normal_cognition_target

@@ -3,8 +3,6 @@ from datetime import datetime, timezone
 from typing import cast
 
 import pytest
-
-from app.domain.contracts import RevisionVector
 from app.runtime.kernel import (
     FakeRuntimeClock,
     LaneErrorPolicy,
@@ -27,6 +25,7 @@ from app.runtime.lifecycle import (
 )
 from app.runtime.shutdown import RuntimeShutdownError, RuntimeShutdownPolicy
 
+from app.domain.contracts import RevisionVector
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 TEST_SCHEDULER_POLICY = RuntimeSchedulerPolicy("test.scheduler", 1, 8)
 

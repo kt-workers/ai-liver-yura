@@ -4,6 +4,8 @@ import asyncio
 from dataclasses import replace
 
 import pytest
+from app.domain.brain_integration.runtime import BrainIntegrationWork, BrainIntegrationWorkOutcome
+from app.runtime.kernel import FakeRuntimeClock, QueuePolicy
 
 from app.domain.brain_integration import (
     BrainIntegrationLane,
@@ -11,8 +13,6 @@ from app.domain.brain_integration import (
     BrainIntegrationRuntime,
     BrainWorkStatus,
 )
-from app.domain.brain_integration.runtime import BrainIntegrationWork, BrainIntegrationWorkOutcome
-from app.runtime.kernel import FakeRuntimeClock, QueuePolicy
 from tests.domain.brain_integration.test_runtime import NOW, FakePort, policy, work
 
 

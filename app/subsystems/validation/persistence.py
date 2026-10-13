@@ -17,12 +17,9 @@ from typing import Any, TypeVar
 from uuid import uuid4
 
 from app.application import CoreComponents, build_persistent_core, stop_core
-from app.infrastructure.persistence.goal_binding import (
-    CoreGoalPersistenceBinding,
-    GoalPersistenceCommitResult,
-)
 from app.config.core import load_core_config
 from app.domain.contracts.common import JsonValue, freeze_json, thaw_json
+from app.domain.contracts.lifecycle import ApplicationShutdownError
 from app.domain.executive import CommittedExecutiveDecision
 from app.domain.memory import MemoryRetrievalQuery, MemoryWriteRequest, MemoryWriteResult
 from app.domain.memory.contracts import MemoryDisposition
@@ -35,13 +32,16 @@ from app.infrastructure.persistence import (
     PostgresPersistenceRuntime,
     SnapshotPersistenceRetryPolicy,
 )
+from app.infrastructure.persistence.goal_binding import (
+    CoreGoalPersistenceBinding,
+    GoalPersistenceCommitResult,
+)
 from app.infrastructure.persistence.postgresql_connection import (
     PostgresConnectionPolicy,
     PostgresDatabase,
     PostgresEndpoint,
 )
 from app.usecases.lifecycle import DependencyRetryPolicy, DependencyState
-from app.domain.contracts.lifecycle import ApplicationShutdownError
 
 from .contracts import (
     Gate,

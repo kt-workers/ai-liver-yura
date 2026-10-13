@@ -9,10 +9,10 @@ from dataclasses import replace
 
 import pytest
 
-from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
 from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentStore
 from app.infrastructure.persistence import DurabilityStatus, PersistenceFailureCode
+from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
 from app.infrastructure.persistence.postgresql_connection import PostgresDatabase, PostgresEndpoint
 from tests.domain.goals.test_goal_commitment_store import decision, goal_transition
 from tests.helpers.goal_semantics import semantic_spec

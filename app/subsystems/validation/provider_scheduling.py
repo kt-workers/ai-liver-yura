@@ -9,6 +9,7 @@ from time import monotonic_ns
 from typing import cast
 
 from app.domain.contracts.common import JsonValue, freeze_json
+from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
 from app.domain.llm import LLMRoleRequest, LLMRoleResult
 from app.infrastructure.scheduling import (
     QueuePolicy,
@@ -19,7 +20,6 @@ from app.infrastructure.scheduling import (
 )
 from app.infrastructure.scheduling.cancellation import CancellationToken
 from app.infrastructure.scheduling.clock import SystemRuntimeClock
-from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
 from app.usecases.ports.llm import LLMRolePort
 
 from .contracts import (

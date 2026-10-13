@@ -7,10 +7,10 @@ import sys
 from pathlib import Path
 
 from app.bootstrap import build_persistent_core
-from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
 from app.domain.executive import GoalTransitionOperation
 from app.domain.memory import MemoryWriteRequest
 from app.infrastructure.persistence import DurabilityStatus
+from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
 from app.infrastructure.persistence.postgresql_connection import PostgresEndpoint
 from tests.domain.goals.test_goal_commitment_store import decision, goal_transition
 from tests.domain.memory import test_memory_store_retrieval as memory

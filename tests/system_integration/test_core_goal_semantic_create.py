@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 
 import pytest
+from app.runtime.kernel import CancellationToken
 
 from app.composition.executive import CoreExecutiveBinding
 from app.domain.contracts.common import freeze_json
@@ -15,7 +16,6 @@ from app.domain.executive import (
 )
 from app.domain.executive import GoalTransitionOperation as G
 from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
-from app.runtime.kernel import CancellationToken
 from tests.domain.executive.test_executive import policy
 from tests.domain.goals.test_goal_commitment_store import commitment_transition, goal_transition
 from tests.helpers.executive_requirements import make_authority

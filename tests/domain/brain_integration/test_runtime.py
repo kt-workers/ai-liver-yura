@@ -6,6 +6,15 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
+from app.runtime.kernel import (
+    CancellationToken,
+    FakeRuntimeClock,
+    LaneErrorPolicy,
+    QueuePolicy,
+    RuntimeLanePolicy,
+    RuntimeSchedulerPolicy,
+)
+from app.runtime.shutdown import RuntimeShutdownPolicy
 
 from app.domain.brain_integration import (
     BrainIntegrationLane,
@@ -20,15 +29,6 @@ from app.domain.brain_integration import (
     BrainWorkPriority,
     BrainWorkStatus,
 )
-from app.runtime.kernel import (
-    CancellationToken,
-    FakeRuntimeClock,
-    LaneErrorPolicy,
-    QueuePolicy,
-    RuntimeLanePolicy,
-    RuntimeSchedulerPolicy,
-)
-from app.runtime.shutdown import RuntimeShutdownPolicy
 
 NOW = datetime(2026, 8, 31, tzinfo=timezone.utc)
 TEST_SHUTDOWN_POLICY = RuntimeShutdownPolicy("test.brain.shutdown", 1, 1.0, 1.0, 1.0, 1.0)

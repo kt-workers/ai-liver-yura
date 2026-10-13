@@ -21,7 +21,6 @@ from app.composition.execution_observation import SPEECH_OBSERVATION_SOURCE
 from app.composition.speech import SpeechOutputPreparationRequest
 from app.composition.speech_feedback import CoreSpeechFeedback, SpeechFactDeliveryDisposition
 from app.domain.brain_integration import BrainWorkStatus
-from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.domain.character_language import CharacterLanguageContextSnapshot, CharacterUtterance
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import CommittedExecutiveDecision, ExecutiveIntentKind
@@ -38,6 +37,7 @@ from app.domain.speech_runtime.contracts import (
 )
 from app.domain.speech_runtime.tasks import CandidateTaskKey
 from app.domain.speech_semantics import SpeechSemanticContextSnapshot, SpeechSemanticPlan
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.usecases.ports.llm import LLMRolePort
 
 from .body import _project

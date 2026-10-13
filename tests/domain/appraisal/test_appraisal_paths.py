@@ -45,7 +45,6 @@ from app.domain.llm import (
 from app.usecases.appraisal import DeepAppraisalInterpreter, DeepAppraisalLiveStatePort
 from tests.helpers.llm import make_execution_policy
 
-
 NOW = datetime(2026, 8, 24, tzinfo=timezone.utc)
 JOY = FacetRef(StateFacetKind.EMOTION, "joy")
 

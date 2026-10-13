@@ -5,6 +5,7 @@ import json
 from dataclasses import replace
 
 import pytest
+from app.runtime.kernel import QueuePolicy, RuntimeWorkItem, WorkPriority
 
 from app.domain.llm import (
     LLMFailureCode,
@@ -14,7 +15,6 @@ from app.domain.llm import (
     LLMRoleStatus,
     LLMTokenUsage,
 )
-from app.runtime.kernel import QueuePolicy, RuntimeWorkItem, WorkPriority
 from app.subsystems.validation.contracts import RunStatus
 from app.subsystems.validation.provider_scheduling import (
     ProviderSchedulingCase,

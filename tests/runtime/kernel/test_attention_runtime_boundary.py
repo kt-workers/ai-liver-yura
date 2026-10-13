@@ -1,17 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
 
-from app.domain.attention import (
-    AttentionCoordinator,
-    AttentionIngressOperation,
-    AttentionIngressSignal,
-    AttentionPriority,
-    AttentionSchedulingPolicy,
-    AttentionSourceKind,
-    AttentionTurnStore,
-    ExecutiveTriggerEligibility,
-)
-from app.domain.contracts import RevisionVector
 from app.runtime.kernel import (
     FakeRuntimeClock,
     LaneErrorPolicy,
@@ -29,6 +18,17 @@ from app.runtime.kernel import (
 )
 from app.runtime.shutdown import RuntimeShutdownPolicy
 
+from app.domain.attention import (
+    AttentionCoordinator,
+    AttentionIngressOperation,
+    AttentionIngressSignal,
+    AttentionPriority,
+    AttentionSchedulingPolicy,
+    AttentionSourceKind,
+    AttentionTurnStore,
+    ExecutiveTriggerEligibility,
+)
+from app.domain.contracts import RevisionVector
 NOW = datetime(2026, 8, 16, tzinfo=timezone.utc)
 TEST_SCHEDULER_POLICY = RuntimeSchedulerPolicy("test.scheduler", 1, 8)
 TEST_SHUTDOWN_POLICY = RuntimeShutdownPolicy("test.attention.shutdown", 1, 1.0, 1.0, 1.0, 1.0)

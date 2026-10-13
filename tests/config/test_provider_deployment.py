@@ -7,8 +7,8 @@ from typing import Any
 import pytest
 import yaml
 
-from app.config.provider_deployment import ROLE_IDS, load_provider_deployment
 from app.config.core_contracts import CoreConfigurationError
+from app.config.provider_deployment import ROLE_IDS, load_provider_deployment
 
 SOURCE = Path("config/provider_deployment_core.yaml").read_text()
 REF = {"source_id": "deployment", "identity": "role-mapping", "revision": 1}

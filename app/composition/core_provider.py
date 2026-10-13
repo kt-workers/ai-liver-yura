@@ -17,8 +17,8 @@ from app.adapters.llm.openai_responses import (
     OpenAIResponsesRoleConfig,
     model_policy_failure,
 )
-from app.config.provider_deployment import ProviderDeploymentConfig, ProviderSourceReference
 from app.config.core_contracts import CoreConfigurationError, CoreFailureCode, identity
+from app.config.provider_deployment import ProviderDeploymentConfig, ProviderSourceReference
 from app.domain.llm import LLMModelClass, LLMRoleDescriptor
 from app.usecases.ports.llm import LLMRolePort
 

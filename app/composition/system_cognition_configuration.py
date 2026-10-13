@@ -50,9 +50,9 @@ from app.domain.goals import GoalCommitmentStore
 from app.domain.input_meaning.interpreter import descriptor as input_descriptor
 from app.domain.plugin_registry import PluginRegistryAuthority
 from app.infrastructure.llm.connection_registry_factory import create_llm_connection_registry
+from app.infrastructure.llm.connections import route_llm_connections
 from app.infrastructure.scheduling import RuntimeClock
 from app.usecases.lifecycle import ApplicationLifecycle
-from app.infrastructure.llm.connections import route_llm_connections
 from app.usecases.ports.llm import LLMConnectionAdapter
 
 

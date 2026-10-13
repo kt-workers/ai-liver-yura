@@ -1,6 +1,7 @@
 """Speech production試験で実Ownerを明示構築する。"""
 
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
+
 from app.composition.speech_semantics_sources import (
     ProductionSpeechSources,
 )

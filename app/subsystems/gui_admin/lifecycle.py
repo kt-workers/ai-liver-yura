@@ -7,8 +7,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from app.config.gui_admin import GuiAdminProductionConfig
 from app.config.core import CoreConfig
+from app.config.gui_admin import GuiAdminProductionConfig
 from app.infrastructure.scheduling import RuntimeClock
 
 from .configuration_projection import CoreConfigurationReadModelProjector

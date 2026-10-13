@@ -14,10 +14,9 @@ from app.adapters.llm.openai_responses import (
     OpenAIResponsesRoleConfig,
     ResponsesClient,
 )
-from app.usecases.ports.llm import LLMConnectionAdapter
 from app.config.llm_connections import LLMConnectionConfig
 from app.domain.llm import LLMModelClass, LLMReasoningEffort, LLMRoleDescriptor
-from app.usecases.ports.llm import LLMRolePort
+from app.usecases.ports.llm import LLMConnectionAdapter, LLMRolePort
 
 
 @dataclass(frozen=True, slots=True)

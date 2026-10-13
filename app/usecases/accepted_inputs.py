@@ -3,13 +3,13 @@
 from collections import OrderedDict
 from dataclasses import dataclass
 
+from app.domain.attention import AttentionSource
 from app.domain.input_gateway import (
     InputAdmission,
     InputAdmissionStatus,
     InputModality,
     NormalizedInputEvent,
 )
-from app.domain.attention import AttentionSource
 from app.domain.input_meaning import InputMeaningInterpretationResult, StructuredInputMeaning
 
 

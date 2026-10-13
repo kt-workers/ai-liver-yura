@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from math import isfinite
 
 from app.config.core_contracts import identity, invalid, parse, resource, revision, shape
-from app.usecases.brain_integration_runtime import BrainIntegrationRuntimePolicy
+from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
 from app.domain.input_meaning import InputMeaningAcceptancePolicy, InputMeaningPolicy, PrimaryIntent
 from app.domain.llm import (
     LLMExecutionPolicy,
@@ -18,7 +18,7 @@ from app.infrastructure.scheduling import (
     RuntimeLanePolicy,
     RuntimeSchedulerPolicy,
 )
-from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
+from app.usecases.brain_integration_runtime import BrainIntegrationRuntimePolicy
 
 
 @dataclass(frozen=True, slots=True)

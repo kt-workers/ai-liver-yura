@@ -8,10 +8,6 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 from app.composition.execution_observation import SPEECH_OBSERVATION_SOURCE
-from app.infrastructure.persistence.memory_binding import (
-    CoreMemoryOperation,
-    CoreMemoryPersistenceBinding,
-)
 from app.domain.activity_execution import ActivityExecutionAuthority, ActivityExecutionRecord
 from app.domain.activity_execution.observation import ObservedExecutionFactRecord
 from app.domain.brain_integration import (
@@ -19,11 +15,6 @@ from app.domain.brain_integration import (
     BrainIntegrationModule,
     BrainWorkEnvelope,
     BrainWorkPriority,
-)
-from app.usecases.brain_integration_runtime import (
-    BrainIntegrationRuntime,
-    BrainIntegrationWork,
-    BrainWorkAdmission,
 )
 from app.domain.contracts import ExecutionStatus
 from app.domain.contracts.common import freeze_json
@@ -44,7 +35,16 @@ from app.domain.memory_reflection import (
     ReflectionTriggerKind,
 )
 from app.infrastructure.persistence import PersistenceError, PersistenceFailureCode
+from app.infrastructure.persistence.memory_binding import (
+    CoreMemoryOperation,
+    CoreMemoryPersistenceBinding,
+)
 from app.infrastructure.scheduling import CancellationToken, RuntimeClock
+from app.usecases.brain_integration_runtime import (
+    BrainIntegrationRuntime,
+    BrainIntegrationWork,
+    BrainWorkAdmission,
+)
 from app.usecases.ports.llm import LLMRolePort
 
 

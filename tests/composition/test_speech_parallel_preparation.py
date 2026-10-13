@@ -6,12 +6,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
+from app.runtime.kernel import CancellationToken
 
 from app.composition.presentation_notification import CoreSpeechProductionOwnerConnection
-from app.usecases.speech_preparation import (
-    PendingSpeechAudioOwner,
-    SpeechPreparationCleanupError,
-)
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.input_gateway.normalizer import (
     InputAdmissionLedger,
@@ -20,7 +17,10 @@ from app.domain.input_gateway.normalizer import (
 )
 from app.domain.speech_runtime.contracts import SpeechPresentationMode, TTSPreparationMode
 from app.domain.speech_runtime.discard import PreparedAudioDiscarder
-from app.runtime.kernel import CancellationToken
+from app.usecases.speech_preparation import (
+    PendingSpeechAudioOwner,
+    SpeechPreparationCleanupError,
+)
 from tests.helpers.speech_path import build_speech_path
 
 

@@ -6,6 +6,7 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
+from app.runtime.kernel import CancellationToken
 
 from app.composition.executive import CoreExecutiveBinding, CoreExecutiveEvidence
 from app.domain.attention import AttentionSource
@@ -20,7 +21,6 @@ from app.domain.executive import (
     ExecutiveSourceEvent,
 )
 from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
-from app.runtime.kernel import CancellationToken
 from tests.domain.executive.test_executive import (
     candidate_json,
     live_state,

@@ -13,18 +13,16 @@ from typing import TYPE_CHECKING, Protocol
 from app.adapters.tts.contracts import TTSSynthesisPriority, TTSSynthesisRequest, TTSSynthesisStatus
 from app.adapters.tts.production import TTSProductionConnection, TTSProductionLease
 from app.composition.cognition import CoreCognitionDelivery
+from app.composition.core_provider import CoreProviderLease, CoreProviderLeaseFactory
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.presentation_notification import (
     CorePresentationNotification,
     CoreSpeechProductionOwnerConnection,
 )
-from app.composition.core_provider import CoreProviderLease, CoreProviderLeaseFactory
 from app.composition.speech import CoreSpeechContextReaders, SpeechOutputPreparationRequest
 from app.composition.speech_deployment import SpeechDeploymentRequest
-from app.usecases.speech_preparation import finish_cleanup
 from app.composition.speech_production_configuration import SpeechProductionPorts
 from app.config.layered import ConfigurationError, ConfigurationFailureCode
-from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.domain.executive import CommittedExecutiveDecision
 from app.domain.speech_runtime.contracts import SpeechPresentationMode, TTSPreparationMode
 from app.domain.speech_runtime.discard import PreparedAudioDiscardPort, PreparedAudioDiscardRequest
@@ -33,6 +31,8 @@ from app.infrastructure.speech_presentation.production import (
     PresentationWorkerLease,
     PresentationWorkerRegistry,
 )
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
+from app.usecases.speech_preparation import finish_cleanup
 
 if TYPE_CHECKING:
     from app.domain.character_language.realizer import CharacterLanguageLiveStatePort

@@ -268,7 +268,7 @@ async def build_speech_path(
     )
     from pathlib import Path
 
-    from app.usecases.accepted_inputs import CoreAcceptedInputStore
+    from app.runtime.kernel import SystemRuntimeClock
     from app.composition.cognition_configuration import CoreCognitionConfiguration
     from app.config.core import load_core_config
     from app.domain.appraisal import InternalStateReducer
@@ -276,7 +276,7 @@ async def build_speech_path(
     from app.domain.contracts.preconditions import PreconditionSourceRouter
     from app.domain.executive import ExecutiveIntentRequirementsPolicy, ExecutiveRequirementsOwner
     from app.domain.plugin_registry import PluginRegistryAuthority
-    from app.runtime.kernel import SystemRuntimeClock
+    from app.usecases.accepted_inputs import CoreAcceptedInputStore
     from tests.domain.appraisal.test_appraisal_paths import policy as appraisal_policy
     from tests.domain.appraisal.test_appraisal_paths import state
     from tests.domain.executive.test_executive import policy as executive_policy

@@ -15,7 +15,6 @@ from app.domain.activity_execution import (
     ExecutionEffectUncertainty,
 )
 from app.domain.brain_integration import BrainWorkStatus
-from app.usecases.brain_integration_runtime import BrainIntegrationWork, BrainWorkAdmission
 from app.domain.contracts import ExecutionStatus, PreconditionRef
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import CommittedExecutiveDecision
@@ -23,6 +22,7 @@ from app.domain.input_gateway import InputAdmission, InputAdmissionStatus
 from app.domain.plan_execution.contracts import PlanExecutionScope
 from app.domain.plan_execution.owner import PlanExecutionProgress
 from app.infrastructure.scheduling import RuntimeClock
+from app.usecases.brain_integration_runtime import BrainIntegrationWork, BrainWorkAdmission
 
 from .body import _project
 from .cognition import _IterationApplication, _result_projection, _status

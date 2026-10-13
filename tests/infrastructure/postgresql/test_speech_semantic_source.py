@@ -3,8 +3,8 @@
 from dataclasses import replace
 
 import pytest
-
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
+
 from app.composition.speech_semantics_sources import (
     ProductionSpeechSources,
     build_projection_v1,

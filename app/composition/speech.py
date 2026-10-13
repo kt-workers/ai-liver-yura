@@ -14,14 +14,7 @@ from app.composition.speech_feedback import (
     ObservedSpeechPresentationBoundary,
     SpeechFactDeliveryDisposition,
 )
-from app.usecases.speech_preparation import (
-    PendingPreparedAudio,
-    PendingSpeechAudioOwner,
-    SpeechPreparationCleanupError,
-    finish_cleanup,
-)
 from app.domain.activity_execution.observation import ObservedExecutionFactRecord
-from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.domain.character_language import (
     CharacterLanguageContextSnapshot,
     CharacterLanguageRealizer,
@@ -67,8 +60,15 @@ from app.domain.speech_runtime.tasks import CandidateTaskKey, CandidateTaskRegis
 from app.domain.speech_semantics import SpeechSemanticPlan, SpeechSemanticsPlanner
 from app.domain.speech_semantics.contracts import SpeechSemanticContextSnapshot
 from app.domain.speech_semantics.production import SpeechSemanticContextBuilder
-from app.infrastructure.speech_presentation.supervisor import SpeechPresentationWorkerSupervisor
 from app.infrastructure.scheduling import CancellationToken
+from app.infrastructure.speech_presentation.supervisor import SpeechPresentationWorkerSupervisor
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
+from app.usecases.speech_preparation import (
+    PendingPreparedAudio,
+    PendingSpeechAudioOwner,
+    SpeechPreparationCleanupError,
+    finish_cleanup,
+)
 
 
 @dataclass(frozen=True, slots=True)

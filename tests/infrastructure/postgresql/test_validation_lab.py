@@ -10,8 +10,8 @@ from typing import Any
 import pytest
 import pytest_asyncio
 import yaml
-
 from app.bootstrap import CoreRuntimeApplication
+
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import GoalTransitionOperation
 from app.domain.memory import MemoryWriteRequest

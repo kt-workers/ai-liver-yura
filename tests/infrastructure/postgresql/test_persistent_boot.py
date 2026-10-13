@@ -8,9 +8,8 @@ from pathlib import Path
 
 import pytest
 import yaml
-
 from app.bootstrap import build_persistent_core
-from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
+
 from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentSnapshot
 from app.domain.memory import MemoryWriteRequest
@@ -21,6 +20,7 @@ from app.infrastructure.persistence import (
     PersistenceOperationResult,
     PostgresPersistenceRuntime,
 )
+from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
 from app.infrastructure.persistence.postgresql_connection import PostgresDatabase, PostgresEndpoint
 from tests.domain.goals.test_goal_commitment_store import decision, goal_transition
 from tests.domain.memory import test_memory_store_retrieval as memory
@@ -294,9 +294,9 @@ async def test_missing_database_keeps_core_running_with_typed_failure(
 ) -> None:
     from dataclasses import replace
 
+    from app.runtime.lifecycle import DependencyState
     from app.domain.brain_integration import BrainWorkStatus
     from app.domain.input_meaning import InputMeaningInterpretationResult
-    from app.runtime.lifecycle import DependencyState
     from tests.system_integration.test_early_boot import work
 
     baseline = asyncio.all_tasks()

@@ -22,7 +22,6 @@ from app.domain.activity_execution.observation import (
     ObservedExecutionFactRecord,
 )
 from app.domain.attention import AttentionTurnStore
-from app.usecases.brain_integration_runtime import BrainIntegrationWork, BrainWorkAdmission
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus, RevisionVector
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import (
@@ -42,6 +41,7 @@ from app.domain.input_gateway import (
 )
 from app.domain.input_gateway.normalizer import InputNormalizer
 from app.usecases.attention import AttentionResponseSettlementCoordinator
+from app.usecases.brain_integration_runtime import BrainIntegrationWork, BrainWorkAdmission
 
 if TYPE_CHECKING:
     from app.composition.cognition import CoreCognitionDelivery

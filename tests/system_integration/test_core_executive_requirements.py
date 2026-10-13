@@ -6,6 +6,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
+from app.runtime.kernel import CancellationToken
 
 from app.composition.executive import CoreExecutiveBinding
 from app.composition.executive_requirements import (
@@ -46,7 +47,6 @@ from app.domain.speech_semantics_vocabulary import (
     CommunicativeGoalCatalogView,
     SpeechSourceContractKind,
 )
-from app.runtime.kernel import CancellationToken
 from tests.domain.executive.test_executive import candidate, policy, snapshot
 from tests.domain.plan_execution.test_progression import setup as plan_setup
 from tests.domain.plugin_registry.test_plugin_registry import available_registry, grants

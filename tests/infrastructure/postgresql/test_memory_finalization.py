@@ -6,8 +6,8 @@ from dataclasses import replace
 from threading import Event
 
 import pytest
-
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
+
 from app.domain.contracts import SemanticSubjectIdentity, SemanticSubjectKind
 from app.domain.contracts.finalization import FinalizationFailure
 from app.domain.memory import (

@@ -5,12 +5,9 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-
-from app.usecases.memory_evidence import (
-    CoreMemoryEvidenceConfiguration,
-    CoreMemoryEvidenceReader,
-)
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
+from app.runtime.kernel import FakeRuntimeClock
+
 from app.composition.reflection import CoreReflectionConfiguration, CoreReflectionDelivery
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_integration import (
@@ -24,7 +21,10 @@ from app.domain.llm import LLMRoleRequest, LLMRoleResult
 from app.domain.memory_reflection import ReflectionAcceptancePolicy, ReflectionCandidateStatus
 from app.domain.memory_reflection.llm_roles import proposal_to_wire_v3
 from app.infrastructure.persistence import PostgresEndpoint
-from app.runtime.kernel import FakeRuntimeClock
+from app.usecases.memory_evidence import (
+    CoreMemoryEvidenceConfiguration,
+    CoreMemoryEvidenceReader,
+)
 from tests.domain.brain_integration.test_runtime import FakePort, envelope, policy, work
 from tests.domain.memory import test_memory_store_retrieval as memory
 from tests.domain.memory_reflection.test_llm_roles import RolePort, role_policy, support_wire

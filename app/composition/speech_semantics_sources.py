@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from app.domain.activity_execution.authority import ActivityExecutionAuthority
 from app.domain.activity_execution.contracts import ActivityExecutionRecord
 from app.domain.contracts import ExecutionStatus
@@ -60,6 +59,7 @@ from app.domain.speech_semantics_vocabulary import (
     SpeechTruthRule as T,
 )
 from app.infrastructure.persistence import PersistenceError
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 
 
 @dataclass(frozen=True, slots=True)

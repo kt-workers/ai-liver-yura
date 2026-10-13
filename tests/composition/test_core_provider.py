@@ -8,18 +8,18 @@ import pytest
 import yaml
 
 from app.adapters.llm.appraisal import appraisal_openai_role_config
-from app.adapters.llm.openai_responses import OpenAIResponsesModelPolicy, OpenAIResponsesRoleConfig
 from app.adapters.llm.core import create_core_provider_lease
+from app.adapters.llm.openai_responses import OpenAIResponsesModelPolicy, OpenAIResponsesRoleConfig
 from app.composition.core_provider import (
     ModelPoliciesPublication,
     RoleConfigPublication,
     resolve_provider_configuration,
 )
 from app.config.appraisal import load_appraisal_config
-from app.config.executive import load_executive_config
 from app.config.core import load_core_config
-from app.config.provider_deployment import ProviderSourceReference, load_provider_deployment
 from app.config.core_contracts import CoreConfigurationError
+from app.config.executive import load_executive_config
+from app.config.provider_deployment import ProviderSourceReference, load_provider_deployment
 from app.domain.appraisal.deep import descriptor as appraisal_descriptor
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.executive.deliberator import ExecutivePolicy

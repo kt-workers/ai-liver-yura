@@ -10,14 +10,25 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol
 
+from app.domain.brain_integration.contracts import (
+    BrainIntegrationLane,
+    BrainIntegrationModule,
+    BrainIntegrationTerminalOutcome,
+    BrainIntegrationTrace,
+    BrainRevisionEvent,
+    BrainWorkEnvelope,
+    BrainWorkInterval,
+    BrainWorkPriority,
+    BrainWorkStatus,
+)
 from app.domain.contracts import RevisionVector
-from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
 from app.domain.contracts.common import (
     require_aware,
     require_identifier,
     require_revision,
     utc_instant,
 )
+from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
 from app.infrastructure.scheduling import (
     CancellationToken,
     QueuePolicy,
@@ -29,18 +40,6 @@ from app.infrastructure.scheduling import (
     WorkDisposition,
     WorkOutcome,
     WorkPriority,
-)
-
-from app.domain.brain_integration.contracts import (
-    BrainIntegrationLane,
-    BrainIntegrationModule,
-    BrainIntegrationTerminalOutcome,
-    BrainIntegrationTrace,
-    BrainRevisionEvent,
-    BrainWorkEnvelope,
-    BrainWorkInterval,
-    BrainWorkPriority,
-    BrainWorkStatus,
 )
 
 

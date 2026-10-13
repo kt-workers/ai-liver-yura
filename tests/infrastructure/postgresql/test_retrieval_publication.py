@@ -6,8 +6,8 @@ from dataclasses import replace
 from threading import Event
 
 import pytest
-
 from app.composition.memory_persistence import CoreMemoryPersistenceBinding
+
 from app.domain.contracts.finalization import FinalizationError, FinalizationFailure
 from app.domain.memory import MemoryStoreAuthority, MemoryWriteRequest
 from app.infrastructure.persistence import PostgresEndpoint

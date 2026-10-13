@@ -9,18 +9,18 @@ from typing import Any
 
 import pytest
 import yaml
+from app.runtime.kernel import SystemRuntimeClock
 
 from app import bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.composition import system_cognition_configuration as system
-from app.config.executive_assembly import create_executive_configuration
 from app.composition.core_provider import CoreProviderLease
 from app.config.core_contracts import CoreConfigurationError
+from app.config.executive_assembly import create_executive_configuration
 from app.domain.attention import AttentionTurnStore
 from app.domain.contracts.finalization import FinalizationError
 from app.domain.contracts.preconditions import PreconditionSourceRouter
 from app.domain.plugin_registry import PluginRegistryAuthority
-from app.runtime.kernel import SystemRuntimeClock
 
 async def unavailable_lease(
     roles: Any, configs: Any, bindings: Any, mode: str

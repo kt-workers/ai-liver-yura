@@ -6,12 +6,12 @@ from dataclasses import dataclass, is_dataclass
 
 import pytest
 
-from app.infrastructure.llm.connection_registry_factory import create_llm_connection_registry
-from app.infrastructure.llm.connections import LLMConnectionRegistry, LLMConnectionRouter
 from app.composition.system_cognition_configuration import CoreRunIdentity
 from app.config.core_contracts import CoreConfigurationError
 from app.config.llm_connections import LLMConnectionConfig, LLMConnectionsConfig
 from app.domain.llm import LLMRoleDescriptor
+from app.infrastructure.llm.connection_registry_factory import create_llm_connection_registry
+from app.infrastructure.llm.connections import LLMConnectionRegistry, LLMConnectionRouter
 
 
 class Port:

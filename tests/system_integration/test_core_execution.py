@@ -5,6 +5,8 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
+from app.domain.brain_integration.runtime import BrainIntegrationWorkOutcome
+from app.runtime.kernel.clock import FakeRuntimeClock
 
 from app.composition.execution import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
 from app.domain.activity_execution import (
@@ -16,7 +18,6 @@ from app.domain.activity_execution import (
     ExecutionEffectUncertainty,
     ExecutionPreflightSnapshot,
 )
-from app.domain.brain_integration.runtime import BrainIntegrationWorkOutcome
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus
 from app.domain.goal_planning import GoalPlanningAuthority
@@ -25,7 +26,6 @@ from app.domain.input_gateway.normalizer import InputAdmissionLedger, InputNorma
 from app.domain.plan_execution.contracts import PlanExecutionPolicy
 from app.domain.plan_execution.coordinator import PlanExecutionCoordinator
 from app.domain.plan_execution.owner import PlanExecutionCurrentState, PlanExecutionOwner
-from app.runtime.kernel.clock import FakeRuntimeClock
 from tests.domain.activity_binding.test_binding import direct_fixture
 from tests.domain.executive.test_executive import NOW
 from tests.helpers.executive_requirements import fence_clock, make_authority

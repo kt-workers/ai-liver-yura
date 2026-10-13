@@ -9,15 +9,12 @@ from typing import TYPE_CHECKING
 
 from app.composition.cognition import CoreCognitionDelivery
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
-from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from app.composition.presentation_notification import CorePresentationNotification
 from app.composition.speech import CoreSpeechContextReaders, CoreSpeechPipeline
 from app.composition.speech_configuration import CoreSpeechConfiguration
-from app.usecases.speech_preparation import finish_cleanup
 from app.composition.speech_semantics_policy import bind_speech_semantics_policy_v1
 from app.composition.speech_semantics_sources import ProductionSpeechSources
 from app.config.core_contracts import CoreConfigurationError, CoreFailureCode, identity, revision
-from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.domain.character_language import CharacterLanguageAuthority, CharacterLanguageRealizer
 from app.domain.character_language.realizer import (
     CharacterLanguageLiveStatePort,
@@ -56,9 +53,12 @@ from app.domain.speech_semantics.planner import (
     descriptor as semantics_descriptor,
 )
 from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
-from app.infrastructure.speech_presentation.supervisor import SpeechPresentationWorkerSupervisor
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from app.infrastructure.scheduling import RuntimeClock
+from app.infrastructure.speech_presentation.supervisor import SpeechPresentationWorkerSupervisor
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.usecases.ports.llm import LLMRolePort
+from app.usecases.speech_preparation import finish_cleanup
 
 if TYPE_CHECKING:
     from app.application import CoreComponents

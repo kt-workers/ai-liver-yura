@@ -15,17 +15,18 @@ from typing import cast
 
 import pytest
 import yaml
-
-from app import bootstrap
-from app.adapters.character.yaml_loader import load_character_definition_yaml
-from app.adapters.llm import production
-from app.adapters.llm.production import UnavailableLLMRolePort
 from app.bootstrap import (
     InputMeaningBrainModulePort,
     InputMeaningBrainWorkPayload,
     UnavailableInputMeaningLiveContextPort,
     build_core_runtime,
 )
+from app.runtime.kernel import CancellationToken, SystemRuntimeClock
+from app.runtime.lifecycle import RuntimeLifecycle
+from app import bootstrap
+from app.adapters.character.yaml_loader import load_character_definition_yaml
+from app.adapters.llm import production
+from app.adapters.llm.production import UnavailableLLMRolePort
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.config.core import load_core_config
 from app.domain.brain_integration import (
@@ -58,8 +59,6 @@ from app.domain.llm import (
     LLMTokenUsage,
     StructuredPayload,
 )
-from app.runtime.kernel import CancellationToken, SystemRuntimeClock
-from app.runtime.lifecycle import RuntimeLifecycle
 from app.usecases.input_meaning import InputMeaningInterpreter
 
 ROOT = Path(__file__).resolve().parents[2]

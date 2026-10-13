@@ -6,13 +6,11 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Protocol
 
-from app.usecases.accepted_inputs import CoreAcceptedInputStore
 from app.composition.appraisal import CoreAppraisalBinding
 from app.composition.executive_input_evidence import (
     CoreExecutiveInputEvidenceReader,
     CoreExecutiveSpeechEvidenceReader,
 )
-from app.usecases.memory_evidence import CoreMemoryEvidenceReader
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
 from app.domain.contracts.common import freeze_json, require_identifier
@@ -32,6 +30,8 @@ from app.domain.plan_execution.contracts import PlanExecutionScope
 from app.domain.plan_execution.owner import PlanExecutionOwner
 from app.domain.plan_execution.progress_contracts import PlanProgressContext
 from app.domain.plugin_registry.authority import PluginRegistryAuthority
+from app.usecases.accepted_inputs import CoreAcceptedInputStore
+from app.usecases.memory_evidence import CoreMemoryEvidenceReader
 
 
 class CoreExecutivePreconditionReader(Protocol):
