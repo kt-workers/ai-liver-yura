@@ -50,10 +50,10 @@ from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
 from app.domain.executive.deliberator import descriptor as executive_descriptor
 from app.domain.goals import GoalCommitmentStore
 from app.domain.input_gateway import InputAdmission, NormalizedInputEvent
+from app.usecases.input_meaning import InputMeaningInterpreter
 from app.domain.input_meaning import (
     InputMeaningFreshnessStamp,
     InputMeaningInterpretationResult,
-    InputMeaningInterpreter,
     ReferenceContext,
 )
 from app.domain.input_meaning.interpreter import descriptor

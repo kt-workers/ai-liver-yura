@@ -7,10 +7,9 @@ from datetime import datetime
 
 from app.domain.contracts.common import freeze_json
 from app.domain.input_gateway import NormalizedInputEvent
+from app.usecases.input_meaning import InputMeaningInterpreter, InputMeaningLiveContextPort
 from app.domain.input_meaning import (
     InputMeaningInterpretationResult,
-    InputMeaningInterpreter,
-    InputMeaningLiveContextPort,
     InputMeaningPolicy,
     ReferenceContext,
     build_request,

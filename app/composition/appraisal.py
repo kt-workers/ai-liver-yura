@@ -10,13 +10,13 @@ from app.composition.input_reference_context import (
     CoreInputReferenceContextBinding,
     CoreInputReferenceSnapshot,
 )
+from app.usecases.appraisal import DeepAppraisalInterpreter, DeepAppraisalLiveStatePort
 from app.domain.appraisal import (
     AppraisalCandidate,
     AppraisalStateCommit,
     DecayPolicy,
     DeepAppraisalContext,
     DeepAppraisalFreshnessStamp,
-    DeepAppraisalInterpreter,
     DeepAppraisalPolicy,
     DeterministicAppraisalRule,
     InternalStateReducer,

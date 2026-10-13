@@ -27,7 +27,7 @@ from app.domain.llm import (
     StructuredPayload,
     validate_role_exchange,
 )
-from app.domain.llm.ports import LLMRolePort
+from app.usecases.ports.llm import LLMRolePort
 
 from .authority import GoalPlanningAuthority
 from .bounds import (

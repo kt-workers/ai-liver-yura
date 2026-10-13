@@ -41,7 +41,7 @@ from app.domain.memory.contracts import (
     MemoryRelationKind,
     MemoryTemporalState,
 )
-from app.domain.llm.ports import LLMRolePort
+from app.usecases.ports.llm import LLMRolePort
 
 from .contracts import (
     MemoryCandidateProposal,

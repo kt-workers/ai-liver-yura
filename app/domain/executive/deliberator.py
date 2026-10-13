@@ -31,7 +31,7 @@ from app.domain.llm import (
     validate_role_exchange,
 )
 from app.domain.plan_execution.progress_contracts import PlanStepCompletionClaim
-from app.domain.llm.ports import LLMRolePort
+from app.usecases.ports.llm import LLMRolePort
 
 from .authority import ExecutiveDecisionAuthority
 from .contracts import (

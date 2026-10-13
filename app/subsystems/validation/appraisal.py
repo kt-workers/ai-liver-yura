@@ -3,10 +3,9 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.usecases.appraisal import DeepAppraisalInterpreter, DeepAppraisalLiveStatePort
 from app.domain.appraisal import (
     DeepAppraisalContext,
-    DeepAppraisalInterpreter,
-    DeepAppraisalLiveStatePort,
     DeepAppraisalPolicy,
     InternalStateSnapshot,
     build_deep_request,

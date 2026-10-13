@@ -4,6 +4,7 @@ from typing import Any, cast
 
 import pytest
 
+from app.usecases.appraisal import DeepAppraisalInterpreter, DeepAppraisalLiveStatePort
 from app.domain.appraisal import (
     OUTPUT_SCHEMA,
     AppraisalDimension,
@@ -11,8 +12,6 @@ from app.domain.appraisal import (
     AppraisalPath,
     DeepAppraisalContext,
     DeepAppraisalFreshnessStamp,
-    DeepAppraisalInterpreter,
-    DeepAppraisalLiveStatePort,
     DeepAppraisalPolicy,
     DeterministicAppraisalRule,
     FacetRef,

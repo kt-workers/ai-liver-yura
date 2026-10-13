@@ -19,6 +19,7 @@ from app.domain.input_gateway import (
     InputSourceState,
     NormalizedInputEvent,
 )
+from app.usecases.input_meaning import InputMeaningInterpreter, InputMeaningLiveContextPort
 from app.domain.input_meaning import (
     OUTPUT_SCHEMA,
     ExpectedResponse,
@@ -26,8 +27,6 @@ from app.domain.input_meaning import (
     InputMeaningBoundaryFailure,
     InputMeaningFreshnessStamp,
     InputMeaningInterpretationResult,
-    InputMeaningInterpreter,
-    InputMeaningLiveContextPort,
     InputMeaningPolicy,
     MeaningResolution,
     PrimaryIntent,

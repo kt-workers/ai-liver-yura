@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol, cast
+from typing import cast
 
 from app.domain.contracts import EventEnvelope
 from app.domain.contracts.common import JsonValue, freeze_json, require_identifier, require_revision
@@ -22,7 +22,6 @@ from app.domain.llm import (
     StructuredPayload,
     validate_role_exchange,
 )
-from app.domain.llm.ports import LLMRolePort
 
 from .contracts import (
     AppraisalCandidate,
@@ -77,12 +76,6 @@ class DeepAppraisalFreshnessStamp:
     def __post_init__(self) -> None:
         require_revision(self.source_context_revision, "source_context_revision")
         require_revision(self.state_revision, "state_revision")
-
-
-class DeepAppraisalLiveStatePort(Protocol):
-    """source contextとInternal Stateの一貫したread-only freshness境界。"""
-
-    async def freshness_stamp(self) -> DeepAppraisalFreshnessStamp: ...
 
 
 def descriptor(policy: DeepAppraisalPolicy) -> LLMRoleDescriptor:
@@ -189,52 +182,6 @@ def commit_deep_result(
         },
         created_at=result.completed_at,
     )
-
-
-class DeepAppraisalInterpreter:
-    def __init__(
-        self,
-        port: LLMRolePort,
-        live_state: DeepAppraisalLiveStatePort,
-        policy: DeepAppraisalPolicy,
-    ) -> None:
-        self._port = port
-        self._live_state = live_state
-        self._policy = policy
-
-    async def appraise(
-        self,
-        event: EventEnvelope,
-        meaning: StructuredInputMeaning | None,
-        snapshot: InternalStateSnapshot,
-        context: DeepAppraisalContext,
-        *,
-        request_id: str,
-        trace_id: str,
-        created_at: datetime,
-    ) -> AppraisalCandidate:
-        request = build_deep_request(
-            event,
-            meaning,
-            snapshot,
-            context,
-            request_id=request_id,
-            trace_id=trace_id,
-            created_at=created_at,
-            policy=self._policy,
-        )
-        result = await self._port.invoke(request)
-        freshness = await self._live_state.freshness_stamp()
-        return commit_deep_result(
-            request,
-            result,
-            event=event,
-            snapshot=snapshot,
-            context=context,
-            current_source_context_revision=freshness.source_context_revision,
-            current_state_revision=freshness.state_revision,
-            policy=self._policy,
-        )
 
 
 def _candidate_from_json(

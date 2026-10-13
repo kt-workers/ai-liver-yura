@@ -3,12 +3,11 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.usecases.appraisal import DeepAppraisalInterpreter, DeepAppraisalLiveStatePort
 from app.domain.appraisal import (
     AppraisalCandidate,
     AppraisalStateCommit,
     DeepAppraisalContext,
-    DeepAppraisalInterpreter,
-    DeepAppraisalLiveStatePort,
     DeepAppraisalPolicy,
     InternalStateReducer,
     InternalStateSnapshot,
