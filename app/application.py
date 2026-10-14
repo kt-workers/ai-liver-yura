@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.connections import production_llm_connection_adapters
@@ -33,10 +33,7 @@ from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.appraisal import DeterministicAppraisalRule
 from app.domain.appraisal import descriptor as appraisal_descriptor
-from app.domain.brain_integration import (
-    BrainIntegrationLane,
-    BrainIntegrationModule,
-)
+from app.domain.brain_integration import BrainIntegrationModule
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.character.contracts import CharacterDefinitionDocument
 from app.domain.contracts.common import require_identifier
@@ -49,12 +46,6 @@ from app.domain.contracts.preconditions import PreconditionSourceBinding, Precon
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
 from app.domain.executive.deliberator import descriptor as executive_descriptor
 from app.domain.goals import GoalCommitmentStore
-from app.domain.input_gateway import InputAdmission, NormalizedInputEvent
-from app.domain.input_meaning import (
-    InputMeaningFreshnessStamp,
-    InputMeaningInterpretationResult,
-    ReferenceContext,
-)
 from app.domain.input_meaning.interpreter import descriptor
 from app.domain.llm import LLMRoleDescriptor
 from app.domain.memory_reflection.llm_roles import proposal_descriptor, support_descriptor
@@ -64,103 +55,25 @@ from app.infrastructure.llm.connection_registry_factory import LLMConnectionAdap
 from app.infrastructure.persistence import PostgresPersistenceRuntime
 from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
 from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
-from app.infrastructure.scheduling import CancellationToken, RuntimeClock, SystemRuntimeClock
+from app.infrastructure.scheduling import RuntimeClock, SystemRuntimeClock
 from app.usecases.accepted_inputs import CoreAcceptedInputStore
-from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
+from app.usecases.brain_input_meaning import (
+    InputMeaningBrainModulePort as InputMeaningBrainModulePort,
+)
+from app.usecases.brain_input_meaning import (
+    InputMeaningBrainWorkPayload as InputMeaningBrainWorkPayload,
+)
+from app.usecases.brain_input_meaning import (
+    UnavailableInputMeaningLiveContextPort as UnavailableInputMeaningLiveContextPort,
+)
+from app.usecases.brain_integration_runtime import BrainIntegrationRuntime
 from app.usecases.input_meaning import InputMeaningInterpreter
 from app.usecases.lifecycle import ApplicationLifecycle, DependencyRetryPolicy
 from app.usecases.ports.llm import LLMRolePort
+from app.usecases.task_cleanup import reap_owned_task as _reap_cleanup
 
 if TYPE_CHECKING:
     from app.composition.speech_deployment import SpeechDeploymentRegistry
-
-
-@dataclass(frozen=True, slots=True)
-class InputMeaningBrainWorkPayload:
-    """既存所有者の入力だけを運び、要求時刻と追跡識別子は重複させない。"""
-
-    event: NormalizedInputEvent
-    reference_context: ReferenceContext
-    request_id: str
-    admission: InputAdmission | None = None
-
-
-class InputMeaningBrainModulePort:
-    """固定入力の自己整合を検査し、意味の採用は既存所有者へ委譲する。"""
-
-    def __init__(
-        self, interpreter: InputMeaningInterpreter, inputs: CoreAcceptedInputStore | None = None
-    ) -> None:
-        self._interpreter = interpreter
-        self.inputs = inputs
-
-    @staticmethod
-    def _validate(work: BrainIntegrationWork) -> InputMeaningBrainWorkPayload:
-        payload = work.payload
-        if (
-            not isinstance(payload, InputMeaningBrainWorkPayload)
-            or not isinstance(payload.event, NormalizedInputEvent)
-            or not isinstance(payload.reference_context, ReferenceContext)
-            or not isinstance(payload.request_id, str)
-            or not payload.request_id.strip()
-        ):
-            raise ValueError("入力意味解析の構成入力が不正です")
-        event = payload.event.envelope
-        if (
-            work.module is not BrainIntegrationModule.INPUT_MEANING
-            or work.lane is not BrainIntegrationLane.FOREGROUND_INTERACTION
-            or work.envelope.source_event_ids != (event.event_id,)
-            or work.envelope.source_context_revision != event.revisions.source_context_revision
-            or work.envelope.source_context_revision
-            != payload.reference_context.source_context_revision
-            or work.envelope.trace_id != event.trace_id
-        ):
-            raise ValueError("入力意味解析の構成入力の識別子または世代が一致しません")
-        return payload
-
-    def is_fresh(self, work: BrainIntegrationWork) -> bool:
-        self._validate(work)
-        return True
-
-    async def execute(
-        self,
-        work: BrainIntegrationWork,
-        cancellation: CancellationToken,
-    ) -> InputMeaningInterpretationResult:
-        payload = self._validate(work)
-        if cancellation.cancelled:
-            raise asyncio.CancelledError
-        task = asyncio.create_task(
-            self._interpreter.interpret(
-                payload.event,
-                payload.reference_context,
-                request_id=payload.request_id,
-                trace_id=work.envelope.trace_id,
-                created_at=work.envelope.created_at,
-            )
-        )
-        try:
-            result = await asyncio.shield(task)
-        except asyncio.CancelledError:
-            task.cancel()
-            try:
-                await _reap_cleanup(task)
-            except (asyncio.CancelledError, Exception):
-                pass
-            raise
-
-        if cancellation.cancelled:
-            raise asyncio.CancelledError
-        if self.inputs is not None and result.meaning is not None:
-            self.inputs.retain(payload.event, result)
-        return result
-
-
-class UnavailableInputMeaningLiveContextPort:
-    """未接続の現在世代を捏造せず、既存の取得失敗境界へ通知する。"""
-
-    async def current_freshness_stamp(self) -> InputMeaningFreshnessStamp:
-        raise RuntimeError("現在の入力文脈の権威ある世代は未接続です")
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,26 +188,6 @@ def default_core_runtime_owners() -> CoreRuntimeOwners:
         activity_bindings={},
         fast_rules=(),
     )
-
-
-_CleanupResult = TypeVar("_CleanupResult")
-
-
-async def _reap_cleanup(task: asyncio.Task[_CleanupResult]) -> None:
-    """呼出し側の再取消でも所有する終了処理を最後まで回収する。"""
-    cancelled = False
-    while not task.done():
-        try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError:
-            cancelled = True
-        except Exception:
-            break
-    if cancelled:
-        if not task.cancelled():
-            task.exception()
-        raise asyncio.CancelledError
-    task.result()
 
 
 def build_core_runtime(

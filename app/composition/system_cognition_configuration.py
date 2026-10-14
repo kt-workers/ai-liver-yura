@@ -56,6 +56,7 @@ from app.infrastructure.llm.connection_registry_factory import (
 from app.infrastructure.llm.connections import route_llm_connections
 from app.infrastructure.scheduling import RuntimeClock
 from app.usecases.lifecycle import ApplicationLifecycle
+from app.usecases.task_cleanup import reap_owned_task
 
 if TYPE_CHECKING:
     from app.application import CoreComponents
@@ -183,10 +184,9 @@ class CoreApplication:
             await asyncio.shield(self._start_task)
         except BaseException as error:
             self._start_task.cancel()
-            from app.application import _reap_cleanup
 
             try:
-                await _reap_cleanup(self._start_task)
+                await reap_owned_task(self._start_task)
             except (Exception, asyncio.CancelledError):
                 pass
             try:
@@ -197,12 +197,10 @@ class CoreApplication:
                 raise CoreConfigurationError(CoreFailureCode.ACTIVATION_FAILED) from None
 
     async def stop(self) -> None:
-        from app.application import _reap_cleanup
-
         if self._stop_task is None:
             self._stop_task = asyncio.create_task(self._close())
         assert self._stop_task is not None
-        await _reap_cleanup(self._stop_task)
+        await reap_owned_task(self._stop_task)
 
     async def _close(self) -> None:
         if self._start_task is not None and not self._start_task.done():
@@ -251,7 +249,7 @@ async def compose_core(
     config_ref: str = CORE_RESOURCE,
     resource_root: Path = ROOT,
 ) -> CoreApplication:
-    from app.application import _compose_core, _reap_cleanup, stop_core
+    from app.application import _compose_core, stop_core
     from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
 
     owned = _OwnedResources()
@@ -424,7 +422,7 @@ async def compose_core(
         return application
     except BaseException as error:
         try:
-            await _reap_cleanup(asyncio.create_task(owned.close()))
+            await reap_owned_task(asyncio.create_task(owned.close()))
         except asyncio.CancelledError:
             raise
         except Exception:
