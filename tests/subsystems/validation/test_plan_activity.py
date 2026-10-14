@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import pytest
 
-from app import bootstrap
+from app import application as bootstrap
 from app.composition.execution import ExecutionFeedbackRetentionPolicy
 from app.composition.execution_configuration import CoreExecutionConfiguration
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS

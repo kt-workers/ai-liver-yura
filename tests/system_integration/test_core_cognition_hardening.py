@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from app import bootstrap
+from app import application as bootstrap
 from app.composition.cognition_configuration import CoreCognitionConfiguration
 from app.config.core import load_core_config
 from app.domain.appraisal import InternalStateReducer

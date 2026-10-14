@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import pytest
 
-from app import bootstrap
+from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.composition import speech_production_configuration as speech
 from app.composition.speech import CoreSpeechContextReaders
@@ -455,7 +455,10 @@ async def test_pipeline_cleanup_failure_does_not_skip_runtime_or_lease(monkeypat
 
     async def shutdown() -> tuple[str, ...]:
         calls.append("runtime")
-        return await original_shutdown()
+        value: object = await original_shutdown()
+        if not isinstance(value, tuple) or any(not isinstance(item, str) for item in value):
+            raise ValueError("停止結果の公開契約が不正です")
+        return cast(tuple[str, ...], value)
 
     monkeypatch.setattr(delivery.pipeline, "close", fail)
     monkeypatch.setattr(delivery.shutdown, "close", shutdown)

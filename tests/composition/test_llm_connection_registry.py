@@ -9,14 +9,14 @@ import pytest
 from app.composition.system_cognition_configuration import CoreRunIdentity
 from app.config.core_contracts import CoreConfigurationError
 from app.config.llm_connections import LLMConnectionConfig, LLMConnectionsConfig
-from app.domain.llm import LLMRoleDescriptor
+from app.domain.llm import LLMRoleDescriptor, LLMRoleRequest, LLMRoleResult
 from app.infrastructure.llm.connection_registry_factory import create_llm_connection_registry
 from app.infrastructure.llm.connections import LLMConnectionRegistry, LLMConnectionRouter
 
 
 class Port:
-    async def invoke(self, request: object) -> object:
-        return request
+    async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult:
+        raise RuntimeError("試験用Portのinvokeは呼び出してはいけません")
 
 
 @dataclass

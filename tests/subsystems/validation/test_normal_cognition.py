@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import pytest
 
-from app.application import CoreComponents
+from app.application import CoreComponents, stop_core
 from app.domain.executive import GoalTransitionOperation
 from app.subsystems.validation import cognition as cognition_module
 from app.subsystems.validation.body import _project
@@ -214,7 +214,7 @@ async def test_typed_meaning_failure_does_not_wait_for_next_work(
 @pytest.mark.asyncio
 async def test_repeated_caller_cancel_waits_for_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
     runner, request, fixture, apps, ports, _ = setup(monkeypatch, internal=True, slow=True)
-    original = cognition_module.stop_core
+    original = stop_core
     entered, release = asyncio.Event(), asyncio.Event()
 
     async def stop(app: CoreComponents) -> None:

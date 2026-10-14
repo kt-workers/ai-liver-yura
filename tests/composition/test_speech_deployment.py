@@ -9,7 +9,7 @@ from typing import Any, cast
 import pytest
 from jsonschema import Draft202012Validator
 
-from app import bootstrap
+from app import application as bootstrap
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.core import create_core_provider_lease
 from app.adapters.llm.openai_responses import OpenAIResponsesAdapter

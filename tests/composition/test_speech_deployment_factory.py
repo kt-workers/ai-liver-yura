@@ -11,7 +11,7 @@ from typing import Any, cast
 
 import pytest
 
-from app import bootstrap
+from app import application as bootstrap
 from app.adapters.llm.core import create_core_provider_lease
 from app.adapters.tts.production import TTSProductionConnection, TTSProviderRegistry
 from app.adapters.tts.provider import TTSProviderClient

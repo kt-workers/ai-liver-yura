@@ -563,7 +563,7 @@ def test_file_edit_takes_effect_only_in_next_core_configuration(
     async def scenario() -> None:
         baseline = asyncio.all_tasks()
         first = build_core_runtime(path)
-        await first.start()
+        await start_core(first)
         try:
             edited = yaml.safe_load(original)
             edited["config_revision"] = 2
@@ -577,18 +577,18 @@ def test_file_edit_takes_effect_only_in_next_core_configuration(
             outcome = await asyncio.wait_for(first.brain.next_outcome(), 2)
             assert outcome.status is BrainWorkStatus.COMPLETED
         finally:
-            await first.stop()
+            await stop_core(first)
         second = build_core_runtime(path)
         assert second.config.config_revision == 2
         assert second.config.scheduler_policy.policy_revision == 2
         assert second.config.scheduler_policy.max_priority_burst == 9
-        await second.start()
+        await start_core(second)
         try:
             assert second.brain.submit(work()).accepted
             outcome = await asyncio.wait_for(second.brain.next_outcome(), 2)
             assert outcome.status is BrainWorkStatus.COMPLETED
         finally:
-            await second.stop()
+            await stop_core(second)
         assert not (asyncio.all_tasks() - baseline)
 
     asyncio.run(scenario())

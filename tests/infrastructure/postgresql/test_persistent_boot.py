@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from app.application import build_persistent_core, start_core, stop_core
+from app.application import build_persistent_core, start_core, stop_core, start_core, stop_core
 from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentSnapshot
 from app.domain.memory import MemoryWriteRequest
@@ -60,7 +60,7 @@ async def test_boot_shares_restored_goals_and_memory_then_closes(
     )
     assert isinstance(first.goals, CoreGoalPersistenceBinding)
     assert first.memory is not None
-    await first.start()
+    await start_core(first)
     try:
         changed = first.goals.apply(
             decision(
@@ -73,7 +73,7 @@ async def test_boot_shares_restored_goals_and_memory_then_closes(
         operation = first.memory.submit_write(MemoryWriteRequest(memory.candidate()))
         assert (await operation.wait()).failure_code is None
     finally:
-        await first.stop()
+        await stop_core(first)
     assert first_runtime.availability is PersistenceAvailability.CLOSED
     assert first_runtime.pending_task_count == 0
     second_runtime = runtime(endpoint)
@@ -107,8 +107,8 @@ async def test_boot_shares_restored_goals_and_memory_then_closes(
         result = await second.memory.submit_retrieval(memory.query()).wait()
         assert result.value is not None and len(result.value.items) == 1
     finally:
-        await second.stop()
-        await second.stop()
+        await stop_core(second)
+        await stop_core(second)
     assert second_runtime.pending_task_count == 0
     assert not (asyncio.all_tasks() - baseline)
 

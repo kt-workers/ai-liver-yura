@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,12 +13,14 @@ import pytest
 
 from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
-from app.composition.core_provider import CoreProviderLease
 from app.composition.system_cognition_configuration import (
     CoreApplication,
     CoreRunIdentity,
 )
+from app.config.appraisal import load_appraisal_config
 from app.config.core import load_core_config
+from app.config.executive import load_executive_config
+from app.config.llm_connections import LLMConnectionConfig
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, RevisionVector
@@ -41,6 +44,7 @@ from app.subsystems.validation.cognition import NormalCognitionLabCase, normal_c
 from app.subsystems.validation.contracts import Gate, LabMode, RunStatus
 from app.subsystems.validation.provenance import capture_production_provenance
 from app.subsystems.validation.runtime import ValidationRunner
+from app.usecases.ports.llm import LLMRolePort
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.infrastructure.postgresql.test_brain_nonserial_acceptance import assert_reaped
 from tests.subsystems.validation.test_runtime import FIXTURE, POLICY, spec
@@ -56,20 +60,28 @@ class SystemRun:
     async def create(cls) -> "SystemRun":
         provider = Port()
         registered_roles: list[LLMRoleDescriptor] = []
-        leases: list[CoreProviderLease] = []
+        connections: list[str] = []
         releases: list[str] = []
 
-        async def factory(roles: Any, configs: Any, bindings: Any, mode: str) -> CoreProviderLease:
-            registered_roles.extend(roles)
-            # 採用済み未設定manifestを保持し、外部I/Oだけを置換する。
-            assert not configs and mode == "unconfigured"
+        class TestConnectionAdapter:
+            """実System構成だけを通し、Provider I/Oを検証用Portで差し替える。"""
 
-            async def release() -> None:
-                releases.append("provider")
+            adapter_id = "openai_responses"
 
-            lease = CoreProviderLease(provider, bindings, mode, release)
-            leases.append(lease)
-            return lease
+            async def connect(
+                self,
+                connection: object,
+                descriptors: tuple[LLMRoleDescriptor, ...],
+            ) -> tuple[LLMRolePort, Callable[[], Awaitable[None]]]:
+                if not isinstance(connection, LLMConnectionConfig):
+                    raise ValueError("本番構成のLLM接続契約が不正です")
+                connections.append(connection.connection_id)
+                registered_roles.extend(descriptors)
+
+                async def release() -> None:
+                    releases.append(connection.connection_id)
+
+                return provider, release
 
         identity = CoreRunIdentity(str(uuid4()), str(uuid4()))
         core = await bootstrap.build_core(
@@ -82,17 +94,16 @@ class SystemRun:
             precondition_bindings=(),
             activity_bindings={},
             fast_rules=(),
-            provider_source=None,
-            provider_factory=factory,
+            llm_adapters=(TestConnectionAdapter(),),
         )
-        return cls(core, provider, registered_roles, leases, releases, identity)
+        return cls(core, provider, registered_roles, connections, releases, identity)
 
     def __init__(
         self,
         core: CoreApplication,
         provider: Port,
         roles: list[LLMRoleDescriptor],
-        leases: list[CoreProviderLease],
+        connections: list[str],
         releases: list[str],
         identity: CoreRunIdentity,
     ) -> None:
@@ -100,7 +111,7 @@ class SystemRun:
         self.app: Any = core.core
         self.provider = provider
         self.roles = roles
-        self.leases = leases
+        self.connections = connections
         self.releases = releases
         self.registration = core.cognition
         self.normalizer = InputNormalizer(InputAdmissionLedger(), bounds_policy=BOUNDS)
@@ -109,7 +120,7 @@ class SystemRun:
         self.snapshot = core.composition_snapshot
         self.provenance = self.current_provenance()
         config = load_core_config((ROOT / "config/core.yaml").read_bytes())
-        loaded = load_core_config((ROOT / config.runtime_config.resource_ref).read_bytes())
+        loaded = config
         assert self.app.config == loaded
         snapshot = self.snapshot
         assert (snapshot.config_id, snapshot.config_revision) == (
@@ -166,22 +177,27 @@ class SystemRun:
             core.executive.initial_generation.serial
             == component.executive.initial_generation_serial
         )
-        assert len(leases) == 1 and snapshot.provider_bindings == leases[0].bindings
+        assert connections == ["yura.llm.default"]
         registered = {r.role_id: r for r in roles}
         assert set(registered) == {
             "input_meaning",
             "subjective_appraisal",
             "executive_deliberation",
         }
-        for binding in snapshot.provider_bindings:
-            descriptor = registered[binding.role_id]
-            assert binding.input_schema_id == descriptor.input_schema_id
-            assert binding.output_schema_id == descriptor.output_schema_id
-            assert (binding.deployment_id, binding.deployment_revision) == (
-                config.provider_deployment.deployment_id,
-                config.provider_deployment.deployment_revision,
-            )
-            assert binding.availability_mode == "unconfigured"
+        appraisal_config = load_appraisal_config(
+            (ROOT / config.appraisal_config.resource_ref).read_bytes()
+        )
+        executive_config = load_executive_config(
+            (ROOT / config.executive_config.resource_ref).read_bytes()
+        )
+        assert {
+            binding.role_id: binding.connection_id
+            for binding in snapshot.llm_connection_bindings
+        } == {
+            "input_meaning": config.input_meaning_llm_connection_id,
+            "subjective_appraisal": appraisal_config.llm_connection_id,
+            "executive_deliberation": executive_config.llm_connection_id,
+        }
         assert registered["subjective_appraisal"].default_execution_policy == (
             self.registration.appraisal_policy.execution
         )
@@ -218,8 +234,8 @@ class SystemRun:
         )
         # Labの既存INTEGRATED形式へ、同一runのSnapshot由来だけを投影する。
         providers = ",".join(
-            f"{b.role_id}:{b.deployment_id}:{b.deployment_revision}:{b.availability_mode}"
-            for b in snapshot.provider_bindings
+            f"{binding.role_id}:{binding.connection_id}"
+            for binding in snapshot.llm_connection_bindings
         )
         return replace(
             provenance,
@@ -279,7 +295,7 @@ class SystemRun:
         await self.core.stop()
         await self.core.stop()
         assert_reaped(self.app)
-        assert self.releases == ["provider"]
+        assert self.releases == ["yura.llm.default"]
         for owner in (
             self.registration.attention,
             self.registration.requirements,

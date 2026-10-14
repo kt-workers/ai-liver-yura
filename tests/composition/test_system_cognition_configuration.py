@@ -3,6 +3,7 @@
 import asyncio
 import json
 import shutil
+from collections.abc import Awaitable, Callable
 from dataclasses import FrozenInstanceError, asdict
 from pathlib import Path
 from typing import Any
@@ -13,25 +14,46 @@ import yaml
 from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.composition import system_cognition_configuration as system
-from app.composition.core_provider import CoreProviderLease
 from app.config.core_contracts import CoreConfigurationError
 from app.config.executive_assembly import create_executive_configuration
+from app.config.llm_connections import LLMConnectionConfig
 from app.domain.attention import AttentionTurnStore
 from app.domain.contracts.finalization import FinalizationError
 from app.domain.contracts.preconditions import PreconditionSourceRouter
+from app.domain.llm import LLMRoleDescriptor
 from app.domain.plugin_registry import PluginRegistryAuthority
 from app.infrastructure.scheduling import SystemRuntimeClock
+from app.usecases.ports.llm import LLMRolePort
 
+class _FakeLLMAdapter:
+    """既存Roleに対する型付き未構成応答と、外側の資源回収を検証する。"""
 
-async def unavailable_lease(
-    roles: Any, configs: Any, bindings: Any, mode: str
-) -> CoreProviderLease:
-    assert not configs
+    adapter_id = "openai_responses"
 
-    async def release() -> None:
-        return None
+    def __init__(
+        self,
+        *,
+        preflight: Callable[[], Awaitable[None]] | None = None,
+        on_release: Callable[[], None] | None = None,
+    ) -> None:
+        self.preflight = preflight
+        self.on_release = on_release
 
-    return CoreProviderLease(UnavailableLLMRolePort(roles), bindings, mode, release)
+    async def connect(
+        self,
+        connection: object,
+        descriptors: tuple[LLMRoleDescriptor, ...],
+    ) -> tuple[LLMRolePort, Callable[[], Awaitable[None]]]:
+        if not isinstance(connection, LLMConnectionConfig):
+            raise ValueError("接続設定の型が不正です")
+        if self.preflight is not None:
+            await self.preflight()
+
+        async def release() -> None:
+            if self.on_release is not None:
+                self.on_release()
+
+        return UnavailableLLMRolePort(descriptors), release
 
 
 def parameters() -> dict[str, Any]:
@@ -45,8 +67,7 @@ def parameters() -> dict[str, Any]:
         precondition_bindings=(),
         activity_bindings={},
         fast_rules=(),
-        provider_source=None,
-        provider_factory=unavailable_lease,
+        llm_adapters=(_FakeLLMAdapter(),),
     )
 
 
@@ -92,14 +113,17 @@ async def test_real_factories_identity_snapshot_and_restart() -> None:
         == snapshot.component_bindings[0].executive.initial_generation_identity
     )
     assert snapshot.subsystem_bindings == ()
-    assert all(
-        binding.availability_mode == "unconfigured" for binding in snapshot.provider_bindings
-    )
+    assert {binding.role_id for binding in snapshot.llm_connection_bindings} == {
+        "input_meaning", "subjective_appraisal", "executive_deliberation",
+    }
+    assert {binding.connection_id for binding in snapshot.llm_connection_bindings} == {
+        "yura.llm.default",
+    }
     text = json.dumps(asdict(snapshot), default=str)
     for forbidden in ("test.llm.execution", "_lock", "/Users/", "credential", "raw_token"):
         assert forbidden not in text
     with pytest.raises(FrozenInstanceError):
-        app.composition_snapshot = snapshot  # type: ignore[misc]
+        setattr(snapshot, "activation_id", "different")
     await app.start()
     await asyncio.gather(app.stop(), app.stop())
     with pytest.raises(FinalizationError):
@@ -131,19 +155,18 @@ async def test_activation_fails_without_minimum_fallback(field: str, value: Any,
 
 
 def copy_resources(tmp_path: Path) -> None:
-    shutil.copytree("resources/config", tmp_path / "resources/config")
-    shutil.copytree("resources/character_definitions", tmp_path / "resources/character_definitions")
+    shutil.copytree("config", tmp_path / "config")
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "reference,field",
     [
-        ("runtime_config", "config_revision"),
+        ("llm_connections", "config_revision"),
         ("appraisal_config", "config_revision"),
         ("executive_config", "config_id"),
         ("attention_policy", "policy_revision"),
-        ("provider_deployment", "deployment_revision"),
+        ("llm_connections", "config_id"),
         ("character_definition", "definition_revision"),
     ],
 )
@@ -183,21 +206,16 @@ async def test_failure_stages_reclaim_owners(monkeypatch: pytest.MonkeyPatch, st
         value = original_attention(*args, **kwargs)
         return value
 
-    async def provider(roles: Any, configs: Any, pubs: Any, mode: str) -> CoreProviderLease:
+    async def provider() -> None:
         if stage == "provider":
             raise ValueError("private-internal-detail")
-
-        async def close() -> None:
-            events.append("provider")
-
-        return CoreProviderLease(UnavailableLLMRolePort(roles), pubs, mode, close)
 
     def fail(*args: Any, **kwargs: Any) -> Any:
         raise ValueError("private-internal-detail")
 
     monkeypatch.setattr(system, "create_executive_configuration", executive)
     monkeypatch.setattr(system, "AttentionTurnStore", attention)
-    params["provider_factory"] = provider
+    params["llm_adapters"] = (_FakeLLMAdapter(preflight=provider, on_release=lambda: events.append("provider")),)
     if stage == "appraisal":
         monkeypatch.setattr(system, "build_appraisal_configuration", fail)
     if stage == "cognition":
@@ -265,13 +283,13 @@ async def test_start_failure_uses_same_cleanup(
     app = await bootstrap.build_core(**parameters())
     entered = asyncio.Event()
 
-    async def start(self: Any) -> None:
+    async def start(self: bootstrap.CoreComponents) -> None:
         entered.set()
         if cancel:
             await asyncio.Future()
         raise ValueError("private-detail")
 
-    monkeypatch.setattr(bootstrap.CoreRuntimeApplication, "start", start)
+    monkeypatch.setattr(bootstrap, "start_core", start)
     task = asyncio.create_task(app.start())
     await entered.wait()
     if cancel:
@@ -299,7 +317,7 @@ async def test_generation_change_before_publication_is_rejected(
         await bootstrap.build_core(**parameters())
 
 
-def test_early_boot_does_not_read_core_config(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_minimum_core_boot_stays_input_meaning_only(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
 
     def forbidden(*args: Any, **kwargs: Any) -> Any:
@@ -308,7 +326,7 @@ def test_early_boot_does_not_read_core_config(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(system, "load_core_config", forbidden)
     core = bootstrap.build_core_runtime(cognition=None)
     assert core.cognition is None
-    assert core.config.brain_module_registrations == ("input_meaning",)
+    assert core.bridge is not None and core.cognition is None
 
 
 @pytest.mark.asyncio
@@ -324,12 +342,12 @@ async def test_cancel_during_provider_construction_reclaims_previous_owners(
         constructed.append(result)
         return result
 
-    async def blocked(*args: Any) -> Any:
+    async def blocked() -> None:
         entered.set()
         await asyncio.Future()
 
     monkeypatch.setattr(system, "create_executive_configuration", executive)
-    params["provider_factory"] = blocked
+    params["llm_adapters"] = (_FakeLLMAdapter(preflight=blocked),)
     task = asyncio.create_task(bootstrap.build_core(**params))
     await entered.wait()
     task.cancel()
@@ -349,7 +367,7 @@ async def test_owned_cleanup_actual_order(monkeypatch: pytest.MonkeyPatch) -> No
 
     original_close = ExecutiveProductionBinding.close
     original_retire = AuthorityFinalizationParticipant.retire
-    original_stop = bootstrap.CoreRuntimeApplication.stop
+    original_stop = system.CoreApplication.stop
 
     def close(binding: ExecutiveProductionBinding) -> None:
         events.append("executive")
@@ -359,20 +377,14 @@ async def test_owned_cleanup_actual_order(monkeypatch: pytest.MonkeyPatch) -> No
         events.append("retire")
         original_retire(participant)
 
-    async def stop(core: bootstrap.CoreRuntimeApplication) -> None:
+    async def stop(core: system.CoreApplication) -> None:
         events.append("core")
         await original_stop(core)
 
-    async def provider(roles: Any, configs: Any, bindings: Any, mode: str) -> CoreProviderLease:
-        async def release() -> None:
-            events.append("provider")
-
-        return CoreProviderLease(UnavailableLLMRolePort(roles), bindings, mode, release)
-
     monkeypatch.setattr(ExecutiveProductionBinding, "close", close)
     monkeypatch.setattr(AuthorityFinalizationParticipant, "retire", retire)
-    monkeypatch.setattr(bootstrap.CoreRuntimeApplication, "stop", stop)
-    params["provider_factory"] = provider
+    monkeypatch.setattr(system.CoreApplication, "stop", stop)
+    params["llm_adapters"] = (_FakeLLMAdapter(on_release=lambda: events.append("provider")),)
     app = await bootstrap.build_core(**params)
     await app.stop()
     assert events[:4] == ["core", "provider", "retire", "executive"]
