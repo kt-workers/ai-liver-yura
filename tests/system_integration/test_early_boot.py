@@ -15,6 +15,7 @@ from typing import cast
 
 import pytest
 import yaml
+
 from app import application as bootstrap
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm import production
