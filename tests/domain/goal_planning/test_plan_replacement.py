@@ -11,12 +11,12 @@ from app.domain.contracts import CapabilityAvailability
 from app.domain.contracts.common import freeze_json
 from app.domain.goal_planning import (
     ActivityPlan,
-    GoalPlanner,
     GoalPlanningAuthority,
     GoalPlanningCommitState,
     GoalPlanningContextSnapshot,
 )
 from app.domain.llm import LLMRoleRequest, LLMRoleResult
+from app.usecases.goal_planning import GoalPlanner
 from tests.domain.goal_planning.test_goal_planning import (
     NOW,
     candidate,

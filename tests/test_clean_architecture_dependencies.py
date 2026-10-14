@@ -8,15 +8,16 @@ from pathlib import Path
 
 from app.composition.system_cognition_configuration import CoreApplication
 from app.usecases.appraisal import DeepAppraisalInterpreter
+from app.usecases.goal_planning import GoalPlanner
 from app.usecases.input_meaning import InputMeaningInterpreter
 from app.usecases.ports.llm import LLMRolePort
 
 _ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_appraisal_and_input_meaning_domain_do_not_depend_on_outer_layers() -> None:
+def test_domain_modules_do_not_depend_on_outer_layers() -> None:
     violations: list[str] = []
-    for package in ("appraisal", "input_meaning"):
+    for package in ("appraisal", "goal_planning", "input_meaning"):
         folder = _ROOT / "app" / "domain" / package
         for path in sorted(folder.rglob("*.py")):
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -45,3 +46,7 @@ def test_llm_interpreters_are_application_services() -> None:
 
 def test_core_application_is_lifecycle_service_not_data_class() -> None:
     assert not is_dataclass(CoreApplication)
+
+
+def test_goal_planner_is_application_service() -> None:
+    assert GoalPlanner.__module__ == "app.usecases.goal_planning"

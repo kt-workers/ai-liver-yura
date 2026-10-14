@@ -20,7 +20,6 @@ from app.domain.goal_planning import (
     ActivityPlan,
     ActivityPlanStep,
     DeterministicPlanningDirective,
-    GoalPlanner,
     GoalPlanningAuthority,
     GoalPlanningCandidate,
     GoalPlanningCommitState,
@@ -48,6 +47,7 @@ from app.domain.llm import (
     LLMTokenUsage,
     StructuredPayload,
 )
+from app.usecases.goal_planning import GoalPlanner
 from tests.helpers.activity_binding import planning_binding
 from tests.helpers.goal_semantics import semantic_spec
 from tests.helpers.llm import make_execution_policy

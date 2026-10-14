@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from typing import Protocol
 from types import MappingProxyType
+from typing import Protocol
 
 from app.config.core_contracts import CoreConfigurationError, CoreFailureCode
 from app.config.llm_connections import LLMConnectionConfig, LLMConnectionsConfig

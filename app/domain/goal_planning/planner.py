@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Protocol, TypeVar, cast
+from typing import TypeVar, cast
 
 from app.domain.brain_operational_bounds import (
     V2_BRAIN_OPERATIONAL_BOUNDS_POLICY,
@@ -27,12 +27,9 @@ from app.domain.llm import (
     StructuredPayload,
     validate_role_exchange,
 )
-from app.usecases.ports.llm import LLMRolePort
 
 from .authority import GoalPlanningAuthority
 from .bounds import (
-    GoalPlanningBoundsPolicyPort,
-    assert_planning_policy_generation,
     validate_plan_bounds,
     validate_planning_context_bounds,
 )
@@ -62,12 +59,6 @@ class GoalPlanningPolicy:
             raise ValueError("execution must be LLMExecutionPolicy")
         if not isinstance(self.bounds_policy, BrainOperationalBoundsPolicy):
             raise ValueError("bounds_policyはBrainOperationalBoundsPolicyでなければなりません")
-
-
-class GoalPlanningLiveStatePort(Protocol):
-    async def current_state(
-        self, snapshot: GoalPlanningContextSnapshot
-    ) -> GoalPlanningCommitState: ...
 
 
 def descriptor(policy: GoalPlanningPolicy) -> LLMRoleDescriptor:
@@ -176,78 +167,6 @@ def commit_result(
         committed_at=result.completed_at,
         bounds_policy=policy.bounds_policy,
     )
-
-
-class GoalPlanner:
-    def __init__(
-        self,
-        port: LLMRolePort,
-        live_state: GoalPlanningLiveStatePort,
-        authority: GoalPlanningAuthority,
-        policy: GoalPlanningPolicy,
-        bounds_policy_state: GoalPlanningBoundsPolicyPort | None = None,
-    ) -> None:
-        self._port = port
-        self._live_state = live_state
-        self._authority = authority
-        self._policy = policy
-        self._bounds_policy_state = bounds_policy_state
-
-    async def _validate_current_policy(self, snapshot: GoalPlanningContextSnapshot) -> None:
-        if self._bounds_policy_state is None:
-            return
-        current_policy = await self._bounds_policy_state.current_policy(snapshot)
-        assert_planning_policy_generation(snapshot, current_policy)
-
-    async def plan(
-        self,
-        snapshot: GoalPlanningContextSnapshot,
-        *,
-        request_id: str,
-        trace_id: str,
-        candidate_id: str,
-        plan_id: str,
-        created_at: datetime,
-    ) -> ActivityPlan:
-        validate_planning_context_bounds(snapshot, self._policy.bounds_policy)
-        directive = snapshot.deterministic_directive
-        if directive is not None:
-            candidate = candidate_from_directive(
-                snapshot,
-                directive,
-                candidate_id=candidate_id,
-                created_at=created_at,
-                bounds_policy=self._policy.bounds_policy,
-            )
-            current = await self._live_state.current_state(snapshot)
-            await self._validate_current_policy(snapshot)
-            return self._authority.commit(
-                candidate,
-                snapshot,
-                current,
-                plan_id=plan_id,
-                committed_at=created_at,
-                bounds_policy=self._policy.bounds_policy,
-            )
-        request = build_request(
-            snapshot,
-            request_id=request_id,
-            trace_id=trace_id,
-            created_at=created_at,
-            policy=self._policy,
-        )
-        result = await self._port.invoke(request)
-        current = await self._live_state.current_state(snapshot)
-        await self._validate_current_policy(snapshot)
-        return commit_result(
-            request,
-            result,
-            snapshot=snapshot,
-            current=current,
-            authority=self._authority,
-            plan_id=plan_id,
-            policy=self._policy,
-        )
 
 
 E = TypeVar("E", bound=Enum)
