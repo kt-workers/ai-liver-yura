@@ -45,14 +45,12 @@ from app.domain.body_motion_planning import (
     BodyMotionPhase,
     BodyMotionPlanAuthority,
     BodyMotionPlanCandidate,
-    BodyMotionPlanner,
     BodyMotionPlanningCommitState,
     BodyMotionPlanningContextSnapshot,
     BodyMotionPlanningPolicy,
     BodyMotionSelector,
     BodySpatialTarget,
     BodySpatialTargetKind,
-    DeterministicBodyMotionPlanner,
     DeterministicBodyPlanningDirective,
     build_request,
     parse_candidate,
@@ -90,6 +88,7 @@ from app.domain.llm import (
     LLMTokenUsage,
     StructuredPayload,
 )
+from app.usecases.body_motion_planning import BodyMotionPlanner, DeterministicBodyMotionPlanner
 from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 17, tzinfo=timezone.utc)

@@ -324,22 +324,14 @@ async def test_cancelled_stop_waits_for_release_then_reraises(monkeypatch: Any) 
 
 @pytest.mark.asyncio
 async def test_cleanup_failure_still_releases_cognition_provider(monkeypatch: Any) -> None:
-    from tests.composition.test_system_cognition_configuration import unavailable_lease
+    from tests.composition.test_system_cognition_configuration import _FakeLLMAdapter
 
     d = Deployment()
     d.release_error = True
     order: list[str] = []
 
-    async def provider(*args: Any) -> Any:
-        lease = await unavailable_lease(*args)
-
-        async def release() -> None:
-            order.append("provider")
-
-        return replace(lease, release_owned=release)
-
     params = parameters()
-    params["provider_factory"] = provider
+    params["llm_adapters"] = (_FakeLLMAdapter(on_release=lambda: order.append("provider")),)
     app = await bootstrap.build_core(**params, speech=d.inputs())
     with pytest.raises(CoreConfigurationError, match="INITIALIZATION_FAILED"):
         await app.stop()
