@@ -2,8 +2,6 @@
 
 from dataclasses import dataclass
 
-from app.composition.appraisal import CoreAppraisalBinding
-from app.composition.attention import CoreAttentionBinding
 from app.composition.cognition import CoreCognitionDelivery
 from app.composition.execution_configuration import CoreExecutionConfiguration
 from app.composition.executive import CoreExecutiveBinding
@@ -12,7 +10,6 @@ from app.composition.executive_requirements import (
     CorePreconditionSourceReader,
     build_core_executive_input_evidence,
 )
-from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.reflection import CoreReflectionConfiguration, CoreReflectionDelivery
 from app.composition.speech_configuration import CoreSpeechConfiguration
 from app.domain.appraisal import (
@@ -23,21 +20,24 @@ from app.domain.appraisal import (
 )
 from app.domain.attention import AttentionTurnStore
 from app.domain.contracts.preconditions import PreconditionSourceBinding, PreconditionSourceRouter
+from app.domain.contracts.time import Clock
 from app.domain.executive import (
     ExecutiveDecisionAuthority,
     ExecutivePolicy,
     ExecutiveRequirementsOwner,
 )
 from app.domain.plugin_registry.authority import PluginRegistryAuthority
-from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
-from app.infrastructure.scheduling import RuntimeClock
 from app.usecases.accepted_inputs import CoreAcceptedInputStore
+from app.usecases.attention_binding import CoreAttentionBinding
 from app.usecases.autonomy import CoreAutonomyDelivery, GoalOwner
+from app.usecases.brain_appraisal import CoreAppraisalBinding
 from app.usecases.brain_integration_runtime import BrainIntegrationRuntime
+from app.usecases.input_reference_context import CoreInputReferenceContextBinding
 from app.usecases.memory_evidence import (
     CoreMemoryEvidenceConfiguration,
     CoreMemoryEvidenceReader,
 )
+from app.usecases.memory_persistence import CoreMemoryPersistenceBinding
 from app.usecases.ports.llm import LLMRolePort
 
 
@@ -87,7 +87,7 @@ class CoreCognitionConfiguration:
         reference: CoreInputReferenceContextBinding,
         inputs: CoreAcceptedInputStore,
         llm: LLMRolePort,
-        clock: RuntimeClock,
+        clock: Clock,
         memory: CoreMemoryPersistenceBinding | None = None,
         goals: GoalOwner | None = None,
     ) -> CoreCognitionDelivery:
