@@ -4,13 +4,26 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from typing import Protocol
 from types import MappingProxyType
 
 from app.config.core_contracts import CoreConfigurationError, CoreFailureCode
-from app.config.llm_connections import LLMConnectionsConfig
+from app.config.llm_connections import LLMConnectionConfig, LLMConnectionsConfig
 from app.domain.llm import LLMRoleDescriptor
 from app.infrastructure.llm.connections import LLMConnectionRegistry
-from app.usecases.ports.llm import LLMConnectionAdapter, LLMRolePort
+from app.usecases.ports.llm import LLMRolePort
+
+
+class LLMConnectionAdapter(Protocol):
+    """構成済みの接続設定からProvider固有Portを取得する外側の契約。"""
+
+    adapter_id: str
+
+    async def connect(
+        self,
+        connection: LLMConnectionConfig,
+        descriptors: tuple[LLMRoleDescriptor, ...],
+    ) -> tuple[LLMRolePort, Callable[[], Awaitable[None]]]: ...
 
 
 async def create_llm_connection_registry(

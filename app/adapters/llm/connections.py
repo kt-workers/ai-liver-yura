@@ -16,7 +16,8 @@ from app.adapters.llm.openai_responses import (
 )
 from app.config.llm_connections import LLMConnectionConfig
 from app.domain.llm import LLMModelClass, LLMReasoningEffort, LLMRoleDescriptor
-from app.usecases.ports.llm import LLMConnectionAdapter, LLMRolePort
+from app.infrastructure.llm.connection_registry_factory import LLMConnectionAdapter
+from app.usecases.ports.llm import LLMRolePort
 
 
 @dataclass(frozen=True, slots=True)

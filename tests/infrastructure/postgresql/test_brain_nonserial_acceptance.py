@@ -10,6 +10,7 @@ import pytest
 import yaml
 
 from app import application as bootstrap
+from app.application import start_core, stop_core
 from app.composition.reflection import CoreReflectionConfiguration
 from app.domain.activity_execution import ExecutionAdapterReport
 from app.domain.brain_integration import (
@@ -71,7 +72,7 @@ async def test_slow_appraisal_trace_local_terminal_and_provenance(
         return await original(request)
 
     monkeypatch.setattr(port, "invoke", controlled)
-    await app.start()
+    await start_core(app)
     try:
         assert app.cognition.submit_input(
             admission(app, event_id="event-A", trace_id="trace-A")
@@ -166,7 +167,7 @@ async def test_slow_appraisal_trace_local_terminal_and_provenance(
     finally:
         for gate in gates.values():
             gate.set()
-        await app.stop()
+        await stop_core(app)
     assert_reaped(app)
 
 
@@ -191,11 +192,11 @@ async def test_stop_caller_cancel_still_reaps_provider_and_unique_outcomes(
         return await original(request)
 
     monkeypatch.setattr(port, "invoke", controlled)
-    await app.start()
+    await start_core(app)
     try:
         accepted = app.cognition.submit_input(admission(app, internal=True))
         await asyncio.wait_for(entered.wait(), 3)
-        stopping = asyncio.create_task(app.stop())
+        stopping = asyncio.create_task(stop_core(app))
         await asyncio.wait_for(cleanup.wait(), 3)
         stopping.cancel()
         assert not app.brain._pump_task.done()
@@ -209,12 +210,12 @@ async def test_stop_caller_cancel_still_reaps_provider_and_unique_outcomes(
         terminal = await outcome(app)
         assert terminal.work_id == accepted.work_id
         assert terminal.status is BrainWorkStatus.CANCELLED
-        await app.stop()
+        await stop_core(app)
         assert app.brain._outcomes.empty()
         assert not app.brain.cancel(accepted.work_id, "回収済み")
     finally:
         release.set()
-        await app.stop()
+        await stop_core(app)
     assert_reaped(app)
     assert not (asyncio.all_tasks() - baseline)
 
@@ -291,7 +292,7 @@ async def test_real_activity_reflection_burst_keeps_foreground_and_bounded_clean
             ),
         ),
     )
-    await app.start()
+    await start_core(app)
     try:
         assert app.cognition is not None and app.cognition.reflection is not None
         first = complete_activity(app, 1)
@@ -321,7 +322,7 @@ async def test_real_activity_reflection_burst_keeps_foreground_and_bounded_clean
         assert "command-1" in str(reflected[0].input.value)
         assert app.brain.trace("front").root_trigger_id == "front"
         if stop_pending:
-            await app.stop()
+            await stop_core(app)
         else:
             reflection_release.set()
         background = [await outcome(app) for _ in range(2)]
@@ -334,7 +335,7 @@ async def test_real_activity_reflection_burst_keeps_foreground_and_bounded_clean
             assert {r.trace_id for r in reflected} == {"background-1", "background-2"}
     finally:
         reflection_release.set()
-        await app.stop()
+        await stop_core(app)
     assert_reaped(app)
     assert app.cognition is not None and app.cognition.reflection is not None
     assert not app.cognition.reflection._pending

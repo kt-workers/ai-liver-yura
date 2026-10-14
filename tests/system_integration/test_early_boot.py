@@ -25,6 +25,8 @@ from app.application import (
     InputMeaningBrainWorkPayload,
     UnavailableInputMeaningLiveContextPort,
     build_core_runtime,
+    start_core,
+    stop_core,
 )
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.config.core import load_core_config
@@ -158,7 +160,7 @@ def test_production_binding_through_brain_preserves_unavailable(
         baseline = asyncio.all_tasks()
         app = build_core_runtime()
         assert isinstance(app.llm, UnavailableLLMRolePort)
-        await app.start()
+        await start_core(app)
         try:
             value = work()
             assert app.bridge.is_fresh(value)
@@ -179,7 +181,7 @@ def test_production_binding_through_brain_preserves_unavailable(
             assert app.bridge.is_fresh(value)
             assert reads == 0
         finally:
-            await app.stop()
+            await stop_core(app)
         assert not (asyncio.all_tasks() - baseline)
 
     asyncio.run(scenario())
@@ -344,7 +346,7 @@ def test_canonical_composition_repeated_start_stop_has_no_pending_tasks(
             assert app.lifecycle.shutdown_policy is app.config.shutdown_policy
             assert app.brain.policy is app.config.integration_policy
             assert app.lifecycle.snapshots() == ()
-            await app.start()
+            await start_core(app)
             try:
                 assert asyncio.all_tasks() - baseline
                 for number, module in enumerate(BrainIntegrationModule):
@@ -356,8 +358,8 @@ def test_canonical_composition_repeated_start_stop_has_no_pending_tasks(
                     assert outcome.status is BrainWorkStatus.REJECTED
                     assert outcome.error == "UNREGISTERED_MODULE"
             finally:
-                await app.stop()
-                await app.stop()
+                await stop_core(app)
+                await stop_core(app)
             assert app.lifecycle.snapshots() == ()
             assert not (asyncio.all_tasks() - baseline)
 
@@ -390,7 +392,7 @@ def test_stop_failure_propagates_but_lifecycle_is_closed(monkeypatch: pytest.Mon
     monkeypatch.setattr(BrainIntegrationRuntime, "stop", failed_stop)
     monkeypatch.setattr(ApplicationLifecycle, "close", close)
     with pytest.raises(RuntimeError, match="停止失敗"):
-        asyncio.run(build_core_runtime().stop())
+        asyncio.run(stop_core(build_core_runtime()))
     assert closed
 
 
@@ -398,18 +400,18 @@ def test_run_loop_cancellation_cleans_signals_and_owned_tasks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     no_provider(monkeypatch)
-    original_start = bootstrap.CoreRuntimeApplication.start
+    original_start = bootstrap.start_core
 
     async def scenario() -> None:
         baseline = asyncio.all_tasks()
         started = asyncio.Event()
         previous = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
 
-        async def start(self: bootstrap.CoreRuntimeApplication) -> None:
-            await original_start(self)
+        async def start(components: bootstrap.CoreComponents) -> None:
+            await original_start(components)
             started.set()
 
-        monkeypatch.setattr(bootstrap.CoreRuntimeApplication, "start", start)
+        monkeypatch.setattr(bootstrap, "start_core", start)
         runner = asyncio.create_task(bootstrap.run_core_runtime())
         try:
             await asyncio.wait_for(started.wait(), 2)
@@ -499,7 +501,7 @@ def test_running_generation_does_not_reload_changed_file(
     async def scenario() -> None:
         app = build_core_runtime(path)
         config = app.config
-        await app.start()
+        await start_core(app)
         try:
             path.write_text("不正な新しい設定")
             assert app.config is config
@@ -511,7 +513,7 @@ def test_running_generation_does_not_reload_changed_file(
             with pytest.raises(ValueError):
                 build_core_runtime(path)
         finally:
-            await app.stop()
+            await stop_core(app)
 
     asyncio.run(scenario())
 
@@ -615,7 +617,7 @@ def test_external_test_client_lifecycle_does_not_stop_core(
                 raise ConnectionError("試験用利用者の切断")
             await release.wait()
 
-        await app.start()
+        await start_core(app)
         client = asyncio.create_task(external_client())
         try:
             if failure == "initialization":
@@ -653,7 +655,7 @@ def test_external_test_client_lifecycle_does_not_stop_core(
             if not client.done():
                 client.cancel()
             await asyncio.gather(client, return_exceptions=True)
-            await app.stop()
+            await stop_core(app)
         assert not (asyncio.all_tasks() - baseline)
 
     asyncio.run(scenario())
@@ -683,7 +685,7 @@ def test_replacement_and_concurrent_clients_use_the_same_public_owner(
                 assert app.brain.submit(value).accepted
                 await asyncio.sleep(0)
 
-        await app.start()
+        await start_core(app)
         try:
             # 先行利用者を終了し、別の利用者へ交換した後で二者を併用する。
             await submit_batch("first")
@@ -704,7 +706,7 @@ def test_replacement_and_concurrent_clients_use_the_same_public_owner(
             assert observed == expected
             assert app.config is config
         finally:
-            await app.stop()
+            await stop_core(app)
         assert not (asyncio.all_tasks() - baseline)
 
     asyncio.run(scenario())

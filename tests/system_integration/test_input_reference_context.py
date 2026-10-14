@@ -7,7 +7,7 @@ from typing import cast
 import pytest
 
 from app import application as bootstrap
-from app.application import InputMeaningBrainWorkPayload
+from app.application import InputMeaningBrainWorkPayload, start_core, stop_core
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
@@ -195,7 +195,7 @@ async def test_minimum_boot_uses_real_current_context_and_commits_meaning(
         ),
         payload=replace(payload, event=captured, reference_context=snapshot.context),
     )
-    await app.start()
+    await start_core(app)
     try:
         assert app.brain.submit(value).accepted
         outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
@@ -204,5 +204,5 @@ async def test_minimum_boot_uses_real_current_context_and_commits_meaning(
         assert outcome.result.boundary_failure is None
         assert app.goals.snapshot().goals == ()
     finally:
-        await app.stop()
+        await stop_core(app)
     assert not (asyncio.all_tasks() - baseline)

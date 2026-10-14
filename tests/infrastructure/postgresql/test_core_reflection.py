@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from app.application import start_core, stop_core
 from app.composition.reflection import CoreReflectionConfiguration, CoreReflectionDelivery
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_integration import (
@@ -233,7 +234,7 @@ async def test_public_boot_registers_roles_and_feeds_memory_into_executive(
         saved = await app.memory.submit_write(MemoryWriteRequest(candidate)).wait()
         assert saved.value is not None and saved.value.record is not None
         initial_goals = app.goals.snapshot()
-        await app.start()
+        await start_core(app)
         assert app.cognition.submit_input(admission(app, internal=True)).accepted
         for _ in range(2):
             outcome = await asyncio.wait_for(app.brain.next_outcome(), 3)
@@ -243,7 +244,7 @@ async def test_public_boot_registers_roles_and_feeds_memory_into_executive(
         assert "memory_evidence" in str(executive.input.value)
         assert app.goals.snapshot() == initial_goals
     finally:
-        await app.stop()
+        await stop_core(app)
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from weakref import WeakKeyDictionary
 
-from app.application import CoreComponents, stop_core
+from app.application import CoreComponents, start_core, stop_core
 from app.domain.appraisal import AppraisalStateCommit
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.contracts.common import JsonValue
@@ -126,7 +126,7 @@ def normal_cognition_target(
         if app.cognition is None:
             await stop()
             return TargetObservation(RunStatus.BLOCKED_UPSTREAM, Gate.NOT_RUN, None)
-        await context.invoke_product("cognition.start", app.start)
+        await context.invoke_product("cognition.start", lambda: start_core(app))
 
         async def submit() -> object:
             assert app.cognition is not None

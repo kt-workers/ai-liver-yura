@@ -9,7 +9,7 @@ from typing import Any, cast
 import pytest
 
 from app import application as bootstrap
-from app.application import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload
+from app.application import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload, stop_core
 from app.composition.executive import CoreExecutiveBinding
 from app.composition.executive_input_evidence import CoreExecutiveInputEvidenceReader
 from app.domain.attention import AttentionSource, AttentionSourceKind
@@ -288,7 +288,7 @@ async def test_minimum_boot_retains_real_success(monkeypatch: pytest.MonkeyPatch
         assert isinstance(retained, CoreAcceptedInput)
         assert retained.result is result
     finally:
-        await app.stop()
+        await stop_core(app)
 
 
 @pytest.mark.asyncio

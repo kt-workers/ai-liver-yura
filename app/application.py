@@ -60,6 +60,7 @@ from app.domain.llm import LLMRoleDescriptor
 from app.domain.memory_reflection.llm_roles import proposal_descriptor, support_descriptor
 from app.domain.plugin_registry import PluginRegistryAuthority
 from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
+from app.infrastructure.llm.connection_registry_factory import LLMConnectionAdapter
 from app.infrastructure.persistence import PostgresPersistenceRuntime
 from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
 from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
@@ -68,7 +69,7 @@ from app.usecases.accepted_inputs import CoreAcceptedInputStore
 from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from app.usecases.input_meaning import InputMeaningInterpreter
 from app.usecases.lifecycle import ApplicationLifecycle, DependencyRetryPolicy
-from app.usecases.ports.llm import LLMConnectionAdapter, LLMRolePort
+from app.usecases.ports.llm import LLMRolePort
 
 if TYPE_CHECKING:
     from app.composition.speech_deployment import SpeechDeploymentRegistry

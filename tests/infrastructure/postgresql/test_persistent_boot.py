@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from app.application import build_persistent_core
+from app.application import build_persistent_core, start_core, stop_core
 from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentSnapshot
 from app.domain.memory import MemoryWriteRequest
@@ -144,7 +144,7 @@ async def test_boot_restore_failure_keeps_saved_goal_after_reconnect(
             assert isinstance(app.goals, CoreGoalPersistenceBinding)
             assert app.goals.restore_failure is PersistenceFailureCode.TIMEOUT
             assert app.input_context.snapshot().goals.goal_revision == 0
-            await app.start()
+            await start_core(app)
             await storage.start()
             change = app.goals.apply(
                 decision(
@@ -154,7 +154,7 @@ async def test_boot_restore_failure_keeps_saved_goal_after_reconnect(
             assert (await change.durability).failure_code is PersistenceFailureCode.TIMEOUT
             assert app.input_context.snapshot().goals.goal_revision == 1
         finally:
-            await app.stop()
+            await stop_core(app)
     finally:
         blocker.close()
         await storage.close()
@@ -262,7 +262,7 @@ async def test_stop_reaps_memory_before_database_close(
         await original(self)
 
     monkeypatch.setattr(CoreMemoryPersistenceBinding, "close", delayed)
-    task = asyncio.create_task(app.stop())
+    task = asyncio.create_task(stop_core(app))
     await asyncio.wait_for(entered.wait(), 2)
     if timeout:
         await asyncio.wait_for(cancelled.wait(), 2)
@@ -316,7 +316,7 @@ async def test_missing_database_keeps_core_running_with_typed_failure(
         )
         assert isinstance(app.goals, CoreGoalPersistenceBinding)
         assert app.goals.restore_failure is PersistenceFailureCode.UNAVAILABLE
-        await app.start()
+        await start_core(app)
         assert app.brain.submit(work()).accepted
         outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
         assert outcome.status is BrainWorkStatus.COMPLETED
@@ -325,7 +325,7 @@ async def test_missing_database_keeps_core_running_with_typed_failure(
         result = await app.memory.submit_retrieval(memory.query()).wait()
         assert result.failure_code is PersistenceFailureCode.UNAVAILABLE
     finally:
-        await app.stop()
+        await stop_core(app)
     assert storage.availability is PersistenceAvailability.CLOSED
     assert not (asyncio.all_tasks() - baseline)
 
@@ -369,7 +369,7 @@ async def test_boot_recovers_goal_and_memory_after_other_process_exits_without_s
         max_pending_memory=2,
     )
     try:
-        await app.start()
+        await start_core(app)
         assert isinstance(app.goals, CoreGoalPersistenceBinding)
         assert app.goals.restore_failure is None
         assert app.goals.snapshot().to_dict() == json.loads(stdout)
@@ -380,7 +380,7 @@ async def test_boot_recovers_goal_and_memory_after_other_process_exits_without_s
         assert retrieved.failure_code is None and retrieved.value is not None
         assert len(retrieved.value.items) == 1
     finally:
-        await app.stop()
+        await stop_core(app)
     assert storage.availability is PersistenceAvailability.CLOSED
     assert storage.pending_task_count == 0
     assert not (asyncio.all_tasks() - baseline)
@@ -432,7 +432,7 @@ async def test_boot_database_reconnect_recovers_memory_without_replacing_goal_ow
         owner = app.goals
         assert owner.restore_failure is PersistenceFailureCode.UNAVAILABLE
         assert app.lifecycle.snapshot("db").state is DependencyState.DEGRADED
-        await app.start()
+        await start_core(app)
         await asyncio.wait_for(entered.wait(), 5)
         with admin.transaction() as connection:
             connection.execute(f'ALTER DATABASE "{endpoint.database}" ALLOW_CONNECTIONS true')
@@ -461,7 +461,7 @@ async def test_boot_database_reconnect_recovers_memory_without_replacing_goal_ow
         finally:
             admin.close()
             if app is not None:
-                await app.stop()
+                await stop_core(app)
             else:
                 await storage.close()
     assert storage.availability is PersistenceAvailability.CLOSED

@@ -16,7 +16,7 @@ from threading import Event
 from typing import Any, TypeVar
 from uuid import uuid4
 
-from app.application import CoreComponents, build_persistent_core, stop_core
+from app.application import CoreComponents, build_persistent_core, start_core, stop_core
 from app.config.core import load_core_config
 from app.domain.contracts.common import JsonValue, freeze_json, thaw_json
 from app.domain.contracts.lifecycle import ApplicationShutdownError
@@ -290,10 +290,10 @@ async def _boot(
         max_pending_memory=settings.max_pending_memory,
     )
     try:
-        await app.start()
+        await start_core(app)
         _check_settings(settings, expected_settings)
     except BaseException:
-        await _settle(app.stop())
+        await _settle(stop_core(app))
         raise
     return app, storage
 

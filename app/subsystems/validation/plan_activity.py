@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from weakref import WeakKeyDictionary
 
-from app.application import CoreComponents
+from app.application import CoreComponents, start_core
 from app.domain.activity_execution import (
     ActivityExecutionPort,
     ActivityExecutionRecord,
@@ -197,7 +197,7 @@ def plan_activity_target(
                 )
 
             scope = await context.invoke_product("plan_activity.prepare_plan", prepare)
-        await context.invoke_product("plan_activity.start", app.start)
+        await context.invoke_product("plan_activity.start", lambda: start_core(app))
 
         async def submit() -> BrainWorkAdmission | None:
             assert app.cognition is not None

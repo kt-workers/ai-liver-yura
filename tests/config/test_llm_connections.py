@@ -24,7 +24,7 @@ def test_loads_immutable_connection_settings() -> None:
     assert loaded.connections[0].connection_id == "yura.llm.primary"
     assert loaded.connections[0].settings == {"availability": "unavailable"}
     with pytest.raises(TypeError):
-        loaded.connections[0].settings["availability"] = "configured"  # type: ignore[index]
+        loaded.connections[0].settings["availability"] = "configured"
 
 
 @pytest.mark.parametrize(

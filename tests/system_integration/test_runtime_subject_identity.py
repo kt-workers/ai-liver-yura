@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from app import bootstrap
+from app import application as bootstrap
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.domain.character.projector import project_character_definition

@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from app import application as bootstrap
+from app.application import start_core, stop_core
 from app.composition.execution import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
 from app.composition.execution_configuration import CoreExecutionConfiguration
 from app.domain.activity_execution import (
@@ -147,7 +148,7 @@ async def test_plugin_fact_crosses_production_composition_and_returns_to_cogniti
     )
     build = bootstrap.build_core_runtime
 
-    def composed(*args: Any, **kwargs: Any) -> bootstrap.CoreRuntimeApplication:
+    def composed(*args: Any, **kwargs: Any) -> bootstrap.CoreComponents:
         from tests.helpers.direct_activity_requirements import requirements_owner, source_owner
 
         requirements = requirements_owner(
@@ -165,7 +166,7 @@ async def test_plugin_fact_crosses_production_composition_and_returns_to_cogniti
     assert len(registry.snapshot().plugins) == 1
     if mode == "revoked":
         registry.adopt_permission_grants(grant_snapshot(1, ()))
-    await app.start()
+    await start_core(app)
     parent = work()
     parent = replace(
         parent, envelope=replace(parent.envelope, root_trigger_id="system-plugin-root")
@@ -236,7 +237,7 @@ async def test_plugin_fact_crosses_production_composition_and_returns_to_cogniti
         trace = app.brain.trace(parent.envelope.trace_id)
         assert trace is not None and trace.root_trigger_id == parent.envelope.root_trigger_id
     finally:
-        await app.stop()
+        await stop_core(app)
 
 
 @pytest.mark.asyncio
@@ -246,13 +247,13 @@ async def test_zero_plugin_keeps_core_available(
     registry = PluginRegistryAuthority()
     build = bootstrap.build_core_runtime
 
-    def composed(*args: Any, **kwargs: Any) -> bootstrap.CoreRuntimeApplication:
+    def composed(*args: Any, **kwargs: Any) -> bootstrap.CoreComponents:
         kwargs["cognition"] = replace(kwargs["cognition"], registry=registry)
         return build(*args, **kwargs)
 
     monkeypatch.setattr(bootstrap, "build_core_runtime", composed)
     app, _ = application(monkeypatch)
-    await app.start()
+    await start_core(app)
     try:
         assert registry.snapshot().foundation_capabilities == ()
         assert app.cognition.submit_input(admission(app, internal=True)).accepted
@@ -261,4 +262,4 @@ async def test_zero_plugin_keeps_core_available(
         assert outcomes[-1].module.value == "executive"
         assert registry.snapshot().plugins == ()
     finally:
-        await app.stop()
+        await stop_core(app)

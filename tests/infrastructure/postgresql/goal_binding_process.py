@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from app.application import build_persistent_core
+from app.application import build_persistent_core, start_core
 from app.domain.executive import GoalTransitionOperation
 from app.domain.memory import MemoryWriteRequest
 from app.infrastructure.persistence import DurabilityStatus
@@ -37,7 +37,7 @@ async def main() -> None:
             runtime_epoch="child-before-exit",
             max_pending_memory=2,
         )
-        await app.start()
+        await start_core(app)
         assert isinstance(app.goals, CoreGoalPersistenceBinding)
         assert app.memory is not None
         committed = app.goals.apply(

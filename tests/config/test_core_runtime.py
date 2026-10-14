@@ -21,7 +21,7 @@ def test_canonical_resource_and_shared_policy_instances() -> None:
     assert config.schema_id == "yura.core-runtime.production-config.v1"
     assert config.config_id == "yura.core-runtime.production"
     assert config.config_revision == 1
-    assert config.character_definition_path == "config/character/yura.yaml"
+    assert config.character_definition.resource_ref == "config/character/yura.yaml"
     acceptance = config.input_meaning_policy.acceptance
     assert (acceptance.policy_id, acceptance.policy_revision) == (
         "yura.input-meaning.acceptance",
