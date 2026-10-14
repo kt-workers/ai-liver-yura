@@ -25,6 +25,7 @@ from app.domain.plugin_registry import PluginRegistryAuthority
 from app.infrastructure.scheduling import SystemRuntimeClock
 from app.usecases.ports.llm import LLMRolePort
 
+
 class _FakeLLMAdapter:
     """既存Roleに対する型付き未構成応答と、外側の資源回収を検証する。"""
 
@@ -123,7 +124,7 @@ async def test_real_factories_identity_snapshot_and_restart() -> None:
     for forbidden in ("test.llm.execution", "_lock", "/Users/", "credential", "raw_token"):
         assert forbidden not in text
     with pytest.raises(FrozenInstanceError):
-        setattr(snapshot, "activation_id", "different")
+        snapshot.activation_id = "different"  # type: ignore[misc]
     await app.start()
     await asyncio.gather(app.stop(), app.stop())
     with pytest.raises(FinalizationError):
@@ -215,7 +216,12 @@ async def test_failure_stages_reclaim_owners(monkeypatch: pytest.MonkeyPatch, st
 
     monkeypatch.setattr(system, "create_executive_configuration", executive)
     monkeypatch.setattr(system, "AttentionTurnStore", attention)
-    params["llm_adapters"] = (_FakeLLMAdapter(preflight=provider, on_release=lambda: events.append("provider")),)
+    params["llm_adapters"] = (
+        _FakeLLMAdapter(
+            preflight=provider,
+            on_release=lambda: events.append("provider"),
+        ),
+    )
     if stage == "appraisal":
         monkeypatch.setattr(system, "build_appraisal_configuration", fail)
     if stage == "cognition":

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from app.application import build_persistent_core, start_core, stop_core, start_core, stop_core
+from app.application import build_persistent_core, start_core, stop_core
 from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentSnapshot
 from app.domain.memory import MemoryWriteRequest
