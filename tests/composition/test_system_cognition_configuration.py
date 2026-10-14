@@ -23,7 +23,9 @@ from app.domain.contracts.preconditions import PreconditionSourceRouter
 from app.domain.llm import LLMRoleDescriptor
 from app.domain.plugin_registry import PluginRegistryAuthority
 from app.infrastructure.scheduling import SystemRuntimeClock
+from app.usecases import core_lifecycle
 from app.usecases.ports.llm import LLMRolePort
+from app.usecases.resource_cleanup import OwnedResourcesCloseError
 
 
 class _FakeLLMAdapter:
@@ -227,7 +229,7 @@ async def test_failure_stages_reclaim_owners(monkeypatch: pytest.MonkeyPatch, st
     if stage == "cognition":
         monkeypatch.setattr(system, "CoreCognitionConfiguration", fail)
     if stage == "core":
-        monkeypatch.setattr(bootstrap, "_compose_core", fail)
+        monkeypatch.setattr(system, "compose_core_components", fail)
     if stage == "snapshot":
         monkeypatch.setattr(system, "_snapshot", fail)
     with pytest.raises(CoreConfigurationError) as caught:
@@ -252,7 +254,7 @@ async def test_reverse_cleanup_continues_after_failure() -> None:
                 raise ValueError("private-detail")
 
         ledger.actions.append(close)
-    with pytest.raises(CoreConfigurationError):
+    with pytest.raises(OwnedResourcesCloseError):
         await ledger.close()
     assert events == [3, 2, 1, 0]
     await ledger.close()
@@ -295,7 +297,7 @@ async def test_start_failure_uses_same_cleanup(
             await asyncio.Future()
         raise ValueError("private-detail")
 
-    monkeypatch.setattr(bootstrap, "start_core", start)
+    monkeypatch.setattr(core_lifecycle, "start_core", start)
     task = asyncio.create_task(app.start())
     await entered.wait()
     if cancel:
@@ -311,14 +313,14 @@ async def test_start_failure_uses_same_cleanup(
 async def test_generation_change_before_publication_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    original = bootstrap._compose_core
+    original = system.compose_core_components
 
     def compose(*args: Any, **kwargs: Any) -> Any:
         core = original(*args, **kwargs)
         kwargs["cognition"].requirements.finalization_participant.retire()
         return core
 
-    monkeypatch.setattr(bootstrap, "_compose_core", compose)
+    monkeypatch.setattr(system, "compose_core_components", compose)
     with pytest.raises(CoreConfigurationError, match="INITIALIZATION_FAILED"):
         await bootstrap.build_core(**parameters())
 
@@ -407,3 +409,17 @@ async def test_symlink_resource_cannot_escape_root(tmp_path: Path) -> None:
     params["resource_root"] = tmp_path
     with pytest.raises(CoreConfigurationError, match="INVALID_SYSTEM_CONFIG"):
         await bootstrap.build_core(**params)
+
+
+@pytest.mark.asyncio
+async def test_application_preserves_public_cleanup_failure_code() -> None:
+    app = await bootstrap.build_core(**parameters())
+
+    def fail() -> None:
+        raise ValueError("非公開の終了失敗詳細")
+
+    app._owned.add_sync(fail)
+    with pytest.raises(CoreConfigurationError, match="INITIALIZATION_FAILED") as caught:
+        await app.stop()
+    assert "非公開の終了失敗詳細" not in str(caught.value)
+    assert not app._owned.actions

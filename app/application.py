@@ -15,9 +15,9 @@ from typing import TYPE_CHECKING
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.connections import production_llm_connection_adapters
 from app.adapters.llm.production import create_openai_port_from_environment
-from app.composition.cognition import CoreCognitionDelivery
+from app.bootstrap.core_components import CoreComponents as CoreComponents
+from app.bootstrap.core_components import compose_core_components
 from app.composition.cognition_configuration import CoreCognitionConfiguration
-from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.speech_production_configuration import SpeechProductionInputs
 from app.composition.system_cognition_configuration import (
     CORE_RESOURCE,
@@ -30,20 +30,12 @@ from app.config.core import CoreConfig, load_core_config
 from app.config.core_contracts import CoreConfigurationError
 from app.config.layered import ConfigurationError, load_user_configuration
 from app.domain.activity_binding import ActivityBindingAuthority
-from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.appraisal import DeterministicAppraisalRule
 from app.domain.appraisal import descriptor as appraisal_descriptor
-from app.domain.brain_integration import BrainIntegrationModule
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.character.contracts import CharacterDefinitionDocument
 from app.domain.contracts.common import require_identifier
-from app.domain.contracts.lifecycle import (
-    ApplicationShutdownError,
-    ApplicationShutdownFailure,
-    ApplicationShutdownStage,
-)
 from app.domain.contracts.preconditions import PreconditionSourceBinding, PreconditionSourceRouter
-from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
 from app.domain.executive.deliberator import descriptor as executive_descriptor
 from app.domain.goals import GoalCommitmentStore
 from app.domain.input_meaning.interpreter import descriptor
@@ -53,10 +45,7 @@ from app.domain.plugin_registry import PluginRegistryAuthority
 from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
 from app.infrastructure.llm.connection_registry_factory import LLMConnectionAdapter
 from app.infrastructure.persistence import PostgresPersistenceRuntime
-from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBinding
-from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from app.infrastructure.scheduling import RuntimeClock, SystemRuntimeClock
-from app.usecases.accepted_inputs import CoreAcceptedInputStore
 from app.usecases.brain_input_meaning import (
     InputMeaningBrainModulePort as InputMeaningBrainModulePort,
 )
@@ -66,81 +55,18 @@ from app.usecases.brain_input_meaning import (
 from app.usecases.brain_input_meaning import (
     UnavailableInputMeaningLiveContextPort as UnavailableInputMeaningLiveContextPort,
 )
-from app.usecases.brain_integration_runtime import BrainIntegrationRuntime
-from app.usecases.input_meaning import InputMeaningInterpreter
+from app.usecases.core_lifecycle import start_core as start_core
+from app.usecases.core_lifecycle import stop_core as stop_core
+from app.usecases.goal_persistence import CoreGoalPersistenceBinding
 from app.usecases.lifecycle import ApplicationLifecycle, DependencyRetryPolicy
+from app.usecases.memory_persistence import CoreMemoryPersistenceBinding
 from app.usecases.ports.llm import LLMRolePort
 from app.usecases.task_cleanup import reap_owned_task as _reap_cleanup
 
+_compose_core = compose_core_components
+
 if TYPE_CHECKING:
     from app.composition.speech_deployment import SpeechDeploymentRegistry
-
-
-@dataclass(frozen=True, slots=True)
-class CoreComponents:
-    """構成済みの値とPort。起動・停止の状態は保持しない。"""
-
-    config: CoreConfig
-    character_definition: CharacterDefinitionDocument
-    lifecycle: ApplicationLifecycle
-    brain: BrainIntegrationRuntime
-    interpreter: InputMeaningInterpreter
-    bridge: InputMeaningBrainModulePort
-    llm: LLMRolePort
-    goals: GoalCommitmentStore | CoreGoalPersistenceBinding
-    activities: ActivityExecutionAuthority
-    input_context: CoreInputReferenceContextBinding
-    runtime_subject_identity: RuntimeSubjectIdentity
-    memory: CoreMemoryPersistenceBinding | None = None
-    cognition: CoreCognitionDelivery | None = None
-
-
-async def start_core(components: CoreComponents) -> None:
-    """構成済みの主要作業系を開始する。"""
-    await components.brain.start()
-    try:
-        if components.cognition is not None and components.cognition.autonomy is not None:
-            components.cognition.autonomy.start()
-    except BaseException:
-        await components.brain.stop()
-        raise
-
-
-async def stop_core(components: CoreComponents) -> None:
-    """構成済みの主要作業系を停止し、依存先を回収する。"""
-    try:
-        try:
-            await components.brain.stop()
-        finally:
-            if components.cognition is not None and components.cognition.speech is not None:
-                await components.cognition.speech.close()
-    finally:
-        try:
-            if components.cognition is not None and components.cognition.reflection is not None:
-                await components.cognition.reflection.close()
-        finally:
-            await _close_core_memory(components)
-
-
-async def _close_core_memory(components: CoreComponents) -> None:
-        try:
-            if components.memory is not None:
-                try:
-                    await asyncio.wait_for(
-                        components.memory.close(),
-                        components.config.shutdown_policy.final_persistence_grace_seconds,
-                    )
-                except asyncio.TimeoutError:
-                    raise ApplicationShutdownError(
-                        (
-                            ApplicationShutdownFailure(
-                                ApplicationShutdownStage.FINAL_PERSISTENCE, "TimeoutError"
-                            ),
-                        )
-                    ) from None
-        finally:
-            # 前段が失敗してもDB・再接続処理を回収する。
-            await components.lifecycle.close()
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,72 +155,6 @@ def _load_core(
             )
     llm = create_openai_port_from_environment(roles)
     return config, character, llm
-
-
-def _compose_core(
-    config: CoreConfig,
-    character: CharacterDefinitionDocument,
-    llm: LLMRolePort,
-    goals: GoalCommitmentStore | CoreGoalPersistenceBinding,
-    memory: CoreMemoryPersistenceBinding | None = None,
-    lifecycle: ApplicationLifecycle | None = None,
-    cognition: CoreCognitionConfiguration | None = None,
-    *,
-    prepared_activities: ActivityExecutionAuthority | None = None,
-    prepared_context: CoreInputReferenceContextBinding | None = None,
-    prepared_clock: RuntimeClock | None = None,
-) -> CoreComponents:
-    from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
-
-    activities = prepared_activities or (
-        ActivityExecutionAuthority(observation_policy=SPEECH_OBSERVATION_POLICY)
-        if cognition is not None and cognition.speech is not None
-        else ActivityExecutionAuthority()
-    )
-    input_context = prepared_context or CoreInputReferenceContextBinding(
-        goals, activities, config.input_meaning_policy, V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
-    )
-    interpreter = InputMeaningInterpreter(
-        llm,
-        input_context,
-        config.input_meaning_policy,
-    )
-    bridge = InputMeaningBrainModulePort(
-        interpreter,
-        CoreAcceptedInputStore(V2_BRAIN_OPERATIONAL_BOUNDS_POLICY.executive.max_source_event_refs),
-    )
-    clock = prepared_clock or SystemRuntimeClock()
-    lifecycle = lifecycle or ApplicationLifecycle(clock, config.shutdown_policy)
-    brain = BrainIntegrationRuntime(clock, config.integration_policy)
-    delivery = None
-    if cognition is None:
-        brain.register_module(BrainIntegrationModule.INPUT_MEANING, bridge)
-    else:
-        assert bridge.inputs is not None
-        delivery = cognition.compose(
-            brain, input_context, bridge.inputs, llm, clock, memory, goals
-        )
-        delivery.register(bridge)
-    return CoreComponents(
-        config,
-        character,
-        lifecycle,
-        brain,
-        interpreter,
-        bridge,
-        llm,
-        goals,
-        activities,
-        input_context,
-        RuntimeSubjectIdentity(
-            self_subject_ref=character.character_id,
-            character_id=character.character_id,
-            character_schema_version=character.schema_version,
-            character_definition_revision=character.definition_revision,
-        ),
-        memory,
-        delivery,
-    )
 
 
 async def build_persistent_core(

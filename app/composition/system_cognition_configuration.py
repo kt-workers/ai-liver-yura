@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
+from app.bootstrap.core_components import compose_core_components
 from app.composition.cognition_configuration import CoreCognitionConfiguration
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.speech_production_configuration import (
@@ -55,14 +56,17 @@ from app.infrastructure.llm.connection_registry_factory import (
 )
 from app.infrastructure.llm.connections import route_llm_connections
 from app.infrastructure.scheduling import RuntimeClock
+from app.usecases.core_lifecycle import CoreActivationError, CoreApplicationLifecycle, stop_core
 from app.usecases.lifecycle import ApplicationLifecycle
+from app.usecases.resource_cleanup import OwnedResourceLedger, OwnedResourcesCloseError
 from app.usecases.task_cleanup import reap_owned_task
 
 if TYPE_CHECKING:
-    from app.application import CoreComponents
+    from app.bootstrap.core_components import CoreComponents
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE_RESOURCE = "config/core.yaml"
+_OwnedResources = OwnedResourceLedger
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,40 +122,12 @@ class SystemCompositionSnapshot:
     requirements_generation: tuple[tuple[str, str | int], ...]
 
 
-class _OwnedResources:
-    """生成済み資源だけを逆順に、一度だけ回収する台帳。"""
-
-    def __init__(self) -> None:
-        self.actions: list[Callable[[], Awaitable[None]]] = []
-
-    def add_sync(self, operation: Callable[[], None]) -> None:
-        async def close() -> None:
-            operation()
-
-        self.actions.append(close)
-
-    async def close(self) -> None:
-        failed = False
-        cancelled = False
-        while self.actions:
-            try:
-                await self.actions.pop()()
-            except asyncio.CancelledError:
-                cancelled = True
-            except Exception:
-                failed = True
-        if cancelled:
-            raise asyncio.CancelledError
-        if failed:
-            raise CoreConfigurationError(CoreFailureCode.INITIALIZATION_FAILED)
-
-
 class CoreApplication:
-    """所有資源の起動・停止を制御する実行オブジェクト。"""
+    """構成情報を公開し、開始・終了を本体の実行所有者へ委譲する。"""
 
     __slots__ = (
         "core", "composition_snapshot", "cognition", "appraisal", "executive",
-        "_owned", "_stop_task", "_start_task",
+        "_owned", "_runtime",
     )
 
     def __init__(
@@ -169,52 +145,19 @@ class CoreApplication:
         self.appraisal = appraisal
         self.executive = executive
         self._owned = owned
-        self._stop_task: asyncio.Task[None] | None = None
-        self._start_task: asyncio.Task[None] | None = None
+        self._runtime = CoreApplicationLifecycle(core, owned)
 
     async def start(self) -> None:
-        if self._stop_task is not None:
-            raise CoreConfigurationError(CoreFailureCode.ACTIVATION_FAILED)
-        if self._start_task is None:
-            from app.application import start_core
-
-            self._start_task = asyncio.create_task(start_core(self.core))
-        assert self._start_task is not None
         try:
-            await asyncio.shield(self._start_task)
-        except BaseException as error:
-            self._start_task.cancel()
-
-            try:
-                await reap_owned_task(self._start_task)
-            except (Exception, asyncio.CancelledError):
-                pass
-            try:
-                await self.stop()
-            finally:
-                if isinstance(error, asyncio.CancelledError):
-                    raise asyncio.CancelledError from None
-                raise CoreConfigurationError(CoreFailureCode.ACTIVATION_FAILED) from None
+            await self._runtime.start()
+        except CoreActivationError:
+            raise CoreConfigurationError(CoreFailureCode.ACTIVATION_FAILED) from None
 
     async def stop(self) -> None:
-        if self._stop_task is None:
-            self._stop_task = asyncio.create_task(self._close())
-        assert self._stop_task is not None
-        await reap_owned_task(self._stop_task)
-
-    async def _close(self) -> None:
-        if self._start_task is not None and not self._start_task.done():
-            self._start_task.cancel()
-            try:
-                await self._start_task
-            except (Exception, asyncio.CancelledError):
-                pass
-        from app.application import stop_core
-
         try:
-            await stop_core(self.core)
-        finally:
-            await self._owned.close()
+            await self._runtime.stop()
+        except OwnedResourcesCloseError:
+            raise CoreConfigurationError(CoreFailureCode.INITIALIZATION_FAILED) from None
 
 
 def _read(root: Path, ref: str) -> bytes:
@@ -249,7 +192,6 @@ async def compose_core(
     config_ref: str = CORE_RESOURCE,
     resource_root: Path = ROOT,
 ) -> CoreApplication:
-    from app.application import _compose_core, stop_core
     from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
 
     owned = _OwnedResources()
@@ -367,7 +309,7 @@ async def compose_core(
             speech=None if speech_binding is None else speech_binding.configuration,
             decay_policy=appraisal.decay_policy,
         )
-        core = _compose_core(
+        core = compose_core_components(
             runtime,
             character,
             llm,
