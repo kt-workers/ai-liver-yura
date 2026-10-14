@@ -15,19 +15,16 @@ from typing import cast
 
 import pytest
 import yaml
+from app import application as bootstrap
+from app.adapters.character.yaml_loader import load_character_definition_yaml
+from app.adapters.llm import production
+from app.adapters.llm.production import UnavailableLLMRolePort
 from app.application import (
     InputMeaningBrainModulePort,
     InputMeaningBrainWorkPayload,
     UnavailableInputMeaningLiveContextPort,
     build_core_runtime,
 )
-from app.infrastructure.scheduling import CancellationToken, SystemRuntimeClock
-from app.usecases.lifecycle import ApplicationLifecycle
-
-from app import application as bootstrap
-from app.adapters.character.yaml_loader import load_character_definition_yaml
-from app.adapters.llm import production
-from app.adapters.llm.production import UnavailableLLMRolePort
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.config.core import load_core_config
 from app.domain.brain_integration import (
@@ -37,7 +34,6 @@ from app.domain.brain_integration import (
     BrainWorkPriority,
     BrainWorkStatus,
 )
-from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from app.domain.contracts import CapabilityAvailability, EventEnvelope, RevisionVector
 from app.domain.input_gateway import (
     InputModality,
@@ -59,7 +55,10 @@ from app.domain.llm import (
     LLMTokenUsage,
     StructuredPayload,
 )
+from app.infrastructure.scheduling import CancellationToken, SystemRuntimeClock
+from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from app.usecases.input_meaning import InputMeaningInterpreter
+from app.usecases.lifecycle import ApplicationLifecycle
 
 ROOT = Path(__file__).resolve().parents[2]
 NOW = datetime(2026, 9, 5, tzinfo=timezone.utc)
