@@ -13,6 +13,7 @@ from app.adapters.llm.production import UnavailableLLMRolePort
 from app.composition.core_provider import CoreProviderLease, ProviderBindingSnapshot
 from app.config.core_contracts import CoreConfigurationError, CoreFailureCode
 from app.domain.llm import LLMRoleDescriptor
+from app.usecases.task_cleanup import reap_owned_task
 
 
 async def create_core_provider_lease(
@@ -42,7 +43,5 @@ async def create_core_provider_lease(
         port = OpenAIResponsesAdapter(cast(ResponsesClient, client.responses), configs)
         return CoreProviderLease(port, bindings, mode, client.close)
     except BaseException:
-        from app.application import _reap_cleanup
-
-        await _reap_cleanup(asyncio.create_task(client.close()))
+        await reap_owned_task(asyncio.create_task(client.close()))
         raise

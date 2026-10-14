@@ -21,6 +21,7 @@ from app.config.core_contracts import CoreConfigurationError, CoreFailureCode, i
 from app.config.provider_deployment import ProviderDeploymentConfig, ProviderSourceReference
 from app.domain.llm import LLMModelClass, LLMRoleDescriptor
 from app.usecases.ports.llm import LLMRolePort
+from app.usecases.task_cleanup import reap_owned_task
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,12 +106,10 @@ class CoreProviderLease:
     _release_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
 
     async def release(self) -> None:
-        from app.application import _reap_cleanup
-
         if self._release_task is None:
             object.__setattr__(self, "_release_task", asyncio.create_task(self._release()))
         assert self._release_task is not None
-        await _reap_cleanup(self._release_task)
+        await reap_owned_task(self._release_task)
 
     async def _release(self) -> None:
         await self.release_owned()

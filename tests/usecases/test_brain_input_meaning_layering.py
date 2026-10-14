@@ -57,9 +57,16 @@ def test_entrypoint_no_longer_implements_input_meaning_or_task_reaping() -> None
     )
 
 
-def test_composition_does_not_get_task_cleanup_from_entrypoint() -> None:
-    path = ROOT / "app/composition/system_cognition_configuration.py"
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+@pytest.mark.parametrize(
+    "path",
+    [
+        "app/composition/system_cognition_configuration.py",
+        "app/composition/core_provider.py",
+        "app/adapters/llm/core.py",
+    ],
+)
+def test_consumers_do_not_get_task_cleanup_from_entrypoint(path: str) -> None:
+    tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module == "app.application":
             assert "_reap_cleanup" not in {item.name for item in node.names}
