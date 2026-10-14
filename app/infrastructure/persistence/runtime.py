@@ -3,10 +3,12 @@
 import asyncio
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
-from typing import Generic, TypeVar, cast
+from typing import TypeVar, cast
 
 from app.domain.contracts.finalization import AuthorityReadPublication
+from app.domain.contracts.persistence import (
+    PersistenceOperationResult as PersistenceOperationResult,
+)
 from app.domain.goals.contracts import GoalCommitmentSnapshot
 from app.domain.memory import MemoryStoreAuthority, MemoryWriteRequest, MemoryWriteResult
 from app.domain.memory.contracts import MemoryRetrievalQuery
@@ -36,20 +38,6 @@ from .worker import (
 )
 
 T = TypeVar("T")
-
-
-@dataclass(frozen=True, slots=True)
-class PersistenceOperationResult(Generic[T]):
-    """呼出しの成功値と保存機構の失敗を区別する。生の提供元例外は運ばない。"""
-
-    value: T | None
-    failure_code: PersistenceFailureCode | None = None
-
-    def __post_init__(self) -> None:
-        if self.failure_code is not None and (
-            self.value is not None or not isinstance(self.failure_code, PersistenceFailureCode)
-        ):
-            raise ValueError("保存処理の成功値と失敗分類が矛盾しています")
 
 
 class PostgresPersistenceRuntime:

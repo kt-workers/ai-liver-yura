@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from app.domain.attention import AttentionSource
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import AuthorityGenerationToken
+from app.domain.contracts.persistence import PersistenceError, PersistenceFailureCode
 from app.domain.executive import ExecutiveFactKind, ExecutiveFactRef
 from app.domain.memory import MemoryRetrievalQuery
 from app.domain.memory.ranking import RankedMemoryEvidenceView
 from app.domain.memory.semantic_assertions import MemorySemanticAssertionEntry
-from app.infrastructure.persistence import PersistenceError, PersistenceFailureCode
-from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
+from app.usecases.ports.memory_evidence import MemoryEvidencePort
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +31,7 @@ class CoreMemoryEvidenceConfiguration:
 
 class CoreMemoryEvidenceReader:
     def __init__(
-        self, memory: CoreMemoryPersistenceBinding, config: CoreMemoryEvidenceConfiguration
+        self, memory: MemoryEvidencePort, config: CoreMemoryEvidenceConfiguration
     ) -> None:
         self.memory, self.config = memory, config
         self.latest_view: RankedMemoryEvidenceView | None = None
@@ -46,7 +46,7 @@ class CoreMemoryEvidenceReader:
             or query.max_estimated_tokens > self.config.max_estimated_tokens
         ):
             raise ValueError("記憶検索条件が起動時の上限を超えています")
-        retrieved = await self.memory.submit_retrieval_publication(query).wait()
+        retrieved = await self.memory.read_retrieval_publication(query)
         if retrieved.failure_code is not None:
             raise PersistenceError(retrieved.failure_code, "判断根拠の記憶検索に失敗しました")
         if retrieved.value is None:
