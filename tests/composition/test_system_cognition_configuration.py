@@ -13,6 +13,7 @@ import yaml
 
 from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
+from app.bootstrap.core_components import compose_core_components
 from app.composition import system_cognition_configuration as system
 from app.config.core_contracts import CoreConfigurationError
 from app.config.executive_assembly import create_executive_configuration
@@ -313,7 +314,7 @@ async def test_start_failure_uses_same_cleanup(
 async def test_generation_change_before_publication_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    original = system.compose_core_components
+    original = compose_core_components
 
     def compose(*args: Any, **kwargs: Any) -> Any:
         core = original(*args, **kwargs)

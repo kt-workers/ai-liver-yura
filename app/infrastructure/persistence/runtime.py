@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TypeVar, cast
 
 from app.domain.contracts.finalization import AuthorityReadPublication
+from app.domain.contracts.persistence import GOAL_PERSISTENCE_OWNER_ID as OWNER_ID
 from app.domain.contracts.persistence import (
     PersistenceOperationResult as PersistenceOperationResult,
 )
@@ -23,7 +24,6 @@ from .contracts import (
     PersistenceFailureCode,
 )
 from .goal_snapshot_codec import (
-    OWNER_ID,
     SNAPSHOT_KIND,
     decode_goal_snapshot,
     encode_goal_snapshot,
