@@ -17,10 +17,10 @@ import pytest
 import yaml
 
 from app import application as bootstrap
-from app.bootstrap import core_components as component_factory
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm import production
 from app.adapters.llm.production import UnavailableLLMRolePort
+from app.bootstrap import core_components as component_factory
 from app.application import (
     InputMeaningBrainModulePort,
     InputMeaningBrainWorkPayload,
