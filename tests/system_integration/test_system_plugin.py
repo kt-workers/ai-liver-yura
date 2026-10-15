@@ -248,7 +248,7 @@ async def test_zero_plugin_keeps_core_available(
     registry = PluginRegistryAuthority()
     build = bootstrap.build_core_runtime
 
-    def composed(*args: Any, **kwargs: Any) -> bootstrap.CoreComponents:
+    def composed(*args: Any, **kwargs: Any) -> CoreRuntimeApplication:
         kwargs["cognition"] = replace(kwargs["cognition"], registry=registry)
         return build(*args, **kwargs)
 

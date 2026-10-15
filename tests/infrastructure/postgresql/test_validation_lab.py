@@ -12,6 +12,7 @@ import pytest_asyncio
 import yaml
 
 from app.application import CoreComponents
+from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import GoalTransitionOperation
 from app.domain.memory import MemoryWriteRequest

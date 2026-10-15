@@ -13,7 +13,7 @@ from hashlib import sha256
 from importlib import import_module
 from pathlib import Path
 from threading import Event
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 from uuid import uuid4
 
 from app.application import build_persistent_core
