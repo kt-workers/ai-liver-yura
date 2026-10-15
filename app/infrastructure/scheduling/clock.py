@@ -4,13 +4,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Protocol
 
-
-class RuntimeClock(Protocol):
-    def now(self) -> datetime: ...
-
-    async def sleep(self, delay_seconds: float) -> None: ...
+from app.runtime.kernel.clock import RuntimeClock as RuntimeClock
 
 
 class SystemRuntimeClock:

@@ -1,4 +1,4 @@
-"""アプリケーションの作業スケジューラ実装。"""
+"""具体時計の実装と、移行中の実行カーネル公開入口。"""
 
 from .cancellation import CancellationRegistry, CancellationToken
 from .clock import FakeRuntimeClock, RuntimeClock, SystemRuntimeClock

@@ -29,7 +29,7 @@ from app.domain.contracts.common import (
     utc_instant,
 )
 from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
-from app.infrastructure.scheduling import (
+from app.runtime.kernel import (
     CancellationToken,
     QueuePolicy,
     RuntimeClock,
