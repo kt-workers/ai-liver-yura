@@ -8,6 +8,7 @@ import pytest
 
 from app import application as bootstrap
 from app.application import start_core, stop_core
+from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.composition.execution import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
 from app.composition.execution_configuration import CoreExecutionConfiguration
 from app.domain.activity_execution import (
@@ -148,7 +149,7 @@ async def test_plugin_fact_crosses_production_composition_and_returns_to_cogniti
     )
     build = bootstrap.build_core_runtime
 
-    def composed(*args: Any, **kwargs: Any) -> bootstrap.CoreComponents:
+    def composed(*args: Any, **kwargs: Any) -> CoreRuntimeApplication:
         from tests.helpers.direct_activity_requirements import requirements_owner, source_owner
 
         requirements = requirements_owner(
