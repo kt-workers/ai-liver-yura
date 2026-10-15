@@ -17,6 +17,7 @@ from app.adapters.llm.connections import production_llm_connection_adapters
 from app.adapters.llm.production import create_openai_port_from_environment
 from app.bootstrap.core_components import CoreComponents as CoreComponents
 from app.bootstrap.core_components import compose_core_components
+from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.composition.cognition_configuration import CoreCognitionConfiguration
 from app.composition.speech_production_configuration import SpeechProductionInputs
 from app.composition.system_cognition_configuration import (
@@ -118,16 +119,17 @@ def default_core_runtime_owners() -> CoreRuntimeOwners:
 
 def build_core_runtime(
     config_path: Path | None = None, *, cognition: CoreCognitionConfiguration | None = None
-) -> CoreComponents:
-    """本番設定を読み、提供サービスの構成不備は既存契約のまま伝える。"""
+) -> CoreRuntimeApplication:
+    """本番設定から構成値を作り、実行ライフサイクルを別所有者へ委譲する。"""
     config, character, llm = _load_core(config_path, cognition)
-    return _compose_core(
+    components = _compose_core(
         config,
         character,
         llm,
         GoalCommitmentStore(bounds=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY),
         cognition=cognition,
     )
+    return CoreRuntimeApplication(components)
 
 
 def _load_core(
@@ -165,8 +167,8 @@ async def build_persistent_core(
     runtime_epoch: str,
     max_pending_memory: int,
     cognition: CoreCognitionConfiguration | None = None,
-) -> CoreComponents:
-    """明示された保存実行基盤を所有し、復元した目標を本体へ接続する。"""
+) -> CoreRuntimeApplication:
+    """保存基盤と復元済み目標を構成し、実行ライフサイクルを委譲する。"""
     if not isinstance(persistence, PostgresPersistenceRuntime):
         raise ValueError("本体の保存構成にはPostgresPersistenceRuntimeが必要です")
     app: CoreComponents | None = None
@@ -189,7 +191,7 @@ async def build_persistent_core(
         await persistence.start()
         goals = await CoreGoalPersistenceBinding.restore(persistence, runtime_epoch=runtime_epoch)
         app = _compose_core(config, character, llm, goals, memory, lifecycle, cognition)
-        return app
+        return CoreRuntimeApplication(app)
     except BaseException:
 
         async def cleanup() -> None:
