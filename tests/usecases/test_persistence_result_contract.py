@@ -74,7 +74,7 @@ def test_failure_code_requires_the_canonical_enum() -> None:
 def test_result_is_an_immutable_dto_with_existing_replace_semantics() -> None:
     result: PersistenceOperationResult[int] = PersistenceOperationResult(5)
     with pytest.raises(FrozenInstanceError):
-        setattr(result, "value", 6)
+        result.value = 6  # type: ignore[misc]
     updated = replace(result, value=7)
     assert result.value == 5 and updated.value == 7
     with pytest.raises(ValueError, match="矛盾"):

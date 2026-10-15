@@ -33,7 +33,7 @@ def test_receipt_preserves_status_and_existing_validation(status: DurabilityStat
     assert receipt.failure_code is code
     assert receipt.durable_at is at
     with pytest.raises(FrozenInstanceError):
-        setattr(receipt, "owner_state_revision", 3)
+        receipt.owner_state_revision = 3  # type: ignore[misc]
 
 
 @pytest.mark.parametrize("revision", [True, -1, 1.5, "1", None])
