@@ -222,12 +222,12 @@ async def run_core_runtime() -> None:
         for signum in previous:
             loop.add_signal_handler(signum, stop_requested.set)
             registered.append(signum)
-        await start_core(app)
+        await app.start()
         print("本体の実行構成が起動しました。", flush=True)
         await stop_requested.wait()
     finally:
         try:
-            await stop_core(app)
+            await app.stop()
         finally:
             for signum in registered:
                 loop.remove_signal_handler(signum)
