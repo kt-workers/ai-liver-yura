@@ -402,7 +402,10 @@ async def _write(
         return await result.durability
 
     async def write() -> PersistenceOperationResult[MemoryWriteResult]:
-        return await memory_owner.submit_write(case.memory_write).wait()
+        return cast(
+            PersistenceOperationResult[MemoryWriteResult],
+            await memory_owner.submit_write(case.memory_write).wait(),
+        )
 
     receipt = await context.invoke_product("persistence.goal.durable", durable)
     memory = await context.invoke_product("persistence.memory.write", write)

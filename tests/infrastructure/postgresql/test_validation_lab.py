@@ -314,7 +314,7 @@ async def test_config_change_after_seed_rejects_original_fixture(
             boot_config.write_text(yaml.safe_dump(config))
             changed = True
 
-    async def stop(app: CoreComponents, storage: PostgresPersistenceRuntime) -> JsonValue:
+    async def stop(app: CoreRuntimeApplication, storage: PostgresPersistenceRuntime) -> JsonValue:
         result = await original(app, storage)
         mutate()
         return result
