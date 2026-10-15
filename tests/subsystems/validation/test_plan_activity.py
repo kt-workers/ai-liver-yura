@@ -8,6 +8,7 @@ from typing import Any, cast
 import pytest
 
 from app import application as bootstrap
+from app.bootstrap import core_components as component_factory
 from app.composition.execution import ExecutionFeedbackRetentionPolicy
 from app.composition.execution_configuration import CoreExecutionConfiguration
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
@@ -87,8 +88,8 @@ def plan_setup(monkeypatch: pytest.MonkeyPatch, *, mode: str = "normal") -> Any:
         (),
         ExecutionFeedbackRetentionPolicy("test-feedback", 1, 2),
     )
-    monkeypatch.setattr(bootstrap, "GoalCommitmentStore", lambda **kw: value.goals)
-    monkeypatch.setattr(bootstrap, "ActivityExecutionAuthority", lambda: value.activity)
+    monkeypatch.setattr(component_factory, "GoalCommitmentStore", lambda **kw: value.goals)
+    monkeypatch.setattr(component_factory, "ActivityExecutionAuthority", lambda: value.activity)
     monkeypatch.setattr(bootstrap, "SystemRuntimeClock", lambda: value.clock)
     build = bootstrap.build_core_runtime
 

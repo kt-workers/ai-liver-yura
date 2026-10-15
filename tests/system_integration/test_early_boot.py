@@ -17,6 +17,7 @@ import pytest
 import yaml
 
 from app import application as bootstrap
+from app.bootstrap import core_components as component_factory
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm import production
 from app.adapters.llm.production import UnavailableLLMRolePort
@@ -484,7 +485,7 @@ def test_descriptor_and_interpreter_receive_the_same_policy(
         return InputMeaningInterpreter(port, live_context, policy)
 
     monkeypatch.setattr(bootstrap, "descriptor", descriptor)
-    monkeypatch.setattr(bootstrap, "InputMeaningInterpreter", interpreter)
+    monkeypatch.setattr(component_factory, "InputMeaningInterpreter", interpreter)
     app = build_core_runtime()
     assert len(observed) == 2
     assert all(policy is app.config.input_meaning_policy for policy in observed)
