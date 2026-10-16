@@ -10,6 +10,10 @@ from app.usecases.resource_cleanup import OwnedResourceLedger, OwnedResourcesClo
 from app.usecases.task_cleanup import reap_owned_task
 
 
+async def _turn() -> None:
+    await asyncio.sleep(0)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["none", "error", "cancel", "both"])
 async def test_reverse_order_reclaims_all_actions_even_after_failure(failure: str) -> None:
@@ -53,7 +57,6 @@ async def test_sync_and_async_resources_share_the_same_reverse_order() -> None:
     ledger.add_sync(lambda: events.append("third"))
     await ledger.close()
     assert events == ["third", "second", "first"]
-
 
 
 @pytest.mark.asyncio
