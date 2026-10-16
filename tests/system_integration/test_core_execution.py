@@ -732,8 +732,14 @@ async def test_recent_references_preserve_goals_and_total_capacity(
                     proposed, captured, current=current, decision_id=f"bounded-{index}"
                 )
             delivery.accept_decision(work(), decision)
-            for _ in range(3):
-                outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+            for module in (
+                BrainIntegrationModule.ACTIVITY_EXECUTION,
+                BrainIntegrationModule.APPRAISAL,
+                BrainIntegrationModule.EXECUTIVE,
+            ):
+                outcome = await next_outcome_matching(
+                    app.brain, trace_id="trace-1", module=module
+                )
                 assert outcome.status.value == "completed", outcome
             assert not delivery._deliveries
             delivery.accept_decision(work(), decision)
@@ -821,11 +827,14 @@ async def test_exact_sibling_freshness_and_parent_lane(
         assert len(payloads) == 2
         source = source_a if stale_own_binding else source_b
         source.publish((replace(source.capture().value[0], revision=2, value="changed"),))
-        outcomes = []
-        for _ in range(4):
-            outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
-            outcomes.append(outcome)
-        activity_outcomes = [o for o in outcomes if o.module.value == "activity_execution"]
+        activity_outcomes = [
+            await next_outcome_matching(
+                app.brain,
+                trace_id=parent.envelope.trace_id,
+                module=BrainIntegrationModule.ACTIVITY_EXECUTION,
+            )
+            for _ in range(2)
+        ]
         assert len(activity_outcomes) == 2
         assert all(o.lane is parent.lane for o in activity_outcomes)
         assert len(calls) == 1
