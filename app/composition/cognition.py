@@ -99,6 +99,9 @@ class _AppraisalModule(AppraisalBrainModulePort):
         payload = self._validate(work)
         if cancellation.cancelled:
             raise asyncio.CancelledError
+        # Lifecycleは自然入力の決定的評価規則を通さず、専用の減衰/診断経路へ送る。
+        if payload.lifecycle is not None:
+            return await super().execute(work, cancellation)
         fast = self._binding.appraise_fast(
             payload.event, self._rules, candidate_id=payload.request_id
         )
