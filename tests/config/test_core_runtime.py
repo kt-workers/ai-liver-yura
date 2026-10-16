@@ -21,6 +21,14 @@ def test_canonical_resource_and_shared_policy_instances() -> None:
     assert config.schema_id == "yura.core-runtime.production-config.v1"
     assert config.config_id == "yura.core-runtime.production"
     assert config.config_revision == 1
+    assert config.appraisal_config.resource_ref == "config/appraisal.yaml"
+    assert config.appraisal_config.config_revision == 1
+    assert config.executive_config.resource_ref == "config/executive.yaml"
+    assert config.executive_config.config_revision == 1
+    assert config.attention_policy.policy_id == "attention-scheduling-production"
+    assert config.llm_connections.config_id == "yura.llm-connections"
+    assert config.input_meaning_llm_connection_id == "yura.llm.default"
+    assert config.character_definition.character_id == "yura"
     assert config.character_definition.resource_ref == "config/character/yura.yaml"
     acceptance = config.input_meaning_policy.acceptance
     assert (acceptance.policy_id, acceptance.policy_revision) == (
@@ -216,6 +224,27 @@ def test_lane_coverage(case: str) -> None:
         lanes.pop()
     else:
         lanes[-1] = lanes[0]
+    with pytest.raises(ValueError):
+        load_core_config(yaml.safe_dump(data))
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "/private/config",
+        "../config",
+        "a/../b",
+        "https://host/x",
+        "file:///path",
+        "a//b",
+        "C:\\secret",
+        "",
+        "a/./b",
+    ],
+)
+def test_unsafe_resource_reference_is_rejected(value: str) -> None:
+    data: Any = yaml.safe_load(RESOURCE.read_text())
+    data["appraisal_config"]["resource_ref"] = value
     with pytest.raises(ValueError):
         load_core_config(yaml.safe_dump(data))
 
