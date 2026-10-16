@@ -14,7 +14,7 @@ from app.composition.input_reference_context import (
     PresentationReferenceCapacityError,
     PresentationReferenceStaleError,
 )
-from app.composition.speech_feedback import SpeechFactDeliveryDisposition as Delivery
+from app.usecases.speech_feedback import SpeechFactDeliveryDisposition as Delivery
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.activity_execution.observation import (
     ExecutionObservationProvenance,
