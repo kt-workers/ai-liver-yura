@@ -164,6 +164,36 @@ def test_stale_deadline_and_error_are_isolated_and_diagnosed() -> None:
     asyncio.run(scenario())
 
 
+
+def test_stale_validation_runs_before_dispatch_and_before_publication() -> None:
+    async def scenario(stale_after_execution: bool) -> None:
+        fresh = stale_after_execution
+        calls = 0
+
+        async def handler(_work: RuntimeWorkItem[object], _token: object) -> None:
+            nonlocal fresh, calls
+            calls += 1
+            fresh = False
+
+        coordinator = RuntimeCoordinator(FakeRuntimeClock(NOW))
+        coordinator.register_lane(
+            RuntimeLanePolicy("lane", 4, QueuePolicy.REJECT_NEW),
+            handler,
+            stale_validator=lambda _work: fresh,
+        )
+        await coordinator.start()
+        try:
+            assert coordinator.submit(item("stale", "lane")).accepted
+            outcome = await asyncio.wait_for(coordinator.next_outcome(), 1.0)
+            assert outcome.disposition is WorkDisposition.STALE
+            assert calls == int(stale_after_execution)
+        finally:
+            await coordinator.stop()
+
+    asyncio.run(scenario(False))
+    asyncio.run(scenario(True))
+
+
 def test_post_stop_admission_is_rejected() -> None:
     async def scenario() -> None:
         coordinator = RuntimeCoordinator(FakeRuntimeClock(NOW))
