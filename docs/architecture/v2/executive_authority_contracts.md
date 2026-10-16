@@ -247,7 +247,7 @@ base `70a62c3cd9fcefc2eacabb966c07811464d7b574`の本書、[Speech Semantics契�
 
 本番SpeechIntentのcommit前に独立して要求する具体Capability identity / operationやspeech-specific Preconditionは、監査対象正本には定義されていない。TTS / playback availabilityは提示の実行可能性であり、意識的発話意図の成立要件に追加しない。#362 / #330 / #348の検証をRequirementsへ移さない。
 
-[本体Runtime本番構成](system_production_cognition_configuration.md) §3の、実TTS・Avatarの存在を最小起動条件にしない境界とも整合する。ただし起動成功は本番会話・発話成功の証拠ではない。Speech未登録・失敗を成功へ変換せず、既存Speech sourceのExecutive段階での参照解決・currentness検証も免除しない。
+[最小Brain本番構成](minimum_brain_production_configuration.md) §3の、実TTS・Avatarの存在を最小起動条件にしない境界とも整合する。ただし最小起動成功は本番会話・発話成功の証拠ではない。Speech未登録・失敗を成功へ変換せず、既存Speech sourceのExecutive段階での参照解決・currentness検証も免除しない。
 
 #### BODYの根拠とcopy契約
 
@@ -466,4 +466,4 @@ MeaningPolicy V1の採用値はFACT_GROUNDED / 1 / 1。GRATITUDEのevidence要�
 
 ## 本番構成の供給境界（#691）
 
-実行方針・Requirements規則の初期採用値、厳密loader、不変DTO、factory、由来は[Executiveの本番構成](executive_production_configuration.md)を正とする。本書の意味・世代・最終Fenceと§9.9 / §11.1を維持し、具体的なProvider mappingとゆら本体登録は#692 / #360が所有する。
+実行方針・Requirements規則の初期採用値、厳密loader、不変DTO、factory、由来は[Executiveの本番構成](executive_production_configuration.md)を正とする。本書の意味・世代・最終Fenceと§9.9 / §11.1を維持し、具体的なProvider mappingとS2登録は#692 / #360が所有する。
