@@ -175,7 +175,7 @@ async def test_cancel_during_appraisal_never_dispatches_executive(
         accepted = app.cognition.submit_input(admission(app, internal=True))
         await asyncio.wait_for(port.entered.wait(), 2)
         app.brain.cancel(accepted.work_id, "試験取消")
-        outcome = await next_outcome_matching(
+        await next_outcome_matching(
             app.brain, work_id=accepted.work_id, status=BrainWorkStatus.CANCELLED
         )
         assert [r.role_id for r in port.requests] == ["subjective_appraisal"]
@@ -198,7 +198,7 @@ async def test_goal_update_during_appraisal_rejects_old_context(
         await asyncio.wait_for(port.entered.wait(), 2)
         apply_goal(app.goals, GoalTransitionOperation.CREATE, 0)
         port.release.set()
-        outcome = await next_outcome_matching(
+        await next_outcome_matching(
             app.brain, work_id=accepted.work_id, status=BrainWorkStatus.FAILED
         )
         assert app.cognition.appraisal.current_commit() is None
@@ -218,11 +218,11 @@ async def test_trace_cancellation_reaches_work_after_input_completed(
     try:
         app.cognition.submit_input(admission(app))
         await asyncio.wait_for(port.entered.wait(), 2)
-        first = await next_outcome_matching(
+        await next_outcome_matching(
             app.brain, trace_id="trace-1", module=BrainIntegrationModule.INPUT_MEANING
         )
         assert app.cognition.cancel_trace("trace-1", "入力置換", supersede=supersede) == 1
-        outcome = await next_outcome_matching(
+        await next_outcome_matching(
             app.brain,
             trace_id="trace-1",
             status=BrainWorkStatus.SUPERSEDED if supersede else BrainWorkStatus.CANCELLED,
