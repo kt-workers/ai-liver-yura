@@ -88,8 +88,8 @@ class CoreConfig:
 
     def __post_init__(self) -> None:
         if (
-            self.schema_id != "yura.core-runtime.production-config.v1"
-            or self.config_id != "yura.core-runtime.production"
+            self.schema_id != "yura.core-config.v1"
+            or self.config_id != "yura.core"
             or self.activation_id != "yura.core.explicit"
             or self.composition_id != "yura.system.core"
         ):
