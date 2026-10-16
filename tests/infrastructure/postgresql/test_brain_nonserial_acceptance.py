@@ -336,7 +336,10 @@ async def test_real_activity_reflection_burst_keeps_foreground_and_bounded_clean
             await stop_core(app)
         else:
             reflection_release.set()
-        background = [\n            await outcome(app, work_id=work_id) for work_id in (first.work_id, queued.work_id)\n        ]
+        background = [
+            await outcome(app, work_id=work_id)
+            for work_id in (first.work_id, queued.work_id)
+        ]
         assert {o.work_id for o in background} == {first.work_id, queued.work_id}
         assert all(
             o.status is (BrainWorkStatus.CANCELLED if stop_pending else BrainWorkStatus.COMPLETED)
