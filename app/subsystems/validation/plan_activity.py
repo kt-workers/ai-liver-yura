@@ -224,8 +224,8 @@ def plan_activity_target(
         decisions: list[CommittedExecutiveDecision] = []
         records: dict[str, ActivityExecutionRecord] = {}
         status = RunStatus.COMPLETED
-        # Runtimeは複数traceを非直列に公開する。対象trace以外の終端は保持済みの
-        # 共通outcome経路へ任せ、対象traceの未観測workだけを数えて完了を判定する。
+        # Runtimeは複数traceを非直列に公開する。対象trace以外の終端を除外し、
+        # 対象traceの未観測workだけを数えて完了を判定する。
         while len(observed) < context.policy.max_intervals:
             outcome = await context.invoke_product("plan_activity.outcome", app.brain.next_outcome)
             if outcome.trace_id != trace_id:
