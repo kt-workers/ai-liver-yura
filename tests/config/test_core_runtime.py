@@ -11,7 +11,7 @@ from app.config.core import load_core_config
 from app.domain.brain_integration import BrainIntegrationLane
 from app.domain.input_meaning import PrimaryIntent
 from app.domain.llm import LLMModelClass, LLMReasoningEffort
-from app.infrastructure.scheduling import LaneErrorPolicy, QueuePolicy
+from app.runtime.kernel import LaneErrorPolicy, QueuePolicy
 
 RESOURCE = Path(__file__).resolve().parents[2] / "config/core.yaml"
 
