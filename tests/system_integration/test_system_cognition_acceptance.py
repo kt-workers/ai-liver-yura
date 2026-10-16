@@ -263,11 +263,21 @@ class SystemRun:
             )
         )
 
-    async def outcome(self) -> Any:
-        item = await asyncio.wait_for(self.app.brain.next_outcome(), 3)
-        assert item.work_id not in {o.work_id for o in self.observed}
-        self.observed.append(item)
-        return item
+    async def outcome(
+        self,
+        trace_id: str | None = None,
+        module: BrainIntegrationModule | None = None,
+    ) -> Any:
+        # 独立laneの完了順は固定しない。要求したtrace/moduleに相関する結果を待ち、
+        # 先に到着した別workの結果も証跡から捨てずに保持する。
+        while True:
+            item = await asyncio.wait_for(self.app.brain.next_outcome(), 3)
+            assert item.work_id not in {o.work_id for o in self.observed}
+            self.observed.append(item)
+            if (trace_id is None or item.trace_id == trace_id) and (
+                module is None or item.module is module
+            ):
+                return item
 
     def evidence(self, *keys: str) -> Any:
         assert self.current_provenance() == self.provenance
@@ -414,7 +424,7 @@ async def test_typed_provider_failure_keeps_other_system_trace_available(
         assert not any(r.role_id == "executive_deliberation" for r in run.provider.requests)
         assert run.app.cognition.submit_input(run.input("healthy")).accepted
         for _ in range(3):
-            healthy = await run.outcome()
+            healthy = await run.outcome(\n                "healthy",\n                (BrainIntegrationModule.INPUT_MEANING, BrainIntegrationModule.APPRAISAL, BrainIntegrationModule.EXECUTIVE)[_],\n            )
             assert healthy.trace_id == "healthy" and healthy.status is BrainWorkStatus.COMPLETED
         assert healthy.module is BrainIntegrationModule.EXECUTIVE
         assert healthy.result.candidate.source_event_ids == ("input:healthy",)
