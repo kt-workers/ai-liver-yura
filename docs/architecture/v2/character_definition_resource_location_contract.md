@@ -41,7 +41,7 @@ resources/character_definitions/v2/<character_id>.yaml
 現行ゆらdefinition:
 
 ```text
-config/character/yura.yaml
+resources/character_definitions/v2/yura.yaml
 ```
 
 storage path自体はDomain Authorityではない。将来package resource / DB等へ置換しても `CharacterDefinitionDocument`、loader schema、projector contractは変更しない。
@@ -59,7 +59,7 @@ character_definitions/v2/yura.yaml
 新:
 
 ```text
-config/character/yura.yaml
+resources/character_definitions/v2/yura.yaml
 ```
 
 移設時はYAML blobをbyte-identicalに維持する。`schema_version`、`definition_revision`、facet値、certainty、Bible provenanceを変更しない。
