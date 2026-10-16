@@ -3,7 +3,6 @@
 from typing import Protocol
 
 from app.composition.appraisal import CoreAppraisalBinding
-from app.usecases.executive_evidence import CoreExecutiveEvidence as CoreExecutiveEvidence
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import AuthorityReadPublication
@@ -26,6 +25,7 @@ from app.usecases.accepted_inputs import (
     CoreAcceptedInputStore,
     CoreAcceptedInternalInput,
 )
+from app.usecases.executive_evidence import CoreExecutiveEvidence as CoreExecutiveEvidence
 from app.usecases.memory_evidence import CoreMemoryEvidenceReader
 
 

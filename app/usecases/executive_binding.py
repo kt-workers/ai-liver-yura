@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 
-from app.usecases.attention_binding import CoreAttentionBinding, CoreAttentionDispatch
 from app.domain.attention import AttentionSourceKind
 from app.domain.brain_integration import BrainWorkEnvelope
 from app.domain.contracts import RevisionVector
@@ -22,6 +21,7 @@ from app.domain.executive import (
     build_executive_context_snapshot,
 )
 from app.infrastructure.scheduling import CancellationToken, RuntimeClock
+from app.usecases.attention_binding import CoreAttentionBinding, CoreAttentionDispatch
 from app.usecases.executive_evidence import CoreExecutiveEvidence, CoreExecutiveEvidenceReader
 from app.usecases.ports.llm import LLMRolePort
 
