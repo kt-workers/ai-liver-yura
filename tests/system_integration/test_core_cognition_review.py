@@ -67,7 +67,7 @@ async def test_early_user_source_is_reaped_on_runtime_cancel_before_execution(
         )
         assert not port.requests
         assert app.brain.cancel(accepted.work_id, "開始前取消")
-        outcome = await next_outcome_matching(
+        await next_outcome_matching(
             app.brain, work_id=accepted.work_id, status=BrainWorkStatus.CANCELLED
         )
         assert not port.requests
