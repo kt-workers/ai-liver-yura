@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.domain.contracts import RevisionVector
-from app.infrastructure.scheduling import (
+from app.runtime.kernel import (
     BoundedWorkQueue,
     QueueAdmissionStatus,
     QueuePolicy,
