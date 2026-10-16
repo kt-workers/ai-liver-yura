@@ -74,7 +74,10 @@ async def allocated_databases(
 
 def make_target(settings: PersistenceLabSettings, case: PersistenceLabCase) -> LabTarget:
     provenance = capture_production_provenance(
-        Path.cwd(), ("app/bootstrap/runtime_application.py",), ("persistence_repository_contracts",), ()
+        Path.cwd(),
+        ("app/bootstrap/runtime_application.py",),
+        ("persistence_repository_contracts",),
+        (),
     )
     return persistence_target((case,), settings, provenance, "1")
 
