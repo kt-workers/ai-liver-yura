@@ -117,6 +117,7 @@ class SystemRun:
         self.normalizer = InputNormalizer(InputAdmissionLedger(), bounds_policy=BOUNDS)
         self.run_id = identity.system_run_id
         self.observed: list[Any] = []
+        self.returned_outcome_ids: set[str] = set()
         self.snapshot = core.composition_snapshot
         self.provenance = self.current_provenance()
         config = load_core_config((ROOT / "config/core.yaml").read_bytes())
@@ -268,8 +269,14 @@ class SystemRun:
         trace_id: str | None = None,
         module: BrainIntegrationModule | None = None,
     ) -> Any:
-        # 独立laneの完了順は固定しない。要求したtrace/moduleに相関する結果を待ち、
-        # 先に到着した別workの結果も証跡から捨てずに保持する。
+        # 独立laneの完了順は固定しない。別traceの先着結果は観測記録へ保持し、
+        # 後続の要求が同じ終端を相関取得できるようにする。
+        for item in self.observed:
+            if item.work_id not in self.returned_outcome_ids and (
+                trace_id is None or item.trace_id == trace_id
+            ) and (module is None or item.module is module):
+                self.returned_outcome_ids.add(item.work_id)
+                return item
         while True:
             item = await asyncio.wait_for(self.app.brain.next_outcome(), 3)
             assert item.work_id not in {o.work_id for o in self.observed}
@@ -277,6 +284,7 @@ class SystemRun:
             if (trace_id is None or item.trace_id == trace_id) and (
                 module is None or item.module is module
             ):
+                self.returned_outcome_ids.add(item.work_id)
                 return item
 
     def evidence(self, *keys: str) -> Any:
