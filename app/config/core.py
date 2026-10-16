@@ -88,10 +88,10 @@ class CoreConfig:
 
     def __post_init__(self) -> None:
         if (
-            self.schema_id != "yura.core-config.v1"
-            or self.config_id != "yura.core"
-            or self.activation_id != "yura.core.explicit"
-            or self.composition_id != "yura.system.core"
+            self.schema_id != "yura.core-runtime.production-config.v1"
+            or self.config_id != "yura.core-runtime.production"
+            or self.activation_id != "yura.core-runtime.explicit"
+            or self.composition_id != "yura.system.core-runtime"
         ):
             invalid()
         revision(self.config_revision)
@@ -210,7 +210,7 @@ def _config_ref(value: object) -> ConfigurationReference:
     )
 
 
-def load_core_config(source: str | bytes) -> CoreConfig:
+def _load_core_config(source: str | bytes) -> CoreConfig:
     data = shape(
         parse(source),
         "schema_id config_id config_revision activation_id composition_id "
@@ -272,3 +272,12 @@ def load_core_config(source: str | bytes) -> CoreConfig:
         integration_policy,
         shutdown,
     )
+
+
+
+def load_core_config(source: str | bytes) -> CoreConfig:
+    """本番設定の内部例外を公開契約の一つの失敗へ正規化する。"""
+    try:
+        return _load_core_config(source)
+    except Exception as error:
+        raise ValueError("本体Runtimeの本番設定を読み込めません") from error
