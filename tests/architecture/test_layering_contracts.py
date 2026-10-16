@@ -234,6 +234,125 @@ def test_kernel_clock_contract_and_implementation_have_separate_owners() -> None
     assert old_classes == {"SystemRuntimeClock", "FakeRuntimeClock"}
 
 
+
+@pytest.mark.parametrize("name", ("contracts", "cancellation", "queue", "coordinator"))
+def test_legacy_kernel_paths_only_reexport_canonical_implementation(name: str) -> None:
+    path = "app/infrastructure/scheduling/" + name + ".py"
+    target = "app.runtime.kernel." + name
+    for node in _tree(path).body:
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+            continue
+        assert isinstance(node, ast.ImportFrom)
+        assert node.level == 0 and node.module == target
+        assert all(alias.name == alias.asname for alias in node.names)
+
+
+@pytest.mark.parametrize(
+    ("path", "names"),
+    (
+        ("app/infrastructure/persistence/contracts.py", ("PersistenceError", "PersistenceFailureCode")),
+        ("app/infrastructure/persistence/runtime.py", ("PersistenceOperationResult",)),
+    ),
+)
+def test_persistence_compatibility_paths_reexport_domain_contracts(
+    path: str, names: tuple[str, ...]
+) -> None:
+    tree = _tree(path)
+    definitions = {node.name for node in tree.body if isinstance(node, ast.ClassDef)}
+    assert definitions.isdisjoint(names)
+    exported = {
+        (alias.name, alias.asname)
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "app.domain.contracts.persistence"
+        for alias in node.names
+    }
+    assert all((name, name) in exported for name in names)
+
+
+def test_goal_persistence_owner_identity_has_one_domain_definition() -> None:
+    for path in (
+        "app/infrastructure/persistence/goal_snapshot_codec.py",
+        "app/usecases/goal_persistence.py",
+    ):
+        tree = _tree(path)
+        aliases = {
+            (alias.name, alias.asname)
+            for node in tree.body
+            if isinstance(node, ast.ImportFrom)
+            and node.module == "app.domain.contracts.persistence"
+            for alias in node.names
+        }
+        assert ("GOAL_PERSISTENCE_OWNER_ID", "OWNER_ID") in aliases
+        assert not any(
+            isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "OWNER_ID" for target in node.targets)
+            for node in tree.body
+        )
+
+
+def test_appraisal_uses_read_only_cancellation_and_shared_clock_contract() -> None:
+    imports = _imports("app/usecases/brain_appraisal.py")
+    assert "app.usecases.ports.cancellation.CancellationState" in imports
+    assert "app.domain.contracts.time.Clock" in imports
+    accesses = {
+        node.attr for node in ast.walk(_tree("app/usecases/brain_appraisal.py"))
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "cancellation"
+    }
+    assert accesses == {"cancelled"}
+    assert "app.domain.contracts.time.Clock" in _imports("app/usecases/attention_binding.py")
+
+
+def test_appraisal_module_preserves_wide_port_contract() -> None:
+    tree = _tree("app/composition/cognition.py")
+    owner = next(
+        node for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "_AppraisalModule"
+    )
+    method = next(
+        node for node in owner.body
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "execute"
+    )
+    annotations = {
+        arg.arg: ast.unparse(arg.annotation)
+        for arg in method.args.args if arg.annotation is not None
+    }
+    assert annotations["work"] == "BrainModuleWork"
+    assert annotations["cancellation"] == "CancellationState"
+
+
+def test_memory_evidence_reader_uses_only_published_read_operations() -> None:
+    tree = _tree("app/usecases/memory_evidence.py")
+    calls = {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Attribute)
+        and isinstance(node.func.value.value, ast.Name)
+        and node.func.value.value.id == "self"
+        and node.func.value.attr == "memory"
+    }
+    assert calls == {"read_retrieval_publication", "read_semantic_assertion_publication"}
+
+
+def test_persistence_usecases_do_not_import_storage_drivers() -> None:
+    for path in (
+        "app/usecases/goal_persistence.py",
+        "app/usecases/memory_persistence.py",
+        "app/usecases/persistence_tasks.py",
+        "app/usecases/ports/goal_persistence.py",
+        "app/usecases/ports/memory_persistence.py",
+    ):
+        imports = _imports(path)
+        assert not any(
+            module.split(".")[0] in {"psycopg", "psycopg_pool", "openai", "PyQt6"}
+            for module in imports
+        ), path
+
+
 def test_moved_execution_files_parse_as_python_310() -> None:
     for path in INWARD_ONLY:
         ast.parse((ROOT / path).read_text(encoding="utf-8"), filename=path, feature_version=(3, 10))
