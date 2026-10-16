@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.runtime.kernel import CancellationRecord, CancellationRegistry, FakeRuntimeClock
+from app.infrastructure.scheduling import FakeRuntimeClock
+from app.runtime.kernel import CancellationRecord, CancellationRegistry
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
 
