@@ -306,7 +306,7 @@ async def run_core() -> None:
             loop.add_signal_handler(signum, stop_requested.set)
             registered.append(signum)
         await app.start()
-        print("ゆら本体の起動が完了しました。", flush=True)
+        print("最小Coreの起動が完了しました。", flush=True)
         await stop_requested.wait()
     finally:
         try:
