@@ -213,8 +213,7 @@ class CoreAppraisalBinding:
         self, lifecycle: LifecycleAppraisalInput, *, candidate_id: str
     ) -> AppraisalStateCommit:
         """起動・再開の既存入力を、LLMを介在させず減衰Ownerへ渡す。"""
-        if self._decay_policy is None:
-            raise ValueError("本体lifecycleには既存の減衰方針が必要です")
+        # 減衰方針が未登録でもlifecycle事実は記録する。方針不在時は差分を捏造せず診断を残す。
         current = self._current()
         if lifecycle.source_context_revision != current.reference.context.source_context_revision:
             raise ValueError("lifecycle入力の文脈が現在の参照文脈と一致しません")
