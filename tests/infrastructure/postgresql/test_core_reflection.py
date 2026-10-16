@@ -254,7 +254,7 @@ async def test_actual_owner_terminal_reaches_background_role(
 ) -> None:
     from datetime import timedelta
 
-    from app.composition.execution_observation import (
+    from app.domain.activity_execution.speech_observation import (
         SPEECH_OBSERVATION_POLICY,
         project_speech_execution_observation,
     )

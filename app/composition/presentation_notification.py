@@ -9,7 +9,6 @@ from enum import Enum
 from typing import TYPE_CHECKING
 from uuid import NAMESPACE_URL, uuid5
 
-from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_SOURCE
 from app.composition.input_reference_context import (
     CoreInputReferenceContextBinding,
     PresentationReferenceCapacityError,
@@ -21,6 +20,7 @@ from app.domain.activity_execution.observation import (
     ExecutionObservationProvenance,
     ObservedExecutionFactRecord,
 )
+from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_SOURCE
 from app.domain.attention import AttentionTurnStore
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus, RevisionVector
 from app.domain.contracts.common import freeze_json

@@ -6,8 +6,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 
-from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
-from app.usecases.speech_observation import project_speech_execution_observation
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.activity_execution.observation import (
     ExecutionObservationProvenance,
@@ -20,6 +18,7 @@ from app.domain.speech_runtime.execution import (
 )
 from app.domain.speech_runtime.policy import SpeechPresentationTimeoutPolicy
 from app.domain.speech_runtime.runtime import SpeechRuntime
+from app.usecases.speech_observation import project_speech_execution_observation
 
 
 class SpeechFactDeliveryDisposition(str, Enum):

@@ -249,7 +249,7 @@ async def test_shutdown_before_receive_forbids_late_worker_spawn(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("audio", [False, True])
 async def test_timeout_preserves_fact_and_unrelated_progress(tmp_path: Path, audio: bool) -> None:
-    from app.composition.execution_observation import (
+    from app.domain.activity_execution.speech_observation import (
         SPEECH_OBSERVATION_POLICY,
         project_speech_execution_observation,
     )

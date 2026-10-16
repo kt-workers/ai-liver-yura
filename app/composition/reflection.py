@@ -7,9 +7,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import uuid4
 
-from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_SOURCE
 from app.domain.activity_execution import ActivityExecutionAuthority, ActivityExecutionRecord
 from app.domain.activity_execution.observation import ObservedExecutionFactRecord
+from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_SOURCE
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,

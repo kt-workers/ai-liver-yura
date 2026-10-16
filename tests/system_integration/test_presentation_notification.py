@@ -6,15 +6,15 @@ from typing import Any
 
 import pytest
 
-from app.domain.activity_execution.speech_observation import (
-    SPEECH_OBSERVATION_POLICY,
-    SPEECH_OBSERVATION_SOURCE,
-)
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.presentation_notification import CorePresentationNotification
 from app.composition.presentation_notification import PresentationNotificationState as S
 from app.composition.speech_feedback import SpeechFactDeliveryDisposition as Delivery
 from app.domain.activity_execution import ActivityExecutionAuthority
+from app.domain.activity_execution.speech_observation import (
+    SPEECH_OBSERVATION_POLICY,
+    SPEECH_OBSERVATION_SOURCE,
+)
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus
 from app.domain.executive import GoalTransitionOperation

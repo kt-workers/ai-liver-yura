@@ -5,10 +5,10 @@ from dataclasses import replace
 
 import pytest
 
-from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
 from app.composition.speech_feedback import CoreSpeechFeedback, ObservedSpeechPresentationBoundary
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.activity_execution.observation import ObservedExecutionFactRecord
+from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
 from app.domain.contracts import ExecutionStatus
 from app.domain.speech_runtime.presentation import SpeechPresentationExecutor
 from app.domain.speech_runtime.runtime import SpeechRuntime

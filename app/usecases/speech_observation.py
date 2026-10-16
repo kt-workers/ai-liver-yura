@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_SOURCE
 from app.domain.activity_execution.contracts import ExecutionEffectKind
 from app.domain.activity_execution.observation import (
     ExecutionObservationProvenance,
@@ -10,6 +9,7 @@ from app.domain.activity_execution.observation import (
     TrustedExecutionObservation,
     observation_identity,
 )
+from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_SOURCE
 from app.domain.contracts import ExecutionStatus, RevisionVector
 from app.domain.contracts.common import JsonValue, require_identifier, utc_instant
 from app.domain.speech_runtime.contracts import (
