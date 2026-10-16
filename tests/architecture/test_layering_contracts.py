@@ -258,7 +258,10 @@ def test_legacy_kernel_paths_only_reexport_canonical_implementation(name: str) -
 @pytest.mark.parametrize(
     ("path", "names"),
     (
-        ("app/infrastructure/persistence/contracts.py", ("PersistenceError", "PersistenceFailureCode")),
+        (
+            "app/infrastructure/persistence/contracts.py",
+            ("PersistenceError", "PersistenceFailureCode"),
+        ),
         ("app/infrastructure/persistence/runtime.py", ("PersistenceOperationResult",)),
     ),
 )
@@ -294,7 +297,10 @@ def test_goal_persistence_owner_identity_has_one_domain_definition() -> None:
         assert ("GOAL_PERSISTENCE_OWNER_ID", "OWNER_ID") in aliases
         assert not any(
             isinstance(node, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id == "OWNER_ID" for target in node.targets)
+            and any(
+                isinstance(target, ast.Name) and target.id == "OWNER_ID"
+                for target in node.targets
+            )
             for node in tree.body
         )
 
