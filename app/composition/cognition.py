@@ -7,11 +7,9 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
-from app.composition.executive import (
-    CoreExecutiveBinding,
-    ExecutiveBrainModulePort,
-    ExecutiveBrainWorkPayload,
-)
+from app.usecases.brain_executive import ExecutiveBrainModulePort as ExecutiveBrainModulePort
+from app.usecases.brain_executive import ExecutiveBrainWorkPayload as ExecutiveBrainWorkPayload
+from app.usecases.executive_binding import CoreExecutiveBinding as CoreExecutiveBinding
 from app.domain.appraisal import (
     AppraisalStateCommit,
     DecayPolicy,

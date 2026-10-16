@@ -3,7 +3,7 @@
 from typing import Protocol
 
 from app.composition.appraisal import CoreAppraisalBinding
-from app.composition.executive import CoreExecutiveEvidence
+from app.usecases.executive_evidence import CoreExecutiveEvidence as CoreExecutiveEvidence
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import AuthorityReadPublication

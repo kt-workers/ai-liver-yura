@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from app.composition.cognition import CoreCognitionDelivery
 from app.composition.execution_configuration import CoreExecutionConfiguration
-from app.composition.executive import CoreExecutiveBinding
+from app.usecases.executive_binding import CoreExecutiveBinding as CoreExecutiveBinding
 from app.composition.executive_requirements import (
     CoreExecutiveRequirementsReader,
     CorePreconditionSourceReader,
