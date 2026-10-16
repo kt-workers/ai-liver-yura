@@ -11,7 +11,6 @@ from app.usecases.brain_integration_runtime import (
     BrainIntegrationWorkOutcome,
 )
 
-
 _BUFFERS: weakref.WeakKeyDictionary[
     BrainIntegrationRuntime, list[BrainIntegrationWorkOutcome]
 ] = weakref.WeakKeyDictionary()
