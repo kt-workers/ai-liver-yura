@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 from app.domain.attention import AttentionSourceKind
-from app.domain.brain_integration import BrainWorkStatus
+from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from tests.helpers.brain_outcomes import next_outcome_matching
 from tests.system_integration.test_core_cognition import admission, application
 
