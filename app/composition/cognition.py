@@ -157,6 +157,9 @@ class CoreCognitionDelivery:
         self.brain.register_terminal_observer(
             BrainIntegrationModule.INPUT_MEANING, self._input_terminal
         )
+        self.brain.register_terminal_observer(
+            BrainIntegrationModule.APPRAISAL, self._appraisal_terminal
+        )
         self.brain.register_module(
             BrainIntegrationModule.INPUT_MEANING,
             _ForwardingModule(input_port, self._input_completed),
@@ -241,6 +244,19 @@ class CoreCognitionDelivery:
             outcome.status is BrainWorkStatus.COMPLETED
             and isinstance(result, InputMeaningInterpretationResult)
             and result.meaning is not None
+        )
+        for event_id in work.envelope.source_event_ids:
+            source = self._pending_users.get(event_id)
+            if source is not None and not successful:
+                self._pending_users.pop(event_id, None)
+                self._resolve_source(source)
+
+    def _appraisal_terminal(
+        self, work: BrainIntegrationWork, outcome: BrainIntegrationWorkOutcome
+    ) -> None:
+        successful = (
+            outcome.status is BrainWorkStatus.COMPLETED
+            and isinstance(outcome.result, AppraisalStateCommit)
         )
         for event_id in work.envelope.source_event_ids:
             source = self._pending_users.pop(event_id, None)
