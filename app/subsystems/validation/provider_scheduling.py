@@ -44,7 +44,12 @@ def _encode(value: object) -> object:
         is_dataclass(value)
         and not isinstance(value, type)
         and type(value).__module__.startswith(
-            ("app.infrastructure.scheduling.", "app.domain.llm.", "app.domain.contracts.")
+            (
+                "app.runtime.kernel.",
+                "app.infrastructure.scheduling.",
+                "app.domain.llm.",
+                "app.domain.contracts.",
+            )
         )
     ):
         return {field.name: getattr(value, field.name) for field in fields(value)}
