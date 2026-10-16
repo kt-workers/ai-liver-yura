@@ -21,6 +21,7 @@ from app.domain.activity_execution import (
     ExecutionEffectUncertainty,
     ExecutionPreflightSnapshot,
 )
+from app.domain.brain_integration import BrainIntegrationModule
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus
 from app.domain.contracts.finalization import FinalizationError
