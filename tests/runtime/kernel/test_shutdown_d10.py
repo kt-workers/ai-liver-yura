@@ -10,8 +10,8 @@ from app.domain.contracts.lifecycle import (
     ApplicationShutdownPolicy,
     ApplicationShutdownStage,
 )
-from app.infrastructure.scheduling import (
-    FakeRuntimeClock,
+from app.infrastructure.scheduling import FakeRuntimeClock
+from app.runtime.kernel import (
     LaneErrorPolicy,
     QueuePolicy,
     RuntimeCoordinator,
