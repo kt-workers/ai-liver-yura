@@ -454,11 +454,11 @@ Stage Aはブラウザ画面とし、サーバは**asyncioとh11の公開APIに�
 
 ### 19.2 必須の表示対象と情報源
 
-Stage Aで必須の種類は`CONFIGURATION_SUMMARY`の1種類だけとする。情報源は、実際の本番構成へ読み込まれ、#360の構成処理から注入された**同一の不変な`CoreConfig`インスタンス**である。
+Stage Aで必須の種類は`CONFIGURATION_SUMMARY`の1種類だけとする。情報源は、実際の本番構成へ読み込まれ、#360の構成処理から注入された**同一の不変な`MinimumBrainProductionConfig`インスタンス**である。
 
 GUIはYAMLのパス探索・再読込、環境からの再構築、Brain内部の探索を行わない。別プロセスで読み直した値を、現在稼働中の設定と表示してはならない。
 
-ブラウザへ出せる本体Runtime設定情報は次の4項目だけとする。
+ブラウザへ出せる最小Brain設定情報は次の4項目だけとする。
 
 ```text
 schema_id
@@ -471,11 +471,11 @@ brain_module_registrations
 
 ### 19.3 設定の純粋な投影
 
-#351が所有する`CoreConfigurationReadModelProjector`は、注入された設定から`GuiAdminConfigurationReadModel`と必要な`AdminReadModelEnvelope`を構築する純粋な投影アダプタとする。
+#351が所有する`MinimumBrainConfigurationReadModelProjector`は、注入された設定から`GuiAdminConfigurationReadModel`と必要な`AdminReadModelEnvelope`を構築する純粋な投影アダプタとする。
 
 ```text
 GuiAdminConfigurationReadModel
-  config_owner = yura.core-runtime.production
+  config_owner = yura.minimum-brain.production
   schema_version = 1
   config_revision = 注入された設定のconfig_revision
   editable_fields = ()
@@ -486,7 +486,7 @@ GuiAdminConfigurationReadModel
 AdminReadModelEnvelope
   model_kind = CONFIGURATION_SUMMARY
   schema_version = 1
-  source_owner = yura.core-runtime.production
+  source_owner = yura.minimum-brain.production
   source_revision = 注入された設定のconfig_revision
   availability = AVAILABLE
   degraded_reasons = ()
@@ -504,13 +504,13 @@ AdminReadModelEnvelope
 GET /
 GET /assets/app.js
 GET /assets/app.css
-GET /api/v1/configuration/core-runtime
+GET /api/v1/configuration/minimum-brain
 GET /healthz
 
 HEAD /
 HEAD /assets/app.js
 HEAD /assets/app.css
-HEAD /api/v1/configuration/core-runtime
+HEAD /api/v1/configuration/minimum-brain
 HEAD /healthz
 ```
 
@@ -524,7 +524,7 @@ HEADはGETと同じ経路・アクセス・安全境界を通り、GETと整合�
 
 `/healthz`はGUI通信処理自身の生存確認だけであり、Core全体の正常性を宣言しない。既存`GuiAdminCommandDispatcher`は保持するが、このHTTP通信処理から到達不能にする。状態変更APIは0経路とする。
 
-画面は「ゆら GUI/Admin」「本体Runtimeの設定」と、構造識別子、設定ID、版、登録済みBrainモジュール、「再取得」操作で構成する。状態変更ボタンと秘密入力欄を設けない。
+画面は「ゆら GUI/Admin」「最小Brainの設定」と、構造識別子、設定ID、版、登録済みBrainモジュール、「再取得」操作で構成する。状態変更ボタンと秘密入力欄を設けない。
 
 ### 19.4.1 成功応答の送信形式
 
@@ -535,37 +535,37 @@ HEADはGETと同じ経路・アクセス・安全境界を通り、GETと整合�
 | `GET /` | 200 | `text/html; charset=utf-8` |
 | `GET /assets/app.js` | 200 | `text/javascript; charset=utf-8` |
 | `GET /assets/app.css` | 200 | `text/css; charset=utf-8` |
-| `GET /api/v1/configuration/core-runtime` | 200 | `application/json; charset=utf-8` |
+| `GET /api/v1/configuration/minimum-brain` | 200 | `application/json; charset=utf-8` |
 | `GET /healthz` | 204 | 本文を持たない |
 
 `GET /healthz`と`HEAD /healthz`はともに204で本文なし。GUI通信処理自身の生存確認だけを意味し、Core・Brain・提供サービスの正常性を表さない。
 
-設定取得応答のキー集合と入れ子構造は次のJSONに固定する。値は例示であり、固定の試験データを返す契約ではない。第19.3節に従い、注入された実際の`CoreConfig`と時計から生成する。
+設定取得応答のキー集合と入れ子構造は次のJSONに固定する。値は例示であり、固定の試験データを返す契約ではない。第19.3節に従い、注入された実際の`MinimumBrainProductionConfig`と時計から生成する。
 
 ```json
 {
   "model_kind": "configuration_summary",
   "schema_version": 1,
-  "source_owner": "yura.core-runtime.production",
+  "source_owner": "yura.minimum-brain.production",
   "source_revision": 1,
   "generated_at": "2026-09-05T12:00:00Z",
   "availability": "available",
   "degraded_reasons": [],
   "payload": {
-    "config_owner": "yura.core-runtime.production",
+    "config_owner": "yura.minimum-brain.production",
     "schema_version": 1,
     "config_revision": 1,
     "editable_fields": [],
     "effective_values": {
-      "schema_id": "yura.core-runtime.production-config.v1",
-      "config_id": "yura.core-runtime.production",
+      "schema_id": "yura.minimum-brain.production-config.v1",
+      "config_id": "yura.minimum-brain.production",
       "config_revision": 1,
       "brain_module_registrations": [
         "input_meaning"
       ]
     },
     "provenance": {
-      "config_id": "yura.core-runtime.production",
+      "config_id": "yura.minimum-brain.production",
       "config_revision": 1
     },
     "secret_fields": []
@@ -641,7 +641,7 @@ HTTP固有の上限は、既存の`GuiAdminOperationalPolicy`と分離した`Gui
 #351の構成・設定層は、次の版管理された静的設定を所有する。環境固有の待受設定をDomain DTOへ入れない。
 
 ```text
-将来のファイル: config/gui_admin.yaml
+将来のファイル: resources/config/v2/gui_admin.yaml
 schema_id = yura.gui-admin.production-config.v1
 config_id = yura.gui-admin.production
 config_revision = 1
@@ -768,7 +768,7 @@ Stage Aのための新たな所有者コード変更は不要とする。別所�
 
 ### 19.12 任意GUIの起動停止の実装境界
 
-`GuiAdminSubsystem`は同一の`CoreConfig`、GUI設定、時計、明示的な通信factoryを受け取る。通信factoryは構築時に待受を開始せず、`GuiAdminTransport.start()` / `stop()`が通信資源を所有する。具体的な通信方式を暗黙選択したり、未接続の通信先を成功として返したりしない。
+`GuiAdminSubsystem`は同一の`MinimumBrainProductionConfig`、GUI設定、時計、明示的な通信factoryを受け取る。通信factoryは構築時に待受を開始せず、`GuiAdminTransport.start()` / `stop()`が通信資源を所有する。具体的な通信方式を暗黙選択したり、未接続の通信先を成功として返したりしない。
 
 並行するstart/stopはそれぞれ一つの作業を共有する。起動失敗でも部分的な通信資源の回収を試み、生例外を公開しない。停止開始後は同じSubsystemインスタンスを再起動せず、再起動が必要なら構成所有者が新しいインスタンスを作る。Coreの状態を停止・変更しない。
 
