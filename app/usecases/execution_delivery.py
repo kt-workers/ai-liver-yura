@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import NAMESPACE_URL, uuid5
 
-from app.usecases.input_reference_context import CoreInputReferenceContextBinding
 from app.domain.activity_binding import ActivityExecutionBindingPublication
 from app.domain.activity_binding.projector import direct_invocation, plan_execution_inputs
 from app.domain.activity_execution import (
@@ -46,6 +45,7 @@ from app.domain.plan_execution.owner import (
     PlanExecutionStatus,
 )
 from app.infrastructure.scheduling import CancellationToken, RuntimeClock
+from app.usecases.input_reference_context import CoreInputReferenceContextBinding
 from app.usecases.brain_integration_runtime import (
     BrainIntegrationRuntime,
     BrainIntegrationWork,
