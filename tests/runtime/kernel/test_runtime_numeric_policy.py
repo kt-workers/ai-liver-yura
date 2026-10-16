@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from app.infrastructure.scheduling import (
+from app.runtime.kernel import (
     LaneErrorPolicy,
     QueuePolicy,
     RuntimeLanePolicy,
