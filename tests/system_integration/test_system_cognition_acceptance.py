@@ -473,7 +473,7 @@ async def test_system_consumer_observes_nonserial_rejection_and_cleanup(
         for key in entered:
             assert run.app.cognition.submit_input(run.input(key)).accepted
             await asyncio.wait_for(entered[key].wait(), 3)
-            meaning = await run.outcome()
+            meaning = await run.outcome(key, BrainIntegrationModule.INPUT_MEANING)
             assert meaning.module is BrainIntegrationModule.INPUT_MEANING
             assert meaning.trace_id == key and meaning.status is BrainWorkStatus.COMPLETED
         assert not release["A"].is_set()
@@ -484,14 +484,14 @@ async def test_system_consumer_observes_nonserial_rejection_and_cleanup(
                 )
                 == 1
             )
-            terminal = await run.outcome()
+            terminal = await run.outcome("A")
             assert terminal.trace_id == "A"
             assert terminal.status is (
                 BrainWorkStatus.CANCELLED if operation == "cancel" else BrainWorkStatus.SUPERSEDED
             )
             release["B"].set()
-            for _ in range(2):
-                decision = await run.outcome()
+            for module in (BrainIntegrationModule.APPRAISAL, BrainIntegrationModule.EXECUTIVE):
+                decision = await run.outcome("B", module)
                 assert decision.trace_id == "B" and decision.status is BrainWorkStatus.COMPLETED
             assert decision.module is BrainIntegrationModule.EXECUTIVE
             assert decision.result.candidate.source_event_ids == ("input:B",)
@@ -509,7 +509,9 @@ async def test_system_consumer_observes_nonserial_rejection_and_cleanup(
                     run.app.cognition.submit_input(late)
                 assert rejected.value.failure is FinalizationFailure.PARTICIPANT_UNAVAILABLE
                 assert_reaped(run.app)
-            terminal = [await run.outcome() for _ in range(2)]
+            terminal = [
+                await run.outcome(key, BrainIntegrationModule.APPRAISAL) for key in ("A", "B")
+            ]
             assert {o.trace_id for o in terminal} == {"A", "B"}
             assert all(
                 o.status
