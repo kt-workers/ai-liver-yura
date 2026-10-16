@@ -88,7 +88,7 @@ def plan_setup(monkeypatch: pytest.MonkeyPatch, *, mode: str = "normal") -> Any:
         (),
         ExecutionFeedbackRetentionPolicy("test-feedback", 1, 2),
     )
-    monkeypatch.setattr(component_factory, "GoalCommitmentStore", lambda **kw: value.goals)
+    monkeypatch.setattr(bootstrap, "GoalCommitmentStore", lambda **kw: value.goals)
     monkeypatch.setattr(component_factory, "ActivityExecutionAuthority", lambda: value.activity)
     monkeypatch.setattr(component_factory, "SystemRuntimeClock", lambda: value.clock)
     build = bootstrap.build_core_runtime
