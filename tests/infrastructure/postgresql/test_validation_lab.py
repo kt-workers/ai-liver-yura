@@ -74,7 +74,7 @@ async def allocated_databases(
 
 def make_target(settings: PersistenceLabSettings, case: PersistenceLabCase) -> LabTarget:
     provenance = capture_production_provenance(
-        Path.cwd(), ("app/bootstrap.py",), ("persistence_repository_contracts",), ()
+        Path.cwd(), ("app/bootstrap/runtime_application.py",), ("persistence_repository_contracts",), ()
     )
     return persistence_target((case,), settings, provenance, "1")
 
@@ -124,7 +124,7 @@ async def test_persistence_scenarios_use_real_boot_and_record_cleanup(
     settings, case = make_case(endpoint, boot_config, scenario)
     provenance = capture_production_provenance(
         Path.cwd(),
-        ("app/bootstrap.py",),
+        ("app/bootstrap/runtime_application.py",),
         ("persistence_repository_contracts",),
         (),
     )
