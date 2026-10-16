@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import weakref
+from typing import Any
 
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.usecases.brain_integration_runtime import (
@@ -40,7 +41,7 @@ async def next_outcome_matching(
     work_id: str | None = None,
     status: BrainWorkStatus | None = None,
     timeout: float = 2.0,
-) -> BrainIntegrationWorkOutcome:
+) -> Any:
     """到着順を仮定せず、識別情報に一致する終端を順序を保って返す。"""
     buffered = _BUFFERS.setdefault(brain, [])
     for index, item in enumerate(buffered):
