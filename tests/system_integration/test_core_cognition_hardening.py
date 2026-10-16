@@ -19,6 +19,7 @@ from app.domain.input_meaning import InputMeaningInterpretationResult
 from app.domain.plugin_registry import PluginRegistryAuthority
 from tests.domain.appraisal.test_appraisal_paths import policy, state
 from tests.domain.executive.test_executive import policy as executive_policy
+from tests.helpers.brain_outcomes import next_outcome_matching
 from tests.system_integration.test_core_cognition import admission, application
 
 
@@ -67,24 +68,34 @@ async def test_cancelled_source_cannot_be_selected_by_unrelated_input(
     try:
         app.cognition.submit_input(admission(app))
         await asyncio.wait_for(port.entered.wait(), 2)
-        first = await asyncio.wait_for(app.brain.next_outcome(), 2)
-        assert first.module is BrainIntegrationModule.INPUT_MEANING
+        first = await next_outcome_matching(
+            app.brain, trace_id="trace-1", module=BrainIntegrationModule.INPUT_MEANING
+        )
         second = app.cognition.submit_input(admission(app, event_id="event-2", trace_id="trace-2"))
         assert second.accepted
         # 遅い評価が待機中でも別のforeground入力の意味採用は完了する。
-        foreground = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        foreground = await next_outcome_matching(
+            app.brain, trace_id="trace-2", module=BrainIntegrationModule.INPUT_MEANING
+        )
         assert (
             foreground.trace_id == "trace-2"
             and foreground.module is BrainIntegrationModule.INPUT_MEANING
         )
         assert app.cognition.cancel_trace("trace-1", "取消", supersede=supersede) == 1
-        cancelled = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        cancelled = await next_outcome_matching(
+            app.brain,
+            trace_id="trace-1",
+            status=BrainWorkStatus.SUPERSEDED if supersede else BrainWorkStatus.CANCELLED,
+        )
         assert cancelled.trace_id == "trace-1"
         assert cancelled.status is (
             BrainWorkStatus.SUPERSEDED if supersede else BrainWorkStatus.CANCELLED
         )
         port.release.set()
-        remaining = [await asyncio.wait_for(app.brain.next_outcome(), 2) for _ in range(2)]
+        remaining = [
+            await next_outcome_matching(app.brain, trace_id="trace-2", module=module)
+            for module in (BrainIntegrationModule.APPRAISAL, BrainIntegrationModule.EXECUTIVE)
+        ]
         decision = remaining[-1]
         assert decision.status is BrainWorkStatus.COMPLETED, remaining
         assert decision.module is BrainIntegrationModule.EXECUTIVE
@@ -124,8 +135,9 @@ async def test_runtime_queue_rejects_without_executive_for_rejected_trace(
             admission(app, internal=True, event_id="rejected", trace_id="rejected")
         )
         assert not rejected.accepted
-        outcomes = [await asyncio.wait_for(app.brain.next_outcome(), 2) for _ in range(3)]
-        rejected_outcome = next(o for o in outcomes if o.trace_id == "rejected")
+        rejected_outcome = await next_outcome_matching(
+            app.brain, trace_id="rejected", status=BrainWorkStatus.REJECTED
+        )
         assert rejected_outcome.status is BrainWorkStatus.REJECTED
         assert all(r.trace_id != "rejected" for r in port.requests)
         assert all(
@@ -168,14 +180,21 @@ async def test_selected_old_source_keeps_provenance_with_new_current_appraisal(
     await bootstrap.start_core(app)
     try:
         app.cognition.submit_input(admission(app))
-        for _ in range(3):
-            assert (
-                await asyncio.wait_for(app.brain.next_outcome(), 2)
-            ).status is BrainWorkStatus.COMPLETED
+        for module in (
+            BrainIntegrationModule.INPUT_MEANING,
+            BrainIntegrationModule.APPRAISAL,
+            BrainIntegrationModule.EXECUTIVE,
+        ):
+            outcome = await next_outcome_matching(app.brain, trace_id="trace-1", module=module)
+            assert outcome.status is BrainWorkStatus.COMPLETED, outcome
         app.cognition.submit_input(admission(app, event_id="event-2", trace_id="trace-2"))
         outcomes = []
-        for _ in range(3):
-            outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        for module in (
+            BrainIntegrationModule.INPUT_MEANING,
+            BrainIntegrationModule.APPRAISAL,
+            BrainIntegrationModule.EXECUTIVE,
+        ):
+            outcome = await next_outcome_matching(app.brain, trace_id="trace-2", module=module)
             assert outcome.status is BrainWorkStatus.COMPLETED, outcome
             outcomes.append(outcome)
         decision = outcomes[-1]
@@ -208,7 +227,9 @@ async def test_unavailable_provider_preserves_input_failure_without_downstream(
     await bootstrap.start_core(unavailable)
     try:
         unavailable.cognition.submit_input(admission(unavailable))
-        outcome = await asyncio.wait_for(unavailable.brain.next_outcome(), 2)
+        outcome = await next_outcome_matching(
+            unavailable.brain, trace_id="trace-1", module=BrainIntegrationModule.INPUT_MEANING
+        )
         assert isinstance(outcome.result, InputMeaningInterpretationResult)
         assert outcome.result.meaning is None
         assert outcome.result.role_failure is not None
@@ -228,7 +249,10 @@ async def test_cancel_before_execution_and_repeated_stop_leave_no_owned_work(
     await bootstrap.start_core(app)
     accepted = app.cognition.submit_input(admission(app, internal=True))
     assert app.cognition.cancel_trace("trace-1", "開始前取消", supersede=supersede) == 1
-    outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+    outcome = await next_outcome_matching(
+        app.brain, work_id=accepted.work_id,
+        status=BrainWorkStatus.SUPERSEDED if supersede else BrainWorkStatus.CANCELLED,
+    )
     assert outcome.status is (
         BrainWorkStatus.SUPERSEDED if supersede else BrainWorkStatus.CANCELLED
     )
@@ -264,9 +288,13 @@ async def test_missing_measured_publication_cannot_commit_decision(
     await bootstrap.start_core(app)
     try:
         app.cognition.submit_input(admission(app, internal=True))
-        appraisal = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        appraisal = await next_outcome_matching(
+            app.brain, trace_id="trace-1", module=BrainIntegrationModule.APPRAISAL
+        )
         assert appraisal.status is BrainWorkStatus.COMPLETED
-        decision = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        decision = await next_outcome_matching(
+            app.brain, trace_id="trace-1", module=BrainIntegrationModule.EXECUTIVE
+        )
         assert decision.module is BrainIntegrationModule.EXECUTIVE
         assert decision.status is BrainWorkStatus.FAILED
         assert decision.result is None
@@ -285,11 +313,15 @@ async def test_concurrent_appraisals_do_not_share_a_stale_state_revision(
     try:
         app.cognition.submit_input(admission(app))
         await asyncio.wait_for(port.entered.wait(), 2)
-        assert (
-            await asyncio.wait_for(app.brain.next_outcome(), 2)
-        ).status is BrainWorkStatus.COMPLETED
+        first = await next_outcome_matching(
+            app.brain, trace_id="trace-1", module=BrainIntegrationModule.INPUT_MEANING
+        )
+        assert first.status is BrainWorkStatus.COMPLETED
         app.cognition.submit_input(admission(app, event_id="event-2", trace_id="trace-2"))
-        assert (await asyncio.wait_for(app.brain.next_outcome(), 2)).trace_id == "trace-2"
+        second = await next_outcome_matching(
+            app.brain, trace_id="trace-2", module=BrainIntegrationModule.INPUT_MEANING
+        )
+        assert second.trace_id == "trace-2"
         # 両方の深い評価が同じ採用前リビジョンを読んだ状態で再開する。
         for _ in range(100):
             if sum(r.role_id == "subjective_appraisal" for r in port.requests) == 2:
@@ -297,8 +329,12 @@ async def test_concurrent_appraisals_do_not_share_a_stale_state_revision(
             await asyncio.sleep(0)
         assert sum(r.role_id == "subjective_appraisal" for r in port.requests) == 2
         port.release.set()
-        outcomes = [await asyncio.wait_for(app.brain.next_outcome(), 2) for _ in range(3)]
-        appraisals = [o for o in outcomes if o.module is BrainIntegrationModule.APPRAISAL]
+        appraisals = [
+            await next_outcome_matching(
+                app.brain, trace_id=trace_id, module=BrainIntegrationModule.APPRAISAL
+            )
+            for trace_id in ("trace-1", "trace-2")
+        ]
         assert sorted(o.status.value for o in appraisals) == ["completed", "failed"]
         committed = app.cognition.appraisal.current_commit()
         assert committed is not None
@@ -333,7 +369,9 @@ async def test_appraisal_attention_rejection_cannot_start_executive(
     await bootstrap.start_core(app)
     try:
         assert app.cognition.submit_input(admission(app, internal=True)).accepted
-        outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        outcome = await next_outcome_matching(
+            app.brain, trace_id="trace-1", module=BrainIntegrationModule.APPRAISAL
+        )
         assert outcome.module is BrainIntegrationModule.APPRAISAL
         assert outcome.status is BrainWorkStatus.FAILED
         assert outcome.result is None
