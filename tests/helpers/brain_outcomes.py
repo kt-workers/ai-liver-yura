@@ -14,7 +14,7 @@ from app.usecases.brain_integration_runtime import (
 
 _BUFFERS: weakref.WeakKeyDictionary[
     BrainIntegrationRuntime, list[BrainIntegrationWorkOutcome]
-] = WeakKeyDictionary()
+] = weakref.WeakKeyDictionary()
 
 
 def _matches(
