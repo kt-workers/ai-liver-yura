@@ -280,7 +280,6 @@ async def test_runtime_cancel_does_not_withdraw_unrelated_successful_input(
 async def test_pending_meaning_cannot_be_used_as_executive_semantic_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.domain.brain_integration import BrainIntegrationModule
     from app.domain.llm import LLMRoleRequest, LLMRoleResult
 
     app, port = application(monkeypatch)
