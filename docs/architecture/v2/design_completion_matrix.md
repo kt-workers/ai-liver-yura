@@ -149,7 +149,7 @@ System Verification stages:
 
 ```text
 S1 Foundation / Runtime
-→ ゆら本体 Brain
+→ S2 Brain
 → S3 Speech / TTS / Presentation
 → S4 Body / Avatar
 → S5 Memory / Persistence
