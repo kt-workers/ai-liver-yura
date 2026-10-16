@@ -41,13 +41,9 @@ async def outcome(
     module: BrainIntegrationModule | None = None,
     work_id: str | None = None,
 ) -> Any:
-    # Runtimeは独立laneを非直列に完了させる。テストは到着順でなく相関情報で対象を選ぶ。
-    while True:
-        item = await asyncio.wait_for(app.brain.next_outcome(), 3)
-        if (trace_id is None or item.trace_id == trace_id) and (
-            module is None or item.module is module
-        ) and (work_id is None or item.work_id == work_id):
-            return item
+    return await next_outcome_matching(
+        app.brain, trace_id=trace_id, module=module, work_id=work_id, timeout=3
+    )
 
 
 def assert_reaped(app: Any) -> None:
