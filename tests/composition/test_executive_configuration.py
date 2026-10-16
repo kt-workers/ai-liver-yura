@@ -407,7 +407,7 @@ def test_factory_uses_no_test_configuration_authority() -> None:
     import ast
     from pathlib import Path
 
-    for path in ("app/config/executive.py", "app/composition/executive_configuration.py"):
+    for path in ("app/config/executive.py", "app/config/executive_assembly.py"):
         tree = ast.parse(Path(path).read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
