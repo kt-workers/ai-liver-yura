@@ -28,6 +28,7 @@ from tests.domain.activity_execution.test_activity_execution import NOW, invocat
 from tests.domain.brain_integration.test_runtime import envelope, work
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.domain.memory_reflection.test_llm_roles import RolePort, role_policy
+from tests.helpers.brain_outcomes import next_outcome_matching
 from tests.infrastructure.postgresql.test_persistent_boot import boot_config  # noqa: F401
 from tests.infrastructure.postgresql.test_runtime import runtime
 from tests.runtime.test_lifecycle import retry_policy
