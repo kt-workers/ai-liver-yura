@@ -251,8 +251,8 @@ async def test_shutdown_before_receive_forbids_late_worker_spawn(
 async def test_timeout_preserves_fact_and_unrelated_progress(tmp_path: Path, audio: bool) -> None:
     from app.domain.activity_execution import ActivityExecutionAuthority
     from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
-    from app.usecases.speech_observation import project_speech_execution_observation
     from app.domain.contracts import ExecutionStatus
+    from app.usecases.speech_observation import project_speech_execution_observation
     from tests.system_integration.test_execution_observation_boundary import PROVENANCE
 
     runtime = SpeechRuntime(replace(runtime_policy(), presentation_timeout=policy()))

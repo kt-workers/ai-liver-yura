@@ -10,8 +10,8 @@ import pytest
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.presentation_notification import CorePresentationNotification
 from app.composition.speech import CoreSpeechContextReaders, CoreSpeechPipeline
-from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
 from app.domain.activity_execution import ActivityExecutionAuthority, ExecutionObservationProvenance
+from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
 from app.domain.attention import AttentionSourceKind
 from app.domain.attention import AttentionTransitionOperation as Op
 from app.domain.brain_integration import (

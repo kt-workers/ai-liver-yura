@@ -256,9 +256,9 @@ async def test_actual_owner_terminal_reaches_background_role(
 
     from app.domain.activity_execution import ExecutionAdapterReport
     from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
-    from app.usecases.speech_observation import project_speech_execution_observation
     from app.domain.contracts import ExecutionStatus
     from app.domain.speech_runtime.contracts import SpeechPresentationReportStatus
+    from app.usecases.speech_observation import project_speech_execution_observation
     from tests.domain.activity_execution.test_activity_execution import DISPATCH_ID, started
     from tests.domain.activity_execution.test_activity_execution import NOW as ACTIVITY_NOW
     from tests.system_integration.test_execution_observation_boundary import (
