@@ -90,8 +90,8 @@ class CoreConfig:
         if (
             self.schema_id != "yura.core-runtime.production-config.v1"
             or self.config_id != "yura.core-runtime.production"
-            or self.activation_id != "yura.core-runtime.explicit"
-            or self.composition_id != "yura.system.core-runtime"
+            or self.activation_id != "yura.core.explicit"
+            or self.composition_id != "yura.system.core"
         ):
             invalid()
         revision(self.config_revision)
