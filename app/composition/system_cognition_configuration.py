@@ -156,7 +156,12 @@ class CoreApplication:
     async def stop(self) -> None:
         try:
             await self._runtime.stop()
-        except OwnedResourcesCloseError:
+        except asyncio.CancelledError:
+            raise
+        except CoreConfigurationError:
+            raise
+        except Exception:
+            # 内部の回収例外を公開契約へ正規化し、詳細例外を外へ漏らさない。
             raise CoreConfigurationError(CoreFailureCode.INITIALIZATION_FAILED) from None
 
 
