@@ -224,16 +224,15 @@ def plan_activity_target(
         decisions: list[CommittedExecutiveDecision] = []
         records: dict[str, ActivityExecutionRecord] = {}
         status = RunStatus.COMPLETED
-        # 公開outcomeより先に製品が後続workを登録するため、未観測の実traceで終端を判定する。
-        # 固定段数や「活動成功なら計画完了」というLab独自の判断は持たない。
-        for _ in range(context.policy.max_intervals):
+        # Runtimeは複数traceを非直列に公開する。対象trace以外の終端は保持済みの
+        # 共通outcome経路へ任せ、対象traceの未観測workだけを数えて完了を判定する。
+        while len(observed) < context.policy.max_intervals:
             outcome = await context.invoke_product("plan_activity.outcome", app.brain.next_outcome)
+            if outcome.trace_id != trace_id:
+                continue
             trace = app.brain.trace(trace_id)
-            if (
-                outcome.trace_id != trace_id
-                or outcome.work_id in observed
-                or outcome.work_id not in {i.work_id for i in trace.intervals}
-            ):
+            expected_work_ids = {i.work_id for i in trace.intervals}
+            if outcome.work_id in observed or outcome.work_id not in expected_work_ids:
                 raise ValueError("計画・活動の公開outcomeとtraceが一致しません")
             observed.add(outcome.work_id)
             result = outcome.result
