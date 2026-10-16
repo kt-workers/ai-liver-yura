@@ -136,7 +136,7 @@ Verify:
 - lifecycle
 - no pending task leaks
 
-### ゆら本体 Brain minimum
+### S2 Brain minimum
 
 Use #334 with fake providers/text presentation.
 
@@ -147,9 +147,9 @@ Verify:
 
 ### #561 早期起動の境界
 
-#561の早期起動に必要な登録集合とリビジョン付き初期データは、[本体Runtimeの本番初期構成](system_production_cognition_configuration.md)を参照する。
+#561の早期起動に必要な登録集合とリビジョン付き初期データは、[最小Brainの本番初期構成](minimum_brain_production_configuration.md)を参照する。
 
-#561の必須Brainモジュール登録は`INPUT_MEANING`のみであり、上記ゆら本体の全検証対象を起動時に必須登録することを意味しない。4レーンの定義要件は維持する。提供サービス未構成時の型付き利用不可、プロセス継続、取消・停止後の所有タスク回収までを早期に証明し、通常会話の成功や#360のゆら本体最終検証は後続工程で確認する。
+#561の必須Brainモジュール登録は`INPUT_MEANING`のみであり、上記S2の全検証対象を起動時に必須登録することを意味しない。4レーンの定義要件は維持する。提供サービス未構成時の型付き利用不可、プロセス継続、取消・停止後の所有タスク回収までを早期に証明し、通常会話の成功や#360のS2最終検証は後続工程で確認する。
 
 ### S3 Full Speech
 
@@ -677,7 +677,7 @@ System Integration implementation and final Verification remain frozen until #44
 
 ## 30. #624 能力提供0件・模擬提供1件の自動結合検証
 
-`tests/system_integration/test_system_plugin.py`は既存の`build_core_runtime`と`CoreCognitionConfiguration` / `CoreExecutionConfiguration`を使用する。RegistryとPluginCapabilityPreflightPort / PluginActivityExecutionPortを同じ構成へ注入し、別の状態Ownerや特定サービスへの固定意思を作らない。模擬提供先だけを登録し、実サービスへ接続しない。
+`tests/system_integration/test_system_plugin.py`は既存の`build_minimum_core`と`CoreCognitionConfiguration` / `CoreExecutionConfiguration`を使用する。RegistryとPluginCapabilityPreflightPort / PluginActivityExecutionPortを同じ構成へ注入し、別の状態Ownerや特定サービスへの固定意思を作らない。模擬提供先だけを登録し、実サービスへ接続しない。
 
 能力提供0件では、空Registryのまま通常の内部入力からAppraisal・Executiveへ到達する。能力提供1件では、公開RegistryからActivityBindingへ投影した確定判断を配送し、実行要求・報告・Activityの現在の終端事実・入力文脈・後続認知を同じtraceで照合する。入口が確定判断であるため、先行する実LLMの能力選択をこの試験で実行したとは扱わない。
 
@@ -711,22 +711,22 @@ Meaning・Appraisal・Attention・Executiveのsource event / root_trigger / trig
 
 提供先を置換した自動試験は実LLM・実音声・実サービス・Human Verificationではない。Human実動作はNOT_RUN / UNRATEDを維持する。#621〜#625、#434、#586、GUI・Game・Streamingの受入れへ拡大しない。
 
-## ゆら本体構成の具体契約（#692）
+## S2本番認知構成の具体契約（#692）
 
-明示activation、deployment参照、SystemCompositionSnapshotのtyped化、構築・終了所有は[Systemのゆら本体構成](system_production_cognition_configuration.md)を正とする。本書第4節の由来をDomain Stateへ置き換えず、別構成起動とゆら本体の分離を維持する。
+明示activation、deployment参照、SystemCompositionSnapshotのtyped化、構築・終了所有は[SystemのS2本番認知構成](system_production_cognition_configuration.md)を正とする。本書第4節の由来をDomain Stateへ置き換えず、minimum起動とS2の分離を維持する。
 
-## ゆら本体の明示CLI入口（#729）
+## 本番S2の明示CLI入口（#729）
 
-`python -m app`は#692の認知構成へ、新しい実行識別子、明示activation、既存Runtime Ownerを渡す。起動可否をGitのHEADや作業ツリー状態へ依存させない。ゆら本体をCLIから選択又はfallbackする経路は設けない。
+`python -m app --s2-production`は#692の`build_s2_production_core()`へ、現在のclean checkoutに束縛した新しい`S2RunIdentity`、明示activation、既存Runtime Ownerを渡す。引数なしの`python -m app`は#561の最小Coreのままとし、両者を自動選択又は相互fallbackしない。
 
-通常のゆら本体は、必須の`llm_connections`集合からInput Meaning、Appraisal、Executiveが参照する接続を解決できる場合だけ起動する。接続設定、Adapter、資格情報、対応付けの不備を`UnavailableLLMRolePort`や別接続へ変換しない。この状態はLLM応答、実発話、外部Provider接続の成功ではない。Speechなしのゆら本体はSpeech用Ownerを要求しない。Speech有効時だけ#705/#709の設定・登録入口から得た`SpeechProductionInputs`を一度だけ渡し、登録又はavailabilityの不備は失敗として返す。
+通常S2のProvider deploymentが`unconfigured`なら既存`UnavailableLLMRolePort`による型付き利用不可を保持する。この状態はLLM応答、実発話、外部Provider接続の成功ではない。SpeechなしのS2はSpeech用Ownerを要求しない。Speech有効時だけ#705/#709の設定・登録入口から得た`SpeechProductionInputs`を一度だけ渡し、登録又はavailabilityの不備は失敗として返す。
 
-## ゆら本体へのSpeech本番構成接続（#702）
+## S2へのSpeech本番構成接続（#702）
 
-Speechを指定したゆら本体起動は、[Systemのゆら本体構成](system_production_cognition_configuration.md) §9のSystem-owned factoryから既存CoreSpeechConfigurationを生成する。Executive Speech evidence、登録pipeline、SystemCompositionSnapshotは同じbinding / generationを参照する。Speech未指定時のゆら本体と別構成起動を維持する。
+Speechを指定したS2起動は、[SystemのS2本番認知構成](system_production_cognition_configuration.md) §9のSystem-owned factoryから既存CoreSpeechConfigurationを生成する。Executive Speech evidence、登録pipeline、SystemCompositionSnapshotは同じbinding / generationを参照する。Speech未指定時の既存S2とminimum起動を維持する。
 
 構築時点のsafe provenanceと、#621が実行後に照合するtrace・candidate generation・提示Factを分離する。factoryは既存Ownerとdeploymentの明示入力を束ね、具体voice/providerやSpeech意味を作らない。資源のCoreへの移管、borrowed依存の保全、部分構築失敗の回収は同§9を正とし、System側でSpeech shutdownを二重実行しない。
 
 ## 設定ファイルからの本番Speech供給（#705）
 
-Speech有効時は[三層の本番設定](configuration_architecture.md)から解決したpublicationをゆら本体の同一runへ注入する。外部I/Oの試験置換とOwner policyの試験fixture置換を区別し、System acceptanceは前者だけを許す。設定の未構成・不正・staleを発話成功とせず、Human Verificationは人間による確認までNOT_RUN / UNRATEDを維持する。
+Speech有効時は[三層の本番設定](configuration_architecture.md)から解決したpublicationをS2の同一runへ注入する。外部I/Oの試験置換とOwner policyの試験fixture置換を区別し、System acceptanceは前者だけを許す。設定の未構成・不正・staleを発話成功とせず、Human Verificationは人間による確認までNOT_RUN / UNRATEDを維持する。
