@@ -11,6 +11,7 @@ from app.domain.activity_execution.observation import (
     ExecutionObservationProvenance,
     ObservedExecutionFactRecord,
 )
+from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
 from app.domain.speech_runtime.contracts import SpeechPresentationCommand, SpeechPresentationReport
 from app.domain.speech_runtime.execution import (
     SpeechPresentationExecutionBoundary,
