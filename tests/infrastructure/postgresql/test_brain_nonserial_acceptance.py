@@ -35,8 +35,19 @@ from tests.system_integration.test_core_cognition import Port, admission, applic
 from tests.system_integration.test_core_cognition_hardening import configuration
 
 
-async def outcome(app: Any) -> Any:
-    return await asyncio.wait_for(app.brain.next_outcome(), 3)
+async def outcome(
+    app: Any,
+    trace_id: str | None = None,
+    module: BrainIntegrationModule | None = None,
+    work_id: str | None = None,
+) -> Any:
+    # Runtimeは独立laneを非直列に完了させる。テストは到着順でなく相関情報で対象を選ぶ。
+    while True:
+        item = await asyncio.wait_for(app.brain.next_outcome(), 3)
+        if (trace_id is None or item.trace_id == trace_id) and (
+            module is None or item.module is module
+        ) and (work_id is None or item.work_id == work_id):
+            return item
 
 
 def assert_reaped(app: Any) -> None:
@@ -78,14 +89,14 @@ async def test_slow_appraisal_trace_local_terminal_and_provenance(
             admission(app, event_id="event-A", trace_id="trace-A")
         ).accepted
         await asyncio.wait_for(entered["trace-A"].wait(), 3)
-        first = await outcome(app)
+        first = await outcome(app, "trace-A", BrainIntegrationModule.INPUT_MEANING)
         assert first.module is BrainIntegrationModule.INPUT_MEANING
         assert first.status is BrainWorkStatus.COMPLETED
         assert app.cognition.submit_input(
             admission(app, event_id="event-B", trace_id="trace-B")
         ).accepted
         await asyncio.wait_for(entered["trace-B"].wait(), 3)
-        second = await outcome(app)
+        second = await outcome(app, "trace-B", BrainIntegrationModule.INPUT_MEANING)
         assert second.trace_id == "trace-B"
         assert second.module is BrainIntegrationModule.INPUT_MEANING
         assert second.status is BrainWorkStatus.COMPLETED
@@ -132,7 +143,7 @@ async def test_slow_appraisal_trace_local_terminal_and_provenance(
                 app.cognition.cancel_trace("trace-A", "対象だけ取消", supersede=mode == "supersede")
                 == 1
             )
-            rejected = await outcome(app)
+            rejected = await outcome(app, "trace-A")
             assert rejected.trace_id == "trace-A"
             assert rejected.status is (
                 BrainWorkStatus.SUPERSEDED if mode == "supersede" else BrainWorkStatus.CANCELLED
@@ -140,7 +151,7 @@ async def test_slow_appraisal_trace_local_terminal_and_provenance(
             await asyncio.wait_for(exited["trace-A"].wait(), 3)
             assert not exited["trace-B"].is_set()
             gates["trace-B"].set()
-            completed = [await outcome(app) for _ in range(2)]
+            completed = [await outcome(app, "trace-B") for _ in range(2)]
             assert all(
                 o.trace_id == "trace-B" and o.status is BrainWorkStatus.COMPLETED for o in completed
             )
@@ -207,7 +218,7 @@ async def test_stop_caller_cancel_still_reaps_provider_and_unique_outcomes(
         release.set()
         with pytest.raises(asyncio.CancelledError):
             await asyncio.wait_for(stopping, 3)
-        terminal = await outcome(app)
+        terminal = await outcome(app, work_id=accepted.work_id)
         assert terminal.work_id == accepted.work_id
         assert terminal.status is BrainWorkStatus.CANCELLED
         await stop_core(app)
@@ -305,13 +316,13 @@ async def test_real_activity_reflection_burst_keeps_foreground_and_bounded_clean
             app.cognition.reflection.last_error
         )
         assert rejected.status is BrainWorkAdmissionStatus.REJECTED
-        terminal = await outcome(app)
+        terminal = await outcome(app, work_id=rejected.work_id)
         assert terminal.work_id == rejected.work_id and terminal.status is BrainWorkStatus.REJECTED
         assert app.cognition is not None
         assert app.cognition.submit_input(
             admission(app, event_id="front", trace_id="front")
         ).accepted
-        foreground = [await outcome(app) for _ in range(3)]
+        foreground = [await outcome(app, "front") for _ in range(3)]
         assert all(
             o.trace_id == "front" and o.status is BrainWorkStatus.COMPLETED for o in foreground
         )
@@ -325,7 +336,7 @@ async def test_real_activity_reflection_burst_keeps_foreground_and_bounded_clean
             await stop_core(app)
         else:
             reflection_release.set()
-        background = [await outcome(app) for _ in range(2)]
+        background = [\n            await outcome(app, work_id=work_id) for work_id in (first.work_id, queued.work_id)\n        ]
         assert {o.work_id for o in background} == {first.work_id, queued.work_id}
         assert all(
             o.status is (BrainWorkStatus.CANCELLED if stop_pending else BrainWorkStatus.COMPLETED)
