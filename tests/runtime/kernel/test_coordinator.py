@@ -7,13 +7,13 @@ from app.infrastructure.scheduling import FakeRuntimeClock
 from app.runtime.kernel import (
     LaneErrorPolicy,
     QueuePolicy,
+    RuntimeCoordinator as KernelRuntimeCoordinator,
     RuntimeHealth,
+    RuntimeLanePolicy as KernelRuntimeLanePolicy,
     RuntimeSchedulerPolicy,
     RuntimeWorkItem,
     WorkDisposition,
     WorkPriority,
-    RuntimeCoordinator as KernelRuntimeCoordinator,
-    RuntimeLanePolicy as KernelRuntimeLanePolicy,
 )
 
 NOW = datetime(2026, 8, 15, tzinfo=timezone.utc)
