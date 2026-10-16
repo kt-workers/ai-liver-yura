@@ -11,7 +11,7 @@ from app.domain.character.contracts import (
 from app.domain.character.projector import project_character_definition
 
 _ROOT = Path(__file__).resolve().parents[3]
-_YURA_DEFINITION = _ROOT / "resources" / "character_definitions" / "v2" / "yura.yaml"
+_YURA_DEFINITION = _ROOT / "config" / "character" / "yura.yaml"
 _LEGACY_YURA_DEFINITION = _ROOT / "character_definitions" / "v2" / "yura.yaml"
 _DYNAMIC_FACET_IDS = frozenset(
     {
