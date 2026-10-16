@@ -20,8 +20,8 @@ Speech命題、Memory事実、Goal意味、人格内容、self-disclosure policy
 
 ## production供給と寿命
 
-active Characterの選択は既存`CoreConfig.character_definition.resource_ref`とbootstrapのresource loadingだけをAuthorityとする。
-`_load_core`が一度ロードしたdocumentを`CoreRuntimeApplication.character_definition`へ保持し、
+active Characterの選択は既存`MinimumBrainProductionConfig.character_definition_path`とbootstrapのresource loadingだけをAuthorityとする。
+`_load_core`が一度ロードしたdocumentを`MinimumCoreApplication.character_definition`へ保持し、
 application構築時に同じdocumentから一度だけ`runtime_subject_identity`を生成する。
 このfieldは外部から別identityを注入できず、application同様に不変である。
 既存Character projectorへ渡すdocumentもこの同じ公開documentとする。新しいprojection経路は追加しない。
@@ -29,7 +29,7 @@ application構築時に同じdocumentから一度だけ`runtime_subject_identity
 
 第二のself設定、二重load、mutable global registry、singleton、hot-reload managerを追加しない。
 新しいapplicationを構成した場合のみ新documentのidentity/provenanceを持つ。
-既存default locator `config/character/yura.yaml`は保持するが、pathやfilenameはidentityのAuthorityではない。
+既存default locator `resources/character_definitions/v2/yura.yaml`は保持するが、pathやfilenameはidentityのAuthorityではない。
 現製品の結果は`yura`であっても、algorithmへその文字列をhard-codeしない。
 
 ## 検証と失敗
