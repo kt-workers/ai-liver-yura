@@ -52,7 +52,7 @@ def test_projection_uses_injected_generation_and_excludes_private_configuration(
         "schema_id",
         "config_id",
         "config_revision",
-        "brain_module_registrations",
+        "input_meaning_policy_id",
     }
     assert wire["payload"]["secret_fields"] == []
     assert b"private-not-for-browser" not in original
