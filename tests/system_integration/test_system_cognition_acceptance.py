@@ -415,7 +415,12 @@ async def test_typed_provider_failure_keeps_other_system_trace_available(
         assert run.app.cognition.submit_input(
             run.input("failed", internal=role == "subjective_appraisal")
         ).accepted
-        terminal = await run.outcome()
+        terminal = await run.outcome(
+            "failed",
+            BrainIntegrationModule.INPUT_MEANING
+            if role == "input_meaning"
+            else BrainIntegrationModule.APPRAISAL,
+        )
         if role == "input_meaning":
             assert terminal.result.meaning is None
             assert terminal.result.role_failure.code is LLMFailureCode.PROVIDER_UNAVAILABLE
@@ -423,8 +428,12 @@ async def test_typed_provider_failure_keeps_other_system_trace_available(
             assert terminal.status is BrainWorkStatus.FAILED
         assert not any(r.role_id == "executive_deliberation" for r in run.provider.requests)
         assert run.app.cognition.submit_input(run.input("healthy")).accepted
-        for _ in range(3):
-            healthy = await run.outcome(\n                "healthy",\n                (BrainIntegrationModule.INPUT_MEANING, BrainIntegrationModule.APPRAISAL, BrainIntegrationModule.EXECUTIVE)[_],\n            )
+        for module in (
+            BrainIntegrationModule.INPUT_MEANING,
+            BrainIntegrationModule.APPRAISAL,
+            BrainIntegrationModule.EXECUTIVE,
+        ):
+            healthy = await run.outcome("healthy", module)
             assert healthy.trace_id == "healthy" and healthy.status is BrainWorkStatus.COMPLETED
         assert healthy.module is BrainIntegrationModule.EXECUTIVE
         assert healthy.result.candidate.source_event_ids == ("input:healthy",)
