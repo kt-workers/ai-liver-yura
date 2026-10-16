@@ -68,7 +68,7 @@ async def test_cancelled_source_cannot_be_selected_by_unrelated_input(
     try:
         app.cognition.submit_input(admission(app))
         await asyncio.wait_for(port.entered.wait(), 2)
-        first = await next_outcome_matching(
+        await next_outcome_matching(
             app.brain, trace_id="trace-1", module=BrainIntegrationModule.INPUT_MEANING
         )
         second = app.cognition.submit_input(admission(app, event_id="event-2", trace_id="trace-2"))
@@ -197,7 +197,7 @@ async def test_selected_old_source_keeps_provenance_with_new_current_appraisal(
         decision = await next_outcome_matching(
             app.brain, trace_id="trace-1", module=BrainIntegrationModule.EXECUTIVE
         )
-        assert decision.status is BrainWorkStatus.COMPLETED, outcomes
+        assert decision.status is BrainWorkStatus.COMPLETED, decision
         assert decision.trace_id == "trace-1"
         assert decision.result.candidate.source_event_ids == ("event-1",)
         assert app.cognition.appraisal.current_commit().candidate.source_event_ids == ("event-2",)
