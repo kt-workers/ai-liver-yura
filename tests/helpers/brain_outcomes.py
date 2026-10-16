@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from weakref import WeakKeyDictionary
+import weakref
 
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.usecases.brain_integration_runtime import (
@@ -12,7 +12,7 @@ from app.usecases.brain_integration_runtime import (
 )
 
 
-_BUFFERS: WeakKeyDictionary[
+_BUFFERS: weakref.WeakKeyDictionary[
     BrainIntegrationRuntime, list[BrainIntegrationWorkOutcome]
 ] = WeakKeyDictionary()
 
