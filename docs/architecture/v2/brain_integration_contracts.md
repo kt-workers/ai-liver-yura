@@ -594,7 +594,7 @@ binding 0件は「現在登録された実測factが0件」を意味する。正
 
 ## 29. 通常認知の起動登録と配送（#611）
 
-`CoreCognitionConfiguration`は、既存の評価方針・判断方針・Internal State所有者・Attention所有者・ExecutiveRequirementsOwner・PluginRegistryAuthority・実測Routerとbinding・定型評価規則を明示して受け取る。`build_core_runtime(cognition=...)`と`build_persistent_core(cognition=...)`は同じ所有者を各接続へ渡し、INPUT_MEANING・APPRAISAL・EXECUTIVEを既存Brain Runtimeへ登録する。要件方針未登録やOwner欠落は構成失敗とし、実測publicationの取得不能は既存の失敗境界へ伝播する。試験用事実や空の成功を既定値として生成しない。
+`CoreCognitionConfiguration`は、既存の評価方針・判断方針・Internal State所有者・Attention所有者・ExecutiveRequirementsOwner・PluginRegistryAuthority・実測Routerとbinding・定型評価規則を明示して受け取る。`build_minimum_core(cognition=...)`と`build_persistent_core(cognition=...)`は同じ所有者を各接続へ渡し、INPUT_MEANING・APPRAISAL・EXECUTIVEを既存Brain Runtimeへ登録する。要件方針未登録やOwner欠落は構成失敗とし、実測publicationの取得不能は既存の失敗境界へ伝播する。試験用事実や空の成功を既定値として生成しない。
 
 `CoreCognitionDelivery.submit_input()`はGatewayのACCEPTED結果と現在文脈を検査する。外部入力は既存Input Meaningの採用結果だけを評価へ配送し、meaningのない型付き失敗では配送を終了する。raw textの再解釈・fallbackは持たない。ユーザー入力のAttention登録には既存UserInteractionAttentionProjectorを使用する。SUBSYSTEM・LIFECYCLE・TIMERの採用イベントは意味解析成功を生成せず、由来付きの内部入力として既存の有界保持へ格納し、直接APPRAISALへ渡す。
 
@@ -622,16 +622,6 @@ BrainIntegrationRuntimeがKernelの`next_outcome()`を唯一消費するoutcome 
 observerはstart前にmoduleごとに登録し、元のBrainIntegrationWorkと不変の結果を受け取る。await・I/O・task生成・Domainの意味判断・終了状態の書換えを禁止する。observer例外は最初の失敗を保持して新規submitを拒否し、stopでも通知失敗を報告する。元の終端結果は変更せず公開し、他の受付済み処理の終端通知・回収を継続する。通知失敗を通常の成功へ隠さない。
 
 stopは新規受付を閉じ、Kernel stopの後、受付済みwork全件の終端公開を待ち、pumpをcancel/joinする。再stop・stop呼出側の取消でも同じ所有終了処理を回収する。Kernelのtask/token所有権をBrain側へ移さない。CognitionとAttentionはconsumer taskを作らない。
-
-### 29.4 本体の自律循環
-
-本体は人間入力を前提としない。Runtimeの実際の開始は一度だけ型付きの内部lifecycle入力として配送できる。これは会話開始、固定発話、固定Goal、又は成功した判断を生成する命令ではない。
-
-起動・再開のlifecycle入力は、既存Appraisalの`LifecycleAppraisalInput`と構成済みのDecayPolicyを通して現在の内部状態へ適用する。ここでLLMを要求せず、固定した感情・Goal・発話を補作しない。後続のAttentionとExecutiveは、そのOwnerが公開する通常の受付・利用不可・失敗の契約に従う。
-
-起動時に既存Goal Ownerが保持する未終端Goal・Commitmentがあれば、既存のbounded trigger viewを一度だけ内部契機として配送する。これはAttention lifecycleのsourceをsnapshotから再構成するものではない。確定したExecutive判断がGoal又はCommitmentの遷移を含む場合、同じ既存Goal Ownerへ一度だけ適用する。Ownerが返した型付きlifecycle事実は、元のtrace・root trigger・現在の参照revisionを保った内部入力として次のAppraisalへ戻す。CompositionはGoalの内容、感情、優先度、完了、又は次の行動を生成しない。Ownerの適用失敗、入力拒否、又はBrain受付拒否は成功へ変換しない。
-
-この還流は、発話、外部Plugin、音声再生、人間からの入力が存在しなくても成立する。外部能力やProviderが未構成の場合、既存の型付き利用不可・失敗を保持し、架空のDecision・活動・発話を作らない。
 
 #611はINPUT_MEANINGのterminal observerを登録する。Gateway ACCEPTEDのTEXT・SPEECH・AUDIO・POINTER・TOUCHを既存projectorでMeaning完了前にAttentionへofferし、その後Runtimeへ渡す。同期submit例外・受付拒否はsubmit_input自身が撤回する。終端がCOMPLETEDで採用meaningを持つ場合だけUSER sourceを保持し、それ以外のFAILED・CANCELLED・TIMED_OUT・STALE・SUPERSEDED・REJECTED、およびCOMPLETEDでmeaningなしの場合は正規resolveで撤回する。cleanupは現在のAttention source/context/revisionを読み、source不在はno-opとする。別traceのsourceや正常Meaningのsourceは撤回しない。
 
@@ -771,7 +761,7 @@ Input Gateway §7の意味は変更しない。`CoreSpeechFeedback`のgeneric do
 
 `CoreSpeechProductionOwnerConnection`は#613の本番接続を完成するCompositionの不変入力である。
 `ActivityExecutionAuthority`、`AttentionTurnStore`、`CoreInputReferenceContextBinding`、process共有
-`InputNormalizer`、`CoreCognitionDelivery`は同じゆら本体 production Ownerの既存instanceをそのまま受け取る。
+`InputNormalizer`、`CoreCognitionDelivery`は同じS2 production Ownerの既存instanceをそのまま受け取る。
 connectionはこれらの意味、generation、admission、settlementを再実装せず、readerとnotificationへ
 同じinstanceを渡すだけとする。
 
