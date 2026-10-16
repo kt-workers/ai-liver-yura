@@ -258,7 +258,9 @@ async def test_semantic_currentness_change_after_registration_reclaims_pipeline(
     monkeypatch: Any,
 ) -> None:
     d = Deployment()
-    original = bootstrap._compose_core
+    from app.composition import system_cognition_configuration as composition
+
+    original = composition.compose_core_components
     pipelines: list[Any] = []
 
     def compose(*args: Any, **kwargs: Any) -> Any:
@@ -268,7 +270,7 @@ async def test_semantic_currentness_change_after_registration_reclaims_pipeline(
         d.publication = replace(d.publication, binding_revision=2, binding_generation=2)
         return core
 
-    monkeypatch.setattr(bootstrap, "_compose_core", compose)
+    monkeypatch.setattr(composition, "compose_core_components", compose)
     with pytest.raises(CoreConfigurationError, match="INITIALIZATION_FAILED"):
         await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert d.events.count("release") == 1
@@ -279,7 +281,9 @@ async def test_semantic_currentness_change_after_registration_reclaims_pipeline(
 @pytest.mark.asyncio
 async def test_compose_failure_after_pipeline_creation_reclaims_handle(monkeypatch: Any) -> None:
     d = Deployment()
-    original = bootstrap._compose_core
+    from app.composition import system_cognition_configuration as composition
+
+    original = composition.compose_core_components
     pipelines: list[Any] = []
 
     def compose(*args: Any, **kwargs: Any) -> Any:
@@ -288,7 +292,7 @@ async def test_compose_failure_after_pipeline_creation_reclaims_handle(monkeypat
         pipelines.append(core.cognition.speech.pipeline)
         raise RuntimeError("部分構築失敗")
 
-    monkeypatch.setattr(bootstrap, "_compose_core", compose)
+    monkeypatch.setattr(composition, "compose_core_components", compose)
     with pytest.raises(CoreConfigurationError):
         await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert pipelines[0]._closed
