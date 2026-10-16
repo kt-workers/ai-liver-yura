@@ -332,7 +332,7 @@ async def test_plan_production_configuration_and_feedback(
 
     monkeypatch.setattr(bootstrap, "GoalCommitmentStore", captured_goals)
     monkeypatch.setattr(component_factory, "ActivityExecutionAuthority", lambda: value.activity)
-    monkeypatch.setattr(bootstrap, "SystemRuntimeClock", lambda: value.clock)
+    monkeypatch.setattr(component_factory, "SystemRuntimeClock", lambda: value.clock)
     monkeypatch.setattr(
         bootstrap,
         "build_core_runtime",
