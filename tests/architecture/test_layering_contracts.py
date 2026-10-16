@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 
 from app.composition.system_cognition_configuration import CoreApplication
+from app.infrastructure import scheduling as legacy_scheduling
+from app.runtime import kernel
 from app.usecases.appraisal import DeepAppraisalInterpreter
 from app.usecases.body_motion_planning import BodyMotionPlanner
 from app.usecases.goal_planning import GoalPlanner
@@ -410,6 +412,12 @@ def test_application_services_have_one_canonical_owner() -> None:
     assert GoalPlanner.__module__ == "app.usecases.goal_planning"
     assert BodyMotionPlanner.__module__ == "app.usecases.body_motion_planning"
     assert not is_dataclass(CoreApplication)
+
+
+
+def test_legacy_and_canonical_kernel_public_types_are_identical() -> None:
+    for name in kernel.__all__:
+        assert getattr(legacy_scheduling, name) is getattr(kernel, name), name
 
 
 def test_moved_execution_files_parse_as_python_310() -> None:
