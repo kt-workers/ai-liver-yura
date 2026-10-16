@@ -7,9 +7,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
-from app.usecases.brain_executive import ExecutiveBrainModulePort as ExecutiveBrainModulePort
-from app.usecases.brain_executive import ExecutiveBrainWorkPayload as ExecutiveBrainWorkPayload
-from app.usecases.executive_binding import CoreExecutiveBinding as CoreExecutiveBinding
 from app.domain.appraisal import (
     AppraisalStateCommit,
     DecayPolicy,
@@ -42,6 +39,8 @@ from app.usecases.brain_appraisal import (
     AppraisalBrainWorkPayload,
     CoreAppraisalBinding,
 )
+from app.usecases.brain_executive import ExecutiveBrainModulePort as ExecutiveBrainModulePort
+from app.usecases.brain_executive import ExecutiveBrainWorkPayload as ExecutiveBrainWorkPayload
 from app.usecases.brain_input_meaning import InputMeaningBrainWorkPayload
 from app.usecases.brain_integration_runtime import (
     BrainIntegrationRuntime,
@@ -49,6 +48,7 @@ from app.usecases.brain_integration_runtime import (
     BrainIntegrationWorkOutcome,
     BrainWorkAdmission,
 )
+from app.usecases.executive_binding import CoreExecutiveBinding as CoreExecutiveBinding
 from app.usecases.ports.brain_work import BrainModuleWork
 from app.usecases.ports.cancellation import CancellationState
 

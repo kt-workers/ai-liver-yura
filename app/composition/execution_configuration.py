@@ -4,8 +4,6 @@ from dataclasses import dataclass, replace
 
 from app.composition.cognition import CoreCognitionDelivery
 from app.composition.execution import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
-from app.usecases.executive_evidence import CoreExecutiveEvidence as CoreExecutiveEvidence
-from app.usecases.executive_evidence import CoreExecutiveEvidenceReader as CoreExecutiveEvidenceReader
 from app.composition.input_reference_context import CoreInputReferenceContextBinding
 from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.activity_execution import ActivityExecutionCoordinator
@@ -29,6 +27,10 @@ from app.domain.plan_execution.coordinator import PlanExecutionContextPort, Plan
 from app.domain.plan_execution.owner import PlanExecutionOwner
 from app.domain.plan_execution.progress_contracts import PlanProgressContext
 from app.infrastructure.scheduling import RuntimeClock
+from app.usecases.executive_evidence import CoreExecutiveEvidence as CoreExecutiveEvidence
+from app.usecases.executive_evidence import (
+    CoreExecutiveEvidenceReader as CoreExecutiveEvidenceReader,
+)
 
 
 class _ExecutionEvidence:

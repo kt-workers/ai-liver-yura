@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from app.composition.cognition import CoreCognitionDelivery
 from app.composition.execution_configuration import CoreExecutionConfiguration
-from app.usecases.executive_binding import CoreExecutiveBinding as CoreExecutiveBinding
 from app.composition.executive_requirements import (
     CoreExecutiveRequirementsReader,
     CorePreconditionSourceReader,
@@ -32,6 +31,7 @@ from app.usecases.attention_binding import CoreAttentionBinding
 from app.usecases.autonomy import CoreAutonomyDelivery, GoalOwner
 from app.usecases.brain_appraisal import CoreAppraisalBinding
 from app.usecases.brain_integration_runtime import BrainIntegrationRuntime
+from app.usecases.executive_binding import CoreExecutiveBinding as CoreExecutiveBinding
 from app.usecases.input_reference_context import CoreInputReferenceContextBinding
 from app.usecases.memory_evidence import (
     CoreMemoryEvidenceConfiguration,
