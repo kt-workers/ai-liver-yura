@@ -168,10 +168,7 @@ async def test_terminal_observer_reclaims_early_user_without_competing_consumer(
             else:
                 release.set()
         if consume:
-            while True:
-                outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
-                if outcome.work_id == accepted.work_id:
-                    break
+            outcome = await next_outcome_matching(app.brain, work_id=accepted.work_id)
             status = outcome.status
         else:
             for _ in range(1000):
