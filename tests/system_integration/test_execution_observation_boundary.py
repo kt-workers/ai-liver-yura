@@ -8,10 +8,8 @@ from typing import Any
 
 import pytest
 
-from app.composition.execution_observation import (
-    SPEECH_OBSERVATION_POLICY,
-    project_speech_execution_observation,
-)
+from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
+from app.usecases.speech_observation import project_speech_execution_observation
 from app.domain.activity_execution import ActivityExecutionAuthority, ExecutionObservationProvenance
 from app.domain.contracts import ExecutionStatus, RevisionVector
 from app.domain.speech_runtime.contracts import (

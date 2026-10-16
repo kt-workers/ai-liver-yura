@@ -192,7 +192,7 @@ async def compose_core(
     config_ref: str = CORE_RESOURCE,
     resource_root: Path = ROOT,
 ) -> CoreApplication:
-    from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
+    from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
 
     owned = _OwnedResources()
     stage = CoreFailureCode.INVALID_SYSTEM_CONFIG

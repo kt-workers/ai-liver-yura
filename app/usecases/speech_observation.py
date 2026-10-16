@@ -1,13 +1,11 @@
-"""受理済みSpeech Presentationを汎用観測へ機械的に投影する。"""
+"""Speech PresentationのOwner snapshotを信頼済み実行観測へ投影する。"""
 
 from __future__ import annotations
 
+from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_SOURCE
 from app.domain.activity_execution.contracts import ExecutionEffectKind
 from app.domain.activity_execution.observation import (
-    ExecutionObservationIngressPolicy,
     ExecutionObservationProvenance,
-    ExecutionObservationSourceBinding,
-    ExecutionObservationSourceRule,
     ObservedExecutionEffectEvidence,
     TrustedExecutionObservation,
     observation_identity,
@@ -25,23 +23,6 @@ from app.domain.speech_runtime.contracts import (
 )
 from app.domain.speech_runtime.runtime import SpeechRuntime
 
-SPEECH_OBSERVATION_SOURCE = ExecutionObservationSourceBinding("speech-presentation-report", 1)
-SPEECH_OBSERVATION_RULE = ExecutionObservationSourceRule(
-    SPEECH_OBSERVATION_SOURCE,
-    (
-        ExecutionStatus.OBSERVABLE,
-        ExecutionStatus.COMPLETED,
-        ExecutionStatus.CANCELLED,
-        ExecutionStatus.FAILED,
-    ),
-    ("text-presentation", "audio-presentation-started"),
-    terminal_requires_prior_effect=True,
-)
-SPEECH_OBSERVATION_POLICY = ExecutionObservationIngressPolicy(
-    "speech-execution-observation",
-    1,
-    (SPEECH_OBSERVATION_RULE,),
-)
 _TERMINALS = {
     SpeechPresentationReportStatus.COMPLETED: (
         CandidateLifecycle.COMPLETED,
@@ -198,3 +179,4 @@ async def project_speech_execution_observation(
         details,
         effects,
     )
+

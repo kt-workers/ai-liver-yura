@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from app.composition.execution_observation import (
+from app.domain.activity_execution.speech_observation import (
     SPEECH_OBSERVATION_POLICY,
     SPEECH_OBSERVATION_SOURCE,
 )
