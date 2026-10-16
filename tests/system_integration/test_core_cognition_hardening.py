@@ -188,16 +188,15 @@ async def test_selected_old_source_keeps_provenance_with_new_current_appraisal(
             outcome = await next_outcome_matching(app.brain, trace_id="trace-1", module=module)
             assert outcome.status is BrainWorkStatus.COMPLETED, outcome
         app.cognition.submit_input(admission(app, event_id="event-2", trace_id="trace-2"))
-        outcomes = []
         for module in (
             BrainIntegrationModule.INPUT_MEANING,
             BrainIntegrationModule.APPRAISAL,
-            BrainIntegrationModule.EXECUTIVE,
         ):
             outcome = await next_outcome_matching(app.brain, trace_id="trace-2", module=module)
             assert outcome.status is BrainWorkStatus.COMPLETED, outcome
-            outcomes.append(outcome)
-        decision = outcomes[-1]
+        decision = await next_outcome_matching(
+            app.brain, trace_id="trace-1", module=BrainIntegrationModule.EXECUTIVE
+        )
         assert decision.status is BrainWorkStatus.COMPLETED, outcomes
         assert decision.trace_id == "trace-1"
         assert decision.result.candidate.source_event_ids == ("event-1",)
@@ -343,7 +342,7 @@ async def test_concurrent_appraisals_do_not_share_a_stale_state_revision(
             committed.candidate.source_event_ids
             == app.brain.trace(successful.trace_id).source_event_ids
         )
-        assert all(o.trace_id in ("trace-1", "trace-2") for o in outcomes)
+        assert all(o.trace_id in ("trace-1", "trace-2") for o in appraisals)
     finally:
         await bootstrap.stop_core(app)
 
