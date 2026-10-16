@@ -258,9 +258,7 @@ async def test_semantic_currentness_change_after_registration_reclaims_pipeline(
     monkeypatch: Any,
 ) -> None:
     d = Deployment()
-    from app.composition import system_cognition_configuration as composition
-
-    original = composition.compose_core_components
+    from app.bootstrap.core_components import compose_core_components as original
     pipelines: list[Any] = []
 
     def compose(*args: Any, **kwargs: Any) -> Any:
@@ -270,7 +268,9 @@ async def test_semantic_currentness_change_after_registration_reclaims_pipeline(
         d.publication = replace(d.publication, binding_revision=2, binding_generation=2)
         return core
 
-    monkeypatch.setattr(composition, "compose_core_components", compose)
+    monkeypatch.setattr(
+        "app.composition.system_cognition_configuration.compose_core_components", compose
+    )
     with pytest.raises(CoreConfigurationError, match="INITIALIZATION_FAILED"):
         await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert d.events.count("release") == 1
