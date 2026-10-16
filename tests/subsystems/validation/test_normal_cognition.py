@@ -241,7 +241,7 @@ async def test_repeated_caller_cancel_waits_for_cleanup(monkeypatch: pytest.Monk
 async def test_missing_cognition_is_blocked_and_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
     runner, request, fixture, _, _, target = setup(monkeypatch)
     app, _ = application(monkeypatch)
-    no_cognition = replace(app, cognition=None)
+    no_cognition = replace(app.core, cognition=None)
     event = admission(app)
     fixture = replace(fixture, typed_inputs=_project(event))
     target = normal_cognition_target(
