@@ -57,7 +57,7 @@ def compose_core_components(
     prepared_context: CoreInputReferenceContextBinding | None = None,
     prepared_clock: RuntimeClock | None = None,
 ) -> CoreComponents:
-    from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
+    from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
 
     activities = prepared_activities or (
         ActivityExecutionAuthority(observation_policy=SPEECH_OBSERVATION_POLICY)
