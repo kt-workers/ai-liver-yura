@@ -274,7 +274,6 @@ def _load_core_config(source: str | bytes) -> CoreConfig:
     )
 
 
-
 def load_core_config(source: str | bytes) -> CoreConfig:
     """正本設定を読み、契約で定義された構成エラーをそのまま公開する。"""
     return _load_core_config(source)
