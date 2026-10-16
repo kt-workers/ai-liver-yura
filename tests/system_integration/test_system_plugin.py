@@ -44,8 +44,8 @@ from tests.domain.plugin_registry.test_plugin_registry_adjacent import (
     available_registry,
     grant_snapshot,
 )
-from tests.helpers.executive_requirements import fence_clock, make_authority
 from tests.helpers.brain_outcomes import next_outcome_matching
+from tests.helpers.executive_requirements import fence_clock, make_authority
 from tests.system_integration.test_core_cognition import admission, application
 from tests.system_integration.test_early_boot import work
 
