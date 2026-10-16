@@ -3,8 +3,8 @@ from datetime import datetime, timedelta, timezone
 
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
-from app.infrastructure.scheduling import (
-    FakeRuntimeClock,
+from app.infrastructure.scheduling import FakeRuntimeClock
+from app.runtime.kernel import (
     LaneErrorPolicy,
     QueuePolicy,
     RuntimeHealth,
@@ -12,11 +12,7 @@ from app.infrastructure.scheduling import (
     RuntimeWorkItem,
     WorkDisposition,
     WorkPriority,
-)
-from app.infrastructure.scheduling import (
     RuntimeCoordinator as KernelRuntimeCoordinator,
-)
-from app.infrastructure.scheduling import (
     RuntimeLanePolicy as KernelRuntimeLanePolicy,
 )
 
