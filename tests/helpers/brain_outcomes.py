@@ -3,12 +3,34 @@
 from __future__ import annotations
 
 import asyncio
+from weakref import WeakKeyDictionary
 
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.usecases.brain_integration_runtime import (
     BrainIntegrationRuntime,
     BrainIntegrationWorkOutcome,
 )
+
+
+_BUFFERS: WeakKeyDictionary[
+    BrainIntegrationRuntime, list[BrainIntegrationWorkOutcome]
+] = WeakKeyDictionary()
+
+
+def _matches(
+    outcome: BrainIntegrationWorkOutcome,
+    *,
+    trace_id: str | None,
+    module: BrainIntegrationModule | None,
+    work_id: str | None,
+    status: BrainWorkStatus | None,
+) -> bool:
+    return (
+        (trace_id is None or outcome.trace_id == trace_id)
+        and (module is None or outcome.module is module)
+        and (work_id is None or outcome.work_id == work_id)
+        and (status is None or outcome.status is status)
+    )
 
 
 async def next_outcome_matching(
@@ -20,15 +42,17 @@ async def next_outcome_matching(
     status: BrainWorkStatus | None = None,
     timeout: float = 2.0,
 ) -> BrainIntegrationWorkOutcome:
-    """到着順を仮定せず、指定した識別情報に一致する終端だけを返す。"""
+    """到着順を仮定せず、識別情報に一致する終端を順序を保って返す。"""
+    buffered = _BUFFERS.setdefault(brain, [])
+    for index, item in enumerate(buffered):
+        if _matches(
+            item, trace_id=trace_id, module=module, work_id=work_id, status=status
+        ):
+            return buffered.pop(index)
     while True:
         outcome = await asyncio.wait_for(brain.next_outcome(), timeout)
-        if trace_id is not None and outcome.trace_id != trace_id:
-            continue
-        if module is not None and outcome.module is not module:
-            continue
-        if work_id is not None and outcome.work_id != work_id:
-            continue
-        if status is not None and outcome.status is not status:
-            continue
-        return outcome
+        if _matches(
+            outcome, trace_id=trace_id, module=module, work_id=work_id, status=status
+        ):
+            return outcome
+        buffered.append(outcome)
