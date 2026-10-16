@@ -58,7 +58,7 @@ from app.infrastructure.llm.connections import route_llm_connections
 from app.infrastructure.scheduling import RuntimeClock
 from app.usecases.core_lifecycle import CoreActivationError, CoreApplicationLifecycle, stop_core
 from app.usecases.lifecycle import ApplicationLifecycle
-from app.usecases.resource_cleanup import OwnedResourceLedger, OwnedResourcesCloseError
+from app.usecases.resource_cleanup import OwnedResourceLedger
 from app.usecases.task_cleanup import reap_owned_task
 
 if TYPE_CHECKING:
