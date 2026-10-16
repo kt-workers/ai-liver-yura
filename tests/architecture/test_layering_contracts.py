@@ -305,6 +305,25 @@ def test_appraisal_uses_read_only_cancellation_and_shared_clock_contract() -> No
     assert "app.domain.contracts.time.Clock" in _imports("app/usecases/attention_binding.py")
 
 
+
+def test_core_assembly_uses_application_persistence_bindings_not_adapters() -> None:
+    for path in ("app/application.py", "app/bootstrap/core_components.py"):
+        imports = _imports(path)
+        assert "app.usecases.goal_persistence" in imports
+        assert "app.usecases.memory_persistence" in imports
+        assert "app.infrastructure.persistence.goal_binding" not in imports
+        assert "app.infrastructure.persistence.memory_binding" not in imports
+
+
+def test_cognition_imports_input_work_from_usecase_not_boot_entrypoint() -> None:
+    imports = _imports("app/composition/cognition.py")
+    assert "app.usecases.brain_input_meaning.InputMeaningBrainWorkPayload" in imports
+    assert not any(
+        module == "app.application" or module.startswith("app.application.")
+        for module in imports
+    )
+
+
 def test_appraisal_module_preserves_wide_port_contract() -> None:
     tree = _tree("app/composition/cognition.py")
     owner = next(
