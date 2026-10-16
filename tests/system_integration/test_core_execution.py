@@ -16,6 +16,7 @@ from app.domain.activity_execution import (
     ExecutionEffectUncertainty,
     ExecutionPreflightSnapshot,
 )
+from app.domain.brain_integration import BrainIntegrationModule
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus
 from app.domain.goal_planning import GoalPlanningAuthority
@@ -28,6 +29,7 @@ from app.infrastructure.scheduling.clock import FakeRuntimeClock
 from app.usecases.brain_integration_runtime import BrainIntegrationWorkOutcome
 from tests.domain.activity_binding.test_binding import direct_fixture
 from tests.domain.executive.test_executive import NOW
+from tests.helpers.brain_outcomes import next_outcome_matching
 from tests.helpers.executive_requirements import fence_clock, make_authority
 from tests.system_integration.test_core_cognition import application
 from tests.system_integration.test_early_boot import work
@@ -145,15 +147,27 @@ async def test_direct_actual_execution_returns_to_existing_cognition(
             identity = next(iter(delivery._deliveries))
             assert app.brain.cancel(identity, "cancel")
             app.brain.cancel(identity, "cancel-again")
-        outcomes = []
-        for _ in range(3):
-            outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
-            assert outcome.status.value in {"completed", "cancelled"}, outcome
-            outcomes.append(outcome)
+        execution_outcome = await next_outcome_matching(
+            app.brain,
+            trace_id=parent.envelope.trace_id,
+            module=BrainIntegrationModule.ACTIVITY_EXECUTION,
+        )
+        appraisal_outcome = await next_outcome_matching(
+            app.brain,
+            trace_id=parent.envelope.trace_id,
+            module=BrainIntegrationModule.APPRAISAL,
+        )
+        executive_outcome = await next_outcome_matching(
+            app.brain,
+            trace_id=parent.envelope.trace_id,
+            module=BrainIntegrationModule.EXECUTIVE,
+        )
+        outcomes = [execution_outcome, appraisal_outcome, executive_outcome]
+        assert all(o.status.value in {"completed", "cancelled"} for o in outcomes), outcomes
         assert sum(o.status.value == "cancelled" for o in outcomes) == (result_kind == "cancelled")
         assert len(calls) == (0 if result_kind == "unavailable" else 1)
         assert not delivery._deliveries
-        record = next(o.result for o in outcomes if o.module.value == "activity_execution")
+        record = execution_outcome.result
         if result_kind == "cancelled":
             record = app.activities.snapshot(identity)
         assert record is not None
@@ -175,7 +189,7 @@ async def test_direct_actual_execution_returns_to_existing_cognition(
         assert not activity._signals
         assert app.goals.snapshot() == goals_before
         assert app.brain.trace(parent.envelope.trace_id).root_trigger_id == "original-root"
-        assert outcomes[-1].result.candidate.source_event_ids
+        assert executive_outcome.result.candidate.source_event_ids
         assert record.bindings[0].capability_id == decision.activity_bindings[0].value.capability_id
         clock.advance(1)
         delivery.accept_decision(parent, decision)
@@ -849,7 +863,7 @@ async def test_delivery_reclamation_before_fact_and_rejected_resubmit(
             assert app.brain.cancel(identity, "試験用の開始前取消")
         elif terminal == "superseded":
             assert app.brain.supersede(identity, "試験用の開始前置換")
-        outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        outcome = await next_outcome_matching(app.brain, work_id=identity)
         assert outcome.status.value == terminal
         assert not calls
         assert not delivery._deliveries
