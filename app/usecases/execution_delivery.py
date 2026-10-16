@@ -45,13 +45,13 @@ from app.domain.plan_execution.owner import (
     PlanExecutionStatus,
 )
 from app.infrastructure.scheduling import CancellationToken, RuntimeClock
-from app.usecases.input_reference_context import CoreInputReferenceContextBinding
 from app.usecases.brain_integration_runtime import (
     BrainIntegrationRuntime,
     BrainIntegrationWork,
     BrainIntegrationWorkOutcome,
     BrainWorkAdmission,
 )
+from app.usecases.input_reference_context import CoreInputReferenceContextBinding
 
 
 
