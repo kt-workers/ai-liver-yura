@@ -148,14 +148,14 @@ def normal_cognition_target(
         complete = False
         # module別の段数表は持たず、実際のtraceの未観測workを追う。
         # 有限な通常認知module集合とLabPolicyの双方で観測数を制限する。
-        for _ in range(min(len(BrainIntegrationModule), context.policy.max_intervals)):
+        expected_limit = min(len(BrainIntegrationModule), context.policy.max_intervals)
+        while len(observed) < expected_limit:
             outcome = await context.invoke_product("cognition.outcome", app.brain.next_outcome)
+            if outcome.trace_id != event.trace_id:
+                continue
             trace = app.brain.trace(event.trace_id)
-            if (
-                outcome.trace_id != event.trace_id
-                or outcome.work_id in observed
-                or outcome.work_id not in {i.work_id for i in trace.intervals}
-            ):
+            expected_work_ids = {i.work_id for i in trace.intervals}
+            if outcome.work_id in observed or outcome.work_id not in expected_work_ids:
                 raise ValueError("通常認知の公開outcomeとtraceが一致しません")
             observed.add(outcome.work_id)
             outputs.append(
