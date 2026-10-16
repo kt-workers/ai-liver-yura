@@ -15,7 +15,8 @@ SOURCE = Path("config/core.yaml").read_text()
 
 def test_canonical_references_are_explicit_and_frozen() -> None:
     config = load_core_config(SOURCE)
-    assert config.config_id == "yura.core"
+    assert config.schema_id == "yura.core-runtime.production-config.v1"
+    assert config.config_id == "yura.core-runtime.production"
     assert config.config_revision == config.composition_revision == 1
     for name in ("appraisal", "executive"):
         ref = getattr(config, name + "_config")
