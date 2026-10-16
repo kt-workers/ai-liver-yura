@@ -275,5 +275,8 @@ def _load_core_config(source: str | bytes) -> CoreConfig:
 
 
 def load_core_config(source: str | bytes) -> CoreConfig:
-    """正本設定を読み、契約で定義された構成エラーをそのまま公開する。"""
-    return _load_core_config(source)
+    """本番設定の内部例外を公開境界の診断へ正規化する。"""
+    try:
+        return _load_core_config(source)
+    except Exception:
+        raise ValueError("本体Runtimeの本番設定を読み込めません") from None
