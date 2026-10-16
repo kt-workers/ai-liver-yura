@@ -54,7 +54,6 @@ from app.usecases.brain_integration_runtime import (
 from app.usecases.input_reference_context import CoreInputReferenceContextBinding
 
 
-
 @dataclass(frozen=True, slots=True)
 class ExecutionFeedbackRetentionPolicy:
     """current cognition向けの実行事実参照数を明示する。"""
