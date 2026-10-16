@@ -281,9 +281,7 @@ async def test_semantic_currentness_change_after_registration_reclaims_pipeline(
 @pytest.mark.asyncio
 async def test_compose_failure_after_pipeline_creation_reclaims_handle(monkeypatch: Any) -> None:
     d = Deployment()
-    from app.composition import system_cognition_configuration as composition
-
-    original = composition.compose_core_components
+    from app.bootstrap.core_components import compose_core_components as original
     pipelines: list[Any] = []
 
     def compose(*args: Any, **kwargs: Any) -> Any:
@@ -292,7 +290,9 @@ async def test_compose_failure_after_pipeline_creation_reclaims_handle(monkeypat
         pipelines.append(core.cognition.speech.pipeline)
         raise RuntimeError("部分構築失敗")
 
-    monkeypatch.setattr(composition, "compose_core_components", compose)
+    monkeypatch.setattr(
+        "app.composition.system_cognition_configuration.compose_core_components", compose
+    )
     with pytest.raises(CoreConfigurationError):
         await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert pipelines[0]._closed
