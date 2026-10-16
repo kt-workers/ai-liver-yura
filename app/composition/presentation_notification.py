@@ -14,7 +14,6 @@ from app.composition.input_reference_context import (
     PresentationReferenceCapacityError,
     PresentationReferenceStaleError,
 )
-from app.usecases.speech_feedback import SpeechFactDeliveryDisposition as Delivery
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.activity_execution.observation import (
     ExecutionObservationProvenance,
@@ -42,6 +41,7 @@ from app.domain.input_gateway import (
 from app.domain.input_gateway.normalizer import InputNormalizer
 from app.usecases.attention import AttentionResponseSettlementCoordinator
 from app.usecases.brain_integration_runtime import BrainIntegrationWork, BrainWorkAdmission
+from app.usecases.speech_feedback import SpeechFactDeliveryDisposition as Delivery
 
 if TYPE_CHECKING:
     from app.composition.cognition import CoreCognitionDelivery
