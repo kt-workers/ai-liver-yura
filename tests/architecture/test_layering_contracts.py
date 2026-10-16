@@ -5,9 +5,17 @@ from __future__ import annotations
 import ast
 import subprocess
 import sys
+from dataclasses import is_dataclass
 from pathlib import Path
 
 import pytest
+
+from app.composition.system_cognition_configuration import CoreApplication
+from app.usecases.appraisal import DeepAppraisalInterpreter
+from app.usecases.body_motion_planning import BodyMotionPlanner
+from app.usecases.goal_planning import GoalPlanner
+from app.usecases.input_meaning import InputMeaningInterpreter
+from app.usecases.ports.llm import LLMRolePort
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -370,6 +378,32 @@ def test_persistence_usecases_do_not_import_storage_drivers() -> None:
             module.split(".")[0] in {"psycopg", "psycopg_pool", "openai", "PyQt6"}
             for module in imports
         ), path
+
+
+
+def test_domain_dependency_direction_for_core_contract_packages() -> None:
+    violations: list[str] = []
+    for package in ("appraisal", "body_motion_planning", "goal_planning", "input_meaning"):
+        folder = ROOT / "app" / "domain" / package
+        for path in sorted(folder.rglob("*.py")):
+            relative = path.relative_to(ROOT).as_posix()
+            for module in _imports(relative):
+                if module == "app" or (
+                    module.startswith("app.")
+                    and module != "app.domain"
+                    and not module.startswith("app.domain.")
+                ):
+                    violations.append(f"{relative}: {module}")
+    assert not violations, "Domainから外側への逆依存:\n" + "\n".join(violations)
+
+
+def test_application_services_have_one_canonical_owner() -> None:
+    assert DeepAppraisalInterpreter.__module__ == "app.usecases.appraisal"
+    assert InputMeaningInterpreter.__module__ == "app.usecases.input_meaning"
+    assert LLMRolePort.__module__ == "app.usecases.ports.llm"
+    assert GoalPlanner.__module__ == "app.usecases.goal_planning"
+    assert BodyMotionPlanner.__module__ == "app.usecases.body_motion_planning"
+    assert not is_dataclass(CoreApplication)
 
 
 def test_moved_execution_files_parse_as_python_310() -> None:
