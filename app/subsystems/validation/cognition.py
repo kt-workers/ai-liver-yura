@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from weakref import WeakKeyDictionary
 
 from app.application import CoreComponents, start_core, stop_core
+from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.domain.appraisal import AppraisalStateCommit
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.contracts.common import JsonValue
@@ -36,7 +37,7 @@ class NormalCognitionLabCase:
         return _project(self.admission)
 
 
-NormalCognitionApplicationFactory = Callable[[], CoreComponents]
+NormalCognitionApplicationFactory = Callable[[], CoreComponents | CoreRuntimeApplication]
 
 
 def _result_projection(result: object) -> JsonValue:
@@ -67,11 +68,28 @@ def _status(status: BrainWorkStatus, result: object) -> RunStatus:
 class _IterationApplication:
     """runに登録する終了処理は1件とし、現在iterationの資源だけを保持する。"""
 
-    current: CoreComponents | None = None
+    current: CoreComponents | CoreRuntimeApplication | None = None
+
+    async def start(self) -> None:
+        """起動状態は正式Runtime境界に委譲し、裸の構成値は互換入口へ渡す。"""
+        if isinstance(self.current, CoreRuntimeApplication):
+            await self.current.start()
+        elif isinstance(self.current, CoreComponents):
+            await start_core(self.current)
+        else:
+            raise ValueError("本体の起動対象が未登録です")
 
     async def stop(self) -> None:
-        if self.current is not None:
-            await stop_core(self.current)
+        """正式Runtimeの停止と、構成DTOの停止を混同しない。"""
+        current = self.current
+        if current is None:
+            return
+        try:
+            if isinstance(current, CoreRuntimeApplication):
+                await current.stop()
+            else:
+                await stop_core(current)
+        finally:
             self.current = None
 
 
@@ -119,14 +137,14 @@ def normal_cognition_target(
         if owner.current is not None:
             raise ValueError("前iterationのアプリケーションが未停止です")
         app = application_factory()
-        if not isinstance(app, CoreComponents):
-            raise ValueError("factoryは正規の構成済み要素を返す必要があります")
+        if not isinstance(app, (CoreComponents, CoreRuntimeApplication)):
+            raise ValueError("factoryは正規の本体または構成済み要素を返す必要があります")
         owner.current = app
         stop = owner.stop
         if app.cognition is None:
             await stop()
             return TargetObservation(RunStatus.BLOCKED_UPSTREAM, Gate.NOT_RUN, None)
-        await context.invoke_product("cognition.start", lambda: start_core(app))
+        await context.invoke_product("cognition.start", owner.start)
 
         async def submit() -> object:
             assert app.cognition is not None
