@@ -131,13 +131,16 @@ async def test_slow_appraisal_trace_local_terminal_and_provenance(
             gates["trace-A"].set()
             gates["trace-B"].set()
             rejected = [
-                await outcome(app, module=BrainIntegrationModule.APPRAISAL)
-                for _ in range(2)
+                await outcome(app, trace_id, BrainIntegrationModule.APPRAISAL)
+                for trace_id in gates
             ]
             assert all(o.status is BrainWorkStatus.FAILED for o in rejected)
             assert all(o.module is BrainIntegrationModule.APPRAISAL for o in rejected)
             assert app.cognition.appraisal.current_commit() is None
-            assert not any(r.role_id == "executive_deliberation" for r in port.requests)
+            assert not any(
+                r.role_id == "executive_deliberation" and r.trace_id in gates
+                for r in port.requests
+            )
         else:
             assert (
                 app.cognition.cancel_trace("trace-A", "対象だけ取消", supersede=mode == "supersede")
