@@ -1,5 +1,5 @@
-schema_id: yura.core-runtime.production-config.v1
-config_id: yura.core-runtime.production
+schema_id: yura.core-config.v1
+config_id: yura.core
 config_revision: 1
 activation_id: yura.core.explicit
 composition_id: yura.system.core
@@ -54,11 +54,11 @@ input_meaning:
       backoff_multiplier: 1.0
       max_backoff_seconds: 1.0
 scheduler:
-  policy_id: yura.core-runtime.scheduler
+  policy_id: yura.core.scheduler
   policy_revision: 1
   max_priority_burst: 8
 integration:
-  policy_id: yura.core-runtime.integration
+  policy_id: yura.core.integration
   policy_revision: 1
   lane_policies:
     - lane_id: foreground_interaction
@@ -86,7 +86,7 @@ integration:
       cancellation_grace_seconds: 0.5
       error_isolation: isolate
 shutdown:
-  policy_id: yura.core-runtime.shutdown
+  policy_id: yura.core.shutdown
   policy_revision: 1
   in_flight_settle_grace_seconds: 2.0
   final_persistence_grace_seconds: 0.0
