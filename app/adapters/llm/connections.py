@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from app.adapters.llm.appraisal import appraisal_openai_role_config
+from app.adapters.llm.production import UnavailableLLMRolePort
 from app.adapters.llm.openai_responses import (
     OpenAIResponsesAdapter,
     OpenAIResponsesModelPolicy,
@@ -37,7 +38,11 @@ class OpenAIResponsesConnectionAdapter(LLMConnectionAdapter):
         configs = tuple(_role_config(descriptor, policies) for descriptor in descriptors)
         api_key = os.environ.get("YURA_OPENAI_API_KEY")
         if not api_key:
-            raise ValueError("YURA_OPENAI_API_KEYが設定されていません")
+            # 外部Provider未接続でも必須Brainの構成は維持し、呼出時に型付き失敗を返す。
+            async def close_unavailable() -> None:
+                return None
+
+            return UnavailableLLMRolePort(descriptors), close_unavailable
         from openai import AsyncOpenAI
 
         client = AsyncOpenAI(api_key=api_key)
