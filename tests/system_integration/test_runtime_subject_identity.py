@@ -64,7 +64,7 @@ def test_production_identity_single_load(tmp_path: Path, alternate: bool, rename
         == document["definition_revision"]
     )
     assert project_character_definition(loaded).language.character_id == identity.character_id
-    character_path.write_text("不正な置換")
+    config_path.write_text("不正な置換")
     assert app.runtime_subject_identity is identity
 
 
