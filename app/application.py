@@ -7,10 +7,7 @@ import signal
 import sys
 import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
-from types import MappingProxyType
-from typing import TYPE_CHECKING
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.connections import production_llm_connection_adapters
@@ -18,6 +15,11 @@ from app.adapters.llm.production import create_openai_port_from_environment
 from app.bootstrap.core_components import CoreComponents as CoreComponents
 from app.bootstrap.core_components import compose_core_components
 from app.bootstrap.runtime_application import CoreRuntimeApplication
+from app.bootstrap.runtime_owners import (
+    CoreRuntimeOwners as CoreRuntimeOwners,
+    CoreSpeechOwners as CoreSpeechOwners,
+    default_core_runtime_owners as default_core_runtime_owners,
+)
 from app.composition.cognition_configuration import CoreCognitionConfiguration
 from app.composition.speech_production_configuration import SpeechProductionInputs
 from app.composition.system_cognition_configuration import (
@@ -43,7 +45,6 @@ from app.domain.input_meaning.interpreter import descriptor
 from app.domain.llm import LLMRoleDescriptor
 from app.domain.memory_reflection.llm_roles import proposal_descriptor, support_descriptor
 from app.domain.plugin_registry import PluginRegistryAuthority
-from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
 from app.infrastructure.llm.connection_registry_factory import LLMConnectionAdapter
 from app.infrastructure.persistence import PostgresPersistenceRuntime
 from app.infrastructure.scheduling import RuntimeClock, SystemRuntimeClock
@@ -65,57 +66,6 @@ from app.usecases.ports.llm import LLMRolePort
 from app.usecases.task_cleanup import reap_owned_task as _reap_cleanup
 
 _compose_core = compose_core_components
-
-if TYPE_CHECKING:
-    from app.composition.speech_deployment import SpeechDeploymentRegistry
-
-
-@dataclass(frozen=True, slots=True)
-class CoreSpeechOwners:
-    """Speech有効時だけ起動rootへ明示注入する既存の本番Owner集合。"""
-
-    semantic_owner: SpeechSemanticPolicyOwner
-    memory: CoreMemoryPersistenceBinding
-    registry: SpeechDeploymentRegistry
-
-
-@dataclass(frozen=True, slots=True)
-class CoreRuntimeOwners:
-    """本体起動rootが生成又は借用する既存Runtime Ownerの入力。"""
-
-    registry: PluginRegistryAuthority
-    precondition_router: PreconditionSourceRouter
-    precondition_bindings: tuple[PreconditionSourceBinding, ...]
-    activity_bindings: Mapping[str, ActivityBindingAuthority]
-    fast_rules: tuple[DeterministicAppraisalRule, ...]
-    speech: CoreSpeechOwners | None = None
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.registry, PluginRegistryAuthority) or not isinstance(
-            self.precondition_router, PreconditionSourceRouter
-        ):
-            raise ValueError("本体起動には既存Runtime Ownerの明示入力が必要です")
-        object.__setattr__(self, "precondition_bindings", tuple(self.precondition_bindings))
-        object.__setattr__(self, "fast_rules", tuple(self.fast_rules))
-        object.__setattr__(
-            self,
-            "activity_bindings",
-            MappingProxyType(dict(self.activity_bindings)),
-        )
-        if self.speech is not None and not isinstance(self.speech, CoreSpeechOwners):
-            raise ValueError("Speech起動には既存Speech Ownerの明示入力が必要です")
-
-
-def default_core_runtime_owners() -> CoreRuntimeOwners:
-    """外部能力を補作せず、空の既存Owner集合を新runへ供給する。"""
-    return CoreRuntimeOwners(
-        registry=PluginRegistryAuthority(),
-        precondition_router=PreconditionSourceRouter(()),
-        precondition_bindings=(),
-        activity_bindings={},
-        fast_rules=(),
-    )
-
 
 def build_core_runtime(
     config_path: Path | None = None, *, cognition: CoreCognitionConfiguration | None = None
