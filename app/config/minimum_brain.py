@@ -8,7 +8,9 @@ from math import isfinite
 import yaml
 from yaml.nodes import MappingNode
 
-from app.domain.brain_integration import BrainIntegrationModule, BrainIntegrationRuntimePolicy
+from app.domain.brain_integration import BrainIntegrationModule
+from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
+from app.usecases.brain_integration_runtime import BrainIntegrationRuntimePolicy
 from app.domain.input_meaning import InputMeaningAcceptancePolicy, InputMeaningPolicy, PrimaryIntent
 from app.domain.llm import (
     LLMExecutionPolicy,
@@ -22,7 +24,6 @@ from app.runtime.kernel import (
     RuntimeLanePolicy,
     RuntimeSchedulerPolicy,
 )
-from app.runtime.shutdown import RuntimeShutdownPolicy
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +38,7 @@ class MinimumBrainProductionConfig:
     input_meaning_policy: InputMeaningPolicy
     scheduler_policy: RuntimeSchedulerPolicy
     integration_policy: BrainIntegrationRuntimePolicy
-    shutdown_policy: RuntimeShutdownPolicy
+    shutdown_policy: ApplicationShutdownPolicy
 
 
 class _StrictLoader(yaml.SafeLoader):
