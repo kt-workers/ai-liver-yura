@@ -50,3 +50,16 @@ def test_core_components_reject_partial_brain_registration() -> None:
     source = (ROOT / "app/bootstrap/core_components.py").read_text()
     assert "統合本体には認知・主観評価・注意・判断の構成が必須" in source
     assert "brain.register_module(BrainIntegrationModule.INPUT_MEANING, bridge)" not in source
+
+def test_no_resources_directory_and_settings_are_canonical() -> None:
+    assert not (ROOT / "resources").exists()
+    for path in (
+        "config/core.yaml",
+        "config/appraisal.yaml",
+        "config/executive.yaml",
+        "config/character/yura.yaml",
+        "config/user.yaml",
+        "config/profiles/speech/conservative.yaml",
+        "config/gui_admin.yaml",
+    ):
+        assert (ROOT / path).is_file()
