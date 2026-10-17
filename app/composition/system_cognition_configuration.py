@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.bootstrap.core_components import compose_core_components
 from app.composition.cognition_configuration import CoreCognitionConfiguration
-from app.usecases.input_reference_context import CoreInputReferenceContextBinding
 from app.composition.speech_production_configuration import (
     SpeechComponentProvenance,
     SpeechProductionInputs,
@@ -57,6 +56,7 @@ from app.infrastructure.llm.connection_registry_factory import (
 from app.infrastructure.llm.connections import route_llm_connections
 from app.infrastructure.scheduling import RuntimeClock
 from app.usecases.core_lifecycle import CoreActivationError, CoreApplicationLifecycle, stop_core
+from app.usecases.input_reference_context import CoreInputReferenceContextBinding
 from app.usecases.lifecycle import ApplicationLifecycle
 from app.usecases.resource_cleanup import OwnedResourceLedger
 from app.usecases.task_cleanup import reap_owned_task
