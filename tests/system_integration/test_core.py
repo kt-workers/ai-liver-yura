@@ -9,7 +9,9 @@ import pytest
 from app.application import build_core
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.executive import GoalTransitionOperation
-from app.domain.llm import LLMConnectionConfig, LLMRoleDescriptor, LLMRolePort
+from app.config.llm_connections import LLMConnectionConfig
+from app.domain.llm import LLMRoleDescriptor
+from app.usecases.ports.llm import LLMRolePort
 from tests.composition.test_system_cognition_configuration import parameters
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.helpers.brain_outcomes import next_outcome_matching
