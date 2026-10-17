@@ -8,6 +8,7 @@ from typing import Any, cast
 import pytest
 
 from app.application import CoreComponents, stop_core
+from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.domain.executive import GoalTransitionOperation
 from app.subsystems.validation import cognition as cognition_module
 from app.subsystems.validation.body import _project
@@ -241,7 +242,7 @@ async def test_repeated_caller_cancel_waits_for_cleanup(monkeypatch: pytest.Monk
 async def test_missing_cognition_is_blocked_and_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
     runner, request, fixture, _, _, target = setup(monkeypatch)
     app, _ = application(monkeypatch)
-    no_cognition = replace(app.core, cognition=None)
+    no_cognition = CoreRuntimeApplication(replace(app.core, cognition=None))
     event = admission(app)
     fixture = replace(fixture, typed_inputs=_project(event))
     target = normal_cognition_target(
