@@ -95,45 +95,6 @@ jobs:
           echo "DOC_REFERENCES"
           grep -RIlE 'app[.]composition|resources/|[sS]2' docs --include='*.md' || true
 
-  one-time-import-repair:
-    name: one-time-import-repair
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.number == 735 && github.event.pull_request.head.repo.full_name == github.repository }}
-    needs: resolve-pr-identity
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - name: 対象ブランチを取得
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.resolve-pr-identity.outputs.head_sha }}
-          persist-credentials: true
-      - name: Python 3.10.5を準備
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version-file: .python-version
-      - name: lock済みRuffでimport順だけ修正
-        run: |
-          python -m pip install "ruff==0.16.5"
-          python -m ruff check --select I --fix app tests
-          git diff --check
-      - name: 差分がある場合だけ同一ブランチへ反映
-        env:
-          EXPECTED_HEAD_SHA: ${{ needs.resolve-pr-identity.outputs.head_sha }}
-          BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: |
-          test "$BRANCH" = "feature/734-clean-architecture-rebuild"
-          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
-          if git diff --quiet; then
-            echo "追加のimport修正なし"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app tests
-          git commit -m "style: import順をPython 3.10.5向けに整える"
-          git push origin "HEAD:refs/heads/$BRANCH"
-
   quality:
     name: quality
     needs: resolve-pr-identity

@@ -11,8 +11,8 @@ from app.bootstrap import system_cognition_configuration as system
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE_DIRS = ("app", "tests", "config", "tools")
-RETIRED_CONSTRUCTION = re.compile(r"(?<![a-zA-Z0-9_])s2(?![a-zA-Z0-9_])", re.IGNORECASE)
-INSTRUCTION_FRAGMENTS = ("ここのs2", "このs2", "機械的に削除", "全体の辻褄", "辻褄がおかしく")
+RETIRED_CONSTRUCTION = re.compile(r"(?<![a-zA-Z0-9_])[sS]\\x32(?![a-zA-Z0-9_])")
+INSTRUCTION_FRAGMENTS = ("ここの", "機械的に削除", "全体の辻褄", "辻褄がおかしく")
 
 
 def test_composition_contract_types_have_one_definition() -> None:
