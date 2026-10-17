@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from app.composition.system_cognition_configuration import CoreApplication
+from app.bootstrap.system_cognition_configuration import CoreApplication
 from app.infrastructure import scheduling as legacy_scheduling
 from app.runtime import kernel
 from app.usecases.appraisal import DeepAppraisalInterpreter
@@ -43,11 +43,6 @@ INWARD_ONLY = (
     "app/runtime/kernel/cancellation.py",
     "app/runtime/kernel/queue.py",
     "app/runtime/kernel/coordinator.py",
-)
-MOVED = (
-    ("app/composition/input_reference_context.py", "app/usecases/input_reference_context.py"),
-    ("app/composition/appraisal.py", "app/usecases/brain_appraisal.py"),
-    ("app/composition/attention.py", "app/usecases/attention_binding.py"),
 )
 FORBIDDEN_OUTER = (
     "app.application",
@@ -105,38 +100,24 @@ def test_moved_boundary_modules_depend_inward(path: str) -> None:
     assert not violations, f"{path}: {violations}"
 
 
-@pytest.mark.parametrize(("old", "new"), MOVED)
-def test_legacy_cognition_paths_only_reexport_the_owner(old: str, new: str) -> None:
-    target = new.removesuffix(".py").replace("/", ".")
-    definitions = {
-        node.name for node in _tree(new).body
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
-        and not node.name.startswith("_")
-    }
-    exported: set[str] = set()
-    for node in _tree(old).body:
-        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
-            continue
-        assert isinstance(node, ast.ImportFrom), f"{old}: execution logic remains"
-        assert node.module == target and node.level == 0
-        for alias in node.names:
-            assert alias.asname == alias.name and alias.name != "*"
-            exported.add(alias.name)
-    assert exported == definitions
+def test_removed_layout_has_no_remaining_modules() -> None:
+    assert not (ROOT / "app/composition").exists()
 
 
 @pytest.mark.parametrize(
     "path",
     (
         "app/bootstrap/core_components.py",
-        "app/composition/cognition_configuration.py",
-        "app/composition/cognition.py",
-        "app/composition/system_cognition_configuration.py",
+        "app/bootstrap/cognition_configuration.py",
+        "app/usecases/cognition_delivery.py",
+        "app/bootstrap/system_cognition_configuration.py",
     ),
 )
-def test_consumers_do_not_import_legacy_cognition_owners(path: str) -> None:
-    old_modules = {old.removesuffix(".py").replace("/", ".") for old, _ in MOVED}
-    assert not (set(_imports(path)) & old_modules)
+def test_updated_consumers_have_no_retired_package_imports(path: str) -> None:
+    assert not any(
+        module == "app.composition" or module.startswith("app.composition.")
+        for module in _imports(path)
+    )
 
 
 def test_entrypoint_contains_no_extracted_execution_owners() -> None:
@@ -157,7 +138,7 @@ def test_entrypoint_contains_no_extracted_execution_owners() -> None:
     })
 
 
-def test_core_components_are_data_and_composition_facade_only_delegates_lifecycle() -> None:
+def test_core_components_are_data_and_bootstrap_delegates_lifecycle() -> None:
     components = next(
         node for node in _tree("app/bootstrap/core_components.py").body
         if isinstance(node, ast.ClassDef) and node.name == "CoreComponents"
@@ -166,7 +147,7 @@ def test_core_components_are_data_and_composition_facade_only_delegates_lifecycl
         isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) for node in components.body
     )
     facade = next(
-        node for node in _tree("app/composition/system_cognition_configuration.py").body
+        node for node in _tree("app/bootstrap/system_cognition_configuration.py").body
         if isinstance(node, ast.ClassDef) and node.name == "CoreApplication"
     )
     methods = {node.name for node in facade.body if isinstance(node, ast.AsyncFunctionDef)}

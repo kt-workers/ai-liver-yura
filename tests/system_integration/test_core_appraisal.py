@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-from app.composition.appraisal import (
+from app.usecases.appraisal_facade import (
     AppraisalBrainModulePort,
     AppraisalBrainWorkPayload,
     CoreAppraisalBinding,

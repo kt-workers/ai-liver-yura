@@ -29,7 +29,7 @@ from app.application import (
     stop_core,
 )
 from app.bootstrap import core_components as component_factory
-from app.composition.input_reference_context import CoreInputReferenceContextBinding
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
 from app.config.core import load_core_config
 from app.domain.brain_integration import (
     BrainIntegrationLane,
