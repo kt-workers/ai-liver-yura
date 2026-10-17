@@ -72,3 +72,18 @@ Speechは意味計画・人物らしい言語化・検証・出力処理の責�
 本番設定と人物定義の唯一のルートは `config/` とする。`resources/` は不要であり使用も生成もしない。既存設定値の違いは `config/` 側の正本を保持する。`app/composition/` の責務は UseCase または Bootstrap へ移し、移設元は削除する。
 
 コードとドキュメントに旧 S2 の型名・起動分岐・設定ファイル参照・自然言語の作業指示を残さない。テスト専用経路も `config/` の正本を扱う。
+
+## 8. 起動構成のコード単位の責務分離
+
+`app/bootstrap/system_cognition_configuration.py` を一枚の巨大な所有者にしない。対象を関数・クラス単位に分離する。
+
+| 正規ファイル | 担当 | 禁止する責務 |
+| --- | --- | --- |
+| `app/bootstrap/composition_contracts.py` | 実行識別子、構成結果を記録する不変契約 | 外部I/O、起動停止、Provider生成 |
+| `app/bootstrap/composition_snapshot.py` | 確定済みConfig/Ownerの来歴を型付きSnapshotへ射影 | Ownerの生成、状態遷移、リソースの取得 |
+| `app/bootstrap/core_application.py` | 完成した本体を保持し、開始・停止を既存ライフサイクルへ委譲 | LLM設定の読み込み、個別認知の判断 |
+| `app/bootstrap/system_cognition_configuration.py` | 設定読込、参照検証、Ownerの組立て、構築失敗時の解放 | 構成DTO定義、利用者向け起動ループ、認知結果の判定 |
+
+異常は従来の `CoreConfigurationError` と失敗コードへ正規化し、構築失敗やキャンセル時の資源回収を省略しない。既存呼び出しが参照する公開名は移行期間だけ元の入口から明示的に再公開し、同じクラスの複製定義を作らない。改修後はクラス定義箇所の単一性、import恒等性、停止処理、Snapshotの値と全pytestを検証する。
+
+設定の唯一の場所は `config/` とし、対象コード・テストに不適切な作業指示文を混入させず、旧構成の別経路を作らない。
