@@ -1,0 +1,16 @@
+schema_id: yura.provider-deployment.s2.v1
+deployment_id: yura.provider-deployment.s2
+deployment_revision: 1
+role_bindings:
+  - role_id: input_meaning
+    availability_mode: unconfigured
+    mapping_ref: null
+    role_config_ref: null
+  - role_id: subjective_appraisal
+    availability_mode: unconfigured
+    mapping_ref: null
+    role_config_ref: null
+  - role_id: executive_deliberation
+    availability_mode: unconfigured
+    mapping_ref: null
+    role_config_ref: null
