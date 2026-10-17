@@ -257,7 +257,8 @@ class CoreCognitionDelivery:
     def _appraisal_completed(self, work: BrainIntegrationWork, result: object) -> None:
         # Lifecycle評価は内部状態の初期化・更新であり、USER/Appraisal sourceを
         # 選択する通常のExecutive配送経路へ流さない。
-        if self._validate(work).lifecycle is not None:
+        payload = work.payload
+        if isinstance(payload, AppraisalBrainWorkPayload) and payload.lifecycle is not None:
             return
         if (
             not isinstance(result, AppraisalStateCommit)
