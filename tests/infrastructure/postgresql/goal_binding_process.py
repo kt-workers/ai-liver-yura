@@ -6,7 +6,10 @@ import os
 import sys
 from pathlib import Path
 
-from app.application import build_persistent_core, start_core
+from app.application import build_persistent_core
+from app.bootstrap.persistent_cognition_configuration import (
+    create_persistent_cognition_configuration,
+)
 from app.domain.executive import GoalTransitionOperation
 from app.domain.memory import MemoryWriteRequest
 from app.infrastructure.persistence import DurabilityStatus
@@ -36,8 +39,9 @@ async def main() -> None:
             retry_policy=retry_policy("db", retry_enabled=False),
             runtime_epoch="child-before-exit",
             max_pending_memory=2,
+            cognition_factory=create_persistent_cognition_configuration,
         )
-        await start_core(app)
+        await app.start()
         assert isinstance(app.goals, CoreGoalPersistenceBinding)
         assert app.memory is not None
         committed = app.goals.apply(
