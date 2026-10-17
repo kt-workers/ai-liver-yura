@@ -10,7 +10,6 @@ from yaml.nodes import MappingNode
 
 from app.domain.brain_integration import BrainIntegrationModule
 from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
-from app.usecases.brain_integration_runtime import BrainIntegrationRuntimePolicy
 from app.domain.input_meaning import InputMeaningAcceptancePolicy, InputMeaningPolicy, PrimaryIntent
 from app.domain.llm import (
     LLMExecutionPolicy,
@@ -24,6 +23,7 @@ from app.runtime.kernel import (
     RuntimeLanePolicy,
     RuntimeSchedulerPolicy,
 )
+from app.usecases.brain_integration_runtime import BrainIntegrationRuntimePolicy
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +188,7 @@ def _build(value: object) -> MinimumBrainProductionConfig:
         "in_flight_settle_grace_seconds final_persistence_grace_seconds "
         "resource_close_grace_seconds owned_task_join_grace_seconds",
     )
-    shutdown = RuntimeShutdownPolicy(
+    shutdown = ApplicationShutdownPolicy(
         _text(shutdown_data["policy_id"]),
         _integer(shutdown_data["policy_revision"]),
         _number(shutdown_data["in_flight_settle_grace_seconds"]),
