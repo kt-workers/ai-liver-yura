@@ -343,3 +343,25 @@ async def test_provenance_is_read_again_before_each_iteration(
     assert result.stage_results[0].status is RunStatus.COMPLETED
     assert result.stage_results[1].machine_gate is Gate.NOT_RUN
     assert len(apps) == 1 and calls == 2 and runner.pending_count == 0
+
+
+def test_brain_admission_is_projected_without_usecase_object() -> None:
+    """本体の受付結果を検証用の安全な公開値として保存できる。"""
+    from app.subsystems.validation.cognition import project_brain_admission
+    from app.usecases.brain_integration_runtime import BrainWorkAdmission, BrainWorkAdmissionStatus
+
+    accepted = BrainWorkAdmission(BrainWorkAdmissionStatus.ACCEPTED, "accepted-1")
+    rejected = BrainWorkAdmission(
+        BrainWorkAdmissionStatus.REJECTED, "rejected-1", ("prerequisite-1",)
+    )
+    assert project_brain_admission(accepted) == _project(
+        {"status": "accepted", "work_id": "accepted-1", "blocked_by": ()}
+    )
+    assert project_brain_admission(rejected) == _project(
+        {
+            "status": "rejected",
+            "work_id": "rejected-1",
+            "blocked_by": ("prerequisite-1",),
+        }
+    )
+    assert project_brain_admission(None) is None
