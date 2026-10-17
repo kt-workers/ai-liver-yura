@@ -119,6 +119,15 @@ jobs:
           test "$fetched_base_sha" = "$LIVE_BASE_SHA"
           git merge-base --is-ancestor "$LIVE_BASE_SHA" "$EXPECTED_HEAD_SHA"
 
+      - name: レガシー参照の移行調査（検証専用）
+        run: |
+          echo "::group::app / tests / config / tools 内の旧参照ファイル"
+          grep -RIlE 'app[.]composition|resources/|[sS]2|ここのs2|機械的に削除' app tests config tools --include='*.py' --include='*.yaml' --include='*.yml' --include='*.json' || true
+          echo "::endgroup::"
+          echo "::group::docs内の旧参照ファイル"
+          grep -RIlE 'app[.]composition|resources/|[sS]2' docs --include='*.md' || true
+          echo "::endgroup::"
+
       - name: リポジトリ指定のPythonを準備
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
