@@ -8,8 +8,8 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import cast
 
-from app.composition.presentation_notification import CorePresentationNotification
-from app.composition.speech_feedback import (
+from app.usecases.presentation_notification import CorePresentationNotification
+from app.usecases.speech_pipeline_feedback import (
     CoreSpeechFeedback,
     ObservedSpeechPresentationBoundary,
     SpeechFactDeliveryDisposition,
