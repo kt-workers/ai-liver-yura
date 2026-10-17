@@ -87,3 +87,11 @@ Speechは意味計画・人物らしい言語化・検証・出力処理の責�
 異常は従来の `CoreConfigurationError` と失敗コードへ正規化し、構築失敗やキャンセル時の資源回収を省略しない。既存呼び出しが参照する公開名は移行期間だけ元の入口から明示的に再公開し、同じクラスの複製定義を作らない。改修後はクラス定義箇所の単一性、import恒等性、停止処理、Snapshotの値と全pytestを検証する。
 
 設定の唯一の場所は `config/` とし、対象コード・テストに不適切な作業指示文を混入させず、旧構成の別経路を作らない。
+
+## 9. ユースケースからInfrastructureへの逆依存排除
+
+`app/usecases/` は外部の具象実装（`app.infrastructure`）をimportしない。取消と時計の契約は `app.runtime.kernel`、保存の失敗分類は `app.domain.contracts.persistence`、保存操作とメモリOwnerは `app.usecases` 内の既存単一定義を使う。
+
+Speechの具体的な子process Supervisorの有無と接続の安全性は `app/bootstrap/speech_production_configuration.py` が組立て時に検査する。`CoreSpeechPipeline` は `SpeechPresentationExecutionBoundary` 抽象Portを受け、実装がprocess Supervisorかどうかを調べない。これにより具象の差替え時も認知・Speechの意味規則を変えない。
+
+検証条件は、ユースケースからInfrastructureへの直接importがないこと、既存型と公開結果の恒等性を保つこと、正式組立て時のSupervisor検証を維持すること、取消・失敗・提示の全経路の回帰試験とする。
