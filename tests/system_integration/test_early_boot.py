@@ -1,4 +1,4 @@
-"""実際のBrain実行とプロセス境界で、早期起動の成立を検証する。"""
+"""統合CoreのBrain実行とプロセス境界を検証する。"""
 
 from __future__ import annotations
 
@@ -62,8 +62,8 @@ from app.domain.llm import (
 from app.infrastructure.scheduling import CancellationToken, SystemRuntimeClock
 from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from app.usecases.input_meaning import InputMeaningInterpreter
-from tests.helpers.full_core import full_cognition
 from app.usecases.lifecycle import ApplicationLifecycle
+from tests.helpers.full_core import full_cognition
 
 ROOT = Path(__file__).resolve().parents[2]
 NOW = datetime(2026, 9, 5, tzinfo=timezone.utc)

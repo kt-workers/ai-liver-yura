@@ -143,7 +143,6 @@ async def test_boot_restore_failure_keeps_saved_goal_after_reconnect(
                 runtime_epoch="failed",
                 max_pending_memory=2,
             cognition=full_cognition(),
-        cognition=full_cognition(),
             )
         try:
             assert isinstance(app.goals, CoreGoalPersistenceBinding)
@@ -185,7 +184,6 @@ async def test_invalid_configuration_closes_transferred_runtime(
             runtime_epoch="invalid",
             max_pending_memory=2,
             cognition=full_cognition(),
-        cognition=full_cognition(),
         )
     assert storage.availability is PersistenceAvailability.CLOSED
     assert storage.pending_task_count == 0
@@ -218,7 +216,6 @@ async def test_cancelled_boot_reaps_runtime(
             runtime_epoch="cancelled",
             max_pending_memory=2,
             cognition=full_cognition(),
-        cognition=full_cognition(),
         )
     )
     await asyncio.wait_for(entered.wait(), 2)
@@ -440,7 +437,6 @@ async def test_boot_database_reconnect_recovers_memory_without_replacing_goal_ow
             runtime_epoch="reconnect",
             max_pending_memory=2,
             cognition=full_cognition(),
-        cognition=full_cognition(),
         )
         assert isinstance(app.goals, CoreGoalPersistenceBinding)
         owner = app.goals
