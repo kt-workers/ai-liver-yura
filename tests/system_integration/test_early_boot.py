@@ -352,12 +352,17 @@ def test_canonical_composition_repeated_start_stop_has_no_pending_tasks(
             await start_core(app)
             try:
                 assert asyncio.all_tasks() - baseline
+                registered = {
+                    BrainIntegrationModule.INPUT_MEANING,
+                    BrainIntegrationModule.APPRAISAL,
+                    BrainIntegrationModule.EXECUTIVE,
+                }
                 for number, module in enumerate(BrainIntegrationModule):
-                    if module is BrainIntegrationModule.INPUT_MEANING:
+                    if module in registered:
                         continue
                     candidate = replace(work(), work_id=f"absent-{number}", module=module)
                     assert not app.brain.submit(candidate).accepted
-                    outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+                    outcome = await wait_for_work_outcome(app.brain, candidate.work_id)
                     assert outcome.status is BrainWorkStatus.REJECTED
                     assert outcome.error == "UNREGISTERED_MODULE"
             finally:
