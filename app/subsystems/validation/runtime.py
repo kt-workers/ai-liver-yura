@@ -328,7 +328,14 @@ class ValidationRunner:
         except Exception as error:
             status, gate = RunStatus.HARNESS_FAILED, Gate.NOT_RUN
             # 例外本文は秘密情報を含み得るため出力せず、型と失敗区間だけを公開する。
-            stage = context.intervals[-1].name if context.intervals else "runner"
+            stage = next(
+                (
+                    interval.stage
+                    for interval in context.intervals
+                    if interval.status is RunStatus.HARNESS_FAILED
+                ),
+                "runner",
+            )
             blockers = (
                 "検証接続の実行に失敗しました",
                 f"HARNESS_STAGE:{stage}",
