@@ -14,7 +14,7 @@ from app.config.appraisal_assembly import AppraisalInitializationProvenance
 from app.config.core import CoreConfig
 from app.config.executive_assembly import ExecutiveConfigurationProvenance
 from app.domain.attention import AttentionSchedulingPolicy
-from app.usecases.speech_pipeline_production_configuration import SpeechComponentProvenance
+from app.bootstrap.speech_production_configuration import SpeechComponentProvenance
 
 
 def _snapshot(

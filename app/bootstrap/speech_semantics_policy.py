@@ -31,7 +31,7 @@ from app.domain.speech_semantics_vocabulary import (
     SpeechSourceContractKind,
     require_meaning_policy,
 )
-from app.usecases.speech_pipeline_semantics_sources import (
+from app.usecases.speech_semantics_sources import (
     ProductionSpeechSources,
     build_projection_v1,
     build_truth_v1,

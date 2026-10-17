@@ -27,7 +27,7 @@ from app.domain.plan_execution.progress_contracts import PlanProgressContext
 from app.domain.plugin_registry.authority import PluginRegistryAuthority
 from app.usecases.accepted_inputs import CoreAcceptedInputStore
 from app.usecases.appraisal_facade import CoreAppraisalBinding
-from app.usecases.executive_facade_input_evidence import (
+from app.usecases.executive_input_evidence import (
     CoreExecutiveInputEvidenceReader,
     CoreExecutiveSpeechEvidenceReader,
 )

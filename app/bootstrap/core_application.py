@@ -9,7 +9,7 @@ from app.bootstrap.core_components import CoreComponents
 from app.config.appraisal_assembly import AppraisalProductionBinding
 from app.config.core_contracts import CoreConfigurationError, CoreFailureCode
 from app.config.executive_assembly import ExecutiveProductionBinding
-from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
+from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.usecases.core_lifecycle import CoreActivationError, CoreApplicationLifecycle
 from app.usecases.resource_cleanup import OwnedResourceLedger
 

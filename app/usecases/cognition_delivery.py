@@ -57,7 +57,7 @@ if TYPE_CHECKING:
     from app.usecases.execution_facade import CoreExecutionDelivery
     from app.usecases.memory_evidence import CoreMemoryEvidenceReader
     from app.usecases.reflection_delivery import CoreReflectionDelivery
-    from app.usecases.speech_pipeline_configuration import CoreSpeechDelivery
+    from app.bootstrap.speech_configuration import CoreSpeechDelivery
 
 
 class _Module(Protocol):
