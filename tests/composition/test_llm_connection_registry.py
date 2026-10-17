@@ -6,7 +6,7 @@ from dataclasses import dataclass, is_dataclass
 
 import pytest
 
-from app.composition.system_cognition_configuration import CoreRunIdentity
+from app.bootstrap.system_cognition_configuration import CoreRunIdentity
 from app.config.core_contracts import CoreConfigurationError
 from app.config.llm_connections import LLMConnectionConfig, LLMConnectionsConfig
 from app.domain.llm import LLMRoleDescriptor, LLMRoleRequest, LLMRoleResult

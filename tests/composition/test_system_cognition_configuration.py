@@ -14,7 +14,7 @@ import yaml
 from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.bootstrap.core_components import compose_core_components
-from app.composition import system_cognition_configuration as system
+from app.bootstrap import system_cognition_configuration as system
 from app.config.core_contracts import CoreConfigurationError
 from app.config.executive_assembly import create_executive_configuration
 from app.config.llm_connections import LLMConnectionConfig
@@ -146,7 +146,7 @@ async def test_real_factories_identity_snapshot_and_restart() -> None:
     [
         ("activation_id", "wrong", "ACTIVATION_FAILED"),
         ("fresh_start", False, "ACTIVATION_FAILED"),
-        ("config_ref", "resources/missing.yaml", "MISSING_SYSTEM_CONFIG"),
+        ("config_ref", "config/missing.yaml", "MISSING_SYSTEM_CONFIG"),
         ("config_ref", "../secret", "INVALID_SYSTEM_CONFIG"),
     ],
 )

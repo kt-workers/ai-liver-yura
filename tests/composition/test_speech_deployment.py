@@ -15,17 +15,17 @@ from app.adapters.llm.core import create_core_provider_lease
 from app.adapters.llm.openai_responses import OpenAIResponsesAdapter
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.adapters.llm.speech_semantics import SpeechSemanticsProviderPort
-from app.composition.speech import CoreSpeechContextReaders
-from app.composition.speech_deployment import (
+from app.usecases.speech_pipeline import CoreSpeechContextReaders
+from app.usecases.speech_pipeline_deployment import (
     SPEECH_PROVIDER_ROLE_IDS,
     SpeechDeploymentRegistry,
     SpeechDeploymentRequest,
     SpeechProviderBindingPublication,
     create_speech_deployment,
 )
-from app.composition.speech_production_configuration import SpeechProductionPorts
-from app.composition.speech_semantics_policy import build_speech_semantics_policy_owner_v1
-from app.composition.system_cognition_configuration import CoreRunIdentity
+from app.usecases.speech_pipeline_production_configuration import SpeechProductionPorts
+from app.usecases.speech_pipeline_semantics_policy import build_speech_semantics_policy_owner_v1
+from app.bootstrap.system_cognition_configuration import CoreRunIdentity
 from app.config.layered import ConfigurationError, ConfigurationFailureCode
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity

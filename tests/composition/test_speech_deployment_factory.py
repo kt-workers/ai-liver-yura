@@ -15,17 +15,17 @@ from app import application as bootstrap
 from app.adapters.llm.core import create_core_provider_lease
 from app.adapters.tts.production import TTSProductionConnection, TTSProviderRegistry
 from app.adapters.tts.provider import TTSProviderClient
-from app.composition.cognition import CoreCognitionDelivery
-from app.composition.core_provider import CoreProviderLease
-from app.composition.input_reference_context import CoreInputReferenceContextBinding
-from app.composition.presentation_notification import CoreSpeechProductionOwnerConnection
-from app.composition.speech import CoreSpeechContextReaders, SpeechOutputPreparationRequest
-from app.composition.speech_deployment import (
+from app.usecases.cognition_delivery import CoreCognitionDelivery
+from app.bootstrap.core_provider import CoreProviderLease
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
+from app.usecases.presentation_notification import CoreSpeechProductionOwnerConnection
+from app.usecases.speech_pipeline import CoreSpeechContextReaders, SpeechOutputPreparationRequest
+from app.usecases.speech_pipeline_deployment import (
     SpeechDeploymentRequest,
     create_speech_deployment,
     production_speech_deployment_registry,
 )
-from app.composition.speech_deployment_factory import (
+from app.usecases.speech_pipeline_deployment_factory import (
     ProductionSpeechDeploymentPortFactory,
     SpeechDeploymentFactoryError,
     SpeechDeploymentOwnerConnections,
@@ -217,7 +217,7 @@ async def test_construction_failure_is_preserved_when_cleanup_also_fails(
         cast(Any, SimpleNamespace(provider_factory=provider, presentation=_Presentation())),
     )
 
-    with caplog.at_level(logging.WARNING, logger="app.composition.speech_deployment_factory"):
+    with caplog.at_level(logging.WARNING, logger="app.usecases.speech_pipeline_deployment_factory"):
         with pytest.raises(RuntimeError) as raised:
             await factory(request)
 

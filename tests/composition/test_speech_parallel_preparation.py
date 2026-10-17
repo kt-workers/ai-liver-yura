@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from app.composition.presentation_notification import CoreSpeechProductionOwnerConnection
+from app.usecases.presentation_notification import CoreSpeechProductionOwnerConnection
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.input_gateway.normalizer import (
     InputAdmissionLedger,

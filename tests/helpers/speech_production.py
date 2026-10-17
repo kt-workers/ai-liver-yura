@@ -1,6 +1,6 @@
 """Speech production試験で実Ownerを明示構築する。"""
 
-from app.composition.speech_semantics_sources import (
+from app.usecases.speech_pipeline_semantics_sources import (
     ProductionSpeechSources,
 )
 from app.domain.activity_execution.authority import ActivityExecutionAuthority
