@@ -216,14 +216,18 @@ def plan_activity_target(
         if accepted is not None and not accepted.accepted:
             await owner.stop()
             return TargetObservation(
-                RunStatus.PRODUCT_FAILED, Gate.FAIL, _project({"admission": project_brain_admission(accepted)})
+                RunStatus.PRODUCT_FAILED,
+                Gate.FAIL,
+                _project({"admission": project_brain_admission(accepted)}),
             )
         try:
             app.brain.trace(trace_id)
         except KeyError:
             await owner.stop()
             return TargetObservation(
-                RunStatus.PRODUCT_FAILED, Gate.FAIL, _project({"admission": project_brain_admission(accepted)})
+                RunStatus.PRODUCT_FAILED,
+                Gate.FAIL,
+                _project({"admission": project_brain_admission(accepted)}),
             )
         observed: set[str] = set()
         outputs: list[JsonValue] = []
