@@ -17,7 +17,6 @@ import pytest
 import yaml
 
 from app import application as bootstrap
-from app.bootstrap.core_application import CoreApplication
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm import production
 from app.adapters.llm.production import UnavailableLLMRolePort
@@ -30,6 +29,7 @@ from app.application import (
     stop_core,
 )
 from app.bootstrap import core_components as component_factory
+from app.bootstrap.core_application import CoreApplication
 from app.config.core import load_core_config
 from app.domain.brain_integration import (
     BrainIntegrationLane,
