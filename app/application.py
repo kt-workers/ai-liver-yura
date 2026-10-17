@@ -15,11 +15,9 @@ from app.adapters.llm.production import create_openai_port_from_environment
 from app.bootstrap.core_components import CoreComponents as CoreComponents
 from app.bootstrap.core_components import compose_core_components
 from app.bootstrap.runtime_application import CoreRuntimeApplication
-from app.bootstrap.runtime_owners import (
-    CoreRuntimeOwners as CoreRuntimeOwners,
-    CoreSpeechOwners as CoreSpeechOwners,
-    default_core_runtime_owners as default_core_runtime_owners,
-)
+from app.bootstrap.runtime_owners import CoreRuntimeOwners as CoreRuntimeOwners
+from app.bootstrap.runtime_owners import CoreSpeechOwners as CoreSpeechOwners
+from app.bootstrap.runtime_owners import default_core_runtime_owners as default_core_runtime_owners
 from app.composition.cognition_configuration import CoreCognitionConfiguration
 from app.composition.speech_production_configuration import SpeechProductionInputs
 from app.composition.system_cognition_configuration import (

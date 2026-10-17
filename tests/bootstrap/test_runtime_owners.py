@@ -4,11 +4,9 @@ from types import MappingProxyType
 
 import pytest
 
-from app.application import (
-    CoreRuntimeOwners as PublicRuntimeOwners,
-    CoreSpeechOwners as PublicSpeechOwners,
-    default_core_runtime_owners as public_default_owners,
-)
+from app.application import CoreRuntimeOwners as PublicRuntimeOwners
+from app.application import CoreSpeechOwners as PublicSpeechOwners
+from app.application import default_core_runtime_owners as public_default_owners
 from app.bootstrap.runtime_owners import (
     CoreRuntimeOwners,
     CoreSpeechOwners,

@@ -4,9 +4,9 @@ import asyncio
 from typing import Any
 
 import pytest
+from app.composition.s2_provider import S2ProviderLease
 
 from app.bootstrap import build_s2_production_core
-from app.composition.s2_provider import S2ProviderLease
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.executive import GoalTransitionOperation
 from tests.composition.test_system_cognition_configuration import parameters

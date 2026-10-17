@@ -3,7 +3,16 @@
 from dataclasses import dataclass
 from math import isfinite
 
-from app.config.core_contracts import (\n    CoreConfigurationError,\n    CoreFailureCode,\n    identity,\n    invalid,\n    parse,\n    resource,\n    revision,\n    shape,\n)
+from app.config.core_contracts import (
+    CoreConfigurationError,
+    CoreFailureCode,
+    identity,
+    invalid,
+    parse,
+    resource,
+    revision,
+    shape,
+)
 from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
 from app.domain.input_meaning import InputMeaningAcceptancePolicy, InputMeaningPolicy, PrimaryIntent
 from app.domain.llm import (
