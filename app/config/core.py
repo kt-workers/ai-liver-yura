@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from math import isfinite
 
 from app.config.core_contracts import (
-    CoreConfigurationError,
-    CoreFailureCode,
     identity,
     invalid,
     parse,
