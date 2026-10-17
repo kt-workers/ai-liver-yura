@@ -67,7 +67,7 @@ async def test_production_chain_and_repeated_fresh_owner(
 ) -> None:
     runner, request, fixture, apps, ports, _ = setup(monkeypatch, internal=internal)
     result = await runner.run(replace(request, repeat_count=2), fixture)
-    assert result.status is RunStatus.COMPLETED, result
+    assert result.status is RunStatus.COMPLETED, (result.blockers, result.timeline)
     assert result.machine_gate is Gate.PASS
     assert len(apps) == 2 and apps[0] is not apps[1]
     assert apps[0].brain is not apps[1].brain
