@@ -26,7 +26,12 @@ from app.infrastructure.scheduling import RuntimeClock
 from app.usecases.brain_integration_runtime import BrainIntegrationWork, BrainWorkAdmission
 
 from .body import _project
-from .cognition import _IterationApplication, _result_projection, _status
+from .cognition import (
+    _IterationApplication,
+    _result_projection,
+    _status,
+    project_brain_admission,
+)
 from .contracts import (
     Gate,
     InjectedFailure,
@@ -211,14 +216,14 @@ def plan_activity_target(
         if accepted is not None and not accepted.accepted:
             await owner.stop()
             return TargetObservation(
-                RunStatus.PRODUCT_FAILED, Gate.FAIL, _project({"admission": accepted})
+                RunStatus.PRODUCT_FAILED, Gate.FAIL, _project({"admission": project_brain_admission(accepted)})
             )
         try:
             app.brain.trace(trace_id)
         except KeyError:
             await owner.stop()
             return TargetObservation(
-                RunStatus.PRODUCT_FAILED, Gate.FAIL, _project({"admission": accepted})
+                RunStatus.PRODUCT_FAILED, Gate.FAIL, _project({"admission": project_brain_admission(accepted)})
             )
         observed: set[str] = set()
         outputs: list[JsonValue] = []
@@ -288,7 +293,7 @@ def plan_activity_target(
             Gate.PASS if structural else Gate.FAIL,
             _project(
                 {
-                    "admission": accepted,
+                    "admission": project_brain_admission(accepted),
                     "scope": None if scope is None else scope.to_dict(),
                     "outcomes": outputs,
                     "execution_records": tuple(records.values()),
