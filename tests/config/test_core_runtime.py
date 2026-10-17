@@ -156,7 +156,7 @@ def test_invalid_values_are_not_coerced(path: tuple[str | int, ...], value: obje
     for key in path[:-1]:
         target = target[key]
     target[path[-1]] = value
-    with pytest.raises(ValueError, match="本番設定"):
+    with pytest.raises(ValueError, match="core構成を使用できません"):
         load_core_config(yaml.safe_dump(data))
 
 
@@ -253,4 +253,4 @@ def test_unsafe_resource_reference_is_rejected(value: str) -> None:
 def test_malformed_or_non_mapping_yaml(source: str) -> None:
     with pytest.raises(ValueError) as caught:
         load_core_config(source)
-    assert str(caught.value) == "本体Runtimeの本番設定を読み込めません"
+    assert str(caught.value) == "core構成を使用できません: INVALID_SYSTEM_CONFIG"
