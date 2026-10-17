@@ -13,6 +13,7 @@ from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLI
 from app.domain.contracts import CapabilityAvailability, RevisionVector
 from app.domain.contracts.snapshots import SnapshotIncoherentError, SnapshotInvariantError
 from app.domain.executive import GoalTransitionOperation
+from app.domain.goals import GoalCommitmentSnapshot, GoalCommitmentStore
 from app.domain.input_gateway import (
     InputAdmissionLedger,
     InputModality,
@@ -21,7 +22,6 @@ from app.domain.input_gateway import (
     InputPermission,
     InputSourceState,
 )
-from app.domain.goals import GoalCommitmentSnapshot, GoalCommitmentStore
 from app.domain.input_meaning import InputMeaningInterpretationResult
 from app.domain.llm import LLMFailureCode, LLMRoleRequest, LLMRoleResult
 from app.usecases.input_meaning import InputMeaningInterpreter
