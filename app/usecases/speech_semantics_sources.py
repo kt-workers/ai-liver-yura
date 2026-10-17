@@ -8,6 +8,7 @@ from app.domain.activity_execution.contracts import ActivityExecutionRecord
 from app.domain.contracts import ExecutionStatus
 from app.domain.contracts.common import JsonValue
 from app.domain.contracts.finalization import AuthorityGenerationToken, AuthorityReadPublication
+from app.domain.contracts.persistence import PersistenceError
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity, SemanticSubjectKind
 from app.domain.executive.contracts import ExecutiveFactRef
 from app.domain.executive.speech_references import (
@@ -58,7 +59,6 @@ from app.domain.speech_semantics_vocabulary import (
 from app.domain.speech_semantics_vocabulary import (
     SpeechTruthRule as T,
 )
-from app.domain.contracts.persistence import PersistenceError
 from app.usecases.memory_persistence import CoreMemoryPersistenceBinding
 
 
