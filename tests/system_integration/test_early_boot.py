@@ -63,6 +63,7 @@ from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, Brai
 from app.usecases.input_meaning import InputMeaningInterpreter
 from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
 from app.usecases.lifecycle import ApplicationLifecycle
+from tests.helpers.brain_outcomes import collect_work_outcomes, wait_for_work_outcome
 from tests.helpers.full_core import full_cognition
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -167,7 +168,7 @@ def test_production_binding_through_brain_preserves_unavailable(
             value = work()
             assert app.bridge.is_fresh(value)
             assert app.brain.submit(value).accepted
-            outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+            outcome = await wait_for_work_outcome(app.brain, value.work_id)
             assert outcome.status is BrainWorkStatus.COMPLETED
             assert isinstance(outcome.result, InputMeaningInterpretationResult)
             result = outcome.result
@@ -640,15 +641,13 @@ def test_external_test_client_lifecycle_does_not_stop_core(
             expected = {"independent-1"}
             if failure != "initialization":
                 expected.add("external-1")
-            observed = set()
-            for _ in expected:
-                outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+            outcomes = await collect_work_outcomes(app.brain, expected)
+            for outcome in outcomes:
                 assert outcome.status is BrainWorkStatus.COMPLETED
                 assert isinstance(outcome.result, InputMeaningInterpretationResult)
                 assert outcome.result.role_failure is not None
                 assert outcome.result.role_failure.code is LLMFailureCode.PROVIDER_UNAVAILABLE
-                observed.add(outcome.work_id)
-            assert observed == expected
+            assert {outcome.work_id for outcome in outcomes} == expected
             assert app.config is config
             if failure == "delay":
                 assert not client.done()
@@ -695,17 +694,15 @@ def test_replacement_and_concurrent_clients_use_the_same_public_owner(
             expected = {
                 f"{name}-{n}" for name in ("first", "replacement", "additional") for n in range(3)
             }
-            observed = set()
-            for _ in expected:
-                outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+            outcomes = await collect_work_outcomes(app.brain, expected)
+            for outcome in outcomes:
                 assert outcome.status is BrainWorkStatus.COMPLETED
                 assert isinstance(outcome.result, InputMeaningInterpretationResult)
                 assert outcome.result.request_id == outcome.work_id
                 assert outcome.result.meaning is None
                 assert outcome.result.role_failure is not None
                 assert outcome.result.role_failure.code is LLMFailureCode.PROVIDER_UNAVAILABLE
-                observed.add(outcome.work_id)
-            assert observed == expected
+            assert {outcome.work_id for outcome in outcomes} == expected
             assert app.config is config
         finally:
             await stop_core(app)

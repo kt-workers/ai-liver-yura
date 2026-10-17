@@ -21,6 +21,7 @@ from app.usecases.input_reference_context_facade import CoreInputReferenceContex
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.domain.input_meaning.test_input_meaning import NOW, event, policy
 from tests.domain.plan_execution.test_progression import WaitingProvider, runner, setup
+from tests.helpers.brain_outcomes import wait_for_work_outcome
 from tests.helpers.full_core import full_cognition
 from tests.system_integration.test_early_boot import SuccessfulPort, work
 
@@ -199,7 +200,7 @@ async def test_unified_boot_uses_real_current_context_and_commits_meaning(
     await start_core(app)
     try:
         assert app.brain.submit(value).accepted
-        outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        outcome = await wait_for_work_outcome(app.brain, value.work_id)
         assert isinstance(outcome.result, InputMeaningInterpretationResult)
         assert outcome.result.meaning is not None
         assert outcome.result.boundary_failure is None
