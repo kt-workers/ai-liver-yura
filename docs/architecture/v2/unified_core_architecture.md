@@ -101,3 +101,7 @@ Speechの具体的な子process Supervisorの有無と接続の安全性は `app
 構造検査は移設後の実定義を対象とする。`CoreApplication` の開始・終了メソッドは `app/bootstrap/core_application.py`、入力意味と評価の配送Portは `app/usecases/cognition_delivery.py` をAST検査する。`app/bootstrap/system_cognition_configuration.py` は構成・接続に限定し、`CoreApplication` を再定義しない。
 
 移設前の `app/composition/` を参照する試験を復活させず、現在のクラスと関数の責務（認知Portの型付き引数、起動ライフサイクルの委譲、Domainへの依存方向）を検証する。テストが通っても、実DB・実起動を含む本体の完了判定は別に実施する。
+
+## 11. 並行認知の結果観測
+
+起動時の主観評価と利用者入力の認知処理は別traceとして並行する。統合検証では最初に到着した結果を投入入力の結果と決めつけず、work_idまたはtrace_idとmoduleの一致を確認する。自律評価を停止して試験を成立させることは認めない。実DB障害時には保存の型付き障害と認知結果を独立に検証する。
