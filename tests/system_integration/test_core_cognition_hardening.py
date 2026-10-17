@@ -136,6 +136,12 @@ async def test_runtime_queue_rejects_without_executive_for_rejected_trace(
     app, port = application(monkeypatch)
     await bootstrap.start_core(app)
     try:
+        # 起動時の独立評価を相関IDで回収した後、専用laneの容量を検証する。
+        await next_outcome_matching(
+            app.brain,
+            trace_id="core-runtime-started",
+            module=BrainIntegrationModule.APPRAISAL,
+        )
         assert app.cognition.submit_input(admission(app, internal=True)).accepted
         rejected = app.cognition.submit_input(
             admission(app, internal=True, event_id="rejected", trace_id="rejected")
