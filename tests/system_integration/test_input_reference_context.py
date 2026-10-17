@@ -21,6 +21,7 @@ from app.usecases.input_meaning import InputMeaningInterpreter
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.domain.input_meaning.test_input_meaning import NOW, event, policy
 from tests.domain.plan_execution.test_progression import WaitingProvider, runner, setup
+from tests.helpers.full_core import full_cognition
 from tests.system_integration.test_early_boot import SuccessfulPort, work
 
 
@@ -170,14 +171,14 @@ def test_bad_owner_generations_do_not_replace_published_projection(failure: str)
 
 
 @pytest.mark.asyncio
-async def test_minimum_boot_uses_real_current_context_and_commits_meaning(
+async def test_unified_boot_uses_real_current_context_and_commits_meaning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         bootstrap, "create_openai_port_from_environment", lambda _: SuccessfulPort()
     )
     baseline = asyncio.all_tasks()
-    app = bootstrap.build_core_runtime()
+    app = bootstrap.build_core_runtime(cognition=full_cognition())
     snapshot = app.input_context.snapshot()
     value = work()
     payload = cast(InputMeaningBrainWorkPayload, value.payload)

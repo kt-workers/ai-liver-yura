@@ -62,6 +62,7 @@ from app.domain.llm import (
 from app.infrastructure.scheduling import CancellationToken, SystemRuntimeClock
 from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from app.usecases.input_meaning import InputMeaningInterpreter
+from tests.helpers.full_core import full_cognition
 from app.usecases.lifecycle import ApplicationLifecycle
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -159,7 +160,7 @@ def test_production_binding_through_brain_preserves_unavailable(
 
     async def scenario() -> None:
         baseline = asyncio.all_tasks()
-        app = build_core_runtime()
+        app = build_core_runtime(cognition=full_cognition())
         assert isinstance(app.llm, UnavailableLLMRolePort)
         await start_core(app)
         try:
@@ -267,7 +268,7 @@ def test_invalid_composition_is_failed_not_stale(
     no_provider(monkeypatch)
 
     async def scenario() -> None:
-        app = build_core_runtime()
+        app = build_core_runtime(cognition=full_cognition())
         value = malformed(case)
         with pytest.raises(ValueError):
             app.bridge.is_fresh(value)
@@ -339,7 +340,7 @@ def test_canonical_composition_repeated_start_stop_has_no_pending_tasks(
     async def scenario() -> None:
         for _ in range(3):
             baseline = asyncio.all_tasks()
-            app = build_core_runtime()
+            app = build_core_runtime(cognition=full_cognition())
             assert app.character_definition == load_character_definition_yaml(
                 (ROOT / app.config.character_definition.resource_ref).read_bytes(),
             )
@@ -375,7 +376,7 @@ def test_configured_provider_missing_config_is_not_hidden(monkeypatch: pytest.Mo
         SimpleNamespace(environ={"YURA_OPENAI_API_KEY": sentinel}),
     )
     with pytest.raises(ValueError, match="役割設定") as caught:
-        build_core_runtime()
+        build_core_runtime(cognition=full_cognition())
     assert sentinel not in str(caught.value)
 
 
@@ -393,7 +394,7 @@ def test_stop_failure_propagates_but_lifecycle_is_closed(monkeypatch: pytest.Mon
     monkeypatch.setattr(BrainIntegrationRuntime, "stop", failed_stop)
     monkeypatch.setattr(ApplicationLifecycle, "close", close)
     with pytest.raises(RuntimeError, match="停止失敗"):
-        asyncio.run(stop_core(build_core_runtime()))
+        asyncio.run(stop_core(build_core_runtime(cognition=full_cognition())))
     assert closed
 
 
@@ -445,7 +446,7 @@ def test_entrypoint_subprocess_graceful_shutdown(stop_signal: signal.Signals) ->
         try:
             assert child.stdout is not None
             ready = await asyncio.wait_for(child.stdout.readline(), 10)
-            assert ready.decode().strip() == "最小Coreの起動が完了しました。"
+            assert ready.decode().strip() == "ゆら本体の起動が完了しました。"
             assert child.returncode is None
             child.send_signal(stop_signal)
             stdout, stderr = await asyncio.wait_for(child.communicate(), 8)
@@ -486,7 +487,7 @@ def test_descriptor_and_interpreter_receive_the_same_policy(
 
     monkeypatch.setattr(bootstrap, "descriptor", descriptor)
     monkeypatch.setattr(component_factory, "InputMeaningInterpreter", interpreter)
-    app = build_core_runtime()
+    app = build_core_runtime(cognition=full_cognition())
     assert len(observed) == 2
     assert all(policy is app.config.input_meaning_policy for policy in observed)
 
@@ -500,7 +501,7 @@ def test_running_generation_does_not_reload_changed_file(
     path.write_bytes((ROOT / "config/core.yaml").read_bytes())
 
     async def scenario() -> None:
-        app = build_core_runtime(path)
+        app = build_core_runtime(path, cognition=full_cognition())
         config = app.config
         await start_core(app)
         try:
@@ -512,14 +513,14 @@ def test_running_generation_does_not_reload_changed_file(
                 await asyncio.wait_for(app.brain.next_outcome(), 2)
             ).status is BrainWorkStatus.COMPLETED
             with pytest.raises(ValueError):
-                build_core_runtime(path)
+                build_core_runtime(path, cognition=full_cognition())
         finally:
             await stop_core(app)
 
     asyncio.run(scenario())
 
 
-def test_minimum_core_runs_with_optional_surface_imports_forbidden() -> None:
+def test_unified_core_runs_with_optional_surface_imports_forbidden() -> None:
     """パッケージを除去せず、画面や検証基盤への推移的な読込を検出する。"""
     script = r"""
 import importlib.abc
@@ -563,7 +564,7 @@ def test_file_edit_takes_effect_only_in_next_core_configuration(
 
     async def scenario() -> None:
         baseline = asyncio.all_tasks()
-        first = build_core_runtime(path)
+        first = build_core_runtime(path, cognition=full_cognition())
         await start_core(first)
         try:
             edited = yaml.safe_load(original)
@@ -579,7 +580,7 @@ def test_file_edit_takes_effect_only_in_next_core_configuration(
             assert outcome.status is BrainWorkStatus.COMPLETED
         finally:
             await stop_core(first)
-        second = build_core_runtime(path)
+        second = build_core_runtime(path, cognition=full_cognition())
         assert second.config.config_revision == 2
         assert second.config.scheduler_policy.policy_revision == 2
         assert second.config.scheduler_policy.max_priority_burst == 9
@@ -604,7 +605,7 @@ def test_external_test_client_lifecycle_does_not_stop_core(
 
     async def scenario() -> None:
         baseline = asyncio.all_tasks()
-        app = build_core_runtime()
+        app = build_core_runtime(cognition=full_cognition())
         config = app.config
         entered = asyncio.Event()
         release = asyncio.Event()
@@ -670,7 +671,7 @@ def test_replacement_and_concurrent_clients_use_the_same_public_owner(
 
     async def scenario() -> None:
         baseline = asyncio.all_tasks()
-        app = build_core_runtime()
+        app = build_core_runtime(cognition=full_cognition())
         config = app.config
 
         async def submit_batch(client_id: str) -> None:

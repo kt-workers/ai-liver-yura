@@ -24,6 +24,7 @@ from app.infrastructure.persistence.goal_binding import CoreGoalPersistenceBindi
 from app.infrastructure.persistence.postgresql_connection import PostgresDatabase, PostgresEndpoint
 from tests.domain.goals.test_goal_commitment_store import decision, goal_transition
 from tests.domain.memory import test_memory_store_retrieval as memory
+from tests.helpers.full_core import full_cognition
 from tests.infrastructure.postgresql.conftest import subprocess_test_environment
 from tests.infrastructure.postgresql.test_memory import POLICY
 from tests.infrastructure.postgresql.test_runtime import runtime
@@ -57,6 +58,7 @@ async def test_boot_shares_restored_goals_and_memory_then_closes(
         retry_policy=retry_policy("db", retry_enabled=False),
         runtime_epoch="first",
         max_pending_memory=2,
+        cognition=full_cognition(),
     )
     assert isinstance(first.goals, CoreGoalPersistenceBinding)
     assert first.memory is not None
@@ -83,6 +85,7 @@ async def test_boot_shares_restored_goals_and_memory_then_closes(
         retry_policy=retry_policy("db", retry_enabled=False),
         runtime_epoch="second",
         max_pending_memory=2,
+        cognition=full_cognition(),
     )
     assert isinstance(second.goals, CoreGoalPersistenceBinding)
     assert second.memory is not None
@@ -139,6 +142,8 @@ async def test_boot_restore_failure_keeps_saved_goal_after_reconnect(
                 retry_policy=retry_policy("db", retry_enabled=False),
                 runtime_epoch="failed",
                 max_pending_memory=2,
+            cognition=full_cognition(),
+        cognition=full_cognition(),
             )
         try:
             assert isinstance(app.goals, CoreGoalPersistenceBinding)
@@ -179,6 +184,8 @@ async def test_invalid_configuration_closes_transferred_runtime(
             retry_policy=retry_policy("db"),
             runtime_epoch="invalid",
             max_pending_memory=2,
+            cognition=full_cognition(),
+        cognition=full_cognition(),
         )
     assert storage.availability is PersistenceAvailability.CLOSED
     assert storage.pending_task_count == 0
@@ -210,6 +217,8 @@ async def test_cancelled_boot_reaps_runtime(
             retry_policy=retry_policy("db"),
             runtime_epoch="cancelled",
             max_pending_memory=2,
+            cognition=full_cognition(),
+        cognition=full_cognition(),
         )
     )
     await asyncio.wait_for(entered.wait(), 2)
@@ -244,6 +253,7 @@ async def test_stop_reaps_memory_before_database_close(
         retry_policy=retry_policy("db", retry_enabled=False),
         runtime_epoch="stop",
         max_pending_memory=2,
+        cognition=full_cognition(),
     )
     assert app.memory is not None
     entered, release = asyncio.Event(), asyncio.Event()
@@ -307,6 +317,7 @@ async def test_missing_database_keeps_core_running_with_typed_failure(
         retry_policy=retry_policy("db", retry_enabled=False),
         runtime_epoch="unavailable",
         max_pending_memory=2,
+        cognition=full_cognition(),
     )
     try:
         assert app.lifecycle.snapshot("db").state is DependencyState.UNAVAILABLE
@@ -367,6 +378,7 @@ async def test_boot_recovers_goal_and_memory_after_other_process_exits_without_s
         retry_policy=retry_policy("db", retry_enabled=False),
         runtime_epoch="parent-after-exit",
         max_pending_memory=2,
+        cognition=full_cognition(),
     )
     try:
         await start_core(app)
@@ -427,6 +439,8 @@ async def test_boot_database_reconnect_recovers_memory_without_replacing_goal_ow
             retry_policy=retry_policy("db", initial_backoff_seconds=0.001),
             runtime_epoch="reconnect",
             max_pending_memory=2,
+            cognition=full_cognition(),
+        cognition=full_cognition(),
         )
         assert isinstance(app.goals, CoreGoalPersistenceBinding)
         owner = app.goals

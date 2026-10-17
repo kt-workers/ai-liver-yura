@@ -10,6 +10,7 @@ from app import application as bootstrap
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.domain.character.projector import project_character_definition
+from tests.helpers.full_core import full_cognition
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -47,7 +48,7 @@ def test_production_identity_single_load(tmp_path: Path, alternate: bool, rename
             ),
         ) as load,
     ):
-        app = bootstrap.build_core_runtime(config_path)
+        app = bootstrap.build_core_runtime(config_path, cognition=full_cognition())
     assert load.call_count == 1
     identity = app.runtime_subject_identity
     loaded = app.character_definition
@@ -79,5 +80,5 @@ def test_missing_invalid_character_has_no_identity_fallback(tmp_path: Path, miss
     config_path.write_text(yaml.safe_dump(config))
     with patch.object(bootstrap, "create_openai_port_from_environment") as provider:
         with pytest.raises((FileNotFoundError, ValueError)):
-            bootstrap.build_core_runtime(config_path)
+            bootstrap.build_core_runtime(config_path, cognition=full_cognition())
     provider.assert_not_called()

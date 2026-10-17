@@ -34,6 +34,7 @@ from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.domain.input_meaning.test_input_meaning import event, policy
 from tests.domain.plugin_registry.test_plugin_registry import grants, manifest
 from tests.helpers.executive_requirements import make_authority
+from tests.helpers.full_core import full_cognition
 from tests.system_integration.test_core_appraisal import Setup, setup
 from tests.system_integration.test_core_attention import connect
 from tests.system_integration.test_core_executive import Port
@@ -261,11 +262,11 @@ async def test_precondition_failure_is_not_replaced_by_empty_facts() -> None:
 
 
 @pytest.mark.asyncio
-async def test_minimum_boot_retains_real_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_unified_core_retains_real_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         bootstrap, "create_openai_port_from_environment", lambda *_a, **_k: SuccessfulPort()
     )
-    app = bootstrap.build_core_runtime()
+    app = bootstrap.build_core_runtime(cognition=full_cognition())
     source = work()
     context = app.input_context.snapshot().context
     payload = cast(InputMeaningBrainWorkPayload, source.payload)
