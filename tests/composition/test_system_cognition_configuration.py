@@ -326,16 +326,10 @@ async def test_generation_change_before_publication_is_rejected(
         await bootstrap.build_core(**parameters())
 
 
-def test_minimum_core_boot_stays_input_meaning_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
-
-    def forbidden(*args: Any, **kwargs: Any) -> Any:
-        pytest.fail("minimum起動がcore構成を参照しました")
-
-    monkeypatch.setattr(system, "load_core_config", forbidden)
-    core = bootstrap.build_core_runtime(cognition=None)
-    assert core.cognition is None
-    assert core.bridge is not None and core.cognition is None
+def test_incomplete_core_cognition_is_rejected() -> None:
+    """最小構成を成功扱いにせず、必須認知不足を拒否する。"""
+    with pytest.raises(ValueError, match="認知構成は必須"):
+        bootstrap.build_core_runtime(cognition=None)
 
 
 @pytest.mark.asyncio

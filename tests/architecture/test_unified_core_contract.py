@@ -44,3 +44,9 @@ def test_full_core_config_is_the_only_product_config() -> None:
     assert "executive_config:" in config
     assert "attention_policy:" in config
     assert "llm_connections:" in config
+
+
+def test_core_components_reject_partial_brain_registration() -> None:
+    source = (ROOT / "app/bootstrap/core_components.py").read_text()
+    assert "統合本体には認知・主観評価・注意・判断の構成が必須" in source
+    assert "brain.register_module(BrainIntegrationModule.INPUT_MEANING, bridge)" not in source

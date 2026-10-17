@@ -8,7 +8,6 @@ from app.composition.cognition import CoreCognitionDelivery
 from app.composition.cognition_configuration import CoreCognitionConfiguration
 from app.config.core import CoreConfig
 from app.domain.activity_execution import ActivityExecutionAuthority
-from app.domain.brain_integration import BrainIntegrationModule
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.character.contracts import CharacterDefinitionDocument
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
@@ -79,15 +78,13 @@ def compose_core_components(
     clock = prepared_clock or SystemRuntimeClock()
     lifecycle = lifecycle or ApplicationLifecycle(clock, config.shutdown_policy)
     brain = BrainIntegrationRuntime(clock, config.integration_policy)
-    delivery = None
     if cognition is None:
-        brain.register_module(BrainIntegrationModule.INPUT_MEANING, bridge)
-    else:
-        assert bridge.inputs is not None
-        delivery = cognition.compose(
-            brain, input_context, bridge.inputs, llm, clock, memory, goals
-        )
-        delivery.register(bridge)
+        raise ValueError("統合本体には認知・主観評価・注意・判断の構成が必須です")
+    assert bridge.inputs is not None
+    delivery = cognition.compose(
+        brain, input_context, bridge.inputs, llm, clock, memory, goals
+    )
+    delivery.register(bridge)
     return CoreComponents(
         config,
         character,

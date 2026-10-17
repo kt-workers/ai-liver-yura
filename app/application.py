@@ -68,7 +68,9 @@ _compose_core = compose_core_components
 def build_core_runtime(
     config_path: Path | None = None, *, cognition: CoreCognitionConfiguration | None = None
 ) -> CoreRuntimeApplication:
-    """本番設定から構成値を作り、実行ライフサイクルを別所有者へ委譲する。"""
+    """既存構成APIを維持しつつ、全Brainを必須とする。"""
+    if cognition is None:
+        raise ValueError("統合本体の認知構成は必須です")
     config, character, llm = _load_core(config_path, cognition)
     components = _compose_core(
         config,
@@ -117,6 +119,8 @@ async def build_persistent_core(
     cognition: CoreCognitionConfiguration | None = None,
 ) -> CoreRuntimeApplication:
     """保存基盤と復元済み目標を構成し、実行ライフサイクルを委譲する。"""
+    if cognition is None:
+        raise ValueError("統合本体の認知構成は必須です")
     if not isinstance(persistence, PostgresPersistenceRuntime):
         raise ValueError("本体の保存構成にはPostgresPersistenceRuntimeが必要です")
     app: CoreComponents | None = None
@@ -162,26 +166,8 @@ async def build_persistent_core(
 
 
 async def run_core_runtime() -> None:
-    """停止通知まで待機し、シグナル登録と所有タスクを確実に片付ける。"""
-    app = build_core_runtime()
-    loop = asyncio.get_running_loop()
-    stop_requested = asyncio.Event()
-    previous = {signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)}
-    registered: list[signal.Signals] = []
-    try:
-        for signum in previous:
-            loop.add_signal_handler(signum, stop_requested.set)
-            registered.append(signum)
-        await app.start()
-        print("本体の実行構成が起動しました。", flush=True)
-        await stop_requested.wait()
-    finally:
-        try:
-            await app.stop()
-        finally:
-            for signum in registered:
-                loop.remove_signal_handler(signum)
-                signal.signal(signum, previous[signum])
+    """旧呼出しは唯一の正式Core起動へ委譲する。"""
+    await run_core()
 
 
 def _new_core_run_identity() -> CoreRunIdentity:
