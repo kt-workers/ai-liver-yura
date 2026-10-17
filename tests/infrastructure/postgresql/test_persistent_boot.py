@@ -325,8 +325,16 @@ async def test_missing_database_keeps_core_running_with_typed_failure(
         assert isinstance(app.goals, CoreGoalPersistenceBinding)
         assert app.goals.restore_failure is PersistenceFailureCode.UNAVAILABLE
         await start_core(app)
-        assert app.brain.submit(work()).accepted
-        outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        submitted_work = work()
+        assert app.brain.submit(submitted_work).accepted
+        # 自律的な起動時評価と利用者入力のworkは別々に観測する。
+        deadline = asyncio.get_running_loop().time() + 2
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            assert remaining > 0, "入力の認知結果が期限内に届きません"
+            outcome = await asyncio.wait_for(app.brain.next_outcome(), remaining)
+            if outcome.work_id == submitted_work.work_id:
+                break
         assert outcome.status is BrainWorkStatus.COMPLETED
         assert isinstance(outcome.result, InputMeaningInterpretationResult)
         assert app.memory is not None
