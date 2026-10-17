@@ -18,6 +18,11 @@ class CoreRuntimeApplication:
         self._start_task: asyncio.Task[None] | None = None
         self._stop_task: asyncio.Task[None] | None = None
 
+    @property
+    def components(self) -> CoreComponents:
+        """起動時に固定した構成値を、変更不能な構成DTOとして参照する。"""
+        return self._components
+
     def __getattr__(self, name: str) -> Any:
         # 構成値はCoreComponentsが所有し、実行状態はこの境界が所有する。
         return getattr(self._components, name)
