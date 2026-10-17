@@ -73,4 +73,4 @@ def test_usecases_never_import_infrastructure() -> None:
             assert all(
                 name != "app.infrastructure" and not name.startswith("app.infrastructure.")
                 for name in imports
-            ), f"{path}:{node.lineno}: 依存方向違反"
+            ), f"{path}:{getattr(node, 'lineno', 0)}: 依存方向違反"
