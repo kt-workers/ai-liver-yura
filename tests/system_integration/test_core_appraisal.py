@@ -378,7 +378,7 @@ async def test_context_change_between_candidate_acceptance_and_commit_is_recheck
         value.clock,
     )
     initial = value.owner.snapshot()
-    with pytest.raises(ValueError, match="stale for source context"):
+    with pytest.raises(ValueError, match="評価中に内部状態または参照元の世代が更新されました"):
         await value.appraise()
     assert value.owner.snapshot() is initial
     assert value.connection.latest_commit() is None

@@ -130,7 +130,10 @@ async def test_slow_appraisal_trace_local_terminal_and_provenance(
             assert app.goals.snapshot() != before
             gates["trace-A"].set()
             gates["trace-B"].set()
-            rejected = [await outcome(app) for _ in range(2)]
+            rejected = [
+                await outcome(app, module=BrainIntegrationModule.APPRAISAL)
+                for _ in range(2)
+            ]
             assert all(o.status is BrainWorkStatus.FAILED for o in rejected)
             assert all(o.module is BrainIntegrationModule.APPRAISAL for o in rejected)
             assert app.cognition.appraisal.current_commit() is None

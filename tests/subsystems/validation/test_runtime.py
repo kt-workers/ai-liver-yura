@@ -93,6 +93,8 @@ async def test_exception_details_and_sdk_values_are_not_exported() -> None:
     runner = ValidationRunner((replace(target(), run=broken),), POLICY)
     result = await runner.run(spec(), FIXTURE)
     assert result.status is RunStatus.HARNESS_FAILED
+    assert "HARNESS_EXCEPTION:RuntimeError" in result.blockers
+    assert "HARNESS_STAGE:target" in result.blockers
     assert "非公開例外本文" not in result.export_json(POLICY.max_export_bytes)
     with pytest.raises(ValueError):
         TargetObservation(RunStatus.COMPLETED, Gate.PASS, object())  # type: ignore[arg-type]

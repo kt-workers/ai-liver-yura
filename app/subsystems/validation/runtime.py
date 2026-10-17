@@ -325,9 +325,15 @@ class ValidationRunner:
         except ProductInvocationError as error:
             status, gate = RunStatus.PRODUCT_FAILED, Gate.NOT_RUN
             blockers = (f"製品入口が例外終了しました: {error.stage}",)
-        except Exception:
+        except Exception as error:
             status, gate = RunStatus.HARNESS_FAILED, Gate.NOT_RUN
-            blockers = ("検証接続の実行に失敗しました",)
+            # 例外本文は秘密情報を含み得るため出力せず、型と失敗区間だけを公開する。
+            stage = context.intervals[-1].name if context.intervals else "runner"
+            blockers = (
+                "検証接続の実行に失敗しました",
+                f"HARNESS_STAGE:{stage}",
+                f"HARNESS_EXCEPTION:{type(error).__name__}",
+            )
         finally:
             try:
                 await context.close()
