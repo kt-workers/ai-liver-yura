@@ -17,6 +17,7 @@ import pytest
 import yaml
 
 from app import application as bootstrap
+from app.bootstrap.core_application import CoreApplication
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm import production
 from app.adapters.llm.production import UnavailableLLMRolePort
@@ -408,19 +409,19 @@ def test_run_loop_cancellation_cleans_signals_and_owned_tasks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     no_provider(monkeypatch)
-    original_start = bootstrap.CoreApplication.start
+    original_start = CoreApplication.start
 
     async def scenario() -> None:
         baseline = asyncio.all_tasks()
         started = asyncio.Event()
         previous = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
 
-        async def start(self: bootstrap.CoreApplication) -> None:
+        async def start(self: CoreApplication) -> None:
             await original_start(self)
             started.set()
 
         # 正本で指定された統合Coreの開始境界を観測する。
-        monkeypatch.setattr(bootstrap.CoreApplication, "start", start)
+        monkeypatch.setattr(CoreApplication, "start", start)
         runner = asyncio.create_task(bootstrap.run_core_runtime())
         try:
             await asyncio.wait_for(started.wait(), 2)
