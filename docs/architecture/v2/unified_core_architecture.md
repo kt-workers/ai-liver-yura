@@ -1,0 +1,68 @@
+# AI Liver ゆら — 統合本体アーキテクチャ
+
+状態: 正本 / 2026-10-17改訂。旧「Minimum Core」「S2 Production」の製品構成契約に優先する。
+対象: ゆら本体。Python 3.10.5（`>=3.10,<3.11`）。旧機能を縮小した代替構成を製品として実装しない。
+
+## 1. 目標と唯一の本体
+
+`python -m app` は、完成形のゆらを構成する唯一の標準CLI入口である。入力意味解析だけを起動する経路、S2専用モード、機能数を減らした「仮のゆら」を本番起動や完成条件にしない。テスト時にPortを置換しても登録されるDomainの責務や構成を縮小しない。
+
+本体は同一の実行Identityとライフサイクルのもとで、入力・内部契機、意味解析、主観評価、感情・欲求・内部状態、注意、自律判断、目標・計画、活動・実行事実、記憶・振り返り、発話の意味・言語化、身体への意図、並行処理・終了を連結する。これらの機能を不要扱いにして起動成功へ読み替えない。
+
+GUI、配信画面、ゲーム技能、個別の音声エンジン、アバター描画器は交換可能な外部提供先であり、ゆらの意思決定のOwnerにはならない。外部能力が未提供のときは、当該能力の可用性を事実どおり報告し、命令や実行成功を補作しない。
+
+## 2. フォルダと責務
+
+| 配置 | 唯一の責務 |
+| --- | --- |
+| `app/domain/` | 感情・欲求・目標・判断・意味・実行事実のモデル、状態遷移、不変条件、純粋な規則 |
+| `app/usecases/` | 複数Domain OwnerとPortを協調し、一連の認知・活動・終了を実行する |
+| `app/runtime/` | queue・lane・時刻・取消・並列タスク・backpressureの機構 |
+| `app/usecases/ports/` / Domain contracts | 外部提供先への抽象契約 |
+| `app/adapters/` | LLM・音声・人物ファイルなどの入出力・Provider変換 |
+| `app/infrastructure/` | DB・時計・接続・資源・外部プロセス等の具体実装 |
+| `app/config/` | 本番設定の型付き読込み・厳格検証。意思決定ルールを持たない |
+| `app/bootstrap/` | 唯一のComposition Rootで具象を組立て、所有・終了を接続する |
+| `app/application.py` / `app/__main__.py` | 利用者向け起動・停止入口だけ |
+
+DomainはUseCase・Adapter・Infrastructure・Bootstrapをimportしない。UseCaseは具象Adapter/Infrastructureを直接生成しない。Bootstrapに構成コードを集約し、`composition/` に追加の起動rootを作らない。責務の移設時は利用側import・テストも同時に修正する。
+
+## 3. 唯一の構成・起動・停止
+
+1. `config/core.yaml` と参照する各Ownerの設定・人物定義を検査する。Python 3.10.5の依存とschema revisionを固定する。
+2. 実行Identityを一度だけ発行し、Goal、Activity、Internal State、Attention、Memory、Brain Runtime等の正規Ownerを構築する。同じ状態を別の段階用に複製しない。
+3. Input Meaning、Appraisal、Executive、Attention、Goal/Activity、記憶、Speechの本体機能をPort経由で明示接続する。必須Ownerの未構成、未登録、設定不整合は起動失敗として返す。
+4. 具体的Providerと外部能力の可用性を確認する。任意提供先の不在は当該能力の型付きUnavailableであり、Brainモジュールを省く理由にはしない。
+5. 全Ownerを公開した後に受付を開始する。受付後も内部契機は入力待ちへ直列化せず、実際の状態と実行結果を観測し続ける。
+6. 停止時は新規受付を閉じ、活動・音声・実行中のタスク・保存を整合させ、所有する資源を逆順に解放する。借用した接続は閉じない。
+
+起動失敗をより小さい構成へfallbackさせない。起動成功は必須Ownerの準備完了を意味するが、未実行の発話・認知結果や外部I/O成功を意味しない。
+
+## 4. 永続化・発話・身体
+
+Memoryの正規Ownerと保存Portは本体構成に含む。DB障害は明示された保存方針に従い、記憶の永続化が成功したかを偽らない。復元・保存・再起動の試験は本体完成に必要。
+
+Speechは意味計画・人物らしい言語化・検証・出力処理の責務を持つ。TTS/Presentationの外部提供先未構成を理由に意味経路を削除しない。Bodyは意思決定と独立した連続制御に従い、装置・アバターの接続有無と内部状態を区別する。
+
+## 5. 受入基準
+
+- 起動時に全必須Ownerが登録済みで、登録不足を成功として隠さない。
+- 入力と内部契機の双方が意味解析・評価・自律判断へ到達する。
+- 感情・欲求・目標・計画・活動・記憶が各Ownerの正しい状態遷移と出典を保持する。
+- Speech / Body / Pluginの可用性、実行事実、失敗が創作されずに出力される。
+- 並列処理・取消・現在性・縮退・資源解放が検証される。
+- Python 3.10.5でRuff、strict Mypy、全pytest、実PostgreSQL、起動停止の結合試験を通過する。
+- 実LLM・実発話・自律活動・復元の動作と品質を確認し、模擬Portの成功だけで完成としない。
+
+**段階別のテスト実行は許可するが、段階別の製品起動構成は認めない。** 進捗はこの唯一の本体の実装・受入れで判定する。
+
+## 6. 廃止する契約
+
+以下は本変更により製品構成の正本ではなくなる。
+
+- `docs/architecture/v2/minimum_brain_production_configuration.md` の入力意味解析だけによる製品起動
+- `docs/architecture/v2/system_production_cognition_configuration.md` のS2専用製品起動
+- `--s2-production` と `build_s2_production_core`、`MinimumBrainProductionConfig` 等の旧API
+- 「S1からS9を進めれば段階ごとの半製品が完成する」という扱い
+
+歴史的な試験やIssueの番号は記録として保持しても、失効済みの起動方式を復活させてはならない。実装移行中に残る旧コードは移行未完了として管理し、完成と報告しない。

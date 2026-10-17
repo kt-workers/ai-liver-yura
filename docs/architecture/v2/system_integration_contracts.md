@@ -7,7 +7,7 @@ Root: #317
 Related: #347 / #352 / #365 / #396 / #434 / #445
 Status: Canonical Supplement / Design Completion Gate
 
-本体の先行完成では第29節を適用する。既存の段階・実サービス・人間による確認の条件は全体完成の条件として保持し、外部機能固有の未達条件を本体の先行完成へ一律に課さない。
+本体の唯一の完成判定は統合本体アーキテクチャを適用する。既存の段階・実サービス・人間による確認の条件は全体完成の条件として保持し、外部機能固有の未達条件を本体の先行完成へ一律に課さない。
 
 ## 1. Purpose
 
@@ -123,74 +123,21 @@ This snapshot is test/operations provenance, not Domain State.
 
 ---
 
-## 5. Staged integration gates
+## 5. 統合本体の受入れ範囲
 
-System Integration proceeds incrementally.
+[統合本体アーキテクチャ](unified_core_architecture.md)の単一本体を対象に検証する。Minimum / S2 / S3などを別々の製品起動状態として扱わない。検証単位は責務ごとに分けてよいが、本番構成は同じ全Ownerと同じ起動・終了境界を使用する。
 
-### S1 Foundation / Runtime
+| 検証対象 | 観測する事実 |
+| --- | --- |
+| 実行基盤 | 並行性、取消、優先度、backpressure、停止後の未回収タスクなし |
+| 認知・自律判断 | 入力と内部契機、意味・主観評価・Attention・Executive・Goal・Activityの連動 |
+| Speech | 意味計画、人物らしい表現、実発話の要求と提示事実 |
+| Body | 内部意図と実際の継続的な身体挙動の独立性 |
+| Memory | 保存、復元、現在世代、出典、再起動の整合 |
+| Plugin / Subsystems | 任意能力0件・1件・複数件で本体判断を変質させない |
+| Human Verification | 実LLM、実音声、自律活動、必要な実行品質 |
 
-Verify:
-- bounded scheduling
-- priority/backpressure
-- cancellation
-- lifecycle
-- no pending task leaks
-
-### S2 Brain minimum
-
-Use #334 with fake providers/text presentation.
-
-Verify:
-- Meaning/Appraisal/Attention/Executive/Goal/Activity/Speech/Memory boundaries
-- user input not unconditional command
-- internal trigger without user input
-
-### #561 早期起動の境界
-
-#561の早期起動に必要な登録集合とリビジョン付き初期データは、[最小Brainの本番初期構成](minimum_brain_production_configuration.md)を参照する。
-
-#561の必須Brainモジュール登録は`INPUT_MEANING`のみであり、上記S2の全検証対象を起動時に必須登録することを意味しない。4レーンの定義要件は維持する。提供サービス未構成時の型付き利用不可、プロセス継続、取消・停止後の所有タスク回収までを早期に証明し、通常会話の成功や#360のS2最終検証は後続工程で確認する。
-
-### S3 Full Speech
-
-Add:
-- #331 Performance
-- #348 Runtime
-- #358 actual/fake TTS
-
-Verify actual speech preparation/presentation separation.
-
-### S4 Body / Avatar
-
-Add #341 and #346.
-
-Verify sibling Speech/Body fan-out and continuous realtime Body.
-
-### S5 Memory / Persistence
-
-Add #364/#332/#359 persistence behavior.
-
-Verify restart-safe state only.
-
-### S6 Plugin zero/one
-
-Use #344.
-
-### S7 GUI / Validation Labs
-
-本体の統合証拠に必要な検証基盤と、任意GUIの接続検証を分ける。#351の完成はS1〜S6、S8〜S9および本体の最終統合の一律前提ではない。GUI接続の観測・操作は公開契約だけを使い、接続したGUIに対する画面品質・失敗分離・停止・交換・併用の検証は別の結果として保持する。未接続GUIの検証をPASSにしない。
-
-本体側ではGUIなしの設定読込・起動・処理継続・正常停止を確認する。ファイル直接編集の反映時点は設定所有者の正本に従う。外部利用者を接続する場合は、GUI単独停止と全体停止を区別し、初期化失敗・遅延・切断で本体の独立処理を止めないこと、別の最小利用者や複数利用者でも同じ公開契約と判断・状態更新の所有権を維持することを確認する。
-
-### S8 Streaming / Game
-
-Verify simultaneous real-time Subsystem behavior.
-
-### S9 Complete lifecycle
-
-Verify degraded failure/reconnect/shutdown/restart.
-
-A later stage does not replace earlier Unit/Adjacent evidence.
+未配備の外部提供先と本体の必須Ownerを区別する。未配備Providerを模擬成果で置き換えて実サービスの成功と主張しない。
 
 ---
 
@@ -203,9 +150,9 @@ Logical sequence:
 ```text
 load static configuration / Character Definition
 → initialize Core stores/runtime
-→ establish minimum Brain service
-→ publish availability of Providers/Plugins/Subsystems as they initialize
-→ admit normal work when minimum required Core gate is ready
+→ establish all mandatory Core/Brain owners
+→ publish typed availability of Providers/Plugins/Subsystems
+→ admit normal work only after the unified Core gate is ready
 ```
 
 Optional provider/subsystem initialization may continue asynchronously.
@@ -711,22 +658,6 @@ Meaning・Appraisal・Attention・Executiveのsource event / root_trigger / trig
 
 提供先を置換した自動試験は実LLM・実音声・実サービス・Human Verificationではない。Human実動作はNOT_RUN / UNRATEDを維持する。#621〜#625、#434、#586、GUI・Game・Streamingの受入れへ拡大しない。
 
-## S2本番認知構成の具体契約（#692）
+## 統合構成の正式起動
 
-明示activation、deployment参照、SystemCompositionSnapshotのtyped化、構築・終了所有は[SystemのS2本番認知構成](system_production_cognition_configuration.md)を正とする。本書第4節の由来をDomain Stateへ置き換えず、minimum起動とS2の分離を維持する。
-
-## 本番S2の明示CLI入口（#729）
-
-`python -m app --s2-production`は#692の`build_s2_production_core()`へ、現在のclean checkoutに束縛した新しい`S2RunIdentity`、明示activation、既存Runtime Ownerを渡す。引数なしの`python -m app`は#561の最小Coreのままとし、両者を自動選択又は相互fallbackしない。
-
-通常S2のProvider deploymentが`unconfigured`なら既存`UnavailableLLMRolePort`による型付き利用不可を保持する。この状態はLLM応答、実発話、外部Provider接続の成功ではない。SpeechなしのS2はSpeech用Ownerを要求しない。Speech有効時だけ#705/#709の設定・登録入口から得た`SpeechProductionInputs`を一度だけ渡し、登録又はavailabilityの不備は失敗として返す。
-
-## S2へのSpeech本番構成接続（#702）
-
-Speechを指定したS2起動は、[SystemのS2本番認知構成](system_production_cognition_configuration.md) §9のSystem-owned factoryから既存CoreSpeechConfigurationを生成する。Executive Speech evidence、登録pipeline、SystemCompositionSnapshotは同じbinding / generationを参照する。Speech未指定時の既存S2とminimum起動を維持する。
-
-構築時点のsafe provenanceと、#621が実行後に照合するtrace・candidate generation・提示Factを分離する。factoryは既存Ownerとdeploymentの明示入力を束ね、具体voice/providerやSpeech意味を作らない。資源のCoreへの移管、borrowed依存の保全、部分構築失敗の回収は同§9を正とし、System側でSpeech shutdownを二重実行しない。
-
-## 設定ファイルからの本番Speech供給（#705）
-
-Speech有効時は[三層の本番設定](configuration_architecture.md)から解決したpublicationをS2の同一runへ注入する。外部I/Oの試験置換とOwner policyの試験fixture置換を区別し、System acceptanceは前者だけを許す。設定の未構成・不正・staleを発話成功とせず、Human Verificationは人間による確認までNOT_RUN / UNRATEDを維持する。
+`python -m app` は[統合本体アーキテクチャ](unified_core_architecture.md)の全必須Ownerを同一runに組み立てる。旧S2専用CLIと最小Coreは廃止し、本体の全機能を接続して検証する。Speech構成とProviderの接続は正規Ownerの方針を保ち、未構成・availability不足を成功へ読み替えない。

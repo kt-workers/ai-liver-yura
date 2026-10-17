@@ -2,6 +2,8 @@
 
 ## 1. 責務と適用範囲（#705 / #360）
 
+**起動経路改訂:** 製品起動は[統合本体](unified_core_architecture.md)の`python -m app`に統一する。本書中の旧S2専用起動rootとMinimum互換の説明は歴史的記録であり、製品の起動契約ではない。Speechが外部で未構成でもBrain側の意味Ownerを省略してはならない。
+
 変更可能な設定はファイルで管理する。通常編集する主設定、詳細をまとめるProfile、内部管理値を分離する。Systemは既存Ownerの公開DTOと登録を構築するだけで、Domainの意味、instructions、schema、規則選択を所有しない。Brain / Body / Memoryもこの境界へ従うが、既存Owner設定の全移行は要求しない。GUI/Adminは許可された安全な投影だけを表示し、設定やsecretの別Authorityにならない。
 
 ## 2. ファイルと優先順位
