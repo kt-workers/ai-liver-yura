@@ -171,7 +171,9 @@ def normal_cognition_target(
         if not accepted.accepted:
             await stop()
             return TargetObservation(
-                RunStatus.PRODUCT_FAILED, Gate.FAIL, _project({"admission": project_brain_admission(accepted)})
+                RunStatus.PRODUCT_FAILED,
+                Gate.FAIL,
+                _project({"admission": project_brain_admission(accepted)}),
             )
         event = case.admission.event.envelope
         observed: set[str] = set()
