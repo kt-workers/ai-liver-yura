@@ -7,11 +7,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.config.core import CoreConfig
 from app.config.gui_admin import GuiAdminProductionConfig
-from app.config.minimum_brain import MinimumBrainProductionConfig
-from app.runtime.kernel.clock import RuntimeClock
+from app.infrastructure.scheduling import RuntimeClock
 
-from .configuration_projection import MinimumBrainConfigurationReadModelProjector
+from .configuration_projection import CoreConfigurationReadModelProjector
 from .contracts import GuiAdminAvailability
 from .http_application import GuiHttpApplication
 
@@ -48,7 +48,7 @@ class GuiAdminSubsystem:
     def __init__(
         self,
         config: GuiAdminProductionConfig,
-        brain_config: MinimumBrainProductionConfig,
+        brain_config: CoreConfig,
         clock: RuntimeClock,
         transport_factory: GuiAdminTransportFactory,
     ) -> None:
@@ -93,7 +93,7 @@ class GuiAdminSubsystem:
 
     async def _start(self) -> None:
         try:
-            projection = MinimumBrainConfigurationReadModelProjector(
+            projection = CoreConfigurationReadModelProjector(
                 self._brain_config, self._clock, self._config.gui_operational_policy
             )
             self._transport = self._factory(self._config, GuiHttpApplication(projection))

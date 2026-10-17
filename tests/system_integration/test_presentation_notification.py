@@ -6,15 +6,11 @@ from typing import Any
 
 import pytest
 
-from app.composition.execution_observation import (
+from app.domain.activity_execution import ActivityExecutionAuthority
+from app.domain.activity_execution.speech_observation import (
     SPEECH_OBSERVATION_POLICY,
     SPEECH_OBSERVATION_SOURCE,
 )
-from app.composition.input_reference_context import CoreInputReferenceContextBinding
-from app.composition.presentation_notification import CorePresentationNotification
-from app.composition.presentation_notification import PresentationNotificationState as S
-from app.composition.speech_feedback import SpeechFactDeliveryDisposition as Delivery
-from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus
 from app.domain.executive import GoalTransitionOperation
@@ -31,6 +27,10 @@ from app.domain.input_gateway.normalizer import (
     InputSessionRegistry,
 )
 from app.domain.input_meaning import ReferenceContextKind
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
+from app.usecases.presentation_notification import CorePresentationNotification
+from app.usecases.presentation_notification import PresentationNotificationState as S
+from app.usecases.speech_feedback_facade import SpeechFactDeliveryDisposition as Delivery
 from tests.domain.activity_execution.test_observation_ingress import observation
 from tests.domain.attention.test_attention_response_settlement import prepared_store
 from tests.domain.goals.test_goal_commitment_store import apply_goal
@@ -325,7 +325,7 @@ class GoalSnapshotSource:
 def test_exact_capacity_failure_is_atomic_and_retry_does_not_consume_gateway(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.composition.input_reference_context import PresentationReferenceCapacityError
+    from app.usecases.input_reference_context_facade import PresentationReferenceCapacityError
 
     d, r, submitted, normalizer = notification(monkeypatch)
     goals = GoalSnapshotSource(32)

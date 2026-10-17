@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 
 from .assets import CSS, HTML, JAVASCRIPT
-from .configuration_projection import MinimumBrainConfigurationReadModelProjector
+from .configuration_projection import CoreConfigurationReadModelProjector
 
 SAFE_HEADERS: tuple[tuple[str, str], ...] = (
     ("Cache-Control", "no-store"),
@@ -55,12 +55,12 @@ def failure_response(status: int, code: str, *, head: bool = False) -> GuiHttpRe
 class GuiHttpApplication:
     """注入済みの不変投影だけを公開し、ファイル探索やOwner操作をしない。"""
 
-    def __init__(self, projector: MinimumBrainConfigurationReadModelProjector) -> None:
+    def __init__(self, projector: CoreConfigurationReadModelProjector) -> None:
         self._routes = {
             b"/": ("text/html; charset=utf-8", HTML),
             b"/assets/app.js": ("text/javascript; charset=utf-8", JAVASCRIPT),
             b"/assets/app.css": ("text/css; charset=utf-8", CSS),
-            b"/api/v1/configuration/minimum-brain": (
+            b"/api/v1/configuration/core-runtime": (
                 "application/json; charset=utf-8",
                 projector.json_bytes,
             ),

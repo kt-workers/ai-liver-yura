@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from weakref import WeakKeyDictionary
 
-from app.bootstrap import MinimumCoreApplication
+from app.application import CoreComponents
+from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.domain.activity_execution import (
     ActivityExecutionPort,
     ActivityExecutionRecord,
@@ -14,17 +15,23 @@ from app.domain.activity_execution import (
     ExecutionDispatchRequest,
     ExecutionEffectUncertainty,
 )
-from app.domain.brain_integration import BrainIntegrationWork, BrainWorkAdmission, BrainWorkStatus
+from app.domain.brain_integration import BrainWorkStatus
 from app.domain.contracts import ExecutionStatus, PreconditionRef
 from app.domain.contracts.common import JsonValue
 from app.domain.executive import CommittedExecutiveDecision
 from app.domain.input_gateway import InputAdmission, InputAdmissionStatus
 from app.domain.plan_execution.contracts import PlanExecutionScope
 from app.domain.plan_execution.owner import PlanExecutionProgress
-from app.runtime.kernel import RuntimeClock
+from app.infrastructure.scheduling import RuntimeClock
+from app.usecases.brain_integration_runtime import BrainIntegrationWork, BrainWorkAdmission
 
 from .body import _project
-from .cognition import _IterationApplication, _result_projection, _status
+from .cognition import (
+    _IterationApplication,
+    _result_projection,
+    _status,
+    project_brain_admission,
+)
 from .contracts import (
     Gate,
     InjectedFailure,
@@ -126,7 +133,7 @@ class CommittedActivityLabCase:
 
 def plan_activity_target(
     cases: tuple[PlanActivityLabCase | CommittedActivityLabCase, ...],
-    application_factory: Callable[[RunContext], MinimumCoreApplication],
+    application_factory: Callable[[RunContext], CoreComponents | CoreRuntimeApplication],
     provenance: ProductionTargetProvenance,
     contract_revision: str,
     provider_policy_refs: tuple[str, ...],
@@ -163,8 +170,8 @@ def plan_activity_target(
         if owner.current is not None:
             raise ValueError("前iterationのアプリケーションが未停止です")
         app = application_factory(context)
-        if not isinstance(app, MinimumCoreApplication):
-            raise ValueError("factoryは正規MinimumCoreApplicationを返す必要があります")
+        if not isinstance(app, (CoreComponents, CoreRuntimeApplication)):
+            raise ValueError("factoryは正規の本体または構成済み要素を返す必要があります")
         owner.current = app
         if app.cognition is None or app.cognition.execution is None:
             await owner.stop()
@@ -196,7 +203,7 @@ def plan_activity_target(
                 )
 
             scope = await context.invoke_product("plan_activity.prepare_plan", prepare)
-        await context.invoke_product("plan_activity.start", app.start)
+        await context.invoke_product("plan_activity.start", owner.start)
 
         async def submit() -> BrainWorkAdmission | None:
             assert app.cognition is not None
@@ -209,30 +216,33 @@ def plan_activity_target(
         if accepted is not None and not accepted.accepted:
             await owner.stop()
             return TargetObservation(
-                RunStatus.PRODUCT_FAILED, Gate.FAIL, _project({"admission": accepted})
+                RunStatus.PRODUCT_FAILED,
+                Gate.FAIL,
+                _project({"admission": project_brain_admission(accepted)}),
             )
         try:
             app.brain.trace(trace_id)
         except KeyError:
             await owner.stop()
             return TargetObservation(
-                RunStatus.PRODUCT_FAILED, Gate.FAIL, _project({"admission": accepted})
+                RunStatus.PRODUCT_FAILED,
+                Gate.FAIL,
+                _project({"admission": project_brain_admission(accepted)}),
             )
         observed: set[str] = set()
         outputs: list[JsonValue] = []
         decisions: list[CommittedExecutiveDecision] = []
         records: dict[str, ActivityExecutionRecord] = {}
         status = RunStatus.COMPLETED
-        # 公開outcomeより先に製品が後続workを登録するため、未観測の実traceで終端を判定する。
-        # 固定段数や「活動成功なら計画完了」というLab独自の判断は持たない。
-        for _ in range(context.policy.max_intervals):
+        # Runtimeは複数traceを非直列に公開する。対象trace以外の終端を除外し、
+        # 対象traceの未観測workだけを数えて完了を判定する。
+        while len(observed) < context.policy.max_intervals:
             outcome = await context.invoke_product("plan_activity.outcome", app.brain.next_outcome)
+            if outcome.trace_id != trace_id:
+                continue
             trace = app.brain.trace(trace_id)
-            if (
-                outcome.trace_id != trace_id
-                or outcome.work_id in observed
-                or outcome.work_id not in {i.work_id for i in trace.intervals}
-            ):
+            expected_work_ids = {i.work_id for i in trace.intervals}
+            if outcome.work_id in observed or outcome.work_id not in expected_work_ids:
                 raise ValueError("計画・活動の公開outcomeとtraceが一致しません")
             observed.add(outcome.work_id)
             result = outcome.result
@@ -287,7 +297,7 @@ def plan_activity_target(
             Gate.PASS if structural else Gate.FAIL,
             _project(
                 {
-                    "admission": accepted,
+                    "admission": project_brain_admission(accepted),
                     "scope": None if scope is None else scope.to_dict(),
                     "outcomes": outputs,
                     "execution_records": tuple(records.values()),

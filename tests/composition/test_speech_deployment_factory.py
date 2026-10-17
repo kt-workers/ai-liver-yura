@@ -11,21 +11,17 @@ from typing import Any, cast
 
 import pytest
 
-from app import bootstrap
-from app.adapters.llm.s2_production import create_s2_provider_lease
+from app import application as bootstrap
+from app.adapters.llm.core import create_core_provider_lease
 from app.adapters.tts.production import TTSProductionConnection, TTSProviderRegistry
 from app.adapters.tts.provider import TTSProviderClient
-from app.composition.cognition import CoreCognitionDelivery
-from app.composition.input_reference_context import CoreInputReferenceContextBinding
-from app.composition.presentation_notification import CoreSpeechProductionOwnerConnection
-from app.composition.s2_provider import S2ProviderLease
-from app.composition.speech import CoreSpeechContextReaders, SpeechOutputPreparationRequest
-from app.composition.speech_deployment import (
+from app.bootstrap.core_provider import CoreProviderLease
+from app.bootstrap.speech_deployment import (
     SpeechDeploymentRequest,
     create_speech_deployment,
     production_speech_deployment_registry,
 )
-from app.composition.speech_deployment_factory import (
+from app.bootstrap.speech_deployment_factory import (
     ProductionSpeechDeploymentPortFactory,
     SpeechDeploymentFactoryError,
     SpeechDeploymentOwnerConnections,
@@ -38,6 +34,10 @@ from app.infrastructure.speech_presentation.production import (
     PresentationProductionRegistration,
     PresentationWorkerRegistry,
 )
+from app.usecases.cognition_delivery import CoreCognitionDelivery
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
+from app.usecases.presentation_notification import CoreSpeechProductionOwnerConnection
+from app.usecases.speech_pipeline import CoreSpeechContextReaders, SpeechOutputPreparationRequest
 from tests.adapters.tts.test_production import FakeTTSClient, capability, registration
 from tests.adapters.tts.test_provider import _policy
 from tests.composition.test_speech_deployment import dependencies
@@ -180,9 +180,9 @@ async def test_construction_failure_is_preserved_when_cleanup_also_fails(
         events.append("provider.release")
         raise RuntimeError("非公開のprovider回収失敗")
 
-    async def provider(*_: object) -> S2ProviderLease:
+    async def provider(*_: object) -> CoreProviderLease:
         port: Any = object()
-        return S2ProviderLease(port, (), "unconfigured", release)
+        return CoreProviderLease(port, (), "unconfigured", release)
 
     class _Presentation:
         async def acquire(self, _: object) -> None:
@@ -217,7 +217,7 @@ async def test_construction_failure_is_preserved_when_cleanup_also_fails(
         cast(Any, SimpleNamespace(provider_factory=provider, presentation=_Presentation())),
     )
 
-    with caplog.at_level(logging.WARNING, logger="app.composition.speech_deployment_factory"):
+    with caplog.at_level(logging.WARNING, logger="app.bootstrap.speech_deployment_factory"):
         with pytest.raises(RuntimeError) as raised:
             await factory(request)
 
@@ -333,10 +333,10 @@ async def test_returned_release_joins_repeated_calls_once() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("available", (False, True))
-async def test_registered_production_factory_reaches_s2_with_separate_role_publication(
+async def test_registered_production_factory_reaches_core_with_separate_role_publication(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, available: bool
 ) -> None:
-    """登録済みfactoryからS2まで、Provider用とDomain用のRoleを混同しない。"""
+    """登録済みfactoryからcoreまで、Provider用とDomain用のRoleを混同しない。"""
     import openai
 
     path = await build_speech_path()
@@ -350,7 +350,7 @@ async def test_registered_production_factory_reaches_s2_with_separate_role_publi
 
     async def provider(roles: Any, configs: Any, bindings: Any, mode: str) -> Any:
         calls.append((roles, configs, bindings, mode))
-        return await create_s2_provider_lease(roles, configs, bindings, mode)
+        return await create_core_provider_lease(roles, configs, bindings, mode)
 
     class FakeAsyncOpenAI:
         async def close(self) -> None:
@@ -400,7 +400,7 @@ async def test_registered_production_factory_reaches_s2_with_separate_role_publi
             root, **dependencies(), registry=registry
         )
         assert source is not None
-        app = await bootstrap.build_s2_production_core(**parameters(), speech=source.inputs)
+        app = await bootstrap.build_core(**parameters(), speech=source.inputs)
         provider_roles, configs, bindings, mode = source.request.provider_bindings.factory_inputs()
         assert calls == [(provider_roles, configs, bindings, mode)]
         assert tuple(role.role_id for role in provider_roles) == tuple(

@@ -17,7 +17,6 @@ from app.domain.contracts import (
 from app.domain.goal_planning import (
     ActivityContextRef,
     ActivityPlanStep,
-    GoalPlanner,
     GoalPlanningAuthority,
     GoalPlanningBoundsError,
     GoalPlanningCandidate,
@@ -31,6 +30,7 @@ from app.domain.goal_planning import (
     validate_plan_bounds,
 )
 from app.domain.goals import InterruptionPolicy
+from app.usecases.goal_planning import GoalPlanner
 from tests.domain.goal_planning.test_goal_planning import (
     NOW,
     DelayedPort,

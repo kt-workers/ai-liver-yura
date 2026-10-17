@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from app import bootstrap
-from app.composition.cognition_configuration import CoreCognitionConfiguration
+from app import application as bootstrap
+from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.domain.appraisal import InternalStateReducer
 from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
@@ -17,12 +17,17 @@ from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLI
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.preconditions import PreconditionSourceRouter
-from app.domain.executive import ExecutiveIntentRequirementsPolicy, ExecutiveRequirementsOwner
+from app.domain.executive import (
+    CommittedExecutiveDecision,
+    ExecutiveIntentRequirementsPolicy,
+    ExecutiveRequirementsOwner,
+)
 from app.domain.input_gateway import InputAdmission, InputAdmissionStatus, InputModality
 from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
 from app.domain.plugin_registry import PluginRegistryAuthority
 from tests.domain.appraisal.test_appraisal_paths import output, policy, result, state
 from tests.domain.executive.test_executive import policy as executive_policy
+from tests.helpers.brain_outcomes import next_outcome_matching
 from tests.system_integration.test_core_attention import rules
 from tests.system_integration.test_core_executive import Port as ExecutivePort
 from tests.system_integration.test_early_boot import SuccessfulPort, work
@@ -100,7 +105,7 @@ def application(monkeypatch: pytest.MonkeyPatch, *, fast: bool = False) -> tuple
         if fast
         else (),
     )
-    app = bootstrap.build_minimum_core(cognition=config)
+    app = bootstrap.build_core_runtime(cognition=config)
     assert set(descriptors) == {"input_meaning", "subjective_appraisal", "executive_deliberation"}
     return app, port
 
@@ -136,14 +141,27 @@ async def test_startup_delivers_accepted_event_to_committed_decision(
     try:
         accepted = app.cognition.submit_input(admission(app, internal=internal))
         assert accepted.accepted
+        modules = (
+            (BrainIntegrationModule.APPRAISAL, BrainIntegrationModule.EXECUTIVE)
+            if internal
+            else (
+                BrainIntegrationModule.INPUT_MEANING,
+                BrainIntegrationModule.APPRAISAL,
+                BrainIntegrationModule.EXECUTIVE,
+            )
+        )
         outcomes = []
-        for _ in range(2 if internal else 3):
-            outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        for module in modules:
+            outcome = await next_outcome_matching(
+                app.brain, trace_id="trace-1", module=module
+            )
             assert outcome.status is BrainWorkStatus.COMPLETED, outcome
             outcomes.append(outcome)
         assert all(o.status is BrainWorkStatus.COMPLETED for o in outcomes), outcomes
         assert outcomes[-1].module is BrainIntegrationModule.EXECUTIVE
-        assert outcomes[-1].result.candidate.source_event_ids == ("event-1",)
+        decision = outcomes[-1].result
+        assert isinstance(decision, CommittedExecutiveDecision)
+        assert decision.candidate.source_event_ids == ("event-1",)
         trace = app.brain.trace("trace-1")
         assert trace.root_trigger_id == "event-1"
         assert trace.source_event_ids == ("event-1",)
@@ -163,8 +181,9 @@ async def test_cancel_during_appraisal_never_dispatches_executive(
         accepted = app.cognition.submit_input(admission(app, internal=True))
         await asyncio.wait_for(port.entered.wait(), 2)
         app.brain.cancel(accepted.work_id, "試験取消")
-        outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
-        assert outcome.status is BrainWorkStatus.CANCELLED
+        await next_outcome_matching(
+            app.brain, work_id=accepted.work_id, status=BrainWorkStatus.CANCELLED
+        )
         assert [r.role_id for r in port.requests] == ["subjective_appraisal"]
     finally:
         await app.stop()
@@ -181,12 +200,13 @@ async def test_goal_update_during_appraisal_rejects_old_context(
     port.release.clear()
     await app.start()
     try:
-        app.cognition.submit_input(admission(app, internal=True))
+        accepted = app.cognition.submit_input(admission(app, internal=True))
         await asyncio.wait_for(port.entered.wait(), 2)
         apply_goal(app.goals, GoalTransitionOperation.CREATE, 0)
         port.release.set()
-        outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
-        assert outcome.status is BrainWorkStatus.FAILED
+        await next_outcome_matching(
+            app.brain, work_id=accepted.work_id, status=BrainWorkStatus.FAILED
+        )
         assert app.cognition.appraisal.current_commit() is None
         assert len(port.requests) == 1
     finally:
@@ -204,12 +224,14 @@ async def test_trace_cancellation_reaches_work_after_input_completed(
     try:
         app.cognition.submit_input(admission(app))
         await asyncio.wait_for(port.entered.wait(), 2)
-        first = await asyncio.wait_for(app.brain.next_outcome(), 2)
-        assert first.module is BrainIntegrationModule.INPUT_MEANING
+        await next_outcome_matching(
+            app.brain, trace_id="trace-1", module=BrainIntegrationModule.INPUT_MEANING
+        )
         assert app.cognition.cancel_trace("trace-1", "入力置換", supersede=supersede) == 1
-        outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
-        assert outcome.status is (
-            BrainWorkStatus.SUPERSEDED if supersede else BrainWorkStatus.CANCELLED
+        await next_outcome_matching(
+            app.brain,
+            trace_id="trace-1",
+            status=BrainWorkStatus.SUPERSEDED if supersede else BrainWorkStatus.CANCELLED,
         )
         assert len(port.requests) == 2
     finally:
@@ -232,7 +254,7 @@ async def test_shutdown_reaps_pending_appraisal(monkeypatch: pytest.MonkeyPatch)
 async def test_next_queue_rejection_is_not_reported_as_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.domain.brain_integration import BrainWorkAdmission, BrainWorkAdmissionStatus
+    from app.usecases.brain_integration_runtime import BrainWorkAdmission, BrainWorkAdmissionStatus
 
     app, port = application(monkeypatch)
     await app.start()
@@ -245,8 +267,8 @@ async def test_next_queue_rejection_is_not_reported_as_success(
 
     monkeypatch.setattr(app.brain, "submit", reject_executive)
     try:
-        app.cognition.submit_input(admission(app, internal=True))
-        outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        accepted = app.cognition.submit_input(admission(app, internal=True))
+        outcome = await next_outcome_matching(app.brain, work_id=accepted.work_id)
         assert outcome.status is BrainWorkStatus.FAILED
         assert not app.cognition.latest_delivery.admission.accepted
         assert len(port.requests) == 1

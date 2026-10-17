@@ -5,9 +5,7 @@ from typing import cast
 
 import pytest
 
-from app.composition.execution import CoreExecutionDelivery
-from app.composition.execution_configuration import _ExecutionEvidence
-from app.composition.executive import CoreExecutiveEvidence
+from app.bootstrap.execution_configuration import _ExecutionEvidence
 from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.attention import AttentionPriority, AttentionSource, AttentionSourceKind
 from app.domain.contracts import CapabilityRequirement
@@ -18,6 +16,8 @@ from app.domain.executive import (
     ExecutiveDecisionCandidate,
     RequirementsRejected,
 )
+from app.usecases.execution_facade import CoreExecutionDelivery
+from app.usecases.executive_facade import CoreExecutiveEvidence
 from tests.domain.activity_binding.test_binding import direct_fixture, fixture, publish
 from tests.domain.executive.test_executive import NOW
 from tests.helpers.direct_activity_requirements import requirements_owner, source_owner

@@ -10,7 +10,7 @@ import pytest
 import yaml
 from openai import APIConnectionError
 
-import app.composition.executive_configuration as composition
+import app.config.executive_assembly as composition
 from app.adapters.llm.openai_responses import OpenAIResponsesAdapter, OpenAIResponsesModelPolicy
 from app.config.executive import (
     ExecutiveConfigurationError,
@@ -64,7 +64,7 @@ def test_empty_catalog_and_real_generation_with_safe_provenance() -> None:
         bound.initial_generation.token == bound.requirements_owner.finalization_participant.token()
     )
     provenance = bound.provenance.to_dict()
-    assert provenance["source_config_ref"] == "resources/config/v2/executive.yaml"
+    assert provenance["source_config_ref"] == "config/executive.yaml"
     assert provenance["execution_policy_id"] == "yura.executive.execution"
     assert provenance["requirements_policy_id"] == "yura.executive.requirements"
     assert provenance["initial_generation_serial"] == 0
@@ -407,7 +407,7 @@ def test_factory_uses_no_test_configuration_authority() -> None:
     import ast
     from pathlib import Path
 
-    for path in ("app/config/executive.py", "app/composition/executive_configuration.py"):
+    for path in ("app/config/executive.py", "app/config/executive_assembly.py"):
         tree = ast.parse(Path(path).read_text())
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):

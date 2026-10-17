@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,16 +11,16 @@ from uuid import uuid4
 
 import pytest
 
-from app import bootstrap
+from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
-from app.composition.s2_provider import S2ProviderLease
-from app.composition.system_cognition_configuration import (
-    S2ProductionApplication,
-    S2RunIdentity,
-    current_artifact_head,
+from app.bootstrap.system_cognition_configuration import (
+    CoreApplication,
+    CoreRunIdentity,
 )
-from app.config.cognition_s2 import load_s2_config
-from app.config.minimum_brain import load_minimum_brain_config
+from app.config.appraisal import load_appraisal_config
+from app.config.core import load_core_config
+from app.config.executive import load_executive_config
+from app.config.llm_connections import LLMConnectionConfig
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, RevisionVector
@@ -37,12 +38,13 @@ from app.domain.input_gateway import (
 )
 from app.domain.llm import LLMFailureCode, LLMRoleDescriptor, LLMRoleRequest, LLMRoleResult
 from app.domain.plugin_registry import PluginRegistryAuthority
-from app.runtime.kernel import SystemRuntimeClock
+from app.infrastructure.scheduling import SystemRuntimeClock
 from app.subsystems.validation.body import _project
 from app.subsystems.validation.cognition import NormalCognitionLabCase, normal_cognition_target
 from app.subsystems.validation.contracts import Gate, LabMode, RunStatus
 from app.subsystems.validation.provenance import capture_production_provenance
 from app.subsystems.validation.runtime import ValidationRunner
+from app.usecases.ports.llm import LLMRolePort
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.infrastructure.postgresql.test_brain_nonserial_acceptance import assert_reaped
 from tests.subsystems.validation.test_runtime import FIXTURE, POLICY, spec
@@ -58,25 +60,33 @@ class SystemRun:
     async def create(cls) -> "SystemRun":
         provider = Port()
         registered_roles: list[LLMRoleDescriptor] = []
-        leases: list[S2ProviderLease] = []
+        connections: list[str] = []
         releases: list[str] = []
 
-        async def factory(roles: Any, configs: Any, bindings: Any, mode: str) -> S2ProviderLease:
-            registered_roles.extend(roles)
-            # 採用済み未設定manifestを保持し、外部I/Oだけを置換する。
-            assert not configs and mode == "unconfigured"
+        class TestConnectionAdapter:
+            """実System構成だけを通し、Provider I/Oを検証用Portで差し替える。"""
 
-            async def release() -> None:
-                releases.append("provider")
+            adapter_id = "openai_responses"
 
-            lease = S2ProviderLease(provider, bindings, mode, release)
-            leases.append(lease)
-            return lease
+            async def connect(
+                self,
+                connection: object,
+                descriptors: tuple[LLMRoleDescriptor, ...],
+            ) -> tuple[LLMRolePort, Callable[[], Awaitable[None]]]:
+                if not isinstance(connection, LLMConnectionConfig):
+                    raise ValueError("本番構成のLLM接続契約が不正です")
+                connections.append(connection.connection_id)
+                registered_roles.extend(descriptors)
 
-        identity = S2RunIdentity(current_artifact_head(), str(uuid4()), str(uuid4()))
-        s2 = await bootstrap.build_s2_production_core(
+                async def release() -> None:
+                    releases.append(connection.connection_id)
+
+                return provider, release
+
+        identity = CoreRunIdentity(str(uuid4()), str(uuid4()))
+        core = await bootstrap.build_core(
             run_identity=identity,
-            activation_id="yura.cognition-s2.explicit",
+            activation_id="yura.core.explicit",
             fresh_start=True,
             clock=SystemRuntimeClock(),
             registry=PluginRegistryAuthority(),
@@ -84,34 +94,34 @@ class SystemRun:
             precondition_bindings=(),
             activity_bindings={},
             fast_rules=(),
-            provider_source=None,
-            provider_factory=factory,
+            llm_adapters=(TestConnectionAdapter(),),
         )
-        return cls(s2, provider, registered_roles, leases, releases, identity)
+        return cls(core, provider, registered_roles, connections, releases, identity)
 
     def __init__(
         self,
-        s2: S2ProductionApplication,
+        core: CoreApplication,
         provider: Port,
         roles: list[LLMRoleDescriptor],
-        leases: list[S2ProviderLease],
+        connections: list[str],
         releases: list[str],
-        identity: S2RunIdentity,
+        identity: CoreRunIdentity,
     ) -> None:
-        self.s2 = s2
-        self.app: Any = s2.core
+        self.core = core
+        self.app: Any = core.core
         self.provider = provider
         self.roles = roles
-        self.leases = leases
+        self.connections = connections
         self.releases = releases
-        self.registration = s2.cognition
+        self.registration = core.cognition
         self.normalizer = InputNormalizer(InputAdmissionLedger(), bounds_policy=BOUNDS)
         self.run_id = identity.system_run_id
         self.observed: list[Any] = []
-        self.snapshot = s2.composition_snapshot
+        self.returned_outcome_ids: set[str] = set()
+        self.snapshot = core.composition_snapshot
         self.provenance = self.current_provenance()
-        config = load_s2_config((ROOT / "resources/config/v2/cognition_s2.yaml").read_bytes())
-        loaded = load_minimum_brain_config((ROOT / config.minimum_config.resource_ref).read_bytes())
+        config = load_core_config((ROOT / "config/core.yaml").read_bytes())
+        loaded = config
         assert self.app.config == loaded
         snapshot = self.snapshot
         assert (snapshot.config_id, snapshot.config_revision) == (
@@ -123,8 +133,7 @@ class SystemRun:
             config.composition_revision,
         )
         assert snapshot.activation_id == config.activation_id
-        assert (snapshot.git_head, snapshot.runtime_epoch, snapshot.system_run_id) == (
-            current_artifact_head(),
+        assert (snapshot.runtime_epoch, snapshot.system_run_id) == (
             identity.runtime_epoch,
             self.run_id,
         )
@@ -133,12 +142,12 @@ class SystemRun:
             self.app.character_definition.definition_revision,
         )
         (component,) = snapshot.component_bindings
-        assert (component.minimum_config_id, component.minimum_config_revision) == (
+        assert (component.core_config_id, component.core_config_revision) == (
             loaded.config_id,
             loaded.config_revision,
         )
-        assert component.appraisal == s2.appraisal.provenance
-        assert component.executive == s2.executive.provenance
+        assert component.appraisal == core.appraisal.provenance
+        assert component.executive == core.executive.provenance
         assert component.appraisal.runtime_epoch == identity.runtime_epoch
         assert component.appraisal.source_context_revision == (
             self.app.input_context.snapshot().context.source_context_revision
@@ -152,8 +161,8 @@ class SystemRun:
             component.attention_policy_id,
             component.attention_policy_revision,
         )
-        requirements = s2.executive.initial_generation.policy
-        assert requirements == s2.executive.config.requirements
+        requirements = core.executive.initial_generation.policy
+        assert requirements == core.executive.config.requirements
         assert (requirements.policy_id, requirements.revision) == (
             component.executive.requirements_policy_id,
             component.executive.requirements_policy_revision,
@@ -161,29 +170,35 @@ class SystemRun:
         assert component.executive.source_config_ref == config.executive_config.resource_ref
         assert component.appraisal.source_config_ref == config.appraisal_config.resource_ref
         assert snapshot.requirements_generation == component.executive.initial_generation_identity
-        assert self.registration.requirements is s2.executive.requirements_owner
+        assert self.registration.requirements is core.executive.requirements_owner
         assert (
-            self.registration.requirements.current_generation() is s2.executive.initial_generation
+            self.registration.requirements.current_generation() is core.executive.initial_generation
         )
         assert (
-            s2.executive.initial_generation.serial == component.executive.initial_generation_serial
+            core.executive.initial_generation.serial
+            == component.executive.initial_generation_serial
         )
-        assert len(leases) == 1 and snapshot.provider_bindings == leases[0].bindings
+        assert connections == ["yura.llm.default"]
         registered = {r.role_id: r for r in roles}
         assert set(registered) == {
             "input_meaning",
             "subjective_appraisal",
             "executive_deliberation",
         }
-        for binding in snapshot.provider_bindings:
-            descriptor = registered[binding.role_id]
-            assert binding.input_schema_id == descriptor.input_schema_id
-            assert binding.output_schema_id == descriptor.output_schema_id
-            assert (binding.deployment_id, binding.deployment_revision) == (
-                config.provider_deployment.deployment_id,
-                config.provider_deployment.deployment_revision,
-            )
-            assert binding.availability_mode == "unconfigured"
+        appraisal_config = load_appraisal_config(
+            (ROOT / config.appraisal_config.resource_ref).read_bytes()
+        )
+        executive_config = load_executive_config(
+            (ROOT / config.executive_config.resource_ref).read_bytes()
+        )
+        assert {
+            binding.role_id: binding.connection_id
+            for binding in snapshot.llm_connection_bindings
+        } == {
+            "input_meaning": config.input_meaning_llm_connection_id,
+            "subjective_appraisal": appraisal_config.llm_connection_id,
+            "executive_deliberation": executive_config.llm_connection_id,
+        }
         assert registered["subjective_appraisal"].default_execution_policy == (
             self.registration.appraisal_policy.execution
         )
@@ -206,12 +221,11 @@ class SystemRun:
         )
 
     def current_provenance(self) -> Any:
-        snapshot = self.s2.composition_snapshot
+        snapshot = self.core.composition_snapshot
         assert snapshot is self.snapshot
-        assert snapshot.git_head == current_artifact_head()
         provenance = capture_production_provenance(
             ROOT,
-            ("app", "resources/config/v2", self.app.config.character_definition_path),
+            ("app", "config", self.app.config.character_definition.resource_ref),
             (
                 "system_integration_contracts.md",
                 "brain_integration_contracts.md",
@@ -219,11 +233,10 @@ class SystemRun:
             ),
             tuple(r.output_schema_id for r in self.roles),
         )
-        assert provenance.git_head == snapshot.git_head
         # Labの既存INTEGRATED形式へ、同一runのSnapshot由来だけを投影する。
         providers = ",".join(
-            f"{b.role_id}:{b.deployment_id}:{b.deployment_revision}:{b.availability_mode}"
-            for b in snapshot.provider_bindings
+            f"{binding.role_id}:{binding.connection_id}"
+            for binding in snapshot.llm_connection_bindings
         )
         return replace(
             provenance,
@@ -251,11 +264,28 @@ class SystemRun:
             )
         )
 
-    async def outcome(self) -> Any:
-        item = await asyncio.wait_for(self.app.brain.next_outcome(), 3)
-        assert item.work_id not in {o.work_id for o in self.observed}
-        self.observed.append(item)
-        return item
+    async def outcome(
+        self,
+        trace_id: str | None = None,
+        module: BrainIntegrationModule | None = None,
+    ) -> Any:
+        # 独立laneの完了順は固定しない。別traceの先着結果は観測記録へ保持し、
+        # 後続の要求が同じ終端を相関取得できるようにする。
+        for item in self.observed:
+            if item.work_id not in self.returned_outcome_ids and (
+                trace_id is None or item.trace_id == trace_id
+            ) and (module is None or item.module is module):
+                self.returned_outcome_ids.add(item.work_id)
+                return item
+        while True:
+            item = await asyncio.wait_for(self.app.brain.next_outcome(), 3)
+            assert item.work_id not in {o.work_id for o in self.observed}
+            self.observed.append(item)
+            if (trace_id is None or item.trace_id == trace_id) and (
+                module is None or item.module is module
+            ):
+                self.returned_outcome_ids.add(item.work_id)
+                return item
 
     def evidence(self, *keys: str) -> Any:
         assert self.current_provenance() == self.provenance
@@ -280,10 +310,10 @@ class SystemRun:
         return json.loads(json.dumps(value, default=lambda v: dict(v)))
 
     async def stop(self) -> None:
-        await self.s2.stop()
-        await self.s2.stop()
+        await self.core.stop()
+        await self.core.stop()
         assert_reaped(self.app)
-        assert self.releases == ["provider"]
+        assert self.releases == ["yura.llm.default"]
         for owner in (
             self.registration.attention,
             self.registration.requirements,
@@ -293,7 +323,7 @@ class SystemRun:
             with pytest.raises(FinalizationError) as failure:
                 owner.finalization_participant.token()
             assert failure.value.failure is FinalizationFailure.PARTICIPANT_UNAVAILABLE
-        assert self.s2.composition_snapshot is self.snapshot
+        assert self.core.composition_snapshot is self.snapshot
 
 
 @pytest.mark.asyncio
@@ -320,7 +350,10 @@ async def test_system_configuration_and_lab_evidence_reach_owner_decision(
     before = asyncio.all_tasks()
     try:
         result = await runner.run(request, fixture)
-        assert result.status is RunStatus.COMPLETED and result.machine_gate is Gate.PASS
+        assert (result.status is RunStatus.COMPLETED and result.machine_gate is Gate.PASS), (
+            result.blockers,
+            result.timeline,
+        )
         exported = json.loads(result.export_json(1_000_000))
         assert exported["human_evaluation"]["status"] == "UNRATED"
         assert exported["target_provenance"]["git_head"] == run.provenance.git_head
@@ -356,10 +389,6 @@ async def test_system_configuration_and_lab_evidence_reach_owner_decision(
         assert evidence["traces"][0]["trace_id"] == value["trace"]["trace_id"]
         assert evidence["configuration"]["config_revision"] == run.app.config.config_revision
         assert result.target_provenance == run.provenance
-        assert (
-            evidence["composition_snapshot"]["git_head"]
-            == exported["target_provenance"]["git_head"]
-        )
         assert evidence["composition_snapshot"]["system_run_id"] == exported["run_spec"]["run_id"]
         registered = {r.role_id: r for r in run.roles}
         for request_used in run.provider.requests:
@@ -390,14 +419,19 @@ async def test_typed_provider_failure_keeps_other_system_trace_available(
 
     monkeypatch.setattr(run.provider, "invoke", controlled)
     assert run.app.cognition is not None
-    await run.s2.start()
+    await run.core.start()
     try:
         # Meaning失敗は外部入力、Appraisal失敗は内部契機として別境界を検証する。
         # 採用済みUSER sourceの寿命は後続Appraisalの失敗と同一ではない。
         assert run.app.cognition.submit_input(
             run.input("failed", internal=role == "subjective_appraisal")
         ).accepted
-        terminal = await run.outcome()
+        terminal = await run.outcome(
+            "failed",
+            BrainIntegrationModule.INPUT_MEANING
+            if role == "input_meaning"
+            else BrainIntegrationModule.APPRAISAL,
+        )
         if role == "input_meaning":
             assert terminal.result.meaning is None
             assert terminal.result.role_failure.code is LLMFailureCode.PROVIDER_UNAVAILABLE
@@ -405,8 +439,12 @@ async def test_typed_provider_failure_keeps_other_system_trace_available(
             assert terminal.status is BrainWorkStatus.FAILED
         assert not any(r.role_id == "executive_deliberation" for r in run.provider.requests)
         assert run.app.cognition.submit_input(run.input("healthy")).accepted
-        for _ in range(3):
-            healthy = await run.outcome()
+        for module in (
+            BrainIntegrationModule.INPUT_MEANING,
+            BrainIntegrationModule.APPRAISAL,
+            BrainIntegrationModule.EXECUTIVE,
+        ):
+            healthy = await run.outcome("healthy", module)
             assert healthy.trace_id == "healthy" and healthy.status is BrainWorkStatus.COMPLETED
         assert healthy.module is BrainIntegrationModule.EXECUTIVE
         assert healthy.result.candidate.source_event_ids == ("input:healthy",)
@@ -441,12 +479,12 @@ async def test_system_consumer_observes_nonserial_rejection_and_cleanup(
 
     monkeypatch.setattr(run.provider, "invoke", controlled)
     assert run.app.cognition is not None
-    await run.s2.start()
+    await run.core.start()
     try:
         for key in entered:
             assert run.app.cognition.submit_input(run.input(key)).accepted
             await asyncio.wait_for(entered[key].wait(), 3)
-            meaning = await run.outcome()
+            meaning = await run.outcome(key, BrainIntegrationModule.INPUT_MEANING)
             assert meaning.module is BrainIntegrationModule.INPUT_MEANING
             assert meaning.trace_id == key and meaning.status is BrainWorkStatus.COMPLETED
         assert not release["A"].is_set()
@@ -457,14 +495,14 @@ async def test_system_consumer_observes_nonserial_rejection_and_cleanup(
                 )
                 == 1
             )
-            terminal = await run.outcome()
+            terminal = await run.outcome("A")
             assert terminal.trace_id == "A"
             assert terminal.status is (
                 BrainWorkStatus.CANCELLED if operation == "cancel" else BrainWorkStatus.SUPERSEDED
             )
             release["B"].set()
-            for _ in range(2):
-                decision = await run.outcome()
+            for module in (BrainIntegrationModule.APPRAISAL, BrainIntegrationModule.EXECUTIVE):
+                decision = await run.outcome("B", module)
                 assert decision.trace_id == "B" and decision.status is BrainWorkStatus.COMPLETED
             assert decision.module is BrainIntegrationModule.EXECUTIVE
             assert decision.result.candidate.source_event_ids == ("input:B",)
@@ -482,14 +520,21 @@ async def test_system_consumer_observes_nonserial_rejection_and_cleanup(
                     run.app.cognition.submit_input(late)
                 assert rejected.value.failure is FinalizationFailure.PARTICIPANT_UNAVAILABLE
                 assert_reaped(run.app)
-            terminal = [await run.outcome() for _ in range(2)]
+            terminal = [
+                await run.outcome(key, BrainIntegrationModule.APPRAISAL) for key in ("A", "B")
+            ]
             assert {o.trace_id for o in terminal} == {"A", "B"}
             assert all(
                 o.status
                 is (BrainWorkStatus.FAILED if operation == "stale" else BrainWorkStatus.CANCELLED)
                 for o in terminal
             )
-            assert run.app.cognition.appraisal.latest_commit() is None
+            # 起動時の独立した主観評価が既に確定していても、
+            # 取消・失効対象のA/Bを採用していないことを保証する。
+            latest = run.app.cognition.appraisal.latest_commit()
+            assert latest is None or not (
+                set(latest.candidate.source_event_ids) & {"input:A", "input:B"}
+            )
             if operation == "stop":
                 with pytest.raises(FinalizationError) as retired:
                     run.app.cognition.appraisal.current_commit()

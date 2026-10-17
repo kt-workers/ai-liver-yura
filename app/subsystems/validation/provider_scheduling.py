@@ -9,17 +9,17 @@ from time import monotonic_ns
 from typing import cast
 
 from app.domain.contracts.common import JsonValue, freeze_json
+from app.domain.contracts.lifecycle import ApplicationShutdownPolicy
 from app.domain.llm import LLMRoleRequest, LLMRoleResult
-from app.runtime.kernel import (
+from app.infrastructure.scheduling import (
     QueuePolicy,
     RuntimeCoordinator,
     RuntimeLanePolicy,
     RuntimeSchedulerPolicy,
     RuntimeWorkItem,
 )
-from app.runtime.kernel.cancellation import CancellationToken
-from app.runtime.kernel.clock import SystemRuntimeClock
-from app.runtime.shutdown import RuntimeShutdownPolicy
+from app.infrastructure.scheduling.cancellation import CancellationToken
+from app.infrastructure.scheduling.clock import SystemRuntimeClock
 from app.usecases.ports.llm import LLMRolePort
 
 from .contracts import (
@@ -44,7 +44,12 @@ def _encode(value: object) -> object:
         is_dataclass(value)
         and not isinstance(value, type)
         and type(value).__module__.startswith(
-            ("app.runtime.", "app.domain.llm.", "app.domain.contracts.")
+            (
+                "app.runtime.kernel.",
+                "app.infrastructure.scheduling.",
+                "app.domain.llm.",
+                "app.domain.contracts.",
+            )
         )
     ):
         return {field.name: getattr(value, field.name) for field in fields(value)}
@@ -63,7 +68,7 @@ class ProviderSchedulingCase:
     work: tuple[RuntimeWorkItem[LLMRoleRequest], ...]
     lanes: tuple[RuntimeLanePolicy, ...]
     scheduler: RuntimeSchedulerPolicy
-    shutdown: RuntimeShutdownPolicy
+    shutdown: ApplicationShutdownPolicy
 
     def __post_init__(self) -> None:
         if not self.work or len({x.work_id for x in self.work}) != len(self.work):

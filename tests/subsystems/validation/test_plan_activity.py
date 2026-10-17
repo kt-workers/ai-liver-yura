@@ -7,9 +7,9 @@ from typing import Any, cast
 
 import pytest
 
-from app import bootstrap
-from app.composition.execution import ExecutionFeedbackRetentionPolicy
-from app.composition.execution_configuration import CoreExecutionConfiguration
+from app import application as bootstrap
+from app.bootstrap import core_components as component_factory
+from app.bootstrap.execution_configuration import CoreExecutionConfiguration
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus, PreconditionRef
 from app.domain.executive import ExecutiveRequirementsOwner, PlanExecutionIntentPayload
@@ -32,6 +32,7 @@ from app.subsystems.validation.plan_activity import (
     plan_activity_target,
 )
 from app.subsystems.validation.runtime import RunContext, ValidationRunner
+from app.usecases.execution_facade import ExecutionFeedbackRetentionPolicy
 from tests.domain.executive.test_plan_authorization import inputs
 from tests.domain.plan_execution.test_progression import Preflight, Provider, WaitingProvider, setup
 from tests.helpers.executive_requirements import capture_plans, fence_clock, make_authority
@@ -88,9 +89,9 @@ def plan_setup(monkeypatch: pytest.MonkeyPatch, *, mode: str = "normal") -> Any:
         ExecutionFeedbackRetentionPolicy("test-feedback", 1, 2),
     )
     monkeypatch.setattr(bootstrap, "GoalCommitmentStore", lambda **kw: value.goals)
-    monkeypatch.setattr(bootstrap, "ActivityExecutionAuthority", lambda: value.activity)
-    monkeypatch.setattr(bootstrap, "SystemRuntimeClock", lambda: value.clock)
-    build = bootstrap.build_minimum_core
+    monkeypatch.setattr(component_factory, "ActivityExecutionAuthority", lambda: value.activity)
+    monkeypatch.setattr(component_factory, "SystemRuntimeClock", lambda: value.clock)
+    build = bootstrap.build_core_runtime
 
     def configured(*args: Any, **kwargs: Any) -> Any:
         cognition = kwargs["cognition"]
@@ -106,7 +107,7 @@ def plan_setup(monkeypatch: pytest.MonkeyPatch, *, mode: str = "normal") -> Any:
             },
         )
 
-    monkeypatch.setattr(bootstrap, "build_minimum_core", configured)
+    monkeypatch.setattr(bootstrap, "build_core_runtime", configured)
     app, port = application(monkeypatch)
     if mode == "input":
         return app, provider, value
@@ -292,9 +293,14 @@ async def test_input_entry_keeps_adopted_plan_and_scope(monkeypatch: pytest.Monk
     result = await ValidationRunner((target,), replace(POLICY, max_intervals=50)).run(
         request, fixture
     )
-    assert result.status is RunStatus.COMPLETED, result
-    assert result.machine_gate is Gate.PASS
     output = cast(Any, result.stage_results[0].typed_outputs)
+    # 失敗時も公開投影されたtraceと実際のOwner結果を診断できるようにする。
+    assert result.status is RunStatus.COMPLETED, (
+        result.blockers,
+        () if output is None else output.get("outcomes", ()),
+        () if output is None else output.get("trace"),
+    )
+    assert result.machine_gate is Gate.PASS
     assert output["scope"]["plan"]["plan_id"] == "plan"
     assert output["execution_records"] == () and not provider.calls
     assert output["outcomes"][-1]["result"]["candidate"]["outcome"] == "wait"

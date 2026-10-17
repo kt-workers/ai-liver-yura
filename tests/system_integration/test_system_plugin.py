@@ -6,9 +6,10 @@ from typing import Any
 
 import pytest
 
-from app import bootstrap
-from app.composition.execution import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
-from app.composition.execution_configuration import CoreExecutionConfiguration
+from app import application as bootstrap
+from app.application import start_core, stop_core
+from app.bootstrap.execution_configuration import CoreExecutionConfiguration
+from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.domain.activity_execution import (
     ActivityInvocation,
     ExecutionAdapterReport,
@@ -19,6 +20,7 @@ from app.domain.activity_execution import (
     ExecutionEffectUncertainty,
     ExecutionPreflightSnapshot,
 )
+from app.domain.brain_integration import BrainIntegrationModule
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus
 from app.domain.contracts.finalization import FinalizationError
@@ -34,13 +36,15 @@ from app.domain.plugin_integration import (
     PluginIntegrationOperationalPolicy,
 )
 from app.domain.plugin_registry import PluginRegistryAuthority
-from app.runtime.kernel.clock import SystemRuntimeClock
+from app.infrastructure.scheduling.clock import SystemRuntimeClock
+from app.usecases.execution_facade import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
 from tests.domain.activity_binding import test_binding
 from tests.domain.executive.test_executive import NOW
 from tests.domain.plugin_registry.test_plugin_registry_adjacent import (
     available_registry,
     grant_snapshot,
 )
+from tests.helpers.brain_outcomes import next_outcome_matching
 from tests.helpers.executive_requirements import fence_clock, make_authority
 from tests.system_integration.test_core_cognition import admission, application
 from tests.system_integration.test_early_boot import work
@@ -145,9 +149,9 @@ async def test_plugin_fact_crosses_production_composition_and_returns_to_cogniti
         (binding,),
         ExecutionFeedbackRetentionPolicy("system-plugin", 1, 4),
     )
-    build = bootstrap.build_minimum_core
+    build = bootstrap.build_core_runtime
 
-    def composed(*args: Any, **kwargs: Any) -> bootstrap.MinimumCoreApplication:
+    def composed(*args: Any, **kwargs: Any) -> CoreRuntimeApplication:
         from tests.helpers.direct_activity_requirements import requirements_owner, source_owner
 
         requirements = requirements_owner(
@@ -158,14 +162,14 @@ async def test_plugin_fact_crosses_production_composition_and_returns_to_cogniti
         )
         return build(*args, **kwargs)
 
-    monkeypatch.setattr(bootstrap, "build_minimum_core", composed)
+    monkeypatch.setattr(bootstrap, "build_core_runtime", composed)
     app, llm = application(monkeypatch)
     delivery = app.cognition.execution
     assert isinstance(delivery, CoreExecutionDelivery)
     assert len(registry.snapshot().plugins) == 1
     if mode == "revoked":
         registry.adopt_permission_grants(grant_snapshot(1, ()))
-    await app.start()
+    await start_core(app)
     parent = work()
     parent = replace(
         parent, envelope=replace(parent.envelope, root_trigger_id="system-plugin-root")
@@ -182,9 +186,13 @@ async def test_plugin_fact_crosses_production_composition_and_returns_to_cogniti
             assert app.cognition.submit_input(
                 admission(app, internal=True, event_id="independent", trace_id="independent")
             ).accepted
-            for _ in range(2):
-                independent = await asyncio.wait_for(app.brain.next_outcome(), 2)
-                assert independent.trace_id == "independent"
+            for module in (
+                BrainIntegrationModule.APPRAISAL,
+                BrainIntegrationModule.EXECUTIVE,
+            ):
+                independent = await next_outcome_matching(
+                    app.brain, trace_id="independent", module=module
+                )
                 assert independent.status.value == "completed"
             trace = app.brain.trace(parent.envelope.trace_id)
             assert trace is not None
@@ -197,7 +205,9 @@ async def test_plugin_fact_crosses_production_composition_and_returns_to_cogniti
             app.brain.cancel(activity_id, "検証再取消")
         outcomes = []
         for _ in range(3):
-            outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+            outcome = await next_outcome_matching(
+                app.brain, trace_id=parent.envelope.trace_id
+            )
             if mode == "applied_revoked" and outcome.module.value == "executive":
                 assert outcome.status.value == "failed"
                 assert outcome.error == "FinalizationError"
@@ -236,29 +246,32 @@ async def test_plugin_fact_crosses_production_composition_and_returns_to_cogniti
         trace = app.brain.trace(parent.envelope.trace_id)
         assert trace is not None and trace.root_trigger_id == parent.envelope.root_trigger_id
     finally:
-        await app.stop()
+        await stop_core(app)
 
 
 @pytest.mark.asyncio
-async def test_zero_plugin_keeps_production_cognition_available(
+async def test_zero_plugin_keeps_core_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     registry = PluginRegistryAuthority()
-    build = bootstrap.build_minimum_core
+    build = bootstrap.build_core_runtime
 
-    def composed(*args: Any, **kwargs: Any) -> bootstrap.MinimumCoreApplication:
+    def composed(*args: Any, **kwargs: Any) -> CoreRuntimeApplication:
         kwargs["cognition"] = replace(kwargs["cognition"], registry=registry)
         return build(*args, **kwargs)
 
-    monkeypatch.setattr(bootstrap, "build_minimum_core", composed)
+    monkeypatch.setattr(bootstrap, "build_core_runtime", composed)
     app, _ = application(monkeypatch)
-    await app.start()
+    await start_core(app)
     try:
         assert registry.snapshot().foundation_capabilities == ()
         assert app.cognition.submit_input(admission(app, internal=True)).accepted
-        outcomes = [await asyncio.wait_for(app.brain.next_outcome(), 2) for _ in range(2)]
+        outcomes = [
+            await next_outcome_matching(app.brain, trace_id="trace-1", module=module)
+            for module in (BrainIntegrationModule.APPRAISAL, BrainIntegrationModule.EXECUTIVE)
+        ]
         assert all(item.status.value == "completed" for item in outcomes)
         assert outcomes[-1].module.value == "executive"
         assert registry.snapshot().plugins == ()
     finally:
-        await app.stop()
+        await stop_core(app)

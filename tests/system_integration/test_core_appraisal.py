@@ -8,17 +8,10 @@ from typing import Any, cast
 
 import pytest
 
-from app.composition.appraisal import (
-    AppraisalBrainModulePort,
-    AppraisalBrainWorkPayload,
-    CoreAppraisalBinding,
-)
 from app.domain.appraisal import AppraisalStateCommit, InternalStateReducer
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
-    BrainIntegrationRuntime,
-    BrainIntegrationWork,
     BrainWorkEnvelope,
     BrainWorkPriority,
     BrainWorkStatus,
@@ -29,7 +22,13 @@ from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentStore
 from app.domain.input_meaning import StructuredInputMeaning
 from app.domain.llm import LLMRoleRequest, LLMRoleResult
-from app.runtime.kernel import CancellationToken, FakeRuntimeClock
+from app.infrastructure.scheduling import CancellationToken, FakeRuntimeClock
+from app.usecases.appraisal_facade import (
+    AppraisalBrainModulePort,
+    AppraisalBrainWorkPayload,
+    CoreAppraisalBinding,
+)
+from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from tests.domain.appraisal.test_appraisal_paths import NOW, event, meaning, policy, result, state
 from tests.domain.brain_integration.test_runtime import FakePort
 from tests.domain.brain_integration.test_runtime import policy as runtime_policy
@@ -311,7 +310,7 @@ async def test_live_reference_failure_after_response_does_not_commit() -> None:
 
 @pytest.mark.asyncio
 async def test_cancellation_token_prevents_commit_after_response() -> None:
-    from app.runtime.kernel.contracts import CancellationRecord
+    from app.infrastructure.scheduling.contracts import CancellationRecord
 
     value = setup(Port(waiting=True))
     token = CancellationToken()
@@ -379,7 +378,7 @@ async def test_context_change_between_candidate_acceptance_and_commit_is_recheck
         value.clock,
     )
     initial = value.owner.snapshot()
-    with pytest.raises(ValueError, match="stale for source context"):
+    with pytest.raises(ValueError, match="評価中に内部状態または参照元の世代が更新されました"):
         await value.appraise()
     assert value.owner.snapshot() is initial
     assert value.connection.latest_commit() is None

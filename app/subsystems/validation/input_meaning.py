@@ -9,13 +9,12 @@ from app.domain.contracts.common import freeze_json
 from app.domain.input_gateway import NormalizedInputEvent
 from app.domain.input_meaning import (
     InputMeaningInterpretationResult,
-    InputMeaningInterpreter,
-    InputMeaningLiveContextPort,
     InputMeaningPolicy,
     ReferenceContext,
     build_request,
 )
 from app.domain.llm import LLMRoleStatus
+from app.usecases.input_meaning import InputMeaningInterpreter, InputMeaningLiveContextPort
 from app.usecases.ports.llm import LLMRolePort
 
 from .contracts import (

@@ -19,10 +19,10 @@ from app.domain.body_motion_planning import (
     BodyMotionSelector,
     BodySpatialTarget,
     BodySpatialTargetKind,
-    DeterministicBodyMotionPlanner,
     DeterministicBodyPlanningDirective,
 )
 from app.domain.body_solver import BodyMotionExecutionStatus, BodyStateAuthority
+from app.usecases.body_motion_planning import DeterministicBodyMotionPlanner
 from tests.domain.body_integration.test_runtime import (
     _at,
     _ControlledPlanner,

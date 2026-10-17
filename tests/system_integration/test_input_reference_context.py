@@ -2,25 +2,36 @@
 
 import asyncio
 from dataclasses import replace
-from typing import cast
+from datetime import datetime, timezone
 
 import pytest
 
-from app import bootstrap
-from app.bootstrap import InputMeaningBrainWorkPayload
-from app.composition.input_reference_context import CoreInputReferenceContextBinding
+from app import application as bootstrap
+from app.application import start_core, stop_core
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
-from app.domain.contracts import RevisionVector
+from app.domain.contracts import CapabilityAvailability, RevisionVector
 from app.domain.contracts.snapshots import SnapshotIncoherentError, SnapshotInvariantError
 from app.domain.executive import GoalTransitionOperation
 from app.domain.goals import GoalCommitmentSnapshot, GoalCommitmentStore
-from app.domain.input_meaning import InputMeaningInterpretationResult, InputMeaningInterpreter
+from app.domain.input_gateway import (
+    InputAdmissionLedger,
+    InputModality,
+    InputNormalizer,
+    InputObservation,
+    InputPermission,
+    InputSourceState,
+)
+from app.domain.input_meaning import InputMeaningInterpretationResult
 from app.domain.llm import LLMFailureCode, LLMRoleRequest, LLMRoleResult
+from app.usecases.input_meaning import InputMeaningInterpreter
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.domain.input_meaning.test_input_meaning import NOW, event, policy
 from tests.domain.plan_execution.test_progression import WaitingProvider, runner, setup
-from tests.system_integration.test_early_boot import SuccessfulPort, work
+from tests.helpers.brain_outcomes import wait_for_work_outcome
+from tests.helpers.full_core import full_cognition
+from tests.system_integration.test_early_boot import SuccessfulPort
 
 
 def binding(
@@ -169,39 +180,43 @@ def test_bad_owner_generations_do_not_replace_published_projection(failure: str)
 
 
 @pytest.mark.asyncio
-async def test_minimum_boot_uses_real_current_context_and_commits_meaning(
+async def test_unified_boot_uses_real_current_context_and_commits_meaning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         bootstrap, "create_openai_port_from_environment", lambda _: SuccessfulPort()
     )
     baseline = asyncio.all_tasks()
-    app = bootstrap.build_minimum_core()
+    app = bootstrap.build_core_runtime(cognition=full_cognition())
     snapshot = app.input_context.snapshot()
-    value = work()
-    payload = cast(InputMeaningBrainWorkPayload, value.payload)
-    captured = replace(
-        payload.event,
-        envelope=replace(
-            payload.event.envelope,
-            revisions=RevisionVector(snapshot.context.source_context_revision),
-        ),
+    # 意味採用後の通常認知へは正規Gatewayの採用根拠が必須。
+    # Brainへ未採用の仕事を直送して成功扱いにしない。
+    admitted = InputNormalizer(
+        InputAdmissionLedger(), bounds_policy=V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
+    ).normalize(
+        InputObservation(
+            "reference-context-meaning",
+            InputSourceState(
+                "chat", "user", CapabilityAvailability.AVAILABLE, InputPermission.GRANTED
+            ),
+            InputModality.TEXT,
+            "utterance",
+            datetime.now(timezone.utc),
+            "trace-reference-context",
+            RevisionVector(snapshot.context.source_context_revision),
+            {"text": "こんにちは"},
+        )
     )
-    value = replace(
-        value,
-        envelope=replace(
-            value.envelope, source_context_revision=snapshot.context.source_context_revision
-        ),
-        payload=replace(payload, event=captured, reference_context=snapshot.context),
-    )
-    await app.start()
+    await start_core(app)
     try:
-        assert app.brain.submit(value).accepted
-        outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        assert app.cognition is not None
+        accepted = app.cognition.submit_input(admitted)
+        assert accepted.accepted
+        outcome = await wait_for_work_outcome(app.brain, accepted.work_id)
         assert isinstance(outcome.result, InputMeaningInterpretationResult)
         assert outcome.result.meaning is not None
         assert outcome.result.boundary_failure is None
         assert app.goals.snapshot().goals == ()
     finally:
-        await app.stop()
+        await stop_core(app)
     assert not (asyncio.all_tasks() - baseline)

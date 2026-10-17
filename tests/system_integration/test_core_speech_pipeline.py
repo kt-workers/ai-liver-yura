@@ -7,17 +7,13 @@ from typing import Any
 
 import pytest
 
-from app.composition.execution_observation import SPEECH_OBSERVATION_POLICY
-from app.composition.input_reference_context import CoreInputReferenceContextBinding
-from app.composition.presentation_notification import CorePresentationNotification
-from app.composition.speech import CoreSpeechContextReaders, CoreSpeechPipeline
 from app.domain.activity_execution import ActivityExecutionAuthority, ExecutionObservationProvenance
+from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
 from app.domain.attention import AttentionSourceKind
 from app.domain.attention import AttentionTransitionOperation as Op
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
-    BrainIntegrationWork,
     BrainWorkEnvelope,
     BrainWorkPriority,
 )
@@ -45,6 +41,10 @@ from app.domain.speech_runtime.presentation import SpeechPresentationExecutor
 from app.domain.speech_runtime.runtime import SpeechRuntime
 from app.domain.speech_runtime.tasks import CandidateTaskRegistry
 from app.domain.speech_semantics import SpeechSemanticAuthority, SpeechSemanticsPlanner
+from app.usecases.brain_integration_runtime import BrainIntegrationWork
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
+from app.usecases.presentation_notification import CorePresentationNotification
+from app.usecases.speech_pipeline import CoreSpeechContextReaders, CoreSpeechPipeline
 from tests.domain.attention.test_attention_turn_store import signal, transition
 from tests.domain.character_language.test_character_language import candidate, current, profile
 from tests.domain.character_language.test_character_language import policy as character_policy
@@ -83,10 +83,10 @@ async def test_full_owner_pipeline_and_presentation_feedback(slow_stage: str | N
     d = await committed(b, "goal-1")
     intent = d.candidate.intents[0]
     semctx = await b.context_builder.build_async(d, intent.intent_id, captured_at=now())
-    from app.composition.speech_semantics_policy import bind_speech_semantics_policy_v1
-    from app.composition.speech_semantics_sources import ProductionSpeechSources
+    from app.bootstrap.speech_semantics_policy import bind_speech_semantics_policy_v1
     from app.domain.executive import CommitmentTransitionOperation, GoalTransitionOperation
     from app.domain.goals import GoalCommitmentSnapshot
+    from app.usecases.speech_semantics_sources import ProductionSpeechSources
     from tests.domain.goals.test_goal_commitment_store import commitment_transition, goal_transition
     from tests.domain.goals.test_goal_commitment_store import decision as goal_decision
     from tests.helpers.speech_production import production_sources
@@ -265,15 +265,15 @@ async def test_full_owner_pipeline_and_presentation_feedback(slow_stage: str | N
     )
     from pathlib import Path
 
-    from app.composition.accepted_input import CoreAcceptedInputStore
-    from app.composition.cognition_configuration import CoreCognitionConfiguration
-    from app.config.minimum_brain import load_minimum_brain_config
+    from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
+    from app.config.core import load_core_config
     from app.domain.appraisal import InternalStateReducer
-    from app.domain.brain_integration import BrainIntegrationRuntime
     from app.domain.contracts.preconditions import PreconditionSourceRouter
     from app.domain.executive import ExecutiveIntentRequirementsPolicy, ExecutiveRequirementsOwner
     from app.domain.plugin_registry import PluginRegistryAuthority
-    from app.runtime.kernel import SystemRuntimeClock
+    from app.infrastructure.scheduling import SystemRuntimeClock
+    from app.usecases.accepted_inputs import CoreAcceptedInputStore
+    from app.usecases.brain_integration_runtime import BrainIntegrationRuntime
     from tests.domain.appraisal.test_appraisal_paths import policy as appraisal_policy
     from tests.domain.appraisal.test_appraisal_paths import state
     from tests.domain.executive.test_executive import policy as executive_policy
@@ -295,8 +295,8 @@ async def test_full_owner_pipeline_and_presentation_feedback(slow_stage: str | N
     cognitive_port = core.Port()
     brain = BrainIntegrationRuntime(
         SystemRuntimeClock(),
-        load_minimum_brain_config(
-            Path("resources/config/v2/minimum_brain.yaml").read_bytes()
+        load_core_config(
+            Path("config/core.yaml").read_bytes()
         ).integration_policy,
     )
 
@@ -407,7 +407,7 @@ async def test_full_owner_pipeline_and_presentation_feedback(slow_stage: str | N
         ),
         d,
     )
-    from app.composition.speech_configuration import CoreSpeechConfiguration
+    from app.bootstrap.speech_configuration import CoreSpeechConfiguration
     from app.domain.speech_runtime.shutdown import SpeechRuntimeShutdown
 
     shutdown = SpeechRuntimeShutdown(
@@ -514,7 +514,7 @@ async def test_full_owner_pipeline_and_presentation_feedback(slow_stage: str | N
         speech_outcome = await asyncio.wait_for(brain.next_outcome(), 3)
         assert speech_outcome.module is BrainIntegrationModule.SPEECH_SEMANTICS
         assert speech_outcome.status.value == "completed"
-        from app.composition.speech_feedback import CoreSpeechFeedback
+        from app.usecases.speech_feedback_facade import CoreSpeechFeedback
 
         feedback = speech_outcome.result
         assert isinstance(feedback, CoreSpeechFeedback)

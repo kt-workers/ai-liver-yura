@@ -40,7 +40,7 @@ from app.domain.plan_execution.owner import (
     PlanExecutionStatus,
 )
 from app.domain.plan_execution.progress_contracts import PlanStepCompletionClaim
-from app.runtime.kernel.clock import FakeRuntimeClock
+from app.infrastructure.scheduling.clock import FakeRuntimeClock
 from tests.domain.executive.test_executive import REVISIONS, candidate, live_state, snapshot
 from tests.domain.executive.test_plan_authorization import inputs
 from tests.domain.goal_planning.test_goal_planning import NOW, capability

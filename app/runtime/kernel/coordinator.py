@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+# 作業実行の具体的な調停器。
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 from app.domain.contracts.common import utc_instant
-from app.runtime.shutdown import (
-    RuntimeShutdownError,
-    RuntimeShutdownFailure,
-    RuntimeShutdownPolicy,
-    RuntimeShutdownStage,
+from app.domain.contracts.lifecycle import (
+    ApplicationShutdownError,
+    ApplicationShutdownFailure,
+    ApplicationShutdownPolicy,
+    ApplicationShutdownStage,
 )
 
 from .cancellation import CancellationRegistry, CancellationToken
@@ -58,9 +59,9 @@ class RuntimeCoordinator:
         self,
         clock: RuntimeClock,
         scheduler_policy: RuntimeSchedulerPolicy,
-        shutdown_policy: RuntimeShutdownPolicy,
+        shutdown_policy: ApplicationShutdownPolicy,
     ) -> None:
-        if not isinstance(shutdown_policy, RuntimeShutdownPolicy):
+        if not isinstance(shutdown_policy, ApplicationShutdownPolicy):
             raise ValueError("Runtime shutdown policy が必要です")
         self._clock = clock
         self._scheduler_policy = scheduler_policy
@@ -78,8 +79,8 @@ class RuntimeCoordinator:
         self._stop_lock = asyncio.Lock()
         self._shutdown_control_open = False
         self._shutdown_task: asyncio.Task[None] | None = None
-        self._shutdown_failures: tuple[RuntimeShutdownFailure, ...] = ()
-        self._shutdown_terminal_error: RuntimeShutdownError | None = None
+        self._shutdown_failures: tuple[ApplicationShutdownFailure, ...] = ()
+        self._shutdown_terminal_error: ApplicationShutdownError | None = None
 
     @property
     def state(self) -> CoordinatorState:
@@ -90,11 +91,11 @@ class RuntimeCoordinator:
         return self._scheduler_policy
 
     @property
-    def shutdown_policy(self) -> RuntimeShutdownPolicy:
+    def shutdown_policy(self) -> ApplicationShutdownPolicy:
         return self._shutdown_policy
 
     @property
-    def shutdown_failures(self) -> tuple[RuntimeShutdownFailure, ...]:
+    def shutdown_failures(self) -> tuple[ApplicationShutdownFailure, ...]:
         return self._shutdown_failures
 
     def register_lane(
@@ -223,7 +224,7 @@ class RuntimeCoordinator:
                 return
             if self._shutdown_terminal_error is not None:
                 raise self._shutdown_terminal_error
-            failures: list[RuntimeShutdownFailure] = list(self._shutdown_failures)
+            failures: list[ApplicationShutdownFailure] = list(self._shutdown_failures)
             self._state = CoordinatorState.STOPPING
             self._shutdown_control_open = True
             for lane in self._lanes.values():
@@ -243,8 +244,8 @@ class RuntimeCoordinator:
             )
             if not settled_cleanly:
                 failures.append(
-                    RuntimeShutdownFailure(
-                        RuntimeShutdownStage.IN_FLIGHT_SETTLE,
+                    ApplicationShutdownFailure(
+                        ApplicationShutdownStage.IN_FLIGHT_SETTLE,
                         "TimeoutError",
                     )
                 )
@@ -260,8 +261,8 @@ class RuntimeCoordinator:
             )
             if not joined_cleanly:
                 failures.append(
-                    RuntimeShutdownFailure(
-                        RuntimeShutdownStage.OWNED_TASK_JOIN,
+                    ApplicationShutdownFailure(
+                        ApplicationShutdownStage.OWNED_TASK_JOIN,
                         "TimeoutError",
                     )
                 )
@@ -274,14 +275,14 @@ class RuntimeCoordinator:
             )
             if pending_owned:
                 failures.append(
-                    RuntimeShutdownFailure(
-                        RuntimeShutdownStage.PENDING_OWNED_WORK,
+                    ApplicationShutdownFailure(
+                        ApplicationShutdownStage.PENDING_OWNED_WORK,
                         "PendingOwnedWork",
                     )
                 )
             self._shutdown_failures = self._deduplicate_failures(tuple(failures))
             if pending_owned or not settled_cleanly or not joined_cleanly:
-                error = RuntimeShutdownError(self._shutdown_failures)
+                error = ApplicationShutdownError(self._shutdown_failures)
                 self._shutdown_terminal_error = error
                 raise error
             self._state = CoordinatorState.STOPPED
@@ -312,29 +313,29 @@ class RuntimeCoordinator:
         await asyncio.sleep(0)
         return False
 
-    async def _stop_producers(self) -> tuple[RuntimeShutdownFailure, ...]:
+    async def _stop_producers(self) -> tuple[ApplicationShutdownFailure, ...]:
         return await self._run_phase_hooks(
             tuple(self._producer_stop_hooks),
             self._shutdown_policy.resource_close_grace_seconds,
-            RuntimeShutdownStage.PRODUCER_STOP,
+            ApplicationShutdownStage.PRODUCER_STOP,
             reverse=True,
             phase_bounded=False,
         )
 
-    async def _run_final_persistence_hooks(self) -> tuple[RuntimeShutdownFailure, ...]:
+    async def _run_final_persistence_hooks(self) -> tuple[ApplicationShutdownFailure, ...]:
         return await self._run_phase_hooks(
             tuple(self._final_persistence_hooks),
             self._shutdown_policy.final_persistence_grace_seconds,
-            RuntimeShutdownStage.FINAL_PERSISTENCE,
+            ApplicationShutdownStage.FINAL_PERSISTENCE,
             reverse=False,
             phase_bounded=True,
         )
 
-    async def _close_resources(self) -> tuple[RuntimeShutdownFailure, ...]:
+    async def _close_resources(self) -> tuple[ApplicationShutdownFailure, ...]:
         return await self._run_phase_hooks(
             tuple(self._close_hooks),
             self._shutdown_policy.resource_close_grace_seconds,
-            RuntimeShutdownStage.RESOURCE_CLOSE,
+            ApplicationShutdownStage.RESOURCE_CLOSE,
             reverse=True,
             phase_bounded=False,
         )
@@ -343,13 +344,13 @@ class RuntimeCoordinator:
     async def _run_phase_hooks(
         hooks: tuple[ShutdownHook, ...],
         grace_seconds: float,
-        stage: RuntimeShutdownStage,
+        stage: ApplicationShutdownStage,
         *,
         reverse: bool,
         phase_bounded: bool,
-    ) -> tuple[RuntimeShutdownFailure, ...]:
+    ) -> tuple[ApplicationShutdownFailure, ...]:
         ordered = tuple(reversed(hooks)) if reverse else hooks
-        failures: list[RuntimeShutdownFailure] = []
+        failures: list[ApplicationShutdownFailure] = []
         loop = asyncio.get_running_loop()
         deadline = loop.time() + grace_seconds
         for hook in ordered:
@@ -359,7 +360,7 @@ class RuntimeCoordinator:
             try:
                 await asyncio.wait_for(hook(), timeout=timeout)
             except Exception as error:
-                failures.append(RuntimeShutdownFailure(stage, type(error).__name__))
+                failures.append(ApplicationShutdownFailure(stage, type(error).__name__))
         return tuple(failures)
 
     async def _join_owned_tasks(self, grace: float) -> bool:
@@ -376,10 +377,10 @@ class RuntimeCoordinator:
 
     @staticmethod
     def _deduplicate_failures(
-        failures: tuple[RuntimeShutdownFailure, ...],
-    ) -> tuple[RuntimeShutdownFailure, ...]:
-        seen: set[tuple[RuntimeShutdownStage, str]] = set()
-        result: list[RuntimeShutdownFailure] = []
+        failures: tuple[ApplicationShutdownFailure, ...],
+    ) -> tuple[ApplicationShutdownFailure, ...]:
+        seen: set[tuple[ApplicationShutdownStage, str]] = set()
+        result: list[ApplicationShutdownFailure] = []
         for failure in failures:
             key = (failure.stage, failure.error_class)
             if key not in seen:

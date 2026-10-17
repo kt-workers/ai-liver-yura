@@ -17,7 +17,7 @@ from app.config.executive import (
 )
 from app.domain.executive import ExecutiveIntentKind, RequirementMode, RequirementSelectorField
 
-SOURCE = Path("resources/config/v2/executive.yaml").read_text()
+SOURCE = Path("config/executive.yaml").read_text()
 
 
 def data() -> dict[str, Any]:
@@ -75,7 +75,7 @@ def test_production_values_and_exact_rules() -> None:
         cast(Any, config).config_revision = 2
     with pytest.raises(FrozenInstanceError):
         cast(Any, config.execution).max_attempts = 5
-    assert read_executive_config(Path("resources/config/v2/executive.yaml")) == config
+    assert read_executive_config(Path("config/executive.yaml")) == config
 
 
 @pytest.mark.parametrize(

@@ -5,7 +5,8 @@ import asyncio
 import pytest
 
 from app.domain.attention import AttentionSourceKind
-from app.domain.brain_integration import BrainWorkStatus
+from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
+from tests.helpers.brain_outcomes import next_outcome_matching
 from tests.system_integration.test_core_cognition import admission, application
 
 
@@ -23,8 +24,21 @@ async def test_sequential_inputs_retire_only_obsolete_appraisals(
                     app, internal=internal, event_id=f"event-{index}", trace_id=f"trace-{index}"
                 )
             ).accepted
-            for _ in range(2 if internal else 3):
-                outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+            # 未応答のUSER sourceは応答精算まで保持されるため、
+            # 連続入力の全traceにExecutiveが生成されるとは限らない。
+            # 各入力の意味と主観評価は確実に検証し、初回の実判断も検証する。
+            modules = (
+                (BrainIntegrationModule.APPRAISAL, BrainIntegrationModule.EXECUTIVE)
+                if internal
+                else (
+                    (BrainIntegrationModule.INPUT_MEANING, BrainIntegrationModule.APPRAISAL)
+                    + ((BrainIntegrationModule.EXECUTIVE,) if index == 0 else ())
+                )
+            )
+            for module in modules:
+                outcome = await next_outcome_matching(
+                    app.brain, trace_id=f"trace-{index}", module=module
+                )
                 assert outcome.status is BrainWorkStatus.COMPLETED, outcome
             current = app.cognition.appraisal.current_commit()
             sources = app.cognition._attention_owner.snapshot().sources
@@ -55,8 +69,9 @@ async def test_early_user_source_is_reaped_on_runtime_cancel_before_execution(
         )
         assert not port.requests
         assert app.brain.cancel(accepted.work_id, "開始前取消")
-        outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
-        assert outcome.status is BrainWorkStatus.CANCELLED
+        await next_outcome_matching(
+            app.brain, work_id=accepted.work_id, status=BrainWorkStatus.CANCELLED
+        )
         assert not port.requests
         assert not app.cognition._attention_owner.snapshot().sources
     finally:
@@ -155,7 +170,7 @@ async def test_terminal_observer_reclaims_early_user_without_competing_consumer(
             else:
                 release.set()
         if consume:
-            outcome = await asyncio.wait_for(app.brain.next_outcome(), 2)
+            outcome = await next_outcome_matching(app.brain, work_id=accepted.work_id)
             status = outcome.status
         else:
             for _ in range(1000):
@@ -194,11 +209,11 @@ async def test_real_runtime_admission_rejection_reclaims_only_new_source(
 ) -> None:
     from dataclasses import replace
 
-    from app import bootstrap
-    from app.config.minimum_brain import MinimumBrainProductionConfig, load_minimum_brain_config
+    from app import application as bootstrap
+    from app.config.core import CoreConfig, load_core_config
 
-    def small(data: bytes) -> MinimumBrainProductionConfig:
-        config = load_minimum_brain_config(data)
+    def small(data: bytes) -> CoreConfig:
+        config = load_core_config(data)
         return replace(
             config,
             integration_policy=replace(
@@ -209,7 +224,7 @@ async def test_real_runtime_admission_rejection_reclaims_only_new_source(
             ),
         )
 
-    monkeypatch.setattr(bootstrap, "load_minimum_brain_config", small)
+    monkeypatch.setattr(bootstrap, "load_core_config", small)
     app, _ = application(monkeypatch)
     await app.start()
     try:
@@ -238,11 +253,19 @@ async def test_runtime_cancel_does_not_withdraw_unrelated_successful_input(
             admission(app, event_id="event-2", trace_id="trace-2")
         ).accepted
         assert app.brain.cancel(first.work_id, "最初だけ取消")
-        outcomes = [await asyncio.wait_for(app.brain.next_outcome(), 2) for _ in range(4)]
-        assert sum(o.status is BrainWorkStatus.CANCELLED for o in outcomes) == 1
-        assert all(
-            o.status is BrainWorkStatus.COMPLETED for o in outcomes if o.trace_id == "trace-2"
+        cancelled = await next_outcome_matching(
+            app.brain, trace_id="trace-1", status=BrainWorkStatus.CANCELLED
         )
+        outcomes = [
+            await next_outcome_matching(app.brain, trace_id="trace-2", module=module)
+            for module in (
+                BrainIntegrationModule.INPUT_MEANING,
+                BrainIntegrationModule.APPRAISAL,
+                BrainIntegrationModule.EXECUTIVE,
+            )
+        ]
+        assert cancelled.trace_id == "trace-1"
+        assert all(o.status is BrainWorkStatus.COMPLETED for o in outcomes)
         assert [
             s.source_ref
             for s in app.cognition._attention_owner.snapshot().sources
@@ -256,7 +279,6 @@ async def test_runtime_cancel_does_not_withdraw_unrelated_successful_input(
 async def test_pending_meaning_cannot_be_used_as_executive_semantic_evidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.domain.brain_integration import BrainIntegrationModule
     from app.domain.llm import LLMRoleRequest, LLMRoleResult
 
     app, port = application(monkeypatch)
@@ -277,14 +299,21 @@ async def test_pending_meaning_cannot_be_used_as_executive_semantic_evidence(
         app.cognition.submit_input(
             admission(app, internal=True, event_id="internal", trace_id="internal")
         )
-        rejected = await asyncio.wait_for(app.brain.next_outcome(), 2)
+        rejected = await next_outcome_matching(
+            app.brain, trace_id="internal", module=BrainIntegrationModule.APPRAISAL
+        )
         assert rejected.module is BrainIntegrationModule.APPRAISAL
         assert rejected.status is BrainWorkStatus.FAILED
         assert not any(r.role_id == "executive_deliberation" for r in port.requests)
         release.set()
-        for _ in range(3):
-            assert (
-                await asyncio.wait_for(app.brain.next_outcome(), 2)
-            ).status is BrainWorkStatus.COMPLETED
+        for module in (
+            BrainIntegrationModule.INPUT_MEANING,
+            BrainIntegrationModule.APPRAISAL,
+            BrainIntegrationModule.EXECUTIVE,
+        ):
+            outcome = await next_outcome_matching(
+                app.brain, trace_id="trace-1", module=module
+            )
+            assert outcome.status is BrainWorkStatus.COMPLETED
     finally:
         await app.stop()

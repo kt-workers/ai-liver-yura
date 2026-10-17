@@ -1,5 +1,7 @@
+"""外部接続に依存しない本体の有界実行カーネル。"""
+
 from .cancellation import CancellationRegistry, CancellationToken
-from .clock import FakeRuntimeClock, RuntimeClock, SystemRuntimeClock
+from .clock import RuntimeClock
 from .contracts import (
     CancellationRecord,
     CoordinatorState,
@@ -26,7 +28,6 @@ __all__ = [
     "CancellationRegistry",
     "CancellationToken",
     "CoordinatorState",
-    "FakeRuntimeClock",
     "LaneDiagnostics",
     "LaneErrorPolicy",
     "QueueAdmission",
@@ -39,7 +40,6 @@ __all__ = [
     "RuntimeLanePolicy",
     "RuntimeSchedulerPolicy",
     "RuntimeWorkItem",
-    "SystemRuntimeClock",
     "WorkDisposition",
     "WorkOutcome",
     "WorkPriority",

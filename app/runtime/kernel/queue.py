@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# 有界待ち行列の具体実装。
 from collections import deque
 from collections.abc import Callable
 from typing import Generic, TypeVar

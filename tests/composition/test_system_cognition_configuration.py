@@ -3,6 +3,7 @@
 import asyncio
 import json
 import shutil
+from collections.abc import Awaitable, Callable
 from dataclasses import FrozenInstanceError, asdict
 from pathlib import Path
 from typing import Any
@@ -10,34 +11,59 @@ from typing import Any
 import pytest
 import yaml
 
-from app import bootstrap
+from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
-from app.composition import system_cognition_configuration as system
-from app.composition.executive_configuration import create_executive_configuration
-from app.composition.s2_provider import S2ProviderLease
-from app.config.s2_contracts import S2ConfigurationError
+from app.bootstrap import system_cognition_configuration as system
+from app.bootstrap.core_components import compose_core_components
+from app.config.core_contracts import CoreConfigurationError
+from app.config.executive_assembly import create_executive_configuration
+from app.config.llm_connections import LLMConnectionConfig
 from app.domain.attention import AttentionTurnStore
 from app.domain.contracts.finalization import FinalizationError
 from app.domain.contracts.preconditions import PreconditionSourceRouter
+from app.domain.llm import LLMRoleDescriptor
 from app.domain.plugin_registry import PluginRegistryAuthority
-from app.runtime.kernel import SystemRuntimeClock
+from app.infrastructure.scheduling import SystemRuntimeClock
+from app.usecases import core_lifecycle
+from app.usecases.ports.llm import LLMRolePort
+from app.usecases.resource_cleanup import OwnedResourcesCloseError
 
-HEAD = "a" * 40
 
+class _FakeLLMAdapter:
+    """既存Roleに対する型付き未構成応答と、外側の資源回収を検証する。"""
 
-async def unavailable_lease(roles: Any, configs: Any, bindings: Any, mode: str) -> S2ProviderLease:
-    assert not configs
+    adapter_id = "openai_responses"
 
-    async def release() -> None:
-        return None
+    def __init__(
+        self,
+        *,
+        preflight: Callable[[], Awaitable[None]] | None = None,
+        on_release: Callable[[], None] | None = None,
+    ) -> None:
+        self.preflight = preflight
+        self.on_release = on_release
 
-    return S2ProviderLease(UnavailableLLMRolePort(roles), bindings, mode, release)
+    async def connect(
+        self,
+        connection: object,
+        descriptors: tuple[LLMRoleDescriptor, ...],
+    ) -> tuple[LLMRolePort, Callable[[], Awaitable[None]]]:
+        if not isinstance(connection, LLMConnectionConfig):
+            raise ValueError("接続設定の型が不正です")
+        if self.preflight is not None:
+            await self.preflight()
+
+        async def release() -> None:
+            if self.on_release is not None:
+                self.on_release()
+
+        return UnavailableLLMRolePort(descriptors), release
 
 
 def parameters() -> dict[str, Any]:
     return dict(
-        run_identity=system.S2RunIdentity(HEAD, "epoch", "run"),
-        activation_id="yura.cognition-s2.explicit",
+        run_identity=system.CoreRunIdentity("epoch", "run"),
+        activation_id="yura.core.explicit",
         fresh_start=True,
         clock=SystemRuntimeClock(),
         registry=PluginRegistryAuthority(),
@@ -45,16 +71,14 @@ def parameters() -> dict[str, Any]:
         precondition_bindings=(),
         activity_bindings={},
         fast_rules=(),
-        provider_source=None,
-        provider_factory=unavailable_lease,
-        artifact_head=lambda: HEAD,
+        llm_adapters=(_FakeLLMAdapter(),),
     )
 
 
 @pytest.mark.asyncio
 async def test_real_factories_identity_snapshot_and_restart() -> None:
     params = parameters()
-    app = await bootstrap.build_s2_production_core(**params)
+    app = await bootstrap.build_core(**params)
     assert app.core.input_context._goals is app.core.goals
     assert app.core.input_context.activities is app.core.activities
     snapshot = app.composition_snapshot
@@ -70,7 +94,6 @@ async def test_real_factories_identity_snapshot_and_restart() -> None:
     )
     assert app.executive.requirements_owner is app.cognition.requirements
     assert app.executive.initial_generation is app.cognition.requirements.current_generation()
-    assert snapshot.git_head == HEAD
     assert snapshot.runtime_epoch == "epoch"
     assert snapshot.system_run_id == "run"
     assert (
@@ -94,22 +117,25 @@ async def test_real_factories_identity_snapshot_and_restart() -> None:
         == snapshot.component_bindings[0].executive.initial_generation_identity
     )
     assert snapshot.subsystem_bindings == ()
-    assert all(
-        binding.availability_mode == "unconfigured" for binding in snapshot.provider_bindings
-    )
+    assert {binding.role_id for binding in snapshot.llm_connection_bindings} == {
+        "input_meaning", "subjective_appraisal", "executive_deliberation",
+    }
+    assert {binding.connection_id for binding in snapshot.llm_connection_bindings} == {
+        "yura.llm.default",
+    }
     text = json.dumps(asdict(snapshot), default=str)
     for forbidden in ("test.llm.execution", "_lock", "/Users/", "credential", "raw_token"):
         assert forbidden not in text
     with pytest.raises(FrozenInstanceError):
-        app.composition_snapshot = snapshot  # type: ignore[misc]
+        snapshot.activation_id = "different"  # type: ignore[misc]
     await app.start()
     await asyncio.gather(app.stop(), app.stop())
     with pytest.raises(FinalizationError):
         app.cognition.requirements.current_generation()
     params["registry"].snapshot()
-    with pytest.raises(S2ConfigurationError, match="ACTIVATION_FAILED"):
+    with pytest.raises(CoreConfigurationError, match="ACTIVATION_FAILED"):
         await app.start()
-    second = await bootstrap.build_s2_production_core(**parameters())
+    second = await bootstrap.build_core(**parameters())
     assert second.composition_snapshot.requirements_generation != snapshot.requirements_generation
     await second.stop()
 
@@ -120,46 +146,44 @@ async def test_real_factories_identity_snapshot_and_restart() -> None:
     [
         ("activation_id", "wrong", "ACTIVATION_FAILED"),
         ("fresh_start", False, "ACTIVATION_FAILED"),
-        ("artifact_head", lambda: "b" * 40, "INVALID_SYSTEM_CONFIG"),
-        ("config_ref", "resources/missing.yaml", "MISSING_SYSTEM_CONFIG"),
+        ("config_ref", "config/missing.yaml", "MISSING_SYSTEM_CONFIG"),
         ("config_ref", "../secret", "INVALID_SYSTEM_CONFIG"),
     ],
 )
 async def test_activation_fails_without_minimum_fallback(field: str, value: Any, code: str) -> None:
     params = parameters()
     params[field] = value
-    with pytest.raises(S2ConfigurationError) as caught:
-        await bootstrap.build_s2_production_core(**params)
+    with pytest.raises(CoreConfigurationError) as caught:
+        await bootstrap.build_core(**params)
     assert caught.value.code.value == code
 
 
 def copy_resources(tmp_path: Path) -> None:
-    shutil.copytree("resources/config", tmp_path / "resources/config")
-    shutil.copytree("resources/character_definitions", tmp_path / "resources/character_definitions")
+    shutil.copytree("config", tmp_path / "config")
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "reference,field",
     [
-        ("minimum_config", "config_revision"),
+        ("llm_connections", "config_revision"),
         ("appraisal_config", "config_revision"),
         ("executive_config", "config_id"),
         ("attention_policy", "policy_revision"),
-        ("provider_deployment", "deployment_revision"),
+        ("llm_connections", "config_id"),
         ("character_definition", "definition_revision"),
     ],
 )
 async def test_reference_mismatch(tmp_path: Path, reference: str, field: str) -> None:
     copy_resources(tmp_path)
-    path = tmp_path / system.S2_RESOURCE
+    path = tmp_path / system.CORE_RESOURCE
     data = yaml.safe_load(path.read_text())
     data[reference][field] = "different" if field.endswith("id") else 2
     path.write_text(yaml.safe_dump(data))
     params = parameters()
     params["resource_root"] = tmp_path
-    with pytest.raises(S2ConfigurationError, match="INVALID_SYSTEM_CONFIG"):
-        await bootstrap.build_s2_production_core(**params)
+    with pytest.raises(CoreConfigurationError, match="INVALID_SYSTEM_CONFIG"):
+        await bootstrap.build_core(**params)
 
 
 @pytest.mark.asyncio
@@ -186,31 +210,31 @@ async def test_failure_stages_reclaim_owners(monkeypatch: pytest.MonkeyPatch, st
         value = original_attention(*args, **kwargs)
         return value
 
-    async def provider(roles: Any, configs: Any, pubs: Any, mode: str) -> S2ProviderLease:
+    async def provider() -> None:
         if stage == "provider":
             raise ValueError("private-internal-detail")
-
-        async def close() -> None:
-            events.append("provider")
-
-        return S2ProviderLease(UnavailableLLMRolePort(roles), pubs, mode, close)
 
     def fail(*args: Any, **kwargs: Any) -> Any:
         raise ValueError("private-internal-detail")
 
     monkeypatch.setattr(system, "create_executive_configuration", executive)
     monkeypatch.setattr(system, "AttentionTurnStore", attention)
-    params["provider_factory"] = provider
+    params["llm_adapters"] = (
+        _FakeLLMAdapter(
+            preflight=provider,
+            on_release=lambda: events.append("provider"),
+        ),
+    )
     if stage == "appraisal":
         monkeypatch.setattr(system, "build_appraisal_configuration", fail)
     if stage == "cognition":
         monkeypatch.setattr(system, "CoreCognitionConfiguration", fail)
     if stage == "core":
-        monkeypatch.setattr(bootstrap, "_compose_core", fail)
+        monkeypatch.setattr(system, "compose_core_components", fail)
     if stage == "snapshot":
         monkeypatch.setattr(system, "_snapshot", fail)
-    with pytest.raises(S2ConfigurationError) as caught:
-        await bootstrap.build_s2_production_core(**params)
+    with pytest.raises(CoreConfigurationError) as caught:
+        await bootstrap.build_core(**params)
     assert "private-internal-detail" not in str(caught.value)
     for binding in bindings:
         with pytest.raises(FinalizationError):
@@ -231,7 +255,7 @@ async def test_reverse_cleanup_continues_after_failure() -> None:
                 raise ValueError("private-detail")
 
         ledger.actions.append(close)
-    with pytest.raises(S2ConfigurationError):
+    with pytest.raises(OwnedResourcesCloseError):
         await ledger.close()
     assert events == [3, 2, 1, 0]
     await ledger.close()
@@ -240,7 +264,7 @@ async def test_reverse_cleanup_continues_after_failure() -> None:
 
 @pytest.mark.asyncio
 async def test_cancel_stop_waits_for_owned_cleanup() -> None:
-    app = await bootstrap.build_s2_production_core(**parameters())
+    app = await bootstrap.build_core(**parameters())
     entered, finish = asyncio.Event(), asyncio.Event()
 
     async def slow() -> None:
@@ -265,21 +289,21 @@ async def test_cancel_stop_waits_for_owned_cleanup() -> None:
 async def test_start_failure_uses_same_cleanup(
     monkeypatch: pytest.MonkeyPatch, cancel: bool
 ) -> None:
-    app = await bootstrap.build_s2_production_core(**parameters())
+    app = await bootstrap.build_core(**parameters())
     entered = asyncio.Event()
 
-    async def start(self: Any) -> None:
+    async def start(self: bootstrap.CoreComponents) -> None:
         entered.set()
         if cancel:
             await asyncio.Future()
         raise ValueError("private-detail")
 
-    monkeypatch.setattr(bootstrap.MinimumCoreApplication, "start", start)
+    monkeypatch.setattr(core_lifecycle, "start_core", start)
     task = asyncio.create_task(app.start())
     await entered.wait()
     if cancel:
         task.cancel()
-    with pytest.raises(asyncio.CancelledError if cancel else S2ConfigurationError):
+    with pytest.raises(asyncio.CancelledError if cancel else CoreConfigurationError):
         await task
     assert not app._owned.actions
     with pytest.raises(FinalizationError):
@@ -290,28 +314,22 @@ async def test_start_failure_uses_same_cleanup(
 async def test_generation_change_before_publication_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    original = bootstrap._compose_core
+    original = compose_core_components
 
     def compose(*args: Any, **kwargs: Any) -> Any:
         core = original(*args, **kwargs)
         kwargs["cognition"].requirements.finalization_participant.retire()
         return core
 
-    monkeypatch.setattr(bootstrap, "_compose_core", compose)
-    with pytest.raises(S2ConfigurationError, match="INITIALIZATION_FAILED"):
-        await bootstrap.build_s2_production_core(**parameters())
+    monkeypatch.setattr(system, "compose_core_components", compose)
+    with pytest.raises(CoreConfigurationError, match="INITIALIZATION_FAILED"):
+        await bootstrap.build_core(**parameters())
 
 
-def test_early_boot_does_not_read_s2_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
-
-    def forbidden(*args: Any, **kwargs: Any) -> Any:
-        pytest.fail("minimum起動がS2構成を参照しました")
-
-    monkeypatch.setattr(system, "load_s2_config", forbidden)
-    core = bootstrap.build_minimum_core(cognition=None)
-    assert core.cognition is None
-    assert core.config.brain_module_registrations == ("input_meaning",)
+def test_incomplete_core_cognition_is_rejected() -> None:
+    """最小構成を成功扱いにせず、必須認知不足を拒否する。"""
+    with pytest.raises(ValueError, match="認知構成は必須"):
+        bootstrap.build_core_runtime(cognition=None)
 
 
 @pytest.mark.asyncio
@@ -327,13 +345,13 @@ async def test_cancel_during_provider_construction_reclaims_previous_owners(
         constructed.append(result)
         return result
 
-    async def blocked(*args: Any) -> Any:
+    async def blocked() -> None:
         entered.set()
         await asyncio.Future()
 
     monkeypatch.setattr(system, "create_executive_configuration", executive)
-    params["provider_factory"] = blocked
-    task = asyncio.create_task(bootstrap.build_s2_production_core(**params))
+    params["llm_adapters"] = (_FakeLLMAdapter(preflight=blocked),)
+    task = asyncio.create_task(bootstrap.build_core(**params))
     await entered.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -347,12 +365,12 @@ async def test_cancel_during_provider_construction_reclaims_previous_owners(
 async def test_owned_cleanup_actual_order(monkeypatch: pytest.MonkeyPatch) -> None:
     params = parameters()
     events: list[str] = []
-    from app.composition.executive_configuration import ExecutiveProductionBinding
+    from app.config.executive_assembly import ExecutiveProductionBinding
     from app.domain.contracts.finalization import AuthorityFinalizationParticipant
 
     original_close = ExecutiveProductionBinding.close
     original_retire = AuthorityFinalizationParticipant.retire
-    original_stop = bootstrap.MinimumCoreApplication.stop
+    original_stop = system.CoreApplication.stop
 
     def close(binding: ExecutiveProductionBinding) -> None:
         events.append("executive")
@@ -362,21 +380,15 @@ async def test_owned_cleanup_actual_order(monkeypatch: pytest.MonkeyPatch) -> No
         events.append("retire")
         original_retire(participant)
 
-    async def stop(core: bootstrap.MinimumCoreApplication) -> None:
+    async def stop(core: system.CoreApplication) -> None:
         events.append("core")
         await original_stop(core)
 
-    async def provider(roles: Any, configs: Any, bindings: Any, mode: str) -> S2ProviderLease:
-        async def release() -> None:
-            events.append("provider")
-
-        return S2ProviderLease(UnavailableLLMRolePort(roles), bindings, mode, release)
-
     monkeypatch.setattr(ExecutiveProductionBinding, "close", close)
     monkeypatch.setattr(AuthorityFinalizationParticipant, "retire", retire)
-    monkeypatch.setattr(bootstrap.MinimumCoreApplication, "stop", stop)
-    params["provider_factory"] = provider
-    app = await bootstrap.build_s2_production_core(**params)
+    monkeypatch.setattr(system.CoreApplication, "stop", stop)
+    params["llm_adapters"] = (_FakeLLMAdapter(on_release=lambda: events.append("provider")),)
+    app = await bootstrap.build_core(**params)
     await app.stop()
     assert events[:4] == ["core", "provider", "retire", "executive"]
     assert events.count("provider") == events.count("executive") == events.count("core") == 1
@@ -385,10 +397,24 @@ async def test_owned_cleanup_actual_order(monkeypatch: pytest.MonkeyPatch) -> No
 @pytest.mark.asyncio
 async def test_symlink_resource_cannot_escape_root(tmp_path: Path) -> None:
     copy_resources(tmp_path)
-    source = tmp_path / "resources/config/v2/appraisal.yaml"
+    source = tmp_path / "config/appraisal.yaml"
     source.unlink()
-    source.symlink_to(Path("resources/config/v2/appraisal.yaml").resolve())
+    source.symlink_to(Path("config/appraisal.yaml").resolve())
     params = parameters()
     params["resource_root"] = tmp_path
-    with pytest.raises(S2ConfigurationError, match="INVALID_SYSTEM_CONFIG"):
-        await bootstrap.build_s2_production_core(**params)
+    with pytest.raises(CoreConfigurationError, match="INVALID_SYSTEM_CONFIG"):
+        await bootstrap.build_core(**params)
+
+
+@pytest.mark.asyncio
+async def test_application_preserves_public_cleanup_failure_code() -> None:
+    app = await bootstrap.build_core(**parameters())
+
+    def fail() -> None:
+        raise ValueError("非公開の終了失敗詳細")
+
+    app._owned.add_sync(fail)
+    with pytest.raises(CoreConfigurationError, match="INITIALIZATION_FAILED") as caught:
+        await app.stop()
+    assert "非公開の終了失敗詳細" not in str(caught.value)
+    assert not app._owned.actions

@@ -6,10 +6,11 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from app import bootstrap
+from app import application as bootstrap
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.domain.character.projector import project_character_definition
+from tests.helpers.full_core import full_cognition
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -17,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.mark.parametrize("alternate", [False, True])
 @pytest.mark.parametrize("rename", [False, True])
 def test_production_identity_single_load(tmp_path: Path, alternate: bool, rename: bool) -> None:
-    document = yaml.safe_load((ROOT / "resources/character_definitions/v2/yura.yaml").read_text())
+    document = yaml.safe_load((ROOT / "config/character/yura.yaml").read_text())
     if alternate:
         document["character_id"] = "alternate-character"
         document["definition_revision"] += 1
@@ -30,10 +31,9 @@ def test_production_identity_single_load(tmp_path: Path, alternate: bool, rename
                 ):
                     if isinstance(facet.get("value"), str):
                         facet["value"] = "別の表記"
-    character_path = tmp_path / "unrelated-filename.yaml"
-    character_path.write_text(yaml.safe_dump(document, allow_unicode=True))
-    config = yaml.safe_load((ROOT / "resources/config/v2/minimum_brain.yaml").read_text())
-    config["character_definition_path"] = str(character_path)
+    config = yaml.safe_load((ROOT / "config/core.yaml").read_text())
+    config["character_definition"]["character_id"] = document["character_id"]
+    config["character_definition"]["definition_revision"] = document["definition_revision"]
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(config))
     with (
@@ -43,10 +43,12 @@ def test_production_identity_single_load(tmp_path: Path, alternate: bool, rename
         patch.object(
             bootstrap,
             "load_character_definition_yaml",
-            wraps=load_character_definition_yaml,
+            side_effect=lambda _source: load_character_definition_yaml(
+                yaml.safe_dump(document, allow_unicode=True).encode("utf-8")
+            ),
         ) as load,
     ):
-        app = bootstrap.build_minimum_core(config_path)
+        app = bootstrap.build_core_runtime(config_path, cognition=full_cognition())
     assert load.call_count == 1
     identity = app.runtime_subject_identity
     loaded = app.character_definition
@@ -63,7 +65,7 @@ def test_production_identity_single_load(tmp_path: Path, alternate: bool, rename
         == document["definition_revision"]
     )
     assert project_character_definition(loaded).language.character_id == identity.character_id
-    character_path.write_text("不正な置換")
+    config_path.write_text("不正な置換")
     assert app.runtime_subject_identity is identity
 
 
@@ -72,11 +74,11 @@ def test_missing_invalid_character_has_no_identity_fallback(tmp_path: Path, miss
     path = tmp_path / "character.yaml"
     if not missing:
         path.write_text("character_id: yura")
-    config = yaml.safe_load((ROOT / "resources/config/v2/minimum_brain.yaml").read_text())
-    config["character_definition_path"] = str(path)
+    config = yaml.safe_load((ROOT / "config/core.yaml").read_text())
+    config["character_definition.resource_ref"] = str(path)
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(config))
     with patch.object(bootstrap, "create_openai_port_from_environment") as provider:
         with pytest.raises((FileNotFoundError, ValueError)):
-            bootstrap.build_minimum_core(config_path)
+            bootstrap.build_core_runtime(config_path, cognition=full_cognition())
     provider.assert_not_called()

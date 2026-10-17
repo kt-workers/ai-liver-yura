@@ -3,16 +3,19 @@
 import asyncio
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
-from typing import Generic, TypeVar, cast
+from typing import TypeVar, cast
 
 from app.domain.contracts.finalization import AuthorityReadPublication
+from app.domain.contracts.persistence import GOAL_PERSISTENCE_OWNER_ID as OWNER_ID
+from app.domain.contracts.persistence import (
+    PersistenceOperationResult as PersistenceOperationResult,
+)
 from app.domain.goals.contracts import GoalCommitmentSnapshot
 from app.domain.memory import MemoryStoreAuthority, MemoryWriteRequest, MemoryWriteResult
 from app.domain.memory.contracts import MemoryRetrievalQuery
 from app.domain.memory.ranking import MemoryRetrievalRankingPolicy, RankedMemoryEvidenceView
 from app.domain.memory.semantic_assertions import MemorySemanticAssertionEntry
-from app.runtime.lifecycle import DependencyFailure, DependencyRetryPolicy, RuntimeLifecycle
+from app.usecases.lifecycle import ApplicationLifecycle, DependencyFailure, DependencyRetryPolicy
 
 from .contracts import (
     DurabilityReceipt,
@@ -21,7 +24,6 @@ from .contracts import (
     PersistenceFailureCode,
 )
 from .goal_snapshot_codec import (
-    OWNER_ID,
     SNAPSHOT_KIND,
     decode_goal_snapshot,
     encode_goal_snapshot,
@@ -36,20 +38,6 @@ from .worker import (
 )
 
 T = TypeVar("T")
-
-
-@dataclass(frozen=True, slots=True)
-class PersistenceOperationResult(Generic[T]):
-    """呼出しの成功値と保存機構の失敗を区別する。生の提供元例外は運ばない。"""
-
-    value: T | None
-    failure_code: PersistenceFailureCode | None = None
-
-    def __post_init__(self) -> None:
-        if self.failure_code is not None and (
-            self.value is not None or not isinstance(self.failure_code, PersistenceFailureCode)
-        ):
-            raise ValueError("保存処理の成功値と失敗分類が矛盾しています")
 
 
 class PostgresPersistenceRuntime:
@@ -79,14 +67,14 @@ class PostgresPersistenceRuntime:
         self._snapshots: PostgresLifecycleSnapshotRepository | None = None
         self._worker: SnapshotPersistenceWorker | None = None
         self._pending: set[asyncio.Future[object]] = set()
-        self._lifecycle: RuntimeLifecycle | None = None
+        self._lifecycle: ApplicationLifecycle | None = None
         self._dependency_id: str | None = None
         self._closed = False
         self._close_task: asyncio.Task[None] | None = None
         self._start_lock = asyncio.Lock()
         self.availability = PersistenceAvailability.UNAVAILABLE
 
-    def attach(self, lifecycle: RuntimeLifecycle, retry_policy: DependencyRetryPolicy) -> None:
+    def attach(self, lifecycle: ApplicationLifecycle, retry_policy: DependencyRetryPolicy) -> None:
         if self._lifecycle is not None or self._closed:
             raise ValueError("永続化の起動停止接続は一度だけ登録できます")
         lifecycle.register_dependency(retry_policy, reconnect=self.start, close=self.close)

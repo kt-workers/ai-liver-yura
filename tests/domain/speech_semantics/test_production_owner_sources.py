@@ -5,13 +5,7 @@ from typing import Any, cast
 
 import pytest
 
-from app.composition.speech_semantics_policy import bind_speech_semantics_policy_v1
-from app.composition.speech_semantics_sources import (
-    ProductionSpeechSources,
-    SpeechOwnerSourceRegistration,
-    build_projection_v1,
-    build_truth_v1,
-)
+from app.bootstrap.speech_semantics_policy import bind_speech_semantics_policy_v1
 from app.domain.activity_execution.authority import ActivityExecutionAuthority
 from app.domain.contracts import ExecutionResult, ExecutionStatus
 from app.domain.contracts.common import JsonValue
@@ -45,6 +39,12 @@ from app.domain.speech_semantics_vocabulary import SpeechSemanticContextFailureC
 from app.domain.speech_semantics_vocabulary import SpeechSemanticFactKind as F
 from app.domain.speech_semantics_vocabulary import SpeechSourceContractKind as K
 from app.domain.speech_semantics_vocabulary import SpeechTruthRule as T
+from app.usecases.speech_semantics_sources import (
+    ProductionSpeechSources,
+    SpeechOwnerSourceRegistration,
+    build_projection_v1,
+    build_truth_v1,
+)
 from tests.domain.activity_execution.test_activity_execution import started
 from tests.domain.executive.test_executive import NOW, snapshot
 from tests.domain.memory.test_memory_store_retrieval import authority, candidate
@@ -489,7 +489,7 @@ async def test_commitment_filters_other_evidence() -> None:
 async def test_memory_material_and_identity_failure_paths(
     fault: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from app.composition.speech_semantics_policy import build_speech_semantics_policy_owner_v1
+    from app.bootstrap.speech_semantics_policy import build_speech_semantics_policy_owner_v1
     from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
     from app.domain.contracts.common import thaw_json
     from app.domain.executive.contracts import SpeechIntentPayload

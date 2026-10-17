@@ -6,17 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from app.composition.memory_evidence import (
-    CoreMemoryEvidenceConfiguration,
-    CoreMemoryEvidenceReader,
-)
-from app.composition.memory_persistence import CoreMemoryPersistenceBinding
-from app.composition.reflection import CoreReflectionConfiguration, CoreReflectionDelivery
+from app.application import start_core, stop_core
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
-    BrainIntegrationRuntime,
     BrainWorkStatus,
 )
 from app.domain.contracts.semantic_subject import SemanticSubjectKind
@@ -24,7 +18,14 @@ from app.domain.llm import LLMRoleRequest, LLMRoleResult
 from app.domain.memory_reflection import ReflectionAcceptancePolicy, ReflectionCandidateStatus
 from app.domain.memory_reflection.llm_roles import proposal_to_wire_v3
 from app.infrastructure.persistence import PostgresEndpoint
-from app.runtime.kernel import FakeRuntimeClock
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
+from app.infrastructure.scheduling import FakeRuntimeClock
+from app.usecases.brain_integration_runtime import BrainIntegrationRuntime
+from app.usecases.memory_evidence import (
+    CoreMemoryEvidenceConfiguration,
+    CoreMemoryEvidenceReader,
+)
+from app.usecases.reflection_delivery import CoreReflectionConfiguration, CoreReflectionDelivery
 from tests.domain.brain_integration.test_runtime import FakePort, envelope, policy, work
 from tests.domain.memory import test_memory_store_retrieval as memory
 from tests.domain.memory_reflection.test_llm_roles import RolePort, role_policy, support_wire
@@ -177,8 +178,8 @@ async def test_query_bound_is_checked_before_io(endpoint: PostgresEndpoint) -> N
 async def test_public_boot_registers_roles_and_feeds_memory_into_executive(
     endpoint: PostgresEndpoint, boot_config: Path, monkeypatch: pytest.MonkeyPatch,  # noqa: F811
 ) -> None:
-    from app import bootstrap
-    from app.composition.cognition_configuration import CoreCognitionConfiguration
+    from app import application as bootstrap
+    from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
     from app.domain.appraisal import InternalStateReducer
     from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore
     from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
@@ -233,17 +234,27 @@ async def test_public_boot_registers_roles_and_feeds_memory_into_executive(
         saved = await app.memory.submit_write(MemoryWriteRequest(candidate)).wait()
         assert saved.value is not None and saved.value.record is not None
         initial_goals = app.goals.snapshot()
-        await app.start()
-        assert app.cognition.submit_input(admission(app, internal=True)).accepted
-        for _ in range(2):
-            outcome = await asyncio.wait_for(app.brain.next_outcome(), 3)
+        await start_core(app)
+        submitted = admission(app, internal=True)
+        assert submitted.event is not None
+        assert app.cognition.submit_input(submitted).accepted
+        target_trace = submitted.event.envelope.trace_id
+        deadline = asyncio.get_running_loop().time() + 3
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            assert remaining > 0, "認知traceの判断終端が期限内に届きません"
+            outcome = await asyncio.wait_for(app.brain.next_outcome(), remaining)
+            if outcome.trace_id != target_trace:
+                continue
             assert outcome.status is BrainWorkStatus.COMPLETED, outcome
+            if outcome.module is BrainIntegrationModule.EXECUTIVE:
+                break
         executive = next(r for r in port.requests if r.role_id == "executive_deliberation")
         assert saved.value.record.memory_id in str(executive.input.value)
         assert "memory_evidence" in str(executive.input.value)
         assert app.goals.snapshot() == initial_goals
     finally:
-        await app.stop()
+        await stop_core(app)
 
 
 @pytest.mark.asyncio
@@ -253,13 +264,11 @@ async def test_actual_owner_terminal_reaches_background_role(
 ) -> None:
     from datetime import timedelta
 
-    from app.composition.execution_observation import (
-        SPEECH_OBSERVATION_POLICY,
-        project_speech_execution_observation,
-    )
     from app.domain.activity_execution import ExecutionAdapterReport
+    from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
     from app.domain.contracts import ExecutionStatus
     from app.domain.speech_runtime.contracts import SpeechPresentationReportStatus
+    from app.usecases.speech_observation import project_speech_execution_observation
     from tests.domain.activity_execution.test_activity_execution import DISPATCH_ID, started
     from tests.domain.activity_execution.test_activity_execution import NOW as ACTIVITY_NOW
     from tests.system_integration.test_execution_observation_boundary import (

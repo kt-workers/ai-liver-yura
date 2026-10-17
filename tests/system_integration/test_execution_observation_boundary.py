@@ -8,11 +8,8 @@ from typing import Any
 
 import pytest
 
-from app.composition.execution_observation import (
-    SPEECH_OBSERVATION_POLICY,
-    project_speech_execution_observation,
-)
 from app.domain.activity_execution import ActivityExecutionAuthority, ExecutionObservationProvenance
+from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
 from app.domain.contracts import ExecutionStatus, RevisionVector
 from app.domain.speech_runtime.contracts import (
     AudioReadinessState,
@@ -27,6 +24,7 @@ from app.domain.speech_runtime.presentation import SpeechPresentationExecutor
 from app.domain.speech_runtime.runtime import SpeechRuntime
 from app.domain.speech_runtime.tasks import CandidateTaskKey, CandidateTaskRegistry
 from app.subsystems.validation.presentation_session import LocalPresentationBoundary
+from app.usecases.speech_observation import project_speech_execution_observation
 from tests.domain.speech_runtime.policy_fixtures import runtime_policy
 from tests.domain.speech_runtime.test_presentation import _ready_candidate, _state
 

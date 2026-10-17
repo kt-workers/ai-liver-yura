@@ -11,8 +11,6 @@ from app.domain.appraisal import (
     AppraisalPath,
     DeepAppraisalContext,
     DeepAppraisalFreshnessStamp,
-    DeepAppraisalInterpreter,
-    DeepAppraisalLiveStatePort,
     DeepAppraisalPolicy,
     DeterministicAppraisalRule,
     FacetRef,
@@ -44,6 +42,7 @@ from app.domain.llm import (
     LLMTokenUsage,
     StructuredPayload,
 )
+from app.usecases.appraisal import DeepAppraisalInterpreter, DeepAppraisalLiveStatePort
 from tests.helpers.llm import make_execution_policy
 
 NOW = datetime(2026, 8, 24, tzinfo=timezone.utc)

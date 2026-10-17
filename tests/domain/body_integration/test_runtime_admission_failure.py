@@ -5,9 +5,9 @@ import pytest
 
 from app.domain.body_motion_planning import (
     BodyMotionPlanAuthority,
-    DeterministicBodyMotionPlanner,
 )
 from app.domain.body_solver import BodyStateAuthority
+from app.usecases.body_motion_planning import DeterministicBodyMotionPlanner
 from tests.domain.body_integration.test_runtime import (
     _at,
     _ControlledPlanner,

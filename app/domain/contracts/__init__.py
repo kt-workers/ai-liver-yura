@@ -46,6 +46,7 @@ from .snapshots import (
     stabilize_snapshot,
     stabilize_snapshot_async,
 )
+from .time import Clock, ControlledClock, SystemClock
 
 __all__ = [
     "RuntimeSubjectIdentity",
@@ -74,6 +75,8 @@ __all__ = [
     "CapabilityAvailability",
     "CapabilityDescriptor",
     "CapabilityRequirement",
+    "Clock",
+    "ControlledClock",
     "DEFAULT_SNAPSHOT_STABILIZATION_POLICY",
     "EventEnvelope",
     "ExecutionResult",
@@ -90,6 +93,7 @@ __all__ = [
     "SnapshotStabilizationPolicy",
     "SourceLifecycleOperation",
     "SystemCommand",
+    "SystemClock",
     "snapshot_cycle_is_stable",
     "stabilize_snapshot",
     "stabilize_snapshot_async",

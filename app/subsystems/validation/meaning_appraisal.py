@@ -7,8 +7,6 @@ from app.domain.appraisal import (
     AppraisalCandidate,
     AppraisalStateCommit,
     DeepAppraisalContext,
-    DeepAppraisalInterpreter,
-    DeepAppraisalLiveStatePort,
     DeepAppraisalPolicy,
     InternalStateReducer,
     InternalStateSnapshot,
@@ -23,6 +21,7 @@ from app.domain.attention import (
 from app.domain.contracts import EventEnvelope
 from app.domain.contracts.common import JsonValue
 from app.domain.input_meaning import StructuredInputMeaning
+from app.usecases.appraisal import DeepAppraisalInterpreter, DeepAppraisalLiveStatePort
 from app.usecases.attention import AppraisalAttentionProjector
 from app.usecases.ports.llm import LLMRolePort
 

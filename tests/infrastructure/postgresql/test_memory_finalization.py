@@ -7,7 +7,6 @@ from threading import Event
 
 import pytest
 
-from app.composition.memory_persistence import CoreMemoryPersistenceBinding
 from app.domain.contracts import SemanticSubjectIdentity, SemanticSubjectKind
 from app.domain.contracts.finalization import FinalizationFailure
 from app.domain.memory import (
@@ -17,6 +16,7 @@ from app.domain.memory import (
     MemoryWriteRequest,
 )
 from app.infrastructure.persistence import PostgresEndpoint
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from app.infrastructure.persistence.postgresql_connection import (
     PostgresConnection,
     PostgresDatabase,

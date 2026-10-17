@@ -31,7 +31,6 @@ from app.domain.body_motion_planning import (
     BodyMotionSelector,
     BodySpatialTarget,
     BodySpatialTargetKind,
-    DeterministicBodyMotionPlanner,
     DeterministicBodyPlanningDirective,
 )
 from app.domain.body_realtime import (
@@ -50,6 +49,7 @@ from app.domain.body_solver import (
 )
 from app.domain.contracts import RevisionVector
 from app.domain.executive import ExecutiveInterruptibility, ExecutivePriority
+from app.usecases.body_motion_planning import DeterministicBodyMotionPlanner
 from tests.domain.body_solver.d10_fixtures import (
     SUPPORT_CONTACT_IDS,
     StaticTargetResolver,

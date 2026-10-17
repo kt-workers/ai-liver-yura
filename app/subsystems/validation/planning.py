@@ -7,11 +7,9 @@ from typing import Generic, TypeVar
 
 from app.domain.contracts.common import JsonValue, freeze_json
 from app.domain.goal_planning import (
-    GoalPlanner,
     GoalPlanningAuthority,
     GoalPlanningBoundsPolicyPort,
     GoalPlanningContextSnapshot,
-    GoalPlanningLiveStatePort,
     GoalPlanningPolicy,
 )
 from app.domain.speech_semantics import (
@@ -22,6 +20,7 @@ from app.domain.speech_semantics import (
     SpeechSemanticsPlanner,
     SpeechSemanticsPolicy,
 )
+from app.usecases.goal_planning import GoalPlanner, GoalPlanningLiveStatePort
 from app.usecases.ports.llm import LLMRolePort
 
 from .contracts import (

@@ -1,0 +1,14 @@
+schema_id: yura.llm-connections.v1
+config_id: yura.llm-connections
+config_revision: 1
+llm_connections:
+  - id: yura.llm.default
+    adapter: openai_responses
+    settings:
+      model_mappings:
+        - model_class: balanced
+          mapping_id: yura.openai.gpt-5-mini.balanced
+          mapping_revision: 1
+          model: gpt-5-mini
+          reasoning_by_effort:
+            medium: medium

@@ -7,12 +7,11 @@ from typing import Any, cast
 
 import pytest
 
-from app import bootstrap
+from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
-from app.composition import speech_production_configuration as speech
-from app.composition.speech import CoreSpeechContextReaders
-from app.composition.speech_semantics_policy import build_speech_semantics_policy_owner_v1
-from app.config.s2_contracts import S2ConfigurationError
+from app.bootstrap import speech_production_configuration as speech
+from app.bootstrap.speech_semantics_policy import build_speech_semantics_policy_owner_v1
+from app.config.core_contracts import CoreConfigurationError
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
 from app.domain.speech_performance.policy import yura_revision_1_policy
@@ -22,6 +21,7 @@ from app.infrastructure.speech_presentation.supervisor import (
     PresentationWorkerRegistration,
     SpeechPresentationWorkerSupervisor,
 )
+from app.usecases.speech_pipeline import CoreSpeechContextReaders
 from tests.composition.test_system_cognition_configuration import parameters
 from tests.domain.character_language.test_character_language import policy as character_policy
 from tests.domain.semantic_verification.test_semantic_verification import verification_policy
@@ -141,7 +141,7 @@ async def test_production_factory_shared_binding_snapshot_and_single_cleanup(
     monkeypatch: Any,
 ) -> None:
     d = Deployment()
-    app = await bootstrap.build_s2_production_core(**parameters(), speech=d.inputs())
+    app = await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert app.core.cognition is not None
     assert app.cognition.speech is not None
     delivery = app.core.cognition.speech
@@ -177,7 +177,7 @@ async def test_production_factory_shared_binding_snapshot_and_single_cleanup(
         for r in d.publication.roles()
     )
     assert "_memory" not in json.dumps(asdict(app.composition_snapshot), default=str)
-    with pytest.raises(S2ConfigurationError):
+    with pytest.raises(CoreConfigurationError):
         app.cognition.speech.compose(app.core.cognition, app.core.input_context)
     calls: list[str] = []
     close = pipeline.close
@@ -201,8 +201,8 @@ async def test_production_factory_shared_binding_snapshot_and_single_cleanup(
 async def test_partial_failure_releases_once(fault: str) -> None:
     d = Deployment()
     setattr(d, fault, True)
-    with pytest.raises(S2ConfigurationError) as error:
-        await bootstrap.build_s2_production_core(**parameters(), speech=d.inputs())
+    with pytest.raises(CoreConfigurationError) as error:
+        await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert "非公開" not in str(error.value)
     assert d.events.count("release") == 1
     assert d.owner.publication()
@@ -213,14 +213,14 @@ async def test_changed_generation_before_acquire_rejected() -> None:
     d = Deployment()
     inputs = d.inputs()
     d.publication = replace(d.publication, binding_generation=2)
-    with pytest.raises(S2ConfigurationError):
-        await bootstrap.build_s2_production_core(**parameters(), speech=inputs)
+    with pytest.raises(CoreConfigurationError):
+        await bootstrap.build_core(**parameters(), speech=inputs)
     assert d.events == []
 
 
 @pytest.mark.asyncio
 async def test_speech_not_configured_keeps_cognition_only() -> None:
-    app = await bootstrap.build_s2_production_core(**parameters())
+    app = await bootstrap.build_core(**parameters())
     assert app.composition_snapshot.component_bindings[0].speech is None
     assert app.cognition.speech is None
     await app.stop()
@@ -238,7 +238,7 @@ async def test_speech_not_configured_keeps_cognition_only() -> None:
 )
 def test_invalid_publication_rejected(field: str, value: Any) -> None:
     d = Deployment()
-    with pytest.raises(S2ConfigurationError):
+    with pytest.raises(CoreConfigurationError):
         replace(d.publication, **{field: value})
 
 
@@ -246,10 +246,10 @@ def test_invalid_publication_rejected(field: str, value: Any) -> None:
 async def test_wrong_character_and_missing_input_fail_closed() -> None:
     d = Deployment()
     d.publication = replace(d.publication, character_id="other")
-    with pytest.raises(S2ConfigurationError):
-        await bootstrap.build_s2_production_core(**parameters(), speech=d.inputs())
-    with pytest.raises(S2ConfigurationError):
-        await bootstrap.build_s2_production_core(**parameters(), speech=cast(Any, object()))
+    with pytest.raises(CoreConfigurationError):
+        await bootstrap.build_core(**parameters(), speech=d.inputs())
+    with pytest.raises(CoreConfigurationError):
+        await bootstrap.build_core(**parameters(), speech=cast(Any, object()))
     assert d.events == []
 
 
@@ -258,7 +258,7 @@ async def test_semantic_currentness_change_after_registration_reclaims_pipeline(
     monkeypatch: Any,
 ) -> None:
     d = Deployment()
-    original = bootstrap._compose_core
+    from app.bootstrap.core_components import compose_core_components as original
     pipelines: list[Any] = []
 
     def compose(*args: Any, **kwargs: Any) -> Any:
@@ -268,9 +268,11 @@ async def test_semantic_currentness_change_after_registration_reclaims_pipeline(
         d.publication = replace(d.publication, binding_revision=2, binding_generation=2)
         return core
 
-    monkeypatch.setattr(bootstrap, "_compose_core", compose)
-    with pytest.raises(S2ConfigurationError, match="INITIALIZATION_FAILED"):
-        await bootstrap.build_s2_production_core(**parameters(), speech=d.inputs())
+    monkeypatch.setattr(
+        "app.bootstrap.system_cognition_configuration.compose_core_components", compose
+    )
+    with pytest.raises(CoreConfigurationError, match="INITIALIZATION_FAILED"):
+        await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert d.events.count("release") == 1
     assert pipelines[0]._closed
     assert pipelines[0].pending_preparation_tasks == 0
@@ -279,7 +281,7 @@ async def test_semantic_currentness_change_after_registration_reclaims_pipeline(
 @pytest.mark.asyncio
 async def test_compose_failure_after_pipeline_creation_reclaims_handle(monkeypatch: Any) -> None:
     d = Deployment()
-    original = bootstrap._compose_core
+    from app.bootstrap.core_components import compose_core_components as original
     pipelines: list[Any] = []
 
     def compose(*args: Any, **kwargs: Any) -> Any:
@@ -288,9 +290,11 @@ async def test_compose_failure_after_pipeline_creation_reclaims_handle(monkeypat
         pipelines.append(core.cognition.speech.pipeline)
         raise RuntimeError("部分構築失敗")
 
-    monkeypatch.setattr(bootstrap, "_compose_core", compose)
-    with pytest.raises(S2ConfigurationError):
-        await bootstrap.build_s2_production_core(**parameters(), speech=d.inputs())
+    monkeypatch.setattr(
+        "app.bootstrap.system_cognition_configuration.compose_core_components", compose
+    )
+    with pytest.raises(CoreConfigurationError):
+        await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert pipelines[0]._closed
     assert pipelines[0].pending_preparation_tasks == 0
     assert d.events.count("release") == 1
@@ -307,7 +311,7 @@ async def test_cancelled_stop_waits_for_release_then_reraises(monkeypatch: Any) 
         d.events.append("release")
 
     monkeypatch.setattr(d, "release", release)
-    app = await bootstrap.build_s2_production_core(**parameters(), speech=d.inputs())
+    app = await bootstrap.build_core(**parameters(), speech=d.inputs())
     stop = asyncio.create_task(app.stop())
     await started.wait()
     stop.cancel()
@@ -324,28 +328,20 @@ async def test_cancelled_stop_waits_for_release_then_reraises(monkeypatch: Any) 
 
 @pytest.mark.asyncio
 async def test_cleanup_failure_still_releases_cognition_provider(monkeypatch: Any) -> None:
-    from tests.composition.test_system_cognition_configuration import unavailable_lease
+    from tests.composition.test_system_cognition_configuration import _FakeLLMAdapter
 
     d = Deployment()
     d.release_error = True
     order: list[str] = []
 
-    async def provider(*args: Any) -> Any:
-        lease = await unavailable_lease(*args)
-
-        async def release() -> None:
-            order.append("provider")
-
-        return replace(lease, release_owned=release)
-
     params = parameters()
-    params["provider_factory"] = provider
-    app = await bootstrap.build_s2_production_core(**params, speech=d.inputs())
-    with pytest.raises(S2ConfigurationError, match="INITIALIZATION_FAILED"):
+    params["llm_adapters"] = (_FakeLLMAdapter(on_release=lambda: order.append("provider")),)
+    app = await bootstrap.build_core(**params, speech=d.inputs())
+    with pytest.raises(CoreConfigurationError, match="INITIALIZATION_FAILED"):
         await app.stop()
     assert d.events.count("release") == 1
     assert order == ["provider"]
-    with pytest.raises(S2ConfigurationError):
+    with pytest.raises(CoreConfigurationError):
         await app.stop()
     assert order == ["provider"]
 
@@ -360,7 +356,7 @@ async def test_cancel_during_partial_build_preserves_cancel_and_reclaims(monkeyp
 
     monkeypatch.setattr(d, "readers", readers)
     with pytest.raises(asyncio.CancelledError):
-        await bootstrap.build_s2_production_core(**parameters(), speech=d.inputs())
+        await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert d.events.count("release") == 1
 
 
@@ -388,8 +384,8 @@ async def test_semantic_owner_changed_while_acquiring_rejected(monkeypatch: Any)
         return ports
 
     monkeypatch.setattr(d, "acquire", changed)
-    with pytest.raises(S2ConfigurationError):
-        await bootstrap.build_s2_production_core(**parameters(), speech=d.inputs())
+    with pytest.raises(CoreConfigurationError):
+        await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert d.events.count("release") == 1
 
 
@@ -417,7 +413,7 @@ async def test_system_stop_reaps_registered_speech_work_and_keeps_borrowed_owner
         raise AssertionError("借用Memoryを閉じてはいけない")
 
     monkeypatch.setattr(d.memory, "close", forbidden_close)
-    app = await bootstrap.build_s2_production_core(**parameters(), speech=d.inputs())
+    app = await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert app.core.cognition is not None and app.core.cognition.speech is not None
     pipeline = app.core.cognition.speech.pipeline
     started = asyncio.Event()
@@ -443,7 +439,7 @@ async def test_system_stop_reaps_registered_speech_work_and_keeps_borrowed_owner
 @pytest.mark.asyncio
 async def test_pipeline_cleanup_failure_does_not_skip_runtime_or_lease(monkeypatch: Any) -> None:
     d = Deployment()
-    app = await bootstrap.build_s2_production_core(**parameters(), speech=d.inputs())
+    app = await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert app.core.cognition is not None and app.core.cognition.speech is not None
     delivery = app.core.cognition.speech
     calls: list[str] = []
@@ -455,11 +451,14 @@ async def test_pipeline_cleanup_failure_does_not_skip_runtime_or_lease(monkeypat
 
     async def shutdown() -> tuple[str, ...]:
         calls.append("runtime")
-        return await original_shutdown()
+        value: object = await original_shutdown()
+        if not isinstance(value, tuple) or any(not isinstance(item, str) for item in value):
+            raise ValueError("停止結果の公開契約が不正です")
+        return cast(tuple[str, ...], value)
 
     monkeypatch.setattr(delivery.pipeline, "close", fail)
     monkeypatch.setattr(delivery.shutdown, "close", shutdown)
-    with pytest.raises(S2ConfigurationError):
+    with pytest.raises(CoreConfigurationError):
         await app.stop()
     assert calls == ["pipeline", "runtime"]
     assert d.events.count("release") == 1
@@ -475,8 +474,8 @@ async def test_lease_publication_mismatch_releases_before_reject(monkeypatch: An
         return replace(ports, publication=replace(ports.publication, binding_revision=2))
 
     monkeypatch.setattr(d, "acquire", acquire)
-    with pytest.raises(S2ConfigurationError):
-        await bootstrap.build_s2_production_core(**parameters(), speech=d.inputs())
+    with pytest.raises(CoreConfigurationError):
+        await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert d.events == ["acquire", "release"]
 
 
@@ -493,6 +492,6 @@ async def test_same_policy_values_with_new_owner_generation_during_acquire_rejec
         return ports
 
     monkeypatch.setattr(d, "acquire", acquire)
-    with pytest.raises(S2ConfigurationError, match="INITIALIZATION_FAILED"):
-        await bootstrap.build_s2_production_core(**parameters(), speech=d.inputs())
+    with pytest.raises(CoreConfigurationError, match="INITIALIZATION_FAILED"):
+        await bootstrap.build_core(**parameters(), speech=d.inputs())
     assert d.events == ["acquire", "release"]

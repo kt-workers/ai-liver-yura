@@ -149,12 +149,12 @@ def test_d10_failure_is_policy_or_stale(kind: str) -> None:
                 for i in range(2)
             ]
         else:
-            wire["rationale_evidence_refs"] = ["s", "s2"]
+            wire["rationale_evidence_refs"] = ["s", "core"]
         value = {"proposals": [wire]}
     with pytest.raises(ReflectionLLMError) as error:
         if kind == "support":
             support = support_wire()
-            support["evidence_refs"] = ["s", "s2"]
+            support["evidence_refs"] = ["s", "core"]
             parse_support(support, c, p, op)
         else:
             parse_proposals(value, c, op)

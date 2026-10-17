@@ -93,12 +93,30 @@ async def test_exception_details_and_sdk_values_are_not_exported() -> None:
     runner = ValidationRunner((replace(target(), run=broken),), POLICY)
     result = await runner.run(spec(), FIXTURE)
     assert result.status is RunStatus.HARNESS_FAILED
+    assert "HARNESS_EXCEPTION:RuntimeError" in result.blockers
+    assert "HARNESS_STAGE:target" in result.blockers
     assert "非公開例外本文" not in result.export_json(POLICY.max_export_bytes)
     with pytest.raises(ValueError):
         TargetObservation(RunStatus.COMPLETED, Gate.PASS, object())  # type: ignore[arg-type]
     unsafe = replace(result, fixture=replace(FIXTURE, typed_inputs={"api_key": "試験値"}))
     with pytest.raises(ValueError, match="非公開"):
         unsafe.export_json(POLICY.max_export_bytes)
+
+
+@pytest.mark.asyncio
+async def test_nested_harness_failure_reports_first_failed_stage_without_exception_body() -> None:
+    async def broken(context: RunContext, fixture: ValidationFixture) -> TargetObservation:
+        async def nested() -> TargetObservation:
+            raise RuntimeError("非公開の接続パラメータ")
+
+        return await context.stage("nested", nested)
+
+    runner = ValidationRunner((replace(target(), run=broken),), POLICY)
+    result = await runner.run(spec(), FIXTURE)
+    assert result.status is RunStatus.HARNESS_FAILED
+    assert "HARNESS_STAGE:nested" in result.blockers
+    assert "HARNESS_EXCEPTION:RuntimeError" in result.blockers
+    assert "非公開の接続パラメータ" not in result.export_json(POLICY.max_export_bytes)
 
 
 @pytest.mark.asyncio

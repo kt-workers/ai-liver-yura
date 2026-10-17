@@ -362,7 +362,7 @@ async def test_cancellation_ignoring_adapter_does_not_hold_shutdown(tmp_path: Pa
 
 @pytest.mark.asyncio
 async def test_start_wait_timeout_has_no_actual_fact() -> None:
-    from app.composition.execution_observation import project_speech_execution_observation
+    from app.usecases.speech_observation import project_speech_execution_observation
     from tests.system_integration.test_execution_observation_boundary import PROVENANCE
 
     runtime, clock, _, _ = await committed()

@@ -1,4 +1,4 @@
-"""設定からS2までを本番policyで接続し、外部I/Oだけを隔離する。"""
+"""設定からcoreまでを本番policyで接続し、外部I/Oだけを隔離する。"""
 
 import asyncio
 import json
@@ -9,23 +9,22 @@ from typing import Any, cast
 import pytest
 from jsonschema import Draft202012Validator
 
-from app import bootstrap
+from app import application as bootstrap
 from app.adapters.character.yaml_loader import load_character_definition_yaml
+from app.adapters.llm.core import create_core_provider_lease
 from app.adapters.llm.openai_responses import OpenAIResponsesAdapter
 from app.adapters.llm.production import UnavailableLLMRolePort
-from app.adapters.llm.s2_production import create_s2_provider_lease
 from app.adapters.llm.speech_semantics import SpeechSemanticsProviderPort
-from app.composition.speech import CoreSpeechContextReaders
-from app.composition.speech_deployment import (
+from app.bootstrap.speech_deployment import (
     SPEECH_PROVIDER_ROLE_IDS,
     SpeechDeploymentRegistry,
     SpeechDeploymentRequest,
     SpeechProviderBindingPublication,
     create_speech_deployment,
 )
-from app.composition.speech_production_configuration import SpeechProductionPorts
-from app.composition.speech_semantics_policy import build_speech_semantics_policy_owner_v1
-from app.composition.system_cognition_configuration import S2RunIdentity
+from app.bootstrap.speech_production_configuration import SpeechProductionPorts
+from app.bootstrap.speech_semantics_policy import build_speech_semantics_policy_owner_v1
+from app.bootstrap.system_cognition_configuration import CoreRunIdentity
 from app.config.layered import ConfigurationError, ConfigurationFailureCode
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
@@ -37,6 +36,7 @@ from app.infrastructure.speech_presentation.supervisor import (
     PresentationWorkerRegistration,
     SpeechPresentationWorkerSupervisor,
 )
+from app.usecases.speech_pipeline import CoreSpeechContextReaders
 from tests.composition.test_system_cognition_configuration import parameters
 from tests.config.test_layered import configured_root, edit
 from tests.helpers.speech_production import production_sources
@@ -106,7 +106,7 @@ class ExternalPorts:
 
 def dependencies() -> dict[str, Any]:
     character = load_character_definition_yaml(
-        Path("resources/character_definitions/v2/yura.yaml").read_bytes()
+        Path("config/character/yura.yaml").read_bytes()
     )
     subject = RuntimeSubjectIdentity(
         character.character_id,
@@ -115,7 +115,7 @@ def dependencies() -> dict[str, Any]:
         character.definition_revision,
     )
     return dict(
-        run=S2RunIdentity("a" * 40, "epoch", "run"),
+        run=CoreRunIdentity("epoch", "run"),
         semantic_owner=build_speech_semantics_policy_owner_v1(
             runtime_subject_identity=subject, bounds_policy=BOUNDS
         ),
@@ -124,7 +124,7 @@ def dependencies() -> dict[str, Any]:
 
 
 @pytest.mark.asyncio
-async def test_files_to_real_s2_snapshot_same_owner_and_cleanup(tmp_path: Path) -> None:
+async def test_files_to_real_core_snapshot_same_owner_and_cleanup(tmp_path: Path) -> None:
     root = configured_root(tmp_path)
     ports = ExternalPorts()
     args = dependencies()
@@ -132,7 +132,7 @@ async def test_files_to_real_s2_snapshot_same_owner_and_cleanup(tmp_path: Path) 
         root, **args, registry=SpeechDeploymentRegistry({"isolated": ports})
     )
     assert source is not None
-    app = await bootstrap.build_s2_production_core(**parameters(), speech=source.inputs)
+    app = await bootstrap.build_core(**parameters(), speech=source.inputs)
     assert app.core.cognition is not None and app.core.cognition.speech is not None
     assert app.cognition.speech is not None
     assert app.cognition.speech.evidence.owner is args["semantic_owner"]
@@ -321,7 +321,7 @@ def test_configured_speech_provider_publication_rejects_snapshot_mismatches(
 
 
 @pytest.mark.asyncio
-async def test_speech_provider_publication_factory_inputs_preserve_s2_boundaries(
+async def test_speech_provider_publication_factory_inputs_preserve_core_boundaries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     unconfigured = create_speech_deployment(
@@ -331,7 +331,9 @@ async def test_speech_provider_publication_factory_inputs_preserve_s2_boundaries
     )
     assert unconfigured is not None
     monkeypatch.delenv("YURA_OPENAI_API_KEY", raising=False)
-    lease = await create_s2_provider_lease(*unconfigured.request.provider_bindings.factory_inputs())
+    lease = await create_core_provider_lease(
+        *unconfigured.request.provider_bindings.factory_inputs()
+    )
     assert isinstance(lease.port, UnavailableLLMRolePort)
     assert lease.bindings == unconfigured.request.provider_bindings.bindings
     await lease.release()
@@ -357,7 +359,7 @@ async def test_speech_provider_publication_factory_inputs_preserve_s2_boundaries
 
     monkeypatch.setattr(openai, "AsyncOpenAI", FakeAsyncOpenAI)
     monkeypatch.setenv("YURA_OPENAI_API_KEY", "test-only-key")
-    configured_lease = await create_s2_provider_lease(
+    configured_lease = await create_core_provider_lease(
         *configured.request.provider_bindings.factory_inputs()
     )
     assert isinstance(configured_lease.port, OpenAIResponsesAdapter)
@@ -435,7 +437,7 @@ def test_missing_registration_and_mapping_limits_fail_closed(tmp_path: Path) -> 
 def test_disabled_speech_does_not_acquire_or_require_deployment() -> None:
     external = ExternalPorts()
     result = create_speech_deployment(
-        Path("resources/config/v2"),
+        Path("config"),
         **dependencies(),
         registry=SpeechDeploymentRegistry({"isolated": external}),
     )

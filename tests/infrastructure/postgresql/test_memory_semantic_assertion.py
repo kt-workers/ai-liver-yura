@@ -4,7 +4,6 @@ from dataclasses import replace
 
 import pytest
 
-from app.composition.memory_persistence import CoreMemoryPersistenceBinding
 from app.domain.contracts import SemanticSubjectIdentity, SemanticSubjectKind
 from app.domain.memory import (
     MemoryAssertionPolarity as P,
@@ -18,6 +17,7 @@ from app.domain.memory import (
     MemorySemanticAssertionUnavailableReason as R,
 )
 from app.infrastructure.persistence import PersistenceFailureCode, PostgresEndpoint
+from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from tests.domain.memory.test_memory_store_retrieval import candidate, query
 from tests.domain.memory.test_semantic_assertions import SEMANTICS
 from tests.infrastructure.postgresql.test_runtime import runtime

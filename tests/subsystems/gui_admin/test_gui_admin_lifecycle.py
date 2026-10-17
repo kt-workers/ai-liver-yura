@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from app.config.core import load_core_config
 from app.config.gui_admin import load_gui_admin_config
-from app.config.minimum_brain import load_minimum_brain_config
-from app.runtime.kernel.clock import FakeRuntimeClock
+from app.infrastructure.scheduling.clock import FakeRuntimeClock
 from app.subsystems.gui_admin.contracts import GuiAdminAvailability
 from app.subsystems.gui_admin.lifecycle import GuiAdminSubsystem
 
@@ -41,7 +41,7 @@ class Transport:
 
 
 def subsystem(transport: Transport) -> GuiAdminSubsystem:
-    config = load_gui_admin_config(Path("resources/config/v2/gui_admin.yaml").read_text())
+    config = load_gui_admin_config(Path("config/gui_admin.yaml").read_text())
     config = replace(
         config,
         gui_http_transport_policy=replace(
@@ -49,7 +49,7 @@ def subsystem(transport: Transport) -> GuiAdminSubsystem:
             shutdown_grace_seconds=0.05,
         ),
     )
-    brain = load_minimum_brain_config(Path("resources/config/v2/minimum_brain.yaml").read_text())
+    brain = load_core_config(Path("config/core.yaml").read_text())
     return GuiAdminSubsystem(
         config,
         brain,

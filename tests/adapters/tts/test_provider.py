@@ -45,7 +45,7 @@ from app.domain.speech_performance.contracts import (
     PitchAnchor,
 )
 from app.domain.speech_performance.policy import yura_revision_1_policy
-from app.runtime.lifecycle import DependencyRetryPolicy
+from app.usecases.lifecycle import DependencyRetryPolicy
 from tests.domain.semantic_verification.test_semantic_verification import _utterance
 
 NOW = datetime(2026, 8, 24, tzinfo=timezone.utc)

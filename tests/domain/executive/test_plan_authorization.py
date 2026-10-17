@@ -36,7 +36,7 @@ from app.domain.plan_execution.contracts import (
     PlanExecutionScope,
     PlanStepExecutionBinding,
 )
-from app.runtime.kernel.clock import FakeRuntimeClock
+from app.infrastructure.scheduling.clock import FakeRuntimeClock
 from tests.domain.executive.test_executive import (
     REVISIONS,
     candidate,
