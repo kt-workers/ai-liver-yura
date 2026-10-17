@@ -5,7 +5,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from app.usecases.speech_pipeline_feedback import SpeechFactDeliveryDisposition as Delivery
+from app.usecases.speech_feedback_facade import SpeechFactDeliveryDisposition as Delivery
 
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.activity_execution.speech_observation import (

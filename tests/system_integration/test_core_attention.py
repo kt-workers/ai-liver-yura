@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import replace
 
 import pytest
-from app.composition.attention import CoreAttentionBinding
+from app.usecases.attention_facade import CoreAttentionBinding
 
 from app.domain.appraisal import DeterministicAppraisalRule, StateDeltaProposal
 from app.domain.attention import (

@@ -7,15 +7,15 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from app.usecases.speech_pipeline_deployment import (
+from app.bootstrap.speech_deployment import (
     SPEECH_PROVIDER_ROLE_IDS,
     SpeechDeploymentRegistry,
     SpeechDeploymentRequest,
     SpeechProviderBindingPublication,
     create_speech_deployment,
 )
-from app.usecases.speech_pipeline_production_configuration import SpeechProductionPorts
-from app.usecases.speech_pipeline_semantics_policy import build_speech_semantics_policy_owner_v1
+from app.bootstrap.speech_production_configuration import SpeechProductionPorts
+from app.bootstrap.speech_semantics_policy import build_speech_semantics_policy_owner_v1
 from jsonschema import Draft202012Validator
 
 from app import application as bootstrap

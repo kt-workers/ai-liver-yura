@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
+from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 
 from app.domain.appraisal import InternalStateReducer
 from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore

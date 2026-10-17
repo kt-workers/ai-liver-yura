@@ -4,8 +4,8 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
-from app.usecases.speech_pipeline_semantics_policy import bind_speech_semantics_policy_v1
-from app.usecases.speech_pipeline_semantics_sources import (
+from app.bootstrap.speech_semantics_policy import bind_speech_semantics_policy_v1
+from app.usecases.speech_semantics_sources import (
     ProductionSpeechSources,
     SpeechOwnerSourceRegistration,
     build_projection_v1,
@@ -489,7 +489,7 @@ async def test_commitment_filters_other_evidence() -> None:
 async def test_memory_material_and_identity_failure_paths(
     fault: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from app.usecases.speech_pipeline_semantics_policy import build_speech_semantics_policy_owner_v1
+    from app.bootstrap.speech_semantics_policy import build_speech_semantics_policy_owner_v1
 
     from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
     from app.domain.contracts.common import thaw_json

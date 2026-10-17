@@ -1136,7 +1136,7 @@ _V1_CONTEXT_FIELDS = {
 
 
 def _wire_context() -> ExecutiveContextSnapshot:
-    from app.usecases.speech_pipeline_semantics_policy import (
+    from app.bootstrap.speech_semantics_policy import (
         build_speech_semantics_meaning_policy_v1,
     )
 
