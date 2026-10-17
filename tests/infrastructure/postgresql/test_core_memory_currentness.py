@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from app.usecases.executive_facade_input_evidence import CoreExecutiveInputEvidenceReader
+from app.usecases.executive_input_evidence import CoreExecutiveInputEvidenceReader
 
 from app.domain.attention import AttentionSource
 from app.domain.contracts import SemanticSubjectIdentity, SemanticSubjectKind

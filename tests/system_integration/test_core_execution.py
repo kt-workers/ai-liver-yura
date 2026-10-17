@@ -253,7 +253,7 @@ async def test_plan_production_configuration_and_feedback(
 ) -> None:
     from datetime import timedelta
 
-    from app.usecases.execution_facade_configuration import CoreExecutionConfiguration
+    from app.bootstrap.execution_configuration import CoreExecutionConfiguration
 
     from app import application as bootstrap
     from app.bootstrap import core_components as component_factory
@@ -648,7 +648,7 @@ def test_retention_policy_rejects_invalid_values(policy_id: str, revision: int, 
 def execution_fixture(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[Any, CoreExecutionDelivery, list[ExecutionDispatchRequest]]:
-    from app.usecases.execution_facade_configuration import CoreExecutionConfiguration
+    from app.bootstrap.execution_configuration import CoreExecutionConfiguration
 
     app, _ = application(monkeypatch)
     _, _, _, captured, _, _ = direct_fixture()

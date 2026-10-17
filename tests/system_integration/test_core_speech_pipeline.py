@@ -83,8 +83,8 @@ async def test_full_owner_pipeline_and_presentation_feedback(slow_stage: str | N
     d = await committed(b, "goal-1")
     intent = d.candidate.intents[0]
     semctx = await b.context_builder.build_async(d, intent.intent_id, captured_at=now())
-    from app.usecases.speech_pipeline_semantics_policy import bind_speech_semantics_policy_v1
-    from app.usecases.speech_pipeline_semantics_sources import ProductionSpeechSources
+    from app.bootstrap.speech_semantics_policy import bind_speech_semantics_policy_v1
+    from app.usecases.speech_semantics_sources import ProductionSpeechSources
 
     from app.domain.executive import CommitmentTransitionOperation, GoalTransitionOperation
     from app.domain.goals import GoalCommitmentSnapshot
@@ -266,7 +266,7 @@ async def test_full_owner_pipeline_and_presentation_feedback(slow_stage: str | N
     )
     from pathlib import Path
 
-    from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
+    from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 
     from app.config.core import load_core_config
     from app.domain.appraisal import InternalStateReducer
@@ -409,7 +409,7 @@ async def test_full_owner_pipeline_and_presentation_feedback(slow_stage: str | N
         ),
         d,
     )
-    from app.usecases.speech_pipeline_configuration import CoreSpeechConfiguration
+    from app.bootstrap.speech_configuration import CoreSpeechConfiguration
 
     from app.domain.speech_runtime.shutdown import SpeechRuntimeShutdown
 
@@ -517,7 +517,7 @@ async def test_full_owner_pipeline_and_presentation_feedback(slow_stage: str | N
         speech_outcome = await asyncio.wait_for(brain.next_outcome(), 3)
         assert speech_outcome.module is BrainIntegrationModule.SPEECH_SEMANTICS
         assert speech_outcome.status.value == "completed"
-        from app.usecases.speech_pipeline_feedback import CoreSpeechFeedback
+        from app.usecases.speech_feedback_facade import CoreSpeechFeedback
 
         feedback = speech_outcome.result
         assert isinstance(feedback, CoreSpeechFeedback)

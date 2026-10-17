@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import pytest
-from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
+from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 
 from app import application as bootstrap
 from app.domain.appraisal import InternalStateReducer

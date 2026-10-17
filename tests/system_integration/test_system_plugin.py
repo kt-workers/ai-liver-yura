@@ -5,7 +5,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from app.usecases.execution_facade_configuration import CoreExecutionConfiguration
+from app.bootstrap.execution_configuration import CoreExecutionConfiguration
 
 from app import application as bootstrap
 from app.application import start_core, stop_core

@@ -6,7 +6,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from app.usecases.executive_facade_requirements import (
+from app.usecases.executive_requirements import (
     CoreExecutivePlanReferences,
     CoreExecutiveRequirementsReader,
     build_core_executive_input_evidence,

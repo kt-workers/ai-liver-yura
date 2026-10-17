@@ -6,7 +6,7 @@ from dataclasses import asdict, replace
 from typing import Any, cast
 
 import pytest
-from app.usecases.speech_pipeline_semantics_policy import build_speech_semantics_policy_owner_v1
+from app.bootstrap.speech_semantics_policy import build_speech_semantics_policy_owner_v1
 
 from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort

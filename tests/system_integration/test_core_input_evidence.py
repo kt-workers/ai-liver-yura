@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from app.usecases.executive_facade_input_evidence import CoreExecutiveInputEvidenceReader
+from app.usecases.executive_input_evidence import CoreExecutiveInputEvidenceReader
 
 from app import application as bootstrap
 from app.application import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload, stop_core
