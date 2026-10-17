@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from app.composition.executive import CoreExecutiveBinding, CoreExecutiveEvidence
-from app.composition.executive_input_evidence import CoreExecutiveInputEvidenceReader
+from app.usecases.executive_facade import CoreExecutiveBinding, CoreExecutiveEvidence
+from app.usecases.executive_facade_input_evidence import CoreExecutiveInputEvidenceReader
 from app.domain.attention import AttentionSource
 from app.domain.contracts import SemanticSubjectIdentity, SemanticSubjectKind
 from app.domain.contracts.finalization import FinalizationError, FinalizationFailure

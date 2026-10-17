@@ -94,31 +94,22 @@ async def test_read_only_cancellation_after_response_rejects_commit() -> None:
 
 
 @pytest.mark.parametrize(
-    "old,new,names",
+    "module,names",
     [
-        (
-            "app.composition.input_reference_context", "app.usecases.input_reference_context",
-            (
-                "CoreGoalSnapshotReader", "CoreInputReferenceSnapshot",
-                "CoreInputReferenceContextBinding", "PresentationReferenceCapacityError",
-                "PresentationReferenceStaleError",
-            ),
-        ),
-        (
-            "app.composition.appraisal", "app.usecases.brain_appraisal",
-            ("CoreAppraisalBinding", "AppraisalBrainWorkPayload", "AppraisalBrainModulePort"),
-        ),
-        (
-            "app.composition.attention", "app.usecases.attention_binding",
-            ("CoreAttentionBinding", "CoreAttentionCurrentState", "CoreAttentionDispatch"),
-        ),
+        ("app.usecases.input_reference_context",
+         ("CoreGoalSnapshotReader", "CoreInputReferenceSnapshot",
+          "CoreInputReferenceContextBinding", "PresentationReferenceCapacityError",
+          "PresentationReferenceStaleError")),
+        ("app.usecases.brain_appraisal",
+         ("CoreAppraisalBinding", "AppraisalBrainWorkPayload", "AppraisalBrainModulePort")),
+        ("app.usecases.attention_binding",
+         ("CoreAttentionBinding", "CoreAttentionCurrentState", "CoreAttentionDispatch")),
     ],
 )
-def test_old_and_new_imports_share_exact_class_identity(
-    old: str, new: str, names: tuple[str, ...],
+def test_canonical_imports_resolve_owned_classes(
+    module: str, names: tuple[str, ...],
 ) -> None:
-    legacy, owner = importlib.import_module(old), importlib.import_module(new)
+    owner = importlib.import_module(module)
     for name in names:
         actual = getattr(owner, name)
-        assert getattr(legacy, name) is actual
-        assert actual.__module__ == new
+        assert actual.__module__ == module

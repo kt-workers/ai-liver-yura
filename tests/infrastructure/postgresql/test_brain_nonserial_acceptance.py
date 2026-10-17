@@ -11,7 +11,7 @@ import yaml
 
 from app import application as bootstrap
 from app.application import start_core, stop_core
-from app.composition.reflection import CoreReflectionConfiguration
+from app.usecases.reflection_delivery import CoreReflectionConfiguration
 from app.domain.activity_execution import ExecutionAdapterReport
 from app.domain.brain_integration import (
     BrainIntegrationLane,

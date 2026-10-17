@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.application import start_core, stop_core
-from app.composition.reflection import CoreReflectionConfiguration, CoreReflectionDelivery
+from app.usecases.reflection_delivery import CoreReflectionConfiguration, CoreReflectionDelivery
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_integration import (
     BrainIntegrationLane,
@@ -179,7 +179,7 @@ async def test_public_boot_registers_roles_and_feeds_memory_into_executive(
     endpoint: PostgresEndpoint, boot_config: Path, monkeypatch: pytest.MonkeyPatch,  # noqa: F811
 ) -> None:
     from app import application as bootstrap
-    from app.composition.cognition_configuration import CoreCognitionConfiguration
+    from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
     from app.domain.appraisal import InternalStateReducer
     from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore
     from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS

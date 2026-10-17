@@ -6,9 +6,9 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
 
-from app.composition.input_reference_context import CoreInputReferenceContextBinding
-from app.composition.presentation_notification import CorePresentationNotification
-from app.composition.speech import CoreSpeechContextReaders, CoreSpeechPipeline
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
+from app.usecases.presentation_notification import CorePresentationNotification
+from app.usecases.speech_pipeline import CoreSpeechContextReaders, CoreSpeechPipeline
 from app.domain.activity_execution import ActivityExecutionAuthority, ExecutionObservationProvenance
 from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
 from app.domain.attention import AttentionSourceKind
@@ -83,8 +83,8 @@ async def build_speech_path(
     d = await committed(b, "goal-1")
     intent = d.candidate.intents[0]
     semctx = await b.context_builder.build_async(d, intent.intent_id, captured_at=now())
-    from app.composition.speech_semantics_policy import bind_speech_semantics_policy_v1
-    from app.composition.speech_semantics_sources import ProductionSpeechSources
+    from app.usecases.speech_pipeline_semantics_policy import bind_speech_semantics_policy_v1
+    from app.usecases.speech_pipeline_semantics_sources import ProductionSpeechSources
     from app.domain.executive import CommitmentTransitionOperation, GoalTransitionOperation
     from app.domain.goals import GoalCommitmentSnapshot
     from tests.domain.goals.test_goal_commitment_store import commitment_transition, goal_transition
@@ -268,7 +268,7 @@ async def build_speech_path(
     )
     from pathlib import Path
 
-    from app.composition.cognition_configuration import CoreCognitionConfiguration
+    from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
     from app.config.core import load_core_config
     from app.domain.appraisal import InternalStateReducer
     from app.domain.contracts.preconditions import PreconditionSourceRouter
@@ -428,7 +428,7 @@ async def build_speech_path(
         ),
         d,
     )
-    from app.composition.speech_configuration import CoreSpeechConfiguration
+    from app.usecases.speech_pipeline_configuration import CoreSpeechConfiguration
     from app.domain.speech_runtime.shutdown import SpeechRuntimeShutdown
 
     shutdown = SpeechRuntimeShutdown(
