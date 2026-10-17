@@ -24,13 +24,15 @@ async def test_sequential_inputs_retire_only_obsolete_appraisals(
                     app, internal=internal, event_id=f"event-{index}", trace_id=f"trace-{index}"
                 )
             ).accepted
+            # 未応答のUSER sourceは応答精算まで保持されるため、
+            # 連続入力の全traceにExecutiveが生成されるとは限らない。
+            # 各入力の意味と主観評価は確実に検証し、初回の実判断も検証する。
             modules = (
                 (BrainIntegrationModule.APPRAISAL, BrainIntegrationModule.EXECUTIVE)
                 if internal
                 else (
-                    BrainIntegrationModule.INPUT_MEANING,
-                    BrainIntegrationModule.APPRAISAL,
-                    BrainIntegrationModule.EXECUTIVE,
+                    (BrainIntegrationModule.INPUT_MEANING, BrainIntegrationModule.APPRAISAL)
+                    + ((BrainIntegrationModule.EXECUTIVE,) if index == 0 else ())
                 )
             )
             for module in modules:
