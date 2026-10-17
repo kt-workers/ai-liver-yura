@@ -4,38 +4,26 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import timezone
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.bootstrap.core_components import compose_core_components
 from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
 from app.usecases.speech_pipeline_production_configuration import (
-    SpeechComponentProvenance,
     SpeechProductionInputs,
     create_production_speech_configuration,
 )
 from app.config.appraisal import load_appraisal_config
-from app.config.appraisal_assembly import (
-    AppraisalInitializationProvenance,
-    AppraisalProductionBinding,
-    build_appraisal_configuration,
-)
-from app.config.core import ConfigurationReference, CoreConfig, load_core_config
+from app.config.appraisal_assembly import build_appraisal_configuration
+from app.config.core import ConfigurationReference, load_core_config
 from app.config.core_contracts import (
     CoreConfigurationError,
     CoreFailureCode,
-    identity,
     resource,
 )
 from app.config.executive import load_executive_config
-from app.config.executive_assembly import (
-    ExecutiveConfigurationProvenance,
-    ExecutiveProductionBinding,
-    create_executive_configuration,
-)
+from app.config.executive_assembly import create_executive_configuration
 from app.config.llm_connections import load_llm_connections
 from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.activity_execution import ActivityExecutionAuthority
@@ -55,114 +43,23 @@ from app.infrastructure.llm.connection_registry_factory import (
 )
 from app.infrastructure.llm.connections import route_llm_connections
 from app.infrastructure.scheduling import RuntimeClock
-from app.usecases.core_lifecycle import CoreActivationError, CoreApplicationLifecycle, stop_core
+from app.usecases.core_lifecycle import stop_core
 from app.usecases.input_reference_context import CoreInputReferenceContextBinding
 from app.usecases.lifecycle import ApplicationLifecycle
 from app.usecases.resource_cleanup import OwnedResourceLedger
 from app.usecases.task_cleanup import reap_owned_task
 
-if TYPE_CHECKING:
-    from app.bootstrap.core_components import CoreComponents
+from app.bootstrap.composition_contracts import CoreRunIdentity as CoreRunIdentity
+from app.bootstrap.composition_contracts import ComponentBindings as ComponentBindings
+from app.bootstrap.composition_contracts import LLMConnectionBinding as LLMConnectionBinding
+from app.bootstrap.composition_contracts import SubsystemBinding as SubsystemBinding
+from app.bootstrap.composition_contracts import SystemCompositionSnapshot as SystemCompositionSnapshot
+from app.bootstrap.composition_snapshot import _snapshot as _snapshot
+from app.bootstrap.core_application import CoreApplication as CoreApplication
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE_RESOURCE = "config/core.yaml"
 _OwnedResources = OwnedResourceLedger
-
-
-@dataclass(frozen=True, slots=True)
-class CoreRunIdentity:
-    runtime_epoch: str
-    system_run_id: str
-
-    def __post_init__(self) -> None:
-        identity(self.runtime_epoch)
-        identity(self.system_run_id)
-
-
-@dataclass(frozen=True, slots=True)
-class ComponentBindings:
-    core_config_id: str
-    core_config_revision: int
-    appraisal: AppraisalInitializationProvenance
-    executive: ExecutiveConfigurationProvenance
-    attention_policy_id: str
-    attention_policy_revision: int
-    speech: SpeechComponentProvenance | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class SubsystemBinding:
-    subsystem_id: str
-    revision: int
-
-
-@dataclass(frozen=True, slots=True)
-class LLMConnectionBinding:
-    """本体が採用した接続IDだけを、Roleの実行内容なしに記録する。"""
-
-    role_id: str
-    connection_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class SystemCompositionSnapshot:
-    composition_id: str
-    composition_revision: int
-    config_id: str
-    config_revision: int
-    activation_id: str
-    runtime_epoch: str
-    system_run_id: str
-    created_at: datetime
-    character_id: str
-    character_definition_revision: int
-    component_bindings: tuple[ComponentBindings, ...]
-    llm_connection_bindings: tuple[LLMConnectionBinding, ...]
-    subsystem_bindings: tuple[SubsystemBinding, ...]
-    requirements_generation: tuple[tuple[str, str | int], ...]
-
-
-class CoreApplication:
-    """構成情報を公開し、開始・終了を本体の実行所有者へ委譲する。"""
-
-    __slots__ = (
-        "core", "composition_snapshot", "cognition", "appraisal", "executive",
-        "_owned", "_runtime",
-    )
-
-    def __init__(
-        self,
-        core: CoreComponents,
-        composition_snapshot: SystemCompositionSnapshot,
-        cognition: CoreCognitionConfiguration,
-        appraisal: AppraisalProductionBinding,
-        executive: ExecutiveProductionBinding,
-        owned: _OwnedResources,
-    ) -> None:
-        self.core = core
-        self.composition_snapshot = composition_snapshot
-        self.cognition = cognition
-        self.appraisal = appraisal
-        self.executive = executive
-        self._owned = owned
-        self._runtime = CoreApplicationLifecycle(core, owned)
-
-    async def start(self) -> None:
-        try:
-            await self._runtime.start()
-        except CoreActivationError:
-            raise CoreConfigurationError(CoreFailureCode.ACTIVATION_FAILED) from None
-
-    async def stop(self) -> None:
-        try:
-            await self._runtime.stop()
-        except asyncio.CancelledError:
-            raise
-        except CoreConfigurationError:
-            raise
-        except Exception:
-            # 内部の回収例外を公開契約へ正規化し、詳細例外を外へ漏らさない。
-            raise CoreConfigurationError(CoreFailureCode.INITIALIZATION_FAILED) from None
 
 
 def _read(root: Path, ref: str) -> bytes:
@@ -382,43 +279,3 @@ async def compose_core(
         raise CoreConfigurationError(stage) from None
 
 
-def _snapshot(
-    config: CoreConfig,
-    run: CoreRunIdentity,
-    created_at: datetime,
-    character_id: str,
-    character_revision: int,
-    core_config_id: str,
-    core_config_revision: int,
-    appraisal: AppraisalInitializationProvenance,
-    executive: ExecutiveConfigurationProvenance,
-    attention: AttentionSchedulingPolicy,
-    llm_connections: tuple[LLMConnectionBinding, ...],
-    speech: SpeechComponentProvenance | None = None,
-) -> SystemCompositionSnapshot:
-    return SystemCompositionSnapshot(
-        config.composition_id,
-        config.composition_revision,
-        config.config_id,
-        config.config_revision,
-        config.activation_id,
-        run.runtime_epoch,
-        run.system_run_id,
-        created_at.astimezone(timezone.utc),
-        character_id,
-        character_revision,
-        (
-            ComponentBindings(
-                core_config_id,
-                core_config_revision,
-                appraisal,
-                executive,
-                attention.policy_id,
-                attention.policy_revision,
-                speech,
-            ),
-        ),
-        llm_connections,
-        (),
-        executive.initial_generation_identity,
-    )
