@@ -1,0 +1,29 @@
+schema_id: yura.cognition-s2.production-config.v1
+config_id: yura.cognition-s2.production
+config_revision: 1
+activation_id: yura.cognition-s2.explicit
+composition_id: yura.system.cognition-s2
+composition_revision: 1
+minimum_config:
+  resource_ref: resources/config/v2/minimum_brain.yaml
+  config_id: yura.minimum-brain.production
+  config_revision: 1
+appraisal_config:
+  resource_ref: resources/config/v2/appraisal.yaml
+  config_id: yura.appraisal.production
+  config_revision: 1
+executive_config:
+  resource_ref: resources/config/v2/executive.yaml
+  config_id: yura.executive.production
+  config_revision: 1
+attention_policy:
+  policy_id: attention-scheduling-production
+  policy_revision: 1
+provider_deployment:
+  resource_ref: resources/config/v2/provider_deployment_s2.yaml
+  deployment_id: yura.provider-deployment.s2
+  deployment_revision: 1
+character_definition:
+  resource_ref: resources/character_definitions/v2/yura.yaml
+  character_id: yura
+  definition_revision: 1
