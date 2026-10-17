@@ -9,9 +9,9 @@ import pytest
 
 from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
-from app.composition import speech_production_configuration as speech
-from app.composition.speech import CoreSpeechContextReaders
-from app.composition.speech_semantics_policy import build_speech_semantics_policy_owner_v1
+from app.bootstrap import speech_production_configuration as speech
+from app.usecases.speech_pipeline import CoreSpeechContextReaders
+from app.usecases.speech_pipeline_semantics_policy import build_speech_semantics_policy_owner_v1
 from app.config.core_contracts import CoreConfigurationError
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
@@ -269,7 +269,7 @@ async def test_semantic_currentness_change_after_registration_reclaims_pipeline(
         return core
 
     monkeypatch.setattr(
-        "app.composition.system_cognition_configuration.compose_core_components", compose
+        "app.bootstrap.system_cognition_configuration.compose_core_components", compose
     )
     with pytest.raises(CoreConfigurationError, match="INITIALIZATION_FAILED"):
         await bootstrap.build_core(**parameters(), speech=d.inputs())
@@ -291,7 +291,7 @@ async def test_compose_failure_after_pipeline_creation_reclaims_handle(monkeypat
         raise RuntimeError("部分構築失敗")
 
     monkeypatch.setattr(
-        "app.composition.system_cognition_configuration.compose_core_components", compose
+        "app.bootstrap.system_cognition_configuration.compose_core_components", compose
     )
     with pytest.raises(CoreConfigurationError):
         await bootstrap.build_core(**parameters(), speech=d.inputs())

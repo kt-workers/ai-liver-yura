@@ -10,7 +10,7 @@ import yaml
 from app.adapters.llm.appraisal import appraisal_openai_role_config
 from app.adapters.llm.core import create_core_provider_lease
 from app.adapters.llm.openai_responses import OpenAIResponsesModelPolicy, OpenAIResponsesRoleConfig
-from app.composition.core_provider import (
+from app.bootstrap.core_provider import (
     ModelPoliciesPublication,
     RoleConfigPublication,
     resolve_provider_configuration,
