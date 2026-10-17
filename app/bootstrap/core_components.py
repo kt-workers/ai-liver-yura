@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.composition.cognition import CoreCognitionDelivery
-from app.composition.cognition_configuration import CoreCognitionConfiguration
+from app.usecases.cognition_delivery import CoreCognitionDelivery
+from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
 from app.config.core import CoreConfig
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY

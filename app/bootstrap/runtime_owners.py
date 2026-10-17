@@ -15,7 +15,7 @@ from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
 from app.usecases.memory_persistence import CoreMemoryPersistenceBinding
 
 if TYPE_CHECKING:
-    from app.composition.speech_deployment import SpeechDeploymentRegistry
+    from app.usecases.speech_pipeline_deployment import SpeechDeploymentRegistry
 
 
 @dataclass(frozen=True, slots=True)

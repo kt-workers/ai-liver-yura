@@ -18,9 +18,9 @@ from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.bootstrap.runtime_owners import CoreRuntimeOwners as CoreRuntimeOwners
 from app.bootstrap.runtime_owners import CoreSpeechOwners as CoreSpeechOwners
 from app.bootstrap.runtime_owners import default_core_runtime_owners as default_core_runtime_owners
-from app.composition.cognition_configuration import CoreCognitionConfiguration
-from app.composition.speech_production_configuration import SpeechProductionInputs
-from app.composition.system_cognition_configuration import (
+from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
+from app.usecases.speech_pipeline_production_configuration import SpeechProductionInputs
+from app.bootstrap.system_cognition_configuration import (
     CORE_RESOURCE,
     ROOT,
     CoreApplication,
@@ -190,7 +190,7 @@ def _load_core_speech(
             return None
         if owners.speech is None:
             raise ValueError("Speech本番接続が登録されていません")
-        from app.composition.speech_deployment import create_speech_deployment
+        from app.usecases.speech_pipeline_deployment import create_speech_deployment
 
         source = create_speech_deployment(
             root,

@@ -10,7 +10,7 @@ from app.adapters.llm.openai_responses import (
     ResponsesClient,
 )
 from app.adapters.llm.production import UnavailableLLMRolePort
-from app.composition.core_provider import CoreProviderLease, ProviderBindingSnapshot
+from app.bootstrap.core_provider import CoreProviderLease, ProviderBindingSnapshot
 from app.config.core_contracts import CoreConfigurationError, CoreFailureCode
 from app.domain.llm import LLMRoleDescriptor
 from app.usecases.task_cleanup import reap_owned_task

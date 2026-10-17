@@ -16,9 +16,9 @@ from weakref import WeakKeyDictionary
 
 from app.adapters.tts import PreparedAudioResourceStore, TTSProviderAdapter
 from app.adapters.tts.provider import ProviderSynthesisInput, TTSProviderClient, TTSProviderResponse
-from app.composition.cognition import CoreCognitionDelivery
-from app.composition.speech import SpeechOutputPreparationRequest
-from app.composition.speech_feedback import CoreSpeechFeedback, SpeechFactDeliveryDisposition
+from app.usecases.cognition_delivery import CoreCognitionDelivery
+from app.usecases.speech_pipeline import SpeechOutputPreparationRequest
+from app.usecases.speech_pipeline_feedback import CoreSpeechFeedback, SpeechFactDeliveryDisposition
 from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_SOURCE
 from app.domain.brain_integration import BrainWorkStatus
 from app.domain.character_language import CharacterLanguageContextSnapshot, CharacterUtterance
