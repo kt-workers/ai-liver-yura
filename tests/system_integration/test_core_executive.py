@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import pytest
 
-from app.composition.executive import CoreExecutiveBinding, CoreExecutiveEvidence
+from app.usecases.executive_facade import CoreExecutiveBinding, CoreExecutiveEvidence
 from app.domain.attention import AttentionSource
 from app.domain.contracts import CapabilityAvailability
 from app.domain.contracts.common import JsonValue

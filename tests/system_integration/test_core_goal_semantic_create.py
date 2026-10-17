@@ -5,7 +5,7 @@ from dataclasses import replace
 
 import pytest
 
-from app.composition.executive import CoreExecutiveBinding
+from app.usecases.executive_facade import CoreExecutiveBinding
 from app.domain.contracts.common import freeze_json
 from app.domain.executive import CommitmentTransitionOperation as C
 from app.domain.executive import (

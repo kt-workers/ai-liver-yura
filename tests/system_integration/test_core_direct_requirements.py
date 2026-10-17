@@ -5,9 +5,9 @@ from typing import cast
 
 import pytest
 
-from app.composition.execution import CoreExecutionDelivery
-from app.composition.execution_configuration import _ExecutionEvidence
-from app.composition.executive import CoreExecutiveEvidence
+from app.usecases.execution_facade import CoreExecutionDelivery
+from app.usecases.execution_facade_configuration import _ExecutionEvidence
+from app.usecases.executive_facade import CoreExecutiveEvidence
 from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.attention import AttentionPriority, AttentionSource, AttentionSourceKind
 from app.domain.contracts import CapabilityRequirement

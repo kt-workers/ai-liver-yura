@@ -10,8 +10,8 @@ import pytest
 
 from app import application as bootstrap
 from app.application import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload, stop_core
-from app.composition.executive import CoreExecutiveBinding
-from app.composition.executive_input_evidence import CoreExecutiveInputEvidenceReader
+from app.usecases.executive_facade import CoreExecutiveBinding
+from app.usecases.executive_facade_input_evidence import CoreExecutiveInputEvidenceReader
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json
@@ -393,8 +393,8 @@ async def test_wrong_input_provenance_never_replaces_original(change: str) -> No
 
 @pytest.mark.asyncio
 async def test_activity_facts_come_from_the_actual_execution_owner() -> None:
-    from app.composition.appraisal import CoreAppraisalBinding
-    from app.composition.input_reference_context import CoreInputReferenceContextBinding
+    from app.usecases.appraisal_facade import CoreAppraisalBinding
+    from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
     from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
     from app.domain.executive import ExecutiveFactKind
     from tests.domain.appraisal.test_appraisal_paths import policy as appraisal_policy

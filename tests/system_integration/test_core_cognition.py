@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from app import application as bootstrap
-from app.composition.cognition_configuration import CoreCognitionConfiguration
+from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
 from app.domain.appraisal import InternalStateReducer
 from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
