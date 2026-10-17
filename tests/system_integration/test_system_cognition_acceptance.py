@@ -529,7 +529,12 @@ async def test_system_consumer_observes_nonserial_rejection_and_cleanup(
                 is (BrainWorkStatus.FAILED if operation == "stale" else BrainWorkStatus.CANCELLED)
                 for o in terminal
             )
-            assert run.app.cognition.appraisal.latest_commit() is None
+            # 起動時の独立した主観評価が既に確定していても、
+            # 取消・失効対象のA/Bを採用していないことを保証する。
+            latest = run.app.cognition.appraisal.latest_commit()
+            assert latest is None or not (
+                set(latest.candidate.source_event_ids) & {"input:A", "input:B"}
+            )
             if operation == "stop":
                 with pytest.raises(FinalizationError) as retired:
                     run.app.cognition.appraisal.current_commit()
