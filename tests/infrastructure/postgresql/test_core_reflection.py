@@ -235,10 +235,20 @@ async def test_public_boot_registers_roles_and_feeds_memory_into_executive(
         assert saved.value is not None and saved.value.record is not None
         initial_goals = app.goals.snapshot()
         await start_core(app)
-        assert app.cognition.submit_input(admission(app, internal=True)).accepted
-        for _ in range(2):
-            outcome = await asyncio.wait_for(app.brain.next_outcome(), 3)
+        submitted = admission(app, internal=True)
+        assert submitted.event is not None
+        assert app.cognition.submit_input(submitted).accepted
+        target_trace = submitted.event.envelope.trace_id
+        deadline = asyncio.get_running_loop().time() + 3
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            assert remaining > 0, "認知traceの判断終端が期限内に届きません"
+            outcome = await asyncio.wait_for(app.brain.next_outcome(), remaining)
+            if outcome.trace_id != target_trace:
+                continue
             assert outcome.status is BrainWorkStatus.COMPLETED, outcome
+            if outcome.module is BrainIntegrationModule.EXECUTIVE:
+                break
         executive = next(r for r in port.requests if r.role_id == "executive_deliberation")
         assert saved.value.record.memory_id in str(executive.input.value)
         assert "memory_evidence" in str(executive.input.value)
