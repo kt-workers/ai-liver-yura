@@ -17,6 +17,7 @@ from typing import Any, TypeVar, cast
 from uuid import uuid4
 
 from app.application import build_persistent_core
+from app.bootstrap.persistent_cognition_configuration import create_persistent_cognition_configuration
 from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.config.core import load_core_config
 from app.domain.contracts.common import JsonValue, freeze_json, thaw_json
@@ -289,6 +290,7 @@ async def _boot(
         retry_policy=settings.retry_policy,
         runtime_epoch=epoch,
         max_pending_memory=settings.max_pending_memory,
+        cognition_factory=create_persistent_cognition_configuration,
     )
     try:
         await app.start()
