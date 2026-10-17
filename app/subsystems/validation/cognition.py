@@ -12,6 +12,7 @@ from app.domain.contracts.common import JsonValue
 from app.domain.executive import CommittedExecutiveDecision
 from app.domain.input_gateway import InputAdmission, InputAdmissionStatus
 from app.domain.input_meaning import InputMeaningInterpretationResult
+from app.usecases.brain_integration_runtime import BrainWorkAdmission
 
 from .body import _project
 from .contracts import (
@@ -38,6 +39,21 @@ class NormalCognitionLabCase:
 
 
 NormalCognitionApplicationFactory = Callable[[], CoreComponents | CoreRuntimeApplication]
+
+
+def project_brain_admission(value: BrainWorkAdmission | None) -> JsonValue:
+    """Usecase受付結果を公開可能な契約の値だけに変換する。"""
+    if value is None:
+        return None
+    if not isinstance(value, BrainWorkAdmission):
+        raise ValueError("認知受付結果の公開型が不正です")
+    return _project(
+        {
+            "status": value.status,
+            "work_id": value.work_id,
+            "blocked_by": value.blocked_by,
+        }
+    )
 
 
 def _result_projection(result: object) -> JsonValue:
@@ -150,14 +166,12 @@ def normal_cognition_target(
             assert app.cognition is not None
             return app.cognition.submit_input(case.admission)
 
-        from app.usecases.brain_integration_runtime import BrainWorkAdmission
-
         accepted = await context.invoke_product("cognition.submit_input", submit)
         assert isinstance(accepted, BrainWorkAdmission)
         if not accepted.accepted:
             await stop()
             return TargetObservation(
-                RunStatus.PRODUCT_FAILED, Gate.FAIL, _project({"admission": accepted})
+                RunStatus.PRODUCT_FAILED, Gate.FAIL, _project({"admission": project_brain_admission(accepted)})
             )
         event = case.admission.event.envelope
         observed: set[str] = set()
@@ -216,7 +230,7 @@ def normal_cognition_target(
             Gate.PASS if structural else Gate.FAIL,
             _project(
                 {
-                    "admission": accepted,
+                    "admission": project_brain_admission(accepted),
                     "outcomes": outputs,
                     "trace": trace,
                 }
