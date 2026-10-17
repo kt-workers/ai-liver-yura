@@ -30,7 +30,7 @@ from app.domain.brain_integration import (
 )
 from app.domain.input_gateway import InputAdmission, InputAdmissionStatus, InputModality
 from app.domain.input_meaning import InputMeaningInterpretationResult
-from app.infrastructure.scheduling import CancellationToken, RuntimeClock
+from app.runtime.kernel import CancellationToken, RuntimeClock
 from app.usecases.accepted_inputs import CoreAcceptedInputStore
 from app.usecases.attention import UserInteractionAttentionProjector
 from app.usecases.attention_binding import CoreAttentionBinding

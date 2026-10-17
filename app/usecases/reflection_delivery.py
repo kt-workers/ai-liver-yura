@@ -34,12 +34,10 @@ from app.domain.memory_reflection import (
     ReflectionTrigger,
     ReflectionTriggerKind,
 )
-from app.infrastructure.persistence import PersistenceError, PersistenceFailureCode
-from app.infrastructure.persistence.memory_binding import (
-    CoreMemoryOperation,
-    CoreMemoryPersistenceBinding,
-)
-from app.infrastructure.scheduling import CancellationToken, RuntimeClock
+from app.domain.contracts.persistence import PersistenceError, PersistenceFailureCode
+from app.usecases.memory_persistence import CoreMemoryPersistenceBinding
+from app.usecases.persistence_tasks import CoreMemoryOperation
+from app.runtime.kernel import CancellationToken, RuntimeClock
 from app.usecases.brain_integration_runtime import (
     BrainIntegrationRuntime,
     BrainIntegrationWork,

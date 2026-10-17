@@ -54,8 +54,8 @@ from app.domain.speech_runtime.tasks import CandidateTaskKey, CandidateTaskRegis
 from app.domain.speech_semantics import SpeechSemanticPlan, SpeechSemanticsPlanner
 from app.domain.speech_semantics.contracts import SpeechSemanticContextSnapshot
 from app.domain.speech_semantics.production import SpeechSemanticContextBuilder
-from app.infrastructure.scheduling import CancellationToken
-from app.infrastructure.speech_presentation.supervisor import SpeechPresentationWorkerSupervisor
+from app.runtime.kernel import CancellationToken
+from app.domain.speech_runtime.execution import SpeechPresentationExecutionBoundary
 from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.usecases.presentation_notification import CorePresentationNotification
 from app.usecases.speech_pipeline_feedback import (
@@ -147,7 +147,7 @@ class CoreSpeechPipeline:
     performance: SpeechPerformancePlanner
     runtime: SpeechRuntime
     executor: SpeechPresentationExecutor
-    boundary: SpeechPresentationWorkerSupervisor
+    boundary: SpeechPresentationExecutionBoundary
     readers: CoreSpeechContextReaders
     clock: Callable[[], datetime]
     notification: Callable[
@@ -303,8 +303,6 @@ class CoreSpeechPipeline:
         intent_id: str,
         cancellation: CancellationToken,
     ) -> CoreSpeechFeedback:
-        if not isinstance(self.boundary, SpeechPresentationWorkerSupervisor):
-            raise ValueError("Presentationは既存process Supervisorの明示登録が必要です")
         intent = next((i for i in decision.candidate.intents if i.intent_id == intent_id), None)
         if intent is None or intent.kind is not ExecutiveIntentKind.SPEECH:
             raise ValueError("確定判断のSpeech intentが必要です")
