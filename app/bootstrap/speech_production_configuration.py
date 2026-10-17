@@ -7,13 +7,6 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from app.usecases.cognition_delivery import CoreCognitionDelivery
-from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
-from app.usecases.presentation_notification import CorePresentationNotification
-from app.usecases.speech_pipeline import CoreSpeechContextReaders, CoreSpeechPipeline
-from app.usecases.speech_pipeline_configuration import CoreSpeechConfiguration
-from app.usecases.speech_pipeline_semantics_policy import bind_speech_semantics_policy_v1
-from app.usecases.speech_pipeline_semantics_sources import ProductionSpeechSources
 from app.config.core_contracts import CoreConfigurationError, CoreFailureCode, identity, revision
 from app.domain.character_language import CharacterLanguageAuthority, CharacterLanguageRealizer
 from app.domain.character_language.realizer import (
@@ -57,7 +50,14 @@ from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceB
 from app.infrastructure.scheduling import RuntimeClock
 from app.infrastructure.speech_presentation.supervisor import SpeechPresentationWorkerSupervisor
 from app.usecases.brain_integration_runtime import BrainIntegrationWork
+from app.usecases.cognition_delivery import CoreCognitionDelivery
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
 from app.usecases.ports.llm import LLMRolePort
+from app.usecases.presentation_notification import CorePresentationNotification
+from app.usecases.speech_pipeline import CoreSpeechContextReaders, CoreSpeechPipeline
+from app.usecases.speech_pipeline_configuration import CoreSpeechConfiguration
+from app.usecases.speech_pipeline_semantics_policy import bind_speech_semantics_policy_v1
+from app.usecases.speech_pipeline_semantics_sources import ProductionSpeechSources
 from app.usecases.speech_preparation import finish_cleanup
 
 if TYPE_CHECKING:

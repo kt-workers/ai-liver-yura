@@ -5,8 +5,8 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-
 from app.composition.executive import ExecutiveBrainModulePort, ExecutiveBrainWorkPayload
+
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,

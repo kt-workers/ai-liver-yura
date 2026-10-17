@@ -4,8 +4,8 @@ import asyncio
 from dataclasses import replace
 
 import pytest
-
 from app.composition.speech_feedback import CoreSpeechFeedback, ObservedSpeechPresentationBoundary
+
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.activity_execution.observation import ObservedExecutionFactRecord
 from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
@@ -95,6 +95,7 @@ async def test_downstream_failure_preserves_actual_process_terminal(
     from app.composition.input_reference_context import CoreInputReferenceContextBinding
     from app.composition.presentation_notification import CorePresentationNotification
     from app.composition.speech_feedback import SpeechFactDeliveryDisposition as Delivery
+
     from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
     from app.domain.contracts import CapabilityAvailability
     from app.domain.goals import GoalCommitmentStore

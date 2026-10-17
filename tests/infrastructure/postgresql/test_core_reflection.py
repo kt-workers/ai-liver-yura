@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from app.application import start_core, stop_core
-from app.usecases.reflection_delivery import CoreReflectionConfiguration, CoreReflectionDelivery
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_integration import (
     BrainIntegrationLane,
@@ -26,6 +25,7 @@ from app.usecases.memory_evidence import (
     CoreMemoryEvidenceConfiguration,
     CoreMemoryEvidenceReader,
 )
+from app.usecases.reflection_delivery import CoreReflectionConfiguration, CoreReflectionDelivery
 from tests.domain.brain_integration.test_runtime import FakePort, envelope, policy, work
 from tests.domain.memory import test_memory_store_retrieval as memory
 from tests.domain.memory_reflection.test_llm_roles import RolePort, role_policy, support_wire
@@ -178,8 +178,9 @@ async def test_query_bound_is_checked_before_io(endpoint: PostgresEndpoint) -> N
 async def test_public_boot_registers_roles_and_feeds_memory_into_executive(
     endpoint: PostgresEndpoint, boot_config: Path, monkeypatch: pytest.MonkeyPatch,  # noqa: F811
 ) -> None:
-    from app import application as bootstrap
     from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
+
+    from app import application as bootstrap
     from app.domain.appraisal import InternalStateReducer
     from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore
     from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS

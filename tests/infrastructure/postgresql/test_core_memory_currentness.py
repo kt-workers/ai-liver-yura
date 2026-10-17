@@ -7,9 +7,8 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-
-from app.usecases.executive_facade import CoreExecutiveBinding, CoreExecutiveEvidence
 from app.usecases.executive_facade_input_evidence import CoreExecutiveInputEvidenceReader
+
 from app.domain.attention import AttentionSource
 from app.domain.contracts import SemanticSubjectIdentity, SemanticSubjectKind
 from app.domain.contracts.finalization import FinalizationError, FinalizationFailure
@@ -19,6 +18,7 @@ from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceB
 from app.infrastructure.persistence.postgresql_connection import PostgresDatabase
 from app.infrastructure.persistence.postgresql_memory import PostgresMemoryRepository
 from app.infrastructure.scheduling import CancellationToken
+from app.usecases.executive_facade import CoreExecutiveBinding, CoreExecutiveEvidence
 from app.usecases.memory_evidence import (
     CoreMemoryEvidenceConfiguration,
     CoreMemoryEvidenceReader,

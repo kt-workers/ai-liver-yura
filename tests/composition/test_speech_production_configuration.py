@@ -6,12 +6,11 @@ from dataclasses import asdict, replace
 from typing import Any, cast
 
 import pytest
+from app.usecases.speech_pipeline_semantics_policy import build_speech_semantics_policy_owner_v1
 
 from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.bootstrap import speech_production_configuration as speech
-from app.usecases.speech_pipeline import CoreSpeechContextReaders
-from app.usecases.speech_pipeline_semantics_policy import build_speech_semantics_policy_owner_v1
 from app.config.core_contracts import CoreConfigurationError
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
@@ -22,6 +21,7 @@ from app.infrastructure.speech_presentation.supervisor import (
     PresentationWorkerRegistration,
     SpeechPresentationWorkerSupervisor,
 )
+from app.usecases.speech_pipeline import CoreSpeechContextReaders
 from tests.composition.test_system_cognition_configuration import parameters
 from tests.domain.character_language.test_character_language import policy as character_policy
 from tests.domain.semantic_verification.test_semantic_verification import verification_policy

@@ -2,11 +2,6 @@
 
 from dataclasses import dataclass
 
-from app.usecases.speech_pipeline_semantics_sources import (
-    ProductionSpeechSources,
-    build_projection_v1,
-    build_truth_v1,
-)
 from app.domain.brain_operational_bounds import BrainOperationalBoundsPolicy
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
 from app.domain.executive.contracts import ExecutiveFactRef
@@ -35,6 +30,11 @@ from app.domain.speech_semantics_vocabulary import (
     SpeechSemanticMeaningPolicy,
     SpeechSourceContractKind,
     require_meaning_policy,
+)
+from app.usecases.speech_pipeline_semantics_sources import (
+    ProductionSpeechSources,
+    build_projection_v1,
+    build_truth_v1,
 )
 
 _MEANING_ID = "yura.speech-semantics.meaning"

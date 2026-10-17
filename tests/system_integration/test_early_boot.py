@@ -29,7 +29,6 @@ from app.application import (
     stop_core,
 )
 from app.bootstrap import core_components as component_factory
-from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
 from app.config.core import load_core_config
 from app.domain.brain_integration import (
     BrainIntegrationLane,
@@ -62,6 +61,7 @@ from app.domain.llm import (
 from app.infrastructure.scheduling import CancellationToken, SystemRuntimeClock
 from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from app.usecases.input_meaning import InputMeaningInterpreter
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
 from app.usecases.lifecycle import ApplicationLifecycle
 from tests.helpers.full_core import full_cognition
 

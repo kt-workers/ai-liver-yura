@@ -7,11 +7,10 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from app.usecases.executive_facade_input_evidence import CoreExecutiveInputEvidenceReader
 
 from app import application as bootstrap
 from app.application import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload, stop_core
-from app.usecases.executive_facade import CoreExecutiveBinding
-from app.usecases.executive_facade_input_evidence import CoreExecutiveInputEvidenceReader
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json
@@ -28,6 +27,7 @@ from app.domain.llm import LLMRoleRequest, LLMRoleResult
 from app.domain.plugin_registry import PluginRegistryAuthority
 from app.infrastructure.scheduling import CancellationToken
 from app.usecases.accepted_inputs import CoreAcceptedInput, CoreAcceptedInputStore
+from app.usecases.executive_facade import CoreExecutiveBinding
 from app.usecases.input_meaning import InputMeaningInterpreter
 from tests.domain.executive.test_executive import policy as executive_policy
 from tests.domain.goals.test_goal_commitment_store import apply_goal
@@ -393,10 +393,10 @@ async def test_wrong_input_provenance_never_replaces_original(change: str) -> No
 
 @pytest.mark.asyncio
 async def test_activity_facts_come_from_the_actual_execution_owner() -> None:
-    from app.usecases.appraisal_facade import CoreAppraisalBinding
-    from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
     from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
     from app.domain.executive import ExecutiveFactKind
+    from app.usecases.appraisal_facade import CoreAppraisalBinding
+    from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
     from tests.domain.appraisal.test_appraisal_paths import policy as appraisal_policy
     from tests.domain.plan_execution.test_progression import WaitingProvider, runner
     from tests.domain.plan_execution.test_progression import setup as plan_setup

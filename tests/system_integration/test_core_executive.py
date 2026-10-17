@@ -7,7 +7,6 @@ from typing import Any, cast
 
 import pytest
 
-from app.usecases.executive_facade import CoreExecutiveBinding, CoreExecutiveEvidence
 from app.domain.attention import AttentionSource
 from app.domain.contracts import CapabilityAvailability
 from app.domain.contracts.common import JsonValue
@@ -21,6 +20,7 @@ from app.domain.executive import (
 )
 from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
 from app.infrastructure.scheduling import CancellationToken
+from app.usecases.executive_facade import CoreExecutiveBinding, CoreExecutiveEvidence
 from tests.domain.executive.test_executive import (
     candidate_json,
     live_state,

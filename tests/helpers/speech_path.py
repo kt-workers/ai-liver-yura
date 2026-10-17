@@ -6,9 +6,6 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
 
-from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
-from app.usecases.presentation_notification import CorePresentationNotification
-from app.usecases.speech_pipeline import CoreSpeechContextReaders, CoreSpeechPipeline
 from app.domain.activity_execution import ActivityExecutionAuthority, ExecutionObservationProvenance
 from app.domain.activity_execution.speech_observation import SPEECH_OBSERVATION_POLICY
 from app.domain.attention import AttentionSourceKind
@@ -44,6 +41,9 @@ from app.domain.speech_runtime.runtime import SpeechRuntime
 from app.domain.speech_semantics import SpeechSemanticAuthority, SpeechSemanticsPlanner
 from app.subsystems.validation.speech_path import SpeechPathTasks
 from app.usecases.brain_integration_runtime import BrainIntegrationWork
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
+from app.usecases.presentation_notification import CorePresentationNotification
+from app.usecases.speech_pipeline import CoreSpeechContextReaders, CoreSpeechPipeline
 from tests.domain.attention.test_attention_turn_store import signal, transition
 from tests.domain.character_language.test_character_language import candidate, current, profile
 from tests.domain.character_language.test_character_language import policy as character_policy
@@ -85,6 +85,7 @@ async def build_speech_path(
     semctx = await b.context_builder.build_async(d, intent.intent_id, captured_at=now())
     from app.usecases.speech_pipeline_semantics_policy import bind_speech_semantics_policy_v1
     from app.usecases.speech_pipeline_semantics_sources import ProductionSpeechSources
+
     from app.domain.executive import CommitmentTransitionOperation, GoalTransitionOperation
     from app.domain.goals import GoalCommitmentSnapshot
     from tests.domain.goals.test_goal_commitment_store import commitment_transition, goal_transition
@@ -269,6 +270,7 @@ async def build_speech_path(
     from pathlib import Path
 
     from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
+
     from app.config.core import load_core_config
     from app.domain.appraisal import InternalStateReducer
     from app.domain.contracts.preconditions import PreconditionSourceRouter
@@ -429,6 +431,7 @@ async def build_speech_path(
         d,
     )
     from app.usecases.speech_pipeline_configuration import CoreSpeechConfiguration
+
     from app.domain.speech_runtime.shutdown import SpeechRuntimeShutdown
 
     shutdown = SpeechRuntimeShutdown(

@@ -6,13 +6,12 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-
-from app.usecases.executive_facade import CoreExecutiveBinding
 from app.usecases.executive_facade_requirements import (
     CoreExecutivePlanReferences,
     CoreExecutiveRequirementsReader,
     build_core_executive_input_evidence,
 )
+
 from app.domain.attention import AttentionSource
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityRequirement
@@ -47,6 +46,7 @@ from app.domain.speech_semantics_vocabulary import (
     SpeechSourceContractKind,
 )
 from app.infrastructure.scheduling import CancellationToken
+from app.usecases.executive_facade import CoreExecutiveBinding
 from tests.domain.executive.test_executive import candidate, policy, snapshot
 from tests.domain.plan_execution.test_progression import setup as plan_setup
 from tests.domain.plugin_registry.test_plugin_registry import available_registry, grants

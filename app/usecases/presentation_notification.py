@@ -9,11 +9,6 @@ from enum import Enum
 from typing import TYPE_CHECKING
 from uuid import NAMESPACE_URL, uuid5
 
-from app.usecases.input_reference_context_facade import (
-    CoreInputReferenceContextBinding,
-    PresentationReferenceCapacityError,
-    PresentationReferenceStaleError,
-)
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.activity_execution.observation import (
     ExecutionObservationProvenance,
@@ -41,6 +36,11 @@ from app.domain.input_gateway import (
 from app.domain.input_gateway.normalizer import InputNormalizer
 from app.usecases.attention import AttentionResponseSettlementCoordinator
 from app.usecases.brain_integration_runtime import BrainIntegrationWork, BrainWorkAdmission
+from app.usecases.input_reference_context_facade import (
+    CoreInputReferenceContextBinding,
+    PresentationReferenceCapacityError,
+    PresentationReferenceStaleError,
+)
 from app.usecases.speech_feedback import SpeechFactDeliveryDisposition as Delivery
 
 if TYPE_CHECKING:

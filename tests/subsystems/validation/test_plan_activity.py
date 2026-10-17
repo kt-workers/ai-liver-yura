@@ -6,11 +6,10 @@ from datetime import timedelta
 from typing import Any, cast
 
 import pytest
+from app.usecases.execution_facade_configuration import CoreExecutionConfiguration
 
 from app import application as bootstrap
 from app.bootstrap import core_components as component_factory
-from app.usecases.execution_facade import ExecutionFeedbackRetentionPolicy
-from app.usecases.execution_facade_configuration import CoreExecutionConfiguration
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus, PreconditionRef
 from app.domain.executive import ExecutiveRequirementsOwner, PlanExecutionIntentPayload
@@ -33,6 +32,7 @@ from app.subsystems.validation.plan_activity import (
     plan_activity_target,
 )
 from app.subsystems.validation.runtime import RunContext, ValidationRunner
+from app.usecases.execution_facade import ExecutionFeedbackRetentionPolicy
 from tests.domain.executive.test_plan_authorization import inputs
 from tests.domain.plan_execution.test_progression import Preflight, Provider, WaitingProvider, setup
 from tests.helpers.executive_requirements import capture_plans, fence_clock, make_authority

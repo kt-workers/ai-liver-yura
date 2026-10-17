@@ -7,15 +7,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from jsonschema import Draft202012Validator
-
-from app import application as bootstrap
-from app.adapters.character.yaml_loader import load_character_definition_yaml
-from app.adapters.llm.core import create_core_provider_lease
-from app.adapters.llm.openai_responses import OpenAIResponsesAdapter
-from app.adapters.llm.production import UnavailableLLMRolePort
-from app.adapters.llm.speech_semantics import SpeechSemanticsProviderPort
-from app.usecases.speech_pipeline import CoreSpeechContextReaders
 from app.usecases.speech_pipeline_deployment import (
     SPEECH_PROVIDER_ROLE_IDS,
     SpeechDeploymentRegistry,
@@ -25,6 +16,14 @@ from app.usecases.speech_pipeline_deployment import (
 )
 from app.usecases.speech_pipeline_production_configuration import SpeechProductionPorts
 from app.usecases.speech_pipeline_semantics_policy import build_speech_semantics_policy_owner_v1
+from jsonschema import Draft202012Validator
+
+from app import application as bootstrap
+from app.adapters.character.yaml_loader import load_character_definition_yaml
+from app.adapters.llm.core import create_core_provider_lease
+from app.adapters.llm.openai_responses import OpenAIResponsesAdapter
+from app.adapters.llm.production import UnavailableLLMRolePort
+from app.adapters.llm.speech_semantics import SpeechSemanticsProviderPort
 from app.bootstrap.system_cognition_configuration import CoreRunIdentity
 from app.config.layered import ConfigurationError, ConfigurationFailureCode
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
@@ -37,6 +36,7 @@ from app.infrastructure.speech_presentation.supervisor import (
     PresentationWorkerRegistration,
     SpeechPresentationWorkerSupervisor,
 )
+from app.usecases.speech_pipeline import CoreSpeechContextReaders
 from tests.composition.test_system_cognition_configuration import parameters
 from tests.config.test_layered import configured_root, edit
 from tests.helpers.speech_production import production_sources

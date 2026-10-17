@@ -23,12 +23,6 @@ from app.adapters.llm.speech_semantics import (
 )
 from app.adapters.tts.contracts import TTSVoiceBinding
 from app.bootstrap.core_provider import ProviderBindingSnapshot, RoleConfigPublication
-from app.usecases.speech_pipeline_production_configuration import (
-    SpeechBindingReference,
-    SpeechProductionInputs,
-    SpeechProductionPorts,
-    SpeechProductionPublication,
-)
 from app.bootstrap.system_cognition_configuration import CoreRunIdentity
 from app.config.core_contracts import identity
 from app.config.layered import (
@@ -60,6 +54,12 @@ from app.domain.speech_performance.policy import yura_revision_1_policy
 from app.domain.speech_semantics.planner import SpeechSemanticsPolicy
 from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
 from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
+from app.usecases.speech_pipeline_production_configuration import (
+    SpeechBindingReference,
+    SpeechProductionInputs,
+    SpeechProductionPorts,
+    SpeechProductionPublication,
+)
 from app.usecases.speech_preparation import finish_cleanup
 
 SPEECH_PROVIDER_ROLE_IDS = (

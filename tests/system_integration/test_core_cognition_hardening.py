@@ -5,9 +5,9 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
+from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
 
 from app import application as bootstrap
-from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
 from app.config.core import load_core_config
 from app.domain.appraisal import InternalStateReducer
 from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore

@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 
-from app.usecases.presentation_notification import CoreSpeechProductionOwnerConnection
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.input_gateway.normalizer import (
     InputAdmissionLedger,
@@ -17,6 +16,7 @@ from app.domain.input_gateway.normalizer import (
 from app.domain.speech_runtime.contracts import SpeechPresentationMode, TTSPreparationMode
 from app.domain.speech_runtime.discard import PreparedAudioDiscarder
 from app.infrastructure.scheduling import CancellationToken
+from app.usecases.presentation_notification import CoreSpeechProductionOwnerConnection
 from app.usecases.speech_preparation import (
     PendingSpeechAudioOwner,
     SpeechPreparationCleanupError,

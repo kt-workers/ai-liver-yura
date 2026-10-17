@@ -5,12 +5,11 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
+from app.usecases.execution_facade_configuration import CoreExecutionConfiguration
 
 from app import application as bootstrap
 from app.application import start_core, stop_core
 from app.bootstrap.runtime_application import CoreRuntimeApplication
-from app.usecases.execution_facade import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
-from app.usecases.execution_facade_configuration import CoreExecutionConfiguration
 from app.domain.activity_execution import (
     ActivityInvocation,
     ExecutionAdapterReport,
@@ -38,6 +37,7 @@ from app.domain.plugin_integration import (
 )
 from app.domain.plugin_registry import PluginRegistryAuthority
 from app.infrastructure.scheduling.clock import SystemRuntimeClock
+from app.usecases.execution_facade import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
 from tests.domain.activity_binding import test_binding
 from tests.domain.executive.test_executive import NOW
 from tests.domain.plugin_registry.test_plugin_registry_adjacent import (

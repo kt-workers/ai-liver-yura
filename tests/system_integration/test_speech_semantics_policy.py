@@ -5,13 +5,13 @@ from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 
 import pytest
-
 from app.usecases.speech_pipeline_semantics_policy import (
     SpeechSemanticPolicyBinding,
     bind_speech_semantics_policy_v1,
     build_speech_semantics_meaning_policy_v1,
     build_speech_semantics_policy_owner_v1,
 )
+
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.executive import CommittedExecutiveDecision, SpeechIntentPayload
 from app.domain.speech_semantics import (

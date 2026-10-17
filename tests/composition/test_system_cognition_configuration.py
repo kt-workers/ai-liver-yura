@@ -13,8 +13,8 @@ import yaml
 
 from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
-from app.bootstrap.core_components import compose_core_components
 from app.bootstrap import system_cognition_configuration as system
+from app.bootstrap.core_components import compose_core_components
 from app.config.core_contracts import CoreConfigurationError
 from app.config.executive_assembly import create_executive_configuration
 from app.config.llm_connections import LLMConnectionConfig

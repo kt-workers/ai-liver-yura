@@ -3,6 +3,7 @@
 from dataclasses import replace
 
 from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
+
 from app.domain.appraisal import InternalStateReducer
 from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY

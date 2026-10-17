@@ -11,7 +11,6 @@ import yaml
 
 from app import application as bootstrap
 from app.application import start_core, stop_core
-from app.usecases.reflection_delivery import CoreReflectionConfiguration
 from app.domain.activity_execution import ExecutionAdapterReport
 from app.domain.brain_integration import (
     BrainIntegrationLane,
@@ -24,6 +23,7 @@ from app.domain.llm import LLMRoleRequest, LLMRoleResult
 from app.domain.memory_reflection import ReflectionAcceptancePolicy
 from app.infrastructure.persistence import PostgresEndpoint
 from app.usecases.brain_integration_runtime import BrainWorkAdmissionStatus
+from app.usecases.reflection_delivery import CoreReflectionConfiguration
 from tests.domain.activity_execution.test_activity_execution import NOW, invocation, preflight
 from tests.domain.brain_integration.test_runtime import envelope, work
 from tests.domain.goals.test_goal_commitment_store import apply_goal

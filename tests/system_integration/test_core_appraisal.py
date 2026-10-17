@@ -8,11 +8,6 @@ from typing import Any, cast
 
 import pytest
 
-from app.usecases.appraisal_facade import (
-    AppraisalBrainModulePort,
-    AppraisalBrainWorkPayload,
-    CoreAppraisalBinding,
-)
 from app.domain.appraisal import AppraisalStateCommit, InternalStateReducer
 from app.domain.brain_integration import (
     BrainIntegrationLane,
@@ -28,6 +23,11 @@ from app.domain.goals import GoalCommitmentStore
 from app.domain.input_meaning import StructuredInputMeaning
 from app.domain.llm import LLMRoleRequest, LLMRoleResult
 from app.infrastructure.scheduling import CancellationToken, FakeRuntimeClock
+from app.usecases.appraisal_facade import (
+    AppraisalBrainModulePort,
+    AppraisalBrainWorkPayload,
+    CoreAppraisalBinding,
+)
 from app.usecases.brain_integration_runtime import BrainIntegrationRuntime, BrainIntegrationWork
 from tests.domain.appraisal.test_appraisal_paths import NOW, event, meaning, policy, result, state
 from tests.domain.brain_integration.test_runtime import FakePort

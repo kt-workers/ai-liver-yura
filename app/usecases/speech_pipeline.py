@@ -8,12 +8,6 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import cast
 
-from app.usecases.presentation_notification import CorePresentationNotification
-from app.usecases.speech_pipeline_feedback import (
-    CoreSpeechFeedback,
-    ObservedSpeechPresentationBoundary,
-    SpeechFactDeliveryDisposition,
-)
 from app.domain.activity_execution.observation import ObservedExecutionFactRecord
 from app.domain.character_language import (
     CharacterLanguageContextSnapshot,
@@ -63,6 +57,12 @@ from app.domain.speech_semantics.production import SpeechSemanticContextBuilder
 from app.infrastructure.scheduling import CancellationToken
 from app.infrastructure.speech_presentation.supervisor import SpeechPresentationWorkerSupervisor
 from app.usecases.brain_integration_runtime import BrainIntegrationWork
+from app.usecases.presentation_notification import CorePresentationNotification
+from app.usecases.speech_pipeline_feedback import (
+    CoreSpeechFeedback,
+    ObservedSpeechPresentationBoundary,
+    SpeechFactDeliveryDisposition,
+)
 from app.usecases.speech_preparation import (
     PendingPreparedAudio,
     PendingSpeechAudioOwner,

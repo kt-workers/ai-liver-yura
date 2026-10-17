@@ -3,11 +3,11 @@
 from dataclasses import replace
 
 import pytest
-
 from app.usecases.speech_pipeline_semantics_sources import (
     ProductionSpeechSources,
     build_projection_v1,
 )
+
 from app.domain.executive.contracts import ExecutiveFactKind, ExecutiveFactRef
 from app.domain.memory import MemoryWriteRequest
 from app.domain.memory.semantic_assertions import MemorySemanticAssertionEntry

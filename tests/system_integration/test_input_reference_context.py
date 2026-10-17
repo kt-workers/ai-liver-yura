@@ -8,7 +8,6 @@ import pytest
 
 from app import application as bootstrap
 from app.application import InputMeaningBrainWorkPayload, start_core, stop_core
-from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import RevisionVector
@@ -18,6 +17,7 @@ from app.domain.goals import GoalCommitmentSnapshot, GoalCommitmentStore
 from app.domain.input_meaning import InputMeaningInterpretationResult
 from app.domain.llm import LLMFailureCode, LLMRoleRequest, LLMRoleResult
 from app.usecases.input_meaning import InputMeaningInterpreter
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
 from tests.domain.goals.test_goal_commitment_store import apply_goal
 from tests.domain.input_meaning.test_input_meaning import NOW, event, policy
 from tests.domain.plan_execution.test_progression import WaitingProvider, runner, setup

@@ -3,6 +3,7 @@
 from app.usecases.speech_pipeline_semantics_sources import (
     ProductionSpeechSources,
 )
+
 from app.domain.activity_execution.authority import ActivityExecutionAuthority
 from app.domain.contracts.finalization import AuthorityReadPublication
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity

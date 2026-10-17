@@ -10,16 +10,6 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-
-from app import application as bootstrap
-from app.adapters.llm.core import create_core_provider_lease
-from app.adapters.tts.production import TTSProductionConnection, TTSProviderRegistry
-from app.adapters.tts.provider import TTSProviderClient
-from app.usecases.cognition_delivery import CoreCognitionDelivery
-from app.bootstrap.core_provider import CoreProviderLease
-from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
-from app.usecases.presentation_notification import CoreSpeechProductionOwnerConnection
-from app.usecases.speech_pipeline import CoreSpeechContextReaders, SpeechOutputPreparationRequest
 from app.usecases.speech_pipeline_deployment import (
     SpeechDeploymentRequest,
     create_speech_deployment,
@@ -32,12 +22,22 @@ from app.usecases.speech_pipeline_deployment_factory import (
     _BoundOwnerConnection,
     speech_tts_request_id,
 )
+
+from app import application as bootstrap
+from app.adapters.llm.core import create_core_provider_lease
+from app.adapters.tts.production import TTSProductionConnection, TTSProviderRegistry
+from app.adapters.tts.provider import TTSProviderClient
+from app.bootstrap.core_provider import CoreProviderLease
 from app.config.layered import ConfigurationError, load_user_configuration
 from app.domain.speech_runtime.contracts import SpeechPresentationMode
 from app.infrastructure.speech_presentation.production import (
     PresentationProductionRegistration,
     PresentationWorkerRegistry,
 )
+from app.usecases.cognition_delivery import CoreCognitionDelivery
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
+from app.usecases.presentation_notification import CoreSpeechProductionOwnerConnection
+from app.usecases.speech_pipeline import CoreSpeechContextReaders, SpeechOutputPreparationRequest
 from tests.adapters.tts.test_production import FakeTTSClient, capability, registration
 from tests.adapters.tts.test_provider import _policy
 from tests.composition.test_speech_deployment import dependencies
