@@ -9,7 +9,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 from uuid import NAMESPACE_URL, uuid5
 
-from app.composition.input_reference_context import (
+from app.usecases.input_reference_context_facade import (
     CoreInputReferenceContextBinding,
     PresentationReferenceCapacityError,
     PresentationReferenceStaleError,
@@ -44,8 +44,8 @@ from app.usecases.brain_integration_runtime import BrainIntegrationWork, BrainWo
 from app.usecases.speech_feedback import SpeechFactDeliveryDisposition as Delivery
 
 if TYPE_CHECKING:
-    from app.composition.cognition import CoreCognitionDelivery
-    from app.composition.speech import CoreSpeechContextReaders
+    from app.usecases.cognition_delivery import CoreCognitionDelivery
+    from app.usecases.speech_pipeline import CoreSpeechContextReaders
 
 
 class PresentationNotificationState(str, Enum):
@@ -67,7 +67,7 @@ class CoreSpeechProductionOwnerConnection:
     cognition: CoreCognitionDelivery
 
     def __post_init__(self) -> None:
-        from app.composition.cognition import CoreCognitionDelivery
+        from app.usecases.cognition_delivery import CoreCognitionDelivery
 
         if not isinstance(self.authority, ActivityExecutionAuthority) or not isinstance(
             self.attention, AttentionTurnStore
@@ -85,7 +85,7 @@ class CoreSpeechProductionOwnerConnection:
         ],
     ) -> CoreSpeechContextReaders:
         """同一Ownerを使うreader構築だけを既存provider接続へ委譲する。"""
-        from app.composition.speech import CoreSpeechContextReaders
+        from app.usecases.speech_pipeline import CoreSpeechContextReaders
 
         readers = factory(self.cognition, self.reference)
         if not isinstance(readers, CoreSpeechContextReaders):

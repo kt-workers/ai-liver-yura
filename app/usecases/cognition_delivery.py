@@ -53,9 +53,9 @@ from app.usecases.ports.brain_work import BrainModuleWork
 from app.usecases.ports.cancellation import CancellationState
 
 if TYPE_CHECKING:
-    from app.composition.execution import CoreExecutionDelivery
-    from app.composition.reflection import CoreReflectionDelivery
-    from app.composition.speech_configuration import CoreSpeechDelivery
+    from app.usecases.execution_facade import CoreExecutionDelivery
+    from app.usecases.reflection_delivery import CoreReflectionDelivery
+    from app.usecases.speech_pipeline_configuration import CoreSpeechDelivery
     from app.usecases.autonomy import CoreAutonomyDelivery
     from app.usecases.memory_evidence import CoreMemoryEvidenceReader
 

@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from app.composition.appraisal import CoreAppraisalBinding
+from app.usecases.appraisal_facade import CoreAppraisalBinding
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.finalization import AuthorityReadPublication

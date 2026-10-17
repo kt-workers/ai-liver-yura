@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Protocol
 
-from app.composition.appraisal import CoreAppraisalBinding
-from app.composition.executive_input_evidence import (
+from app.usecases.appraisal_facade import CoreAppraisalBinding
+from app.usecases.executive_facade_input_evidence import (
     CoreExecutiveInputEvidenceReader,
     CoreExecutiveSpeechEvidenceReader,
 )

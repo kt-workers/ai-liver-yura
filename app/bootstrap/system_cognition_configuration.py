@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.bootstrap.core_components import compose_core_components
-from app.composition.cognition_configuration import CoreCognitionConfiguration
-from app.composition.speech_production_configuration import (
+from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
+from app.usecases.speech_pipeline_production_configuration import (
     SpeechComponentProvenance,
     SpeechProductionInputs,
     create_production_speech_configuration,
