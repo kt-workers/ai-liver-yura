@@ -275,5 +275,10 @@ def _load_core_config(source: str | bytes) -> CoreConfig:
 
 
 def load_core_config(source: str | bytes) -> CoreConfig:
-    """正本設定を読み、契約で定義された構成エラーをそのまま公開する。"""
-    return _load_core_config(source)
+    """設定Owner内部の例外を、構成境界の安全な失敗へ正規化する。"""
+    try:
+        return _load_core_config(source)
+    except Exception:
+        from app.config.core_contracts import CoreConfigurationError, CoreFailureCode
+
+        raise CoreConfigurationError(CoreFailureCode.INVALID_SYSTEM_CONFIG) from None
