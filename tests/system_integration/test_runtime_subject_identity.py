@@ -30,10 +30,9 @@ def test_production_identity_single_load(tmp_path: Path, alternate: bool, rename
                 ):
                     if isinstance(facet.get("value"), str):
                         facet["value"] = "別の表記"
-    character_path = tmp_path / "unrelated-filename.yaml"
-    character_path.write_text(yaml.safe_dump(document, allow_unicode=True))
     config = yaml.safe_load((ROOT / "config/core.yaml").read_text())
-    config["character_definition.resource_ref"] = str(character_path)
+    config["character_definition"]["character_id"] = document["character_id"]
+    config["character_definition"]["definition_revision"] = document["definition_revision"]
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(config))
     with (
@@ -43,7 +42,9 @@ def test_production_identity_single_load(tmp_path: Path, alternate: bool, rename
         patch.object(
             bootstrap,
             "load_character_definition_yaml",
-            wraps=load_character_definition_yaml,
+            side_effect=lambda _source: load_character_definition_yaml(
+                yaml.safe_dump(document, allow_unicode=True).encode("utf-8")
+            ),
         ) as load,
     ):
         app = bootstrap.build_core_runtime(config_path)
