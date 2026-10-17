@@ -14,7 +14,11 @@ from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts.preconditions import PreconditionSourceRouter
-from app.domain.executive import ExecutiveIntentRequirementsPolicy, ExecutiveRequirementsOwner
+from app.domain.executive import (
+    CommittedExecutiveDecision,
+    ExecutiveIntentRequirementsPolicy,
+    ExecutiveRequirementsOwner,
+)
 from app.domain.input_meaning import InputMeaningInterpretationResult
 from app.domain.plugin_registry import PluginRegistryAuthority
 from tests.domain.appraisal.test_appraisal_paths import policy, state
@@ -100,7 +104,9 @@ async def test_cancelled_source_cannot_be_selected_by_unrelated_input(
         assert decision.status is BrainWorkStatus.COMPLETED, remaining
         assert decision.module is BrainIntegrationModule.EXECUTIVE
         assert decision.trace_id == "trace-2"
-        assert decision.result.candidate.source_event_ids == ("event-2",)
+        committed = decision.result
+        assert isinstance(committed, CommittedExecutiveDecision)
+        assert committed.candidate.source_event_ids == ("event-2",)
         assert app.brain.trace("trace-2").root_trigger_id == "event-2"
     finally:
         await bootstrap.stop_core(app)
@@ -199,7 +205,9 @@ async def test_selected_old_source_keeps_provenance_with_new_current_appraisal(
         )
         assert decision.status is BrainWorkStatus.COMPLETED, decision
         assert decision.trace_id == "trace-1"
-        assert decision.result.candidate.source_event_ids == ("event-1",)
+        committed = decision.result
+        assert isinstance(committed, CommittedExecutiveDecision)
+        assert committed.candidate.source_event_ids == ("event-1",)
         assert app.cognition.appraisal.current_commit().candidate.source_event_ids == ("event-2",)
         assert port.requests[-1].trace_id == "trace-1"
         assert app.brain.trace("trace-1").root_trigger_id == "event-1"

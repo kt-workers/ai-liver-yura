@@ -8,6 +8,7 @@ import pytest
 
 from app.domain.activity_execution import (
     ActivityExecutionCoordinator,
+    ActivityExecutionRecord,
     ActivityInvocation,
     ExecutionAdapterReport,
     ExecutionCancellationSignal,
@@ -18,6 +19,7 @@ from app.domain.activity_execution import (
 from app.domain.brain_integration import BrainIntegrationModule
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus
+from app.domain.executive import CommittedExecutiveDecision
 from app.domain.goal_planning import GoalPlanningAuthority
 from app.domain.input_gateway import InputPermission, InputSourceState
 from app.domain.input_gateway.normalizer import InputAdmissionLedger, InputNormalizer
@@ -170,7 +172,7 @@ async def test_direct_actual_execution_returns_to_existing_cognition(
         record = execution_outcome.result
         if result_kind == "cancelled":
             record = app.activities.snapshot(identity)
-        assert record is not None
+        assert isinstance(record, ActivityExecutionRecord)
         expected = {
             "completed": ExecutionStatus.COMPLETED,
             "unavailable": ExecutionStatus.UNSUPPORTED,
@@ -189,7 +191,9 @@ async def test_direct_actual_execution_returns_to_existing_cognition(
         assert not activity._signals
         assert app.goals.snapshot() == goals_before
         assert app.brain.trace(parent.envelope.trace_id).root_trigger_id == "original-root"
-        assert executive_outcome.result.candidate.source_event_ids
+        committed = executive_outcome.result
+        assert isinstance(committed, CommittedExecutiveDecision)
+        assert committed.candidate.source_event_ids
         assert record.bindings[0].capability_id == decision.activity_bindings[0].value.capability_id
         clock.advance(1)
         delivery.accept_decision(parent, decision)

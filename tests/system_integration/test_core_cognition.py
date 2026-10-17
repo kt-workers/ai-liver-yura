@@ -17,7 +17,11 @@ from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLI
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json
 from app.domain.contracts.preconditions import PreconditionSourceRouter
-from app.domain.executive import ExecutiveIntentRequirementsPolicy, ExecutiveRequirementsOwner
+from app.domain.executive import (
+    CommittedExecutiveDecision,
+    ExecutiveIntentRequirementsPolicy,
+    ExecutiveRequirementsOwner,
+)
 from app.domain.input_gateway import InputAdmission, InputAdmissionStatus, InputModality
 from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
 from app.domain.plugin_registry import PluginRegistryAuthority
@@ -155,7 +159,9 @@ async def test_startup_delivers_accepted_event_to_committed_decision(
             outcomes.append(outcome)
         assert all(o.status is BrainWorkStatus.COMPLETED for o in outcomes), outcomes
         assert outcomes[-1].module is BrainIntegrationModule.EXECUTIVE
-        assert outcomes[-1].result.candidate.source_event_ids == ("event-1",)
+        decision = outcomes[-1].result
+        assert isinstance(decision, CommittedExecutiveDecision)
+        assert decision.candidate.source_event_ids == ("event-1",)
         trace = app.brain.trace("trace-1")
         assert trace.root_trigger_id == "event-1"
         assert trace.source_event_ids == ("event-1",)
