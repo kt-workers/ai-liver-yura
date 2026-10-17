@@ -39,6 +39,7 @@ def setup(
 
     def factory() -> CoreRuntimeApplication:
         current, provider = (app, port) if not created else application(monkeypatch)
+        assert isinstance(current, CoreRuntimeApplication)
         if slow:
             provider.release.clear()
         created.append(current)
