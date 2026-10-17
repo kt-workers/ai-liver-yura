@@ -185,12 +185,8 @@ class CoreAppraisalBinding:
         if cancellation.cancelled:
             raise asyncio.CancelledError
         latest = self._current()
-        if (
-            latest.state.revision != current.state.revision
-            or latest.reference.context.source_context_revision
-            != current.reference.context.source_context_revision
-        ):
-            raise ValueError("評価中に内部状態または参照文脈が更新されました")
+        if latest.generations() != current.generations():
+            raise ValueError("評価中に内部状態または参照元の世代が更新されました")
         return self._commit(candidate)
 
     def appraise_fast(
