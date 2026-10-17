@@ -13,7 +13,7 @@ import pytest
 
 from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
-from app.composition.system_cognition_configuration import (
+from app.bootstrap.system_cognition_configuration import (
     CoreApplication,
     CoreRunIdentity,
 )

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from app.composition.execution import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
+from app.usecases.execution_facade import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
 from app.domain.activity_execution import (
     ActivityExecutionCoordinator,
     ActivityInvocation,
@@ -255,7 +255,7 @@ async def test_plan_production_configuration_and_feedback(
 
     from app import application as bootstrap
     from app.bootstrap import core_components as component_factory
-    from app.composition.execution_configuration import CoreExecutionConfiguration
+    from app.usecases.execution_facade_configuration import CoreExecutionConfiguration
     from app.domain.contracts import PreconditionRef
     from app.domain.executive import PlanExecutionIntentPayload
     from app.domain.executive.requirements import RequirementSourcePublication
@@ -647,7 +647,7 @@ def test_retention_policy_rejects_invalid_values(policy_id: str, revision: int, 
 def execution_fixture(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[Any, CoreExecutionDelivery, list[ExecutionDispatchRequest]]:
-    from app.composition.execution_configuration import CoreExecutionConfiguration
+    from app.usecases.execution_facade_configuration import CoreExecutionConfiguration
 
     app, _ = application(monkeypatch)
     _, _, _, captured, _, _ = direct_fixture()

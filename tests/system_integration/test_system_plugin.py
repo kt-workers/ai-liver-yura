@@ -9,8 +9,8 @@ import pytest
 from app import application as bootstrap
 from app.application import start_core, stop_core
 from app.bootstrap.runtime_application import CoreRuntimeApplication
-from app.composition.execution import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
-from app.composition.execution_configuration import CoreExecutionConfiguration
+from app.usecases.execution_facade import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
+from app.usecases.execution_facade_configuration import CoreExecutionConfiguration
 from app.domain.activity_execution import (
     ActivityInvocation,
     ExecutionAdapterReport,

@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from app.composition.executive import CoreExecutiveBinding
-from app.composition.executive_requirements import (
+from app.usecases.executive_facade import CoreExecutiveBinding
+from app.usecases.executive_facade_requirements import (
     CoreExecutiveRequirementsReader,
     CorePreconditionSourceReader,
     build_core_executive_input_evidence,

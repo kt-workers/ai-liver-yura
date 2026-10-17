@@ -6,10 +6,10 @@ from typing import Any
 
 import pytest
 
-from app.composition.input_reference_context import CoreInputReferenceContextBinding
-from app.composition.presentation_notification import CorePresentationNotification
-from app.composition.presentation_notification import PresentationNotificationState as S
-from app.composition.speech_feedback import SpeechFactDeliveryDisposition as Delivery
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
+from app.usecases.presentation_notification import CorePresentationNotification
+from app.usecases.presentation_notification import PresentationNotificationState as S
+from app.usecases.speech_pipeline_feedback import SpeechFactDeliveryDisposition as Delivery
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.activity_execution.speech_observation import (
     SPEECH_OBSERVATION_POLICY,
@@ -325,7 +325,7 @@ class GoalSnapshotSource:
 def test_exact_capacity_failure_is_atomic_and_retry_does_not_consume_gateway(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.composition.input_reference_context import PresentationReferenceCapacityError
+    from app.usecases.input_reference_context_facade import PresentationReferenceCapacityError
 
     d, r, submitted, normalizer = notification(monkeypatch)
     goals = GoalSnapshotSource(32)

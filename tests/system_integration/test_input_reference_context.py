@@ -8,7 +8,7 @@ import pytest
 
 from app import application as bootstrap
 from app.application import InputMeaningBrainWorkPayload, start_core, stop_core
-from app.composition.input_reference_context import CoreInputReferenceContextBinding
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import RevisionVector
