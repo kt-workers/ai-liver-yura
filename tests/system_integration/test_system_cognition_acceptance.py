@@ -350,7 +350,10 @@ async def test_system_configuration_and_lab_evidence_reach_owner_decision(
     before = asyncio.all_tasks()
     try:
         result = await runner.run(request, fixture)
-        assert result.status is RunStatus.COMPLETED and result.machine_gate is Gate.PASS, (result.blockers, result.timeline)
+        assert (result.status is RunStatus.COMPLETED and result.machine_gate is Gate.PASS), (
+            result.blockers,
+            result.timeline,
+        )
         exported = json.loads(result.export_json(1_000_000))
         assert exported["human_evaluation"]["status"] == "UNRATED"
         assert exported["target_provenance"]["git_head"] == run.provenance.git_head
