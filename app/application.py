@@ -53,14 +53,14 @@ from app.usecases.brain_input_meaning import (
 from app.usecases.brain_input_meaning import (
     UnavailableInputMeaningLiveContextPort as UnavailableInputMeaningLiveContextPort,
 )
-from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
+from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.usecases.core_lifecycle import start_core as start_core
 from app.usecases.core_lifecycle import stop_core as stop_core
 from app.usecases.goal_persistence import CoreGoalPersistenceBinding
 from app.usecases.lifecycle import ApplicationLifecycle, DependencyRetryPolicy
 from app.usecases.memory_persistence import CoreMemoryPersistenceBinding
 from app.usecases.ports.llm import LLMRolePort
-from app.usecases.speech_pipeline_production_configuration import SpeechProductionInputs
+from app.bootstrap.speech_production_configuration import SpeechProductionInputs
 from app.usecases.task_cleanup import reap_owned_task as _reap_cleanup
 
 _compose_core = compose_core_components
@@ -190,7 +190,7 @@ def _load_core_speech(
             return None
         if owners.speech is None:
             raise ValueError("Speech本番接続が登録されていません")
-        from app.usecases.speech_pipeline_deployment import create_speech_deployment
+        from app.bootstrap.speech_deployment import create_speech_deployment
 
         source = create_speech_deployment(
             root,

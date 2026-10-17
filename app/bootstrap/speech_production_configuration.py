@@ -55,9 +55,9 @@ from app.usecases.input_reference_context_facade import CoreInputReferenceContex
 from app.usecases.ports.llm import LLMRolePort
 from app.usecases.presentation_notification import CorePresentationNotification
 from app.usecases.speech_pipeline import CoreSpeechContextReaders, CoreSpeechPipeline
-from app.usecases.speech_pipeline_configuration import CoreSpeechConfiguration
-from app.usecases.speech_pipeline_semantics_policy import bind_speech_semantics_policy_v1
-from app.usecases.speech_pipeline_semantics_sources import ProductionSpeechSources
+from app.bootstrap.speech_configuration import CoreSpeechConfiguration
+from app.bootstrap.speech_semantics_policy import bind_speech_semantics_policy_v1
+from app.usecases.speech_semantics_sources import ProductionSpeechSources
 from app.usecases.speech_preparation import finish_cleanup
 
 if TYPE_CHECKING:

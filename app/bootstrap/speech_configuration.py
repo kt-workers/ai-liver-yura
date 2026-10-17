@@ -17,7 +17,7 @@ from app.infrastructure.scheduling import CancellationToken
 from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
 from app.usecases.speech_pipeline import CoreSpeechPipeline
-from app.usecases.speech_pipeline_semantics_policy import ExecutiveSpeechPolicyEvidence
+from app.bootstrap.speech_semantics_policy import ExecutiveSpeechPolicyEvidence
 
 if TYPE_CHECKING:
     from app.usecases.cognition_delivery import CoreCognitionDelivery

@@ -58,7 +58,7 @@ from app.runtime.kernel import CancellationToken
 from app.domain.speech_runtime.execution import SpeechPresentationExecutionBoundary
 from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.usecases.presentation_notification import CorePresentationNotification
-from app.usecases.speech_pipeline_feedback import (
+from app.usecases.speech_feedback_facade import (
     CoreSpeechFeedback,
     ObservedSpeechPresentationBoundary,
     SpeechFactDeliveryDisposition,

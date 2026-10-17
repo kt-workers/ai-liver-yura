@@ -47,12 +47,12 @@ from app.infrastructure.llm.connection_registry_factory import (
 )
 from app.infrastructure.llm.connections import route_llm_connections
 from app.infrastructure.scheduling import RuntimeClock
-from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
+from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.usecases.core_lifecycle import stop_core
 from app.usecases.input_reference_context import CoreInputReferenceContextBinding
 from app.usecases.lifecycle import ApplicationLifecycle
 from app.usecases.resource_cleanup import OwnedResourceLedger
-from app.usecases.speech_pipeline_production_configuration import (
+from app.bootstrap.speech_production_configuration import (
     SpeechProductionInputs,
     create_production_speech_configuration,
 )

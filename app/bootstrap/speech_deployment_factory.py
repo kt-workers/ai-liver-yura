@@ -30,8 +30,8 @@ from app.usecases.presentation_notification import (
     CoreSpeechProductionOwnerConnection,
 )
 from app.usecases.speech_pipeline import CoreSpeechContextReaders, SpeechOutputPreparationRequest
-from app.usecases.speech_pipeline_deployment import SpeechDeploymentRequest
-from app.usecases.speech_pipeline_production_configuration import SpeechProductionPorts
+from app.bootstrap.speech_deployment import SpeechDeploymentRequest
+from app.bootstrap.speech_production_configuration import SpeechProductionPorts
 from app.usecases.speech_preparation import finish_cleanup
 
 if TYPE_CHECKING:

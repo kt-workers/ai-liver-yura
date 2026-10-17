@@ -54,7 +54,7 @@ from app.domain.speech_performance.policy import yura_revision_1_policy
 from app.domain.speech_semantics.planner import SpeechSemanticsPolicy
 from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
 from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
-from app.usecases.speech_pipeline_production_configuration import (
+from app.bootstrap.speech_production_configuration import (
     SpeechBindingReference,
     SpeechProductionInputs,
     SpeechProductionPorts,
@@ -307,7 +307,7 @@ def production_speech_deployment_registry(
     connections: Mapping[str, object],
 ) -> SpeechDeploymentRegistry:
     """起動rootがtrusted Owner bundleだけを接続名へ明示登録する。"""
-    from app.usecases.speech_pipeline_deployment_factory import (
+    from app.bootstrap.speech_deployment_factory import (
         ProductionSpeechDeploymentPortFactory,
         SpeechDeploymentOwnerConnections,
     )
