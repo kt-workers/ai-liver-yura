@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.config.core import CoreConfig
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
@@ -15,7 +16,6 @@ from app.usecases.accepted_inputs import CoreAcceptedInputStore
 from app.usecases.brain_input_meaning import InputMeaningBrainModulePort
 from app.usecases.brain_integration_runtime import BrainIntegrationRuntime
 from app.usecases.cognition_delivery import CoreCognitionDelivery
-from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.usecases.goal_persistence import CoreGoalPersistenceBinding
 from app.usecases.input_meaning import InputMeaningInterpreter
 from app.usecases.input_reference_context import CoreInputReferenceContextBinding

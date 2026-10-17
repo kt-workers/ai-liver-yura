@@ -7,7 +7,6 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from app.usecases.executive_input_evidence import CoreExecutiveInputEvidenceReader
 
 from app import application as bootstrap
 from app.application import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload, stop_core
@@ -28,6 +27,7 @@ from app.domain.plugin_registry import PluginRegistryAuthority
 from app.infrastructure.scheduling import CancellationToken
 from app.usecases.accepted_inputs import CoreAcceptedInput, CoreAcceptedInputStore
 from app.usecases.executive_facade import CoreExecutiveBinding
+from app.usecases.executive_input_evidence import CoreExecutiveInputEvidenceReader
 from app.usecases.input_meaning import InputMeaningInterpreter
 from tests.domain.executive.test_executive import policy as executive_policy
 from tests.domain.goals.test_goal_commitment_store import apply_goal

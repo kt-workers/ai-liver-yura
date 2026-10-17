@@ -5,10 +5,10 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from app.bootstrap.execution_configuration import CoreExecutionConfiguration
 
 from app import application as bootstrap
 from app.application import start_core, stop_core
+from app.bootstrap.execution_configuration import CoreExecutionConfiguration
 from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.domain.activity_execution import (
     ActivityInvocation,

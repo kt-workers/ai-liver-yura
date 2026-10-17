@@ -12,12 +12,14 @@ from pathlib import Path
 from app.adapters.character.yaml_loader import load_character_definition_yaml
 from app.adapters.llm.connections import production_llm_connection_adapters
 from app.adapters.llm.production import create_openai_port_from_environment
+from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.bootstrap.core_components import CoreComponents as CoreComponents
 from app.bootstrap.core_components import compose_core_components
 from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.bootstrap.runtime_owners import CoreRuntimeOwners as CoreRuntimeOwners
 from app.bootstrap.runtime_owners import CoreSpeechOwners as CoreSpeechOwners
 from app.bootstrap.runtime_owners import default_core_runtime_owners as default_core_runtime_owners
+from app.bootstrap.speech_production_configuration import SpeechProductionInputs
 from app.bootstrap.system_cognition_configuration import (
     CORE_RESOURCE,
     ROOT,
@@ -53,14 +55,12 @@ from app.usecases.brain_input_meaning import (
 from app.usecases.brain_input_meaning import (
     UnavailableInputMeaningLiveContextPort as UnavailableInputMeaningLiveContextPort,
 )
-from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.usecases.core_lifecycle import start_core as start_core
 from app.usecases.core_lifecycle import stop_core as stop_core
 from app.usecases.goal_persistence import CoreGoalPersistenceBinding
 from app.usecases.lifecycle import ApplicationLifecycle, DependencyRetryPolicy
 from app.usecases.memory_persistence import CoreMemoryPersistenceBinding
 from app.usecases.ports.llm import LLMRolePort
-from app.bootstrap.speech_production_configuration import SpeechProductionInputs
 from app.usecases.task_cleanup import reap_owned_task as _reap_cleanup
 
 _compose_core = compose_core_components

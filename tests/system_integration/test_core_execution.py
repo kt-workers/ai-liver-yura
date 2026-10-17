@@ -253,10 +253,9 @@ async def test_plan_production_configuration_and_feedback(
 ) -> None:
     from datetime import timedelta
 
-    from app.bootstrap.execution_configuration import CoreExecutionConfiguration
-
     from app import application as bootstrap
     from app.bootstrap import core_components as component_factory
+    from app.bootstrap.execution_configuration import CoreExecutionConfiguration
     from app.domain.contracts import PreconditionRef
     from app.domain.executive import PlanExecutionIntentPayload
     from app.domain.executive.requirements import RequirementSourcePublication

@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from app.bootstrap.execution_configuration import CoreExecutionConfiguration
+from app.bootstrap.speech_configuration import CoreSpeechConfiguration
 from app.domain.appraisal import (
     DecayPolicy,
     DeepAppraisalPolicy,
@@ -23,7 +25,6 @@ from app.usecases.autonomy import CoreAutonomyDelivery, GoalOwner
 from app.usecases.brain_appraisal import CoreAppraisalBinding
 from app.usecases.brain_integration_runtime import BrainIntegrationRuntime
 from app.usecases.cognition_delivery import CoreCognitionDelivery
-from app.bootstrap.execution_configuration import CoreExecutionConfiguration
 from app.usecases.executive_binding import CoreExecutiveBinding as CoreExecutiveBinding
 from app.usecases.executive_requirements import (
     CoreExecutiveRequirementsReader,
@@ -38,7 +39,6 @@ from app.usecases.memory_evidence import (
 from app.usecases.memory_persistence import CoreMemoryPersistenceBinding
 from app.usecases.ports.llm import LLMRolePort
 from app.usecases.reflection_delivery import CoreReflectionConfiguration, CoreReflectionDelivery
-from app.bootstrap.speech_configuration import CoreSpeechConfiguration
 
 
 @dataclass(frozen=True, slots=True)

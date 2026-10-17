@@ -7,7 +7,6 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from app.usecases.executive_input_evidence import CoreExecutiveInputEvidenceReader
 
 from app.domain.attention import AttentionSource
 from app.domain.contracts import SemanticSubjectIdentity, SemanticSubjectKind
@@ -19,6 +18,7 @@ from app.infrastructure.persistence.postgresql_connection import PostgresDatabas
 from app.infrastructure.persistence.postgresql_memory import PostgresMemoryRepository
 from app.infrastructure.scheduling import CancellationToken
 from app.usecases.executive_facade import CoreExecutiveBinding, CoreExecutiveEvidence
+from app.usecases.executive_input_evidence import CoreExecutiveInputEvidenceReader
 from app.usecases.memory_evidence import (
     CoreMemoryEvidenceConfiguration,
     CoreMemoryEvidenceReader,

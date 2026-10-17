@@ -10,11 +10,11 @@ from app.bootstrap.composition_contracts import (
     LLMConnectionBinding,
     SystemCompositionSnapshot,
 )
+from app.bootstrap.speech_production_configuration import SpeechComponentProvenance
 from app.config.appraisal_assembly import AppraisalInitializationProvenance
 from app.config.core import CoreConfig
 from app.config.executive_assembly import ExecutiveConfigurationProvenance
 from app.domain.attention import AttentionSchedulingPolicy
-from app.bootstrap.speech_production_configuration import SpeechComponentProvenance
 
 
 def _snapshot(

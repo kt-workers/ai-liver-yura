@@ -4,8 +4,8 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
-from app.bootstrap.execution_configuration import _ExecutionEvidence
 
+from app.bootstrap.execution_configuration import _ExecutionEvidence
 from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.attention import AttentionPriority, AttentionSource, AttentionSourceKind
 from app.domain.contracts import CapabilityRequirement

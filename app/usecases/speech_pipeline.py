@@ -45,6 +45,7 @@ from app.domain.speech_runtime.discard import (
     PreparedAudioDiscardPort,
     PreparedAudioDiscardReason,
 )
+from app.domain.speech_runtime.execution import SpeechPresentationExecutionBoundary
 from app.domain.speech_runtime.orchestrator import SpeechPreparationOrchestrator
 from app.domain.speech_runtime.policy import SpeechCandidatePriority
 from app.domain.speech_runtime.presentation import SpeechPresentationExecutor
@@ -55,7 +56,6 @@ from app.domain.speech_semantics import SpeechSemanticPlan, SpeechSemanticsPlann
 from app.domain.speech_semantics.contracts import SpeechSemanticContextSnapshot
 from app.domain.speech_semantics.production import SpeechSemanticContextBuilder
 from app.runtime.kernel import CancellationToken
-from app.domain.speech_runtime.execution import SpeechPresentationExecutionBoundary
 from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.usecases.presentation_notification import CorePresentationNotification
 from app.usecases.speech_feedback_facade import (

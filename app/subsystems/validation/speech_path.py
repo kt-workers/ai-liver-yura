@@ -37,8 +37,8 @@ from app.domain.speech_semantics import SpeechSemanticContextSnapshot, SpeechSem
 from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.usecases.cognition_delivery import CoreCognitionDelivery
 from app.usecases.ports.llm import LLMRolePort
-from app.usecases.speech_pipeline import SpeechOutputPreparationRequest
 from app.usecases.speech_feedback_facade import CoreSpeechFeedback, SpeechFactDeliveryDisposition
+from app.usecases.speech_pipeline import SpeechOutputPreparationRequest
 
 from .body import _project
 from .cognition import _result_projection, _status

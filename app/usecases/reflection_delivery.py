@@ -18,6 +18,7 @@ from app.domain.brain_integration import (
 )
 from app.domain.contracts import ExecutionStatus
 from app.domain.contracts.common import freeze_json
+from app.domain.contracts.persistence import PersistenceError, PersistenceFailureCode
 from app.domain.memory import MemoryWriteResult
 from app.domain.memory_reflection import (
     LLMReflectionProposalPort,
@@ -34,15 +35,14 @@ from app.domain.memory_reflection import (
     ReflectionTrigger,
     ReflectionTriggerKind,
 )
-from app.domain.contracts.persistence import PersistenceError, PersistenceFailureCode
-from app.usecases.memory_persistence import CoreMemoryPersistenceBinding
-from app.usecases.persistence_tasks import CoreMemoryOperation
 from app.runtime.kernel import CancellationToken, RuntimeClock
 from app.usecases.brain_integration_runtime import (
     BrainIntegrationRuntime,
     BrainIntegrationWork,
     BrainWorkAdmission,
 )
+from app.usecases.memory_persistence import CoreMemoryPersistenceBinding
+from app.usecases.persistence_tasks import CoreMemoryOperation
 from app.usecases.ports.llm import LLMRolePort
 
 

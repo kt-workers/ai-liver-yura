@@ -3,10 +3,6 @@
 from dataclasses import replace
 
 import pytest
-from app.usecases.speech_semantics_sources import (
-    ProductionSpeechSources,
-    build_projection_v1,
-)
 
 from app.domain.executive.contracts import ExecutiveFactKind, ExecutiveFactRef
 from app.domain.memory import MemoryWriteRequest
@@ -14,6 +10,10 @@ from app.domain.memory.semantic_assertions import MemorySemanticAssertionEntry
 from app.domain.speech_semantics.production import SpeechSemanticFactProjector
 from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
 from app.infrastructure.persistence.postgresql_connection import PostgresEndpoint
+from app.usecases.speech_semantics_sources import (
+    ProductionSpeechSources,
+    build_projection_v1,
+)
 from tests.domain.memory.test_memory_store_retrieval import candidate
 from tests.domain.memory.test_semantic_assertions import SEMANTICS
 from tests.domain.speech_semantics.test_production_owner_sources import resolution

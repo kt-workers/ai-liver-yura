@@ -8,6 +8,7 @@ from datetime import timezone
 from pathlib import Path
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
+from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.bootstrap.composition_contracts import ComponentBindings as ComponentBindings
 from app.bootstrap.composition_contracts import CoreRunIdentity as CoreRunIdentity
 from app.bootstrap.composition_contracts import LLMConnectionBinding as LLMConnectionBinding
@@ -18,6 +19,10 @@ from app.bootstrap.composition_contracts import (
 from app.bootstrap.composition_snapshot import _snapshot as _snapshot
 from app.bootstrap.core_application import CoreApplication as CoreApplication
 from app.bootstrap.core_components import compose_core_components
+from app.bootstrap.speech_production_configuration import (
+    SpeechProductionInputs,
+    create_production_speech_configuration,
+)
 from app.config.appraisal import load_appraisal_config
 from app.config.appraisal_assembly import build_appraisal_configuration
 from app.config.core import ConfigurationReference, load_core_config
@@ -47,15 +52,10 @@ from app.infrastructure.llm.connection_registry_factory import (
 )
 from app.infrastructure.llm.connections import route_llm_connections
 from app.infrastructure.scheduling import RuntimeClock
-from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.usecases.core_lifecycle import stop_core
 from app.usecases.input_reference_context import CoreInputReferenceContextBinding
 from app.usecases.lifecycle import ApplicationLifecycle
 from app.usecases.resource_cleanup import OwnedResourceLedger
-from app.bootstrap.speech_production_configuration import (
-    SpeechProductionInputs,
-    create_production_speech_configuration,
-)
 from app.usecases.task_cleanup import reap_owned_task
 
 ROOT = Path(__file__).resolve().parents[2]

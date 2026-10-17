@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING, Protocol
 from app.adapters.tts.contracts import TTSSynthesisPriority, TTSSynthesisRequest, TTSSynthesisStatus
 from app.adapters.tts.production import TTSProductionConnection, TTSProductionLease
 from app.bootstrap.core_provider import CoreProviderLease, CoreProviderLeaseFactory
+from app.bootstrap.speech_deployment import SpeechDeploymentRequest
+from app.bootstrap.speech_production_configuration import SpeechProductionPorts
 from app.config.layered import ConfigurationError, ConfigurationFailureCode
 from app.domain.executive import CommittedExecutiveDecision
 from app.domain.speech_runtime.contracts import SpeechPresentationMode, TTSPreparationMode
@@ -30,8 +32,6 @@ from app.usecases.presentation_notification import (
     CoreSpeechProductionOwnerConnection,
 )
 from app.usecases.speech_pipeline import CoreSpeechContextReaders, SpeechOutputPreparationRequest
-from app.bootstrap.speech_deployment import SpeechDeploymentRequest
-from app.bootstrap.speech_production_configuration import SpeechProductionPorts
 from app.usecases.speech_preparation import finish_cleanup
 
 if TYPE_CHECKING:

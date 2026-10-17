@@ -6,10 +6,10 @@ from datetime import timedelta
 from typing import Any, cast
 
 import pytest
-from app.bootstrap.execution_configuration import CoreExecutionConfiguration
 
 from app import application as bootstrap
 from app.bootstrap import core_components as component_factory
+from app.bootstrap.execution_configuration import CoreExecutionConfiguration
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts import CapabilityAvailability, ExecutionStatus, PreconditionRef
 from app.domain.executive import ExecutiveRequirementsOwner, PlanExecutionIntentPayload

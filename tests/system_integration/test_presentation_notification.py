@@ -5,7 +5,6 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from app.usecases.speech_feedback_facade import SpeechFactDeliveryDisposition as Delivery
 
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.activity_execution.speech_observation import (
@@ -31,6 +30,7 @@ from app.domain.input_meaning import ReferenceContextKind
 from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
 from app.usecases.presentation_notification import CorePresentationNotification
 from app.usecases.presentation_notification import PresentationNotificationState as S
+from app.usecases.speech_feedback_facade import SpeechFactDeliveryDisposition as Delivery
 from tests.domain.activity_execution.test_observation_ingress import observation
 from tests.domain.attention.test_attention_response_settlement import prepared_store
 from tests.domain.goals.test_goal_commitment_store import apply_goal

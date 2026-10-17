@@ -5,11 +5,6 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from app.usecases.executive_requirements import (
-    CoreExecutiveRequirementsReader,
-    CorePreconditionSourceReader,
-    build_core_executive_input_evidence,
-)
 
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts.common import JsonValue, freeze_json
@@ -29,6 +24,11 @@ from app.domain.contracts.preconditions import (
 from app.domain.executive import ExecutivePreconditionRequirement, RequirementsRejected
 from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
 from app.usecases.executive_facade import CoreExecutiveBinding
+from app.usecases.executive_requirements import (
+    CoreExecutiveRequirementsReader,
+    CorePreconditionSourceReader,
+    build_core_executive_input_evidence,
+)
 from tests.domain.executive.test_executive import policy
 from tests.system_integration.test_core_executive_requirements import (
     GoalPort,

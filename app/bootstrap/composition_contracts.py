@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.bootstrap.speech_production_configuration import SpeechComponentProvenance
 from app.config.appraisal_assembly import AppraisalInitializationProvenance
 from app.config.core_contracts import identity
 from app.config.executive_assembly import ExecutiveConfigurationProvenance
-from app.bootstrap.speech_production_configuration import SpeechComponentProvenance
 
 
 @dataclass(frozen=True, slots=True)

@@ -4,12 +4,11 @@ import asyncio
 from dataclasses import replace
 
 import pytest
+
 from app.bootstrap.speech_semantics_policy import (
     bind_speech_semantics_policy_v1,
     build_speech_semantics_policy_owner_v1,
 )
-from app.usecases.speech_semantics_sources import ProductionSpeechSources
-
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts.finalization import AuthorityReadPublication
@@ -24,6 +23,7 @@ from app.domain.speech_semantics.production import SpeechSemanticPolicyOwner
 from app.domain.speech_semantics_vocabulary import SpeechSemanticContextError
 from app.domain.speech_semantics_vocabulary import SpeechSemanticContextFailureCode as C
 from app.infrastructure.persistence import PersistenceFailureCode, PersistenceOperationResult
+from app.usecases.speech_semantics_sources import ProductionSpeechSources
 from tests.domain.activity_execution.test_activity_execution import started
 from tests.domain.executive.test_executive import NOW
 from tests.domain.goals.test_goal_commitment_store import (

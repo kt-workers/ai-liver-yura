@@ -10,6 +10,12 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+
+from app import application as bootstrap
+from app.adapters.llm.core import create_core_provider_lease
+from app.adapters.tts.production import TTSProductionConnection, TTSProviderRegistry
+from app.adapters.tts.provider import TTSProviderClient
+from app.bootstrap.core_provider import CoreProviderLease
 from app.bootstrap.speech_deployment import (
     SpeechDeploymentRequest,
     create_speech_deployment,
@@ -22,12 +28,6 @@ from app.bootstrap.speech_deployment_factory import (
     _BoundOwnerConnection,
     speech_tts_request_id,
 )
-
-from app import application as bootstrap
-from app.adapters.llm.core import create_core_provider_lease
-from app.adapters.tts.production import TTSProductionConnection, TTSProviderRegistry
-from app.adapters.tts.provider import TTSProviderClient
-from app.bootstrap.core_provider import CoreProviderLease
 from app.config.layered import ConfigurationError, load_user_configuration
 from app.domain.speech_runtime.contracts import SpeechPresentationMode
 from app.infrastructure.speech_presentation.production import (

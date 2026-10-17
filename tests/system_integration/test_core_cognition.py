@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 import pytest
-from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 
 from app import application as bootstrap
+from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.domain.appraisal import InternalStateReducer
 from app.domain.attention import AttentionSchedulingPolicy, AttentionTurnStore
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus

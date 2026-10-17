@@ -4,7 +4,6 @@ import asyncio
 from dataclasses import replace
 
 import pytest
-from app.usecases.speech_feedback_facade import CoreSpeechFeedback, ObservedSpeechPresentationBoundary
 
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.activity_execution.observation import ObservedExecutionFactRecord
@@ -13,6 +12,10 @@ from app.domain.contracts import ExecutionStatus
 from app.domain.speech_runtime.presentation import SpeechPresentationExecutor
 from app.domain.speech_runtime.runtime import SpeechRuntime
 from app.domain.speech_runtime.tasks import CandidateTaskRegistry
+from app.usecases.speech_feedback_facade import (
+    CoreSpeechFeedback,
+    ObservedSpeechPresentationBoundary,
+)
 from tests.domain.speech_runtime.policy_fixtures import runtime_policy
 from tests.domain.speech_runtime.test_presentation import _ready_candidate, _state
 from tests.infrastructure.speech_presentation.test_process import boundary, policy
@@ -92,16 +95,15 @@ async def test_downstream_failure_preserves_actual_process_terminal(
 ) -> None:
     from typing import Any
 
-    from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
-    from app.usecases.presentation_notification import CorePresentationNotification
-    from app.usecases.speech_feedback_facade import SpeechFactDeliveryDisposition as Delivery
-
     from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
     from app.domain.contracts import CapabilityAvailability
     from app.domain.goals import GoalCommitmentStore
     from app.domain.input_gateway import InputPermission, InputSourceState
     from app.domain.speech_runtime.contracts import CandidateLifecycle
     from app.usecases.attention import AttentionResponseSettlementCoordinator
+    from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
+    from app.usecases.presentation_notification import CorePresentationNotification
+    from app.usecases.speech_feedback_facade import SpeechFactDeliveryDisposition as Delivery
     from tests.domain.attention.test_attention_response_settlement import prepared_store
     from tests.domain.attention.test_attention_turn_store import signal
     from tests.domain.input_meaning.test_input_meaning import policy as meaning_policy

@@ -6,11 +6,11 @@ from dataclasses import asdict, replace
 from typing import Any, cast
 
 import pytest
-from app.bootstrap.speech_semantics_policy import build_speech_semantics_policy_owner_v1
 
 from app import application as bootstrap
 from app.adapters.llm.production import UnavailableLLMRolePort
 from app.bootstrap import speech_production_configuration as speech
+from app.bootstrap.speech_semantics_policy import build_speech_semantics_policy_owner_v1
 from app.config.core_contracts import CoreConfigurationError
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY as BOUNDS
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity

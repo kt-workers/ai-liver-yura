@@ -1,9 +1,5 @@
 """Speech production試験で実Ownerを明示構築する。"""
 
-from app.usecases.speech_semantics_sources import (
-    ProductionSpeechSources,
-)
-
 from app.domain.activity_execution.authority import ActivityExecutionAuthority
 from app.domain.contracts.finalization import AuthorityReadPublication
 from app.domain.contracts.semantic_subject import RuntimeSubjectIdentity
@@ -21,6 +17,9 @@ from app.domain.memory import MemoryStoreAuthority
 from app.domain.memory.semantic_assertions import MemorySemanticAssertionEntry
 from app.infrastructure.persistence import PersistenceOperationResult
 from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
+from app.usecases.speech_semantics_sources import (
+    ProductionSpeechSources,
+)
 from tests.domain.executive.test_executive import NOW
 from tests.domain.memory.test_memory_store_retrieval import authority
 from tests.helpers.goal_semantics import semantic_spec
