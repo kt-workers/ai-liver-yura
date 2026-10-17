@@ -84,10 +84,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve-pr-identity.outputs.head_sha }}
-      - name: 旧参照の一覧を出力
+      - name: 旧参照・混入した作業指示を全コードから検出
         run: |
-          echo "PRODUCT_REFERENCES"
-          grep -RIlE 'app[.]composition|resources/|[sS]2|ここのs2|機械的に削除' app tests config tools --include='*.py' --include='*.yaml' --include='*.yml' --include='*.json' || true
+          echo "SOURCE_INSTRUCTIONS_WITH_LINE_NUMBERS"
+          grep -RnEi 'ここの.{0,30}(s2|削除)|機械的に削除|辻褄|このs2|全体の.{0,15}おかしく|s2を消|s2.{0,12}消し|ただ.{0,30}削除するんじゃ' app tests tools config --include='*.py' --include='*.yaml' --include='*.yml' --include='*.json' || true
+          echo "IDENTIFIER_S2_WITH_LINE_NUMBERS"
+          grep -RnEi '(^|[^[:alnum:]_])s2([^[:alnum:]_]|$)' app tests tools config --include='*.py' --include='*.yaml' --include='*.yml' --include='*.json' || true
+          echo "RETIRED_IMPORTS_WITH_LINE_NUMBERS"
+          grep -RnE 'app[.]composition|resources/' app tests tools config --include='*.py' --include='*.yaml' --include='*.yml' --include='*.json' || true
           echo "DOC_REFERENCES"
           grep -RIlE 'app[.]composition|resources/|[sS]2' docs --include='*.md' || true
 
