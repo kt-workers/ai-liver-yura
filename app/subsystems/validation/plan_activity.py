@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from weakref import WeakKeyDictionary
 
-from app.application import CoreComponents, start_core
+from app.application import CoreComponents
+from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.domain.activity_execution import (
     ActivityExecutionPort,
     ActivityExecutionRecord,
@@ -127,7 +128,7 @@ class CommittedActivityLabCase:
 
 def plan_activity_target(
     cases: tuple[PlanActivityLabCase | CommittedActivityLabCase, ...],
-    application_factory: Callable[[RunContext], CoreComponents],
+    application_factory: Callable[[RunContext], CoreComponents | CoreRuntimeApplication],
     provenance: ProductionTargetProvenance,
     contract_revision: str,
     provider_policy_refs: tuple[str, ...],
@@ -164,8 +165,8 @@ def plan_activity_target(
         if owner.current is not None:
             raise ValueError("前iterationのアプリケーションが未停止です")
         app = application_factory(context)
-        if not isinstance(app, CoreComponents):
-            raise ValueError("factoryは正規の構成済み要素を返す必要があります")
+        if not isinstance(app, (CoreComponents, CoreRuntimeApplication)):
+            raise ValueError("factoryは正規の本体または構成済み要素を返す必要があります")
         owner.current = app
         if app.cognition is None or app.cognition.execution is None:
             await owner.stop()
@@ -197,7 +198,7 @@ def plan_activity_target(
                 )
 
             scope = await context.invoke_product("plan_activity.prepare_plan", prepare)
-        await context.invoke_product("plan_activity.start", lambda: start_core(app))
+        await context.invoke_product("plan_activity.start", owner.start)
 
         async def submit() -> BrainWorkAdmission | None:
             assert app.cognition is not None
