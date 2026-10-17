@@ -95,3 +95,9 @@ Speechは意味計画・人物らしい言語化・検証・出力処理の責�
 Speechの具体的な子process Supervisorの有無と接続の安全性は `app/bootstrap/speech_production_configuration.py` が組立て時に検査する。`CoreSpeechPipeline` は `SpeechPresentationExecutionBoundary` 抽象Portを受け、実装がprocess Supervisorかどうかを調べない。これにより具象の差替え時も認知・Speechの意味規則を変えない。
 
 検証条件は、ユースケースからInfrastructureへの直接importがないこと、既存型と公開結果の恒等性を保つこと、正式組立て時のSupervisor検証を維持すること、取消・失敗・提示の全経路の回帰試験とする。
+
+## 10. アーキテクチャ試験の正本参照
+
+構造検査は移設後の実定義を対象とする。`CoreApplication` の開始・終了メソッドは `app/bootstrap/core_application.py`、入力意味と評価の配送Portは `app/usecases/cognition_delivery.py` をAST検査する。`app/bootstrap/system_cognition_configuration.py` は構成・接続に限定し、`CoreApplication` を再定義しない。
+
+移設前の `app/composition/` を参照する試験を復活させず、現在のクラスと関数の責務（認知Portの型付き引数、起動ライフサイクルの委譲、Domainへの依存方向）を検証する。テストが通っても、実DB・実起動を含む本体の完了判定は別に実施する。

@@ -147,9 +147,14 @@ def test_core_components_are_data_and_bootstrap_delegates_lifecycle() -> None:
         isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) for node in components.body
     )
     facade = next(
-        node for node in _tree("app/bootstrap/system_cognition_configuration.py").body
+        node for node in _tree("app/bootstrap/core_application.py").body
         if isinstance(node, ast.ClassDef) and node.name == "CoreApplication"
     )
+    assembly_classes = {
+        node.name for node in _tree("app/bootstrap/system_cognition_configuration.py").body
+        if isinstance(node, ast.ClassDef)
+    }
+    assert "CoreApplication" not in assembly_classes
     methods = {node.name for node in facade.body if isinstance(node, ast.AsyncFunctionDef)}
     assert methods == {"start", "stop"}
     for node in ast.walk(facade):
@@ -313,7 +318,7 @@ def test_core_assembly_uses_application_persistence_bindings_not_adapters() -> N
 
 
 def test_cognition_imports_input_work_from_usecase_not_boot_entrypoint() -> None:
-    imports = _imports("app/composition/cognition.py")
+    imports = _imports("app/usecases/cognition_delivery.py")
     assert "app.usecases.brain_input_meaning.InputMeaningBrainWorkPayload" in imports
     assert not any(
         module == "app.application" or module.startswith("app.application.")
@@ -322,7 +327,7 @@ def test_cognition_imports_input_work_from_usecase_not_boot_entrypoint() -> None
 
 
 def test_appraisal_module_preserves_wide_port_contract() -> None:
-    tree = _tree("app/composition/cognition.py")
+    tree = _tree("app/usecases/cognition_delivery.py")
     owner = next(
         node for node in tree.body
         if isinstance(node, ast.ClassDef) and node.name == "_AppraisalModule"
