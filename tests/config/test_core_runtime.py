@@ -18,8 +18,8 @@ RESOURCE = Path(__file__).resolve().parents[2] / "config/core.yaml"
 
 def test_canonical_resource_and_shared_policy_instances() -> None:
     config = load_core_config(RESOURCE.read_bytes())
-    assert config.schema_id == "yura.core-runtime.production-config.v1"
-    assert config.config_id == "yura.core-runtime.production"
+    assert config.schema_id == "yura.core-config.v1"
+    assert config.config_id == "yura.core"
     assert config.config_revision == 1
     assert config.appraisal_config.resource_ref == "config/appraisal.yaml"
     assert config.appraisal_config.config_revision == 1
@@ -69,9 +69,9 @@ def test_canonical_resource_and_shared_policy_instances() -> None:
         config.scheduler_policy.policy_id,
         config.scheduler_policy.policy_revision,
         config.scheduler_policy.max_priority_burst,
-    ) == ("yura.core-runtime.scheduler", 1, 8)
+    ) == ("yura.core.scheduler", 1, 8)
     assert (config.integration_policy.policy_id, config.integration_policy.policy_revision) == (
-        "yura.core-runtime.integration",
+        "yura.core.integration",
         1,
     )
     lanes = config.integration_policy.lane_policies
@@ -89,7 +89,7 @@ def test_canonical_resource_and_shared_policy_instances() -> None:
         for lane in lanes
     )
     stop = config.shutdown_policy
-    assert (stop.policy_id, stop.policy_revision) == ("yura.core-runtime.shutdown", 1)
+    assert (stop.policy_id, stop.policy_revision) == ("yura.core.shutdown", 1)
     assert (
         stop.in_flight_settle_grace_seconds,
         stop.final_persistence_grace_seconds,
