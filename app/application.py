@@ -6,7 +6,7 @@ import asyncio
 import signal
 import sys
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
@@ -117,10 +117,13 @@ async def build_persistent_core(
     runtime_epoch: str,
     max_pending_memory: int,
     cognition: CoreCognitionConfiguration | None = None,
+    cognition_factory: (
+        Callable[[CoreConfig, CoreGoalPersistenceBinding, str], CoreCognitionConfiguration] | None
+    ) = None,
 ) -> CoreRuntimeApplication:
     """保存基盤と復元済み目標を構成し、実行ライフサイクルを委譲する。"""
-    if cognition is None:
-        raise ValueError("統合本体の認知構成は必須です")
+    if (cognition is None) == (cognition_factory is None):
+        raise ValueError("認知構成か信頼済み認知生成元を一つだけ指定してください")
     if not isinstance(persistence, PostgresPersistenceRuntime):
         raise ValueError("本体の保存構成にはPostgresPersistenceRuntimeが必要です")
     app: CoreComponents | None = None
@@ -130,7 +133,11 @@ async def build_persistent_core(
         require_identifier(runtime_epoch, "runtime_epoch")
         if not isinstance(retry_policy, DependencyRetryPolicy):
             raise ValueError("保存接続には型付きの再接続方針が必要です")
-        config, character, llm = _load_core(config_path, cognition)
+        if cognition_factory is None:
+            config, character, llm = _load_core(config_path, cognition)
+        else:
+            # 復元Goalができる前に認知Ownerを代作しない。
+            config = load_core_config(config_path.read_bytes())
         shutdown = config.shutdown_policy
         if (
             shutdown.final_persistence_grace_seconds <= 0
@@ -142,6 +149,13 @@ async def build_persistent_core(
         persistence.attach(lifecycle, retry_policy)
         await persistence.start()
         goals = await CoreGoalPersistenceBinding.restore(persistence, runtime_epoch=runtime_epoch)
+        if cognition_factory is not None:
+            cognition = cognition_factory(config, goals, runtime_epoch)
+            if not isinstance(cognition, CoreCognitionConfiguration):
+                raise ValueError("認知生成元が型付き本番構成を返していません")
+            loaded_config, character, llm = _load_core(config_path, cognition)
+            if loaded_config != config:
+                raise ValueError("保存用の本体構成が起動中に変更されました")
         app = _compose_core(config, character, llm, goals, memory, lifecycle, cognition)
         return CoreRuntimeApplication(app)
     except BaseException:
