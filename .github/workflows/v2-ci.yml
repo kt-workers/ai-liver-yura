@@ -75,6 +75,22 @@ jobs:
             echo "live_base_sha=$live_base_sha"
           } >> "$GITHUB_OUTPUT"
 
+  layout-audit:
+    name: layout-audit
+    needs: resolve-pr-identity
+    runs-on: ubuntu-24.04
+    steps:
+      - name: PR先端を取得
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve-pr-identity.outputs.head_sha }}
+      - name: 旧参照の一覧を出力
+        run: |
+          echo "PRODUCT_REFERENCES"
+          grep -RIlE 'app[.]composition|resources/|[sS]2|ここのs2|機械的に削除' app tests config tools --include='*.py' --include='*.yaml' --include='*.yml' --include='*.json' || true
+          echo "DOC_REFERENCES"
+          grep -RIlE 'app[.]composition|resources/|[sS]2' docs --include='*.md' || true
+
   quality:
     name: quality
     needs: resolve-pr-identity
@@ -118,15 +134,6 @@ jobs:
           fetched_base_sha="$(git rev-parse "refs/remotes/origin/$BASE_REF")"
           test "$fetched_base_sha" = "$LIVE_BASE_SHA"
           git merge-base --is-ancestor "$LIVE_BASE_SHA" "$EXPECTED_HEAD_SHA"
-
-      - name: レガシー参照の移行調査（検証専用）
-        run: |
-          echo "::group::app / tests / config / tools 内の旧参照ファイル"
-          grep -RIlE 'app[.]composition|resources/|[sS]2|ここのs2|機械的に削除' app tests config tools --include='*.py' --include='*.yaml' --include='*.yml' --include='*.json' || true
-          echo "::endgroup::"
-          echo "::group::docs内の旧参照ファイル"
-          grep -RIlE 'app[.]composition|resources/|[sS]2' docs --include='*.md' || true
-          echo "::endgroup::"
 
       - name: リポジトリ指定のPythonを準備
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
