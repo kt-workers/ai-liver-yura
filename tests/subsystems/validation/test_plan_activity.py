@@ -293,7 +293,7 @@ async def test_input_entry_keeps_adopted_plan_and_scope(monkeypatch: pytest.Monk
     result = await ValidationRunner((target,), replace(POLICY, max_intervals=50)).run(
         request, fixture
     )
-    assert result.status is RunStatus.COMPLETED, result
+    assert result.status is RunStatus.COMPLETED, (result.blockers, result.timeline)
     assert result.machine_gate is Gate.PASS
     output = cast(Any, result.stage_results[0].typed_outputs)
     assert output["scope"]["plan"]["plan_id"] == "plan"
