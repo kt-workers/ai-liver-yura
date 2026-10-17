@@ -6,6 +6,15 @@ from pathlib import Path
 from .contracts import ProductionTargetProvenance
 
 
+PERSISTENCE_PRODUCTION_SOURCES: tuple[str, ...] = (
+    "app/application.py",
+    "app/bootstrap/core_components.py",
+    "app/usecases/goal_persistence.py",
+    "app/usecases/memory_persistence.py",
+    "app/infrastructure/persistence",
+)
+
+
 def capture_production_provenance(
     repository: Path,
     source_paths: tuple[str, ...],

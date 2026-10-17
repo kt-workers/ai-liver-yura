@@ -53,7 +53,7 @@ from .contracts import (
     ValidationFixture,
 )
 from .memory import _project
-from .provenance import capture_production_provenance
+from .provenance import PERSISTENCE_PRODUCTION_SOURCES, capture_production_provenance
 from .runtime import LabTarget, RunContext
 
 T = TypeVar("T")
@@ -352,12 +352,7 @@ def _current_provenance(
 ) -> bool:
     actual = capture_production_provenance(
         settings.repository,
-        (
-            "app/bootstrap.py",
-            "app/composition/goal_persistence.py",
-            "app/composition/memory_persistence.py",
-            "app/infrastructure/persistence",
-        ),
+        PERSISTENCE_PRODUCTION_SOURCES,
         expected.module_contract_ids,
         expected.role_schema_ids,
     )

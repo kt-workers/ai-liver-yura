@@ -32,7 +32,7 @@ from app.usecases.lifecycle import DependencyRetryPolicy
 
 from .memory import _project
 from .persistence import PersistenceLabSettings, _boot, _state, _stop
-from .provenance import capture_production_provenance
+from .provenance import PERSISTENCE_PRODUCTION_SOURCES, capture_production_provenance
 
 
 async def restore(packet: dict[str, Any]) -> dict[str, object]:
@@ -75,12 +75,7 @@ async def restore(packet: dict[str, Any]) -> dict[str, object]:
     expected = packet["provenance"]
     provenance = capture_production_provenance(
         settings.repository,
-        (
-            "app/bootstrap.py",
-            "app/composition/goal_persistence.py",
-            "app/composition/memory_persistence.py",
-            "app/infrastructure/persistence",
-        ),
+        PERSISTENCE_PRODUCTION_SOURCES,
         tuple(expected["module_contract_ids"]),
         tuple(expected["role_schema_ids"]),
     )

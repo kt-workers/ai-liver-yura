@@ -28,7 +28,10 @@ from app.subsystems.validation.persistence import (
     PersistenceScenario,
     persistence_target,
 )
-from app.subsystems.validation.provenance import capture_production_provenance
+from app.subsystems.validation.provenance import (
+    PERSISTENCE_PRODUCTION_SOURCES,
+    capture_production_provenance,
+)
 from app.subsystems.validation.runtime import LabTarget, ValidationRunner
 from tests.domain.goals.test_goal_commitment_store import decision, goal_transition
 from tests.domain.memory import test_memory_store_retrieval as memory
@@ -39,6 +42,20 @@ from tests.runtime.test_lifecycle import retry_policy
 from tests.subsystems.validation.test_runtime import FIXTURE, spec
 
 LAB_POLICY = LabPolicy(2, 16, 100, 1_000_000, 15, 4)
+
+
+def test_persistence_provenance_resolves_current_clean_architecture() -> None:
+    """親子の検証経路は削除済み構成でなく正規の製品ソースを監査する。"""
+    assert "app/application.py" in PERSISTENCE_PRODUCTION_SOURCES
+    assert "app/usecases/goal_persistence.py" in PERSISTENCE_PRODUCTION_SOURCES
+    assert "app/usecases/memory_persistence.py" in PERSISTENCE_PRODUCTION_SOURCES
+    assert all("app/composition/" not in source for source in PERSISTENCE_PRODUCTION_SOURCES)
+    snapshot = capture_production_provenance(
+        Path.cwd(), PERSISTENCE_PRODUCTION_SOURCES, ("persistence_repository_contracts",), ()
+    )
+    assert len(snapshot.git_head) == 40
+
+
 
 
 @pytest_asyncio.fixture
@@ -75,7 +92,7 @@ async def allocated_databases(
 def make_target(settings: PersistenceLabSettings, case: PersistenceLabCase) -> LabTarget:
     provenance = capture_production_provenance(
         Path.cwd(),
-        ("app/bootstrap/runtime_application.py",),
+        PERSISTENCE_PRODUCTION_SOURCES,
         ("persistence_repository_contracts",),
         (),
     )
@@ -127,7 +144,7 @@ async def test_persistence_scenarios_use_real_boot_and_record_cleanup(
     settings, case = make_case(endpoint, boot_config, scenario)
     provenance = capture_production_provenance(
         Path.cwd(),
-        ("app/bootstrap/runtime_application.py",),
+        PERSISTENCE_PRODUCTION_SOURCES,
         ("persistence_repository_contracts",),
         (),
     )
