@@ -8,13 +8,13 @@ from dataclasses import dataclass
 from typing import cast
 
 from app.adapters.llm.appraisal import appraisal_openai_role_config
-from app.adapters.llm.production import UnavailableLLMRolePort
 from app.adapters.llm.openai_responses import (
     OpenAIResponsesAdapter,
     OpenAIResponsesModelPolicy,
     OpenAIResponsesRoleConfig,
     ResponsesClient,
 )
+from app.adapters.llm.production import UnavailableLLMRolePort
 from app.config.llm_connections import LLMConnectionConfig
 from app.domain.llm import LLMModelClass, LLMReasoningEffort, LLMRoleDescriptor
 from app.infrastructure.llm.connection_registry_factory import LLMConnectionAdapter
