@@ -7,9 +7,9 @@ from typing import Any
 import pytest
 
 from app.application import build_core
+from app.config.llm_connections import LLMConnectionConfig
 from app.domain.brain_integration import BrainIntegrationModule, BrainWorkStatus
 from app.domain.executive import GoalTransitionOperation
-from app.config.llm_connections import LLMConnectionConfig
 from app.domain.llm import LLMRoleDescriptor
 from app.usecases.ports.llm import LLMRolePort
 from tests.composition.test_system_cognition_configuration import parameters
