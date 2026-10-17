@@ -22,14 +22,14 @@ from app.adapters.llm.speech_semantics import (
     speech_semantics_provider_descriptor,
 )
 from app.adapters.tts.contracts import TTSVoiceBinding
-from app.composition.core_provider import ProviderBindingSnapshot, RoleConfigPublication
-from app.composition.speech_production_configuration import (
+from app.bootstrap.core_provider import ProviderBindingSnapshot, RoleConfigPublication
+from app.usecases.speech_pipeline_production_configuration import (
     SpeechBindingReference,
     SpeechProductionInputs,
     SpeechProductionPorts,
     SpeechProductionPublication,
 )
-from app.composition.system_cognition_configuration import CoreRunIdentity
+from app.bootstrap.system_cognition_configuration import CoreRunIdentity
 from app.config.core_contracts import identity
 from app.config.layered import (
     ConfigurationError,
@@ -307,7 +307,7 @@ def production_speech_deployment_registry(
     connections: Mapping[str, object],
 ) -> SpeechDeploymentRegistry:
     """起動rootがtrusted Owner bundleだけを接続名へ明示登録する。"""
-    from app.composition.speech_deployment_factory import (
+    from app.usecases.speech_pipeline_deployment_factory import (
         ProductionSpeechDeploymentPortFactory,
         SpeechDeploymentOwnerConnections,
     )

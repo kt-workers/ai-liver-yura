@@ -6,9 +6,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from app.composition.input_reference_context import CoreInputReferenceContextBinding
-from app.composition.speech import CoreSpeechPipeline
-from app.composition.speech_semantics_policy import ExecutiveSpeechPolicyEvidence
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
+from app.usecases.speech_pipeline import CoreSpeechPipeline
+from app.usecases.speech_pipeline_semantics_policy import ExecutiveSpeechPolicyEvidence
 from app.domain.brain_integration import (
     BrainIntegrationLane,
     BrainIntegrationModule,
@@ -20,7 +20,7 @@ from app.infrastructure.scheduling import CancellationToken
 from app.usecases.brain_integration_runtime import BrainIntegrationWork
 
 if TYPE_CHECKING:
-    from app.composition.cognition import CoreCognitionDelivery
+    from app.usecases.cognition_delivery import CoreCognitionDelivery
 
 
 @dataclass(frozen=True, slots=True)

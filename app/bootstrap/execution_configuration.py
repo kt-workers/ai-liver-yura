@@ -2,9 +2,9 @@
 
 from dataclasses import dataclass, replace
 
-from app.composition.cognition import CoreCognitionDelivery
-from app.composition.execution import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
-from app.composition.input_reference_context import CoreInputReferenceContextBinding
+from app.usecases.cognition_delivery import CoreCognitionDelivery
+from app.usecases.execution_facade import CoreExecutionDelivery, ExecutionFeedbackRetentionPolicy
+from app.usecases.input_reference_context_facade import CoreInputReferenceContextBinding
 from app.domain.activity_binding import ActivityBindingAuthority
 from app.domain.activity_execution import ActivityExecutionCoordinator
 from app.domain.activity_execution.coordinator import ActivityExecutionPort, ExecutionPreflightPort

@@ -2,15 +2,15 @@
 
 from dataclasses import dataclass
 
-from app.composition.cognition import CoreCognitionDelivery
-from app.composition.execution_configuration import CoreExecutionConfiguration
-from app.composition.executive_requirements import (
+from app.usecases.cognition_delivery import CoreCognitionDelivery
+from app.usecases.execution_facade_configuration import CoreExecutionConfiguration
+from app.usecases.executive_facade_requirements import (
     CoreExecutiveRequirementsReader,
     CorePreconditionSourceReader,
     build_core_executive_input_evidence,
 )
-from app.composition.reflection import CoreReflectionConfiguration, CoreReflectionDelivery
-from app.composition.speech_configuration import CoreSpeechConfiguration
+from app.usecases.reflection_delivery import CoreReflectionConfiguration, CoreReflectionDelivery
+from app.usecases.speech_pipeline_configuration import CoreSpeechConfiguration
 from app.domain.appraisal import (
     DecayPolicy,
     DeepAppraisalPolicy,
