@@ -6,7 +6,7 @@ from datetime import timedelta
 from typing import Any, cast
 
 import pytest
-from app.usecases.execution_facade_configuration import CoreExecutionConfiguration
+from app.bootstrap.execution_configuration import CoreExecutionConfiguration
 
 from app import application as bootstrap
 from app.bootstrap import core_components as component_factory

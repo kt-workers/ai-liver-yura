@@ -178,7 +178,7 @@ async def test_query_bound_is_checked_before_io(endpoint: PostgresEndpoint) -> N
 async def test_public_boot_registers_roles_and_feeds_memory_into_executive(
     endpoint: PostgresEndpoint, boot_config: Path, monkeypatch: pytest.MonkeyPatch,  # noqa: F811
 ) -> None:
-    from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
+    from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 
     from app import application as bootstrap
     from app.domain.appraisal import InternalStateReducer

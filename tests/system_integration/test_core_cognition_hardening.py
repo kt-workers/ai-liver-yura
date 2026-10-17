@@ -5,7 +5,7 @@ from dataclasses import replace
 from typing import Any
 
 import pytest
-from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
+from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 
 from app import application as bootstrap
 from app.config.core import load_core_config

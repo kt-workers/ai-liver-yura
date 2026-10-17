@@ -83,8 +83,8 @@ async def build_speech_path(
     d = await committed(b, "goal-1")
     intent = d.candidate.intents[0]
     semctx = await b.context_builder.build_async(d, intent.intent_id, captured_at=now())
-    from app.usecases.speech_pipeline_semantics_policy import bind_speech_semantics_policy_v1
-    from app.usecases.speech_pipeline_semantics_sources import ProductionSpeechSources
+    from app.bootstrap.speech_semantics_policy import bind_speech_semantics_policy_v1
+    from app.usecases.speech_semantics_sources import ProductionSpeechSources
 
     from app.domain.executive import CommitmentTransitionOperation, GoalTransitionOperation
     from app.domain.goals import GoalCommitmentSnapshot
@@ -269,7 +269,7 @@ async def build_speech_path(
     )
     from pathlib import Path
 
-    from app.usecases.cognition_delivery_configuration import CoreCognitionConfiguration
+    from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 
     from app.config.core import load_core_config
     from app.domain.appraisal import InternalStateReducer
@@ -430,7 +430,7 @@ async def build_speech_path(
         ),
         d,
     )
-    from app.usecases.speech_pipeline_configuration import CoreSpeechConfiguration
+    from app.bootstrap.speech_configuration import CoreSpeechConfiguration
 
     from app.domain.speech_runtime.shutdown import SpeechRuntimeShutdown
 

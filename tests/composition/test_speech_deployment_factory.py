@@ -10,12 +10,12 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from app.usecases.speech_pipeline_deployment import (
+from app.bootstrap.speech_deployment import (
     SpeechDeploymentRequest,
     create_speech_deployment,
     production_speech_deployment_registry,
 )
-from app.usecases.speech_pipeline_deployment_factory import (
+from app.bootstrap.speech_deployment_factory import (
     ProductionSpeechDeploymentPortFactory,
     SpeechDeploymentFactoryError,
     SpeechDeploymentOwnerConnections,
@@ -217,7 +217,7 @@ async def test_construction_failure_is_preserved_when_cleanup_also_fails(
         cast(Any, SimpleNamespace(provider_factory=provider, presentation=_Presentation())),
     )
 
-    with caplog.at_level(logging.WARNING, logger="app.usecases.speech_pipeline_deployment_factory"):
+    with caplog.at_level(logging.WARNING, logger="app.bootstrap.speech_deployment_factory"):
         with pytest.raises(RuntimeError) as raised:
             await factory(request)
 
