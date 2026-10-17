@@ -58,8 +58,8 @@ from app.domain.speech_semantics_vocabulary import (
 from app.domain.speech_semantics_vocabulary import (
     SpeechTruthRule as T,
 )
-from app.infrastructure.persistence import PersistenceError
-from app.infrastructure.persistence.memory_binding import CoreMemoryPersistenceBinding
+from app.domain.contracts.persistence import PersistenceError
+from app.usecases.memory_persistence import CoreMemoryPersistenceBinding
 
 
 @dataclass(frozen=True, slots=True)

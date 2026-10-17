@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from app.domain.brain_integration import BrainIntegrationModule
 from app.domain.contracts.common import require_identifier
 from app.domain.executive import CommittedExecutiveDecision
-from app.infrastructure.scheduling import CancellationToken
+from app.runtime.kernel import CancellationToken
 from app.usecases.attention_binding import CoreAttentionDispatch
 from app.usecases.brain_integration_runtime import BrainIntegrationWork
 from app.usecases.executive_binding import CoreExecutiveBinding, _validate_envelope

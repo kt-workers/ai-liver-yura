@@ -58,3 +58,19 @@ def test_product_code_has_no_retired_package_or_embedded_edit_instructions() -> 
                 assert "resources/" not in text, str(path)
             assert RETIRED_CONSTRUCTION.search(text) is None, str(path)
             assert not any(fragment in text for fragment in INSTRUCTION_FRAGMENTS), str(path)
+
+
+def test_usecases_never_import_infrastructure() -> None:
+    """UseCaseのimportはDomain/Runtime/Portへ向け、具体提供先はBootstrapで組み立てる。"""
+    for path in (ROOT / "app/usecases").rglob("*.py"):
+        module = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(module):
+            imports: tuple[str, ...] = ()
+            if isinstance(node, ast.Import):
+                imports = tuple(item.name for item in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.level == 0:
+                imports = (node.module or "",)
+            assert all(
+                name != "app.infrastructure" and not name.startswith("app.infrastructure.")
+                for name in imports
+            ), f"{path}:{node.lineno}: 依存方向違反"

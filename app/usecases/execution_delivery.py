@@ -44,7 +44,7 @@ from app.domain.plan_execution.owner import (
     PlanExecutionProgress,
     PlanExecutionStatus,
 )
-from app.infrastructure.scheduling import CancellationToken, RuntimeClock
+from app.runtime.kernel import CancellationToken, RuntimeClock
 from app.usecases.brain_integration_runtime import (
     BrainIntegrationRuntime,
     BrainIntegrationWork,

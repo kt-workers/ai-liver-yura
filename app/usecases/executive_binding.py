@@ -20,7 +20,7 @@ from app.domain.executive import (
     ExecutivePolicy,
     build_executive_context_snapshot,
 )
-from app.infrastructure.scheduling import CancellationToken, RuntimeClock
+from app.runtime.kernel import CancellationToken, RuntimeClock
 from app.usecases.attention_binding import CoreAttentionBinding, CoreAttentionDispatch
 from app.usecases.executive_evidence import CoreExecutiveEvidence, CoreExecutiveEvidenceReader
 from app.usecases.ports.llm import LLMRolePort
