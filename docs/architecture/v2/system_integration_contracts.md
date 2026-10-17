@@ -63,13 +63,13 @@ Streaming / Game / GUI / Labs
 
 ### Required Core foundation
 
-Minimum process requires:
-- Foundation typed contracts
-- Runtime Kernel
-- Brain minimum cognition
-- lifecycle coordinator
+Unified Core requires:
+- Foundation typed contracts and Runtime Kernel
+- Input Meaning / Appraisal / Internal State / Attention / Executive / Goal / Activity owners
+- Memory / Reflection / Speech / Body integration contracts and their registered provider ports
+- a single lifecycle coordinator and explicit resource ownership
 
-### Core-native optional-at-boot service capability
+### 外部提供先の可用性
 
 Core semantic responsibilities remain defined even if a concrete external provider is absent.
 
@@ -513,7 +513,7 @@ This is Verification evidence only.
 
 ## 23. Metrics
 
-Minimum:
+Required observations:
 - Role queue wait/provider latency/token/cost where available
 - end-to-end interaction p50/p95/p99
 - user input→Meaning
@@ -624,7 +624,7 @@ System Integration implementation and final Verification remain frozen until #44
 
 ## 30. #624 能力提供0件・模擬提供1件の自動結合検証
 
-`tests/system_integration/test_system_plugin.py`は既存の`build_minimum_core`と`CoreCognitionConfiguration` / `CoreExecutionConfiguration`を使用する。RegistryとPluginCapabilityPreflightPort / PluginActivityExecutionPortを同じ構成へ注入し、別の状態Ownerや特定サービスへの固定意思を作らない。模擬提供先だけを登録し、実サービスへ接続しない。
+統合本体は`build_core`と既存`CoreCognitionConfiguration` / `CoreExecutionConfiguration`の正規Ownerを使用する。旧`build_minimum_core`を試験fixtureに再導入しない。RegistryとPluginCapabilityPreflightPort / PluginActivityExecutionPortを同じ構成へ注入し、別の状態Ownerや特定サービスへの固定意思を作らない。模擬提供先だけを登録し、実サービスへ接続しない。
 
 能力提供0件では、空Registryのまま通常の内部入力からAppraisal・Executiveへ到達する。能力提供1件では、公開RegistryからActivityBindingへ投影した確定判断を配送し、実行要求・報告・Activityの現在の終端事実・入力文脈・後続認知を同じtraceで照合する。入口が確定判断であるため、先行する実LLMの能力選択をこの試験で実行したとは扱わない。
 
