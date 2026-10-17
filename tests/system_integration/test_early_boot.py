@@ -408,18 +408,19 @@ def test_run_loop_cancellation_cleans_signals_and_owned_tasks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     no_provider(monkeypatch)
-    original_start = bootstrap.start_core
+    original_start = bootstrap.CoreApplication.start
 
     async def scenario() -> None:
         baseline = asyncio.all_tasks()
         started = asyncio.Event()
         previous = {s: signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)}
 
-        async def start(components: bootstrap.CoreComponents) -> None:
-            await original_start(components)
+        async def start(self: bootstrap.CoreApplication) -> None:
+            await original_start(self)
             started.set()
 
-        monkeypatch.setattr(bootstrap, "start_core", start)
+        # 正本で指定された統合Coreの開始境界を観測する。
+        monkeypatch.setattr(bootstrap.CoreApplication, "start", start)
         runner = asyncio.create_task(bootstrap.run_core_runtime())
         try:
             await asyncio.wait_for(started.wait(), 2)
