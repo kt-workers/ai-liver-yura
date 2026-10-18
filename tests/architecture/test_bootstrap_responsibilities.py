@@ -26,6 +26,9 @@ def test_composition_contract_types_have_one_definition() -> None:
         canonical = getattr(composition_contracts, name)
         assert getattr(system, name) is canonical
         assert canonical.__module__ == composition_contracts.__name__
+    identity = composition_contracts.CoreRunIdentity("epoch", "run")
+    assert identity.runtime_epoch == "epoch"
+    assert identity.system_run_id == "run"
 
 
 def test_application_owner_and_snapshot_projection_are_separate() -> None:

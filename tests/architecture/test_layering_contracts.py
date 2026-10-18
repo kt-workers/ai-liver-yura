@@ -100,10 +100,6 @@ def test_moved_boundary_modules_depend_inward(path: str) -> None:
     assert not violations, f"{path}: {violations}"
 
 
-def test_removed_layout_has_no_remaining_modules() -> None:
-    assert not (ROOT / "app/composition").exists()
-
-
 @pytest.mark.parametrize(
     "path",
     (

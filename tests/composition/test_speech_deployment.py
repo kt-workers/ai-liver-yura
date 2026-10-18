@@ -210,6 +210,14 @@ def test_configured_speech_provider_publication_has_exact_factory_inputs(tmp_pat
         assert snapshot.output_schema_id == role.output_schema_id == config.output_schema_id
         assert snapshot.provider_output_format_name == config.provider_output_format_name
         assert snapshot.mappings
+    # 同じ構成publicationに対する不変性の検証も、一度の構築でまとめる。
+    schema = cast(dict[str, object], configs[0].output_json_schema)
+    schema["review_nested_mutation"] = {"items": [{"value": "changed"}]}
+    with pytest.raises(TypeError):
+        configs[0].model_policies[object()] = object()  # type: ignore[index]
+    _, reread_configs, _, _ = bindings.factory_inputs()
+    assert "review_nested_mutation" not in reread_configs[0].output_json_schema
+    assert reread_configs[0].model_policies == configs[0].model_policies
 
 
 def test_unconfigured_speech_provider_publication_has_no_fabricated_mapping(tmp_path: Path) -> None:
@@ -249,24 +257,6 @@ def _rebuild_provider_publication(
         current_configs if configs is None else configs,
         current_snapshots if snapshots is None else snapshots,
     )
-
-
-def test_configured_speech_provider_publication_is_deeply_immutable(tmp_path: Path) -> None:
-    source = create_speech_deployment(
-        configured_root(tmp_path, available=True),
-        **dependencies(),
-        registry=SpeechDeploymentRegistry({"isolated": ExternalPorts()}),
-    )
-    assert source is not None
-    publication = source.request.provider_bindings
-    _, configs, _, _ = publication.factory_inputs()
-    schema = cast(dict[str, object], configs[0].output_json_schema)
-    schema["review_nested_mutation"] = {"items": [{"value": "changed"}]}
-    with pytest.raises(TypeError):
-        configs[0].model_policies[object()] = object()  # type: ignore[index]
-    _, reread_configs, _, _ = publication.factory_inputs()
-    assert "review_nested_mutation" not in reread_configs[0].output_json_schema
-    assert reread_configs[0].model_policies == configs[0].model_policies
 
 
 def test_configured_speech_provider_publication_rejects_snapshot_mismatches(

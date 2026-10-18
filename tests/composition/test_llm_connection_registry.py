@@ -6,7 +6,6 @@ from dataclasses import dataclass, is_dataclass
 
 import pytest
 
-from app.bootstrap.system_cognition_configuration import CoreRunIdentity
 from app.config.core_contracts import CoreConfigurationError
 from app.config.llm_connections import LLMConnectionConfig, LLMConnectionsConfig
 from app.domain.llm import LLMRoleDescriptor, LLMRoleRequest, LLMRoleResult
@@ -90,13 +89,6 @@ def test_cleanup_failure_is_typed_without_hiding_an_unclosed_connection() -> Non
         assert events == ["connect:first", "connect:second", "close:first"]
 
     asyncio.run(run())
-
-
-def test_run_identity_has_no_git_head() -> None:
-    identity = CoreRunIdentity("epoch", "run")
-
-    assert identity.runtime_epoch == "epoch"
-    assert identity.system_run_id == "run"
 
 
 def test_runtime_connection_owners_are_not_data_classes() -> None:
