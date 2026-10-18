@@ -6,7 +6,7 @@ import asyncio
 import signal
 import sys
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from pathlib import Path
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
@@ -19,33 +19,26 @@ from app.bootstrap.runtime_application import CoreRuntimeApplication
 from app.bootstrap.runtime_owners import CoreRuntimeOwners as CoreRuntimeOwners
 from app.bootstrap.runtime_owners import CoreSpeechOwners as CoreSpeechOwners
 from app.bootstrap.runtime_owners import default_core_runtime_owners as default_core_runtime_owners
-from app.bootstrap.speech_production_configuration import SpeechProductionInputs
 from app.bootstrap.system_cognition_configuration import (
-    CORE_RESOURCE,
     ROOT,
     CoreApplication,
     CoreRunIdentity,
-    compose_core,
+    build_core as build_core,
 )
 from app.config.core import CoreConfig, load_core_config
 from app.config.core_contracts import CoreConfigurationError
 from app.config.layered import ConfigurationError, load_user_configuration
-from app.domain.activity_binding import ActivityBindingAuthority
-from app.domain.appraisal import DeterministicAppraisalRule
 from app.domain.appraisal import descriptor as appraisal_descriptor
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.character.contracts import CharacterDefinitionDocument
 from app.domain.contracts.common import require_identifier
-from app.domain.contracts.preconditions import PreconditionSourceBinding, PreconditionSourceRouter
 from app.domain.executive.deliberator import descriptor as executive_descriptor
 from app.domain.goals import GoalCommitmentStore
 from app.domain.input_meaning.interpreter import descriptor
 from app.domain.llm import LLMRoleDescriptor
 from app.domain.memory_reflection.llm_roles import proposal_descriptor, support_descriptor
-from app.domain.plugin_registry import PluginRegistryAuthority
-from app.infrastructure.llm.connection_registry_factory import LLMConnectionAdapter
 from app.infrastructure.persistence import PostgresPersistenceRuntime
-from app.infrastructure.scheduling import RuntimeClock, SystemRuntimeClock
+from app.infrastructure.scheduling import SystemRuntimeClock
 from app.usecases.brain_input_meaning import (
     InputMeaningBrainModulePort as InputMeaningBrainModulePort,
 )
@@ -281,37 +274,3 @@ def main() -> None:
     except (OSError, ValueError, RuntimeError):
         print("ゆら本体の構成、起動または停止に失敗しました。", file=sys.stderr)
         raise SystemExit(1) from None
-
-
-async def build_core(
-    *,
-    run_identity: CoreRunIdentity,
-    activation_id: str,
-    fresh_start: bool,
-    clock: RuntimeClock,
-    registry: PluginRegistryAuthority,
-    precondition_router: PreconditionSourceRouter,
-    precondition_bindings: tuple[PreconditionSourceBinding, ...],
-    activity_bindings: Mapping[str, ActivityBindingAuthority],
-    fast_rules: tuple[DeterministicAppraisalRule, ...],
-    llm_adapters: tuple[LLMConnectionAdapter, ...] = (),
-    speech: SpeechProductionInputs | None = None,
-    config_ref: str = CORE_RESOURCE,
-    resource_root: Path = ROOT,
-) -> CoreApplication:
-    """本体要求だけを構築し、別構成へfallbackしない。"""
-    return await compose_core(
-        run_identity=run_identity,
-        activation_id=activation_id,
-        fresh_start=fresh_start,
-        clock=clock,
-        registry=registry,
-        precondition_router=precondition_router,
-        precondition_bindings=precondition_bindings,
-        activity_bindings=activity_bindings,
-        fast_rules=fast_rules,
-        llm_adapters=llm_adapters,
-        speech=speech,
-        config_ref=config_ref,
-        resource_root=resource_root,
-    )

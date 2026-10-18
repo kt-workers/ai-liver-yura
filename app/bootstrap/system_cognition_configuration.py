@@ -278,3 +278,38 @@ async def compose_core(
         if isinstance(error, CoreConfigurationError):
             raise
         raise CoreConfigurationError(stage) from None
+
+
+
+async def build_core(
+    *,
+    run_identity: CoreRunIdentity,
+    activation_id: str,
+    fresh_start: bool,
+    clock: RuntimeClock,
+    registry: PluginRegistryAuthority,
+    precondition_router: PreconditionSourceRouter,
+    precondition_bindings: tuple[PreconditionSourceBinding, ...],
+    activity_bindings: Mapping[str, ActivityBindingAuthority],
+    fast_rules: tuple[DeterministicAppraisalRule, ...],
+    llm_adapters: tuple[LLMConnectionAdapter, ...] = (),
+    speech: SpeechProductionInputs | None = None,
+    config_ref: str = CORE_RESOURCE,
+    resource_root: Path = ROOT,
+) -> CoreApplication:
+    """本体要求だけを構築し、別構成へfallbackしない。"""
+    return await compose_core(
+        run_identity=run_identity,
+        activation_id=activation_id,
+        fresh_start=fresh_start,
+        clock=clock,
+        registry=registry,
+        precondition_router=precondition_router,
+        precondition_bindings=precondition_bindings,
+        activity_bindings=activity_bindings,
+        fast_rules=fast_rules,
+        llm_adapters=llm_adapters,
+        speech=speech,
+        config_ref=config_ref,
+        resource_root=resource_root,
+    )
