@@ -13,7 +13,6 @@ import pytest
 from app.bootstrap.speech_configuration import CoreSpeechDelivery as PublicSpeechDelivery
 from app.bootstrap.system_cognition_configuration import CoreApplication
 from app.domain.llm.ports import LLMRolePort as DomainLLMRolePort
-from app.usecases.speech_delivery import CoreSpeechDelivery as CanonicalSpeechDelivery
 from app.infrastructure import scheduling as legacy_scheduling
 from app.runtime import kernel
 from app.usecases.appraisal import DeepAppraisalInterpreter
@@ -21,6 +20,7 @@ from app.usecases.body_motion_planning import BodyMotionPlanner
 from app.usecases.goal_planning import GoalPlanner
 from app.usecases.input_meaning import InputMeaningInterpreter
 from app.usecases.ports.llm import LLMRolePort
+from app.usecases.speech_delivery import CoreSpeechDelivery as CanonicalSpeechDelivery
 
 ROOT = Path(__file__).resolve().parents[2]
 
