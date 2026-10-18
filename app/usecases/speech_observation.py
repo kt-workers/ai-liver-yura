@@ -179,4 +179,3 @@ async def project_speech_execution_observation(
         details,
         effects,
     )
-

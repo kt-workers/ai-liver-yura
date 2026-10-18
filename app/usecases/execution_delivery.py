@@ -480,4 +480,3 @@ class CoreExecutionDelivery:
         self._progress_feedback[scope_id] = signature
         if progress.status in {PlanExecutionStatus.COMPLETED, PlanExecutionStatus.STOPPED}:
             self._terminal_events[admission.event.envelope.event_id] = (scope_id, progress.status)
-

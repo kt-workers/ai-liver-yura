@@ -278,5 +278,3 @@ async def compose_core(
         if isinstance(error, CoreConfigurationError):
             raise
         raise CoreConfigurationError(stage) from None
-
-

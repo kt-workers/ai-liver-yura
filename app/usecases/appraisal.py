@@ -68,4 +68,3 @@ class DeepAppraisalInterpreter:
             current_state_revision=freshness.state_revision,
             policy=self._policy,
         )
-

@@ -102,4 +102,3 @@ class GoalPlanner:
             plan_id=plan_id,
             policy=self._policy,
         )
-

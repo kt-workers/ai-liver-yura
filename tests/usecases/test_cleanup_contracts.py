@@ -159,4 +159,3 @@ async def test_cancellation_reaches_the_owner_only_when_explicitly_requested() -
     finally:
         block.set()
         await asyncio.gather(waiter, owned, return_exceptions=True)
-

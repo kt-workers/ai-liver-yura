@@ -71,5 +71,3 @@ class CoreSpeechFeedback:
             ):
                 self._delivered_revision = record.record_revision
         return record
-
-

@@ -43,4 +43,3 @@ class ObservedSpeechPresentationBoundary:
         if command.presentation_id != self.feedback.presentation_id:
             raise ValueError("提示と還流先のidentityが一致しません")
         return _ObservedSession(self.boundary.open(command, policy), self.feedback)
-

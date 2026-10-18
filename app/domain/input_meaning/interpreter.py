@@ -190,5 +190,3 @@ def commit_result(
             "解決した参照が参照文脈の範囲外です",
         )
     return meaning
-
-

@@ -104,5 +104,3 @@ def route_llm_connections(
             raise CoreConfigurationError(CoreFailureCode.PROVIDER_MAPPING_FAILED)
         ports[descriptor.role_id] = registry.port(connection_id)
     return LLMConnectionRouter(ports)
-
-

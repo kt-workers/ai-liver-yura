@@ -108,4 +108,3 @@ class InputMeaningInterpreter:
             result.status,
             meaning=meaning,
         )
-
