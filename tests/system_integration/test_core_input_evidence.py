@@ -9,8 +9,8 @@ from typing import Any, cast
 import pytest
 
 from app import application as bootstrap
-from app.bootstrap import runtime_assembly
 from app.application import InputMeaningBrainModulePort, InputMeaningBrainWorkPayload, stop_core
+from app.bootstrap import runtime_assembly
 from app.domain.attention import AttentionSource, AttentionSourceKind
 from app.domain.contracts import RevisionVector
 from app.domain.contracts.common import freeze_json

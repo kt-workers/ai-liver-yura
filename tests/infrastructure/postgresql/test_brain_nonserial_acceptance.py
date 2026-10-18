@@ -10,8 +10,8 @@ import pytest
 import yaml
 
 from app import application as bootstrap
-from app.bootstrap import runtime_assembly
 from app.application import start_core, stop_core
+from app.bootstrap import runtime_assembly
 from app.domain.activity_execution import ExecutionAdapterReport
 from app.domain.brain_integration import (
     BrainIntegrationLane,

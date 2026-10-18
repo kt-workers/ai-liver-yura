@@ -7,8 +7,8 @@ from datetime import datetime, timezone
 import pytest
 
 from app import application as bootstrap
-from app.bootstrap import runtime_assembly
 from app.application import start_core, stop_core
+from app.bootstrap import runtime_assembly
 from app.domain.activity_execution import ActivityExecutionAuthority
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.contracts import CapabilityAvailability, RevisionVector
