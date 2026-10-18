@@ -19,11 +19,18 @@ from app.bootstrap.system_cognition_configuration import CoreApplication as Core
 from app.bootstrap.system_cognition_configuration import CoreRunIdentity as CoreRunIdentity
 from app.bootstrap.system_cognition_configuration import build_core as build_core
 from app.config.core_contracts import CoreConfigurationError
-from app.usecases.brain_input_meaning import InputMeaningBrainModulePort as InputMeaningBrainModulePort
-from app.usecases.brain_input_meaning import InputMeaningBrainWorkPayload as InputMeaningBrainWorkPayload
-from app.usecases.brain_input_meaning import UnavailableInputMeaningLiveContextPort as UnavailableInputMeaningLiveContextPort
+from app.usecases.brain_input_meaning import (
+    InputMeaningBrainModulePort as InputMeaningBrainModulePort,
+)
+from app.usecases.brain_input_meaning import (
+    InputMeaningBrainWorkPayload as InputMeaningBrainWorkPayload,
+)
+from app.usecases.brain_input_meaning import (
+    UnavailableInputMeaningLiveContextPort as UnavailableInputMeaningLiveContextPort,
+)
 from app.usecases.core_lifecycle import start_core as start_core
 from app.usecases.core_lifecycle import stop_core as stop_core
+
 
 async def run_core_runtime() -> None:
     """旧呼出しは唯一の正式Core起動へ委譲する。"""
