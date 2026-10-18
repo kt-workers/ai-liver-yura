@@ -209,7 +209,6 @@ async def test_real_runtime_admission_rejection_reclaims_only_new_source(
 ) -> None:
     from dataclasses import replace
 
-    from app import application as bootstrap
     from app.bootstrap import runtime_assembly
     from app.config.core import CoreConfig, load_core_config
 
