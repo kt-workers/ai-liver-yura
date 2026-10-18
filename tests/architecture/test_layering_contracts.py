@@ -100,22 +100,6 @@ def test_moved_boundary_modules_depend_inward(path: str) -> None:
     assert not violations, f"{path}: {violations}"
 
 
-@pytest.mark.parametrize(
-    "path",
-    (
-        "app/bootstrap/core_components.py",
-        "app/bootstrap/cognition_configuration.py",
-        "app/usecases/cognition_delivery.py",
-        "app/bootstrap/system_cognition_configuration.py",
-    ),
-)
-def test_updated_consumers_have_no_retired_package_imports(path: str) -> None:
-    assert not any(
-        module == "app.composition" or module.startswith("app.composition.")
-        for module in _imports(path)
-    )
-
-
 def test_entrypoint_contains_no_extracted_execution_owners() -> None:
     definitions = {
         node.name for node in _tree("app/application.py").body

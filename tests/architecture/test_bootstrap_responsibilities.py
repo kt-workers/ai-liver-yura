@@ -57,7 +57,8 @@ def test_product_code_has_no_retired_package_or_embedded_edit_instructions() -> 
                 continue
             text = path.read_text(encoding="utf-8")
             if folder == "app":
-                assert "app.composition." not in text, str(path)
+                # 末尾ドット有無に依存せず、全製品ファイルを走査する。
+                assert "app.composition" not in text, str(path)
                 assert "resources/" not in text, str(path)
             assert RETIRED_CONSTRUCTION.search(text) is None, str(path)
             assert not any(fragment in text for fragment in INSTRUCTION_FRAGMENTS), str(path)
