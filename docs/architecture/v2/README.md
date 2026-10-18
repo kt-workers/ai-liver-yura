@@ -2,8 +2,6 @@
 
 ## 設計完了・製造順
 
-- **`unified_core_architecture.md` — ゆら本体の唯一の起動構成・フォルダ・責務・受入条件の正本。旧Minimum/S2構成を廃止。**
-
 - `system_architecture.md` — システム全体の正本アーキテクチャ
 - `foundation_contracts.md` — #321 Event / Revision / Authority / Capability / ExecutionResult等の共有typed Foundation契約
 - `design_completion_matrix.md` — #445 全V2詳細設計の完了状態とD10後の製造起点統合Gate
