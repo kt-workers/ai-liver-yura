@@ -39,6 +39,8 @@ KERNEL_FORBIDDEN = (
     "app.bootstrap",
     "app.composition",
     "app.application",
+    "app.config",
+    "app.usecases",
     "app.subsystems",
 )
 
