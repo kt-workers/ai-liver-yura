@@ -15,7 +15,12 @@ def test_unified_cli_entry() -> None:
         for node in module.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
-    assert {"main", "build_core_application", "run_core"} <= functions
+    assert {"main", "run_core"} <= functions
+    assert "build_core_application" not in functions
+    from app.application import build_core_application as public_factory
+    from app.bootstrap.cli_composition import build_core_application as canonical_factory
+
+    assert public_factory is canonical_factory
 
 
 def test_legacy_layout_directories_are_absent() -> None:

@@ -5,23 +5,20 @@ from __future__ import annotations
 import asyncio
 import signal
 import sys
-import uuid
 from collections.abc import Callable
 from pathlib import Path
 
 from app.adapters.character.yaml_loader import load_character_definition_yaml
-from app.adapters.llm.connections import production_llm_connection_adapters
 from app.adapters.llm.production import create_openai_port_from_environment
 from app.bootstrap.cognition_configuration import CoreCognitionConfiguration
 from app.bootstrap.core_components import CoreComponents as CoreComponents
 from app.bootstrap.core_components import compose_core_components
 from app.bootstrap.runtime_application import CoreRuntimeApplication
+from app.bootstrap.cli_composition import build_core_application as build_core_application
 from app.bootstrap.runtime_owners import CoreRuntimeOwners as CoreRuntimeOwners
 from app.bootstrap.runtime_owners import CoreSpeechOwners as CoreSpeechOwners
 from app.bootstrap.runtime_owners import default_core_runtime_owners as default_core_runtime_owners
-from app.bootstrap.speech_production_configuration import SpeechProductionInputs
 from app.bootstrap.system_cognition_configuration import (
-    ROOT,
     CoreApplication,
     CoreRunIdentity,
 )
@@ -30,7 +27,6 @@ from app.bootstrap.system_cognition_configuration import (
 )
 from app.config.core import CoreConfig, load_core_config
 from app.config.core_contracts import CoreConfigurationError
-from app.config.layered import ConfigurationError, load_user_configuration
 from app.domain.appraisal import descriptor as appraisal_descriptor
 from app.domain.brain_operational_bounds import V2_BRAIN_OPERATIONAL_BOUNDS_POLICY
 from app.domain.character.contracts import CharacterDefinitionDocument
@@ -179,63 +175,6 @@ async def run_core_runtime() -> None:
     """旧呼出しは唯一の正式Core起動へ委譲する。"""
     await run_core()
 
-
-def _new_core_run_identity() -> CoreRunIdentity:
-    """本体の一回の起動へ、新しい実行識別子を与える。"""
-    return CoreRunIdentity(
-        f"core-epoch-{uuid.uuid4().hex}",
-        f"core-run-{uuid.uuid4().hex}",
-    )
-
-
-def _load_core_speech(
-    run: CoreRunIdentity,
-    owners: CoreRuntimeOwners,
-) -> SpeechProductionInputs | None:
-    """三層設定のSpeech有効化だけを既存登録済みOwnerへ接続する。"""
-    root = ROOT / "config"
-    try:
-        configuration = load_user_configuration(root)
-        if configuration.speech is None:
-            return None
-        if owners.speech is None:
-            raise ValueError("Speech本番接続が登録されていません")
-        from app.bootstrap.speech_deployment import create_speech_deployment
-
-        source = create_speech_deployment(
-            root,
-            run=run,
-            semantic_owner=owners.speech.semantic_owner,
-            memory=owners.speech.memory,
-            registry=owners.speech.registry,
-        )
-        if source is None:
-            raise ValueError("Speech設定の状態が一致しません")
-        return source.inputs
-    except ConfigurationError:
-        raise ValueError("Speech本番設定または登録を使用できません") from None
-
-
-async def build_core_application(
-    owners: CoreRuntimeOwners | None = None,
-) -> CoreApplication:
-    """通常CLIが使用する本体構成を、既存公開factoryだけで組み立てる。"""
-    runtime_owners = owners or default_core_runtime_owners()
-    run = _new_core_run_identity()
-    speech = _load_core_speech(run, runtime_owners)
-    return await build_core(
-        run_identity=run,
-        activation_id="yura.core.explicit",
-        fresh_start=True,
-        clock=SystemRuntimeClock(),
-        registry=runtime_owners.registry,
-        precondition_router=runtime_owners.precondition_router,
-        precondition_bindings=runtime_owners.precondition_bindings,
-        activity_bindings=runtime_owners.activity_bindings,
-        fast_rules=runtime_owners.fast_rules,
-        llm_adapters=production_llm_connection_adapters(),
-        speech=speech,
-    )
 
 
 async def run_core() -> None:
