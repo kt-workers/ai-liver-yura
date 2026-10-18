@@ -81,7 +81,7 @@ def test_missing_invalid_character_has_no_identity_fallback(tmp_path: Path, miss
     config["character_definition.resource_ref"] = str(path)
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.safe_dump(config))
-    with patch.object(bootstrap, "create_openai_port_from_environment") as provider:
+    with patch.object(runtime_assembly, "create_openai_port_from_environment") as provider:
         with pytest.raises((FileNotFoundError, ValueError)):
             bootstrap.build_core_runtime(config_path, cognition=full_cognition())
     provider.assert_not_called()
