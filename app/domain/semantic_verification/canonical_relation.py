@@ -8,7 +8,7 @@ from typing import cast
 
 from app.domain.contracts.common import JsonValue
 from app.domain.llm import LLMRoleRequest, LLMRoleResult, StructuredPayload
-from app.usecases.ports.llm import LLMRolePort
+from app.domain.llm.ports import LLMRolePort
 
 from .authority import SemanticVerificationAuthority
 from .bounds import (

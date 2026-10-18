@@ -10,7 +10,10 @@ from pathlib import Path
 
 import pytest
 
+from app.bootstrap.speech_configuration import CoreSpeechDelivery as PublicSpeechDelivery
 from app.bootstrap.system_cognition_configuration import CoreApplication
+from app.domain.llm.ports import LLMRolePort as DomainLLMRolePort
+from app.usecases.speech_delivery import CoreSpeechDelivery as CanonicalSpeechDelivery
 from app.infrastructure import scheduling as legacy_scheduling
 from app.runtime import kernel
 from app.usecases.appraisal import DeepAppraisalInterpreter
@@ -368,7 +371,10 @@ def test_all_domain_and_usecase_dependencies_point_inward() -> None:
 def test_application_services_have_one_canonical_owner() -> None:
     assert DeepAppraisalInterpreter.__module__ == "app.usecases.appraisal"
     assert InputMeaningInterpreter.__module__ == "app.usecases.input_meaning"
-    assert LLMRolePort.__module__ == "app.usecases.ports.llm"
+    assert LLMRolePort is DomainLLMRolePort
+    assert LLMRolePort.__module__ == "app.domain.llm.ports"
+    assert PublicSpeechDelivery is CanonicalSpeechDelivery
+    assert CanonicalSpeechDelivery.__module__ == "app.usecases.speech_delivery"
     assert GoalPlanner.__module__ == "app.usecases.goal_planning"
     assert BodyMotionPlanner.__module__ == "app.usecases.body_motion_planning"
     assert not is_dataclass(CoreApplication)

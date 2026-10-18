@@ -1,9 +1,3 @@
-from __future__ import annotations
+"""従来の公開入口からDomainの単一LLM Port契約を再公開する。"""
 
-from typing import Protocol
-
-from app.domain.llm import LLMRoleRequest, LLMRoleResult
-
-
-class LLMRolePort(Protocol):
-    async def invoke(self, request: LLMRoleRequest) -> LLMRoleResult: ...
+from app.domain.llm.ports import LLMRolePort as LLMRolePort
