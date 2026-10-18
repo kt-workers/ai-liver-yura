@@ -294,11 +294,24 @@ async def test_input_entry_keeps_adopted_plan_and_scope(monkeypatch: pytest.Monk
         request, fixture
     )
     output = cast(Any, result.stage_results[0].typed_outputs)
-    # 失敗時も公開投影されたtraceと実際のOwner結果を診断できるようにする。
+    # 設計を弱めず、未達時は対象traceの終端・結果だけを安全に短く表示する。
     assert result.status is RunStatus.COMPLETED, (
         result.blockers,
-        () if output is None else output.get("outcomes", ()),
-        () if output is None else output.get("trace"),
+        tuple(
+            (
+                item["module"],
+                item["status"],
+                item["result"],
+            )
+            for item in (() if output is None else output.get("outcomes", ()))
+        ),
+        () if output is None else (
+            output["trace"]["root_trigger_id"],
+            tuple(
+                (item["module"], item["status"])
+                for item in output["trace"]["intervals"]
+            ),
+        ),
     )
     assert result.machine_gate is Gate.PASS
     assert output["scope"]["plan"]["plan_id"] == "plan"
